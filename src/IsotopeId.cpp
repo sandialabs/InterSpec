@@ -586,9 +586,11 @@ double fractionDetectedWeight( const std::vector<SandiaDecay::EnergyRatePair> &s
     return 0.0;
 
   if( expectedAbund == 0.0 )
-    throw runtime_error( "fractionDetectedWeight(...): Peak with no candiates" );
+    throw runtime_error( "fractionDetectedWeight(...): Peak with no candidates" );
   
-  const double det_sf = (!!response ? response->efficiency( mean, distance ) : 1.0);
+  const double det_sf = (response ? (response->isFixedGeometry() ? response->intrinsicEfficiency(mean)
+                                                                 : response->efficiency( mean, distance ))
+                                  : 1.0);
   const double xs = MassAttenuation::massAttenuationCoeficient( shielding_an, mean );
   const double shielding_sf = exp( -shielding_ad * xs );
   const double sf = test_peak->peakArea() / shielding_sf / det_sf /expectedAbund;
@@ -610,7 +612,9 @@ double fractionDetectedWeight( const std::vector<SandiaDecay::EnergyRatePair> &s
       continue;
     
     const double exp_resolution = (hasResolutionResponse ? response->peakResolutionSigma( energy ) : float((highE-lowE)/3.0) );
-    const double det_eff = (!!response ? response->efficiency( energy, distance ) : 1.0);
+    const double det_eff = (response ? (response->isFixedGeometry() ? response->intrinsicEfficiency(energy)
+                                                                    : response->efficiency(energy, distance))
+                                     : 1.0);
     const double xs = MassAttenuation::massAttenuationCoeficient( shielding_an, energy );
     const double transmition = exp( -shielding_ad * xs );
     
@@ -944,7 +948,7 @@ void findCandidates( vector<string> &suggestednucs,
       {
         cerr << "guessIsotopesForPeaks(...): error opening default detector file" << endl;
         //ToDo: get approximate intrinsic efficiency formula for a HPGe and NaI detector here, and just use those for this function.
-        detPtr->setIntrinsicEfficiencyFormula( "1.0", 3.0*PhysicalUnits::cm, PhysicalUnits::keV, 0.0f, 0.0f );
+        detPtr->setIntrinsicEfficiencyFormula( "1.0", 3.0*PhysicalUnits::cm, PhysicalUnits::keV, 0.0f, 0.0f, false );
       }
       //      try{ detPtr->fitResolution( allpeaks, DetectorPeakResponse::kGadrasResolutionFcn ); }catch(...){}
     }//if( !detector || !detector->isValid() )

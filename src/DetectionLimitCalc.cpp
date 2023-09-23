@@ -158,6 +158,8 @@ void batch_test()
   const double shielding_thickness = 2.5*PhysicalUnits::mm;
   const double live_time = spectrum->live_time();
   
+  const bool fixed_geom = det->isFixedGeometry();
+  
   typedef boost::math::policies::policy<boost::math::policies::digits10<6> > my_pol_6;
   const boost::math::normal_distribution<float,my_pol_6> gaus_dist( 0.0f, 1.0f );
   // Will map 0.8414->1.00023, 0.95->1.64485, 0.975->1.95996, 0.995->2.57583, ...
@@ -238,7 +240,8 @@ void batch_test()
       
       try
       {
-      const double det_eff = det->efficiency( erp.energy, distance );
+      const double det_eff = fixed_geom ? det->intrinsicEfficiency(erp.energy)
+                                        : det->efficiency( erp.energy, distance );
       const double shield_trans = shield_transmission( erp.energy );
       const double gammas_per_bq_per_sec = erp.numPerSecond / parent_act;
       if( gammas_per_bq_per_sec < 1.0E-16 )
@@ -1020,6 +1023,8 @@ DeconComputeResults decon_compute_peaks( const DeconComputeInput &input )
   if( input.roi_info.empty() )
     return result;
     
+  const bool fixed_geom = input.drf->isFixedGeometry();
+  
   // We should be good to go,
   vector<PeakDef> inputPeaks, fitPeaks;
   
@@ -1048,11 +1053,12 @@ DeconComputeResults decon_compute_peaks( const DeconComputeInput &input )
       const float &energy = peak_info.energy;
       const float fwhm = input.drf->peakResolutionFWHM( energy );
       const float sigma = fwhm / 2.634;
-      const double det_eff = input.drf->efficiency( energy, input.distance );
+      const double det_eff = fixed_geom ? input.drf->intrinsicEfficiency(energy)
+                                        : input.drf->efficiency( energy, input.distance );
       const double counts_4pi = peak_info.counts_per_bq_into_4pi;
       double air_atten = 1.0;
       
-      if( input.include_air_attenuation )
+      if( input.include_air_attenuation && !fixed_geom )
       {
         const double air_len = input.distance - input.shielding_thickness;
         const double mu_air = GammaInteractionCalc::transmission_coefficient_air( energy, air_len );
@@ -1065,7 +1071,6 @@ DeconComputeResults decon_compute_peaks( const DeconComputeInput &input )
       peak.setFitFor( PeakDef::CoefficientType::Mean, false );
       peak.setFitFor( PeakDef::CoefficientType::Sigma, false );
       peak.setFitFor( PeakDef::CoefficientType::GaussAmplitude, false );
-      
       
       if( peak_continuum )
       {

@@ -232,7 +232,7 @@ namespace
     vector<string> potential_coefs;
     SpecUtils::split( potential_coefs, fcn, ",\t; \n\r" );
     
-    // There is an Excell sheet that users could copy-paste an entire column of
+    // There is an Excel sheet that users could copy-paste an entire column of
     //  data from, that would like like:
     //  { `visible?`, `Det. Name`, `cal. desc`, `Comment`, `far-field/fixed-geom`, `Det Rad(cm)`,
     //    `Source to det dist (cm)`, `Det Setback (cm)`, `Det Area`, `Source to crystal face`,
@@ -260,9 +260,9 @@ namespace
         }//
         
         // Now find the next "Yes" or "No" - which indicates if it is a far-field point source
-        //   calibration, or if "No", then a fixed geometery DRF
-        //  Before it, the name, source description, or comments can all have delimeters in them,
-        //  or be empty, so we dont know how to use this info super easily.
+        //   calibration, or if "No", then a fixed geometry DRF
+        //  Before it, the name, source description, or comments can all have delimiters in them,
+        //  or be empty, so we don't know how to use this info super easily.
         for( size_t i = 0; i < add_info.size(); ++i )
         {
           if( (SpecUtils::iequals_ascii(add_info[i], "Yes")
@@ -2550,6 +2550,7 @@ DrfSelect::DrfSelect( std::shared_ptr<DetectorPeakResponse> currentDet,
     m_efficiencyCsvUpload( nullptr ),
     m_detectrDotDatDiv( nullptr ),
     m_detectorDotDatUpload( nullptr ),
+    m_fixedGeometryCb( nullptr ),
     m_acceptButton( nullptr ),
     m_cancelButton( nullptr ),
     m_noDrfButton( nullptr ),
@@ -2559,6 +2560,7 @@ DrfSelect::DrfSelect( std::shared_ptr<DetectorPeakResponse> currentDet,
     m_detectorManualDescription( nullptr ),
     m_eqnEnergyGroup( nullptr ),
     m_absOrIntrinsicGroup( nullptr ),
+    m_detectorManualDiameterLabel( nullptr ),
     m_detectorManualDiameterText( nullptr ),
     m_detectorManualDistText( nullptr ),
     m_detectorManualDistLabel( nullptr ),
@@ -2731,6 +2733,13 @@ DrfSelect::DrfSelect( std::shared_ptr<DetectorPeakResponse> currentDet,
   m_detectorDiameter->enterPressed().connect( boost::bind( &DrfSelect::fileUploadedCallback, this, UploadCallbackReason::DetectorDiameterChanged ) );
   m_detectorDiameter->blurred().connect( boost::bind( &DrfSelect::fileUploadedCallback, this, UploadCallbackReason::DetectorDiameterChanged ) );
 
+  m_fixedGeometryCb = new WCheckBox( "Fixed Geometry", uploadDetTab );
+  m_fixedGeometryCb->setInline( false );
+  m_fixedGeometryCb->addStyleClass( "FixedGeometry" );
+  m_fixedGeometryCb->hide();
+  m_fixedGeometryCb->checked().connect( boost::bind( &DrfSelect::fileUploadedCallback, this, UploadCallbackReason::FixedGeometryChanged ) );
+  m_fixedGeometryCb->unChecked().connect( boost::bind( &DrfSelect::fileUploadedCallback, this, UploadCallbackReason::FixedGeometryChanged ) );
+  
   
   m_uploadedDetNameDiv = new WContainerWidget( m_detectrDiameterDiv );
   label = new WLabel( "Name:", m_uploadedDetNameDiv );
@@ -2796,7 +2805,8 @@ DrfSelect::DrfSelect( std::shared_ptr<DetectorPeakResponse> currentDet,
   m_detectorManualFunctionName->setText( ns_default_manual_det_name );
   m_detectorManualFunctionName->setEmptyText("Unique Detector Name");
   m_detectorManualFunctionName->setInline(false);
-  m_detectorManualFunctionName->keyWentUp().connect(boost::bind(&DrfSelect::verifyManualDefinition, this));
+  //m_detectorManualFunctionName->keyWentUp().connect(boost::bind(&DrfSelect::verifyManualDefinition, this));
+  m_detectorManualFunctionName->textInput().connect(boost::bind(&DrfSelect::verifyManualDefinition, this));
 
   cell = formulaTable->elementAt( 1, 0 );
   label = new WLabel("Efficiency f(x) = ", cell );
@@ -2811,7 +2821,8 @@ DrfSelect::DrfSelect( std::shared_ptr<DetectorPeakResponse> currentDet,
   //m_detectorManualFunctionText->setText(fcn);
   m_detectorManualFunctionText->setEmptyText(fcn);
   m_detectorManualFunctionText->setInline(false);
-  m_detectorManualFunctionText->keyWentUp().connect(boost::bind(&DrfSelect::verifyManualDefinition, this));
+  //m_detectorManualFunctionText->keyWentUp().connect(boost::bind(&DrfSelect::verifyManualDefinition, this));
+  m_detectorManualFunctionText->textInput().connect(boost::bind(&DrfSelect::verifyManualDefinition, this));
   
   cell = formulaTable->elementAt( 2, 0 );
   Wt::WContainerWidget *energyContainer = new Wt::WContainerWidget( cell );
@@ -2844,17 +2855,19 @@ DrfSelect::DrfSelect( std::shared_ptr<DetectorPeakResponse> currentDet,
 #endif
   
   cell = formulaTable->elementAt( 4, 0 );
-  label = new WLabel("Detector diam.", cell );
+  m_detectorManualDiameterLabel = new WLabel( "Detector diam.", cell );
   cell = formulaTable->elementAt( 4, 1 );
   m_detectorManualDiameterText = new WLineEdit( cell );
-  label->setBuddy( m_detectorManualDiameterText );
+  m_detectorManualDiameterLabel->setBuddy( m_detectorManualDiameterText );
   m_detectorManualDiameterText->setValidator( distValidator );
   //m_detectorManualDiameterText->setText( diamtxt );
   m_detectorManualDiameterText->setEmptyText( diamtxt );
   m_detectorManualDiameterText->setValidator( distValidator );
   m_detectorManualDiameterText->blurred().connect(boost::bind(&DrfSelect::verifyManualDefinition, this));
   m_detectorManualDiameterText->enterPressed().connect(boost::bind(&DrfSelect::verifyManualDefinition, this));
-  m_detectorManualDiameterText->keyWentUp().connect(boost::bind(&DrfSelect::verifyManualDefinition, this));
+  //m_detectorManualDiameterText->keyWentUp().connect(boost::bind(&DrfSelect::verifyManualDefinition, this));
+  m_detectorManualDiameterText->textInput().connect(boost::bind(&DrfSelect::verifyManualDefinition, this));
+  
   
   m_detectorManualDiameterText->setAttributeValue( "ondragstart", "return false" );
 #if( BUILD_AS_OSX_APP || IOS )
@@ -2901,6 +2914,9 @@ DrfSelect::DrfSelect( std::shared_ptr<DetectorPeakResponse> currentDet,
   button = new WRadioButton( "Absolute", cell );
   button->setMargin( 5, Wt::Left );
   m_absOrIntrinsicGroup->addButton( button, 1 );
+  button = new WRadioButton( "Fixed Geometry", cell );
+  button->setMargin( 5, Wt::Left );
+  m_absOrIntrinsicGroup->addButton( button, 2 );
   m_absOrIntrinsicGroup->checkedChanged().connect(boost::bind(&DrfSelect::verifyManualDefinition, this));
   m_absOrIntrinsicGroup->setSelectedButtonIndex( 0 );
 
@@ -2913,7 +2929,9 @@ DrfSelect::DrfSelect( std::shared_ptr<DetectorPeakResponse> currentDet,
   m_detectorManualDistText->setHiddenKeepsGeometry( true );
   m_detectorManualDistLabel->hide();
   m_detectorManualDistText->hide();
-  m_detectorManualDistText->keyWentUp().connect(boost::bind(&DrfSelect::verifyManualDefinition, this));
+  //m_detectorManualDistText->keyWentUp().connect(boost::bind(&DrfSelect::verifyManualDefinition, this));
+  m_detectorManualDistText->textInput().connect(boost::bind(&DrfSelect::verifyManualDefinition, this));
+  
   
   
   m_manualSetButton = new WPushButton( "Set", cell );
@@ -3765,7 +3783,8 @@ void DrfSelect::verifyManualDefinition()
     }
     
     if( !coef_formula_info.m_source_to_crystal_distance.empty()
-       && (m_detectorManualDistText->isHidden() || m_detectorManualDistText->text().empty() ) )
+       && (m_detectorManualDistText->isHidden() || m_detectorManualDistText->text().empty() )
+       && !coef_formula_info.m_fixed_geom )
     {
       m_absOrIntrinsicGroup->setSelectedButtonIndex(1);
       m_detectorManualDistText->setText( coef_formula_info.m_source_to_crystal_distance );
@@ -3777,21 +3796,32 @@ void DrfSelect::verifyManualDefinition()
     {
       m_detectorManualFunctionName->setText( coef_formula_info.m_det_name );
     }
+    
+    if( coef_formula_info.m_fixed_geom )
+      m_absOrIntrinsicGroup->setSelectedButtonIndex(2);
   }//if( user_entered_coefs )
   
   
-  const bool hideAbs = (m_absOrIntrinsicGroup->checkedId() == 0);
-  m_detectorManualDistLabel->setHidden( hideAbs );
-  m_detectorManualDistText->setHidden( hideAbs );
+  const bool is_intrinsic = (m_absOrIntrinsicGroup->checkedId() == 0);
+  const bool is_absolute = (m_absOrIntrinsicGroup->checkedId() == 1);
+  const bool is_fixed_geom = (m_absOrIntrinsicGroup->checkedId() == 2);
+  assert( (static_cast<int>(is_intrinsic)
+           + static_cast<int>(is_absolute)
+           + static_cast<int>(is_fixed_geom)) == 1 );
   
-  if( !hideAbs )
+  m_detectorManualDistLabel->setHidden( is_intrinsic || is_fixed_geom );
+  m_detectorManualDistText->setHidden( is_intrinsic || is_fixed_geom );
+  m_detectorManualDiameterText->setHidden( is_fixed_geom );
+  m_detectorManualDiameterLabel->setHidden( is_fixed_geom );
+  
+  if( is_absolute )
   {
     if( m_detectorManualDistText->text().empty()
        || (m_detectorManualDistText->validate() != WValidator::State::Valid) )
       valid = false;
-  }//if( !hideAbs )
+  }//if( is_absolute )
   
-  if( m_detectorManualDiameterText->validate() != WValidator::State::Valid )
+  if( !is_fixed_geom && (m_detectorManualDiameterText->validate() != WValidator::State::Valid) )
     valid = false;
   
   
@@ -3803,10 +3833,13 @@ void DrfSelect::verifyManualDefinition()
     det_diam = PhysicalUnits::stringToDistance( diamtxt );
   }catch( std::exception & )
   {
-    valid = false;
+    if( is_fixed_geom )
+      det_diam = 0.0;
+    else
+      valid = false;
   }
   
-  if( m_absOrIntrinsicGroup->checkedId() != 0 )
+  if( is_absolute )
   {
     double dist = 1*PhysicalUnits::meter;
     try
@@ -3840,7 +3873,7 @@ void DrfSelect::verifyManualDefinition()
     
     DetectorPeakResponse detec( "temp", "temp " );
     detec.setIntrinsicEfficiencyFormula( fcn_txt, static_cast<float>(det_diam),
-                                        energyUnits, lowerEnergy, upperEnergy );
+                                        energyUnits, lowerEnergy, upperEnergy, is_fixed_geom );
     
     if( m_detectorManualFunctionText->hasStyleClass("Wt-invalid") )
       m_detectorManualFunctionText->removeStyleClass( "Wt-invalid" );
@@ -3884,16 +3917,33 @@ void DrfSelect::setFormulaDefineDetector()
     m_detectorManualDescription->setText( descr );
   }//if( descr.empty() )
 
+  const bool is_intrinsic = (m_absOrIntrinsicGroup->checkedId() == 0);
+  const bool is_absolute = (m_absOrIntrinsicGroup->checkedId() == 1);
+  const bool is_fixed_geom = (m_absOrIntrinsicGroup->checkedId() == 2);
+  assert( (static_cast<int>(is_intrinsic)
+           + static_cast<int>(is_absolute)
+           + static_cast<int>(is_fixed_geom)) == 1 );
+  
+  
   shared_ptr<DetectorPeakResponse> detec = make_shared<DetectorPeakResponse>( name, descr );
   
   try
   {
     const string diamtxt = m_detectorManualDiameterText->text().narrow();
-    const double det_diam = PhysicalUnits::stringToDistance( diamtxt );
-    if( det_diam < 0.0001f )
+    double det_diam = 0.0;
+    try
+    {
+      det_diam = PhysicalUnits::stringToDistance( diamtxt );
+    }catch( std::exception &e )
+    {
+      if( !is_fixed_geom )
+        throw;
+    }
+    
+    if( !is_fixed_geom && (det_diam < (is_fixed_geom ? 0.0 : 0.0001)) )
       throw runtime_error( "Detector diameters must be positive" );
     
-    if( m_absOrIntrinsicGroup->checkedId() != 0 )
+    if( is_absolute )
     {
       const string disttxt = m_detectorManualDistText->text().narrow();
       const float dist = (float)PhysicalUnits::stringToDistance( disttxt );
@@ -3934,7 +3984,8 @@ void DrfSelect::setFormulaDefineDetector()
     
     try
     {
-      detec->setIntrinsicEfficiencyFormula( fcn, det_diam, energyUnits, minEnergy, maxEnergy );
+      detec->setIntrinsicEfficiencyFormula( fcn, det_diam, energyUnits,
+                                           minEnergy, maxEnergy, is_fixed_geom );
     }catch( std::exception &e )
     {
       if( !fcn.empty() && !m_detectorManualDiameterText->hasStyleClass("Wt-invalid") )
@@ -4033,13 +4084,16 @@ std::shared_ptr<DetectorPeakResponse> DrfSelect::parseRelEffCsvFile( const std::
   int nlineschecked = 0;
   
   string drfname, drfdescrip;
+  bool fixed_geometry = false;
   bool foundMeV = false, foundKeV = false;
+  
   //ToDo: Need to implement getting lines safely where a quoted field may span
   //      several lines.
   while( SpecUtils::safe_get_line(csvfile, line, 2048) && (++nlineschecked < 100) )
   {
     foundKeV |= SpecUtils::icontains( line, "kev" );
     foundMeV |= SpecUtils::icontains( line, "mev" );
+    fixed_geometry |= SpecUtils::icontains( line, "Fixed Geometry DRF" );
     
     vector<string> fields;
     split_escaped_csv( fields, line );
@@ -4061,6 +4115,14 @@ std::shared_ptr<DetectorPeakResponse> DrfSelect::parseRelEffCsvFile( const std::
        || !SpecUtils::iequals_ascii( fields[6], "c3")
        || !SpecUtils::icontains( fields[15], "radius") )
       continue;
+    
+    // Nominally the header is "FixedGeometry", and be in column 17, but we'll be a little loose
+    int fixed_geom_col = -1;
+    for( size_t i = 0; (fixed_geom_col < 0) && (i < fields.size()); ++i )
+    {
+      if( SpecUtils::icontains( fields[i], "Fixed") && SpecUtils::icontains( fields[i], "Geom") )
+        fixed_geom_col = static_cast<int>( i );
+    }
     
     //Okay, next line should be
     if( !SpecUtils::safe_get_line(csvfile, line, 2048) )
@@ -4091,6 +4153,15 @@ std::shared_ptr<DetectorPeakResponse> DrfSelect::parseRelEffCsvFile( const std::
       const float dist = std::stof( fields.at(14) ) * PhysicalUnits::cm;
       const float radius = std::stof( fields.at(15) ) * PhysicalUnits::cm;
       
+      if( (fixed_geom_col >= 0) && (static_cast<int>(fields.size()) >= fixed_geom_col) )
+      {
+        fixed_geometry |= (SpecUtils::icontains( fields[fixed_geom_col], "1")
+                           || SpecUtils::icontains( fields[fixed_geom_col], "yes")
+                           || SpecUtils::icontains( fields[fixed_geom_col], "true")
+                           || SpecUtils::istarts_with(fields[fixed_geom_col], "y"));
+      }//if( has_fixed_geom_col )
+      
+      
       const string name = (fields[0].empty() ? drfname : fields[0]);
       const float energUnits = ((foundKeV && !foundMeV) ? 1.0f : 1000.0f);
       float lowerEnergy = 0.0f, upperEnergy = 0.0f;
@@ -4120,11 +4191,10 @@ std::shared_ptr<DetectorPeakResponse> DrfSelect::parseRelEffCsvFile( const std::
         }
       }//if( we got another line we'll check if its the uncertainties )
       
-      
       auto det = std::make_shared<DetectorPeakResponse>( fields[0], drfdescrip );
       
       det->fromExpOfLogPowerSeriesAbsEff( coefs, coef_uncerts, dist, 2.0f*radius, energUnits,
-                                          lowerEnergy, upperEnergy );
+                                          lowerEnergy, upperEnergy, fixed_geometry );
       
       //Look for the line that gives the appropriate energy range.
 #define POS_DECIMAL_REGEX "\\+?\\s*((\\d+(\\.\\d*)?)|(\\.\\d*))\\s*(?:[Ee][+\\-]?\\d+)?\\s*"
@@ -4218,7 +4288,7 @@ void DrfSelect::fileUploadedCallback( const UploadCallbackReason context )
     }
   };//updateUserName(...)
   
-  
+  bool is_fixed_geometry = false;
   m_uploadedDetName->setValueText( "" );
   if( !m_efficiencyCsvUpload->empty() )
   {
@@ -4232,8 +4302,14 @@ void DrfSelect::fileUploadedCallback( const UploadCallbackReason context )
   {
     case UploadCallbackReason::ImportTabChosen:
       break;
+      
     case UploadCallbackReason::DetectorDiameterChanged:
       break;
+      
+    case UploadCallbackReason::FixedGeometryChanged:
+      m_detectorDiameter->setHidden( m_fixedGeometryCb->isChecked() );
+      break;
+      
     case UploadCallbackReason::DetectorDotDatUploaded:
       break;
       
@@ -4250,6 +4326,13 @@ void DrfSelect::fileUploadedCallback( const UploadCallbackReason context )
           m_detectrDotDatDiv->hide();
           m_detectorDiameter->disable();
           m_detector = det;
+          
+          const bool fixed_geometry = det->isFixedGeometry();
+          m_fixedGeometryCb->show();
+          m_fixedGeometryCb->setChecked( fixed_geometry );
+          m_fixedGeometryCb->disable();
+          m_detectrDiameterDiv->setHidden( fixed_geometry );
+          
           setAcceptButtonEnabled( true );
           updateUserName();
           emitChangedSignal();
@@ -4257,6 +4340,9 @@ void DrfSelect::fileUploadedCallback( const UploadCallbackReason context )
         }else
         {
           m_detectrDotDatDiv->show();
+          m_detectrDiameterDiv->show();
+          m_fixedGeometryCb->hide();
+          m_fixedGeometryCb->setChecked( false );
           m_detectorDiameter->enable();
         }//if( det )
       }//if( we have a file to test )
@@ -4268,22 +4354,28 @@ void DrfSelect::fileUploadedCallback( const UploadCallbackReason context )
                             && m_efficiencyCsvUpload->spoolFileName().size()
                             && m_detectorDotDatUpload->spoolFileName().size());
 
+  const bool fixed_geometry = (m_fixedGeometryCb->isVisible() && m_fixedGeometryCb->isChecked());
+  
   float diameter = -1.0f;
-  try
+  if( !fixed_geometry )
   {
-    diameter = static_cast<float>( PhysicalUnits::stringToDistance( m_detectorDiameter->text().narrow() ) );
-    if( diameter < float(0.001*PhysicalUnits::cm) )
-      diameter = 0.0f;
-  }catch(...)
-  {
-    m_detectorDiameter->setText( "" );
-  }
+    try
+    {
+      diameter = static_cast<float>( PhysicalUnits::stringToDistance( m_detectorDiameter->text().toUTF8() ) );
+      if( diameter < float(0.001*PhysicalUnits::cm) )
+        diameter = 0.0f;
+    }catch(...)
+    {
+      m_detectorDiameter->setText( "" );
+    }
+  }//if( !fixed_geometry )
   
   const bool isDiamDet = (!m_efficiencyCsvUpload->empty()
                           && diameter>0.0
+                          && !fixed_geometry
                           && m_efficiencyCsvUpload->spoolFileName().size() );
 
-  if( !isGadrasDet && !isDiamDet )
+  if( !isGadrasDet && !isDiamDet && !fixed_geometry )
   {
     if( diameter > 0.0 )
       passMessage( "Need the detectors diameter", WarningWidget::WarningMsgHigh );
@@ -4322,8 +4414,11 @@ void DrfSelect::fileUploadedCallback( const UploadCallbackReason context )
         m_detectorDiameter->setText( PhysicalUnits::printToBestLengthUnits(det->detectorDiameter()) );
     }else
     {
-      det->fromEnergyEfficiencyCsv( csvfile, diameter, float(PhysicalUnits::keV) );
+      det->fromEnergyEfficiencyCsv( csvfile, diameter, float(PhysicalUnits::keV), fixed_geometry );
       det->setDrfSource( DetectorPeakResponse::DrfSource::UserImportedIntrisicEfficiencyDrf );
+      
+      m_fixedGeometryCb->show();
+      m_fixedGeometryCb->enable();
     }//if( isGadrasDet ) / else
   }catch( std::exception &e )
   {

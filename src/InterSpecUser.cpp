@@ -91,26 +91,6 @@ namespace Wt
     const char *sql_value_traits<FileData_t>
     ::type(SqlConnection *conn, int size)
     {
-#if( HAS_WTDBOSQLITE3 )
-      if( dynamic_cast<Wt::Dbo::backend::Sqlite3 *>(conn) )
-        return "blob not null";
-#endif
-      
-#if( HAS_WTDBOMYSQL )
-      if( dynamic_cast<Wt::Dbo::backend::MySQL *>(conn) )
-        return "MEDIUMBLOB";
-#endif
-      
-#if( HAS_WTDBOPOSTGRES )
-      if( dynamic_cast<Wt::Dbo::backend::Postgres *>(conn) )
-        return "bytea not null";
-#endif
-      
-#if( HAS_WTDBOFIREBIRD )
-      if( dynamic_cast<Wt::Dbo::backend::Firebird *>(conn) )
-        return "blob";
-#endif
-      cerr << "\n\n\nInterSpecUser.cpp:\n\tWarning, urogognized DB type\n";
       return conn->blobType();
     }
     

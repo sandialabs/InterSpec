@@ -2887,10 +2887,6 @@ void InterSpec::saveStateToDb( Wt::Dbo::ptr<UserState> entry )
   if( entry->isWriteProtected() )
     throw runtime_error( "UserState is write protected; "
                          "please clone state to re-save" );
-  
-//  if( !m_user->preferenceValue<bool>("SaveSpectraToDb") )
-//    throw runtime_error( "You must enable saving spectra to database inorder to"
-//                         " save the apps state." );
 
   try
   {

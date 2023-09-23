@@ -110,8 +110,8 @@ public:
    */
   double ageAtSpectrumTime() const;
   
-  /** Returns nullptr if the user has not selected a shielding, other wise
-     returns the ShieldingSelect.
+  /** Returns nullptr if the user has not selected a shielding, currently
+   a fixed geometry, other wise returns the ShieldingSelect.
    */
   ShieldingSelect *shielding();
   
@@ -155,6 +155,11 @@ public:
      Causes shielding widget to be shown.
    */
   void setShielding( const float atomic_number, const float areal_density );
+  
+  
+  /** Sets is fixed geometry (e.g., hide distance and shielding), or not (default). */
+  void setIsFixedGeometry( const bool is_fixed );
+  
   
   /** Returns a GADRAS style source string.
       May include source age, if it will matter.
@@ -215,6 +220,13 @@ protected:
   /** Display of the nuclide. */
   Wt::WText *m_nuclideLabel;
   
+  
+  Wt::WLabel *m_distanceLabel;
+  
+  /** The distance of source to face of detector.
+   
+   When geometry is fixed, this will be hidden.
+   */
   Wt::WLineEdit *m_distanceEdit;
   
   

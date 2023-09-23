@@ -79,6 +79,7 @@ MakeDrfSrcDef::MakeDrfSrcDef( const SandiaDecay::Nuclide *nuc,
   m_materialDB( materialDB ),
   m_materialSuggest( materialSuggest ),
   m_nuclideLabel( nullptr ),
+  m_distanceLabel( nullptr ),
   m_distanceEdit( nullptr ),
   m_activityEdit( nullptr ),
   m_activityUncertainty( nullptr ),
@@ -198,7 +199,7 @@ void MakeDrfSrcDef::create()
 */
   
   cell = m_table->elementAt(sm_distance_row,0);
-  WLabel *label = new WLabel( "Distance", cell );
+  m_distanceLabel = new WLabel( "Distance", cell );
   cell = m_table->elementAt(sm_distance_row,1);
   m_distanceEdit = new WLineEdit( cell );
   m_distanceEdit->setTextSize( 16 );
@@ -209,7 +210,7 @@ void MakeDrfSrcDef::create()
   m_distanceEdit->setAttributeValue( "autocorrect", "off" );
   m_distanceEdit->setAttributeValue( "spellcheck", "off" );
 #endif
-  label->setBuddy( m_distanceEdit );
+  m_distanceLabel->setBuddy( m_distanceEdit );
   WRegExpValidator *distValidator = new WRegExpValidator( PhysicalUnits::sm_distanceUnitOptionalRegex, this );
   distValidator->setFlags( Wt::MatchCaseInsensitive );
   m_distanceEdit->setValidator( distValidator );
@@ -219,7 +220,7 @@ void MakeDrfSrcDef::create()
   
   
   cell = m_table->elementAt(sm_activity_row,0);
-  label = new WLabel( "Activity", cell );
+  WLabel *label = new WLabel( "Activity", cell );
   
   cell = m_table->elementAt(sm_activity_row,1);
   m_activityEdit = new WLineEdit( cell );
@@ -559,6 +560,11 @@ double MakeDrfSrcDef::enteredActivity() const
 
 double MakeDrfSrcDef::distance() const
 {
+  assert( !m_distanceEdit->isHidden() );
+  
+  if( m_distanceEdit->isHidden() )
+    throw runtime_error( "MakeDrfSrcDef: should not be calling distance, when a fixed geometry." );
+  
   const string txt = m_distanceEdit->text().toUTF8();
   return PhysicalUnits::stringToDistance(txt);
 }
@@ -773,6 +779,13 @@ void MakeDrfSrcDef::setShielding( const float atomic_number, const float areal_d
   m_shieldingSelect->setHidden( false );
   m_shieldingSelect->setAtomicNumberAndArealDensity( atomic_number, areal_density );
 }//void setShielding( const float atomic_number, const float areal_density )
+
+
+void MakeDrfSrcDef::setIsFixedGeometry( const bool is_fixed )
+{
+  m_distanceEdit->setHidden( is_fixed );
+  m_distanceLabel->setHidden( is_fixed );
+}//void setIsFixedGeometry( const bool is_fixed )
 
 
 std::string MakeDrfSrcDef::toGadrasLikeSourceString() const

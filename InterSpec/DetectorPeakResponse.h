@@ -218,7 +218,9 @@ public:
   //  Detector diameter is in units of PhysicalUnits
   //  Recomputes hash value.
   void fromEnergyEfficiencyCsv( std::istream &input,
-                const float detectorDiameter, const float energyUnits );
+                               const float detectorDiameter,
+                               const float energyUnits,
+                               const bool is_fixed_geometry );
   
   
   //setIntrinsicEfficiencyFormula(): sets m_efficiencyForm, m_efficiencyFormula,
@@ -239,13 +241,17 @@ public:
   //  intrinsicEfficiency(700)   ==0.219004;
   //  intrinsicEfficiency(800)   ==0.197117
   //
-  //The 'detector_diameter' is in units of PhysicalUnits (e.g. mm).
+  //The 'detector_diameter' is in units of PhysicalUnits (e.g. mm), and
+  //  will not be used if 'fixedGeometry' is true..
   //
   //The lower and upper energy parameters specify the energy range the function
   //  is valid over; if unknown specify 0.0f for both.
   //
+  // The 'fixedGeometry' is If this efficiency is for a fixed geometry
+  //  (e.g. Marinelli beaker, soil contamination, etc).
+  //
   //Throws std::runtime_error if invalid expression, with a message that is
-  //  valid HTML
+  //  valid HTML.
   //Note, valid function names are:
   //   abs min, max, sqrt, pow, sin, cos, tan, asin, acos, atan, atan2,
   //    sinh, cosh, tanh, exp, log, ln (synonym for log), log10
@@ -253,7 +259,8 @@ public:
                                       const float detector_diameter,
                                       const float eqnEnergyUnits,
                                       const float lowerEnergy,
-                                      const float upperEnergy );
+                                      const float upperEnergy,
+                                      const bool fixedGeometry );
   
   /** Makes a callable funtion from the provided mathematical formula
    
@@ -291,14 +298,16 @@ public:
    \param uncerts The uncertainties of the coefficients; must either be empty,
           or the same size as \p coefs.
    \param characterizationDist Distance used when fitting coefficients.  If
-          coefficients are for intrinsic efficiency, then this value will be
-          0.0f.
+          coefficients are for intrinsic efficiency, or for fixed geometry, then this
+          value will be 0.0f.
    \param equationEnergyUnits The energy units equation should be evaluated
           in. If eqn is in MeV, this will be 1000.  If in keV, will be 1.0.
    \param lowerEnergy Lower energy, in keV, the equation is good for; if
           unknown pass a value of 0.0f for this parameter and upperEnergy.
    \param upperEnergy Upper energy, in keV, the equation is good for; if
           unknown pass a value of 0.0f for this parameter and lowerEnergy.
+   \param fixedGeometry If this efficiency is for a fixed geometry (e.g. Marinelli
+          beaker, soil contamination, etc).
    
    Recomputes hash value.
   */
@@ -308,7 +317,8 @@ public:
                                       const float detector_diameter,
                                       const float equationEnergyUnits,
                                       const float lowerEnergy,
-                                      const float upperEnergy );
+                                      const float upperEnergy,
+                                      const bool fixedGeometry );
 
   
   static std::shared_ptr<DetectorPeakResponse> parseSingleCsvLineRelEffDrf( std::string &line );
@@ -369,7 +379,7 @@ public:
    or all characters converted to QR-ascii so the available number of characters is larger.
    
    The returned string is url-encoded - unlike the `toAppUrl()` function of other classes; this
-   is to allow the resturned string to be represented as a ASCII-mode QR code.
+   is to allow the returned string to be represented as a ASCII-mode QR code.
    
    If this DRF is not valid, will throw an exception.
    */
@@ -393,26 +403,32 @@ public:
   void setFwhmCoefficients( const std::vector<float> &coefs,
                             const ResolutionFnctForm form );
   
-  //efficiency(...): Currently just linearly interpolates between surrounding
-  //  efficiency points for m_efficiencyForm=kEnergyEfficiencyPairs.  Will throw
-  //  std::runtime_exception if the object has not been initialized.  Above or
-  //  below maximum energies of the efficiency will return upper or lower
-  //  efficiencies, respectively.
-  //Returns efficiency per decay measured at `distance`
-  //Energy should be in units of SandiaDecay (e.g. keV=1.0).
+  /** Returns efficiency of a full energy detection event, per decay measured at `distance`.
+   
+   Energy and distance should be in units of SandiaDecay (e.g. keV=1.0).
+   
+   If a fixed-geometry DRF, then distance must either be zero or negative, in which case will
+   just return the same thing as #intrinsicEfficiency
+   
+   Will throw `std::runtime_exception` if this object has not been initialized.
+   Above or below maximum energies of the efficiency will return upper or lower efficiencies, respectively.
+   */
   double efficiency( const float energy, const double distance ) const;
 
 
-  //intrinsicEfficiency(...): Currently just linearly interpolates between
-  //  surrounding efficiency points.  Will throw std::runtime_exception if the
-  //  object has not been initialized.  Above or below maximum energies of the
-  //  efficiency will return upper or lower efficiencies, respectively.
+  /** Returns the fraction of gamma rays, at the specified energy, striking the face of the detector,
+   will result in a full-energy detection event.  Or for fixed-geometry efficiencies, returns the efficiency
+   of a gamma to be detected, per bq of the source (or similar per unit area, if for a surface distribution).
+   
+   Will throw `std::runtime_exception` if this object has not been initialized.
+   Above or below maximum energies of the efficiency will return upper or lower efficiencies, respectively.
+   */
   float intrinsicEfficiency( const float energy ) const;
 
-  /** Returns a std::function that gives intrinsic efficiecny as a function
-  of energy.  Useful porimarily for places when you dont want to have this
+  /** Returns a std::function that gives intrinsic efficiency as a function
+  of energy.  Useful primarily for places when you don't want to have this
   class as a dependancy.
-  Returns null function if not avaiable.
+  Returns null function if not available.
   */
   std::function<float( float )> intrinsicEfficiencyFcn() const;
 
@@ -500,6 +516,13 @@ public:
    Note: this limit is not currently enforced/used anywhere in InterSpec.
    */
   double upperEnergy() const;
+  
+  /** Returns if this DRF is for a fixed geometry.
+   
+   If true,
+   */
+  bool isFixedGeometry() const;
+  
   
   /** The distance the detector crystal is setback from the face of the detector.
    
@@ -674,6 +697,8 @@ protected:
   
   /** Not currently used, but in place for future upgrades, so DB schema wont
    have to be changed.
+   
+   20230917: now used when serializing to DB, to denote if `m_fixedGeometry` is true.
    */
   uint64_t m_flags;
   
@@ -693,6 +718,14 @@ protected:
   /** Last time the DRF was used. */
   int64_t m_lastUsedUtc;
   
+  /** When true, the response will not have a distance component, but only provide an efficiency
+   per decay of source (or decay per unit area).
+   */
+  bool m_fixedGeometry;
+  
+  /** On 20230916 updated from version 0 to 1, to account for `m_fixedGeometry` - will still write version 0 if
+   `m_fixedGeometry == false`.
+   */
   static const int sm_xmlSerializationVersion;
   
 public:
@@ -822,13 +855,20 @@ public:
     Wt::Dbo::field( a, m_user, "InterSpecUser_id" );
     
     //Wt::Dbo doesnt support unsigned integers, so we got a little workaround
+    //
+    //  20230916: We'll store `m_fixedGeometry` as a bit in `m_flags`, to avoid
+    //            bothering to change the schema
+    const uint64_t fixed_geom_bit = 0x80000000;
+    
     int64_t hash, parentHash, flags;
     if( a.getsValue() )
     {
       hash = reinterpret_cast<int64_t&>(m_hash);
       parentHash = reinterpret_cast<int64_t&>(m_parentHash);
-      flags = reinterpret_cast<int64_t&>(m_flags);
-    }
+      
+      uint64_t flags_tmp = (m_flags | (m_fixedGeometry ? fixed_geom_bit : uint64_t(0)));
+      flags = reinterpret_cast<int64_t&>(flags_tmp);
+    }//if( a.getsValue() )
     
     
     Wt::Dbo::field( a, hash, "Hash" );
@@ -840,6 +880,9 @@ public:
       m_hash = reinterpret_cast<uint64_t&>(hash);
       m_parentHash = reinterpret_cast<uint64_t&>(parentHash);
       m_flags = reinterpret_cast<uint64_t&>(flags);
+      
+      m_fixedGeometry = (m_flags & fixed_geom_bit);
+      m_flags &= ~fixed_geom_bit; //clear fixed
     }
 
     if( a.getsValue() )

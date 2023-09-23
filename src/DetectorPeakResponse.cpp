@@ -65,7 +65,7 @@
 using namespace std;
 using SpecUtils::Measurement;
 
-const int DetectorPeakResponse::sm_xmlSerializationVersion = 0;
+const int DetectorPeakResponse::sm_xmlSerializationVersion = 1;
 
 namespace
 {
@@ -496,7 +496,8 @@ DetectorPeakResponse::DetectorPeakResponse()
     m_lowerEnergy( 0.0 ),
     m_upperEnergy( 0.0 ),
     m_createdUtc( 0 ),
-    m_lastUsedUtc( 0 )
+    m_lastUsedUtc( 0 ),
+    m_fixedGeometry( false )
 {
 } //DetectorPeakResponse()
 
@@ -516,7 +517,8 @@ DetectorPeakResponse::DetectorPeakResponse( const std::string &name,
     m_lowerEnergy( 0.0 ),
     m_upperEnergy( 0.0 ),
     m_createdUtc( 0 ),
-    m_lastUsedUtc( 0 )
+    m_lastUsedUtc( 0 ),
+    m_fixedGeometry( false )
 {
 }//DetectorPeakResponse( const std::string &name, const std::string &descrip )
 
@@ -583,6 +585,9 @@ void DetectorPeakResponse::computeHash()
   
   //Dont hash based on m_createdUtc or m_lastUsed
   
+  if( m_fixedGeometry )
+    boost::hash_combine( seed, m_fixedGeometry );
+  
   m_hash = seed;
 }//void computeHash()
 
@@ -643,7 +648,7 @@ void DetectorPeakResponse::reset()
   m_lowerEnergy = m_upperEnergy = 0.0;
   m_efficiencySource = DrfSource::UnknownDrfSource;
   m_createdUtc = m_lastUsedUtc = 0;
-  
+  m_fixedGeometry = false;
   
 /*
   m_name = "Flat";
@@ -678,6 +683,7 @@ bool DetectorPeakResponse::operator==( const DetectorPeakResponse &rhs ) const
           && m_upperEnergy==rhs.m_upperEnergy
           //m_createdUtc
           //m_lastUsedUtc
+          && m_fixedGeometry==rhs.m_fixedGeometry
           );
 }//operator==
 
@@ -686,6 +692,7 @@ DetectorPeakResponse::DrfSource DetectorPeakResponse::drfSource() const
 {
   return m_efficiencySource;
 }
+
 
 float DetectorPeakResponse::efficiencyEnergyUnits() const
 {
@@ -722,6 +729,12 @@ double DetectorPeakResponse::upperEnergy() const
 }
 
 
+bool DetectorPeakResponse::isFixedGeometry() const
+{
+  return m_fixedGeometry;
+}//bool isFixedGeometry() const;
+
+
 void DetectorPeakResponse::updateLastUsedTimeToNow()
 {
   m_lastUsedUtc = std::time(nullptr);
@@ -730,9 +743,11 @@ void DetectorPeakResponse::updateLastUsedTimeToNow()
 
 void DetectorPeakResponse::fromEnergyEfficiencyCsv( std::istream &input,
                                     const float detectorDiameter,
-                                    const float energyUnits )
+                                    const float energyUnits,
+                                    const bool is_fixed_geometry )
 {
-  if( detectorDiameter <= 0.0 || IsInf(detectorDiameter) || IsNan(detectorDiameter) )
+  if( !is_fixed_geometry
+     && ((detectorDiameter <= 0.0) || IsInf(detectorDiameter) || IsNan(detectorDiameter)) )
     throw runtime_error( "Detector diameter must be greater than 0.0" );
   
   if( energyUnits <= 0.0 || IsInf(energyUnits) || IsNan(energyUnits) )
@@ -772,8 +787,8 @@ void DetectorPeakResponse::fromEnergyEfficiencyCsv( std::istream &input,
       
       throw runtime_error( "Invalid efficiency file.  After the CSV file header"
                            ", all lines must have at least two numbers: "
-                           "energy and % efficiency. Further comma seperated "
-                           "numbers are alllowed, but no other text" );
+                           "energy and % efficiency. Further comma separated "
+                           "numbers are allowed, but no other text" );
     }//if( fields.size() < 2 )
     
     EnergyEfficiencyPair point;
@@ -841,6 +856,7 @@ void DetectorPeakResponse::fromEnergyEfficiencyCsv( std::istream &input,
   m_upperEnergy = m_energyEfficiencies.back().energy;
   
   m_lastUsedUtc = m_createdUtc = std::time(nullptr);
+  m_fixedGeometry = is_fixed_geometry;
   
   computeHash();
 }//void fromEnergyEfficiencyCsv(...)
@@ -851,7 +867,8 @@ void DetectorPeakResponse::setIntrinsicEfficiencyFormula( const string &fcnstr,
                                                           const float diameter,
                                                           const float energyUnits,
                                                           const float lowerEnergy,
-                                                          const float upperEnergy )
+                                                          const float upperEnergy,
+                                                          const bool fixedGeometry )
 {
   const bool isMeV = (energyUnits > 10.f);
   std::shared_ptr<FormulaWrapper > expression
@@ -872,6 +889,7 @@ void DetectorPeakResponse::setIntrinsicEfficiencyFormula( const string &fcnstr,
   m_efficiencySource = DrfSource::UserSpecifiedFormulaDrf;
   
   m_lastUsedUtc = m_createdUtc = std::time(nullptr);
+  m_fixedGeometry = fixedGeometry;
   
   computeHash();
 }//void setIntrinsicEfficiencyFormula( const std::string &fcn )
@@ -1001,7 +1019,8 @@ void DetectorPeakResponse::fromGadrasDefinition( std::istream &csvFile,
   //const float diam = (4.0f/3.14159265359f) * sqrt(surfaceArea) * static_cast<float>(PhysicalUnits::cm);
   const float diam = 2.0f*sqrt(surfaceArea/3.14159265359f) * static_cast<float>(PhysicalUnits::cm);
   
-  fromEnergyEfficiencyCsv( csvFile, diam, static_cast<float>(PhysicalUnits::keV) );
+  const bool fixed_geom = false;
+  fromEnergyEfficiencyCsv( csvFile, diam, static_cast<float>(PhysicalUnits::keV), fixed_geom );
   
   m_flags = 0;
   
@@ -1011,6 +1030,7 @@ void DetectorPeakResponse::fromGadrasDefinition( std::istream &csvFile,
   m_efficiencySource = DrfSource::UserAddedGadrasDrf;
   
   m_lastUsedUtc = m_createdUtc = std::time(nullptr);
+  m_fixedGeometry = fixed_geom;
   
   computeHash();
 }//void fromGadrasDefinition(...)
@@ -1067,7 +1087,8 @@ void DetectorPeakResponse::fromExpOfLogPowerSeriesAbsEff(
                                    const float det_diam,
                                    const float equationEnergyUnits,
                                    const float lowerEnergy,
-                                   const float upperEnergy )
+                                   const float upperEnergy,
+                                   const bool fixedGeometry )
 {
   if( coefs.empty() )
     throw runtime_error( "fromExpOfLogPowerSeriesAbsEff(...): invalid input" );
@@ -1090,7 +1111,7 @@ void DetectorPeakResponse::fromExpOfLogPowerSeriesAbsEff(
   m_expOfLogPowerSeriesUncerts = uncerts;
   
   //now we need to account for characterizationDist
-  if( charactDist > 0.0f )
+  if( (charactDist > 0.0f) && !fixedGeometry )
   {
     //x^n * x^m = x^(n+m)
     const float gfactor = fractionalSolidAngle( det_diam, charactDist );
@@ -1105,7 +1126,10 @@ void DetectorPeakResponse::fromExpOfLogPowerSeriesAbsEff(
   m_efficiencySource = DrfSource::UserAddedRelativeEfficiencyDrf;
   
   m_lastUsedUtc = m_createdUtc = std::time(nullptr);
+  m_fixedGeometry = false;
 
+  m_fixedGeometry = fixedGeometry;
+  
   computeHash();
 }//void fromExpOfLogPowerSeriesAbsEff
 
@@ -1163,7 +1187,7 @@ std::shared_ptr<DetectorPeakResponse> DetectorPeakResponse::parseSingleCsvLineRe
     
     string description = fields[2] + " - from Relative Eff. File";
     det.reset( new DetectorPeakResponse( name, description ) );
-    det->fromExpOfLogPowerSeriesAbsEff( coefs, {}, dist, diam, eunits, 0.0f, 0.0f );
+    det->fromExpOfLogPowerSeriesAbsEff( coefs, {}, dist, diam, eunits, 0.0f, 0.0f, false );
     det->setDrfSource( DetectorPeakResponse::DrfSource::UserAddedRelativeEfficiencyDrf );
   }catch( std::exception &e )
   {
@@ -1259,7 +1283,8 @@ std::string DetectorPeakResponse::toAppUrl() const
   if( !m_description.empty() )
     parts["DESC"] = url_encode( m_description, "", false );
   
-  parts["DIAM"] = PhysicalUnits::printCompact( m_detectorDiameter, 5 );
+  if( !m_fixedGeometry || (m_detectorDiameter > 0.0) )
+    parts["DIAM"] = PhysicalUnits::printCompact( m_detectorDiameter, 5 );
   
   // We'll assume units are MeV, unless stated otherwise.
   const bool notKeV = (fabs(m_efficiencyEnergyUnits - PhysicalUnits::keV) > 0.001);
@@ -1355,6 +1380,9 @@ std::string DetectorPeakResponse::toAppUrl() const
   
   if( m_lastUsedUtc )
     parts["LASTUSED"] = std::to_string( m_lastUsedUtc );
+  
+  if( m_fixedGeometry )
+    parts["FIXGEOM"] = "1";
   
   auto current_url_len = [&parts]() -> size_t {
     size_t nchar = (2 * parts.size()) - (parts.size() ? 1 : 0);
@@ -1468,6 +1496,7 @@ void DetectorPeakResponse::fromAppUrl( std::string url_query )
   uint64_t hash = 0, parent_hash = 0;
   int64_t createdUtc = 0, lastUsedUtc = 0;
   double lowerEnergy = 0.0, upperEnergy = 0.0;
+  bool fixedGeometry = false;
   
   if( parts.count("NAME") )
     name = parts["NAME"];
@@ -1475,11 +1504,28 @@ void DetectorPeakResponse::fromAppUrl( std::string url_query )
   if( parts.count("DESC") )
     desc = parts["DESC"];
   
-  if( !parts.count("DIAM") )
+  if( parts.count("FIXGEOM") )
+  {
+    const string &v = parts["FIXGEOM"];
+    if( (v != "0") && (v != "1")
+       && !SpecUtils::iequals_ascii(v, "true")
+       && !SpecUtils::iequals_ascii(v, "false") )
+      throw runtime_error( "fromAppUrl: FIXGEOM not boolean." );
+     
+    fixedGeometry = ((v != "1") || SpecUtils::iequals_ascii(v, "true"));
+  }//if( parts.count("FIXGEOM") )
+  
+  if( !parts.count("DIAM") && !fixedGeometry )
     throw runtime_error( "fromAppUrl: missing required DIAM component" );
   
-  if( !(stringstream(parts["DIAM"]) >> detectorDiameter) || (detectorDiameter <= 0.0) )
-    throw runtime_error( "fromAppUrl: invalid DIAM component" );
+  if( parts.count("DIAM") )
+  {
+    if( !(stringstream(parts["DIAM"]) >> detectorDiameter) || (detectorDiameter <= 0.0) )
+      throw runtime_error( "fromAppUrl: invalid DIAM component" );
+  }else
+  {
+    detectorDiameter = 0.0;
+  }//if( parts.count("DIAM") )
   
   if( parts.count("EUNIT") )
   {
@@ -1695,6 +1741,8 @@ void DetectorPeakResponse::fromAppUrl( std::string url_query )
   m_lowerEnergy = lowerEnergy;
   m_upperEnergy = upperEnergy;
       
+  m_fixedGeometry = fixedGeometry;
+  
   if( !isValid() )
     throw runtime_error( "fromAppUrl: DRF is invalid - even though it shouldnt be - logic error in this function." );
 }//void fromAppUrl( std::string url_query )
@@ -1744,7 +1792,10 @@ void DetectorPeakResponse::toXml( ::rapidxml::xml_node<char> *parent,
   xml_node<char> *base_node = doc->allocate_node( node_element, "DetectorPeakResponse" );
   parent->append_node( base_node );
   
-  snprintf( buffer, sizeof(buffer), "%i", sm_xmlSerializationVersion );
+  // We will write XML version 0, if m_fixedGeometry is false (this was only change between 0 and 1)
+  static_assert( sm_xmlSerializationVersion == 1, "Update DetectorPeakResponse sm_xmlSerializationVersion");
+  snprintf( buffer, sizeof(buffer), "%i", (m_fixedGeometry ? sm_xmlSerializationVersion : 0) );
+  
   const char *value = doc->allocate_string( buffer );
   xml_attribute<char> *attr = doc->allocate_attribute( "version", value );
   base_node->append_attribute( attr );
@@ -1757,10 +1808,13 @@ void DetectorPeakResponse::toXml( ::rapidxml::xml_node<char> *parent,
   node = doc->allocate_node( node_element, "Description", val );
   base_node->append_node( node );
   
-  snprintf( buffer, sizeof(buffer), "%1.8E", m_detectorDiameter );
-  val = doc->allocate_string( buffer );
-  node = doc->allocate_node( node_element, "DetectorDiameter", val );
-  base_node->append_node( node );
+  if( !m_fixedGeometry || (m_detectorDiameter > 0.0) )
+  {
+    snprintf( buffer, sizeof(buffer), "%1.8E", m_detectorDiameter );
+    val = doc->allocate_string( buffer );
+    node = doc->allocate_node( node_element, "DetectorDiameter", val );
+    base_node->append_node( node );
+  }//if( !m_fixedGeometry || (m_detectorDiameter > 0.0) )
   
   val = "UnknownDrfSource";
   switch( m_efficiencySource )
@@ -1889,6 +1943,15 @@ void DetectorPeakResponse::toXml( ::rapidxml::xml_node<char> *parent,
     base_node->append_node( node );
   }
   
+  
+  if( m_fixedGeometry )
+  {
+    // Added 20230916, e.g., for InterSpec v1.0.12
+    node = doc->allocate_node( node_element, "FixedGeometry", "1" );
+    base_node->append_node( node );
+  }//if( m_fixedGeometry )
+  
+  
   if( m_createdUtc )
   {
     stringstream strm;
@@ -1926,9 +1989,8 @@ void DetectorPeakResponse::fromXml( const ::rapidxml::xml_node<char> *parent )
   if( !att || !att->value() || (sscanf(att->value(), "%i", &version)!=1) )
     throw runtime_error( "DetectorPeakResponse invalid version" );
   
-  if( version != sm_xmlSerializationVersion )
+  if( version > sm_xmlSerializationVersion )
     throw runtime_error( "Invalid DetectorPeakResponse version" );
-  
 
   const xml_node<char> *node = parent->first_node( "Name", 4 );
   if( !node || !node->value() )
@@ -1941,10 +2003,33 @@ void DetectorPeakResponse::fromXml( const ::rapidxml::xml_node<char> *parent )
     throw runtime_error( "DetectorPeakResponse missing Description node" );
   m_description = node->value();
   
+  
+  node = parent->first_node( "FixedGeometry", 13 );
+  if( !node )
+  {
+    m_fixedGeometry = false;
+  }else
+  {
+    // Added 20230916, e.g., for InterSpec v1.0.12
+    if( compare(node->name(), node->name_size(), "1", 1, false)
+       || compare(node->name(), node->name_size(), "true", 4, false) )
+    {
+      m_fixedGeometry = true;
+    }else if( !compare(node->name(), node->name_size(), "0", 1, false)
+            && !compare(node->name(), node->name_size(), "false", 5, false) )
+    {
+      throw runtime_error( "DetectorPeakResponse invalid FixedGeometry" );
+    }
+  }//if( not "FixedGeometry" node )
+  
+  
   node = parent->first_node( "DetectorDiameter", 16 );
-  if( !node || !node->value() )
+  if( (!node || !node->value()) && !m_fixedGeometry )
     throw runtime_error( "DetectorPeakResponse missing DetectorDiameter node" );
-  m_detectorDiameter = atof( node->value() );
+  if( node && node->value() )
+    m_detectorDiameter = atof( node->value() );
+  else
+    m_detectorDiameter = 0.0;
   
   node = parent->first_node( "EfficiencySource", 16 );
   if( !node || !node->value() )
@@ -2133,7 +2218,6 @@ void DetectorPeakResponse::fromXml( const ::rapidxml::xml_node<char> *parent )
   {
     m_createdUtc = 0;
   }
-  
   
   node = parent->first_node( "LastUsedTimeUtc", 15 );
   if( node && node->value_size() )

@@ -128,6 +128,7 @@ protected:
   void handleSqrtEqnOrderChange();
   void handleFwhmTypeChanged();
   void handleShowFwhmPointsToggled();
+  void handleFixedGeometryChanged();
   void chartEnergyRangeChangedCallback( double lower, double upper );
   
   void peakPreviewShown( DrfPeak *peak );
@@ -163,7 +164,11 @@ protected:
   
   Wt::WContainerWidget *m_files;
   
+  Wt::WGroupBox *m_detDiamGroup;
+  
   Wt::WLineEdit *m_detDiameter;
+  
+  Wt::WCheckBox *m_fixedGeometry;
   
   Wt::WCheckBox *m_showFwhmPoints;
   

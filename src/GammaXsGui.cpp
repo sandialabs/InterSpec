@@ -86,8 +86,15 @@ GammaXsGui::GammaXsGui( MaterialDB *materialDB,
     m_materialDB( materialDB ),
     m_specViewer( viewer ),
     m_detectorDisplay( NULL ),
+    m_detectorDistanceLabel( nullptr ),
+    m_detectorDistance( nullptr ),
+    m_efficiencyLabel( nullptr ),
     m_efficiency( NULL ),
+    m_totalEfficiencyLabel( nullptr ),
     m_totalEfficiency( NULL ),
+    m_intrinsicEfficiencyLabel( nullptr ),
+    m_intrinsicEfficiency( nullptr ),
+    m_fractionalAngleLabel( nullptr ),
     m_fractionalAngle( NULL )
 {
   UndoRedoManager::BlockUndoRedoInserts undo_blocker;
@@ -300,9 +307,8 @@ GammaXsGui::GammaXsGui( MaterialDB *materialDB,
   m_layout->addWidget( m_detectorDisplay, row, 0, 1, 3 );
   
   ++row;
-  int detectorCount=0;
-  m_detectorLabel[detectorCount] = new WLabel( "Distance" );
-  m_layout->addWidget( m_detectorLabel[detectorCount] , row, 0, 1, 1, AlignLeft );
+  m_detectorDistanceLabel = new WLabel( "Distance" );
+  m_layout->addWidget( m_detectorDistanceLabel, row, 0, 1, 1, AlignLeft );
   m_detectorDistance = new WLineEdit("2 cm");
   
   m_detectorDistance->setAutoComplete( false );
@@ -324,9 +330,8 @@ GammaXsGui::GammaXsGui( MaterialDB *materialDB,
   m_detectorDistance->blurred().connect( this, &GammaXsGui::updateDetectorCalc );
   
   ++row;
-  ++detectorCount;
-  m_detectorLabel[detectorCount] = new WLabel( "Intrinsic Efficiency" );
-  m_layout->addWidget( m_detectorLabel[detectorCount] , row, 0, 1, 1, AlignLeft );
+  m_intrinsicEfficiencyLabel = new WLabel( "Intrinsic Efficiency" );
+  m_layout->addWidget( m_intrinsicEfficiencyLabel , row, 0, 1, 1, AlignLeft );
   m_intrinsicEfficiency = new WText();
   m_layout->addWidget( m_intrinsicEfficiency, row, 1, 1, 2 );
   
@@ -336,9 +341,8 @@ GammaXsGui::GammaXsGui( MaterialDB *materialDB,
     " detector face).", showToolTips );
   
   ++row;
-  ++detectorCount;
-  m_detectorLabel[detectorCount] = new WLabel( "Solid Angle Fraction" );
-  m_layout->addWidget( m_detectorLabel[detectorCount], row, 0, 1, 1, AlignLeft );
+  m_fractionalAngleLabel = new WLabel( "Solid Angle Fraction" );
+  m_layout->addWidget( m_fractionalAngleLabel, row, 0, 1, 1, AlignLeft );
   m_fractionalAngle = new WText();
   m_layout->addWidget( m_fractionalAngle, row, 1, 1, 2 );
   
@@ -349,13 +353,12 @@ GammaXsGui::GammaXsGui( MaterialDB *materialDB,
   
   
   ++row;
-  ++detectorCount;
-  m_detectorLabel[detectorCount] = new WLabel( "Detection Efficiency" );
-  m_layout->addWidget( m_detectorLabel[detectorCount], row, 0, 1, 1, AlignLeft );
+  m_efficiencyLabel = new WLabel( "Detection Efficiency" );
+  m_layout->addWidget( m_efficiencyLabel, row, 0, 1, 1, AlignLeft );
   m_efficiency = new WText();
   m_layout->addWidget( m_efficiency, row, 1, 1, 2 );
   
-  HelpSystem::attachToolTipOn( m_detectorLabel[detectorCount],
+  HelpSystem::attachToolTipOn( m_efficiencyLabel,
     "Intrinsic efficiency times solid angle fraction. E.g. the fraction of"
     " gammas making it out of the shielding that will be detected.",
                               showToolTips );
@@ -366,17 +369,16 @@ GammaXsGui::GammaXsGui( MaterialDB *materialDB,
   
   
   ++row;
-  ++detectorCount;
-  m_detectorLabel[detectorCount] = new WLabel( "Total Efficiency" );
-  m_layout->addWidget( m_detectorLabel[detectorCount], row, 0, 1, 1, AlignLeft );
+  m_totalEfficiencyLabel = new WLabel( "Total Efficiency" );
+  m_layout->addWidget( m_totalEfficiencyLabel, row, 0, 1, 1, AlignLeft );
   m_totalEfficiency = new WText();
   m_layout->addWidget( m_totalEfficiency, row, 1, 1, 2 );
   
-  HelpSystem::attachToolTipOn( m_detectorLabel[detectorCount],
-    "Transmition fraction times detection efficiency." , showToolTips );
+  HelpSystem::attachToolTipOn( m_totalEfficiencyLabel,
+    "Transmission fraction times detection efficiency." , showToolTips );
   HelpSystem::attachToolTipOn( m_totalEfficiency,
-    "Transmition fraction times detection efficiency. E.g. the fraction of"
-    " gammas emmitted from the source that will be detected.",
+    "Transmission fraction times detection efficiency. E.g. the fraction of"
+    " gammas emitted from the source that will be detected.",
                               showToolTips );
   
   m_specViewer->detectorChanged().connect( this, &GammaXsGui::handleDetectorChange );
@@ -403,17 +405,22 @@ void GammaXsGui::handleDetectorChange( std::shared_ptr<DetectorPeakResponse> det
 void GammaXsGui::updateDetectorCalc()
 {
   const bool hasDetector = !!m_detector;
-  if( m_efficiency->isHidden() == hasDetector )
-  {
-    const size_t nlabel = (sizeof(m_detectorLabel)/sizeof(*m_detectorLabel));
-    for( size_t i = 0; i < nlabel; ++i )
-      m_detectorLabel[i]->setHidden( !hasDetector );
-    m_efficiency->setHidden( !hasDetector );
-    m_intrinsicEfficiency->setHidden( !hasDetector );
-    m_fractionalAngle->setHidden( !hasDetector );
-    m_detectorDistance->setHidden( !hasDetector );
-    m_totalEfficiency->setHidden( !hasDetector );
-  }//if( m_efficiency->isHidden() == hasDetector )
+  const bool fixed_geom = (m_detector && m_detector->isFixedGeometry());
+  
+  m_detectorDistanceLabel->setHidden( !hasDetector || fixed_geom );
+  m_detectorDistance->setHidden( !hasDetector || fixed_geom );
+  
+  m_intrinsicEfficiencyLabel->setHidden( !hasDetector || fixed_geom );
+  m_intrinsicEfficiency->setHidden( !hasDetector || fixed_geom );
+  
+  m_fractionalAngleLabel->setHidden( !hasDetector || fixed_geom );
+  m_fractionalAngle->setHidden( !hasDetector || fixed_geom );
+  
+  m_efficiencyLabel->setHidden( !hasDetector );
+  m_efficiency->setHidden( !hasDetector );
+  
+  m_totalEfficiencyLabel->setHidden( !hasDetector );
+  m_totalEfficiency->setHidden( !hasDetector );
   
   if( !hasDetector )
     return;
@@ -421,34 +428,52 @@ void GammaXsGui::updateDetectorCalc()
   try
   {
     // efficiency
-    const string energystr = m_energyEdit->text().narrow();
-    const string diststr = m_detectorDistance->text().narrow();
-    const float energy = static_cast<float>( std::stod( energystr ) );
-    const double dist = PhysicalUnits::stringToDistance( diststr );
-    double val = m_detector->efficiency( energy, dist );
     char buffer[32];
-    snprintf( buffer, sizeof(buffer), "%.4g", val );
-    m_efficiency->setText( buffer );
+    const string energystr = m_energyEdit->text().toUTF8();
+    const float energy = static_cast<float>( std::stod( energystr ) );
+    const double intrinsic_eff =  m_detector->intrinsicEfficiency( energy );
     
-    if( m_transmissionFractionVal >= 0.0f )
+    if( m_detector->isFixedGeometry() )
     {
-      snprintf( buffer, sizeof(buffer), "%.4g", val*m_transmissionFractionVal );
-      m_totalEfficiency->setText( buffer );
+      snprintf( buffer, sizeof(buffer), "%.4g", intrinsic_eff );
+      m_efficiency->setText( buffer );
+      
+      if( m_transmissionFractionVal >= 0.0f )
+      {
+        snprintf( buffer, sizeof(buffer), "%.4g", intrinsic_eff*m_transmissionFractionVal );
+        m_totalEfficiency->setText( buffer );
+      }else
+      {
+        m_totalEfficiency->setText( "---" );
+      }
     }else
     {
-      m_totalEfficiency->setText( "---" );
-    }
+      const string diststr = m_detectorDistance->text().toUTF8();
+      const double dist = PhysicalUnits::stringToDistance( diststr );
+      const double det_eff = m_detector->efficiency( energy, dist );
+      snprintf( buffer, sizeof(buffer), "%.4g", det_eff );
+      m_efficiency->setText( buffer );
+      
+      if( m_transmissionFractionVal >= 0.0f )
+      {
+        snprintf( buffer, sizeof(buffer), "%.4g", det_eff*m_transmissionFractionVal );
+        m_totalEfficiency->setText( buffer );
+      }else
+      {
+        m_totalEfficiency->setText( "---" );
+      }
+      
+      // fractional solid angle
+      const float diameter = m_detector->detectorDiameter();
+      const double gfactor =  m_detector->fractionalSolidAngle( diameter, dist );
+      snprintf( buffer, sizeof(buffer), "%.4g", gfactor );
+      m_fractionalAngle->setText( buffer );
+      
+      // absolute efficiency
+      snprintf( buffer, sizeof(buffer), "%.4g", intrinsic_eff );
+      m_intrinsicEfficiency->setText( buffer );
+    }//if( fixed geometry ) / else
     
-    // absolute efficiency
-    val =  m_detector->intrinsicEfficiency( energy );
-    snprintf( buffer, sizeof(buffer), "%.4g", val );
-    m_intrinsicEfficiency->setText( buffer );
-    
-    // fractional solid angle
-    const float diameter = m_detector->detectorDiameter();
-    val =  m_detector->fractionalSolidAngle( diameter, dist );
-    snprintf( buffer, sizeof(buffer), "%.4g", val );
-    m_fractionalAngle->setText( buffer );
   }catch( std::runtime_error & )
   {
     //could not get all the measurements for the detector

@@ -1482,14 +1482,20 @@ double TerminalModel::drfEfficiency( const double energy, const std::string &dis
   if( !det || !det->isValid() )
     throw mup::ParserError( "No valid detector response loaded." );
   
+  const bool fixed_geom = det->isFixedGeometry();
+  
   double distance = 0;
   try
   {
     distance = PhysicalUnits::stringToDistance(distance_str);
   }catch(...)
   {
-    throw mup::ParserError( "Could not convert '" + distance_str + "' to a distance" );
+    if( !fixed_geom )
+      throw mup::ParserError( "Could not convert '" + distance_str + "' to a distance" );
   }
+  
+  if( fixed_geom && (distance > 0.0) )
+    throw mup::ParserError( "DRF is for fixed geometry, so you must specify a distance of 0 or negative" );
   
   if( distance < 0.0 )
     throw mup::ParserError( "Distance must not be negative." );

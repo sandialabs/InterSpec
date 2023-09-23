@@ -704,6 +704,7 @@ namespace
     WText *m_backgroundTxt;
     WCheckBox *m_allNoneSome;
     Wt::Signal<> m_srcInfoUpdated;
+    bool m_isFixedGeometry;
     
     void updateTitle()
     {
@@ -807,7 +808,8 @@ namespace
       m_sources( nullptr ),
       m_background( nullptr ),
       m_backgroundTxt( nullptr ),
-      m_allNoneSome( nullptr )
+      m_allNoneSome( nullptr ),
+      m_isFixedGeometry( false )
     {
       const SandiaDecay::SandiaDecayDataBase * const db = DecayDataBaseServer::database();
       
@@ -1156,6 +1158,21 @@ namespace
       refreshSourcesVisible();
     }//void handleUserToggleAllNoneSum()
     
+    void setIsFixedGeometry( const bool isFixedGeometry )
+    {
+      m_isFixedGeometry = isFixedGeometry;
+      
+      for( auto w : m_sources->children() )
+      {
+        MakeDrfSrcDef *src = dynamic_cast<MakeDrfSrcDef *>( w );
+        if( src )
+          src->setIsFixedGeometry( isFixedGeometry );
+      }//for( auto w : m_sources->children() )
+      
+      refreshSourcesVisible(); //I dont actually think this is necassary, but JIC
+    }//void setIsFixedGeometry( const bool isFixedGeometry )
+    
+    
     void refreshSourcesVisible()
     {
       //ToDo: order nuclides by some predictable reasonable way, instead of sorted by pointer
@@ -1196,6 +1213,7 @@ namespace
           }//for( size_t i = 0; i < detNames.size(); ++i )
           
           MakeDrfSrcDef *src = new MakeDrfSrcDef( n, measDate, m_materialDB, m_materialSuggest, m_sources );
+          src->setIsFixedGeometry( m_isFixedGeometry );
           src->updated().connect( std::bind([this](){ m_srcInfoUpdated.emit(); }) );
           
           nucToWidget[n] = src;
@@ -1342,6 +1360,12 @@ namespace
       return answer;
     }//fileSamples()
     
+    void setIsFixedGeometry( const bool is_fixed_geom )
+    {
+      for( DrfSpecFileSample *fs : fileSamples() )
+        fs->setIsFixedGeometry( is_fixed_geom );
+    }//void setIsFixedGeometry( const bool is_fixed_geom )
+    
     std::shared_ptr<const SpecMeas> measurement(){ return m_meas; }
   };//class DrfSpecFile
   
@@ -1384,7 +1408,9 @@ MakeDrf::MakeDrf( InterSpec *viewer, MaterialDB *materialDB,
   m_finished( this ),
   m_chart( nullptr ),
   m_files( nullptr ),
+  m_detDiamGroup( nullptr ),
   m_detDiameter( nullptr ),
+  m_fixedGeometry( nullptr ),
   m_showFwhmPoints( nullptr ),
   m_fwhmOptionGroup( nullptr ),
   m_fwhmEqnType( nullptr ),
@@ -1421,8 +1447,8 @@ MakeDrf::MakeDrf( InterSpec *viewer, MaterialDB *materialDB,
   fitOptionsDiv->addStyleClass( "MakeDrfOptions" );
   upperLayout->addWidget( fitOptionsDiv, 0, 0, 2, 1 );
   
-  WGroupBox *detDiamGroup = new WGroupBox( "Det. Diameter", fitOptionsDiv );
-  m_detDiameter = new WLineEdit( detDiamGroup );
+  m_detDiamGroup = new WGroupBox( "Det. Diameter", fitOptionsDiv );
+  m_detDiameter = new WLineEdit( m_detDiamGroup );
   WRegExpValidator *distValidator = new WRegExpValidator( PhysicalUnits::sm_distanceUnitOptionalRegex, this );
   distValidator->setFlags( Wt::MatchCaseInsensitive );
   m_detDiameter->setValidator( distValidator );
@@ -1495,6 +1521,17 @@ MakeDrf::MakeDrf( InterSpec *viewer, MaterialDB *materialDB,
   m_airAttenuate->addStyleClass( "AirAttenCb" );
   m_airAttenuate->checked().connect( this, &MakeDrf::handleSourcesUpdates );
   m_airAttenuate->unChecked().connect( this, &MakeDrf::handleSourcesUpdates );
+  
+  m_fixedGeometry = new WCheckBox( "Fixed Geometry", genOpts );
+  m_fixedGeometry->setInline( false );
+  m_fixedGeometry->addStyleClass( "FixedGeomCb" );
+  m_fixedGeometry->setToolTip( "For when the characterization data is taken in the same"
+            " configuration, and distance as later measurements will be taken."
+            "  E.x., Marinelli beakers, in-situ measurements, etc." );
+  
+  m_fixedGeometry->checked().connect( this, &MakeDrf::handleFixedGeometryChanged );
+  m_fixedGeometry->unChecked().connect( this, &MakeDrf::handleFixedGeometryChanged );
+  
   
   m_chart = new MakeDrfChart();
   DrfChartHolder *chartholder = new DrfChartHolder( m_chart, nullptr );
@@ -2036,19 +2073,24 @@ void MakeDrf::handleSourcesUpdates()
   vector< std::shared_ptr<const PeakDef> > peaks;
   vector<MakeDrfFit::DetEffDataPoint> effpoints;
   
+  const bool is_fixed_geometry = m_fixedGeometry->isChecked();
+  
   bool highres = false;
   
   bool detDiamInvalid = false;
-  double diameter = 2.54*PhysicalUnits::cm;
-  try
+  double diameter = 0.0; //2.54*PhysicalUnits::cm;
+  if( !is_fixed_geometry )
   {
-    diameter = PhysicalUnits::stringToDistance( m_detDiameter->text().toUTF8() );
-  }catch(...)
-  {
-    detDiamInvalid = true;
-  }
+    try
+    {
+      diameter = PhysicalUnits::stringToDistance( m_detDiameter->text().toUTF8() );
+    }catch(...)
+    {
+      detDiamInvalid = true;
+    }
+  }//if( !is_fixed_geometry )
   
-  const bool doAirAtten = m_airAttenuate->isChecked();
+  const bool doAirAtten = (!is_fixed_geometry && m_airAttenuate->isChecked());
   
   //Go through and and grab background peaks
   vector<DrfPeak *> backgroundpeaks;
@@ -2231,13 +2273,13 @@ void MakeDrf::handleSourcesUpdates()
         };//trans_frac lambda
         
         
-        auto src_rate = [&mixtures,trans_frac,diameter]( const float energy, const float width,
+        auto src_rate = [&mixtures,trans_frac,diameter,is_fixed_geometry]( const float energy, const float width,
                                                 MakeDrfSrcDef * const src, DrfPeak * const peak,
                                                 float &source_count_rate,
                                                 float &incidentGamma, float &fracUncert ) {
           source_count_rate = incidentGamma = fracUncert = 0.0;
           
-          const double distance = src->distance();
+          const double distance = is_fixed_geometry ? -1.0 : src->distance();
           const double transmittion_factor = trans_frac( energy, src );
           const SandiaDecay::Nuclide * const nuc = src->nuclide();
           
@@ -2265,7 +2307,7 @@ void MakeDrf::handleSourcesUpdates()
           if( source_count_rate > 0.0f )
           {
             const double livetime = peak->m_livetime;
-            const double fracSolidAngle = DetectorPeakResponse::fractionalSolidAngle( diameter, distance );
+            const double fracSolidAngle = is_fixed_geometry ? 1.0 : DetectorPeakResponse::fractionalSolidAngle( diameter, distance );
             incidentGamma = source_count_rate * livetime * fracSolidAngle;
             fracUncert = src->fractionalActivityUncertainty();
           }//if( source_count_rate > 0.0f )
@@ -2276,7 +2318,7 @@ void MakeDrf::handleSourcesUpdates()
         
         try
         {
-          point.distance = srcDef->distance();
+          point.distance = is_fixed_geometry ? -1.0 : srcDef->distance();
           
           float source_count_rate, expected, fracUncert;
           src_rate( point.energy, width, srcDef, drfPeak, source_count_rate, expected, fracUncert );
@@ -2378,7 +2420,7 @@ void MakeDrf::handleSourcesUpdates()
   if( not_all_sources_used )
     msg += "Some sources had errors.";
   if( detDiamInvalid )
-    msg += string(msg.empty() ? "" : "  ") + "Detector diameter is invalid - assumin 2.54 cm.";
+    msg += string(msg.empty() ? "" : "  ") + "Detector diameter is invalid - assuming 2.54 cm.";
   
   m_errorMsg->setText( msg );
   m_errorMsg->setHidden( msg.empty() );
@@ -2496,6 +2538,25 @@ void MakeDrf::handleShowFwhmPointsToggled()
 {
   m_chart->showFwhmPoints( m_showFwhmPoints->isChecked() );
 }//void handleShowFwhmPointsToggled()
+
+
+void MakeDrf::handleFixedGeometryChanged()
+{
+  const bool is_fixed_geom = m_fixedGeometry->isChecked();
+  m_detDiamGroup->setHidden( is_fixed_geom );
+  m_airAttenuate->setHidden( is_fixed_geom );
+  
+  // Go through all the sources and set distances visible/hidden
+  //Hide all other previews showing.
+  for( auto w : m_files->children() )
+  {
+    DrfSpecFile *fileWidget = dynamic_cast<DrfSpecFile *>( w );
+    if( fileWidget )
+      fileWidget->setIsFixedGeometry( is_fixed_geom );
+  }//for( auto w : m_files->children() )
+  
+  handleSourcesUpdates();
+}//void handleFixedGeometryChanged()
 
 
 void MakeDrf::chartEnergyRangeChangedCallback( double lower, double upper )
@@ -2802,6 +2863,8 @@ std::shared_ptr<SpecMeas> MakeDrf::assembleCalFile()
 {
   auto answer = std::make_shared<SpecMeas>();
   
+  const bool is_fixed_geometry = m_fixedGeometry->isChecked();
+  
   try
   {
     //Go through and and grab background peaks
@@ -2882,11 +2945,14 @@ std::shared_ptr<SpecMeas> MakeDrf::assembleCalFile()
             //ToDo: Do we need to handle the error better here?
             cerr << "Caught exception calling MakeDrfSrcDef::toGadrasLikeSourceString(): " << e.what() << endl;
           }
-          try
+          if( !is_fixed_geometry )
           {
-            distance = source->distance();
-          }catch(...){}
-        }//
+            try
+            {
+              distance = source->distance();
+            }catch(...){}
+          }//if( !is_fixed_geometry )
+        }//for( MakeDrfSrcDef *source : sample->sources() )
         
         for( const string &remark : m->remarks() )
         {
@@ -2929,8 +2995,13 @@ std::shared_ptr<SpecMeas> MakeDrf::assembleCalFile()
           
           SpecUtils::trim( title );
           answer->set_title( title, m );
-        }//if( distance > 0.0 )
-        
+        }else if( is_fixed_geometry )
+        {
+          string title = SpecUtils::trim_copy(m->title());
+          if( !SpecUtils::icontains(title, "Fixed") )
+            title += " Fixed Geometry";
+          answer->set_title( title, m );
+        }//if( distance > 0.0 ) / else if( is_fixed_geometry )
       }//for( DrfSpecFileSample *sample : sampleWidgets )
     }//for( auto w : m_files->children()  )
     
@@ -2948,7 +3019,7 @@ std::shared_ptr<SpecMeas> MakeDrf::assembleCalFile()
     }
   }catch( std::exception &e )
   {
-    cerr << "Caught excpetion in assembleCalFile(): " << e.what();
+    cerr << "Caught exception in assembleCalFile(): " << e.what();
     return nullptr;
   }//try / catch
   
@@ -2970,20 +3041,25 @@ shared_ptr<DetectorPeakResponse> MakeDrf::assembleDrf( const string &name, const
       throw runtime_error( "An equation coefficient is invalid." );
   }
   
+  const bool is_fixed_geometry = m_fixedGeometry->isChecked();
+  
   auto drf = make_shared<DetectorPeakResponse>( name, descrip );
   
-  float diameter;
-  try
+  float diameter = 0.0; //2.54*PhysicalUnits::cm;
+  if( !is_fixed_geometry )
   {
-    const double diam = PhysicalUnits::stringToDistance( m_detDiameter->text().toUTF8() );
-    diameter = static_cast<float>( diam );
-    
-    if( IsNan(diameter) || IsInf(diameter) || (diameter <= 0.0) )
-      throw runtime_error( "invalid diameter." );
-  }catch(...)
-  {
-    throw runtime_error( "Detector diameter entered is not a valid distance." );
-  }
+    try
+    {
+      const double diam = PhysicalUnits::stringToDistance( m_detDiameter->text().toUTF8() );
+      diameter = static_cast<float>( diam );
+      
+      if( IsNan(diameter) || IsInf(diameter) || (diameter <= 0.0) )
+        throw runtime_error( "invalid diameter." );
+    }catch(...)
+    {
+      throw runtime_error( "Detector diameter entered is not a valid distance." );
+    }
+  }//if( !is_fixed_geometry )
   
   const bool inMeV = isEffEqnInMeV();
   const float eqnEnergyUnits = inMeV ? 1000.0f : 1.0f;
@@ -2997,7 +3073,8 @@ shared_ptr<DetectorPeakResponse> MakeDrf::assembleDrf( const string &name, const
   }
   
   drf->fromExpOfLogPowerSeriesAbsEff( m_effEqnCoefs, m_effEqnCoefUncerts,
-                                     0.0f, diameter, eqnEnergyUnits, lowerEnergy, upperEnergy );
+                                     0.0f, diameter, eqnEnergyUnits, lowerEnergy, upperEnergy,
+                                     is_fixed_geometry );
   drf->setDrfSource( DetectorPeakResponse::DrfSource::UserCreatedDrf );
   
   if( !m_fwhmCoefs.empty() )
@@ -3060,15 +3137,20 @@ void MakeDrf::writeCsvSummary( std::ostream &out,
   const bool effInMeV = isEffEqnInMeV();
   const auto resFcnForm = DetectorPeakResponse::ResolutionFnctForm( m_fwhmEqnType->currentIndex() );
   
-  double diam;
+  const bool is_fixed_geometry = m_fixedGeometry->isChecked();
+  
+  double diam = 0.0;
   try
   {
     diam = detectorDiameter();
   }catch( std::exception &e )
   {
-    out << "Invalid detector diameter: " << e.what() << endline;
-    return;
-  }
+    if( !is_fixed_geometry )
+    {
+      out << "Invalid detector diameter: " << e.what() << endline;
+      return;
+    }
+  }//try / catch
   
   if( effEqnCoefs.empty() )
   {
@@ -3111,13 +3193,13 @@ void MakeDrf::writeCsvSummary( std::ostream &out,
   " Eff(x) = exp( C_0 + C_1*log(x) + C_2*log(x)^2 + ...) where x is energy in "
   << (effInMeV ? "MeV" : "keV") << endline
   << "#  i.e. equation for probability of gamma that hits the face of the detector being detected in the full energy photopeak." << endline
-  << "# Name,Relative Eff @ 661keV,eff.c name,c0,c1,c2,c3,c4,c5,c6,c7,p0,p1,p2,Calib Distance,Radius (cm),G factor" << endline
+  << "# Name,Relative Eff @ 661keV,eff.c name,c0,c1,c2,c3,c4,c5,c6,c7,p0,p1,p2,Calib Distance,Radius (cm),G factor,FixedGeometry" << endline
   << drfname << " Intrinsic," << (100.0*intrinsicEffAt661/ns_NaI3x3IntrinsicEff) << "%,";
   for( size_t i = 0; i < effEqnCoefs.size(); ++i )
     out << "," << effEqnCoefs[i];
   for( size_t i = effEqnCoefs.size(); i < 12; ++i )
     out << ",";
-  out << "0.0," << (0.5*diam/PhysicalUnits::cm) << ",0.5" << endline;
+  out << "0.0," << (0.5*diam/PhysicalUnits::cm) << ",0.5," << (is_fixed_geometry ? "1" : "0") << endline;
   out << "# 1 sigma Uncertainties,";
   if( releffuncert >= 0.0 )
     out << 100*(releffuncert / ns_NaI3x3IntrinsicEff) << "%";
@@ -3129,29 +3211,35 @@ void MakeDrf::writeCsvSummary( std::ostream &out,
         << " = " << (effDof >= 1 ? (effChi2/(effDof-1.0)) : 0.0);
   out << endline << endline;
   
-  //Convert equation into an absolute efficiency at 25 cm, and output those equations
-  const double solidAngleAt25cm = DetectorPeakResponse::fractionalSolidAngle( diam, 25*PhysicalUnits::cm );
-  out << "# Absolute Efficiency Coefficients (i.e. probability of gamma emitted from source at 25cm being detected in the full energy photopeak) for equation of form"
-  " Eff(x) = exp( C_0 + C_1*log(x) + C_2*log(x)^2 + ...) where x is energy in "
-  << (effInMeV ? "MeV" : "keV") << " and at distance of 25 cm" << endline
-  << "#  i.e. equation for probability of gamma emitted from source at 25cm being detected in the full energy photopeak." << endline
-  << "# Name,Relative Eff @ 661keV,eff.c name,c0,c1,c2,c3,c4,c5,c6,c7,p0,p1,p2,Calib Distance,Radius (cm),G factor" << endline
-  << drfname << " Absolute," << (100.0*intrinsicEffAt661/ns_NaI3x3IntrinsicEff) << "%,";
-  for( size_t i = 0; i < effEqnCoefs.size(); ++i )
-    out << "," << ( (i==0 ? log(solidAngleAt25cm) : 0.0) + effEqnCoefs[i]);  //todo: make sure its not
-  for( size_t i = effEqnCoefs.size(); i < 12; ++i )
+  if( is_fixed_geometry )
+  {
+    out << "# This is a DRF for a fixed geometry." << endline << endline;
+  }else
+  {
+    //Convert equation into an absolute efficiency at 25 cm, and output those equations
+    const double solidAngleAt25cm = DetectorPeakResponse::fractionalSolidAngle( diam, 25*PhysicalUnits::cm );
+    out << "# Absolute Efficiency Coefficients (i.e. probability of gamma emitted from source at 25cm being detected in the full energy photopeak) for equation of form"
+    " Eff(x) = exp( C_0 + C_1*log(x) + C_2*log(x)^2 + ...) where x is energy in "
+    << (effInMeV ? "MeV" : "keV") << " and at distance of 25 cm" << endline
+    << "#  i.e. equation for probability of gamma emitted from source at 25cm being detected in the full energy photopeak." << endline
+    << "# Name,Relative Eff @ 661keV,eff.c name,c0,c1,c2,c3,c4,c5,c6,c7,p0,p1,p2,Calib Distance,Radius (cm),G factor" << endline
+    << drfname << " Absolute," << (100.0*intrinsicEffAt661/ns_NaI3x3IntrinsicEff) << "%,";
+    for( size_t i = 0; i < effEqnCoefs.size(); ++i )
+      out << "," << ( (i==0 ? log(solidAngleAt25cm) : 0.0) + effEqnCoefs[i]);  //todo: make sure its not
+    for( size_t i = effEqnCoefs.size(); i < 12; ++i )
+      out << ",";
+    out << "25," << (0.5*diam/PhysicalUnits::cm) << "," << solidAngleAt25cm << endline;
+    out << "# 1 sigma Uncertainties,";
+    if( releffuncert >= 0.0 )
+      out << 100*(releffuncert / ns_NaI3x3IntrinsicEff) << "%";
     out << ",";
-  out << "25," << (0.5*diam/PhysicalUnits::cm) << "," << solidAngleAt25cm << endline;
-  out << "# 1 sigma Uncertainties,";
-  if( releffuncert >= 0.0 )
-    out << 100*(releffuncert / ns_NaI3x3IntrinsicEff) << "%";
-  out << ",";
-  for( size_t i = 0; i < effEqnCoefsUncerts.size(); ++i )
-    out << "," << effEqnCoefsUncerts[i];
-  if( effChi2 > 0 )
-    out << endline << "# Chi2 / DOF = " << effChi2 << " / " << (effDof-1)
-        << " = " << (effDof >= 1 ? (effChi2/(effDof-1.0)) : 0.0);
-  out << endline << endline;
+    for( size_t i = 0; i < effEqnCoefsUncerts.size(); ++i )
+      out << "," << effEqnCoefsUncerts[i];
+    if( effChi2 > 0 )
+      out << endline << "# Chi2 / DOF = " << effChi2 << " / " << (effDof-1)
+      << " = " << (effDof >= 1 ? (effChi2/(effDof-1.0)) : 0.0);
+    out << endline << endline;
+  }//if( !is_fixed_geometry )
   
   
   //Then need to give FWHM equation form and coefficient, if available.
@@ -3232,9 +3320,13 @@ void MakeDrf::writeCsvSummary( std::ostream &out,
     }
   }//if( data.size() >= 2 )
   
-  out << endline << endline
-      << "Detector diameter = " << (diam/PhysicalUnits::cm) << " cm." << endline
-      << "Valid energy range: " << lowerEnergy
+  out << endline << endline;
+  if( m_fixedGeometry->isChecked() )
+    out << "Fixed Geometry DRF, # No detector dimensions or source distances recorded." << endline;
+  else
+    out << "Detector diameter = " << (diam/PhysicalUnits::cm) << " cm." << endline;
+  
+  out << "Valid energy range: " << lowerEnergy
       << " keV to " << upperEnergy << " keV." << endline
       << endline;
   
@@ -3251,12 +3343,12 @@ void MakeDrf::writeCsvSummary( std::ostream &out,
     const double deteff = d.peak_area / d.source_count_rate;
     const double deteffUncert = deteff * sqrt( pow(d.peak_area_uncertainty/d.peak_area,2)
                                                + pow(d.source_count_rate_uncertainty/d.source_count_rate,2) );
-    const double geomFactor = DetectorPeakResponse::fractionalSolidAngle(diam, d.distance);
+    const double geomFactor = (d.distance < 0.0) ? 1.0 : DetectorPeakResponse::fractionalSolidAngle(diam, d.distance);
     out << d.energy << "," << d.livetime
         << "," << d.peak_area << "," << d.peak_area_uncertainty
         << "," << d.peak_fwhm << "," << d.peak_fwhm_uncertainty
         << "," << d.source_count_rate << "," << d.source_count_rate_uncertainty
-        << "," << d.distance / PhysicalUnits::cm
+        << "," << ((d.distance < 0.0) ? 0.0 : (d.distance / PhysicalUnits::cm))
         << "," << d.source_information
         << "," << (d.background_peak_area > 0.0 ? std::to_string(d.background_peak_area) : string("") )
         << "," << (d.background_peak_live_time > 0.0 ? std::to_string(d.background_peak_live_time) : string("") )
@@ -3287,7 +3379,7 @@ void MakeDrf::writeCsvSummary( std::ostream &out,
     out << endline;
   }//for( int i = 25; i <= 3000; i += 25 )
   
-}//void MakeDrf::writeCsvSummary( std::ostream & )
+}//void writeCsvSummary( std::ostream & )
 
 
 
@@ -3312,8 +3404,9 @@ void MakeDrf::writeRefSheet( std::ostream &output, std::string drfname, std::str
   // Lets gather all our general information
   const string tmplttxt = get_tmplt_txt();
   
+  const bool is_fixed_geometry = m_fixedGeometry->isChecked();
   const double diam = [this]() -> double {try{return detectorDiameter();}catch(...){return 0.0;}}();
-  const WString diameter = m_detDiameter->text();
+  const WString diameter = (!is_fixed_geometry || (diam > 0.0)) ? m_detDiameter->text() : WString("N/A");
   
   const int offset = wApp->environment().timeZoneOffset();
   const WDateTime now = WDateTime::currentDateTime().addSecs(60*offset);
@@ -3470,7 +3563,13 @@ void MakeDrf::writeRefSheet( std::ostream &output, std::string drfname, std::str
   efftable << "</tr>\n\t</thead>\n"
               "\t<tbody>\n";
   
-  efftable << "\t<tr><th>Intrinsic</th>";
+  if( is_fixed_geometry )
+  {
+    efftable << "\t<tr><th>Efficiency</th>";
+  }else
+  {
+    efftable << "\t<tr><th>Intrinsic</th>";
+  }
   for( double raw_energy : eff_energies )
   {
     if( (raw_energy < (m_effLowerEnergy - 10)) || (raw_energy > (m_effUpperEnergy + 10)) )
@@ -3483,23 +3582,26 @@ void MakeDrf::writeRefSheet( std::ostream &output, std::string drfname, std::str
   }
   efftable << "\t</tr>\n";
   
-  for( const int dist_cm : eff_dist_cm )
+  if( !is_fixed_geometry )
   {
-    efftable << "\t<tr><th>" << dist_cm << " cm</th>";
-    for( double raw_energy : eff_energies )
+    for( const int dist_cm : eff_dist_cm )
     {
-      if( (raw_energy < (m_effLowerEnergy - 10)) || (raw_energy > (m_effUpperEnergy + 10)) )
-        continue;
-      
-      const float energy = raw_energy / (effInMeV ? 1000.0f : 1.0f);
-      const float intrinsic_eff = DetectorPeakResponse::expOfLogPowerSeriesEfficiency( energy, m_effEqnCoefs );
-      const double frac_solid_angle = DetectorPeakResponse::fractionalSolidAngle( diam, dist_cm*PhysicalUnits::cm );
-    
-      snprintf( buffer, sizeof(buffer), "<td>%.2G</td>", 100.0*frac_solid_angle*intrinsic_eff );
-      efftable << buffer;
-    }
-    efftable << "\t</tr>\n";
-  }//for( const auto dist : eff_dist )
+      efftable << "\t<tr><th>" << dist_cm << " cm</th>";
+      for( double raw_energy : eff_energies )
+      {
+        if( (raw_energy < (m_effLowerEnergy - 10)) || (raw_energy > (m_effUpperEnergy + 10)) )
+          continue;
+        
+        const float energy = raw_energy / (effInMeV ? 1000.0f : 1.0f);
+        const float intrinsic_eff = DetectorPeakResponse::expOfLogPowerSeriesEfficiency( energy, m_effEqnCoefs );
+        const double frac_solid_angle = DetectorPeakResponse::fractionalSolidAngle( diam, dist_cm*PhysicalUnits::cm );
+        
+        snprintf( buffer, sizeof(buffer), "<td>%.2G</td>", 100.0*frac_solid_angle*intrinsic_eff );
+        efftable << buffer;
+      }
+      efftable << "\t</tr>\n";
+    }//for( const auto dist : eff_dist )
+  }//if( !is_fixed_geometry )
   
   efftable << "\t</tbody>\n"
               "</table>\n";
@@ -3512,7 +3614,7 @@ void MakeDrf::writeRefSheet( std::ostream &output, std::string drfname, std::str
     MakeDrfChart chart;
     chart.resize( chart_width, chart_height );
     const std::vector<MakeDrfChart::DataPoint> &data = m_chart->currentDataPoints();
-    const float detDiam = m_chart->currentDiameter();
+    const float detDiam = is_fixed_geometry ? -1.0 : m_chart->currentDiameter();
     const float chartLower = 10.0f * std::round( 0.1f*(m_effLowerEnergy - 6.0f) );
     const float chartUpper = 10.0f * std::round( 0.1f*(m_effUpperEnergy + 6.0f) );
     
@@ -3544,6 +3646,8 @@ void MakeDrf::writeRefSheet( std::ostream &output, std::string drfname, std::str
     
     chart.setFwhmCoefficients( m_fwhmCoefs, m_fwhmCoefUncerts, fwhmEqnType, units );
     chart.setEfficiencyCoefficients( m_effEqnCoefs, m_effEqnCoefUncerts, units );
+    
+    chart.update();
     
     WPainter p( &eff_chart );
     chart.paint( p );

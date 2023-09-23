@@ -264,7 +264,8 @@ public:
     ImportTabChosen,
     DetectorDiameterChanged,
     EfficiencyCsvUploaded,
-    DetectorDotDatUploaded
+    DetectorDotDatUploaded,
+    FixedGeometryChanged
   };//enum class UploadCallbackReason
   
   /** Function called when "Import" tab is chosen, detector diameter is changed,
@@ -349,6 +350,7 @@ protected:
   Wt::WFileUpload *m_efficiencyCsvUpload;
   Wt::WContainerWidget *m_detectrDotDatDiv;
   Wt::WFileUpload *m_detectorDotDatUpload;
+  Wt::WCheckBox *m_fixedGeometryCb;
 
   Wt::WPushButton *m_acceptButton;
   Wt::WPushButton *m_cancelButton;
@@ -365,6 +367,7 @@ protected:
   Wt::WLineEdit    *m_detectorManualDescription;
   Wt::WButtonGroup *m_eqnEnergyGroup;
   Wt::WButtonGroup *m_absOrIntrinsicGroup;
+  Wt::WLabel       *m_detectorManualDiameterLabel;
   Wt::WLineEdit    *m_detectorManualDiameterText;
   Wt::WLineEdit    *m_detectorManualDistText;
   Wt::WLabel       *m_detectorManualDistLabel;

@@ -25,7 +25,7 @@
 
 .faqs-subject
 {
-  border:1px solid black;
+  border: 1px solid black;
   margin-top: 15px
 }
 
@@ -34,6 +34,14 @@
   text-align: center;
   font-size: larger;
   font-weight: bold;
+  min-height: 23px;
+  padding: 3px;
+}
+
+.faqs-subject-title span
+{
+  margin-top: 3px;
+  display: inline-block;
 }
 
 .faqs-subject-title button, .faqs-subject-title button:hover
@@ -44,5 +52,9 @@
 
 .faqs-subject-content
 {
-  margin-top: 5px
+  border-top: 1px solid black;
+  margin-top: 2px;
+  width: 100%;
+  display: block;
+  overflow-x: hidden;
 }

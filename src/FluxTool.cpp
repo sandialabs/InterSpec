@@ -176,7 +176,9 @@ namespace FluxToolImp
   };//struct index_compare
   
   
-  bool showFluxColumn( FluxToolWidget::DisplayInfoLevel disptype, const FluxToolWidget::FluxColumns col )
+  bool showFluxColumn( FluxToolWidget::DisplayInfoLevel disptype,
+                      const FluxToolWidget::FluxColumns col,
+                      const shared_ptr<const DetectorPeakResponse> &det )
   {
     switch( disptype )
     {
@@ -189,10 +191,10 @@ namespace FluxToolImp
             return true;
             break;
           
-          case FluxToolWidget::FluxColumns::FluxPeakCpsCol:
-          case FluxToolWidget::FluxColumns::FluxFluxPerCm2PerSCol:
           case FluxToolWidget::FluxColumns::FluxIntrinsicEffCol:
           case FluxToolWidget::FluxColumns::FluxGeometricEffCol:
+          case FluxToolWidget::FluxColumns::FluxPeakCpsCol:
+          case FluxToolWidget::FluxColumns::FluxFluxPerCm2PerSCol:
           case FluxToolWidget::FluxColumns::FluxFluxOnDetCol:
           case FluxToolWidget::FluxColumns::FluxNumColumns:
             return false;
@@ -211,9 +213,9 @@ namespace FluxToolImp
             return true;
             break;
             
-          case FluxToolWidget::FluxColumns::FluxNuclideCol:
           case FluxToolWidget::FluxColumns::FluxIntrinsicEffCol:
           case FluxToolWidget::FluxColumns::FluxGeometricEffCol:
+          case FluxToolWidget::FluxColumns::FluxNuclideCol:
           case FluxToolWidget::FluxColumns::FluxFluxOnDetCol:
           case FluxToolWidget::FluxColumns::FluxNumColumns:
             return false;
@@ -223,7 +225,28 @@ namespace FluxToolImp
         break;
         
       case FluxToolWidget::DisplayInfoLevel::Extended:
-        return (col != FluxToolWidget::FluxColumns::FluxNumColumns); //e.g., always true
+        switch( col )
+        {
+          case FluxToolWidget::FluxColumns::FluxEnergyCol:
+          case FluxToolWidget::FluxColumns::FluxPeakCpsCol:
+          case FluxToolWidget::FluxColumns::FluxFluxPerCm2PerSCol:
+          case FluxToolWidget::FluxColumns::FluxGammasInto4PiCol:
+          case FluxToolWidget::FluxColumns::FluxNuclideCol:
+          case FluxToolWidget::FluxColumns::FluxFluxOnDetCol:
+            return true;
+            break;
+            
+          case FluxToolWidget::FluxColumns::FluxIntrinsicEffCol:
+          case FluxToolWidget::FluxColumns::FluxGeometricEffCol:
+            return (!det || !det->isFixedGeometry());
+            break;
+            
+          case FluxToolWidget::FluxColumns::FluxNumColumns:
+            return false;
+            break;
+        }//switch( col )
+        
+        return true;
         break;
     }//switch( disptype )
     
@@ -570,12 +593,14 @@ namespace FluxToolImp
       if( html )
         strm << "<table border=\"1\" cellpadding=\"2\" style=\"border-collapse: collapse\">" << eol_char;
       
+      const shared_ptr<const DetectorPeakResponse> det = tool->m_detector->detector();
+      
       for( FluxToolWidget::FluxColumns col = FluxToolWidget::FluxColumns(0);
           col < FluxToolWidget::FluxColumns::FluxNumColumns; col = FluxToolWidget::FluxColumns(col+1) )
       {
         const WString &colname = tool->m_colnamesCsv[col];
         
-        if( !FluxToolImp::showFluxColumn(disptype, col) )
+        if( !FluxToolImp::showFluxColumn(disptype, col, det) )
           continue;
         
         if( html )
@@ -631,7 +656,7 @@ namespace FluxToolImp
         for( FluxToolWidget::FluxColumns col = FluxToolWidget::FluxColumns(0);
             col < FluxToolWidget::FluxColumns::FluxNumColumns; col = FluxToolWidget::FluxColumns(col+1) )
         {
-          if( !FluxToolImp::showFluxColumn(disptype, col) )
+          if( !FluxToolImp::showFluxColumn(disptype, col, det) )
             continue;
           
           const double data = tool->m_data[row][col];
@@ -906,6 +931,8 @@ FluxToolWidget::DisplayInfoLevel FluxToolWidget::displayInfoLevel() const
 void FluxToolWidget::handleAppUrl( std::string query_str )
 {
   // Do we want to add an undo/redo step here?
+  UndoRedoManager::BlockUndoRedoInserts undo_blocker;
+  
   const map<string,string> parts = AppUtils::query_str_key_values( query_str );
   
   const auto ver_iter = parts.find( "VER" );
@@ -943,7 +970,7 @@ void FluxToolWidget::handleAppUrl( std::string query_str )
   else
     Wt::log("warn") << "FluxToolWidget URI had invalid display type: '" << disp_str << "'";
   
-  setDisplayInfoLevel( level );
+  setDisplayInfoLevel( level, true );
   m_prevDistance = WString::fromUTF8(dist);
   m_distance->setText( m_prevDistance );
   setTableNeedsUpdating();
@@ -1047,8 +1074,8 @@ void FluxToolWidget::init()
   SpectraFileModel *specFileModel = m_interspec->fileManager()->model();
   m_detector = new DetectorDisplay( m_interspec, specFileModel );
   m_detector->addStyleClass( "FluxDet" );
-  m_interspec->detectorChanged().connect( this, &FluxToolWidget::setTableNeedsUpdating );
-  m_interspec->detectorModified().connect( this, &FluxToolWidget::setTableNeedsUpdating );
+  m_interspec->detectorChanged().connect( boost::bind( &FluxToolWidget::handleDrfChange, this, boost::placeholders::_1 ) );
+  m_interspec->detectorModified().connect( boost::bind( &FluxToolWidget::handleDrfChange, this, boost::placeholders::_1 ) );
   distDetRow->elementAt(0,1)->addWidget( m_detector );
   
   auto distCell = distDetRow->elementAt(0,0);
@@ -1140,7 +1167,7 @@ void FluxToolWidget::init()
            || (level == DisplayInfoLevel::Normal)
            || (level == DisplayInfoLevel::Extended) );
     
-    setDisplayInfoLevel( level );
+    setDisplayInfoLevel( level, false );
   }) );
   
   
@@ -1168,8 +1195,7 @@ void FluxToolWidget::init()
                                     boost::placeholders::_1 ) );
 #endif
   
-  m_displayInfoLevel = DisplayInfoLevel::Simple; //set to simple so #setDisplayInfoLevel(...) will do its work
-  setDisplayInfoLevel( DisplayInfoLevel::Normal );
+  setDisplayInfoLevel( DisplayInfoLevel::Normal, true );
 }//void init()
 
 
@@ -1276,6 +1302,8 @@ void FluxToolWidget::refreshPeakTable()
   m_nucNames.resize( npeaks );
   m_data.resize( npeaks );
   m_uncertainties.resize( npeaks );
+  
+  const bool fixed_geom = det->isFixedGeometry();
 
   for( int i = 0; i < static_cast<int>(npeaks); ++i )
   {
@@ -1290,9 +1318,9 @@ void FluxToolWidget::refreshPeakTable()
     const double ampUncert = peak.peakAreaUncert();
     const double cps = amp / live_time;
     const double cpsUncert = ampUncert / live_time;
-    const double intrisic = det->intrinsicEfficiency(energy);
-    const double geomEff = det->fractionalSolidAngle( det->detectorDiameter(), distance );
-    const double totaleff = det->efficiency(energy, distance );
+    const double intrinsic = det->intrinsicEfficiency(energy);
+    const double geomEff = fixed_geom ? 1.0 : det->fractionalSolidAngle( det->detectorDiameter(), distance );
+    const double totaleff = fixed_geom ? intrinsic : det->efficiency(energy, distance );
     
     
     if( peak.parentNuclide() )
@@ -1307,18 +1335,19 @@ void FluxToolWidget::refreshPeakTable()
     m_uncertainties[i][FluxColumns::FluxPeakCpsCol] = cpsUncert;
     
     m_data[i][FluxColumns::FluxGeometricEffCol] = geomEff;
-    m_data[i][FluxColumns::FluxIntrinsicEffCol] = intrisic;
-    //ToDo: Check if there is an uncertainty on DRF, and if so include that.
+    m_data[i][FluxColumns::FluxIntrinsicEffCol] = intrinsic;
     
-    if( totaleff <= 0.0 || intrisic <= 0.0 )
+    // TODO: Check if there is an uncertainty on DRF, and if so include that.
+    
+    if( totaleff <= 0.0 || intrinsic <= 0.0 )
     {
       m_data[i][FluxColumns::FluxFluxOnDetCol]      = std::numeric_limits<double>::infinity();
       m_data[i][FluxColumns::FluxFluxPerCm2PerSCol] = std::numeric_limits<double>::infinity();
       m_data[i][FluxColumns::FluxGammasInto4PiCol]  = std::numeric_limits<double>::infinity();
     }else
     {
-      const double fluxOnDet = cps / intrisic;
-      const double fluxOnDetUncert = cpsUncert / intrisic;
+      const double fluxOnDet = cps / intrinsic;
+      const double fluxOnDetUncert = cpsUncert / intrinsic;
       
       //gammas into 4pi
       const double gammaInto4pi = cps / totaleff;
@@ -1351,15 +1380,34 @@ void FluxToolWidget::refreshPeakTable()
 }//void refreshPeakTable()
 
 
-
-
-void FluxToolWidget::setDisplayInfoLevel( const DisplayInfoLevel disptype )
+void FluxToolWidget::handleDrfChange( std::shared_ptr<DetectorPeakResponse> drf )
 {
-  if( disptype == m_displayInfoLevel )
+  UndoRedoManager::BlockUndoRedoInserts undo_blocker;
+  
+  const auto level = static_cast<DisplayInfoLevel>( m_displayLevelButtons->checkedId() );
+  
+  assert( (level == DisplayInfoLevel::Simple)
+         || (level == DisplayInfoLevel::Normal)
+         || (level == DisplayInfoLevel::Extended) );
+  
+  // The m_interspec->detectorChanged() signal will actually call this function
+  //  (i.e., FluxToolWidget::handleDrfChange()) before DetectorDisplay::setDetector, so
+  //  the following calls would use the wrong DRF, unless we explicitly set it here.
+  m_detector->setDetector( drf );
+  
+  setDisplayInfoLevel( level, true );
+  
+  setTableNeedsUpdating();
+}//void handleDrfChange()
+
+
+void FluxToolWidget::setDisplayInfoLevel( const DisplayInfoLevel disptype, const bool force )
+{
+  if( !force && (disptype == m_displayInfoLevel) )
     return;
   
   UndoRedoManager *undoRedo = UndoRedoManager::instance();
-  if( undoRedo && undoRedo->canAddUndoRedoNow() )
+  if( (disptype != m_displayInfoLevel) && undoRedo && undoRedo->canAddUndoRedoNow() )
   {
     const DisplayInfoLevel prev = m_displayInfoLevel;
     auto undo_redo = [prev, disptype]( const bool is_undo ){
@@ -1367,7 +1415,7 @@ void FluxToolWidget::setDisplayInfoLevel( const DisplayInfoLevel disptype )
       FluxToolWindow *fluxwin = viewer ? viewer->createFluxTool() : nullptr;
       FluxToolWidget *tool = fluxwin ? fluxwin->m_fluxTool : nullptr;
       if( tool )
-        tool->setDisplayInfoLevel( is_undo ? prev : disptype );
+        tool->setDisplayInfoLevel( is_undo ? prev : disptype, false );
     };
     auto undo = [=](){ undo_redo(true); };
     auto redo = [=](){ undo_redo(false); };
@@ -1380,9 +1428,11 @@ void FluxToolWidget::setDisplayInfoLevel( const DisplayInfoLevel disptype )
   
   setTableNeedsUpdating();
   
+  const shared_ptr<const DetectorPeakResponse> det = m_detector->detector();
+  
   for( FluxColumns col = FluxColumns(0); col < FluxColumns::FluxNumColumns; col = FluxColumns(col + 1) )
   {
-    const bool show = FluxToolImp::showFluxColumn(m_displayInfoLevel, col);
+    const bool show = FluxToolImp::showFluxColumn(m_displayInfoLevel, col, det);
     m_table->setColumnHidden( col, !show );
     
     WLength length;

@@ -223,9 +223,9 @@ tuple<string,int,ErrorCorrLevel> utf8_string_to_svg_qr( const std::string &input
       // LOW (7% erroneous codewords), MEDIUM (15%), QUARTILE (25%), HIGH (30%).
       qrcodegen::QrCode qr = qrcodegen::QrCode::encodeText( input.c_str(), ecc );
       
-      cout << "Qr code created has version: " << qr.getVersion() << ", size: " << qr.getSize()
-      << ", ErrorCorrectionLevel: " << static_cast<int>(qr.getErrorCorrectionLevel())
-      << endl;
+      //cout << "Qr code created has version: " << qr.getVersion() << ", size: " << qr.getSize()
+      //  << ", ErrorCorrectionLevel: " << static_cast<int>(qr.getErrorCorrectionLevel())
+      //  << endl;
       
       return { to_svg_string( qr, quietSpace ), qr.getSize(), toOurEnum(ecc) };
     }catch( std::exception &e )

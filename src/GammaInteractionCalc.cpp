@@ -5420,6 +5420,9 @@ vector< tuple<double,double,double,Wt::WColor,double> >
   //      queezy - this should be checked on!
   typedef map<double,double> EnergyCountMap;
 
+  // Make sure attenuate_for_air isnt set for fixed geometry DRFs
+  assert( !m_options.attenuate_for_air || !m_detector || !m_detector->isFixedGeometry() );
+  
 //  cerr << "energy_chi_contributions: vals={ ";
 //  for( size_t i = 0; i < x.size(); ++i )
 //    cerr << x[i] << ", ";
@@ -5434,10 +5437,18 @@ vector< tuple<double,double,double,Wt::WColor,double> >
     info->push_back( "Distance to source center from detector: "
                       + PhysicalUnits::printToBestLengthUnits(m_distance) );
     if( m_detector && m_detector->isValid() )
-      info->push_back( "Detector: "
-                        + m_detector->name() + " radius "
+    {
+      if( m_detector->isFixedGeometry() )
+      {
+        info->push_back( "Detector: " + m_detector->name() + ", fixed geometry" );
+      }else
+      {
+        info->push_back( "Detector: " + m_detector->name() + " radius "
                         + std::to_string( 0.5*m_detector->detectorDiameter()/PhysicalUnits::cm )
-                      + " cm" );
+                        + " cm" );
+      }
+    }//if( m_detector && m_detector->isValid() )
+    
     if( m_options.multiple_nucs_contribute_to_peaks )
       info->push_back( "Allowing multiple nuclides being fit for to potentially contribute to the same photopeak" );
     else
@@ -5677,7 +5688,7 @@ vector< tuple<double,double,double,Wt::WColor,double> >
   }//for( int materialN = 0; materialN < nMaterials; ++materialN )
 
   
-  if( m_options.attenuate_for_air )
+  if( m_options.attenuate_for_air && (!m_detector || !m_detector->isFixedGeometry()) )
   {
     const double air_dist = std::max( 0.0, m_distance - shield_outer_rad );
     
@@ -5692,8 +5703,10 @@ vector< tuple<double,double,double,Wt::WColor,double> >
   //Fold in the detector response
   if( m_detector && m_detector->isValid() )
   {
+    const bool fixed_geom = m_detector->isFixedGeometry();
     if( info )
-      info->push_back( "Detector Efficiency Effects" );
+      info->push_back( "Detector Efficiency Effects"
+                      + string(fixed_geom ? " (Fixed Geometry)" : "") );
     
     for( EnergyCountMap::value_type &energy_count : energy_count_map )
     {
@@ -5701,7 +5714,8 @@ vector< tuple<double,double,double,Wt::WColor,double> >
 //           << m_detector->intrinsicEfficiency( energy_count.first ) << " and the "
 //           << " total efficiency is " << m_detector->efficiency( energy_count.first, m_distance ) << endl;
       
-      const double eff = m_detector->efficiency( energy_count.first, m_distance );
+      const double eff = fixed_geom ? m_detector->intrinsicEfficiency(energy_count.first)
+                                    : m_detector->efficiency( energy_count.first, m_distance );
       
       if( info )
       {
@@ -5799,6 +5813,10 @@ vector< tuple<double,double,double,Wt::WColor,double> >
     
     if( srcs.empty() )
       continue;
+     
+    assert( !m_detector || !m_detector->isFixedGeometry() );
+    if( m_detector && m_detector->isFixedGeometry() )
+      throw logic_error( "Self-attenuating and trace sources are not allowed for fixed geometry detector response functions." );
     
     DistributedSrcCalc baseCalculator;
     baseCalculator.m_geometry = m_geometry;

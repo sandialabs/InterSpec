@@ -198,9 +198,14 @@ public:
   {
     try
     {
+      const bool fixed_geom = m_input.drf->isFixedGeometry();
+      const float &energy = m_input.energy;
+      const double &distance = m_input.distance;
       const bool useCuries = use_curie_units();
-      const double det_eff = m_input.drf->efficiency(m_input.energy, m_input.distance);
-      const double counts_4pi = (m_input.do_air_attenuation ? m_input.counts_per_bq_into_4pi_with_air
+      const double det_eff = fixed_geom ? m_input.drf->intrinsicEfficiency(energy)
+                                        : m_input.drf->efficiency(energy, distance);
+      const double counts_4pi = ((m_input.do_air_attenuation && !fixed_geom)
+                                 ? m_input.counts_per_bq_into_4pi_with_air
                                  : m_input.counts_per_bq_into_4pi);
       const double gammas_per_bq = counts_4pi * det_eff;
       
@@ -570,11 +575,13 @@ public:
     assert( input.confidence_level > 0.5 && input.confidence_level < 1.0 );
     assert( input.roi_start < input.roi_end );
     
-    
+    const bool fixed_geom = input.drf->isFixedGeometry();
+    const bool do_air_atten = (input.do_air_attenuation && !fixed_geom);
     const double fwhm = input.drf->peakResolutionFWHM( input.energy );
-    const double det_eff = input.drf->efficiency( input.energy, input.distance );
-    const double counts_4pi = (input.do_air_attenuation ? input.counts_per_bq_into_4pi_with_air
-                               : input.counts_per_bq_into_4pi);
+    const double det_eff = fixed_geom ? input.drf->intrinsicEfficiency(input.energy)
+                                      : input.drf->efficiency( input.energy, input.distance );
+    const double counts_4pi = (do_air_atten ? input.counts_per_bq_into_4pi_with_air
+                                            : input.counts_per_bq_into_4pi);
     
     char buffer[64] = { '\0' };
     
@@ -711,11 +718,15 @@ public:
         throw runtime_error( "No measurement" );
         
       const bool useCuries = use_curie_units();
-      const double intrinsic_eff = m_input.drf->intrinsicEfficiency( m_input.energy );
-      const double geom_eff = m_input.drf->fractionalSolidAngle( m_input.drf->detectorDiameter(), m_input.distance );
-      const double det_eff = m_input.drf->efficiency(m_input.energy, m_input.distance);
-      const double counts_4pi = (m_input.do_air_attenuation ? m_input.counts_per_bq_into_4pi_with_air
-                                 : m_input.counts_per_bq_into_4pi);
+      const bool fixed_geom = m_input.drf->isFixedGeometry();
+      const bool air_atten = (m_input.do_air_attenuation && !fixed_geom);
+      const double &distance = m_input.distance;
+      const float &energy = m_input.energy;
+      const double intrinsic_eff = m_input.drf->intrinsicEfficiency( energy );
+      const double geom_eff = m_input.drf->fractionalSolidAngle( m_input.drf->detectorDiameter(), distance );
+      const double det_eff = fixed_geom ? intrinsic_eff : m_input.drf->efficiency(energy, distance);
+      const double counts_4pi = (air_atten ? m_input.counts_per_bq_into_4pi_with_air
+                                           : m_input.counts_per_bq_into_4pi);
       const double gammas_per_bq = counts_4pi * det_eff;
       
       snprintf( buffer, sizeof(buffer), "%.1f%%", 100.0*m_input.confidence_level );
@@ -1720,6 +1731,11 @@ void DetectionLimitTool::handleDrfSelected( std::shared_ptr<DetectorPeakResponse
 {
   m_drf_cache = new_drf;
   
+  // The DetectorDisplay::setDetector(...) function may not have been called yet because of
+  //  the order of signal/slot connections - so we'll set that here to make sure we are up
+  //  to date.
+  m_detectorDisplay->setDetector( new_drf );
+  
   handleInputChange();
 }//void handleDrfChange()
 
@@ -1761,16 +1777,18 @@ void DetectionLimitTool::calcAndSetDefaultMinRelativeIntensity()
   {
   }
   
-  const bool air_atten = m_attenuateForAir->isChecked();
+  const bool fixed_geom = drf->isFixedGeometry();
+  const bool air_atten = (!fixed_geom && m_attenuateForAir->isChecked());
   
-  if( distance > 0.0 )
+  if( (distance > 0.0) || fixed_geom )
   {
     for( GammaLineInfo &line : lines )
     {
       if( air_atten )
         line.gammas_into_4pi = line.gammas_4pi_after_air_attenuation;
-      line.gammas_into_4pi *= drf->efficiency( line.energy, distance );
-    }
+      line.gammas_into_4pi *= (fixed_geom ? drf->intrinsicEfficiency(line.energy)
+                                          : drf->efficiency( line.energy, distance ) );
+    }//for( GammaLineInfo &line : lines )
   }//if( distance > 0.0 )
   
   // Sort 'lines' so the largest intensities come first
@@ -1940,8 +1958,27 @@ void DetectionLimitTool::handleInputChange()
     return;
   }
   
+  const bool fixed_geom = drf->isFixedGeometry();
   const LimitType type = limitType();
-  const bool do_air_atten = m_attenuateForAir->isChecked();
+  const bool do_air_atten = (!fixed_geom && m_attenuateForAir->isChecked());
+  
+  if( fixed_geom )
+  {
+    if( m_distOrActivity->isChecked() ) //checked means distance limit
+    {
+      m_distOrActivity->setUnChecked();
+      m_distOrActivity->disable();
+      handleUserChangedToComputeActOrDist();
+      
+      //`handleUserChangedToComputeActOrDist()` will call this function
+      //  (`DetectionLimitTool::handleInputChange()`), but we wont get here, but we
+      //  do have no need to continue on in our current function call.
+      return;
+    }//
+  }else
+  {
+    m_distOrActivity->enable();
+  }//if( m_distOrActivity->isChecked() ) / else
   
   double distance = 0.0, activity = 0.0;
   
@@ -2018,7 +2055,8 @@ void DetectionLimitTool::handleInputChange()
   double maxLineIntensity = 0.0;
   for( const auto &line : lines )
   {
-    const double det_eff = drf->efficiency( line.energy, distance);
+    const double det_eff = fixed_geom ? drf->intrinsicEfficiency(line.energy)
+                                      : drf->efficiency( line.energy, distance);
     
     // Note that line.gammas_into_4pi and line.gammas_4pi_after_air_attenuation already have
     //  shielding attenuation accounted for.
@@ -2040,7 +2078,8 @@ void DetectionLimitTool::handleInputChange()
   {
     const double energy = line.energy;
     const double br = line.branching_ratio;
-    const double det_eff = drf->efficiency( energy, distance);
+    const double det_eff = fixed_geom ? drf->intrinsicEfficiency(energy)
+                                      : drf->efficiency( energy, distance);
     const double intensity = det_eff * (do_air_atten ? line.gammas_4pi_after_air_attenuation : line.gammas_into_4pi);
     
     const double relIntensity = intensity / maxLineIntensity;
@@ -2168,6 +2207,8 @@ void DetectionLimitTool::doCalc()
       continue;
     
     const MdaPeakRowInput &input = rw->input();
+    const bool fixed_geom = input.drf->isFixedGeometry();
+    const bool air_atten = (!fixed_geom && input.do_air_attenuation);
     
     ++nused;
     if( (rw->m_simple_mda > 0.0) && !IsInf(rw->m_simple_mda) && !IsNan(rw->m_simple_mda)  )
@@ -2177,8 +2218,9 @@ void DetectionLimitTool::doCalc()
       
       if( rw->m_simple_excess_counts > 0.0 )
       {
-        const double det_eff = input.drf->efficiency(input.energy, input.distance);
-        const double counts_4pi = (input.do_air_attenuation ? input.counts_per_bq_into_4pi_with_air
+        const double det_eff = fixed_geom ? input.drf->intrinsicEfficiency(input.energy)
+                                          : input.drf->efficiency(input.energy, input.distance);
+        const double counts_4pi = (air_atten ? input.counts_per_bq_into_4pi_with_air
                                                             : input.counts_per_bq_into_4pi);
         const double gammas_per_bq = det_eff * counts_4pi;
         

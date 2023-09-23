@@ -131,12 +131,16 @@ protected:
   
   InterSpec* m_specViewer; //the reference holding the detector
   DetectorDisplay *m_detectorDisplay;
+  Wt::WLabel *m_detectorDistanceLabel;
   Wt::WLineEdit *m_detectorDistance; //detector distance
+  Wt::WLabel *m_efficiencyLabel;
   Wt::WText *m_efficiency; //detector efficiency
+  Wt::WLabel *m_totalEfficiencyLabel;
   Wt::WText *m_totalEfficiency;
+  Wt::WLabel *m_intrinsicEfficiencyLabel;
   Wt::WText *m_intrinsicEfficiency; //detector absolute efficiency
+  Wt::WLabel *m_fractionalAngleLabel;
   Wt::WText *m_fractionalAngle; //detector fractional solid angle
-  Wt::WLabel *m_detectorLabel[5] ; //labels for detector if defined
   
   std::shared_ptr<const DetectorPeakResponse> m_detector;
   

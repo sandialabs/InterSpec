@@ -52,6 +52,9 @@ namespace SpecUtils
  - Have the SpecMeas hold the history for itself
  - Be able to insert, or maybe just modify, an undo/redo step from within a undo/redo step
  - Add a "blocker" to block undo/redo while tools, like File Parameters, Istopics by nuclides, or File Manager, tool is open
+ - Make it so this class collects all the undo/redo steps for a given event loop, and mark this object as needing update, so
+   during render, all steps are collected up, and made into a single step - but this would require making this class inherit
+   from Wt::WWidget, instead of just Wt::WObject.
  */
 class UndoRedoManager : public Wt::WObject
 {

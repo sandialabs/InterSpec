@@ -397,8 +397,8 @@ public:
    memmory, but at the cost of not currently getting things exactly right for trace and self-atten sources.
    
    @param select The ShieldingSelect that was changed.
-   @param prev_state The XML represetntation of the ShieldingSelect before it was changed.
-   @param current_state The XML represetntation of the updated ShieldingSelect state.
+   @param prev_state The XML representation of the ShieldingSelect before it was changed.
+   @param current_state The XML representation of the updated ShieldingSelect state.
    */
   void handleShieldingUndoRedoPoint( const ShieldingSelect * const select,
                                     const std::shared_ptr<const std::string> &prev_state,
@@ -471,6 +471,8 @@ public:
   void checkForMultipleGenericMaterials();
   
   void handleShieldingChange();
+  
+  void handleDetectorChanged( std::shared_ptr<DetectorPeakResponse> new_det );
   
   void updateChi2Chart();
   
@@ -634,7 +636,8 @@ protected:
 
   DetectorDisplay *m_detectorDisplay;
   
-  /** Is set after validating a user entered distrance string.  If user enetered 
+  Wt::WLabel *m_distanceLabel;
+  /** Is set after validating a user entered distance string.  If user entered
    *  string is invalid, then this value is used to go back to.
    */
   std::string m_prevDistStr;
@@ -657,9 +660,12 @@ protected:
   //m_shieldingSelects: contains objects of class ShieldingSelect
   Wt::WContainerWidget *m_shieldingSelects;
 
+  Wt::WLabel *m_geometryLabel;
   GammaInteractionCalc::GeometryType m_prevGeometry;
   Wt::WComboBox *m_geometrySelect;
 
+  Wt::WText *m_fixedGeometryTxt;
+  
   Wt::WText *m_showChi2Text;
   Wt::WStandardItemModel *m_chi2Model;
   Chi2Graphic *m_chi2Graphic;

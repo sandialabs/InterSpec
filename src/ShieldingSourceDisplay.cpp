@@ -203,7 +203,7 @@ namespace
    If blocks all other undo/redo step insertions until this object is destructed.
    
    You are looking at at least about 15 kb memory for each undo/redo step, just for the XML; for small things, it may be more
-   efficient to not use this mecahnism.
+   efficient to not use this mechanism.
    */
   struct ShieldSourceChange
   {
@@ -2742,6 +2742,8 @@ ShieldingSourceDisplay::ShieldingSourceDisplay( PeakModel *peakModel,
     m_peakView( nullptr ),
     m_sourceView( nullptr ),
     m_detectorDisplay( nullptr ),
+    m_distanceLabel( nullptr ),
+    m_prevDistStr(),
     m_distanceEdit( nullptr ),
     m_addMaterialShielding( nullptr ),
     m_addGenericShielding( nullptr ),
@@ -2752,8 +2754,10 @@ ShieldingSourceDisplay::ShieldingSourceDisplay( PeakModel *peakModel,
 #endif
     m_materialSuggest( matSuggest ),
     m_shieldingSelects( nullptr ),
+    m_geometryLabel( nullptr ),
     m_prevGeometry( GammaInteractionCalc::GeometryType::Spherical ),
     m_geometrySelect( nullptr ),
+    m_fixedGeometryTxt( nullptr ),
     m_showChi2Text( nullptr ),
     m_chi2Model( nullptr ),
     m_chi2Graphic( nullptr ),
@@ -2897,7 +2901,7 @@ ShieldingSourceDisplay::ShieldingSourceDisplay( PeakModel *peakModel,
   //this validates floating point numbers followed by a distance unit
   WRegExpValidator *distValidator = new WRegExpValidator( PhysicalUnits::sm_distanceUnitOptionalRegex, this );
   distValidator->setFlags( Wt::MatchCaseInsensitive );
-  WLabel *distanceLabel = new WLabel( "Distance:" );
+  m_distanceLabel = new WLabel( "Distance:" );
   
   m_distanceEdit = new WLineEdit( "100 cm" );
   
@@ -2908,7 +2912,7 @@ ShieldingSourceDisplay::ShieldingSourceDisplay( PeakModel *peakModel,
 #endif
   m_distanceEdit->setTextSize( 5 );
 
-  distanceLabel->setBuddy( m_distanceEdit );
+  m_distanceLabel->setBuddy( m_distanceEdit );
   m_distanceEdit->setValidator( distValidator );
   string tooltip = "Distance from center of source to face of detector. Number must be"
             " followed by units; valid units are: meters, m, cm, mm, km, feet,"
@@ -2918,7 +2922,7 @@ ShieldingSourceDisplay::ShieldingSourceDisplay( PeakModel *peakModel,
 
   HelpSystem::attachToolTipOn( m_distanceEdit,tooltip, showToolTips );
 
-  WLabel *geometryLabel = new WLabel( "Geometry:" );
+  m_geometryLabel = new WLabel( "Geometry:" );
   m_geometrySelect = new WComboBox();
   
   // We want the current index of m_geometrySelect to correspond to the GeometryType enum value
@@ -2944,6 +2948,8 @@ ShieldingSourceDisplay::ShieldingSourceDisplay( PeakModel *peakModel,
   m_geometrySelect->setCurrentIndex( static_cast<int>(GeometryType::Spherical) );
   m_geometrySelect->changed().connect( this, &ShieldingSourceDisplay::handleGeometryTypeChange );
 
+  m_fixedGeometryTxt = new WText( "Using fixed geometry DRF" );
+  m_fixedGeometryTxt->hide();
 
   m_shieldingSelects = new WContainerWidget();
   m_shieldingSelects->setStyleClass( "ShieldingSelectContainer" );
@@ -3101,9 +3107,8 @@ ShieldingSourceDisplay::ShieldingSourceDisplay( PeakModel *peakModel,
   m_distanceEdit->changed().connect( this, &ShieldingSourceDisplay::handleUserDistanceChange );
   m_distanceEdit->enterPressed().connect( this, &ShieldingSourceDisplay::handleUserDistanceChange );
   
-  m_specViewer->detectorChanged().connect( this, &ShieldingSourceDisplay::updateChi2Chart );
-  m_specViewer->detectorModified().connect( this, &ShieldingSourceDisplay::updateChi2Chart );
-
+  m_specViewer->detectorChanged().connect( boost::bind( &ShieldingSourceDisplay::handleDetectorChanged, this, boost::placeholders::_1 ) );
+  m_specViewer->detectorModified().connect( boost::bind( &ShieldingSourceDisplay::handleDetectorChanged, this, boost::placeholders::_1 ) );
   
   m_showChiOnChart = new SwitchCheckbox( "Mult.", "&chi;" );
   m_showChiOnChart->setChecked();
@@ -3200,19 +3205,20 @@ ShieldingSourceDisplay::ShieldingSourceDisplay( PeakModel *peakModel,
   WGridLayout *smallLayout = new WGridLayout();
   smallerContainer->setLayout(smallLayout);
   
-  smallLayout->addWidget( distanceLabel,           0, 0, AlignRight | AlignMiddle );
+  smallLayout->addWidget( m_distanceLabel,         0, 0, AlignRight | AlignMiddle );
   smallLayout->addWidget( m_distanceEdit,          0, 1, 1, 2);
-  smallLayout->addWidget( geometryLabel,           1, 0, AlignRight | AlignMiddle );
+  smallLayout->addWidget( m_geometryLabel,         1, 0, AlignRight | AlignMiddle );
   smallLayout->addWidget( m_geometrySelect,        1, 1, 1, 2);
-  smallLayout->addWidget( addShieldingLabel,       2, 0, AlignRight | AlignMiddle );
-  smallLayout->addWidget( m_addMaterialShielding,  2, 1);
-  smallLayout->addWidget( m_addGenericShielding,   2, 2);
+  smallLayout->addWidget( m_fixedGeometryTxt,      2, 0, 1, 3, AlignCenter );
+  smallLayout->addWidget( addShieldingLabel,       3, 0, AlignRight | AlignMiddle );
+  smallLayout->addWidget( m_addMaterialShielding,  3, 1);
+  smallLayout->addWidget( m_addGenericShielding,   3, 2);
   smallLayout->setColumnStretch( 0, 0 );
 
   smallLayout->setContentsMargins(0,5,0,5);
   smallerContainer->setPadding(0);
   
-  //geometryLabel->setText( "Shield Geometry" );
+  //m_geometryLabel->setText( "Shield Geometry" );
   HelpSystem::attachToolTipOn( m_geometrySelect,
     "Geometry to use for modeling \"trace\" sources, or self-attenuating sources.<br />"
     "<br />"
@@ -3379,7 +3385,8 @@ ShieldingSourceDisplay::ShieldingSourceDisplay( PeakModel *peakModel,
   setLayout( m_layout );
   setOverflow( WContainerWidget::OverflowVisible);
   setOffsets(WLength(0,WLength::Pixel));
-  updateChi2Chart();
+  
+  handleDetectorChanged( m_detectorDisplay->detector() ); // Will also call updateChi2Chart()
 }//ShieldingSourceDisplay constructor
 
 
@@ -3463,9 +3470,12 @@ SourceFitModel *ShieldingSourceDisplay::sourceFitModel()
 
 ShieldingSourceFitCalc::ShieldingSourceFitOptions ShieldingSourceDisplay::fitOptions() const
 {
+  const shared_ptr<const DetectorPeakResponse> det = m_detectorDisplay->detector();
+  const bool fixed_geom = (det && det->isFixedGeometry());
+  
   ShieldingSourceFitCalc::ShieldingSourceFitOptions options;
   options.multiple_nucs_contribute_to_peaks = m_multiIsoPerPeak->isChecked();
-  options.attenuate_for_air = m_attenForAir->isChecked();
+  options.attenuate_for_air = (!fixed_geom && m_attenForAir->isChecked());
   options.account_for_decay_during_meas = m_decayCorrect->isChecked();
   options.multithread_self_atten = m_multithread_computation;
   options.photopeak_cluster_sigma = m_photopeak_cluster_sigma;
@@ -5408,6 +5418,126 @@ void ShieldingSourceDisplay::handleShieldingChange()
 }//void handleShieldingChange()
 
 
+void ShieldingSourceDisplay::handleDetectorChanged( std::shared_ptr<DetectorPeakResponse> det )
+{
+  // `m_detectorDisplay` probably hasnt been updated yet, because of the order in signal/slot,
+  //  so we'll update it now, even though everything wont be updated until render, so it
+  //  would probably be fine anyway
+  m_detectorDisplay->setDetector( det );
+  
+  unique_ptr<ShieldSourceChange> state_undo_creator;
+  
+  const bool fixed_geom = (det && det->isFixedGeometry());
+  if( fixed_geom /* && !m_distanceLabel->isHidden() */ )
+  {
+    // If there are any self-attenuating, or trace sources defined, or geometry is non-spherical,
+    //  we should add an undo step, to go along with the change of detector undo.
+    //  But this is a little tenuous, as it relies on the undo step of this function being inserted
+    //  before the undo of the changed detector, and even then it will appear as an extra step to
+    //  the user.
+    
+    bool any_volume_src = false;
+    for( int nuc_num = 0; nuc_num < m_sourceModel->numNuclides(); ++nuc_num )
+      any_volume_src |= m_sourceModel->isVolumetricSource( nuc_num );
+    
+    UndoRedoManager *undoRedo = UndoRedoManager::instance();
+    if( any_volume_src && (geometry() != GeometryType::Spherical)
+       && undoRedo && !undoRedo->isInUndoOrRedo() )
+    {
+      state_undo_creator = make_unique<ShieldSourceChange>( this, "Change to fixed-geometry DRF" );
+    }
+    
+    m_attenForAir->hide();
+    m_distanceLabel->hide();
+    m_distanceEdit->hide();
+    m_geometryLabel->hide();
+    m_geometrySelect->hide();
+    m_fixedGeometryTxt->show();
+    
+    m_geometrySelect->setCurrentIndex( static_cast<int>(GeometryType::Spherical) );
+    handleGeometryTypeChange();
+    
+    for( WWidget *widget : m_shieldingSelects->children() )
+    {
+      ShieldingSelect *select = dynamic_cast<ShieldingSelect *>(widget);
+      if( !select )
+        continue;
+      
+      // If we were fitting a nuclide via trace source, or self-attenuation (fitting dimensions),
+      //  then we will need to tell the nuclide model to fit for the activity there as well.
+      set<const SandiaDecay::Nuclide *> nucs_fitting_act;
+      
+      if( !select->isGenericMaterial() )
+      {
+        for( const SandiaDecay::Nuclide *nuc : select->traceSourceNuclides() )
+        {
+          if( select->fitTraceSourceActivity(nuc) )
+            nucs_fitting_act.insert( nuc );
+        }
+        
+        bool fitting_dims = false;
+        switch( select->geometry() )
+        {
+          case GammaInteractionCalc::GeometryType::Spherical:
+            fitting_dims |= select->fitThickness();
+            break;
+            
+          case GammaInteractionCalc::GeometryType::CylinderEndOn:
+          case GammaInteractionCalc::GeometryType::CylinderSideOn:
+            fitting_dims |= select->fitCylindricalRadiusThickness();
+            fitting_dims |= select->fitCylindricalLengthThickness();
+            break;
+            
+          case GammaInteractionCalc::GeometryType::Rectangular:
+            fitting_dims |= select->fitRectangularWidthThickness();
+            fitting_dims |= select->fitRectangularHeightThickness();
+            fitting_dims |= select->fitRectangularDepthThickness();
+            break;
+            
+          case GammaInteractionCalc::GeometryType::NumGeometryType:
+            break;
+        }//switch( select->geometry() )
+        
+        if( fitting_dims )
+        {
+          const vector<const SandiaDecay::Nuclide *> self_atten_nucs = select->selfAttenNuclides();
+          nucs_fitting_act.insert( begin(self_atten_nucs), end(self_atten_nucs) );
+        }//if( fitting_dims )
+      }//if( !select->isGenericMaterial() )
+      
+      select->setFixedGeometry( true );
+      
+      assert( select->traceSourceNuclides().empty() );
+      assert( select->selfAttenNuclides().empty() );
+      
+      for( const SandiaDecay::Nuclide *nuc : nucs_fitting_act )
+      {
+        WModelIndex index = m_sourceModel->index( nuc, SourceFitModel::Columns::kFitActivity );
+        m_sourceModel->setData( index, boost::any(true), Wt::CheckStateRole );
+      }
+    }//for( WWidget *widget : m_shieldingSelects->children() )
+  }//if( DRF is fixed geometry, but layout is for non-fixed geometry )
+  
+  if( !fixed_geom /* && m_distanceLabel->isHidden() */ )
+  {
+    m_attenForAir->show();
+    m_distanceLabel->show();
+    m_distanceEdit->show();
+    m_geometryLabel->show();
+    m_geometrySelect->show();
+    m_fixedGeometryTxt->hide();
+    
+    for( WWidget *widget : m_shieldingSelects->children() )
+    {
+      ShieldingSelect *thisSelect = dynamic_cast<ShieldingSelect *>(widget);
+      if( thisSelect )
+        thisSelect->setFixedGeometry( false );
+    }//for( WWidget *widget : m_shieldingSelects->children() )
+  }//if( DRF is non-fixed geometry, but layout is for fixed geometry )
+  
+  updateChi2Chart();
+}//void handleDetectorChanged()
+
 void ShieldingSourceDisplay::updateChi2Chart()
 {
   m_chi2ChartNeedsUpdating = true;
@@ -6691,6 +6821,8 @@ void ShieldingSourceDisplay::deSerializeShieldings( const rapidxml::xml_node<cha
 {
   const rapidxml::xml_node<> *shield_node;
   
+  const shared_ptr<const DetectorPeakResponse> det = m_detectorDisplay->detector();
+  
   for( shield_node = shiledings->first_node( "Shielding", 9 );
       shield_node; shield_node = shield_node->next_sibling( "Shielding", 9 ) )
   {
@@ -6739,6 +6871,7 @@ void ShieldingSourceDisplay::reset()
   
   //We shouldnt actually need the next line
 //  m_sourceModel->repopulateIsotopes();
+  handleDetectorChanged( m_detectorDisplay->detector() );
 }//void reset()
 
 
@@ -6838,6 +6971,7 @@ void ShieldingSourceDisplay::deSerialize( const rapidxml::xml_node<char> *base_n
   //clear out the GUI
   reset();
   
+  
   m_prevGeometry = geom_type;
   m_geometrySelect->setCurrentIndex( static_cast<int>(geom_type) );
   
@@ -6857,6 +6991,10 @@ void ShieldingSourceDisplay::deSerialize( const rapidxml::xml_node<char> *base_n
   deSerializeShieldings( shieldings_node );
   
   m_modifiedThisForeground = true;
+
+  // Make sure if DRF is fixed/not-fixed, that the GUI state will be consistent with this
+  //  (it may not have been the same when serialized)
+  handleDetectorChanged( m_detectorDisplay->detector() );
   
   updateChi2Chart();
 }//void deSerialize( rapidxml::xml_document<char> &doc )
@@ -7185,6 +7323,10 @@ ShieldingSelect *ShieldingSourceDisplay::addShielding( ShieldingSelect *before,
   
   select->setGeometry( geometry() );
   
+  const auto det = m_detectorDisplay->detector();
+  select->setFixedGeometry( det && det->isFixedGeometry() );
+  
+  
   select->addShieldingBefore().connect( boost::bind( &ShieldingSourceDisplay::doAddShieldingBefore,
                                                     this, boost::placeholders::_1 ) );
   select->addShieldingAfter().connect( boost::bind( &ShieldingSourceDisplay::doAddShieldingAfter,
@@ -7377,6 +7519,13 @@ void ShieldingSourceDisplay::updateActivityOfShieldingIsotope( ShieldingSelect *
     return;
   }//if( !select || select->isGenericMaterial() )
 
+  const shared_ptr<const DetectorPeakResponse> det = m_detectorDisplay->detector();
+  if( det && det->isFixedGeometry() )
+  {
+    // This happens during deSerialization, if we serialized with a non-fixed geometry DRF
+    //  but then are deSerializing with a fixed geometry DRF
+    return;
+  }
   
   char buffer[64] = { '\0' };
   const int row = m_sourceModel->row( nuc );
@@ -7935,6 +8084,10 @@ void ShieldingSourceDisplay::updateGuiWithModelFitResults( std::shared_ptr<Shiel
     {
       ShieldingSelect *select = gui_shieldings[shielding_index];
       assert( select );
+      
+      if( select->isGenericMaterial() )
+        continue;
+      
       shared_ptr<const Material> usrmaterial = select->material();
       assert( usrmaterial );
       if( !usrmaterial )
