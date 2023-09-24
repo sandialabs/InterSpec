@@ -60,6 +60,7 @@
 #include <Wt/WTabWidget>
 #include <Wt/WTableCell>
 #include <Wt/WIOService>
+#include <Wt/Chart/WAxis>
 
 #include <Wt/WGroupBox>
 #include <Wt/WResource>
@@ -87,6 +88,7 @@
 #include <Wt/WMemoryResource>
 #include <Wt/WStringListModel>
 #include <Wt/WContainerWidget>
+#include <Wt/WRegExpValidator>
 #if( HAS_WTDBOMYSQL )
 #include <Wt/Dbo/backend/MySQL>
 #endif
@@ -104,6 +106,8 @@
 #include "SpecUtils/StringAlgo.h"
 #include "SpecUtils/ParseUtils.h"
 
+
+#include "InterSpec/DrfChart.h"
 #include "InterSpec/SpecMeas.h"
 #include "InterSpec/PopupDiv.h"
 #include "InterSpec/EnergyCal.h"
@@ -1699,6 +1703,13 @@ bool SpecMeasManager::handleNonSpectrumFile( const std::string &displayName,
   }
 #endif
   
+  // Check if a .ECC file from ISOCS
+  if( (header_contains("SGI_template") || header_contains("ISOCS_file_name"))
+     && handleEccFile(infile, dialog) )
+  {
+    return true;
+  }//if( a .ECC file from ISOCS )
+  
   delete dialog;
   
   return false;
@@ -1916,8 +1927,8 @@ bool SpecMeasManager::handleCALpFile( std::istream &infile, SimpleDialog *dialog
       continue;
     }
     
-    // The calbiration may not be for the correct number of channels, for files that have detectors
-    //  with differnt num channels; we'll check for this here and fix the calibration up for this
+    // The calibration may not be for the correct number of channels, for files that have detectors
+    //  with different num channels; we'll check for this here and fix the calibration up for this
     //  case.
     //  We could also do this for `name.empty()` case, but we shouldnt need to, I dont think.
     if( !name.empty() )
@@ -2261,6 +2272,211 @@ bool SpecMeasManager::handleRelActAutoXmlFile( std::istream &input, SimpleDialog
 #endif
 
 
+bool SpecMeasManager::handleEccFile( std::istream &input, SimpleDialog *dialog )
+{
+  shared_ptr<DetectorPeakResponse> det;
+  try
+  {
+    det = DetectorPeakResponse::parseEccFile( input );
+    
+    assert( det && det->isValid() );
+    if( !det || !det->isValid() )
+      throw std::logic_error( "DRF returned from DetectorPeakResponse::parseEccFile() should be valid." );
+  }catch( std::exception &e )
+  {
+    return false;
+  }//try / catch
+  
+  dialog->addStyleClass( "EccDrfDialog" );
+  
+  assert( dialog );
+  
+  dialog->contents()->clear();
+  dialog->footer()->clear();
+  
+  int chartw = 350, charth = 200;
+  if( m_viewer->renderedWidth() > 500 )
+    chartw = std::min( ((3*m_viewer->renderedWidth()/4) - 50), 500 );
+  if( m_viewer->renderedHeight() > 400 )
+    charth = std::min( m_viewer->renderedHeight()/4, (4*chartw)/7 );
+  chartw = std::max( chartw, 300 );
+  charth = std::max( charth, 175 );
+  
+  WText *title = new WText( "ISOCS Efficiency Calibration Curve DRF", dialog->contents() );
+  title->addStyleClass( "title" );
+  title->setInline( false );
+  
+  DrfChart *chart = new DrfChart( dialog->contents() );
+  chart->setMinimumSize( 300, 175 );
+  chart->resize( chartw, charth );
+  chart->updateChart( det );
+  
+  auto set_chart_y_range = [=]( shared_ptr<DetectorPeakResponse> drf ){
+    // We will override the auto y-axis limits, since it does badly with really small
+    //  numbers we might encounter.
+    double ymax = -999.0;
+    double lower_x = drf->lowerEnergy();
+    double upper_x = drf->upperEnergy();
+    if( lower_x >= upper_x )
+    {
+      lower_x = 45;
+      upper_x = 3000;
+    }
+    
+    for( double energy = lower_x; energy <= upper_x; energy += 10 )
+    {
+      const double val = drf->intrinsicEfficiency( energy );
+      ymax = std::max( ymax, val );
+    }
+    if( ymax > 0.0 )
+      chart->axis(Chart::Y1Axis).setRange( 0.0, 1.2*ymax );
+  };
+  
+  set_chart_y_range( det );
+  
+  const string name = Wt::Utils::htmlEncode( det->name() );
+  const string desc = Wt::Utils::htmlEncode( det->description() );
+    
+  string txt_css = "style=\"text-align: left;"
+  " max-width: " + std::to_string(chartw-5) + "px;"
+  " white-space: nowrap;"
+  " text-overflow: ellipsis;"
+  " overflow-x: hidden;"
+  "\"";
+  
+  string msg = "<p style=\"white-space: nowrap;\">"
+      "You can use this .ECC file as a DRF."
+    "</p>"
+    "<p " + txt_css + ">"
+      "Name: " + name +
+  "</p>";
+  if( !desc.empty() )
+    msg += "<p " + txt_css + ">"
+        "Desc: " + desc +
+    "</p>";
+  //msg += "<p>Would you like to use this DRF?</p>";
+  
+  WText *txt = new WText( msg, TextFormat::XHTMLText, dialog->contents() );
+
+  // Now put in choice to use as fixed geometry, or as far-field.
+  WButtonGroup *group = new WButtonGroup( dialog->contents() );
+  WGroupBox *button_box = new WGroupBox( "How to interpret", dialog->contents() );
+  button_box->addStyleClass( "HowToUseGrp" );
+  
+  WContainerWidget *btn_div = new WContainerWidget( button_box );
+  
+  WRadioButton *fixed_geom = new WRadioButton( "Fixed Geometry", btn_div );
+  fixed_geom->addStyleClass( "EccDrfTypeBtn" );
+  WRadioButton *far_field = new WRadioButton( "Far Field DRF", btn_div );
+  far_field->addStyleClass( "EccDrfTypeBtn" );
+  group->addButton( fixed_geom, 0 );
+  group->addButton( far_field, 1 );
+  group->setCheckedButton( fixed_geom );
+  
+  WTable *far_field_opt = new WTable( button_box );
+  
+  WRegExpValidator *dist_validator = new WRegExpValidator( PhysicalUnits::sm_distanceRegex, this );
+  dist_validator->setFlags( Wt::MatchCaseInsensitive );
+  dist_validator->setInvalidBlankText( "0.0 cm" );
+  dist_validator->setMandatory( true );
+    
+  WTableCell *cell = far_field_opt->elementAt( 0, 0 );
+  WLabel *label = new WLabel( "Detector diam.", cell );
+  cell = far_field_opt->elementAt( 0, 1 );
+  WLineEdit *diameter_edit = new WLineEdit( "2.54 cm", cell );
+  label->setBuddy( diameter_edit );
+  diameter_edit->setValidator( dist_validator );
+  
+  cell = far_field_opt->elementAt( 1, 0 );
+  label = new WLabel( "Distance.", cell );
+  cell = far_field_opt->elementAt( 1, 1 );
+  WLineEdit *distance_edit = new WLineEdit( "", cell );
+  label->setBuddy( distance_edit );
+  distance_edit->setValidator( dist_validator );
+  distance_edit->setEmptyText( "0 cm" );
+  
+  // TODO: make option to correct for air-attenuation
+  
+  far_field_opt->hide();
+  
+  // TODO: make option to make DRF default for detector model, or serial number
+  
+  dialog->addButton( "Cancel" );
+  WPushButton *accept = dialog->addButton( "Use DRF" );
+  
+  
+  auto try_create_farfield = [=]() -> shared_ptr<DetectorPeakResponse> {
+    const double distance = PhysicalUnits::stringToDistance( distance_edit->text().toUTF8() );
+    const double diameter = PhysicalUnits::stringToDistance( diameter_edit->text().toUTF8() );
+      
+    if( distance < 0.0 )
+      throw runtime_error( "dist < 0" );
+    if( diameter <= 0.0 )
+      throw runtime_error( "diam <= 0" );
+    
+    const bool correct_for_air_atten = true;
+    return det->convertFixedGeometryToFarField( diameter, distance, correct_for_air_atten );
+  };//try_create_farfield
+  
+  auto update_state = [=](){
+    if( group->checkedId() == 0 )
+    {
+      accept->enable();
+      far_field_opt->hide();
+      chart->updateChart( det );
+      set_chart_y_range( det );
+      return;
+    }
+    
+    far_field_opt->show();
+    try
+    {
+      auto new_drf = try_create_farfield();
+      chart->updateChart( new_drf );
+      set_chart_y_range( new_drf );
+      accept->enable();
+    }catch( std::exception & )
+    {
+      chart->updateChart( nullptr );
+      accept->disable();
+    }
+  };//update_state lambda
+  
+  group->checkedChanged().connect( std::bind(update_state) );
+  distance_edit->textInput().connect( std::bind(update_state) );
+  diameter_edit->textInput().connect( std::bind(update_state) );
+  
+  
+  accept->clicked().connect( std::bind( [=](){
+    auto new_drf = det;
+    
+    if( group->checkedId() == 1 )
+    {
+      try
+      {
+        new_drf = try_create_farfield();
+      }catch( std::exception &e )
+      {
+        passMessage( "Error creating far-field DRF from ECC: " + string(e.what()),
+                    WarningWidget::WarningMsgHigh );
+        return;
+      }
+    }//if( group->checkedId() == 1 )
+    
+    auto interspec = InterSpec::instance();
+    if( !new_drf || !interspec )
+      return;
+      
+    auto sql = interspec->sql();
+    auto user = interspec->m_user;
+    DrfSelect::updateLastUsedTimeOrAddToDb( new_drf, user.id(), sql );
+    interspec->detectorChanged().emit( new_drf ); //This loads it to the foreground spectrum file
+  }) );
+    
+  return true;
+}//bool handleEccFile( std::istream &input, SimpleDialog *dialog )
+
+
 void SpecMeasManager::handleFileDropWorker( const std::string &name,
                      const std::string &spoolName,
                      SpecUtils::SpectrumType type,
@@ -2303,7 +2519,7 @@ void SpecMeasManager::handleFileDropWorker( const std::string &name,
   } BOOST_SCOPE_EXIT_END
   
  
-  if( name.length() > 4
+  if( (name.length() > 4)
      && SpecUtils::iequals_ascii( name.substr(name.length()-4), ".zip")
      && handleZippedFile( name, spoolName, type ) )
   {

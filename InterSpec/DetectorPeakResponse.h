@@ -64,13 +64,16 @@ namespace rapidxml
 }//namespace rapidxml
 
 /** TODO:
- - Add a "fixed" geometry option - then distances in like shielding/source display are not shown/used
  - Add a "setback" option
     - There are a couple commented-out functions where this is started, but will need to
       - Add `m_setback` member variable
       - Modify the "DetectorPeakResponse" DB class - need to use DB upgrade mechanism
       - Make sure that everywhere that gets a fractional solid angle, accounts for the setback.
-      - At the same time, add a "fixed geometry" option, where distances then disapear everywhere
+      - At the same time, add a "fixed geometry" option, where distances then disappear everywhere
+ - Add ability to store original intrinsic efficiencies, and their uncertainties, and similarly for FWHM.
+ - Add ability to add "additional" energy dependent uncertainties
+  - Need to think about how to handle correlations between energies
+ - Add material type and depth, so can approximate any interaction for cascade summing corrections
  */
 
 
@@ -165,6 +168,9 @@ public:
      directory.
      */
     DefaultRelativeEfficiencyDrf = 9,
+    
+    /** From ISOCS .ECC file. */
+    IsocsEcc = 10,
   };//enum DrfSource
   
 public:
@@ -393,6 +399,30 @@ public:
    */
   void fromAppUrl( std::string url_query );
   
+  /** Parses a .ECC file from ISOCS into a fixed-geometry DRF.
+   
+   On failure, will throw exception.
+   Returns a valid DRF with (efficiencyFcnType() == kEnergyEfficiencyPairs).
+   */
+  static std::shared_ptr<DetectorPeakResponse> parseEccFile( std::istream &input );
+  
+  /** Converts a fixed geometry DRF to a far-field measurement.
+   
+   @param diameter The detector diameter.
+   @param distance The distance the current efficiency is at.
+   @param correct_for_air_atten Wether air attenuation, for #distance, should be backed out.
+          Only valid if this DRF is from energy-efficiency pairs (e.g., from CSV or .ECC), or functional efficiency form.
+   @returns The new detector response function.
+   
+   Throws exception if:
+   - this DRF is not a fixed geometry
+   - If air attenuation is asked to be corrected for, but `efficiencyFcnType() == kExpOfLogPowerSeries`.
+   - this DRF is not valid, or diameter is zero or less, or distance is less than zero.
+   */
+  std::shared_ptr<DetectorPeakResponse> convertFixedGeometryToFarField( const double diameter,
+                                                          const double distance,
+                                                          const bool correct_for_air_atten ) const;
+  
   
   /**
    if form==kGadrasResolutionFcn then coefs must have 3 entries
@@ -445,7 +475,7 @@ public:
   static double fractionalSolidAngle( const double detector_diameter,
                                      const double observation_distance ) noexcept;
 
-  /** Returns approximate fraction of gammas or x-rays from a extended disk-source, that would strick
+  /** Returns approximate fraction of gammas or x-rays from a extended disk-source, that would strike
    the detector crystal.
  
    @param detector_diameter The diameter of the detector, in units of PhysicalUnits.
@@ -455,7 +485,7 @@ public:
    @param source_radius The radius of the flat, round plane, source, in units of PhysicalUnits.
    
    Note: Source is assumed to be flat round plane.
-   Note: see pg 119 in Knoll for details on approxiation used.
+   Note: see pg 119 in Knoll for details on approximation used.
    */
   static double fractionalSolidAngle( const double detector_diameter,
                                      const double observation_distance,
@@ -634,7 +664,7 @@ protected:
   //  detector
   float m_detectorDiameter;
 
-  //m_efficiencyEnergyUnits: units the absolute energy efficinecy formula,
+  //m_efficiencyEnergyUnits: units the absolute energy efficiency formula,
   //  equation, or EnergyEfficiencyPairs are expecting.  Defaults to
   //  PhysicalUnits::keV
   float m_efficiencyEnergyUnits;
@@ -650,15 +680,15 @@ protected:
   EfficiencyFnctForm m_efficiencyForm;
   
   //Design decision: I dont like have member variables that are only used for
-  //  certain m_efficiencyForm types, and would have preffered to just have a
-  //  single std::function<double(double)> object that would abstract awway
+  //  certain m_efficiencyForm types, and would have preferred to just have a
+  //  single std::function<double(double)> object that would abstract away
   //  the differences, however, the ability to serialize the detector response
   //  function easily, made this difficult to accomplish, so I'm doing it the
   //  bone-headed way I'm not entirely satisfied with at the moment.
   
-  //m_energyEfficiencies: the raw intrinsic energy to efficincy pairs, only
+  //m_energyEfficiencies: the raw intrinsic energy to efficiency pairs, only
   //  filled out if (m_efficiencyForm==kEnergyEfficiencyPairs), which also
-  //  implies the efficiency came from a CSV file.
+  //  implies the efficiency came from a CSV or ECC file.
   std::vector<EnergyEfficiencyPair> m_energyEfficiencies;
   
    
@@ -680,7 +710,7 @@ protected:
   /** Valid if same size as m_expOfLogPowerSeriesCoeffs. */
   std::vector<float> m_expOfLogPowerSeriesUncerts;
   
-  //In order to keep track of lineage and uniqness of detectors, we will use
+  //In order to keep track of lineage and uniqueness of detectors, we will use
   //  hash values.  All non-serialization related non-const member functions
   //  should recompute the m_hash value when/if it makes any changes to the
   //  detector.

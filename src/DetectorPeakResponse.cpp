@@ -60,6 +60,7 @@
 #include "InterSpec/PeakFitUtils.h"
 #include "InterSpec/PhysicalUnits.h"
 #include "InterSpec/DetectorPeakResponse.h"
+#include "InterSpec/GammaInteractionCalc.h"
 
 
 using namespace std;
@@ -1115,6 +1116,7 @@ void DetectorPeakResponse::fromExpOfLogPowerSeriesAbsEff(
   {
     //x^n * x^m = x^(n+m)
     const float gfactor = fractionalSolidAngle( det_diam, charactDist );
+    // TODO: Note that this does not account for attenuation in the air, which is something like 2.2% at 59 keV
     m_expOfLogPowerSeriesCoeffs[0] += log( 1.0f/gfactor );
   }//if( characterizationDist > 0.0f )
   
@@ -1666,6 +1668,7 @@ void DetectorPeakResponse::fromAppUrl( std::string url_query )
       case DrfSource::UserSpecifiedFormulaDrf:
       case DrfSource::UserCreatedDrf:
       case DrfSource::FromSpectrumFileDrf:
+      case DrfSource::IsocsEcc:
         break;
       
       default:
@@ -1748,6 +1751,266 @@ void DetectorPeakResponse::fromAppUrl( std::string url_query )
 }//void fromAppUrl( std::string url_query )
 
 
+shared_ptr<DetectorPeakResponse> DetectorPeakResponse::parseEccFile( std::istream &input )
+{
+  /*
+   SGI_template: SPHERE
+   ISOCS_file_name: PointSource.gis
+   Detector_name: UserDetectorName
+   Collimator_name: no_collimator
+
+   Convrgence_[%]: 1.0000
+   Test_description:
+   Comment:
+   Date_Time: Tue_Sep_19_16:30:38_2023
+   Source_area_cm2:  3.14159e-4
+   Source_grams:  5.23599e-9
+   keV_eff_%err_effw_%cnvrg(i)_%cnvrg(i-1)_pntsN:    45.00    1.07165e-4   15.0    5.61115e-13   -0.000001   -0.000003     1022
+   keV_eff_%err_effw_%cnvrg(i)_%cnvrg(i-1)_pntsN:    60.00    1.64972e-4   10.0    8.63793e-13   -0.000000   -0.000003     1022
+   keV_eff_%err_effw_%cnvrg(i)_%cnvrg(i-1)_pntsN:    80.00    1.97791e-4   10.0    1.03563e-12   -0.000001   -0.000002     1022
+   ...
+   */
+  
+  // We dont currently handle DRF uncertainties (other than m_expOfLogPowerSeriesUncerts, which
+  //  we dont actually use anywhere anyway...), but in the future we hopefully will, so we'll
+  //  parse them here to.
+  string line;
+  vector<pair<float,float>> energy_error;
+  vector<EnergyEfficiencyPair> energy_efficiencies;
+  
+  string det_name, ISOCS_fname, coll_name, test_desc, comment, date_time, src_area, src_grams;
+  
+  while( SpecUtils::safe_get_line( input, line, 8192 ) )
+  {
+    SpecUtils::trim( line );
+    
+    string label;
+    const size_t label_pos = line.find(':');
+    if( label_pos != string::npos )
+    {
+      label = line.substr(0, label_pos);
+      line = line.substr( label_pos + 1 );
+      SpecUtils::trim( line );
+    }
+    
+    if( SpecUtils::istarts_with(label, "Detector_name") )
+    {
+      det_name = line;
+    }else if( SpecUtils::istarts_with(label, "ISOCS_file_name") )
+    {
+      ISOCS_fname = line;
+    }else if( SpecUtils::istarts_with(label, "Collimator_name") )
+    {
+      if( line != "no_collimator" )
+        coll_name = line;
+    }else if( SpecUtils::istarts_with(label, "Test_description") )
+    {
+      test_desc = line;
+    }else if( SpecUtils::istarts_with(label, "Comment") )
+    {
+      comment = line;
+    }else if( SpecUtils::istarts_with(label, "Date_Time") )
+    {
+      date_time = line;
+    }else if( SpecUtils::istarts_with(label, "Source_area_cm2") )
+    {
+      src_area = line;
+    }else if( SpecUtils::istarts_with(label, "Source_grams") )
+    {
+      src_grams = line;
+    }else if( SpecUtils::istarts_with(label, "keV_eff_%err") )
+    {
+      // line == "45.00    1.07165e-4   15.0    5.61115e-13   -0.000001   -0.000003     1022"
+      vector<float> values;
+      if( !SpecUtils::split_to_floats( line, values ) )
+        cerr << "Warning: didnt parse ECC line entirely to floats: '" << line << "'" << endl;
+      if( values.size() != 7 )
+        cerr << "Warning: didnt parse ECC line to 7 floats: '" << line << "' (got " << values.size()
+             << " floats)" << endl;
+      
+      if( values.size() > 3 )
+      {
+        EnergyEfficiencyPair ene_eff;
+        ene_eff.energy = values[0];
+        ene_eff.efficiency = values[1];
+        energy_efficiencies.push_back( ene_eff );
+        
+        if( ene_eff.energy <= 10.0 ) //ISOCS only goes down to 45 keV, but we'll be generous
+          throw runtime_error( "parseEccFile: energy <10 keV (" + to_string(ene_eff.energy) + ")" );
+        if( ene_eff.energy > 8000.0 ) //ISOCS only goes up to 7 MeV, but we'll be generous
+          throw runtime_error( "parseEccFile: energy >8 MeV (" + to_string(ene_eff.energy) + ")" );
+        
+        if( (ene_eff.efficiency < 0.0) || IsNan(ene_eff.efficiency) || IsInf(ene_eff.efficiency) )
+          throw runtime_error( "parseEccFile: efficiency <0 ("
+                              + to_string(ene_eff.efficiency) + " at " + to_string(ene_eff.energy)
+                              + " keV)" );
+        
+        energy_error.emplace_back( values[0], 0.001f * values[2] );
+      }//if( values.size() > 3 )
+    }//if( label is some value ) / else if( ... )
+  }//while( SpecUtils::safe_get_line( input, line, 8192 ) )
+  
+  if( energy_efficiencies.size() < 4 )
+    throw runtime_error( "parseEccFile: not enough energy efficiency pairs found." );
+  
+  // Make sure efficiency points are sorted - even though they already should be.
+  std::sort( begin(energy_efficiencies), end(energy_efficiencies),
+    []( const EnergyEfficiencyPair &lhs, const EnergyEfficiencyPair &rhs) -> bool {
+    return lhs.energy < rhs.energy;
+  } );
+  
+  shared_ptr<DetectorPeakResponse> answer = make_shared<DetectorPeakResponse>();
+  answer->m_name = det_name;
+  if( !ISOCS_fname.empty() )
+    answer->m_name += (answer->m_name.empty() ? "" : " - ") + ISOCS_fname;
+  if( !coll_name.empty() )
+    answer->m_name += (answer->m_name.empty() ? "" : " - ") + ISOCS_fname;
+  
+  answer->m_description = comment;
+  if( !test_desc.empty() )
+    answer->m_description += (answer->m_description.empty() ? "" : ". ") + test_desc;
+  //if( !date_time.empty() )
+  //  answer->m_description += (answer->m_description.empty() ? "" : " - ") + date_time;
+  if( !src_area.empty() )
+    answer->m_description += (answer->m_description.empty() ? "" : ". Src area: ") + src_area;
+  if( !src_grams.empty() )
+    answer->m_description += (answer->m_description.empty() ? "" : ". Src mass (g): ") + src_grams;
+  
+  answer->m_detectorDiameter = 0.0f;
+  answer->m_efficiencyEnergyUnits = static_cast<float>(PhysicalUnits::keV);
+  answer->m_resolutionForm = ResolutionFnctForm::kNumResolutionFnctForm;
+  answer->m_efficiencySource = DrfSource::IsocsEcc;
+  answer->m_efficiencyForm = EfficiencyFnctForm::kEnergyEfficiencyPairs;
+  answer->m_energyEfficiencies = energy_efficiencies;
+  answer->m_flags = 0;
+  answer->m_lowerEnergy = energy_efficiencies.front().energy;
+  answer->m_upperEnergy = energy_efficiencies.back().energy;
+  answer->m_createdUtc = std::time(nullptr);
+  answer->m_lastUsedUtc = answer->m_createdUtc;
+  answer->m_fixedGeometry = true;
+  answer->m_parentHash = 0;
+  answer->computeHash();
+  
+  return answer;
+}//shared_ptr<DetectorPeakResponse> parseEccFile( std::istream &input )
+
+
+shared_ptr<DetectorPeakResponse> DetectorPeakResponse::convertFixedGeometryToFarField(
+                                                        const double diameter,
+                                                        const double distance,
+                                                        const bool correct_for_air_atten ) const
+{
+  if( !isValid() )
+    throw runtime_error( "DetectorPeakResponse::convertFixedGeometryToFarField: Invalid input DRF" );
+  
+  if( !m_fixedGeometry )
+    throw runtime_error( "DetectorPeakResponse::convertFixedGeometryToFarField:"
+                        " Input DRF not fixed-geometry" );
+  
+  if( (distance < 0.0) || IsInf(distance) || IsNan(distance) )
+    throw runtime_error( "DetectorPeakResponse::convertFixedGeometryToFarField: Invalid distance" );
+  
+  if( (diameter <= 0.0) || IsInf(diameter) || IsNan(diameter) )
+    throw runtime_error( "DetectorPeakResponse::convertFixedGeometryToFarField: Invalid diameter" );
+  
+  if( correct_for_air_atten &&
+     ( (m_efficiencyForm != EfficiencyFnctForm::kEnergyEfficiencyPairs)
+      && (m_efficiencyForm != EfficiencyFnctForm::kFunctialEfficienyForm)) )
+    throw runtime_error( "DetectorPeakResponse::convertFixedGeometryToFarField: air attenuation"
+                        " correction only allowed if DRF defined using energy-efficiency pairs"
+                        " or a functional efficiency form" );
+  
+  
+  shared_ptr<DetectorPeakResponse> answer = make_shared<DetectorPeakResponse>(*this);
+  answer->m_fixedGeometry = false;
+  answer->m_detectorDiameter = diameter;
+  
+  const double energy_units = answer->m_efficiencyEnergyUnits;
+  const float distancef = static_cast<float>( distance );
+  
+  
+  const double frac_angle = fractionalSolidAngle( diameter, distance );
+  if( (frac_angle <= 0.0) || IsInf(frac_angle) || IsNan(frac_angle) )
+    throw runtime_error( "DetectorPeakResponse::convertFixedGeometryToFarField: invalid"
+                         " fractional solid angle" );
+  
+  switch( answer->m_efficiencyForm )
+  {
+    case kEnergyEfficiencyPairs:
+    {
+      for( EnergyEfficiencyPair &ene_eff : answer->m_energyEfficiencies )
+      {
+        ene_eff.efficiency /= frac_angle;
+        
+        if( correct_for_air_atten && (ene_eff.efficiency > 0.0) )
+        {
+          const float energy = static_cast<float>( energy_units * ene_eff.energy );
+          const double mu = GammaInteractionCalc::transmission_coefficient_air( energy, distancef );
+          const double transmission_frac = exp( -mu );
+          if( (transmission_frac <= 0.0) || IsInf(transmission_frac) || IsNan(transmission_frac) )
+            throw runtime_error( "DetectorPeakResponse::convertFixedGeometryToFarField: air"
+                                " attenuation correction at "
+                                + std::to_string(floor(100*energy + 0.5)/100.0)
+                                + " keV was not possible." );
+          
+          ene_eff.efficiency /= transmission_frac;
+        }//if( correct_for_air_atten )
+      }//for( loop over answer->m_energyEfficiencies )
+      
+      break;
+    }//case kEnergyEfficiencyPairs:
+    
+      
+    case kFunctialEfficienyForm:
+    {
+      if( !answer->m_efficiencyFcn )
+        throw runtime_error( "DetectorPeakResponse::convertFixedGeometryToFarField: "
+                            "no function defined, which is unexpected." );
+      function<float(float)> old_fnctn = answer->m_efficiencyFcn;
+      
+      answer->m_efficiencyFcn
+      = [old_fnctn, frac_angle, correct_for_air_atten, distancef]( float energy ) -> float {
+        const float fixed_geom_eff = old_fnctn( energy );
+        double eff = fixed_geom_eff / frac_angle;
+        if( correct_for_air_atten && (eff > 0.0) ){
+          const double mu = GammaInteractionCalc::transmission_coefficient_air( energy, distancef );
+          const double transmission_frac = exp( -mu );
+          // We should probably check `transmission_frac` is not zero - but I guess we'll have to
+          //  look for this NaN later...
+          eff /= transmission_frac;
+        }
+        
+        return static_cast<float>( eff );
+      };//answer->m_efficiencyFcn lambda defintion
+      
+      break;
+    }//case kFunctialEfficienyForm:
+      
+    case kExpOfLogPowerSeries:
+    {
+      assert( !correct_for_air_atten );
+      if( m_expOfLogPowerSeriesCoeffs.empty() )
+        throw runtime_error( "DetectorPeakResponse::convertFixedGeometryToFarField: "
+                            "no coefficients defined, which is unexpected." );
+      
+      answer->m_expOfLogPowerSeriesCoeffs[0] += static_cast<float>( log(1.0 / frac_angle) );
+      
+      // TODO: if correct_for_air_atten is true, we could try to re-fit for the equation, or something...
+      
+      break;
+    }//case kExpOfLogPowerSeries:
+      
+    case kNumEfficiencyFnctForms:
+      assert( 0 );
+      throw runtime_error( "DetectorPeakResponse::convertFixedGeometryToFarField: invalid function form" );
+      break;
+  }//switch( m_efficiencyForm )
+  
+  answer->computeHash();
+
+  return answer;
+}//shared_ptr<DetectorPeakResponse> convertFixedGeometryToFarField(...)
+
 
 void DetectorPeakResponse::setFwhmCoefficients( const std::vector<float> &coefs,
                          const ResolutionFnctForm form )
@@ -1829,6 +2092,7 @@ void DetectorPeakResponse::toXml( ::rapidxml::xml_node<char> *parent,
     case UserSpecifiedFormulaDrf:           val = "UserSpecifiedFormulaDrf";           break;
     case UserCreatedDrf:                    val = "UserCreatedDrf";                    break;
     case FromSpectrumFileDrf:               val = "FromSpectrumFileDrf";               break;
+    case DrfSource::IsocsEcc:               val = "ISOCS";                             break;
   }//switch( m_efficiencySource )
   
   node = doc->allocate_node( node_element, "EfficiencySource", val );
@@ -2061,6 +2325,8 @@ void DetectorPeakResponse::fromXml( const ::rapidxml::xml_node<char> *parent )
     m_efficiencySource = UserCreatedDrf;
   else if( compare(node->value(),node->value_size(),"FromSpectrumFileDrf",19,false) )
     m_efficiencySource = FromSpectrumFileDrf;
+  else if( compare(node->value(),node->value_size(),"ISOCS",5,false) )
+    m_efficiencySource = IsocsEcc;
   else 
     throw runtime_error( "DetectorPeakResponse: invalid EfficiencySource value" );
   

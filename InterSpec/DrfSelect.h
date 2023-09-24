@@ -33,7 +33,6 @@
 #include <Wt/WSignal>
 #include <Wt/WTextArea>
 #include <Wt/WContainerWidget>
-#include <Wt/Chart/WCartesianChart>
 
 #include "InterSpec/AuxWindow.h"
 #include "InterSpec/InterSpecUser.h"  //for UseDrfPref::UseDrfType enum only

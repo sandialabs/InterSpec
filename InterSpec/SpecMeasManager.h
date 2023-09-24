@@ -217,6 +217,9 @@ public:
   bool handleRelActAutoXmlFile( std::istream &input, SimpleDialog *dialog );
 #endif
   
+  /** Handles the user dropping a .ECC file produced from ISOCS. */
+  bool handleEccFile( std::istream &input, SimpleDialog *dialog );
+  
   enum class VariantChecksToDo
   {
     None = 0,

@@ -112,7 +112,7 @@ double transmition_coefficient_material( const Material *material, float energy,
  double energy = 661.0*PhysicalUnits::keV;
  double distance = 3.2*PhysicalUnits::cm;
  double mu = transmission_coefficient_air( energy, distance );
- double tranmission_fraction = exp( -mu );
+ double transmission_fraction = exp( -mu );
  \endcode
  */
 double transmission_coefficient_air( float energy, float length );
@@ -124,7 +124,7 @@ double transmission_coefficient_air( float energy, float length );
  double energy = 661.0*PhysicalUnits::keV;
  double distance = 3.2*PhysicalUnits::cm;
  double mu = transmission_length_coefficient_air( energy );
- double tranmission_fraction = exp( - mu * distance );
+ double transmission_fraction = exp( - mu * distance );
  \endcode
  */
 double transmission_length_coefficient_air( float energy );

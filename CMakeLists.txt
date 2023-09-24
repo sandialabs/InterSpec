@@ -317,6 +317,7 @@ set(sources
     src/ColorThemeWindow.cpp
     src/PeakSearchGuiUtils.cpp
     src/DrfSelect.cpp
+    src/DrfChart.cpp
     src/MakeDrf.cpp
     src/MakeDrfSrcDef.cpp
     src/MakeDrfChart.cpp
@@ -417,6 +418,7 @@ set(headers
     InterSpec/ColorThemeWindow.h
     InterSpec/PeakSearchGuiUtils.h
     InterSpec/DrfSelect.h
+    InterSpec/DrfChart.h
     InterSpec/MakeDrf.h
     InterSpec/MakeDrfSrcDef.h
     InterSpec/MakeDrfChart.h
