@@ -55,10 +55,8 @@ namespace InterSpecServer
   void startWebServer( std::string proccessname,
                              std::string basedir,
                              const std::string configpath,
-                             unsigned short int server_port_num = 0
-#if( BUILD_FOR_WEB_DEPLOYMENT )
-                             , std::string http_address = "127.0.0.1"
-#endif
+                             unsigned short int server_port_num = 0,
+                             std::string http_address = "127.0.0.1"
                               );
   
   /** Starts the server, given the various options.
@@ -79,7 +77,11 @@ namespace InterSpecServer
           Ports below 1024 usually require admin privledges.
 #if( BUILD_FOR_WEB_DEPLOYMENT )
    @param http_address The network adapter address to bind the web-server to.  "127.0.0.1" is
-          localhost, while "0.0.0.0" will bind so it is visible on the external network
+          localhost, while "0.0.0.0" will listen to all addresses. A specific address may also
+		  be given if the server should only listen to that address, eg. "198.51.100.42".
+#else
+   @param http_address While any value may be provided for this parameter, this build has been
+          restricted to only listen on "127.0.0.1".
 #endif
    @returns port being served on, or a negative value on error.
 
@@ -87,10 +89,8 @@ namespace InterSpecServer
    */
   int start_server( const char *process_name, const char *userdatadir,
                     const char *basedir, const char *xml_config_path,
-                    unsigned short int server_port_num = 0
-#if( BUILD_FOR_WEB_DEPLOYMENT )
-                    , const char *http_address = "127.0.0.1"
-#endif
+                    unsigned short int server_port_num = 0,
+                    const char *http_address = "127.0.0.1"
                    );
   
 

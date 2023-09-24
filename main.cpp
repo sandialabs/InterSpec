@@ -77,9 +77,9 @@ int main( int argc, char **argv )
   
   int server_port_num;
   std::string docroot, wt_config, user_data_dir;
+  std::string http_address = "127.0.0.1";  //Init to reasonable default
   
 #if( BUILD_FOR_WEB_DEPLOYMENT )
-  std::string http_address = "127.0.0.1";
   static_assert( !BUILD_AS_LOCAL_SERVER, "Web and local server should not both be enabled");
 #endif
   
@@ -156,20 +156,19 @@ int main( int argc, char **argv )
   
   
 #if( BUILD_FOR_WEB_DEPLOYMENT )
-  if( cl_vm.count("config") )
+  if( 0 == cl_vm.count("config") )
   {
     std::cerr << "You must specify the Wt config file to use (the 'config' option)" << std::endl;
     return -20;
   }
   
-  if( cl_vm.count("http-address") )
+  if( 0 == cl_vm.count("http-address") )
   {
-    std::cerr << "You must specify the network adapter address to bind to"
-    << " (the 'http-address' option)." << std::endl;
-    return -21;
+    std::cerr << "No listen address specified, listening on " << http_address << ". Use the "
+	<<"'http-address' option to change this." << std::endl;
   }
   
-  if( cl_vm.count("docroot") )
+  if( 0 == cl_vm.count("docroot") )
   {
     std::cerr << "You must specify the HTTP document root directory to use (the 'docroot' option)" << std::endl;
     return -22;
@@ -288,7 +287,8 @@ int main( int argc, char **argv )
   const int rval = InterSpecServer::start_server( argv[0], user_data_dir.c_str(),
                                                  docroot.c_str(),
                                                  wt_config.c_str(),
-                                                 static_cast<short int>(server_port_num) );
+                                                 static_cast<short int>(server_port_num),
+                                                 http_address.c_str());
   if( rval < 0 )
   {
     std::cerr << "Failed to start server, val=" << rval << std::endl;
