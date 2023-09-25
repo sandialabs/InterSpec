@@ -2344,9 +2344,8 @@ bool SpecMeasManager::handleEccFile( std::istream &input, SimpleDialog *dialog )
   " overflow-x: hidden;"
   "\"";
   
-  string msg = "<p style=\"white-space: nowrap;\">"
-      "You can use this .ECC file as a DRF."
-    "</p>"
+  string msg =
+    //"<p style=\"white-space: nowrap;\">You can use this .ECC file as a DRF.</p>"
     "<p " + txt_css + ">"
       "Name: " + name +
   "</p>";
@@ -2383,9 +2382,10 @@ bool SpecMeasManager::handleEccFile( std::istream &input, SimpleDialog *dialog )
   WTableCell *cell = far_field_opt->elementAt( 0, 0 );
   WLabel *label = new WLabel( "Detector diam.", cell );
   cell = far_field_opt->elementAt( 0, 1 );
-  WLineEdit *diameter_edit = new WLineEdit( "2.54 cm", cell );
+  WLineEdit *diameter_edit = new WLineEdit( "", cell );
   label->setBuddy( diameter_edit );
   diameter_edit->setValidator( dist_validator );
+  diameter_edit->setEmptyText( "0 cm" );
   
   cell = far_field_opt->elementAt( 1, 0 );
   label = new WLabel( "Distance.", cell );
