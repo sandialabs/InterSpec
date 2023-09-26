@@ -328,12 +328,13 @@ namespace InterSpecServer
     ns_server = new Wt::WServer( name, xml_config_path );
     char *exe_param_name  = &(name[0]);
     char httpaddr_param_name[]  = "--http-addr";
-    char *httpaddr_param_value;
 
 #if( BUILD_FOR_WEB_DEPLOYMENT )
-    httpaddr_param_value  = &(http_address[0]);
+    char *httpaddr_param_value  = &(http_address[0]);
 #else
-    httpaddr_param_value= "127.0.0.1";
+    if (http_address.length() && http_address != "127.0.0.1" && http_address != "localhost")
+      throw std::runtime_error( "Only localhost listen address is allowed with this configuration" );
+    char httpaddr_param_value[] = "127.0.0.1";
 #endif
     
     
