@@ -257,13 +257,13 @@ void MakeDrfChart::updateYAxisRange()
     }
   }//for( int row = 0; row < nrows; ++row )
   
-  if( maxy < miny )
+  if( maxy <= miny )
   {
     axis(Chart::YAxis).setRange(0.0, 1.0);
   }else
   {
     miny = (miny < 0.1) ? 0.0 : std::floor(9*miny)/10.0;
-    maxy = std::ceil(11.0*maxy)/10.0;
+    maxy = ((11.0*maxy) > 1.5) ? (std::ceil(11.0*maxy)/10.0) : 1.15*maxy;
     axis(Chart::YAxis).setRange(miny, maxy);
   }
   
@@ -324,10 +324,11 @@ void MakeDrfChart::updateDataToModel()
         fracUncert2 += std::pow( data.peak_area_uncertainty / data.peak_area, 2.0f );
       if( data.source_count_rate_uncertainty > 0.0f )
         fracUncert2 += std::pow( data.source_count_rate_uncertainty / data.source_count_rate, 2.0f );
+      const double eff_uncert = eff * std::sqrt(fracUncert2);
       
-      m->setData( row, sm_data_eff_col, boost::any( eff ), Wt::DisplayRole );
-      if( fracUncert2 > 0.0 )
-        m->setData( row, sm_data_eff_col, boost::any( std::sqrt(fracUncert2) ), Wt::UserRole );
+      m->setData( row, sm_data_eff_col, boost::any(eff), Wt::DisplayRole );
+      if( eff_uncert > 0.0 )
+        m->setData( row, sm_data_eff_col, boost::any(eff_uncert), Wt::UserRole );
       m->setData( row, sm_data_eff_col, boost::any(data.peak_color), Wt::MarkerPenColorRole );
       m->setData( row, sm_data_eff_col, boost::any(data.peak_color), Wt::MarkerBrushColorRole );
       if( data.source_information.size() )
