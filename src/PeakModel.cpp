@@ -2838,7 +2838,7 @@ bool PeakModel::setData( const WModelIndex &index,
     }else if( column == kPhotoPeakEnergy )
     {
       if( changedFit )
-        dataChanged().emit( PeakModel::index(row, kIsotope), PeakModel::index(row, kNumColumns) ); //just update whole row, jic
+        dataChanged().emit( PeakModel::index(row, kIsotope), PeakModel::index(row, kNumColumns-1) ); //just update whole row, jic
       else
         dataChanged().emit( index, PeakModel::index(row, kDifference) );
     }else if( column == kMean )
