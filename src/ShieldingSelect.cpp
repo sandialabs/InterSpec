@@ -4607,7 +4607,7 @@ void ShieldingSelect::fromShieldingInfo( const ShieldingSourceFitCalc::Shielding
       handleToggleGeneric();
     
     m_atomicNumberEdit->setValue( info.m_dimensions[0] );
-    m_arealDensityEdit->setValue( info.m_dimensions[1] );
+    m_arealDensityEdit->setValue( info.m_dimensions[1] * PhysicalUnits::cm2 / PhysicalUnits::gram );
     
     if( m_forFitting && m_fitArealDensityCB && m_fitAtomicNumberCB )
     {
