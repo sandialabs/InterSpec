@@ -2194,7 +2194,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
           vector<float> coefs = cost_functor->m_energy_cal->coefficients();
           assert( coefs.size() >= 2 );
           coefs[0] += parameters[0];
-          coefs[1] *= (1.0 + parameters[1]);
+          coefs[1] *= parameters[1];
           
           const auto &dev_pairs = cost_functor->m_energy_cal->deviation_pairs();
           
@@ -2211,7 +2211,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
         {
           vector<float> lower_energies = *cost_functor->m_energy_cal->channel_energies();
           for( float &energy : lower_energies )
-            energy = parameters[0] + ((1.0 + parameters[1]) * energy);
+            energy = parameters[0] + (parameters[1] * energy);
           
           new_cal->set_lower_channel_energy( num_channel, std::move(lower_energies) );
           
