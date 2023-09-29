@@ -372,6 +372,7 @@ void InterSpecApp::setupDomEnvironment()
         case 'k': // Clear showing reference photopeak lines
         case 's': // Store
         case 'l': // Log/Linear
+        case 'f': case 'F': // Show FAQs - for development only
         case 'e': case 'E': // Export file dialog
           if( $(".Wt-dialogcover").is(':visible') ) // Dont do shortcut when there is a blocking-dialog showing
             return;

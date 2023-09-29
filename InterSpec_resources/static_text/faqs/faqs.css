@@ -54,7 +54,11 @@
 {
   border-top: 1px solid black;
   margin-top: 2px;
-  width: 100%;
+  width: calc( 100% - 20px );
   display: block;
   overflow-x: hidden;
+  padding-top: 5px;
+  padding-left: 10px;
+  padding-right: 10px;
+  padding-bottom: 5px;
 }

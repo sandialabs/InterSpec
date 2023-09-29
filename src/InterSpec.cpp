@@ -1640,6 +1640,16 @@ void InterSpec::hotKeyPressed( const unsigned int value )
         createExportSpectrumFileDialog();
         break;
         
+    // Temporarily add shortcut for showing FAQ window during development
+      case 'f': case 'F':
+      {
+        showWelcomeDialog( true );
+        if( m_useInfoWindow )
+          m_useInfoWindow->showFaqTab();
+        break;
+      }
+        
+        
       case 37: case 38: case 39: case 40:
         arrowKeyPressed( value );
         break;

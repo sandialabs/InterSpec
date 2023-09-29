@@ -1,41 +1,1402 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <messages>
+<!-- SAND2023-10095O -->
+
+<!-- Potential additional topics to include:
+  - How statistical significance tests are applied when (trying to) fit a peak
+  - ...
+-->
+
   <message id="intro">
-    Some intro txt
+    These are questions users have asked, or things that have been noticed to cause issues 
+    or mis-understandings while using <code>InterSpec</code>.<br />
+    <br />
+    If you have any questions, something is harder than it seems it should be, are having difficulties, 
+    or would like to request features or report a bug, please email: 
+    <div style="text-align: center; font-size: larger; margin-top: 5px;"><a href="mailto:InterSpec@sandia.gov">InterSpec@sandia.gov</a></div>
   </message>
 
-  <message id='save-work' title="How to save your work">
-    Some text on saving your work
-	  <div style="border:1px solid black">
-	    <div style="padding-top: 10px" align="center">
-	      <img src="InterSpec_resources/static_text/images/touch_zoom_in.png" style="width:70%" />
-	    </div>
-      <div align="center" style="padding-top: 10px; padding-bottom: 10px">
-         To zoom in on a specific portion of the spectrum,
-         <u>push</u> two fingers away from each other.
+  <message id="warm-start" title="Remarks for coming from other spectroscopy software">
+    <p>
+      If you are familiar with another spectral analysis package, please, you will have to 
+      switch your mental model of how the analysis procedure is done while using InterSpec.<br />      
+      But hopefully you will find the methodology in <code>InterSpec</code> intuitive.<br />
+      <br />
+      The most common use of <code>InterSpec</code> for the primary developer is to analyze field-collected
+      spectra from a wide variety of detection systems and locations, where the source isotopes, shielding, age, 
+      and other information is frequently not known.  Thus <code>InterSpec</code> focusses on flexible interactive 
+      analysis, with supporting tools to enable this, and to help assist in answering relevant questions for 
+      situational assessment related to the radiation data.<br />
+      <code>InterSpec</code> does not focus on analyzing repetitive measurements, or creating formal reports, 
+      or using a fixed methodology, but it does try to make common operations fast and easy.
+
+      <br />
+      A few notable mental-model differences between <code>InterSpec</code> and other software suites are:
+    </p>
+
+    <ul>
+      <li>
+        In <code>InterSpec</code>, when you fit a peak (which, the easiest way is by double-clicking where the peak looks to be on the spectrum), 
+        you probably also want to assign a nuclide to it peak at the same time.<br />
+        The easiest way to do this is if you are showing reference photopeak lines when you fit a peak, the
+        association is automatically made.  But after fitting you can still make or change the assignment by right-clicking on a peak, 
+        by using the &quot;Peak Editor&quot;, by typing into the &quot;Nuclide&quot; cells of any table listing peak information, 
+        or a few other methods.<br />
+        Assigning the nuclide ID to peaks enables fitting for source nuclide activity, energy calibration, 
+        doing relative efficiency analysis, detector efficiency characterizations, and more.
+      </li>
+
+      <li>
+        <code>InterSpec</code> does not use user-made nuclide libraries.<br />
+        Instead, you assign nuclides to peaks, and you can always choose nuclides from the total ~4000 available nuclides.  
+        Or when searching for nuclides to make an identification for a peak, all ~4k nuclides are used.
+        If a gamma-ray comes from a progeny nuclide (ex., the 1001 keV gamma from the decay of Pa234m to U234, in the U238 decay chain),
+        you assign the peak to the parent nuclide (ex, the 1001 keV peak would be assigned to U238), and <code>InterSpec</code>
+        will perform decay calculations to determine the branching ratio of the specific gamma.
+        The nuclides assigned to peaks are the nuclides that will be used to fit activities, or perform other operations.
+      </li>
+
+      <li>
+        Peak fitting is best done manually in <code>InterSpec</code> - e.g., you identifying where the peaks probably are, and then
+        tell InterSpec to fit a peak there (e.g., by double-clicking on the spectrum near the peak, etc). 
+        This might seem a little tedious at first, but it allows you to carefully perform nuclide-ID as you go (assigning the 
+        nuclide to the peak when you fit it), and ensure good fits - the process becomes quite rapid in practice.
+        <br />
+        If you really want to have peaks automatically fit for you, on the &quot;Peak Manager&quot; tab, 
+        there is a &quot;Search for Peaks&quot; button, which if you are showing reference photopeaks, nuclide 
+        assignment can be automatically done as well - but care should be taken.
+
+        <div style="border:1px solid black; width: 90%; margin-left: auto; margin-right: auto;">
+          <div style="display: flex; align-content: space-around;">
+              <img src="/InterSpec_resources/static_text/faqs/auto_peak_search_btn.png" style="height: 175px; max-width: 49.5%;" />
+              <img src="/InterSpec_resources/static_text/faqs/auto_peak_search_dialog.png" style="height: 175px; max-width: 49.5%;" />
+          </div>
+          <div align="center" style="padding-top: 10px; padding-bottom: 10px">
+             (left) Button to perform an automated peak search for all peaks in your foreground spectrum.<br />
+             (right) Results of performing an automated search; if you are showing reference photopeak lines, you have the 
+             option to asign that nuclide to the peaks, and only keep peaks near reference photopeak lines.
+          </div>
+        </div>
+        There are also options to automatically fit the same peaks from one spectrum to the next; see the &quot;Working with spectra with similar nuclides&quot;
+        topic in this document.
+      </li>  
+      
+      <li>
+        <code>InterSpec</code> is only for analyzing data - it does not have any acquisition capabilities; this keeps the application 
+        from being tied to a particular type of detector, or making assumptions on hardware or performance.  Clearly separating analysis 
+        from acquisition also simplifies and clarifies the user interface.
+      </li>
+
+      <li>
+        For peak-fitting, nuclide ID, energy calibration, isotopic ratios, and a number of other functions,
+        no detector response function is necessary.
+      </li>
+    </ul>
+  </message>
+
+
+  <message id="save-work" title="Saving your work">
+    You have a few options for saving your work in <code>InterSpec</code>
+    <ul>
+      <li>
+        You can save the &quot;application state&quot; to an internal application database, by using the <code>Store As...</code> menu option.  
+        Most aspects of the application state are stored (the spectrum files displayed, the peaks fit, nuclide identifications, most tools 
+        currently open and thier state, etc), so you can pick up where you left off later.  You can also create &quot;tags&quot;
+        or snapshots of your work, so you can go back later.
+        <br />
+        After saving a state, if you load one of its spectrum files later, <code>InterSpec</code> will check its internal database, 
+        to see if you've done work on it, and if so, you will be given a chance to pick up where you left off from.
+        <br />
+        See the <code>data</code> tab in the <code>About InterSpec</code> dialog for where this data lives on your computer 
+        (or equivalently <a href="interspec://about/disclaimer">click here</a>).
+      </li>
+      <li> 
+        Exporting the spectra to a <code>N42-2012</code> file, via the  <code>Export File...</code> menu item, will save all the
+        peaks you've fit, the nuclide identifications, energy calibration changes, as well as the &quot;Activity/Shielding Fit&quot; 
+        results,  your current detector response function (DRF), &quot;Isotopics from peaks&quot;, &quot;Isotopics by nuclides&quot; 
+        results, and a few other things.<br />
+        You can then load the <code>N42-2012</code> file later into <code>InterSpec</code>, and pick up where you left off, or 
+        have a record of how you got a particular answer.  However, the state of more minor tools like the cross-section or 
+        dose calculators will not be saved to the <code>N42-2012</code> file.
+      </li>
+      <li>
+        In the various tools throughout the application, you can export <code>CSV</code>, <code>XML</code>, <code>CALp</code>, or <code>QR-codes</code>, to represent the
+        state of that tool.  These files can, a lot of times, be drag-n-dropped back onto the application to use that work.
+        For example, the &quot;Peak Manager&quot; tab has a <code>CSV</code> export link; the resulting <code>CSV</code> file can be used with
+        other programs, or if you drag-n-drop back on to <code>InterSpec</code>, even with a different but similar spectrum file,
+        <code>InterSpec</code> will fit those same peaks.  Similarly with energy calibration and CALp files.  
+        The &quot;Activity/Shielding Fit&quot; tool can export an XML file, that you can import later to use the similar setup.
+        And the QR-codes also contain URI links that can be used to have <code>InterSpec</code> open up a certain tool, to a certain state 
+        (for example, <a href="interspec://decay/chart%3fgrid%3d0%26logy%3d0%26actunits%3dci%26charttype%3dactivity%26timespan%3d20%20d%26nuc%3dI131%26act%3d1%20uCi%26nuc%3dI129%26act%3d1.5%20uCi">this one</a> will open up the decay tool to have I131 and I129 displayed).
+      </li>
+      <li>
+        There is a &quot;Auto store your work&quot; option as well, that stores most of your changes/work to the 
+        internal database mentioned above (this happens when you cleanly quit InterSpec), but currently, as of 
+        <code>InterSpec</code> v1.0.11, the only way to retrieve this work is by loading the foreground spectrum 
+        file again (e.g., by dragging-n-dropping the file onto <code>InterSpec</code>), while the 
+        &quot;Check for prev work&quot; option is set to true; you will be prompted if you want to resume
+        from your old state.<br />
+        However, this method is potentially unreliable, and probably shouldnt be depended on.
+      </li>
+    </ul>
+  </message>
+
+
+  <message id="orig-file-mod" title="Does the original spectrum file get modified?">
+    When you load a spectrum file into <code>InterSpec</code>, it gets read into memory,
+    without modifying the original file; the original file is never read, written, 
+    or referenced again.
+  </message>
+
+  <message id="mult-open-files" title="Having multiple spectrum files open">
+    <p>
+      When you open a new spectrum file, any previously open spectrum files, and all the work you've done to them 
+      (energy calibration, peaks fit, nuclides assigned, activity/shielding fits, etc) stays in memory.
+      As shown below, you can switch back-and-forth between open spectrum files, without losing work.
+    </p>
+    <div style="border:1px solid black; width: 90%; margin-left: auto; margin-right: auto;">
+      <div style="display: flex; align-content: space-around;">
+          <img src="/InterSpec_resources/static_text/faqs/changing_spec_files.png" style="max-height: 150px; width: 49.5%;" />
+          <img src="/InterSpec_resources/static_text/faqs/spec_meas_manager_1.png" style="max-height: 150px; width: 49.5%;" />
       </div>
-	  </div>
-  </message>
-
-  <message id='something-else' title="Some other How to save your work">
-    Some text on saving your work
-	  <div style="border:1px solid black">
-	    <div style="padding-top: 10px" align="center">
-	      <img src="InterSpec_resources/static_text/images/touch_zoom_in.png" style="width:70%" />
-	    </div>
       <div align="center" style="padding-top: 10px; padding-bottom: 10px">
-         To zoom in on a specific portion of the spectrum,
-         <u>push</u> two fingers away from each other.
+         (left) Using the &quot;Spectrum Files&quot; tab to change between displaying and working with different spectrum files in memory.<br />
+         (right) Using the &quot;Spectrum Manager&quot; (use the <code>Manager...</code> menu item to display) to select which files in memory to display, or to combine or export files.
       </div>
-	  </div>
+    </div>
+
+    <p>
+      When a spectrum file contains multiple samples (for example, both a item of interest, and a background spectrum),
+      The peaks you fit are associated with the <em>sample numbers</em> you have displayed as the foreground.
+      So if on the &quot;Spectrum Files&quot; tab, you change which samples you have displayed as the foreground,
+      your fit peaks will no longer be displayed, and you can fit new peaks for the currently displayed foreground
+      samples; if you switch back to the original sample numbers, your original peaks will be displayed again.<br />
+      If one or more of your signal peaks coincide with a background peak, you might display the background 
+      spectrum as the foreground, fit the peaks in it, and then switch back to your signal spectrum as foreground,
+      and the background sample displayed as background, and when you fit for nuclide activity, you will have 
+      the option to background-subtract your background peaks from the foreground peaks.
+    </p>
+    <p>
+      The &quot;Activity/Shielding Fit&quot;, detector response function, &quot;Isotopics from peaks&quot;, 
+      &quot;Isotopics by nuclides&quot;, and a few other tools states are associated with the foreground spectrum 
+      file in memory.  That is, if you change which sample numbers are displayed as foreground in a spectrum
+      file, these tools states will not be changed.
+    </p>
+    <p>These peak associations with <em>sample numbers</em>, as well as energy calibrations, will be preserved
+      if you export a spectrum file in the <code>N42-2012</code> format; the various tool states will also be
+      saved into the <code>N42</code> file.
+    </p>
+    <p>
+      Having many spectrum files open at once usually doesn't cause any issues; if memory usage of open
+      spectrum files gets above about 256 MB, then spectrum files will be unloaded to temporary swap files,
+      and seamlessly read back into memory if you change back to displaying them.<br />
+      However, there is a <code>Clear Session</code> menu option that will effectively remove
+      all spectrum files from memory, and put the user interface back into a fresh state.
+    </p>
   </message>
 
-  <message id='input-formats' title="What input spectrum file formats are accepted?">
-    Some more text on formats
+  <message id="sample-nums-dets" title="Understanding sample numbers and detector names">
+    Some radiation detection systems provide output spectrum files that may have multiple 
+    samples in them; that is, measurements made at different times. You can select which 
+    of these samples are displayed in as the foreground/background/secondary spectrum
+    in the &quot;Spectrum Files&quot; tab; you can display individual <em>sample numbers</em>,
+    combine multiple sample numbers, and/or specify ranges.
+    <br />
+    Some systems may have multiple detection elements, whose spectra are separately recorded
+    in the spectrum file.  The individual detection elements will be named in <code>InterSpec</code>,
+    and you can choose which ones to display in the <b>View</b> &rarr; <b>Detectors</b> menu. 
+    The detector names are often specified in the spectrum file, but if not, <code>InterSpec</code>
+    will pick default names.
+    <br />
+    The <em>sample numbers</em>, and detectors you choose to display as the foreground, or background,
+    or secondary spectrum, are summed together for display, or fitting peaks to, or whatever.
+
+    <div style="border:1px solid black; width: 90%; margin-left: auto; margin-right: auto;">
+      <div style="display: flex; align-content: center;">
+          <img src="/InterSpec_resources/static_text/faqs/sample_dets.png" style="max-height: 250px; max-width: 49.5%;" />
+      </div>
+      <div align="center" style="padding-top: 10px; padding-bottom: 10px">
+        The example passthrough spectrum file which has samples 82 through 94 loaded as foreground, 
+        samples 1 through 20 as background, and is only displaying two of the eight detectors in the 
+        detection system.
+      </div>
+    </div>
+
+    <p>
+      When reading the spectrum file in, if there are multiple detectors, the spectra are usually grouped 
+      together according to when the measurements were taken; that is, all spectra for a given <em>sample numbers</em>,
+      will <i>usually</i> have the same measurement start time.
+    </p>
+    <p>
+      The set of <em>sample numbers</em> displayed as foreground, is what the peaks that you fit are associated with; the displayed
+      detectors (if the measurement system had more than one detector) do not affect the peak associations.  If you fit 
+      peaks for a given set of <em>sample numbers</em>, then change the displayed sample numbers, and possibly fit
+      other peaks, then change back to the original sample numbers, your original peaks will be displayed.
+    </p>
+    <p>
+      On the &quot;Spectrum Files&quot; tab, you can specify which <em>sample numbers</em> are displayed by manually
+      entering the sample numbers, in formats like &quot;1&quot; (only sample 1), &quot;1-5&quot; (samples 1 through 5), 
+      &quot;1-3,8,12-20,10&quot; (samples 1 through 3, 8, 12 through 20, and 10).
+    </p>
+    <p>
+      If the data is search-mode or portal data, a time-chart will also be displayed under the spectrum; you can use this time chart
+      to select foreground, background, and secondary spectra <em>sample numbers</em>.
+      (hint: use the <img src="/InterSpec_resources/images/more_menu_icon.svg" style="display: inline-block; height: 15px;"></img>
+      menu in the upper-right of the time chart to help control selection mode).
+    </p>
   </message>
 
-  <message id='multi-iso-peak' title="Contributions to a peak by multiple isotopes?">
-    Some more text on multi-iso peaks
+  <message id="multi-iso-peak" title="Contributions to a peak by multiple isotopes">
+    <p>
+      In the <code>InterSpec</code> user interface, only a single specific gamma or x-ray from a 
+      single nuclides decay chain can be assigned to a fit peak.<br />
+      However, it is common that multiple gammas, or x-rays, from the nuclides decay chain may contribute to 
+      the fit peak.  Or it could be that a gamma or x-ray from a completely different parent nuclide also
+      contributes to the peak.
+    </p>
+    <p>
+      When performing an &quot;Activity/Shielding Fit&quot; or &quot;Isotopics from peaks&quot; analysis, there
+      is a &quot;<em>Multiple nuclides contribute to peak</em>&quot; option:
+      <img src="/InterSpec_resources/static_text/faqs/mult_nuc_contrib_cb.png" style="display: block; height: 20px; margin-left: 20px"></img>
+      When this option is selected (which is default), the contributions from all gamma and x-rays within 1.25 FWHM of the peak mean, 
+      from any nuclide associated with any of the peaks being used, will be included.  This has shown to generally do a good job
+      of accounting for interferences.
+      <br />
+      Typically the nuclide (and hence gamma/x-ray) you assign to a peak is the dominantly contributing source for the 
+      peak.  However, occasionally a nuclide may not be the dominant source for any observed photopeak; in these cases, 
+      it is fine to pick any of the peaks that the nuclide contributes to, and assign the peak to the nuclide.  Then for 
+      that peak, and any other peak the nuclide contributes to, the (expected) amplitudes will all be properly 
+      calculated, and include the nuclide in question.
+    </p>
   </message>
 
+  <message id="background-peak-fit" title="Accounting for peaks in the background">
+    You can only fit peaks for the currently displayed foreground spectrum; however, if you want to fit the
+    peaks for the measurements background spectrum, you can use the &quot;Spectrum Files&quot; tab to display
+    the background measurement as the foreground spectrum.  You can then fit peaks, and switch back to showing
+    the item-of-interest spectrum as foreground, and the measurements background as the displayed background 
+    spectrum.<br />
+    Then in &quot;Activity/Shielding Fit&quot; tool, and a few other places, you can select the option to subtract 
+    the background spectrums peak.  Using this method of fitting the background peaks has the advantage that
+    <code>InterSpec</code> will properly account for uncertainties in calculating activities and shielding.  If you
+    do a &quot;Hard Background Sub...&quot;, the data variance in each channel is currently lost, and the peak fits
+    will have an artificially low statistical uncertainty.
+  </message>
+
+  <message id="fit-source-over-background-peaks" title="Background correction of activities">
+    Please see the topic immediately above here.
+  </message>
+
+  <message id="create-drf" title="Creating detector response functions (DRFs)">
+    <code>InterSpec</code> allows importing detector response functions (DRFs) from a 
+    few common sources, but you can also use <code>InterSpec</code> to create the DRF
+    for you detector.
+    <br/>
+    Please see
+    <a target="_blank" href="https://sandialabs.github.io/InterSpec/tutorials/#making-a-detector-response-function">https://sandialabs.github.io/InterSpec/tutorials/#making-a-detector-response-function</a>
+    for a description of the process.
+  </message>
+
+  <message id="re-using-drfs" title="Re-using detector response functions (DRFs)">
+    Once you have a DRF in <code>InterSpec</code>, there are a few ways to re-use them in the future:
+    <ul>
+      <li>
+        When you create a DRF in <code>InterSpec</code>, and you click the &quot;Store/Export...&quot; 
+        button, you will be shown:
+        <img src="/InterSpec_resources/static_text/faqs/drf_save_dialog.png" style="height: 150px; max-width: 90%; display: block; margin-top: 10px; margin-bottom: 10px; margin-left: auto; margin-right: auto;" />
+        You can export the DRF as a <code>CSV</code> file you can latter drag-n-drop back onto <code>InterSpec</code> to
+        use, you can choose to save the DRF into <code>InterSpec</code>s internal database, which you can 
+        easily pull back up later.  Or if you export the <code>N42-2012</code> file, the DRF will
+        be saved in there, for later use.  The quick-reference card will contain a QR-code that 
+        has all the DRF information embedded, which you can scan later to use the DRF as well.<br />
+        There is also the option to use this DRF automatically any time you load data either from the 
+        specific detector, or the same model of detector.
+      </li>
+      <li>
+        <code>InterSpec</code> stores previously used DRFs in its internal database; if you click on the DRF select button, located 
+        in various places throughout the application, and looks like:
+        <img src="/InterSpec_resources/static_text/faqs/drf_select_btn.png" style="height: 20px; display: block; margin-left: 20px" />
+        You can select the &quot;Previous&quot; tab, and scroll through the DRFs.<br />
+        The interface looks like:
+        <img src="/InterSpec_resources/static_text/faqs/drf_prev_dialog.png" style="height: 150px; max-width: 90%; display: block; margin-top: 10px; margin-bottom: 10px; margin-left: auto; margin-right: auto;" />
+      </li>
+      <li>
+        On the footer of the DRF select dialog, shown above, there are options to export a DRF to an XML file, which can later be 
+        drag-n-dropped onto <code>InterSpec</code> to use, or you can display a QR-code, which will embed the DRF information
+        into the QR-code.  On the QR-code dialog there is also an option to copy a URI, which will look something like
+        <code>interspec://drf/specify?CREATED%3d1682954314%...</code>, which you can put into a hyperlink somewhere and click on,
+        paste into the address-bar of a web-browser to have your Operating System then open in <code>InterSpec</code>, or 
+        you can paste the URI into the dialog created by the <b>Edit</b> &rarr; <b>Enter URL</b> menu item of <code>InterSpec</code>.
+      </li>
+      <li>
+        The DRF is saved to <code>N42-2012</code> spectrum files as well, so if you load the file at a later time, the DRF will 
+        automatically be used.
+      </li>
+    </ul>
+  </message>
+
+  <message id="using-default-drfs" title="Using built-in detector response functions (DRFs)">
+    <code>InterSpec</code> comes with a number of detector response functions (DRFs) for common handheld 
+    radiation detectors; it also comes with a few generic response functions.<br />
+    If a radiation detector model can be determined from the spectrum file, and there is a default
+    DRF for that model, when you load a spectrum file, the default DRF will also be loaded.<br />
+    If the default DRF isnt loaded, or an incorrect DRF is loaded, you can click or tap the 
+    detector select icon:
+
+    <img src="/InterSpec_resources/static_text/faqs/drf_select_btn_empty.png" style="height: 20px; display: block; margin-top: 5px; margin-bottom: 5px; margin-left: 35px;" />
+    
+    You will then be presented with a dialog, where clicking on the &quot;<b>GADRAS</b>&quot; tab 
+    will provide some generic DRF options, or selecting the &quot;<b>Rel. Eff.</b>&quot; tab will 
+    presents you with a list of specific detector models to choose from.<br />
+
+    <img src="/InterSpec_resources/static_text/faqs/drf_select_defaults.png" style="height: 170px; max-width: 90%; display: block; margin-top: 10px; margin-bottom: 10px; margin-left: auto; margin-right: auto;" />
+    
+    You can click the <img src="/InterSpec_resources/images/plus_min_black.svg" style="display: inline-block; height: 15px;"></img> icon 
+    to import more DRFs from files, that you can choose to save so they will also be in this dialog/tab in the future.
+  </message>
+
+  <message id="input-spectrum-file-formats" title="Input spectrum file formats that are accepted">
+    <code>InterSpec</code> aims to support common spectrum file types produced by commercially available detectors, as
+    well as a number of one-off and text based formats.
+    <p>
+      If you encounter a spectrum file format not supported by <code>InterSpec</code>, please email 
+      an example file to <a href="mailto:interspec@sandia.gov">InterSpec@sandia.gov</a>, along with any
+      documentation you may have.<br />
+      However, developer availability to implement is very limited, so priority will be given to widely, or 
+      strategically used formats.<br />
+      You are also welcome to implement support for a spectrum file format to 
+      <a target="_blank" href="https://github.com/sandialabs/SpecUtils">https://github.com/sandialabs/SpecUtils</a>, for inclusion 
+      into <code>InterSpec</code>.
+    </p>
+    
+    <!--
+    An incomplete list of file formats accepted are:
+    <table>
+      <tr>
+        <th>Format</th>
+        <th>Remarks</th>
+      </tr>
+      <tr>
+        <td>
+          ANSI N42.N42
+        </td>
+        <td>
+          see <a target="_blank" href="https://ieeexplore.ieee.org/document/9264644">here</a>, including many N42-2006 variants, 
+          N42-2012 spectrum files, and N42-2020.  Many models of instruments don't strictly adhere to the standard, with 
+          <code>InterSpec</code> implementing work-arounds for those files.
+        </td>
+      </tr>
+      <tr>
+        <td>CHN</td>
+        <td>A binary, single-spectrum file format used by <em>ORTEC</em> detectors.  
+          This format is described by the <em>ORTEC Software File Structure Manual for DOS and Windows® Systems</em>
+          PDF that can be found on a web search.
+        </td>
+      </tr>
+      <tr>
+        <td>SPC</td>
+        <td>There are floating-point and integer-based binary formats produced by 
+          <em>ORTEC</em> and <em>Thermo Fisher Scientific</em> instruments, 
+          as well as an ASCII format produced by <em>FLIR/Teledyne</em> and other manufacturers instruments.
+        </td>
+      </tr>
+      <tr>
+        <td>ICD2</td>
+        <td>These typically have an extension of &quot;.N42&quot; and contain analysis results; they are related to N42-2006.
+           <code>InterSpec</code> reads in a some of these files, when they also contain spectroscopic information.
+        </td>
+      </tr>
+      <tr>
+        <td>TXT/CSV</td>
+        <td>Many variants of text and CSV, or TSV files are read into <code>InterSpec</code>.</td>
+      </tr>
+      <tr>
+        <td>GR130/135 .dat</td>
+        <td></td>
+      </tr>
+      <tr>
+        <td>PCF</td>
+        <td></td>
+      </tr>
+      <tr>
+        <td>SPE - IAEA</td>
+        <td></td>
+      </tr>
+      <tr>
+        <td>SPE - LSRM</td>
+        <td></td>
+      </tr>
+      <tr>
+        <td>PCF - GADRAS</td>
+        <td></td>
+      </tr>
+      <tr>
+        <td>CNF - Mirion</td>
+        <td></td>
+      </tr>
+      <tr>
+        <td>MPS</td>
+        <td></td>
+      </tr>
+      <tr>
+        <td>SPM</td>
+        <td></td>
+      </tr>
+      <tr>
+        <td>MCA</td>
+        <td></td>
+      </tr>
+      <tr>
+        <td>ORTEC Listmode</td>
+        <td></td>
+      </tr>
+      <tr>
+        <td>XML</td>
+        <td>Various, including radiacode, MicroRaider, ScanData</td>
+      </tr>
+      <tr>
+        <td>ARAM</td>
+        <td></td>
+      </tr>
+      <tr>
+        <td>TKA</td>
+        <td>Canberra Toolkit file.</td>
+      </tr>
+      <tr>
+        <td>MultiAct</td>
+        <td></td>
+      </tr>
+      <tr>
+        <td>PHD</td>
+        <td></td>
+      </tr>
+      <tr>
+        <td>LZS</td>
+        <td></td>
+      </tr>
+      <tr>
+        <td>JSON</td>
+        <td></td>
+      </tr>
+      <tr>
+        <td>GXML</td>
+        <td></td>
+      </tr>
+      <tr>
+        <td></td>
+        <td></td>
+      </tr>
+    </table> 
+  -->
+  <p>
+    <code>InterSpec</code> can export spectra to the following formats: <code>N42-2012</code>, 
+    <code>N42-2006</code>, <code>CHN</code>, <code>IAEA</code>, <code>SPE</code>, <code>CSV</code>, 
+    <code>TXT</code>, <code>PCF</code>, <code>CNF</code>, <code>SPC</code> (floating-point, integer, and ascii),
+     <code>TKA</code>, <code>EXPLORANIUM GR-130/135</code>, self-contained HTML file, QR-codes, and 
+     <code>raddata://</code> URIs 
+     (see <a target="_blank" href="https://sandialabs.github.io/InterSpec/tutorials/references/spectrum_in_a_qr_code_uur_latest.pdf">here</a>).
+  </p>
+  </message>
+
+  <message id="marinelli-meas" title="Using Marinelli Beaker and other fixed geometries">
+    <p>
+    To determine activities for a Marinelli Beaker, or other fixed geometries where the normal far-field 
+    detector response function approximation breaks down (i.e., the distance between the source and 
+    detector is less than about three times the largest of the detector and source dimensions), you will
+    need a specialized detector response function (DRF).
+  </p>
+
+  <p>
+    For the Marinelli Beaker case, often times a multi-isotope calibration standard is used to calculate
+    the detectors energy-dependent efficiency.  In this case you can use the &quot;Make Detector Response&quot;
+    tool to create a DRF.  You can either input a random distance (like 1 meter), and then later when you 
+    fit for activity, use this same distance (and usually no shielding), or starting in 
+    <code>InterSpec</code> v1.0.12, there is a  &quot;Fixed Geometry&quot; option you can check in the 
+    <em>Make Detector Response</em> tool, which  will remove distance inputs both from this tool, as well as 
+    from the &quot;Activity/Shielding Fit&quot; tool.  
+    The &quot;Fixed Geometry&quot; in the <em>Make Detector Response</em> tool is circled below:
+    <img src="/InterSpec_resources/static_text/faqs/make_drf_fixed_geom.png" style="height: 150px; max-width: 90%; display: block; margin-top: 10px; margin-bottom: 10px; margin-left: auto; margin-right: auto;" />
+  </p>
+    
+  <p>
+    For geometries, such as <em>in-situ</em> soil contamination measurements (e.g., a detector 1 meter off 
+    the ground, pointing down), where multi-isotope calibration standards aren't practical to derive the efficiencies, 
+    you will need to compute the efficiencies some other way, usually using something like a Monte Carlo method, or a 
+    modeling software like 
+    <a target="_blank" href="https://www.mirion.com/products/technologies/spectroscopy-scientific-analysis/gamma-spectroscopy/gamma-spectroscopy-software/lab-applications/s573-isocs-calibration-software">Mirion ISOCS</a>.
+    <br />
+    Starting in <code>InterSpec</code> v1.0.12, you can import the <em>.ecc</em> files produced by ISOCS
+    to <code>InterSpec</code>, by dragging and dropping the <em>.ecc</em> file onto <code>InterSpec</code>,
+    which will result in a dialog similar to:
+    <img src="/InterSpec_resources/static_text/faqs/isocs_ecc_import.png" style="height: 150px; max-width: 90%; display: block; margin-top: 10px; margin-bottom: 10px; margin-left: auto; margin-right: auto;" />
+  </p>
+    
+  <p>
+    If some modeling error is acceptable, using &quot;Activity/Shielding Fit&quot; tool with a standard 
+    <em>far-field</em> DRF seems to often provide acceptable results; for example, <em>in-situ</em>
+    (i.e., detector 1 meter off ground, pointing down) measurement analysis in <code>InterSpec</code> usually 
+    agree within 10%, or better, to methods/packages which properly take into account angular dependence of the detector 
+    response (at least for energies above around or above a couple hundred keV, lower energies would likely
+    have larger errors).  
+    But also please note that for very near measurements (i.e., sample less than ~10 cm from detector) cascade summing can become significant, leading 
+    to errors of up to 30% or so, just from this effect, which <code>InterSpec</code> does not currently account for.
+  </p>
+  </message>
+
+  <message id="soil-contamination" title="Determining surface contamination of soil">
+    <code>InterSpec</code> can be used to help determine surface contamination, as well as 
+    exponentially distributed contamination in soil, using the &quot;Activity/Shielding Fit&quot; tool
+    by using cylindrical or rectangular geometries and trace-sources.<br/>
+    For full information, please see:
+    <a target="_blank" href="https://sandialabs.github.io/InterSpec/tutorials/#soil-contamination-and-trace-sources" style="display: block; margin-left: 25px;">https://sandialabs.github.io/InterSpec/tutorials/#soil-contamination-and-trace-sources</a>
+    <br />
+    A limitation is that as of version 1.0.12, <code>InterSpec</code> does not take into account
+    the angular dependence of the detector, unless a &quot;Fixed Geometry&quot; DRF is used; that is,
+    if you used a Ortec Detective-X to take the measurement, and the default DRF that comes with 
+    <code>InterSpec</code>, this effect would not be taken into account. However, results usually 
+    agree to well within 10%, or better, of methods/packages which do properly take into account this 
+    effect, at least for higher energies.
+  </message>
+
+  <message id="out-of-equilibrium" title="Checking if a decay chain is in equilibrium">
+    A few possible methods to check the equilibrium status of parent nuclides:
+    <ul>
+      <li>Using the &quot;Isotopics from peaks&quot; tool, can be a nice way to see that a 
+        decay chain is out of equilibrium, or at a significantly different than assumed age,
+        because we expect the detection efficiency to be roughly a smooth function
+        of energy, and detector response, shielding, or distance is not needed to be known.
+        Here is an example of the tool for a out-of-equilibrium Th232 measurement; there 
+        is clearly two separate Relative Efficiency curves, which wouldn't be expected 
+        for a sample in equilibrium.
+        <img src="/InterSpec_resources/static_text/faqs/th232_out_of_equilibrium.png" style="max-height: 150px; max-width: 90%; display: block; margin-top: 10px; margin-bottom: 10px; margin-left: auto; margin-right: auto;" />
+      </li>
+      <li> The &quot;Activity/Shielding Fit&quot; tool can be used to fit for a parent nuclides
+        age, which can give you the time of chemical separation.
+      </li>
+      <li> The &quot;Reference Photopeak&quot; tool can be used to show lines for the parent nuclide
+        at different ages, with a quick visual inspection of relative peak heights, referenced to the 
+        photopeak line heights, sometimes indicating obvious discrepancies, or even allowing for rough 
+        age estimates.
+      </li>
+      <li>Normally you assign a peak to the parent nuclide, and then <code>InterSpec</code> will take
+        care of performing the decay, and getting the correct branching ratios for the progeny lines.
+        However, if instead you assign each peak to the nuclide directly responsible for that gamma
+        (e.g., the 2614 keV peak of Th232, would be assigned to Tl208), you can
+        then fit for the progeny activities in the &quot;Activity/Shielding Fit&quot; tool
+        to figure out at which nuclide in the decay chain the interruption began (e.x., you might
+        see a change in activities for Ra226 and below, for the U238 decay chain).
+      </li>
+    </ul>
+  </message>
+
+  <message id="decay-chain-assign" title="Assign the parent nuclide to peaks">
+    When you assign a source nuclide to a peak (e.g., you are showing reference photopeak 
+    lines, and then fit a peak near a line), you normally assign the parent nuclide to it.
+    For example, the 2614 keV peak in the Th232 decay series is created by the decay of Tl208,
+    however, in <code>InterSpec</code> you would normally assign the 2614 keV peak to Th232 
+    (either by showing Th232 reference photopeak lines before fitting, or by typing &quot;Th232&quot;
+    into the <em>Nuclide</em> column of any table showing peak information, or by right-clicking on the peak
+    and choosing to assign a nuclide).  When you do this,
+    <code>InterSpec</code> internally decays Th232 and assigns the specific nuclear transition 
+    leading to this gamma, to the peak.<br />
+    The major motivation for assigning peaks to the parent isotope, rather than the specific progeny 
+    that created it, is to allow accounting for different branching ratios, as the sample ages, or
+    to use gamma line intensities from multiple progeny to do things like fit for shielding thicknesses, 
+    or types, using differential attenuation.
+  </message>
+
+  <message id="default-age" title="Default ages of nuclides">
+    Some simple heuristics are used to guess default ages of nuclides, the logic can be found in the
+    <a target="_blank" href="https://github.com/sandialabs/InterSpec/blob/bbc3d420a80f03a47ec1341909421cf450624571/src/PeakDef.cpp#L3217">PeakDef::defaultDecayTime(...)</a>
+    function, but it roughly follows:
+    <ul>
+      <li>If secular equilibrium can be obtained, will use 10 secular equilibrium half lives, otherwise 7 prompt equilibrium half-lives</li>
+      <li>If the above value is less than one half the half-life of the parent nuclide, then 2.5 half-lives of the parent nuclide</li>
+      <li>If the nuclide decays to stable children, an age of zero seconds is used</li>
+      <li>If nuclide half-life is greater than 100 years, or for any Uranium or Plutonium isotope, an age of 20 years will be used</li>
+      <li>If after the above, the value is more than 100 half-lives of the parent nuclide, then 7 half-lives of the parent will be used</li>
+    </ul>
+  </message>
+ 
+  <message id="livetime-normalization" title="Foreground/background normalization, and how to change">  
+    <p>
+      When a background or secondary spectrum is displayed, by default it is live-time normalized to the 
+      foreground spectrum (e.x., if the background live-time is twice the foreground, then the background spectrum
+      amplitude will be divided by 2), so that visually the spectra are compared according to their <em>count-rate</em>.
+      The legend on the spectrum will indicate how much the background or secondary spectrum is scaled by, and the 
+      shown live-time for the background/secondary spectrum will match that of the foreground; the total counts of
+      the background/secondary spectrum shown in the legend will also be scaled by this same factor.
+    </p>
+    <p>
+    You can adjust the normalization factors using either the sliders to the right of the spectra,
+    or by manually typing the desired scale factor on the &quot;Spectrum Files&quot; tab, as shown
+    cicled in red here:
+    <img src="/InterSpec_resources/static_text/faqs/normalize_spectra.png" style="max-height: 350px; max-width: 90%; display: block; margin-top: 10px; margin-bottom: 10px; margin-left: auto; margin-right: auto;" />
+    If you do adjust the normalization away from live-time normalization, the &quot;Normalize&quot;
+    button shown above (in lower-right, for the secondary spectrum) will appear, and when clicked will 
+    return the normalization to live-time.
+    </p>
+  </message>
+
+  <message id="time-chart-display" title="Time-chart display options">
+    When displaying search-mode, or portal data in <code>InterSpec</code>, a time-chart will be shown.
+    This time-chart can be used to select portions of time to sum and use as foreground/background/secondary, however,
+    unless you do this regularly, the keyboard short cuts wont be remembered, so instead you can click the
+    <img src="/InterSpec_resources/images/more_menu_icon.svg" style="display: inline-block; height: 15px;"></img>
+    icon in the upper-right of the time-chart, to show some slightly easier to use modes for selecting or changing 
+    time-periods of data to use:
+    <img src="/InterSpec_resources/static_text/faqs/time_opt_int.png" style="max-height: 150px; max-width: 25%; display: block; margin-top: 10px; margin-bottom: 10px; margin-left: auto; margin-right: auto;" />
+    <br />
+    You can also use the &quot;Filt&quot; tab to filter the energy range that is summed to form the time chart; 
+    a normalization range can also be chosen.  For example, choosing to sum between 170 keV and 200 keV, 
+    and normalize to energies above 250 keV, will usually make U235 signal really stand out in; in the figure below
+    the same source data is used, but using this ratio-ing will make the signal of interest stand out, when
+    the original rate-chart did not indicate it.
+    <div style="border:1px solid black; width: 90%; margin-left: auto; margin-right: auto;">
+      <div style="display: flex; align-content: space-around;">
+          <img src="/InterSpec_resources/static_text/faqs/time_history_full_energy_range.jpg" style="height: 115px; max-width: 49.5%;" />
+          <img src="/InterSpec_resources/static_text/faqs/time_history_u235_energy_range.jpg" style="height: 115px; max-width: 49.5%;" />
+      </div>
+      <div align="center" style="padding-top: 10px; padding-bottom: 10px">
+         (left) Time history of search data with no energy range filter.<br />
+         (right) The same data, but with 170 keV to 190 keV range ratio-ed with 220 keV and above.
+      </div>
+    </div>
+    <br />
+    The &quot;Opt&quot; has some options for how the data is plotted; sometimes the &quot;Don't Rebin&quot; can be helpful for
+    spotting narrow hot-spots in really long time-history data.<br />
+    The &quot;Rel. y-max&quot; can be useful for (de-)emphasizing the gamma or neutron data. 
+    The value can be adjusted between 0.04 and 25. Values larger than 1.0 will cause the neutron y-axis range to be that 
+    multiple of neutron data range, while not effecting the gamma y-axis range.  Values less than one will do a similar thing for the gamma data.
+    Example effects of changing this value are:
+    <img src="/InterSpec_resources/static_text/faqs/time_char_opt_2.png" style="max-height: 150px; max-width: 65%; display: block; margin-top: 10px; margin-bottom: 10px; margin-left: auto; margin-right: auto;" />
+    <img src="/InterSpec_resources/static_text/faqs/time_char_opt.png" style="max-height: 150px; max-width: 65%; display: block; margin-top: 10px; margin-bottom: 10px; margin-left: auto; margin-right: auto;" />
+  </message>
+
+  <message id="energy-cal-quick" title="Overview of performing energy calibrations">
+    The easiest way to perform an energy calibration in <code>InterSpec</code> is often 
+    to fit one or more photopeaks, assign nuclide to them (and hence a gamma-line energy), and then on the 
+    &quot;Energy Calibration&quot; tab select which peaks to use, and
+    which coefficient(s) to fit, and click the &quot;Fit Coeffs&quot; button:
+    <img src="/InterSpec_resources/static_text/faqs/energy_cal_tab.png" style="max-height: 150px; max-width: 65%; display: block; margin-top: 10px; margin-bottom: 10px; margin-left: auto; margin-right: auto;" />
+    <br />
+    The &quot;Energy Calibration&quot; tab has a ton more functionality; see the help topic on the tool (click
+    the question mark in the lower-left of the tab) for more information.
+    <p>
+    You can also use <code>CTRL + ALT</code> (or on macOS, <code>CTRL + OPT</code>), and the left mouse button
+    to click-and-drag the spectrum visually to the correct location.
+    If you then do this action again, like first on a high energy peak, then on a low energy peak (or vice versa), 
+    the dialog that pops up will give you the option to preserve both actions by adjusting both the offset and gain 
+    so this way both peaks will remain at the energies you drug them to.
+    </p>
+    <p>There is also the possibility of inheriting the energy calibration between successive spectra,
+      or using a <b>CALp</b> file - see the next topic for more info.
+    </p>
+  </message>
+
+  <message id="reuse-energy-cal" title="Re-using energy calibrations">
+    There are two options for re-using energy calibration from one spectrum to another.
+    <ol>
+      <li>If you are displaying a spectrum, but then open another spectrum from the same detector 
+        (i.e., same model and serial number), but  its energy calibration is different from the first, 
+        <code>InterSpec</code> should ask you if you would like to use the energy calibration from the 
+        first file, with the newly loaded one.
+      </li>
+      <li>Through use of a &quot;<b>CALp</b>&quot; file, described below.</li>
+    </ol>
+
+    <p>
+      In the lower left-hand corner of the energy calibration tool there are links to export or import
+      <b>CALp</b> energy calibration files.
+      <b>CALp</b> files contain the current energy calibration information in a simple text format, and
+      allow saving commonly used energy calibrations for easy application to other spectrum files.
+      They are particularly useful for working with detectors that either do not provide an energy
+      calibration, or provide poor energy calibrations.<br />
+      Once you have found an energy calibration you would like to use later, simply click/tap the export
+      icon shown below, and save the file somewhere convenient on your filesystem.  When you later want
+      to re-use that energy calibration with a different spectrum file, simple drag-n-drop the <b>CALp</b>
+      file onto <b>InterSpec</b> and that energy calibration will be applied to the new spectrum file.
+      
+      <div style="padding-top: 10px; text-align: center;">
+        <img src="/InterSpec_resources/static_text/images/CALp_down_up.png" style="width: 120px; display: block; margin-top: 10px; margin-bottom: 10px; margin-left: auto; margin-right: auto;" />
+        <div style="clear: both; text-align: left; padding-left: 20px; padding-right: 20px;">
+          Icons to use for exporting or importing <b>CALp</b> energy calibration files.
+          You can also drag-n-drop <b>CALp</b> files from your operating systems filesystem onto
+          <b>InterSpec</b> to apply the <b>CALp</b> files.
+        </div>
+      </div>
+    </p>
+  </message>
+
+  <message id="how-drf-model" title="Detector response function modeling">
+    <p>
+    The default Detector Response Functions (DRFs) in <code>InterSpec</code>
+    hold the efficiency, as a function of energy, for a full-energy detection of a gamma
+    ray hitting the face of the detector.  The assumption is that the detector is pointing
+    at the source, and the gamma rays are approximately parallel by the time they get to the 
+    detector; in practice this means the distance between the source and the detector should
+    be at least 3 times the largest of the detector or source dimensions.<br/>
+    The DRF also holds the detector face diameter (assuming it is circular) so that solid angle 
+    corrections can be accurately made.
+    </p>
+    <p> The DRF may also hold the parameterized FWHM of the detector.  However this information
+      is not mandatory (many of the default DRFs that come with <code>InterSpec</code> do not
+      include this information), and is only used, if available, as the initial peak 
+      width when fitting peaks; but if this information isn't available suitable estimates are
+      made anyway, so it usually doesn't result in any difference.
+    </p>
+    <p> Starting in <code>InterSpec</code> v1.0.12, there is also an option that the DRF
+      may be a &quot;Fixed Geometry&quot; DRF.  If this is the case, then the <em>distance</em>
+      option will not be available in the &quot;Activity/Shielding Fit&quot; tool, as it is 
+      assumed the DRF already accounts for this, any internal attenuation of the object, and 
+      the efficiency of the detector.  Although you can still add additional absorbers into 
+      the problem.
+    </p>
+    <p> The DRF efficiency is internally represented by:
+      <ul>
+        <li>A set of energy-efficiency pairs, which get interpolated between</li>
+        <li>A set of coefficients for the equation:<br />
+            &nbsp;&nbsp;&nbsp;&nbsp;<code>eff = exp( c0 + c1*x<sup>1</sup> + c2*x<sup>2</sup> + c3*x<sup>3</sup> + ...)</code>
+        </li>
+        <li>An arbitrary mathematical formula that can be entered</li>
+      </ul>
+    </p>
+    <p>
+      Currently <code>InterSpec</code> does not take into account the angular response of detectors.
+    </p>
+  </message>
+
+  <message id="how-sum-peaks-handled" title="How are sum-peaks handled?">
+    <p>
+    When fitting for activity, sum peaks (either random sum, or true-coincidence) are not currently
+    accounted for.
+    </p>
+    <p> If this might be a problem, it is recommended to move the sample 10 cm or greater from the detector
+      where true-coincidence (a.k.a. cascade) summing becomes negligible, and/or to reduce dead-time for
+      random summing.
+    </p>
+    <p> The &quot;Reference Photopeak&quot; tab does offer the option to show cascade sums, to help 
+      detect these issues; see the circled options below:
+      <img src="/InterSpec_resources/static_text/faqs/ref_photopeak_cascade_opt.png" style="max-height: 125px; max-width: 85%; display: block; margin-top: 10px; margin-bottom: 10px; margin-left: auto; margin-right: auto;" />
+    </p>
+  </message>
+
+  <message id="reusing-peaks" title="Working with spectra with similar nuclides">
+    If you are working with multiple spectra that you expect to have about the same photopeaks, 
+    you can propagate peaks from one spectra to the next in a couple ways:
+
+    <ul>
+      <li>On &quot;Peak Manager&quot; tab there is an option to export a <code>CSV</code> file that contains the
+        peak information.  If you fit all the relevant peaks, and assign nuclides to them (if desired), on the
+        first spectrum, you can then export the <code>CSV</code> file to a location on your computer.<br />
+        Then when you load subsequent spectra, you can drag-n-drop the <code>CSV</code> file back onto 
+        <code>InterSpec</code>, and you will be given the option to re-fit those same original peaks, with 
+        associated nuclides, in the new spectrum.  Amplitudes and continuum will be totally re-fit, using
+        the same continuum model and ROI extents you originally used.  The FWHM and peak means will be allowed to 
+        vary a little bit to account for small energy calibration or temperature drifts.
+      </li>
+      <li> There is an option, <b>Help</b> &rarr; <b>Options</b> &rarr; <b>Ask to Propagate Peaks</b>, that when checked,
+        and you load a new spectrum from the same detector (same serial number and model), <code>InterSpec</code>
+        will then ask you if you want to propagate peaks from the old spectrum to the new one - similar to using the 
+        <code>CSV</code> method described above.
+      </li>
+    </ul>
+    
+    There is also a feature under development to allow fitting of peaks in a &quot;batch&quot; mode
+    using the command-line.  However, there no estimated date of availability for this or other 
+    &quot;batch&quot; features.
+  </message>
+
+  <message id="peak-area" title="How the peak area is determined">
+    <p>
+    The peak area reported by <code>InterSpec</code> is actually the Gaussian amplitude that 
+    is determined from a non-linear optimization routine.
+    By default peaks are modeled as the continuum plus a Gaussian, with the continuum parameterization
+    being fit for at the same time as the Gaussian amplitude and width. <br />
+    Some software packages first determine the continuum, then after that is determine the Gaussian, 
+    or leftover data, area - this is not how <code>InterSpec</code> does it.
+    </p>
+    <p> If you right-click on a peak, there is an option for a &quot;<b>Peak Editor...</b>&quot;.  
+      From this tool you can change the continuum model, or change the peak type to be a 
+      &quot;Data Region&quot; peak, so that the reported area will be the data, minus the continuum area.
+      There is also a number of other options for customizing the fit of peaks, or assigning nuclides.
+    </p>
+  </message>
+
+  <message id="short-lived-isos" title="Determining short lived isotope activities">
+    When the spectrum acquisition time becomes relevant to a nuclides half-life,
+    the &quot;Activity/Shielding Fit&quot; dialog has an option, &quot;Correct for decay during meas.&quot;,
+    that is checked by default, and will account for the effects of the nuclide decaying during the dwell.
+    The full decay-chain is accounted for, including progeny ingrowth and decay.
+  </message>
+
+  <message id="cascade-summing" title="Cascade summing">
+    <p>
+    <code>InterSpec</code> does not currently account for cascade (e.g., true-coincidence) summing 
+    when fitting activities.  If these effects might become significant, it is recommended to 
+    measure the sample at 10 cm, or greater, from the detector, if possible.
+    </p>
+    <p> The &quot;Reference Photopeak&quot; tab does offer the option to show cascade sums, to help 
+      detect these issues; see the circled options below:
+      <img src="/InterSpec_resources/static_text/faqs/ref_photopeak_cascade_opt.png" style="max-height: 125px; max-width: 85%; display: block; margin-top: 10px; margin-bottom: 10px; margin-left: auto; margin-right: auto;" />
+    </p>
+  </message>
+
+  <message id="nuc-data-origin" title="Nuclear data sources used">
+    The nuclear decay data (half-lives, gamma intensities and energies, etc) largely come
+    from ENSDF-V, but have significant additional corrections from observations and 
+    other data sources.  X-ray data comes from LBNL ToRI database.<br />
+    All this information is accessed via the <code>SandiaDecay</code> 
+    (<a target="_blank" href="https://github.com/sandialabs/SandiaDecay">https://github.com/sandialabs/SandiaDecay</a>)
+    library.
+    Gamma/x-ray cross-sections also come from ENSDF.<br />
+    Reaction data comes from various places, including 
+    &quot;<em>Atlas of Gamma-Ray Spectra from the Inelastic Scattering of Reactor Fast Neutrons</em>&quot; (A.M. Demidov <i>et al.</i>), 
+    and the &quot;<em>IAEA Prompt Gamma Activation Analysis (PGAA) database</em>&quot;.
+  </message>
+
+  <message id="unit-definitions" title="How are units like year, day, etc. are defined">
+    The exact definitions used can be found in <a target="_blank" href="https://github.com/sandialabs/InterSpec/blob/master/InterSpec/PhysicalUnits.h">PhysicalUnits.h</a>,
+    but internally, <code>InterSpec</code> uses millimeters as the basic distance unit, 
+    seconds for time, keV for energy, becquerel for activity, and coulomb for charge; all other 
+    units are built from these ones.<br />
+
+    Some time unit definitions used, that could be ambiguously defined, are:
+    <ul>
+      <li>1 day = 24&times;60&times;60 seconds</li>
+      <li>1 year = 365.2425 days</li>
+      <li>1 month = 1/12 years</li>
+    </ul>
+  </message>
+
+  <message id="act-mass-conv" title="How to convert from mass to activity">
+    The &quot;Units Converter&quot; tool can convert an activity to a mass.<br />
+    For example, entering the text 
+    <pre style="margin-left: 20px;">10 gram Th232</pre>
+    will result in an answer of 
+    <pre style="margin-left: 20px;">1.10 uCi</pre>
+    This also works in reverse if you enter the activity of a nuclide.
+    <br />
+    <p>
+    The &quot;Nuclide Decay Info&quot; tool also gives the specific activity of nuclides in the 
+    &quot;Decay Chain&quot; tab, when you click/tap on a nuclide.
+    </p>
+  </message>
+
+  <message id="interspec-arc" title="Software architecture of &lt;code&gt;InterSpec&lt;/code&gt;">
+    <p>
+    At its heart, <code>InterSpec</code> is a web-app that is rendered to HTML and Javascript,
+    with all the <em>business</em> logic written in C++.<br />
+    When you run <code>InterSpec</code> as an application (i.e., on Windows, macOS, Linux, iOS, or Android),
+    the application creates a &quot;server&quot; that can only be accessed on your computer 
+    (i.e., it opens a random high-number port on <code>127.0.0.1</code>), then it opens a window
+    that displays a <code>WebView</code> (provided by the OS, except on Linux where 
+    <a target="_blank" href="https://www.electronjs.org">Electron</a> is used), and instructs the 
+    <code>WebView</code> to connect to the local server.  By default, an additional secret token is 
+    also used to ensure only the wanted <code>WebView</code> instance can connect to the localhost 
+    server.  Interactions between the GUI and the <em>business</em> logic happen over the
+    localhost network (i.e., your computers internal network bus - it all stays on your computer).
+    </p>
+    <p>This architecture has been a stable way to allow for cross-platform development of 
+      <code>InterSpec</code>.  Using HTML/Javascript for the user interface allows targeting
+      nearly all device types, with an appreciable amount of code re-use across other 
+      projects, while taking advantage of the large ecosystem of HTML and JS tools and libraries.<br />
+      Using C++ for the business logic allows efficient computation and memory management, 
+      enabling use of richer algorithms, without sacrificing the applications responsiveness.
+    </p>
+  </message>
+
+  <message id="data-privacy" title="Information and use privacy">
+    <p>
+    InterSpec apps built by Sandia National Laboratories, do not collect any personal information,
+    and do not send any information off of your device, except for the two user-triggered 
+    actions described below.
+    </p>
+
+    <p>
+      The two instances <code>InterSpec</code> may cause information to be sent off of your device, are:
+      <ol>
+        <li>When the &quot;Map&quot; tool is used, map tiles will be requested 
+          from https://arcgisonline.com.<br /> 
+          Users will be warned before these external network requests are made, 
+          and there is an option to use your own arcgisonline.com account to request the the map tiles under 
+          (see the in-app Map Tools help for more information).<br /> 
+          Only tile locations are relayed to the external server; all plotting of 
+          radiation data on the map is done locally on your device.<br />
+          As far as the primary developer of <code>InterSpec</code> is aware, no information
+          about individual map-requests, or an individual persons requests, is available to 
+          Sandia National Laboratories.
+        </li>
+        <li>
+          The &quot;External RID&quot; tool can send your radiation data
+          to an external server (or executable on your device) to have a 
+          nuclide ID performed.<br />
+          Users are warned before using this tool, and they must explicitly enter
+          the URL of the server to use for the nuclide ID service.<br />
+          Sandia National Laboratories provides a freely available server for this 
+          service, but the URL is not pre-populated in <code>InterSpec</code> to explicitly 
+          ensure the user wants to perform this action, explicitly enables it,
+          and is aware of exactly where data will be sent.
+        </li>
+      </ol>
+    </p>
+
+    <p>
+    Additionally, <code>InterSpec</code> locally stores preferences you may change in the app as well as spectra you load, 
+    explicitly saved states, and the app state when it is exited. This information does not leave 
+    your device, and can be deleted by removing the application data folder in the operating 
+    system's standard location for the app 
+    (see <b>Help</b> &rarr; <b>About InterSpec...</b> &rarr; <b>Data</b> for this location).
+    There is currently no way to merge this data from multiple computers into a single source of information,
+    but you can copy this folder from an old computer to a new one to retain all your old information and preferences.
+    </p>
+    <p>
+      Use statistics and diagnostics are not collected by Sandia National Laboratories; we do 
+      not know who, or even how many people use <code>InterSpec</code>, or for how much, except as
+      can be inferred through support requests to 
+      <a href="mailto:InterSpec@sandia.gov">InterSpec@sandia.gov</a>, or attendance to webinars, or similar.<br />
+      However, if you install <code>InterSpec</code> through your operating systems app store 
+      (macOS, iOS, and Android), your operating system may report statistics or crash reports
+      to your operating system vendor; disabling this is usually a operating system preference, and 
+      except for iOS, you can install the app not through the app-store (e.g., side-load on Android).
+    </p>
+  </message>
+
+  <message id="bleeding-edge" title="Bleeding-edge builds of &lt;code&gt;InterSpec&lt;/code&gt;">
+    <p>
+      An automated build of <code>InterSpec</code> application is available for the Windows platform at:
+      <a target="_blank" href="https://github.com/sandialabs/InterSpec/releases/tag/bleeding-edge" style="display: block; margin-left: 20px">https://github.com/sandialabs/InterSpec/releases/tag/bleeding-edge</a>
+      This build is updated any time code is pushed to the github repository, and the executable is
+      able to be successfully built, and some small sanity checks are passed.
+    </p>
+    <p> This build of <code>InterSpec</code> is compiled completely from publicly available source code
+      on the github infrastructure, so you can be sure of what went into making of the executable.<br />
+      However, unlike official releases, the executable is not code-signed, meaning 
+      antivirus tools, or <code>Windows Defender</code>, may block initial execution of the EXE.
+      Usually clicking on the &quot;more info&quot; link of the resulting dialog will allow you
+      to bypass this, or you can add an exception in the <code>Windows Defender</code> options.
+    </p>
+    <p> The primary value of this automated build is that if you report a bug that has
+      been fixed in the code, or request a feature that has been implemented, you
+      don't need to wait until the next official release to take advantage of it.
+    </p>
+    <p>If you would like email updates about official releases, please send an email to 
+      <a href="mailto:InterSpec@sandia.gov">InterSpec@sandia.gov</a>, and you will notified 
+      of new releases every few months.
+    </p>
+  </message>
+  
+  <message id="add-spectra" title="How to add spectra together">
+    <p>
+      If you want to sum multiple spectra together, that come from different 
+      spectrum files: load all spectrum files into <code>InterSpec</code> 
+      (e.g., drag-n-drop the files onto <code>InterSpec</code>, one-by-one), 
+      then go to the &quot;Spectrum Manager&quot; (<b>InterSpec</b> &rarr; <b>Manager...</b>)
+      and select the specific files or samples you would like to sum (hold the <code>CTRL</code>
+      key while clicking on records/files, or hold the <code>SHIFT</code> key to select
+      a range), then click the &quot;<b>Sum Spectra</b>&quot; button as shown bellow.
+      A new in-memory spectrum file will be created at the bottom of the display area, 
+      usually named &quot;summed&quot;, that will have a single record.
+      <img src="/InterSpec_resources/static_text/faqs/manager_sum_spectra.png" style="max-height: 200px; max-width: 85%; display: block; margin-top: 10px; margin-bottom: 10px; margin-left: auto; margin-right: auto;" />
+    </p>
+    <p>
+      Another way to potentially do this, if all the samples are in the same original spectrum file,
+      is to use the &quot;<b>Spectrum Files</b>&quot; tab to  display all the samples you would like 
+      to sum, for example you could enter the text 
+      <pre style="margin-left: 20px;">1,3,8-12</pre>
+      to sum samples 1, 3, and 8 through 12.  You can now either work with this foreground spectrum
+      in the application, or if you use the
+      export spectrum file utility (&quot;<b>InterSpec</b>&quot; &rarr; &quot;<b>Export File...</b>&quot;)
+      you can choose to export just these displayed samples, and to sum them together (or for formats that 
+      allow just a single spectrum, the summing will be forced).
+    </p>
+  </message>
+
+  <message id="back-sub" title="Background subtracting spectra">
+    <p>
+      There are two ways to perform a channel-by-channel background subtraction:
+      <ol>
+        <li>The &quot;<b>Background Subtract</b>&quot; option under the &quot;<b>View</b>&quot; 
+          menu performs a <em>visual</em> background subtraction on the displayed plot.  No
+          actual subtraction happens, and performing operations like fitting peaks are still
+          performed on the full-statistics original foreground.  This background-subtraction
+          mode is intended to primarily help visualize and inspect data.<br />
+          This mode can be turned off by the menu item, &quot;<b>Un-Background Subtract</b>&quot;,
+          that will be shown in place of the original menu item.<br />
+          Peak continua may show distortions from this background subtraction mode; this is a
+          visual artifact of subtracting the varying data from, what would be a smooth line.
+        </li>
+        <li>
+          The &quot;<b>Hard Background Sub...</b>&quot; option under the &quot;<b>View</b>&quot; menu
+          performs a channel-by-channel subtraction of the background from the currently displayed 
+          foreground.  When this is performed, a new in-memory spectrum file with a single record 
+          gets created, and set as the displayed foreground (e.g., you can switch back to the original 
+          foreground - it is kept in memory, unchanged).  All further operations are are performed
+          on the reduced statistics spectrum, but assuming the Poisson uncertainty of each channel
+          is still the square root of its amplitude, which is not correct (but nearly always close-enough).
+        </li>
+      </ol>
+    </p>
+
+    <p> When dealing with peaks that may overlap background peaks, you can load the background as a foreground
+      and fit all the relevant peaks (you do not need to associate nuclides with them), then load your
+      spectrum of interest, and set your background (that now has peaks associated with it), as your background,
+      and in the &quot;Activity/Shielding Fit&quot; tool, and the &quot;Isotopics from peaks&quot;, and other
+      tools, a &quot;background subtract&quot; option will become available, which will properly propagate 
+      statistical uncertainties; this method of correcting for background peaks is generally preferred 
+      by the softwares author, over a &quot;<b>Hard Background Sub...</b>&quot; subtraction - but in practice
+      either way should give similar-ish answers.
+    </p>
+  </message>
+
+  <message id="isolate-spectra" title="Making a spectrum file with a subset of measurements">
+    If you have loaded a spectrum file with many records in it, but you would like to make a 
+    spectrum file with a sub-set of the records, there are a couple ways you can do this:
+    <ol>
+      <li>
+        The easiest way is if you use the &quot;<b>Spectrum Files</b>&quot; tab to display 
+        a sum of records, for say, the foreground (for example, enter text 
+        &quot;<code>1,3,8-12</code>&quot;, for samples 1, 3, and 8 through 12),
+        then you use the export spectrum file utility 
+        (&quot;<b>InterSpec</b>&quot; &rarr; &quot;<b>Export File...</b>&quot;)
+        and choose to export just these displayed samples, not summing them.
+      </li>
+      <li>
+        You can use the &quot;Spectrum Manager&quot; (<b>InterSpec</b> &rarr; <b>Manager...</b>)
+        to select the samples you want, and then create a new in-memory spectrum file, and 
+        then export it.
+      </li>
+    </ol>
+  </message>
+
+  <message id="unknown-shielding" title="Dealing with unknown shielding around a source">
+    The &quot;Activity/Shielding Fit&quot; tool allows you to use a &quot;<em>Generic</em>&quot;
+    shielding type that is specified by the atomic number and areal density.<br />
+    If you have peaks from the same (parent) nuclide, at multiple energies, you 
+    can fit for the effective atomic number.  However, due to the nature of attenuation cross-section
+    as a function of atomic number and energy, you really need at least one peak below 300 keV,
+    and preferable a few (above 300 keV, the <em>shape</em> of the attenuation, as a function 
+    of energy, becomes very similar between elements).<br />
+    You can add a generic shielding, or toggle a material shielding to its effective generic shielding equivalent, as shown below:
+
+    <div style="border:1px solid black; width: 90%; margin-left: auto; margin-right: auto;">
+      <div style="display: flex; align-content: space-around;">
+          <img src="/InterSpec_resources/static_text/faqs/shielding_toggle.png" style="max-height: 175px; width: 49.5%;" />
+          <img src="/InterSpec_resources/static_text/faqs/shielding_toggle_generic.png" style="max-height: 175px; width: 49.5%;" />
+      </div>
+      <div align="center" style="padding-top: 10px; padding-bottom: 10px">
+         (left) How to add a &quot;<em>Generic</em>&quot; shielding, or toggle a material to its effective generic shielding.<br />
+         (right) The option to check to fit for the effective atomic number of the generic shielding.
+      </div>
+    </div>
+
+    
+  </message>
+
+  <message id="timezone" title="How time-zones are handled">
+    Time zones are completely ignored by <code>InterSpec</code>.  
+    In a spectrum file, if a date/time is specified with a time zone, the time zone component is discarded.
+    It was found the usage of time zones was too inconsistent across different detector models and deploying agencies
+    to broadly gain anything by using time-zone information.<br />
+    The result of this is that if the time is properly tracked by the detection system, then the local time of 
+    the detector is what will be displayed to the user in <code>InterSpec</code>, usually.
+  </message>
+
+  <message id="move-work" title="Move work to another computer, or archiving work done">
+    <p>
+      If, after you do all your work (fit peaks, energy calibrate, fit activities, do isotopics, etc), 
+      you export your spectrum file to a <code>N42-2012</code> file, all this work will be included in the resulting
+      file.<br />
+      If some time later you load the <code>N42-2012</code> file, all your peaks will be present - the &quot;Activity/Shielding Fit&quot;
+      model and solution you found will be displayed if you open that tool, etc.
+    </p>
+    <p>
+      <code>InterSpec</code> also has an internal database you can store your applications state to by going
+      to the &quot;<b>InterSpec</b>&quot; &rarr; &quot;<b>Store As...</b>&quot; menu item.  However, this is effectively
+      tied to your computer (although you can copy this internal database from an old computer to a new one
+      by copying the files in the OS specified application data directory 
+      (see <b>Help</b> &rarr; <b>About InterSpec...</b> &rarr; <b>Data</b> for this location)).
+    </p>
+    <p>
+      Most of the tools also offer <code>CSV</code> and/or <em>XML</em> and/or <em>QR-code/URI</em> 
+      exports that capture the state of that tool, and which you can usually be re-imported to the 
+      tool (or drag-n-drop onto the application).
+    </p>
+  </message>
+
+  <message id="how-compile" title="How to compile &lt;code&gt;InterSpec&lt;/code&gt; from source">
+    The <a target="_blank" href="https://github.com/sandialabs/InterSpec/tree/master/target/patches">InterSpec/target/patches</a> 
+    directory in the code (available at <a target="_blank" href="https://github.com/sandialabs/InterSpec">https://github.com/sandialabs/InterSpec</a>)
+    provides instructions for this.
+  </message>
+
+  <message id="se-de-peak-id" title="Assigning single and double escape peak IDs">
+    If you are showing reference photopeaks for a nuclide, and you fit a peak in the spectrum
+    that is likely a single or double escape peak, it is likely <code>InterSpec</code> will automatically
+    recognize this, and associate it, for example, as &quot;<code>S.E 2614.53 keV, Th232&quot;</code> for a 
+    peak fit at 2013.14 keV.<br />
+    However, if <code>InterSpec</code> doesn't properly catch this, or you want to make the assignment 
+    after fitting, you can try right-clicking on the peak (best while showing parent nuclides reference 
+    photopeak lines), and going to the &quot;<b>Change Nuclide</b>&quot; sub-menu, and selecting the appropriate ID, as shown below:
+    <img src="/InterSpec_resources/static_text/faqs/se_right_click.png" style="max-height: 200px; max-width: 85%; display: block; margin-top: 10px; margin-bottom: 10px; margin-left: auto; margin-right: auto;" />
+    <br />
+    You can also type something like &quot;<code>2614 keV S.E.</code>&quot; into the &quot;<b>Photopeak</b>&quot; 
+    column of any table displaying peak information.
+  </message>
+
+  <message id="fit-age" title="Fitting a nuclides age">
+    In the &quot;Activity/Shielding Fit&quot; tool, when you have selected multiple peaks with 
+    the same parent nuclide, a &quot;<b>Fit Age</b>&quot; checkbox may appear in the 
+    the center table, that you can check to then fit the age.<br />
+    If the peaks you selected are all from the same progeny, or there is otherwise no hope to
+    fit age, this checkbox may not appear.<br />
+    However, please note that often time you <em>may not</em> have the power to fit for the age, 
+    or make a good estimate of this.<br />
+    Or, your nuclide may be in equilibrium, meaning some random, relatively large age will be fit, with
+    usually a large uncertainty value.<br />
+    <code>InterSpec</code> does not (currently) protect you well against either of these cases.
+  </message>
+
+  <message id="fit-separate" title="Separately fitting nuclides in a spectrum">
+    In the &quot;Activity/Shielding Fit&quot; tool you have the option to use whichever 
+    peaks you would like in a fit.  Usually if you have multiple nuclides, you can fit for 
+    all their activities, and the shielding amounts, all at the same time.  However, sometimes
+    you may want to first use the peaks for a single isotope, that you have trust in, to first 
+    fit for the amount of shielding, then un-select fitting for shielding, and then add in peaks
+    for other nuclides, and fit their activities, or ages, or whatever.<br />
+    Cases like this tend to be rare, but it can occasionally be useful to do things like this.
+  </message>
+
+  <message id="app-state" title="Saving the applications state">
+    <p>
+    Storing your applications state to <code>InterSpec</code>s internal database 
+    (via &quot;<b>InterSpec</b>&quot; &rarr; &quot;<b>Store As...</b>&quot;)
+    will store your currently open foreground/background/secondary spectrum files, your work
+    (peaks fit, activities, enrichments, etc), and the state of most tools that you
+    might have open (<em>Dose Calc</em>, <em>Gamma XS Calc</em>, etc), 
+    your current preferences/option, and a few other things.<br />
+    Exporting to a <code>N42-2012</code> spectrum file will capture much of your work, but not things like your current 
+    preferences, or the state of most tools (the &quot;Activity/Shielding Fit&quot; and isotopics tools are 
+    the notable exceptions that are stored into the <code>N42-2012</code> file).
+    </p>
+    <p> Storing to the internal database will allow you to save snapshots that you can go back to if you want 
+      (ex, if you want to analyze the spectrum using a few different hypothesis).  It will also enable that if
+      you later open the same spectrum file, a dialog will pop-up allowing you to pick back up from where you
+      previously left off.
+    </p>
+  </message>
+
+  <message id="max-file-size" title="Maximum file size that can be opened">
+    By default the largest spectrum file that can be opened in the Windows version of <code>InterSpec</code>
+    is 512 MB.  However, if you need to open a larger file you can edit the &quot;max-memory-request-size&quot;
+    element of the <code>InterSpec\data\config\wt_config_wx.xml</code> file, to increase this
+    (there isn't really a hard limit on the size, but the parsing is done in-memory, so really large
+    files will eat up your ram).<br />
+    You could also try compressing the file into a zip file, and if that is below 512 MB, you can then open it in 
+    <code>InterSpec</code>.
+  </message>
+
+  <message id="isocs-drf" title="Detector response functions (DRFs) from other programs">
+    <p>
+      <code>InterSpec</code> accepts detector response functions (DRFs) in a few forms.<br />
+      <ul>
+        <li>DRFs created using the &quot;Make Detector Response&quot;, in <code>CSV</code>, <code>XML</code>, <code>URI</code>, or <code>QR-code</code> form</li>
+        <li>From <a target="_blank" href="https://rsicc.ornl.gov/PackageDetail.aspx?p=GADRAS-DRF-18.8.13&amp;id=P00610&amp;cpu=PCX86&amp;v=04&amp;t=Gamma%20Detector%20Response%20and%20Analysis%20Software–Detector%20Response%20Function.">GADRAS-DRF</a></li>
+        <li>In a couple <code>CSV</code>/<code>TSV</code> formats</li>
+        <li><code>.ECC</code> files produced by
+          <a target="_blank" href="https://www.mirion.com/products/technologies/spectroscopy-scientific-analysis/gamma-spectroscopy/gamma-spectroscopy-software/lab-applications/s573-isocs-calibration-software">Mirion ISOCS</a>
+        </li>
+        <li>Through directly inputting a mathematical function in the &quot;Detector Response Function Select&quot; tool.</li>
+      </ul>
+      
+      See the <em>help</em> page for the &quot;Detector Response Function Select&quot; tool for more information.
+    </p>
+  </message>
+<!--
+  <message id="how-peak-fitter-works" title="How does the peak fitter work.">
+    ...
+  </message>
+-->
+  <message id="multi-ref-lines" title="Showing multiple reference photopeak reference lines at once">
+    You can show the reference photopeak lines for multiple nuclides and/or reaction at once, by first 
+    inputting the first nuclide into the <b>Reference Photopeak</b> tab, then clicking the 
+    &quot;<b>Add Another</b>&quot; button and entering your second nuclide, and so on.  <br/>
+    You can change the shielding and nuclide age for each nuclide, with the values you enter before 
+    clicking the &quot;<b>Add Another</b>&quot; button, being what will be used, independent of what 
+    you use for future nuclides added.<br/>
+    Each nuclide you add will be normalized to itself; that is, the maximum yield gamma/x-ray line
+    for each nuclide will scale to about the top of the spectrum - there is (currently) no way
+    to specify a relative scaling between nuclides.
+  </message>
+
+  <message id="dist-def" title="How &quot;Distance&quot; is defined for fitting activity">
+    In the &quot;Activity/Shielding Fit&quot; tool, and other places, the distance
+    is always defined from the detector face, to the <em>center</em> of the source.<br/>
+    <em>Not</em> the edge of the shielding, like if you were measuring with a tape measure.
+    That is, if your source is a box, and you measure from the detector face to the surface of the
+    box, you will need to add one-half of the boxes depth to this measurement, for the value
+    you enter into <code>InterSpec</code>.
+  </message>
+
+  <message id="act-line-weighting" title="How activity is weighted between multiple gamma lines">
+    In the &quot;Activity/Shielding Fit&quot; tool if you use multiple peaks for a parent nuclide,
+    the reported activity is a weighted average of all of them, with the weighting being defined by
+    the peak area uncertainties (DRF uncertainties will be added in the future - they are currently ignored).
+  </message>
+
+  <message id="key-line" title="Is there a key line">
+    <p>
+      <code>InterSpec</code> does not support the concept of a <em>key-line</em>, like other software use.
+      If you want to estimate an activity based off of a single gamma energy, then in the 
+      &quot;Activity/Shielding Fit&quot; tool, de-select all other peaks, and de-select any 
+      fit options for the shielding, then hit the &quot;Fit Model&quot; button, 
+      and you will get the activity of that single peak.
+    </p>
+    <p>
+      The chart on the &quot;Activity/Shielding Fit&quot; tool can be toggled 
+      between showing statistical deviations of each peaks, and the amplitude 
+      discrepancies of each peak, compared to the weighted average value.  This chart provides 
+      a good indication of how consistent each peak estimates activity, and if the
+      shielding, DRF, and nuclide age are all modeled well, then the chart will
+      show the peaks to be consistent with each other.
+    </p>
+  </message>
+
+  <message id="how-make-nuc-library" title="How to make a nuclide library">
+    <code>InterSpec</code> does not support the concept of a nuclide library.<br/>
+    You assign a nuclide, x-ray, or reaction to peaks, and the
+    assignments you make determine which activities can be fit for in the 
+    &quot;Activity/Shielding Fit&quot; tool.
+  </message>
+
+  <message id="zero-amp-fit" title="Fitting zero-amplitude peaks">
+    If you want to fit a low, or zero, amplitude peak, holding the <b>CTRL</b> key, plus dragging 
+    over the region of interest (ROI) with the mouse will force a peak to be fit; no statistical 
+    significance thresholds are applied, like if you were to double-click on the spectrum.<br/>
+    Instead you can also use the &quot;Add...&quot; button on the &quot;Peak Manager&quot;
+    tab to force add a peak.
+  </message>
+
+  
+  <message id="search-profile" title="How the &quot;Profile&quot; ordering is defined when searching for nuclides">
+    <p>
+      On the &quot;Nuclide Search&quot; tab, when you search on an energy, by default the results
+      are ordered by the &quot;<b>Profile</b>&quot; column.<br/>
+      You can click on the header of any other column to order the results by that column, but usually
+      &quot;<b>Profile</b>&quot; is the best option.
+    </p>
+    <p>
+      Roughly, the &quot;<b>Profile</b>&quot; column is calculated by looking for peaks that would be 
+      naively expected from a nuclide, under a few shielding conditions (none, light, heavy) and ages,
+      and comparing the observed peaks, to predicted.  If there are extra peaks in the spectrum, no 
+      penalty is added, but if a peak that was expected is not observed (e.g., if a peak is predicted 
+      between two other peaks that are predicted and observed, but the middle peak is not observed), 
+      than a penalty is assessed.  The score also includes a naive evaluation of the relative heights 
+      of multiple peaks, compared to expectations.  The peaks used for this evaluation is a combination
+      of peaks fit by the user, as well as an automated search of peaks in the spectrum.
+    </p>
+    <p>
+      This weighting is a heuristic that is intended to provide reasonable ordering
+      of results from the ~4000 nuclides available in <code>InterSpec</code>, without 
+      introducing biases of commonly seen nuclides, or expected half-lives, etc.<br/>
+      A downside of trying not to bias things, is that if you search on an energy
+      like 2614.53 keV, the top result wont be the common answer of Th232, but instead 
+      include results of all the possible nuclides that decay through Tl208 (whose
+      decay is the one that results in the 2614.53 keV gamma).  This is intended, because it might be
+      critical that you catch U232, or Th228, or Pu236 can all have this line, instead
+      of just assuming Th232.<br/>
+      In practice the heuristic used seems to work pretty well, given it has no priors 
+      injected into its results.  
+    </p>
+    <p>
+      If you would like some priors based on likely encountered nuclides, you can 
+      right-click on a peak, and go to the &quot;<b>Change Nuclide</b>&quot;
+      sub-menu for suggestions.
+    </p>
+    <p>The implementation of this scoring method can be found in the 
+      <a target="_blank" href="https://github.com/sandialabs/InterSpec/blob/b38a80b6ef14a8ea21940fb8fc2558aee8a3aaf1/src/IsotopeSearchByEnergyModel.cpp#L240">profile_weight(...)</a>
+      function in the code; the comments in the code clearly indicate how the above procedure 
+      was developed through informal, non-rigorous, experimentation, and there seems to 
+      be clear room for improvement - feedback is always welcome for any part of <code>InterSpec</code>.
+    </p>
+  </message>
+
+  <message id="peak-suggestions" title="Where nuclide-suggestions on right-clicks come from">
+    When you right-click on a peak, and go to the &quot;<b>Change Nuclide</b>&quot;, menu,
+    the suggested nuclides come from a few different places.
+    
+    <ul>
+      <li>The currently displayed reference photopeak lines are checked for energies nearby the peak</li>
+      <li>The nuclides of other peaks that have been identified are checked for energies nearby the peak</li>
+      <li>A file, 
+        <a target="_blank" href="https://github.com/sandialabs/InterSpec/blob/master/data/PhotoPeak.lis">PhotoPeak.lis</a>
+        is included with <code>InterSpec</code> (the file is originally from 
+        <a target="_blank" href="https://rsicc.ornl.gov/PackageDetail.aspx?p=GADRAS-DRF-18.8.13&amp;id=P00610&amp;cpu=PCX86&amp;v=04&amp;t=Gamma%20Detector%20Response%20and%20Analysis%20Software–Detector%20Response%20Function.">GADRAS-DRF</a>)
+        which has about 10,000 energies mapped to their likely nuclide, x-ray, or reaction source.
+      </li>
+      <li>
+        A file, 
+        <a target="_blank" href="https://github.com/sandialabs/InterSpec/blob/master/data/CharacteristicGammas.txt">CharacteristicGammas.txt</a>
+        is included with <code>InterSpec</code> (the file is originally from 
+        <a target="_blank" href="https://rsicc.ornl.gov/PackageDetail.aspx?p=GADRAS-DRF-18.8.13&amp;id=P00610&amp;cpu=PCX86&amp;v=04&amp;t=Gamma%20Detector%20Response%20and%20Analysis%20Software–Detector%20Response%20Function.">GADRAS-DRF</a>)
+        which has about 50 common nuclides with the energies that are characteristic to them.
+      </li>
+      <li>Single and double escape peaks from the above are checked for, 
+        as they are for peaks found from doing an auto-search of peaks in the spectrum
+      </li>
+      <li>Sum peaks from peaks found from an auto-search of peaks in the spectrum, are also checked 
+        for (although these sum-peak options can't currently be selected for nuclide assignment of the peak)</li>
+    </ul>
+    
+    <p>If you choose to assign the peak to a nuclide, x-ray, or reaction that any other peak in the spectrum 
+      is assigned to, then the color of the peak in question will be changed to the color of the other peak.
+    </p>
+
+    <p>The implementation of this scoring method can be found in the 
+      <a target="_blank" href="https://github.com/sandialabs/InterSpec/blob/b38a80b6ef14a8ea21940fb8fc2558aee8a3aaf1/src/IsotopeId.cpp#L1466">IsotopeId::populateCandidateNuclides(...)</a>
+      function in the code, which itself calls out to a number of other functions to do the work.
+    </p>
+  </message>
+
+  <message id="file-query" title="How to &quot;Datamine&quot; a pile of spectrum files">  
+    If you have an archive of spectrum files on your filesystem, the &quot;File Query Tool&quot;
+    can be used to look through them, and match criteria like RID nuclide results, live time, dead time,
+    measurement date, detector used, etc.<br />
+    A <code>CSV</code> file of the results can also be exported from this tool as well for deeper analysis
+    in a spreadsheet application.
+  </message>
+
+  <message id="feature-requests" title="How to request support, new features, or report bugs">
+    <p>
+      Feedback, feature requests, bug reports, criticisms, and just asking how to do something in 
+      <code>InterSpec</code> are all greatly appreciated!<br />
+      <br />
+      Please email:
+      <div style="text-align: center; font-size: larger; margin-top: 5px;"><a href="mailto:InterSpec@sandia.gov">InterSpec@sandia.gov</a></div>
+    </p>
+    <p>Most improvements and features implemented in <code>InterSpec</code> since 2019 have
+      been a result of user feedback.  A lot of times when a user has expressed not knowing
+      how to do something, or expressed frustration at how hard something is to do, this has
+      led to very nice improvements.  User requests also weigh heavily into deciding which
+      new features to implement.  All feedback, even if not direct feedback, is given serious 
+      consideration and recorded; a number of times after a few days or weeks of thought, 
+      the feedback that initially may not have seemed within scope, or only applicable to a very specific use-case,
+      will <em>click</em> with the primary author and a more generalized solution can be implemented
+      improving the overall experience. 
+    </p>
+    <p>
+      Contributions to <code>InterSpec</code> are also welcome and greatly appreciated, either 
+      through github pull-requests, or via other means.  Pull-requests for minor bugs or fixes
+      can usually be accepted pretty easily.  For larger feature additions, please 
+      email <a href="mailto:InterSpec@sandia.gov">InterSpec@sandia.gov</a> first to coordinate,
+      and you will also be asked to sign an authorship memo to protect our ability to freely
+      distribute <code>InterSpec</code>.
+    </p>
+    <p><code>InterSpec</code> is primarily developed and supported with only a minority 
+      fraction of the primary authors time, so not everything can be implemented, or it may take 
+      a while before something can be gotten to.
+      Responses to email may take a while if the author is on travel or vacation, 
+      and it is possible resources will not be available to provide requested support.
+    </p>
+  </message>
 </messages>
