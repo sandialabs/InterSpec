@@ -141,6 +141,26 @@ UndoRedoManager::~UndoRedoManager()
   
 }//~UndoRedoManager()
 
+void UndoRedoManager::PeakModelChange::setToCurrentPeaks()
+{
+  UndoRedoManager *manager = UndoRedoManager::instance();
+  if( !manager || !manager->m_interspec )
+    return;
+  
+  auto &start_peaks = manager->m_PeakModelChange_starting_peaks;
+  assert( start_peaks.empty() );
+  start_peaks.clear();
+  
+  PeakModel *pmodel = manager->m_interspec->peakModel();
+  assert( pmodel );
+  if( !pmodel )
+    return;
+  
+  shared_ptr<const deque<PeakModel::PeakShrdPtr>> peaks = pmodel->peaks();
+  if( peaks )
+    start_peaks.insert( end(start_peaks), begin(*peaks), end(*peaks) );
+}//void UndoRedoManager::PeakModelChange::setToCurrentPeaks()
+
 
 UndoRedoManager::PeakModelChange::PeakModelChange()
 {
@@ -150,18 +170,7 @@ UndoRedoManager::PeakModelChange::PeakModelChange()
   
   if( manager->m_PeakModelChange_counter == 0 )
   {
-    auto &start_peaks = manager->m_PeakModelChange_starting_peaks;
-    assert( start_peaks.empty() );
-    start_peaks.clear();
-    
-    PeakModel *pmodel = manager->m_interspec->peakModel();
-    assert( pmodel );
-    if( !pmodel )
-      return;
-    
-    shared_ptr<const deque<PeakModel::PeakShrdPtr>> peaks = pmodel->peaks();
-    if( peaks )
-      start_peaks.insert( end(start_peaks), begin(*peaks), end(*peaks) );
+    setToCurrentPeaks();
   }//if( manager->m_PeakModelChange_counter == 0 )
   
   manager->m_PeakModelChange_counter += 1;
@@ -655,6 +664,14 @@ void UndoRedoManager::handleSpectrumChange( const SpecUtils::SpectrumType type,
   if( type == SpecUtils::SpectrumType::Foreground )
   {
     // TODO: go through and cleanup files we are holding undo/redo for
+    
+    
+    // We dont want to set the old peaks to the new spectrum, so we'll update it
+    //  to the current spectrums peaks... not ideal, but something.
+    if( m_PeakModelChange_counter > 0 )
+    {
+      UndoRedoManager::PeakModelChange::setToCurrentPeaks();
+    }
     
     if( m_steps && !m_steps->empty() )
     {

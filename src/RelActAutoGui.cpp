@@ -73,6 +73,7 @@
 #include "InterSpec/RelActAutoGui.h"
 #include "InterSpec/WarningWidget.h"
 #include "InterSpec/RelActCalcAuto.h"
+#include "InterSpec/UndoRedoManager.h"
 #include "InterSpec/RelActTxtResults.h"
 #include "InterSpec/NativeFloatSpinBox.h"
 #include "InterSpec/DecayDataBaseServer.h"
@@ -1228,6 +1229,8 @@ RelActAutoGui::RelActAutoGui( InterSpec *viewer, Wt::WContainerWidget *parent )
   if( !m_interspec )
     throw runtime_error( "RelActAutoGui: requires pointer to InterSpec" );
   
+  new UndoRedoManager::BlockGuiUndoRedo( this );
+    
   wApp->useStyleSheet( "InterSpec_resources/RelActAutoGui.css" );
   wApp->useStyleSheet( "InterSpec_resources/GridLayoutHelpers.css" );
   

@@ -2025,6 +2025,55 @@ std::shared_ptr<void> ReferencePhotopeakDisplay::getDisableUndoRedoSentry()
 }//std::shared_ptr<void> getDisableUndoRedoSentry()
 
 
+void ReferencePhotopeakDisplay::addUndoRedoPoint( const ReferenceLineInfo &starting_showing,
+                      const std::vector<ReferenceLineInfo> &starting_persisted,
+                      const std::deque<RefLineInput> &starting_prev_nucs,
+                      const bool starting_user_color,
+                      const RefLineInput &current_user_input )
+{
+  const bool ending_user_color = m_userHasPickedColor;
+  
+  UndoRedoManager *undo_manager = UndoRedoManager::instance();
+  if( undo_manager
+     && !(starting_showing == m_currentlyShowingNuclide)
+     && !m_undo_redo_sentry.lock() )
+  {
+    auto undo = [this, starting_showing, starting_persisted, starting_prev_nucs, starting_user_color](){
+      InterSpec *interspec = InterSpec::instance();
+      ReferencePhotopeakDisplay *display = interspec ? interspec->referenceLinesWidget() : nullptr;
+      if( !display )
+        return;
+      
+      display->m_currentlyShowingNuclide = starting_showing;
+      display->m_persisted = starting_persisted;
+      display->m_prevNucs = starting_prev_nucs;
+      
+      display->updateDisplayFromInput( starting_showing.m_input );
+      display->m_userHasPickedColor = starting_user_color;
+    };//undo
+    
+    auto redo = [this, starting_showing, starting_persisted, starting_prev_nucs, current_user_input, ending_user_color](){
+      InterSpec *interspec = InterSpec::instance();
+      ReferencePhotopeakDisplay *display = interspec ? interspec->referenceLinesWidget() : nullptr;
+      if( !display )
+        return;
+      
+      display->m_currentlyShowingNuclide = starting_showing;
+      display->m_persisted = starting_persisted;
+      display->m_prevNucs = starting_prev_nucs;
+      
+      display->updateDisplayFromInput( current_user_input );
+      display->m_userHasPickedColor = ending_user_color;
+    };//undo
+    
+    
+    undo_manager->addUndoRedoStep( undo, redo, "Update ref-lines." );
+  }//if( undo_manager )
+}//void addUndoRedoPoint(...)
+
+
+
+
 void ReferencePhotopeakDisplay::updateDisplayChange()
 {
   if( m_currently_updating )
@@ -2038,40 +2087,19 @@ void ReferencePhotopeakDisplay::updateDisplayChange()
   const RefLineInput user_input = userInput();
   updateDisplayFromInput( user_input );
   
-  const bool ending_user_color = m_userHasPickedColor;
-  
-  
-  UndoRedoManager *undo_manager = UndoRedoManager::instance();
-  if( undo_manager
-     && !(starting_showing == m_currentlyShowingNuclide)
-     && !m_undo_redo_sentry.lock() )
-  {
-    auto undo = [this, starting_showing, starting_persisted, starting_prev_nucs](){
-      m_currentlyShowingNuclide = starting_showing;
-      m_persisted = starting_persisted;
-      m_prevNucs = starting_prev_nucs;
-      
-      updateDisplayFromInput( starting_showing.m_input );
-    };//undo
-    
-    auto redo = [this, starting_showing, starting_persisted, starting_prev_nucs, user_input, ending_user_color](){
-      m_currentlyShowingNuclide = starting_showing;
-      m_persisted = starting_persisted;
-      m_prevNucs = starting_prev_nucs;
-      
-      updateDisplayFromInput( user_input );
-      m_userHasPickedColor = ending_user_color;
-    };//undo
-    
-    
-    undo_manager->addUndoRedoStep( undo, redo, "Update ref-lines." );
-  }//if( undo_manager )
+  addUndoRedoPoint( starting_showing, starting_persisted, starting_prev_nucs,
+                   starting_user_color, user_input );
 }//void updateDisplayChange()
 
 
 void ReferencePhotopeakDisplay::updateDisplayFromInput( RefLineInput user_input )
 {
   UpdateGuard guard( m_currently_updating );
+  
+  const ReferenceLineInfo starting_showing = m_currentlyShowingNuclide;
+  const vector<ReferenceLineInfo> starting_persisted = m_persisted;
+  const deque<RefLineInput> starting_prev_nucs = m_prevNucs;
+  const bool starting_user_color = m_userHasPickedColor;
   
   shared_ptr<ReferenceLineInfo> ref_lines = ReferenceLineInfo::generateRefLineInfo( user_input );
   
@@ -2361,6 +2389,9 @@ void ReferencePhotopeakDisplay::updateDisplayFromInput( RefLineInput user_input 
   }
 
   updateOtherNucsDisplay();
+  
+  addUndoRedoPoint( starting_showing, starting_persisted, starting_prev_nucs,
+                   starting_user_color, user_input );
 }//void updateDisplayChange()
 
 
@@ -2751,11 +2782,13 @@ void ReferencePhotopeakDisplay::deSerialize( std::string &xml_data  )
           input.setShieldingAttFcn( m_materialDB );
         }
         
-        shared_ptr<ReferenceLineInfo> ref_line = ReferenceLineInfo::generateRefLineInfo( input );
-        if( !ref_line || (ref_line->m_validity != ReferenceLineInfo::InputValidity::Valid) )
-          throw runtime_error( "Couldn't generate reference lines from source '" + input.m_input_txt + "'" );
+        //shared_ptr<ReferenceLineInfo> ref_line = ReferenceLineInfo::generateRefLineInfo( input );
+        //if( !ref_line || (ref_line->m_validity != ReferenceLineInfo::InputValidity::Valid) )
+        //  throw runtime_error( "Couldn't generate reference lines from source '" + input.m_input_txt + "'" );
+        //
+        //m_currentlyShowingNuclide = *ref_line;
         
-        m_currentlyShowingNuclide = *ref_line;
+        updateDisplayFromInput( input );
       }
     }//if( showing_node )
     

@@ -140,6 +140,7 @@ public:
   {
     PeakModelChange();
     ~PeakModelChange();
+    static void setToCurrentPeaks();
     
     PeakModelChange( const PeakModelChange& ) = delete; // non construction-copyable
     PeakModelChange &operator=( const PeakModelChange & ) = delete; // non copyable
@@ -176,6 +177,10 @@ public:
      only items that will be saved.
      */
     std::unique_ptr<PeakModelChange> m_peak_change;
+    
+    // TODO: should also save energy calibration...
+    //typedef std::map<std::weak_ptr<SpecMeas>,std::shared_ptr<const SpecUtils::EnergyCalibration>,std::owner_less<std::weak_ptr<SpecMeas>>> MeasToEnergyCal_t;
+    //MeasToEnergyCal_t m_energy_cals[3];
   };//BlockGuiUndoRedo
   
   
