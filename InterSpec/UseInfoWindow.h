@@ -108,6 +108,8 @@ public:
     void handleSampleSelectionChanged();
     void handleSampleDoubleClicked( Wt::WModelIndex index, Wt::WMouseEvent event );
     
+  
+  void showFaqTab();
 protected:
   
   std::shared_ptr<DataBaseUtils::DbSession>           m_session;

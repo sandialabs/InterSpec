@@ -299,7 +299,7 @@ UndoRedoManager *UndoRedoManager::instance()
 {
   InterSpec *viewer = InterSpec::instance();
   
-  assert( viewer );
+  //assert( viewer );  //this will hit sometimes in the destruction of the app
   if( !viewer )
     return nullptr;
   

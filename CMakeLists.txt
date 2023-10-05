@@ -848,34 +848,25 @@ endif( WIN32 )
 #endif()
 
 
+# I cant seems to get more complex regexs to work, so we'll use many simple ones.
+FILE(GLOB JS_BASE_FILES InterSpec_resources/*.js )
+FILE(GLOB CSS_BASE_FILES InterSpec_resources/*.css )
+list(FILTER CSS_BASE_FILES EXCLUDE REGEX ".*SpectrumChartD3.*css")
+FILE(GLOB STATIC_XML_FILES InterSpec_resources/static_text/*.xml )
+FILE(GLOB STATIC_HTML_TMPLTS_FILES InterSpec_resources/static_text/*.html )
+FILE(GLOB STATIC_ADD_XML_FILES InterSpec_resources/static_text/*/*.xml )
+FILE(GLOB STATIC_ADD_CSS_FILES InterSpec_resources/static_text/*/*.css )
+
 list( APPEND OTHER_InterSpec_SUPPORT_FILES
+     ${JS_BASE_FILES}
+     ${CSS_BASE_FILES}
+     ${STATIC_XML_FILES}
+     ${STATIC_ADD_XML_FILES}
+     ${STATIC_ADD_CSS_FILES}
+     ${STATIC_HTML_TMPLTS_FILES}
+     ${CMAKE_CURRENT_SOURCE_DIR}/InterSpec_resources/static_text/help.json
      ${CMAKE_CURRENT_SOURCE_DIR}/README.md
-     ${CMAKE_CURRENT_SOURCE_DIR}/data/default_preferences.xml
-     ${CMAKE_CURRENT_SOURCE_DIR}/InterSpec_resources/themes/dark/dark.css
-     ${CMAKE_CURRENT_SOURCE_DIR}/InterSpec_resources/static_text/copyright_and_about.xml
-     ${CMAKE_CURRENT_SOURCE_DIR}/InterSpec_resources/static_text/use_instructions.xml
-     ${CMAKE_CURRENT_SOURCE_DIR}/InterSpec_resources/static_text/spectrum_file_format_descriptions.xml
   )
-
-FILE(GLOB CSS_FILES ${CMAKE_CURRENT_SOURCE_DIR}/InterSpec_resources/*.css )
-list(FILTER CSS_FILES EXCLUDE REGEX ".*SpectrumChartD3.*css")
-list(APPEND OTHER_InterSpec_SUPPORT_FILES ${CSS_FILES})
-
-list(
-    APPEND
-    OTHER_InterSpec_SUPPORT_FILES
-    ${CMAKE_CURRENT_SOURCE_DIR}/InterSpec_resources/DecayChainChart.js
-    ${CMAKE_CURRENT_SOURCE_DIR}/InterSpec_resources/RelEffPlot.js
-    ${CMAKE_CURRENT_SOURCE_DIR}/InterSpec_resources/DetectionLimitTool.js
-)
-
-FILE(GLOB HELP_FILES ${CMAKE_CURRENT_SOURCE_DIR}/InterSpec_resources/static_text/*help.xml)
-list(
-    APPEND
-    OTHER_InterSpec_SUPPORT_FILES
-    ${HELP_FILES}
-    ${CMAKE_CURRENT_SOURCE_DIR}/InterSpec_resources/static_text/help.json
-)
 
 add_custom_target(interspec_resources SOURCES ${OTHER_InterSpec_SUPPORT_FILES})
 

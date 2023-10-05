@@ -1234,6 +1234,18 @@ void UseInfoWindow::handleSampleDoubleClicked( WModelIndex index, WMouseEvent ev
 }
 
 
+void UseInfoWindow::showFaqTab()
+{
+  for( WMenuItem *item : m_menu->items() )
+  {
+    if( item->text() != "FAQs" )
+      continue;
+    right_select_item( item );
+    return;
+  }//for( loop over menu items )
+}//void showFaq( std::string &topic_id = "" );
+
+
 void UseInfoWindow::loadSample( const Wt::WModelIndex index )
 {
   if( !index.isValid() )
