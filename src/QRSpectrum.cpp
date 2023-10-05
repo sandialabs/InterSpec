@@ -2029,7 +2029,7 @@ EncodedSpectraInfo get_spectrum_url_info( std::string url )
     }
    
     answer.m_number_urls = hex_to_dec( url[(has_email_opt ? 2 : 1)] ) + 1;
-    if( answer.m_number_urls > 10 )
+    if( answer.m_number_urls > 16 )
       throw std::runtime_error( "Invalid number of total URLs specified" );
     
     if( answer.m_number_urls > 1 )
@@ -2040,7 +2040,7 @@ EncodedSpectraInfo get_spectrum_url_info( std::string url )
     }else
     {
       answer.m_num_spectra = hex_to_dec( url[(has_email_opt ? 3 : 2)] ) + 1;
-      if( answer.m_num_spectra > 10 )
+      if( answer.m_num_spectra > 16 )
         throw std::runtime_error( "Invalid number of spectra in URL." );
     }
     
@@ -2330,6 +2330,19 @@ std::vector<UrlSpectrum> spectrum_decode_first_url( const std::string &url, cons
       next_spec_info = next_spec_info.substr(4);
     }//if( next_spec_info.size() > 4 )
     
+    // If we have a few extra bytes at the end of the message - we'll ignore them, if they are zero
+    if( next_spec_info.size() <= 4 )
+    {
+      bool all_zeros = true;
+      for( size_t i = 0; all_zeros && (i < next_spec_info.size()); ++i )
+        all_zeros = (next_spec_info[i] == '\0');
+      if( all_zeros )
+        next_spec_info.clear();
+      else
+        throw runtime_error( "There were " + std::to_string(next_spec_info.size())
+                            + " bytes left over after the spectral data, that were not zero." );
+    }//if( next_spec_info.size() < 4 )
+    
     //cout << "next_spec_info.len=" << next_spec_info.length() << endl;
   }//if( info.m_encode_options & EncodeOptions::CsvChannelData ) / else
   
@@ -2345,9 +2358,19 @@ std::vector<UrlSpectrum> spectrum_decode_first_url( const std::string &url, cons
   
   if( next_spec_info.length() > 1 )
   {
-    vector<UrlSpectrum> the_rest = spectrum_decode_first_url( next_spec_info, info );
-    answer.insert( end(answer), begin(the_rest), end(the_rest) );
-  }
+    try
+    {
+      vector<UrlSpectrum> the_rest = spectrum_decode_first_url( next_spec_info, info );
+      answer.insert( end(answer), begin(the_rest), end(the_rest) );
+    }catch( std::exception &e )
+    {
+      string msg = e.what();
+      const string prefix = "Error reading subsequent spectra from URI: ";
+      if( msg.find(prefix) == string::npos )
+        msg = prefix + msg;
+      throw runtime_error( msg );
+    }
+  }//if( next_spec_info.length() > 1 )
   
   return answer;
 }//std::vector<UrlSpectrum> spectrum_decode_first_url( string url, const EncodedSpectraInfo & )
