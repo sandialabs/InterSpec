@@ -110,6 +110,10 @@ namespace SpecFileQuery
     NumFileDataFields
   };//enum FileDataField
 
+  // Previous to 20231005 we printed live times as full duration strings, but to make data
+  //  easier to work with in Excel, lets try just printing it out as seconds.
+#define SpecFileQuery_TIME_AS_SECONDS 1
+  
   const char *to_string( const FileDataField field );
   
   /** Returns true if field was succesfully found; if not found filed will be

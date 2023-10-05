@@ -315,7 +315,11 @@ namespace
             //if( !(stringstream(value_str) >> value) ) //Should have been valideted client-side, but lets be safe
             //  throw runtime_error( "Could not convert '" + value_str + "' to a floating point" );
             double value = std::numeric_limits<double>::infinity();
+#if( SpecFileQuery_TIME_AS_SECONDS )
+            stringstream(value_str) >> value;
+#else
             try{ value = PhysicalUnits::stringToTimeDuration( value_str ); }catch(...){}
+#endif
             
             testitem.set_numeric_test( field, value, matchtype );
             break;
@@ -473,7 +477,9 @@ namespace
           case FileDataField::TotalRealTime:
           case FileDataField::IndividualSpectrumLiveTime:
           case FileDataField::IndividualSpectrumRealTime:
+#if( !SpecFileQuery_TIME_AS_SECONDS )
             titlestr_utf8 += " (s)";
+#endif
             break;
             
           default:
@@ -542,6 +548,7 @@ namespace
              
             case FileDataField::TotalLiveTime:
             case FileDataField::TotalRealTime:
+#if( !SpecFileQuery_TIME_AS_SECONDS )
               try
               {
                 // Convert to decimal number of seconds, for ease of use in Excel
@@ -550,11 +557,13 @@ namespace
               }catch(...)
               {
               }
+#endif
               break;
               
             case FileDataField::IndividualSpectrumLiveTime:
             case FileDataField::IndividualSpectrumRealTime:
             {
+#if( !SpecFileQuery_TIME_AS_SECONDS )
               // Convert to decimal number of seconds, for ease of use in Excel
               string answer;
               vector<string> fields;
@@ -574,7 +583,7 @@ namespace
               }
               
               utf8txt = answer.empty() ? utf8txt : answer;
-              
+#endif
               break;
             }//case IndividualSpectrum{LiveTime|RealTime}
            
@@ -622,6 +631,16 @@ namespace
   {
     const size_t max_cell_size = 1024;
     vector<string> row( NumFileDataFields + xmlfilters.size(), "" );
+    
+#if( SpecFileQuery_TIME_AS_SECONDS )
+    auto print_to_milli = []( const double time ) -> string {
+      //char buffer[64];
+      //snprintf(buffer, sizeof(buffer), "%.3f", (time/PhysicalUnits::second) );
+      
+      const size_t precision = static_cast<size_t>( max(0.0, ceil(log10(time))) + 3 );
+      return PhysicalUnits::printCompact(time, precision);
+    };
+#endif
     
     for( FileDataField f = FileDataField(0); f < NumFileDataFields; f = FileDataField(f+1) )
     {
@@ -768,18 +787,30 @@ namespace
         }//case FileDataField::EnergyCalibrationType:
           
         case FileDataField::TotalLiveTime:
+#if( SpecFileQuery_TIME_AS_SECONDS )
+          row[f] = print_to_milli( meas.total_livetime );
+#else
           row[f] = PhysicalUnits::printToBestTimeUnits( meas.total_livetime );
+#endif
           break;
           
         case FileDataField::TotalRealTime:
+#if( SpecFileQuery_TIME_AS_SECONDS )
+          row[f] = print_to_milli( meas.total_realtime );
+#else
           row[f] = PhysicalUnits::printToBestTimeUnits( meas.total_realtime );
+#endif
           break;
           
         case FileDataField::IndividualSpectrumLiveTime:
         {
           for( const auto lt : meas.individual_spectrum_live_time )
           {
+#if( SpecFileQuery_TIME_AS_SECONDS )
+            row[f] += (row[f].size()?";":"") + print_to_milli(lt);
+#else
             row[f] += (row[f].size()?";":"") + PhysicalUnits::printToBestTimeUnits(lt);
+#endif
             if( row[f].size() > max_cell_size )
               break;
           }
@@ -790,7 +821,12 @@ namespace
         {
           for( const auto lt : meas.individual_spectrum_real_time )
           {
+#if( SpecFileQuery_TIME_AS_SECONDS )
+            row[f] += (row[f].size()?";":"") + print_to_milli(lt);
+#else
             row[f] += (row[f].size()?";":"") + PhysicalUnits::printToBestTimeUnits(lt);
+#endif
+            
             if( row[f].size() > max_cell_size )
               break;
           }
@@ -1038,6 +1074,10 @@ protected:
           
           bool pl = true, pr = true;
           double lhsval, rhsval;
+#if( SpecFileQuery_TIME_AS_SECONDS )
+          pl = !!(stringstream(lhsstr) >> lhsval);
+          pr = !!(stringstream(rhsstr) >> rhsval);
+#else
           try
           {
             lhsval = PhysicalUnits::stringToTimeDuration( lhsstr );
@@ -1053,6 +1093,7 @@ protected:
           {
             pr = false;
           }
+#endif
           
           if( pl && pr )
             lesthan = (lhsval < rhsval);
@@ -1323,10 +1364,17 @@ public:
       case FileDataField::ContainedDeviationPairs:    return WString("Dev. Pairs");
       case FileDataField::HasGps:                     return WString("GPS Info");
       case FileDataField::EnergyCalibrationType:      return WString("Energy Cal. Type");
+#if( SpecFileQuery_TIME_AS_SECONDS )
+      case FileDataField::TotalLiveTime:              return WString("Sum Live Time (s)");
+      case FileDataField::TotalRealTime:              return WString("Sum Wall Time (s)");
+      case FileDataField::IndividualSpectrumLiveTime: return WString("Spec Live Times (s)");
+      case FileDataField::IndividualSpectrumRealTime: return WString("Spec Wall Times (s)");
+#else
       case FileDataField::TotalLiveTime:              return WString("Sum Live Time");
       case FileDataField::TotalRealTime:              return WString("Sum Wall Time");
       case FileDataField::IndividualSpectrumLiveTime: return WString("Spec Live Times");
       case FileDataField::IndividualSpectrumRealTime: return WString("Spec Wall Times");
+#endif //SpecFileQuery_TIME_AS_SECONDS
       case FileDataField::NumberOfSamples:            return WString("Num Samples");
       case FileDataField::NumberOfRecords:            return WString("Num Records");
       case FileDataField::NumberOfGammaChannels:      return WString("Num Gamma Channels");
