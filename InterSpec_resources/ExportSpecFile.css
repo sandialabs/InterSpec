@@ -246,8 +246,9 @@
 }
 
 
-.ExportSpecFileTool .LinkBtn.ExportSpecExportBtn
+.ExportSpecFileTool button.Wt-btn.with-label.LightButton.LinkBtn.ExportSpecExportBtn
 {
+  color: blue;
   float: none;
   border: 1px solid blue !important;
 }
