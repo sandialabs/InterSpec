@@ -145,33 +145,43 @@ namespace SpecFileQuery
     switch( field )
     {
       //String type searches
-      case ParentPath: case Filename: case DetectorName: case SerialNumber:
-      case Manufacturer: case Model: case Uuid: case Remark: case LocationName:
-      case AnalysisResultText: case AnalysisResultNuclide:
+      case FileDataField::ParentPath:
+      case FileDataField::Filename:
+      case FileDataField::DetectorName:
+      case FileDataField::SerialNumber:
+      case FileDataField::Manufacturer:
+      case FileDataField::Model:
+      case FileDataField::Uuid:
+      case FileDataField::Remark:
+      case FileDataField::LocationName:
+      case FileDataField::AnalysisResultText:
+      case FileDataField::AnalysisResultNuclide:
         break;
         
-      case DetectionSystemType:
-      case SearchMode:
-      case ContainedNuetronDetector:
-      case ContainedDeviationPairs:
-      case HasGps:
-      case HasRIIDAnalysis:
-      case EnergyCalibrationType:
-      case TotalLiveTime:
-      case TotalRealTime:
-      case IndividualSpectrumLiveTime:
-      case IndividualSpectrumRealTime:
-      case NumberOfSamples:
-      case NumberOfRecords:
-      case NumberOfGammaChannels:
-      case MaximumGammaEnergy:
-      case Latitude:
-      case Longitude:
-      case NeutronCountRate:
-      case GammaCountRate:
-      case StartTime:
-      case NumFileDataFields:
-        throw runtime_error( string("SpecTest::set_test: ") + to_string(field) + " not a string field" );
+      case FileDataField::DetectionSystemType:
+      case FileDataField::SearchMode:
+      case FileDataField::ContainedNuetronDetector:
+      case FileDataField::ContainedDeviationPairs:
+      case FileDataField::HasGps:
+      case FileDataField::HasRIIDAnalysis:
+      case FileDataField::EnergyCalibrationType:
+      case FileDataField::TotalLiveTime:
+      case FileDataField::TotalRealTime:
+      case FileDataField::IndividualSpectrumLiveTime:
+      case FileDataField::IndividualSpectrumRealTime:
+      case FileDataField::NumberOfSamples:
+      case FileDataField::NumberOfRecords:
+      case FileDataField::NumberOfGammaChannels:
+      case FileDataField::MaximumGammaEnergy:
+      case FileDataField::Latitude:
+      case FileDataField::Longitude:
+      case FileDataField::NeutronCountRate:
+      case FileDataField::GammaCountRate:
+      case FileDataField::StartTimeIoI:
+      case FileDataField::MeasurementsStartTimes:
+      case FileDataField::NumFileDataFields:
+        throw runtime_error( string("SpecTest::set_test: ")
+                             + to_string(field) + " not a string field" );
         break;
     }//switch( m_searchField )
     
@@ -184,24 +194,43 @@ namespace SpecFileQuery
   {
     switch( field )
     {
-      case DetectionSystemType: case SearchMode:
-      case ContainedNuetronDetector:
-      case ContainedDeviationPairs:
-      case HasGps:
-      case HasRIIDAnalysis:
-      case EnergyCalibrationType:
+      case FileDataField::DetectionSystemType:
+      case FileDataField::SearchMode:
+      case FileDataField::ContainedNuetronDetector:
+      case FileDataField::ContainedDeviationPairs:
+      case FileDataField::HasGps:
+      case FileDataField::HasRIIDAnalysis:
+      case FileDataField::EnergyCalibrationType:
         break;
         
-      case TotalLiveTime: case TotalRealTime:
-      case IndividualSpectrumLiveTime: case IndividualSpectrumRealTime:
-      case NumberOfSamples: case NumberOfRecords: case NumberOfGammaChannels:
-      case MaximumGammaEnergy: case Latitude: case Longitude:
-      case NeutronCountRate: case GammaCountRate:
-      case ParentPath: case Filename: case DetectorName: case SerialNumber:
-      case Manufacturer: case Model: case Uuid: case Remark: case LocationName:
-      case AnalysisResultText: case AnalysisResultNuclide:
-      case StartTime: case NumFileDataFields:
-        throw runtime_error( string("SpecTest::set_test: ") + to_string(field) + " not a discrete field" );
+      case FileDataField::TotalLiveTime:
+      case FileDataField::TotalRealTime:
+      case FileDataField::IndividualSpectrumLiveTime:
+      case FileDataField::IndividualSpectrumRealTime:
+      case FileDataField::NumberOfSamples:
+      case FileDataField::NumberOfRecords:
+      case FileDataField::NumberOfGammaChannels:
+      case FileDataField::MaximumGammaEnergy:
+      case FileDataField::Latitude:
+      case FileDataField::Longitude:
+      case FileDataField::NeutronCountRate:
+      case FileDataField::GammaCountRate:
+      case FileDataField::ParentPath:
+      case FileDataField::Filename:
+      case FileDataField::DetectorName:
+      case FileDataField::SerialNumber:
+      case FileDataField::Manufacturer:
+      case FileDataField::Model:
+      case FileDataField::Uuid:
+      case FileDataField::Remark:
+      case FileDataField::LocationName:
+      case FileDataField::AnalysisResultText:
+      case FileDataField::AnalysisResultNuclide:
+      case FileDataField::StartTimeIoI:
+      case FileDataField::MeasurementsStartTimes:
+      case FileDataField::NumFileDataFields:
+        throw runtime_error( string("SpecTest::set_test: ")
+                            + to_string(field) + " not a discrete field" );
         break;
     }//switch( m_searchField )
     
@@ -225,7 +254,8 @@ namespace SpecFileQuery
       case ParentPath: case Filename: case DetectorName: case SerialNumber:
       case Manufacturer: case Model: case Uuid: case Remark: case LocationName:
       case AnalysisResultText: case AnalysisResultNuclide: case HasRIIDAnalysis:
-      case StartTime: case NumFileDataFields:
+      case FileDataField::StartTimeIoI: case MeasurementsStartTimes:
+      case NumFileDataFields:
         throw runtime_error( string("SpecTest::set_test: ") + to_string(field) + " not a numeric field" );
         break;
     }//switch( m_searchField )
@@ -236,27 +266,30 @@ namespace SpecFileQuery
   }
   
   
-  //6 year old, 
-  
   void SpecTest::set_time_test( const FileDataField field, boost::posix_time::ptime comptime, const NumericFieldMatchType type )
   {
     switch( field )
     {
-      case StartTime:
+      case FileDataField::StartTimeIoI:
+      case FileDataField::MeasurementsStartTimes:
         break;
         
-      case TotalLiveTime: case TotalRealTime:
-      case IndividualSpectrumLiveTime: case IndividualSpectrumRealTime:
-      case NumberOfSamples: case NumberOfRecords: case NumberOfGammaChannels:
-      case MaximumGammaEnergy: case Latitude: case Longitude:
-      case NeutronCountRate: case GammaCountRate:
-      case DetectionSystemType: case SearchMode:
-      case ContainedNuetronDetector: case ContainedDeviationPairs: case HasGps:
-      case EnergyCalibrationType:
-      case ParentPath: case Filename: case DetectorName: case SerialNumber:
-      case Manufacturer: case Model: case Uuid: case Remark: case LocationName:
-      case AnalysisResultText: case AnalysisResultNuclide: case HasRIIDAnalysis:
-      case NumFileDataFields:
+      case FileDataField::TotalLiveTime: case FileDataField::TotalRealTime:
+      case FileDataField::IndividualSpectrumLiveTime: case FileDataField::IndividualSpectrumRealTime:
+      case FileDataField::NumberOfSamples: case FileDataField::NumberOfRecords:
+      case FileDataField::NumberOfGammaChannels: case FileDataField::MaximumGammaEnergy:
+      case FileDataField::Latitude: case FileDataField::Longitude:
+      case FileDataField::NeutronCountRate: case FileDataField::GammaCountRate:
+      case FileDataField::DetectionSystemType: case FileDataField::SearchMode:
+      case FileDataField::ContainedNuetronDetector: case FileDataField::ContainedDeviationPairs:
+      case FileDataField::HasGps: case FileDataField::EnergyCalibrationType:
+      case FileDataField::ParentPath: case FileDataField::Filename:
+      case FileDataField::DetectorName: case FileDataField::SerialNumber:
+      case FileDataField::Manufacturer: case FileDataField::Model:
+      case FileDataField::Uuid: case FileDataField::Remark:
+      case FileDataField::LocationName: case FileDataField::AnalysisResultText:
+      case FileDataField::AnalysisResultNuclide: case FileDataField::HasRIIDAnalysis:
+      case FileDataField::NumFileDataFields:
         throw runtime_error( string("SpecTest::set_test: ") + to_string(field) + " not a time field" );
         break;
     }//switch( m_searchField )
@@ -377,13 +410,13 @@ namespace SpecFileQuery
     
     switch( m_searchField )
     {
-      case ParentPath:
+      case FileDataField::ParentPath:
         return test_string( SpecUtils::parent_path(meas.filename), m_stringSearchType, m_searchString );
         
-      case Filename:
+      case FileDataField::Filename:
         return test_string( meas.filename, m_stringSearchType, m_searchString );
         
-      case DetectorName:
+      case FileDataField::DetectorName:
       {
         bool found = false;
         for( auto it = begin(meas.detector_names); !found && (it != end(meas.detector_names)); ++it )
@@ -391,19 +424,19 @@ namespace SpecFileQuery
         return found;
       }
         
-      case SerialNumber:
+      case FileDataField::SerialNumber:
         return test_string( meas.serial_number, m_stringSearchType, m_searchString );
         
-      case Manufacturer:
+      case FileDataField::Manufacturer:
         return test_string( meas.manufacturer, m_stringSearchType, m_searchString );
         
-      case Model:
+      case FileDataField::Model:
         return test_string( meas.model, m_stringSearchType, m_searchString );
         
-      case Uuid:
+      case FileDataField::Uuid:
         return test_string( meas.uuid, m_stringSearchType, m_searchString );
         
-      case Remark:
+      case FileDataField::Remark:
       {
         bool found = false;
         
@@ -419,13 +452,13 @@ namespace SpecFileQuery
         return found;
       }
         
-      case LocationName:
+      case FileDataField::LocationName:
         return test_string( meas.location_name, m_stringSearchType, m_searchString );
         
-      case HasRIIDAnalysis:
+      case FileDataField::HasRIIDAnalysis:
         return (m_discreteOption==1 ? meas.has_riid_analysis : !meas.has_riid_analysis);
         
-      case AnalysisResultText:
+      case FileDataField::AnalysisResultText:
       {
         if( !meas.has_riid_analysis )
           return false;
@@ -467,7 +500,7 @@ namespace SpecFileQuery
       }//case AnalysisResultText:
         
         
-      case AnalysisResultNuclide:
+      case FileDataField::AnalysisResultNuclide:
       {
         if( !meas.has_riid_analysis )
           return false;
@@ -544,7 +577,7 @@ namespace SpecFileQuery
         return (m_stringSearchType == TextDoesNotContain) ? !found_nuclide : found_nuclide;
       }//case AnalysisResultNuclide:
         
-      case DetectionSystemType:
+      case FileDataField::DetectionSystemType:
       {
         const SpecUtils::DetectorType type = SpecUtils::DetectorType(m_discreteOption);
         return (meas.detector_type == type);
@@ -552,10 +585,10 @@ namespace SpecFileQuery
         break;
       }//case DetectionSystemType:
         
-      case SearchMode:
+      case FileDataField::SearchMode:
         return ((m_discreteOption==0 && !meas.passthrough) || (m_discreteOption && meas.passthrough));
         
-      case TotalLiveTime:
+      case FileDataField::TotalLiveTime:
       {
         switch( m_compareType )
         {
@@ -567,7 +600,7 @@ namespace SpecFileQuery
         return false;
       }//case TotalLiveTime:
         
-      case TotalRealTime:
+      case FileDataField::TotalRealTime:
       {
         switch( m_compareType )
         {
@@ -579,16 +612,16 @@ namespace SpecFileQuery
         return false;
       }//case TotalRealTime:
         
-      case ContainedNuetronDetector:
+      case FileDataField::ContainedNuetronDetector:
         return ((m_discreteOption==1) ? meas.contained_neutron : !meas.contained_neutron);
         
-      case ContainedDeviationPairs:
+      case FileDataField::ContainedDeviationPairs:
         return ((m_discreteOption==1) ? meas.contained_dev_pairs : !meas.contained_dev_pairs);
         
-      case HasGps:
+      case FileDataField::HasGps:
         return (m_discreteOption==1 ? meas.contained_gps : !meas.contained_gps);
         
-      case EnergyCalibrationType:
+      case FileDataField::EnergyCalibrationType:
       {
         const auto type = SpecUtils::EnergyCalType(m_discreteOption);
         for( const auto cal : meas.energy_cal_types )
@@ -597,7 +630,7 @@ namespace SpecFileQuery
         return false;
       }//case EnergyCalibrationType:
         
-      case IndividualSpectrumLiveTime:
+      case FileDataField::IndividualSpectrumLiveTime:
       {
         for( const auto lt : meas.individual_spectrum_live_time )
         {
@@ -612,7 +645,7 @@ namespace SpecFileQuery
         return false;
       }//case IndividualSpectrumLiveTime:
         
-      case IndividualSpectrumRealTime:
+      case FileDataField::IndividualSpectrumRealTime:
       {
         for( const auto rt : meas.individual_spectrum_real_time )
         {
@@ -627,7 +660,7 @@ namespace SpecFileQuery
         return false;
       }//case IndividualSpectrumRealTime:
         
-      case NumberOfSamples:
+      case FileDataField::NumberOfSamples:
       {
         //The number of samples we will ever deal with will always be able to
         //  be represented exactly as a double.
@@ -643,7 +676,7 @@ namespace SpecFileQuery
         return false;
       }//case NumberOfSamples:
         
-      case NumberOfRecords:
+      case FileDataField::NumberOfRecords:
       {
         //The number of measurements we will ever deal with will always be able
         //  to be represented exactly as a double.
@@ -659,7 +692,7 @@ namespace SpecFileQuery
         return false;
       }//case NumberOfRecords:
         
-      case NumberOfGammaChannels:
+      case FileDataField::NumberOfGammaChannels:
       {
         for( const auto n : meas.number_of_gamma_channels )
         {
@@ -680,7 +713,7 @@ namespace SpecFileQuery
         return false;
       }//case NumberOfGammaChannels:
         
-      case MaximumGammaEnergy:
+      case FileDataField::MaximumGammaEnergy:
       {
         for( const auto energy : meas.max_gamma_energy )
         {
@@ -696,7 +729,7 @@ namespace SpecFileQuery
         return false;
       }//case MaximumGammaEnergy:
         
-      case Latitude:
+      case FileDataField::Latitude:
       {
         if( !meas.contained_gps )
           return false;
@@ -710,7 +743,7 @@ namespace SpecFileQuery
         }
       }//case Latitude:
         
-      case Longitude:
+      case FileDataField::Longitude:
       {
         if( !meas.contained_gps )
           return false;
@@ -724,7 +757,7 @@ namespace SpecFileQuery
         }
       }//case Longitude:
         
-      case NeutronCountRate:
+      case FileDataField::NeutronCountRate:
       {
         for( const auto cps : meas.neutron_count_rate )
         {
@@ -740,7 +773,7 @@ namespace SpecFileQuery
         return false;
       }//case NeutronCountRate:
         
-      case GammaCountRate:
+      case FileDataField::GammaCountRate:
       {
         for( const auto cps : meas.gamma_count_rate )
         {
@@ -756,8 +789,37 @@ namespace SpecFileQuery
         return false;
       }//case GammaCountRate:
         
+      case FileDataField::StartTimeIoI:
+      {
+        const boost::posix_time::ptime epoch(boost::gregorian::date(1970,1,1));
+        const boost::posix_time::time_duration::sec_type test_time = (m_time - epoch).total_seconds();
         
-      case StartTime:
+        if( meas.start_time_ioi == 0 )
+          return false;
+        
+        switch( m_compareType )
+        {
+          case ValueIsExact:
+          {
+            if( abs(meas.start_time_ioi - test_time) < 60 ) //note: we only have minute resoltion on the gui selector
+              return true;
+            break;
+          }
+            
+          case ValueIsNotEqual:
+          {
+            if( abs(meas.start_time_ioi - test_time) > 60 ) //We only have minute resoltion on the gui selector
+              return true;
+            break;
+          }
+          case ValueIsLessThan:    if(meas.start_time_ioi < test_time) return true; break;
+          case ValueIsGreaterThan: if(meas.start_time_ioi > test_time) return true; break;
+        }//switch( m_compareType )
+        
+        return false;
+      }//case FileDataField::StartTimeIoI:
+        
+      case FileDataField::MeasurementsStartTimes:
       {
         const boost::posix_time::ptime epoch(boost::gregorian::date(1970,1,1));
         const boost::posix_time::time_duration::sec_type test_time = (m_time - epoch).total_seconds();
@@ -786,7 +848,7 @@ namespace SpecFileQuery
         return false;
       }//case StartTime:
         
-      case NumFileDataFields:
+      case FileDataField::NumFileDataFields:
         return false;
         break;
     }//switch( m_searchField )
@@ -803,39 +865,40 @@ namespace SpecFileQuery
      */
     switch( field )
     {
-      case ParentPath:                 return "ParentPath";
-      case Filename:                   return "Filename";
-      case DetectorName:               return "Detector name";
-      case SerialNumber:               return "Serial number";
-      case Manufacturer:               return "Manufacturer";
-      case Model:                      return "Model";
-      case Uuid:                       return "UUID";
-      case Remark:                     return "Remark";
-      case LocationName:               return "Location name";
-      case AnalysisResultText:         return "RIID Ana result";
-      case AnalysisResultNuclide:      return "RIID IDed nuclide";
-      case HasRIIDAnalysis:            return "Has RIID Analysis";
-      case DetectionSystemType:        return "Detector system";
-      case ContainedNuetronDetector:   return "Has Neutron";
-      case ContainedDeviationPairs:    return "Has Dev. Pairs";
-      case HasGps:                     return "Has GPS Info";
-      case EnergyCalibrationType:      return "Energy Cal Type";
-      case SearchMode:                 return "Aquisition mode";
-      case TotalLiveTime:              return "Sum live time";
-      case TotalRealTime:              return "Sum real time";
-      case IndividualSpectrumLiveTime: return "Spectrum live time";
-      case IndividualSpectrumRealTime: return "Spectrum real time";
-      case NumberOfSamples:            return "Num. Time Samples";
-      case NumberOfRecords:            return "Num. Records";
-      case NumberOfGammaChannels:      return "Num Gamma Channels";
-      case MaximumGammaEnergy:         return "Max Gamma Energy";
-      case Latitude:                   return "Latitude";
-      case Longitude:                  return "Longitude";
-      case NeutronCountRate:           return "Neutron CPS";
-      case GammaCountRate:             return "Gamma CPS";
-      case StartTime:                  return "Start Time";
+      case FileDataField::ParentPath:                 return "ParentPath";
+      case FileDataField::Filename:                   return "Filename";
+      case FileDataField::DetectorName:               return "Detector name";
+      case FileDataField::SerialNumber:               return "Serial number";
+      case FileDataField::Manufacturer:               return "Manufacturer";
+      case FileDataField::Model:                      return "Model";
+      case FileDataField::Uuid:                       return "UUID";
+      case FileDataField::Remark:                     return "Remark";
+      case FileDataField::LocationName:               return "Location name";
+      case FileDataField::AnalysisResultText:         return "RIID Ana result";
+      case FileDataField::AnalysisResultNuclide:      return "RIID IDed nuclide";
+      case FileDataField::HasRIIDAnalysis:            return "Has RIID Analysis";
+      case FileDataField::DetectionSystemType:        return "Detector system";
+      case FileDataField::ContainedNuetronDetector:   return "Has Neutron";
+      case FileDataField::ContainedDeviationPairs:    return "Has Dev. Pairs";
+      case FileDataField::HasGps:                     return "Has GPS Info";
+      case FileDataField::EnergyCalibrationType:      return "Energy Cal Type";
+      case FileDataField::SearchMode:                 return "Acquisition mode";
+      case FileDataField::TotalLiveTime:              return "Sum live time";
+      case FileDataField::TotalRealTime:              return "Sum real time";
+      case FileDataField::IndividualSpectrumLiveTime: return "Spectrum live time";
+      case FileDataField::IndividualSpectrumRealTime: return "Spectrum real time";
+      case FileDataField::NumberOfSamples:            return "Num. Time Samples";
+      case FileDataField::NumberOfRecords:            return "Num. Records";
+      case FileDataField::NumberOfGammaChannels:      return "Num Gamma Channels";
+      case FileDataField::MaximumGammaEnergy:         return "Max Gamma Energy";
+      case FileDataField::Latitude:                   return "Latitude";
+      case FileDataField::Longitude:                  return "Longitude";
+      case FileDataField::NeutronCountRate:           return "Neutron CPS";
+      case FileDataField::GammaCountRate:             return "Gamma CPS";
+      case FileDataField::StartTimeIoI:               return "Start Time";
+      case FileDataField::MeasurementsStartTimes:     return "Meas. Start Times";
         
-      case NumFileDataFields:
+      case FileDataField::NumFileDataFields:
         break;
     }//switch( m_searchField )
     
@@ -956,39 +1019,42 @@ namespace SpecFileQuery
     
     switch( m_searchField )
     {
-        //String type searches
-      case ParentPath: case Filename: case DetectorName: case SerialNumber:
-      case Manufacturer: case Model: case Uuid: case Remark: case LocationName:
-      case AnalysisResultText: case AnalysisResultNuclide:
+      //String type searches
+      case FileDataField::ParentPath: case FileDataField::Filename:
+      case FileDataField::DetectorName: case FileDataField::SerialNumber:
+      case FileDataField::Manufacturer: case FileDataField::Model:
+      case FileDataField::Uuid: case FileDataField::Remark:
+      case FileDataField::LocationName: case FileDataField::AnalysisResultText:
+      case FileDataField::AnalysisResultNuclide:
         summary += string(" ") + to_string( m_stringSearchType )
         + string(" \"") + m_searchString + "\"";
         break;
         
-      case HasRIIDAnalysis:
+      case FileDataField::HasRIIDAnalysis:
         summary += "does " + string(m_discreteOption ? "" : "not ") + " have RIID Analysis Results";
         break;
         
-      case DetectionSystemType:
+      case FileDataField::DetectionSystemType:
         summary += " is a " + SpecUtils::detectorTypeToString( SpecUtils::DetectorType(m_discreteOption) );
         break;
         
-      case SearchMode:
+      case FileDataField::SearchMode:
         summary += " is " + string(m_discreteOption ? "search/passthrough" : "dwell");
         break;
         
-      case ContainedNuetronDetector:
+      case FileDataField::ContainedNuetronDetector:
         summary += "does " + string(m_discreteOption ? "" : "not ") + " have a neutron detectoor";
         break;
         
-      case ContainedDeviationPairs:
+      case FileDataField::ContainedDeviationPairs:
         summary += "does " + string(m_discreteOption ? "" : "not ") + " have non-linear deviation pairs";
         break;
         
-      case HasGps:
+      case FileDataField::HasGps:
         summary += "does " + string(m_discreteOption ? "" : "not ") + " have GPS information";
         break;
         
-      case EnergyCalibrationType:
+      case FileDataField::EnergyCalibrationType:
         switch( SpecUtils::EnergyCalType(m_discreteOption) )
         {
           case SpecUtils::EnergyCalType::Polynomial: summary += "polynomial"; break;
@@ -1002,15 +1068,17 @@ namespace SpecFileQuery
         summary += " energy calibration";
         break;
         
-      case TotalLiveTime: case TotalRealTime:
-      case IndividualSpectrumLiveTime: case IndividualSpectrumRealTime:
-      case NumberOfSamples: case NumberOfRecords: case NumberOfGammaChannels:
-      case MaximumGammaEnergy: case Latitude: case Longitude:
-      case NeutronCountRate: case GammaCountRate:
+      case FileDataField::TotalLiveTime: case FileDataField::TotalRealTime:
+      case FileDataField::IndividualSpectrumLiveTime: case FileDataField::IndividualSpectrumRealTime:
+      case FileDataField::NumberOfSamples: case FileDataField::NumberOfRecords:
+      case FileDataField::NumberOfGammaChannels: case FileDataField::MaximumGammaEnergy:
+      case Latitude: case FileDataField::Longitude:
+      case FileDataField::NeutronCountRate: case FileDataField::GammaCountRate:
         summary += " is " + string(to_string(m_compareType)) + " " + PhysicalUnits::printToBestTimeUnits(m_numeric);
         break;
         
-      case StartTime:
+      case FileDataField::StartTimeIoI:
+      case FileDataField::MeasurementsStartTimes:
         summary += " is " + string(to_string(m_compareType)) + " " + SpecUtils::to_iso_string( std::chrono::time_point_cast<std::chrono::microseconds>(to_time_point(m_time)));
         break;
         
@@ -1027,9 +1095,12 @@ namespace SpecFileQuery
     switch( m_searchField )
     {
       //String type searches
-      case ParentPath: case Filename: case DetectorName: case SerialNumber:
-      case Manufacturer: case Model: case Uuid: case Remark: case LocationName:
-      case AnalysisResultText: case AnalysisResultNuclide:
+      case FileDataField::ParentPath: case FileDataField::Filename:
+      case FileDataField::DetectorName: case FileDataField::SerialNumber:
+      case FileDataField::Manufacturer: case FileDataField::Model:
+      case FileDataField::Uuid: case FileDataField::Remark:
+      case FileDataField::LocationName: case AnalysisResultText:
+      case FileDataField::AnalysisResultNuclide:
       {
         switch( m_stringSearchType )
         {
@@ -1067,7 +1138,7 @@ namespace SpecFileQuery
         break;
       }//case All string searches
         
-      case DetectionSystemType:
+      case FileDataField::DetectionSystemType:
       {
         //We could check m_discreteOption is
         bool gotit = false;
@@ -1122,42 +1193,42 @@ namespace SpecFileQuery
         break;
       }//case DetectionSystemType:
         
-      case SearchMode:
+      case FileDataField::SearchMode:
       {
         if( m_discreteOption!=0 && m_discreteOption!=1 )
           throw runtime_error( "Invalid aquitision mode (programming error)" );
         break;
       }
       
-      case HasRIIDAnalysis:
+      case FileDataField::HasRIIDAnalysis:
       {
         if( m_discreteOption!=0 && m_discreteOption!=1 )
           throw runtime_error( "Invalid RIID Analysis present option (programming error)" );
         break;
       }
         
-      case ContainedNuetronDetector:
+      case FileDataField::ContainedNuetronDetector:
       {
         if( m_discreteOption!=0 && m_discreteOption!=1 )
           throw runtime_error( "Invalid neutron detector presence (programming error)" );
         break;
       }
         
-      case ContainedDeviationPairs:
+      case FileDataField::ContainedDeviationPairs:
       {
         if( m_discreteOption!=0 && m_discreteOption!=1 )
           throw runtime_error( "Invalid deviation pair presence (programming error)" );
         break;
       }
         
-      case HasGps:
+      case FileDataField::HasGps:
       {
         if( m_discreteOption!=0 && m_discreteOption!=1 )
           throw runtime_error( "Invalid GPS info presence (programming error)" );
         break;
       }
         
-      case EnergyCalibrationType:
+      case FileDataField::EnergyCalibrationType:
       {
         switch( static_cast<SpecUtils::EnergyCalType>(m_discreteOption) )
         {
@@ -1172,18 +1243,20 @@ namespace SpecFileQuery
         }
       }
         
-      case TotalLiveTime: case TotalRealTime:
-      case IndividualSpectrumLiveTime: case IndividualSpectrumRealTime:
-      case NumberOfSamples: case NumberOfRecords: case NumberOfGammaChannels:
-      case MaximumGammaEnergy: case Latitude: case Longitude:
-      case NeutronCountRate: case GammaCountRate:
+      case FileDataField::TotalLiveTime: case FileDataField::TotalRealTime:
+      case FileDataField::IndividualSpectrumLiveTime: case FileDataField::IndividualSpectrumRealTime:
+      case FileDataField::NumberOfSamples: case FileDataField::NumberOfRecords:
+      case FileDataField::NumberOfGammaChannels: case FileDataField::MaximumGammaEnergy:
+      case FileDataField::Latitude: case FileDataField::Longitude:
+      case FileDataField::NeutronCountRate: case FileDataField::GammaCountRate:
       {
         if( IsInf(m_numeric) || IsNan(m_numeric) )
           throw runtime_error( "Invalid time duration" );
         break;
       }
         
-      case StartTime:
+      case FileDataField::StartTimeIoI:
+      case FileDataField::MeasurementsStartTimes:
       {
         if( m_time.is_special() )
           throw runtime_error( "Invalid Time" );

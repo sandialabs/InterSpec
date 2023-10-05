@@ -102,7 +102,8 @@ namespace SpecFileQuery
     GammaCountRate,
     
     //Time field
-    StartTime,
+    StartTimeIoI,
+    MeasurementsStartTimes,
     
     //More complex: peak location...
     

@@ -197,11 +197,16 @@ struct SpecFileInfoToQuery
   SpecUtils::DetectorAnalysis riid_ana;
   SpecUtils::DetectorType detector_type;
   bool passthrough;
+  /** Total live-time of foreground spectra,  Background, intrinsic, calibration filtered out, unless no foreground identified.  */
   float total_livetime;
+  /** Total real-time of foreground spectra,  Background, intrinsic, calibration filtered out, unless no foreground identified.  */
   float total_realtime;
   bool contained_neutron;
   bool contained_dev_pairs;
   bool contained_gps;
+  bool contains_background;
+  bool contains_calibration;
+  bool contains_intrinsic;
   std::set<SpecUtils::EnergyCalType> energy_cal_types;
   std::set<float> individual_spectrum_live_time;
   std::set<float> individual_spectrum_real_time;
@@ -214,6 +219,7 @@ struct SpecFileInfoToQuery
   
   std::set<float> neutron_count_rate;
   std::set<float> gamma_count_rate;
+  std::time_t start_time_ioi; //time of first non-background or intrinsic spectrum
   std::set<std::time_t> start_times;  //long; good to the second - good enough.
   
   /** For a particularly large dataset (~40k specfiles, 14k events),
@@ -221,7 +227,7 @@ struct SpecFileInfoToQuery
       information increases initial search time from somethign like 3:40 (for
       no Event XML search criterial defined) to somewhere between 4:00 and 4:40.
       Also increases subsequent search times from 9 seconds, to 11 seconds, or
-      18 seocnds if a blanket xpath is defined for all event tag values.
+      18 seconds if a blanket xpath is defined for all event tag values.
    */
   std::map<std::string,std::vector<std::string>> event_xml_filter_values;
   
@@ -255,6 +261,9 @@ struct SpecFileInfoToQuery
     Wt::Dbo::field( a, contained_neutron, "contained_neutron" );
     Wt::Dbo::field( a, contained_dev_pairs, "contained_dev_pairs" );
     Wt::Dbo::field( a, contained_gps, "contained_gps" );
+    Wt::Dbo::field( a, contains_background, "contains_background" );
+    Wt::Dbo::field( a, contains_calibration, "contains_calibration" );
+    Wt::Dbo::field( a, contains_intrinsic, "contains_intrinsic" );
     Wt::Dbo::field( a, energy_cal_types, "energy_cal_types" );
     Wt::Dbo::field( a, individual_spectrum_live_time, "individual_spectrum_live_time" );
     Wt::Dbo::field( a, individual_spectrum_real_time, "individual_spectrum_real_time" );
@@ -266,6 +275,7 @@ struct SpecFileInfoToQuery
     Wt::Dbo::field( a, mean_longitude, "mean_longitude" );
     Wt::Dbo::field( a, neutron_count_rate, "neutron_count_rate" );
     Wt::Dbo::field( a, gamma_count_rate, "gamma_count_rate" );
+    Wt::Dbo::field( a, start_time_ioi, "start_time_ioi" );
     Wt::Dbo::field( a, start_times, "start_times" );
     Wt::Dbo::field( a, event_xml_filter_values, "event_xml_filter_values" );
     

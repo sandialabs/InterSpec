@@ -2372,6 +2372,12 @@ bool SpecMeasManager::handleEccFile( std::istream &input, SimpleDialog *dialog )
   group->addButton( far_field, 1 );
   group->setCheckedButton( fixed_geom );
   
+  //Rename "Fixed Geometry", to
+  //     "Fixed Geometry total Act", then
+  // add "Fixed Geometry act per cm2",
+  // and "Fixed Geometry act per gram"
+  
+  
   WTable *far_field_opt = new WTable( button_box );
   
   WRegExpValidator *dist_validator = new WRegExpValidator( PhysicalUnits::sm_distanceRegex, this );
