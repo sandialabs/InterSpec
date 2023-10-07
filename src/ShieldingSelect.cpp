@@ -2022,12 +2022,12 @@ void ShieldingSelect::init()
   m_materialEdit->setAttributeValue( "spellcheck", "off" );
 #endif
 
-  m_materialEdit->changed().connect( this, &ShieldingSelect::handleMaterialChange );
-  m_materialEdit->enterPressed().connect( this, &ShieldingSelect::handleMaterialChange );
-  //m_materialEdit->blurred().connect( this, &ShieldingSelect::handleMaterialChange );
+  m_materialEdit->changed().connect( this, &ShieldingSelect::handleUserChangedMaterialName );
+  m_materialEdit->enterPressed().connect( this, &ShieldingSelect::handleUserChangedMaterialName );
 
+  // Instead of hooking undo/redo to changed(), we'll have handleUserChangedMaterialName() handle it
   // We will only insert an undo/redo step when the field losses focus.
-  m_materialEdit->changed().connect( this, &ShieldingSelect::handleUserChangeForUndoRedo );
+  //m_materialEdit->changed().connect( this, &ShieldingSelect::handleUserChangeForUndoRedo );
   
   if( m_forFitting )
   {
@@ -4430,6 +4430,47 @@ void ShieldingSelect::handleMaterialChange()
 }//void handleMaterialChange()
 
 
+void ShieldingSelect::handleUserChangedMaterialName()
+{
+  // When the user clicks on a  popup suggestions, first `m_materialEdit->changed()` is emitted
+  // with the current text being an invalid material (just whatever they have typed so far),
+  // then the `m_materialSuggest->activated()` signal is emitted (which updates the edits text),
+  // then `m_materialEdit->changed()` changed again, with the now correct text in the edit.
+  //
+  // This function tries to avoid showing the user an error from the first `changed()` signal
+  // where the text is just partial (by just putting back the previous valid text).
+  
+  const string text = SpecUtils::trim_copy( m_materialEdit->text().toUTF8() );
+  if( text == m_currentMaterialDescrip )
+    return;
+  
+  if( !text.empty()  )
+  {
+    const Material *mat = material( text );
+    
+    if( !mat )
+    {
+      //Check if `text` is the beginning of a shielding name, and if so, just set the text
+      //  to the previous value.  If we dont do this, and its an invalid material, then the
+      //  user will see an error message.
+      const vector<string> &material_names = m_materialDB->names();
+      for( const string &mat_name : material_names )
+      {
+        if( SpecUtils::istarts_with(mat_name, text) )
+        {
+          m_materialEdit->setText( WString::fromUTF8(m_currentMaterialDescrip) );
+          return;
+        }
+      }//for( const string &mat_name : material_names )
+    }//if( !mat )
+  }//if( !text.empty() && (text != m_currentMaterialDescrip) )
+  
+  handleMaterialChange();
+  
+  handleUserChangeForUndoRedo();
+}//void ShieldingSelect::handleUserChangedMaterialName()
+
+
 void ShieldingSelect::handleUserChangeForUndoRedoWorker( const bool emit_change )
 {
   auto xml_data = make_shared<string>();
@@ -4931,7 +4972,7 @@ void ShieldingSelect::serialize( rapidxml::xml_node<char> *parent_node ) const
   {
     const string msg = "Error roundtripping ShieldingSelect to URI and back: " + string(e.what());
     log_developer_error( __func__, msg.c_str() );
-    assert( 0 );
+//    assert( 0 );
   }//try
   
   /*
@@ -5111,11 +5152,14 @@ std::string ShieldingSelect::encodeStateToUrl() const
       answer += "&FAD=1";
   }else
   {
-    std::string material = m_materialEdit->text().toUTF8();
-    SpecUtils::ireplace_all(material, "#", "%23" );
-    SpecUtils::ireplace_all(material, "&", "%26" );
+    std::string material_name = m_materialEdit->text().toUTF8();
+    SpecUtils::ireplace_all(material_name, "#", "%23" );
+    SpecUtils::ireplace_all(material_name, "&", "%26" );
     
-    answer += "&N=" + material;
+    if( !m_currentMaterial )
+      material_name = "";
+    
+    answer += "&N=" + material_name;
       
     switch( m_geometry )
     {
