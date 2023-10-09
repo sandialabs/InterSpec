@@ -130,6 +130,7 @@
 #include "InterSpec/PeakSearchGuiUtils.h"
 #include "InterSpec/RowStretchTreeView.h"
 #include "InterSpec/FileDragUploadResource.h"
+#include "InterSpec/ShieldingSourceDisplay.h"
 
 #if( USE_DB_TO_STORE_SPECTRA )
 #include "InterSpec/DbFileBrowser.h"
@@ -1707,8 +1708,21 @@ bool SpecMeasManager::handleNonSpectrumFile( const std::string &displayName,
   if( (header_contains("SGI_template") || header_contains("ISOCS_file_name"))
      && handleEccFile(infile, dialog) )
   {
+    add_undo_redo();
+    
     return true;
   }//if( a .ECC file from ISOCS )
+  
+  if( header_contains("<ShieldingSourceFit") && header_contains("<Geometry")
+     && (filesize > 128) && (filesize < 1024*1024)
+     && handleShieldingSourceFile(infile, dialog) )
+  {
+    add_undo_redo();
+    
+    return true;
+  }//if( Shielding/Source fit XML file )
+
+  
   
   delete dialog;
   
@@ -2274,6 +2288,8 @@ bool SpecMeasManager::handleRelActAutoXmlFile( std::istream &input, SimpleDialog
 
 bool SpecMeasManager::handleEccFile( std::istream &input, SimpleDialog *dialog )
 {
+  const size_t start_pos = input.tellg();
+  
   shared_ptr<DetectorPeakResponse> det;
   try
   {
@@ -2284,6 +2300,7 @@ bool SpecMeasManager::handleEccFile( std::istream &input, SimpleDialog *dialog )
       throw std::logic_error( "DRF returned from DetectorPeakResponse::parseEccFile() should be valid." );
   }catch( std::exception &e )
   {
+    input.seekg( start_pos );
     return false;
   }//try / catch
   
@@ -2481,6 +2498,81 @@ bool SpecMeasManager::handleEccFile( std::istream &input, SimpleDialog *dialog )
     
   return true;
 }//bool handleEccFile( std::istream &input, SimpleDialog *dialog )
+
+
+bool SpecMeasManager::handleShieldingSourceFile( std::istream &input, SimpleDialog *dialog )
+{
+  const size_t start_pos = input.tellg();
+  
+  try
+  {
+    //get the filesize
+    input.seekg(0, ios::end);
+    const size_t end_pos = input.tellg();
+    input.seekg(start_pos);
+    const size_t file_size = end_pos - start_pos;
+    if( (file_size < 128) || (file_size > 1024*1024) )
+      throw runtime_error( "invalid size" );
+    
+    // We need to keep data around as long as the xml_document
+    auto data = make_shared<vector<char>>( file_size + 1 );
+    
+    if( !input.read( (char *)(&((*data)[0])), file_size ) )
+      throw runtime_error( "failed to read file" );
+    
+    (*data)[file_size] = '\0';
+    
+    auto xml_doc = make_shared<rapidxml::xml_document<char>>();
+    const int flags = rapidxml::parse_normalize_whitespace | rapidxml::parse_trim_whitespace;
+    xml_doc->parse<flags>( &((*data)[0]) );
+    
+  
+    MaterialDB *material_db = m_viewer->materialDataBase();
+    PeakModel *peak_model = m_viewer->peakModel();
+    WSuggestionPopup *shield_suggest = m_viewer->shieldingSuggester();
+      
+    auto disp = make_unique<ShieldingSourceDisplay>( peak_model, m_viewer, shield_suggest, material_db );
+    disp->deSerialize( xml_doc->first_node() );
+    
+    assert( dialog );
+    dialog->contents()->clear();
+    dialog->footer()->clear();
+    
+    WText *title = new WText( "Activity/Shielding XML", dialog->contents() );
+    title->addStyleClass( "title" );
+    title->setInline( false );
+    
+    WText *content = new WText( "Use this Activity/Shielding fit setup?", dialog->contents() );
+    content->addStyleClass( "content" );
+    content->setInline( false );
+    
+    dialog->footer()->clear();
+    dialog->addButton( "Cancel" );
+    WPushButton *btn = dialog->addButton( "Yes" );
+    btn->clicked().connect( std::bind([this,data,xml_doc](){
+      InterSpec *viewer = InterSpec::instance();
+      if( !viewer || !data || !xml_doc )
+        return;
+      
+      try
+      {
+        ShieldingSourceDisplay *display = viewer->shieldingSourceFit();
+        if( display )
+          display->deSerialize( xml_doc->first_node() );
+      }catch( std::exception &e )
+      {
+        passMessage( "Sorry, there was an error loading Activity/Shielding Fit model: "
+                    + std::string(e.what()), WarningWidget::WarningMsgHigh );
+      }
+    }) );
+  }catch( std::exception &e )
+  {
+    input.seekg( start_pos );
+    return false;
+  }//try / catch
+  
+  return true;
+}//bool handleShieldingSourceFile( std::istream &input, SimpleDialog *dialog );
 
 
 void SpecMeasManager::handleFileDropWorker( const std::string &name,
