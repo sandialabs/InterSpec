@@ -941,7 +941,7 @@ public:
     //const uint64_t fixed_geom_bit = 0x80000000;
     const uint64_t fixed_geom_bits =  0xF80000000;
     
-    int64_t hash, parentHash, flags;
+    int64_t hash = 0, parentHash = 0, flags = 0;
     if( a.getsValue() )
     {
       hash = reinterpret_cast<int64_t&>(m_hash);
@@ -974,25 +974,41 @@ public:
       
       //m_fixedGeometry = (m_flags & fixed_geom_bit);
       //m_flags &= ~fixed_geom_bit; //clear fixed
+      
       const uint64_t geom_flags = ((reinterpret_cast<uint64_t&>(flags) & fixed_geom_bits) >> 31);
       const EffGeometryType geom_type = static_cast<EffGeometryType>( geom_flags );
+      m_flags &= ~fixed_geom_bits; //clear fixed
       
-      assert( (geom_type == EffGeometryType::FarField)
-         || (geom_type == EffGeometryType::FixedGeomTotalAct)
-         || (geom_type == EffGeometryType::FixedGeomActPerCm2)
-         || (geom_type == EffGeometryType::FixedGeomActPerM2)
-         || (geom_type == EffGeometryType::FixedGeomActPerGram) );
-      
-      if( (geom_type != EffGeometryType::FarField)
-         && (geom_type != EffGeometryType::FixedGeomTotalAct)
-         && (geom_type != EffGeometryType::FixedGeomActPerCm2)
-         && (geom_type != EffGeometryType::FixedGeomActPerM2)
-         && (geom_type != EffGeometryType::FixedGeomActPerGram) )
+      if( !a.isSchema() )
       {
-        throw std::runtime_error( "Invalid geometry flags read in DetectorPeakResponse::persist" );
-      }
+        assert( (geom_type == EffGeometryType::FarField)
+               || (geom_type == EffGeometryType::FixedGeomTotalAct)
+               || (geom_type == EffGeometryType::FixedGeomActPerCm2)
+               || (geom_type == EffGeometryType::FixedGeomActPerM2)
+               || (geom_type == EffGeometryType::FixedGeomActPerGram) );
+        
+        if( (geom_type != EffGeometryType::FarField)
+           && (geom_type != EffGeometryType::FixedGeomTotalAct)
+           && (geom_type != EffGeometryType::FixedGeomActPerCm2)
+           && (geom_type != EffGeometryType::FixedGeomActPerM2)
+           && (geom_type != EffGeometryType::FixedGeomActPerGram) )
+        {
+          throw std::runtime_error( "Invalid geometry flags read in DetectorPeakResponse::persist ("
+                                   + std::to_string(static_cast<uint64_t>(geom_type)) + ")" );
+        }
+      }//if( !a.isSchema() )
       
-      m_geomType = geom_type;
+      switch( geom_type )
+      {
+        case EffGeometryType::FarField:
+        case EffGeometryType::FixedGeomTotalAct:
+        case EffGeometryType::FixedGeomActPerCm2:
+        case EffGeometryType::FixedGeomActPerM2:
+        case EffGeometryType::FixedGeomActPerGram:
+          m_geomType = geom_type;
+          break;
+      }//switch( geom_type )
+      
     }//if( a.setsValue() || a.isSchema() )
 
     if( a.getsValue() )
