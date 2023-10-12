@@ -136,7 +136,7 @@ int SearchMode3DDataModel::maxNumEnergyChannels() const { return m_maxNumChannel
 std::pair<float,float> SearchMode3DDataModel::minMaxCounts( const float time_min, const float time_max,
                                                             const float e_min, const float e_max ) const
 {
-  std::pair<float,float> answer( 0, 1.0 );
+  std::pair<float,float> answer( 0.0f, 1.0f );
   
   auto timeStart = lower_bound( begin(m_times), end(m_times), time_min );
   auto timeEnd = upper_bound( begin(m_times), end(m_times), time_max );
