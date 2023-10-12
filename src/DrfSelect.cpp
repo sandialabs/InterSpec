@@ -222,7 +222,7 @@ namespace
    of entering a mathematical formula.  If this is the case, we will assume the standard functional form
    f(x) = exp( C_0 + C_1*log(x)  + C_2*log(x)^2 + ... ).
    
-   Returns true if coefficents were entered, and also changes the input string to have the proper
+   Returns true if coefficients were entered, and also changes the input string to have the proper
    mathematical function.
    */
   CoefToFormulaInfo check_if_coef_for_formula( const string &fcn )
@@ -286,7 +286,7 @@ namespace
     }//for( int i = 0; i < static_cast<int>(potential_coefs.size()); ++i )
     
     
-    if( (add_info.size() == 9)
+    if( ((add_info.size() == 9) || (add_info.size() == 10))
        && (SpecUtils::iequals_ascii( add_info[0], "No" )
            || SpecUtils::iequals_ascii( add_info[0], "Yes" )) )
     {
@@ -311,10 +311,16 @@ namespace
       if( SpecUtils::parse_double(add_info[6].c_str(), add_info[6].size(), src_to_crystal) )
         results.m_source_to_crystal_distance = add_info[6] + " cm";
       
-      if( SpecUtils::parse_double(add_info[7].c_str(), add_info[7].size(), low_energy) )
+      // 7 - Relative Efficiency (%) - doesnt seem to
+      
+      // Second to last element, lower energy
+      const string &low_energy_str = add_info[add_info.size()-2];
+      if( SpecUtils::parse_double(low_energy_str.c_str(), low_energy_str.size(), low_energy) )
         results.m_lower_energy = low_energy * PhysicalUnits::keV;
       
-      if( SpecUtils::parse_double(add_info[8].c_str(), add_info[8].size(), up_energy) )
+      // Last element, upper energy
+      const string &up_energy_str = add_info[add_info.size()-1];
+      if( SpecUtils::parse_double(up_energy_str.c_str(), up_energy_str.size(), up_energy) )
         results.m_upper_energy = up_energy * PhysicalUnits::keV;
       
       if( low_energy >= up_energy )
@@ -3539,7 +3545,7 @@ void DrfSelect::verifyManualDefinition()
     }
     
     if( coef_formula_info.m_fixed_geom )
-      m_drfType->setCurrentIndex( 2 );
+      m_drfType->setCurrentIndex( 3 ); //Act/cm2
   }//if( user_entered_coefs )
   
   const bool is_intrinsic = (m_drfType->currentIndex() == 0);
