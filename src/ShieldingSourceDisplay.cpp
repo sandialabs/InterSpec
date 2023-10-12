@@ -156,6 +156,24 @@ function(id,info)
 
 namespace
 {
+  string det_eff_geom_type_postfix( DetectorPeakResponse::EffGeometryType type )
+  {
+    switch( type )
+    {
+      case DetectorPeakResponse::EffGeometryType::FarField:
+      case DetectorPeakResponse::EffGeometryType::FixedGeomTotalAct:
+        return "";
+      case DetectorPeakResponse::EffGeometryType::FixedGeomActPerCm2:
+        return "/cm2";
+      case DetectorPeakResponse::EffGeometryType::FixedGeomActPerM2:
+        return "/m2";
+      case DetectorPeakResponse::EffGeometryType::FixedGeomActPerGram:
+        return "/g";
+    }//switch( m_det_type )
+    assert( 0 );
+    return "";
+  }//string det_eff_geom_type_postfix( DetectorPeakResponse::EffGeometryType )
+  
   class StringDownloadResource : public Wt::WResource
   {
     ShieldingSourceDisplay *m_display;
@@ -346,7 +364,8 @@ SourceFitModel::SourceFitModel( PeakModel *peakModel,
     m_sortOrder( Wt::AscendingOrder ),
     m_sortColumn( kIsotope ),
     m_peakModel( peakModel ),
-    m_sameAgeForIsotopes( sameAgeIsotopes )
+    m_sameAgeForIsotopes( sameAgeIsotopes ),
+    m_det_type( DetectorPeakResponse::EffGeometryType::FarField )
 {
   auto interspec = InterSpec::instance();
   if( !interspec )
@@ -491,6 +510,35 @@ void SourceFitModel::setUnderlyingData( const std::vector<ShieldingSourceFitCalc
   }//if( undoRedo && !undoRedo->isInUndoOrRedo() )
 }//void setUnderlyingData( std::vector<ShieldingSourceFitCalc::IsoFitStruct> &data )
 
+
+void SourceFitModel::setDetectorType( const DetectorPeakResponse::EffGeometryType det_type )
+{
+  if( m_det_type == det_type )
+    return;
+  
+  m_det_type = det_type;
+  headerDataChanged().emit( Orientation::Horizontal,
+                           static_cast<int>(kActivity), static_cast<int>(kActivity) );
+  
+  if( !m_nuclides.empty() )
+  {
+    int col = static_cast<int>(kActivity);
+    const WModelIndex act_first = index( 0, col );
+    const WModelIndex act_second = index( static_cast<int>(m_nuclides.size()-1), col );
+    dataChanged().emit(act_first, act_second);
+    
+    col = static_cast<int>(kActivityUncertainty);
+    const WModelIndex uncert_first = index( 0, col );
+    const WModelIndex uncert_second = index( static_cast<int>(m_nuclides.size()-1), col );
+    dataChanged().emit(uncert_first, uncert_second);
+  }//if( !m_nuclides.empty() )
+}//void setDetectorType( const int detector_EffGeometryType )
+
+
+DetectorPeakResponse::EffGeometryType SourceFitModel::detType() const
+{
+  return m_det_type;
+}
 
 int SourceFitModel::numNuclides() const
 {
@@ -1461,7 +1509,21 @@ boost::any SourceFitModel::headerData( int section, Orientation orientation, int
   switch( section )
   {
     case kIsotope:     return boost::any( WString("Nuclide") );
-    case kActivity:    return boost::any( WString("Activity") );
+    case kActivity:
+      switch( m_det_type )
+      {
+        case DetectorPeakResponse::EffGeometryType::FarField:
+        case DetectorPeakResponse::EffGeometryType::FixedGeomTotalAct:
+          return boost::any( WString("Activity") );
+          
+        case DetectorPeakResponse::EffGeometryType::FixedGeomActPerCm2:
+        case DetectorPeakResponse::EffGeometryType::FixedGeomActPerM2:
+        case DetectorPeakResponse::EffGeometryType::FixedGeomActPerGram:
+          return boost::any( WString("Activity" + det_eff_geom_type_postfix(m_det_type)) );
+      }//switch( m_det_type )
+      assert( 0 );
+      break;
+      
     case kAge:         return boost::any( WString("Age") );
     case kFitActivity: return boost::any( WString("Fit Act.") );
     case kFitAge:      return boost::any( WString("Fit Age") );
@@ -1489,7 +1551,7 @@ Wt::WModelIndex SourceFitModel::parent( const Wt::WModelIndex &index ) const
 
 boost::any SourceFitModel::data( const Wt::WModelIndex &index, int role ) const
 {
-  //should consider impementing ToolTipRole
+  //should consider implementing ToolTipRole
   if( (role != Wt::DisplayRole) && (role != Wt::EditRole) && (role != Wt::ToolTipRole)
      && (role != (Wt::ItemDataRole::UserRole + 10))
     && !((role==Wt::CheckStateRole) && ((index.column()==kFitActivity) || (index.column()==kFitAge))) )
@@ -1534,6 +1596,7 @@ boost::any SourceFitModel::data( const Wt::WModelIndex &index, int role ) const
     {
       const double act = isof.activity;
       string ans = PhysicalUnits::printToBestActivityUnits( act, (extra_precision ? 8 : 3), m_displayCurries );
+      ans += det_eff_geom_type_postfix(m_det_type);
       
       // We'll require the uncertainty to be non-zero to show it - 1 micro-bq is an arbitrary cutoff to
       //  consider anything below it zero.
@@ -1557,7 +1620,10 @@ boost::any SourceFitModel::data( const Wt::WModelIndex &index, int role ) const
       }//switch( iso.sourceType )
       
       if( shouldHaveUncert )
+      {
         ans += " \xC2\xB1 " + PhysicalUnits::printToBestActivityUnits( uncert, (extra_precision ? 5 : 2), m_displayCurries );
+        ans += det_eff_geom_type_postfix(m_det_type);
+      }//if( shouldHaveUncert )
       
       return boost::any( WString(ans) );
     }//case kActivity:
@@ -1655,7 +1721,9 @@ boost::any SourceFitModel::data( const Wt::WModelIndex &index, int role ) const
         return boost::any();
       
       double act = isof.activityUncertainty;
-      const string ans = PhysicalUnits::printToBestActivityUnits( act, (extra_precision ? 8 : 2), m_displayCurries );
+      string ans = PhysicalUnits::printToBestActivityUnits( act, (extra_precision ? 8 : 2), m_displayCurries );
+      ans += det_eff_geom_type_postfix(m_det_type);
+      
       return boost::any( WString(ans) );
     }//case kActivityUncertainty:
 
@@ -1672,7 +1740,10 @@ boost::any SourceFitModel::data( const Wt::WModelIndex &index, int role ) const
     {
       if( !isof.truthActivity )
         return boost::any();
-      const string ans = PhysicalUnits::printToBestActivityUnits( *isof.truthActivity, (extra_precision ? 8 : 4), m_displayCurries );
+      
+      string ans = PhysicalUnits::printToBestActivityUnits( *isof.truthActivity, (extra_precision ? 8 : 4), m_displayCurries );
+      ans += det_eff_geom_type_postfix(m_det_type);
+      
       return boost::any( WString(ans) );
     }
       
@@ -1680,7 +1751,9 @@ boost::any SourceFitModel::data( const Wt::WModelIndex &index, int role ) const
     {
       if( !isof.truthActivityTolerance )
         return boost::any();
-      const string ans = PhysicalUnits::printToBestActivityUnits( *isof.truthActivityTolerance, (extra_precision ? 8 : 4), m_displayCurries );
+      string ans = PhysicalUnits::printToBestActivityUnits( *isof.truthActivityTolerance, (extra_precision ? 8 : 4), m_displayCurries );
+      ans += det_eff_geom_type_postfix(m_det_type);
+      
       return boost::any( WString(ans) );
     }
       
@@ -4547,11 +4620,14 @@ tuple<bool,int,int,vector<string>> ShieldingSourceDisplay::testCurrentFitAgainst
         numCorrect += closeEnough;
         
         textInfoLines.push_back( "For " + nuc->symbol + " fit activity "
-                                + PhysicalUnits::printToBestActivityUnits(fitAct) + " with the"
+                                + PhysicalUnits::printToBestActivityUnits(fitAct)
+                                + det_eff_geom_type_postfix(m_sourceModel->detType()) + " with the"
                                 " truth value of "
                                 + PhysicalUnits::printToBestActivityUnits(*truthAct)
+                                + det_eff_geom_type_postfix(m_sourceModel->detType())
                                 + " and tolerance "
                                 + PhysicalUnits::printToBestActivityUnits(*tolerance)
+                                + det_eff_geom_type_postfix(m_sourceModel->detType())
                                 + (closeEnough ? " - within tolerance." : " - out of tolerance." )
                                 );
       }//if( fit activity )
@@ -5428,6 +5504,10 @@ void ShieldingSourceDisplay::handleDetectorChanged( std::shared_ptr<DetectorPeak
   unique_ptr<ShieldSourceChange> state_undo_creator;
   
   const bool fixed_geom = (det && det->isFixedGeometry());
+  const DetectorPeakResponse::EffGeometryType det_type = det ? det->geometryType()
+                                                 : DetectorPeakResponse::EffGeometryType::FarField;
+  m_sourceModel->setDetectorType( det_type );
+  
   if( fixed_geom /* && !m_distanceLabel->isHidden() */ )
   {
     // If there are any self-attenuating, or trace sources defined, or geometry is non-spherical,
@@ -8558,11 +8638,13 @@ void ShieldingSourceDisplay::updateCalcLogWithFitResults(
       const string ageStr = PhysicalUnits::printToBestTimeUnits( age, 2 );
       const string ageUncertStr = PhysicalUnits::printToBestTimeUnits( ageUncert, 2 );
   
-      string act_postfix = "", trace_total = "";
+      string act_postfix = det_eff_geom_type_postfix(m_sourceModel->detType()), trace_total = "";
       if( chi2Fcn->isTraceSource(nuc) )
       {
         const double total_act = chi2Fcn->totalActivity(nuc,params);
-        trace_total = "Total activity " + PhysicalUnits::printToBestActivityUnits( total_act, 2, useCi ) + ", ";
+        trace_total = "Total activity "
+                      + PhysicalUnits::printToBestActivityUnits( total_act, 2, useCi )
+                      + det_eff_geom_type_postfix(m_sourceModel->detType()) + ", ";
         
         switch( chi2Fcn->traceSourceActivityType(nuc) )
         {
@@ -8592,8 +8674,8 @@ void ShieldingSourceDisplay::updateCalcLogWithFitResults(
       stringstream msg;
       msg << nuc->symbol << " fit activity " << actStr << act_postfix
           << " (" << trace_total << nuc->symbol << " mass: " << massStr
-          << ") with uncertainty " << actUncertStr << " ("
-          << floor(0.5 + 10000*actUncert/act)/100.0 << "%)";
+          << act_postfix << ") with uncertainty " << actUncertStr << act_postfix
+          << " (" << floor(0.5 + 10000*actUncert/act)/100.0 << "%)";
       
       if( ageUncert <= DBL_EPSILON )
         msg << " at assumed age " << ageStr;
