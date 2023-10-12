@@ -333,7 +333,7 @@ void MakeDrfChart::updateDataToModel()
       m->setData( row, sm_data_eff_col, boost::any(data.peak_color), Wt::MarkerBrushColorRole );
       if( data.source_information.size() )
         m->setData( row, sm_data_eff_col, boost::any( WString::fromUTF8(data.source_information)), Wt::ToolTipRole );
-    }//if( we can calculate a effeiciency )
+    }//if( we can calculate a efficiency )
     
     if( data.peak_fwhm > 0.0f )
     {
@@ -782,6 +782,11 @@ void MakeDrfChart::setDataPoints( const std::vector<MakeDrfChart::DataPoint> &da
   }//if( energy range changed )
   
   updateDataToModel();
+  
+  if( det_diameter > 0.0 )
+    axis(Chart::YAxis).setTitle( "Intrinsic Eff." );
+  else
+    axis(Chart::YAxis).setTitle( "Efficiency" );
   
   if( update_xrange )
     m_xRangeChanged.emit(m_det_lower_energy,m_det_upper_energy);

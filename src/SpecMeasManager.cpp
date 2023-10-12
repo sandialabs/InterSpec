@@ -2291,9 +2291,15 @@ bool SpecMeasManager::handleEccFile( std::istream &input, SimpleDialog *dialog )
   const size_t start_pos = input.tellg();
   
   shared_ptr<DetectorPeakResponse> det;
+  double source_area = 0.0, source_mass = 0.0;
   try
   {
-    det = DetectorPeakResponse::parseEccFile( input );
+    tuple<shared_ptr<DetectorPeakResponse>,double,double> det_area_mass
+      = DetectorPeakResponse::parseEccFile( input );
+    
+    det = get<0>(det_area_mass);
+    source_area = get<1>(det_area_mass);
+    source_mass = get<2>(det_area_mass);
     
     assert( det && det->isValid() );
     if( !det || !det->isValid() )
@@ -2374,28 +2380,39 @@ bool SpecMeasManager::handleEccFile( std::istream &input, SimpleDialog *dialog )
   
   WText *txt = new WText( msg, TextFormat::XHTMLText, dialog->contents() );
 
-  // Now put in choice to use as fixed geometry, or as far-field.
-  WButtonGroup *group = new WButtonGroup( dialog->contents() );
-  WGroupBox *button_box = new WGroupBox( "How to interpret", dialog->contents() );
-  button_box->addStyleClass( "HowToUseGrp" );
+  WContainerWidget *btn_div = new WContainerWidget( dialog->contents() );
+  btn_div->addStyleClass( "HowToUseGrp" );
   
-  WContainerWidget *btn_div = new WContainerWidget( button_box );
+  map<int,DetectorPeakResponse::EffGeometryType> index_to_geom;
   
-  WRadioButton *fixed_geom = new WRadioButton( "Fixed Geometry", btn_div );
-  fixed_geom->addStyleClass( "EccDrfTypeBtn" );
-  WRadioButton *far_field = new WRadioButton( "Far Field DRF", btn_div );
-  far_field->addStyleClass( "EccDrfTypeBtn" );
-  group->addButton( fixed_geom, 0 );
-  group->addButton( far_field, 1 );
-  group->setCheckedButton( fixed_geom );
+  WLabel *geom_label = new WLabel( "How to interpret", btn_div );
+  WComboBox *geom_combo = new WComboBox( btn_div );
+  geom_combo->addItem( "Far Field DRF" );
+  index_to_geom[geom_combo->count() - 1] = DetectorPeakResponse::EffGeometryType::FarField;
   
-  //Rename "Fixed Geometry", to
-  //     "Fixed Geometry total Act", then
-  // add "Fixed Geometry act per cm2",
-  // and "Fixed Geometry act per gram"
+  geom_combo->addItem( "Fixed Geometry - total activity" );
+  index_to_geom[geom_combo->count() - 1] = DetectorPeakResponse::EffGeometryType::FixedGeomTotalAct;
   
+  if( source_area > 0.0 )
+  {
+    geom_combo->addItem( "Fixed Geometry - activity per cm2" );
+    index_to_geom[geom_combo->count() - 1] = DetectorPeakResponse::EffGeometryType::FixedGeomActPerCm2;
+    
+    geom_combo->addItem( "Fixed Geometry - activity per m2" );
+    index_to_geom[geom_combo->count() - 1] = DetectorPeakResponse::EffGeometryType::FixedGeomActPerM2;
+  }//if( source_area > 0.0 )
   
-  WTable *far_field_opt = new WTable( button_box );
+  if( source_mass > 0 )
+  {
+    geom_combo->addItem( "Fixed Geometry - activity per gram" );
+    index_to_geom[geom_combo->count() - 1] = DetectorPeakResponse::EffGeometryType::FixedGeomActPerGram;
+  }//if( source_mass > 0 )
+  
+  geom_combo->setCurrentIndex( 1 );
+    
+  WTable *far_field_opt = new WTable( dialog->contents() );
+  //far_field_opt->setHiddenKeepsGeometry( true );
+  far_field_opt->addStyleClass( "FarFieldOptTbl" );
   
   WRegExpValidator *dist_validator = new WRegExpValidator( PhysicalUnits::sm_distanceRegex, this );
   dist_validator->setFlags( Wt::MatchCaseInsensitive );
@@ -2442,19 +2459,39 @@ bool SpecMeasManager::handleEccFile( std::istream &input, SimpleDialog *dialog )
   };//try_create_farfield
   
   auto update_state = [=](){
-    if( group->checkedId() == 0 )
-    {
-      accept->enable();
-      far_field_opt->hide();
-      chart->updateChart( det );
-      set_chart_y_range( det );
-      return;
-    }
+    const int index = geom_combo->currentIndex();
+    const auto pos = index_to_geom.find(index);
+    assert( pos != end(index_to_geom) );
+    if( pos == end(index_to_geom) )
+      throw logic_error( "SpecMeasManager::handleEccFile: unexpected index" );
     
-    far_field_opt->show();
+    const DetectorPeakResponse::EffGeometryType geom_type = pos->second;
+    
     try
     {
-      auto new_drf = try_create_farfield();
+      shared_ptr<DetectorPeakResponse> new_drf = det;
+      
+      far_field_opt->setHidden( (geom_type != DetectorPeakResponse::EffGeometryType::FarField) );
+      
+      switch( geom_type )
+      {
+        case DetectorPeakResponse::EffGeometryType::FarField:
+          new_drf = try_create_farfield();
+          break;
+          
+        case DetectorPeakResponse::EffGeometryType::FixedGeomTotalAct:
+          break;
+          
+        case DetectorPeakResponse::EffGeometryType::FixedGeomActPerCm2:
+        case DetectorPeakResponse::EffGeometryType::FixedGeomActPerM2:
+          new_drf = det->convertFixedGeometryType( source_area, geom_type );
+          break;
+          
+        case DetectorPeakResponse::EffGeometryType::FixedGeomActPerGram:
+          new_drf = det->convertFixedGeometryType( source_mass, geom_type );
+          break;
+      }//switch( geom_type )
+        
       chart->updateChart( new_drf );
       set_chart_y_range( new_drf );
       accept->enable();
@@ -2465,26 +2502,47 @@ bool SpecMeasManager::handleEccFile( std::istream &input, SimpleDialog *dialog )
     }
   };//update_state lambda
   
-  group->checkedChanged().connect( std::bind(update_state) );
+  geom_combo->activated().connect( std::bind(update_state) );
   distance_edit->textInput().connect( std::bind(update_state) );
   diameter_edit->textInput().connect( std::bind(update_state) );
   
   
   accept->clicked().connect( std::bind( [=](){
-    auto new_drf = det;
+    const int index = geom_combo->currentIndex();
+    const auto pos = index_to_geom.find(index);
+    assert( pos != end(index_to_geom) );
+    if( pos == end(index_to_geom) )
+      throw logic_error( "SpecMeasManager::handleEccFile: unexpected index" );
     
-    if( group->checkedId() == 1 )
+    const DetectorPeakResponse::EffGeometryType geom_type = pos->second;
+    
+    auto new_drf = det;
+    try
     {
-      try
+      switch( geom_type )
       {
-        new_drf = try_create_farfield();
-      }catch( std::exception &e )
-      {
-        passMessage( "Error creating far-field DRF from ECC: " + string(e.what()),
+        case DetectorPeakResponse::EffGeometryType::FarField:
+          new_drf = try_create_farfield();
+          break;
+          
+        case DetectorPeakResponse::EffGeometryType::FixedGeomTotalAct:
+          break;
+          
+        case DetectorPeakResponse::EffGeometryType::FixedGeomActPerCm2:
+        case DetectorPeakResponse::EffGeometryType::FixedGeomActPerM2:
+          new_drf = det->convertFixedGeometryType( source_area, geom_type );
+          break;
+          
+        case DetectorPeakResponse::EffGeometryType::FixedGeomActPerGram:
+          new_drf = det->convertFixedGeometryType( source_mass, geom_type );
+          break;
+      }//switch( geom_type )
+    }catch( std::exception &e )
+    {
+      passMessage( "Error creating DRF from ECC: " + string(e.what()),
                     WarningWidget::WarningMsgHigh );
-        return;
-      }
-    }//if( group->checkedId() == 1 )
+      return;
+    }//try / catch
     
     auto interspec = InterSpec::instance();
     if( !new_drf || !interspec )

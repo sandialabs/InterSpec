@@ -2188,9 +2188,10 @@ DetectorDisplay::DetectorDisplay( InterSpec *specViewer,
   addStyleClass( "DetectorDisplay" );  //In InterSpec.css since this widget is loaded almost always at initial load time anyway
 
   new WImage( "InterSpec_resources/images/detector_small_white.png", this );
-  new WText( "Detector:&nbsp;", this );
+  new WText( "Detector:", this );
   const char *txt = (m_interspec && m_interspec->isMobile()) ? sm_noDetectorTxtMbl : sm_noDetectorTxt;
-  m_text = new WText( txt, XHTMLUnsafeText, this );
+  m_text = new WText( txt, XHTMLText, this );
+  m_text->addStyleClass( "DetName" );
 
   std::shared_ptr<DetectorPeakResponse> detector;
   auto meas = specViewer->measurment(SpecUtils::SpectrumType::Foreground);
@@ -2280,7 +2281,7 @@ DrfSelect::DrfSelect( std::shared_ptr<DetectorPeakResponse> currentDet,
     m_detectorManualFunctionText( nullptr ),
     m_detectorManualDescription( nullptr ),
     m_eqnEnergyGroup( nullptr ),
-    m_absOrIntrinsicGroup( nullptr ),
+    m_drfType( nullptr ),
     m_detectorManualDiameterLabel( nullptr ),
     m_detectorManualDiameterText( nullptr ),
     m_detectorManualDistText( nullptr ),
@@ -2629,18 +2630,36 @@ DrfSelect::DrfSelect( std::shared_ptr<DetectorPeakResponse> currentDet,
   
   cell = formulaTable->elementAt( 6, 0 );
   cell->setColumnSpan( 2 );
-  m_absOrIntrinsicGroup = new WButtonGroup( cell );
-  button = new WRadioButton( "Intrinsic", cell );
-  m_absOrIntrinsicGroup->addButton( button, 0 );
-  button = new WRadioButton( "Absolute", cell );
-  button->setMargin( 5, Wt::Left );
-  m_absOrIntrinsicGroup->addButton( button, 1 );
-  button = new WRadioButton( "Fixed Geometry", cell );
-  button->setMargin( 5, Wt::Left );
-  m_absOrIntrinsicGroup->addButton( button, 2 );
-  m_absOrIntrinsicGroup->checkedChanged().connect(boost::bind(&DrfSelect::verifyManualDefinition, this));
-  m_absOrIntrinsicGroup->setSelectedButtonIndex( 0 );
-
+  m_drfType = new WComboBox( cell );
+  m_drfType->addItem( "Intrinsic Efficiency" );
+  m_drfType->addItem( "Absolute Efficiency" );
+  m_drfType->addItem( "Fixed Geometry - total activity" );
+  m_drfType->addItem( "Fixed Geometry - activity per cm2" );
+  m_drfType->addItem( "Fixed Geometry - activity per m2" );
+  m_drfType->addItem( "Fixed Geometry - activity per gram" );
+  m_drfType->setToolTip( "How this efficiency should be interpreted.\n"
+  "\n"
+  "Intrinsic Efficiency: the probability for a x-ray or gamma striking the"
+  " face of the detector, to register a full-energy detection event.\n"
+  "\n"
+  "Absolute Efficiency: the probability for a x-ray or gamma from the source"
+  " to register a full-energy detection event, with it being appropriate to"
+  " allow scaling this efficiency by 1/r2 to other distances (i.g., is for a point-source).\n"
+  "\n"
+  "Fixed Geometry - total activity: the probability for a x-ray or gamma from the source"
+  " to register a full-energy detection event, and it is not appropriate to allow scaling this"
+  " efficiency to other distances (e.g., for a near, or large extended source).\n"
+  "\n"
+  "Fixed Geometry - activity per cm2: similar to total activity, but the efficiency curve"
+  " represents efficiency per decay, per square centimeter (i.e., surface contamination).\n"
+  "\n"
+  "Fixed Geometry - activity per m2: similar to per cm2, but for per square meter.\n"
+  "\n"
+  "Fixed Geometry - activity per g: similar to per cm2, but for per gram of source."
+  );
+  m_drfType->setCurrentIndex( 0 );
+  m_drfType->activated().connect( this, &DrfSelect::verifyManualDefinition );
+  
   m_detectorManualDistLabel = new WLabel( "Dist:", cell );
   m_detectorManualDistLabel->setMargin( 10, Wt::Left );
   
@@ -3369,7 +3388,7 @@ void DrfSelect::setGuiToCurrentDetector()
         if( fabs(PhysicalUnits::MeV-units) < fabs(PhysicalUnits::keV-units) )
           energygrp = 1;
         m_eqnEnergyGroup->setSelectedButtonIndex( energygrp );
-        m_absOrIntrinsicGroup->setSelectedButtonIndex( 0 );
+        m_drfType->setCurrentIndex( 0 );
         
         m_gui_select_matches_det = true;
         break;
@@ -3508,7 +3527,7 @@ void DrfSelect::verifyManualDefinition()
        && (m_detectorManualDistText->isHidden() || m_detectorManualDistText->text().empty() )
        && !coef_formula_info.m_fixed_geom )
     {
-      m_absOrIntrinsicGroup->setSelectedButtonIndex(1);
+      m_drfType->setCurrentIndex( 1 );
       m_detectorManualDistText->setText( coef_formula_info.m_source_to_crystal_distance );
     }
     
@@ -3520,16 +3539,29 @@ void DrfSelect::verifyManualDefinition()
     }
     
     if( coef_formula_info.m_fixed_geom )
-      m_absOrIntrinsicGroup->setSelectedButtonIndex(2);
+      m_drfType->setCurrentIndex( 2 );
   }//if( user_entered_coefs )
   
+  const bool is_intrinsic = (m_drfType->currentIndex() == 0);
+  const bool is_absolute = (m_drfType->currentIndex() == 1);
+  const bool is_fixed_geom = (m_drfType->currentIndex() >= 2);
   
-  const bool is_intrinsic = (m_absOrIntrinsicGroup->checkedId() == 0);
-  const bool is_absolute = (m_absOrIntrinsicGroup->checkedId() == 1);
-  const bool is_fixed_geom = (m_absOrIntrinsicGroup->checkedId() == 2);
   assert( (static_cast<int>(is_intrinsic)
            + static_cast<int>(is_absolute)
            + static_cast<int>(is_fixed_geom)) == 1 );
+  DetectorPeakResponse::EffGeometryType geom_type = DetectorPeakResponse::EffGeometryType::FarField;
+  switch( m_drfType->currentIndex() )
+  {
+    case 0:  geom_type = DetectorPeakResponse::EffGeometryType::FarField; break;
+    case 1:  geom_type = DetectorPeakResponse::EffGeometryType::FarField; break;
+    case 2:  geom_type = DetectorPeakResponse::EffGeometryType::FixedGeomTotalAct; break;
+    case 3:  geom_type = DetectorPeakResponse::EffGeometryType::FixedGeomActPerCm2; break;
+    case 4:  geom_type = DetectorPeakResponse::EffGeometryType::FixedGeomActPerM2; break;
+    case 5:  geom_type = DetectorPeakResponse::EffGeometryType::FixedGeomActPerGram; break;
+    default:
+      assert( 0 );
+      break;
+  }//switch( m_drfType->currentIndex() )
   
   m_detectorManualDistLabel->setHidden( is_intrinsic || is_fixed_geom );
   m_detectorManualDistText->setHidden( is_intrinsic || is_fixed_geom );
@@ -3595,7 +3627,7 @@ void DrfSelect::verifyManualDefinition()
     
     DetectorPeakResponse detec( "temp", "temp " );
     detec.setIntrinsicEfficiencyFormula( fcn_txt, static_cast<float>(det_diam),
-                                        energyUnits, lowerEnergy, upperEnergy, is_fixed_geom );
+                                        energyUnits, lowerEnergy, upperEnergy, geom_type );
     
     if( m_detectorManualFunctionText->hasStyleClass("Wt-invalid") )
       m_detectorManualFunctionText->removeStyleClass( "Wt-invalid" );
@@ -3639,9 +3671,27 @@ void DrfSelect::setFormulaDefineDetector()
     m_detectorManualDescription->setText( descr );
   }//if( descr.empty() )
 
-  const bool is_intrinsic = (m_absOrIntrinsicGroup->checkedId() == 0);
-  const bool is_absolute = (m_absOrIntrinsicGroup->checkedId() == 1);
-  const bool is_fixed_geom = (m_absOrIntrinsicGroup->checkedId() == 2);
+  const bool is_intrinsic = (m_drfType->currentIndex() == 0);
+  const bool is_absolute = (m_drfType->currentIndex() == 1);
+  const bool is_fixed_geom = (m_drfType->currentIndex() >= 2);
+  
+  assert( (static_cast<int>(is_intrinsic)
+           + static_cast<int>(is_absolute)
+           + static_cast<int>(is_fixed_geom)) == 1 );
+  DetectorPeakResponse::EffGeometryType geom_type = DetectorPeakResponse::EffGeometryType::FarField;
+  switch( m_drfType->currentIndex() )
+  {
+    case 0:  geom_type = DetectorPeakResponse::EffGeometryType::FarField; break;
+    case 1:  geom_type = DetectorPeakResponse::EffGeometryType::FarField; break;
+    case 2:  geom_type = DetectorPeakResponse::EffGeometryType::FixedGeomTotalAct; break;
+    case 3:  geom_type = DetectorPeakResponse::EffGeometryType::FixedGeomActPerCm2; break;
+    case 4:  geom_type = DetectorPeakResponse::EffGeometryType::FixedGeomActPerM2; break;
+    case 5:  geom_type = DetectorPeakResponse::EffGeometryType::FixedGeomActPerGram; break;
+    default:
+      assert( 0 );
+      break;
+  }//switch( m_drfType->currentIndex() )
+  
   assert( (static_cast<int>(is_intrinsic)
            + static_cast<int>(is_absolute)
            + static_cast<int>(is_fixed_geom)) == 1 );
@@ -3677,7 +3727,7 @@ void DrfSelect::setFormulaDefineDetector()
                                                               det_diam, dist );
         
       fcn = std::to_string(1.0/gfactor) + "*(" + fcn + ")";
-    }//if( m_absOrIntrinsicGroup->groupId() != 0 )
+    }//if( is_absolute )
     
     const float energyUnits
               = static_cast<float>(m_eqnEnergyGroup->checkedId()==0
@@ -3707,7 +3757,7 @@ void DrfSelect::setFormulaDefineDetector()
     try
     {
       detec->setIntrinsicEfficiencyFormula( fcn, det_diam, energyUnits,
-                                           minEnergy, maxEnergy, is_fixed_geom );
+                                           minEnergy, maxEnergy, geom_type );
     }catch( std::exception &e )
     {
       if( !fcn.empty() && !m_detectorManualDiameterText->hasStyleClass("Wt-invalid") )
@@ -3913,10 +3963,14 @@ std::shared_ptr<DetectorPeakResponse> DrfSelect::parseRelEffCsvFile( const std::
         }
       }//if( we got another line we'll check if its the uncertainties )
       
+      DetectorPeakResponse::EffGeometryType geom_type = DetectorPeakResponse::EffGeometryType::FarField;
+      if( fixed_geometry )
+        geom_type = DetectorPeakResponse::EffGeometryType::FixedGeomActPerM2;
+      
       auto det = std::make_shared<DetectorPeakResponse>( fields[0], drfdescrip );
       
       det->fromExpOfLogPowerSeriesAbsEff( coefs, coef_uncerts, dist, 2.0f*radius, energUnits,
-                                          lowerEnergy, upperEnergy, fixed_geometry );
+                                          lowerEnergy, upperEnergy, geom_type );
       
       //Look for the line that gives the appropriate energy range.
 #define POS_DECIMAL_REGEX "\\+?\\s*((\\d+(\\.\\d*)?)|(\\.\\d*))\\s*(?:[Ee][+\\-]?\\d+)?\\s*"
@@ -4136,7 +4190,7 @@ void DrfSelect::fileUploadedCallback( const UploadCallbackReason context )
         m_detectorDiameter->setText( PhysicalUnits::printToBestLengthUnits(det->detectorDiameter()) );
     }else
     {
-      det->fromEnergyEfficiencyCsv( csvfile, diameter, float(PhysicalUnits::keV), fixed_geometry );
+      det->fromEnergyEfficiencyCsv( csvfile, diameter, float(PhysicalUnits::keV), DetectorPeakResponse::EffGeometryType::FarField );
       det->setDrfSource( DetectorPeakResponse::DrfSource::UserImportedIntrisicEfficiencyDrf );
       
       m_fixedGeometryCb->show();

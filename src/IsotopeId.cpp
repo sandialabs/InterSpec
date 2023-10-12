@@ -948,7 +948,8 @@ void findCandidates( vector<string> &suggestednucs,
       {
         cerr << "guessIsotopesForPeaks(...): error opening default detector file" << endl;
         //ToDo: get approximate intrinsic efficiency formula for a HPGe and NaI detector here, and just use those for this function.
-        detPtr->setIntrinsicEfficiencyFormula( "1.0", 3.0*PhysicalUnits::cm, PhysicalUnits::keV, 0.0f, 0.0f, false );
+        detPtr->setIntrinsicEfficiencyFormula( "1.0", 3.0*PhysicalUnits::cm, PhysicalUnits::keV,
+                                               0.0f, 0.0f, DetectorPeakResponse::EffGeometryType::FarField );
       }
       //      try{ detPtr->fitResolution( allpeaks, DetectorPeakResponse::kGadrasResolutionFcn ); }catch(...){}
     }//if( !detector || !detector->isValid() )

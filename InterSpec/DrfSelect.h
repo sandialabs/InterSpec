@@ -365,7 +365,8 @@ protected:
   Wt::WTextArea    *m_detectorManualFunctionText;
   Wt::WLineEdit    *m_detectorManualDescription;
   Wt::WButtonGroup *m_eqnEnergyGroup;
-  Wt::WButtonGroup *m_absOrIntrinsicGroup;
+  Wt::WComboBox    *m_drfType;
+  
   Wt::WLabel       *m_detectorManualDiameterLabel;
   Wt::WLineEdit    *m_detectorManualDiameterText;
   Wt::WLineEdit    *m_detectorManualDistText;

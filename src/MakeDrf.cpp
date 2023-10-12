@@ -704,7 +704,7 @@ namespace
     WText *m_backgroundTxt;
     WCheckBox *m_allNoneSome;
     Wt::Signal<> m_srcInfoUpdated;
-    bool m_isFixedGeometry;
+    DetectorPeakResponse::EffGeometryType m_geometry_type;
     
     void updateTitle()
     {
@@ -809,7 +809,7 @@ namespace
       m_background( nullptr ),
       m_backgroundTxt( nullptr ),
       m_allNoneSome( nullptr ),
-      m_isFixedGeometry( false )
+      m_geometry_type( DetectorPeakResponse::EffGeometryType::FarField )
     {
       const SandiaDecay::SandiaDecayDataBase * const db = DecayDataBaseServer::database();
       
@@ -1158,15 +1158,14 @@ namespace
       refreshSourcesVisible();
     }//void handleUserToggleAllNoneSum()
     
-    void setIsFixedGeometry( const bool isFixedGeometry )
+    void setIsEffGeometryType( const DetectorPeakResponse::EffGeometryType type )
     {
-      m_isFixedGeometry = isFixedGeometry;
-      
+      m_geometry_type = type;
       for( auto w : m_sources->children() )
       {
         MakeDrfSrcDef *src = dynamic_cast<MakeDrfSrcDef *>( w );
         if( src )
-          src->setIsFixedGeometry( isFixedGeometry );
+          src->setIsEffGeometryType( static_cast<int>(type) );
       }//for( auto w : m_sources->children() )
       
       refreshSourcesVisible(); //I dont actually think this is necassary, but JIC
@@ -1213,7 +1212,7 @@ namespace
           }//for( size_t i = 0; i < detNames.size(); ++i )
           
           MakeDrfSrcDef *src = new MakeDrfSrcDef( n, measDate, m_materialDB, m_materialSuggest, m_sources );
-          src->setIsFixedGeometry( m_isFixedGeometry );
+          src->setIsEffGeometryType( static_cast<int>(m_geometry_type) );
           src->updated().connect( std::bind([this](){ m_srcInfoUpdated.emit(); }) );
           
           nucToWidget[n] = src;
@@ -1360,11 +1359,11 @@ namespace
       return answer;
     }//fileSamples()
     
-    void setIsFixedGeometry( const bool is_fixed_geom )
+    void setIsEffGeometryType( const DetectorPeakResponse::EffGeometryType type )
     {
       for( DrfSpecFileSample *fs : fileSamples() )
-        fs->setIsFixedGeometry( is_fixed_geom );
-    }//void setIsFixedGeometry( const bool is_fixed_geom )
+        fs->setIsEffGeometryType( type );
+    }//void setIsEffGeometryType( const bool is_fixed_geom )
     
     std::shared_ptr<const SpecMeas> measurement(){ return m_meas; }
   };//class DrfSpecFile
@@ -1410,7 +1409,7 @@ MakeDrf::MakeDrf( InterSpec *viewer, MaterialDB *materialDB,
   m_files( nullptr ),
   m_detDiamGroup( nullptr ),
   m_detDiameter( nullptr ),
-  m_fixedGeometry( nullptr ),
+  m_geometry( nullptr ),
   m_showFwhmPoints( nullptr ),
   m_fwhmOptionGroup( nullptr ),
   m_fwhmEqnType( nullptr ),
@@ -1462,7 +1461,7 @@ MakeDrf::MakeDrf( InterSpec *viewer, MaterialDB *materialDB,
   m_detDiameter->setAttributeValue( "spellcheck", "off" );
 #endif
   
-  m_effOptionGroup = new WGroupBox( "Intrinsic Eff.", fitOptionsDiv );
+  m_effOptionGroup = new WGroupBox( "Efficiency Type", fitOptionsDiv );
   m_effEqnOrder = new WComboBox( m_effOptionGroup );
   m_effEqnOrder->setNoSelectionEnabled( true );
   m_effEqnOrder->setInline( false );
@@ -1474,6 +1473,34 @@ MakeDrf::MakeDrf( InterSpec *viewer, MaterialDB *materialDB,
   m_effEqnUnits->addItem( "Eqn. in MeV" );
   m_effEqnUnits->setCurrentIndex( 1 );
   m_effEqnUnits->changed().connect( this, &MakeDrf::handleSourcesUpdates );
+  
+  m_geometry = new WComboBox( m_effOptionGroup );
+  m_geometry->setInline( false );
+  m_geometry->addStyleClass( "FixedGeomCombo" );
+  m_geometry->addItem( "Intrinsic Eff." );
+  m_geometry->addItem( "Fixed Geometry" );
+  m_geometry->addItem( "Fixed: per cm2" );
+  m_geometry->addItem( "Fixed: per m2" );
+  m_geometry->addItem( "Fixed: per gram" );
+  m_geometry->setCurrentIndex( 0 );
+  
+  m_geometry->setToolTip( "How this efficiency should be interpreted.\n"
+    "\n"
+    "Far Field: Point sources, or sources small compared to distance to detector; will allow"
+    " changing detection distance to scale for 1/r2.\n"
+    "\n"
+    "Fixed Geometry: For when characterization data geometry and distance matches measurements,"
+    " and you will want to calculate total activity of the source (e.x. Marinelli beaker).\n"
+    "\n"
+    "Fixed per cm2: similar to total activity, but when calibration data and measurements are"
+    " for surface contamination, with values given per square centimeter.\n"
+    "\n"
+    "Fixed per m2: similar to total per cm2, but for per square meter.\n"
+    "\n"
+    "Fixed per gram: similar to per cm2, but for per gram of source."
+  );
+  
+  m_geometry->activated().connect( this, &MakeDrf::handleFixedGeometryChanged );
   
   
   m_fwhmOptionGroup = new WGroupBox( "FWHM Eqn.", fitOptionsDiv );
@@ -1514,6 +1541,7 @@ MakeDrf::MakeDrf( InterSpec *viewer, MaterialDB *materialDB,
   m_effOptionGroup->hide();
   m_fwhmOptionGroup->hide();
   
+
   WGroupBox *genOpts = new WGroupBox( fitOptionsDiv );
   m_airAttenuate = new WCheckBox( "Atten. for air", genOpts );
   m_airAttenuate->setChecked( true );
@@ -1521,16 +1549,6 @@ MakeDrf::MakeDrf( InterSpec *viewer, MaterialDB *materialDB,
   m_airAttenuate->addStyleClass( "AirAttenCb" );
   m_airAttenuate->checked().connect( this, &MakeDrf::handleSourcesUpdates );
   m_airAttenuate->unChecked().connect( this, &MakeDrf::handleSourcesUpdates );
-  
-  m_fixedGeometry = new WCheckBox( "Fixed Geometry", genOpts );
-  m_fixedGeometry->setInline( false );
-  m_fixedGeometry->addStyleClass( "FixedGeomCb" );
-  m_fixedGeometry->setToolTip( "For when the characterization data is taken in the same"
-            " configuration, and distance as later measurements will be taken."
-            "  E.x., Marinelli beakers, in-situ measurements, etc." );
-  
-  m_fixedGeometry->checked().connect( this, &MakeDrf::handleFixedGeometryChanged );
-  m_fixedGeometry->unChecked().connect( this, &MakeDrf::handleFixedGeometryChanged );
   
   
   m_chart = new MakeDrfChart();
@@ -2073,7 +2091,7 @@ void MakeDrf::handleSourcesUpdates()
   vector< std::shared_ptr<const PeakDef> > peaks;
   vector<MakeDrfFit::DetEffDataPoint> effpoints;
   
-  const bool is_fixed_geometry = m_fixedGeometry->isChecked();
+  const bool is_fixed_geometry = (m_geometry->currentIndex() != 0);
   
   bool highres = false;
   
@@ -2542,9 +2560,20 @@ void MakeDrf::handleShowFwhmPointsToggled()
 
 void MakeDrf::handleFixedGeometryChanged()
 {
-  const bool is_fixed_geom = m_fixedGeometry->isChecked();
+  const bool is_fixed_geom = (m_geometry->currentIndex() != 0);
   m_detDiamGroup->setHidden( is_fixed_geom );
   m_airAttenuate->setHidden( is_fixed_geom );
+  
+  DetectorPeakResponse::EffGeometryType geom_type = DetectorPeakResponse::EffGeometryType::FarField;
+  switch( m_geometry->currentIndex() )
+  {
+    case 0: geom_type = DetectorPeakResponse::EffGeometryType::FarField;            break;
+    case 1: geom_type = DetectorPeakResponse::EffGeometryType::FixedGeomTotalAct;   break;
+    case 2: geom_type = DetectorPeakResponse::EffGeometryType::FixedGeomActPerCm2;  break;
+    case 3: geom_type = DetectorPeakResponse::EffGeometryType::FixedGeomActPerM2;   break;
+    case 4: geom_type = DetectorPeakResponse::EffGeometryType::FixedGeomActPerGram; break;
+    default: assert( 0 ); break;
+  }//switch( m_geometry->currentIndex() )
   
   // Go through all the sources and set distances visible/hidden
   //Hide all other previews showing.
@@ -2552,7 +2581,7 @@ void MakeDrf::handleFixedGeometryChanged()
   {
     DrfSpecFile *fileWidget = dynamic_cast<DrfSpecFile *>( w );
     if( fileWidget )
-      fileWidget->setIsFixedGeometry( is_fixed_geom );
+      fileWidget->setIsEffGeometryType( geom_type );
   }//for( auto w : m_files->children() )
   
   handleSourcesUpdates();
@@ -2863,7 +2892,7 @@ std::shared_ptr<SpecMeas> MakeDrf::assembleCalFile()
 {
   auto answer = std::make_shared<SpecMeas>();
   
-  const bool is_fixed_geometry = m_fixedGeometry->isChecked();
+  const bool is_fixed_geometry = (m_geometry->currentIndex() == 0);
   
   try
   {
@@ -3041,12 +3070,21 @@ shared_ptr<DetectorPeakResponse> MakeDrf::assembleDrf( const string &name, const
       throw runtime_error( "An equation coefficient is invalid." );
   }
   
-  const bool is_fixed_geometry = m_fixedGeometry->isChecked();
+  DetectorPeakResponse::EffGeometryType geom_type = DetectorPeakResponse::EffGeometryType::FarField;
+  switch( m_geometry->currentIndex() )
+  {
+    case 0: geom_type = DetectorPeakResponse::EffGeometryType::FarField;            break;
+    case 1: geom_type = DetectorPeakResponse::EffGeometryType::FixedGeomTotalAct;   break;
+    case 2: geom_type = DetectorPeakResponse::EffGeometryType::FixedGeomActPerCm2;  break;
+    case 3: geom_type = DetectorPeakResponse::EffGeometryType::FixedGeomActPerM2;   break;
+    case 4: geom_type = DetectorPeakResponse::EffGeometryType::FixedGeomActPerGram; break;
+    default: assert( 0 ); break;
+  }//switch( m_geometry->currentIndex() )
   
   auto drf = make_shared<DetectorPeakResponse>( name, descrip );
   
   float diameter = 0.0; //2.54*PhysicalUnits::cm;
-  if( !is_fixed_geometry )
+  if( geom_type == DetectorPeakResponse::EffGeometryType::FarField )
   {
     try
     {
@@ -3074,7 +3112,7 @@ shared_ptr<DetectorPeakResponse> MakeDrf::assembleDrf( const string &name, const
   
   drf->fromExpOfLogPowerSeriesAbsEff( m_effEqnCoefs, m_effEqnCoefUncerts,
                                      0.0f, diameter, eqnEnergyUnits, lowerEnergy, upperEnergy,
-                                     is_fixed_geometry );
+                                     geom_type );
   drf->setDrfSource( DetectorPeakResponse::DrfSource::UserCreatedDrf );
   
   if( !m_fwhmCoefs.empty() )
@@ -3137,7 +3175,17 @@ void MakeDrf::writeCsvSummary( std::ostream &out,
   const bool effInMeV = isEffEqnInMeV();
   const auto resFcnForm = DetectorPeakResponse::ResolutionFnctForm( m_fwhmEqnType->currentIndex() );
   
-  const bool is_fixed_geometry = m_fixedGeometry->isChecked();
+  DetectorPeakResponse::EffGeometryType geom_type = DetectorPeakResponse::EffGeometryType::FarField;
+  switch( m_geometry->currentIndex() )
+  {
+    case 0: geom_type = DetectorPeakResponse::EffGeometryType::FarField;            break;
+    case 1: geom_type = DetectorPeakResponse::EffGeometryType::FixedGeomTotalAct;   break;
+    case 2: geom_type = DetectorPeakResponse::EffGeometryType::FixedGeomActPerCm2;  break;
+    case 3: geom_type = DetectorPeakResponse::EffGeometryType::FixedGeomActPerM2;   break;
+    case 4: geom_type = DetectorPeakResponse::EffGeometryType::FixedGeomActPerGram; break;
+    default: assert( 0 ); break;
+  }//switch( m_geometry->currentIndex() )
+  
   
   double diam = 0.0;
   try
@@ -3145,7 +3193,7 @@ void MakeDrf::writeCsvSummary( std::ostream &out,
     diam = detectorDiameter();
   }catch( std::exception &e )
   {
-    if( !is_fixed_geometry )
+    if( geom_type == DetectorPeakResponse::EffGeometryType::FarField )
     {
       out << "Invalid detector diameter: " << e.what() << endline;
       return;
@@ -3193,13 +3241,37 @@ void MakeDrf::writeCsvSummary( std::ostream &out,
   " Eff(x) = exp( C_0 + C_1*log(x) + C_2*log(x)^2 + ...) where x is energy in "
   << (effInMeV ? "MeV" : "keV") << endline
   << "#  i.e. equation for probability of gamma that hits the face of the detector being detected in the full energy photopeak." << endline
-  << "# Name,Relative Eff @ 661keV,eff.c name,c0,c1,c2,c3,c4,c5,c6,c7,p0,p1,p2,Calib Distance,Radius (cm),G factor,FixedGeometry" << endline
+  << "# Name,Relative Eff @ 661keV,eff.c name,c0,c1,c2,c3,c4,c5,c6,c7,p0,p1,p2,Calib Distance,Radius (cm),G factor,GeometryType" << endline
   << drfname << " Intrinsic," << (100.0*intrinsicEffAt661/ns_NaI3x3IntrinsicEff) << "%,";
   for( size_t i = 0; i < effEqnCoefs.size(); ++i )
     out << "," << effEqnCoefs[i];
   for( size_t i = effEqnCoefs.size(); i < 12; ++i )
     out << ",";
-  out << "0.0," << (0.5*diam/PhysicalUnits::cm) << ",0.5," << (is_fixed_geometry ? "1" : "0") << endline;
+  out << "0.0," << (0.5*diam/PhysicalUnits::cm) << ",0.5,";
+  switch( geom_type )
+  {
+    case DetectorPeakResponse::EffGeometryType::FarField:
+      out << "FarField";
+      break;
+      
+    case DetectorPeakResponse::EffGeometryType::FixedGeomTotalAct:
+      out << "FixedTotalAct";
+      break;
+      
+    case DetectorPeakResponse::EffGeometryType::FixedGeomActPerCm2:
+      out << "FixedPerCm2";
+      break;
+      
+    case DetectorPeakResponse::EffGeometryType::FixedGeomActPerM2:
+      out << "FixedPerM2";
+      break;
+      
+    case DetectorPeakResponse::EffGeometryType::FixedGeomActPerGram:
+      out << "FixedPerGram";
+      break;
+  }//switch( geom_type )
+  out << endline;
+  
   out << "# 1 sigma Uncertainties,";
   if( releffuncert >= 0.0 )
     out << 100*(releffuncert / ns_NaI3x3IntrinsicEff) << "%";
@@ -3211,7 +3283,7 @@ void MakeDrf::writeCsvSummary( std::ostream &out,
         << " = " << (effDof >= 1 ? (effChi2/(effDof-1.0)) : 0.0);
   out << endline << endline;
   
-  if( is_fixed_geometry )
+  if( geom_type != DetectorPeakResponse::EffGeometryType::FarField )
   {
     out << "# This is a DRF for a fixed geometry." << endline << endline;
   }else
@@ -3321,10 +3393,24 @@ void MakeDrf::writeCsvSummary( std::ostream &out,
   }//if( data.size() >= 2 )
   
   out << endline << endline;
-  if( m_fixedGeometry->isChecked() )
-    out << "Fixed Geometry DRF, # No detector dimensions or source distances recorded." << endline;
-  else
-    out << "Detector diameter = " << (diam/PhysicalUnits::cm) << " cm." << endline;
+  switch( geom_type )
+  {
+    case DetectorPeakResponse::EffGeometryType::FarField:
+      out << "Detector diameter = " << (diam/PhysicalUnits::cm) << " cm." << endline;
+      break;
+    case DetectorPeakResponse::EffGeometryType::FixedGeomTotalAct:
+      out << "Fixed Geometry DRF - total activity, # No detector dimensions or source distances recorded." << endline;
+      break;
+    case DetectorPeakResponse::EffGeometryType::FixedGeomActPerCm2:
+      out << "Fixed Geometry DRF - activity per cm2, # No detector dimensions or source distances recorded." << endline;
+      break;
+    case DetectorPeakResponse::EffGeometryType::FixedGeomActPerM2:
+      out << "Fixed Geometry DRF - activity per m2, # No detector dimensions or source distances recorded." << endline;
+      break;
+    case DetectorPeakResponse::EffGeometryType::FixedGeomActPerGram:
+      out << "Fixed Geometry DRF - activity per gram, # No detector dimensions or source distances recorded." << endline;
+      break;
+  }//switch( geom_type )
   
   out << "Valid energy range: " << lowerEnergy
       << " keV to " << upperEnergy << " keV." << endline
@@ -3404,9 +3490,21 @@ void MakeDrf::writeRefSheet( std::ostream &output, std::string drfname, std::str
   // Lets gather all our general information
   const string tmplttxt = get_tmplt_txt();
   
-  const bool is_fixed_geometry = m_fixedGeometry->isChecked();
+  
+  DetectorPeakResponse::EffGeometryType geom_type = DetectorPeakResponse::EffGeometryType::FarField;
+  switch( m_geometry->currentIndex() )
+  {
+    case 0: geom_type = DetectorPeakResponse::EffGeometryType::FarField;            break;
+    case 1: geom_type = DetectorPeakResponse::EffGeometryType::FixedGeomTotalAct;   break;
+    case 2: geom_type = DetectorPeakResponse::EffGeometryType::FixedGeomActPerCm2;  break;
+    case 3: geom_type = DetectorPeakResponse::EffGeometryType::FixedGeomActPerM2;   break;
+    case 4: geom_type = DetectorPeakResponse::EffGeometryType::FixedGeomActPerGram; break;
+    default: assert( 0 ); break;
+  }//switch( m_geometry->currentIndex() )
+  
   const double diam = [this]() -> double {try{return detectorDiameter();}catch(...){return 0.0;}}();
-  const WString diameter = (!is_fixed_geometry || (diam > 0.0)) ? m_detDiameter->text() : WString("N/A");
+  const WString diameter = ((geom_type == DetectorPeakResponse::EffGeometryType::FarField) || (diam > 0.0))
+                              ? m_detDiameter->text() : WString("N/A");
   
   const int offset = wApp->environment().timeZoneOffset();
   const WDateTime now = WDateTime::currentDateTime().addSecs(60*offset);
@@ -3563,13 +3661,26 @@ void MakeDrf::writeRefSheet( std::ostream &output, std::string drfname, std::str
   efftable << "</tr>\n\t</thead>\n"
               "\t<tbody>\n";
   
-  if( is_fixed_geometry )
+  switch( geom_type )
   {
-    efftable << "\t<tr><th>Efficiency</th>";
-  }else
-  {
-    efftable << "\t<tr><th>Intrinsic</th>";
-  }
+    case DetectorPeakResponse::EffGeometryType::FarField:
+      efftable << "\t<tr><th>Intrinsic</th>";
+      break;
+    case DetectorPeakResponse::EffGeometryType::FixedGeomTotalAct:
+      efftable << "\t<tr><th>Efficiency</th>";
+      break;
+    case DetectorPeakResponse::EffGeometryType::FixedGeomActPerCm2:
+      efftable << "\t<tr><th>Efficiency/cm2</th>";
+      break;
+    case DetectorPeakResponse::EffGeometryType::FixedGeomActPerM2:
+      efftable << "\t<tr><th>Efficiency/m2</th>";
+      break;
+    case DetectorPeakResponse::EffGeometryType::FixedGeomActPerGram:
+      efftable << "\t<tr><th>Efficiency/gram</th>";
+      break;
+  }//switch( geom_type )
+  
+ 
   for( double raw_energy : eff_energies )
   {
     if( (raw_energy < (m_effLowerEnergy - 10)) || (raw_energy > (m_effUpperEnergy + 10)) )
@@ -3582,7 +3693,7 @@ void MakeDrf::writeRefSheet( std::ostream &output, std::string drfname, std::str
   }
   efftable << "\t</tr>\n";
   
-  if( !is_fixed_geometry )
+  if( geom_type == DetectorPeakResponse::EffGeometryType::FarField )
   {
     for( const int dist_cm : eff_dist_cm )
     {
@@ -3614,7 +3725,7 @@ void MakeDrf::writeRefSheet( std::ostream &output, std::string drfname, std::str
     MakeDrfChart chart;
     chart.resize( chart_width, chart_height );
     const std::vector<MakeDrfChart::DataPoint> &data = m_chart->currentDataPoints();
-    const float detDiam = is_fixed_geometry ? -1.0 : m_chart->currentDiameter();
+    const float detDiam = (geom_type != DetectorPeakResponse::EffGeometryType::FarField) ? -1.0 : m_chart->currentDiameter();
     const float chartLower = 10.0f * std::round( 0.1f*(m_effLowerEnergy - 6.0f) );
     const float chartUpper = 10.0f * std::round( 0.1f*(m_effUpperEnergy + 6.0f) );
     

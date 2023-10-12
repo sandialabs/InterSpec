@@ -828,7 +828,6 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
       
       try
       {
-        const bool is_fixed_geometry = false;
         const std::vector<float> drf_coefs{ 0.0f, 0.0f, 0.0f, 0.0f }, uncerts;
         new_drf->fromExpOfLogPowerSeriesAbsEff( drf_coefs, uncerts,
                                                25*PhysicalUnits::cm,
@@ -836,7 +835,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
                                                PhysicalUnits::keV,
                                                spectrum->gamma_energy_min(),
                                                spectrum->gamma_energy_max(),
-                                               is_fixed_geometry );
+                                               DetectorPeakResponse::EffGeometryType::FarField );
         
         if( all_peaks.empty() )
           throw runtime_error( "No peaks provided to fit for FWHM parameters." );
