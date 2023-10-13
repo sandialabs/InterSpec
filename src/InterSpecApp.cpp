@@ -1467,6 +1467,11 @@ void InterSpecApp::clearSession()
 #else
   setupWidgets( false );
 #endif
+  
+  // Set it so drag-n-drop of file will only allow loading foreground again,
+  //  until you load a foreground (the previous set value wont have been updated
+  //  when we do the reset).
+  doJavaScript( "$('.Wt-domRoot').data('HasForeground',0);" );
 }//void clearSession()
 
 
