@@ -1171,7 +1171,7 @@ void MultiPeakFitChi2Fcn::parametersToPeaks( vector<PeakDef> &peaks,
       success = matrix_invert( f, finv );
     }catch( std::exception &e )
     {
-      cerr << "Failed marix invert: " << e.what() << endl;
+      cerr << "Failed matrix invert: " << e.what() << endl;
     }//try / catch
     
     if( success )
@@ -1186,7 +1186,11 @@ void MultiPeakFitChi2Fcn::parametersToPeaks( vector<PeakDef> &peaks,
     }else
     {
       for( int i = 0; i < m_npeak; ++i )
-        peaks[i].setAmplitude( (b(i) / f(i,i)) );
+      {
+        double amp = (b(i) / f(i,i));
+        amp = (IsInf(amp) || IsNan(amp)) ? 0.0 : amp;
+        peaks[i].setAmplitude( amp );
+      }
     }//if( success )
   }//if( computeAreas )
   

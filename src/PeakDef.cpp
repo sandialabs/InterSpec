@@ -2780,8 +2780,16 @@ std::string PeakDef::gaus_peaks_to_json(const std::vector<std::shared_ptr<const 
 			t < PeakDef::NumCoefficientTypes; t = PeakDef::CoefficientType(t + 1))
 		{
       double coef = p.coefficient(t), uncert = p.uncertainty(t);
+      assert( !IsInf(coef) && !IsNan(coef) );
       if( IsInf(coef) || IsNan(coef) )
-        throw runtime_error( "Peak ceoff is inf or nan" );
+      {
+        //throw runtime_error( "Peak ceoff is inf or nan" );
+        coef = 0.0;
+#if( PERFORM_DEVELOPER_CHECKS )
+        log_developer_error( __func__, "Peak coefficient is Inf or NaN" );
+#endif//#if( PERFORM_DEVELOPER_CHECKS )
+      }
+      
       if( IsInf(uncert) || IsNan(uncert) )
         uncert = 0.0;
       

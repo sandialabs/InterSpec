@@ -1090,11 +1090,14 @@ double PeakDef::amplitudeUncert() const
 
 void PeakDef::setMean( const double m )
 {
+  assert( !IsInf(m) && !IsNan(m) );
   m_coefficients[PeakDef::Mean] = m;
 }
 
 void PeakDef::setSigma( const double s )
 {
+  assert( !IsInf(s) && !IsNan(s) );
+  
   if( m_type != PeakDef::GaussianDefined )
     throw std::runtime_error( "PeakDef::setSigma(): not gaus peak" );
   m_coefficients[PeakDef::Sigma] = s;
@@ -1102,6 +1105,8 @@ void PeakDef::setSigma( const double s )
 
 void PeakDef::setAmplitude( const double a )
 {
+  assert( !IsInf(a) && !IsNan(a) );
+  
   if( m_type != PeakDef::GaussianDefined )
     throw std::runtime_error( "PeakDef::setAmplitude(): not gaus peak" );
   m_coefficients[PeakDef::GaussAmplitude] = a;
