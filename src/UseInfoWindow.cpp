@@ -56,7 +56,9 @@
 #include <Wt/WAbstractItemDelegate>
 
 #include "SpecUtils/Filesystem.h"
+#include "SpecUtils/StringAlgo.h"
 
+#include "InterSpec/AppUtils.h"
 #include "InterSpec/InterSpec.h"
 #include "InterSpec/AuxWindow.h"
 #include "InterSpec/HelpSystem.h"
@@ -1150,7 +1152,8 @@ void UseInfoWindow::textItemCreator( const std::string &resource, Wt::WContainer
     // Add some JS to scroll to the contents
     wApp->declareJavaScriptFunction( resource_name + "_scroll_to",
     "function(id){"
-      "const sec_el = document.getElementById(id);"
+      //"const sec_el = document.getElementById(id);"
+      "const sec_el = document.querySelector('[id^=' + id + ']');"  //match ID starting with specified ID
       "if(!sec_el){console.error('No element with id=', id); return;}"
       "const parent_el = document.getElementById('" + parent->id() + "');"
       "if( !parent_el ){console.error('No element with id=" + parent->id() + "'); return;}"
@@ -1197,6 +1200,7 @@ void UseInfoWindow::textItemCreator( const std::string &resource, Wt::WContainer
       WText *sub = new WText( content, w );
       sub->addStyleClass( resource_name + "-subject-content" );
       
+      w->setObjectName( key_title.first );
       
       // Add to the TOC
       WContainerWidget *toc_item = new WContainerWidget( into_toc );
@@ -1233,11 +1237,47 @@ void UseInfoWindow::handleSampleDoubleClicked( WModelIndex index, WMouseEvent ev
   loadSampleSelected();
 }
 
+void UseInfoWindow::handleAppUrl( std::string query_str )
+{
+  const map<string,string> parts = AppUtils::query_str_key_values( query_str );
+  
+  const auto topic_pos = parts.find("TOPIC");
+  
+  if( topic_pos != end(parts) )
+  {
+    for( WMenuItem *item : m_menu->items() )
+    {
+      //item->pathComponent() will be "faqs", and is probably a better thing to use
+      if( SpecUtils::iequals_ascii(item->text().toUTF8(), topic_pos->second) )
+      {
+        right_select_item( item );
+        
+        if( SpecUtils::iequals_ascii("faqs", topic_pos->second) )
+        {
+          const auto subtopic_pos = parts.find("SUBTOPIC");
+          if( subtopic_pos != end(parts) )
+          {
+            string topic_id = WString::fromUTF8(subtopic_pos->second).jsStringLiteral();
+            doJavaScript( "setTimeout( function(){try{"
+                         + wApp->javaScriptClass() + "." + "faqs_scroll_to(" + topic_id
+                         + ");}catch(e){}}, 500 );" );
+          }
+        }//if( a FAQs topic )
+        
+        // TODO: add selecting tab on "Controls" and "Welcome" tabs.
+
+        break;
+      }
+    }//for( loop over menu items )
+  }//if( topic_pos != end(parts) )
+}//void handleAppUrl( std::string query_str )
+
 
 void UseInfoWindow::showFaqTab()
 {
   for( WMenuItem *item : m_menu->items() )
   {
+    //item->pathComponent() will be "faqs", and is probably a better thing to use
     if( item->text() != "FAQs" )
       continue;
     right_select_item( item );

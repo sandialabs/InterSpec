@@ -648,7 +648,8 @@ void InterSpecApp::setupWidgets( const bool attemptStateLoad  )
          || SpecUtils::istarts_with(internal_path, "/dose/")
          || SpecUtils::istarts_with(internal_path, "/gammaxs/")
          || SpecUtils::istarts_with(internal_path, "/1overr2/")
-         || SpecUtils::istarts_with(internal_path, "/unit/") ) )
+         || SpecUtils::istarts_with(internal_path, "/unit/")
+         || SpecUtils::istarts_with(internal_path, "/welcome") ) )
   {
     try
     {

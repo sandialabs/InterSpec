@@ -108,6 +108,15 @@ public:
     void handleSampleSelectionChanged();
     void handleSampleDoubleClicked( Wt::WModelIndex index, Wt::WMouseEvent event );
     
+  /** handles app-url; the query string version.
+   
+   Currently only takes in the query string that can have a key of "topic", whose value corresponds to the
+   text for the buttons.
+   Example: "interspec://welcome/?V=1&topic=faqs&subtopic=save-work"
+   
+   In the future we could consider adding support for a "FAQs" topic, "Controls" tab, or "Welcome" tab.
+   */
+  void handleAppUrl( std::string query_str );
   
   void showFaqTab();
 protected:

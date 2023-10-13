@@ -11102,6 +11102,11 @@ void InterSpec::handleAppUrl( const std::string &url_encoded_url )
     showLicenseAndDisclaimersWindow();
     if( m_licenseWindow )
       m_licenseWindow->handleAppUrlPath( path );
+  }if( SpecUtils::iequals_ascii(host,"welcome") )
+  {
+    showWelcomeDialog(true);
+    if( m_useInfoWindow )
+      m_useInfoWindow->handleAppUrl( query_str );
   }
 #if( USE_REMOTE_RID )
   else if( SpecUtils::iequals_ascii(host,"remoterid") )
