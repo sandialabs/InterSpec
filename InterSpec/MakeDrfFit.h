@@ -56,9 +56,20 @@ namespace MakeDrfFit
                              std::vector<float> &uncerts );
   
   /** Fits the FWHM as a sqrt( Sum_i {A_i *pow(x,i)} )
+   
+   @param peaks The peaks to use for the fit
+   @param num_fit_coefficients The number of coefficients to fit _not_ the fit order (which would be num energy
+          dependent coefficients).  Must be larger than zero
+   @param include_inv_term If true, fits sqrt(A + B*x + C/x) instead of sqrt(A + B*x + C*x*x + D*x*x + ... )
+          Right now, if true, assumes will fit for three coefficients.
+   @param[out] coeffs The resulting fit coefficients.
+   @param[out] coeffs The resulting fit coefficient uncertainties.
+   @returns the chi2 of the fit
+   
+   Throws exception if fitting for more parameters than there are peaks, or if number of coefficients isnt at least 1, or the fit fails.
    */
   double fit_sqrt_poly_fwhm_lls( const std::deque< std::shared_ptr<const PeakDef> > &peaks,
-                                       const int order,
+                                       const int num_fit_coefficients,
                                        const bool include_inv_term,
                                        std::vector<float> &coeffs,
                                        std::vector<float> &coeff_uncerts );

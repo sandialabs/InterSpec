@@ -1517,12 +1517,15 @@ MakeDrf::MakeDrf( InterSpec *viewer, MaterialDB *materialDB,
       case DetectorPeakResponse::kGadrasResolutionFcn:
         m_fwhmEqnType->addItem( "Gadras Equation" );
         break;
-      case DetectorPeakResponse::kSqrtPolynomial:
+        
+      case DetectorPeakResponse::kSqrtEnergyPlusInverse:
         m_fwhmEqnType->addItem( "sqrt(A + B*E + C/E)" );
         break;
-      case DetectorPeakResponse::kSqrtEnergyPlusInverse:
+        
+      case DetectorPeakResponse::kSqrtPolynomial:
         m_fwhmEqnType->addItem( "Sqrt Power Series" );
         break;
+        
       case DetectorPeakResponse::kNumResolutionFnctForm:
         assert( 0 );
         break;
@@ -2473,16 +2476,21 @@ void MakeDrf::handleSourcesUpdates()
       m_effEqnOrder->setCurrentIndex( -1 );
   }//
   
-  const int currentSqrtOrder = m_sqrtEqnOrder->currentIndex();
+  const int currentSqrtOrder = m_sqrtEqnOrder->currentIndex() + 1;
   const int nCurrentSqrtOrders = m_sqrtEqnOrder->count();
   if( nCurrentSqrtOrders==6 && numPeaks>=6 )
   {
     //Dont need to do anything
   }else if( nCurrentSqrtOrders != numPeaks )
   {
-    m_sqrtEqnOrder->clear();
-    for( int order = 0; order < numPeaks && order < 6; ++order )
-      m_sqrtEqnOrder->addItem( std::to_string(order+1) + " Fit Params"  );
+    const int nprev_orders = m_sqrtEqnOrder->count();
+    if( (nprev_orders > numPeaks) || ((numPeaks > 6) && (nprev_orders < 6)) )
+    {
+      m_sqrtEqnOrder->clear();
+      for( int order = 0; (order < numPeaks) && (order < 6); ++order )
+        m_sqrtEqnOrder->addItem( std::to_string(order+1) + " Fit Params"  );
+      m_sqrtEqnOrder->setCurrentIndex( std::min(currentSqrtOrder-1, m_sqrtEqnOrder->count()-1) );
+    }//if( we need to adjust the how many orders are listed for FWHM )
     
     if( currentSqrtOrder > 0 )
     {
@@ -2496,8 +2504,7 @@ void MakeDrf::handleSourcesUpdates()
     {
       const int index = std::min(numPeaks-1,4); //Default to 5 fit params.
       m_sqrtEqnOrder->setCurrentIndex( index );
-    }else
-      m_sqrtEqnOrder->setCurrentIndex( -1 );
+    }
   }//
   
   m_chart->setDataPoints( datapoints, diameter, minenergy, maxenergy );
@@ -2515,18 +2522,25 @@ void MakeDrf::handleSourcesUpdates()
 
 void MakeDrf::handleFwhmTypeChanged()
 {
-  switch( DetectorPeakResponse::ResolutionFnctForm(m_fwhmEqnType->currentIndex()) )
+  const auto fwhm_form = DetectorPeakResponse::ResolutionFnctForm( m_fwhmEqnType->currentIndex() );
+  
+  bool valid_fwhm_form = false;
+  switch( fwhm_form )
   {
     case DetectorPeakResponse::kGadrasResolutionFcn:
     case DetectorPeakResponse::kSqrtEnergyPlusInverse:
     case DetectorPeakResponse::kNumResolutionFnctForm:
       m_sqrtEqnOrder->hide();
+      valid_fwhm_form = true;
       break;
       
     case DetectorPeakResponse::kSqrtPolynomial:
       m_sqrtEqnOrder->show();
+      valid_fwhm_form = true;
       break;
-  }//switch( DetectorPeakResponse::ResolutionFnctForm(m_fwhmEqnType->currentIndex()) )
+  }//switch( fwhm_form )
+  
+  assert( valid_fwhm_form );
   
   //We could update *just* the FWHM equation like:
   //size_t numchan = 0;
@@ -2634,19 +2648,21 @@ void MakeDrf::fitFwhmEqn( std::vector< std::shared_ptr<const PeakDef> > peaks,
   int sqrtEqnOrder = -1;
   const auto fnctnlForm = DetectorPeakResponse::ResolutionFnctForm(m_fwhmEqnType->currentIndex());
   
-  
   switch( fnctnlForm )
   {
     case DetectorPeakResponse::kGadrasResolutionFcn:
-    case DetectorPeakResponse::kSqrtEnergyPlusInverse:
     case DetectorPeakResponse::kNumResolutionFnctForm:
+    case DetectorPeakResponse::kSqrtEnergyPlusInverse:
+      break;
+      
     case DetectorPeakResponse::kSqrtPolynomial:
+      sqrtEqnOrder = m_sqrtEqnOrder->currentIndex() + 1;
       break;
       
     default:
       assert( 0 );
       return;
-  }//switch( DetectorPeakResponse::ResolutionFnctForm(m_fwhmEqnType->currentIndex()) )
+  }//switch( fnctnlForm )
   
   
   //ToDo: I'm not entirely sure the next line protects against updateFwhmEqn()
@@ -2701,34 +2717,45 @@ void MakeDrf::updateFwhmEqn( std::vector<float> coefs,
     return;
   
   MakeDrfChart::FwhmCoefType eqnType = MakeDrfChart::FwhmCoefType::Gadras;
+  
   const auto fcntform = DetectorPeakResponse::ResolutionFnctForm( functionalForm );
+  bool valid_fcntform = false;
+  
   switch( fcntform )
   {
     case DetectorPeakResponse::ResolutionFnctForm::kGadrasResolutionFcn:
       eqnType = MakeDrfChart::FwhmCoefType::Gadras;
-      m_fwhmEqnType->setCurrentIndex( 0 );
+      valid_fcntform = true;
       break;
     
     case DetectorPeakResponse::ResolutionFnctForm::kSqrtEnergyPlusInverse:
       eqnType = MakeDrfChart::FwhmCoefType::SqrtEnergyPlusInverse;
-      m_fwhmEqnType->setCurrentIndex( 1 );
+      valid_fcntform = true;
       break;
       
     case DetectorPeakResponse::ResolutionFnctForm::kSqrtPolynomial:
       eqnType = MakeDrfChart::FwhmCoefType::SqrtEqn;
-      m_fwhmEqnType->setCurrentIndex( 2 );
+      valid_fcntform = true;
       break;
       
     case DetectorPeakResponse::ResolutionFnctForm::kNumResolutionFnctForm:
-    default:
-      m_fwhmEqnType->setCurrentIndex( -1 );
+      valid_fcntform = false;
       return;
   }//switch( fcntform )
   
-  m_fwhmEqnChi2 = chi2;
-  m_fwhmCoefs = coefs;
-  m_fwhmCoefUncerts = uncerts;
-  m_chart->setFwhmCoefficients( coefs, uncerts, eqnType, MakeDrfChart::EqnEnergyUnits::keV );
+  assert( valid_fcntform );
+  if( !valid_fcntform )
+  {
+    m_fwhmEqnType->setCurrentIndex( -1 );
+  }else
+  {
+    m_fwhmEqnType->setCurrentIndex( static_cast<int>(fcntform) );
+    
+    m_fwhmEqnChi2 = chi2;
+    m_fwhmCoefs = coefs;
+    m_fwhmCoefUncerts = uncerts;
+    m_chart->setFwhmCoefficients( coefs, uncerts, eqnType, MakeDrfChart::EqnEnergyUnits::keV );
+  }//if( !valid_fcntform ) / else
   
   wApp->triggerUpdate();
 }//void updateFwhmEqn(...)
