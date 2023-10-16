@@ -29,6 +29,7 @@
 #include <memory>
 #include <vector>
 #include <utility>
+#include <assert.h>
 #include <stdexcept>
 
 #include <Wt/WColor>

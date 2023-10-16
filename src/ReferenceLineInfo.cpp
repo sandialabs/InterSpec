@@ -212,7 +212,7 @@ namespace
       load_custom_nuc_mixes();
     
     if( !sm_nuc_mixes )
-      return;
+      return nullptr;
     
     const auto pos = sm_nuc_mixes->find( label );
     if( pos == end(*sm_nuc_mixes) )
