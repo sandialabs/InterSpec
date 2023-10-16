@@ -1864,7 +1864,7 @@ bool SpecMeasManager::handleCALpFile( std::istream &infile, SimpleDialog *dialog
     // If we set the contents margins to 0, then scroll-bars may appear.
     //  However doing just the below looks okay, and the scroll bars dont seem to appear
     stretcher->setContentsMargins( 9, 2, 9, 2 );
-    //dialog->contents()->setOverflow( WContainerWidget::Overflow::OverflowHidden );
+    dialog->contents()->setOverflow( WContainerWidget::Overflow::OverflowHidden, Wt::Orientation::Horizontal );
     
     dialog->contents()->setLayout( stretcher );
     WText *title = new WText( "Not a spectrum file" );

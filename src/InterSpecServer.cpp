@@ -54,15 +54,17 @@
 #include <boost/filesystem.hpp>
 
 #include "SpecUtils/SpecFile.h"
-#include "InterSpec/InterSpec.h"
 #include "SpecUtils/StringAlgo.h"
 #include "SpecUtils/Filesystem.h"
+#include "SpecUtils/SerialToDetectorModel.h"
+
+#include "InterSpec/InterSpec.h"
 #include "InterSpec/InterSpecApp.h"
 #include "InterSpec/DataBaseUtils.h"
 #include "InterSpec/ReactionGamma.h"
 #include "InterSpec/InterSpecServer.h"
+#include "InterSpec/ReferenceLineInfo.h"
 #include "InterSpec/DecayDataBaseServer.h"
-#include "SpecUtils/SerialToDetectorModel.h"
 #include "InterSpec/DataBaseVersionUpgrade.h"
 
 
@@ -366,7 +368,10 @@ namespace InterSpecServer
     if( ns_server->start() )
     {
       // See remarks in startServer() on performance and reason for this next call
-      ns_server->ioService().boost::asio::io_service::post( &DecayDataBaseServer::initialize );
+      ns_server->ioService().boost::asio::io_service::post( [](){
+        DecayDataBaseServer::initialize();
+        ReferenceLineInfo::load_nuclide_mixtures();
+      } );
       
       const int port = ns_server->httpPort();
       assert( !server_port_num || (server_port_num == port) );

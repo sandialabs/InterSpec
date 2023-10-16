@@ -1382,6 +1382,7 @@ public:
           case ReferenceLineInfo::SourceType::FluorescenceXray:
           case ReferenceLineInfo::SourceType::Reaction:
           case ReferenceLineInfo::SourceType::Background:
+          case ReferenceLineInfo::SourceType::NuclideMixture:
             break;
           
           case ReferenceLineInfo::SourceType::CustomEnergy:
@@ -1628,6 +1629,7 @@ std::unique_ptr<std::pair<PeakModel::PeakShrdPtr,std::string>>
         case ReferenceLineInfo::SourceType::FluorescenceXray:
         case ReferenceLineInfo::SourceType::Reaction:
         case ReferenceLineInfo::SourceType::Background:
+        case ReferenceLineInfo::SourceType::NuclideMixture:
           break;
           
         case ReferenceLineInfo::SourceType::CustomEnergy:

@@ -1364,6 +1364,7 @@ void peakCandidateSourceFromRefLines( std::shared_ptr<const PeakDef> peak, const
       case ReferenceLineInfo::SourceType::FluorescenceXray:
       case ReferenceLineInfo::SourceType::Reaction:
       case ReferenceLineInfo::SourceType::Background:
+      case ReferenceLineInfo::SourceType::NuclideMixture:
         break;
         
       case ReferenceLineInfo::SourceType::CustomEnergy:
