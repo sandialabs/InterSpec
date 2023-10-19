@@ -4702,6 +4702,10 @@ shared_ptr<DetectorPeakResponse> DrfSelect::initARelEffDetector( const SpecUtils
         
       case SpecUtils::DetectorType::KromekD3S:
         return { "D3S", "Kromek D3S", "D3", "Kromek D3S", "Kromek D3" };
+      
+      case SpecUtils::DetectorType::RadiaCode:
+        return { "Radiacode 102", "Radiacode", "Radiacode 101" };
+        break;
     }//switch( type )
     
     return {};
