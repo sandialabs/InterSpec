@@ -1804,12 +1804,14 @@ void RestRidInterface::deleteSelfForToast()
   // I think its fine to just call `delete this`, but we'll do a little delay, "just because"
   WServer::instance()->schedule( 1000, wApp->sessionId(), [rest_id, instance](){
     assert( wApp );
-     WWidget *w = wApp->domRoot()->findById( rest_id );
-     RestRidInterface *ww = dynamic_cast<RestRidInterface *>( w );
-    // cout << "When deleting RestRidInterface, got w = " << w << ", ww = " << ww << ", instance = " << instance << endl;
-    assert( w );
+    WWidget *w = wApp->domRoot()->findById( rest_id );
+    RestRidInterface *ww = dynamic_cast<RestRidInterface *>( w );
     
-    delete instance;
+    // IF the user did a "Clear Session..." the widget could already be deleted
+    if( ww && (ww == instance) )
+      delete instance;
+    else
+      cerr << "When deleting RestRidInterface, got w = " << w << ", ww = " << ww << ", instance = " << instance << endl;
   } );
 }//deleteSelfForToast()
 

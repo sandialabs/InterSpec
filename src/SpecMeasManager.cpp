@@ -2052,11 +2052,7 @@ bool SpecMeasManager::handleCALpFile( std::istream &infile, SimpleDialog *dialog
           msg += "Polynomial:";
         
         for( size_t i = 0; i < cal->coefficients().size() && i < 4; ++i )
-        {
-          char buffer[64];
-          snprintf( buffer, sizeof(buffer), "%s%.3f", (i ? ", " : " "), cal->coefficients()[i] );
-          msg += buffer;
-        }
+          msg += PhysicalUnits::printCompact( cal->coefficients()[i], 4 );
         if( cal->coefficients().size() > 4 )
           msg += "...";
         

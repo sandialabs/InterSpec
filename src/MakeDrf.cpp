@@ -109,8 +109,10 @@ extern void android_download_workaround( Wt::WResource *resource, std::string de
 
 namespace
 {
-  const float ns_NaI3x3IntrinsicEff = 0.47096f; //linear interpolation based on Efficiency.csv for generic 3x3. So could be improved...
-
+  //const float ns_NaI3x3IntrinsicEff_661 = 0.422605; //linear interpolation based on Efficiency.csv for generic 3x3. So could be improved...
+  const float ns_NaI3x3IntrinsicEff_1332 = 0.24291f;
+  
+  
   bool source_info_from_lib_file( string srcname, const string &filename,
                                   double &activity, boost::posix_time::ptime &activityDate, string &comments )
   {
@@ -3239,12 +3241,12 @@ void MakeDrf::writeCsvSummary( std::ostream &out,
   //Okay, we've got all the variables we need for this function I think, lets
   //  write stuff
   
-  const float cs137Energy = (effInMeV ? 0.661657f : 661.657f);
-  const float intrinsicEffAt661 = DetectorPeakResponse::expOfLogPowerSeriesEfficiency( cs137Energy, effEqnCoefs );
+  const float co60Energy = (effInMeV ? 1.33249f : 1332.49f);
+  const float intrinsicEffAt1332 = DetectorPeakResponse::expOfLogPowerSeriesEfficiency( co60Energy, effEqnCoefs );
   
   float releffuncert = -999.9f;
   if( effEqnCoefs.size() == effEqnCoefsUncerts.size() && effEqnCoefs.size() > 0 )
-    releffuncert = effEqnUncert( cs137Energy, effEqnCoefs, effEqnCoefsUncerts );
+    releffuncert = effEqnUncert( co60Energy, effEqnCoefs, effEqnCoefsUncerts );
 
   
   int offset = 0;
@@ -3269,7 +3271,7 @@ void MakeDrf::writeCsvSummary( std::ostream &out,
   << (effInMeV ? "MeV" : "keV") << endline
   << "#  i.e. equation for probability of gamma that hits the face of the detector being detected in the full energy photopeak." << endline
   << "# Name,Relative Eff @ 661keV,eff.c name,c0,c1,c2,c3,c4,c5,c6,c7,p0,p1,p2,Calib Distance,Radius (cm),G factor,GeometryType" << endline
-  << drfname << " Intrinsic," << (100.0*intrinsicEffAt661/ns_NaI3x3IntrinsicEff) << "%,";
+  << drfname << " Intrinsic," << (100.0*intrinsicEffAt1332/ns_NaI3x3IntrinsicEff_1332) << "%,";
   for( size_t i = 0; i < effEqnCoefs.size(); ++i )
     out << "," << effEqnCoefs[i];
   for( size_t i = effEqnCoefs.size(); i < 12; ++i )
@@ -3301,7 +3303,7 @@ void MakeDrf::writeCsvSummary( std::ostream &out,
   
   out << "# 1 sigma Uncertainties,";
   if( releffuncert >= 0.0 )
-    out << 100*(releffuncert / ns_NaI3x3IntrinsicEff) << "%";
+    out << 100*(releffuncert / ns_NaI3x3IntrinsicEff_1332) << "%";
   out << ",";
   for( size_t i = 0; i < effEqnCoefsUncerts.size(); ++i )
     out << "," << effEqnCoefsUncerts[i];
@@ -3322,7 +3324,7 @@ void MakeDrf::writeCsvSummary( std::ostream &out,
     << (effInMeV ? "MeV" : "keV") << " and at distance of 25 cm" << endline
     << "#  i.e. equation for probability of gamma emitted from source at 25cm being detected in the full energy photopeak." << endline
     << "# Name,Relative Eff @ 661keV,eff.c name,c0,c1,c2,c3,c4,c5,c6,c7,p0,p1,p2,Calib Distance,Radius (cm),G factor" << endline
-    << drfname << " Absolute," << (100.0*intrinsicEffAt661/ns_NaI3x3IntrinsicEff) << "%,";
+    << drfname << " Absolute," << (100.0*intrinsicEffAt1332/ns_NaI3x3IntrinsicEff_1332) << "%,";
     for( size_t i = 0; i < effEqnCoefs.size(); ++i )
       out << "," << ( (i==0 ? log(solidAngleAt25cm) : 0.0) + effEqnCoefs[i]);  //todo: make sure its not
     for( size_t i = effEqnCoefs.size(); i < 12; ++i )
@@ -3330,7 +3332,7 @@ void MakeDrf::writeCsvSummary( std::ostream &out,
     out << "25," << (0.5*diam/PhysicalUnits::cm) << "," << solidAngleAt25cm << endline;
     out << "# 1 sigma Uncertainties,";
     if( releffuncert >= 0.0 )
-      out << 100*(releffuncert / ns_NaI3x3IntrinsicEff) << "%";
+      out << 100*(releffuncert / ns_NaI3x3IntrinsicEff_1332) << "%";
     out << ",";
     for( size_t i = 0; i < effEqnCoefsUncerts.size(); ++i )
       out << "," << effEqnCoefsUncerts[i];
@@ -3558,9 +3560,10 @@ void MakeDrf::writeRefSheet( std::ostream &output, std::string drfname, std::str
 
   const bool effInMeV = isEffEqnInMeV();
   const auto fwhmForm = DetectorPeakResponse::ResolutionFnctForm( m_fwhmEqnType->currentIndex() );
-  const float cs137Energy = (effInMeV ? 0.661657f : 661.657f);
-  const float intrinsicEffAt661 = DetectorPeakResponse::expOfLogPowerSeriesEfficiency( cs137Energy, m_effEqnCoefs );
-  const float relEffPercent = 100.0 * intrinsicEffAt661 / ns_NaI3x3IntrinsicEff;
+  const float co60Energy = (effInMeV ? 1.33249f : 1332.49f);
+  const float intrinsicEffAt1332 = DetectorPeakResponse::expOfLogPowerSeriesEfficiency( co60Energy, m_effEqnCoefs );
+  const float relEffPercent = 100.0 * intrinsicEffAt1332 / ns_NaI3x3IntrinsicEff_1332;
+  
   char rel_eff_txt[256] = { '\0' };
   
   if( m_fwhmCoefs.empty() )
@@ -3568,11 +3571,11 @@ void MakeDrf::writeRefSheet( std::ostream &output, std::string drfname, std::str
     snprintf( rel_eff_txt, sizeof(rel_eff_txt), "%.1f%% eff. (rel. to 3x3 NaI) @661 keV", relEffPercent );
   }else
   {
-    const float fwhm661 = DetectorPeakResponse::peakResolutionSigma( 661.7, fwhmForm, m_fwhmCoefs );
+    const float fwhm661 = DetectorPeakResponse::peakResolutionFWHM( 661.7, fwhmForm, m_fwhmCoefs );
     const float relResolution = 100 * fwhm661 / 661.7;
     
     snprintf( rel_eff_txt, sizeof(rel_eff_txt),
-              "@661 keV: %.1f%% eff (rel. to 3x3 NaI), and FWHM=%.2g%%",
+              "%.1f%% eff (rel. to 3x3 NaI @1332), and FWHM(661)=%.2g%%",
              relEffPercent, relResolution );
   }//if( we have FWHM ) / else.
   

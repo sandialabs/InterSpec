@@ -1543,6 +1543,9 @@ double LinearProblemSubSolveChi2Fcn::parametersToPeaks( vector<PeakDef> &peaks,
   vector<double> means, sigmas;
   for( size_t i = 0; i < m_npeak; ++i )
   {
+    if( IsNan(x[i]) || IsInf(x[i]) )
+      throw runtime_error( "NaN or Inf peak mean" );
+    
     peaks[i].setMean( x[i] );
     if( errors )
       peaks[i].setMeanUncert( errors[i] );
