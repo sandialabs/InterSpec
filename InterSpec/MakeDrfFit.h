@@ -39,8 +39,6 @@ namespace MakeDrfFit
     used as the starting parameters for the fit, otherwise some default values
     will be chosen to start the fit with.
     The provided Measurement should be same one peaks where fit for.
-    Currently for kSqrtPolynomial, only the first two coefficients (A1 and A2)
-    are fit for.
    
     @param sqrtEqnOrder Only used if fnctnlForm==DetectorPeakResponse::kSqrtPolynomial
    

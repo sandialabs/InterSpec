@@ -322,6 +322,7 @@ set(sources
     src/MakeDrfSrcDef.cpp
     src/MakeDrfChart.cpp
     src/MakeDrfFit.cpp
+    src/MakeFwhmForDrf.cpp
     src/FluxTool.cpp
     src/NativeFloatSpinBox.cpp
     src/SwitchCheckbox.cpp
@@ -423,6 +424,7 @@ set(headers
     InterSpec/MakeDrfSrcDef.h
     InterSpec/MakeDrfChart.h
     InterSpec/MakeDrfFit.h
+    InterSpec/MakeFwhmForDrf.h
     InterSpec/FluxTool.h
     InterSpec/NativeFloatSpinBox.h
     InterSpec/SwitchCheckbox.h
