@@ -1369,32 +1369,6 @@ namespace
     
     std::shared_ptr<const SpecMeas> measurement(){ return m_meas; }
   };//class DrfSpecFile
-  
-  /** MakeDrfChart need resize() explicitly called when its size changes, and
-     its not happening when placed directly into the WGridLayout, so this class
-     just does that explicitly
-   */
-  class DrfChartHolder : public WContainerWidget
-  {
-    MakeDrfChart *m_chart;
-    
-  public:
-    DrfChartHolder( MakeDrfChart *chart, WContainerWidget *parent )
-    : WContainerWidget( parent ),
-      m_chart( chart )
-    {
-      setLayoutSizeAware( true );
-      addWidget( m_chart );
-    }
-    
-    virtual ~DrfChartHolder(){};
-    
-    virtual void layoutSizeChanged(int width, int height)
-    {
-      m_chart->resize( width, height );
-    }
-  };//class DrfChartHolder
-  
 }//namespace to implement DrfSpecFile and DrfSpecFileSample
 
 

@@ -69,6 +69,26 @@ namespace
 }//namespace
 
 
+DrfChartHolder::DrfChartHolder( MakeDrfChart *chart, WContainerWidget *parent )
+  : WContainerWidget( parent ),
+    m_chart( chart )
+{
+  setLayoutSizeAware( true );
+  addWidget( m_chart );
+}
+  
+DrfChartHolder::~DrfChartHolder()
+{
+};
+  
+void DrfChartHolder::layoutSizeChanged( int width, int height )
+{
+  m_chart->resize( width, height );
+}
+
+
+
+
 MakeDrfChart::MakeDrfChart( Wt::WContainerWidget *parent )
 : Wt::Chart::WCartesianChart( parent ),
   m_det_diameter( 1.0*PhysicalUnits::cm ),
@@ -813,6 +833,15 @@ void MakeDrfChart::showFwhmPoints( const bool show )
   axis(Chart::Y2Axis).setVisible( show );
   setPlotAreaPadding( (show ? 55 : 10), Wt::Right );
 }//void showFwhmPoints( const bool show )
+
+
+void MakeDrfChart::showEfficiencyPoints( const bool show )
+{
+  series(sm_data_eff_col).setHidden( !show );
+  series(sm_equation_eff_col).setHidden( !show );
+  axis(Chart::Y1Axis).setVisible( show );
+  setPlotAreaPadding( (show ? 55 : 10), Wt::Left );
+}//void showEfficiencyPoints( const bool show )
 
 
 void MakeDrfChart::setXRange( double lower, double upper )

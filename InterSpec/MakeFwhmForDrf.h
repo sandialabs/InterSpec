@@ -27,19 +27,24 @@
 
 #include <memory>
 #include <vector>
+#include <utility>
 
 #include <Wt/WContainerWidget>
 
 class PeakDef;
 class AuxWindow;
 class InterSpec;
+class MakeDrfChart;
+class FwhmPeaksModel;
 class NativeFloatSpinBox;
 class DetectorPeakResponse;
 
 namespace Wt
 {
+  class WText;
   class WComboBox;
-}
+  class WTableView;
+}//namespace Wt
 
 /* Adds FWHM functional information to the DRF passed in; resulting
  DRF can be set to the current one for the application
@@ -58,24 +63,47 @@ public:
       and have the signals to delete it when closed hooked up, so you probably
       wont need the window.
    */
-  static AuxWindow *makeAddFwhmToDrfWindow();
+  static std::pair<AuxWindow *,MakeFwhmForDrf *> makeAddFwhmToDrfWindow();
 
   Wt::Signal<bool> &validationChanged();
   bool isValidFwhm() const;
   
   void setToDrf();
+  Wt::Signal<std::shared_ptr<DetectorPeakResponse>> &updatedDrf();
+protected:
+  void handleFwhmEqnTypeChange();
+  void handleSqrtEqnOrderChange();
   
+  void coefficientManuallyChanged( const int coef_num );
+  
+  void refit();
+  void setEquationToChart();
+  
+  void startAutomatedPeakSearch();
+  void setPeaksFromAutoSearch( std::vector<std::shared_ptr<const PeakDef>> user_peaks,
+                               std::shared_ptr<std::vector<std::shared_ptr<const PeakDef>>> auto_search_peaks );
 protected:
   InterSpec *m_interspec;
   std::shared_ptr<const DetectorPeakResponse> m_orig_drf;
   std::vector<std::shared_ptr<const PeakDef>> m_user_peaks;
   std::vector<std::shared_ptr<const PeakDef>> m_auto_fit_peaks;
   
+  MakeDrfChart *m_chart;
+  
   Wt::WComboBox *m_fwhmEqnType;
   Wt::WComboBox *m_sqrtEqnOrder;
   std::vector<NativeFloatSpinBox *> m_parEdits;
+  std::vector<float> m_parameters;
+  std::vector<float> m_uncertainties;
+  
+  Wt::WText *m_error;
+  Wt::WText *m_equation;
+  
+  Wt::WTableView *m_table;
+  FwhmPeaksModel *m_model;
   
   Wt::Signal<bool> m_validationChanged;
+  Wt::Signal<std::shared_ptr<DetectorPeakResponse>> m_updatedDrf;
 };//class MakeFwhmForDrf
 
 

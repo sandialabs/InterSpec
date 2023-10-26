@@ -94,6 +94,7 @@
 #include "InterSpec/PhysicalUnits.h"
 #include "InterSpec/DataBaseUtils.h"
 #include "InterSpec/WarningWidget.h"
+#include "InterSpec/MakeFwhmForDrf.h"
 #include "InterSpec/SpecMeasManager.h"
 #include "InterSpec/UndoRedoManager.h"
 #include "InterSpec/SpectraFileModel.h"
@@ -2934,6 +2935,11 @@ DrfSelect::DrfSelect( std::shared_ptr<DetectorPeakResponse> currentDet,
   if( specViewer && !specViewer->isPhone() )
     m_noDrfButton->addStyleClass( "NoDrfBtn" );
   
+  WPushButton *changeFwhm = new WPushButton( "Fit FWHM...", m_footer );
+  if( specViewer && !specViewer->isPhone() )
+    changeFwhm->addStyleClass( "NoDrfBtn" );
+  changeFwhm->clicked().connect( this, &DrfSelect::handleFitFwhmRequested );
+  
   if( auxWindow && !auxWindow->isPhone() )
   {
     m_cancelButton = auxWindow->addCloseButtonToFooter( "Cancel" );
@@ -3291,6 +3297,24 @@ void DrfSelect::handleUserChangedUploadedDrfName()
   
   m_detector->setName( value );
 }//handleUserChangedUploadedDrfName()
+
+
+void DrfSelect::handleFitFwhmRequested()
+{
+  pair<AuxWindow *,MakeFwhmForDrf *> tool = MakeFwhmForDrf::makeAddFwhmToDrfWindow();
+  if( !tool.second )
+    return;
+  
+  tool.second->updatedDrf().connect( boost::bind( &DrfSelect::handleFitFwhmFinished, this, boost::placeholders::_1 ) );
+}//void handleFitFwhmRequested()
+
+
+void DrfSelect::handleFitFwhmFinished( std::shared_ptr<DetectorPeakResponse> drf )
+{
+  if( drf )
+    updateLastUsedTimeOrAddToDb( drf, m_interspec->m_user.id(), m_sql );
+  done().emit();
+}//void handleFitFwhmFinished( std::shared_ptr<DetectorPeakResponse> drf )
 
 
 void DrfSelect::deleteDBTableSelected()
