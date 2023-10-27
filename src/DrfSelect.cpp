@@ -3301,11 +3301,7 @@ void DrfSelect::handleUserChangedUploadedDrfName()
 
 void DrfSelect::handleFitFwhmRequested()
 {
-  pair<AuxWindow *,MakeFwhmForDrf *> tool = MakeFwhmForDrf::makeAddFwhmToDrfWindow();
-  if( !tool.second )
-    return;
-  
-  tool.second->updatedDrf().connect( boost::bind( &DrfSelect::handleFitFwhmFinished, this, boost::placeholders::_1 ) );
+  MakeFwhmForDrfWindow *tool = m_interspec->fwhmFromForegroundWindow();
 }//void handleFitFwhmRequested()
 
 

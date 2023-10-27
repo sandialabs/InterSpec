@@ -296,14 +296,14 @@ public:
   //a row is selected, so update det and charts
   void dbTableSelectionChanged();
   
+  void handleFitFwhmRequested();
+  void handleFitFwhmFinished( std::shared_ptr<DetectorPeakResponse> drf );
 protected:
   void setAcceptButtonEnabled( const bool enable );
   
   /** Called when user changes value in m_uploadedDetName; sets m_detector name. */
   void handleUserChangedUploadedDrfName();
   
-  void handleFitFwhmRequested();
-  void handleFitFwhmFinished( std::shared_ptr<DetectorPeakResponse> drf );
 protected:
   WContainerWidget *m_footer;
   InterSpec *m_interspec;

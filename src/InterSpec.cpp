@@ -128,6 +128,7 @@
 #include "InterSpec/WarningWidget.h"
 #include "InterSpec/DoseCalcWidget.h"
 #include "InterSpec/ExportSpecFile.h"
+#include "InterSpec/MakeFwhmForDrf.h"
 #include "SpecUtils/SpecUtilsAsync.h"
 #include "InterSpec/PeakFitChi2Fcn.h"
 #include "InterSpec/PeakInfoDisplay.h"
@@ -453,6 +454,7 @@ InterSpec::InterSpec( WContainerWidget *parent )
   m_licenseWindow( nullptr ),
   m_useInfoWindow( 0 ),
   m_decayInfoWindow( nullptr ),
+  m_addFwhmTool( nullptr ),
   m_preserveCalibWindow( 0 ),
 #if( USE_SEARCH_MODE_3D_CHART )
   m_3dViewWindow( nullptr ),
@@ -7902,6 +7904,58 @@ DecayWindow *InterSpec::createDecayInfoWindow()
   
   return m_decayInfoWindow;
 }//void createDecayInfoWindow()
+
+
+MakeFwhmForDrfWindow *InterSpec::fwhmFromForegroundWindow()
+{
+  if( m_addFwhmTool )
+    return m_addFwhmTool;
+  
+  m_addFwhmTool = new MakeFwhmForDrfWindow();
+  m_addFwhmTool->tool()->updatedDrf().connect( m_addFwhmTool, &AuxWindow::hide );
+  m_addFwhmTool->finished().connect( boost::bind( &InterSpec::deleteFwhmFromForegroundWindow, this ) );
+  
+  
+  if( m_drfSelectWindow )
+  {
+    m_addFwhmTool->tool()->updatedDrf().connect(
+        boost::bind( &DrfSelect::handleFitFwhmFinished,
+                    m_drfSelectWindow->widget(), boost::placeholders::_1
+    ) );
+  }//if( m_drfSelectWindow )
+  
+  if( m_undo && m_undo->canAddUndoRedoNow() )
+  {
+    auto undo = [this](){ deleteFwhmFromForegroundWindow(); };
+    auto redo = [this](){ fwhmFromForegroundWindow(); };
+    m_undo->addUndoRedoStep( std::move(undo), std::move(redo), "Show fit FWHM from foreground tool" );
+  }//if( undo )
+  
+  return m_addFwhmTool;
+}//MakeFwhmForDrfWindow *fwhmFromForegroundWindow()
+
+
+void InterSpec::deleteFwhmFromForegroundWindow()
+{
+  if( !m_addFwhmTool )
+    return;
+  
+  shared_ptr<MakeFwhmForDrf::ToolState> state = m_addFwhmTool->tool()->currentState();
+  
+  AuxWindow::deleteAuxWindow( m_addFwhmTool );
+  m_addFwhmTool = nullptr;
+  
+  if( m_undo && m_undo->canAddUndoRedoNow() )
+  {
+    auto undo = [this,state](){
+      MakeFwhmForDrfWindow *window = fwhmFromForegroundWindow();
+      if( window )
+        window->tool()->setState( state );
+    };
+    auto redo = [this](){ deleteFwhmFromForegroundWindow(); };
+    m_undo->addUndoRedoStep( std::move(undo), std::move(redo), "Close fit FWHM from foreground tool" );
+  }//if( do_undo )
+}//void deleteFwhmFromForegroundWindow()
 
 
 #if( USE_DETECTION_LIMIT_TOOL )

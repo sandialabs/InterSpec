@@ -58,8 +58,8 @@ class UseInfoWindow;
 class WarningWidget;
 class DoseCalcWindow;
 class FluxToolWindow;
-class WarningMessage;
 class PeakEditWindow;
+class WarningMessage;
 class DrfSelectWindow;
 class PeakInfoDisplay;
 class SpecMeasManager;
@@ -73,6 +73,7 @@ class FeatureMarkerWindow;
 class D3SpectrumDisplayDiv;
 class DetectorPeakResponse;
 class ExportSpecFileWindow;
+class MakeFwhmForDrfWindow;
 class IsotopeSearchByEnergy;
 class ShieldingSourceDisplay;
 class EnergyCalPreserveWindow;
@@ -792,13 +793,19 @@ public:
   
   OneOverR2Calc *createOneOverR2Calculator();
   void deleteOneOverR2Calc();
+  
   UnitsConverterTool *createUnitsConverterTool();
   void deleteUnitsConverterTool();
+  
   FluxToolWindow *createFluxTool();
   void deleteFluxTool();
+  
   DecayWindow *createDecayInfoWindow();
   void deleteDecayInfoWindow();
 
+  MakeFwhmForDrfWindow *fwhmFromForegroundWindow();
+  void deleteFwhmFromForegroundWindow();
+  
   /** Will show the disclaimer, license, and statment window, setting
       m_licenseWindow pointer with its value.
    */
@@ -1517,6 +1524,8 @@ protected:
    color changes when color theme is updated
    */
   DecayWindow *m_decayInfoWindow;
+  
+  MakeFwhmForDrfWindow *m_addFwhmTool;
   
   //m_preserveCalibWindow: a pointer to the window that prompts the user if they
   //  would like to use a calibration from a previously used spectrum if the one

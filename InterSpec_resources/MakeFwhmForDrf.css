@@ -1,21 +1,16 @@
 .MakeFwhmForDrf
 {
- 
+  width: 500px;
 }
 
 .MakeFwhmForDrf .Options, .MakeFwhmForDrf .Parameters
 {
-  height: 25px;
-  display: flex;
-  flex-direction: row;
-  column-gap: 10px;
+
 }
 
 .MakeFwhmForDrf .Options .OptDiv, .MakeFwhmForDrf .Parameters .ParDiv
 {
-  display: flex;
-  flex-direction: row;
-  column-gap: 3px;
+
 }
 
 .MakeFwhmForDrf .ErrTxt
@@ -24,6 +19,11 @@
 }
 
 .MakeFwhmForDrf .EqnTxt
+{
+
+}
+
+.MakeFwhmForDrf .PeakTable
 {
 
 }
