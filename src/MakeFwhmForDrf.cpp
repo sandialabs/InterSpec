@@ -219,11 +219,13 @@ public:
        || (value.type() != typeid(bool)) )
     {
       assert( 0 );
-      return;
+      return false;
     }
     
     m_rows[index.row()].m_use_for_fit = boost::any_cast<bool>(value);
     dataChanged().emit( index, index );
+    
+    return true;
   }//bool setData( const WModelIndex &index, const boost::any &value, int role = EditRole )
   
   
