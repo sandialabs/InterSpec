@@ -7906,15 +7906,14 @@ DecayWindow *InterSpec::createDecayInfoWindow()
 }//void createDecayInfoWindow()
 
 
-MakeFwhmForDrfWindow *InterSpec::fwhmFromForegroundWindow()
+MakeFwhmForDrfWindow *InterSpec::fwhmFromForegroundWindow( const bool use_auto_fit_peaks )
 {
   if( m_addFwhmTool )
     return m_addFwhmTool;
   
-  m_addFwhmTool = new MakeFwhmForDrfWindow();
+  m_addFwhmTool = new MakeFwhmForDrfWindow( use_auto_fit_peaks );
   m_addFwhmTool->tool()->updatedDrf().connect( m_addFwhmTool, &AuxWindow::hide );
   m_addFwhmTool->finished().connect( boost::bind( &InterSpec::deleteFwhmFromForegroundWindow, this ) );
-  
   
   if( m_drfSelectWindow )
   {
@@ -7927,7 +7926,7 @@ MakeFwhmForDrfWindow *InterSpec::fwhmFromForegroundWindow()
   if( m_undo && m_undo->canAddUndoRedoNow() )
   {
     auto undo = [this](){ deleteFwhmFromForegroundWindow(); };
-    auto redo = [this](){ fwhmFromForegroundWindow(); };
+    auto redo = [this,use_auto_fit_peaks](){ fwhmFromForegroundWindow(use_auto_fit_peaks); };
     m_undo->addUndoRedoStep( std::move(undo), std::move(redo), "Show fit FWHM from foreground tool" );
   }//if( undo )
   
@@ -7948,9 +7947,15 @@ void InterSpec::deleteFwhmFromForegroundWindow()
   if( m_undo && m_undo->canAddUndoRedoNow() )
   {
     auto undo = [this,state](){
-      MakeFwhmForDrfWindow *window = fwhmFromForegroundWindow();
+      MakeFwhmForDrfWindow *window = fwhmFromForegroundWindow(false);
       if( window )
         window->tool()->setState( state );
+      
+      shared_ptr<DetectorPeakResponse> drf = m_dataMeasurement ? m_dataMeasurement->detector() : nullptr;
+      if( state->m_orig_drf != drf )
+      {
+        m_detectorChanged.emit(state->m_orig_drf);
+      }
     };
     auto redo = [this](){ deleteFwhmFromForegroundWindow(); };
     m_undo->addUndoRedoStep( std::move(undo), std::move(redo), "Close fit FWHM from foreground tool" );

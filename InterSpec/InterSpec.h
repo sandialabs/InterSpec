@@ -803,7 +803,16 @@ public:
   DecayWindow *createDecayInfoWindow();
   void deleteDecayInfoWindow();
 
-  MakeFwhmForDrfWindow *fwhmFromForegroundWindow();
+  /** If no `MakeFwhmForDrfWindow` is currently showing, will create one and return a pointer to it.
+   If a window is currently showing, will return a pointer to it.
+   @param use_auto_fit_peaks_too Whether to use auto-search for peaks and include those in the table of
+          peaks that can be used.  Only has an effect if the window is created; if a window already exists, doesnt
+          have an effect.
+   */
+  MakeFwhmForDrfWindow *fwhmFromForegroundWindow( const bool use_auto_fit_peaks_too );
+  
+  /** If a `MakeFwhmForDrfWindow` is showing, deletes it, and sets `m_addFwhmTool` to nullptr.
+   */
   void deleteFwhmFromForegroundWindow();
   
   /** Will show the disclaimer, license, and statment window, setting

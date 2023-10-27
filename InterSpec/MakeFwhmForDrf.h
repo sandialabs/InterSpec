@@ -37,6 +37,7 @@ class InterSpec;
 class MakeDrfChart;
 class FwhmPeaksModel;
 class NativeFloatSpinBox;
+class RowStretchTreeView;
 class DetectorPeakResponse;
 
 namespace Wt
@@ -52,8 +53,9 @@ namespace Wt
 class MakeFwhmForDrf : public Wt::WContainerWidget
 {
 public:
-  MakeFwhmForDrf( InterSpec *viewer,
-                 std::shared_ptr<const DetectorPeakResponse> drf,
+  MakeFwhmForDrf( const bool auto_fit_peaks,
+                 InterSpec *viewer,
+                 std::shared_ptr<DetectorPeakResponse> drf,
                  Wt::WContainerWidget *parent = nullptr );
   
   virtual ~MakeFwhmForDrf() override;
@@ -80,6 +82,7 @@ public: //Some stuff for undo/redo support
     int m_sqrt_eqn_index;
     std::vector<MakeFwhmForDrf::TableRow> m_rows;
     std::vector<float> m_parameters, m_uncertainties;
+    std::shared_ptr<DetectorPeakResponse> m_orig_drf;
     
     bool operator==( const ToolState &rhs ) const;
   };//struct ToolState
@@ -100,6 +103,7 @@ protected:
   void doRefitWork();
   void setEquationToChart();
   
+  std::vector<std::shared_ptr<const PeakDef>> get_user_peaks();
   void startAutomatedPeakSearch();
   void setPeaksFromAutoSearch( std::vector<std::shared_ptr<const PeakDef>> user_peaks,
                                std::shared_ptr<std::vector<std::shared_ptr<const PeakDef>>> auto_search_peaks );
@@ -113,7 +117,7 @@ protected:
   bool m_refit_scheduled;
   bool m_undo_redo_scheduled;
   
-  std::shared_ptr<const DetectorPeakResponse> m_orig_drf;
+  std::shared_ptr<DetectorPeakResponse> m_orig_drf;
   std::vector<std::shared_ptr<const PeakDef>> m_user_peaks;
   std::vector<std::shared_ptr<const PeakDef>> m_auto_fit_peaks;
   
@@ -128,7 +132,7 @@ protected:
   Wt::WText *m_error;
   Wt::WText *m_equation;
   
-  Wt::WTableView *m_table;
+  RowStretchTreeView *m_table;
   FwhmPeaksModel *m_model;
   
   Wt::Signal<bool> m_validationChanged;
@@ -146,7 +150,7 @@ protected:
 class MakeFwhmForDrfWindow : public AuxWindow
 {
 public:
-  MakeFwhmForDrfWindow();
+  MakeFwhmForDrfWindow( const bool use_auto_fit_peaks_too );
   
   MakeFwhmForDrf *tool();
   

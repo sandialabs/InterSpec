@@ -1,29 +1,47 @@
 .MakeFwhmForDrf
 {
-  width: 500px;
+    
 }
 
-.MakeFwhmForDrf .Options, .MakeFwhmForDrf .Parameters
+.MakeFwhmForDrf .Options
 {
 
 }
 
-.MakeFwhmForDrf .Options .OptDiv, .MakeFwhmForDrf .Parameters .ParDiv
+.MakeFwhmForDrf .Parameters
 {
+  border: none;
+}
 
+.MakeFwhmForDrf .Options .OptDiv
+{
+  border: none;
+}
+
+.MakeFwhmForDrf .Parameters .ParDiv
+{
+  border: none;
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 5px;
 }
 
 .MakeFwhmForDrf .ErrTxt
 {
-
+  color: red;
+  border: 1px solid yellow;
+  padding: 5px;
 }
 
 .MakeFwhmForDrf .EqnTxt
 {
-
+  padding: 5px;
+  text-align: center;
 }
 
 .MakeFwhmForDrf .PeakTable
 {
-
+  border: 2px solid #e1e1e1;
 }

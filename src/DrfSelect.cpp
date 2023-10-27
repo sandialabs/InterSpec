@@ -3301,7 +3301,8 @@ void DrfSelect::handleUserChangedUploadedDrfName()
 
 void DrfSelect::handleFitFwhmRequested()
 {
-  MakeFwhmForDrfWindow *tool = m_interspec->fwhmFromForegroundWindow();
+  const bool use_auto_fit_peaks_too = true;
+  MakeFwhmForDrfWindow *tool = m_interspec->fwhmFromForegroundWindow( use_auto_fit_peaks_too );
 }//void handleFitFwhmRequested()
 
 

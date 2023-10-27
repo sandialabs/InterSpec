@@ -29,8 +29,8 @@
 #include <Wt/WLabel>
 #include <Wt/WServer>
 #include <Wt/WComboBox>
+#include <Wt/WGroupBox>
 #include <Wt/WIOService>
-#include <Wt/WTableView>
 #include <Wt/WGridLayout>
 #include <Wt/WPushButton>
 #include <Wt/WAbstractItemModel>
@@ -49,6 +49,7 @@
 #include "InterSpec/MakeFwhmForDrf.h"
 #include "InterSpec/UndoRedoManager.h"
 #include "InterSpec/NativeFloatSpinBox.h"
+#include "InterSpec/RowStretchTreeView.h"
 
 
 using namespace std;
@@ -349,7 +350,7 @@ public:
 };//class FwhmPeaksModel
  
 
-MakeFwhmForDrfWindow::MakeFwhmForDrfWindow()
+MakeFwhmForDrfWindow::MakeFwhmForDrfWindow( const bool use_auto_fit_peaks_too )
  : AuxWindow( "Add FWHM to Detector Response Function",
              (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::TabletNotFullScreen)
               | AuxWindowProperties::SetCloseable
@@ -369,17 +370,17 @@ MakeFwhmForDrfWindow::MakeFwhmForDrfWindow()
   const int wh = viewer->renderedHeight();
   if( ww > 100 && wh > 100 )
   {
-    const int width = std::min( 3*ww/4, 900 );
-    const int height = ((wh < 420) ? wh : (19*wh)/20 );
+    const int width = std::min( (8*ww)/9, 750 );
+    const int height = std::min( 700, ((wh < 420) ? wh : (19*wh)/20 ) );
     
     window->resizeWindow( width, height );
     window->setMinimumSize( std::min(width,640), std::min(height,480) );
   }//if( ww > 100 && wh > 100 )
   
-  shared_ptr<const SpecMeas> foreground = viewer->measurment(SpecUtils::SpectrumType::Foreground );
-  shared_ptr<const DetectorPeakResponse> drf = foreground ? foreground->detector() : nullptr;
+  shared_ptr<SpecMeas> foreground = viewer->measurment(SpecUtils::SpectrumType::Foreground );
+  shared_ptr<DetectorPeakResponse> drf = foreground ? foreground->detector() : nullptr;
   
-  m_tool = new MakeFwhmForDrf( viewer, drf );
+  m_tool = new MakeFwhmForDrf( use_auto_fit_peaks_too, viewer, drf );
     
   window->stretcher()->addWidget( m_tool, 0, 0 );
   window->stretcher()->setContentsMargins( 0, 0, 0, 0 );
@@ -413,8 +414,9 @@ MakeFwhmForDrf *MakeFwhmForDrfWindow::tool()
 }
   
 
-MakeFwhmForDrf::MakeFwhmForDrf( InterSpec *viewer,
-               std::shared_ptr<const DetectorPeakResponse> drf,
+MakeFwhmForDrf::MakeFwhmForDrf( const bool auto_fit_peaks,
+                               InterSpec *viewer,
+               std::shared_ptr<DetectorPeakResponse> drf,
                Wt::WContainerWidget *parent )
  : WContainerWidget( parent ),
   m_interspec( viewer ),
@@ -482,10 +484,9 @@ MakeFwhmForDrf::MakeFwhmForDrf( InterSpec *viewer,
   lowerLayout->addWidget( optionsDiv, 0, 0 );
   optionsDiv->addStyleClass( "Options" );
     
-  WContainerWidget *optDiv = new WContainerWidget( optionsDiv );
-  optDiv->addStyleClass( "OptDiv" );
-  WLabel *label = new WLabel( "Eqn Type:", optDiv );
-  m_fwhmEqnType = new WComboBox( optDiv );
+  WGroupBox *box = new WGroupBox( "Equation Type:", optionsDiv );
+  box->addStyleClass( "OptDiv" );
+  m_fwhmEqnType = new WComboBox( box );
   
   for( auto fcnfrm = DetectorPeakResponse::ResolutionFnctForm(0);
       fcnfrm != DetectorPeakResponse::ResolutionFnctForm::kNumResolutionFnctForm;
@@ -513,10 +514,9 @@ MakeFwhmForDrf::MakeFwhmForDrf( InterSpec *viewer,
   m_fwhmEqnType->setCurrentIndex( DetectorPeakResponse::kSqrtPolynomial );
   m_fwhmEqnType->activated().connect( this, &MakeFwhmForDrf::handleFwhmEqnTypeChange );
   
-  optDiv = new WContainerWidget( optionsDiv );
-  optDiv->addStyleClass( "OptDiv" );
-  label = new WLabel( "Num Terms:", optDiv );
-  m_sqrtEqnOrder = new WComboBox( optDiv );
+  box = new WGroupBox( "Number Terms:", optionsDiv );
+  box->addStyleClass( "OptDiv" );
+  m_sqrtEqnOrder = new WComboBox( box );
   m_sqrtEqnOrder->addItem( "1" );
   m_sqrtEqnOrder->addItem( "2" );
   m_sqrtEqnOrder->addItem( "3" );
@@ -525,16 +525,21 @@ MakeFwhmForDrf::MakeFwhmForDrf( InterSpec *viewer,
   m_sqrtEqnOrder->setCurrentIndex( 1 );
   m_sqrtEqnOrder->activated().connect( this, &MakeFwhmForDrf::handleSqrtEqnOrderChange );
   
-  WContainerWidget *parametersDiv = new WContainerWidget();
-  lowerLayout->addWidget( parametersDiv, 1, 0 );
+  WGroupBox *parametersDiv = new WGroupBox( "Parameter Values:" );
+  //WContainerWidget *parametersDiv = new WContainerWidget();
+  lowerLayout->addWidget( parametersDiv, 1, 0, Wt::AlignmentFlag::AlignTop );
+  lowerLayout->setRowStretch( 1, 1 );
+    
   parametersDiv->addStyleClass( "Parameters" );
     
   for( int i = 0; i < m_sqrtEqnOrder->count(); ++i )
   {
     WContainerWidget *parDiv = new WContainerWidget( parametersDiv );
     parDiv->addStyleClass( "ParDiv" );
-    label = new WLabel( "A" + std::to_string(i), parDiv );
+    WLabel *label = new WLabel( "A" + std::to_string(i), parDiv );
+    label->setInline( false );
     NativeFloatSpinBox *sb = new NativeFloatSpinBox( parDiv );
+    label->setBuddy( sb );
     sb->setText( "" );
     sb->setSpinnerHidden( true );
     sb->setWidth( 75 );
@@ -545,25 +550,34 @@ MakeFwhmForDrf::MakeFwhmForDrf( InterSpec *viewer,
   }//for( int i = 0; i < m_sqrtEqnOrder->count(); ++i )
     
   m_model = new FwhmPeaksModel( this );
-  m_table = new WTableView();
+  m_table = new RowStretchTreeView();
+  m_table->setRootIsDecorated( false ); //makes the tree look like a table! :)
   m_table->addStyleClass( "PeakTable" );
   lowerLayout->addWidget( m_table, 0, 1, 2, 1 );
   m_table->setModel( m_model );
   lowerLayout->setColumnStretch( 1, 1 );
   
-  m_table->setColumnWidth( static_cast<int>(FwhmPeaksModel::Column::Energy), 85 );
+  m_table->setColumnWidth( static_cast<int>(FwhmPeaksModel::Column::Energy), 115 );
   m_table->setColumnWidth( static_cast<int>(FwhmPeaksModel::Column::Fwhm), 85 );
-  m_table->setColumnWidth( static_cast<int>(FwhmPeaksModel::Column::FWhmUncert), 85 );
-  m_table->setColumnWidth( static_cast<int>(FwhmPeaksModel::Column::UserOrAuto), 85 );
-  m_table->setColumnWidth( static_cast<int>(FwhmPeaksModel::Column::UseForFit), 85 );
-    
+  m_table->setColumnWidth( static_cast<int>(FwhmPeaksModel::Column::FWhmUncert), 125 );
+  m_table->setColumnWidth( static_cast<int>(FwhmPeaksModel::Column::UserOrAuto), 105 );
+  m_table->setColumnWidth( static_cast<int>(FwhmPeaksModel::Column::UseForFit), 60 );
+  
     
   m_model->dataChanged().connect( this, &MakeFwhmForDrf::handleTableDataChange );
   m_model->rowsInserted().connect( this, &MakeFwhmForDrf::handleTableDataChange );
   m_model->rowsRemoved().connect( this, &MakeFwhmForDrf::handleTableDataChange );
   m_model->layoutChanged().connect( this, &MakeFwhmForDrf::handleTableDataChange );
     
-  startAutomatedPeakSearch();
+  if( auto_fit_peaks )
+  {
+    startAutomatedPeakSearch();
+  }else
+  {
+    const vector<shared_ptr<const PeakDef>> user_peaks = get_user_peaks();
+    const auto dummy_auto_fit_peaks = make_shared<vector<shared_ptr<const PeakDef>>>();
+    setPeaksFromAutoSearch( user_peaks, dummy_auto_fit_peaks );
+  }//if( auto_fit_peaks )
     
   scheduleUndoRedoStep();  //Fills in initial m_current_state
     
@@ -592,13 +606,26 @@ void MakeFwhmForDrf::render( Wt::WFlags<Wt::RenderFlag> flags )
 }//void render( Wt::WFlags<Wt::RenderFlag> flags )
 
 
-void MakeFwhmForDrf::startAutomatedPeakSearch()
+vector<shared_ptr<const PeakDef>> MakeFwhmForDrf::get_user_peaks()
 {
+  vector<shared_ptr<const PeakDef>> user_peaks;
+  
   PeakModel *peakModel = m_interspec->peakModel();
   assert( peakModel );
   if( !peakModel )
-    return; //shouldnt happen
+    return user_peaks; //shouldnt happen
   
+  const auto originalPeaks = peakModel->peakVec();
+  std::shared_ptr<const deque< std::shared_ptr<const PeakDef> > > startingPeaks = peakModel->peaks();
+  if( startingPeaks && !startingPeaks->empty() )
+    user_peaks.insert( end(user_peaks), begin(*startingPeaks), end(*startingPeaks) );
+  
+  return user_peaks;
+}//get_user_peaks() const
+
+
+void MakeFwhmForDrf::startAutomatedPeakSearch()
+{
   auto dataPtr = m_interspec->displayedHistogram( SpecUtils::SpectrumType::Foreground );
   assert( dataPtr );
   if( !dataPtr )
@@ -607,12 +634,7 @@ void MakeFwhmForDrf::startAutomatedPeakSearch()
     return;
   }//if( !dataPtr )
     
-  const auto originalPeaks = peakModel->peakVec();
-  std::shared_ptr<const deque< std::shared_ptr<const PeakDef> > > startingPeaks = peakModel->peaks();
-  vector<shared_ptr<const PeakDef>> user_peaks;
-  if( startingPeaks && !startingPeaks->empty() )
-    user_peaks.insert( end(user_peaks), begin(*startingPeaks), end(*startingPeaks) );
-    
+  vector<shared_ptr<const PeakDef>> user_peaks = get_user_peaks();
   
   //The results of the peak search will be placed into the vector pointed to by searchresults
   auto searchresults = std::make_shared< vector<std::shared_ptr<const PeakDef> > >();
@@ -1012,6 +1034,7 @@ std::shared_ptr<MakeFwhmForDrf::ToolState> MakeFwhmForDrf::currentState() const
   answer->m_rows = m_model->rowData();
   answer->m_parameters = m_parameters;
   answer->m_uncertainties = m_uncertainties;
+  answer->m_orig_drf = m_orig_drf;
   
   return answer;
 }//std::shared_ptr<ToolState> currentState() const
@@ -1048,6 +1071,8 @@ void MakeFwhmForDrf::setState( shared_ptr<const MakeFwhmForDrf::ToolState> state
     }
   }//if( the user manually set parameter values )
   
+  m_orig_drf = state->m_orig_drf;
+  
   scheduleRefit(); //It should already be scheduled, but just to be explicit
 }//void setState( std::shared_ptr<const ToolState> state )
 
@@ -1077,14 +1102,14 @@ void MakeFwhmForDrf::doAddUndoRedoStep()
   
   auto undo = [prev_state](){
     InterSpec *viewer = InterSpec::instance();
-    MakeFwhmForDrfWindow *window = viewer ? viewer->fwhmFromForegroundWindow() : nullptr;
+    MakeFwhmForDrfWindow *window = viewer ? viewer->fwhmFromForegroundWindow(false) : nullptr;
     if( window )
       window->tool()->setState( prev_state );
   };
     
   auto redo = [this,state](){
     InterSpec *viewer = InterSpec::instance();
-    MakeFwhmForDrfWindow *window = viewer ? viewer->fwhmFromForegroundWindow() : nullptr;
+    MakeFwhmForDrfWindow *window = viewer ? viewer->fwhmFromForegroundWindow(false) : nullptr;
     if( window )
       window->tool()->setState( state );
   };
