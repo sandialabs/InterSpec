@@ -415,7 +415,9 @@ BOOST_AUTO_TEST_CASE( SimpleSourceFit )
   // Create a 100% efficient detector at our test distance.
   auto detector = make_shared<DetectorPeakResponse>();
   detector->fromExpOfLogPowerSeriesAbsEff( {0.0f, 0.0f}, {}, distance,
-                                          5*PhysicalUnits::cm, PhysicalUnits::keV, 0, 3000*PhysicalUnits::keV, false );
+                                          5*PhysicalUnits::cm, PhysicalUnits::keV,
+                                          0, 3000*PhysicalUnits::keV,
+                                          DetectorPeakResponse::EffGeometryType::FarField );
   
   auto foreground = make_shared<SpecUtils::Measurement>();
   
