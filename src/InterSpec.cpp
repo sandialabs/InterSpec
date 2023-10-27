@@ -1038,6 +1038,10 @@ InterSpec::InterSpec( WContainerWidget *parent )
         m_rightClickMenutItems[i] = m_rightClickMenu->addMenuItem( "Refit Peak" );
         m_rightClickMenutItems[i]->triggered().connect( this, &InterSpec::refitPeakFromRightClick );
         break;
+      case kRefitPeakWithDrfFwhm:
+        m_rightClickMenutItems[i] = m_rightClickMenu->addMenuItem( "Use DRF FWHM" );
+        m_rightClickMenutItems[i]->triggered().connect( this, &InterSpec::refitPeakWithDrfFwhm );
+        break;
       case kRefitROI:
         m_rightClickMenutItems[i] = m_rightClickMenu->addMenuItem( "Refit ROI" );
         m_rightClickMenutItems[i]->triggered().connect( this, &InterSpec::refitPeakFromRightClick );
@@ -1804,6 +1808,12 @@ void InterSpec::refitPeakFromRightClick()
 }//void refitPeakFromRightClick()
 
 
+void InterSpec::refitPeakWithDrfFwhm()
+{
+  PeakSearchGuiUtils::refit_peaks_with_drf_fwhm( this, m_rightClickEnergy );
+}//void InterSpec::refitPeakWithDrfFwhm()
+
+
 void InterSpec::addPeakFromRightClick()
 {
   UndoRedoManager::PeakModelChange peak_undo_creator;
@@ -2517,6 +2527,10 @@ void InterSpec::handleRightClick( double energy, double counts,
         
       case kRefitROI:
         m_rightClickMenutItems[i]->setHidden( !peak->gausPeak() || npeaksInRoi<2 );
+      break;
+        
+      case kRefitPeakWithDrfFwhm:
+        m_rightClickMenutItems[i]->setHidden( !peak->gausPeak() );
       break;
         
       case kShareContinuumWithLeftPeak:

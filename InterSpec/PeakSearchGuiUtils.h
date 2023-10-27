@@ -136,6 +136,12 @@ void assign_srcs_from_ref_lines( const std::shared_ptr<const SpecUtils::Measurem
  */
 void refit_peaks_from_right_click( InterSpec * const interspec, const double rightClickEnergy );
 
+/** Sets all peaks in the ROI pointed to by the passed in energy, to the FWHM specified by the DRF, then refits the peaks.
+ 
+ Assumes you are in the Wt app primary thread.
+ */
+void refit_peaks_with_drf_fwhm( InterSpec * const interspec, const double rightClickEnergy );
+  
 /** Changes the continuum type and causes a refit of ROI.
  
  @param interspec The InterSpec instance to work with - it is assumed this function is being called from that apps primary thread.

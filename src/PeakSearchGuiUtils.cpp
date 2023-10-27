@@ -60,11 +60,13 @@
 #include "InterSpec/InterSpecApp.h"
 #include "InterSpec/SpectrumChart.h"
 #include "InterSpec/WarningWidget.h"
+#include "InterSpec/MakeFwhmForDrf.h"
 #include "InterSpec/PeakInfoDisplay.h"
 #include "InterSpec/UndoRedoManager.h"
 #include "InterSpec/SpectrumDataModel.h"
 #include "InterSpec/PeakSearchGuiUtils.h"
 #include "InterSpec/DecayDataBaseServer.h"
+#include "InterSpec/DetectorPeakResponse.h"
 #include "InterSpec/ReferencePhotopeakDisplay.h"
 
 using namespace Wt;
@@ -2544,7 +2546,195 @@ void refit_peaks_from_right_click( InterSpec * const interspec, const double rig
   }
 }//void refit_peaks_from_right_click(...)
 
+  
+void refit_peaks_with_drf_fwhm( InterSpec * const interspec, const double rightClickEnergy )
+{
+  try
+  {
+    PeakModel * const model = interspec->peakModel();
+    const shared_ptr<const SpecUtils::Measurement> data = interspec->displayedHistogram(SpecUtils::SpectrumType::Foreground);
+    const shared_ptr<const SpecMeas> foreground = interspec->measurment( SpecUtils::SpectrumType::Foreground);
+    
+    
+    if( !model || !data || !foreground ) //shouldnt ever happen
+    {
+      passMessage( "No data loaded to refit peaks", WarningWidget::WarningMsgInfo );
+      return;
+    }
+    
+    shared_ptr<const DetectorPeakResponse> drf = foreground->detector();
+    if( !drf || !drf->hasResolutionInfo() )
+    {
+      const char *title = "FWHM Information is Needed";
+      string content;
+      if( drf)
+        content = "<div>Current detector response does not contain FWHM info.</div>";
+      else
+        content = "<div>No detector response is selected.</div>";
+      content += "<div>Would you like to fit FWHM info from current spectra?</div>";
+      SimpleDialog *msg = new SimpleDialog( title, content );
+      // Setting object name of the SimpleDialog causes a javascript error - so we'll set
+      //  the SimpleDialog contents name, and then get the dialog from that.
+      //  This is all for undo/redo support, so we dont have to store a pointer to the dialog
+      //  somewhere.
+      msg->contents()->setObjectName( "AskToFitFwhmDialog" );
+      msg->rejectWhenEscapePressed();
+      WPushButton *yes_btn = msg->addButton( "Yes" );
+      WPushButton *no_btn = msg->addButton( "No" );
+      
+      no_btn->clicked().connect( std::bind([interspec,rightClickEnergy](){
+        auto undo = [interspec,rightClickEnergy](){
+          refit_peaks_with_drf_fwhm( interspec, rightClickEnergy );
+        };
+        auto redo = [](){
+          auto w = dynamic_cast<WContainerWidget *>( wApp->findWidget("AskToFitFwhmDialog") );
+          WWidget *p = w ? w->parent() : nullptr;
+          WWidget *pp = p ? p->parent() : nullptr;
+          WWidget *ppp = pp ? pp->parent() : nullptr;
+          SimpleDialog *d = dynamic_cast<SimpleDialog *>( ppp );
+            
+          if( d )
+            d->done(Wt::WDialog::DialogCode::Accepted);
+          wApp->doJavaScript( "$('.Wt-dialogcover').hide();" );
+        };
+        
+        UndoRedoManager *undoManager = interspec->undoRedoManager();
+        if( undoManager && undoManager->canAddUndoRedoNow() )
+          undoManager->addUndoRedoStep( undo, redo, "Cancel refit peak with DRF FWHM." );
+      } ) );
+      
+      
+      yes_btn->clicked().connect( std::bind( [interspec,rightClickEnergy](){
+        MakeFwhmForDrfWindow *window = interspec->fwhmFromForegroundWindow(true);
+        if( window )
+        {
+          window->tool()->updatedDrf().connect(
+            boost::bind( &refit_peaks_with_drf_fwhm, interspec, rightClickEnergy
+          ) );
+        }//if( window )
+        
+        auto undo = [interspec,rightClickEnergy](){
+          interspec->deleteFwhmFromForegroundWindow();
+          refit_peaks_with_drf_fwhm( interspec, rightClickEnergy );
+        };
+        auto redo = [interspec,rightClickEnergy](){
+          auto w = dynamic_cast<WContainerWidget *>( wApp->findWidget("AskToFitFwhmDialog") );
+          WWidget *p = w ? w->parent() : nullptr;
+          WWidget *pp = p ? p->parent() : nullptr;
+          WWidget *ppp = pp ? pp->parent() : nullptr;
+          SimpleDialog *d = dynamic_cast<SimpleDialog *>( ppp );
+          if( d )
+            d->done(Wt::WDialog::DialogCode::Accepted);
+          wApp->doJavaScript( "$('.Wt-dialogcover').hide();" );
+          
+          MakeFwhmForDrfWindow *window = interspec->fwhmFromForegroundWindow(true);
+          if( window )
+          {
+            window->tool()->updatedDrf().connect(
+              boost::bind( &refit_peaks_with_drf_fwhm, interspec, rightClickEnergy
+            ) );
+          }//if( window )
+        };
+        
+        UndoRedoManager *undoManager = interspec->undoRedoManager();
+        if( undoManager && undoManager->canAddUndoRedoNow() )
+          undoManager->addUndoRedoStep( undo, redo, "Start fit FWHM function." );
+      } ) );
+      
+      return;
+    }//if( !drf || !drf->hasResolutionInfo() )
+    
+    shared_ptr<const PeakDef> peak = model->nearestPeak( rightClickEnergy );
+    if( !peak )
+    {
+      passMessage( "There was no peak to refit with fixed FWHM", WarningWidget::WarningMsgInfo );
+      return;
+    }
+    
+    UndoRedoManager::PeakModelChange peak_undo_creator;
+    
+    vector<PeakDef> inputPeak, fixedPeaks, outputPeak;
+    const vector<shared_ptr<const PeakDef>> peaksInRoi = model->peaksSharingRoi( peak );
+    const vector<shared_ptr<const PeakDef>> peaksNotInRoi  = model->peaksNotSharingRoi( peak );
+    
+    assert( peaksInRoi.size() >= 1 );
+    
+    for( const auto &m : peaksInRoi )
+    {
+      PeakDef p = *m;
+      
+      p.setSigma( drf->peakResolutionSigma(p.mean()) );
+      p.setSigmaUncert( 0.0 );
+      //p.setSigmaUncert( ... DRF FWHM uncert not implemented ... )
+      p.setFitFor( PeakDef::CoefficientType::Sigma, false );
+      
+      inputPeak.push_back( p );
+    }
+    
+    for( const auto &m : peaksNotInRoi )
+      fixedPeaks.push_back( *m );
+    
+    std::sort( inputPeak.begin(), inputPeak.end(), &PeakDef::lessThanByMean );
+    
+    if( inputPeak.size() > 1 )
+    {
+      const shared_ptr<const DetectorPeakResponse> &detector = foreground->detector();
+      const PeakShrdVec result = refitPeaksThatShareROI( data, detector, peaksInRoi, 0.25 );
+      
+      if( result.size() == inputPeak.size() )
+      {
+        for( size_t i = 0; i < result.size(); ++i )
+          fixedPeaks.push_back( *result[i] );
+        std::sort( fixedPeaks.begin(), fixedPeaks.end(), &PeakDef::lessThanByMean );
+        model->setPeaks( fixedPeaks );
+        return;
+      }else
+      {
+        cerr << "refit_peaks_with_drf_fwhm was not successful" << endl;
+      }//if( result.size() == inputPeak.size() ) / else
+    }//if( inputPeak.size() > 1 )
+    
+    
+    //  const double lowE = peak->mean() - 0.1;
+    //  const double upE = peak->mean() + 0.1;
+    const double lowE = inputPeak.front().mean() - 0.1;
+    const double upE = inputPeak.back().mean() + 0.1;
+    const double ncausalitysigma = 0.0;
+    const double stat_threshold  = -1000.0;
+    const double hypothesis_threshold = -1000.0;
+    
+    const bool isRefit = false;
+    outputPeak = fitPeaksInRange( lowE, upE, ncausalitysigma, stat_threshold,
+                                 hypothesis_threshold, inputPeak, data,
+                                 fixedPeaks, isRefit );
+    if( outputPeak.size() != inputPeak.size() )
+    {
+      WStringStream msg;
+      msg << "Failed to refit peak (became insignificant), from "
+      << int(inputPeak.size()) << " to " << int(outputPeak.size()) << " peaks";
+      passMessage( msg.str(), WarningWidget::WarningMsgInfo );
+      return;
+    }//if( outputPeak.size() != 1 )
+    
+    if( inputPeak.size() > 1 )
+    {
+      fixedPeaks.insert( fixedPeaks.end(), outputPeak.begin(), outputPeak.end() );
+      std::sort( fixedPeaks.begin(), fixedPeaks.end(), &PeakDef::lessThanByMean );
+      model->setPeaks( fixedPeaks );
+    }else
+    {
+      assert( !outputPeak.empty() );
+      
+      model->updatePeak( peak, outputPeak[0] );
+    }//if( inputPeak.size() > 1 )
+  }catch( std::exception &e )
+  {
+    passMessage( "Sorry, error encountered refitting ROI with fixed FWHM.", WarningWidget::WarningMsgInfo );
+    cerr << "Error encountered refitting ROI: " << e.what() << endl;
+  }
+}//void refit_peaks_with_drf_fwhm( InterSpec * const interspec, const double rightClickEnergy )
 
+  
 void change_continuum_type_from_right_click( InterSpec * const interspec,
                                             const double rightClickEnergy,
                                             const int continuum_type )

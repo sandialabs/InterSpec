@@ -31,6 +31,8 @@
 
 #include <Wt/WContainerWidget>
 
+#include "InterSpec/AuxWindow.h"
+
 class PeakDef;
 class AuxWindow;
 class InterSpec;
