@@ -210,6 +210,28 @@ public:
   }//data(...)
   
   
+  void set_use( const shared_ptr<const PeakDef> &p, const bool use_peak )
+  {
+    for( size_t i = 0; i < m_rows.size(); ++i )
+    {
+      if( m_rows[i].m_peak == p )
+      {
+        if( m_rows[i].m_use_for_fit != use_peak )
+        {
+          const WModelIndex index = createIndex(static_cast<int>(i),
+                                                static_cast<int>(Column::UseForFit), nullptr );
+          m_rows[i].m_use_for_fit = use_peak;
+          dataChanged().emit( index, index );
+        }
+        
+        return;
+      }//if( m_rows[i].m_peak == p )
+    }//for( size_t i = 0; i < m_rows.size(); ++i )
+    
+    assert( 0 );
+  }//void set_use( distances[index].second, const bool use_peak )
+  
+  
   virtual bool setData( const WModelIndex &index, const boost::any &value, int role = EditRole ) override
   {
     if( index.parent().isValid() || (index.row() < 0)
@@ -441,19 +463,13 @@ MakeFwhmForDrf::MakeFwhmForDrf( const bool auto_fit_peaks,
   wApp->useStyleSheet( "InterSpec_resources/MakeFwhmForDrf.css" );
   
   addStyleClass( "MakeFwhmForDrf" );
-  
-  // The chart requires using a Wt layout, so we'll go with it
-  // I think this should be made four rows.
-  //  First is the chart
-  //  Second is equation txt
-  //  Third is error txt
-  //  The Fourth row has all the options and values on left, and then the table on the right
     
+  // Using a Wt layout since the chart requires this
   WGridLayout *layout = new WGridLayout( this );
-  //layout->setVerticalSpacing( 0 );
-  //layout->setHorizontalSpacing( 0 );
   layout->setContentsMargins( 0, 0, 0, 0 );
     
+  // TODO: make chart be full energy range of spectrum
+  //       Maybe have a parameter be "fixed"...
   m_chart = new MakeDrfChart();
   m_chart->showEfficiencyPoints( false );
   DrfChartHolder *chartholder = new DrfChartHolder( m_chart, nullptr );
@@ -874,7 +890,81 @@ void MakeFwhmForDrf::setPeaksFromAutoSearch( vector<shared_ptr<const PeakDef>> u
 {
   assert( auto_search_peaks );
   
-  m_model->set_peaks( user_peaks, *auto_search_peaks ); //should trigger a re-fit
+  // `auto_search_peaks` will contain both the original users peaks, as well as the auto-fit
+  //  peaks, but we want to keep them separate to indicate to the user, so we'll just remove
+  //  the peaks in `auto_search_peaks` that overlap with the user peaks.  Not perfect, but
+  //  good enough probably.
+  vector<shared_ptr<const PeakDef>> filtered_auto_search;
+  if( auto_search_peaks )
+  {
+    for( const auto &p : *auto_search_peaks )
+    {
+      bool overlaps_user = false;
+      const double mean = p->mean();
+      for( size_t i = 0; !overlaps_user && (i < user_peaks.size()); ++i )
+        overlaps_user = (fabs(user_peaks[i]->mean() - mean) < 0.5*user_peaks[i]->fwhm());
+      if( !overlaps_user )
+        filtered_auto_search.push_back( p );
+    }//for( const auto &p : *auto_search_peaks )
+  }//if( auto_search_peaks )
+  
+  
+  m_model->set_peaks( user_peaks, filtered_auto_search ); //should trigger a re-fit
+  
+  
+  // If more than a handful of peaks, fit to a function, then go through and uncheck outliers
+  vector<shared_ptr<const PeakDef>> initial_fit_peaks = m_model->peaks_to_use();
+  if( initial_fit_peaks.size() > 9 )  //9 is arbitrary
+  {
+    try
+    {
+      auto peaks_deque = make_shared<deque<shared_ptr<const PeakDef>>>();
+      peaks_deque->insert( end(*peaks_deque), begin(initial_fit_peaks), end(initial_fit_peaks) );
+      
+      int sqrt_eqn_order = 3;
+      const auto fwhm_type = DetectorPeakResponse::ResolutionFnctForm::kSqrtPolynomial;
+      
+      auto meas = m_interspec->displayedHistogram(SpecUtils::SpectrumType::Foreground);
+      const bool highres = PeakFitUtils::is_high_res(meas);
+      
+      vector<float> result, uncerts;
+      const double chi2 = MakeDrfFit::performResolutionFit( peaks_deque, fwhm_type, highres,
+                                                            sqrt_eqn_order, result, uncerts );
+      
+      vector<pair<double,shared_ptr<const PeakDef>>> distances;
+      for( const auto &p : initial_fit_peaks )
+      {
+        double pred_fwhm = 0.0;
+        const double mean = 0.001 * p->mean();
+        for( size_t i = 0; i < result.size(); ++i )
+          pred_fwhm += result[i] * std::pow( mean, 1.0*i );
+        pred_fwhm = sqrt( pred_fwhm );
+        const double frac_diff = fabs( p->fwhm() - pred_fwhm ) / p->fwhm();
+        if( !IsNan(frac_diff) && !IsInf(frac_diff) )
+          distances.emplace_back( frac_diff, p );
+      }//for( const auto &p : initial_fit_peaks )
+      
+      std::sort( begin(distances), end(distances),
+        []( const pair<double,shared_ptr<const PeakDef>> &lhs,
+            const pair<double,shared_ptr<const PeakDef>> &rhs) -> bool {
+          return lhs.first > rhs.first;
+        } );
+
+      // Limit to un-selecting max of 20% of peaks (arbitrarily chosen), if the deviate
+      // more than 17.5% from the fit (again, arbitrarily chosen).
+      const size_t max_remove = static_cast<size_t>( std::ceil( 0.2*distances.size() ) );
+      for( size_t index = 0; (index < max_remove) && (index < distances.size()); ++index )
+      {
+        if( distances[index].first < 0.175 ) //0.175 chosen arbitrarily
+          break;
+        m_model->set_use( distances[index].second, false );
+      }
+    }catch( std::exception & )
+    {
+      // Oh, well, wasnt meant to be
+    }//try / catch
+  }//if( a good number of peaks )
+  
   
   m_current_state = currentState();
   wApp->triggerUpdate();
@@ -994,7 +1084,7 @@ void MakeFwhmForDrf::setToDrf()
     new_det->setParentHashValue( prev_det->hashValue() );
   }else
   {
-    new_det = make_shared<DetectorPeakResponse>( "Flat Detector", "FWHM info only" );
+    new_det = make_shared<DetectorPeakResponse>( "Flat Response", "FWHM info only" );
     new_det->setIntrinsicEfficiencyFormula( "1.0", 2.54*PhysicalUnits::cm, PhysicalUnits::keV,
                                             0.0f, 0.0f, DetectorPeakResponse::EffGeometryType::FarField );
   }
