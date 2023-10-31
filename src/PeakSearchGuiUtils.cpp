@@ -2565,7 +2565,7 @@ void refit_peaks_with_drf_fwhm( InterSpec * const interspec, const double rightC
     shared_ptr<const DetectorPeakResponse> drf = foreground->detector();
     if( !drf || !drf->hasResolutionInfo() )
     {
-      const char *title = "FWHM Information is Needed";
+      const char *title = "FWHM information is needed";
       string content;
       if( drf)
         content = "<div>Current detector response does not contain FWHM info.</div>";
