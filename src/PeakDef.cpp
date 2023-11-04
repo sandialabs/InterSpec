@@ -55,8 +55,11 @@
 using namespace std;
 using SpecUtils::Measurement;
 
+/** Peak XML minor version  changes:
+ 20231031: Minor version incremented from 1 to 2 to account for new peak skew models
+ */
 const int PeakDef::sm_xmlSerializationMajorVersion = 0;
-const int PeakDef::sm_xmlSerializationMinorVersion = 1;
+const int PeakDef::sm_xmlSerializationMinorVersion = 2;
 
 const bool PeakDef::sm_defaultUseForDrfIntrinsicEffFit = true;
 const bool PeakDef::sm_defaultUseForDrfFwhmFit = true;
@@ -216,7 +219,414 @@ namespace
     return sign * y;
   }
    */
+  
+  double boost_erfc_imp( double z )
+  {
+    return 1.0 - boost_erf_imp( z );
+  }
    
+  
+  /** Returns the PDF for a unit-area Bortel function.
+   */
+  double bortel_pdf( const double x, const double mean, const double sigma, const double skew_low )
+  {
+    // 32-bit floats have a normalized range of 1E-38 to 1E38; 64bit floats 1E-308 to 1E308
+    // We could use the proper functions up to ~1E308, but to be conservative, but to be
+    // a little conservative, we'll switch to using a gaussian when the exp() and erfc()
+    // functions start returning values with limits near 1E-38 or 1E38.
+    // Although difference between the methods will start out ar ~30% and increase to >100%,
+    // the function values are so small, they dont really matter.
+    // TODO: try expanding the function, around (or above) `mean` to see if there can be a better approximation
+    
+    const double exp_arg = ((x - mean)/skew_low) + (sigma*sigma/(2*skew_low*skew_low));
+    const double erfc_arg = 0.7071067812*(((x - mean)/sigma) + (sigma/skew_low));
+    
+    if( (skew_low <= 0.0) || (exp_arg > 87.0) || (erfc_arg > 10.0) )
+    {
+      const double a = (x-mean)/sigma;
+      return (1.0/(sigma*2.5066282746)) * std::exp( -0.5 * a*a );
+    }
+    
+    return (0.5/skew_low)*std::exp( exp_arg ) * boost::math::erfc( erfc_arg );
+  }//double bortel_pdf(...)
+
+
+  /** Returns the indefinite integral (e.g., from negative infinity up to `x`) of a unit-area Bortel function
+   */
+  double bortel_indefinite_integral( const double &x, const double &mean,
+                           const double &sigma, const double &skew )
+  {
+    const double sqrt2 = boost::math::constants::root_two<double>();
+    const double oneOverSqrt2 = boost::math::constants::one_div_root_two<double>();
+   
+    const double x_0 = x - mean;
+    const double erf_arg = x_0/(sigma*sqrt2);
+    const double exp_arg = (2*skew*x_0 + sigma*sigma) / (2*skew*skew);
+    const double erfc_arg = oneOverSqrt2*((x_0/sigma) + (sigma/skew));
+    
+    if( (skew <= 0.0) || (exp_arg > 87.0) || (erfc_arg > 10.0) )
+      return 0.5 * boost_erf_imp(erf_arg);
+    
+    return 0.5*(boost_erf_imp(erf_arg) + (std::exp(exp_arg) * boost::math::erfc(erfc_arg)));
+  }//double bortel_indefinite
+
+  /** Returns the integral of a unit-area Bortel function, between `x1` and `x2`. */
+  double bortel_integral( const double &x1, const double &x2, const double &mean,
+                      const double &sigma, const double &skew )
+  {
+    return bortel_indefinite_integral(x2, mean, sigma, skew )
+      - bortel_indefinite_integral(x1, mean, sigma, skew );
+  }
+
+  /** Returns an approximate area between `x1` and `x2` for a unit-area Bortel function.
+   
+   Just multiplies the x-range by the Bortel PDF value in the middle of the range.
+   */
+  double bortel_integral_fast( const double &x1, const double &x2, const double &mean,
+                              const double &sigma, const double &skew )
+  {
+    const double half_way_x = 0.5*(x1 + x2);
+    return (x2 - x1) * bortel_pdf( half_way_x, mean, sigma, skew );
+  }
+  
+/*
+  double doniach_integral( const double &x1, const double &x2, const double &mean,
+                          const double &sigma, const double &skew )
+  {
+    // blah blah blah - more work to be done here
+  }
+ */
+  
+  double crystal_ball_pdf(const double mean,
+                          const double sigma,
+                          const double alpha,
+                          const double n,
+                          const double x )
+  {
+    // From https://en.wikipedia.org/wiki/Crystal_Ball_function
+    assert( alpha > 0.0 );
+    if( alpha <= 0.0 )
+      throw runtime_error( "crystal_ball_pdf: alpha must be >0" );
+    
+    assert( n > 1.0 );
+    if( n <= 1.0 )
+      throw runtime_error( "crystal_ball_pdf: power-law must be >1" );
+    
+    const double oneOverSqrt2 = boost::math::constants::one_div_root_two<double>();
+    const double sqrt_half_pi = boost::math::constants::root_half_pi<double>();
+    
+    const double x_norm = (x - mean) / sigma;
+    
+    const double C = (n / alpha) * (1.0/(n - 1.0)) * std::exp( -0.5*alpha*alpha );
+    const double D = sqrt_half_pi * (1.0 + boost_erf_imp( oneOverSqrt2 * alpha ));
+    const double N = 1.0 / (sigma * (C + D));
+    
+    if( x_norm <= -alpha )
+    {
+      const double A = std::pow( n/alpha, n) * std::exp( -0.5*alpha*alpha );
+      const double B = (n / alpha) - alpha;
+      return N*A*std::pow( B - x_norm, -n );
+    }
+    
+    return N * std::exp( -0.5*x_norm*x_norm );
+  }//crystal_ball_pdf
+
+
+  /** Returns indefinite integral (negative infinite to `x0` for the power-law component for the unit-area Crystal Ball function.
+   */
+  double crystal_ball_tail_indefinite( const double mean,
+                                          const double sigma,
+                                          const double alpha,
+                                          const double n,
+                                          const double x )
+  {
+    // TODO: this is just a niave implementation - still needs to be optimized
+    // The CERN ROOT implementation switches to a log-version of this integral when `n` is
+    //  less than 1 + 1E-5 - which makes sense, but for the moment lets just avoid n approaching 1
+    assert( ((x - mean)/sigma) <= alpha );
+    assert( alpha > 0.0 );
+    assert( n > 1.0 );
+    
+    const double oneOverSqrt2 = boost::math::constants::one_div_root_two<double>(); //0.7071....
+    const double sqrt_half_pi = boost::math::constants::root_half_pi<double>();
+    
+    const double A = std::pow(n/alpha, n) * std::exp( -0.5*alpha*alpha );
+    const double B = (n / alpha) - alpha;
+    const double C = (n / alpha) * (1.0/(n - 1.0)) * std::exp( -0.5*alpha*alpha );
+    const double D = sqrt_half_pi * (1.0 + boost_erf_imp( oneOverSqrt2 * alpha ));
+    const double N = 1.0 / (sigma * (C + D));
+    
+    return N * A * sigma * std::pow( (B*sigma + mean - x)/sigma, 1.0 - n ) / (n - 1.0);
+  }//crystal_ball_tail_indefinite
+
+  /** Returns the non-normalized, double sided Crystal Ball PDF value for `x` */
+  double double_sided_crystal_ball_pdf(const double mean,
+                                    const double sigma,
+                                    const double alpha_low,
+                                    const double n_low,
+                                    const double alpha_high,
+                                    const double n_high,
+                                    const double x )
+  {
+    // From chapter 6 of https://arxiv.org/pdf/1606.03833.pdf
+    double t = (x - mean) / sigma;
+    
+    if( (t >= -alpha_low) && (t <= alpha_high) ) //Return gaussian value
+      return std::exp(-0.5*t*t);
+    
+    // Return tail value
+    const double n = (x > mean) ? n_high : n_low;
+    const double alpha = (x > mean) ? alpha_high : alpha_low;
+    if( x > mean )
+      t = -t;
+    
+    return std::exp(-0.5*alpha*alpha) * std::pow( (alpha/n)*((n/alpha) - alpha - t), -n );
+  }
+
+  double double_sided_crystal_ball_norm( const double peak_sigma,
+                                        const double alpha_low,
+                                        const double n_low,
+                                        const double alpha_high,
+                                        const double n_high )
+  {
+    const double one_div_root_two = boost::math::constants::one_div_root_two<double>(); //0.70710678118654752440
+    const double root_pi = boost::math::constants::root_pi<double>();
+    
+    // a = alpha_low
+    // n = n_low
+    // -(e^(-a*a/2)*n*((a*(-t+n/a-a))/n)^(1-n))/(a*(1-n))
+    double a = alpha_low;
+    double n = n_low;
+    const double ltail = -(std::exp(-a*a/2)*n*std::pow((a*(a+n/a-a))/n,1-n))/(a*(1-n));
+    
+    // L = alpha_low
+    // R = alpha_high
+    // (sqrt(pi)*(erf(R/sqrt(2))-erf(L/sqrt(2))))/sqrt(2)
+    const double mid = (root_pi*one_div_root_two*(boost_erf_imp(alpha_high*one_div_root_two)
+                                                   - boost_erf_imp(-alpha_low*one_div_root_two)));
+    
+    // a = alpha_high
+    // n = n_high
+    // (e^(-a^2/2)*n*((a*(t+n/a-a))/n)^(1-n))/(a*(1-n))
+    a = alpha_high;
+    n = n_high;
+    const double rtail = -(std::exp(-a*a/2)*n*std::pow((a*(a + n/a -a))/n,1-n))/(a*(1-n));
+    
+    return 1.0 / (ltail + mid + rtail);
+  }//double_sided_crystal_ball_norm( ... )
+  
+  
+  double double_sided_crystal_ball_left_tail_indefinite_t( const double peak_sigma,
+                                                          const double alpha_low,
+                                                          const double n_low,
+                                                          const double alpha_high,
+                                                          const double n_high,
+                                                          const double t)
+  {
+    assert( t <= alpha_low );
+    // Takes `t = (x - mean) / sigma`, not x
+    const double norm = double_sided_crystal_ball_norm( peak_sigma, alpha_low, n_low, alpha_high, n_high );
+    
+    // a = alpha_low
+    // n = n_low
+    // -(e^(-a*a/2)*n*((a*(-t+n/a-a))/n)^(1-n))/(a*(1-n))
+    
+    const double &a = alpha_low;
+    const double &n = n_low;
+    return -norm*(std::exp(-a*a/2)*n*std::pow((a*(-t+n/a-a))/n, 1-n))/(a*(1-n));
+  }//double double_sided_crystal_ball_left_tail_indefinite_t(t)
+  
+  
+  double double_sided_crystal_ball_right_tail_indefinite_t(const double peak_sigma,
+                                                           const double alpha_low,
+                                                           const double n_low,
+                                                           const double alpha_high,
+                                                           const double n_high,
+                                                           const double t)
+  {
+    assert( t >= alpha_high );
+    // Takes `t = (x - mean) / sigma`, not x
+    const double norm = double_sided_crystal_ball_norm( peak_sigma, alpha_low, n_low, alpha_high, n_high );
+    
+    const double &a = alpha_high;
+    const double &n = n_high;
+    
+    // (e^(a^2/2)*n*((a*(t+n/a-a))/n)^(1-n))/(a*(1-n))
+    return norm*(std::exp(-a*a/2)*n*std::pow((a*(t + n/a - a))/n,1-n))/(a*(1-n));
+  }
+  
+  double double_sided_crystal_ball_gauss_indefinite_t( const double peak_sigma,
+                                                      const double alpha_low,
+                                                      const double n_low,
+                                                      const double alpha_high,
+                                                      const double n_high,
+                                                      const double t)
+  {
+    const double root_half_pi = boost::math::constants::root_half_pi<double>();
+    const double one_div_root_two = boost::math::constants::one_div_root_two<double>(); //0.70710678118654752440
+    
+    const double norm = double_sided_crystal_ball_norm( peak_sigma, alpha_low, n_low, alpha_high, n_high );
+    
+    return norm*root_half_pi * boost_erf_imp( one_div_root_two * t );
+  }//double_sided_crystal_ball_gauss_indefinite_t(...)
+
+  
+  /** Returns the normalization so the GaussExp distribution has unit area. */
+  double gauss_exp_norm( const double sigma, const double skew )
+  {
+    static const double sqrt_pi = boost::math::constants::root_pi<double>(); //1.7724538509055160272981
+    static const double one_div_root_two = boost::math::constants::one_div_root_two<double>(); //0.707106781186547524400
+    
+    return 1.0 / ((sigma/skew)*std::exp(-0.5*skew*skew)
+           + (sqrt_pi*one_div_root_two*(boost_erf_imp(skew*one_div_root_two)+1)*sigma));
+  }
+  
+  double gauss_exp_pdf(const double mean,
+                       const double sigma,
+                       const double skew,
+                       const double x )
+  {
+    const double t = (x - mean) / sigma;
+    const double norm = gauss_exp_norm( sigma, skew );
+    if( t >= -skew )
+      return norm * std::exp( -0.5*t*t );
+    return norm * std::exp( 0.5*skew*skew + skew*t );
+  }
+  
+  double gauss_exp_tail_indefinite(const double mean,
+                                  const double sigma,
+                                  const double skew,
+                                  const double x )
+  {
+    const double t = (x - mean) / sigma;
+    assert( t <= skew );
+    
+    return gauss_exp_norm(sigma,skew)*(sigma/skew)*std::exp((skew/sigma)*(0.5*skew*sigma - mean + x));
+  }
+  
+  double gauss_exp_indefinite(const double mean,
+                             const double sigma,
+                             const double skew,
+                             const double x )
+  {
+    const double t = (x - mean) / sigma;
+    
+    const double root_half_pi = boost::math::constants::root_half_pi<double>();
+    static const double one_div_root_two = boost::math::constants::one_div_root_two<double>(); //0.707106781186547524400
+    
+    double answer = gauss_exp_tail_indefinite( mean, sigma, skew, std::min(x,-skew*sigma + mean) );
+    if( t >= -skew )
+      answer += gauss_exp_norm(sigma,skew)*sigma*root_half_pi
+                 * (boost_erf_imp(t*one_div_root_two) - boost_erf_imp(-skew*one_div_root_two) );
+    return answer;
+  }
+  
+  
+  double gauss_exp_integral( const double &x1, const double &x2, const double &mean,
+                            const double &sigma, const double &skew )
+  {
+    return gauss_exp_indefinite(mean, sigma, skew, x2) - gauss_exp_indefinite(mean, sigma, skew, x1);
+  }
+      
+  
+  double exp_gauss_exp_norm( const double &sigma, const double &skew_left, const double &skew_right )
+  {
+    static const double sqrt_pi = boost::math::constants::root_pi<double>(); //1.7724538509055160272981
+    static const double one_div_root_two = boost::math::constants::one_div_root_two<double>(); //0.707106781186547524400
+    
+    return 1.0 / ((sigma/skew_left)*std::exp(-0.5*skew_left*skew_left)
+                  + (one_div_root_two*sqrt_pi*sigma*(boost_erf_imp(one_div_root_two*skew_right)+boost_erf_imp(one_div_root_two*skew_left)))
+                  + (sigma/skew_right)*std::exp(-0.5*skew_right*skew_right) );
+  }//exp_gauss_exp_norm(...)
+
+  
+  double exp_gauss_exp_pdf( const double mean,
+                           const double sigma,
+                           const double skew_left,
+                           const double skew_right,
+                           const double x )
+  {
+    const double t = (x - mean) / sigma;
+    const double norm = exp_gauss_exp_norm( sigma, skew_left, skew_right );
+    if( t > skew_right )
+      return norm*std::exp( 0.5*skew_right*skew_right - skew_right*t );
+    
+    if( t > -skew_left )
+      return norm*std::exp( -0.5*t*t );
+      
+    return norm*std::exp( 0.5*skew_left*skew_left + skew_left*t );
+  }//double exp_gauss_exp_pdf(...)
+  
+
+  double exp_gauss_exp_left_tail_indefinite( const double mean,
+                                          const double sigma,
+                                          const double skew_left,
+                                          const double skew_right,
+                                          const double x )
+  {
+    const double t = (x - mean) / sigma;
+    const double norm = exp_gauss_exp_norm(sigma,skew_left,skew_right);
+    return norm*(sigma/skew_left)*std::exp((skew_left/sigma)*(0.5*skew_left*sigma - mean + x));
+  }
+
+  double exp_gauss_exp_right_tail_indefinite( const double mean,
+                                           const double sigma,
+                                           const double skew_left,
+                                           const double skew_right,
+                                           const double x )
+  {
+    const double norm = exp_gauss_exp_norm( sigma, skew_left, skew_right );
+    const double &k = skew_right;
+    const double &s = sigma;
+    const double &m = mean;
+    return norm*((std::exp(-k*k/2)*s)/k-(s*std::exp((k*m)/s-(x*k)/s+k*k/2))/k);
+  }
+
+  double exp_gauss_exp_gauss_indefinite( const double mean,
+                                      const double sigma,
+                                      const double skew_left,
+                                      const double skew_right,
+                                      const double x )
+  {
+    static const double sqrt_pi = boost::math::constants::root_pi<double>(); //1.7724538509055160272981
+    static const double sqrt_half_pi = boost::math::constants::root_half_pi<double>(); //1.2533141373155002512078826424
+    static const double one_div_root_two = boost::math::constants::one_div_root_two<double>(); //0.707106781186547524400
+    
+    const double t = (x - mean) / sigma;
+    const double norm = exp_gauss_exp_norm( sigma, skew_left, skew_right);
+    
+    return norm * sigma * sqrt_half_pi * (boost_erf_imp( one_div_root_two*t )
+                                          - boost_erf_imp( -one_div_root_two*skew_left ) );
+  }//
+  
+  double exp_gauss_exp_indefinite( const double mean,
+                                const double sigma,
+                                const double skew_left,
+                                const double skew_right,
+                                const double x )
+  {
+    const double t = (x - mean) / sigma;
+    double answer = exp_gauss_exp_left_tail_indefinite( mean, sigma, skew_left, skew_right, min(x,-skew_left*sigma + mean) );
+    
+    if( t > skew_right )
+      answer += exp_gauss_exp_right_tail_indefinite( mean, sigma, skew_left, skew_right, x );
+    
+    if( t > -skew_left )
+      answer += exp_gauss_exp_gauss_indefinite( mean, sigma, skew_left, skew_right, min(x,skew_right*sigma + mean) );
+    
+    return answer;
+  }
+  
+  double exp_gauss_exp_integral(const double mean,
+                           const double sigma,
+                           const double skew_left,
+                           const double skew_right,
+                           const double x0,
+                           const double x1 )
+  {
+    return exp_gauss_exp_indefinite(mean, sigma, skew_left, skew_right,x1)
+        - exp_gauss_exp_indefinite(mean, sigma, skew_left, skew_right, x0);
+  }
   
   //clones 'source' into the document that 'result' is a part of.
   //  'result' is cleared and set lexically equal to 'source'.
@@ -353,7 +763,7 @@ namespace
 
 }//namespace
 
-
+/*
 double skewedGaussianIntegral( double x0, double x1,
                                double mu, double s,
                                double L )
@@ -385,7 +795,7 @@ double skewedGaussianIntegral( double x0, double x1,
 {
   return skewedGaussianIndefinitIntegral( x1, A, c, w, t ) - skewedGaussianIndefinitIntegral( x0, A, c, w, t );
 }
-
+*/
 
 void findROIEnergyLimits( double &lowerEnengy, double &upperEnergy,
                          const PeakDef &peak, const std::shared_ptr<const Measurement> &data )
@@ -784,7 +1194,7 @@ size_t findROILimit( const PeakDef &peak, const std::shared_ptr<const Measuremen
     ExperimentalPeakSearch::find_spectroscopic_extent( dataH, lower_channel, upper_channel );
     if( static_cast<int>(lower_channel) >= lastchannel )
     {
-      lastchannel = lower_channel ? lower_channel - 1 : 0;
+      lastchannel = lower_channel ? static_cast<indexing_t>(lower_channel - 1) : 0;
       minChannel = std::max( minChannel, lastchannel );
     }
   }//if( direction < 0 && dataH->GetBinCenter(lastbin) < 100.0 )
@@ -1010,8 +1420,8 @@ void estimatePeakFitRange( const PeakDef &peak, const std::shared_ptr<const Meas
   
   if( peak.skewType() == PeakDef::LandauSkew )
   {
-    double landau_mode = peak.coefficient(PeakDef::LandauMode);
-    double landau_sigma = peak.coefficient(PeakDef::LandauSigma);
+    double landau_mode = peak.coefficient(PeakDef::CoefficientType::SkewPar1);
+    double landau_sigma = peak.coefficient(PeakDef::SkewPar2);
     cout << "xlow was " << lowxrange << " now is ";
     lowxrange = min( lowxrange, mean-landau_mode+(0.22278*landau_sigma) - 10.0*landau_sigma );
     cout << lowxrange << endl;
@@ -1104,9 +1514,10 @@ std::ostream &operator<<( std::ostream &stream, const PeakDef &peak )
   
   stream << ", " << *peak.m_continuum
          << ", chi2=" << peak.m_coefficients[PeakDef::Chi2DOF]
-         << ", landau_amplitude=" << peak.m_coefficients[PeakDef::LandauAmplitude]
-         << ", landau_mode=" << peak.m_coefficients[PeakDef::LandauMode]
-         << ", landau_sigma=" << peak.m_coefficients[PeakDef::LandauSigma]
+         << ", Skew0=" << peak.m_coefficients[PeakDef::SkewPar0]
+         << ", Skew1=" << peak.m_coefficients[PeakDef::SkewPar1]
+         << ", Skew2=" << peak.m_coefficients[PeakDef::SkewPar2]
+         << ", Skew3=" << peak.m_coefficients[PeakDef::SkewPar3]
          << std::flush;
   return stream;
 }//std::ostream &operator<<( std::ostream &stream, const PeakDef &peak )
@@ -1480,9 +1891,10 @@ void PeakDef::reset()
         m_fitFor[t] = true;
       break;
         
-      case PeakDef::LandauAmplitude:
-      case PeakDef::LandauMode:
-      case PeakDef::LandauSigma:
+      case PeakDef::SkewPar0:
+      case PeakDef::SkewPar1:
+      case PeakDef::SkewPar2:
+      case PeakDef::SkewPar3:
       case PeakDef::Chi2DOF:
       case PeakDef::NumCoefficientTypes:
         m_fitFor[t] = false;
@@ -1531,9 +1943,10 @@ const char *PeakDef::to_string( const CoefficientType type )
     case PeakDef::Mean:                return "Centroid";
     case PeakDef::Sigma:               return "Width";
     case PeakDef::GaussAmplitude:      return "Amplitude";
-    case PeakDef::LandauAmplitude:     return "LandauAmplitude";
-    case PeakDef::LandauMode:          return "LandauMode";
-    case PeakDef::LandauSigma:         return "LandauSigma";
+    case PeakDef::SkewPar0:            return "SkewValue";
+    case PeakDef::SkewPar1:            return "SkewPowerLaw";
+    case PeakDef::SkewPar2:            return "UpperSkewValue";
+    case PeakDef::SkewPar3:            return "UpperSkewPowerLaw";
     case PeakDef::Chi2DOF:             return "Chi2";
     case PeakDef::NumCoefficientTypes: return "";
   }//switch( type )
@@ -1541,6 +1954,128 @@ const char *PeakDef::to_string( const CoefficientType type )
   return "";
 }//const char *PeakDef::to_string( const CoefficientType type )
 
+
+bool PeakDef::skew_parameter_range( const SkewType skew_type, const CoefficientType coef,
+                                   double &lower_value, double &upper_value,
+                                   double &starting_value, double &step_size )
+{
+  lower_value = upper_value = starting_value = step_size = 0.0;
+  
+  switch( skew_type )
+  {
+    case NoSkew:
+      return false;
+      
+    case SkewType::LandauSkew:
+    {
+      switch( coef )
+      {
+        case CoefficientType::SkewPar0:
+          //LandauAmplitude
+          lower_value = 0.0;
+          upper_value = 0.5;
+          starting_value = 0.05; //total guess
+          break;
+          
+        case CoefficientType::SkewPar1:
+          //LandauMode
+          starting_value = (2.0+0.3*0.22278);
+          step_size = 0.1;
+          lower_value = 0.0;
+          upper_value = 5.0;
+          break;
+          
+        case CoefficientType::SkewPar2:
+          //LandauSigma
+          starting_value = 0.3;
+          step_size = 0.05;
+          lower_value = 0.0;
+          upper_value = 1.0;
+          break;
+          
+        default:
+          return false;
+      }//switch( coef )
+      
+      break;
+    }//case LandauSkew:
+      
+    case SkewType::Bortel:
+    {
+      if( coef != CoefficientType::SkewPar0 )
+        return false;
+      
+      starting_value = 0.2;
+      step_size = 0.05;
+      lower_value = 0.0; //Below 0.005 would be numerically bad, but the Bortel function should protect against it.
+      upper_value = 10;
+      
+      break;
+    }//case SkewType::Bortel:
+      
+    case SkewType::CrystalBall:
+    case SkewType::DoubleSidedCrystalBall:
+    {
+      switch( coef )
+      {
+        case CoefficientType::SkewPar2: //alpha (right)
+          if( skew_type == SkewType::CrystalBall )
+            return false;
+          // fall-though intentional
+        case CoefficientType::SkewPar0: //alpha (left)
+          starting_value = 2; //Can start seeing a little bit of skew
+          step_size = 0.1;
+          lower_value = 0.2;  //a ton of skew with really long tail
+          upper_value = 6;  //I dont really see any skew by ~4
+          break;
+        
+          
+        case CoefficientType::SkewPar3: //n (right)
+          if( skew_type == SkewType::CrystalBall )
+            return false;
+          // fall-though intentional
+        case CoefficientType::SkewPar1: //n (left)
+          // The valid values of `n` is probably a bit more complicated than just the range,
+          //  since
+          starting_value = 2;
+          step_size = 0.1;
+          lower_value = 1.05; //1.0 would be divide by zero
+          upper_value = 100;  //much higher than this
+          break;
+          
+        default:
+          return false;
+      }//switch( coef )
+      
+      break;
+    }//case SkewType::CrystalBall, SkewType::DoubleSidedCrystalBall:
+      
+    case SkewType::GaussExp:
+    case SkewType::ExpGaussExp:
+    {
+      switch( coef )
+      {
+        case CoefficientType::SkewPar1:
+          if( skew_type == SkewType::GaussExp )
+            return false;
+          // fall-though intentional
+        case CoefficientType::SkewPar0:
+          starting_value = 1;  //A pretty good amount of skew
+          step_size = 0.2;
+          lower_value = 0.15;  //this is a huge amount of skew
+          upper_value = 3.25;  //you really cant see any skew above ~2.75
+          break;
+          
+        default:
+          return false;
+      }//switch( coef )
+      
+      break;
+    }//case SkewType::ExpGaussExp: case SkewType::GaussExp:
+  }//switch( skew_type )
+  
+  return true;
+}//void skew_parameter_range(...)
 
 
 double PeakDef::extract_energy_from_peak_source_string( std::string &str )
@@ -1986,10 +2521,17 @@ rapidxml::xml_node<char> *PeakDef::toXml( rapidxml::xml_node<char> *parent,
   node = doc->allocate_node( node_element, "Type", val );
   peak_node->append_node( node );
   
+  
   switch( m_skewType )
   {
-    case NoSkew:     val = "NoSkew";     break;
-    case LandauSkew: val = "LandauSkew"; break;
+    case NoSkew:                 val = "NoSkew";                 break;
+    case LandauSkew:             val = "LandauSkew";             break;
+    case Bortel:                 val = "Bortel";                 break;
+    //case Doniach:                val = "Doniach";                break;
+    case CrystalBall:            val = "CrystalBall";            break;
+    case DoubleSidedCrystalBall: val = "DoubleSidedCrystalBall"; break;
+    case GaussExp:               val = "GaussExp";               break;
+    case ExpGaussExp:            val = "ExpGaussExp";            break;
   }//switch( m_skewType )
   
   node = doc->allocate_node( node_element, "Skew", val );
@@ -2001,14 +2543,79 @@ rapidxml::xml_node<char> *PeakDef::toXml( rapidxml::xml_node<char> *parent,
   {
     const char *label = to_string( t );
     
-    snprintf( buffer, sizeof(buffer), "%1.8e %1.8e", m_coefficients[t], m_uncertainties[t] );
-    val = doc->allocate_string( buffer );
-    node = doc->allocate_node( node_element, label, val );
+    // In going from PeakDef XML version 0.1 to 0.2, we need to have "LandauAmplitude",
+    //  "LandauMode", and "LandauSigma" elements written, even if there is no skew, since
+    //  InterSpec v1.0.11 and before always expect these elements.
+    //  If we have a non-Landau skew, then older versions of InterSpec will fail anyway
+    const char *extra_label = nullptr;
+    switch( t )
+    {
+      case Mean: case Sigma: case GaussAmplitude:
+      case Chi2DOF: case NumCoefficientTypes:
+        break;
+        
+      case SkewPar0:
+        if( (m_skewType == NoSkew) || (m_skewType == LandauSkew) )
+          extra_label = "LandauAmplitude";
+        if( m_skewType == NoSkew )
+          label = nullptr;
+        break;
+        
+      case SkewPar1:
+        if( (m_skewType == NoSkew) || (m_skewType == LandauSkew) )
+          extra_label = "LandauMode";
+        if( (m_skewType != CrystalBall)
+           && (m_skewType != DoubleSidedCrystalBall)
+           && (m_skewType != ExpGaussExp) )
+        {
+          label = nullptr;
+        }
+        break;
+        
+      case SkewPar2:
+        if( (m_skewType == NoSkew) || (m_skewType == LandauSkew) )
+          extra_label = "LandauSigma";
+        if( m_skewType != DoubleSidedCrystalBall )
+          label = nullptr;
+        break;
+        
+      case SkewPar3:
+        if( m_skewType != DoubleSidedCrystalBall )
+          label = nullptr;
+        break;
+    }//switch( t )
     
-    att = doc->allocate_attribute( "fit", (m_fitFor[t] ? "true" : "false") );
-    node->append_attribute( att );
+    auto add_node = [this, &buffer, doc, peak_node, t]( const char *label, const bool is_deprecated ){
+      double value = m_coefficients[t];
+      double uncert = m_uncertainties[t];
+      
+      // For backwards compatibility for pre 20231101, before we stored LandauMode and LandauSigma
+      //  relative to peak FWHM.
+      if( (m_skewType == LandauSkew) && ((t == SkewPar1) || (t == SkewPar2)) )
+      {
+        value *= m_coefficients[CoefficientType::Sigma];
+        uncert *= m_coefficients[CoefficientType::Sigma];
+      }
+      
+      snprintf( buffer, sizeof(buffer), "%1.8e %1.8e", value, uncert );
+      const char *val = doc->allocate_string( buffer );
+      xml_node<char> *node = doc->allocate_node( node_element, label, val );
+      xml_attribute<char> *att = doc->allocate_attribute( "fit", (m_fitFor[t] ? "true" : "false") );
+      node->append_attribute( att );
+      
+      if( is_deprecated )
+      {
+        att = doc->allocate_attribute( "remark", "Deprecated element" );
+        node->append_attribute( att );
+      }
+      
+      peak_node->append_node( node );
+    };//add_node
     
-    peak_node->append_node( node );
+    if( label )
+      add_node( label, false );
+    if( extra_label )
+      add_node( extra_label, true );
   }//for(...)
   
   /// TODO: Need to deprecate 'forCalibration' in favor of 'useForEnergyCalibration' the next
@@ -2165,7 +2772,7 @@ void PeakDef::fromXml( const rapidxml::xml_node<char> *peak_node,
   std::map<int,std::shared_ptr<PeakContinuum> >::const_iterator contpos;
   contpos = continuums.find( contID );
   if( contpos == continuums.end() )
-    throw runtime_error( "Couldnt find valud continuum for peak" );
+    throw runtime_error( "Couldnt find valid continuum for peak" );
   
   m_continuum = contpos->second;
   
@@ -2272,14 +2879,45 @@ void PeakDef::fromXml( const rapidxml::xml_node<char> *peak_node,
   for( CoefficientType t = CoefficientType(0); 
       t < NumCoefficientTypes; t = CoefficientType(t+1) )
   {
-    const char *label = to_string( t );
+    // We dont expect all the skew coefficients
+    bool want_par = true;
+    switch( t )
+    {
+      case Mean: case Sigma: case GaussAmplitude:
+      case Chi2DOF: case NumCoefficientTypes:
+        want_par = true;
+        break;
+        
+      case SkewPar0:
+        want_par = (m_skewType != NoSkew);
+        break;
+        
+      case SkewPar1:
+        want_par = ((m_skewType == CrystalBall) || (m_skewType == DoubleSidedCrystalBall));
+        break;
+        
+      case SkewPar2:
+      case SkewPar3:
+        want_par = (m_skewType == DoubleSidedCrystalBall);
+        break;
+    }//switch( t )
     
+    if( !want_par )
+    {
+      m_coefficients[t] = 0.0;
+      m_uncertainties[t] = 0.0;
+      m_fitFor[t] = false;
+      continue;
+    }//if( !want_par )
+    
+    const char *label = to_string( t );
     node = peak_node->first_node(label);
     if( !node || !node->value() )
-      throw runtime_error( "No coefficent " + string(label) );
+      throw runtime_error( "No coefficient " + string(label) );
     
-    float dblval, dbluncrt;
-    if( sscanf(node->value(), "%g %g", &dblval, &dbluncrt) != 2 )
+    float dblval = 0.0f, dbluncrt = 0.0f;
+    const int nread = sscanf(node->value(), "%g %g", &dblval, &dbluncrt);
+    if( (nread != 1) && (nread != 2) )
       throw runtime_error( "unable to read value or uncert for " + string(label) );
     
     m_coefficients[t] = dblval;
@@ -2287,11 +2925,24 @@ void PeakDef::fromXml( const rapidxml::xml_node<char> *peak_node,
     
     att = node->first_attribute("fit",3);
     if( !att || !att->value() )
-      throw runtime_error( "No fit attribute for " + string(label) );
-    
-    m_fitFor[t] = compare(att->value(),att->value_size(),"true",4,false);
-    if( !m_fitFor[t] && !compare(att->value(),att->value_size(),"false",5,false) )
-      throw runtime_error( "invalid fit value" );
+    {
+      switch( t )
+      {
+        case Mean: case Sigma: case GaussAmplitude:
+        case SkewPar0: case SkewPar1: case SkewPar2: case SkewPar3:
+          throw runtime_error( "No fit attribute for " + string(label) );
+          break;
+          
+        case Chi2DOF: case NumCoefficientTypes:
+          m_fitFor[t] = false;
+          break;
+      }//switch( t )
+    }else
+    {
+      m_fitFor[t] = compare(att->value(),att->value_size(),"true",4,false);
+      if( !m_fitFor[t] && !compare(att->value(),att->value_size(),"false",5,false) )
+        throw runtime_error( "invalid fit value" );
+    }
   }//for(...)
 
   
@@ -2519,14 +3170,14 @@ std::string PeakDef::gaus_peaks_to_json(const std::vector<std::shared_ptr<const 
 {
   //Need to check all numbers to make sure not inf or nan
   
-	stringstream answer;
+  stringstream answer;
   
-	if (peaks.empty())
-		return answer.str();
+  if (peaks.empty())
+    return answer.str();
 
-	std::shared_ptr<const PeakContinuum> continuum = peaks[0]->continuum();
-	if (!continuum)
-		throw runtime_error("gaus_peaks_to_json: invalid continuum");
+  std::shared_ptr<const PeakContinuum> continuum = peaks[0]->continuum();
+  if (!continuum)
+    throw runtime_error("gaus_peaks_to_json: invalid continuum");
   
   
   if( IsInf(continuum->lowerEnergy()) || IsNan(continuum->lowerEnergy()) )
@@ -2535,22 +3186,22 @@ std::string PeakDef::gaus_peaks_to_json(const std::vector<std::shared_ptr<const 
   if( IsInf(continuum->upperEnergy()) || IsNan(continuum->upperEnergy()) )
     throw runtime_error( "Continuum upper energy is invalid" );
   
-	const char *q = "\""; // for creating valid json format
+  const char *q = "\""; // for creating valid json format
 
-	answer << "{" << q << "type" << q << ":" << q;
-	switch( continuum->type() )
-	{
-	  case PeakContinuum::NoOffset:     answer << "NoOffset";     break;
-	  case PeakContinuum::Constant:     answer << "Constant";     break;
-	  case PeakContinuum::Linear:       answer << "Linear";       break;
-	  case PeakContinuum::Quadratic:    answer << "Quadratic";    break;
-	  case PeakContinuum::Cubic:        answer << "Cubic";        break;
+  answer << "{" << q << "type" << q << ":" << q;
+  switch( continuum->type() )
+  {
+    case PeakContinuum::NoOffset:     answer << "NoOffset";     break;
+    case PeakContinuum::Constant:     answer << "Constant";     break;
+    case PeakContinuum::Linear:       answer << "Linear";       break;
+    case PeakContinuum::Quadratic:    answer << "Quadratic";    break;
+    case PeakContinuum::Cubic:        answer << "Cubic";        break;
     case PeakContinuum::FlatStep:     answer << "FlatStep";     break;
     case PeakContinuum::LinearStep:   answer << "LinearStep";   break;
     case PeakContinuum::BiLinearStep: answer << "BiLinearStep"; break;
-	  case PeakContinuum::External:     answer << "External";     break;
-	}//switch( continuum->type() )
-	answer << q << "," << q << "lowerEnergy" << q << ":" << continuum->lowerEnergy()
+    case PeakContinuum::External:     answer << "External";     break;
+  }//switch( continuum->type() )
+  answer << q << "," << q << "lowerEnergy" << q << ":" << continuum->lowerEnergy()
          << "," << q << "upperEnergy" << q << ":" << continuum->upperEnergy();
   
   
@@ -2718,15 +3369,15 @@ std::string PeakDef::gaus_peaks_to_json(const std::vector<std::shared_ptr<const 
   }//switch( continuum->type() )
 
 
-	answer << "," << q << "peaks" << q << ":[";
-	for (size_t i = 0; i < peaks.size(); ++i)
-	{
-		const PeakDef &p = *peaks[i];
-		if (continuum != p.continuum())
-			throw runtime_error("gaus_peaks_to_json: peaks all must share same continuum");
-		answer << (i ? "," : "") << "{";
+  answer << "," << q << "peaks" << q << ":[";
+  for (size_t i = 0; i < peaks.size(); ++i)
+  {
+    const PeakDef &p = *peaks[i];
+    if (continuum != p.continuum())
+      throw runtime_error("gaus_peaks_to_json: peaks all must share same continuum");
+    answer << (i ? "," : "") << "{";
 
-		if( !p.userLabel().empty() )
+    if( !p.userLabel().empty() )
     {
       string label = p.userLabel();
       
@@ -2749,36 +3400,36 @@ std::string PeakDef::gaus_peaks_to_json(const std::vector<std::shared_ptr<const 
       }
     }
 
-		if (!p.lineColor().isDefault())
-			answer << q << "lineColor" << q << ":" << q << p.lineColor().cssText(false) << q << ",";
+    if (!p.lineColor().isDefault())
+      answer << q << "lineColor" << q << ":" << q << p.lineColor().cssText(false) << q << ",";
 
-		answer << q << "type" << q << ":";
-		switch (p.type())
-		{
-		  case PeakDef::GaussianDefined:
+    answer << q << "type" << q << ":";
+    switch (p.type())
+    {
+      case PeakDef::GaussianDefined:
         answer << q << "GaussianDefined" << q << ",";
       break;
         
-		  case PeakDef::DataDefined:
+      case PeakDef::DataDefined:
         answer << q << "DataDefined" << q << ",";
       break;
-		}//switch( p.type() )
+    }//switch( p.type() )
 
-		answer << q << "skewType" << q << ":";
-		switch( p.skewType() )
-		{
-		  case PeakDef::NoSkew:
+    answer << q << "skewType" << q << ":";
+    switch( p.skewType() )
+    {
+      case PeakDef::NoSkew:
         answer << q << "NoSkew" << q << ",";
         break;
         
-		  case PeakDef::LandauSkew:
+      case PeakDef::LandauSkew:
         answer << q << "LandauSkew" << q << ",";
         break;
-		}//switch( p.type() )
+    }//switch( p.type() )
 
-		for (PeakDef::CoefficientType t = PeakDef::CoefficientType(0);
-			t < PeakDef::NumCoefficientTypes; t = PeakDef::CoefficientType(t + 1))
-		{
+    for (PeakDef::CoefficientType t = PeakDef::CoefficientType(0);
+      t < PeakDef::NumCoefficientTypes; t = PeakDef::CoefficientType(t + 1))
+    {
       double coef = p.coefficient(t), uncert = p.uncertainty(t);
       assert( !IsInf(coef) && !IsNan(coef) );
       if( IsInf(coef) || IsNan(coef) )
@@ -2793,10 +3444,10 @@ std::string PeakDef::gaus_peaks_to_json(const std::vector<std::shared_ptr<const 
       if( IsInf(uncert) || IsNan(uncert) )
         uncert = 0.0;
       
-			answer << q << PeakDef::to_string(t) << q << ":[" << coef
-				<< "," << uncert << "," << (p.fitFor(t) ? "true" : "false")
-				<< "],";
-		}//for(...)
+      answer << q << PeakDef::to_string(t) << q << ":[" << coef
+        << "," << uncert << "," << (p.fitFor(t) ? "true" : "false")
+        << "],";
+    }//for(...)
     
     // The peak amplitude CPS, is only used for the little info box when you hover-over/tap a peak,
     //   so we'll just format the text here; may change in the future.
@@ -2824,18 +3475,18 @@ std::string PeakDef::gaus_peaks_to_json(const std::vector<std::shared_ptr<const 
     
     
     /*
-		const char *gammaTypeVal = 0;
-		switch( p.sourceGammaType() )
-		{
-		  case PeakDef::NormalGamma:       gammaTypeVal = "NormalGamma";       break;
-		  case PeakDef::AnnihilationGamma: gammaTypeVal = "AnnihilationGamma"; break;
-		  case PeakDef::SingleEscapeGamma: gammaTypeVal = "SingleEscapeGamma"; break;
-		  case PeakDef::DoubleEscapeGamma: gammaTypeVal = "DoubleEscapeGamma"; break;
-		  case PeakDef::XrayGamma:         gammaTypeVal = "XrayGamma";         break;
-		}//switch( p.sourceGammaType() )
+    const char *gammaTypeVal = 0;
+    switch( p.sourceGammaType() )
+    {
+      case PeakDef::NormalGamma:       gammaTypeVal = "NormalGamma";       break;
+      case PeakDef::AnnihilationGamma: gammaTypeVal = "AnnihilationGamma"; break;
+      case PeakDef::SingleEscapeGamma: gammaTypeVal = "SingleEscapeGamma"; break;
+      case PeakDef::DoubleEscapeGamma: gammaTypeVal = "DoubleEscapeGamma"; break;
+      case PeakDef::XrayGamma:         gammaTypeVal = "XrayGamma";         break;
+    }//switch( p.sourceGammaType() )
 
-		if( p.parentNuclide() || p.xrayElement() || p.reaction() )
-			answer << "," << q << "sourceType" << q << ":" << q << gammaTypeVal << q;
+    if( p.parentNuclide() || p.xrayElement() || p.reaction() )
+      answer << "," << q << "sourceType" << q << ":" << q << gammaTypeVal << q;
     */
     
     const auto srcTypeJSON = [q]( const PeakDef::SourceGammaType gamtype ) -> std::string{
@@ -2853,86 +3504,86 @@ std::string PeakDef::gaus_peaks_to_json(const std::vector<std::shared_ptr<const 
     };//srcTypeJSON lamda
     
     
-		if( p.parentNuclide() )
-		{
-			const SandiaDecay::Transition *trans = p.nuclearTransition();
-			const SandiaDecay::RadParticle *decayPart = p.decayParticle();
+    if( p.parentNuclide() )
+    {
+      const SandiaDecay::Transition *trans = p.nuclearTransition();
+      const SandiaDecay::RadParticle *decayPart = p.decayParticle();
 
-			answer << "," << q << "nuclide" << q << ": { " << q << "name" << q << ": " << q << p.parentNuclide()->symbol << q;
-			if( trans && decayPart )
-			{
-				string transistion_parent, decay_child;
-				const SandiaDecay::Nuclide *trans_parent = trans->parent;
-				transistion_parent = trans_parent->symbol;
-				if( trans->child )
-					decay_child = trans->child->symbol;
+      answer << "," << q << "nuclide" << q << ": { " << q << "name" << q << ": " << q << p.parentNuclide()->symbol << q;
+      if( trans && decayPart )
+      {
+        string transistion_parent, decay_child;
+        const SandiaDecay::Nuclide *trans_parent = trans->parent;
+        transistion_parent = trans_parent->symbol;
+        if( trans->child )
+          decay_child = trans->child->symbol;
 
-				answer << "," << q << "decayParent" << q << ":" << q << transistion_parent << q;
-				answer << "," << q << "decayChild" << q << ":" << q << decay_child << q;
+        answer << "," << q << "decayParent" << q << ":" << q << transistion_parent << q;
+        answer << "," << q << "decayChild" << q << ":" << q << decay_child << q;
         const float energy = (IsInf(decayPart->energy) || IsNan(decayPart->energy)) ? 0.0f : decayPart->energy;
         answer << "," << q << "energy" << q << ":" << energy << "";
         answer << srcTypeJSON( p.sourceGammaType() );
-			}else if( p.sourceGammaType() == AnnihilationGamma )
+      }else if( p.sourceGammaType() == AnnihilationGamma )
       {
         answer << "," << q << "energy" << q << ":511.006";
         answer << srcTypeJSON( p.sourceGammaType() );
       }//if( m_transition )
 
-			answer << "}";
-		}//if( m_parentNuclide )
+      answer << "}";
+    }//if( m_parentNuclide )
 
-		if( p.xrayElement() )
-		{
+    if( p.xrayElement() )
+    {
       const float energy = (IsInf(p.xrayEnergy()) || IsNan(p.xrayEnergy())) ? 0.0f : p.xrayEnergy();
         
-			answer << "," << q << "xray" << q
+      answer << "," << q << "xray" << q
         << ":{"
              << q << "name" << q << ":" << q << p.xrayElement()->name << q << ","
              << q << "energy" << q << ":" << energy
              << srcTypeJSON( p.sourceGammaType() )
         << "}";
-		}//if( m_xrayElement )
+    }//if( m_xrayElement )
 
 
-		if( p.reaction() )
-		{
+    if( p.reaction() )
+    {
       const float energy = (IsInf(p.reactionEnergy()) || IsNan(p.reactionEnergy())) ? 0.0f : p.reactionEnergy();
       
-			answer << "," << q << "reaction" << q
+      answer << "," << q << "reaction" << q
         << ":{"
              << q << "name" << q << ":" << q << p.reaction()->name() << q << ","
              << q << "energy" << q << ":" << energy
              << srcTypeJSON( p.sourceGammaType() )
         << "}";
-		}//if( m_reaction )
+    }//if( m_reaction )
 
-		answer << "}";
-	}//for( size_t i = 0; i < peaks.size(); ++i )
+    answer << "}";
+  }//for( size_t i = 0; i < peaks.size(); ++i )
 
-	answer << "]}";
+  answer << "]}";
 
-	return answer.str();
+  return answer.str();
 }//std::string PeakDef::gaus_peaks_to_json(...)
 
 
 string PeakDef::peak_json(const vector<std::shared_ptr<const PeakDef> > &inpeaks,
                           const std::shared_ptr<const SpecUtils::Measurement> &foreground )
 {
-	if (inpeaks.empty())
-		return "[]";
+  if (inpeaks.empty())
+    return "[]";
 
-	typedef std::map< std::shared_ptr<const PeakContinuum>, vector<std::shared_ptr<const PeakDef> > > ContinuumToPeakMap_t;
+  typedef std::map< std::shared_ptr<const PeakContinuum>, vector<std::shared_ptr<const PeakDef> > > ContinuumToPeakMap_t;
 
-	ContinuumToPeakMap_t continuumToPeaks;
-	for (size_t i = 0; i < inpeaks.size(); ++i)
-		continuumToPeaks[inpeaks[i]->continuum()].push_back(inpeaks[i]);
+  ContinuumToPeakMap_t continuumToPeaks;
+  for (size_t i = 0; i < inpeaks.size(); ++i)
+    continuumToPeaks[inpeaks[i]->continuum()].push_back(inpeaks[i]);
 
-	string json = "[";
-	for (const ContinuumToPeakMap_t::value_type &vt : continuumToPeaks)
-		json += ((json.size()>2) ? "," : "") + gaus_peaks_to_json(vt.second,foreground);
+  string json = "[";
+  for (const ContinuumToPeakMap_t::value_type &vt : continuumToPeaks)
+    json += ((json.size()>2) ? "," : "") + gaus_peaks_to_json(vt.second,foreground);
 
-	json += "]";
-	return json;
+  json += "]";
+  return json;
 }//string peak_json( inpeaks )
 #endif //#if( SpecUtils_ENABLE_D3_CHART )
 
@@ -2972,11 +3623,16 @@ double PeakDef::peakArea() const
   
   switch( m_skewType )
   {
-    case PeakDef::NoSkew:
+    case PeakDef::SkewType::NoSkew:
+    case PeakDef::SkewType::Bortel:
+    case PeakDef::SkewType::CrystalBall:
+    case PeakDef::SkewType::DoubleSidedCrystalBall:
+    case PeakDef::SkewType::GaussExp:
+    case PeakDef::SkewType::ExpGaussExp:
     break;
     
-    case PeakDef::LandauSkew:
-      amp += skew_integral( lowerX(), upperX() );
+    case PeakDef::SkewType::LandauSkew:
+      amp += landau_skew_integral( lowerX(), upperX() );
     break;
   }//switch( m_skewType )
   
@@ -2991,13 +3647,19 @@ double PeakDef::peakAreaUncert() const
   switch( m_skewType )
   {
     case PeakDef::NoSkew:
+    case PeakDef::Bortel:
+    //case PeakDef::Doniach:
+    case PeakDef::CrystalBall:
+    case PeakDef::DoubleSidedCrystalBall:
+    case GaussExp:
+    case ExpGaussExp:
     break;
       
     case PeakDef::LandauSkew:
     {
-      const double skew_area = skew_integral( lowerX(), upperX() );
-      const double frac_uncert = m_uncertainties[PeakDef::LandauAmplitude]
-                                 / m_coefficients[PeakDef::LandauAmplitude];
+      const double skew_area = landau_skew_integral( lowerX(), upperX() );
+      const double frac_uncert = m_uncertainties[PeakDef::SkewPar0]
+                                 / m_coefficients[PeakDef::SkewPar0];
       const double skew_uncert = skew_area * frac_uncert;
       //XXX - below assumes ampltude and skew amplitude are uncorelated,
       //      which they are not.
@@ -3017,11 +3679,17 @@ void PeakDef::setPeakArea( const double a )
   switch( m_skewType )
   {
     case PeakDef::NoSkew:
+    case PeakDef::Bortel:
+    //case PeakDef::Doniach:
+    case PeakDef::CrystalBall:
+    case PeakDef::DoubleSidedCrystalBall:
+    case GaussExp:
+    case ExpGaussExp:
     break;
       
     case PeakDef::LandauSkew:
     {
-      const double skew_area = skew_integral( lowerX(), upperX() );
+      const double skew_area = landau_skew_integral( lowerX(), upperX() );
       const double skew_frac = skew_area / (skew_area + area);
       area = (1.0 - skew_frac) * a;
       break;
@@ -3037,16 +3705,22 @@ void PeakDef::setPeakAreaUncert( const double uncert )
   switch( m_skewType )
   {
     case PeakDef::NoSkew:
+    case PeakDef::Bortel:
+    //case PeakDef::Doniach:
+    case PeakDef::CrystalBall:
+    case PeakDef::DoubleSidedCrystalBall:
+    case GaussExp:
+    case ExpGaussExp:
       m_uncertainties[PeakDef::GaussAmplitude] = uncert;
     break;
       
     case PeakDef::LandauSkew:
     {
-      //XXX - the below only modifies the gaus uncertainty, and not the skew
+      //TODO: the below only modifies the gaus uncertainty, and not the skew
       //  uncertainty - I was just to lazy to do it properly (should also look
-      //  at how coorelated the skew amplitude error is to peak amplitude error
+      //  at how correlated the skew amplitude error is to peak amplitude error
       //  ...)
-      const double skew_area = skew_integral( lowerX(), upperX() );
+      const double skew_area = landau_skew_integral( lowerX(), upperX() );
       const double gauss_area = m_coefficients[PeakDef::GaussAmplitude];
       const double total_area = skew_area + gauss_area;
       const double frac_uncert = uncert / total_area;
@@ -3055,20 +3729,20 @@ void PeakDef::setPeakAreaUncert( const double uncert )
       
       /*
       const double gaussuncert = m_coefficients[PeakDef::GaussAmplitude];
-      const double skewuncert = m_coefficients[PeakDef::LandauAmplitude];
+      const double skewuncert = m_coefficients[PeakDef::SkewPar0];
       
       if( skewuncert > 0.0 && skew_area > 0.0 )
       {
         const double gauss_area = m_coefficients[PeakDef::GaussAmplitude];
         const double area = skew_area + gauss_area;
         const double skew_uncert = skew_area * skewuncert
-                                   / m_coefficients[PeakDef::LandauAmplitude];
+                                   / m_coefficients[PeakDef::SkewPar0];
         const double skew_frac_uncert = skew_uncert / (skew_uncert+gaussuncert);
         
         const double skew_uncert = skew_area * skew_frac_uncert
         
         m_uncertainties[PeakDef::GaussAmplitude] = fracuncert*gauss_area;
-        m_uncertainties[PeakDef::LandauAmplitude] = fracuncert*;
+        m_uncertainties[PeakDef::SkewPar0] = fracuncert*;
       }else
       {
         m_uncertainties[PeakDef::GaussAmplitude] = uncert;
@@ -3807,8 +4481,9 @@ void PeakDef::inheritUserSelectedOptions( const PeakDef &parent,
       switch( t )
       {
         case PeakDef::Mean:             case PeakDef::Sigma:
-        case PeakDef::GaussAmplitude:   case PeakDef::LandauAmplitude:
-        case PeakDef::LandauMode:       case PeakDef::LandauSigma:
+        case PeakDef::GaussAmplitude:
+        case PeakDef::SkewPar0: case PeakDef::SkewPar1:
+        case PeakDef::SkewPar2: case PeakDef::SkewPar3:
           m_coefficients[t]  = parent.m_coefficients[t];
           m_uncertainties[t] = parent.m_uncertainties[t];
         break;
@@ -3921,11 +4596,119 @@ double PeakDef::lowerX() const
   if( m_continuum->PeakContinuum::energyRangeDefined() )
     return m_continuum->lowerEnergy();
 
-  if( m_skewType == PeakDef::LandauSkew )
-    return min(m_coefficients[PeakDef::Mean] - m_coefficients[PeakDef::LandauSigma]+(0.22278*m_coefficients[PeakDef::LandauSigma])-25.0*m_coefficients[PeakDef::LandauSigma],
-        m_coefficients[PeakDef::Mean] - 4.0*m_coefficients[PeakDef::Sigma]);
+  const double mean = m_coefficients[PeakDef::Mean];
+  const double sigma = m_coefficients[PeakDef::Sigma];
+  
+  switch( m_skewType )
+  {
+    case NoSkew:
+      return mean - 4.0*sigma;
+      
+    case LandauSkew:
+      // This next line needs to be checked
+      return min(m_coefficients[PeakDef::Mean] - m_coefficients[PeakDef::SkewPar2]+(0.22278*m_coefficients[PeakDef::SkewPar2])-25.0*m_coefficients[PeakDef::SkewPar1],
+                 mean - 4.0*sigma );
+      break;
+      
+    case Bortel:
+    {
+      // Find `x` so that only 2.5% of the distribution is to the left, but dont go any more
+      //  than 8 sigma to the left of the mean
+      // TODO: turn this next loop into a definite equation
+      const double skew = m_coefficients[PeakDef::SkewPar0];
+      double lowx = mean - 8.0*sigma;
+      while( lowx < (mean - 4.0*sigma) )
+      {
+        const double cumulative = bortel_indefinite_integral(lowx, mean, sigma, skew);
+        if( cumulative > 0.025 )
+          return lowx;
+        lowx += 0.1*sigma;
+      }
+      return mean - 4.0*sigma;
+    }//case Bortel
+      
+    case CrystalBall:
+    {
+      // Find `x` so that only 2.5% of the distribution is to the left, but dont go any more
+      //  than 8 sigma to the left of the mean
+      // TODO: turn this next loop into a definite equation
+      const double alpha = m_coefficients[PeakDef::SkewPar0];
+      const double n = m_coefficients[PeakDef::SkewPar1];
+      double lowx = mean - 8.0*sigma;
+      while( (lowx < (mean - 4.0*sigma)) && (((lowx - mean)/sigma) < -alpha) )
+      {
+        const double cumulative = crystal_ball_tail_indefinite( mean, sigma, alpha, n, lowx );
+        if( cumulative > 0.025 )
+          return lowx;
+        lowx += 0.1*sigma;
+      }
+      return mean - 4.0*sigma;
+    }//case CrystalBall
+      
+    case DoubleSidedCrystalBall:
+    {
+      // Find `x` so that only 2.5% of the distribution is to the left, but dont go any more
+      //  than 8 sigma to the left of the mean
+      // TODO: turn this next loop into a definite equation, or search for 0.05, or something
+      const double alpha_left = m_coefficients[PeakDef::SkewPar0];
+      const double n_left = m_coefficients[PeakDef::SkewPar1];
+      const double alpha_right = m_coefficients[PeakDef::SkewPar2];
+      const double n_right = m_coefficients[PeakDef::SkewPar3];
+      
+      double lowx = mean - 8.0*sigma;
+      while( (lowx < (mean - 4.0*sigma)) && (((lowx - mean)/sigma) < -alpha_left) )
+      {
+        const double t = (lowx - mean) / sigma;
+        const double cumulative = double_sided_crystal_ball_left_tail_indefinite_t( sigma, alpha_left, n_left, alpha_right, n_right, t );
+        
+        if( cumulative > 0.025 )
+          return lowx;
+        lowx += 0.1*sigma;
+      }
+      return mean - 4.0*sigma;
+    }//case CrystalBall
+      
+    case GaussExp:
+    {
+      // Find `x` so that only 2.5% of the distribution is to the left, but dont go any more
+      //  than 8 sigma to the left of the mean
+      // TODO: turn this next loop into a definite equation, or search for 0.05, or something
+      const double skew = m_coefficients[PeakDef::SkewPar0];
+      
+      double lowx = mean - 8.0*sigma;
+      while( (lowx < (mean - 4.0*sigma)) && (((lowx - mean)/sigma) < -skew) )
+      {
+        const double cumulative = gauss_exp_indefinite(mean, sigma, skew, lowx);
+        if( cumulative > 0.025 )
+          return lowx;
+        lowx += 0.1*sigma;
+      }
+      return mean - 4.0*sigma;
+    }//case GaussExp:
+      
+      
+    case ExpGaussExp:
+    {
+      // Find `x` so that only 2.5% of the distribution is to the left, but dont go any more
+      //  than 8 sigma to the left of the mean
+      // TODO: turn this next loop into a definite equation, or search for 0.05, or something
+      const double skew_left = m_coefficients[PeakDef::SkewPar0];
+      const double skew_right = m_coefficients[PeakDef::SkewPar1];
+      
+      double lowx = mean - 8.0*sigma;
+      while( (lowx < (mean - 4.0*sigma)) && (((lowx - mean)/sigma) < -skew_left) )
+      {
+        const double cumulative = exp_gauss_exp_indefinite( mean, sigma, skew_left, skew_right, lowx);
+        if( cumulative > 0.025 )
+          return lowx;
+        lowx += 0.1*sigma;
+      }
+      return mean - 4.0*sigma;
+    }//case ExpGaussExp:
+  }//switch( m_skewType )
 
-  return m_coefficients[PeakDef::Mean] - 4.0*m_coefficients[PeakDef::Sigma];
+  assert( 0 );
+  return mean - 4.0*sigma;
 }//double lowerX() const
 
 
@@ -3934,28 +4717,417 @@ double PeakDef::upperX() const
   if( m_continuum->PeakContinuum::energyRangeDefined() )
     return m_continuum->upperEnergy();
   
-  return m_coefficients[PeakDef::Mean] + 4.0*m_coefficients[PeakDef::Sigma];
+  const double mean = m_coefficients[PeakDef::Mean];
+  const double sigma = m_coefficients[PeakDef::Sigma];
+  
+  switch( m_skewType )
+  {
+    case NoSkew:
+    case GaussExp:
+    case LandauSkew:
+    case Bortel:
+    case CrystalBall:
+      return mean + 4.0*sigma;
+      break;
+      
+    case DoubleSidedCrystalBall:
+    {
+      // Find `x` so that only 2.5% of the distribution is to the left, but dont go any more
+      //  than 8 sigma to the left of the mean
+      // TODO: turn this next loop into a definite equation, or search for 0.05, or something
+      const double alpha_left = m_coefficients[PeakDef::SkewPar0];
+      const double n_left = m_coefficients[PeakDef::SkewPar1];
+      const double alpha_right = m_coefficients[PeakDef::SkewPar2];
+      const double n_right = m_coefficients[PeakDef::SkewPar3];
+      
+      const double oneOverSqrt2 = boost::math::constants::one_div_root_two<double>(); //0.70710678118654752440
+      const double sqrtPiOver2 = boost::math::constants::root_half_pi<double>();      //1.2533141373155002512078826424
+      
+      double start_cumulative = 0.0;
+      start_cumulative += double_sided_crystal_ball_left_tail_indefinite_t( sigma, alpha_left,
+                                                      n_left, alpha_right, n_right, -alpha_left );
+      start_cumulative += double_sided_crystal_ball_gauss_indefinite_t( sigma, alpha_left, n_left,
+                                                             alpha_right, n_right, alpha_right );
+      start_cumulative -= double_sided_crystal_ball_gauss_indefinite_t( sigma, alpha_left, n_left,
+                                                             alpha_right, n_right, -alpha_left );
+      start_cumulative -= double_sided_crystal_ball_right_tail_indefinite_t( sigma, alpha_left,
+                                                      n_left, alpha_right, n_right, alpha_right );
+                                                           
+      double upper_t = alpha_right + 1;
+      while( upper_t < 8 )
+      {
+        const double cumulative = start_cumulative
+                + double_sided_crystal_ball_right_tail_indefinite_t( sigma, alpha_left, n_left,
+                                                                    alpha_right, n_right, upper_t );
+        if( cumulative >= 0.975 )
+          return (upper_t*sigma + mean);
+        upper_t += 0.1;
+      }
+      return mean + 8.0*sigma;
+    }//case DoubleSidedCrystalBall:
+      
+    case ExpGaussExp:
+    {
+      // Find `x` so that only 2.5% of the distribution is to the right, but dont go any more
+      //  than 8 sigma to the left of the mean
+      // TODO: turn this next loop into a definite equation, or search for 0.05, or something
+      const double skew_left = m_coefficients[PeakDef::SkewPar0];
+      const double skew_right = m_coefficients[PeakDef::SkewPar1];
+      
+      double upperx = mean + skew_right*sigma;
+      while( upperx < (mean + 8.0*sigma) )
+      {
+        const double cumulative = exp_gauss_exp_indefinite( mean, sigma, skew_left, skew_right, upperx);
+        if( cumulative >= 0.975 )
+          return upperx;
+        upperx += 0.1*sigma;
+      }
+      return mean + 8.0*sigma;
+      break;
+    }//case DoubleSidedCrystalBall:, case ExpGaussExp:
+  }//switch( m_skewType )
+  
+  assert( 0 );
+  return mean + 4.0*sigma;
 }//double upperX() const
+
+                  
+void PeakDef::bortel_integral( const double &mean, const double &sigma, const double &amp, const double &skew,
+                       const float * const energies, double *channels, const size_t nchannel )
+{
+  assert( sigma > 0.0 );
+  if( (sigma <= 0.0) || (amp <= 0.0) || !nchannel )
+    return;
+  
+  const double zero_amp_point_nsigma_lower = 12.0; // TODO: Use the skew to determine lower energy
+  const double zero_amp_point_nsigma_upper = 8.0;
+  const float start_energy = static_cast<float>( mean - zero_amp_point_nsigma_lower*sigma );
+  const float stop_energy = static_cast<float>( mean + zero_amp_point_nsigma_upper*sigma );
+  
+  size_t channel = 0;
+  while( (channel < nchannel) && (energies[channel+1] < start_energy) )
+  {
+    channel += 1;
+  }
+    
+  if( channel == nchannel )
+    return;
+    
+  // We will keep track of the channels lower value indefinite integral, so we dont have to
+  //  re-compute it for each channel
+  double val_low = bortel_indefinite_integral(energies[channel], mean, sigma, skew );
+  
+  while( (channel < nchannel) && (energies[channel] < stop_energy) )
+  {
+    const double val_high = bortel_indefinite_integral(energies[channel+1], mean, sigma, skew );
+    
+    channels[channel] += amp*(val_high - val_low);
+    val_low = val_high;
+    channel += 1;
+  }//while( (channel < nchannel) && (energies[channel] < stop_energy) )
+}//bortel_integral( to array values)
+
+
+/*
+double PeakDef::doniach_integral( const double peak_mean,
+                               const double peak_sigma,
+                               const double peak_amplitude,
+                               const double skew,
+                               const double x0, const double x1 )
+{
+#ifdef _MSC_VER
+  #pragma message( "PeakDef::doniach_integral is returning a poor approximation" )
+#else
+  #warning "PeakDef::doniach_integral is returning a poor approximation"
+#endif
+  blah blah blah
+}//doniach_integral(...)
+*/
+
+
+double PeakDef::crystal_ball_integral( const double mean,
+                               const double sigma,
+                               const double peak_amplitude,
+                               const double alpha,
+                               const double n,
+                               const double x0, const double x1 )
+{
+  // TODO: this is just a niave implementation - still needs to be optimized
+  
+  // Also, the implementation in CERNs ROOT
+  //  may better deal with numerical accuracies of tails by switching to integrating in log
+  //   see https://root.cern.ch/doc/master/RooCrystalBall_8cxx_source.html
+  const double oneOverSqrt2 = boost::math::constants::one_div_root_two<double>(); //0.70710678118654752440
+  const double sqrt_half_pi = boost::math::constants::root_half_pi<double>();
+  
+  const double a_0 = (x0 - mean) / sigma;
+  const double a_1 = (x1 - mean) / sigma;
+  
+  if( (a_0 <= -alpha) && (a_1 <= -alpha) )
+  {
+    // Integrate just among the power law component
+    return peak_amplitude * (crystal_ball_tail_indefinite(mean,sigma,alpha,n,x1)
+                              - crystal_ball_tail_indefinite(mean,sigma,alpha,n,x0));
+  }
+  
+  const double A = std::pow(n/alpha, n) * std::exp( -0.5*alpha*alpha );
+  const double B = (n / alpha) - alpha;
+  const double C = (n / alpha) * (1.0/(n - 1.0)) * std::exp( -0.5*alpha*alpha );
+  const double D = sqrt_half_pi * (1.0 + boost_erf_imp( oneOverSqrt2 * alpha ));
+  const double N = 1.0 / (sigma * (C + D));
+  
+  const double sqrt_2pi = boost::math::constants::root_two_pi<double>();
+  
+  const double gauss_amp = (sqrt_2pi)/(C + D);
+  
+  if( (a_0 >= -alpha) && (a_1 > -alpha) ) // just the gaussian
+    return gaussian_integral( mean, sigma, gauss_amp, x0, x1 );
+  
+  // integrate power-law from a_0 to -alpha
+  // integrate gaussian from -alpha to a_1
+  return peak_amplitude * (crystal_ball_tail_indefinite(mean,sigma,alpha,n,mean-alpha)
+                          - crystal_ball_tail_indefinite(mean,sigma,alpha,n,x0))
+         + gaussian_integral( mean, sigma, gauss_amp, mean-alpha, x1 );
+}//crystal_ball_integral(...)
+
+
+double PeakDef::double_sided_crystal_ball_integral( const double peak_mean,
+                               const double peak_sigma,
+                               const double peak_amplitude,
+                               const double alpha_low,
+                               const double n_low,
+                               const double alpha_high,
+                               const double n_high,
+                               const double x0, const double x1 )
+{
+#ifdef _MSC_VER
+  #pragma message( "PeakDef::double_sided_crystal_ball_integral not tested/optimized - normalization for power law below 5 starts being off decently" )
+#else
+  #warning "PeakDef::double_sided_crystal_ball_integral not tested/optimized - normalization for power law below 5 starts being off decently"
+#endif
+  
+  const double oneOverSqrt2 = boost::math::constants::one_div_root_two<double>(); //0.70710678118654752440
+  const double sqrtPiOver2 = boost::math::constants::root_half_pi<double>();      //1.2533141373155002512078826424
+  
+  const double t0 = (x0 - peak_mean) / peak_sigma;
+  const double t1 = (x1 - peak_mean) / peak_sigma;
+      
+  double answer = 0.0;
+  if( t0 < -alpha_low )
+    answer += double_sided_crystal_ball_left_tail_indefinite_t(peak_sigma, alpha_low, n_low, alpha_high, n_high, std::min(-alpha_low,t1) )
+              - double_sided_crystal_ball_left_tail_indefinite_t(peak_sigma, alpha_low, n_low, alpha_high, n_high, t0 );
+  
+  if( t1 > alpha_high )
+    answer += double_sided_crystal_ball_right_tail_indefinite_t(peak_sigma, alpha_low, n_low, alpha_high, n_high, t1 )
+              - double_sided_crystal_ball_right_tail_indefinite_t(peak_sigma, alpha_low, n_low, alpha_high, n_high, std::max(alpha_high,t0) );
+  
+  if( (t0 < alpha_high) && (t1 > -alpha_low) )
+    answer += double_sided_crystal_ball_gauss_indefinite_t( peak_sigma, alpha_low, n_low,
+                                                           alpha_high, n_high, min(alpha_high,t1) )
+              - double_sided_crystal_ball_gauss_indefinite_t( peak_sigma, alpha_low, n_low,
+                                                              alpha_high, n_high, max(-alpha_low,t0) );
+      
+  return peak_amplitude * answer;
+}//double_sided_crystal_ball_integral(...)
+
+double PeakDef::gauss_exp_integral( const double peak_mean,
+                                    const double peak_sigma,
+                                    const double peak_amplitude,
+                                    const double skew,
+                                    const double x0, const double x1 )
+{
+  return gauss_exp_integral( peak_mean, peak_sigma, peak_amplitude, skew, x0, x1 );
+}
+
+
+double PeakDef::exp_gauss_exp_integral( const double peak_mean,
+                                    const double peak_sigma,
+                                    const double peak_amplitude,
+                                    const double skew_left,
+                                    const double skew_right,
+                                    const double x0, const double x1 )
+{
+  return exp_gauss_exp_integral( peak_mean, peak_sigma, peak_amplitude, skew_left, skew_right, x0, x1 );
+}
+
+
+void PeakDef::gauss_exp_integral( const double &peak_mean,
+                             const double &peak_sigma,
+                             const double &peak_amplitude,
+                             const double &skew,
+                             const float * const energies,
+                             double *channels,
+                             const size_t nchannel )
+{
+#ifdef _MSC_VER
+  #pragma message( "PeakDef::gauss_exp_integral is not properly coded" )
+#else
+  #warning "PeakDef::gauss_exp_integral is not properly coded"
+#endif
+  
+  for( size_t i = 0; i < nchannel; ++i )
+  {
+    const float x0 = energies[i];
+    const float x1 = energies[i+1];
+    
+    channels[i] += PeakDef::gauss_exp_integral( peak_mean, peak_sigma, peak_amplitude, skew, x0, x1 );
+  }
+}//void PeakDef::gauss_exp_integral( ... array ... )
+
+
+void PeakDef::exp_gauss_exp_integral( const double &peak_mean,
+                             const double &peak_sigma,
+                             const double &peak_amplitude,
+                             const double &skew_left,
+                             const double &skew_right,
+                             const float * const energies,
+                             double *channels,
+                             const size_t nchannel )
+{
+#ifdef _MSC_VER
+  #pragma message( "PeakDef::exp_gauss_exp_integral is not properly coded" )
+#else
+  #warning "PeakDef::exp_gauss_exp_integral is not properly coded"
+#endif
+  
+  for( size_t i = 0; i < nchannel; ++i )
+  {
+    const float x0 = energies[i];
+    const float x1 = energies[i+1];
+    
+    channels[i] += PeakDef::exp_gauss_exp_integral( peak_mean, peak_sigma, peak_amplitude, skew_left, skew_right, x0, x1 );
+  }
+}
+
+/*
+void PeakDef::doniach_integral( const double &peak_mean,
+                             const double &peak_sigma,
+                             const double &peak_amplitude,
+                             const double &skew,
+                             const float * const energies,
+                             double *channels,
+                             const size_t nchannel )
+{
+  // TODO: Need to properly optimize this function
+#ifdef _MSC_VER
+  #pragma message( "PeakDef::doniach_integral is not properly coded" )
+#else
+  #warning "PeakDef::doniach_integral is not properly coded"
+#endif
+  for( size_t i = 0; i < nchannel; ++i )
+  {
+    const float x0 = energies[i];
+    const float x1 = energies[i+1];
+    
+    channels[channel] += doniach_integral( peak_mean, peak_sigma, peak_amplitude, skew, x0, x1 );
+  }
+}//doniach_integral(...)
+*/
+
+void PeakDef::crystal_ball_integral( const double &peak_mean,
+                             const double &peak_sigma,
+                             const double &peak_amplitude,
+                             const double &alpha,
+                             const double &power_law,
+                             const float * const energies,
+                             double *channels,
+                             const size_t nchannel )
+{
+#ifdef _MSC_VER
+  #pragma message( "PeakDef::crystal_ball_integral is not properly coded" )
+#else
+  #warning "PeakDef::crystal_ball_integral is not properly coded"
+#endif
+  
+  for( size_t i = 0; i < nchannel; ++i )
+  {
+    const float x0 = energies[i];
+    const float x1 = energies[i+1];
+    
+    channels[i] += PeakDef::crystal_ball_integral( peak_mean, peak_sigma, peak_amplitude, alpha, power_law, x0, x1 );
+  }
+}//crystal_ball_integral(...)
+
+
+void PeakDef::double_sided_crystal_ball_integral( const double &peak_mean,
+                                               const double &peak_sigma,
+                                               const double &peak_amplitude,
+                                               const double &lower_alpha,
+                                               const double &lower_power_law,
+                                               const double &upper_alpha,
+                                               const double &upper_power_law,
+                                               const float * const energies,
+                                               double *channels,
+                                               const size_t nchannel )
+{
+#ifdef _MSC_VER
+  #pragma message( "PeakDef::double_sided_crystal_ball_integral is not properly coded" )
+#else
+  #warning "PeakDef::double_sided_crystal_ball_integral is not properly coded"
+#endif
+  
+  for( size_t i = 0; i < nchannel; ++i )
+  {
+    const float x0 = energies[i];
+    const float x1 = energies[i+1];
+    
+    channels[i] += PeakDef::double_sided_crystal_ball_integral( peak_mean, peak_sigma, peak_amplitude,
+                                                                     lower_alpha, lower_power_law,
+                                                                     upper_alpha, upper_power_law, x0, x1 );
+  }
+}//double_sided_crystal_ball_integral(...)
 
 
 double PeakDef::gauss_integral( const double x0, const double x1 ) const
 {
-  double integral = gaus_integral( m_coefficients[PeakDef::Mean],
-                                   m_coefficients[PeakDef::Sigma],
-                                   m_coefficients[PeakDef::GaussAmplitude],
-                                   x0, x1 );
+  const double &mean = m_coefficients[CoefficientType::Mean];
+  const double &sigma = m_coefficients[CoefficientType::Sigma];
+  const double &amp = m_coefficients[CoefficientType::GaussAmplitude];
   
   switch( m_skewType )
   {
-    case PeakDef::NoSkew:
-    break;
+    case SkewType::NoSkew:
+      return gaussian_integral( mean, sigma, amp, x0, x1 );
     
-    case PeakDef::LandauSkew:
-      integral += skew_integral( x0, x1 );
-    break;
+    case SkewType::LandauSkew:
+      return gaussian_integral( mean, sigma, amp, x0, x1 ) + landau_skew_integral( x0, x1 );
+      
+    case SkewType::Bortel:
+      return amp*::bortel_integral( x0, x1, mean, sigma, m_coefficients[CoefficientType::SkewPar0] );
+      
+    //case SkewType::Doniach:
+    //  return amp*doniach_integral( x0, x1, mean, sigma, m_coefficients[CoefficientType::SkewPar0] );
+      
+    case SkewType::CrystalBall:
+      return PeakDef::crystal_ball_integral( mean, sigma, amp,
+                            m_coefficients[CoefficientType::SkewPar0],
+                            m_coefficients[CoefficientType::SkewPar1],
+                            x0, x1 );
+      
+    case SkewType::DoubleSidedCrystalBall:
+      return PeakDef::double_sided_crystal_ball_integral( mean, sigma, amp,
+                                       m_coefficients[CoefficientType::SkewPar0],
+                                       m_coefficients[CoefficientType::SkewPar1],
+                                       m_coefficients[CoefficientType::SkewPar2],
+                                       m_coefficients[CoefficientType::SkewPar3],
+                                                         x0, x1 );
+      break;
+      
+    case SkewType::GaussExp:
+      return PeakDef::gauss_exp_integral( mean, sigma, amp,
+                                         m_coefficients[CoefficientType::SkewPar0], x0, x1 );
+      break;
+      
+    case SkewType::ExpGaussExp:
+      return PeakDef::exp_gauss_exp_integral( mean, sigma, amp,
+                                             m_coefficients[CoefficientType::SkewPar0],
+                                             m_coefficients[CoefficientType::SkewPar1], x0, x1 );
+      break;
   };//enum SkewType
 
-  return integral;
+  assert( 0 );
+  throw runtime_error( "Invalid skew type" );
+  return 0.0;
 }//double gauss_integral( const double x0, const double x1 ) const;
 
 
@@ -3964,24 +5136,77 @@ void PeakDef::gauss_integral( const float *energies, double *channels, const siz
   const double mean = m_coefficients[PeakDef::Mean];
   const double sigma = m_coefficients[PeakDef::Sigma];
   const double amp = m_coefficients[PeakDef::GaussAmplitude];
-  gaus_integral( mean, sigma, amp, energies, channels, nchannel );
+  
   
   switch( m_skewType )
   {
-    case PeakDef::NoSkew:
+    case SkewType::NoSkew:
+      gaussian_integral( mean, sigma, amp, energies, channels, nchannel );
       break;
       
-    case PeakDef::LandauSkew:
+    case SkewType::LandauSkew:
     {
+      gaussian_integral( mean, sigma, amp, energies, channels, nchannel );
+      
       // We dont use the current peak skew model often (at all?), so we wont bother to optimize it
       for( size_t i = 0; i < nchannel; ++i )
       {
         const float x0 = energies[i];
         const float x1 = energies[i+1];
-        channels[i] += skew_integral( x0, x1 );
+        channels[i] += landau_skew_integral( x0, x1 );
       }
       break;
     }
+      
+    case SkewType::Bortel:
+    {
+      const double skew = m_coefficients[PeakDef::SkewPar0];
+      bortel_integral( mean, sigma, amp, skew, energies, channels, nchannel );
+      break;
+    }
+      
+    //case SkewType::Doniach:
+    //{
+    //  const double skew = m_coefficients[PeakDef::SkewPar0];
+    //  doniach_integral( mean, sigma, amp, skew, energies, channels, nchannel );
+    //  break;
+    //}
+      
+    case SkewType::CrystalBall:
+    {
+      const double alpha = m_coefficients[PeakDef::SkewPar0];
+      const double power_law = m_coefficients[PeakDef::SkewPar1];
+      crystal_ball_integral( mean, sigma, amp, alpha, power_law, energies, channels, nchannel );
+      break;
+    }
+      
+    case SkewType::DoubleSidedCrystalBall:
+    {
+      const double lower_alpha = m_coefficients[PeakDef::SkewPar0];
+      const double lower_power_law = m_coefficients[PeakDef::SkewPar1];
+      const double upper_alpha = m_coefficients[PeakDef::SkewPar2];
+      const double upper_power_law = m_coefficients[PeakDef::SkewPar3];
+      
+      double_sided_crystal_ball_integral( mean, sigma, amp,
+                                         lower_alpha, lower_power_law, upper_alpha, upper_power_law,
+                                         energies, channels, nchannel );
+      break;
+    }
+     
+    case GaussExp:
+    {
+      const double skew = m_coefficients[PeakDef::SkewPar0];
+      gauss_exp_integral( mean, sigma, amp, skew, energies, channels, nchannel );
+      break;
+    }//case GaussExp:
+      
+    case ExpGaussExp:
+    {
+      const double skew_left = m_coefficients[PeakDef::SkewPar0];
+      const double skew_right = m_coefficients[PeakDef::SkewPar1];
+      exp_gauss_exp_integral( mean, sigma, amp, skew_left, skew_right, energies, channels, nchannel );
+      break;
+    }//case ExpGaussExp:
   };//enum SkewType
 }//void gauss_integral( const float * const energies, double *channels, const size_t nchannel )
 
@@ -4022,11 +5247,13 @@ double PeakDef::landau_integral( const double x0, const double x1,
   return amplitude*(y0-y1);
 }//static double landau_integral( ... )
 
-double PeakDef::skew_integral( const double xbinlow, const double xbinup,
+double PeakDef::landau_skew_integral( const double xbinlow, const double xbinup,
                                const double peak_amplitude,
                                const double peak_mean,
                                const double t, const double s, const double b )
 {
+  // NOTE: `s` and `b` should both be multiplied by the parameter sigma, before being added here
+  
   //XXX - should make landaumode and landausigma relative to peak sigma
   return peak_amplitude*landau_integral( xbinlow, xbinup, peak_mean, t, s, b );
 
@@ -4051,31 +5278,40 @@ double PeakDef::skew_integral( const double xbinlow, const double xbinup,
 
   return amp * skew;
   */
-}//double PeakDef::skew_integral(...)
+}//double landau_skew_integral(...)
 
 
-double PeakDef::skew_integral( const double x0, const double x1 ) const
+double PeakDef::landau_skew_integral( const double x0, const double x1 ) const
 {
+  assert( m_skewType == SkewType::LandauSkew );
+  if( m_skewType != SkewType::LandauSkew )
+    throw std::logic_error( "PeakDef::landau_skew_integral: Invalid skew type" );
+  
   double area = 0.0;
   
   switch( m_skewType )
   {
-    case PeakDef::NoSkew:
+    case SkewType::NoSkew:
+    case SkewType::Bortel:
+    case SkewType::CrystalBall:
+    case SkewType::DoubleSidedCrystalBall:
+    case SkewType::GaussExp:
+    case SkewType::ExpGaussExp:
       break;
       
-    case PeakDef::LandauSkew:
-      area = skew_integral( x0, x1, m_coefficients[PeakDef::GaussAmplitude],
+    case SkewType::LandauSkew:
+      area = landau_skew_integral( x0, x1, m_coefficients[PeakDef::GaussAmplitude],
                            m_coefficients[PeakDef::Mean],
-                           m_coefficients[PeakDef::LandauAmplitude],
-                           m_coefficients[PeakDef::LandauMode],
-                           m_coefficients[PeakDef::LandauSigma] );
+                           m_coefficients[PeakDef::SkewPar0],
+                           m_coefficients[PeakDef::SkewPar1]*m_coefficients[PeakDef::Sigma],
+                           m_coefficients[PeakDef::SkewPar2]*m_coefficients[PeakDef::Sigma] );
       break;
   };//switch( m_skewType )
   
   return area;
-}//double skew_integral( const double x0, const double x1 ) const
+}//double landau_skew_integral( const double x0, const double x1 ) const
 
-double PeakDef::gaus_integral( const double peak_mean, const double peak_sigma,
+double PeakDef::gaussian_integral( const double peak_mean, const double peak_sigma,
                                const double peak_amplitude,
                                const double x0, const double x1 )
 {
@@ -4088,10 +5324,10 @@ double PeakDef::gaus_integral( const double peak_mean, const double peak_sigma,
   const double erfhigharg = (x1 - peak_mean)/(sqrt2*peak_sigma);
   
   return 0.5 * peak_amplitude * (boost_erf_imp(erfhigharg) - boost_erf_imp(erflowarg));
-}//double gaus_integral(...)
+}//double gaussian_integral(...)
 
 
-void PeakDef::gaus_integral( const double peak_mean,
+void PeakDef::gaussian_integral( const double peak_mean,
                             const double peak_sigma,
                             const double peak_amplitude,
                             const float * const energies,

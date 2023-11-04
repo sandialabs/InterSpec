@@ -1979,18 +1979,43 @@ boost::any PeakModel::data( const WModelIndex &index, int role ) const
       
     case kSkewAmount:
     {
-      if( peak->skewType() == PeakDef::LandauSkew )
+      char text[64] = { '\0' };
+      
+      switch( peak->skewType() )
       {
-        char text[64];
-        snprintf( text, sizeof(text), "%.3f, W%.3f, %.3f",
-                  peak->coefficient(PeakDef::LandauAmplitude),
-                  peak->coefficient(PeakDef::LandauMode),
-                  peak->coefficient(PeakDef::LandauSigma) );
-        return WString( text );
-      }else
-      {
-        return WString( "NA" );
-      }
+        case PeakDef::NoSkew:
+          snprintf( text, sizeof(text), "NA" );
+          break;
+          
+        case PeakDef::Bortel:
+        case PeakDef::GaussExp:
+          snprintf( text, sizeof(text), "%.3f", peak->coefficient(PeakDef::SkewPar0) );
+          break;
+          
+        case PeakDef::CrystalBall:
+        case PeakDef::ExpGaussExp:
+          snprintf( text, sizeof(text), "%.3f, %.3f",
+                   peak->coefficient(PeakDef::SkewPar0),
+                   peak->coefficient(PeakDef::SkewPar1) );
+          break;
+          
+        case PeakDef::LandauSkew:
+          snprintf( text, sizeof(text), "%.3f, %.3f, %.3f",
+                    peak->coefficient(PeakDef::SkewPar0),
+                    peak->coefficient(PeakDef::SkewPar1),
+                    peak->coefficient(PeakDef::SkewPar2) );
+          break;
+          
+        case PeakDef::DoubleSidedCrystalBall:
+          snprintf( text, sizeof(text), "%.3f, %.3f, %.3f, %.4f",
+                    peak->coefficient(PeakDef::SkewPar0),
+                    peak->coefficient(PeakDef::SkewPar1),
+                    peak->coefficient(PeakDef::SkewPar2),
+                   peak->coefficient(PeakDef::SkewPar3) );
+          break;
+      }//switch( peak->skewType() )
+      
+      return WString::fromUTF8( text );
     }//case kSkewAmount:
       
     case kType:

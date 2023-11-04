@@ -78,9 +78,10 @@ public:
     Sigma,
     SigmaDrfPredicted,
     GaussAmplitude,
-    LandauAmplitude,
-    LandauMode,
-    LandauSigma,
+    SkewPar0,
+    SkewPar1,
+    SkewPar2,
+    SkewPar3,
     Chi2DOF,
     RangeStartEnergy,
     RangeEndEnergy,
@@ -169,6 +170,7 @@ protected:
   bool isDirty() const;
   
   void updateDrfFwhmTxt();
+  void setSkewInputValueRanges( const PeakDef::SkewType skewType );
 protected:
   double m_energy;
   PeakModel *m_peakModel;

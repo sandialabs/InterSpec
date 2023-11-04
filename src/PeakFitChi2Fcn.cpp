@@ -50,9 +50,10 @@ static_assert( (PeakDef::Chi2DOF+1) == int(PeakDef::NumCoefficientTypes), "PeakD
 static_assert( int(PeakFitChi2Fcn::Mean)             == int(PeakDef::Mean), "PeakFitChi2Fcn::Mean != PeakDef::Mean" );
 static_assert( int(PeakFitChi2Fcn::Sigma)            == int(PeakDef::Sigma), "PeakFitChi2Fcn::Sigma != PeakDef::Sigma" );
 static_assert( int(PeakFitChi2Fcn::GaussAmplitude)   == int(PeakDef::GaussAmplitude), "PeakFitChi2Fcn::GaussAmplitude != PeakDef::GaussAmplitude" );
-static_assert( int(PeakFitChi2Fcn::LandauAmplitude)  == int(PeakDef::LandauAmplitude), "PeakFitChi2Fcn::LandauAmplitude != PeakDef::LandauAmplitude" );
-static_assert( int(PeakFitChi2Fcn::LandauMode)       == int(PeakDef::LandauMode), "PeakFitChi2Fcn::LandauMode != PeakDef::LandauMode" );
-static_assert( int(PeakFitChi2Fcn::LandauSigma)      == int(PeakDef::LandauSigma), "PeakFitChi2Fcn::LandauSigma != PeakDef::LandauSigma" );
+static_assert( int(PeakFitChi2Fcn::SkewPar0)         == int(PeakDef::SkewPar0), "PeakFitChi2Fcn::SkewPar0 != PeakDef::SkewPar0" );
+static_assert( int(PeakFitChi2Fcn::SkewPar1)         == int(PeakDef::SkewPar1), "PeakFitChi2Fcn::SkewPar1 != PeakDef::SkewPar1" );
+static_assert( int(PeakFitChi2Fcn::SkewPar2)         == int(PeakDef::SkewPar2), "PeakFitChi2Fcn::SkewPar2 != PeakDef::SkewPar2" );
+static_assert( int(PeakFitChi2Fcn::SkewPar3)         == int(PeakDef::SkewPar3), "PeakFitChi2Fcn::SkewPar3 != PeakDef::SkewPar3" );
 static_assert( int(PeakFitChi2Fcn::Chi2DOF)          == int(PeakDef::Chi2DOF), "PeakFitChi2Fcn::Chi2DOF != PeakDef::Chi2DOF" );
 
 
@@ -343,12 +344,27 @@ void PeakFitChi2Fcn::parametersToPeaks( std::vector<PeakDef> &peaks,
         continuum->setExternalContinuum( m_continium );
     }//if( shares a continuum ) / else
     
+    const double skew_type_d = round(these_params[SkewInfoField]);
+    const auto skew_type_t = static_cast<PeakDef::SkewType>( static_cast<int>(skew_type_d) );
+    bool valid_skew_type = false;
+    switch( skew_type_t )
+    {
+      case PeakDef::NoSkew:
+      case PeakDef::LandauSkew:
+      case PeakDef::Bortel:
+      case PeakDef::CrystalBall:
+      case PeakDef::DoubleSidedCrystalBall:
+      case PeakDef::GaussExp:
+      case PeakDef::ExpGaussExp:
+        valid_skew_type = true;
+        break;
+    }//switch( skew_type_t )
     
-    assert( (these_params[SkewInfoField] == 0.0) || (these_params[SkewInfoField] == 1.0) );
-    PeakDef::SkewType skew_type = PeakDef::SkewType::NoSkew;
-    if( std::round(these_params[SkewInfoField]) == 1.0 )
-      skew_type = PeakDef::SkewType::LandauSkew;
-    candidate_peak.setSkewType( skew_type );
+    assert( valid_skew_type );
+    if( !valid_skew_type )
+      throw std::logic_error( "Invalid skew type: " + std::to_string(these_params[SkewInfoField]) );
+    
+    candidate_peak.setSkewType( skew_type_t );
   }//for( int peakn = 0; peakn < npeak; ++peakn )
 }//parametersToPeak(...)
 
@@ -640,65 +656,16 @@ void PeakFitChi2Fcn::addPeaksToFitter( ROOT::Minuit2::MnUserParameters &params,
           if( method == kFitUserIndicatedPeak )
             stepsize = 0.5*startval;
           break;
-          
-        case PeakDef::LandauAmplitude:
-          startval = 0.01;
-          stepsize = 0.001;
-          minval = 0.0;
-          maxval = 0.2;
-          if( method==kRefitPeakParameters )
-          {
-            startval = peak.coefficient(type);
-            stepsize = std::max( 0.1*peak.coefficient(type), 0.001 );
-            minval = std::max( 0.5*peak.coefficient(type), 0.0 );
-            maxval = std::max( 1.5*peak.coefficient(type), 0.15 );
-            if( minval == maxval )
-            {
-              minval = 0.0;
-              maxval = 0.15;
-            }
-          }//if( method==kRefitPeakParameters )
+        
+        case PeakDef::SkewPar0:
+        case PeakDef::SkewPar1:
+        case PeakDef::SkewPar2:
+        case PeakDef::SkewPar3:
+        {
+          //We'll grab these later
+       
           break;
-          
-        case PeakDef::LandauMode:
-          startval =  (2.0+0.3*0.22278)*peak.sigma();
-          stepsize = 0.1;
-          minval = 0.0;
-          maxval = 5.0*peak.sigma();
-          if( method==kRefitPeakParameters )
-          {
-            startval = peak.coefficient(type);
-            stepsize = 0.25*peak.sigma();
-            minval = std::max( 0.0, 0.5*peak.coefficient(type) );
-            maxval = std::max( 2.0*peak.coefficient(type), 5.0*peak.sigma() );
-            if( minval == maxval )
-            {
-              stepsize = 0.5 * peak.sigma();
-              minval = 0.0;
-              maxval = 5.0*peak.sigma();
-            }
-          }//if( method==kRefitPeakParameters )
-          break;
-          
-        case PeakDef::LandauSigma:
-          startval =  0.3*peak.sigma();
-          stepsize = 0.05*peak.sigma();
-          minval = 0.0;
-          maxval = peak.sigma();
-          if( method==kRefitPeakParameters )
-          {
-            startval = peak.coefficient(type);
-            stepsize = 0.05*peak.sigma();
-            minval = 0.5*peak.coefficient(type);
-            maxval = 2.0*peak.coefficient(type);
-            if( minval == maxval )
-            {
-              minval = 0.0;
-              maxval = peak.sigma();
-              stepsize = 0.1*peak.sigma();
-            }
-          }//if( method==kRefitPeakParameters )
-          break;
+        }//SkewPar...
           
         case PeakDef::Chi2DOF:
           startval = 0.0;
@@ -753,11 +720,38 @@ void PeakFitChi2Fcn::addPeaksToFitter( ROOT::Minuit2::MnUserParameters &params,
           break;
           
           
-        case PeakDef::LandauAmplitude:
-        case PeakDef::LandauMode:
-        case PeakDef::LandauSigma:
+        case PeakDef::SkewPar0:
+        case PeakDef::SkewPar1:
+        case PeakDef::SkewPar2:
+        case PeakDef::SkewPar3:
         {
-          if( !peak.fitFor(type) || (peak.skewType() != PeakDef::LandauSkew) )
+          bool do_fit = false;
+          startval = 0.0, stepsize = 0.0, minval = 0.0, maxval = 0.0;
+          
+          if( PeakDef::skew_parameter_range( peak.skewType(), type, minval, maxval, startval, stepsize) )
+          {
+            do_fit = true;
+            
+            if( method == kRefitPeakParameters )
+            {
+              if( (peak.coefficient(type) >= minval) && (peak.coefficient(type) <= maxval) )
+              {
+                startval = peak.coefficient(type);
+                stepsize = std::max( 0.1*peak.coefficient(type), stepsize );
+                minval = std::max( minval, fabs(0.5*peak.coefficient(type)) );
+                maxval = std::min( maxval, 1.5*fabs(peak.coefficient(type)) );
+              }
+              
+              if( minval == maxval )
+              {
+                do_fit = false;
+                startval = peak.coefficient(type);
+              }
+            }//if( method==kRefitPeakParameters )
+          }//if( parameter replies )
+          
+          
+          if( !do_fit || !peak.fitFor(type) )
           {
             params.Add( name,  peak.coefficient(type) );
           }else
@@ -774,10 +768,7 @@ void PeakFitChi2Fcn::addPeaksToFitter( ROOT::Minuit2::MnUserParameters &params,
                 break;
             }//switch(method)
           }//if( not fitting skew value ) / else
-          
-          break;
-        }//case PeakDef::LandauAmplitude/LandauMode/LandauSigma
-          
+        }//case PeakDef::SkewPar...
           
         case PeakDef::Chi2DOF:
           params.Add( name, 0.0 );
@@ -819,19 +810,8 @@ void PeakFitChi2Fcn::addPeaksToFitter( ROOT::Minuit2::MnUserParameters &params,
     
     
     {// Begin set SkewInfoField
-      double type = 0.0;
-      switch( peak.skewType() )
-      {
-        case PeakDef::NoSkew:
-          type = 0.0;
-          break;
-        
-        case PeakDef::LandauSkew:
-          type = 1.0;
-          break;
-      }
-    
-      std::string name = "Peak" + std::to_string(peakn) + "SkewType";
+      const double type = static_cast<int>( peak.skewType() );
+      const string name = "Peak" + std::to_string(peakn) + "SkewType";
       params.Add( name,  type );
     }// End set SkewInfoField
     

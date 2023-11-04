@@ -71,14 +71,15 @@ public:
   //  PeakFitChi2Fcn::PeakPars will have to be altered as well.
   enum FitPars
   {
-    Mean               = PeakDef::Mean,
-    Sigma              = PeakDef::Sigma,
-    GaussAmplitude     = PeakDef::GaussAmplitude,
-    LandauAmplitude    = PeakDef::LandauAmplitude,
-    LandauMode         = PeakDef::LandauMode,
-    LandauSigma        = PeakDef::LandauSigma,
-    Chi2DOF            = PeakDef::Chi2DOF,
-    ContinuumInfoField = PeakDef::NumCoefficientTypes,
+    Mean               = PeakDef::CoefficientType::Mean,
+    Sigma              = PeakDef::CoefficientType::Sigma,
+    GaussAmplitude     = PeakDef::CoefficientType::GaussAmplitude,
+    SkewPar0           = PeakDef::CoefficientType::SkewPar0,
+    SkewPar1           = PeakDef::CoefficientType::SkewPar1,
+    SkewPar2           = PeakDef::CoefficientType::SkewPar2,
+    SkewPar3           = PeakDef::CoefficientType::SkewPar3,
+    Chi2DOF            = PeakDef::CoefficientType::Chi2DOF,
+    ContinuumInfoField = PeakDef::CoefficientType::NumCoefficientTypes,
     SkewInfoField,
     RangeStartEnergy,
     RangeEndEnergy,

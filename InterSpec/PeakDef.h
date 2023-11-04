@@ -307,7 +307,7 @@ protected:
 };//struct PeakContinuum
 
 
-
+/*
 //skewedGaussianIntegral(...):
 //A gaussian convoluted with an exponential:
 //  http://en.wikipedia.org/wiki/Exponentially_modified_Gaussian_distribution
@@ -322,7 +322,7 @@ double skewedGaussianIntegral( double x0,  //x-value to start integrating at
                                double width, //
                                double skewness  //must be >= 0.03*width
                               );
-
+*/
 
 /** TODO: Define and implement this function
  
@@ -385,13 +385,96 @@ class PeakDef
   // If I was to re-write this class from scratch I would define peak mean by channel, and FWHM
   //  by the fraction of the peak mean, and similarly for the other quantities so that it is
   //  invariant to the energy calibration - although this isnt without issues.
-  // I would also make the PeakContinuum the primary ROI with a list of peaks beloinging to it,
+  // I would also make the PeakContinuum the primary ROI with a list of peaks belonging to it,
   //  instead of the other way around.
   
 public:
   enum SkewType
   {
-    NoSkew, LandauSkew
+    NoSkew,
+    
+    /** Depreciated, bad skew model.
+     
+     Uses three skew parameters.
+     The first is LandauAmplitude. //multiplies peak amplitude (so is between 0.0 and ~0.2)
+     The second is LandauMode.
+     The third is LandauSigma.
+     */
+    LandauSkew,
+    
+    /** The Bortel function, from the paper referenced below, is:
+     
+     Convolution of Gaussian with an left-hand exponential multiplied by a step function
+     that goes to zero above the peak mean.  The Bortel paper cited below uses two
+     exponentials, but we use only one for gamma spectroscopy.
+     
+     See: Analytical function for fitting peaks in alpha-particle spectra from Si detectors
+     G. Bortels, P. Collaers
+     International Journal of Radiation Applications and Instrumentation. Part A. Applied Radiation and Isotopes
+     Volume 38, Issue 10, 1987, Pages 831-837
+     https://doi.org/10.1016/0883-2889(87)90180-8
+     
+     Uses one skew parameter.
+     */
+    Bortel,
+    
+    /** A model of an Doniach Sunjic asymmetric lineshape.
+     
+     Commonly use in X-ray Photoelectron Spectroscopy (XPS) peak fitting.
+     
+     See https://lmfit.github.io/lmfit-py/builtin_models.html#doniachmodel
+     
+     Uses one skew parameter.
+     
+     Not currently defined because the amplitude can be infinite for non-zero skew, meaning we need some-way to specify the reported range - likely is
+     */
+    // Doniach,
+    
+    /** A Gaussian core portion and a power-law low-end tail, below a threshold.
+     
+     See https://en.wikipedia.org/wiki/Crystal_Ball_function
+     
+     Uses two skew parameters.
+     The first is `alpha`, which defines the threshold.
+     The second is `n` which defines the power-law.
+     */
+    CrystalBall,
+    
+    /** A "double-sided" version of the Crystal Ball distribution to account for high-energy skew.
+     
+     See: Search for resonances in diphoton events at $$ \sqrt{s}=13 $$ TeV with the ATLAS detector
+     Aaboud, M., G. Aad, B. Abbott, J. Abdallah, O. Abdinov, B. Abeloos, R. Aben, et al. 2016
+     http://nrs.harvard.edu/urn-3:HUL.InstRepos:29362185
+     Chapter 6
+     
+     Note also that CERNs ROOT package implements this function, with likely with some consideration
+     for power laws between 1 and 1.00001, that we dont currently do.  However, this implementation
+     is independent of the ROOT implementation, and treats the distribution as having unit area
+     when integrated over all `x`, which it doesnt appear the ROOT implementation does (but I didnt
+     check)
+     https://root.cern.ch/doc/master/RooCrystalBall_8cxx_source.html
+     
+     Uses four skew parameters.
+     The first is `alpha_low`, which defines the threshold, on the left side.
+     The second is `n_low` which defines the power-law on the left side.
+     The third is `alpha_high`, which defines the threshold, on the right side.
+     The second is `n_high` which defines the power-law on the right side.
+     */
+    DoubleSidedCrystalBall,
+    
+    /** An exponential tail stitched to a Gaussian core.
+     
+     See: A simple alternative to the Crystal Ball function.
+     Souvik Das, arXiv:1603.08591
+     https://arxiv.org/abs/1603.08591
+     */
+    GaussExp,
+    
+    /** The GausExp extended to a exponential tail on each side of the Gaussian.
+     
+     See same reference as for GaussExp.
+     */
+    ExpGaussExp
   };//enum SkewType
   
   enum DefintionType
@@ -405,9 +488,10 @@ public:
     Mean,
     Sigma,
     GaussAmplitude,
-    LandauAmplitude,   //multiplies peak amplitude (so is between 0.0 and ~0.2)
-    LandauMode,
-    LandauSigma,
+    SkewPar0,
+    SkewPar1,
+    SkewPar2,
+    SkewPar3,
     Chi2DOF,           //for peaks that share a ROI/Continuum, this values is for entire ROI/Continuum
     NumCoefficientTypes
   };//enum CoefficientType
@@ -449,8 +533,16 @@ public:
   static double extract_energy_from_peak_source_string( std::string &str );
   
   
-  
   static const char *to_string( const CoefficientType type );
+  
+  /** Gives reasonable range for skew parameter values, as well as a reasonable starting value.
+   
+   Returns true if limits if the #CoefficientType is applicable to #SkewType, or else returns false and
+   sets values to all zero
+   */
+  static bool skew_parameter_range( const SkewType skew_type, const CoefficientType coefficient,
+                                   double &lower_value, double &upper_value,
+                                   double &starting_value, double &step_size );
   
 public:
   PeakDef();
@@ -714,9 +806,9 @@ public:
    */
   void setLineColor( const Wt::WColor &color );
   
-  //skew_integral(): gives the difference in aarea between the gaussian, and
+  //landau_skew_integral(): gives the difference in area between the gaussian, and
   //  gaussian with skew applied, between x0 and x1.
-  double skew_integral( const double x0, const double x1 ) const;
+  double landau_skew_integral( const double x0, const double x1 ) const;
 
   static double landau_potential_lowerX( const double peak_mean, const double peak_sigma );
   static double landau_potential_upperX( const double peak_mean, const double peak_sigma );
@@ -725,7 +817,7 @@ public:
                                  const double land_amp,
                                  const double land_mode,
                                  const double land_sigma );
-  static double skew_integral( const double xlow,
+  static double landau_skew_integral( const double xlow,
                                const double xhigh,
                                const double peak_amplitude,
                                const double peak_mean,
@@ -740,13 +832,48 @@ public:
   bool operator==( const PeakDef &rhs ) const;
 
 
-  //gaus_integral(): Calculates the area of a Gaussian with specified mean,
+  //gaussian_integral(): Calculates the area of a Gaussian with specified mean,
   //  sigma, and amplitude, between x0 and x1.
   //  Results have approximately 9 decimal digits of accuracy.
-  static double gaus_integral( const double peak_mean,
+  static double gaussian_integral( const double peak_mean,
                                const double peak_sigma,
                                const double peak_amplitude,
                                const double x0, const double x1 );
+  
+  /*
+  static double doniach_integral( const double peak_mean,
+                                 const double peak_sigma,
+                                 const double peak_amplitude,
+                                 const double skew,
+                                 const double x0, const double x1 );
+  */
+  static double crystal_ball_integral( const double peak_mean,
+                                      const double peak_sigma,
+                                      const double peak_amplitude,
+                                      const double alpha,
+                                      const double power_law,
+                                      const double x0, const double x1 );
+  
+  static double double_sided_crystal_ball_integral( const double peak_mean,
+                                                   const double peak_sigma,
+                                                   const double peak_amplitude,
+                                                   const double lower_alpha,
+                                                   const double lower_power_law,
+                                                   const double upper_alpha,
+                                                   const double upper_power_law,
+                                                   const double x0, const double x1 );
+  
+  static double gauss_exp_integral( const double peak_mean,
+                                      const double peak_sigma,
+                                      const double peak_amplitude,
+                                      const double skew,
+                                      const double x0, const double x1 );
+  static double exp_gauss_exp_integral( const double peak_mean,
+                                      const double peak_sigma,
+                                      const double peak_amplitude,
+                                      const double skew_left,
+                                      const double skew_right,
+                                      const double x0, const double x1 );
   
   /** Slightly CPU optimized method of computing the Gaussian integral over a number of channels.
    
@@ -763,13 +890,82 @@ public:
           will not be zeroed); must have at least `nchannel` entries
    @param nchannel The number of channels to do the integration over.
    */
-  static void gaus_integral( const double peak_mean,
+  static void gaussian_integral( const double peak_mean,
                               const double peak_sigma,
                               const double peak_amplitude,
                               const float * const energies,
                               double *channels,
                               const size_t nchannel );
 
+  /** Slightly CPU optimized method of computing the peak area, for Bortel skew over a number of channels.
+   
+   Cuts the number of calls to the `erf`, `erfc`, and exp functionsn half.
+   Also, only calculates values between -12 to +8 sigma of the mean/
+   
+   @param peak_mean
+   @param peak_sigma
+   @param peak_amplitude
+   @param skew The Bortel skew of the peak.
+   @param energies Array of lower channel energies; must have at least one more entry than
+          `nchannel`
+   @param channels Channel count array integrals of Gaussian and Skew will be _added_ to (e.g.,
+          will not be zeroed); must have at least `nchannel` entries
+   @param nchannel The number of channels to do the integration over.
+   */
+  static void bortel_integral( const double &peak_mean,
+                              const double &peak_sigma,
+                              const double &peak_amplitude,
+                              const double &skew,
+                              const float * const energies,
+                              double *channels,
+                              const size_t nchannel );
+  /*
+  static void doniach_integral( const double &peak_mean,
+                               const double &peak_sigma,
+                               const double &peak_amplitude,
+                               const double &skew,
+                               const float * const energies,
+                               double *channels,
+                               const size_t nchannel );
+  */
+  static void crystal_ball_integral( const double &peak_mean,
+                               const double &peak_sigma,
+                               const double &peak_amplitude,
+                               const double &alpha,
+                               const double &power_law,
+                               const float * const energies,
+                               double *channels,
+                               const size_t nchannel );
+  
+  static void double_sided_crystal_ball_integral( const double &peak_mean,
+                                                 const double &peak_sigma,
+                                                 const double &peak_amplitude,
+                                                 const double &lower_alpha,
+                                                 const double &lower_power_law,
+                                                 const double &upper_alpha,
+                                                 const double &upper_power_law,
+                                                 const float * const energies,
+                                                 double *channels,
+                                                 const size_t nchannel );
+  static void gauss_exp_integral( const double &peak_mean,
+                               const double &peak_sigma,
+                               const double &peak_amplitude,
+                               const double &skew,
+                               const float * const energies,
+                               double *channels,
+                               const size_t nchannel );
+  
+  static void exp_gauss_exp_integral( const double &peak_mean,
+                               const double &peak_sigma,
+                               const double &peak_amplitude,
+                               const double &skew_left,
+                               const double &skew_right,
+                               const float * const energies,
+                               double *channels,
+                               const size_t nchannel );
+  
+  
+  
   static bool causilyConnected( const PeakDef &lower_peak,
                                 const PeakDef &upper_peak,
                                 const double ncausality,
