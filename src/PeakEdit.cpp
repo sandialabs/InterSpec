@@ -498,9 +498,6 @@ void PeakEdit::init()
       case PeakDef::NoSkew:
         m_skewType->addItem( "None" );
         break;
-      case PeakDef::LandauSkew:
-        m_skewType->addItem( "Landau Skew" );
-        break;
       case PeakDef::Bortel:
         m_skewType->addItem( "Bortel" );
         break;
@@ -1796,108 +1793,6 @@ void PeakEdit::skewTypeChanged()
       m_valueTable->rowAt(1+PeakEdit::SkewPar3)->setHidden( true );
     break;
       
-    case PeakDef::LandauSkew:
-      if( !m_currentPeak.gausPeak() )
-      {
-        passMessage( "Only Gaussian peaks can have a skew.", WarningWidget::WarningMsgHigh );
-        m_skewType->setCurrentIndex( PeakDef::NoSkew );
-        return;
-      }//if( !m_currentPeak.gausPeak() )
-      
-      m_valueTable->rowAt(1+PeakEdit::SkewPar0)->setHidden( false );
-      m_valueTable->rowAt(1+PeakEdit::SkewPar1)->setHidden( false );
-      m_valueTable->rowAt(1+PeakEdit::SkewPar2)->setHidden( false );
-      
-      
-      if( m_currentPeak.coefficient(PeakDef::SkewPar1) <= 0.0 )
-      {
-        const double val = (2.5+0.3*0.22278)*m_currentPeak.sigma();
-        
-        char valTxt[32];
-        snprintf( valTxt, sizeof(valTxt), "%.6f", val );
-        m_currentPeak.set_coefficient( val, PeakDef::SkewPar1 );
-        m_values[PeakDef::SkewPar1]->setText( valTxt );
-        m_uncertainties[PeakDef::SkewPar1]->setText( "" );
-      }//if( SkewPar1 not specified )
-      
-      if( m_currentPeak.coefficient(PeakDef::SkewPar2) <= 0.0 )
-      {
-        const double val = 3.0*m_currentPeak.sigma();
-        char valTxt[32];
-        snprintf( valTxt, sizeof(valTxt), "%.6f", val );
-        m_currentPeak.set_coefficient( val, PeakDef::SkewPar2 );
-        m_values[PeakDef::SkewPar2]->setText( valTxt );
-        m_uncertainties[PeakDef::SkewPar2]->setText( "" );
-      }//if( SkewPar1 not specified )
-
-      
-      if( m_currentPeak.coefficient(PeakDef::SkewPar0) <= 0.0 )
-      {
-        //Integrate area between continuum and peak to guess multiple
-        double amp = 0.003;
-        std::shared_ptr<const Measurement> data = m_viewer->displayedHistogram(SpecUtils::SpectrumType::Foreground);
-//        std::shared_ptr<const Measurement> continuum = m_viewer->continuum();
-        
-        if( data )
-        {
-          double lowe, highe;
-          findROIEnergyLimits( lowe, highe, m_currentPeak, data );
-          const double upe =  m_currentPeak.mean() - 3.5*m_currentPeak.sigma();
-          if( upe > lowe )
-          {
-            double contArea = -1.0;
-            const double dataArea = gamma_integral( data, lowe, upe );
-            
-            switch( continuum->type() )
-            {
-              case PeakContinuum::NoOffset:
-                break;
-                
-              case PeakContinuum::External:
-//                if( continuum )
-//                  contArea = integral( continuum, lowe, upe );
-                contArea = continuum->offset_integral( lowe, upe, nullptr );
-                break;
-                
-              case PeakContinuum::Constant: case PeakContinuum::Linear:
-              case PeakContinuum::Quadratic: case PeakContinuum::Cubic:
-//                contArea = m_currentPeak.offset_integral( lowe, upe );
-                contArea = continuum->offset_integral( lowe, upe, nullptr );
-                break;
-                
-              case PeakContinuum::FlatStep:
-              case PeakContinuum::LinearStep:
-              case PeakContinuum::BiLinearStep:
-              {
-                std::shared_ptr<const Measurement> data = m_viewer->displayedHistogram(SpecUtils::SpectrumType::Foreground);
-                contArea = continuum->offset_integral( lowe, upe, data );
-              }
-            }//switch( m_currentPeak.offsetType() )
-            
-            if( dataArea > contArea )
-              amp = (dataArea-contArea) / m_currentPeak.peakArea();
-            
-            PeakDef tempPeak = m_currentPeak;
-            tempPeak.setSkewType( type );
-            tempPeak.set_coefficient( 1.0, PeakDef::SkewPar0 );
-            tempPeak.set_coefficient( 1.0, PeakDef::GaussAmplitude );
-            const double frac = tempPeak.landau_skew_integral( lowe, upe );
-            
-            if( (frac > 0.0) && !IsInf(frac) && !IsNan(frac) )
-              amp /= frac;
-            
-            m_currentPeak.set_coefficient( amp, PeakDef::SkewPar0 );
-          }//if( upp > lowe )
-        }//if( data )
-        
-        
-        const string val = std::to_string( amp );
-        m_values[PeakDef::SkewPar0]->setText( val );
-        m_uncertainties[PeakDef::SkewPar0]->setText( "" );
-      }//if( SkewPar0 not specified )
-    break;
-      
-      
     case PeakDef::SkewType::Bortel:
     case PeakDef::SkewType::CrystalBall:
     case PeakDef::SkewType::DoubleSidedCrystalBall:
@@ -2370,7 +2265,6 @@ void PeakEdit::apply()
       switch( skewType )
       {
         case PeakDef::SkewType::NoSkew:
-        case PeakDef::SkewType::LandauSkew:
         case PeakDef::SkewType::Bortel:
         case PeakDef::SkewType::GaussExp:
         case PeakDef::SkewType::CrystalBall:

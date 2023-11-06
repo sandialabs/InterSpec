@@ -1971,10 +1971,7 @@ boost::any PeakModel::data( const WModelIndex &index, int role ) const
       
     case kHasSkew:
     {
-      if( peak->skewType() == PeakDef::LandauSkew )
-        return WString( "True" );
-      else
-        return WString( "False" );
+      return WString( (peak->skewType() == PeakDef::NoSkew) ? "False" : "True" );
     }//case kHasSkew:
       
     case kSkewAmount:
@@ -1997,13 +1994,6 @@ boost::any PeakModel::data( const WModelIndex &index, int role ) const
           snprintf( text, sizeof(text), "%.3f, %.3f",
                    peak->coefficient(PeakDef::SkewPar0),
                    peak->coefficient(PeakDef::SkewPar1) );
-          break;
-          
-        case PeakDef::LandauSkew:
-          snprintf( text, sizeof(text), "%.3f, %.3f, %.3f",
-                    peak->coefficient(PeakDef::SkewPar0),
-                    peak->coefficient(PeakDef::SkewPar1),
-                    peak->coefficient(PeakDef::SkewPar2) );
           break;
           
         case PeakDef::DoubleSidedCrystalBall:

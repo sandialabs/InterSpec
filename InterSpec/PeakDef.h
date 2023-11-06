@@ -392,16 +392,7 @@ public:
   enum SkewType
   {
     NoSkew,
-    
-    /** Depreciated, bad skew model.
-     
-     Uses three skew parameters.
-     The first is LandauAmplitude. //multiplies peak amplitude (so is between 0.0 and ~0.2)
-     The second is LandauMode.
-     The third is LandauSigma.
-     */
-    LandauSkew,
-    
+  
     /** The Bortel function, from the paper referenced below, is:
      
      Convolution of Gaussian with an left-hand exponential multiplied by a step function
@@ -807,25 +798,6 @@ public:
   /** Sets the CSS style color of peak.
    */
   void setLineColor( const Wt::WColor &color );
-  
-  //landau_skew_integral(): gives the difference in area between the gaussian, and
-  //  gaussian with skew applied, between x0 and x1.
-  double landau_skew_integral( const double x0, const double x1 ) const;
-
-  static double landau_potential_lowerX( const double peak_mean, const double peak_sigma );
-  static double landau_potential_upperX( const double peak_mean, const double peak_sigma );
-  static double landau_integral( const double x0, const double x1,
-                                 const double peak_mean,
-                                 const double land_amp,
-                                 const double land_mode,
-                                 const double land_sigma );
-  static double landau_skew_integral( const double xlow,
-                               const double xhigh,
-                               const double peak_amplitude,
-                               const double peak_mean,
-                               const double p0,
-                               const double p1,
-                               const double p2 );
 
   static bool lessThanByMean( const PeakDef &lhs, const PeakDef &rhs );
   static bool lessThanByMeanShrdPtr( const std::shared_ptr<const PeakDef> &lhs,
@@ -1080,20 +1052,6 @@ public:
 public:
   std::string m_userLabel;  //Encoded as UTF8
   
-  //The Landau is evaluated as:
-  //  landau_amplitude*TMath::Landau(mean-x,landau_mode,landau_sigma,true)
-  //  reasonable
-  //landau_mode is how far to the left of the peak mean the most probable value
-  //  of the landau should be (a larger landau_mode shifts further to left)
-  //landau_sigma is the width of the landau distribution
-  //landau_amplitude is the total area of the landau distribution if integrated
-  //  from negative to positive infinity
-  //The maximum value of the landau distribution for this peak is at
-  //  mean-landau_mode+(0.22278*landau_sigma)
-  //  and by 2.622 landau_sigma to the right of this is down 0.01
-  //  times the maximum amplitude.  It takes about 25 landau_sigma to the left
-  //  of this point an amplitude of 0.01 times the maximum value
-  //  double landau_amplitude, landau_mode, landau_sigma; //landau_amplitude==0.0 indicates dont draw landau
   DefintionType m_type;
   SkewType m_skewType;
   double m_coefficients[NumCoefficientTypes];

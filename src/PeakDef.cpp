@@ -56,7 +56,7 @@ using namespace std;
 using SpecUtils::Measurement;
 
 /** Peak XML minor version  changes:
- 20231031: Minor version incremented from 1 to 2 to account for new peak skew models
+ 20231031: Minor version incremented from 1 to 2 to account for new peak skew models, and removal of Landau skew model
  */
 const int PeakDef::sm_xmlSerializationMajorVersion = 0;
 const int PeakDef::sm_xmlSerializationMinorVersion = 2;
@@ -699,76 +699,6 @@ namespace
       
     return false;
   }//bool gives_off_gammas( const SandiaDecay::Nuclide *nuc )
-  
-  
-  double landau_cdf(double x, double xi, double x0) {
-    // implementation of landau distribution (from DISLAN)
-    //The algorithm was taken from the Cernlib function dislan(G110)
-    //Reference: K.S.Kolbig and B.Schorr, "A program package for the Landau
-    //distribution", Computer Phys.Comm., 31(1984), 97-111
-    //
-    //Lifted from the root/math/mathcore/src/ProbFuncMathCore.cxx file
-    //  by wcjohns 20120216
-    
-    static double p1[5] = {0.2514091491e+0,-0.6250580444e-1, 0.1458381230e-1, -0.2108817737e-2, 0.7411247290e-3};
-    static double q1[5] = {1.0            ,-0.5571175625e-2, 0.6225310236e-1, -0.3137378427e-2, 0.1931496439e-2};
-    
-    static double p2[4] = {0.2868328584e+0, 0.3564363231e+0, 0.1523518695e+0, 0.2251304883e-1};
-    static double q2[4] = {1.0            , 0.6191136137e+0, 0.1720721448e+0, 0.2278594771e-1};
-    
-    static double p3[4] = {0.2868329066e+0, 0.3003828436e+0, 0.9950951941e-1, 0.8733827185e-2};
-    static double q3[4] = {1.0            , 0.4237190502e+0, 0.1095631512e+0, 0.8693851567e-2};
-    
-    static double p4[4] = {0.1000351630e+1, 0.4503592498e+1, 0.1085883880e+2, 0.7536052269e+1};
-    static double q4[4] = {1.0            , 0.5539969678e+1, 0.1933581111e+2, 0.2721321508e+2};
-    
-    static double p5[4] = {0.1000006517e+1, 0.4909414111e+2, 0.8505544753e+2, 0.1532153455e+3};
-    static double q5[4] = {1.0            , 0.5009928881e+2, 0.1399819104e+3, 0.4200002909e+3};
-    
-    static double p6[4] = {0.1000000983e+1, 0.1329868456e+3, 0.9162149244e+3, -0.9605054274e+3};
-    static double q6[4] = {1.0            , 0.1339887843e+3, 0.1055990413e+4, 0.5532224619e+3};
-    
-    static double a1[4] = {0, -0.4583333333e+0, 0.6675347222e+0,-0.1641741416e+1};
-    
-    static double a2[4] = {0,  1.0            ,-0.4227843351e+0,-0.2043403138e+1};
-    
-    double v = (x - x0)/xi;
-    double u;
-    double lan;
-    
-    if (v < -5.5) {
-      u = std::exp(v+1);
-      lan = 0.3989422803*std::exp(-1./u)*std::sqrt(u)*(1+(a1[1]+(a1[2]+a1[3]*u)*u)*u);
-    }
-    else if (v < -1 ) {
-      u = std::exp(-v-1);
-      lan = (std::exp(-u)/std::sqrt(u))*(p1[0]+(p1[1]+(p1[2]+(p1[3]+p1[4]*v)*v)*v)*v)/
-      (q1[0]+(q1[1]+(q1[2]+(q1[3]+q1[4]*v)*v)*v)*v);
-    }
-    else if (v < 1)
-      lan = (p2[0]+(p2[1]+(p2[2]+p2[3]*v)*v)*v)/(q2[0]+(q2[1]+(q2[2]+q2[3]*v)*v)*v);
-    else if (v < 4)
-      lan = (p3[0]+(p3[1]+(p3[2]+p3[3]*v)*v)*v)/(q3[0]+(q3[1]+(q3[2]+q3[3]*v)*v)*v);
-    else if (v < 12) {
-      u = 1./v;
-      lan = (p4[0]+(p4[1]+(p4[2]+p4[3]*u)*u)*u)/(q4[0]+(q4[1]+(q4[2]+q4[3]*u)*u)*u);
-    }
-    else if (v < 50) {
-      u = 1./v;
-      lan = (p5[0]+(p5[1]+(p5[2]+p5[3]*u)*u)*u)/(q5[0]+(q5[1]+(q5[2]+q5[3]*u)*u)*u);
-    }
-    else if (v < 300) {
-      u = 1./v;
-      lan = (p6[0]+(p6[1]+(p6[2]+p6[3]*u)*u)*u)/(q6[0]+(q6[1]+(q6[2]+q6[3]*u)*u)*u);
-    }
-    else {
-      u = 1./(v-v*std::log(v)/(v+1));
-      lan = 1-(a2[1]+(a2[2]+a2[3]*u)*u)*u;
-    }
-    
-    return lan;
-  }//double landau_cdf(double x, double xi, double x0)
-
 }//namespace
 
 /*
@@ -1426,17 +1356,6 @@ void estimatePeakFitRange( const PeakDef &peak, const std::shared_ptr<const Meas
     upper_channel = dataH->find_gamma_channel( mean + 4.0*sigma );
   }
   
-  if( peak.skewType() == PeakDef::LandauSkew )
-  {
-    double landau_mode = peak.coefficient(PeakDef::CoefficientType::SkewPar1);
-    double landau_sigma = peak.coefficient(PeakDef::SkewPar2);
-    cout << "xlow was " << lowxrange << " now is ";
-    lowxrange = min( lowxrange, mean-landau_mode+(0.22278*landau_sigma) - 10.0*landau_sigma );
-    cout << lowxrange << endl;
-    lower_channel = dataH->find_gamma_channel( lowxrange );
-    upper_channel = dataH->find_gamma_channel( highxrange );
-  }//if( we have a landau tail )
-  
   if( lower_channel > upper_channel )
       std::swap( lower_channel, upper_channel );
       
@@ -1974,40 +1893,6 @@ bool PeakDef::skew_parameter_range( const SkewType skew_type, const CoefficientT
     case NoSkew:
       return false;
       
-    case SkewType::LandauSkew:
-    {
-      switch( coef )
-      {
-        case CoefficientType::SkewPar0:
-          //LandauAmplitude
-          lower_value = 0.0;
-          upper_value = 0.5;
-          starting_value = 0.05; //total guess
-          break;
-          
-        case CoefficientType::SkewPar1:
-          //LandauMode
-          starting_value = (2.0+0.3*0.22278);
-          step_size = 0.1;
-          lower_value = 0.0;
-          upper_value = 5.0;
-          break;
-          
-        case CoefficientType::SkewPar2:
-          //LandauSigma
-          starting_value = 0.3;
-          step_size = 0.05;
-          lower_value = 0.0;
-          upper_value = 1.0;
-          break;
-          
-        default:
-          return false;
-      }//switch( coef )
-      
-      break;
-    }//case LandauSkew:
-      
     case SkewType::Bortel:
     {
       if( coef != CoefficientType::SkewPar0 )
@@ -2533,7 +2418,6 @@ rapidxml::xml_node<char> *PeakDef::toXml( rapidxml::xml_node<char> *parent,
   switch( m_skewType )
   {
     case NoSkew:                 val = "NoSkew";                 break;
-    case LandauSkew:             val = "LandauSkew";             break;
     case Bortel:                 val = "Bortel";                 break;
     //case Doniach:                val = "Doniach";                break;
     case CrystalBall:            val = "CrystalBall";            break;
@@ -2563,14 +2447,14 @@ rapidxml::xml_node<char> *PeakDef::toXml( rapidxml::xml_node<char> *parent,
         break;
         
       case SkewPar0:
-        if( (m_skewType == NoSkew) || (m_skewType == LandauSkew) )
+        if( (m_skewType == NoSkew) )
           extra_label = "LandauAmplitude";
         if( m_skewType == NoSkew )
           label = nullptr;
         break;
         
       case SkewPar1:
-        if( (m_skewType == NoSkew) || (m_skewType == LandauSkew) )
+        if( (m_skewType == NoSkew) )
           extra_label = "LandauMode";
         if( (m_skewType != CrystalBall)
            && (m_skewType != DoubleSidedCrystalBall)
@@ -2581,7 +2465,7 @@ rapidxml::xml_node<char> *PeakDef::toXml( rapidxml::xml_node<char> *parent,
         break;
         
       case SkewPar2:
-        if( (m_skewType == NoSkew) || (m_skewType == LandauSkew) )
+        if( (m_skewType == NoSkew) )
           extra_label = "LandauSigma";
         if( m_skewType != DoubleSidedCrystalBall )
           label = nullptr;
@@ -2596,14 +2480,6 @@ rapidxml::xml_node<char> *PeakDef::toXml( rapidxml::xml_node<char> *parent,
     auto add_node = [this, &buffer, doc, peak_node, t]( const char *label, const bool is_deprecated ){
       double value = m_coefficients[t];
       double uncert = m_uncertainties[t];
-      
-      // For backwards compatibility for pre 20231101, before we stored LandauMode and LandauSigma
-      //  relative to peak FWHM.
-      if( (m_skewType == LandauSkew) && ((t == SkewPar1) || (t == SkewPar2)) )
-      {
-        value *= m_coefficients[CoefficientType::Sigma];
-        uncert *= m_coefficients[CoefficientType::Sigma];
-      }
       
       snprintf( buffer, sizeof(buffer), "%1.8e %1.8e", value, uncert );
       const char *val = doc->allocate_string( buffer );
@@ -2878,7 +2754,7 @@ void PeakDef::fromXml( const rapidxml::xml_node<char> *peak_node,
   if( !node || !node->value_size() || compare(node->value(),node->value_size(),"NoSkew",6,false) )
     m_skewType = NoSkew;
   else if( compare(node->value(),node->value_size(),"LandauSkew",10,false) )
-    m_skewType = LandauSkew;
+    m_skewType = NoSkew;  //Pre 20231101, LandauSkew was defined, but I dont think ever use, so just throw it awa
   else if( compare(node->value(),node->value_size(),"Bortel",6,false)
           || compare(node->value(),node->value_size(),"ExGauss",7,false) )
     m_skewType = Bortel;
@@ -3445,10 +3321,6 @@ std::string PeakDef::gaus_peaks_to_json(const std::vector<std::shared_ptr<const 
       case PeakDef::NoSkew:
         answer << q << "NoSkew" << q << ",";
         break;
-        
-      case PeakDef::LandauSkew:
-        answer << q << "LandauSkew" << q << ",";
-        break;
       
       case Bortel:
         answer << q << "Bortel" << q << ",";
@@ -3699,138 +3571,25 @@ void PeakDef::makeUniqueNewContinuum()
 //The below should in principle take care of gaussian area and the skew area
 double PeakDef::peakArea() const
 {
-  double amp = m_coefficients[PeakDef::GaussAmplitude];
-  
-  switch( m_skewType )
-  {
-    case PeakDef::SkewType::NoSkew:
-    case PeakDef::SkewType::Bortel:
-    case PeakDef::SkewType::CrystalBall:
-    case PeakDef::SkewType::DoubleSidedCrystalBall:
-    case PeakDef::SkewType::GaussExp:
-    case PeakDef::SkewType::ExpGaussExp:
-    break;
-    
-    case PeakDef::SkewType::LandauSkew:
-      amp += landau_skew_integral( lowerX(), upperX() );
-    break;
-  }//switch( m_skewType )
-  
-  return amp;
+  return m_coefficients[PeakDef::GaussAmplitude];
 }//double peakArea() const
 
 
 double PeakDef::peakAreaUncert() const
 {
-  double uncert = m_uncertainties[PeakDef::GaussAmplitude];
-  
-  switch( m_skewType )
-  {
-    case PeakDef::NoSkew:
-    case PeakDef::Bortel:
-    //case PeakDef::Doniach:
-    case PeakDef::CrystalBall:
-    case PeakDef::DoubleSidedCrystalBall:
-    case GaussExp:
-    case ExpGaussExp:
-    break;
-      
-    case PeakDef::LandauSkew:
-    {
-      const double skew_area = landau_skew_integral( lowerX(), upperX() );
-      const double frac_uncert = m_uncertainties[PeakDef::SkewPar0]
-                                 / m_coefficients[PeakDef::SkewPar0];
-      const double skew_uncert = skew_area * frac_uncert;
-      //XXX - below assumes ampltude and skew amplitude are uncorelated,
-      //      which they are not.
-      uncert = sqrt( uncert*uncert + skew_uncert*skew_uncert );
-      break;
-    }//case PeakDef::LandauSkew:
-  }//switch( m_skewType )
-  
-  return uncert;
+  return m_uncertainties[PeakDef::GaussAmplitude];
 }//double peakAreaUncert() const
 
 
 void PeakDef::setPeakArea( const double a )
 {
-  double area = a; //m_coefficients[PeakDef::GaussAmplitude];
-  
-  switch( m_skewType )
-  {
-    case PeakDef::NoSkew:
-    case PeakDef::Bortel:
-    //case PeakDef::Doniach:
-    case PeakDef::CrystalBall:
-    case PeakDef::DoubleSidedCrystalBall:
-    case GaussExp:
-    case ExpGaussExp:
-    break;
-      
-    case PeakDef::LandauSkew:
-    {
-      const double skew_area = landau_skew_integral( lowerX(), upperX() );
-      const double skew_frac = skew_area / (skew_area + area);
-      area = (1.0 - skew_frac) * a;
-      break;
-    }//case PeakDef::LandauSkew:
-  }//switch( m_skewType )
-  
-  m_coefficients[PeakDef::GaussAmplitude] = area;
+  m_coefficients[PeakDef::GaussAmplitude] = a;
 }//void PeakDef::setPeakArea( const double a )
 
 
 void PeakDef::setPeakAreaUncert( const double uncert )
 {
-  switch( m_skewType )
-  {
-    case PeakDef::NoSkew:
-    case PeakDef::Bortel:
-    //case PeakDef::Doniach:
-    case PeakDef::CrystalBall:
-    case PeakDef::DoubleSidedCrystalBall:
-    case GaussExp:
-    case ExpGaussExp:
-      m_uncertainties[PeakDef::GaussAmplitude] = uncert;
-    break;
-      
-    case PeakDef::LandauSkew:
-    {
-      //TODO: the below only modifies the gaus uncertainty, and not the skew
-      //  uncertainty - I was just to lazy to do it properly (should also look
-      //  at how correlated the skew amplitude error is to peak amplitude error
-      //  ...)
-      const double skew_area = landau_skew_integral( lowerX(), upperX() );
-      const double gauss_area = m_coefficients[PeakDef::GaussAmplitude];
-      const double total_area = skew_area + gauss_area;
-      const double frac_uncert = uncert / total_area;
-      const double new_gauss_uncert = frac_uncert * gauss_area;
-      m_uncertainties[PeakDef::GaussAmplitude] = new_gauss_uncert;
-      
-      /*
-      const double gaussuncert = m_coefficients[PeakDef::GaussAmplitude];
-      const double skewuncert = m_coefficients[PeakDef::SkewPar0];
-      
-      if( skewuncert > 0.0 && skew_area > 0.0 )
-      {
-        const double gauss_area = m_coefficients[PeakDef::GaussAmplitude];
-        const double area = skew_area + gauss_area;
-        const double skew_uncert = skew_area * skewuncert
-                                   / m_coefficients[PeakDef::SkewPar0];
-        const double skew_frac_uncert = skew_uncert / (skew_uncert+gaussuncert);
-        
-        const double skew_uncert = skew_area * skew_frac_uncert
-        
-        m_uncertainties[PeakDef::GaussAmplitude] = fracuncert*gauss_area;
-        m_uncertainties[PeakDef::SkewPar0] = fracuncert*;
-      }else
-      {
-        m_uncertainties[PeakDef::GaussAmplitude] = uncert;
-      }//if( skewuncert > 0.0 ) / else
-       */
-      break;
-    }//case PeakDef::LandauSkew:
-  }//switch( m_skewType )
+  m_uncertainties[PeakDef::GaussAmplitude] = uncert;
 }//void setPeakAreaUncert( const double a )
 
 
@@ -4684,12 +4443,6 @@ double PeakDef::lowerX() const
     case NoSkew:
       return mean - 4.0*sigma;
       
-    case LandauSkew:
-      // This next line needs to be checked
-      return min(m_coefficients[PeakDef::Mean] - m_coefficients[PeakDef::SkewPar2]+(0.22278*m_coefficients[PeakDef::SkewPar2])-25.0*m_coefficients[PeakDef::SkewPar1],
-                 mean - 4.0*sigma );
-      break;
-      
     case Bortel:
     {
       // Find `x` so that only 2.5% of the distribution is to the left, but dont go any more
@@ -4804,7 +4557,6 @@ double PeakDef::upperX() const
   {
     case NoSkew:
     case GaussExp:
-    case LandauSkew:
     case Bortel:
     case CrystalBall:
       return mean + 4.0*sigma;
@@ -5010,13 +4762,14 @@ double PeakDef::double_sided_crystal_ball_integral( const double peak_mean,
   return peak_amplitude * answer;
 }//double_sided_crystal_ball_integral(...)
 
+
 double PeakDef::gauss_exp_integral( const double peak_mean,
                                     const double peak_sigma,
                                     const double peak_amplitude,
                                     const double skew,
                                     const double x0, const double x1 )
 {
-  return gauss_exp_integral( peak_mean, peak_sigma, peak_amplitude, skew, x0, x1 );
+  return peak_amplitude * ::gauss_exp_integral( peak_mean, peak_sigma, skew, x0, x1 );
 }
 
 
@@ -5168,10 +4921,7 @@ double PeakDef::gauss_integral( const double x0, const double x1 ) const
   {
     case SkewType::NoSkew:
       return gaussian_integral( mean, sigma, amp, x0, x1 );
-    
-    case SkewType::LandauSkew:
-      return gaussian_integral( mean, sigma, amp, x0, x1 ) + landau_skew_integral( x0, x1 );
-      
+          
     case SkewType::Bortel:
       return amp*::bortel_integral( x0, x1, mean, sigma, m_coefficients[CoefficientType::SkewPar0] );
       
@@ -5223,20 +4973,6 @@ void PeakDef::gauss_integral( const float *energies, double *channels, const siz
     case SkewType::NoSkew:
       gaussian_integral( mean, sigma, amp, energies, channels, nchannel );
       break;
-      
-    case SkewType::LandauSkew:
-    {
-      gaussian_integral( mean, sigma, amp, energies, channels, nchannel );
-      
-      // We dont use the current peak skew model often (at all?), so we wont bother to optimize it
-      for( size_t i = 0; i < nchannel; ++i )
-      {
-        const float x0 = energies[i];
-        const float x1 = energies[i+1];
-        channels[i] += landau_skew_integral( x0, x1 );
-      }
-      break;
-    }
       
     case SkewType::Bortel:
     {
@@ -5297,99 +5033,6 @@ double PeakDef::offset_integral( const double x0, const double x1,
   return m_continuum->offset_integral( x0, x1, data );
 }//double offset_integral( const double x0, const double x1 ) const
 
-
-double PeakDef::landau_potential_lowerX( const double peak_mean,
-                                          const double peak_sigma )
-{
-  return peak_mean - 8.0*peak_sigma;
-}//double landau_potential_lowerX() const
-
-
-double PeakDef::landau_potential_upperX( const double peak_mean,
-                                          const double /*peak_sigma*/)
-{
-  return peak_mean;
-}//double landau_potential_upperX() const
-
-
-double PeakDef::landau_integral( const double x0, const double x1,
-                                  const double peak_mean,
-                                  const double amplitude,
-                                  const double mode,
-                                  const double sigma )
-{
-  if( amplitude <= 0.0 )
-    return 0.0;
-
-  const double y0 = landau_cdf( peak_mean - x0, mode, sigma );
-  const double y1 = landau_cdf( peak_mean - x1, mode, sigma );
-  
-  return amplitude*(y0-y1);
-}//static double landau_integral( ... )
-
-double PeakDef::landau_skew_integral( const double xbinlow, const double xbinup,
-                               const double peak_amplitude,
-                               const double peak_mean,
-                               const double t, const double s, const double b )
-{
-  // NOTE: `s` and `b` should both be multiplied by the parameter sigma, before being added here
-  
-  //XXX - should make landaumode and landausigma relative to peak sigma
-  return peak_amplitude*landau_integral( xbinlow, xbinup, peak_mean, t, s, b );
-
-  /*
-  //Below is an implementation of the skew definition TSpectrumFit uses.
-  //  I cant seem to get it to work real well when using TMinuit2 to fit for
-  //  the skew - additionally I dont know if the s*erfc( p )/2 term is well
-  //  motoivated.
-  const double amp = peak_amplitude /sqrt( 2.0*boost::math::constants::pi<double>()*sigma*sigma );
-
-  const double x = (xbinup+xbinlow)/2.0;
-  const double p = (x-peak_mean)/sigma;
-  const double c = p + 1.0 / (2.0 * b);
-  double e = p / b;
-  if( e > 700.0 )
-    e = 700.0;
-
-  double skew = 0.0;
-  if( b != 0.0 )
-    skew += 0.5*t*exp( e ) * boost::math::erfc( c );
-  skew += 0.5*s*boost::math::erfc( p );
-
-  return amp * skew;
-  */
-}//double landau_skew_integral(...)
-
-
-double PeakDef::landau_skew_integral( const double x0, const double x1 ) const
-{
-  assert( m_skewType == SkewType::LandauSkew );
-  if( m_skewType != SkewType::LandauSkew )
-    throw std::logic_error( "PeakDef::landau_skew_integral: Invalid skew type" );
-  
-  double area = 0.0;
-  
-  switch( m_skewType )
-  {
-    case SkewType::NoSkew:
-    case SkewType::Bortel:
-    case SkewType::CrystalBall:
-    case SkewType::DoubleSidedCrystalBall:
-    case SkewType::GaussExp:
-    case SkewType::ExpGaussExp:
-      break;
-      
-    case SkewType::LandauSkew:
-      area = landau_skew_integral( x0, x1, m_coefficients[PeakDef::GaussAmplitude],
-                           m_coefficients[PeakDef::Mean],
-                           m_coefficients[PeakDef::SkewPar0],
-                           m_coefficients[PeakDef::SkewPar1]*m_coefficients[PeakDef::Sigma],
-                           m_coefficients[PeakDef::SkewPar2]*m_coefficients[PeakDef::Sigma] );
-      break;
-  };//switch( m_skewType )
-  
-  return area;
-}//double landau_skew_integral( const double x0, const double x1 ) const
 
 double PeakDef::gaussian_integral( const double peak_mean, const double peak_sigma,
                                const double peak_amplitude,

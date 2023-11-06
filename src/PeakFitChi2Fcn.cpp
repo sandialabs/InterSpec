@@ -350,7 +350,6 @@ void PeakFitChi2Fcn::parametersToPeaks( std::vector<PeakDef> &peaks,
     switch( skew_type_t )
     {
       case PeakDef::NoSkew:
-      case PeakDef::LandauSkew:
       case PeakDef::Bortel:
       case PeakDef::CrystalBall:
       case PeakDef::DoubleSidedCrystalBall:
