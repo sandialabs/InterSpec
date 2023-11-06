@@ -297,6 +297,20 @@ namespace
   }
  */
   
+  double crystal_ball_norm( const double sigma,
+                           const double alpha,
+                           const double n )
+  {
+    const double oneOverSqrt2 = boost::math::constants::one_div_root_two<double>();
+    const double sqrt_half_pi = boost::math::constants::root_half_pi<double>();
+    
+    const double C = (n / alpha) * (1.0/(n - 1.0)) * std::exp( -0.5*alpha*alpha );
+    const double D = sqrt_half_pi * (1.0 + boost_erf_imp( oneOverSqrt2 * alpha ));
+    const double N = 1.0 / (sigma * (C + D));
+    
+    return N;
+  }
+  
   double crystal_ball_pdf(const double mean,
                           const double sigma,
                           const double alpha,
@@ -312,14 +326,8 @@ namespace
     if( n <= 1.0 )
       throw runtime_error( "crystal_ball_pdf: power-law must be >1" );
     
-    const double oneOverSqrt2 = boost::math::constants::one_div_root_two<double>();
-    const double sqrt_half_pi = boost::math::constants::root_half_pi<double>();
-    
+    const double N = crystal_ball_norm( sigma, alpha, n );
     const double x_norm = (x - mean) / sigma;
-    
-    const double C = (n / alpha) * (1.0/(n - 1.0)) * std::exp( -0.5*alpha*alpha );
-    const double D = sqrt_half_pi * (1.0 + boost_erf_imp( oneOverSqrt2 * alpha ));
-    const double N = 1.0 / (sigma * (C + D));
     
     if( x_norm <= -alpha )
     {
@@ -1943,10 +1951,10 @@ const char *PeakDef::to_string( const CoefficientType type )
     case PeakDef::Mean:                return "Centroid";
     case PeakDef::Sigma:               return "Width";
     case PeakDef::GaussAmplitude:      return "Amplitude";
-    case PeakDef::SkewPar0:            return "SkewValue";
-    case PeakDef::SkewPar1:            return "SkewPowerLaw";
-    case PeakDef::SkewPar2:            return "UpperSkewValue";
-    case PeakDef::SkewPar3:            return "UpperSkewPowerLaw";
+    case PeakDef::SkewPar0:            return "Skew0";
+    case PeakDef::SkewPar1:            return "Skew1";
+    case PeakDef::SkewPar2:            return "Skew2";
+    case PeakDef::SkewPar3:            return "Skew3";
     case PeakDef::Chi2DOF:             return "Chi2";
     case PeakDef::NumCoefficientTypes: return "";
   }//switch( type )
@@ -2864,17 +2872,30 @@ void PeakDef::fromXml( const rapidxml::xml_node<char> *peak_node,
     throw runtime_error( "Invalid peak type" );
   
   node = peak_node->first_node("Skew",4);
-  if( !node || !node->value() )
-    throw runtime_error( "No peak skew type" );
+  //if( !node || !node->value() )
+  //  throw runtime_error( "No peak skew type" );
   
-  
-  if( compare(node->value(),node->value_size(),"NoSkew",6,false) )
+  if( !node || !node->value_size() || compare(node->value(),node->value_size(),"NoSkew",6,false) )
     m_skewType = NoSkew;
   else if( compare(node->value(),node->value_size(),"LandauSkew",10,false) )
     m_skewType = LandauSkew;
+  else if( compare(node->value(),node->value_size(),"Bortel",6,false)
+          || compare(node->value(),node->value_size(),"ExGauss",7,false) )
+    m_skewType = Bortel;
+  //else if( compare(node->value(),node->value_size(),"Doniach",7,false) )
+  //  m_skewType = Doniach;
+  else if( compare(node->value(),node->value_size(),"CrystalBall",11,false)
+          || compare(node->value(),node->value_size(),"CB",2,false) )
+    m_skewType = CrystalBall;
+  else if( compare(node->value(),node->value_size(),"DoubleSidedCrystalBall",22,false)
+          || compare(node->value(),node->value_size(),"DSCB",4,false))
+    m_skewType = DoubleSidedCrystalBall;
+  else if( compare(node->value(),node->value_size(),"GaussExp",8,false) )
+    m_skewType = GaussExp;
+  else if( compare(node->value(),node->value_size(),"ExpGaussExp",11,false) )
+    m_skewType = ExpGaussExp;
   else
     throw runtime_error( "Invalid peak skew type" );
-    
   
   for( CoefficientType t = CoefficientType(0); 
       t < NumCoefficientTypes; t = CoefficientType(t+1) )
@@ -3415,7 +3436,10 @@ std::string PeakDef::gaus_peaks_to_json(const std::vector<std::shared_ptr<const 
       break;
     }//switch( p.type() )
 
+    
+    double dist_norm = 0.0;
     answer << q << "skewType" << q << ":";
+    
     switch( p.skewType() )
     {
       case PeakDef::NoSkew:
@@ -3425,11 +3449,67 @@ std::string PeakDef::gaus_peaks_to_json(const std::vector<std::shared_ptr<const 
       case PeakDef::LandauSkew:
         answer << q << "LandauSkew" << q << ",";
         break;
+      
+      case Bortel:
+        answer << q << "Bortel" << q << ",";
+        break;
+        
+      case CrystalBall:
+        answer << q << "CB" << q << ",";
+        dist_norm = crystal_ball_norm( p.coefficient(CoefficientType::Sigma),
+                                          p.coefficient(CoefficientType::SkewPar0),
+                                      p.coefficient(CoefficientType::SkewPar1) );
+        break;
+        
+      case DoubleSidedCrystalBall:
+        answer << q << "DSCB" << q << ",";
+        dist_norm = double_sided_crystal_ball_norm( p.coefficient(CoefficientType::Sigma),
+                                                   p.coefficient(CoefficientType::SkewPar0),
+                                                   p.coefficient(CoefficientType::SkewPar1),
+                                                   p.coefficient(CoefficientType::SkewPar2),
+                                                   p.coefficient(CoefficientType::SkewPar3) );
+        
+        break;
+        
+      case GaussExp:
+        answer << q << "GaussExp" << q << ",";
+        dist_norm = gauss_exp_norm( p.coefficient(CoefficientType::Sigma),
+                                   p.coefficient(CoefficientType::SkewPar0) );
+        break;
+        
+      case ExpGaussExp:
+        answer << q << "ExpGaussExp" << q << ",";
+        dist_norm = exp_gauss_exp_norm( p.coefficient(CoefficientType::Sigma),
+                                       p.coefficient(CoefficientType::SkewPar0),
+                                       p.coefficient(CoefficientType::SkewPar1) );
+        break;
     }//switch( p.type() )
 
+    if( p.skewType() != PeakDef::NoSkew )
+      answer << q << "DistNorm" << q << ":" << dist_norm << ",";
+    
     for (PeakDef::CoefficientType t = PeakDef::CoefficientType(0);
       t < PeakDef::NumCoefficientTypes; t = PeakDef::CoefficientType(t + 1))
     {
+      // Dont include non-useful skew coefficients
+      switch( t )
+      {
+        case SkewPar0:
+        case SkewPar1:
+        case SkewPar2:
+        case SkewPar3:
+        {
+          double lower, upper, starting, step;
+          if( !PeakDef::skew_parameter_range( p.m_skewType, t, lower, upper, starting, step ) )
+            continue;
+          
+          break;
+        }//case A Skew Parameter
+          
+        default:
+          break;
+      }//switch( t )
+      
       double coef = p.coefficient(t), uncert = p.uncertainty(t);
       assert( !IsInf(coef) && !IsNan(coef) );
       if( IsInf(coef) || IsNan(coef) )
@@ -4947,7 +5027,7 @@ double PeakDef::exp_gauss_exp_integral( const double peak_mean,
                                     const double skew_right,
                                     const double x0, const double x1 )
 {
-  return exp_gauss_exp_integral( peak_mean, peak_sigma, peak_amplitude, skew_left, skew_right, x0, x1 );
+  return peak_amplitude * ::exp_gauss_exp_integral( peak_mean, peak_sigma, skew_left, skew_right, x0, x1 );
 }
 
 

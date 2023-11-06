@@ -415,6 +415,8 @@ public:
      https://doi.org/10.1016/0883-2889(87)90180-8
      
      Uses one skew parameter.
+     
+     Maybe call exGaussian?
      */
     Bortel,
     

@@ -491,7 +491,7 @@ void PeakEdit::init()
   m_skewType->activated().connect( this, &PeakEdit::skewTypeChanged );
   
   for( PeakDef::SkewType t = PeakDef::SkewType(0);
-      t <= PeakDef::LandauSkew; t = PeakDef::SkewType(t+1) )
+      t <= PeakDef::ExpGaussExp; t = PeakDef::SkewType(t+1) )
   {
     switch ( t )
     {
@@ -1916,6 +1916,7 @@ void PeakEdit::skewTypeChanged()
         if( PeakDef::skew_parameter_range( type, ct, lower, upper, starting_val, step_size ) )
         {
           m_values[index]->setHidden( false );
+          m_valueTable->rowAt(1+index)->setHidden( false );
           m_values[index]->setText( PhysicalUnits::printCompact(starting_val, 4) );
           auto validator = dynamic_cast<WDoubleValidator *>( m_values[index]->validator() );
           assert( validator );
@@ -1925,6 +1926,7 @@ void PeakEdit::skewTypeChanged()
         {
           m_values[index]->setHidden( true );
           m_uncertainties[index]->setText( "" );
+          m_valueTable->rowAt(1+index)->setHidden( true );
         }
       }//for( int i = 0; i <= num_skew_pars; ++i )
       
@@ -1958,8 +1960,6 @@ bool PeakEdit::isDirty() const
   if( nuclideInfoIsDirty() )
     return true;
 
-  
-  
   return (m_userLabel->text().toUTF8() != m_originalPeak.userLabel());
 }//bool isDirty() const
 
@@ -1999,15 +1999,24 @@ void PeakEdit::setSkewInputValueRanges( const PeakDef::SkewType type )
     if( PeakDef::skew_parameter_range( type, ct, lower, upper, starting_val, step_size ) )
     {
       m_values[index]->setHidden( false );
+      m_valueTable->rowAt(index+1)->setHidden( false );
       //m_values[index]->setText( PhysicalUnits::printCompact(starting_val, 4) );
       
       auto validator = dynamic_cast<WDoubleValidator *>( m_values[index]->validator() );
       assert( validator );
       if( validator )
         validator->setRange( lower, upper );
+      
+      double val = 0.0;
+      if( (m_values[index]->validate() != WValidator::Valid)
+         || !(stringstream(m_values[index]->text().toUTF8()) >> val)
+         || (val < lower) || (val > upper) )
+      {
+        m_values[index]->setValueText( PhysicalUnits::printCompact(starting_val, 4) );
+      }
     }else
     {
-      m_values[index]->setHidden( true );
+      m_valueTable->rowAt(index+1)->setHidden( true );
       m_uncertainties[index]->setText( "" );
     }
   }//for( int i = 0; i <= num_skew_pars; ++i )
@@ -2357,8 +2366,6 @@ void PeakEdit::apply()
     const PeakDef::SkewType skewType = PeakDef::SkewType( m_skewType->currentIndex() );
     if( skewType != m_currentPeak.skewType() )
     {
-      cerr << "PeakEdit::apply(): handle skew type change better" << endl;
-      
       bool valid_skew = false;
       switch( skewType )
       {
@@ -2378,6 +2385,29 @@ void PeakEdit::apply()
       
       m_currentPeak.setSkewType( skewType );
       setSkewInputValueRanges( skewType );
+      
+      for( PeakPars t : {SkewPar0, SkewPar1, SkewPar2, SkewPar3} )
+      {
+        const PeakDef::CoefficientType ct = row_to_peak_coef_type( t );
+      
+        double lower, upper, starting_val, step_size;
+        if( PeakDef::skew_parameter_range( skewType, ct, lower, upper, starting_val, step_size ) )
+        {
+          double val = 0.0, uncert = 0.0;
+          if( !(stringstream(m_values[t]->text().toUTF8()) >> val)
+             || (val < lower) || (val > upper) )
+          {
+            val = starting_val;
+          }
+          
+          if( !(stringstream(m_uncertainties[t]->text().toUTF8()) >> uncert) )
+            m_uncertainties[t]->setText( "0" );
+          
+          m_currentPeak.set_coefficient( val, ct );
+          m_currentPeak.set_uncertainty( uncert, ct );
+        }//if( use this parameter )
+      }//for( loop over {SkewPar0, SkewPar1, SkewPar2, SkewPar3} )
+      
     }//if( skewType != m_currentPeak.skewType() )
     
     
