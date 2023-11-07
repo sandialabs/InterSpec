@@ -116,6 +116,9 @@ struct RoiRange
    */
   PeakContinuum::OffsetType continuum_type = PeakContinuum::OffsetType::Quadratic;
   
+#warning "Skew type isnt totally determined how to do it - we need to fit for the skew values"
+  PeakDef::SkewType skew_type = PeakDef::SkewType::NoSkew;
+  
   /** Dont allow cutting range down based on peaks not being anywhere reasonably near edge. */
   bool force_full_range = false;
   

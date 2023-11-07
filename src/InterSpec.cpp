@@ -1877,6 +1877,7 @@ void InterSpec::addPeakFromRightClick()
     MultiPeakFitChi2Fcn chi2fcn( static_cast<int>(origRoiPeaks.size()),
                                 dataH,
                                 peak->continuum()->type(),
+                                PeakDef::SkewType::NoSkew,
                                 lower_channel, upper_channel );
     startingChi2 = chi2fcn.evalRelBinRange( 0, chi2fcn.nbin(), origRoiPeaks );
   }//end codeblock to evaluate startingChi2
@@ -1918,7 +1919,7 @@ void InterSpec::addPeakFromRightClick()
     throw runtime_error( "Logic error 2 in InterSpec::addPeakFromRightClick()" );
 
   
-  const MultiPeakInitialGuesMethod methods[] = { FromInputPeaks, UniformInitialGuess, FromDataInitialGuess };
+  const MultiPeakInitialGuessMethod methods[] = { FromInputPeaks, UniformInitialGuess, FromDataInitialGuess };
   
   for( auto method : methods )
   {
@@ -1935,8 +1936,9 @@ void InterSpec::addPeakFromRightClick()
     
     MultiPeakFitChi2Fcn chi2fcn( static_cast<int>(newRoiPeaks.size()),
                                 dataH,
-                                 peak->continuum()->type(),
-                                 lower_channel, upper_channel );
+                                peak->continuum()->type(),
+                                PeakDef::SkewType::NoSkew,
+                                lower_channel, upper_channel );
     fitChi2 = chi2fcn.evalRelBinRange( 0, chi2fcn.nbin(), newRoiPeaks );
     
     if( fitChi2 < startingChi2 )

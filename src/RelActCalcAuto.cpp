@@ -2926,7 +2926,8 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     // The #fit_amp_and_offset function is taking most of the time for calculations - and in fact
     //  the PeakDef::gauss_integral is taking all of its time
     const double chi2 = fit_amp_and_offset( energies, data, num_channels, num_polynomial_terms,
-                                           is_step_continuum, ref_energy, {}, {}, peaks, dummy_amps,
+                                           is_step_continuum, ref_energy, {}, {}, peaks,
+                                           PeakDef::SkewType::NoSkew, nullptr, dummy_amps,
                                            continuum_coeffs, dummy_amp_uncert, continuum_uncerts );
     
     for( const double &val : continuum_coeffs )
@@ -3722,12 +3723,12 @@ void RoiRange::toXml( ::rapidxml::xml_node<char> *parent ) const
   const char *cont_type_str = PeakContinuum::offset_type_str( continuum_type );
   append_string_node( base_node, "ContinuumType", cont_type_str );
   
+  const char *skew_type_str = PeakDef::to_string(skew_type);
+  append_string_node( base_node, "SkewType", skew_type_str );
+  
   append_bool_node( base_node, "ForceFullRange", force_full_range );
   append_bool_node( base_node, "AllowExpandForPeakWidth", allow_expand_for_peak_width );
 }//RoiRange::toXml(...)
-
-
-
 
 
 void RoiRange::fromXml( const rapidxml::xml_node<char> *range_node )
@@ -3752,6 +3753,14 @@ void RoiRange::fromXml( const rapidxml::xml_node<char> *range_node )
     const rapidxml::xml_node<char> *cont_type_node = XML_FIRST_NODE( range_node, "ContinuumType" );
     const string cont_type_str = SpecUtils::xml_value_str( cont_type_node );
     continuum_type = PeakContinuum::str_to_offset_type_str( cont_type_str.c_str(), cont_type_str.size() );
+    
+    //SkewType added 20231106, so we will make SkewType optional
+    const rapidxml::xml_node<char> *skew_type_node = XML_FIRST_NODE( range_node, "SkewType" );
+    const string skew_type_str = SpecUtils::xml_value_str( skew_type_node );
+    
+    skew_type = PeakDef::SkewType::NoSkew;
+    if( !skew_type_str.empty() )
+      skew_type = PeakDef::skew_from_string( skew_type_str );
     
     force_full_range = get_bool_node_value( range_node, "ForceFullRange" );
     allow_expand_for_peak_width = get_bool_node_value( range_node, "AllowExpandForPeakWidth" );
@@ -5219,6 +5228,10 @@ RelActAutoSolution solve( const Options options,
         const int cont_type_int = std::max( static_cast<int>(range.continuum_type),
                                            static_cast<int>(next_range.continuum_type) );
         range.continuum_type = PeakContinuum::OffsetType(cont_type_int);
+        
+        const int skew_type_int = std::max( static_cast<int>(range.skew_type),
+                                           static_cast<int>(next_range.skew_type) );
+        range.skew_type = PeakDef::SkewType(skew_type_int);
       }//for( loop over the next peaks, until they shouldnt be combined )
       
       combined_sig_peak_ranges.push_back( range );

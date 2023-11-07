@@ -726,12 +726,12 @@ void PeakFitChi2Fcn::addPeaksToFitter( ROOT::Minuit2::MnUserParameters &params,
         {
           bool do_fit = false;
           startval = 0.0, stepsize = 0.0, minval = 0.0, maxval = 0.0;
-          
-          if( PeakDef::skew_parameter_range( peak.skewType(), type, minval, maxval, startval, stepsize) )
+          const PeakDef::SkewType skew_type = peak.skewType();
+          if( PeakDef::skew_parameter_range( skew_type, type, minval, maxval, startval, stepsize) )
           {
-            do_fit = true;
+            do_fit = peak.fitFor(type);
             
-            if( method == kRefitPeakParameters )
+            if( do_fit && (method == kRefitPeakParameters) )
             {
               if( (peak.coefficient(type) >= minval) && (peak.coefficient(type) <= maxval) )
               {
@@ -739,7 +739,7 @@ void PeakFitChi2Fcn::addPeaksToFitter( ROOT::Minuit2::MnUserParameters &params,
                 stepsize = std::max( 0.1*peak.coefficient(type), stepsize );
                 minval = std::max( minval, fabs(0.5*peak.coefficient(type)) );
                 maxval = std::min( maxval, 1.5*fabs(peak.coefficient(type)) );
-              }
+              }//if( peaks current value is within the reasonable range )
               
               if( minval == maxval )
               {
@@ -748,7 +748,6 @@ void PeakFitChi2Fcn::addPeaksToFitter( ROOT::Minuit2::MnUserParameters &params,
               }
             }//if( method==kRefitPeakParameters )
           }//if( parameter replies )
-          
           
           if( !do_fit || !peak.fitFor(type) )
           {
@@ -796,7 +795,7 @@ void PeakFitChi2Fcn::addPeaksToFitter( ROOT::Minuit2::MnUserParameters &params,
       const PeakContinuum::OffsetType resultType
                                       = continuumInfoToOffsetType( contInfo );
       
-      //Below check probably isnt necassarry, but I'll leave in until tested
+      //Below check probably isn't necessary, but I'll leave in until tested
       //  or all platforms/architectures (implemented 20131230)
       if( resultIndex != sharedContinuumIndex
           || resultType != continuum->type() )
@@ -915,6 +914,9 @@ void PeakFitChi2Fcn::addPeaksToFitter( ROOT::Minuit2::MnUserParameters &params,
  p1
  p2
  ...pX
+ Skew0                     //Skew parameters, will be `PeakDef::num_skew_parameters(SkewType)`
+ Skew1                     //  All peaks in the ROI share the same skew type/values.
+ ...3
  width     1
  mean      1
  Amplitude 1
@@ -926,15 +928,18 @@ void PeakFitChi2Fcn::addPeaksToFitter( ROOT::Minuit2::MnUserParameters &params,
  mean      X
  Amplitude X
  */
-
-MultiPeakFitChi2Fcn::MultiPeakFitChi2Fcn( const int npeaks, std::shared_ptr<const SpecUtils::Measurement> data,
-                      PeakContinuum::OffsetType offsetType,
-                      const size_t lower_channel, const size_t upper_channel )
+MultiPeakFitChi2Fcn::MultiPeakFitChi2Fcn( const int npeaks,
+                                         std::shared_ptr<const SpecUtils::Measurement> data,
+                                         PeakContinuum::OffsetType offsetType,
+                                         PeakDef::SkewType skewType,
+                                         const size_t lower_channel,
+                                         const size_t upper_channel )
   : m_npeak( npeaks ),
     m_lower_channel( lower_channel ),
     m_upper_channel( upper_channel ),
     m_numOffset( 0 ),
     m_offsetType( offsetType ),
+    m_skewType( skewType ),
     m_data( data ),
     m_reldiff_punish_start( 1.25 ),
     m_reldiff_punish_weight( 2.0 )
@@ -957,17 +962,18 @@ MultiPeakFitChi2Fcn::MultiPeakFitChi2Fcn( const int npeaks, std::shared_ptr<cons
   m_highRange = data->gamma_channel_upper(m_upper_channel);
   
   m_nbin = 1 + m_upper_channel - m_lower_channel;
-  m_binLowerEdge.resize( m_nbin );
-  m_binUpperEdge.resize( m_nbin );
+  m_energies.resize( m_nbin + 1 );
   m_dataCounts.resize( m_nbin );
   
   for( size_t channel = m_lower_channel; channel <= m_upper_channel; ++channel )
   {
     const size_t i = channel - m_lower_channel;
-    m_binLowerEdge[i] = m_data->gamma_channel_lower(channel);
-    m_binUpperEdge[i] = m_data->gamma_channel_upper(channel);
+    m_energies[i] = m_data->gamma_channel_lower(channel);
     m_dataCounts[i] = m_data->gamma_channel_content(channel);
   }//for( int bin = m_lowerbin; bin <= m_upperbin; ++bin )
+  
+  assert( m_energies.size() == (m_nbin + 1) );
+  m_energies[m_nbin] = m_data->gamma_channel_upper(m_upper_channel);
   
   switch( m_offsetType )
   {
@@ -987,22 +993,30 @@ MultiPeakFitChi2Fcn::MultiPeakFitChi2Fcn( const int npeaks, std::shared_ptr<cons
       m_numOffset = 2 + (m_offsetType - PeakContinuum::FlatStep);
     break;
   }//switch( m_offsetType )
-}//MultiPeakFitChi2Fcn constructpor
+  
+  
+  const size_t num_skew_pars = PeakDef::num_skew_parameters( m_skewType );
+  m_numOffset += static_cast<int>( num_skew_pars );
+}//MultiPeakFitChi2Fcn constructor
 
 
 MultiPeakFitChi2Fcn &MultiPeakFitChi2Fcn::operator=( const MultiPeakFitChi2Fcn &rhs )
 {
   if( &rhs == this )
     return *this;
+  
   m_npeak = rhs.m_npeak;
   m_lower_channel = rhs.m_lower_channel;
   m_upper_channel = rhs.m_upper_channel;
-  m_offsetType = rhs.m_offsetType;
-  m_data = rhs.m_data;
-  m_binLowerEdge = rhs.m_binLowerEdge;
-  m_binUpperEdge = rhs.m_binUpperEdge;
-  m_dataCounts = rhs.m_dataCounts;
+  m_numOffset = rhs.m_numOffset;
   m_nbin = rhs.m_nbin;
+  m_rangeLow = rhs.m_rangeLow;
+  m_highRange = rhs.m_highRange;
+  m_energies = rhs.m_energies;
+  m_dataCounts = rhs.m_dataCounts;
+  m_offsetType = rhs.m_offsetType;
+  m_skewType = rhs.m_skewType;
+  m_data = rhs.m_data;
   m_reldiff_punish_start = rhs.m_reldiff_punish_start;
   m_reldiff_punish_weight = rhs.m_reldiff_punish_weight;
   
@@ -1108,6 +1122,19 @@ void MultiPeakFitChi2Fcn::parametersToPeaks( vector<PeakDef> &peaks,
       // \TODO: need to set continuum errors here
 //      if( continuum->isPolynomial() )
     }//if( errors )
+    
+    peak.setSkewType( m_skewType );
+    const size_t nskew = PeakDef::num_skew_parameters( m_skewType );
+    const size_t ncont = PeakContinuum::num_parameters( m_offsetType );
+    assert( static_cast<int>(nskew + ncont) == m_numOffset );
+    
+    for( size_t i = 0; i < nskew; ++i )
+    {
+      const auto par_type = static_cast<PeakDef::CoefficientType>( PeakDef::CoefficientType::SkewPar0 + i );
+      peak.set_coefficient( x[ncont + i], par_type );
+      if( errors )
+        peak.set_uncertainty( errors[ncont + i], par_type );
+    }//for( size_t i = 0; i < nskew; ++i )    
   }//for( int peakn = 0; peakn < m_npeak; ++peakn )
   
   if( computeAreas )
@@ -1119,15 +1146,14 @@ void MultiPeakFitChi2Fcn::parametersToPeaks( vector<PeakDef> &peaks,
     vector<size_t> centroidbins( m_npeak, 0 );
     for( int i = 0; i < m_npeak; ++i )
     {
-      size_t bin = lower_bound( m_binLowerEdge.begin(),
-                                     m_binLowerEdge.end(), peaks[i].mean() )
-                                     - m_binLowerEdge.begin();
-      if( bin >= m_binLowerEdge.size() )
-        bin = m_binLowerEdge.size() - 1;
+      size_t bin = lower_bound( m_energies.begin(), m_energies.end(),
+                               static_cast<float>(peaks[i].mean()) ) - m_energies.begin();
+      if( bin >= m_energies.size() )
+        bin = m_energies.size() - 1;
       
       centroidbins[i] = bin;
-      const double lowx = m_binLowerEdge[bin];
-      const double highx = m_binUpperEdge[bin];
+      const double lowx = m_energies[bin];
+      const double highx = m_energies[bin + 1];
       const double contarea = peaks[i].offset_integral( lowx, highx, m_data );
       
       b(i) = std::max( 0.0, m_dataCounts[bin] - contarea );
@@ -1138,8 +1164,8 @@ void MultiPeakFitChi2Fcn::parametersToPeaks( vector<PeakDef> &peaks,
       for( int col = 0; col < m_npeak; ++col )
       {
         const size_t bin = centroidbins[row];
-        const double lowx = m_binLowerEdge[bin];
-        const double highx = m_binUpperEdge[bin];
+        const double lowx = m_energies[bin];
+        const double highx = m_energies[bin + 1];
         f(row,col) = peaks[col].gauss_integral( lowx, highx );
       }//for( int j = 0; j < peaks.size(); ++j )
     }//for( int i = 0; i < peaks.size(); ++i )
@@ -1183,40 +1209,26 @@ double MultiPeakFitChi2Fcn::evalRelBinRange( const size_t beginRelChannel,
   if( peaks.empty() )
     throw runtime_error( "MultiPeakFitChi2Fcn::evalRelBinRange(): empty input" );
   
-  assert( beginRelChannel < m_binLowerEdge.size() );
-  assert( beginRelChannel < m_binUpperEdge.size() );
-  assert( endRelChannel <= m_binLowerEdge.size() );
-  assert( endRelChannel <= m_binUpperEdge.size() );
+  assert( beginRelChannel < m_energies.size() );
+  assert( endRelChannel <= m_energies.size() );
+  
+  if( (endRelChannel >= m_energies.size()) || (endRelChannel < beginRelChannel) )
+    throw std::logic_error( "MultiPeakFitChi2Fcn::evalRelBinRange: invalid bin range" );
   
   double chi2 = 0.0;
   
-//  for( int relbin = 0; relbin < m_nbin; ++relbin )
-//  {
-//    const double xbinlow = m_binLowerEdge[relbin];
-//    const double xbinup  = m_binUpperEdge[relbin];
-//    double nfitpeak = 0.0;
-//    for( size_t i = 0; i < peaks.size(); ++i )
-//      nfitpeak += peaks[i].gauss_integral( xbinlow, xbinup );
-//
-//    const double ndata = m_dataCounts[relbin];//m_data->GetBinContent(bin);
-//    const double ncontinuim = PeakDef::offset_eqn_integral(
-//                             x, m_offsetType, xbinlow, xbinup, m_rangeLow );
-//
-//    if( ndata > 0.000001 )
-//      chi2 += pow( (ndata - ncontinuim - nfitpeak), 2.0 ) / ndata;
-//    else
-//      chi2 += fabs(nfitpeak + ncontinuim);
-//  }//for( int bin = xlowbin; bin <= xhighbin; ++bin )
+  // We will get the peak contributions using the slightly more efficient methods
+  const size_t nchan = endRelChannel - beginRelChannel;
+  vector<double> peak_sum( endRelChannel - beginRelChannel, 0.0 );
+  for( size_t i = 0; i < peaks.size(); ++i )
+    peaks[i].gauss_integral( &(m_energies[beginRelChannel]), &(peak_sum[0]), nchan );
   
   for( size_t relchannel = beginRelChannel; relchannel < endRelChannel; ++relchannel )
   {
-    const double xbinlow = m_binLowerEdge[relchannel];
-    const double xbinup  = m_binUpperEdge[relchannel];
-    double nfitpeak = 0.0;
-    for( size_t i = 0; i < peaks.size(); ++i )
-      nfitpeak += peaks[i].gauss_integral( xbinlow, xbinup );
-    
+    double nfitpeak = peak_sum[relchannel - beginRelChannel];
     const double ndata = m_dataCounts[relchannel];
+    const double xbinlow = m_energies[relchannel];
+    const double xbinup  = m_energies[relchannel+1];
     const double ncontinuim = peaks[0].offset_integral( xbinlow, xbinup, m_data );
     
     const double datauncert = std::max( ndata, 1.0 );
@@ -1230,7 +1242,7 @@ double MultiPeakFitChi2Fcn::evalRelBinRange( const size_t beginRelChannel,
 
 int MultiPeakFitChi2Fcn::nbin() const
 {
-  return m_nbin;
+  return static_cast<int>( m_nbin );
 }
 
 double MultiPeakFitChi2Fcn::dof() const
@@ -1285,12 +1297,12 @@ double MultiPeakFitChi2Fcn::evalMultiPeakInsentive(
 //      const size_t peak_roi_end = m_data->find_gamma_channel( upper_energy );
 //      const double dataarea = m_data->gamma_channels_sum( peak_roi_begin, peak_roi_end );
     
-    const size_t binstart = lower_bound( m_binLowerEdge.begin(),
-                                         m_binLowerEdge.end(), lower_energy )
-                                         - m_binLowerEdge.begin();
-    const size_t binend = lower_bound( m_binLowerEdge.begin(),
-                                       m_binLowerEdge.end(), upper_energy )
-                                       - m_binLowerEdge.begin();
+    const size_t binstart = lower_bound( m_energies.begin(),
+                                        m_energies.end(), static_cast<float>(lower_energy) )
+                                         - m_energies.begin();
+    const size_t binend = lower_bound( m_energies.begin(),
+                                      m_energies.end(), static_cast<float>(upper_energy) )
+                                       - m_energies.begin();
     double dataarea = 0.0;
     for( size_t bin = binstart; bin < binend; ++bin )
       dataarea += m_dataCounts[bin];
@@ -1374,6 +1386,7 @@ LinearProblemSubSolveChi2Fcn::LinearProblemSubSolveChi2Fcn(
           const std::vector< std::shared_ptr<const PeakDef> > &originalPeaks,
           std::shared_ptr<const SpecUtils::Measurement> data,
           const PeakContinuum::OffsetType offsetType,
+          const PeakDef::SkewType skewType,
           const float lowerROI, const float upperROI )
 : ROOT::Minuit2::FCNBase(),
   m_nbin( 0 ),
@@ -1381,6 +1394,7 @@ LinearProblemSubSolveChi2Fcn::LinearProblemSubSolveChi2Fcn(
   m_lowerROI( lowerROI ),
   m_upperROI( upperROI ),
   m_offsetType( offsetType ),
+  m_skewType( skewType ),
   m_originalPeaks( originalPeaks )
 {
   init( data );
@@ -1390,13 +1404,16 @@ LinearProblemSubSolveChi2Fcn::LinearProblemSubSolveChi2Fcn(
 LinearProblemSubSolveChi2Fcn::LinearProblemSubSolveChi2Fcn( const size_t npeaks,
                                std::shared_ptr<const SpecUtils::Measurement> data,
                                const PeakContinuum::OffsetType offsetType,
+                               const PeakDef::SkewType skewType,
                                const float lowerROI, const float upperROI )
 : ROOT::Minuit2::FCNBase(),
   m_nbin( 0 ),
   m_npeak( npeaks ),
   m_lowerROI( lowerROI ),
   m_upperROI( upperROI ),
-  m_offsetType( offsetType )
+  m_offsetType( offsetType ),
+  m_skewType( skewType ),
+  m_originalPeaks{}
 {
   init( data );
 }
@@ -1440,7 +1457,7 @@ void LinearProblemSubSolveChi2Fcn::init( std::shared_ptr<const SpecUtils::Measur
     m_x.push_back( data->gamma_channel_lower(channel) );
   }//for( int bin = lowerbin; bin < upperbin; ++bin )
   
-  //I dont think this next call should ever throw... if so its a programmign error
+  //I dont think this next call should ever throw... if so its a programming error
   m_x.push_back( data->gamma_channel_lower(upper_channel+1) );
 }//LinearProblemSubSolveChi2Fcn constructor
 
@@ -1453,9 +1470,10 @@ double LinearProblemSubSolveChi2Fcn::Up() const
 
 size_t LinearProblemSubSolveChi2Fcn::nfitPars() const
 {
+  const size_t nskew = PeakDef::num_skew_parameters(m_skewType);
   if( m_npeak < 2 )
-    return 2;
-  return m_npeak + 2;
+    return 2 + nskew;
+  return m_npeak + 2 + nskew;
 }//
 
 double LinearProblemSubSolveChi2Fcn::operator()( const vector<double> &x ) const
@@ -1519,6 +1537,13 @@ double LinearProblemSubSolveChi2Fcn::parametersToPeaks( vector<PeakDef> &peaks,
   vector<size_t> indicesOfFittingPeaks;
   vector<PeakDef> fixedamppeaks;
   
+  const size_t npar = nfitPars();
+  const size_t num_skew_pars = PeakDef::num_skew_parameters( m_skewType );
+  const size_t start_skew_index = ((m_npeak < 2) ? size_t(2) : (2 + m_npeak));
+  assert( start_skew_index <= npar );
+  const double * const skew_params = x + start_skew_index;
+  const double * const skew_param_errors = errors ? (errors + start_skew_index) : nullptr;
+  
   vector<double> means, sigmas;
   for( size_t i = 0; i < m_npeak; ++i )
   {
@@ -1534,6 +1559,15 @@ double LinearProblemSubSolveChi2Fcn::parametersToPeaks( vector<PeakDef> &peaks,
     {
       means.push_back( x[i] );
     }
+    
+    peaks[i].setSkewType( m_skewType );
+    for( size_t skew_par_index = 0; skew_par_index < num_skew_pars; ++skew_par_index )
+    {
+      const auto ct = PeakDef::CoefficientType(PeakDef::CoefficientType::SkewPar0 + skew_par_index);
+      peaks[i].set_coefficient( skew_params[skew_par_index], ct );
+      if( skew_param_errors )
+        peaks[i].set_uncertainty( skew_param_errors[skew_par_index], ct );
+    }//
   }//for( size_t i = 0; i < m_npeak; ++i )
   
   if( m_npeak < 2 )
@@ -1590,20 +1624,21 @@ double LinearProblemSubSolveChi2Fcn::parametersToPeaks( vector<PeakDef> &peaks,
     }//for( size_t i = 0; i < m_npeak; ++i )
   }//if( one peak ) / else
   
-  const int num_polynomial_terms = PeakContinuum::num_parameters( m_offsetType );
+  const int num_polynomial_terms = static_cast<int>( PeakContinuum::num_parameters(m_offsetType) );
   const bool step_continuum = PeakContinuum::is_step_continuum( m_offsetType );
-  
   
   vector<double> amps, offsets, amps_uncerts, offsets_uncerts;
   
   const double chi2 = fit_amp_and_offset( &m_x[0], &m_y[0], m_nbin,
                                          num_polynomial_terms,
                                          step_continuum,
-                                          m_lowerROI,
-                                          means, sigmas,
+                                         m_lowerROI,
+                                         means, sigmas,
                                          fixedamppeaks,
+                                         m_skewType,
+                                         skew_params,
                                          amps, offsets,
-                                          amps_uncerts, offsets_uncerts );
+                                         amps_uncerts, offsets_uncerts );
   const double chi2Dof = chi2 / dof();
   
   peaks[0].continuum()->setType( m_offsetType );
@@ -1670,6 +1705,111 @@ double LinearProblemSubSolveChi2Fcn::closenessPunishment(
   
   return chi2;
 }//closenessPunishment(...)
+
+
+void LinearProblemSubSolveChi2Fcn::addSkewParameters( ROOT::Minuit2::MnUserParameters &pars,
+                              const PeakDef::SkewType skew_type )
+{
+  const size_t num_skew = PeakDef::num_skew_parameters( skew_type );
+  for( size_t skew_num = 0; skew_num < num_skew; ++skew_num )
+  {
+    const PeakDef::CoefficientType ct = PeakDef::CoefficientType( PeakDef::SkewPar0 + skew_num );
+    double lower_value, upper_value, starting_value, step_size;
+    const bool use = PeakDef::skew_parameter_range( skew_type, ct, lower_value, upper_value,
+                                                   starting_value, step_size );
+    assert( use );
+    if( !use )
+      throw std::logic_error("inconsistent peak skew fit logic");
+    
+    const string name = "Skew" + std::to_string(skew_num);
+    pars.Add( name, starting_value, step_size, lower_value, upper_value );
+  }//for( size_t skew_num = 0; skew_num < num_skew; ++skew_num )
+}//static void addSkewParameters(...);
+
+
+
+void LinearProblemSubSolveChi2Fcn::skewFromPrevPeaks( const vector<shared_ptr<const PeakDef> > &inpeaks,
+                                                   PeakDef::SkewType &skew_type,
+                                                   std::vector<bool> &fit_parameter,
+                                                   std::vector<double> &starting_value )
+{
+  skew_type = PeakDef::SkewType::NoSkew;
+  
+  for( const auto &p : inpeaks )
+  {
+    // PeakDef::SkewType is defined roughly in order of how we should prefer them.
+    //  However, if one of the peaks in the ROI required a higher-level of skew function
+    //  to describe it, we will use that skew for the entire ROI.
+    // Here we will use the skew value of the first peak we encounter, with the higher-level
+    //  of skew function, as the starting value, and wether we should fit for the parameter
+    //  at all.
+    if( p->skewType() > skew_type )
+    {
+      skew_type = p->skewType();
+      const size_t num_skew_pars = PeakDef::num_skew_parameters(skew_type);
+      fit_parameter.resize( num_skew_pars );
+      starting_value.resize( num_skew_pars );
+      
+      for( size_t i = 0; i < num_skew_pars; ++i )
+      {
+        const auto ct = PeakDef::CoefficientType( PeakDef::CoefficientType::SkewPar0 + i);
+        fit_parameter[i] = p->fitFor( ct );
+        double val = p->coefficient( ct );
+        
+        double lower, upper, start, dx;
+        const bool use = PeakDef::skew_parameter_range( skew_type, ct, lower, upper, start, dx );
+        assert( use );
+        if( !use )
+          throw logic_error( "Inconsistent skew par val" );
+        
+        if( IsInf(val) || IsNan(val) || (val < lower) || (val > upper) )
+          val = start;
+          
+        starting_value[i] = val;
+      }//
+    }//if( p->skewType() > skew_type )
+  }//for( const auto &p : inpeaks )
+}//void skewFromPrevPeaks(...)
+
+
+void LinearProblemSubSolveChi2Fcn::addSkewParameters( ROOT::Minuit2::MnUserParameters &pars,
+                               const PeakDef::SkewType skewType,
+                              const std::vector<bool> &fit_parameter,
+                              const std::vector<double> &starting_value )
+{
+  const size_t num_skew_pars = PeakDef::num_skew_parameters(skewType);
+  
+  assert( num_skew_pars == fit_parameter.size() );
+  assert( num_skew_pars == starting_value.size() );
+  
+  if( (num_skew_pars != fit_parameter.size())
+     || (num_skew_pars != starting_value.size()) )
+    throw std::logic_error( "addSkewParameters: invalid input sizes" );
+  
+  for( size_t skew_index = 0; skew_index < num_skew_pars; ++skew_index )
+  {
+    const string name = "Skew" + std::to_string(skew_index);
+    if( fit_parameter[skew_index] )
+    {
+      double starting_val = starting_value[skew_index];
+      
+      const auto ct = PeakDef::CoefficientType( PeakDef::CoefficientType::SkewPar0 + skew_index);
+      double lower, upper, start, step;
+      const bool use = PeakDef::skew_parameter_range( skewType, ct, lower, upper, start, step );
+      assert( use );
+      if( !use )
+        throw std::logic_error( "inconsistent skew par stuff" );
+      
+      if( (starting_val < lower) || (starting_val > upper) )
+        starting_val = start;
+      
+      pars.Add( name, starting_val, step, lower, upper );
+    }else
+    {
+      pars.Add( name, starting_value[skew_index] );
+    }
+  }//for( size_t skew_index = 0; skew_index < num_skew_pars; ++skew_index )
+}//addSkewParameters(...)
 
 
 double LinearProblemSubSolveChi2Fcn::punishment( const std::vector<PeakDef> &peaks ) const

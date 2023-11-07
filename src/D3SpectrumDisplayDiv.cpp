@@ -1995,14 +1995,14 @@ void D3SpectrumDisplayDiv::performDragCreateRoiWork( double lower_energy, double
                      nForcedPeaks, lower_energy, upper_energy, foreground, detector]( const size_t index ){
         std::vector<std::shared_ptr<PeakDef> > newpeaks;
         const auto method = (static_cast<size_t>(npeakstry[index])==ncandidates)
-        ? MultiPeakInitialGuesMethod::FromDataInitialGuess
-        :  MultiPeakInitialGuesMethod::UniformInitialGuess;
+        ? MultiPeakInitialGuessMethod::FromDataInitialGuess
+        :  MultiPeakInitialGuessMethod::UniformInitialGuess;
         
         
         //Note: InterSpec::findPeakFromControlDrag(...) tries all methods, e.g.,
-        //for( MultiPeakInitialGuesMethod method = MultiPeakInitialGuesMethod(0);
+        //for( MultiPeakInitialGuessMethod method = MultiPeakInitialGuessMethod(0);
         //    method < FromInputPeaks;
-        //    method = MultiPeakInitialGuesMethod(method+1) )
+        //    method = MultiPeakInitialGuessMethod(method+1) )
         //{
         //  ...
         //}

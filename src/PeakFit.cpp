@@ -860,7 +860,7 @@ std::vector< std::vector<PeakDef> > causilyDisconnectedPeaks( const double x0,
 
 
 void findPeaksInUserRange( double x0, double x1, int nPeaks,
-                          MultiPeakInitialGuesMethod method,
+                          MultiPeakInitialGuessMethod method,
                           std::shared_ptr<const Measurement> dataH,
                           std::shared_ptr<const DetectorPeakResponse> detector,
                           vector<std::shared_ptr<PeakDef> > &answer,
@@ -901,7 +901,9 @@ void findPeaksInUserRange( double x0, double x1, int nPeaks,
   PeakContinuum::eqn_from_offsets( start_channel, end_channel, start_range,
                                   dataH, nSideBinsToAverage, nSideBinsToAverage, p1, p0 );
   
-  MultiPeakFitChi2Fcn chi2fcn( nPeaks, dataH, offsetType, start_channel, end_channel );
+  const PeakDef::SkewType skewType = PeakDef::SkewType::NoSkew;
+  
+  MultiPeakFitChi2Fcn chi2fcn( nPeaks, dataH, offsetType, skewType, start_channel, end_channel );
   
   //chi2fcn.set_reldiff_punish_start( 2.35482 );
   
@@ -1239,7 +1241,7 @@ void findPeaksInUserRange( double x0, double x1, int nPeaks,
 
 
 void findPeaksInUserRange_linsubsolve( double x0, double x1, int nPeaks,
-                          MultiPeakInitialGuesMethod method,
+                                      MultiPeakInitialGuessMethod method,
                           std::shared_ptr<const Measurement> dataH,
                           std::shared_ptr<const DetectorPeakResponse> detector,
                           vector<std::shared_ptr<PeakDef> > &answer,
@@ -1281,7 +1283,9 @@ void findPeaksInUserRange_linsubsolve( double x0, double x1, int nPeaks,
   //MultiPeakFitChi2Fcn chi2fcn( nPeaks, dataH, offsetType, start_channel, end_channel );
   //chi2fcn.set_reldiff_punish_start( 2.35482 );
   
-  LinearProblemSubSolveChi2Fcn chi2fcn( nPeaks, dataH, offsetType, x0, x1 );
+  const PeakDef::SkewType skew_type = PeakDef::SkewType::NoSkew;
+  
+  LinearProblemSubSolveChi2Fcn chi2fcn( nPeaks, dataH, offsetType, skew_type, x0, x1 );
   
   
   const bool isHpge = PeakFitUtils::is_high_res( dataH );
@@ -1314,6 +1318,9 @@ void findPeaksInUserRange_linsubsolve( double x0, double x1, int nPeaks,
    meanN     {mean of N'th peak}
    width0    {if npeaks==1, width of that peak; else width at m_lowerROI}
    widthFcn  {multiple of width0, plus fraction of total range time widthFcn}
+   Skew0     {depends on skew type
+   Skew1
+   ...
    */
 
   vector<PeakDef> inpeaks;
@@ -1466,6 +1473,7 @@ void findPeaksInUserRange_linsubsolve( double x0, double x1, int nPeaks,
   if( nPeaks > 1 )
     inputPrams.Add( "SigmaFcn", 0.0, 0.001, -0.10, 0.10 );
   
+  LinearProblemSubSolveChi2Fcn::addSkewParameters( inputPrams, skew_type );
   
   ROOT::Minuit2::MnUserParameterState inputParamState( inputPrams );
   ROOT::Minuit2::MnStrategy strategy( 2 ); //0 low, 1 medium, >=2 high
@@ -1818,13 +1826,21 @@ PeakShrdVec refitPeaksThatShareROI( const std::shared_ptr<const Measurement> &da
     for( const PeakPtr &p : inpeaks )
       if( origCont != p->continuum() )
         throw runtime_error( "refitPeaksThatShareROI: all input peaks must share a ROI" );
+    
     const double lx = origCont->lowerEnergy();
     const double ux = origCont->upperEnergy();
     const double range = ux - lx;
     
-    LinearProblemSubSolveChi2Fcn chi2Fcn( inpeaks, dataH, origCont->type(), lx, ux );
     
-    const int mid_channel = dataH->find_gamma_channel( lx + 0.5*range );
+    PeakDef::SkewType skew_type;
+    vector<bool> fit_skew_pars;
+    vector<double> skew_par_vals;
+    LinearProblemSubSolveChi2Fcn::skewFromPrevPeaks( inpeaks, skew_type, fit_skew_pars, skew_par_vals );
+    
+    
+    LinearProblemSubSolveChi2Fcn chi2Fcn( inpeaks, dataH, origCont->type(), skew_type, lx, ux );
+    
+    const size_t mid_channel = dataH->find_gamma_channel( lx + 0.5*range );
     double minsigma = dataH->gamma_channel_width( mid_channel );
     if( detector && detector->hasResolutionInfo() )
       minsigma = 0.75*detector->peakResolutionSigma( origCont->lowerEnergy() );
@@ -1868,6 +1884,9 @@ PeakShrdVec refitPeaksThatShareROI( const std::shared_ptr<const Measurement> &da
     else if( inpeaks.size() > 1 )
       params.Add( "SigmaFcn", 0.0 );
     
+    LinearProblemSubSolveChi2Fcn::addSkewParameters( params, skew_type, fit_skew_pars, skew_par_vals );
+    
+    
     if( (nFitWidth == 0) && (nFitEnergy == 0) )
     {
       // Nothing to do here; LinearProblemSubSolveChi2Fcn::parametersToPeaks(...) will do all work
@@ -1910,9 +1929,9 @@ PeakShrdVec refitPeaksThatShareROI( const std::shared_ptr<const Measurement> &da
     
     //now we need to go through and make sure the peaks we're adding are both
     //  significant, and improve the chi2/dof from before the fit.
-    const size_t lower_channel = dataH->find_gamma_channel( lx );
-    const size_t upper_channel = dataH->find_gamma_channel( ux );
-    const size_t nbin = (upper_channel > lower_channel) ? (upper_channel - lower_channel) : size_t(0);
+    const int lower_channel = static_cast<int>( dataH->find_gamma_channel( lx ) );
+    const int upper_channel = static_cast<int>( dataH->find_gamma_channel( ux ) );
+    const int nbin = (upper_channel > lower_channel) ? (upper_channel - lower_channel) : 1;
     const double prechi2Dof = chi2_for_region( inpeaks, dataH, lower_channel, upper_channel ) / nbin;
     const double postchi2Dof = chi2_for_region( answer, dataH, lower_channel, upper_channel ) / nbin;
     
@@ -2021,54 +2040,58 @@ void refit_for_new_roi( std::vector< std::shared_ptr<const PeakDef> > originalPe
   {
     const PeakContinuum::OffsetType offset = originalPeaks[0]->continuum()->type();
     
+    PeakDef::SkewType skew_type;
+    vector<bool> fit_skew_pars;
+    vector<double> skew_par_vals;
+    LinearProblemSubSolveChi2Fcn::skewFromPrevPeaks( originalPeaks, skew_type, fit_skew_pars, skew_par_vals );
     
-    LinearProblemSubSolveChi2Fcn chi2Fcn( originalPeaks, dataH, offset,
+    LinearProblemSubSolveChi2Fcn chi2Fcn( originalPeaks, dataH, offset, skew_type,
                                          new_lower_roi, new_roi_upper );
     
     //If there are a ton of peaks in this ROI, a compleete refit will
     //  be to slow, so only to the complete re-fit for 1 or 2 peaks.
     const size_t npeaks = originalPeaks.size();
     
-      ROOT::Minuit2::MnUserParameters params;
-      
-      for( size_t i = 0; i < originalPeaks.size(); ++i )
-      {
-        char name[64];
-        const std::shared_ptr<const PeakDef> &peak = originalPeaks[i];
-        snprintf( name, sizeof(name), "Mean%i", static_cast<int>(i) );
-        const double mean = peak->mean();
-        const double sigma = peak->sigma();
-        
-        const double meanmin = std::max( new_lower_roi, mean-1.0*sigma );
-        const double meanmax = std::min( new_roi_upper, mean+1.0*sigma );
-        
-        if( !peak->fitFor(PeakDef::Mean) )
-          params.Add( name, mean );
-        else
-          params.Add( name, mean, 0.1*sigma, meanmin, meanmax );
-      }//for( const PeakDefShrdPtr &peak : peaksToReFit )
-      
-      const double sigma0 = originalPeaks[0]->sigma();
+    ROOT::Minuit2::MnUserParameters params;
     
-      params.Add( "Sigma0", sigma0, 0.1*sigma0, 0.25*sigma0, 2.0*sigma0 );
-      if( npeaks > 1 )
-        params.Add( "SigmaFcn", 0.0, 0.001, -0.10, 0.10 );
+    for( size_t i = 0; i < originalPeaks.size(); ++i )
+    {
+      char name[64];
+      const std::shared_ptr<const PeakDef> &peak = originalPeaks[i];
+      snprintf( name, sizeof(name), "Mean%i", static_cast<int>(i) );
+      const double mean = peak->mean();
+      const double sigma = peak->sigma();
       
-      ROOT::Minuit2::MnUserParameterState inputParamState( params );
-      const ROOT::Minuit2::MnStrategy strategy( 2 );
+      const double meanmin = std::max( new_lower_roi, mean-1.0*sigma );
+      const double meanmax = std::min( new_roi_upper, mean+1.0*sigma );
       
-      ROOT::Minuit2::CombinedMinimizer fitter;
-      ROOT::Minuit2::FunctionMinimum minimum
-      = fitter.Minimize( chi2Fcn, params, strategy, 0, 0.01 );
-      
-      params = minimum.UserState().Parameters();
-      const vector<double> pars = params.Params();
-      const vector<double> errors = params.Errors();
+      if( !peak->fitFor(PeakDef::Mean) )
+        params.Add( name, mean );
+      else
+        params.Add( name, mean, 0.1*sigma, meanmin, meanmax );
+    }//for( const PeakDefShrdPtr &peak : peaksToReFit )
     
+    const double sigma0 = originalPeaks[0]->sigma();
     
-    const double newChi2 = chi2Fcn.parametersToPeaks( resultPeaks,
-                                                     &pars[0],
-                                                     &errors[0] );
+    params.Add( "Sigma0", sigma0, 0.1*sigma0, 0.25*sigma0, 2.0*sigma0 );
+    if( npeaks > 1 )
+      params.Add( "SigmaFcn", 0.0, 0.001, -0.10, 0.10 );
+    
+    LinearProblemSubSolveChi2Fcn::addSkewParameters( params, skew_type, fit_skew_pars, skew_par_vals );
+    
+    ROOT::Minuit2::MnUserParameterState inputParamState( params );
+    const ROOT::Minuit2::MnStrategy strategy( 2 );
+    
+    ROOT::Minuit2::CombinedMinimizer fitter;
+    ROOT::Minuit2::FunctionMinimum minimum
+    = fitter.Minimize( chi2Fcn, params, strategy, 0, 0.01 );
+    
+    params = minimum.UserState().Parameters();
+    const vector<double> pars = params.Params();
+    const vector<double> errors = params.Errors();
+    
+    const double newChi2 = chi2Fcn.parametersToPeaks( resultPeaks, &pars[0], &errors[0] );
+    
     resultChi2Dof = newChi2 / chi2Fcn.dof();
   }catch( std::exception & )
   {
@@ -2968,7 +2991,15 @@ void fit_peak_for_user_click( PeakShrdVec &results,
       if( coFitPeaks.size() > 1 )
         params.Add( "SigmaFcn", 0.0, 0.001, -0.10, 0.10 );
             
-      LinearProblemSubSolveChi2Fcn chi2Fcn( coFitPeaks, dataH, offsetType,
+      
+      PeakDef::SkewType skew_type;
+      vector<bool> fit_skew_pars;
+      vector<double> skew_par_vals;
+      LinearProblemSubSolveChi2Fcn::skewFromPrevPeaks( coFitPeaks, skew_type, fit_skew_pars, skew_par_vals );
+      LinearProblemSubSolveChi2Fcn::addSkewParameters( params, skew_type, fit_skew_pars, skew_par_vals );
+      
+      
+      LinearProblemSubSolveChi2Fcn chi2Fcn( coFitPeaks, dataH, offsetType, skew_type,
                                            lenergy, uenergy );
       
       ROOT::Minuit2::MnUserParameterState inputParamState( params );
@@ -6227,6 +6258,8 @@ double fit_amp_and_offset( const float *x, const float *data, const size_t nbin,
                                   const vector<double> &means,
                                   const vector<double> &sigmas,
                                   const vector<PeakDef> &fixedAmpPeaks,
+                                  const PeakDef::SkewType skew_type,
+                                  const double *skew_parameters,
                                   std::vector<double> &amplitudes,
                                   std::vector<double> &continuum_coeffs,
                                   std::vector<double> &amplitudes_uncerts,
@@ -6243,6 +6276,10 @@ double fit_amp_and_offset( const float *x, const float *data, const size_t nbin,
   
   if( num_polynomial_terms > 4 )
     throw runtime_error( "fit_amp_and_offset: you asked for a higher order polynomial continuum than reasonable" );
+  
+  assert( (skew_type == PeakDef::SkewType::NoSkew) || skew_parameters );
+  if( !skew_parameters && (skew_type != PeakDef::SkewType::NoSkew) )
+    throw std::logic_error( "Skew pars not provided" );
   
   //Using variable names of section 15.4 of Numerical Recipes, 3rd edition
   //
@@ -6268,7 +6305,7 @@ double fit_amp_and_offset( const float *x, const float *data, const size_t nbin,
   using namespace boost::numeric;
   const size_t npeaks = sigmas.size();
   const size_t npoly = static_cast<size_t>( num_polynomial_terms );
-  const int nfit_terms = npoly + npeaks;
+  const int nfit_terms = static_cast<int>( npoly + npeaks );
   
 #if( TRIAL_MINIMIZE_MATRIX_ALLOCATIONS )
 #warning "TRIAL_MINIMIZE_MATRIX_ALLOCATIONS Is enabled - this will blow up if making an InterSpec GUI"
@@ -6447,22 +6484,50 @@ double fit_amp_and_offset( const float *x, const float *data, const size_t nbin,
         A(row,col) = contribution / uncert;
       }
     }//for( int order = 0; order < maxorder; ++order )
-    
-    for( size_t i = 0; i < npeaks; ++i )
-    {
-      const size_t col = npoly + i;
-      
-      // TODO: PeakDef::gaussian_integral calls calls `boost_erf_imp` twice (which is the main cost of this function seemingly), one of which can be eliminated if we accumulate the channels sequentially for each peak, but this will require some refactoring, so not doing it for now.  We could also parallelize this computation (1 thread per peak)
-      
-      // To niavely *attempt* to save CPU time, we'll only assume peak contributions between -8 and
-      //  +8 sigma; 8 arbitrarily chosen.
-      if( ((x1 >= (means[i] - 8*sigmas[i])) && (x0 <= (means[i] + 8*sigmas[i]))) )
-        A(row,col) = PeakDef::gaussian_integral( means[i], sigmas[i], 1.0, x0, x1 ) / uncert;
-      else
-        A(row,col) = 0.0;
-    }
   }//for( size_t row = 0; row < nbin; ++row )
   
+  
+  // If we have more than 2 peaks (arbitrarily chosen), we'll compute the peak contributions
+  //  in parallel.
+  //  TODO: investigate performance impact of computing peak integrals multithread - e.g., should we do this only if a skew is being used?  Or if we have more than X peaks, etc.
+  vector<double> unit_peak_counts( nbin * npeaks, 0.0 );
+  
+  const bool parallelize_peak_sum = (npeaks > 2);
+  if( parallelize_peak_sum )
+  {
+    SpecUtilsAsync::ThreadPool pool;
+    for( size_t i = 0; i < npeaks; ++i )
+    {
+      double *peak_areas = &(unit_peak_counts[i*nbin]);
+      const double mean = means[i];
+      const double sigma = sigmas[i];
+      pool.post( [peak_areas,i,mean,sigma,skew_type,skew_parameters,nbin,x](){
+        PeakDef::photopeak_function_integral( mean, sigma, 1.0, skew_type, skew_parameters,
+                                             nbin, x, peak_areas );
+      } );
+    }//for( size_t i = 0; i < npeaks; ++i )
+    pool.join();
+  }else
+  {
+    for( size_t i = 0; i < npeaks; ++i )
+    {
+      double *peak_areas = &(unit_peak_counts[i*nbin]);
+      PeakDef::photopeak_function_integral( means[i], sigmas[i], 1.0,
+                                           skew_type, skew_parameters,
+                                           nbin, x, peak_areas );
+    }
+  }//if( npeaks > 2 ) / else
+  
+  for( size_t i = 0; i < npeaks; ++i )
+  {
+    double *peak_areas = &(unit_peak_counts[i*nbin]);
+    for( size_t channel = 0; channel < nbin; ++channel )
+    {
+      const double dataval = data[channel];
+      const double uncert = (dataval > 0.0 ? sqrt(dataval) : 1.0);
+      A(channel,npoly + i) = peak_areas[channel] / uncert;
+    }//for( size_t channel = 0; channel < nbin; ++channel )
+  }//for( size_t i = 0; i < npeaks; ++i )
   
 #if( TRIAL_MINIMIZE_MATRIX_ALLOCATIONS )
   const ublas::matrix<double> A_transpose = ublas::trans( A );
@@ -7621,12 +7686,18 @@ void AutoPeakSearchChi2Fcn::fit_peak_group( const vector<PeakDef> &peaks,
 #endif
     try
     {
+      // TODO: currently this
+      const PeakDef::SkewType skew_type = PeakDef::SkewType::NoSkew;
+      const double * const skew_parameters = nullptr;
+      
       chi2 = fit_amp_and_offset( x_start, y_start, nregionbin,
                                 num_polynomial_terms,
                                 isStepContinuum,
                                 cont->lowerEnergy(),
                                 means, sigmas,
                                 fixedAmpPeaks,
+                                skew_type,
+                                skew_parameters,
                                 amplitudes,
                                 continuum_coeffs,
                                 amplitudes_uncerts,
@@ -8056,6 +8127,7 @@ std::vector<PeakDef> search_for_peaks( const std::shared_ptr<const Measurement> 
   if( !meas )
     throw runtime_error( "search_for_peaks: invalid input" );
   
+  // TODO: currently doesn't account for/fit peak skew
   
   AutoPeakSearchChi2Fcn chi2fcn( meas, origpeaks );
   chi2fcn.m_min_chi2_dof_thresh = min_chi2_dof_thresh;
@@ -8250,11 +8322,17 @@ std::vector<PeakDef> search_for_peaks( const std::shared_ptr<const Measurement> 
          num_polynomial_terms = 3;
          */
         
+        // TODO: currently doesn't account for/fit peak skew
+        const PeakDef::SkewType skew_type = PeakDef::SkewType::NoSkew;
+        const double * const skew_pars = nullptr;
+        
         const double chi2 =  fit_amp_and_offset( x_start, data, nbin,
                                                 num_polynomial_terms,
                                                 step_continuum,
                                                 energy, means, sigmas,
                                                 fixedAmpPeaks,
+                                                skew_type,
+                                                skew_pars,
                                                 amplitudes, continuum_coeffs,
                                                 amplitudes_uncerts, continuum_coeffs_uncerts );
         

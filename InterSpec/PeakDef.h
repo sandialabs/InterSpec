@@ -389,8 +389,13 @@ class PeakDef
   //  instead of the other way around.
   
 public:
+  /** The skew type applied with Gaussian defined peaks.
+   
+   The skew types are listed roughly in order of what should be preferred, if it can describe the data.
+   */
   enum SkewType
   {
+    /** No skew - i.e., a purely Gaussian distribution. */
     NoSkew,
   
     /** The Bortel function, from the paper referenced below, is:
@@ -423,6 +428,16 @@ public:
      */
     // Doniach,
     
+    /** An exponential tail stitched to a Gaussian core.
+     
+     See: A simple alternative to the Crystal Ball function.
+     Souvik Das, arXiv:1603.08591
+     https://arxiv.org/abs/1603.08591
+     
+     Uses one skew parameter.
+     */
+    GaussExp,
+    
     /** A Gaussian core portion and a power-law low-end tail, below a threshold.
      
      See https://en.wikipedia.org/wiki/Crystal_Ball_function
@@ -432,6 +447,16 @@ public:
      The second is `n` which defines the power-law.
      */
     CrystalBall,
+    
+    /** The GausExp extended to a exponential tail on each side of the Gaussian.
+     
+     See same reference as for GaussExp.
+     
+     Uses two skew parameters.
+     The first one is the skew on the left.
+     The second one is the skew on the right.
+     */
+    ExpGaussExp,
     
     /** A "double-sided" version of the Crystal Ball distribution to account for high-energy skew.
      
@@ -453,21 +478,7 @@ public:
      The third is `alpha_high`, which defines the threshold, on the right side.
      The second is `n_high` which defines the power-law on the right side.
      */
-    DoubleSidedCrystalBall,
-    
-    /** An exponential tail stitched to a Gaussian core.
-     
-     See: A simple alternative to the Crystal Ball function.
-     Souvik Das, arXiv:1603.08591
-     https://arxiv.org/abs/1603.08591
-     */
-    GaussExp,
-    
-    /** The GausExp extended to a exponential tail on each side of the Gaussian.
-     
-     See same reference as for GaussExp.
-     */
-    ExpGaussExp
+    DoubleSidedCrystalBall
   };//enum SkewType
   
   enum DefintionType
@@ -527,6 +538,8 @@ public:
   
   
   static const char *to_string( const CoefficientType type );
+  static const char *to_string( const SkewType type );
+  static SkewType skew_from_string( const std::string &skew_str );
   
   /** Gives reasonable range for skew parameter values, as well as a reasonable starting value.
    
@@ -536,6 +549,35 @@ public:
   static bool skew_parameter_range( const SkewType skew_type, const CoefficientType coefficient,
                                    double &lower_value, double &upper_value,
                                    double &starting_value, double &step_size );
+  
+  /** Returns the number of parameters required to describe the skew type.
+   Will return 0, 1, 2, 3, or 4
+   */
+  static size_t num_skew_parameters( const SkewType skew_type );
+  
+  
+  /** Function to semi-efficiently integrate the gaussian plus optionally skew distribution over an energy range.
+   
+   @param mean The peak mean, in keV
+   @param sigma The peak sigma, in keV
+   @param amplitude The peak amplitude; e.g., use 1.0 for unit-area peak.
+   @param skew_type The type of skew of the peak
+   @param skew_parameters The values of the skew parameters; must have at least `num_skew_parameters(SkewType)` entries.
+          or can be nullptr if no skew.
+   @param nchannel The number of channels to sum
+   @param lower_energies The lower energies of the channels.  Must have at least `nchannel + 1` entries
+   @param[out] peak_count_channels Where the channel sums of the distribution are added to.
+          Note that the distribution sum for each channel is _added_ to this array, so you should zero-initialize it.
+          Must have at least `nchannel` entries.
+   */
+  static void photopeak_function_integral( const double mean,
+                                          const double sigma,
+                                          const double amplitude,
+                                          const SkewType skew_type,
+                                          const double * const skew_parameters,
+                                          const size_t nchannel,
+                                          const float * const lower_energies,
+                                          double *peak_count_channels );
   
 public:
   PeakDef();

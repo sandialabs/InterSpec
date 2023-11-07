@@ -1195,7 +1195,7 @@ DeconComputeResults decon_compute_peaks( const DeconComputeInput &input )
   
   //Lets try to keep whether or not to fit parameters should be the same for
   //  the output peaks as the input peaks.
-  //Note that this doesnt account for peaks swapping with eachother in the fit
+  //Note that this doesnt account for peaks swapping with each other in the fit
   assert( fitPeaks.size() == inputPeaks.size() );
   
   //for( size_t i = 0; i < near_peaks.size(); ++i )

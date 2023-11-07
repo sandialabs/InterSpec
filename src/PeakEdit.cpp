@@ -490,8 +490,13 @@ void PeakEdit::init()
   m_skewType = new WComboBox( row->elementAt(1) );
   m_skewType->activated().connect( this, &PeakEdit::skewTypeChanged );
   
+  static_assert( PeakDef::DoubleSidedCrystalBall > PeakDef::ExpGaussExp, "SkewType ordering changed DSCB should be largest" );
+  static_assert( PeakDef::DoubleSidedCrystalBall > PeakDef::CrystalBall, "SkewType ordering changed DSCB should be largest" );
+  static_assert( PeakDef::DoubleSidedCrystalBall > PeakDef::GaussExp, "SkewType ordering changed DSCB should be largest" );
+  static_assert( PeakDef::DoubleSidedCrystalBall > PeakDef::Bortel, "SkewType ordering changed DSCB should be largest" );
+  
   for( PeakDef::SkewType t = PeakDef::SkewType(0);
-      t <= PeakDef::ExpGaussExp; t = PeakDef::SkewType(t+1) )
+      t <= PeakDef::DoubleSidedCrystalBall; t = PeakDef::SkewType(t+1) )
   {
     switch ( t )
     {

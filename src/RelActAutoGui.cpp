@@ -264,6 +264,7 @@ namespace
     NativeFloatSpinBox *m_lower_energy;
     NativeFloatSpinBox *m_upper_energy;
     WComboBox *m_continuum_type;
+    WComboBox *m_skew_type;
     WCheckBox *m_force_full_range;
     WPushButton *m_to_individual_rois;
     
@@ -279,6 +280,7 @@ namespace
       m_lower_energy( nullptr ),
       m_upper_energy( nullptr ),
       m_continuum_type( nullptr ),
+      m_skew_type( nullptr ),
       m_force_full_range( nullptr ),
       m_to_individual_rois( nullptr ),
       m_highlight_region_id( 0 )
@@ -328,8 +330,24 @@ namespace
       m_continuum_type->setCurrentIndex( static_cast<int>(PeakContinuum::OffsetType::Linear) );
       m_continuum_type->changed().connect( this, &RelActAutoEnergyRange::handleContinuumTypeChange );
       
+      label = new WLabel( "Skew Type:", this );
+      label->addStyleClass( "GridFourthCol GridSecondRow" );
+      m_skew_type = new WComboBox( this );
+      m_skew_type->addStyleClass( "GridFifthCol GridSecondRow" );
+      label->setBuddy( m_skew_type );
+      
+      // We wont allow "External" here
+      for( int i = 0; i < static_cast<int>(PeakContinuum::OffsetType::External); ++i )
+      {
+        const char *label = PeakContinuum::offset_type_label( PeakContinuum::OffsetType(i) );
+        m_continuum_type->addItem( label );
+      }//for( loop over PeakContinuum::OffsetType )
+      
+      m_skew_type->setCurrentIndex( static_cast<int>(PeakDef::SkewType::NoSkew) );
+      m_skew_type->changed().connect( this, &RelActAutoEnergyRange::handleSkewTypeChange );
+      
       m_force_full_range = new WCheckBox( "Force full-range", this );
-      m_force_full_range->addStyleClass( "GridFourthCol GridSecondRow GridSpanTwoCol" );
+      m_force_full_range->addStyleClass( "GridFourthCol GridThirdRow GridSpanTwoCol" );
       m_force_full_range->checked().connect( this, &RelActAutoEnergyRange::handleForceFullRangeChange );
       m_force_full_range->unChecked().connect( this, &RelActAutoEnergyRange::handleForceFullRangeChange );
       
@@ -366,6 +384,11 @@ namespace
     
     
     void handleContinuumTypeChange()
+    {
+      m_updated.emit();
+    }
+    
+    void handleSkewTypeChange()
     {
       m_updated.emit();
     }
@@ -448,6 +471,38 @@ namespace
     }//void setContinuumType( PeakContinuum::OffsetType type )
     
     
+    void setSkewType( const PeakDef::SkewType type )
+    {
+      static_assert( PeakDef::SkewType::DoubleSidedCrystalBall > PeakDef::SkewType::ExpGaussExp,
+                    "DoubleSidedCrystalBall should be largest value of SkewType enum" );
+      static_assert( PeakDef::SkewType::DoubleSidedCrystalBall > PeakDef::SkewType::CrystalBall,
+                    "DoubleSidedCrystalBall should be largest value of SkewType enum" );
+      static_assert( PeakDef::SkewType::DoubleSidedCrystalBall > PeakDef::SkewType::GaussExp,
+                    "DoubleSidedCrystalBall should be largest value of SkewType enum" );
+      static_assert( PeakDef::SkewType::DoubleSidedCrystalBall > PeakDef::SkewType::Bortel,
+                    "DoubleSidedCrystalBall should be largest value of SkewType enum" );
+      static_assert( PeakDef::SkewType::DoubleSidedCrystalBall > PeakDef::SkewType::NoSkew,
+                    "DoubleSidedCrystalBall should be largest value of SkewType enum" );
+      static_assert( PeakDef::SkewType::NoSkew == 0,
+                    "NoSkew should be first value of SkewType enum" );
+      
+      const int type_index = static_cast<int>( type );
+      
+      if( (type_index < 0)
+         || (type_index > static_cast<int>(PeakDef::SkewType::DoubleSidedCrystalBall)) )
+      {
+        assert( 0 );
+        return;
+      }
+      
+      if( type_index == m_continuum_type->currentIndex() )
+        return;
+      
+      m_skew_type->setCurrentIndex( type_index );
+      m_updated.emit();
+    }//void setSkewType( PeakContinuum::OffsetType type )
+    
+    
     void setHighlightRegionId( const size_t chart_id )
     {
       m_highlight_region_id = chart_id;
@@ -495,6 +550,7 @@ namespace
       roi.lower_energy = m_lower_energy->value();
       roi.upper_energy = m_upper_energy->value();
       roi.continuum_type = PeakContinuum::OffsetType( m_continuum_type->currentIndex() );
+      roi.skew_type = PeakDef::SkewType( m_skew_type->currentIndex() );
       roi.force_full_range = m_force_full_range->isChecked();
       roi.allow_expand_for_peak_width = false; //not currently supported to the GUI, or tested in the calculation code
       

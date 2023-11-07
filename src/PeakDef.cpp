@@ -1815,13 +1815,13 @@ void PeakDef::reset()
       case PeakDef::Mean:
       case PeakDef::Sigma:
       case PeakDef::GaussAmplitude:
-        m_fitFor[t] = true;
-      break;
-        
       case PeakDef::SkewPar0:
       case PeakDef::SkewPar1:
       case PeakDef::SkewPar2:
       case PeakDef::SkewPar3:
+        m_fitFor[t] = true;
+      break;
+        
       case PeakDef::Chi2DOF:
       case PeakDef::NumCoefficientTypes:
         m_fitFor[t] = false;
@@ -1880,6 +1880,54 @@ const char *PeakDef::to_string( const CoefficientType type )
 
   return "";
 }//const char *PeakDef::to_string( const CoefficientType type )
+
+
+const char *PeakDef::to_string( const SkewType type )
+{
+  switch( type )
+  {
+    case PeakDef::NoSkew:                 return "NoSkew";
+    case PeakDef::Bortel:                 return "Bortel"; //Might change to "ExGauss"
+    case PeakDef::GaussExp:               return "GaussExp";
+    case PeakDef::CrystalBall:            return "CrystalBall"; //Might change to "CB"
+    case PeakDef::ExpGaussExp:            return "ExpGaussExp";
+    case PeakDef::DoubleSidedCrystalBall: return "DoubleSidedCrystalBall"; //Might change to "DSCB"
+  }//switch( skew_type )
+  
+  assert( 0 );
+  throw runtime_error( "PeakDef::to_string(SkewType): invalid SkewType" );
+  return "";
+}//const char *to_string( const SkewType type )
+
+
+PeakDef::SkewType PeakDef::skew_from_string( const string &skew_type_str )
+{
+  if( SpecUtils::iequals_ascii(skew_type_str,"NoSkew") )
+    return PeakDef::SkewType::NoSkew;
+  
+  if( SpecUtils::iequals_ascii(skew_type_str,"Bortel")
+          || SpecUtils::iequals_ascii(skew_type_str,"ExGauss")  )
+    return PeakDef::SkewType::Bortel;
+  
+  if( SpecUtils::iequals_ascii(skew_type_str,"GaussExp") )
+    return PeakDef::SkewType::GaussExp;
+  
+  if( SpecUtils::iequals_ascii(skew_type_str,"CrystalBall")
+          || SpecUtils::iequals_ascii(skew_type_str,"CB") )
+    return PeakDef::SkewType::CrystalBall;
+  
+  if( SpecUtils::iequals_ascii(skew_type_str,"ExpGaussExp") )
+    return PeakDef::SkewType::ExpGaussExp;
+  
+  if( SpecUtils::iequals_ascii(skew_type_str,"DoubleSidedCrystalBall")
+          || SpecUtils::iequals_ascii(skew_type_str,"DSCB") )
+    return PeakDef::SkewType::DoubleSidedCrystalBall;
+  
+  
+  throw runtime_error( "Invalid peak skew type: " + string(skew_type_str) );
+  
+  return PeakDef::SkewType::NoSkew;
+}//SkewType skew_from_string( const char *skew_str )
 
 
 bool PeakDef::skew_parameter_range( const SkewType skew_type, const CoefficientType coef,
@@ -1969,6 +2017,69 @@ bool PeakDef::skew_parameter_range( const SkewType skew_type, const CoefficientT
   
   return true;
 }//void skew_parameter_range(...)
+
+
+size_t PeakDef::num_skew_parameters( const SkewType skew_type )
+{
+  switch ( skew_type )
+  {
+    case NoSkew:                 return 0;
+    case Bortel:                 return 1;
+    case CrystalBall:            return 2;
+    case DoubleSidedCrystalBall: return 4;
+    case GaussExp:               return 1;
+    case ExpGaussExp:            return 2;
+  }//switch ( skew_type )
+  
+  assert( 0 );
+  throw std::logic_error( "Invalid peak skew" );
+  return 0;
+}//size_t num_skew_parameters( const SkewType skew_type );
+
+
+
+void PeakDef::photopeak_function_integral( const double mean,
+                                        const double sigma,
+                                        const double amp,
+                                        const SkewType skew_type,
+                                        const double * const skew_parameters,
+                                        const size_t nchannel,
+                                        const float * const energies,
+                                        double *channels )
+{
+  assert( (skew_type == SkewType::NoSkew) || skew_parameters );
+  
+  switch( skew_type )
+  {
+    case NoSkew:
+      gaussian_integral( mean, sigma, amp, energies, channels, nchannel );
+      break;
+      
+    case Bortel:
+      bortel_integral( mean, sigma, amp, skew_parameters[0], energies, channels, nchannel );
+      break;
+      
+    case CrystalBall:
+      crystal_ball_integral( mean, sigma, amp, skew_parameters[0], skew_parameters[1], energies, channels, nchannel );
+      break;
+      
+    case DoubleSidedCrystalBall:
+      double_sided_crystal_ball_integral( mean, sigma, amp,
+                                         skew_parameters[0], skew_parameters[1],
+                                         skew_parameters[2], skew_parameters[3],
+                                         energies, channels, nchannel );
+      break;
+      
+    case GaussExp:
+      gauss_exp_integral( mean, sigma, amp, skew_parameters[0], energies, channels, nchannel );
+      break;
+      
+    case ExpGaussExp:
+      exp_gauss_exp_integral( mean, sigma, amp, skew_parameters[0], skew_parameters[1], energies, channels, nchannel );
+      break;
+  }//switch( skew_type )
+}//void photopeak_function_integral(...)
+
 
 
 double PeakDef::extract_energy_from_peak_source_string( std::string &str )
@@ -4967,63 +5078,9 @@ void PeakDef::gauss_integral( const float *energies, double *channels, const siz
   const double sigma = m_coefficients[PeakDef::Sigma];
   const double amp = m_coefficients[PeakDef::GaussAmplitude];
   
-  
-  switch( m_skewType )
-  {
-    case SkewType::NoSkew:
-      gaussian_integral( mean, sigma, amp, energies, channels, nchannel );
-      break;
-      
-    case SkewType::Bortel:
-    {
-      const double skew = m_coefficients[PeakDef::SkewPar0];
-      bortel_integral( mean, sigma, amp, skew, energies, channels, nchannel );
-      break;
-    }
-      
-    //case SkewType::Doniach:
-    //{
-    //  const double skew = m_coefficients[PeakDef::SkewPar0];
-    //  doniach_integral( mean, sigma, amp, skew, energies, channels, nchannel );
-    //  break;
-    //}
-      
-    case SkewType::CrystalBall:
-    {
-      const double alpha = m_coefficients[PeakDef::SkewPar0];
-      const double power_law = m_coefficients[PeakDef::SkewPar1];
-      crystal_ball_integral( mean, sigma, amp, alpha, power_law, energies, channels, nchannel );
-      break;
-    }
-      
-    case SkewType::DoubleSidedCrystalBall:
-    {
-      const double lower_alpha = m_coefficients[PeakDef::SkewPar0];
-      const double lower_power_law = m_coefficients[PeakDef::SkewPar1];
-      const double upper_alpha = m_coefficients[PeakDef::SkewPar2];
-      const double upper_power_law = m_coefficients[PeakDef::SkewPar3];
-      
-      double_sided_crystal_ball_integral( mean, sigma, amp,
-                                         lower_alpha, lower_power_law, upper_alpha, upper_power_law,
-                                         energies, channels, nchannel );
-      break;
-    }
-     
-    case GaussExp:
-    {
-      const double skew = m_coefficients[PeakDef::SkewPar0];
-      gauss_exp_integral( mean, sigma, amp, skew, energies, channels, nchannel );
-      break;
-    }//case GaussExp:
-      
-    case ExpGaussExp:
-    {
-      const double skew_left = m_coefficients[PeakDef::SkewPar0];
-      const double skew_right = m_coefficients[PeakDef::SkewPar1];
-      exp_gauss_exp_integral( mean, sigma, amp, skew_left, skew_right, energies, channels, nchannel );
-      break;
-    }//case ExpGaussExp:
-  };//enum SkewType
+  PeakDef::photopeak_function_integral( mean, sigma, amp, m_skewType,
+                                       m_coefficients + PeakDef::SkewPar0,
+                                       nchannel, energies, channels );
 }//void gauss_integral( const float * const energies, double *channels, const size_t nchannel )
 
 
