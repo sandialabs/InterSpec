@@ -342,16 +342,15 @@ namespace
 
   /** Returns indefinite integral (negative infinite to `x0` for the power-law component for the unit-area Crystal Ball function.
    */
-  double crystal_ball_tail_indefinite( const double mean,
-                                          const double sigma,
+  double crystal_ball_tail_indefinite_t( const double sigma,
                                           const double alpha,
                                           const double n,
-                                          const double x )
+                                          const double t )
   {
     // TODO: this is just a niave implementation - still needs to be optimized
     // The CERN ROOT implementation switches to a log-version of this integral when `n` is
     //  less than 1 + 1E-5 - which makes sense, but for the moment lets just avoid n approaching 1
-    assert( ((x - mean)/sigma) <= alpha );
+    assert( t <= -alpha );
     assert( alpha > 0.0 );
     assert( n > 1.0 );
     
@@ -364,8 +363,8 @@ namespace
     const double D = sqrt_half_pi * (1.0 + boost_erf_imp( oneOverSqrt2 * alpha ));
     const double N = 1.0 / (sigma * (C + D));
     
-    return N * A * sigma * std::pow( (B*sigma + mean - x)/sigma, 1.0 - n ) / (n - 1.0);
-  }//crystal_ball_tail_indefinite
+    return N * A * sigma * std::pow( B - t, 1.0 - n ) / (n - 1.0);
+  }//crystal_ball_tail_indefinite_t
 
   /** Returns the non-normalized, double sided Crystal Ball PDF value for `x` */
   double double_sided_crystal_ball_pdf(const double mean,
@@ -431,13 +430,9 @@ namespace
                                                           const double n_high,
                                                           const double t)
   {
-    assert( t <= alpha_low );
     // Takes `t = (x - mean) / sigma`, not x
+    assert( t <= -alpha_low );
     const double norm = double_sided_crystal_ball_norm( peak_sigma, alpha_low, n_low, alpha_high, n_high );
-    
-    // a = alpha_low
-    // n = n_low
-    // -(e^(-a*a/2)*n*((a*(-t+n/a-a))/n)^(1-n))/(a*(1-n))
     
     const double &a = alpha_low;
     const double &n = n_low;
@@ -452,8 +447,8 @@ namespace
                                                            const double n_high,
                                                            const double t)
   {
-    assert( t >= alpha_high );
     // Takes `t = (x - mean) / sigma`, not x
+    assert( t >= alpha_high );
     const double norm = double_sided_crystal_ball_norm( peak_sigma, alpha_low, n_low, alpha_high, n_high );
     
     const double &a = alpha_high;
@@ -470,6 +465,9 @@ namespace
                                                       const double n_high,
                                                       const double t)
   {
+    assert( t >= -alpha_low );
+    assert( t <= alpha_high );
+    
     const double root_half_pi = boost::math::constants::root_half_pi<double>();
     const double one_div_root_two = boost::math::constants::one_div_root_two<double>(); //0.70710678118654752440
     
@@ -530,8 +528,7 @@ namespace
   }
   
   
-  double gauss_exp_integral( const double &x1, const double &x2, const double &mean,
-                            const double &sigma, const double &skew )
+  double gauss_exp_integral( const double &mean, const double &sigma, const double &skew, const double &x1, const double &x2 )
   {
     return gauss_exp_indefinite(mean, sigma, skew, x2) - gauss_exp_indefinite(mean, sigma, skew, x1);
   }
@@ -1964,10 +1961,10 @@ bool PeakDef::skew_parameter_range( const SkewType skew_type, const CoefficientT
             return false;
           // fall-though intentional
         case CoefficientType::SkewPar0: //alpha (left)
-          starting_value = 2; //Can start seeing a little bit of skew
-          step_size = 0.1;
-          lower_value = 0.2;  //a ton of skew with really long tail
-          upper_value = 6;  //I dont really see any skew by ~4
+          starting_value = 2; // Saying skew becomes significant after 2 sigma, is maybe reasonable
+          step_size = 0.5;
+          lower_value = 0.5;  // You should at least be gaussian for half a sigma
+          upper_value = 4.0;  // If you are gaussian all the way out to 4 sigma, you dont need skew
           break;
         
           
@@ -1979,9 +1976,9 @@ bool PeakDef::skew_parameter_range( const SkewType skew_type, const CoefficientT
           // The valid values of `n` is probably a bit more complicated than just the range,
           //  since
           starting_value = 2;
-          step_size = 0.1;
+          step_size = 2;
           lower_value = 1.05; //1.0 would be divide by zero
-          upper_value = 100;  //much higher than this
+          upper_value = 100;  //much higher than this and we run into numerical issues
           break;
           
         default:
@@ -4581,7 +4578,7 @@ double PeakDef::lowerX() const
       double lowx = mean - 8.0*sigma;
       while( (lowx < (mean - 4.0*sigma)) && (((lowx - mean)/sigma) < -alpha) )
       {
-        const double cumulative = crystal_ball_tail_indefinite( mean, sigma, alpha, n, lowx );
+        const double cumulative = crystal_ball_tail_indefinite_t( sigma, alpha, n, (lowx - mean)/sigma );
         if( cumulative > 0.025 )
           return lowx;
         lowx += 0.1*sigma;
@@ -4809,28 +4806,28 @@ double PeakDef::crystal_ball_integral( const double mean,
   if( (a_0 <= -alpha) && (a_1 <= -alpha) )
   {
     // Integrate just among the power law component
-    return peak_amplitude * (crystal_ball_tail_indefinite(mean,sigma,alpha,n,x1)
-                              - crystal_ball_tail_indefinite(mean,sigma,alpha,n,x0));
+    return peak_amplitude * (crystal_ball_tail_indefinite_t(sigma,alpha,n,a_1)
+                              - crystal_ball_tail_indefinite_t(sigma,alpha,n,a_0));
   }
   
   const double A = std::pow(n/alpha, n) * std::exp( -0.5*alpha*alpha );
-  const double B = (n / alpha) - alpha;
+  //const double B = (n / alpha) - alpha;
   const double C = (n / alpha) * (1.0/(n - 1.0)) * std::exp( -0.5*alpha*alpha );
   const double D = sqrt_half_pi * (1.0 + boost_erf_imp( oneOverSqrt2 * alpha ));
-  const double N = 1.0 / (sigma * (C + D));
+  //const double N = 1.0 / (sigma * (C + D));
   
   const double sqrt_2pi = boost::math::constants::root_two_pi<double>();
   
-  const double gauss_amp = (sqrt_2pi)/(C + D);
+  const double gauss_amp = peak_amplitude * (sqrt_2pi)/(C + D);
   
   if( (a_0 >= -alpha) && (a_1 > -alpha) ) // just the gaussian
     return gaussian_integral( mean, sigma, gauss_amp, x0, x1 );
   
   // integrate power-law from a_0 to -alpha
   // integrate gaussian from -alpha to a_1
-  return peak_amplitude * (crystal_ball_tail_indefinite(mean,sigma,alpha,n,mean-alpha)
-                          - crystal_ball_tail_indefinite(mean,sigma,alpha,n,x0))
-         + gaussian_integral( mean, sigma, gauss_amp, mean-alpha, x1 );
+  return peak_amplitude * (crystal_ball_tail_indefinite_t(sigma,alpha,n,-alpha)
+                          - crystal_ball_tail_indefinite_t(sigma,alpha,n,a_0))
+         + gaussian_integral( mean, sigma, gauss_amp, mean-alpha*sigma, x1 );
 }//crystal_ball_integral(...)
 
 
@@ -4909,13 +4906,43 @@ void PeakDef::gauss_exp_integral( const double &peak_mean,
   #warning "PeakDef::gauss_exp_integral is not properly coded"
 #endif
   
+#if( PERFORM_DEVELOPER_CHECKS )
+  double dist_sum = 0.0;
+#endif
+  
   for( size_t i = 0; i < nchannel; ++i )
   {
     const float x0 = energies[i];
     const float x1 = energies[i+1];
+    const double val = PeakDef::gauss_exp_integral( peak_mean, peak_sigma, peak_amplitude, skew, x0, x1 );
+    channels[i] += val;
     
-    channels[i] += PeakDef::gauss_exp_integral( peak_mean, peak_sigma, peak_amplitude, skew, x0, x1 );
+#if( PERFORM_DEVELOPER_CHECKS )
+    dist_sum += val;
+    
+    if( IsInf(channels[i]) || IsNan(channels[i]) )
+    {
+      cerr << "Found GausExp invalid counts, " << channels[i] << " from [" << x0 << ", " << x1 << "]:\n"
+      << "\t" << setw(14) << "range:" << "[" << energies[0] << ", " << energies[nchannel] << "]\n"
+      << "\t" << setw(14) << "min_energy =" << energies[0] << "\n"
+      << "\t" << setw(14) << "max_energy =" << energies[nchannel] << "\n"
+      << "\t" << setw(14) << "nchannel =" << nchannel << "\n"
+      << "\t" << setw(14) << "mean =" << peak_mean << "\n"
+      << "\t" << setw(14) << "sigma =" << peak_sigma << "\n"
+      << "\t" << setw(14) << "amp =" << peak_amplitude << "\n"
+      << "\t" << setw(14) << "skew =" << skew << "\n"
+      << endl;
+      cerr << endl;
+    }//if( skew_type_t != PeakDef::NoSkew )
+    
+    //log_developer_error( __func__, "Invalid CSS color called back " );
+#endif //PERFORM_DEVELOPER_CHECKS
   }
+  
+#if( PERFORM_DEVELOPER_CHECKS )
+//  cerr << "GaussExp sum over [" << energies[0] << "," << energies[nchannel] << "] is "
+//  << (dist_sum/peak_amplitude) << " (should be near 1)" << endl;
+#endif
 }//void PeakDef::gauss_exp_integral( ... array ... )
 
 
@@ -4940,7 +4967,27 @@ void PeakDef::exp_gauss_exp_integral( const double &peak_mean,
     const float x1 = energies[i+1];
     
     channels[i] += PeakDef::exp_gauss_exp_integral( peak_mean, peak_sigma, peak_amplitude, skew_left, skew_right, x0, x1 );
-  }
+    
+#if( PERFORM_DEVELOPER_CHECKS )
+    if( IsInf(channels[i]) || IsNan(channels[i]) )
+    {
+      cerr << "Found ExpGausExp invalid counts, " << channels[i] << " from [" << x0 << ", " << x1 << "]:\n"
+      << "\t" << setw(14) << "range:" << "[" << energies[0] << ", " << energies[nchannel] << "]\n"
+      << "\t" << setw(14) << "min_energy =" << energies[0] << "\n"
+      << "\t" << setw(14) << "max_energy =" << energies[nchannel] << "\n"
+      << "\t" << setw(14) << "nchannel =" << nchannel << "\n"
+      << "\t" << setw(14) << "mean =" << peak_mean << "\n"
+      << "\t" << setw(14) << "sigma =" << peak_sigma << "\n"
+      << "\t" << setw(14) << "amp =" << peak_amplitude << "\n"
+      << "\t" << setw(14) << "skew_left =" << skew_left << "\n"
+      << "\t" << setw(14) << "skew_right =" << skew_right << "\n"
+      << endl;
+      cerr << endl;
+    }//if( skew_type_t != PeakDef::NoSkew )
+    
+    //log_developer_error( __func__, "Invalid CSS color called back " );
+#endif //PERFORM_DEVELOPER_CHECKS
+  }//for( size_t i = 0; i < nchannel; ++i )
 }
 
 /*
@@ -4983,13 +5030,64 @@ void PeakDef::crystal_ball_integral( const double &peak_mean,
   #warning "PeakDef::crystal_ball_integral is not properly coded"
 #endif
   
+#if( PERFORM_DEVELOPER_CHECKS )
+  double dist_sum = 0.0;
+#endif
+  
   for( size_t i = 0; i < nchannel; ++i )
   {
     const float x0 = energies[i];
     const float x1 = energies[i+1];
     
-    channels[i] += PeakDef::crystal_ball_integral( peak_mean, peak_sigma, peak_amplitude, alpha, power_law, x0, x1 );
-  }
+    const double val = PeakDef::crystal_ball_integral( peak_mean, peak_sigma, peak_amplitude, alpha, power_law, x0, x1 );
+    channels[i] += val;
+    
+#if( PERFORM_DEVELOPER_CHECKS )
+    dist_sum += val;
+#endif
+    
+#if( PERFORM_DEVELOPER_CHECKS )
+    if( IsInf(channels[i]) || IsNan(channels[i]) )
+    {
+      cerr << "Found Crystal Ball invalid counts, " << channels[i] << " from [" << x0 << ", " << x1 << "]:\n"
+      << "\t" << setw(14) << "range:" << "[" << energies[0] << ", " << energies[nchannel] << "]\n"
+      << "\t" << setw(14) << "min_energy =" << energies[0] << "\n"
+      << "\t" << setw(14) << "max_energy =" << energies[nchannel] << "\n"
+      << "\t" << setw(14) << "nchannel =" << nchannel << "\n"
+      << "\t" << setw(14) << "mean =" << peak_mean << "\n"
+      << "\t" << setw(14) << "sigma =" << peak_sigma << "\n"
+      << "\t" << setw(14) << "amp =" << peak_amplitude << "\n"
+      << "\t" << setw(14) << "alpha =" << alpha << "\n"
+      << "\t" << setw(14) << "n =" << power_law << "\n"
+      << endl;
+      cerr << endl;
+    }//if( skew_type_t != PeakDef::NoSkew )
+    
+    //log_developer_error( __func__, "..." );
+#endif //PERFORM_DEVELOPER_CHECKS
+  }//for( size_t i = 0; i < nchannel; ++i )
+  
+#if( PERFORM_DEVELOPER_CHECKS )
+  /*
+  const double frac = dist_sum / peak_amplitude;
+    cerr << "Crystal Ball sum over [" << energies[0] << "," << energies[nchannel] << "] is "
+          << frac << " (should be near 1)" << endl;
+  
+  if( fabs(1 - frac) > 0.01 )
+  {
+    cerr << "alpha(x) -> " << (peak_mean - alpha*peak_sigma) << endl;
+    for( size_t i = 0; i < nchannel; ++i )
+      cout << setw(5) << i << setw(12) << std::fixed << setprecision(2) << energies[i]
+      << setw(12) << std::scientific << (channels[i]/peak_amplitude) << endl;
+    
+    cerr << "Single step integral is "
+    << PeakDef::crystal_ball_integral( peak_mean, peak_sigma, 1.0, alpha, power_law, energies[0], energies[nchannel] )
+    << " and over all area: "
+    << PeakDef::crystal_ball_integral( peak_mean, peak_sigma, 1.0, alpha, power_law, peak_mean - 50*peak_sigma, peak_mean + 20*peak_sigma )
+    << endl;
+  }//if( fabs(1 - frac) > 0.01 )
+   */
+#endif
 }//crystal_ball_integral(...)
 
 
@@ -5010,15 +5108,69 @@ void PeakDef::double_sided_crystal_ball_integral( const double &peak_mean,
   #warning "PeakDef::double_sided_crystal_ball_integral is not properly coded"
 #endif
   
+#if( PERFORM_DEVELOPER_CHECKS )
+  double dist_sum = 0.0;
+#endif
+  
   for( size_t i = 0; i < nchannel; ++i )
   {
     const float x0 = energies[i];
     const float x1 = energies[i+1];
     
-    channels[i] += PeakDef::double_sided_crystal_ball_integral( peak_mean, peak_sigma, peak_amplitude,
-                                                                     lower_alpha, lower_power_law,
-                                                                     upper_alpha, upper_power_law, x0, x1 );
+    const double val = PeakDef::double_sided_crystal_ball_integral( peak_mean, peak_sigma, peak_amplitude,
+                                                                   lower_alpha, lower_power_law,
+                                                                   upper_alpha, upper_power_law, x0, x1 );
+    channels[i] += val;
+    
+#if( PERFORM_DEVELOPER_CHECKS )
+    dist_sum += val;
+    
+    if( IsInf(channels[i]) || IsNan(channels[i]) )
+    {
+      cerr << "Found Double Sided Crystal Ball invalid counts, " << channels[i] << " from [" << x0 << ", " << x1 << "]:\n"
+      << "\t" << setw(14) << "range:" << "[" << energies[0] << ", " << energies[nchannel] << "]\n"
+      << "\t" << setw(14) << "min_energy =" << energies[0] << "\n"
+      << "\t" << setw(14) << "max_energy =" << energies[nchannel] << "\n"
+      << "\t" << setw(14) << "nchannel =" << nchannel << "\n"
+      << "\t" << setw(14) << "mean =" << peak_mean << "\n"
+      << "\t" << setw(14) << "sigma =" << peak_sigma << "\n"
+      << "\t" << setw(14) << "amp =" << peak_amplitude << "\n"
+      << "\t" << setw(14) << "lower_alpha =" << lower_alpha << "\n"
+      << "\t" << setw(14) << "lower_power_law =" << lower_power_law << "\n"
+      << "\t" << setw(14) << "upper_alpha =" << upper_alpha << "\n"
+      << "\t" << setw(14) << "upper_power_law =" << upper_power_law << "\n"
+      << endl;
+      cerr << endl;
+    }//if( skew_type_t != PeakDef::NoSkew )
+    
+    //log_developer_error( __func__, "..." );
+#endif //PERFORM_DEVELOPER_CHECKS
   }
+  
+#if( PERFORM_DEVELOPER_CHECKS )
+  const double frac = dist_sum / peak_amplitude;
+    cerr << "Double Sided Crystal Ball sum over [" << energies[0] << "," << energies[nchannel] << "] is "
+          << frac << " (should be near 1)" << endl;
+  
+  if( (peak_amplitude > 0.0) && IsNan(frac) )
+  {
+    cerr << endl;
+  }
+  
+  if( fabs(1 - frac) > 0.01 )
+  {
+    //cerr << "alpha(x) -> " << (peak_mean - alpha*peak_sigma) << endl;
+    //for( size_t i = 0; i < nchannel; ++i )
+    //  cout << setw(5) << i << setw(12) << std::fixed << setprecision(2) << energies[i]
+    //  << setw(12) << std::scientific << (channels[i]/peak_amplitude) << endl;
+    
+    //cerr << "Single step integral is "
+    //<< PeakDef::crystal_ball_integral( peak_mean, peak_sigma, 1.0, alpha, power_law, energies[0], energies[nchannel] )
+    //<< " and over all area: "
+    //<< PeakDef::crystal_ball_integral( peak_mean, peak_sigma, 1.0, alpha, power_law, peak_mean - 50*peak_sigma, peak_mean + 20*peak_sigma )
+    //<< endl;
+  }//if( fabs(1 - frac) > 0.01 )
+#endif
 }//double_sided_crystal_ball_integral(...)
 
 

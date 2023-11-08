@@ -1835,6 +1835,10 @@ void D3SpectrumDisplayDiv::performExistingRoiEdgeDragWork(
       //Need to check that all peaks are Gaussian.
       //  Actually should make sure a ROI can only have data defined or Gausian peaks only (what happens now)
       std::shared_ptr<const DetectorPeakResponse> detector;
+      
+      // As user drag a ROI, the parameters may change substantually, but we are always comparing against the
+      //  original peaks chi2/dof; instead we should compare to the last peaks fit that were used, and the original ones
+      
       vector<shared_ptr<const PeakDef>> refitpeaks
                   = refitPeaksThatShareROI( foreground, detector, new_roi_initial_peaks, 3.0 );
       

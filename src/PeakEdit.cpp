@@ -1818,6 +1818,7 @@ void PeakEdit::skewTypeChanged()
           m_values[index]->setHidden( false );
           m_valueTable->rowAt(1+index)->setHidden( false );
           m_values[index]->setText( PhysicalUnits::printCompact(starting_val, 4) );
+          m_fitFors[index]->setChecked( true );
           auto validator = dynamic_cast<WDoubleValidator *>( m_values[index]->validator() );
           assert( validator );
           if( validator )

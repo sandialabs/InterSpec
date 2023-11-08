@@ -403,6 +403,7 @@ InterSpec::InterSpec( WContainerWidget *parent )
     m_rightClickEnergy( -DBL_MAX ),
     m_rightClickNuclideSuggestMenu( nullptr ),
     m_rightClickChangeContinuumMenu( nullptr ),
+    m_rightClickChangeSkewMenu( nullptr ),
     m_exportSpecFileMenu{ nullptr },
     m_exportSpecFileWindow{ nullptr },
   m_logYItems{0},
@@ -1067,6 +1068,20 @@ InterSpec::InterSpec( WContainerWidget *parent )
         }//for( loop over PeakContinuum::OffsetTypes )
         break;
       }//case kChangeContinuum:
+        
+      case kChangeSkew:
+      {
+        m_rightClickChangeSkewMenu = m_rightClickMenu->addPopupMenuItem( "Change Skew Type" );
+        m_rightClickMenutItems[i] = m_rightClickChangeSkewMenu->parentItem();
+        for( auto type = PeakDef::SkewType(0);
+            type <= PeakDef::SkewType::DoubleSidedCrystalBall; type = PeakDef::SkewType(type+1) )
+        {
+          WMenuItem *item = m_rightClickChangeSkewMenu->addItem( PeakDef::to_string(type) );
+          item->triggered().connect( boost::bind( &InterSpec::handleChangeSkewTypeFromRightClick,
+                                                 this, static_cast<int>(type) ) );
+        }//for( loop over PeakContinuum::OffsetTypes )
+        break;
+      }
         
       case kAddPeak:
         m_rightClickMenutItems[i] = m_rightClickMenu->addMenuItem( "Add Peak" );
@@ -2093,6 +2108,15 @@ void InterSpec::handleChangeContinuumTypeFromRightClick( const int continuum_typ
 }//InterSpec::handleChangeContinuumTypeFromRightClick(...)
 
 
+void InterSpec::handleChangeSkewTypeFromRightClick( const int peak_skew_type )
+{
+  UndoRedoManager::PeakModelChange peak_undo_creator;
+  
+  PeakSearchGuiUtils::change_skew_type_from_right_click( this, m_rightClickEnergy,
+                                                        peak_skew_type );
+}//void handleChangeSkewTypeFromRightClick( const int peak_continuum_offset_type )
+
+
 void InterSpec::shareContinuumWithNeighboringPeak( const bool shareWithLeft )
 {
   UndoRedoManager::PeakModelChange peak_undo_creator;
@@ -2458,6 +2482,18 @@ void InterSpec::handleRightClick( double energy, double counts,
         
         break;
       }//case kChangeContinuum:
+        
+      case kChangeSkew:
+      {
+        if( !m_rightClickChangeSkewMenu )
+          break;
+        
+        // Disable current skew type, enable all others
+        const vector<WMenuItem *> items = m_rightClickChangeSkewMenu->items();
+        const char *labelTxt = PeakDef::to_string( peak->skewType() );
+        for( WMenuItem *item : items )
+          item->setDisabled( item->text() == labelTxt );
+      }//case kChangeSkew:
         
       case kChangeNuclide:
       {

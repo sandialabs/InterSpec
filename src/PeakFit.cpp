@@ -1729,7 +1729,7 @@ double chi2_for_region( const PeakShrdVec &peaks,
 {
   //xxx - need to implement a ROI for multipeaks
   typedef std::shared_ptr<const PeakDef> PeakShrdPtr;
-  if( !data )
+  if( !data || !data->channel_energies() || data->channel_energies()->empty() )
     throw runtime_error( "chi2_for_region: invalid data" );
   
   double chi2 = 0.0;
@@ -1756,24 +1756,29 @@ double chi2_for_region( const PeakShrdVec &peaks,
       const size_t xlowbin = data->find_gamma_channel( continuum->lowerEnergy() );
       const size_t xhighbin = data->find_gamma_channel( continuum->upperEnergy() );
       
-      for( size_t channel = xlowbin; channel <= xhighbin; ++channel )
+      const size_t nchannel = (xhighbin >= xlowbin) ? (1 + xhighbin - xlowbin) : size_t(0);
+      vector<double> gauss_counts( std::max(nchannel, size_t(1)), 0.0 );
+      const vector<float> &energies = *data->channel_energies();
+      for( size_t i = 0; i < peaks.size(); ++i )
+        peaks[i]->gauss_integral( &(energies[xlowbin]), &(gauss_counts[0]), nchannel );
+      
+      for( size_t i = 0; i <= nchannel; ++i )
       {
-        const double xbinlow = data->gamma_channel_lower(channel);
-        const double xbinup = data->gamma_channel_upper(channel);
+        const size_t channel = xlowbin + i;
+        const double xbinlow = energies[channel];
+        const double xbinup = energies[channel+1];
         const double ndata = data->gamma_channel_content(channel);
         const double ncontinuum = continuum->offset_integral(xbinlow, xbinup, data);
         
-        double npeak = 0.0;
-        for( const PeakShrdPtr &peak : peaks )
-          npeak = peak->gauss_integral( xbinlow, xbinup );
-        
+        const double npeak = gauss_counts[i];
         const double uncert = ndata > 0.0 ? sqrt(ndata) : 1.0;
         const double chi = (ndata-ncontinuum-npeak)/uncert;
         
         chi2 += chi*chi;
-      }//for( int bin = xlowbin; bin <= xhighbin; ++bin )
+      }//for( size_t i = 0; i <= nchannel; ++i )
     }else
     {
+      // 20231107: I'm not sure if we should ever get here anymore
       map<size_t,double> predicted;
       
       for( const PeakShrdPtr &peak : peaks )
@@ -1832,10 +1837,7 @@ PeakShrdVec refitPeaksThatShareROI( const std::shared_ptr<const Measurement> &da
     const double range = ux - lx;
     
     
-    PeakDef::SkewType skew_type;
-    vector<bool> fit_skew_pars;
-    vector<double> skew_par_vals;
-    LinearProblemSubSolveChi2Fcn::skewFromPrevPeaks( inpeaks, skew_type, fit_skew_pars, skew_par_vals );
+    PeakDef::SkewType skew_type = LinearProblemSubSolveChi2Fcn::skewTypeFromPrevPeaks( inpeaks );
     
     
     LinearProblemSubSolveChi2Fcn chi2Fcn( inpeaks, dataH, origCont->type(), skew_type, lx, ux );
@@ -1853,7 +1855,7 @@ PeakShrdVec refitPeaksThatShareROI( const std::shared_ptr<const Measurement> &da
       if( !inpeaks[i]->gausPeak() )
         throw runtime_error( "Somehow a data defined peak made it into "
                             "refitPeaksThatShareROI; please let "
-                            "wcjohns@sandia.gov know about this" );
+                            "InterSpec@sandia.gov know about this" );
       
       char name[64];
       snprintf( name, sizeof(name), "Mean%i", static_cast<int>(i) );
@@ -1884,7 +1886,13 @@ PeakShrdVec refitPeaksThatShareROI( const std::shared_ptr<const Measurement> &da
     else if( inpeaks.size() > 1 )
       params.Add( "SigmaFcn", 0.0 );
     
-    LinearProblemSubSolveChi2Fcn::addSkewParameters( params, skew_type, fit_skew_pars, skew_par_vals );
+    if( skew_type != PeakDef::SkewType::NoSkew )
+    {
+      if( meanSigmaVary > 0.3 )
+        LinearProblemSubSolveChi2Fcn::addSkewParameters( params, skew_type );
+      else
+        LinearProblemSubSolveChi2Fcn::addSkewParameters( params, skew_type, inpeaks );
+    }//if( skew_type != PeakDef::SkewType::NoSkew )
     
     
     if( (nFitWidth == 0) && (nFitEnergy == 0) )
@@ -1944,7 +1952,41 @@ PeakShrdVec refitPeaksThatShareROI( const std::shared_ptr<const Measurement> &da
     if( prechi2Dof < postchi2Dof )
     {
       answer.clear();
-      return answer;
+      
+      if( true )
+      {
+        const double ncausalitysigma = 0.0;
+        const double stat_threshold  = 0.0;
+        const double hypothesis_threshold = 0.0;
+        
+        const bool isRefit = true;
+        
+        vector<PeakDef> input_peaks, fixed_peaks;
+        for( const auto &p : inpeaks )
+          input_peaks.push_back( *p );
+        
+        vector<PeakDef> output_peak = fitPeaksInRange( lx, ux, ncausalitysigma, stat_threshold,
+                                     hypothesis_threshold, input_peaks, dataH,
+                                     fixed_peaks, isRefit );
+        
+        if( output_peak.size() == inpeaks.size() )
+        {
+          vector<shared_ptr<const PeakDef>> refit_peaks;
+          for( const auto &p : output_peak )
+            refit_peaks.push_back( make_shared<PeakDef>(p) );
+          
+          const double refit_chi2Dof = chi2_for_region( refit_peaks, dataH, lower_channel, upper_channel ) / nbin;
+          cout << "refit_chi2Dof=" << refit_chi2Dof << ", prechi2Dof=" << prechi2Dof << ", postchi2Dof=" << postchi2Dof << endl;
+          if( refit_chi2Dof <= prechi2Dof )
+          {
+            cout << "Using re-fit peaks!" << endl;
+            answer = refit_peaks;
+          }
+        }//if( output_peak.size() == inpeaks.size() )
+      }
+      
+      if( answer.empty() )
+        return answer;
     }//if( prechi2Dof >= 0.99*postchi2Dof )
     
       
@@ -2040,10 +2082,7 @@ void refit_for_new_roi( std::vector< std::shared_ptr<const PeakDef> > originalPe
   {
     const PeakContinuum::OffsetType offset = originalPeaks[0]->continuum()->type();
     
-    PeakDef::SkewType skew_type;
-    vector<bool> fit_skew_pars;
-    vector<double> skew_par_vals;
-    LinearProblemSubSolveChi2Fcn::skewFromPrevPeaks( originalPeaks, skew_type, fit_skew_pars, skew_par_vals );
+    const PeakDef::SkewType skew_type = LinearProblemSubSolveChi2Fcn::skewTypeFromPrevPeaks( originalPeaks );
     
     LinearProblemSubSolveChi2Fcn chi2Fcn( originalPeaks, dataH, offset, skew_type,
                                          new_lower_roi, new_roi_upper );
@@ -2077,7 +2116,7 @@ void refit_for_new_roi( std::vector< std::shared_ptr<const PeakDef> > originalPe
     if( npeaks > 1 )
       params.Add( "SigmaFcn", 0.0, 0.001, -0.10, 0.10 );
     
-    LinearProblemSubSolveChi2Fcn::addSkewParameters( params, skew_type, fit_skew_pars, skew_par_vals );
+    LinearProblemSubSolveChi2Fcn::addSkewParameters( params, skew_type, originalPeaks );
     
     ROOT::Minuit2::MnUserParameterState inputParamState( params );
     const ROOT::Minuit2::MnStrategy strategy( 2 );
@@ -2991,13 +3030,8 @@ void fit_peak_for_user_click( PeakShrdVec &results,
       if( coFitPeaks.size() > 1 )
         params.Add( "SigmaFcn", 0.0, 0.001, -0.10, 0.10 );
             
-      
-      PeakDef::SkewType skew_type;
-      vector<bool> fit_skew_pars;
-      vector<double> skew_par_vals;
-      LinearProblemSubSolveChi2Fcn::skewFromPrevPeaks( coFitPeaks, skew_type, fit_skew_pars, skew_par_vals );
-      LinearProblemSubSolveChi2Fcn::addSkewParameters( params, skew_type, fit_skew_pars, skew_par_vals );
-      
+      const PeakDef::SkewType skew_type = LinearProblemSubSolveChi2Fcn::skewTypeFromPrevPeaks( coFitPeaks );
+      LinearProblemSubSolveChi2Fcn::addSkewParameters( params, skew_type, coFitPeaks );
       
       LinearProblemSubSolveChi2Fcn chi2Fcn( coFitPeaks, dataH, offsetType, skew_type,
                                            lenergy, uenergy );
@@ -5707,7 +5741,7 @@ void get_chi2_and_dof_for_roi( double &chi2, double &dof,
                               const vector<PeakDef *> &peaks )
 {
   dof = chi2 = 0.0;
-  if( peaks.empty() || !data )
+  if( peaks.empty() || !data || !data->channel_energies() || data->channel_energies()->empty() )
     return;
   
   assert( peaks[0] );
@@ -5724,14 +5758,21 @@ void get_chi2_and_dof_for_roi( double &chi2, double &dof,
   
   const size_t startchannel = data->find_gamma_channel( lx + 0.0000001 );
   const size_t endchannel = data->find_gamma_channel( ux - 0.0000001 );
+  const size_t numchannel = (endchannel >= startchannel) ? (1 + endchannel - startchannel) : size_t(0);
+  const vector<float> &energies = *data->channel_energies();
+  assert( startchannel < energies.size() );
+  assert( endchannel < energies.size() );
   
-  for( size_t channel = startchannel; channel <= endchannel; ++channel )
+  vector<double> gauss_counts( std::max(numchannel,size_t(0)), 0.0 );
+  for( size_t i = 0; i < peaks.size(); ++i )
+    peaks[i]->gauss_integral( &(energies[startchannel]), &(gauss_counts[0]), numchannel );
+  
+  for( size_t i = 0; i < numchannel; ++i )
   {
-    const double xbinlow = data->gamma_channel_lower( channel );
-    const double xbinup  = data->gamma_channel_upper( channel );
-    double nfitpeak = 0.0;
-    for( size_t i = 0; i < peaks.size(); ++i )
-      nfitpeak += peaks[i]->gauss_integral( xbinlow, xbinup );
+    const size_t channel = startchannel + i;
+    const double xbinlow = energies[channel];
+    const double xbinup  = energies[channel+1];
+    double nfitpeak = gauss_counts[i];
     
     const double ndata = data->gamma_channel_content( channel );
     const double ncontinuim = continuum->offset_integral( xbinlow, xbinup, data );
@@ -5739,7 +5780,7 @@ void get_chi2_and_dof_for_roi( double &chi2, double &dof,
     const double datauncert = std::max( ndata, 1.0 );
     const double nabove = (ndata - ncontinuim - nfitpeak);
     chi2 += nabove*nabove / datauncert;
-  }//for( int bin = xlowbin; bin <= xhighbin; ++bin )
+  }//for( size_t i = 0; i < numchannel; ++i )
   
 
   int nfitsigma = 0, nfitamp = 0, nfitmean = 0;

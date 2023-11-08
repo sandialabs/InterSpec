@@ -408,10 +408,7 @@ public:
   
   /** Determines skew type, and starting parameters to use, form previous peaks in ROI.
    */
-  static void skewFromPrevPeaks( const std::vector<std::shared_ptr<const PeakDef> > &prev_peaks,
-                                 PeakDef::SkewType &skew_type,
-                                 std::vector<bool> &fit_parameter,
-                                 std::vector<double> &starting_value );
+  static PeakDef::SkewType skewTypeFromPrevPeaks( const std::vector<std::shared_ptr<const PeakDef> > &prev_peaks );
   
   /** You can use this function to add the skew fitting parameters to Minuit, when you dont have any previous
    values to use for the skew coefficients.
@@ -419,10 +416,12 @@ public:
   static void addSkewParameters( ROOT::Minuit2::MnUserParameters &pars,
                                  const PeakDef::SkewType skewType );
   
+  /** Add skew fitting parameters to Minuit, when you have previous starting values; constrains the range that the values
+   can change to between half and 1.5 their current values.
+   */
   static void addSkewParameters( ROOT::Minuit2::MnUserParameters &pars,
                                  const PeakDef::SkewType skewType,
-                                const std::vector<bool> &fit_parameter,
-                                const std::vector<double> &starting_value );
+                                 const std::vector<std::shared_ptr<const PeakDef> > &inpeaks );
   
 protected:
   void init( std::shared_ptr<const SpecUtils::Measurement> data );

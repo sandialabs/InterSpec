@@ -32,9 +32,6 @@
 
 #include <boost/function.hpp>
 
-#include <Wt/WContainerWidget>
-
-#include "InterSpec/AuxWindow.h"
 
 //Forward declarations
 class PeakDef;
@@ -50,8 +47,8 @@ namespace Wt{
   class WSvgImage;
 };
 
-/** Functions in this header/source are kinda go betweens of the GUI and the
- numerical code (although of course, seperation is never as clean as one would
+/** Functions in this header/source are kinda go between of the GUI and the
+ numerical code (although of course, separation is never as clean as one would
  like).
  */
 namespace PeakSearchGuiUtils
@@ -152,6 +149,14 @@ void change_continuum_type_from_right_click( InterSpec * const interspec,
                                             const double rightClickEnergy,
                                             const int continuum_type );
 
+/** Changes the continuum type of a ROI, and does a refit.
+ @param interspec The InterSpec instance to work with - it is assumed this function is being called from that apps primary thread.
+ @param rightClickEnergy Energy used to identify a peak, that will in turn identify the ROI.
+ @param skew_type the #PeakDef::SkewType
+*/
+void change_skew_type_from_right_click( InterSpec * const interspec,
+                                       const double rightClickEnergy,
+                                       const int skew_type );
 
 /** Enum to tell #fit_template_peaks where the candidate peaks to fit are
    comming from.  This info will be propagated through to the GUI and influence

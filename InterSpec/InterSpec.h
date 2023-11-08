@@ -1015,6 +1015,7 @@ protected:
   void makePeakFromRightClickHaveOwnContinuum();
   void shareContinuumWithNeighboringPeak( const bool shareWithLeft );
   void handleChangeContinuumTypeFromRightClick( const int peak_continuum_offset_type );
+  void handleChangeSkewTypeFromRightClick( const int peak_continuum_offset_type );
   
   //updateRightClickNuclidesMenu(): meant to be called from within the
   //  application loop (so wApp is valid).  Sets the contents of the
@@ -1386,6 +1387,7 @@ protected:
     kRefitPeakWithDrfFwhm,
     kChangeNuclide,
     kChangeContinuum,
+    kChangeSkew,
     kDeletePeak,
     kAddPeak,
     kShareContinuumWithLeftPeak,
@@ -1399,6 +1401,7 @@ protected:
   Wt::WMenuItem        *m_rightClickMenutItems[kNumRightClickItems];
   PopupDivMenu         *m_rightClickNuclideSuggestMenu;
   PopupDivMenu         *m_rightClickChangeContinuumMenu;
+  PopupDivMenu         *m_rightClickChangeSkewMenu;
   
   Wt::WMenuItem        *m_showPeakManager;
     
