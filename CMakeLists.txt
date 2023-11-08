@@ -281,6 +281,7 @@ set(sources
     src/PeakFit.cpp
     src/PeakFitUtils.cpp
     src/PeakDef.cpp
+    src/PeakDists.cpp
     src/SpectraFileModel.cpp
     src/AuxWindow.cpp
     src/PeakFitChi2Fcn.cpp
@@ -383,6 +384,7 @@ set(headers
     InterSpec/PeakFit.h
     InterSpec/PeakFitUtils.h
     InterSpec/PeakDef.h
+    InterSpec/PeakDists.h
     InterSpec/SpectraFileModel.h
     InterSpec/AuxWindow.h
     InterSpec/PeakFitChi2Fcn.h
