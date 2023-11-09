@@ -307,22 +307,6 @@ protected:
 };//struct PeakContinuum
 
 
-/*
-//skewedGaussianIntegral(...):
-//A gaussian convoluted with an exponential:
-//  http://en.wikipedia.org/wiki/Exponentially_modified_Gaussian_distribution
-double skewedGaussianIntegral( double xlow, double xhigh,
-                               double mean, double sigma,
-                               double lambda );
-//The chromotagraphy form:
-double skewedGaussianIntegral( double x0,  //x-value to start integrating at
-                               double x1,  //x-value to stop integrating at
-                               double amplitude,  //Area of entire gaussian
-                               double peak_center,//
-                               double width, //
-                               double skewness  //must be >= 0.03*width
-                              );
-*/
 
 /** TODO: Define and implement this function
  

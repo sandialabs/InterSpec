@@ -140,39 +140,7 @@ namespace
   }//bool gives_off_gammas( const SandiaDecay::Nuclide *nuc )
 }//namespace
 
-/*
-double skewedGaussianIntegral( double x0, double x1,
-                               double mu, double s,
-                               double L )
-{
-  using boost::math::erf;
-  using boost::math::erfc;
-  static const double sqrt2 = boost::math::constants::root_two<double>();
-  
-  return -0.5*erf((x0 - mu)/(sqrt2*s)) + erf((x1 - mu)/(sqrt2*s))
-   + exp((L*(L*s*s - 2*x0 + 2*mu))/2)*erfc((L*s*s - x0 + mu)/(sqrt2*s))
-  - exp((L*(L*s*s - 2*x1 + 2*mu))/2) *erfc((L*s*s - x1 + mu)/(sqrt2*s));
-}//double skewedGaussianIntegral(...)
 
-double skewedGaussianIndefinitIntegral( double x,
-                              double A, double c,
-                              double w, double t )
-{
-  using boost::math::erf;
-  using boost::math::erfc;
-  static const double sqrt2 = boost::math::constants::root_two<double>();
-  
-//  integral (A e^(1/2 (w/t)^2-(x-c)/t) (1/2+1/2 erf(((x-c)/w-w/t)/sqrt(2))))/t dx =
-  return -0.5*A*exp(-x/t)*(exp((2*c*t+w*w)/(2*t*t))*(erf(((x-c)/w-w/t)/sqrt2)+1)-exp(x/t)*erf((x-c)/(sqrt2*w)));
-}
-
-double skewedGaussianIntegral( double x0, double x1,
-                              double A, double c,
-                              double w, double t )
-{
-  return skewedGaussianIndefinitIntegral( x1, A, c, w, t ) - skewedGaussianIndefinitIntegral( x0, A, c, w, t );
-}
-*/
 
 void findROIEnergyLimits( double &lowerEnengy, double &upperEnergy,
                          const PeakDef &peak, const std::shared_ptr<const Measurement> &data )
@@ -2841,8 +2809,7 @@ std::string PeakDef::gaus_peaks_to_json(const std::vector<std::shared_ptr<const 
         
       case DoubleSidedCrystalBall:
         answer << q << "DSCB" << q << ",";
-        dist_norm = PeakDists::double_sided_crystal_ball_norm( p.coefficient(CoefficientType::Sigma),
-                                                   p.coefficient(CoefficientType::SkewPar0),
+        dist_norm = PeakDists::DSCB_norm( p.coefficient(CoefficientType::SkewPar0),
                                                    p.coefficient(CoefficientType::SkewPar1),
                                                    p.coefficient(CoefficientType::SkewPar2),
                                                    p.coefficient(CoefficientType::SkewPar3) );
@@ -3993,12 +3960,13 @@ double PeakDef::lowerX() const
       const double n_left = m_coefficients[PeakDef::SkewPar1];
       const double alpha_right = m_coefficients[PeakDef::SkewPar2];
       const double n_right = m_coefficients[PeakDef::SkewPar3];
+      const double norm = PeakDists::DSCB_norm( alpha_left, n_left, alpha_right, n_right );
       
       double lowx = mean - 8.0*sigma;
       while( (lowx < (mean - 4.0*sigma)) && (((lowx - mean)/sigma) < -alpha_left) )
       {
         const double t = (lowx - mean) / sigma;
-        const double cumulative = PeakDists::double_sided_crystal_ball_left_tail_indefinite_t( sigma, alpha_left, n_left, alpha_right, n_right, t );
+        const double cumulative = norm * PeakDists::DSCB_left_tail_indefinite_non_norm_t( alpha_left, n_left, t );
         
         if( cumulative > 0.025 )
           return lowx;
@@ -4081,22 +4049,22 @@ double PeakDef::upperX() const
       const double oneOverSqrt2 = boost::math::constants::one_div_root_two<double>(); //0.70710678118654752440
       const double sqrtPiOver2 = boost::math::constants::root_half_pi<double>();      //1.2533141373155002512078826424
       
+      
       double start_cumulative = 0.0;
-      start_cumulative += PeakDists::double_sided_crystal_ball_left_tail_indefinite_t( sigma, alpha_left,
-                                                      n_left, alpha_right, n_right, -alpha_left );
-      start_cumulative += PeakDists::double_sided_crystal_ball_gauss_indefinite_t( sigma, alpha_left, n_left,
-                                                             alpha_right, n_right, alpha_right );
-      start_cumulative -= PeakDists::double_sided_crystal_ball_gauss_indefinite_t( sigma, alpha_left, n_left,
-                                                             alpha_right, n_right, -alpha_left );
-      start_cumulative -= PeakDists::double_sided_crystal_ball_right_tail_indefinite_t( sigma, alpha_left,
-                                                      n_left, alpha_right, n_right, alpha_right );
-                                                           
+      start_cumulative += PeakDists::DSCB_left_tail_indefinite_non_norm_t( alpha_left,
+                                                      n_left, -alpha_left );
+      start_cumulative += PeakDists::DSCB_gauss_indefinite_non_norm_t( alpha_right );
+      start_cumulative -= PeakDists::DSCB_gauss_indefinite_non_norm_t( -alpha_left );
+      start_cumulative -= PeakDists::DSCB_right_tail_indefinite_non_norm_t( alpha_right, n_right, alpha_right );
+
+      const double norm = PeakDists::DSCB_norm( alpha_left, n_left, alpha_right, n_right );
+      start_cumulative *= norm;
+      
       double upper_t = alpha_right + 1;
       while( upper_t < 8 )
       {
         const double cumulative = start_cumulative
-                + PeakDists::double_sided_crystal_ball_right_tail_indefinite_t( sigma, alpha_left, n_left,
-                                                                    alpha_right, n_right, upper_t );
+                + norm*PeakDists::DSCB_right_tail_indefinite_non_norm_t( alpha_right, n_right, upper_t );
         if( cumulative >= 0.975 )
           return (upper_t*sigma + mean);
         upper_t += 0.1;
@@ -4139,22 +4107,22 @@ double PeakDef::gauss_integral( const double x0, const double x1 ) const
   switch( m_skewType )
   {
     case SkewType::NoSkew:
-      return PeakDists::gaussian_integral( mean, sigma, amp, x0, x1 );
+      return amp*PeakDists::gaussian_integral( mean, sigma, x0, x1 );
           
     case SkewType::Bortel:
-      return amp*PeakDists::bortel_integral( x0, x1, mean, sigma, m_coefficients[CoefficientType::SkewPar0] );
+      return amp*PeakDists::bortel_integral( mean, sigma, m_coefficients[CoefficientType::SkewPar0], x0, x1 );
       
     //case SkewType::Doniach:
     //  return amp*doniach_integral( x0, x1, mean, sigma, m_coefficients[CoefficientType::SkewPar0] );
       
     case SkewType::CrystalBall:
-      return PeakDists::crystal_ball_integral( mean, sigma, amp,
+      return amp*PeakDists::crystal_ball_integral( mean, sigma,
                             m_coefficients[CoefficientType::SkewPar0],
                             m_coefficients[CoefficientType::SkewPar1],
                             x0, x1 );
       
     case SkewType::DoubleSidedCrystalBall:
-      return PeakDists::double_sided_crystal_ball_integral( mean, sigma, amp,
+      return amp*PeakDists::double_sided_crystal_ball_integral( mean, sigma,
                                        m_coefficients[CoefficientType::SkewPar0],
                                        m_coefficients[CoefficientType::SkewPar1],
                                        m_coefficients[CoefficientType::SkewPar2],
@@ -4163,12 +4131,12 @@ double PeakDef::gauss_integral( const double x0, const double x1 ) const
       break;
       
     case SkewType::GaussExp:
-      return PeakDists::gauss_exp_integral( mean, sigma, amp,
+      return amp*PeakDists::gauss_exp_integral( mean, sigma,
                                          m_coefficients[CoefficientType::SkewPar0], x0, x1 );
       break;
       
     case SkewType::ExpGaussExp:
-      return PeakDists::exp_gauss_exp_integral( mean, sigma, amp,
+      return amp*PeakDists::exp_gauss_exp_integral( mean, sigma,
                                              m_coefficients[CoefficientType::SkewPar0],
                                              m_coefficients[CoefficientType::SkewPar1], x0, x1 );
       break;

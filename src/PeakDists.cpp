@@ -235,7 +235,7 @@ namespace PeakDists
   
   /** Returns the PDF for a unit-area Bortel function.
    */
-  double bortel_pdf( const double x, const double mean, const double sigma, const double skew_low )
+  double bortel_pdf( const double mean, const double sigma, const double skew_low, const double x )
   {
     // 32-bit floats have a normalized range of 1E-38 to 1E38; 64bit floats 1E-308 to 1E308
     // We could use the proper functions up to ~1E308, but to be conservative, but to be
@@ -260,8 +260,8 @@ namespace PeakDists
 
   /** Returns the indefinite integral (e.g., from negative infinity up to `x`) of a unit-area Bortel function
    */
-  double bortel_indefinite_integral( const double &x, const double &mean,
-                           const double &sigma, const double &skew )
+  double bortel_indefinite_integral( const double x, const double mean,
+                           const double sigma, const double skew )
   {
     const double sqrt2 = boost::math::constants::root_two<double>();
     const double oneOverSqrt2 = boost::math::constants::one_div_root_two<double>();
@@ -277,9 +277,9 @@ namespace PeakDists
     return 0.5*(boost_erf_imp(erf_arg) + (std::exp(exp_arg) * boost::math::erfc(erfc_arg)));
   }//double bortel_indefinite
 
-  /** Returns the integral of a unit-area Bortel function, between `x1` and `x2`. */
-  double bortel_integral( const double &x1, const double &x2, const double &mean,
-                      const double &sigma, const double &skew )
+  
+  double bortel_integral( const double mean, const double sigma, const double skew,
+                         const double x1, const double x2 )
   {
     return bortel_indefinite_integral(x2, mean, sigma, skew )
       - bortel_indefinite_integral(x1, mean, sigma, skew );
@@ -289,20 +289,13 @@ namespace PeakDists
    
    Just multiplies the x-range by the Bortel PDF value in the middle of the range.
    */
-  double bortel_integral_fast( const double &x1, const double &x2, const double &mean,
-                              const double &sigma, const double &skew )
+  double bortel_integral_fast( const double mean, const double sigma, const double skew,
+                              const double x1, const double x2 )
   {
     const double half_way_x = 0.5*(x1 + x2);
-    return (x2 - x1) * bortel_pdf( half_way_x, mean, sigma, skew );
+    return (x2 - x1) * bortel_pdf( mean, sigma, skew, half_way_x );
   }
   
-/*
-  double doniach_integral( const double &x1, const double &x2, const double &mean,
-                          const double &sigma, const double &skew )
-  {
-    // blah blah blah - more work to be done here
-  }
- */
   
   double crystal_ball_norm( const double sigma,
                            const double alpha,
@@ -374,13 +367,10 @@ namespace PeakDists
   }//crystal_ball_tail_indefinite_t
 
   /** Returns the non-normalized, double sided Crystal Ball PDF value for `x` */
-  double double_sided_crystal_ball_pdf(const double mean,
-                                    const double sigma,
-                                    const double alpha_low,
-                                    const double n_low,
-                                    const double alpha_high,
-                                    const double n_high,
-                                    const double x )
+  double DSCB_pdf_non_norm( const double mean, const double sigma,
+                            const double alpha_low, const double n_low,
+                            const double alpha_high, const double n_high,
+                            const double x )
   {
     // From chapter 6 of https://arxiv.org/pdf/1606.03833.pdf
     double t = (x - mean) / sigma;
@@ -389,29 +379,32 @@ namespace PeakDists
       return std::exp(-0.5*t*t);
     
     // Return tail value
-    const double n = (x > mean) ? n_high : n_low;
-    const double alpha = (x > mean) ? alpha_high : alpha_low;
-    if( x > mean )
-      t = -t;
+    const double n = (t > 0.0) ? n_high : n_low;
+    const double alpha = (t > 0.0) ? alpha_high : alpha_low;
+    t = (t > 0.0) ? -t : t;
     
-    return std::exp(-0.5*alpha*alpha) * std::pow( (alpha/n)*((n/alpha) - alpha - t), -n );
+    //return std::exp(-0.5*alpha*alpha) * std::pow( (alpha/n)*((n/alpha) - alpha - t), -n );
+    return std::exp(-0.5*alpha*alpha) * std::pow((1.0 - ((alpha + t) * (alpha / n))), -n); //slightly more stable version of above
   }
 
-  double double_sided_crystal_ball_norm( const double peak_sigma,
-                                        const double alpha_low,
-                                        const double n_low,
-                                        const double alpha_high,
-                                        const double n_high )
+  double DSCB_norm( const double alpha_low, const double n_low,
+                    const double alpha_high, const double n_high )
   {
+    assert( alpha_low > 0 );
+    assert( alpha_high > 0 );
+    assert( n_low > 1 );
+    assert( n_high > 1 );
+    
     const double one_div_root_two = boost::math::constants::one_div_root_two<double>(); //0.70710678118654752440
     const double root_pi = boost::math::constants::root_pi<double>();
     
-    // a = alpha_low
-    // n = n_low
-    // -(e^(-a*a/2)*n*((a*(-t+n/a-a))/n)^(1-n))/(a*(1-n))
+    
     double a = alpha_low;
     double n = n_low;
-    const double ltail = -(std::exp(-a*a/2)*n*std::pow((a*(a+n/a-a))/n,1-n))/(a*(1-n));
+    // -(e^(-a*a/2)*n*((a*(-t+n/a-a))/n)^(1-n))/(a*(1-n))
+    // -(e^(-a^2/2)*n^n*(-t+n/a-a)^(1-n))/((1-n)*a^n)
+    //const double ltail = -(std::exp(-a*a/2)*n*std::pow((a*(a +n/a -a))/n,1-n))/(a*(1-n)); //From Integrating with Maxima
+    const double ltail = -std::exp(-0.5*a*a) * n / (a * (1.0 - n)); //Simplifying, and making more numerically stable, using https://herbie.uwplse.org/demo/
     
     // L = alpha_low
     // R = alpha_high
@@ -419,69 +412,54 @@ namespace PeakDists
     const double mid = (root_pi*one_div_root_two*(boost_erf_imp(alpha_high*one_div_root_two)
                                                    - boost_erf_imp(-alpha_low*one_div_root_two)));
     
-    // a = alpha_high
-    // n = n_high
-    // (e^(-a^2/2)*n*((a*(t+n/a-a))/n)^(1-n))/(a*(1-n))
     a = alpha_high;
     n = n_high;
-    const double rtail = -(std::exp(-a*a/2)*n*std::pow((a*(a + n/a -a))/n,1-n))/(a*(1-n));
+    // (e^(-a^2/2)*n*((a*(t+n/a-a))/n)^(1-n))/(a*(1-n))
+    // (e^(-a^2/2)*n^n*(x+n/a-a)^(1-n))/((1-n)*a^n)
+    //const double rtail = -(std::exp(-a*a/2)*n*std::pow((a*(a + n/a -a))/n,1-n))/(a*(1-n)); //From Integrating with Maxima
+    const double rtail = -std::exp(-0.5*a*a) * n / (a * (1.0 - n));  //Simplifying, and making more numerically stable, using https://herbie.uwplse.org/demo/
     
     return 1.0 / (ltail + mid + rtail);
-  }//double_sided_crystal_ball_norm( ... )
+  }//DSCB_norm( ... )
   
   
-  double double_sided_crystal_ball_left_tail_indefinite_t( const double peak_sigma,
-                                                          const double alpha_low,
+  double DSCB_left_tail_indefinite_non_norm_t( const double alpha_low,
                                                           const double n_low,
-                                                          const double alpha_high,
-                                                          const double n_high,
                                                           const double t)
   {
     // Takes `t = (x - mean) / sigma`, not x
     assert( t <= -alpha_low );
-    const double norm = double_sided_crystal_ball_norm( peak_sigma, alpha_low, n_low, alpha_high, n_high );
     
     const double &a = alpha_low;
     const double &n = n_low;
-    return -norm*(std::exp(-a*a/2)*n*std::pow((a*(-t+n/a-a))/n, 1-n))/(a*(1-n));
-  }//double double_sided_crystal_ball_left_tail_indefinite_t(t)
+    //return -(std::exp(-a*a/2)*n*std::pow((a*(-t+n/a-a))/n, 1-n))/(a*(1-n));
+    const double t_1 = 1.0 - (a / (n / (a + t)));
+    return -std::exp(-0.5*a*a)*(t_1 / std::pow(t_1, n)) / ((a / n) - a); //slightly more stsable
+  }//double DSCB_left_tail_indefinite_non_norm_t(t)
   
   
-  double double_sided_crystal_ball_right_tail_indefinite_t(const double peak_sigma,
-                                                           const double alpha_low,
-                                                           const double n_low,
-                                                           const double alpha_high,
+  double DSCB_right_tail_indefinite_non_norm_t( const double alpha_high,
                                                            const double n_high,
                                                            const double t)
   {
     // Takes `t = (x - mean) / sigma`, not x
-    assert( t >= alpha_high );
-    const double norm = double_sided_crystal_ball_norm( peak_sigma, alpha_low, n_low, alpha_high, n_high );
+    assert( (t + 1.0E-7) >= alpha_high );
     
     const double &a = alpha_high;
     const double &n = n_high;
     
     // (e^(a^2/2)*n*((a*(t+n/a-a))/n)^(1-n))/(a*(1-n))
-    return norm*(std::exp(-a*a/2)*n*std::pow((a*(t + n/a - a))/n,1-n))/(a*(1-n));
+    //return (std::exp(-a*a/2)*n*std::pow((a*(t + n/a - a))/n,1-n))/(a*(1-n));
+    return std::exp(-a*a/2)*(1.0 / ((a / n) - a)) * std::pow((1.0 + ((a * (t - a)) / n)), (1.0 - n));
   }
   
-  double double_sided_crystal_ball_gauss_indefinite_t( const double peak_sigma,
-                                                      const double alpha_low,
-                                                      const double n_low,
-                                                      const double alpha_high,
-                                                      const double n_high,
-                                                      const double t)
+  double DSCB_gauss_indefinite_non_norm_t( const double t )
   {
-    assert( t >= -alpha_low );
-    assert( t <= alpha_high );
-    
     const double root_half_pi = boost::math::constants::root_half_pi<double>();
     const double one_div_root_two = boost::math::constants::one_div_root_two<double>(); //0.70710678118654752440
     
-    const double norm = double_sided_crystal_ball_norm( peak_sigma, alpha_low, n_low, alpha_high, n_high );
-    
-    return norm*root_half_pi * boost_erf_imp( one_div_root_two * t );
-  }//double_sided_crystal_ball_gauss_indefinite_t(...)
+    return root_half_pi * boost_erf_imp( one_div_root_two * t );
+  }//DSCB_gauss_indefinite_non_norm_t(...)
 
   
   /** Returns the normalization so the GaussExp distribution has unit area. */
@@ -535,13 +513,13 @@ namespace PeakDists
   }
   
   
-  double gauss_exp_integral( const double &mean, const double &sigma, const double &skew, const double &x1, const double &x2 )
+  double gauss_exp_integral( const double mean, const double sigma, const double skew, const double x1, const double x2 )
   {
     return gauss_exp_indefinite(mean, sigma, skew, x2) - gauss_exp_indefinite(mean, sigma, skew, x1);
   }
       
   
-  double exp_gauss_exp_norm( const double &sigma, const double &skew_left, const double &skew_right )
+  double exp_gauss_exp_norm( const double sigma, const double skew_left, const double skew_right )
   {
     static const double sqrt_pi = boost::math::constants::root_pi<double>(); //1.7724538509055160272981
     static const double one_div_root_two = boost::math::constants::one_div_root_two<double>(); //0.707106781186547524400
@@ -641,12 +619,10 @@ namespace PeakDists
   }
   
   
-  
   double gaussian_integral( const double peak_mean, const double peak_sigma,
-                                 const double peak_amplitude,
-                                 const double x0, const double x1 )
+                            const double x0, const double x1 )
   {
-    if( peak_sigma==0.0 || peak_amplitude==0.0 )
+    if( peak_sigma == 0.0 )
       return 0.0;
 
     const double sqrt2 = boost::math::constants::root_two<double>();  //M_SQRT2 (but need to use '#define _USE_MATH_DEFINES' before #include <cmath>)
@@ -654,7 +630,7 @@ namespace PeakDists
     const double erflowarg = (x0 - peak_mean)/(sqrt2*peak_sigma);
     const double erfhigharg = (x1 - peak_mean)/(sqrt2*peak_sigma);
     
-    return 0.5 * peak_amplitude * (boost_erf_imp(erfhigharg) - boost_erf_imp(erflowarg));
+    return 0.5 * (boost_erf_imp(erfhigharg) - boost_erf_imp(erflowarg));
   }//double gaussian_integral(...)
 
 
@@ -701,7 +677,7 @@ namespace PeakDists
   
   
   
-  void bortel_integral( const double &mean, const double &sigma, const double &amp, const double &skew,
+  void bortel_integral( const double mean, const double sigma, const double amp, const double skew,
                        const float * const energies, double *channels, const size_t nchannel )
   {
     assert( sigma > 0.0 );
@@ -737,26 +713,9 @@ namespace PeakDists
   }//bortel_integral( to array values)
 
 
-/*
-double PeakDef::doniach_integral( const double peak_mean,
-               const double peak_sigma,
-               const double peak_amplitude,
-               const double skew,
-               const double x0, const double x1 )
-{
-#ifdef _MSC_VER
-#pragma message( "PeakDef::doniach_integral is returning a poor approximation" )
-#else
-#warning "PeakDef::doniach_integral is returning a poor approximation"
-#endif
-blah blah blah
-}//doniach_integral(...)
-*/
-
   
   double crystal_ball_integral( const double mean,
                                const double sigma,
-                               const double peak_amplitude,
                                const double alpha,
                                const double n,
                                const double x0, const double x1 )
@@ -775,7 +734,7 @@ blah blah blah
     if( (a_0 <= -alpha) && (a_1 <= -alpha) )
     {
       // Integrate just among the power law component
-      return peak_amplitude * (crystal_ball_tail_indefinite_t(sigma,alpha,n,a_1)
+      return (crystal_ball_tail_indefinite_t(sigma,alpha,n,a_1)
                                - crystal_ball_tail_indefinite_t(sigma,alpha,n,a_0));
     }
     
@@ -787,22 +746,21 @@ blah blah blah
     
     const double sqrt_2pi = boost::math::constants::root_two_pi<double>();
     
-    const double gauss_amp = peak_amplitude * (sqrt_2pi)/(C + D);
+    const double gauss_amp = sqrt_2pi / (C + D);
     
     if( (a_0 >= -alpha) && (a_1 > -alpha) ) // just the gaussian
-      return gaussian_integral( mean, sigma, gauss_amp, x0, x1 );
+      return gauss_amp*gaussian_integral( mean, sigma, x0, x1 );
     
     // integrate power-law from a_0 to -alpha
     // integrate gaussian from -alpha to a_1
-    return peak_amplitude * (crystal_ball_tail_indefinite_t(sigma,alpha,n,-alpha)
+    return (crystal_ball_tail_indefinite_t(sigma,alpha,n,-alpha)
                              - crystal_ball_tail_indefinite_t(sigma,alpha,n,a_0))
-    + gaussian_integral( mean, sigma, gauss_amp, mean-alpha*sigma, x1 );
+    + gauss_amp*gaussian_integral( mean, sigma, mean-alpha*sigma, x1 );
   }//crystal_ball_integral(...)
 
   
   double double_sided_crystal_ball_integral( const double peak_mean,
                                             const double peak_sigma,
-                                            const double peak_amplitude,
                                             const double alpha_low,
                                             const double n_low,
                                             const double alpha_high,
@@ -823,48 +781,28 @@ blah blah blah
     
     double answer = 0.0;
     if( t0 < -alpha_low )
-      answer += double_sided_crystal_ball_left_tail_indefinite_t(peak_sigma, alpha_low, n_low, alpha_high, n_high, std::min(-alpha_low,t1) )
-      - double_sided_crystal_ball_left_tail_indefinite_t(peak_sigma, alpha_low, n_low, alpha_high, n_high, t0 );
+      answer += DSCB_left_tail_indefinite_non_norm_t( alpha_low, n_low, std::min(-alpha_low,t1) )
+      - DSCB_left_tail_indefinite_non_norm_t( alpha_low, n_low, t0 );
     
     if( t1 > alpha_high )
-      answer += double_sided_crystal_ball_right_tail_indefinite_t(peak_sigma, alpha_low, n_low, alpha_high, n_high, t1 )
-      - double_sided_crystal_ball_right_tail_indefinite_t(peak_sigma, alpha_low, n_low, alpha_high, n_high, std::max(alpha_high,t0) );
+      answer += DSCB_right_tail_indefinite_non_norm_t( alpha_high, n_high, t1 )
+      - DSCB_right_tail_indefinite_non_norm_t( alpha_high, n_high, std::max(alpha_high,t0) );
     
     if( (t0 < alpha_high) && (t1 > -alpha_low) )
-      answer += double_sided_crystal_ball_gauss_indefinite_t( peak_sigma, alpha_low, n_low,
-                                                             alpha_high, n_high, min(alpha_high,t1) )
-      - double_sided_crystal_ball_gauss_indefinite_t( peak_sigma, alpha_low, n_low,
-                                                     alpha_high, n_high, max(-alpha_low,t0) );
+      answer += DSCB_gauss_indefinite_non_norm_t( min(alpha_high,t1) )
+      - DSCB_gauss_indefinite_non_norm_t( max(-alpha_low,t0) );
     
-    return peak_amplitude * answer;
+    const double norm = DSCB_norm( alpha_low, n_low, alpha_high, n_high );
+    return norm*answer;
   }//double_sided_crystal_ball_integral(...)
 
   
-  double gauss_exp_integral( const double peak_mean,
-                            const double peak_sigma,
-                            const double peak_amplitude,
-                            const double skew,
-                            const double x0, const double x1 )
-  {
-    return peak_amplitude * PeakDists::gauss_exp_integral( peak_mean, peak_sigma, skew, x0, x1 );
-  }
   
   
-  double exp_gauss_exp_integral( const double peak_mean,
-                                const double peak_sigma,
-                                const double peak_amplitude,
-                                const double skew_left,
-                                const double skew_right,
-                                const double x0, const double x1 )
-  {
-    return peak_amplitude * PeakDists::exp_gauss_exp_integral( peak_mean, peak_sigma, skew_left, skew_right, x0, x1 );
-  }
-  
-  
-  void gauss_exp_integral( const double &peak_mean,
-                          const double &peak_sigma,
-                          const double &peak_amplitude,
-                          const double &skew,
+  void gauss_exp_integral( const double peak_mean,
+                          const double peak_sigma,
+                          const double peak_amplitude,
+                          const double skew,
                           const float * const energies,
                           double *channels,
                           const size_t nchannel )
@@ -883,7 +821,7 @@ blah blah blah
     {
       const float x0 = energies[i];
       const float x1 = energies[i+1];
-      const double val = PeakDists::gauss_exp_integral( peak_mean, peak_sigma, peak_amplitude, skew, x0, x1 );
+      const double val = peak_amplitude*PeakDists::gauss_exp_integral( peak_mean, peak_sigma, skew, x0, x1 );
       channels[i] += val;
       
 #if( PERFORM_DEVELOPER_CHECKS )
@@ -915,11 +853,11 @@ blah blah blah
   }//void PeakDef::gauss_exp_integral( ... array ... )
   
   
-  void exp_gauss_exp_integral( const double &peak_mean,
-                              const double &peak_sigma,
-                              const double &peak_amplitude,
-                              const double &skew_left,
-                              const double &skew_right,
+  void exp_gauss_exp_integral( const double peak_mean,
+                              const double peak_sigma,
+                              const double peak_amplitude,
+                              const double skew_left,
+                              const double skew_right,
                               const float * const energies,
                               double *channels,
                               const size_t nchannel )
@@ -935,7 +873,7 @@ blah blah blah
       const float x0 = energies[i];
       const float x1 = energies[i+1];
       
-      channels[i] += PeakDists::exp_gauss_exp_integral( peak_mean, peak_sigma, peak_amplitude, skew_left, skew_right, x0, x1 );
+      channels[i] += peak_amplitude*PeakDists::exp_gauss_exp_integral( peak_mean, peak_sigma, skew_left, skew_right, x0, x1 );
       
 #if( PERFORM_DEVELOPER_CHECKS )
       if( IsInf(channels[i]) || IsNan(channels[i]) )
@@ -959,36 +897,12 @@ blah blah blah
     }//for( size_t i = 0; i < nchannel; ++i )
   }
 
-/*
-void doniach_integral( const double &peak_mean,
-             const double &peak_sigma,
-             const double &peak_amplitude,
-             const double &skew,
-             const float * const energies,
-             double *channels,
-             const size_t nchannel )
-{
-// TODO: Need to properly optimize this function
-#ifdef _MSC_VER
-#pragma message( "PeakDef::doniach_integral is not properly coded" )
-#else
-#warning "PeakDef::doniach_integral is not properly coded"
-#endif
-for( size_t i = 0; i < nchannel; ++i )
-{
-const float x0 = energies[i];
-const float x1 = energies[i+1];
-
-channels[channel] += doniach_integral( peak_mean, peak_sigma, peak_amplitude, skew, x0, x1 );
-}
-}//doniach_integral(...)
-*/
   
-  void crystal_ball_integral( const double &peak_mean,
-                             const double &peak_sigma,
-                             const double &peak_amplitude,
-                             const double &alpha,
-                             const double &power_law,
+  void crystal_ball_integral( const double peak_mean,
+                             const double peak_sigma,
+                             const double peak_amplitude,
+                             const double alpha,
+                             const double power_law,
                              const float * const energies,
                              double *channels,
                              const size_t nchannel )
@@ -1008,7 +922,7 @@ channels[channel] += doniach_integral( peak_mean, peak_sigma, peak_amplitude, sk
       const float x0 = energies[i];
       const float x1 = energies[i+1];
       
-      const double val = PeakDists::crystal_ball_integral( peak_mean, peak_sigma, peak_amplitude, alpha, power_law, x0, x1 );
+      const double val = peak_amplitude*PeakDists::crystal_ball_integral( peak_mean, peak_sigma, alpha, power_law, x0, x1 );
       channels[i] += val;
       
 #if( PERFORM_DEVELOPER_CHECKS )
@@ -1060,13 +974,13 @@ channels[channel] += doniach_integral( peak_mean, peak_sigma, peak_amplitude, sk
   }//crystal_ball_integral(...)
 
   
-  void double_sided_crystal_ball_integral( const double &peak_mean,
-                                          const double &peak_sigma,
-                                          const double &peak_amplitude,
-                                          const double &lower_alpha,
-                                          const double &lower_power_law,
-                                          const double &upper_alpha,
-                                          const double &upper_power_law,
+  void double_sided_crystal_ball_integral( const double peak_mean,
+                                          const double peak_sigma,
+                                          const double peak_amplitude,
+                                          const double lower_alpha,
+                                          const double lower_power_law,
+                                          const double upper_alpha,
+                                          const double upper_power_law,
                                           const float * const energies,
                                           double *channels,
                                           const size_t nchannel )
@@ -1086,7 +1000,7 @@ channels[channel] += doniach_integral( peak_mean, peak_sigma, peak_amplitude, sk
       const float x0 = energies[i];
       const float x1 = energies[i+1];
       
-      const double val = PeakDists::double_sided_crystal_ball_integral( peak_mean, peak_sigma, peak_amplitude,
+      const double val = peak_amplitude*PeakDists::double_sided_crystal_ball_integral( peak_mean, peak_sigma,
                                                                        lower_alpha, lower_power_law,
                                                                        upper_alpha, upper_power_law, x0, x1 );
       channels[i] += val;
@@ -1135,12 +1049,12 @@ channels[channel] += doniach_integral( peak_mean, peak_sigma, peak_amplitude, sk
       //  << setw(12) << std::scientific << (channels[i]/peak_amplitude) << endl;
       
       cerr << "Single step integral is "
-      << PeakDists::double_sided_crystal_ball_integral(peak_mean, peak_sigma, 1.0,
+      << PeakDists::double_sided_crystal_ball_integral(peak_mean, peak_sigma,
                                                        lower_alpha, lower_power_law,
                                                        upper_alpha, upper_power_law,
                                                        energies[0], energies[nchannel] )
       << " and over all area: "
-      << PeakDists::double_sided_crystal_ball_integral(peak_mean, peak_sigma, 1.0,
+      << PeakDists::double_sided_crystal_ball_integral(peak_mean, peak_sigma,
                                                        lower_alpha, lower_power_law,
                                                        upper_alpha, upper_power_law,
                                                        peak_mean - 50*peak_sigma, peak_mean + 30*peak_sigma )

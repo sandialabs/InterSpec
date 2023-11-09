@@ -31,24 +31,30 @@
 
 #include "InterSpec/PeakDef.h" //for PeakDef::SkewType
 
+/** The functions in this .h/.cpp are for computing skewed and Gaussian photopeak distributions.
+ 
+ */
 namespace PeakDists
 {
-  /** 20191230: wcjohns extracted the boost::math::erf() function implementation
+  /** `erfc` implementation based on boost, but sped up to be more efficient.
+   
+   Surprisingly, the erf() function is the major bottleneck for peak fitting.
+   
+   20191230: wcjohns extracted the boost::math::erf() function implementation
    from boost 1.65.1 for double precision (53 bit mantissa) into this function,
    boost_erf_imp(). Removing some of the supporting code structure, and
    explicitly writing out the polynomial equation evaluation seems to speed
    things up by about a factor of ~3 over calling boost::math::erf().
    
-   Using the commented out erf_approx() function looks to be about 25% faster than
+   In the implementation file, there is a commented out erf_approx() function looks to be about 25% faster than
    this boost version, but I havent carefully checked out the precision implications
    so not switching to it yet.
-   
-   Surprisingly, the erf() function is the major bottleneck for peak fitting.
    */
   double boost_erf_imp( double z );
   
   /** Returns `1-boost_erf_imp(z)` */
   double boost_erfc_imp( double z );
+  
   
   /** Function to semi-efficiently integrate the gaussian plus optionally skew distribution over an energy range.
    
@@ -73,48 +79,16 @@ namespace PeakDists
                                           const float * const lower_energies,
                                           double *peak_count_channels );
   
-  //gaussian_integral(): Calculates the area of a Gaussian with specified mean,
-  //  sigma, and amplitude, between x0 and x1.
-  //  Results have approximately 9 decimal digits of accuracy.
-  double gaussian_integral( const double peak_mean,
-                               const double peak_sigma,
-                               const double peak_amplitude,
-                               const double x0, const double x1 );
   
-  /*
-  double doniach_integral( const double peak_mean,
-                                 const double peak_sigma,
-                                 const double peak_amplitude,
-                                 const double skew,
-                                 const double x0, const double x1 );
-  */
-  double crystal_ball_integral( const double peak_mean,
-                                      const double peak_sigma,
-                                      const double peak_amplitude,
-                                      const double alpha,
-                                      const double power_law,
-                                      const double x0, const double x1 );
   
-  double double_sided_crystal_ball_integral( const double peak_mean,
-                                                   const double peak_sigma,
-                                                   const double peak_amplitude,
-                                                   const double lower_alpha,
-                                                   const double lower_power_law,
-                                                   const double upper_alpha,
-                                                   const double upper_power_law,
-                                                   const double x0, const double x1 );
   
-  double gauss_exp_integral( const double peak_mean,
-                                      const double peak_sigma,
-                                      const double peak_amplitude,
-                                      const double skew,
-                                      const double x0, const double x1 );
-  double exp_gauss_exp_integral( const double peak_mean,
-                                      const double peak_sigma,
-                                      const double peak_amplitude,
-                                      const double skew_left,
-                                      const double skew_right,
-                                      const double x0, const double x1 );
+  
+  /** Calculates the area of a Gaussian with specified mean, sigma, and amplitude, between x0 and x1.
+   
+    Results have approximately 9 decimal digits of accuracy.
+   */
+  double gaussian_integral( const double peak_mean, const double peak_sigma,
+                            const double x0, const double x1 );
   
   /** Slightly CPU optimized method of computing the Gaussian integral over a number of channels.
    
@@ -137,9 +111,12 @@ namespace PeakDists
                               const float * const energies,
                               double *channels,
                               const size_t nchannel );
-
-  double bortel_integral( const double &x1, const double &x2, const double &mean,
-                         const double &sigma, const double &skew );
+  
+  
+  
+  /** Returns the integral of a unit-area Bortel function, between `x1` and `x2`. */
+  double bortel_integral( const double mean, const double sigma, const double skew,
+                         const double x1, const double x2 );
   
   /** Slightly CPU optimized method of computing the peak area, for Bortel skew over a number of channels.
    
@@ -156,98 +133,190 @@ namespace PeakDists
           will not be zeroed); must have at least `nchannel` entries
    @param nchannel The number of channels to do the integration over.
    */
-  void bortel_integral( const double &peak_mean,
-                              const double &peak_sigma,
-                              const double &peak_amplitude,
-                              const double &skew,
+  void bortel_integral( const double peak_mean,
+                              const double peak_sigma,
+                              const double peak_amplitude,
+                              const double skew,
                               const float * const energies,
                               double *channels,
                               const size_t nchannel );
-  /*
-  void doniach_integral( const double &peak_mean,
-                               const double &peak_sigma,
-                               const double &peak_amplitude,
-                               const double &skew,
-                               const float * const energies,
-                               double *channels,
-                               const size_t nchannel );
-  */
-  void crystal_ball_integral( const double &peak_mean,
-                               const double &peak_sigma,
-                               const double &peak_amplitude,
-                               const double &alpha,
-                               const double &power_law,
+  
+  /** Returns the PDF for a unit-area Bortel function.
+   */
+  double bortel_pdf( const double mean, const double sigma, const double skew_low, const double x );
+
+  /** Returns the indefinite integral (e.g., from negative infinity up to `x`) of a unit-area Bortel function
+   */
+  double bortel_indefinite_integral( const double x, const double mean,
+                                    const double sigma, const double skew );
+
+  /** Returns an approximate area between `x1` and `x2` for a unit-area Bortel function.
+   
+   Just multiplies the x-range by the Bortel PDF value in the middle of the range.
+   */
+  double bortel_integral_fast( const double mean, const double sigma, const double skew,
+                              const double x1, const double x2 );
+  
+  
+  
+  
+  
+  double gauss_exp_integral( const double peak_mean,
+                                      const double peak_sigma,
+                                      const double skew,
+                                      const double x0, const double x1 );
+  
+  void gauss_exp_integral( const double peak_mean,
+                               const double peak_sigma,
+                               const double peak_amplitude,
+                               const double skew,
                                const float * const energies,
                                double *channels,
                                const size_t nchannel );
   
-  void double_sided_crystal_ball_integral( const double &peak_mean,
-                                                 const double &peak_sigma,
-                                                 const double &peak_amplitude,
-                                                 const double &lower_alpha,
-                                                 const double &lower_power_law,
-                                                 const double &upper_alpha,
-                                                 const double &upper_power_law,
+  /** Returns the normalization so the GaussExp distribution has unit area. */
+  double gauss_exp_norm( const double sigma, const double skew );
+  double gauss_exp_pdf(const double mean,
+                       const double sigma,
+                       const double skew,
+                       const double x );
+  
+  double gauss_exp_tail_indefinite(const double mean,
+                                  const double sigma,
+                                  const double skew,
+                                   const double x );
+  
+  double gauss_exp_indefinite(const double mean,
+                             const double sigma,
+                             const double skew,
+                              const double x );
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  double exp_gauss_exp_integral( const double mean,
+                           const double sigma,
+                           const double skew_left,
+                           const double skew_right,
+                           const double x0,
+                                const double x1 );
+  
+  void exp_gauss_exp_integral( const double peak_mean,
+                               const double peak_sigma,
+                               const double peak_amplitude,
+                               const double skew_left,
+                               const double skew_right,
+                               const float * const energies,
+                               double *channels,
+                               const size_t nchannel );
+  
+  double exp_gauss_exp_norm( const double sigma, const double skew_left, const double skew_right );
+  
+  double exp_gauss_exp_pdf( const double mean,
+                           const double sigma,
+                           const double skew_left,
+                           const double skew_right,
+                           const double x );
+  
+  double exp_gauss_exp_left_tail_indefinite( const double mean,
+                                          const double sigma,
+                                          const double skew_left,
+                                          const double skew_right,
+                                            const double x );
+
+  double exp_gauss_exp_right_tail_indefinite( const double mean,
+                                           const double sigma,
+                                           const double skew_left,
+                                           const double skew_right,
+                                             const double x );
+
+  double exp_gauss_exp_gauss_indefinite( const double mean,
+                                      const double sigma,
+                                      const double skew_left,
+                                      const double skew_right,
+                                        const double x );
+  
+  double exp_gauss_exp_indefinite( const double mean,
+                                const double sigma,
+                                const double skew_left,
+                                const double skew_right,
+                                  const double x );
+  
+  
+  
+  
+  
+  
+  
+  double crystal_ball_integral( const double peak_mean,
+                                      const double peak_sigma,
+                                      const double alpha,
+                                      const double power_law,
+                                      const double x0, const double x1 );
+  
+  void crystal_ball_integral( const double peak_mean,
+                               const double peak_sigma,
+                               const double peak_amplitude,
+                               const double alpha,
+                               const double power_law,
+                               const float * const energies,
+                               double *channels,
+                               const size_t nchannel );
+  
+  double crystal_ball_norm( const double sigma,
+                           const double alpha,
+                           const double n );
+  
+  double crystal_ball_pdf(const double mean,
+                          const double sigma,
+                          const double alpha,
+                          const double n,
+                          const double x );
+
+  /** Returns indefinite integral (negative infinite to `x0` for the power-law component for the unit-area Crystal Ball function.
+   */
+  double crystal_ball_tail_indefinite_t( const double sigma, const double alpha,
+                                        const double n, const double t );
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  double double_sided_crystal_ball_integral( const double peak_mean,
+                                                   const double peak_sigma,
+                                                   const double lower_alpha,
+                                                   const double lower_power_law,
+                                                   const double upper_alpha,
+                                                   const double upper_power_law,
+                                                   const double x0, const double x1 );
+  
+  void double_sided_crystal_ball_integral( const double peak_mean,
+                                                 const double peak_sigma,
+                                                 const double peak_amplitude,
+                                                 const double lower_alpha,
+                                                 const double lower_power_law,
+                                                 const double upper_alpha,
+                                                 const double upper_power_law,
                                                  const float * const energies,
                                                  double *channels,
                                                  const size_t nchannel );
-  void gauss_exp_integral( const double &peak_mean,
-                               const double &peak_sigma,
-                               const double &peak_amplitude,
-                               const double &skew,
-                               const float * const energies,
-                               double *channels,
-                               const size_t nchannel );
-  
-  void exp_gauss_exp_integral( const double &peak_mean,
-                               const double &peak_sigma,
-                               const double &peak_amplitude,
-                               const double &skew_left,
-                               const double &skew_right,
-                               const float * const energies,
-                               double *channels,
-                               const size_t nchannel );
-     
     
-    /** Returns the PDF for a unit-area Bortel function.
-     */
-    double bortel_pdf( const double x, const double mean, const double sigma, const double skew_low );
-
-    /** Returns the indefinite integral (e.g., from negative infinity up to `x`) of a unit-area Bortel function
-     */
-    double bortel_indefinite_integral( const double &x, const double &mean,
-                                      const double &sigma, const double &skew );
-
-    /** Returns the integral of a unit-area Bortel function, between `x1` and `x2`. */
-    double bortel_integral( const double &x1, const double &x2, const double &mean,
-                           const double &sigma, const double &skew );
-
-    /** Returns an approximate area between `x1` and `x2` for a unit-area Bortel function.
-     
-     Just multiplies the x-range by the Bortel PDF value in the middle of the range.
-     */
-    double bortel_integral_fast( const double &x1, const double &x2, const double &mean,
-                                const double &sigma, const double &skew );
     
-    double crystal_ball_norm( const double sigma,
-                             const double alpha,
-                             const double n );
-    
-    double crystal_ball_pdf(const double mean,
-                            const double sigma,
-                            const double alpha,
-                            const double n,
-                            const double x );
 
-    /** Returns indefinite integral (negative infinite to `x0` for the power-law component for the unit-area Crystal Ball function.
-     */
-    double crystal_ball_tail_indefinite_t( const double sigma,
-                                            const double alpha,
-                                            const double n,
-                                          const double t );
     
     /** Returns the non-normalized, double sided Crystal Ball PDF value for `x` */
-    double double_sided_crystal_ball_pdf(const double mean,
+    double DSCB_pdf_non_norm(const double mean,
                                       const double sigma,
                                       const double alpha_low,
                                       const double n_low,
@@ -255,165 +324,19 @@ namespace PeakDists
                                       const double n_high,
                                          const double x );
 
-    double double_sided_crystal_ball_norm( const double peak_sigma,
-                                          const double alpha_low,
+    double DSCB_norm( const double alpha_low,
                                           const double n_low,
                                           const double alpha_high,
                                           const double n_high );
     
-    double double_sided_crystal_ball_left_tail_indefinite_t( const double peak_sigma,
-                                                            const double alpha_low,
-                                                            const double n_low,
-                                                            const double alpha_high,
-                                                            const double n_high,
-                                                            const double t);
+    double DSCB_left_tail_indefinite_non_norm_t( const double alpha_low, const double n_low,
+                                                 const double t );
     
-    double double_sided_crystal_ball_right_tail_indefinite_t(const double peak_sigma,
-                                                             const double alpha_low,
-                                                             const double n_low,
-                                                             const double alpha_high,
+    double DSCB_right_tail_indefinite_non_norm_t( const double alpha_high,
                                                              const double n_high,
                                                              const double t);
     
-    double double_sided_crystal_ball_gauss_indefinite_t( const double peak_sigma,
-                                                        const double alpha_low,
-                                                        const double n_low,
-                                                        const double alpha_high,
-                                                        const double n_high,
-                                                        const double t);
-    
-    /** Returns the normalization so the GaussExp distribution has unit area. */
-    double gauss_exp_norm( const double sigma, const double skew );
-    double gauss_exp_pdf(const double mean,
-                         const double sigma,
-                         const double skew,
-                         const double x );
-    
-    double gauss_exp_tail_indefinite(const double mean,
-                                    const double sigma,
-                                    const double skew,
-                                     const double x );
-    
-    double gauss_exp_indefinite(const double mean,
-                               const double sigma,
-                               const double skew,
-                                const double x );
-    
-    
-    double gauss_exp_integral( const double &mean, const double &sigma, const double &skew, const double &x1, const double &x2 );
-    
-    double exp_gauss_exp_norm( const double &sigma, const double &skew_left, const double &skew_right );
-    
-    double exp_gauss_exp_pdf( const double mean,
-                             const double sigma,
-                             const double skew_left,
-                             const double skew_right,
-                             const double x );
-    
-    double exp_gauss_exp_left_tail_indefinite( const double mean,
-                                            const double sigma,
-                                            const double skew_left,
-                                            const double skew_right,
-                                              const double x );
-
-    double exp_gauss_exp_right_tail_indefinite( const double mean,
-                                             const double sigma,
-                                             const double skew_left,
-                                             const double skew_right,
-                                               const double x );
-
-    double exp_gauss_exp_gauss_indefinite( const double mean,
-                                        const double sigma,
-                                        const double skew_left,
-                                        const double skew_right,
-                                          const double x );
-    
-    double exp_gauss_exp_indefinite( const double mean,
-                                  const double sigma,
-                                  const double skew_left,
-                                  const double skew_right,
-                                    const double x );
-    
-    double exp_gauss_exp_integral(const double mean,
-                             const double sigma,
-                             const double skew_left,
-                             const double skew_right,
-                             const double x0,
-                                  const double x1 );
-    
-    
-    void bortel_integral( const double &mean, const double &sigma, const double &amp, const double &skew,
-                         const float * const energies, double *channels, const size_t nchannel );
-
-    
-    double crystal_ball_integral( const double mean,
-                                 const double sigma,
-                                 const double peak_amplitude,
-                                 const double alpha,
-                                 const double n,
-                                 const double x0, const double x1 );
-    
-    double double_sided_crystal_ball_integral( const double peak_mean,
-                                              const double peak_sigma,
-                                              const double peak_amplitude,
-                                              const double alpha_low,
-                                              const double n_low,
-                                              const double alpha_high,
-                                              const double n_high,
-                                              const double x0, const double x1 );
-    
-    double gauss_exp_integral( const double peak_mean,
-                              const double peak_sigma,
-                              const double peak_amplitude,
-                              const double skew,
-                              const double x0, const double x1 );
-    
-    double exp_gauss_exp_integral( const double peak_mean,
-                                  const double peak_sigma,
-                                  const double peak_amplitude,
-                                  const double skew_left,
-                                  const double skew_right,
-                                  const double x0, const double x1 );
-    
-    void gauss_exp_integral( const double &peak_mean,
-                            const double &peak_sigma,
-                            const double &peak_amplitude,
-                            const double &skew,
-                            const float * const energies,
-                            double *channels,
-                            const size_t nchannel );
-    
-    void exp_gauss_exp_integral( const double &peak_mean,
-                                const double &peak_sigma,
-                                const double &peak_amplitude,
-                                const double &skew_left,
-                                const double &skew_right,
-                                const float * const energies,
-                                double *channels,
-                                const size_t nchannel );
-    
-    void crystal_ball_integral( const double &peak_mean,
-                               const double &peak_sigma,
-                               const double &peak_amplitude,
-                               const double &alpha,
-                               const double &power_law,
-                               const float * const energies,
-                               double *channels,
-                               const size_t nchannel );
-    
-    void double_sided_crystal_ball_integral( const double &peak_mean,
-                                            const double &peak_sigma,
-                                            const double &peak_amplitude,
-                                            const double &lower_alpha,
-                                            const double &lower_power_law,
-                                            const double &upper_alpha,
-                                            const double &upper_power_law,
-                                            const float * const energies,
-                                            double *channels,
-                                            const size_t nchannel );
-    
-  
-  
+    double DSCB_gauss_indefinite_non_norm_t( const double t );
   
 }//namespace PeakDists
 

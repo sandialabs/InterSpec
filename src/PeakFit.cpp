@@ -5240,12 +5240,12 @@ void secondDerivativePeakCanidates( const std::shared_ptr<const Measurement> dat
           const float p2binlower = data->gamma_channel_lower( p2sigmbin );
           const float p2binupper = data->gamma_channel_upper( p2sigmbin );
           
-          const double p2gausheight = PeakDists::gaussian_integral( mean, sigma, amplitude, p2binlower, p2binupper );
+          const double p2gausheight = amplitude*PeakDists::gaussian_integral( mean, sigma, p2binlower, p2binupper );
           const float p2contents = data->gamma_channel_content( p2sigmbin );
           
           const float meanbinlower = data->gamma_channel_lower( minbin );
           const float meanbinupper = data->gamma_channel_upper( minbin );
-          const double meangausheight = PeakDists::gaussian_integral( mean, sigma, amplitude, meanbinlower, meanbinupper );
+          const double meangausheight = amplitude*PeakDists::gaussian_integral( mean, sigma, meanbinlower, meanbinupper );
           const float meancontents = data->gamma_channel_content( minbin );
           const double expecteddiff = meangausheight - p2gausheight;
           const float actualdiff = meancontents - p2contents;
@@ -6757,7 +6757,7 @@ double fit_amp_and_offset( const float *x, const float *data, const size_t nbin,
     for( size_t i = 0; i < npeaks; ++i )
     {
       const size_t col = npoly + i;
-      y_pred += a(col) * PeakDists::gaussian_integral( means[i], sigmas[i], 1.0, x0, x1 );
+      y_pred += a(col) * PeakDists::gaussian_integral( means[i], sigmas[i], x0, x1 );
     }
     
     for( size_t i = 0; i < fixedAmpPeaks.size(); ++i )
@@ -8403,14 +8403,14 @@ std::vector<PeakDef> search_for_peaks( const std::shared_ptr<const Measurement> 
             y_pred = 0.0;
           
           for( size_t i = 0; i < (amplitudes.size()-1); ++i )
-          y_pred += amplitudes[i]*PeakDists::gaussian_integral( means[i], sigmas[i], 1.0, x0, x1 );
+          y_pred += amplitudes[i]*PeakDists::gaussian_integral( means[i], sigmas[i], x0, x1 );
           
           for( size_t i = 0; i < fixedAmpPeaks.size(); ++i )
           y_pred += fixedAmpPeaks[i].gauss_integral( x0, x1 );
           
           withoutpeakchi2 += std::pow( (y_pred - data[bin]) / uncert, 2.0 );
           
-          y_pred += amplitudes.back()*PeakDists::gaussian_integral( means.back(), sigmas.back(), 1.0, x0, x1 );
+          y_pred += amplitudes.back()*PeakDists::gaussian_integral( means.back(), sigmas.back(), x0, x1 );
           withpeakchi2 += std::pow( (y_pred - data[bin]) / uncert, 2.0 );
         }
         
