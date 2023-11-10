@@ -1393,7 +1393,7 @@ namespace PeakDists
     
     auto left_tail_indefinite_non_norm = [peak_mean,peak_sigma,lower_alpha,lower_power_law, exp_lower_aa]( const double x ) -> double {
       const double t = (x - peak_mean) / peak_sigma;
-      assert( t <= -lower_alpha );
+      assert( (t - 1.0E-7) <= -lower_alpha );
       
       const double &a = lower_alpha;
       const double &n = lower_power_law;

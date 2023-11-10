@@ -1764,9 +1764,10 @@ double chi2_for_region( const PeakShrdVec &peaks,
       for( size_t i = 0; i < peaks.size(); ++i )
         peaks[i]->gauss_integral( &(energies[xlowbin]), &(gauss_counts[0]), nchannel );
       
-      for( size_t i = 0; i <= nchannel; ++i )
+      for( size_t i = 0; i < nchannel; ++i )
       {
         const size_t channel = xlowbin + i;
+        assert( (channel+1) < energies.size() );
         const double xbinlow = energies[channel];
         const double xbinup = energies[channel+1];
         const double ndata = data->gamma_channel_content(channel);
