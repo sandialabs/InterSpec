@@ -327,16 +327,16 @@ namespace PeakDists
       throw runtime_error( "crystal_ball_pdf: power-law must be >1" );
     
     const double N = crystal_ball_norm( sigma, alpha, n );
-    const double x_norm = (x - mean) / sigma;
+    const double t = (x - mean) / sigma;
     
-    if( x_norm <= -alpha )
+    if( t <= -alpha )
     {
       const double A = std::pow( n/alpha, n) * std::exp( -0.5*alpha*alpha );
       const double B = (n / alpha) - alpha;
-      return N*A*std::pow( B - x_norm, -n );
+      return N*A*std::pow( B - t, -n );
     }
     
-    return N * std::exp( -0.5*x_norm*x_norm );
+    return N * std::exp( -0.5*t*t );
   }//crystal_ball_pdf
 
 
@@ -366,7 +366,7 @@ namespace PeakDists
     return N * A * sigma * std::pow( B - t, 1.0 - n ) / (n - 1.0);
   }//crystal_ball_tail_indefinite_t
 
-  /** Returns the non-normalized, double sided Crystal Ball PDF value for `x` */
+  /*
   double DSCB_pdf_non_norm( const double mean, const double sigma,
                             const double alpha_low, const double n_low,
                             const double alpha_high, const double n_high,
@@ -386,6 +386,7 @@ namespace PeakDists
     //return std::exp(-0.5*alpha*alpha) * std::pow( (alpha/n)*((n/alpha) - alpha - t), -n );
     return std::exp(-0.5*alpha*alpha) * std::pow((1.0 - ((alpha + t) * (alpha / n))), -n); //slightly more stable version of above
   }
+   */
 
   double DSCB_norm( const double alpha_low, const double n_low,
                     const double alpha_high, const double n_high )
@@ -414,6 +415,7 @@ namespace PeakDists
     
     a = alpha_high;
     n = n_high;
+    // Integrate [e^(-a^2/2)* (((a/n)*((n/a)-a+t))^(-n)] dt, from a to inifit
     // (e^(-a^2/2)*n*((a*(t+n/a-a))/n)^(1-n))/(a*(1-n))
     // (e^(-a^2/2)*n^n*(x+n/a-a)^(1-n))/((1-n)*a^n)
     //const double rtail = -(std::exp(-a*a/2)*n*std::pow((a*(a + n/a -a))/n,1-n))/(a*(1-n)); //From Integrating with Maxima
@@ -554,7 +556,7 @@ namespace PeakDists
                                           const double skew_right,
                                           const double x )
   {
-    const double t = (x - mean) / sigma;
+    //const double t = (x - mean) / sigma;
     const double norm = exp_gauss_exp_norm(sigma,skew_left,skew_right);
     return norm*(sigma/skew_left)*std::exp((skew_left/sigma)*(0.5*skew_left*sigma - mean + x));
   }
@@ -773,9 +775,6 @@ namespace PeakDists
 #warning "PeakDef::double_sided_crystal_ball_integral not tested/optimized - normalization for power law below 5 starts being off decently"
 #endif
     
-    const double oneOverSqrt2 = boost::math::constants::one_div_root_two<double>(); //0.70710678118654752440
-    const double sqrtPiOver2 = boost::math::constants::root_half_pi<double>();      //1.2533141373155002512078826424
-    
     const double t0 = (x0 - peak_mean) / peak_sigma;
     const double t1 = (x1 - peak_mean) / peak_sigma;
     
@@ -807,6 +806,11 @@ namespace PeakDists
                           double *channels,
                           const size_t nchannel )
   {
+#define USE_SIMPLE_GAUSS_EXP_IMP 0
+    
+#if( USE_SIMPLE_GAUSS_EXP_IMP )
+    //compiled in debug mode, this implementation takes about 5 times as long as the more optimized version.
+    
 #ifdef _MSC_VER
 #pragma message( "PeakDef::gauss_exp_integral is not properly coded" )
 #else
@@ -850,6 +854,87 @@ namespace PeakDists
     //  cerr << "GaussExp sum over [" << energies[0] << "," << energies[nchannel] << "] is "
     //  << (dist_sum/peak_amplitude) << " (should be near 1)" << endl;
 #endif
+    
+#else  //USE_SIMPLE_GAUSS_EXP_IMP
+    
+    if( (peak_sigma == 0.0) || (peak_amplitude == 0.0) )
+      return;
+    
+    
+     // TODO: estimate where we should actually start and stop computing values for
+    //const double zero_amp_point_nsigma = 8.0;
+    const float start_energy = energies[0]; //static_cast<float>( peak_mean - zero_amp_point_nsigma*peak_sigma );
+    const float stop_energy = energies[nchannel]; //static_cast<float>( peak_mean + zero_amp_point_nsigma*peak_sigma );
+    
+    size_t channel = 0;
+    while( (channel < nchannel) && (energies[channel+1] < start_energy) )
+    {
+      channel += 1;
+    }
+    
+    if( channel == nchannel )
+      return;
+    
+    
+    const auto tail_indefinite_non_norm = [peak_mean,peak_sigma,skew]( const double x ) -> double {
+      const double t = (x - peak_mean) / peak_sigma;
+      assert( (t - 1.0E-8) <= -skew );
+      return (peak_sigma/skew)*std::exp((skew/peak_sigma)*(0.5*skew*peak_sigma - peak_mean + x));
+    };
+    
+    const auto gaus_indefinite_non_norm = [peak_mean,peak_sigma,skew]( const double x ) -> double {
+      const double t = (x - peak_mean) / peak_sigma;
+      assert( t >= -skew );
+      
+      const double root_half_pi = boost::math::constants::root_half_pi<double>();
+      static const double one_div_root_two = boost::math::constants::one_div_root_two<double>(); //0.707106781186547524400
+      return peak_sigma*root_half_pi * boost_erf_imp(t*one_div_root_two);
+    };
+    
+    const double norm = peak_amplitude * gauss_exp_norm( peak_sigma, skew );
+    const double tail_end = peak_mean - peak_sigma*skew;
+    
+    
+    if( energies[channel] < tail_end )
+    {
+      double indefinite_low = tail_indefinite_non_norm( energies[channel] );
+      
+      while( (channel < nchannel) && (energies[channel] < tail_end) )
+      {
+        const double upper_energy = energies[channel+1];
+        
+        double indefinite_high;
+        if( upper_energy > tail_end )
+        {
+          indefinite_high = tail_indefinite_non_norm( tail_end );
+          channels[channel] += norm * (indefinite_high - indefinite_low);
+          break;
+        }else
+        {
+          indefinite_high = tail_indefinite_non_norm( upper_energy );
+          channels[channel] += norm * (indefinite_high - indefinite_low);
+          indefinite_low = indefinite_high;
+          channel += 1;
+        }
+      }//while( (channel < nchannel) && (energies[channel] < tail_end) )
+    }//if( energies[channel] < tail_end )
+    
+    if( channel >= nchannel )
+      return;
+    
+    assert( energies[channel+1] >= tail_end );
+    double indefinite_low = gaus_indefinite_non_norm( std::max(1.0*energies[channel],tail_end) );
+    
+    while( (channel < nchannel) && (energies[channel] < stop_energy) )
+    {
+      const double upper_energy = energies[channel+1];
+      const double indefinite_high = gaus_indefinite_non_norm( upper_energy );
+      
+      channels[channel] += norm * (indefinite_high - indefinite_low);
+      indefinite_low = indefinite_high;
+      channel += 1;
+    }//while( (channel < nchannel) && (energies[channel] < stop_energy) )
+#endif  //USE_SIMPLE_GAUSS_EXP_IMP
   }//void PeakDef::gauss_exp_integral( ... array ... )
   
   
@@ -862,6 +947,9 @@ namespace PeakDists
                               double *channels,
                               const size_t nchannel )
   {
+#define USE_SIMPLE_EGE_IMP 0
+    
+#if( USE_SIMPLE_EGE_IMP )
 #ifdef _MSC_VER
 #pragma message( "PeakDef::exp_gauss_exp_integral is not properly coded" )
 #else
@@ -895,6 +983,123 @@ namespace PeakDists
       //log_developer_error( __func__, "Invalid CSS color called back " );
 #endif //PERFORM_DEVELOPER_CHECKS
     }//for( size_t i = 0; i < nchannel; ++i )
+    
+#else
+    
+    if( (peak_sigma == 0.0) || (peak_amplitude == 0.0) )
+      return;
+    
+    
+     // TODO: estimate where we should actually start and stop computing values for
+    //const double zero_amp_point_nsigma = 8.0;
+    const float start_energy = energies[0]; //static_cast<float>( peak_mean - zero_amp_point_nsigma*peak_sigma );
+    const float stop_energy = energies[nchannel]; //static_cast<float>( peak_mean + zero_amp_point_nsigma*peak_sigma );
+    
+    size_t channel = 0;
+    while( (channel < nchannel) && (energies[channel+1] < start_energy) )
+    {
+      channel += 1;
+    }
+    
+    if( channel == nchannel )
+      return;
+
+    
+    auto left_tail_indefinite_non_norm = [peak_mean,peak_sigma,skew_left]( const double x ) -> double {
+      return (peak_sigma/skew_left)*std::exp((skew_left/peak_sigma)*(0.5*skew_left*peak_sigma - peak_mean + x));
+    };
+    
+    const double r_const = (std::exp(-0.5*skew_right*skew_right/2)*peak_sigma)/skew_right;
+    auto right_tail_indefinite_non_norm = [peak_mean,peak_sigma,skew_right,r_const]( const double x ) -> double {
+      return (r_const-(peak_sigma*std::exp((skew_right*peak_mean)/peak_sigma-(x*skew_right)/peak_sigma+0.5*skew_right*skew_right))/skew_right);
+    };
+    
+    auto gauss_indefinite_non_norm = [peak_mean,peak_sigma]( const double x ) -> double {
+      static const double sqrt_half_pi = boost::math::constants::root_half_pi<double>(); //1.2533141373155002512078826424
+      static const double one_div_root_two = boost::math::constants::one_div_root_two<double>(); //0.707106781186547524400
+      
+      const double t = (x - peak_mean) / peak_sigma;
+      return peak_sigma * sqrt_half_pi * boost_erf_imp( one_div_root_two*t );
+    };
+    
+    const double norm = peak_amplitude * exp_gauss_exp_norm( peak_sigma, skew_left, skew_right );
+    
+    const double left_tail_end = peak_mean - peak_sigma*skew_left;
+    const double right_tail_start = peak_mean + peak_sigma*skew_right;
+    
+    
+    if( energies[channel] < left_tail_end )
+    {
+      double indefinite_low = left_tail_indefinite_non_norm( energies[channel] );
+      
+      while( (channel < nchannel) && (energies[channel] < left_tail_end) )
+      {
+        const double upper_energy = energies[channel+1];
+        
+        if( upper_energy > left_tail_end )
+        {
+          const double indefinite_high = left_tail_indefinite_non_norm( left_tail_end );
+          channels[channel] += norm * (indefinite_high - indefinite_low);
+          break;
+        }else
+        {
+          const double indefinite_high = left_tail_indefinite_non_norm( upper_energy );
+          channels[channel] += norm * (indefinite_high - indefinite_low);
+          indefinite_low = indefinite_high;
+          channel += 1;
+        }
+      }//while( (channel < nchannel) && (energies[channel] < tail_end) )
+    }//if( energies[channel] < tail_end )
+    
+    if( channel >= nchannel )
+      return;
+    
+    assert( energies[channel+1] >= left_tail_end );
+    double indefinite_low = gauss_indefinite_non_norm( std::max(1.0*energies[channel],left_tail_end) );
+    
+    while( (channel < nchannel) && (energies[channel] < right_tail_start) )
+    {
+      const double upper_energy = energies[channel+1];
+      
+      if( upper_energy > right_tail_start )
+      {
+        const double indefinite_high = gauss_indefinite_non_norm( right_tail_start );
+        channels[channel] += norm * (indefinite_high - indefinite_low);
+        break;
+      }else
+      {
+        const double indefinite_high = gauss_indefinite_non_norm( upper_energy );
+        channels[channel] += norm * (indefinite_high - indefinite_low);
+        indefinite_low = indefinite_high;
+        channel += 1;
+      }
+    }//while( (channel < nchannel) && (energies[channel] < stop_energy) )
+    
+    
+    if( channel >= nchannel )
+      return;
+    
+    assert( energies[channel+1] >= right_tail_start );
+    indefinite_low = right_tail_indefinite_non_norm( std::max(1.0*energies[channel],right_tail_start) );
+    
+    while( (channel < nchannel) && (energies[channel] < stop_energy) )
+    {
+      const double upper_energy = energies[channel+1];
+      
+      if( upper_energy > stop_energy )
+      {
+        const double indefinite_high = right_tail_indefinite_non_norm( right_tail_start );
+        channels[channel] += norm * (indefinite_high - indefinite_low);
+        break;
+      }else
+      {
+        const double indefinite_high = right_tail_indefinite_non_norm( upper_energy );
+        channels[channel] += norm * (indefinite_high - indefinite_low);
+        indefinite_low = indefinite_high;
+        channel += 1;
+      }
+    }//while( (channel < nchannel) && (energies[channel] < stop_energy) )
+#endif
   }
 
   
@@ -907,16 +1112,14 @@ namespace PeakDists
                              double *channels,
                              const size_t nchannel )
   {
-#ifdef _MSC_VER
-#pragma message( "PeakDef::crystal_ball_integral is not properly coded" )
-#else
-#warning "PeakDef::crystal_ball_integral is not properly coded"
-#endif
+#define USE_SIMPLE_CB_IMP 0
     
 #if( PERFORM_DEVELOPER_CHECKS )
     double dist_sum = 0.0;
 #endif
+
     
+#if( USE_SIMPLE_CB_IMP )
     for( size_t i = 0; i < nchannel; ++i )
     {
       const float x0 = energies[i];
@@ -950,6 +1153,107 @@ namespace PeakDists
 #endif //PERFORM_DEVELOPER_CHECKS
     }//for( size_t i = 0; i < nchannel; ++i )
     
+
+#else //USE_SIMPLE_CB_IMP
+    
+    
+    if( (peak_sigma == 0.0) || (peak_amplitude == 0.0) )
+      return;
+    
+    
+     // TODO: estimate where we should actually start and stop computing values for
+    //const double zero_amp_point_nsigma = 8.0;
+    const float start_energy = energies[0]; //static_cast<float>( peak_mean - zero_amp_point_nsigma*peak_sigma );
+    const float stop_energy = energies[nchannel]; //static_cast<float>( peak_mean + zero_amp_point_nsigma*peak_sigma );
+    
+    size_t channel = 0;
+    while( (channel < nchannel) && (energies[channel+1] < start_energy) )
+    {
+      channel += 1;
+    }
+    
+    if( channel == nchannel )
+      return;
+    
+    
+    const double exp_aa = std::exp(-0.5*alpha*alpha);
+    const double one_div_root_two = boost::math::constants::one_div_root_two<double>(); //0.70710678118654752440
+    const double sqrt_half_pi = boost::math::constants::root_half_pi<double>();
+    const double sqrt_2pi = boost::math::constants::root_two_pi<double>();
+    
+    const double A = std::pow(power_law/alpha, power_law) * exp_aa;
+    const double B = (power_law / alpha) - alpha;
+    const double C = (power_law / alpha) * (1.0/(power_law - 1.0)) * exp_aa;
+    const double D = sqrt_half_pi * (1.0 + boost_erf_imp( one_div_root_two * alpha ));
+    const double N = 1.0 / (peak_sigma * (C + D));
+    const double tail_amp = peak_amplitude * N * A * peak_sigma;
+    const double gauss_indef_amp = 0.5 * peak_amplitude * sqrt_2pi / (C + D);
+    
+    // Brief implementation of crystal_ball_tail_indefinite_t
+    auto tail_indefinite = [peak_mean,peak_sigma,alpha,power_law,B,tail_amp]( const double x ) -> double {
+      const double t = (x - peak_mean) / peak_sigma;
+      assert( (t <= -alpha) && (alpha > 0.0) && (power_law > 1.0) );
+      return tail_amp * std::pow( B - t, 1.0 - power_law ) / (power_law - 1.0);
+    };
+    
+    auto gauss_indefinite = [peak_mean,peak_sigma,gauss_indef_amp,one_div_root_two]( const double x ) -> double {
+      const double t = (x - peak_mean) / peak_sigma;
+      return gauss_indef_amp * boost_erf_imp( one_div_root_two * t );
+    };
+    
+    
+    const double tail_end = peak_mean - peak_sigma*alpha;    
+    
+    if( energies[channel] < tail_end )
+    {
+      double indefinite_low = tail_indefinite( energies[channel] );
+      
+      while( (channel < nchannel) && (energies[channel] < tail_end) )
+      {
+        assert( energies[channel] < energies[channel+1] );
+        
+        const double upper_energy = energies[channel+1];
+        
+        if( upper_energy > tail_end )
+        {
+          const double indefinite_high = tail_indefinite( tail_end );
+          const double val = (indefinite_high - indefinite_low);
+          channels[channel] += val;
+    #if( PERFORM_DEVELOPER_CHECKS )
+          dist_sum += val;
+    #endif
+          break;
+        }else
+        {
+          const double indefinite_high = tail_indefinite( upper_energy );
+          const double val = (indefinite_high - indefinite_low);
+          channels[channel] += val;
+          indefinite_low = indefinite_high;
+          channel += 1;
+        }
+      }//while( (channel < nchannel) && (energies[channel] < tail_end) )
+    }//if( energies[channel] < tail_end )
+    
+    if( channel >= nchannel )
+      return;
+    
+    assert( energies[channel+1] >= tail_end );
+    double indefinite_low = gauss_indefinite( std::max(1.0*energies[channel],tail_end) );
+    
+    while( (channel < nchannel) && (energies[channel] < stop_energy) )
+    {
+      assert( energies[channel] < energies[channel+1] );
+      const double upper_energy = energies[channel+1];
+      
+      const double indefinite_high = gauss_indefinite( upper_energy );
+      const double val = (indefinite_high - indefinite_low);
+      channels[channel] += val;
+      indefinite_low = indefinite_high;
+      channel += 1;
+    }//while( (channel < nchannel) && (energies[channel] < stop_energy) )
+#endif //USE_SIMPLE_CB_IMP
+    
+    
 #if( PERFORM_DEVELOPER_CHECKS )
     /*
      const double frac = dist_sum / peak_amplitude;
@@ -971,6 +1275,7 @@ namespace PeakDists
      }//if( fabs(1 - frac) > 0.01 )
      */
 #endif
+    
   }//crystal_ball_integral(...)
 
   
@@ -985,6 +1290,11 @@ namespace PeakDists
                                           double *channels,
                                           const size_t nchannel )
   {
+#define USE_SIMPLE_DSCB_IMP 0
+    
+#if( USE_SIMPLE_DSCB_IMP )
+    //compiled in debug mode, this implementation takes about X times as long as the more optimized version.
+    
 #ifdef _MSC_VER
 #pragma message( "PeakDef::double_sided_crystal_ball_integral is not properly coded" )
 #else
@@ -1032,13 +1342,8 @@ namespace PeakDists
     
 #if( PERFORM_DEVELOPER_CHECKS )
     const double frac = dist_sum / peak_amplitude;
-    cerr << "Double Sided Crystal Ball sum over [" << energies[0] << "," << energies[nchannel] << "] is "
-    << frac << " (should be near 1)" << endl;
-    
-    if( (peak_amplitude > 0.0) && IsNan(frac) )
-    {
-      cerr << endl;
-    }
+    //cerr << "Double Sided Crystal Ball sum over [" << energies[0] << "," << energies[nchannel] << "] is "
+    //<< frac << " (should be near 1)" << endl;
     
     if( fabs(1 - frac) > 0.01 )
     {
@@ -1061,6 +1366,140 @@ namespace PeakDists
       << endl;
     }//if( fabs(1 - frac) > 0.01 )
 #endif
+    
+#else //USE_SIMPLE_DSCB_IMP
+    
+    
+    if( (peak_sigma == 0.0) || (peak_amplitude == 0.0) )
+      return;
+    
+    
+     // TODO: estimate where we should actually start and stop computing values for
+    //const double zero_amp_point_nsigma = 8.0;
+    const float start_energy = energies[0]; //static_cast<float>( peak_mean - zero_amp_point_nsigma*peak_sigma );
+    const float stop_energy = energies[nchannel]; //static_cast<float>( peak_mean + zero_amp_point_nsigma*peak_sigma );
+    
+    size_t channel = 0;
+    while( (channel < nchannel) && (energies[channel+1] < start_energy) )
+    {
+      channel += 1;
+    }
+    
+    if( channel == nchannel )
+      return;
+    
+    const double exp_lower_aa = std::exp(-0.5*lower_alpha*lower_alpha);
+    const double exp_upper_aa = std::exp(-0.5*upper_alpha*upper_alpha);
+    
+    auto left_tail_indefinite_non_norm = [peak_mean,peak_sigma,lower_alpha,lower_power_law, exp_lower_aa]( const double x ) -> double {
+      const double t = (x - peak_mean) / peak_sigma;
+      assert( t <= -lower_alpha );
+      
+      const double &a = lower_alpha;
+      const double &n = lower_power_law;
+      const double t_1 = 1.0 - (a / (n / (a + t)));
+      return -exp_lower_aa*(t_1 / std::pow(t_1, n)) / ((a / n) - a); //slightly more stable
+    };
+    
+    auto right_tail_indefinite_non_norm = [peak_mean,peak_sigma,upper_alpha,upper_power_law,exp_upper_aa]( const double x ) -> double {
+      const double t = (x - peak_mean) / peak_sigma;
+      assert( (t + 1.0E-7) >= upper_alpha );
+      
+      const double &a = upper_alpha;
+      const double &n = upper_power_law;
+
+      return exp_upper_aa*(1.0 / ((a / n) - a)) * std::pow((1.0 + ((a * (t - a)) / n)), (1.0 - n));
+    };
+    
+    
+    auto gauss_indefinite_non_norm = [peak_mean,peak_sigma]( const double x ) -> double {
+      const double t = (x - peak_mean) / peak_sigma;
+      const double root_half_pi = boost::math::constants::root_half_pi<double>();
+      const double one_div_root_two = boost::math::constants::one_div_root_two<double>(); //0.70710678118654752440
+      
+      return root_half_pi * boost_erf_imp( one_div_root_two * t );
+    };
+    
+    
+    
+    const double norm = peak_amplitude * DSCB_norm( lower_alpha, lower_power_law, upper_alpha, upper_power_law);
+    
+    const double left_tail_end = peak_mean - peak_sigma*lower_alpha;
+    const double right_tail_start = peak_mean + peak_sigma*upper_alpha;
+    
+    
+    if( energies[channel] < left_tail_end )
+    {
+      double indefinite_low = left_tail_indefinite_non_norm( energies[channel] );
+      
+      while( (channel < nchannel) && (energies[channel] < left_tail_end) )
+      {
+        const double upper_energy = energies[channel+1];
+        
+        if( upper_energy > left_tail_end )
+        {
+          const double indefinite_high = left_tail_indefinite_non_norm( left_tail_end );
+          channels[channel] += norm * (indefinite_high - indefinite_low);
+          break;
+        }else
+        {
+          const double indefinite_high = left_tail_indefinite_non_norm( upper_energy );
+          channels[channel] += norm * (indefinite_high - indefinite_low);
+          indefinite_low = indefinite_high;
+          channel += 1;
+        }
+      }//while( (channel < nchannel) && (energies[channel] < tail_end) )
+    }//if( energies[channel] < tail_end )
+    
+    if( channel >= nchannel )
+      return;
+    
+    assert( energies[channel+1] >= left_tail_end );
+    double indefinite_low = gauss_indefinite_non_norm( std::max(1.0*energies[channel],left_tail_end) );
+    
+    while( (channel < nchannel) && (energies[channel] < right_tail_start) )
+    {
+      const double upper_energy = energies[channel+1];
+      
+      if( upper_energy > right_tail_start )
+      {
+        const double indefinite_high = gauss_indefinite_non_norm( right_tail_start );
+        channels[channel] += norm * (indefinite_high - indefinite_low);
+        break;
+      }else
+      {
+        const double indefinite_high = gauss_indefinite_non_norm( upper_energy );
+        channels[channel] += norm * (indefinite_high - indefinite_low);
+        indefinite_low = indefinite_high;
+        channel += 1;
+      }
+    }//while( (channel < nchannel) && (energies[channel] < stop_energy) )
+    
+    
+    if( channel >= nchannel )
+      return;
+    
+    assert( energies[channel+1] >= right_tail_start );
+    indefinite_low = right_tail_indefinite_non_norm( std::max(1.0*energies[channel],right_tail_start) );
+    
+    while( (channel < nchannel) && (energies[channel] < stop_energy) )
+    {
+      const double upper_energy = energies[channel+1];
+      
+      if( upper_energy > stop_energy )
+      {
+        const double indefinite_high = right_tail_indefinite_non_norm( right_tail_start );
+        channels[channel] += norm * (indefinite_high - indefinite_low);
+        break;
+      }else
+      {
+        const double indefinite_high = right_tail_indefinite_non_norm( upper_energy );
+        channels[channel] += norm * (indefinite_high - indefinite_low);
+        indefinite_low = indefinite_high;
+        channel += 1;
+      }
+    }//while( (channel < nchannel) && (energies[channel] < stop_energy) )
+#endif //USE_SIMPLE_DSCB_IMP
   }//double_sided_crystal_ball_integral(...)
 
 }//namespace PeakDists

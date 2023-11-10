@@ -315,14 +315,19 @@ namespace PeakDists
     
 
     
-    /** Returns the non-normalized, double sided Crystal Ball PDF value for `x` */
-    double DSCB_pdf_non_norm(const double mean,
-                                      const double sigma,
-                                      const double alpha_low,
-                                      const double n_low,
-                                      const double alpha_high,
-                                      const double n_high,
-                                         const double x );
+    /** 20231109: Currently `DSCB_pdf_non_norm` yields a that can be almost 20% too low, over the entire effective range
+     I'm totally not sure why - it could be an error in my integration for normalization, a bug in the indefinite integral functions,
+     or likely a mis-understanding on my part, or a bug in `DSCB_pdf_non_norm` that I have just become blind to seeing.
+     So for the moment, we wont use the equivalent of `DSCB_pdf_non_norm` in the JS, which is faster and more compact,
+     see test\_PeakDists.cpp for some commented out tests that show this issue.  I'm a bit miffed at this inconsistency.
+     
+     Returns the non-normalized, double sided Crystal Ball PDF value for `x`
+     */
+    //double DSCB_pdf_non_norm( const double mean, const double sigma,
+    //                          const double alpha_low, const double n_low,
+    //                          const double alpha_high, const double n_high,
+    //                          const double x );
+  
 
     double DSCB_norm( const double alpha_low,
                                           const double n_low,

@@ -605,9 +605,6 @@ find_path(
 )
 
 #Set SpecUtils compile options
-set(SpecUtils_REBIN_FILES_TO_SINGLE_BINNING OFF
-    CACHE BOOL "Set Rebin spectrum to single energy cal"
-)
 set(SpecUtils_NO_BOOST_LIB OFF
     CACHE BOOL "Use boost for threading primitives in SpecUtils"
 )
