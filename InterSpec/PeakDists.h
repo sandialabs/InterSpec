@@ -126,7 +126,7 @@ namespace PeakDists
    @param peak_mean
    @param peak_sigma
    @param peak_amplitude
-   @param skew The Bortel skew of the peak.
+   @param skew The Bortel skew of the peak (between 0 and 10)
    @param energies Array of lower channel energies; must have at least one more entry than
           `nchannel`
    @param channels Channel count array integrals of Gaussian and Skew will be _added_ to (e.g.,
@@ -157,7 +157,24 @@ namespace PeakDists
   double bortel_integral_fast( const double mean, const double sigma, const double skew,
                               const double x1, const double x2 );
   
-  
+  /** Return the limits so that `1-p` of the Bortel distribution is covered.
+   
+   @param mean The peak mean
+   @param sigma The peak width
+   @param skew The Bortel skew of the peak (between 0 and 10)
+   @param The fraction of the distribution you want to be outside of the returned range; must
+          be between 1.0E-11and 0.999.
+   
+   @returns limits so that `0.5*p` of the distribution will be below the first element, and
+   `0.5*p` will be above the second element, so the fraction of the distribution between the
+   returned limits is `1 - p`.
+   
+   The area above and below the retuned limits is accurate to within 0.02 of requested area (i.e. `0.02*p`).
+   
+   Throws error on invalid input.
+   */
+  std::pair<double,double> bortel_coverage_limits( const double mean, const double sigma,
+                                         const double skew, const double p );
   
   
   
@@ -191,7 +208,24 @@ namespace PeakDists
                              const double skew,
                               const double x );
   
-  
+  /** Return the limits so that `1-p` of the GaussExp distribution is covered.
+   
+   @param mean The peak mean
+   @param sigma The peak width
+   @param skew The GaussExp skew of the peak (between 0.15 and 3.25)
+   @param The fraction of the distribution you want to be outside of the returned range; must
+          be between 1.0E-11and 0.999.
+   
+   @returns limits so that `0.5*p` of the distribution will be below the first element, and
+   `0.5*p` will be above the second element, so the fraction of the distribution between the
+   returned limits is `1 - p`.
+   
+   The area above and below the retuned limits is accurate to within 0.02 of requested area (i.e. `0.02*p`).
+   
+   Throws error on invalid input.
+   */
+  std::pair<double,double> gauss_exp_coverage_limits( const double mean, const double sigma,
+                                         const double skew, const double p );
   
   
   
@@ -247,6 +281,26 @@ namespace PeakDists
                                 const double skew_right,
                                   const double x );
   
+  /** Return the limits so that `1-p` of the ExpGaussExp distribution is covered.
+   
+   @param mean The peak mean
+   @param sigma The peak width
+   @param skew_left The left-sided ExpGaussExp skew of the peak (between 0.15 and 3.25)
+   @param skew_right The right-sided ExpGaussExp skew of the peak (between 0.15 and 3.25)
+   @param The fraction of the distribution you want to be outside of the returned range; must
+          be between 1.0E-11and 0.999.
+   
+   @returns limits so that `0.5*p` of the distribution will be below the first element, and
+   `0.5*p` will be above the second element, so the fraction of the distribution between the
+   returned limits is `1 - p`.
+   
+   The area above and below the retuned limits is accurate to within 0.02 of requested area (i.e. `0.02*p`).
+   
+   Throws error on invalid input.
+   */
+  std::pair<double,double> exp_gauss_exp_coverage_limits( const double mean, const double sigma,
+                                const double left_skew, const double right_skew, const double p );
+  
   
   
   
@@ -283,10 +337,27 @@ namespace PeakDists
   double crystal_ball_tail_indefinite_t( const double sigma, const double alpha,
                                         const double n, const double t );
   
-  
-  
-  
-  
+  /** Return the limits so that `1-p` of the Crustal Ball distribution is covered.
+   
+   @param mean The peak mean
+   @param sigma The peak width
+   @param alpha The Crystal Ball skew of the peak
+   @param n The Crystal Ball power-law of the peak
+   @param The fraction of the distribution you want to be outside of the returned range; must
+          be between 1.0E-11and 0.999.
+   
+   @returns limits so that `0.5*p` of the distribution will be below the first element, and
+   `0.5*p` will be above the second element, so the fraction of the distribution between the
+   returned limits is `1 - p`.
+   
+   The area above and below the retuned limits is accurate to within 0.02 of requested area (i.e. `0.02*p`).
+   
+   Throws error on invalid input.
+   */
+  std::pair<double,double> crystal_ball_coverage_limits( const double mean, const double sigma,
+                                                        const double alpha,
+                                                        const double n,
+                                                        const double p );
   
   
   
@@ -312,7 +383,31 @@ namespace PeakDists
                                                  double *channels,
                                                  const size_t nchannel );
     
-    
+  /** Return the limits so that `1-p` of the ExpGaussExp distribution is covered.
+   
+   @param mean The peak mean
+   @param sigma The peak width
+   @param alpha_left The left-sided Crystal Ball skew of the peak
+   @param n_left The left-sided Crystal Ball power-law of the peak
+   @param alpha_right The right-sided Crystal Ball skew of the peak
+   @param n_right The right-sided Crystal Ball power-law of the peak
+   @param The fraction of the distribution you want to be outside of the returned range; must
+          be between 1.0E-11and 0.999.
+   
+   @returns limits so that `0.5*p` of the distribution will be below the first element, and
+   `0.5*p` will be above the second element, so the fraction of the distribution between the
+   returned limits is `1 - p`.
+   
+   The area above and below the retuned limits is accurate to within 0.02 of requested area (i.e. `0.02*p`).
+   
+   Throws error on invalid input.
+   */
+  std::pair<double,double> double_sided_crystal_ball_coverage_limits( const double mean, const double sigma,
+                                                                     const double left_skew,
+                                                                     const double left_n,
+                                                                     const double right_skew,
+                                                                     const double right_n,
+                                                                     const double p );
 
     
     /** 20231109: Currently `DSCB_pdf_non_norm` yields a that can be almost 20% too low, over the entire effective range
@@ -342,7 +437,7 @@ namespace PeakDists
                                                              const double t);
     
     double DSCB_gauss_indefinite_non_norm_t( const double t );
-  
+    
 }//namespace PeakDists
 
 #endif  //PeakDists_h

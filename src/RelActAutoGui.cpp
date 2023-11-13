@@ -264,7 +264,6 @@ namespace
     NativeFloatSpinBox *m_lower_energy;
     NativeFloatSpinBox *m_upper_energy;
     WComboBox *m_continuum_type;
-    WComboBox *m_skew_type;
     WCheckBox *m_force_full_range;
     WPushButton *m_to_individual_rois;
     
@@ -280,7 +279,6 @@ namespace
       m_lower_energy( nullptr ),
       m_upper_energy( nullptr ),
       m_continuum_type( nullptr ),
-      m_skew_type( nullptr ),
       m_force_full_range( nullptr ),
       m_to_individual_rois( nullptr ),
       m_highlight_region_id( 0 )
@@ -329,25 +327,9 @@ namespace
       
       m_continuum_type->setCurrentIndex( static_cast<int>(PeakContinuum::OffsetType::Linear) );
       m_continuum_type->changed().connect( this, &RelActAutoEnergyRange::handleContinuumTypeChange );
-      
-      label = new WLabel( "Skew Type:", this );
-      label->addStyleClass( "GridFourthCol GridSecondRow" );
-      m_skew_type = new WComboBox( this );
-      m_skew_type->addStyleClass( "GridFifthCol GridSecondRow" );
-      label->setBuddy( m_skew_type );
-      
-      // We wont allow "External" here
-      for( int i = 0; i < static_cast<int>(PeakContinuum::OffsetType::External); ++i )
-      {
-        const char *label = PeakContinuum::offset_type_label( PeakContinuum::OffsetType(i) );
-        m_continuum_type->addItem( label );
-      }//for( loop over PeakContinuum::OffsetType )
-      
-      m_skew_type->setCurrentIndex( static_cast<int>(PeakDef::SkewType::NoSkew) );
-      m_skew_type->changed().connect( this, &RelActAutoEnergyRange::handleSkewTypeChange );
-      
+
       m_force_full_range = new WCheckBox( "Force full-range", this );
-      m_force_full_range->addStyleClass( "GridFourthCol GridThirdRow GridSpanTwoCol" );
+      m_force_full_range->addStyleClass( "GridFourthCol GridSecondRow GridSpanTwoCol" );
       m_force_full_range->checked().connect( this, &RelActAutoEnergyRange::handleForceFullRangeChange );
       m_force_full_range->unChecked().connect( this, &RelActAutoEnergyRange::handleForceFullRangeChange );
       
@@ -387,12 +369,6 @@ namespace
     {
       m_updated.emit();
     }
-    
-    void handleSkewTypeChange()
-    {
-      m_updated.emit();
-    }
-    
     
     void handleForceFullRangeChange()
     {
@@ -471,38 +447,6 @@ namespace
     }//void setContinuumType( PeakContinuum::OffsetType type )
     
     
-    void setSkewType( const PeakDef::SkewType type )
-    {
-      static_assert( PeakDef::SkewType::DoubleSidedCrystalBall > PeakDef::SkewType::ExpGaussExp,
-                    "DoubleSidedCrystalBall should be largest value of SkewType enum" );
-      static_assert( PeakDef::SkewType::DoubleSidedCrystalBall > PeakDef::SkewType::CrystalBall,
-                    "DoubleSidedCrystalBall should be largest value of SkewType enum" );
-      static_assert( PeakDef::SkewType::DoubleSidedCrystalBall > PeakDef::SkewType::GaussExp,
-                    "DoubleSidedCrystalBall should be largest value of SkewType enum" );
-      static_assert( PeakDef::SkewType::DoubleSidedCrystalBall > PeakDef::SkewType::Bortel,
-                    "DoubleSidedCrystalBall should be largest value of SkewType enum" );
-      static_assert( PeakDef::SkewType::DoubleSidedCrystalBall > PeakDef::SkewType::NoSkew,
-                    "DoubleSidedCrystalBall should be largest value of SkewType enum" );
-      static_assert( PeakDef::SkewType::NoSkew == 0,
-                    "NoSkew should be first value of SkewType enum" );
-      
-      const int type_index = static_cast<int>( type );
-      
-      if( (type_index < 0)
-         || (type_index > static_cast<int>(PeakDef::SkewType::DoubleSidedCrystalBall)) )
-      {
-        assert( 0 );
-        return;
-      }
-      
-      if( type_index == m_continuum_type->currentIndex() )
-        return;
-      
-      m_skew_type->setCurrentIndex( type_index );
-      m_updated.emit();
-    }//void setSkewType( PeakContinuum::OffsetType type )
-    
-    
     void setHighlightRegionId( const size_t chart_id )
     {
       m_highlight_region_id = chart_id;
@@ -550,7 +494,6 @@ namespace
       roi.lower_energy = m_lower_energy->value();
       roi.upper_energy = m_upper_energy->value();
       roi.continuum_type = PeakContinuum::OffsetType( m_continuum_type->currentIndex() );
-      roi.skew_type = PeakDef::SkewType( m_skew_type->currentIndex() );
       roi.force_full_range = m_force_full_range->isChecked();
       roi.allow_expand_for_peak_width = false; //not currently supported to the GUI, or tested in the calculation code
       
@@ -1259,6 +1202,7 @@ RelActAutoGui::RelActAutoGui( InterSpec *viewer, Wt::WContainerWidget *parent )
   m_background_subtract( nullptr ),
   m_same_z_age( nullptr ),
   m_pu_corr_method( nullptr ),
+  m_skew_type( nullptr ),
   m_more_options_menu( nullptr ),
   m_apply_energy_cal_item( nullptr ),
   m_show_ref_lines_item( nullptr ),
@@ -1615,6 +1559,35 @@ RelActAutoGui::RelActAutoGui( InterSpec *viewer, Wt::WContainerWidget *parent )
   m_pu_corr_method->hide();
   label->hide();
   
+    
+  label = new WLabel( "Peak Skew", optionsDiv );
+  label->addStyleClass( "GridNinthCol GridFirstRow" );
+  m_skew_type = new WComboBox( optionsDiv );
+  m_skew_type->addStyleClass( "GridTenthCol GridFirstRow" );
+  label->setBuddy( m_skew_type );
+  m_skew_type->activated().connect( this, &RelActAutoGui::handleSkewTypeChanged );
+  tooltip = "The type of skew to apply to the peaks; skew parameters will be fit.";
+  HelpSystem::attachToolTipOn( label, tooltip, showToolTips );
+  HelpSystem::attachToolTipOn( m_skew_type, tooltip, showToolTips );
+  for( auto st = PeakDef::SkewType(0); st <= PeakDef::SkewType::DoubleSidedCrystalBall;
+      st = PeakDef::SkewType(st + 1) )
+  {
+    const char *label = "";
+    switch( st )
+    {
+      case PeakDef::NoSkew:  	              label = "None";                break;
+      case PeakDef::Bortel:  	              label = "exGaussian";          break;
+      case PeakDef::GaussExp:               label = "GaussExp";            break;
+      case PeakDef::CrystalBall:            label = "Crystal Ball";        break;
+      case PeakDef::ExpGaussExp:            label = "ExpGaussExp";         break;
+      case PeakDef::DoubleSidedCrystalBall: label = "Double Crystal Ball"; break;
+    }//switch( st )
+    
+    m_skew_type->addItem( label );
+  }//for( loop over SkewTypes )
+    
+  m_skew_type->setCurrentIndex( 0 );
+    
   WPushButton *more_btn = new WPushButton( optionsDiv );
   more_btn->setIcon( "InterSpec_resources/images/more_menu_icon.svg" );
   more_btn->addStyleClass( "MoreMenuIcon Wt-icon" );
@@ -1895,6 +1868,10 @@ RelActCalcAuto::Options RelActAutoGui::getCalcOptions() const
     }//for( loop over RelActCalc::PuCorrMethod )
   }//if( m_pu_corr_method->isVisible() )
   
+  options.skew_type = PeakDef::SkewType::NoSkew;
+  const int skew_index = m_skew_type->currentIndex();
+  if( (skew_index >= 0) && (skew_index <= PeakDef::SkewType::DoubleSidedCrystalBall) )
+    options.skew_type = PeakDef::SkewType( m_skew_type->currentIndex() );
   
   return options;
 }//RelActCalcAuto::Options getCalcOptions() const
@@ -2444,7 +2421,7 @@ void RelActAutoGui::setCalcOptionsGui( const RelActCalcAuto::Options &options )
   m_rel_eff_eqn_form->setCurrentIndex( static_cast<int>(options.rel_eff_eqn_type) );
   m_rel_eff_eqn_order->setCurrentIndex( std::max(options.rel_eff_eqn_order,size_t(1)) - 1 );
   m_fwhm_eqn_form->setCurrentIndex( static_cast<int>(options.fwhm_form) );
-  
+  m_skew_type->setCurrentIndex( static_cast<int>(options.skew_type) );
   // options.spectrum_title
   
   m_render_flags |= RenderActions::UpdateCalculations;
@@ -3061,6 +3038,12 @@ void RelActAutoGui::handlePuByCorrelationChanged()
   scheduleRender();
 }
 
+void RelActAutoGui::handleSkewTypeChanged()
+{
+  checkIfInUserConfigOrCreateOne( false );
+  m_render_flags |= RenderActions::UpdateCalculations;
+  scheduleRender();
+}
 
 void RelActAutoGui::handleNucDataSrcChanged()
 {

@@ -148,7 +148,7 @@ void UndoRedoManager::PeakModelChange::setToCurrentPeaks()
     return;
   
   auto &start_peaks = manager->m_PeakModelChange_starting_peaks;
-  assert( start_peaks.empty() );
+  //assert( start_peaks.empty() );
   start_peaks.clear();
   
   PeakModel *pmodel = manager->m_interspec->peakModel();

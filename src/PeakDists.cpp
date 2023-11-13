@@ -264,12 +264,12 @@ namespace PeakDists
                            const double sigma, const double skew )
   {
     const double sqrt2 = boost::math::constants::root_two<double>();
-    const double oneOverSqrt2 = boost::math::constants::one_div_root_two<double>();
+    const double one_div_root_two = boost::math::constants::one_div_root_two<double>();
    
     const double x_0 = x - mean;
     const double erf_arg = x_0/(sigma*sqrt2);
     const double exp_arg = (2*skew*x_0 + sigma*sigma) / (2*skew*skew);
-    const double erfc_arg = oneOverSqrt2*((x_0/sigma) + (sigma/skew));
+    const double erfc_arg = one_div_root_two*((x_0/sigma) + (sigma/skew));
     
     if( (skew <= 0.0) || (exp_arg > 87.0) || (erfc_arg > 10.0) )
       return 0.5 * boost_erf_imp(erf_arg);
@@ -297,15 +297,402 @@ namespace PeakDists
   }
   
   
+  std::pair<double,double> bortel_coverage_limits( const double mean, const double sigma,
+                                         const double skew, const double p )
+  {
+    if( (p <= 1.0E-11) || (p > 0.999)  ) // 7 sigma would be 1.279812544E-12, so to account for skew
+      throw runtime_error( "bortel_coverage_limits: invalid p" );
+    
+    try
+    {
+      auto tail_cdf = [mean,sigma,skew,p]( const double x ) -> double {
+        const double cdf = bortel_indefinite_integral( x, mean, sigma, skew );
+        const double answer = -0.5*p + (cdf + 0.5);
+        return answer;
+      };
+      
+      auto term_condition = [p]( const double left, const double right ) -> bool {
+        return fabs(left - right) < 0.01*p;
+      };
+      
+      boost::uintmax_t max_iter = 100;
+      const double low_low_limit = mean - 50*sigma;  //50 sigma is arbitrary
+      const double low_up_limit = mean - skew*sigma;
+      const pair<double,double> lower_val = boost::math::tools::bisect( tail_cdf, low_low_limit,
+                                                          low_up_limit, term_condition, max_iter );
+      const double lower_x = 0.5*(lower_val.first + lower_val.second);
+      
+      
+      auto upper_cdf = [mean,sigma,skew,p]( const double x ) -> double {
+        const double cdf = bortel_indefinite_integral( x, mean, sigma, skew );
+        return 0.5*p + (-0.5 + cdf);
+      };
+       
+      max_iter = 100;
+      const double up_low_limit = mean;
+      const double up_up_limit = mean + 7*sigma;
+      const pair<double,double> upper_val = boost::math::tools::bisect( upper_cdf, up_low_limit,
+                                                          up_up_limit, term_condition, max_iter );
+      const double upper_x = 0.5*(upper_val.first + upper_val.second);
+        
+      assert( (1.0 - bortel_integral(mean, sigma, skew, lower_val.first, upper_val.second)) <= (p + 1.0E-6) );
+      assert( (1.0 - bortel_integral(mean, sigma, skew, lower_val.second, upper_val.first)) >= (p - 1.0E-6) );
+      
+      return pair<double,double>( lower_x, upper_x );
+    }catch( std::exception &e )
+    {
+      throw runtime_error( "bortel_coverage_limits: failed to find limit: " + string(e.what()) );
+    }//try / catch
+    
+    assert( 0 );
+    return std::pair<double,double>( -1.0, -1.0 );
+  }//bortel_coverage_limits(...)
+  
+  
+  std::pair<double,double> gauss_exp_coverage_limits( const double mean, const double sigma,
+                                         const double skew, const double p )
+  {
+    const double one_div_root_two = boost::math::constants::one_div_root_two<double>(); //0.707106781186547524400
+    const double root_half_pi = boost::math::constants::root_half_pi<double>();
+    
+    
+    const double norm = gauss_exp_norm(sigma,skew);
+    const double tail_norm = norm * (sigma / skew);
+    
+    auto tail_indefinite_t = [mean,sigma,skew,tail_norm]( const double t ) -> double {
+      return tail_norm * std::exp( skew*(0.5*skew + t) );
+    };
+    
+    
+    const double indefinite_of_tail = tail_indefinite_t( -skew );
+    const double erf_neg_skew = boost_erf_imp(-skew*one_div_root_two);
+    const double gaus_norm = norm * sigma * root_half_pi;
+    
+    auto dist_indefinite = [mean, sigma, skew, gaus_norm,
+                            tail_indefinite_t, indefinite_of_tail,
+                            erf_neg_skew, one_div_root_two]( const double x ) -> double {
+      const double t = (x - mean) / sigma;
+      
+      if( t < -skew )
+        return tail_indefinite_t( t );
+      
+      return indefinite_of_tail + gaus_norm*(boost_erf_imp(t*one_div_root_two) - erf_neg_skew);
+    };
+    
+    auto lower_fcn = [p, dist_indefinite]( const double x ) -> double {
+      return -0.5*p + dist_indefinite(x);
+    };
+    
+    auto upper_fcn = [p, dist_indefinite]( const double x ) -> double {
+      return -0.5*p + (1.0 - dist_indefinite(x));
+    };
+    
+    if( (p <= 1.0E-11) || (p > 0.999)  ) // for gaussian, 7 sigma would be 1.279812544E-12
+      throw runtime_error( "gauss_exp_coverage_limits: invalid p" );
+    
+    try
+    {
+      auto term_condition = [p]( const double left, const double right ) -> bool {
+        return fabs(left - right) < 0.01*p;
+      };
+      
+      boost::uintmax_t max_iter = 100;
+      const double low_low_limit = mean - 50*sigma;  //50 sigma is arbitrary
+      const double low_up_limit = mean;
+      const pair<double,double> lower_val = boost::math::tools::bisect( lower_fcn, low_low_limit,
+                                                          low_up_limit, term_condition, max_iter );
+      const double lower_x = 0.5*(lower_val.first + lower_val.second);
+       
+      max_iter = 100;
+      const double up_low_limit = mean;
+      const double up_up_limit = mean + 7*sigma;
+      const pair<double,double> upper_val = boost::math::tools::bisect( upper_fcn, up_low_limit,
+                                                          up_up_limit, term_condition, max_iter );
+      const double upper_x = 0.5*(upper_val.first + upper_val.second);
+        
+      assert( (1.0 - gauss_exp_integral(mean, sigma, skew, lower_val.first, upper_val.second)) <= (p + 1.0E-6) );
+      assert( (1.0 - gauss_exp_integral(mean, sigma, skew, lower_val.second, upper_val.first)) >= (p - 1.0E-6) );
+      
+      return pair<double,double>( lower_x, upper_x );
+    }catch( std::exception &e )
+    {
+      throw runtime_error( "gauss_exp_coverage_limits: failed to find limit: " + string(e.what()) );
+    }//try / catch
+    
+    assert( 0 );
+    return std::pair<double,double>( -1.0, -1.0 );
+  }//gauss_exp_coverage_limits(...)
+  
+  
+  std::pair<double,double> exp_gauss_exp_coverage_limits( const double mean, const double sigma,
+                                const double left_skew, const double right_skew, const double p )
+  {
+    const double one_div_root_two = boost::math::constants::one_div_root_two<double>(); //0.707106781186547524400
+    const double root_half_pi = boost::math::constants::root_half_pi<double>(); //1.2533141373155002512078826424
+    
+    const double norm = exp_gauss_exp_norm( sigma, left_skew, right_skew );
+    const double left_tail_norm = norm*(sigma/left_skew);
+    const double right_tail_norm = norm*(sigma / right_skew);
+    const double rtail_constant = std::exp(-right_skew*right_skew/2);
+    const double gaus_constant = norm * sigma * root_half_pi;
+    const double erf_left_skew = boost_erf_imp( -one_div_root_two*left_skew );
+    
+    auto left_tail_indefinite_t = [left_skew,left_tail_norm]( const double t ) -> double {
+      return left_tail_norm*std::exp(left_skew*(0.5*left_skew + t));
+    };
+    
+    auto right_tail_indefinite_t = [right_skew,right_tail_norm,rtail_constant]( const double t ) -> double {
+      return right_tail_norm*(rtail_constant - std::exp(right_skew*(0.5*right_skew - t)));
+    };
+    
+    auto gauss_indefinite_t = [gaus_constant, one_div_root_two, erf_left_skew]( const double t ) -> double {
+      return gaus_constant * (boost_erf_imp( one_div_root_two*t ) - erf_left_skew );
+    };
+    
+    const double indef_at_left_skew = left_tail_indefinite_t( -left_skew );
+    const double indef_at_right_skew = indef_at_left_skew + gauss_indefinite_t( right_skew );
+    
+    auto indefinite_x = [mean, sigma, left_skew, right_skew,
+                       left_tail_indefinite_t, right_tail_indefinite_t, gauss_indefinite_t,
+                       indef_at_left_skew, indef_at_right_skew]( const double x ) {
+      const double t = (x - mean) / sigma;
+      if( t <= -left_skew )
+        return left_tail_indefinite_t( t );
+      
+      if( t <= right_skew )
+        return indef_at_left_skew + gauss_indefinite_t( t );
+      
+      return indef_at_right_skew + right_tail_indefinite_t( t );
+    };
+    
+    
+    auto lower_fcn = [mean, sigma, left_skew, right_skew, p, indefinite_x]( const double x ) -> double {
+      return -0.5*p + indefinite_x( x );
+    };
+    
+    auto upper_fcn = [mean, sigma, left_skew, right_skew, p, indefinite_x]( const double x ) -> double {
+      return -0.5*p + (1.0 - indefinite_x( x ));
+    };
+    
+    if( (p <= 1.0E-11) || (p > 0.999)  ) // for gaussian, 7 sigma would be 1.279812544E-12
+      throw runtime_error( "exp_gauss_exp_coverage_limits: invalid p" );
+    
+    try
+    {
+      auto term_condition = [p]( const double left, const double right ) -> bool {
+        return fabs(left - right) < 0.01*p;
+      };
+      
+      boost::uintmax_t max_iter = 100;
+      const double low_low_limit = mean - 50*sigma;  //50 sigma is arbitrary
+      const double low_up_limit = mean;
+      const pair<double,double> lower_val = boost::math::tools::bisect( lower_fcn, low_low_limit,
+                                                          low_up_limit, term_condition, max_iter );
+      const double lower_x = 0.5*(lower_val.first + lower_val.second);
+       
+      max_iter = 100;
+      const double up_low_limit = mean;
+      const double up_up_limit = mean + 50*sigma;
+      const pair<double,double> upper_val = boost::math::tools::bisect( upper_fcn, up_low_limit,
+                                                          up_up_limit, term_condition, max_iter );
+      const double upper_x = 0.5*(upper_val.first + upper_val.second);
+        
+      assert( (1.0 - exp_gauss_exp_integral(mean, sigma, left_skew, right_skew, lower_val.first, upper_val.second)) <= (p + 1.0E-6) );
+      assert( (1.0 - exp_gauss_exp_integral(mean, sigma, left_skew, right_skew, lower_val.second, upper_val.first)) >= (p - 1.0E-6) );
+      
+      return pair<double,double>( lower_x, upper_x );
+    }catch( std::exception &e )
+    {
+      throw runtime_error( "exp_gauss_exp_coverage_limits: failed to find limit: " + string(e.what()) );
+    }//try / catch
+    
+    assert( 0 );
+    return std::pair<double,double>( -1.0, -1.0 );
+  }//exp_gauss_exp_coverage_limits(...)
+  
+  
+  
+  std::pair<double,double> crystal_ball_coverage_limits( const double mean, const double sigma,
+                                                        const double alpha,
+                                                        const double n,
+                                                        const double p )
+  {
+    const double one_div_root_two = boost::math::constants::one_div_root_two<double>(); //0.70710678118654752440
+    const double root_half_pi = boost::math::constants::root_half_pi<double>();
+    const double sqrt_2pi = boost::math::constants::root_two_pi<double>();
+    
+    const double A = std::pow(n/alpha, n) * std::exp( -0.5*alpha*alpha );
+    const double B = (n / alpha) - alpha;
+    const double C = (n / alpha) * (1.0/(n - 1.0)) * std::exp( -0.5*alpha*alpha );
+    const double D = root_half_pi * (1.0 + boost_erf_imp( one_div_root_two * alpha ));
+    const double N = 1.0 / (sigma * (C + D));
+    const double tail_norm = N * A * sigma / (n - 1.0);
+    const double gauss_indef_amp = 0.5 * sqrt_2pi / (C + D);
+    const double gaus_indef_at_skew = gauss_indef_amp * boost_erf_imp( -alpha*one_div_root_two );
+    const double indefinite_of_tail = tail_norm * std::pow( B + alpha, 1.0 - n );
+    
+    auto tail_indefinite_t = [tail_norm, B, n]( const double t ) -> double {
+      return tail_norm * std::pow( B - t, 1.0 - n );
+    };
+    
+    auto dist_indefinite = [mean, sigma, alpha, tail_indefinite_t, indefinite_of_tail,
+                            gauss_indef_amp, one_div_root_two, gaus_indef_at_skew]( const double x ) -> double {
+      const double t = (x - mean) / sigma;
+      if( t <= -alpha )
+        return tail_indefinite_t( t );
+      return indefinite_of_tail + gauss_indef_amp*boost_erf_imp(t*one_div_root_two) - gaus_indef_at_skew;
+    };
+    
+    auto lower_fcn = [p, dist_indefinite]( const double x ) -> double {
+      return -0.5*p + dist_indefinite(x);
+    };
+    
+    auto upper_fcn = [p, dist_indefinite]( const double x ) -> double {
+      return -0.5*p + (1.0 - dist_indefinite(x));
+    };
+    
+    if( (p <= 1.0E-11) || (p > 0.999)  ) // for gaussian, 7 sigma would be 1.279812544E-12
+      throw runtime_error( "crystal_ball_coverage_limits: invalid p" );
+    
+    try
+    {
+      auto term_condition = [p]( const double left, const double right ) -> bool {
+        return fabs(left - right) < 0.01*p;
+      };
+      
+      boost::uintmax_t max_iter = 100;
+      const double low_low_limit = mean - 200*sigma;  //200 sigma is arbitrary
+      const double low_up_limit = mean;
+      const pair<double,double> lower_val = boost::math::tools::bisect( lower_fcn, low_low_limit,
+                                                          low_up_limit, term_condition, max_iter );
+      const double lower_x = 0.5*(lower_val.first + lower_val.second);
+       
+      max_iter = 100;
+      const double up_low_limit = mean;
+      const double up_up_limit = mean + 7*sigma;
+      const pair<double,double> upper_val = boost::math::tools::bisect( upper_fcn, up_low_limit,
+                                                          up_up_limit, term_condition, max_iter );
+      const double upper_x = 0.5*(upper_val.first + upper_val.second);
+        
+      assert( (1.0 - crystal_ball_integral(mean, sigma, alpha, n, lower_val.first, upper_val.second)) <= (p + 1.0E-6) );
+      assert( (1.0 - crystal_ball_integral(mean, sigma, alpha, n, lower_val.second, upper_val.first)) >= (p - 1.0E-6) );
+      
+      return pair<double,double>( lower_x, upper_x );
+    }catch( std::exception &e )
+    {
+      throw runtime_error( "crystal_ball_coverage_limits: failed to find limit: " + string(e.what()) );
+    }//try / catch
+    
+    assert( 0 );
+    return std::pair<double,double>( -1.0, -1.0 );
+  }//crystal_ball_coverage_limits(...)
+  
+  
+  std::pair<double,double> double_sided_crystal_ball_coverage_limits( const double mean, const double sigma,
+                                                                     const double left_skew,
+                                                                     const double left_n,
+                                                                     const double right_skew,
+                                                                     const double right_n,
+                                                                     const double p )
+  {
+    const double one_div_root_two = boost::math::constants::one_div_root_two<double>(); //0.707106781186547524400
+    const double root_half_pi = boost::math::constants::root_half_pi<double>(); //1.2533141373155002512078826424
+    
+    const double norm = DSCB_norm( left_skew, left_n, right_skew, right_n );
+    const double exp_lower_aa = std::exp(-0.5*left_skew*left_skew);
+    const double exp_upper_aa = std::exp(-0.5*right_skew*right_skew);
+    const double right_tail_indef_at_rskew = norm * exp_upper_aa*(1.0 / ((right_skew / right_n) - right_skew));
+    
+    auto left_tail_indefinite_t = [left_skew, left_n, norm, exp_lower_aa]( const double t ) -> double {
+      const double t_1 = (t == -left_skew) ? 1.0 : 1.0 - (left_skew / (left_n / (left_skew + t)));
+      return -norm * exp_lower_aa * (t_1 / std::pow(t_1, left_n)) / ((left_skew / left_n) - left_skew); //slightly more stable
+    };
+    
+    auto right_tail_indefinite_t = [right_skew, right_n, norm, exp_upper_aa, right_tail_indef_at_rskew]( const double t ) -> double {
+      const double t_1 = (t == right_skew) ? 1.0 : (1.0 + ((right_skew * (t - right_skew)) / right_n));
+      return norm * exp_upper_aa*(1.0 / ((right_skew / right_n) - right_skew)) * std::pow(t_1, (1.0 - right_n)) - right_tail_indef_at_rskew;
+    };
+    
+    const double gaus_indef_at_left_skew = norm * root_half_pi * boost_erf_imp( -left_skew * one_div_root_two );
+    auto gauss_indefinite_t = [norm, gaus_indef_at_left_skew, one_div_root_two, root_half_pi]( const double t ) -> double {
+      return norm * root_half_pi * boost_erf_imp( one_div_root_two * t ) - gaus_indef_at_left_skew;
+    };
+    
+    const double indef_at_left_skew = left_tail_indefinite_t( -left_skew );
+    const double indef_at_right_skew = indef_at_left_skew + gauss_indefinite_t( right_skew );
+    
+    auto indefinite_x = [mean, sigma, left_skew, right_skew,
+                       left_tail_indefinite_t, right_tail_indefinite_t, gauss_indefinite_t,
+                       indef_at_left_skew, indef_at_right_skew]( const double x ) {
+      const double t = (x - mean) / sigma;
+      if( t <= -left_skew )
+        return left_tail_indefinite_t( t );
+      
+      if( t <= right_skew )
+        return indef_at_left_skew + gauss_indefinite_t( t );
+      
+      return indef_at_right_skew + right_tail_indefinite_t( t );
+    };
+    
+    
+    auto lower_fcn = [mean, sigma, left_skew, right_skew, p, indefinite_x]( const double x ) -> double {
+      return -0.5*p + indefinite_x( x );
+    };
+    
+    auto upper_fcn = [mean, sigma, left_skew, right_skew, p, indefinite_x]( const double x ) -> double {
+      return -0.5*p + (1.0 - indefinite_x( x ));
+    };
+    
+    if( (p <= 1.0E-11) || (p > 0.999)  ) // for gaussian, 7 sigma would be 1.279812544E-12
+      throw runtime_error( "double_sided_crystal_ball_coverage_limits: invalid p" );
+    
+    try
+    {
+      auto term_condition = [p]( const double left, const double right ) -> bool {
+        return fabs(left - right) < 0.01*p;
+      };
+      
+      boost::uintmax_t max_iter = 100;
+      const double low_low_limit = mean - 200*sigma;  //200 sigma is arbitrary
+      const double low_up_limit = mean;
+      const pair<double,double> lower_val = boost::math::tools::bisect( lower_fcn, low_low_limit,
+                                                          low_up_limit, term_condition, max_iter );
+      const double lower_x = 0.5*(lower_val.first + lower_val.second);
+       
+      max_iter = 100;
+      const double up_low_limit = mean;
+      const double up_up_limit = mean + 200*sigma;
+      const pair<double,double> upper_val = boost::math::tools::bisect( upper_fcn, up_low_limit,
+                                                          up_up_limit, term_condition, max_iter );
+      const double upper_x = 0.5*(upper_val.first + upper_val.second);
+        
+      assert( (1.0 - double_sided_crystal_ball_integral(mean, sigma, left_skew, left_n, right_skew,
+                                                        right_n, lower_val.first, upper_val.second))
+             <= (p + 1.0E-6) );
+      assert( (1.0 - double_sided_crystal_ball_integral(mean, sigma, left_skew, left_n, right_skew,
+                                                        right_n, lower_val.second, upper_val.first))
+             >= (p - 1.0E-6) );
+      
+      return pair<double,double>( lower_x, upper_x );
+    }catch( std::exception &e )
+    {
+      throw runtime_error( "double_sided_crystal_ball_coverage_limits: failed to find limit: " + string(e.what()) );
+    }//try / catch
+    
+    assert( 0 );
+    return std::pair<double,double>( -1.0, -1.0 );
+  }//double_sided_crystal_ball_coverage_limits(...)
+  
+  
   double crystal_ball_norm( const double sigma,
                            const double alpha,
                            const double n )
   {
-    const double oneOverSqrt2 = boost::math::constants::one_div_root_two<double>();
-    const double sqrt_half_pi = boost::math::constants::root_half_pi<double>();
+    const double one_div_root_two = boost::math::constants::one_div_root_two<double>();
+    const double root_half_pi = boost::math::constants::root_half_pi<double>();
     
     const double C = (n / alpha) * (1.0/(n - 1.0)) * std::exp( -0.5*alpha*alpha );
-    const double D = sqrt_half_pi * (1.0 + boost_erf_imp( oneOverSqrt2 * alpha ));
+    const double D = root_half_pi * (1.0 + boost_erf_imp( one_div_root_two * alpha ));
     const double N = 1.0 / (sigma * (C + D));
     
     return N;
@@ -354,13 +741,13 @@ namespace PeakDists
     assert( alpha > 0.0 );
     assert( n > 1.0 );
     
-    const double oneOverSqrt2 = boost::math::constants::one_div_root_two<double>(); //0.7071....
-    const double sqrt_half_pi = boost::math::constants::root_half_pi<double>();
+    const double one_div_root_two = boost::math::constants::one_div_root_two<double>(); //0.7071....
+    const double root_half_pi = boost::math::constants::root_half_pi<double>();
     
     const double A = std::pow(n/alpha, n) * std::exp( -0.5*alpha*alpha );
     const double B = (n / alpha) - alpha;
     const double C = (n / alpha) * (1.0/(n - 1.0)) * std::exp( -0.5*alpha*alpha );
-    const double D = sqrt_half_pi * (1.0 + boost_erf_imp( oneOverSqrt2 * alpha ));
+    const double D = root_half_pi * (1.0 + boost_erf_imp( one_div_root_two * alpha ));
     const double N = 1.0 / (sigma * (C + D));
     
     return N * A * sigma * std::pow( B - t, 1.0 - n ) / (n - 1.0);
@@ -436,7 +823,7 @@ namespace PeakDists
     const double &n = n_low;
     //return -(std::exp(-a*a/2)*n*std::pow((a*(-t+n/a-a))/n, 1-n))/(a*(1-n));
     const double t_1 = 1.0 - (a / (n / (a + t)));
-    return -std::exp(-0.5*a*a)*(t_1 / std::pow(t_1, n)) / ((a / n) - a); //slightly more stsable
+    return -std::exp(-0.5*a*a)*(t_1 / std::pow(t_1, n)) / ((a / n) - a); //slightly more stable
   }//double DSCB_left_tail_indefinite_non_norm_t(t)
   
   
@@ -581,13 +968,13 @@ namespace PeakDists
                                       const double x )
   {
     static const double sqrt_pi = boost::math::constants::root_pi<double>(); //1.7724538509055160272981
-    static const double sqrt_half_pi = boost::math::constants::root_half_pi<double>(); //1.2533141373155002512078826424
+    static const double root_half_pi = boost::math::constants::root_half_pi<double>(); //1.2533141373155002512078826424
     static const double one_div_root_two = boost::math::constants::one_div_root_two<double>(); //0.707106781186547524400
     
     const double t = (x - mean) / sigma;
     const double norm = exp_gauss_exp_norm( sigma, skew_left, skew_right);
     
-    return norm * sigma * sqrt_half_pi * (boost_erf_imp( one_div_root_two*t )
+    return norm * sigma * root_half_pi * (boost_erf_imp( one_div_root_two*t )
                                           - boost_erf_imp( -one_div_root_two*skew_left ) );
   }//
   
@@ -727,8 +1114,8 @@ namespace PeakDists
     // Also, the implementation in CERNs ROOT
     //  may better deal with numerical accuracies of tails by switching to integrating in log
     //   see https://root.cern.ch/doc/master/RooCrystalBall_8cxx_source.html
-    const double oneOverSqrt2 = boost::math::constants::one_div_root_two<double>(); //0.70710678118654752440
-    const double sqrt_half_pi = boost::math::constants::root_half_pi<double>();
+    const double one_div_root_two = boost::math::constants::one_div_root_two<double>(); //0.70710678118654752440
+    const double root_half_pi = boost::math::constants::root_half_pi<double>();
     
     const double a_0 = (x0 - mean) / sigma;
     const double a_1 = (x1 - mean) / sigma;
@@ -743,7 +1130,7 @@ namespace PeakDists
     const double A = std::pow(n/alpha, n) * std::exp( -0.5*alpha*alpha );
     //const double B = (n / alpha) - alpha;
     const double C = (n / alpha) * (1.0/(n - 1.0)) * std::exp( -0.5*alpha*alpha );
-    const double D = sqrt_half_pi * (1.0 + boost_erf_imp( oneOverSqrt2 * alpha ));
+    const double D = root_half_pi * (1.0 + boost_erf_imp( one_div_root_two * alpha ));
     //const double N = 1.0 / (sigma * (C + D));
     
     const double sqrt_2pi = boost::math::constants::root_two_pi<double>();
@@ -861,10 +1248,10 @@ namespace PeakDists
       return;
     
     
-     // TODO: estimate where we should actually start and stop computing values for
-    //const double zero_amp_point_nsigma = 8.0;
+    // TODO: estimate where we should actually start and stop computing values for, using `gauss_exp_coverage_limits(...)`, but need to check if it actually saves time
+    const double zero_amp_point_nsigma = 8.0;
     const float start_energy = energies[0]; //static_cast<float>( peak_mean - zero_amp_point_nsigma*peak_sigma );
-    const float stop_energy = energies[nchannel]; //static_cast<float>( peak_mean + zero_amp_point_nsigma*peak_sigma );
+    const float stop_energy = static_cast<float>( peak_mean + zero_amp_point_nsigma*peak_sigma );
     
     size_t channel = 0;
     while( (channel < nchannel) && (energies[channel+1] < start_energy) )
@@ -884,7 +1271,7 @@ namespace PeakDists
     
     const auto gaus_indefinite_non_norm = [peak_mean,peak_sigma,skew]( const double x ) -> double {
       const double t = (x - peak_mean) / peak_sigma;
-      assert( t >= -skew );
+      assert( (t + 1.0E-6) >= -skew );
       
       const double root_half_pi = boost::math::constants::root_half_pi<double>();
       static const double one_div_root_two = boost::math::constants::one_div_root_two<double>(); //0.707106781186547524400
@@ -990,7 +1377,7 @@ namespace PeakDists
       return;
     
     
-     // TODO: estimate where we should actually start and stop computing values for
+    // TODO: estimate where we should actually start and stop computing values for, using `exp_gauss_exp_coverage_limits(...)`, but need to check if it actually saves time
     //const double zero_amp_point_nsigma = 8.0;
     const float start_energy = energies[0]; //static_cast<float>( peak_mean - zero_amp_point_nsigma*peak_sigma );
     const float stop_energy = energies[nchannel]; //static_cast<float>( peak_mean + zero_amp_point_nsigma*peak_sigma );
@@ -1015,11 +1402,11 @@ namespace PeakDists
     };
     
     auto gauss_indefinite_non_norm = [peak_mean,peak_sigma]( const double x ) -> double {
-      static const double sqrt_half_pi = boost::math::constants::root_half_pi<double>(); //1.2533141373155002512078826424
+      static const double root_half_pi = boost::math::constants::root_half_pi<double>(); //1.2533141373155002512078826424
       static const double one_div_root_two = boost::math::constants::one_div_root_two<double>(); //0.707106781186547524400
       
       const double t = (x - peak_mean) / peak_sigma;
-      return peak_sigma * sqrt_half_pi * boost_erf_imp( one_div_root_two*t );
+      return peak_sigma * root_half_pi * boost_erf_imp( one_div_root_two*t );
     };
     
     const double norm = peak_amplitude * exp_gauss_exp_norm( peak_sigma, skew_left, skew_right );
@@ -1161,10 +1548,10 @@ namespace PeakDists
       return;
     
     
-     // TODO: estimate where we should actually start and stop computing values for
-    //const double zero_amp_point_nsigma = 8.0;
+     // TODO: estimate where we should actually start and stop computing values for, using `crystal_ball_coverage_limits(...)`, but need to check if it actually saves time
+    const double zero_amp_point_nsigma = 8.0;
     const float start_energy = energies[0]; //static_cast<float>( peak_mean - zero_amp_point_nsigma*peak_sigma );
-    const float stop_energy = energies[nchannel]; //static_cast<float>( peak_mean + zero_amp_point_nsigma*peak_sigma );
+    const float stop_energy = static_cast<float>( peak_mean + zero_amp_point_nsigma*peak_sigma );
     
     size_t channel = 0;
     while( (channel < nchannel) && (energies[channel+1] < start_energy) )
@@ -1178,22 +1565,22 @@ namespace PeakDists
     
     const double exp_aa = std::exp(-0.5*alpha*alpha);
     const double one_div_root_two = boost::math::constants::one_div_root_two<double>(); //0.70710678118654752440
-    const double sqrt_half_pi = boost::math::constants::root_half_pi<double>();
+    const double root_half_pi = boost::math::constants::root_half_pi<double>();
     const double sqrt_2pi = boost::math::constants::root_two_pi<double>();
     
     const double A = std::pow(power_law/alpha, power_law) * exp_aa;
     const double B = (power_law / alpha) - alpha;
     const double C = (power_law / alpha) * (1.0/(power_law - 1.0)) * exp_aa;
-    const double D = sqrt_half_pi * (1.0 + boost_erf_imp( one_div_root_two * alpha ));
+    const double D = root_half_pi * (1.0 + boost_erf_imp( one_div_root_two * alpha ));
     const double N = 1.0 / (peak_sigma * (C + D));
-    const double tail_amp = peak_amplitude * N * A * peak_sigma;
+    const double tail_amp = peak_amplitude * N * A * peak_sigma / (power_law - 1.0);
     const double gauss_indef_amp = 0.5 * peak_amplitude * sqrt_2pi / (C + D);
     
     // Brief implementation of crystal_ball_tail_indefinite_t
     auto tail_indefinite = [peak_mean,peak_sigma,alpha,power_law,B,tail_amp]( const double x ) -> double {
       const double t = (x - peak_mean) / peak_sigma;
-      assert( (t <= -alpha) && (alpha > 0.0) && (power_law > 1.0) );
-      return tail_amp * std::pow( B - t, 1.0 - power_law ) / (power_law - 1.0);
+      assert( ((t - 1.0E-6) <= -alpha) && (alpha > 0.0) && (power_law > 1.0) );
+      return tail_amp * std::pow( B - t, 1.0 - power_law );
     };
     
     auto gauss_indefinite = [peak_mean,peak_sigma,gauss_indef_amp,one_div_root_two]( const double x ) -> double {
@@ -1374,7 +1761,7 @@ namespace PeakDists
       return;
     
     
-     // TODO: estimate where we should actually start and stop computing values for
+    // TODO: estimate where we should actually start and stop computing values for, using `double_sided_crystal_ball_coverage_limits(...)`, but need to check if it actually saves time
     //const double zero_amp_point_nsigma = 8.0;
     const float start_energy = energies[0]; //static_cast<float>( peak_mean - zero_amp_point_nsigma*peak_sigma );
     const float stop_energy = energies[nchannel]; //static_cast<float>( peak_mean + zero_amp_point_nsigma*peak_sigma );

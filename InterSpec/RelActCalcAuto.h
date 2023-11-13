@@ -31,7 +31,7 @@
 #include <vector>
 #include <ostream>
 
-#include "InterSpec/PeakDef.h" //for PeakContinuum::OffsetType
+#include "InterSpec/PeakDef.h" //for PeakContinuum::OffsetType and PeakDef::SkewType
 
 
 // Forward declarations
@@ -115,9 +115,6 @@ struct RoiRange
    TODO: Allow setting to #PeakContinuum::OffsetType::External to auto-choose this.
    */
   PeakContinuum::OffsetType continuum_type = PeakContinuum::OffsetType::Quadratic;
-  
-#warning "Skew type isnt totally determined how to do it - we need to fit for the skew values"
-  PeakDef::SkewType skew_type = PeakDef::SkewType::NoSkew;
   
   /** Dont allow cutting range down based on peaks not being anywhere reasonably near edge. */
   bool force_full_range = false;
@@ -299,6 +296,10 @@ struct Options
    fail.
    */
   RelActCalc::PuCorrMethod pu242_correlation_method;
+  
+  
+  /** Under development */
+  PeakDef::SkewType skew_type;
   
   static const int sm_xmlSerializationVersion = 0;
   rapidxml::xml_node<char> *toXml( ::rapidxml::xml_node<char> *parent ) const;

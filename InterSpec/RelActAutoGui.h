@@ -103,6 +103,7 @@ public:
   void handleBackgroundSubtractChanged();
   void handleSameAgeChanged();
   void handlePuByCorrelationChanged();
+  void handleSkewTypeChanged();
   void handleNucDataSrcChanged();
   void handleAddNuclide();
   void handleAddEnergy();
@@ -285,6 +286,8 @@ protected:
   Wt::WCheckBox *m_same_z_age;
   
   Wt::WComboBox *m_pu_corr_method;
+  
+  Wt::WComboBox *m_skew_type;
   
   // Wt::WComboBox *m_u_pu_data_source;
   PopupDivMenu *m_more_options_menu;

@@ -539,6 +539,13 @@ public:
    */
   static size_t num_skew_parameters( const SkewType skew_type );
   
+  /** Returns if a skew parameter has an energy dependence across the spectrum, or if the parameter should have
+   the same value, no matter the energy of the peak.
+   
+   This is currently experimental - I dont actually know!!!
+   */
+  static bool is_energy_dependent( const SkewType skew_type, const CoefficientType coefficient );
+  
 public:
   PeakDef();
 

@@ -156,6 +156,23 @@ BOOST_AUTO_TEST_CASE( BortelDist )
     
     BOOST_CHECK_CLOSE( answer_sum, 1.0, 1.0E-7 );
   }
+  
+  { //test bortel_coverage_limits
+    double mean = 100;
+    double sigma = 1;
+    double skew = 0.5;
+    double prob = 0.000000573303;
+    
+    pair<double,double> limits = bortel_coverage_limits( mean, sigma, skew, prob );
+    double fraction = 1.0 - bortel_integral( mean, sigma, skew, limits.first, limits.second );
+    BOOST_CHECK_CLOSE( fraction, prob, 0.01 );
+    
+    prob = 0.317310507863;
+    limits = bortel_coverage_limits( mean, sigma, skew, prob );
+    fraction = 1.0 - bortel_integral( mean, sigma, skew, limits.first, limits.second );
+    BOOST_CHECK_CLOSE( fraction, prob, 0.1 );
+  }
+  
 }//BOOST_AUTO_TEST_CASE( BortelDist )
 
 
@@ -226,6 +243,22 @@ BOOST_AUTO_TEST_CASE( GaussExp )
     BOOST_CHECK_CLOSE( answer_sum, 1.0, 1.0E-6 );
   }
   
+  
+  {
+    double mean = 100;
+    double sigma = 1;
+    double skew = 0.5; //0.15, 3.25;
+    double prob = 0.000000573303;
+    
+    pair<double,double> limits = gauss_exp_coverage_limits( mean, sigma, skew, prob );
+    double fraction = 1.0 - gauss_exp_integral( mean, sigma, skew, limits.first, limits.second );
+    BOOST_CHECK_CLOSE( fraction, prob, 0.01 );
+    
+    prob = 0.317310507863;
+    limits = gauss_exp_coverage_limits( mean, sigma, skew, prob );
+    fraction = 1.0 - gauss_exp_integral( mean, sigma, skew, limits.first, limits.second );
+    BOOST_CHECK_CLOSE( fraction, prob, 0.1 );
+  }
   
   /*
   double gauss_exp_norm( const double sigma, const double skew );
@@ -316,7 +349,22 @@ BOOST_AUTO_TEST_CASE( ExpGaussExp )
     BOOST_CHECK_CLOSE( answer_sum, 1.0, 1.0E-3 );
   }
   
-  
+  {
+    double mean = 100;
+    double sigma = 1.0;
+    double left_skew = 1.05;
+    double right_skew = 1.75;
+    double prob = 0.000000573303;
+    
+    pair<double,double> limits = exp_gauss_exp_coverage_limits( mean, sigma, left_skew, right_skew, prob );
+    double fraction = 1.0 - exp_gauss_exp_integral( mean, sigma, left_skew, right_skew, limits.first, limits.second );
+    BOOST_CHECK_CLOSE( fraction, prob, 0.01 );
+    
+    prob = 0.317310507863;
+    limits = exp_gauss_exp_coverage_limits( mean, sigma, left_skew, right_skew, prob );
+    fraction = 1.0 - exp_gauss_exp_integral( mean, sigma, left_skew, right_skew, limits.first, limits.second );
+    BOOST_CHECK_CLOSE( fraction, prob, 0.5 );
+  }
   /*
   double exp_gauss_exp_norm( const double sigma, const double skew_left, const double skew_right );
 
@@ -429,6 +477,25 @@ BOOST_AUTO_TEST_CASE( CrystalBall )
     
     BOOST_CHECK_CLOSE( answer_sum, 1.0, 5.0E-3 );
   }
+  
+  {
+    double mean = 100;
+    double sigma = 1.0;
+    double alpha = 2.25;
+    double n = 8;
+    double prob = 0.000000573303;
+    
+    pair<double,double> limits = crystal_ball_coverage_limits( mean, sigma, alpha, n, prob );
+    double fraction = 1.0 - crystal_ball_integral( mean, sigma, alpha, n, limits.first, limits.second );
+    BOOST_CHECK_CLOSE( fraction, prob, 0.01 );
+    
+    prob = 0.317310507863;
+    limits = crystal_ball_coverage_limits( mean, sigma, alpha, n, prob );
+    fraction = 1.0 - crystal_ball_integral( mean, sigma, alpha, n, limits.first, limits.second );
+    BOOST_CHECK_CLOSE( fraction, prob, 0.5 );
+  }
+  
+  
   
   /*
   double crystal_ball_norm( const double sigma,
@@ -728,6 +795,32 @@ BOOST_AUTO_TEST_CASE( DoubleSidedCrystalBall )
                           - DSCB_gauss_indefinite_non_norm_t( -alpha_low );
     
     BOOST_CHECK_CLOSE( left_integral + right_integral + mid_integral, 1.0/norm, 1.0E-8 );
+  }
+  
+  
+  {
+    double mean = 100;
+    double sigma = 1.5;
+    double alpha_low = 1.7;
+    double n_low = 8;
+    double alpha_high = 2.5;
+    double n_high = 20;
+    
+    double prob = 0.000000573303;
+    pair<double,double> limits = double_sided_crystal_ball_coverage_limits( mean, sigma, alpha_low,
+                                                                n_low, alpha_high, n_high, prob );
+    double fraction = 1.0 - double_sided_crystal_ball_integral( mean, sigma, alpha_low, n_low,
+                                                               alpha_high, n_high,
+                                                               limits.first, limits.second );
+    BOOST_CHECK_CLOSE( fraction, prob, 0.01 );
+    
+    prob = 0.317310507863;
+    limits = double_sided_crystal_ball_coverage_limits( mean, sigma, alpha_low,
+                                                                n_low, alpha_high, n_high, prob );
+    fraction = 1.0 - double_sided_crystal_ball_integral( mean, sigma, alpha_low, n_low,
+                                                        alpha_high, n_high,
+                                                        limits.first, limits.second );
+    BOOST_CHECK_CLOSE( fraction, prob, 0.1 ); // Termination of limit searches is at 1% difference from expected value, so checking within 0.1% here is still pretty tight
   }
   
   

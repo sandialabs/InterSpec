@@ -1444,6 +1444,37 @@ size_t PeakDef::num_skew_parameters( const SkewType skew_type )
 }//size_t num_skew_parameters( const SkewType skew_type );
 
 
+bool PeakDef::is_energy_dependent( const SkewType skew_type, const CoefficientType coef )
+{
+  switch( skew_type )
+  {
+    case NoSkew:
+      return false;
+      
+    case SkewType::Bortel:
+      assert( coef == CoefficientType::SkewPar0 );
+      return (coef == CoefficientType::SkewPar0);
+      
+    case SkewType::CrystalBall:
+      assert( (coef == CoefficientType::SkewPar0) || (coef == CoefficientType::SkewPar1) );
+      return (coef == CoefficientType::SkewPar0);
+      
+    case SkewType::DoubleSidedCrystalBall:
+      return ((coef == CoefficientType::SkewPar0) || (coef == CoefficientType::SkewPar2));
+      
+    case SkewType::GaussExp:
+      assert( coef == CoefficientType::SkewPar0 );
+      return (coef == CoefficientType::SkewPar0);
+      
+    case SkewType::ExpGaussExp:
+      assert( (coef == CoefficientType::SkewPar0) || (coef == CoefficientType::SkewPar1) );
+      return ((coef == CoefficientType::SkewPar0) || (coef == CoefficientType::SkewPar1));
+  }//switch( skew_type )
+  
+  assert( 0 );
+  return false;
+}//bool is_energy_dependent( const SkewType skew_type, const CoefficientType coefficient )
+
 
 double PeakDef::extract_energy_from_peak_source_string( std::string &str )
 {  
@@ -2775,7 +2806,7 @@ std::string PeakDef::gaus_peaks_to_json(const std::vector<std::shared_ptr<const 
       answer << q << "lineColor" << q << ":" << q << p.lineColor().cssText(false) << q << ",";
 
     answer << q << "type" << q << ":";
-    switch (p.type())
+    switch( p.type() )
     {
       case PeakDef::GaussianDefined:
         answer << q << "GaussianDefined" << q << ",";
@@ -2832,6 +2863,93 @@ std::string PeakDef::gaus_peaks_to_json(const std::vector<std::shared_ptr<const 
 
     if( p.skewType() != PeakDef::NoSkew )
       answer << q << "DistNorm" << q << ":" << dist_norm << ",";
+    
+    if( (p.type() == PeakDef::GaussianDefined) && (p.skewType() != PeakDef::NoSkew) )
+    {
+      double hidden_frac = 1.0E-6; //
+      
+      try
+      {
+        pair<double,double> vis_limits;
+        
+        switch( p.skewType() )
+        {
+          case NoSkew:
+            vis_limits.first = p.mean() - 8.0*p.sigma();
+            vis_limits.second = p.mean() + 8.0*p.sigma();
+            break;
+            
+          case Bortel:
+            vis_limits = PeakDists::bortel_coverage_limits( p.mean(), p.sigma(),
+                                                           p.coefficient(CoefficientType::SkewPar0),
+                                                           hidden_frac );
+            break;
+            
+          case GaussExp:
+            vis_limits = PeakDists::gauss_exp_coverage_limits( p.mean(), p.sigma(),
+                                                              p.coefficient(CoefficientType::SkewPar0),
+                                                              hidden_frac );
+            break;
+          case CrystalBall:
+            try
+            {
+              vis_limits = PeakDists::crystal_ball_coverage_limits( p.mean(), p.sigma(),
+                                                                 p.coefficient(CoefficientType::SkewPar0),
+                                                                 p.coefficient(CoefficientType::SkewPar1),
+                                                                 hidden_frac );
+            }catch( std::exception & )
+            {
+              // CB dist can have really long tail, causing the coverage limits to fail, because
+              //  of unreasonable values - we'll limit it arbitrarily to 25 sigma
+              vis_limits.first = std::max( p.mean() - 25*p.sigma(), p.lowerX() );
+              vis_limits.second = std::min( p.mean() + 5*p.sigma(), p.upperX() );
+            }
+            break;
+          case ExpGaussExp:
+            vis_limits = PeakDists::exp_gauss_exp_coverage_limits( p.mean(), p.sigma(),
+                                                                  p.coefficient(CoefficientType::SkewPar0),
+                                                                  p.coefficient(CoefficientType::SkewPar1),
+                                                                  hidden_frac );
+            break;
+          case DoubleSidedCrystalBall:
+            if( p.coefficient(CoefficientType::SkewPar1) < 5.0
+               || p.coefficient(CoefficientType::SkewPar3) < 5.0)
+              hidden_frac = 1.0E-3; //DSCB doesnt behave well for power-law peaks...
+            
+            try
+            {
+              vis_limits = PeakDists::double_sided_crystal_ball_coverage_limits( p.mean(), p.sigma(),
+                                                                              p.coefficient(CoefficientType::SkewPar0),
+                                                                              p.coefficient(CoefficientType::SkewPar1),
+                                                                              p.coefficient(CoefficientType::SkewPar2),
+                                                                              p.coefficient(CoefficientType::SkewPar3),
+                                                                              hidden_frac );
+            }catch( std::exception & )
+            {
+              // DSCB dist can have really long tail, causing the coverage limits to fail, because
+              //  of unreasonable values - we'll limit it arbitrarily to 25 sigma
+              vis_limits.first = std::max( p.mean() - 25*p.sigma(), p.lowerX() );
+              vis_limits.second = std::min( p.mean() + 25*p.sigma(), p.upperX() );
+            }//try / catch
+            
+            break;
+        }//switch( p.skewType() )
+        
+        answer << q << "visRange" << q << ":[" << vis_limits.first << "," << vis_limits.second << "],";
+      }catch( std::exception &e )
+      {
+        cerr << "Failed to get limits for peak type " << PeakDef::to_string(p.skewType())
+            << ": " << e.what() << endl
+            << "\tFor peak with skew=[" << p.coefficient(CoefficientType::SkewPar0)
+            << ", " << p.coefficient(CoefficientType::SkewPar1)
+            << ", " << p.coefficient(CoefficientType::SkewPar2)
+            << ", " << p.coefficient(CoefficientType::SkewPar3)
+            << "], mean=" << p.mean() << ", and sigma=" << p.sigma()
+            << " with prob=" << hidden_frac << endl;
+      }//try / catch
+    }//if( we should give a hint to the JS about range to draw skewed peaks )
+    
+    
     
     for (PeakDef::CoefficientType t = PeakDef::CoefficientType(0);
       t < PeakDef::NumCoefficientTypes; t = PeakDef::CoefficientType(t + 1))
