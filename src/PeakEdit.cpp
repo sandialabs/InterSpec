@@ -316,7 +316,7 @@ void PeakEdit::init()
     switch( t )
     {
       case PeakEdit::Mean:
-        m_values[t]->textInput().connect( this, &PeakEdit::validateMeanOrRoiChange );
+        m_values[t]->changed().connect( this, &PeakEdit::validateMeanOrRoiChange );
         m_values[t]->enterPressed().connect( this, &PeakEdit::validateMeanOrRoiChange );
       break;
         
@@ -328,7 +328,7 @@ void PeakEdit::init()
         break;
       
       case PeakEdit::RangeStartEnergy: case PeakEdit::RangeEndEnergy:
-        m_values[t]->textInput().connect( this, &PeakEdit::validateMeanOrRoiChange );
+        m_values[t]->changed().connect( this, &PeakEdit::validateMeanOrRoiChange );
         m_values[t]->enterPressed().connect( this, &PeakEdit::validateMeanOrRoiChange );
         //note, purposeful fall-through
         
