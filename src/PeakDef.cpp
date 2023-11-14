@@ -1383,9 +1383,8 @@ bool PeakDef::skew_parameter_range( const SkewType skew_type, const CoefficientT
             return false;
           // fall-though intentional
         case CoefficientType::SkewPar1: //n (left)
-          // The valid values of `n` is probably a bit more complicated than just the range,
-          //  since
-          starting_value = 2;
+          // The valid values of `n` is probably a bit more complicated than just the range
+          starting_value = 15;
           step_size = 2;
           lower_value = 1.05; //1.0 would be divide by zero
           upper_value = 100;  //much higher than this and we run into numerical issues
@@ -2875,8 +2874,8 @@ std::string PeakDef::gaus_peaks_to_json(const std::vector<std::shared_ptr<const 
         switch( p.skewType() )
         {
           case NoSkew:
-            vis_limits.first = p.mean() - 8.0*p.sigma();
-            vis_limits.second = p.mean() + 8.0*p.sigma();
+            vis_limits.first = p.mean() - 5.0*p.sigma();
+            vis_limits.second = p.mean() + 5.0*p.sigma();
             break;
             
           case Bortel:

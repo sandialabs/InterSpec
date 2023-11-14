@@ -220,7 +220,8 @@ namespace PeakDists
    `0.5*p` will be above the second element, so the fraction of the distribution between the
    returned limits is `1 - p`.
    
-   The area above and below the retuned limits is accurate to within 0.02 of requested area (i.e. `0.02*p`).
+   The area above and below the retuned limits is computed by inverting the indefinite integral, so should be
+   decently accurate up to numeric precision (which hasn't been checked/optimized).
    
    Throws error on invalid input.
    */
@@ -294,7 +295,8 @@ namespace PeakDists
    `0.5*p` will be above the second element, so the fraction of the distribution between the
    returned limits is `1 - p`.
    
-   The area above and below the retuned limits is accurate to within 0.02 of requested area (i.e. `0.02*p`).
+   The area above and below the retuned limits is computed by inverting the indefinite integral, so should be
+   decently accurate up to numeric precision (which hasn't been checked/optimized).
    
    Throws error on invalid input.
    */
@@ -350,7 +352,8 @@ namespace PeakDists
    `0.5*p` will be above the second element, so the fraction of the distribution between the
    returned limits is `1 - p`.
    
-   The area above and below the retuned limits is accurate to within 0.02 of requested area (i.e. `0.02*p`).
+   The area above and below the retuned limits is computed by inverting the indefinite integral, so should be
+   decently accurate up to numeric precision (which hasn't been checked/optimized).
    
    Throws error on invalid input.
    */
@@ -398,7 +401,7 @@ namespace PeakDists
    `0.5*p` will be above the second element, so the fraction of the distribution between the
    returned limits is `1 - p`.
    
-   The area above and below the retuned limits is accurate to within 0.02 of requested area (i.e. `0.02*p`).
+   The area below the retuned limit should be quite accurate, while above may only be good to within 0.02 of requested area (i.e. `0.02*p`).
    
    Throws error on invalid input.
    */

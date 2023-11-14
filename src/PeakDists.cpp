@@ -352,67 +352,41 @@ namespace PeakDists
   std::pair<double,double> gauss_exp_coverage_limits( const double mean, const double sigma,
                                          const double skew, const double p )
   {
+    const double root_two = boost::math::constants::root_two<double>();
     const double one_div_root_two = boost::math::constants::one_div_root_two<double>(); //0.707106781186547524400
     const double root_half_pi = boost::math::constants::root_half_pi<double>();
-    
     
     const double norm = gauss_exp_norm(sigma,skew);
     const double tail_norm = norm * (sigma / skew);
     
-    auto tail_indefinite_t = [mean,sigma,skew,tail_norm]( const double t ) -> double {
-      return tail_norm * std::exp( skew*(0.5*skew + t) );
-    };
-    
-    
-    const double indefinite_of_tail = tail_indefinite_t( -skew );
+    const double indefinite_of_tail = tail_norm * std::exp( -0.5*skew*skew );
     const double erf_neg_skew = boost_erf_imp(-skew*one_div_root_two);
     const double gaus_norm = norm * sigma * root_half_pi;
-    
-    auto dist_indefinite = [mean, sigma, skew, gaus_norm,
-                            tail_indefinite_t, indefinite_of_tail,
-                            erf_neg_skew, one_div_root_two]( const double x ) -> double {
-      const double t = (x - mean) / sigma;
-      
-      if( t < -skew )
-        return tail_indefinite_t( t );
-      
-      return indefinite_of_tail + gaus_norm*(boost_erf_imp(t*one_div_root_two) - erf_neg_skew);
-    };
-    
-    auto lower_fcn = [p, dist_indefinite]( const double x ) -> double {
-      return -0.5*p + dist_indefinite(x);
-    };
-    
-    auto upper_fcn = [p, dist_indefinite]( const double x ) -> double {
-      return -0.5*p + (1.0 - dist_indefinite(x));
-    };
     
     if( (p <= 1.0E-11) || (p > 0.999)  ) // for gaussian, 7 sigma would be 1.279812544E-12
       throw runtime_error( "gauss_exp_coverage_limits: invalid p" );
     
     try
     {
-      auto term_condition = [p]( const double left, const double right ) -> bool {
-        return fabs(left - right) < 0.01*p;
-      };
-      
-      boost::uintmax_t max_iter = 100;
-      const double low_low_limit = mean - 50*sigma;  //50 sigma is arbitrary
-      const double low_up_limit = mean;
-      const pair<double,double> lower_val = boost::math::tools::bisect( lower_fcn, low_low_limit,
-                                                          low_up_limit, term_condition, max_iter );
-      const double lower_x = 0.5*(lower_val.first + lower_val.second);
-       
-      max_iter = 100;
-      const double up_low_limit = mean;
-      const double up_up_limit = mean + 7*sigma;
-      const pair<double,double> upper_val = boost::math::tools::bisect( upper_fcn, up_low_limit,
-                                                          up_up_limit, term_condition, max_iter );
-      const double upper_x = 0.5*(upper_val.first + upper_val.second);
+      auto x_from_eqn = [mean, sigma, skew, tail_norm, indefinite_of_tail, root_two, erf_neg_skew, gaus_norm]( const double prob ) -> double {
+        if( prob <= indefinite_of_tail )
+        {
+          const double t_eqn = (1/skew)*log(prob/tail_norm) - 0.5*skew;
+          return t_eqn*sigma + mean;
+        }
         
-      assert( (1.0 - gauss_exp_integral(mean, sigma, skew, lower_val.first, upper_val.second)) <= (p + 1.0E-6) );
-      assert( (1.0 - gauss_exp_integral(mean, sigma, skew, lower_val.second, upper_val.first)) >= (p - 1.0E-6) );
+        const double t_eqn = root_two * boost::math::erf_inv( erf_neg_skew + (prob - indefinite_of_tail)/gaus_norm );
+        return t_eqn*sigma + mean;
+      };//auto x_from_eqn
       
+      const double lower_x = x_from_eqn( 0.5*p );
+      const double upper_x = x_from_eqn( 1.0 - 0.5*p );
+        
+      if( IsNan(lower_x) || IsInf(lower_x) || IsNan(upper_x) || IsInf(upper_x) )
+        throw runtime_error( "got invalid answer" );
+      
+      assert( (1.0 - gauss_exp_integral( mean, sigma, skew, lower_x, upper_x)) <= (p + 1.0E-6) );
+        
       return pair<double,double>( lower_x, upper_x );
     }catch( std::exception &e )
     {
@@ -437,68 +411,41 @@ namespace PeakDists
     const double gaus_constant = norm * sigma * root_half_pi;
     const double erf_left_skew = boost_erf_imp( -one_div_root_two*left_skew );
     
-    auto left_tail_indefinite_t = [left_skew,left_tail_norm]( const double t ) -> double {
-      return left_tail_norm*std::exp(left_skew*(0.5*left_skew + t));
-    };
+    const double indef_at_left_skew = left_tail_norm*std::exp( -0.5*left_skew*left_skew );
+    const double indef_at_right_skew = indef_at_left_skew + gaus_constant * (boost_erf_imp( one_div_root_two*right_skew ) - erf_left_skew );
     
-    auto right_tail_indefinite_t = [right_skew,right_tail_norm,rtail_constant]( const double t ) -> double {
-      return right_tail_norm*(rtail_constant - std::exp(right_skew*(0.5*right_skew - t)));
-    };
-    
-    auto gauss_indefinite_t = [gaus_constant, one_div_root_two, erf_left_skew]( const double t ) -> double {
-      return gaus_constant * (boost_erf_imp( one_div_root_two*t ) - erf_left_skew );
-    };
-    
-    const double indef_at_left_skew = left_tail_indefinite_t( -left_skew );
-    const double indef_at_right_skew = indef_at_left_skew + gauss_indefinite_t( right_skew );
-    
-    auto indefinite_x = [mean, sigma, left_skew, right_skew,
-                       left_tail_indefinite_t, right_tail_indefinite_t, gauss_indefinite_t,
-                       indef_at_left_skew, indef_at_right_skew]( const double x ) {
-      const double t = (x - mean) / sigma;
-      if( t <= -left_skew )
-        return left_tail_indefinite_t( t );
-      
-      if( t <= right_skew )
-        return indef_at_left_skew + gauss_indefinite_t( t );
-      
-      return indef_at_right_skew + right_tail_indefinite_t( t );
-    };
-    
-    
-    auto lower_fcn = [mean, sigma, left_skew, right_skew, p, indefinite_x]( const double x ) -> double {
-      return -0.5*p + indefinite_x( x );
-    };
-    
-    auto upper_fcn = [mean, sigma, left_skew, right_skew, p, indefinite_x]( const double x ) -> double {
-      return -0.5*p + (1.0 - indefinite_x( x ));
-    };
     
     if( (p <= 1.0E-11) || (p > 0.999)  ) // for gaussian, 7 sigma would be 1.279812544E-12
       throw runtime_error( "exp_gauss_exp_coverage_limits: invalid p" );
     
     try
     {
-      auto term_condition = [p]( const double left, const double right ) -> bool {
-        return fabs(left - right) < 0.01*p;
-      };
-      
-      boost::uintmax_t max_iter = 100;
-      const double low_low_limit = mean - 50*sigma;  //50 sigma is arbitrary
-      const double low_up_limit = mean;
-      const pair<double,double> lower_val = boost::math::tools::bisect( lower_fcn, low_low_limit,
-                                                          low_up_limit, term_condition, max_iter );
-      const double lower_x = 0.5*(lower_val.first + lower_val.second);
-       
-      max_iter = 100;
-      const double up_low_limit = mean;
-      const double up_up_limit = mean + 50*sigma;
-      const pair<double,double> upper_val = boost::math::tools::bisect( upper_fcn, up_low_limit,
-                                                          up_up_limit, term_condition, max_iter );
-      const double upper_x = 0.5*(upper_val.first + upper_val.second);
+      auto x_from_eqn = [indef_at_right_skew,indef_at_left_skew,left_skew,left_tail_norm,mean,sigma,
+                         one_div_root_two,erf_left_skew,gaus_constant,right_skew,right_tail_norm,rtail_constant]( const double prob ) -> double {
+        if( prob <= indef_at_left_skew )
+        {
+          const double t_eqn = -0.5*left_skew  + log(prob/left_tail_norm)/left_skew;
+          return t_eqn*sigma + mean;
+        }
         
-      assert( (1.0 - exp_gauss_exp_integral(mean, sigma, left_skew, right_skew, lower_val.first, upper_val.second)) <= (p + 1.0E-6) );
-      assert( (1.0 - exp_gauss_exp_integral(mean, sigma, left_skew, right_skew, lower_val.second, upper_val.first)) >= (p - 1.0E-6) );
+        if( prob < indef_at_right_skew )
+        {
+          const double t_eqn = boost::math::erf_inv( (prob - indef_at_left_skew + gaus_constant*erf_left_skew)/gaus_constant )/one_div_root_two;
+          return t_eqn*sigma + mean;
+        }
+        
+        const double t_eqn = 0.5*right_skew - log(rtail_constant - (prob - indef_at_right_skew)/right_tail_norm)*(1/right_skew);
+        return t_eqn*sigma + mean;
+      };//auto x_from_eqn
+      
+      
+      const double lower_x = x_from_eqn( 0.5*p );
+      const double upper_x = x_from_eqn( 1.0 - 0.5*p );
+      
+      if( IsNan(lower_x) || IsInf(lower_x) || IsNan(upper_x) || IsInf(upper_x) )
+        throw runtime_error( "got invalid answer" );
+      
+      assert( (1.0 - exp_gauss_exp_integral( mean, sigma, left_skew, right_skew, lower_x, upper_x)) <= (p + 1.0E-6) );
       
       return pair<double,double>( lower_x, upper_x );
     }catch( std::exception &e )
@@ -531,51 +478,31 @@ namespace PeakDists
     const double gaus_indef_at_skew = gauss_indef_amp * boost_erf_imp( -alpha*one_div_root_two );
     const double indefinite_of_tail = tail_norm * std::pow( B + alpha, 1.0 - n );
     
-    auto tail_indefinite_t = [tail_norm, B, n]( const double t ) -> double {
-      return tail_norm * std::pow( B - t, 1.0 - n );
-    };
-    
-    auto dist_indefinite = [mean, sigma, alpha, tail_indefinite_t, indefinite_of_tail,
-                            gauss_indef_amp, one_div_root_two, gaus_indef_at_skew]( const double x ) -> double {
-      const double t = (x - mean) / sigma;
-      if( t <= -alpha )
-        return tail_indefinite_t( t );
-      return indefinite_of_tail + gauss_indef_amp*boost_erf_imp(t*one_div_root_two) - gaus_indef_at_skew;
-    };
-    
-    auto lower_fcn = [p, dist_indefinite]( const double x ) -> double {
-      return -0.5*p + dist_indefinite(x);
-    };
-    
-    auto upper_fcn = [p, dist_indefinite]( const double x ) -> double {
-      return -0.5*p + (1.0 - dist_indefinite(x));
-    };
-    
     if( (p <= 1.0E-11) || (p > 0.999)  ) // for gaussian, 7 sigma would be 1.279812544E-12
       throw runtime_error( "crystal_ball_coverage_limits: invalid p" );
     
     try
     {
-      auto term_condition = [p]( const double left, const double right ) -> bool {
-        return fabs(left - right) < 0.01*p;
-      };
-      
-      boost::uintmax_t max_iter = 100;
-      const double low_low_limit = mean - 200*sigma;  //200 sigma is arbitrary
-      const double low_up_limit = mean;
-      const pair<double,double> lower_val = boost::math::tools::bisect( lower_fcn, low_low_limit,
-                                                          low_up_limit, term_condition, max_iter );
-      const double lower_x = 0.5*(lower_val.first + lower_val.second);
-       
-      max_iter = 100;
-      const double up_low_limit = mean;
-      const double up_up_limit = mean + 7*sigma;
-      const pair<double,double> upper_val = boost::math::tools::bisect( upper_fcn, up_low_limit,
-                                                          up_up_limit, term_condition, max_iter );
-      const double upper_x = 0.5*(upper_val.first + upper_val.second);
+      auto x_from_eqn = [tail_norm,indefinite_of_tail,B,n,one_div_root_two,sigma,mean,
+                         gauss_indef_amp,gaus_indef_at_skew]( const double prob ) -> double {
+        if( prob < indefinite_of_tail )
+        {
+          const double t_eqn = B - std::pow( prob/tail_norm, 1.0/(1.0 - n));
+          return t_eqn*sigma + mean;
+        }
         
-      assert( (1.0 - crystal_ball_integral(mean, sigma, alpha, n, lower_val.first, upper_val.second)) <= (p + 1.0E-6) );
-      assert( (1.0 - crystal_ball_integral(mean, sigma, alpha, n, lower_val.second, upper_val.first)) >= (p - 1.0E-6) );
+        const double root_two = boost::math::constants::root_two<double>();
+        const double t_eqn = root_two* boost::math::erf_inv( (1.0/gauss_indef_amp) * (prob - indefinite_of_tail + gaus_indef_at_skew) );
+        return t_eqn*sigma + mean;
+      };//auto x_from_eqn
+      
+      const double lower_x = x_from_eqn( 0.5*p );
+      const double upper_x = x_from_eqn( 1.0 - 0.5*p );
+      
+      if( IsNan(lower_x) || IsInf(lower_x) || IsNan(upper_x) || IsInf(upper_x) )
+        throw runtime_error( "got invalid answer" );
+      
+      assert( (1.0 - crystal_ball_integral(mean, sigma, alpha, n, lower_x, upper_x)) <= (p + 1.0E-6) );
       
       return pair<double,double>( lower_x, upper_x );
     }catch( std::exception &e )
@@ -608,10 +535,13 @@ namespace PeakDists
       return -norm * exp_lower_aa * (t_1 / std::pow(t_1, left_n)) / ((left_skew / left_n) - left_skew); //slightly more stable
     };
     
+    
     auto right_tail_indefinite_t = [right_skew, right_n, norm, exp_upper_aa, right_tail_indef_at_rskew]( const double t ) -> double {
       const double t_1 = (t == right_skew) ? 1.0 : (1.0 + ((right_skew * (t - right_skew)) / right_n));
       return norm * exp_upper_aa*(1.0 / ((right_skew / right_n) - right_skew)) * std::pow(t_1, (1.0 - right_n)) - right_tail_indef_at_rskew;
     };
+    
+    assert( right_tail_indefinite_t(right_skew) == 0 );
     
     const double gaus_indef_at_left_skew = norm * root_half_pi * boost_erf_imp( -left_skew * one_div_root_two );
     auto gauss_indefinite_t = [norm, gaus_indef_at_left_skew, one_div_root_two, root_half_pi]( const double t ) -> double {
@@ -646,32 +576,73 @@ namespace PeakDists
     if( (p <= 1.0E-11) || (p > 0.999)  ) // for gaussian, 7 sigma would be 1.279812544E-12
       throw runtime_error( "double_sided_crystal_ball_coverage_limits: invalid p" );
     
+    auto x_from_eqn = [mean, sigma, norm, left_skew, left_n, right_skew, right_n,
+                       indef_at_left_skew, indef_at_right_skew, gaus_indef_at_left_skew,
+                       right_tail_indef_at_rskew, exp_lower_aa, exp_upper_aa, root_half_pi ]( const double prob ) -> double {
+      if( prob <= indef_at_left_skew )
+      {
+        // TODO: these next lines could probably be way simplified and improved
+        const double tmp = std::pow( -prob * ((left_skew / left_n) - left_skew) / (norm * exp_lower_aa), 1.0/(1-left_n));
+        const double t_eqn = -left_skew + left_n*((1.0 - tmp)/left_skew);
+        return t_eqn*sigma + mean;
+      }
+      
+      if( prob < indef_at_right_skew )
+      {
+        const double root_two = boost::math::constants::root_two<double>();
+        const double t_eqn = root_two * boost::math::erf_inv( (prob - indef_at_left_skew + gaus_indef_at_left_skew) / (norm * root_half_pi) );
+        return t_eqn*sigma + mean;
+      }
+  
+      // TODO: Fix these not working
+      const double pow_arg = right_tail_indef_at_rskew + ((right_skew / right_n) - right_skew)*(prob - indef_at_right_skew)/(norm * exp_upper_aa);
+      const double tmp = std::pow( pow_arg, 1.0/(1.0-right_n) );
+      const double t_eqn = right_skew + (right_n/right_skew) *(tmp - 1.0);
+      
+      // TODO: for some reason inverting the right tail doesnt work (`pow_arg` is negative); math must be wrong
+      throw runtime_error( "Inverting right tail doesnt work yet" );
+      
+      return t_eqn*sigma + mean;
+    };//auto x_from_eqn
+    
+    
     try
     {
       auto term_condition = [p]( const double left, const double right ) -> bool {
         return fabs(left - right) < 0.01*p;
       };
+
+      // TODO: if value is in right tail, we will fail, in which case we will resort to an iterative solution
+      double lower_x = -999, upper_x = -999;
+      try{ lower_x = x_from_eqn( 0.5*p ); }catch( std::exception & ){ cout << "Failed to find lower answer by eqn from p=" << p << endl; }
+      try{ upper_x = x_from_eqn( 1.0 - 0.5*p ); }catch( std::exception & ){ cout << "Failed to find upper answer by eqn from p=" << p << endl; }
       
-      boost::uintmax_t max_iter = 100;
-      const double low_low_limit = mean - 200*sigma;  //200 sigma is arbitrary
-      const double low_up_limit = mean;
-      const pair<double,double> lower_val = boost::math::tools::bisect( lower_fcn, low_low_limit,
-                                                          low_up_limit, term_condition, max_iter );
-      const double lower_x = 0.5*(lower_val.first + lower_val.second);
+
+      if( (lower_x < 989) || IsNan(lower_x) || IsInf(lower_x) )
+      {
+        boost::uintmax_t max_iter = 100;
+        const double low_low_limit = mean - 200*sigma;  //200 sigma is arbitrary
+        const double low_up_limit = mean;
+        const pair<double,double> lower_val = boost::math::tools::bisect( lower_fcn, low_low_limit,
+                                                                         low_up_limit, term_condition, max_iter );
+        lower_x = 0.5*(lower_val.first + lower_val.second);
+      }//if( lower_x < 989 || IsNan(lower_x) || IsInf(lower_x) )
+      
        
-      max_iter = 100;
-      const double up_low_limit = mean;
-      const double up_up_limit = mean + 200*sigma;
-      const pair<double,double> upper_val = boost::math::tools::bisect( upper_fcn, up_low_limit,
-                                                          up_up_limit, term_condition, max_iter );
-      const double upper_x = 0.5*(upper_val.first + upper_val.second);
+      if( (upper_x < 989) || IsNan(upper_x) || IsInf(upper_x) )
+      {
+        boost::uintmax_t max_iter = 100;
+        const double up_low_limit = mean;
+        const double up_up_limit = mean + 200*sigma;
+        const pair<double,double> upper_val = boost::math::tools::bisect( upper_fcn, up_low_limit,
+                                                                         up_up_limit, term_condition, max_iter );
+        upper_x = 0.5*(upper_val.first + upper_val.second);
+      }//if( upper_x < 989 || IsNan(upper_x) || IsInf(upper_x) )
         
-      assert( (1.0 - double_sided_crystal_ball_integral(mean, sigma, left_skew, left_n, right_skew,
-                                                        right_n, lower_val.first, upper_val.second))
-             <= (p + 1.0E-6) );
-      assert( (1.0 - double_sided_crystal_ball_integral(mean, sigma, left_skew, left_n, right_skew,
-                                                        right_n, lower_val.second, upper_val.first))
-             >= (p - 1.0E-6) );
+      
+      if( IsNan(lower_x) || IsInf(lower_x) || IsNan(upper_x) || IsInf(upper_x) )
+        throw runtime_error( "got inf or NaN value" );
+      
       
       return pair<double,double>( lower_x, upper_x );
     }catch( std::exception &e )
