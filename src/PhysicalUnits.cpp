@@ -188,6 +188,46 @@ namespace
     throw std::runtime_error( "Unrecognized prefix: '" + prefix + "'" );
   }//double metrix_prefix_value( const string &prefix )
 
+  /** Function that takes in a metric prefix string, and returns its numeric value. */
+  double prefix_str_to_val( const string &letters )
+  {
+    if( letters.empty() )
+      return 1.0;
+    
+    if( SpecUtils::istarts_with(letters, "f" ) )
+      return 1.0E-15;
+    
+    if( SpecUtils::istarts_with(letters, "p" ) )
+      return 1.0E-12;
+    
+    if( SpecUtils::istarts_with(letters, "n" ) )
+      return 1.0E-9;
+    
+    if( SpecUtils::istarts_with(letters, "u" )
+             || SpecUtils::istarts_with(letters, "micro" )
+             || SpecUtils::starts_with(letters, MU_CHARACTER_1 )
+             || SpecUtils::starts_with(letters, MU_CHARACTER_2 ) )
+      return 1.0E-6;
+    
+    if( SpecUtils::starts_with(letters, "m" )
+             || SpecUtils::istarts_with(letters, "milli" ) )
+      return 1.0E-3;
+    
+    if( SpecUtils::istarts_with(letters, "k" ) )
+      return 1.0E+3;
+    
+    if( SpecUtils::starts_with(letters, "M" )
+             || SpecUtils::istarts_with(letters, "mega" ) )
+      return 1.0E+6;
+    
+    if( SpecUtils::starts_with(letters, "G" ) )
+      return 1.0E+9;
+    
+    if( SpecUtils::starts_with(letters, "T" ) )
+      return 1.0E+12;
+    
+    throw std::runtime_error( "'" + letters + "' is not a recognized prefix unit" );
+  }//double prefix_str_to_val( const string &letters )
 }//namespace
 
 
@@ -869,7 +909,8 @@ double stringToTimeDurationPossibleHalfLife( std::string str,
 
   return time_dur;
 }//double stringToTimeDuration( std::string str, double second_def )
-
+  
+  
 //stringToActivity(...): Takes a user string, and attempts to interpret
 //  if as an activity.  Ex. '52.3 bq', '88 MCi', etc
 //  throws std::runtime_error on failure
@@ -878,6 +919,30 @@ double stringToActivity( std::string str, double bq_def )
   SpecUtils::trim( str );
   boost::smatch mtch;
   boost::regex expr( "(" POS_DECIMAL_REGEX ")" "\\s*([a-zA-Z \\-]+)" );
+  
+  /*
+   // 20231113: A shorter and probably more robust implementation of this function is commented
+   //           out here - it passes unit-tests, but I didnt enable yet incase unit-tests dont fully
+   //           cover possibilities.
+  boost::smatch test_mtch;
+  boost::regex test_expr( "(" POS_DECIMAL_REGEX ")" "\\s*((" METRIC_PREFIX_UNITS ")*[\\s\\-]*(bq|ci|bec.*|cu.*))" );
+  if( !boost::regex_match( str, test_mtch, test_expr ) )
+    throw std::runtime_error( std::string("'") + str + "' is not appropriate activity string" );
+  
+  string number = SpecUtils::trim_copy( string( test_mtch[1].first, test_mtch[1].second ) );
+  string prefix = SpecUtils::trim_copy( string( test_mtch[7].first, test_mtch[7].second ) );
+  string units = SpecUtils::trim_copy( string( test_mtch[8].first, test_mtch[8].second ) );
+    
+  const double prefix_val = prefix_str_to_val( prefix );
+    
+  const bool hasb = (SpecUtils::icontains(units, "bq" ) || SpecUtils::icontains(units, "bec" ));
+  const bool hasc = (SpecUtils::icontains(units, "ci" ) || SpecUtils::icontains(units, "cu" ));
+    
+  if( hasb == hasc )
+    throw runtime_error( "didnt contain unit specification (bq or ci) in '" + units + "'" );
+    
+  return std::stod(number) * prefix_val * (hasb ? becquerel : curie) * bq_def / becquerel;
+  */
 
   if( boost::regex_match( str, mtch, expr ) )
   {
@@ -946,8 +1011,11 @@ double stringToActivity( std::string str, double bq_def )
       //throw runtime_error( msg );
     //}
 
-    const bool hasb = SpecUtils::icontains(letters, "b" );
-    const bool hasc = SpecUtils::icontains(letters, "c" );
+    const bool hasb = (SpecUtils::icontains(letters, "bq" )
+                      || SpecUtils::icontains(letters, "bec" ));
+    const bool hasc = (SpecUtils::icontains(letters, "ci" )
+                       || SpecUtils::icontains(letters, "curi" )
+                       || SpecUtils::icontains(letters, "cu" ) );
 
     if( hasb && !hasc )
      unit *= becquerel;

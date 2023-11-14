@@ -66,15 +66,30 @@ BOOST_AUTO_TEST_CASE( testStringToActivity ) {
   validCases["1.0 mci"] = 0.001*curie;
   validCases["1.0 mCi"] = 0.001*curie;
   validCases["128 bq"] = 128*becquerel;
+  validCases["128 Mbq"] = 128*becquerel*1.0E6;
+  validCases["128 becquerel"] = 128*becquerel;
+  validCases["128 mbecquerel"] = 0.128*becquerel;
+  validCases["128 millibecquerel"] = 0.128*becquerel;
+  validCases["128 milli-becquerel"] = 0.128*becquerel;
+  validCases["128 milli becquerel"] = 0.128*becquerel;
+  validCases["128 milli bq"] = 0.128*becquerel;
+  validCases["1.0 curie"] = curie;
+  validCases["1.0 mcurie"] = 0.001*curie;
+  validCases["1.0 m-curie"] = 0.001*curie;
+  validCases["1.0 milli-curie"] = 0.001*curie;
+  validCases["1.0 milli curie"] = 0.001*curie;
+  validCases["128 mbq"] = 0.128*becquerel;
   validCases["128 ci"] = 128*curie;
   validCases["128. ci"] = 128*curie;
   validCases["128.ci"] = 128*curie;
   validCases["128.0ci"] = 128*curie;
   validCases["128.0mci"] = 0.128*curie;
+  validCases["128.0Mci"] = 128*curie*1.0E6;
   validCases["128mbq"] = 0.128*becquerel;
   validCases["0.128mbq"] = 0.000128*becquerel;
   validCases["+0.128mbq"] = 0.000128*becquerel;
   validCases["+0.128mbq"] = 0.000128*becquerel;
+  validCases["+0.128m-bq"] = 0.000128*becquerel;
   validCases["+0.128\t mbq"] = 0.000128*becquerel;
   validCases["+0.128\t milli-bq"] = 0.000128*becquerel;
   validCases["1.27e-06ci"] = 1.27e-06 * curie;
@@ -103,7 +118,7 @@ BOOST_AUTO_TEST_CASE( testStringToActivity ) {
 BOOST_AUTO_TEST_CASE( testStringToActivityShouldFail ) {
   const char * invalidCases[] =
     {
-      "a33", "m33", "3"
+      "a33", "m33", "3", "5 micro-gram", "5 ugram", "5 microgram"
     };
     //Need to make this list more complete!
   const size_t ncases = sizeof(invalidCases) / sizeof(invalidCases[0]);
@@ -536,6 +551,10 @@ BOOST_AUTO_TEST_CASE( test_stringToMass )
     {"3g", 3*gram},
     {"5 kg", 5000*gram},
     {"5 mg", 0.005*gram},
+    {"5 micro-gram", 5E-6*gram},
+    {"5 ugram", 5E-6*gram},
+    {"5 microgram", 5E-6*gram},
+    {"5 micro gram", 5E-6*gram},
     {"5 kilogram", 5000*gram},
     {"5.0E0 kilo-gram", 5000*gram},
     {"2lb", 2*pound},
