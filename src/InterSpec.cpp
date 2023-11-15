@@ -1040,11 +1040,18 @@ InterSpec::InterSpec( WContainerWidget *parent )
         break;
       case kRefitPeakWithDrfFwhm:
         m_rightClickMenutItems[i] = m_rightClickMenu->addMenuItem( "Use DRF FWHM" );
+        m_rightClickMenutItems[i]->setToolTip( "Fixes the peaks FWHM to what the detector response"
+                                              " function predicts, and then refits the peak." );
         m_rightClickMenutItems[i]->triggered().connect( this, &InterSpec::refitPeakWithDrfFwhm );
         break;
         
       case kSetMeanToRefPhotopeak:
         m_rightClickMenutItems[i] = m_rightClickMenu->addMenuItem( "Set mean to photopeak" );
+        m_rightClickMenutItems[i]->setToolTip( "Fixes the peak centroid to the assigned gamma"
+                                              " energy, or if no source has been assigned, to"
+                                              " likely reference photopeak line.  After setting"
+                                              " the centroid, the other peak parameters will be"
+                                              " refit" );
         m_rightClickMenutItems[i]->triggered().connect( this, &InterSpec::setMeanToRefPhotopeak );
         break;
         
