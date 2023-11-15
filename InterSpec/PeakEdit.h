@@ -132,6 +132,7 @@ protected:
   void peakTypeChanged();
   void contnuumTypeChanged();
   void skewTypeChanged();
+  void updateSkewParameterLabels( const PeakDef::SkewType skewType );
   void validateMeanOrRoiChange();
   void changeToNextPeakInRoi( const bool back );
   

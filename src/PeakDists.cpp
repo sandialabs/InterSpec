@@ -254,7 +254,7 @@ namespace PeakDists
       return (1.0/(sigma*2.5066282746)) * std::exp( -0.5 * a*a );
     }
     
-    return (0.5/skew_low)*std::exp( exp_arg ) * boost::math::erfc( erfc_arg );
+    return (0.5/skew_low)*std::exp( exp_arg ) * boost_erfc_imp( erfc_arg );
   }//double bortel_pdf(...)
 
 
@@ -263,18 +263,18 @@ namespace PeakDists
   double bortel_indefinite_integral( const double x, const double mean,
                            const double sigma, const double skew )
   {
-    const double sqrt2 = boost::math::constants::root_two<double>();
+    const double root_two = boost::math::constants::root_two<double>();
     const double one_div_root_two = boost::math::constants::one_div_root_two<double>();
    
-    const double x_0 = x - mean;
-    const double erf_arg = x_0/(sigma*sqrt2);
-    const double exp_arg = (2*skew*x_0 + sigma*sigma) / (2*skew*skew);
-    const double erfc_arg = one_div_root_two*((x_0/sigma) + (sigma/skew));
+    const double t = (x - mean) / sigma;
+    const double erf_arg = one_div_root_two*t;
+    const double exp_arg = sigma*(2*skew*t + sigma) / (2*skew*skew);
+    const double erfc_arg = one_div_root_two*(t + (sigma/skew));
     
     if( (skew <= 0.0) || (exp_arg > 87.0) || (erfc_arg > 10.0) )
       return 0.5 * boost_erf_imp(erf_arg);
     
-    return 0.5*(boost_erf_imp(erf_arg) + (std::exp(exp_arg) * boost::math::erfc(erfc_arg)));
+    return 0.5*(boost_erf_imp(erf_arg) + (std::exp(exp_arg) * boost_erfc_imp(erfc_arg)));
   }//double bortel_indefinite
 
   
@@ -375,6 +375,8 @@ namespace PeakDists
           return t_eqn*sigma + mean;
         }
         
+        // TODO: check that boost::math::erf_inv(double) doesnt iterate to find a precise enough
+        //       solution, but if it does, maybe try using boost::math::policies::policy<boost::math::policies::digits10<8> >
         const double t_eqn = root_two * boost::math::erf_inv( erf_neg_skew + (prob - indefinite_of_tail)/gaus_norm );
         return t_eqn*sigma + mean;
       };//auto x_from_eqn

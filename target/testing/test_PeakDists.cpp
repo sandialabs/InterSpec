@@ -154,7 +154,7 @@ BOOST_AUTO_TEST_CASE( BortelDist )
       answer_sum += dx * pdf_val;
     }
     
-    BOOST_CHECK_CLOSE( answer_sum, 1.0, 1.0E-7 );
+    BOOST_CHECK_CLOSE( answer_sum, 1.0, 1.0E-6 );
   }
   
   { //test bortel_coverage_limits

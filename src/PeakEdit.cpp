@@ -1272,6 +1272,7 @@ void PeakEdit::refreshPeakInfo()
     m_otherPeakTxt->setText( text );
   }//if( peaksInRoi.size() < 2 ) / else
   
+  updateSkewParameterLabels( m_currentPeak.skewType() );
   
   m_apply->disable();
 //  m_accept->disable();
@@ -1778,6 +1779,65 @@ void PeakEdit::contnuumTypeChanged()
 }//void contnuumTypeChanged()
 
 
+void PeakEdit::updateSkewParameterLabels( const PeakDef::SkewType skewType )
+{
+  
+  WLabel *label[4] = { nullptr, nullptr, nullptr, nullptr };
+  for( int i = 0; i < 4; ++i )
+  {
+    WTableCell *cell = m_valueTable->elementAt(1+PeakEdit::SkewPar0+i, 0 );
+    assert( cell && (cell->children().size() == 1) );
+    if( !cell || cell->children().empty() )
+      continue;
+    
+    label[i] = dynamic_cast<WLabel *>( cell->children()[0] );
+    assert( label[i] );
+  }//for( int i = 0; i < 4; ++i )
+  
+  
+  switch( skewType )
+  {
+    case PeakDef::NoSkew:
+      return;
+      
+    case PeakDef::SkewType::Bortel:
+      if( label[0] )
+        label[0]->setText( "Skew &alpha;" );
+      break;
+      
+    case PeakDef::SkewType::CrystalBall:
+      if( label[0] )
+        label[0]->setText( "Skew &alpha;" );
+      if( label[1] )
+        label[1]->setText( "Skew n" );
+      break;
+      
+    case PeakDef::SkewType::DoubleSidedCrystalBall:
+      if( label[0] )
+        label[0]->setText( "Skew &alpha;<sub>low</sub>" );
+      if( label[1] )
+        label[1]->setText( "Skew n<sub>low</sub>" );
+      if( label[2] )
+        label[2]->setText( "Skew &alpha;<sub>high</sub>" );
+      if( label[3] )
+        label[3]->setText( "Skew n<sub>high</sub>" );
+      break;
+      
+    case PeakDef::SkewType::GaussExp:
+      if( label[0] )
+        label[0]->setText( "Skew k" );
+      break;
+      
+    case PeakDef::SkewType::ExpGaussExp:
+      if( label[0] )
+        label[0]->setText( "Skew k<sub>L</sub>" );
+      if( label[1] )
+        label[1]->setText( "Skew k<sub>H</sub>" );
+      break;
+  }//switch( skewType )
+}//void updateSkewParameterLabels();
+
+
 void PeakEdit::skewTypeChanged()
 {
   PeakDef::SkewType type = PeakDef::SkewType( m_skewType->currentIndex() );
@@ -1835,6 +1895,7 @@ void PeakEdit::skewTypeChanged()
     }//case Bortel, CrystalBall, DoubleSidedCrystalBall, GaussExp, ExpGaussExp
   }//switch( type )
   
+  updateSkewParameterLabels( type );
   setSkewInputValueRanges( type );
   
   m_apply->enable();
@@ -2285,6 +2346,7 @@ void PeakEdit::apply()
       
       m_currentPeak.setSkewType( skewType );
       setSkewInputValueRanges( skewType );
+      updateSkewParameterLabels( skewType );
       
       for( PeakPars t : {SkewPar0, SkewPar1, SkewPar2, SkewPar3} )
       {
