@@ -2734,6 +2734,163 @@ void refit_peaks_with_drf_fwhm( InterSpec * const interspec, const double rightC
   }
 }//void refit_peaks_with_drf_fwhm( InterSpec * const interspec, const double rightClickEnergy )
 
+
+float reference_line_energy_near_peak( InterSpec * const interspec, const PeakDef &peak )
+{
+  if( !interspec )
+    return -999.9f;
+  
+  try
+  {
+    return peak.gammaParticleEnergy();
+  }catch( std::exception & )
+  {
+  }
+  
+  auto refLineTool = interspec->referenceLinesWidget();
+  if( !refLineTool )
+    return -999.9f;
+  
+  const double mean = peak.mean(), sigma = peak.sigma();
+  const double lx = peak.lowerX(), ux = peak.upperX();
+    
+  double largest_w = -9999, best_energy = -1.0f;
+  for( const ReferenceLineInfo &info : refLineTool->showingNuclides() )
+  {
+    for( const ReferenceLineInfo::RefLine &l : info.m_ref_lines )
+    {
+      const double dist = fabs( l.m_energy - mean );
+      const double w = l.m_normalized_intensity / (0.25*sigma + dist);
+      
+      if( (w > largest_w) && (l.m_energy < ux) && (l.m_energy > lx) && (dist < 4*sigma) )
+      {
+        largest_w = w;
+        best_energy = l.m_energy;
+      }//if( best candidate so far )
+    }//for( const ReferenceLineInfo::RefLine &line : info.m_ref_lines )
+  }//for( const ReferenceLineInfo &info : m_referencePhotopeakLines->showingNuclides() )
+    
+  if( (largest_w > 0) && (best_energy > 0) )
+    return static_cast<float>(best_energy);
+  
+  return -999.9f;
+}//float reference_line_energy_near_peak( InterSpec * const interspec, const PeakDef &peak )
+
+  
+void refit_peak_with_photopeak_mean( InterSpec * const interspec, const double rightClickEnergy )
+{
+  try
+  {
+    PeakModel * const model = interspec->peakModel();
+    const shared_ptr<const SpecUtils::Measurement> data = interspec->displayedHistogram(SpecUtils::SpectrumType::Foreground);
+    const shared_ptr<const SpecMeas> foreground = interspec->measurment( SpecUtils::SpectrumType::Foreground);
+    
+    shared_ptr<const PeakDef> peak = model->nearestPeak( rightClickEnergy );
+    if( !peak )
+    {
+      passMessage( "There was no peak to to set to gamma's energy",
+                  WarningWidget::WarningMsgInfo );
+      return;
+    }
+    
+    const float energy = reference_line_energy_near_peak( interspec, *peak );
+    if( energy < 10 )
+    {
+      passMessage( "There was no reference gamma energy to set the peaks mean to.",
+                  WarningWidget::WarningMsgInfo );
+      return;
+    }
+  
+    UndoRedoManager::PeakModelChange peak_undo_creator;
+  
+    vector<PeakDef> inputPeak, fixedPeaks, outputPeak;
+    const vector<shared_ptr<const PeakDef>> peaksInRoi = model->peaksSharingRoi( peak );
+    const vector<shared_ptr<const PeakDef>> peaksNotInRoi = model->peaksNotSharingRoi( peak );
+  
+    assert( peaksInRoi.size() >= 1 );
+  
+    for( const auto &m : peaksInRoi )
+    {
+      PeakDef p = *m;
+    
+      if( m == peak )
+      {
+        p.setMean( energy );
+        p.setMeanUncert( 0.0 );
+        p.setFitFor( PeakDef::CoefficientType::Mean, false );
+        
+        //Should we also assign the source gamma to be the same as the reference line?
+      }//if( m == peak )
+    
+      inputPeak.push_back( p );
+    }//for( const auto &m : peaksInRoi )
+  
+    for( const auto &m : peaksNotInRoi )
+      fixedPeaks.push_back( *m );
+  
+    std::sort( inputPeak.begin(), inputPeak.end(), &PeakDef::lessThanByMean );
+  
+    if( inputPeak.size() > 1 )
+    {
+      const shared_ptr<const DetectorPeakResponse> &detector = foreground->detector();
+      const PeakShrdVec result = refitPeaksThatShareROI( data, detector, peaksInRoi, 0.25 );
+    
+      if( result.size() == inputPeak.size() )
+      {
+        for( size_t i = 0; i < result.size(); ++i )
+          fixedPeaks.push_back( *result[i] );
+        std::sort( fixedPeaks.begin(), fixedPeaks.end(), &PeakDef::lessThanByMean );
+        model->setPeaks( fixedPeaks );
+        return;
+      }else
+      {
+        cerr << "refit_peak_with_photopeak_mean was not successful" << endl;
+      }//if( result.size() == inputPeak.size() ) / else
+    }//if( inputPeak.size() > 1 )
+  
+  
+    //  const double lowE = peak->mean() - 0.1;
+    //  const double upE = peak->mean() + 0.1;
+    const double lowE = inputPeak.front().mean() - 0.1;
+    const double upE = inputPeak.back().mean() + 0.1;
+    const double ncausalitysigma = 0.0;
+    const double stat_threshold  = 0;
+    const double hypothesis_threshold = 0;
+  
+    const bool isRefit = false;
+    outputPeak = fitPeaksInRange( lowE, upE, ncausalitysigma, stat_threshold,
+                               hypothesis_threshold, inputPeak, data,
+                               fixedPeaks, isRefit );
+    if( outputPeak.size() != inputPeak.size() )
+    {
+      WStringStream msg;
+      msg << "Failed to refit peak after fixing mean to reference photopeak."
+      " A peak became insignificant; from "
+      << int(inputPeak.size()) << " to " << int(outputPeak.size()) << " peaks";
+      passMessage( msg.str(), WarningWidget::WarningMsgInfo );
+      return;
+    }//if( outputPeak.size() != 1 )
+  
+    if( inputPeak.size() > 1 )
+    {
+      fixedPeaks.insert( fixedPeaks.end(), outputPeak.begin(), outputPeak.end() );
+      std::sort( fixedPeaks.begin(), fixedPeaks.end(), &PeakDef::lessThanByMean );
+      model->setPeaks( fixedPeaks );
+    }else
+    {
+      assert( !outputPeak.empty() );
+    
+      model->updatePeak( peak, outputPeak[0] );
+    }//if( inputPeak.size() > 1 )
+  }catch( std::exception &e )
+  {
+    passMessage( "Sorry, error encountered refitting ROI after fixing peak mean to"
+                " reference photopeak.",
+                WarningWidget::WarningMsgInfo );
+    cerr << "Error encountered refitting ROI: " << e.what() << endl;
+  }//try / catch
+}//void refit_peak_with_photopeak_mean( InterSpec * const interspec, const double rightClickEnergy )
+  
   
 void change_continuum_type_from_right_click( InterSpec * const interspec,
                                             const double rightClickEnergy,

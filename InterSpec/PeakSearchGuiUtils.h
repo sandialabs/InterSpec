@@ -138,6 +138,16 @@ void refit_peaks_from_right_click( InterSpec * const interspec, const double rig
  Assumes you are in the Wt app primary thread.
  */
 void refit_peaks_with_drf_fwhm( InterSpec * const interspec, const double rightClickEnergy );
+
+/** Returns the energy of its assigned nuclides gamma line, or peak doesnt have assigned gamma line, returns the
+ nearest showing Reference Photopeak line. Returns a negative value if neither can be found
+ */
+float reference_line_energy_near_peak( InterSpec * const interspec, const PeakDef &peak );
+  
+/** Set the peak nearest `rightClickEnergy` to preferably its assigned gamma energy, or if none assigned, to
+ nearest showing reference photopeak energy, and then refits peak.
+ */
+void refit_peak_with_photopeak_mean( InterSpec * const interspec, const double rightClickEnergy );
   
 /** Changes the continuum type and causes a refit of ROI.
  

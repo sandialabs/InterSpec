@@ -1041,8 +1041,21 @@ InterSpec::InterSpec( WContainerWidget *parent )
         break;
       case kRefitPeakWithDrfFwhm:
         m_rightClickMenutItems[i] = m_rightClickMenu->addMenuItem( "Use DRF FWHM" );
+        m_rightClickMenutItems[i]->setToolTip( "Fixes the peaks FWHM to what the detector response"
+                                              " function predicts, and then refits the peak." );
         m_rightClickMenutItems[i]->triggered().connect( this, &InterSpec::refitPeakWithDrfFwhm );
         break;
+        
+      case kSetMeanToRefPhotopeak:
+        m_rightClickMenutItems[i] = m_rightClickMenu->addMenuItem( "Set mean to photopeak" );
+        m_rightClickMenutItems[i]->setToolTip( "Fixes the peak centroid to the assigned gamma"
+                                              " energy, or if no source has been assigned, to"
+                                              " likely reference photopeak line.  After setting"
+                                              " the centroid, the other peak parameters will be"
+                                              " refit" );
+        m_rightClickMenutItems[i]->triggered().connect( this, &InterSpec::setMeanToRefPhotopeak );
+        break;
+        
       case kRefitROI:
         m_rightClickMenutItems[i] = m_rightClickMenu->addMenuItem( "Refit ROI" );
         m_rightClickMenutItems[i]->triggered().connect( this, &InterSpec::refitPeakFromRightClick );
@@ -1829,6 +1842,12 @@ void InterSpec::refitPeakWithDrfFwhm()
 }//void InterSpec::refitPeakWithDrfFwhm()
 
 
+void InterSpec::setMeanToRefPhotopeak()
+{
+  PeakSearchGuiUtils::refit_peak_with_photopeak_mean( this, m_rightClickEnergy );
+}//void setMeanToRefPhotopeak()
+
+
 void InterSpec::addPeakFromRightClick()
 {
   UndoRedoManager::PeakModelChange peak_undo_creator;
@@ -2570,6 +2589,21 @@ void InterSpec::handleRightClick( double energy, double counts,
       case kRefitPeakWithDrfFwhm:
         m_rightClickMenutItems[i]->setHidden( !peak->gausPeak() );
       break;
+        
+      case kSetMeanToRefPhotopeak:
+      {
+        const float energy = PeakSearchGuiUtils::reference_line_energy_near_peak( this, *peak );
+        const bool hide = (energy < 10.0f);
+        m_rightClickMenutItems[i]->setHidden( hide );
+        if( !hide )
+        {
+          char buffer[64] = { '\0' };
+          snprintf( buffer, sizeof(buffer), "Fix to %.1f keV", energy );
+          m_rightClickMenutItems[i]->setText( buffer );
+        }//if( !hide )
+        
+        break;
+      }//case kSetMeanToRefPhotopeak:
         
       case kShareContinuumWithLeftPeak:
       {
