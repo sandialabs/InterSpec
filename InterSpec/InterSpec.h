@@ -1010,6 +1010,7 @@ protected:
   void peakEditFromRightClick();
   void refitPeakFromRightClick();
   void refitPeakWithDrfFwhm();
+  void setMeanToRefPhotopeak();
   void deletePeakFromRightClick();
   void addPeakFromRightClick();
   void makePeakFromRightClickHaveOwnContinuum();
@@ -1384,6 +1385,7 @@ protected:
     kRefitPeak,
     kRefitROI,
     kRefitPeakWithDrfFwhm,
+    kSetMeanToRefPhotopeak,
     kChangeNuclide,
     kChangeContinuum,
     kDeletePeak,
