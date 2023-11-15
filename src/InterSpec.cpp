@@ -2560,7 +2560,7 @@ void InterSpec::handleRightClick( double energy, double counts,
         if( !hide )
         {
           char buffer[64] = { '\0' };
-          snprintf( buffer, sizeof(buffer), "Mean to %.1f keV", energy );
+          snprintf( buffer, sizeof(buffer), "Fix to %.1f keV", energy );
           m_rightClickMenutItems[i]->setText( buffer );
         }//if( !hide )
         
