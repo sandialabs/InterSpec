@@ -51,7 +51,7 @@
 #include "InterSpec/BatchCommandLine.h"
 #endif
 
-//#include "InterSpec/QRSpectrum.h"
+// #include "InterSpec/QRSpectrum.h"
 
 int main( int argc, char **argv )
 {

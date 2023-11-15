@@ -1651,9 +1651,9 @@ std::vector<PeakDef> fitPeaksInRange( const double x0,
   
   std::sort( input_peaks.begin(), input_peaks.end(), &PeakDef::lessThanByMean );
   
-  //Now make sure peaks from two previously causily disconnected regions
-  //  didnt migrate towards eachother, causing the regions to become
-  //  causily connected now
+  //Now make sure peaks from two previously causally disconnected regions
+  //  didn't migrate towards each other, causing the regions to become
+  //  causally connected now
   bool migration = false;
   for( size_t peakn = 1; peakn < fit_peak_ranges.size(); ++peakn )
   {
@@ -6823,10 +6823,13 @@ bool chi2_significance_test( PeakDef peak,
   const double withGausChi2 = chi2fcn( &(params[0]) );
   const double chi2Ratio = withoutGausChi2 / withGausChi2;
   
-  bool noRatioRequired = false;
+  const bool noDeltaRequired = ((withoutPeakDSigma <= 0.0) && (chi2ratioRequired <= 0.0));
+  bool noRatioRequired = noDeltaRequired;
           
-  if( withoutGausChi2 < 5 ) //XXX - arbitrary and untested as of 20131230
+  if( withoutGausChi2 < 5 )
     noRatioRequired = true;
+  
+  
           
   //Dont require the ratio test to apply if peaks share a continuum
   std::shared_ptr<const PeakContinuum> continuum = peak.continuum();
@@ -6835,7 +6838,7 @@ bool chi2_significance_test( PeakDef peak,
 
   const double deltaChi2 = withoutGausChi2 - withGausChi2;
           
-  /*
+/*
   static std::mutex s_mutex;
   {
     std::lock_guard<std::mutex> lock( s_mutex );
@@ -6850,9 +6853,11 @@ bool chi2_significance_test( PeakDef peak,
          << " peak.amplitude()=" << peak.amplitude()
          << endl << endl;
   }
-  */
+ */
   
-  return ((noRatioRequired || chi2Ratio>=chi2ratioRequired) && (deltaChi2>withoutPeakDSigma));
+  
+  return ((noRatioRequired || (chi2Ratio >= chi2ratioRequired))
+          && (noDeltaRequired || (deltaChi2 > withoutPeakDSigma)));
 }//bool chi2_significance_test( ... 0
         
         
