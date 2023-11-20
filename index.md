@@ -6,6 +6,7 @@
 - [Latest Release](http://github.com/sandialabs/InterSpec/releases/latest)
 - [Release Notes, including short usage videos](https://sandialabs.github.io/InterSpec/releases/)
 - [Tutorials and example problems/solutions](https://sandialabs.github.io/InterSpec/tutorials/)
+- [Short Usage Videos](https://sandialabs.github.io/InterSpec/videos/)
 
 
 Some example screenshots:
