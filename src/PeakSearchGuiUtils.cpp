@@ -60,11 +60,13 @@
 #include "InterSpec/InterSpecApp.h"
 #include "InterSpec/SpectrumChart.h"
 #include "InterSpec/WarningWidget.h"
+#include "InterSpec/MakeFwhmForDrf.h"
 #include "InterSpec/PeakInfoDisplay.h"
 #include "InterSpec/UndoRedoManager.h"
 #include "InterSpec/SpectrumDataModel.h"
 #include "InterSpec/PeakSearchGuiUtils.h"
 #include "InterSpec/DecayDataBaseServer.h"
+#include "InterSpec/DetectorPeakResponse.h"
 #include "InterSpec/ReferencePhotopeakDisplay.h"
 
 using namespace Wt;
@@ -1382,6 +1384,7 @@ public:
           case ReferenceLineInfo::SourceType::FluorescenceXray:
           case ReferenceLineInfo::SourceType::Reaction:
           case ReferenceLineInfo::SourceType::Background:
+          case ReferenceLineInfo::SourceType::NuclideMixture:
             break;
           
           case ReferenceLineInfo::SourceType::CustomEnergy:
@@ -1628,6 +1631,7 @@ std::unique_ptr<std::pair<PeakModel::PeakShrdPtr,std::string>>
         case ReferenceLineInfo::SourceType::FluorescenceXray:
         case ReferenceLineInfo::SourceType::Reaction:
         case ReferenceLineInfo::SourceType::Background:
+        case ReferenceLineInfo::SourceType::NuclideMixture:
           break;
           
         case ReferenceLineInfo::SourceType::CustomEnergy:
@@ -2542,7 +2546,352 @@ void refit_peaks_from_right_click( InterSpec * const interspec, const double rig
   }
 }//void refit_peaks_from_right_click(...)
 
+  
+void refit_peaks_with_drf_fwhm( InterSpec * const interspec, const double rightClickEnergy )
+{
+  try
+  {
+    PeakModel * const model = interspec->peakModel();
+    const shared_ptr<const SpecUtils::Measurement> data = interspec->displayedHistogram(SpecUtils::SpectrumType::Foreground);
+    const shared_ptr<const SpecMeas> foreground = interspec->measurment( SpecUtils::SpectrumType::Foreground);
+    
+    
+    if( !model || !data || !foreground ) //shouldnt ever happen
+    {
+      passMessage( "No data loaded to refit peaks", WarningWidget::WarningMsgInfo );
+      return;
+    }
+    
+    shared_ptr<const DetectorPeakResponse> drf = foreground->detector();
+    if( !drf || !drf->hasResolutionInfo() )
+    {
+      const char *title = "FWHM information is needed";
+      string content;
+      if( drf)
+        content = "<div>Current detector response does not contain FWHM info.</div>";
+      else
+        content = "<div>No detector response is selected.</div>";
+      content += "<div>Would you like to fit FWHM info from current spectra?</div>";
+      SimpleDialog *msg = new SimpleDialog( title, content );
+      // Setting object name of the SimpleDialog causes a javascript error - so we'll set
+      //  the SimpleDialog contents name, and then get the dialog from that.
+      //  This is all for undo/redo support, so we dont have to store a pointer to the dialog
+      //  somewhere.
+      msg->contents()->setObjectName( "AskToFitFwhmDialog" );
+      msg->rejectWhenEscapePressed();
+      WPushButton *yes_btn = msg->addButton( "Yes" );
+      WPushButton *no_btn = msg->addButton( "No" );
+      
+      no_btn->clicked().connect( std::bind([interspec,rightClickEnergy](){
+        auto undo = [interspec,rightClickEnergy](){
+          refit_peaks_with_drf_fwhm( interspec, rightClickEnergy );
+        };
+        auto redo = [](){
+          auto w = dynamic_cast<WContainerWidget *>( wApp->findWidget("AskToFitFwhmDialog") );
+          WWidget *p = w ? w->parent() : nullptr;
+          WWidget *pp = p ? p->parent() : nullptr;
+          WWidget *ppp = pp ? pp->parent() : nullptr;
+          SimpleDialog *d = dynamic_cast<SimpleDialog *>( ppp );
+            
+          if( d )
+            d->done(Wt::WDialog::DialogCode::Accepted);
+          wApp->doJavaScript( "$('.Wt-dialogcover').hide();" );
+        };
+        
+        UndoRedoManager *undoManager = interspec->undoRedoManager();
+        if( undoManager && undoManager->canAddUndoRedoNow() )
+          undoManager->addUndoRedoStep( undo, redo, "Cancel refit peak with DRF FWHM." );
+      } ) );
+      
+      
+      yes_btn->clicked().connect( std::bind( [interspec,rightClickEnergy](){
+        MakeFwhmForDrfWindow *window = interspec->fwhmFromForegroundWindow(true);
+        if( window )
+        {
+          window->tool()->updatedDrf().connect(
+            boost::bind( &refit_peaks_with_drf_fwhm, interspec, rightClickEnergy
+          ) );
+        }//if( window )
+        
+        auto undo = [interspec,rightClickEnergy](){
+          interspec->deleteFwhmFromForegroundWindow();
+          refit_peaks_with_drf_fwhm( interspec, rightClickEnergy );
+        };
+        auto redo = [interspec,rightClickEnergy](){
+          auto w = dynamic_cast<WContainerWidget *>( wApp->findWidget("AskToFitFwhmDialog") );
+          WWidget *p = w ? w->parent() : nullptr;
+          WWidget *pp = p ? p->parent() : nullptr;
+          WWidget *ppp = pp ? pp->parent() : nullptr;
+          SimpleDialog *d = dynamic_cast<SimpleDialog *>( ppp );
+          if( d )
+            d->done(Wt::WDialog::DialogCode::Accepted);
+          wApp->doJavaScript( "$('.Wt-dialogcover').hide();" );
+          
+          MakeFwhmForDrfWindow *window = interspec->fwhmFromForegroundWindow(true);
+          if( window )
+          {
+            window->tool()->updatedDrf().connect(
+              boost::bind( &refit_peaks_with_drf_fwhm, interspec, rightClickEnergy
+            ) );
+          }//if( window )
+        };
+        
+        UndoRedoManager *undoManager = interspec->undoRedoManager();
+        if( undoManager && undoManager->canAddUndoRedoNow() )
+          undoManager->addUndoRedoStep( undo, redo, "Start fit FWHM function." );
+      } ) );
+      
+      return;
+    }//if( !drf || !drf->hasResolutionInfo() )
+    
+    shared_ptr<const PeakDef> peak = model->nearestPeak( rightClickEnergy );
+    if( !peak )
+    {
+      passMessage( "There was no peak to refit with fixed FWHM", WarningWidget::WarningMsgInfo );
+      return;
+    }
+    
+    UndoRedoManager::PeakModelChange peak_undo_creator;
+    
+    vector<PeakDef> inputPeak, fixedPeaks, outputPeak;
+    const vector<shared_ptr<const PeakDef>> peaksInRoi = model->peaksSharingRoi( peak );
+    const vector<shared_ptr<const PeakDef>> peaksNotInRoi  = model->peaksNotSharingRoi( peak );
+    
+    assert( peaksInRoi.size() >= 1 );
+    
+    for( const auto &m : peaksInRoi )
+    {
+      PeakDef p = *m;
+      
+      p.setSigma( drf->peakResolutionSigma(p.mean()) );
+      p.setSigmaUncert( 0.0 );
+      //p.setSigmaUncert( ... DRF FWHM uncert not implemented ... )
+      p.setFitFor( PeakDef::CoefficientType::Sigma, false );
+      
+      inputPeak.push_back( p );
+    }
+    
+    for( const auto &m : peaksNotInRoi )
+      fixedPeaks.push_back( *m );
+    
+    std::sort( inputPeak.begin(), inputPeak.end(), &PeakDef::lessThanByMean );
+    
+    if( inputPeak.size() > 1 )
+    {
+      const shared_ptr<const DetectorPeakResponse> &detector = foreground->detector();
+      const PeakShrdVec result = refitPeaksThatShareROI( data, detector, peaksInRoi, 0.25 );
+      
+      if( result.size() == inputPeak.size() )
+      {
+        for( size_t i = 0; i < result.size(); ++i )
+          fixedPeaks.push_back( *result[i] );
+        std::sort( fixedPeaks.begin(), fixedPeaks.end(), &PeakDef::lessThanByMean );
+        model->setPeaks( fixedPeaks );
+        return;
+      }else
+      {
+        cerr << "refit_peaks_with_drf_fwhm was not successful" << endl;
+      }//if( result.size() == inputPeak.size() ) / else
+    }//if( inputPeak.size() > 1 )
+    
+    
+    //  const double lowE = peak->mean() - 0.1;
+    //  const double upE = peak->mean() + 0.1;
+    const double lowE = inputPeak.front().mean() - 0.1;
+    const double upE = inputPeak.back().mean() + 0.1;
+    const double ncausalitysigma = 0.0;
+    const double stat_threshold  = -1000.0;
+    const double hypothesis_threshold = -1000.0;
+    
+    const bool isRefit = false;
+    outputPeak = fitPeaksInRange( lowE, upE, ncausalitysigma, stat_threshold,
+                                 hypothesis_threshold, inputPeak, data,
+                                 fixedPeaks, isRefit );
+    if( outputPeak.size() != inputPeak.size() )
+    {
+      WStringStream msg;
+      msg << "Failed to refit peak (became insignificant), from "
+      << int(inputPeak.size()) << " to " << int(outputPeak.size()) << " peaks";
+      passMessage( msg.str(), WarningWidget::WarningMsgInfo );
+      return;
+    }//if( outputPeak.size() != 1 )
+    
+    if( inputPeak.size() > 1 )
+    {
+      fixedPeaks.insert( fixedPeaks.end(), outputPeak.begin(), outputPeak.end() );
+      std::sort( fixedPeaks.begin(), fixedPeaks.end(), &PeakDef::lessThanByMean );
+      model->setPeaks( fixedPeaks );
+    }else
+    {
+      assert( !outputPeak.empty() );
+      
+      model->updatePeak( peak, outputPeak[0] );
+    }//if( inputPeak.size() > 1 )
+  }catch( std::exception &e )
+  {
+    passMessage( "Sorry, error encountered refitting ROI with fixed FWHM.", WarningWidget::WarningMsgInfo );
+    cerr << "Error encountered refitting ROI: " << e.what() << endl;
+  }
+}//void refit_peaks_with_drf_fwhm( InterSpec * const interspec, const double rightClickEnergy )
 
+
+float reference_line_energy_near_peak( InterSpec * const interspec, const PeakDef &peak )
+{
+  if( !interspec )
+    return -999.9f;
+  
+  try
+  {
+    return peak.gammaParticleEnergy();
+  }catch( std::exception & )
+  {
+  }
+  
+  auto refLineTool = interspec->referenceLinesWidget();
+  if( !refLineTool )
+    return -999.9f;
+  
+  const double mean = peak.mean(), sigma = peak.sigma();
+  const double lx = peak.lowerX(), ux = peak.upperX();
+    
+  double largest_w = -9999, best_energy = -1.0f;
+  for( const ReferenceLineInfo &info : refLineTool->showingNuclides() )
+  {
+    for( const ReferenceLineInfo::RefLine &l : info.m_ref_lines )
+    {
+      const double dist = fabs( l.m_energy - mean );
+      const double w = l.m_normalized_intensity / (0.25*sigma + dist);
+      
+      if( (w > largest_w) && (l.m_energy < ux) && (l.m_energy > lx) && (dist < 4*sigma) )
+      {
+        largest_w = w;
+        best_energy = l.m_energy;
+      }//if( best candidate so far )
+    }//for( const ReferenceLineInfo::RefLine &line : info.m_ref_lines )
+  }//for( const ReferenceLineInfo &info : m_referencePhotopeakLines->showingNuclides() )
+    
+  if( (largest_w > 0) && (best_energy > 0) )
+    return static_cast<float>(best_energy);
+  
+  return -999.9f;
+}//float reference_line_energy_near_peak( InterSpec * const interspec, const PeakDef &peak )
+
+  
+void refit_peak_with_photopeak_mean( InterSpec * const interspec, const double rightClickEnergy )
+{
+  try
+  {
+    PeakModel * const model = interspec->peakModel();
+    const shared_ptr<const SpecUtils::Measurement> data = interspec->displayedHistogram(SpecUtils::SpectrumType::Foreground);
+    const shared_ptr<const SpecMeas> foreground = interspec->measurment( SpecUtils::SpectrumType::Foreground);
+    
+    shared_ptr<const PeakDef> peak = model->nearestPeak( rightClickEnergy );
+    if( !peak )
+    {
+      passMessage( "There was no peak to to set to gamma's energy",
+                  WarningWidget::WarningMsgInfo );
+      return;
+    }
+    
+    const float energy = reference_line_energy_near_peak( interspec, *peak );
+    if( energy < 10 )
+    {
+      passMessage( "There was no reference gamma energy to set the peaks mean to.",
+                  WarningWidget::WarningMsgInfo );
+      return;
+    }
+  
+    UndoRedoManager::PeakModelChange peak_undo_creator;
+  
+    vector<PeakDef> inputPeak, fixedPeaks, outputPeak;
+    const vector<shared_ptr<const PeakDef>> peaksInRoi = model->peaksSharingRoi( peak );
+    const vector<shared_ptr<const PeakDef>> peaksNotInRoi = model->peaksNotSharingRoi( peak );
+  
+    assert( peaksInRoi.size() >= 1 );
+  
+    for( const auto &m : peaksInRoi )
+    {
+      PeakDef p = *m;
+    
+      if( m == peak )
+      {
+        p.setMean( energy );
+        p.setMeanUncert( 0.0 );
+        p.setFitFor( PeakDef::CoefficientType::Mean, false );
+        
+        //Should we also assign the source gamma to be the same as the reference line?
+      }//if( m == peak )
+    
+      inputPeak.push_back( p );
+    }//for( const auto &m : peaksInRoi )
+  
+    for( const auto &m : peaksNotInRoi )
+      fixedPeaks.push_back( *m );
+  
+    std::sort( inputPeak.begin(), inputPeak.end(), &PeakDef::lessThanByMean );
+  
+    if( inputPeak.size() > 1 )
+    {
+      const shared_ptr<const DetectorPeakResponse> &detector = foreground->detector();
+      const PeakShrdVec result = refitPeaksThatShareROI( data, detector, peaksInRoi, 0.25 );
+    
+      if( result.size() == inputPeak.size() )
+      {
+        for( size_t i = 0; i < result.size(); ++i )
+          fixedPeaks.push_back( *result[i] );
+        std::sort( fixedPeaks.begin(), fixedPeaks.end(), &PeakDef::lessThanByMean );
+        model->setPeaks( fixedPeaks );
+        return;
+      }else
+      {
+        cerr << "refit_peak_with_photopeak_mean was not successful" << endl;
+      }//if( result.size() == inputPeak.size() ) / else
+    }//if( inputPeak.size() > 1 )
+  
+  
+    //  const double lowE = peak->mean() - 0.1;
+    //  const double upE = peak->mean() + 0.1;
+    const double lowE = inputPeak.front().mean() - 0.1;
+    const double upE = inputPeak.back().mean() + 0.1;
+    const double ncausalitysigma = 0.0;
+    const double stat_threshold  = 0;
+    const double hypothesis_threshold = 0;
+  
+    const bool isRefit = false;
+    outputPeak = fitPeaksInRange( lowE, upE, ncausalitysigma, stat_threshold,
+                               hypothesis_threshold, inputPeak, data,
+                               fixedPeaks, isRefit );
+    if( outputPeak.size() != inputPeak.size() )
+    {
+      WStringStream msg;
+      msg << "Failed to refit peak after fixing mean to reference photopeak."
+      " A peak became insignificant; from "
+      << int(inputPeak.size()) << " to " << int(outputPeak.size()) << " peaks";
+      passMessage( msg.str(), WarningWidget::WarningMsgInfo );
+      return;
+    }//if( outputPeak.size() != 1 )
+  
+    if( inputPeak.size() > 1 )
+    {
+      fixedPeaks.insert( fixedPeaks.end(), outputPeak.begin(), outputPeak.end() );
+      std::sort( fixedPeaks.begin(), fixedPeaks.end(), &PeakDef::lessThanByMean );
+      model->setPeaks( fixedPeaks );
+    }else
+    {
+      assert( !outputPeak.empty() );
+    
+      model->updatePeak( peak, outputPeak[0] );
+    }//if( inputPeak.size() > 1 )
+  }catch( std::exception &e )
+  {
+    passMessage( "Sorry, error encountered refitting ROI after fixing peak mean to"
+                " reference photopeak.",
+                WarningWidget::WarningMsgInfo );
+    cerr << "Error encountered refitting ROI: " << e.what() << endl;
+  }//try / catch
+}//void refit_peak_with_photopeak_mean( InterSpec * const interspec, const double rightClickEnergy )
+  
+  
 void change_continuum_type_from_right_click( InterSpec * const interspec,
                                             const double rightClickEnergy,
                                             const int continuum_type )
@@ -2729,6 +3078,237 @@ void change_continuum_type_from_right_click( InterSpec * const interspec,
   }
 }//change_continuum_type_from_right_click(...)
 
+  
+void change_skew_type_from_right_click( InterSpec * const interspec,
+                                         const double rightClickEnergy,
+                                         const int skew_type )
+{
+  try
+  {
+    assert( interspec );
+    
+    const PeakDef::SkewType type = static_cast<PeakDef::SkewType>( skew_type );
+    
+    // Make sure a valid continuum type is passed in, although this check should never fail anyway
+    bool valid_offset = false;
+    switch( type )
+    {
+      case PeakDef::NoSkew:       case PeakDef::Bortel:
+      case PeakDef::GaussExp:     case PeakDef::CrystalBall:
+      case PeakDef::ExpGaussExp:  case PeakDef::DoubleSidedCrystalBall:
+        valid_offset = true;
+        break;
+    };//enum OffsetType
+    
+    assert( valid_offset );
+    if( !valid_offset )
+    {
+      // Should never happen, but will leave check in for development
+      passMessage( "Unexpected error in InterSpec::handleChangeSkewTypeFromRightClick"
+                   " - invalid skew type - not proceeding", WarningWidget::WarningMsgHigh );
+      return;
+    }//if( !valid_offset )
+    
+    PeakModel * const model = interspec->peakModel();
+    const shared_ptr<const SpecUtils::Measurement> data = interspec->displayedHistogram(SpecUtils::SpectrumType::Foreground);
+    const shared_ptr<const SpecMeas> foreground = interspec->measurment( SpecUtils::SpectrumType::Foreground);
+    
+    if( !model || !data || !foreground ) //shouldnt ever happen
+    {
+      passMessage( "No data loaded to refit", WarningWidget::WarningMsgInfo );
+      return;
+    }
+    
+    
+    shared_ptr<const PeakDef> peak = model->nearestPeak( rightClickEnergy );
+    if( !peak || (rightClickEnergy < peak->lowerX()) || (rightClickEnergy > peak->upperX()) )
+    {
+      // Shouldnt happen, but jic
+      passMessage( "There was no ROI at " + std::to_string(rightClickEnergy)
+                  + " keV to modify continuum of", WarningWidget::WarningMsgInfo );
+      return;
+    }//if( !peak )
+    
+    
+    if( peak->skewType() == type )
+    {
+      passMessage( "Skew type is already of type " + string(PeakDef::to_string(type)),
+                  WarningWidget::WarningMsgInfo)
+      return;
+    }//if( peak->skewType() == type )
+    
+    // Make sure all peaks in ROI are Gaussian defined
+    vector<shared_ptr<const PeakDef>> peaks_in_roi = model->peaksSharingRoi( peak );
+    for( const auto &p : peaks_in_roi )
+    {
+      if( peak->type() == PeakDef::DefintionType::DataDefined )
+      {
+        passMessage( "Peak in ROI at " + std::to_string(rightClickEnergy)
+                    + " keV is not Gaussian defined - please change this in the Peak Editor"
+                    " before setting a skew type.",
+                    WarningWidget::WarningMsgInfo );
+        return;
+      }//if( peak not Gaussian defined )
+    }//for( const auto &p : peaks_in_roi )
+    
+    // `peak` should be in peaks_in_roi
+    assert( std::find(begin(peaks_in_roi), end(peaks_in_roi), peak) != end(peaks_in_roi) );
+    
+    // Check if any peaks already have this skew type defined, and if so, start with those values
+    shared_ptr<const PeakDef> near_skew_peak;
+    shared_ptr<const deque<shared_ptr<const PeakDef>>> all_peaks = model->peaks();
+    if( all_peaks )
+    {
+      vector<shared_ptr<const PeakDef>> peaks_by_nearest;
+      peaks_by_nearest.insert( end(peaks_by_nearest), begin(*all_peaks), end(*all_peaks) );
+      std::sort( begin(peaks_by_nearest), end(peaks_by_nearest),
+                [peak]( const shared_ptr<const PeakDef> &lhs,
+                       const shared_ptr<const PeakDef> &rhs) -> bool {
+        return (fabs(lhs->mean() - peak->mean()) < fabs(rhs->mean() - peak->mean()));
+      } );
+      
+      for( const auto &p : peaks_by_nearest )
+      {
+        if( p->skewType() == type )
+        {
+          near_skew_peak = p;
+          break;
+        }
+      }//for( const auto &p : peaks_by_nearest )
+    }//if( all_peaks )
+    
+    
+    // Grab the suggested skew starting parameters, but use values from `near_skew_peak`, if valid
+    const size_t num_skew_pars = PeakDef::num_skew_parameters( type );
+    vector<double> skew_pars( num_skew_pars, 0.0 );
+    vector<bool> fit_for_skew_pars( num_skew_pars, true );
+    for( size_t skew_par_index = 0; skew_par_index < num_skew_pars; ++skew_par_index )
+    {
+      const auto ct = PeakDef::CoefficientType(PeakDef::CoefficientType::SkewPar0 + skew_par_index);
+      double lower, upper, starting, step;
+      const bool use = PeakDef::skew_parameter_range( type, ct, lower, upper, starting, step );
+      assert( use );
+      if( !use )
+        throw std::logic_error("inconsistent skew par def");
+      
+      double val = starting;
+      bool fit_for = true;
+      if( near_skew_peak )
+      {
+        const double peak_val = near_skew_peak->coefficient( ct );
+        if( (peak_val >= lower) && (peak_val <= upper) )
+        {
+          val = peak_val;
+          fit_for = near_skew_peak->fitFor(ct);
+        }
+      }//if( near_skew_peak )
+      
+      skew_pars[skew_par_index] = val;
+      fit_for_skew_pars[skew_par_index] = fit_for;
+    }//for( loop over skew parameters )
+    
+
+    vector<shared_ptr<const PeakDef>> newCandidatePeaks;
+    for( const auto &p : peaks_in_roi )
+    {
+      auto newPeak = make_shared<PeakDef>( *p );
+      newPeak->setSkewType( type );
+      for( size_t skew_par_index = 0; skew_par_index < num_skew_pars; ++skew_par_index )
+      {
+        const auto ct = PeakDef::CoefficientType(PeakDef::CoefficientType::SkewPar0 + skew_par_index);
+        newPeak->set_coefficient( skew_pars[skew_par_index], ct );
+        newPeak->set_uncertainty( 0.0, ct );
+        newPeak->setFitFor( ct, fit_for_skew_pars[skew_par_index] );
+      }
+      
+      newCandidatePeaks.push_back( newPeak );
+    }//for( const auto &p : oldPeaksInRoi )
+    
+    if( newCandidatePeaks.empty() ) //shouldnt happen, but jic
+    {
+      assert( 0 );
+      throw std::runtime_error( "Somehow no input/starting peaks???" );
+    }
+    
+    if( newCandidatePeaks.size() > 1 )
+    {
+      const shared_ptr<const DetectorPeakResponse> &detector = foreground->detector();
+      const vector<shared_ptr<const PeakDef>> result
+                                = refitPeaksThatShareROI( data, detector, newCandidatePeaks, 0.5 );
+      
+      if( result.size() == newCandidatePeaks.size() )
+      {
+        vector<PeakDef> newPeaks;
+        for( const auto &p : result )
+          newPeaks.push_back( *p );
+        
+        model->updatePeaks( peaks_in_roi, newPeaks );
+      }else
+      {
+        passMessage( "Changing the skew type to "
+                    + string(PeakDef::to_string(type))
+                    + " caused " + string( newCandidatePeaks.size() > 1 ? "at least one" : "the" )
+                    + " peak to become insignificant.<br />"
+                    "Please use the <b>Peak Editor</b> to make this change.",
+                    WarningWidget::WarningMsgInfo);
+      }//if( result.size() == inputPeak.size() ) / else
+      
+      return;
+    }else //if( inputPeak.size() > 1 )
+    {
+      vector<PeakDef> inputPeak, fixedPeaks, outputPeak;
+      
+      for( const auto &p : newCandidatePeaks )
+        inputPeak.push_back( *p );
+      
+      const vector<shared_ptr<const PeakDef>> peaksNotInRoi = model->peaksNotSharingRoi( peak );
+      for( const auto &m : peaksNotInRoi )
+        fixedPeaks.push_back( *m );
+      
+      const double lowE = peak->mean() - 0.1;
+      const double upE = peak->mean() + 0.1;
+      const double ncausalitysigma = 0.0;
+      const double stat_threshold  = 0.0;
+      const double hypothesis_threshold = 0.0;
+      
+      // We'll let the means and widths change significantly
+      const bool isRefit = false;
+      
+      outputPeak = fitPeaksInRange( lowE, upE, ncausalitysigma, stat_threshold,
+                                   hypothesis_threshold, inputPeak, data,
+                                   fixedPeaks, isRefit );
+      
+      if( outputPeak.empty() )
+      {
+        WStringStream msg;
+        msg << "Naively changing the continuum type to "
+        << string(PeakDef::to_string(type))
+        << " caused the peak to become insignificant.<br />"
+        "Please use the <b>Peak Editor</b> to make this change.";
+        
+        passMessage( msg.str(), WarningWidget::WarningMsgInfo );
+        return;
+      }//if( outputPeak.empty() )
+      
+      assert( outputPeak.size() == 1 );
+      
+      if( outputPeak.size() == 1 )
+      {
+        model->updatePeak( peak, outputPeak[0] );
+      }else
+      {
+        assert( 0 );
+        throw std::runtime_error( "Some how fitPeaksInRange didnt return exactly one peak" );
+      }//if( inputPeak.size() == 1 ) / else
+      
+    }//if( inputPeak.size() > 1 ) / else
+  }catch( std::exception &e )
+  {
+    cerr << "Unexpected error changing skew type: " << e.what() << endl;
+    passMessage( "Unexpected error changing skew type." , WarningWidget::WarningMsgHigh );
+  }
+}//change_skew_type_from_right_click(...)
+  
 
 void fit_template_peaks( InterSpec *interspec, std::shared_ptr<const SpecUtils::Measurement> data,
                          std::vector<PeakDef> input_peaks,

@@ -1971,26 +1971,41 @@ boost::any PeakModel::data( const WModelIndex &index, int role ) const
       
     case kHasSkew:
     {
-      if( peak->skewType() == PeakDef::LandauSkew )
-        return WString( "True" );
-      else
-        return WString( "False" );
+      return WString( (peak->skewType() == PeakDef::NoSkew) ? "False" : "True" );
     }//case kHasSkew:
       
     case kSkewAmount:
     {
-      if( peak->skewType() == PeakDef::LandauSkew )
+      char text[64] = { '\0' };
+      
+      switch( peak->skewType() )
       {
-        char text[64];
-        snprintf( text, sizeof(text), "%.3f, W%.3f, %.3f",
-                  peak->coefficient(PeakDef::LandauAmplitude),
-                  peak->coefficient(PeakDef::LandauMode),
-                  peak->coefficient(PeakDef::LandauSigma) );
-        return WString( text );
-      }else
-      {
-        return WString( "NA" );
-      }
+        case PeakDef::NoSkew:
+          snprintf( text, sizeof(text), "NA" );
+          break;
+          
+        case PeakDef::Bortel:
+        case PeakDef::GaussExp:
+          snprintf( text, sizeof(text), "%.3f", peak->coefficient(PeakDef::SkewPar0) );
+          break;
+          
+        case PeakDef::CrystalBall:
+        case PeakDef::ExpGaussExp:
+          snprintf( text, sizeof(text), "%.3f, %.3f",
+                   peak->coefficient(PeakDef::SkewPar0),
+                   peak->coefficient(PeakDef::SkewPar1) );
+          break;
+          
+        case PeakDef::DoubleSidedCrystalBall:
+          snprintf( text, sizeof(text), "%.3f, %.3f, %.3f, %.4f",
+                    peak->coefficient(PeakDef::SkewPar0),
+                    peak->coefficient(PeakDef::SkewPar1),
+                    peak->coefficient(PeakDef::SkewPar2),
+                   peak->coefficient(PeakDef::SkewPar3) );
+          break;
+      }//switch( peak->skewType() )
+      
+      return WString::fromUTF8( text );
     }//case kSkewAmount:
       
     case kType:
@@ -2838,7 +2853,7 @@ bool PeakModel::setData( const WModelIndex &index,
     }else if( column == kPhotoPeakEnergy )
     {
       if( changedFit )
-        dataChanged().emit( PeakModel::index(row, kIsotope), PeakModel::index(row, kNumColumns) ); //just update whole row, jic
+        dataChanged().emit( PeakModel::index(row, kIsotope), PeakModel::index(row, kNumColumns-1) ); //just update whole row, jic
       else
         dataChanged().emit( index, PeakModel::index(row, kDifference) );
     }else if( column == kMean )

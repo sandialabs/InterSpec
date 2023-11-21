@@ -23,6 +23,8 @@
 
 #include "InterSpec_config.h"
 
+#include <numeric>
+
 #include <Wt/Utils>
 #include <Wt/Json/Value>
 #include <Wt/Json/Array>
@@ -115,6 +117,102 @@ namespace
     
     return true;
   }//xml_files_small_enough(...)
+  
+  
+  /** Function taken from full-spectrum 20231002 */
+  bool potentially_analyze_derived_data( const SpecUtils::SpecFile &spec )
+  {
+    // Right now we will only use derived data from Verifinder detectors, since they will show
+    //  up as searchmode data, but their derived data is what we would sum anyway
+    
+    if( !spec.num_measurements() )
+      return false;
+    
+    bool potentially_use = false;
+    switch( spec.detector_type() )
+    {
+      case SpecUtils::DetectorType::VerifinderNaI:
+      case SpecUtils::DetectorType::VerifinderLaBr:
+        //We'll use derived data for the Verifinder, if we have it
+        potentially_use = spec.contains_derived_data();
+        break;
+        
+      default:
+        // For all other systems, we will only consider using derived data, if thats the only data
+        //  we have.  The meaning of derived data is not well-specified in N42 files, so we should
+        //  probably manually inspect contents of systems before using derived data from them.
+        potentially_use = (spec.contains_derived_data() && !spec.contains_non_derived_data());
+        break;
+    }//switch( spec->detector_type() )
+    
+    return potentially_use;
+  }//potentially_analyze_derived_data(...)
+  
+  /** Function taken from full-spectrum 20231002 */
+  void get_derived_measurements( const SpecUtils::SpecFile &spec,
+                                set<shared_ptr<const SpecUtils::Measurement>> &foreground,
+                                set<shared_ptr<const SpecUtils::Measurement>> &background )
+  {
+    foreground.clear();
+    background.clear();
+    
+    try
+    {
+      for( const auto &m : spec.measurements() )
+      {
+        if( !m || !m->derived_data_properties() || m->num_gamma_channels() < 32 )
+          continue;
+        
+        const uint32_t properties = m->derived_data_properties();
+        assert( properties & static_cast<uint32_t>(SpecUtils::Measurement::DerivedDataProperties::IsDerived) );
+        const bool ioi_sum = (properties & static_cast<uint32_t>(SpecUtils::Measurement::DerivedDataProperties::ItemOfInterestSum));
+        const bool for_ana = (properties & static_cast<uint32_t>(SpecUtils::Measurement::DerivedDataProperties::UsedForAnalysis));
+        const bool processed = (properties & static_cast<uint32_t>(SpecUtils::Measurement::DerivedDataProperties::ProcessedFurther));
+        const bool back_sub = (properties & static_cast<uint32_t>(SpecUtils::Measurement::DerivedDataProperties::BackgroundSubtracted));
+        
+        if( back_sub || processed )
+          continue;
+        
+        switch( m->source_type() )
+        {
+          case SpecUtils::SourceType::Foreground:
+            foreground.insert( m );
+            break;
+            
+          case SpecUtils::SourceType::Background:
+            background.insert( m );
+            break;
+            
+          case SpecUtils::SourceType::Unknown:
+            //This makes it so the order of seeing Foreground marked record an a IOI sum matters
+            //  ... whatever for now
+            if( ioi_sum && foreground.empty() )
+              foreground.insert( m );
+            break;
+            
+          case SpecUtils::SourceType::IntrinsicActivity:
+          case SpecUtils::SourceType::Calibration:
+            break;
+        }//switch( m->source_type() )
+      }//for( const auto &m : derived->measurements() )
+      
+      if( foreground.size() > 1 )
+        throw runtime_error( "Multiple foreground" );
+      
+      if( background.size() > 1 )
+        throw runtime_error( "Multiple background" );
+      
+      if( foreground.empty() )
+        throw runtime_error( "No foreground in derived data" );
+      
+      if( background.empty() )
+        throw runtime_error( "No background in derived data" );
+    }catch( std::exception &e )
+    {
+      foreground.clear();
+      background.clear();
+    }//try / catch to get derived data spectra to use
+  }//get_derived_measurements
 }//namespace
 
 
@@ -867,7 +965,7 @@ void SpecFileInfoToQuery::reset()
   passthrough = false;
   total_livetime = total_realtime = 0.0f;
   contained_neutron = contained_dev_pairs = contained_gps = false;
-  
+  contains_background = contains_calibration = contains_intrinsic = false;
   energy_cal_types.clear();
   individual_spectrum_live_time.clear();
   individual_spectrum_real_time.clear();
@@ -879,6 +977,8 @@ void SpecFileInfoToQuery::reset()
   neutron_count_rate.clear();
   gamma_count_rate.clear();
   start_times.clear();
+  
+  start_time_ioi = std::time_t(0);
   
   event_xml_filter_values.clear();
 }//void SpecFileInfoToQuery::reset()
@@ -953,40 +1053,291 @@ void SpecFileInfoToQuery::fill_info_from_file( const std::string filepath )
   total_livetime = total_realtime = 0.0f;
   contained_neutron = contained_dev_pairs = false;
   
-  for( const auto m : meas.measurements() )
+  set<std::time_t> fore_start_times, back_start_times, cal_start_times;
+  set<std::time_t> intrinsic_start_times, unknown_start_times;
+  
+  // Usually if you think of measurement time, you think of it as IOI time, and you dont want
+  //  to include the included background (that you may or may not want to use), cal, or intrinsic
+  //  radiation spectra.
+  // Also, you dont want to double count between derived and non-derived data.
+  // However, you dont always get a spectrum marked as foreground, or whatever, so we will go
+  //  through some trouble to do our best to choose the most reasonable time from an explosion
+  //  of options :(
+  double all_live_time = 0, all_real_time = 0;
+  double fore_live_time = 0, fore_real_time = 0;
+  double back_live_time = 0, back_real_time = 0;
+  double cal_live_time = 0, cal_real_time = 0;
+  double intrinsic_live_time = 0, intrinsic_real_time = 0;
+  double unknown_live_time = 0, unknown_real_time = 0;
+  
+  double derived_fore_live_time = 0, derived_fore_real_time = 0;
+  double derived_back_live_time = 0, derived_back_real_time = 0;
+  double derived_cal_live_time = 0, derived_cal_real_time = 0;
+  double derived_intrinsic_live_time = 0, derived_intrinsic_real_time = 0;
+  double derived_unknown_live_time = 0, derived_unknown_real_time = 0;
+  
+  
+  map<int,vector<shared_ptr<const SpecUtils::Measurement>>> samples_to_meas;
+  
+  // If this is a system we want derived data from, we will go all-in and
+  //  only look at derived data; most fields will then only show derived data,
+  //  but some, like number of samples/measurements will show all..
+  const bool use_derived = potentially_analyze_derived_data( meas );
+  if( use_derived )
   {
-    total_livetime += m->live_time();
-    total_realtime += m->real_time();
+    set<shared_ptr<const SpecUtils::Measurement>> foreground, background;
+    get_derived_measurements( meas, foreground, background );
+    for( const auto &m : foreground )
+      samples_to_meas[m->sample_number()].push_back( m );
+    for( const auto &m : background )
+      samples_to_meas[m->sample_number()].push_back( m );
     
-    record_remarks.insert( m->remarks().begin(), m->remarks().end() );
-    if( m->num_gamma_channels() > 6 )//skip over GMTubes and other gross-count gamma detectors
+    
+  }//if( use_derived )
+  
+  if( !use_derived || (samples_to_meas.empty()) )
+  {
+    for( const int sample_num : meas.sample_numbers() )
     {
-      energy_cal_types.insert( m->energy_calibration_model() );
+      for( const string &det_name : meas.detector_names() )
+      {
+        const auto m = meas.measurement( sample_num, det_name );
+        if( m && !m->derived_data_properties() )
+          samples_to_meas[m->sample_number()].push_back( m );
+      }//for( const string &det_name : meas.detector_names() )
+    }//for( const int sample_num : meas.sample_numbers() )
+  }//if( !use_derived || (samples_to_meas.empty()) )
+  
+  for( const pair<int,vector<shared_ptr<const SpecUtils::Measurement>>> &sample_meas : samples_to_meas )
+  {
+    vector<float> live_times, real_times;
+    bool is_fore = false, is_back = false, is_cal = false, is_intrinsic = false, is_unknown = false;
+    size_t num_meas_this_sample = 0;
+    
+    // In principle as we move through the detectors for a sample number, is_fore, is_back, is_cal,
+    //  and is_intrinsic _could_ change, but _shouldn't_, but we'll loop through and check anyway
+    bool is_derived_sample = false;
+    for( const shared_ptr<const SpecUtils::Measurement> m : sample_meas.second )
+    {
+      if( m && m->derived_data_properties() )
+        is_derived_sample = true;
+    }
+    
+    for( const shared_ptr<const SpecUtils::Measurement> m : sample_meas.second )
+    {
+      switch( m->source_type() )
+      {
+        case SpecUtils::SourceType::IntrinsicActivity: is_intrinsic = true; break;
+        case SpecUtils::SourceType::Calibration:       is_cal = true;       break;
+        case SpecUtils::SourceType::Background:        is_back = true;      break;
+        case SpecUtils::SourceType::Foreground:        is_fore = true;      break;
+        case SpecUtils::SourceType::Unknown:           is_unknown = true;   break;
+      }//switch( m->source_type() )
       
-      if( m->live_time() > 0.0f )
-        individual_spectrum_live_time.insert( m->live_time() );
-      if( m->real_time() > 0.0f )
-        individual_spectrum_real_time.insert( m->real_time() );
-      number_of_gamma_channels.insert( m->num_gamma_channels() );
-      const float lt = ((m->live_time() > 0.001f) ? m->live_time() : m->real_time());
-      if( lt > 0.001f )
-        gamma_count_rate.insert( m->gamma_count_sum() / lt );
-      max_gamma_energy.insert( m->gamma_energy_max() );
-    }
+      record_remarks.insert( m->remarks().begin(), m->remarks().end() );
+      if( m->num_gamma_channels() > 6 )//skip over GMTubes and other gross-count gamma detectors
+      {
+        num_meas_this_sample += 1;
+        energy_cal_types.insert( m->energy_calibration_model() );
+        
+        if( m->live_time() > 0.0f )
+        {
+          live_times.push_back( m->live_time() );
+          individual_spectrum_live_time.insert( m->live_time() );
+        }
+        
+        if( m->real_time() > 0.0f )
+        {
+          real_times.push_back( m->real_time() );
+          individual_spectrum_real_time.insert( m->real_time() );
+        }
+        
+        number_of_gamma_channels.insert( m->num_gamma_channels() );
+        const float lt = ((m->live_time() > 0.001f) ? m->live_time() : m->real_time());
+        if( lt > 0.001f )
+          gamma_count_rate.insert( m->gamma_count_sum() / lt );
+        max_gamma_energy.insert( m->gamma_energy_max() );
+      }
+      
+      if( m->contained_neutron() )
+      {
+        contained_neutron = true;
+        const float rt = ((m->real_time() > 0.001f) ? m->real_time() : m->live_time());
+        if( rt > 0.001f )
+          neutron_count_rate.insert( m->neutron_counts_sum() / rt );
+      }
+      
+      contained_dev_pairs = (contained_dev_pairs || !m->deviation_pairs().empty());
+      
+      if( !SpecUtils::is_special(m->start_time()) )
+      {
+        const std::time_t this_time = chrono::system_clock::to_time_t( m->start_time() );
+        start_times.insert( this_time );
+        
+        switch( m->source_type() )
+        {
+          case SpecUtils::SourceType::IntrinsicActivity:
+            intrinsic_start_times.insert( this_time );
+            break;
+            
+          case SpecUtils::SourceType::Calibration:
+            cal_start_times.insert( this_time );
+            break;
+            
+          case SpecUtils::SourceType::Background:
+            back_start_times.insert( this_time );
+            break;
+            
+          case SpecUtils::SourceType::Foreground:
+            fore_start_times.insert( this_time );
+            break;
+            
+          case SpecUtils::SourceType::Unknown:
+            unknown_start_times.insert( this_time );
+            break;
+        }//switch( m->source_type() )
+      }//if( !SpecUtils::is_special(m->start_time()) )
+    }//for( const string &det_name : meas.detector_names() )
     
-    if( m->contained_neutron() )
+    contains_background  |= is_back;
+    contains_calibration |= is_cal;
+    contains_intrinsic   |= is_intrinsic;
+      
+    float avrg_live_time = std::accumulate( begin(live_times), end(live_times), 0.0f );
+    if( avrg_live_time > 0.0f )
+      avrg_live_time /= live_times.size();
+    
+    float avrg_real_time = std::accumulate( begin(real_times), end(real_times), 0.0f );
+    if( avrg_real_time > 0.0f )
+      avrg_real_time /= real_times.size();
+    
+    all_live_time += avrg_live_time;
+    all_real_time += avrg_real_time;
+    
+    if( is_fore )
     {
-      contained_neutron = true;
-      const float rt = ((m->real_time() > 0.001f) ? m->real_time() : m->live_time());
-      if( rt > 0.001f )
-        neutron_count_rate.insert( m->neutron_counts_sum() / rt );
+      if( is_derived_sample )
+      {
+        derived_fore_live_time += avrg_live_time;
+        derived_fore_real_time += avrg_real_time;
+      }else
+      {
+        fore_live_time += avrg_live_time;
+        fore_real_time += avrg_real_time;
+      }
+    }else if( is_unknown && !is_intrinsic && !is_cal && !is_back )
+    {
+      if( is_derived_sample )
+      {
+        derived_unknown_live_time += avrg_live_time;
+        derived_unknown_real_time += avrg_real_time;
+      }else
+      {
+        unknown_live_time += avrg_live_time;
+        unknown_real_time += avrg_real_time;
+      }
+    }else if( is_back )
+    {
+      if( is_derived_sample )
+      {
+        derived_back_live_time += avrg_live_time;
+        derived_back_real_time += avrg_real_time;
+      }else
+      {
+        back_live_time += avrg_live_time;
+        back_real_time += avrg_real_time;
+      }
+    }else if( is_cal )
+    {
+      if( is_derived_sample )
+      {
+        derived_cal_live_time += avrg_live_time;
+        derived_cal_real_time += avrg_real_time;
+      }else
+      {
+        cal_live_time += avrg_live_time;
+        cal_real_time += avrg_real_time;
+      }
+    }else if( is_intrinsic )
+    {
+      if( is_derived_sample )
+      {
+        derived_intrinsic_live_time += avrg_live_time;
+        derived_intrinsic_real_time += avrg_real_time;
+      }else
+      {
+        intrinsic_live_time += avrg_live_time;
+        intrinsic_real_time += avrg_real_time;
+      }
+    }else
+    {
+      assert( 0 );
     }
-    
-    contained_dev_pairs = (contained_dev_pairs || !m->deviation_pairs().empty());
-    
-    if( !SpecUtils::is_special(m->start_time()) )
-      start_times.insert( chrono::system_clock::to_time_t( m->start_time() ) );
+  }//for( const int sample_num : meas.sample_numbers() )
+  
+  if( fore_live_time > 0 )
+    total_livetime += fore_live_time;
+  else if( derived_fore_live_time > 0 )
+    total_livetime += derived_fore_live_time;
+  else if( unknown_live_time > 0 )
+    total_livetime += unknown_live_time;
+  else if( derived_unknown_live_time > 0 )
+    total_livetime += derived_unknown_live_time;
+  else if( back_live_time > 0 )
+    total_livetime += back_live_time;
+  else if( cal_live_time > 0 )
+    total_livetime += cal_live_time;
+  else if( derived_cal_live_time > 0 )
+    total_livetime += derived_cal_live_time;
+  else if( intrinsic_live_time > 0 )
+    total_livetime += intrinsic_live_time;
+  else if( derived_intrinsic_live_time > 0 )
+    total_livetime += derived_intrinsic_live_time;
+  else
+  {
+    assert( all_live_time == 0 );
+    total_livetime += all_live_time;
   }
+  
+  
+  if( fore_real_time > 0 )
+    total_realtime += fore_real_time;
+  else if( derived_fore_real_time > 0 )
+    total_realtime += derived_fore_real_time;
+  else if( unknown_real_time > 0 )
+    total_realtime += unknown_real_time;
+  else if( derived_unknown_real_time > 0 )
+    total_realtime += derived_unknown_real_time;
+  else if( back_real_time > 0 )
+    total_realtime += back_real_time;
+  else if( cal_real_time > 0 )
+    total_realtime += cal_real_time;
+  else if( derived_cal_real_time > 0 )
+    total_realtime += derived_cal_real_time;
+  else if( intrinsic_real_time > 0 )
+    total_realtime += intrinsic_real_time;
+  else if( derived_intrinsic_real_time > 0 )
+    total_realtime += derived_intrinsic_real_time;
+  else
+  {
+    assert( all_real_time == 0 );
+    total_realtime += all_real_time;
+  }
+  
+
+  if( !fore_start_times.empty() )
+    start_time_ioi = *begin(fore_start_times);
+  else if( !unknown_start_times.empty() )
+    start_time_ioi = *begin(unknown_start_times);
+  else if( !back_start_times.empty() )
+    start_time_ioi = *begin(back_start_times);
+  else if( !cal_start_times.empty() )
+    start_time_ioi = *begin(cal_start_times);
+  else if( !intrinsic_start_times.empty() )
+    start_time_ioi = *begin(intrinsic_start_times);
+  else if( !start_times.empty() )
+    start_time_ioi = *begin(start_times);
+  
 }//void fill_info_from_file( const std::string filepath )
 
 
@@ -1118,7 +1469,7 @@ std::string SpecFileQueryDbCache::construct_persisted_db_filename( std::string p
   SpecUtils::make_canonical_path(persisted_path);
   
   const auto path_hash = std::hash<std::string>()( persisted_path );
-  return SpecUtils::append_path( persisted_path, "InterSpec_file_query_cache_" + std::to_string(path_hash) + ".sqlite3" );
+  return SpecUtils::append_path( persisted_path, "InterSpec_file_query_cache_" + std::to_string(path_hash) + "_v1.sqlite3" );
 }//std::string construct_persisted_db_filename( std::string basepath )
 
 
@@ -1326,6 +1677,12 @@ bool operator==( const SpecFileInfoToQuery &lhs, const SpecFileInfoToQuery &rhs 
     return false;
   if( rhs.contained_gps != lhs.contained_gps )
     return false;
+  if( rhs.contains_background != lhs.contains_background )
+    return false;
+  if( rhs.contains_calibration != lhs.contains_calibration )
+    return false;
+  if( rhs.contains_intrinsic != lhs.contains_intrinsic )
+    return false;
   if( rhs.energy_cal_types != lhs.energy_cal_types )
     return false;
   if( rhs.individual_spectrum_live_time != lhs.individual_spectrum_live_time )
@@ -1347,6 +1704,8 @@ bool operator==( const SpecFileInfoToQuery &lhs, const SpecFileInfoToQuery &rhs 
   if( rhs.neutron_count_rate != lhs.neutron_count_rate )
     return false;
   if( rhs.gamma_count_rate != lhs.gamma_count_rate )
+    return false;
+  if( rhs.start_time_ioi != lhs.start_time_ioi )
     return false;
   if( rhs.start_times != lhs.start_times )
     return false;

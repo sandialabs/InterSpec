@@ -86,7 +86,7 @@ SimpleDialog *createEntryWindow( InterSpec *viewer )
   // To be generous to the user, we will allow them to have stuff before the relevant part of the
   //  URI, so we'll serach for URIs beginning with following paths:
   const string acceptable_paths[] = {
-    "G0", "drf", "specsum", "flux", "specexport", "decay", "dose", "gammaxs", "1overr2", "unit"
+    "G0", "drf", "specsum", "flux", "specexport", "decay", "dose", "gammaxs", "1overr2", "unit", "about", "welcome"
 #if( USE_REMOTE_RID )
     , "remoterid"
 #endif
@@ -96,17 +96,25 @@ SimpleDialog *createEntryWindow( InterSpec *viewer )
   // We will validate the URL starts with 'interspec://' or 'raddata://', end enable/disable the
   //  "Okay" button in javascript
   const string jsokay = okay->jsRef();
-  string validate_js = "function(textarea,event){ "
+  string enable_fcn = "function(value){"
   "const matches = /^((interspec:\\/\\/)|(raddata:\\/\\/))";
-  
   for( const string &path : acceptable_paths )
-    validate_js += "|(.*\\/" + path + "\\/)";
-  
-  validate_js += ".+/i.test(textarea.value);"
+    enable_fcn += "|(.*\\/" + path + "\\/)";
+  enable_fcn += ".+/i.test(value);"
     "$(" + jsokay + ").prop('disabled', !matches);"
+  "}";
+  
+  string validate_js = "function(textarea,event){ "
+   "(" + enable_fcn + ")(textarea.value);"
   " }";
   text->keyWentUp().connect( validate_js );
   
+  text->doJavaScript( "$(" + text->jsRef() + ").on('paste', function(){"
+      "setTimeout(function(){"
+          "(" + enable_fcn + ")(" + text->jsRef() + ".value);"
+      "},1);"
+  "} );"
+  );
   
   // Dont disable okay button during undo/redo - would be better to validate after we might put text
   //  into the textarea - but not bothering to do it correctly, at the moment.

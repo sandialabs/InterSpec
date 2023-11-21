@@ -74,14 +74,16 @@ public:
   //  PeakEdit::PeakPars will have to be altered as well.
   enum PeakPars
   {
-    Mean             = PeakDef::Mean,
-    Sigma            = PeakDef::Sigma,
-    GaussAmplitude   = PeakDef::GaussAmplitude,
-    LandauAmplitude  = PeakDef::LandauAmplitude,
-    LandauMode       = PeakDef::LandauMode,
-    LandauSigma      = PeakDef::LandauSigma,
-    Chi2DOF          = PeakDef::Chi2DOF,
-    RangeStartEnergy = PeakDef::NumCoefficientTypes,
+    Mean,
+    Sigma,
+    SigmaDrfPredicted,
+    GaussAmplitude,
+    SkewPar0,
+    SkewPar1,
+    SkewPar2,
+    SkewPar3,
+    Chi2DOF,
+    RangeStartEnergy,
     RangeEndEnergy,
     OffsetPolynomial0,
     OffsetPolynomial1,
@@ -91,6 +93,13 @@ public:
     PeakColor,
     NumPeakPars
   };//enum PeakPars
+  
+  /** Convert from PeakPars to PeakDef::CoefficientType.
+   
+   Throws exception if does not directly map; e.g., `type` is larger than #PeakPars::RangeStartEnergy or is equal
+   to #PeakPars::SigmaDrfPredicted.
+   */
+  static PeakDef::CoefficientType row_to_peak_coef_type( const PeakPars type );
   
 public:
   PeakEdit( const double energy,
@@ -123,6 +132,7 @@ protected:
   void peakTypeChanged();
   void contnuumTypeChanged();
   void skewTypeChanged();
+  void updateSkewParameterLabels( const PeakDef::SkewType skewType );
   void validateMeanOrRoiChange();
   void changeToNextPeakInRoi( const bool back );
   
@@ -159,6 +169,9 @@ protected:
   void deletePeak();
   
   bool isDirty() const;
+  
+  void updateDrfFwhmTxt();
+  void setSkewInputValueRanges( const PeakDef::SkewType skewType );
 protected:
   double m_energy;
   PeakModel *m_peakModel;
@@ -207,6 +220,8 @@ protected:
   Wt::WText *m_otherPeakTxt;
   Wt::WPushButton *m_prevPeakInRoi;
   Wt::WPushButton *m_nextPeakInRoi;
+  
+  Wt::WText *m_drfFwhm;
   
   Wt::Signal<> m_doneSignal;
   Wt::WContainerWidget *m_footer;

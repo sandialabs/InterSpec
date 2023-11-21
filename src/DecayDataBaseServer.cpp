@@ -77,7 +77,7 @@ void DecayDataBaseServer::initialize()
     
     cerr << "DecayDataBaseServer::initialize()\n\tError initializing SandiaDecayDataBase!"
          << endl << endl;
-  }//try/caatch
+  }//try/catch
 }//void initialize()
 
 

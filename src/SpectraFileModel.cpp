@@ -250,9 +250,7 @@ SpectraFileHeader::~SpectraFileHeader() noexcept(true)
   try
   {
 #if( USE_DB_TO_STORE_SPECTRA )
-    const bool autosave
-      = InterSpecUser::preferenceValue<bool>( "AutoSaveSpectraToDb", m_viewer );
-    const bool allowsave = true; //           = InterSpecUser::preferenceValue<bool>( "SaveSpectraToDb", m_viewer );
+    const bool autosave = InterSpecUser::preferenceValue<bool>( "AutoSaveSpectraToDb", m_viewer );
 #endif
 
     string fileSystemLocation;
@@ -263,7 +261,7 @@ SpectraFileHeader::~SpectraFileHeader() noexcept(true)
       RecursiveLock lock( m_mutex );
       m_aboutToBeDeletedConnection.disconnect();
 #if( USE_DB_TO_STORE_SPECTRA )
-      save = (!!m_user && autosave && allowsave);
+      save = (!!m_user && autosave);
       candidateForSavingToDb = m_candidateForSavingToDb;
 #endif
       memObj = m_weakMeasurmentPtr.lock();
@@ -279,28 +277,23 @@ SpectraFileHeader::~SpectraFileHeader() noexcept(true)
         if( memObj )
         {
           saveToDatabase( memObj );
-          //  WString msg = "Autosaved previously opened spectra '";
-          //  msg += (!!memObj ? memObj->filename() : fileSystemLocation);
-          //  msg += "'";
-          //  passMessage( msg, "", WarningWidget::WarningMsgSave );
-        }
-        else if( fileSystemLocation.size() )
+        }else if( fileSystemLocation.size() )
         {
           saveToDatabaseFromTempFile();
-          //passMessage ("memObj saveToDatabaseFromTempFile", "", WarningWidget::WarningMsgMedium);
-            //WString msg = "Autosaved previously opened spectra '";
-            //msg += (!!memObj ? memObj->filename() : fileSystemLocation);
-            //msg += "'";
-            //passMessage( msg, WarningWidget::WarningMsgInfo );
-        }
-        else //probably shouldnt happen
+        }else //probably shouldnt happen unless a valid measurement was never set
+        {
           throw runtime_error( "There is absolutely no reference to the spectra"
-                               " anymore");
+                              " anymore");
+        }
       
       }catch( std::exception &e )
       {
-        cerr << "SpectraFileHeader::~SpectraFileHeader(): Failed to save file to DB with error: "
-             << e.what() << endl;
+        if( ((m_totalLiveTime > 0.0) || (m_totalRealTime > 0.0))
+            && ((m_numDetectors > 0) || m_modifiedSinceDecode) )
+        {
+          cerr << "SpectraFileHeader::~SpectraFileHeader(): Failed to save file to DB with error: "
+          << e.what() << endl;
+        }
       }//try / catch
     }else if( m_user && m_fileDbEntry && m_fileDbEntry.session() && !save )
     {
@@ -692,17 +685,6 @@ void SpectraFileHeader::saveToDatabase( std::shared_ptr<const SpecMeas> input ) 
   
   //In principle we should take a recursive mutex lock on meas for this entire function
   //  or do a deep copy...
-  
-  const bool allowsave = true; //InterSpecUser::preferenceValue<bool>( "SaveSpectraToDb", m_viewer );
-  if( !allowsave )
-  {
-    const char *msg = "Trying to save spectrum to database when the user prefence doesnt allow it!";
-#if( PERFORM_DEVELOPER_CHECKS )
-    log_developer_error( __func__, msg );
-#endif
-    cerr << endl << __func__ << ": " << msg << endl << endl;
-    return;
-  }//if( !allowsave )
   
 #if( PERFORM_DEVELOPER_CHECKS && SpecUtils_ENABLE_EQUALITY_CHECKS )
   {//begin code block to do check

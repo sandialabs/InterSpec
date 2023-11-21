@@ -1,0 +1,64 @@
+.faqs-intro
+{
+
+}
+
+.faqs-intro-txt
+{
+
+}
+
+.faqs-toc
+{
+
+}
+
+.faqs-toc > ul
+{
+
+}
+
+.faqs-subjects
+{
+
+}
+
+.faqs-subject
+{
+  border: 1px solid black;
+  margin-top: 15px
+}
+
+.faqs-subject-title
+{
+  text-align: center;
+  font-size: larger;
+  font-weight: bold;
+  min-height: 23px;
+  padding: 3px;
+}
+
+.faqs-subject-title span
+{
+  margin-top: 3px;
+  display: inline-block;
+}
+
+.faqs-subject-title button, .faqs-subject-title button:hover
+{
+  float: right;
+  background: none;
+}
+
+.faqs-subject-content
+{
+  border-top: 1px solid black;
+  margin-top: 2px;
+  width: calc( 100% - 20px );
+  display: block;
+  overflow-x: hidden;
+  padding-top: 5px;
+  padding-left: 10px;
+  padding-right: 10px;
+  padding-bottom: 5px;
+}

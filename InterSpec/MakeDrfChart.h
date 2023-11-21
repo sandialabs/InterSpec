@@ -130,8 +130,11 @@ public:
   const std::vector<DataPoint> &currentDataPoints() const;
   float currentDiameter() const;
   
-  /** Sets whther the FWHM data points and equation should be shown. */
+  /** Sets whether the FWHM data points and equation should be shown. */
   void showFwhmPoints( const bool show );
+  
+  /** Sets whether the efficiecncy data points and equation should be shown. */
+  void showEfficiencyPoints( const bool show );
   
   /** Set the displayed x-range, in keV. */
   void setXRange( double lower, double upper );
@@ -183,5 +186,18 @@ protected:
   Wt::WPen m_textPen;
 };//class WCartesianChart
 
+/** MakeDrfChart need resize() explicitly called when its size changes, and
+   its not happening when placed directly into the WGridLayout, so this class
+   just does that explicitly
+ */
+class DrfChartHolder : public Wt::WContainerWidget
+{
+  MakeDrfChart *m_chart;
+  
+public:
+  DrfChartHolder( MakeDrfChart *chart, Wt::WContainerWidget *parent );
+  virtual ~DrfChartHolder();
+  virtual void layoutSizeChanged(int width, int height);
+};//class DrfChartHolder
 
 #endif  //MakeDrfChart_h

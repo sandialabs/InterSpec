@@ -444,7 +444,9 @@ void OneOverR2Calc::handleAppUrl( std::string query_str )
     {
       try
       {
-        std::stod(value);
+        const double test_val = std::stod(value);
+        if( IsInf(test_val) || IsNan(test_val) )
+          throw runtime_error( "NaN or Inf" );
       }catch( std::exception & )
       {
         throw runtime_error( "1/r2 Calc.: invalid '" + name + "' value '" + value + "' in URI." );

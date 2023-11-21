@@ -43,6 +43,7 @@
 #include <Wt/WAbstractItemModel>
 #include <Wt/Chart/WCartesianChart>
 
+#include "InterSpec/DetectorPeakResponse.h" //DetectorPeakResponse::EffGeometryType
 #include "InterSpec/ShieldingSourceFitCalc.h"
 
 //Forward declarations
@@ -56,7 +57,6 @@ class PopupDivMenu;
 class SwitchCheckbox;
 class DetectorDisplay;
 class PopupDivMenuItem;
-class DetectorPeakResponse;
 struct ShieldingSourceModel;
 #if( INCLUDE_ANALYSIS_TEST_SUITE )
 class SpectrumViewerTester;
@@ -298,6 +298,11 @@ public:
   
   void setUnderlyingData( const std::vector<ShieldingSourceFitCalc::IsoFitStruct> &data );
   
+  /** Set the DetectorPeakResponse::EffGeometryType, so correct label for activity can be shown.
+   */
+  void setDetectorType( const DetectorPeakResponse::EffGeometryType det_type );
+  DetectorPeakResponse::EffGeometryType detType() const;
+  
 protected:
   Wt::SortOrder m_sortOrder;
   Columns m_sortColumn;
@@ -305,6 +310,7 @@ protected:
   PeakModel *m_peakModel;
   std::vector<ShieldingSourceFitCalc::IsoFitStruct> m_nuclides;
   bool m_sameAgeForIsotopes;
+  DetectorPeakResponse::EffGeometryType m_det_type;
   
   //m_previousResults: when a isotope gets removed from this model, we'll cache
   //  its current value, since it will often times get added again and be
@@ -397,8 +403,8 @@ public:
    memmory, but at the cost of not currently getting things exactly right for trace and self-atten sources.
    
    @param select The ShieldingSelect that was changed.
-   @param prev_state The XML represetntation of the ShieldingSelect before it was changed.
-   @param current_state The XML represetntation of the updated ShieldingSelect state.
+   @param prev_state The XML representation of the ShieldingSelect before it was changed.
+   @param current_state The XML representation of the updated ShieldingSelect state.
    */
   void handleShieldingUndoRedoPoint( const ShieldingSelect * const select,
                                     const std::shared_ptr<const std::string> &prev_state,
@@ -471,6 +477,8 @@ public:
   void checkForMultipleGenericMaterials();
   
   void handleShieldingChange();
+  
+  void handleDetectorChanged( std::shared_ptr<DetectorPeakResponse> new_det );
   
   void updateChi2Chart();
   
@@ -634,7 +642,8 @@ protected:
 
   DetectorDisplay *m_detectorDisplay;
   
-  /** Is set after validating a user entered distrance string.  If user enetered 
+  Wt::WLabel *m_distanceLabel;
+  /** Is set after validating a user entered distance string.  If user entered
    *  string is invalid, then this value is used to go back to.
    */
   std::string m_prevDistStr;
@@ -657,9 +666,12 @@ protected:
   //m_shieldingSelects: contains objects of class ShieldingSelect
   Wt::WContainerWidget *m_shieldingSelects;
 
+  Wt::WLabel *m_geometryLabel;
   GammaInteractionCalc::GeometryType m_prevGeometry;
   Wt::WComboBox *m_geometrySelect;
 
+  Wt::WText *m_fixedGeometryTxt;
+  
   Wt::WText *m_showChi2Text;
   Wt::WStandardItemModel *m_chi2Model;
   Chi2Graphic *m_chi2Graphic;

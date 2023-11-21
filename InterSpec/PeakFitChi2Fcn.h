@@ -71,14 +71,15 @@ public:
   //  PeakFitChi2Fcn::PeakPars will have to be altered as well.
   enum FitPars
   {
-    Mean               = PeakDef::Mean,
-    Sigma              = PeakDef::Sigma,
-    GaussAmplitude     = PeakDef::GaussAmplitude,
-    LandauAmplitude    = PeakDef::LandauAmplitude,
-    LandauMode         = PeakDef::LandauMode,
-    LandauSigma        = PeakDef::LandauSigma,
-    Chi2DOF            = PeakDef::Chi2DOF,
-    ContinuumInfoField = PeakDef::NumCoefficientTypes,
+    Mean               = PeakDef::CoefficientType::Mean,
+    Sigma              = PeakDef::CoefficientType::Sigma,
+    GaussAmplitude     = PeakDef::CoefficientType::GaussAmplitude,
+    SkewPar0           = PeakDef::CoefficientType::SkewPar0,
+    SkewPar1           = PeakDef::CoefficientType::SkewPar1,
+    SkewPar2           = PeakDef::CoefficientType::SkewPar2,
+    SkewPar3           = PeakDef::CoefficientType::SkewPar3,
+    Chi2DOF            = PeakDef::CoefficientType::Chi2DOF,
+    ContinuumInfoField = PeakDef::CoefficientType::NumCoefficientTypes,
     SkewInfoField,
     RangeStartEnergy,
     RangeEndEnergy,
@@ -90,28 +91,27 @@ public:
     OffsetPolynomial4,
     NumFitPars
   };//enum PeakPars
-//PeakFitChi2Fcn::NumFitPars  
 
 public:
   //Constructor to fit full range of histograms
   PeakFitChi2Fcn( const int npeaks,
                   std::shared_ptr<const SpecUtils::Measurement> data,
-                  std::shared_ptr<const SpecUtils::Measurement> continium );
+                  std::shared_ptr<const SpecUtils::Measurement> continuum );
 
   //Constructor to fit partial range of histogram; only bins between lowerbin
-  //  and upperbin will contibute to the chi2
+  //  and upperbin will contribute to the chi2
   PeakFitChi2Fcn( const int npeaks,
                   const size_t lower_bin, const size_t upper_bin,
                   std::shared_ptr<const SpecUtils::Measurement> data,
-                  std::shared_ptr<const SpecUtils::Measurement> continium );
+                  std::shared_ptr<const SpecUtils::Measurement> continuum );
 
   void useReducedChi2( const bool use = true );        //default is true
   
   //setUseMultiPeakPunishment(bool): sets whether or not when fitting for
   //  multiple peaks that share the same continuum (via explicit shared
   //  polynomial continuum, or if sharing an External continuum), if the chi2
-  //  should be increased if a peak isnt statisstically significiant, or
-  //  if peaks are too near eachother.
+  //  should be increased if a peak isn't statistically significant, or
+  //  if peaks are too near each other.
   //Not particularly well tested as of 20131230
   void setUseMultiPeakPunishment( bool punish );
   
@@ -202,9 +202,12 @@ private:
  p1
  p2
  ...pX
+ Skew0                     //Skew parameters, will be `PeakDef::num_skew_parameters(SkewType)`
+ Skew1                     //  All peaks in the ROI share the same skew type/values.
+ ...X
  width     1               //m_numOffset + 0
  mean      1
- Amplitude 1  //If Amplitude==-999.9, then estimate from data height
+ Amplitude 1  //If Amplitude==-999.9, then estimate from data height at peak centroid
  width     2  (multiple of first width, as fraction of total range; if zero, use first peak width; if negative use negative width)
  mean      2
  Amplitude 2  //If Amplitude==-999.9, then estimate from data height
@@ -227,10 +230,14 @@ class MultiPeakFitChi2Fcn
   //    1) Punishes for the shared peaks being to close
   //    2) Is optimized for speed of evaluation
 public:
-  //Constructor to fit full range of histograms
-  MultiPeakFitChi2Fcn( const int npeaks, std::shared_ptr<const SpecUtils::Measurement> data,
+  /** Constructor to fit full range of histograms.
+  */
+  MultiPeakFitChi2Fcn( const int npeaks,
+                      std::shared_ptr<const SpecUtils::Measurement> data,
                       PeakContinuum::OffsetType offsetType,
-                      const size_t lower_channel, const size_t upper_channel );
+                      PeakDef::SkewType skewType,
+                      const size_t lower_channel,
+                      const size_t upper_channel );
   
   MultiPeakFitChi2Fcn &operator=( const MultiPeakFitChi2Fcn &rhs );
   
@@ -265,11 +272,22 @@ protected:
   size_t m_nbin;
   
   double m_rangeLow, m_highRange;
-  std::vector<double> m_binLowerEdge, m_binUpperEdge, m_dataCounts;
+  
+  /** The lower channel energies for the channel range being used.
+   Will be of size `m_nbin + 1` (i.e., the last entry is the upper energy of the last channel).
+   The first entry in this vector is the lower energy of data channel `m_lower_channel`.
+   */
+  std::vector<float> m_energies;
+  /** 
+   
+   Will be of size `m_nbin`.
+   */
+  std::vector<double> m_dataCounts;
   PeakContinuum::OffsetType m_offsetType;
+  PeakDef::SkewType m_skewType;
   std::shared_ptr<const SpecUtils::Measurement> m_data;
   
-  /* How close peaks have to be together before you start applying a wieght
+  /* How close peaks have to be together before you start applying a weight
    to the chi2 to punish this - this keeps ROIs with more than one peak from
    collapsing to have multiple peaks located at the same mean and width.
    
@@ -291,7 +309,7 @@ protected:
   
   
   //If sm_call_opt_integrate is true, then will re-use the following peaks to
-  //  avoid alocation overhead and such - currently only for developemtn
+  //  avoid allocation overhead and such - currently only for development
   //  (looks to speed things up by maybe 8% or so?)
   mutable std::vector<PeakDef> m_workingpeaks;
 };//class MultiPeakFitChi2Fcn
@@ -314,7 +332,8 @@ class LinearProblemSubSolveChi2Fcn
 /*
    Want to fit for a number of peaks in the given range.
    All peaks should share a common polynomial continuum.
-   Widths of the peaks are tied together
+   Widths of the peaks are tied together.
+   All peaks have same skew type, with same skew value(s).
    
    parameters:
    mean0     {mean of first peak}
@@ -323,6 +342,9 @@ class LinearProblemSubSolveChi2Fcn
    meanN     {mean of N'th peak}
    width0    {if npeaks==1, width of that peak; else width at m_lowerROI}
    widthFcn  {multiple of width0, plus fraction of total range time widthFcn}
+   Skew0     {first skew parameter, if present - see `PeakDef::num_skew_parameters(SkewType)`}
+   ....
+   Skew3     {fourth, and last possible, skew parameter, if present}
 */
 
 public:
@@ -333,6 +355,7 @@ public:
   LinearProblemSubSolveChi2Fcn( const size_t npeaks,
                                std::shared_ptr<const SpecUtils::Measurement> data,
                                const PeakContinuum::OffsetType offsetType,
+                               const PeakDef::SkewType skewType,
                                const float lowerROI, const float upperROI );
 
   //Constructor useful when re-fitting peaks, to allow preserving of 'extra'
@@ -352,6 +375,7 @@ public:
         const std::vector< std::shared_ptr<const PeakDef> > &originalPeaks,
                                std::shared_ptr<const SpecUtils::Measurement> data,
                                const PeakContinuum::OffsetType offsetType,
+                               const PeakDef::SkewType skewType,
                                const float lowerROI, const float upperROI );
   
   virtual double Up() const;
@@ -382,6 +406,23 @@ public:
   double closenessPunishment( const std::vector<double> &means,
                               const std::vector<double> &sigmas ) const;
   
+  /** Determines skew type, and starting parameters to use, form previous peaks in ROI.
+   */
+  static PeakDef::SkewType skewTypeFromPrevPeaks( const std::vector<std::shared_ptr<const PeakDef> > &prev_peaks );
+  
+  /** You can use this function to add the skew fitting parameters to Minuit, when you dont have any previous
+   values to use for the skew coefficients.
+   */
+  static void addSkewParameters( ROOT::Minuit2::MnUserParameters &pars,
+                                 const PeakDef::SkewType skewType );
+  
+  /** Add skew fitting parameters to Minuit, when you have previous starting values; constrains the range that the values
+   can change to between half and 1.5 their current values.
+   */
+  static void addSkewParameters( ROOT::Minuit2::MnUserParameters &pars,
+                                 const PeakDef::SkewType skewType,
+                                 const std::vector<std::shared_ptr<const PeakDef> > &inpeaks );
+  
 protected:
   void init( std::shared_ptr<const SpecUtils::Measurement> data );
   
@@ -392,6 +433,7 @@ protected:
   std::vector<float> m_y;
   std::vector<float> m_x;
   PeakContinuum::OffsetType m_offsetType;
+  PeakDef::SkewType m_skewType;
   std::vector< std::shared_ptr<const PeakDef> > m_originalPeaks;
 };//class LinearProblemSubSolveChi2Fcn
 

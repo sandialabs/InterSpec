@@ -50,8 +50,9 @@ namespace SpecUtils
 /**
  TODO items:
  - Have the SpecMeas hold the history for itself
- - Be able to insert, or maybe just modify, an undo/redo step from within a undo/redo step
- - Add a "blocker" to block undo/redo while tools, like File Parameters, Istopics by nuclides, or File Manager, tool is open
+ - Make it so this class collects all the undo/redo steps for a given event loop, and mark this object as needing update, so
+   during render, all steps are collected up, and made into a single step - but this would require making this class inherit
+   from Wt::WWidget (or more likely Wt::WCompositeWidget), instead of just Wt::WObject.
  */
 class UndoRedoManager : public Wt::WObject
 {
@@ -137,6 +138,7 @@ public:
   {
     PeakModelChange();
     ~PeakModelChange();
+    static void setToCurrentPeaks();
     
     PeakModelChange( const PeakModelChange& ) = delete; // non construction-copyable
     PeakModelChange &operator=( const PeakModelChange & ) = delete; // non copyable
@@ -173,6 +175,10 @@ public:
      only items that will be saved.
      */
     std::unique_ptr<PeakModelChange> m_peak_change;
+    
+    // TODO: should also save energy calibration...
+    //typedef std::map<std::weak_ptr<SpecMeas>,std::shared_ptr<const SpecUtils::EnergyCalibration>,std::owner_less<std::weak_ptr<SpecMeas>>> MeasToEnergyCal_t;
+    //MeasToEnergyCal_t m_energy_cals[3];
   };//BlockGuiUndoRedo
   
   

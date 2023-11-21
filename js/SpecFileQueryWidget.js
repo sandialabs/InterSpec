@@ -214,7 +214,8 @@ function( divid, parentid, additional_filters )
       35: 'Verifinder-NaI',
       36: 'Verifinder-LaBr3',
       37: 'Kromek D3S',
-      38: 'Unknown'
+      38: 'RadiaCode 102',
+      39: 'Unknown'
     },
     operators: ['equal']
   },{

@@ -26,7 +26,10 @@
 #include <string>
 #include <functional>
 
+#include "rapidxml/rapidxml.hpp"
+
 #include <Wt/WText>
+#include <Wt/Utils>
 #include <Wt/WLink>
 #include <Wt/WMenu>
 #include <Wt/WImage>
@@ -53,7 +56,9 @@
 #include <Wt/WAbstractItemDelegate>
 
 #include "SpecUtils/Filesystem.h"
+#include "SpecUtils/StringAlgo.h"
 
+#include "InterSpec/AppUtils.h"
 #include "InterSpec/InterSpec.h"
 #include "InterSpec/AuxWindow.h"
 #include "InterSpec/HelpSystem.h"
@@ -588,6 +593,9 @@ UseInfoWindow::UseInfoWindow( std::function<void(bool)> showAgainCallback,
   } //isDesktop()
 
   
+  const string tips_file = "InterSpec_resources/static_text/faqs/faqs";
+  item = makeTextItem( "FAQs", tips_file );
+  
   // ---- Cheat sheet PDF
 /*
  //Cheat sheet is currently outdated, so dont display it.
@@ -1043,6 +1051,172 @@ SideMenuItem * UseInfoWindow::makeItem( const WString &title, const string &reso
 }//SideMenuItem * UseInfoWindow::makeItem( const WString &title, const string &resource)
 
 
+SideMenuItem *UseInfoWindow::makeTextItem( const Wt::WString &title, const std::string &resource )
+{
+  std::function<void(WContainerWidget *)> f = boost::bind( &UseInfoWindow::textItemCreator, this,
+                                                          resource, boost::placeholders::_1 );
+  
+  WWidget *w = deferCreate( f );
+  w->addStyleClass( "UseInfoItem" );
+  
+  SideMenuItem *item = new SideMenuItem( title, w );
+  item->clicked().connect( boost::bind( &UseInfoWindow::right_select_item, this, item) );
+  item->mouseWentDown().connect( boost::bind( &UseInfoWindow::right_select_item, this, item) );
+  
+  m_menu->addItem( item );
+  
+  return item;
+}//SideMenuItem * makeTextItem( const Wt::WString &title, const std::string &resource );
+
+
+void UseInfoWindow::textItemCreator( const std::string &resource, Wt::WContainerWidget *parent )
+{
+  assert( parent );
+  if( !parent )
+    return;
+  
+  try
+  {
+    const string docroot = wApp->docRoot();
+    const string resource_base = SpecUtils::append_path(docroot, resource);
+    const string resource_name = SpecUtils::filename(resource);
+    
+    WMessageResourceBundle bundle;
+    bundle.use( resource, true );
+    
+    vector<pair<string,string>> topic_keys;
+    
+    // We want to load the topics in the order they are in the file, not alphabetical like
+    //  `bundle.keys(WMessageResourceBundle::Scope::Default)` would return.
+    {// Begin scope to manually parse out XML file
+      // The locale name comes from the HTTP Accept-Language header, which may be like
+      //  fr-CH, fr, en-US, en, de-DE-1996, de-CH
+      string locale = WLocale::currentLocale().name();
+      string resource_file = resource_base + (locale.empty() ? "" : "_") + locale + ".xml";
+      
+      do
+      {
+        if( SpecUtils::is_file(resource_file) )
+          break;
+        
+        const size_t pos = locale.rfind( '-' );
+        locale.erase( (pos == string::npos) ? size_t(0) : pos );
+        resource_file = resource_base + (locale.empty() ? "" : "_") + locale + ".xml";
+      }while( !locale.empty() );
+      
+      vector<char> data;
+      SpecUtils::load_file_data( resource_file.c_str(), data );
+      
+      rapidxml::xml_document<char> doc;
+      doc.parse<rapidxml::parse_trim_whitespace>( data.data() );
+      
+      const rapidxml::xml_node<char> * const msgs_node = doc.first_node("messages");
+      if( !msgs_node )
+        throw runtime_error( "No 'messages' node." );
+      
+      for( rapidxml::xml_node<char> *node = msgs_node->first_node("message");
+          node; node = node->next_sibling("message") )
+      {
+        const rapidxml::xml_attribute<char> * const id = node->first_attribute("id");
+        const rapidxml::xml_attribute<char> * const title = node->first_attribute("title");
+        assert( id && id->value_size() );
+        
+        if( id && id->value_size() && title && title->value_size() )
+        {
+          string key{id->value(), id->value() + id->value_size()};
+          string desc{title->value(), title->value() + title->value_size()};
+          
+#if( PERFORM_DEVELOPER_CHECKS )
+          for( const auto &i : topic_keys )
+          {
+            if( i.first == key )
+              log_developer_error( __func__, ("FAQ topic ID " + key + "is non-unique").c_str() );
+            assert( i.first != key );
+          }//for( const auto &i : topic_keys )
+#endif
+          
+          if( key != "intro" )
+            topic_keys.emplace_back( std::move(key), std::move(desc) );
+        }//if( we have key and title strings )
+      }//for( loop over nodes )
+    }// End scope to manually parse out XML file
+    
+    if( topic_keys.empty() )
+      throw runtime_error( "Error getting 'message' nodes." );
+    
+    const bool has_css = SpecUtils::is_file(resource_base + ".css");
+    assert( has_css );
+    if( has_css )
+      wApp->useStyleSheet( resource + ".css" ); //resource_base may be absolute filesystem path; resource is
+    
+    // Add some JS to scroll to the contents
+    wApp->declareJavaScriptFunction( resource_name + "_scroll_to",
+    "function(id){"
+      //"const sec_el = document.getElementById(id);"
+      "const sec_el = document.querySelector('[id^=' + id + ']');"  //match ID starting with specified ID
+      "if(!sec_el){console.error('No element with id=', id); return;}"
+      "const parent_el = document.getElementById('" + parent->id() + "');"
+      "if( !parent_el ){console.error('No element with id=" + parent->id() + "'); return;}"
+      "parent_el.scrollTop = sec_el.offsetTop;"
+    "}");
+    
+    // Create intro
+    WContainerWidget *into_div = new WContainerWidget( parent );
+    into_div->addStyleClass( resource_name + "-intro" );
+    
+    std::string intro_txt;
+    bundle.resolveKey( "intro", intro_txt );
+    WText *intro = new WText( WString::fromUTF8(intro_txt), into_div );
+    intro->setInline( false );
+    intro->addStyleClass( resource_name + "-intro-txt" );
+    
+    // Create a table of contents
+    WContainerWidget *into_toc = new WContainerWidget( into_div );
+    into_toc->setList( true );
+    into_div->addStyleClass( resource_name + "-toc" );
+        
+    // Add the contents
+    WContainerWidget *subjects = new WContainerWidget( parent );
+    subjects->addStyleClass( resource_name + "-subjects" );
+    
+    for( const pair<string,string> &key_title : topic_keys )
+    {
+      WContainerWidget *w = new WContainerWidget( subjects );
+      w->addStyleClass( resource_name + "-subject" );
+      
+      WContainerWidget *title = new WContainerWidget( w );
+      title->addStyleClass( resource_name + "-subject-title" );
+      WPushButton *up_btn = new WPushButton( title );
+      up_btn->setToolTip( "Back to top" );
+      up_btn->setIcon( WLink("InterSpec_resources/images/minimal_go_up_arrow.svg") );
+      up_btn->clicked().connect( "function(){ document.getElementById('" + parent->id() + "').scrollTop = '0px'; }" );
+      WText *title_txt = new WText( key_title.second, title );
+        
+      std::string content;
+      bundle.resolveKey( key_title.first, content );
+      
+      //cout << "key: " << key_title.first << " --> content: " << content << endl;
+      
+      WText *sub = new WText( content, w );
+      sub->addStyleClass( resource_name + "-subject-content" );
+      
+      w->setObjectName( key_title.first );
+      
+      // Add to the TOC
+      WContainerWidget *toc_item = new WContainerWidget( into_toc );
+      const string this_js_call = "function(){"
+        + wApp->javaScriptClass() + "." + resource_name + "_scroll_to('" + w->id() + "');"
+      "}";
+      toc_item->clicked().connect( this_js_call );
+      new WAnchor( WLink("#"), key_title.second, toc_item );
+    }//for( const pair<string,string> &key_title : topic_keys )
+  }catch( std::exception &e )
+  {
+    new WText( "Error loading FAQ topics: " + string(e.what()), parent );
+  }//try catch
+}//void textItemCreator( const std::string &resource, Wt::WContainerWidget *parent )
+
+
 void UseInfoWindow::handleSampleSelectionChanged()
 {
 }//void handleSampleSelectionChanged()
@@ -1062,6 +1236,54 @@ void UseInfoWindow::handleSampleDoubleClicked( WModelIndex index, WMouseEvent ev
   m_tableSample->setSelectedIndexes( selected );
   loadSampleSelected();
 }
+
+void UseInfoWindow::handleAppUrl( std::string query_str )
+{
+  const map<string,string> parts = AppUtils::query_str_key_values( query_str );
+  
+  const auto topic_pos = parts.find("TOPIC");
+  
+  if( topic_pos != end(parts) )
+  {
+    for( WMenuItem *item : m_menu->items() )
+    {
+      //item->pathComponent() will be "faqs", and is probably a better thing to use
+      if( SpecUtils::iequals_ascii(item->text().toUTF8(), topic_pos->second) )
+      {
+        right_select_item( item );
+        
+        if( SpecUtils::iequals_ascii("faqs", topic_pos->second) )
+        {
+          const auto subtopic_pos = parts.find("SUBTOPIC");
+          if( subtopic_pos != end(parts) )
+          {
+            string topic_id = WString::fromUTF8(subtopic_pos->second).jsStringLiteral();
+            doJavaScript( "setTimeout( function(){try{"
+                         + wApp->javaScriptClass() + "." + "faqs_scroll_to(" + topic_id
+                         + ");}catch(e){}}, 500 );" );
+          }
+        }//if( a FAQs topic )
+        
+        // TODO: add selecting tab on "Controls" and "Welcome" tabs.
+
+        break;
+      }
+    }//for( loop over menu items )
+  }//if( topic_pos != end(parts) )
+}//void handleAppUrl( std::string query_str )
+
+
+void UseInfoWindow::showFaqTab()
+{
+  for( WMenuItem *item : m_menu->items() )
+  {
+    //item->pathComponent() will be "faqs", and is probably a better thing to use
+    if( item->text() != "FAQs" )
+      continue;
+    right_select_item( item );
+    return;
+  }//for( loop over menu items )
+}//void showFaq( std::string &topic_id = "" );
 
 
 void UseInfoWindow::loadSample( const Wt::WModelIndex index )

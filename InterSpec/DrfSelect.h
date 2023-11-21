@@ -33,7 +33,6 @@
 #include <Wt/WSignal>
 #include <Wt/WTextArea>
 #include <Wt/WContainerWidget>
-#include <Wt/Chart/WCartesianChart>
 
 #include "InterSpec/AuxWindow.h"
 #include "InterSpec/InterSpecUser.h"  //for UseDrfPref::UseDrfType enum only
@@ -264,7 +263,8 @@ public:
     ImportTabChosen,
     DetectorDiameterChanged,
     EfficiencyCsvUploaded,
-    DetectorDotDatUploaded
+    DetectorDotDatUploaded,
+    FixedGeometryChanged
   };//enum class UploadCallbackReason
   
   /** Function called when "Import" tab is chosen, detector diameter is changed,
@@ -296,12 +296,13 @@ public:
   //a row is selected, so update det and charts
   void dbTableSelectionChanged();
   
+  void handleFitFwhmRequested();
+  void handleFitFwhmFinished( std::shared_ptr<DetectorPeakResponse> drf );
 protected:
   void setAcceptButtonEnabled( const bool enable );
   
   /** Called when user changes value in m_uploadedDetName; sets m_detector name. */
   void handleUserChangedUploadedDrfName();
-  
   
 protected:
   WContainerWidget *m_footer;
@@ -349,6 +350,7 @@ protected:
   Wt::WFileUpload *m_efficiencyCsvUpload;
   Wt::WContainerWidget *m_detectrDotDatDiv;
   Wt::WFileUpload *m_detectorDotDatUpload;
+  Wt::WCheckBox *m_fixedGeometryCb;
 
   Wt::WPushButton *m_acceptButton;
   Wt::WPushButton *m_cancelButton;
@@ -364,7 +366,9 @@ protected:
   Wt::WTextArea    *m_detectorManualFunctionText;
   Wt::WLineEdit    *m_detectorManualDescription;
   Wt::WButtonGroup *m_eqnEnergyGroup;
-  Wt::WButtonGroup *m_absOrIntrinsicGroup;
+  Wt::WComboBox    *m_drfType;
+  
+  Wt::WLabel       *m_detectorManualDiameterLabel;
   Wt::WLineEdit    *m_detectorManualDiameterText;
   Wt::WLineEdit    *m_detectorManualDistText;
   Wt::WLabel       *m_detectorManualDistLabel;

@@ -287,6 +287,23 @@ unless your measurements will always be at the same distance as the calibration-
 which case you should also disable air attenuation from the &quot;Activity/Shielding Fit&quot; tool;
 however, leaving it enabled in both places would cancel out anyway).
 </div>
+
+<div style="margin-top: 10px;">
+The &quot;<span style="font-weight: bold;">Fixed Geometry</span>&quot; option is for cases where
+the measurements to be analyzed, will be in the same configuration and distance as the
+check source data.  Some common use cases for this is Marinelli beakers measurements (e.g.,
+lab-based soil contamination), <em>in-situ</em> measurements, or repetitive lab-based measurements.
+When this option is checked, the detector diameter, the source distances, and air attenuation
+option, will all be hidden, as they become moot.  Source shielding will not normally be applicable
+to these characterizations (since you normally <em>want</em> the DRF to already include attenuations
+of your sample), but you will still be allowed to enter a shielding in-case you need to compensate
+for a test-source having self-shielding, and some amount of un-avoidable shielding, that your later
+measurements wont have.
+When using a DRF created with this option, the <b>Activity/Shielding fit</b> tool, or other tools
+will not allow you to enter a distance or geometry, as they will assume the exact same geometry
+is being used for the measurement, as for the characterization.
+</div>
+
 </p>
 </div>
 

@@ -107,6 +107,12 @@
         "keywords":"Detectors Relative Efficiency Full Width at Half Maximum FWHM Absolute"
       },
       {
+        "id":"add-fwhm-to-drf",
+        "title":"Fit FWHM from current spectrum",
+        "help-xml":"add_fwhm_to_drf_help.xml",
+        "keywords":"DRF Detector FWHM Full Width at Half Maximum FWHM"
+      },
+      {
         "id":"activity-shielding-dialog",
         "title":"Activity Shielding Fit",
         "help-xml":"activity_shielding_fit_help.xml",

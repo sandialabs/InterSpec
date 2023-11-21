@@ -219,7 +219,8 @@ are concave upwards or downwards after fitting).
   are working with Marinelli beaker geometries, where you created your detector response
   function using a Marinelli beaker standard and the sample you are analyzing is the same
   geometry and distance (but also if you include air attenuation in creating the detector
-  response, and in this analysis, things should cancel out anyway).
+  response, and in this analysis, things should cancel out anyway - but also if you made
+  the response function in <b>InterSpec</b>, see the &quot;Fixed Geometry&quot; option).
   </li>
   <li><b>Subtract Background Peaks</b>: If your source peaks correspond to peaks
     that may also be found in the background, then this option will effectively

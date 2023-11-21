@@ -268,17 +268,17 @@ void fitPeaks( const std::vector<PeakDef> &input_peaks,
                       const std::vector<PeakDef> &fixedpeaks,
                       bool amplitudeOnly ) throw();
 
-enum MultiPeakInitialGuesMethod
+enum MultiPeakInitialGuessMethod
 {
   UniformInitialGuess,    //With a rough prefit performed
   FromDataInitialGuess,   //Tries to use second derivative
   FromInputPeaks          //uses peaks populated in 'answer', throws if answer.size!=nPeaks, or if they dont all share a continuum
-};//enum MultiPeakInitialGuesMethod
+};//enum MultiPeakInitialGuessMethod
 
 //findPeaksInUserRange(...): method to simultaneously fit for 'nPeaks' in the
 //  the range x0 to x1
 void findPeaksInUserRange( double x0, double x1, int nPeaks,
-                          MultiPeakInitialGuesMethod method,
+                          MultiPeakInitialGuessMethod method,
                           std::shared_ptr<const SpecUtils::Measurement> dataH,
                           std::shared_ptr<const DetectorPeakResponse> detector,
                           std::vector<std::shared_ptr<PeakDef> > &answer,
@@ -286,7 +286,7 @@ void findPeaksInUserRange( double x0, double x1, int nPeaks,
 
 
 void findPeaksInUserRange_linsubsolve( double x0, double x1, int nPeaks,
-                          MultiPeakInitialGuesMethod method,
+                                      MultiPeakInitialGuessMethod method,
                           std::shared_ptr<const SpecUtils::Measurement> dataH,
                           std::shared_ptr<const DetectorPeakResponse> detector,
                           std::vector<std::shared_ptr<PeakDef> > &answer,
@@ -339,9 +339,21 @@ double evaluate_polynomial( const double x,
  @param nbin The number of channels in the ROI.
  @param num_polynomial_terms The number of polynomial continuum terms to fit for.
         0 is no continuum (untested), 1 is constant, 2 is linear sloped continuum, etc
- @param step_continuum Specifies whether or not a step in the continuum is to be used.  Currently
+ @param step_continuum Specifies whether or not a step in the continuum is to be used.
+ @param means The peak means, in keV
+ @param sigmas The peak sigmas, in keV
+ @param fixedAmpPeaks The fixed amplitude peaks in the ROI, that we are not fitting for
+ @param skew_type The skew type to use for peaks that are being fit
+ @param skew_parameters The parameters that specify the skew; must have `PeakDef::num_skew_parameters(SkewType)` number
+        of entries; if no skew is used, may be `nullptr`.
+ @param[out] amplitudes The fit peak amplitudes
+ @param[out] continuum_coeffs The fit continuum coefficients
+ @param[out] amplitudes_uncerts The (statistical) uncertainties for the amplitudes
+ @param[out] continuum_coeffs_uncerts The (statistical) uncertainties for the continuum coefficients
  
  Currently the implementation is reasonably inefficient.
+ 
+ Skew uncertainties are also not taken into account in determining amplitude or continuum uncertainties.
  
  Throws exception upon ill-posed input.
  */
@@ -352,6 +364,8 @@ double fit_amp_and_offset( const float *energies, const float *data, const size_
                            const std::vector<double> &means,
                            const std::vector<double> &sigmas,
                            const std::vector<PeakDef> &fixedAmpPeaks,
+                           const PeakDef::SkewType skew_type,
+                           const double *skew_parameters,
                            std::vector<double> &amplitudes,
                            std::vector<double> &continuum_coeffs,
                            std::vector<double> &amplitudes_uncerts,
@@ -448,6 +462,8 @@ std::vector<PeakDef> search_for_peaks( const std::shared_ptr<const SpecUtils::Me
       Polynomial3rdOrder,
       SqrtEnergy
     };//enum ResolutionType
+    
+    // TODO: currently doesn't account for/fit peak skew
     
   protected:
     bool m_inited;

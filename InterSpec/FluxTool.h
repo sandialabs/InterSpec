@@ -51,6 +51,7 @@ class InterSpec;
 class FluxToolWidget;
 class DetectorDisplay;
 class RowStretchTreeView;
+class DetectorPeakResponse;
 
 namespace Wt
 {
@@ -162,9 +163,10 @@ protected:
   void distanceUpdated();
   void setTableNeedsUpdating();
   void refreshPeakTable();
+  void handleDrfChange( std::shared_ptr<DetectorPeakResponse> drf );
   
   
-  void setDisplayInfoLevel( const DisplayInfoLevel disptype );
+  void setDisplayInfoLevel( const DisplayInfoLevel disptype, const bool force );
   
 #if( FLUX_USE_COPY_TO_CLIPBOARD )
   void tableCopiedToCliboardCallback( const int copied );

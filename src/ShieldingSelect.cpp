@@ -1291,6 +1291,7 @@ ShieldingSelect::ShieldingSelect( MaterialDB *materialDB,
   m_closeIcon( nullptr ),
   m_addIcon( nullptr ),
   m_addTraceSourceItem( nullptr ),
+  m_fixedGeometry( false ),
   m_dimensionsStack( nullptr ),
   m_genericDiv( nullptr ),
   m_arealDensityEdit( nullptr ),
@@ -1333,12 +1334,13 @@ ShieldingSelect::ShieldingSelect( MaterialDB *materialDB,
     m_sourceModel( sourceModel ),
     m_geometry( GeometryType::Spherical ),
     m_materialSuggest( materialSuggest ),
-    m_materialEdit( NULL ),
+    m_materialEdit( nullptr ),
     m_isGenericMaterial( false ),
-    m_materialSummary( NULL ),
-    m_closeIcon( NULL ),
-    m_addIcon( NULL ),
+    m_materialSummary( nullptr ),
+    m_closeIcon( nullptr ),
+    m_addIcon( nullptr ),
     m_addTraceSourceItem( nullptr ),
+    m_fixedGeometry( false ),
     m_dimensionsStack( nullptr ),
     m_genericDiv( nullptr ),
     m_arealDensityEdit( nullptr ),
@@ -1346,16 +1348,22 @@ ShieldingSelect::ShieldingSelect( MaterialDB *materialDB,
     m_atomicNumberEdit( nullptr ),
     m_fitAtomicNumberCB( nullptr ),
     m_sphericalDiv( nullptr ),
+    m_thicknessEdit( nullptr ),
+    m_fitThicknessCB( nullptr ),
     m_cylindricalDiv( nullptr ),
     m_cylRadiusEdit( nullptr ),
     m_fitCylRadiusCB( nullptr ),
     m_cylLengthEdit( nullptr ),
     m_fitCylLengthCB( nullptr ),
     m_rectangularDiv( nullptr ),
-    m_thicknessEdit( NULL ),
-    m_fitThicknessCB( NULL ),
-    m_fitMassFrac( NULL ),
-    m_asSourceCBs( NULL ),
+    m_rectWidthEdit( nullptr ),
+    m_fitRectWidthCB( nullptr ),
+    m_rectHeightEdit( nullptr ),
+    m_fitRectHeightCB( nullptr ),
+    m_rectDepthEdit( nullptr ),
+    m_fitRectDepthCB( nullptr ),
+    m_fitMassFrac( nullptr ),
+    m_asSourceCBs( nullptr ),
     m_traceSources( nullptr )
 {
   init();
@@ -1923,6 +1931,8 @@ double ShieldingSelect::updateTotalTraceSourceActivityForGeometryChange( const S
 
 const TraceSrcDisplay *ShieldingSelect::traceSourceWidgetForNuclide( const SandiaDecay::Nuclide *nuc ) const
 {
+  assert( !m_fixedGeometry );
+  
   if( !m_traceSources || !nuc )
     return nullptr;
   
@@ -2019,12 +2029,12 @@ void ShieldingSelect::init()
   m_materialEdit->setAttributeValue( "spellcheck", "off" );
 #endif
 
-  m_materialEdit->changed().connect( this, &ShieldingSelect::handleMaterialChange );
-  m_materialEdit->enterPressed().connect( this, &ShieldingSelect::handleMaterialChange );
-  //m_materialEdit->blurred().connect( this, &ShieldingSelect::handleMaterialChange );
+  m_materialEdit->changed().connect( this, &ShieldingSelect::handleUserChangedMaterialName );
+  m_materialEdit->enterPressed().connect( this, &ShieldingSelect::handleUserChangedMaterialName );
 
+  // Instead of hooking undo/redo to changed(), we'll have handleUserChangedMaterialName() handle it
   // We will only insert an undo/redo step when the field losses focus.
-  m_materialEdit->changed().connect( this, &ShieldingSelect::handleUserChangeForUndoRedo );
+  //m_materialEdit->changed().connect( this, &ShieldingSelect::handleUserChangeForUndoRedo );
   
   if( m_forFitting )
   {
@@ -2508,7 +2518,7 @@ void ShieldingSelect::setTraceSourceMenuItemStatus()
   if( !m_addTraceSourceItem )
     return;
   
-  if( m_isGenericMaterial || !m_sourceModel )
+  if( m_isGenericMaterial || !m_sourceModel || m_fixedGeometry )
   {
     m_addTraceSourceItem->setDisabled( true );
     return;
@@ -2866,6 +2876,10 @@ Wt::Signal<ShieldingSelect *, shared_ptr<const string>, shared_ptr<const string>
 
 void ShieldingSelect::setGeometry( GammaInteractionCalc::GeometryType type )
 {
+  assert( !m_fixedGeometry || (type == GammaInteractionCalc::GeometryType::Spherical) );
+  if( m_fixedGeometry && (type != GammaInteractionCalc::GeometryType::Spherical) )
+    throw std::logic_error( "Geometry type must be spherical when fixed geometry" );
+  
   assert( type != GeometryType::NumGeometryType );
   if( type == GeometryType::NumGeometryType )
     throw runtime_error( "setGeometry: invalid geometry" );
@@ -2880,6 +2894,82 @@ GammaInteractionCalc::GeometryType ShieldingSelect::geometry() const
 {
   return m_geometry;
 }
+
+
+void ShieldingSelect::setFixedGeometry( const bool fixed_geom )
+{
+  if( !m_forFitting )
+    throw std::logic_error( "ShieldingSelect::setFixedGeometry: should not be called for non-fitting instances." );
+  
+  //if( fixed_geom == m_fixedGeometry )
+  //  return;
+  
+  m_fixedGeometry = fixed_geom;
+  if( m_fixedGeometry )
+  {
+    if( m_geometry != GammaInteractionCalc::GeometryType::Spherical )
+      setGeometry( GammaInteractionCalc::GeometryType::Spherical );
+    
+    vector<const SandiaDecay::Nuclide *> self_atten_nucs = selfAttenNuclides();
+    vector<const SandiaDecay::Nuclide *> trace_srcs = traceSourceNuclides();
+    
+    if( m_fitMassFrac )
+    {
+      m_fitMassFrac->setUnChecked();
+      m_fitMassFrac->hide();
+    }//if( m_fitMassFrac )
+    
+    if( m_traceSources )
+    {
+      for( WWidget *w : m_traceSources->children() )
+      {
+        TraceSrcDisplay *src = dynamic_cast<TraceSrcDisplay *>( w );
+        if( src )
+        {
+          src->deSelectNuclideNoEmit();
+          removeTraceSourceWidget( src );
+        }
+      }
+    }//if( m_traceSources )
+    
+    if( m_asSourceCBs )
+    {
+      for( const ElementToNuclideMap::value_type &etnp : m_sourceIsotopes )
+      {
+        for( WWidget *child : etnp.second->children() )
+        {
+          SourceCheckbox *cb = dynamic_cast<SourceCheckbox *>( child );
+          if( cb && cb->useAsSource() && cb->isotope() )
+          {
+            cb->setUseAsSource( false );
+            removingIsotopeAsSource().emit( cb->isotope(), ShieldingSourceFitCalc::ModelSourceType::Intrinsic );
+          }//if( cb->useAsSource() )
+        }//for( WWidget *child : children )
+        
+        etnp.second->hide();
+      }//for(...)
+      
+      m_asSourceCBs->hide();
+    }//if( m_asSourceCBs )
+    
+    assert( selfAttenNuclides().empty() );
+  }else
+  {
+    if( m_asSourceCBs )
+    {
+      if( !m_sourceIsotopes.empty() )
+        m_asSourceCBs->show();
+      
+      for( const ElementToNuclideMap::value_type &etnp : m_sourceIsotopes )
+      {
+        etnp.second->show();
+      }//for(...)
+    }//if( m_asSourceCBs )
+  }//if( m_fixedGeometry ) / else
+  
+  setTraceSourceMenuItemStatus();
+}//void setFixedGeometry( const bool fixed_geom );
+
 
 bool ShieldingSelect::isGenericMaterial() const
 {
@@ -3644,7 +3734,6 @@ void ShieldingSelect::modelNuclideAdded( const SandiaDecay::Nuclide *iso )
   cb->m_massFraction->hide();
 */
 
-
   if( m_asSourceCBs->isHidden() )
     m_asSourceCBs->show();
 }//void modelNuclideAdded( const std::string &symol )
@@ -3791,6 +3880,10 @@ void ShieldingSelect::setMassFractionDisplaysToMaterial( std::shared_ptr<const M
   if( !mat )
     return;
 
+  assert( !m_fixedGeometry );
+  if( m_fixedGeometry )
+    throw logic_error( "Cant set mass fraction when fixed geometry" );
+  
   //Lets go through and update the values displayed to the user of the
   //  isotopics
   for( ElementToNuclideMap::value_type &vt : m_sourceIsotopes )
@@ -4296,10 +4389,7 @@ void ShieldingSelect::handleMaterialChange()
       }//for( int row = 0; row < nrow; ++row )
     }//if( newMaterial )
 
-    if( m_sourceIsotopes.size() )
-      m_asSourceCBs->show();
-    else
-      m_asSourceCBs->hide();
+    m_asSourceCBs->setHidden( m_sourceIsotopes.empty() || m_fixedGeometry );
   }//if( previousMaterial != newMaterial )
 
   
@@ -4345,6 +4435,47 @@ void ShieldingSelect::handleMaterialChange()
   else
     m_materialChangedSignal.emit( this );
 }//void handleMaterialChange()
+
+
+void ShieldingSelect::handleUserChangedMaterialName()
+{
+  // When the user clicks on a  popup suggestions, first `m_materialEdit->changed()` is emitted
+  // with the current text being an invalid material (just whatever they have typed so far),
+  // then the `m_materialSuggest->activated()` signal is emitted (which updates the edits text),
+  // then `m_materialEdit->changed()` changed again, with the now correct text in the edit.
+  //
+  // This function tries to avoid showing the user an error from the first `changed()` signal
+  // where the text is just partial (by just putting back the previous valid text).
+  
+  const string text = SpecUtils::trim_copy( m_materialEdit->text().toUTF8() );
+  if( text == m_currentMaterialDescrip )
+    return;
+  
+  if( !text.empty()  )
+  {
+    const Material *mat = material( text );
+    
+    if( !mat )
+    {
+      //Check if `text` is the beginning of a shielding name, and if so, just set the text
+      //  to the previous value.  If we dont do this, and its an invalid material, then the
+      //  user will see an error message.
+      const vector<string> &material_names = m_materialDB->names();
+      for( const string &mat_name : material_names )
+      {
+        if( SpecUtils::istarts_with(mat_name, text) )
+        {
+          m_materialEdit->setText( WString::fromUTF8(m_currentMaterialDescrip) );
+          return;
+        }
+      }//for( const string &mat_name : material_names )
+    }//if( !mat )
+  }//if( !text.empty() && (text != m_currentMaterialDescrip) )
+  
+  handleMaterialChange();
+  
+  handleUserChangeForUndoRedo();
+}//void ShieldingSelect::handleUserChangedMaterialName()
 
 
 void ShieldingSelect::handleUserChangeForUndoRedoWorker( const bool emit_change )
@@ -4524,7 +4655,7 @@ void ShieldingSelect::fromShieldingInfo( const ShieldingSourceFitCalc::Shielding
       handleToggleGeneric();
     
     m_atomicNumberEdit->setValue( info.m_dimensions[0] );
-    m_arealDensityEdit->setValue( info.m_dimensions[1] );
+    m_arealDensityEdit->setValue( info.m_dimensions[1] * PhysicalUnits::cm2 / PhysicalUnits::gram );
     
     if( m_forFitting && m_fitArealDensityCB && m_fitAtomicNumberCB )
     {
@@ -4848,7 +4979,7 @@ void ShieldingSelect::serialize( rapidxml::xml_node<char> *parent_node ) const
   {
     const string msg = "Error roundtripping ShieldingSelect to URI and back: " + string(e.what());
     log_developer_error( __func__, msg.c_str() );
-    assert( 0 );
+//    assert( 0 );
   }//try
   
   /*
@@ -4949,7 +5080,7 @@ std::string ShieldingSelect::encodeStateToUrl() const
   const ShieldingSourceFitCalc::ShieldingInfo info = toShieldingInfo();
   string uri = info.encodeStateToUrl();
   
-  // Update distances to exactly match user input for roundtripping
+  // Update distances to exactly match user input for round-tripping
   auto updateval = [&uri]( const string name, WLineEdit *edit ){
     assert( edit );
     const auto pos = uri.find( "&" + name + "=" );
@@ -4968,7 +5099,14 @@ std::string ShieldingSelect::encodeStateToUrl() const
   switch( m_geometry )
   {
     case GammaInteractionCalc::GeometryType::Spherical:
-      updateval( "D1", m_thicknessEdit );
+      if( m_isGenericMaterial )
+      {
+        updateval( "AD", m_arealDensityEdit );
+        updateval( "AN", m_atomicNumberEdit );
+      }else
+      {
+        updateval( "D1", m_thicknessEdit );
+      }
       break;
       
     case GammaInteractionCalc::GeometryType::CylinderEndOn:
@@ -4997,7 +5135,7 @@ std::string ShieldingSelect::encodeStateToUrl() const
   // "G": geometry
   // "F": for fitting; if not specified than false
   // "D1": "D2": Thickness, depth, etc
-  // "FD1": "FD2": fit the cooresponding dimensions
+  // "FD1": "FD2": fit the corresponding dimensions
   // "N": material name
   // "AN": atomic number
   // "FAN": fit atomic number - if not specified than false
@@ -5015,17 +5153,20 @@ std::string ShieldingSelect::encodeStateToUrl() const
     answer += "&AD=" + m_arealDensityEdit->text().toUTF8();
     answer += "&AN=" + m_atomicNumberEdit->text().toUTF8();
     
-    if( m_forFitting && m_fitArealDensityCB->isChecked() )
-      answer += "FAN=1";
     if( m_forFitting && m_fitAtomicNumberCB->isChecked() )
-      answer += "FAD=1";
+      answer += "&FAN=1";
+    if( m_forFitting && m_fitArealDensityCB->isChecked() )
+      answer += "&FAD=1";
   }else
   {
-    std::string material = m_materialEdit->text().toUTF8();
-    SpecUtils::ireplace_all(material, "#", "%23" );
-    SpecUtils::ireplace_all(material, "&", "%26" );
+    std::string material_name = m_materialEdit->text().toUTF8();
+    SpecUtils::ireplace_all(material_name, "#", "%23" );
+    SpecUtils::ireplace_all(material_name, "&", "%26" );
     
-    answer += "&N=" + material;
+    if( !m_currentMaterial )
+      material_name = "";
+    
+    answer += "&N=" + material_name;
       
     switch( m_geometry )
     {
@@ -5083,7 +5224,7 @@ void ShieldingSelect::handleAppUrl( std::string query_str )
   info.handleAppUrl( query_str, m_materialDB );
   fromShieldingInfo( info );
   
-  // Update distances to exactly match user input for roundtripping
+  // Update distances to exactly match user input for round-tripping
   auto updateval = [&query_str]( const string name, WLineEdit *edit ){
     assert( edit );
     const auto pos = query_str.find( "&" + name + "=" );
@@ -5100,7 +5241,14 @@ void ShieldingSelect::handleAppUrl( std::string query_str )
   switch( m_geometry )
   {
     case GammaInteractionCalc::GeometryType::Spherical:
-      updateval( "D1", m_thicknessEdit );
+      if( m_isGenericMaterial )
+      {
+        updateval( "AD", m_arealDensityEdit );
+        updateval( "AN", m_atomicNumberEdit );
+      }else
+      {
+        updateval( "D1", m_thicknessEdit );
+      }
       break;
       
     case GammaInteractionCalc::GeometryType::CylinderEndOn:

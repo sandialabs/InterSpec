@@ -232,7 +232,12 @@ D3SpectrumDisplayDiv::D3SpectrumDisplayDiv( WContainerWidget *parent )
   m_axisColor( 0x00, 0x00, 0x00 ),
   m_chartMarginColor(),
   m_chartBackgroundColor(),
-  m_defaultPeakColor( 0, 51, 255, 155 )
+  m_defaultPeakColor( 0, 51, 255, 155 ),
+  m_cssRules{},
+  m_pendingJs{},
+  m_last_drag_time{},
+  m_continuum_being_drug( nullptr ),
+  m_last_being_drug_peaks()
 {
   addStyleClass( "D3SpectrumDisplayDiv" );
   
@@ -1835,8 +1840,39 @@ void D3SpectrumDisplayDiv::performExistingRoiEdgeDragWork(
       //Need to check that all peaks are Gaussian.
       //  Actually should make sure a ROI can only have data defined or Gausian peaks only (what happens now)
       std::shared_ptr<const DetectorPeakResponse> detector;
+      
+      // As user drag a ROI, the parameters may change substantially, but we are always comparing against the
+      //  original peaks chi2/dof; instead we should compare to the last peaks fit that were used, and the original ones
+      const auto now = chrono::steady_clock::now();
+      const auto dt = now - m_last_drag_time;
+      if( (m_continuum_being_drug == continuum)
+         && (new_roi_initial_peaks.size() == m_last_being_drug_peaks.size())
+         && !m_last_being_drug_peaks.empty()
+         && (dt < std::chrono::seconds(15)) )
+      {
+        cout << "Using previously drug-n-fit peaks" << endl;
+        
+        const auto old_continuum = m_last_being_drug_peaks.front()->continuum();
+        assert( old_continuum );
+        auto new_continuum = std::make_shared<PeakContinuum>( *old_continuum );
+        new_continuum->setRange( new_lower_energy, new_upper_energy );
+        
+        new_roi_initial_peaks.clear();
+        for( const auto &p : m_last_being_drug_peaks )
+        {
+          auto newpeak = make_shared<PeakDef>( *p );
+          newpeak->setContinuum( new_continuum );
+          new_roi_initial_peaks.push_back( newpeak );
+        }
+      }//if( we should start from the peaks we last fit while dragging )
+      
       vector<shared_ptr<const PeakDef>> refitpeaks
                   = refitPeaksThatShareROI( foreground, detector, new_roi_initial_peaks, 3.0 );
+      
+      m_continuum_being_drug = continuum;
+      m_last_being_drug_peaks = refitpeaks;
+      m_last_drag_time = chrono::steady_clock::now();
+      
       
       //If the fit failed, use the old peaks, but with the ROI changed to what the user has
       const auto &newpeaks = refitpeaks.empty() ? new_roi_initial_peaks : refitpeaks;
@@ -1844,13 +1880,19 @@ void D3SpectrumDisplayDiv::performExistingRoiEdgeDragWork(
       if( isfinal )
       {
         // TODO: add a `PeakModel::replacePeaks(orig,newer)` function to allow updating peak quanitites in one step, or allow setting kLowerX/kUpperX columns in setData(...) function
-        peakModel->removePeaks( orig_roi_peaks );
+        
+        // TODO: or rather, to consider: we could `m_continuum_being_drug` use, so that we get exactly what is shown
         
         std::vector<PeakDef> peaks_to_add;
         for( auto p : newpeaks )
           peaks_to_add.push_back( *p );
         
+        peakModel->removePeaks( orig_roi_peaks );
         peakModel->addPeaks( peaks_to_add );
+        
+        m_continuum_being_drug.reset();
+        m_last_being_drug_peaks.clear();
+        m_last_drag_time = chrono::steady_clock::time_point{};
       }else
       {
         spectrum->updateRoiBeingDragged( newpeaks );
@@ -1995,14 +2037,14 @@ void D3SpectrumDisplayDiv::performDragCreateRoiWork( double lower_energy, double
                      nForcedPeaks, lower_energy, upper_energy, foreground, detector]( const size_t index ){
         std::vector<std::shared_ptr<PeakDef> > newpeaks;
         const auto method = (static_cast<size_t>(npeakstry[index])==ncandidates)
-        ? MultiPeakInitialGuesMethod::FromDataInitialGuess
-        :  MultiPeakInitialGuesMethod::UniformInitialGuess;
+        ? MultiPeakInitialGuessMethod::FromDataInitialGuess
+        :  MultiPeakInitialGuessMethod::UniformInitialGuess;
         
         
         //Note: InterSpec::findPeakFromControlDrag(...) tries all methods, e.g.,
-        //for( MultiPeakInitialGuesMethod method = MultiPeakInitialGuesMethod(0);
+        //for( MultiPeakInitialGuessMethod method = MultiPeakInitialGuessMethod(0);
         //    method < FromInputPeaks;
-        //    method = MultiPeakInitialGuesMethod(method+1) )
+        //    method = MultiPeakInitialGuessMethod(method+1) )
         //{
         //  ...
         //}

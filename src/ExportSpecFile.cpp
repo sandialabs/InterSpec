@@ -971,12 +971,12 @@ void ExportSpecFileTool::init()
 #if( BUILD_AS_OSX_APP || IOS )
   m_export_btn = new WAnchor( WLink(m_resource), btnsDiv );
   m_export_btn->setTarget( AnchorTarget::TargetNewWindow );
-  m_export_btn->setStyleClass( "DownloadLink ExportSpecExportBtn" );
+  m_export_btn->setStyleClass( "LinkBtn DownloadLink ExportSpecExportBtn" );
 #else
   m_export_btn = new WPushButton( btnsDiv );
   m_export_btn->setLink( WLink(m_resource) );
   m_export_btn->setLinkTarget( AnchorTarget::TargetNewWindow );
-  m_export_btn->setStyleClass( "LinkBtn DownloadBtn ExportSpecExportBtn" );
+  m_export_btn->setStyleClass( "LightButton LinkBtn DownloadBtn ExportSpecExportBtn" );
     
 #if( ANDROID )
   // Using hacked saving to temporary file in Android, instead of via network download of file.

@@ -276,7 +276,8 @@ namespace
                 case 35: val = static_cast<int>(SpecUtils::DetectorType::VerifinderNaI); break;
                 case 36: val = static_cast<int>(SpecUtils::DetectorType::VerifinderLaBr); break;
                 case 37: val = static_cast<int>(SpecUtils::DetectorType::KromekD3S); break;
-                case 38: val = static_cast<int>(SpecUtils::DetectorType::Unknown); break;
+                case 38: val = static_cast<int>(SpecUtils::DetectorType::RadiaCode); break;
+                case 39: val = static_cast<int>(SpecUtils::DetectorType::Unknown); break;
                   
                 default:
                   throw runtime_error( "Unknown DetectionSystemType value type" );
@@ -314,7 +315,11 @@ namespace
             //if( !(stringstream(value_str) >> value) ) //Should have been valideted client-side, but lets be safe
             //  throw runtime_error( "Could not convert '" + value_str + "' to a floating point" );
             double value = std::numeric_limits<double>::infinity();
+#if( SpecFileQuery_TIME_AS_SECONDS )
+            stringstream(value_str) >> value;
+#else
             try{ value = PhysicalUnits::stringToTimeDuration( value_str ); }catch(...){}
+#endif
             
             testitem.set_numeric_test( field, value, matchtype );
             break;
@@ -360,7 +365,8 @@ namespace
             break;
           }//case( a string field )
             
-          case FileDataField::StartTime:
+          case FileDataField::StartTimeIoI:
+          case FileDataField::MeasurementsStartTimes:
           {
             const std::string &value_str = t.get("value");
             
@@ -463,10 +469,43 @@ namespace
       {
         const boost::any title = m_model->headerData( col, Horizontal, DisplayRole );
         const WString titlestr = Wt::asString( title );
+        string titlestr_utf8 = titlestr.toUTF8();
+        
+        switch( FileDataField(col) )
+        {
+          case FileDataField::TotalLiveTime:
+          case FileDataField::TotalRealTime:
+          case FileDataField::IndividualSpectrumLiveTime:
+          case FileDataField::IndividualSpectrumRealTime:
+#if( !SpecFileQuery_TIME_AS_SECONDS )
+            titlestr_utf8 += " (s)";
+#endif
+            break;
+            
+          default:
+            break;
+        }//switch( FileDataField(col) )
+        
         response.out() << (col ? "," : "");
-        output_csv_field(	response.out(), titlestr.toUTF8() );
+        output_csv_field(	response.out(), titlestr_utf8 );
       }
       response.out() << "\r\n";
+      
+      auto to_excel_dt = []( const string &v ) -> string {
+        try
+        {
+          const SpecUtils::time_point_t tp = SpecUtils::time_from_string( v );
+          if( SpecUtils::is_special(tp) )
+            throw runtime_error("");
+          
+          string timestr = SpecUtils::to_extended_iso_string( tp ); //"2014-04-14T14:12:01.621543"
+          SpecUtils::ireplace_all(timestr, "T", " " );
+          return (timestr.empty() ? v : timestr);
+        }catch(...)
+        {
+        }
+        return v;
+      };//to_excel_dt
       
       const int nrow = m_model->rowCount();
       for( int row = 0; row < nrow; ++row )
@@ -475,11 +514,110 @@ namespace
         {
           const boost::any txt = m_model->data( row, col, Wt::DisplayRole /* (col==FileDataField::Filename ? UserRole : DisplayRole)*/ );
           const WString txtstr = Wt::asString( txt );
-          const string utf8txt = txtstr.toUTF8();
+          string utf8txt = txtstr.toUTF8();
+          
+          switch( FileDataField(col) )
+          {
+            case FileDataField::ParentPath:  //be lazy and just use full file path
+            case FileDataField::Filename:
+            case FileDataField::DetectorName:
+            case FileDataField::SerialNumber:
+            case FileDataField::Manufacturer:
+            case FileDataField::Model:
+            case FileDataField::Uuid:
+            case FileDataField::Remark:
+            case FileDataField::LocationName:
+            case FileDataField::AnalysisResultText:
+            case FileDataField::AnalysisResultNuclide:
+            case FileDataField::HasRIIDAnalysis:
+            case FileDataField::DetectionSystemType:
+            case FileDataField::SearchMode:
+            case FileDataField::ContainedNuetronDetector:
+            case FileDataField::ContainedDeviationPairs:
+            case FileDataField::HasGps:
+            case FileDataField::EnergyCalibrationType:
+            case FileDataField::NumberOfSamples:
+            case FileDataField::NumberOfRecords:
+            case FileDataField::NumberOfGammaChannels:
+            case FileDataField::MaximumGammaEnergy:
+            case FileDataField::Latitude:
+            case FileDataField::Longitude:
+            case FileDataField::NeutronCountRate:
+            case FileDataField::GammaCountRate:
+               break;
+             
+            case FileDataField::TotalLiveTime:
+            case FileDataField::TotalRealTime:
+#if( !SpecFileQuery_TIME_AS_SECONDS )
+              try
+              {
+                // Convert to decimal number of seconds, for ease of use in Excel
+                const double t = PhysicalUnits::stringToTimeDuration( utf8txt );
+                utf8txt = PhysicalUnits::printCompact( t/PhysicalUnits::second, 7 );
+              }catch(...)
+              {
+              }
+#endif
+              break;
+              
+            case FileDataField::IndividualSpectrumLiveTime:
+            case FileDataField::IndividualSpectrumRealTime:
+            {
+#if( !SpecFileQuery_TIME_AS_SECONDS )
+              // Convert to decimal number of seconds, for ease of use in Excel
+              string answer;
+              vector<string> fields;
+              SpecUtils::split( fields, utf8txt, ";" );
+              for( const string &v : fields )
+              {
+                answer += (answer.empty() ? "" : ";");
+                
+                try
+                {
+                  const double t = PhysicalUnits::stringToTimeDuration( v );
+                  answer += PhysicalUnits::printCompact( t, 7 );
+                }catch(...)
+                {
+                  answer += v;
+                }
+              }
+              
+              utf8txt = answer.empty() ? utf8txt : answer;
+#endif
+              break;
+            }//case IndividualSpectrum{LiveTime|RealTime}
+           
+            case FileDataField::StartTimeIoI:
+            {
+              //Convert to like "2023-01-24 08:13:12.123", so Excel will accept
+              utf8txt = to_excel_dt( utf8txt );
+              break;
+            }//case FileDataField::StartTimeIoI:
+           
+            case FileDataField::MeasurementsStartTimes:
+            {
+              //Convert to like "2023-01-24 08:13:12.123", so Excel will accept
+              string answer;
+              vector<string> fields;
+               
+              SpecUtils::split( fields, utf8txt, ";" );
+              for( const string &v : fields )
+                answer += (answer.empty() ? "" : ";") + to_excel_dt( v );
+              
+              utf8txt = answer.empty() ? utf8txt : answer;
+               break;
+             }//case StartTime:
+               
+             case NumFileDataFields:
+               break;
+              
+            default:
+              break;
+           }//switch( FileDataField(column) )
           
           response.out() << (col ? "," : "");
           output_csv_field(	response.out(), utf8txt );
-        }
+        }//for( int col = 0; col < ncol; ++col )
         
         response.out() << "\r\n";
       }//for( int row = 0; row < nrow; ++row )
@@ -493,6 +631,16 @@ namespace
   {
     const size_t max_cell_size = 1024;
     vector<string> row( NumFileDataFields + xmlfilters.size(), "" );
+    
+#if( SpecFileQuery_TIME_AS_SECONDS )
+    auto print_to_milli = []( const double time ) -> string {
+      //char buffer[64];
+      //snprintf(buffer, sizeof(buffer), "%.3f", (time/PhysicalUnits::second) );
+      
+      const size_t precision = static_cast<size_t>( max(0.0, ceil(log10(time))) + 3 );
+      return PhysicalUnits::printCompact(time, precision);
+    };
+#endif
     
     for( FileDataField f = FileDataField(0); f < NumFileDataFields; f = FileDataField(f+1) )
     {
@@ -639,18 +787,30 @@ namespace
         }//case FileDataField::EnergyCalibrationType:
           
         case FileDataField::TotalLiveTime:
+#if( SpecFileQuery_TIME_AS_SECONDS )
+          row[f] = print_to_milli( meas.total_livetime );
+#else
           row[f] = PhysicalUnits::printToBestTimeUnits( meas.total_livetime );
+#endif
           break;
           
         case FileDataField::TotalRealTime:
+#if( SpecFileQuery_TIME_AS_SECONDS )
+          row[f] = print_to_milli( meas.total_realtime );
+#else
           row[f] = PhysicalUnits::printToBestTimeUnits( meas.total_realtime );
+#endif
           break;
           
         case FileDataField::IndividualSpectrumLiveTime:
         {
           for( const auto lt : meas.individual_spectrum_live_time )
           {
+#if( SpecFileQuery_TIME_AS_SECONDS )
+            row[f] += (row[f].size()?";":"") + print_to_milli(lt);
+#else
             row[f] += (row[f].size()?";":"") + PhysicalUnits::printToBestTimeUnits(lt);
+#endif
             if( row[f].size() > max_cell_size )
               break;
           }
@@ -661,7 +821,12 @@ namespace
         {
           for( const auto lt : meas.individual_spectrum_real_time )
           {
+#if( SpecFileQuery_TIME_AS_SECONDS )
+            row[f] += (row[f].size()?";":"") + print_to_milli(lt);
+#else
             row[f] += (row[f].size()?";":"") + PhysicalUnits::printToBestTimeUnits(lt);
+#endif
+            
             if( row[f].size() > max_cell_size )
               break;
           }
@@ -736,7 +901,15 @@ namespace
           break;
         }//case FileDataField::NeutronCountRate:
           
-        case FileDataField::StartTime:
+        case FileDataField::StartTimeIoI:
+        {
+          const boost::posix_time::ptime epoch(boost::gregorian::date(1970,1,1));
+          row[f] = SpecUtils::to_iso_string(std::chrono::time_point_cast<std::chrono::microseconds>(to_time_point(epoch + boost::posix_time::seconds(meas.start_time_ioi))) );
+          
+          break;
+        }//case FileDataField::StartTimeIoI:
+          
+        case FileDataField::MeasurementsStartTimes:
         {
           for( const auto &st : meas.start_times )
           {
@@ -873,24 +1046,26 @@ protected:
       switch( FileDataField(m_column) )
       {
         case FileDataField::ParentPath:  //be lazy and just use full file path
-        case Filename:
+        case FileDataField::Filename:
           lesthan = (SpecUtils::filename(lhs[m_column]) < SpecUtils::filename(rhs[m_column]));
           break;
           
-        case DetectorName: case SerialNumber: case Manufacturer:
-        case Model: case Uuid: case Remark: case LocationName:
-        case AnalysisResultText: case AnalysisResultNuclide:
-        case HasRIIDAnalysis:
-        case DetectionSystemType: case SearchMode:
-        case ContainedNuetronDetector: case ContainedDeviationPairs:
-        case HasGps: case EnergyCalibrationType:
+        case FileDataField::DetectorName: case FileDataField::SerialNumber:
+        case FileDataField::Manufacturer:
+        case FileDataField::Model: case FileDataField::Uuid:
+        case FileDataField::Remark: case FileDataField::LocationName:
+        case FileDataField::AnalysisResultText: case FileDataField::AnalysisResultNuclide:
+        case FileDataField::HasRIIDAnalysis:
+        case FileDataField::DetectionSystemType: case FileDataField::SearchMode:
+        case FileDataField::ContainedNuetronDetector: case FileDataField::ContainedDeviationPairs:
+        case FileDataField::HasGps: case FileDataField::EnergyCalibrationType:
           lesthan = (lhs[m_column] < rhs[m_column]);
           break;
         
-        case TotalLiveTime:
-        case TotalRealTime:
-        case IndividualSpectrumLiveTime:
-        case IndividualSpectrumRealTime:
+        case FileDataField::TotalLiveTime:
+        case FileDataField::TotalRealTime:
+        case FileDataField::IndividualSpectrumLiveTime:
+        case FileDataField::IndividualSpectrumRealTime:
         {
           const size_t lhssemi = lhs[m_column].find( ';' );
           const size_t rhssemi = lhs[m_column].find( ';' );
@@ -899,6 +1074,10 @@ protected:
           
           bool pl = true, pr = true;
           double lhsval, rhsval;
+#if( SpecFileQuery_TIME_AS_SECONDS )
+          pl = !!(stringstream(lhsstr) >> lhsval);
+          pr = !!(stringstream(rhsstr) >> rhsval);
+#else
           try
           {
             lhsval = PhysicalUnits::stringToTimeDuration( lhsstr );
@@ -914,6 +1093,7 @@ protected:
           {
             pr = false;
           }
+#endif
           
           if( pl && pr )
             lesthan = (lhsval < rhsval);
@@ -922,14 +1102,14 @@ protected:
           break;
         }
           
-        case NumberOfSamples:
-        case NumberOfRecords:
-        case NumberOfGammaChannels:
-        case MaximumGammaEnergy:
-        case Latitude:
-        case Longitude:
-        case NeutronCountRate:
-        case GammaCountRate:
+        case FileDataField::NumberOfSamples:
+        case FileDataField::NumberOfRecords:
+        case FileDataField::NumberOfGammaChannels:
+        case FileDataField::MaximumGammaEnergy:
+        case FileDataField::Latitude:
+        case FileDataField::Longitude:
+        case FileDataField::NeutronCountRate:
+        case FileDataField::GammaCountRate:
         {
           const size_t lhssemi = lhs[m_column].find( ';' );
           const size_t rhssemi = lhs[m_column].find( ';' );
@@ -947,12 +1127,22 @@ protected:
           break;
         }//
           
-        case StartTime:
+        case FileDataField::StartTimeIoI:
+        {
+          const auto l = SpecUtils::time_from_string( lhs[m_column] );
+          const auto r = SpecUtils::time_from_string( rhs[m_column] );
+          
+          lesthan = (l < r);
+          
+          break;
+        }//case FileDataField::StartTimeIoI:
+          
+        case FileDataField::MeasurementsStartTimes:
         {
           const size_t lhssemi = lhs[m_column].find( ';' );
-          const size_t rhssemi = lhs[m_column].find( ';' );
+          const size_t rhssemi = rhs[m_column].find( ';' );
           const string lhsstr = ((lhssemi==string::npos) ? lhs[m_column] : lhs[m_column].substr(0,lhssemi));
-          const string rhsstr = ((rhssemi==string::npos) ? rhs[m_column] : rhs[m_column].substr(0,lhssemi));
+          const string rhsstr = ((rhssemi==string::npos) ? rhs[m_column] : rhs[m_column].substr(0,rhssemi));
           
           const auto l = SpecUtils::time_from_string( lhsstr.c_str() );
           const auto r = SpecUtils::time_from_string( rhsstr.c_str() );
@@ -962,7 +1152,7 @@ protected:
           break;
         }
           
-        case NumFileDataFields:
+        case FileDataField::NumFileDataFields:
           break;
       }//switch( FileDataField(column) )
       
@@ -1156,40 +1346,48 @@ public:
     
     switch( SpecFileQuery::FileDataField(section) )
     {
-      case FileDataField::ParentPath:  return WString("Parent Path");
-      case Filename:                   return WString("Filename");
-      case DetectorName:               return WString("Detectors Name");
-      case SerialNumber:               return WString("Serial Number");
-      case Manufacturer:               return WString("Manufacturer");
-      case Model:                      return WString("Model");
-      case Uuid:                       return WString("UUID");
-      case Remark:                     return WString("Remarks");
-      case LocationName:               return WString("Location Name");
-      case AnalysisResultText:         return WString("Analysis Txt");
-      case HasRIIDAnalysis:            return WString("RIID Results");
-      case AnalysisResultNuclide:      return WString("Analysis Nuclide");
-      case DetectionSystemType:        return WString("Detector Type");
-      case SearchMode:                 return WString("Aquisition Mode");
-      case ContainedNuetronDetector:   return WString("Has Neutron");
-      case ContainedDeviationPairs:    return WString("Dev. Pairs");
-      case HasGps:                     return WString("GPS Info");
-      case EnergyCalibrationType:      return WString("Energy Cal. Type");
-      case TotalLiveTime:              return WString("Sum Live Time");
-      case TotalRealTime:              return WString("Sum Wall Time");
-      case IndividualSpectrumLiveTime: return WString("Spec Live Times");
-      case IndividualSpectrumRealTime: return WString("Spec Wall Times");
-      case NumberOfSamples:            return WString("Num Samples");
-      case NumberOfRecords:            return WString("Num Records");
-      case NumberOfGammaChannels:      return WString("Num Gamma Channels");
-      case MaximumGammaEnergy:         return WString("Max Gamma Energy");
-      case Latitude:                   return WString("Latitude");
-      case Longitude:                  return WString("Longitude");
-      case NeutronCountRate:           return WString("Neutron CPS");
-      case GammaCountRate:             return WString("Gamma CPS");
-      case StartTime:                  return WString("Start Time");
+      case FileDataField::ParentPath:                 return WString("Parent Path");
+      case FileDataField::Filename:                   return WString("Filename");
+      case FileDataField::DetectorName:               return WString("Detectors Name");
+      case FileDataField::SerialNumber:               return WString("Serial Number");
+      case FileDataField::Manufacturer:               return WString("Manufacturer");
+      case FileDataField::Model:                      return WString("Model");
+      case FileDataField::Uuid:                       return WString("UUID");
+      case FileDataField::Remark:                     return WString("Remarks");
+      case FileDataField::LocationName:               return WString("Location Name");
+      case FileDataField::AnalysisResultText:         return WString("Analysis Txt");
+      case FileDataField::HasRIIDAnalysis:            return WString("RIID Results");
+      case FileDataField::AnalysisResultNuclide:      return WString("Analysis Nuclide");
+      case FileDataField::DetectionSystemType:        return WString("Detector Type");
+      case FileDataField::SearchMode:                 return WString("Acquisition Mode");
+      case FileDataField::ContainedNuetronDetector:   return WString("Has Neutron");
+      case FileDataField::ContainedDeviationPairs:    return WString("Dev. Pairs");
+      case FileDataField::HasGps:                     return WString("GPS Info");
+      case FileDataField::EnergyCalibrationType:      return WString("Energy Cal. Type");
+#if( SpecFileQuery_TIME_AS_SECONDS )
+      case FileDataField::TotalLiveTime:              return WString("Sum Live Time (s)");
+      case FileDataField::TotalRealTime:              return WString("Sum Wall Time (s)");
+      case FileDataField::IndividualSpectrumLiveTime: return WString("Spec Live Times (s)");
+      case FileDataField::IndividualSpectrumRealTime: return WString("Spec Wall Times (s)");
+#else
+      case FileDataField::TotalLiveTime:              return WString("Sum Live Time");
+      case FileDataField::TotalRealTime:              return WString("Sum Wall Time");
+      case FileDataField::IndividualSpectrumLiveTime: return WString("Spec Live Times");
+      case FileDataField::IndividualSpectrumRealTime: return WString("Spec Wall Times");
+#endif //SpecFileQuery_TIME_AS_SECONDS
+      case FileDataField::NumberOfSamples:            return WString("Num Samples");
+      case FileDataField::NumberOfRecords:            return WString("Num Records");
+      case FileDataField::NumberOfGammaChannels:      return WString("Num Gamma Channels");
+      case FileDataField::MaximumGammaEnergy:         return WString("Max Gamma Energy");
+      case FileDataField::Latitude:                   return WString("Latitude");
+      case FileDataField::Longitude:                  return WString("Longitude");
+      case FileDataField::NeutronCountRate:           return WString("Neutron CPS");
+      case FileDataField::GammaCountRate:             return WString("Gamma CPS");
+      case FileDataField::StartTimeIoI:               return WString("Start Time");
+      case FileDataField::MeasurementsStartTimes:     return WString("Meas. Start Times");
         
       case SpecFileQuery::NumFileDataFields: break;
-    }
+    }//switch( SpecFileQuery::FileDataField(section) )
       
     return boost::any();
   }//headerData

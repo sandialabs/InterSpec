@@ -31,7 +31,7 @@
 #include <vector>
 #include <ostream>
 
-#include "InterSpec/PeakDef.h" //for PeakContinuum::OffsetType
+#include "InterSpec/PeakDef.h" //for PeakContinuum::OffsetType and PeakDef::SkewType
 
 
 // Forward declarations
@@ -296,6 +296,10 @@ struct Options
    fail.
    */
   RelActCalc::PuCorrMethod pu242_correlation_method;
+  
+  
+  /** Under development */
+  PeakDef::SkewType skew_type;
   
   static const int sm_xmlSerializationVersion = 0;
   rapidxml::xml_node<char> *toXml( ::rapidxml::xml_node<char> *parent ) const;

@@ -580,7 +580,7 @@ JNIEXPORT
   JNIEXPORT
   jint
   JNICALL
-  Java_gov_sandia_InterSpec_removeSessionToken( JNIEnv* env, jobject thiz, jstring jtoken )
+  Java_gov_sandia_InterSpec_InterSpec_removeSessionToken( JNIEnv* env, jobject thiz, jstring jtoken )
   {
     const std::string token = std::string(env->GetStringUTFChars(jtoken, nullptr));
 
@@ -603,7 +603,7 @@ JNIEXPORT
   JNIEXPORT
   jint
   JNICALL
-  Java_gov_sandia_InterSpec_setInitialFileToLoad( JNIEnv* env, jobject thiz, jstring jtoken, jstring jfilepath )
+  Java_gov_sandia_InterSpec_InterSpec_setInitialFileToLoad( JNIEnv* env, jobject thiz, jstring jtoken, jstring jfilepath )
   {
     const std::string token = std::string(env->GetStringUTFChars(jtoken, nullptr));
     const std::string filepath = std::string(env->GetStringUTFChars(jfilepath, nullptr));

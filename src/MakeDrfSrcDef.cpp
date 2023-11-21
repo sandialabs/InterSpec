@@ -38,16 +38,19 @@
 #include <Wt/WContainerWidget>
 #include <Wt/WSuggestionPopup>
 
+#include "SpecUtils/StringAlgo.h"
+
+#include "SandiaDecay/SandiaDecay.h"
+
 #include "InterSpec/PeakDef.h"
 #include "InterSpec/InterSpec.h"
 #include "InterSpec/MaterialDB.h"
 #include "InterSpec/HelpSystem.h"
-#include "SpecUtils/StringAlgo.h"
 #include "InterSpec/MakeDrfSrcDef.h"
-#include "SandiaDecay/SandiaDecay.h"
 #include "InterSpec/PhysicalUnits.h"
 #include "InterSpec/ShieldingSelect.h"
 #include "InterSpec/NativeFloatSpinBox.h"
+#include "InterSpec/DetectorPeakResponse.h"
 #include "InterSpec/IsotopeSelectionAids.h"
 //#include "InterSpec/IsotopeNameFilterModel.h"
 
@@ -79,7 +82,9 @@ MakeDrfSrcDef::MakeDrfSrcDef( const SandiaDecay::Nuclide *nuc,
   m_materialDB( materialDB ),
   m_materialSuggest( materialSuggest ),
   m_nuclideLabel( nullptr ),
+  m_distanceLabel( nullptr ),
   m_distanceEdit( nullptr ),
+  m_activityLabel( nullptr ),
   m_activityEdit( nullptr ),
   m_activityUncertainty( nullptr ),
   m_useAgeInfo( nullptr ),
@@ -198,7 +203,7 @@ void MakeDrfSrcDef::create()
 */
   
   cell = m_table->elementAt(sm_distance_row,0);
-  WLabel *label = new WLabel( "Distance", cell );
+  m_distanceLabel = new WLabel( "Distance", cell );
   cell = m_table->elementAt(sm_distance_row,1);
   m_distanceEdit = new WLineEdit( cell );
   m_distanceEdit->setTextSize( 16 );
@@ -209,7 +214,7 @@ void MakeDrfSrcDef::create()
   m_distanceEdit->setAttributeValue( "autocorrect", "off" );
   m_distanceEdit->setAttributeValue( "spellcheck", "off" );
 #endif
-  label->setBuddy( m_distanceEdit );
+  m_distanceLabel->setBuddy( m_distanceEdit );
   WRegExpValidator *distValidator = new WRegExpValidator( PhysicalUnits::sm_distanceUnitOptionalRegex, this );
   distValidator->setFlags( Wt::MatchCaseInsensitive );
   m_distanceEdit->setValidator( distValidator );
@@ -219,7 +224,7 @@ void MakeDrfSrcDef::create()
   
   
   cell = m_table->elementAt(sm_activity_row,0);
-  label = new WLabel( "Activity", cell );
+  m_activityLabel = new WLabel( "Activity", cell );
   
   cell = m_table->elementAt(sm_activity_row,1);
   m_activityEdit = new WLineEdit( cell );
@@ -231,7 +236,7 @@ void MakeDrfSrcDef::create()
   m_activityEdit->setAttributeValue( "spellcheck", "off" );
 #endif
   m_activityEdit->setTextSize( 16 );
-  label->setBuddy( m_activityEdit );
+  m_activityLabel->setBuddy( m_activityEdit );
   
   WRegExpValidator *val = new WRegExpValidator( PhysicalUnits::sm_activityRegex, this );
   val->setFlags( Wt::MatchCaseInsensitive );
@@ -242,7 +247,7 @@ void MakeDrfSrcDef::create()
   m_activityEdit->enterPressed().connect( this, &MakeDrfSrcDef::handleUserChangedActivity );
 
   cell = m_table->elementAt(sm_activity_uncert_row,0);
-  label = new WLabel( "Act. Uncert.&nbsp;", cell );  //The nbsp is to make this the longest label so when acti ity or shielding is shown, the width doesnt get changed
+  WLabel *label = new WLabel( "Act. Uncert.&nbsp;", cell );  //The nbsp is to make this the longest label so when acti ity or shielding is shown, the width doesnt get changed
   cell = m_table->elementAt(sm_activity_uncert_row,1);
   m_activityUncertainty = new WDoubleSpinBox( cell );
   m_activityUncertainty->setValue( 0.0 );
@@ -559,6 +564,11 @@ double MakeDrfSrcDef::enteredActivity() const
 
 double MakeDrfSrcDef::distance() const
 {
+  assert( !m_distanceEdit->isHidden() );
+  
+  if( m_distanceEdit->isHidden() )
+    throw runtime_error( "MakeDrfSrcDef: should not be calling distance, when a fixed geometry." );
+  
   const string txt = m_distanceEdit->text().toUTF8();
   return PhysicalUnits::stringToDistance(txt);
 }
@@ -773,6 +783,49 @@ void MakeDrfSrcDef::setShielding( const float atomic_number, const float areal_d
   m_shieldingSelect->setHidden( false );
   m_shieldingSelect->setAtomicNumberAndArealDensity( atomic_number, areal_density );
 }//void setShielding( const float atomic_number, const float areal_density )
+
+
+void MakeDrfSrcDef::setIsEffGeometryType( const int drf_eff_geom_type )
+{
+  const auto type = static_cast<DetectorPeakResponse::EffGeometryType>( drf_eff_geom_type );
+  
+  assert( (type == DetectorPeakResponse::EffGeometryType::FarField)
+         || (type == DetectorPeakResponse::EffGeometryType::FixedGeomTotalAct)
+         || (type == DetectorPeakResponse::EffGeometryType::FixedGeomActPerCm2)
+         || (type == DetectorPeakResponse::EffGeometryType::FixedGeomActPerM2)
+         || (type == DetectorPeakResponse::EffGeometryType::FixedGeomActPerGram) );
+  
+  bool hide_distance = false;
+  const char *text = "Activity";
+  switch( type )
+  {
+    case DetectorPeakResponse::EffGeometryType::FarField:
+      hide_distance = false;
+      text = "Activity";
+      break;
+      
+    case DetectorPeakResponse::EffGeometryType::FixedGeomTotalAct:
+      hide_distance = true;
+      text = "Total Act.";
+      break;
+    case DetectorPeakResponse::EffGeometryType::FixedGeomActPerCm2:
+      hide_distance = true;
+      text = "Act./cm2";
+      break;
+    case DetectorPeakResponse::EffGeometryType::FixedGeomActPerM2:
+      hide_distance = true;
+      text = "Act./m2";
+      break;
+    case DetectorPeakResponse::EffGeometryType::FixedGeomActPerGram:
+      hide_distance = true;
+      text = "Act./gram";
+      break;
+  }//switch( type )
+  
+  m_activityLabel->setText( text );
+  m_distanceEdit->setHidden( hide_distance );
+  m_distanceLabel->setHidden( hide_distance );
+}//void setIsEffGeometryType( const bool is_fixed )
 
 
 std::string MakeDrfSrcDef::toGadrasLikeSourceString() const

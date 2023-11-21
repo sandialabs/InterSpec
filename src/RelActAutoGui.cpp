@@ -73,6 +73,7 @@
 #include "InterSpec/RelActAutoGui.h"
 #include "InterSpec/WarningWidget.h"
 #include "InterSpec/RelActCalcAuto.h"
+#include "InterSpec/UndoRedoManager.h"
 #include "InterSpec/RelActTxtResults.h"
 #include "InterSpec/NativeFloatSpinBox.h"
 #include "InterSpec/DecayDataBaseServer.h"
@@ -326,7 +327,7 @@ namespace
       
       m_continuum_type->setCurrentIndex( static_cast<int>(PeakContinuum::OffsetType::Linear) );
       m_continuum_type->changed().connect( this, &RelActAutoEnergyRange::handleContinuumTypeChange );
-      
+
       m_force_full_range = new WCheckBox( "Force full-range", this );
       m_force_full_range->addStyleClass( "GridFourthCol GridSecondRow GridSpanTwoCol" );
       m_force_full_range->checked().connect( this, &RelActAutoEnergyRange::handleForceFullRangeChange );
@@ -368,7 +369,6 @@ namespace
     {
       m_updated.emit();
     }
-    
     
     void handleForceFullRangeChange()
     {
@@ -1202,6 +1202,7 @@ RelActAutoGui::RelActAutoGui( InterSpec *viewer, Wt::WContainerWidget *parent )
   m_background_subtract( nullptr ),
   m_same_z_age( nullptr ),
   m_pu_corr_method( nullptr ),
+  m_skew_type( nullptr ),
   m_more_options_menu( nullptr ),
   m_apply_energy_cal_item( nullptr ),
   m_show_ref_lines_item( nullptr ),
@@ -1228,6 +1229,8 @@ RelActAutoGui::RelActAutoGui( InterSpec *viewer, Wt::WContainerWidget *parent )
   if( !m_interspec )
     throw runtime_error( "RelActAutoGui: requires pointer to InterSpec" );
   
+  new UndoRedoManager::BlockGuiUndoRedo( this );
+    
   wApp->useStyleSheet( "InterSpec_resources/RelActAutoGui.css" );
   wApp->useStyleSheet( "InterSpec_resources/GridLayoutHelpers.css" );
   
@@ -1556,6 +1559,35 @@ RelActAutoGui::RelActAutoGui( InterSpec *viewer, Wt::WContainerWidget *parent )
   m_pu_corr_method->hide();
   label->hide();
   
+    
+  label = new WLabel( "Peak Skew", optionsDiv );
+  label->addStyleClass( "GridNinthCol GridFirstRow" );
+  m_skew_type = new WComboBox( optionsDiv );
+  m_skew_type->addStyleClass( "GridTenthCol GridFirstRow" );
+  label->setBuddy( m_skew_type );
+  m_skew_type->activated().connect( this, &RelActAutoGui::handleSkewTypeChanged );
+  tooltip = "The type of skew to apply to the peaks; skew parameters will be fit.";
+  HelpSystem::attachToolTipOn( label, tooltip, showToolTips );
+  HelpSystem::attachToolTipOn( m_skew_type, tooltip, showToolTips );
+  for( auto st = PeakDef::SkewType(0); st <= PeakDef::SkewType::DoubleSidedCrystalBall;
+      st = PeakDef::SkewType(st + 1) )
+  {
+    const char *label = "";
+    switch( st )
+    {
+      case PeakDef::NoSkew:  	              label = "None";                break;
+      case PeakDef::Bortel:  	              label = "exGaussian";          break;
+      case PeakDef::GaussExp:               label = "GaussExp";            break;
+      case PeakDef::CrystalBall:            label = "Crystal Ball";        break;
+      case PeakDef::ExpGaussExp:            label = "ExpGaussExp";         break;
+      case PeakDef::DoubleSidedCrystalBall: label = "Double Crystal Ball"; break;
+    }//switch( st )
+    
+    m_skew_type->addItem( label );
+  }//for( loop over SkewTypes )
+    
+  m_skew_type->setCurrentIndex( 0 );
+    
   WPushButton *more_btn = new WPushButton( optionsDiv );
   more_btn->setIcon( "InterSpec_resources/images/more_menu_icon.svg" );
   more_btn->addStyleClass( "MoreMenuIcon Wt-icon" );
@@ -1836,6 +1868,10 @@ RelActCalcAuto::Options RelActAutoGui::getCalcOptions() const
     }//for( loop over RelActCalc::PuCorrMethod )
   }//if( m_pu_corr_method->isVisible() )
   
+  options.skew_type = PeakDef::SkewType::NoSkew;
+  const int skew_index = m_skew_type->currentIndex();
+  if( (skew_index >= 0) && (skew_index <= PeakDef::SkewType::DoubleSidedCrystalBall) )
+    options.skew_type = PeakDef::SkewType( m_skew_type->currentIndex() );
   
   return options;
 }//RelActCalcAuto::Options getCalcOptions() const
@@ -2385,7 +2421,7 @@ void RelActAutoGui::setCalcOptionsGui( const RelActCalcAuto::Options &options )
   m_rel_eff_eqn_form->setCurrentIndex( static_cast<int>(options.rel_eff_eqn_type) );
   m_rel_eff_eqn_order->setCurrentIndex( std::max(options.rel_eff_eqn_order,size_t(1)) - 1 );
   m_fwhm_eqn_form->setCurrentIndex( static_cast<int>(options.fwhm_form) );
-  
+  m_skew_type->setCurrentIndex( static_cast<int>(options.skew_type) );
   // options.spectrum_title
   
   m_render_flags |= RenderActions::UpdateCalculations;
@@ -3002,6 +3038,12 @@ void RelActAutoGui::handlePuByCorrelationChanged()
   scheduleRender();
 }
 
+void RelActAutoGui::handleSkewTypeChanged()
+{
+  checkIfInUserConfigOrCreateOne( false );
+  m_render_flags |= RenderActions::UpdateCalculations;
+  scheduleRender();
+}
 
 void RelActAutoGui::handleNucDataSrcChanged()
 {

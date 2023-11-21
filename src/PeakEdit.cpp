@@ -29,6 +29,7 @@
 #include <Wt/WText>
 #include <Wt/WLabel>
 #include <Wt/WTable>
+#include <Wt/WServer>
 #include <Wt/WComboBox>
 #include <Wt/WCheckBox>
 #include <Wt/WLineEdit>
@@ -59,27 +60,6 @@
 using namespace Wt;
 using namespace std;
 using SpecUtils::Measurement;
-
-static_assert( PeakDef::Mean == 0,
-               "PeakDef::CoefficientType::Mean typedef value has unexpected value" );
-static_assert( (PeakDef::Chi2DOF+1) == int(PeakDef::NumCoefficientTypes),
-               "PeakDef::CoefficientType::Chi2DOF or NumCoefficientTypes typedef values have unexpected values" );
-
-static_assert( int(PeakEdit::Mean)            == int(PeakDef::Mean),
-               "PeakEdit::Mean and PeakDef::Mean are not equal as expected" );
-static_assert( int(PeakEdit::Sigma)           == int(PeakDef::Sigma),
-               "PeakEdit::Sigma and PeakDef::Sigma are not equal as expected" );
-static_assert( int(PeakEdit::GaussAmplitude)  == int(PeakDef::GaussAmplitude),
-               "PeakEdit::GaussAmplitude and PeakDef::GaussAmplitude are not equal as expected" );
-static_assert( int(PeakEdit::LandauAmplitude) == int(PeakDef::LandauAmplitude),
-              "PeakEdit::LandauAmplitude and PeakDef::LandauAmplitude are not equal as expected" );
-static_assert( int(PeakEdit::LandauMode)      == int(PeakDef::LandauMode),
-               "PeakEdit::LandauMode and PeakDef::LandauMode are not equal as expected" );
-static_assert( int(PeakEdit::LandauSigma)     == int(PeakDef::LandauSigma),
-               "PeakEdit::LandauSigma and PeakDef::LandauSigma are not equal as expected" );
-static_assert( int(PeakEdit::Chi2DOF)         == int(PeakDef::Chi2DOF),
-               "PeakEdit::Chi2DOF and PeakDef::Chi2DOF are not equal as expected" );
-
 
 namespace
 {
@@ -135,6 +115,37 @@ Wt::Signal<> &PeakEditWindow::editingDone()
   return m_edit->done();
 }
 
+
+PeakDef::CoefficientType PeakEdit::row_to_peak_coef_type( const PeakEdit::PeakPars type )
+{
+  switch( type )
+  {
+    case PeakPars::Mean:             return PeakDef::CoefficientType::Mean;
+    case PeakPars::Sigma:            return PeakDef::CoefficientType::Sigma;
+    case PeakPars::GaussAmplitude:   return PeakDef::CoefficientType::GaussAmplitude;
+    case PeakPars::SkewPar0:  return PeakDef::CoefficientType::SkewPar0;
+    case PeakPars::SkewPar1:       return PeakDef::CoefficientType::SkewPar1;
+    case PeakPars::SkewPar2:      return PeakDef::CoefficientType::SkewPar2;
+    case PeakPars::SkewPar3:      return PeakDef::CoefficientType::SkewPar3;
+    case PeakPars::Chi2DOF:          return PeakDef::CoefficientType::Chi2DOF;
+    case PeakPars::SigmaDrfPredicted:
+    case PeakPars::RangeStartEnergy:
+    case PeakPars::RangeEndEnergy:
+    case PeakPars::OffsetPolynomial0:
+    case PeakPars::OffsetPolynomial1:
+    case PeakPars::OffsetPolynomial2:
+    case PeakPars::OffsetPolynomial3:
+    case PeakPars::OffsetPolynomial4:
+    case PeakPars::PeakColor:
+    case PeakPars::NumPeakPars:
+      break;
+  }//switch( type )
+  
+  throw logic_error( "Invalid conversion from PeakEdit::PeakPars to PeakDef::CoefficientType" );
+  return PeakDef::CoefficientType::NumCoefficientTypes;
+}//PeakDef::CoefficientType PeakEdit::row_to_peak_coef_type( const PeakEdit::PeakPars type )
+
+
 PeakEdit::PeakEdit( const double energy,
                     PeakModel *peakmodel,
                     InterSpec *viewer,
@@ -166,6 +177,7 @@ PeakEdit::PeakEdit( const double energy,
     m_otherPeakTxt( NULL ),
     m_prevPeakInRoi( NULL ),
     m_nextPeakInRoi( NULL ),
+    m_drfFwhm( nullptr ),
     m_footer( aux->footer() ),
     m_aux( aux )
 {
@@ -180,10 +192,12 @@ const char *PeakEdit::rowLabel( const PeakPars t )
   {
     case PeakEdit::Mean:              return "Centroid";
     case PeakEdit::Sigma:             return "FWHM";
+    case PeakEdit::SigmaDrfPredicted: return "DRF Pred. FWHM";
     case PeakEdit::GaussAmplitude:    return "Amplitude";
-    case PeakEdit::LandauAmplitude:   return "Skew Amp.";
-    case PeakEdit::LandauMode:        return "Skew Mode";
-    case PeakEdit::LandauSigma:       return "Skew Width";
+    case PeakEdit::SkewPar0:   return "Skew 0";
+    case PeakEdit::SkewPar1:        return "Skew 1";
+    case PeakEdit::SkewPar2:       return "Skew 2";
+    case PeakEdit::SkewPar3:       return "Skew 3";
     case PeakEdit::OffsetPolynomial0: return "Cont. P0";
     case PeakEdit::OffsetPolynomial1: return "Cont. P1";
     case PeakEdit::OffsetPolynomial2: return "Cont. P2";
@@ -205,8 +219,6 @@ void PeakEdit::init()
 {
   addStyleClass( "PeakEdit" );
   
-  WDoubleValidator *validator = new WDoubleValidator( this );
-  
   m_valueTable = new WTable( this );
   m_valueTable->setHeaderCount( 1, Horizontal );
   m_valueTable->addStyleClass( "PeakEditTable" );
@@ -218,11 +230,21 @@ void PeakEdit::init()
   
   for( PeakPars t = PeakPars(0); t < NumPeakPars; t = PeakPars(t+1) )
   {
+   if( t == PeakEdit::PeakColor || t == PeakEdit::PeakPars::SigmaDrfPredicted )
+   {
+     m_values[t] = m_uncertainties[t] = nullptr;
+     m_fitFors[t] = nullptr;
+     m_valueTable->rowAt(t+1)->setHidden(true);
+     
+     continue;
+   }//if( t == PeakEdit::PeakColor )
+    
     label = new WLabel( rowLabel(t), m_valueTable->elementAt(t+1,0) );
     m_values[t] = new WLineEdit( m_valueTable->elementAt(t+1,1) );
     m_uncertainties[t] = new WLineEdit( m_valueTable->elementAt(t+1,2) );
     
     m_values[t]->setAttributeValue( "ondragstart", "return false" );
+    label->setBuddy( m_values[t] );
     m_uncertainties[t]->setAttributeValue( "ondragstart", "return false" );
 #if( BUILD_AS_OSX_APP || IOS )
     m_values[t]->setAttributeValue( "autocorrect", "off" );
@@ -235,8 +257,8 @@ void PeakEdit::init()
     switch( t )
     {
       case PeakEdit::Mean: case PeakEdit::Sigma: case PeakEdit::GaussAmplitude:
-      case PeakEdit::LandauAmplitude: case PeakEdit::LandauMode:
-      case PeakEdit::LandauSigma:
+      case PeakEdit::SkewPar0: case PeakEdit::SkewPar1:
+      case PeakEdit::SkewPar2: case PeakEdit::SkewPar3:
       case PeakEdit::OffsetPolynomial0:
       case PeakEdit::OffsetPolynomial1: case PeakEdit::OffsetPolynomial2:
       case PeakEdit::OffsetPolynomial3: case PeakEdit::OffsetPolynomial4:
@@ -244,10 +266,14 @@ void PeakEdit::init()
       break;
       
       case PeakEdit::RangeStartEnergy: case PeakEdit::RangeEndEnergy:
-      case PeakEdit::Chi2DOF: case PeakEdit::PeakColor:
-      case PeakEdit::NumPeakPars:
+      case PeakEdit::Chi2DOF: case PeakEdit::NumPeakPars:
         m_fitFors[t] = NULL;
       break;
+        
+      case PeakEdit::PeakPars::SigmaDrfPredicted:
+      case PeakEdit::PeakPars::PeakColor:
+        assert( 0 );
+        break;
     }//case( t )
     
     
@@ -270,13 +296,14 @@ void PeakEdit::init()
         txt = "The amplitude uncertainty is used when fitting for the source"
               " activity and shielding thicknesses.";
       break;
-      case PeakEdit::LandauAmplitude:   case PeakEdit::LandauMode:
-      case PeakEdit::LandauSigma:
+      case PeakEdit::SkewPar0:   case PeakEdit::SkewPar1:
+      case PeakEdit::SkewPar2: case PeakEdit::SkewPar3:
       case PeakEdit::OffsetPolynomial0: case PeakEdit::OffsetPolynomial1:
       case PeakEdit::OffsetPolynomial2: case PeakEdit::OffsetPolynomial3:
       case PeakEdit::OffsetPolynomial4:
  case PeakEdit::PeakColor:
       case PeakEdit::RangeStartEnergy:  case PeakEdit::RangeEndEnergy:
+      case PeakPars::SigmaDrfPredicted:
       case PeakEdit::Chi2DOF: case PeakEdit::NumPeakPars:
         break;
     }//case( t )
@@ -289,44 +316,44 @@ void PeakEdit::init()
     switch( t )
     {
       case PeakEdit::Mean:
-//        m_values[t]->changed().connect( this, &PeakEdit::validateMeanOrRoiChange ); //doesnt seem to reliably work for some reason
-        m_values[t]->blurred().connect( this, &PeakEdit::validateMeanOrRoiChange );
+        m_values[t]->changed().connect( this, &PeakEdit::validateMeanOrRoiChange );
         m_values[t]->enterPressed().connect( this, &PeakEdit::validateMeanOrRoiChange );
       break;
         
       case PeakEdit::Sigma: case PeakEdit::GaussAmplitude:
-      case PeakEdit::LandauAmplitude: case PeakEdit::LandauMode:
-      case PeakEdit::LandauSigma:
+      case PeakEdit::SkewPar0: case PeakEdit::SkewPar1:
+      case PeakEdit::SkewPar2: case PeakEdit::SkewPar3:
+      case PeakEdit::PeakPars::SigmaDrfPredicted:
+      case PeakEdit::NumPeakPars:
         break;
       
       case PeakEdit::RangeStartEnergy: case PeakEdit::RangeEndEnergy:
-//        m_values[t]->changed().connect( this, &PeakEdit::validateMeanOrRoiChange );
-        m_values[t]->blurred().connect( this, &PeakEdit::validateMeanOrRoiChange );
+        m_values[t]->changed().connect( this, &PeakEdit::validateMeanOrRoiChange );
         m_values[t]->enterPressed().connect( this, &PeakEdit::validateMeanOrRoiChange );
-        //note, purposful fallthrough
+        //note, purposeful fall-through
         
       case PeakEdit::OffsetPolynomial0: case PeakEdit::OffsetPolynomial1:
       case PeakEdit::OffsetPolynomial2: case PeakEdit::OffsetPolynomial3:
       case PeakEdit::OffsetPolynomial4:
       case PeakEdit::Chi2DOF:
       case PeakEdit::PeakColor:
-      case PeakEdit::NumPeakPars:
         m_uncertainties[t]->disable();
       break;
     }//case( t )
     
-    
+    WDoubleValidator *validator = new WDoubleValidator( m_values[t] );
     m_values[t]->setValidator( validator );
     m_values[t]->addStyleClass( "numberValidator"); //used to detect mobile keyboard
+    validator = new WDoubleValidator( m_uncertainties[t] );
     m_uncertainties[t]->setValidator( validator );
     m_uncertainties[t]->addStyleClass( "numberValidator"); //used to detect mobile keyboard
 //    m_values[t]->changed().connect( boost::bind( &PeakEdit::checkIfDirty, this, t, false ) );
-//    m_uncertainties[t]->changed().connect( boost::bind( &PeakEdit::checkIfDirty, this, t, true ) );    
-    m_values[t]->blurred()
+//    m_uncertainties[t]->changed().connect( boost::bind( &PeakEdit::checkIfDirty, this, t, true ) );
+    m_values[t]->textInput()
             .connect( boost::bind( &PeakEdit::checkIfDirty, this, t, false ) );
     m_values[t]->enterPressed()
             .connect( boost::bind( &PeakEdit::checkIfDirty, this, t, false ) );
-    m_uncertainties[t]->blurred()
+    m_uncertainties[t]->textInput()
             .connect( boost::bind( &PeakEdit::checkIfDirty, this, t, true ) );
     m_uncertainties[t]->enterPressed()
             .connect( boost::bind( &PeakEdit::checkIfDirty, this, t, true ) );
@@ -338,7 +365,28 @@ void PeakEdit::init()
     }//if( m_fitFors[t] )
   }//for(...)
 
-  WTableRow *row = NULL;
+  WTableRow *row = nullptr;
+  
+  
+  row = m_valueTable->rowAt( PeakEdit::PeakPars::SigmaDrfPredicted + 1 );
+  row->elementAt(0)->setColumnSpan(4);
+  m_drfFwhm = new WText( "", row->elementAt(0) );
+  m_drfFwhm->addStyleClass( "PeakEditDrfFwhm" );
+  row->setHidden( true );
+  
+  // When the detector changed/modified signal is emitted, the DRF for the foreground
+  //  may not be updated yet, so we will delay until after current event loop
+  auto drfUpdateWorker = wApp->bind( boost::bind(&PeakEdit::updateDrfFwhmTxt, this) );
+  auto drfUpdater = [drfUpdateWorker](){
+    WServer::instance()->schedule(100, wApp->sessionId(), [drfUpdateWorker](){
+      drfUpdateWorker();
+      wApp->triggerUpdate();
+    });
+  };
+  m_viewer->detectorChanged().connect( std::bind(drfUpdater) );
+  m_viewer->detectorModified().connect( std::bind(drfUpdater) );
+  
+  
   row = m_valueTable->rowAt( PeakEdit::NumPeakPars+1 );
   label = new WLabel( "Nuclide", row->elementAt(0) );
   row->elementAt(1)->setColumnSpan(2);
@@ -442,16 +490,36 @@ void PeakEdit::init()
   m_skewType = new WComboBox( row->elementAt(1) );
   m_skewType->activated().connect( this, &PeakEdit::skewTypeChanged );
   
+  static_assert( PeakDef::DoubleSidedCrystalBall > PeakDef::ExpGaussExp, "SkewType ordering changed DSCB should be largest" );
+  static_assert( PeakDef::DoubleSidedCrystalBall > PeakDef::CrystalBall, "SkewType ordering changed DSCB should be largest" );
+  static_assert( PeakDef::DoubleSidedCrystalBall > PeakDef::GaussExp, "SkewType ordering changed DSCB should be largest" );
+  static_assert( PeakDef::DoubleSidedCrystalBall > PeakDef::Bortel, "SkewType ordering changed DSCB should be largest" );
+  
   for( PeakDef::SkewType t = PeakDef::SkewType(0);
-      t <= PeakDef::LandauSkew; t = PeakDef::SkewType(t+1) )
+      t <= PeakDef::DoubleSidedCrystalBall; t = PeakDef::SkewType(t+1) )
   {
     switch ( t )
     {
-      case PeakDef::NoSkew: m_skewType->addItem( "None" );            break;
-      case PeakDef::LandauSkew: m_skewType->addItem( "Landau Skew" ); break;
+      case PeakDef::NoSkew:
+        m_skewType->addItem( "None" );
+        break;
+      case PeakDef::Bortel:
+        m_skewType->addItem( "Bortel" );
+        break;
+      case PeakDef::CrystalBall:
+        m_skewType->addItem( "Crystal Ball" );
+        break;
+      case PeakDef::DoubleSidedCrystalBall:
+        m_skewType->addItem( "Double Crystal Ball" );
+        break;
+      case PeakDef::GaussExp:
+        m_skewType->addItem( "GaussExp" );
+        break;
+      case PeakDef::ExpGaussExp:
+        m_skewType->addItem( "ExpGaussExp" );
+        break;
     }//switch ( t )
   }//for( loop over PeakDef::OffsetType )
-  
   
   row = m_valueTable->rowAt( PeakEdit::NumPeakPars+8 );
   row->elementAt(0)->setColumnSpan(4);
@@ -832,8 +900,10 @@ void PeakEdit::refreshPeakInfo()
     for( PeakPars t = PeakPars(0); t < NumPeakPars; t = PeakPars(t+1) )
     {
       m_valTxts[t] = m_uncertTxts[t] = "";
-      m_values[t]->setText( "" );
-      m_uncertainties[t]->setText( "" );
+      if( m_values[t] )
+        m_values[t]->setText( "" );
+      if( m_uncertainties[t] )
+        m_uncertainties[t]->setText( "" );
       if( m_fitFors[t] )
         m_fitFors[t]->setUnChecked();
     }//for( PeakPars t )
@@ -850,6 +920,12 @@ void PeakEdit::refreshPeakInfo()
     m_otherPeaksDiv->hide();
     m_otherPeakTxt->setText( "" );
     
+    m_drfFwhm->setText( "" );
+    
+    WTableRow *drfFwhmRow = m_valueTable->rowAt( PeakEdit::PeakPars::SigmaDrfPredicted );
+    if( drfFwhmRow )
+      drfFwhmRow->setHidden( true );
+    
     return;
   }//if( !nrow )
   
@@ -863,12 +939,29 @@ void PeakEdit::refreshPeakInfo()
     
     const int rownum = static_cast<int>(t);
     double val = 0.0, uncert = 0.0;
-    if( rownum < PeakDef::NumCoefficientTypes )
+    
+    switch( t )
     {
-      const PeakDef::CoefficientType ct = PeakDef::CoefficientType( rownum );
-      val = m_currentPeak.coefficient( ct );
-      uncert = m_currentPeak.uncertainty( ct );
-    }
+      case PeakPars::Mean: case PeakPars::Sigma: case PeakPars::GaussAmplitude:
+      case PeakPars::SkewPar0: case PeakPars::SkewPar1:
+      case PeakEdit::SkewPar2: case PeakEdit::SkewPar3:
+      case PeakPars::Chi2DOF:
+      {
+        const PeakDef::CoefficientType ct = row_to_peak_coef_type( t );
+        val = m_currentPeak.coefficient( ct );
+        uncert = m_currentPeak.uncertainty( ct );
+        break;
+      }
+        
+      case PeakPars::SigmaDrfPredicted:
+      case PeakPars::RangeStartEnergy: case PeakPars::RangeEndEnergy:
+      case PeakPars::OffsetPolynomial0: case PeakPars::OffsetPolynomial1:
+      case PeakPars::OffsetPolynomial2: case PeakPars::OffsetPolynomial3:
+      case PeakPars::OffsetPolynomial4: case PeakPars::PeakColor:
+      case PeakPars::NumPeakPars:
+        break;
+    }//switch( t )
+    
     
     switch( t )
     {
@@ -917,11 +1010,40 @@ void PeakEdit::refreshPeakInfo()
         }//switch( m_currentPeak.m_type )
       break;
         
-      case PeakEdit::LandauAmplitude:
-      case PeakEdit::LandauMode:
-      case PeakEdit::LandauSigma:
-        row->setHidden( (m_currentPeak.skewType()==PeakDef::NoSkew) );
-      break;
+      case PeakEdit::SkewPar0:
+      case PeakEdit::SkewPar1:
+      case PeakEdit::SkewPar2:
+      case PeakEdit::SkewPar3:
+      {
+        const int i = t - PeakEdit::PeakPars::SkewPar0;
+        const PeakDef::CoefficientType ct = row_to_peak_coef_type( t );
+        auto type = m_currentPeak.skewType();
+        double lower, upper, starting_val, step_size;
+        if( PeakDef::skew_parameter_range( type, ct, lower, upper, starting_val, step_size ) )
+        {
+          row->setHidden( false );
+          
+          val = m_currentPeak.coefficient( ct );
+          uncert = m_currentPeak.uncertainty( ct );
+          
+          if( (val < lower) || (val > upper) )
+          {
+            val = starting_val;
+            uncert = 0.0;
+          }
+          
+          m_values[t]->setHidden( false );
+          auto validator = dynamic_cast<WDoubleValidator *>( m_values[t]->validator() );
+          assert( validator );
+          if( validator )
+            validator->setRange( lower, upper );
+        }else
+        {
+          row->setHidden( true );
+        }
+        
+        break;
+      }
         
       case PeakEdit::OffsetPolynomial0: case PeakEdit::OffsetPolynomial1:
       case PeakEdit::OffsetPolynomial2: case PeakEdit::OffsetPolynomial3:
@@ -1009,36 +1131,80 @@ void PeakEdit::refreshPeakInfo()
         row->setHidden( !m_currentPeak.chi2Defined() );
       break;
         
+      case PeakPars::SigmaDrfPredicted:
+        updateDrfFwhmTxt();
+        break;
+        
       case PeakEdit::NumPeakPars:
       break;
     }//case( t )
     
     if( m_fitFors[t] )
     {
-      if( rownum < PeakDef::NumCoefficientTypes )
+      switch( t )
       {
-        const PeakDef::CoefficientType ct = PeakDef::CoefficientType( rownum );
-        m_fitFors[t]->setChecked( m_currentPeak.fitFor(ct) );
-      }else
-      {
-        const int coefnum = rownum - 2 - PeakDef::NumCoefficientTypes;
-        const vector<bool> fitfor = continuum->fitForParameter();
-        if( coefnum >= 0 && static_cast<size_t>(coefnum) < fitfor.size() )
-          m_fitFors[t]->setChecked( fitfor[coefnum] );
-      }//if( rownum < PeakDef::NumCoefficientTypes ) / else
+        case PeakPars::Mean: case PeakPars::Sigma: case PeakPars::GaussAmplitude:
+        case PeakPars::SkewPar0: case PeakPars::SkewPar1:
+        case PeakPars::SkewPar2: case PeakPars::SkewPar3:
+        case PeakPars::Chi2DOF:
+        {
+          const PeakDef::CoefficientType ct = row_to_peak_coef_type( t );
+          m_fitFors[t]->setChecked( m_currentPeak.fitFor(ct) );
+          break;
+        }
+          
+        case PeakPars::RangeStartEnergy: case PeakPars::RangeEndEnergy:
+        case PeakPars::SigmaDrfPredicted:
+        case PeakPars::NumPeakPars:
+          break;
+          
+        case PeakPars::OffsetPolynomial0: case PeakPars::OffsetPolynomial1:
+        case PeakPars::OffsetPolynomial2: case PeakPars::OffsetPolynomial3:
+        case PeakPars::OffsetPolynomial4: case PeakPars::PeakColor:
+        {
+          const int coefnum = rownum - static_cast<int>(PeakPars::OffsetPolynomial0);
+          const vector<bool> fitfor = continuum->fitForParameter();
+          if( coefnum >= 0 && static_cast<size_t>(coefnum) < fitfor.size() )
+            m_fitFors[t]->setChecked( fitfor[coefnum] );
+          break;
+        }
+      }//switch( t )
     }//if( m_fitFors[t] )
     
     char valTxt[32], uncertTxt[32];
+    
     snprintf( valTxt, sizeof(valTxt), "%.4f", val );
     snprintf( uncertTxt, sizeof(uncertTxt), "%.4f", uncert );
+    
+    switch( t )
+    {
+      case PeakPars::Mean: case PeakPars::Sigma: case PeakPars::GaussAmplitude:
+      case PeakPars::SkewPar0: case PeakPars::SkewPar1:
+      case PeakPars::SkewPar2: case PeakPars::SkewPar3:
+      case PeakPars::OffsetPolynomial0: case PeakPars::OffsetPolynomial1:
+      case PeakPars::OffsetPolynomial2: case PeakPars::OffsetPolynomial3:
+      case PeakPars::OffsetPolynomial4: case PeakPars::PeakColor:
+        break;
+    
+      case PeakPars::Chi2DOF:
+      case PeakPars::RangeStartEnergy: case PeakPars::RangeEndEnergy:
+      case PeakPars::SigmaDrfPredicted:
+      case PeakPars::NumPeakPars:
+        uncertTxt[0] = '\0';
+        break;
+    }//switch( t )
+    
     
     if( row->isHidden() )
       uncertTxt[0] = valTxt[0] = '\0';
     
     m_valTxts[t] = valTxt;
     m_uncertTxts[t] = uncertTxt;
-    m_values[t]->setText( valTxt );
-    m_uncertainties[t]->setText( uncertTxt );
+    if( m_values[t] )
+      m_values[t]->setText( valTxt );
+    
+    if( m_uncertainties[t] )
+      m_uncertainties[t]->setText( uncertTxt );
   }//for( PeakPars t )
   
   m_userLabel->setText( WString::fromUTF8( m_currentPeak.userLabel() ) );
@@ -1106,6 +1272,7 @@ void PeakEdit::refreshPeakInfo()
     m_otherPeakTxt->setText( text );
   }//if( peaksInRoi.size() < 2 ) / else
   
+  updateSkewParameterLabels( m_currentPeak.skewType() );
   
   m_apply->disable();
 //  m_accept->disable();
@@ -1318,7 +1485,7 @@ void PeakEdit::checkIfDirty( PeakPars t, bool uncert )
     }//if( m_uncertIsDirty[type] )
   }else
   {
-    m_valIsDirty[t] = (m_values[t]->text()!=m_valTxts[t]);
+    m_valIsDirty[t] = (m_values[t] && (m_values[t]->text() != m_valTxts[t]));
     if( m_valIsDirty[t] )
     {
       m_apply->enable();
@@ -1415,10 +1582,12 @@ void PeakEdit::fitTypeChanged( PeakPars t )
   
   switch( t )
   {
-    case Mean: case Sigma: case GaussAmplitude: case LandauAmplitude:
-    case LandauMode: case LandauSigma: case Chi2DOF:
+    case Mean: case Sigma: case GaussAmplitude:
+    case SkewPar0: case SkewPar1:
+    case PeakPars::SkewPar2: case PeakPars::SkewPar3:
+    case Chi2DOF:
     {
-      PeakDef::CoefficientType coef = PeakDef::CoefficientType(static_cast<int>(t));
+      const PeakDef::CoefficientType coef = row_to_peak_coef_type( t );
       m_peakModel->setPeakFitFor( m_peakIndex, coef, isChecked );
       //  m_originalPeak.setFitFor( coef, isChecked );
       //m_currentPeak.setFitFor( coef, isChecked );
@@ -1434,6 +1603,7 @@ void PeakEdit::fitTypeChanged( PeakPars t )
       break;
     }
     
+    case SigmaDrfPredicted:
     case RangeStartEnergy: case RangeEndEnergy:
     case PeakColor: case NumPeakPars:
     break;
@@ -1443,7 +1613,7 @@ void PeakEdit::fitTypeChanged( PeakPars t )
   
 //  m_apply->enable();
   m_accept->enable();
-}//void fitTypeChanged( PeakDef::CoefficientType t )
+}//void fitTypeChanged( PeakPars t )
 
 
 void PeakEdit::peakTypeChanged()
@@ -1465,11 +1635,20 @@ void PeakEdit::peakTypeChanged()
           case PeakEdit::Sigma:             row->setHidden( false );  break;
           case PeakEdit::GaussAmplitude:    row->setHidden( false );  break;
           
-          case PeakEdit::LandauAmplitude:
-          case PeakEdit::LandauMode:
-          case PeakEdit::LandauSigma:
-            row->setHidden( (m_currentPeak.skewType()==PeakDef::LandauSkew) );
-          break;
+          case PeakEdit::SkewPar0:
+            row->setHidden( (m_currentPeak.skewType()==PeakDef::NoSkew) );
+            break;
+            
+          case PeakEdit::SkewPar1:
+            row->setHidden( (m_currentPeak.skewType()!=PeakDef::CrystalBall)
+                           && (m_currentPeak.skewType()!=PeakDef::DoubleSidedCrystalBall)
+                           && (m_currentPeak.skewType()!=PeakDef::ExpGaussExp) );
+            break;
+            
+          case PeakEdit::SkewPar2:
+          case PeakEdit::SkewPar3:
+            row->setHidden( (m_currentPeak.skewType()!=PeakDef::DoubleSidedCrystalBall) );
+            break;
             
           case PeakEdit::OffsetPolynomial0: case PeakEdit::OffsetPolynomial1:
           case PeakEdit::OffsetPolynomial2: case PeakEdit::OffsetPolynomial3:
@@ -1492,9 +1671,10 @@ void PeakEdit::peakTypeChanged()
           break;
             
           case PeakEdit::PeakColor:         row->setHidden( false ); break;
+          case PeakPars::SigmaDrfPredicted: break;
           case PeakEdit::NumPeakPars: break;
         }//switch ( t )
-      }//for( PeakDef::CoefficientType t )
+      }//for( PeakPars t )
     break;
       
     case PeakDef::DataDefined:
@@ -1509,9 +1689,12 @@ void PeakEdit::peakTypeChanged()
           case PeakEdit::Mean:              row->setHidden( false ); break;
           case PeakEdit::Sigma:             row->setHidden( true );  break;
           case PeakEdit::GaussAmplitude:    row->setHidden( true );  break;
-          case PeakEdit::LandauAmplitude:   row->setHidden( true );  break;
-          case PeakEdit::LandauMode:        row->setHidden( true );  break;
-          case PeakEdit::LandauSigma:       row->setHidden( true );  break;
+          case PeakEdit::SkewPar0:
+          case PeakEdit::SkewPar1:
+          case PeakPars::SkewPar2:
+          case PeakPars::SkewPar3:
+            row->setHidden( true );
+            break;
           case PeakEdit::OffsetPolynomial0:
           case PeakEdit::OffsetPolynomial1:
           case PeakEdit::OffsetPolynomial2:
@@ -1524,7 +1707,8 @@ void PeakEdit::peakTypeChanged()
           case PeakEdit::Chi2DOF:
             row->setHidden( m_currentPeak.chi2Defined() );
           break;
-          case PeakEdit::PeakColor:         row->setHidden( false ); break;
+          case PeakEdit::PeakColor:         row->setHidden( true ); break;
+          case PeakPars::SigmaDrfPredicted: break;
           case PeakEdit::NumPeakPars: break;
         }//switch ( t )
       }//for( PeakPars t )    break;
@@ -1595,6 +1779,65 @@ void PeakEdit::contnuumTypeChanged()
 }//void contnuumTypeChanged()
 
 
+void PeakEdit::updateSkewParameterLabels( const PeakDef::SkewType skewType )
+{
+  
+  WLabel *label[4] = { nullptr, nullptr, nullptr, nullptr };
+  for( int i = 0; i < 4; ++i )
+  {
+    WTableCell *cell = m_valueTable->elementAt(1+PeakEdit::SkewPar0+i, 0 );
+    assert( cell && (cell->children().size() == 1) );
+    if( !cell || cell->children().empty() )
+      continue;
+    
+    label[i] = dynamic_cast<WLabel *>( cell->children()[0] );
+    assert( label[i] );
+  }//for( int i = 0; i < 4; ++i )
+  
+  
+  switch( skewType )
+  {
+    case PeakDef::NoSkew:
+      return;
+      
+    case PeakDef::SkewType::Bortel:
+      if( label[0] )
+        label[0]->setText( "Skew &alpha;" );
+      break;
+      
+    case PeakDef::SkewType::CrystalBall:
+      if( label[0] )
+        label[0]->setText( "Skew &alpha;" );
+      if( label[1] )
+        label[1]->setText( "Skew n" );
+      break;
+      
+    case PeakDef::SkewType::DoubleSidedCrystalBall:
+      if( label[0] )
+        label[0]->setText( "Skew &alpha;<sub>low</sub>" );
+      if( label[1] )
+        label[1]->setText( "Skew n<sub>low</sub>" );
+      if( label[2] )
+        label[2]->setText( "Skew &alpha;<sub>high</sub>" );
+      if( label[3] )
+        label[3]->setText( "Skew n<sub>high</sub>" );
+      break;
+      
+    case PeakDef::SkewType::GaussExp:
+      if( label[0] )
+        label[0]->setText( "Skew k" );
+      break;
+      
+    case PeakDef::SkewType::ExpGaussExp:
+      if( label[0] )
+        label[0]->setText( "Skew k<sub>L</sub>" );
+      if( label[1] )
+        label[1]->setText( "Skew k<sub>H</sub>" );
+      break;
+  }//switch( skewType )
+}//void updateSkewParameterLabels();
+
+
 void PeakEdit::skewTypeChanged()
 {
   PeakDef::SkewType type = PeakDef::SkewType( m_skewType->currentIndex() );
@@ -1609,112 +1852,51 @@ void PeakEdit::skewTypeChanged()
   switch( type )
   {
     case PeakDef::NoSkew:
-      m_valueTable->rowAt(1+PeakEdit::LandauAmplitude)->setHidden( true );
-      m_valueTable->rowAt(1+PeakEdit::LandauMode)->setHidden( true );
-      m_valueTable->rowAt(1+PeakEdit::LandauSigma)->setHidden( true );
+      m_valueTable->rowAt(1+PeakEdit::SkewPar0)->setHidden( true );
+      m_valueTable->rowAt(1+PeakEdit::SkewPar1)->setHidden( true );
+      m_valueTable->rowAt(1+PeakEdit::SkewPar2)->setHidden( true );
+      m_valueTable->rowAt(1+PeakEdit::SkewPar3)->setHidden( true );
     break;
       
-    case PeakDef::LandauSkew:
-      if( !m_currentPeak.gausPeak() )
+    case PeakDef::SkewType::Bortel:
+    case PeakDef::SkewType::CrystalBall:
+    case PeakDef::SkewType::DoubleSidedCrystalBall:
+    case PeakDef::SkewType::GaussExp:
+    case PeakDef::SkewType::ExpGaussExp:
+    {
+      const int num_skew_pars = static_cast<int>(PeakDef::CoefficientType::SkewPar3)
+                                - static_cast<int>(PeakDef::CoefficientType::SkewPar0);
+      
+      for( int i = 0; i <= num_skew_pars; ++i )
       {
-        passMessage( "Only Gaussian peaks can have a skew.", WarningWidget::WarningMsgHigh );
-        m_skewType->setCurrentIndex( PeakDef::NoSkew );
-        return;
-      }//if( !m_currentPeak.gausPeak() )
-      
-      m_valueTable->rowAt(1+PeakEdit::LandauAmplitude)->setHidden( false );
-      m_valueTable->rowAt(1+PeakEdit::LandauMode)->setHidden( false );
-      m_valueTable->rowAt(1+PeakEdit::LandauSigma)->setHidden( false );
-      
-      
-      if( m_currentPeak.coefficient(PeakDef::LandauMode) <= 0.0 )
-      {
-        const double val = (2.5+0.3*0.22278)*m_currentPeak.sigma();
+        const auto index = static_cast<PeakEdit::PeakPars>( PeakEdit::PeakPars::SkewPar0 + i );
+        const PeakDef::CoefficientType ct = row_to_peak_coef_type( index );
         
-        char valTxt[32];
-        snprintf( valTxt, sizeof(valTxt), "%.6f", val );
-        m_currentPeak.set_coefficient( val, PeakDef::LandauMode );
-        m_values[PeakDef::LandauMode]->setText( valTxt );
-        m_uncertainties[PeakDef::LandauMode]->setText( "" );
-      }//if( LandauMode not specficied )
-      
-      if( m_currentPeak.coefficient(PeakDef::LandauSigma) <= 0.0 )
-      {
-        const double val = 3.0*m_currentPeak.sigma();
-        char valTxt[32];
-        snprintf( valTxt, sizeof(valTxt), "%.6f", val );
-        m_currentPeak.set_coefficient( val, PeakDef::LandauSigma );
-        m_values[PeakDef::LandauSigma]->setText( valTxt );
-        m_uncertainties[PeakDef::LandauSigma]->setText( "" );
-      }//if( LandauMode not specficied )
-
-      
-      if( m_currentPeak.coefficient(PeakDef::LandauAmplitude) <= 0.0 )
-      {
-        //Integrate area between continuum and peak to guess multiple
-        double amp = 0.003;
-        std::shared_ptr<const Measurement> data = m_viewer->displayedHistogram(SpecUtils::SpectrumType::Foreground);
-//        std::shared_ptr<const Measurement> continuum = m_viewer->continuum();
-        
-        if( data )
+        double lower, upper, starting_val, step_size;
+        if( PeakDef::skew_parameter_range( type, ct, lower, upper, starting_val, step_size ) )
         {
-          double lowe, highe;
-          findROIEnergyLimits( lowe, highe, m_currentPeak, data );
-          const double upe =  m_currentPeak.mean() - 3.5*m_currentPeak.sigma();
-          if( upe > lowe )
-          {
-            double contArea = -1.0;
-            const double dataArea = gamma_integral( data, lowe, upe );
-            
-            switch( continuum->type() )
-            {
-              case PeakContinuum::NoOffset:
-                break;
-                
-              case PeakContinuum::External:
-//                if( continuum )
-//                  contArea = integral( continuum, lowe, upe );
-                contArea = continuum->offset_integral( lowe, upe, nullptr );
-                break;
-                
-              case PeakContinuum::Constant: case PeakContinuum::Linear:
-              case PeakContinuum::Quadratic: case PeakContinuum::Cubic:
-//                contArea = m_currentPeak.offset_integral( lowe, upe );
-                contArea = continuum->offset_integral( lowe, upe, nullptr );
-                break;
-                
-              case PeakContinuum::FlatStep:
-              case PeakContinuum::LinearStep:
-              case PeakContinuum::BiLinearStep:
-              {
-                std::shared_ptr<const Measurement> data = m_viewer->displayedHistogram(SpecUtils::SpectrumType::Foreground);
-                contArea = continuum->offset_integral( lowe, upe, data );
-              }
-            }//switch( m_currentPeak.offsetType() )
-            
-            if( dataArea > contArea )
-              amp = (dataArea-contArea) / m_currentPeak.peakArea();
-            
-            PeakDef tempPeak = m_currentPeak;
-            tempPeak.setSkewType( type );
-            tempPeak.set_coefficient( 1.0, PeakDef::LandauAmplitude );
-            tempPeak.set_coefficient( 1.0, PeakDef::GaussAmplitude );
-            const double frac = tempPeak.skew_integral( lowe, upe );
-            
-            if( (frac > 0.0) && !IsInf(frac) && !IsNan(frac) )
-              amp /= frac;
-            
-            m_currentPeak.set_coefficient( amp, PeakDef::LandauAmplitude );
-          }//if( upp > lowe )
-        }//if( data )
-        
-        
-        const string val = std::to_string( amp );
-        m_values[PeakDef::LandauAmplitude]->setText( val );
-        m_uncertainties[PeakDef::LandauAmplitude]->setText( "" );
-      }//if( LandauAmplitude not specficied )
-    break;
+          m_values[index]->setHidden( false );
+          m_valueTable->rowAt(1+index)->setHidden( false );
+          m_values[index]->setText( PhysicalUnits::printCompact(starting_val, 4) );
+          m_fitFors[index]->setChecked( true );
+          auto validator = dynamic_cast<WDoubleValidator *>( m_values[index]->validator() );
+          assert( validator );
+          if( validator )
+            validator->setRange( lower, upper );
+        }else
+        {
+          m_values[index]->setHidden( true );
+          m_uncertainties[index]->setText( "" );
+          m_valueTable->rowAt(1+index)->setHidden( true );
+        }
+      }//for( int i = 0; i <= num_skew_pars; ++i )
+      
+      break;
+    }//case Bortel, CrystalBall, DoubleSidedCrystalBall, GaussExp, ExpGaussExp
   }//switch( type )
+  
+  updateSkewParameterLabels( type );
+  setSkewInputValueRanges( type );
   
   m_apply->enable();
   m_accept->enable();
@@ -1740,10 +1922,67 @@ bool PeakEdit::isDirty() const
   if( nuclideInfoIsDirty() )
     return true;
 
-  
-  
   return (m_userLabel->text().toUTF8() != m_originalPeak.userLabel());
 }//bool isDirty() const
+
+
+void PeakEdit::updateDrfFwhmTxt()
+{
+  const double mean = m_currentPeak.mean();
+  WTableRow *row = m_valueTable->rowAt( SigmaDrfPredicted + 1 );
+  shared_ptr<const SpecMeas> meas = m_viewer->measurment(SpecUtils::SpectrumType::Foreground);
+  shared_ptr<const DetectorPeakResponse> drf = meas ? meas->detector() : nullptr;
+  if( !drf || !drf->hasResolutionInfo() || (mean < 10.0) )
+  {
+    m_drfFwhm->setText( "" );
+    row->setHidden( true );
+  }else
+  {
+    const double drf_fwhm = drf->peakResolutionFWHM( mean );
+    char text[128] = { '\0' };
+    snprintf( text, sizeof(text), "DRF predicts FWHM of %.2f keV", drf_fwhm );
+    m_drfFwhm->setText( text );
+    row->setHidden( false );
+  }//case PeakPars::SigmaDrfPredicted:
+}//void updateDrfFwhmTxt();
+
+
+void PeakEdit::setSkewInputValueRanges( const PeakDef::SkewType type )
+{
+  const int num_skew_pars = static_cast<int>(PeakDef::CoefficientType::SkewPar3)
+                            - static_cast<int>(PeakDef::CoefficientType::SkewPar0);
+  
+  for( int i = 0; i <= num_skew_pars; ++i )
+  {
+    const auto index = static_cast<PeakEdit::PeakPars>( PeakEdit::PeakPars::SkewPar0 + i );
+    const PeakDef::CoefficientType ct = row_to_peak_coef_type( index );
+    
+    double lower, upper, starting_val, step_size;
+    if( PeakDef::skew_parameter_range( type, ct, lower, upper, starting_val, step_size ) )
+    {
+      m_values[index]->setHidden( false );
+      m_valueTable->rowAt(index+1)->setHidden( false );
+      //m_values[index]->setText( PhysicalUnits::printCompact(starting_val, 4) );
+      
+      auto validator = dynamic_cast<WDoubleValidator *>( m_values[index]->validator() );
+      assert( validator );
+      if( validator )
+        validator->setRange( lower, upper );
+      
+      double val = 0.0;
+      if( (m_values[index]->validate() != WValidator::Valid)
+         || !(stringstream(m_values[index]->text().toUTF8()) >> val)
+         || (val < lower) || (val > upper) )
+      {
+        m_values[index]->setValueText( PhysicalUnits::printCompact(starting_val, 4) );
+      }
+    }else
+    {
+      m_valueTable->rowAt(index+1)->setHidden( true );
+      m_uncertainties[index]->setText( "" );
+    }
+  }//for( int i = 0; i <= num_skew_pars; ++i )
+}//void setSkewInputValueRanges( const PeakDef::SkewType skewType )
 
 
 bool PeakEdit::nuclideInfoIsDirty() const
@@ -2089,23 +2328,56 @@ void PeakEdit::apply()
     const PeakDef::SkewType skewType = PeakDef::SkewType( m_skewType->currentIndex() );
     if( skewType != m_currentPeak.skewType() )
     {
-      cerr << "PeakEdit::apply(): handle skew type change better" << endl;
-      
+      bool valid_skew = false;
       switch( skewType )
       {
-        case PeakDef::NoSkew:
-          m_currentPeak.setSkewType( skewType );
-          break;
-          
-        case PeakDef::LandauSkew:
-          m_currentPeak.setSkewType( skewType );
+        case PeakDef::SkewType::NoSkew:
+        case PeakDef::SkewType::Bortel:
+        case PeakDef::SkewType::GaussExp:
+        case PeakDef::SkewType::CrystalBall:
+        case PeakDef::SkewType::ExpGaussExp:
+        case PeakDef::SkewType::DoubleSidedCrystalBall:
+          valid_skew = true;
           break;
       }//switch( skewType )
+      assert( valid_skew );
+      if( !valid_skew )
+        throw std::logic_error( "invalid skew type" );
+      
+      m_currentPeak.setSkewType( skewType );
+      setSkewInputValueRanges( skewType );
+      updateSkewParameterLabels( skewType );
+      
+      for( PeakPars t : {SkewPar0, SkewPar1, SkewPar2, SkewPar3} )
+      {
+        const PeakDef::CoefficientType ct = row_to_peak_coef_type( t );
+      
+        double lower, upper, starting_val, step_size;
+        if( PeakDef::skew_parameter_range( skewType, ct, lower, upper, starting_val, step_size ) )
+        {
+          double val = 0.0, uncert = 0.0;
+          if( !(stringstream(m_values[t]->text().toUTF8()) >> val)
+             || (val < lower) || (val > upper) )
+          {
+            val = starting_val;
+          }
+          
+          if( !(stringstream(m_uncertainties[t]->text().toUTF8()) >> uncert) )
+            m_uncertainties[t]->setText( "0" );
+          
+          m_currentPeak.set_coefficient( val, ct );
+          m_currentPeak.set_uncertainty( uncert, ct );
+        }//if( use this parameter )
+      }//for( loop over {SkewPar0, SkewPar1, SkewPar2, SkewPar3} )
+      
     }//if( skewType != m_currentPeak.skewType() )
     
     
     for( PeakPars t = PeakPars(0); t < NumPeakPars; t = PeakPars(t+1) )
     {
+      if( !m_values[t] )
+        continue;
+      
       if( m_valIsDirty[t] )
       {
         if( m_values[t]->validate() != WValidator::Valid )
@@ -2137,10 +2409,11 @@ void PeakEdit::apply()
             m_energy = m_currentPeak.mean();
             //note: fall-through intentional
             
-          case PeakEdit::LandauAmplitude:
-          case PeakEdit::LandauMode:
-          case PeakEdit::LandauSigma:
-            m_currentPeak.set_coefficient( val, PeakDef::CoefficientType(static_cast<int>(t)) );
+          case PeakEdit::SkewPar0:
+          case PeakEdit::SkewPar1:
+          case PeakEdit::SkewPar2:
+          case PeakEdit::SkewPar3:
+            m_currentPeak.set_coefficient( val, row_to_peak_coef_type(t) );
             break;
             
           case PeakEdit::OffsetPolynomial0:
@@ -2206,6 +2479,7 @@ void PeakEdit::apply()
           }//case PeakEdit::PeakColor:
             
           case PeakEdit::Chi2DOF:
+          case PeakPars::SigmaDrfPredicted:
           case PeakEdit::NumPeakPars:
             break;
         }//case( t )
@@ -2244,10 +2518,11 @@ void PeakEdit::apply()
           case PeakEdit::Sigma:
             val /= 2.3548201; //note: purposfull fall-through
           case PeakEdit::Mean:
-          case PeakEdit::LandauAmplitude:
-          case PeakEdit::LandauMode:
-          case PeakEdit::LandauSigma:
-            m_currentPeak.set_uncertainty( val, PeakDef::CoefficientType(static_cast<int>(t)) );
+          case PeakEdit::SkewPar0:
+          case PeakEdit::SkewPar1:
+          case PeakEdit::SkewPar2:
+          case PeakEdit::SkewPar3:
+            m_currentPeak.set_uncertainty( val, row_to_peak_coef_type(t) );
             break;
             
           case PeakEdit::OffsetPolynomial0:
@@ -2260,7 +2535,7 @@ void PeakEdit::apply()
             
           case PeakEdit::RangeStartEnergy: case PeakEdit::RangeEndEnergy:
           case PeakEdit::Chi2DOF:          case PeakEdit::PeakColor:
-          case PeakEdit::NumPeakPars:
+          case PeakEdit::SigmaDrfPredicted: case PeakEdit::NumPeakPars:
             break;
         }//case( t )
       }//if( m_uncertIsDirty[t] )

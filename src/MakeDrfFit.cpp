@@ -294,9 +294,12 @@ double performResolutionFit( std::shared_ptr<const std::deque< std::shared_ptr<c
       
       try
       {
-        double chi2 = MakeDrfFit::fit_sqrt_poly_fwhm_lls( *peaks, sqrtEqnOrder, true, answer, uncerts );
+        int num_fit_coefficients = 3;
+        //if( sqrtEqnOrder > 3 )
+        //  num_fit_coefficients = sqrtEqnOrder;  // Right now, just assuming 3 fit parameters always, but thing would work out if we wanted to do different
+        double chi2 = MakeDrfFit::fit_sqrt_poly_fwhm_lls( *peaks, num_fit_coefficients, true, answer, uncerts );
         
-        assert( answer.size() == static_cast<int>(sqrtEqnOrder) );
+        assert( answer.size() == static_cast<size_t>(num_fit_coefficients) );
         
         //cout << "MakeDrfFit::fit_sqrt_poly_fwhm_lls got {";
         //for( size_t i = 0; i < answer.size(); ++i )
@@ -610,21 +613,21 @@ bool matrix_invert( const boost::numeric::ublas::matrix<T>& input,
   
   
 double fit_sqrt_poly_fwhm_lls( const std::deque< std::shared_ptr<const PeakDef> > &peaks,
-                               const int order,
+                               const int num_fit_coefficients,
                                const bool include_inv_term,
                                std::vector<float> &coeffs,
                                std::vector<float> &coeff_uncerts )
 {
   const size_t nbin = peaks.size();
   
-  if( order < 1 )
-    throw runtime_error( "fit_sqrt_poly_fwhm_lls: order must be >= 1" );
+  if( num_fit_coefficients < 1 )
+    throw runtime_error( "fit_sqrt_poly_fwhm_lls: num_fit_coefficients must be >= 1" );
   
   if( !nbin )
     throw runtime_error( "fit_sqrt_poly_fwhm_lls: must have at least 1 input peak" );
   
-  if( nbin < static_cast<size_t>(order) )
-    throw runtime_error( "fit_sqrt_poly_fwhm_lls: must have at least as many peaks as orders to fit to" );
+  if( nbin < static_cast<size_t>(num_fit_coefficients) )
+    throw runtime_error( "fit_sqrt_poly_fwhm_lls: must have at least as many peaks as coefficients to fit to" );
   
   //log(eff(x)) = A0 + A1*logx + A2*logx^2 + A3*logx^3, where x is energy in MeV
   vector<float> x, widths, widths_uncert;
@@ -646,7 +649,7 @@ double fit_sqrt_poly_fwhm_lls( const std::deque< std::shared_ptr<const PeakDef> 
   //Implementation is quite inneficient.
   using namespace boost::numeric;
   
-  ublas::matrix<double> A( nbin, order );
+  ublas::matrix<double> A( nbin, num_fit_coefficients );
   ublas::vector<double> b( nbin );
   
   
@@ -659,13 +662,13 @@ double fit_sqrt_poly_fwhm_lls( const std::deque< std::shared_ptr<const PeakDef> 
     
     if( include_inv_term )
     {
-      // Nominally we will only ever call this function to fit for the FRAM style FWHM  when order == 3,
-      //  but we'll go ahead and code in possibility to fit for different order.  For order==1, we'll
-      //  fit the energy dependent term, for order==2, the constant + energy dependient, and order==3
-      //  the inverse term as well.  Higher order terms we'll do as power series in energy.
+      // Nominally we will only ever call this function to fit for the FRAM style FWHM  when num_fit_coefficients == 3,
+      //  but we'll go ahead and code in possibility to fit for different num_fit_coefficients.  For num_fit_coefficients==1, we'll
+      //  fit the energy dependent term, for num_fit_coefficients==2, the constant + energy dependent, and num_fit_coefficients==3
+      //  the inverse term as well.  Higher num_fit_coefficients terms we'll do as power series in energy.
       //  Before we return, we'll swap the zeroth and first coefficients so things are as expected.
-      assert( order == 3 );
-      for( int col = 0; col < order; ++col )
+      assert( num_fit_coefficients == 3 );
+      for( int col = 0; col < num_fit_coefficients; ++col )
       {
         if( col == 0 )
           A(row,col) = x[row] / data_y_uncert;
@@ -678,10 +681,10 @@ double fit_sqrt_poly_fwhm_lls( const std::deque< std::shared_ptr<const PeakDef> 
       }
     }else
     {
-      for( int col = 0; col < order; ++col )
+      for( int col = 0; col < num_fit_coefficients; ++col )
         A(row,col) = std::pow( x[row], double(col)) / data_y_uncert;
     }
-  }//for( int col = 0; col < order; ++col )
+  }//for( int col = 0; col < num_fit_coefficients; ++col )
   
   const ublas::matrix<double> A_transpose = ublas::trans( A );
   const ublas::matrix<double> alpha = prod( A_transpose, A );
@@ -693,13 +696,13 @@ double fit_sqrt_poly_fwhm_lls( const std::deque< std::shared_ptr<const PeakDef> 
   const ublas::vector<double> beta = prod( A_transpose, b );
   const ublas::vector<double> a = prod( C, beta );
   
-  coeffs.resize( order );
-  coeff_uncerts.resize( order );
-  for( int coef = 0; coef < order; ++coef )
+  coeffs.resize( num_fit_coefficients );
+  coeff_uncerts.resize( num_fit_coefficients );
+  for( int coef = 0; coef < num_fit_coefficients; ++coef )
   {
     coeffs[coef] = static_cast<float>( a(coef) );
     coeff_uncerts[coef] = static_cast<float>( C(coef,coef) );
-  }//for( int coef = 0; coef < order; ++coef )
+  }//for( int coef = 0; coef < num_fit_coefficients; ++coef )
   
   double chi2 = 0;
   for( size_t bin = 0; bin < nbin; ++bin )
@@ -707,7 +710,7 @@ double fit_sqrt_poly_fwhm_lls( const std::deque< std::shared_ptr<const PeakDef> 
     double y_pred = 0.0;
     if( include_inv_term )
     {
-      for( int i = 0; i < order; ++i )
+      for( int i = 0; i < num_fit_coefficients; ++i )
       {
         if( i == 0 )
           y_pred += a(i) * x[bin];
@@ -720,7 +723,7 @@ double fit_sqrt_poly_fwhm_lls( const std::deque< std::shared_ptr<const PeakDef> 
       }
     }else
     {
-      for( int i = 0; i < order; ++i )
+      for( int i = 0; i < num_fit_coefficients; ++i )
         y_pred += a(i) * std::pow( x[bin], static_cast<double>(i) );
     }//if( include_inv_term ) / else
     

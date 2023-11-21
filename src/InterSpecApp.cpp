@@ -372,6 +372,7 @@ void InterSpecApp::setupDomEnvironment()
         case 'k': // Clear showing reference photopeak lines
         case 's': // Store
         case 'l': // Log/Linear
+        case 'f': case 'F': // Show FAQs - for development only
         case 'e': case 'E': // Export file dialog
           if( $(".Wt-dialogcover").is(':visible') ) // Dont do shortcut when there is a blocking-dialog showing
             return;
@@ -647,7 +648,8 @@ void InterSpecApp::setupWidgets( const bool attemptStateLoad  )
          || SpecUtils::istarts_with(internal_path, "/dose/")
          || SpecUtils::istarts_with(internal_path, "/gammaxs/")
          || SpecUtils::istarts_with(internal_path, "/1overr2/")
-         || SpecUtils::istarts_with(internal_path, "/unit/") ) )
+         || SpecUtils::istarts_with(internal_path, "/unit/")
+         || SpecUtils::istarts_with(internal_path, "/welcome") ) )
   {
     try
     {
@@ -664,7 +666,6 @@ void InterSpecApp::setupWidgets( const bool attemptStateLoad  )
   //Check to see if we should load the apps last saved state
   try
   {
-    const bool saveSpectra =  true; // InterSpecUser::preferenceValue<bool>("SaveSpectraToDb", m_viewer );
     bool saveState = InterSpecUser::preferenceValue<bool>( "AutoSaveSpectraToDb", m_viewer );
     saveState = (saveState && attemptStateLoad);
     
@@ -680,15 +681,15 @@ void InterSpecApp::setupWidgets( const bool attemptStateLoad  )
     
     //if the URL contains something like "&restore=no", then we wont load in
     //  stored state
-    if( saveState && saveSpectra )
+    if( saveState )
     {
       Http::ParameterMap::const_iterator iter = parmap.find( "restore" );
       saveState = !(iter != parmap.end() && iter->second.size()
                     && (iter->second[0] == "0" || iter->second[0] == "no"
                         || iter->second[0] == "false"));
-    }//if( saveState && saveSpectra )
+    }//if( saveState )
     
-    if( !loadedSpecFile && saveSpectra && saveState )
+    if( !loadedSpecFile && saveState )
     {
       std::shared_ptr<DataBaseUtils::DbSession> sql = m_viewer->sql();
       DataBaseUtils::DbTransaction transaction( *sql );
@@ -808,7 +809,7 @@ void InterSpecApp::setupWidgets( const bool attemptStateLoad  )
       {
         Wt::log("error") << "Could not load previously saved state.";
       }
-    }//if( saveSpectra && saveState )
+    }//if(  saveState )
   }catch( std::exception &e )
   {
     Wt::log("error") << "Failed to load app state, caught: '" << e.what() << "'.";
@@ -1467,6 +1468,11 @@ void InterSpecApp::clearSession()
 #else
   setupWidgets( false );
 #endif
+  
+  // Set it so drag-n-drop of file will only allow loading foreground again,
+  //  until you load a foreground (the previous set value wont have been updated
+  //  when we do the reset).
+  doJavaScript( "$('.Wt-domRoot').data('HasForeground',0);" );
 }//void clearSession()
 
 

@@ -1270,7 +1270,7 @@ void TraceSourceInfo::equalEnough( const TraceSourceInfo &lhs, const TraceSource
     // "G": geometry
     // "F": for fitting; if not specified than false
     // "D1": "D2": Thickness, depth, etc
-    // "FD1": "FD2": fit the cooresponding dimensions
+    // "FD1": "FD2": fit the corresponding dimensions
     // "N": material name
     // "AN": atomic number
     // "FAN": fit atomic number - if not specified than false
@@ -1285,13 +1285,14 @@ void TraceSourceInfo::equalEnough( const TraceSourceInfo &lhs, const TraceSource
     
     if( m_isGenericMaterial )
     {
-      answer += "&AD=" + PhysicalUnits::printCompact(m_dimensions[1], 7);
+      const double ad_g_cm2 = m_dimensions[1] * PhysicalUnits::cm2 / PhysicalUnits::gram;
+      answer += "&AD=" + PhysicalUnits::printCompact(ad_g_cm2, 7);
       answer += "&AN=" + PhysicalUnits::printCompact(m_dimensions[0], 7);
       
       if( m_forFitting && m_fitDimensions[0] )
-        answer += "FAN=1";
+        answer += "&FAN=1";
       if( m_forFitting && m_fitDimensions[1] )
-        answer += "FAD=1";
+        answer += "&FAD=1";
     }else
     {
       std::string material = m_material ? m_material->name : string();
@@ -1409,7 +1410,7 @@ void TraceSourceInfo::equalEnough( const TraceSourceInfo &lhs, const TraceSource
           throw runtime_error( "AD '" + ad_str + "' is out of range" );
         
         m_dimensions[0] = an;
-        m_dimensions[1] = ad;
+        m_dimensions[1] = ad * (PhysicalUnits::gram / PhysicalUnits::cm2);
         m_dimensions[2] = 0.0f;
       }catch( std::exception &e )
       {
@@ -1586,7 +1587,11 @@ void TraceSourceInfo::equalEnough( const TraceSourceInfo &lhs, const TraceSource
         const float m = std::max( fabs(lhs.m_dimensions[i]), fabs(rhs.m_dimensions[i]) );
         const float d = fabs(lhs.m_dimensions[i] - rhs.m_dimensions[i]);
         if( (m > 1.0E-9) && (fabs(d) > 1.0E-6*m) )
-          throw runtime_error( "ShieldingInfo LHS dimension " + std::to_string(i) + " differs from RHS." );
+        {
+          throw runtime_error( "ShieldingInfo for dimension " + std::to_string(i) + " differs:"
+                               + " LHS=" + std::to_string(lhs.m_dimensions[i])
+                               +  ", RHS=" + std::to_string(rhs.m_dimensions[i]) );
+        }
       }
       
       if( lhs.m_fitDimensions[i] != rhs.m_fitDimensions[i] )

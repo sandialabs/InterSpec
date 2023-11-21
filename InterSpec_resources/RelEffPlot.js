@@ -212,11 +212,19 @@ RelEffPlot.prototype.setRelEffData = function (data_vals, fit_eqn) {
           if( d.nuc_info.length === 0 )
             return "noiso";
 
-          if( d.nuc_info.length !== 1 )
-            return "multiiso";
+          //Return the dominant nuclide, if no nuclide is over 50%, we'll use "multiiso"
+          //  TODO: use a gradient to indicate relative components
+          let max_contrib = 0, sum_contrib = 0, max_nuc = null;
+          for( const el of d.nuc_info ) {
+            const contrib = el.rel_act * el.br;
+            sum_contrib += contrib;
+            if( contrib > max_contrib ){
+              max_contrib = contrib;
+              max_nuc = el.nuc;
+            }
+          }
           
-          const nuc = d.nuc_info[0].nuc;
-          return nuc;
+          return (max_nuc && (max_contrib > 0.5*sum_contrib)) ? max_nuc : "multiiso";
         })
         .on("mouseover", function (d, i) {
 

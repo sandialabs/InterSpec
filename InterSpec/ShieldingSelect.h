@@ -166,6 +166,16 @@ public:
   /** @returns the current geometry. */
   GammaInteractionCalc::GeometryType geometry() const;
   
+  /** Sets if trace or self-attenuating sources are allowed.
+   
+   @param fixed_geom If true, then any trace or self-attenuating sources, as well as menu
+          item to add a trace source, will be removed, and geometry will be set to spherical.
+          If false, will make sure menu item to add trace-source is enabled.
+   
+   If `m_forFitting` is false, and this function is called, will throw exception.
+   */
+  void setFixedGeometry( const bool fixed_geom );
+  
   //isGenericMaterial(): tells you if the material is defined by areal density
   //  and atomic number, or if a pre-defined material
   bool isGenericMaterial() const;
@@ -255,7 +265,7 @@ public:
   //  Returns null on error.
   const Material *material( const std::string &text );
   
-  //remove() is the signal emmitted when the user clicks the close button
+  //remove() is the signal emitted when the user clicks the close button
   Wt::Signal<ShieldingSelect *> &remove();
 
   //Signals emitted when the user requests to add another shielding. Can only be
@@ -263,10 +273,10 @@ public:
   Wt::Signal<ShieldingSelect *> &addShieldingBefore();
   Wt::Signal<ShieldingSelect *> &addShieldingAfter();
   
-  //materialModified() is signal emmitted when the material is modified.
+  //materialModified() is signal emitted when the material is modified.
   Wt::Signal<ShieldingSelect *> &materialModified();
 
-  //materialChanged() is signal emmitted when the material is changed.
+  //materialChanged() is signal emitted when the material is changed.
   Wt::Signal<ShieldingSelect *> &materialChanged();
 
   //  The removingIsotopeAsSource() signal will be emitted for all
@@ -548,6 +558,14 @@ protected:
   //  on what has been done.
   void handleMaterialChange();
   
+  /** Handles when `m_materialEdit` emits the `changed()` or `enterPressed()` signals.
+   
+   Does a simple guess to correct for the material name not being valid if the user clicked on one
+   of the popup suggestion (this first `m_materialEdit->changed()` signal will have only the
+   partial text the user entered to get the suggestions).
+   */
+  void handleUserChangedMaterialName();
+  
   /** Updates #m_currentMaterial if `m_materialEdit->text() != m_currentMaterialDescrip` */
   void updateMaterialFromUserInputTxt();
   
@@ -568,9 +586,9 @@ protected:
   
    
   This function tries to adjust the other isotope fractions in a way that is kinda intuitive to
-  the user, while enforcing consitency.
+  the user, while enforcing consistency.
    
-   The overal mass-fraction for the respective element stays the same, this function just
+   The overall mass-fraction for the respective element stays the same, this function just
    changes the isotopic composition of the element.  (i.e. the mass-fraction of the element
    will stay the same).
    */
@@ -631,6 +649,11 @@ protected:
   Wt::WPushButton *m_closeIcon;
   Wt::WPushButton *m_addIcon;
   PopupDivMenuItem *m_addTraceSourceItem;
+  
+  /** If true, then `m_addTraceSourceItem` should be hidden, spherical geometry, and there should be no trace sources,
+   and no self-attenuating sources.
+   */
+  bool m_fixedGeometry;
   
   /** Stack to hold the dimension edits for spherical, cylindrical, and rectangular geometries, as well as m_genericMaterialDiv.
    First entry is m_genericMaterialDiv, then spherical, then cylindrical, then rectangular

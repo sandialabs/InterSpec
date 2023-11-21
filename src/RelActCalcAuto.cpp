@@ -740,6 +740,18 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
   /** Will either be null, or have FWHM info. */
   std::shared_ptr<const DetectorPeakResponse> m_drf;
   
+  /** Indexes of where information begin in the parameters vector - currently used as confirmation of index, but
+   it probably makes sense to start using at some point.
+   */
+  size_t m_energy_cal_par_start_index;
+  size_t m_fwhm_par_start_index;
+  size_t m_rel_eff_par_start_index;
+  size_t m_acts_par_start_index;
+  size_t m_free_peak_par_start_index;
+  size_t m_skew_par_start_index;
+  
+  bool m_skew_has_energy_dependance;
+  
   std::shared_ptr<std::atomic_bool> m_cancel_calc;
   
   /** just for debug purposes, we'll keep track of how many times the eval function gets called. */
@@ -783,6 +795,13 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
   m_energy_cal( spectrum ? spectrum->energy_calibration() : nullptr ),
   m_rel_eff_anchor_enhancement( 1000.0 ),
   m_drf( nullptr ),
+  m_energy_cal_par_start_index( std::numeric_limits<size_t>::max() ),
+  m_fwhm_par_start_index( std::numeric_limits<size_t>::max() ),
+  m_rel_eff_par_start_index( std::numeric_limits<size_t>::max() ),
+  m_acts_par_start_index( std::numeric_limits<size_t>::max() ),
+  m_free_peak_par_start_index( std::numeric_limits<size_t>::max() ),
+  m_skew_par_start_index( std::numeric_limits<size_t>::max() ),
+  m_skew_has_energy_dependance( false ),
   m_cancel_calc( cancel_calc ),
   m_ncalls( 0 )
   {
@@ -834,7 +853,8 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
                                                2*PhysicalUnits::cm,
                                                PhysicalUnits::keV,
                                                spectrum->gamma_energy_min(),
-                                               spectrum->gamma_energy_max() );
+                                               spectrum->gamma_energy_max(),
+                                               DetectorPeakResponse::EffGeometryType::FarField );
         
         if( all_peaks.empty() )
           throw runtime_error( "No peaks provided to fit for FWHM parameters." );
@@ -1037,6 +1057,11 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     
     // Floating peaks; one parameter for amplitude, one for FWHM (which will usually be unused)
     num_pars += 2*m_extra_peaks.size();
+    
+    // Peak skew parameters; two sets of these, with some coefficients in the upper set
+    //  maybe not being used
+    const size_t num_skew = PeakDef::num_skew_parameters( m_options.skew_type );
+    num_pars += 2*num_skew;
     
     // Anything else?
     
@@ -1365,8 +1390,17 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     const size_t num_acts_par = 2*cost_functor->m_nuclides.size();
     const size_t free_peak_start = acts_start + num_acts_par;
     const size_t num_free_peak_par = 2*extra_peaks.size();
+    const size_t num_skew_coefs = PeakDef::num_skew_parameters( options.skew_type );
+    const size_t skew_start = free_peak_start + num_free_peak_par;
     
-    assert( (free_peak_start + num_free_peak_par) == cost_functor->number_parameters() );
+    cost_functor->m_energy_cal_par_start_index = 0;
+    cost_functor->m_fwhm_par_start_index = fwhm_start;
+    cost_functor->m_rel_eff_par_start_index = rel_eff_start;
+    cost_functor->m_acts_par_start_index = acts_start;
+    cost_functor->m_free_peak_par_start_index = free_peak_start;
+    cost_functor->m_skew_par_start_index = skew_start;
+    
+    assert( (skew_start + 2*num_skew_coefs) == cost_functor->number_parameters() );
     
     try
     {
@@ -1774,7 +1808,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
       
       int manual_num_peaks = static_cast<int>( peaks_with_sources.size() );
       int manual_num_isos = static_cast<int>( manual_nucs.size() );
-      int manual_num_rel_eff = manual_rel_eff_order + 1;
+      int manual_num_rel_eff = static_cast<int>( manual_rel_eff_order + 1 );
       int num_free_pars = manual_num_peaks - (manual_num_rel_eff + manual_num_isos - 1);
       
       if( (manual_num_peaks - manual_num_isos) < 1 )
@@ -1818,7 +1852,58 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
       
       for( size_t i = 0; i <= options.rel_eff_eqn_order; ++i )
         parameters[rel_eff_start + i] = manual_solution.m_rel_eff_eqn_coefficients[i];
-            
+
+      // The parameters will have entries for two sets of peak-skew parameters; one for
+      //  the lowest energy of the problem, and one for the highest; in-between we will
+      //  scale the energy-dependent skew parameters.  If there is no energy dependence for
+      //  a parameter, or the problem doesnt span a large enough energy range to have a
+      //  dependence, parameters for the second skew will be fixed garbage values (i.e.,
+      //  unused)
+      for( size_t i = 0; i < num_skew_coefs; ++i )
+      {
+        const auto ct = PeakDef::CoefficientType( PeakDef::CoefficientType::SkewPar0 + i );
+        double lower, upper, starting, step;
+        const bool use = PeakDef::skew_parameter_range( options.skew_type, ct,
+                                                       lower, upper, starting, step );
+        assert( use );
+        if( !use )
+          throw logic_error( "Inconsistent skew parameter thing" );
+        
+        bool fit_energy_dep = PeakDef::is_energy_dependent( options.skew_type, ct );
+        
+        if( fit_energy_dep && (energy_ranges.size() == 1) )
+        {
+          // TODO: if statistically significant peaks across less than ~100 keV, then set fit_energy_dep to false
+#ifdef _MSC_VER
+#pragma message( "if statistically significant peaks across less than ~100 keV, then set fit_energy_dep to false" )
+#else
+#warning "if statistically significant peaks across less than ~100 keV, then set fit_energy_dep to false"
+#endif
+          const double dx = (energy_ranges.front().upper_energy - energy_ranges.front().lower_energy);
+          fit_energy_dep = (dx > 100.0);
+        }
+        
+        // If we will be fitting an energy dependence, make sure the cost functor knows this
+        cost_functor->m_skew_has_energy_dependance |= fit_energy_dep;
+        
+        
+        parameters[skew_start + i] = starting;
+        problem.SetParameterLowerBound(pars + skew_start + i, 0, lower );
+        problem.SetParameterUpperBound(pars + skew_start + i, 0, upper );
+        
+        // Specify ranges for second set of skew parameters
+        if( !fit_energy_dep )
+        {
+          parameters[skew_start + i + num_skew_coefs] = -999.9;
+          problem.SetParameterBlockConstant( pars + skew_start + i + num_skew_coefs );
+        }else
+        {
+          parameters[skew_start + i + num_skew_coefs] = starting;
+          problem.SetParameterLowerBound(pars + skew_start + i + num_skew_coefs, 0, lower );
+          problem.SetParameterUpperBound(pars + skew_start + i + num_skew_coefs, 0, upper );
+        }
+      }//for( size_t i = 0; i < (num_skew_par/2); ++i )
+      
       // Manual "relative_activity" assumes a measurement of 1-second (or rather peaks are in CPS),
       //  but this "auto" relative activity takes into account live_time
       const double live_time = spectrum->live_time();
@@ -2192,7 +2277,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
           vector<float> coefs = cost_functor->m_energy_cal->coefficients();
           assert( coefs.size() >= 2 );
           coefs[0] += parameters[0];
-          coefs[1] *= (1.0 + parameters[1]);
+          coefs[1] *= parameters[1];
           
           const auto &dev_pairs = cost_functor->m_energy_cal->deviation_pairs();
           
@@ -2209,7 +2294,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
         {
           vector<float> lower_energies = *cost_functor->m_energy_cal->channel_energies();
           for( float &energy : lower_energies )
-            energy = parameters[0] + ((1.0 + parameters[1]) * energy);
+            energy = parameters[0] + (parameters[1] * energy);
           
           new_cal->set_lower_channel_energy( num_channel, std::move(lower_energies) );
           
@@ -2436,12 +2521,69 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
   float fwhm( const float energy, const std::vector<double> &x ) const
   {
     const auto drf_start = begin(x) + 2;
+    assert( 2 == m_fwhm_par_start_index );
     const size_t num_drf_par = num_parameters(m_options.fwhm_form);
     
     const vector<float> drfx( drf_start, drf_start + num_drf_par );
     
     return eval_fwhm( energy, m_options.fwhm_form, drfx );
   }//float fwhm(...)
+  
+  
+  void set_peak_skew( PeakDef &peak, const std::vector<double> &x ) const
+  {
+    const size_t skew_start = 2  //energy adjustments
+                              + num_parameters(m_options.fwhm_form)
+                              + m_options.rel_eff_eqn_order + 1
+                              + 2*m_nuclides.size()
+                              + 2*m_extra_peaks.size();
+    assert( skew_start == m_skew_par_start_index );
+    
+    if( m_options.skew_type == PeakDef::SkewType::NoSkew )
+      return;
+    
+    peak.setSkewType( m_options.skew_type );
+    
+    const size_t num_skew = PeakDef::num_skew_parameters( m_options.skew_type );
+    assert( x.size() <= (skew_start + 2*num_skew) );
+    vector<double> skew_pars( begin(x)+skew_start, begin(x)+skew_start+num_skew );
+    assert( skew_pars.size() == num_skew );
+    
+    if( m_skew_has_energy_dependance )
+    {
+      const float lower_energy = m_spectrum->gamma_channel_lower(0);
+      const float upper_energy = m_spectrum->gamma_channel_upper( m_spectrum->num_gamma_channels() - 1 );
+      const float mean_frac = (peak.mean() - lower_energy) / (upper_energy - lower_energy);
+      
+      for( size_t i = 0; i < skew_pars.size(); ++i )
+      {
+        const auto ct = PeakDef::CoefficientType(PeakDef::CoefficientType::SkewPar0 + i);
+        if( PeakDef::is_energy_dependent( m_options.skew_type, ct ) )
+        {
+          const double lower_en_val = x[skew_start + i];
+          const double upper_en_val = x[skew_start + i + num_skew];
+          assert( upper_en_val > -999 );//should NOT have value -999.9
+          
+          const double val = lower_en_val + mean_frac*(upper_en_val - lower_en_val);
+          peak.set_coefficient( val, ct );
+        }else
+        {
+          assert( x[skew_start + num_skew + i] < -999 ); //should have value -999.9
+          const double val = x[skew_start + i];
+          peak.set_coefficient( val, ct );
+        }
+      }
+    }else
+    {
+      for( size_t i = 0; i < skew_pars.size(); ++i )
+      {
+        assert( x[skew_start + num_skew + i] < -999 ); //should have value -999.9
+        const auto ct = PeakDef::CoefficientType(PeakDef::CoefficientType::SkewPar0 + i);
+        const double val = x[skew_start + i];
+        peak.set_coefficient( val, ct );
+      }
+    }//if( m_skew_has_energy_dependance )
+  }//set_peak_skew(...)
   
   
   size_t nuclide_index( const SandiaDecay::Nuclide * const nuc ) const
@@ -2471,7 +2613,9 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     const size_t act_start_index = 2  //energy adjustments
                                    + num_parameters(m_options.fwhm_form)
                                    + m_options.rel_eff_eqn_order + 1;
-    assert( (act_start_index + 2*m_nuclides.size() + 2*m_extra_peaks.size()) == number_parameters() );
+    assert( (act_start_index + 2*m_nuclides.size() + 2*m_extra_peaks.size()
+             + 2*PeakDef::num_skew_parameters(m_options.skew_type)) == number_parameters() );
+    assert( act_start_index == m_acts_par_start_index );
     
     assert( x.size() == number_parameters() );
     return x[act_start_index + 2*nuc_index];
@@ -2503,6 +2647,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     const size_t act_start_index = 2  //energy adjustments
                                    + num_parameters(m_options.fwhm_form)
                                    + m_options.rel_eff_eqn_order + 1;
+    assert( act_start_index == m_acts_par_start_index );
     
     // The `parent_nuc` will often times be `nuc`.
     const SandiaDecay::Nuclide *parent_nuc = age_controlling_nuc( nuc );
@@ -2531,6 +2676,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
   {
     const size_t rel_eff_start_index = 2 + num_parameters(m_options.fwhm_form);
     assert( (rel_eff_start_index + m_options.rel_eff_eqn_order + 1) < x.size() );
+    assert( rel_eff_start_index == m_rel_eff_par_start_index );
     
     return RelActCalc::eval_eqn( energy, m_options.rel_eff_eqn_type,
                                  &(x[rel_eff_start_index]), m_options.rel_eff_eqn_order + 1 );
@@ -2543,6 +2689,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
   double apply_energy_cal_adjustment( double energy, const std::vector<double> &x ) const
   {
     assert( x.size() > 2 );
+    assert( 0 == m_energy_cal_par_start_index );
     
     if( !m_options.fit_energy_cal )
     {
@@ -2834,6 +2981,8 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
         
         if( !nucinfo.peak_color_css.empty() )
           new_peak.setLineColor( Wt::WColor( Wt::WString::fromUTF8(nucinfo.peak_color_css) ) );
+        
+        set_peak_skew( new_peak, x );
       }//for( const SandiaDecay::EnergyRatePair &gamma : gammas )
     }//for( const NucInputGamma &nucinfo : m_nuclides )
     
@@ -2925,7 +3074,8 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     // The #fit_amp_and_offset function is taking most of the time for calculations - and in fact
     //  the PeakDef::gauss_integral is taking all of its time
     const double chi2 = fit_amp_and_offset( energies, data, num_channels, num_polynomial_terms,
-                                           is_step_continuum, ref_energy, {}, {}, peaks, dummy_amps,
+                                           is_step_continuum, ref_energy, {}, {}, peaks,
+                                           PeakDef::SkewType::NoSkew, nullptr, dummy_amps,
                                            continuum_coeffs, dummy_amp_uncert, continuum_uncerts );
     
     for( const double &val : continuum_coeffs )
@@ -3726,9 +3876,6 @@ void RoiRange::toXml( ::rapidxml::xml_node<char> *parent ) const
 }//RoiRange::toXml(...)
 
 
-
-
-
 void RoiRange::fromXml( const rapidxml::xml_node<char> *range_node )
 {
   try
@@ -3751,7 +3898,7 @@ void RoiRange::fromXml( const rapidxml::xml_node<char> *range_node )
     const rapidxml::xml_node<char> *cont_type_node = XML_FIRST_NODE( range_node, "ContinuumType" );
     const string cont_type_str = SpecUtils::xml_value_str( cont_type_node );
     continuum_type = PeakContinuum::str_to_offset_type_str( cont_type_str.c_str(), cont_type_str.size() );
-    
+        
     force_full_range = get_bool_node_value( range_node, "ForceFullRange" );
     allow_expand_for_peak_width = get_bool_node_value( range_node, "AllowExpandForPeakWidth" );
   }catch( std::exception &e )
@@ -3944,6 +4091,8 @@ rapidxml::xml_node<char> *Options::toXml( rapidxml::xml_node<char> *parent ) con
     append_string_node( base_node, "PuCorrelationMethod", method_str );
   }
   
+  append_string_node( base_node, "SkewType", PeakDef::to_string(skew_type) );
+  
   return base_node;
 }//rapidxml::xml_node<char> *Options::toXml(...)
 
@@ -4004,6 +4153,13 @@ void Options::fromXml( const ::rapidxml::xml_node<char> *parent )
       
       assert( found );
     }//if( !pu242_corr_str.empty() )
+    
+    // skew_type added 20231111; we wont require it.
+    skew_type = PeakDef::SkewType::NoSkew;
+    const rapidxml::xml_node<char> *skew_node = XML_FIRST_NODE( parent, "SkewType" );
+    const string skew_str = SpecUtils::xml_value_str( skew_node );
+    if( !skew_str.empty() )
+      skew_type = PeakDef::skew_from_string( skew_str );
   }catch( std::exception &e )
   {
     throw runtime_error( "Options::fromXml(): " + string(e.what()) );
@@ -4039,7 +4195,8 @@ Options::Options()
   rel_eff_eqn_order( 3 ),
   fwhm_form( FwhmForm::Polynomial_2 ),
   spectrum_title( "" ),
-  pu242_correlation_method( RelActCalc::PuCorrMethod::NotApplicable )
+  pu242_correlation_method( RelActCalc::PuCorrMethod::NotApplicable ),
+  skew_type( PeakDef::SkewType::NoSkew )
 {
 }
 

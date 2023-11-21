@@ -115,6 +115,24 @@ bool use_curie_units()
   return !InterSpecUser::preferenceValue<bool>( "DisplayBecquerel", interspec );
 }//bool use_curie_units()
 
+  
+string det_eff_geom_type_postfix( DetectorPeakResponse::EffGeometryType type )
+{
+  switch( type )
+  {
+    case DetectorPeakResponse::EffGeometryType::FarField:
+    case DetectorPeakResponse::EffGeometryType::FixedGeomTotalAct:
+      return "";
+    case DetectorPeakResponse::EffGeometryType::FixedGeomActPerCm2:
+      return "/cm2";
+    case DetectorPeakResponse::EffGeometryType::FixedGeomActPerM2:
+      return "/m2";
+    case DetectorPeakResponse::EffGeometryType::FixedGeomActPerGram:
+      return "/g";
+  }//switch( m_det_type )
+  assert( 0 );
+  return "";
+}//string det_eff_geom_type_postfix( DetectorPeakResponse::EffGeometryType )
 }//namespace
 
 // We cant have MdaPeakRow in a private namespace since we forward declare it in the header.
@@ -198,9 +216,15 @@ public:
   {
     try
     {
+      const bool fixed_geom = m_input.drf->isFixedGeometry();
+      const DetectorPeakResponse::EffGeometryType det_geom = m_input.drf->geometryType();
+      const float &energy = m_input.energy;
+      const double &distance = m_input.distance;
       const bool useCuries = use_curie_units();
-      const double det_eff = m_input.drf->efficiency(m_input.energy, m_input.distance);
-      const double counts_4pi = (m_input.do_air_attenuation ? m_input.counts_per_bq_into_4pi_with_air
+      const double det_eff = fixed_geom ? m_input.drf->intrinsicEfficiency(energy)
+                                        : m_input.drf->efficiency(energy, distance);
+      const double counts_4pi = ((m_input.do_air_attenuation && !fixed_geom)
+                                 ? m_input.counts_per_bq_into_4pi_with_air
                                  : m_input.counts_per_bq_into_4pi);
       const double gammas_per_bq = counts_4pi * det_eff;
       
@@ -225,9 +249,12 @@ public:
             const float upper_act = result.upper_limit / gammas_per_bq;
             const float nominal_act = result.source_counts / gammas_per_bq;
             
-            const string lowerstr = PhysicalUnits::printToBestActivityUnits( lower_act, 2, useCuries );
-            const string upperstr = PhysicalUnits::printToBestActivityUnits( upper_act, 2, useCuries );
-            const string nomstr = PhysicalUnits::printToBestActivityUnits( nominal_act, 2, useCuries );
+            const string lowerstr = PhysicalUnits::printToBestActivityUnits( lower_act, 2, useCuries )
+                                    + det_eff_geom_type_postfix( det_geom );
+            const string upperstr = PhysicalUnits::printToBestActivityUnits( upper_act, 2, useCuries )
+                                    + det_eff_geom_type_postfix( det_geom );
+            const string nomstr = PhysicalUnits::printToBestActivityUnits( nominal_act, 2, useCuries )
+                                  + det_eff_geom_type_postfix( det_geom );
             
             //cout << "At " << m_input.energy << "keV observed " << result.source_counts
             //     << " counts, at distance " << PhysicalUnits::printToBestLengthUnits(m_input.distance)
@@ -243,14 +270,16 @@ public:
           {
             // This can happen when there are a lot fewer counts in the peak region than predicted
             //  from the sides - since this is non-sensical, we'll just say zero.
-            const string unitstr = useCuries ? "Ci" : "Bq";
+            const string unitstr = (useCuries ? "Ci" : "Bq") + det_eff_geom_type_postfix( det_geom );
             m_poisonLimit->setText( "<div>MDA: &lt; 0" + unitstr + "</div><div>(sig. fewer counts in ROI than predicted)</div>" );
             m_poisonLimit->setToolTip( "Significantly fewer counts were observed in the"
                                        " Region Of Interest, than predicted by the neighboring channels." );
           }else
           {
             // We will provide the upper bound on activity.
-            const string mdastr = PhysicalUnits::printToBestActivityUnits( m_simple_mda, 2, useCuries );
+            const string mdastr = PhysicalUnits::printToBestActivityUnits( m_simple_mda, 2, useCuries )
+                                  + det_eff_geom_type_postfix( det_geom );
+            
             m_poisonLimit->setText( "MDA: " + mdastr );
             m_poisonLimit->setToolTip( "Minimum Detectable Activity, using just this Region Of"
                                       " Interests, assuming no signal is present.\n"
@@ -570,11 +599,15 @@ public:
     assert( input.confidence_level > 0.5 && input.confidence_level < 1.0 );
     assert( input.roi_start < input.roi_end );
     
+    const bool fixed_geom = input.drf->isFixedGeometry();
+    const DetectorPeakResponse::EffGeometryType det_geom = input.drf->geometryType();
     
+    const bool do_air_atten = (input.do_air_attenuation && !fixed_geom);
     const double fwhm = input.drf->peakResolutionFWHM( input.energy );
-    const double det_eff = input.drf->efficiency( input.energy, input.distance );
-    const double counts_4pi = (input.do_air_attenuation ? input.counts_per_bq_into_4pi_with_air
-                               : input.counts_per_bq_into_4pi);
+    const double det_eff = fixed_geom ? input.drf->intrinsicEfficiency(input.energy)
+                                      : input.drf->efficiency( input.energy, input.distance );
+    const double counts_4pi = (do_air_atten ? input.counts_per_bq_into_4pi_with_air
+                                            : input.counts_per_bq_into_4pi);
     
     char buffer[64] = { '\0' };
     
@@ -592,7 +625,11 @@ public:
     
     const string fwhm_str = PhysicalUnits::printCompact(fwhm,3);
     const string cnts_per_bq_str = PhysicalUnits::printCompact(counts_4pi*det_eff, 3);
-    snprintf( buffer, sizeof(buffer), "FWHM=%s, %s cnts/bq", fwhm_str.c_str(), cnts_per_bq_str.c_str() );
+    const string act_postfix = det_eff_geom_type_postfix( det_geom );
+    
+    
+    snprintf( buffer, sizeof(buffer), "FWHM=%s, %s cnts/bq%s",
+             fwhm_str.c_str(), cnts_per_bq_str.c_str(), act_postfix.c_str() );
     m_title_info = new WText( buffer, rightColumn );
     m_title_info->addStyleClass( "MdaRowDetInfo" );
     
@@ -711,11 +748,16 @@ public:
         throw runtime_error( "No measurement" );
         
       const bool useCuries = use_curie_units();
-      const double intrinsic_eff = m_input.drf->intrinsicEfficiency( m_input.energy );
-      const double geom_eff = m_input.drf->fractionalSolidAngle( m_input.drf->detectorDiameter(), m_input.distance );
-      const double det_eff = m_input.drf->efficiency(m_input.energy, m_input.distance);
-      const double counts_4pi = (m_input.do_air_attenuation ? m_input.counts_per_bq_into_4pi_with_air
-                                 : m_input.counts_per_bq_into_4pi);
+      const bool fixed_geom = m_input.drf->isFixedGeometry();
+      const DetectorPeakResponse::EffGeometryType det_geom = m_input.drf->geometryType();
+      const bool air_atten = (m_input.do_air_attenuation && !fixed_geom);
+      const double &distance = m_input.distance;
+      const float &energy = m_input.energy;
+      const double intrinsic_eff = m_input.drf->intrinsicEfficiency( energy );
+      const double geom_eff = m_input.drf->fractionalSolidAngle( m_input.drf->detectorDiameter(), distance );
+      const double det_eff = fixed_geom ? intrinsic_eff : m_input.drf->efficiency(energy, distance);
+      const double counts_4pi = (air_atten ? m_input.counts_per_bq_into_4pi_with_air
+                                           : m_input.counts_per_bq_into_4pi);
       const double gammas_per_bq = counts_4pi * det_eff;
       
       snprintf( buffer, sizeof(buffer), "%.1f%%", 100.0*m_input.confidence_level );
@@ -757,9 +799,12 @@ public:
             const float upper_act = result.upper_limit / gammas_per_bq;
             const float nominal_act = result.source_counts / gammas_per_bq;
             
-            const string lowerstr = PhysicalUnits::printToBestActivityUnits( lower_act, 2, useCuries );
-            const string upperstr = PhysicalUnits::printToBestActivityUnits( upper_act, 2, useCuries );
-            const string nomstr = PhysicalUnits::printToBestActivityUnits( nominal_act, 2, useCuries );
+            const string lowerstr = PhysicalUnits::printToBestActivityUnits( lower_act, 2, useCuries )
+                                    + det_eff_geom_type_postfix( det_geom );
+            const string upperstr = PhysicalUnits::printToBestActivityUnits( upper_act, 2, useCuries )
+                                    + det_eff_geom_type_postfix( det_geom );
+            const string nomstr = PhysicalUnits::printToBestActivityUnits( nominal_act, 2, useCuries )
+                                  + det_eff_geom_type_postfix( det_geom );
             
             cell = table->elementAt( table->rowCount(), 0 );
             new WText( "Observed activity", cell );
@@ -786,7 +831,8 @@ public:
           }else
           {
             // We will provide the upper bound on activity.
-            const string mdastr = PhysicalUnits::printToBestActivityUnits( m_simple_mda, 2, useCuries );
+            const string mdastr = PhysicalUnits::printToBestActivityUnits( m_simple_mda, 2, useCuries )
+                                  + det_eff_geom_type_postfix( det_geom );
             
             cell = table->elementAt( table->rowCount(), 0 );
             new WText( "Activity upper bound", cell );
@@ -897,6 +943,7 @@ public:
       val = PhysicalUnits::printCompact( result.decision_threshold, 4 )
             + " <span style=\"font-size: smaller;\">("
             + PhysicalUnits::printToBestActivityUnits( decision_threshold_act, 2, useCuries )
+            + det_eff_geom_type_postfix( det_geom )
             + ")</span>";
       cell = table->elementAt( table->rowCount() - 1, 1 );
       txt = new WText( val, cell );
@@ -913,6 +960,7 @@ public:
       val = PhysicalUnits::printCompact( result.detection_limit, 4 )
             + " <span style=\"font-size: smaller;\">("
             + PhysicalUnits::printToBestActivityUnits( detection_limit_act, 2, useCuries )
+            + det_eff_geom_type_postfix( det_geom )
             + ")</span>";
       
       cell = table->elementAt( table->rowCount() - 1, 1 );
@@ -1720,6 +1768,11 @@ void DetectionLimitTool::handleDrfSelected( std::shared_ptr<DetectorPeakResponse
 {
   m_drf_cache = new_drf;
   
+  // The DetectorDisplay::setDetector(...) function may not have been called yet because of
+  //  the order of signal/slot connections - so we'll set that here to make sure we are up
+  //  to date.
+  m_detectorDisplay->setDetector( new_drf );
+  
   handleInputChange();
 }//void handleDrfChange()
 
@@ -1761,16 +1814,18 @@ void DetectionLimitTool::calcAndSetDefaultMinRelativeIntensity()
   {
   }
   
-  const bool air_atten = m_attenuateForAir->isChecked();
+  const bool fixed_geom = drf->isFixedGeometry();
+  const bool air_atten = (!fixed_geom && m_attenuateForAir->isChecked());
   
-  if( distance > 0.0 )
+  if( (distance > 0.0) || fixed_geom )
   {
     for( GammaLineInfo &line : lines )
     {
       if( air_atten )
         line.gammas_into_4pi = line.gammas_4pi_after_air_attenuation;
-      line.gammas_into_4pi *= drf->efficiency( line.energy, distance );
-    }
+      line.gammas_into_4pi *= (fixed_geom ? drf->intrinsicEfficiency(line.energy)
+                                          : drf->efficiency( line.energy, distance ) );
+    }//for( GammaLineInfo &line : lines )
   }//if( distance > 0.0 )
   
   // Sort 'lines' so the largest intensities come first
@@ -1940,8 +1995,27 @@ void DetectionLimitTool::handleInputChange()
     return;
   }
   
+  const bool fixed_geom = drf->isFixedGeometry();
   const LimitType type = limitType();
-  const bool do_air_atten = m_attenuateForAir->isChecked();
+  const bool do_air_atten = (!fixed_geom && m_attenuateForAir->isChecked());
+  
+  if( fixed_geom )
+  {
+    if( m_distOrActivity->isChecked() ) //checked means distance limit
+    {
+      m_distOrActivity->setUnChecked();
+      m_distOrActivity->disable();
+      handleUserChangedToComputeActOrDist();
+      
+      //`handleUserChangedToComputeActOrDist()` will call this function
+      //  (`DetectionLimitTool::handleInputChange()`), but we wont get here, but we
+      //  do have no need to continue on in our current function call.
+      return;
+    }//
+  }else
+  {
+    m_distOrActivity->enable();
+  }//if( m_distOrActivity->isChecked() ) / else
   
   double distance = 0.0, activity = 0.0;
   
@@ -2018,7 +2092,8 @@ void DetectionLimitTool::handleInputChange()
   double maxLineIntensity = 0.0;
   for( const auto &line : lines )
   {
-    const double det_eff = drf->efficiency( line.energy, distance);
+    const double det_eff = fixed_geom ? drf->intrinsicEfficiency(line.energy)
+                                      : drf->efficiency( line.energy, distance);
     
     // Note that line.gammas_into_4pi and line.gammas_4pi_after_air_attenuation already have
     //  shielding attenuation accounted for.
@@ -2040,7 +2115,8 @@ void DetectionLimitTool::handleInputChange()
   {
     const double energy = line.energy;
     const double br = line.branching_ratio;
-    const double det_eff = drf->efficiency( energy, distance);
+    const double det_eff = fixed_geom ? drf->intrinsicEfficiency(energy)
+                                      : drf->efficiency( energy, distance);
     const double intensity = det_eff * (do_air_atten ? line.gammas_4pi_after_air_attenuation : line.gammas_into_4pi);
     
     const double relIntensity = intensity / maxLineIntensity;
@@ -2160,6 +2236,7 @@ void DetectionLimitTool::doCalc()
   double minSearchActivity = std::numeric_limits<double>::infinity(), maxSearchActivity = 0.0;
   
   int nused = 0;
+  DetectorPeakResponse::EffGeometryType det_geom = DetectorPeakResponse::EffGeometryType::FarField;
   for( auto w : m_peaks->children() )
   {
     auto rw = dynamic_cast<MdaPeakRow *>( w );
@@ -2168,6 +2245,9 @@ void DetectionLimitTool::doCalc()
       continue;
     
     const MdaPeakRowInput &input = rw->input();
+    const bool fixed_geom = input.drf->isFixedGeometry();
+    const bool air_atten = (!fixed_geom && input.do_air_attenuation);
+    det_geom = input.drf->geometryType(); //assumes all peaks have same DRF - which they should
     
     ++nused;
     if( (rw->m_simple_mda > 0.0) && !IsInf(rw->m_simple_mda) && !IsNan(rw->m_simple_mda)  )
@@ -2177,8 +2257,9 @@ void DetectionLimitTool::doCalc()
       
       if( rw->m_simple_excess_counts > 0.0 )
       {
-        const double det_eff = input.drf->efficiency(input.energy, input.distance);
-        const double counts_4pi = (input.do_air_attenuation ? input.counts_per_bq_into_4pi_with_air
+        const double det_eff = fixed_geom ? input.drf->intrinsicEfficiency(input.energy)
+                                          : input.drf->efficiency(input.energy, input.distance);
+        const double counts_4pi = (air_atten ? input.counts_per_bq_into_4pi_with_air
                                                             : input.counts_per_bq_into_4pi);
         const double gammas_per_bq = det_eff * counts_4pi;
         
@@ -2296,6 +2377,7 @@ void DetectionLimitTool::doCalc()
     
     cout << "Found min X2=" << overallBestChi2 << " with activity "
          << PhysicalUnits::printToBestActivityUnits(overallBestActivity,4,false)
+         << det_eff_geom_type_postfix( det_geom )
          << " and it took " << std::dec << num_iterations << " iterations" << endl;
     
     //boost::math::tools::bracket_and_solve_root(...)
@@ -2336,11 +2418,15 @@ void DetectionLimitTool::doCalc()
       foundLowerCl = true;
       cout << "lower_val CL activity="
            << PhysicalUnits::printToBestActivityUnits(lowerLimit,4,false)
+           << det_eff_geom_type_postfix( det_geom )
            << " with Chi2(" << lowerLimit << ")=" << chi2ForAct(lowerLimit)
            << " (Best Chi2(" << overallBestActivity << ")=" << overallBestChi2
            << "), num_iterations=" << std::dec << num_iterations << " and search range from "
-           << PhysicalUnits::printToBestActivityUnits(minSearchActivity,4,false) << " to "
+           << PhysicalUnits::printToBestActivityUnits(minSearchActivity,4,false)
+           << det_eff_geom_type_postfix( det_geom )
+           << " to "
            << PhysicalUnits::printToBestActivityUnits(overallBestActivity,4,false)
+           << det_eff_geom_type_postfix( det_geom )
            << endl;
       
       const double minActChi2 = chi2ForRangeLimit(minSearchActivity);
@@ -2357,7 +2443,9 @@ void DetectionLimitTool::doCalc()
           lower_val = boost::math::tools::bisect( chi2ForRangeLimit, minSearchActivity, lowerLimit, tolerance, max_iter );
           activityRangeMin = 0.5*(lower_val.first + lower_val.second);
           foundLowerDisplay = true;
-          cout << "lower_val display activity=" << PhysicalUnits::printToBestActivityUnits(activityRangeMin,4,false)
+          cout << "lower_val display activity="
+          << PhysicalUnits::printToBestActivityUnits(activityRangeMin,4,false)
+          << det_eff_geom_type_postfix( det_geom )
           << " wih chi2=" << chi2ForAct(activityRangeMin) << ", num_iterations=" << std::dec << num_iterations << endl;
         }catch( std::exception &e )
         {
@@ -2371,10 +2459,11 @@ void DetectionLimitTool::doCalc()
           
           cout << "Couldnt find lower-limit of display range properly, so scanned down and found "
                << PhysicalUnits::printToBestActivityUnits(activityRangeMin,4,false)
+               << det_eff_geom_type_postfix( det_geom )
                << " where LowerLimit=" << PhysicalUnits::printToBestActivityUnits(lowerLimit,4,false)
                << " and ActRangeMin=" << PhysicalUnits::printToBestActivityUnits(activityRangeMin,4,false)
                << " and BestActivity" << PhysicalUnits::printToBestActivityUnits(overallBestActivity,4,false)
-          << endl;
+               << endl;
         }//try / catch
       }//
     }else
@@ -2393,9 +2482,13 @@ void DetectionLimitTool::doCalc()
       upperLimit = 0.5*(upper_val.first + upper_val.second);
       foundUpperCl = true;
       cout << "upper_val CL activity=" << PhysicalUnits::printToBestActivityUnits(upperLimit,4,false)
+           << det_eff_geom_type_postfix( det_geom )
            << " wih chi2=" << chi2ForAct(upperLimit) << ", num_iterations=" << std::dec << num_iterations
-           << " and search range from " << PhysicalUnits::printToBestActivityUnits(overallBestActivity,4,false) << " to "
+           << " and search range from " << PhysicalUnits::printToBestActivityUnits(overallBestActivity,4,false)
+           << det_eff_geom_type_postfix( det_geom )
+           << " to "
            << PhysicalUnits::printToBestActivityUnits(maxSearchActivity,4,false)
+           << det_eff_geom_type_postfix( det_geom )
            << endl;
       
       const double maxSearchChi2 = chi2ForRangeLimit(maxSearchActivity);
@@ -2412,6 +2505,7 @@ void DetectionLimitTool::doCalc()
           activityRangeMax = 0.5*(upper_val.first + upper_val.second);
           foundUpperDisplay = true;
           cout << "upper_val display activity=" << PhysicalUnits::printToBestActivityUnits(activityRangeMax,4,false)
+          << det_eff_geom_type_postfix( det_geom )
           << " wih chi2=" << chi2ForAct(activityRangeMax) << ", num_iterations=" << std::dec << num_iterations << endl;
         }catch( std::exception &e )
         {
@@ -2425,9 +2519,16 @@ void DetectionLimitTool::doCalc()
           
           cout << "Couldn't find upper-limit of display range properly, so scanned up and found "
                << PhysicalUnits::printToBestActivityUnits(activityRangeMax,4,false)
-               << " where UpperLimit Chi2(" << upperLimit << ")=" << PhysicalUnits::printToBestActivityUnits(upperLimit,4,false)
-               << " and ActRangeMax Chi2(" << activityRangeMax << ")=" << PhysicalUnits::printToBestActivityUnits(activityRangeMax,4,false)
-               << " and BestActivity Chi2(" << overallBestActivity << ")=" << PhysicalUnits::printToBestActivityUnits(overallBestActivity,4,false)
+               << det_eff_geom_type_postfix( det_geom )
+               << " where UpperLimit Chi2(" << upperLimit << ")="
+               << PhysicalUnits::printToBestActivityUnits(upperLimit,4,false)
+               << det_eff_geom_type_postfix( det_geom )
+               << " and ActRangeMax Chi2(" << activityRangeMax << ")="
+               << PhysicalUnits::printToBestActivityUnits(activityRangeMax,4,false)
+               << det_eff_geom_type_postfix( det_geom )
+               << " and BestActivity Chi2(" << overallBestActivity << ")="
+               << PhysicalUnits::printToBestActivityUnits(overallBestActivity,4,false)
+               << det_eff_geom_type_postfix( det_geom )
           << endl;
         }//try / catch
       }
@@ -2462,15 +2563,15 @@ void DetectionLimitTool::doCalc()
   std::vector<PeakDef> peaks;
   computeForActivity( upperLimit, distance, peaks, upperActivtyChi2, numDOF );
   
-  
+  const string act_str = PhysicalUnits::printToBestActivityUnits(overallBestActivity,3,useCurie)
+                         + det_eff_geom_type_postfix(det_geom);
   char buffer[128];
   snprintf( buffer, sizeof(buffer), "Best &chi;<sup>2</sup> of %.1f at activity %s, %i DOF",
-            overallBestChi2,
-            PhysicalUnits::printToBestActivityUnits(overallBestActivity,3,useCurie).c_str(),
-            numDOF );
+            overallBestChi2, act_str.c_str(), numDOF );
   m_bestChi2Act->setText( buffer );
   
-  string upperLimitActStr = PhysicalUnits::printToBestActivityUnits(upperLimit,3,useCurie);
+  string upperLimitActStr = PhysicalUnits::printToBestActivityUnits(upperLimit,3,useCurie)
+                            + det_eff_geom_type_postfix(det_geom);
   snprintf( buffer, sizeof(buffer), "%.1f%% coverage at %s with &chi;<sup>2</sup> of %.1f",
             0.1*std::round(1000.0*wantedCl), upperLimitActStr.c_str(), upperActivtyChi2 );
   

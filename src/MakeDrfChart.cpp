@@ -69,6 +69,26 @@ namespace
 }//namespace
 
 
+DrfChartHolder::DrfChartHolder( MakeDrfChart *chart, WContainerWidget *parent )
+  : WContainerWidget( parent ),
+    m_chart( chart )
+{
+  setLayoutSizeAware( true );
+  addWidget( m_chart );
+}
+  
+DrfChartHolder::~DrfChartHolder()
+{
+};
+  
+void DrfChartHolder::layoutSizeChanged( int width, int height )
+{
+  m_chart->resize( width, height );
+}
+
+
+
+
 MakeDrfChart::MakeDrfChart( Wt::WContainerWidget *parent )
 : Wt::Chart::WCartesianChart( parent ),
   m_det_diameter( 1.0*PhysicalUnits::cm ),
@@ -257,13 +277,13 @@ void MakeDrfChart::updateYAxisRange()
     }
   }//for( int row = 0; row < nrows; ++row )
   
-  if( maxy < miny )
+  if( maxy <= miny )
   {
     axis(Chart::YAxis).setRange(0.0, 1.0);
   }else
   {
     miny = (miny < 0.1) ? 0.0 : std::floor(9*miny)/10.0;
-    maxy = std::ceil(11.0*maxy)/10.0;
+    maxy = ((11.0*maxy) > 1.5) ? (std::ceil(11.0*maxy)/10.0) : 1.15*maxy;
     axis(Chart::YAxis).setRange(miny, maxy);
   }
   
@@ -310,10 +330,12 @@ void MakeDrfChart::updateDataToModel()
     
     m->setData( row, sm_energy_col, energy, Wt::DisplayRole );
     
-    if( data.peak_area > 0.0f && data.source_count_rate > 0.0f
-        && data.livetime > 0.0f && data.distance > 0.0f && m_det_diameter > 0.0f )
+    if( (data.peak_area > 0.0f) && (data.source_count_rate > 0.0f)
+        && (data.livetime > 0.0f) && ((m_det_diameter > 0.0f) || (data.distance < 0.0)) )
     {
-      const double fracSolidAngle = DetectorPeakResponse::fractionalSolidAngle( m_det_diameter, data.distance );
+      const double fracSolidAngle
+           = (data.distance < 0.0) ? 1.0
+                                   : DetectorPeakResponse::fractionalSolidAngle( m_det_diameter, data.distance );
       const double expected = data.source_count_rate * data.livetime * fracSolidAngle;
       const double eff = data.peak_area / expected;
       
@@ -322,15 +344,16 @@ void MakeDrfChart::updateDataToModel()
         fracUncert2 += std::pow( data.peak_area_uncertainty / data.peak_area, 2.0f );
       if( data.source_count_rate_uncertainty > 0.0f )
         fracUncert2 += std::pow( data.source_count_rate_uncertainty / data.source_count_rate, 2.0f );
+      const double eff_uncert = eff * std::sqrt(fracUncert2);
       
-      m->setData( row, sm_data_eff_col, boost::any( eff ), Wt::DisplayRole );
-      if( fracUncert2 > 0.0 )
-        m->setData( row, sm_data_eff_col, boost::any( std::sqrt(fracUncert2) ), Wt::UserRole );
+      m->setData( row, sm_data_eff_col, boost::any(eff), Wt::DisplayRole );
+      if( eff_uncert > 0.0 )
+        m->setData( row, sm_data_eff_col, boost::any(eff_uncert), Wt::UserRole );
       m->setData( row, sm_data_eff_col, boost::any(data.peak_color), Wt::MarkerPenColorRole );
       m->setData( row, sm_data_eff_col, boost::any(data.peak_color), Wt::MarkerBrushColorRole );
       if( data.source_information.size() )
         m->setData( row, sm_data_eff_col, boost::any( WString::fromUTF8(data.source_information)), Wt::ToolTipRole );
-    }//if( we can calculate a effeiciency )
+    }//if( we can calculate a efficiency )
     
     if( data.peak_fwhm > 0.0f )
     {
@@ -780,6 +803,11 @@ void MakeDrfChart::setDataPoints( const std::vector<MakeDrfChart::DataPoint> &da
   
   updateDataToModel();
   
+  if( det_diameter > 0.0 )
+    axis(Chart::YAxis).setTitle( "Intrinsic Eff." );
+  else
+    axis(Chart::YAxis).setTitle( "Efficiency" );
+  
   if( update_xrange )
     m_xRangeChanged.emit(m_det_lower_energy,m_det_upper_energy);
   
@@ -805,6 +833,15 @@ void MakeDrfChart::showFwhmPoints( const bool show )
   axis(Chart::Y2Axis).setVisible( show );
   setPlotAreaPadding( (show ? 55 : 10), Wt::Right );
 }//void showFwhmPoints( const bool show )
+
+
+void MakeDrfChart::showEfficiencyPoints( const bool show )
+{
+  series(sm_data_eff_col).setHidden( !show );
+  series(sm_equation_eff_col).setHidden( !show );
+  axis(Chart::Y1Axis).setVisible( show );
+  setPlotAreaPadding( (show ? 55 : 10), Wt::Left );
+}//void showEfficiencyPoints( const bool show )
 
 
 void MakeDrfChart::setXRange( double lower, double upper )

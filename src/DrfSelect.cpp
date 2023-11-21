@@ -83,6 +83,7 @@
 #include "SpecUtils/StringAlgo.h"
 #include "SpecUtils/SpecUtilsAsync.h"
 
+#include "InterSpec/DrfChart.h"
 #include "InterSpec/DrfSelect.h"
 #include "InterSpec/InterSpec.h"
 #include "InterSpec/AuxWindow.h"
@@ -93,6 +94,7 @@
 #include "InterSpec/PhysicalUnits.h"
 #include "InterSpec/DataBaseUtils.h"
 #include "InterSpec/WarningWidget.h"
+#include "InterSpec/MakeFwhmForDrf.h"
 #include "InterSpec/SpecMeasManager.h"
 #include "InterSpec/UndoRedoManager.h"
 #include "InterSpec/SpectraFileModel.h"
@@ -221,7 +223,7 @@ namespace
    of entering a mathematical formula.  If this is the case, we will assume the standard functional form
    f(x) = exp( C_0 + C_1*log(x)  + C_2*log(x)^2 + ... ).
    
-   Returns true if coefficents were entered, and also changes the input string to have the proper
+   Returns true if coefficients were entered, and also changes the input string to have the proper
    mathematical function.
    */
   CoefToFormulaInfo check_if_coef_for_formula( const string &fcn )
@@ -232,7 +234,7 @@ namespace
     vector<string> potential_coefs;
     SpecUtils::split( potential_coefs, fcn, ",\t; \n\r" );
     
-    // There is an Excell sheet that users could copy-paste an entire column of
+    // There is an Excel sheet that users could copy-paste an entire column of
     //  data from, that would like like:
     //  { `visible?`, `Det. Name`, `cal. desc`, `Comment`, `far-field/fixed-geom`, `Det Rad(cm)`,
     //    `Source to det dist (cm)`, `Det Setback (cm)`, `Det Area`, `Source to crystal face`,
@@ -260,9 +262,9 @@ namespace
         }//
         
         // Now find the next "Yes" or "No" - which indicates if it is a far-field point source
-        //   calibration, or if "No", then a fixed geometery DRF
-        //  Before it, the name, source description, or comments can all have delimeters in them,
-        //  or be empty, so we dont know how to use this info super easily.
+        //   calibration, or if "No", then a fixed geometry DRF
+        //  Before it, the name, source description, or comments can all have delimiters in them,
+        //  or be empty, so we don't know how to use this info super easily.
         for( size_t i = 0; i < add_info.size(); ++i )
         {
           if( (SpecUtils::iequals_ascii(add_info[i], "Yes")
@@ -285,7 +287,7 @@ namespace
     }//for( int i = 0; i < static_cast<int>(potential_coefs.size()); ++i )
     
     
-    if( (add_info.size() == 9)
+    if( ((add_info.size() == 9) || (add_info.size() == 10))
        && (SpecUtils::iequals_ascii( add_info[0], "No" )
            || SpecUtils::iequals_ascii( add_info[0], "Yes" )) )
     {
@@ -310,10 +312,16 @@ namespace
       if( SpecUtils::parse_double(add_info[6].c_str(), add_info[6].size(), src_to_crystal) )
         results.m_source_to_crystal_distance = add_info[6] + " cm";
       
-      if( SpecUtils::parse_double(add_info[7].c_str(), add_info[7].size(), low_energy) )
+      // 7 - Relative Efficiency (%) - doesnt seem to
+      
+      // Second to last element, lower energy
+      const string &low_energy_str = add_info[add_info.size()-2];
+      if( SpecUtils::parse_double(low_energy_str.c_str(), low_energy_str.size(), low_energy) )
         results.m_lower_energy = low_energy * PhysicalUnits::keV;
       
-      if( SpecUtils::parse_double(add_info[8].c_str(), add_info[8].size(), up_energy) )
+      // Last element, upper energy
+      const string &up_energy_str = add_info[add_info.size()-1];
+      if( SpecUtils::parse_double(up_energy_str.c_str(), up_energy_str.size(), up_energy) )
         results.m_upper_energy = up_energy * PhysicalUnits::keV;
       
       if( low_energy >= up_energy )
@@ -634,286 +642,6 @@ public:
 };//class DrfDownloadResource
 
 }//namespace
-
-
-
-
-/** Class that plots the DRF efficiency and possible FWHM.
- 
- TODO: replace this Wt plotting with d3.js based plotting so we can do things a little more interactively.
- 
- We need this outside of namespace so we can forward-declare in the header
- */
-class DrfChart : public Wt::Chart::WCartesianChart
-{
-protected:
-  Wt::WColor m_chartEnergyLineColor;
-  Wt::WColor m_chartFwhmLineColor;
-  Wt::WStandardItemModel* m_efficiencyModel;
-  
-  std::shared_ptr<const DetectorPeakResponse> m_detector;
-
-  
-public:
-  
-  DrfChart( WContainerWidget *parent = 0 )
-  : Wt::Chart::WCartesianChart( 0 )
-  {
-    setBackground(Wt::WColor(220, 220, 220));
-    setXSeriesColumn(0);
-    setType(Wt::Chart::ScatterPlot);
-    
-    //Before, m_efficiencyModel was actually a memory leak, because it didnt have
-    //  a parent (m_chart in this case), so everytime you created a new one, the
-    //  old one would be leaked since there was no longer a refernce to it anywhere
-    m_efficiencyModel = new WStandardItemModel( this );
-    setModel( m_efficiencyModel );
-    
-    m_chartEnergyLineColor = WColor("#B02B2C"); //Ruby on Rails red
-    m_chartFwhmLineColor = WColor("#3F4C6B");  //Mozilla blue
-    
-    //We should check the color theme for colors
-    InterSpec *viewer = InterSpec::instance();
-    
-    if( viewer )
-      viewer->colorThemeChanged().connect( this, &DrfChart::handleColorThemeChange );
-    
-    auto theme = viewer ? viewer->getColorTheme() : nullptr;
-    handleColorThemeChange( theme );
-    
-    const bool is_phone = (!viewer || viewer->isPhone() || (viewer->renderedHeight() < 500 ));
-    
-    //setAutoLayoutEnabled(); //Leaves a lot of room at the top, but maybe because font-metrics not available?
-    setPlotAreaPadding(5, Wt::Top);
-    
-    if( is_phone )
-    {
-      setPlotAreaPadding(20, Wt::Bottom);
-      setPlotAreaPadding(50, Wt::Right | Wt::Left);
-      
-      WFont labelFont = axis(Wt::Chart::XAxis).labelFont();
-      labelFont.setSize( WFont::Size::XXSmall );
-      axis(Wt::Chart::XAxis).setLabelFont( labelFont );
-      axis(Wt::Chart::Y1Axis).setLabelFont( labelFont );
-      axis(Wt::Chart::Y2Axis).setLabelFont( labelFont );
-      
-      WFont titleFont = axis(Wt::Chart::XAxis).titleFont();
-      titleFont.setSize( WFont::Size::XSmall );
-      axis(Wt::Chart::XAxis).setTitleFont( titleFont );
-      axis(Wt::Chart::Y1Axis).setTitleFont( titleFont );
-      axis(Wt::Chart::Y2Axis).setTitleFont( titleFont );
-      
-      // titleOffset doesnt seem to have an effect, so leaving commented out (would be nice to make title closer to labels)
-      // axis(Wt::Chart::Y1Axis).setTitleOffset( 1 );
-      // axis(Wt::Chart::Y2Axis).setTitleOffset( 1 );
-      
-      setMinimumSize(WLength(200), WLength(100));
-    }else
-    {
-      setPlotAreaPadding(55, Wt::Right | Wt::Left);
-      setPlotAreaPadding(60, Wt::Bottom);
-      axis(Wt::Chart::XAxis).setTitle("Energy (keV)");
-      
-      setMinimumSize(WLength(350), WLength(200));
-    }//if( is_phone ) / else
-    
-    axis(Wt::Chart::Y1Axis).setVisible(true);
-    axis(Wt::Chart::Y1Axis).setTitle("Efficiency");
-    
-    axis(Wt::Chart::Y1Axis).setTitleOrientation( Wt::Vertical );
-    axis(Wt::Chart::Y2Axis).setTitleOrientation( Wt::Vertical );
-    
-    setLegendEnabled( true );
-    
-    setLegendLocation(Wt::Chart::LegendInside, Wt::Top, Wt::AlignRight);
-    
-#if( WT_VERSION >= 0x3040000 )  //I'm not too sure when these features became available, but I dont think in Wt 3.3.4
-    setCurveManipulationEnabled( true );
-        
-    Wt::Chart::WheelActions wheelAction;
-    //InteractiveAction: ZoomY, ZoomXY, ZoomMatching, PanX, PanY, PanMatching
-    wheelAction[KeyboardModifier::NoModifier] = Chart::InteractiveAction::ZoomX;
-    
-    setWheelActions(wheelAction);
-     
-    setPanEnabled(true);
-    setZoomEnabled(true);
-    
-    //setRubberBandEffectEnabled(true);
-#endif
-  }//DrfChart constructor
-  
-  
-  void handleColorThemeChange( std::shared_ptr<const ColorTheme> theme )
-  {
-    if( !theme )
-      return;
-    
-    if( !theme->foregroundLine.isDefault() )
-      m_chartEnergyLineColor = theme->foregroundLine;
-    else
-      m_chartEnergyLineColor = WColor("#B02B2C"); //Ruby on Rails red
-    
-    
-    if( !theme->backgroundLine.isDefault() )
-      m_chartFwhmLineColor = theme->backgroundLine;
-    else
-      m_chartFwhmLineColor = WColor("#3F4C6B");  //Mozilla blue
-    
-    const WColor txtColor = theme->spectrumChartText.isDefault()
-                                  ? WColor(GlobalColor::black)
-                                  : theme->spectrumChartText;
-      
-    WPen txtpen( txtColor );
-    setTextPen( txtpen );
-    axis(Chart::XAxis).setTextPen( txtpen );
-    axis(Chart::YAxis).setTextPen( txtpen );
-    axis(Chart::Y2Axis).setTextPen( txtpen );
-      
-    setCrosshairColor( txtColor );
-    
-    if( theme->spectrumChartBackground.isDefault() )
-      setBackground( Wt::NoBrush );
-    else
-      setBackground( WBrush(theme->spectrumChartBackground) );
-    
-    
-    //From what I can tell, we cant change the legend text color easily, so
-    //  we'll just cheat and back the legend background different enough from
-    //  black so we can always read the text.  Lame, but whatever.
-    setLegendStyle( legendFont(), legendBorder(), WBrush(Wt::WColor(220, 220, 220, 120)) );
-    
-    if( (theme->spectrumChartMargins.isDefault() && !theme->spectrumChartBackground.isDefault()) )
-    {
-      //theme->spectrumChartBackground
-    }else if( !theme->spectrumChartMargins.isDefault() )
-    {
-      //theme->spectrumChartMargins
-    }
-    
-    const WColor axisLineColor = theme->spectrumAxisLines.isDefault()
-                                      ? WColor(GlobalColor::black)
-                                      : theme->spectrumAxisLines;
-    
-    WPen defpen = axis(Chart::XAxis).pen();
-    defpen.setColor( axisLineColor );
-    axis(Chart::XAxis).setPen( defpen );
-    axis(Chart::Y1Axis).setPen( defpen );
-    axis(Chart::Y2Axis).setPen( defpen );
-  }//handleColorThemeChange(...)
-  
-  
-  void updateChart( std::shared_ptr<const DetectorPeakResponse> det )
-  {
-    m_detector = det;
-    
-    // clear series if any
-    removeSeries(1);
-    removeSeries(2);
-    
-    const Wt::Chart::SeriesType seriesType = Wt::Chart::SeriesType::CurveSeries;
-    
-    const bool hasEfficiency = !!m_detector && m_detector->isValid();
-    
-    if( hasEfficiency )
-    {
-      int nValidPoints = 0, nEffPoints = 0;
-      try
-      {
-        const bool hasResloution = m_detector->hasResolutionInfo();
-        
-        float minEnergy = 0.0f, maxEnergy = 3000.0f;
-        
-        // If DRF has a defined energy range, of at least 100 keV, use it.
-        if( m_detector && m_detector->isValid()
-           && (m_detector->upperEnergy() > (m_detector->lowerEnergy() + 100.0)) )
-        {
-          minEnergy = m_detector->lowerEnergy();
-          maxEnergy = m_detector->upperEnergy();
-        }
-        
-        
-        // TODO: pick this better using the chart width or whatever
-        int numEnergyPoints = floor(maxEnergy - minEnergy) / 2.5; //max of 8k points, but usually 12.5
-        if( numEnergyPoints > 4500 ) //4500 chosen arbitrarily
-          numEnergyPoints = 4500;
-        
-        m_efficiencyModel->clear();
-        m_efficiencyModel->insertRows( 0, numEnergyPoints );
-        m_efficiencyModel->insertColumns( 0, hasResloution? 3 : 2 );
-        float energy = 0.0f, efficiency = 0.0f;
-        for( int row = 0; row < numEnergyPoints; ++row )
-        {
-          energy = minEnergy + (float(row)/float(numEnergyPoints)) * (maxEnergy-minEnergy);
-          efficiency = static_cast<float>( m_detector->intrinsicEfficiency( energy ) );
-          m_efficiencyModel->setData(row, 0, energy );
-          
-          
-          //Skip any points outside where we would expect.
-          if( IsNan(efficiency) || IsInf(efficiency) || efficiency < 0.0f )
-          {
-            m_efficiencyModel->setData(row, 1, boost::any() );
-          }else
-          {
-            ++nValidPoints;
-            m_efficiencyModel->setData(row, 1, efficiency );
-          }
-          
-          if( hasResloution )
-          {
-            const float fwhm = m_detector->peakResolutionFWHM(energy);
-            if( !IsNan(fwhm) && !IsInf(fwhm) && fwhm>=0.0f && fwhm<9999.9f )
-            {
-              ++nEffPoints;
-              m_efficiencyModel->setData(row, 2, fwhm);
-            }
-          }
-        }//for( int row = 0; row < numEnergyPoints; ++row )
-        
-        m_efficiencyModel->setHeaderData(0, Wt::WString("Energy"));
-        m_efficiencyModel->setHeaderData(1, Wt::WString("Efficiency"));
-        if( m_detector->hasResolutionInfo() )
-          m_efficiencyModel->setHeaderData(2, Wt::WString("FWHM"));
-        
-        setXSeriesColumn(0);  //Not having this line after creating a new model was why the x-axis was the wrong scale
-        Wt::Chart::WDataSeries s1(1, seriesType, Wt::Chart::Y1Axis);
-        s1.setPen( WPen(m_chartEnergyLineColor) );
-        addSeries(s1);
-        
-#if( WT_VERSION >= 0x3040000 )
-        setFollowCurve( 1 );
-#endif
-        
-        if( nValidPoints == 0 )
-        {
-          axis(Wt::Chart::Y1Axis).setRange( 0.0, 1.0 );
-        }else
-        {
-          //m_chart->axis(Wt::Chart::Y1Axis).setRoundLimits(<#WFlags<Wt::Chart::AxisValue> locations#>)
-          axis(Wt::Chart::Y1Axis).setAutoLimits( Chart::MinimumValue | Chart::MaximumValue );
-        }
-        
-        if( nEffPoints )
-        { //only if there is resolution FWHM
-          Wt::Chart::WDataSeries s2(2, seriesType, Wt::Chart::Y2Axis);
-          s2.setPen( WPen(m_chartFwhmLineColor) );
-          addSeries(s2);
-          axis(Wt::Chart::Y2Axis).setTitle("FWHM");
-          axis(Wt::Chart::Y2Axis).setVisible(true);
-        }else
-        { //no ResolutionInfo
-          axis(Wt::Chart::Y2Axis).setVisible(false);
-          axis(Wt::Chart::Y2Axis).setTitle("");
-        }//no ResolutionInfo
-      }catch( std::exception &e )
-      {
-        cerr << "DrfSelect::updateChart()\n\tCaught: " << e.what() << endl;
-      }//try / catch
-    }//if( hasEfficiency )
-  } //DrfSelect::updateChart()
-};//class DrfChart
-
-
 
 
 class RelEffFile;
@@ -2467,9 +2195,10 @@ DetectorDisplay::DetectorDisplay( InterSpec *specViewer,
   addStyleClass( "DetectorDisplay" );  //In InterSpec.css since this widget is loaded almost always at initial load time anyway
 
   new WImage( "InterSpec_resources/images/detector_small_white.png", this );
-  new WText( "Detector:&nbsp;", this );
+  new WText( "Detector:", this );
   const char *txt = (m_interspec && m_interspec->isMobile()) ? sm_noDetectorTxtMbl : sm_noDetectorTxt;
-  m_text = new WText( txt, XHTMLUnsafeText, this );
+  m_text = new WText( txt, XHTMLText, this );
+  m_text->addStyleClass( "DetName" );
 
   std::shared_ptr<DetectorPeakResponse> detector;
   auto meas = specViewer->measurment(SpecUtils::SpectrumType::Foreground);
@@ -2550,6 +2279,7 @@ DrfSelect::DrfSelect( std::shared_ptr<DetectorPeakResponse> currentDet,
     m_efficiencyCsvUpload( nullptr ),
     m_detectrDotDatDiv( nullptr ),
     m_detectorDotDatUpload( nullptr ),
+    m_fixedGeometryCb( nullptr ),
     m_acceptButton( nullptr ),
     m_cancelButton( nullptr ),
     m_noDrfButton( nullptr ),
@@ -2558,7 +2288,8 @@ DrfSelect::DrfSelect( std::shared_ptr<DetectorPeakResponse> currentDet,
     m_detectorManualFunctionText( nullptr ),
     m_detectorManualDescription( nullptr ),
     m_eqnEnergyGroup( nullptr ),
-    m_absOrIntrinsicGroup( nullptr ),
+    m_drfType( nullptr ),
+    m_detectorManualDiameterLabel( nullptr ),
     m_detectorManualDiameterText( nullptr ),
     m_detectorManualDistText( nullptr ),
     m_detectorManualDistLabel( nullptr ),
@@ -2731,6 +2462,13 @@ DrfSelect::DrfSelect( std::shared_ptr<DetectorPeakResponse> currentDet,
   m_detectorDiameter->enterPressed().connect( boost::bind( &DrfSelect::fileUploadedCallback, this, UploadCallbackReason::DetectorDiameterChanged ) );
   m_detectorDiameter->blurred().connect( boost::bind( &DrfSelect::fileUploadedCallback, this, UploadCallbackReason::DetectorDiameterChanged ) );
 
+  m_fixedGeometryCb = new WCheckBox( "Fixed Geometry", uploadDetTab );
+  m_fixedGeometryCb->setInline( false );
+  m_fixedGeometryCb->addStyleClass( "FixedGeometry" );
+  m_fixedGeometryCb->hide();
+  m_fixedGeometryCb->checked().connect( boost::bind( &DrfSelect::fileUploadedCallback, this, UploadCallbackReason::FixedGeometryChanged ) );
+  m_fixedGeometryCb->unChecked().connect( boost::bind( &DrfSelect::fileUploadedCallback, this, UploadCallbackReason::FixedGeometryChanged ) );
+  
   
   m_uploadedDetNameDiv = new WContainerWidget( m_detectrDiameterDiv );
   label = new WLabel( "Name:", m_uploadedDetNameDiv );
@@ -2796,7 +2534,8 @@ DrfSelect::DrfSelect( std::shared_ptr<DetectorPeakResponse> currentDet,
   m_detectorManualFunctionName->setText( ns_default_manual_det_name );
   m_detectorManualFunctionName->setEmptyText("Unique Detector Name");
   m_detectorManualFunctionName->setInline(false);
-  m_detectorManualFunctionName->keyWentUp().connect(boost::bind(&DrfSelect::verifyManualDefinition, this));
+  //m_detectorManualFunctionName->keyWentUp().connect(boost::bind(&DrfSelect::verifyManualDefinition, this));
+  m_detectorManualFunctionName->textInput().connect(boost::bind(&DrfSelect::verifyManualDefinition, this));
 
   cell = formulaTable->elementAt( 1, 0 );
   label = new WLabel("Efficiency f(x) = ", cell );
@@ -2811,7 +2550,8 @@ DrfSelect::DrfSelect( std::shared_ptr<DetectorPeakResponse> currentDet,
   //m_detectorManualFunctionText->setText(fcn);
   m_detectorManualFunctionText->setEmptyText(fcn);
   m_detectorManualFunctionText->setInline(false);
-  m_detectorManualFunctionText->keyWentUp().connect(boost::bind(&DrfSelect::verifyManualDefinition, this));
+  //m_detectorManualFunctionText->keyWentUp().connect(boost::bind(&DrfSelect::verifyManualDefinition, this));
+  m_detectorManualFunctionText->textInput().connect(boost::bind(&DrfSelect::verifyManualDefinition, this));
   
   cell = formulaTable->elementAt( 2, 0 );
   Wt::WContainerWidget *energyContainer = new Wt::WContainerWidget( cell );
@@ -2844,17 +2584,19 @@ DrfSelect::DrfSelect( std::shared_ptr<DetectorPeakResponse> currentDet,
 #endif
   
   cell = formulaTable->elementAt( 4, 0 );
-  label = new WLabel("Detector diam.", cell );
+  m_detectorManualDiameterLabel = new WLabel( "Detector diam.", cell );
   cell = formulaTable->elementAt( 4, 1 );
   m_detectorManualDiameterText = new WLineEdit( cell );
-  label->setBuddy( m_detectorManualDiameterText );
+  m_detectorManualDiameterLabel->setBuddy( m_detectorManualDiameterText );
   m_detectorManualDiameterText->setValidator( distValidator );
   //m_detectorManualDiameterText->setText( diamtxt );
   m_detectorManualDiameterText->setEmptyText( diamtxt );
   m_detectorManualDiameterText->setValidator( distValidator );
   m_detectorManualDiameterText->blurred().connect(boost::bind(&DrfSelect::verifyManualDefinition, this));
   m_detectorManualDiameterText->enterPressed().connect(boost::bind(&DrfSelect::verifyManualDefinition, this));
-  m_detectorManualDiameterText->keyWentUp().connect(boost::bind(&DrfSelect::verifyManualDefinition, this));
+  //m_detectorManualDiameterText->keyWentUp().connect(boost::bind(&DrfSelect::verifyManualDefinition, this));
+  m_detectorManualDiameterText->textInput().connect(boost::bind(&DrfSelect::verifyManualDefinition, this));
+  
   
   m_detectorManualDiameterText->setAttributeValue( "ondragstart", "return false" );
 #if( BUILD_AS_OSX_APP || IOS )
@@ -2895,15 +2637,36 @@ DrfSelect::DrfSelect( std::shared_ptr<DetectorPeakResponse> currentDet,
   
   cell = formulaTable->elementAt( 6, 0 );
   cell->setColumnSpan( 2 );
-  m_absOrIntrinsicGroup = new WButtonGroup( cell );
-  button = new WRadioButton( "Intrinsic", cell );
-  m_absOrIntrinsicGroup->addButton( button, 0 );
-  button = new WRadioButton( "Absolute", cell );
-  button->setMargin( 5, Wt::Left );
-  m_absOrIntrinsicGroup->addButton( button, 1 );
-  m_absOrIntrinsicGroup->checkedChanged().connect(boost::bind(&DrfSelect::verifyManualDefinition, this));
-  m_absOrIntrinsicGroup->setSelectedButtonIndex( 0 );
-
+  m_drfType = new WComboBox( cell );
+  m_drfType->addItem( "Intrinsic Efficiency" );
+  m_drfType->addItem( "Absolute Efficiency" );
+  m_drfType->addItem( "Fixed Geometry - total activity" );
+  m_drfType->addItem( "Fixed Geometry - activity per cm2" );
+  m_drfType->addItem( "Fixed Geometry - activity per m2" );
+  m_drfType->addItem( "Fixed Geometry - activity per gram" );
+  m_drfType->setToolTip( "How this efficiency should be interpreted.\n"
+  "\n"
+  "Intrinsic Efficiency: the probability for a x-ray or gamma striking the"
+  " face of the detector, to register a full-energy detection event.\n"
+  "\n"
+  "Absolute Efficiency: the probability for a x-ray or gamma from the source"
+  " to register a full-energy detection event, with it being appropriate to"
+  " allow scaling this efficiency by 1/r2 to other distances (i.g., is for a point-source).\n"
+  "\n"
+  "Fixed Geometry - total activity: the probability for a x-ray or gamma from the source"
+  " to register a full-energy detection event, and it is not appropriate to allow scaling this"
+  " efficiency to other distances (e.g., for a near, or large extended source).\n"
+  "\n"
+  "Fixed Geometry - activity per cm2: similar to total activity, but the efficiency curve"
+  " represents efficiency per decay, per square centimeter (i.e., surface contamination).\n"
+  "\n"
+  "Fixed Geometry - activity per m2: similar to per cm2, but for per square meter.\n"
+  "\n"
+  "Fixed Geometry - activity per g: similar to per cm2, but for per gram of source."
+  );
+  m_drfType->setCurrentIndex( 0 );
+  m_drfType->activated().connect( this, &DrfSelect::verifyManualDefinition );
+  
   m_detectorManualDistLabel = new WLabel( "Dist:", cell );
   m_detectorManualDistLabel->setMargin( 10, Wt::Left );
   
@@ -2913,7 +2676,9 @@ DrfSelect::DrfSelect( std::shared_ptr<DetectorPeakResponse> currentDet,
   m_detectorManualDistText->setHiddenKeepsGeometry( true );
   m_detectorManualDistLabel->hide();
   m_detectorManualDistText->hide();
-  m_detectorManualDistText->keyWentUp().connect(boost::bind(&DrfSelect::verifyManualDefinition, this));
+  //m_detectorManualDistText->keyWentUp().connect(boost::bind(&DrfSelect::verifyManualDefinition, this));
+  m_detectorManualDistText->textInput().connect(boost::bind(&DrfSelect::verifyManualDefinition, this));
+  
   
   
   m_manualSetButton = new WPushButton( "Set", cell );
@@ -3169,6 +2934,11 @@ DrfSelect::DrfSelect( std::shared_ptr<DetectorPeakResponse> currentDet,
   m_noDrfButton->clicked().connect( this, &DrfSelect::finishWithNoDetector );
   if( specViewer && !specViewer->isPhone() )
     m_noDrfButton->addStyleClass( "NoDrfBtn" );
+  
+  WPushButton *changeFwhm = new WPushButton( "Fit FWHM...", m_footer );
+  if( specViewer && !specViewer->isPhone() )
+    changeFwhm->addStyleClass( "NoDrfBtn" );
+  changeFwhm->clicked().connect( this, &DrfSelect::handleFitFwhmRequested );
   
   if( auxWindow && !auxWindow->isPhone() )
   {
@@ -3529,6 +3299,21 @@ void DrfSelect::handleUserChangedUploadedDrfName()
 }//handleUserChangedUploadedDrfName()
 
 
+void DrfSelect::handleFitFwhmRequested()
+{
+  const bool use_auto_fit_peaks_too = true;
+  MakeFwhmForDrfWindow *tool = m_interspec->fwhmFromForegroundWindow( use_auto_fit_peaks_too );
+}//void handleFitFwhmRequested()
+
+
+void DrfSelect::handleFitFwhmFinished( std::shared_ptr<DetectorPeakResponse> drf )
+{
+  if( drf )
+    updateLastUsedTimeOrAddToDb( drf, m_interspec->m_user.id(), m_sql );
+  done().emit();
+}//void handleFitFwhmFinished( std::shared_ptr<DetectorPeakResponse> drf )
+
+
 void DrfSelect::deleteDBTableSelected()
 {
   WModelIndexSet indices = m_DBtable->selectedIndexes();
@@ -3630,7 +3415,7 @@ void DrfSelect::setGuiToCurrentDetector()
         if( fabs(PhysicalUnits::MeV-units) < fabs(PhysicalUnits::keV-units) )
           energygrp = 1;
         m_eqnEnergyGroup->setSelectedButtonIndex( energygrp );
-        m_absOrIntrinsicGroup->setSelectedButtonIndex( 0 );
+        m_drfType->setCurrentIndex( 0 );
         
         m_gui_select_matches_det = true;
         break;
@@ -3646,6 +3431,7 @@ void DrfSelect::setGuiToCurrentDetector()
       case DetectorPeakResponse::UnknownDrfSource:
       case DetectorPeakResponse::UserImportedGadrasDrf:
       case DetectorPeakResponse::UserCreatedDrf:
+      case DetectorPeakResponse::IsocsEcc:
       case DetectorPeakResponse::FromSpectrumFileDrf:
       {
         m_drfTypeMenu->select( 4 );
@@ -3765,9 +3551,10 @@ void DrfSelect::verifyManualDefinition()
     }
     
     if( !coef_formula_info.m_source_to_crystal_distance.empty()
-       && (m_detectorManualDistText->isHidden() || m_detectorManualDistText->text().empty() ) )
+       && (m_detectorManualDistText->isHidden() || m_detectorManualDistText->text().empty() )
+       && !coef_formula_info.m_fixed_geom )
     {
-      m_absOrIntrinsicGroup->setSelectedButtonIndex(1);
+      m_drfType->setCurrentIndex( 1 );
       m_detectorManualDistText->setText( coef_formula_info.m_source_to_crystal_distance );
     }
     
@@ -3777,21 +3564,45 @@ void DrfSelect::verifyManualDefinition()
     {
       m_detectorManualFunctionName->setText( coef_formula_info.m_det_name );
     }
+    
+    if( coef_formula_info.m_fixed_geom )
+      m_drfType->setCurrentIndex( 3 ); //Act/cm2
   }//if( user_entered_coefs )
   
+  const bool is_intrinsic = (m_drfType->currentIndex() == 0);
+  const bool is_absolute = (m_drfType->currentIndex() == 1);
+  const bool is_fixed_geom = (m_drfType->currentIndex() >= 2);
   
-  const bool hideAbs = (m_absOrIntrinsicGroup->checkedId() == 0);
-  m_detectorManualDistLabel->setHidden( hideAbs );
-  m_detectorManualDistText->setHidden( hideAbs );
+  assert( (static_cast<int>(is_intrinsic)
+           + static_cast<int>(is_absolute)
+           + static_cast<int>(is_fixed_geom)) == 1 );
+  DetectorPeakResponse::EffGeometryType geom_type = DetectorPeakResponse::EffGeometryType::FarField;
+  switch( m_drfType->currentIndex() )
+  {
+    case 0:  geom_type = DetectorPeakResponse::EffGeometryType::FarField; break;
+    case 1:  geom_type = DetectorPeakResponse::EffGeometryType::FarField; break;
+    case 2:  geom_type = DetectorPeakResponse::EffGeometryType::FixedGeomTotalAct; break;
+    case 3:  geom_type = DetectorPeakResponse::EffGeometryType::FixedGeomActPerCm2; break;
+    case 4:  geom_type = DetectorPeakResponse::EffGeometryType::FixedGeomActPerM2; break;
+    case 5:  geom_type = DetectorPeakResponse::EffGeometryType::FixedGeomActPerGram; break;
+    default:
+      assert( 0 );
+      break;
+  }//switch( m_drfType->currentIndex() )
   
-  if( !hideAbs )
+  m_detectorManualDistLabel->setHidden( is_intrinsic || is_fixed_geom );
+  m_detectorManualDistText->setHidden( is_intrinsic || is_fixed_geom );
+  m_detectorManualDiameterText->setHidden( is_fixed_geom );
+  m_detectorManualDiameterLabel->setHidden( is_fixed_geom );
+  
+  if( is_absolute )
   {
     if( m_detectorManualDistText->text().empty()
        || (m_detectorManualDistText->validate() != WValidator::State::Valid) )
       valid = false;
-  }//if( !hideAbs )
+  }//if( is_absolute )
   
-  if( m_detectorManualDiameterText->validate() != WValidator::State::Valid )
+  if( !is_fixed_geom && (m_detectorManualDiameterText->validate() != WValidator::State::Valid) )
     valid = false;
   
   
@@ -3803,10 +3614,13 @@ void DrfSelect::verifyManualDefinition()
     det_diam = PhysicalUnits::stringToDistance( diamtxt );
   }catch( std::exception & )
   {
-    valid = false;
+    if( is_fixed_geom )
+      det_diam = 0.0;
+    else
+      valid = false;
   }
   
-  if( m_absOrIntrinsicGroup->checkedId() != 0 )
+  if( is_absolute )
   {
     double dist = 1*PhysicalUnits::meter;
     try
@@ -3840,7 +3654,7 @@ void DrfSelect::verifyManualDefinition()
     
     DetectorPeakResponse detec( "temp", "temp " );
     detec.setIntrinsicEfficiencyFormula( fcn_txt, static_cast<float>(det_diam),
-                                        energyUnits, lowerEnergy, upperEnergy );
+                                        energyUnits, lowerEnergy, upperEnergy, geom_type );
     
     if( m_detectorManualFunctionText->hasStyleClass("Wt-invalid") )
       m_detectorManualFunctionText->removeStyleClass( "Wt-invalid" );
@@ -3884,16 +3698,51 @@ void DrfSelect::setFormulaDefineDetector()
     m_detectorManualDescription->setText( descr );
   }//if( descr.empty() )
 
+  const bool is_intrinsic = (m_drfType->currentIndex() == 0);
+  const bool is_absolute = (m_drfType->currentIndex() == 1);
+  const bool is_fixed_geom = (m_drfType->currentIndex() >= 2);
+  
+  assert( (static_cast<int>(is_intrinsic)
+           + static_cast<int>(is_absolute)
+           + static_cast<int>(is_fixed_geom)) == 1 );
+  DetectorPeakResponse::EffGeometryType geom_type = DetectorPeakResponse::EffGeometryType::FarField;
+  switch( m_drfType->currentIndex() )
+  {
+    case 0:  geom_type = DetectorPeakResponse::EffGeometryType::FarField; break;
+    case 1:  geom_type = DetectorPeakResponse::EffGeometryType::FarField; break;
+    case 2:  geom_type = DetectorPeakResponse::EffGeometryType::FixedGeomTotalAct; break;
+    case 3:  geom_type = DetectorPeakResponse::EffGeometryType::FixedGeomActPerCm2; break;
+    case 4:  geom_type = DetectorPeakResponse::EffGeometryType::FixedGeomActPerM2; break;
+    case 5:  geom_type = DetectorPeakResponse::EffGeometryType::FixedGeomActPerGram; break;
+    default:
+      assert( 0 );
+      break;
+  }//switch( m_drfType->currentIndex() )
+  
+  assert( (static_cast<int>(is_intrinsic)
+           + static_cast<int>(is_absolute)
+           + static_cast<int>(is_fixed_geom)) == 1 );
+  
+  
   shared_ptr<DetectorPeakResponse> detec = make_shared<DetectorPeakResponse>( name, descr );
   
   try
   {
     const string diamtxt = m_detectorManualDiameterText->text().narrow();
-    const double det_diam = PhysicalUnits::stringToDistance( diamtxt );
-    if( det_diam < 0.0001f )
+    double det_diam = 0.0;
+    try
+    {
+      det_diam = PhysicalUnits::stringToDistance( diamtxt );
+    }catch( std::exception &e )
+    {
+      if( !is_fixed_geom )
+        throw;
+    }
+    
+    if( !is_fixed_geom && (det_diam < (is_fixed_geom ? 0.0 : 0.0001)) )
       throw runtime_error( "Detector diameters must be positive" );
     
-    if( m_absOrIntrinsicGroup->checkedId() != 0 )
+    if( is_absolute )
     {
       const string disttxt = m_detectorManualDistText->text().narrow();
       const float dist = (float)PhysicalUnits::stringToDistance( disttxt );
@@ -3905,7 +3754,7 @@ void DrfSelect::setFormulaDefineDetector()
                                                               det_diam, dist );
         
       fcn = std::to_string(1.0/gfactor) + "*(" + fcn + ")";
-    }//if( m_absOrIntrinsicGroup->groupId() != 0 )
+    }//if( is_absolute )
     
     const float energyUnits
               = static_cast<float>(m_eqnEnergyGroup->checkedId()==0
@@ -3934,7 +3783,8 @@ void DrfSelect::setFormulaDefineDetector()
     
     try
     {
-      detec->setIntrinsicEfficiencyFormula( fcn, det_diam, energyUnits, minEnergy, maxEnergy );
+      detec->setIntrinsicEfficiencyFormula( fcn, det_diam, energyUnits,
+                                           minEnergy, maxEnergy, geom_type );
     }catch( std::exception &e )
     {
       if( !fcn.empty() && !m_detectorManualDiameterText->hasStyleClass("Wt-invalid") )
@@ -4033,13 +3883,16 @@ std::shared_ptr<DetectorPeakResponse> DrfSelect::parseRelEffCsvFile( const std::
   int nlineschecked = 0;
   
   string drfname, drfdescrip;
+  bool fixed_geometry = false;
   bool foundMeV = false, foundKeV = false;
+  
   //ToDo: Need to implement getting lines safely where a quoted field may span
   //      several lines.
   while( SpecUtils::safe_get_line(csvfile, line, 2048) && (++nlineschecked < 100) )
   {
     foundKeV |= SpecUtils::icontains( line, "kev" );
     foundMeV |= SpecUtils::icontains( line, "mev" );
+    fixed_geometry |= SpecUtils::icontains( line, "Fixed Geometry DRF" );
     
     vector<string> fields;
     split_escaped_csv( fields, line );
@@ -4061,6 +3914,14 @@ std::shared_ptr<DetectorPeakResponse> DrfSelect::parseRelEffCsvFile( const std::
        || !SpecUtils::iequals_ascii( fields[6], "c3")
        || !SpecUtils::icontains( fields[15], "radius") )
       continue;
+    
+    // Nominally the header is "FixedGeometry", and be in column 17, but we'll be a little loose
+    int fixed_geom_col = -1;
+    for( size_t i = 0; (fixed_geom_col < 0) && (i < fields.size()); ++i )
+    {
+      if( SpecUtils::icontains( fields[i], "Fixed") && SpecUtils::icontains( fields[i], "Geom") )
+        fixed_geom_col = static_cast<int>( i );
+    }
     
     //Okay, next line should be
     if( !SpecUtils::safe_get_line(csvfile, line, 2048) )
@@ -4091,6 +3952,15 @@ std::shared_ptr<DetectorPeakResponse> DrfSelect::parseRelEffCsvFile( const std::
       const float dist = std::stof( fields.at(14) ) * PhysicalUnits::cm;
       const float radius = std::stof( fields.at(15) ) * PhysicalUnits::cm;
       
+      if( (fixed_geom_col >= 0) && (static_cast<int>(fields.size()) >= fixed_geom_col) )
+      {
+        fixed_geometry |= (SpecUtils::icontains( fields[fixed_geom_col], "1")
+                           || SpecUtils::icontains( fields[fixed_geom_col], "yes")
+                           || SpecUtils::icontains( fields[fixed_geom_col], "true")
+                           || SpecUtils::istarts_with(fields[fixed_geom_col], "y"));
+      }//if( has_fixed_geom_col )
+      
+      
       const string name = (fields[0].empty() ? drfname : fields[0]);
       const float energUnits = ((foundKeV && !foundMeV) ? 1.0f : 1000.0f);
       float lowerEnergy = 0.0f, upperEnergy = 0.0f;
@@ -4120,11 +3990,14 @@ std::shared_ptr<DetectorPeakResponse> DrfSelect::parseRelEffCsvFile( const std::
         }
       }//if( we got another line we'll check if its the uncertainties )
       
+      DetectorPeakResponse::EffGeometryType geom_type = DetectorPeakResponse::EffGeometryType::FarField;
+      if( fixed_geometry )
+        geom_type = DetectorPeakResponse::EffGeometryType::FixedGeomActPerM2;
       
       auto det = std::make_shared<DetectorPeakResponse>( fields[0], drfdescrip );
       
       det->fromExpOfLogPowerSeriesAbsEff( coefs, coef_uncerts, dist, 2.0f*radius, energUnits,
-                                          lowerEnergy, upperEnergy );
+                                          lowerEnergy, upperEnergy, geom_type );
       
       //Look for the line that gives the appropriate energy range.
 #define POS_DECIMAL_REGEX "\\+?\\s*((\\d+(\\.\\d*)?)|(\\.\\d*))\\s*(?:[Ee][+\\-]?\\d+)?\\s*"
@@ -4218,7 +4091,7 @@ void DrfSelect::fileUploadedCallback( const UploadCallbackReason context )
     }
   };//updateUserName(...)
   
-  
+  bool is_fixed_geometry = false;
   m_uploadedDetName->setValueText( "" );
   if( !m_efficiencyCsvUpload->empty() )
   {
@@ -4232,8 +4105,14 @@ void DrfSelect::fileUploadedCallback( const UploadCallbackReason context )
   {
     case UploadCallbackReason::ImportTabChosen:
       break;
+      
     case UploadCallbackReason::DetectorDiameterChanged:
       break;
+      
+    case UploadCallbackReason::FixedGeometryChanged:
+      m_detectorDiameter->setHidden( m_fixedGeometryCb->isChecked() );
+      break;
+      
     case UploadCallbackReason::DetectorDotDatUploaded:
       break;
       
@@ -4250,6 +4129,13 @@ void DrfSelect::fileUploadedCallback( const UploadCallbackReason context )
           m_detectrDotDatDiv->hide();
           m_detectorDiameter->disable();
           m_detector = det;
+          
+          const bool fixed_geometry = det->isFixedGeometry();
+          m_fixedGeometryCb->show();
+          m_fixedGeometryCb->setChecked( fixed_geometry );
+          m_fixedGeometryCb->disable();
+          m_detectrDiameterDiv->setHidden( fixed_geometry );
+          
           setAcceptButtonEnabled( true );
           updateUserName();
           emitChangedSignal();
@@ -4257,6 +4143,9 @@ void DrfSelect::fileUploadedCallback( const UploadCallbackReason context )
         }else
         {
           m_detectrDotDatDiv->show();
+          m_detectrDiameterDiv->show();
+          m_fixedGeometryCb->hide();
+          m_fixedGeometryCb->setChecked( false );
           m_detectorDiameter->enable();
         }//if( det )
       }//if( we have a file to test )
@@ -4268,22 +4157,28 @@ void DrfSelect::fileUploadedCallback( const UploadCallbackReason context )
                             && m_efficiencyCsvUpload->spoolFileName().size()
                             && m_detectorDotDatUpload->spoolFileName().size());
 
+  const bool fixed_geometry = (m_fixedGeometryCb->isVisible() && m_fixedGeometryCb->isChecked());
+  
   float diameter = -1.0f;
-  try
+  if( !fixed_geometry )
   {
-    diameter = static_cast<float>( PhysicalUnits::stringToDistance( m_detectorDiameter->text().narrow() ) );
-    if( diameter < float(0.001*PhysicalUnits::cm) )
-      diameter = 0.0f;
-  }catch(...)
-  {
-    m_detectorDiameter->setText( "" );
-  }
+    try
+    {
+      diameter = static_cast<float>( PhysicalUnits::stringToDistance( m_detectorDiameter->text().toUTF8() ) );
+      if( diameter < float(0.001*PhysicalUnits::cm) )
+        diameter = 0.0f;
+    }catch(...)
+    {
+      m_detectorDiameter->setText( "" );
+    }
+  }//if( !fixed_geometry )
   
   const bool isDiamDet = (!m_efficiencyCsvUpload->empty()
                           && diameter>0.0
+                          && !fixed_geometry
                           && m_efficiencyCsvUpload->spoolFileName().size() );
 
-  if( !isGadrasDet && !isDiamDet )
+  if( !isGadrasDet && !isDiamDet && !fixed_geometry )
   {
     if( diameter > 0.0 )
       passMessage( "Need the detectors diameter", WarningWidget::WarningMsgHigh );
@@ -4322,8 +4217,11 @@ void DrfSelect::fileUploadedCallback( const UploadCallbackReason context )
         m_detectorDiameter->setText( PhysicalUnits::printToBestLengthUnits(det->detectorDiameter()) );
     }else
     {
-      det->fromEnergyEfficiencyCsv( csvfile, diameter, float(PhysicalUnits::keV) );
+      det->fromEnergyEfficiencyCsv( csvfile, diameter, float(PhysicalUnits::keV), DetectorPeakResponse::EffGeometryType::FarField );
       det->setDrfSource( DetectorPeakResponse::DrfSource::UserImportedIntrisicEfficiencyDrf );
+      
+      m_fixedGeometryCb->show();
+      m_fixedGeometryCb->enable();
     }//if( isGadrasDet ) / else
   }catch( std::exception &e )
   {
@@ -4825,6 +4723,10 @@ shared_ptr<DetectorPeakResponse> DrfSelect::initARelEffDetector( const SpecUtils
         
       case SpecUtils::DetectorType::KromekD3S:
         return { "D3S", "Kromek D3S", "D3", "Kromek D3S", "Kromek D3" };
+      
+      case SpecUtils::DetectorType::RadiaCode:
+        return { "Radiacode 102", "Radiacode", "Radiacode 101" };
+        break;
     }//switch( type )
     
     return {};

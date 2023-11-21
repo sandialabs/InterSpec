@@ -128,6 +128,7 @@
 #include "InterSpec/WarningWidget.h"
 #include "InterSpec/DoseCalcWidget.h"
 #include "InterSpec/ExportSpecFile.h"
+#include "InterSpec/MakeFwhmForDrf.h"
 #include "SpecUtils/SpecUtilsAsync.h"
 #include "InterSpec/PeakFitChi2Fcn.h"
 #include "InterSpec/PeakInfoDisplay.h"
@@ -402,6 +403,7 @@ InterSpec::InterSpec( WContainerWidget *parent )
     m_rightClickEnergy( -DBL_MAX ),
     m_rightClickNuclideSuggestMenu( nullptr ),
     m_rightClickChangeContinuumMenu( nullptr ),
+    m_rightClickChangeSkewMenu( nullptr ),
     m_exportSpecFileMenu{ nullptr },
     m_exportSpecFileWindow{ nullptr },
   m_logYItems{0},
@@ -453,6 +455,7 @@ InterSpec::InterSpec( WContainerWidget *parent )
   m_licenseWindow( nullptr ),
   m_useInfoWindow( 0 ),
   m_decayInfoWindow( nullptr ),
+  m_addFwhmTool( nullptr ),
   m_preserveCalibWindow( 0 ),
 #if( USE_SEARCH_MODE_3D_CHART )
   m_3dViewWindow( nullptr ),
@@ -1036,6 +1039,23 @@ InterSpec::InterSpec( WContainerWidget *parent )
         m_rightClickMenutItems[i] = m_rightClickMenu->addMenuItem( "Refit Peak" );
         m_rightClickMenutItems[i]->triggered().connect( this, &InterSpec::refitPeakFromRightClick );
         break;
+      case kRefitPeakWithDrfFwhm:
+        m_rightClickMenutItems[i] = m_rightClickMenu->addMenuItem( "Use DRF FWHM" );
+        m_rightClickMenutItems[i]->setToolTip( "Fixes the peaks FWHM to what the detector response"
+                                              " function predicts, and then refits the peak." );
+        m_rightClickMenutItems[i]->triggered().connect( this, &InterSpec::refitPeakWithDrfFwhm );
+        break;
+        
+      case kSetMeanToRefPhotopeak:
+        m_rightClickMenutItems[i] = m_rightClickMenu->addMenuItem( "Set mean to photopeak" );
+        m_rightClickMenutItems[i]->setToolTip( "Fixes the peak centroid to the assigned gamma"
+                                              " energy, or if no source has been assigned, to"
+                                              " likely reference photopeak line.  After setting"
+                                              " the centroid, the other peak parameters will be"
+                                              " refit" );
+        m_rightClickMenutItems[i]->triggered().connect( this, &InterSpec::setMeanToRefPhotopeak );
+        break;
+        
       case kRefitROI:
         m_rightClickMenutItems[i] = m_rightClickMenu->addMenuItem( "Refit ROI" );
         m_rightClickMenutItems[i]->triggered().connect( this, &InterSpec::refitPeakFromRightClick );
@@ -1061,6 +1081,20 @@ InterSpec::InterSpec( WContainerWidget *parent )
         }//for( loop over PeakContinuum::OffsetTypes )
         break;
       }//case kChangeContinuum:
+        
+      case kChangeSkew:
+      {
+        m_rightClickChangeSkewMenu = m_rightClickMenu->addPopupMenuItem( "Change Skew Type" );
+        m_rightClickMenutItems[i] = m_rightClickChangeSkewMenu->parentItem();
+        for( auto type = PeakDef::SkewType(0);
+            type <= PeakDef::SkewType::DoubleSidedCrystalBall; type = PeakDef::SkewType(type+1) )
+        {
+          WMenuItem *item = m_rightClickChangeSkewMenu->addItem( PeakDef::to_string(type) );
+          item->triggered().connect( boost::bind( &InterSpec::handleChangeSkewTypeFromRightClick,
+                                                 this, static_cast<int>(type) ) );
+        }//for( loop over PeakContinuum::OffsetTypes )
+        break;
+      }
         
       case kAddPeak:
         m_rightClickMenutItems[i] = m_rightClickMenu->addMenuItem( "Add Peak" );
@@ -1640,6 +1674,16 @@ void InterSpec::hotKeyPressed( const unsigned int value )
         createExportSpectrumFileDialog();
         break;
         
+    // Temporarily add shortcut for showing FAQ window during development
+      case 'f': case 'F':
+      {
+        showWelcomeDialog( true );
+        if( m_useInfoWindow )
+          m_useInfoWindow->showFaqTab();
+        break;
+      }
+        
+        
       case 37: case 38: case 39: case 40:
         arrowKeyPressed( value );
         break;
@@ -1792,6 +1836,18 @@ void InterSpec::refitPeakFromRightClick()
 }//void refitPeakFromRightClick()
 
 
+void InterSpec::refitPeakWithDrfFwhm()
+{
+  PeakSearchGuiUtils::refit_peaks_with_drf_fwhm( this, m_rightClickEnergy );
+}//void InterSpec::refitPeakWithDrfFwhm()
+
+
+void InterSpec::setMeanToRefPhotopeak()
+{
+  PeakSearchGuiUtils::refit_peak_with_photopeak_mean( this, m_rightClickEnergy );
+}//void setMeanToRefPhotopeak()
+
+
 void InterSpec::addPeakFromRightClick()
 {
   UndoRedoManager::PeakModelChange peak_undo_creator;
@@ -1855,6 +1911,7 @@ void InterSpec::addPeakFromRightClick()
     MultiPeakFitChi2Fcn chi2fcn( static_cast<int>(origRoiPeaks.size()),
                                 dataH,
                                 peak->continuum()->type(),
+                                PeakDef::SkewType::NoSkew,
                                 lower_channel, upper_channel );
     startingChi2 = chi2fcn.evalRelBinRange( 0, chi2fcn.nbin(), origRoiPeaks );
   }//end codeblock to evaluate startingChi2
@@ -1896,7 +1953,7 @@ void InterSpec::addPeakFromRightClick()
     throw runtime_error( "Logic error 2 in InterSpec::addPeakFromRightClick()" );
 
   
-  const MultiPeakInitialGuesMethod methods[] = { FromInputPeaks, UniformInitialGuess, FromDataInitialGuess };
+  const MultiPeakInitialGuessMethod methods[] = { FromInputPeaks, UniformInitialGuess, FromDataInitialGuess };
   
   for( auto method : methods )
   {
@@ -1913,8 +1970,9 @@ void InterSpec::addPeakFromRightClick()
     
     MultiPeakFitChi2Fcn chi2fcn( static_cast<int>(newRoiPeaks.size()),
                                 dataH,
-                                 peak->continuum()->type(),
-                                 lower_channel, upper_channel );
+                                peak->continuum()->type(),
+                                PeakDef::SkewType::NoSkew,
+                                lower_channel, upper_channel );
     fitChi2 = chi2fcn.evalRelBinRange( 0, chi2fcn.nbin(), newRoiPeaks );
     
     if( fitChi2 < startingChi2 )
@@ -2067,6 +2125,15 @@ void InterSpec::handleChangeContinuumTypeFromRightClick( const int continuum_typ
   PeakSearchGuiUtils::change_continuum_type_from_right_click( this, m_rightClickEnergy,
                                                              continuum_type );
 }//InterSpec::handleChangeContinuumTypeFromRightClick(...)
+
+
+void InterSpec::handleChangeSkewTypeFromRightClick( const int peak_skew_type )
+{
+  UndoRedoManager::PeakModelChange peak_undo_creator;
+  
+  PeakSearchGuiUtils::change_skew_type_from_right_click( this, m_rightClickEnergy,
+                                                        peak_skew_type );
+}//void handleChangeSkewTypeFromRightClick( const int peak_continuum_offset_type )
 
 
 void InterSpec::shareContinuumWithNeighboringPeak( const bool shareWithLeft )
@@ -2435,6 +2502,18 @@ void InterSpec::handleRightClick( double energy, double counts,
         break;
       }//case kChangeContinuum:
         
+      case kChangeSkew:
+      {
+        if( !m_rightClickChangeSkewMenu )
+          break;
+        
+        // Disable current skew type, enable all others
+        const vector<WMenuItem *> items = m_rightClickChangeSkewMenu->items();
+        const char *labelTxt = PeakDef::to_string( peak->skewType() );
+        for( WMenuItem *item : items )
+          item->setDisabled( item->text() == labelTxt );
+      }//case kChangeSkew:
+        
       case kChangeNuclide:
       {
         if( m_rightClickNuclideSuggestMenu )
@@ -2506,6 +2585,25 @@ void InterSpec::handleRightClick( double energy, double counts,
       case kRefitROI:
         m_rightClickMenutItems[i]->setHidden( !peak->gausPeak() || npeaksInRoi<2 );
       break;
+        
+      case kRefitPeakWithDrfFwhm:
+        m_rightClickMenutItems[i]->setHidden( !peak->gausPeak() );
+      break;
+        
+      case kSetMeanToRefPhotopeak:
+      {
+        const float energy = PeakSearchGuiUtils::reference_line_energy_near_peak( this, *peak );
+        const bool hide = (energy < 10.0f);
+        m_rightClickMenutItems[i]->setHidden( hide );
+        if( !hide )
+        {
+          char buffer[64] = { '\0' };
+          snprintf( buffer, sizeof(buffer), "Fix to %.1f keV", energy );
+          m_rightClickMenutItems[i]->setText( buffer );
+        }//if( !hide )
+        
+        break;
+      }//case kSetMeanToRefPhotopeak:
         
       case kShareContinuumWithLeftPeak:
       {
@@ -2887,10 +2985,6 @@ void InterSpec::saveStateToDb( Wt::Dbo::ptr<UserState> entry )
   if( entry->isWriteProtected() )
     throw runtime_error( "UserState is write protected; "
                          "please clone state to re-save" );
-  
-//  if( !m_user->preferenceValue<bool>("SaveSpectraToDb") )
-//    throw runtime_error( "You must enable saving spectra to database inorder to"
-//                         " save the apps state." );
 
   try
   {
@@ -7898,6 +7992,63 @@ DecayWindow *InterSpec::createDecayInfoWindow()
 }//void createDecayInfoWindow()
 
 
+MakeFwhmForDrfWindow *InterSpec::fwhmFromForegroundWindow( const bool use_auto_fit_peaks )
+{
+  if( m_addFwhmTool )
+    return m_addFwhmTool;
+  
+  m_addFwhmTool = new MakeFwhmForDrfWindow( use_auto_fit_peaks );
+  m_addFwhmTool->tool()->updatedDrf().connect( m_addFwhmTool, &AuxWindow::hide );
+  m_addFwhmTool->finished().connect( boost::bind( &InterSpec::deleteFwhmFromForegroundWindow, this ) );
+  
+  if( m_drfSelectWindow )
+  {
+    m_addFwhmTool->tool()->updatedDrf().connect(
+        boost::bind( &DrfSelect::handleFitFwhmFinished,
+                    m_drfSelectWindow->widget(), boost::placeholders::_1
+    ) );
+  }//if( m_drfSelectWindow )
+  
+  if( m_undo && m_undo->canAddUndoRedoNow() )
+  {
+    auto undo = [this](){ deleteFwhmFromForegroundWindow(); };
+    auto redo = [this,use_auto_fit_peaks](){ fwhmFromForegroundWindow(use_auto_fit_peaks); };
+    m_undo->addUndoRedoStep( std::move(undo), std::move(redo), "Show fit FWHM from foreground tool" );
+  }//if( undo )
+  
+  return m_addFwhmTool;
+}//MakeFwhmForDrfWindow *fwhmFromForegroundWindow()
+
+
+void InterSpec::deleteFwhmFromForegroundWindow()
+{
+  if( !m_addFwhmTool )
+    return;
+  
+  shared_ptr<MakeFwhmForDrf::ToolState> state = m_addFwhmTool->tool()->currentState();
+  
+  AuxWindow::deleteAuxWindow( m_addFwhmTool );
+  m_addFwhmTool = nullptr;
+  
+  if( m_undo && m_undo->canAddUndoRedoNow() )
+  {
+    auto undo = [this,state](){
+      MakeFwhmForDrfWindow *window = fwhmFromForegroundWindow(false);
+      if( window )
+        window->tool()->setState( state );
+      
+      shared_ptr<DetectorPeakResponse> drf = m_dataMeasurement ? m_dataMeasurement->detector() : nullptr;
+      if( state->m_orig_drf != drf )
+      {
+        m_detectorChanged.emit(state->m_orig_drf);
+      }
+    };
+    auto redo = [this](){ deleteFwhmFromForegroundWindow(); };
+    m_undo->addUndoRedoStep( std::move(undo), std::move(redo), "Close fit FWHM from foreground tool" );
+  }//if( do_undo )
+}//void deleteFwhmFromForegroundWindow()
+
+
 #if( USE_DETECTION_LIMIT_TOOL )
 void InterSpec::createDetectionLimitTool()
 {
@@ -8765,7 +8916,7 @@ void InterSpec::handleToolTabClosed( const int tabnum )
   handleTerminalWindowClose();
 #elif( USE_REL_ACT_TOOL )
   handleRelActManualClose();
-  static_assert( 0, "Need to update handleToolTabClosed logic" );
+  //static_assert( 0, "Need to update handleToolTabClosed logic" );  //20230913 - no updates look to be needed
 #endif
 }//void handleToolTabClosed( const int tabnum )
 #endif
@@ -11031,7 +11182,7 @@ void InterSpec::handleAppUrl( const std::string &url_encoded_url )
   string host, path, query_str, frag;
   AppUtils::split_uri( url, host, path, query_str, frag );
   
-  if( query_str.empty() )
+  if( query_str.empty() && !SpecUtils::iequals_ascii(host, "about") )
     throw runtime_error( "No query string found in URI." );
   
   // I dont think we use the fragment component of URLs anywhere, but maybe we accidentally
@@ -11091,6 +11242,16 @@ void InterSpec::handleAppUrl( const std::string &url_encoded_url )
     UnitsConverterTool *converter = createUnitsConverterTool();
     if( converter )
       converter->handleAppUrl( query_str );
+  }if( SpecUtils::iequals_ascii(host,"about") )
+  {
+    showLicenseAndDisclaimersWindow();
+    if( m_licenseWindow )
+      m_licenseWindow->handleAppUrlPath( path );
+  }if( SpecUtils::iequals_ascii(host,"welcome") )
+  {
+    showWelcomeDialog(true);
+    if( m_useInfoWindow )
+      m_useInfoWindow->handleAppUrl( query_str );
   }
 #if( USE_REMOTE_RID )
   else if( SpecUtils::iequals_ascii(host,"remoterid") )

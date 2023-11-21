@@ -214,6 +214,10 @@ namespace
           filename += "_custom_energy";
           break;
           
+        case ReferenceLineInfo::SourceType::NuclideMixture:
+          filename += "_mixture";
+          break;
+          
         case ReferenceLineInfo::SourceType::None:
           filename = "empty";
           break;
@@ -272,6 +276,13 @@ namespace
         case ReferenceLineInfo::SourceType::CustomEnergy:
           out << "Source,Gammas" << eol_char;
           break;
+          
+        case ReferenceLineInfo::SourceType::NuclideMixture:
+        {
+          out << "NuclideMixture," << refinfo.m_input.m_input_txt << eol_char;
+          out << "AgeDecayedTo," << refinfo.m_input.m_age << eol_char;
+          break;
+        }//
           
         case ReferenceLineInfo::SourceType::None:
           assert( 0 );
@@ -364,21 +375,10 @@ namespace
           break;
           
         case ReferenceLineInfo::SourceType::FluorescenceXray:
-          out << eol_char << rel_amp_note << eol_char << eol_char;
-          out << "Energy (keV),Rel. Yield" << eol_char;
-          break;
-          
         case ReferenceLineInfo::SourceType::Reaction:
-          out << eol_char << rel_amp_note << eol_char << eol_char;
-          out << "Energy (keV),Rel. Yield" << eol_char;
-          break;
-          
         case ReferenceLineInfo::SourceType::Background:
-          out << eol_char << rel_amp_note << eol_char << eol_char;
-          out << "Energy (keV),Rel. Yield";
-          break;
-          
         case ReferenceLineInfo::SourceType::CustomEnergy:
+        case ReferenceLineInfo::SourceType::NuclideMixture:
           out << eol_char << rel_amp_note << eol_char << eol_char;
           out << "Energy (keV),Rel. Yield";
           break;
@@ -414,10 +414,17 @@ namespace
         snprintf( buffer, sizeof(buffer), "%.3f,%1.6g", line.m_energy, line.m_decay_intensity );
         out << buffer;
         
-        if( line.m_transition && line.m_transition->parent )
-          out << "," << line.m_transition->parent->symbol;
-        else
-          out << ",";
+        if( line.m_parent_nuclide
+           && (refinfo.m_source_type == ReferenceLineInfo::SourceType::NuclideMixture) )
+        {
+          out << "," << line.m_parent_nuclide->symbol;
+        }else
+        {
+          if( line.m_transition && line.m_transition->parent )
+            out << "," << line.m_transition->parent->symbol;
+          else
+            out << ",";
+        }
         
         out << ",";
         switch( line.m_source_type )
@@ -490,11 +497,11 @@ namespace
         
         if( att_fcn || det )
         {
-          snprintf( buffer, sizeof(buffer), "%1.7g,", line.m_decay_intensity*shield_eff*drf_eff );
+          snprintf( buffer, sizeof(buffer), "%1.7g", line.m_decay_intensity*shield_eff*drf_eff );
           out << "," << buffer;
         }
         
-        snprintf( buffer, sizeof(buffer), "%1.7g,", line.m_normalized_intensity );
+        snprintf( buffer, sizeof(buffer), "%1.7g", line.m_normalized_intensity );
         out << "," << buffer;
         
         out << eol_char;
@@ -920,6 +927,10 @@ ReferencePhotopeakDisplay::ReferencePhotopeakDisplay(
   IsotopeNameFilterModel::nuclideNameMatcherJs( matcherJs );
   IsotopeNameFilterModel *isoSuggestModel = new IsotopeNameFilterModel( this );
   isoSuggestModel->addCustomSuggestPossibility( "background" );
+  
+  for( const string &name : ReferenceLineInfo::additional_nuclide_mixtures() )
+    isoSuggestModel->addCustomSuggestPossibility( name );
+  
   m_nuclideSuggest = new WSuggestionPopup( matcherJs, replacerJs, this );
 #if( WT_VERSION < 0x3070000 ) //I'm not sure what version of Wt "wtNoReparent" went away.
   m_nuclideSuggest->setJavaScriptMember("wtNoReparent", "true");
@@ -2025,6 +2036,55 @@ std::shared_ptr<void> ReferencePhotopeakDisplay::getDisableUndoRedoSentry()
 }//std::shared_ptr<void> getDisableUndoRedoSentry()
 
 
+void ReferencePhotopeakDisplay::addUndoRedoPoint( const ReferenceLineInfo &starting_showing,
+                      const std::vector<ReferenceLineInfo> &starting_persisted,
+                      const std::deque<RefLineInput> &starting_prev_nucs,
+                      const bool starting_user_color,
+                      const RefLineInput &current_user_input )
+{
+  const bool ending_user_color = m_userHasPickedColor;
+  
+  UndoRedoManager *undo_manager = UndoRedoManager::instance();
+  if( undo_manager
+     && !(starting_showing == m_currentlyShowingNuclide)
+     && !m_undo_redo_sentry.lock() )
+  {
+    auto undo = [this, starting_showing, starting_persisted, starting_prev_nucs, starting_user_color](){
+      InterSpec *interspec = InterSpec::instance();
+      ReferencePhotopeakDisplay *display = interspec ? interspec->referenceLinesWidget() : nullptr;
+      if( !display )
+        return;
+      
+      display->m_currentlyShowingNuclide = starting_showing;
+      display->m_persisted = starting_persisted;
+      display->m_prevNucs = starting_prev_nucs;
+      
+      display->updateDisplayFromInput( starting_showing.m_input );
+      display->m_userHasPickedColor = starting_user_color;
+    };//undo
+    
+    auto redo = [this, starting_showing, starting_persisted, starting_prev_nucs, current_user_input, ending_user_color](){
+      InterSpec *interspec = InterSpec::instance();
+      ReferencePhotopeakDisplay *display = interspec ? interspec->referenceLinesWidget() : nullptr;
+      if( !display )
+        return;
+      
+      display->m_currentlyShowingNuclide = starting_showing;
+      display->m_persisted = starting_persisted;
+      display->m_prevNucs = starting_prev_nucs;
+      
+      display->updateDisplayFromInput( current_user_input );
+      display->m_userHasPickedColor = ending_user_color;
+    };//undo
+    
+    
+    undo_manager->addUndoRedoStep( undo, redo, "Update ref-lines." );
+  }//if( undo_manager )
+}//void addUndoRedoPoint(...)
+
+
+
+
 void ReferencePhotopeakDisplay::updateDisplayChange()
 {
   if( m_currently_updating )
@@ -2038,40 +2098,19 @@ void ReferencePhotopeakDisplay::updateDisplayChange()
   const RefLineInput user_input = userInput();
   updateDisplayFromInput( user_input );
   
-  const bool ending_user_color = m_userHasPickedColor;
-  
-  
-  UndoRedoManager *undo_manager = UndoRedoManager::instance();
-  if( undo_manager
-     && !(starting_showing == m_currentlyShowingNuclide)
-     && !m_undo_redo_sentry.lock() )
-  {
-    auto undo = [this, starting_showing, starting_persisted, starting_prev_nucs](){
-      m_currentlyShowingNuclide = starting_showing;
-      m_persisted = starting_persisted;
-      m_prevNucs = starting_prev_nucs;
-      
-      updateDisplayFromInput( starting_showing.m_input );
-    };//undo
-    
-    auto redo = [this, starting_showing, starting_persisted, starting_prev_nucs, user_input, ending_user_color](){
-      m_currentlyShowingNuclide = starting_showing;
-      m_persisted = starting_persisted;
-      m_prevNucs = starting_prev_nucs;
-      
-      updateDisplayFromInput( user_input );
-      m_userHasPickedColor = ending_user_color;
-    };//undo
-    
-    
-    undo_manager->addUndoRedoStep( undo, redo, "Update ref-lines." );
-  }//if( undo_manager )
+  addUndoRedoPoint( starting_showing, starting_persisted, starting_prev_nucs,
+                   starting_user_color, user_input );
 }//void updateDisplayChange()
 
 
 void ReferencePhotopeakDisplay::updateDisplayFromInput( RefLineInput user_input )
 {
   UpdateGuard guard( m_currently_updating );
+  
+  const ReferenceLineInfo starting_showing = m_currentlyShowingNuclide;
+  const vector<ReferenceLineInfo> starting_persisted = m_persisted;
+  const deque<RefLineInput> starting_prev_nucs = m_prevNucs;
+  const bool starting_user_color = m_userHasPickedColor;
   
   shared_ptr<ReferenceLineInfo> ref_lines = ReferenceLineInfo::generateRefLineInfo( user_input );
   
@@ -2082,6 +2121,7 @@ void ReferencePhotopeakDisplay::updateDisplayFromInput( RefLineInput user_input 
     assert( (ref_lines->m_source_type == ReferenceLineInfo::SourceType::Reaction) == (!ref_lines->m_reactions.empty()) );
     //ReferenceLineInfo::SourceType::Background
     //ReferenceLineInfo::SourceType::CustomEnergy
+    //ReferenceLineInfo::SourceType::NuclideMixture:
     //ReferenceLineInfo::SourceType::None
   }//if( ref_lines - do some quick sanity checks )
   
@@ -2121,7 +2161,12 @@ void ReferencePhotopeakDisplay::updateDisplayFromInput( RefLineInput user_input 
   if( !hasPromptEquilib )
     m_promptLinesOnly->setUnChecked();
   
-  const bool enable_aging = (nuclide && !ref_lines->m_input.m_promptLinesOnly && !nuclide->decaysToStableChildren());
+  // For SourceType::NuclideMixture, we could look through all the nuclides and check if any of them
+  //  are candidates for aging - but for now we'll just assume we can age them.
+  const bool enable_aging = ((nuclide && !ref_lines->m_input.m_promptLinesOnly
+                              && !nuclide->decaysToStableChildren())
+                             || (ref_lines->m_source_type == ReferenceLineInfo::SourceType::NuclideMixture) ) ;
+  
   const string agestr = (!enable_aging || !ref_lines) ? string() : ref_lines->m_input.m_age;
   
   m_ageEdit->setText( WString::fromUTF8(agestr) );
@@ -2165,6 +2210,7 @@ void ReferencePhotopeakDisplay::updateDisplayFromInput( RefLineInput user_input 
       break;
       
     case ReferenceLineInfo::SourceType::Background:
+    case ReferenceLineInfo::SourceType::NuclideMixture:
       showAplhaCb = showBetaCb = false;
       break;
       
@@ -2217,6 +2263,11 @@ void ReferencePhotopeakDisplay::updateDisplayFromInput( RefLineInput user_input 
   
   //Default to using the old color, unless we find a reason to change it.
   WColor color = ref_lines->m_input.m_color;
+  
+  //if( ref_lines->m_source_type == ReferenceLineInfo::SourceType::NuclideMixture )
+  //{
+   // TODO: maybe make each nuclide a different color... but this opens a can of worms
+  //}//if( ref_lines->m_source_type == ReferenceLineInfo::SourceType::NuclideMixture )
   
   // Note: this is strictly the source string, and not age, shielding, or other options.
   const bool isSameSrc = (!srcstr.empty() && (srcstr == m_currentlyShowingNuclide.m_input.m_input_txt));
@@ -2313,6 +2364,7 @@ void ReferencePhotopeakDisplay::updateDisplayFromInput( RefLineInput user_input 
         break;
         
       case ReferenceLineInfo::SourceType::Background:
+      case ReferenceLineInfo::SourceType::NuclideMixture:
         nonDefaultOpts |= !ref_lines->m_input.m_showXrays;
         nonDefaultOpts |= !ref_lines->m_input.m_showGammas;
         break;
@@ -2361,7 +2413,10 @@ void ReferencePhotopeakDisplay::updateDisplayFromInput( RefLineInput user_input 
   }
 
   updateOtherNucsDisplay();
-}//void updateDisplayChange()
+  
+  addUndoRedoPoint( starting_showing, starting_persisted, starting_prev_nucs,
+                   starting_user_color, user_input );
+}//void updateDisplayFromInput()
 
 
 
@@ -2751,11 +2806,13 @@ void ReferencePhotopeakDisplay::deSerialize( std::string &xml_data  )
           input.setShieldingAttFcn( m_materialDB );
         }
         
-        shared_ptr<ReferenceLineInfo> ref_line = ReferenceLineInfo::generateRefLineInfo( input );
-        if( !ref_line || (ref_line->m_validity != ReferenceLineInfo::InputValidity::Valid) )
-          throw runtime_error( "Couldn't generate reference lines from source '" + input.m_input_txt + "'" );
+        //shared_ptr<ReferenceLineInfo> ref_line = ReferenceLineInfo::generateRefLineInfo( input );
+        //if( !ref_line || (ref_line->m_validity != ReferenceLineInfo::InputValidity::Valid) )
+        //  throw runtime_error( "Couldn't generate reference lines from source '" + input.m_input_txt + "'" );
+        //
+        //m_currentlyShowingNuclide = *ref_line;
         
-        m_currentlyShowingNuclide = *ref_line;
+        updateDisplayFromInput( input );
       }
     }//if( showing_node )
     

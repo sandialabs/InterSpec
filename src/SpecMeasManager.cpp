@@ -60,6 +60,7 @@
 #include <Wt/WTabWidget>
 #include <Wt/WTableCell>
 #include <Wt/WIOService>
+#include <Wt/Chart/WAxis>
 
 #include <Wt/WGroupBox>
 #include <Wt/WResource>
@@ -87,6 +88,7 @@
 #include <Wt/WMemoryResource>
 #include <Wt/WStringListModel>
 #include <Wt/WContainerWidget>
+#include <Wt/WRegExpValidator>
 #if( HAS_WTDBOMYSQL )
 #include <Wt/Dbo/backend/MySQL>
 #endif
@@ -104,6 +106,8 @@
 #include "SpecUtils/StringAlgo.h"
 #include "SpecUtils/ParseUtils.h"
 
+
+#include "InterSpec/DrfChart.h"
 #include "InterSpec/SpecMeas.h"
 #include "InterSpec/PopupDiv.h"
 #include "InterSpec/EnergyCal.h"
@@ -126,6 +130,7 @@
 #include "InterSpec/PeakSearchGuiUtils.h"
 #include "InterSpec/RowStretchTreeView.h"
 #include "InterSpec/FileDragUploadResource.h"
+#include "InterSpec/ShieldingSourceDisplay.h"
 
 #if( USE_DB_TO_STORE_SPECTRA )
 #include "InterSpec/DbFileBrowser.h"
@@ -1699,6 +1704,26 @@ bool SpecMeasManager::handleNonSpectrumFile( const std::string &displayName,
   }
 #endif
   
+  // Check if a .ECC file from ISOCS
+  if( (header_contains("SGI_template") || header_contains("ISOCS_file_name"))
+     && handleEccFile(infile, dialog) )
+  {
+    add_undo_redo();
+    
+    return true;
+  }//if( a .ECC file from ISOCS )
+  
+  if( header_contains("<ShieldingSourceFit") && header_contains("<Geometry")
+     && (filesize > 128) && (filesize < 1024*1024)
+     && handleShieldingSourceFile(infile, dialog) )
+  {
+    add_undo_redo();
+    
+    return true;
+  }//if( Shielding/Source fit XML file )
+
+  
+  
   delete dialog;
   
   return false;
@@ -1839,7 +1864,7 @@ bool SpecMeasManager::handleCALpFile( std::istream &infile, SimpleDialog *dialog
     // If we set the contents margins to 0, then scroll-bars may appear.
     //  However doing just the below looks okay, and the scroll bars dont seem to appear
     stretcher->setContentsMargins( 9, 2, 9, 2 );
-    //dialog->contents()->setOverflow( WContainerWidget::Overflow::OverflowHidden );
+    dialog->contents()->setOverflow( WContainerWidget::Overflow::OverflowHidden, Wt::Orientation::Horizontal );
     
     dialog->contents()->setLayout( stretcher );
     WText *title = new WText( "Not a spectrum file" );
@@ -1916,8 +1941,8 @@ bool SpecMeasManager::handleCALpFile( std::istream &infile, SimpleDialog *dialog
       continue;
     }
     
-    // The calbiration may not be for the correct number of channels, for files that have detectors
-    //  with differnt num channels; we'll check for this here and fix the calibration up for this
+    // The calibration may not be for the correct number of channels, for files that have detectors
+    //  with different num channels; we'll check for this here and fix the calibration up for this
     //  case.
     //  We could also do this for `name.empty()` case, but we shouldnt need to, I dont think.
     if( !name.empty() )
@@ -2027,11 +2052,7 @@ bool SpecMeasManager::handleCALpFile( std::istream &infile, SimpleDialog *dialog
           msg += "Polynomial:";
         
         for( size_t i = 0; i < cal->coefficients().size() && i < 4; ++i )
-        {
-          char buffer[64];
-          snprintf( buffer, sizeof(buffer), "%s%.3f", (i ? ", " : " "), cal->coefficients()[i] );
-          msg += buffer;
-        }
+          msg += PhysicalUnits::printCompact( cal->coefficients()[i], 4 );
         if( cal->coefficients().size() > 4 )
           msg += "...";
         
@@ -2261,6 +2282,353 @@ bool SpecMeasManager::handleRelActAutoXmlFile( std::istream &input, SimpleDialog
 #endif
 
 
+bool SpecMeasManager::handleEccFile( std::istream &input, SimpleDialog *dialog )
+{
+  const size_t start_pos = input.tellg();
+  
+  shared_ptr<DetectorPeakResponse> det;
+  double source_area = 0.0, source_mass = 0.0;
+  try
+  {
+    tuple<shared_ptr<DetectorPeakResponse>,double,double> det_area_mass
+      = DetectorPeakResponse::parseEccFile( input );
+    
+    det = get<0>(det_area_mass);
+    source_area = get<1>(det_area_mass);
+    source_mass = get<2>(det_area_mass);
+    
+    assert( det && det->isValid() );
+    if( !det || !det->isValid() )
+      throw std::logic_error( "DRF returned from DetectorPeakResponse::parseEccFile() should be valid." );
+  }catch( std::exception &e )
+  {
+    input.seekg( start_pos );
+    return false;
+  }//try / catch
+  
+  dialog->addStyleClass( "EccDrfDialog" );
+  
+  assert( dialog );
+  
+  dialog->contents()->clear();
+  dialog->footer()->clear();
+  
+  int chartw = 350, charth = 200;
+  if( m_viewer->renderedWidth() > 500 )
+    chartw = std::min( ((3*m_viewer->renderedWidth()/4) - 50), 500 );
+  if( m_viewer->renderedHeight() > 400 )
+    charth = std::min( m_viewer->renderedHeight()/4, (4*chartw)/7 );
+  chartw = std::max( chartw, 300 );
+  charth = std::max( charth, 175 );
+  
+  WText *title = new WText( "ISOCS Efficiency Calibration Curve DRF", dialog->contents() );
+  title->addStyleClass( "title" );
+  title->setInline( false );
+  
+  DrfChart *chart = new DrfChart( dialog->contents() );
+  chart->setMinimumSize( 300, 175 );
+  chart->resize( chartw, charth );
+  chart->updateChart( det );
+  
+  auto set_chart_y_range = [=]( shared_ptr<DetectorPeakResponse> drf ){
+    // We will override the auto y-axis limits, since it does badly with really small
+    //  numbers we might encounter.
+    double ymax = -999.0;
+    double lower_x = drf->lowerEnergy();
+    double upper_x = drf->upperEnergy();
+    if( lower_x >= upper_x )
+    {
+      lower_x = 45;
+      upper_x = 3000;
+    }
+    
+    for( double energy = lower_x; energy <= upper_x; energy += 10 )
+    {
+      const double val = drf->intrinsicEfficiency( energy );
+      ymax = std::max( ymax, val );
+    }
+    if( ymax > 0.0 )
+      chart->axis(Chart::Y1Axis).setRange( 0.0, 1.2*ymax );
+  };
+  
+  set_chart_y_range( det );
+  
+  const string name = Wt::Utils::htmlEncode( det->name() );
+  const string desc = Wt::Utils::htmlEncode( det->description() );
+    
+  string txt_css = "style=\"text-align: left;"
+  " max-width: " + std::to_string(chartw-5) + "px;"
+  " white-space: nowrap;"
+  " text-overflow: ellipsis;"
+  " overflow-x: hidden;"
+  "\"";
+  
+  string msg =
+    //"<p style=\"white-space: nowrap;\">You can use this .ECC file as a DRF.</p>"
+    "<p " + txt_css + ">"
+      "Name: " + name +
+  "</p>";
+  if( !desc.empty() )
+    msg += "<p " + txt_css + ">"
+        "Desc: " + desc +
+    "</p>";
+  //msg += "<p>Would you like to use this DRF?</p>";
+  
+  WText *txt = new WText( msg, TextFormat::XHTMLText, dialog->contents() );
+
+  WContainerWidget *btn_div = new WContainerWidget( dialog->contents() );
+  btn_div->addStyleClass( "HowToUseGrp" );
+  
+  map<int,DetectorPeakResponse::EffGeometryType> index_to_geom;
+  
+  WLabel *geom_label = new WLabel( "How to interpret", btn_div );
+  WComboBox *geom_combo = new WComboBox( btn_div );
+  geom_combo->addItem( "Far Field DRF" );
+  index_to_geom[geom_combo->count() - 1] = DetectorPeakResponse::EffGeometryType::FarField;
+  
+  geom_combo->addItem( "Fixed Geometry - total activity" );
+  index_to_geom[geom_combo->count() - 1] = DetectorPeakResponse::EffGeometryType::FixedGeomTotalAct;
+  
+  if( source_area > 0.0 )
+  {
+    geom_combo->addItem( "Fixed Geometry - activity per cm2" );
+    index_to_geom[geom_combo->count() - 1] = DetectorPeakResponse::EffGeometryType::FixedGeomActPerCm2;
+    
+    geom_combo->addItem( "Fixed Geometry - activity per m2" );
+    index_to_geom[geom_combo->count() - 1] = DetectorPeakResponse::EffGeometryType::FixedGeomActPerM2;
+  }//if( source_area > 0.0 )
+  
+  if( source_mass > 0 )
+  {
+    geom_combo->addItem( "Fixed Geometry - activity per gram" );
+    index_to_geom[geom_combo->count() - 1] = DetectorPeakResponse::EffGeometryType::FixedGeomActPerGram;
+  }//if( source_mass > 0 )
+  
+  geom_combo->setCurrentIndex( 1 );
+    
+  WTable *far_field_opt = new WTable( dialog->contents() );
+  //far_field_opt->setHiddenKeepsGeometry( true );
+  far_field_opt->addStyleClass( "FarFieldOptTbl" );
+  
+  WRegExpValidator *dist_validator = new WRegExpValidator( PhysicalUnits::sm_distanceRegex, this );
+  dist_validator->setFlags( Wt::MatchCaseInsensitive );
+  dist_validator->setInvalidBlankText( "0.0 cm" );
+  dist_validator->setMandatory( true );
+    
+  WTableCell *cell = far_field_opt->elementAt( 0, 0 );
+  WLabel *label = new WLabel( "Detector diam.", cell );
+  cell = far_field_opt->elementAt( 0, 1 );
+  WLineEdit *diameter_edit = new WLineEdit( "", cell );
+  label->setBuddy( diameter_edit );
+  diameter_edit->setValidator( dist_validator );
+  diameter_edit->setEmptyText( "0 cm" );
+  
+  cell = far_field_opt->elementAt( 1, 0 );
+  label = new WLabel( "Distance.", cell );
+  cell = far_field_opt->elementAt( 1, 1 );
+  WLineEdit *distance_edit = new WLineEdit( "", cell );
+  label->setBuddy( distance_edit );
+  distance_edit->setValidator( dist_validator );
+  distance_edit->setEmptyText( "0 cm" );
+  
+  // TODO: make option to correct for air-attenuation
+  
+  far_field_opt->hide();
+  
+  // TODO: make option to make DRF default for detector model, or serial number
+  
+  dialog->addButton( "Cancel" );
+  WPushButton *accept = dialog->addButton( "Use DRF" );
+  
+  
+  auto try_create_farfield = [=]() -> shared_ptr<DetectorPeakResponse> {
+    const double distance = PhysicalUnits::stringToDistance( distance_edit->text().toUTF8() );
+    const double diameter = PhysicalUnits::stringToDistance( diameter_edit->text().toUTF8() );
+      
+    if( distance < 0.0 )
+      throw runtime_error( "dist < 0" );
+    if( diameter <= 0.0 )
+      throw runtime_error( "diam <= 0" );
+    
+    const bool correct_for_air_atten = true;
+    return det->convertFixedGeometryToFarField( diameter, distance, correct_for_air_atten );
+  };//try_create_farfield
+  
+  auto update_state = [=](){
+    const int index = geom_combo->currentIndex();
+    const auto pos = index_to_geom.find(index);
+    assert( pos != end(index_to_geom) );
+    if( pos == end(index_to_geom) )
+      throw logic_error( "SpecMeasManager::handleEccFile: unexpected index" );
+    
+    const DetectorPeakResponse::EffGeometryType geom_type = pos->second;
+    
+    try
+    {
+      shared_ptr<DetectorPeakResponse> new_drf = det;
+      
+      far_field_opt->setHidden( (geom_type != DetectorPeakResponse::EffGeometryType::FarField) );
+      
+      switch( geom_type )
+      {
+        case DetectorPeakResponse::EffGeometryType::FarField:
+          new_drf = try_create_farfield();
+          break;
+          
+        case DetectorPeakResponse::EffGeometryType::FixedGeomTotalAct:
+          break;
+          
+        case DetectorPeakResponse::EffGeometryType::FixedGeomActPerCm2:
+        case DetectorPeakResponse::EffGeometryType::FixedGeomActPerM2:
+          new_drf = det->convertFixedGeometryType( source_area, geom_type );
+          break;
+          
+        case DetectorPeakResponse::EffGeometryType::FixedGeomActPerGram:
+          new_drf = det->convertFixedGeometryType( source_mass, geom_type );
+          break;
+      }//switch( geom_type )
+        
+      chart->updateChart( new_drf );
+      set_chart_y_range( new_drf );
+      accept->enable();
+    }catch( std::exception & )
+    {
+      chart->updateChart( nullptr );
+      accept->disable();
+    }
+  };//update_state lambda
+  
+  geom_combo->activated().connect( std::bind(update_state) );
+  distance_edit->textInput().connect( std::bind(update_state) );
+  diameter_edit->textInput().connect( std::bind(update_state) );
+  
+  
+  accept->clicked().connect( std::bind( [=](){
+    const int index = geom_combo->currentIndex();
+    const auto pos = index_to_geom.find(index);
+    assert( pos != end(index_to_geom) );
+    if( pos == end(index_to_geom) )
+      throw logic_error( "SpecMeasManager::handleEccFile: unexpected index" );
+    
+    const DetectorPeakResponse::EffGeometryType geom_type = pos->second;
+    
+    auto new_drf = det;
+    try
+    {
+      switch( geom_type )
+      {
+        case DetectorPeakResponse::EffGeometryType::FarField:
+          new_drf = try_create_farfield();
+          break;
+          
+        case DetectorPeakResponse::EffGeometryType::FixedGeomTotalAct:
+          break;
+          
+        case DetectorPeakResponse::EffGeometryType::FixedGeomActPerCm2:
+        case DetectorPeakResponse::EffGeometryType::FixedGeomActPerM2:
+          new_drf = det->convertFixedGeometryType( source_area, geom_type );
+          break;
+          
+        case DetectorPeakResponse::EffGeometryType::FixedGeomActPerGram:
+          new_drf = det->convertFixedGeometryType( source_mass, geom_type );
+          break;
+      }//switch( geom_type )
+    }catch( std::exception &e )
+    {
+      passMessage( "Error creating DRF from ECC: " + string(e.what()),
+                    WarningWidget::WarningMsgHigh );
+      return;
+    }//try / catch
+    
+    auto interspec = InterSpec::instance();
+    if( !new_drf || !interspec )
+      return;
+      
+    auto sql = interspec->sql();
+    auto user = interspec->m_user;
+    DrfSelect::updateLastUsedTimeOrAddToDb( new_drf, user.id(), sql );
+    interspec->detectorChanged().emit( new_drf ); //This loads it to the foreground spectrum file
+  }) );
+    
+  return true;
+}//bool handleEccFile( std::istream &input, SimpleDialog *dialog )
+
+
+bool SpecMeasManager::handleShieldingSourceFile( std::istream &input, SimpleDialog *dialog )
+{
+  const size_t start_pos = input.tellg();
+  
+  try
+  {
+    //get the filesize
+    input.seekg(0, ios::end);
+    const size_t end_pos = input.tellg();
+    input.seekg(start_pos);
+    const size_t file_size = end_pos - start_pos;
+    if( (file_size < 128) || (file_size > 1024*1024) )
+      throw runtime_error( "invalid size" );
+    
+    // We need to keep data around as long as the xml_document
+    auto data = make_shared<vector<char>>( file_size + 1 );
+    
+    if( !input.read( (char *)(&((*data)[0])), file_size ) )
+      throw runtime_error( "failed to read file" );
+    
+    (*data)[file_size] = '\0';
+    
+    auto xml_doc = make_shared<rapidxml::xml_document<char>>();
+    const int flags = rapidxml::parse_normalize_whitespace | rapidxml::parse_trim_whitespace;
+    xml_doc->parse<flags>( &((*data)[0]) );
+    
+  
+    MaterialDB *material_db = m_viewer->materialDataBase();
+    PeakModel *peak_model = m_viewer->peakModel();
+    WSuggestionPopup *shield_suggest = m_viewer->shieldingSuggester();
+      
+    auto disp = make_unique<ShieldingSourceDisplay>( peak_model, m_viewer, shield_suggest, material_db );
+    disp->deSerialize( xml_doc->first_node() );
+    
+    assert( dialog );
+    dialog->contents()->clear();
+    dialog->footer()->clear();
+    
+    WText *title = new WText( "Activity/Shielding XML", dialog->contents() );
+    title->addStyleClass( "title" );
+    title->setInline( false );
+    
+    WText *content = new WText( "Use this Activity/Shielding fit setup?", dialog->contents() );
+    content->addStyleClass( "content" );
+    content->setInline( false );
+    
+    dialog->footer()->clear();
+    dialog->addButton( "Cancel" );
+    WPushButton *btn = dialog->addButton( "Yes" );
+    btn->clicked().connect( std::bind([this,data,xml_doc](){
+      InterSpec *viewer = InterSpec::instance();
+      if( !viewer || !data || !xml_doc )
+        return;
+      
+      try
+      {
+        ShieldingSourceDisplay *display = viewer->shieldingSourceFit();
+        if( display )
+          display->deSerialize( xml_doc->first_node() );
+      }catch( std::exception &e )
+      {
+        passMessage( "Sorry, there was an error loading Activity/Shielding Fit model: "
+                    + std::string(e.what()), WarningWidget::WarningMsgHigh );
+      }
+    }) );
+  }catch( std::exception &e )
+  {
+    input.seekg( start_pos );
+    return false;
+  }//try / catch
+  
+  return true;
+}//bool handleShieldingSourceFile( std::istream &input, SimpleDialog *dialog );
+
+
 void SpecMeasManager::handleFileDropWorker( const std::string &name,
                      const std::string &spoolName,
                      SpecUtils::SpectrumType type,
@@ -2303,7 +2671,7 @@ void SpecMeasManager::handleFileDropWorker( const std::string &name,
   } BOOST_SCOPE_EXIT_END
   
  
-  if( name.length() > 4
+  if( (name.length() > 4)
      && SpecUtils::iequals_ascii( name.substr(name.length()-4), ".zip")
      && handleZippedFile( name, spoolName, type ) )
   {
