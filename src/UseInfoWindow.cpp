@@ -1208,7 +1208,8 @@ void UseInfoWindow::textItemCreator( const std::string &resource, Wt::WContainer
         + wApp->javaScriptClass() + "." + resource_name + "_scroll_to('" + w->id() + "');"
       "}";
       toc_item->clicked().connect( this_js_call );
-      new WAnchor( WLink("#"), key_title.second, toc_item );
+      WText *link = new WText( key_title.second, toc_item );
+      link->addStyleClass( resource_name + "-toc-item LinkBtn" );
     }//for( const pair<string,string> &key_title : topic_keys )
   }catch( std::exception &e )
   {

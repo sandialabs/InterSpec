@@ -18,6 +18,11 @@
 
 }
 
+.faqs-toc-item.LinkBtn
+{
+  float: none;
+}
+
 .faqs-subjects
 {
 
