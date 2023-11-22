@@ -1353,10 +1353,10 @@ bool PeakDef::skew_parameter_range( const SkewType skew_type, const CoefficientT
       if( coef != CoefficientType::SkewPar0 )
         return false;
       
-      starting_value = 0.2;
-      step_size = 0.05;
+      starting_value = 2.0;
+      step_size = 1.0;
       lower_value = 0.0; //Below 0.005 would be numerically bad, but the Bortel function should protect against it.
-      upper_value = 10;
+      upper_value = 15;
       
       break;
     }//case SkewType::Bortel:

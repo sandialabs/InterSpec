@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.15 FATAL_ERROR)
 
-project( InterSpecApp VERSION 1.0.11 )
+project( InterSpecApp VERSION 1.0.12 )
 
 set(BUILD_AS_OSX_APP ON CACHE INTERNAL "Build a OSX native app" )
 set(USE_OSX_NATIVE_MENU ON CACHE INTERNAL "Use macOS native menu-system" )

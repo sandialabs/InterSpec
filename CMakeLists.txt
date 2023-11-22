@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.1...3.20 FATAL_ERROR)
 
-project(InterSpec VERSION 1.0.11)
+project(InterSpec VERSION 1.0.12)
 
 set(CMAKE_CXX_STANDARD 14)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -168,7 +168,7 @@ if( CMAKE_COMPILER_IS_GNUCC AND CMAKE_CXX_COMPILER_VERSION VERSION_LESS 5.0 )
   message( FATAL_ERROR, "GCC less than 5 not supported." )
 endif()
 
-# Make a cached variable avaiable to parent cmake projects
+# Make a cached variable available to parent cmake projects
 set( INTERSPEC_VERSION "${PROJECT_VERSION}" CACHE STRING "InterSpec version" )
 
 if(NOT CMAKE_BUILD_TYPE)

@@ -62,40 +62,22 @@ namespace RelActCalc
 
 
 /*
- We need to take in:
- 
- foreground_spectrum;
- background_spectrum; //optional
- 
- struct RoiRanges{ double lower_energy, upper_energy; continuum_type; bool force_full_range; }
- vector<RoiRanges>: roi_ranges;
- 
- struct NucInputInfo{ const SandiaDecay::Nuclide *nuc; double age; bool fit_age; vector<double> gammas_to_release; }
- vector<NucInputInfo> nuclides;
- 
- struct FreeFloatPeak{ double energy; bool release_fwhm; }
- vector<FreeFloatPeak> free_floating_peaks;
- 
- options{ bool fit_energy_cal; RelEffEqnType; size_t RelEffEqnOrder; FwhmFcnForm/Order; }
- 
- 
- For deciding peak ROIs:
- - First use whole specified ROI, and fit for a solution
- - Eliminate statistically insignificant gamma lines; then use remaining gammas to decide peak ROI widths (and if should be further broken up?)
- 
- To get rid of the degeneracy of rel-eff and rel-act:
- - Add an extra term to the Chi2 that forces the rel-act equation to be 1.0 at the lowest energy; maybe multiple difference of current rel-eff equation from 1.0 by the area of the largest peak in any of the ROIs
- 
- Parameters to fit:
- - Energy offset; Energy gain adjust //will be fixed to begin with
- - Fwhm Parameters  // Will be `num_parameters(FwhmForm)` number of these
- - RelEff coefs     // There will be one more than the "order" of relative eff eqn
- - {Activity,Age}   // One pair for each nuclide.  Age will be mostly fixed, but can also be tied to another nuclide of the same elements age
- - Free float peaks {amplitude, width-multiple} // The width multiple is of what the Fwhm Parameters predict (e.g., 1.0 says use parameter value).
- 
- 
  Further things to consider:
- - Sum peaks - not totally sure how to handle - can there just be one parameter that controls strength of peak random summing, and then another for cascade?
+ - For the relative efficiency chart, currently all markers for peaks info fall exactly on the
+    RelEff line. What we should do is, after finding the solution, cluster the peaks together
+    (similar to Act/Shield fit), and then make a template for each clustered peak (sum all peaks into
+    a channel count array, with separate array for each clustered peak), with some threshold (like
+    99% detection threshold) that if the clustered peaks area is less than, it just gets subtracted
+    from the data, unless its the only peak for that ROI.
+    Then fit the templates to data, and use the fit values to make the markers on the RelEff plot.
+    I think the plotting JS can handle showing info for multiple nuclides in a single plots
+    mouse-over.  We will need to create new variable that is analogous to
+    #RelActAutoSolution::m_fit_peaks, but maps multiple source nuclides to a single peak.
+ - Sum peaks - not totally sure how to handle - can there just be one parameter that controls
+    strength of peak random summing, and then another for cascade?  For cascades we dont have
+    gamma-x-ray coincidences (or is it the case we can just assume constant fraction between any
+    gamma and any nuclide?), so we might need two parameters, one for gamams, one for gamma-neutrons
+    and I guess maybe xray-xray?
  */
 
 namespace RelActCalcAuto
@@ -298,7 +280,13 @@ struct Options
   RelActCalc::PuCorrMethod pu242_correlation_method;
   
   
-  /** Under development */
+  /** Peak skew to apply to the entire spectrum.
+   
+   Under development: currently, if total energy range being fit is less than 100 keV, then all peaks will share the same skew.
+   Otherwise a linear energy dependance will be assumed, where the fitting parameters will be for the spectrums lower
+   energy, and the spectrums upper energy; not all skew parameters are allowed to vary with energy; e.g., the Crystal Ball
+   power law is not allowed to have an energy dependence (see `PeakDef::is_energy_dependent(...)`).
+   */
   PeakDef::SkewType skew_type;
   
   static const int sm_xmlSerializationVersion = 0;
