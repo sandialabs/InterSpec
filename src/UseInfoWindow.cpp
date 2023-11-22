@@ -1082,7 +1082,7 @@ void UseInfoWindow::textItemCreator( const std::string &resource, Wt::WContainer
     const string resource_name = SpecUtils::filename(resource);
     
     WMessageResourceBundle bundle;
-    bundle.use( resource, true );
+    bundle.use( resource_base, true );
     
     vector<pair<string,string>> topic_keys;
     
