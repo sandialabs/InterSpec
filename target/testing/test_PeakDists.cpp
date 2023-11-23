@@ -31,6 +31,8 @@
 //#include <boost/test/unit_test.hpp>
 #include <boost/test/included/unit_test.hpp>
 
+#include <boost/math/special_functions/erf.hpp>
+
 #include "SpecUtils/DateTime.h"
 
 #include "InterSpec/PeakDists.h"
@@ -40,6 +42,24 @@
 using namespace std;
 using namespace PeakDists;
 using namespace boost::unit_test;
+
+
+BOOST_AUTO_TEST_CASE( Erfc )
+{
+  for( double x = -10; x <= 10; x += 0.01 )
+  {
+    const double our_val = PeakDists::boost_erf_imp(x);
+    const double boost_val = boost::math::erf(x);
+    BOOST_CHECK_CLOSE( our_val, boost_val, 1.0E-12 );
+  }
+  
+  for( double z = -30; z <= 30; z += 0.01 )
+  {
+    const double our_val = PeakDists::boost_erfc_imp(z);
+    const double boost_val = boost::math::erfc(z);
+    BOOST_CHECK_CLOSE( our_val, boost_val, 1.0E-10 );
+  }
+}//BOOST_AUTO_TEST_CASE( Erfc )
 
 
 BOOST_AUTO_TEST_CASE( GaussianDist )

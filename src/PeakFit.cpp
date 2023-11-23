@@ -1979,10 +1979,10 @@ PeakShrdVec refitPeaksThatShareROI( const std::shared_ptr<const Measurement> &da
             refit_peaks.push_back( make_shared<PeakDef>(p) );
           
           const double refit_chi2Dof = chi2_for_region( refit_peaks, dataH, lower_channel, upper_channel ) / nbin;
-          cout << "refit_chi2Dof=" << refit_chi2Dof << ", prechi2Dof=" << prechi2Dof << ", postchi2Dof=" << postchi2Dof << endl;
+          //cout << "refit_chi2Dof=" << refit_chi2Dof << ", prechi2Dof=" << prechi2Dof << ", postchi2Dof=" << postchi2Dof << endl;
           if( refit_chi2Dof <= prechi2Dof )
           {
-            cout << "Using re-fit peaks!" << endl;
+            //cout << "Using re-fit peaks!" << endl;
             answer = refit_peaks;
           }
         }//if( output_peak.size() == inpeaks.size() )

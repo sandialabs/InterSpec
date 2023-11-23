@@ -1850,7 +1850,7 @@ void D3SpectrumDisplayDiv::performExistingRoiEdgeDragWork(
          && !m_last_being_drug_peaks.empty()
          && (dt < std::chrono::seconds(15)) )
       {
-        cout << "Using previously drug-n-fit peaks" << endl;
+        //cout << "Using previously drug-n-fit peaks" << endl;
         
         const auto old_continuum = m_last_being_drug_peaks.front()->continuum();
         assert( old_continuum );

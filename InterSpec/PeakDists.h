@@ -43,8 +43,10 @@ namespace PeakDists
    20191230: wcjohns extracted the boost::math::erf() function implementation
    from boost 1.65.1 for double precision (53 bit mantissa) into this function,
    boost_erf_imp(). Removing some of the supporting code structure, and
-   explicitly writing out the polynomial equation evaluation seems to speed
-   things up by about a factor of ~3 over calling boost::math::erf().
+   explicitly writing out the polynomial equation evaluation, and removing some
+   very minor corrections, seems to speed things up by about a factor of ~3 over
+   calling boost::math::erf() (and agrees with boosts implementation to within
+   1E-10%, across the entire range).
    
    In the implementation file, there is a commented out erf_approx() function looks to be about 25% faster than
    this boost version, but I havent carefully checked out the precision implications
@@ -52,7 +54,8 @@ namespace PeakDists
    */
   double boost_erf_imp( double z );
   
-  /** Returns `1-boost_erf_imp(z)` */
+  /** Returns `1-boost_erf_imp(z)`, however, due to rounding, is a separate implementation than erf.
+   */
   double boost_erfc_imp( double z );
   
   
