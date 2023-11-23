@@ -633,11 +633,14 @@ Wt::WApplication *createApplication(const Wt::WEnvironment& env)
       {
         NSString *host = [[request URL] host];
         NSString *absurl = [[request URL] absoluteString];
+        NSString *scheme = [[request URL] scheme];
         
-        NSLog(@"host=%@, absurl=%@", host, absurl );
+        NSLog(@"scheme=%@, host=%@, absurl=%@", scheme, host, absurl );
         
         if ([absurl rangeOfString:@"request=redirect&url=http"].location != NSNotFound
-            || [[[request URL] scheme] isEqual:@"mailto"])
+            || [scheme isEqual:@"mailto"]
+            || ([scheme isEqual:@"https"] && ![host isEqual:@"127.0.0.1"]
+                && ([host rangeOfString:@"localhost"].location == NSNotFound)) )
         {
           //external url or email
           [[NSWorkspace sharedWorkspace] openURL:[request URL]];
