@@ -60,7 +60,52 @@ you may have made since the last time you clicked the apply, or refit buttons.
 <div style="padding-top: 10px">
 The <b>Accept</b> button applies any changes you have made, and closes the dialog.
 </div>    
-</ul>    
+</ul>
+
+
+<h3>Peak Skew Descriptions</h3>
+There are currently three skew distributions that modify the lower energy tail of Gaussian peaks,
+and two skew distributions that modify both the lower and upper energy tails of the Gaussians.
+
+<ul>
+  <li>
+    <b>Exp*Gauss</b>: Convolution of Gaussian with an left-hand exponential multiplied by a
+    step function that goes to zero above the peak mean.<br />
+    See:<br/>
+    &nbsp;&nbsp;&nbsp;&nbsp;Analytical function for fitting peaks in alpha-particle spectra from Si detectors<br/>
+    &nbsp;&nbsp;&nbsp;&nbsp;International Journal of Radiation Applications and Instrumentation. Part A. Applied Radiation and Isotopes<br/>
+    &nbsp;&nbsp;&nbsp;&nbsp;Volume 38, Issue 10, 1987, Pages 831-837<br/>
+    &nbsp;&nbsp;&nbsp;&nbsp;<a href="https://doi.org/10.1016/0883-2889(87)90180-8" target="_blank">https://doi.org/10.1016/0883-2889(87)90180-8</a><br/>
+    <br/>
+    Although in the paper two exponentials are used, for gamma-spectroscopy a single exponential
+    appears to usually be sufficient, so <em>InterSpec</em> only implements a single exponential.
+  </li>
+  <li>
+    <b>GaussExp</b>: An exponential tail stitched to a Gaussian core.<br />
+    See:<br />
+    &nbsp;&nbsp;&nbsp;&nbsp;A simple alternative to the Crystal Ball function.<br />
+    &nbsp;&nbsp;&nbsp;&nbsp;Souvik Das, arXiv:1603.08591<br />
+    &nbsp;&nbsp;&nbsp;&nbsp;<a href="https://arxiv.org/abs/1603.08591" target="_blank">https://arxiv.org/abs/1603.08591</a>
+  </li>
+  <li>
+    <b>Crystal Ball</b>: A Gaussian core portion and a power-law low-end tail, below a threshold.<br />
+    See:<br />
+    &nbsp;&nbsp;&nbsp;&nbsp;<a href="https://en.wikipedia.org/wiki/Crystal_Ball_function" target="_blank">https://en.wikipedia.org/wiki/Crystal_Ball_function</a><br/>
+    <br/>
+    Uses two skew parameters.<br/>
+    <ol>
+      <li><b>&alpha;</b>: defines the threshold (how many gaussian sigma away from the mean for the modified-tail to start).</li>
+      <li><b>n</b>: defines the power-law.
+    </ol>
+  </li>
+  <li>
+    <b>ExpGaussExp</b>: A double-sided version of the <em>GaussExp</em> distribution, with separate parameters for the lower and upper tails.
+  </li>
+  <li>
+    <b>Double Sided Crystal Ball</b>: A double-sided version of the <em>Crystal Ball</em> distribution, with separate <b>&alpha;</b> and <b>n</b> for the lower and upper tails.
+  </li>
+</ul>
+
       <h3>Example Use Cases</h3>
       <div style="padding-top: 10px">
 	  The following are typical reasons to refer to the <b>Peak Editor</b> tool.

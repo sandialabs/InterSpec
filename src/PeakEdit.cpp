@@ -504,7 +504,7 @@ void PeakEdit::init()
         m_skewType->addItem( "None" );
         break;
       case PeakDef::Bortel:
-        m_skewType->addItem( "Bortel" );
+        m_skewType->addItem( "Exp*Gauss" );
         break;
       case PeakDef::CrystalBall:
         m_skewType->addItem( "Crystal Ball" );

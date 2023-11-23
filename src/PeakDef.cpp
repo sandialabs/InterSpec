@@ -1294,7 +1294,7 @@ const char *PeakDef::to_string( const SkewType type )
   switch( type )
   {
     case PeakDef::NoSkew:                 return "NoSkew";
-    case PeakDef::Bortel:                 return "Bortel"; //Might change to "ExGauss"
+    case PeakDef::Bortel:                 return "ExGauss"; //Could instead use "Bortel"
     case PeakDef::GaussExp:               return "GaussExp";
     case PeakDef::CrystalBall:            return "CrystalBall"; //Might change to "CB"
     case PeakDef::ExpGaussExp:            return "ExpGaussExp";
@@ -1922,7 +1922,7 @@ rapidxml::xml_node<char> *PeakDef::toXml( rapidxml::xml_node<char> *parent,
   switch( m_skewType )
   {
     case NoSkew:                 val = "NoSkew";                 break;
-    case Bortel:                 val = "Bortel";                 break;
+    case Bortel:                 val = "ExGauss";                break;
     //case Doniach:                val = "Doniach";                break;
     case CrystalBall:            val = "CrystalBall";            break;
     case DoubleSidedCrystalBall: val = "DoubleSidedCrystalBall"; break;
@@ -2827,7 +2827,7 @@ std::string PeakDef::gaus_peaks_to_json(const std::vector<std::shared_ptr<const 
         break;
       
       case Bortel:
-        answer << q << "Bortel" << q << ",";
+        answer << q << "ExGauss" << q << ",";
         break;
         
       case CrystalBall:
