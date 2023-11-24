@@ -523,6 +523,7 @@ public:
   
   static const char *to_string( const CoefficientType type );
   static const char *to_string( const SkewType type );
+  static const char *to_label( const SkewType type );
   static SkewType skew_from_string( const std::string &skew_str );
   
   /** Gives reasonable range for skew parameter values, as well as a reasonable starting value.

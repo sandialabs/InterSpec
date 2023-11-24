@@ -498,27 +498,7 @@ void PeakEdit::init()
   for( PeakDef::SkewType t = PeakDef::SkewType(0);
       t <= PeakDef::DoubleSidedCrystalBall; t = PeakDef::SkewType(t+1) )
   {
-    switch ( t )
-    {
-      case PeakDef::NoSkew:
-        m_skewType->addItem( "None" );
-        break;
-      case PeakDef::Bortel:
-        m_skewType->addItem( "Exp*Gauss" );
-        break;
-      case PeakDef::CrystalBall:
-        m_skewType->addItem( "Crystal Ball" );
-        break;
-      case PeakDef::DoubleSidedCrystalBall:
-        m_skewType->addItem( "Double Crystal Ball" );
-        break;
-      case PeakDef::GaussExp:
-        m_skewType->addItem( "GaussExp" );
-        break;
-      case PeakDef::ExpGaussExp:
-        m_skewType->addItem( "ExpGaussExp" );
-        break;
-    }//switch ( t )
+    m_skewType->addItem( PeakDef::to_label(t) );
   }//for( loop over PeakDef::OffsetType )
   
   row = m_valueTable->rowAt( PeakEdit::NumPeakPars+8 );

@@ -1572,17 +1572,7 @@ RelActAutoGui::RelActAutoGui( InterSpec *viewer, Wt::WContainerWidget *parent )
   for( auto st = PeakDef::SkewType(0); st <= PeakDef::SkewType::DoubleSidedCrystalBall;
       st = PeakDef::SkewType(st + 1) )
   {
-    const char *label = "";
-    switch( st )
-    {
-      case PeakDef::NoSkew:  	              label = "None";                break;
-      case PeakDef::Bortel:  	              label = "exGaussian";          break;
-      case PeakDef::GaussExp:               label = "GaussExp";            break;
-      case PeakDef::CrystalBall:            label = "Crystal Ball";        break;
-      case PeakDef::ExpGaussExp:            label = "ExpGaussExp";         break;
-      case PeakDef::DoubleSidedCrystalBall: label = "Double Crystal Ball"; break;
-    }//switch( st )
-    
+    const char *label = PeakDef::to_label(st);
     m_skew_type->addItem( label );
   }//for( loop over SkewTypes )
     

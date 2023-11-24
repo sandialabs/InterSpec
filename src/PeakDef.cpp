@@ -1307,6 +1307,24 @@ const char *PeakDef::to_string( const SkewType type )
 }//const char *to_string( const SkewType type )
 
 
+const char *PeakDef::to_label( const SkewType type )
+{
+  switch( type )
+  {
+    case PeakDef::NoSkew:                 return "None";
+    case PeakDef::Bortel:                 return "Exp*Gauss";
+    case PeakDef::GaussExp:               return "GaussExp";
+    case PeakDef::CrystalBall:            return "Crystal Ball";
+    case PeakDef::ExpGaussExp:            return "ExpGaussExp";
+    case PeakDef::DoubleSidedCrystalBall: return "Double Crystal Ball";
+  }//switch( skew_type )
+  
+  assert( 0 );
+  throw runtime_error( "PeakDef::to_string(SkewType): invalid SkewType" );
+  return "";
+}//const char *to_label( const SkewType type );
+
+
 PeakDef::SkewType PeakDef::skew_from_string( const string &skew_type_str )
 {
   if( SpecUtils::iequals_ascii(skew_type_str,"NoSkew") )
