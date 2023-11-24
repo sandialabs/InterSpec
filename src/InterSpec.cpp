@@ -11242,12 +11242,12 @@ void InterSpec::handleAppUrl( const std::string &url_encoded_url )
     UnitsConverterTool *converter = createUnitsConverterTool();
     if( converter )
       converter->handleAppUrl( query_str );
-  }if( SpecUtils::iequals_ascii(host,"about") )
+  }else if( SpecUtils::iequals_ascii(host,"about") )
   {
     showLicenseAndDisclaimersWindow();
     if( m_licenseWindow )
       m_licenseWindow->handleAppUrlPath( path );
-  }if( SpecUtils::iequals_ascii(host,"welcome") )
+  }else if( SpecUtils::iequals_ascii(host,"welcome") )
   {
     showWelcomeDialog(true);
     if( m_useInfoWindow )
