@@ -488,7 +488,7 @@ InterSpec::InterSpec( WContainerWidget *parent )
   m_notificationDiv->setStyleClass("qtipDiv");
   m_notificationDiv->setId("qtip-growl-container");
   
-#if( BUILD_AS_ELECTRON_APP && !USE_ELECTRON_NATIVE_MENU )
+#if( BUILD_AS_ELECTRON_APP )
   m_notificationDiv->addStyleClass( "belowMenu" );
 #endif
   
@@ -616,13 +616,7 @@ InterSpec::InterSpec( WContainerWidget *parent )
 
   initMaterialDbAndSuggestions();
   
-#if( BUILD_AS_ELECTRON_APP )
-#if( USE_ELECTRON_NATIVE_MENU )
-  const bool isAppTitlebar = false;
-#else
-  const bool isAppTitlebar = InterSpecApp::isPrimaryWindowInstance();
-#endif
-#elif( BUILD_AS_WX_WIDGETS_APP )
+#if( BUILD_AS_ELECTRON_APP || BUILD_AS_WX_WIDGETS_APP )
   const bool isAppTitlebar = InterSpecApp::isPrimaryWindowInstance();
 #else
   const bool isAppTitlebar = false; // !isMobile()
@@ -1165,7 +1159,7 @@ InterSpec::InterSpec( WContainerWidget *parent )
   m_timeSeries->setHidden( true );
   m_chartResizer->setHidden( m_timeSeries->isHidden() );
   
-#if( USE_OSX_NATIVE_MENU || USING_ELECTRON_NATIVE_MENU )
+#if( USE_OSX_NATIVE_MENU )
   if( InterSpecApp::isPrimaryWindowInstance() )
     m_menuDiv->hide();
 #endif
@@ -1736,7 +1730,7 @@ void InterSpec::hotKeyPressed( const unsigned int value )
 
 void InterSpec::arrowKeyPressed( const unsigned int value )
 {
-#if( USING_ELECTRON_NATIVE_MENU || USE_OSX_NATIVE_MENU || IOS || ANDROID )
+#if( USE_OSX_NATIVE_MENU || IOS || ANDROID )
   return;
 #endif
   
@@ -5638,12 +5632,8 @@ void InterSpec::addFileMenu( WWidget *parent, const bool isAppTitlebar )
                          " be a PopupDivMenu  or WContainerWidget" );
 
   string menuname = isAppTitlebar ? "File" : "InterSpec";
-#if( !defined(__APPLE__) && USING_ELECTRON_NATIVE_MENU )
-  menuname = "File";
-#else
   if( mobile )
     menuname = "Spectra";
-#endif
   
   if( menuDiv )
   {
@@ -5662,19 +5652,7 @@ void InterSpec::addFileMenu( WWidget *parent, const bool isAppTitlebar )
 
   PopupDivMenuItem *item = (PopupDivMenuItem *)0;
   
-#if( defined(__APPLE__) && USING_ELECTRON_NATIVE_MENU )
-  PopupDivMenuItem *aboutitem = m_fileMenuPopup->createAboutThisAppItem();
-  
-  if( aboutitem )
-    aboutitem->triggered().connect( this, &InterSpec::showLicenseAndDisclaimersWindow );
-  
-  m_fileMenuPopup->addSeparator();
-  m_fileMenuPopup->addRoleMenuItem( PopupDivMenu::MenuRole::Hide );
-  m_fileMenuPopup->addRoleMenuItem( PopupDivMenu::MenuRole::HideOthers );
-  m_fileMenuPopup->addRoleMenuItem( PopupDivMenu::MenuRole::UnHide );
-  m_fileMenuPopup->addRoleMenuItem( PopupDivMenu::MenuRole::Front );
-  m_fileMenuPopup->addSeparator();
-#elif( BUILD_AS_OSX_APP )
+#if( BUILD_AS_OSX_APP )
   if( InterSpecApp::isPrimaryWindowInstance() )
   {
     item = m_fileMenuPopup->addMenuItem( "About InterSpec" );
@@ -5864,10 +5842,7 @@ void InterSpec::addFileMenu( WWidget *parent, const bool isAppTitlebar )
 #if( BUILD_AS_ELECTRON_APP || BUILD_AS_WX_WIDGETS_APP )
   if( InterSpecApp::isPrimaryWindowInstance() )
   {
-#if( USING_ELECTRON_NATIVE_MENU )
-  m_fileMenuPopup->addSeparator();
-  m_fileMenuPopup->addRoleMenuItem( PopupDivMenu::MenuRole::Quit );
-#elif( BUILD_AS_ELECTRON_APP )
+#if( BUILD_AS_ELECTRON_APP )
   m_fileMenuPopup->addSeparator();
   PopupDivMenuItem *exitItem = m_fileMenuPopup->addMenuItem( "Exit" );
   exitItem->triggered().connect( std::bind( []{
@@ -6657,19 +6632,8 @@ void InterSpec::addDisplayMenu( WWidget *parent )
   }//if( useNativeMenu )
 #endif //BUILD_AS_ELECTRON_APP || BUILD_AS_OSX_APP
   
-  
-#if( USING_ELECTRON_NATIVE_MENU )
-  m_displayOptionsPopupDiv->addSeparator();
-  m_displayOptionsPopupDiv->addRoleMenuItem( PopupDivMenu::MenuRole::ToggleFullscreen );
-  m_displayOptionsPopupDiv->addSeparator();
-  m_displayOptionsPopupDiv->addRoleMenuItem( PopupDivMenu::MenuRole::ResetZoom );
-  m_displayOptionsPopupDiv->addRoleMenuItem( PopupDivMenu::MenuRole::ZoomIn );
-  m_displayOptionsPopupDiv->addRoleMenuItem( PopupDivMenu::MenuRole::ZoomOut );
-#if( PERFORM_DEVELOPER_CHECKS )
-  m_displayOptionsPopupDiv->addSeparator();
-  m_displayOptionsPopupDiv->addRoleMenuItem( PopupDivMenu::MenuRole::ToggleDevTools );
-#endif
-#elif( BUILD_AS_ELECTRON_APP || BUILD_AS_WX_WIDGETS_APP )
+
+#if( BUILD_AS_ELECTRON_APP || BUILD_AS_WX_WIDGETS_APP )
   if (InterSpecApp::isPrimaryWindowInstance())
   {
     m_displayOptionsPopupDiv->addSeparator();
@@ -8990,7 +8954,7 @@ void InterSpec::addToolsMenu( Wt::WWidget *parent )
   item->triggered().connect( boost::bind( &InterSpec::showDoseTool, this ) );
   
 //  item = popup->addMenuItem( Wt::WString::fromUTF8("1/r² Calculator") );  // is superscript 2
-#if( USE_OSX_NATIVE_MENU  || USING_ELECTRON_NATIVE_MENU )
+#if( USE_OSX_NATIVE_MENU )
   item = popup->addMenuItem( Wt::WString::fromUTF8("1/r\x0032 Calculator") );  //works on OS X at least.
 #else
   item = popup->addMenuItem( Wt::WString::fromUTF8("1/r<sup>2</sup> Calculator") );
@@ -11374,15 +11338,6 @@ void InterSpec::updateGuiForPrimarySpecChange( std::set<int> display_sample_nums
         delete item;
       }
     }
-    
-#if( USING_ELECTRON_NATIVE_MENU )
-#if( !defined(WIN32) )
-    //20190125: hmm, looks like detectors menu is behaving okay - I guess I fixed it somewhere else?
-    //#warning "Need to do something to get rid of previous detectors from Electrons menu"
-#endif
-//  https://github.com/electron/electron/issues/527
-    m_detectorToShowMenu->clearElectronMenu();
-#endif
   }//if( m_detectorToShowMenu )
   
   m_timeSeries->setHighlightedIntervals( {}, SpecUtils::SpectrumType::Foreground );
@@ -11430,7 +11385,7 @@ void InterSpec::updateGuiForPrimarySpecChange( std::set<int> display_sample_nums
 
     if( m_detectorToShowMenu )
     {
-#if( USE_OSX_NATIVE_MENU  || USING_ELECTRON_NATIVE_MENU )
+#if( USE_OSX_NATIVE_MENU )
       WCheckBox *cb = new WCheckBox( title );
       cb->setChecked( true );
       PopupDivMenuItem *item = m_detectorToShowMenu->addWidget( cb, false );

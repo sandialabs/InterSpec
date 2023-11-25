@@ -158,7 +158,7 @@ bool handle_message_from_nodejs( const std::string &session_token,
   {
     
   }
-#if( !USE_ELECTRON_NATIVE_MENU )
+
   else if( msg_name == "OnMaximize" )
   {
     cout << "\n\nOnMaximize\n\n";
@@ -180,7 +180,6 @@ bool handle_message_from_nodejs( const std::string &session_token,
   {
     cout << "Went to fullscreen." << endl;
   }else
-#endif
   {
     cerr << "Unrecognized msg_name from nodejs: '" << msg_name << "'" << endl;
     return false;
@@ -319,17 +318,6 @@ bool interspec_set_initial_file_to_open( const char *session_token, const char *
   return true;
 }
 
-
-bool interspec_using_electron_menus()
-{
-#if( USING_ELECTRON_HTML_MENU )
-  return false;
-#elif( USING_ELECTRON_NATIVE_MENU )
-  return true;
-#else
-  return false;
-#endif
-}
 
 void interspec_kill_server()
 {

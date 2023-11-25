@@ -42,7 +42,7 @@
 #include "InterSpec/HelpSystem.h"
 #include "InterSpec/WarningWidget.h"
 
-#if( BUILD_AS_WX_WIDGETS_APP || (BUILD_AS_ELECTRON_APP && !USING_ELECTRON_NATIVE_MENU) )
+#if( BUILD_AS_WX_WIDGETS_APP || BUILD_AS_ELECTRON_APP )
 #include "InterSpec/InterSpecApp.h"
 #endif
 
@@ -1037,7 +1037,7 @@ void AuxWindow::render( Wt::WFlags<Wt::RenderFlag> flags )
   {
     wApp->doJavaScript(wApp->javaScriptClass() + ".TriggerResizeEvent();");
 
-#if(  BUILD_AS_WX_WIDGETS_APP || (BUILD_AS_ELECTRON_APP && !USING_ELECTRON_NATIVE_MENU) )
+#if(  BUILD_AS_WX_WIDGETS_APP || BUILD_AS_ELECTRON_APP )
     // For wxWidgets, we have a bit of a hack to allow dragging the application window around
     //  by the titlebar - but when the dialog cover is being shown (i.e., a modal WDialog),
     //  the the titlebar cant be clicked.  So here we'll add a listener to the dialog cover
