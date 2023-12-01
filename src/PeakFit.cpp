@@ -4884,7 +4884,7 @@ pair< PeakShrdVec, PeakShrdVec > searchForPeakFromUser( const double x,
   auto mnCont = mnInitialfitpeaks.size() ? mnInitialfitpeaks[0]->continuum() : nullptr;
   auto lmCont = lmInitialfitpeaks.size() ? lmInitialfitpeaks[0]->continuum() : nullptr;
   
-  cout << "Contiuum: minuit={";
+  cout << "Continuum: minuit={";
   if( mnCont )
   {
     for( size_t i = 0; i < mnCont->parameters().size(); ++i )
