@@ -2019,13 +2019,22 @@ EncodedSpectraInfo get_spectrum_url_info( std::string url )
       answer.m_encode_options = hex_to_dec( url[0] );
     }
     
-    if( answer.m_encode_options
-       & ~(EncodeOptions::NoDeflate | EncodeOptions::NoBaseXEncoding
-           | EncodeOptions::CsvChannelData | EncodeOptions::NoZeroCompressCounts
-           | EncodeOptions::UseUrlSafeBase64 | EncodeOptions::AsMailToUri) )
+    const uint8_t allowed_bits = (EncodeOptions::NoDeflate | EncodeOptions::NoBaseXEncoding
+                                  | EncodeOptions::CsvChannelData | EncodeOptions::NoZeroCompressCounts
+                                  | EncodeOptions::UseUrlSafeBase64 | EncodeOptions::AsMailToUri);
+    const uint8_t non_allowed_bits = ~allowed_bits;
+    if( answer.m_encode_options & non_allowed_bits )
     {
-      throw runtime_error( string("Encoding option had invalid bit set (hex digit ")
-                           + url[0] + (has_email_opt ? (string() + url[1]) : string()) + ")" );
+      string msg = "Encoding option had invalid bit set (option value 0x";
+      msg += has_email_opt ? "" : "0";
+      msg += url[0];
+      msg += (has_email_opt ? (string() + url[1]) : string());
+      msg += " but bits 0x";
+      msg += sm_hex_digits[ ((non_allowed_bits >> 4) & 0x0F) ];
+      msg += sm_hex_digits[ (non_allowed_bits & 0x0F) ];
+      msg += " not allowed)";
+      
+      throw runtime_error( msg );
     }
    
     answer.m_number_urls = hex_to_dec( url[(has_email_opt ? 2 : 1)] ) + 1;
@@ -2047,8 +2056,8 @@ EncodedSpectraInfo get_spectrum_url_info( std::string url )
     url = url.substr( has_email_opt ? 5 : 4 );
   }catch( std::exception &e )
   {
-    throw runtime_error( "get_spectrum_url_info: options portion (three hex digits after"
-                        " the //G/) of url is invalid: " + string(e.what()) );
+    throw runtime_error( "get_spectrum_url_info: options portion (three or four hex digits after"
+                        " the //G0/) of url is invalid: " + string(e.what()) );
   }//try / catch
   
   if( answer.m_number_urls > 1 )
