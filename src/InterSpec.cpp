@@ -1083,7 +1083,7 @@ InterSpec::InterSpec( WContainerWidget *parent )
         for( auto type = PeakDef::SkewType(0);
             type <= PeakDef::SkewType::DoubleSidedCrystalBall; type = PeakDef::SkewType(type+1) )
         {
-          WMenuItem *item = m_rightClickChangeSkewMenu->addItem( PeakDef::to_string(type) );
+          WMenuItem *item = m_rightClickChangeSkewMenu->addItem( PeakDef::to_label(type) );
           item->triggered().connect( boost::bind( &InterSpec::handleChangeSkewTypeFromRightClick,
                                                  this, static_cast<int>(type) ) );
         }//for( loop over PeakContinuum::OffsetTypes )
@@ -2503,7 +2503,7 @@ void InterSpec::handleRightClick( double energy, double counts,
         
         // Disable current skew type, enable all others
         const vector<WMenuItem *> items = m_rightClickChangeSkewMenu->items();
-        const char *labelTxt = PeakDef::to_string( peak->skewType() );
+        const char *labelTxt = PeakDef::to_label( peak->skewType() );
         for( WMenuItem *item : items )
           item->setDisabled( item->text() == labelTxt );
       }//case kChangeSkew:
@@ -11206,12 +11206,12 @@ void InterSpec::handleAppUrl( const std::string &url_encoded_url )
     UnitsConverterTool *converter = createUnitsConverterTool();
     if( converter )
       converter->handleAppUrl( query_str );
-  }if( SpecUtils::iequals_ascii(host,"about") )
+  }else if( SpecUtils::iequals_ascii(host,"about") )
   {
     showLicenseAndDisclaimersWindow();
     if( m_licenseWindow )
       m_licenseWindow->handleAppUrlPath( path );
-  }if( SpecUtils::iequals_ascii(host,"welcome") )
+  }else if( SpecUtils::iequals_ascii(host,"welcome") )
   {
     showWelcomeDialog(true);
     if( m_useInfoWindow )
