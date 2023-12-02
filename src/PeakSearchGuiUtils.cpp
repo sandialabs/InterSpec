@@ -2091,8 +2091,9 @@ namespace PeakSearchGuiUtils
     return img;
   }//renderChartToSvg(...)
 
-  
+#ifndef _WIN32
 #warning "20231201 TEmporarily disabling code for work at place"
+#endif
   /*
 std::pair<std::vector<std::shared_ptr<const PeakDef>>, std::vector<std::shared_ptr<const PeakDef>> >
   improve_initial_peak_fit( InterSpec *interspec, shared_ptr<const DetectorPeakResponse> det,
@@ -2148,7 +2149,9 @@ void fit_peak_from_double_click( InterSpec *interspec, const double x, const dou
   // Check if we found a single peak, that is its own new ROI
   if( (foundPeaks.first.size() == 1) && foundPeaks.second.empty() )
   {
+#ifndef _WIN32
 #warning "20231201 TEmporarily disabling code for work at place"
+#endif
     //improve_initial_peak_fit( InterSpec *)
     //pair< PeakShrdVec, PeakShrdVec >
     
