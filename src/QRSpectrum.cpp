@@ -1473,7 +1473,13 @@ vector<string> url_encode_spectrum( const UrlSpectrum &m,
   
   cout << "--------------------------------------------------------------------------------\n";
   cout << "URL start:\n\t";
-  const string url_start = string("RADDATA://G0/") + sm_hex_digits[encode_options & 0x0F];
+  
+  const uint8_t used_options = (encode_options & (~EncodeOptions::AsMailToUri));
+  const char more_sig_char = sm_hex_digits[(used_options >> 4) & 0x0F];
+  const char less_sig_char = sm_hex_digits[used_options & 0x0F];
+  const string opt_str = ((more_sig_char == '0') ? string() : (string() + more_sig_char)) + less_sig_char;
+  
+  const string url_start = "RADDATA://G0/" + opt_str;
   cout << "\t" << url_start << endl;
   cout << "--------------------------------------------------------------------------------\n";
   
@@ -1665,9 +1671,11 @@ std::vector<UrlEncodedSpec> url_encode_spectra( const std::vector<UrlSpectrum> &
   if( measurements.size() > 9 )
     throw runtime_error( "url_encode_spectra: to many measurements passed in." );
   
-
-  if( encode_options & ~(EncodeOptions::NoDeflate | EncodeOptions::NoBaseXEncoding | EncodeOptions::CsvChannelData
-                         | EncodeOptions::NoZeroCompressCounts | EncodeOptions::UseUrlSafeBase64 | EncodeOptions::AsMailToUri) )
+  const uint8_t allowed_bits = (EncodeOptions::NoDeflate | EncodeOptions::NoBaseXEncoding
+                                | EncodeOptions::CsvChannelData | EncodeOptions::NoZeroCompressCounts
+                                | EncodeOptions::UseUrlSafeBase64 | EncodeOptions::AsMailToUri);
+  const uint8_t not_allowed_bits = ~allowed_bits;
+  if( encode_options & not_allowed_bits )
     throw runtime_error( "url_encode_spectra: invalid option passed in - see EncodeOptions." );
   
   assert( encode_options < 0x80 );
@@ -1717,8 +1725,9 @@ std::vector<UrlEncodedSpec> url_encode_spectra( const std::vector<UrlSpectrum> &
       url_start = string("RADDATA://G0/");
     }
     
-    const char more_sig_char = sm_hex_digits[(encode_options >> 4) & 0x0F];
-    const char less_sig_char = sm_hex_digits[encode_options & 0x0F];
+    const uint8_t used_options = (encode_options & (~EncodeOptions::AsMailToUri));
+    const char more_sig_char = sm_hex_digits[(used_options >> 4) & 0x0F];
+    const char less_sig_char = sm_hex_digits[used_options & 0x0F];
     
     url_start += ((more_sig_char == '0') ? string() : (string() + more_sig_char))
                  + (string() + less_sig_char)
@@ -2019,6 +2028,8 @@ EncodedSpectraInfo get_spectrum_url_info( std::string url )
       answer.m_encode_options = hex_to_dec( url[0] );
     }
     
+    // Note that `EncodeOptions::AsMailToUri = 0x20` was written previous to 20231202, even though it
+    //  shouldnt have been - so we will ignore this bit
     const uint8_t allowed_bits = (EncodeOptions::NoDeflate | EncodeOptions::NoBaseXEncoding
                                   | EncodeOptions::CsvChannelData | EncodeOptions::NoZeroCompressCounts
                                   | EncodeOptions::UseUrlSafeBase64 | EncodeOptions::AsMailToUri);
