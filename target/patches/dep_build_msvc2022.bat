@@ -12,12 +12,16 @@ IF not "%3"=="" GOTO invalidarg
 
 pushd .
 
+rem By default we will only build the Release versions of the libraries, but
+rem if you would like to build the Debug version (probably for developing 
+rem InterSpec), then just set `builddebug` equal to something.
+set "builddebug="
+
 rem We will assume this script is in the patch directory
 set PATCH_DIR=%~dp0
 
 set ORIG_DIR=%CD%
 
-echo Checking of tgz/zip file hashes is temporarily disabled
 
 if not exist "%1" (
   MKDIR "%1" && (
@@ -48,6 +52,14 @@ if not exist "%2" (
 ) else (
     echo "Install directory %2 already exists."
 )
+
+if defined builddebug (
+    echo "Building Debug and Release libraries."
+) else (
+    echo "Only building Release libraries, and not Debug."
+)
+
+
 
 pushd .
 cd %2
@@ -86,7 +98,7 @@ if not exist %BOOST_BUILT_FILE% (
     
     if not "!BOOST_SHA256!"=="%BOOST_REQUIRED_SHA256%" (
         echo Invalid hash of boost.  Expected "%BOOST_REQUIRED_SHA256%" and got "!BOOST_SHA256!"
-rem     GOTO :cmderr
+        GOTO :cmderr
     )
 
     if not exist %BOOST_DIR% (
@@ -124,13 +136,15 @@ rem     GOTO :cmderr
         GOTO :cmderr
     )
 
-    echo "Building boost release"
-    .\b2.exe runtime-link=static link=static threading=multi variant=debug address-model=64 architecture=x86 --prefix="%MY_PREFIX%" --build-dir=win_build_debug -j8 install && (
-        rmdir /s /q win_build_debug
-        echo Done building boost debug
-    ) || (
-        echo "Failed to run build boost debug"
-        GOTO :cmderr
+    if defined builddebug (
+        echo "Building boost debug"
+        .\b2.exe runtime-link=static link=static threading=multi variant=debug address-model=64 architecture=x86 --prefix="%MY_PREFIX%" --build-dir=win_build_debug -j8 install && (
+            rmdir /s /q win_build_debug
+            echo Done building boost debug
+        ) || (
+            echo "Failed to run build boost debug"
+            GOTO :cmderr
+        )
     )
 
     echo "Built boost!"
@@ -156,28 +170,6 @@ set ZLIB_BUILT_FILE=built_%ZLIB_DIR%
 set ZLIB_REQUIRED_SHA256=b3a24de97a8fdbc835b9833169501030b8977031bcb54b3b3ac13740f846ab30
 
 if not exist %ZLIB_BUILT_FILE% (
-    rem if not exist %ZLIB_TAR% (
-        rem curl -L https://zlib.net/fossils/zlib-1.2.13.tar.gz --output %ZLIB_TAR%
-    rem    curl -L https://zlib.net/zlib-1.2.13.tar.gz --output %ZLIB_TAR%
-    rem ) else (
-    rem    echo %ZLIB_TAR% already downloaded
-    rem )
-
-    rem set "ZLIB_SHA256="
-    rem for /f %%A in ('certutil -hashfile "%ZLIB_TAR%" SHA256 ^| find /i /v ":" ') do set "ZLIB_SHA256=%%A"
-    
-    rem if not "!ZLIB_SHA256!"=="%ZLIB_REQUIRED_SHA256%" (
-    rem    echo Invalid hash of zlib.  Expected "%ZLIB_REQUIRED_SHA256%" and got "!ZLIB_SHA256!"
-rem     GOTO :cmderr
-    rem )
-
-    rem tar -xzvf %ZLIB_TAR% && (
-    rem    echo Untarred zlib
-    rem ) || (
-    rem    echo "Failed to untar zlib"
-    rem    GOTO :cmderr
-    rem )
-
     git clone https://github.com/madler/zlib.git %ZLIB_DIR% && (
         echo Cloned into zlib
     ) || (
@@ -204,11 +196,13 @@ rem     GOTO :cmderr
         GOTO :cmderr
     )
 
-    cmake --build . --config Debug --target install && (
-        echo Built/installed zlib Debug
-    ) || (
-        echo "Failed to build zlib debug"
-        GOTO :cmderr
+    if defined builddebug (
+        cmake --build . --config Debug --target install && (
+            echo Built/installed zlib Debug
+        ) || (
+            echo "Failed to build zlib debug"
+            GOTO :cmderr
+        )
     )
 
 
@@ -302,11 +296,13 @@ if not exist %WT_BUILT_FILE% (
         GOTO :cmderr
     )
 
-    cmake --build . --config Debug --target install && (
-        echo Built and installed Wt Debug
-    ) || (
-        echo "Failed to build Debug Wt"
-        GOTO :cmderr
+    if defined builddebug (
+        cmake --build . --config Debug --target install && (
+            echo Built and installed Wt Debug
+        ) || (
+            echo "Failed to build Debug Wt"
+            GOTO :cmderr
+        )
     )
 
     echo "Built Wt!"
@@ -341,8 +337,8 @@ if not exist %EIGEN_BUILT_FILE% (
     for /f %%A in ('certutil -hashfile "%EIGEN_TAR%" SHA256 ^| find /i /v ":" ') do set "EIGEN_SHA256=%%A"
     
     if not "!EIGEN_SHA256!"=="%EIGEN_REQUIRED_SHA256%" (
-         echo Invalid hash of eigen.  Expected "%EIGEN_REQUIRED_SHA256%" and got "!EIGEN_SHA256!"
-rem     GOTO :cmderr
+        echo Invalid hash of eigen.  Expected "%EIGEN_REQUIRED_SHA256%" and got "!EIGEN_SHA256!"
+        GOTO :cmderr
     )
 
     tar -xzvf %EIGEN_TAR% && (
@@ -404,7 +400,7 @@ if not exist %CERES_BUILT_FILE% (
     
     if not "!CERES_SHA256!"=="%CERES_REQUIRED_SHA256%" (
           echo Invalid hash of ceres.  Expected "%CERES_REQUIRED_SHA256%" and got "!CERES_SHA256!"
-rem          GOTO :cmderr
+          GOTO :cmderr
     )
 
     tar -xzvf %CERES_TAR% && (
@@ -415,26 +411,30 @@ rem          GOTO :cmderr
     )
 
     cd %CERES_DIR%
-    mkdir build_msvc_debug
-    cd build_msvc_debug
+    if defined builddebug (
+        echo "Building CERES Debug"
+        mkdir build_msvc_debug
+        cd build_msvc_debug
 
-    cmake -DCMAKE_PREFIX_PATH=%MY_PREFIX% -DCMAKE_INSTALL_PREFIX=%MY_PREFIX% -DMINIGLOG=ON -DGFLAGS=OFF -DCXSPARSE=OFF -DACCELERATESPARSE=OFF -DCUDA=OFF -DEXPORT_BUILD_DIR=ON -DBUILD_TESTING=ON -DBUILD_EXAMPLES=OFF -DPROVIDE_UNINSTALL_TARGET=OFF -DBUILD_SHARED_LIBS=OFF -DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreadedDebug -DMSVC_USE_STATIC_CRT=ON .. && (
-        echo Configured Debug Ceres
-    ) || (
-        echo Failed to configure Debug ceres-solver
-        GOTO :cmderr
+        cmake -DCMAKE_PREFIX_PATH=%MY_PREFIX% -DCMAKE_INSTALL_PREFIX=%MY_PREFIX% -DMINIGLOG=ON -DGFLAGS=OFF -DCXSPARSE=OFF -DACCELERATESPARSE=OFF -DCUDA=OFF -DEXPORT_BUILD_DIR=ON -DBUILD_TESTING=ON -DBUILD_EXAMPLES=OFF -DPROVIDE_UNINSTALL_TARGET=OFF -DBUILD_SHARED_LIBS=OFF -DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreadedDebug -DMSVC_USE_STATIC_CRT=ON .. && (
+            echo Configured Debug Ceres
+        ) || (
+            echo Failed to configure Debug ceres-solver
+            GOTO :cmderr
+        )
+    
+        cmake --build . --config Debug --target install && (
+            echo Built and installed Debug Cerres
+        ) || (
+            echo Failed to build Debug ceres-solver
+            GOTO :cmderr
+        )
+    
+        cd ..
+        rmdir /s /q build_msvc_debug
     )
 
-    cmake --build . --config Debug --target install && (
-        echo Built and installed Debug Cerres
-    ) || (
-        echo Failed to build Debug ceres-solver
-        GOTO :cmderr
-    )
-
-    cd ..
-    rmdir /s /q build_msvc_debug
-
+    echo "Building CERES Release"
     mkdir build_msvc_rel
     cd build_msvc_rel
 
@@ -485,11 +485,10 @@ if not exist %WX_BUILT_FILE% (
     set "WX_SHA256="
     for /f %%A in ('certutil -hashfile "%WX_TAR%" SHA256 ^| find /i /v ":" ') do set "WX_SHA256=%%A"
     
-    echo Temporarily not checking hash
-    rem if not "!WX_SHA256!"=="%WX_REQUIRED_SHA256%" (
-    rem     echo Invalid hash of ceres.  Expected "%WX_REQUIRED_SHA256%" and got "!WX_SHA256!"
-    rem     GOTO :cmderr
-    rem )
+    if not "!WX_SHA256!"=="%WX_REQUIRED_SHA256%" (
+        echo Invalid hash of ceres.  Expected "%WX_REQUIRED_SHA256%" and got "!WX_SHA256!"
+        GOTO :cmderr
+    )
 
     tar -xzvf %WX_TAR% && (
         echo Unzipped wxWidgets
@@ -509,15 +508,19 @@ if not exist %WX_BUILT_FILE% (
         GOTO :cmderr
     )
 
-    cmake --build . --config Debug --target install && (
-        echo Installed Debug wxWidgets
-    ) || (
-        echo Failed to install Debug wxWidgets
-        GOTO :cmderr
+    if defined builddebug (
+        echo "Building wxWidgets Debug"
+        cmake --build . --config Debug --target install && (
+            echo Installed Debug wxWidgets
+        ) || (
+            echo Failed to install Debug wxWidgets
+            GOTO :cmderr
+        )
     )
 
+    echo "Building wxWidgets Release"
     cmake --build . --config Release --target install && (
-        echo Installed Debug wxWidgets
+        echo Installed Release wxWidgets
     ) || (
         echo Failed to install Release wxWidgets
         GOTO :cmderr
