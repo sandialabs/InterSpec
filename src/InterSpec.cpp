@@ -420,6 +420,9 @@ InterSpec::InterSpec( WContainerWidget *parent )
   m_featureMarkers( nullptr ),
   m_featureMarkerMenuItem( nullptr ),
   m_multimedia( nullptr ),
+#if( USE_REMOTE_RID )
+  m_autoRemoteRidResultDialog( nullptr ),
+#endif
   m_gammaXsToolWindow( nullptr ),
   m_doseCalcWindow( nullptr ),
   m_1overR2Calc( nullptr ),
@@ -8608,7 +8611,6 @@ void InterSpec::createRemoteRidWindow()
 
 void InterSpec::deleteRemoteRidWindow()
 {
-  assert( m_remoteRid );
   if( !m_remoteRid )
     return;
   
@@ -8637,6 +8639,30 @@ void InterSpec::deleteRemoteRidWindow()
     m_undo->addUndoRedoStep( std::move(undo), std::move(redo), "Close remote RID tool" );
   }
 }//void handleRemoteRidClose()
+
+void InterSpec::setAutoRemoteRidResultDialog( SimpleDialog *dialog )
+{
+  programaticallyCloseAutoRemoteRidResultDialog();
+  m_autoRemoteRidResultDialog = dialog;
+}//setAutoRemoteRidResultDialog()
+
+
+void InterSpec::handleAutoRemoteRidResultDialogClose()
+{
+  m_autoRemoteRidResultDialog = nullptr;
+}//handleAutoRemoteRidResultDialogClose()
+
+
+void InterSpec::programaticallyCloseAutoRemoteRidResultDialog()
+{
+  SimpleDialog *dialog = m_autoRemoteRidResultDialog;
+  
+  //Set m_multimedia to m_autoRemoteRidResultDialog so #handleAutoRemoteRidResultDialogClose
+  //  wont add undo/redo step
+  m_autoRemoteRidResultDialog = nullptr;
+  if( dialog )
+    dialog->done( Wt::WDialog::DialogCode::Accepted );
+}//programaticallyCloseAutoRemoteRidResultDialog()
 #endif  //#if( USE_REMOTE_RID )
 
 
@@ -10815,9 +10841,9 @@ void InterSpec::setSpectrum( std::shared_ptr<SpecMeas> meas,
       const std::string type = SpecUtils::descriptionText(spec_type);
       WStringStream js;
 #if( USE_REMOTE_RID )
-      js << "File contained on-board RIID results: "
+      js << "File contained on-board RID results: "
 #else
-      js << "File contained RIID analysis results: "
+      js << "File contained RID analysis results: "
 #endif
       << riidAnaSummary(meas)
       << "<div onclick="
@@ -10835,8 +10861,9 @@ void InterSpec::setSpectrum( std::shared_ptr<SpecMeas> meas,
 #if( USE_REMOTE_RID )
   if( meas && !options.testFlag(SetSpectrumOptions::SkipExternalRid) )
   {
-    const int call_ext_rid = InterSpecUser::preferenceValue<int>( "AlwaysCallExternalRid", this );
-    if( (call_ext_rid == 1) || (call_ext_rid == 2) )
+    const ExternalRidAuotCallPref pref = RemoteRid::external_rid_call_pref( this );
+    
+    if( pref != ExternalRidAuotCallPref::DoNotCall )
     {
       Wt::WApplication *app = wApp;
       auto callExternalRid = [app,this,sameSpecFile](){
@@ -10850,7 +10877,7 @@ void InterSpec::setSpectrum( std::shared_ptr<SpecMeas> meas,
           if( sameSpecFile )
             flags |= RemoteRid::AnaFileOptions::OnlyDisplayedSearchSamples;
           
-          RemoteRid::startAutomatedOnLoadAnalysis(this, flags );
+          RemoteRid::startAutomatedOnLoadAnalysis( this, flags );
         }else
         {
           cerr << "Failed to get WApplication::UpdateLock to call external RID." << endl;
@@ -10913,6 +10940,11 @@ void InterSpec::setSpectrum( std::shared_ptr<SpecMeas> meas,
     if( m_multimedia )
       programmaticallyCloseMultimediaWindow();
     assert( !m_multimedia );
+    
+#if( USE_REMOTE_RID )
+      if( m_autoRemoteRidResultDialog )
+        programaticallyCloseAutoRemoteRidResultDialog();
+#endif
     
     bool show_notification = false;
     for( const shared_ptr<const SpecUtils::MultimediaData> &mmd : m_dataMeasurement->multimedia_data() )
