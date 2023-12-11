@@ -338,6 +338,17 @@ namespace
     
     return false;
   }//try_update_hint_peak(...)
+  
+  
+  template<class T>
+  void del_ptr_set_null( T * &ptr )
+  {
+    if( ptr )
+    {
+      delete ptr;
+      ptr = nullptr;
+    }
+  }//void del_ptr_set_null( T * &ptr )
 }//namespace
 
 
@@ -1295,17 +1306,8 @@ InterSpec::~InterSpec() noexcept(true)
   Wt::log("info") << "Destructing InterSpec from session '" << (wApp ? wApp->sessionId() : string("")) << "'";
 
   // Get rid of undo/redo, so we dont insert anything into them
-  if( m_undo )
-  {
-    delete m_undo;
-    m_undo = nullptr;
-  }
-  
-  if( m_licenseWindow )
-  {
-    delete m_licenseWindow;
-    m_licenseWindow = nullptr;
-  }
+  del_ptr_set_null( m_undo );
+  del_ptr_set_null( m_licenseWindow );
   
   try
   {
@@ -1321,48 +1323,24 @@ InterSpec::~InterSpec() noexcept(true)
         m_toolsTabs->removeTab( m_peakInfoDisplay );
     if( m_peakInfoWindow )
       m_peakInfoWindow->contents()->removeWidget( m_peakInfoDisplay );
-    delete m_peakInfoDisplay;
-    m_peakInfoDisplay = nullptr;
+    
+    del_ptr_set_null( m_peakInfoDisplay );
   }//if( m_peakInfoDisplay )
 
-  if( m_peakInfoWindow )
-  {
-    delete m_peakInfoWindow;
-    m_peakInfoWindow = nullptr;
-  }//if( m_peakInfoWindow )
+  del_ptr_set_null( m_peakInfoWindow );
   
   if( m_energyCalTool )
   {
     if( m_toolsTabs && m_toolsTabs->indexOf(m_energyCalTool)>=0 )
       m_toolsTabs->removeTab( m_energyCalTool );
     
-    delete m_energyCalTool;
-    m_energyCalTool = nullptr;
+    del_ptr_set_null( m_energyCalTool );
   }//if( m_energyCalTool )
   
-  if( m_energyCalWindow )
-  {
-    delete m_energyCalWindow;
-    m_energyCalWindow = nullptr;
-  }//if( m_energyCalWindow )
-    
-  if( m_shieldingSourceFitWindow )
-  {
-    delete m_shieldingSourceFitWindow;
-    m_shieldingSourceFitWindow = nullptr;
-  }//if( m_shieldingSourceFitWindow )
-  
-  if( m_nuclideSearch )
-  {
-    delete m_nuclideSearch;
-    m_nuclideSearch = nullptr;
-  }//if( m_nuclideSearch )
-
-  if( m_nuclideSearchWindow )
-  {
-    delete m_nuclideSearchWindow;
-    m_nuclideSearchWindow = nullptr;
-  }
+  del_ptr_set_null( m_energyCalWindow );
+  del_ptr_set_null( m_shieldingSourceFitWindow );
+  del_ptr_set_null( m_nuclideSearch );
+  del_ptr_set_null( m_nuclideSearchWindow );
   
   if( m_referencePhotopeakLines )
   {
@@ -1370,47 +1348,29 @@ InterSpec::~InterSpec() noexcept(true)
       m_toolsTabs->removeTab( m_referencePhotopeakLines );
     
     m_referencePhotopeakLines->clearAllLines();
-    delete m_referencePhotopeakLines;
-    m_referencePhotopeakLines = nullptr;
+    del_ptr_set_null( m_referencePhotopeakLines );
   }//if( m_referencePhotopeakLines )
   
-  if( m_referencePhotopeakLinesWindow )
-  {
-    delete m_referencePhotopeakLinesWindow;
-    m_referencePhotopeakLinesWindow = nullptr;
-  }//if( m_referencePhotopeakLinesWindow )
+  del_ptr_set_null( m_referencePhotopeakLinesWindow );
   
   handleWarningsWindowClose();
-  if( m_warnings )  //WarningWidget isnt necessarily parented, so we do have to manually delete it
-  {
-    delete m_warnings;
-    m_warnings = nullptr;
-  }//if( m_warnings )
-
+  del_ptr_set_null( m_warnings ); //WarningWidget isnt necessarily parented, so we do have to manually delete it
   
   deletePeakEdit();
   deleteGammaCountDialog();
   
-  if( m_mobileMenuButton )
-    delete m_mobileMenuButton;
-
-  if (m_mobileBackButton )
-    delete m_mobileBackButton;
-  
-  if (m_mobileForwardButton)
-    delete m_mobileForwardButton;
-  
-  if( m_notificationDiv )
-    delete m_notificationDiv;
-  
-  if( m_fileManager )
-    delete m_fileManager;
-
-  if( m_menuDiv )
-  {
-    delete m_menuDiv;
-    m_menuDiv = nullptr;
-  }//if( m_menuDiv )
+  // The following may be parented by app->domRoot()
+  del_ptr_set_null( m_mobileMenuButton );
+  del_ptr_set_null( m_mobileBackButton );
+  del_ptr_set_null( m_mobileForwardButton );
+  del_ptr_set_null( m_notificationDiv );
+  del_ptr_set_null( m_fileManager );
+  del_ptr_set_null( m_displayOptionsPopupDiv );
+  del_ptr_set_null( m_fileMenuPopup );
+  del_ptr_set_null( m_editMenuPopup );
+  del_ptr_set_null( m_toolsMenuPopup );
+  del_ptr_set_null( m_helpMenuPopup );
+  del_ptr_set_null( m_menuDiv );
   
   try
   {

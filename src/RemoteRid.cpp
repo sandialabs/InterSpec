@@ -2773,9 +2773,9 @@ void RemoteRid::handleAppUrl( std::string query_str )
   const string desc = "Are you sure you would like to use the '"
   + (exe_path.empty() ? url_path : exe_path) + "' service to call"
   + (always_call ? " whenever spectrum files are loaded" : " when the External-RID tool is used")
-  + "?"
-  + (show_dialog ? "A modal-dialog with results will be shown.<br />" : "")
-  + "<br />Your spectrum data will be sent to this "
+  + "?<br />"
+  + (show_dialog ? "A modal-dialog with results will be shown." : "")
+  + "Your spectrum data will be sent to this "
   + (exe_path.empty() ? "service." : "executable.")
   + "<br /><em>InterSpec</em> does not check the validity, trustworthiness, or anything else about this "
   + (exe_path.empty() ? "service" : "executable") + " - it just blindly sends it your spectroscopy data."
