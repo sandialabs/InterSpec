@@ -639,7 +639,8 @@ Wt::WApplication *createApplication(const Wt::WEnvironment& env)
         
         if ([absurl rangeOfString:@"request=redirect&url=http"].location != NSNotFound
             || [scheme isEqual:@"mailto"]
-            || ([scheme isEqual:@"https"] && ![host isEqual:@"127.0.0.1"]
+            || ( ([scheme isEqual:@"https"] || [scheme isEqual:@"http"])
+                && ![host isEqual:@"127.0.0.1"]
                 && ([host rangeOfString:@"localhost"].location == NSNotFound)) )
         {
           //external url or email
