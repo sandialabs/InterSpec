@@ -451,7 +451,7 @@ void PeakInfoDisplay::confirmRemoveAllPeaks()
   yes_button->clicked().connect( boost::bind( &PeakInfoDisplay::removeAllPeaks, this ) );
   
   
-  // We'll put an "undo" to close the dialog we just made - we could do a redu, but then making the
+  // We'll put an "undo" to close the dialog we just made - we could do a redo, but then making the
   //  undo becomes a bit harder... good enough, I guess
   auto closerfcn = wApp->bind( boost::bind( &WDialog::done, window, Wt::WDialog::DialogCode::Accepted ) );
   UndoRedoManager *undoManager = m_viewer ? m_viewer->undoRedoManager() : nullptr;

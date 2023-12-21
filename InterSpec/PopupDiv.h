@@ -46,7 +46,7 @@ the menus still behave well.
 */
 #define APP_MENU_STATELESS_FIX 1
 
-//Limitations of enabling USE_OSX_NATIVE_MENU or USING_ELECTRON_NATIVE_MENU:
+//Limitations of enabling USE_OSX_NATIVE_MENU:
 //  -disabling the closing of the menu when an item is selected isn't supported.
 //  -CheckBox items must be created through passing a WCheckBox to
 //   PopupDivMenu::addWidget(...).
@@ -55,8 +55,6 @@ the menus still behave well.
 //  -USE_OSX_NATIVE_MENU implementation casts the objective-c pointers to void*
 //   pointers, I tried doing some forward declartions using things similar to
 //   'typedef struct objc_object NSMenu', but then ran into linking errors.
-//  -USING_ELECTRON_NATIVE_MENU implementation currently expects top level menus
-//   to already exist (probably easy to fix).
 
 class PopupDivMenu : public Wt::WPopupMenu
 {
@@ -108,57 +106,6 @@ public:
    */
   bool removeSeperator( Wt::WMenuItem *sepertor );
   
-#if( USING_ELECTRON_NATIVE_MENU )
-  enum class MenuRole{
-    Quit, ResetZoom, ZoomIn, ZoomOut, ToggleFullscreen,
-    Cut, Copy, Past, ToggleDevTools,
-#if defined(__APPLE__)
-    Hide, HideOthers, UnHide, Front,
-#endif
-  };//enum class MenuRole
-
-  /** Adds a menu that performs an action already defined by the OS or Electron
-      meaning you dont need to worry about implementing any actions
-   */
-  void addRoleMenuItem( MenuRole role );
-
-  /** Adding or removing items from Electron menu is sticky, meaning you need
-      to force Electron to re-init the native menu for effects to show up.
-      Doing this for every addition of menu items during app startup is
-      noticably slow, so instead you must call this function when you would
-      like items you've added to actually show up.
-   
-      Note that Showing and Hiding items automatically forces this (making this
-      not happen durring app start is something that could use to be done to
-      improve start up time).
-   
-      See: https://github.com/electron/electron/issues/527
-   */
-  static void triggerElectronMenuUpdate();
-  
-  /** There is no easy way to remove an item from an electron (sub-)menu.
-      Therefore when an item is removed in Wt, it gets hidden in Electron (with
-      more work could properly be removed - but would also be slow); however to
-      avoid building up a ton of hidden items, you can call this function when
-      there are no items in this (sub-)menu function to clear it out in Electron
-      land.
-   
-      To be clear, this is a hack that addresses InterSpecs one use-case for
-      removing menu items (Detector names).
-   
-      ToDo: Reformulate this function to re-build the electron menu from the
-            current Wt menu items after clearing the Electron items - this would
-            make things a bit less of a hack and could be used form
-            PopupDivMenuItem destructor to keep its parent up to date.
-   
-      See: https://github.com/electron/electron/issues/527
-   */
-  void clearElectronMenu();
-  
-#if defined(__APPLE__)
-  PopupDivMenuItem *createAboutThisAppItem();
-#endif
-#endif
   
   virtual void setHidden( bool hidden,
                           const Wt::WAnimation &animation = Wt::WAnimation() );
@@ -238,10 +185,6 @@ protected:
   void *m_nsmenu;
   friend class PopupDivMenuItem;
 #endif
-  
-#if( USING_ELECTRON_NATIVE_MENU )
-  bool m_hasElectronCounterpart;
-#endif
 
   bool m_mobile;
   const MenuType m_type;
@@ -296,21 +239,6 @@ protected:
   void *m_nsmenu;
   void *m_nsmenuitem;
   friend class PopupDivMenu;
-#endif
-  
-#if( USING_ELECTRON_NATIVE_MENU )
-  friend class PopupDivMenu;
-  bool m_hasElectronItem;
-
-  public:
-  void emitClickFromElectronMenu();
-  void toggleFromElectronMenu(bool checked);
-  virtual void setHidden( bool hidden,
-                         const Wt::WAnimation &animation = Wt::WAnimation() );
-  virtual void setDisabled(bool disabled);
-  //toggleChecked
-  Wt::JSignal<void> m_electron_clicked;
-  Wt::JSignal<bool> m_electron_checked;
 #endif
 };//class PopupDivMenuItem
 

@@ -119,10 +119,6 @@ extern "C"
    
    */
   LIB_INTERFACE(bool) interspec_set_initial_file_to_open( const char *session_token, const char *file_path );
-
-  /** Returns if using the Electron-native menus.  If you are using the HTML-electron menu, will return false.
-   */
-  LIB_INTERFACE(bool) interspec_using_electron_menus();
 }//extern "C"
 
 #endif //#if( BUILD_AS_ELECTRON_APP )

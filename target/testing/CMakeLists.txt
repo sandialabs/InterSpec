@@ -97,6 +97,14 @@ add_test( NAME TDoseCalc
 )
 
 
+add_executable( test_PeakDists test_PeakDists.cpp )
+target_link_libraries( test_PeakDists PRIVATE InterSpecLib )
+add_test( NAME TPeakDists
+  COMMAND $<TARGET_FILE:test_PeakDists> ${BOOST_TEST_CL_ARGS} -- ${DATA_DIR_ARGS}
+  WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
+)
+
+
 add_executable( test_AppUtils test_AppUtils.cpp )
 target_link_libraries( test_AppUtils PRIVATE InterSpecLib )
 add_test( NAME TAppUtils

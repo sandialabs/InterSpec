@@ -5,6 +5,21 @@ overflow-y: auto;
 
 .PeakEditTable
 {
+  margin-left: auto;
+  margin-right: auto;
+}
+
+.PeakEdit .PeakEditTable td
+{
+  padding: 2px;
+  padding-right: 2px;
+}
+
+.PeakEdit .PeakEditTable tr td:first-child
+{
+  /* First column td elements */
+  vertical-align: middle;
+  padding-right: 2px;
 }
 
 .PeakEditWindow
@@ -15,6 +30,14 @@ overflow-y: auto;
 {
   text-align: center;
   padding-top: 0.5em;
+}
+
+.PeakEdit .PeakEditDrfFwhm
+{
+  display: block;
+  text-align: right;
+  font-style: italic;
+  font-size: xx-small;
 }
 
 .PeakEditPreviousPeak, .PeakEditNextPeak

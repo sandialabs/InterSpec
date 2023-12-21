@@ -228,15 +228,6 @@ void InterSpecApp::setupDomEnvironment()
   "if( Wt.WT.IsElectronInstance() )"
     "if (typeof module === 'object') {window.module = module; module = undefined;}";
   doJavaScript( fixElectronJs, false );
-  
-  if( isPrimaryWindowInstance() )
-  {
-#if( USING_ELECTRON_NATIVE_MENU )
-    //Some support to use native menu
-    doJavaScript( "const {Menu, MenuItem} = remote;", false );
-#endif
-  }//if( isPrimaryWindowInstance() )
-  
 #endif //BUILD_AS_ELECTRON_APP
 
   setTitle( "InterSpec" );
@@ -315,7 +306,7 @@ void InterSpecApp::setupDomEnvironment()
   );
   
 
-#if(  BUILD_AS_WX_WIDGETS_APP || (BUILD_AS_ELECTRON_APP && !USING_ELECTRON_NATIVE_MENU) )
+#if(  BUILD_AS_WX_WIDGETS_APP || BUILD_AS_ELECTRON_APP )
   // A workaround to allow moving the app window around by the titlebar area, when a 
   //  AuxWindow or SimpleDialog is showing
   if (isPrimaryWindowInstance())
@@ -372,6 +363,7 @@ void InterSpecApp::setupDomEnvironment()
         case 'k': // Clear showing reference photopeak lines
         case 's': // Store
         case 'l': // Log/Linear
+        case 'f': case 'F': // Show FAQs - for development only
         case 'e': case 'E': // Export file dialog
           if( $(".Wt-dialogcover").is(':visible') ) // Dont do shortcut when there is a blocking-dialog showing
             return;
@@ -515,11 +507,6 @@ void InterSpecApp::setupWidgets( const bool attemptStateLoad  )
     //  destruct?
     delete m_viewer;
     m_viewer = nullptr;
-    
-#if( USING_ELECTRON_NATIVE_MENU )
-    //ToDo: need to clear out all the native menus...
-#elif( USE_OSX_NATIVE_MENU )
-#endif
   }
   
   if( m_layout )
@@ -647,7 +634,8 @@ void InterSpecApp::setupWidgets( const bool attemptStateLoad  )
          || SpecUtils::istarts_with(internal_path, "/dose/")
          || SpecUtils::istarts_with(internal_path, "/gammaxs/")
          || SpecUtils::istarts_with(internal_path, "/1overr2/")
-         || SpecUtils::istarts_with(internal_path, "/unit/") ) )
+         || SpecUtils::istarts_with(internal_path, "/unit/")
+         || SpecUtils::istarts_with(internal_path, "/welcome") ) )
   {
     try
     {
@@ -941,15 +929,6 @@ void InterSpecApp::setupWidgets( const bool attemptStateLoad  )
   if( m_viewer->m_user )
     Wt::log("debug") << "Have started session " << sessionId() << " for user "
     << m_viewer->m_user->userName() << ".";
-  
-#if( USING_ELECTRON_NATIVE_MENU )
-  if( isPrimaryWindowInstance() )
-  {
-    //ToDo: time if WTimer::singleShot or post() is better
-    //WServer::instance()->post( sessionId(), [](){ PopupDivMenu::triggerElectronMenuUpdate(); } );
-    PopupDivMenu::triggerElectronMenuUpdate();
-  }//if( !m_externalToken.empty() )
-#endif
   
 #if( BUILD_AS_ELECTRON_APP || BUILD_AS_OSX_APP || ANDROID || BUILD_AS_WX_WIDGETS_APP  )
   // TODO 20220405: in macOS app I see the error "Wt: decodeSignal(): signal 'of7g69f.SucessfullyLoadedConf' not exposed"
@@ -1466,6 +1445,11 @@ void InterSpecApp::clearSession()
 #else
   setupWidgets( false );
 #endif
+  
+  // Set it so drag-n-drop of file will only allow loading foreground again,
+  //  until you load a foreground (the previous set value wont have been updated
+  //  when we do the reset).
+  doJavaScript( "$('.Wt-domRoot').data('HasForeground',0);" );
 }//void clearSession()
 
 

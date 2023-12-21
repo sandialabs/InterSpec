@@ -32,9 +32,6 @@
 
 #include <boost/function.hpp>
 
-#include <Wt/WContainerWidget>
-
-#include "InterSpec/AuxWindow.h"
 
 //Forward declarations
 class PeakDef;
@@ -50,14 +47,14 @@ namespace Wt{
   class WSvgImage;
 };
 
-/** Functions in this header/source are kinda go betweens of the GUI and the
- numerical code (although of course, seperation is never as clean as one would
+/** Functions in this header/source are kinda go between of the GUI and the
+ numerical code (although of course, separation is never as clean as one would
  like).
  */
 namespace PeakSearchGuiUtils
 {
   
-/** Renders the selcted energy range of the measurement to a SVG image.
+/** Renders the selected energy range of the measurement to a SVG image.
  @param measurement What to plot.  Must be non-null pointer.
  @param peaks Peaks to include on the histogram.  May be empty.
  @param reflines Reference lines to show on the chart. May be empty
@@ -76,6 +73,14 @@ std::shared_ptr<Wt::WSvgImage> renderChartToSvg( std::shared_ptr<const SpecUtils
                                               const int width_px, const int height_px,
                                               std::shared_ptr<const ColorTheme> theme,
                                                 const bool compact );
+  
+/** Function that is called when the user double-left-clicks on the spectrum.
+ */
+void fit_peak_from_double_click( InterSpec *interspec,
+                                const double energy_clicked,
+                                const double pixel_per_keV,
+                                std::shared_ptr<const DetectorPeakResponse> det );
+  
   
 /** Performs the automated search for peaks - setting the results to the GUI. */
 void automated_search_for_peaks( InterSpec *interspec, const bool keep_old_peaks );
@@ -136,6 +141,22 @@ void assign_srcs_from_ref_lines( const std::shared_ptr<const SpecUtils::Measurem
  */
 void refit_peaks_from_right_click( InterSpec * const interspec, const double rightClickEnergy );
 
+/** Sets all peaks in the ROI pointed to by the passed in energy, to the FWHM specified by the DRF, then refits the peaks.
+ 
+ Assumes you are in the Wt app primary thread.
+ */
+void refit_peaks_with_drf_fwhm( InterSpec * const interspec, const double rightClickEnergy );
+
+/** Returns the energy of its assigned nuclides gamma line, or peak doesnt have assigned gamma line, returns the
+ nearest showing Reference Photopeak line. Returns a negative value if neither can be found
+ */
+float reference_line_energy_near_peak( InterSpec * const interspec, const PeakDef &peak );
+  
+/** Set the peak nearest `rightClickEnergy` to preferably its assigned gamma energy, or if none assigned, to
+ nearest showing reference photopeak energy, and then refits peak.
+ */
+void refit_peak_with_photopeak_mean( InterSpec * const interspec, const double rightClickEnergy );
+  
 /** Changes the continuum type and causes a refit of ROI.
  
  @param interspec The InterSpec instance to work with - it is assumed this function is being called from that apps primary thread.
@@ -146,6 +167,14 @@ void change_continuum_type_from_right_click( InterSpec * const interspec,
                                             const double rightClickEnergy,
                                             const int continuum_type );
 
+/** Changes the continuum type of a ROI, and does a refit.
+ @param interspec The InterSpec instance to work with - it is assumed this function is being called from that apps primary thread.
+ @param rightClickEnergy Energy used to identify a peak, that will in turn identify the ROI.
+ @param skew_type the #PeakDef::SkewType
+*/
+void change_skew_type_from_right_click( InterSpec * const interspec,
+                                       const double rightClickEnergy,
+                                       const int skew_type );
 
 /** Enum to tell #fit_template_peaks where the candidate peaks to fit are
    comming from.  This info will be propagated through to the GUI and influence

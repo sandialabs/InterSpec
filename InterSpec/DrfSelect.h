@@ -296,12 +296,13 @@ public:
   //a row is selected, so update det and charts
   void dbTableSelectionChanged();
   
+  void handleFitFwhmRequested();
+  void handleFitFwhmFinished( std::shared_ptr<DetectorPeakResponse> drf );
 protected:
   void setAcceptButtonEnabled( const bool enable );
   
   /** Called when user changes value in m_uploadedDetName; sets m_detector name. */
   void handleUserChangedUploadedDrfName();
-  
   
 protected:
   WContainerWidget *m_footer;
@@ -365,7 +366,8 @@ protected:
   Wt::WTextArea    *m_detectorManualFunctionText;
   Wt::WLineEdit    *m_detectorManualDescription;
   Wt::WButtonGroup *m_eqnEnergyGroup;
-  Wt::WButtonGroup *m_absOrIntrinsicGroup;
+  Wt::WComboBox    *m_drfType;
+  
   Wt::WLabel       *m_detectorManualDiameterLabel;
   Wt::WLineEdit    *m_detectorManualDiameterText;
   Wt::WLineEdit    *m_detectorManualDistText;

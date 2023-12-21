@@ -38,6 +38,7 @@ namespace SandiaDecay
 {
   struct Nuclide;
   struct Element;
+  struct Transition;
 }
 
 namespace rapidxml
@@ -228,6 +229,15 @@ struct ReferenceLineInfo
    */
   static std::shared_ptr<ReferenceLineInfo> generateRefLineInfo( RefLineInput input );
   
+  /** The additional nuclide mixtures defined in `data/add_ref_line.xml` */
+  static std::vector<std::string> additional_nuclide_mixtures();
+  
+  /** Loads nuclide mixtures  defined in `data/add_ref_line.xml` into memory.
+   
+   You do not need to call this function, but you can if you want to avoid the ~2 ms to load it
+   the first time you create a reference photopeak widget.
+   */
+  static void load_nuclide_mixtures();
   
   /** A struct to represent the information for a single reference line.  */
   struct RefLine
@@ -362,6 +372,7 @@ struct ReferenceLineInfo
     Reaction,
     Background,
     CustomEnergy,
+    NuclideMixture,
     None
   };//enum class SourceType : int
 

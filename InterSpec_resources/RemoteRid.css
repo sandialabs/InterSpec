@@ -115,7 +115,16 @@
 }
 
 
-.RemoteRid .AlwaysSubmitAna
+.ExternalRidWidget .RidOptionCbRow
+{
+  display: flex;
+  flex-direction: row;
+  flex-wrap: nowrap;
+  justify-content: flex-start;
+  align-items: center;
+}
+
+.RemoteRid .AlwaysSubmitAna, .RemoteRid .ShowDialogOpt
 {
   margin-left: 10px;
 }

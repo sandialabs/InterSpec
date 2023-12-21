@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.1...3.20 FATAL_ERROR)
 
-project(InterSpec VERSION 1.0.11)
+project(InterSpec VERSION 1.0.12)
 
 set(CMAKE_CXX_STANDARD 14)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -58,11 +58,6 @@ option(
     "Mirrors WMenus with OSX native NSMenu (not fully implemented)"
     off
 )
-option(
-    USE_ELECTRON_NATIVE_MENU
-    "Mirrors WMenus with Electrons native Menu (not fully implemented); if off will use HTML based menus"
-    OFF
-)
 
 
 if( NOT DEFINED TRY_TO_STATIC_LINK )
@@ -117,7 +112,7 @@ option(
     OFF
 )
 
-option(USE_REMOTE_RID "Enables using remote RID tool" OFF)
+option(USE_REMOTE_RID "Enables using remote RID tool" ON)
 option(USE_REL_ACT_TOOL "Enables Relative Activity tool - experimental" ON)
 
 if( IOS OR ANDROID OR BUILD_AS_OSX_APP )
@@ -168,7 +163,7 @@ if( CMAKE_COMPILER_IS_GNUCC AND CMAKE_CXX_COMPILER_VERSION VERSION_LESS 5.0 )
   message( FATAL_ERROR, "GCC less than 5 not supported." )
 endif()
 
-# Make a cached variable avaiable to parent cmake projects
+# Make a cached variable available to parent cmake projects
 set( INTERSPEC_VERSION "${PROJECT_VERSION}" CACHE STRING "InterSpec version" )
 
 if(NOT CMAKE_BUILD_TYPE)
@@ -281,6 +276,7 @@ set(sources
     src/PeakFit.cpp
     src/PeakFitUtils.cpp
     src/PeakDef.cpp
+    src/PeakDists.cpp
     src/SpectraFileModel.cpp
     src/AuxWindow.cpp
     src/PeakFitChi2Fcn.cpp
@@ -322,6 +318,7 @@ set(sources
     src/MakeDrfSrcDef.cpp
     src/MakeDrfChart.cpp
     src/MakeDrfFit.cpp
+    src/MakeFwhmForDrf.cpp
     src/FluxTool.cpp
     src/NativeFloatSpinBox.cpp
     src/SwitchCheckbox.cpp
@@ -382,6 +379,7 @@ set(headers
     InterSpec/PeakFit.h
     InterSpec/PeakFitUtils.h
     InterSpec/PeakDef.h
+    InterSpec/PeakDists.h
     InterSpec/SpectraFileModel.h
     InterSpec/AuxWindow.h
     InterSpec/PeakFitChi2Fcn.h
@@ -423,6 +421,7 @@ set(headers
     InterSpec/MakeDrfSrcDef.h
     InterSpec/MakeDrfChart.h
     InterSpec/MakeDrfFit.h
+    InterSpec/MakeFwhmForDrf.h
     InterSpec/FluxTool.h
     InterSpec/NativeFloatSpinBox.h
     InterSpec/SwitchCheckbox.h
@@ -601,9 +600,6 @@ find_path(
 )
 
 #Set SpecUtils compile options
-set(SpecUtils_REBIN_FILES_TO_SINGLE_BINNING OFF
-    CACHE BOOL "Set Rebin spectrum to single energy cal"
-)
 set(SpecUtils_NO_BOOST_LIB OFF
     CACHE BOOL "Use boost for threading primitives in SpecUtils"
 )
@@ -848,34 +844,25 @@ endif( WIN32 )
 #endif()
 
 
+# I cant seems to get more complex regexs to work, so we'll use many simple ones.
+FILE(GLOB JS_BASE_FILES InterSpec_resources/*.js )
+FILE(GLOB CSS_BASE_FILES InterSpec_resources/*.css )
+list(FILTER CSS_BASE_FILES EXCLUDE REGEX ".*SpectrumChartD3.*css")
+FILE(GLOB STATIC_XML_FILES InterSpec_resources/static_text/*.xml )
+FILE(GLOB STATIC_HTML_TMPLTS_FILES InterSpec_resources/static_text/*.html )
+FILE(GLOB STATIC_ADD_XML_FILES InterSpec_resources/static_text/*/*.xml )
+FILE(GLOB STATIC_ADD_CSS_FILES InterSpec_resources/static_text/*/*.css )
+
 list( APPEND OTHER_InterSpec_SUPPORT_FILES
+     ${JS_BASE_FILES}
+     ${CSS_BASE_FILES}
+     ${STATIC_XML_FILES}
+     ${STATIC_ADD_XML_FILES}
+     ${STATIC_ADD_CSS_FILES}
+     ${STATIC_HTML_TMPLTS_FILES}
+     ${CMAKE_CURRENT_SOURCE_DIR}/InterSpec_resources/static_text/help.json
      ${CMAKE_CURRENT_SOURCE_DIR}/README.md
-     ${CMAKE_CURRENT_SOURCE_DIR}/data/default_preferences.xml
-     ${CMAKE_CURRENT_SOURCE_DIR}/InterSpec_resources/themes/dark/dark.css
-     ${CMAKE_CURRENT_SOURCE_DIR}/InterSpec_resources/static_text/copyright_and_about.xml
-     ${CMAKE_CURRENT_SOURCE_DIR}/InterSpec_resources/static_text/use_instructions.xml
-     ${CMAKE_CURRENT_SOURCE_DIR}/InterSpec_resources/static_text/spectrum_file_format_descriptions.xml
   )
-
-FILE(GLOB CSS_FILES ${CMAKE_CURRENT_SOURCE_DIR}/InterSpec_resources/*.css )
-list(FILTER CSS_FILES EXCLUDE REGEX ".*SpectrumChartD3.*css")
-list(APPEND OTHER_InterSpec_SUPPORT_FILES ${CSS_FILES})
-
-list(
-    APPEND
-    OTHER_InterSpec_SUPPORT_FILES
-    ${CMAKE_CURRENT_SOURCE_DIR}/InterSpec_resources/DecayChainChart.js
-    ${CMAKE_CURRENT_SOURCE_DIR}/InterSpec_resources/RelEffPlot.js
-    ${CMAKE_CURRENT_SOURCE_DIR}/InterSpec_resources/DetectionLimitTool.js
-)
-
-FILE(GLOB HELP_FILES ${CMAKE_CURRENT_SOURCE_DIR}/InterSpec_resources/static_text/*help.xml)
-list(
-    APPEND
-    OTHER_InterSpec_SUPPORT_FILES
-    ${HELP_FILES}
-    ${CMAKE_CURRENT_SOURCE_DIR}/InterSpec_resources/static_text/help.json
-)
 
 add_custom_target(interspec_resources SOURCES ${OTHER_InterSpec_SUPPORT_FILES})
 

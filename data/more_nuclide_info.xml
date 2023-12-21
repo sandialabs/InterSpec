@@ -1,4 +1,4 @@
-﻿<?xml version="1.0" encoding="UTF-8"?>
+<?xml version="1.0" encoding="UTF-8"?>
 <AddNucInfo>
   <!-- UUR SAND2023-02430O
 
@@ -122,6 +122,13 @@ TODO: Need to incorporate the following from FRMAC Spectroscopists guide:
       <url>https://www.orau.org/health-physics-museum/collection/consumer/products-containing-thorium/magnesium-thorium-alloy.html</url>
       <date>20230401</date>
     </Ref>
+
+    <Ref key="DOE-QSA">
+      <desc>DOE Isotope Program and QSA Global Inc. partner for domestic production of iridium-192</desc>
+      <url>https://www.isotopes.gov/QSA-joint-product-development-agreement</url>
+      <date>20231121</date>
+    </Ref>
+    
 
   </References>
 
@@ -446,7 +453,7 @@ Common fission product
 
 Industrial radiography devices and gauges, fluid processing/level gauges
 
-Used for low-intensity sterilization of blood.  Reactor radioisotope. [GNRIM]
+Used for low-intensity sterilization of blood and in brachytherapy.  Reactor radioisotope. [GNRIM]
 
 "Used for radiotracer technique for identification of sources of soil erosion and deposition, as well as in density and fill height level switches. Also for low-intensity gamma sterilization."-[RII]
 
@@ -634,6 +641,8 @@ Common radiography source.  May be placed in a depleted uranium (DU) shield/pig 
 
 Radiography and nondestructive testing devices. [NIDC]
 
+"Ir-192 serves as a gamma source essential for industrial radiographic non-destructive testing to detect structural damage to metal parts such as castings, forgings, and weld defects. Industrial gamma radiography plays a crucial role in ensuring the quality of manufacturing processes, particularly in sectors such as shipbuilding, auto manufacturing, and aerospace. Additionally, it is instrumental in performing on-site integrity assessments of oil and gas pipelines. This type of quality assessment is indispensable for upholding the reliability of U.S. infrastructure and supporting defense applications."-[DOE-QSA]
+
 Reactor radioisotope.
       </Notes>
     </Nuc>
@@ -703,7 +712,7 @@ Can be found with Lu-177m
 
 Lu-177m becomes more dominant with time.
  
-Production mode: Neutron capture on enriched Lu-176 target.  Other companies are investigating the ytterbium production route which does not produce the Lu-177m impurity.
+Production mode: Usually produced by neutron activation of natural or enriched lutetium-176 targets or indirectly by neutron irradiation of Yb-176.  The ytterbium production route does not produce the Lu-177m impurity.
 
 "Lu-177 is increasingly important as it emits just enough gamma for imaging while the beta radiation does the therapy on small (e.g. endocrine) tumors. Its half-life is long enough to allow sophisticated preparation for use.  It is usually produced by neutron activation of natural or enriched lutetium-176 targets."-[GNRIM]  
 
@@ -790,6 +799,54 @@ Pure beta, β- max 1.709 MeV.
 Reactor radioisotope.
       </Notes>
     </Nuc>
+
+
+
+    <Nuc name="Np-237">
+      <Associated>Np-237;Pa-233;Pu-239;Am-241;Pu-241</Associated>
+      <Notes>
+Np-237/Pa-233 (27.4 d)
+      </Notes>
+    </Nuc>
+
+    <Nuc name="Pb-212">
+      <Associated>Ra-224</Associated>
+      <Notes>
+        "Pb-212 is used in TAT for cancers or alpha radioimmunotherapy, with decay products Bi-212 (1 h) and Po-212 (0.3 µs) delivering the alpha particles. Used especially for melanoma, breast cancer and ovarian cancer. Demand is increasing. Used in peptide receptor radionuclide therapy (PRRT)."-[GNRIM]
+        
+        Ra-224 (3.66 d) is used for the generator for Pb-212 (10.64 h).-[GNRIM]
+        
+        Reactor radioisotope.
+        
+        Gamma spectroscopy notes:
+        &lt;ul&gt;
+          &lt;li&gt;The gamma signatures from Ra-224 and Pb-212 will look very similar.  The only primary gamma emission that helps with distinguishing Ra-224 with its decay products from Pb-212 with its decay products is the Ra-224 gamma emission at 241.0 keV.&lt;/li&gt;
+          &lt;li&gt;For unshielded or lightly shielded sources, a NaI detector will not be able to distinguish Ra-224 with its decay products from Pb-212 with its decay products.  However, an HPGe detector can allow you to resolve both the 238.6 keV Pb-212 peak (43.3% yield) and the 241.0 keV Ra-224 peak (4.1% yield).&lt;/li&gt;
+          &lt;li&gt;For a well shielded source (shielding the 238.6 keV and 241.0 keV peaks), neither a NaI or HPGe detector will be able to distinguish Ra-224 with its decay products from Pb-212 with its decay products.&lt;/li&gt;
+          &lt;li&gt;Lastly, the gamma signature for Ra-224 and Pb-212 will look like U-232/Th-228 since no strong gamma signatures occur in the U-232/Th-228 decay chain prior to Ra-224.  This is especially true for low resolution spectrometers where you can’t resolve both the 238.6 keV Pb-212 and the 241.0 keV Ra-224 peaks.&lt;/li&gt;
+        &lt;/ul&gt;
+      </Notes>
+    </Nuc>
+
+    <Nuc name="Ra-224">
+      <Associated>Pb-212</Associated>
+      <Notes>
+        "Pb-212 is used in TAT for cancers or alpha radioimmunotherapy, with decay products Bi-212 (1 h) and Po-212 (0.3 µs) delivering the alpha particles. Used especially for melanoma, breast cancer and ovarian cancer. Demand is increasing. Used in peptide receptor radionuclide therapy (PRRT)."-[GNRIM]
+
+        Ra-224 (3.66 d) is used for the generator for Pb-212 (10.64 h).-[GNRIM]
+        
+        Reactor radioisotope.
+
+        Gamma spectroscopy notes
+        &lt;ul&gt;
+          &lt;li&gt;The gamma signatures from Ra-224 and Pb-212 will look very similar.  The only primary gamma emission that helps with distinguishing Ra-224 with its decay products from Pb-212 with its decay products is the Ra-224 gamma emission at 241.0 keV.&lt;/li&gt;
+          &lt;li&gt;For unshielded or lightly shielded sources, a NaI detector will not be able to distinguish Ra-224 with its decay products from Pb-212 with its decay products.  However, an HPGe detector can allow you to resolve both the 238.6 keV Pb-212 peak (43.3% yield) and the 241.0 keV Ra-224 peak (4.1% yield).&lt;/li&gt;
+          &lt;li&gt;For a well shielded source (shielding the 238.6 keV and 241.0 keV peaks), neither a NaI or HPGe detector will be able to distinguish Ra-224 with its decay products from Pb-212 with its decay products.&lt;/li&gt;
+          &lt;li&gt;Lastly, the gamma signature for Ra-224 and Pb-212 will look like U-232/Th-228 since no strong gamma signatures occur in the U-232/Th-228 decay chain prior to Ra-224.  This is especially true for low resolution spectrometers where you can’t resolve both the 238.6 keV Pb-212 and the 241.0 keV Ra-224 peaks.&lt;/li&gt;
+        &lt;/ul&gt;
+      </Notes>
+    </Nuc>
+
 
     <Nuc name="Pd-103">
       <Associated></Associated>
@@ -1044,7 +1101,7 @@ Tl-202 becomes more dominant with time.
 
 When Tl-201 medical shipments are made, the Tl can be heavily shielded resulting in the primary gamma signature being from high energy Tl-200 gamma emissions.
 
-Production mode: Tl-203(p,3n) Pb-201 -> Tl-201
+Production mode: Tl-203(p,3n) Pb-201 -&gt; Tl-201
 
 Tl-201 X-rays combined with scatter and/or a gain shift in a NaI detector can generate a peak near 59.5 keV causing misidentification as Am-241.
 

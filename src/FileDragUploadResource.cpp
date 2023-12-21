@@ -214,8 +214,10 @@ void FileDragUploadResource::handleRequest( const Http::Request& request,
     {
       spool_file << request.in().rdbuf();
       spool_file.close();
-      const string userName = request.headerValue( "X-File-Name" );
+      const string userNameEncoded = request.headerValue( "X-File-Name" );
+      const string userName = Wt::Utils::urlDecode(userNameEncoded);
       
+      cout << "userNameEncoded='" << userNameEncoded << "' --> userName='" << userName << "'" << endl;
       //cerr << "\n\n\nuserName = '" << userName << "'\n\n" << endl;
       
       auto app = WApplication::instance();

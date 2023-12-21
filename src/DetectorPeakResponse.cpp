@@ -498,7 +498,7 @@ DetectorPeakResponse::DetectorPeakResponse()
     m_upperEnergy( 0.0 ),
     m_createdUtc( 0 ),
     m_lastUsedUtc( 0 ),
-    m_fixedGeometry( false )
+    m_geomType(EffGeometryType::FarField)
 {
 } //DetectorPeakResponse()
 
@@ -519,7 +519,7 @@ DetectorPeakResponse::DetectorPeakResponse( const std::string &name,
     m_upperEnergy( 0.0 ),
     m_createdUtc( 0 ),
     m_lastUsedUtc( 0 ),
-    m_fixedGeometry( false )
+    m_geomType(EffGeometryType::FarField)
 {
 }//DetectorPeakResponse( const std::string &name, const std::string &descrip )
 
@@ -586,8 +586,8 @@ void DetectorPeakResponse::computeHash()
   
   //Dont hash based on m_createdUtc or m_lastUsed
   
-  if( m_fixedGeometry )
-    boost::hash_combine( seed, m_fixedGeometry );
+  if( m_geomType != EffGeometryType::FarField )
+    boost::hash_combine( seed, m_geomType );
   
   m_hash = seed;
 }//void computeHash()
@@ -649,7 +649,7 @@ void DetectorPeakResponse::reset()
   m_lowerEnergy = m_upperEnergy = 0.0;
   m_efficiencySource = DrfSource::UnknownDrfSource;
   m_createdUtc = m_lastUsedUtc = 0;
-  m_fixedGeometry = false;
+  m_geomType = EffGeometryType::FarField;
   
 /*
   m_name = "Flat";
@@ -684,7 +684,7 @@ bool DetectorPeakResponse::operator==( const DetectorPeakResponse &rhs ) const
           && m_upperEnergy==rhs.m_upperEnergy
           //m_createdUtc
           //m_lastUsedUtc
-          && m_fixedGeometry==rhs.m_fixedGeometry
+          && m_geomType==rhs.m_geomType
           );
 }//operator==
 
@@ -732,8 +732,14 @@ double DetectorPeakResponse::upperEnergy() const
 
 bool DetectorPeakResponse::isFixedGeometry() const
 {
-  return m_fixedGeometry;
+  return (m_geomType != EffGeometryType::FarField);
 }//bool isFixedGeometry() const;
+
+
+DetectorPeakResponse::EffGeometryType DetectorPeakResponse::geometryType() const
+{
+  return m_geomType;
+}
 
 
 void DetectorPeakResponse::updateLastUsedTimeToNow()
@@ -745,9 +751,11 @@ void DetectorPeakResponse::updateLastUsedTimeToNow()
 void DetectorPeakResponse::fromEnergyEfficiencyCsv( std::istream &input,
                                     const float detectorDiameter,
                                     const float energyUnits,
-                                    const bool is_fixed_geometry )
+                                    //const bool is_fixed_geometry
+                                    const EffGeometryType geometry_type )
 {
-  if( !is_fixed_geometry
+  if( // !is_fixed_geometry
+     (geometry_type == EffGeometryType::FarField)
      && ((detectorDiameter <= 0.0) || IsInf(detectorDiameter) || IsNan(detectorDiameter)) )
     throw runtime_error( "Detector diameter must be greater than 0.0" );
   
@@ -857,7 +865,7 @@ void DetectorPeakResponse::fromEnergyEfficiencyCsv( std::istream &input,
   m_upperEnergy = m_energyEfficiencies.back().energy;
   
   m_lastUsedUtc = m_createdUtc = std::time(nullptr);
-  m_fixedGeometry = is_fixed_geometry;
+  m_geomType = geometry_type;
   
   computeHash();
 }//void fromEnergyEfficiencyCsv(...)
@@ -869,7 +877,8 @@ void DetectorPeakResponse::setIntrinsicEfficiencyFormula( const string &fcnstr,
                                                           const float energyUnits,
                                                           const float lowerEnergy,
                                                           const float upperEnergy,
-                                                          const bool fixedGeometry )
+                                                          //const bool fixedGeometry
+                                                          const EffGeometryType geometry_type )
 {
   const bool isMeV = (energyUnits > 10.f);
   std::shared_ptr<FormulaWrapper > expression
@@ -890,7 +899,7 @@ void DetectorPeakResponse::setIntrinsicEfficiencyFormula( const string &fcnstr,
   m_efficiencySource = DrfSource::UserSpecifiedFormulaDrf;
   
   m_lastUsedUtc = m_createdUtc = std::time(nullptr);
-  m_fixedGeometry = fixedGeometry;
+  m_geomType = geometry_type;
   
   computeHash();
 }//void setIntrinsicEfficiencyFormula( const std::string &fcn )
@@ -1020,8 +1029,9 @@ void DetectorPeakResponse::fromGadrasDefinition( std::istream &csvFile,
   //const float diam = (4.0f/3.14159265359f) * sqrt(surfaceArea) * static_cast<float>(PhysicalUnits::cm);
   const float diam = 2.0f*sqrt(surfaceArea/3.14159265359f) * static_cast<float>(PhysicalUnits::cm);
   
-  const bool fixed_geom = false;
-  fromEnergyEfficiencyCsv( csvFile, diam, static_cast<float>(PhysicalUnits::keV), fixed_geom );
+  //const bool fixed_geom = false;
+  const EffGeometryType geometry_type = EffGeometryType::FarField;
+  fromEnergyEfficiencyCsv( csvFile, diam, static_cast<float>(PhysicalUnits::keV), geometry_type );
   
   m_flags = 0;
   
@@ -1031,7 +1041,7 @@ void DetectorPeakResponse::fromGadrasDefinition( std::istream &csvFile,
   m_efficiencySource = DrfSource::UserAddedGadrasDrf;
   
   m_lastUsedUtc = m_createdUtc = std::time(nullptr);
-  m_fixedGeometry = fixed_geom;
+  m_geomType = geometry_type;
   
   computeHash();
 }//void fromGadrasDefinition(...)
@@ -1089,7 +1099,9 @@ void DetectorPeakResponse::fromExpOfLogPowerSeriesAbsEff(
                                    const float equationEnergyUnits,
                                    const float lowerEnergy,
                                    const float upperEnergy,
-                                   const bool fixedGeometry )
+                                   //const bool fixedGeometry
+                                   const EffGeometryType geometry_type
+)
 {
   if( coefs.empty() )
     throw runtime_error( "fromExpOfLogPowerSeriesAbsEff(...): invalid input" );
@@ -1112,7 +1124,7 @@ void DetectorPeakResponse::fromExpOfLogPowerSeriesAbsEff(
   m_expOfLogPowerSeriesUncerts = uncerts;
   
   //now we need to account for characterizationDist
-  if( (charactDist > 0.0f) && !fixedGeometry )
+  if( (charactDist > 0.0f) && (geometry_type == EffGeometryType::FarField) )
   {
     //x^n * x^m = x^(n+m)
     const float gfactor = fractionalSolidAngle( det_diam, charactDist );
@@ -1128,9 +1140,7 @@ void DetectorPeakResponse::fromExpOfLogPowerSeriesAbsEff(
   m_efficiencySource = DrfSource::UserAddedRelativeEfficiencyDrf;
   
   m_lastUsedUtc = m_createdUtc = std::time(nullptr);
-  m_fixedGeometry = false;
-
-  m_fixedGeometry = fixedGeometry;
+  m_geomType = geometry_type;
   
   computeHash();
 }//void fromExpOfLogPowerSeriesAbsEff
@@ -1189,7 +1199,7 @@ std::shared_ptr<DetectorPeakResponse> DetectorPeakResponse::parseSingleCsvLineRe
     
     string description = fields[2] + " - from Relative Eff. File";
     det.reset( new DetectorPeakResponse( name, description ) );
-    det->fromExpOfLogPowerSeriesAbsEff( coefs, {}, dist, diam, eunits, 0.0f, 0.0f, false );
+    det->fromExpOfLogPowerSeriesAbsEff( coefs, {}, dist, diam, eunits, 0.0f, 0.0f, EffGeometryType::FarField );
     det->setDrfSource( DetectorPeakResponse::DrfSource::UserAddedRelativeEfficiencyDrf );
   }catch( std::exception &e )
   {
@@ -1285,7 +1295,7 @@ std::string DetectorPeakResponse::toAppUrl() const
   if( !m_description.empty() )
     parts["DESC"] = url_encode( m_description, "", false );
   
-  if( !m_fixedGeometry || (m_detectorDiameter > 0.0) )
+  if( (m_geomType == EffGeometryType::FarField) || (m_detectorDiameter > 0.0) )
     parts["DIAM"] = PhysicalUnits::printCompact( m_detectorDiameter, 5 );
   
   // We'll assume units are MeV, unless stated otherwise.
@@ -1383,8 +1393,30 @@ std::string DetectorPeakResponse::toAppUrl() const
   if( m_lastUsedUtc )
     parts["LASTUSED"] = std::to_string( m_lastUsedUtc );
   
-  if( m_fixedGeometry )
-    parts["FIXGEOM"] = "1";
+  switch( m_geomType )
+  {
+    case EffGeometryType::FarField:
+      // We wont note this, but if decide to in the future, use "FAR-FIELD"
+      //parts["GEOM"] = "FAR-FIELD";
+      break;
+      
+    case EffGeometryType::FixedGeomTotalAct:
+      parts["GEOM"] = "FIXED-TOTAL";
+      parts["FIXGEOM"] = "1"; //Left-over from when fixed geometry was just a boolean - can be removed probably
+      break;
+      
+    case EffGeometryType::FixedGeomActPerCm2:
+      parts["GEOM"] = "FIXED-PER-CM2";
+      break;
+      
+    case EffGeometryType::FixedGeomActPerM2:
+      parts["GEOM"] = "FIXED-PER-M2";
+      break;
+      
+    case EffGeometryType::FixedGeomActPerGram:
+      parts["GEOM"] = "FIXED-PER-GRAM";
+      break;
+  }//switch( m_geomType )
   
   auto current_url_len = [&parts]() -> size_t {
     size_t nchar = (2 * parts.size()) - (parts.size() ? 1 : 0);
@@ -1498,7 +1530,8 @@ void DetectorPeakResponse::fromAppUrl( std::string url_query )
   uint64_t hash = 0, parent_hash = 0;
   int64_t createdUtc = 0, lastUsedUtc = 0;
   double lowerEnergy = 0.0, upperEnergy = 0.0;
-  bool fixedGeometry = false;
+  //bool fixedGeometry = false;
+  EffGeometryType geom_type = EffGeometryType::FarField;
   
   if( parts.count("NAME") )
     name = parts["NAME"];
@@ -1508,16 +1541,37 @@ void DetectorPeakResponse::fromAppUrl( std::string url_query )
   
   if( parts.count("FIXGEOM") )
   {
+    // This is vestigial code that can probably be deleted - it was only used between
+    //  20230916 and 20231010 on development builds (maybe it also on a released Android version?)
     const string &v = parts["FIXGEOM"];
     if( (v != "0") && (v != "1")
        && !SpecUtils::iequals_ascii(v, "true")
        && !SpecUtils::iequals_ascii(v, "false") )
       throw runtime_error( "fromAppUrl: FIXGEOM not boolean." );
      
-    fixedGeometry = ((v != "1") || SpecUtils::iequals_ascii(v, "true"));
+    if( (v == "1") || SpecUtils::iequals_ascii(v, "true") )
+      geom_type = EffGeometryType::FixedGeomTotalAct;
   }//if( parts.count("FIXGEOM") )
   
-  if( !parts.count("DIAM") && !fixedGeometry )
+  if( parts.count("GEOM") )
+  {
+    const string &v = parts["GEOM"];
+    if( SpecUtils::iequals_ascii(v, "FAR-FIELD") )
+      geom_type = EffGeometryType::FarField;
+    else if( SpecUtils::iequals_ascii(v, "FIXED-TOTAL") )
+      geom_type = EffGeometryType::FixedGeomTotalAct;
+    else if( SpecUtils::iequals_ascii(v, "FIXED-PER-CM2") )
+      geom_type = EffGeometryType::FixedGeomActPerCm2;
+    else if( SpecUtils::iequals_ascii(v, "FIXED-PER-M2") )
+      geom_type = EffGeometryType::FixedGeomActPerM2;
+    else if( SpecUtils::iequals_ascii(v, "FIXED-PER-GRAM") )
+      geom_type = EffGeometryType::FixedGeomActPerGram;
+    else
+      throw runtime_error( "fromAppUrl: invalid GEOM field: '" + v + "'" );
+  }//if( parts.count("GEOM") )
+  
+  //if( !parts.count("DIAM") && !fixedGeometry )
+  if( !parts.count("DIAM") && (geom_type == EffGeometryType::FarField) )
     throw runtime_error( "fromAppUrl: missing required DIAM component" );
   
   if( parts.count("DIAM") )
@@ -1743,15 +1797,16 @@ void DetectorPeakResponse::fromAppUrl( std::string url_query )
        
   m_lowerEnergy = lowerEnergy;
   m_upperEnergy = upperEnergy;
-      
-  m_fixedGeometry = fixedGeometry;
+  
+  m_geomType = geom_type;
   
   if( !isValid() )
     throw runtime_error( "fromAppUrl: DRF is invalid - even though it shouldnt be - logic error in this function." );
 }//void fromAppUrl( std::string url_query )
 
 
-shared_ptr<DetectorPeakResponse> DetectorPeakResponse::parseEccFile( std::istream &input )
+tuple<shared_ptr<DetectorPeakResponse>,double,double>
+  DetectorPeakResponse::parseEccFile( std::istream &input )
 {
   /*
    SGI_template: SPHERE
@@ -1778,6 +1833,7 @@ shared_ptr<DetectorPeakResponse> DetectorPeakResponse::parseEccFile( std::istrea
   vector<pair<float,float>> energy_error;
   vector<EnergyEfficiencyPair> energy_efficiencies;
   
+  double source_area = 0.0, source_mass = 0.0;
   string det_name, ISOCS_fname, coll_name, test_desc, comment, date_time, src_area, src_grams;
   
   while( SpecUtils::safe_get_line( input, line, 8192 ) )
@@ -1814,10 +1870,10 @@ shared_ptr<DetectorPeakResponse> DetectorPeakResponse::parseEccFile( std::istrea
       date_time = line;
     }else if( SpecUtils::istarts_with(label, "Source_area_cm2") )
     {
-      src_area = line;
+      src_area = line + " cm2";  //It looks like "Source_area_cm2" is always used, so we can assume cm2 always.
     }else if( SpecUtils::istarts_with(label, "Source_grams") )
     {
-      src_grams = line;
+      src_grams = line + " g";
     }else if( SpecUtils::istarts_with(label, "keV_eff_%err") )
     {
       // line == "45.00    1.07165e-4   15.0    5.61115e-13   -0.000001   -0.000003     1022"
@@ -1872,9 +1928,38 @@ shared_ptr<DetectorPeakResponse> DetectorPeakResponse::parseEccFile( std::istrea
   //if( !date_time.empty() )
   //  answer->m_description += (answer->m_description.empty() ? "" : " - ") + date_time;
   if( !src_area.empty() )
+  {
+    try
+    {
+      //Ex. "300 cm2"
+      // Instead we could use regex from PhysicalUnits to extract the number.
+      const size_t pos = src_area.find("cm2");
+      if( pos == string::npos )
+        throw runtime_error( "no 'cm2' in src area string." );
+      const string number = SpecUtils::trim_copy( src_area.substr(0,pos) );
+      
+      if( !SpecUtils::parse_double( number.c_str(), number.length(), source_area ) )
+        throw runtime_error( "Failed to parse '" + number + "' as a number." );
+      
+      source_area *= PhysicalUnits::cm2;
+    }catch( std::exception &e )
+    {
+      cerr << "Failed to interpret '" << src_area << "' as a surface area: " << e.what() << "." << endl;
+    }
+    
     answer->m_description += (answer->m_description.empty() ? "" : ". Src area: ") + src_area;
+  }
   if( !src_grams.empty() )
-    answer->m_description += (answer->m_description.empty() ? "" : ". Src mass (g): ") + src_grams;
+  {
+    try
+    {
+      source_mass = PhysicalUnits::stringToMass( src_grams );
+    }catch( std::exception &e )
+    {
+      cerr << "Failed to interpret '" << src_grams << "' as a mass: " << e.what() << "." << endl;
+    }
+    answer->m_description += (answer->m_description.empty() ? "" : ". Src mass: ") + src_grams;
+  }
   
   answer->m_detectorDiameter = 0.0f;
   answer->m_efficiencyEnergyUnits = static_cast<float>(PhysicalUnits::keV);
@@ -1887,11 +1972,11 @@ shared_ptr<DetectorPeakResponse> DetectorPeakResponse::parseEccFile( std::istrea
   answer->m_upperEnergy = energy_efficiencies.back().energy;
   answer->m_createdUtc = std::time(nullptr);
   answer->m_lastUsedUtc = answer->m_createdUtc;
-  answer->m_fixedGeometry = true;
+  answer->m_geomType = EffGeometryType::FixedGeomTotalAct;
   answer->m_parentHash = 0;
   answer->computeHash();
   
-  return answer;
+  return {answer, source_area, source_mass};
 }//shared_ptr<DetectorPeakResponse> parseEccFile( std::istream &input )
 
 
@@ -1903,7 +1988,7 @@ shared_ptr<DetectorPeakResponse> DetectorPeakResponse::convertFixedGeometryToFar
   if( !isValid() )
     throw runtime_error( "DetectorPeakResponse::convertFixedGeometryToFarField: Invalid input DRF" );
   
-  if( !m_fixedGeometry )
+  if( m_geomType != EffGeometryType::FixedGeomTotalAct )
     throw runtime_error( "DetectorPeakResponse::convertFixedGeometryToFarField:"
                         " Input DRF not fixed-geometry" );
   
@@ -1922,7 +2007,7 @@ shared_ptr<DetectorPeakResponse> DetectorPeakResponse::convertFixedGeometryToFar
   
   
   shared_ptr<DetectorPeakResponse> answer = make_shared<DetectorPeakResponse>(*this);
-  answer->m_fixedGeometry = false;
+  answer->m_geomType = EffGeometryType::FarField;
   answer->m_detectorDiameter = diameter;
   
   const double energy_units = answer->m_efficiencyEnergyUnits;
@@ -2012,6 +2097,124 @@ shared_ptr<DetectorPeakResponse> DetectorPeakResponse::convertFixedGeometryToFar
 }//shared_ptr<DetectorPeakResponse> convertFixedGeometryToFarField(...)
 
 
+shared_ptr<DetectorPeakResponse> DetectorPeakResponse::convertFixedGeometryType( const double quantity,
+                                                            const EffGeometryType to_type ) const
+{
+  if( !isValid() )
+    throw runtime_error( "DetectorPeakResponse::convertFixedGeometryType: Invalid input DRF" );
+  
+  if( m_geomType == EffGeometryType::FarField )
+    throw runtime_error( "DetectorPeakResponse::convertFixedGeometryType:"
+                        " Input DRF not fixed-geometry" );
+  
+  if( (quantity <= 0.0) || IsInf(quantity) || IsNan(quantity) )
+    throw runtime_error( "DetectorPeakResponse::convertFixedGeometryType: Invalid surface_area" );
+
+  shared_ptr<DetectorPeakResponse> answer = make_shared<DetectorPeakResponse>(*this);
+  if( answer->m_geomType == to_type )
+    return answer;
+
+  answer->m_geomType = to_type;
+  
+  double correction = quantity;
+  switch( to_type )
+  {
+    case EffGeometryType::FarField:
+      assert( 0 );
+      break;
+      
+    case EffGeometryType::FixedGeomTotalAct:
+      switch( answer->m_geomType )
+      {
+        case EffGeometryType::FarField:
+        case EffGeometryType::FixedGeomTotalAct:
+          assert( 0 );
+          break;
+          
+        case EffGeometryType::FixedGeomActPerCm2:
+          correction /= PhysicalUnits::cm2;
+          break;
+          
+        case EffGeometryType::FixedGeomActPerM2:
+          correction /= PhysicalUnits::m2;
+          break;
+          
+        case EffGeometryType::FixedGeomActPerGram:
+          correction /= PhysicalUnits::gram;
+          break;
+      }//switch( answer->m_geomType )
+      
+      correction = 1.0 / correction;
+      break;
+      
+    case EffGeometryType::FixedGeomActPerCm2:
+      correction /= PhysicalUnits::cm2;
+      break;
+      
+    case EffGeometryType::FixedGeomActPerM2:
+      correction /= PhysicalUnits::m2;
+      break;
+      
+    case EffGeometryType::FixedGeomActPerGram:
+      correction /= PhysicalUnits::gram;
+      break;
+  }//switch( to_type )
+  
+  if( (correction <= 0.0) || IsNan(correction) || IsInf(correction) )
+    throw runtime_error( "DetectorPeakResponse::convertFixedGeometryType: "
+                         "The correction became invalid (" + to_string(correction) + ")." );
+  
+  switch( answer->m_efficiencyForm )
+  {
+    case kEnergyEfficiencyPairs:
+    {
+      for( EnergyEfficiencyPair &ene_eff : answer->m_energyEfficiencies )
+      {
+        ene_eff.efficiency *= correction;
+      }//for( loop over answer->m_energyEfficiencies )
+      
+      break;
+    }//case kEnergyEfficiencyPairs:
+    
+      
+    case kFunctialEfficienyForm:
+    {
+      if( !answer->m_efficiencyFcn )
+        throw runtime_error( "DetectorPeakResponse::convertFixedGeometryType: "
+                            "no function defined, which is unexpected." );
+      function<float(float)> old_fnctn = answer->m_efficiencyFcn;
+      
+      answer->m_efficiencyFcn
+      = [old_fnctn, correction]( float energy ) -> float {
+        return static_cast<float>( correction * old_fnctn(energy) );
+      };//answer->m_efficiencyFcn lambda defintion
+      
+      break;
+    }//case kFunctialEfficienyForm:
+      
+    case kExpOfLogPowerSeries:
+    {
+      if( m_expOfLogPowerSeriesCoeffs.empty() )
+        throw runtime_error( "DetectorPeakResponse::convertFixedGeometryTypeToFarField: "
+                            "no coefficients defined, which is unexpected." );
+      
+      answer->m_expOfLogPowerSeriesCoeffs[0] += static_cast<float>( log(correction) );
+      
+      break;
+    }//case kExpOfLogPowerSeries:
+      
+    case kNumEfficiencyFnctForms:
+      assert( 0 );
+      throw runtime_error( "DetectorPeakResponse::convertFixedGeometryTypeToFarField: invalid function form" );
+      break;
+  }//switch( m_efficiencyForm )
+  
+  answer->computeHash();
+
+  return answer;
+}//std::shared_ptr<DetectorPeakResponse> convertFixedGeometryType( const double quanitity, const EffGeometryType to_type ) const;
+
+
 void DetectorPeakResponse::setFwhmCoefficients( const std::vector<float> &coefs,
                          const ResolutionFnctForm form )
 {
@@ -2055,9 +2258,9 @@ void DetectorPeakResponse::toXml( ::rapidxml::xml_node<char> *parent,
   xml_node<char> *base_node = doc->allocate_node( node_element, "DetectorPeakResponse" );
   parent->append_node( base_node );
   
-  // We will write XML version 0, if m_fixedGeometry is false (this was only change between 0 and 1)
+  // We will write XML version 0, if m_geomType is not far-field (this was only change between 0 and 1)
   static_assert( sm_xmlSerializationVersion == 1, "Update DetectorPeakResponse sm_xmlSerializationVersion");
-  snprintf( buffer, sizeof(buffer), "%i", (m_fixedGeometry ? sm_xmlSerializationVersion : 0) );
+  snprintf( buffer, sizeof(buffer), "%i", ((m_geomType != EffGeometryType::FarField) ? sm_xmlSerializationVersion : 0) );
   
   const char *value = doc->allocate_string( buffer );
   xml_attribute<char> *attr = doc->allocate_attribute( "version", value );
@@ -2071,13 +2274,13 @@ void DetectorPeakResponse::toXml( ::rapidxml::xml_node<char> *parent,
   node = doc->allocate_node( node_element, "Description", val );
   base_node->append_node( node );
   
-  if( !m_fixedGeometry || (m_detectorDiameter > 0.0) )
+  if( (m_geomType == EffGeometryType::FarField) || (m_detectorDiameter > 0.0) )
   {
     snprintf( buffer, sizeof(buffer), "%1.8E", m_detectorDiameter );
     val = doc->allocate_string( buffer );
     node = doc->allocate_node( node_element, "DetectorDiameter", val );
     base_node->append_node( node );
-  }//if( !m_fixedGeometry || (m_detectorDiameter > 0.0) )
+  }//if( (m_geomType == EffGeometryType::FarField) || (m_detectorDiameter > 0.0) )
   
   val = "UnknownDrfSource";
   switch( m_efficiencySource )
@@ -2208,12 +2411,29 @@ void DetectorPeakResponse::toXml( ::rapidxml::xml_node<char> *parent,
   }
   
   
-  if( m_fixedGeometry )
+  if( m_geomType == EffGeometryType::FixedGeomTotalAct )
   {
     // Added 20230916, e.g., for InterSpec v1.0.12
+    //  - but then made irrelevant before v1.0.12 released, on 20231011
+    // This section of code can be removed
     node = doc->allocate_node( node_element, "FixedGeometry", "1" );
     base_node->append_node( node );
-  }//if( m_fixedGeometry )
+  }//if( m_geomType == EffGeometryType::FixedGeomTotalAct )
+  
+  
+  // Added 20231011 to describe geometry type
+  const char *geom_type_str = "FAR-FIELD";
+  switch( m_geomType )
+  {
+    case EffGeometryType::FarField:            break;
+    case EffGeometryType::FixedGeomTotalAct:   geom_type_str = "FIXED-TOTAL";    break;
+    case EffGeometryType::FixedGeomActPerCm2:  geom_type_str = "FIXED-PER-CM2";  break;
+    case EffGeometryType::FixedGeomActPerM2:   geom_type_str = "FIXED-PER-M2";   break;
+    case EffGeometryType::FixedGeomActPerGram: geom_type_str = "FIXED-PER-GRAM"; break;
+  }//switch( m_geomType )
+  
+  node = doc->allocate_node( node_element, "Geometry", geom_type_str );
+  base_node->append_node( node );
   
   
   if( m_createdUtc )
@@ -2268,17 +2488,16 @@ void DetectorPeakResponse::fromXml( const ::rapidxml::xml_node<char> *parent )
   m_description = node->value();
   
   
+  m_geomType = EffGeometryType::FarField;
+  
   node = parent->first_node( "FixedGeometry", 13 );
-  if( !node )
-  {
-    m_fixedGeometry = false;
-  }else
+  if( node )
   {
     // Added 20230916, e.g., for InterSpec v1.0.12
     if( compare(node->name(), node->name_size(), "1", 1, false)
        || compare(node->name(), node->name_size(), "true", 4, false) )
     {
-      m_fixedGeometry = true;
+      m_geomType = EffGeometryType::FixedGeomTotalAct;
     }else if( !compare(node->name(), node->name_size(), "0", 1, false)
             && !compare(node->name(), node->name_size(), "false", 5, false) )
     {
@@ -2287,8 +2506,30 @@ void DetectorPeakResponse::fromXml( const ::rapidxml::xml_node<char> *parent )
   }//if( not "FixedGeometry" node )
   
   
+  // Geometry node added 20231011 to describe geometry type
+  node = parent->first_node( "Geometry", 8 );
+  if( !node && (version >= 1) && (m_geomType != EffGeometryType::FixedGeomTotalAct) )
+    throw runtime_error( "DetectorPeakResponse no Geometry node" );
+  
+  if( node )
+  {
+    if( compare(node->value(), node->value_size(), "FAR-FIELD", 9, false) )
+      m_geomType = EffGeometryType::FarField;
+    else if( compare(node->value(), node->value_size(), "FIXED-TOTAL", 11, false) )
+      m_geomType = EffGeometryType::FixedGeomTotalAct;
+    else if( compare(node->value(), node->value_size(), "FIXED-PER-CM2", 13, false) )
+      m_geomType = EffGeometryType::FixedGeomActPerCm2;
+    else if( compare(node->value(), node->value_size(), "FIXED-PER-M2", 12, false) )
+      m_geomType = EffGeometryType::FixedGeomActPerM2;
+    else if( compare(node->value(), node->value_size(), "FIXED-PER-GRAM", 14, false) )
+      m_geomType = EffGeometryType::FixedGeomActPerGram;
+    else
+      throw runtime_error( "DetectorPeakResponse has Geometry value: "
+                          + string(node->value(), node->value() + node->value_size()) );
+  }//if( node )
+  
   node = parent->first_node( "DetectorDiameter", 16 );
-  if( (!node || !node->value()) && !m_fixedGeometry )
+  if( (!node || !node->value()) && (m_geomType == EffGeometryType::FarField) )
     throw runtime_error( "DetectorPeakResponse missing DetectorDiameter node" );
   if( node && node->value() )
     m_detectorDiameter = atof( node->value() );

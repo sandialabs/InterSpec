@@ -130,6 +130,7 @@
 #include "InterSpec/PeakSearchGuiUtils.h"
 #include "InterSpec/RowStretchTreeView.h"
 #include "InterSpec/FileDragUploadResource.h"
+#include "InterSpec/ShieldingSourceDisplay.h"
 
 #if( USE_DB_TO_STORE_SPECTRA )
 #include "InterSpec/DbFileBrowser.h"
@@ -1707,8 +1708,21 @@ bool SpecMeasManager::handleNonSpectrumFile( const std::string &displayName,
   if( (header_contains("SGI_template") || header_contains("ISOCS_file_name"))
      && handleEccFile(infile, dialog) )
   {
+    add_undo_redo();
+    
     return true;
   }//if( a .ECC file from ISOCS )
+  
+  if( header_contains("<ShieldingSourceFit") && header_contains("<Geometry")
+     && (filesize > 128) && (filesize < 1024*1024)
+     && handleShieldingSourceFile(infile, dialog) )
+  {
+    add_undo_redo();
+    
+    return true;
+  }//if( Shielding/Source fit XML file )
+
+  
   
   delete dialog;
   
@@ -1850,7 +1864,7 @@ bool SpecMeasManager::handleCALpFile( std::istream &infile, SimpleDialog *dialog
     // If we set the contents margins to 0, then scroll-bars may appear.
     //  However doing just the below looks okay, and the scroll bars dont seem to appear
     stretcher->setContentsMargins( 9, 2, 9, 2 );
-    //dialog->contents()->setOverflow( WContainerWidget::Overflow::OverflowHidden );
+    dialog->contents()->setOverflow( WContainerWidget::Overflow::OverflowHidden, Wt::Orientation::Horizontal );
     
     dialog->contents()->setLayout( stretcher );
     WText *title = new WText( "Not a spectrum file" );
@@ -2038,11 +2052,7 @@ bool SpecMeasManager::handleCALpFile( std::istream &infile, SimpleDialog *dialog
           msg += "Polynomial:";
         
         for( size_t i = 0; i < cal->coefficients().size() && i < 4; ++i )
-        {
-          char buffer[64];
-          snprintf( buffer, sizeof(buffer), "%s%.3f", (i ? ", " : " "), cal->coefficients()[i] );
-          msg += buffer;
-        }
+          msg += PhysicalUnits::printCompact( cal->coefficients()[i], 4 );
         if( cal->coefficients().size() > 4 )
           msg += "...";
         
@@ -2274,16 +2284,25 @@ bool SpecMeasManager::handleRelActAutoXmlFile( std::istream &input, SimpleDialog
 
 bool SpecMeasManager::handleEccFile( std::istream &input, SimpleDialog *dialog )
 {
+  const size_t start_pos = input.tellg();
+  
   shared_ptr<DetectorPeakResponse> det;
+  double source_area = 0.0, source_mass = 0.0;
   try
   {
-    det = DetectorPeakResponse::parseEccFile( input );
+    tuple<shared_ptr<DetectorPeakResponse>,double,double> det_area_mass
+      = DetectorPeakResponse::parseEccFile( input );
+    
+    det = get<0>(det_area_mass);
+    source_area = get<1>(det_area_mass);
+    source_mass = get<2>(det_area_mass);
     
     assert( det && det->isValid() );
     if( !det || !det->isValid() )
       throw std::logic_error( "DRF returned from DetectorPeakResponse::parseEccFile() should be valid." );
   }catch( std::exception &e )
   {
+    input.seekg( start_pos );
     return false;
   }//try / catch
   
@@ -2344,9 +2363,8 @@ bool SpecMeasManager::handleEccFile( std::istream &input, SimpleDialog *dialog )
   " overflow-x: hidden;"
   "\"";
   
-  string msg = "<p style=\"white-space: nowrap;\">"
-      "You can use this .ECC file as a DRF."
-    "</p>"
+  string msg =
+    //"<p style=\"white-space: nowrap;\">You can use this .ECC file as a DRF.</p>"
     "<p " + txt_css + ">"
       "Name: " + name +
   "</p>";
@@ -2358,22 +2376,39 @@ bool SpecMeasManager::handleEccFile( std::istream &input, SimpleDialog *dialog )
   
   WText *txt = new WText( msg, TextFormat::XHTMLText, dialog->contents() );
 
-  // Now put in choice to use as fixed geometry, or as far-field.
-  WButtonGroup *group = new WButtonGroup( dialog->contents() );
-  WGroupBox *button_box = new WGroupBox( "How to interpret", dialog->contents() );
-  button_box->addStyleClass( "HowToUseGrp" );
+  WContainerWidget *btn_div = new WContainerWidget( dialog->contents() );
+  btn_div->addStyleClass( "HowToUseGrp" );
   
-  WContainerWidget *btn_div = new WContainerWidget( button_box );
+  map<int,DetectorPeakResponse::EffGeometryType> index_to_geom;
   
-  WRadioButton *fixed_geom = new WRadioButton( "Fixed Geometry", btn_div );
-  fixed_geom->addStyleClass( "EccDrfTypeBtn" );
-  WRadioButton *far_field = new WRadioButton( "Far Field DRF", btn_div );
-  far_field->addStyleClass( "EccDrfTypeBtn" );
-  group->addButton( fixed_geom, 0 );
-  group->addButton( far_field, 1 );
-  group->setCheckedButton( fixed_geom );
+  WLabel *geom_label = new WLabel( "How to interpret", btn_div );
+  WComboBox *geom_combo = new WComboBox( btn_div );
+  geom_combo->addItem( "Far Field DRF" );
+  index_to_geom[geom_combo->count() - 1] = DetectorPeakResponse::EffGeometryType::FarField;
   
-  WTable *far_field_opt = new WTable( button_box );
+  geom_combo->addItem( "Fixed Geometry - total activity" );
+  index_to_geom[geom_combo->count() - 1] = DetectorPeakResponse::EffGeometryType::FixedGeomTotalAct;
+  
+  if( source_area > 0.0 )
+  {
+    geom_combo->addItem( "Fixed Geometry - activity per cm2" );
+    index_to_geom[geom_combo->count() - 1] = DetectorPeakResponse::EffGeometryType::FixedGeomActPerCm2;
+    
+    geom_combo->addItem( "Fixed Geometry - activity per m2" );
+    index_to_geom[geom_combo->count() - 1] = DetectorPeakResponse::EffGeometryType::FixedGeomActPerM2;
+  }//if( source_area > 0.0 )
+  
+  if( source_mass > 0 )
+  {
+    geom_combo->addItem( "Fixed Geometry - activity per gram" );
+    index_to_geom[geom_combo->count() - 1] = DetectorPeakResponse::EffGeometryType::FixedGeomActPerGram;
+  }//if( source_mass > 0 )
+  
+  geom_combo->setCurrentIndex( 1 );
+    
+  WTable *far_field_opt = new WTable( dialog->contents() );
+  //far_field_opt->setHiddenKeepsGeometry( true );
+  far_field_opt->addStyleClass( "FarFieldOptTbl" );
   
   WRegExpValidator *dist_validator = new WRegExpValidator( PhysicalUnits::sm_distanceRegex, this );
   dist_validator->setFlags( Wt::MatchCaseInsensitive );
@@ -2383,9 +2418,10 @@ bool SpecMeasManager::handleEccFile( std::istream &input, SimpleDialog *dialog )
   WTableCell *cell = far_field_opt->elementAt( 0, 0 );
   WLabel *label = new WLabel( "Detector diam.", cell );
   cell = far_field_opt->elementAt( 0, 1 );
-  WLineEdit *diameter_edit = new WLineEdit( "2.54 cm", cell );
+  WLineEdit *diameter_edit = new WLineEdit( "", cell );
   label->setBuddy( diameter_edit );
   diameter_edit->setValidator( dist_validator );
+  diameter_edit->setEmptyText( "0 cm" );
   
   cell = far_field_opt->elementAt( 1, 0 );
   label = new WLabel( "Distance.", cell );
@@ -2419,19 +2455,39 @@ bool SpecMeasManager::handleEccFile( std::istream &input, SimpleDialog *dialog )
   };//try_create_farfield
   
   auto update_state = [=](){
-    if( group->checkedId() == 0 )
-    {
-      accept->enable();
-      far_field_opt->hide();
-      chart->updateChart( det );
-      set_chart_y_range( det );
-      return;
-    }
+    const int index = geom_combo->currentIndex();
+    const auto pos = index_to_geom.find(index);
+    assert( pos != end(index_to_geom) );
+    if( pos == end(index_to_geom) )
+      throw logic_error( "SpecMeasManager::handleEccFile: unexpected index" );
     
-    far_field_opt->show();
+    const DetectorPeakResponse::EffGeometryType geom_type = pos->second;
+    
     try
     {
-      auto new_drf = try_create_farfield();
+      shared_ptr<DetectorPeakResponse> new_drf = det;
+      
+      far_field_opt->setHidden( (geom_type != DetectorPeakResponse::EffGeometryType::FarField) );
+      
+      switch( geom_type )
+      {
+        case DetectorPeakResponse::EffGeometryType::FarField:
+          new_drf = try_create_farfield();
+          break;
+          
+        case DetectorPeakResponse::EffGeometryType::FixedGeomTotalAct:
+          break;
+          
+        case DetectorPeakResponse::EffGeometryType::FixedGeomActPerCm2:
+        case DetectorPeakResponse::EffGeometryType::FixedGeomActPerM2:
+          new_drf = det->convertFixedGeometryType( source_area, geom_type );
+          break;
+          
+        case DetectorPeakResponse::EffGeometryType::FixedGeomActPerGram:
+          new_drf = det->convertFixedGeometryType( source_mass, geom_type );
+          break;
+      }//switch( geom_type )
+        
       chart->updateChart( new_drf );
       set_chart_y_range( new_drf );
       accept->enable();
@@ -2442,26 +2498,47 @@ bool SpecMeasManager::handleEccFile( std::istream &input, SimpleDialog *dialog )
     }
   };//update_state lambda
   
-  group->checkedChanged().connect( std::bind(update_state) );
+  geom_combo->activated().connect( std::bind(update_state) );
   distance_edit->textInput().connect( std::bind(update_state) );
   diameter_edit->textInput().connect( std::bind(update_state) );
   
   
   accept->clicked().connect( std::bind( [=](){
-    auto new_drf = det;
+    const int index = geom_combo->currentIndex();
+    const auto pos = index_to_geom.find(index);
+    assert( pos != end(index_to_geom) );
+    if( pos == end(index_to_geom) )
+      throw logic_error( "SpecMeasManager::handleEccFile: unexpected index" );
     
-    if( group->checkedId() == 1 )
+    const DetectorPeakResponse::EffGeometryType geom_type = pos->second;
+    
+    auto new_drf = det;
+    try
     {
-      try
+      switch( geom_type )
       {
-        new_drf = try_create_farfield();
-      }catch( std::exception &e )
-      {
-        passMessage( "Error creating far-field DRF from ECC: " + string(e.what()),
+        case DetectorPeakResponse::EffGeometryType::FarField:
+          new_drf = try_create_farfield();
+          break;
+          
+        case DetectorPeakResponse::EffGeometryType::FixedGeomTotalAct:
+          break;
+          
+        case DetectorPeakResponse::EffGeometryType::FixedGeomActPerCm2:
+        case DetectorPeakResponse::EffGeometryType::FixedGeomActPerM2:
+          new_drf = det->convertFixedGeometryType( source_area, geom_type );
+          break;
+          
+        case DetectorPeakResponse::EffGeometryType::FixedGeomActPerGram:
+          new_drf = det->convertFixedGeometryType( source_mass, geom_type );
+          break;
+      }//switch( geom_type )
+    }catch( std::exception &e )
+    {
+      passMessage( "Error creating DRF from ECC: " + string(e.what()),
                     WarningWidget::WarningMsgHigh );
-        return;
-      }
-    }//if( group->checkedId() == 1 )
+      return;
+    }//try / catch
     
     auto interspec = InterSpec::instance();
     if( !new_drf || !interspec )
@@ -2475,6 +2552,81 @@ bool SpecMeasManager::handleEccFile( std::istream &input, SimpleDialog *dialog )
     
   return true;
 }//bool handleEccFile( std::istream &input, SimpleDialog *dialog )
+
+
+bool SpecMeasManager::handleShieldingSourceFile( std::istream &input, SimpleDialog *dialog )
+{
+  const size_t start_pos = input.tellg();
+  
+  try
+  {
+    //get the filesize
+    input.seekg(0, ios::end);
+    const size_t end_pos = input.tellg();
+    input.seekg(start_pos);
+    const size_t file_size = end_pos - start_pos;
+    if( (file_size < 128) || (file_size > 1024*1024) )
+      throw runtime_error( "invalid size" );
+    
+    // We need to keep data around as long as the xml_document
+    auto data = make_shared<vector<char>>( file_size + 1 );
+    
+    if( !input.read( (char *)(&((*data)[0])), file_size ) )
+      throw runtime_error( "failed to read file" );
+    
+    (*data)[file_size] = '\0';
+    
+    auto xml_doc = make_shared<rapidxml::xml_document<char>>();
+    const int flags = rapidxml::parse_normalize_whitespace | rapidxml::parse_trim_whitespace;
+    xml_doc->parse<flags>( &((*data)[0]) );
+    
+  
+    MaterialDB *material_db = m_viewer->materialDataBase();
+    PeakModel *peak_model = m_viewer->peakModel();
+    WSuggestionPopup *shield_suggest = m_viewer->shieldingSuggester();
+      
+    auto disp = make_unique<ShieldingSourceDisplay>( peak_model, m_viewer, shield_suggest, material_db );
+    disp->deSerialize( xml_doc->first_node() );
+    
+    assert( dialog );
+    dialog->contents()->clear();
+    dialog->footer()->clear();
+    
+    WText *title = new WText( "Activity/Shielding XML", dialog->contents() );
+    title->addStyleClass( "title" );
+    title->setInline( false );
+    
+    WText *content = new WText( "Use this Activity/Shielding fit setup?", dialog->contents() );
+    content->addStyleClass( "content" );
+    content->setInline( false );
+    
+    dialog->footer()->clear();
+    dialog->addButton( "Cancel" );
+    WPushButton *btn = dialog->addButton( "Yes" );
+    btn->clicked().connect( std::bind([this,data,xml_doc](){
+      InterSpec *viewer = InterSpec::instance();
+      if( !viewer || !data || !xml_doc )
+        return;
+      
+      try
+      {
+        ShieldingSourceDisplay *display = viewer->shieldingSourceFit();
+        if( display )
+          display->deSerialize( xml_doc->first_node() );
+      }catch( std::exception &e )
+      {
+        passMessage( "Sorry, there was an error loading Activity/Shielding Fit model: "
+                    + std::string(e.what()), WarningWidget::WarningMsgHigh );
+      }
+    }) );
+  }catch( std::exception &e )
+  {
+    input.seekg( start_pos );
+    return false;
+  }//try / catch
+  
+  return true;
+}//bool handleShieldingSourceFile( std::istream &input, SimpleDialog *dialog );
 
 
 void SpecMeasManager::handleFileDropWorker( const std::string &name,

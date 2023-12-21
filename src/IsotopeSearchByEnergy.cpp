@@ -374,6 +374,7 @@ IsotopeSearchByEnergy::IsotopeSearchByEnergy( InterSpec *viewer,
 //    HelpSystem::attachToolTipOn( label, tip, showToolTips , HelpSystem::ToolTipPosition::Top);
 
   m_minHalfLife = new WLineEdit( "6000 s", optionDiv );
+  m_minHl = 6000.0 * PhysicalUnits::second;
   
   m_minHalfLife->setAttributeValue( "ondragstart", "return false" );
 #if( BUILD_AS_OSX_APP || IOS )
@@ -477,9 +478,13 @@ IsotopeSearchByEnergy::IsotopeSearchByEnergy( InterSpec *viewer,
   enrgy->disableRemove();
   enrgy->changed().connect( boost::bind( &IsotopeSearchByEnergy::startSearch, this, false ) );
 
-
-  minBrOrHlChanged();
-  
+  // Previous to 20230928 we called `minBrOrHlChanged()` here, but this had the side-effect of
+  //  also clearing the ReferencePhotopeak nuclide, which if we are restoring a state, we
+  //  dont want to do.  So instead we will pre-initialize the mapping from energy to
+  //  nuclide explicitly, in a separate thread, once the `render()` function is called
+  //  the first time (which is immediately after this since we preload the tool-tabs, but whatever).
+  //minBrOrHlChanged();
+    
   // During normal desktop construction of this widget, the ReferencePhotopeakDisplay is still
   //  nullptr at this point, but we'll check here, JIC
   updateClearSelectionButton();
@@ -492,7 +497,24 @@ IsotopeSearchByEnergy::IsotopeSearchByEnergy( InterSpec *viewer,
     m_refLineClearConnection
       = display->nuclidesCleared().connect( this, &IsotopeSearchByEnergy::handleRefLinesUpdated );
   }//if( display )
-}//IsotopeSearchByEnergy constuctor
+}//IsotopeSearchByEnergy constructor
+
+
+void IsotopeSearchByEnergy::render( Wt::WFlags<Wt::RenderFlag> flags )
+{
+  WContainerWidget::render( flags );
+  
+  if( flags.testFlag(Wt::RenderFlag::RenderFull) )
+  {
+    // Initialize the mapping from energies to nuclides when we render this widget the first
+    //  time, so this way it will be ever so slightly quicker when the user does the first search.
+    const double minHl = m_minHl, minBr = m_minBr;
+    WServer::instance()->ioService().boost::asio::io_service::post( [minHl,minBr](){
+      EnergyToNuclideServer::setLowerLimits( minHl, minBr );
+      EnergyToNuclideServer::energyToNuclide();
+    } );
+  }
+}//void render( Wt::WFlags<Wt::RenderFlag> flags )
 
 
 void IsotopeSearchByEnergy::searchEnergyRecievedFocus( SearchEnergy *enrgy )

@@ -37,11 +37,33 @@ namespace SpecUtils { class SpecFile; }
 
 namespace RestRidImp { class ExternalRidWidget; }
 
+/** An enum that represents the value of the integer "AlwaysCallExternalRid" preference.
+ 
+ ```
+ const int always_call = InterSpecUser::preferenceValue<int>( "AlwaysCallExternalRid", m_interspec );
+ const auto pref = static_cast<ExternalRidAuotCallPref>( always_call );
+ ```
+ */
+enum class ExternalRidAuotCallPref : int
+{
+  DoNotCall = 0,
+  AlwaysUseRestWithToast = 1,
+  AlwaysUseExeWithToast = 2,
+  AlwaysUseRestWithDialog = 3,
+  AlwaysUseExeWithDialog = 4
+};//enum class ExternalRidCallPrevValue : int
+
+
+
 /** Interface to the Full-Spectrum nuclide ID algorithm, either to the REST web service, or to
  the command line interface of the executable.
  */
 class RemoteRid : public Wt::WContainerWidget
 {
+public:
+  /** Retrieves and returns users preference about calling external RID algorithm. */
+  static ExternalRidAuotCallPref external_rid_call_pref( InterSpec *viewer );
+  
 public:
   /** Starts a remote RID dialog sequence.
    

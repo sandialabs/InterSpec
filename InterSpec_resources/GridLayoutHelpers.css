@@ -58,6 +58,17 @@
   grid-column-start: 8; 
 }
 
+.GridNinthCol
+{
+  grid-column-start: 9;
+}
+
+.GridTenthCol
+{
+  grid-column-start: 10;
+}
+
+
 .GridFirstRow
 {
   grid-row-start: 1;

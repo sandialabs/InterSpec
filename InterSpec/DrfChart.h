@@ -31,7 +31,7 @@
 #include <Wt/WContainerWidget>
 #include <Wt/Chart/WCartesianChart>
 
-class ColorTheme;
+struct ColorTheme;
 class DetectorPeakResponse;
 
 namespace Wt

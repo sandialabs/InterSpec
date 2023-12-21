@@ -125,10 +125,16 @@ button.LinkBtn.NonSpecEmbedBtn.Wt-btn.with-label
 {
   display: flex;
   flex-direction: row;
-  gap: 20px;
+  gap: 10px;
 }
 
-.simple-dialog.EccDrfDialog .HowToUseGrp table td
+.simple-dialog.EccDrfDialog table.FarFieldOptTbl
+{
+  margin-left: 40px;
+  margin-top: 10px;
+}
+
+.simple-dialog.EccDrfDialog table.FarFieldOptTbl td
 {
   vertical-align: middle;
   padding-left: 5px

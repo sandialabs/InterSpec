@@ -128,6 +128,7 @@
 #include "InterSpec/WarningWidget.h"
 #include "InterSpec/DoseCalcWidget.h"
 #include "InterSpec/ExportSpecFile.h"
+#include "InterSpec/MakeFwhmForDrf.h"
 #include "SpecUtils/SpecUtilsAsync.h"
 #include "InterSpec/PeakFitChi2Fcn.h"
 #include "InterSpec/PeakInfoDisplay.h"
@@ -337,6 +338,17 @@ namespace
     
     return false;
   }//try_update_hint_peak(...)
+  
+  
+  template<class T>
+  void del_ptr_set_null( T * &ptr )
+  {
+    if( ptr )
+    {
+      delete ptr;
+      ptr = nullptr;
+    }
+  }//void del_ptr_set_null( T * &ptr )
 }//namespace
 
 
@@ -402,6 +414,7 @@ InterSpec::InterSpec( WContainerWidget *parent )
     m_rightClickEnergy( -DBL_MAX ),
     m_rightClickNuclideSuggestMenu( nullptr ),
     m_rightClickChangeContinuumMenu( nullptr ),
+    m_rightClickChangeSkewMenu( nullptr ),
     m_exportSpecFileMenu{ nullptr },
     m_exportSpecFileWindow{ nullptr },
   m_logYItems{0},
@@ -418,6 +431,9 @@ InterSpec::InterSpec( WContainerWidget *parent )
   m_featureMarkers( nullptr ),
   m_featureMarkerMenuItem( nullptr ),
   m_multimedia( nullptr ),
+#if( USE_REMOTE_RID )
+  m_autoRemoteRidResultDialog( nullptr ),
+#endif
   m_gammaXsToolWindow( nullptr ),
   m_doseCalcWindow( nullptr ),
   m_1overR2Calc( nullptr ),
@@ -453,6 +469,7 @@ InterSpec::InterSpec( WContainerWidget *parent )
   m_licenseWindow( nullptr ),
   m_useInfoWindow( 0 ),
   m_decayInfoWindow( nullptr ),
+  m_addFwhmTool( nullptr ),
   m_preserveCalibWindow( 0 ),
 #if( USE_SEARCH_MODE_3D_CHART )
   m_3dViewWindow( nullptr ),
@@ -485,7 +502,7 @@ InterSpec::InterSpec( WContainerWidget *parent )
   m_notificationDiv->setStyleClass("qtipDiv");
   m_notificationDiv->setId("qtip-growl-container");
   
-#if( BUILD_AS_ELECTRON_APP && !USE_ELECTRON_NATIVE_MENU )
+#if( BUILD_AS_ELECTRON_APP )
   m_notificationDiv->addStyleClass( "belowMenu" );
 #endif
   
@@ -613,13 +630,7 @@ InterSpec::InterSpec( WContainerWidget *parent )
 
   initMaterialDbAndSuggestions();
   
-#if( BUILD_AS_ELECTRON_APP )
-#if( USE_ELECTRON_NATIVE_MENU )
-  const bool isAppTitlebar = false;
-#else
-  const bool isAppTitlebar = InterSpecApp::isPrimaryWindowInstance();
-#endif
-#elif( BUILD_AS_WX_WIDGETS_APP )
+#if( BUILD_AS_ELECTRON_APP || BUILD_AS_WX_WIDGETS_APP )
   const bool isAppTitlebar = InterSpecApp::isPrimaryWindowInstance();
 #else
   const bool isAppTitlebar = false; // !isMobile()
@@ -1036,6 +1047,23 @@ InterSpec::InterSpec( WContainerWidget *parent )
         m_rightClickMenutItems[i] = m_rightClickMenu->addMenuItem( "Refit Peak" );
         m_rightClickMenutItems[i]->triggered().connect( this, &InterSpec::refitPeakFromRightClick );
         break;
+      case kRefitPeakWithDrfFwhm:
+        m_rightClickMenutItems[i] = m_rightClickMenu->addMenuItem( "Use DRF FWHM" );
+        m_rightClickMenutItems[i]->setToolTip( "Fixes the peaks FWHM to what the detector response"
+                                              " function predicts, and then refits the peak." );
+        m_rightClickMenutItems[i]->triggered().connect( this, &InterSpec::refitPeakWithDrfFwhm );
+        break;
+        
+      case kSetMeanToRefPhotopeak:
+        m_rightClickMenutItems[i] = m_rightClickMenu->addMenuItem( "Set mean to photopeak" );
+        m_rightClickMenutItems[i]->setToolTip( "Fixes the peak centroid to the assigned gamma"
+                                              " energy, or if no source has been assigned, to"
+                                              " likely reference photopeak line.  After setting"
+                                              " the centroid, the other peak parameters will be"
+                                              " refit" );
+        m_rightClickMenutItems[i]->triggered().connect( this, &InterSpec::setMeanToRefPhotopeak );
+        break;
+        
       case kRefitROI:
         m_rightClickMenutItems[i] = m_rightClickMenu->addMenuItem( "Refit ROI" );
         m_rightClickMenutItems[i]->triggered().connect( this, &InterSpec::refitPeakFromRightClick );
@@ -1061,6 +1089,20 @@ InterSpec::InterSpec( WContainerWidget *parent )
         }//for( loop over PeakContinuum::OffsetTypes )
         break;
       }//case kChangeContinuum:
+        
+      case kChangeSkew:
+      {
+        m_rightClickChangeSkewMenu = m_rightClickMenu->addPopupMenuItem( "Change Skew Type" );
+        m_rightClickMenutItems[i] = m_rightClickChangeSkewMenu->parentItem();
+        for( auto type = PeakDef::SkewType(0);
+            type <= PeakDef::SkewType::DoubleSidedCrystalBall; type = PeakDef::SkewType(type+1) )
+        {
+          WMenuItem *item = m_rightClickChangeSkewMenu->addItem( PeakDef::to_label(type) );
+          item->triggered().connect( boost::bind( &InterSpec::handleChangeSkewTypeFromRightClick,
+                                                 this, static_cast<int>(type) ) );
+        }//for( loop over PeakContinuum::OffsetTypes )
+        break;
+      }
         
       case kAddPeak:
         m_rightClickMenutItems[i] = m_rightClickMenu->addMenuItem( "Add Peak" );
@@ -1131,7 +1173,7 @@ InterSpec::InterSpec( WContainerWidget *parent )
   m_timeSeries->setHidden( true );
   m_chartResizer->setHidden( m_timeSeries->isHidden() );
   
-#if( USE_OSX_NATIVE_MENU || USING_ELECTRON_NATIVE_MENU )
+#if( USE_OSX_NATIVE_MENU )
   if( InterSpecApp::isPrimaryWindowInstance() )
     m_menuDiv->hide();
 #endif
@@ -1264,17 +1306,8 @@ InterSpec::~InterSpec() noexcept(true)
   Wt::log("info") << "Destructing InterSpec from session '" << (wApp ? wApp->sessionId() : string("")) << "'";
 
   // Get rid of undo/redo, so we dont insert anything into them
-  if( m_undo )
-  {
-    delete m_undo;
-    m_undo = nullptr;
-  }
-  
-  if( m_licenseWindow )
-  {
-    delete m_licenseWindow;
-    m_licenseWindow = nullptr;
-  }
+  del_ptr_set_null( m_undo );
+  del_ptr_set_null( m_licenseWindow );
   
   try
   {
@@ -1290,48 +1323,24 @@ InterSpec::~InterSpec() noexcept(true)
         m_toolsTabs->removeTab( m_peakInfoDisplay );
     if( m_peakInfoWindow )
       m_peakInfoWindow->contents()->removeWidget( m_peakInfoDisplay );
-    delete m_peakInfoDisplay;
-    m_peakInfoDisplay = nullptr;
+    
+    del_ptr_set_null( m_peakInfoDisplay );
   }//if( m_peakInfoDisplay )
 
-  if( m_peakInfoWindow )
-  {
-    delete m_peakInfoWindow;
-    m_peakInfoWindow = nullptr;
-  }//if( m_peakInfoWindow )
+  del_ptr_set_null( m_peakInfoWindow );
   
   if( m_energyCalTool )
   {
     if( m_toolsTabs && m_toolsTabs->indexOf(m_energyCalTool)>=0 )
       m_toolsTabs->removeTab( m_energyCalTool );
     
-    delete m_energyCalTool;
-    m_energyCalTool = nullptr;
+    del_ptr_set_null( m_energyCalTool );
   }//if( m_energyCalTool )
   
-  if( m_energyCalWindow )
-  {
-    delete m_energyCalWindow;
-    m_energyCalWindow = nullptr;
-  }//if( m_energyCalWindow )
-    
-  if( m_shieldingSourceFitWindow )
-  {
-    delete m_shieldingSourceFitWindow;
-    m_shieldingSourceFitWindow = nullptr;
-  }//if( m_shieldingSourceFitWindow )
-  
-  if( m_nuclideSearch )
-  {
-    delete m_nuclideSearch;
-    m_nuclideSearch = nullptr;
-  }//if( m_nuclideSearch )
-
-  if( m_nuclideSearchWindow )
-  {
-    delete m_nuclideSearchWindow;
-    m_nuclideSearchWindow = nullptr;
-  }
+  del_ptr_set_null( m_energyCalWindow );
+  del_ptr_set_null( m_shieldingSourceFitWindow );
+  del_ptr_set_null( m_nuclideSearch );
+  del_ptr_set_null( m_nuclideSearchWindow );
   
   if( m_referencePhotopeakLines )
   {
@@ -1339,47 +1348,29 @@ InterSpec::~InterSpec() noexcept(true)
       m_toolsTabs->removeTab( m_referencePhotopeakLines );
     
     m_referencePhotopeakLines->clearAllLines();
-    delete m_referencePhotopeakLines;
-    m_referencePhotopeakLines = nullptr;
+    del_ptr_set_null( m_referencePhotopeakLines );
   }//if( m_referencePhotopeakLines )
   
-  if( m_referencePhotopeakLinesWindow )
-  {
-    delete m_referencePhotopeakLinesWindow;
-    m_referencePhotopeakLinesWindow = nullptr;
-  }//if( m_referencePhotopeakLinesWindow )
+  del_ptr_set_null( m_referencePhotopeakLinesWindow );
   
   handleWarningsWindowClose();
-  if( m_warnings )  //WarningWidget isnt necessarily parented, so we do have to manually delete it
-  {
-    delete m_warnings;
-    m_warnings = nullptr;
-  }//if( m_warnings )
-
+  del_ptr_set_null( m_warnings ); //WarningWidget isnt necessarily parented, so we do have to manually delete it
   
   deletePeakEdit();
   deleteGammaCountDialog();
   
-  if( m_mobileMenuButton )
-    delete m_mobileMenuButton;
-
-  if (m_mobileBackButton )
-    delete m_mobileBackButton;
-  
-  if (m_mobileForwardButton)
-    delete m_mobileForwardButton;
-  
-  if( m_notificationDiv )
-    delete m_notificationDiv;
-  
-  if( m_fileManager )
-    delete m_fileManager;
-
-  if( m_menuDiv )
-  {
-    delete m_menuDiv;
-    m_menuDiv = nullptr;
-  }//if( m_menuDiv )
+  // The following may be parented by app->domRoot()
+  del_ptr_set_null( m_mobileMenuButton );
+  del_ptr_set_null( m_mobileBackButton );
+  del_ptr_set_null( m_mobileForwardButton );
+  del_ptr_set_null( m_notificationDiv );
+  del_ptr_set_null( m_fileManager );
+  del_ptr_set_null( m_displayOptionsPopupDiv );
+  del_ptr_set_null( m_fileMenuPopup );
+  del_ptr_set_null( m_editMenuPopup );
+  del_ptr_set_null( m_toolsMenuPopup );
+  del_ptr_set_null( m_helpMenuPopup );
+  del_ptr_set_null( m_menuDiv );
   
   try
   {
@@ -1640,6 +1631,16 @@ void InterSpec::hotKeyPressed( const unsigned int value )
         createExportSpectrumFileDialog();
         break;
         
+    // Temporarily add shortcut for showing FAQ window during development
+      case 'f': case 'F':
+      {
+        showWelcomeDialog( true );
+        if( m_useInfoWindow )
+          m_useInfoWindow->showFaqTab();
+        break;
+      }
+        
+        
       case 37: case 38: case 39: case 40:
         arrowKeyPressed( value );
         break;
@@ -1692,7 +1693,7 @@ void InterSpec::hotKeyPressed( const unsigned int value )
 
 void InterSpec::arrowKeyPressed( const unsigned int value )
 {
-#if( USING_ELECTRON_NATIVE_MENU || USE_OSX_NATIVE_MENU || IOS || ANDROID )
+#if( USE_OSX_NATIVE_MENU || IOS || ANDROID )
   return;
 #endif
   
@@ -1792,6 +1793,18 @@ void InterSpec::refitPeakFromRightClick()
 }//void refitPeakFromRightClick()
 
 
+void InterSpec::refitPeakWithDrfFwhm()
+{
+  PeakSearchGuiUtils::refit_peaks_with_drf_fwhm( this, m_rightClickEnergy );
+}//void InterSpec::refitPeakWithDrfFwhm()
+
+
+void InterSpec::setMeanToRefPhotopeak()
+{
+  PeakSearchGuiUtils::refit_peak_with_photopeak_mean( this, m_rightClickEnergy );
+}//void setMeanToRefPhotopeak()
+
+
 void InterSpec::addPeakFromRightClick()
 {
   UndoRedoManager::PeakModelChange peak_undo_creator;
@@ -1855,6 +1868,7 @@ void InterSpec::addPeakFromRightClick()
     MultiPeakFitChi2Fcn chi2fcn( static_cast<int>(origRoiPeaks.size()),
                                 dataH,
                                 peak->continuum()->type(),
+                                PeakDef::SkewType::NoSkew,
                                 lower_channel, upper_channel );
     startingChi2 = chi2fcn.evalRelBinRange( 0, chi2fcn.nbin(), origRoiPeaks );
   }//end codeblock to evaluate startingChi2
@@ -1896,7 +1910,7 @@ void InterSpec::addPeakFromRightClick()
     throw runtime_error( "Logic error 2 in InterSpec::addPeakFromRightClick()" );
 
   
-  const MultiPeakInitialGuesMethod methods[] = { FromInputPeaks, UniformInitialGuess, FromDataInitialGuess };
+  const MultiPeakInitialGuessMethod methods[] = { FromInputPeaks, UniformInitialGuess, FromDataInitialGuess };
   
   for( auto method : methods )
   {
@@ -1913,8 +1927,9 @@ void InterSpec::addPeakFromRightClick()
     
     MultiPeakFitChi2Fcn chi2fcn( static_cast<int>(newRoiPeaks.size()),
                                 dataH,
-                                 peak->continuum()->type(),
-                                 lower_channel, upper_channel );
+                                peak->continuum()->type(),
+                                PeakDef::SkewType::NoSkew,
+                                lower_channel, upper_channel );
     fitChi2 = chi2fcn.evalRelBinRange( 0, chi2fcn.nbin(), newRoiPeaks );
     
     if( fitChi2 < startingChi2 )
@@ -2067,6 +2082,15 @@ void InterSpec::handleChangeContinuumTypeFromRightClick( const int continuum_typ
   PeakSearchGuiUtils::change_continuum_type_from_right_click( this, m_rightClickEnergy,
                                                              continuum_type );
 }//InterSpec::handleChangeContinuumTypeFromRightClick(...)
+
+
+void InterSpec::handleChangeSkewTypeFromRightClick( const int peak_skew_type )
+{
+  UndoRedoManager::PeakModelChange peak_undo_creator;
+  
+  PeakSearchGuiUtils::change_skew_type_from_right_click( this, m_rightClickEnergy,
+                                                        peak_skew_type );
+}//void handleChangeSkewTypeFromRightClick( const int peak_continuum_offset_type )
 
 
 void InterSpec::shareContinuumWithNeighboringPeak( const bool shareWithLeft )
@@ -2435,6 +2459,18 @@ void InterSpec::handleRightClick( double energy, double counts,
         break;
       }//case kChangeContinuum:
         
+      case kChangeSkew:
+      {
+        if( !m_rightClickChangeSkewMenu )
+          break;
+        
+        // Disable current skew type, enable all others
+        const vector<WMenuItem *> items = m_rightClickChangeSkewMenu->items();
+        const char *labelTxt = PeakDef::to_label( peak->skewType() );
+        for( WMenuItem *item : items )
+          item->setDisabled( item->text() == labelTxt );
+      }//case kChangeSkew:
+        
       case kChangeNuclide:
       {
         if( m_rightClickNuclideSuggestMenu )
@@ -2506,6 +2542,25 @@ void InterSpec::handleRightClick( double energy, double counts,
       case kRefitROI:
         m_rightClickMenutItems[i]->setHidden( !peak->gausPeak() || npeaksInRoi<2 );
       break;
+        
+      case kRefitPeakWithDrfFwhm:
+        m_rightClickMenutItems[i]->setHidden( !peak->gausPeak() );
+      break;
+        
+      case kSetMeanToRefPhotopeak:
+      {
+        const float energy = PeakSearchGuiUtils::reference_line_energy_near_peak( this, *peak );
+        const bool hide = (energy < 10.0f);
+        m_rightClickMenutItems[i]->setHidden( hide );
+        if( !hide )
+        {
+          char buffer[64] = { '\0' };
+          snprintf( buffer, sizeof(buffer), "Fix to %.1f keV", energy );
+          m_rightClickMenutItems[i]->setText( buffer );
+        }//if( !hide )
+        
+        break;
+      }//case kSetMeanToRefPhotopeak:
         
       case kShareContinuumWithLeftPeak:
       {
@@ -5540,12 +5595,8 @@ void InterSpec::addFileMenu( WWidget *parent, const bool isAppTitlebar )
                          " be a PopupDivMenu  or WContainerWidget" );
 
   string menuname = isAppTitlebar ? "File" : "InterSpec";
-#if( !defined(__APPLE__) && USING_ELECTRON_NATIVE_MENU )
-  menuname = "File";
-#else
   if( mobile )
     menuname = "Spectra";
-#endif
   
   if( menuDiv )
   {
@@ -5564,19 +5615,7 @@ void InterSpec::addFileMenu( WWidget *parent, const bool isAppTitlebar )
 
   PopupDivMenuItem *item = (PopupDivMenuItem *)0;
   
-#if( defined(__APPLE__) && USING_ELECTRON_NATIVE_MENU )
-  PopupDivMenuItem *aboutitem = m_fileMenuPopup->createAboutThisAppItem();
-  
-  if( aboutitem )
-    aboutitem->triggered().connect( this, &InterSpec::showLicenseAndDisclaimersWindow );
-  
-  m_fileMenuPopup->addSeparator();
-  m_fileMenuPopup->addRoleMenuItem( PopupDivMenu::MenuRole::Hide );
-  m_fileMenuPopup->addRoleMenuItem( PopupDivMenu::MenuRole::HideOthers );
-  m_fileMenuPopup->addRoleMenuItem( PopupDivMenu::MenuRole::UnHide );
-  m_fileMenuPopup->addRoleMenuItem( PopupDivMenu::MenuRole::Front );
-  m_fileMenuPopup->addSeparator();
-#elif( BUILD_AS_OSX_APP )
+#if( BUILD_AS_OSX_APP )
   if( InterSpecApp::isPrimaryWindowInstance() )
   {
     item = m_fileMenuPopup->addMenuItem( "About InterSpec" );
@@ -5766,10 +5805,7 @@ void InterSpec::addFileMenu( WWidget *parent, const bool isAppTitlebar )
 #if( BUILD_AS_ELECTRON_APP || BUILD_AS_WX_WIDGETS_APP )
   if( InterSpecApp::isPrimaryWindowInstance() )
   {
-#if( USING_ELECTRON_NATIVE_MENU )
-  m_fileMenuPopup->addSeparator();
-  m_fileMenuPopup->addRoleMenuItem( PopupDivMenu::MenuRole::Quit );
-#elif( BUILD_AS_ELECTRON_APP )
+#if( BUILD_AS_ELECTRON_APP )
   m_fileMenuPopup->addSeparator();
   PopupDivMenuItem *exitItem = m_fileMenuPopup->addMenuItem( "Exit" );
   exitItem->triggered().connect( std::bind( []{
@@ -6559,19 +6595,8 @@ void InterSpec::addDisplayMenu( WWidget *parent )
   }//if( useNativeMenu )
 #endif //BUILD_AS_ELECTRON_APP || BUILD_AS_OSX_APP
   
-  
-#if( USING_ELECTRON_NATIVE_MENU )
-  m_displayOptionsPopupDiv->addSeparator();
-  m_displayOptionsPopupDiv->addRoleMenuItem( PopupDivMenu::MenuRole::ToggleFullscreen );
-  m_displayOptionsPopupDiv->addSeparator();
-  m_displayOptionsPopupDiv->addRoleMenuItem( PopupDivMenu::MenuRole::ResetZoom );
-  m_displayOptionsPopupDiv->addRoleMenuItem( PopupDivMenu::MenuRole::ZoomIn );
-  m_displayOptionsPopupDiv->addRoleMenuItem( PopupDivMenu::MenuRole::ZoomOut );
-#if( PERFORM_DEVELOPER_CHECKS )
-  m_displayOptionsPopupDiv->addSeparator();
-  m_displayOptionsPopupDiv->addRoleMenuItem( PopupDivMenu::MenuRole::ToggleDevTools );
-#endif
-#elif( BUILD_AS_ELECTRON_APP || BUILD_AS_WX_WIDGETS_APP )
+
+#if( BUILD_AS_ELECTRON_APP || BUILD_AS_WX_WIDGETS_APP )
   if (InterSpecApp::isPrimaryWindowInstance())
   {
     m_displayOptionsPopupDiv->addSeparator();
@@ -7894,6 +7919,63 @@ DecayWindow *InterSpec::createDecayInfoWindow()
 }//void createDecayInfoWindow()
 
 
+MakeFwhmForDrfWindow *InterSpec::fwhmFromForegroundWindow( const bool use_auto_fit_peaks )
+{
+  if( m_addFwhmTool )
+    return m_addFwhmTool;
+  
+  m_addFwhmTool = new MakeFwhmForDrfWindow( use_auto_fit_peaks );
+  m_addFwhmTool->tool()->updatedDrf().connect( m_addFwhmTool, &AuxWindow::hide );
+  m_addFwhmTool->finished().connect( boost::bind( &InterSpec::deleteFwhmFromForegroundWindow, this ) );
+  
+  if( m_drfSelectWindow )
+  {
+    m_addFwhmTool->tool()->updatedDrf().connect(
+        boost::bind( &DrfSelect::handleFitFwhmFinished,
+                    m_drfSelectWindow->widget(), boost::placeholders::_1
+    ) );
+  }//if( m_drfSelectWindow )
+  
+  if( m_undo && m_undo->canAddUndoRedoNow() )
+  {
+    auto undo = [this](){ deleteFwhmFromForegroundWindow(); };
+    auto redo = [this,use_auto_fit_peaks](){ fwhmFromForegroundWindow(use_auto_fit_peaks); };
+    m_undo->addUndoRedoStep( std::move(undo), std::move(redo), "Show fit FWHM from foreground tool" );
+  }//if( undo )
+  
+  return m_addFwhmTool;
+}//MakeFwhmForDrfWindow *fwhmFromForegroundWindow()
+
+
+void InterSpec::deleteFwhmFromForegroundWindow()
+{
+  if( !m_addFwhmTool )
+    return;
+  
+  shared_ptr<MakeFwhmForDrf::ToolState> state = m_addFwhmTool->tool()->currentState();
+  
+  AuxWindow::deleteAuxWindow( m_addFwhmTool );
+  m_addFwhmTool = nullptr;
+  
+  if( m_undo && m_undo->canAddUndoRedoNow() )
+  {
+    auto undo = [this,state](){
+      MakeFwhmForDrfWindow *window = fwhmFromForegroundWindow(false);
+      if( window )
+        window->tool()->setState( state );
+      
+      shared_ptr<DetectorPeakResponse> drf = m_dataMeasurement ? m_dataMeasurement->detector() : nullptr;
+      if( state->m_orig_drf != drf )
+      {
+        m_detectorChanged.emit(state->m_orig_drf);
+      }
+    };
+    auto redo = [this](){ deleteFwhmFromForegroundWindow(); };
+    m_undo->addUndoRedoStep( std::move(undo), std::move(redo), "Close fit FWHM from foreground tool" );
+  }//if( do_undo )
+}//void deleteFwhmFromForegroundWindow()
+
+
 #if( USE_DETECTION_LIMIT_TOOL )
 void InterSpec::createDetectionLimitTool()
 {
@@ -8489,7 +8571,6 @@ void InterSpec::createRemoteRidWindow()
 
 void InterSpec::deleteRemoteRidWindow()
 {
-  assert( m_remoteRid );
   if( !m_remoteRid )
     return;
   
@@ -8518,6 +8599,30 @@ void InterSpec::deleteRemoteRidWindow()
     m_undo->addUndoRedoStep( std::move(undo), std::move(redo), "Close remote RID tool" );
   }
 }//void handleRemoteRidClose()
+
+void InterSpec::setAutoRemoteRidResultDialog( SimpleDialog *dialog )
+{
+  programaticallyCloseAutoRemoteRidResultDialog();
+  m_autoRemoteRidResultDialog = dialog;
+}//setAutoRemoteRidResultDialog()
+
+
+void InterSpec::handleAutoRemoteRidResultDialogClose()
+{
+  m_autoRemoteRidResultDialog = nullptr;
+}//handleAutoRemoteRidResultDialogClose()
+
+
+void InterSpec::programaticallyCloseAutoRemoteRidResultDialog()
+{
+  SimpleDialog *dialog = m_autoRemoteRidResultDialog;
+  
+  //Set m_multimedia to m_autoRemoteRidResultDialog so #handleAutoRemoteRidResultDialogClose
+  //  wont add undo/redo step
+  m_autoRemoteRidResultDialog = nullptr;
+  if( dialog )
+    dialog->done( Wt::WDialog::DialogCode::Accepted );
+}//programaticallyCloseAutoRemoteRidResultDialog()
 #endif  //#if( USE_REMOTE_RID )
 
 
@@ -8835,7 +8940,7 @@ void InterSpec::addToolsMenu( Wt::WWidget *parent )
   item->triggered().connect( boost::bind( &InterSpec::showDoseTool, this ) );
   
 //  item = popup->addMenuItem( Wt::WString::fromUTF8("1/r² Calculator") );  // is superscript 2
-#if( USE_OSX_NATIVE_MENU  || USING_ELECTRON_NATIVE_MENU )
+#if( USE_OSX_NATIVE_MENU )
   item = popup->addMenuItem( Wt::WString::fromUTF8("1/r\x0032 Calculator") );  //works on OS X at least.
 #else
   item = popup->addMenuItem( Wt::WString::fromUTF8("1/r<sup>2</sup> Calculator") );
@@ -10696,9 +10801,9 @@ void InterSpec::setSpectrum( std::shared_ptr<SpecMeas> meas,
       const std::string type = SpecUtils::descriptionText(spec_type);
       WStringStream js;
 #if( USE_REMOTE_RID )
-      js << "File contained on-board RIID results: "
+      js << "File contained on-board RID results: "
 #else
-      js << "File contained RIID analysis results: "
+      js << "File contained RID analysis results: "
 #endif
       << riidAnaSummary(meas)
       << "<div onclick="
@@ -10716,8 +10821,9 @@ void InterSpec::setSpectrum( std::shared_ptr<SpecMeas> meas,
 #if( USE_REMOTE_RID )
   if( meas && !options.testFlag(SetSpectrumOptions::SkipExternalRid) )
   {
-    const int call_ext_rid = InterSpecUser::preferenceValue<int>( "AlwaysCallExternalRid", this );
-    if( (call_ext_rid == 1) || (call_ext_rid == 2) )
+    const ExternalRidAuotCallPref pref = RemoteRid::external_rid_call_pref( this );
+    
+    if( pref != ExternalRidAuotCallPref::DoNotCall )
     {
       Wt::WApplication *app = wApp;
       auto callExternalRid = [app,this,sameSpecFile](){
@@ -10731,7 +10837,7 @@ void InterSpec::setSpectrum( std::shared_ptr<SpecMeas> meas,
           if( sameSpecFile )
             flags |= RemoteRid::AnaFileOptions::OnlyDisplayedSearchSamples;
           
-          RemoteRid::startAutomatedOnLoadAnalysis(this, flags );
+          RemoteRid::startAutomatedOnLoadAnalysis( this, flags );
         }else
         {
           cerr << "Failed to get WApplication::UpdateLock to call external RID." << endl;
@@ -10794,6 +10900,11 @@ void InterSpec::setSpectrum( std::shared_ptr<SpecMeas> meas,
     if( m_multimedia )
       programmaticallyCloseMultimediaWindow();
     assert( !m_multimedia );
+    
+#if( USE_REMOTE_RID )
+      if( m_autoRemoteRidResultDialog )
+        programaticallyCloseAutoRemoteRidResultDialog();
+#endif
     
     bool show_notification = false;
     for( const shared_ptr<const SpecUtils::MultimediaData> &mmd : m_dataMeasurement->multimedia_data() )
@@ -11087,11 +11198,16 @@ void InterSpec::handleAppUrl( const std::string &url_encoded_url )
     UnitsConverterTool *converter = createUnitsConverterTool();
     if( converter )
       converter->handleAppUrl( query_str );
-  }if( SpecUtils::iequals_ascii(host,"about") )
+  }else if( SpecUtils::iequals_ascii(host,"about") )
   {
     showLicenseAndDisclaimersWindow();
     if( m_licenseWindow )
       m_licenseWindow->handleAppUrlPath( path );
+  }else if( SpecUtils::iequals_ascii(host,"welcome") )
+  {
+    showWelcomeDialog(true);
+    if( m_useInfoWindow )
+      m_useInfoWindow->handleAppUrl( query_str );
   }
 #if( USE_REMOTE_RID )
   else if( SpecUtils::iequals_ascii(host,"remoterid") )
@@ -11214,15 +11330,6 @@ void InterSpec::updateGuiForPrimarySpecChange( std::set<int> display_sample_nums
         delete item;
       }
     }
-    
-#if( USING_ELECTRON_NATIVE_MENU )
-#if( !defined(WIN32) )
-    //20190125: hmm, looks like detectors menu is behaving okay - I guess I fixed it somewhere else?
-    //#warning "Need to do something to get rid of previous detectors from Electrons menu"
-#endif
-//  https://github.com/electron/electron/issues/527
-    m_detectorToShowMenu->clearElectronMenu();
-#endif
   }//if( m_detectorToShowMenu )
   
   m_timeSeries->setHighlightedIntervals( {}, SpecUtils::SpectrumType::Foreground );
@@ -11270,7 +11377,7 @@ void InterSpec::updateGuiForPrimarySpecChange( std::set<int> display_sample_nums
 
     if( m_detectorToShowMenu )
     {
-#if( USE_OSX_NATIVE_MENU  || USING_ELECTRON_NATIVE_MENU )
+#if( USE_OSX_NATIVE_MENU )
       WCheckBox *cb = new WCheckBox( title );
       cb->setChecked( true );
       PopupDivMenuItem *item = m_detectorToShowMenu->addWidget( cb, false );
@@ -11431,117 +11538,9 @@ void InterSpec::searchForSinglePeak( const double x )
   const double pixPerKeV = (xmax > xmin && xmax > 0.0 && specWidthPx > 10.0) ? std::max(0.001,(specWidthPx/(xmax - xmin))): 0.001;
   
   std::shared_ptr<const DetectorPeakResponse> det = m_dataMeasurement->detector();
-  vector< PeakModel::PeakShrdPtr > origPeaks;
-  if( !!m_peakModel->peaks() )
-  {
-    for( const PeakModel::PeakShrdPtr &p : *m_peakModel->peaks() )
-    {
-      origPeaks.push_back( p );
-      
-      //Avoid fitting a peak in the same area a data defined peak is.
-      if( !p->gausPeak() && (x >= p->lowerX()) && (x <= p->upperX()) )
-        return;
-    }
-  }//if( m_peakModel->peaks() )
-  
-  pair< PeakShrdVec, PeakShrdVec > foundPeaks;
-  foundPeaks = searchForPeakFromUser( x, pixPerKeV, data, origPeaks, det );
-  
-  //cerr << "Found " << foundPeaks.first.size() << " peaks to add, and "
-  //     << foundPeaks.second.size() << " peaks to remove" << endl;
-  
-  if( foundPeaks.first.empty()
-      || foundPeaks.second.size() >= foundPeaks.first.size() )
-  {
-    char msg[256];
-    snprintf( msg, sizeof(msg), "Couldn't find peak a peak near %.1f keV", x );
-    passMessage( msg, 0 );
-    return;
-  }//if( foundPeaks.first.empty() )
   
   
-  for( const PeakModel::PeakShrdPtr &p : foundPeaks.second )
-    m_peakModel->removePeak( p );
-
-  
-  //We want to add all of the previously found peaks back into the model, before
-  //  adding the new peak.
-  PeakShrdVec peakstoadd( foundPeaks.first.begin(), foundPeaks.first.end() );
-  PeakShrdVec existingpeaks( foundPeaks.second.begin(), foundPeaks.second.end() );
-  
-  //First add all the new peaks that have a nuclide/reaction/xray associated
-  //  with them, since we know they are existing peaks
-  for( const PeakModel::PeakShrdPtr &p : foundPeaks.first )
-  {
-    if( p->parentNuclide() || p->reaction() || p->xrayElement() )
-    {
-      //find nearest previously existing peak, and add new peak, while removing
-      //  old one from existingpeaks
-      int nearest = -1;
-      double smallesdist = DBL_MAX;
-      for( size_t i = 0; i < existingpeaks.size(); ++i )
-      {
-        const PeakModel::PeakShrdPtr &prev = existingpeaks[i];
-        if( prev->parentNuclide() != p->parentNuclide() )
-          continue;
-        if( prev->reaction() != p->reaction() )
-          continue;
-        if( prev->xrayElement() != p->xrayElement() )
-          continue;
-        
-        const double thisdif = fabs(p->mean() - prev->mean());
-        if( thisdif < smallesdist )
-        {
-          nearest = static_cast<int>( i );
-          smallesdist = thisdif;
-        }
-      }
-      
-      if( nearest >= 0 )
-      {
-        addPeak( *p, false );
-        existingpeaks.erase( existingpeaks.begin() + nearest );
-        peakstoadd.erase( std::find(peakstoadd.begin(), peakstoadd.end(), p) );
-      }//if( nearest >= 0 )
-    }//if( p->parentNuclide() || p->reaction() || p->xrayElement() )
-  }//for( const PeakModel::PeakShrdPtr &p : peakstoadd )
-  
-  
-  //Now go through and add the new versions of the previously existing peaks,
-  //  using energy to match the previous to current peak.
-  for( const PeakModel::PeakShrdPtr &p : existingpeaks )
-  {
-    size_t nearest = 0;
-    double smallesdist = DBL_MAX;
-    for( size_t i = 0; i < peakstoadd.size(); ++i )
-    {
-      const double thisdif = fabs(p->mean() - peakstoadd[i]->mean());
-      if( thisdif < smallesdist )
-      {
-        nearest = i;
-        smallesdist = thisdif;
-      }
-    }
-    
-    std::shared_ptr<const PeakDef> peakToAdd = peakstoadd[nearest];
-    peakstoadd.erase( peakstoadd.begin() + nearest );
-    addPeak( *peakToAdd, false );
-  }//for( const PeakModel::PeakShrdPtr &p : existingpeaks )
-  
-  //Just in case we messed up the associations between the existing peak an
-  //  their respective new version, we'll add all peaks that have a
-  //  nuclide/reaction/xray associated with them, since they must be previously
-  //  existing
-  for( const PeakModel::PeakShrdPtr &p : peakstoadd )
-    if( p->parentNuclide() || p->reaction() || p->xrayElement() )
-      addPeak( *p, false );
-  
-  //Finally, in principle we will add the new peak here
-  for( const PeakModel::PeakShrdPtr &p : peakstoadd )
-  {
-    if( !p->parentNuclide() && !p->reaction() && !p->xrayElement() )
-      addPeak( *p, true );
-  }
+  PeakSearchGuiUtils::fit_peak_from_double_click( this, x, pixPerKeV, det );
 }//void searchForSinglePeak( const double x )
 
 

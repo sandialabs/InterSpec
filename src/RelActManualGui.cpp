@@ -1197,7 +1197,7 @@ void RelActManualGui::calculateSolution()
           if( (fabs(peak.m_energy - p->gammaParticleEnergy()) > (match_tol_sigma*(peak.m_fwhm/2.35482)))
              && (match_tol_sigma > 0.0) )
           {
-            energy_cal_match_warning_energies.emplace( peak.m_energy, p->gammaParticleEnergy() );
+            energy_cal_match_warning_energies.emplace( static_cast<float>(peak.m_energy), p->gammaParticleEnergy() );
           }
           
           peak.m_energy = p->gammaParticleEnergy();

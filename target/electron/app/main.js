@@ -117,9 +117,8 @@ if( !gotTheLock )
     {
       // If the user double-clicked the executable again, then the only command line arguments will be executable 
       //  path and the "--allow-file-access-from-files" flag
-      // Lets open a new window, if we arent using the Electron native menus (I havent tested having multiple windows open while using native windows)
-      if( !interspec.usingElectronMenus() )
-        createWindow();
+      // Lets open a new window
+      createWindow();
     }
 
     //let argvstr = commandLine.join(', ');
@@ -423,48 +422,6 @@ let allowRestorePath = path.join(userdata, "do_restore");
 const app_options = get_interspec_options();
 
 
-
-function doMenuStuff(currentwindow){
-  if( !interspec.usingElectronMenus() ){
-    //console.log( 'Not using ElectronMenus - bailing' );
-    return;
-  }
-
-  console.log( 'Doing doMenuStuff' );
-
-  currentwindow.setMenu(null);
-  
-  const template = [{label: 'Edit', submenu: [{role: 'cut'},{role: 'copy'},{role: 'paste'}]},
-  { label: 'View', submenu: []},
-  { label: 'Tools', submenu:[]},
-  { role: 'window', submenu: [{role: 'minimize'},{role: 'close'}]},
-  { role: 'help', submenu: [] }
-  ];
-  
-  if (process.platform === 'darwin') {
-    template.unshift({label: "InterSpec", submenu: [] });
-    // Edit menu.
-    //template[1].submenu.push({type: 'separator'},{label: 'Speech',submenu: [{role: 'startspeaking'},{role: 'stopspeaking'}]})
-    
-    // Window menu.
-    template[4].submenu = [
-    { label: 'Close', accelerator: 'CmdOrCtrl+W', role: 'close' },
-    { label: 'Minimize', accelerator: 'CmdOrCtrl+M', role: 'minimize' },
-    { label: 'Zoom', role: 'zoom' },
-    { type: 'separator' },
-    { label: 'Bring All to Front', role: 'front' }
-    ]
-  } else {
-    template.unshift({ label: 'File', submenu: [] })
-  }//if (process.platform === 'darwin') / else
-
-  //Menu.getApplicationMenu()
-  const menubar = Menu.buildFromTemplate(template);
-  Menu.setApplicationMenu(menubar)
-  console.log( 'Have set ElectronMenus' );
-}
-
-
 let setAsMostRecentWindow = function(window){
   const index = openWindows.indexOf(window);
   if( index < 0 )
@@ -514,7 +471,7 @@ function createWindow() {
 
   //To get nodeIntegration to work, there is som JS hacks in
   //  InterSpecApp::setupDomEnvironment()
-  windowPrefs.frame = ((process.platform == 'darwin') || interspec.usingElectronMenus());
+  windowPrefs.frame = (process.platform == 'darwin');
   windowPrefs.webPreferences = { nodeIntegration: false, contextIsolation: true, nativeWindowOpen: true, spellcheck: false };
 
   // Create the new window
@@ -584,7 +541,6 @@ function createWindow() {
       
       console.log('Will Load ' + url_to_load);
       
-      doMenuStuff( newWindow );
       newWindow.loadURL( url_to_load );
     } else {
       let workingdir = path.dirname(require.main.filename);
@@ -720,7 +676,6 @@ function createWindow() {
       //   http://127.0.0.1:57851/?wtd=oiaGAdsaiwqAs&request=resource&resource=asSaEwq&rand=65
       //   but I didnt bother about this yet)
       //(as of 20191012 only tested by calling wApp->quit() from c++).
-      doMenuStuff(newWindow);
     }
   });
 
@@ -945,7 +900,6 @@ function messageToNodeJs( token, msg_name, msg_data ){
     
     interspec.removeSessionToken( token );
     interspec.addPrimarySessionToken( window.appSessionToken );
-    doMenuStuff(window);
     window.loadURL( interspec_url + "?apptoken=" + window.appSessionToken + "&restore=no");
   }else if( msg_name == 'SessionFinishedLoading' ){
     window.appHasLoadConfirmed = true;

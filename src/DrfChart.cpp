@@ -60,7 +60,7 @@ DrfChart::DrfChart( WContainerWidget *parent )
   if( viewer )
     viewer->colorThemeChanged().connect( this, &DrfChart::handleColorThemeChange );
   
-  auto theme = viewer ? viewer->getColorTheme() : nullptr;
+  shared_ptr<const ColorTheme> theme = viewer ? viewer->getColorTheme() : shared_ptr<const ColorTheme>();
   handleColorThemeChange( theme );
   
   const bool is_phone = (!viewer || viewer->isPhone() || (viewer->renderedHeight() < 500 ));

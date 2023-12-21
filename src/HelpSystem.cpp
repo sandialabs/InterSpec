@@ -722,9 +722,11 @@ namespace HelpSystem
     //Create popup notifications
     Wt::WStringStream strm;
     
-    //need to escape the ' in the text message
+    //need to escape the ' in the text message, and also remove new-lines from the string
     std::string val = text;
     boost::replace_all(val, "'", "\\'");
+    boost::replace_all( val, "\r", "" );
+    boost::replace_all( val, "\n", "" );
     
     string pos = "";
     

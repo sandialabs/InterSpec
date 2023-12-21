@@ -86,7 +86,7 @@ SimpleDialog *createEntryWindow( InterSpec *viewer )
   // To be generous to the user, we will allow them to have stuff before the relevant part of the
   //  URI, so we'll serach for URIs beginning with following paths:
   const string acceptable_paths[] = {
-    "G0", "drf", "specsum", "flux", "specexport", "decay", "dose", "gammaxs", "1overr2", "unit", "about"
+    "G0", "drf", "specsum", "flux", "specexport", "decay", "dose", "gammaxs", "1overr2", "unit", "about", "welcome"
 #if( USE_REMOTE_RID )
     , "remoterid"
 #endif

@@ -191,6 +191,9 @@ public:
   std::shared_ptr<void> getDisableUndoRedoSentry();
   
 protected:
+  virtual void render( Wt::WFlags<Wt::RenderFlag> flags );
+
+  
   //hideSearchingTxt(): hides the searching text only if
   //  searchNum==m_currentSearch.  This is incase multiple searches are posted
   //  to the thread pool, only the most recent one will hide the "Searching"

@@ -64,7 +64,7 @@ namespace MoreNuclideInfo
 
 
   RefInfo::RefInfo( string &&key, string &&url, string &&desc )
-    : m_key( move( key ) ), m_url( move( url ) ), m_desc( move( desc ) )
+    : m_key( std::move( key ) ), m_url( std::move( url ) ), m_desc( std::move( desc ) )
   {
   }
 
@@ -294,7 +294,7 @@ namespace MoreNuclideInfo
       // The following assert is for developing the XML, not coding logic
       assert( !(url.empty() && desc.empty()) );
 
-      m_references.emplace( move(key), RefInfo{move(key_cpy), move(url), move(desc)} );
+      m_references.emplace( std::move(key), RefInfo{std::move(key_cpy), std::move(url), std::move(desc)} );
     }//for( loop over <Ref> nodes )
 
 

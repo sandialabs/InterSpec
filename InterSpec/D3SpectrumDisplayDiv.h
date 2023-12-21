@@ -4,6 +4,7 @@
 #include "InterSpec_config.h"
 
 #include <map>
+#include <chrono>
 #include <memory>
 #include <vector>
 #include <utility>
@@ -495,6 +496,11 @@ protected:
      here as they will be options set to the D3 chart during first rendering.
    */
   std::vector<std::string> m_pendingJs;
+  
+  
+  std::chrono::steady_clock::time_point m_last_drag_time;
+  std::shared_ptr<const PeakContinuum> m_continuum_being_drug;
+  std::vector<std::shared_ptr<const PeakDef>> m_last_being_drug_peaks;
   
 #if( INCLUDE_ANALYSIS_TEST_SUITE )
   friend class SpectrumViewerTester;

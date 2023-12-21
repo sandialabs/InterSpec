@@ -157,8 +157,10 @@ public:
   void setShielding( const float atomic_number, const float areal_density );
   
   
-  /** Sets is fixed geometry (e.g., hide distance and shielding), or not (default). */
-  void setIsFixedGeometry( const bool is_fixed );
+  /** Sets geometry type of DRF being made (e.g., hide distance and shielding), or not (default).
+   The int passed in is defined by DetectorPeakResponse::EffGeometryType.
+   */
+  void setIsEffGeometryType( const int drf_eff_geom_type );
   
   
   /** Returns a GADRAS style source string.
@@ -229,6 +231,7 @@ protected:
    */
   Wt::WLineEdit *m_distanceEdit;
   
+  Wt::WLabel *m_activityLabel;
   
   /** */
   Wt::WLineEdit *m_activityEdit;

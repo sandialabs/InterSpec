@@ -558,6 +558,14 @@ protected:
   //  on what has been done.
   void handleMaterialChange();
   
+  /** Handles when `m_materialEdit` emits the `changed()` or `enterPressed()` signals.
+   
+   Does a simple guess to correct for the material name not being valid if the user clicked on one
+   of the popup suggestion (this first `m_materialEdit->changed()` signal will have only the
+   partial text the user entered to get the suggestions).
+   */
+  void handleUserChangedMaterialName();
+  
   /** Updates #m_currentMaterial if `m_materialEdit->text() != m_currentMaterialDescrip` */
   void updateMaterialFromUserInputTxt();
   

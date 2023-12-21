@@ -168,7 +168,7 @@ protected:
   
   Wt::WLineEdit *m_detDiameter;
   
-  Wt::WCheckBox *m_fixedGeometry;
+  Wt::WComboBox *m_geometry;
   
   Wt::WCheckBox *m_showFwhmPoints;
   

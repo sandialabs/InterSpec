@@ -43,6 +43,7 @@
 #include <Wt/WAbstractItemModel>
 #include <Wt/Chart/WCartesianChart>
 
+#include "InterSpec/DetectorPeakResponse.h" //DetectorPeakResponse::EffGeometryType
 #include "InterSpec/ShieldingSourceFitCalc.h"
 
 //Forward declarations
@@ -56,7 +57,6 @@ class PopupDivMenu;
 class SwitchCheckbox;
 class DetectorDisplay;
 class PopupDivMenuItem;
-class DetectorPeakResponse;
 struct ShieldingSourceModel;
 #if( INCLUDE_ANALYSIS_TEST_SUITE )
 class SpectrumViewerTester;
@@ -298,6 +298,11 @@ public:
   
   void setUnderlyingData( const std::vector<ShieldingSourceFitCalc::IsoFitStruct> &data );
   
+  /** Set the DetectorPeakResponse::EffGeometryType, so correct label for activity can be shown.
+   */
+  void setDetectorType( const DetectorPeakResponse::EffGeometryType det_type );
+  DetectorPeakResponse::EffGeometryType detType() const;
+  
 protected:
   Wt::SortOrder m_sortOrder;
   Columns m_sortColumn;
@@ -305,6 +310,7 @@ protected:
   PeakModel *m_peakModel;
   std::vector<ShieldingSourceFitCalc::IsoFitStruct> m_nuclides;
   bool m_sameAgeForIsotopes;
+  DetectorPeakResponse::EffGeometryType m_det_type;
   
   //m_previousResults: when a isotope gets removed from this model, we'll cache
   //  its current value, since it will often times get added again and be

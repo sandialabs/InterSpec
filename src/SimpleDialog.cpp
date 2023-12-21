@@ -34,7 +34,7 @@
 #include "InterSpec/InterSpec.h"  //for InterSpec::instance()
 #include "InterSpec/SimpleDialog.h"
 
-#if( BUILD_AS_WX_WIDGETS_APP || (BUILD_AS_ELECTRON_APP && !USING_ELECTRON_NATIVE_MENU) )
+#if( BUILD_AS_WX_WIDGETS_APP || BUILD_AS_ELECTRON_APP )
 #include "InterSpec/InterSpecApp.h"  //for InterSpecApp::isPrimaryWindowInstance()
 #endif
 
@@ -102,7 +102,7 @@ void SimpleDialog::render( Wt::WFlags<Wt::RenderFlag> flags )
     // The below seems to be necessary or else sometimes the window doesnt resize to fit its content
     wApp->doJavaScript( wApp->javaScriptClass() + ".TriggerResizeEvent();" );
 
-#if( BUILD_AS_WX_WIDGETS_APP || (BUILD_AS_ELECTRON_APP && !USING_ELECTRON_NATIVE_MENU) )
+#if( BUILD_AS_WX_WIDGETS_APP || BUILD_AS_ELECTRON_APP )
     // To allow moving window around when dialog showing; see note in AuxWindow::render 
     //  for the same code snippet
     if( InterSpecApp::isPrimaryWindowInstance() )

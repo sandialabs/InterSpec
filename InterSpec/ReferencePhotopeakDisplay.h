@@ -283,6 +283,13 @@ public:
 protected:
   virtual void render( Wt::WFlags<Wt::RenderFlag> flags );
   
+  
+  void addUndoRedoPoint( const ReferenceLineInfo &starting_showing,
+                        const std::vector<ReferenceLineInfo> &starting_persisted,
+                        const std::deque<RefLineInput> &starting_prev_nucs,
+                        const bool starting_user_color,
+                        const RefLineInput &current_user_input );
+  
   void updateDisplayChange();
   void updateDisplayFromInput( RefLineInput user_input );
  

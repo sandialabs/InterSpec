@@ -1277,32 +1277,32 @@ color: blue;
 
 .DetectorDisplay
 {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: nowrap;
+  align-items: center;
+  align-content: flex-start;
+  gap: 5px;
+  
   padding: 0px;
+  padding-left: 5px;
+  padding-right: 2px;
   margin: 0px;
-  padding-right: 3px;
   font-weight: bold;
   background: #888888; color: #FFFFFF;
   border: 1px solid #e1e1e1;
   cursor: pointer;
   height: 24px;
   white-space: nowrap;
-  overflow: hidden;
-  max-width: 275px;
+  width: 250px;
 }
 
-.DetectorDisplay > span
+.DetectorDisplay .DetName
 {
   display: inline-block;
-  vertical-align: middle;
-  height: 24px;
-}
-
-.DetectorDisplay > img
-{
-  /* Imge is 16px high, so 3px top margin will center image*/
-  margin-top: 3px;
-  margin-left: 5px;
-  margin-right: 5px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  overflow: hidden;
 }
 
 

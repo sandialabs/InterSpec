@@ -10,10 +10,6 @@
 #endif
 
 
-
-
-
-
 #include "InterSpecWxApp.h"
 
 
