@@ -118,7 +118,7 @@ public:
   std::vector<float> m_photon_group_flux;
   
   
-  /** Lower energy of the neutron energy group.  Will have same number of
+  /** Upper energy of the neutron energy group.  Will have same number of
    * entries as #m_neutron_group_flux.
    * Energy is in keV (note that .gam files use eV).
    */

@@ -3218,9 +3218,32 @@ float DetectorPeakResponse::peakResolutionFWHM( float energy,
                                  " pars not defined" );
       
       energy /= PhysicalUnits::keV;
+      
+      /*
+       // 20231223: a updated straight-forward translation from the fortran is:
+       const float &resolutionOffset = pars[0];
+       const float &resolution661 = pars[1];
+       const float &resolutionPower = pars[2];
+       energy = std::max( 1.0f, energy );
+       if( energy > 661.0f )
+         return 6.61f * resolution661 * std::pow( energy/661.0f, resolutionPower );
+       
+       if( resolutionOffset >= 0.0 )
+       {
+         const float ZeroLimit = std::max( 0.0f, fabs(resolutionOffset)*(661.0f - energy)/661.0f );
+         const float FWHM = 6.61f * resolution661 * std::pow( energy/661.0f, resolutionPower );
+         return std::sqrt( ZeroLimit*ZeroLimit + FWHM*FWHM );
+       }
+       
+       const float p = std::pow(resolutionPower, (1.0f/std::log(1.0f - resolutionOffset)) );
+       return 6.61f * resolution661 * std::pow(std::max(30.0f,energy)/661.0f, p );
+       */
+      
       const float &a = pars[0];
       const float &b = pars[1];
       const float &c = pars[2];
+      
+      
       
       if( energy >= 661.0f || fabs(a)<float(1.0E-6) )
         return 6.61f * b * pow(energy/661.0f, c);

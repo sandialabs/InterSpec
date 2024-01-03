@@ -2091,17 +2091,49 @@ namespace PeakSearchGuiUtils
     return img;
   }//renderChartToSvg(...)
 
-#ifndef _WIN32
-#warning "20231201 TEmporarily disabling code for work at place"
-#endif
-  /*
-std::pair<std::vector<std::shared_ptr<const PeakDef>>, std::vector<std::shared_ptr<const PeakDef>> >
+std::vector<std::shared_ptr<const PeakDef>>
   improve_initial_peak_fit( InterSpec *interspec, shared_ptr<const DetectorPeakResponse> det,
-                           const std::pair<std::vector<std::shared_ptr<const PeakDef>> &inital_fit )
+                           const std::pair<std::vector<std::shared_ptr<const PeakDef>>,
+                                          std::vector<std::shared_ptr<const PeakDef>>> &inital_fit )
 {
+  const vector<shared_ptr<const PeakDef>> initial_fit_peaks = inital_fit.first;
+  const vector<shared_ptr<const PeakDef>> before_fit_peaks_to_rm = inital_fit.second;
+  
+  // Check we are the simplest case, right now
+  assert( initial_fit_peaks.size() == 1 );
+  assert( before_fit_peaks_to_rm.empty() );
+  if( initial_fit_peaks.size() != 1 || !before_fit_peaks_to_rm.empty() )
+    throw runtime_error( "improve_initial_peak_fit not implemented for all but simplest case" );
+  
+  shared_ptr<const SpecUtils::Measurement> data = interspec->displayedHistogram(SpecUtils::SpectrumType::Foreground);
+  if( !data )
+    return inital_fit.first;
     
+  const bool isHPGe = PeakFitUtils::is_high_res(data);
+  
+  // Check ROI range, and limit it to a specified number of FWHM
+  
+  // Try a few different continuums - including flat and linear step - but first check if worthwhile
+  
+  // See if worth trying some skew
+  
+  //vector<shared_ptr<const PeakDef>> linear_cont = initial_fit_peaks;
+  //vector<shared_ptr<const PeakDef>> quadratic_cont = initial_fit_peaks;
+  //vector<shared_ptr<const PeakDef>> flat_step_cont = initial_fit_peaks;
+    // blah blah blah go through and set some value
+  
+    
+  //Pick best peak, but consider adding systematic uncertainty to peak area
+  
+    //vector<shared_ptr<const PeakDef>>
+    //    refitPeaksThatShareROI( data, det,
+    //                            const std::vector< std::shared_ptr<const PeakDef> > &inpeaks,
+    //                            -1.0 );
+    
+    
+  return inital_fit.first;
 }//improve_initial_peak_fit(...)
- */
+
   
   
 void fit_peak_from_double_click( InterSpec *interspec, const double x, const double pixPerKeV,
@@ -2147,15 +2179,9 @@ void fit_peak_from_double_click( InterSpec *interspec, const double x, const dou
   
   
   // Check if we found a single peak, that is its own new ROI
+  //  20231209: right now, starting development for this simple case, and will expand later
   if( (foundPeaks.first.size() == 1) && foundPeaks.second.empty() )
-  {
-#ifndef _WIN32
-#warning "20231201 TEmporarily disabling code for work at place"
-#endif
-    //improve_initial_peak_fit( InterSpec *)
-    //pair< PeakShrdVec, PeakShrdVec >
-    
-  }//if( (foundPeaks.first.size() == 1) && foundPeaks.second.empty() )
+    foundPeaks.first = improve_initial_peak_fit( interspec, det, foundPeaks );
   
   
   for( const PeakModel::PeakShrdPtr &p : foundPeaks.second )

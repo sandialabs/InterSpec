@@ -1850,8 +1850,7 @@ PeakShrdVec refitPeaksThatShareROI( const std::shared_ptr<const Measurement> &da
     if( detector && detector->hasResolutionInfo() )
       minsigma = 0.75*detector->peakResolutionSigma( origCont->lowerEnergy() );
     
-    int nFitWidth = 0, nFitEnergy = 0;
-    
+    int nFitWidth = 0, nFitEnergy = 0, nSkewFitPars = 0;
     ROOT::Minuit2::MnUserParameters params;
     for( size_t i = 0; i < inpeaks.size(); ++i )
     {
@@ -1863,7 +1862,7 @@ PeakShrdVec refitPeaksThatShareROI( const std::shared_ptr<const Measurement> &da
       char name[64];
       snprintf( name, sizeof(name), "Mean%i", static_cast<int>(i) );
       const double mean = inpeaks[i]->mean();
-      const double sigma = inpeaks[i]->sigma(); //Will throw exception if peak not Gaussian defined - wanted behaviour
+      const double sigma = inpeaks[i]->sigma(); //Will throw exception if peak not Gaussian defined - wanted behavior
       minsigma = std::min( minsigma, 0.9*sigma );
       
       if( !inpeaks[i]->fitFor(PeakDef::Mean) || meanSigmaVary==0.0 )
@@ -1875,6 +1874,12 @@ PeakShrdVec refitPeaksThatShareROI( const std::shared_ptr<const Measurement> &da
       
       nFitWidth += inpeaks[i]->fitFor(PeakDef::Sigma);
       nFitEnergy += inpeaks[i]->fitFor(PeakDef::Mean);
+      
+      for( int skew_par = 0; skew_par < PeakDef::num_skew_parameters(skew_type); ++skew_par )
+      {
+        const auto ct = PeakDef::CoefficientType(PeakDef::CoefficientType::SkewPar0 + skew_par);
+        nSkewFitPars += inpeaks[i]->fitFor(ct);
+      }
     }//for( const PeakDefShrdPtr &peak : inpeaks )
     
       
@@ -1898,7 +1903,7 @@ PeakShrdVec refitPeaksThatShareROI( const std::shared_ptr<const Measurement> &da
     }//if( skew_type != PeakDef::SkewType::NoSkew )
     
     
-    if( (nFitWidth == 0) && (nFitEnergy == 0) )
+    if( (nFitWidth == 0) && (nFitEnergy == 0) && (nSkewFitPars == 0) )
     {
       // Nothing to do here; LinearProblemSubSolveChi2Fcn::parametersToPeaks(...) will do all work
     }else
@@ -7014,7 +7019,7 @@ std::vector<PeakDef> AutoPeakSearchChi2Fcn::candidate_peaks( const vector<float>
 #if( WRITE_CANDIDATE_PEAK_INFO_TO_FILE )
   static int nwrites = 0;
   if( nwrites++ < 3 )
-    cerr << "Writing candadte peak info to files" << endl;
+    cerr << "Writing candidate peak info to files" << endl;
 #endif
   
   vector<PeakDef> candidates;
@@ -7028,7 +7033,7 @@ std::vector<PeakDef> AutoPeakSearchChi2Fcn::candidate_peaks( const vector<float>
   {
     vector<float> results;
     SavitzyGolayCoeffs sgcoeffs( m_side_bins, m_side_bins, m_smooth_order, 0 );
-    sgcoeffs.smooth( &(channel_counts[0]), channel_counts.size(), results );
+    sgcoeffs.smooth( &(channel_counts[0]), static_cast<int>(channel_counts.size()), results );
     
 #if( WRITE_CANDIDATE_PEAK_INFO_TO_FILE )
     ofstream fileout( "smoothout.csv" );
