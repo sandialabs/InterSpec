@@ -56,56 +56,49 @@ ExecutorService myExecutor = Executors.newCachedThreadPool();
                 <category android:name="android.intent.category.DEFAULT" />
                 <category android:name="android.intent.category.BROWSABLE" />
                 <data android:mimeType="*/*" />
-                <data android:scheme="file" android:pathPattern="*.n42" />
-                <data android:scheme="content" android:pathPattern="*.n42" />
 
-                <data android:scheme="file" android:pathPattern="*.spc" />
-                <data android:scheme="content" android:pathPattern="*.spc" />
+                <!-- These android:pathPattern="..." elements are currently invalid, as they should 
+                    start with a /, and actually the pattern matching doesnt work like expected, so
+                    we should have like (for how ever many '.' characters we expect in a filename...):
+                    <data android:pathPattern="/.*\\.n42" />
+                    <data android:pathPattern="/.*\\..\\.n42" />
+                    <data android:pathPattern="/.*\\..\\..\\.n42" />
+                    <data android:pathPattern="/.*\\..\\..\\..\\.n42" />
+                    <data android:pathPattern="/.*\\..\\..\\..\\..\\.n42" />
+                    <data android:pathPattern="/.*\\..\\..\\..\\..\\..\\.n42" />
+                    <data android:pathPattern="/.*\\..\\..\\..\\..\\..\\..\\.n42" />
+                    <data android:pathPattern="/.*\\..\\..\\..\\..\\..\\..\\..\\.n42" />
+                    
+                    android:pathSuffix was only introduced in API level 31 (Android 12, 2021)
 
-                <data android:scheme="file" android:pathPattern="*.dat" />
-                <data android:scheme="content" android:pathPattern="*.dat" />
+                    (Didnt implement the above, as I couldnt test it at the moment)
+                -->
+                <data android:scheme="file" />
+                <data android:scheme="content" />
+                <data android:pathSuffix=".n42" />
+                <data android:pathSuffix=".spc" />
+                <data android:pathSuffix=".xml" />
+                <data android:pathSuffix=".pcf" />
+                <data android:pathSuffix=".dat" />
+                <data android:pathSuffix=".chn" />
+                <data android:pathSuffix=".cnf" />
+                <data android:pathSuffix=".spe" />
+                <data android:pathSuffix=".tka" />
+                <data android:pathSuffix=".mca" />
+                <data android:pathSuffix=".lzs" />
+                
 
-                <data android:scheme="file" android:pathPattern="*.pcf" />
-                <data android:scheme="content" android:pathPattern="*.pcf" />
-
-                <data android:scheme="file" android:pathPattern="*.chn" />
-                <data android:scheme="content" android:pathPattern="*.chn" />
-
-                <data android:scheme="file" android:pathPattern="*.iaea" />
-                <data android:scheme="content" android:pathPattern="*.iaea" />
-
-                <data android:scheme="file" android:pathPattern="*.cnf" />
-                <data android:scheme="content" android:pathPattern="*.cnf" />
-
-                <data android:scheme="file" android:pathPattern="*.spe" />
-                <data android:scheme="content" android:pathPattern="*.spe" />
-
-                <data android:scheme="file" android:pathPattern="*.tka" />
-                <data android:scheme="content" android:pathPattern="*.tka" />
-
-                <data android:scheme="file" android:pathPattern="*.spm" />
-                <data android:scheme="content" android:pathPattern="*.spm" />
-
-                <data android:scheme="file" android:pathPattern="*.mps" />
-                <data android:scheme="content" android:pathPattern="*.mps" />
-
-                <data android:scheme="file" android:pathPattern="*.gam" />
-                <data android:scheme="content" android:pathPattern="*.gam" />
-
-                <data android:scheme="file" android:pathPattern="*.lis" />
-                <data android:scheme="content" android:pathPattern="*.lis" />
-
-                <data android:scheme="file" android:pathPattern="*.mca" />
-                <data android:scheme="content" android:pathPattern="*.mca" />
-
-                <data android:scheme="file" android:pathPattern="*.lzs" />
-                <data android:scheme="content" android:pathPattern="*.lzs" />
-
-                <data android:scheme="file" android:pathPattern="*.icd" />
-                <data android:scheme="content" android:pathPattern="*.icd" />
-
-                <data android:scheme="file" android:pathPattern="*.icd1" />
-                <data android:scheme="content" android:pathPattern="*.icd1" />
+                <data android:pathPattern="*.n42" />
+                <data android:pathPattern="*.spc" />
+                <data android:pathPattern="*.xml" />
+                <data android:pathPattern="*.pcf" />
+                <data android:pathPattern="*.dat" />
+                <data android:pathPattern="*.chn" />
+                <data android:pathPattern="*.cnf" />
+                <data android:pathPattern="*.spe" />
+                <data android:pathPattern="*.tka" />
+                <data android:pathPattern="*.mca" />
+                <data android:pathPattern="*.lzs" />
             </intent-filter>
 
 
@@ -117,18 +110,13 @@ ExecutorService myExecutor = Executors.newCachedThreadPool();
                 <category android:name="android.intent.category.BROWSABLE" />
                 <category android:name="android.intent.category.SELECTED_ALTERNATIVE" />
                 <data android:mimeType="*/*" />
+                <data android:scheme="file" />
+                <data android:scheme="content" />
 
-                <data android:scheme="file" android:pathPattern="*.txt" />
-                <data android:scheme="content" android:pathPattern="*.txt" />
-
-                <data android:scheme="file" android:pathPattern="*.csv" />
-                <data android:scheme="content" android:pathPattern="*.csv" />
-
-                <data android:scheme="file" android:pathPattern="*.xml" />
-                <data android:scheme="content" android:pathPattern="*.xml" />
-
-                <data android:scheme="file" android:pathPattern="*.zip" />
-                <data android:scheme="content" android:pathPattern="*.zip" />
+                <data android:pathPattern="*.txt" android:pathSuffix="." />
+                <data android:pathPattern="*.csv" android:pathSuffix=".csv" />
+                <data android:pathPattern="*.xml" android:pathSuffix=".xml" />
+                <data android:pathPattern="*.zip" android:pathSuffix=".zip" />
             </intent-filter>
 <!--
             <intent-filter android:label="InterSpec peak detector response">
@@ -177,5 +165,3 @@ ExecutorService myExecutor = Executors.newCachedThreadPool();
 
     </application>
 </manifest>
-
-
