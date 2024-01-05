@@ -152,6 +152,10 @@ public:
   void setNeutronsHidden( const bool hide );
   bool neutronsHidden() const;
   
+  void setGammaLogY( const bool logy );
+  bool gammaLogY() const;
+  
+  
   void setXAxisRangeSamples( const int min_sample_num, const int max_sample_num );
   
   /** Returns the current user-entered gamma energy range that should be summed to create this gross count chart. */
@@ -253,6 +257,7 @@ protected:
   bool m_showHorizontalLines;
   bool m_dontRebin;
   bool m_hideNeutrons;
+  bool m_gammaLogY;
   
   std::shared_ptr<const SpecUtils::SpecFile> m_spec;
   std::vector<std::string> m_detectors_to_display;
