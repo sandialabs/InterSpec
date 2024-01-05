@@ -2257,13 +2257,13 @@ std::shared_ptr<const SpecMeas> ExportSpecFileTool::generateFileToSave()
   const vector<string> detectors = currentlySelectedDetectors();
   
   const bool backgroundSub = (m_backSubFore && m_backSubFore->isVisible() && m_backSubFore->isChecked());
-  const bool sumAll = (m_sumAllToSingleRecord->isVisible() && m_sumAllToSingleRecord->isChecked());
+  const bool sumAll = ((m_sumAllToSingleRecord->isVisible() && m_sumAllToSingleRecord->isChecked())
+                       || (max_records <= 2));
   const bool foreToSingleRecord = (m_sumForeToSingleRecord->isVisible() && m_sumForeToSingleRecord->isChecked());
   const bool backToSingleRecord = (m_sumBackToSingleRecord->isVisible() && m_sumBackToSingleRecord->isChecked());
   const bool secoToSingleRecord = (m_sumSecoToSingleRecord->isVisible() && m_sumSecoToSingleRecord->isChecked());
   const bool filterDets = (m_filterDetector && m_filterDetector->isVisible() && m_filterDetector->isChecked());
-  const bool sumDetectorsPerSample = ( ((max_records <= 2) && (detectors.size() > 1))
-                                      && !(use_disp_fore || use_disp_back || use_disp_seco) );
+  const bool sumDetectorsPerSample = (sum_per_sample && ((max_records <= 2) && (detectors.size() > 1)));
   
   
   shared_ptr<SpecMeas> answer = make_shared<SpecMeas>();
@@ -2623,19 +2623,19 @@ std::shared_ptr<const SpecMeas> ExportSpecFileTool::generateFileToSave()
   }
   
   
-  if( m_sumAllToSingleRecord->isVisible() && m_sumAllToSingleRecord->isChecked() )
+  if( sumAll )
   {
     const vector<shared_ptr<const SpecUtils::Measurement>> orig_meass = answer->measurements();
     
     // Next call throws exception if invalid sample number, detector name, or cant find energy
     //  binning to use.  And returns nullptr if empty sample numbers or detector names.
-    shared_ptr<deque<shared_ptr<const PeakDef>>> peaks = answer->peaks(samples);
-    answer->setPeaks( {}, samples );
-    
     shared_ptr<SpecUtils::Measurement> sum_meas = answer->sum_measurements( samples, detectors, nullptr );
     assert( sum_meas );
     if( !sum_meas )
       throw runtime_error( "Error summing records - perhaps empty sample numbers or detector names." );
+    
+    shared_ptr<deque<shared_ptr<const PeakDef>>> peaks = answer->peaks(samples);
+    answer->setPeaks( {}, samples );
     
     sum_meas->set_sample_number( 1 );
     if( peaks && peaks->size() )
@@ -2645,7 +2645,7 @@ std::shared_ptr<const SpecMeas> ExportSpecFileTool::generateFileToSave()
     
     answer->remove_measurements( orig_meass );
     answer->add_measurement( sum_meas, true );
-  }else if( sumDetectorsPerSample )
+  }else if( sumDetectorsPerSample && (answer->detector_names().size() > 1) )
   {
     set<int> problem_samples;
     map<int,vector<shared_ptr<const SpecUtils::Measurement>>> sample_to_meas;
@@ -2664,7 +2664,9 @@ std::shared_ptr<const SpecMeas> ExportSpecFileTool::generateFileToSave()
       
       try
       {
-        shared_ptr<SpecUtils::Measurement> m = answer->sum_measurements( {sample_num}, detectors, nullptr );
+        // `detectors` is no longer valid, since we may have summed them together
+        const vector<string> det_names = answer->detector_names();
+        shared_ptr<SpecUtils::Measurement> m = answer->sum_measurements( {sample_num}, det_names, nullptr );
         if( !m )
           throw runtime_error( "No gamma spectra found" );
         
