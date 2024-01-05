@@ -404,15 +404,6 @@ namespace InterSpecAddOn
   }
 
 
-  Napi::Boolean usingElectronMenus(const Napi::CallbackInfo& info) 
-  {
-    Napi::Env env = info.Env();
-
-    const bool isUsing = interspec_using_electron_menus();
-
-    return Napi::Boolean::New( env, isUsing );
-  }
-
   bool send_nodejs_message( const std::string &session_token, const std::string &msg_name, const std::string &msg_data )
   {
     std::cout << "In InterSpecAddOn::send_nodejs_message, for msg_name=" << msg_name << std::endl;
@@ -604,8 +595,6 @@ Napi::Object InitAll(Napi::Env env, Napi::Object exports) {
   exports.Set( "openAppUrl", Napi::Function::New(env, InterSpecAddOn::openAppUrl) );
   
   exports.Set( "removeSessionToken", Napi::Function::New(env, InterSpecAddOn::removeSessionToken ));
-
-  exports.Set( "usingElectronMenus", Napi::Function::New(env, InterSpecAddOn::usingElectronMenus ));
   
   exports.Set( "setMessageToNodeJsCallback", Napi::Function::New(env, InterSpecAddOn::setMessageToNodeJsCallback));
   exports.Set( "setBrowseForDirectoryCallback", Napi::Function::New(env, InterSpecAddOn::setBrowseForDirectoryCallback));

@@ -58,11 +58,6 @@ option(
     "Mirrors WMenus with OSX native NSMenu (not fully implemented)"
     off
 )
-option(
-    USE_ELECTRON_NATIVE_MENU
-    "Mirrors WMenus with Electrons native Menu (not fully implemented); if off will use HTML based menus"
-    OFF
-)
 
 
 if( NOT DEFINED TRY_TO_STATIC_LINK )
@@ -117,7 +112,7 @@ option(
     OFF
 )
 
-option(USE_REMOTE_RID "Enables using remote RID tool" OFF)
+option(USE_REMOTE_RID "Enables using remote RID tool" ON)
 option(USE_REL_ACT_TOOL "Enables Relative Activity tool - experimental" ON)
 
 if( IOS OR ANDROID OR BUILD_AS_OSX_APP )

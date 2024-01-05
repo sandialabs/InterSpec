@@ -1473,7 +1473,13 @@ vector<string> url_encode_spectrum( const UrlSpectrum &m,
   
   cout << "--------------------------------------------------------------------------------\n";
   cout << "URL start:\n\t";
-  const string url_start = string("RADDATA://G0/") + sm_hex_digits[encode_options & 0x0F];
+  
+  const uint8_t used_options = (encode_options & (~EncodeOptions::AsMailToUri));
+  const char more_sig_char = sm_hex_digits[(used_options >> 4) & 0x0F];
+  const char less_sig_char = sm_hex_digits[used_options & 0x0F];
+  const string opt_str = ((more_sig_char == '0') ? string() : (string() + more_sig_char)) + less_sig_char;
+  
+  const string url_start = "RADDATA://G0/" + opt_str;
   cout << "\t" << url_start << endl;
   cout << "--------------------------------------------------------------------------------\n";
   
@@ -1665,9 +1671,11 @@ std::vector<UrlEncodedSpec> url_encode_spectra( const std::vector<UrlSpectrum> &
   if( measurements.size() > 9 )
     throw runtime_error( "url_encode_spectra: to many measurements passed in." );
   
-
-  if( encode_options & ~(EncodeOptions::NoDeflate | EncodeOptions::NoBaseXEncoding | EncodeOptions::CsvChannelData
-                         | EncodeOptions::NoZeroCompressCounts | EncodeOptions::UseUrlSafeBase64 | EncodeOptions::AsMailToUri) )
+  const uint8_t allowed_bits = (EncodeOptions::NoDeflate | EncodeOptions::NoBaseXEncoding
+                                | EncodeOptions::CsvChannelData | EncodeOptions::NoZeroCompressCounts
+                                | EncodeOptions::UseUrlSafeBase64 | EncodeOptions::AsMailToUri);
+  const uint8_t not_allowed_bits = ~allowed_bits;
+  if( encode_options & not_allowed_bits )
     throw runtime_error( "url_encode_spectra: invalid option passed in - see EncodeOptions." );
   
   assert( encode_options < 0x80 );
@@ -1717,8 +1725,9 @@ std::vector<UrlEncodedSpec> url_encode_spectra( const std::vector<UrlSpectrum> &
       url_start = string("RADDATA://G0/");
     }
     
-    const char more_sig_char = sm_hex_digits[(encode_options >> 4) & 0x0F];
-    const char less_sig_char = sm_hex_digits[encode_options & 0x0F];
+    const uint8_t used_options = (encode_options & (~EncodeOptions::AsMailToUri));
+    const char more_sig_char = sm_hex_digits[(used_options >> 4) & 0x0F];
+    const char less_sig_char = sm_hex_digits[used_options & 0x0F];
     
     url_start += ((more_sig_char == '0') ? string() : (string() + more_sig_char))
                  + (string() + less_sig_char)
@@ -2019,13 +2028,24 @@ EncodedSpectraInfo get_spectrum_url_info( std::string url )
       answer.m_encode_options = hex_to_dec( url[0] );
     }
     
-    if( answer.m_encode_options
-       & ~(EncodeOptions::NoDeflate | EncodeOptions::NoBaseXEncoding
-           | EncodeOptions::CsvChannelData | EncodeOptions::NoZeroCompressCounts
-           | EncodeOptions::UseUrlSafeBase64 | EncodeOptions::AsMailToUri) )
+    // Note that `EncodeOptions::AsMailToUri = 0x20` was written previous to 20231202, even though it
+    //  shouldnt have been - so we will ignore this bit
+    const uint8_t allowed_bits = (EncodeOptions::NoDeflate | EncodeOptions::NoBaseXEncoding
+                                  | EncodeOptions::CsvChannelData | EncodeOptions::NoZeroCompressCounts
+                                  | EncodeOptions::UseUrlSafeBase64 | EncodeOptions::AsMailToUri);
+    const uint8_t non_allowed_bits = ~allowed_bits;
+    if( answer.m_encode_options & non_allowed_bits )
     {
-      throw runtime_error( string("Encoding option had invalid bit set (hex digit ")
-                           + url[0] + (has_email_opt ? (string() + url[1]) : string()) + ")" );
+      string msg = "Encoding option had invalid bit set (option value 0x";
+      msg += has_email_opt ? "" : "0";
+      msg += url[0];
+      msg += (has_email_opt ? (string() + url[1]) : string());
+      msg += " but bits 0x";
+      msg += sm_hex_digits[ ((non_allowed_bits >> 4) & 0x0F) ];
+      msg += sm_hex_digits[ (non_allowed_bits & 0x0F) ];
+      msg += " not allowed)";
+      
+      throw runtime_error( msg );
     }
    
     answer.m_number_urls = hex_to_dec( url[(has_email_opt ? 2 : 1)] ) + 1;
@@ -2047,8 +2067,8 @@ EncodedSpectraInfo get_spectrum_url_info( std::string url )
     url = url.substr( has_email_opt ? 5 : 4 );
   }catch( std::exception &e )
   {
-    throw runtime_error( "get_spectrum_url_info: options portion (three hex digits after"
-                        " the //G/) of url is invalid: " + string(e.what()) );
+    throw runtime_error( "get_spectrum_url_info: options portion (three or four hex digits after"
+                        " the //G0/) of url is invalid: " + string(e.what()) );
   }//try / catch
   
   if( answer.m_number_urls > 1 )

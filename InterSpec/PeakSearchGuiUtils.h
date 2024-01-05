@@ -54,7 +54,7 @@ namespace Wt{
 namespace PeakSearchGuiUtils
 {
   
-/** Renders the selcted energy range of the measurement to a SVG image.
+/** Renders the selected energy range of the measurement to a SVG image.
  @param measurement What to plot.  Must be non-null pointer.
  @param peaks Peaks to include on the histogram.  May be empty.
  @param reflines Reference lines to show on the chart. May be empty
@@ -73,6 +73,14 @@ std::shared_ptr<Wt::WSvgImage> renderChartToSvg( std::shared_ptr<const SpecUtils
                                               const int width_px, const int height_px,
                                               std::shared_ptr<const ColorTheme> theme,
                                                 const bool compact );
+  
+/** Function that is called when the user double-left-clicks on the spectrum.
+ */
+void fit_peak_from_double_click( InterSpec *interspec,
+                                const double energy_clicked,
+                                const double pixel_per_keV,
+                                std::shared_ptr<const DetectorPeakResponse> det );
+  
   
 /** Performs the automated search for peaks - setting the results to the GUI. */
 void automated_search_for_peaks( InterSpec *interspec, const bool keep_old_peaks );

@@ -78,6 +78,7 @@
 #include "InterSpec/RemoteRid.h"
 #include "InterSpec/InterSpecApp.h"
 #include "InterSpec/SimpleDialog.h"
+#include "InterSpec/PhysicalUnits.h"
 #include "InterSpec/WarningWidget.h"
 #include "InterSpec/UndoRedoManager.h"
 #include "InterSpec/DecayDataBaseServer.h"
@@ -212,6 +213,8 @@ struct FullSpecResults
   vector<string> analysisWarnings;
   string drf;
   double chi2 = -1.0;
+  //estimatedDose: in PhysicalUnits (i.e., 1.0E-6*PhysicalUnits::rem/PhysicalUnits::hour)
+  double estimatedDose = -1.0;
   double stuffOfInterest = 1.0;
   double alarmBasisDuration = -1.0;
   
@@ -266,6 +269,9 @@ FullSpecResults json_to_results( const string &input )
   answer.analysisError = result["analysisError"].orIfNull(0);
   answer.drf = result["drf"].orIfNull("");
   answer.chi2 = result["chi2"].orIfNull( -1.0 );
+  answer.estimatedDose = result["estimatedDose"].orIfNull( -1.0 ); //estimation from spectrum, in micro-rem/hour
+  if( answer.estimatedDose > 0 )
+    answer.estimatedDose *= 1.0E-6 * PhysicalUnits::rem / PhysicalUnits::hour;
   answer.stuffOfInterest = result["stuffOfInterest"].orIfNull( -1.0 );
   answer.alarmBasisDuration = result["alarmBasisDuration"].orIfNull( -1.0 );
   answer.foregroundDescription = result["foregroundDescription"].orIfNull("");
@@ -363,8 +369,8 @@ public:
   void startRestAnalysis( const string ana_service_url );
   void requestRestServiceInfo( const string url );
   void deleteSelfForToast();
-  void handleAnaResultSuccessForToast( string response );
-  void handleAnaResultFailureForToast( string response );
+  void handleAutoAnaResultSuccess( string response );
+  void handleAutoAnaResultFailure( string response );
 };//class RestRidInterface
 
 
@@ -400,6 +406,7 @@ protected:
   WText *m_result;
   
   WCheckBox *m_alwaysDoAnalysisCb;
+  WCheckBox *m_autoAnaInDialog;
 
   RestRidInterface *m_rest_interface;
   
@@ -527,6 +534,7 @@ public:
    m_status( nullptr ),
    m_result( nullptr ),
    m_alwaysDoAnalysisCb( nullptr ),
+   m_autoAnaInDialog( nullptr ),
    m_rest_interface( nullptr )
   {
     assert( m_remote_rid );
@@ -562,7 +570,7 @@ public:
     {
       case ServiceType::Rest:
       {
-        const char *url_regex = "^(http(s)?:\\/\\/)[\\w.-]+(?:\\.[\\w\\.-]+)+[\\w\\-\\._~:/?#[\\]@!\\$&'\\(\\)\\*\\+,;=.]+$";
+        const char *url_regex = "^(http(s)?:\\/\\/)[\\w.-]+(?:\\.[\\w\\.-]+)*[\\w\\-\\._~:/?#[\\]@!\\$&'\\(\\)\\*\\+,;=.]+$";
         WRegExpValidator *validator = new WRegExpValidator( url_regex, m_url );
         m_url->setValidator( validator );
         m_url->setPlaceholderText( "URL of FullSpectrum Service" );
@@ -646,17 +654,70 @@ public:
     m_submit->clicked().connect( this, &ExternalRidWidget::submitForAnalysis );
     m_submit->disable();
     
-    m_alwaysDoAnalysisCb = new WCheckBox( "Always submit analysis on spectrum load" );
-    m_alwaysDoAnalysisCb->addStyleClass( "AlwaysSubmitAna" );
-    layout->addWidget( m_alwaysDoAnalysisCb, 5, 0, 1, 2 );
+    WContainerWidget *cb_row = new WContainerWidget();
+    cb_row->addStyleClass( "RidOptionCbRow" );
+    layout->addWidget( cb_row, 5, 0, 1, 2 );
     
-    const int always_call_index = (m_type == ServiceType::Rest) ? 1 : 2;
-    const int always_call = InterSpecUser::preferenceValue<int>( "AlwaysCallExternalRid", m_interspec );
-    if( always_call == always_call_index )
-      m_alwaysDoAnalysisCb->setChecked( true );
+    m_alwaysDoAnalysisCb = new WCheckBox( "Always call on spectrum load", cb_row );
+    m_alwaysDoAnalysisCb->addStyleClass( "AlwaysSubmitAna" );
+    
+    m_autoAnaInDialog = new WCheckBox( "Show dialog", cb_row );
+    m_autoAnaInDialog->addStyleClass( "ShowDialogOpt" );
+    m_autoAnaInDialog->setToolTip( "If checked, a dialog that must be dismissed by the user will be"
+                                  " shown with RID results. If not checked, only a"
+                                  " notification that will disappear after a short time, will be"
+                                  " shown with RID results." );
+    m_autoAnaInDialog->hide();
+    
+    const ExternalRidAuotCallPref pref = RemoteRid::external_rid_call_pref( m_interspec );
+    
+    switch( m_type )
+    {
+      case ServiceType::Rest:
+      {
+        switch( pref )
+        {
+          case ExternalRidAuotCallPref::DoNotCall:
+          case ExternalRidAuotCallPref::AlwaysUseExeWithToast:
+          case ExternalRidAuotCallPref::AlwaysUseExeWithDialog:
+            break;
+            
+          case ExternalRidAuotCallPref::AlwaysUseRestWithDialog:
+            m_autoAnaInDialog->setChecked( true );
+          case ExternalRidAuotCallPref::AlwaysUseRestWithToast:
+            m_alwaysDoAnalysisCb->setChecked( true );
+            m_autoAnaInDialog->show();
+            break;
+        }//switch( pref )
+        
+        break;
+      }//case ServiceType::Rest:
+        
+      case ServiceType::Exe:
+      {
+        switch( pref )
+        {
+          case ExternalRidAuotCallPref::DoNotCall:
+          case ExternalRidAuotCallPref::AlwaysUseRestWithToast:
+          case ExternalRidAuotCallPref::AlwaysUseRestWithDialog:
+            break;
+            
+          case ExternalRidAuotCallPref::AlwaysUseExeWithDialog:
+            m_autoAnaInDialog->setChecked( true );
+          case ExternalRidAuotCallPref::AlwaysUseExeWithToast:
+            m_alwaysDoAnalysisCb->setChecked( true );
+            m_autoAnaInDialog->show();
+            break;
+        }//switch( pref )
+        
+        break;
+      }//case ServiceType::Exe:
+    }//switch( m_type )
     
     m_alwaysDoAnalysisCb->checked().connect( this, &ExternalRidWidget::handleAlwaysCallCheckChanged );
     m_alwaysDoAnalysisCb->unChecked().connect( this, &ExternalRidWidget::handleAlwaysCallCheckChanged );
+    m_autoAnaInDialog->checked().connect( this, &ExternalRidWidget::handleAlwaysCallCheckChanged );
+    m_autoAnaInDialog->unChecked().connect( this, &ExternalRidWidget::handleAlwaysCallCheckChanged );
     
     m_interspec->displayedSpectrumChanged().connect( this, &ExternalRidWidget::displayedSpectrumChanged );
     
@@ -677,69 +738,133 @@ public:
   void uncheckAlwaysCallAnalysis()
   {
     m_alwaysDoAnalysisCb->setChecked( false );
+    m_autoAnaInDialog->setHidden( true );
   }
   
   void handleAlwaysCallCheckChanged()
   {
-    const int always_call_index = (m_type == ServiceType::Rest) ? 1 : 2;
+    const auto prev_pref_value = RemoteRid::external_rid_call_pref( m_interspec );
+    
+    ExternalRidAuotCallPref pref_value = ExternalRidAuotCallPref::DoNotCall;
+    
+    m_autoAnaInDialog->setHidden( !m_alwaysDoAnalysisCb->isChecked() );
     
     if( m_alwaysDoAnalysisCb->isChecked() )
     {
-      try
+      const bool dialog = m_autoAnaInDialog->isChecked();
+      switch( m_type )
       {
-        InterSpecUser::setPreferenceValue(m_interspec->m_user, "AlwaysCallExternalRid", always_call_index, m_interspec);
-#if( ANDROID || IOS || BUILD_FOR_WEB_DEPLOYMENT )
-        m_remote_rid->alwaysCallRestAnaChecked();
-#else
-        switch( m_type )
+        case ServiceType::Rest:
         {
-          case ServiceType::Rest:
-            m_remote_rid->alwaysCallRestAnaChecked();
-            break;
-          case ServiceType::Exe:
-            m_remote_rid->alwaysCallExeAnaChecked();
-            break;
-        }//switch( m_type )
+          pref_value = dialog ? ExternalRidAuotCallPref::AlwaysUseRestWithDialog
+                              : ExternalRidAuotCallPref::AlwaysUseRestWithToast;
+          break;
+        }//case ServiceType::Rest:
+          
+        case ServiceType::Exe:
+        {
+          pref_value = dialog ? ExternalRidAuotCallPref::AlwaysUseExeWithDialog
+                              : ExternalRidAuotCallPref::AlwaysUseExeWithToast;
+          break;
+        }//case ServiceType::Exe:
+      }//switch( m_type )
+      
+      
+#if( ANDROID || IOS || BUILD_FOR_WEB_DEPLOYMENT )
+      m_remote_rid->alwaysCallRestAnaChecked();
+#else
+      switch( m_type )
+      {
+        case ServiceType::Rest:
+          m_remote_rid->alwaysCallRestAnaChecked();
+          break;
+        case ServiceType::Exe:
+          m_remote_rid->alwaysCallExeAnaChecked();
+          break;
+      }//switch( m_type )
 #endif
-      }catch( std::exception & )
-      {
-        assert(0);
-      }
-    }else
+    }//if( m_alwaysDoAnalysisCb->isChecked() )
+    
+    try
     {
-      try
-      {
-        InterSpecUser::setPreferenceValue(m_interspec->m_user, "AlwaysCallExternalRid", 0, m_interspec);
-      }catch( std::exception & )
-      {
-        assert(0);
-      }
+      InterSpecUser::setPreferenceValue( m_interspec->m_user, "AlwaysCallExternalRid",
+                                        static_cast<int>(pref_value), m_interspec );
+    }catch( std::exception & )
+    {
+      assert(0);
     }
     
     UndoRedoManager *undoRedo = UndoRedoManager::instance();
     if( undoRedo && undoRedo->canAddUndoRedoNow() )
     {
-      auto undo_redo = [always_call_index](){
+      auto undo_redo = []( const ExternalRidAuotCallPref value ){
         InterSpec *viewer = InterSpec::instance();
         RemoteRid *rid = viewer ? viewer->remoteRid() : nullptr;
         if( !rid )
           return;
       
         RestRidImp::ExternalRidWidget *tool = rid->restRidTool();
-#if( !ANDROID && !IOS && !BUILD_FOR_WEB_DEPLOYMENT )
-        if( always_call_index == 2 )
-          tool = rid->exeRidTool();
-#endif
-        WCheckBox *cb = tool ? tool->m_alwaysDoAnalysisCb : nullptr;
         
-        if( cb )
-          cb->setChecked( !cb->isChecked() );
+#if( ANDROID || IOS || BUILD_FOR_WEB_DEPLOYMENT )
+#else
+        switch( value )
+        {
+          case ExternalRidAuotCallPref::DoNotCall:
+            break;
+            
+          case ExternalRidAuotCallPref::AlwaysUseRestWithToast:
+          case ExternalRidAuotCallPref::AlwaysUseRestWithDialog:
+            break;
+            
+          case ExternalRidAuotCallPref::AlwaysUseExeWithToast:
+          case ExternalRidAuotCallPref::AlwaysUseExeWithDialog:
+            tool = rid->exeRidTool();
+            break;
+        }//switch( value )
+        
+        WCheckBox *always_cb = tool ? tool->m_alwaysDoAnalysisCb : nullptr;
+        WCheckBox *dialog_cb = tool ? tool->m_autoAnaInDialog : nullptr;
+        
+        switch( value )
+        {
+          case ExternalRidAuotCallPref::DoNotCall:
+            if( always_cb )
+              always_cb->setChecked( false );
+            if( dialog_cb )
+              dialog_cb->setHidden( true );
+            break;
+            
+          case ExternalRidAuotCallPref::AlwaysUseRestWithToast:
+          case ExternalRidAuotCallPref::AlwaysUseExeWithToast:
+            if( always_cb )
+              always_cb->setChecked( true );
+            if( dialog_cb )
+            {
+              dialog_cb->setHidden( false );
+              dialog_cb->setChecked( false );
+            }
+            break;
+            
+          case ExternalRidAuotCallPref::AlwaysUseRestWithDialog:
+          case ExternalRidAuotCallPref::AlwaysUseExeWithDialog:
+            if( always_cb )
+              always_cb->setChecked( true );
+            if( dialog_cb )
+            {
+              dialog_cb->setHidden( false );
+              dialog_cb->setChecked( true );
+            }
+            break;
+        }//switch( value )
         
         if( tool )
           tool->handleAlwaysCallCheckChanged();
+#endif //if ANDROID/IOS/WEB / else
       };//undo_redo
       
-      undoRedo->addUndoRedoStep( undo_redo, undo_redo, "Toggle always do External Rid on spectrum load" );
+      undoRedo->addUndoRedoStep( [=](){ undo_redo(prev_pref_value); },
+                                [=](){ undo_redo(pref_value); },
+                                "Toggle always do External Rid on spectrum load" );
     }//if( undo )
   }//handleAlwaysCallCheckChanged()
   
@@ -796,27 +921,55 @@ protected:
 #endif  //#if( !ANDROID && !IOS && !BUILD_FOR_WEB_DEPLOYMENT )
 
 public:
-  static void makeToastNotificationForAnaResult( std::shared_ptr<int> rcode, std::shared_ptr<string> result, std::shared_ptr<std::mutex> m )
+  static void displayAutoRidAnaResult( std::shared_ptr<int> rcode,
+                                                std::shared_ptr<string> result,
+                                                std::shared_ptr<std::mutex> m )
   {
     assert( rcode && result && m );
     WApplication *app = WApplication::instance();
-    assert( app );
-    if( !app )
+    InterSpec *interspec = InterSpec::instance();
+    assert( app && interspec );
+    if( !app || !interspec )
       return;
+    
+    const ExternalRidAuotCallPref pref = RemoteRid::external_rid_call_pref( InterSpec::instance() );
+    
+    bool make_dialog = false;
+    
+    switch( pref )
+    {
+      case ExternalRidAuotCallPref::DoNotCall:
+        assert( 0 );
+        return;
+        break;
+        
+      case ExternalRidAuotCallPref::AlwaysUseRestWithToast:
+      case ExternalRidAuotCallPref::AlwaysUseExeWithToast:
+        make_dialog = false;
+        break;
+        
+      case ExternalRidAuotCallPref::AlwaysUseRestWithDialog:
+      case ExternalRidAuotCallPref::AlwaysUseExeWithDialog:
+        make_dialog = true;
+        break;
+    }//switch( pref )
     
     std::lock_guard<mutex> lock( *m );
     
     string message;
     const int code = *rcode;
     const string &res = *result;
+        
     if( code == 0 )
     {
+      // `code == 0` just means the http response was okay - there could still be GADRAS error
       vector<string> nuclides;
       vector<pair<string,string>> iso_descrips;
-      
+      std::unique_ptr<const FullSpecResults> result_ptr;
       try
       {
         const FullSpecResults result = json_to_results( res );
+        result_ptr.reset( new FullSpecResults(result) );
         
         string iso_str = result.isotopeString;
         SpecUtils::ireplace_all( iso_str, "+", ", " );
@@ -824,11 +977,17 @@ public:
         if( iso_str.empty() )
         {
           if( result.errorMessage.size() )
+          {
+            result_ptr.reset();
             message = "GADRAS RID Error: " + result.errorMessage;
-          else if( result.code )
+          }else if( result.code )
+          {
+            result_ptr.reset();
             message = "GADRAS RID Error code " + to_string(result.code);
-          else
+          }else
+          {
             message = "GADRAS RID: nothing identified";
+          }
         }else
         {
           message = "GADRAS RID: " + iso_str;
@@ -857,51 +1016,136 @@ public:
         //  displayed spectra, and do this when the sample numbers change.
         //
         //  TODO: the results we just got might be for the previous file
-        InterSpec *interspec = InterSpec::instance();
-        ReferencePhotopeakDisplay *reflines = interspec ? interspec->referenceLinesWidget() : nullptr;
+        ReferencePhotopeakDisplay *reflines = interspec->referenceLinesWidget();
         if( reflines )
           reflines->setExternalRidResults( "GADRAS", iso_descrips );
       }catch( std::exception &e )
       {
         message = "Failed to parse GADRAS RID results.";
         
-        cerr << "makeToastNotificationForAnaResult: Failed to parse results from GADRAS: "
+        cerr << "displayAutoRidAnaResult: Failed to parse results from GADRAS: "
         << e.what() << endl;
       }//try / catch
       
-      WStringStream js;
-      js << message;
       
-      js << "<div class=\"RemoteRidToastButtons\">";
-      if( !nuclides.empty() )
+      if( make_dialog && result_ptr )
       {
-        string nucstr;
-        for( size_t i = 0; i < nuclides.size(); ++i )
-          nucstr += (i ? "," : "") + nuclides[i];
+        WStringStream msg_html_strm;
+        generateResultHtml( msg_html_strm, *result_ptr );
+        const string msg_html = msg_html_strm.str();
+          
+        wApp->useStyleSheet( "InterSpec_resources/RemoteRid.css" );
+        SimpleDialog *dialog = new SimpleDialog( "External RID Results" );
+        
+        WText *contents = new WText( msg_html, dialog->contents() );
+        contents->addStyleClass( "content RestRidResult" );
+        contents->setInline( false );
+        
+        WPushButton *btn = dialog->addButton( "Close" );
+        btn->clicked().connect( std::bind( [rcode,result,m](){
+          UndoRedoManager *undoRedo = UndoRedoManager::instance();
+          if( undoRedo && undoRedo->canAddUndoRedoNow() )
+          {
+            auto undo = [=](){ displayAutoRidAnaResult( rcode, result, m ); };
+            auto redo = [=](){
+              InterSpec *interspec = InterSpec::instance();
+              if( interspec )
+                interspec->programaticallyCloseAutoRemoteRidResultDialog();
+            };
+            undoRedo->addUndoRedoStep( std::move(undo), std::move(redo), "Close external RID dialog" );
+          }
+        } ) );//Close button clicked
+          
+        btn = dialog->addButton( "RID Tool" );
+        btn->clicked().connect( std::bind([=](){
+          InterSpec *interspec = InterSpec::instance();
+          assert( interspec );
+          if( !interspec )
+            return;
+          interspec->createRemoteRidWindow();
+          
+          UndoRedoManager *undoRedo = UndoRedoManager::instance();
+          if( undoRedo && undoRedo->canAddUndoRedoNow() )
+          {
+            auto undo = [=](){
+              InterSpec *interspec = InterSpec::instance();
+              if( interspec )
+                interspec->deleteRemoteRidWindow();
+              displayAutoRidAnaResult( rcode, result, m );
+            };
+            auto redo = [=](){
+              InterSpec *interspec = InterSpec::instance();
+              if( interspec )
+              {
+                interspec->programaticallyCloseAutoRemoteRidResultDialog();
+                interspec->createRemoteRidWindow();
+              }
+            };
+            undoRedo->addUndoRedoStep( std::move(undo), std::move(redo), "Close external RID dialog" );
+          }
+        }));//RID Tool button clicked
+        
+        
+        interspec->setAutoRemoteRidResultDialog( dialog );
+        dialog->finished().connect( interspec, &InterSpec::handleAutoRemoteRidResultDialogClose );
+        
+        UndoRedoManager *undoRedo = UndoRedoManager::instance();
+        if( undoRedo && undoRedo->canAddUndoRedoNow() )
+        {
+          auto undo = [](){
+            InterSpec *interspec = InterSpec::instance();
+            if( interspec )
+              interspec->programaticallyCloseAutoRemoteRidResultDialog();
+          };
+          auto redo = [rcode,result,m](){
+            displayAutoRidAnaResult( rcode, result, m );
+          };
+          undoRedo->addUndoRedoStep( std::move(undo), std::move(redo), "Show External RID dialog" );
+        }//if( make undo/redo )
+      }else
+      {
+        WStringStream js;
+        js << message;
+        
+        js << "<div class=\"RemoteRidToastButtons\">";
+        if( !nuclides.empty() )
+        {
+          string nucstr;
+          for( size_t i = 0; i < nuclides.size(); ++i )
+            nucstr += (i ? "," : "") + nuclides[i];
+          
+          js <<
+          "<div onclick=\"Wt.emit('" << app->root()->id() << "',{name:'miscSignal'}, 'showRemoteRidRefLines-" << nucstr << "');"
+          "try{$(this.parentElement.parentElement.parentElement).remove();}catch(e){}"
+          "return false;\">Show Ref. Lines</div>";
+        }//if( !nuclides.empty() )
         
         js <<
-        "<div onclick=\"Wt.emit('" << app->root()->id() << "',{name:'miscSignal'}, 'showRemoteRidRefLines-" << nucstr << "');"
+        "<div onclick=\"Wt.emit('" << app->root()->id() << "',{name:'miscSignal'}, 'openRemoteRidTool');"
         "try{$(this.parentElement.parentElement.parentElement).remove();}catch(e){}"
-        "return false;\">Show Ref. Lines</div>";
-      }//if( !nuclides.empty() )
-      
-      js <<
-      "<div onclick=\"Wt.emit('" << app->root()->id() << "',{name:'miscSignal'}, 'openRemoteRidTool');"
-      "try{$(this.parentElement.parentElement.parentElement).remove();}catch(e){}"
-      "return false;\">Open Remote RID</div>";
-      
-      js << "</div>";
-      
-      InterSpec *viewer = InterSpec::instance();
-      if( viewer )
-        viewer->warningWidget()->addMessageUnsafe( js.str(), WarningWidget::WarningMsgExternalRiid, 20000 );
+        "return false;\">Open Remote RID</div>";
+        
+        js << "</div>";
+        
+        InterSpec *viewer = InterSpec::instance();
+        if( viewer )
+          viewer->warningWidget()->addMessageUnsafe( js.str(), WarningWidget::WarningMsgExternalRiid, 20000 );
+      }//if( make_dialog ) / else
     }else // if( code != 0 )
     {
       // TODO: check for return code, etc., and customize message based on that
       
+      string msg = res;
+      if( SpecUtils::icontains(msg , "Failed to fetch") //chrome
+         || SpecUtils::icontains(msg , "Load failed")   //Safari
+         || SpecUtils::icontains(msg , "NetworkError when attempting") ) //Firefox
+      {
+        msg = "Error calling analysis: incorrect URL or no internet.";
+      }
+      
       WStringStream js;
-      js << res;
-      js <<
+      js << msg
+         <<
       "<div class=\"RemoteRidToastButtons\">"
       "<div onclick=\"Wt.emit('" << app->root()->id() << "',{name:'miscSignal'}, 'openRemoteRidTool');"
       "try{$(this.parentElement.parentElement.parentElement).remove();}catch(e){}"
@@ -917,7 +1161,7 @@ public:
     }//if( code == 0 ) / else
     
     wApp->triggerUpdate();
-  }//void makeToastNotificationForAnaResult( std::shared_ptr<string> result, std::shared_ptr<std::mutex> m )
+  }//void displayAutoRidAnaResult( std::shared_ptr<string> result, std::shared_ptr<std::mutex> m )
 
 public:
 
@@ -997,7 +1241,7 @@ public:
     if( parent )
       doUpdateFcn = wApp->bind( boost::bind( &ExternalRidWidget::receiveExeAnalysis, parent, rcode, result, m ) );
     else
-      doUpdateFcn = boost::bind( &ExternalRidWidget::makeToastNotificationForAnaResult, rcode, result, m );
+      doUpdateFcn = boost::bind( &ExternalRidWidget::displayAutoRidAnaResult, rcode, result, m );
     
     auto commandRunner = [tmpfilename,exe_path,arguments,doUpdateFcn,rcode,result,m,appsession](){
       try
@@ -1280,7 +1524,7 @@ public:
   }//void handleInfoResponse()
   
   
-  void handleInfoResponseError( const std::string &msg )
+  void handleInfoResponseError( std::string msg )
   {
     m_current_drf_index = -1;
     m_drf_select->clear();
@@ -1288,10 +1532,119 @@ public:
     m_retrieve_drfs_btn->disable();
     m_result->setText( "" );
     m_status->setText( "" );
+    
+    if( SpecUtils::icontains( msg , "Failed to fetch") //chrome
+       || SpecUtils::icontains( msg , "Load failed")   //Safari
+       || SpecUtils::icontains( msg , "NetworkError when attempting") ) //Firefox
+    {
+      msg = "incorrect URL or no internet.";
+    }
+    
     m_error->setText( "Error retrieving service information: <code>" + msg + "</code>" );
     m_status_stack->setCurrentIndex( m_status_stack->indexOf(m_error) );
   }//void handleInfoResponseError()
 
+  
+  static void generateResultHtml( WStringStream &rslttxt, const FullSpecResults &results )
+  {
+    const bool useBq = InterSpecUser::preferenceValue<bool>( "DisplayBecquerel", InterSpec::instance() );
+    
+    rslttxt << "<table class=\"ResultTable\"><tbody>\n"
+    << "\t<tr>"
+    << "\t\t<th>Nuclide</th>\n"
+    << "\t\t<th>Confidence</th>\n"
+    << "\t\t<th>Category</th>\n";
+    
+    if( SpecUtils::iequals_ascii(results.analysisType, "Simple")
+       || SpecUtils::icontains(results.analysisType, "NotSpecified")
+       || results.analysisType.empty() )
+    {
+      rslttxt << "\t\t<th>Count Rate</th>\n";
+    }else
+    {
+      rslttxt << "\t\t<th>Max CPS</th>\n";
+    }
+    
+    rslttxt << "\t</tr>";
+    
+    if( results.isotopes.empty() )
+    {
+      rslttxt << "\t<tr>"
+      << "\t\t<td colspan=\"4\" style=\"text-align: center; vertical-align: middle;\">None Found</td>\n\t</tr>\n";
+    }else
+    {
+      const size_t nres = results.isotopes.size();
+      
+      for( const FullSpecIsotope &res_iso : results.isotopes )
+      {
+        const string &iso = res_iso.name;
+        string type = res_iso.type;
+        string conf = res_iso.confidenceStr;
+        const float count_rate = res_iso.countRate;
+        
+        if( conf == "H" )
+          conf = "High";
+        else if( conf == "F" )
+          conf = "Fair";
+        else if( conf == "L" )
+          conf = "Low";
+        else
+          cerr << "Unknown confidence '" << conf << "' for nuclide " << iso << endl;
+        
+        char buffer[64] = { '\0' };
+        if( count_rate < 1.0E-7 )  //FLT_EPSILON is usually 1.19209e-07
+          snprintf( buffer, sizeof(buffer), "--" );
+        else
+          snprintf( buffer, sizeof(buffer), "%.4g", count_rate );
+        
+        rslttxt << "\t<tr>\n"
+        <<"\t\t<td>" << Wt::Utils::htmlEncode(iso) << "</td>\n"
+        <<"\t\t<td>" << Wt::Utils::htmlEncode(conf) << "</td>\n"
+        <<"\t\t<td>" << Wt::Utils::htmlEncode(type) << "</td>\n"
+        <<"\t\t<td>" << std::string(buffer) << "</td>\n"
+        <<"\t</tr>\n";
+      }//for( size_t i = 0; i < nres; ++i )
+    }//if( output.isotope_names.empty() ) / else
+    
+    rslttxt << "</tbody></table>";
+    
+    if( results.code != 0 )
+      rslttxt << "<div class=\"ResultChi2\">Result Code: " << results.code << "</div>";
+    
+    string dose_str;
+    if( results.estimatedDose > 0 )
+    {
+      dose_str = "&gamma; dose="
+                 + PhysicalUnits::printToBestEquivalentDoseRateUnits( results.estimatedDose, 1, useBq )
+                 + ", ";
+    }
+    
+    if( (results.chi2 > 0.0001f) && (results.isotopes.size() > 0) )
+    {
+      char buffer[64] = { '\0' };
+      snprintf( buffer, sizeof(buffer), "%.2f", results.chi2 );
+      rslttxt << "<div class=\"ResultChi2\">"
+              << dose_str
+              << "&chi;<sup>2</sup>=" << std::string(buffer)
+              << ", DRF:&nbsp;" << Wt::Utils::htmlEncode(results.drf)
+              << "</div>";
+    }else
+    {
+      rslttxt << "<div class=\"ResultChi2\">"
+              << dose_str
+              << "DRF:&nbsp;" << Wt::Utils::htmlEncode(results.drf)
+              << "</div>";
+    }//if( output.chi_sqr > 0.0f )
+    
+    if( !results.analysisWarnings.empty() )
+    {
+      rslttxt << "<div class=\"AnaWarnings\">\n";
+      for( const string &warning : results.analysisWarnings )
+        rslttxt << "<div>" << Wt::Utils::htmlEncode(warning) << "</div>\n";
+      rslttxt << "</div>\n";
+    }//if( result.contains("analysisWarnings") )
+  }//void generateResultHtml( WStringStream &rslttxt, const FullSpecResults &results )
+  
   
   void handleResultResponse( const std::string &msg )
   {
@@ -1314,87 +1667,7 @@ public:
       
       WStringStream rslttxt;
       rslttxt << "<div class=\"ResultLabel\">Results:</div>";
-      rslttxt << "<table class=\"ResultTable\"><tbody>\n"
-      << "\t<tr>"
-      << "\t\t<th>Nuclide</th>\n"
-      << "\t\t<th>Confidence</th>\n"
-      << "\t\t<th>Category</th>\n";
-      
-      if( SpecUtils::iequals_ascii(results.analysisType, "Simple")
-         || SpecUtils::icontains(results.analysisType, "NotSpecified")
-         || results.analysisType.empty() )
-      {
-        rslttxt << "\t\t<th>Count Rate</th>\n";
-      }else
-      {
-        rslttxt << "\t\t<th>Max CPS</th>\n";
-      }
-      
-      rslttxt << "\t</tr>";
-      
-      if( results.isotopes.empty() )
-      {
-        rslttxt << "\t<tr>"
-        << "\t\t<td colspan=\"4\" style=\"text-align: center; vertical-align: middle;\">None Found</td>\n\t</tr>\n";
-      }else
-      {
-        const size_t nres = results.isotopes.size();
-        
-        for( const FullSpecIsotope &res_iso : results.isotopes )
-        {
-          const string &iso = res_iso.name;
-          string type = res_iso.type;
-          string conf = res_iso.confidenceStr;
-          const float count_rate = res_iso.countRate;
-          
-          if( conf == "H" )
-            conf = "High";
-          else if( conf == "F" )
-            conf = "Fair";
-          else if( conf == "L" )
-            conf = "Low";
-          else
-            cerr << "Unknown confidence '" << conf << "' for nuclide " << iso << endl;
-          
-          char buffer[64] = { '\0' };
-          if( count_rate < 1.0E-7 )  //FLT_EPSILON is usually 1.19209e-07
-            snprintf( buffer, sizeof(buffer), "--" );
-          else
-            snprintf( buffer, sizeof(buffer), "%.4g", count_rate );
-          
-          rslttxt << "\t<tr>\n"
-          <<"\t\t<td>" << Wt::Utils::htmlEncode(iso) << "</td>\n"
-          <<"\t\t<td>" << Wt::Utils::htmlEncode(conf) << "</td>\n"
-          <<"\t\t<td>" << Wt::Utils::htmlEncode(type) << "</td>\n"
-          <<"\t\t<td>" << std::string(buffer) << "</td>\n"
-          <<"\t</tr>\n";
-        }//for( size_t i = 0; i < nres; ++i )
-      }//if( output.isotope_names.empty() ) / else
-      
-      rslttxt << "</tbody></table>";
-      
-      if( results.code != 0 )
-        rslttxt << "<div class=\"ResultChi2\">Result Code: " << results.code << "</div>";
-      
-      if( (results.chi2 > 0.0001f) && (results.isotopes.size() > 0) )
-      {
-        char buffer[64] = { '\0' };
-        snprintf( buffer, sizeof(buffer), "%.2f", results.chi2 );
-        rslttxt << "<div class=\"ResultChi2\">&chi;<sup>2</sup>=" << std::string(buffer)
-        << ", DRF:&nbsp;" << Wt::Utils::htmlEncode(results.drf) << "</div>";
-      }else
-      {
-        rslttxt << "<div class=\"ResultChi2\">DRF:&nbsp;" << Wt::Utils::htmlEncode(results.drf)
-        << "</div>";
-      }//if( output.chi_sqr > 0.0f )
-      
-      if( !results.analysisWarnings.empty() )
-      {
-        rslttxt << "<div class=\"AnaWarnings\">\n";
-        for( const string &warning : results.analysisWarnings )
-          rslttxt << "<div>" << Wt::Utils::htmlEncode(warning) << "</div>\n";
-        rslttxt << "</div>\n";
-      }//if( result.contains("analysisWarnings") )
+      generateResultHtml( rslttxt, results );
       
       m_result->setText( rslttxt.str() );
       m_status_stack->setCurrentIndex( m_status_stack->indexOf(m_result) );
@@ -1406,11 +1679,18 @@ public:
   }//void handleResultResponse()
   
   
-  void handleResultResponseError( const std::string &msg )
+  void handleResultResponseError( std::string msg )
   {
     m_submit->enable();
     m_result->setText( "" );
     m_status->setText( "" );
+    
+    if( SpecUtils::icontains( msg , "Failed to fetch") //chrome
+       || SpecUtils::icontains( msg , "Load failed")   //Safari
+       || SpecUtils::icontains( msg , "NetworkError when attempting") ) //Firefox
+    {
+      msg = "incorrect URL or no internet.";
+    }
     
     m_error->setText( msg );
     m_status_stack->setCurrentIndex( m_status_stack->indexOf(m_error) );
@@ -1426,9 +1706,16 @@ public:
     return m_url->text().toUTF8();
   }
   
-  bool alwaysFoAnalysis() const
+  bool alwaysAutoCallAnalysis() const
   {
     return m_alwaysDoAnalysisCb->isChecked();
+  }
+  
+  bool showDialogForAutoCalledResults() const
+  {
+    if( !m_alwaysDoAnalysisCb->isChecked() )
+      return false;
+    return m_autoAnaInDialog->isChecked();
   }
   
   bool isValidUrl()
@@ -1728,13 +2015,22 @@ void RestRidInterface::startRestAnalysis( const string ana_service_url )
   // Note: the JS is defined in the C++ to avoid having a separate JS file that will end up being
   // packaged in builds that wont use it (i.e., most InterSpec builds); I dont like having various
   // `fetch` commands around that can call off of localhost; if nothing else this is a bad look.
-  
   WStringStream js;
   js <<
   "\n(function(){"
   "let sendAnaRequest = function(formData){\n"
   "  fetch('" << ana_service_url << "/analysis', {method: 'POST', body: formData})\n"
-  "    .then(response => response.json() )\n"
+  "    .then(response => {\n"
+  "       if( !response.ok ) {\n"
+  "         throw new Error('Server returned status ' + response.status);\n"
+  "       }\n"
+  // We could require server to declare content JSON, but we wont for the moment
+  //"       const contentType = response.headers.get('content-type');\n"
+  //"       if( !contentType || !contentType.includes('application/json') ){\n"
+  //"         throw new TypeError('Server did not return JSON');\n"
+  //"       }\n"
+  "       return response.json();\n"
+  "   })\n"
   "    .then(json_results => {\n"
   //"      console.log( 'Got JSON analysis response:', json_results );\n"
   "      const result_str = JSON.stringify(json_results);\n"
@@ -1815,27 +2111,27 @@ void RestRidInterface::deleteSelfForToast()
   } );
 }//deleteSelfForToast()
 
-void RestRidInterface::handleAnaResultSuccessForToast( string response )
+void RestRidInterface::handleAutoAnaResultSuccess( string response )
 {
   auto result = std::make_shared<string>( response );
   auto rcode = std::make_shared<int>( 0 );
   auto m = make_shared<mutex>();
   
-  RestRidImp::ExternalRidWidget::makeToastNotificationForAnaResult( rcode, result, m );
+  RestRidImp::ExternalRidWidget::displayAutoRidAnaResult( rcode, result, m );
   
   deleteSelfForToast();
-}//handleAnaResultSuccessForToast(...)
+}//handleAutoAnaResultSuccess(...)
 
-void RestRidInterface::handleAnaResultFailureForToast( string response )
+void RestRidInterface::handleAutoAnaResultFailure( string response )
 {
   auto result = std::make_shared<string>( response );
   auto rcode = std::make_shared<int>( -1 );
   auto m = make_shared<mutex>();
   
-  RestRidImp::ExternalRidWidget::makeToastNotificationForAnaResult( rcode, result, m );
+  RestRidImp::ExternalRidWidget::displayAutoRidAnaResult( rcode, result, m );
   
   deleteSelfForToast();
-}//handleAnaResultFailureForToast(...)
+}//handleAutoAnaResultFailure(...)
 
 
 
@@ -1926,6 +2222,44 @@ void RestRidInputResource::handleRequest( const Wt::Http::Request &request,
 }//handleRequest(...)
 
 }//namespace
+
+
+
+ExternalRidAuotCallPref RemoteRid::external_rid_call_pref( InterSpec *viewer )
+{
+  ExternalRidAuotCallPref answer = ExternalRidAuotCallPref::DoNotCall;
+  try
+  {
+    if( !viewer )
+      throw runtime_error( "Invalid InterSpec instance" );
+    
+    const int pref_value = InterSpecUser::preferenceValue<int>( "AlwaysCallExternalRid", viewer );
+    const auto pref = static_cast<ExternalRidAuotCallPref>( pref_value );
+    
+    bool valid = false;
+    switch( pref )
+    {
+      case ExternalRidAuotCallPref::DoNotCall:
+      case ExternalRidAuotCallPref::AlwaysUseRestWithToast:
+      case ExternalRidAuotCallPref::AlwaysUseExeWithToast:
+      case ExternalRidAuotCallPref::AlwaysUseRestWithDialog:
+      case ExternalRidAuotCallPref::AlwaysUseExeWithDialog:
+        answer = pref;
+        valid = true;
+        break;
+      
+      //Not using default: to preserve compiler warning if we add a new value and dont get it here
+    }//switch( pref )
+    
+    if( !valid )
+      throw runtime_error( "Invalid AlwaysCallExternalRid value (" + std::to_string(pref_value) + ")" );
+  }catch( std::exception &e )
+  {
+    Wt::log("error") << "RemoteRid::external_rid_call_pref: error " << e.what();
+  }//try / catch
+  
+  return answer;
+}//ExternalRidAuotCallPref external_rid_call_pref( InterSpec *viewer )
 
 
 SimpleDialog *RemoteRid::startRemoteRidDialog( InterSpec *viewer,
@@ -2096,8 +2430,24 @@ RemoteRid::RemoteRid( InterSpec *viewer, Wt::WContainerWidget *parent )
   layout->setColumnStretch( 1, 1 );
   
   // If we have it setup to always call the EXE, then show this tab, otherwise show REST tab.
-  const int always_call = InterSpecUser::preferenceValue<int>( "AlwaysCallExternalRid", viewer );
-  m_menu->select( (always_call == 2) ? 1 : 0 );
+  const auto pref_value = RemoteRid::external_rid_call_pref( m_interspec );
+  
+  switch( pref_value )
+  {
+    case ExternalRidAuotCallPref::DoNotCall:
+      break;
+      
+    case ExternalRidAuotCallPref::AlwaysUseRestWithToast:
+    case ExternalRidAuotCallPref::AlwaysUseRestWithDialog:
+      m_menu->select( 0 );
+      break;
+      
+    case ExternalRidAuotCallPref::AlwaysUseExeWithToast:
+    case ExternalRidAuotCallPref::AlwaysUseExeWithDialog:
+      m_menu->select( 1 );
+      break;
+  }//switch( prev_value )
+  
   
   UndoRedoManager *undoRedo = UndoRedoManager::instance();
   if( undoRedo )
@@ -2207,17 +2557,27 @@ void RemoteRid::startAutomatedOnLoadAnalysis( InterSpec *interspec,
   if( !interspec || !app )
     return;
   
-  const int always_call = InterSpecUser::preferenceValue<int>( "AlwaysCallExternalRid", interspec );
-  if( (always_call != 1) && (always_call != 2) )
-    return;
+  const auto pref_value = RemoteRid::external_rid_call_pref( interspec );
+  auto service_type = RestRidImp::ExternalRidWidget::ServiceType::Exe;
+  switch( pref_value )
+  {
+    case ExternalRidAuotCallPref::DoNotCall:
+      return;
+      
+    case ExternalRidAuotCallPref::AlwaysUseRestWithToast:
+    case ExternalRidAuotCallPref::AlwaysUseRestWithDialog:
+      service_type = RestRidImp::ExternalRidWidget::ServiceType::Rest;
+      break;
+    
+    case ExternalRidAuotCallPref::AlwaysUseExeWithToast:
+    case ExternalRidAuotCallPref::AlwaysUseExeWithDialog:
+      service_type = RestRidImp::ExternalRidWidget::ServiceType::Exe;
+      break;
+  }//switch( pref_value )
   
   shared_ptr<SpecUtils::SpecFile> meas = fileForAnalysis( interspec, flags );
   if( !meas )
     return;
-  
-  
-  const auto service_type = (always_call == 1) ? RestRidImp::ExternalRidWidget::ServiceType::Rest
-                                               : RestRidImp::ExternalRidWidget::ServiceType::Exe;
   
   const string uri = RestRidImp::ExternalRidWidget::mostRecentUserUrl( service_type, interspec );
   
@@ -2228,8 +2588,8 @@ void RemoteRid::startAutomatedOnLoadAnalysis( InterSpec *interspec,
       RestRidImp::RestRidInterface *rest = new RestRidImp::RestRidInterface( interspec, wApp->domRoot() );
       rest->m_resource->setAnaFlags( flags );
       rest->m_resource->setDrf( "auto" );
-      rest->m_analysis_results_signal.connect( rest, &RestRidImp::RestRidInterface::handleAnaResultSuccessForToast );
-      rest->m_analysis_error_signal.connect( rest, &RestRidImp::RestRidInterface::handleAnaResultFailureForToast );
+      rest->m_analysis_results_signal.connect( rest, &RestRidImp::RestRidInterface::handleAutoAnaResultSuccess );
+      rest->m_analysis_error_signal.connect( rest, &RestRidImp::RestRidInterface::handleAutoAnaResultFailure );
       rest->startRestAnalysis( uri );
     
       break;
@@ -2357,8 +2717,11 @@ void RemoteRid::handleAppUrl( std::string query_str )
     throw runtime_error( "interspec://remoterid?... URI must contain either PATH or URL parameters." );
   
   const bool always_call = parts.count("ALWAYS")
-  ? ((parts["ALWAYS"] == "1") || SpecUtils::iequals_ascii(parts["ALWAYS"], "true"))
-  : false;
+              ? ((parts["ALWAYS"] == "1") || SpecUtils::iequals_ascii(parts["ALWAYS"], "true"))
+              : false;
+  const bool show_dialog = (always_call && parts.count("DIALOG"))
+              ? ((parts["DIALOG"] == "1") || SpecUtils::iequals_ascii(parts["DIALOG"], "true"))
+              : false;
   
   string exe_path = parts.count("PATH") ? Wt::Utils::urlDecode(parts["PATH"]) : string();
   const string url_path = parts.count("URL") ? Wt::Utils::urlDecode(parts["URL"]) : string();
@@ -2410,27 +2773,42 @@ void RemoteRid::handleAppUrl( std::string query_str )
   const string desc = "Are you sure you would like to use the '"
   + (exe_path.empty() ? url_path : exe_path) + "' service to call"
   + (always_call ? " whenever spectrum files are loaded" : " when the External-RID tool is used")
-  + "?"
-  "<br />Your spectrum data will be sent to this "
+  + "?<br />"
+  + (show_dialog ? "A modal-dialog with results will be shown." : "")
+  + "Your spectrum data will be sent to this "
   + (exe_path.empty() ? "service." : "executable.")
-  + "<br /><em>InterSpec</em> does not check the validity, trustworthness, or anything else about this "
+  + "<br /><em>InterSpec</em> does not check the validity, trustworthiness, or anything else about this "
   + (exe_path.empty() ? "service" : "executable") + " - it just blindly sends it your spectroscopy data."
   "<br />If you are unsure, select <b>No</b>.";
   
   SimpleDialog *dialog = new SimpleDialog( title, desc );
   WPushButton *btn = dialog->addButton( "Yes" );
   
-  const auto set_to_new_prefs = [exe_path,url_path,always_call](){
+  const auto set_to_new_prefs = [exe_path,url_path,always_call,show_dialog](){
     InterSpec *interspec = InterSpec::instance();
     assert( interspec );
     
-#if( ANDROID || IOS || BUILD_FOR_WEB_DEPLOYMENT )
-    const int always_call_index = (always_call ? 1 : 0);
+    ExternalRidAuotCallPref pref_value = ExternalRidAuotCallPref::DoNotCall;
+    if( always_call )
+    {
+      if( !url_path.empty() )
+      {
+        pref_value = show_dialog ? ExternalRidAuotCallPref::AlwaysUseRestWithDialog
+                                 : ExternalRidAuotCallPref::AlwaysUseRestWithToast;
+      }else
+      {
+#if( !ANDROID && !IOS && !BUILD_FOR_WEB_DEPLOYMENT )
+        pref_value = show_dialog ? ExternalRidAuotCallPref::AlwaysUseExeWithDialog
+                                 : ExternalRidAuotCallPref::AlwaysUseExeWithToast;
 #else
-    const int always_call_index = always_call ? (!url_path.empty() ? 1 : 2) : 0;
+        pref_value = ExternalRidAuotCallPref::DoNotCall;
+        passMessage( "External-RID can-not call executable on this platform"
+                     " - disabling auto-calling of external RID.", WarningWidget::WarningMsgHigh );
 #endif
+      }//if( !url_path.empty() ) / else
+    }//if( always_call )
     
-    InterSpecUser::setPreferenceValue( interspec->m_user, "AlwaysCallExternalRid", always_call_index, interspec );
+    InterSpecUser::setPreferenceValue( interspec->m_user, "AlwaysCallExternalRid", static_cast<int>(pref_value), interspec );
     //InterSpecUser::setPreferenceValue( interspec->m_user, "ExternalRidWarn", false, interspec );
     if( !url_path.empty() )
       InterSpecUser::setPreferenceValue( interspec->m_user, "ExternalRidUrl", url_path, interspec );
@@ -2502,8 +2880,11 @@ std::string RemoteRid::encodeStateToUrl() const
   url += ((w->serviceType() == RestRidImp::ExternalRidWidget::ServiceType::Rest) ? "&url=" : "&path=");
   url += Wt::Utils::urlEncode(w->url());
   
-  if( w->alwaysFoAnalysis() )
+  if( w->alwaysAutoCallAnalysis() )
     url += "&always=1";
+  
+  if( w->showDialogForAutoCalledResults() )
+    url += "&dialog=1";
   
   return url;
 }//std::string encodeStateToUrl() const

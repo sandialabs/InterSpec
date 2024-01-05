@@ -2091,6 +2091,158 @@ namespace PeakSearchGuiUtils
     return img;
   }//renderChartToSvg(...)
 
+#ifndef _WIN32
+#warning "20231201 TEmporarily disabling code for work at place"
+#endif
+  /*
+std::pair<std::vector<std::shared_ptr<const PeakDef>>, std::vector<std::shared_ptr<const PeakDef>> >
+  improve_initial_peak_fit( InterSpec *interspec, shared_ptr<const DetectorPeakResponse> det,
+                           const std::pair<std::vector<std::shared_ptr<const PeakDef>> &inital_fit )
+{
+    
+}//improve_initial_peak_fit(...)
+ */
+  
+  
+void fit_peak_from_double_click( InterSpec *interspec, const double x, const double pixPerKeV,
+                                shared_ptr<const DetectorPeakResponse> det )
+{
+  PeakModel *pmodel = interspec ? interspec->peakModel() : nullptr;
+  assert( pmodel );
+  if( !pmodel )
+    return;
+  
+  shared_ptr<const SpecUtils::Measurement> data = interspec->displayedHistogram(SpecUtils::SpectrumType::Foreground);
+  if( !data )
+    return;
+  
+  
+  vector< PeakModel::PeakShrdPtr > origPeaks;
+  if( !!pmodel->peaks() )
+  {
+    for( const PeakModel::PeakShrdPtr &p : *pmodel->peaks() )
+    {
+      origPeaks.push_back( p );
+      
+      //Avoid fitting a peak in the same area a data defined peak is.
+      if( !p->gausPeak() && (x >= p->lowerX()) && (x <= p->upperX()) )
+        return;
+    }
+  }//if( pmodel->peaks() )
+  
+  pair< PeakShrdVec, PeakShrdVec > foundPeaks;
+  foundPeaks = searchForPeakFromUser( x, pixPerKeV, data, origPeaks, det );
+  
+  //cerr << "Found " << foundPeaks.first.size() << " peaks to add, and "
+  //     << foundPeaks.second.size() << " peaks to remove" << endl;
+  
+  if( foundPeaks.first.empty()
+      || foundPeaks.second.size() >= foundPeaks.first.size() )
+  {
+    char msg[256];
+    snprintf( msg, sizeof(msg), "Couldn't find peak a peak near %.1f keV", x );
+    passMessage( msg, 0 );
+    return;
+  }//if( foundPeaks.first.empty() )
+  
+  
+  // Check if we found a single peak, that is its own new ROI
+  if( (foundPeaks.first.size() == 1) && foundPeaks.second.empty() )
+  {
+#ifndef _WIN32
+#warning "20231201 TEmporarily disabling code for work at place"
+#endif
+    //improve_initial_peak_fit( InterSpec *)
+    //pair< PeakShrdVec, PeakShrdVec >
+    
+  }//if( (foundPeaks.first.size() == 1) && foundPeaks.second.empty() )
+  
+  
+  for( const PeakModel::PeakShrdPtr &p : foundPeaks.second )
+    pmodel->removePeak( p );
+
+  
+  //We want to add all of the previously found peaks back into the model, before
+  //  adding the new peak.
+  PeakShrdVec peakstoadd( foundPeaks.first.begin(), foundPeaks.first.end() );
+  PeakShrdVec existingpeaks( foundPeaks.second.begin(), foundPeaks.second.end() );
+  
+  //First add all the new peaks that have a nuclide/reaction/xray associated
+  //  with them, since we know they are existing peaks
+  for( const PeakModel::PeakShrdPtr &p : foundPeaks.first )
+  {
+    if( p->parentNuclide() || p->reaction() || p->xrayElement() )
+    {
+      //find nearest previously existing peak, and add new peak, while removing
+      //  old one from existingpeaks
+      int nearest = -1;
+      double smallesdist = DBL_MAX;
+      for( size_t i = 0; i < existingpeaks.size(); ++i )
+      {
+        const PeakModel::PeakShrdPtr &prev = existingpeaks[i];
+        if( prev->parentNuclide() != p->parentNuclide() )
+          continue;
+        if( prev->reaction() != p->reaction() )
+          continue;
+        if( prev->xrayElement() != p->xrayElement() )
+          continue;
+        
+        const double thisdif = fabs(p->mean() - prev->mean());
+        if( thisdif < smallesdist )
+        {
+          nearest = static_cast<int>( i );
+          smallesdist = thisdif;
+        }
+      }
+      
+      if( nearest >= 0 )
+      {
+        pmodel->addNewPeak( *p );
+        existingpeaks.erase( existingpeaks.begin() + nearest );
+        peakstoadd.erase( std::find(peakstoadd.begin(), peakstoadd.end(), p) );
+      }//if( nearest >= 0 )
+    }//if( p->parentNuclide() || p->reaction() || p->xrayElement() )
+  }//for( const PeakModel::PeakShrdPtr &p : peakstoadd )
+  
+  
+  //Now go through and add the new versions of the previously existing peaks,
+  //  using energy to match the previous to current peak.
+  for( const PeakModel::PeakShrdPtr &p : existingpeaks )
+  {
+    size_t nearest = 0;
+    double smallesdist = DBL_MAX;
+    for( size_t i = 0; i < peakstoadd.size(); ++i )
+    {
+      const double thisdif = fabs(p->mean() - peakstoadd[i]->mean());
+      if( thisdif < smallesdist )
+      {
+        nearest = i;
+        smallesdist = thisdif;
+      }
+    }
+    
+    std::shared_ptr<const PeakDef> peakToAdd = peakstoadd[nearest];
+    peakstoadd.erase( peakstoadd.begin() + nearest );
+    pmodel->addNewPeak( *peakToAdd );
+  }//for( const PeakModel::PeakShrdPtr &p : existingpeaks )
+  
+  //Just in case we messed up the associations between the existing peak an
+  //  their respective new version, we'll add all peaks that have a
+  //  nuclide/reaction/xray associated with them, since they must be previously
+  //  existing
+  for( const PeakModel::PeakShrdPtr &p : peakstoadd )
+    if( p->parentNuclide() || p->reaction() || p->xrayElement() )
+      pmodel->addNewPeak( *p );
+  
+  //Finally, in principle we will add the new peak here
+  for( const PeakModel::PeakShrdPtr &p : peakstoadd )
+  {
+    if( !p->parentNuclide() && !p->reaction() && !p->xrayElement() )
+      interspec->addPeak( *p, true );
+  }
+}//void fit_peak_from_double_click(...)
+
+  
 void automated_search_for_peaks( InterSpec *viewer,
                                 const bool keep_old_peaks )
 {

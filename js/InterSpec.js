@@ -101,8 +101,8 @@ function()
         xhr.setRequestHeader("Content-type", "application/x-spectrum");
         xhr.setRequestHeader("Cache-Control", "no-cache");
         xhr.setRequestHeader("X-Requested-With", "XMLHttpRequest");
-        xhr.setRequestHeader("X-File-Name", file.name);
-        
+        // Filename may have non-ISO-8859-1 code points, so we need to URI encode it
+        xhr.setRequestHeader("X-File-Name", encodeURIComponent(file.name));
         
 //#if( BUILD_AS_ELECTRON_APP ) //C++ preprocessors dont look to work here...
         if( lookForPath && (typeof file.path === "string") && (file.path.length > 2) && !file.path.toLowerCase().includes('fake') ) {

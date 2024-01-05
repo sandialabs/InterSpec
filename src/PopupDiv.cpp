@@ -341,317 +341,6 @@ WT_DECLARE_WT_MEMBER
 
 
 
-#if( USING_ELECTRON_NATIVE_MENU )
-WT_DECLARE_WT_MEMBER(FindElectronMenu, Wt::JavaScriptFunction, "FindElectronMenu",
-function( name, selfid )
-{
-  let appmenu = Menu.getApplicationMenu();
-  //remote.getCurrentWindow()
-  
-  //console.log( 'appmenu:' );
-  //console.log( appmenu );
-  
-  if(!appmenu){
-    console.log('Couldnt get app menu');
-    return;
-  }
-  
-  for( var i of appmenu.items ){
-    if( i.label == name )
-    {
-      //console.log( 'Found menu ' + name );
-      //console.log( i );
-      
-      $(window).data('electronMenu'+selfid, i );
-      //$('#'+selfid).data('electronMenu',i);
-      //console.log('Set Electron Menu Item: ' + i.label );
-      return;
-    }
-  }
-  
-  //Start of trying to dynamically add menu items...
-  //let newmenu = new MenuItem( {type: 'submenu', label: name, id: selfid, submenu: appmenu } );
-  //appmenu.items.push(newmenu);
-  //$(window).data('electronMenu'+selfid, newmenu );
-  //Menu.setApplicationMenu(appmenu);
-  
-  console.log('Failed to find Electron Menu Item data for : ' + name );
-});
-
-WT_DECLARE_WT_MEMBER(AddMenuItemToElectronMenu, Wt::JavaScriptFunction, "AddMenuItemToElectronMenu",
-function( selfid, txt, iconstr, itemid, roleType )
-{
-  //let m = $('#'+selfid).data('electronMenu');
-  let m = $(window).data('electronMenu'+selfid);
-  
-  if( !m )
-  {
-    console.log( 'No electron menu set when trying to add: ' + txt );
-    return;
-  }
-
-  var newItem = new MenuItem({label: txt,
-    role: roleType,
-    icon: ((iconstr && (iconstr.length>0)) ? iconstr : null),
-    click(menu,event,modifiers){ Wt.emit(itemid,'electron_clicked');}
-  } );
-  
-  m.submenu.append( newItem );
-  
-  //console.log( "AddMenuItemToElectronMenu: adding itemid='" + itemid + "', txt='" + txt + "'" );
-  $(window).data('electronItem'+itemid, newItem);
-  
-  if( $(window).data('HaveTriggeredMenuUpdate') ){
-    let appmenu = Menu.getApplicationMenu();
-    if(appmenu)
-      Menu.setApplicationMenu(appmenu);
-    else
-      console.log('Couldnt get app menu');  //dont think getting app menu has ever failed, that I've seen
-  }
-});
-
-WT_DECLARE_WT_MEMBER(AddSeperatorToElectronMenu, Wt::JavaScriptFunction, "AddSeperatorToElectronMenu",
-function( selfid )
-{
-  let m = $(window).data('electronMenu'+selfid);
-  
-  let appmenu = Menu.getApplicationMenu();
-  if( !m || !appmenu ) return;
-
-  m.submenu.append( new MenuItem({type: 'separator'}) );
-  
-  if( $(window).data('HaveTriggeredMenuUpdate') )
-    Menu.setApplicationMenu(appmenu);
-});
-
-WT_DECLARE_WT_MEMBER(InsertSeperatorInElectronMenu, Wt::JavaScriptFunction, "InsertSeperatorInElectronMenu",
-                     function( selfid, pos )
-{
-  let m = $(window).data('electronMenu'+selfid);
-  
-  let appmenu = Menu.getApplicationMenu();
-  if( !m || !appmenu ) return;
-  
-  if( pos >= 0 )
-    m.submenu.insert( pos, new MenuItem({type: 'separator'}) );
-  else
-    m.submenu.append( new MenuItem({type: 'separator'}) );
-  
-  if( $(window).data('HaveTriggeredMenuUpdate') )
-    Menu.setApplicationMenu(appmenu);
-});
-
-WT_DECLARE_WT_MEMBER(HideElectronMenuItem, Wt::JavaScriptFunction, "HideElectronMenuItem",
-  function( itemid, hidden )
-{
-  let appmenu = Menu.getApplicationMenu();
-  if( !appmenu ) return;
-  
-  let eitem = $(window).data('electronItem'+itemid);
-  if( eitem ){
-    eitem.visible = !hidden;
-  } else {
-    console.log( 'Failed to get electronItem for ' + itemid );
-  }
-  
-  if( $(window).data('HaveTriggeredMenuUpdate') )
-    Menu.setApplicationMenu(appmenu);
-});
-
-
-WT_DECLARE_WT_MEMBER(DisableElectronMenuItem, Wt::JavaScriptFunction, "DisableElectronMenuItem",
-                     function( itemid, disabled )
-{
-  let appmenu = Menu.getApplicationMenu();
-  if( !appmenu ) return;
-  
-  let eitem = $(window).data('electronItem'+itemid);
-  if( eitem ){
-    eitem.enabled = !disabled;
-  } else {
-    console.log( 'Failed to get electronItem for ' + itemid );
-  }
-  
-  if( $(window).data('HaveTriggeredMenuUpdate') )
-    Menu.setApplicationMenu(appmenu);
-});
-
-/*
-WT_DECLARE_WT_MEMBER(RemoveMenuItemFromElectronMenu, Wt::JavaScriptFunction, "RemoveMenuItemFromElectronMenu",
-function( menuid, itemid )
-{
-  //https://github.com/electron/electron/issues/527
-  
-  let item = $(window).data('electronItem'+itemid);
-  let parent = $(window).data('electronMenu'+menuid);
-  if( !item ){
-    console.log( 'RemoveMenuItemFromElectronMenu: Failed to get child, ' + itemid );
-    return;
-  }
-  
-  if( !parent ){
-    console.log( 'RemoveMenuItemFromElectronMenu: Failed to get parent, ' + menuid );
-    return;
-  }
-  
-  var index = parent.submenu.items.indexOf(item);
-  if (index > -1) {
-    parent.submenu.items.splice(index, 1);
-    $(window).data('electronMenu'+itemid,null);
-  } else {
-    console.log( 'DID NOt Got index to remove' );
-  }
-} );
-*/
-
-WT_DECLARE_WT_MEMBER(ClearElectronMenu, Wt::JavaScriptFunction, "ClearElectronMenu",
-function( menuid )
-{
-  //https://github.com/electron/electron/issues/527
-  let parent = $(window).data('electronMenu'+menuid);
-  if( !parent ){
-    console.log( 'ClearElectronMenu: Failed to get parent, ' + menuid );
-    return;
-  }
-  parent.submenu.clear();
-  
-  let appmenu = Menu.getApplicationMenu();
-  if( !appmenu ) return;
-  
-  if( $(window).data('HaveTriggeredMenuUpdate') )
-    Menu.setApplicationMenu(appmenu);
-} );
-
-WT_DECLARE_WT_MEMBER(AddCheckBoxItemToElectronMenu, Wt::JavaScriptFunction, "AddCheckBoxItemToElectronMenu",
-function( menuid, itemid, txt, isChecked )
-{
-  let appmenu = Menu.getApplicationMenu();
-  if(!appmenu) return;
-  
-  let m = $(window).data('electronMenu'+menuid);
-  
-  if( !m )
-  {
-    console.log( 'No electron menu set when trying to add checkbox item: ' + txt + ' menuid=' + menuid + ', itemid=' + itemid );
-    return;
-  }
-  
-  var newItem = new MenuItem({label: txt, type: 'checkbox', checked: isChecked, click: function(item, BrowserWindow){
-    //console.log( "Got click status: " + item.checked );
-    Wt.emit(itemid,'electron_checked',item.checked);
-  }} );
-  
-  m.submenu.append( newItem );
-  
-  $(window).data('electronItem'+itemid, newItem);
-  
-  if( $(window).data('HaveTriggeredMenuUpdate') )
-    Menu.setApplicationMenu(appmenu);
-} );
-
-
-WT_DECLARE_WT_MEMBER(AddElectronSubMenu, Wt::JavaScriptFunction, "AddElectronSubMenu",
-function( menuid, submenuid, txt, iconPath )
-{
-  let appmenu = Menu.getApplicationMenu();
-  if(!appmenu){
-    console.log( 'AddElectronSubMenu: no appmenu' );
-    return;
-  }
-  
-  //let m = $('#'+menuid).data('electronMenu');
-  let m = $(window).data('electronMenu'+menuid);
-  
-  if( !m )
-  {
-    console.log( 'No electron menu for parent: ' + txt + ', menuid=' + menuid + ', submenuid=' + submenuid );
-    return;
-  }
-
-  var newItem = new MenuItem({label: txt, icon: (iconPath.length>0 ? iconPath : null), submenu: []});
-  m.submenu.append( newItem );
-  
-  $(window).data('electronMenu'+submenuid, newItem );
-  
-  if( $(window).data('HaveTriggeredMenuUpdate') )
-    Menu.setApplicationMenu(appmenu);
-} );
-
-
-WT_DECLARE_WT_MEMBER(AddRoleItemToElectronMenu, Wt::JavaScriptFunction, "AddRoleItemToElectronMenu",
-function( menuid, roleName )
-{
-  let appmenu = Menu.getApplicationMenu();
-  if( !appmenu ) return;
-  
-  let m = $(window).data('electronMenu'+menuid);
-  if( m ){
-    m.submenu.append( new MenuItem({role: roleName}) );
-  } else {
-    console.log( 'Failed to get electronMenu for ' + itemid + ' to implement ' + role );
-  }
-  
-  if( $(window).data('HaveTriggeredMenuUpdate') )
-    Menu.setApplicationMenu(appmenu);
-});
-
-
-//A hack to force the Electron Menu system to actually update its contents
-WT_DECLARE_WT_MEMBER(TriggerElectronMenuUpdate, Wt::JavaScriptFunction, "TriggerElectronMenuUpdate",
-function()
-{
-  //This function gets called once, after loading all the widgets into the
-  //  GUI, and doing the initial defining of Electron menu items.
-  //
-  //Calling Menu.setApplicationMenu() for each item we add to the menu during
-  //  program start up is pretty slow.  Takes initial load time from about
-  //  1.5 seconds on macOS if we only do it once, to 3.4 seconds if we do it
-  //  for every menu item addded, etc (first request Wt log prints out, to final
-  //  request).  Since this function gets called once after initial load, we can
-  //  defer all calls to Menu.setApplicationMenu() until now.  But after this
-  //  we want changes to take effect immediately (ex enable/disable a menu item)
-  //Note: requestNewCleanSession() will reset this variable to speedup resets.
-  $(window).data('HaveTriggeredMenuUpdate',true);
-  
-  let appmenu = Menu.getApplicationMenu();
-  if( appmenu )
-    Menu.setApplicationMenu(appmenu);
-  else
-    console.log( "Failed to get Application menu" );
-});
-
-
-//A hack since we apparetnyl need absolute path to icons, or else there is  a fata exception in the JS
-string resolve_icon_path( string inputIconPath )
-{
-  if( inputIconPath.empty() )
-    return "";
-  
-  const std::string docroot = (wApp ? wApp->docRoot() : string());
-  string iconPath = SpecUtils::append_path( docroot, inputIconPath );
-  
-  if( !SpecUtils::is_file( iconPath ) )
-    iconPath = SpecUtils::append_path( SpecUtils::get_working_path(), inputIconPath );
-  
-  if( !SpecUtils::is_file( iconPath ) )
-  {
-    cerr << "Couldnt find icon '" << inputIconPath << "' in docRoot ('" << docroot << "') or CWD ('"
-         << SpecUtils::get_working_path() << "')" << endl;
-    iconPath = "";
-  }
-  
-
-#if( defined(WIN32) || defined(UNDER_CE) || defined(_WIN32) || defined(WIN64) )
-  for (size_t pos = iconPath.find('\\'); pos != string::npos; pos = iconPath.find('\\'))
-	  iconPath[pos] = '/';
-#endif
-
-  return iconPath;
-}//string resolve_icon_path( string iconPath )
-#endif
-
-
-
 PopupDivMenu::PopupDivMenu( Wt::WPushButton *menuParent,
                             const PopupDivMenu::MenuType menutype )
 : WPopupMenu(),
@@ -660,9 +349,6 @@ PopupDivMenu::PopupDivMenu( Wt::WPushButton *menuParent,
   m_menuParentID( menuParent ? menuParent->id() : string() ),
 #if(USE_OSX_NATIVE_MENU)
   m_nsmenu( 0 ),
-#endif
-#if( USING_ELECTRON_NATIVE_MENU )
-  m_hasElectronCounterpart( false ),
 #endif
   m_mobile( false ),
   m_type( menutype )
@@ -692,28 +378,12 @@ PopupDivMenu::PopupDivMenu( Wt::WPushButton *menuParent,
     LOAD_JAVASCRIPT(wApp, "PopupDiv.cpp", "PopupDivMenu", wtjsAdjustTopPos);
   }//if( mobile ) / else
 
-#if( USING_ELECTRON_NATIVE_MENU || USE_OSX_NATIVE_MENU )
+#if( USE_OSX_NATIVE_MENU )
   const bool useNativeMenu = InterSpecApp::isPrimaryWindowInstance();
 #else
   const bool useNativeMenu = false;
 #endif
-  
-#if( USING_ELECTRON_NATIVE_MENU )
-  if( useNativeMenu )
-  {
-    LOAD_JAVASCRIPT(wApp, "PopupDiv.cpp", "PopupDivMenu", wtjsFindElectronMenu);
-    LOAD_JAVASCRIPT(wApp, "PopupDiv.cpp", "PopupDivMenu", wtjsAddMenuItemToElectronMenu);
-    LOAD_JAVASCRIPT(wApp, "PopupDiv.cpp", "PopupDivMenu", wtjsAddSeperatorToElectronMenu);
-    LOAD_JAVASCRIPT(wApp, "PopupDiv.cpp", "PopupDivMenu", wtjsInsertSeperatorInElectronMenu);
-    //LOAD_JAVASCRIPT(wApp, "PopupDiv.cpp", "PopupDivMenu", wtjsRemoveMenuItemFromElectronMenu);
-    LOAD_JAVASCRIPT(wApp, "PopupDiv.cpp", "PopupDivMenu", wtjsClearElectronMenu);
-    LOAD_JAVASCRIPT(wApp, "PopupDiv.cpp", "PopupDivMenu", wtjsAddCheckBoxItemToElectronMenu);
-    LOAD_JAVASCRIPT(wApp, "PopupDiv.cpp", "PopupDivMenu", wtjsAddElectronSubMenu);
-    LOAD_JAVASCRIPT(wApp, "PopupDiv.cpp", "PopupDivMenu", wtjsAddRoleItemToElectronMenu);
-    LOAD_JAVASCRIPT(wApp, "PopupDiv.cpp", "PopupDivMenu", wtjsTriggerElectronMenuUpdate);
-  }//if( useNativeMenu )
-#endif
-  
+    
   if( m_mobile)
   {
     if( menuParent )
@@ -730,17 +400,6 @@ PopupDivMenu::PopupDivMenu( Wt::WPushButton *menuParent,
       if( buttontxt.length() )
         m_nsmenu = addOsxMenu( this, buttontxt.c_str() );
     } //AppLevelMenu
-#endif
-      
-#if( USING_ELECTRON_NATIVE_MENU )
-    if( useNativeMenu && (menutype == AppLevelMenu) )
-    {
-      //Here we are adding a menu at the topof the window.  "InterSpec", "View", "Tools", "Help"
-      //In Js, we should find the menu, and get a reference to it.
-      //app->doJavaScript( "console.log('Adding PopupDivMenu id=" + id() + " parentTxt=" + menuParent->text().toUTF8() + "');" );
-      app->doJavaScript( "Wt.WT.FindElectronMenu('" + menuParent->text().toUTF8() + "', '" + id() + "');" );
-      m_hasElectronCounterpart = true;
-    }
 #endif
       
     if( !useNativeMenu && (menutype == AppLevelMenu) )
@@ -763,11 +422,6 @@ PopupDivMenu::PopupDivMenu( Wt::WPushButton *menuParent,
     }
   }else //if( m_mobile) / else if( menuParent )
   {
-#if( USING_ELECTRON_NATIVE_MENU )
-    if( m_hasElectronCounterpart && (menutype == AppLevelMenu) )
-      doJavaScript( "console.log('Not implemented: Adding PopupDivMenu (no parent) id="
-                   + id() + (menutype==AppLevelMenu?" AppLevelMenu":" TransientMenu") + "');" );
-#endif
     if( menutype != AppLevelMenu )
       setAutoHide( true, 500 );
   }//if( menuParent ) / else
@@ -780,20 +434,6 @@ PopupDivMenu::~PopupDivMenu()
 #if( USE_OSX_NATIVE_MENU )
 //  if( m_nsmenu )
 //    removeOsxMenu( m_nsmenu );
-#endif
-
-#if( USING_ELECTRON_NATIVE_MENU )
-  if(  m_hasElectronCounterpart )
-  {
-    if( m_parentItem )
-    {
-  	//This is a sub-menu, so we should get rid of the electron sub-menu tooss
-      //WApplication::instance()->doJavaScript( "Wt.WT.HideElectronMenuItem('" + id() + "',true);" );
-      //WApplication::instance()->doJavaScript( "Wt.WT.ClearElectronMenu('" + id() + "');" );
-    }else if( m_menuParent )
-    {
-    }
-  }//if(  m_hasElectronCounterpart )
 #endif
 }
 
@@ -830,13 +470,7 @@ Wt::WMenuItem *PopupDivMenu::addSeparatorAt( int index )
     WMenu::insertItem( index, item );
   }
   
-#if( USING_ELECTRON_NATIVE_MENU )
-  if( m_hasElectronCounterpart && (m_type == AppLevelMenu) )
-  {
-    //Need to modify Wt.WT.AddSeperatorToElectronMenu to also take the index
-    WApplication::instance()->doJavaScript( "Wt.WT.InsertSeperatorInElectronMenu('" + id() + "'," + std::to_string(index) + ");" );
-  }
-#elif( USE_OSX_NATIVE_MENU )
+#if( USE_OSX_NATIVE_MENU )
   if( m_nsmenu )
   {
     if( index < 0 )
@@ -844,7 +478,6 @@ Wt::WMenuItem *PopupDivMenu::addSeparatorAt( int index )
     void *macItem = addOsxSeparatorAt( index, m_nsmenu );
     item->setData( macItem );
   }
-#else
 #endif
   
   return item;
@@ -864,11 +497,7 @@ bool PopupDivMenu::removeSeperator( Wt::WMenuItem *sepertor )
   }
   removeItem( sepertor );
   
-#if( USING_ELECTRON_NATIVE_MENU )
-  //ToDo: Hack, just hide the electron menu since we cant easily remove items...
-  if( m_hasElectronCounterpart )
-    WApplication::instance()->doJavaScript( "Wt.WT.HideElectronMenuItem('" + sepertor->id() + "',true);" );
-#elif( USE_OSX_NATIVE_MENU )
+#if( USE_OSX_NATIVE_MENU )
   if( m_nsmenu )
     removeOsxSeparator( m_nsmenu, sepertor->data() );
 #endif
@@ -877,82 +506,11 @@ bool PopupDivMenu::removeSeperator( Wt::WMenuItem *sepertor )
 }//bool removeSeperator( Wt::WMenuItem *sepertor )
 
 
-
 Wt::WMenuItem *PopupDivMenu::addSeparator()
 {
   return addSeparatorAt( -1 );
 }//void PopupDivMenu::addSeparator(void)
 
-
-#if( USING_ELECTRON_NATIVE_MENU )
-void PopupDivMenu::addRoleMenuItem( MenuRole role )
-{
-  if( !m_hasElectronCounterpart )
-    return;
-  
-  string rolestr;
-  switch( role )
-  {
-    case MenuRole::Quit:             rolestr = "quit";             break;
-    case MenuRole::ResetZoom:        rolestr = "resetzoom";        break;
-    case MenuRole::ZoomIn:           rolestr = "zoomin";           break;
-    case MenuRole::ZoomOut:          rolestr = "zoomout";          break;
-    case MenuRole::ToggleFullscreen: rolestr = "togglefullscreen"; break;
-    case MenuRole::Cut:              rolestr = "cut";              break;
-    case MenuRole::Copy:             rolestr = "copy";             break;
-    case MenuRole::Past:             rolestr = "paste";            break;
-    case MenuRole::ToggleDevTools:   rolestr = "toggledevtools";   break;
-#if defined(__APPLE__)
-    case MenuRole::Hide:             rolestr = "hide";             break;
-    case MenuRole::HideOthers:       rolestr = "hideothers";       break;
-    case MenuRole::UnHide:           rolestr = "unhide";           break;
-    case MenuRole::Front:            rolestr = "front";            break;
-#endif
-  }//switch( role )
-  
-  WApplication::instance()->doJavaScript( "Wt.WT.AddRoleItemToElectronMenu('" + id() + "','" + rolestr + "');" );
-}//addRoleMenuItem( MenuRole role )
-
-
-void PopupDivMenu::triggerElectronMenuUpdate()
-{
-  const bool useNativeMenu = InterSpecApp::isPrimaryWindowInstance();
-  if( useNativeMenu )
-    WApplication::instance()->doJavaScript( "Wt.WT.TriggerElectronMenuUpdate();" );
-}//void PopupDivMenu::triggerElectronMenuUpdate()
-
-
-void PopupDivMenu::clearElectronMenu()
-{
-  if( m_hasElectronCounterpart )
-    WApplication::instance()->doJavaScript( "Wt.WT.ClearElectronMenu('" + id() + "');" );
-}//void clearElectronMenu();
-
-
-#if defined(__APPLE__)
-PopupDivMenuItem *PopupDivMenu::createAboutThisAppItem()
-{
-  PopupDivMenuItem *item = new PopupDivMenuItem( "About", "" );
-  addItem( item );
-  
-  if( !m_hasElectronCounterpart )
-    return nullptr;
-  
-  item->m_electron_clicked.connect( item, &PopupDivMenuItem::emitClickFromElectronMenu );
-  
-  //I cant seem to figure out how to use use the native "role" property
-  //  of 'about' and still costumize behaviour, so I'll hack it for the moment.
-  //const string role = "'about'";
-  //const string label = "null";
-  const string role = "null";
-  const string label = "'About InterSpec'";
-  WApplication::instance()->doJavaScript( "Wt.WT.AddMenuItemToElectronMenu("
-                                          "'" + id() + "'," + label + ",null,"
-                                          + "'" + item->id() + "', " + role + ");" );
-  return item;
-}//createAboutThisAppItem()
-#endif //defined(__APPLE__)
-#endif // USING_ELECTRON_NATIVE_MENU
 
 void PopupDivMenu::setHidden( bool hidden, const Wt::WAnimation &animation )
 {
@@ -1193,7 +751,7 @@ PopupDivMenuItem *PopupDivMenu::addWidget( Wt::WWidget *widget,
   
   // We could `item->anchor()->hide();`, but we dont appear to need to.
   
-#if(USE_OSX_NATIVE_MENU)
+#if( USE_OSX_NATIVE_MENU )
   if( m_nsmenu )
   {
     WCheckBox *cb = static_cast<WCheckBox *>( widget );
@@ -1206,32 +764,6 @@ PopupDivMenuItem *PopupDivMenu::addWidget( Wt::WWidget *widget,
       cerr << "PopupDivMenu::addWidget: Unsuppored Widget type on OS X" << endl;
     }
   }//if( m_nsmenu )
-#endif
-  
-#if( USING_ELECTRON_NATIVE_MENU )
-  if( m_hasElectronCounterpart && (m_type == PopupDivMenu::AppLevelMenu) )
-  {
-    WCheckBox *cb = static_cast<WCheckBox *>( widget );
-    
-    if( cb )
-    {
-      item->m_electron_checked.connect( item, &PopupDivMenuItem::toggleFromElectronMenu );
-      
-      //Theres a hack where we dont add electron menu items for blank labels, so we
-      //  shouldnt need to remove item
-      //WApplication::instance()->doJavaScript( "Wt.WT.RemoveMenuItemFromElectronMenu('" + id() + "',"
-        //                                       + "'" + item->id() + "'"
-          //                                     + ");" );
-      //cerr << "ADDing check box for " << item->id() << ", " << cb->text().toUTF8() << endl;
-      
-      WApplication::instance()->doJavaScript( "Wt.WT.AddCheckBoxItemToElectronMenu('" + id() + "',"
-                                             + "'" + item->id() + "',"
-                                             + "'" + cb->text().toUTF8() + "',"
-                                             + (cb->isChecked()?"true":"false")
-                                             + ");" );
-	  item->m_hasElectronItem = true;
-    }
-  }
 #endif
   
   return item;
@@ -1289,26 +821,6 @@ PopupDivMenuItem *PopupDivMenu::insertMenuItem( const int index,
     item->m_nsmenuitem = insertOsxMenuItem( m_nsmenu, item, index );
     item->m_nsmenu = m_nsmenu;
     item->setData( item->m_nsmenuitem );
-  }
-#endif
-  
-#if( USING_ELECTRON_NATIVE_MENU )
-  if( m_hasElectronCounterpart && (!text.empty() || !iconPath.empty())
-     && (m_type == PopupDivMenu::AppLevelMenu) )
-  {
-    item->m_electron_clicked.connect( item, &PopupDivMenuItem::emitClickFromElectronMenu );
-    //Need to edit Wt.WT.AddMenuItemToElectronMenu to take into accoutn the index were adding it at
-     WApplication::instance()->doJavaScript( "Wt.WT.AddMenuItemToElectronMenu('" + id() + "',"
-                                           + "'" + text.toUTF8() + "',"
-                                           + "'" + resolve_icon_path(iconPath) + "',"
-                                           + "'" + item->id() + "', null);" );
-    item->m_hasElectronItem = true;
-  }else if( (m_type == PopupDivMenu::AppLevelMenu) && InterSpecApp::isPrimaryWindowInstance() )
-  {
-    cout << "Not calling AddMenuItemToElectronMenu for id='" << id() << "' text='" << text.toUTF8() << "'"
-         << ", m_hasElectronCounterpart=" << m_hasElectronCounterpart
-         << ", (m_type == PopupDivMenu::AppLevelMenu)=" << (m_type == PopupDivMenu::AppLevelMenu)
-         << endl;
   }
 #endif
   
@@ -1405,7 +917,7 @@ PopupDivMenu *PopupDivMenu::addPopupMenuItem( const Wt::WString &text,
       menu->addStyleClass( "ContextSubMenu" );
     }
     
-#if( BUILD_AS_ELECTRON_APP && !USING_ELECTRON_NATIVE_MENU )
+#if( BUILD_AS_ELECTRON_APP )
     menu->setMargin( 25, Wt::Top );
 #endif
     
@@ -1424,23 +936,7 @@ PopupDivMenu *PopupDivMenu::addPopupMenuItem( const Wt::WString &text,
     if( m_nsmenu && (!p || p->m_type==PopupDivMenu::AppLevelMenu) )
       menu->m_nsmenu = addOsxSubMenu( m_nsmenu, menu, text.toUTF8().c_str() );
 #endif
-    
-#if( USING_ELECTRON_NATIVE_MENU )
-    if( m_hasElectronCounterpart )
-    {
-      PopupDivMenu *p = parentItem() ? dynamic_cast<PopupDivMenu *>(parentItem()->menu()) : nullptr;
-      if( !p || p->m_type==PopupDivMenu::AppLevelMenu )
-      {
-        menu->m_hasElectronCounterpart = true;
-        WApplication::instance()->doJavaScript( "Wt.WT.AddElectronSubMenu('" + id() + "',"
-                                                + "'" + menu->id() + "',"
-                                                + "'" + text.toUTF8() + "',"
-                                                + "'" + resolve_icon_path(iconPath) + "'"
-                                                + ");" );
-      }
-    }
-#endif
-  }
+  }//if( m_mobile ) / else
   
   return menu;
 }//addPopupMenuItem( const Wt::WString &text, const std::string iconPath )
@@ -1454,12 +950,6 @@ PopupDivMenuItem::PopupDivMenuItem( const Wt::WString &text,
    , m_nsmenu( 0 )
    , m_nsmenuitem( 0 )
 #endif
-#if( USING_ELECTRON_NATIVE_MENU )
-   , m_hasElectronItem( false )
-   , m_electron_clicked( this, "electron_clicked", false )
-   , m_electron_checked( this, "electron_checked", false )
-#endif
-
 {
   WAnchor *a = anchor();
   if( a )
@@ -1467,15 +957,6 @@ PopupDivMenuItem::PopupDivMenuItem( const Wt::WString &text,
     a->clicked().preventPropagation();
     clicked().connect( this, &PopupDivMenuItem::nonAnchorClickHack );
   }//if( a )
-  
-#if( USING_ELECTRON_NATIVE_MENU )
-  const bool useNativeMenu = InterSpecApp::isPrimaryWindowInstance();
-  if( useNativeMenu )
-  {
-    LOAD_JAVASCRIPT(wApp, "PopupDiv.cpp", "PopupDivMenu", wtjsHideElectronMenuItem);
-    LOAD_JAVASCRIPT(wApp, "PopupDiv.cpp", "PopupDivMenu", wtjsDisableElectronMenuItem);
-  }
-#endif
 }//PopupDivMenuItem constructor
 
 
@@ -1484,14 +965,6 @@ PopupDivMenuItem::~PopupDivMenuItem()
 #if( USE_OSX_NATIVE_MENU )
   if( m_nsmenu && m_nsmenuitem )
     removeOsxMenuItem( m_nsmenuitem, m_nsmenu );
-#endif
-  
-#if( USING_ELECTRON_NATIVE_MENU )
-//Right now, as a workaround for not being able to remove items from an Electron
-//  menu (https://github.com/electron/electron/issues/527), we will hide the
-//  item.  See clearElectronMenu().
-  if( m_hasElectronItem )
-    WApplication::instance()->doJavaScript( "Wt.WT.HideElectronMenuItem('" + id() + "',true);" );
 #endif
 }//~PopupDivMenuItem()
 
@@ -1517,70 +990,6 @@ void PopupDivMenuItem::setHidden( bool hidden, const Wt::WAnimation &animation )
     setOsxMenuItemHidden( m_nsmenuitem, hidden );
 }
 #endif //USE_OSX_NATIVE_MENU
-
-
-
-#if( USING_ELECTRON_NATIVE_MENU )
-void PopupDivMenuItem::emitClickFromElectronMenu()
-{
-  //cout << "emitClickFromElectronMenu" << endl;
-  this->triggered().emit( (Wt::WMenuItem *)this );
-  wApp->triggerUpdate();
-}//void emitClickFromElectronMenu( PopupDivMenuItem *item )
-
-
-void PopupDivMenuItem::toggleFromElectronMenu(bool checked)
-{
-  //Wt::WServer::instance()->post( WApplication::instance()->sessionId(), [this,checked](){
-  
-  //cout << "toggleFromElectronMenu: " << checked << endl;
-  WCheckBox *cb = checkBox();
-  if( !cb )
-  {
-    cerr << "PopupDivMenuItem::toggleFromElectronMenu() called for non checkBox" << endl;
-    return;
-  }
-  //const bool wasChecked = cb->isChecked();
-  
-  //For some reason the below doesnt seem to have an effect... not sure why yet
-  cb->setChecked(checked);
-  cb->changed().emit();
-  if( checked )
-    cb->checked().emit();
-  else
-    cb->unChecked().emit();
-  
-  //if( checked != wasChecked )
-    //cb->changed().emit();
-  
-  triggered().emit( (Wt::WMenuItem *)this );
-  
-  wApp->triggerUpdate();
-//  } );
-}//
-
-void PopupDivMenuItem::setHidden( bool hidden, const Wt::WAnimation &animation )
-{
-  //cout << "Hiding " << text().toUTF8() << endl;
-  WMenuItem::setHidden( hidden, animation );
-  if( InterSpecApp::isPrimaryWindowInstance() )
-    WApplication::instance()->doJavaScript( "Wt.WT.HideElectronMenuItem('" + id() + "',"
-                                           + string(hidden ? "true" : "false") + ");" );
-}
-
-void PopupDivMenuItem::setDisabled(bool disabled)
-{
-  //cout << "DIsabling " << text().toUTF8() << endl;
-  WMenuItem::setDisabled(disabled);
-  if( InterSpecApp::isPrimaryWindowInstance() )
-    WApplication::instance()->doJavaScript( "Wt.WT.DisableElectronMenuItem('" + id() + "',"
-                                           + string(disabled ? "true" : "false") + ");" );
-}
-
-#endif // USING_ELECTRON_NATIVE_MENU
-
-
-
 
 
 void PopupDivMenuItem::makeTextXHTML()

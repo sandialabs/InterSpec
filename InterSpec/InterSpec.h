@@ -772,6 +772,10 @@ public:
   RemoteRid *remoteRid();
   void createRemoteRidWindow();
   void deleteRemoteRidWindow();
+  
+  void setAutoRemoteRidResultDialog( SimpleDialog *dialog );
+  void handleAutoRemoteRidResultDialogClose();
+  void programaticallyCloseAutoRemoteRidResultDialog();
 #endif
 
 
@@ -1455,6 +1459,16 @@ protected:
   PopupDivMenuItem *m_featureMarkerMenuItem;
 
   SimpleDialog *m_multimedia;
+
+#if( USE_REMOTE_RID )
+  /** When the user has selected spectra to be sent off to external RID analysis, and results to
+   be displayed in a dialog, instead of a Toast message, this pointer will keep track of the dialog.
+   
+   \sa getAutoRemoteRidResultDialog
+   \sa handleAutoRemoteRidResultDialogClose
+   */
+  SimpleDialog *m_autoRemoteRidResultDialog;
+#endif
   
   GammaXsWindow *m_gammaXsToolWindow;
   DoseCalcWindow *m_doseCalcWindow;

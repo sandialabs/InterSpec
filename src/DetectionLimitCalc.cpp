@@ -131,7 +131,7 @@ DetectionLimitCalc::CurieMdaInput currie_input( const float energy,
   
 void batch_test()
 {
-  const string base_dir = "/Users/wcjohns/Library/CloudStorage/OneDrive-SandiaNationalLaboratories/NonNucComponentLDRD/MDA_calc_20230718/";
+  const string base_dir = "/Users/wcjohns/Downloads/MDA_calc_20230718/";
   const string spec_file = SpecUtils::append_path( base_dir, "Livermore_48_hour background 5-26-23.n42" );
   
   SpecMeas meas;
@@ -412,16 +412,16 @@ void batch_test()
       if( act_str_uci == "--" )
         continue;
       
-      float activity_uci;
-      if( !SpecUtils::parse_float( act_str_uci.c_str(), act_str_uci.size(), activity_uci) )
+      float csv_activity_uci;
+      if( !SpecUtils::parse_float( act_str_uci.c_str(), act_str_uci.size(), csv_activity_uci) )
       {
         cerr << "Failed to parse activity '" << act_str_uci << "'" << endl;
         continue;
       }
       
-      activity_uci *= PhysicalUnits::microCi;
+      csv_activity_uci *= PhysicalUnits::microCi;
       
-      const double wanted_mass_activity = wanted_grams * activity_uci / input_data_mass_grams;
+      const double wanted_mass_activity = wanted_grams * csv_activity_uci / input_data_mass_grams;
       
       if( !single_peak_sensitivity.count(nuc) )
       {
@@ -434,20 +434,20 @@ void batch_test()
       /** The decay constant that is defined as
           0.5 = exp( -decay_const*halfLife ), or put another way ln(0.5)/halfLife.
        */
-      //min_det_act = activity_uci * exp(-nuc->decayConstant() * X )
-      //min_det_act/activity_uci = exp(-nuc->decayConstant() * X )
-      //ln( min_det_act/activity_uci ) = -nuc->decayConstant() * X
-      //X = ln( min_det_act/activity_uci ) / -nuc->decayConstant()
+      //min_det_act = wanted_mass_activity * exp(-nuc->decayConstant() * X )
+      //min_det_act/wanted_mass_activity = exp(-nuc->decayConstant() * X )
+      //ln( min_det_act/wanted_mass_activity ) = -nuc->decayConstant() * X
+      //X = ln( min_det_act/wanted_mass_activity ) / -nuc->decayConstant()
       
       const double min_det_act = single_peak_sensitivity[nuc];
-      if( activity_uci > min_det_act )
+      if( wanted_mass_activity > min_det_act )
       {
-        const double time_til_min_det = - std::log( min_det_act/activity_uci ) / nuc->decayConstant();
+        const double time_til_min_det = - std::log( min_det_act/wanted_mass_activity ) / nuc->decayConstant();
         
         cout << nuc->symbol << ","
              << (nuc->halfLife / PhysicalUnits::day) << ","
              << min_det_act << ","
-             << activity_uci << ","
+             << wanted_mass_activity << ","
              << (time_til_min_det / PhysicalUnits::day) << ","
              << SpecUtils::filename(csv_filename)
              << endl;
