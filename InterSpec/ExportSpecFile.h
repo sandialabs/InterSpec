@@ -168,6 +168,7 @@ protected:
   void handleFormatChange();
   void handleForePlusBackChanged();
   void handleFilterDetectorCbChanged();
+  void handleDetectorsToFilterChanged();
   
   void handleSumToSingleRecordChanged();
   void handleSumTypeToSingleRecordChanged();
