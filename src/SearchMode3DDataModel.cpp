@@ -294,19 +294,20 @@ void SearchMode3DDataModel::update( InterSpec *viewer )
       for( int i = 0; (i < sampleNumDelta) && ((sampleNumIndex+i) < numSampleNums); ++i )
         thissamplenum.insert( sample_numbers_vec[sampleNumIndex + i] );
       
-      float realtime = FLT_MAX;
-      for( const string &detnamme : det_to_use )
+      float realtime = 0.0f;
+      for( const int samplenum : thissamplenum )
       {
-        for( const int samplenum : thissamplenum )
+        float sample_realtime = FLT_MAX;
+        for( const string &detnamme : det_to_use )
         {
           auto m = meas->measurement( samplenum, detnamme );
           if( m )
-            realtime = std::min( realtime, m->real_time() );
-        }//for( const int samplenum : thissamplenum )
-      }//for( const string &detnamme : det_to_use )
+            sample_realtime = std::min( sample_realtime, m->real_time() );
+        }//for( const string &detnamme : det_to_use )
         
-      if( realtime > 1.0E+6f )
-        realtime = 0.0f;
+        if( sample_realtime < 1.0E+6f )
+          realtime += sample_realtime;
+      }//for( const int samplenum : thissamplenum )
         
       auto summed = meas->sum_measurements( thissamplenum, det_to_use, energy_cal );
         
