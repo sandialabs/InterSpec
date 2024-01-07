@@ -586,6 +586,7 @@ Napi::Object InitAll(Napi::Env env, Napi::Object exports) {
   exports.Set( "setTempDir", Napi::Function::New(env, InterSpecAddOn::setTempDir ));
   
   exports.Set( "setRequireSessionToken", Napi::Function::New(env, InterSpecAddOn::setRequireSessionToken ));
+  exports.Set( "setMaxUndoRedoSteps", Napi::Function::New(env, InterSpecAddOn::setMaxUndoRedoSteps ));
   exports.Set( "addPrimarySessionToken", Napi::Function::New(env, InterSpecAddOn::addPrimarySessionToken ));
   exports.Set( "addExternalSessionToken", Napi::Function::New(env, InterSpecAddOn::addExternalSessionToken ));
   

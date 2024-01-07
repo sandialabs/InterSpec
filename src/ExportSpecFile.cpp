@@ -1582,14 +1582,16 @@ vector<string> ExportSpecFileTool::currentlySelectedDetectors() const
   }
   
   vector<string> answer;
-  for( const auto w : m_detectorFilterCbs->children() )
+  const vector<Wt::WWidget *> &detector_cbs = m_detectorFilterCbs->children();
+  for( const auto w : detector_cbs )
   {
     WCheckBox *cb = dynamic_cast<WCheckBox *>( w );
     
     if( !cb || !cb->isChecked() )
       continue;
     
-    const auto pos = label_to_orig.find( cb->text().toUTF8() );
+    const string cb_label = cb->text().toUTF8();
+    const auto pos = label_to_orig.find( cb_label );
     assert( pos != end(label_to_orig) );
     if( pos != end(label_to_orig) )
       answer.push_back( pos->second );
@@ -1740,6 +1742,14 @@ void ExportSpecFileTool::refreshSampleAndDetectorOptions()
         cb->setChecked( prev_check[cb->text().toUTF8()] );
       else
         cb->setChecked( true );  //Could check if spectrum is displayed, and if so if the det is displayed
+      
+      // Curiously, if we dont have these next two calls, then the checkboxes wont actually be
+      //  registered and not-checked (after the user unchecks them) in
+      //  `ExportSpecFileTool::currentlySelectedDetectors()`, if the user immediately clicks
+      //  "Export" after un-checking a detector; `ExportSpecFileTool::handleDetectorsToFilterChanged()`
+      //  doesnt even have to do anything, just any function to be called.
+      cb->checked().connect( this, &ExportSpecFileTool::handleDetectorsToFilterChanged );
+      cb->unChecked().connect( this, &ExportSpecFileTool::handleDetectorsToFilterChanged );
     }//
     
     if( (max_records <= 1) || (max_records == 2) )
@@ -2142,6 +2152,12 @@ void ExportSpecFileTool::handleFilterDetectorCbChanged()
 }//void handleFilterDetectorCbChanged()
 
 
+void ExportSpecFileTool::handleDetectorsToFilterChanged()
+{
+  scheduleAddingUndoRedo();
+}//void handleDetectorsToFilterChanged();
+
+
 void ExportSpecFileTool::handleSumToSingleRecordChanged()
 {
   scheduleAddingUndoRedo();
@@ -2241,12 +2257,13 @@ std::shared_ptr<const SpecMeas> ExportSpecFileTool::generateFileToSave()
   const vector<string> detectors = currentlySelectedDetectors();
   
   const bool backgroundSub = (m_backSubFore && m_backSubFore->isVisible() && m_backSubFore->isChecked());
-  const bool sumAll = (m_sumAllToSingleRecord->isVisible() && m_sumAllToSingleRecord->isChecked());
+  const bool sumAll = ((m_sumAllToSingleRecord->isVisible() && m_sumAllToSingleRecord->isChecked())
+                       || (max_records <= 2));
   const bool foreToSingleRecord = (m_sumForeToSingleRecord->isVisible() && m_sumForeToSingleRecord->isChecked());
   const bool backToSingleRecord = (m_sumBackToSingleRecord->isVisible() && m_sumBackToSingleRecord->isChecked());
   const bool secoToSingleRecord = (m_sumSecoToSingleRecord->isVisible() && m_sumSecoToSingleRecord->isChecked());
   const bool filterDets = (m_filterDetector && m_filterDetector->isVisible() && m_filterDetector->isChecked());
-  const bool sumDetectorsPerSample = ((max_records <= 2) && (detectors.size() > 1));
+  const bool sumDetectorsPerSample = (sum_per_sample && ((max_records <= 2) && (detectors.size() > 1)));
   
   
   shared_ptr<SpecMeas> answer = make_shared<SpecMeas>();
@@ -2549,12 +2566,22 @@ std::shared_ptr<const SpecMeas> ExportSpecFileTool::generateFileToSave()
       }
     }//if( sum_samples.size() == 1 )
     
+    
     if( !single_meas )
     {
       assert( !sum_samples.empty() );
+      
+      shared_ptr<deque<shared_ptr<const PeakDef>>> peaks = answer->peaks(sum_samples);
+      
       shared_ptr<SpecUtils::Measurement> m = answer->sum_measurements( sum_samples, detectors, nullptr );
       m->set_sample_number( *begin(sum_samples) );
       meas_to_add.push_back( m );
+      
+      answer->setPeaks( {}, sum_samples );
+      if( peaks && peaks->size() )
+        answer->setPeaks( *peaks, {m->sample_number()} );
+      else
+        answer->setPeaks( {}, {m->sample_number()} );
       
       for( const int sample : sum_samples )
       {
@@ -2596,7 +2623,7 @@ std::shared_ptr<const SpecMeas> ExportSpecFileTool::generateFileToSave()
   }
   
   
-  if( m_sumAllToSingleRecord->isVisible() && m_sumAllToSingleRecord->isChecked() )
+  if( sumAll )
   {
     const vector<shared_ptr<const SpecUtils::Measurement>> orig_meass = answer->measurements();
     
@@ -2607,9 +2634,18 @@ std::shared_ptr<const SpecMeas> ExportSpecFileTool::generateFileToSave()
     if( !sum_meas )
       throw runtime_error( "Error summing records - perhaps empty sample numbers or detector names." );
     
+    shared_ptr<deque<shared_ptr<const PeakDef>>> peaks = answer->peaks(samples);
+    answer->setPeaks( {}, samples );
+    
+    sum_meas->set_sample_number( 1 );
+    if( peaks && peaks->size() )
+      answer->setPeaks( *peaks, {1} );
+    else
+      answer->setPeaks( {}, {1} );
+    
     answer->remove_measurements( orig_meass );
     answer->add_measurement( sum_meas, true );
-  }else if( sumDetectorsPerSample )
+  }else if( sumDetectorsPerSample && (answer->detector_names().size() > 1) )
   {
     set<int> problem_samples;
     map<int,vector<shared_ptr<const SpecUtils::Measurement>>> sample_to_meas;
@@ -2628,7 +2664,9 @@ std::shared_ptr<const SpecMeas> ExportSpecFileTool::generateFileToSave()
       
       try
       {
-        shared_ptr<SpecUtils::Measurement> m = answer->sum_measurements( {sample_num}, detectors, nullptr );
+        // `detectors` is no longer valid, since we may have summed them together
+        const vector<string> det_names = answer->detector_names();
+        shared_ptr<SpecUtils::Measurement> m = answer->sum_measurements( {sample_num}, det_names, nullptr );
         if( !m )
           throw runtime_error( "No gamma spectra found" );
         

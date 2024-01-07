@@ -106,6 +106,7 @@ class D3TimeChartFilters : public WContainerWidget
   WPushButton *m_clearEnergyFilterBtn;
   WCheckBox *m_dontRebin;
   WCheckBox *m_hideNeutrons;
+  WCheckBox *m_gammaLogY;
   NativeFloatSpinBox *m_gammaNeutRelEmphasis;
   float m_gammaNeutRelEmphasisValue;                      // Tracking for undo/redo support
   WCheckBox* m_normalizeCb;
@@ -130,6 +131,7 @@ public:
       m_clearEnergyFilterBtn( nullptr ),
       m_dontRebin( nullptr ),
       m_hideNeutrons( nullptr ),
+      m_gammaLogY( nullptr ),
       m_gammaNeutRelEmphasis( nullptr ),
       m_gammaNeutRelEmphasisValue( 1.0f ),
       m_normalizeCb(nullptr),
@@ -356,6 +358,13 @@ public:
     m_hideNeutrons->setToolTip( "Do not show neutrons on chart" );
     m_hideNeutrons->checked().connect( this, &D3TimeChartFilters::hideNeutronsChanged );
     m_hideNeutrons->unChecked().connect( this, &D3TimeChartFilters::hideNeutronsChanged );
+    
+    
+    m_gammaLogY = new WCheckBox( "Log Y Scale", optContents );
+    m_gammaLogY->addStyleClass( "D3TimeGammaLogY" );
+    m_gammaLogY->setToolTip( "Make the y-axis log, for the gammas" );
+    m_gammaLogY->checked().connect( this, &D3TimeChartFilters::gammaLogYChanged );
+    m_gammaLogY->unChecked().connect( this, &D3TimeChartFilters::gammaLogYChanged );
     
     
     WContainerWidget *sfDiv = new WContainerWidget(optContents);
@@ -862,6 +871,34 @@ public:
   }//void hideNeutronsChanged()
   
   
+  void gammaLogYChanged()
+  {
+    const bool logy = m_gammaLogY->isChecked();
+    m_parentChart->setGammaLogY( logy );
+    
+    // Take care of undo/redo
+    UndoRedoManager *undoRedo = UndoRedoManager::instance();
+    if( undoRedo && !undoRedo->isInUndoOrRedo() )
+    {
+      auto toggleLogYCB = wApp->bind( boost::bind( &WCheckBox::setChecked, m_gammaLogY, !logy ) );
+      auto unToggleLogYCB = wApp->bind( boost::bind( &WCheckBox::setChecked, m_gammaLogY, logy ) );
+      auto callLogYChanged = wApp->bind( boost::bind( &D3TimeChartFilters::gammaLogYChanged, this ) );
+      
+      auto undo = [toggleLogYCB, callLogYChanged](){
+        toggleLogYCB();
+        callLogYChanged();
+      };
+      
+      auto redo = [unToggleLogYCB, callLogYChanged](){
+        unToggleLogYCB();
+        callLogYChanged();
+      };
+      
+      undoRedo->addUndoRedoStep( undo, redo, "Toggle y-axis on time chart log/lin" );
+    }//if( undoRedo && !undoRedo->isInUndoOrRedo() )
+  }//void gammaLogYChanged()
+  
+  
   void handleGammaNeutRelEmphasisChanged()
   {
     float value = 1.0f;
@@ -934,6 +971,11 @@ public:
     m_gammaNeutRelEmphasis->setHidden( !visible );
     // Should we also reset m_gammaNeutRelEmphasis to 1.0 if we are hiding the option?
   }
+  
+  void setGammaLogY( const bool logy )
+  {
+    m_gammaLogY->setChecked( logy );
+  }
 };//class D3TimeChartFilters
 
 
@@ -948,6 +990,7 @@ D3TimeChart::D3TimeChart( Wt::WContainerWidget *parent )
   m_showHorizontalLines( false ),
   m_dontRebin( false ),
   m_hideNeutrons( false ),
+  m_gammaLogY( false ),
   m_spec( nullptr ),
   m_detectors_to_display(),
   m_highlights(),
@@ -1031,6 +1074,7 @@ void D3TimeChart::defineJavaScript()
   options += ", gridy: " + jsbool(m_showHorizontalLines);
   options += ", chartLineWidth: 1.0";  //ToDo: Let this be specified in C++
   options += ", dontRebin: " + jsbool(m_dontRebin);
+  options += ", gammaLogY: " + jsbool(m_gammaLogY);
   options += "}";
   
   setJavaScriptMember( "chart", "new D3TimeChart(" + m_chart->jsRef() + "," + options + ");");
@@ -2347,6 +2391,24 @@ bool D3TimeChart::neutronsHidden() const
 {
   return m_hideNeutrons;
 }
+
+
+void D3TimeChart::setGammaLogY( const bool logy )
+{
+  m_gammaLogY = logy;
+  if( m_options )
+    m_options->setGammaLogY( logy );
+  
+  if( isRendered() )
+    doJavaScript( m_jsgraph + ".setGammaLogY(" + jsbool(logy) +  ");" );
+}//void setGammaLogY( const bool logy )
+
+
+bool D3TimeChart::gammaLogY() const
+{
+  return m_gammaLogY;
+}//bool gammaLogY() const
+
 
 void D3TimeChart::setXAxisRangeSamples( const int min_sample_num, const int max_sample_num )
 {
