@@ -1684,6 +1684,11 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
         }//if( use_peak )
       }//for( const shared_ptr<const PeakDef> &p : all_peaks )
       
+      const double real_time = (foreground && (foreground->real_time() > 0))
+                                 ? foreground->real_time() : -1.0f;
+      // TODO: add something like `options.correct_for_decay_during_meas` or maybe this option should be a per-nuclide option.
+      //const bool correct_for_decay = (real_time > 0.0) ? options.correct_for_decay_during_meas : false;
+      const bool correct_for_decay = false;
       
       vector<RelActCalcManual::SandiaDecayNuc> nuc_sources;
       for( const RelActCalcAuto::NucInputInfo &info : nuclides )
@@ -1691,26 +1696,27 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
         RelActCalcManual::SandiaDecayNuc nucinfo;
         nucinfo.nuclide = info.nuclide;
         nucinfo.age = info.age;
+        nucinfo.correct_for_decay_during_meas = correct_for_decay;
         nuc_sources.push_back( nucinfo );
       }
       
       
-        vector<RelActCalcManual::PeakCsvInput::NucAndAge> isotopes;
-        for( const auto &n : nuc_sources )
-        {
-          if( n.nuclide )
-            isotopes.emplace_back( n.nuclide->symbol, n.age );
-        }
-        
+      vector<RelActCalcManual::PeakCsvInput::NucAndAge> isotopes;
+      for( const auto &n : nuc_sources )
+      {
+        if( n.nuclide )
+          isotopes.emplace_back( n.nuclide->symbol, n.age, correct_for_decay );
+      }
+      
       
       // TODO: For cbnm9375, fill_in_nuclide_info() and add_nuclides_to_peaks() produce nearly identical results (like tiny rounding errors on yields), but this causes a notable difference in the final "auto" solution, although this manual solution apears the same - really should figure this out - and then get rid of add_nuclides_to_peaks(...) - maybe this is all a testimate to how brittle somethign else is...
       const double cluster_sigma = 1.5;
-      const auto peaks_with_nucs = add_nuclides_to_peaks( peaks_in_range, nuc_sources, cluster_sigma );
+      const auto peaks_with_nucs = add_nuclides_to_peaks( peaks_in_range, nuc_sources, real_time, cluster_sigma );
       
       //RelActCalcManual::PeakCsvInput::NucMatchResults matched_res
       //  = RelActCalcManual::PeakCsvInput::fill_in_nuclide_info( peaks_in_range,
       //                                    RelActCalcManual::PeakCsvInput::NucDataSrc::SandiaDecay,
-      //                                    {}, isotopes, cluster_sigma, {} );
+      //                                    {}, isotopes, cluster_sigma, {}, real_time );
       // const auto peaks_with_nucs = matched_res.peaks_matched;
       
       /*
@@ -1829,8 +1835,8 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
       cout << "Initial estimates:" << endl;
       manual_solution.print_summary( cout );
       
-      ofstream debug_manual_html( "/Users/wcjohns/rad_ana/InterSpec_RelAct/RelActTest/initial_manual_estimate.html" );
-      manual_solution.print_html_report( debug_manual_html, options.spectrum_title, spectrum, debug_manual_display_peaks );
+      //ofstream debug_manual_html( "/Users/wcjohns/rad_ana/InterSpec_RelAct/RelActTest/initial_manual_estimate.html" );
+      //manual_solution.print_html_report( debug_manual_html, options.spectrum_title, spectrum, debug_manual_display_peaks );
       
       //Need to fill out rel eff starting values and rel activities starting values
       

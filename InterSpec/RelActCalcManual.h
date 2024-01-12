@@ -66,9 +66,9 @@ struct SandiaDecayNuc
 {
   const SandiaDecay::Nuclide *nuclide = nullptr;
   double age = -1;
-  
+  bool correct_for_decay_during_meas = false;
   const ReactionGamma::Reaction *reaction = nullptr;
-};//struct SandiaDecayNucRelAct
+};//struct SandiaDecayNuc
 
 
 /** Information about a SandiaDecay defined nuclide for input into relative efficiency calculation.
@@ -76,6 +76,7 @@ struct SandiaDecayNuc
 struct SandiaDecayNucRelAct
 {
   const SandiaDecay::Nuclide *nuclide = nullptr;
+  /** Age at start of measurement. */
   double age = -1.0;
   double rel_activity = -1.0;
 };//struct SandiaDecayNucRelAct
@@ -162,9 +163,18 @@ struct GenericPeakInfo
 };//struct GenericPeakInfo
 
 
-
+/** Adds the `GenericLineInfo` info (e.g. nuclides and their BR) to input `peaks` by clustering gamma lines of
+ provided nuclides.
+ 
+ @param peaks Input peaks, with all info except `GenericPeakInfo::m_source_gammas` filled out
+ @param nuclides The input nuclides to cluster and assign to peaks
+ @param real_time The real time of the measurement - only used if correcting for the nuclides decay during measurement
+        \sa `SandiaDecayNuc::correct_for_decay_during_meas`
+ @param cluster_sigma The number of peak sigma to cluster gamma energies as being responsible for the peaks.
+ */
 std::vector<GenericPeakInfo> add_nuclides_to_peaks( const std::vector<GenericPeakInfo> &peaks,
                                                    const std::vector<SandiaDecayNuc> &nuclides,
+                                                   const double real_time,
                                                    const double cluster_sigma = 1.5
                                                    );
 
@@ -358,6 +368,16 @@ struct RelEffSolution
   /** The input peaks that were used to create the solution. */
   std::vector<GenericPeakInfo> m_input_peak;
   
+  /** Peaks with un-decay-corrected yields; useful only to note the effect of the decay correction.
+   
+   Only includes peaks that have at least one correction, and the only entries in
+   `GenericPeakInfo::m_source_gammas`, are the ones with corrections.
+   
+   Note: these are not filled out by `solve_relative_efficiency(...)`, like the rest of this struct,
+   but rather must be filled out after finding a solution.  Not super clean, but these are informational
+   only.
+   */
+  std::vector<GenericPeakInfo> m_input_peaks_before_decay_corr;
   
   /////////////////////////////////////////////////////////////////////////////////////////////////
   //            Below here are member functions for simplified access to information             //
@@ -550,6 +570,12 @@ struct NucMatchResults
    any of the peaks fit in data.
    */
   std::vector<NuclideInfo> source_gammas_not_used;
+  
+  /** The non-decay-corrected values for peaks that received decay-during-measurement corrections.
+   Will only have entries in `RelActCalcManual::GenericPeakInfo::m_source_gammas`
+   that received corrections.
+   */
+  std::vector<RelActCalcManual::GenericPeakInfo> not_decay_corrected_peaks;
 };//struct NucMatchResults
 
 
@@ -565,9 +591,13 @@ struct NucAndAge
   /** Age of nuclide; a negative value will cause the default age for the nuclide to be used. */
   double age = -1.0;
   
-  NucAndAge( const std::string &nuc, const double the_age )
+  /** If the nuclides decay during the measurement should be accounted for. */
+  bool decay_during_measurement;
+  
+  NucAndAge( const std::string &nuc, const double the_age, const bool decay_correct_during_meas )
   : nuclide(nuc),
-    age( the_age )
+    age( the_age ),
+    decay_during_measurement( decay_correct_during_meas )
   {}
 };//NucAndAge
 
@@ -584,13 +614,16 @@ struct NucAndAge
         this energy range of the peak mean will be attributed to the peak.  A value of 0.57 will
         include all gammas within 1.5 sigma of the mean.
  @param excluded_peak_energies Peaks to explicitly exclude from the analysis.
+ @param measurement_duration The duration of the measurement; only used if correcting activities for decay during measurement.
+        \sa `NucAndAge::decay_during_measurement`
  */
 NucMatchResults fill_in_nuclide_info( const std::vector<RelActCalcManual::GenericPeakInfo> peaks,
                                      const NucDataSrc nuc_data_src,
                                      const std::vector<std::pair<float,float>> energy_ranges,
                                      std::vector<NucAndAge> isotopes,
                                      const float energy_tolerance_sigma,
-                                     const std::vector<float> excluded_peak_energies );
+                                     const std::vector<float> excluded_peak_energies,
+                                     const float measurement_duration );
 }//namespace PeakCsvInput
 
 }//namespace RelActCalcManual

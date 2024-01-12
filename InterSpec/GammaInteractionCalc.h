@@ -39,17 +39,14 @@
 
 #include "Minuit2/FCNBase.h"
 
+#include "SandiaDecay/SandiaDecay.h"
+
 #include "InterSpec/ShieldingSourceFitCalc.h"
 
 class PeakDef;
 struct Material;
 class DetectorPeakResponse;
 
-namespace SandiaDecay
-{
-  struct Nuclide;
-  class NuclideMixture;
-}
 
 namespace GammaInteractionCalc
 {
@@ -140,7 +137,18 @@ double mass_attenuation_coef( float atomic_number, float energy );
 double transmition_coefficient_generic( float atomic_number, float areal_density,
                                 float energy );
 
-
+/** Returns the average gammas per second during a measurement, when the decay of the input nuclides is accounted for.
+ @param mixture The nuclide mixture - currently may only have a single parent nuclide.
+ @param intial_age The mixture nuclides age when the measurement is started.
+ @param measurement_duration The duration of the measurement.
+ 
+ @returns The average rates for each of the energies, ordered by energy.
+ */
+std::vector<SandiaDecay::EnergyRatePair> decay_during_meas_corrected_gammas(
+                                                    const SandiaDecay::NuclideMixture &mixture,
+                                                    const double initial_age,
+                                                    const double measurement_duration );
+    
 void example_integration();
 
 // When debugging we will grab a static mutex so we dont get jumbled stdout

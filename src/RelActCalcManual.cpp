@@ -118,10 +118,10 @@ struct ManualGenericRelActFunctor  /* : ROOT::Minuit2::FCNBase() */
    Will throw exception on error.
    */
   ManualGenericRelActFunctor( const RelActCalc::RelEffEqnForm eqn_form,
-                    const int eqn_order,
+                    const size_t eqn_order,
                     const std::vector<RelActCalcManual::GenericPeakInfo> &peak_infos )
   : m_eqn_form( eqn_form ),
-  m_eqn_order( eqn_order ),
+  m_eqn_order( static_cast<int>(eqn_order) ),
   m_peak_infos( peak_infos ),
   m_ncalls( 0 )
   {
@@ -765,8 +765,9 @@ void fit_rel_eff_eqn_lls( const RelActCalc::RelEffEqnForm fcn_form,
 
 
 vector<GenericPeakInfo> add_nuclides_to_peaks( const std::vector<GenericPeakInfo> &peaks,
-                                                   const std::vector<SandiaDecayNuc> &nuclides,
-                                                   const double cluster_sigma )
+                                              const std::vector<SandiaDecayNuc> &nuclides,
+                                              const double real_time,
+                                              const double cluster_sigma )
 {
   vector<GenericPeakInfo> answer = peaks;
   
@@ -787,14 +788,17 @@ vector<GenericPeakInfo> add_nuclides_to_peaks( const std::vector<GenericPeakInfo
     // We will map from the peaks mean, to the total number of gammas that contribute to that peak,
     //  for this nuclide
     map<double,double> energy_gammas_map;
+        
+    if( n.correct_for_decay_during_meas && (real_time <= 0) )
+      throw runtime_error( "add_nuclides_to_peaks: measurement time must be specified if"
+                          " correcting activities for nuclide decays during measurement.");
     
     const double activity = 1.0;
-    // TODO: we could account for decays during the measurement, but would need realTime here
-    const bool accountForDecayDuringMeas = false;
-    const double realTime = -1;
+    const bool decay_correct = n.correct_for_decay_during_meas;
+    
     GammaInteractionCalc::ShieldingSourceChi2Fcn::cluster_peak_activities( energy_gammas_map,
                             energy_widths, mixture, activity, n.age, cluster_sigma, -1,
-                            accountForDecayDuringMeas, realTime, nullptr );
+                            decay_correct, real_time, nullptr );
     
     // Convert energy_gammas_map to a vector for convenience
     vector<pair<double,double>> energy_gammas;
@@ -1563,6 +1567,7 @@ void RelEffSolution::print_html_report( ostream &output_html_file,
   get_mass_fraction_table( results_html );
   get_mass_ratio_table( results_html );
   
+  const bool has_decay_corr = !m_input_peaks_before_decay_corr.empty();
   
   // Make table giving info on each of the _used_ peaks
   results_html << "<table class=\"peaktable resulttable\">\n";
@@ -1578,8 +1583,9 @@ void RelEffSolution::print_html_report( ostream &output_html_file,
   "<th scope=\"col\">Add. Unc.</th>"
   "<th scope=\"col\">Meas. Rel Eff</th>"
   "<th scope=\"col\">Meas. Rel Eff Unct</th>"
-  "</tr></thead>\n";
-  results_html << "  <tbody>\n";
+  << (has_decay_corr ? "<th scope=\"col\">Decay Corr.</th>" : "")
+  << "</tr></thead>\n"
+  "  <tbody>\n";
   
   
   for( const GenericPeakInfo &info : m_input_peak )
@@ -1588,25 +1594,51 @@ void RelEffSolution::print_html_report( ostream &output_html_file,
     results_html << "  <tr><td>" << buffer << "</td>";
     for( size_t i = 0; i < info.m_source_gammas.size(); ++i )
     {
+      const GenericLineInfo &line = info.m_source_gammas[i];
+      
       if( i )
         results_html << "<tr><td></td>";
       
-      const double rel_act = relative_activity(info.m_source_gammas[i].m_isotope);
-      const double counts_over_yield = info.m_counts / info.m_source_gammas[i].m_yield;
+      const double rel_act = relative_activity(line.m_isotope);
+      const double counts_over_yield = info.m_counts / line.m_yield;
       const double counts_uncert_percent = 100.0*(info.m_counts_uncert / info.m_counts);
-      const double meas_rel_eff = info.m_counts / (info.m_source_gammas[i].m_yield * rel_act);
+      const double meas_rel_eff = info.m_counts / (line.m_yield * rel_act);
       const double meas_rel_eff_uncert = 100* info.m_counts_uncert / info.m_counts;
       
-      results_html << "<td>" << info.m_source_gammas[i].m_isotope
-      << "</td><td>" << PhysicalUnits::printCompact( info.m_source_gammas[i].m_yield, nsigfig )
+      results_html << "<td>" << line.m_isotope
+      << "</td><td>" << PhysicalUnits::printCompact( line.m_yield, nsigfig )
       << "</td><td>" << PhysicalUnits::printCompact( info.m_counts, nsigfig )
       << "</td><td>" << PhysicalUnits::printCompact( info.m_counts_uncert, nsigfig )
       << "</td><td>" << PhysicalUnits::printCompact( counts_over_yield, nsigfig )
       << "</td><td>" << PhysicalUnits::printCompact( counts_uncert_percent, nsigfig ) << "%"
       << "</td><td>" << PhysicalUnits::printCompact( info.m_base_rel_eff_uncert, nsigfig )
       << "</td><td>" << PhysicalUnits::printCompact( meas_rel_eff, nsigfig )
-      << "</td><td>" << PhysicalUnits::printCompact( meas_rel_eff_uncert, nsigfig ) << "%"
-      << "</td></tr>\n";
+      << "</td><td>" << PhysicalUnits::printCompact( meas_rel_eff_uncert, nsigfig ) << "%";
+      
+      if( has_decay_corr )
+      {
+        results_html << "</td><td>";
+        
+        for( const GenericPeakInfo &un_corr_peak : m_input_peaks_before_decay_corr )
+        {
+          if( fabs(info.m_energy - un_corr_peak.m_energy) > 0.001 )
+            continue;
+          
+          for( const GenericLineInfo &un_corr_line : un_corr_peak.m_source_gammas )
+          {
+            if( un_corr_line.m_isotope != line.m_isotope )
+              continue;
+            
+            const double ratio = line.m_yield / un_corr_line.m_yield;
+            if( !IsInf(ratio) && !IsNan(ratio) )
+              results_html << " " << PhysicalUnits::printCompact( ratio, nsigfig );
+            else
+              results_html << "--";
+          }//for( loop over un_corr_peak.m_source_gammas )
+        }//for( loop over m_input_peaks_before_decay_corr )
+      }//if( has_decay_corr )
+      
+      results_html << "</td></tr>\n";
     }//for( size_t i = 0; i < info.m_source_gammas.size(); ++i )
   }//for( const RelEff::PeakInfo &info : input_peaks )
   
@@ -1883,8 +1915,8 @@ RelEffSolution solve_relative_efficiency( const std::vector<GenericPeakInfo> &pe
   // We have one more residual than the number of peaks; the last residual is what clamps the
   //  relative efficiency curve to 1.0 at the lowest energy (to prevent degeneracy between rel eff
   //  curve, and rel activities).
-  cost_function->SetNumResiduals( cost_functor->number_residuals() );
-  cost_function->AddParameterBlock( num_nuclides );
+  cost_function->SetNumResiduals( static_cast<int>(cost_functor->number_residuals()) );
+  cost_function->AddParameterBlock( static_cast<int>(num_nuclides) );
   
   // Relative activities multiples start out as 1.0 because ManualGenericRelActFunctor constructor
   //   estimates the activities for a flat rel eff = 1.0; see
@@ -2129,7 +2161,8 @@ NucMatchResults fill_in_nuclide_info( const vector<RelActCalcManual::GenericPeak
                                      const vector<pair<float,float>> energy_ranges,
                                      std::vector<NucAndAge> isotopes,
                                      const float energy_tolerance_sigma,
-                                     const vector<float> excluded_peak_energies )
+                                     const vector<float> excluded_peak_energies,
+                                     const float measurement_duration )
 {
   const SandiaDecay::SandiaDecayDataBase *db = DecayDataBaseServer::database();
   assert( db );
@@ -2254,7 +2287,7 @@ NucMatchResults fill_in_nuclide_info( const vector<RelActCalcManual::GenericPeak
         if( !nuc )
           throw runtime_error( "Some how '" + info.parent + "' isnt a valid nuclide." );
         
-        isotopes.emplace_back( nuc->symbol, -1.0 );
+        isotopes.emplace_back( nuc->symbol, -1.0, false );
       }//
     }//for( const auto &info : specialize_src )
   }//if( isotopes.empty() )
@@ -2262,7 +2295,10 @@ NucMatchResults fill_in_nuclide_info( const vector<RelActCalcManual::GenericPeak
   
   // We will put raw source info into 'initial_nucs_info', and then filter this down to the
   //  nuclides and energy ranges we will actually use
-  vector<NuclideInfo> initial_nucs_info;
+  //  If we are correcting activities for nuclides decay during the measurement, then we will
+  //  place the uncorrected info into `non_decay_corr_initial_nucs_info` (that is,
+  //  `non_decay_corr_initial_nucs_info` will not have any entries if we arent decay correcting)
+  vector<NuclideInfo> initial_nucs_info, non_decay_corr_initial_nucs_info;
   for( size_t i = 0; i < isotopes.size(); ++i )
   {
     string &iso = isotopes[i].nuclide;
@@ -2368,16 +2404,44 @@ NucMatchResults fill_in_nuclide_info( const vector<RelActCalcManual::GenericPeak
         }else
         {
           assert( nuc );
-          SandiaDecay::NuclideMixture mix;
           const double ref_act = 1.0*SandiaDecay::MBq;
-          mix.addAgedNuclideByActivity( nuc, ref_act, age );
-          //mix.addNuclideByActivity( nuc, ref_act );
+          const double decrease_factor = std::exp( -age * nuc->decayConstant() );
+          const double initial_activity = ref_act / decrease_factor;
+          SandiaDecay::NuclideMixture mix;
+          mix.addNuclideByActivity( nuc, initial_activity );
           
-          //const auto gammas = mix.gammas( 0.0, SandiaDecay::NuclideMixture::HowToOrder::OrderByEnergy, true );
-          const vector<SandiaDecay::EnergyRatePair> photons = mix.photons(0.0, SandiaDecay::NuclideMixture::HowToOrder::OrderByEnergy );
+          assert( fabs(ref_act - mix.activity(age, nuc)) < 0.001*ref_act );
           
-          for( const SandiaDecay::EnergyRatePair &rate_info : photons )
+          vector<SandiaDecay::EnergyRatePair> un_decay_corrected_photons;
+          vector<SandiaDecay::EnergyRatePair> photons = mix.photons( age, SandiaDecay::NuclideMixture::HowToOrder::OrderByEnergy );
+          
+          if( isotopes[i].decay_during_measurement )
           {
+            vector<SandiaDecay::EnergyRatePair> corr_photons
+                  = GammaInteractionCalc::decay_during_meas_corrected_gammas( mix, age, measurement_duration );
+            
+            // See what the decay correction is here, and note to then include in the results.
+            assert( corr_photons.size() == photons.size() );
+            assert( std::is_sorted(begin(corr_photons), end(corr_photons),
+                   []( const SandiaDecay::EnergyRatePair &lhs, const SandiaDecay::EnergyRatePair &rhs ){ 
+              return lhs.energy <= rhs.energy;
+            }) );
+            assert( std::is_sorted(begin(photons), end(photons),
+                   []( const SandiaDecay::EnergyRatePair &lhs, const SandiaDecay::EnergyRatePair &rhs ){
+              return lhs.energy <= rhs.energy;
+            }) );
+            //for( size_t i = 0; i < std::min(photons.size(),corr_photons.size()); ++i ){
+            //  assert( fabs(photons[i].energy - corr_photons[i].energy) < 0.001 );
+            //}
+            
+            un_decay_corrected_photons = std::move(photons);
+            photons = std::move(corr_photons);
+          }//if( isotopes[i].decay_during_measurement ) / else
+          
+          for( size_t info_index = 0; info_index < photons.size(); ++info_index )
+          {
+            const SandiaDecay::EnergyRatePair &rate_info = photons[info_index];
+              
             const char * const parent = nuc->symbol.c_str();
             const char * const resp_nuc = ""; //TODO: bother to get the nuclide thats actually giving off this gamma; see decay_gammas(...) in RelActCalcAuto.cpp
             const bool optional_use = true;
@@ -2385,7 +2449,19 @@ NucMatchResults fill_in_nuclide_info( const vector<RelActCalcManual::GenericPeak
             const float br = static_cast<float>( rate_info.numPerSecond / ref_act );
             
             if( br > std::numeric_limits<float>::min() )
+            {
               initial_nucs_info.emplace_back( parent, resp_nuc, optional_use, energy, br );
+              
+              if( info_index < un_decay_corrected_photons.size() )
+              {
+                assert( un_decay_corrected_photons.size() == photons.size() );
+                const SandiaDecay::EnergyRatePair &noncorr_rate_info = un_decay_corrected_photons[info_index];
+                assert( fabs(noncorr_rate_info.energy - energy) < 0.001 );
+                
+                const float non_corr_br = static_cast<float>( noncorr_rate_info.numPerSecond / ref_act );
+                non_decay_corr_initial_nucs_info.emplace_back( parent, resp_nuc, optional_use, energy, non_corr_br );
+              }//if( decay correct nuclides )
+            }//if( br > std::numeric_limits<float>::min() )
           }//for( const SandiaDecay::EnergyRatePair info : photons )
         }//if( rctn ) / else( nuc )
         
@@ -2404,6 +2480,10 @@ NucMatchResults fill_in_nuclide_info( const vector<RelActCalcManual::GenericPeak
     return lhs.energy < rhs.energy;
   });
 
+  std::sort( begin(non_decay_corr_initial_nucs_info), end(non_decay_corr_initial_nucs_info),
+            []( const NuclideInfo &lhs, const NuclideInfo &rhs ){
+    return lhs.energy < rhs.energy;
+  });
   
   
   // Now we'll put the entries from 'initial_nucs_info' we *might* actually use, into
@@ -2438,6 +2518,12 @@ NucMatchResults fill_in_nuclide_info( const vector<RelActCalcManual::GenericPeak
   vector<bool> peak_was_excluded( matched_peaks.size(), false );
   vector<bool> used_candidate_nucs_info( candidate_nucs_info.size(), false );
   
+  // Lets keep track of peaks with gammas that have received decay-during-measurement
+  //  corrections; following variable will only have un-corrected values for peaks that
+  //  received corrections and only entries in #GenericPeakInfo::m_source_gammas that
+  //  have been corrected.
+  vector<RelActCalcManual::GenericPeakInfo> un_corrected_peaks;
+  
   for( size_t peak_index = 0; peak_index < matched_peaks.size(); ++peak_index )
   {
     RelActCalcManual::GenericPeakInfo &peak = matched_peaks[peak_index];
@@ -2451,6 +2537,10 @@ NucMatchResults fill_in_nuclide_info( const vector<RelActCalcManual::GenericPeak
     peak_was_excluded[peak_index] = exclude;
     if( exclude )
       continue;
+    
+    RelActCalcManual::GenericPeakInfo un_decay_corr_peak = peak;
+    assert( un_decay_corr_peak.m_source_gammas.empty() );
+    un_decay_corr_peak.m_source_gammas.clear();
     
     // Try to match this peak to a source gamma line
     for( size_t nuc_index = 0; nuc_index < candidate_nucs_info.size(); ++nuc_index )
@@ -2487,13 +2577,46 @@ NucMatchResults fill_in_nuclide_info( const vector<RelActCalcManual::GenericPeak
           {
             nuc_already_used = true;
             gamma.m_yield += nuc.yield;
+            break;
           }
         }//for( loop over existing source gammas for `peak` )
         
         if( !nuc_already_used )
           peak.m_source_gammas.emplace_back( nuc.yield, nuc.parent );
+        
+        
+        //look through `non_decay_corr_initial_nucs_info` and try to match to `isotopes[i]`
+        //  TODO: `non_decay_corr_initial_nucs_info` is sorted by energy, so we could be much
+        //         smarter here
+        for( const NuclideInfo &un_corr_nuc : non_decay_corr_initial_nucs_info )
+        {
+          if( (nuc.parent == un_corr_nuc.parent)
+             && (nuc.source_nuclide == un_corr_nuc.source_nuclide)
+             && (fabs(nuc.energy - un_corr_nuc.energy) < 0.001) )
+          {
+            bool uncorr_nuc_already_used = false;
+            for( RelActCalcManual::GenericLineInfo &gamma : un_decay_corr_peak.m_source_gammas )
+            {
+              if( gamma.m_isotope == nuc.parent )
+              {
+                uncorr_nuc_already_used = true;
+                gamma.m_yield += un_corr_nuc.yield;
+                break;
+              }
+            }//for( loop over existing source gammas for `peak` )
+            
+            if( !uncorr_nuc_already_used )
+              un_decay_corr_peak.m_source_gammas.emplace_back( un_corr_nuc.yield, un_corr_nuc.parent );
+          }//if( we found un-corrected line corresponding to `nuc` )
+          
+          if( un_corr_nuc.energy > nuc.energy )
+            break;
+        }//for( loop over non_decay_corr_initial_nucs_info )
       }//if( peak matched source data within tolerance )
     }//for( size_t nuc_index = 0; nuc_index < candidate_nucs_info.size(); ++candidate_nucs_info )
+    
+    if( !un_decay_corr_peak.m_source_gammas.empty() )
+      un_corrected_peaks.push_back( un_decay_corr_peak );
   }//for( size_t peak_index = 0; peak_index < matched_peaks.size(); ++peak_index )
   
   
@@ -2502,6 +2625,7 @@ NucMatchResults fill_in_nuclide_info( const vector<RelActCalcManual::GenericPeak
   
   results.match_sigma_tolerance = energy_tolerance_sigma;
   results.energy_ranges = energy_ranges;
+  results.not_decay_corrected_peaks = un_corrected_peaks;
   
   for( size_t peak_index = 0; peak_index < matched_peaks.size(); ++peak_index )
   {
