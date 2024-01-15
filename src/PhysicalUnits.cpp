@@ -47,7 +47,7 @@ namespace PhysicalUnits
 #define METRIC_PREFIX_UNITS "m|M|k|g|G|t|T|u|" MU_CHARACTER_1 "|" MU_CHARACTER_2 "|p|n|f|milli|micro|pico|nano|femto|kilo|mega|giga|terra"
 
 #define PLUS_MINUS_REGEX "(\\xC2?\\xB1|\\+\\-\\s*|\\-\\+\\s*)"
-#define TIME_UNIT_REGEX "(year|yr|y|day|d|hrs|hour|h|minutes|min|m|second|s|ms|microseconds|us|nanoseconds|ns)"
+#define TIME_UNIT_REGEX "(year|yr|y|day|d|hrs|hour|h|minutes|min|m|second|seconds|sec|s|ms|microseconds|us|nanoseconds|ns)"
 #define HALF_LIFE_REGEX "(hl|halflife|halflives|half-life|half-lives|half lives|half life)"
 #define ACTIVITY_UNIT_REGEX "(bq|becquerel|ci|cu|curie|c)"
 #define ABSORBED_DOSE_UNIT_REGEX "(gray|Gy|gy|rad|erg|erg\\/g|erg per gram)"
@@ -110,7 +110,9 @@ const char * const sm_timeDurationRegex
 const char * const sm_timeDurationHalfLiveOptionalRegex
 = "^(\\s*\\+?\\s*((" POS_DECIMAL_REGEX "\\s*" TIME_UNIT_REGEX "\\s*)"
   "|(" DURATION_REGEX "\\s*)"
-  "|(" POS_DECIMAL_REGEX "\\s*" HALF_LIFE_REGEX "\\s*)))+$";
+  "|(" POS_DECIMAL_REGEX "\\s*" HALF_LIFE_REGEX "\\s*)"
+  "|(0+(\\.0*)?)" //Allow the user to enter "0", or "0.000", with no time units
+  "))+$";
 
 const char * const sm_timeDurationHalfLiveOptionalPosOrNegRegex
    = "^\\s*((" DECIMAL_REGEX "\\s*" TIME_UNIT_REGEX "\\s*)"
@@ -825,7 +827,7 @@ double stringToTimeDurationPossibleHalfLife( std::string str,
                             "|ns|nano\\-*second|nano\\-*sec"
                             "|us|micro\\-*sec|micro\\-*second"
                             "|ms|milli\\-*sec|milli\\-*second"
-                            "|second|s|minute|minutes|min|m"
+                            "|second|seconds|sec|s|minute|minutes|min|m"
                             "|hours|hour|hrs|h|days|day|d|year|yr|y"
                             "|hl|halflife|halflives|half\\-life|half\\-lives|half\\slives|half\\slife"
                             ")"
@@ -866,7 +868,7 @@ double stringToTimeDurationPossibleHalfLife( std::string str,
       unit = second * 1.0E-3;
     else if( SpecUtils::starts_with(letters, "s" ) )
       unit = second;
-    else if( letters=="m" || SpecUtils::contains(letters, "min" )  )
+    else if( (letters=="m") || SpecUtils::contains(letters, "min" )  )
       unit = minute;
     else if( letters=="h"
              || SpecUtils::contains(letters, "hour" )
