@@ -4998,25 +4998,26 @@ void ShieldingSourceChi2Fcn::cluster_peak_activities( std::map<double,double> &e
   if( !nuclide )
     throw std::logic_error( "nullptr nuc" );
   
-  // We'll calculate our gammas differently if we are correcting for decays during the measurement or not
-  vector<SandiaDecay::EnergyRatePair> gammas;
+  // We'll calculate our gammas differently if we are correcting for decays during the measurement 
+  //  or not.
+  //  We will only fill the `non_decay_cor_gammas` if we are correcting for decays during
+  //  measurement, and we are creating log info (we only use non-corrected gammas to put
+  //  the correction factor into the log file).
+  vector<SandiaDecay::EnergyRatePair> gammas, non_decay_cor_gammas;
   
   assert( !accountForDecayDuringMeas || (measDuration > 0.0) );  //This could happen, I guess if foreground real-time is zero, but it shouldnt, so I'll leave this assert in to check for things.
   
-  if( !accountForDecayDuringMeas || (measDuration <= 0.0) || IsNan(measDuration) || IsInf(measDuration) )
+  if( accountForDecayDuringMeas && (measDuration > 0.0) && !IsNan(measDuration) && !IsInf(measDuration) )
   {
-    gammas = mixture.photons( age, SandiaDecay::NuclideMixture::OrderByEnergy );
+    gammas = decay_during_meas_corrected_gammas( mixture, age, measDuration );
+    
+    // We will only use non-decay-corrected gammas if we are logging information
+    if( info )
+      non_decay_cor_gammas = mixture.photons( age, SandiaDecay::NuclideMixture::OrderByEnergy );
   }else
   {
-    vector<SandiaDecay::EnergyRatePair> corrected_gammas = decay_during_meas_corrected_gammas( mixture, age, measDuration );
-    
-    if( info )
-    {
-      // TODO: we could add something about effect of accounting for nuclide aging
-    }//if( info )
-    
-    gammas = std::move( corrected_gammas );
-  }//if( accountForDecayDuringMeas )
+    gammas = mixture.photons( age, SandiaDecay::NuclideMixture::OrderByEnergy );
+  }//if( accountForDecayDuringMeas ) / else
   
   
   //The problem we have is that 'gammas' have the activity of the original
@@ -5135,7 +5136,23 @@ void ShieldingSourceChi2Fcn::cluster_peak_activities( std::map<double,double> &e
       msg << "\tPeak attributed to " << energy << " keV received "
           << contribution*PhysicalUnits::second
           << " cps from " << aep.energy << " keV line, which has I="
-          << age_sf * aep.numPerSecond/sm_activityUnits << "";
+          << age_sf * aep.numPerSecond/sm_activityUnits;
+      
+      if( !non_decay_cor_gammas.empty() )
+      {
+        //Find same-energy gamma, and get correction factor
+        const auto non_corr_pos = std::find_if( begin(non_decay_cor_gammas), end(non_decay_cor_gammas),
+          [&aep]( const SandiaDecay::EnergyRatePair &v ) {
+            return fabs(v.energy - aep.energy) < 0.00001;
+        });
+        
+        assert( non_corr_pos != end(non_decay_cor_gammas) );
+        if( non_corr_pos != end(non_decay_cor_gammas) )
+        {
+          msg << " (decay correction " << aep.numPerSecond/non_corr_pos->numPerSecond << ")";
+        }
+      }//if( we are correcting for decays during measurement )
+      
       info->push_back( msg.str() );
     }//if( info )
   }//for( const SandiaDecay::AbundanceEnergyPair &aep : gammas )
