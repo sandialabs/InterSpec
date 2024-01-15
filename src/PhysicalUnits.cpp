@@ -1446,7 +1446,7 @@ std::string printValueWithUncertainty( double value, double uncert, size_t unsig
   rounduncert /= uncertnorm;
   
   char buffer[64] = {'\0'};
-  snprintf( buffer, sizeof(buffer), "%.*g &plusmn; %.*g", nsigfig, roundedval, nsigfig, rounduncert );
+  snprintf( buffer, sizeof(buffer), "%.*g \xC2\xB1 %.*g", nsigfig, roundedval, nsigfig, rounduncert );
   
   // Incase "%.*g" isnt supprted somewhere, could instead do
   //char formatflag[64] = {'\0'}, buffer[64] = {'\0'};

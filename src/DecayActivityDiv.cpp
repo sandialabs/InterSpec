@@ -26,6 +26,7 @@
 #include <string>
 #include <vector>
 #include <memory>
+#include <numeric>
 #include <iostream>
 #include <algorithm>
 #include <exception>
@@ -2661,10 +2662,11 @@ double DecayActivityDiv::findTimeForActivityFrac(
 
 void DecayActivityDiv::updateYScale()
 {
-  if( m_logYScale->isChecked() )
-    m_decayChart->axis(Chart::YAxis).setScale( Chart::LogScale );
-  else
-    m_decayChart->axis(Chart::YAxis).setScale( Chart::LinearScale );
+  const Chart::AxisScale scale = m_logYScale->isChecked() ? Chart::LogScale : Chart::LinearScale;
+  m_decayChart->axis(Chart::YAxis).setScale( scale );
+    
+  // If we dont do a full refresh, for some reason sometimes the lines wont show up
+  refreshDecayDisplay( true );
 }//void updateYScale()
 
 
@@ -3411,7 +3413,7 @@ void DecayActivityDiv::updateYAxisRange()
   //  manually
   // m_decayChart->axis(Chart::YAxis).setAutoLimits( Chart::MinimumValue | Chart::MaximumValue );
   
-  double miny = 0.0, maxy = 0.0;
+  double miny = std::numeric_limits<double>::max(), maxy = 0.0;
   
   for( int row = 0; row < m_decayModel->rowCount(); ++row )
   {
@@ -3426,16 +3428,41 @@ void DecayActivityDiv::updateYAxisRange()
       {
         miny = std::min( miny, yval );
         maxy = std::max( maxy, yval );
-      }
-    }
-  }
+      }//if( we are showing this value )
+    }//for( loop over columns )
+  }//for( loop over rows )
 
   if( maxy <= 0.0 )
     maxy = 1.0;
   
-  //If it wont change the dynamic range of the chart much anyways, might as well
-  //  anchor the y-axis to zero
-  m_decayChart->axis(Chart::YAxis).setRange( 0.0, 1.1*maxy );
+  if( miny > maxy )
+    miny = 0.0;
+  
+  double min_disp_act = 0.0, max_disp_act = 1.1*maxy;
+  switch( m_decayChart->axis(Chart::YAxis).scale() )
+  {
+    case Wt::Chart::LogScale:
+      if( miny < 0.000001*maxy )
+        min_disp_act = 0.00001*maxy;
+      else
+        min_disp_act = 0.75*miny;
+      max_disp_act = 1.5*maxy;
+      break;
+    
+    case Wt::Chart::LinearScale:
+      //If it wont change the dynamic range of the chart much anyways, might as well
+      //  anchor the y-axis to zero
+      break;
+      
+    case Wt::Chart::CategoryScale:
+    case Wt::Chart::DateScale:
+    case Wt::Chart::DateTimeScale:
+      assert( 0 );
+      break;
+  }//switch( m_decayChart->axis(Chart::YAxis).scale() )
+  
+  
+  m_decayChart->axis(Chart::YAxis).setRange( min_disp_act, max_disp_act );
 }//void updateYAxisRange();
 
 
