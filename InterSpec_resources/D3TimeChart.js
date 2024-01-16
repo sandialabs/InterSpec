@@ -219,6 +219,7 @@ D3TimeChart = function (elem, options) {
        || (this.options.yAxisGammaNeutronRelMaxSf < 0.04)
        || (this.options.yAxisGammaNeutronRelMaxSf > 25) )
     this.options.yAxisGammaNeutronRelMaxSf = 1;
+    if (typeof this.options.gammaLogY !== "boolean") this.options.gammaLogY = false;
     
   /* The dontRebin option makes it so when there are more time samples than pixels, instead of
    averaging multiple time samples together, instead the min and max counts from that interval are
@@ -1634,10 +1635,17 @@ D3TimeChart.prototype.updateChart = function( scales, compressionIndex, options 
     var yAxisLeft = d3.svg
       .axis()
       .scale(yScaleGamma)
-      .ticks(3)
-      .orient("left")
-      .tickFormat(d3.format(".1g"));
+      .orient("left");
 
+    // Adjust which/how-many labels is shown
+    if( this.options.gammaLogY ) {
+      //yScaleGamma.nice(); //rounds down to next power of 10, and up to next power - its not bad; if we use this then we should remove scaling the domain by a factor of two in `this.getScales(...)`, for log display
+      yAxisLeft.tickFormat( yScaleGamma.tickFormat(1) );
+    }else{
+      yAxisLeft.ticks(3)
+               .tickFormat(d3.format(".1g"));
+    }
+      
     // update or create axis
     this.axisLeftG
       .attr("transform", "translate(" + this.margin.left + ",0)")
@@ -2334,6 +2342,7 @@ D3TimeChart.prototype.getDomainsFromRaw = function (rawData) {
     return d[1];
   });
 
+  var yMinGamma = Number.MAX_SAFE_INTEGER;
   var yMaxGamma = Number.MIN_SAFE_INTEGER;
   var yMaxNeutron = Number.MIN_SAFE_INTEGER;
 
@@ -2360,6 +2369,7 @@ D3TimeChart.prototype.getDomainsFromRaw = function (rawData) {
       
       var cps = dontRebin ? rawData.gammaCounts[i].maxCps[j] : (rawData.gammaCounts[i].counts[j] / dt);
       yMaxGamma = Math.max(yMaxGamma, cps );
+      yMinGamma = Math.min(yMinGamma, cps );
     }
   }
 
@@ -2378,10 +2388,18 @@ D3TimeChart.prototype.getDomainsFromRaw = function (rawData) {
     }
   }
 
+  // This function gives a gamma y-range of zero to yMaxGamma, since this seems right for when you
+  //  are viewing the whole time-chart (if you zoom-in, then the y-axis is no longer forced to zero,
+  //  but to the actual minimum of data showing), but if we are using a log-y axis, we actually
+  //  want to know what the data minimum value is - so we'll do kinda a hack and add an extra
+  //  variable to the returned domains, `yGammaMin`, that we can use for this; this is the only
+  //  place this variable is assigned.
+  
   return {
     x: [xMin, xMax],
     yGamma: [0, yMaxGamma],
     yNeutron: [0, yMaxNeutron],
+    yGammaMin: yMinGamma
   };
 };
 
@@ -2453,12 +2471,34 @@ D3TimeChart.prototype.getScales = function (domains) {
         .domain(domains.x)
         .range([this.margin.left, this.state.width - this.margin.right])
     : undefined;
-  var yScaleGamma = domains.yGamma
-    ? d3.scale
-        .linear()
-        .domain([domains.yGamma[0],yGammaMult*domains.yGamma[1]])
-        .range([this.state.height - this.margin.bottom, this.margin.top])
-    : undefined;
+  
+  var yScaleGamma = undefined;
+  if( domains.yGamma )
+  {
+    if( this.options.gammaLogY )
+    {
+      // If we are fully zoomed-out, the `this.getDomainsFromRaw()` function puts the gamma
+      //   y-minimum to zero (which we dont want), but it also defines another variable,
+      //  `yGammaMin`, that `this.getYDomainsInRange()` doesnt define, so we'l use it if available.
+      let lowery = domains.yGamma[0];
+      let uppery = domains.yGamma[1];
+      if (typeof domains.yGammaMin !== 'undefined') {
+        lowery = domains.yGammaMin;
+      }
+      
+      yScaleGamma = d3.scale
+                      .log()
+                      .domain([Math.max(0.5, 0.5*lowery),2*yGammaMult*uppery])
+                      .range([this.state.height - this.margin.bottom, this.margin.top]);
+    }else
+    {
+      yScaleGamma = d3.scale
+                      .linear()
+                      .domain([domains.yGamma[0],yGammaMult*domains.yGamma[1]])
+                      .range([this.state.height - this.margin.bottom, this.margin.top]);
+    }
+  }//if( domains.yGamma )
+  
   var yScaleNeutron = domains.yNeutron
     ? d3.scale
         .linear()
@@ -4000,6 +4040,16 @@ D3TimeChart.prototype.setNeutronsHidden = function (hide) {
     this.setData( this.state.data.raw );
 };
 
+
+D3TimeChart.prototype.setGammaLogY = function (logy) {
+  logy = !!logy;  // make sure its a boolean
+  if( this.options.gammaLogY === logy )  //dont waste time if we dont need to
+    return;
+  
+  this.options.gammaLogY = logy;
+  if( this.state.data.raw )
+    this.setData( this.state.data.raw );
+};
 
 
 

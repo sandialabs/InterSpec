@@ -207,6 +207,8 @@ protected:
   
   /// Keep a cache of nuclide ages around incase the user removes a nuclide, but adds it in later.
   std::map<std::string,double> m_nucAge;
+  /// Keep a cache of if we should decay-correct the nuclide incase the user removes a nuclide, but adds it in later.
+  std::map<std::string,bool> m_nucDecayCorrect;
   
   Wt::WMenu *m_resultMenu;
   
@@ -227,7 +229,7 @@ protected:
     float m_matchToleranceValue = -1.0f;
     int m_addUncertIndex = -1;
     bool m_backgroundSubtract = false;
-    std::vector<std::pair<std::string,double>> m_nucAges;
+    std::vector<std::tuple<std::string,double,bool>> m_nucAgesAndDecayCorrect; 
     // TODO: could track nuclide WPanel collapse un-collapse
     int m_resultTab = 0; //Not currently having in for undo/redo steps, but will track
     
