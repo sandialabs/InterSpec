@@ -1929,8 +1929,8 @@ void ExportSpecFileTool::refreshSampleAndDetectorOptions()
   }//for( const int sample : samplesToUse )
   
   m_sumDetsPerSample->setHidden( (max_records <= 2) || !mult_dets_per_sample );
-  if( !mult_dets_per_sample )
-    m_filterDetector->hide();
+  m_filterDetector->setHidden( !mult_dets_per_sample );
+  m_detectorFilterCbs->setHidden( !mult_dets_per_sample || !m_filterDetector->isChecked() );
   
   size_t num_sample_showing = 0, num_option_showing = 0;
   for( const auto w : m_samplesHolder->children() )
@@ -2134,12 +2134,11 @@ void ExportSpecFileTool::handleFilterDetectorCbChanged()
   if( !m_filterDetector || !m_detectorFilterCbs )
     return;
   
-  if( m_filterDetector->isChecked() )
+  const bool use_all_det = (m_filterDetector->isHidden() || !m_filterDetector->isChecked());
+  m_detectorFilterCbs->setHidden( use_all_det );
+  
+  if( use_all_det )
   {
-    m_detectorFilterCbs->show();
-  }else
-  {
-    m_detectorFilterCbs->hide();
     for( const auto w : m_detectorFilterCbs->children() )
     {
       WCheckBox *cb = dynamic_cast<WCheckBox *>( w );
