@@ -24,9 +24,14 @@
 #import <Cocoa/Cocoa.h>
 #import <WebKit/WebKit.h>
 
+// We will override WKWebView, so we can detect file drop in obj-c
+//  and grab their file path, to then inject into JS, so we can avoid
+//  waiting and doing the upgrade.
+@interface OurWebView : WKWebView
+@end
 
 @interface AppDelegate : NSObject <NSApplicationDelegate,WKNavigationDelegate,WKUIDelegate,NSURLDownloadDelegate,WKScriptMessageHandler>
-@property (nonatomic,strong) WKWebView *InterSpecWebView;
+@property (nonatomic,strong) OurWebView *InterSpecWebView;
 //@property (nonatomic, strong) WKWebViewConfiguration *webConfig;
 
 @property (nonatomic) BOOL isServing;
@@ -52,4 +57,5 @@
 -(void)enableWebInspector;
 
 -(NSString *)generateSessionToken;
+
 @end

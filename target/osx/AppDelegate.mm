@@ -41,6 +41,9 @@
 #endif
 
 #include <Wt/WString>
+#include <Wt/Json/Array>
+#include <Wt/Json/Value>
+#include <Wt/Json/Serializer>
 
 #include "InterSpec/InterSpec.h"
 #include "InterSpec/InterSpecApp.h"
@@ -54,6 +57,125 @@
 
 #include "SpecUtils/Filesystem.h"
 #include "SpecUtils/SerialToDetectorModel.h"
+
+@implementation OurWebView
+- (BOOL)performDragOperation:(id <NSDraggingInfo>)sender
+{
+  // This function lets files go through to WkWebView - we actually dont need this function,
+  //  but leaving in for the moment as I experiment
+  
+  // We wont handle promises here, so this way WkWebView will keep handling them,
+  //  But here is some code to intercept them, in case it turns out we should.
+  //NSPasteboard *pboard = [sender draggingPasteboard];
+  //NSDictionary *options = @{};
+  //NSArray<Class> *promises_class = @[[NSFilePromiseReceiver class]];
+  //NSArray<NSURL*> *promises = [pboard readObjectsForClasses:promises_class options:options];
+  //
+  //for( NSFilePromiseReceiver *promise in promises )
+  //{
+  //  [promise receivePromisedFilesAtDestination: [NSURL fileURLWithPath: NSTemporaryDirectory()]
+  //                                     options: @{}
+  //                              operationQueue: [NSOperationQueue new]
+  //                                      reader:^(NSURL * _Nonnull fileURL, NSError * _Nullable errorOrNil) {
+  //    if (errorOrNil) {
+  //      NSLog(@"Error: %@", errorOrNil);
+  //      return;
+  //    }
+  //    NSLog(@"fileURL: %s", [fileURL fileSystemRepresentation]);
+  //  }];
+  //}//for( NSFilePromiseReceiver *promise in promises )
+  
+  return [super performDragOperation: sender];
+}//performDragOperation - e.g., when file is dropped
+
+- (NSDragOperation)draggingEntered:(id <NSDraggingInfo>)sender {
+  
+  NSLog( @"In draggingEntered!" );
+  
+  NSDragOperation sourceDragMask = [sender draggingSourceOperationMask];
+  NSPasteboard *pboard = [sender draggingPasteboard];
+  
+  NSArray<NSPasteboardType> * types = [pboard types];
+  if( !types )
+    return [super draggingEntered: sender];
+  
+  
+  NSArray<Class> *url_class = @[[NSURL class]];
+  NSDictionary *options = @{};
+  NSArray<NSURL*> *files = [pboard readObjectsForClasses:url_class options:options];
+  
+  // If we use obj-c, to create an array, and then print that to JSON, like is commented out,
+  //  we cant use the NSJSONWritingWithoutEscapingSlashes option of NSJSONSerialization
+  //  (requires macOS 10.15), and so we'll get slashes '/' escaped, which JSON.parse(), doesnt
+  //  like, and we cant use as-is either.
+  //  So we'll just bring in a little c++/Wt for the moment, so strings will be properly escaped.
+  //NSMutableArray *array = [NSMutableArray arrayWithCapacity:[files count]];
+  Wt::Json::Array json_array;
+  
+  // Form some JSON to set a variable in JS client-side, that can then make the call to server code
+  for (NSURL *url in files)
+  {
+    const char *fs_path = [url fileSystemRepresentation];  //Will be UTF-8 encoded
+    json_array.push_back( Wt::WString::fromUTF8(fs_path) );
+    //NSString *fs_path_str = [[NSString alloc] initWithCString:fs_path encoding:NSUTF8StringEncoding];
+    //[array addObject:fs_path_str];
+    //NSLog( @"draggingEntered: git URL: %s", fs_path );
+  }
+  
+  
+  // We wont do anything about promises (like dragging an attachment from mail or Outlook),
+  //  at the moment (since if we do, then WkWebView wont handle them) - so for these cases
+  //  we will just let the upload handle as normal
+  //NSArray<Class> *promises_class = @[[NSFilePromiseReceiver class]];
+  //NSArray<NSURL*> *promises = [pboard readObjectsForClasses:promises_class options:options];
+  //for( NSFilePromiseReceiver *promise in promises )
+  //{
+  //}
+  
+  
+  if( json_array.empty() )
+  {
+    //Probably got file promise(s) here - we'll just fall-back to normal file upload, and
+    //  let WkWebView take care of getting the files.
+    NSString *js = @"(function(){$(document).data('dragOverFilePaths',null);})()";
+    [self evaluateJavaScript: js completionHandler:nil];
+  }else
+  {
+    //NSError *error = nil;
+    //NSData *jsonData = [NSJSONSerialization dataWithJSONObject:array options:NSJSONWritingPrettyPrinted error:&error];
+    //NSString *json_string = [[NSString alloc] initWithData:jsonData encoding:NSUTF8StringEncoding];
+    
+    const std::string json_data = Wt::Json::serialize(json_array);
+    const std::string js_str =
+    "(function(){\n\t"
+    "let fns = {};\n\t"
+    "fns.time = new Date();\n\t"
+    "fns.filenames = " + json_data + ";\n\t"
+    "$(document).data('dragOverFilePaths',fns);\n\t"
+    "console.log(\"Set file paths\",fns);\n"
+    "})();";
+    
+    NSString *js = [[NSString alloc] initWithCString:js_str.c_str() encoding:NSUTF8StringEncoding];
+    
+    //NSLog( @"draggingEntered: json_string: %@", js );
+    
+    [self evaluateJavaScript: js completionHandler:nil];
+  }//if( !json_array.empty() )
+  
+  // Leaving in the below for development only.
+  if ( [types containsObject:NSPasteboardTypeFileURL] ) {
+    NSLog( @"draggingEntered: Is NSPasteboardTypeFileURL:" );
+  }else if ( [types containsObject:NSPasteboardTypeURL] ) {
+    NSLog( @"draggingEntered: Is NSPasteboardTypeURL:" );
+  }else if ( [types containsObject:NSFileContentsPboardType] ) {
+    NSLog( @"draggingEntered: Is NSFileContentsPboardType:" );
+  }
+  
+  // We'll let the WKWebView handle the drag-n-drop as normal
+  return [super draggingEntered: sender];
+}
+@end
+
 
 
 @implementation AppDelegate
@@ -387,7 +509,7 @@ Wt::WApplication *createApplication(const Wt::WEnvironment& env)
   
   
   //Create WKWebView manually, rather than in XIB to support macOS 10.10 and 10.11...
-  self.InterSpecWebView = [[WKWebView alloc] initWithFrame: _window.contentView.frame configuration: webConfig];
+  self.InterSpecWebView = [[OurWebView alloc] initWithFrame: _window.contentView.frame configuration: webConfig];
   [_window.contentView addSubview:self.InterSpecWebView];
   
   //Make sure the WKWebView resizes.
@@ -498,47 +620,23 @@ Wt::WApplication *createApplication(const Wt::WEnvironment& env)
       actualURL = [NSString stringWithFormat:@"%@&restore=no", actualURL];
     
     
+    /*
+     //Right now drag-n-drop from Outlook does not work - should investigate this:
+     // Probably need to sub-class WKWebView, and then do something like
+     //https://developer.apple.com/library/archive/documentation/Cocoa/Conceptual/DragandDrop/Tasks/acceptingdrags.html#//apple_ref/doc/uid/20000993-BABHHIHC
+     */
+    
+    
+    
+    
+
+    //[_window registerForDraggedTypes: [NSArray arrayWithObjects:NSFilenamesPboardType, NSURLPboardType, nil]]; //requires macOS >=10.13, which is the lowest we target anyway
+    [_window registerForDraggedTypes: [NSArray arrayWithObjects:NSPasteboardTypeFileURL, NSPasteboardTypeURL, NSFileContentsPboardType, nil]]; //requires macOS >=10.13, which is the lowest we target anyway
+    
+    
     //if( [_InterSpecWebView respondsToSelector:@selector(mainFrame)])
     //[[_InterSpecWebView mainFrame] loadRequest:[NSURLRequest requestWithURL:[NSURL URLWithString:actualURL]]];
     [_InterSpecWebView loadRequest: [NSURLRequest requestWithURL:[NSURL URLWithString:actualURL]] ];
-    
-    
-    /*
-     //Right now drag-n-drop from Outlook does not work - should investigate this:
-     // Probably need to sub-class WKWebView, and then do something like 
-     //https://developer.apple.com/library/archive/documentation/Cocoa/Conceptual/DragandDrop/Tasks/acceptingdrags.html#//apple_ref/doc/uid/20000993-BABHHIHC
-    [_InterSpecWebView registerForDraggedTypes:[NSArray arrayWithObjects:
-                      NSStringPboardType, NSFilenamesPboardType, NSTIFFPboardType,
-                      NSRTFPboardType, NSTabularTextPboardType, NSFontPboardType,
-                      NSRulerPboardType, NSColorPboardType, NSRTFDPboardType,
-                      NSHTMLPboardType, NSURLPboardType, NSPDFPboardType,
-                      NSMultipleTextSelectionPboardType, NSPostScriptPboardType,
-                      NSVCardPboardType, NSInkTextPboardType, NSFilesPromisePboardType,
-                      NSPasteboardTypeFindPanelSearchOptions, nil]];  // NSFilenamesPboardType is probably mostly what is needed
-
-    - (NSDragOperation)draggingEntered:(id <NSDraggingInfo>)sender {
-      NSPasteboard *pboard;
-      NSDragOperation sourceDragMask;
-      NSLog( @"In draggingEntered!" );
-      sourceDragMask = [sender draggingSourceOperationMask];
-      pboard = [sender draggingPasteboard];
-      
-      if ( [[pboard types] containsObject:NSColorPboardType] ) {
-        if (sourceDragMask & NSDragOperationGeneric) {
-          return NSDragOperationGeneric;
-        }
-      }
-      if ( [[pboard types] containsObject:NSFilenamesPboardType] ) {
-        if (sourceDragMask & NSDragOperationLink) {
-          return NSDragOperationLink;
-        } else if (sourceDragMask & NSDragOperationCopy) {
-          return NSDragOperationCopy;
-        }
-      }
-      return NSDragOperationNone;
-    }
-    */
-    
     
     [_InterSpecWebView setNavigationDelegate: self];
     [_InterSpecWebView setUIDelegate: self];
