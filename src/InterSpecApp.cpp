@@ -781,7 +781,7 @@ void InterSpecApp::setupWidgets( const bool attemptStateLoad  )
         WStringStream js;
         js << "Resuming where you left off on " << state->name.toUTF8()
            << "<div onclick="
-        "\"Wt.emit('" << root()->id() << "',{name:'miscSignal'}, 'clearSession');"
+        "\"Wt.emit( $('.specviewer').attr('id'), {name:'miscSignal'}, 'clearSession');"
         //"$('.qtip.jgrowl:visible:last').remove();"
         "try{$(this.parentElement.parentElement).remove();}catch(e){}"
         "return false;\" "
@@ -1502,7 +1502,7 @@ void InterSpecApp::miscSignalHandler( const std::string &signal )
       level = WarningWidget::WarningMsgLevel::WarningMsgInfo;
     }else if( SpecUtils::istarts_with( msg, "error-" ) )
     {
-      msg = signal.substr(6);
+      msg = msg.substr(6);
       level = WarningWidget::WarningMsgLevel::WarningMsgHigh;
     }
     

@@ -7374,7 +7374,7 @@ void InterSpec::addAboutMenu( Wt::WWidget *parent )
                                 true, HelpSystem::ToolTipPosition::Right );
     
     const string msg = "Changes will not take effect until app is restarted or refreshed."
-    "<div onclick=\"Wt.emit('" + wApp->root()->id() + "',{name:'miscSignal'}, 'clearSession');"
+    "<div onclick=\"Wt.emit( $('.specviewer').attr('id'), {name:'miscSignal'}, 'clearSession');"
     "try{$(this.parentElement.parentElement).remove();}catch(e){}return false;\" "
     "class=\"clearsession\"><span class=\"clearsessiontxt\">Refresh Session</span></div>";
     const WString wmsg = WString::fromUTF8( msg );
@@ -10677,7 +10677,7 @@ void InterSpec::setSpectrum( std::shared_ptr<SpecMeas> meas,
       WStringStream js;
       js << "File contains GPS coordinates."
       << "<div onclick="
-      "\"Wt.emit('" << wApp->root()->id() << "',{name:'miscSignal'}, 'showMap-" << type << "');"
+      "\"Wt.emit( $('.specviewer').attr('id'),{name:'miscSignal'}, 'showMap-" << type << "');"
       "try{$(this.parentElement.parentElement).remove();}catch(e){}"
       "return false;\" "
       "class=\"clearsession\">"
@@ -10807,7 +10807,7 @@ void InterSpec::setSpectrum( std::shared_ptr<SpecMeas> meas,
 #endif
       << riidAnaSummary(meas)
       << "<div onclick="
-           "\"Wt.emit('" << wApp->root()->id() << "',{name:'miscSignal'}, 'showRiidAna-" << type << "');"
+           "\"Wt.emit( $('.specviewer').attr('id'),{name:'miscSignal'}, 'showRiidAna-" << type << "');"
            //"$('.qtip.jgrowl:visible:last').remove();"
            "try{$(this.parentElement.parentElement).remove();}catch(e){}"
            "return false;\" "
@@ -10928,7 +10928,7 @@ void InterSpec::setSpectrum( std::shared_ptr<SpecMeas> meas,
         WStringStream js;
         js << "Spectrum file contained embedded images: "
         << "<div onclick="
-        "\"Wt.emit('" << wApp->root()->id() << "',{name:'miscSignal'}, 'showMultimedia-" << type << "');"
+        "\"Wt.emit( $('.specviewer').attr('id'),{name:'miscSignal'}, 'showMultimedia-" << type << "');"
         //"$('.qtip.jgrowl:visible:last').remove();"
         "try{$(this.parentElement.parentElement).remove();}catch(e){}"
         "return false;\" "

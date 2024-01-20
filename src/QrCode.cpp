@@ -59,7 +59,7 @@ namespace
 {
 WT_DECLARE_WT_MEMBER
  (CopyUrlToClipboard, Wt::JavaScriptFunction, "CopyUrlToClipboard",
-  function( sender, event, id, domSignalId, text )
+  function( sender, event, id, text )
 {
   const success_msg = 'showMsg-info-Copied URL to clipboard';
   const fail_msg = 'showMsg-error-Failed to copy URL to clipboard';
@@ -87,11 +87,11 @@ WT_DECLARE_WT_MEMBER
     if( successful )
     {
       console.log('Copied text to clipboard via appending textarea to DOM');
-      Wt.emit( domSignalId, {name:'miscSignal'}, success_msg );
+      Wt.emit( $('.specviewer').attr('id'), {name:'miscSignal'}, success_msg );
     }else
     {
       console.warn('Failed to copy to clipboard using textarea');
-      Wt.emit( domSignalId, {name:'miscSignal'}, fail_msg );
+      Wt.emit( $('.specviewer').attr('id'), {name:'miscSignal'}, fail_msg );
     }
     
     return successful;
@@ -99,10 +99,10 @@ WT_DECLARE_WT_MEMBER
   
   navigator.clipboard.writeText(text).then(function() {
     console.log('Copying text to clipboard using async method.');
-    Wt.emit( domSignalId, {name:'miscSignal'}, success_msg );
+    Wt.emit( $('.specviewer').attr('id'), {name:'miscSignal'}, success_msg );
   }, function(err) {
     console.warn('Failed copying text to clipboard using async method.: ', err);
-    Wt.emit( domSignalId, {name:'miscSignal'}, fail_msg );
+    Wt.emit( $('.specviewer').attr('id'), {name:'miscSignal'}, fail_msg );
   });
 }
   );
@@ -467,7 +467,7 @@ SimpleDialog *displayTxtAsQrCode( const std::string &url,
     // TODO: there is probably a way to get wApp->root()->id() directly in the JS
     const string escaped_url = WString(url).jsStringLiteral();
     copyBtn->clicked().connect( "function(s,e){ "
-                                 "Wt.WT.CopyUrlToClipboard(s,e,'" + copyBtn->id() + "','" + wApp->root()->id() + "'," + escaped_url + ");"
+                                 "Wt.WT.CopyUrlToClipboard(s,e,'" + copyBtn->id() + "'," + escaped_url + ");"
                                  "}" );
     if( is_phone )
     {

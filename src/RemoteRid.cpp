@@ -1115,13 +1115,13 @@ public:
             nucstr += (i ? "," : "") + nuclides[i];
           
           js <<
-          "<div onclick=\"Wt.emit('" << app->root()->id() << "',{name:'miscSignal'}, 'showRemoteRidRefLines-" << nucstr << "');"
+          "<div onclick=\"Wt.emit( $('.specviewer').attr('id'), {name:'miscSignal'}, 'showRemoteRidRefLines-" << nucstr << "');"
           "try{$(this.parentElement.parentElement.parentElement).remove();}catch(e){}"
           "return false;\">Show Ref. Lines</div>";
         }//if( !nuclides.empty() )
         
         js <<
-        "<div onclick=\"Wt.emit('" << app->root()->id() << "',{name:'miscSignal'}, 'openRemoteRidTool');"
+        "<div onclick=\"Wt.emit( $('.specviewer').attr('id'), {name:'miscSignal'}, 'openRemoteRidTool');"
         "try{$(this.parentElement.parentElement.parentElement).remove();}catch(e){}"
         "return false;\">Open Remote RID</div>";
         
@@ -1147,10 +1147,10 @@ public:
       js << msg
          <<
       "<div class=\"RemoteRidToastButtons\">"
-      "<div onclick=\"Wt.emit('" << app->root()->id() << "',{name:'miscSignal'}, 'openRemoteRidTool');"
+      "<div onclick=\"Wt.emit( $('.specviewer').attr('id'),{name:'miscSignal'}, 'openRemoteRidTool');"
       "try{$(this.parentElement.parentElement.parentElement).remove();}catch(e){}"
       "return false;\">Open Remote RID</div>"
-      "<div onclick=\"Wt.emit('" << app->root()->id() << "',{name:'miscSignal'}, 'disableRemoteRid');"
+      "<div onclick=\"Wt.emit( $('.specviewer').attr('id'),{name:'miscSignal'}, 'disableRemoteRid');"
       "try{$(this.parentElement.parentElement.parentElement).remove();}catch(e){}"
       "return false;\">Disable Remote RID</div>"
       "</div>";
