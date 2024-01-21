@@ -43,13 +43,14 @@
 #include <boost/range.hpp>
 #include <boost/scope_exit.hpp>
 #include <boost/system/error_code.hpp>
+#include <boost/asio/deadline_timer.hpp>
 
 #include <Wt/WLink>
 #include <Wt/WText>
 #include <Wt/Utils>
-#include <Wt/WTable>
 #include <Wt/WImage>
 #include <Wt/WLabel>
+#include <Wt/WTable>
 #include <Wt/WAnchor>
 #include <Wt/WString>
 #include <Wt/WServer>
@@ -785,7 +786,9 @@ SpecMeasManager::SpecMeasManager( InterSpec *viewer )
     m_backgroundDragNDrop( new FileDragUploadResource(this) ),
     m_multiUrlSpectrumDialog( nullptr ),
     m_destructMutex( new std::mutex() ),
-    m_destructed( new bool(false) )
+    m_destructed( new bool(false) ),
+    m_processingUploadDialog( nullptr ),
+    m_processingUploadTimer{}
 {
   std::unique_ptr<UndoRedoManager::BlockUndoRedoInserts> undo_blocker;
   if( viewer && viewer->undoRedoManager() )
@@ -815,6 +818,20 @@ SpecMeasManager::SpecMeasManager( InterSpec *viewer )
                                                          boost::placeholders::_1,
                                                          boost::placeholders::_2,
                                                          SpectrumType::Background ) );
+  
+  void handleDataRecievedStatus( uint64_t num_bytes_recieved, uint64_t num_bytes_total, SpecUtils::SpectrumType type );
+  
+  m_foregroundDragNDrop->setUploadProgress( true );
+  m_foregroundDragNDrop->dataReceived().connect( boost::bind( &SpecMeasManager::handleDataRecievedStatus, this,
+                                      boost::placeholders::_1, boost::placeholders::_2, SpectrumType::Foreground ) );
+  
+  m_secondForegroundDragNDrop->setUploadProgress( true );
+  m_secondForegroundDragNDrop->dataReceived().connect( boost::bind( &SpecMeasManager::handleDataRecievedStatus, this,
+                                      boost::placeholders::_1, boost::placeholders::_2, SpectrumType::SecondForeground ) );
+  
+  m_backgroundDragNDrop->setUploadProgress( true );
+  m_backgroundDragNDrop->dataReceived().connect( boost::bind( &SpecMeasManager::handleDataRecievedStatus, this,
+                                      boost::placeholders::_1, boost::placeholders::_2, SpectrumType::Background ) );
 }// SpecMeasManager
 
 //Moved what use to be SpecMeasManager, out to a startSpectrumManager() to correct modal issues
@@ -2629,6 +2646,127 @@ bool SpecMeasManager::handleShieldingSourceFile( std::istream &input, SimpleDial
 }//bool handleShieldingSourceFile( std::istream &input, SimpleDialog *dialog );
 
 
+void SpecMeasManager::checkCloseUploadDialog( SimpleDialog *dialog, WApplication *app )
+{
+  WApplication::UpdateLock lock( app );
+  assert( lock );
+  if( !lock )
+    return;
+  
+  if( dialog != m_processingUploadDialog )
+    return;
+  
+  if( m_processingUploadTimer )
+  {
+    boost::system::error_code ec;
+    m_processingUploadTimer->cancel( ec );
+    if( ec )
+      cerr << "SpecMeasManager::checkCloseUploadDialog(): error cancelling timer: " << ec.message() << endl;
+    m_processingUploadTimer.reset();
+  }//if( m_processingUploadTimer )
+  
+  if( m_processingUploadDialog )
+  {
+    m_processingUploadDialog->done(WDialog::DialogCode::Accepted);
+    m_processingUploadDialog = nullptr;
+  }//if( m_processingUploadDialog )
+  
+  passMessage( "File upload has maybe timed-out - 30 seconds without recieving file data.",
+              WarningWidget::WarningMsgHigh ) ;
+}//void checkCloseUploadDialog( SimpleDialog *dialog )
+
+
+void SpecMeasManager::handleDataRecievedStatus( uint64_t num_bytes_recieved, uint64_t num_bytes_total,
+                                               SpecUtils::SpectrumType type )
+{
+  if( num_bytes_total < sm_minNumBytesShowUploadProgressDialog )
+    return;
+  
+  //cout << "SpecMeasManager::handleDataRecievedStatus: " << num_bytes_recieved << " of " << num_bytes_total << " total." << endl;
+  
+  auto app = WApplication::instance();
+  assert( app );
+  if( !app )
+    return;
+  
+  WApplication::UpdateLock lock( app );
+  assert( lock );
+  if( !lock )
+    return;
+  
+  auto make_timer = [this,app]( SimpleDialog *dialog ){
+    Wt::WServer *server = Wt::WServer::instance();
+    if( !server )
+      return;
+    
+    if( m_processingUploadTimer )
+    {
+      boost::system::error_code ec;
+      m_processingUploadTimer->cancel( ec );
+      if( ec )
+        cerr << "SpecMeasManager::handleDataRecievedStatus(): error cancelling timer: " << ec.message() << endl;
+      m_processingUploadTimer.reset();
+    }//if( m_processingUploadTimer )
+    
+    auto timeoutfcn = app->bind( boost::bind(&SpecMeasManager::checkCloseUploadDialog, this, dialog, app) );
+    m_processingUploadTimer = make_unique<boost::asio::deadline_timer>( server->ioService() );
+    m_processingUploadTimer->expires_from_now( boost::posix_time::seconds(30) );
+    m_processingUploadTimer->async_wait( [timeoutfcn](const boost::system::error_code &ec){ if(!ec) timeoutfcn(); } );
+  };//make_timer lamda
+  
+  
+  if( m_processingUploadDialog )
+  {
+    assert( m_processingUploadTimer );
+    
+    // TODO: could occasionally (every few seconds) update dialog text with current status
+    
+    make_timer( m_processingUploadDialog );
+    return;
+  }//if( m_processingUploadDialog )
+  
+  assert( !m_processingUploadTimer );
+  
+#if( BUILD_AS_LOCAL_SERVER || BUILD_FOR_WEB_DEPLOYMENT )
+  const string title = "Finishing upload";
+#else
+  const string title = "Finishing copying file";
+#endif
+  
+  string msg = "of ";
+  {//begin codeblock to add file size to string
+    char filesize_str[64] = { '\0' };
+    if( num_bytes_total < 1024*1024 )
+      snprintf( filesize_str, sizeof(filesize_str), "%.1f kb ", num_bytes_total/1024.0 );
+    else
+      snprintf( filesize_str, sizeof(filesize_str), "%.1f Mb ", num_bytes_total/(1024.0*1024.0) );
+    
+    msg += filesize_str;
+    
+    switch( type )
+    {
+      case SpecUtils::SpectrumType::Foreground:
+        msg += "foreground";
+        break;
+      case SpecUtils::SpectrumType::SecondForeground:
+        msg += "secondary";
+        break;
+      case SpecUtils::SpectrumType::Background:
+        msg += "background";
+        break;
+    }//switch( type )
+    
+    msg += " file - may take a minute.";
+  }//end codeblock to add file size to string
+   
+  m_processingUploadDialog = new SimpleDialog( title, msg );
+  
+  make_timer( m_processingUploadDialog );
+  
+  app->triggerUpdate();
+}//void handleDataRecievedStatus(...)
+
+
 void SpecMeasManager::handleFileDropWorker( const std::string &name,
                      const std::string &spoolName,
                      SpecUtils::SpectrumType type,
@@ -2704,6 +2842,21 @@ void SpecMeasManager::handleFileDrop( const std::string &name,
                                              const std::string &spoolName,
                                              SpecUtils::SpectrumType type )
 {
+  if( m_processingUploadTimer )
+  {
+    boost::system::error_code ec;
+    m_processingUploadTimer->cancel( ec );
+    if( ec )
+      cerr << "SpecMeasManager::handleFileDrop(): error cancelling timer: " << ec.message() << endl;
+    m_processingUploadTimer.reset();
+  }//if( m_processingUploadTimer )
+  
+  if( m_processingUploadDialog )
+  {
+    m_processingUploadDialog->done(WDialog::DialogCode::Accepted);
+    m_processingUploadDialog = nullptr;
+  }//if( m_processingUploadDialog )
+  
   // If file is small, and not csv/txt (these are really slow to parse), dont display the parsing
   //  message.
   if( (SpecUtils::file_size(spoolName) < 512*1024)

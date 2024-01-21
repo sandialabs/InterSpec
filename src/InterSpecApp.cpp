@@ -147,7 +147,6 @@ InterSpecApp::InterSpecApp( const WEnvironment &env )
   }//if( !checkExternalTokenFromUrl() )
 #endif
  
-  enableUpdates( true );
   setupDomEnvironment();
   setupWidgets( true );
 
@@ -229,7 +228,12 @@ void InterSpecApp::setupDomEnvironment()
     "if (typeof module === 'object') {window.module = module; module = undefined;}";
   doJavaScript( fixElectronJs, false );
 #endif //BUILD_AS_ELECTRON_APP
-
+  
+  // Use newer version of jQuery than Wt uses by default
+  requireJQuery("InterSpec_resources/assets/js/jquery-3.6.0.min.js");
+  
+  enableUpdates( true );
+  
   setTitle( "InterSpec" );
   
   //Call tempDirectory() to set global variable holding path to the temp file
@@ -247,9 +251,6 @@ void InterSpecApp::setupDomEnvironment()
 #endif
   
   setCssTheme( "default" );  //"polished" is the other option
-  
-  // Use newer version of jQuery than Wt uses by default
-  requireJQuery("InterSpec_resources/assets/js/jquery-3.6.0.min.js");
   
   //for qTip2
   useStyleSheet( "InterSpec_resources/assets/js/qTip2-3.0.3/jquery.qtip.min.css" );

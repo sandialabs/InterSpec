@@ -261,7 +261,7 @@ D3SpectrumDisplayDiv::D3SpectrumDisplayDiv( WContainerWidget *parent )
   wApp->useStyleSheet( resource_base + "SpectrumChartD3.css" );
   initChangeableCssRules();
   
-  wApp->require( resource_base + "d3.v3.min.js", "d3.v3.js" );
+  wApp->require( "InterSpec_resources/d3.v3.min.js", "d3.v3.js" );
   wApp->require( resource_base + "SpectrumChartD3.js" );
   
   
