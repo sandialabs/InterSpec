@@ -37,9 +37,6 @@ extern "C"{
 }
 
 #include <boost/crc.hpp>
-#include <boost/endian/conversion.hpp>
-
-#include <Wt/Utils>
 
 #include "QR-Code-generator/cpp/qrcodegen.hpp"
 
@@ -56,7 +53,11 @@ extern "C"{
 #include "InterSpec/PhysicalUnits.h"
 
 
-// Files only needed for `int dev_code();`
+// Headers only needed for tests (e.g., in asserts)
+#include <Wt/Utils>
+#include <boost/endian/conversion.hpp>
+
+// Headers only needed for `int dev_code();`
 #include <mutex>
 #include "SpecUtils/SpecUtilsAsync.h"
 
@@ -371,6 +372,47 @@ std::string base64url_encode_bytes( const T &input, const bool use_padding )
   
   return answer;
 }//std::string base64url_encode_bytes( const T &input )
+  
+  
+std::string url_decode( const std::string &input )
+{
+  std::string answer;
+  answer.reserve( input.size() );
+    
+  for( size_t i = 0; i < input.length(); ++i )
+  {
+    const char c = input[i];
+      
+    if( (c == '%') && ((i + 2) < input.length()) )
+    {
+      const char raw[3] = { input[i+1], input[i+2], '\0' };
+      
+      char *endptr = nullptr;
+      long int hval = std::strtol( raw, &endptr, 16 );
+        
+      if( !(*endptr) ) //check that endptr points to the '\0' in raw[3], which means we parsed number as hex number
+      {
+        assert( endptr == (raw + 2) );
+        answer += (char)hval;
+        i += 2;
+      }else
+      {
+        // not a hex number, so just take it as it is
+        answer += c;
+      }
+    }else if( c == '+' )
+    {
+      answer += ' ';
+    }else
+    {
+      answer += c;
+    }
+  }//for( size_t i = 0; i < input.length(); ++i )
+    
+  assert( answer == Wt::Utils::urlDecode(input) );
+  
+  return answer;
+}//std::string url_decode( const std::string &input )
   
 
 template<class T>
@@ -937,6 +979,7 @@ vector<uint8_t> base64url_decode( const std::string &input )
   return answer;
 }//std::vector<uint8_t> base64url_decode( const std::string &input )
 
+
   
 /** Performs the same encoding as `streamvbyte_encode` from https://github.com/lemire/streamvbyte,
  but pre-pended with a uint16_t to give number of integer entries, has a c++ interface, and is way,
@@ -950,6 +993,15 @@ vector<uint8_t> encode_stream_vbyte( const vector<uint32_t> &input )
   
   // I this function might be okay on big-endian machines, but untested, so we'll leave a
   //  compile time assert here
+#if defined(__clang__)
+  #ifdef __BIG_ENDIAN__
+    static_assert( 0, "This function not tested in big-endian" );
+  #endif
+#elif defined(__GNUC__) || defined(__GNUG__)
+  static_assert(__BYTE_ORDER__ == __ORDER_BIG_ENDIAN__, "This function not tested in big-endian" );
+#elif defined(_MSC_VER)
+  // not sure, but not to worried
+#endif
   static_assert( boost::endian::order::native == boost::endian::order::little, "This function not tested in big-endian" );
   
   const size_t count = input.size();
@@ -1025,6 +1077,15 @@ size_t decode_stream_vbyte( const T * const input_begin, const size_t nbytes, ve
   
   static_assert( sizeof(T) == 1, "Must be byte-based container" );
   // Maybe fine on big-endian, but untested
+#if defined(__clang__)
+#ifdef __BIG_ENDIAN__
+  static_assert( 0, "This function not tested in big-endian" );
+#endif
+#elif defined(__GNUC__) || defined(__GNUG__)
+  static_assert(__BYTE_ORDER__ == __ORDER_BIG_ENDIAN__, "This function not tested in big-endian" );
+#elif defined(_MSC_VER)
+  // not sure, but not to worried
+#endif
   static_assert( boost::endian::order::native == boost::endian::order::little, "This function not tested in big-endian" );
   
   if( nbytes < 2 )
@@ -1419,7 +1480,7 @@ vector<string> url_encode_spectrum( const UrlSpectrum &m,
     {
 #ifndef NDEBUG
       string urlencoded = url_encode( answer[msg_num] );
-      assert( Wt::Utils::urlDecode(urlencoded) == answer[msg_num] );
+      assert( url_decode(urlencoded) == answer[msg_num] );
       answer[msg_num].swap( urlencoded );
 #else
       answer[msg_num] = url_encode( answer[msg_num] );
@@ -1760,7 +1821,7 @@ std::vector<UrlEncodedSpec> url_encode_spectra( const std::vector<UrlSpectrum> &
         
         for( const string &v : trial_urls )
         {
-          const string preUrlDecode = Wt::Utils::urlDecode( v );
+          const string preUrlDecode = url_decode( v );
           crc_computer.process_bytes( (void const *)preUrlDecode.data(), preUrlDecode.size() );
         }
         
@@ -2093,7 +2154,7 @@ EncodedSpectraInfo get_spectrum_url_info( std::string url )
   answer.m_raw_data = url;
   
   //cout << "Before being URL decoded: '" << to_hex_bytes_str(url.substr(0,60)) << "'" << endl << endl;
-  //url = Wt::Utils::urlDecode( url );
+  //url = url_decode( url );
   
   const bool base_X_encoded = !(answer.m_encode_options & EncodeOptions::NoBaseXEncoding);
   const bool base64url_encoded = (answer.m_encode_options & EncodeOptions::UseUrlSafeBase64);
@@ -2257,8 +2318,8 @@ std::vector<UrlSpectrum> spectrum_decode_first_url( const std::string &url, cons
      && (info.m_encode_options & EncodeOptions::NoBaseXEncoding)
      && (info.m_encode_options & EncodeOptions::CsvChannelData) )
   {
-    spec.m_model = Wt::Utils::urlDecode( spec.m_model );
-    spec.m_title = Wt::Utils::urlDecode( spec.m_title );
+    spec.m_model = url_decode( spec.m_model );
+    spec.m_title = url_decode( spec.m_title );
   }
   
   const string neut_str = get_str_field( 'N' );
@@ -2769,7 +2830,7 @@ int dev_code()
           
           try
           {
-            vector<UrlSpectrum> decoded = decode_spectrum_urls( { Wt::Utils::urlDecode(encspecs[0].m_url) } );
+            vector<UrlSpectrum> decoded = decode_spectrum_urls( { url_decode(encspecs[0].m_url) } );
             assert( decoded.size() == 2 );
           }catch( std:: exception &e )
           {
@@ -2950,7 +3011,7 @@ int dev_code()
           
           vector<string> urls;
           for( const auto &g : encoded )
-            urls.push_back( Wt::Utils::urlDecode( g.m_url ) );
+            urls.push_back( url_decode( g.m_url ) );
           
 #define TEST_EQUAL_ENOUGH(lhs,rhs) \
 assert( (fabs((lhs) - (rhs)) < 1.0E-12) \
