@@ -1000,7 +1000,7 @@ void ReferenceLineInfo::toJson( string &json ) const
           decay_strs.push_back(decay_str);
         }
         
-        jsons << ",\"decayind\":" << decay_str_iter->second;
+        jsons << ",\"desc_ind\":" << decay_str_iter->second;
       }
       
       // For Nuclide Mixtures, need to add a special label to lines to indicate ultimate parent,
@@ -1042,7 +1042,7 @@ void ReferenceLineInfo::toJson( string &json ) const
       
       // Now increment 'i' so we'll skip over these lines we've already covered.
       index += (num_combined >= 1) ? (num_combined - 1) : size_t(0);
-    }else
+    }else  //if( next_gamma_close )
     {
       if( IsNan(line.m_normalized_intensity) || IsInf(line.m_normalized_intensity) )
         snprintf( intensity_buffer, sizeof(intensity_buffer), "0" );
