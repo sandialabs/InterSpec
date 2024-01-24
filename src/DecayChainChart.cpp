@@ -297,17 +297,7 @@ DecayChainChart::DecayChainChart( WContainerWidget *parent  )
   m_showDecayParticles( this, "ShowDecayParticleInfo", true ),
   m_showDecaysThrough( this, "ShowDecaysThrough", true )
 {
-  //To keep Wt from loading d3.js again, if it loaded it fo D3SpectrumDisplay, then
-  //  it looks like (for Wt 3.3.4 anyway) we need the same URL, not just the same
-  //  second argument - so the loading here matches D3SpectrumDisplay.
-#if( defined(NDEBUG) || IOS || ANDROID || BUILD_AS_ELECTRON_APP || BUILD_AS_OSX_APP || BUILD_AS_WX_WIDGETS_APP )
-  //THe NDEBUG should be enough, but just making sure
   wApp->require( "InterSpec_resources/d3.v3.min.js", "d3.v3.js" );
-#else
-  wApp->require( "external_libs/SpecUtils/d3_resources/d3.v3.min.js", "d3.v3.js" );
-#endif
-  
-  //wApp->require( "InterSpec_resources/d3.v3.min.js", "d3.v3.js" );
   wApp->require( "InterSpec_resources/DecayChainChart.js" );
   wApp->useStyleSheet( "InterSpec_resources/DecayChainChart.css" );
   addStyleClass( "DecayChainChart" );

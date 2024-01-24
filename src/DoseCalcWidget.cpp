@@ -1121,7 +1121,7 @@ void DoseCalcWidget::init()
         else
           m_activityEnterUnits->setCurrentIndex( 6 ); //uci
         
-        m_activityAnswerUnits->addItem( "curries" );
+        m_activityAnswerUnits->addItem( "curies" );
         m_activityAnswerUnits->addItem( "becquerels" );
 
         if( useBq )

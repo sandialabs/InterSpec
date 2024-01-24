@@ -59,19 +59,17 @@ RelEffChart::RelEffChart( WContainerWidget *parent )
   addStyleClass( "RelEffChart" );
   setOverflow(Overflow::OverflowHidden);
   
-  const string resource_base = "InterSpec_resources/";
-  
   // We will actually totally define the CSS through WApplication, rather than using the same CSS
   //  file we use for the self-contained HTML reports.
-  //wApp->useStyleSheet( resource_base + "RelEffPlot.css" );
+  //wApp->useStyleSheet( "InterSpec_resources/RelEffPlot.css" );
   
   setCssRules();
   InterSpec *interspec = InterSpec::instance();
   if( interspec )
     interspec->colorThemeChanged().connect( this, &RelEffChart::setCssRules );
   
-  wApp->require( resource_base + "d3.v3.min.js", "d3.v3.js" );
-  wApp->require( resource_base + "RelEffPlot.js" );
+  wApp->require( "InterSpec_resources/d3.v3.min.js", "d3.v3.js" );
+  wApp->require( "InterSpec_resources/RelEffPlot.js" );
 }//RelEffChart constructor
 
 

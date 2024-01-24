@@ -66,6 +66,7 @@
   
   // We wont handle promises here, so this way WkWebView will keep handling them,
   //  But here is some code to intercept them, in case it turns out we should.
+  //  (TODO: double check Mail and Outlook attachments can be dragged in)
   //NSPasteboard *pboard = [sender draggingPasteboard];
   //NSDictionary *options = @{};
   //NSArray<Class> *promises_class = @[[NSFilePromiseReceiver class]];
@@ -619,20 +620,8 @@ Wt::WApplication *createApplication(const Wt::WEnvironment& env)
     if( !doResume )
       actualURL = [NSString stringWithFormat:@"%@&restore=no", actualURL];
     
-    
-    /*
-     //Right now drag-n-drop from Outlook does not work - should investigate this:
-     // Probably need to sub-class WKWebView, and then do something like
-     //https://developer.apple.com/library/archive/documentation/Cocoa/Conceptual/DragandDrop/Tasks/acceptingdrags.html#//apple_ref/doc/uid/20000993-BABHHIHC
-     */
-    
-    
-    
-    
-
-    //[_window registerForDraggedTypes: [NSArray arrayWithObjects:NSFilenamesPboardType, NSURLPboardType, nil]]; //requires macOS >=10.13, which is the lowest we target anyway
-    [_window registerForDraggedTypes: [NSArray arrayWithObjects:NSPasteboardTypeFileURL, NSPasteboardTypeURL, NSFileContentsPboardType, nil]]; //requires macOS >=10.13, which is the lowest we target anyway
-    
+    // WkWebView registers _window for registerForDraggedTypes; if it didnt, we could use the following line
+    //[_window registerForDraggedTypes: [NSArray arrayWithObjects:NSFilenamesPboardType, NSURLPboardType, nil]];
     
     //if( [_InterSpecWebView respondsToSelector:@selector(mainFrame)])
     //[[_InterSpecWebView mainFrame] loadRequest:[NSURLRequest requestWithURL:[NSURL URLWithString:actualURL]]];

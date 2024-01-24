@@ -7374,7 +7374,7 @@ void InterSpec::addAboutMenu( Wt::WWidget *parent )
                                 true, HelpSystem::ToolTipPosition::Right );
     
     const string msg = "Changes will not take effect until app is restarted or refreshed."
-    "<div onclick=\"Wt.emit('" + wApp->root()->id() + "',{name:'miscSignal'}, 'clearSession');"
+    "<div onclick=\"Wt.emit( $('.specviewer').attr('id'), {name:'miscSignal'}, 'clearSession');"
     "try{$(this.parentElement.parentElement).remove();}catch(e){}return false;\" "
     "class=\"clearsession\"><span class=\"clearsessiontxt\">Refresh Session</span></div>";
     const WString wmsg = WString::fromUTF8( msg );
@@ -8293,6 +8293,10 @@ void InterSpec::create3DSearchModeChart()
     programmaticallyClose3DSearchModeChart();
   
   m_3dViewWindow = new AuxWindow( "3D Data View" );
+  //set min size so setResizable call before setResizable so Wt/Resizable.js wont cause the initial
+  //  size to be the min-size
+  m_3dViewWindow->setMinimumSize( 512, 420 );
+  
   m_3dViewWindow->disableCollapse();
   m_3dViewWindow->Wt::WDialog::rejectWhenEscapePressed();
   
@@ -8308,8 +8312,9 @@ void InterSpec::create3DSearchModeChart()
   
   m_3dViewWindow->show();
   m_3dViewWindow->setClosable( true );
-  m_3dViewWindow->resizeScaledWindow( 0.95, 0.95 );
+  m_3dViewWindow->resizeScaledWindow( 0.7, 0.9 );
   m_3dViewWindow->centerWindow();
+  m_3dViewWindow->setResizable( true );
   m_3dViewWindow->finished().connect( this, &InterSpec::handle3DSearchModeChartClose );
   
   if( m_undo && m_undo->canAddUndoRedoNow() )
@@ -10677,7 +10682,7 @@ void InterSpec::setSpectrum( std::shared_ptr<SpecMeas> meas,
       WStringStream js;
       js << "File contains GPS coordinates."
       << "<div onclick="
-      "\"Wt.emit('" << wApp->root()->id() << "',{name:'miscSignal'}, 'showMap-" << type << "');"
+      "\"Wt.emit( $('.specviewer').attr('id'),{name:'miscSignal'}, 'showMap-" << type << "');"
       "try{$(this.parentElement.parentElement).remove();}catch(e){}"
       "return false;\" "
       "class=\"clearsession\">"
@@ -10807,7 +10812,7 @@ void InterSpec::setSpectrum( std::shared_ptr<SpecMeas> meas,
 #endif
       << riidAnaSummary(meas)
       << "<div onclick="
-           "\"Wt.emit('" << wApp->root()->id() << "',{name:'miscSignal'}, 'showRiidAna-" << type << "');"
+           "\"Wt.emit( $('.specviewer').attr('id'),{name:'miscSignal'}, 'showRiidAna-" << type << "');"
            //"$('.qtip.jgrowl:visible:last').remove();"
            "try{$(this.parentElement.parentElement).remove();}catch(e){}"
            "return false;\" "
@@ -10928,7 +10933,7 @@ void InterSpec::setSpectrum( std::shared_ptr<SpecMeas> meas,
         WStringStream js;
         js << "Spectrum file contained embedded images: "
         << "<div onclick="
-        "\"Wt.emit('" << wApp->root()->id() << "',{name:'miscSignal'}, 'showMultimedia-" << type << "');"
+        "\"Wt.emit( $('.specviewer').attr('id'),{name:'miscSignal'}, 'showMultimedia-" << type << "');"
         //"$('.qtip.jgrowl:visible:last').remove();"
         "try{$(this.parentElement.parentElement).remove();}catch(e){}"
         "return false;\" "

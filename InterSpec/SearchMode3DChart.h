@@ -25,15 +25,27 @@
 
 #include "InterSpec_config.h"
 
+#include <set>
+#include <memory>
+#include <string>
+#include <vector>
+
 #include <Wt/WContainerWidget>
 
 //Some forward declarations
+class SpecMeas;
 class InterSpec;
+class NativeFloatSpinBox;
 class SearchMode3DDataModel;
+
+namespace SpecUtils{ enum class SpectrumType : int; }
+
 namespace Wt
 {
+  class WText;
   namespace Chart
   {
+    class WSpinBox;
     class WGridData;
     class WGridLayout;
     class WDoubleSpinBox;
@@ -100,8 +112,14 @@ protected:
   void setEnergyLimits();
   
   /** Function that gets called when the user loads a new spectrum. */
-  void newSpectralDataSet();
+  void newSpectralDataSet( const SpecUtils::SpectrumType type,
+                          const std::shared_ptr<SpecMeas> &meas,
+                          const std::set<int> &sample_numbers,
+                          const std::vector<std::string> &detectors );
   
+  void setBinningLimits();
+  void handleNumTimeDivsChanged();
+  void handleNumEnergyDivsChanged();
   
 protected:
   InterSpec *m_viewer;
@@ -115,11 +133,21 @@ protected:
   SearchMode3DDataModel *m_model;
   Wt::Chart::WGridData  *m_data;
   Wt::Chart::WCartesian3DChart *m_chart;
-  Wt::WDoubleSpinBox *m_inputMinEnergy;
-  Wt::WDoubleSpinBox *m_inputMaxEnergy;
-  Wt::WDoubleSpinBox *m_inputMinTime;
-  Wt::WDoubleSpinBox *m_inputMaxTime;
-    
+  
+  NativeFloatSpinBox *m_inputMinEnergy;
+  NativeFloatSpinBox *m_inputMaxEnergy;
+  NativeFloatSpinBox *m_inputMinTime;
+  NativeFloatSpinBox *m_inputMaxTime;
+  
+  Wt::WSpinBox *m_timeDivisions;
+  Wt::WSpinBox *m_energyDivisions;
+  
+  Wt::WText *m_loadingTxt;
+  
+  /** Some absolute limits on min and max number of divisions to display in the 3D chart. */
+  static const int sm_maxTimeDivs;
+  static const int sm_maxEnergyDivs;
+  static const int sm_minTimeOrEnergyDivs;
 };//class SearchMode3DChart
 
 

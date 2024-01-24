@@ -137,7 +137,7 @@ void FileDragUploadResource::handleRequest( const Http::Request& request,
   }//if( !app )
   
   
-#if( BUILD_AS_ELECTRON_APP )
+#if( BUILD_AS_ELECTRON_APP || BUILD_AS_OSX_APP )
   // See FileUploadFcn in InterSpec.js
   const string isFilePath = request.headerValue("Is-File-Path");
   

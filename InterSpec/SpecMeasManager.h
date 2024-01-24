@@ -32,6 +32,7 @@
 #include <string>
 
 #include <boost/any.hpp>
+#include <boost/asio/deadline_timer.hpp>
 
 #include <Wt/WString>
 #include <Wt/WResource>
@@ -47,10 +48,10 @@
 #include "InterSpec/AuxWindow.h"
 #include "InterSpec/SpectraFileModel.h"
 
+// Some forward declarations
 namespace SpecUtils{ enum class ParserType : int; }
 namespace SpecUtils{ enum class SpectrumType : int; }
 
-// Some forward declarations
 namespace Wt
 {
   class JSlot;
@@ -396,6 +397,10 @@ public:
                               AuxWindow *window,
                               Wt::WModelIndex index );
   
+  /** Called by FileDragUploadResource, as files are being uploaded; if file is larger than `sm_minNumBytesShowUploadProgressDialog`,
+   then will create a status message dialog, `m_processingUploadDialog`.
+   */
+  void handleDataRecievedStatus( uint64_t num_bytes_recieved, uint64_t num_bytes_total, SpecUtils::SpectrumType type );
   
   //Handles a file dropped onto the application, or finishes opening files from
   //  filesystem URL.
@@ -449,6 +454,8 @@ protected:
                            const bool checkIfPreviouslyOpened,
                            const bool doPreviousEnergyRangeCheck );
   
+  /** Deletes the dialog, but only if the passed in dialog is the same as `m_processingUploadDialog` */
+  void checkCloseUploadDialog( SimpleDialog *dialog, Wt::WApplication *app );
   
 private:
   Wt::WContainerWidget *createButtonBar();
@@ -489,9 +496,24 @@ protected:
   //m_sql same as m_viewer->sql();
   std::shared_ptr<DataBaseUtils::DbSession> m_sql;
   
-  std::shared_ptr< std::mutex > m_destructMutex;
-  std::shared_ptr< bool > m_destructed;
+  std::shared_ptr<std::mutex> m_destructMutex;
+  std::shared_ptr<bool> m_destructed;
   
+  /** Dialog created when a file is uploading, from `handleDataRecievedStatus()`, letting the user know that something is going on.
+   On the client-side there is an upload status that is shown, but for large files the upload status in JS can be significantly off from what
+   the server is seeing, leading to a potentially long gap between the client-side status, and when the file actually finishes uploading and
+   is being parsed (which another dialog will be shown for parsing large files) - so this dialog covers this time gap to keep the user informed.
+   */
+  SimpleDialog *m_processingUploadDialog;
+  
+  /** Timer used to make sure the dialog is destroyed, even if upload stalls-out; reset in every call to `handleDataRecievedStatus()`,
+   with a timeout of 30 seconds.
+   
+   Did not use a `Wt::WTimer` so we dont effect the DOM when creating and resetting timer, as the WTimer gets inserted into the DOM, and
+   maybe also added to the client-side JS (but I didnt check if creating/resetting a WTimer would cause a network request, but a quick glance at
+   the Wt source code did look like this might be the case, but also maybe not if its server-side only connection)
+   */
+  std::unique_ptr<boost::asio::deadline_timer> m_processingUploadTimer;
 
 #if( !defined(MAX_SPECTRUM_MEMMORY_SIZE_MB) ||  MAX_SPECTRUM_MEMMORY_SIZE_MB < 0 )
   static const size_t sm_maxTempCacheSize = 0;
@@ -499,6 +521,8 @@ protected:
   static const size_t sm_maxTempCacheSize = 1024 * 1024 * MAX_SPECTRUM_MEMMORY_SIZE_MB;
 #endif
 
+  const static size_t sm_minNumBytesShowUploadProgressDialog = 100 * 1024;
+  
   mutable std::deque< std::shared_ptr<const SpecMeas> > m_tempSpectrumInfoCache;
 };//class SpecMeasManager
 
