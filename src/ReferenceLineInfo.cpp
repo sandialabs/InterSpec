@@ -945,6 +945,8 @@ void ReferenceLineInfo::toJson( string &json ) const
       map<const SandiaDecay::Nuclide *,double> nuc_to_frac;
       // TODO: be a little more efficient than allocating strings in these sets...
       set<string> particles, decays;
+      vector<pair<string,double>> decay_fractions;
+      
       for( size_t inner_index = index; inner_index < m_ref_lines.size(); ++inner_index )
       {
         const RefLine &inner_line = m_ref_lines[inner_index];
@@ -962,7 +964,22 @@ void ReferenceLineInfo::toJson( string &json ) const
         intensity += inner_line.m_normalized_intensity;
         particles.insert( inner_line.particlestr() );
         if( !inner_line.m_decaystr.empty() )
+        {
           decays.insert( inner_line.m_decaystr );
+          
+          auto pos = std::lower_bound( begin(decay_fractions), end(decay_fractions),
+                                      inner_line.m_decaystr,
+                                      []( const pair<string,double> &el, const string &val) -> bool {
+            return el.first < val;
+          });
+          
+          if( (pos != end(decay_fractions)) && (inner_line.m_decaystr == pos->first) )
+            pos->second += inner_line.m_normalized_intensity;
+          else
+            decay_fractions.insert( pos, {inner_line.m_decaystr, inner_line.m_normalized_intensity} );
+          
+          assert( decays.size() == decay_fractions.size() );
+        }
         
         auto pos = nuc_to_frac.find(inner_line.m_parent_nuclide);
         if( pos == end(nuc_to_frac) )
@@ -980,19 +997,39 @@ void ReferenceLineInfo::toJson( string &json ) const
       else
         snprintf( intensity_buffer, sizeof(intensity_buffer), "%.3g", intensity );
       
-      auto combine_strs = []( const set<string> &strs ) -> string {
+      auto combine_particle_strs = []( const set<string> &strs ) -> string {
         string answer;
         for( const auto &s : strs )
           answer += (answer.empty() ? "" : ", ") + s;
         return answer;
-      };//combine_strs lambda
+      };//combine_particle_strs lambda
       
       jsons << (printed ? "," : "") << "{\"e\":" << energy << ",\"h\":" << intensity_buffer;
       if( !particles.empty() )
-        jsons << ",\"particle\":" << jsQuote(combine_strs(particles));
-      if( !decays.empty() )
+        jsons << ",\"particle\":" << jsQuote(combine_particle_strs(particles));
+      
+      assert( decays.size() == decay_fractions.size() );
+      
+      if( !decay_fractions.empty() )
       {
-        const string decay_str = combine_strs(decays);
+        auto combine_decays = []( const vector<pair<string,double>> &fracs ) -> string {
+          if( fracs.size() == 1 )
+            return fracs[0].first;
+          
+          double sum = 0.0;
+          for( const auto &i : fracs )
+            sum += i.second;
+          
+          string answer;
+          for( const auto &i : fracs )
+          {
+            answer += (answer.empty() ? "" : ", ") + i.first
+                      + " (" + PhysicalUnits::printCompact( 100.0*i.second/sum, 4 ) + "%)";
+          }
+          return answer;
+        };//combine_particle_strs lambda
+        
+        const string decay_str = combine_decays( decay_fractions );
         auto decay_str_iter = decay_str_indexs.find(decay_str);
         if( decay_str_iter == end(decay_str_indexs) )
         {
