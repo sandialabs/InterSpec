@@ -1820,7 +1820,6 @@ void ExportSpecFileTool::refreshSampleAndDetectorOptions()
     
     m_backSubFore->hide();
     m_sumDetsPerSample->hide();
-    m_excludeInterSpecInfo->hide();
     
     m_sampleSelectNotAppTxt->show();
     m_optionsNotAppTxt->setHidden( m_excludeGpsInfo->isVisible()
