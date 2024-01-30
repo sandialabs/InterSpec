@@ -300,6 +300,8 @@ protected:
   Wt::WColor colorForNewSource( const std::string &src );
 
   void handleIsotopeChange( const bool useCurrentAge );
+  
+  void handleDrfChange( std::shared_ptr<DetectorPeakResponse> det );
 
   //refreshLinesDisplayedToGui(): makes setting and re-sends to client the lines
   //  that should be displayed, based on m_currentlyShowingNuclide and
