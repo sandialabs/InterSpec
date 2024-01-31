@@ -490,11 +490,13 @@ std::vector<PeakDef> PeakModel::csv_to_candidate_fit_peaks(
   if( line.empty() || !csv )
     throw runtime_error( "Failed to get first line" );
   
-  //Columns garunteed to be in file, or we'll throw an exception.
+  //Columns guaranteed to be in file, or we'll throw an exception.
   int mean_index = -1, area_index = -1, fwhm_index = -1;
   
   //Columns that may or not be in file, in whcih case will be >= 0.
-  int roi_lower_index = -1, roi_upper_index = -1, nuc_index = -1, nuc_energy_index = -1, color_index = -1, label_index = -1, cont_type_index = -1;
+  int roi_lower_index = -1, roi_upper_index = -1, nuc_index = -1, nuc_energy_index = -1;
+  int color_index = -1, label_index = -1, cont_type_index = -1, skew_type_index = -1;
+  int cont_coef_index = -1, skew_coef_index = -1, area_uncert_index = -1;
   
   {//begin to get field_pos
     vector<string> headers;
@@ -513,6 +515,9 @@ std::vector<PeakDef> PeakModel::csv_to_candidate_fit_peaks(
     const auto color_pos = std::find( begin(headers), end(headers), "color");
     const auto label_pos = std::find( begin(headers), end(headers), "user_label");
     const auto cont_type_pos = std::find( begin(headers), end(headers), "continuum_type");
+    const auto skew_type_pos = std::find( begin(headers), end(headers), "skew_type");
+    const auto cont_coef_pos = std::find( begin(headers), end(headers), "continuum_coefficients");
+    const auto skew_coef_pos = std::find( begin(headers), end(headers), "skew_coefficients");
     
     if( centroid_pos == end(headers) )
       throw runtime_error( "Header did not contain 'Centroid'" );
@@ -521,6 +526,11 @@ std::vector<PeakDef> PeakModel::csv_to_candidate_fit_peaks(
     if( net_area_pos == end(headers) )
       throw runtime_error( "Header did not contain 'Net_Area'" );
     area_index = static_cast<int>( net_area_pos - begin(headers) );
+    
+    // The second "Net_Area" column is uncertainty
+    const auto net_area_uncert_pos = std::find( net_area_pos + 1, end(headers), "net_area");
+    if( net_area_uncert_pos != end(headers) )
+      area_uncert_index = static_cast<int>( net_area_uncert_pos - begin(headers) );
     
     if( fwhm_pos == end(headers) )
       throw runtime_error( "Header did not contain 'FWHM'" );
@@ -546,6 +556,15 @@ std::vector<PeakDef> PeakModel::csv_to_candidate_fit_peaks(
     
     if( cont_type_pos != end(headers) )
       cont_type_index = static_cast<int>( cont_type_pos - begin(headers) );
+    
+    if( skew_type_pos != end(headers) )
+      skew_type_index = static_cast<int>( skew_type_pos - begin(headers) );
+    
+    if( cont_coef_pos != end(headers) )
+      cont_coef_index = static_cast<int>( cont_coef_pos - begin(headers) );
+    
+    if( skew_coef_pos != end(headers) )
+      skew_coef_index = static_cast<int>( skew_coef_pos - begin(headers) );
   }//end to get field_pos
   
   
@@ -585,6 +604,14 @@ std::vector<PeakDef> PeakModel::csv_to_candidate_fit_peaks(
       
       PeakDef peak( centroid, fwhm/2.35482, area );
       
+      
+      if( (area_uncert_index >= 0) && (area_uncert_index < nfields) )
+      {
+        const float area_uncert = std::stof( fields[area_uncert_index] );
+        if( area_uncert > 0.0 )
+          peak.setPeakAreaUncert( area_uncert );
+      }//if( (area_uncert_index >= 0) && (area_uncert_index < nfields) )
+      
       if( roi_lower_index >= 0 && roi_lower_index < nfields
          && roi_upper_index >= 0 && roi_upper_index < nfields )
       {
@@ -614,6 +641,33 @@ std::vector<PeakDef> PeakModel::csv_to_candidate_fit_peaks(
                           = PeakContinuum::str_to_offset_type_str( strval.c_str(), strval.size() );
           peak.continuum()->setType( type );
           continuums_with_type_set.insert( peak.continuum() );
+          
+          if( (cont_coef_index >= 0) && (cont_coef_index < nfields) )
+          {
+            const string &flt_list_str = fields[cont_coef_index];
+            vector<float> values;
+            // The delimiter should be a space, but for the moment we'll be loose with this
+            //  incase we switch things up.
+            SpecUtils::split_to_floats( flt_list_str.c_str(), values, " ,\r\n\t;", false );
+            
+            if( values.size() == (1 + PeakContinuum::num_parameters(type)) )
+            {
+              const float ref_energy = values[0];
+              vector<double> dvalues( begin(values) + 1, end(values) );
+              peak.continuum()->setParameters( ref_energy, dvalues, {} );
+            }else
+            {
+              const string msg = "For peak at " + std::to_string(peak.mean()) + " keV, read in "
+                      + std::to_string(values.size()) + " continuum coefficients, but expected 1+"
+                      + std::to_string(PeakContinuum::num_parameters(type));
+              cerr << msg << endl;
+              
+#if( PERFORM_DEVELOPER_CHECKS )
+              log_developer_error( __func__, msg.c_str() );
+              assert( 0 ); //just for development.
+#endif
+            }//if( we have the reference energy plus correct number of continuum parameters ) / else
+          }//if( (cont_coef_index >= 0) && (cont_coef_index < nfields) )
         }catch( std::exception & )
         {
           const string msg = "Failed to convert '" + strval + "' to a PeakContinuum::OffsetType.";
@@ -624,6 +678,51 @@ std::vector<PeakDef> PeakModel::csv_to_candidate_fit_peaks(
         }//try / catch
       }//if( cont_type_index >= 0 && cont_type_index < nfields )
       
+      
+      if( (skew_type_index >= 0) && (skew_type_index < nfields) )
+      {
+        const string &strval = fields[skew_type_index];
+        
+        try
+        {
+          const PeakDef::SkewType type = PeakDef::skew_from_string( strval );
+          peak.setSkewType( type );
+          
+          if( (skew_coef_index >= 0) && (skew_coef_index < nfields) )
+          {
+            const string &flt_list_str = fields[skew_coef_index];
+            vector<float> values;
+            // Again, being loos with allowed delimiters
+            SpecUtils::split_to_floats( flt_list_str.c_str(), values, " ,\r\n\t;", false );
+            if( values.size() == PeakDef::num_skew_parameters(type) )
+            {
+              for( size_t i = 0; i < values.size(); ++i )
+              {
+                const auto coef = PeakDef::CoefficientType(PeakDef::SkewPar0 + i);
+                peak.set_coefficient( values[i], coef );
+              }//for( set skew coeficient values )
+            }else
+            {
+              const string msg = "For peak at " + std::to_string(peak.mean()) + " keV, read in "
+                              + std::to_string(values.size()) + " skew coefficients, but expected "
+                              + std::to_string(PeakDef::num_skew_parameters(type));
+              
+              cerr << msg << endl;
+#if( PERFORM_DEVELOPER_CHECKS )
+              log_developer_error( __func__, msg.c_str() );
+              assert( 0 ); //just for development.
+#endif
+            }//if( we have correct number of coefficients ) / else
+          }//if( (skew_coef_index >= 0) && (skew_coef_index < nfields) )
+        }catch( std::exception & )
+        {
+          const string msg = "Failed to convert '" + strval + "' to a PeakDef::OffsetType.";
+          cerr << msg << endl;
+#if( PERFORM_DEVELOPER_CHECKS )
+          log_developer_error( __func__, msg.c_str() );
+#endif
+        }//try / catch
+      }//if( (skew_type_index >= 0) && (skew_type_index < nfields) )
       
       if( nuc_index >= 0 && nuc_energy_index >= 0
          && nuc_index < nfields && nuc_energy_index < nfields
@@ -3240,11 +3339,13 @@ void PeakModel::write_peak_csv( std::ostream &outstrm,
   
   outstrm <<
   "Centroid,  Net_Area,   Net_Area,      Peak, FWHM,   FWHM,Reduced, ROI_Total,ROI, "
-  "File,         ,     ,     , Nuclide, Photopeak_Energy, ROI_Lower_Energy, ROI_Upper_Energy, Color, User_Label, Continuum_Type"
+  "File,         ,     ,     , Nuclide, Photopeak_Energy, ROI_Lower_Energy, ROI_Upper_Energy, Color, User_Label, Continuum_Type, "
+  "Skew_Type, Continuum_Coefficients, Skew_Coefficients"
   << eol_char
   <<
   "     keV,    Counts,Uncertainty,       CPS,  keV,Percent,Chi_Sqr,    Counts,ID#, "
-  "Name, LiveTime, Date, Time,        ,              keV,              keV,              keV, (css),           ,               "
+  "Name, LiveTime, Date, Time,        ,              keV,              keV,              keV, (css),           ,               , "
+  "         ,                       ,                  "
   << eol_char;
   
   
@@ -3414,7 +3515,69 @@ void PeakModel::write_peak_csv( std::ostream &outstrm,
     csvEscape( color_str );
     csvEscape( user_label );
 
-    const string continuum_type = PeakContinuum::offset_type_str( peak.continuum()->type() );
+    std::shared_ptr<const PeakContinuum> continuum = peak.continuum();
+    assert( continuum );
+    const PeakContinuum::OffsetType cont_type = continuum->type();
+    const string continuum_type = PeakContinuum::offset_type_str( cont_type );
+    const string skew_type = PeakDef::to_string( peak.skewType() );
+    
+    string cont_coefs;
+    switch( cont_type )
+    {
+      case PeakContinuum::NoOffset:
+      case PeakContinuum::External:
+        break;
+        
+      case PeakContinuum::Constant:  case PeakContinuum::Linear:
+      case PeakContinuum::Quadratic: case PeakContinuum::Cubic:
+      case PeakContinuum::FlatStep:  case PeakContinuum::LinearStep:
+      case PeakContinuum::BiLinearStep:
+      {
+        const size_t num_cont_par = PeakContinuum::num_parameters( cont_type );
+        const double ref_energy = continuum->referenceEnergy();
+        const vector<double> &pars = continuum->parameters();
+        const vector<double> &uncerts = continuum->uncertainties();
+        const vector<bool> fit_for = continuum->fitForParameter();
+        
+        // Print reference energy, in keV
+        cont_coefs += PhysicalUnits::printCompact( ref_energy, 6 );
+         
+        for( size_t i = 0; i < num_cont_par; ++i )
+        {
+          cont_coefs += " " + PhysicalUnits::printCompact(pars[i],7);
+          
+          // We could print triplicate [Coefficient,Uncertainty,FitFor], but I'm unsure about doing
+          //   this at the moment.
+          //cont_coefs += "[";
+          //if( pars.size() > i )
+          //  cont_coefs += PhysicalUnits::printCompact( pars[i], 7 );
+          //cont_coefs += ";";
+          //if( uncerts.size() > i )
+          //  cont_coefs += PhysicalUnits::printCompact( uncerts[i], 7 );
+          //cont_coefs += ";";
+          //if( fit_for.size() > i )
+          //  cont_coefs += (fit_for[i] ? "1" : "0");
+          //cont_coefs += "]";
+        }
+        break;
+      }//case any continuum type that has parameters
+    }//switch( cont_type )
+    
+    
+    string skew_coefs;
+    const size_t num_skew = PeakDef::num_skew_parameters( peak.skewType() );
+    for( size_t i = 0; i < num_skew; ++i )
+    {
+      const auto par = PeakDef::CoefficientType( PeakDef::CoefficientType::SkewPar0 + i );
+      const double val = peak.coefficient(par);
+      //const double uncert = peak.uncertainty(par);
+      //skew_coefs += "[" + PhysicalUnits::printCompact( val, 7 )
+      //              + ";" + PhysicalUnits::printCompact( uncert, 7 )
+      //              + (peak.fitFor(par) ? ";1]" : ";1]");
+      skew_coefs += (skew_coefs.empty() ? "" : " ")
+                    + PhysicalUnits::printCompact(val,7);
+    }//for( loop over skew parameters )
+    
     
     outstrm << meanstr
     << ',' << areastr
@@ -3436,6 +3599,9 @@ void PeakModel::write_peak_csv( std::ostream &outstrm,
     << ',' << color_str
     << ',' << user_label
     << ',' << continuum_type
+    << ',' << skew_type
+    << ',' << cont_coefs
+    << ',' << skew_coefs
     << eol_char;
   }//for( loop over peaks, peakn )
 }//void PeakModel::write_peak_csv(...)

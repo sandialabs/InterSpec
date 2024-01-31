@@ -1206,6 +1206,7 @@ bool SpecMeas::write_iaea_spe( std::ostream &output,
       string peak_csv_str = peak_csv.str();
       SpecUtils::ireplace_all(peak_csv_str, "$", " ");
       SpecUtils::ireplace_all(peak_csv_str, ":", " ");
+      SpecUtils::ireplace_all(peak_csv_str, "\t", " ");
       
       // Now write info to file
       output << "$PEAK_INFO_CSV:\r\n" << peak_csv_str << "\r\n";
