@@ -313,7 +313,9 @@ namespace PhysicalUnits
   typedef std::pair<std::string,double>    UnitNameValuePair;
   typedef std::vector< UnitNameValuePair > UnitNameValuePairV;
 
+  extern const UnitNameValuePairV sm_lengthUnitNameValues;
   extern const UnitNameValuePairV sm_activityUnitNameValues;
+  extern const UnitNameValuePairV sm_lengthUnitHtmlNameValues;
   extern const UnitNameValuePairV sm_activityUnitHtmlNameValues;
   extern const UnitNameValuePairV sm_doseRateUnitHtmlNameValues;
 
@@ -327,6 +329,10 @@ namespace PhysicalUnits
   
   const UnitNameValuePair &bestDoseUnitHtml( const double dose,
                                                 bool useRem = true );
+  
+  const UnitNameValuePair &bestLengthUnit( const double length );
+  const UnitNameValuePair &bestLengthUnitHtml( const double length );
+  
   UnitNameValuePair bestTimeUnit( double time );
 }//namespace PhysicalUnits
 #endif

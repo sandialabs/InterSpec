@@ -28,22 +28,13 @@ MdaChi2Chart = function(elem, options) {
   
   this.parent = typeof elem === 'string' ? document.getElementById(elem) : elem;
   
+  // See `setEmptyData(...)` for simple example data for later when I forget format
+  this.setEmptyData();
+  
   this.margins = {top: 10, right: 5, bottom: 5, left: 5};
   
   const chartAreaWidth = Math.max(0,this.parent.clientWidth - this.margins.left - this.margins.right);
   const chartAreaHeight = Math.max(0,this.parent.clientHeight - this.margins.top - this.margins.bottom);
-  
-  // Set some simple example data for later when I forget format
-  this.data = {
-    data: [{x:0, y:0}, {x:1, y:1}],
-    xtitle: "Activity (&mu;Ci)",
-    ytitle: "Chi2",
-    lineColor: "black",
-    //axisColor: "black",
-    chartBackgroundColor: "rgba(0,0,0,0)",
-    //textColor: "black"
-  };
-  
   
   this.xscale = d3.scale.linear();
   this.yscale = d3.scale.linear();
@@ -106,6 +97,17 @@ MdaChi2Chart = function(elem, options) {
   this.redraw();
 }
 
+MdaChi2Chart.prototype.setEmptyData = function() {
+  this.data = {
+    data: [{x:0, y:0}, {x:1, y:1}],
+    xtitle: "Activity (&mu;Ci)",
+    ytitle: "Chi2",
+    lineColor: "black",
+    //axisColor: "black",
+    chartBackgroundColor: "rgba(0,0,0,0)",
+    //textColor: "black"
+  };
+}
 
 MdaChi2Chart.prototype.redraw = function() {
   let self = this;
@@ -198,6 +200,10 @@ MdaChi2Chart.prototype.redraw = function() {
 
 
 MdaChi2Chart.prototype.setData = function( data ){
-  this.data = data;
+  if( data )
+    this.data = data;
+  else
+    this.setEmptyData();
+  
   this.redraw();
 }

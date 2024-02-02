@@ -123,6 +123,25 @@ const char * const sm_timeDurationHalfLiveOptionalPosOrNegRegex
 
 const char * const sm_positiveDecimalRegex = POS_DECIMAL_REGEX;
 
+const UnitNameValuePairV sm_lengthUnitNameValues{
+  {"nm", nm},
+  {"um", um},
+  {"mm", mm},
+  {"cm", cm},
+  {"m", meter},
+  {"km", 1.0E3*meter}
+};
+  
+const UnitNameValuePairV sm_lengthUnitHtmlNameValues{
+  {"nm", nm},
+  {"&mu;m", um},
+  {"mm", mm},
+  {"cm", cm},
+  {"m", meter},
+  {"km", 1.0E3*meter}
+};
+    
+  
 const UnitNameValuePairV sm_activityUnitNameValues{
   {"uBq", 1.0E-6*bq},
   {"mBq", 1.0E-3*bq},
@@ -1779,6 +1798,44 @@ const UnitNameValuePair &bestActivityUnitHtml( const double activity,
   return sm_activityUnitHtmlNameValues[0];  //shouldnt ever happen
 }//const UnitNameValuePair &bestActivityUnitHtml(...)
 
+
+const UnitNameValuePair &bestLengthUnit( const double length )
+{
+  if( length == 0.0 )
+  {
+    assert( sm_lengthUnitNameValues[sm_lengthUnitNameValues.size() - 2].first == "m" );
+    return sm_lengthUnitNameValues[sm_lengthUnitNameValues.size() - 2];  // return just "m", no prefix
+  }
+
+  for( size_t index = 0; (index + 1) < sm_lengthUnitNameValues.size(); ++index )
+  {
+    const UnitNameValuePair &next_unit = sm_lengthUnitNameValues[index + 1];
+    if( length <= next_unit.second )
+      return sm_lengthUnitNameValues[index];
+  }//for( iter = begin; begin != end; ++begin )
+
+  return sm_lengthUnitNameValues.back();
+}//const UnitNameValuePair &bestLengthUnit( const double length )
+  
+  
+const UnitNameValuePair &bestLengthUnitHtml( const double length )
+{
+  if( length == 0.0 )
+  {
+    assert( sm_lengthUnitHtmlNameValues[sm_lengthUnitHtmlNameValues.size() - 2].first == "m" );
+    return sm_lengthUnitHtmlNameValues[sm_lengthUnitHtmlNameValues.size() - 2];  // return just "m", no prefix
+  }
+
+  for( size_t index = 0; (index + 1) < sm_lengthUnitHtmlNameValues.size(); ++index )
+  {
+    const UnitNameValuePair &next_unit = sm_lengthUnitHtmlNameValues[index + 1];
+    if( length <= next_unit.second )
+      return sm_lengthUnitHtmlNameValues[index];
+  }//for( iter = begin; begin != end; ++begin )
+
+  return sm_lengthUnitHtmlNameValues.back();
+}//const UnitNameValuePair &bestLengthUnitHtml( const double length )
+  
   
 UnitNameValuePair bestTimeUnit( double t )
 {
