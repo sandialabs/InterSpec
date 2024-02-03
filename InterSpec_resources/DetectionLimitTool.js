@@ -122,16 +122,19 @@ MdaChi2Chart.prototype.redraw = function() {
   this.svg
     .attr("width",this.parent.clientWidth )
     .attr("height",this.parent.clientHeight );
-
-  //console.log( "this.data.data: ", this.data.data );
   
   this.xscale
     .domain(d3.extent(this.data.data, function(d) {return d.x;}))
     .range([leftMargin, chartAreaWidth + leftMargin]);
   
+  // Give a little marging above and below the plot line
+  const yextent = d3.extent(this.data.data, function(d) {return d.y;});
+  const yspan = yextent[1] - yextent[0];
+  
   this.yscale
-    .domain(d3.extent(this.data.data, function(d) {return d.y;}))
+    .domain([yextent[0]-0.1*yspan, yextent[1]+0.1*yspan])
     .range([chartAreaHeight + this.margins.top, this.margins.top]);
+  
   
   this.xaxis.scale( this.xscale );
   this.yaxis.scale( this.yscale );
