@@ -93,6 +93,11 @@ class DetectionLimitTool;
 class D3SpectrumDisplayDiv;
 class DetectorPeakResponse;
 
+namespace DetectionLimitCalc
+{
+  struct DeconComputeInput;
+}
+
 namespace SpecUtils
 {
   class Measurement;
@@ -110,6 +115,7 @@ namespace Wt
   class WCheckBox;
   class WLineEdit;
   class WComboBox;
+  class WPushButton;
   class WSuggestionPopup;
   class WStandardItemModel;
   namespace Chart
@@ -170,6 +176,21 @@ protected:
   
   void doCalc();
   void updateShownPeaks();
+  
+  /** Returns the input for computing Chi2 
+   
+   Returns nullptr if cant prepare input (e.g., no peaks, do displayed histogram, etc).
+   
+   You can simple change `DetectionLimitCalc::DeconComputeInput::activity` and
+   `DetectionLimitCalc::DeconComputeInput::distance` of the returned object, and the
+   rest of the fields will remain valid (e.g., for scanning over activity or distance, you only need to
+   prepare the input once).
+   */
+  std::shared_ptr<DetectionLimitCalc::DeconComputeInput> getComputeForActivityInput(
+                                                                    const double activity,
+                                                                    const double distance,
+                                                                    std::vector<PeakDef> &peaks );
+  
   void computeForActivity( const double activity,
                           const double distance,
                           std::vector<PeakDef> &peaks,
@@ -196,6 +217,8 @@ protected:
   
   void handleDrfSelected( std::shared_ptr<DetectorPeakResponse> new_drf );
   
+  void handleFitFwhmRequested();
+  
   void handleInputChange();
   
   /** Gets DRF from GUI widget, and if that isnt valid, gets it from the spectrum. */
@@ -210,7 +233,12 @@ protected:
    */
   double currentDisplayDistance() const;
   
-  
+  /** Returns either the current user entered activity (if determining activity limit), or the current display activity (if determining
+   distance limit).
+   
+   Throws exception if invalid or zero distance.
+   */
+  double currentDisplayActivity() const;
   
   /** Returns the type of limit, either activity or distance, the user currently has selected t determine. */
   LimitType limitType() const;
@@ -304,6 +332,8 @@ protected:
   Wt::WText *m_upperLimit;
   
   Wt::WText *m_errorMsg;
+  
+  Wt::WPushButton *m_fitFwhmBtn;
   
   std::shared_ptr<SpecMeas> m_our_meas;
   Wt::WContainerWidget *m_peaks;

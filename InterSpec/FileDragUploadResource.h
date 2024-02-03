@@ -35,11 +35,8 @@
 
 class FileDragUploadResource : public Wt::WResource
 {
-  //TODO - create own .h, .cpp, and .js  files for FileDragUploadResource
-  //
-  //FileDragUploadResource is designed to provide a URL to post a file to from
-  //  the client side inorder to open the file.  It is not prticularly well
-  //  tested as of yet, but seems to work; will not work on older IE..
+  //FileDragUploadResource is intended to provide a URL to post a file to from
+  //  the client side in order to open the file.
   //Uploaded file are kept on disk until this object is destructed - which
   //  could be a source of optimization
 

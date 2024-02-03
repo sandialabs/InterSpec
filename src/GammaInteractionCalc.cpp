@@ -284,6 +284,11 @@ vector<SandiaDecay::EnergyRatePair> decay_during_meas_corrected_gammas(
   vector<SandiaDecay::EnergyRatePair> gammas
                              = mixture.photons( age, SandiaDecay::NuclideMixture::OrderByEnergy );
   
+  assert( std::is_sorted(begin(gammas), end(gammas),
+         []( const SandiaDecay::EnergyRatePair &lhs, const SandiaDecay::EnergyRatePair &rhs ){
+    return lhs.energy < rhs.energy;
+  }) );
+  
   vector<vector<SandiaDecay::EnergyRatePair>> energy_rate_pairs( nthread,
                                                                 vector<SandiaDecay::EnergyRatePair>(gammas.size(), {0.0,0.0}) );
   
@@ -368,6 +373,11 @@ vector<SandiaDecay::EnergyRatePair> decay_during_meas_corrected_gammas(
   }//if( we can use standard formula to correct )
 #endif //#if( PERFORM_DEVELOPER_CHECKS )
   //cout << endl << endl << endl;
+  
+  assert( std::is_sorted(begin(corrected_gammas), end(corrected_gammas),
+         []( const SandiaDecay::EnergyRatePair &lhs, const SandiaDecay::EnergyRatePair &rhs ){
+    return lhs.energy < rhs.energy;
+  }) );
   
   return corrected_gammas;
 }//decay_during_meas_corrected_gammas(...)

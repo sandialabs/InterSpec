@@ -955,12 +955,30 @@ public:
     if( !displayPeak )
       return;
     
-    auto peaks_for_plotting = make_shared< std::deque<std::shared_ptr<const PeakDef> > >();
-    for( const auto &p : m_old_to_new_peaks )
-      if( p.second )
-        peaks_for_plotting->push_back( make_shared<PeakDef>(*p.second) );
-    
     std::shared_ptr<const ColorTheme> theme = m_viewer->getColorTheme();
+    
+    auto peaks_for_plotting = make_shared< std::deque<std::shared_ptr<const PeakDef> > >();
+    for( size_t peak_index = 0; peak_index < m_old_to_new_peaks.size(); ++peak_index )
+    {
+      const auto &p = m_old_to_new_peaks[peak_index];
+      
+      if( !p.second )
+        continue;
+      
+      auto new_peak = make_shared<PeakDef>(*p.second);
+      
+      if( peak_index != i )
+      {
+        WColor color = new_peak->lineColor();
+        if( color.isDefault() && theme )
+          color = theme->defaultPeakLine;
+        
+        color.setRgb( color.red(), color.green(), color.blue(), 50 );
+        new_peak->setLineColor( color );
+      }//if( peak_index != i )
+      
+      peaks_for_plotting->push_back( new_peak );
+    }//for( const auto &p : m_old_to_new_peaks )
     
     const double lowerx = displayPeak->mean() - 0.75*displayPeak->roiWidth();
     const double upperx = displayPeak->mean() + 0.75*displayPeak->roiWidth();

@@ -37,15 +37,18 @@
 #include <Wt/WServer>
 #include <Wt/WIOService>
 
-#include "InterSpec/PeakDef.h"
-#include "SpecUtils/SpecFile.h"
-#include "InterSpec/SpecMeas.h"
-#include "InterSpec/PeakModel.h"
-#include "SpecUtils/Filesystem.h"
-#include "SpecUtils/StringAlgo.h"
 #include "SandiaDecay/SandiaDecay.h"
+
+#include "SpecUtils/SpecFile.h"
+#include "SpecUtils/Filesystem.h"
+#include "SpecUtils/ParseUtils.h"
+#include "SpecUtils/StringAlgo.h"
 #include "SpecUtils/RapidXmlUtils.hpp"
 #include "SpecUtils/EnergyCalibration.h"
+
+#include "InterSpec/PeakDef.h"
+#include "InterSpec/SpecMeas.h"
+#include "InterSpec/PeakModel.h"
 #include "InterSpec/DetectorPeakResponse.h"
 
 using namespace Wt;
@@ -1116,71 +1119,99 @@ bool SpecMeas::write_iaea_spe( std::ostream &output,
   
   const deque< std::shared_ptr<const PeakDef> > &peaks = *peakiter->second;
   
-  //I think PEAKLABELS is a PeakEasy specific addition
-  output << "$PEAKLABELS:\r\n";
-  
-  for( deque< std::shared_ptr<const PeakDef> >::const_iterator iter = peaks.begin();
-      iter != peaks.end(); ++iter )
+  // I think PEAKLABELS is a PeakEasy specific addition, and we do not read them back in.
+  // PEAK_INFO_CSV is a InterSpec specific addition we will read back in
+  if( !peaks.empty() )
   {
-    const PeakDef &peak = **iter;
+    output << "$PEAKLABELS:\r\n";
     
-    if( peak.userLabel().size() || peak.gammaParticleEnergy() > 0.0f )
+    for( deque< std::shared_ptr<const PeakDef> >::const_iterator iter = peaks.begin();
+        iter != peaks.end(); ++iter )
     {
-      // The channel should be a floating point number
-      double channel = 0.0;
-      const shared_ptr<const SpecUtils::EnergyCalibration> energycal = summed->energy_calibration();
-      try
+      const PeakDef &peak = **iter;
+      
+      if( peak.userLabel().size() || peak.hasSourceGammaAssigned() )
       {
-        if( energycal && (energycal->type() != SpecUtils::EnergyCalType::InvalidEquationType) )
+        // The channel should be a floating point number
+        double channel = 0.0;
+        const shared_ptr<const SpecUtils::EnergyCalibration> energycal = summed->energy_calibration();
+        try
         {
-          try
+          if( energycal && (energycal->type() != SpecUtils::EnergyCalType::InvalidEquationType) )
           {
-            if( peak.xrayElement() || peak.nuclearTransition() || peak.reaction() )
-              channel = energycal->channel_for_energy( peak.gammaParticleEnergy() );
-            else
+            try
+            {
+              if( peak.xrayElement() || peak.nuclearTransition() || peak.reaction() )
+                channel = energycal->channel_for_energy( peak.gammaParticleEnergy() );
+              else
+                channel = energycal->channel_for_energy( peak.mean() );
+            }catch(...)
+            {
               channel = energycal->channel_for_energy( peak.mean() );
-          }catch(...)
-          {
-            channel = energycal->channel_for_energy( peak.mean() );
-          }
-        }//if( we have energy calibration info - which we should )
-      }catch(...)
-      {
-        // We probably shouldnt really get to here unless the peak is outside of reasonable range
-        //  of the energy calibration
-        continue;
-      }
+            }
+          }//if( we have energy calibration info - which we should )
+        }catch(...)
+        {
+          // We probably shouldnt really get to here unless the peak is outside of reasonable range
+          //  of the energy calibration
+          continue;
+        }
+        
+        string label = peak.userLabel();
+        if( peak.parentNuclide() )
+          label += " " + peak.parentNuclide()->symbol;
+        if( peak.xrayElement() )
+          label += " " + peak.xrayElement()->symbol + " xray";
+        if( peak.reaction() )
+          label += " " + peak.reaction()->name();
+        
+        switch( peak.sourceGammaType() )
+        {
+          case PeakDef::NormalGamma:                            break;
+          case PeakDef::AnnihilationGamma: label += " annih."; break;
+          case PeakDef::SingleEscapeGamma: label += " s.e.";   break;
+          case PeakDef::DoubleEscapeGamma: label += " d.e.";   break;
+          case PeakDef::XrayGamma:         label += " xray";   break;
+        }//switch( peak.sourceGammaType() )
+        
+        SpecUtils::ireplace_all( label, "\r\n", " " );
+        SpecUtils::ireplace_all( label, "\r", " " );
+        SpecUtils::ireplace_all( label, "\n", " " );
+        SpecUtils::ireplace_all( label, "\"", "&quot;" );
+        SpecUtils::ireplace_all( label, "  ", " " );
+        
+        if( label.size() && label[0]==' ' )
+          label = label.substr( 1, label.size() - 1 );
+        
+        if( label.size() )
+          output << channel << ", \"" << label << "\"\r\n";
+      }//if( there is a label for the peak )
+    }//for( loop over peaks )
+    
+    // Now add PEAK_INFO_CSV
+    shared_ptr<const SpecUtils::Measurement> summed;
+    if( measurements_.size() == 1 )
+      summed = measurements_[0];
+    else
+      summed = sum_measurements( sample_nums, detnames, nullptr );
+    
+    
+    if( summed )
+    {
+      stringstream peak_csv;
+      PeakModel::write_peak_csv( peak_csv, filename(), peaks, summed );
       
-      string label = peak.userLabel();
-      if( peak.parentNuclide() )
-        label += " " + peak.parentNuclide()->symbol;
-      if( peak.xrayElement() )
-        label += " " + peak.xrayElement()->symbol + " xray";
-      if( peak.reaction() )
-        label += " " + peak.reaction()->name();
+      // Just in case, remove all $ and : characters (should only come from peak labels),
+      //  to not confuse parsers
+      string peak_csv_str = peak_csv.str();
+      SpecUtils::ireplace_all(peak_csv_str, "$", " ");
+      SpecUtils::ireplace_all(peak_csv_str, ":", " ");
+      SpecUtils::ireplace_all(peak_csv_str, "\t", " ");
       
-      switch( peak.sourceGammaType() )
-      {
-        case PeakDef::NormalGamma:                            break;
-        case PeakDef::AnnihilationGamma: label += " annih."; break;
-        case PeakDef::SingleEscapeGamma: label += " s.e.";   break;
-        case PeakDef::DoubleEscapeGamma: label += " d.e.";   break;
-        case PeakDef::XrayGamma:         label += " xray";   break;
-      }//switch( peak.sourceGammaType() )
-      
-      SpecUtils::ireplace_all( label, "\r\n", " " );
-      SpecUtils::ireplace_all( label, "\r", " " );
-      SpecUtils::ireplace_all( label, "\n", " " );
-      SpecUtils::ireplace_all( label, "\"", "&quot;" );
-      SpecUtils::ireplace_all( label, "  ", " " );
-      
-      if( label.size() && label[0]==' ' )
-        label = label.substr( 1, label.size() - 1 );
-      
-      if( label.size() )
-        output << channel << ", \"" << label << "\"\r\n";
-    }//if( there is a label for the peak )
-  }//for( loop over peaks )
+      // Now write info to file
+      output << "$PEAK_INFO_CSV:\r\n" << peak_csv_str << "\r\n";
+    }//if( summed )
+  }//if( !peaks.empty() )
   
    //$ROI: This group contains the regions of interest marked in the spectrum.
    //      The first line the number of regions, the following lines contain the
@@ -1190,6 +1221,69 @@ bool SpecMeas::write_iaea_spe( std::ostream &output,
   
   return true;
 }//write_iaea_spe...
+
+
+bool SpecMeas::load_from_iaea( std::istream &istr )
+{
+  const size_t start_pos = istr.tellg();
+  if( !SpecUtils::SpecFile::load_from_iaea(istr) )
+    return false;
+  
+  const size_t end_pos = istr.tellg();
+  const ios::iostate end_state = istr.rdstate();
+  istr.clear();
+  istr.seekg( start_pos );
+  
+  string line;
+  while( SpecUtils::safe_get_line(istr, line) && (istr.tellg() < end_pos) )
+  {
+    SpecUtils::trim(line);
+    if( !SpecUtils::istarts_with( line, "$PEAK_INFO_CSV:") )
+      continue;
+    
+    stringstream csv;
+    while( SpecUtils::safe_get_line(istr, line) && (istr.tellg() < end_pos) )
+    {
+      SpecUtils::trim(line);
+      if( SpecUtils::istarts_with( line, "$") )
+        break;
+      csv << line << "\r\n";
+    }
+    
+    try 
+    {
+      shared_ptr<const SpecUtils::Measurement> summed;
+      if( measurements_.size() == 1 )
+        summed = measurements_[0];
+      else
+        summed = sum_measurements( sample_numbers_, detector_names_, nullptr );
+      
+      if( !summed )
+        throw runtime_error( "Failed to sum measurement for detector" );
+      
+      const vector<PeakDef> peaks = PeakModel::csv_to_candidate_fit_peaks( summed, csv );
+      
+      deque<shared_ptr<const PeakDef>> peakdeque;
+      for( const PeakDef &p : peaks )
+        peakdeque.push_back( make_shared<PeakDef>(p) );
+      
+      setPeaks( peakdeque, sample_numbers_ );
+      
+      break;
+    }catch( std::exception &e )
+    {
+      parse_warnings_.push_back( "IAEA format file contained peaks, but error reading them in: "
+                                + string(e.what()) );
+    }//try / catch
+  }//while( loop over file, looking for "$PEAK_INFO_CSV:" )
+  
+  istr.seekg( end_pos );
+  istr.clear( end_state );
+  
+  return true;
+}//bool SpecMeas::load_from_iaea( std::istream &istr )
+
+
 
 
 

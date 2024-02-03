@@ -2941,7 +2941,7 @@ void SpectrumChart::drawIndependantGausPeak( const PeakDef &peak,
   
   if( doFill )
   {
-    color.setRgb( color.red(), color.green(), color.blue(), 155 );
+    color.setRgb( color.red(), color.green(), color.blue(), (155.0/255.0)*color.alpha() );
     painter.setBrush( WBrush(color) );
     painter.setPen( WPen(WColor(color.red(),color.green(),color.blue())) );
     painter.drawPath( path );
@@ -3265,7 +3265,7 @@ void SpectrumChart::paintGausPeaks( const vector<std::shared_ptr<const PeakDef> 
       path.lineTo( start_point );
       
       WColor color = peak->lineColor().isDefault() ? m_defaultPeakColor : peak->lineColor();
-      color.setRgb( color.red(), color.green(), color.blue(), 155 );
+      color.setRgb( color.red(), color.green(), color.blue(), (155.0/255.0)*color.alpha() );
       
       painter.fillPath( path, WBrush(color) );
     }//for( size_t j = 1; j < peak_yval.size(); ++j )
@@ -3417,7 +3417,7 @@ void SpectrumChart::paintGausPeaks( const vector<std::shared_ptr<const PeakDef> 
       if( !outline )
       {
         WColor color = peak.lineColor().isDefault() ? m_defaultPeakColor : peak.lineColor();
-        color.setRgb( color.red(), color.green(), color.blue(), 155 );
+        color.setRgb( color.red(), color.green(), color.blue(), (155.0/255.0)*color.alpha() );
         
         //if( lineColors.size() > 1 )
         //{
@@ -3480,7 +3480,7 @@ void SpectrumChart::paintGausPeaks( const vector<std::shared_ptr<const PeakDef> 
         path->lineTo( mapToDevice( iter->second.first, iter->second.second ) );
      
       WColor color = peaks.front()->lineColor().isDefault() ? m_defaultPeakColor : peaks.front()->lineColor();
-      color.setRgb( color.red(), color.green(), color.blue(), 155 );
+      color.setRgb( color.red(), color.green(), color.blue(), (155.0/255.0)*color.alpha() );
       painter.fillPath( *path, WBrush(color) );
     }//if( path )
   }else if( hadGlobalCont && continuumVals.size()>2 )

@@ -1051,15 +1051,11 @@ ReferencePhotopeakDisplay::ReferencePhotopeakDisplay(
   SpectraFileModel *specFileModel = specViewer->fileManager()->model();
   m_detectorDisplay = new DetectorDisplay( specViewer, specFileModel );
   
-  //ToDo: When the detector is changed, should actually call a specialized function
-  //      so all of the persisted gamma lines will be changed...
-  //      Also, it doesnt look like changing the DRF changes current showing primary lines...
+  specViewer->detectorChanged().connect( boost::bind( &ReferencePhotopeakDisplay::handleDrfChange, this, boost::placeholders::_1 ) );
+  specViewer->detectorModified().connect( boost::bind( &ReferencePhotopeakDisplay::handleDrfChange, this, boost::placeholders::_1 ) );
   
-  specViewer->detectorChanged().connect( boost::bind( &ReferencePhotopeakDisplay::handleIsotopeChange, this, true ) );
-  specViewer->detectorModified().connect( boost::bind( &ReferencePhotopeakDisplay::handleIsotopeChange, this, true ) );
-  
-  // If foreground spectrum _file_ changes, then the RIID analysis results of the siggested  
-  //  nuclides may need updating.  However, for simplicity, we'll update suggested nuclides 
+  // If foreground spectrum _file_ changes, then the RIID analysis results of the suggested
+  //  nuclides may need updating.  However, for simplicity, we'll update suggested nuclides
   //  whenever the foreground gets updated
   specViewer->displayedSpectrumChanged().connect(this, &ReferencePhotopeakDisplay::handleSpectrumChange);
 
@@ -1421,6 +1417,24 @@ void ReferencePhotopeakDisplay::handleIsotopeChange( const bool useCurrentAge )
   else if( m_persisted.empty() )
     m_nuclidesCleared.emit();
 }//void handleIsotopeChange();
+
+
+void ReferencePhotopeakDisplay::handleDrfChange( std::shared_ptr<DetectorPeakResponse> det )
+{
+  //ToDo: When the detector is changed, should maybe update all the persisted gamma lines
+  //      as well - needs more thought
+  
+  // Block the undoing this, as the
+  UpdateGuard guard( m_currently_updating );
+  
+  // The detector display may not have been updated yet (since it is connected to the
+  //  `InterSpec::detectorChanged()` signal earlier, the call to `DetectorDisplay::setDetector(det)`
+  //  actually happens later).
+  m_detectorDisplay->setDetector( det );
+  
+  const RefLineInput user_input = userInput();
+  updateDisplayFromInput( user_input );
+}//void handleDrfChange()
 
 
 std::map<std::string,std::vector<Wt::WColor>> ReferencePhotopeakDisplay::currentlyUsedPeakColors()

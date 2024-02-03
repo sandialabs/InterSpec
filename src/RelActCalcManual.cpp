@@ -2423,12 +2423,12 @@ NucMatchResults fill_in_nuclide_info( const vector<RelActCalcManual::GenericPeak
             // See what the decay correction is here, and note to then include in the results.
             assert( corr_photons.size() == photons.size() );
             assert( std::is_sorted(begin(corr_photons), end(corr_photons),
-                   []( const SandiaDecay::EnergyRatePair &lhs, const SandiaDecay::EnergyRatePair &rhs ){ 
-              return lhs.energy <= rhs.energy;
+                   []( const SandiaDecay::EnergyRatePair &lhs, const SandiaDecay::EnergyRatePair &rhs ){
+              return lhs.energy < rhs.energy;
             }) );
             assert( std::is_sorted(begin(photons), end(photons),
                    []( const SandiaDecay::EnergyRatePair &lhs, const SandiaDecay::EnergyRatePair &rhs ){
-              return lhs.energy <= rhs.energy;
+              return lhs.energy < rhs.energy;
             }) );
             //for( size_t i = 0; i < std::min(photons.size(),corr_photons.size()); ++i ){
             //  assert( fabs(photons[i].energy - corr_photons[i].energy) < 0.001 );

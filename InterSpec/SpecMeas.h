@@ -124,11 +124,14 @@ public:
   //                               m_displayType, m_displayedSampleNumbers;
   virtual bool write_2006_N42( std::ostream &ostr ) const;
 
-  //write_iaea_spe(...) Writes ascii IAEA SPE file; the specialization in
-  //  SpecMeas also adds in peak information.
+  /** Writes ascii IAEA SPE file; calls `SpecUtils::SpecFile::write_iaea_spe(...)`, and then adds
+   peak information.
+   */
   virtual bool write_iaea_spe( std::ostream &output,
                                std::set<int> sample_nums,
                                const std::set<int> &det_nums ) const;
+  /** Adds reading back in peak information (only from InterSpec exported SPE files though). */
+  virtual bool load_from_iaea( std::istream &istr );
   
   virtual std::shared_ptr< ::rapidxml::xml_document<char> > create_2012_N42_xml() const;
   

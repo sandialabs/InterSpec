@@ -279,8 +279,6 @@ public:
         m_current_age = PeakDef::defaultDecayTime( nuc, &agestr );
       }//if( decay to stable only ) / else
       
-      cout << "PhysicalUnits::sm_timeDurationHalfLiveOptionalRegex='" << PhysicalUnits::sm_timeDurationHalfLiveOptionalRegex << "'" << endl;
-      
       if( m_age_is_settable )
       {
         m_age_edit_tmp = new WLineEdit( agestr, cell );

@@ -97,6 +97,13 @@
   color: red;
 }
 
+.DetectionLimitTool button.MdaFitFwhm.Wt-btn.with-label.LightButton
+{
+  align-self: center;
+  color: red;
+  border: 1px solid red;
+}
+
 .DetectionLimitTool .MdaChartLogLin
 {
   justify-self: end;
