@@ -2290,8 +2290,6 @@ void DetectionLimitTool::doCalc()
 {
   try
   {
-    //  blah blah blah - Distance detection still not quite working right
-    
     const bool useCurie = use_curie_units();
   
     const bool is_dist_limit = (limitType() == DetectionLimitTool::LimitType::Distance);
@@ -2372,6 +2370,7 @@ void DetectionLimitTool::doCalc()
         m_errorMsg->setText( "No peaks are selected" );
         m_errorMsg->show();
       }
+      m_peakModel->setPeaks( vector<shared_ptr<const PeakDef>>{} );
       
       return;
     }//if( !nused )
@@ -2390,8 +2389,8 @@ void DetectionLimitTool::doCalc()
     //  for a uBq - a limit low enough its not likely to ever be encountered
     //const double min_allowed_quantity = 1.0E-6*PhysicalUnits::bq;
     const double min_allowed_quantity = is_dist_limit
-    ? (shielding_has_thick ? shield_thickness : 0.1*PhysicalUnits::mm)
-    : 0.0;
+                              ? (shielding_has_thick ? shield_thickness : 0.1*PhysicalUnits::mm)
+                              : 0.0;
     
     if( min_search_quantity < min_allowed_quantity )
       min_search_quantity = min_allowed_quantity;
@@ -2774,63 +2773,84 @@ void DetectionLimitTool::doCalc()
     const string quantity_str = print_quantity(overallBestQuantity, 3);
     char buffer[128];
     
-    
-    if( is_dist_limit )
+    string limit_str;
+    if( foundLowerCl && foundUpperCl )
     {
-      const double activity = other_quantity;
+      vector<PeakDef> peaks;
+      double lowerQuantityChi2 = -999.9, upperQuantityChi2 = -999.9;
+      if( is_dist_limit )
+      {
+        computeForActivity( other_quantity, lowerLimit, peaks, lowerQuantityChi2, numDOF );
+        computeForActivity( other_quantity, upperLimit, peaks, upperQuantityChi2, numDOF );
+      }else
+      {
+        computeForActivity( lowerLimit, other_quantity, peaks, lowerQuantityChi2, numDOF );
+        computeForActivity( upperLimit, other_quantity, peaks, upperQuantityChi2, numDOF );
+      }
       
-      string limit_str;
-      if( foundLowerCl && foundUpperCl )
+      limit_str = print_quantity( overallBestQuantity, 3 );
+      const string lower_limit_str = print_quantity( lowerLimit, 2 );
+      const string upper_limit_str = print_quantity( upperLimit, 2 );
+      
+      // Chi2 at upper and lower limits *should* be the same, but since I dont totally trust
+      //  everything yet, we'll allow showing a discrepancy so we can see something is up
+      if( fabs(lowerQuantityChi2 - upperQuantityChi2) < 0.05*std::max(lowerQuantityChi2, upperQuantityChi2) )
+        snprintf( buffer, sizeof(buffer), "%.1f", 0.5*(lowerQuantityChi2 + upperQuantityChi2) );
+      else
+        snprintf( buffer, sizeof(buffer), "%.1f and %.1f", lowerQuantityChi2, upperQuantityChi2 );
+      
+      const string chi2_str = buffer;
+      
+      snprintf( buffer, sizeof(buffer), "%.1f%% coverage in [%s, %s], &chi;<sup>2</sup>=%s",
+               0.1*std::round(1000.0*wantedCl), lower_limit_str.c_str(), upper_limit_str.c_str(),
+               chi2_str.c_str() );
+    }else if( !foundLowerCl && !foundUpperCl )
+    {
+      limit_str = print_quantity( overallBestQuantity, 3 );
+      snprintf( buffer, sizeof(buffer), "Error: failed upper and lower limits at %.1f%%",
+               0.1*std::round(1000.0*wantedCl) );
+    }else if( foundLowerCl )
+    {
+      vector<PeakDef> peaks;
+      double lowerQuantityChi2 = -999.9;
+      if( is_dist_limit )
       {
-        vector<PeakDef> peaks;
-        double lowerQuantityChi2 = -999.9, upperQuantityChi2 = -999.9;
-        computeForActivity( activity, lowerLimit, peaks, lowerQuantityChi2, numDOF );
-        computeForActivity( activity, upperLimit, peaks, upperQuantityChi2, numDOF );
-        
-        limit_str = print_quantity( overallBestQuantity, 3 );
-        const string lower_limit_str = print_quantity( lowerLimit, 2 );
-        const string upper_limit_str = print_quantity( upperLimit, 2 );
-        
-        // Chi2 at upper and lower limits *should* be the same, but since I dont totally trust
-        //  everything yet, we'll allow showing a discrepancy so we can see something is up
-        if( fabs(lowerQuantityChi2 - upperQuantityChi2) < 0.05*std::max(lowerQuantityChi2, upperQuantityChi2) )
-          snprintf( buffer, sizeof(buffer), "%.1f", 0.5*(lowerQuantityChi2 + upperQuantityChi2) );
-        else
-          snprintf( buffer, sizeof(buffer), "%.1f and %.1f", lowerQuantityChi2, upperQuantityChi2 );
-        
-        const string chi2_str = buffer;
-        
-        snprintf( buffer, sizeof(buffer), "%.1f%% coverage in [%s, %s], &chi;<sup>2</sup>=%s",
-                  0.1*std::round(1000.0*wantedCl), lower_limit_str.c_str(), upper_limit_str.c_str(),
-                 chi2_str.c_str() );
-      }else if( !foundLowerCl && !foundUpperCl )
-      {
-        limit_str = print_quantity( overallBestQuantity, 3 );
-        snprintf( buffer, sizeof(buffer), "%s", "Error: Didn't find detection at 95% limit" );
-      }else if( foundLowerCl )
-      {
-        vector<PeakDef> peaks;
-        double lowerQuantityChi2 = -999.9;
-        computeForActivity( activity, lowerLimit, peaks, lowerQuantityChi2, numDOF );
+        computeForActivity( other_quantity, lowerLimit, peaks, lowerQuantityChi2, numDOF );
         
         limit_str = print_quantity( lowerLimit, 3 );
         const string print_limit_str = print_quantity( lowerLimit, 2 );
         snprintf( buffer, sizeof(buffer), "%.1f%% coverage at %s with &chi;<sup>2</sup>=%.1f",
-                  0.1*std::round(1000.0*wantedCl), print_limit_str.c_str(), lowerQuantityChi2 );
+                 0.1*std::round(1000.0*wantedCl), print_limit_str.c_str(), lowerQuantityChi2 );
+      }else
+      {
+        //computeForActivity( lowerLimit, other_quantity, peaks, lowerQuantityChi2, numDOF );
+        snprintf( buffer, sizeof(buffer), "Error: Didn't find %.1f%% CL activity",
+                 0.1*std::round(1000.0*wantedCl));
+      }
+    }else
+    {
+      assert( foundUpperCl );
+      
+      if( is_dist_limit )
+      {
+        snprintf( buffer, sizeof(buffer), "Error: Didn't find %.1f%% CL det. distance",
+                 0.1*std::round(1000.0*wantedCl) );
       }else
       {
         vector<PeakDef> peaks;
         double upperQuantityChi2 = -999.9;
-        computeForActivity( activity, upperLimit, peaks, upperQuantityChi2, numDOF );
-        
-        assert( foundUpperCl );
+        computeForActivity( upperLimit, other_quantity, peaks, upperQuantityChi2, numDOF );
         limit_str = print_quantity(upperLimit,3);
         const string print_limit_str = print_quantity( upperLimit, 2 );
         snprintf( buffer, sizeof(buffer), "%.1f%% coverage at %s with &chi;<sup>2</sup>=%.1f",
-                  0.1*std::round(1000.0*wantedCl), print_limit_str.c_str(), upperQuantityChi2 );
-      }
-      
-      m_upperLimit->setText( WString::fromUTF8(buffer) );
+                 0.1*std::round(1000.0*wantedCl), print_limit_str.c_str(), upperQuantityChi2 );
+      }//if( is_dist_limit ) / else
+    }
+    
+    m_upperLimit->setText( WString::fromUTF8(buffer) );
+    
+    if( is_dist_limit )
+    {
       m_displayDistance->setText( WString::fromUTF8(limit_str) );
       
       if( foundUpperCl )
@@ -2842,74 +2862,15 @@ void DetectionLimitTool::doCalc()
         snprintf( buffer, sizeof(buffer), "&chi;<sup>2</sup> is %.1f at large distance, %i DOF",
                  overallBestChi2, numDOF );
       }
-      
-      m_bestChi2Act->setText( buffer );
     }else
     {
-      const double distance = other_quantity;
-      
-      string limit_str;
-      if( foundLowerCl && foundUpperCl )
-      {
-        vector<PeakDef> peaks;
-        double lowerQuantityChi2 = -999.9, upperQuantityChi2 = -999.9;
-        computeForActivity( lowerLimit, distance, peaks, lowerQuantityChi2, numDOF );
-        computeForActivity( upperLimit, distance, peaks, upperQuantityChi2, numDOF );
-        
-        limit_str = print_quantity( overallBestQuantity, 3 );
-        const string lower_limit_str = print_quantity( lowerLimit, 2 );
-        const string upper_limit_str = print_quantity( upperLimit, 2 );
-        
-        // Chi2 at upper and lower limits *should* be the same, but since I dont totally trust
-        //  everything yet, we'll allow showing a discrepancy so we can see something is up
-        if( fabs(lowerQuantityChi2 - upperQuantityChi2) < 0.05*std::max(lowerQuantityChi2, upperQuantityChi2) )
-          snprintf( buffer, sizeof(buffer), "%.1f", 0.5*(lowerQuantityChi2 + upperQuantityChi2) );
-        else
-          snprintf( buffer, sizeof(buffer), "%.1f and %.1f", lowerQuantityChi2, upperQuantityChi2 );
-        
-        const string chi2_str = buffer;
-        
-        snprintf( buffer, sizeof(buffer), "%.1f%% coverage in [%s, %s], &chi;<sup>2</sup>=%s",
-                  0.1*std::round(1000.0*wantedCl), lower_limit_str.c_str(), upper_limit_str.c_str(),
-                 chi2_str.c_str() );
-      }else if( !foundLowerCl && !foundUpperCl )
-      {
-        limit_str = print_quantity( overallBestQuantity, 3 );
-        snprintf( buffer, sizeof(buffer), "%s", "Error: Didn't find detection at 95% limit" );
-      }else if( foundLowerCl )
-      {
-        vector<PeakDef> peaks;
-        double lowerQuantityChi2 = -999.9;
-        computeForActivity( lowerLimit, distance, peaks, lowerQuantityChi2, numDOF );
-        
-        limit_str = print_quantity( lowerLimit, 3 );
-        const string print_limit_str = print_quantity( lowerLimit, 2 );
-        snprintf( buffer, sizeof(buffer), "%.1f%% coverage at %s with &chi;<sup>2</sup>=%.1f",
-                  0.1*std::round(1000.0*wantedCl), print_limit_str.c_str(), lowerQuantityChi2 );
-      }else
-      {
-        vector<PeakDef> peaks;
-        double upperQuantityChi2 = -999.9;
-        computeForActivity( upperLimit, distance, peaks, upperQuantityChi2, numDOF );
-        
-        assert( foundUpperCl );
-        limit_str = print_quantity(upperLimit,3);
-        const string print_limit_str = print_quantity( upperLimit, 2 );
-        snprintf( buffer, sizeof(buffer), "%.1f%% coverage at %s with &chi;<sup>2</sup>=%.1f",
-                  0.1*std::round(1000.0*wantedCl), print_limit_str.c_str(), upperQuantityChi2 );
-      }
-      
-      if( foundUpperCl )
-        m_upperLimit->setText( buffer );
-      else
-        m_upperLimit->setText( "Error: Didn't find upper 95% limit" );
-      
       m_displayActivity->setText( WString::fromUTF8(limit_str) );
       
       snprintf( buffer, sizeof(buffer), "Best &chi;<sup>2</sup> of %.1f at %s, %i DOF",
-                overallBestChi2, quantity_str.c_str(), numDOF );
-      m_bestChi2Act->setText( buffer );
+               overallBestChi2, quantity_str.c_str(), numDOF );
     }//if( is_dist_limit ) / else
+    
+    m_bestChi2Act->setText( buffer );
     
     
     if( foundLowerCl && (lowerLimit > 0.0) )
@@ -2992,6 +2953,7 @@ void DetectionLimitTool::doCalc()
     m_bestChi2Act->setText( "" );
     m_upperLimit->setText( "" );
     m_results->hide();
+    m_peakModel->setPeaks( vector<shared_ptr<const PeakDef>>{} );
     m_errorMsg->setText( "Error calculating Chi2: " + string(e.what()) );
     
     const string jsgraph = m_chi2Chart->jsRef() + ".chart";
