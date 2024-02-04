@@ -144,7 +144,7 @@ string det_eff_geom_type_postfix( DetectorPeakResponse::EffGeometryType type )
 // We cant have MdaPeakRow in a private namespace since we forward declare it in the header.
 class MdaPeakRow : public WContainerWidget
 {
-public:
+protected:
   DetectionLimitTool::MdaPeakRowInput m_input;
   
   const SandiaDecay::Nuclide *const m_nuclide;
@@ -186,10 +186,6 @@ public:
   
   Wt::Signal<> m_changed;
   
-  const DetectionLimitTool::MdaPeakRowInput &input() const
-  {
-    return m_input;
-  }
   
   void handleUseForLikelihoodChanged()
   {
@@ -200,32 +196,7 @@ public:
     m_input.use_for_likelihood = use;
     emitChanged();
   }
-  
-  DetectionLimitCalc::CurieMdaInput currieInput() const
-  {
-    auto m = m_input.measurement;
-    if( !m || (m->num_gamma_channels() < 16) )
-      throw runtime_error( "No measurement." );
-    
-    const float roi_lower_energy = m_roi_start->value();
-    const float roi_upper_energy = m_roi_end->value();
-    
-    const size_t nsidebin = static_cast<size_t>( std::round( std::max( 1.0f, m_num_side_channels->value() ) ) );
-    const size_t nchannels = m->num_gamma_channels();
-    
-    DetectionLimitCalc::CurieMdaInput input;
-    input.spectrum = m;
-    input.gamma_energy = m_input.energy;
-    input.roi_lower_energy = m_roi_start->value();
-    input.roi_upper_energy = m_roi_end->value();
-    input.num_lower_side_channels = nsidebin;
-    input.num_upper_side_channels = nsidebin;
-    input.detection_probability = m_input.confidence_level;
-    input.additional_uncertainty = 0.0f;  // TODO: can we get the DRFs contribution to form this?
-    
-    return input;
-  }//DetectionLimitCalc::CurieMdaInput currieInput() const
-  
+
   
   void setSimplePoisonTxt()
   {
@@ -523,10 +494,13 @@ public:
   
   void handleFixContinuumChange()
   {
-    m_continuum->setEnabled( !m_fix_decon_continuum->isChecked() );
-    
-    if( m_fix_decon_continuum->isChecked() )
+    m_input.fixed_decon_continuum = m_fix_decon_continuum->isChecked();
+    m_continuum->setEnabled( !m_input.fixed_decon_continuum );
+    if( m_input.fixed_decon_continuum )
+    {
       m_continuum->setCurrentIndex( 0 );
+      m_input.decon_continuum_type = PeakContinuum::OffsetType::Linear;
+    }
     
     emitChanged();
   }//void handleFixContinuumChange()
@@ -549,10 +523,25 @@ public:
       m_num_side_channels->setValue(numSideChannel);
     }
     
-    m_input.roi_start = m_roi_start->value();
-    m_input.roi_end = m_roi_end->value();
     assert( numSideChannel > 0.0 );
     m_input.num_side_channels = static_cast<size_t>( std::round(numSideChannel) );
+    
+    switch( m_continuum->currentIndex() )
+    {
+      case 0:
+        m_input.decon_continuum_type = PeakContinuum::OffsetType::Linear;
+        break;
+      case 1:
+        m_input.decon_continuum_type = PeakContinuum::OffsetType::Quadratic;
+        break;
+      default:
+        assert( 0 );
+        m_input.decon_continuum_type = PeakContinuum::OffsetType::Linear;
+        m_continuum->setCurrentIndex( 0 );
+        break;
+    }//switch( m_continuum->currentIndex() )
+    
+    m_input.fixed_decon_continuum = m_fix_decon_continuum->isChecked();
     
     emitChanged();
   }//void roiChanged()
@@ -578,17 +567,6 @@ public:
     return static_cast<float>( cal->energy_for_channel(whole) );
   }//float roundToNearestChannelEdge( float energy )
   
-  
-  void setRoiStart( const float energy )
-  {
-    m_roi_start->setValue( roundToNearestChannelEdge(energy) );
-  }//void setRoiStart( float energy )
-  
-  
-  void setRoiEnd( const float energy )
-  {
-    m_roi_end->setValue( roundToNearestChannelEdge(energy) );
-  }//void setRoiEnd( float energy )
   
 public:
   MdaPeakRow( const DetectionLimitTool::MdaPeakRowInput &input,
@@ -617,6 +595,8 @@ public:
     assert( input.drf && input.drf->isValid() && input.drf->hasResolutionInfo() );
     assert( input.confidence_level > 0.5 && input.confidence_level < 1.0 );
     assert( input.roi_start < input.roi_end );
+    assert( input.decon_continuum_type == PeakContinuum::OffsetType::Linear
+           || input.decon_continuum_type == PeakContinuum::OffsetType::Quadratic );
     
     const bool fixed_geom = input.drf->isFixedGeometry();
     const DetectorPeakResponse::EffGeometryType det_geom = input.drf->geometryType();
@@ -683,6 +663,37 @@ public:
     m_continuum->addItem( "Quadratic" );
     m_continuum->setCurrentIndex( 0 );
     label->setBuddy( m_continuum );
+  
+    if( m_input.fixed_decon_continuum )
+    {
+      // See notes for `DeconRoiInfo::fix_continuum_to_edges` about how we could/should change
+      //  only allowing linear continuums for fixed continuums
+      assert( input.decon_continuum_type == PeakContinuum::OffsetType::Linear );
+      m_input.decon_continuum_type = PeakContinuum::OffsetType::Linear;
+    }
+    
+    switch( m_input.decon_continuum_type )
+    {
+      case PeakContinuum::Linear:
+        m_continuum->setCurrentIndex( 0 );
+        break;
+      case PeakContinuum::Quadratic:
+        m_continuum->setCurrentIndex( 1 );
+        break;
+        
+      case PeakContinuum::NoOffset:
+      case PeakContinuum::Constant:
+      case PeakContinuum::Cubic:
+      case PeakContinuum::FlatStep:
+      case PeakContinuum::LinearStep:
+      case PeakContinuum::BiLinearStep:
+      case PeakContinuum::External:
+        assert( 0 );
+        m_continuum->setCurrentIndex( 0 );
+        m_input.decon_continuum_type = PeakContinuum::Linear;
+        break;
+    }//switch( input.offset_type )
+    
     
     WContainerWidget *currieLimitContent = new WContainerWidget( rightColumn );
     currieLimitContent->addStyleClass( "MdaRowCurrieLimitContent" );
@@ -727,6 +738,7 @@ public:
     
     m_fix_decon_continuum = new WCheckBox( "Fixed continuum", leftColumn );
     m_fix_decon_continuum->addStyleClass( "GridFirstCol GridFithRow GridSpanTwoCol" );
+    m_fix_decon_continuum->setChecked( input.fixed_decon_continuum );
     
     m_fix_decon_continuum->checked().connect( this, &MdaPeakRow::handleFixContinuumChange );
     m_fix_decon_continuum->unChecked().connect( this, &MdaPeakRow::handleFixContinuumChange );
@@ -736,8 +748,8 @@ public:
     m_roi_start->valueChanged().connect( this, &MdaPeakRow::roiChanged );
     m_roi_end->valueChanged().connect( this, &MdaPeakRow::roiChanged );
     m_num_side_channels->valueChanged().connect( this, &MdaPeakRow::roiChanged );
-    m_continuum->activated().connect( this, &MdaPeakRow::emitChanged );
-    m_continuum->changed().connect( this, &MdaPeakRow::emitChanged );
+    m_continuum->activated().connect( this, &MdaPeakRow::roiChanged );
+    m_continuum->changed().connect( this, &MdaPeakRow::roiChanged );
     
     m_continuum->disable();
     m_fix_decon_continuum->disable();
@@ -750,6 +762,97 @@ public:
     //InterSpecUser::addCallbackWhenChanged( viewer->m_user, "DisplayBecquerel",
     //                                      boost::bind(&MdaPeakRow::setSimplePoisonTxt, this) );
   }//MdaPeakRow constructor
+  
+  
+  double simple_excess_counts() const
+  {
+    return m_simple_excess_counts;
+  }
+  
+  double simple_mda() const
+  {
+    return m_simple_mda;
+  }
+  
+  double simple_max_det_dist() const
+  {
+    return m_simple_max_det_dist;
+  }
+  
+  Wt::Signal<> &changed()
+  {
+    return m_changed;
+  }
+  
+  void setRoiStart( const float energy )
+  {
+    const float value = roundToNearestChannelEdge(energy);
+    assert( roundToNearestChannelEdge(value) == value );
+    const float oldval = m_roi_start->value();
+    m_roi_start->setValue( value );
+    m_input.roi_start = value;
+    if( value != oldval )
+      emitChanged();
+  }//void setRoiStart( float energy )
+  
+  
+  void setRoiEnd( const float energy )
+  {
+    const float value = roundToNearestChannelEdge(energy);
+    assert( roundToNearestChannelEdge(value) == value );
+    const float oldval = m_roi_end->value();
+    m_roi_end->setValue( value );
+    m_input.roi_end = value;
+    if( value != oldval )
+      emitChanged();
+  }//void setRoiEnd( float energy )
+  
+
+  const DetectionLimitTool::MdaPeakRowInput &input() const
+  {
+    // Some sanity checks to make sure `m_input` has been kept in=sync with GUI widgets
+    assert( fabs( m_input.roi_start - m_roi_start->value() ) < 0.1 );
+    assert( fabs( m_input.roi_end - m_roi_end->value() ) < 0.1 );
+    
+    //roi_start/roi_end should already be rounded to nearest bin edge
+    assert( fabs(m_input.roi_start - roundToNearestChannelEdge( m_roi_start->value() ) ) < 0.01 );
+    assert( fabs(m_input.roi_end - roundToNearestChannelEdge( m_roi_end->value() ) ) < 0.01 );
+
+    assert( m_input.fixed_decon_continuum == m_fix_decon_continuum->isChecked() );
+    assert( m_input.num_side_channels == m_num_side_channels->value() );
+    assert( (m_continuum->currentIndex() == 0)
+           || (m_continuum->currentIndex() == 1) );
+    assert( ((m_continuum->currentIndex() == 0) && (m_input.decon_continuum_type == PeakContinuum::OffsetType::Linear))
+           || ((m_continuum->currentIndex() == 1) && (m_input.decon_continuum_type == PeakContinuum::OffsetType::Quadratic)) );
+    assert( m_input.use_for_likelihood == m_use_for_likelihood->isChecked() );
+    
+    return m_input;
+  }
+  
+  DetectionLimitCalc::CurieMdaInput currieInput() const
+  {
+    auto m = m_input.measurement;
+    if( !m || (m->num_gamma_channels() < 16) )
+      throw runtime_error( "No measurement." );
+    
+    const float roi_lower_energy = m_roi_start->value();
+    const float roi_upper_energy = m_roi_end->value();
+    
+    const size_t nsidebin = static_cast<size_t>( std::round( std::max( 1.0f, m_num_side_channels->value() ) ) );
+    const size_t nchannels = m->num_gamma_channels();
+    
+    DetectionLimitCalc::CurieMdaInput input;
+    input.spectrum = m;
+    input.gamma_energy = m_input.energy;
+    input.roi_lower_energy = m_roi_start->value();
+    input.roi_upper_energy = m_roi_end->value();
+    input.num_lower_side_channels = nsidebin;
+    input.num_upper_side_channels = nsidebin;
+    input.detection_probability = m_input.confidence_level;
+    input.additional_uncertainty = 0.0f;  // TODO: can we get the DRFs contribution to form this?
+    
+    return input;
+  }//DetectionLimitCalc::CurieMdaInput currieInput() const
   
   
   void createMoreInfoWindow()
@@ -1585,14 +1688,15 @@ void DetectionLimitTool::roiDraggedCallback( double new_roi_lower_energy,
     auto rw = dynamic_cast<MdaPeakRow *>( w );
     assert( rw );
     
-    const float this_roi_start = rw->m_roi_start->value();
+    const DetectionLimitTool::MdaPeakRowInput &input = rw->input();
+    
+    const float this_roi_start = input.roi_start;
     if( fabs(this_roi_start - original_lower_energy) < 0.1 )
     {
-      rw->m_roi_start->setValue( new_roi_lower_energy );
-      rw->m_roi_end->setValue( new_roi_upper_energy );
-      rw->emitChanged();
+      rw->setRoiStart( new_roi_lower_energy );
+      rw->setRoiEnd( new_roi_upper_energy );
       
-      cout << "Updated ROI of peak at " << rw->m_input.energy << " keV to go from "
+      cout << "Updated ROI of peak at " << rw->input().energy << " keV to go from "
            << new_roi_lower_energy << " to " << new_roi_upper_energy << " keV" << endl;
       return;
     }
@@ -2181,7 +2285,8 @@ void DetectionLimitTool::handleInputChange()
     input.confidence_level = confLevel;
     input.trans_through_air = line.air_transmission;
     input.trans_through_shielding = line.shield_transmission;
-    
+    input.fixed_decon_continuum = false;
+    input.decon_continuum_type = PeakContinuum::OffsetType::Linear;
     
     const auto oldValPos = m_previousRoiValues.find( energy );
     if( oldValPos != end(m_previousRoiValues) )
@@ -2194,13 +2299,20 @@ void DetectionLimitTool::handleInputChange()
       input.roi_start = oldval.roi_start;
       input.roi_end = oldval.roi_end;
       input.num_side_channels = oldval.num_side_channels;
-      
-      // TODO: we should try to preserve continuum type
+      input.fixed_decon_continuum = oldval.fixed_decon_continuum;
+      input.decon_continuum_type = oldval.decon_continuum_type;
+      if( input.fixed_decon_continuum )
+      {
+        // See notes for `DeconRoiInfo::fix_continuum_to_edges` about how we could/should change
+        //  only allowing linear continuums for fixed continuums
+        assert( input.decon_continuum_type == PeakContinuum::OffsetType::Linear );
+        input.decon_continuum_type = PeakContinuum::OffsetType::Linear;
+      }
     }//if( we have seen this energy before )
     
     auto row = new MdaPeakRow( input, m_currentNuclide, m_peaks );
     
-    row->m_changed.connect( this, &DetectionLimitTool::scheduleCalcUpdate );
+    row->changed().connect( this, &DetectionLimitTool::scheduleCalcUpdate );
   }//for( const auto &line : lines )
   
   m_results->show();
@@ -2309,15 +2421,15 @@ void DetectionLimitTool::doCalc()
     {
       auto rw = dynamic_cast<MdaPeakRow *>( w );
       assert( rw );
-      if( !rw->m_use_for_likelihood->isChecked() )
+      if( !rw->input().use_for_likelihood )
         continue;
     
       const MdaPeakRowInput &input = rw->input();
       const bool fixed_geom = input.drf->isFixedGeometry();
       const bool air_atten = (!fixed_geom && input.do_air_attenuation);
       det_geom = input.drf->geometryType(); //assumes all peaks have same DRF - which they should
-    
-      const double row_limit = std::max( 0.0, (is_dist_limit ? rw->m_simple_max_det_dist : rw->m_simple_mda) );
+      
+      const double row_limit = std::max( 0.0, (is_dist_limit ? rw->simple_max_det_dist() : rw->simple_mda()) );
     
       ++nused;
     
@@ -2325,8 +2437,8 @@ void DetectionLimitTool::doCalc()
       {
         min_search_quantity = std::min( min_search_quantity, row_limit );
         max_search_quantity = std::max( max_search_quantity, row_limit );
-      
-        if( rw->m_simple_excess_counts > 0.0 )
+        
+        if( rw->simple_excess_counts() > 0.0 )
         {
           // `row_limit` is the upper limit, but we'll compute nominal value, to help increase range
           if( is_dist_limit )
@@ -2342,7 +2454,7 @@ void DetectionLimitTool::doCalc()
             
             const double activity = other_quantity;
             
-            const double nominal_dist = sqrt(counts_4pi * det_eff_1m * activity * def_dist * def_dist / rw->m_simple_excess_counts);
+            const double nominal_dist = sqrt(counts_4pi * det_eff_1m * activity * def_dist * def_dist / rw->simple_excess_counts());
             
             min_search_quantity = std::min( min_search_quantity, nominal_dist );
             max_search_quantity = std::max( max_search_quantity, nominal_dist );
@@ -2354,7 +2466,7 @@ void DetectionLimitTool::doCalc()
                                        : input.counts_per_bq_into_4pi);
             const double gammas_per_bq = det_eff * counts_4pi;
             
-            const double nominalActivity = rw->m_simple_excess_counts / gammas_per_bq;
+            const double nominalActivity = rw->simple_excess_counts() / gammas_per_bq;
             min_search_quantity = std::min( min_search_quantity, nominalActivity );
             max_search_quantity = std::max( max_search_quantity, nominalActivity );
           }//if( is_dist_limit ) / else
@@ -2801,8 +2913,13 @@ void DetectionLimitTool::doCalc()
       
       const string chi2_str = buffer;
       
-      snprintf( buffer, sizeof(buffer), "%.1f%% coverage in [%s, %s], &chi;<sup>2</sup>=%s",
-               0.1*std::round(1000.0*wantedCl), lower_limit_str.c_str(), upper_limit_str.c_str(),
+      //snprintf( buffer, sizeof(buffer), "%.1f%% coverage in [%s, %s], &chi;<sup>2</sup>=%s",
+      //         0.1*std::round(1000.0*wantedCl), lower_limit_str.c_str(), upper_limit_str.c_str(),
+      //         chi2_str.c_str() );
+      
+      snprintf( buffer, sizeof(buffer), "Between %s and %s at %.1f%% CL, &chi;<sup>2</sup>=%s",
+               lower_limit_str.c_str(), upper_limit_str.c_str(),
+               0.1*std::round(1000.0*wantedCl),
                chi2_str.c_str() );
     }else if( !foundLowerCl && !foundUpperCl )
     {
@@ -2819,8 +2936,14 @@ void DetectionLimitTool::doCalc()
         
         limit_str = print_quantity( lowerLimit, 3 );
         const string print_limit_str = print_quantity( lowerLimit, 2 );
-        snprintf( buffer, sizeof(buffer), "%.1f%% coverage at %s with &chi;<sup>2</sup>=%.1f",
-                 0.1*std::round(1000.0*wantedCl), print_limit_str.c_str(), lowerQuantityChi2 );
+        
+        //More stat-nerd-esk language, maybe, if its even correct, but lets print something
+        //  easier to interpret, for the commoners, like myself.
+        //snprintf( buffer, sizeof(buffer), "%.1f%% coverage at %s with &chi;<sup>2</sup>=%.1f",
+        //         0.1*std::round(1000.0*wantedCl), print_limit_str.c_str(), lowerQuantityChi2 );
+        
+        snprintf( buffer, sizeof(buffer), "Can detect at %s at %.1f%% CL, &chi;<sup>2</sup>=%.1f",
+                 print_limit_str.c_str(), 0.1*std::round(1000.0*wantedCl), lowerQuantityChi2 );
       }else
       {
         //computeForActivity( lowerLimit, other_quantity, peaks, lowerQuantityChi2, numDOF );
@@ -2842,11 +2965,15 @@ void DetectionLimitTool::doCalc()
         computeForActivity( upperLimit, other_quantity, peaks, upperQuantityChi2, numDOF );
         limit_str = print_quantity(upperLimit,3);
         const string print_limit_str = print_quantity( upperLimit, 2 );
-        snprintf( buffer, sizeof(buffer), "%.1f%% coverage at %s with &chi;<sup>2</sup>=%.1f",
-                 0.1*std::round(1000.0*wantedCl), print_limit_str.c_str(), upperQuantityChi2 );
+        //snprintf( buffer, sizeof(buffer), "%.1f%% coverage at %s with &chi;<sup>2</sup>=%.1f",
+        //         0.1*std::round(1000.0*wantedCl), print_limit_str.c_str(), upperQuantityChi2 );
+        snprintf( buffer, sizeof(buffer), "Can detect %s at %.1f%% CL, &chi;<sup>2</sup>=%.1f",
+                 print_limit_str.c_str(), 0.1*std::round(1000.0*wantedCl), upperQuantityChi2 );
       }//if( is_dist_limit ) / else
     }
     
+    // TODO: This `m_upperLimit` text could be moved to where the warnings is, ot the title area where the "Gamma lines to use" is
+    //       This would give us more room, and maybe be more obvious to the user
     m_upperLimit->setText( WString::fromUTF8(buffer) );
     
     if( is_dist_limit )
@@ -3049,33 +3176,33 @@ shared_ptr<DetectionLimitCalc::DeconComputeInput> DetectionLimitTool::getCompute
     auto rw = dynamic_cast<MdaPeakRow *>( w );
     assert( rw );
     
-    if( !rw->m_use_for_likelihood->isChecked() )
+    if( !rw->input().use_for_likelihood )
       continue;
     
-    // TODO: roi_start/roi_end should already be rounded to nearest bin edge, but should add check for this
-    const float roi_start = rw->m_roi_start->value();
-    const float roi_end = rw->m_roi_end->value();
-    const size_t nsidebin = static_cast<size_t>( std::round( std::max( 1.0f, rw->m_num_side_channels->value() ) ) );
+    const DetectionLimitTool::MdaPeakRowInput &row_input = rw->input();
+    const float roi_start = row_input.roi_start;
+    const float roi_end = row_input.roi_end;
+    
+    const size_t nsidebin = std::max( size_t(1), row_input.num_side_channels );
     
     shared_ptr<PeakContinuum> peak_continuum;
     
-    const bool fix_continuum = rw->m_fix_decon_continuum->isChecked();
+    const bool fix_continuum = row_input.fixed_decon_continuum;
     
-    PeakContinuum::OffsetType continuum_type = PeakContinuum::OffsetType::NoOffset;
-    const int continuumSelected = rw->m_continuum->currentIndex();
-    switch( continuumSelected )
+    const PeakContinuum::OffsetType continuum_type = row_input.decon_continuum_type;
+    switch( continuum_type )
     {
-      case 0:
-        continuum_type = PeakContinuum::OffsetType::Linear;
+      case PeakContinuum::Linear:
+      case PeakContinuum::Quadratic:
         break;
         
-      case 1:
-        continuum_type = PeakContinuum::OffsetType::Quadratic;
-        break;
-        
-      default:
+      case PeakContinuum::NoOffset:   case PeakContinuum::Constant:
+      case PeakContinuum::Cubic:      case PeakContinuum::FlatStep:
+      case PeakContinuum::LinearStep: case PeakContinuum::BiLinearStep:
+      case PeakContinuum::External:
         throw logic_error( "DetectionLimitTool::computeForActivity: Unexpected continuum type" );
-    }//switch( assign continuum )
+        break;
+    }//switch( continuum_type )
     
     
     DetectionLimitCalc::DeconRoiInfo roi_info;
@@ -3087,14 +3214,12 @@ shared_ptr<DetectionLimitCalc::DeconComputeInput> DetectionLimitTool::getCompute
     roi_info.num_lower_side_channels = nsidebin;
     roi_info.num_upper_side_channels = nsidebin;
     
-    const MdaPeakRowInput &widget_info = rw->input();
-    
     // TODO: have all this peak-specific stuff go inside a loop
     DetectionLimitCalc::DeconRoiInfo::PeakInfo peak_info;
     
-    peak_info.energy = widget_info.energy;
-    peak_info.fwhm = input->drf->peakResolutionFWHM(widget_info.energy);
-    peak_info.counts_per_bq_into_4pi = widget_info.counts_per_bq_into_4pi;
+    peak_info.energy = row_input.energy;
+    peak_info.fwhm = input->drf->peakResolutionFWHM(row_input.energy);
+    peak_info.counts_per_bq_into_4pi = row_input.counts_per_bq_into_4pi;
     
     roi_info.peak_infos.push_back( peak_info );
     

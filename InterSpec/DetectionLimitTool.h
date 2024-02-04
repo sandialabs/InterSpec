@@ -40,7 +40,7 @@
  - [ ] Add in a Curie style MDA calculator where you enter limits, BR, and stuff and get out counts and such
  - [ ] The likelihood based estimate does not seem to be reliable yet
  - [x] Add in checkbox to allow accounting for attenuation in the air (or just always do this)
- - [ ] Add in allowing to calculate the maximum detection distance; not sure if this should be individual peaks, or all peaks; maybe a toggle for the whole screen
+ - [x] Add in allowing to calculate the maximum detection distance; not sure if this should be individual peaks, or all peaks; maybe a toggle for the whole screen
  - [x] Add a drop-box to allow selecting confidence for limit (e.g., 80%, 90%, 95%, 99%, etc)
  - [ ] Allow asserting you know there isnt a peak in the spectrum, and affix the peak continuums to the observed spectrum
  - [x] Allow adjusting the simple MDA side-widths
@@ -49,7 +49,7 @@
  - [ ] When deconvolution method is used along with continuum determined from channels above/below the ROI, need to probably take into account the stat uncertainty of the channels...
  - [ ] Check numerical accuracies of calculations
  - [ ] Report mass as well as activity
- - [ ] Make sure when presence is reported on Currie style limit (e.g., both lower and upper limits given), the coverage is actually correct; e.g. 95% of tims in given interval, and not 97.5% or 90% or something.
+ - [ ] Make sure when presence is reported on Currie style limit (e.g., both lower and upper limits given), the coverage is actually correct; e.g. 95% of times in given interval, and not 97.5% or 90% or something.
  - [ ] Allow volumetric sources; either trace or self-attenuating.
  - [ ] Add in pass-by (e.g., at a fixed speed/distance) calculation
   - [ ] Have C-api to call from node/python
@@ -62,7 +62,7 @@
  - [ ] Make test cases that will quickly iterate through, to test things
  - [ ] Give the user a choice about using continuum fixed at null hypothesis
  - [ ] For each row show plot of current peak in that row
- - [ ] Allow combining ROI with neghboring peaks
+ - [ ] Allow combining ROI with neighboring peaks
  - [ ] In addition to error messages, have an area for warning messages (like if scaling spectrum more than 1.0, etc)
  - [ ] Allow user to pick Currie limit ranges, and improve clarity of this stuff, like maybe have each peak be a WPanel or something
  - [ ] Have the energy rows fold down to show more information, similar to Steves tool, for each energy
@@ -365,6 +365,18 @@ public:
     float roi_end;
     size_t num_side_channels;
     float confidence_level;
+    
+    /** Wether the continuum should be fixed using the edges of the continuum, and then the gaussian component will
+     always just sit on that, no matter the activity.
+     
+     See notes for `DeconRoiInfo::fix_continuum_to_edges` about how we may alter this in the future.
+     */
+    bool fixed_decon_continuum;
+    
+    /** The continuum type to use for the deconvolution limit type.
+     Currently only linear or quadratic, but maybe we can expand this.
+     */
+    PeakContinuum::OffsetType decon_continuum_type;
     
     std::shared_ptr<const DetectorPeakResponse> drf;
     std::shared_ptr<const SpecUtils::Measurement> measurement;

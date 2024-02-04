@@ -285,12 +285,18 @@ struct DeconRoiInfo
   
   /** Whether to allow the continuum to float in the fit, or to fix the continuum using the peaks bordering the ROI.
    
-   If this parameter is false, a large activity will cause the continuum to clearly be below the data, and above data fo too small of activity;
+   If this parameter is false, a large activity will cause the continuum to clearly be below the data, and above data for too small of activity;
    e.g., the continuum will help make up for the incorrectness of the Gaussian area.
    If this parameter is true, then the continuum offset+linear coefficients will be fixed by the channels above and below the ROI, as
    specified by #num_lower_side_channels and #num_upper_side_channels.  Currently when this is done, the statistical uncertainty of
    the above/below regions are not accounted for, and the continuum is just fixed - I need to put in more thought around properly
    handling this.
+   
+   
+   TODO: 20240204 One use of fixing the continuum is that it essentially allows the user to assert
+   that the given peak is not present in the data - which may be a valid and useful thing to specify.  So if the continuum is fixed, maybe
+   we should offer an additional option to assert that the peak is not present in the data, and in that case the full ROI is used to fit for
+   the continuum, and we could allow other continuum types.
    
    \sa num_lower_side_channels
    \sa num_upper_side_channels
