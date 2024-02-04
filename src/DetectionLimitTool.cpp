@@ -431,8 +431,9 @@ protected:
           }else
           {
             // We will provide a "At the 95% CL you would detect this source at X meters" answer
-
-#warning "go back through this logic when I am less tired to make sure result.upper_limit is really what we want to use here"
+#ifndef _WIN32
+  #warning "go back through this logic when I am less tired to make sure result.upper_limit is really what we want to use here"
+#endif
             // TODO: go back through this logic when I am less tired to make sure result.upper_limit is really what we want to use here
             
             if( result.upper_limit < 0.0 )
@@ -3095,8 +3096,10 @@ void DetectionLimitTool::doCalc()
 void DetectionLimitTool::updateShownPeaks()
 {
   cout << "Need to upgrade DetectionLimitTool::updateShownPeaks() for toggle between activity and distance" << endl;
-#warning "Need to upgrade DetectionLimitTool::updateShownPeaks() for toggle between activity and distance"
-  
+#ifndef _WIN32
+  #warning "Need to upgrade DetectionLimitTool::updateShownPeaks() for toggle between activity and distance"
+#endif
+
   m_peakModel->removeAllPeaks();
   
   const bool distanceLimit = (limitType() == DetectionLimitTool::LimitType::Distance);
