@@ -998,9 +998,9 @@ vector<uint8_t> encode_stream_vbyte( const vector<uint32_t> &input )
     static_assert( 0, "This function not tested in big-endian" );
   #endif
 #elif defined(__GNUC__) || defined(__GNUG__)
-  static_assert(__BYTE_ORDER__ == __ORDER_BIG_ENDIAN__, "This function not tested in big-endian" );
+  static_assert(__BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__, "This function not tested in big-endian" );
 #elif defined(_MSC_VER)
-  // not sure, but not to worried
+  // not sure, but not too worried
 #endif
   static_assert( boost::endian::order::native == boost::endian::order::little, "This function not tested in big-endian" );
   
@@ -1082,7 +1082,7 @@ size_t decode_stream_vbyte( const T * const input_begin, const size_t nbytes, ve
   static_assert( 0, "This function not tested in big-endian" );
 #endif
 #elif defined(__GNUC__) || defined(__GNUG__)
-  static_assert(__BYTE_ORDER__ == __ORDER_BIG_ENDIAN__, "This function not tested in big-endian" );
+  static_assert(__BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__, "This function not tested in big-endian" );
 #elif defined(_MSC_VER)
   // not sure, but not to worried
 #endif
