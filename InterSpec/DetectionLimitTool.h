@@ -63,6 +63,7 @@
  - [ ] Give the user a choice about using continuum fixed at null hypothesis
  - [ ] For each row show plot of current peak in that row
  - [ ] Allow combining ROI with neighboring peaks
+    - Actually should just include all gammas in an energy range, and have them all share a continuum - so a user could widen the ROI to include multiple peaks, and all would be fine
  - [ ] In addition to error messages, have an area for warning messages (like if scaling spectrum more than 1.0, etc)
  - [ ] Allow user to pick Currie limit ranges, and improve clarity of this stuff, like maybe have each peak be a WPanel or something
  - [ ] Have the energy rows fold down to show more information, similar to Steves tool, for each energy
@@ -96,6 +97,7 @@ class DetectorPeakResponse;
 namespace DetectionLimitCalc
 {
   struct DeconComputeInput;
+  enum class DeconContinuumNorm : int;
 }
 
 namespace SpecUtils
@@ -366,12 +368,11 @@ public:
     size_t num_side_channels;
     float confidence_level;
     
-    /** Wether the continuum should be fixed using the edges of the continuum, and then the gaussian component will
-     always just sit on that, no matter the activity.
-     
-     See notes for `DeconRoiInfo::fix_continuum_to_edges` about how we may alter this in the future.
+    /** How we should normalize the continuum.
+     E.g., allowed to float as normal, fixed using the edges of the continuum, or fixed using the whole ROI, assuming no signal
+     (the gaussian component will always just sit on top of the continuum, no matter the activity, for the later two options).
      */
-    bool fixed_decon_continuum;
+    DetectionLimitCalc::DeconContinuumNorm decon_cont_norm_method;
     
     /** The continuum type to use for the deconvolution limit type.
      Currently only linear or quadratic, but maybe we can expand this.

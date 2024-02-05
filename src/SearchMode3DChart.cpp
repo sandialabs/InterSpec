@@ -184,8 +184,7 @@ void SearchMode3DChart::init()
             " with a total of 52 bins on the time axis.<br />"
             "If the product of the number of time channels, times the number of energy channels"
             " is too large, performance issues may be encountered";
-  HelpSystem::attachToolTipOn( label, tooltip, showToolTips, HelpSystem::ToolTipPosition::Left );
-  HelpSystem::attachToolTipOn( m_timeDivisions, tooltip, showToolTips, HelpSystem::ToolTipPosition::Left );
+  HelpSystem::attachToolTipOn( {label,m_timeDivisions}, tooltip, showToolTips, HelpSystem::ToolTipPosition::Left );
   
   label = new WLabel( "Energy display bins", controlsDiv );
   label->addStyleClass( "GridSecondRow GridSixthCol" );
@@ -202,8 +201,7 @@ void SearchMode3DChart::init()
   "<br />"
   "If the product of the number of time channels, times the number of energy channels"
   " is too large, performance issues may be encountered";
-  HelpSystem::attachToolTipOn( label, tooltip, showToolTips, HelpSystem::ToolTipPosition::Left );
-  HelpSystem::attachToolTipOn( m_energyDivisions, tooltip, showToolTips, HelpSystem::ToolTipPosition::Left );
+  HelpSystem::attachToolTipOn( {label,m_energyDivisions}, tooltip, showToolTips, HelpSystem::ToolTipPosition::Left );
   
   m_viewer->displayedSpectrumChanged().connect(
             boost::bind( &SearchMode3DChart::newSpectralDataSet, this,

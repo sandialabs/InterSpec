@@ -698,7 +698,19 @@ namespace HelpSystem
                         const ToolTipPosition position,
                         const ToolTipPrefOverride forceShowing )
   {
-      
+    attachToolTipOn( {widget}, text, enableShowing, position, forceShowing );
+  }
+  
+  void attachToolTipOn( std::initializer_list<Wt::WWebWidget*> widgets,
+                       const std::string &text,
+                        const bool enableShowing,
+                        const ToolTipPosition position,
+                        const ToolTipPrefOverride forceShowing )
+  {
+    assert( widgets.size() );
+    if( !widgets.size() )
+      return;
+    
     //if is gesture controlled, we do not want to add tooltips to objects
     InterSpecApp *app = dynamic_cast<InterSpecApp *>( wApp );
     if (app && app->isMobile())
@@ -738,11 +750,16 @@ namespace HelpSystem
       case ToolTipPosition::Left:   pos = "my: 'right center', at: 'left center', "; break;
     }//switch( position )
     
+    string selector;
+    for( const auto w : widgets )
+      selector += (selector.empty() ? "#" : ",#") + w->id();
 
-    RmHelpFromDom *remover = new RmHelpFromDom( widget );
+    Wt::WWebWidget *first_widget = *begin(widgets);
+    
+    RmHelpFromDom *remover = new RmHelpFromDom( first_widget );
     
     //Note: need to pre-render, as toggling requires tooltip already rendered.
-    strm << "$('#"<< widget->id() <<"').qtip({ "
+    strm << "$('"<< selector <<"').qtip({ "
         "id: '" << remover->id() << "',"
         "prerender: true, "
         "content:  { text: '" << val << "'}, "
@@ -762,7 +779,7 @@ namespace HelpSystem
                 "}"
         "});";
     
-    widget->doJavaScript( strm.str() );
+    first_widget->doJavaScript( strm.str() );
   }//void attachToolTipOn( Wt::WWebWidget* widget, const std::string &text, bool force)
 
 } //namespace HelpSystem

@@ -129,15 +129,7 @@ GammaXsGui::GammaXsGui( MaterialDB *materialDB,
 
   ++row;
   
-  const char *tooltip =  "You can either enter the name of a pre-defined"
-  " material or element (clear form text"
-  " and click arrow on right of form to see all predefined options), or you can"
-  " enter a chemical formula such as 'H0.112 O0.88' where the numbers are the"
-  " density in g/cm3, (or use mass fraction and Density field), of the"
-  " preceding element.";
-  
   label = new WLabel( "Material/mass-formula" );
-  HelpSystem::attachToolTipOn( label, tooltip, showToolTips );
   m_layout->addWidget( label, row, 0, 1, 1, AlignLeft );
   m_materialEdit = new WLineEdit( "C0.5H0.2Ni0.3" );
   
@@ -152,8 +144,14 @@ GammaXsGui::GammaXsGui( MaterialDB *materialDB,
 //  m_materialEdit->focussed().connect( this, &GammaXsGui::handleMaterialChange );
   m_materialEdit->blurred().connect( this, &GammaXsGui::handleMaterialChange );
 
-  HelpSystem::attachToolTipOn( m_materialEdit, tooltip, showToolTips );
-  
+  const char *tooltip =  "You can either enter the name of a pre-defined"
+  " material or element (clear form text"
+  " and click arrow on right of form to see all predefined options), or you can"
+  " enter a chemical formula such as 'H0.112 O0.88' where the numbers are the"
+  " density in g/cm3, (or use mass fraction and Density field), of the"
+  " preceding element.";
+  HelpSystem::attachToolTipOn( {static_cast<Wt::WWebWidget*>(label),static_cast<Wt::WWebWidget*>(m_materialEdit)},
+                              tooltip, showToolTips );
   
   m_layout->addWidget( m_materialEdit, row, 1, 1, 2 );
   m_materialSuggestion->forEdit( m_materialEdit,

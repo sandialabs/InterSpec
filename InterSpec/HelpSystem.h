@@ -25,6 +25,8 @@
 
 #include "InterSpec_config.h"
 
+#include <initializer_list>
+
 #include <Wt/WObject>
 #include <Wt/WMessageResourceBundle>
 
@@ -127,6 +129,17 @@ namespace HelpSystem
                        const ToolTipPosition pos = HelpSystem::ToolTipPosition::Right,
                        const ToolTipPrefOverride forceShowing
                                             = HelpSystem::ToolTipPrefOverride::RespectPreference );
+  
+  /** Same as above, but attaches the same tooltip to multiple elements.
+   
+   The lifetime of the tooltip is governed by the first element in the list.
+   */
+  void attachToolTipOn( std::initializer_list<Wt::WWebWidget*> widgets,
+                        const std::string &text,
+                        const bool enableShowing,
+                        const ToolTipPosition pos = HelpSystem::ToolTipPosition::Right,
+                        const ToolTipPrefOverride forceShowing
+                                  = HelpSystem::ToolTipPrefOverride::RespectPreference );
   
 } //namespace HelpSystem
 #endif //HelpSystem_h

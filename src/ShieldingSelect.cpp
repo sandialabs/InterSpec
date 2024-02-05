@@ -2154,7 +2154,7 @@ void ShieldingSelect::init()
     " (which is assumed spherical), so self attenuation"
     " and other factors are accounted for.";
     
-    HelpSystem::attachToolTipOn( m_asSourceCBs,tooltip, showToolTips );
+    HelpSystem::attachToolTipOn( m_asSourceCBs, tooltip, showToolTips );
     m_fitMassFrac = new WCheckBox( "Fit Mass Fractions", m_asSourceCBs );
     m_fitMassFrac->hide();
     m_fitMassFrac->setInline( false );

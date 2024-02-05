@@ -358,21 +358,6 @@ IsotopeSearchByEnergy::IsotopeSearchByEnergy( InterSpec *viewer,
   optionDiv = new WContainerWidget( searchOptions );
   label = new WLabel( "Min. T\xc2\xbd", optionDiv );
  
-  tip = "Minimum half life of nuclides to be searched.<br />"
-    "<div>Age can be specified using a combination of time units, "
-    "similar to '<b>5.3y 8d 22m</b>'.</div>"
-    "<div>"
-    "Acceptable time units: <b>year</b>, <b>yr</b>, <b>y</b>, <b>day</b>, <b>d</b>, <b>hrs</b>, <b>hour</b>, <b>h</b>, <b>minute</b>, "
-    "<b>min</b>, <b>m</b>, <b>second</b>, <b>s</b>, <b>ms</b>, <b>microseconds</b>, <b>us</b>, <b>nanoseconds</b>, <b>ns</b>, or "
-    "you can specify time period by <b>hh:mm:ss</b>. "
-    "</div>"
-    "<div>"
-    "When multiple time periods are "
-    "specified, they are summed, e.x. '1y6months 3m' is interpreted as "
-    "18 months and 3 minutes"
-    "</div>";
-//    HelpSystem::attachToolTipOn( label, tip, showToolTips , HelpSystem::ToolTipPosition::Top);
-
   m_minHalfLife = new WLineEdit( "6000 s", optionDiv );
   m_minHl = 6000.0 * PhysicalUnits::second;
   
@@ -381,7 +366,21 @@ IsotopeSearchByEnergy::IsotopeSearchByEnergy( InterSpec *viewer,
   m_minHalfLife->setAttributeValue( "autocorrect", "off" );
   m_minHalfLife->setAttributeValue( "spellcheck", "off" );
 #endif
-  HelpSystem::attachToolTipOn( m_minHalfLife, tip, showToolTips , HelpSystem::ToolTipPosition::Top );
+    
+  tip = "Minimum half life of nuclides to be searched.<br />"
+      "<div>Age can be specified using a combination of time units, "
+      "similar to '<b>5.3y 8d 22m</b>'.</div>"
+      "<div>"
+      "Acceptable time units: <b>year</b>, <b>yr</b>, <b>y</b>, <b>day</b>, <b>d</b>, <b>hrs</b>, <b>hour</b>, <b>h</b>, <b>minute</b>, "
+      "<b>min</b>, <b>m</b>, <b>second</b>, <b>s</b>, <b>ms</b>, <b>microseconds</b>, <b>us</b>, <b>nanoseconds</b>, <b>ns</b>, or "
+      "you can specify time period by <b>hh:mm:ss</b>. "
+      "</div>"
+      "<div>"
+      "When multiple time periods are "
+      "specified, they are summed, e.x. '1y6months 3m' is interpreted as "
+      "18 months and 3 minutes"
+      "</div>";
+  HelpSystem::attachToolTipOn( {label,m_minHalfLife}, tip, showToolTips , HelpSystem::ToolTipPosition::Top );
 
   WRegExpValidator *validator = new WRegExpValidator( PhysicalUnits::sm_timeDurationRegex, this );
   validator->setFlags(Wt::MatchCaseInsensitive);

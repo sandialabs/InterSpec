@@ -255,6 +255,43 @@ std::ostream &print_summary( std::ostream &strm, const CurieMdaResult &result, c
 CurieMdaResult currie_mda_calc( const CurieMdaInput &input );
 
 
+/** How the continuum for peaks should be normalized.
+ */
+enum class DeconContinuumNorm : int
+{
+  /** The Gaussian (at a given activity) plus continuum are summed and compared to data (e.g., normal peak fitting). 
+   
+   I think this gives you what you usually want, e.g., the most likely peak with your current data, at the activity you
+   are asserting.
+   
+   Note that with this option a large activity will cause the continuum to clearly be below the data, and above data for too small of activity;
+   e.g., the continuum will help make up for the incorrectness of the Gaussian area.
+   */
+  Floating,
+  
+  /** A straight line is created from the edges past the ROI.
+   
+   I think this is sorta equivalent of saying the amplitude of the signal will not affect the
+   area in the ROI, of your current data.
+   
+   With this option, then the continuum offset+linear coefficients will be fixed by the channels above and below the ROI, as
+   specified by `DeconRoiInfo::num_lower_side_channels` and `DeconRoiInfo::num_upper_side_channels`.
+   Currently when this is done, the statistical uncertainty of the above/below regions are not accounted for, and the continuum
+   is just fixed - I need to put in more thought around properly handling this.
+   */
+  FixedByEdges,
+  
+  /** The continuum is fit, assuming a Gaussian area of zero, then the Gaussian component is added on top of this.
+   
+   This options is asserting there is no signal in your current data (most if you are doing an MDA).
+   
+   No uncertainty is used with the ROI (which is slightly kinda sorta, just a tiny bi defensible, if you are asserting there
+   is no signal present in the data - the data variance will be used when evaluating the Chi2 anyway).
+   */
+  FixedByFullRange
+};//enum class DeconContinuumNorm
+  
+
 /** Information about a single Region Of Interest (ROI) that is input to the deconvolution method of estimating peaks and chi2 for a
  given activity and distance.
  
@@ -283,35 +320,23 @@ struct DeconRoiInfo
    */
   PeakContinuum::OffsetType continuum_type;
   
-  /** Whether to allow the continuum to float in the fit, or to fix the continuum using the peaks bordering the ROI.
-   
-   If this parameter is false, a large activity will cause the continuum to clearly be below the data, and above data for too small of activity;
-   e.g., the continuum will help make up for the incorrectness of the Gaussian area.
-   If this parameter is true, then the continuum offset+linear coefficients will be fixed by the channels above and below the ROI, as
-   specified by #num_lower_side_channels and #num_upper_side_channels.  Currently when this is done, the statistical uncertainty of
-   the above/below regions are not accounted for, and the continuum is just fixed - I need to put in more thought around properly
-   handling this.
-   
-   
-   TODO: 20240204 One use of fixing the continuum is that it essentially allows the user to assert
-   that the given peak is not present in the data - which may be a valid and useful thing to specify.  So if the continuum is fixed, maybe
-   we should offer an additional option to assert that the peak is not present in the data, and in that case the full ROI is used to fit for
-   the continuum, and we could allow other continuum types.
+  /** Whether to allow the continuum to float in the fit, or to fix the continuum using the peaks bordering the ROI, or
+   use the whole ROI to determine the continuum with the assumption no signal is there.
    
    \sa num_lower_side_channels
    \sa num_upper_side_channels
    */
-  bool fix_continuum_to_edges;
+  DeconContinuumNorm cont_norm_method;
   
   /** The number of channels below #roi_lower_energy to use to estimate the continuum.
    
-   Only used if #fix_continuum_to_edges is true.
+   Only used if `cont_norm_method` is `DeconContinuumNorm::FixedByEdges`.
    */
   size_t num_lower_side_channels;
   
   /** The number of channels above #roi_upper_energy to use to estimate the continuum.
    
-   Only used if #fix_continuum_to_edges is true.
+   Only used if `cont_norm_method` is `DeconContinuumNorm::FixedByEdges`.
    */
   size_t num_upper_side_channels;
   

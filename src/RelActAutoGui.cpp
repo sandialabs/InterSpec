@@ -1397,9 +1397,7 @@ RelActAutoGui::RelActAutoGui( InterSpec *viewer, Wt::WContainerWidget *parent )
   "<tr><th>Log(energy)Log(rel. eff.):</th> <th>y = exp( a  + b*(lnx) + c*(lnx)^2 + d*(lnx)^3 + ... )</th></tr>"
   "<tr><th>FRAM Empirical:</th>            <th>y = exp( a + b/x^2 + c*(lnx) + d*(lnx)^2 + e*(lnx)^3 )</th></tr>"
   "</table>";
-  HelpSystem::attachToolTipOn( m_rel_eff_eqn_form, tooltip, showToolTips );
-  HelpSystem::attachToolTipOn( label, tooltip, showToolTips );
-  
+  HelpSystem::attachToolTipOn( {label,m_rel_eff_eqn_form}, tooltip, showToolTips );
   
   // Will assume FramEmpirical is the highest
   static_assert( static_cast<int>(RelActCalc::RelEffEqnForm::FramEmpirical)
@@ -1459,8 +1457,7 @@ RelActAutoGui::RelActAutoGui( InterSpec *viewer, Wt::WContainerWidget *parent )
   
   
   tooltip = "The order (how many energy-dependent terms) relative efficiency equation to use.";
-  HelpSystem::attachToolTipOn( label, tooltip, showToolTips );
-  HelpSystem::attachToolTipOn( m_rel_eff_eqn_order, tooltip, showToolTips );
+  HelpSystem::attachToolTipOn( {label, m_rel_eff_eqn_order}, tooltip, showToolTips );
   
   label = new WLabel( "FWHM Form", optionsDiv );
   label->addStyleClass( "GridFifthCol GridFirstRow" );
@@ -1487,8 +1484,7 @@ RelActAutoGui::RelActAutoGui( InterSpec *viewer, Wt::WContainerWidget *parent )
   }//for( loop over RelActCalcAuto::FwhmForm )
   
   tooltip = "The equation type used to model peak FWHM as a function of energy.";
-  HelpSystem::attachToolTipOn( label, tooltip, showToolTips );
-  HelpSystem::attachToolTipOn( m_fwhm_eqn_form, tooltip, showToolTips );
+  HelpSystem::attachToolTipOn( {label, m_fwhm_eqn_form}, tooltip, showToolTips );
   
   // TODO: need to set m_fwhm_eqn_form based on energy ranges selected
   m_fwhm_eqn_form->setCurrentIndex( 1 );
@@ -1504,8 +1500,7 @@ RelActAutoGui::RelActAutoGui( InterSpec *viewer, Wt::WContainerWidget *parent )
   m_u_pu_data_source->addStyleClass( "GridEighthCol GridFirstRow" );
   
   tooltip = "The nuclear data source for gamma branching ratios of uranium and plutonium.";
-  HelpSystem::attachToolTipOn( label, tooltip, showToolTips );
-  HelpSystem::attachToolTipOn( m_u_pu_data_source, tooltip, showToolTips );
+  HelpSystem::attachToolTipOn( {label, m_u_pu_data_source}, tooltip, showToolTips );
   
   using RelActCalcManual::PeakCsvInput::NucDataSrc;
   for( NucDataSrc src = NucDataSrc(0); src < NucDataSrc::Undefined; src = NucDataSrc(static_cast<int>(src) + 1) )
@@ -1554,8 +1549,7 @@ RelActAutoGui::RelActAutoGui( InterSpec *viewer, Wt::WContainerWidget *parent )
   " correct for this isotope when calculating enrichment, the expected contributions of this"
   " isotope can be inferred from the other Pu isotopes."
   "  This form allows you to select the correction method.";
-  HelpSystem::attachToolTipOn( label, tooltip, showToolTips );
-  HelpSystem::attachToolTipOn( m_pu_corr_method, tooltip, showToolTips );
+  HelpSystem::attachToolTipOn( {label,m_pu_corr_method}, tooltip, showToolTips );
   m_pu_corr_method->hide();
   label->hide();
   
@@ -1567,8 +1561,7 @@ RelActAutoGui::RelActAutoGui( InterSpec *viewer, Wt::WContainerWidget *parent )
   label->setBuddy( m_skew_type );
   m_skew_type->activated().connect( this, &RelActAutoGui::handleSkewTypeChanged );
   tooltip = "The type of skew to apply to the peaks; skew parameters will be fit.";
-  HelpSystem::attachToolTipOn( label, tooltip, showToolTips );
-  HelpSystem::attachToolTipOn( m_skew_type, tooltip, showToolTips );
+  HelpSystem::attachToolTipOn( {label,m_skew_type}, tooltip, showToolTips );
   for( auto st = PeakDef::SkewType(0); st <= PeakDef::SkewType::DoubleSidedCrystalBall;
       st = PeakDef::SkewType(st + 1) )
   {
@@ -1682,8 +1675,7 @@ RelActAutoGui::RelActAutoGui( InterSpec *viewer, Wt::WContainerWidget *parent )
   " and their amplitude is fit to the best value for the data.  The peaks may optionally be released from the"
   " functional FWHM constraint as well.<br />"
   "Free peaks are useful to handle peaks from reactions, or from unidentified nuclides.";
-  HelpSystem::attachToolTipOn( m_free_peaks_container, tooltip, showToolTips );
-  HelpSystem::attachToolTipOn( m_show_free_peak, tooltip, showToolTips );
+  HelpSystem::attachToolTipOn( {m_free_peaks_container,m_show_free_peak}, tooltip, showToolTips );
   
     
   auto html_rsc = dynamic_cast<RelActAutoReportResource *>( m_html_download_rsc );

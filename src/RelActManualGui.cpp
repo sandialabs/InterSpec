@@ -565,8 +565,7 @@ void RelActManualGui::init()
   "<tr><th>Log(energy)Log(rel. eff.):</th> <th>y = exp( a  + b*(lnx) + c*(lnx)^2 + d*(lnx)^3 + ... )</th></tr>"
   "<tr><th>FRAM Empirical:</th>            <th>y = exp( a + b/x^2 + c*(lnx) + d*(lnx)^2 + e*(lnx)^3 )</th></tr>"
   "</table>";
-  HelpSystem::attachToolTipOn( optionsList->elementAt(0,0), tooltip, showToolTips );
-  HelpSystem::attachToolTipOn( optionsList->elementAt(0,1), tooltip, showToolTips );
+  HelpSystem::attachToolTipOn( {optionsList->elementAt(0,0), optionsList->elementAt(0,1)}, tooltip, showToolTips );
   
   
   // Will assume FramEmpirical is the highest
@@ -625,8 +624,7 @@ void RelActManualGui::init()
   
   
   tooltip = "The order (how many energy-dependent terms) relative efficiency equation to use.";
-  HelpSystem::attachToolTipOn( optionsList->elementAt(1, 0), tooltip, showToolTips );
-  HelpSystem::attachToolTipOn( optionsList->elementAt(1, 1), tooltip, showToolTips );
+  HelpSystem::attachToolTipOn( {optionsList->elementAt(1, 0),optionsList->elementAt(1, 1)}, tooltip, showToolTips );
   
   label = new WLabel( "Yield Info", optionsList->elementAt(2, 0) );
   m_nucDataSrc = new WComboBox( optionsList->elementAt(2, 1) );
@@ -634,8 +632,7 @@ void RelActManualGui::init()
   m_nucDataSrc->activated().connect( this, &RelActManualGui::nucDataSrcChanged );
   
   tooltip = "The nuclear data source for gamma branching ratios.";
-  HelpSystem::attachToolTipOn( optionsList->elementAt(2, 0), tooltip, showToolTips );
-  HelpSystem::attachToolTipOn( optionsList->elementAt(2, 1), tooltip, showToolTips );
+  HelpSystem::attachToolTipOn( {optionsList->elementAt(2, 0),optionsList->elementAt(2, 1)}, tooltip, showToolTips );
   
   
   using RelActCalcManual::PeakCsvInput::NucDataSrc;
@@ -677,8 +674,7 @@ void RelActManualGui::init()
   " observed peak mean source gammas should be summed to determine the branching ratio to use."
   "<br />Specifying a value of zero will will cause only the gamma energy assigned to a peak to"
   " be used, even if there are very nearby other gammas.";
-  HelpSystem::attachToolTipOn( optionsList->elementAt(3, 0), tooltip, showToolTips );
-  HelpSystem::attachToolTipOn( optionsList->elementAt(3, 1), tooltip, showToolTips );
+  HelpSystem::attachToolTipOn( {optionsList->elementAt(3, 0),optionsList->elementAt(3, 1)}, tooltip, showToolTips );
   
   label = new WLabel( "Add. Uncert", optionsList->elementAt(4, 0) );
   m_addUncertainty = new WComboBox( optionsList->elementAt(4, 1) );
@@ -695,9 +691,7 @@ void RelActManualGui::init()
   " important, just as long as there is something.  You can also choose to use an unweighted fit,"
   " where each peak will contribute to the fit equally, no matter its statistical uncertainty.";
   
-  HelpSystem::attachToolTipOn( optionsList->elementAt(4, 0), tooltip, showToolTips );
-  HelpSystem::attachToolTipOn( optionsList->elementAt(4, 1), tooltip, showToolTips );
-  
+  HelpSystem::attachToolTipOn( {optionsList->elementAt(4, 0),optionsList->elementAt(4, 1)}, tooltip, showToolTips );
   
   m_addUncertainty->activated().connect( this, &RelActManualGui::addUncertChanged );
   

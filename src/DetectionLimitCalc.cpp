@@ -959,7 +959,7 @@ DeconRoiInfo::DeconRoiInfo()
 : roi_start( 0.0f ),
   roi_end( 0.0f ),
   continuum_type( PeakContinuum::OffsetType::NoOffset ),
-  fix_continuum_to_edges( false ),
+  cont_norm_method( DeconContinuumNorm::Floating ),
   num_lower_side_channels( 0 ),
   num_upper_side_channels( 0 ),
   peak_infos()
@@ -1026,14 +1026,27 @@ DeconComputeResults decon_compute_peaks( const DeconComputeInput &input )
   const bool fixed_geom = input.drf->isFixedGeometry();
   
   // We should be good to go,
-  vector<PeakDef> inputPeaks, fitPeaks;
+  vector<PeakDef> inputPeaks, fittedPeaks;
   
   for( const DeconRoiInfo &roi : input.roi_info )
   {
     const float  &roi_start = roi.roi_start; //This _should_ already be rounded to nearest bin edge; TODO: check that this is rounded
     const float  &roi_end = roi.roi_end; //This _should_ already be rounded to nearest bin edge; TODO: check that this is rounded
-    const bool   &fix_continuum = roi.fix_continuum_to_edges;
-    const PeakContinuum::OffsetType &continuum_type = roi.continuum_type;
+    
+    const DeconContinuumNorm &cont_norm_method = roi.cont_norm_method;
+    PeakContinuum::OffsetType continuum_type = roi.continuum_type;
+    switch( cont_norm_method )
+    {
+      case DeconContinuumNorm::Floating:
+      case DeconContinuumNorm::FixedByFullRange:
+        break;
+        
+      case DeconContinuumNorm::FixedByEdges:
+        assert( continuum_type == PeakContinuum::OffsetType::Linear );
+        continuum_type = PeakContinuum::OffsetType::Linear;
+        break;
+    }//switch( cont_norm_method )
+    
     const size_t &num_lower_side_channels = roi.num_lower_side_channels;
     const size_t &num_upper_side_channels = roi.num_upper_side_channels;
     
@@ -1088,12 +1101,57 @@ DeconComputeResults decon_compute_peaks( const DeconComputeInput &input )
                                                   num_lower_side_channels,
                                                   num_upper_side_channels );
         
-        peak_continuum->setType( PeakContinuum::OffsetType::Linear );
-        
-        for( size_t order = 0; order < 2; ++order )  //peak_continuum->parameters().size()
-          peak_continuum->setPolynomialCoefFitFor( order, !fix_continuum );
-        
         peak_continuum->setType( continuum_type );
+        
+        
+        if( cont_norm_method == DeconContinuumNorm::FixedByFullRange )
+        {
+          // We'll set a peaks amplitude for zero
+          for( size_t order = 0; order < peak_continuum->parameters().size(); ++order )
+            peak_continuum->setPolynomialCoefFitFor( order, true );
+          
+          PeakDef worker_peak( 0.5*(roi_start + roi_end), sigma, 0.0 );
+          worker_peak.setContinuum( peak_continuum );
+          worker_peak.setFitFor( PeakDef::CoefficientType::Mean, false );
+          worker_peak.setFitFor( PeakDef::CoefficientType::Sigma, false );
+          worker_peak.setFitFor( PeakDef::CoefficientType::GaussAmplitude, false );
+          
+          std::vector<PeakDef> fit_peak;
+          fitPeaks( {worker_peak}, -1.0, -1.0, input.measurement, fit_peak, {}, false );
+          
+          assert( fit_peak.size() == 1 );
+          if( fit_peak.size() == 1 )
+          {
+            peak_continuum = fit_peak[0].continuum();
+            peak.setContinuum( peak_continuum );
+          }else
+          {
+            string msg = "Error fitting DeconContinuumNorm::FixedByFullRange continuum - failed to"
+                        " get a peak out - expected 1, got " + std::to_string(fit_peak.size());
+            cerr << msg << endl;
+#if( PERFORM_DEVELOPER_CHECKS )
+            log_developer_error( __func__, msg.c_str() );
+            throw runtime_error( msg );
+#endif
+          }//if( fit_peak.size() == 1 ) / else
+        }//if( cont_norm_method == DeconContinuumNorm::FixedByFullRange )
+        
+        
+        for( size_t order = 0; order < peak_continuum->parameters().size(); ++order )
+        {
+          switch( cont_norm_method )
+          {
+            case DeconContinuumNorm::Floating:
+              peak_continuum->setPolynomialCoefFitFor( order, true );
+              break;
+              
+            case DeconContinuumNorm::FixedByFullRange:
+            case DeconContinuumNorm::FixedByEdges:
+              peak_continuum->setPolynomialCoefFitFor( order, false );
+              break;
+          }//switch( cont_norm_method )
+        }//for( size_t order = 0; order < peak_continuum->parameters().size(); ++order )
+        
         
         switch( continuum_type )
         {
@@ -1189,32 +1247,32 @@ DeconComputeResults decon_compute_peaks( const DeconComputeInput &input )
   
   vector<double> fitpars = fitParams.Params();
   vector<double> fiterrors = fitParams.Errors();
-  chi2Fcn.parametersToPeaks( fitPeaks, &fitpars[0], &fiterrors[0] );
+  chi2Fcn.parametersToPeaks( fittedPeaks, &fitpars[0], &fiterrors[0] );
   
   double initialChi2 = chi2Fcn.chi2( &fitpars[0] );
   
   //Lets try to keep whether or not to fit parameters should be the same for
   //  the output peaks as the input peaks.
   //Note that this doesnt account for peaks swapping with each other in the fit
-  assert( fitPeaks.size() == inputPeaks.size() );
+  assert( fittedPeaks.size() == inputPeaks.size() );
   
   //for( size_t i = 0; i < near_peaks.size(); ++i )
-  //  fitpeaks[i].inheritUserSelectedOptions( near_peaks[i], true );
+  //  fittedPeaks[i].inheritUserSelectedOptions( near_peaks[i], true );
   //for( size_t i = 0; i < fixedpeaks.size(); ++i )
-  //  fitpeaks[i+near_peaks.size()].inheritUserSelectedOptions( fixedpeaks[i], true );
+  //  fittedPeaks[i+near_peaks.size()].inheritUserSelectedOptions( fixedpeaks[i], true );
   
-  const double totalNDF = set_chi2_dof( input.measurement, fitPeaks, 0, fitPeaks.size() );
+  const double totalNDF = set_chi2_dof( input.measurement, fittedPeaks, 0, fittedPeaks.size() );
   
   result.chi2 = initialChi2;
   result.num_degree_of_freedom = static_cast<int>( std::round(totalNDF) );
   
-  for( auto &peak : fitPeaks )
+  for( auto &peak : fittedPeaks )
   {
     peak.setFitFor( PeakDef::CoefficientType::Mean, false );
     peak.setFitFor( PeakDef::CoefficientType::Sigma, false );
   }
   
-  result.fit_peaks = fitPeaks;
+  result.fit_peaks = fittedPeaks;
   
   return result;
 }//DeconComputeResults decon_compute_peaks( const DeconComputeInput &input )

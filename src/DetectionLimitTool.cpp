@@ -181,8 +181,9 @@ protected:
   /** The maximum detection distance - only filled out if computing for distance limits.  */
   double m_simple_max_det_dist;
   
-  /** Wether of not to fix the continuum for the likelihood based limit to the bins on either side of the ROI. */
-  WCheckBox *m_fix_decon_continuum;
+  /** Wether of not to fix the continuum for the likelihood based limit to the bins on either side of the ROI, the full ROI, or let float
+   and change dependent on the activity. */
+  Wt::WComboBox *m_decon_cont_norm_method;
   
   Wt::Signal<> m_changed;
   
@@ -190,8 +191,17 @@ protected:
   void handleUseForLikelihoodChanged()
   {
     const bool use = m_use_for_likelihood->isChecked();
-    m_fix_decon_continuum->setEnabled( use );
-    m_continuum->setEnabled( use && !m_fix_decon_continuum->isChecked() );
+    m_decon_cont_norm_method->setEnabled( use );
+    
+    const bool fixed_at_edges = (m_decon_cont_norm_method->currentIndex() == static_cast<int>(DetectionLimitCalc::DeconContinuumNorm::FixedByEdges));
+    m_continuum->setEnabled( use && !fixed_at_edges );
+    if( fixed_at_edges )
+    {
+      assert( m_continuum->currentIndex() == 0 );
+      assert( m_input.decon_continuum_type == PeakContinuum::OffsetType::Linear );
+      m_continuum->setCurrentIndex( 0 );
+      m_input.decon_continuum_type = PeakContinuum::OffsetType::Linear;
+    }
     
     m_input.use_for_likelihood = use;
     emitChanged();
@@ -493,18 +503,33 @@ protected:
     m_changed.emit();
   }
   
-  void handleFixContinuumChange()
+  void handleContinuumNormMethodChange()
   {
-    m_input.fixed_decon_continuum = m_fix_decon_continuum->isChecked();
-    m_continuum->setEnabled( !m_input.fixed_decon_continuum );
-    if( m_input.fixed_decon_continuum )
+    auto norm_type = static_cast<DetectionLimitCalc::DeconContinuumNorm>( m_decon_cont_norm_method->currentIndex() );
+    switch( norm_type )
     {
-      m_continuum->setCurrentIndex( 0 );
-      m_input.decon_continuum_type = PeakContinuum::OffsetType::Linear;
-    }
+      case DetectionLimitCalc::DeconContinuumNorm::Floating:
+      case DetectionLimitCalc::DeconContinuumNorm::FixedByFullRange:
+        m_continuum->setEnabled( true );
+        break;
+        
+      case DetectionLimitCalc::DeconContinuumNorm::FixedByEdges:
+        m_continuum->setCurrentIndex( 0 );
+        m_input.decon_continuum_type = PeakContinuum::OffsetType::Linear;
+        m_continuum->setEnabled( false );
+        break;
+        
+      default:
+        assert(0);
+        norm_type = DetectionLimitCalc::DeconContinuumNorm::Floating;
+        m_decon_cont_norm_method->setCurrentIndex( static_cast<int>(DetectionLimitCalc::DeconContinuumNorm::Floating ) );
+        break;
+    }//switch( m_decon_cont_norm_method->currentIndex() )
+    
+    m_input.decon_cont_norm_method = norm_type;
     
     emitChanged();
-  }//void handleFixContinuumChange()
+  }//void handleContinuumNormMethodChange()
   
   
   void roiChanged()
@@ -542,7 +567,27 @@ protected:
         break;
     }//switch( m_continuum->currentIndex() )
     
-    m_input.fixed_decon_continuum = m_fix_decon_continuum->isChecked();
+    auto norm_method = static_cast<DetectionLimitCalc::DeconContinuumNorm>( m_decon_cont_norm_method->currentIndex() );
+    switch( norm_method )
+    {
+      case DetectionLimitCalc::DeconContinuumNorm::Floating:
+      case DetectionLimitCalc::DeconContinuumNorm::FixedByFullRange:
+        break;
+        
+      case DetectionLimitCalc::DeconContinuumNorm::FixedByEdges:
+        m_continuum->setCurrentIndex( 0 );
+        m_input.decon_continuum_type = PeakContinuum::OffsetType::Linear;
+        break;
+        
+      default:
+        m_input.decon_cont_norm_method = DetectionLimitCalc::DeconContinuumNorm::Floating;
+        m_continuum->setCurrentIndex( 0 );
+        m_decon_cont_norm_method->setCurrentIndex( 0 );
+        m_input.decon_continuum_type = PeakContinuum::OffsetType::Linear;
+        break;
+    }//switch( m_decon_cont_norm_method->currentIndex() )
+    
+    m_input.decon_cont_norm_method = norm_method;
     
     emitChanged();
   }//void roiChanged()
@@ -585,9 +630,9 @@ public:
   m_continuum( nullptr ),
   m_poisonLimit( nullptr ),
   m_simple_mda( -1.0 ),
-  m_simple_max_det_dist( -1.0 ),
   m_simple_excess_counts( -1.0 ),
-  m_fix_decon_continuum( nullptr ),
+  m_simple_max_det_dist( -1.0 ),
+  m_decon_cont_norm_method( nullptr ),
   m_changed( this )
   {
     addStyleClass( "MdaPeakRow" );
@@ -655,7 +700,6 @@ public:
     m_roi_end->setFormatString( "%.2f" );
     label->setBuddy( m_roi_end );
     
-    
     label = new WLabel( "Continuum", leftColumn );
     label->addStyleClass( "GridFirstCol GridFifthRow" );
     m_continuum = new WComboBox( leftColumn );
@@ -664,11 +708,43 @@ public:
     m_continuum->addItem( "Quadratic" );
     m_continuum->setCurrentIndex( 0 );
     label->setBuddy( m_continuum );
-  
-    if( m_input.fixed_decon_continuum )
+    
+    
+    label = new WLabel( "Cont. Norm", leftColumn );
+    label->addStyleClass( "GridFirstCol GridSixthRow" );
+    m_decon_cont_norm_method = new WComboBox( leftColumn );
+    m_decon_cont_norm_method->addStyleClass( "GridSecondCol GridSixthRow" );
+    
+    static_assert( static_cast<int>(DetectionLimitCalc::DeconContinuumNorm::Floating) == 0, "DeconContinuumNorm out of date" );
+    static_assert( static_cast<int>(DetectionLimitCalc::DeconContinuumNorm::FixedByEdges) == 1, "DeconContinuumNorm out of date" );
+    static_assert( static_cast<int>(DetectionLimitCalc::DeconContinuumNorm::FixedByFullRange) == 2, "DeconContinuumNorm out of date" );
+    m_decon_cont_norm_method->addItem( "Floating" );
+    m_decon_cont_norm_method->addItem( "Fixed at edges" );
+    m_decon_cont_norm_method->addItem( "Fixed full ROI" );
+    m_decon_cont_norm_method->setCurrentIndex( static_cast<int>(m_input.decon_cont_norm_method) );
+    
+    const bool showToolTips = InterSpecUser::preferenceValue<bool>( "ShowTooltips", InterSpec::instance() );
+    const char *tooltip = "How the continuum normalization should be determined:"
+    "<ul><li><b>Floating</b>: The polynomial continuum is fit for, at each given activity -"
+         " the activity affects the continuum.</li>"
+    "<li><b>Fixed at edges</b>: The channels on either side of the ROI are used to determine a"
+         " linear continuum that is fixed, and not affected by the nuclides activity.</li>"
+    "<li><b>Fixed full ROI</b>: The continuum is fit using the entire energy range of the ROI,"
+         " assuming a Gaussian amplitude of zero; later, the Gaussian component of the peak will "
+         " sit on top of this fixed continuum.<br/>"
+         "This is effectively asserting that you know there is no signal peak present in the data."
+         "  The continuum will not be affected by the nuclide activity value, and the Gaussian"
+         " component of the peak will sit on top of this fixed continuum when evaluating the"
+         " &chi;<sup>2</sup>.</li>"
+    "</ul>";
+      
+    HelpSystem::attachToolTipOn( {static_cast<Wt::WWebWidget*>(label),
+                                  static_cast<Wt::WWebWidget*>(m_decon_cont_norm_method)},
+                                tooltip, showToolTips, HelpSystem::ToolTipPosition::Right,
+                                HelpSystem::ToolTipPrefOverride::RespectPreference );
+
+    if( m_input.decon_cont_norm_method == DetectionLimitCalc::DeconContinuumNorm::FixedByEdges )
     {
-      // See notes for `DeconRoiInfo::fix_continuum_to_edges` about how we could/should change
-      //  only allowing linear continuums for fixed continuums
       assert( input.decon_continuum_type == PeakContinuum::OffsetType::Linear );
       m_input.decon_continuum_type = PeakContinuum::OffsetType::Linear;
     }
@@ -714,7 +790,6 @@ public:
     m_num_side_channels->setRange( 1.0f, 50.0f );
     m_num_side_channels->setValue( input.num_side_channels );
     label->setBuddy( m_continuum );
-    
   
     switch( m_input.limit_type )
     {
@@ -734,16 +809,6 @@ public:
     }//switch( m_input.limit_type )
     
     
-    setRoiStart( input.roi_start );
-    setRoiEnd( input.roi_end );
-    
-    m_fix_decon_continuum = new WCheckBox( "Fixed continuum", leftColumn );
-    m_fix_decon_continuum->addStyleClass( "GridFirstCol GridFithRow GridSpanTwoCol" );
-    m_fix_decon_continuum->setChecked( input.fixed_decon_continuum );
-    
-    m_fix_decon_continuum->checked().connect( this, &MdaPeakRow::handleFixContinuumChange );
-    m_fix_decon_continuum->unChecked().connect( this, &MdaPeakRow::handleFixContinuumChange );
-
     m_use_for_likelihood->checked().connect( this, &MdaPeakRow::handleUseForLikelihoodChanged );
     m_use_for_likelihood->unChecked().connect( this, &MdaPeakRow::handleUseForLikelihoodChanged );
     m_roi_start->valueChanged().connect( this, &MdaPeakRow::roiChanged );
@@ -751,9 +816,15 @@ public:
     m_num_side_channels->valueChanged().connect( this, &MdaPeakRow::roiChanged );
     m_continuum->activated().connect( this, &MdaPeakRow::roiChanged );
     m_continuum->changed().connect( this, &MdaPeakRow::roiChanged );
+    m_decon_cont_norm_method->activated().connect( this, &MdaPeakRow::handleContinuumNormMethodChange );
+    m_decon_cont_norm_method->changed().connect( this, &MdaPeakRow::handleContinuumNormMethodChange );
+    
+    
+    setRoiStart( input.roi_start );
+    setRoiEnd( input.roi_end );
     
     m_continuum->disable();
-    m_fix_decon_continuum->disable();
+    m_decon_cont_norm_method->disable();
     
     setSimplePoisonTxt();
     
@@ -819,7 +890,7 @@ public:
     assert( fabs(m_input.roi_start - roundToNearestChannelEdge( m_roi_start->value() ) ) < 0.01 );
     assert( fabs(m_input.roi_end - roundToNearestChannelEdge( m_roi_end->value() ) ) < 0.01 );
 
-    assert( m_input.fixed_decon_continuum == m_fix_decon_continuum->isChecked() );
+    assert( static_cast<int>(m_input.decon_cont_norm_method) == m_decon_cont_norm_method->currentIndex() );
     assert( m_input.num_side_channels == m_num_side_channels->value() );
     assert( (m_continuum->currentIndex() == 0)
            || (m_continuum->currentIndex() == 1) );
@@ -2286,7 +2357,7 @@ void DetectionLimitTool::handleInputChange()
     input.confidence_level = confLevel;
     input.trans_through_air = line.air_transmission;
     input.trans_through_shielding = line.shield_transmission;
-    input.fixed_decon_continuum = false;
+    input.decon_cont_norm_method = DetectionLimitCalc::DeconContinuumNorm::Floating;
     input.decon_continuum_type = PeakContinuum::OffsetType::Linear;
     
     const auto oldValPos = m_previousRoiValues.find( energy );
@@ -2300,12 +2371,10 @@ void DetectionLimitTool::handleInputChange()
       input.roi_start = oldval.roi_start;
       input.roi_end = oldval.roi_end;
       input.num_side_channels = oldval.num_side_channels;
-      input.fixed_decon_continuum = oldval.fixed_decon_continuum;
+      input.decon_cont_norm_method = oldval.decon_cont_norm_method;
       input.decon_continuum_type = oldval.decon_continuum_type;
-      if( input.fixed_decon_continuum )
+      if( input.decon_cont_norm_method == DetectionLimitCalc::DeconContinuumNorm::FixedByEdges )
       {
-        // See notes for `DeconRoiInfo::fix_continuum_to_edges` about how we could/should change
-        //  only allowing linear continuums for fixed continuums
         assert( input.decon_continuum_type == PeakContinuum::OffsetType::Linear );
         input.decon_continuum_type = PeakContinuum::OffsetType::Linear;
       }
@@ -3190,7 +3259,7 @@ shared_ptr<DetectionLimitCalc::DeconComputeInput> DetectionLimitTool::getCompute
     
     shared_ptr<PeakContinuum> peak_continuum;
     
-    const bool fix_continuum = row_input.fixed_decon_continuum;
+    const DetectionLimitCalc::DeconContinuumNorm cont_norm = row_input.decon_cont_norm_method;
     
     const PeakContinuum::OffsetType continuum_type = row_input.decon_continuum_type;
     switch( continuum_type )
@@ -3213,7 +3282,7 @@ shared_ptr<DetectionLimitCalc::DeconComputeInput> DetectionLimitTool::getCompute
     roi_info.roi_start = roi_start;
     roi_info.roi_end = roi_end;
     roi_info.continuum_type = continuum_type;
-    roi_info.fix_continuum_to_edges = fix_continuum;
+    roi_info.cont_norm_method = cont_norm;
     roi_info.num_lower_side_channels = nsidebin;
     roi_info.num_upper_side_channels = nsidebin;
     

@@ -6043,8 +6043,8 @@ void fitPeaks( const std::vector<PeakDef> &all_near_peaks,
       if( !peak->fitFor(PeakDef::GaussAmplitude) )
         continue;
       
-      // Dont enforce a significance test if we are reftting the peak, and 
-      //  Sigma and Mean are fixed - the user probably probably what they  
+      // Dont enforce a significance test if we are refitting the peak, and
+      //  Sigma and Mean are fixed - the user probably knows what they
       //  are are doing.
       if( (method == PeakFitChi2Fcn::kRefitPeakParameters)
         && !peak->fitFor(PeakDef::Sigma)
