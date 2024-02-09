@@ -176,6 +176,8 @@ void QLSpecMeas::addPeaksFromXml( const ::rapidxml::xml_node<char> *peaksnode )
     for( const xml_node<char> *peak_node = peaksnode->first_node("Peak",4);
         peak_node; peak_node = peak_node->next_sibling("Peak",4) )
     {
+      try
+      {
       std::shared_ptr<QLPeakDef> peak( new QLPeakDef() );
       peak->fromXml( peak_node, continuums );
       
@@ -193,6 +195,10 @@ void QLSpecMeas::addPeaksFromXml( const ::rapidxml::xml_node<char> *peaksnode )
         throw runtime_error( "Peak elements \"id\" attribute must have a unique value: " + peakidstr );
       
       id_to_peak[peakid] = peak;
+      }catch( std::exception &e )
+      {
+        cerr << "Failed to parse peak: " << e.what() << endl;
+      }
     }//for( loop over Peak nodes )
     
     
@@ -296,7 +302,16 @@ void QLSpecMeas::decodeSpecMeasStuffFromXml( const ::rapidxml::xml_node<char> *i
   
   node = interspecnode->first_node( "Peaks", 5 );
   if( node )
-    addPeaksFromXml( node );
+  {
+    try
+    {
+      addPeaksFromXml( node );
+    }
+    catch(const std::exception& e)
+    {
+      std::cerr << "Failed to parse peaks: " << e.what() << '\n';
+    }
+  }
 }//void decodeSpecMeasStuffFromXml( ::rapidxml::xml_node<char> *parent )
 
 

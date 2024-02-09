@@ -12,6 +12,7 @@ find_package( Threads REQUIRED )
 
 message( "InterSpec_BASE_DIR=${InterSpec_BASE_DIR}" )
 message( "CMAKE_PREFIX_PATH=${CMAKE_PREFIX_PATH}" )
+# set( InterSpec_BASE_DIR ../../../../ )
 INCLUDE( ${InterSpec_BASE_DIR}/cmake/FindWt.cmake )
 
 

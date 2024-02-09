@@ -212,8 +212,8 @@ bool renderTimeSeries( ImageType &image, std::shared_ptr<QLSpecMeas> meas )
       labelFont.setSize( WLength(ns_large_render_font_size) );
       chart.setPlotAreaPadding( 165, Wt::Bottom );
       chart.setPlotAreaPadding( (contained_neutrons ? 75 : 5), Wt::Right );
-      chart.enableLegend( true );
-      chart.setPaintOnLegendFontSize( ns_large_render_legend_font_size );
+      //chart.enableLegend( true );
+      //chart.setPaintOnLegendFontSize( ns_large_render_legend_font_size );
       chart.axis(Chart::XAxis).setTitle( "Time (s)" );
       chart.setCompactAxis( false );
       break;
@@ -324,7 +324,6 @@ bool renderSpectrum( ImageType &image,
   
   //printf( "128 pixels -> %f\n",  WLength(128,WLength::Point).toPixels() );
   //128 pixels -> 170.666667
-  
   std::shared_ptr<QLSpecMeas> specmeas = std::make_shared<QLSpecMeas>();
   specmeas->add_measurement( meas, true );
   if( peaks )
@@ -332,7 +331,6 @@ bool renderSpectrum( ImageType &image,
   
   QLSpectrumDataModel dataModel;
   QLSpectrumChart chart;
-  
   chart.setModel( &dataModel );
   chart.setPeaks( peaks );
   
@@ -340,7 +338,6 @@ bool renderSpectrum( ImageType &image,
   const float realTime = meas->real_time();
   const double neutrons = meas->neutron_counts_sum();
   dataModel.setDataHistogram( meas, liveTime, realTime, neutrons );
-  
   if( back )
   {
     float sf = 1.0;
@@ -349,7 +346,6 @@ bool renderSpectrum( ImageType &image,
     dataModel.setBackgroundHistogram( back, back->live_time(), back->real_time(), back->neutron_counts_sum() );
     dataModel.setBackgroundDataScaleFactor( sf );
   }//if( background )
-  
   const vector<Chart::WDataSeries> series = dataModel.suggestDataSeries();
   chart.setSeries( series );
   
@@ -357,7 +353,6 @@ bool renderSpectrum( ImageType &image,
   
   WFont labelFont = chart.axis(Chart::YAxis).labelFont();
   WFont titleFont = chart.titleFont();
-  
   switch( render_type )
   {
     case LargeSpecRender:
@@ -370,7 +365,7 @@ bool renderSpectrum( ImageType &image,
         chart.setPlotAreaPadding( ns_large_render_font_size + 5, Wt::Top );
         titleFont.setSize( ns_large_render_font_size );
       }
-      chart.setPaintOnLegendFontSize( ns_large_render_font_size );
+      //chart.setPaintOnLegendFontSize( ns_large_render_font_size );
       chart.axis(Chart::XAxis).setTitle( "Energy (keV)" );
       chart.setCompactAxis( false );
       if( title.size() )
@@ -383,7 +378,7 @@ bool renderSpectrum( ImageType &image,
       chart.setPlotAreaPadding( 75, Wt::Bottom );
       chart.setPlotAreaPadding( 0, Wt::Right );
       titleFont.setSize( ns_compact_render_font_size );
-      chart.setPaintOnLegendFontSize( ns_compact_render_font_size );
+      //chart.setPaintOnLegendFontSize( ns_compact_render_font_size );
       chart.axis(Chart::XAxis).setTitle( "(keV)" );
       chart.setCompactAxis( true );
     break;
@@ -397,8 +392,8 @@ bool renderSpectrum( ImageType &image,
   
   chart.setTitleFont( titleFont );
   
-  if( legend )
-    chart.enableLegend( true );
+  //if( legend )
+  //  chart.enableLegend( true );
   
   const size_t nchannel = meas->num_gamma_channels();
   float lowx = meas->gamma_channel_lower( 0 );
@@ -466,16 +461,15 @@ void render_spec_file_to_preview( uint8_t **result, size_t *result_size,
   std::shared_ptr<QLSpecMeas> spec = std::make_shared<QLSpecMeas>();
   std::shared_ptr< std::deque<std::shared_ptr<const QLPeakDef> > > peaks;
   
-  
   if( !spec->load_file( filename, SpecUtils::ParserType::Auto, filename ) )
   {
     printf( "Failed to parse '%s' as a spectrum file.\n", filename );
     return;
   }//
-  
+
   if( !spec->num_measurements() )
   {
-    printf( "No measurments in '%s'.\n", filename );
+    printf( "No measurements in '%s'.\n", filename );
     return;
   }
   
@@ -572,6 +566,7 @@ void render_spec_file_to_preview( uint8_t **result, size_t *result_size,
     }//if( spec->num_measurements() == 1 || samplenums.size() == 1 ) / else
   }//if( spec->passthrough() ) / else
   
+  
   if( foreground_sample_numbers.empty() )
     swap( foreground_sample_numbers, background_sample_numbers );
   
@@ -580,6 +575,7 @@ void render_spec_file_to_preview( uint8_t **result, size_t *result_size,
     printf( "No foreground measurements in '%s' spectrum file.\n", filename );
     return;
   }
+  
 
   const vector<string> &detectors_to_use = spec->detector_names();
   
@@ -592,6 +588,7 @@ void render_spec_file_to_preview( uint8_t **result, size_t *result_size,
   {
     foreground = spec->sum_measurements( foreground_sample_numbers, detectors_to_use, nullptr );
   }
+  
   
   if( background_sample_numbers.size() )
     background = spec->sum_measurements( background_sample_numbers, detectors_to_use, nullptr );
@@ -631,7 +628,6 @@ void render_spec_file_to_preview( uint8_t **result, size_t *result_size,
         cerr << "Failed in renderSpectrum" << endl;
         return;
       }
-    
       if( spec->passthrough() )
       {
         time_img = std::make_shared<WSvgImage>( width_px, spec_height_px/2.0f );
@@ -676,6 +672,7 @@ void render_spec_file_to_preview( uint8_t **result, size_t *result_size,
       cerr << "Caught exception rendering SVG: " << e.what() << endl;
       return;
     }//try / catch
+    
 #if( RENDER_PREVIEWS_AS_PDF )
   }else
   {
@@ -817,7 +814,6 @@ void render_spec_file_to_preview( uint8_t **result, size_t *result_size,
         {
           //Simple spectrum file with foreground/background
           auto spectrum_img = std::make_shared<WPdfImage>( pdfdoc, pdfpage, 0, 0, width_px, height_px );
-          
           if( !renderSpectrum( *spectrum_img, foreground, background, peaks, show_legend ) )
             throw runtime_error( "Failed in renderSpectrum" );
         }
