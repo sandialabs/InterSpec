@@ -197,6 +197,7 @@ protected:
   void startApplyFitEnergyCalToSpecFile();
   void applyFitEnergyCalToSpecFile();
   void handleShowRefLines( const bool show );
+  void setPeaksToForeground();
   
   /** Calculation has been started. */
   Wt::Signal<> &calculationStarted();
@@ -294,6 +295,7 @@ protected:
   PopupDivMenuItem *m_apply_energy_cal_item;
   PopupDivMenuItem *m_show_ref_lines_item;
   PopupDivMenuItem *m_hide_ref_lines_item;
+  PopupDivMenuItem *m_set_peaks_foreground;
   
   /** If the user wants to show reference gamma lines, we'll use a #ReferencePhotopeakDisplay
    widget to calculate them and load them to m_spectrum; this is primarily for code re-use

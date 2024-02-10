@@ -52,6 +52,7 @@
 #include "SpecUtils/SpecFile.h"
 #include "SpecUtils/Filesystem.h"
 #include "SpecUtils/StringAlgo.h"
+#include "SpecUtils/SpecUtilsAsync.h"
 #include "SpecUtils/RapidXmlUtils.hpp"
 
 #include "InterSpec/PeakFit.h"
@@ -73,6 +74,7 @@
 #include "InterSpec/RelActAutoGui.h"
 #include "InterSpec/WarningWidget.h"
 #include "InterSpec/RelActCalcAuto.h"
+#include "InterSpec/SwitchCheckbox.h"
 #include "InterSpec/UndoRedoManager.h"
 #include "InterSpec/RelActTxtResults.h"
 #include "InterSpec/NativeFloatSpinBox.h"
@@ -1207,6 +1209,7 @@ RelActAutoGui::RelActAutoGui( InterSpec *viewer, Wt::WContainerWidget *parent )
   m_apply_energy_cal_item( nullptr ),
   m_show_ref_lines_item( nullptr ),
   m_hide_ref_lines_item( nullptr ),
+  m_set_peaks_foreground( nullptr ),
   m_photopeak_widget(),
   m_clear_energy_ranges( nullptr ),
   m_show_free_peak( nullptr ),
@@ -1591,6 +1594,11 @@ RelActAutoGui::RelActAutoGui( InterSpec *viewer, Wt::WContainerWidget *parent )
   m_hide_ref_lines_item->setHidden( true );
   m_hide_ref_lines_item->setDisabled( true );
   
+  m_set_peaks_foreground = m_more_options_menu->addMenuItem( "Set Peaks to foreground" );
+  m_set_peaks_foreground->triggered().connect( boost::bind( &RelActAutoGui::setPeaksToForeground, this ) );
+  m_set_peaks_foreground->setDisabled( true );
+    
+    
   // TODO: add item to account for Rel Eff, and Rel Acts
   
   WContainerWidget *bottomArea = new WContainerWidget( this );
@@ -3073,6 +3081,7 @@ void RelActAutoGui::handleFreePeakChange()
 void RelActAutoGui::setOptionsForNoSolution()
 {
   makeZeroAmplitudeRoisToChart();
+  m_set_peaks_foreground->setDisabled( true );
   
   for( WWidget *w : m_energy_ranges->children() )
   {
@@ -3094,7 +3103,7 @@ void RelActAutoGui::setOptionsForValidSolution()
   // Check if we should allow setting energy calibration from fit solution
   const bool fit_energy_cal = (m_solution->m_fit_energy_cal[0] || m_solution->m_fit_energy_cal[1]);
   m_apply_energy_cal_item->setDisabled( !fit_energy_cal );
-  
+  m_set_peaks_foreground->setDisabled( m_solution->m_fit_peaks.empty() );
   
   for( WWidget *w : m_energy_ranges->children() )
   {
@@ -3760,6 +3769,223 @@ void RelActAutoGui::handleShowRefLines( const bool show )
   m_render_flags |= RenderActions::UpdateRefGammaLines;
   scheduleRender();
 }//void RelActAutoGui::handleShowRefLines()
+
+
+void RelActAutoGui::setPeaksToForeground()
+{
+  assert( m_solution && !m_solution->m_fit_peaks.empty() );
+  if( !m_solution || m_solution->m_fit_peaks.empty() )
+  {
+    SimpleDialog *dialog = new SimpleDialog( "Can't Continue", "No peaks in current solution" );
+    dialog->addButton( "Close" );
+    return;
+  }//if( no solution peaks )
+  
+  PeakModel *peak_model = m_interspec->peakModel();
+  assert( peak_model );
+  if( !peak_model )
+    return;
+  
+  SimpleDialog *dialog = new SimpleDialog( "Use peaks with foreground?", "" );
+  dialog->addStyleClass( "SetToPeaksDialog" );
+  WText *message = new WText( "Peaks will not have uncertainties unless you choose"
+                             " to re-fit them, in which case the re-fit peaks may"
+                             " differ from the current peaks since they will no"
+                             " longer be constrained by the Relative Efficiency"
+                             " curve or spectrum wide FWHM response.", dialog->contents() );
+  message->addStyleClass( "content" );
+  message->setInline( false );
+  
+  SwitchCheckbox *replace_or_add = nullptr;
+  const vector<PeakDef> previous_peaks = peak_model->peakVec();
+  if( !previous_peaks.empty() )
+  {
+    WContainerWidget *holder = new WContainerWidget( dialog->contents() );
+    holder->addStyleClass( "AddOrReplaceSwitchRow" );
+    
+    replace_or_add = new SwitchCheckbox( "Add peaks", "Replace peaks", holder );
+    replace_or_add->setChecked( true ); //Make "Replace peaks" the default answer
+  }//if( we have peaks )
+  
+  WContainerWidget *refit_holder = new WContainerWidget( dialog->contents() );
+  refit_holder->addStyleClass( "AddOrReplaceRefitRow" );
+  WCheckBox *refit_peaks = new WCheckBox( "Refit Peaks", refit_holder );
+  
+  const bool showToolTips = InterSpecUser::preferenceValue<bool>( "ShowTooltips", InterSpec::instance() );
+  const char *tooltip = 
+  "When checked, peaks will be refit without the constraints of the relative efficiency curve,"
+  " expected branching ratios, or FWHM constraints from other ROIs - allowing statistical"
+  " uncertainties to be assigned to the peaks amplitude.<br/>"
+  "Peaks that are within 1.25 sigma of each other will be merged together.<br/>"
+  "  Peak mean, FWHM, and continuums will be refit, with usually peak means limited to be changed"
+  " by no more than 0.25 times the peak sigma, but if this fails,"
+  " then the limit may be increased to 0.5 times the peak sigma. <br/>"
+  "Fit peak amplitudes may also be limits in how much can be changed from the relative efficiency"
+  " peak amplitude, so you may need to manually refit some peaks again.<br/>";
+  HelpSystem::attachToolTipOn( refit_holder, tooltip, showToolTips );
+  
+  
+  dialog->addButton( "No" );
+  WPushButton *yes = dialog->addButton( "Yes" );
+  
+  
+  const vector<PeakDef> fit_peaks = m_solution->m_fit_peaks;
+  std::shared_ptr<const DetectorPeakResponse> ana_drf = m_solution->m_drf;
+  
+  if( m_solution->m_options.fit_energy_cal )
+  {
+    // The fit peaks have already been adjusted for energy calibration, so I dont
+    //  think we need to update them here
+  }//if( m_solution->m_options.fit_energy_cal )
+  
+  yes->clicked().connect( std::bind([fit_peaks, replace_or_add, refit_peaks, previous_peaks, ana_drf](){
+    const bool replace_peaks = (!replace_or_add || replace_or_add->isChecked());
+    
+    InterSpec *interpsec = InterSpec::instance();
+    assert( interpsec );
+    if( !interpsec )
+      return;
+    
+    shared_ptr<const SpecUtils::Measurement> foreground = interpsec->displayedHistogram(SpecUtils::SpectrumType::Foreground);
+    
+    vector<PeakDef> final_peaks;
+    if( foreground && refit_peaks->isChecked() )
+    {
+      
+      map< shared_ptr<const PeakContinuum>,vector<shared_ptr<const PeakDef>> > rois;
+     
+      for( const PeakDef &peak : fit_peaks )
+        rois[peak.continuum()].push_back( make_shared<PeakDef>(peak) );
+      
+      vector< vector<shared_ptr<const PeakDef>> > fit_peaks( rois.size() );
+      
+      SpecUtilsAsync::ThreadPool pool;
+      size_t roi_num = 0;
+      for( const auto &cont_peaks : rois )
+      {
+        const vector<shared_ptr<const PeakDef>> *peaks = &(cont_peaks.second);
+        
+        pool.post( [&fit_peaks, roi_num, foreground, peaks, ana_drf](){
+          
+          // If two peaks are near each other, we wont be able to resolve them in the fit,
+          //  so just get rid of the smaller amplitude peak
+          vector<shared_ptr<const PeakDef>> peaks_to_filter = *peaks;
+          std::sort( begin(peaks_to_filter), end(peaks_to_filter),
+                []( const shared_ptr<const PeakDef> &lhs, const shared_ptr<const PeakDef> &rhs ) -> bool {
+            if( (lhs->type() != PeakDef::GaussianDefined) 
+               || (rhs->type() != PeakDef::GaussianDefined) )
+            {
+              return (lhs->type() < rhs->type());
+            }
+            return lhs->amplitude() > rhs->amplitude();
+          } ); //sort(...)
+          
+          
+          vector<shared_ptr<const PeakDef>> peaks_to_refit;
+          for( const auto &to_add : peaks_to_filter )
+          {
+            if( to_add->type() != PeakDef::GaussianDefined )
+            {
+              peaks_to_refit.push_back( to_add );
+              continue;
+            }
+            
+            bool keep = true;
+            for( const auto &already_added : peaks_to_refit )
+            {
+              if( already_added->type() != PeakDef::GaussianDefined )
+                continue;
+              
+              // Using the default value of ShieldingSourceFitOptions::photopeak_cluster_sigma,
+              //  1.25, to decide if we should keep this peak or not
+              if( fabs(to_add->mean() - already_added->mean()) < 1.25*already_added->sigma() )
+              {
+                keep = false;
+                break;
+              }
+            }//for( const auto &already_added : peaks_to_refit )
+            
+            if( keep )
+              peaks_to_refit.push_back( to_add );
+          }//for( const auto &to_add : peaks_to_filter )
+          
+          std::sort( begin(peaks_to_refit), end(peaks_to_refit), &PeakDef::lessThanByMeanShrdPtr );
+          
+          
+          const double meanSigmaVary = 0.25; //arbitrary
+          fit_peaks[roi_num] = refitPeaksThatShareROI( foreground, ana_drf, peaks_to_refit, meanSigmaVary );
+          
+          if( fit_peaks[roi_num].size() != peaks_to_refit.size() )
+          {
+            cout << "refitPeaksThatShareROI gave " << fit_peaks[roi_num].size() << " peaks, while"
+            << " we wanted " << peaks->size() << ", will try fitPeaksInRange(...)" << endl;
+            vector<PeakDef> input_peaks, fixed_peaks;
+            for( const auto &p : peaks_to_refit )
+              input_peaks.push_back( *p );
+            
+            const double lx = input_peaks.front().lowerX();
+            const double ux = input_peaks.front().upperX();
+            
+            const double ncausality = 10;
+            const double stat_threshold = 0.5;
+            const double hypothesis_threshold = -1.0;
+            
+            const vector<PeakDef> retry_peak = fitPeaksInRange( lx, ux, ncausality, stat_threshold,
+                                                          hypothesis_threshold, input_peaks,
+                                                          foreground, fixed_peaks, true );
+            
+            if( (retry_peak.size() == peaks_to_refit.size())
+               || (fit_peaks[roi_num].empty() && !retry_peak.empty()) )
+            {
+              // This is *usually* the case
+              fit_peaks[roi_num].clear();
+              for( const auto &p : retry_peak )
+                fit_peaks[roi_num].push_back( make_shared<PeakDef>(p) );
+            }else if( !fit_peaks[roi_num].empty() )
+            {
+              // Maybe a peak became insignificant or something, just go with it
+            }else
+            {
+              cerr << "fitPeaksInRange(...) also failed us, giving " << retry_peak.size()
+              << " peaks when we wanted " << peaks_to_refit.size()
+              << ", will just use Rel. Eff. peaks." << endl;
+              fit_peaks[roi_num] = *peaks;
+            }//if( retry_peak.size() == peaks->size() ) / else
+          }//if( fit_peaks[roi_num].size() != peaks->size() )
+        } );
+        
+        ++roi_num;
+      }//for( auto &cont_peaks : rois )
+
+      pool.join();
+      
+      for( const auto &pvec : fit_peaks )
+      {
+        for( const auto &p : pvec )
+          final_peaks.push_back( *p );
+      }
+      std::sort( begin(final_peaks), end(final_peaks), &PeakDef::lessThanByMean );
+    }else
+    {
+      final_peaks = fit_peaks;
+    }
+    
+    PeakModel *peak_model = interpsec->peakModel();
+    assert( peak_model );
+    if( !peak_model )
+      return;
+    
+    if( replace_peaks )
+      peak_model->setPeaks( final_peaks );
+    else
+      peak_model->addPeaks( final_peaks );
+    
+    // Potential TODO: we could do something more sophisticated when adding peaks - kinda merge
+    //  them like we do when we do a peak search, see the `PeakSelectorWindow` class constructor
+    //  for how its done there
+  }) );
+  
+}//void setPeaksToForeground()
 
 
 Wt::Signal<> &RelActAutoGui::calculationStarted()

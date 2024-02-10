@@ -243,11 +243,11 @@ std::pair< PeakShrdVec, PeakShrdVec > searchForPeakFromUser( const double x,
                                            std::shared_ptr<const DetectorPeakResponse> drf );
 
 //refitPeaksThatShareROI: intended to refit peaks fit for by
-//  searchForPeakFromUser(...), for instance when you modfiy the ROI range.
+//  searchForPeakFromUser(...), for instance when you modify the ROI range.
 //  Returns an empty result if error occurs, or is not able to produce a better
 //  fit
 //  meanSigmaVary is how many sigma we should limit the peak means to. A negative
-//  value means no limit (untested).  Recomend 0.25.
+//  value means no limit (untested).  Recommend 0.25.
 std::vector< std::shared_ptr<const PeakDef> >
     refitPeaksThatShareROI( const std::shared_ptr<const SpecUtils::Measurement> &dataH,
                             const DetctorPtr &detector,

@@ -78,6 +78,8 @@ namespace RelActCalc
     gamma-x-ray coincidences (or is it the case we can just assume constant fraction between any
     gamma and any nuclide?), so we might need two parameters, one for gamams, one for gamma-neutrons
     and I guess maybe xray-xray?
+ - Should add option to give each branching-ratio an independent uncertainty (like 1% or something),
+   as well the same for FWHM
  */
 
 namespace RelActCalcAuto
