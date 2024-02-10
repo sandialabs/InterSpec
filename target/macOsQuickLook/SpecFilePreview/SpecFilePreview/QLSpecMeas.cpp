@@ -20,7 +20,6 @@
 #include "SpecUtils/SpecFile.h"
 #include "SpecUtils/StringAlgo.h"
 
-
 using namespace Wt;
 using namespace std;
 
@@ -113,7 +112,7 @@ void QLSpecMeas::addPeaksFromXml( const ::rapidxml::xml_node<char> *peaksnode )
   std::lock_guard<std::recursive_mutex> scoped_lock( mutex_ );
   
   if( !m_peaks )
-    m_peaks.reset( new SampleNumsToPeakMap() );
+    m_peaks = std::make_shared<SampleNumsToPeakMap>();
   
   int version = 1;
   const xml_attribute<char> *version_att = peaksnode->first_attribute("version",7);
@@ -176,8 +175,6 @@ void QLSpecMeas::addPeaksFromXml( const ::rapidxml::xml_node<char> *peaksnode )
     for( const xml_node<char> *peak_node = peaksnode->first_node("Peak",4);
         peak_node; peak_node = peak_node->next_sibling("Peak",4) )
     {
-      try
-      {
       std::shared_ptr<QLPeakDef> peak( new QLPeakDef() );
       peak->fromXml( peak_node, continuums );
       
@@ -195,10 +192,6 @@ void QLSpecMeas::addPeaksFromXml( const ::rapidxml::xml_node<char> *peaksnode )
         throw runtime_error( "Peak elements \"id\" attribute must have a unique value: " + peakidstr );
       
       id_to_peak[peakid] = peak;
-      }catch( std::exception &e )
-      {
-        cerr << "Failed to parse peak: " << e.what() << endl;
-      }
     }//for( loop over Peak nodes )
     
     
@@ -230,12 +223,16 @@ void QLSpecMeas::addPeaksFromXml( const ::rapidxml::xml_node<char> *peaksnode )
                                                     = id_to_peak.find( peakid );
         if( iter == id_to_peak.end() )
           throw runtime_error( "Could not find peak with id '"
-                               + boost::lexical_cast<string>(peakid)
+                               + std::to_string(peakid)
                                + "' in the XML for sample numbers '"
                                + xml_value(samples_node) );
         peaks->push_back( iter->second );
-      }//for( const int peakid, peakids )
+      }//for( const int peakid : peakids )
       
+      //The problem here is that the sample numbers can change; what we need to
+      //  do is create a <RadMeasurementGroup> and use this to associate peaks
+      //  with measurements.  We should also do the same for analysis, and also
+      //  dispalyed sample numbers
       
       switch( source )
       {

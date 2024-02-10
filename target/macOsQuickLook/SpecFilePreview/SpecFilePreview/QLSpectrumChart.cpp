@@ -2216,7 +2216,15 @@ void QLSpectrumChart::paint( WPainter &painter, const WRectF &rectangle ) const
   
   paintHighlightRegions( painter );
 
-  paintPeaks( painter );
+  painter.save();
+  try
+  {
+    paintPeaks( painter );
+  }catch( std::exception &e )
+  {
+    cerr << "Failed to paint peaks: " << e.what() << endl;
+  }
+  painter.restore();
   
   paintOnChartLegend( painter );
 }//paint( ... )
@@ -2345,8 +2353,10 @@ bool QLSpectrumChart::gausPeakDrawRange( int &minrow, int &maxrow,
   std::shared_ptr<const Measurement> dataH = th1Model->getData();
   if( dataH )
   {
-    size_t lower_channel, upper_channel;
+    //size_t lower_channel, upper_channel;
     //estimatePeakFitRange( peak, dataH, lower_channel, upper_channel );
+    const size_t lower_channel = dataH->find_gamma_channel( peak.lowerX() );
+    const size_t upper_channel = dataH->find_gamma_channel( peak.upperX() );
     minx = dataH->gamma_channel_lower(lower_channel) + 0.001;
     maxx = dataH->gamma_channel_upper(upper_channel);
   }//if( dataH )
