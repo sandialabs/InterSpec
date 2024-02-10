@@ -716,13 +716,18 @@ namespace HelpSystem
     if (app && app->isMobile())
        return;
     
+    Wt::WWebWidget *first_widget = *begin(widgets);
+    
 #if( USE_OSX_NATIVE_MENU )
-    PopupDivMenuItem *menuitem = dynamic_cast<PopupDivMenuItem *>( widget );
-    if( menuitem && menuitem->getNsMenuItem() )
+    for( Wt::WWebWidget *w : widgets )
     {
-      addOsxMenuItemToolTip( menuitem->getNsMenuItem(), text.c_str() );
-      return;
-    }//if( menuitem )
+      PopupDivMenuItem *menuitem = dynamic_cast<PopupDivMenuItem *>( w );
+      if( menuitem && menuitem->getNsMenuItem() )
+      {
+        addOsxMenuItemToolTip( menuitem->getNsMenuItem(), text.c_str() );
+        return;
+      }//if( menuitem )
+    }//for( Wt::WWebWidget *w : widgets )
 #endif
     
     //get the InterSpecApp so we can access the value set (from the preferences) whether
@@ -753,8 +758,6 @@ namespace HelpSystem
     string selector;
     for( const auto w : widgets )
       selector += (selector.empty() ? "#" : ",#") + w->id();
-
-    Wt::WWebWidget *first_widget = *begin(widgets);
     
     RmHelpFromDom *remover = new RmHelpFromDom( first_widget );
     

@@ -738,8 +738,7 @@ public:
          " &chi;<sup>2</sup>.</li>"
     "</ul>";
       
-    HelpSystem::attachToolTipOn( {static_cast<Wt::WWebWidget*>(label),
-                                  static_cast<Wt::WWebWidget*>(m_decon_cont_norm_method)},
+    HelpSystem::attachToolTipOn( {label, m_decon_cont_norm_method},
                                 tooltip, showToolTips, HelpSystem::ToolTipPosition::Right,
                                 HelpSystem::ToolTipPrefOverride::RespectPreference );
 

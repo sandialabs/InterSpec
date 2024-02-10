@@ -250,7 +250,7 @@ vector<SandiaDecay::EnergyRatePair> decay_during_meas_corrected_gammas(
   //
   // TODO: if nuclide decays to stable children, then just use standard formula to correct for decay (see below developer check for this)
   //
-  // We want to get the activity at the beggining of the measurement, but we want
+  // We want to get the activity at the beginning of the measurement, but we want
   //  to account for decay (or build up!) throughout the measurement; rather than
   //  being intelligent about it, we'll just average throughout the dwell time
   //
@@ -261,6 +261,10 @@ vector<SandiaDecay::EnergyRatePair> decay_during_meas_corrected_gammas(
   //            For 50:  0.82692
   //            For 25:  0.826913
   //            For 10:  0.826869
+  //
+  //  A spot check using Mn56 (hl=9283.8s), and a meas duration of 86423.86s, with 50 timeslices
+  //    gives a correction factor of 0.15473519892011101, vs analytical answer of 0.1547364350135815
+  
   const size_t characteristic_time_slices = 50; // Maybe at least ~5 sig figs
   
   if( mixture.numInitialNuclides() != 1 )

@@ -150,8 +150,7 @@ GammaXsGui::GammaXsGui( MaterialDB *materialDB,
   " enter a chemical formula such as 'H0.112 O0.88' where the numbers are the"
   " density in g/cm3, (or use mass fraction and Density field), of the"
   " preceding element.";
-  HelpSystem::attachToolTipOn( {static_cast<Wt::WWebWidget*>(label),static_cast<Wt::WWebWidget*>(m_materialEdit)},
-                              tooltip, showToolTips );
+  HelpSystem::attachToolTipOn( {label,m_materialEdit}, tooltip, showToolTips );
   
   m_layout->addWidget( m_materialEdit, row, 1, 1, 2 );
   m_materialSuggestion->forEdit( m_materialEdit,

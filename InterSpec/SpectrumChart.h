@@ -80,13 +80,6 @@ class SpectrumChart : public Wt::Chart::WCartesianChart
 // workaround, for more info see XXX note in SpectrumChart::handleDrag(...)
  
 public:
-  enum DragAction
-  {
-    ZoomIn,
-    HighLight,
-    NoAction
-  };//enum DragAction
-
   enum XAxisUnits
   {
     kkeV,
@@ -304,7 +297,7 @@ public:
   
   //enableLegend():  Makes it so the legend will be rendered, with some caviots.
   //  If no spectrums are present, will not be rendered.
-  //  If a time series chart (DragAction==Highlight), only rendered if more than
+  //  If a time series chart, only rendered if more than
   //  one sereies is to be plotted.
   //  For non-phone devices, creates a globablly floating legend (AuxWindow)
   //  that will be kept at a consistent distance from the top and right hand
