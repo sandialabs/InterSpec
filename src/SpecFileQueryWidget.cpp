@@ -277,7 +277,12 @@ namespace
                 case 36: val = static_cast<int>(SpecUtils::DetectorType::VerifinderLaBr); break;
                 case 37: val = static_cast<int>(SpecUtils::DetectorType::KromekD3S); break;
                 case 38: val = static_cast<int>(SpecUtils::DetectorType::RadiaCode); break;
-                case 39: val = static_cast<int>(SpecUtils::DetectorType::Unknown); break;
+                case 39: val = static_cast<int>(SpecUtils::DetectorType::Fulcrum); break;
+                case 40: val = static_cast<int>(SpecUtils::DetectorType::Fulcrum40h); break;
+                case 41: val = static_cast<int>(SpecUtils::DetectorType::IdentiFinderR425NaI); break;
+                case 42: val = static_cast<int>(SpecUtils::DetectorType::IdentiFinderR425LaBr); break;
+                case 43: val = static_cast<int>(SpecUtils::DetectorType::Sam950); break;
+                case 44: val = static_cast<int>(SpecUtils::DetectorType::Unknown); break;
                   
                 default:
                   throw runtime_error( "Unknown DetectionSystemType value type" );

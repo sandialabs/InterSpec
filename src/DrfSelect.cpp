@@ -4608,8 +4608,17 @@ shared_ptr<DetectorPeakResponse> DrfSelect::initARelEffDetector( const SpecUtils
       case SpecUtils::DetectorType::IdentiFinderLaBr3:
         return { "IdentiFINDER-LaBr", "IdentiFINDER-LG" };
         
-      case SpecUtils::DetectorType::IdentiFinderTungsten:
+      case SpecUtils::DetectorType::IdentiFinderR425NaI:
+        return { "IdentiFINDER-R425" };
+      
+      case SpecUtils::DetectorType::IdentiFinderR425LaBr:
+        //return  { }
+        break;
+        
       case SpecUtils::DetectorType::IdentiFinderR500NaI:
+        return { "IdentiFINDER-R500-NaI" };
+        
+      case SpecUtils::DetectorType::IdentiFinderTungsten:
       case SpecUtils::DetectorType::IdentiFinderR500LaBr:
       case SpecUtils::DetectorType::IdentiFinderUnknown:
         break;
@@ -4694,6 +4703,9 @@ shared_ptr<DetectorPeakResponse> DrfSelect::initARelEffDetector( const SpecUtils
       case SpecUtils::DetectorType::Sam945:
         return { "Sam-945" };
         
+      case SpecUtils::DetectorType::Sam950:
+        return { "BNC SAM-950 3x3 NaI", "SAM-950" };
+        
       case SpecUtils::DetectorType::Srpm210:
         //return { }
         break;
@@ -4727,6 +4739,14 @@ shared_ptr<DetectorPeakResponse> DrfSelect::initARelEffDetector( const SpecUtils
       case SpecUtils::DetectorType::RadiaCode:
         return { "Radiacode 102", "Radiacode", "Radiacode 101" };
         break;
+        
+      case SpecUtils::DetectorType::Fulcrum:
+        //return {};
+        break;
+        
+      case SpecUtils::DetectorType::Fulcrum40h:
+        return { "Fulcrum40h" };
+        
     }//switch( type )
     
     return {};
@@ -4918,17 +4938,21 @@ std::shared_ptr<DetectorPeakResponse> DrfSelect::initAGadrasDetector(
     case DetectorType::IdentiFinderR500LaBr:       name = "IdentiFINDER-R500-LaBr3"; break;
       
     case SpecUtils::DetectorType::KromekD3S:       name = "D3S"; break;
+    case DetectorType::Fulcrum40h:                 name = "Fulcrum40h"; break;
+    case DetectorType::IdentiFinderR425NaI: 	     name = "IdentiFINDER-R425"; break;
+    case DetectorType::Sam950:                     name = "SAM-950GN-N30"; break;
+    case DetectorType::Sam940LaBr3:                name = "SAM-Eagle-LaBr3"; break;
       
     case DetectorType::OrtecRadEagleCeBr2Inch:
     case DetectorType::OrtecRadEagleCeBr3Inch:
     case DetectorType::OrtecRadEagleLaBr:
     case DetectorType::RadHunterLaBr3:
     case DetectorType::RadHunterNaI:
-    case DetectorType::Sam940LaBr3:
     case DetectorType::IdentiFinderTungsten:
     case DetectorType::IdentiFinderUnknown:
     case DetectorType::RIIDEyeLaBr:
-      
+    case DetectorType::Fulcrum:
+    case DetectorType::IdentiFinderR425LaBr:
       // \TODO: fill in these names
       break;
   }//switch( type )

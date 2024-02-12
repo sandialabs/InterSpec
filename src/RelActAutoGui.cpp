@@ -3816,10 +3816,10 @@ void RelActAutoGui::setPeaksToForeground()
   "When checked, peaks will be refit without the constraints of the relative efficiency curve,"
   " expected branching ratios, or FWHM constraints from other ROIs - allowing statistical"
   " uncertainties to be assigned to the peaks amplitude.<br/>"
-  "Peaks that are within 1.25 sigma of each other will be merged together.<br/>"
+  "Peaks that are within 0.53 FWHM (1.25 sigma) of each other will be merged together.<br/>"
   "  Peak mean, FWHM, and continuums will be refit, with usually peak means limited to be changed"
-  " by no more than 0.25 times the peak sigma, but if this fails,"
-  " then the limit may be increased to 0.5 times the peak sigma. <br/>"
+  " by no more than 0.11 times the peak FWHM, but if this fails,"
+  " then the limit may be increased to 0.21 times the peak FWHM. <br/>"
   "Fit peak amplitudes may also be limits in how much can be changed from the relative efficiency"
   " peak amplitude, so you may need to manually refit some peaks again.<br/>";
   HelpSystem::attachToolTipOn( refit_holder, tooltip, showToolTips );
