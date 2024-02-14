@@ -4678,7 +4678,7 @@ shared_ptr<DetectorPeakResponse> DrfSelect::initARelEffDetector( const SpecUtils
         break;
         
       case SpecUtils::DetectorType::OrtecRadEagleNai:
-        return { "RadEagle" };
+        return { "RadEagle", "ORTEC RadEagle" };
         break;
         
       case SpecUtils::DetectorType::OrtecRadEagleCeBr2Inch:

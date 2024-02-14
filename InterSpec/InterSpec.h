@@ -425,7 +425,8 @@ public:
     void stateSaveTagAction(Wt::WLineEdit *nameedit,
                           AuxWindow *window);
   
-  //startStoreStateInDb(...): If state hasnt been saved yet (m_currentStateID>0)
+  //startStoreStateInDb(...): If state hasn't been saved yet,
+  //  e.g. `m_dataMeasurement->dbStateId(m_displayedSamples) < 0`,
   //  then a dialog will be popped up allowing user to enter a title and
   //  description.
   //  If the state is already in the database, and either the state is not
@@ -1053,10 +1054,6 @@ public:
   
 public:
 
-#if( USE_DB_TO_STORE_SPECTRA )
-  //getCurrentStateID() open access to the current state ID
-  long long getCurrentStateID() { return m_currentStateID; }
-#endif
   
   /** Function to add undo/redo step for when the user changes x-axis range of spectrum. */
   void handleSpectrumChartXRangeChange( const double xmin, const double xmax,
@@ -1366,7 +1363,7 @@ protected:
   //  InterSpec class is deleted.
   std::shared_ptr<DataBaseUtils::DbSession> m_sql;
   
-  //This menu implementation uses somethng that visually looks like a WPopupMenuItem.
+  //This menu implementation uses something that visually looks like a WPopupMenuItem.
   PopupDivMenu         *m_fileMenuPopup;
   PopupDivMenu         *m_editMenuPopup;
   PopupDivMenu         *m_toolsMenuPopup;
@@ -1377,11 +1374,6 @@ protected:
   PopupDivMenuItem *m_saveState;
   PopupDivMenuItem *m_saveStateAs;
   PopupDivMenuItem *m_createTag;
-  
-  //m_currentStateID: if the user has saved a state, this will be the database
-  //  ID of that state.  If there is no saved state, this variable will be -1.
-  //  It will also be reset to -1 when a new foreground is loaded.
-  long long m_currentStateID;
 #endif
   
   enum RightClickItems
@@ -1532,7 +1524,7 @@ protected:
 
   //m_referencePhotopeakLines: is a pointer to the widget where you can type in
   //  nuclides, reactions or elements (ex "U235", "W", "Ge(n,n)") to see the
-  //  reference photpeaks on the energy spectrum chart.
+  //  reference photopeaks on the energy spectrum chart.
   ReferencePhotopeakDisplay *m_referencePhotopeakLines;
   AuxWindow                 *m_referencePhotopeakLinesWindow;
 

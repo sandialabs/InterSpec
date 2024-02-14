@@ -1348,13 +1348,13 @@ void InterSpecApp::prepareForEndOfSession()
         state->description = desc;
           
           //check if Save menu needs to be updated
-          if( m_viewer->getCurrentStateID() >= 0 )
+          if( m_viewer->currentAppStateDbId() >= 0 )
           {
               try
               {
                   std::shared_ptr<DataBaseUtils::DbSession> sql = m_viewer->sql();
                   DataBaseUtils::DbTransaction transaction( *sql );
-                  Dbo::ptr<UserState> currentState = sql->session()->find<UserState>( "where id = ?" ).bind( m_viewer->getCurrentStateID() );
+                  Dbo::ptr<UserState> currentState = sql->session()->find<UserState>( "where id = ?" ).bind( m_viewer->currentAppStateDbId() );
                   transaction.commit();
                   
                   if (currentState)

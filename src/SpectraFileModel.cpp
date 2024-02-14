@@ -1017,6 +1017,11 @@ std::shared_ptr<SpecMeas> SpectraFileHeader::initFile(
 
     if( success )
     {
+      //Make sure the file we're opening doesn't have erroneous DB state indexes in it, which could
+      //  cause us to overwrite a state.
+      // I *think* all opening of spectrum files from filesystem go through here of `setFile(...)`.
+      info->clearAllDbStateId();
+      
       RecursiveLock lock( m_mutex );
       m_weakMeasurmentPtr = info;
       return info;
@@ -1358,6 +1363,12 @@ void SpectraFileHeader::setFile( const std::string &displayFileName, std::shared
   
   info->reset_modified();
   info->reset_modified_since_decode();
+  
+  //Make sure the file we're opening doesn't have erroneous DB state indexes in it, which could
+  //  cause us to overwrite a state.
+  // I *think* all opening of spectrum files from filesystem go through here of `initFile(...)`.
+  info->clearAllDbStateId();
+  
   m_modifiedSinceDecode = false;
   
   setMeasurmentInfo( info );

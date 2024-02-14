@@ -942,7 +942,7 @@ struct UserState
   Wt::WString name;
   Wt::WString description;
   
-  //The fillowing indices should probably be converted over to being proper
+  //The following indices should probably be converted over to being proper
   //  pointers/collections (or maybye Dbo::weak_ptr), so as to not run into
   //  issues with Wt::Dbo optimizations (e.g. indices not normally assigned
   //  until last recursive Transaction is committed).

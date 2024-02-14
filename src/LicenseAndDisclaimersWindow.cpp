@@ -431,8 +431,18 @@ void LicenseAndDisclaimersWindow::dataStorageCreator( Wt::WContainerWidget *pare
 #if( USE_GOOGLE_MAP )
     ", except when the Google Maps feature is used"
 #endif
+#if( USE_LEAFLET_MAP || USE_REMOTE_RID )
+    ", except when the "
+#endif
 #if( USE_LEAFLET_MAP )
-    ", except when the Maps feature is used"
+    "Maps or External RID features are used"
+  #if( USE_REMOTE_RID )
+    "Maps or External RID features are used"
+  #else
+    "External RID feature is used"
+  #endif
+#elif( USE_REMOTE_RID )
+    "Remote RID feature is used"
 #endif
     "."
     

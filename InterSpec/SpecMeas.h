@@ -231,6 +231,23 @@ public:
   //peaksHaveBeenAdded(): marks this SpecUtils::SpecFile object as
   void setModified();
 
+  /** The database UserState table index for the state associated with the passed in sample numbers.
+   
+   @returns The db index value that is >=0, if there is a state associated with this spectrum, otherwise returns -1.
+   
+   This quantity is stored when the user loads or saves the application state.
+   This value is currently persisted into the XML, but may change in the future.
+   */
+  long long int dbStateId( const std::set<int> &samplenums ) const;
+  
+  /** Sets the database UserState table index for the state associated with the passed in sample numbers. 
+   
+   Passing in a ID of less than zero removes the index for the specified sample numbers.
+   */
+  void setDbStateId( const long long int db_id, const std::set<int> &samplenums );
+  
+  /** Clears all UserState table index associations. */
+  void clearAllDbStateId();
   
   //shiftPeaksForRecalibration: shift the peaks for when you apply a
   //  recalibration to the spectrum, for instance after calling
@@ -287,6 +304,8 @@ public:
   void addPeaksToXml( ::rapidxml::xml_node<char> *peaksnode ) const;
   void addPeaksFromXml( const ::rapidxml::xml_node<char> *peaksnode );
   
+  void addDbStateIdsToXml( ::rapidxml::xml_node<char> *db_state_index_node ) const;
+  void addDbStateIdsFromXml( const ::rapidxml::xml_node<char> *db_state_index_node );
   
 #if( PERFORM_DEVELOPER_CHECKS )
   //equalEnough(...): tests whether the passed in Measurement objects are
@@ -374,10 +393,16 @@ protected:
    */
   bool m_fileWasFromInterSpec;
   
+  /** A mapping of sample numbers, to the UserState table, if the user has saved state to the DB.
+   
+   Not currently serialized to N42...
+   */
+  std::map<std::set<int>,long long int> m_dbUserStateIndex;
+  
   /** Version of XML serialization of the <DHS:InterSpec> node.
    Changes:
    - Added version field to xml 20200807, with initial value 1.  Added <DisplayedDetectors> field.
-   
+   - Added "DbUserStateIndexes" node to xml 20230214, but did not increment version as it is not required field.
    */
   static const int sm_specMeasSerializationVersion;
   

@@ -408,7 +408,6 @@ InterSpec::InterSpec( WContainerWidget *parent )
     m_saveState( 0 ),
     m_saveStateAs( 0 ),
     m_createTag( 0 ),
-    m_currentStateID( -1 ),
 #endif
     m_rightClickMenu( 0 ),
     m_rightClickEnergy( -DBL_MAX ),
@@ -3017,9 +3016,9 @@ void InterSpec::saveStateToDb( Wt::Dbo::ptr<UserState> entry )
     //  written to the database, so there id()'s will be not -1.
     m_sql->session()->flush();
     
-    entry.modify()->foregroundId = dbforeground.id();
-    entry.modify()->backgroundId = dbbackground.id();
-    entry.modify()->secondForegroundId = dbsecond.id();
+    entry.modify()->foregroundId = static_cast<int>( dbforeground.id() );
+    entry.modify()->backgroundId = static_cast<int>( dbbackground.id() );
+    entry.modify()->secondForegroundId = static_cast<int>( dbsecond.id() );
     
     /*
     entry.modify()->shieldSourceModelId = -1;
@@ -3990,38 +3989,46 @@ void InterSpec::loadStateFromDb( Wt::Dbo::ptr<UserState> entry )
 //  int showingMarkers;        //bitwise or of FeatureMarkers
 //  int showingWindows;
     
-    m_currentStateID = entry.id();
-    if( parent )
-      m_currentStateID = parent.id();
-    
     transaction.commit();
+    
+    const long long int db_index = parent ? parent.id() : entry.id();
+    if( m_dataMeasurement && !m_displayedSamples.empty() )
+      m_dataMeasurement->setDbStateId( db_index, m_displayedSamples );
+    
+    updateSaveWorkspaceMenu();
   }catch( std::exception &e )
   {
-    m_currentStateID = -1;
+    if( m_dataMeasurement )
+      m_dataMeasurement->setDbStateId( -1, m_displayedSamples );
+    
     updateSaveWorkspaceMenu();
     cerr << "\n\n\n\nloadStateFromDb(...) caught: " << e.what() << endl;
     throw runtime_error( e.what() );
   }//try / catch
-  
-  m_currentStateID = entry.id();
-  updateSaveWorkspaceMenu();
 }//void loadStateFromDb( Wt::Dbo::ptr<UserState> entry )
 
 
-//Whenever m_currentStateID changes value, we need to update the menu!
+//Whenever `m_dataMeasurement->dbStateId(db_index, m_displayedSamples)` changes value,
+//  we need to update the menu!
 void InterSpec::updateSaveWorkspaceMenu()
 {
   m_saveStateAs->setDisabled( !m_dataMeasurement );
   
   //check if Save menu needs to be updated
-  if( m_currentStateID >= 0 )
+  
+  
+  const long long int db_index = (m_dataMeasurement && !m_displayedSamples.empty())
+                                    ? m_dataMeasurement->dbStateId(m_displayedSamples)
+                                    : static_cast<long long int>(-1);
+  
+  if( db_index >= 0 )
   {
     try
     {
       DataBaseUtils::DbTransaction transaction( *m_sql );
       Dbo::ptr<UserState> state = m_sql->session()
                                        ->find<UserState>( "where id = ?" )
-                                       .bind( m_currentStateID );
+                                       .bind( db_index );
       transaction.commit();
       
       if( state && (state->stateType==UserState::kEndOfSessionHEAD
@@ -4049,17 +4056,19 @@ void InterSpec::updateSaveWorkspaceMenu()
 
 long long int InterSpec::currentAppStateDbId()
 {
-  return m_currentStateID;
+  if( !m_dataMeasurement || m_displayedSamples.empty() )
+    return -1;
+  
+  return m_dataMeasurement->dbStateId(m_displayedSamples);
 }//int currentAppStateDbId()
 
 
 void InterSpec::resetCurrentAppStateDbId()
 {
-  m_currentStateID = -1;
+  if( m_dataMeasurement )
+    m_dataMeasurement->setDbStateId( -1, m_displayedSamples );
   updateSaveWorkspaceMenu();
 }//void resetCurrentAppStateDbId()
-//m_currentStateID
-
 #endif //#if( USE_DB_TO_STORE_SPECTRA )
 
 
@@ -4798,11 +4807,9 @@ void InterSpec::finishStoreStateInDb( WLineEdit *nameedit,
   
   Dbo::ptr<UserState> state = serializeStateToDb( name, desc, forTesting, parent );
   
-  if( parent )
-    m_currentStateID = parent.id();
-  else
-    m_currentStateID = state.id();
-    
+  const long long int db_index = parent ? parent.id() : state.id();
+  if( m_dataMeasurement )
+    m_dataMeasurement->setDbStateId( db_index, m_displayedSamples );
   updateSaveWorkspaceMenu();
   
 #if( INCLUDE_ANALYSIS_TEST_SUITE )
@@ -5197,7 +5204,10 @@ void InterSpec::startN42TestStates()
 
 void InterSpec::startStoreTestStateInDb()
 {
-  if( m_currentStateID >= 0 )
+  const long long int db_index = m_dataMeasurement ? m_dataMeasurement->dbStateId(m_displayedSamples)
+                                                   : static_cast<long long int>(-1);
+  
+  if( db_index >= 0 )
   {
     AuxWindow *window = new AuxWindow( "Warning",
                                       (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::PhoneNotFullScreen)
@@ -5225,7 +5235,7 @@ void InterSpec::startStoreTestStateInDb()
   }else
   {
     startStoreStateInDb( true, true, true, false );
-  }//if( m_currentStateID >= 0 ) / else
+  }//if( db_index >= 0 ) / else
 }//void startStoreTestStateInDb()
 #endif //#if( INCLUDE_ANALYSIS_TEST_SUITE )
 
@@ -5233,7 +5243,8 @@ void InterSpec::startStoreTestStateInDb()
 //Save the snapshot and ALSO the spectra.
 void InterSpec::stateSave()
 {
-  if( m_currentStateID > 0 )
+  const long long int current_state_index = currentAppStateDbId();
+  if( current_state_index >= 0 )
   {
     //TODO: Should check if can save?
     saveShieldingSourceModelToForegroundSpecMeas();
@@ -5246,7 +5257,7 @@ void InterSpec::stateSave()
   {
     //No currentStateID, so just save as new snapshot
     stateSaveAs();
-  }//if( m_currentStateID > 0 ) / else
+  }//if( current_state_index >= 0 ) / else
 } //void stateSave()
 
 
@@ -5373,21 +5384,23 @@ void InterSpec::stateSaveTagAction( WLineEdit *nameedit, AuxWindow *window )
 {
   Dbo::ptr<UserState> state;
     
-  if( m_currentStateID >= 0 )
+  const long long int current_state_index = currentAppStateDbId();
+  
+  if( current_state_index >= 0 )
   {
     try
     {
       DataBaseUtils::DbTransaction transaction( *m_sql );
       state = m_sql->session()->find<UserState>( "where id = ?" )
-                               .bind( m_currentStateID );
+                               .bind( current_state_index );
       transaction.commit();
     }catch( std::exception &e )
     {
         cerr << "\nstartStoreStateInDb() caught: " << e.what() << endl;
     }//try / catch
-  }//if( m_currentStateID >= 0 )
+  }//if( current_state_index >= 0 )
     
-  //Save Snapshot/enviornment
+  //Save Snapshot/environment
   if( state )
     finishStoreStateInDb( nameedit, 0, 0, false, state );
   else
@@ -5438,14 +5451,16 @@ void InterSpec::startStoreStateInDb( const bool forTesting,
 {
   Dbo::ptr<UserState> state;
   
-  if( m_currentStateID >= 0 && !asNewState )
+  const long long int current_state_index = currentAppStateDbId();
+  
+  if( current_state_index >= 0 && !asNewState )
   {
       //If saving a tag, make sure to save to the parent.  We never overwrite TAGS
       try
       {
           DataBaseUtils::DbTransaction transaction( *m_sql );
           Dbo::ptr<UserState> childState  = m_sql->session()->find<UserState>( "where id = ? AND SnapshotTagParent_id >= 0" )
-          .bind( m_currentStateID );
+          .bind( current_state_index );
           
           if (childState)
           {
@@ -5465,14 +5480,14 @@ void InterSpec::startStoreStateInDb( const bool forTesting,
         {
             DataBaseUtils::DbTransaction transaction( *m_sql );
             state = m_sql->session()->find<UserState>( "where id = ?" )
-                           .bind( m_currentStateID );
+                           .bind( current_state_index );
             transaction.commit();
         }catch( std::exception &e )
         {
             cerr << "\nstartStoreStateInDb() caught: " << e.what() << endl;
         }//try / catch
     } //!state
-  }//if( m_currentStateID >= 0 )
+  }//if( current_state_index >= 0 )
   
   if( state )
   { //Save without dialog
@@ -10328,7 +10343,7 @@ void InterSpec::setSpectrum( std::shared_ptr<SpecMeas> meas,
     //{
     //  //We also need to do this in the InterSpec destructor as well.
     //  //   Also maybe change size limitations to only apply to auto saving
-    //  if( m_currentStateID >= 0 )
+    //  if( current_state_index >= 0 )
     //  {
     //    //Save to (HEAD) of current state
     //  }else
@@ -10354,10 +10369,6 @@ void InterSpec::setSpectrum( std::shared_ptr<SpecMeas> meas,
   switch( spec_type )
   {
     case SpecUtils::SpectrumType::Foreground:
-#if( USE_DB_TO_STORE_SPECTRA )
-      m_currentStateID = -1;
-      updateSaveWorkspaceMenu();
-#endif
       if( !sameSpecFile )
         deletePeakEdit();
       
@@ -10523,7 +10534,7 @@ void InterSpec::setSpectrum( std::shared_ptr<SpecMeas> meas,
     case SpecUtils::SpectrumType::Foreground:
       updateGuiForPrimarySpecChange( sample_numbers );
 #if( USE_DB_TO_STORE_SPECTRA )
-      m_saveStateAs->setDisabled( !m_dataMeasurement );
+      updateSaveWorkspaceMenu();
 #endif
       displayForegroundData( false );
       displayTimeSeriesData();
