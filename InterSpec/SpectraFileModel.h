@@ -25,6 +25,7 @@
 
 #include "InterSpec_config.h"
 
+#include <map>
 #include <set>
 #include <mutex>
 #include <deque>
@@ -358,6 +359,16 @@ public:
   std::string m_appId;
   mutable Wt::WApplication *m_app;
 
+  /** Keep a mapping of UserState database indexes, when files are removed from memory, and written back to disk.
+   This will be restored when the file is parsed back in.
+   
+   Values in this variable are only valid if the measurement is not in memory.
+   
+   This variable is only accessed or modified when there is a lock on `m_mutex`, and is mutable so that
+   it can be set and cleared in `saveToFileSystem(...)` and `parseFile()`, respectively.
+   */
+  mutable std::map<std::set<int>,long long int> m_userStateDbIndexes;
+  
 #ifdef WT_USE_BOOST_SIGNALS2
   mutable boost::signals2::connection m_aboutToBeDeletedConnection;
 #else

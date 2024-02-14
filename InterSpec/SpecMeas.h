@@ -155,7 +155,7 @@ public:
    */
   const std::set<int> &displayedSampleNumbers() const;
 
-  //aboutToBeDeleted(): signal emited right before object destructions - useful
+  //aboutToBeDeleted(): signal emitted right before object destructions - useful
   //  if you want to serialize changes to disk
   Wt::Signal<> &aboutToBeDeleted();
 
@@ -236,7 +236,7 @@ public:
    @returns The db index value that is >=0, if there is a state associated with this spectrum, otherwise returns -1.
    
    This quantity is stored when the user loads or saves the application state.
-   This value is currently persisted into the XML, but may change in the future.
+   This value is not currently persisted into the XML.
    */
   long long int dbStateId( const std::set<int> &samplenums ) const;
   
@@ -248,6 +248,9 @@ public:
   
   /** Clears all UserState table index associations. */
   void clearAllDbStateId();
+  
+  /** Returns the full map from sample numbers, to database UserState indexes. */
+  const std::map<std::set<int>,long long int> &dbUserStateIndexes() const;
   
   //shiftPeaksForRecalibration: shift the peaks for when you apply a
   //  recalibration to the spectrum, for instance after calling
@@ -304,8 +307,14 @@ public:
   void addPeaksToXml( ::rapidxml::xml_node<char> *peaksnode ) const;
   void addPeaksFromXml( const ::rapidxml::xml_node<char> *peaksnode );
   
-  void addDbStateIdsToXml( ::rapidxml::xml_node<char> *db_state_index_node ) const;
-  void addDbStateIdsFromXml( const ::rapidxml::xml_node<char> *db_state_index_node );
+  // I dont think we ever want to store the database index(es) into the written N42
+  //  file, but if we ever do, these next two functions implement writing to, and
+  //  reading from the xml.
+  //  If you change this, at a minimum, check for commented out calls to
+  //  `SpecMeas::clearAllDbStateId()`, so we don't erroneously setup to write over
+  //  existing database states, that may not be related to the data being loaded.
+  // void addDbStateIdsToXml( ::rapidxml::xml_node<char> *db_state_index_node ) const;
+  // void addDbStateIdsFromXml( const ::rapidxml::xml_node<char> *db_state_index_node );
   
 #if( PERFORM_DEVELOPER_CHECKS )
   //equalEnough(...): tests whether the passed in Measurement objects are
@@ -395,14 +404,13 @@ protected:
   
   /** A mapping of sample numbers, to the UserState table, if the user has saved state to the DB.
    
-   Not currently serialized to N42...
+   Not currently serialized to N42.
    */
-  std::map<std::set<int>,long long int> m_dbUserStateIndex;
+  std::map<std::set<int>,long long int> m_dbUserStateIndexes;
   
   /** Version of XML serialization of the <DHS:InterSpec> node.
    Changes:
    - Added version field to xml 20200807, with initial value 1.  Added <DisplayedDetectors> field.
-   - Added "DbUserStateIndexes" node to xml 20230214, but did not increment version as it is not required field.
    */
   static const int sm_specMeasSerializationVersion;
   

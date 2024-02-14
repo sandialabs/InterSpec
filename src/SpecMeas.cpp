@@ -547,7 +547,7 @@ void SpecMeas::uniqueCopyContents( const SpecMeas &rhs )
   
   m_fileWasFromInterSpec = rhs.m_fileWasFromInterSpec;
   
-  m_dbUserStateIndex = rhs.m_dbUserStateIndex;
+  m_dbUserStateIndexes = rhs.m_dbUserStateIndexes;
 }//void uniqueCopyContents( const SpecMeas &rhs )
 
 
@@ -919,6 +919,7 @@ void SpecMeas::addPeaksFromXml( const ::rapidxml::xml_node<char> *peaksnode )
 }//void addPeaksFromXml( ::rapidxml::xml_node<char> *peaksnode );
 
 
+/*
 void SpecMeas::addDbStateIdsToXml( ::rapidxml::xml_node<char> *db_state_index_node ) const
 {
   auto doc = db_state_index_node ? db_state_index_node->document() : nullptr;
@@ -926,7 +927,7 @@ void SpecMeas::addDbStateIdsToXml( ::rapidxml::xml_node<char> *db_state_index_no
   if( !doc )
     return;
   
-  for( const auto &index_id : m_dbUserStateIndex )
+  for( const auto &index_id : m_dbUserStateIndexes )
   {
     rapidxml::xml_node<char> *state_node = doc->allocate_node( rapidxml::node_element, "SamplesToUserState" );
     db_state_index_node->append_node( state_node );
@@ -943,7 +944,7 @@ void SpecMeas::addDbStateIdsToXml( ::rapidxml::xml_node<char> *db_state_index_no
     val = doc->allocate_string( std::to_string(index_id.second).c_str() );
     rapidxml::xml_node<char> *index_node = doc->allocate_node( rapidxml::node_element, "DbIndex", val );
     state_node->append_node( index_node );
-  }//for( const auto &index_id : m_dbUserStateIndex )
+  }//for( const auto &index_id : m_dbUserStateIndexes )
 }//void addDbStateIdsToXml( ::rapidxml::xml_node<char> *peaksnode ) const
 
 
@@ -975,14 +976,14 @@ void SpecMeas::addDbStateIdsFromXml( const ::rapidxml::xml_node<char> *node )
       if( !(stringstream( SpecUtils::xml_value_str(index) ) >> index_value) || (index_value < 0) )
         throw runtime_error( "Invalid index value" );
       
-      m_dbUserStateIndex[sample_set] = index_value;
+      m_dbUserStateIndexes[sample_set] = index_value;
     }catch( std::exception &e )
     {
       cerr << "Failed to parse UserStates XML node: " << e.what() << endl;
     }//try / catch
   }//XML_FOREACH_CHILD( state_node , node, "SamplesToUserState")
 }//void addDbStateIdsFromXml( const ::rapidxml::xml_node<char> *db_state_index_node );
-
+*/
 
 rapidxml::xml_document<char> *SpecMeas::shieldingSourceModel()
 {
@@ -1542,11 +1543,10 @@ void SpecMeas::decodeSpecMeasStuffFromXml( const ::rapidxml::xml_node<char> *int
   }//if( !filename_.empty() )
   
   
-  m_dbUserStateIndex.clear();
-  node = XML_FIRST_NODE( interspecnode, "DbUserStateIndexes" );
-  if( node )
-    addDbStateIdsFromXml( node );
-  
+  m_dbUserStateIndexes.clear();
+  //node = XML_FIRST_NODE( interspecnode, "DbUserStateIndexes" );
+  //if( node )
+  //  addDbStateIdsFromXml( node );
 }//void decodeSpecMeasStuffFromXml( ::rapidxml::xml_node<char> *parent )
 
 
@@ -1673,12 +1673,12 @@ rapidxml::xml_node<char> *SpecMeas::appendDisplayedDetectorsToXml(
     interspec_node->append_node( node );
   }//if( !filename_.empty() )
   
-  if( !m_dbUserStateIndex.empty() )
-  {
-    xml_node<char> *db_state_index_node = doc->allocate_node( node_element, "DbUserStateIndexes" );
-    interspec_node->append_node( db_state_index_node );
-    addDbStateIdsToXml( db_state_index_node );
-  }//if( !m_dbUserStateIndex.empty() )
+  //if( !m_dbUserStateIndexes.empty() )
+  //{
+  //  xml_node<char> *db_state_index_node = doc->allocate_node( node_element, "DbUserStateIndexes" );
+  //  interspec_node->append_node( db_state_index_node );
+  //  addDbStateIdsToXml( db_state_index_node );
+  //}//if( !m_dbUserStateIndexes.empty() )
   
   return interspec_node;
 }//appendSpecMeasStuffToXml(...);
@@ -2143,8 +2143,8 @@ void SpecMeas::setModified()
 
 long long int SpecMeas::dbStateId( const set<int> &samplenums ) const
 {
-  const auto pos = m_dbUserStateIndex.find(samplenums);
-  if( pos == end(m_dbUserStateIndex) )
+  const auto pos = m_dbUserStateIndexes.find(samplenums);
+  if( pos == end(m_dbUserStateIndexes) )
     return -1;
   return pos->second;
 }//long long int dbStateId( const set<int> &samplenums ) const
@@ -2154,20 +2154,26 @@ void SpecMeas::setDbStateId( const long long int db_id, const std::set<int> &sam
 {
   if( db_id < 0 )
   {
-    const auto pos = m_dbUserStateIndex.find(samplenums);
-    if( pos != end(m_dbUserStateIndex) )
-      m_dbUserStateIndex.erase(pos);
+    const auto pos = m_dbUserStateIndexes.find(samplenums);
+    if( pos != end(m_dbUserStateIndexes) )
+      m_dbUserStateIndexes.erase(pos);
     return;
   }//if( db_id < 0 )
   
-  m_dbUserStateIndex[samplenums] = db_id;
+  m_dbUserStateIndexes[samplenums] = db_id;
 }//void setDbStateId( const long long int db_id, const std::set<int> &samplenums )
 
 
 void SpecMeas::clearAllDbStateId()
 {
-  m_dbUserStateIndex.clear();
+  m_dbUserStateIndexes.clear();
 }
+
+
+const map<set<int>,long long int> &SpecMeas::dbUserStateIndexes() const
+{
+  return m_dbUserStateIndexes;
+}//const map<set<int>,long long int> &dbUserStateIndexs() const
 
 
 void SpecMeas::cleanup_after_load( const unsigned int flags )
