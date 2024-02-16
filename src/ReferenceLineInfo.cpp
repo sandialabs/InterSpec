@@ -88,7 +88,30 @@ namespace
   
   std::mutex sm_nuc_mix_mutex;
   bool sm_have_tried_init = false;
+  /** Protected by `sm_nuc_mix_mutex`; is only read in once, and never freed or changed until end of program. */
   std::shared_ptr<const std::map<std::string,NucMix>> sm_nuc_mixes;
+  
+  
+  struct CustomLine
+  {
+    float m_energy;
+    float m_branch_ratio;
+    std::string m_info;
+    CustomLine( float ener, float br, std::string &&inf )
+    : m_energy(ener), m_branch_ratio(br), m_info( std::move(inf) )
+    {
+    }
+  };//struct CustomLine
+  
+  struct CustomSrcLines
+  {
+    string m_name;
+    float m_max_branch_ratio;
+    std::vector<CustomLine> m_lines;
+  };//struct CustomSrcLines
+  
+  /** Also protected by `sm_nuc_mix_mutex`; is only created once, and never freed or changed until program termination. */
+  std::shared_ptr<const std::map<std::string,CustomSrcLines>> sm_custom_lines;
   
   void sanitize_label_str( string &label )
   {
@@ -191,6 +214,57 @@ namespace
       }//XML_FOREACH_CHILD( nuc_mix, ref_lines, "NucMixture" )
       
       sm_nuc_mixes = answer;
+      
+      
+      auto custom_lines = make_shared<map<string,CustomSrcLines>>();
+      XML_FOREACH_CHILD( source, ref_lines, "SourceLines" )
+      {
+        const XmlAttribute *src_name = XML_FIRST_ATTRIB( source, "name" );
+        string src_name_str = SpecUtils::xml_value_str( src_name );
+        SpecUtils::trim( src_name_str );
+        
+        if( src_name_str.empty() )
+          throw runtime_error( "No name specified for a SourceLines element" );
+        
+        CustomSrcLines src_lines;
+        src_lines.m_name = src_name_str;
+        src_lines.m_max_branch_ratio = 0.0;
+        XML_FOREACH_CHILD( line, source, "Line" )
+        {
+          const XmlAttribute *info = XML_FIRST_ATTRIB( line, "info" );
+          string info_str = SpecUtils::xml_value_str( info );
+          SpecUtils::trim( info_str );
+          
+          const string values_str = SpecUtils::xml_value_str( line );
+          
+          vector<float> values;
+          SpecUtils::split_to_floats( values_str, values );
+          if( values.size() != 2 )
+            throw runtime_error( "SourceLines named '" + src_name_str + "' provided "
+                              + std::to_string(values.size()) + " values (expected two numbers)" );
+          
+          const float energy = values[0];
+          const float br = values[1];
+          
+          if( (energy <= 0.f) || (br < 0.0f) )
+            throw runtime_error( "SourceLines named '" + src_name_str + "' has a negative value." );
+          
+          src_lines.m_max_branch_ratio = std::max( src_lines.m_max_branch_ratio, br );
+          
+          src_lines.m_lines.emplace_back( energy, br, std::move(info_str) );
+        }//XML_FOREACH_CHILD( line, source, "Line" )
+        
+        if( src_lines.m_lines.empty() )
+          throw runtime_error( "No lines specified for SourceLines named '" + src_name_str + "'" );
+        
+        if( src_lines.m_max_branch_ratio <= 0.0f )
+          throw runtime_error( "Lines specified for SourceLines named '" + src_name_str + "' were all zero amplitude." );
+        
+        sanitize_label_str( src_name_str );
+        (*custom_lines)[std::move(src_name_str)] = std::move(src_lines);
+      }//XML_FOREACH_CHILD( source, ref_lines, "SourceLines" )
+      
+      sm_custom_lines = custom_lines;
     }catch( std::exception &e )
     {
       cerr << "Failed to load '" << custom_mix_path << "' as custom ref lines: "
@@ -220,6 +294,27 @@ namespace
     
     return &(pos->second);
   }//const NucMix *get_custom_nuc_mix( std::string label )
+  
+
+  const CustomSrcLines *get_custom_src_lines( std::string label )
+  {
+    sanitize_label_str( label );
+    
+    std::lock_guard<std::mutex> lock( sm_nuc_mix_mutex );
+    
+    if( !sm_have_tried_init )
+      load_custom_nuc_mixes();
+    
+    if( !sm_custom_lines )
+      return nullptr;
+    
+    const auto pos = sm_custom_lines->find( label );
+    if( pos == end(*sm_custom_lines) )
+      return nullptr;
+    
+    return &(pos->second);
+  }//const NucMix *get_custom_nuc_mix( std::string label )
+  
 }//namespace
 
 
@@ -1727,6 +1822,7 @@ std::shared_ptr<ReferenceLineInfo> ReferenceLineInfo::generateRefLineInfo( RefLi
   }//if( !nuc && !el && rctnGammas.empty() )
   
   const NucMix *nuc_mix = nullptr;
+  const CustomSrcLines *src_lines = nullptr;
   if( !nuc && !el && rctn_gammas.empty() && !is_background && !is_custom_energy )
   {
     nuc_mix = get_custom_nuc_mix( input.m_input_txt );
@@ -1750,10 +1846,20 @@ std::shared_ptr<ReferenceLineInfo> ReferenceLineInfo::generateRefLineInfo( RefLi
         }//try /catch to get the age
       }//if( input.m_age == "" ) / else
     }//if( nuc_mix )
+    
+    if( !nuc_mix )
+    {
+      src_lines = get_custom_src_lines( input.m_input_txt );
+      if( src_lines )
+      {
+        age = 0.0;
+        input.m_age = "";
+      }
+    }//if( !nuc_mix )
   }//if( not anything else so far )
   
   
-  if( !nuc && !el && rctn_gammas.empty() && !is_background && !is_custom_energy && !nuc_mix )
+  if( !nuc && !el && rctn_gammas.empty() && !is_background && !is_custom_energy && !nuc_mix && !src_lines )
   {
     answer.m_validity = ReferenceLineInfo::InputValidity::InvalidSource;
     answer.m_input_warnings.push_back( input.m_input_txt + " is not a valid isotope, element, reaction, or energy." );
@@ -1787,6 +1893,8 @@ std::shared_ptr<ReferenceLineInfo> ReferenceLineInfo::generateRefLineInfo( RefLi
     answer.m_source_type = ReferenceLineInfo::SourceType::CustomEnergy;
   else if( nuc_mix )
     answer.m_source_type = ReferenceLineInfo::SourceType::NuclideMixture;
+  else if( src_lines )
+    answer.m_source_type = ReferenceLineInfo::SourceType::OneOffSrcLines;
   else
     answer.m_source_type = ReferenceLineInfo::SourceType::None;
   
@@ -2053,7 +2161,7 @@ std::shared_ptr<ReferenceLineInfo> ReferenceLineInfo::generateRefLineInfo( RefLi
       
       answer.m_has_coincidences |= std::get<2>(nuc_line_info);
     }//for( const NucMixComp &comp : nuc_mix->m_components )
-    
+      
     // We will limit the total number of gammas/x-rays, according to intensity
     // 1250 is arbitrarily chosen, but its hard to imagine more than this being relevant.
     //  In principle, we would like to do this after combining similar energies, but maybe
@@ -2073,6 +2181,28 @@ std::shared_ptr<ReferenceLineInfo> ReferenceLineInfo::generateRefLineInfo( RefLi
     }//if( lines.size() > 1250 )
   }//if( nuc_mix )
   
+  if( src_lines )
+  {
+    answer.m_has_coincidences = false;
+    
+    for( const CustomLine &line : src_lines->m_lines )
+    {
+      ReferenceLineInfo::RefLine refline;
+      refline.m_energy = line.m_energy;
+      refline.m_normalized_intensity = line.m_branch_ratio / src_lines->m_max_branch_ratio;
+      refline.m_particle_sf_applied = 1.0f / src_lines->m_max_branch_ratio;
+      refline.m_decaystr = line.m_info;
+      refline.m_decay_intensity = line.m_branch_ratio;
+      
+      // TODO: refline.m_drf_factor and refline.m_shield_atten will be set below, assuming a
+      //       gamma.  Should consider putting in an option to make it so these factors are
+      //       not applied (would have to be as part of CustomLine)
+      refline.m_particle_type = ReferenceLineInfo::RefLine::Particle::Gamma;
+      refline.m_source_type = ReferenceLineInfo::RefLine::RefGammaType::Normal;
+      
+      lines.push_back( std::move(refline) );
+    }//for( const CustomLine &line : src_lines->m_lines )
+  }//if( src_lines )
   
   // Update showing cascades based on if there are actually any present
   input.m_showCascades = (answer.m_has_coincidences && input.m_showCascades);
@@ -2509,7 +2639,7 @@ std::shared_ptr<ReferenceLineInfo> ReferenceLineInfo::generateRefLineInfo( RefLi
 }//std::shared_ptr<ReferenceLineInfo> generateRefLineInfo()
 
 
-vector<string> ReferenceLineInfo::additional_nuclide_mixtures()
+vector<string> ReferenceLineInfo::additional_ref_line_sources()
 {
   vector<string> answer;
   
@@ -2518,14 +2648,20 @@ vector<string> ReferenceLineInfo::additional_nuclide_mixtures()
   if( !sm_have_tried_init )
     load_custom_nuc_mixes();
   
-  if( !sm_nuc_mixes )
-    return answer;
+  if( sm_nuc_mixes )
+  {
+    for( const auto &n : *sm_nuc_mixes )
+      answer.push_back( n.second.m_name );
+  }//if( sm_nuc_mixes )
   
-  for( const auto &n : *sm_nuc_mixes )
-    answer.push_back( n.second.m_name );
+  if( sm_custom_lines )
+  {
+    for( const auto &n : *sm_custom_lines )
+      answer.push_back( n.second.m_name );
+  }//if( sm_custom_lines )
   
   return answer;
-}//vector<string> additional_nuclide_mixtures()
+}//vector<string> additional_ref_line_sources()
 
 
 void ReferenceLineInfo::load_nuclide_mixtures()

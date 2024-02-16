@@ -229,8 +229,8 @@ struct ReferenceLineInfo
    */
   static std::shared_ptr<ReferenceLineInfo> generateRefLineInfo( RefLineInput input );
   
-  /** The additional nuclide mixtures defined in `data/add_ref_line.xml` */
-  static std::vector<std::string> additional_nuclide_mixtures();
+  /** The additional nuclide mixtures and one-off sources defined in `data/add_ref_line.xml` */
+  static std::vector<std::string> additional_ref_line_sources();
   
   /** Loads nuclide mixtures  defined in `data/add_ref_line.xml` into memory.
    
@@ -373,6 +373,7 @@ struct ReferenceLineInfo
     Background,
     CustomEnergy,
     NuclideMixture,
+    OneOffSrcLines,
     None
   };//enum class SourceType : int
 

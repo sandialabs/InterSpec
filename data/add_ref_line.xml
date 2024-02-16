@@ -54,4 +54,20 @@
         <Nuc name="U235" act-frac="3.592" />
         <Nuc name="U234" act-frac="96.373" />
     </NucMixture>
+
+    <SourceLines name="HPGe(n,n)">
+        <!-- Each line consists of two numbers; the energy (in keV) and the relative branching ratio, 
+            separated by a space.
+            You can optionally add an attribute, "info", which will show up when you mouse-over the
+            line in InterSpec.
+        -->
+        <Line info="...some info...">430 1.0</Line>
+        <Line>488 1.0</Line>
+        <Line>562 1.0</Line>
+        <Line>596 1.0</Line>
+        <Line>630 1.0</Line>
+        <Line>691 1.0</Line>
+        <Line>834 1.0</Line>
+        <Line>1039.6 1.0</Line>
+    </SourceLines>
 </RefLineDefinitions>

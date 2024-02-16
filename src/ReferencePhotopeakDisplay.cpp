@@ -218,6 +218,10 @@ namespace
           filename += "_mixture";
           break;
           
+        case ReferenceLineInfo::SourceType::OneOffSrcLines:
+          filename += "_one_off_src";
+          break;
+          
         case ReferenceLineInfo::SourceType::None:
           filename = "empty";
           break;
@@ -274,6 +278,7 @@ namespace
           
         case ReferenceLineInfo::SourceType::Background:
         case ReferenceLineInfo::SourceType::CustomEnergy:
+        case ReferenceLineInfo::SourceType::OneOffSrcLines:
           out << "Source,Gammas" << eol_char;
           break;
           
@@ -379,6 +384,7 @@ namespace
         case ReferenceLineInfo::SourceType::Background:
         case ReferenceLineInfo::SourceType::CustomEnergy:
         case ReferenceLineInfo::SourceType::NuclideMixture:
+        case ReferenceLineInfo::SourceType::OneOffSrcLines:
           out << eol_char << rel_amp_note << eol_char << eol_char;
           out << "Energy (keV),Rel. Yield";
           break;
@@ -928,7 +934,7 @@ ReferencePhotopeakDisplay::ReferencePhotopeakDisplay(
   IsotopeNameFilterModel *isoSuggestModel = new IsotopeNameFilterModel( this );
   isoSuggestModel->addCustomSuggestPossibility( "background" );
   
-  for( const string &name : ReferenceLineInfo::additional_nuclide_mixtures() )
+  for( const string &name : ReferenceLineInfo::additional_ref_line_sources() )
     isoSuggestModel->addCustomSuggestPossibility( name );
   
   m_nuclideSuggest = new WSuggestionPopup( matcherJs, replacerJs, this );
@@ -2136,6 +2142,7 @@ void ReferencePhotopeakDisplay::updateDisplayFromInput( RefLineInput user_input 
     //ReferenceLineInfo::SourceType::Background
     //ReferenceLineInfo::SourceType::CustomEnergy
     //ReferenceLineInfo::SourceType::NuclideMixture:
+    //ReferenceLineInfo::SourceType::OneOffSrcLines:
     //ReferenceLineInfo::SourceType::None
   }//if( ref_lines - do some quick sanity checks )
   
@@ -2229,7 +2236,8 @@ void ReferencePhotopeakDisplay::updateDisplayFromInput( RefLineInput user_input 
       break;
       
     case ReferenceLineInfo::SourceType::CustomEnergy:
-      // We treat custom energy as a gamma, so only show it - but really we shouldnt show any of them
+    case ReferenceLineInfo::SourceType::OneOffSrcLines:
+      // We treat custom energy and one-off sources as a gammas, so only show it - but really we shouldnt show any of them
       showXrayCb = showAplhaCb = showBetaCb = false;
       break;
       
@@ -2384,6 +2392,7 @@ void ReferencePhotopeakDisplay::updateDisplayFromInput( RefLineInput user_input 
         break;
         
       case ReferenceLineInfo::SourceType::CustomEnergy:
+      case ReferenceLineInfo::SourceType::OneOffSrcLines:
         nonDefaultOpts |= !ref_lines->m_input.m_showGammas;
         break;
         

@@ -571,8 +571,9 @@ void ReactionGamma::populate_reaction( const rapidxml::xml_node<char> *parent,
       }//if( the nuclide is listed ) / else
 
       if( !rctn.targetNuclide && !rctn.targetElement )
-        throw runtime_error( "ReactionGamma::populate_reaction(...) Couldnt "
-                             "find a isotope or element for a target" );
+        throw runtime_error( "ReactionGamma::populate_reaction(...) Couldn't "
+                             "find a isotope or element by the name '" + nuclide_name
+                              + "', for a target." );
 
       if( product_node && product_node->value() && product_node->value_size() )
       {
@@ -630,7 +631,7 @@ void ReactionGamma::populate_reaction( const rapidxml::xml_node<char> *parent,
     for( size_t i = 0; i < results.size(); ++i )
       delete results[i];
     results.clear();
-    throw e;
+    throw;
   }//try / catch
 }//void populate_reaction(...)
 

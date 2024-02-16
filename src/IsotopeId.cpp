@@ -1368,6 +1368,7 @@ void peakCandidateSourceFromRefLines( std::shared_ptr<const PeakDef> peak, const
         break;
         
       case ReferenceLineInfo::SourceType::CustomEnergy:
+      case ReferenceLineInfo::SourceType::OneOffSrcLines:
       case ReferenceLineInfo::SourceType::None:
         continue;
         break;

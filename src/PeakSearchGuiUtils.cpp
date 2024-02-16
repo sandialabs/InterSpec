@@ -1406,6 +1406,7 @@ public:
             break;
           
           case ReferenceLineInfo::SourceType::CustomEnergy:
+          case ReferenceLineInfo::SourceType::OneOffSrcLines:
           case ReferenceLineInfo::SourceType::None:
             continue;
             break;
@@ -1653,6 +1654,7 @@ std::unique_ptr<std::pair<PeakModel::PeakShrdPtr,std::string>>
           break;
           
         case ReferenceLineInfo::SourceType::CustomEnergy:
+        case ReferenceLineInfo::SourceType::OneOffSrcLines:
         case ReferenceLineInfo::SourceType::None:
           continue;
           break;
