@@ -389,7 +389,7 @@ SnapshotBrowser::SnapshotBrowser( SpecMeasManager *manager,
     
     Dbo::collection< Dbo::ptr<UserState> > query = SnapshotBrowser::get_user_states_collection( m_viewer->m_user, m_session, m_header );
     
-    m_nrows = query.size(); //save for future query
+    m_nrows = static_cast<int>( query.size() ); //save for future query
     
     if( m_nrows == 0 )
       layout->addWidget( new WLabel("No saved application states"), row++, 0 );

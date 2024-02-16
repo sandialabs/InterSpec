@@ -2855,7 +2855,7 @@ std::unique_ptr<rapidxml::xml_document<char>> RelActAutoGui::guiStateToXml() con
   
   serialize( doc.get() );
   
-  return move( doc );
+  return std::move( doc );
 }//std::unique_ptr<rapidxml::xml_document<char>> guiStateToXml() const
 
 

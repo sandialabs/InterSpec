@@ -3441,8 +3441,8 @@ void DetectionLimitTool::setRefLinesAndGetLineInfo()
   
   if( generic_shielding )
   {
-    ref_input.m_shielding_an;
-    ref_input.m_shielding_ad;
+    ref_input.m_shielding_an = m_shieldingSelect->atomicNumberEdit()->text().toUTF8();
+    ref_input.m_shielding_ad = m_shieldingSelect->arealDensityEdit()->text().toUTF8();
   }else
   {
     ref_input.m_shielding_name = m_shieldingSelect->materialEdit()->text().toUTF8();

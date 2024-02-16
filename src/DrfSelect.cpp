@@ -4953,6 +4953,7 @@ std::shared_ptr<DetectorPeakResponse> DrfSelect::initAGadrasDetector(
     case DetectorType::RIIDEyeLaBr:
     case DetectorType::Fulcrum:
     case DetectorType::IdentiFinderR425LaBr:
+    case SpecUtils::DetectorType::RadiaCode:
       // \TODO: fill in these names
       break;
   }//switch( type )

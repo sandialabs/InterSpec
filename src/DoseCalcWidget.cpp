@@ -1722,7 +1722,8 @@ double DoseCalcWidget::enteredActivity()
     PhysicalUnits::UnitNameValuePairV::const_iterator pos =
          std::find( PhysicalUnits::sm_activityUnitHtmlNameValues.begin(), PhysicalUnits::sm_activityUnitHtmlNameValues.end(), bestunit );
     assert( pos != PhysicalUnits::sm_activityUnitHtmlNameValues.end() );
-    m_activityEnterUnits->setCurrentIndex( pos - PhysicalUnits::sm_activityUnitHtmlNameValues.begin() );
+    const int activity_index = static_cast<int>( pos - PhysicalUnits::sm_activityUnitHtmlNameValues.begin() );
+    m_activityEnterUnits->setCurrentIndex( activity_index );
     
     const double txtdblval = activity / bestunit.second;
     char txtval[32];

@@ -1069,7 +1069,7 @@ class DateLengthCalculator : public WContainerWidget
           const double num_atoms_in_gram = nap.nuclide->atomsPerGram();
           const double ngrams = natomp->numAtoms / num_atoms_in_gram;
           const string massstr = PhysicalUnits::printToBestMassUnits( ngrams*PhysicalUnits::gram );
-          beforeTable->elementAt(row_num,2)->addWidget( new WText(massstr) );
+          beforeTable->elementAt(static_cast<int>(row_num),2)->addWidget( new WText(massstr) );
         }
       }//for( size_t i = 0; i < activities.size(); ++i )
     }//if( timeSpan < 0.0 )
@@ -1103,7 +1103,7 @@ class DateLengthCalculator : public WContainerWidget
     const int maxDecimal = std::max(2, nSigFigsActivity);
     //activityEdit->tex
     
-    for( size_t actnum = 0, row_num = 1; actnum < activities.size(); ++actnum )
+    for( int actnum = 0, row_num = 1; actnum < static_cast<int>(activities.size()); ++actnum )
     {
       const SandiaDecay::NuclideActivityPair &nap = activities[activities.size()-1-actnum];
       if( !nap.nuclide )

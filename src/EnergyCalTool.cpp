@@ -591,7 +591,7 @@ void DevPair::setDevPair( const std::pair<float,float> &d )
     const float fraction = val - std::floor(val);
     if( fraction == 0.0 )
       snprintf( buffer, sizeof(buffer), "%.0f", val );
-    else if( fraction == 0.1 )
+    else if( fabs(fraction - 0.1f) < 1.0E-4f )
       snprintf( buffer, sizeof(buffer), "%.1f", val );
     else
       snprintf( buffer, sizeof(buffer), "%.2f", val );
