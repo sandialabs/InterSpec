@@ -131,145 +131,159 @@ namespace
     
     sm_have_tried_init = true;
     
-    const string data_dir = InterSpec::staticDataDirectory();
-    const string custom_mix_path = SpecUtils::append_path( data_dir, "add_ref_line.xml" );
+    auto load_ref_line_file = []( const string filepath, map<string,NucMix> &nuc_mixes, map<string,CustomSrcLines> &custom_lines ){
+      
+      try
+      {
+        const SandiaDecay::SandiaDecayDataBase *db = DecayDataBaseServer::database();
+        assert( db );
+        if( !db )
+          throw std::logic_error( "invalid SandiaDecayDataBase" );
+        
+        std::vector<char> data;
+        SpecUtils::load_file_data( filepath.c_str(), data );
+        
+        rapidxml::xml_document<char> doc;
+        const int flags = rapidxml::parse_normalize_whitespace | rapidxml::parse_trim_whitespace;
+        doc.parse<flags>( &data.front() );
+        
+        const XmlNode *ref_lines = doc.first_node( "RefLineDefinitions" );
+        if( !ref_lines )
+          throw runtime_error( "No RefLineDefinitions node." );
+        
+        XML_FOREACH_CHILD( nuc_mix, ref_lines, "NucMixture" )
+        {
+          const XmlAttribute *mix_name = XML_FIRST_ATTRIB( nuc_mix, "name" );
+          const XmlAttribute *def_age = XML_FIRST_ATTRIB( nuc_mix, "default-age" );
+          
+          string mix_name_str = SpecUtils::xml_value_str( mix_name );
+          if( mix_name_str.empty() )
+            throw runtime_error( "No mixture name" );
+          
+          NucMix mix;
+          mix.m_name = mix_name_str;
+          mix.m_default_age = 0.0;
+          mix.m_default_age_str = "";
+          if( def_age )
+          {
+            mix.m_default_age_str = SpecUtils::xml_value_str( def_age );
+            mix.m_default_age = PhysicalUnits::stringToTimeDuration( mix.m_default_age_str );
+          }
+          
+          double act_fraction_sum = 0.0;
+          XML_FOREACH_CHILD( nuc, nuc_mix, "Nuc" )
+          {
+            const XmlAttribute *nuc_name = XML_FIRST_ATTRIB( nuc, "name" );
+            const XmlAttribute *nuc_act_frac = XML_FIRST_ATTRIB( nuc, "act-frac" );
+            
+            if( !nuc_name || !nuc_name->value_size() )
+              throw runtime_error( "No nuclide name" );
+            
+            const string nuc_name_str = SpecUtils::xml_value_str( nuc_name );
+            
+            if( !nuc_act_frac || !nuc_act_frac->value_size() )
+              throw runtime_error( "No activity fraction for " + nuc_name_str
+                                  + " in " + mix_name_str );
+            
+            NucMixComp comp;
+            comp.m_age_offset = 0.0;
+            comp.m_nuclide = db->nuclide( nuc_name_str );
+            if( !comp.m_nuclide )
+              throw runtime_error( "Invalid nuclide: " + nuc_name_str );
+            
+            if( !SpecUtils::parse_double( nuc_act_frac->value(), nuc_act_frac->value_size(),
+                                         comp.m_act_fraction )
+               || (comp.m_act_fraction < 0.0) )
+              throw runtime_error( "Invalid activity fraction: " + nuc_name_str );
+            
+            act_fraction_sum += comp.m_act_fraction;
+            mix.m_components.push_back( std::move(comp) );
+          }//XML_FOREACH_CHILD( nuc, nuc_mix, "Nuc" )
+          
+          if( (act_fraction_sum <= 0.0) || IsNan(act_fraction_sum) || IsInf(act_fraction_sum) )
+            throw runtime_error( "Invalid activity fraction sum" );
+          
+          for( auto &m : mix.m_components )
+            m.m_act_fraction /= act_fraction_sum ;
+          
+          sanitize_label_str( mix_name_str );
+          nuc_mixes[mix_name_str] = std::move(mix);
+        }//XML_FOREACH_CHILD( nuc_mix, ref_lines, "NucMixture" )
+        
+        
+        XML_FOREACH_CHILD( source, ref_lines, "SourceLines" )
+        {
+          const XmlAttribute *src_name = XML_FIRST_ATTRIB( source, "name" );
+          string src_name_str = SpecUtils::xml_value_str( src_name );
+          SpecUtils::trim( src_name_str );
+          
+          if( src_name_str.empty() )
+            throw runtime_error( "No name specified for a SourceLines element" );
+          
+          CustomSrcLines src_lines;
+          src_lines.m_name = src_name_str;
+          src_lines.m_max_branch_ratio = 0.0;
+          XML_FOREACH_CHILD( line, source, "Line" )
+          {
+            const XmlAttribute *info = XML_FIRST_ATTRIB( line, "info" );
+            string info_str = SpecUtils::xml_value_str( info );
+            SpecUtils::trim( info_str );
+            
+            const string values_str = SpecUtils::xml_value_str( line );
+            
+            vector<float> values;
+            SpecUtils::split_to_floats( values_str, values );
+            if( values.size() != 2 )
+              throw runtime_error( "SourceLines named '" + src_name_str + "' provided "
+                                  + std::to_string(values.size()) + " values (expected two numbers)" );
+            
+            const float energy = values[0];
+            const float br = values[1];
+            
+            if( (energy <= 0.f) || (br < 0.0f) )
+              throw runtime_error( "SourceLines named '" + src_name_str + "' has a negative value." );
+            
+            src_lines.m_max_branch_ratio = std::max( src_lines.m_max_branch_ratio, br );
+            
+            src_lines.m_lines.emplace_back( energy, br, std::move(info_str) );
+          }//XML_FOREACH_CHILD( line, source, "Line" )
+          
+          if( src_lines.m_lines.empty() )
+            throw runtime_error( "No lines specified for SourceLines named '" + src_name_str + "'" );
+          
+          if( src_lines.m_max_branch_ratio <= 0.0f )
+            throw runtime_error( "Lines specified for SourceLines named '" + src_name_str + "' were all zero amplitude." );
+          
+          sanitize_label_str( src_name_str );
+          custom_lines[std::move(src_name_str)] = std::move(src_lines);
+        }//XML_FOREACH_CHILD( source, ref_lines, "SourceLines" )
+      }catch( std::exception &e )
+      {
+        cerr << "Failed to load '" << filepath << "' as custom ref lines: "
+        << e.what() << endl;
+      }//try / catch to load XML data
+    };//auto load_ref_line_file lambda
     
-    try
-    {
-      const SandiaDecay::SandiaDecayDataBase *db = DecayDataBaseServer::database();
-      assert( db );
-      if( !db )
-        throw std::logic_error( "invalid SandiaDecayDataBase" );
-      
-      auto answer = make_shared<map<string,NucMix>>();
-      
-      std::vector<char> data;
-      SpecUtils::load_file_data( custom_mix_path.c_str(), data );
-      
-      rapidxml::xml_document<char> doc;
-      const int flags = rapidxml::parse_normalize_whitespace | rapidxml::parse_trim_whitespace;
-      doc.parse<flags>( &data.front() );
-      
-      const XmlNode *ref_lines = doc.first_node( "RefLineDefinitions" );
-      if( !ref_lines )
-        throw runtime_error( "No RefLineDefinitions node." );
-      
-      XML_FOREACH_CHILD( nuc_mix, ref_lines, "NucMixture" )
-      {
-        const XmlAttribute *mix_name = XML_FIRST_ATTRIB( nuc_mix, "name" );
-        const XmlAttribute *def_age = XML_FIRST_ATTRIB( nuc_mix, "default-age" );
-        
-        string mix_name_str = SpecUtils::xml_value_str( mix_name );
-        if( mix_name_str.empty() )
-          throw runtime_error( "No mixture name" );
-        
-        NucMix mix;
-        mix.m_name = mix_name_str;
-        mix.m_default_age = 0.0;
-        mix.m_default_age_str = "";
-        if( def_age )
-        {
-          mix.m_default_age_str = SpecUtils::xml_value_str( def_age );
-          mix.m_default_age = PhysicalUnits::stringToTimeDuration( mix.m_default_age_str );
-        }
-        
-        double act_fraction_sum = 0.0;
-        XML_FOREACH_CHILD( nuc, nuc_mix, "Nuc" )
-        {
-          const XmlAttribute *nuc_name = XML_FIRST_ATTRIB( nuc, "name" );
-          const XmlAttribute *nuc_act_frac = XML_FIRST_ATTRIB( nuc, "act-frac" );
-          
-          if( !nuc_name || !nuc_name->value_size() )
-            throw runtime_error( "No nuclide name" );
-          
-          const string nuc_name_str = SpecUtils::xml_value_str( nuc_name );
-          
-          if( !nuc_act_frac || !nuc_act_frac->value_size() )
-            throw runtime_error( "No activity fraction for " + nuc_name_str
-                                + " in " + mix_name_str );
-          
-          NucMixComp comp;
-          comp.m_age_offset = 0.0;
-          comp.m_nuclide = db->nuclide( nuc_name_str );
-          if( !comp.m_nuclide )
-            throw runtime_error( "Invalid nuclide: " + nuc_name_str );
-          
-          if( !SpecUtils::parse_double( nuc_act_frac->value(), nuc_act_frac->value_size(),
-                                       comp.m_act_fraction )
-              || (comp.m_act_fraction < 0.0) )
-            throw runtime_error( "Invalid activity fraction: " + nuc_name_str );
-          
-          act_fraction_sum += comp.m_act_fraction;
-          mix.m_components.push_back( std::move(comp) );
-        }//XML_FOREACH_CHILD( nuc, nuc_mix, "Nuc" )
-        
-        if( (act_fraction_sum <= 0.0) || IsNan(act_fraction_sum) || IsInf(act_fraction_sum) )
-          throw runtime_error( "Invalid activity fraction sum" );
-        
-        for( auto &m : mix.m_components )
-          m.m_act_fraction /= act_fraction_sum ;
-        
-        sanitize_label_str( mix_name_str );
-        (*answer)[mix_name_str] = std::move(mix);
-      }//XML_FOREACH_CHILD( nuc_mix, ref_lines, "NucMixture" )
-      
-      sm_nuc_mixes = answer;
-      
-      
-      auto custom_lines = make_shared<map<string,CustomSrcLines>>();
-      XML_FOREACH_CHILD( source, ref_lines, "SourceLines" )
-      {
-        const XmlAttribute *src_name = XML_FIRST_ATTRIB( source, "name" );
-        string src_name_str = SpecUtils::xml_value_str( src_name );
-        SpecUtils::trim( src_name_str );
-        
-        if( src_name_str.empty() )
-          throw runtime_error( "No name specified for a SourceLines element" );
-        
-        CustomSrcLines src_lines;
-        src_lines.m_name = src_name_str;
-        src_lines.m_max_branch_ratio = 0.0;
-        XML_FOREACH_CHILD( line, source, "Line" )
-        {
-          const XmlAttribute *info = XML_FIRST_ATTRIB( line, "info" );
-          string info_str = SpecUtils::xml_value_str( info );
-          SpecUtils::trim( info_str );
-          
-          const string values_str = SpecUtils::xml_value_str( line );
-          
-          vector<float> values;
-          SpecUtils::split_to_floats( values_str, values );
-          if( values.size() != 2 )
-            throw runtime_error( "SourceLines named '" + src_name_str + "' provided "
-                              + std::to_string(values.size()) + " values (expected two numbers)" );
-          
-          const float energy = values[0];
-          const float br = values[1];
-          
-          if( (energy <= 0.f) || (br < 0.0f) )
-            throw runtime_error( "SourceLines named '" + src_name_str + "' has a negative value." );
-          
-          src_lines.m_max_branch_ratio = std::max( src_lines.m_max_branch_ratio, br );
-          
-          src_lines.m_lines.emplace_back( energy, br, std::move(info_str) );
-        }//XML_FOREACH_CHILD( line, source, "Line" )
-        
-        if( src_lines.m_lines.empty() )
-          throw runtime_error( "No lines specified for SourceLines named '" + src_name_str + "'" );
-        
-        if( src_lines.m_max_branch_ratio <= 0.0f )
-          throw runtime_error( "Lines specified for SourceLines named '" + src_name_str + "' were all zero amplitude." );
-        
-        sanitize_label_str( src_name_str );
-        (*custom_lines)[std::move(src_name_str)] = std::move(src_lines);
-      }//XML_FOREACH_CHILD( source, ref_lines, "SourceLines" )
-      
-      sm_custom_lines = custom_lines;
-    }catch( std::exception &e )
-    {
-      cerr << "Failed to load '" << custom_mix_path << "' as custom ref lines: "
-           << e.what() << endl;
-    }//try / catch to load XML data
+    
+    const string data_dir = InterSpec::staticDataDirectory();
+    const string add_lines_path = SpecUtils::append_path( data_dir, "add_ref_line.xml" );
+    
+    auto nuc_mixes = make_shared<map<string,NucMix>>();
+    auto custom_lines = make_shared<map<string,CustomSrcLines>>();
+    
+    load_ref_line_file( add_lines_path, *nuc_mixes, *custom_lines );
+    
+#if( BUILD_AS_ELECTRON_APP || IOS || ANDROID || BUILD_AS_OSX_APP || BUILD_AS_LOCAL_SERVER || BUILD_AS_WX_WIDGETS_APP || BUILD_AS_UNIT_TEST_SUITE )
+    const string user_data_dir = InterSpec::writableDataDirectory();
+    const string custom_lines_path = SpecUtils::append_path( user_data_dir, "add_ref_line.xml" );
+    
+    // Any duplicate names, will overwrite what comes with InterSpec
+    if( SpecUtils::is_file( custom_lines_path ) )
+      load_ref_line_file( custom_lines_path, *nuc_mixes, *custom_lines );
+#endif
+    
+    sm_nuc_mixes = nuc_mixes;
+    sm_custom_lines = custom_lines;
     
     //const double end_time = SpecUtils::get_wall_time();
     //cout << "load_custom_nuc_mixes(): took " << (end_time - start_time) << " s" << endl;
@@ -2134,6 +2148,7 @@ std::shared_ptr<ReferenceLineInfo> ReferenceLineInfo::generateRefLineInfo( RefLi
   {
     for( const NucMixComp &comp : nuc_mix->m_components )
     {
+      // TODO: NucMixComp::m_age_offset should be implemented, and used to define the point in time the relative activities are defined for, so when the user ages things, the relative activities of the parent nuclides will be modified
       tuple<vector<ReferenceLineInfo::RefLine>,vector<coincidence_info_t>,bool> nuc_line_info
                                 = make_nuc_lines( comp.m_nuclide, age + comp.m_age_offset, input );
       

@@ -1,5 +1,47 @@
 <?xml version="1.0" encoding="utf-8" ?>
+
+<!-- If you want to define your own reference photopeak lines in InterSpec, you
+    can copy this file to the applications data directory (See Help -> Data for this 
+    location, but usually on Windows its 'C:\Users\username\AppData\Roaming\InterSpec'
+    and on macOS '/Users/username/Library/Containers/gov.sandia.macOS.InterSpec/Data/Library/Application Support/sandia.InterSpec')
+    and then use the examples provided here to define your own source (and delete the rest of the sources defined).
+    Your custom file will be loaded after this file that comes with InterSpec.
+
+    Currently you can define two source type:
+    1) SourceLines: this is simple energy and branching ratio pairs.  
+                    The "Reference Photopeaks" tab will then display
+                    the lines on the spectrum, but you can not associate
+                    a peak with one of these lines (although this may 
+                    change in the future).
+    2) NucMixture:  this is a mixture of nuclide, at a specified relative 
+                    activities to each other.  When the name of the NucMixture
+                    is entered into the "Reference Photopeaks" tab, the lines
+                    of the nuclides will be displayed, and gamma-line associations
+                    with peaks can happen as normal.  You can also enter custom 
+                    ages into the UI to change the amount of progeny in-growth.
+                    Note that the activity fraction specified, is currently at the 
+                    aged time (not at t=0), but this may be refined in the future.
+-->
+
 <RefLineDefinitions>
+    <SourceLines name="HPGe(n,n)">
+        <!-- Each line consists of two numbers; the energy (in keV) and the relative branching ratio, 
+            separated by a space.
+            You can optionally add an attribute, "info", which will show up when you mouse-over the
+            line in InterSpec.
+        -->
+        <Line info="...some info...">430 1.0</Line>
+        <Line>488 1.0</Line>
+        <Line>562 1.0</Line>
+        <Line>596 1.0</Line>
+        <Line>630 1.0</Line>
+        <Line>691 1.0</Line>
+        <Line>834 1.0</Line>
+        <Line>1039.6 1.0</Line>
+    </SourceLines>
+
+    <!-- Nuclide mixtures must be made up of valid nuclides.
+    -->
     <NucMixture name="Pu low burnup" default-age="20y">
         <!-- From FRMAC Gamma Spectroscopist Knowledge Guide 2019-08, Michael Enghauser, Table 13-1 -->
         <Nuc name="Pu238" act-frac="0.010" />
@@ -54,20 +96,4 @@
         <Nuc name="U235" act-frac="3.592" />
         <Nuc name="U234" act-frac="96.373" />
     </NucMixture>
-
-    <SourceLines name="HPGe(n,n)">
-        <!-- Each line consists of two numbers; the energy (in keV) and the relative branching ratio, 
-            separated by a space.
-            You can optionally add an attribute, "info", which will show up when you mouse-over the
-            line in InterSpec.
-        -->
-        <Line info="...some info...">430 1.0</Line>
-        <Line>488 1.0</Line>
-        <Line>562 1.0</Line>
-        <Line>596 1.0</Line>
-        <Line>630 1.0</Line>
-        <Line>691 1.0</Line>
-        <Line>834 1.0</Line>
-        <Line>1039.6 1.0</Line>
-    </SourceLines>
 </RefLineDefinitions>
