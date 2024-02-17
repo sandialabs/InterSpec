@@ -2239,11 +2239,17 @@ std::shared_ptr<ReferenceLineInfo> ReferenceLineInfo::generateRefLineInfo( RefLi
       //  by the activity fractions specified.  But otherwise, we need to figure out the parent
       //  nuclides activity at the time being used, and then multiply by that.
       double correction_factor = comp.m_rel_act;
-      if( nuc_mix->m_fixed_act_fractions )
+      if( !nuc_mix->m_fixed_act_fractions )
       {
         // `NucMixComp::m_rel_act` is for age=0 in this case
         correction_factor *= exp( -age * comp.m_nuclide->decayConstant() );
       }//if( nuc_mix->m_fixed_act_fractions )
+      
+      //cout << "For " << nuc_mix->m_name << ", the rel act. of " << comp.m_nuclide->symbol
+      //     << " is " << correction_factor << " at age " << PhysicalUnits::printToBestTimeUnits(age)
+      //     << " (m_rel_act=" << comp.m_rel_act
+      //     << ", m_fixed_act_fractions=" << (nuc_mix->m_fixed_act_fractions ? "yes" : "no") << ")"
+      //     << endl;
       
       for( ReferenceLineInfo::RefLine &this_line : these_lines )
         this_line.m_decay_intensity *= correction_factor;
