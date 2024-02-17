@@ -73,8 +73,23 @@ namespace
   
   struct NucMixComp
   {
+    /** An age offset, relative to the rest of the nuclides (i.e., t=0).  
+     
+     A negative value will increase the age of the nuclide, and positive value reduce it.
+     
+     If a positive value is used, and it is larger than the requested mixture age in the
+     "Reference Photopeak" tool, than an age of 0 will be used.
+     
+     This value corresponds to the "age-offset" attribute of the <Nuc /> element.
+     
+     TODO: as of 20240217, the use of "age-offset" is not well tested
+     */
     double m_age_offset;
-    double m_act_fraction;
+    
+    /** The relative activity for this nuclide - the total activity fractions dont need to add up to 1, they will be normalized. */
+    double m_rel_act;
+    
+    /** The nuclide - must not be nullptr. */
     const SandiaDecay::Nuclide *m_nuclide;
   };//struct NucMixComp
   
@@ -83,6 +98,17 @@ namespace
     std::string m_name;
     double m_default_age;
     std::string m_default_age_str;
+    
+    /** If the activity fractions are fixed, at whatever time is specified (e.g., no matter the age, the relative
+     activity fractions of the parent nuclides will always be the same).
+     
+     If the XML provides a "reference-age", then this will be false, and changing the age will change the relative
+     ratio of the activities.
+     
+     TODO: as of 20240217, the use of "reference-age" is not well tested
+     */
+    bool m_fixed_act_fractions;
+    
     std::vector<NucMixComp> m_components;
   };//struct NucMix
   
@@ -164,17 +190,28 @@ namespace
           mix.m_name = mix_name_str;
           mix.m_default_age = 0.0;
           mix.m_default_age_str = "";
+          mix.m_fixed_act_fractions = true;
           if( def_age )
           {
             mix.m_default_age_str = SpecUtils::xml_value_str( def_age );
             mix.m_default_age = PhysicalUnits::stringToTimeDuration( mix.m_default_age_str );
           }
           
-          double act_fraction_sum = 0.0;
+          const XmlAttribute *ref_age_attrib = XML_FIRST_ATTRIB( nuc_mix, "reference-age" );
+          const string ref_age_str = SpecUtils::xml_value_str( ref_age_attrib );
+          double ref_age = -1.0;
+          if( !ref_age_str.empty() )
+          {
+            mix.m_fixed_act_fractions = false;
+            ref_age = PhysicalUnits::stringToTimeDuration( ref_age_str );
+          }//if( !ref_age_str.empty() )
+          
+          
           XML_FOREACH_CHILD( nuc, nuc_mix, "Nuc" )
           {
             const XmlAttribute *nuc_name = XML_FIRST_ATTRIB( nuc, "name" );
             const XmlAttribute *nuc_act_frac = XML_FIRST_ATTRIB( nuc, "act-frac" );
+            const XmlAttribute *age_offset = XML_FIRST_ATTRIB( nuc, "age-offset" );
             
             if( !nuc_name || !nuc_name->value_size() )
               throw runtime_error( "No nuclide name" );
@@ -192,19 +229,56 @@ namespace
               throw runtime_error( "Invalid nuclide: " + nuc_name_str );
             
             if( !SpecUtils::parse_double( nuc_act_frac->value(), nuc_act_frac->value_size(),
-                                         comp.m_act_fraction )
-               || (comp.m_act_fraction < 0.0) )
+                                         comp.m_rel_act )
+               || (comp.m_rel_act < 0.0) )
               throw runtime_error( "Invalid activity fraction: " + nuc_name_str );
             
-            act_fraction_sum += comp.m_act_fraction;
+            if( age_offset && age_offset->value_size() )
+            {
+              const string age_offset_str = SpecUtils::xml_value_str( age_offset );
+              comp.m_age_offset = PhysicalUnits::stringToTimeDuration( age_offset_str );
+            }//if( age_offset && age_offset->value_size() )
+            
+            
             mix.m_components.push_back( std::move(comp) );
           }//XML_FOREACH_CHILD( nuc, nuc_mix, "Nuc" )
+          
+          assert( mix.m_fixed_act_fractions == (ref_age < 0.0) );
+          if( !mix.m_fixed_act_fractions && (ref_age > 0.0) )
+          {
+            // Figure out activities at t=0:
+            //  specified_act = A_0 * exp( -ref_age * nuc->decayConstant() );
+            //  A_0 = specified_act / exp( -ref_age * nuc->decayConstant() );
+            
+            for( NucMixComp &m : mix.m_components )
+            {
+              const double given_act = m.m_rel_act;
+              const SandiaDecay::Nuclide *nuc = m.m_nuclide;
+              m.m_rel_act = given_act / exp( -ref_age * nuc->decayConstant() );
+              
+#if( PERFORM_DEVELOPER_CHECKS )
+              SandiaDecay::NuclideMixture decay_mix;
+              decay_mix.addNuclideByActivity( nuc, m.m_rel_act );
+              const double ref_act = decay_mix.activity(ref_age, nuc);
+              if( (given_act > 0.0)
+                 && (fabs(ref_act - given_act) > 1.0E-5*std::max(ref_act,given_act)) ) //1.0E-5 arbitrary
+              {
+                log_developer_error( __func__, "Decay correction calculation has failed." );
+                assert( fabs(ref_act - given_act) < 1.0E-5*std::max(ref_act,given_act) );
+              }
+#endif
+            }//for( NucMixComp &m : mix.m_components )
+          }//if( mix.m_fixed_act_fractions )
+          
+          double act_fraction_sum = 0.0;
+          for( const NucMixComp &m : mix.m_components )
+            act_fraction_sum += m.m_rel_act;
           
           if( (act_fraction_sum <= 0.0) || IsNan(act_fraction_sum) || IsInf(act_fraction_sum) )
             throw runtime_error( "Invalid activity fraction sum" );
           
-          for( auto &m : mix.m_components )
-            m.m_act_fraction /= act_fraction_sum ;
+          for( NucMixComp &m : mix.m_components )
+            m.m_rel_act /= act_fraction_sum;
           
           sanitize_label_str( mix_name_str );
           nuc_mixes[mix_name_str] = std::move(mix);
@@ -1954,6 +2028,8 @@ std::shared_ptr<ReferenceLineInfo> ReferenceLineInfo::generateRefLineInfo( RefLi
   typedef tuple<const SandiaDecay::Transition *, double, float, float, float, double> coincidence_info_t;
   vector<coincidence_info_t> gamma_coincidences;
   
+  /** The `m_decay_intensity` value returned are normalized to 1 bq of the parent nuclide, at the specified age.
+   */
   auto make_nuc_lines = [use_particle,lower_photon_energy]( const SandiaDecay::Nuclide *nuc, double age, const RefLineInput &input )
               -> tuple<vector<ReferenceLineInfo::RefLine>,vector<coincidence_info_t>,bool> {
     
@@ -2148,21 +2224,34 @@ std::shared_ptr<ReferenceLineInfo> ReferenceLineInfo::generateRefLineInfo( RefLi
   {
     for( const NucMixComp &comp : nuc_mix->m_components )
     {
-      // TODO: NucMixComp::m_age_offset should be implemented, and used to define the point in time the relative activities are defined for, so when the user ages things, the relative activities of the parent nuclides will be modified
+      assert( comp.m_nuclide );
+      const double nuc_age = std::max( 0.0, age - comp.m_age_offset ); //Make sure age is at least zero
       tuple<vector<ReferenceLineInfo::RefLine>,vector<coincidence_info_t>,bool> nuc_line_info
-                                = make_nuc_lines( comp.m_nuclide, age + comp.m_age_offset, input );
+                                = make_nuc_lines( comp.m_nuclide, nuc_age, input );
       
       vector<ReferenceLineInfo::RefLine> &these_lines = get<0>(nuc_line_info);
       vector<coincidence_info_t> &these_coinc = get<1>(nuc_line_info);
       
       // Correct BR of line to account for fraction of parent nuclide
+      //
+      // The `m_decay_intensity` value returned are normalized to 1 bq of the parent nuclide, at
+      //  the specified age, so if we are having fixed activity fraction, we just need to multiply
+      //  by the activity fractions specified.  But otherwise, we need to figure out the parent
+      //  nuclides activity at the time being used, and then multiply by that.
+      double correction_factor = comp.m_rel_act;
+      if( nuc_mix->m_fixed_act_fractions )
+      {
+        // `NucMixComp::m_rel_act` is for age=0 in this case
+        correction_factor *= exp( -age * comp.m_nuclide->decayConstant() );
+      }//if( nuc_mix->m_fixed_act_fractions )
+      
       for( ReferenceLineInfo::RefLine &this_line : these_lines )
-        this_line.m_decay_intensity *= comp.m_act_fraction;
+        this_line.m_decay_intensity *= correction_factor;
       
       for( coincidence_info_t &this_coinc : these_coinc )
       {
-        get<1>(this_coinc) *= comp.m_act_fraction; //first gamma BR
-        get<5>(this_coinc) *= comp.m_act_fraction; // second gamma BR (just for debug)
+        get<1>(this_coinc) *= correction_factor; // first gamma BR
+        get<5>(this_coinc) *= correction_factor; // second gamma BR (just for debug)
       }
       
       lines.insert( end(lines), begin(these_lines), end(these_lines) );

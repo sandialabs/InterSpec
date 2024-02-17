@@ -1,11 +1,11 @@
 <?xml version="1.0" encoding="utf-8" ?>
 
 <!-- If you want to define your own reference photopeak lines in InterSpec, you
-    can copy this file to the applications data directory (See Help -> Data for this 
+    can copy this file to InterSpecs user data directory (See Help -> Data for this 
     location, but usually on Windows its 'C:\Users\username\AppData\Roaming\InterSpec'
     and on macOS '/Users/username/Library/Containers/gov.sandia.macOS.InterSpec/Data/Library/Application Support/sandia.InterSpec')
     and then use the examples provided here to define your own source (and delete the rest of the sources defined).
-    Your custom file will be loaded after this file that comes with InterSpec.
+    Your custom file will be loaded after the file that comes with InterSpec.
 
     Currently you can define two source type:
     1) SourceLines: this is simple energy and branching ratio pairs.  
@@ -16,11 +16,14 @@
     2) NucMixture:  this is a mixture of nuclide, at a specified relative 
                     activities to each other.  When the name of the NucMixture
                     is entered into the "Reference Photopeaks" tab, the lines
-                    of the nuclides will be displayed, and gamma-line associations
-                    with peaks can happen as normal.  You can also enter custom 
-                    ages into the UI to change the amount of progeny in-growth.
-                    Note that the activity fraction specified, is currently at the 
-                    aged time (not at t=0), but this may be refined in the future.
+                    of the nuclides will be displayed, and gamma-line associating
+                    with peaks will happen as normal (the peaks will be associated
+                    with a nuclide, not the mixture you define).  You can also enter 
+                    custom  ages into the UI to change the activity fractions of the 
+                    parent nuclides and/or the ingrowth of progeny (see 
+                    "reference-age" attribute to control this behavior).
+
+    If you modify this file, you must restart InterSpec for changes to take effect.
 -->
 
 <RefLineDefinitions>
@@ -40,18 +43,38 @@
         <Line>1039.6 1.0</Line>
     </SourceLines>
 
-    <!-- Nuclide mixtures must be made up of valid nuclides.
+    <!-- Nuclide mixtures must be made up of valid nuclides. 
+
+        If you define the optional "reference-age" attribute, the 
+        specified activities are assumed at that age; if you later 
+        change the age, the relative activity fractions of the parent 
+        nuclides will be different.  If you do no specify this 
+        attribute, then the relative activities of the parent nuclides  
+        will always be what you specified - aging will only change
+        the ingrowth of progeny.  
+        You will usually want to specify "reference-age", even if its 0.
+
+        The "default-age" attribute, is optional, and controls the age 
+        the "Reference Photopeaks" tool will use initially use.
+
+        The "age-offset" attribute is optional, and allows making a 
+        nuclide older or younger than the rest of the nuclides. A 
+        negative value will make the nuclide older than the other
+        nuclides, and a positive value younger.  If a positive value
+        is specified, and it is larger than the mixture age entered
+        in the "Reference Photopeaks" tool, then an age of zero will
+        be used for the nuclide.
     -->
-    <NucMixture name="Pu low burnup" default-age="20y">
+    <NucMixture name="Pu low burnup" default-age="20y" reference-age="0y">
         <!-- From FRMAC Gamma Spectroscopist Knowledge Guide 2019-08, Michael Enghauser, Table 13-1 -->
-        <Nuc name="Pu238" act-frac="0.010" />
+        <Nuc name="Pu238" act-frac="0.010" age-offset="0s" />
         <Nuc name="Pu239" act-frac="93.780" />
         <Nuc name="Pu240" act-frac="6.000" />
         <Nuc name="Pu241" act-frac="0.200" />
         <Nuc name="Pu242" act-frac="0.020" />
     </NucMixture>
 
-    <NucMixture name="Pu high burnup" default-age="20y">
+    <NucMixture name="Pu high burnup" default-age="20y" reference-age="0y">
         <!-- From FRMAC Gamma Spectroscopist Knowledge Guide 2019-08, Michael Enghauser, Table 13-1 -->
         <Nuc name="Pu238" act-frac="1.500" />
         <Nuc name="Pu239" act-frac="58.100" />
@@ -60,7 +83,7 @@
         <Nuc name="Pu242" act-frac="4.900" />
     </NucMixture>
 
-    <NucMixture name="Pu heat source" default-age="20y">
+    <NucMixture name="Pu heat source" default-age="20y" reference-age="0y">
         <!-- From FRMAC Gamma Spectroscopist Knowledge Guide 2019-08, Michael Enghauser, Table 13-1 -->
         <Nuc name="Pu238" act-frac="83.890" />
         <Nuc name="Pu239" act-frac="13.800" />
@@ -69,28 +92,28 @@
         <Nuc name="Pu242" act-frac="0.090" />
     </NucMixture>
 
-    <NucMixture name="U depleted" default-age="20y">
+    <NucMixture name="U depleted" default-age="20y" reference-age="0y">
         <!-- From FRMAC Gamma Spectroscopist Knowledge Guide 2019-08, Michael Enghauser, Table 12-4 -->
         <Nuc name="U238" act-frac="84.039" />
         <Nuc name="U235" act-frac="1.080" />
         <Nuc name="U234" act-frac="14.900" />
     </NucMixture>
 
-    <NucMixture name="U natural" default-age="20y">
+    <NucMixture name="U natural" default-age="20y" reference-age="0y">
         <!-- From FRMAC Gamma Spectroscopist Knowledge Guide 2019-08, Michael Enghauser, Table 12-4 -->
         <Nuc name="U238" act-frac="48.260" />
         <Nuc name="U235" act-frac="2.223" />
         <Nuc name="U234" act-frac="49.510" />
     </NucMixture>
 
-    <NucMixture name="U 3% enriched" default-age="20y">
+    <NucMixture name="U 3% enriched" default-age="20y" reference-age="0y">
         <!-- From FRMAC Gamma Spectroscopist Knowledge Guide 2019-08, Michael Enghauser, Table 12-4 -->
         <Nuc name="U238" act-frac="15.858" />
         <Nuc name="U235" act-frac="3.153" />
         <Nuc name="U234" act-frac="80.989" />
     </NucMixture>
 
-    <NucMixture name="U 93.3% enriched" default-age="20y">
+    <NucMixture name="U 93.3% enriched" default-age="20y" reference-age="0y">
         <!-- From FRMAC Gamma Spectroscopist Knowledge Guide 2019-08, Michael Enghauser, Table 12-4 -->
         <Nuc name="U238" act-frac="0.035" />
         <Nuc name="U235" act-frac="3.592" />
