@@ -1216,10 +1216,10 @@ bool PeakDef::useForManualRelEff() const
   switch( m_sourceGammaType )
   {
     case PeakDef::NormalGamma:
+    case PeakDef::AnnihilationGamma:
       return m_useForManualRelEff;
       
     case PeakDef::XrayGamma:
-    case PeakDef::AnnihilationGamma:
     case PeakDef::SingleEscapeGamma:
     case PeakDef::DoubleEscapeGamma:
       break;

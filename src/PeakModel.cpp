@@ -2076,11 +2076,23 @@ boost::any PeakModel::data( const WModelIndex &index, int role ) const
       
     case kUseForManualRelEff:
     {
-      if( (!peak->parentNuclide() && !peak->reaction())
-         || (peak->sourceGammaType() != PeakDef::SourceGammaType::NormalGamma) )
-        return boost::any();
+      switch( peak->sourceGammaType() )
+      {
+        case PeakDef::NormalGamma:
+        case PeakDef::AnnihilationGamma:
+          if( !peak->parentNuclide() && !peak->reaction() )
+            return boost::any();
+          break;
+          
+        case PeakDef::XrayGamma:
+        case PeakDef::SingleEscapeGamma:
+        case PeakDef::DoubleEscapeGamma:
+          return boost::any();
+          break;
+      }//switch( peak->sourceGammaType() )
+      
       return peak->useForManualRelEff();
-    }
+    }//case kUseForManualRelEff:
       
     case kPeakLineColor:
     {
@@ -2924,10 +2936,17 @@ bool PeakModel::setData( const WModelIndex &index,
         try
         {
           const bool use = boost::any_cast<bool>( value );
-          if( use && ((!new_peak.parentNuclide() && !new_peak.reaction())
-                      || (new_peak.sourceGammaType() != PeakDef::SourceGammaType::NormalGamma) ) )
-            passMessage( "Only peaks associated with a nuclides gamma can be used for relative"
-                        " activity analysis.", WarningWidget::WarningMsgHigh );
+          
+          if( use )
+          {
+            const bool has_parent = (new_peak.parentNuclide() || new_peak.reaction());
+            const bool is_gamma = ((new_peak.sourceGammaType() == PeakDef::SourceGammaType::NormalGamma)
+                                   || (new_peak.sourceGammaType() == PeakDef::SourceGammaType::AnnihilationGamma) );
+            
+            if( !has_parent || !is_gamma )
+               passMessage( "Only peaks associated with a nuclides gamma can be used for relative"
+                            " activity analysis.", WarningWidget::WarningMsgHigh );
+          }//if( use )
           
           if( use == new_peak.useForManualRelEff() )
             return false;
@@ -3095,7 +3114,7 @@ boost::any PeakModel::headerData( int section, Orientation orientation, int role
       case kUseForShieldingSourceFit: return boost::any();
       case kCandidateIsotopes:  return boost::any();
       case kUseForCalibration:  return boost::any();
-      case kUseForManualRelEff: return boost::any( WString("Use for &quot;Isotopics from peaks&quot; analysis.") );
+      case kUseForManualRelEff: return boost::any( WString("Use for \"Isotopics from peaks\" analysis.") );
       case kPeakLineColor:     return boost::any( WString("Peak color") );
       case kUserLabel:         return boost::any( WString("User specified label") );
       case kRoiCounts:         return boost::any( WString("Integral of gamma counts over the region of interest") );
