@@ -1706,6 +1706,17 @@ void PeakModel::setPeakFitFor( const Wt::WModelIndex index,
   m_sortedPeaks[row] = std::make_shared<PeakDef>( newPeak );
   (*m_peaks)[energy_index] = m_sortedPeaks[row];
   
+  // We dont need to emit data changed, because the "Fit For" values
+  //  are not displayed as part of the MVC values
+  
+  if( coef == PeakDef::CoefficientType::Mean )
+  {
+    // If we are fixing the mean, we wont allow using this peak for energy calibration,
+    //  so we need to emit that this value may have changed.
+    WModelIndex peak_index = PeakModel::index(row, kUseForCalibration);
+    dataChanged().emit( peak_index, peak_index );
+  }//if( coef == PeakDef::CoefficientType::Mean )
+  
   notifySpecMeasOfPeakChange();
 }//setPeakFitFor(...)
 
@@ -1823,14 +1834,24 @@ boost::any PeakModel::data( const WModelIndex &index, int role ) const
 
   if( m_sortedPeaks.size() != m_peaks->size() )
   {
-    stringstream msg;
-    msg << "PeakModel::data(...)\n\tm_sortedPeaks.size()=" << m_sortedPeaks.size()
-         << ", m_peaks->size()=" << m_peaks->size();
-    cerr << endl << msg.str() << endl << endl;
-    throw std::runtime_error( msg.str() );
+    string msg = "PeakModel::data(...)\n\tm_sortedPeaks.size()="
+                  + std::to_string(m_sortedPeaks.size())
+                  + ", m_peaks->size()=" + std::to_string(m_peaks->size());
+    cerr << endl << msg << endl << endl;
+    throw std::runtime_error( msg );
   }//if( m_sortedPeaks.size() != m_peaks->size() )
 
-  //should consider implementing ToolTipRole
+  // TODO: implement ToolTipRole
+  if( role == ToolTipRole )
+  {
+    if( index.column() == kUseForCalibration )
+      return WString( "If this peak should be used to help calibrate energy.\n"
+                      "You must have a nuclide, reaction, or x-ray assigned to the"
+                      " peak, and you must not have fixed the mean energy value"
+                      " using the Peak Editor." );
+    return any();
+  }//if( role == ToolTipRole )
+  
   if( (role != Wt::DisplayRole)
      && (role != Wt::EditRole)
      && !((role==Wt::CheckStateRole)
@@ -1839,7 +1860,9 @@ boost::any PeakModel::data( const WModelIndex &index, int role ) const
             || (index.column()==kUseForManualRelEff))
           )
       )
+  {
     return any();
+  }
 
 
   assert( m_sortedPeaks.size() == m_peaks->size() );
@@ -2044,7 +2067,12 @@ boost::any PeakModel::data( const WModelIndex &index, int role ) const
     }//case kUseForShieldingSourceFit:
 
     case kUseForCalibration:
+    {
+      const bool fixed_mean = !peak->fitFor(PeakDef::CoefficientType::Mean);
+      if( fixed_mean )
+        return boost::any();
       return peak->useForEnergyCalibration();
+    }
       
     case kUseForManualRelEff:
     {

@@ -1163,12 +1163,15 @@ void PeakDef::setAmplitudeUncert( const double a )
 
 bool PeakDef::useForEnergyCalibration() const
 {
-  return ( m_useForEnergyCal &&
-           ( (m_radparticleIndex>=0 && m_transition && m_parentNuclide)
-            || (m_parentNuclide && (m_sourceGammaType==PeakDef::AnnihilationGamma))
-            || (m_xrayElement && m_xrayEnergy>0.0)
-            || (m_reaction && m_reactionEnergy>0.0)
-           ) );
+  // We wont use this peak for fitting for energy calibration if the mean
+  //  has been fixed
+  return ( m_useForEnergyCal && m_fitFor[PeakDef::Mean]
+          && ( (m_radparticleIndex>=0 && m_transition && m_parentNuclide)
+               || (m_parentNuclide && (m_sourceGammaType==PeakDef::AnnihilationGamma))
+               || (m_xrayElement && m_xrayEnergy>0.0)
+               || (m_reaction && m_reactionEnergy>0.0)
+             )
+         );
 }//void useForEnergyCalibration() const
 
 
