@@ -349,11 +349,15 @@ color: #E0F5FF;
   width: 9.5ex;
 }
 
-
-
-.CoefFit
+.CoefContent .CoefDisplay > input
 {
-  
+  width: 15ex;
+}
+
+
+.CoefContent .CoefDisplay .CoefFit
+{
+  margin-left: 3px;
 }
 
 

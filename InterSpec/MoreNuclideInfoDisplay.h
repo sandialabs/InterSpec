@@ -35,7 +35,7 @@
 #include "InterSpec/SimpleDialog.h"
 
 
-// Forward declerations
+// Forward declarations
 namespace SandiaDecay
 {
   struct Nuclide;
@@ -45,7 +45,16 @@ namespace SandiaDecay
 class MoreNuclideInfoDisplay : public Wt::WTemplate
 {
 public:
-  MoreNuclideInfoDisplay( const SandiaDecay::Nuclide *const nuc,
+  /** Constructor for MoreNuclideInfoDisplay
+   
+   @par nuc The (initial) nuclide to display information for.
+   @par displayTitle If the title (e.g., "More info on U238") should be displayed within the
+        widget, or if you will maybe display your own title (e.x., in the title section of
+        SimpleDialog)
+   @par parent The standard Wt parent widget.
+   */
+  MoreNuclideInfoDisplay( const SandiaDecay::Nuclide * const nuc,
+                         const bool displayTitle,
                           Wt::WContainerWidget *parent = nullptr);
 
 
@@ -63,12 +72,20 @@ public:
   void setNuclide( const SandiaDecay::Nuclide *const nuc,
                    std::vector<const SandiaDecay::Nuclide *> history );
 
+  /** Signal emitted when the nuclide that information is being displayed for, is changed.
+   
+   Can be used, for example, to update the title, if you are displaying the title yourself.
+   */
+  Wt::Signal<const SandiaDecay::Nuclide *> &nuclideChanged();
+  
 protected:
   void setTemplateTxt();
   void showDecayChainChart();
   void showDecayThroughChart();
 
   const SandiaDecay::Nuclide *m_nuc;
+  bool m_displayTitle;
+  Wt::Signal<const SandiaDecay::Nuclide *> m_nuclideChanged;
 };//class MoreNuclideInfoDisplay
 
 
@@ -77,6 +94,7 @@ class MoreNuclideInfoWindow : public SimpleDialog
 public:
   MoreNuclideInfoWindow( const SandiaDecay::Nuclide *const nuc );
 
+  void nuclideUpdated( const SandiaDecay::Nuclide *nuc );
 protected:
   MoreNuclideInfoDisplay *m_display;
 };//class MoreNuclideInfoWindow

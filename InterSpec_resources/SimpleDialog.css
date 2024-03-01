@@ -41,14 +41,15 @@ dialog
 /* Note: the dialog .body position and height is adjusted by Wt layout JS. */
 .simple-dialog .body
 {
-  padding: 0px 0px 0px 0px;
+  /* Use 15px padding on right and left, instead of margin, so this way scroll bar will be
+   along right edge of dialog, if it is present.
+   */
+  padding: 0px 15px 0px 15px;
+  margin: 0px 0px 0px 0px;
   
   /* The 95vh is from .simple-dialog, and the 90px is the header and footer height. */
   max-height: calc( 95vh - 90px );
   overflow-y: auto;
-  
-  margin-left: 15px;
-  margin-right: 15px;
   
   max-width: calc( 50vw - 30px );
 }

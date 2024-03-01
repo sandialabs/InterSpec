@@ -183,10 +183,14 @@ namespace
 }//namespace
 
 
-MoreNuclideInfoDisplay::MoreNuclideInfoDisplay( const SandiaDecay::Nuclide *const nuc, Wt::WContainerWidget *parent )
+MoreNuclideInfoDisplay::MoreNuclideInfoDisplay( const SandiaDecay::Nuclide *const nuc, 
+                                               const bool display_title,
+                                               Wt::WContainerWidget *parent )
   : WTemplate( parent ),
-    m_nuc( nullptr )
-{  
+    m_nuc( nullptr ),
+    m_displayTitle( display_title ),
+    m_nuclideChanged( this )
+{
   try
   {
     setTemplateTxt();
@@ -243,22 +247,23 @@ void MoreNuclideInfoDisplay::setTemplateTxt()
 void MoreNuclideInfoDisplay::setNuclide( const SandiaDecay::Nuclide *const nuc, 
                                          vector<const SandiaDecay::Nuclide *> history )
 {
-   using namespace MoreNuclideInfo;
-
-   WTemplate &tmplt = *this;
-
+  using namespace MoreNuclideInfo;
+  
+  WTemplate &tmplt = *this;
+  
   try
   {
     if( !nuc )
       throw std::runtime_error( "Invalid Nuclide" );
-
-    const SandiaDecay::SandiaDecayDataBase *const db = DecayDataBaseServer::database();
+    
+    const SandiaDecay::SandiaDecayDataBase * const db = DecayDataBaseServer::database();
     assert( db );
     if( !db )
       throw runtime_error( "Error getting DecayDataBaseServer" );
-
+    
     const bool useBq = InterSpecUser::preferenceValue<bool>( "DisplayBecquerel", InterSpec::instance() );
-
+    
+    tmplt.setCondition( "display-title", m_displayTitle );
     tmplt.setCondition( "if-have-prev", !history.empty() );
     if( !history.empty() )
     {
@@ -274,278 +279,297 @@ void MoreNuclideInfoDisplay::setNuclide( const SandiaDecay::Nuclide *const nuc,
       anchor->clicked().connect( boost::bind( &MoreNuclideInfoDisplay::setNuclide, this, prev, prev_history ) );
       tmplt.bindWidget( "link-to-prev", anchor );
     }//if( !history.empty() )
-
+    
     history.push_back( nuc );
-
+    
     const SandiaDecay::Element *el = db->element( nuc->atomicNumber );
     assert( el );
     string elname = el ? el->name : string();
     if( !elname.empty() )
       elname[0] = static_cast<char>(std::tolower( static_cast<unsigned char>(elname[0]) ));
-      
+    
     string elsymbol = el ? el->symbol : string();
     if( !elsymbol.empty() )
       elsymbol[0] = static_cast<char>(std::toupper( static_cast<unsigned char>(elsymbol[0]) ));
-     
+    
     string meta_str = "";
-      if( nuc->isomerNumber == 1 )
-        meta_str = "m";
-      else if( nuc->isomerNumber > 1 )
-        meta_str = "m" + std::to_string( (int)nuc->isomerNumber );
-
-      tmplt.bindString( "symbol", nuc->symbol, Wt::TextFormat::PlainText );
-      tmplt.bindString( "element", elname, Wt::TextFormat::PlainText );
-      tmplt.bindString( "element-symbol", elsymbol, Wt::TextFormat::PlainText );
-      tmplt.bindInt( "mass-number", nuc->massNumber );
-      tmplt.bindInt( "atomic-number", nuc->atomicNumber );
-      tmplt.bindInt( "num-neutrons", nuc->massNumber - nuc->atomicNumber );
-     
-      tmplt.setCondition( "if-meta-stable", (nuc->isomerNumber != 0) );
-      tmplt.bindInt( "meta-state-number", nuc->isomerNumber );
-      tmplt.bindString( "meta-state", meta_str );
-        
-
-      if( !nuc->isStable() )
+    if( nuc->isomerNumber == 1 )
+      meta_str = "m";
+    else if( nuc->isomerNumber > 1 )
+      meta_str = "m" + std::to_string( (int)nuc->isomerNumber );
+    
+    tmplt.bindString( "symbol", nuc->symbol, Wt::TextFormat::PlainText );
+    tmplt.bindString( "element", elname, Wt::TextFormat::PlainText );
+    tmplt.bindString( "element-symbol", elsymbol, Wt::TextFormat::PlainText );
+    tmplt.bindInt( "mass-number", nuc->massNumber );
+    tmplt.bindInt( "atomic-number", nuc->atomicNumber );
+    tmplt.bindInt( "num-neutrons", nuc->massNumber - nuc->atomicNumber );
+    
+    tmplt.setCondition( "if-meta-stable", (nuc->isomerNumber != 0) );
+    tmplt.bindInt( "meta-state-number", nuc->isomerNumber );
+    tmplt.bindString( "meta-state", meta_str );
+    
+    
+    if( !nuc->isStable() )
+    {
+      const string halflife = PhysicalUnits::printToBestTimeUnits( nuc->halfLife, 4, SandiaDecay::second );
+      tmplt.bindString( "half-life", halflife, Wt::TextFormat::XHTMLText );
+      
+      const double specificActivity = nuc->activityPerGram() / PhysicalUnits::gram;
+      const string sa = PhysicalUnits::printToBestSpecificActivityUnits( specificActivity, 3, !useBq );
+      tmplt.bindString( "specific-activity", sa, Wt::TextFormat::XHTMLText );
+    }else
+    {
+      tmplt.bindString( "half-life", "stable", Wt::TextFormat::PlainText );
+      tmplt.bindString( "specific-activity", "", Wt::TextFormat::PlainText );
+    }
+    
+    const string amu = PhysicalUnits::printCompact( nuc->atomicMass, 6 ) + " amu";
+    tmplt.bindString( "atomic-mass", amu, Wt::TextFormat::PlainText );
+    
+    double natural_abundance = -1;
+    if( el )
+    {
+      for( const auto &n : el->isotopes )
       {
-        const string halflife = PhysicalUnits::printToBestTimeUnits( nuc->halfLife, 4, SandiaDecay::second );
-        tmplt.bindString( "half-life", halflife, Wt::TextFormat::XHTMLText );
-
-        const double specificActivity = nuc->activityPerGram() / PhysicalUnits::gram;
-        const string sa = PhysicalUnits::printToBestSpecificActivityUnits( specificActivity, 3, !useBq );
-        tmplt.bindString( "specific-activity", sa, Wt::TextFormat::XHTMLText );
+        if( n.nuclide == nuc )
+        {
+          natural_abundance = n.abundance;
+          break;
+        }
+      }
+    }//if( el )
+    
+    tmplt.setCondition( "if-is-natural", (natural_abundance > 0.0) );
+    const string natabun = PhysicalUnits::printCompact( 100.0*natural_abundance, 4 ) + "%";
+    tmplt.bindString( "natural-abundance", natabun, Wt::TextFormat::PlainText );
+    
+    WPushButton *decayChainBtn = new WPushButton( "Show Decay Chain" );
+    decayChainBtn->addStyleClass( "LightButton DecayBtn" );
+    decayChainBtn->clicked().connect( this, &MoreNuclideInfoDisplay::showDecayChainChart );
+    tmplt.bindWidget( "decay-chain-btn", decayChainBtn );
+    
+    tmplt.setCondition( "if-has-parents", !nuc->decaysFromParents.empty() );
+    if( !nuc->decaysFromParents.empty() )
+    {
+      WPushButton *decayThroughBtn = new WPushButton( "Show Decays Through" );
+      decayThroughBtn->addStyleClass( "LightButton DecayBtn" );
+      decayThroughBtn->clicked().connect( this, &MoreNuclideInfoDisplay::showDecayThroughChart );
+      tmplt.bindWidget( "decay-through-btn", decayThroughBtn );
+    }
+    
+    //We'll overide the text of SandiaDecay::to_str( SandiaDecay::DecayMode ) for a few types
+    auto trans_mode_txt = []( const SandiaDecay::DecayMode mode ){
+      switch( mode )
+      {
+        case SandiaDecay::ElectronCaptureDecay:
+          return "e- Capture";
+        case SandiaDecay::BetaPlusAndAlphaDecay:
+          return "Beta+ and Alpha";
+        case SandiaDecay::DoubleBetaDecay:
+          return "2 Beta+";
+        case SandiaDecay::DoubleElectronCaptureDecay:
+          return "2 e- Capture";
+        case SandiaDecay::SpontaneousFissionDecay:
+          return "Spont. Fission";
+        default:
+          break;
+      };//switch( transition->mode )
+      
+      return SandiaDecay::to_str( mode );
+    };//trans_mode_txt lamda
+    
+    
+    // TODO: WTemplate has a Wt::WTemplate::Functions::while_f function, but from the documentation it isnt totally clear how to use it; it would be nice to use this to generate rows in a table or something to list all the individual decays
+    WTable *decayTable = new WTable();
+    decayTable->setHeaderCount( 1, Wt::Horizontal );
+    WTableCell *cell = decayTable->elementAt( 0, 0 );
+    new WText( "Child Iso.", cell );
+    cell = decayTable->elementAt( 0, 1 );
+    new WText( "Decay Mode", cell );
+    cell = decayTable->elementAt( 0, 2 );
+    new WText( "Branch Ratio", cell );
+    
+    
+    for( const SandiaDecay::Transition *transition : nuc->decaysToChildren )
+    {
+      const int row = decayTable->rowCount();
+      
+      cell = decayTable->elementAt( row, 0 );
+      if( transition->child )
+      {
+        WAnchor *anchor = new WAnchor( cell );
+        anchor->setText( transition->child->symbol );
+        anchor->clicked().connect( boost::bind( &MoreNuclideInfoDisplay::setNuclide, this, transition->child, history ) );
+        
+        string txt = "(t<sub>1/2</sub>=" + PhysicalUnits::printToBestTimeUnits( transition->child->halfLife, 2 ) + ")";
+        WText *t = new WText( txt, cell );
+        t->addStyleClass( "HalfLife" );
       }else
       {
-        tmplt.bindString( "half-life", "stable", Wt::TextFormat::PlainText );
-        tmplt.bindString( "specific-activity", "", Wt::TextFormat::PlainText );
-      }
-
-      const string amu = PhysicalUnits::printCompact( nuc->atomicMass, 6 ) + " amu";
-      tmplt.bindString( "atomic-mass", amu, Wt::TextFormat::PlainText );
+        new WText( "<div style=\"text-align: center;\">--</div>", cell );
+      }//if( transition->child )
       
-      double natural_abundance = -1;
-      if( el )
-      {
-        for( const auto &n : el->isotopes )
-        {
-          if( n.nuclide == nuc )
-          {
-            natural_abundance = n.abundance;
-            break;
-          }
-        }
-      }//if( el )
-
-      tmplt.setCondition( "if-is-natural", (natural_abundance > 0.0) );
-      const string natabun = PhysicalUnits::printCompact( 100.0*natural_abundance, 4 ) + "%";
-      tmplt.bindString( "natural-abundance", natabun, Wt::TextFormat::PlainText );
-
-      WPushButton *decayChainBtn = new WPushButton( "Show Decay Chain" );
-      decayChainBtn->addStyleClass( "LightButton DecayBtn" );
-      decayChainBtn->clicked().connect( this, &MoreNuclideInfoDisplay::showDecayChainChart );
-      tmplt.bindWidget( "decay-chain-btn", decayChainBtn );
-
-      tmplt.setCondition( "if-has-parents", !nuc->decaysFromParents.empty() );
-      if( !nuc->decaysFromParents.empty() )
-      {
-        WPushButton *decayThroughBtn = new WPushButton( "Show Decays Through" );
-        decayThroughBtn->addStyleClass( "LightButton DecayBtn" );
-        decayThroughBtn->clicked().connect( this, &MoreNuclideInfoDisplay::showDecayThroughChart );
-        tmplt.bindWidget( "decay-through-btn", decayThroughBtn );
-      }
-
-      //We'll overide the text of SandiaDecay::to_str( SandiaDecay::DecayMode ) for a few types
-      auto trans_mode_txt = []( const SandiaDecay::DecayMode mode ){
-        switch( mode )
-        {
-          case SandiaDecay::ElectronCaptureDecay:
-            return "e- Capture";
-          case SandiaDecay::BetaPlusAndAlphaDecay:
-            return "Beta+ and Alpha";
-          case SandiaDecay::DoubleBetaDecay:
-            return "2 Beta+";
-          case SandiaDecay::DoubleElectronCaptureDecay:
-            return "2 e- Capture";
-          case SandiaDecay::SpontaneousFissionDecay:
-            return "Spont. Fission";
-          default:
-            break;
-        };//switch( transition->mode )
-
-        return SandiaDecay::to_str( mode );
-      };//trans_mode_txt lamda
-
-
-      // TODO: WTemplate has a Wt::WTemplate::Functions::while_f function, but from the documentation it isnt totally clear how to use it; it would be nice to use this to generate rows in a table or something to list all the individual decays
-      WTable *decayTable = new WTable();
-      decayTable->setHeaderCount( 1, Wt::Horizontal );
-      WTableCell *cell = decayTable->elementAt( 0, 0 );
-      new WText( "Child Iso.", cell );
-      cell = decayTable->elementAt( 0, 1 );
+      cell = decayTable->elementAt( row, 1 );
+      new WText( trans_mode_txt( transition->mode ), cell );
+      
+      cell = decayTable->elementAt( row, 2 );
+      new WText( PhysicalUnits::printCompact( transition->branchRatio, 5 ), cell );
+    }//for( const SandiaDecay::Transition * transition : nuc->decaysToChildren)
+    
+    tmplt.bindWidget( "decays-to-table", decayTable );
+    
+    
+    if( !nuc->decaysFromParents.empty() )
+    {
+      WTable *decayFromTable = new WTable();
+      decayFromTable->setHeaderCount( 1, Wt::Horizontal );
+      WTableCell *cell = decayFromTable->elementAt( 0, 0 );
+      new WText( "Parent Isotope", cell );
+      cell = decayFromTable->elementAt( 0, 1 );
       new WText( "Decay Mode", cell );
-      cell = decayTable->elementAt( 0, 2 );
+      cell = decayFromTable->elementAt( 0, 2 );
       new WText( "Branch Ratio", cell );
-
-
-      for( const SandiaDecay::Transition *transition : nuc->decaysToChildren )
+      
+      string decaysFromHtml;
+      for( const SandiaDecay::Transition *parentTrans : nuc->decaysFromParents )
       {
-        const int row = decayTable->rowCount();
-
-        cell = decayTable->elementAt( row, 0 );
-        if( transition->child )
+        const SandiaDecay::Nuclide *parentNuclide = parentTrans->parent;
+        if( !parentNuclide || (nuc == parentNuclide) )
+          continue;
+        
+        for( const SandiaDecay::Transition *trans : parentNuclide->decaysToChildren )
         {
+          if( trans->child != nuc )
+            continue;
+          
+          const int row = decayFromTable->rowCount();
+          
+          const float br_to = trans->branchRatio;
+          
+          cell = decayFromTable->elementAt( row, 0 );
+          
           WAnchor *anchor = new WAnchor( cell );
-          anchor->setText( transition->child->symbol );
-          anchor->clicked().connect( boost::bind( &MoreNuclideInfoDisplay::setNuclide, this, transition->child, history ) );
-
-          string txt = "(t<sub>1/2</sub>=" + PhysicalUnits::printToBestTimeUnits( transition->child->halfLife, 2 ) + ")";
+          anchor->setText( parentNuclide->symbol );
+          anchor->clicked().connect( boost::bind( &MoreNuclideInfoDisplay::setNuclide, this, parentNuclide, history ) );
+          
+          string txt = "(t<sub>1/2</sub>=" + PhysicalUnits::printToBestTimeUnits( parentNuclide->halfLife, 2 ) + ")";
           WText *t = new WText( txt, cell );
           t->addStyleClass( "HalfLife" );
-        }else
-        {
-          new WText( "<div style=\"text-align: center;\">--</div>", cell );
-        }//if( transition->child )
-
-        cell = decayTable->elementAt( row, 1 );
-        new WText( trans_mode_txt( transition->mode ), cell );
-
-        cell = decayTable->elementAt( row, 2 );
-        new WText( PhysicalUnits::printCompact( transition->branchRatio, 5 ), cell );
-      }//for( const SandiaDecay::Transition * transition : nuc->decaysToChildren)
-
-      tmplt.bindWidget( "decays-to-table", decayTable );
-
-
-      if( !nuc->decaysFromParents.empty() )
-      {
-        WTable *decayFromTable = new WTable();
-        decayFromTable->setHeaderCount( 1, Wt::Horizontal );
-        WTableCell *cell = decayFromTable->elementAt( 0, 0 );
-        new WText( "Parent Isotope", cell );
-        cell = decayFromTable->elementAt( 0, 1 );
-        new WText( "Decay Mode", cell );
-        cell = decayFromTable->elementAt( 0, 2 );
-        new WText( "Branch Ratio", cell );
-
-        string decaysFromHtml;
-        for( const SandiaDecay::Transition *parentTrans : nuc->decaysFromParents )
-        {
-          const SandiaDecay::Nuclide *parentNuclide = parentTrans->parent;
-          if( !parentNuclide || (nuc == parentNuclide) )
-            continue;
-
-          for( const SandiaDecay::Transition *trans : parentNuclide->decaysToChildren )
-          {
-            if( trans->child != nuc )
-              continue;
-
-            const int row = decayFromTable->rowCount();
-
-            const float br_to = trans->branchRatio;
-
-            cell = decayFromTable->elementAt( row, 0 );
-
-            WAnchor *anchor = new WAnchor( cell );
-            anchor->setText( parentNuclide->symbol );
-            anchor->clicked().connect( boost::bind( &MoreNuclideInfoDisplay::setNuclide, this, parentNuclide, history ) );
-
-            string txt = "(t<sub>1/2</sub>=" + PhysicalUnits::printToBestTimeUnits( parentNuclide->halfLife, 2 ) + ")";
-            WText *t = new WText( txt, cell );
-            t->addStyleClass( "HalfLife" );
-
-            cell = decayFromTable->elementAt( row, 1 );
-            new WText( trans_mode_txt( trans->mode ), cell );
-
-            cell = decayFromTable->elementAt( row, 2 );
-            new WText( PhysicalUnits::printCompact( br_to, 5 ), cell );
-          }//for( const SandiaDecay::Transition *trans : parentNuclide->decaysToChildren )
+          
+          cell = decayFromTable->elementAt( row, 1 );
+          new WText( trans_mode_txt( trans->mode ), cell );
+          
+          cell = decayFromTable->elementAt( row, 2 );
+          new WText( PhysicalUnits::printCompact( br_to, 5 ), cell );
+        }//for( const SandiaDecay::Transition *trans : parentNuclide->decaysToChildren )
       }//for( const SandiaDecay::Transition *parentTrans : nuc->decaysFromParents )
-
-
-        tmplt.bindWidget( "decays-from-table", decayFromTable );
-      }//if( !nuc->decaysFromParents.empty() )
-
-      const auto more_info_db = MoreNucInfoDb::instance();
-      if( more_info_db )
-      { 
-        const NucInfo *const more_info = more_info_db->info( nuc );
-
-        if( !more_info )
-        {
-          // We need to fill these conditions out, incase we are setting a nuclide that doesnt have
-          //  them, but the previously displayed nuclide did.
-          tmplt.setCondition( "if-has-more-info", false );
-          tmplt.setCondition( "if-has-related", false );
-          tmplt.bindWidget( "related-nucs", nullptr );
-          tmplt.bindString( "more-info", "", Wt::TextFormat::XHTMLText );
-        }else
-        {
-          tmplt.setCondition( "if-has-related", !more_info->m_associated.empty() );
-          if( !more_info->m_associated.empty() )
-          {
-            WContainerWidget *associatedList = new WContainerWidget();
-            associatedList->setList( true, false );
-            associatedList->addStyleClass( "MoreNucInfoRelated" );
-
-            for( size_t i = 0; i < more_info->m_associated.size(); ++i )
-            {
-              const SandiaDecay::Nuclide *associated = db->nuclide( more_info->m_associated[i] );
-              WContainerWidget *li = new WContainerWidget( associatedList );
-              if( associated )
-              {
-                WAnchor *anchor = new WAnchor( li );
-                anchor->setText( more_info->m_associated[i] );
-                anchor->clicked().connect( boost::bind( &MoreNuclideInfoDisplay::setNuclide, this, associated, history ) );
-
-                string txt = " (t<sub>1/2</sub>=" + PhysicalUnits::printToBestTimeUnits( associated->halfLife, 2 ) + ")";
-                WText *t = new WText( txt, li );
-                t->addStyleClass( "HalfLife" );
-              }else
-              {
-                new WText( more_info->m_associated[i], li );
-              }
-            }
-
-            tmplt.bindWidget( "related-nucs", associatedList );
-          }//if( !more_info->m_associated.empty() )
-          
-          
-          
-          string notes = notes_html( more_info_db, more_info );
-
-          tmplt.setCondition( "if-has-more-info", !notes.empty() );
-          tmplt.bindString( "more-info", notes, Wt::TextFormat::XHTMLText );
-        }//if( more_info )
-      }//if( more_info_db )
-
-      //if( nuc->canObtainSecularEquilibrium() )
-      //  information.push_back( "Can reach secular equilibrium" );
-      //else
-      //  information.push_back( "Cannot reach secular equilibrium" );
-
-      // TODO: maybe compute gamma-dose information?
-
-      tmplt.setCondition( "if-valid", true );
-      tmplt.setCondition( "if-invalid", false );
-
-      m_nuc = nuc;
-
-      // Incase we are loading a nuclide, and the user had scrolled down - we'll scroll up
-      doJavaScript( "try{" + jsRef() + ".parentElement.scrollTop=0;}catch{}" );
-    } catch( std::exception &e )
+      
+      
+      tmplt.bindWidget( "decays-from-table", decayFromTable );
+    }//if( !nuc->decaysFromParents.empty() )
+    
+    const auto more_info_db = MoreNucInfoDb::instance();
+    if( more_info_db )
     {
-      m_nuc = nullptr;
-      tmplt.setCondition( "if-valid", false );
-      tmplt.setCondition( "if-invalid", true );
-      tmplt.bindString( "error-message", e.what(), Wt::TextFormat::XHTMLText );
-    }//try / catch
-  }//void MoreNuclideInfoDisplay::setNuclide(...)
+      const NucInfo *const more_info = more_info_db->info( nuc );
+      
+      if( !more_info )
+      {
+        // We need to fill these conditions out, incase we are setting a nuclide that doesnt have
+        //  them, but the previously displayed nuclide did.
+        tmplt.setCondition( "if-has-more-info", false );
+        tmplt.setCondition( "if-has-related", false );
+        tmplt.bindWidget( "related-nucs", nullptr );
+        tmplt.bindString( "more-info", "", Wt::TextFormat::XHTMLText );
+      }else
+      {
+        tmplt.setCondition( "if-has-related", !more_info->m_associated.empty() );
+        if( !more_info->m_associated.empty() )
+        {
+          WContainerWidget *associatedList = new WContainerWidget();
+          associatedList->setList( true, false );
+          associatedList->addStyleClass( "MoreNucInfoRelated" );
+          
+          for( size_t i = 0; i < more_info->m_associated.size(); ++i )
+          {
+            const SandiaDecay::Nuclide *associated = db->nuclide( more_info->m_associated[i] );
+            WContainerWidget *li = new WContainerWidget( associatedList );
+            if( associated )
+            {
+              WAnchor *anchor = new WAnchor( li );
+              anchor->setText( more_info->m_associated[i] );
+              anchor->clicked().connect( boost::bind( &MoreNuclideInfoDisplay::setNuclide, this, associated, history ) );
+              
+              string txt = " (t<sub>1/2</sub>=" + PhysicalUnits::printToBestTimeUnits( associated->halfLife, 2 ) + ")";
+              WText *t = new WText( txt, li );
+              t->addStyleClass( "HalfLife" );
+            }else
+            {
+              new WText( more_info->m_associated[i], li );
+            }
+          }
+          
+          tmplt.bindWidget( "related-nucs", associatedList );
+        }//if( !more_info->m_associated.empty() )
+        
+        
+        
+        string notes = notes_html( more_info_db, more_info );
+        
+        tmplt.setCondition( "if-has-more-info", !notes.empty() );
+        tmplt.bindString( "more-info", notes, Wt::TextFormat::XHTMLText );
+      }//if( more_info )
+    }//if( more_info_db )
+    
+    //if( nuc->canObtainSecularEquilibrium() )
+    //  information.push_back( "Can reach secular equilibrium" );
+    //else
+    //  information.push_back( "Cannot reach secular equilibrium" );
+    
+    // TODO: maybe compute gamma-dose information?
+    
+    tmplt.setCondition( "if-valid", true );
+    tmplt.setCondition( "if-invalid", false );
+    
+    m_nuc = nuc;
+    
+    // Incase we are loading a nuclide, and the user had scrolled down - we'll scroll up
+    doJavaScript( "try{" + jsRef() + ".parentElement.scrollTop=0;}catch{}" );
+  }catch( std::exception &e )
+  {
+    m_nuc = nullptr;
+    tmplt.setCondition( "if-valid", false );
+    tmplt.setCondition( "if-invalid", true );
+    tmplt.bindString( "error-message", e.what(), Wt::TextFormat::XHTMLText );
+  }//try / catch
+  
+  m_nuclideChanged.emit( m_nuc );
+}//void setNuclide(...)
 
+
+Wt::Signal<const SandiaDecay::Nuclide *> &MoreNuclideInfoDisplay::nuclideChanged()
+{
+  return m_nuclideChanged;
+}
 
 
 MoreNuclideInfoWindow::MoreNuclideInfoWindow( const SandiaDecay::Nuclide *const nuc )
-  : SimpleDialog(),
+  : SimpleDialog( "More info dialog" ), //We need some title text so `SimpleDialog::m_title` is created
   m_display( nullptr )
 {
-  m_display = new MoreNuclideInfoDisplay( nuc, contents() );
+  m_display = new MoreNuclideInfoDisplay( nuc, false, contents() );
+  
+  m_display->nuclideChanged().connect( boost::bind( &MoreNuclideInfoWindow::nuclideUpdated, this, boost::placeholders::_1 ) );
+  
+  nuclideUpdated( nuc );
+  
   addButton( "Close" );
 }//MoreNuclideInfoWindow
+
+
+void MoreNuclideInfoWindow::nuclideUpdated( const SandiaDecay::Nuclide *nuc )
+{
+  if( m_title )
+    m_title->setText( "More Info on " + (nuc ? nuc->symbol : string("---")) );
+}//void nuclideUpdated( const SandiaDecay::Nuclide *nuc )

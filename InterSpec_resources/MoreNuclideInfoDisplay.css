@@ -24,14 +24,14 @@
   margin-top: 10px;
 }
 
-.MoreNuclideInfoDisplay .MoreNucInfoPrev
-{
-  margin-bottom: 5px;
-}
-
 .MoreNuclideInfoDisplay .MoreNucInfoTitle:first-letter
 {
   text-transform: uppercase;
+}
+
+.MoreNuclideInfoDisplay .MoreNucInfoPrev
+{
+  margin-bottom: 5px;
 }
 
 .MoreNuclideInfoDisplay .MoreNucInfoSection
