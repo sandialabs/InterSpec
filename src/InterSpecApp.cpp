@@ -455,7 +455,7 @@ void InterSpecApp::setupDomEnvironment()
     wApp->useStyleSheet( "InterSpec_resources/GammaCountDialog.css" );
     wApp->useStyleSheet( "InterSpec_resources/GridLayoutHelpers.css" );
     wApp->useStyleSheet( "InterSpec_resources/ExportSpecFile.css" );
-    
+    wApp->useStyleSheet( "InterSpec_resources/MoreNuclideInfoDisplay.css" );
     // anything else relevant?
     wApp->triggerUpdate();
   } );
