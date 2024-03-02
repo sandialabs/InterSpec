@@ -4584,8 +4584,7 @@ vector<pair<string,string>> DrfSelect::avaliableGadrasDetectors() const
 
 shared_ptr<DetectorPeakResponse> DrfSelect::initARelEffDetector( const SpecUtils::DetectorType type,
                                                                 std::string manufacturer,
-                                                                std::string model,
-                                                                InterSpec *interspec )
+                                                                std::string model )
 {
 
   // Get a list of potential model names for a given DetectorType.

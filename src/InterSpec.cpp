@@ -7240,6 +7240,9 @@ void InterSpec::addPeakLabelSubMenu( PopupDivMenu *parentWidget )
   WCheckBox *cb = new WCheckBox( "Show User Labels" );
   cb->setChecked(false);
   PopupDivMenuItem *item = menu->addWidget( cb );
+  // We will show user labels by default
+  item->setChecked( true );
+  m_spectrum->setShowPeakLabel( SpectrumChart::PeakLabels::kShowPeakUserLabel, true );
   setupLabelCbCallbacks( SpectrumChart::kShowPeakUserLabel, cb );
   
   cb = new WCheckBox( "Show Peak Energies" );
@@ -10075,7 +10078,7 @@ void InterSpec::loadDetectorResponseFunction( std::shared_ptr<SpecMeas> meas,
   {
     try
     {
-      det = DrfSelect::initARelEffDetector( type, manufacturer, model, this );
+      det = DrfSelect::initARelEffDetector( type, manufacturer, model );
     }catch( std::exception & )
     {
     }

@@ -448,6 +448,7 @@ void PeakEdit::init()
               .connect( boost::bind( &PeakEdit::checkIfUserLabelDirty, this ) );
   m_userLabel->enterPressed()
               .connect( boost::bind( &PeakEdit::checkIfUserLabelDirty, this ) );
+  m_userLabel->textInput().connect( boost::bind( &PeakEdit::checkIfUserLabelDirty, this ) );
   
   row = m_valueTable->rowAt( PeakEdit::NumPeakPars+4 );
   label = new WLabel( "Peak Color", row->elementAt(0) );

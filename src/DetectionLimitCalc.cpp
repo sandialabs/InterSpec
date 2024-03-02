@@ -108,7 +108,7 @@ DetectionLimitCalc::CurieMdaInput currie_input( const float energy,
   
   const size_t nsidebin = 4;
   //const float num_fwhm = 2.5;
-  const float nfwhm = 1.19f;
+  const float nfwhm = 1.25; // recommended by ISO 11929:2010, could instead use 1.19
   const double confidence_level = detection_probability;
   
   const float fwhm = det->peakResolutionFWHM( energy );

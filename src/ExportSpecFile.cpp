@@ -2251,12 +2251,15 @@ std::shared_ptr<const SpecMeas> ExportSpecFileTool::generateFileToSave()
   if( (start_spec->num_measurements() == 1) && !remove_gps )
     return start_spec;
   
-  const set<int> samples = currentlySelectedSamples();
-  const vector<string> detectors = currentlySelectedDetectors();
+  set<int> samples = currentlySelectedSamples();
+  vector<string> detectors = currentlySelectedDetectors();
+  
+  // TODO: we should probably filter out unwanted detectors and samples up front, rather than
+  //       waiting for the summing step
   
   const bool backgroundSub = (m_backSubFore && m_backSubFore->isVisible() && m_backSubFore->isChecked());
   const bool sumAll = ((m_sumAllToSingleRecord->isVisible() && m_sumAllToSingleRecord->isChecked())
-                       || (max_records <= 2));
+                       || (max_records < 2));
   const bool foreToSingleRecord = (m_sumForeToSingleRecord->isVisible() && m_sumForeToSingleRecord->isChecked());
   const bool backToSingleRecord = (m_sumBackToSingleRecord->isVisible() && m_sumBackToSingleRecord->isChecked());
   const bool secoToSingleRecord = (m_sumSecoToSingleRecord->isVisible() && m_sumSecoToSingleRecord->isChecked());
@@ -2606,7 +2609,6 @@ std::shared_ptr<const SpecMeas> ExportSpecFileTool::generateFileToSave()
       meas_to_remove.insert( m );
   }//for( const auto &m : answer->measurements() )
   
-  
   if( !meas_to_remove.empty() )
   {
     vector<shared_ptr<const SpecUtils::Measurement>> to_remove( begin(meas_to_remove), end(meas_to_remove) );
@@ -2617,8 +2619,39 @@ std::shared_ptr<const SpecMeas> ExportSpecFileTool::generateFileToSave()
   {
     for( const shared_ptr<SpecUtils::Measurement> &i : meas_to_add )
       answer->add_measurement( i, false );
-    answer->cleanup_after_load();
   }
+  
+  if( !meas_to_remove.empty() || !meas_to_add.empty() )
+  {
+    answer->cleanup_after_load();
+    
+    // `detectors` and `samples` are maybe no longer valid, since we may have summed them together
+    //  - we will fix this up, although it probably makes more sense to just filter out unwanted
+    //  detectors and samples, up front (but this maybe creates other problems?)
+    const vector<string> &dets_now = answer->detector_names();
+    const set<int> &samples_now = answer->sample_numbers();
+    vector<string> names_to_remove;
+    for( const string &d : detectors )
+    {
+      if( std::find(begin(dets_now), end(dets_now), d) == end(dets_now) )
+        names_to_remove.push_back( d );
+    }//for( const string &d : detectors )
+    
+    for( const string &d : names_to_remove )
+    {
+      assert( std::find( begin(detectors), end(detectors), d ) != end(detectors) );
+      detectors.erase( std::find( begin(detectors), end(detectors), d ) );
+    }
+    
+    set<int> samples_to_remove;
+    for( const int sample : samples )
+    {
+      if( !samples_now.count(sample) )
+        samples_to_remove.insert(sample);
+    }
+    for( const int sample : samples_to_remove )
+      samples.erase( sample );
+  }//if( !meas_to_remove.empty() || !meas_to_add.empty() )
   
   
   if( sumAll )

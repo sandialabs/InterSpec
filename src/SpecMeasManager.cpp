@@ -4607,7 +4607,7 @@ WContainerWidget *SpecMeasManager::createButtonBar()
   m_newDiv->setStyleClass( "LoadSpectrumUploadDiv" );
   new WText( "Selected Spectrum: " , m_newDiv );
   
-  m_setButton = new Wt::WPushButton("Assign As",m_newDiv);
+  m_setButton = new Wt::WPushButton("Display As",m_newDiv);
   m_setButton->setIcon( "InterSpec_resources/images/bullet_arrow_down.png" );
   
   Wt::WPopupMenu *setPopup = new Wt::WPopupMenu();

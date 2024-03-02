@@ -2350,8 +2350,8 @@ void DetectionLimitTool::handleInputChange()
     input.counts_per_bq_into_4pi_with_air = line.gammas_4pi_after_air_attenuation*spec->live_time();
     input.distance = distance;
     input.activity = activity;
-    input.roi_start = energy - 1.19*fwhm; //Could alternatively use 1.125;
-    input.roi_end = energy + 1.19*fwhm;
+    input.roi_start = energy - 1.25*fwhm; // recommended by ISO 11929:2010, could instead use 1.19
+    input.roi_end = energy + 1.25*fwhm;
     input.num_side_channels = 4;
     input.confidence_level = confLevel;
     input.trans_through_air = line.air_transmission;

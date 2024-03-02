@@ -325,7 +325,7 @@ public:
       if( meas_time > 0.005*m_nuc->halfLife ) //0.005 times HL is arbitrary
       {
         showDecayDuringMeasurementCb();
-        setDecayDuringMeasurement( (meas_time > 0.05*m_nuc->halfLife) ); //5% of HL is arbitrary
+        setDecayDuringMeasurement( (meas_time > 0.005*m_nuc->halfLife) ); //0.5% of HL is arbitrary
       }
       
       // We could maybe list which gammas are currently being used
