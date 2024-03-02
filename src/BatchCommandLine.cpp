@@ -32,7 +32,9 @@
 
 #include "InterSpec/AppUtils.h"
 #include "InterSpec/BatchPeak.h"
+#include "InterSpec/BatchActivity.h"
 #include "InterSpec/BatchCommandLine.h"
+#include "InterSpec/DetectorPeakResponse.h"
 
 using namespace std;
 
@@ -132,15 +134,21 @@ int run_batch_command( int argc, char **argv )
   
   bool successful = true;
   
-  if( cl_vm.count("batch-peak-fit") )
+  const bool batch_peak_fit = cl_vm.count("batch-peak-fit");
+  const bool batch_act_fit = cl_vm.count("batch-act-fit");
+  
+  if( batch_peak_fit || batch_act_fit )
   {
     try
     {
+      if( batch_peak_fit && batch_act_fit )
+        throw std::runtime_error( "You may not specify both 'batch-peak-fit' and 'batch-act-fit'." );
+      
       bool output_stdout, refit_energy_cal, use_exemplar_energy_cal, write_n42_with_peaks, show_nonfit_peaks;
       vector<std::string> input_files;
       string exemplar_path, output_path, exemplar_samples, background_sub_file;
       
-      po::options_description peak_cl_desc("Allowed batch peak-fit options", term_width, min_description_length);
+      po::options_description peak_cl_desc("Allowed batch peak-fit, and activity-fit options", term_width, min_description_length);
       peak_cl_desc.add_options()
       ("help,h",  "Produce help message")
       ("exemplar", po::value<std::string>(&exemplar_path),
@@ -186,28 +194,56 @@ int run_batch_command( int argc, char **argv )
        )
       ;
       
+      
+      string drf_file, drf_name;
+      po::options_description activity_cl_desc("Activity-fit options", term_width, min_description_length);
+      activity_cl_desc.add_options()
+      ("drf-file",  po::value<string>(&drf_file)->default_value(""),
+                    "Path to a file containing DRF to use (overrides DRF contained in exemplar N42 file)")
+      ("drf-name",  po::value<string>(&drf_name)->default_value(""),
+                    "The name of a DRF to use; either within the file specified by 'drf-file'"
+                    " (which may have multiple DRFs)"
+                    ", or built-in, or previously used in InterSpec "
+                    "(overrides DRF contained in exemplar N42 file).")
+      ;
+      
       po::variables_map cl_vm;
       try
       {
-        po::parsed_options parsed_opts
+        po::parsed_options parsed_peak_opts
         = po::command_line_parser(argc,argv)
           .allow_unregistered()
           .options(peak_cl_desc)
           .run();
         
-        po::store( parsed_opts, cl_vm );
+        po::store( parsed_peak_opts, cl_vm );
+        
+        if( batch_act_fit )
+        {
+          po::parsed_options parsed_act_opts
+          = po::command_line_parser(argc,argv)
+            .allow_unregistered()
+            .options(activity_cl_desc)
+            .run();
+          po::store( parsed_act_opts, cl_vm );
+        }//if( batch_act_fit )
+        
         po::notify( cl_vm );
       }catch( std::exception &e )
       {
         std::cerr << "Command line argument error: " << e.what() << std::endl << std::endl;
         std::cout << peak_cl_desc << std::endl;
+        if( batch_act_fit )
+          std::cout << activity_cl_desc << std::endl;
         return 1;
       }//try catch
       
       if( cl_vm.count("help") )
       {
-        std::cout << "Available command-line options for batch peak-fitting are:\n";
+        std::cout << "Available command-line options for batch peak or activity fitting are:\n";
         std::cout << peak_cl_desc << std::endl;
+        if( batch_act_fit )
+          std::cout << activity_cl_desc << std::endl;
         return 0;
       }//if( cl_vm.count("help") )
       
@@ -229,7 +265,7 @@ int run_batch_command( int argc, char **argv )
         }
       }//for( string filename : input_files )
       
-      BatchPeak::BatchPeakFitOptions options;
+      BatchActivity::BatchActivityFitOptions options;  //derived from BatchPeak::BatchPeakFitOptions
       options.to_stdout = output_stdout;
       options.refit_energy_cal = refit_energy_cal;
       options.use_exemplar_energy_cal = use_exemplar_energy_cal;
@@ -238,21 +274,35 @@ int run_batch_command( int argc, char **argv )
       options.output_dir = output_path;
       options.background_subtract_file = background_sub_file;
       
-      BatchPeak::fit_peaks_in_files( exemplar_path, exemplar_sample_nums, expanded_input_files, options );
+      if( batch_peak_fit )
+      {
+        BatchPeak::fit_peaks_in_files( exemplar_path, exemplar_sample_nums, 
+                                      expanded_input_files, options );
+      }//if( batch_peak_fit )
+      
+      if( batch_act_fit )
+      {
+        options.drf_override = BatchActivity::init_drf_from_name( drf_file, drf_name ); 
+        
+        cerr << "batch-act-fit no implemented yet" << endl;
+        throw runtime_error( "Not implemented yet" );
+        
+        BatchActivity::fit_activities_in_files( exemplar_path, exemplar_sample_nums,
+                                               expanded_input_files, options );
+      }//if( batch_act_fit )
     }catch( std::exception &e )
     {
       successful = false;
-      cerr << "Error batch-fitting peaks: " << e.what() << endl;
+      cerr << "Error performing batch analysis: " << e.what() << endl;
     }
-  }//if( cl_vm.count("help") )
-  
-  
-  if( cl_vm.count("batch-act-fit") )
+  }else
   {
-    cerr << "batch-act-fit no implemented yet" << endl;
-    throw runtime_error( "Not implemented yet" );
-    return 0;
-  }//if( cl_vm.count("help") )
+    successful = false;
+    cerr << "Please specify either 'batch-peak-fit', or 'batch-act-fit'" << endl;
+  }//if( batch_peak_fit || batch_act_fit )
+  
+
+  cout << "Done with batch processing." << endl;
   
   return successful ? EXIT_SUCCESS : EXIT_FAILURE;
 }//int run_batch_command( int argc, const char **argv )

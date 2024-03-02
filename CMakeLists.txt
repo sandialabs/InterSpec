@@ -555,11 +555,13 @@ if( USE_BATCH_TOOLS )
   list( APPEND sources
         src/BatchCommandLine.cpp
         src/BatchPeak.cpp
+        src/BatchActivity.cpp
   )
   
   list( APPEND headers
-        InterSpec/BatchPeak.h
         InterSpec/BatchCommandLine.h
+        InterSpec/BatchPeak.h
+        InterSpec/BatchActivity.h
   )
 endif( USE_BATCH_TOOLS )
 
