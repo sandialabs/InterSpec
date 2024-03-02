@@ -2355,22 +2355,23 @@ void PeakEdit::apply()
     
     for( PeakPars t = PeakPars(0); t < NumPeakPars; t = PeakPars(t+1) )
     {
-      if( !m_values[t] )
+      if( !m_values[t] && (t != PeakEdit::PeakColor) )
         continue;
       
       if( m_valIsDirty[t] )
       {
-        if( m_values[t]->validate() != WValidator::Valid )
-          throw runtime_error( "Value for '"
-                              + string(rowLabel(t)) + "' is not a valid number" );
-        
         double val = 0.0;
-        string valtxt = m_values[t]->text().narrow();
         
-        //      if( valtxt..size() && (sscanf( valtxt.c_str(), "%lf", &val ) != 1) )
-        //        throw runtime_error( "Error converting " + valtxt + " to float" );
-        if( !(stringstream(valtxt) >> val) && !valtxt.empty() )
-          throw runtime_error( "Error converting " + valtxt + " to float" );
+        if( t != PeakEdit::PeakColor )
+        {
+          if( m_values[t]->validate() != WValidator::Valid )
+            throw runtime_error( "Value for '"
+                                + string(rowLabel(t)) + "' is not a valid number" );
+          
+          const string valtxt = m_values[t]->text().toUTF8();
+          if( !(stringstream(valtxt) >> val) && !valtxt.empty() )
+            throw runtime_error( "Error converting " + valtxt + " to float" );
+        }//if( t != PeakEdit::PeakColor )
         
         switch( t )
         {
@@ -2381,7 +2382,7 @@ void PeakEdit::apply()
             break;
             
           case PeakEdit::Sigma:
-            val /= 2.3548201; //note: purposfull fall-through
+            val /= 2.3548201; //note: purposeful fall-through
             if( val < 0.0 )
               val = -val;
           
