@@ -54,6 +54,7 @@
 
 #include "SpecUtils/SpecFile.h"
 #include "SpecUtils/Filesystem.h"
+#include "SpecUtils/StringAlgo.h"
 #include "SpecUtils/RapidXmlUtils.hpp"
 
 #include "InterSpec/SpecMeas.h"
@@ -1231,14 +1232,14 @@ void RelActManualGui::calculateSolution()
               back_counts += scale * back_peak->peakArea();
               back_uncert_2 += scale * scale * back_peak->peakAreaUncert() * back_peak->peakAreaUncert();
             }//if( fabs(backPeak.mean()-peak.mean()) < sigma )
-            
-            if( back_counts > 0.0 )
-            {
-              num_peaks_back_sub += 1;
-              peak.m_counts -= back_counts;
-              peak.m_counts_uncert = sqrt( peak.m_counts_uncert*peak.m_counts_uncert + back_uncert_2 );
-            }
           }//for( const PeakDef &peak : backPeaks )
+          
+          if( back_counts > 0.0 )
+          {
+            num_peaks_back_sub += 1;
+            peak.m_counts -= back_counts;
+            peak.m_counts_uncert = sqrt( peak.m_counts_uncert*peak.m_counts_uncert + back_uncert_2 );
+          }
           
           if( peak.m_counts <= 0.0 )
           {
@@ -1388,7 +1389,7 @@ void RelActManualGui::calculateSolution()
       bool first = true;
       for( const auto &pp : energy_cal_match_warning_energies )
       {
-        msg << (first ? "" : ", ") << PhysicalUnits::printCompact(pp.second, 4);
+        msg << (first ? "" : ", ") << SpecUtils::printCompact(pp.second, 4);
         first = false;
       }
       msg << (multiple ? "}" : "") << " keV are outside of the match tolerance with the peak"
@@ -1396,7 +1397,7 @@ void RelActManualGui::calculateSolution()
       first = true;
       for( const auto &pp : energy_cal_match_warning_energies )
       {
-        msg << (first ? "" : ", ") << PhysicalUnits::printCompact(pp.first, 4);
+        msg << (first ? "" : ", ") << SpecUtils::printCompact(pp.first, 4);
         first = false;
       }
       msg << (multiple ? "}" : "")
@@ -1662,9 +1663,9 @@ void RelActManualGui::updateGuiWithResults( shared_ptr<RelActCalcManual::RelEffS
   << RelActCalc::rel_eff_eqn_text( solution.m_rel_eff_eqn_form, solution.m_rel_eff_eqn_coefficients )
   << "</div>\n";
   
-  results_html << "<br /> <div>&chi;<sup>2</sup>=" << PhysicalUnits::printCompact( solution.m_chi2, 4)
+  results_html << "<br /> <div>&chi;<sup>2</sup>=" << SpecUtils::printCompact( solution.m_chi2, 4)
   << " and there were " << solution.m_dof << " DOF (&chi;<sup>2</sup>/<sub>DOF</sub>="
-  << PhysicalUnits::printCompact(solution.m_chi2/solution.m_dof, 4) << ")</div>\n";
+  << SpecUtils::printCompact(solution.m_chi2/solution.m_dof, 4) << ")</div>\n";
   
   
   results_html << "<div class=\"ToolAlphaWarning\">";
@@ -2176,7 +2177,7 @@ shared_ptr<const RelActCalcManual::RelEffSolution> RelActManualGui::currentSolut
   base_node->append_node( node );
   
   const float match_tolerance = m_matchTolerance->value();
-  const string match_tolerance_str = PhysicalUnits::printCompact(match_tolerance, 7);
+  const string match_tolerance_str = SpecUtils::printCompact(match_tolerance, 7);
   value = doc->allocate_string( match_tolerance_str.c_str() );
   node = doc->allocate_node( ::rapidxml::node_element, "MatchTolerance", value );
   base_node->append_node( node );
@@ -2220,7 +2221,7 @@ shared_ptr<const RelActCalcManual::RelEffSolution> RelActManualGui::currentSolut
     ::rapidxml::xml_node<char> *name_node = doc->allocate_node( ::rapidxml::node_element, "Name", value );
     nuc_node->append_node(name_node);
     
-    value = doc->allocate_string( PhysicalUnits::printCompact(n.second,8).c_str() );
+    value = doc->allocate_string( SpecUtils::printCompact(n.second,8).c_str() );
     ::rapidxml::xml_node<char> *age_node = doc->allocate_node( ::rapidxml::node_element, "Age", value );
     nuc_node->append_node(age_node);
     
