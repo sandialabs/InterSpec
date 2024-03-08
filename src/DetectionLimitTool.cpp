@@ -662,14 +662,14 @@ public:
     WContainerWidget *rightColumn = new WContainerWidget( this );
     rightColumn->addStyleClass( "MdaRowCurrieMda" );
     
-    const string br_str = PhysicalUnits::printCompact(input.branch_ratio, 3);
+    const string br_str = SpecUtils::printCompact(input.branch_ratio, 3);
     snprintf( buffer, sizeof(buffer), "%.2f keV, br=%s", input.energy, br_str.c_str() );
     m_title = new WText( buffer, leftColumn );
     m_title->addStyleClass( "MdaRowTitle GridFirstCol GridFirstRow GridSpanTwoCol" );
     
     
-    const string fwhm_str = PhysicalUnits::printCompact(fwhm,3);
-    const string cnts_per_bq_str = PhysicalUnits::printCompact(counts_4pi*det_eff, 3);
+    const string fwhm_str = SpecUtils::printCompact(fwhm,3);
+    const string cnts_per_bq_str = SpecUtils::printCompact(counts_4pi*det_eff, 3);
     const string act_postfix = det_eff_geom_type_postfix( det_geom );
     
     
@@ -1069,7 +1069,7 @@ public:
       
       cell = table->elementAt( table->rowCount(), 0 );
       txt = new WText( "Lower region counts", cell );
-      val = PhysicalUnits::printCompact( result.lower_continuum_counts_sum, 5 );
+      val = SpecUtils::printCompact( result.lower_continuum_counts_sum, 5 );
       cell = table->elementAt( table->rowCount() - 1, 1 );
       txt = new WText( val, cell );
       addTooltipToRow( "The number of counts observed in the region below the peak region,"
@@ -1090,7 +1090,7 @@ public:
       
       cell = table->elementAt( table->rowCount(), 0 );
       txt = new WText( "Upper region counts", cell );
-      val = PhysicalUnits::printCompact( result.upper_continuum_counts_sum, 5 );
+      val = SpecUtils::printCompact( result.upper_continuum_counts_sum, 5 );
       cell = table->elementAt( table->rowCount() - 1, 1 );
       txt = new WText( val, cell );
       addTooltipToRow( "The number of counts observed in the region above the peak region,"
@@ -1113,15 +1113,15 @@ public:
       
       cell = table->elementAt( table->rowCount(), 0 );
       txt = new WText( "Peak region counts", cell );
-      val = PhysicalUnits::printCompact( result.peak_region_counts_sum, 5 );
+      val = SpecUtils::printCompact( result.peak_region_counts_sum, 5 );
       cell = table->elementAt( table->rowCount() - 1, 1 );
       txt = new WText( val, cell );
       addTooltipToRow( "The observed number of counts in the peak region" );
       
       cell = table->elementAt( table->rowCount(), 0 );
       txt = new WText( "Peak region null est.", cell );
-      val = PhysicalUnits::printCompact( result.estimated_peak_continuum_counts, 5 )
-            + " &plusmn; " + PhysicalUnits::printCompact( result.estimated_peak_continuum_uncert, 5 );
+      val = SpecUtils::printCompact( result.estimated_peak_continuum_counts, 5 )
+            + " &plusmn; " + SpecUtils::printCompact( result.estimated_peak_continuum_uncert, 5 );
       cell = table->elementAt( table->rowCount() - 1, 1 );
       txt = new WText( val, TextFormat::XHTMLText, cell );
       addTooltipToRow( "An estimate of the expected number of counts, in the peak region, if it"
@@ -1133,7 +1133,7 @@ public:
       cell = table->elementAt( table->rowCount(), 0 );
       txt = new WText( "Peak critical limit", cell );
       const double decision_threshold_act = result.decision_threshold / gammas_per_bq;
-      val = PhysicalUnits::printCompact( result.decision_threshold, 4 )
+      val = SpecUtils::printCompact( result.decision_threshold, 4 )
             + " <span style=\"font-size: smaller;\">("
             + PhysicalUnits::printToBestActivityUnits( decision_threshold_act, 2, useCuries )
             + det_eff_geom_type_postfix( det_geom )
@@ -1150,7 +1150,7 @@ public:
       cell = table->elementAt( table->rowCount(), 0 );
       txt = new WText( "Peak detection limit", cell );
       const double detection_limit_act = result.detection_limit / gammas_per_bq;
-      val = PhysicalUnits::printCompact( result.detection_limit, 4 )
+      val = SpecUtils::printCompact( result.detection_limit, 4 )
             + " <span style=\"font-size: smaller;\">("
             + PhysicalUnits::printToBestActivityUnits( detection_limit_act, 2, useCuries )
             + det_eff_geom_type_postfix( det_geom )
@@ -1169,7 +1169,7 @@ public:
       
       cell = table->elementAt( table->rowCount(), 0 );
       txt = new WText( "Detector Intrinsic Eff.", cell );
-      val = PhysicalUnits::printCompact( intrinsic_eff, 5 );
+      val = SpecUtils::printCompact( intrinsic_eff, 5 );
       cell = table->elementAt( table->rowCount() - 1, 1 );
       txt = new WText( val, cell );
       addTooltipToRow( "The efficiency for a gamma hitting the detector face,"
@@ -1178,7 +1178,7 @@ public:
       
       cell = table->elementAt( table->rowCount(), 0 );
       txt = new WText( "Solid angle fraction", cell );
-      val = PhysicalUnits::printCompact( geom_eff, 5 );
+      val = SpecUtils::printCompact( geom_eff, 5 );
       cell = table->elementAt( table->rowCount() - 1, 1 );
       txt = new WText( val, cell );
       addTooltipToRow( "The fraction of the solid angle, the detector face takes up, at the specified distance." );
@@ -1186,7 +1186,7 @@ public:
       const double shield_trans = m_input.counts_per_bq_into_4pi / m_input.branch_ratio / m_input.measurement->live_time();
       cell = table->elementAt( table->rowCount(), 0 );
       txt = new WText( "Shielding transmission", cell );
-      val = PhysicalUnits::printCompact( shield_trans, 5 );
+      val = SpecUtils::printCompact( shield_trans, 5 );
       cell = table->elementAt( table->rowCount() - 1, 1 );
       txt = new WText( val, cell );
       addTooltipToRow( "The fraction of gammas, at this energy, that will make it through the shielding without interacting." );
@@ -1194,7 +1194,7 @@ public:
       const double air_trans = m_input.counts_per_bq_into_4pi_with_air / m_input.counts_per_bq_into_4pi;
       cell = table->elementAt( table->rowCount(), 0 );
       txt = new WText( "Air transmission", cell );
-      val = PhysicalUnits::printCompact( air_trans, 5 );
+      val = SpecUtils::printCompact( air_trans, 5 );
       cell = table->elementAt( table->rowCount() - 1, 1 );
       txt = new WText( val, cell );
       addTooltipToRow( "The fraction of gammas, at this energy, that will make it through the air (assuming sea level) without interacting." );
@@ -1202,7 +1202,7 @@ public:
       
       cell = table->elementAt( table->rowCount(), 0 );
       txt = new WText( "Nuclide branching ratio", cell );
-      val = PhysicalUnits::printCompact( m_input.branch_ratio, 5 );
+      val = SpecUtils::printCompact( m_input.branch_ratio, 5 );
       cell = table->elementAt( table->rowCount() - 1, 1 );
       txt = new WText( val, cell );
       addTooltipToRow( "The number of gamma rays emitted at this energy, from the radioactive"

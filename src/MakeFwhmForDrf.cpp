@@ -36,6 +36,7 @@
 #include <Wt/WAbstractItemModel>
 
 #include "SpecUtils/SpecFile.h"
+#include "SpecUtils/StringAlgo.h"
 
 #include "InterSpec/PeakDef.h"
 #include "InterSpec/PeakFit.h"
@@ -753,11 +754,11 @@ void MakeFwhmForDrf::doRefitWork()
       assert( !m_parEdits[i]->isHidden() );
       m_parEdits[i]->setHidden(false);
       if( i < uncerts.size() )
-        m_parEdits[i]->setToolTip( "With uncertainty: " + PhysicalUnits::printCompact(uncerts[i], 5) );
+        m_parEdits[i]->setToolTip( "With uncertainty: " + SpecUtils::printCompact(uncerts[i], 5) );
       else
         m_parEdits[i]->setToolTip( "" );
       
-      const string val_str = PhysicalUnits::printCompact(result[i], 6);
+      const string val_str = SpecUtils::printCompact(result[i], 6);
       
       switch( fwhm_type )
       {

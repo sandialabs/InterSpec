@@ -4361,16 +4361,16 @@ std::ostream &RelActAutoSolution::print_summary( std::ostream &out ) const
     }//for( const auto &act : m_rel_activities )
     
     if( nuclides.count( "Pu238" ) )
-      out << "\tPu238: " << PhysicalUnits::printCompact(100.0*m_corrected_pu->pu238_mass_frac, 4) << "\n";
+      out << "\tPu238: " << SpecUtils::printCompact(100.0*m_corrected_pu->pu238_mass_frac, 4) << "\n";
     if( nuclides.count( "Pu239" ) )
-      out << "\tPu239: " << PhysicalUnits::printCompact(100.0*m_corrected_pu->pu239_mass_frac, 4) << "\n";
+      out << "\tPu239: " << SpecUtils::printCompact(100.0*m_corrected_pu->pu239_mass_frac, 4) << "\n";
     if( nuclides.count( "Pu240" ) )
-      out << "\tPu40: " << PhysicalUnits::printCompact(100.0*m_corrected_pu->pu240_mass_frac, 4) << "\n";
+      out << "\tPu40: " << SpecUtils::printCompact(100.0*m_corrected_pu->pu240_mass_frac, 4) << "\n";
     if( nuclides.count( "Pu241" ) )
-      out << "\tPu241: " << PhysicalUnits::printCompact(100.0*m_corrected_pu->pu241_mass_frac, 4) << "\n";
-    out << "\tPu242 (by corr): " << PhysicalUnits::printCompact(100.0*m_corrected_pu->pu242_mass_frac, 4) << "\n";
+      out << "\tPu241: " << SpecUtils::printCompact(100.0*m_corrected_pu->pu241_mass_frac, 4) << "\n";
+    out << "\tPu242 (by corr): " << SpecUtils::printCompact(100.0*m_corrected_pu->pu242_mass_frac, 4) << "\n";
     if( nuclides.count( "Am241" ) )
-      out << "\tAm241: " << PhysicalUnits::printCompact(100.0*m_corrected_pu->am241_mass_frac, 4) << "\n";
+      out << "\tAm241: " << SpecUtils::printCompact(100.0*m_corrected_pu->am241_mass_frac, 4) << "\n";
     out << "\n";
   }//if( m_corrected_pu )
   
@@ -4443,26 +4443,26 @@ void RelActAutoSolution::print_html_report( std::ostream &out ) const
     
     if( nuclides.count( "Pu238" ) )
       results_html << "  <tr><td>Pu238</td><td>"
-                   << PhysicalUnits::printCompact(100.0*m_corrected_pu->pu238_mass_frac, 4)
+                   << SpecUtils::printCompact(100.0*m_corrected_pu->pu238_mass_frac, 4)
                    << "</td></tr>\n";
     if( nuclides.count( "Pu239" ) )
       results_html << "  <tr><td>Pu239</td><td>"
-      << PhysicalUnits::printCompact(100.0*m_corrected_pu->pu239_mass_frac, 4)
+      << SpecUtils::printCompact(100.0*m_corrected_pu->pu239_mass_frac, 4)
       << "</td></tr>\n";
     if( nuclides.count( "Pu240" ) )
       results_html << "  <tr><td>Pu40</td><td>"
-      << PhysicalUnits::printCompact(100.0*m_corrected_pu->pu240_mass_frac, 4)
+      << SpecUtils::printCompact(100.0*m_corrected_pu->pu240_mass_frac, 4)
       << "</td></tr>\n";
     if( nuclides.count( "Pu241" ) )
       results_html << "  <tr><td>Pu241</td><td>"
-      << PhysicalUnits::printCompact(100.0*m_corrected_pu->pu241_mass_frac, 4)
+      << SpecUtils::printCompact(100.0*m_corrected_pu->pu241_mass_frac, 4)
       << "</td></tr>\n";
     results_html << "  <tr><td>Pu242 (by corr)</td><td>"
-      << PhysicalUnits::printCompact(100.0*m_corrected_pu->pu242_mass_frac, 4)
+      << SpecUtils::printCompact(100.0*m_corrected_pu->pu242_mass_frac, 4)
       << "</td></tr>\n";
     if( nuclides.count( "Am241" ) )
       results_html << "  <tr><td>Am241</td><td>"
-      << PhysicalUnits::printCompact(100.0*m_corrected_pu->am241_mass_frac, 4)
+      << SpecUtils::printCompact(100.0*m_corrected_pu->am241_mass_frac, 4)
       << "</td></tr>\n";
     results_html << "  </tbody>\n"
     << "</table>\n\n";

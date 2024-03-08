@@ -859,7 +859,7 @@ void TraceSourceInfo::equalEnough( const TraceSourceInfo &lhs, const TraceSource
           node = doc->allocate_node( rapidxml::node_element, "Name", value );
           iso_node->append_node( node );
           
-          const string fracstr = PhysicalUnits::printCompact(frac, 12);
+          const string fracstr = SpecUtils::printCompact(frac, 12);
           value = doc->allocate_string( fracstr.c_str(), fracstr.size() + 1 );
           node = doc->allocate_node( rapidxml::node_element, "MassFrac", value );
           iso_node->append_node( node );
@@ -1286,8 +1286,8 @@ void TraceSourceInfo::equalEnough( const TraceSourceInfo &lhs, const TraceSource
     if( m_isGenericMaterial )
     {
       const double ad_g_cm2 = m_dimensions[1] * PhysicalUnits::cm2 / PhysicalUnits::gram;
-      answer += "&AD=" + PhysicalUnits::printCompact(ad_g_cm2, 7);
-      answer += "&AN=" + PhysicalUnits::printCompact(m_dimensions[0], 7);
+      answer += "&AD=" + SpecUtils::printCompact(ad_g_cm2, 7);
+      answer += "&AN=" + SpecUtils::printCompact(m_dimensions[0], 7);
       
       if( m_forFitting && m_fitDimensions[0] )
         answer += "&FAN=1";
@@ -1306,7 +1306,7 @@ void TraceSourceInfo::equalEnough( const TraceSourceInfo &lhs, const TraceSource
       switch( m_geometry )
       {
         case GammaInteractionCalc::GeometryType::Spherical:
-          answer += "&G=S&D1=" + PhysicalUnits::printCompact(m_dimensions[0]/cm, 7) + "cm";
+          answer += "&G=S&D1=" + SpecUtils::printCompact(m_dimensions[0]/cm, 7) + "cm";
           if( m_forFitting && m_fitDimensions[0] )
             answer += "&FD1=1";
           break;
@@ -1317,8 +1317,8 @@ void TraceSourceInfo::equalEnough( const TraceSourceInfo &lhs, const TraceSource
             answer += "&G=CE";
           else
             answer += "&G=CS";
-          answer += "&D1=" + PhysicalUnits::printCompact(m_dimensions[0]/cm, 7) + "cm";
-          answer += "&D2=" + PhysicalUnits::printCompact(m_dimensions[1]/cm, 7) + "cm";
+          answer += "&D1=" + SpecUtils::printCompact(m_dimensions[0]/cm, 7) + "cm";
+          answer += "&D2=" + SpecUtils::printCompact(m_dimensions[1]/cm, 7) + "cm";
           if( m_forFitting && m_fitDimensions[0] )
             answer += "&FD1=1";
           if( m_forFitting && m_fitDimensions[1] )
@@ -1327,9 +1327,9 @@ void TraceSourceInfo::equalEnough( const TraceSourceInfo &lhs, const TraceSource
           
         case GammaInteractionCalc::GeometryType::Rectangular:
           answer += "&G=R";
-          answer += "&D1=" + PhysicalUnits::printCompact(m_dimensions[0]/cm, 7) + "cm";
-          answer += "&D2=" + PhysicalUnits::printCompact(m_dimensions[1]/cm, 7) + "cm";
-          answer += "&D3=" + PhysicalUnits::printCompact(m_dimensions[2]/cm, 7) + "cm";
+          answer += "&D1=" + SpecUtils::printCompact(m_dimensions[0]/cm, 7) + "cm";
+          answer += "&D2=" + SpecUtils::printCompact(m_dimensions[1]/cm, 7) + "cm";
+          answer += "&D3=" + SpecUtils::printCompact(m_dimensions[2]/cm, 7) + "cm";
           if( m_forFitting && m_fitDimensions[0] )
             answer += "&FD1=1";
           if( m_forFitting && m_fitDimensions[1] )

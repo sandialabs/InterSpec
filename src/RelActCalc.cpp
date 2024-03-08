@@ -92,11 +92,11 @@ string rel_eff_eqn_text( const RelEffEqnForm eqn_form, const std::vector<double>
         const auto val = coefs[i];
         if( i == 0 )
         {
-          rel_eff_eqn_str += PhysicalUnits::printCompact(val,nsigfig);
+          rel_eff_eqn_str += SpecUtils::printCompact(val,nsigfig);
         }else
         {
           rel_eff_eqn_str += (val < 0.0 ? " - " : " + " )
-                             +  PhysicalUnits::printCompact(fabs(val),nsigfig)
+                             +  SpecUtils::printCompact(fabs(val),nsigfig)
                              + "*ln(x)^" + to_string(i);
         }
       }//for( size_t i = 0; i < coefs.size(); ++i )
@@ -114,11 +114,11 @@ string rel_eff_eqn_text( const RelEffEqnForm eqn_form, const std::vector<double>
         const auto val = coefs[i];
         if( i == 0 )
         {
-          rel_eff_eqn_str += PhysicalUnits::printCompact(val,nsigfig);
+          rel_eff_eqn_str += SpecUtils::printCompact(val,nsigfig);
         }else
         {
           rel_eff_eqn_str += (val < 0.0 ? " - " : " + " )
-                             + PhysicalUnits::printCompact(fabs(val),nsigfig);
+                             + SpecUtils::printCompact(fabs(val),nsigfig);
           if( i == 1 )
             rel_eff_eqn_str += "*x";
           else if( i == 2 )
@@ -145,7 +145,7 @@ string rel_eff_eqn_text( const RelEffEqnForm eqn_form, const std::vector<double>
         }else
         {
           rel_eff_eqn_str += (val < 0.0 ? " - " : " + " )
-                             + PhysicalUnits::printCompact(fabs(val),nsigfig)
+                             + SpecUtils::printCompact(fabs(val),nsigfig)
                              + "*ln(x)^" + to_string(i);
         }
       }//for( size_t i = 0; i < coefs.size(); ++i )
@@ -163,15 +163,15 @@ string rel_eff_eqn_text( const RelEffEqnForm eqn_form, const std::vector<double>
         const auto val = coefs[i];
         if( i == 0 )
         {
-          rel_eff_eqn_str += PhysicalUnits::printCompact(val,nsigfig);
+          rel_eff_eqn_str += SpecUtils::printCompact(val,nsigfig);
         }else if( i == 1 )
         {
           rel_eff_eqn_str += (val < 0.0 ? " - " : " + " )
-                             + PhysicalUnits::printCompact(fabs(val),nsigfig) + "/(x*x)";
+                             + SpecUtils::printCompact(fabs(val),nsigfig) + "/(x*x)";
         }else
         {
           rel_eff_eqn_str += (val < 0.0 ? " - " : " + " )
-                             + PhysicalUnits::printCompact(fabs(val),nsigfig)
+                             + SpecUtils::printCompact(fabs(val),nsigfig)
                              + "*ln(x)^" + to_string(i-1);
         }
       }//for( size_t i = 0; i < coefs.size(); ++i )

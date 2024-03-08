@@ -1858,7 +1858,7 @@ void PeakEdit::skewTypeChanged()
         {
           m_values[index]->setHidden( false );
           m_valueTable->rowAt(1+index)->setHidden( false );
-          m_values[index]->setText( PhysicalUnits::printCompact(starting_val, 4) );
+          m_values[index]->setText( SpecUtils::printCompact(starting_val, 4) );
           m_fitFors[index]->setChecked( true );
           auto validator = dynamic_cast<WDoubleValidator *>( m_values[index]->validator() );
           assert( validator );
@@ -1943,7 +1943,7 @@ void PeakEdit::setSkewInputValueRanges( const PeakDef::SkewType type )
     {
       m_values[index]->setHidden( false );
       m_valueTable->rowAt(index+1)->setHidden( false );
-      //m_values[index]->setText( PhysicalUnits::printCompact(starting_val, 4) );
+      //m_values[index]->setText( SpecUtils::printCompact(starting_val, 4) );
       
       auto validator = dynamic_cast<WDoubleValidator *>( m_values[index]->validator() );
       assert( validator );
@@ -1955,7 +1955,7 @@ void PeakEdit::setSkewInputValueRanges( const PeakDef::SkewType type )
          || !(stringstream(m_values[index]->text().toUTF8()) >> val)
          || (val < lower) || (val > upper) )
       {
-        m_values[index]->setValueText( PhysicalUnits::printCompact(starting_val, 4) );
+        m_values[index]->setValueText( SpecUtils::printCompact(starting_val, 4) );
       }
     }else
     {

@@ -11145,12 +11145,12 @@ bool InterSpec::userOpenFileFromFilesystem( const std::string path, std::string 
 
 void InterSpec::handleAppUrl( const std::string &url_encoded_url )
 {
-  const string url = Wt::Utils::urlDecode( url_encoded_url );
+  string url = Wt::Utils::urlDecode( url_encoded_url );
     
   if( SpecUtils::istarts_with(url, "RADDATA://G0/")
      || SpecUtils::istarts_with(url, "interspec://G0/") )
   {
-    m_fileManager->handleSpectrumUrl( url );
+    m_fileManager->handleSpectrumUrl( std::move(url) );
     return;
   }
   

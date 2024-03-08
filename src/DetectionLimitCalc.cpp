@@ -280,45 +280,45 @@ void batch_test()
            << result.last_lower_continuum_channel << "]"
            << endl;
       cout << std::left << std::setw(label_width) << "\tLower region counts:"
-           << PhysicalUnits::printCompact( result.lower_continuum_counts_sum, 5 )
+           << SpecUtils::printCompact( result.lower_continuum_counts_sum, 5 )
            << endl;
       cout << std::left << std::setw(label_width) << "\tUpper region channels:"
            << "[" << result.first_upper_continuum_channel << ", "
            << result.last_upper_continuum_channel << "]"
            << endl;
       cout << std::left << std::setw(label_width) << "\tUpper region counts:"
-           << PhysicalUnits::printCompact( result.upper_continuum_counts_sum, 5 ) << endl;
+           << SpecUtils::printCompact( result.upper_continuum_counts_sum, 5 ) << endl;
       cout << std::left << std::setw(label_width) << "\tPeak area channels:"
            << "[" << (result.last_lower_continuum_channel + 1) << ", "
            << (result.first_upper_continuum_channel - 1) << "]"
            << endl;
       cout << std::left << std::setw(label_width) << "\tPeak region counts:"
-           << PhysicalUnits::printCompact( result.peak_region_counts_sum, 5 )
+           << SpecUtils::printCompact( result.peak_region_counts_sum, 5 )
            << endl;
       cout << std::left << std::setw(label_width) << "\tPeak region null est.:"
-           << PhysicalUnits::printCompact( result.estimated_peak_continuum_counts, 5 )
-           << " +- " << PhysicalUnits::printCompact( result.estimated_peak_continuum_uncert, 5 )
+           << SpecUtils::printCompact( result.estimated_peak_continuum_counts, 5 )
+           << " +- " << SpecUtils::printCompact( result.estimated_peak_continuum_uncert, 5 )
            << endl;
       cout << std::left << std::setw(label_width) << "\tPeak critical limit:"
-           << PhysicalUnits::printCompact( result.decision_threshold, 5 )
+           << SpecUtils::printCompact( result.decision_threshold, 5 )
            << endl;
       cout << std::left << std::setw(label_width) << "\tPeak detection limit:"
-           << PhysicalUnits::printCompact( result.detection_limit, 5 )
+           << SpecUtils::printCompact( result.detection_limit, 5 )
            << endl;
       cout << endl;
       const double intrinsic_eff = det->intrinsicEfficiency( erp.energy );
       const double geom_eff = det->fractionalSolidAngle( det->detectorDiameter(), distance );
       cout << std::left << std::setw(label_width) << "\tDetector Intrinsic Eff.:"
-           << PhysicalUnits::printCompact( intrinsic_eff, 5 )
+           << SpecUtils::printCompact( intrinsic_eff, 5 )
            << endl;
       cout << std::left << std::setw(label_width) << "\tSolid angle fraction:"
-           << PhysicalUnits::printCompact( geom_eff, 5 )
+           << SpecUtils::printCompact( geom_eff, 5 )
            << endl;
       cout << std::left << std::setw(label_width) << "\tShielding transmission:"
-           << PhysicalUnits::printCompact( shield_trans, 5 )
+           << SpecUtils::printCompact( shield_trans, 5 )
            << endl;
       cout << std::left << std::setw(label_width) << "\tNuclide branching ratio:"
-           << PhysicalUnits::printCompact( gammas_per_bq_per_sec, 5 )
+           << SpecUtils::printCompact( gammas_per_bq_per_sec, 5 )
            << endl;
       cout << endl;
       */

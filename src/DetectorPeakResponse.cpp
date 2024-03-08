@@ -190,7 +190,7 @@ namespace
   {
     string answer;
     for( size_t i = 0; i < vals.size(); ++i )
-      answer += (i ? "*" : "") + PhysicalUnits::printCompact( vals[i], num_sig_fig );
+      answer += (i ? "*" : "") + SpecUtils::printCompact( vals[i], num_sig_fig );
     return answer;
   }//string to_url_flt_array
 
@@ -1296,12 +1296,12 @@ std::string DetectorPeakResponse::toAppUrl() const
     parts["DESC"] = url_encode( m_description, "", false );
   
   if( (m_geomType == EffGeometryType::FarField) || (m_detectorDiameter > 0.0) )
-    parts["DIAM"] = PhysicalUnits::printCompact( m_detectorDiameter, 5 );
+    parts["DIAM"] = SpecUtils::printCompact( m_detectorDiameter, 5 );
   
   // We'll assume units are MeV, unless stated otherwise.
   const bool notKeV = (fabs(m_efficiencyEnergyUnits - PhysicalUnits::keV) > 0.001);
   if( notKeV )
-    parts["EUNIT"] = PhysicalUnits::printCompact( m_efficiencyEnergyUnits, 4 );
+    parts["EUNIT"] = SpecUtils::printCompact( m_efficiencyEnergyUnits, 4 );
   
   switch( m_efficiencyForm )
   {
@@ -1383,8 +1383,8 @@ std::string DetectorPeakResponse::toAppUrl() const
   
   if( (fabs(m_lowerEnergy - m_upperEnergy) > 1.0) && (m_upperEnergy > 0.0) )
   {
-    parts["LOWE"] = PhysicalUnits::printCompact( m_lowerEnergy, 4 );
-    parts["HIGHE"] = PhysicalUnits::printCompact( m_upperEnergy, 4 );
+    parts["LOWE"] = SpecUtils::printCompact( m_lowerEnergy, 4 );
+    parts["HIGHE"] = SpecUtils::printCompact( m_upperEnergy, 4 );
   }
   
   if( m_createdUtc )

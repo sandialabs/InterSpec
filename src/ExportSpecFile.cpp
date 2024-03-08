@@ -59,6 +59,7 @@
 #include "SpecUtils/SpecFile.h"
 #include "SpecUtils/Filesystem.h"
 #include "SpecUtils/StringAlgo.h"
+#include "SpecUtils/UriSpectrum.h"
 #include "SpecUtils/D3SpectrumExport.h"
 
 #include "InterSpec/PeakDef.h"
@@ -143,7 +144,7 @@ std::string clean_uuid( string uuid )
 }//std::string clean_uuid( string uuid )
 
 
-  void displayQrDialog( const vector<QRSpectrum::UrlEncodedSpec> urls,
+  void displayQrDialog( const vector<QRSpectrum::QrCodeEncodedSpec> urls,
                        const size_t index,
                        boost::function<void()> successfullyDone,
                        const bool as_emailto,
@@ -203,10 +204,10 @@ std::string clean_uuid( string uuid )
       dialog->footer()->insertWidget( 0, btn );
       btn->clicked().connect( std::bind(toogleEmailVsUri) );
     }//if( toogleEmailVsUri )
-  }//void displayQr( vector<QRSpectrum::UrlEncodedSpec> urls )
+  }//void displayQr( vector<QRSpectrum::QrCodeEncodedSpec> urls )
 
 
-void displayQrCode( const vector<QRSpectrum::UrlSpectrum> urlspec,
+void displayQrCode( const vector<SpecUtils::UrlSpectrum> urlspec,
                    shared_ptr<const SpecMeas> spec,
                    boost::function<void()> successfullyDone,
                    const bool as_emailto )
@@ -215,10 +216,10 @@ void displayQrCode( const vector<QRSpectrum::UrlSpectrum> urlspec,
   {
     uint8_t encode_options = 0;
     if( as_emailto )
-      encode_options = QRSpectrum::EncodeOptions::UseUrlSafeBase64
-                        | QRSpectrum::EncodeOptions::AsMailToUri;
+      encode_options = SpecUtils::EncodeOptions::UseUrlSafeBase64
+                        | SpecUtils::EncodeOptions::AsMailToUri;
     
-    vector<QRSpectrum::UrlEncodedSpec> urls;
+    vector<QRSpectrum::QrCodeEncodedSpec> urls;
     QRSpectrum::QrErrorCorrection ecc = QRSpectrum::QrErrorCorrection::High;
     
     auto do_encode = [&](){
@@ -228,7 +229,7 @@ void displayQrCode( const vector<QRSpectrum::UrlSpectrum> urlspec,
       {
         try
         {
-          urls = QRSpectrum::url_encode_spectra( urlspec, ecc, encode_options );
+          urls = QRSpectrum::qr_code_encode_spectra( urlspec, ecc, encode_options );
         }catch( std::exception & )
         {
         }//try / catch
@@ -239,7 +240,7 @@ void displayQrCode( const vector<QRSpectrum::UrlSpectrum> urlspec,
         try
         {
           ecc = QRSpectrum::QrErrorCorrection::Medium;
-          urls = QRSpectrum::url_encode_spectra( urlspec, ecc, encode_options );
+          urls = QRSpectrum::qr_code_encode_spectra( urlspec, ecc, encode_options );
         }catch( std::exception & )
         {
         }//try / catch
@@ -250,7 +251,7 @@ void displayQrCode( const vector<QRSpectrum::UrlSpectrum> urlspec,
         try
         {
           ecc = QRSpectrum::QrErrorCorrection::Low;
-          urls = QRSpectrum::url_encode_spectra( urlspec, ecc, encode_options );
+          urls = QRSpectrum::qr_code_encode_spectra( urlspec, ecc, encode_options );
         }catch( std::exception & )
         {
         }//try / catch
@@ -279,7 +280,7 @@ void displayQrCode( const vector<QRSpectrum::UrlSpectrum> urlspec,
     auto dialog = new SimpleDialog( "Error", "Failed to display spectrum as a QR code: " + string(e.what()) );
     dialog->addButton( "Ok" );
   }//try catch
-}//void displayQrCode( const vector<QRSpectrum::UrlSpectrum> urlspec, const bool as_emailto )
+}//void displayQrCode( const vector<SpecUtils::UrlSpectrum> urlspec, const bool as_emailto )
 }//namespace
 #endif //USE_QR_CODES
 
@@ -1190,19 +1191,19 @@ void ExportSpecFileTool::updateInfoAboutSelectedFile()
   if( meas->has_gps_info() )
   {
     tabletxt << "<tr><th>Latitude</th><td><div>"
-             << PhysicalUnits::printCompact( meas->mean_latitude(), 7 ) << "</div></td></tr>\n";
+             << SpecUtils::printCompact( meas->mean_latitude(), 7 ) << "</div></td></tr>\n";
     tabletxt << "<tr><th>Longitude</th><td><div>"
-             << PhysicalUnits::printCompact( meas->mean_longitude(), 7 ) << "</div></td></tr>\n";
+             << SpecUtils::printCompact( meas->mean_longitude(), 7 ) << "</div></td></tr>\n";
   }//if( meas->has_gps_info() )
   
   const string total_time = PhysicalUnits::printToBestTimeUnits( meas->gamma_real_time() );
   tabletxt << "<tr><th>Total Time</th><td><div>" << total_time << "</div></td></tr>\n";
   
   tabletxt << "<tr><th>Sum Gamma</th><td><div>"
-           << PhysicalUnits::printCompact( meas->gamma_count_sum(), 5) << "</div></td></tr>\n";
+           << SpecUtils::printCompact( meas->gamma_count_sum(), 5) << "</div></td></tr>\n";
   if( meas->contained_neutron() )
     tabletxt << "<tr><th>Sum Neut.</th><td><div>"
-             << PhysicalUnits::printCompact( meas->neutron_counts_sum(), 5) << "</div></td></tr>\n";
+             << SpecUtils::printCompact( meas->neutron_counts_sum(), 5) << "</div></td></tr>\n";
   
   //const string &instrument_type = meas->instrument_type();
   const string &manufacturer = meas->manufacturer();
@@ -2790,14 +2791,14 @@ void ExportSpecFileTool::handleGenerateQrCode()
     if( model.empty() )
       model = spec->instrument_model();
   
-    const vector<QRSpectrum::UrlSpectrum> urlspec = QRSpectrum::to_url_spectra( spec->measurements(), model );
+    const vector<SpecUtils::UrlSpectrum> urlspec = SpecUtils::to_url_spectra( spec->measurements(), model );
     
     auto successfullyDone = wApp->bind( boost::bind( &ExportSpecFileTool::emitDone, this, true ) );
     
     displayQrCode( urlspec, spec, successfullyDone, false );
   }catch( std::exception &e )
   {
-    auto dialog = new SimpleDialog( "Error", "Failed to encoded spectrum to a QR code: " + string(e.what()) );
+    auto dialog = new SimpleDialog( "Error", "Failed to encoded spectrum to a URI: " + string(e.what()) );
     dialog->addButton( "Ok" );
   }//try catch
 }//void handleGenerateQrCode()

@@ -558,7 +558,7 @@ namespace
               {
                 // Convert to decimal number of seconds, for ease of use in Excel
                 const double t = PhysicalUnits::stringToTimeDuration( utf8txt );
-                utf8txt = PhysicalUnits::printCompact( t/PhysicalUnits::second, 7 );
+                utf8txt = SpecUtils::printCompact( t/PhysicalUnits::second, 7 );
               }catch(...)
               {
               }
@@ -580,7 +580,7 @@ namespace
                 try
                 {
                   const double t = PhysicalUnits::stringToTimeDuration( v );
-                  answer += PhysicalUnits::printCompact( t, 7 );
+                  answer += SpecUtils::printCompact( t, 7 );
                 }catch(...)
                 {
                   answer += v;
@@ -643,7 +643,7 @@ namespace
       //snprintf(buffer, sizeof(buffer), "%.3f", (time/PhysicalUnits::second) );
       
       const size_t precision = static_cast<size_t>( max(0.0, ceil(log10(time))) + 3 );
-      return PhysicalUnits::printCompact(time, precision);
+      return SpecUtils::printCompact(time, precision);
     };
 #endif
     

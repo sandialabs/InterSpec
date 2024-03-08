@@ -1207,7 +1207,7 @@ void ReferenceLineInfo::toJson( string &json ) const
           for( const auto &i : fracs )
           {
             answer += (answer.empty() ? "" : ", ") + i.first
-                      + " (" + PhysicalUnits::printCompact( 100.0*i.second/sum, 4 ) + "%)";
+                      + " (" + SpecUtils::printCompact( 100.0*i.second/sum, 4 ) + "%)";
           }
           return answer;
         };//combine_particle_strs lambda
@@ -1253,7 +1253,7 @@ void ReferenceLineInfo::toJson( string &json ) const
             
             src_label += (src_label.empty() ? "" : ", ")
                       + (src.first ? src.first->symbol : string("null"))
-                      + " (" + PhysicalUnits::printCompact(src.second/intensity, 3) + ")";
+                      + " (" + SpecUtils::printCompact(src.second/intensity, 3) + ")";
           }//for( const auto &src : srcs )
         }//if( srcs.size() <= 1 ) / else
         

@@ -4877,9 +4877,9 @@ tuple<bool,int,int,vector<string>> ShieldingSourceDisplay::testCurrentFitAgainst
             numCorrect += closeEnough;
             
             textInfoLines.push_back( "For shielding '" + mat->name + "' fit " + nuc->symbol
-                                     + " to have mass fraction " + PhysicalUnits::printCompact(value, 5)
-                                     + " with the truth value of " + PhysicalUnits::printCompact(truthval,5)
-                                     + " and tolerance " + PhysicalUnits::printCompact(truthtol,5)
+                                     + " to have mass fraction " + SpecUtils::printCompact(value, 5)
+                                     + " with the truth value of " + SpecUtils::printCompact(truthval,5)
+                                     + " and tolerance " + SpecUtils::printCompact(truthtol,5)
                                      + (closeEnough ? " - within tolerance." : " - out of tolerance." ) );
           };//checkMassFrac( ... )
           

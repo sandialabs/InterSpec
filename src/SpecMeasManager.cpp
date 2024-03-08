@@ -106,6 +106,7 @@
 #include "SpecUtils/Filesystem.h"
 #include "SpecUtils/StringAlgo.h"
 #include "SpecUtils/ParseUtils.h"
+#include "SpecUtils/UriSpectrum.h"
 
 
 #include "InterSpec/DrfChart.h"
@@ -468,7 +469,7 @@ namespace
   };//class FileUploadDialog
 
 #if( USE_QR_CODES )
-void displayQrDialog( const vector<QRSpectrum::UrlEncodedSpec> urls, const size_t index,
+void displayQrDialog( const vector<QRSpectrum::QrCodeEncodedSpec> urls, const size_t index,
                      const SpecUtils::SpectrumType type )
 {
   string seqnum = "QR Code";
@@ -489,7 +490,7 @@ void displayQrDialog( const vector<QRSpectrum::UrlEncodedSpec> urls, const size_
       displayQrDialog( urls, index + 1, type );
     }) );
   }//if( (index + 1) < urls.size() )
-}//void displayQr( vector<QRSpectrum::UrlEncodedSpec> urls )
+}//void displayQr( vector<QRSpectrum::QrCodeEncodedSpec> urls )
 
 /** This dialog box gets shown when a multi-part QR code is received, but not all parts.
  Once all parts are handed to this dialog, it will load the spectrum, and close.
@@ -501,7 +502,7 @@ class MultiUrlSpectrumDialog : public SimpleDialog
 {
   SpecMeasManager *m_manager;
   InterSpec *m_interspec;
-  vector<QRSpectrum::EncodedSpectraInfo> m_urls;
+  vector<SpecUtils::EncodedSpectraInfo> m_urls;
   
 public:
   MultiUrlSpectrumDialog( SpecMeasManager *manager, InterSpec *viewer )
@@ -595,11 +596,11 @@ public:
   
   void addUrl( const string &url_unencoded_url )
   {
-    using QRSpectrum::EncodedSpectraInfo;
+    using SpecUtils::EncodedSpectraInfo;
     
     try
     {
-      const EncodedSpectraInfo info = QRSpectrum::get_spectrum_url_info( url_unencoded_url );
+      const EncodedSpectraInfo info = SpecUtils::get_spectrum_url_info( url_unencoded_url );
       assert( info.m_number_urls > 1 );
       
       
@@ -612,9 +613,9 @@ public:
       }
       
       // Check to see if we have already received this URL
-      for( const QRSpectrum::EncodedSpectraInfo &i : m_urls )
+      for( const SpecUtils::EncodedSpectraInfo &i : m_urls )
       {
-        if( i.m_spectrum_number == info.m_spectrum_number )
+        if( i.m_url_num == info.m_url_num )
         {
           passMessage( "Have already received this URL/QR-code",
                       WarningWidget::WarningMsgMedium );
@@ -626,7 +627,7 @@ public:
       
       std::sort( begin(m_urls), end(m_urls),
           []( const EncodedSpectraInfo &lhs, const EncodedSpectraInfo &rhs ) -> bool {
-        return lhs.m_spectrum_number < rhs.m_spectrum_number;
+        return lhs.m_url_num < rhs.m_url_num;
       } );
       
       if( m_urls.size() == info.m_number_urls )
@@ -635,9 +636,15 @@ public:
         for( const auto &i : m_urls )
           urls.push_back( i.m_orig_url );
         
-        vector<QRSpectrum::UrlSpectrum> specs = QRSpectrum::decode_spectrum_urls( urls );
+        vector<SpecUtils::UrlSpectrum> specs = SpecUtils::decode_spectrum_urls( urls );
         assert( specs.size() == 1 );
-        shared_ptr<SpecMeas> specfile = QRSpectrum::to_spec_file( specs );
+        
+        
+        auto specmeas = make_shared<SpecMeas>();
+        {
+          shared_ptr<SpecUtils::SpecFile> specfile = SpecUtils::to_spec_file( specs );
+          reinterpret_cast<SpecUtils::SpecFile &>( *specmeas ) = *specfile;
+        }
         
         m_manager->multiSpectrumDialogDone();
         
@@ -649,7 +656,7 @@ public:
         removePrevUrlsFile();
 #endif
         
-        m_interspec->userOpenFile( specfile, display_name );
+        m_interspec->userOpenFile( specmeas, display_name );
         accept();
       }//if( m_urls.size() == info.m_number_urls )
       
@@ -666,7 +673,7 @@ public:
           msg += " and ";
         else if( i )
           msg += ", ";
-        msg += std::to_string( 1 + m_urls[i].m_spectrum_number );
+        msg += std::to_string( 1 + m_urls[i].m_url_num );
       }
       
       msg += " of " + std::to_string(info.m_number_urls) + ".<p>Waiting on more URLS/QR-codes</p>";
@@ -2069,7 +2076,7 @@ bool SpecMeasManager::handleCALpFile( std::istream &infile, SimpleDialog *dialog
           msg += "Polynomial:";
         
         for( size_t i = 0; i < cal->coefficients().size() && i < 4; ++i )
-          msg += PhysicalUnits::printCompact( cal->coefficients()[i], 4 );
+          msg += SpecUtils::printCompact( cal->coefficients()[i], 4 );
         if( cal->coefficients().size() > 4 )
           msg += "...";
         
@@ -2671,7 +2678,7 @@ void SpecMeasManager::checkCloseUploadDialog( SimpleDialog *dialog, WApplication
     m_processingUploadDialog = nullptr;
   }//if( m_processingUploadDialog )
   
-  passMessage( "File upload has maybe timed-out - 30 seconds without recieving file data.",
+  passMessage( "File upload has maybe timed-out - 120 seconds without receiving file data.",
               WarningWidget::WarningMsgHigh ) ;
 }//void checkCloseUploadDialog( SimpleDialog *dialog )
 
@@ -2710,7 +2717,7 @@ void SpecMeasManager::handleDataRecievedStatus( uint64_t num_bytes_recieved, uin
     
     auto timeoutfcn = app->bind( boost::bind(&SpecMeasManager::checkCloseUploadDialog, this, dialog, app) );
     m_processingUploadTimer = make_unique<boost::asio::deadline_timer>( server->ioService() );
-    m_processingUploadTimer->expires_from_now( boost::posix_time::seconds(30) );
+    m_processingUploadTimer->expires_from_now( boost::posix_time::seconds(120) );
     m_processingUploadTimer->async_wait( [timeoutfcn](const boost::system::error_code &ec){ if(!ec) timeoutfcn(); } );
   };//make_timer lamda
   
@@ -2884,11 +2891,31 @@ void SpecMeasManager::handleFileDrop( const std::string &name,
 
 
 #if( USE_QR_CODES )
-void SpecMeasManager::handleSpectrumUrl( const std::string &unencoded )
+void SpecMeasManager::handleSpectrumUrl( std::string &&unencoded )
 {
   try
   {
-    const QRSpectrum::EncodedSpectraInfo info = QRSpectrum::get_spectrum_url_info( unencoded );
+    SpecUtils::EncodedSpectraInfo info;
+    
+    try
+    {
+      info = SpecUtils::get_spectrum_url_info( unencoded );
+    }catch( std::exception &e )
+    {
+      // We'll try one extra URL decode
+      string second_chance = SpecUtils::url_decode( unencoded );
+      try
+      {
+        info = SpecUtils::get_spectrum_url_info( second_chance );
+        unencoded = second_chance;
+      }catch( std::exception & )
+      {
+        // No go - give up
+        throw runtime_error( e.what() );
+      }
+    }//try / catch, SpecUtils::get_spectrum_url_info
+    
+    
     if( info.m_number_urls == 1 )
     {
       if( m_multiUrlSpectrumDialog )
@@ -2897,11 +2924,11 @@ void SpecMeasManager::handleSpectrumUrl( const std::string &unencoded )
         multiSpectrumDialogDone();
       }
       
-      vector<QRSpectrum::UrlSpectrum> spectra = QRSpectrum::spectrum_decode_first_url( unencoded );
+      vector<SpecUtils::UrlSpectrum> spectra = SpecUtils::spectrum_decode_first_url( unencoded );
       if( spectra.empty() )
         throw runtime_error( "No gamma measurements in URL/QR code" );
       
-      shared_ptr<SpecMeas> specfile = QRSpectrum::to_spec_file( spectra );
+      shared_ptr<SpecUtils::SpecFile> specfile = SpecUtils::to_spec_file( spectra );
       assert( specfile && specfile->num_measurements() );
       
       if( !specfile || (specfile->num_measurements() < 1) || (specfile->num_gamma_channels() < 7) )
@@ -2910,8 +2937,11 @@ void SpecMeasManager::handleSpectrumUrl( const std::string &unencoded )
       string display_name = spectra[0].m_title;
       if( display_name.size() < 3 )
         display_name = "From QR-code/URL";
+
+      auto specmeas = make_shared<SpecMeas>();
+      reinterpret_cast<SpecUtils::SpecFile &>( *specmeas ) = *specfile;
       
-      m_viewer->userOpenFile( specfile, display_name );
+      m_viewer->userOpenFile( specmeas, display_name );
     }else
     {
       auto dialog = dynamic_cast<MultiUrlSpectrumDialog *>( m_multiUrlSpectrumDialog );
@@ -2977,10 +3007,10 @@ void SpecMeasManager::displaySpectrumQrCode( const SpecUtils::SpectrumType type 
     if( model.empty() )
       model = meas->instrument_model();
   
-    vector<QRSpectrum::UrlSpectrum> urlspec = QRSpectrum::to_url_spectra( {spec}, model );
+    vector<SpecUtils::UrlSpectrum> urlspec = SpecUtils::to_url_spectra( {spec}, model );
     
     const uint8_t encode_options = 0;
-    vector<QRSpectrum::UrlEncodedSpec> urls;
+    vector<QRSpectrum::QrCodeEncodedSpec> urls;
     QRSpectrum::QrErrorCorrection ecc = QRSpectrum::QrErrorCorrection::High;
     
     // We'll try to only use a single QR-code, but also use highest error-correction we can.
@@ -2989,7 +3019,7 @@ void SpecMeasManager::displaySpectrumQrCode( const SpecUtils::SpectrumType type 
     {
       try
       {
-        urls = QRSpectrum::url_encode_spectra( urlspec, ecc, encode_options );
+        urls = QRSpectrum::qr_code_encode_spectra( urlspec, ecc, encode_options );
       }catch( std::exception & )
       {
       }//try / catch
@@ -3000,7 +3030,7 @@ void SpecMeasManager::displaySpectrumQrCode( const SpecUtils::SpectrumType type 
       try
       {
         ecc = QRSpectrum::QrErrorCorrection::Medium;
-        urls = QRSpectrum::url_encode_spectra( urlspec, ecc, encode_options );
+        urls = QRSpectrum::qr_code_encode_spectra( urlspec, ecc, encode_options );
       }catch( std::exception & )
       {
       }//try / catch
@@ -3011,7 +3041,7 @@ void SpecMeasManager::displaySpectrumQrCode( const SpecUtils::SpectrumType type 
       try
       {
         ecc = QRSpectrum::QrErrorCorrection::Low;
-        urls = QRSpectrum::url_encode_spectra( urlspec, ecc, encode_options );
+        urls = QRSpectrum::qr_code_encode_spectra( urlspec, ecc, encode_options );
       }catch( std::exception & )
       {
       }//try / catch

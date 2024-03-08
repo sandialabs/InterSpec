@@ -296,16 +296,6 @@ namespace PhysicalUnits
    */
   std::string printValueWithUncertainty( double value, double uncert, size_t nsigfig );
 
-  /** Prints the most compact string representation of the value, with at least the specified
-   number of significant figures; if more significant figures can be included without increasing
-   result length, they will be included.
-   
-   Uses the "round to nearest and ties to even" convention.
-   
-   Note: this function is hand-rolled, and extremely slow, and likely missing some edge cases or
-         something.  There is likely a much more elegant and correct implementation for this.
-   */
-  std::string printCompact( const double value, const size_t sig_figs );
 
   //Functions below here were imported 20121014 from some other code I have
   //  written, and are not yet consistent with the above functions (e.g.

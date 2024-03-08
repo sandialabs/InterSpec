@@ -419,7 +419,7 @@ public:
                        Wt::WApplication *app );
 
 #if( USE_QR_CODES )
-  void handleSpectrumUrl( const std::string &url );
+  void handleSpectrumUrl( std::string &&url );
   void displaySpectrumQrCode( const SpecUtils::SpectrumType type );
   void multiSpectrumDialogDone();
 #endif

@@ -3587,20 +3587,20 @@ void PeakModel::write_peak_csv( std::ostream &outstrm,
         const vector<bool> fit_for = continuum->fitForParameter();
         
         // Print reference energy, in keV
-        cont_coefs += PhysicalUnits::printCompact( ref_energy, 6 );
+        cont_coefs += SpecUtils::printCompact( ref_energy, 6 );
          
         for( size_t i = 0; i < num_cont_par; ++i )
         {
-          cont_coefs += " " + PhysicalUnits::printCompact(pars[i],7);
+          cont_coefs += " " + SpecUtils::printCompact(pars[i],7);
           
           // We could print triplicate [Coefficient,Uncertainty,FitFor], but I'm unsure about doing
           //   this at the moment.
           //cont_coefs += "[";
           //if( pars.size() > i )
-          //  cont_coefs += PhysicalUnits::printCompact( pars[i], 7 );
+          //  cont_coefs += SpecUtils::printCompact( pars[i], 7 );
           //cont_coefs += ";";
           //if( uncerts.size() > i )
-          //  cont_coefs += PhysicalUnits::printCompact( uncerts[i], 7 );
+          //  cont_coefs += SpecUtils::printCompact( uncerts[i], 7 );
           //cont_coefs += ";";
           //if( fit_for.size() > i )
           //  cont_coefs += (fit_for[i] ? "1" : "0");
@@ -3618,11 +3618,11 @@ void PeakModel::write_peak_csv( std::ostream &outstrm,
       const auto par = PeakDef::CoefficientType( PeakDef::CoefficientType::SkewPar0 + i );
       const double val = peak.coefficient(par);
       //const double uncert = peak.uncertainty(par);
-      //skew_coefs += "[" + PhysicalUnits::printCompact( val, 7 )
-      //              + ";" + PhysicalUnits::printCompact( uncert, 7 )
+      //skew_coefs += "[" + SpecUtils::printCompact( val, 7 )
+      //              + ";" + SpecUtils::printCompact( uncert, 7 )
       //              + (peak.fitFor(par) ? ";1]" : ";1]");
       skew_coefs += (skew_coefs.empty() ? "" : " ")
-                    + PhysicalUnits::printCompact(val,7);
+                    + SpecUtils::printCompact(val,7);
     }//for( loop over skew parameters )
     
     

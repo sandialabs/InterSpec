@@ -324,7 +324,7 @@ void MoreNuclideInfoDisplay::setNuclide( const SandiaDecay::Nuclide *const nuc,
       tmplt.bindString( "specific-activity", "", Wt::TextFormat::PlainText );
     }
     
-    const string amu = PhysicalUnits::printCompact( nuc->atomicMass, 6 ) + " amu";
+    const string amu = SpecUtils::printCompact( nuc->atomicMass, 6 ) + " amu";
     tmplt.bindString( "atomic-mass", amu, Wt::TextFormat::PlainText );
     
     double natural_abundance = -1;
@@ -341,7 +341,7 @@ void MoreNuclideInfoDisplay::setNuclide( const SandiaDecay::Nuclide *const nuc,
     }//if( el )
     
     tmplt.setCondition( "if-is-natural", (natural_abundance > 0.0) );
-    const string natabun = PhysicalUnits::printCompact( 100.0*natural_abundance, 4 ) + "%";
+    const string natabun = SpecUtils::printCompact( 100.0*natural_abundance, 4 ) + "%";
     tmplt.bindString( "natural-abundance", natabun, Wt::TextFormat::PlainText );
     
     WPushButton *decayChainBtn = new WPushButton( "Show Decay Chain" );
@@ -414,7 +414,7 @@ void MoreNuclideInfoDisplay::setNuclide( const SandiaDecay::Nuclide *const nuc,
       new WText( trans_mode_txt( transition->mode ), cell );
       
       cell = decayTable->elementAt( row, 2 );
-      new WText( PhysicalUnits::printCompact( transition->branchRatio, 5 ), cell );
+      new WText( SpecUtils::printCompact( transition->branchRatio, 5 ), cell );
     }//for( const SandiaDecay::Transition * transition : nuc->decaysToChildren)
     
     tmplt.bindWidget( "decays-to-table", decayTable );
@@ -461,7 +461,7 @@ void MoreNuclideInfoDisplay::setNuclide( const SandiaDecay::Nuclide *const nuc,
           new WText( trans_mode_txt( trans->mode ), cell );
           
           cell = decayFromTable->elementAt( row, 2 );
-          new WText( PhysicalUnits::printCompact( br_to, 5 ), cell );
+          new WText( SpecUtils::printCompact( br_to, 5 ), cell );
         }//for( const SandiaDecay::Transition *trans : parentNuclide->decaysToChildren )
       }//for( const SandiaDecay::Transition *parentTrans : nuc->decaysFromParents )
       

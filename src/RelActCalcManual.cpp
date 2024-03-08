@@ -1438,18 +1438,18 @@ void RelEffSolution::get_mass_fraction_table( std::ostream &results_html ) const
     const double uncert_percent = 100.0 * act.m_rel_activity_uncert / act.m_rel_activity;
     
     results_html << "  <tr><td>" << act.m_isotope << "</td>"
-    << "<td>" << PhysicalUnits::printCompact( act.m_rel_activity, nsigfig ) << "</td>";
+    << "<td>" << SpecUtils::printCompact( act.m_rel_activity, nsigfig ) << "</td>";
     
     try
     {
       const double frac_mass = mass_fraction(act.m_isotope);
-      results_html << "<td>" << PhysicalUnits::printCompact(100.0*frac_mass, nsigfig)      << "%</td>";
+      results_html << "<td>" << SpecUtils::printCompact(100.0*frac_mass, nsigfig)      << "%</td>";
     }catch( std::exception & )
     {
       results_html << "<td>N.A.</td>";
     }
     
-    results_html << "<td>" << PhysicalUnits::printCompact(uncert_percent, nsigfig-1)       << "%</td>"
+    results_html << "<td>" << SpecUtils::printCompact(uncert_percent, nsigfig-1)       << "%</td>"
     << "</tr>\n";
   }
   results_html << "  </tbody>\n"
@@ -1525,13 +1525,13 @@ void RelEffSolution::get_mass_ratio_table( std::ostream &results_html ) const
       }else
       {
         results_html << "<tr><td>" << nuc_i->symbol << "/" << nuc_j->symbol
-        << "</td><td>" << PhysicalUnits::printCompact(i_to_j_mass_ratio, nsigfig) << " \xC2\xB1 n/a"
-        << "</td><td>" << PhysicalUnits::printCompact(i_to_j_act_ratio, nsigfig) << " \xC2\xB1 n/a"
+        << "</td><td>" << SpecUtils::printCompact(i_to_j_mass_ratio, nsigfig) << " \xC2\xB1 n/a"
+        << "</td><td>" << SpecUtils::printCompact(i_to_j_act_ratio, nsigfig) << " \xC2\xB1 n/a"
         << "</td></tr>\n";
         
         results_html << "<tr><td>" <<nuc_j->symbol << "/" << nuc_i->symbol
-        << "</td><td>" << PhysicalUnits::printCompact(j_to_i_mass_ratio, nsigfig) << " \xC2\xB1 n/a"
-        << "</td><td>" << PhysicalUnits::printCompact(j_to_i_act_ratio, nsigfig) << " \xC2\xB1 n/a"
+        << "</td><td>" << SpecUtils::printCompact(j_to_i_mass_ratio, nsigfig) << " \xC2\xB1 n/a"
+        << "</td><td>" << SpecUtils::printCompact(j_to_i_act_ratio, nsigfig) << " \xC2\xB1 n/a"
         << "</td></tr>\n";
       }//if( we have covariance ) / else
     }//for( size_t j = 0; j < i; ++j )
@@ -1555,9 +1555,9 @@ void RelEffSolution::print_html_report( ostream &output_html_file,
   
   
   stringstream results_html;
-  results_html << "<div>&chi;<sup>2</sup>=" << PhysicalUnits::printCompact(m_chi2, nsigfig)
+  results_html << "<div>&chi;<sup>2</sup>=" << SpecUtils::printCompact(m_chi2, nsigfig)
   << " and there were " << m_dof << " DOF; &chi;<sup>2</sup>/dof="
-  << PhysicalUnits::printCompact(m_chi2/m_dof, nsigfig)
+  << SpecUtils::printCompact(m_chi2/m_dof, nsigfig)
   << " </div>\n";
   
   results_html << "<div class=\"releffeqn\">Rel. Eff. Eqn: y = "
@@ -1606,14 +1606,14 @@ void RelEffSolution::print_html_report( ostream &output_html_file,
       const double meas_rel_eff_uncert = 100* info.m_counts_uncert / info.m_counts;
       
       results_html << "<td>" << line.m_isotope
-      << "</td><td>" << PhysicalUnits::printCompact( line.m_yield, nsigfig )
-      << "</td><td>" << PhysicalUnits::printCompact( info.m_counts, nsigfig )
-      << "</td><td>" << PhysicalUnits::printCompact( info.m_counts_uncert, nsigfig )
-      << "</td><td>" << PhysicalUnits::printCompact( counts_over_yield, nsigfig )
-      << "</td><td>" << PhysicalUnits::printCompact( counts_uncert_percent, nsigfig ) << "%"
-      << "</td><td>" << PhysicalUnits::printCompact( info.m_base_rel_eff_uncert, nsigfig )
-      << "</td><td>" << PhysicalUnits::printCompact( meas_rel_eff, nsigfig )
-      << "</td><td>" << PhysicalUnits::printCompact( meas_rel_eff_uncert, nsigfig ) << "%";
+      << "</td><td>" << SpecUtils::printCompact( line.m_yield, nsigfig )
+      << "</td><td>" << SpecUtils::printCompact( info.m_counts, nsigfig )
+      << "</td><td>" << SpecUtils::printCompact( info.m_counts_uncert, nsigfig )
+      << "</td><td>" << SpecUtils::printCompact( counts_over_yield, nsigfig )
+      << "</td><td>" << SpecUtils::printCompact( counts_uncert_percent, nsigfig ) << "%"
+      << "</td><td>" << SpecUtils::printCompact( info.m_base_rel_eff_uncert, nsigfig )
+      << "</td><td>" << SpecUtils::printCompact( meas_rel_eff, nsigfig )
+      << "</td><td>" << SpecUtils::printCompact( meas_rel_eff_uncert, nsigfig ) << "%";
       
       if( has_decay_corr )
       {
@@ -1631,7 +1631,7 @@ void RelEffSolution::print_html_report( ostream &output_html_file,
             
             const double ratio = line.m_yield / un_corr_line.m_yield;
             if( !IsInf(ratio) && !IsNan(ratio) )
-              results_html << " " << PhysicalUnits::printCompact( ratio, nsigfig );
+              results_html << " " << SpecUtils::printCompact( ratio, nsigfig );
             else
               results_html << "--";
           }//for( loop over un_corr_peak.m_source_gammas )

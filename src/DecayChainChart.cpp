@@ -644,7 +644,7 @@ std::vector<std::string> DecayChainChart::getTextInfoForNuclide( const SandiaDec
     if( transition->child && (transition->branchRatio > 0.0) )
     {
       const string decay_mode = SandiaDecay::to_str( transition->mode );
-      const string br = PhysicalUnits::printCompact(transition->branchRatio, 4);
+      const string br = SpecUtils::printCompact(transition->branchRatio, 4);
       const string txt = decay_mode + " decays to " + transition->child->symbol + ", BR " + br;
       
       information.push_back( txt );
