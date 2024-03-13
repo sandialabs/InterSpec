@@ -195,7 +195,7 @@ shared_ptr<DetectorPeakResponse> init_drf_from_name( std::string drf_file, std::
       auto drf = DrfSelect::initARelEffDetector( SpecUtils::DetectorType::Unknown,
                                                 manufacturer, model );
       if( drf )
-        return;
+        return drf;
     }catch( std::exception &e )
     {
       
