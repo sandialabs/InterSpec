@@ -991,6 +991,12 @@ rapidxml::xml_document<char> *SpecMeas::shieldingSourceModel()
   return m_shieldingSourceModel.get();
 }
 
+const rapidxml::xml_document<char> *SpecMeas::shieldingSourceModel() const
+{
+  std::lock_guard<std::recursive_mutex> scoped_lock( mutex_ );
+  return m_shieldingSourceModel.get();
+}
+
 
 void SpecMeas::setShieldingSourceModel( std::unique_ptr<rapidxml::xml_document<char>> &&model )
 {

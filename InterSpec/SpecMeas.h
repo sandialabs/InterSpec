@@ -330,6 +330,7 @@ public:
       make sure another thread doesn't change the model on you.
    */
   rapidxml::xml_document<char> *shieldingSourceModel();
+  const rapidxml::xml_document<char> *shieldingSourceModel() const;
   
   /** Sets the shielding source model that was serialized by the gui. */
   void setShieldingSourceModel( std::unique_ptr<rapidxml::xml_document<char>> &&model );

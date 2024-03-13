@@ -2895,6 +2895,12 @@ void SpecMeasManager::handleSpectrumUrl( std::string &&unencoded )
 {
   try
   {
+    //Remove everything leading up to "RADDATA://G0/"
+    const size_t uri_pos = SpecUtils::ifind_substr_ascii( unencoded, "RADDATA://G0/" );
+    if( (uri_pos != string::npos) && (uri_pos > 0) )
+      unencoded = unencoded.substr( 0, uri_pos );
+    
+    
     SpecUtils::EncodedSpectraInfo info;
     
     try
