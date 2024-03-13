@@ -254,6 +254,7 @@ void SpectrumViewerTester::writeStateStaticHtmlHeader( std::ostream &strm,
                                                     const UserState *dbstate )
 {
   const string username = dbstate->user ? dbstate->user->userName() : string("Unknown");
+  const int state_id = dbstate->user ? static_cast<int>(dbstate->user.id()) : -1;
   const string now = WDateTime::currentDateTime().toString( DATE_TIME_FORMAT_STR ).toUTF8();
   
   writeHtmlHeader( strm, dbstate->name.toUTF8() );
@@ -271,7 +272,7 @@ void SpectrumViewerTester::writeStateStaticHtmlHeader( std::ostream &strm,
        << "\t\t\t<tr><th>Description</th><td>"
           << dbstate->description.toUTF8() << "</td></tr>\n"
        << "\t\t\t<tr><th>User State ID</th><td>"
-          << viewer->m_currentStateID << "</td></tr>\n"
+          << state_id << "</td></tr>\n"
        << "\t\t\t<tr><th>Foreground ID</th><td>"
           << dbstate->foregroundId << "</td></tr>\n"
        << "\t\t\t<tr><th>Background ID</th><td>"
