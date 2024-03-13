@@ -3829,7 +3829,7 @@ void RelActAutoGui::setPeaksToForeground()
   WPushButton *yes = dialog->addButton( "Yes" );
   
   
-  const vector<PeakDef> fit_peaks = m_solution->m_fit_peaks;
+  const vector<PeakDef> solution_peaks = m_solution->m_fit_peaks;
   std::shared_ptr<const DetectorPeakResponse> ana_drf = m_solution->m_drf;
   
   if( m_solution->m_options.fit_energy_cal )
@@ -3838,7 +3838,7 @@ void RelActAutoGui::setPeaksToForeground()
     //  think we need to update them here
   }//if( m_solution->m_options.fit_energy_cal )
   
-  yes->clicked().connect( std::bind([fit_peaks, replace_or_add, refit_peaks, previous_peaks, ana_drf](){
+  yes->clicked().connect( std::bind([solution_peaks, replace_or_add, refit_peaks, previous_peaks, ana_drf](){
     const bool replace_peaks = (!replace_or_add || replace_or_add->isChecked());
     
     InterSpec *interpsec = InterSpec::instance();
@@ -3851,10 +3851,9 @@ void RelActAutoGui::setPeaksToForeground()
     vector<PeakDef> final_peaks;
     if( foreground && refit_peaks->isChecked() )
     {
-      
       map< shared_ptr<const PeakContinuum>,vector<shared_ptr<const PeakDef>> > rois;
      
-      for( const PeakDef &peak : fit_peaks )
+      for( const PeakDef &peak : solution_peaks )
         rois[peak.continuum()].push_back( make_shared<PeakDef>(peak) );
       
       vector< vector<shared_ptr<const PeakDef>> > fit_peaks( rois.size() );
@@ -3967,7 +3966,7 @@ void RelActAutoGui::setPeaksToForeground()
       std::sort( begin(final_peaks), end(final_peaks), &PeakDef::lessThanByMean );
     }else
     {
-      final_peaks = fit_peaks;
+      final_peaks = solution_peaks;
     }
     
     PeakModel *peak_model = interpsec->peakModel();

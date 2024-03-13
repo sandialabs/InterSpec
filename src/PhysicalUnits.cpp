@@ -1479,7 +1479,10 @@ std::string printValueWithUncertainty( double value, double uncert, size_t unsig
 }//printValueWithUncertainty(...)
 
 
-
+std::string printCompact( const double value, const size_t sig_figs )
+{
+  return SpecUtils::printCompact( value, sig_figs );
+}
 
 
 const UnitNameValuePair &bestActivityUnit( const double activity,

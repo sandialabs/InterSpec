@@ -296,6 +296,9 @@ namespace PhysicalUnits
    */
   std::string printValueWithUncertainty( double value, double uncert, size_t nsigfig );
 
+  /** A simple passthrough to `SpecUtils::printCompact`, for compatibility. */
+  [[deprecated("Use SpecUtils::printCompact(double,size_t).")]]
+  std::string printCompact( const double value, const size_t sig_figs );
 
   //Functions below here were imported 20121014 from some other code I have
   //  written, and are not yet consistent with the above functions (e.g.
