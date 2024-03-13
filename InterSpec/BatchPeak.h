@@ -68,6 +68,7 @@ namespace BatchPeak
     bool show_nonfit_peaks;
     std::string output_dir;
     std::string background_subtract_file;
+    std::set<int> background_subtract_samples;
   };//struct BatchPeakFitOptions
   
   
@@ -109,6 +110,9 @@ namespace BatchPeak
    @param cached_exemplar_n42 If non-null, then `exemplar_filename` will be ignored, and this file will be used; to avoid re-parsing
           of the exemplar file over-and-over again.
    @param filename The name of the spectrum file to fit peaks to.
+   @param cached_spectrum If you have already parsed/opened the `filename` spectrum file, you can provide it here to
+          avoid overhead of re-parsing it.
+   @param foreground_sample_numbers The sample numbers to fit the peaks to.  If left empty, will try to automatically determine.
    @param options The options to use for fitting peaks; note, not all options are used, as some of them are only applicable to
           #fit_peaks_in_files
    */
@@ -116,6 +120,8 @@ namespace BatchPeak
                           std::set<int> exemplar_sample_nums,
                           std::shared_ptr<const SpecMeas> cached_exemplar_n42,
                           const std::string &filename,
+                          std::shared_ptr<SpecMeas> cached_spectrum,
+                          std::set<int> foreground_sample_numbers,
                           const BatchPeakFitOptions &options );
   
 }//namespace BatchPeak

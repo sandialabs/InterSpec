@@ -42,7 +42,10 @@ namespace SpecUtils
   class Measurement;
 }//namespace SpecUtils
 
-
+namespace ShieldingSourceFitCalc
+{
+  struct ModelFitResults;
+}
 
 /** The functions necessary to batch-fit activity and shielding.  */
 namespace BatchActivity
@@ -68,8 +71,61 @@ namespace BatchActivity
   
   struct BatchActivityFitResult
   {
+    enum class ResultCode
+    {
+      CouldntInitializeStaticResources,
+      NoExemplar,
+      CouldntOpenExemplar,
+      CouldntOpenInputFile,
+      CouldntOpenBackgroundFile,
+      NoInputSrcShieldModel,
+      ForegroundSampleNumberUnderSpecified,
+      BackgroundSampleNumberUnderSpecified,
+      
+      ForegroundPeakFitFailed,
+      NoFitForegroundPeaks,
+      NoDetEffFnct,
+      InvalidDistance,
+      InvalidGeometry,
+      InvalidFitOptions,
+      ExemplarUsedBackSubButNoBackground,
+      NoShieldingsNode,
+      ErrorParsingShielding,
+      MissingNuclidesNode,
+      InvalidNuclideNode,
+      NoSourceNuclides,
+      
+      FitNotSuccessful,
+      DidNotFitAllSources,
+      
+      UnknownStatus,
+      Success
+    };//enum class ResultCode
+    
+    ResultCode m_result_code;
+    std::string m_error_msg;
+    std::vector<std::string> m_warnings;
+    
+    std::string m_filename;
+    std::shared_ptr<const SpecMeas> m_foreground_file;
+    std::set<int> m_foreground_sample_numbers;  ///!< right now limited to single sample - may change in future
+    std::shared_ptr<const SpecUtils::Measurement> m_foreground;
+    
+    std::shared_ptr<const SpecMeas> m_exemplar_file;
+    std::set<int> m_exemplar_sample_numbers;    ///!< right now limited to single sample - may change in future
+    std::shared_ptr<const SpecUtils::Measurement> m_exemplar;
+    
+    std::shared_ptr<const SpecMeas> m_background_file;  ///!< May be same as foreground or exemplar
+    std::set<int> m_background_sample_numbers;  ///!< right now limited to single sample - may change in future
+    std::shared_ptr<const SpecUtils::Measurement> m_background;
+    
+    BatchActivityFitOptions m_options;
+    
     // Blah blah blah
-    std::shared_ptr<const BatchPeak::BatchPeakFitResult> peak_fit_results;
+    std::shared_ptr<const BatchPeak::BatchPeakFitResult> m_peak_fit_results;
+    std::shared_ptr<const BatchPeak::BatchPeakFitResult> m_background_peak_fit_results;
+    
+    std::shared_ptr<ShieldingSourceFitCalc::ModelFitResults> m_fit_results;
   };//struct BatchActivityFitResult
   
   

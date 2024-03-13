@@ -146,7 +146,7 @@ int run_batch_command( int argc, char **argv )
       
       bool output_stdout, refit_energy_cal, use_exemplar_energy_cal, write_n42_with_peaks, show_nonfit_peaks;
       vector<std::string> input_files;
-      string exemplar_path, output_path, exemplar_samples, background_sub_file;
+      string exemplar_path, output_path, exemplar_samples, background_sub_file, background_samples;
       
       po::options_description peak_cl_desc("Allowed batch peak-fit, and activity-fit options", term_width, min_description_length);
       peak_cl_desc.add_options()
@@ -205,6 +205,10 @@ int run_batch_command( int argc, char **argv )
                     " (which may have multiple DRFs)"
                     ", or built-in, or previously used in InterSpec "
                     "(overrides DRF contained in exemplar N42 file).")
+      ("background-sample-nums", po::value<std::string>(&background_samples),
+       "The sample numbers from the background file to use; if left empty will try to determine, and fail if not unique.\n\t"
+       "Only applicable if the background subtraction file is specified."
+       )
       ;
       
       po::variables_map cl_vm;
@@ -265,6 +269,16 @@ int run_batch_command( int argc, char **argv )
         }
       }//for( string filename : input_files )
       
+      
+      set<int> background_sample_nums;
+      if( !background_samples.empty() )
+        background_sample_nums = sequenceStrToSampleNums( background_samples );
+      
+      if( !background_sample_nums.empty() && background_sub_file.empty() )
+      {
+        throw runtime_error( "You can not specify background sample numbers without specifying a background file" );
+      }
+      
       BatchActivity::BatchActivityFitOptions options;  //derived from BatchPeak::BatchPeakFitOptions
       options.to_stdout = output_stdout;
       options.refit_energy_cal = refit_energy_cal;
@@ -273,6 +287,7 @@ int run_batch_command( int argc, char **argv )
       options.show_nonfit_peaks = show_nonfit_peaks;
       options.output_dir = output_path;
       options.background_subtract_file = background_sub_file;
+      options.background_subtract_samples = background_sample_nums;
       
       if( batch_peak_fit )
       {
@@ -284,8 +299,8 @@ int run_batch_command( int argc, char **argv )
       {
         options.drf_override = BatchActivity::init_drf_from_name( drf_file, drf_name ); 
         
-        cerr << "batch-act-fit no implemented yet" << endl;
-        throw runtime_error( "Not implemented yet" );
+        //cerr << "batch-act-fit no implemented yet" << endl;
+        //throw runtime_error( "Not implemented yet" );
         
         BatchActivity::fit_activities_in_files( exemplar_path, exemplar_sample_nums,
                                                expanded_input_files, options );
