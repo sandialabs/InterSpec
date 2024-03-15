@@ -50,6 +50,14 @@
 #include "InterSpec/GammaInteractionCalc.h"
 
 
+// I'm just starting to toy around with using inja to template the output of the batch results.
+//  Preliminarily, it looks like we can do most of what we might want with this.
+//  Lets not compile stuff in by default quite yet.
+#define USE_TMPLT_RESULT_OUTPUT 0
+#if( USE_TMPLT_RESULT_OUTPUT )
+#include "external_libs/SpecUtils/3rdparty/inja/inja.hpp"
+#endif
+
 using namespace std;
 
 namespace BatchActivity
@@ -253,15 +261,29 @@ void fit_activities_in_files( const std::string &exemplar_filename,
       cached_exemplar_n42 = fit_results.m_exemplar_file;
     warnings.insert(end(warnings), begin(fit_results.m_warnings), end(fit_results.m_warnings) );
     
-    if( fit_results.m_result_code == BatchActivity::BatchActivityFitResult::ResultCode::Success )
+    
+    assert( (fit_results.m_result_code != BatchActivity::BatchActivityFitResult::ResultCode::Success)
+             || fit_results.m_fit_results );
+    
+    if( (fit_results.m_result_code == BatchActivity::BatchActivityFitResult::ResultCode::Success)
+       && fit_results.m_fit_results )
     {
+      
+      const bool useBq = InterSpecUser::preferenceValue<bool>( "DisplayBecquerel", InterSpec::instance() );
+      
       cout << "Success analyzing '" << filename << "'!" << endl;
       assert( fit_results.m_fit_results );
+      
+#if( USE_TMPLT_RESULT_OUTPUT )
+      nlohmann::json data;
+#endif
       for( const ShieldingSourceFitCalc::IsoFitStruct &nuc : fit_results.m_fit_results->fit_src_info )
       {
+        
+          
         cout << (nuc.fitActivity ? "\t" : "[act not fit]") << nuc.nuclide->symbol << ": "
-             << PhysicalUnits::printToBestActivityUnits(nuc.activity)
-             << " +- " << PhysicalUnits::printToBestActivityUnits(nuc.activityUncertainty);
+             << PhysicalUnits::printToBestActivityUnits(nuc.activity,3,!useBq)
+             << " +- " << PhysicalUnits::printToBestActivityUnits(nuc.activityUncertainty,3,!useBq);
         
         if( nuc.ageIsFittable )
         {
@@ -275,27 +297,65 @@ void fit_activities_in_files( const std::string &exemplar_filename,
           }
         }//if( nuc.ageIsFittable )
         
+        cout << endl;
         
+#if( USE_TMPLT_RESULT_OUTPUT )
+        data["Sources"].push_back( {
+          {"Nuclide", nuc.nuclide->symbol},
+          {"FitActivity", nuc.fitActivity},
+          {"Activity", PhysicalUnits::printToBestActivityUnits(nuc.activity,3,!useBq) }
+        });
+        auto &nuc_json_obj = data["Sources"].back();
+        
+        if( nuc.fitActivity )
+          nuc_json_obj["ActivityUncertainty"] = PhysicalUnits::printToBestActivityUnits(nuc.activityUncertainty,3,!useBq);
+        
+        if( nuc.ageIsFittable )
+        {
+          if( nuc.fitAge )
+          {
+            nuc_json_obj["FitAge"] = PhysicalUnits::printToBestTimeUnits(nuc.age,3);
+            nuc_json_obj["FitAgeUncertainty"] = PhysicalUnits::printToBestTimeUnits(nuc.ageUncertainty,3);
+            if( nuc.ageDefiningNuc )
+              nuc_json_obj["AgeTiedTo"] = nuc.ageDefiningNuc->symbol;
+          }else
+          {
+            nuc_json_obj["Age"] = PhysicalUnits::printToBestTimeUnits(nuc.age,3);
+          }
+        }//if( nuc.ageIsFittable )
         
         switch( nuc.sourceType )
         {
           case ShieldingSourceFitCalc::ModelSourceType::Point:
+            nuc_json_obj["SourceType"] = "Point";
             break;
             
           case ShieldingSourceFitCalc::ModelSourceType::Intrinsic:
+            nuc_json_obj["SourceType"] = "Intrinsic Radiation";
             break;
             
           case ShieldingSourceFitCalc::ModelSourceType::Trace:
+            nuc_json_obj["SourceType"] = "Trace Source";
             break;
         }//switch( nuc.sourceType )
-        
-        cout << endl;
+#endif
       }//for( const ShieldingSourceFitCalc::IsoFitStruct &nuc : m_fit_results.fit_src_info )
       
+#if( USE_TMPLT_RESULT_OUTPUT )
+      data["Geometry"] = GammaInteractionCalc::to_str( fit_results.m_fit_results->geometry );
+#endif
       
       for( const ShieldingSourceFitCalc::FitShieldingInfo &shield : fit_results.m_fit_results->final_shieldings )
       {
-        //const char *GammaInteractionCalc::to_str( shield.m_geometry );
+#if( USE_TMPLT_RESULT_OUTPUT )
+        data["Shieldings"].push_back({
+          { "Geometry", GammaInteractionCalc::to_str(shield.m_geometry) }
+        });
+        
+        auto &shield_json_obj = data["Shieldings"].back();
+        // blah blah blah
+#endif
+        //const char *shield.m_geometry );
         
         /** Dimensions of this shielding; the meaning of the entries differs depending on the geometry,
          or if a generic material.
@@ -321,6 +381,14 @@ void fit_activities_in_files( const std::string &exemplar_filename,
         */
       }//for( loop fit_results.m_fit_results->fit_src_info )
       
+#if( USE_TMPLT_RESULT_OUTPUT )
+      const string rpt = inja::render(R"(Sources:
+## for src in Sources
+  {{ loop.index1 }}: {{ src.Nuclide }} {% if src.FitActivity %} +- {{ src.ActivityUncertainty }} {% endif %} {% if src.FitActivity %}
+## endfor )", data);
+      
+      cout << "Json: " << rpt << endl;
+#endif
     }else
     {
       cout << "Failure: " << fit_results.m_error_msg << endl;
