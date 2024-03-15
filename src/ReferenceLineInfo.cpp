@@ -348,12 +348,26 @@ namespace
     load_ref_line_file( add_lines_path, *nuc_mixes, *custom_lines );
     
 #if( BUILD_AS_ELECTRON_APP || IOS || ANDROID || BUILD_AS_OSX_APP || BUILD_AS_LOCAL_SERVER || BUILD_AS_WX_WIDGETS_APP || BUILD_AS_UNIT_TEST_SUITE )
-    const string user_data_dir = InterSpec::writableDataDirectory();
-    const string custom_lines_path = SpecUtils::append_path( user_data_dir, "add_ref_line.xml" );
     
-    // Any duplicate names, will overwrite what comes with InterSpec
-    if( SpecUtils::is_file( custom_lines_path ) )
-      load_ref_line_file( custom_lines_path, *nuc_mixes, *custom_lines );
+    string user_data_dir;
+    
+    // `InterSpec::writableDataDirectory()` will throw if it hasnt been set.
+    //  - e.g., in testing or batch mode
+    try
+    {
+      user_data_dir = InterSpec::writableDataDirectory();
+    }catch( std::exception & )
+    {
+    }//try / catch
+    
+    if( !user_data_dir.empty() )
+    {
+      const string custom_lines_path = SpecUtils::append_path( user_data_dir, "add_ref_line.xml" );
+        
+      // Any duplicate names, will overwrite what comes with InterSpec
+      if( SpecUtils::is_file( custom_lines_path ) )
+        load_ref_line_file( custom_lines_path, *nuc_mixes, *custom_lines );
+    }//if( !user_data_dir.empty() )
 #endif
     
     sm_nuc_mixes = nuc_mixes;
