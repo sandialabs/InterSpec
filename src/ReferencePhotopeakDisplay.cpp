@@ -1380,7 +1380,7 @@ void ReferencePhotopeakDisplay::handleIsotopeChange( const bool useCurrentAge )
       {
         string defagestr;
         PeakDef::defaultDecayTime( nuc, &defagestr );
-        m_ageEdit->setText( agestr );
+        m_ageEdit->setText( defagestr );
       }else
       {
         const double hl = (nuc ? nuc->halfLife : -1.0);

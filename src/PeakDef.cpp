@@ -3345,7 +3345,7 @@ bool PeakDef::ageFitNotAllowed( const SandiaDecay::Nuclide *nuc )
 
 double PeakDef::defaultDecayTime( const SandiaDecay::Nuclide *nuclide, string *stranswer )
 {
-  string decayTimeStr = "";
+  const char *decayTimeStr = nullptr;
   double decaytime = 0;
   if( nuclide->canObtainSecularEquilibrium() )
   {
@@ -3386,11 +3386,13 @@ double PeakDef::defaultDecayTime( const SandiaDecay::Nuclide *nuclide, string *s
     decayTimeStr = "7 HL";
   }
   
-  if( decayTimeStr.empty() )
-    decayTimeStr = PhysicalUnits::printToBestTimeUnits( decaytime, 2, SandiaDecay::second );
-  
   if( stranswer )
-    *stranswer = decayTimeStr;
+  {
+    if( decayTimeStr )
+      *stranswer = decayTimeStr;
+    else
+      *stranswer = PhysicalUnits::printToBestTimeUnits( decaytime, 2, SandiaDecay::second );
+  }//if( stranswer )
   
   return decaytime;
 }//string defaultDecayTime(..)
