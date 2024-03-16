@@ -166,7 +166,7 @@ public:
   }//void docreate()
   
 private:
-  void load()
+  virtual void load()
   {
     docreate();
     WContainerWidget::load();
