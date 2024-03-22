@@ -230,14 +230,43 @@ width:100%;
 }
 
 
-/* A lighter-appearing button, with no background color, and text matching border. */
-button.Wt-btn.with-label.LightButton
+/* A lighter-appearing button, with no background color, and text matching border. 
+ We will also allow applying this style to WSplitButton
+ */
+button.Wt-btn.LightButton, .btn-group.LightButton
 {
   font-weight: normal;
   background-color: rgba(0,0,0,0);
   color: rgb(86,88,90);
 }
 
+/* .btn-group is for WSplitButton */
+.btn-group.LightButton > button.Wt-btn
+{
+  border-top: none;
+  border-bottom: none;
+  margin-top: -1px;
+  padding-top: 3px;
+}
+
+.btn-group.LightButton > button.Wt-btn.dropdown-toggle.LightButton
+{
+  border-right: none;
+  border-radius: 0px;
+}
+
+.btn-group.LightButton > button.Wt-btn.with-label.LightButton
+{
+  border: none;
+}
+
+.btn-group > .Wt-btn.dropdown-toggle
+{
+  width: 20px;
+  background-image: url('../InterSpec_resources/images/bullet_arrow_down.png');
+  background-position: right center;
+  background-repeat: no-repeat, no-repeat;
+}
 
 .Wt-icon {
   display: inline-block;
@@ -802,7 +831,9 @@ opacity:0.4;
 }
 
 
-button, button:hover {
+button, button:hover,
+  .btn-group  /* WSplitButton spans */
+{
   font-weight:bold;
   vertical-align: middle;
   border:1px solid #e1e1e1;

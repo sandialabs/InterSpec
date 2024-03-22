@@ -42,6 +42,12 @@ table.PeakSelectorTable td.NewNucCell{
   padding-right: 3px;
 }
 
+table.PeakSelectorTable td.NewNucCell .DontAssignCb{
+  margin-top: 10px;
+  float: right;
+  margin-right: 10px;
+}
+
 .PeakPreviewCell{
 }
 

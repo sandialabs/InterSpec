@@ -60,7 +60,6 @@
 #include <Wt/WPushButton>
 #include <Wt/WJavaScript>
 #include <Wt/WFileUpload>
-#include <Wt/WSplitButton>
 #include <Wt/WEnvironment>
 #include <Wt/Http/Response>
 #include <Wt/WSelectionBox>

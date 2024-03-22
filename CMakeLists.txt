@@ -849,8 +849,9 @@ endif( WIN32 )
 
 # I cant seems to get more complex regexs to work, so we'll use many simple ones.
 FILE(GLOB JS_BASE_FILES InterSpec_resources/*.js )
-FILE(GLOB CSS_BASE_FILES InterSpec_resources/*.css )
+FILE(GLOB_RECURSE CSS_BASE_FILES LIST_DIRECTORIES TRUE InterSpec_resources/*.css )
 list(FILTER CSS_BASE_FILES EXCLUDE REGEX ".*SpectrumChartD3.*css")
+list(FILTER CSS_BASE_FILES EXCLUDE REGEX ".min.css")
 FILE(GLOB STATIC_XML_FILES InterSpec_resources/static_text/*.xml )
 FILE(GLOB STATIC_HTML_TMPLTS_FILES InterSpec_resources/static_text/*.html )
 FILE(GLOB STATIC_ADD_XML_FILES InterSpec_resources/static_text/*/*.xml )

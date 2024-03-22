@@ -493,7 +493,7 @@ void PeakInfoDisplay::removeAllPeaks()
 
 void PeakInfoDisplay::assignNuclidesFromRefLines()
 {
-  PeakSearchGuiUtils::assign_peak_nuclides_from_reference_lines( m_viewer );
+  PeakSearchGuiUtils::assign_peak_nuclides_from_reference_lines( m_viewer, true, false );
 }//void assignNuclidesFromRefLines()
 
 

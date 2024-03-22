@@ -35,14 +35,34 @@
   justify-content: space-between;
 }
 
-.AssignToSelectedRow button.LightButton
+.AssignToSelectedRow .LightButton
 {
   height: 18px;
+  font-size: 10px;
+}
+
+.AssignToSelectedRow > .LightButton
+{
   margin-left: 2px;
   margin-right: 2px;
-  font-size: 0.75em;
-  padding-top: 1px;
 }
+
+.AssignToSelectedRow .LightButton.btn-group
+{
+  box-sizing: border-box;
+}
+
+.AssignToSelectedRow button.Wt-btn.LightButton:hover
+{
+  background-color: rgba(136, 136, 136, 0.08);
+}
+
+.AssignToSelectedRow button.Wt-btn.LightButton.dropdown-toggle.active
+{
+  background-color: rgba(136, 136, 136, 0.12);
+}
+
+
 
 .IsotopeSourceTypes
 {

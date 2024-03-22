@@ -127,6 +127,7 @@ class PeakSelectorWindow : public AuxWindow
   vector< shared_ptr<const ReferenceLineInfo>> m_displayed;
   vector<WCheckBox *> m_keep_peak_cbs;
   vector<WComboBox *> m_nuc_select_combos;
+  vector<WCheckBox *> m_dont_change_nuc_cbs;
   vector<bool> m_peak_updated;
   
   /** For each entry the first peak is a previously existing peak (before either
@@ -351,6 +352,7 @@ public:
     
     m_keep_peak_cbs.resize( m_old_to_new_peaks.size(), nullptr );
     m_nuc_select_combos.resize( m_old_to_new_peaks.size(), nullptr );
+    m_dont_change_nuc_cbs.resize( m_old_to_new_peaks.size(), nullptr );
     m_peak_updated.resize( m_old_to_new_peaks.size(), false );
     
     auto nucs_changed = [this]( size_t index ){
@@ -554,6 +556,15 @@ public:
         {
           m_nuc_select_combos[i] = new WComboBox(newNucCell);
           m_nuc_select_combos[i]->changed().connect( boost::bind( &PeakSelectorWindow::nucSelectChanged, this, i ) );
+          
+          m_dont_change_nuc_cbs[i] = new WCheckBox( "Don't assign", newNucCell );
+          m_dont_change_nuc_cbs[i]->addStyleClass( "DontAssignCb" );
+          
+          m_nuc_select_combos[i]->setInline( false );
+          m_dont_change_nuc_cbs[i]->setInline( false );
+          
+          m_dont_change_nuc_cbs[i]->checked().connect( boost::bind( &PeakSelectorWindow::dontChangeNucCbChanged, this, i ) );
+          m_dont_change_nuc_cbs[i]->unChecked().connect( boost::bind( &PeakSelectorWindow::dontChangeNucCbChanged, this, i ) );
         }else
         {
           const string origstr = makeSourceDesciption( m_old_to_new_peaks[i].second );
@@ -777,8 +788,12 @@ public:
         p = m_old_to_new_peaks[i].first;
       
       //Only consider normal nuclides, and normal gammas (n xrays, or escape peaks)
-      if( !p || !p->parentNuclide() || (p->sourceGammaType()!=PeakDef::NormalGamma) )
+      if( !p || !p->parentNuclide() 
+         || ((p->sourceGammaType() != PeakDef::NormalGamma)
+             && (p->sourceGammaType() != PeakDef::XrayGamma)) )
+      {
         continue;
+      }
       
       if( m_keep_peak_cbs[i] && !m_keep_peak_cbs[i]->isChecked() )
         continue;
@@ -797,7 +812,6 @@ public:
       {
         if( refline->m_nuclide == p->parentNuclide() )
         {
-          double intensity = 0.0;
           for( const ReferenceLineInfo::RefLine &line : refline->m_ref_lines )
           {
             // We only want x-rays and gammas to make rel-eff chart from
@@ -852,7 +866,7 @@ public:
         SandiaDecay::NuclideMixture mix;
         mix.addAgedNuclideByActivity( nuc, 0.01*SandiaDecay::curie, age );
       
-        for( const auto gamma : mix.gammas(0, SandiaDecay::NuclideMixture::OrderByEnergy, true ) )
+        for( const auto gamma : mix.photons(0, SandiaDecay::NuclideMixture::OrderByEnergy ) )
         {
           if( fabs(gamma.energy-photopeakEnergy) < 1.25*peakSigma )
             intensity += gamma.numPerSecond;
@@ -875,6 +889,8 @@ public:
     
     for( size_t i = 0; i < energies.size(); ++i )
       m_relEffModel->setData( static_cast<int>(i), 0, energies[i] );
+    
+    m_chart->setSeries( vector<Wt::Chart::WDataSeries *>{} ); //clear out all the old series.
     
     m_chart->setXSeriesColumn(0);
     m_relEffModel->setHeaderData(0, WString("Energy (keV)") );
@@ -914,11 +930,11 @@ public:
         }
       }
       
-      Wt::Chart::WDataSeries series( col, Chart::PointSeries, Chart::Y1Axis );
-      series.setMarkerBrush( WBrush(src_to_color[lp.first]) );
-      series.setMarkerPen( WPen(src_to_color[lp.first]) );
-      series.setMarker( markers[col%markers.size()] );
-      m_chart->addSeries( series );
+      auto series = make_unique<Wt::Chart::WDataSeries>( col, Chart::PointSeries, Chart::Y1Axis );
+      series->setMarkerBrush( WBrush(src_to_color[lp.first]) );
+      series->setMarkerPen( WPen(src_to_color[lp.first]) );
+      series->setMarker( markers[col%markers.size()] );
+      m_chart->addSeries( series.release() ); //m_chart takes ownership
     }//for( auto &lp : src_to_energy_eff )
   }//void refreshRelEffChart()
   
@@ -944,9 +960,9 @@ public:
   
   void updatePreviewPlot( size_t i )
   {
+    assert( i < m_old_to_new_peaks.size() );
     if( i >= m_old_to_new_peaks.size() || m_previewChartColumn < 0 )
       return;
-    
     
     auto finalpeak = m_old_to_new_peaks[i].second;
     auto originalpeak = m_old_to_new_peaks[i].first;
@@ -1235,7 +1251,10 @@ public:
   
   void nucSelectChanged( const size_t i )
   {
-    if( i >= m_nuc_select_combos.size() )  //shouldnt ever happen, but JIC
+    assert( i < m_dont_change_nuc_cbs.size() );
+    assert( m_nuc_select_combos.size() == m_dont_change_nuc_cbs.size() );
+    
+    if( (i >= m_nuc_select_combos.size()) || (i >= m_dont_change_nuc_cbs.size()) )  //shouldnt ever happen, but JIC
       return;
     
     //shared_ptr<PeakDef> &oldpeak = m_old_to_new_peaks[i].first;
@@ -1248,6 +1267,38 @@ public:
     assert( combo );
     if( !combo ) //shouldnt ever happen!
       return;
+    
+    WCheckBox *cb = m_dont_change_nuc_cbs[i];
+    const bool keepOriginal = (cb && cb->isChecked());
+    
+    if( keepOriginal )
+    {
+      
+      
+      switch( m_reason )
+      {
+        case PeakSelectorWindowReason::PeakSearch:
+        case PeakSelectorWindowReason::PeaksFromPreviousSpectum:
+        case PeakSelectorWindowReason::PeaksFromCsvFile:
+          newpeak->clearSources();
+          break;
+          
+        case PeakSelectorWindowReason::NuclideId:
+        {
+          shared_ptr<PeakDef> &oldpeak = m_old_to_new_peaks[i].first;
+          if( oldpeak )
+            newpeak->inheritUserSelectedOptions( *oldpeak, false );
+          break;
+        }
+      }//switch( m_reason )
+      
+      
+      updatePreviewPlot(i);
+      keepPeakChanged();
+      refreshRelEffChart();
+      return;
+    }//if( keepOriginal )
+    
     
     const int index = combo->currentIndex();
     
@@ -1329,6 +1380,35 @@ public:
     keepPeakChanged();
     refreshRelEffChart();
   }//void nucSelectChanged( const size_t i )
+  
+  
+  void dontChangeNucCbChanged( const size_t i )
+  {
+    assert( i < m_dont_change_nuc_cbs.size() );
+    assert( m_nuc_select_combos.size() == m_dont_change_nuc_cbs.size() );
+    if( (i >= m_nuc_select_combos.size()) || (i >= m_dont_change_nuc_cbs.size()) )  //shouldnt ever happen, but JIC
+      return;
+    
+    WComboBox *select = m_nuc_select_combos[i];
+    WCheckBox *cb = m_dont_change_nuc_cbs[i];
+    assert( select && cb );
+    
+    //We should only get here if select and cb are valid
+    if( select && cb )
+    {
+      select->setEnabled( !cb->isChecked() );
+      
+      if( cb->isChecked() 
+         && (i < m_old_to_new_peaks.size())
+         && m_old_to_new_peaks[i].first 
+         && !m_old_to_new_peaks[i].first->hasSourceGammaAssigned() )
+      {
+        select->setCurrentIndex( 0 );
+      }//
+    }//if( select && cb )
+    
+    nucSelectChanged( i );
+  }//void dontChangeNucCbChanged( const size_t i )
   
   
   void populateNuclideSelects()
@@ -1510,10 +1590,32 @@ public:
     
     for( size_t i = 0; i < m_old_to_new_peaks.size(); ++i )
     {
-      if( m_nuc_select_combos[i] && (m_nuc_select_combos[i]->currentIndex()<=0)
+      if( m_dont_change_nuc_cbs[i] && m_dont_change_nuc_cbs[i]->isChecked() )
+      {
+        if( m_old_to_new_peaks[i].first )
+        {
+          switch( m_reason )
+          {
+            case PeakSelectorWindowReason::NuclideId:
+            case PeakSelectorWindowReason::PeakSearch:
+              *m_old_to_new_peaks[i].second = *m_old_to_new_peaks[i].first;
+            break;
+            
+            case PeakSelectorWindowReason::PeaksFromPreviousSpectum:
+            case PeakSelectorWindowReason::PeaksFromCsvFile:
+              m_old_to_new_peaks[i].second->inheritUserSelectedOptions( *m_old_to_new_peaks[i].first, false );
+            break;
+          }//switch( m_reason )
+        }else
+        {
+          m_old_to_new_peaks[i].second->clearSources();
+          m_old_to_new_peaks[i].second->setLineColor( WColor() );
+        }
+      }else if( m_nuc_select_combos[i] && (m_nuc_select_combos[i]->currentIndex()<=0)
           && m_old_to_new_peaks[i].second && !m_table->rowAt(static_cast<int>(i+1))->isHidden() )
       {
         m_old_to_new_peaks[i].second->clearSources();
+        m_old_to_new_peaks[i].second->setLineColor( WColor() );
       }
       
       if( m_keep_peak_cbs[i] && !m_keep_peak_cbs[i]->isChecked() )
@@ -1894,7 +1996,7 @@ std::unique_ptr<std::pair<PeakModel::PeakShrdPtr,std::string>>
       // TODO: do we really need to use #PeakModel::setNuclideXrayReaction ?  We should be able to just directly set information
       PeakModel::setNuclideXrayReaction( peak, nuclide_label, -1.0 );
       
-      if( colorPeaksBasedOnReferenceLines && peak.lineColor().isDefault() )
+      if( colorPeaksBasedOnReferenceLines /* && peak.lineColor().isDefault() */ )
         peak.setLineColor( color );
     }//if( nuclide || reaction || element )
   }catch( std::exception &e )
@@ -2384,7 +2486,9 @@ void automated_search_for_peaks( InterSpec *viewer,
   
   
   
-void assign_peak_nuclides_from_reference_lines( InterSpec *viewer )
+void assign_peak_nuclides_from_reference_lines( InterSpec *viewer,
+                                               const bool only_peaks_with_no_src,
+                                               const bool only_current_ref_lines )
 {
   if( !viewer )
     return;
@@ -2410,9 +2514,10 @@ void assign_peak_nuclides_from_reference_lines( InterSpec *viewer )
   vector<ReferenceLineInfo> displayed;
   
   {
-    const ReferenceLineInfo &currentNuclide = refLineDisp->currentlyShowingNuclide();
-    displayed = refLineDisp->persistedNuclides();
+    if( !only_current_ref_lines )
+      displayed = refLineDisp->persistedNuclides();
     
+    const ReferenceLineInfo &currentNuclide = refLineDisp->currentlyShowingNuclide();
     if( currentNuclide.m_validity == ReferenceLineInfo::InputValidity::Valid )
       displayed.insert( displayed.begin(), currentNuclide );
   }
@@ -2421,7 +2526,8 @@ void assign_peak_nuclides_from_reference_lines( InterSpec *viewer )
   for( const PeakDef &p : peaks )
     resultpeaks->push_back( make_shared<PeakDef>(p) );
   
-  assign_srcs_from_ref_lines( foreground, resultpeaks, displayed, assignColor, showingEscapePeakFeature );
+  assign_srcs_from_ref_lines( foreground, resultpeaks, displayed, assignColor, 
+                             showingEscapePeakFeature, only_peaks_with_no_src );
   
   for( const auto &foundpeak : *resultpeaks )
   {
@@ -2554,7 +2660,7 @@ void search_for_peaks_worker( std::weak_ptr<const SpecUtils::Measurement> weak_d
   {
     *resultpeaks = ExperimentalAutomatedPeakSearch::search_for_peaks( data, drf, existingPeaks, singleThread );
     
-    assign_srcs_from_ref_lines( data, resultpeaks, displayed, setColor, false );
+    assign_srcs_from_ref_lines( data, resultpeaks, displayed, setColor, false, true );
   }catch( std::exception &e )
   {
     string msg = "InterSpec::search_for_peaks_worker(): caught exception: '";
@@ -2579,7 +2685,8 @@ void assign_srcs_from_ref_lines( const std::shared_ptr<const SpecUtils::Measurem
                                   std::shared_ptr<std::vector<std::shared_ptr<const PeakDef> > > resultpeaks,
                                   const vector<ReferenceLineInfo> &displayed,
                                   const bool setColor,
-                                  const bool showingEscapePeakFeature )
+                                  const bool showingEscapePeakFeature,
+                                  const bool only_peaks_with_no_src )
 {
   if( !resultpeaks || !data )
     return;
@@ -2589,7 +2696,7 @@ void assign_srcs_from_ref_lines( const std::shared_ptr<const SpecUtils::Measurem
   
   for( const auto &p : *resultpeaks )
   {
-    if( p->parentNuclide() || p->xrayElement() || p->reaction() )
+    if( only_peaks_with_no_src && p->hasSourceGammaAssigned() )
       answerpeaks->push_back( p );
     else
       unassignedpeaks.push_back( make_shared<PeakDef>( *p ) );
@@ -2608,7 +2715,8 @@ void assign_srcs_from_ref_lines( const std::shared_ptr<const SpecUtils::Measurem
   
   for( shared_ptr<PeakDef> peak : unassignedpeaks )
   {
-    auto addswap = assign_nuc_from_ref_lines( *peak, answerpeaks, data, displayed, setColor, showingEscapePeakFeature );
+    unique_ptr<pair<PeakModel::PeakShrdPtr,string>> addswap
+           = assign_nuc_from_ref_lines( *peak, answerpeaks, data, displayed, setColor, showingEscapePeakFeature );
     
     if( addswap )  //The assignment caused a better assignment to be made for a previously existing peak.
     {

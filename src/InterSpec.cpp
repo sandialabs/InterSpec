@@ -69,7 +69,6 @@
 #include <Wt/WJavaScript>
 #include <Wt/WApplication>
 #include <Wt/WEnvironment>
-#include <Wt/WSplitButton>
 #include <Wt/WBorderLayout>
 #include <Wt/WSelectionBox>
 #include <Wt/WCssStyleSheet>

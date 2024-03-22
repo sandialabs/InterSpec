@@ -86,11 +86,15 @@ void fit_peak_from_double_click( InterSpec *interspec,
 void automated_search_for_peaks( InterSpec *interspec, const bool keep_old_peaks );
 
 
-/** For all peaks currently fit for, that do not already have a
-   nuclide/xray/reaction assigned, it attempts to assign them a source
-   based on currently showing reference lines.
+/** For all peaks currently fit for, this function attempts to assign them a source
+ based on currently showing reference lines.
+ 
+ @param only_peaks_with_no_src If true, only consider peaks that do not currently have an assigned nuclide/x-ray/reaction.
+ @param only_current_ref_lines If true, then only use the current (e.g., top-most) reference lines, and not the "persisted" lines.
 */
-void assign_peak_nuclides_from_reference_lines( InterSpec *viewer );
+void assign_peak_nuclides_from_reference_lines( InterSpec *viewer,
+                                               const bool only_peaks_with_no_src,
+                                               const bool only_current_ref_lines );
   
 /** Attempts to assign a nuclide/xray/reaction from the currently displayed
    reference gamma lines.  This is called for instance when you are showing
@@ -126,15 +130,18 @@ void search_for_peaks_worker( std::weak_ptr<const SpecUtils::Measurement> weak_d
                                const bool singleThread);
   
 /** Assigns peak nuclides/xrays/reactions from the reference photopeak lines by
-   modifying the peaks passed in.  If a peak already has a nuclide set, it wont
-   be changed unless a new peak is a better candidate for it, and there is
-   another ref line that explains it.
+   modifying the peaks passed in.  
+ 
+ @param only_peaks_with_no_src If false, If a peak already has a nuclide set, it wont be changed unless a new peak is a
+        better candidate for it, and there is another ref line that explains it.  If true, peaks with any nuclide/x-ray-reaction assigned
+        will be skipped.
  */
 void assign_srcs_from_ref_lines( const std::shared_ptr<const SpecUtils::Measurement> &data,
                                  std::shared_ptr<std::vector<std::shared_ptr<const PeakDef> > > peaks,
                                 const std::vector<ReferenceLineInfo> &displayed,
                                  const bool setColor,
-                                const bool showingEscapePeakFeature );
+                                const bool showingEscapePeakFeature,
+                                const bool only_peaks_with_no_src );
   
 /** Refits the peaks from a right-click refit request.
  Assumes you are in the Wt app primary thread.
