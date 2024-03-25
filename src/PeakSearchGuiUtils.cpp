@@ -702,9 +702,15 @@ public:
     set<const SandiaDecay::Nuclide *> new_peak_nucs;
     for( const auto &old_new : m_old_to_new_peaks )
     {
-      if( !old_new.first && eligible_for_rel_eff_chart(old_new.second) )
+      // The new peak should be eligible to be in the Rel. Eff. chart, and the nuclide, or at least
+      //   the specifically attributed gamma/x-ray, should have changed.
+      if( eligible_for_rel_eff_chart(old_new.second)
+         && (!old_new.first
+             || (old_new.first->decayParticle() != old_new.second->decayParticle()) ) )
+      {
         new_peak_nucs.insert( old_new.second->parentNuclide() );
-    }
+      }
+    }//for( const auto &old_new : m_old_to_new_peaks )
     
     map<const SandiaDecay::Nuclide *, size_t> num_peaks;
     for( size_t i = 0; i < m_old_to_new_peaks.size(); ++i )
@@ -753,9 +759,12 @@ public:
     set<const SandiaDecay::Nuclide *> new_peak_nucs;
     for( const auto &old_new : m_old_to_new_peaks )
     {
-      if( !old_new.first && eligible_for_rel_eff_chart(old_new.second) )
+      if( eligible_for_rel_eff_chart(old_new.second) 
+         && (!old_new.first || (old_new.first->decayParticle() != old_new.second->decayParticle()) ))
+      {
         new_peak_nucs.insert( old_new.second->parentNuclide() );
-    }
+      }
+    }//for( const auto &old_new : m_old_to_new_peaks )
     
     vector<RelActCalcManual::GenericPeakInfo> peaks;
     map<string,pair<double,std::string>> relActsColors;  //maps source --> {rel-act,color}
