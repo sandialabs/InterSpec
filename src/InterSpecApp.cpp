@@ -44,40 +44,29 @@
 
 #include <Wt/WText>
 #include <Wt/WTimer>
-#include <Wt/WLabel>
 #include <Wt/WServer>
-#include <Wt/WCheckBox>
-#include <Wt/WIOService>
-#include <Wt/WFitLayout>
-#include <Wt/WFileUpload>
 #include <Wt/WGridLayout>
-#include <Wt/WPushButton>
 #include <Wt/WApplication>
 #include <Wt/WEnvironment>
-#include <Wt/WProgressBar>
-#include <Wt/WBorderLayout>
-#include <Wt/WBootstrapTheme>
 #include <Wt/WContainerWidget>
-#include <Wt/WContainerWidget>
-#include <Wt/WStandardItemModel>
-#include <Wt/Chart/WCartesianChart>
-#include <Wt/WMessageResourceBundle>
+
+#if( PROMPT_USER_BEFORE_LOADING_PREVIOUS_STATE )
+#include <Wt/WLabel>
+#include <Wt/WCheckBox>
+#include <Wt/WPushButton>
+#endif
 
 #include "SpecUtils/DateTime.h"
+#include "SpecUtils/SpecFile.h"
 #include "SpecUtils/Filesystem.h"
 #include "SpecUtils/StringAlgo.h"
 
-#include "InterSpec/PopupDiv.h"
+#include "InterSpec/AuxWindow.h"
 #include "InterSpec/InterSpec.h"
 #include "InterSpec/InterSpecApp.h"
 #include "InterSpec/InterSpecUser.h"
 #include "InterSpec/DataBaseUtils.h"
 #include "InterSpec/WarningWidget.h"
-#include "InterSpec/SpectrumChart.h"
-#include "InterSpec/ReactionGamma.h"
-#include "InterSpec/SpecMeasManager.h"
-#include "InterSpec/DecayDataBaseServer.h"
-#include "InterSpec/ShowRiidInstrumentsAna.h"
 
 #if( BUILD_AS_ELECTRON_APP )
 #include "target/electron/ElectronUtils.h"

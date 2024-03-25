@@ -57,5 +57,22 @@ table.PeakSelectorTable td.NewNucCell .DontAssignCb{
 .KeepRefLinPeaksOnlyCb{
 }
 
+.Wt-panel.PeakSelectRelEffPanel{
+  border-width: 1px;
+  border-radius: 3px;
+  margin-top: 5px;
+  margin-left: 5px;
+  margin-right: 5px;
+}
 
+.Wt-panel.PeakSelectRelEffPanel .titlebar{
+  height: 20px;
+  display: flex;
+  align-items: center;
+  padding-top: 1px;
+  padding-bottom: 1px;
+}
 
+.Wt-panel.PeakSelectRelEffPanel .titlebar span {
+  display: flex;
+}
