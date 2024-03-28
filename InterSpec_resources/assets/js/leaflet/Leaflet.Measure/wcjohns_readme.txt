@@ -1,0 +1,1 @@
+wcjohns downloaded from https://github.com/ptma/Leaflet.Measure/tree/master on 20240328, corresponding to git hash 20e0e7d9d46255f256b7343197aaf97a5eadbcc4.

@@ -102,6 +102,8 @@ LeafletRadMap = function (elem,options) {
   
   L.control.scale({metric: true, imperial: false, position: 'bottomleft'}).addTo(this.map);
   
+  L.control.measure({position: "bottomleft"}).addTo(this.map);
+  
   this.markerGradientStops = {
     0.4: 'blue',
     0.6: 'cyan',
