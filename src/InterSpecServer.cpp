@@ -289,6 +289,7 @@ namespace InterSpecServer
       ns_server->ioService().boost::asio::io_service::post( &DecayDataBaseServer::initialize );
       
       const int port = ns_server->httpPort();
+	  // FIXME
       std::string this_url = "http://127.0.0.1:" + boost::lexical_cast<string>(port);
       
       {
@@ -307,10 +308,8 @@ namespace InterSpecServer
   void startWebServer( string name,
                              std::string basedir,
                              const std::string xml_config_path,
-                             unsigned short int server_port_num
-#if( BUILD_FOR_WEB_DEPLOYMENT )
-                             , string http_address
-#endif
+                             unsigned short int server_port_num,
+                             string http_address
                              )
   {
     std::lock_guard<std::mutex> serverlock( ns_servermutex );
@@ -331,10 +330,12 @@ namespace InterSpecServer
     ns_server = new Wt::WServer( name, xml_config_path );
     char *exe_param_name  = &(name[0]);
     char httpaddr_param_name[]  = "--http-addr";
-    
+
 #if( BUILD_FOR_WEB_DEPLOYMENT )
     char *httpaddr_param_value  = &(http_address[0]);
 #else
+    if (http_address.length() && http_address != "127.0.0.1" && http_address != "localhost")
+      throw std::runtime_error( "Only localhost listen address is allowed with this configuration" );
     char httpaddr_param_value[] = "127.0.0.1";
 #endif
     
@@ -393,10 +394,8 @@ int start_server( const char *process_name,
                   const char *userdatadir,
                   const char *basedir,
                   const char *xml_config_path,
-                  unsigned short int server_port
-#if( BUILD_FOR_WEB_DEPLOYMENT )
-                  , const char *http_address
-#endif
+                  unsigned short int server_port,
+                  const char *http_address
                   )
 {
   //Using a relative path should get us in less trouble than an absolute path
@@ -547,7 +546,7 @@ int start_server( const char *process_name,
 
   try
   {
-    InterSpecServer::startWebServer( process_name, relbasedir, wt_config_file, server_port );
+    InterSpecServer::startWebServer( process_name, relbasedir, wt_config_file, server_port, http_address);
   }catch( std::exception &e )
   {
     std::cerr << "\n\nCaught exception trying to start InterSpec server:\n\t"

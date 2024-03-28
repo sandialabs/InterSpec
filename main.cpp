@@ -77,9 +77,9 @@ int main( int argc, char **argv )
   
   int server_port_num;
   std::string docroot, wt_config, user_data_dir;
+  std::string http_address = "127.0.0.1";  //Init to reasonable default
   
 #if( BUILD_FOR_WEB_DEPLOYMENT )
-  std::string http_address = "127.0.0.1";
   static_assert( !BUILD_AS_LOCAL_SERVER, "Web and local server should not both be enabled");
 #endif
   
@@ -93,11 +93,13 @@ int main( int argc, char **argv )
   ("help,h",  "produce this help message")
   ("http-port", po::value<int>(&server_port_num)->default_value(8080),
    "The HTTP port to bind the web-server too.  Ports below 1024 are not recommended, and require elevated privileges.")
-#if( BUILD_FOR_WEB_DEPLOYMENT )
   ( "http-address", po::value<std::string>(&http_address),
-   "The network HTTP address to bind the web-server too; '127.0.0.1' is localhost, while '0.0.0.0' will serve the web-app to the external network."
-   )
+#if( BUILD_FOR_WEB_DEPLOYMENT )
+   "The network HTTP address where the web server listens; '127.0.0.1' is localhost, while '0.0.0.0' will serve the web-app to the external network."
+#else
+   "This build listens on localhost only; it is not necessary to specify this parameter."
 #endif
+   )
   ("userdatadir", po::value<std::string>(&user_data_dir),
    "The directory to store user data to, or to look in for custom user data (serial_to_model.csv, etc)."
    )
@@ -156,20 +158,21 @@ int main( int argc, char **argv )
   
   
 #if( BUILD_FOR_WEB_DEPLOYMENT )
-  if( cl_vm.count("config") )
+  std::cerr << "Web Deployment Enabled. This build may accept remote connections." << std::endl;
+
+  if( 0 == cl_vm.count("config") )
   {
     std::cerr << "You must specify the Wt config file to use (the 'config' option)" << std::endl;
     return -20;
   }
   
-  if( cl_vm.count("http-address") )
+  if( 0 == cl_vm.count("http-address") )
   {
-    std::cerr << "You must specify the network adapter address to bind to"
-    << " (the 'http-address' option)." << std::endl;
-    return -21;
+    std::cerr << "No listen address specified, listening on " << http_address << ". Use the "
+	<<"'http-address' option to change this." << std::endl;
   }
   
-  if( cl_vm.count("docroot") )
+  if( 0 == cl_vm.count("docroot") )
   {
     std::cerr << "You must specify the HTTP document root directory to use (the 'docroot' option)" << std::endl;
     return -22;
@@ -288,7 +291,8 @@ int main( int argc, char **argv )
   const int rval = InterSpecServer::start_server( argv[0], user_data_dir.c_str(),
                                                  docroot.c_str(),
                                                  wt_config.c_str(),
-                                                 static_cast<short int>(server_port_num) );
+                                                 static_cast<short int>(server_port_num),
+                                                 http_address.c_str());
   if( rval < 0 )
   {
     std::cerr << "Failed to start server, val=" << rval << std::endl;
