@@ -1953,7 +1953,10 @@ std::set<std::set<int> > SpecMeas::sampleNumsWithPeaks() const
   if( !m_peaks )
     return answer;
   for( const SampleNumsToPeakMap::value_type &t : *m_peaks )
-    answer.insert( t.first );
+  {
+    if( t.second && !t.second->empty() )
+      answer.insert( t.first );
+  }
   return answer;
 }//sampleNumsWithPeaks() const
 

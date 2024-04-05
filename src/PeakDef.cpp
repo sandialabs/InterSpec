@@ -2991,7 +2991,7 @@ std::string PeakDef::gaus_peaks_to_json(const std::vector<std::shared_ptr<const 
       }//switch( t )
       
       double coef = p.coefficient(t), uncert = p.uncertainty(t);
-      assert( !IsInf(coef) && !IsNan(coef) );
+      assert( !IsInf(coef) && !IsNan(coef) || (t == PeakDef::Chi2DOF) ); // PeakDef::Chi2DOF may be +inf, if it wasnt evaluated
       if( IsInf(coef) || IsNan(coef) )
       {
         //throw runtime_error( "Peak ceoff is inf or nan" );

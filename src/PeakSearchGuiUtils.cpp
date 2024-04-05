@@ -983,6 +983,9 @@ public:
     //  peak colors, and maybe the displayed width.
     
     
+    /*
+     // The SVG renderer for Wt 3.7.1 appears to glitch-up sometimes, so instead of using SVG,
+     //  we'll display a full SpectrumChart.
     std::shared_ptr<WSvgImage> svg = PeakSearchGuiUtils::renderChartToSvg( m_data, peaks_for_plotting, m_displayed, lowerx, upperx, 225, 125, theme, true );
     if( svg )
     {
@@ -994,6 +997,39 @@ public:
         preview->addStyleClass( "PeakPreviewCell" );
       new WText( strm.str(), Wt::XHTMLUnsafeText, preview );
     }
+     */
+    
+    
+    SpectrumChart *chart = PeakSearchGuiUtils::createFixedSpectrumDisplay( m_data,
+                                                    peaks_for_plotting, m_displayed,
+                                                    lowerx, upperx,
+                                                    225, 125, theme );
+    if( chart )
+    {
+#if( !DYNAMICALLY_ADJUST_LEFT_CHART_PADDING )
+      chart->setPlotAreaPadding( 14, Wt::Left );
+#endif
+      chart->setPlotAreaPadding( 22, Wt::Bottom );
+      chart->setPlotAreaPadding( 0, Wt::Right );
+      chart->setPlotAreaPadding( 0, Wt::Top );
+      
+      WFont labelFont( WFont::Default );
+      labelFont.setSize(WFont::Size::XXSmall);
+      chart->axis(Chart::XAxis).setLabelFont( labelFont );
+      
+      // The y-axis label font doesnt seem to be respected (and instead a 10pt font is always used)
+      //  Rendering the axis is done in SpectrumChart.cpp, and it isnt clear what the problem is,
+      //  so we'll just leave off the y-axis labels for now.  Not a great solution, but its time
+      //  to move on to more effective ways to spend time.
+      chart->axis(Chart::YAxis).setLabelFont( labelFont ); //doesnt seem to be obeyed
+      chart->axis(Chart::YAxis).setLabelFormat( " " );
+      
+      WTableCell *preview = m_table->elementAt( static_cast<int>(i+1), m_previewChartColumn );
+      preview->clear();
+      if( !preview->hasStyleClass("PeakPreviewCell") )
+        preview->addStyleClass( "PeakPreviewCell" );
+      preview->addWidget( chart );
+    }//if( previewChart )
   }//void updatePreviewPlot( size_t i )
   
   
@@ -2099,52 +2135,53 @@ void set_peaks_from_search( InterSpec *viewer,
 
 namespace PeakSearchGuiUtils
 {
-  
-  std::shared_ptr<WSvgImage> renderChartToSvg( std::shared_ptr<const SpecUtils::Measurement> inmeas,
-                                              std::shared_ptr<const std::deque<std::shared_ptr<const PeakDef> > > peaks,
-                                              const std::vector<std::shared_ptr<const ReferenceLineInfo>> &displayed,
-                                              double lowx, double upperx,
-                                              const int width, const int height,
-                                              std::shared_ptr<const ColorTheme> theme,
-                                              const bool compact )
+  /* Setups a static, fixed chart for display.
+   
+   You must either put the result into the widget hierarchy, or delete it.
+   */
+  SpectrumChart *createFixedSpectrumDisplay( std::shared_ptr<const SpecUtils::Measurement> inmeas,
+                            std::shared_ptr<const std::deque<std::shared_ptr<const PeakDef> > > peaks,
+                            const std::vector<std::shared_ptr<const ReferenceLineInfo>> &displayed,
+                            double lowx, double upperx,
+                            const int width, const int height,
+                            std::shared_ptr<const ColorTheme> theme )
   {
     if( !inmeas )
       return nullptr;
     
     auto meas = std::make_shared<SpecUtils::Measurement>( *inmeas );
-    
-    std::shared_ptr<Wt::WSvgImage> img
-    = std::make_shared<WSvgImage>( width, height );
     std::shared_ptr<SpecMeas> specmeas = std::make_shared<SpecMeas>();
     specmeas->add_measurement( meas, true );
     if( peaks )
       specmeas->setPeaks( *peaks, specmeas->sample_numbers() );
     
-    PeakModel peakmodel;
-    SpectrumDataModel dataModel;
-    SpectrumChart chart;
+    std::unique_ptr<SpectrumChart> chart( new SpectrumChart() );
+    chart->setWidth( width );
+    chart->setHeight( height );
+    PeakModel *peakmodel = new PeakModel( chart.get() );
+    SpectrumDataModel *dataModel = new SpectrumDataModel( chart.get() );
     
-    chart.setModel( &dataModel );
-    chart.setPeakModel( &peakmodel );
-    peakmodel.setDataModel( &dataModel );
-    peakmodel.setPeakFromSpecMeas( specmeas, specmeas->sample_numbers() );
+    chart->setModel( dataModel );
+    chart->setPeakModel( peakmodel );
+    peakmodel->setDataModel( dataModel );
+    peakmodel->setPeakFromSpecMeas( specmeas, specmeas->sample_numbers() );
     
-    dataModel.setDataHistogram( meas );
+    dataModel->setDataHistogram( meas );
     
-    const vector<Chart::WDataSeries> series = dataModel.suggestDataSeries();
-    chart.setSeries( series );
+    const vector<Chart::WDataSeries> series = dataModel->suggestDataSeries();
+    chart->setSeries( series );
     
     //chart.enableLegend( true );
     
-    chart.axis(Chart::YAxis).setScale( Chart::LogScale );
+    chart->axis(Chart::YAxis).setScale( Chart::LogScale );
     
     for( size_t i = displayed.size(); i > 1; --i )
     {
-      chart.setReferncePhotoPeakLines( *displayed[i-1] );
-      chart.persistCurrentReferncePhotoPeakLines();
+      chart->setReferncePhotoPeakLines( *displayed[i-1] );
+      chart->persistCurrentReferncePhotoPeakLines();
     }
     if( !displayed.empty() )
-      chart.setReferncePhotoPeakLines( *displayed[0] );
+      chart->setReferncePhotoPeakLines( *displayed[0] );
     
     
     if( meas && (fabs(upperx-lowx) < 0.000001) )
@@ -2154,54 +2191,75 @@ namespace PeakSearchGuiUtils
       upperx = meas->gamma_channel_upper( nchannel - 1 );
     }//if( lowx == upperx )
     
-    chart.setXAxisRange( lowx, upperx );
-    
-    if( compact )
-    {
-      chart.axis(Chart::XAxis).setTitle("");
-      chart.axis(Chart::YAxis).setTitle("");
-      //chart.setLeftYAxisPadding(double width, <#double height#>)
-      chart.setPlotAreaPadding( 35, Wt::Left );
-      chart.setPlotAreaPadding( 16, Wt::Bottom );
-      chart.setPlotAreaPadding( 0, Wt::Right );
-      chart.setPlotAreaPadding( 0, Wt::Top );
-      
-      WFont labelFont( WFont::Default );
-      labelFont.setSize(8);
-      chart.axis(Chart::XAxis).setLabelFont( labelFont );
-      chart.axis(Chart::YAxis).setLabelFont( labelFont );
-    }//if( compact )
+    chart->setXAxisRange( lowx, upperx );
     
     const size_t displayednbin = meas->find_gamma_channel( upperx )
-    - meas->find_gamma_channel( lowx );
-    const int plotAreaWidth = static_cast<int>( img->width().toPixels() )
-    - chart.plotAreaPadding(Left)
-    - chart.plotAreaPadding(Right);
+                              - meas->find_gamma_channel( lowx );
+    const int plotAreaWidth = width 
+                              - chart->plotAreaPadding(Left)
+                              - chart->plotAreaPadding(Right);
     const float bins_per_pixel = float(displayednbin) / float(plotAreaWidth);
     const int factor = max( static_cast<int>(ceil(bins_per_pixel)), 1 );
     
-    dataModel.setRebinFactor( factor );
+    dataModel->setRebinFactor( factor );
     
-    chart.setAutoYAxisRange();
+    chart->setAutoYAxisRange();
     
     if( theme )
     {
-      dataModel.setForegroundSpectrumColor( theme->foregroundLine );
-      dataModel.setBackgroundSpectrumColor( theme->backgroundLine );
-      dataModel.setSecondarySpectrumColor( theme->secondaryLine );
-      chart.setSeries( dataModel.suggestDataSeries() );
+      dataModel->setForegroundSpectrumColor( theme->foregroundLine );
+      dataModel->setBackgroundSpectrumColor( theme->backgroundLine );
+      dataModel->setSecondarySpectrumColor( theme->secondaryLine );
+      chart->setSeries( dataModel->suggestDataSeries() );
       
-      chart.setDefaultPeakColor( theme->defaultPeakLine );
+      chart->setDefaultPeakColor( theme->defaultPeakLine );
       
-      chart.setAxisLineColor( theme->spectrumAxisLines );
-      chart.setChartMarginColor( theme->spectrumChartMargins );
-      chart.setChartBackgroundColor( theme->spectrumChartBackground );
-      chart.setTextColor( theme->spectrumChartText );
+      chart->setAxisLineColor( theme->spectrumAxisLines );
+      chart->setChartMarginColor( theme->spectrumChartMargins );
+      chart->setChartBackgroundColor( theme->spectrumChartBackground );
+      chart->setTextColor( theme->spectrumChartText );
     }//if( theme )
     
+  
+    return chart.release();
+  }//createFixedSpectrumDisplay(...)
+  
+  
+  std::shared_ptr<WSvgImage> renderChartToSvg( std::shared_ptr<const SpecUtils::Measurement> inmeas,
+                                              std::shared_ptr<const std::deque<std::shared_ptr<const PeakDef> > > peaks,
+                                              const std::vector<std::shared_ptr<const ReferenceLineInfo>> &displayed,
+                                              double lowx, double upperx,
+                                              const int width, const int height,
+                                              std::shared_ptr<const ColorTheme> theme,
+                                              const bool compact )
+  {
+    SpectrumChart *chart = createFixedSpectrumDisplay( inmeas, peaks, displayed, lowx, upperx,
+                              width, height, theme );
+    if( !chart )
+      return nullptr;
+    
+    unique_ptr<SpectrumChart> chart_holder(chart);
+    
+    if( compact )
+    {
+      chart->axis(Chart::XAxis).setTitle("");
+      chart->axis(Chart::YAxis).setTitle("");
+      //chart->setLeftYAxisPadding(double width, <#double height#>)
+      chart->setPlotAreaPadding( 35, Wt::Left );
+      chart->setPlotAreaPadding( 16, Wt::Bottom );
+      chart->setPlotAreaPadding( 0, Wt::Right );
+      chart->setPlotAreaPadding( 0, Wt::Top );
+      
+      WFont labelFont( WFont::Default );
+      labelFont.setSize(8);
+      chart->axis(Chart::XAxis).setLabelFont( labelFont );
+      chart->axis(Chart::YAxis).setLabelFont( labelFont );
+    }//if( compact )
+    
+    shared_ptr<Wt::WSvgImage> img = make_shared<WSvgImage>( width, height );
     
     WPainter p( img.get() );
-    chart.paint( p );
+    chart->paint( p );
     p.end();
     
     return img;
@@ -2598,7 +2656,7 @@ void assign_nuclide_from_reference_lines( PeakDef &peak,
     return;
   
   std::shared_ptr<const deque< PeakModel::PeakShrdPtr > > previouspeaks = peakModel->peaks();
-  if( !previouspeaks )  //probably never necassary, but JIC
+  if( !previouspeaks )  //probably never necessary, but JIC
     previouspeaks = std::make_shared<deque< PeakModel::PeakShrdPtr > >();
   
   unique_ptr<pair<PeakModel::PeakShrdPtr,std::string>> addswap

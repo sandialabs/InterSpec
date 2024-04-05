@@ -490,7 +490,7 @@ public:
           // Dont write the detector name if its unambiguous
           const string detname = (gamma_detectors.size() == 1) ? string() : det;
           
-          if( EnergyCal::write_CALp_file(response.out(), cal, detname) )
+          if( SpecUtils::write_CALp_file(response.out(), cal, detname) )
           {
             dets_so_far.insert( det );
           }else
@@ -523,7 +523,7 @@ public:
               continue;
             }//if( energy cal is not valid )
             
-            if( EnergyCal::write_CALp_file(response.out(), cal, det) )
+            if( SpecUtils::write_CALp_file(response.out(), cal, det) )
             {
               dets_so_far.insert( det );
             }else
@@ -2545,7 +2545,23 @@ void EnergyCalTool::applyCalChange( std::shared_ptr<const SpecUtils::EnergyCalib
     
     // Now go through and translate the peaks, but we wont actually update them to the SpecMeas
     //  until we know we can update all the peaks
-    const set<set<int>> peaksamples = change.meas->sampleNumsWithPeaks();
+    
+    const set<set<int>> samples_with_peaks = change.meas->sampleNumsWithPeaks();
+    
+    // We may not be updating all samples, so we will only update peaks who are owned
+    //  by sample numbers that are all in the samples being updated.
+    set<set<int>> peaksamples;
+    
+    for( const set<int> &samples : samples_with_peaks )
+    {
+      bool all_samples = true;
+      for( const int sample : change.sample_numbers )
+        all_samples = (all_samples && samples.count(sample));
+      
+      if( all_samples )
+        peaksamples.insert( samples );
+    }//for( const set<int> &samples : samples_with_peaks )
+    
     
     // The peaks position (i.e., mean channel number) is determined by
     //  #SpecFile::suggested_sum_energy_calibration, however we may be applying an energy

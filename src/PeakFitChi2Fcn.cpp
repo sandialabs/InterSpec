@@ -1146,6 +1146,15 @@ void MultiPeakFitChi2Fcn::parametersToPeaks( vector<PeakDef> &peaks,
     else
       sigma = -x[m_numOffset + 3*peakn + 0];
 
+    if( IsInf(sigma) || IsNan(sigma) )
+      throw runtime_error( "MultiPeakFitChi2Fcn::parametersToPeaks: Invalid peak sigma." );
+    
+    if( IsInf(centroid) || IsNan(centroid) )
+      throw runtime_error( "MultiPeakFitChi2Fcn::parametersToPeaks: Invalid peak centroid." );
+    
+    if( IsInf(amplitude) || IsNan(amplitude) )
+      throw runtime_error( "MultiPeakFitChi2Fcn::parametersToPeaks: Invalid peak amplitude." );
+    
     peak.setSigma( sigma );
     peak.setMean( centroid );
     peak.setAmplitude( amplitude );
@@ -1206,8 +1215,12 @@ void MultiPeakFitChi2Fcn::parametersToPeaks( vector<PeakDef> &peaks,
     
     for( size_t i = 0; i < nskew; ++i )
     {
+      const double val = x[ncont + i];
+      if( IsInf(val) || IsNan(val) )
+        throw runtime_error( "MultiPeakFitChi2Fcn::parametersToPeaks: Invalid skew parameter value." );
+      
       const auto par_type = static_cast<PeakDef::CoefficientType>( PeakDef::CoefficientType::SkewPar0 + i );
-      peak.set_coefficient( x[ncont + i], par_type );
+      peak.set_coefficient( val, par_type );
       if( errors )
         peak.set_uncertainty( errors[ncont + i], par_type );
     }//for( size_t i = 0; i < nskew; ++i )    
@@ -1260,6 +1273,9 @@ void MultiPeakFitChi2Fcn::parametersToPeaks( vector<PeakDef> &peaks,
       const ublas::vector<double> a = prod( finv, b );
       for( int i = 0; i < m_npeak; ++i )
       {
+        if( IsInf(a(i)) || IsNan(a(i)) )
+          throw runtime_error( "MultiPeakFitChi2Fcn::parametersToPeaks: Invalid computed peak area." );
+        
         peaks[i].setAmplitude( a(i) );
 //        cerr << "Setting candidate peak amplitude to " << a(i)
 //             << " (would have set to " << (b(i) / f(i,i)) << ")" << endl;

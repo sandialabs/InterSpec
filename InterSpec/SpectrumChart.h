@@ -61,7 +61,7 @@ class PeakModel;
 //See comments about SpectrumChart::setLeftYAxisPadding() for what
 //  DYNAMICALLY_ADJUST_LEFT_CHART_PADDING controls.  This feature has not
 //  been tested well enough to fully use yet, although it seems to work well.
-#define DYNAMICALLY_ADJUST_LEFT_CHART_PADDING 1
+#define DYNAMICALLY_ADJUST_LEFT_CHART_PADDING 0
 
 class SeriesRenderer;
 class LabelRenderIterator;

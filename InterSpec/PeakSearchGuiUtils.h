@@ -38,10 +38,14 @@ class PeakDef;
 class PeakModel;
 class InterSpec;
 struct ColorTheme;
-namespace SpecUtils{ class Measurement; }
+class SpectrumChart;
 struct ReferenceLineInfo;
 class DetectorPeakResponse;
 class ReferencePhotopeakDisplay;
+
+namespace SpecUtils{
+  class Measurement;
+}
 
 namespace Wt{
   class WSvgImage;
@@ -73,6 +77,17 @@ std::shared_ptr<Wt::WSvgImage> renderChartToSvg( std::shared_ptr<const SpecUtils
                                               const int width_px, const int height_px,
                                               std::shared_ptr<const ColorTheme> theme,
                                                 const bool compact );
+
+/** Same as `renderChartToSvg(...)`, but returns  a `SpectrumChart` that may be painted in a <canvas/> element,
+ or whatever.
+ (note: Wt 3.7.1 seems to have a issue in rendering to SVG, where sometimes there will be lines and artifacts, so this is a workaround)
+ */
+SpectrumChart *createFixedSpectrumDisplay( std::shared_ptr<const SpecUtils::Measurement> inmeas,
+                            std::shared_ptr<const std::deque<std::shared_ptr<const PeakDef> > > peaks,
+                            const std::vector<std::shared_ptr<const ReferenceLineInfo>> &displayed,
+                            double lowx, double upperx,
+                            const int width, const int height,
+                            std::shared_ptr<const ColorTheme> theme );
   
 /** Function that is called when the user double-left-clicks on the spectrum.
  */

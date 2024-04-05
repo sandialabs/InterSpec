@@ -2088,14 +2088,14 @@ void D3SpectrumDisplayDiv::performDragCreateRoiWork( double lower_energy, double
       //     << " cpu seconds, and " << (stop_wall_time-start_wall_time)
       //     << " wall seconds" << endl;
       
-      //pick the best chi2, but have some weighting to preffer less numbers of peaks
-      size_t best_choice = 0;
+      //pick the best chi2, but have some weighting to prefer less numbers of peaks
+      int best_choice = -1;
       for( size_t i = 0; i < chi2s.size(); ++i )
       {
         if( results[i].empty() )
           continue;
         
-        const int npeaksdiff = npeakstry[i] - npeakstry[best_choice];
+        const int npeaksdiff = npeakstry[i] - ((best_choice >= 0) ? npeakstry[best_choice] : 0);
         
         //Require at least 10% better chi2 for each peak you want to add
         //  - this was completely drawn from the air - needs actual testing/optimizing.
@@ -2107,13 +2107,16 @@ void D3SpectrumDisplayDiv::performDragCreateRoiWork( double lower_energy, double
         //     << endl;
         
         
-        if( chi2s[i] < weight*chi2s[best_choice] )
-          best_choice = i;
+        if( !IsNan(chi2s[i]) && !IsInf(chi2s[i]) 
+           && ((best_choice < 0) || (chi2s[i] < weight*chi2s[best_choice])) )
+        {
+          best_choice = static_cast<int>(i);
+        }
       }//for( loop over results to find best number of peaks )
       
       //cout << "Chose " << npeakstry[best_choice] << " peaks" << endl;
       
-      if( results[best_choice].empty() )
+      if( (best_choice < 0) || results[best_choice].empty() )
         throw runtime_error( "Failed to fit for peaks." );
       
       WApplication::UpdateLock lock( app );

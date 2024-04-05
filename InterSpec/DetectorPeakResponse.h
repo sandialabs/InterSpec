@@ -112,8 +112,18 @@ public:
   enum ResolutionFnctForm
   {
     kGadrasResolutionFcn, //See peakResolutionFWHM() implementation
-    kSqrtPolynomial,  //FWHM = sqrt( Sum_i{A_i*pow(x/1000,i)} );
+    
+    /**  
+     FWHM = sqrt( Sum_i{A_i*pow(x/1000,i)} );
+     */
+    kSqrtPolynomial,  //
+    
+    /**
+     FWHM = `sqrt(A0 + A1*E + A2/E)`
+     */
     kSqrtEnergyPlusInverse,
+    
+    
     kNumResolutionFnctForm
   };//enum ResolutionFnctForm
 

@@ -1912,31 +1912,38 @@ void InterSpec::addPeakFromRightClick()
   
   for( auto method : methods )
   {
+    
     vector< std::shared_ptr<PeakDef> > orig_answer;
-    for( auto p : answer )
-      orig_answer.push_back( make_shared<PeakDef>( *p ) );
-    
-    findPeaksInUserRange( x0, x1, int(answer.size()), method, dataH,
-                        m_dataMeasurement->detector(), answer, fitChi2 );
-  
-    std::vector<PeakDef> newRoiPeaks;
-    for( size_t i = 0; i < answer.size(); ++i )
-      newRoiPeaks.push_back( *answer[i] );
-    
-    MultiPeakFitChi2Fcn chi2fcn( static_cast<int>(newRoiPeaks.size()),
-                                dataH,
-                                peak->continuum()->type(),
-                                PeakDef::SkewType::NoSkew,
-                                lower_channel, upper_channel );
-    fitChi2 = chi2fcn.evalRelBinRange( 0, chi2fcn.nbin(), newRoiPeaks );
-    
-    if( fitChi2 < startingChi2 )
+    try
     {
-      //cout << "Method " << method << " gave fitChi2=" << fitChi2 << ", which is better than initial startingChi2=" << startingChi2 << endl;
-      break;
+      for( auto p : answer )
+        orig_answer.push_back( make_shared<PeakDef>( *p ) );
+      
+      findPeaksInUserRange( x0, x1, int(answer.size()), method, dataH,
+                           m_dataMeasurement->detector(), answer, fitChi2 );
+      
+      std::vector<PeakDef> newRoiPeaks;
+      for( size_t i = 0; i < answer.size(); ++i )
+        newRoiPeaks.push_back( *answer[i] );
+      
+      MultiPeakFitChi2Fcn chi2fcn( static_cast<int>(newRoiPeaks.size()),
+                                  dataH,
+                                  peak->continuum()->type(),
+                                  PeakDef::SkewType::NoSkew,
+                                  lower_channel, upper_channel );
+      fitChi2 = chi2fcn.evalRelBinRange( 0, chi2fcn.nbin(), newRoiPeaks );
+      
+      if( !IsNan(fitChi2) && !IsInf(fitChi2) && (fitChi2 < startingChi2) )
+      {
+        //cout << "Method " << method << " gave fitChi2=" << fitChi2 << ", which is better than initial startingChi2=" << startingChi2 << endl;
+        break;
+      }
+      
+      answer = orig_answer;
+    }catch( std::exception & )
+    {
+      answer = orig_answer;
     }
-    
-    answer = orig_answer;
   }//for( auto method : methods )
   
 //  could try to fix all peaks other than the new one, and the nearest one, do the
@@ -11024,7 +11031,8 @@ void InterSpec::finishLoadUserFilesystemOpenedFile(
   try
   {
     const int row = fileModel->addRow( header );
-    m_fileManager->displayFile( row, meas, type, true, true, SpecMeasManager::VariantChecksToDo::DerivedDataAndEnergy );
+    m_fileManager->displayFile( row, meas, type, true, true, 
+            SpecMeasManager::VariantChecksToDo::DerivedDataAndMultiEnergyAndMultipleVirtualDets );
   }catch( std::exception & )
   {
     passMessage( "There was an error loading "
@@ -11102,7 +11110,8 @@ void InterSpec::userOpenFile( std::shared_ptr<SpecMeas> meas, std::string displa
     
     SpectraFileModel *fileModel = m_fileManager->model();
     const int row = fileModel->addRow( header );
-    m_fileManager->displayFile( row, meas, SpecUtils::SpectrumType::Foreground, true, true, SpecMeasManager::VariantChecksToDo::DerivedDataAndEnergy );
+    m_fileManager->displayFile( row, meas, SpecUtils::SpectrumType::Foreground, true, true,
+            SpecMeasManager::VariantChecksToDo::DerivedDataAndMultiEnergyAndMultipleVirtualDets );
     return;
   }
 }//void InterSpec::userOpenFile( std::shared_ptr<SpecMeas> meas, std::string displayFileName )
@@ -11148,7 +11157,7 @@ void InterSpec::handleAppUrl( const std::string &url_encoded_url )
     
   // Check if the URL contains "RADDATA://G0/" (dont require start with - incase its a 'emailto:'
   //  URI or something)
-  if( SpecUtils::icontains(url, "RADDATA://G0/")
+  if( SpecUtils::icontains(url, "RADDATA://")
      || SpecUtils::istarts_with(url, "interspec://G0/") )
   {
     m_fileManager->handleSpectrumUrl( std::move(url) );

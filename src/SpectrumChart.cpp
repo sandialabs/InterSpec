@@ -1150,12 +1150,12 @@ void SpectrumChart::renderAxes( Wt::WPainter &painter,
   
   if( m )
   {
-    renderXAxis( painter, axis(Chart::XAxis), properties);
+    renderXAxis( painter, axis(Chart::XAxis), properties );
     renderYAxis( painter, axis(Chart::Y1Axis), properties );
     renderYAxis( painter, axis(Chart::Y2Axis), properties );
   }else
   {
-    renderAxis( painter, axis(Chart::XAxis), properties);
+    renderAxis( painter, axis(Chart::XAxis), properties );
     renderAxis( painter, axis(Chart::Y1Axis), properties );
     renderAxis( painter, axis(Chart::Y2Axis), properties );
   }//if( m ) / else
@@ -1285,10 +1285,11 @@ void SpectrumChart::renderYAxis( Wt::WPainter &painter,
   
   WPainterPath ticksPath;
   
+  painter.save();
   const WFont oldFont = painter.font();
   const WPen oldPen = painter.pen();
-  
-  painter.setFont( yaxis.labelFont() );
+  WFont labelFont = yaxis.labelFont();
+  painter.setFont( labelFont );
   
   for( size_t i = 0; i < nticks; ++i )
   {
@@ -1339,13 +1340,16 @@ void SpectrumChart::renderYAxis( Wt::WPainter &painter,
     if( (properties & Chart::Labels) && !ticks[i].label.empty() )
     {   
       painter.setPen( m_textPen );
+      painter.setFont( labelFont );
       painter.drawText( WRectF(labelxpx, labelypx, txtwidth, txtheight),
                         labelAlignFlags, ticks[i].label);
       painter.setPen( oldPen );
     }
   }//for( size_t i = 0; i < nticks; ++i )
   
+  painter.restore();
   painter.setFont( oldFont );
+  painter.setPen( oldPen );
   
   if ((properties & Chart::Line) && !ticksPath.isEmpty() )
     painter.strokePath( ticksPath, yaxis.pen() );
@@ -1773,10 +1777,6 @@ SpectrumChart::SpectrumChart( Wt::WContainerWidget *parent )
   
   axis(Chart::XAxis).setMinimum( 0.0 );
   axis(Chart::XAxis).setMaximum( 3000.0 );
-  
-  //make it so we can use control-drag and right click on the cavas without
-  //  the browsers context menu poping up
-  setAttributeValue( "oncontextmenu", "return false;" );
 }//SpectrumChart( constructor )
 
 
