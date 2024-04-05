@@ -237,6 +237,10 @@ LeafletRadMap::LeafletRadMap( Wt::WContainerWidget *parent )
   wApp->useStyleSheet( "InterSpec_resources/assets/js/leaflet/leaflet-EasyButton_2.4.0/easy-button.css" );
   wApp->require( "InterSpec_resources/assets/js/leaflet/leaflet-EasyButton_2.4.0/easy-button.js" );
   
+  // Include Leaflet.Measure 20e0e7d (20230426), see https://github.com/ptma/Leaflet.Measure/commits/master/
+  wApp->useStyleSheet( "InterSpec_resources/assets/js/leaflet/Leaflet.Measure/src/leaflet.measure.css" );
+  wApp->require( "InterSpec_resources/assets/js/leaflet/Leaflet.Measure/src/leaflet.measure.js" );
+  
   // Finally include our JS/CSS
   wApp->useStyleSheet( "InterSpec_resources/LeafletRadMap.css" );
   wApp->require( "InterSpec_resources/LeafletRadMap.js" );
