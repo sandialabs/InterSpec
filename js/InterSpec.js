@@ -60,8 +60,22 @@ function()
       function removeUploading(){
         //console.log( 'removeUploading' );
         $('#Uploading').remove();
+        
+        // Clear the time-out timer, if we have one
+        clearTimeout( $('.Wt-domRoot').data('UploadCoverTimer') );
+        $('.Wt-domRoot').data( 'UploadCoverTimer', null );
       };
       
+      
+      /* Lets set a 1-minute timeout so we will eventually remove the uploading cover if no traffic. */
+      function setUploadTimer(){
+        clearTimeout( $('.Wt-domRoot').data('UploadCoverTimer') );
+        const coverTimer = setTimeout( function(){
+          console.error("The request to upload file timed out.");
+          removeUploading();
+        }, 60000 );
+        $('.Wt-domRoot').data( 'UploadCoverTimer', coverTimer );
+      };
       
       function errfcn(){
         removeUploading();
@@ -185,6 +199,7 @@ function()
               $('#UploadingProgress').text( Math.trunc(100*pe.loaded/pe.total) + '%' );
             }
           }
+          setUploadTimer(); //reset the upload timer, since we have recieved some data
         });
         
         xhr.upload.addEventListener("load", removeUploading);
@@ -211,19 +226,6 @@ function()
           removeUploading();
         });
         
-        
-        /* Lets set a 1-minute timeout so we will eventually remove the uploading cover...
-         
-         TODO: What we should really do is setup a timeout that fires if 'progress' is never never
-         called with an appropriate status, and then once it does get called set another timer
-         as upload is finished, to get the response.  I.e., get rid of xhr.ontimeout.
-         */
-        xhr.timeout = 60000;
-        xhr.ontimeout = function () {
-          console.error("The request to upload file timed out.");
-          removeUploading();
-        };
-        
           
         xhr.send(file);
       };//uploadFileToUrl
@@ -238,6 +240,8 @@ function()
       + '<div id=\"UploadingProgress\">--%</div>'
       + '</div></div></div>'
       + '</div>').appendTo(target);
+      
+      setUploadTimer();
     }catch(error)
     {
       console.log( "Error in HandleDrop: " + error );
