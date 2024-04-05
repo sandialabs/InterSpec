@@ -561,7 +561,7 @@ public:
     {
       rapidxml::xml_document<char> doc;
       
-      for( const QRSpectrum::EncodedSpectraInfo &url : m_urls )
+      for( const SpecUtils::EncodedSpectraInfo &url : m_urls )
       {
         const char *value = doc.allocate_string( url.m_orig_url.c_str(), url.m_orig_url.size() + 1 );
         rapidxml::xml_node<> *node = doc.allocate_node( rapidxml::node_element, "Url", value );
@@ -825,8 +825,6 @@ SpecMeasManager::SpecMeasManager( InterSpec *viewer )
                                                          boost::placeholders::_1,
                                                          boost::placeholders::_2,
                                                          SpectrumType::Background ) );
-  
-  void handleDataRecievedStatus( uint64_t num_bytes_recieved, uint64_t num_bytes_total, SpecUtils::SpectrumType type );
   
   m_foregroundDragNDrop->setUploadProgress( true );
   m_foregroundDragNDrop->dataReceived().connect( boost::bind( &SpecMeasManager::handleDataRecievedStatus, this,
@@ -1873,7 +1871,7 @@ bool SpecMeasManager::handleMultipleDrfCsv( std::istream &input,
 
 bool SpecMeasManager::handleCALpFile( std::istream &infile, SimpleDialog *dialog, bool autoApply )
 {
-  // Blah blah blah Add undo/redo support
+  // Blah blah blah TODO: Add undo/redo support, when showing this diagram - the actual energy calibration change does have support
   WGridLayout *stretcher = nullptr;
   WPushButton *closeButton = nullptr;
   
@@ -1931,12 +1929,17 @@ bool SpecMeasManager::handleCALpFile( std::istream &infile, SimpleDialog *dialog
     // Note that num_display_channel is for the displayed data - the individual detectors may
     //  have different numbers of channels - we'll fix this up after initially loading the cal
     //  (we need to know the detectors name the cal is for in order to fix it up)
-    shared_ptr<SpecUtils::EnergyCalibration> cal = EnergyCal::energy_cal_from_CALp_file( infile, num_display_channel, name );
+    shared_ptr<SpecUtils::EnergyCalibration> cal;
     
-    if( !cal )
+    try
+    {
+      cal = SpecUtils::energy_cal_from_CALp_file( infile, num_display_channel, name );
+      assert( cal && cal->valid() );
+    }catch( std::exception &e )
     {
       // Display message to user to let them know it was a CALp file, but we couldn't use it.
       //  TODO: improve this error message with details, ex if it was a lower-channel-energy CALp, and number of channels didnt match, we should display this to the user
+      
       if( det_to_cal.empty() /* && SpecUtils::iends_with( displayName, "CALp" ) */ )
       {
         infile.seekg( start_pos, ios::beg );
@@ -1957,7 +1960,8 @@ bool SpecMeasManager::handleCALpFile( std::istream &infile, SimpleDialog *dialog
       }//if( we didnt get any calibrations )
       
       break;
-    }//if( !cal )
+    }//try / catch
+
     
     if( !cal->valid() )
     {
@@ -2831,7 +2835,8 @@ void SpecMeasManager::handleFileDropWorker( const std::string &name,
     
     const int modelRow = setFile( name, spoolName, header, measurement );
 
-    displayFile( modelRow, measurement, type, true, true, SpecMeasManager::VariantChecksToDo::DerivedDataAndEnergy );
+    displayFile( modelRow, measurement, type, true, true, 
+              SpecMeasManager::VariantChecksToDo::DerivedDataAndMultiEnergyAndMultipleVirtualDets );
     
     //It is the responsibility of the caller to clean up the file.
   }catch( exception &e )
@@ -2896,7 +2901,7 @@ void SpecMeasManager::handleSpectrumUrl( std::string &&unencoded )
   try
   {
     //Remove everything leading up to "RADDATA://G0/"
-    const size_t uri_pos = SpecUtils::ifind_substr_ascii( unencoded, "RADDATA://G0/" );
+    const size_t uri_pos = SpecUtils::ifind_substr_ascii( unencoded, "RADDATA://" );
     if( (uri_pos != string::npos) && (uri_pos > 0) )
       unencoded = unencoded.substr( 0, uri_pos );
     
@@ -3307,7 +3312,8 @@ void SpecMeasManager::finishQuickUpload( Wt::WFileUpload *upload,
     return;
   } // if( row < 0 )
 
-  displayFile( row, measement_ptr, type, true, true, SpecMeasManager::VariantChecksToDo::DerivedDataAndEnergy );
+  displayFile( row, measement_ptr, type, true, true, 
+              SpecMeasManager::VariantChecksToDo::DerivedDataAndMultiEnergyAndMultipleVirtualDets );
 }//void finishQuickUpload(...)
 
 
@@ -3348,8 +3354,8 @@ void SpecMeasManager::selectEnergyBinning( const string binning,
   }//if( binning != "Keep All" ) / else
   
   displayFile( index.row(), meas, type, checkIfPreviouslyOpened, doPreviousEnergyRangeCheck,
-              SpecMeasManager::VariantChecksToDo::None );
-}//
+              SpecMeasManager::VariantChecksToDo::MultiVirtualDets );
+}//SpecMeasManager::selectEnergyBinning(...)
 
 
 void SpecMeasManager::selectDerivedDataChoice( const SpecMeasManager::DerivedDataToKeep tokeep,
@@ -3373,11 +3379,11 @@ void SpecMeasManager::selectDerivedDataChoice( const SpecMeasManager::DerivedDat
   switch( tokeep )
   {
     case DerivedDataToKeep::All:
-      furtherChecks = VariantChecksToDo::MultipleEnergyCal;
+      furtherChecks = VariantChecksToDo::MultiEnergyCalsAndMultiVirtualDets;
       break;
       
     case DerivedDataToKeep::RawOnly:
-      furtherChecks = VariantChecksToDo::MultipleEnergyCal;
+      furtherChecks = VariantChecksToDo::MultiEnergyCalsAndMultiVirtualDets;
       break;
       
     case DerivedDataToKeep::DerivedOnly:
@@ -3416,12 +3422,54 @@ void SpecMeasManager::selectDerivedDataChoice( const SpecMeasManager::DerivedDat
 
 
 
+void SpecMeasManager::selectVirtualDetectorChoice( const std::set<std::string> tokeep,
+                         std::shared_ptr<SpectraFileHeader> header,
+                         std::shared_ptr<SpecMeas> meas,
+                         const SpecUtils::SpectrumType type,
+                         const bool checkIfPreviouslyOpened,
+                         const bool doPreviousEnergyRangeCheck )
+{
+  WModelIndex index = m_fileModel->index( header );
+  
+  if( !index.isValid() || !meas )
+  {
+    passMessage( "Aborting loading of file after selecting virtual detector type to keep - "
+                "the file is no longer available in memory. please report "
+                "this bug to interspec@sandia.gov", WarningWidget::WarningMsgHigh );
+    return;
+  }//if( !index.isValid() )
+  
+  if( !tokeep.empty() )
+  {
+    set<string> dets_to_remove;
+    for( const string &name : meas->gamma_detector_names() )
+    {
+      if( SpecUtils::istarts_with(name, "VD") && !tokeep.count(name) )
+        dets_to_remove.insert( name );
+    }
+    
+    meas->remove_detectors_data( dets_to_remove );
+    
+    // Trigger a refresh of row info and selected rows in File Manager
+    m_fileModel->removeRows( index.row(), 1 );
+    header->setMeasurmentInfo( meas );
+    m_fileModel->addRow( header );
+    index = m_fileModel->index( header );
+  }//if( !tokeep.empty() )
+  
+  const VariantChecksToDo furtherChecks = VariantChecksToDo::None;
+  
+  displayFile( index.row(), meas, type, checkIfPreviouslyOpened, doPreviousEnergyRangeCheck,
+              furtherChecks );
+}//void selectVirtualDetectorChoice(...)
+
+
 bool SpecMeasManager::checkForAndPromptUserForDisplayOptions( std::shared_ptr<SpectraFileHeader> header,
                                             std::shared_ptr<SpecMeas> meas,
                                             const SpecUtils::SpectrumType type,
                                             const bool checkIfPreviouslyOpened,
                                             const bool doPreviousEnergyRangeCheck,
-                                            const VariantChecksToDo viewingChecks )
+                                            VariantChecksToDo viewingChecks )
 {
   if( !header || !meas )
     throw runtime_error( "SpecMeasManager::checkForAndPromptUserForDisplayOptions(): Invalid input" );
@@ -3429,8 +3477,12 @@ bool SpecMeasManager::checkForAndPromptUserForDisplayOptions( std::shared_ptr<Sp
   if( viewingChecks == VariantChecksToDo::None )
     return false;
   
+  // We will first deal with "Derived Data" being present, then "Multiple Energy Calibrations",
+  //  and then finally "Multiple Virtual Detectors"
+  
+  
   bool derivedData = false, energyCal = false;
-  if( viewingChecks == VariantChecksToDo::DerivedDataAndEnergy )
+  if( viewingChecks == VariantChecksToDo::DerivedDataAndMultiEnergyAndMultipleVirtualDets )
     derivedData = (meas->contains_derived_data() && meas->contains_non_derived_data());
   
   set<string> cals;
@@ -3440,6 +3492,72 @@ bool SpecMeasManager::checkForAndPromptUserForDisplayOptions( std::shared_ptr<Sp
     cals = meas->energy_cal_variants();
     energyCal = (cals.size() > 1);
   }
+  
+  if( (!derivedData && !energyCal && (viewingChecks == VariantChecksToDo::DerivedDataAndMultiEnergyAndMultipleVirtualDets))
+     || (!energyCal && (viewingChecks == VariantChecksToDo::MultiEnergyCalsAndMultiVirtualDets))
+     || (viewingChecks == VariantChecksToDo::MultiVirtualDets) )
+  {
+    vector<string> virtual_detectors;
+    for( const string &name : meas->gamma_detector_names() )
+    {
+      if( SpecUtils::istarts_with( name, "VD" ) )
+        virtual_detectors.push_back( name );
+    }
+    
+    if( virtual_detectors.size() > 1 )
+    {
+      const char *title = "Virtual Detectors to load?";
+      string msgtxt
+      = "<div>This file contained multiple &quot;Virtual Detectors&quot; which</div>"
+      "<div>may be sums of multiple physical detectors, or not.</div>"
+      "<div>If you load all, see the <b>View</b>&rarr;<b>Detectors</b> menu to</div>"
+      "<div>display a subset.</div>";
+      
+      if( virtual_detectors.size() > 5 )
+        msgtxt += "<div>There are " + std::to_string(virtual_detectors.size())
+                  + " VDs, only &quot;All&quot; or first 5 selectable.</div>";
+      
+      msgtxt += "<div style=\"margin-top: 20px; margin-bottom: 5px; white-space: nowrap; font-weight: bold;\">"
+          "What detectors data would you like to load?"
+        "</div>";
+      
+      SimpleDialog *dialog = new SimpleDialog( title, msgtxt );
+      
+      auto add_button = [=]( string btn_txt, const set<string> &dets, size_t max_txt_size ){
+        if( btn_txt.size() > max_txt_size )
+        {
+          SpecUtils::utf8_limit_str_size( btn_txt, max_txt_size - 1 );
+          btn_txt += "...";
+        }
+        btn_txt = Wt::Utils::htmlEncode( btn_txt );
+          
+        WPushButton *button = dialog->addButton( btn_txt );
+        button->clicked().connect( boost::bind( &SpecMeasManager::selectVirtualDetectorChoice, this,
+                                               dets, header, meas, type,
+                                               checkIfPreviouslyOpened, doPreviousEnergyRangeCheck ) );
+      };//add_button
+      
+      add_button( "All", set<string>{}, 6 );
+      
+      for( size_t i = 0; (i < 5) && (i < virtual_detectors.size()); ++i )
+      {
+        add_button( virtual_detectors[i], set<string>{virtual_detectors[i]}, 6 );
+      }//for( size_t i = 0; (i < 5) && (i < virtual_detectors.size()); ++i )
+      
+      // If three detectors, let them choose any 1, any 2, or all
+      if( virtual_detectors.size() == 3 )
+      {
+        string btn_txt = virtual_detectors[0] + "+" + virtual_detectors[1];
+        add_button( btn_txt, {virtual_detectors[0], virtual_detectors[1]}, 9 );
+        
+        btn_txt = virtual_detectors[1] + "+" + virtual_detectors[2];
+        add_button( btn_txt, {virtual_detectors[1], virtual_detectors[2]}, 9 );
+      }//if( virtual_detectors.size() <= 3 )
+      
+      return true;
+    }//if( virtual_detectors.size() > 1 )
+  }//if( viewingChecks == VariantChecksToDo::DerivedDataAndMultiEnergyAndMultipleVirtualDets )
+  
   
   if( !derivedData && !energyCal )
     return false;
@@ -5190,7 +5308,8 @@ int SpecMeasManager::dataUploaded2( Wt::WFileUpload *upload , SpecUtils::Spectru
 {
   std::shared_ptr<SpecMeas> measurement;
   int row= dataUploaded( upload, measurement );
-  displayFile( row, measurement, type, true, true, SpecMeasManager::VariantChecksToDo::DerivedDataAndEnergy );
+  displayFile( row, measurement, type, true, true, 
+              SpecMeasManager::VariantChecksToDo::DerivedDataAndMultiEnergyAndMultipleVirtualDets );
   return row;
 } // int SpecMeasManager::dataUploaded( Wt::WFileUpload )
 
@@ -5221,7 +5340,8 @@ bool SpecMeasManager::loadFromFileSystem( const string &name, SpecUtils::Spectru
     m_treeView->setSelectedIndexes( WModelIndexSet() );    
 //    passMessage( "Successfully uploaded file.", 0 );
 
-    displayFile( row, measurement, type, true, true, SpecMeasManager::VariantChecksToDo::DerivedDataAndEnergy );
+    displayFile( row, measurement, type, true, true, 
+              SpecMeasManager::VariantChecksToDo::DerivedDataAndMultiEnergyAndMultipleVirtualDets );
   }catch( const std::exception &e )
   {
     {

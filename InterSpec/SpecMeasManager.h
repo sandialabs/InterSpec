@@ -224,12 +224,31 @@ public:
   /** Handles the user dropping a .ECC file produced from ISOCS. */
   bool handleEccFile( std::istream &input, SimpleDialog *dialog );
   
+  /** Some input files contain duplicate data - we will ask the user how they want to handle
+   this, first handling "Derived Data", then "Multiple Energy Calibration Types", then
+   "Multiple Virtual Detectors"
+   */
   enum class VariantChecksToDo
   {
+    /** No checks for things like multiple energy cals, derived data, or virtual detectors. */
     None = 0,
-    MultipleEnergyCal = 1,
-    DerivedDataAndEnergy = 2
-  };
+    
+    /** RSI systems may have multiple Virtual Detectors (ex "VD1", "VD2", etc) defined, that may be sums of
+     multiple detection elements, or not, or be overlapping, or whatever - so lets alert the user, and let them
+     choose what to do.
+     */
+    MultiVirtualDets = 1,
+    
+    /** Some spectrum files will include both linear and compressed spectra, or multiple energy ranges of
+     the same data.  The user may want to only load one of these, so they arent seeing duplicate data.
+     */
+    MultiEnergyCalsAndMultiVirtualDets = 2,
+    
+    /** For some files, the user may just want to see the derived data.
+     Or perhaps just the raw data, without the essentially duplicate derived data.
+     */
+    DerivedDataAndMultiEnergyAndMultipleVirtualDets = 3
+  };//enum class VariantChecksToDo
   
   // displayFile(...) displays the file passed in as specified type, if it can.
   //  --if kForground is specified and the measurment contains a background
@@ -437,7 +456,7 @@ protected:
                                               const SpecUtils::SpectrumType type,
                                               const bool checkIfPreviouslyOpened,
                                               const bool doPreviousEnergyRangeCheck,
-                                              const VariantChecksToDo viewingChecks );
+                                              VariantChecksToDo viewingChecks );
 
   void selectEnergyBinning( const std::string binning,
                             std::shared_ptr<SpectraFileHeader> header,
@@ -448,6 +467,13 @@ protected:
   
   enum class DerivedDataToKeep{ All, RawOnly, DerivedOnly };
   void selectDerivedDataChoice( const DerivedDataToKeep tokeep,
+                           std::shared_ptr<SpectraFileHeader> header,
+                           std::shared_ptr<SpecMeas> meas,
+                           const SpecUtils::SpectrumType type,
+                           const bool checkIfPreviouslyOpened,
+                           const bool doPreviousEnergyRangeCheck );
+  
+  void selectVirtualDetectorChoice( const std::set<std::string> tokeep,
                            std::shared_ptr<SpectraFileHeader> header,
                            std::shared_ptr<SpecMeas> meas,
                            const SpecUtils::SpectrumType type,
