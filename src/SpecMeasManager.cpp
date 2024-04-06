@@ -3406,6 +3406,28 @@ void SpecMeasManager::selectDerivedDataChoice( const SpecMeasManager::DerivedDat
       
       meas->keep_derived_data_variant( keeptype );
       
+      if( (meas->detector_type() == SpecUtils::DetectorType::VerifinderNaI)
+         || (meas->detector_type() == SpecUtils::DetectorType::VerifinderLaBr)
+         || SpecUtils::icontains(meas->manufacturer(), "Symetrica") )
+      {
+        // Remove the calibration and stabilization measurements; user probably doesnt want these
+        
+        vector<shared_ptr<const SpecUtils::Measurement>> meas_to_remove;
+        const vector<shared_ptr<const SpecUtils::Measurement>> orig_meas = meas->measurements();
+        for( const shared_ptr<const SpecUtils::Measurement> &m : orig_meas )
+        {
+          if( SpecUtils::icontains( m->title(), "StabMeas" ) 
+             || SpecUtils::icontains( m->title(), "Gamma Cal" )
+             || SpecUtils::icontains( m->title(), "CalMeasurement" ) )
+          {
+            meas_to_remove.push_back( m );
+          }
+        }//for( loop over remaining measurements )
+        
+        if( !meas_to_remove.empty() )
+          meas->remove_measurements( meas_to_remove );
+      }//if( a Symetrica detector )
+      
       // Trigger a refresh of row info and selected rows in File Manager
       m_fileModel->removeRows( index.row(), 1 );
       header->setMeasurmentInfo( meas );
