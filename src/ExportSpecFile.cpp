@@ -23,6 +23,7 @@
 
 #include "InterSpec_config.h"
 
+#include <array>
 #include <regex>
 #include <limits>
 #include <memory>
@@ -115,7 +116,7 @@ const std::vector<std::pair<SpecUtils::SaveSpectrumAsType,std::string>> sm_file_
   { SpecUtils::SaveSpectrumAsType::HtmlD3, "HTML" },
 #endif
 #if( USE_QR_CODES )
-  { SpecUtils::SaveSpectrumAsType::NumTypes, "QR-code" },
+  { SpecUtils::SaveSpectrumAsType::Uri, "QR-code" },
 #endif
 };//sm_file_type_to_uri_name
 }//namespace
@@ -262,9 +263,12 @@ void displayQrCode( const vector<SpecUtils::UrlSpectrum> urlspec,
     
     if( urls.empty() )
     {
+      string msg = (urlspec.size() == 1) ? "<p>Likely due to requiring more than 9 QR codes<p>"
+                                         : "<p>Likely due to not being able to fit multiple spectra"
+                                           " into a single QR code.</p>";
+      
       auto dialog = new SimpleDialog( "Error",
-                                     "Spectrum could not be encoded to a QR code.<br />"
-                                     "Likely due to requiring more than 9 QR codes." );
+                                     "<p>Spectrum could not be encoded to a QR code.</p>" + msg );
       dialog->addButton( "Ok" );
       return;
     }//if( urls.empty() )
@@ -412,6 +416,11 @@ namespace ExportSpecFileTool_imp
           response.setMimeType( "text/html" );
         break;
     #endif //#if( USE_D3_EXPORTING )
+          
+#if( USE_QR_CODES )
+        case SpecUtils::SaveSpectrumAsType::Uri:
+        break;
+#endif
           
         case SpecUtils::SaveSpectrumAsType::NumTypes:
         break;
@@ -603,6 +612,12 @@ namespace ExportSpecFileTool_imp
         break;
   #endif //#if( USE_D3_EXPORTING )
         
+#if( USE_QR_CODES )
+      case SpecUtils::SaveSpectrumAsType::Uri:
+        assert( 0 );
+        measurement->write_uri( output, 1, 0x0 );
+      break;
+#endif
       case SpecUtils::SaveSpectrumAsType::NumTypes:
         break;
     }//switch( type )
@@ -833,7 +848,7 @@ void ExportSpecFileTool::init()
   addFormatItem( "HTML", SpecUtils::SaveSpectrumAsType::HtmlD3 );
 #endif
 #if( USE_QR_CODES )
-  addFormatItem( "QR-code/URL", SpecUtils::SaveSpectrumAsType::NumTypes );
+  addFormatItem( "QR-code/URL", SpecUtils::SaveSpectrumAsType::Uri );
 #endif
   
   // Meas/samples to include
@@ -1613,11 +1628,7 @@ SpecUtils::SaveSpectrumAsType ExportSpecFileTool::currentSaveType() const
   if( currentFormatItem )
   {
     const uint64_t data = reinterpret_cast<uint64_t>( currentFormatItem->data() );
-#if( USE_QR_CODES )
-    assert( data <= static_cast<int>(SpecUtils::SaveSpectrumAsType::NumTypes) );
-#else
     assert( data < static_cast<int>(SpecUtils::SaveSpectrumAsType::NumTypes) );
-#endif
     return SpecUtils::SaveSpectrumAsType( data );
   }//if( currentFormatItem )
   
@@ -1640,10 +1651,10 @@ uint16_t ExportSpecFileTool::maxRecordsInCurrentSaveType( shared_ptr<const SpecM
     case SpecUtils::SaveSpectrumAsType::ExploraniumGr130v0:
     case SpecUtils::SaveSpectrumAsType::ExploraniumGr135v2:
       return std::numeric_limits<uint16_t>::max();
-    
+      
 #if( USE_QR_CODES )
     // Spectrum file types that can have two spectra in them (foreground + background)
-    case SpecUtils::SaveSpectrumAsType::NumTypes:
+    case SpecUtils::SaveSpectrumAsType::Uri:
       if( !spec )
         spec = currentlySelectedFile();
       return (spec && (spec->num_gamma_channels() < 2075)) ? 2 : 1;
@@ -1669,6 +1680,10 @@ uint16_t ExportSpecFileTool::maxRecordsInCurrentSaveType( shared_ptr<const SpecM
       assert( 0 );
       break;
 #endif
+    
+    case SpecUtils::SaveSpectrumAsType::NumTypes:
+      assert( 0 );
+      break;
   }//switch( save_format )
   
   assert( 0 );
@@ -1953,7 +1968,14 @@ void ExportSpecFileTool::refreshSampleAndDetectorOptions()
   if( (max_records < 2)
      && ( (spec->gamma_detector_names().size() > 1) || (samplesToUse.size() > 1 ) ) )
   {
-    m_msg->setText( "Records will be summed together." );
+    if( m_backSubFore->isVisible() && m_backSubFore->isEnabled() && m_backSubFore->isChecked()
+       && (use_fore_disp != use_seco_disp) )
+    {
+      m_msg->setText( "A single spectrum will be produced." );
+    }else
+    {
+      m_msg->setText( "Records will be summed together." );
+    }
   }else if( max_records == 2 )
   {
     // QR code here
@@ -1964,6 +1986,10 @@ void ExportSpecFileTool::refreshSampleAndDetectorOptions()
        && (!m_sumAllToSingleRecord->isVisible() || !m_sumAllToSingleRecord->isChecked()) )
     {
       m_msg->setText( "QR will have 2 spectrum" );
+    }else if( m_backSubFore->isVisible() && m_backSubFore->isEnabled() && m_backSubFore->isChecked()
+             && (use_fore_disp != use_seco_disp) )
+    {
+      m_msg->setText( "A single spectrum will be produced." );
     }else if( (samplesToUse.size() > 1) || (spec->gamma_detector_names().size() > 1) )
     {
       m_msg->setText( "Records will be summed together." );
@@ -2093,7 +2119,7 @@ void ExportSpecFileTool::handleFormatChange()
   const SpecUtils::SaveSpectrumAsType save_format = currentSaveType();
   
 #if( USE_QR_CODES )
-  const bool is_qr = (save_format == SpecUtils::SaveSpectrumAsType::NumTypes);
+  const bool is_qr = (save_format == SpecUtils::SaveSpectrumAsType::Uri);
   m_export_btn->setHidden( is_qr );
   m_show_qr_btn->setHidden( !is_qr );
 #else
@@ -2240,6 +2266,7 @@ std::shared_ptr<const SpecMeas> ExportSpecFileTool::generateFileToSave()
   
   const bool remove_gps = (m_excludeGpsInfo->isVisible() && m_excludeGpsInfo->isChecked());
   const bool sum_per_sample = (m_sumDetsPerSample->isVisible() && m_sumDetsPerSample->isChecked());
+  const bool fore_plus_back_files = (m_forePlusBack && m_forePlusBack->isVisible() && m_forePlusBack->isChecked());
   const bool use_disp_fore = (m_dispForeSamples->isVisible() && m_dispForeSamples->isChecked());
   const bool use_disp_back = (m_dispBackSamples->isVisible() && m_dispBackSamples->isChecked());
   const bool use_disp_seco = (m_dispSecondSamples->isVisible() && m_dispSecondSamples->isChecked());
@@ -2295,6 +2322,7 @@ std::shared_ptr<const SpecMeas> ExportSpecFileTool::generateFileToSave()
   if( foreToSingleRecord || (use_disp_fore && (max_records <= 2)) )
   {
     assert( use_disp_fore );
+    assert( !fore_plus_back_files );
     const set<int> &samples = m_interspec->displayedSamples(SpecUtils::SpectrumType::Foreground);
     samplesToSum.insert( samples );
   }//if( foreground to single record )
@@ -2303,6 +2331,7 @@ std::shared_ptr<const SpecMeas> ExportSpecFileTool::generateFileToSave()
   if( backToSingleRecord || (use_disp_back && (max_records <= 2)) )
   {
     assert( use_disp_back );
+    assert( !fore_plus_back_files );
     const set<int> &samples = m_interspec->displayedSamples(SpecUtils::SpectrumType::Background);
     samplesToSum.insert( samples );
   }//if( background to single record )
@@ -2311,10 +2340,41 @@ std::shared_ptr<const SpecMeas> ExportSpecFileTool::generateFileToSave()
   if( secoToSingleRecord || (use_disp_seco && (max_records <= 2)) )
   {
     assert( use_disp_seco );
+    assert( !fore_plus_back_files );
     const set<int> &samples = m_interspec->displayedSamples(SpecUtils::SpectrumType::SecondForeground);
     samplesToSum.insert( samples );
   }//if( secondary to single record )
   
+  if( fore_plus_back_files && (max_records <= 2) )
+  {
+    const std::array<SpecUtils::SourceType, 5> src_types = {
+      SpecUtils::SourceType::IntrinsicActivity,
+      SpecUtils::SourceType::Calibration,
+      SpecUtils::SourceType::Foreground,
+      SpecUtils::SourceType::Background,
+      SpecUtils::SourceType::Unknown
+    };//src_types array definition
+    
+    for( const SpecUtils::SourceType type : src_types )
+    {
+      set<int> samples;
+      for( const auto &m : answer->measurements() )
+      {
+        if( m->source_type() == type )
+          samples.insert( m->sample_number() );
+      }
+      
+      // We dont expect Intrinsic or Calibration to ever be present when a foreground
+      //  and background file has been combined into a single file
+      //  See `currentlySelectedFile()` implementation.
+      assert( (type != SpecUtils::SourceType::IntrinsicActivity)
+             && (type != SpecUtils::SourceType::Calibration)
+             || samples.empty() );
+      
+      if( !samples.empty() )
+        samplesToSum.insert( samples );
+    }//for( SpecUtils::SourceType type : src_types )
+  }//if( fore_plus_back_files && (max_records <= 2) )
   
   set<set<int>> peaks_to_remove;
   map<set<int>,shared_ptr<const deque<shared_ptr<const PeakDef>>>> peaks_to_set;

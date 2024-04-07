@@ -135,7 +135,7 @@
   </message>
 
   <message id="QR-code/URL">
-    The spectrum will be encoded inta a QR-code and/or URI.
+    The spectrum will be encoded into a QR-code and/or URI.
 
     The QR-code or URI may contain the foreground and background spectra, if they will fit.
 
