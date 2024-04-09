@@ -3663,7 +3663,7 @@ bool SpecMeasManager::checkForAndPromptUserForDisplayOptions( std::shared_ptr<Sp
   //  to check for this
   if( viewingChecks == VariantChecksToDo::MultiVirtualDets )
   {
-    return;
+    return false;
   }
   
   const char *title = "Select Binning";
