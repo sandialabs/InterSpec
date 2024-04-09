@@ -2330,7 +2330,7 @@ void D3SpectrumDisplayDiv::yAxisScaled( const double scale, const std::string &s
     m_model->setSecondDataScaleFactor( scale );
   }else
   {
-    cerr << "Recieved yscaled signal with scale " << scale << " and spectrum = '"
+    cerr << "Received yscaled signal with scale " << scale << " and spectrum = '"
     << spectrum << "', which is invalid" << endl;
     return;
   }

@@ -350,8 +350,6 @@ public:
                                 std::shared_ptr< std::mutex > mutex,
                                 std::shared_ptr<bool> destructed );
   
-  void showDatabaseStatesHavingSpectrumFile( std::shared_ptr<SpectraFileHeader> header );
-  
   
   void showPreviousSpecFileUsesDialog( std::shared_ptr<SpectraFileHeader> header,
                                    const SpecUtils::SpectrumType type,
@@ -361,8 +359,7 @@ public:
   
   
   
-  void userCanceledResumeFromPreviousOpened( AuxWindow *window,
-                                 std::shared_ptr<SpectraFileHeader> header );
+  void userCanceledResumeFromPreviousOpened( std::shared_ptr<SpectraFileHeader> header );
   
   //saveToDatabase(...): saves the SpecMeas to the database in another thread;
   //  must be called from a thread where WApplication::instance() is available
@@ -480,6 +477,9 @@ protected:
                            const bool checkIfPreviouslyOpened,
                            const bool doPreviousEnergyRangeCheck );
   
+  void handleCancelPreviousStatesDialog( AuxWindow *dialog );
+  void handleClosePreviousStatesDialogAfterSelect( AuxWindow *dialog );
+  
   /** Deletes the dialog, but only if the passed in dialog is the same as `m_processingUploadDialog` */
   void checkCloseUploadDialog( SimpleDialog *dialog, Wt::WApplication *app );
   
@@ -524,6 +524,9 @@ protected:
   
   std::shared_ptr<std::mutex> m_destructMutex;
   std::shared_ptr<bool> m_destructed;
+  
+  /** Dialog shown when user loads a file that has been previously either explicitly saved state, or automatically saved. */
+  AuxWindow *m_previousStatesDialog;
   
   /** Dialog created when a file is uploading, from `handleDataRecievedStatus()`, letting the user know that something is going on.
    On the client-side there is an upload status that is shown, but for large files the upload status in JS can be significantly off from what

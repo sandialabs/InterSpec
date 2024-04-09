@@ -794,6 +794,7 @@ SpecMeasManager::SpecMeasManager( InterSpec *viewer )
     m_multiUrlSpectrumDialog( nullptr ),
     m_destructMutex( new std::mutex() ),
     m_destructed( new bool(false) ),
+    m_previousStatesDialog( nullptr ),
     m_processingUploadDialog( nullptr ),
     m_processingUploadTimer{}
 {
@@ -2657,6 +2658,30 @@ bool SpecMeasManager::handleShieldingSourceFile( std::istream &input, SimpleDial
 }//bool handleShieldingSourceFile( std::istream &input, SimpleDialog *dialog );
 
 
+void SpecMeasManager::handleCancelPreviousStatesDialog( AuxWindow *dialog )
+{
+  assert( dialog == m_previousStatesDialog );
+  if( !dialog )
+    return;
+  
+  if( dialog != m_previousStatesDialog )
+  {
+    cerr << "SpecMeasManager::handleCancelPreviousStatesDialog: dialog passed in isnt as expected"
+    << " - not doing anything." << endl;
+    return;
+  }
+  
+  m_previousStatesDialog = nullptr;
+  AuxWindow::deleteAuxWindow( dialog );
+}//void handleCancelPreviousStatesDialog( AuxWindow *dialog )
+
+
+void SpecMeasManager::handleClosePreviousStatesDialogAfterSelect( AuxWindow *dialog )
+{
+  handleCancelPreviousStatesDialog( dialog );
+}//void handleClosePreviousStatesDialogAfterSelect( AuxWindow *dialog )
+
+
 void SpecMeasManager::checkCloseUploadDialog( SimpleDialog *dialog, WApplication *app )
 {
   WApplication::UpdateLock lock( app );
@@ -2869,6 +2894,9 @@ void SpecMeasManager::handleFileDrop( const std::string &name,
     m_processingUploadDialog = nullptr;
   }//if( m_processingUploadDialog )
   
+  if( m_previousStatesDialog )
+    handleCancelPreviousStatesDialog( m_previousStatesDialog );
+  
   // If file is small, and not csv/txt (these are really slow to parse), dont display the parsing
   //  message.
   if( (SpecUtils::file_size(spoolName) < 512*1024)
@@ -2900,6 +2928,9 @@ void SpecMeasManager::handleSpectrumUrl( std::string &&unencoded )
 {
   try
   {
+    if( m_previousStatesDialog )
+      handleCancelPreviousStatesDialog( m_previousStatesDialog );
+    
     //Remove everything leading up to "RADDATA://G0/"
     const size_t uri_pos = SpecUtils::ifind_substr_ascii( unencoded, "RADDATA://" );
     if( (uri_pos != string::npos) && (uri_pos > 0) )
@@ -3339,7 +3370,7 @@ void SpecMeasManager::selectEnergyBinning( const string binning,
   {
     try
     {
-      meas->keep_energy_cal_variant( binning );
+      meas->keep_energy_cal_variants( {binning} );
     }catch( std::exception &e )
     {
       passMessage( "There was an error separating energy cal type; loading all (error: "
@@ -3410,8 +3441,7 @@ void SpecMeasManager::selectDerivedDataChoice( const SpecMeasManager::DerivedDat
          || (meas->detector_type() == SpecUtils::DetectorType::VerifinderLaBr)
          || SpecUtils::icontains(meas->manufacturer(), "Symetrica") )
       {
-        // Remove the calibration and stabilization measurements; user probably doesnt want these
-        
+        // Remove the calibration and stabilization measurements; user probably doesnt want these.
         vector<shared_ptr<const SpecUtils::Measurement>> meas_to_remove;
         const vector<shared_ptr<const SpecUtils::Measurement>> orig_meas = meas->measurements();
         for( const shared_ptr<const SpecUtils::Measurement> &m : orig_meas )
@@ -3425,7 +3455,21 @@ void SpecMeasManager::selectDerivedDataChoice( const SpecMeasManager::DerivedDat
         }//for( loop over remaining measurements )
         
         if( !meas_to_remove.empty() )
+        {
+          meas->set_uuid( "" );
           meas->remove_measurements( meas_to_remove );
+        }
+        
+        // Also, a lot of times there are multiple energy calibrations, like "ECalVirtual3keV"
+        //  and/or something like "ECalGamma-SG_xxxxx-xxxxx", so we'll have detectors named
+        //  "DetectorInfoGamma", "DetectorInfoGamma_intercal_ECalVirtual3keV", etc.
+        //  So lets also rename these detectors.
+        const set<string> energy_cal_variants = meas->energy_cal_variants();
+        if( !energy_cal_variants.empty() )
+        {
+          meas->set_uuid( "" );
+          meas->keep_energy_cal_variants( energy_cal_variants );
+        }
       }//if( a Symetrica detector )
       
       // Trigger a refresh of row info and selected rows in File Manager
@@ -3434,7 +3478,7 @@ void SpecMeasManager::selectDerivedDataChoice( const SpecMeasManager::DerivedDat
       m_fileModel->addRow( header );
       index = m_fileModel->index( header );
       break;
-    }
+    }//case RawOnly or DerivedOnly
   }//switch( tokeep )
   
   
@@ -3615,6 +3659,13 @@ bool SpecMeasManager::checkForAndPromptUserForDisplayOptions( std::shared_ptr<Sp
     return true;
   }//if( derivedData )
 
+  // Everything past here is for selecting energy binning - lets check to make sure we are supposed
+  //  to check for this
+  if( viewingChecks == VariantChecksToDo::MultiVirtualDets )
+  {
+    return;
+  }
+  
   const char *title = "Select Binning";
   const char *msgtxt
    = "<div style=\"white-space: nowrap;\">Multiple energy binnings were found in the spectrum file.</div>"
@@ -3635,7 +3686,7 @@ bool SpecMeasManager::checkForAndPromptUserForDisplayOptions( std::shared_ptr<Sp
     WTableCell *cell = table->elementAt( 0, 0 );
     cell->addWidget( msg );
     cell->setColumnSpan( ncolwide );
-  
+    
     WPushButton *button = new WPushButton( "Keep All" );
     cell = table->elementAt( 1, 0 );
     cell->addWidget( button );
@@ -3785,7 +3836,9 @@ void SpecMeasManager::displayFile( int row,
     if( checkForAndPromptUserForDisplayOptions( header, measement_ptr,
                                 type, checkIfPreviouslyOpened,
                                 doPreviousEnergyRangeCheck, viewingChecks ) )
+    {
       return;
+    }
   }//if( checkIfAppropriateForViewing )
   
   
@@ -4954,12 +5007,8 @@ int SpecMeasManager::setDbEntry( Wt::Dbo::ptr<UserFileInDb> dbfile,
 }//int setDbEntry(...)
 
 
-void SpecMeasManager::userCanceledResumeFromPreviousOpened( AuxWindow *window,
-                                  std::shared_ptr<SpectraFileHeader> header )
+void SpecMeasManager::userCanceledResumeFromPreviousOpened( shared_ptr<SpectraFileHeader> header )
 {
-  if( window )
-    delete window;
-
   std::shared_ptr<SpecMeas> meas = header->measurementIfInMemory();
   
   boost::function<void(void)> f;
@@ -4967,11 +5016,8 @@ void SpecMeasManager::userCanceledResumeFromPreviousOpened( AuxWindow *window,
   if( meas )
     f = boost::bind( &SpectraFileHeader::saveToDatabaseWorker, meas, header );
   else
-    f = boost::bind( &SpectraFileHeader::saveToDatabaseFromTempFileWorker,
-                     header );
+    f = boost::bind( &SpectraFileHeader::saveToDatabaseFromTempFileWorker, header );
   
-//  boost::function<void(void)> worker = wApp->bind( f );
-//  WServer::instance()->post( wApp->sessionId(), worker );
   WServer::instance()->ioService().boost::asio::io_service::post( f );
 }//userCanceledResumeFromPreviousOpened(..)
 
@@ -5014,12 +5060,17 @@ void SpecMeasManager::showPreviousSpecFileUsesDialog( std::shared_ptr<SpectraFil
     }//try / catch
   }//if( unModifiedFiles.size() )
 
+  if( m_previousStatesDialog )
+    handleCancelPreviousStatesDialog( m_previousStatesDialog );
+  
   AuxWindow *window = new AuxWindow( "Previously Stored States",
                                     (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::DisableCollapse)
                                      | AuxWindowProperties::EnableResize
                                      | AuxWindowProperties::TabletNotFullScreen) );
   window->rejectWhenEscapePressed();
   window->addStyleClass( "ShowPrevSpecFileUses" );
+  WPushButton *cancel = window->addCloseButtonToFooter();
+  cancel->clicked().connect( window, &AuxWindow::hide );
   
   //bool auto_save_states = false;
   SnapshotBrowser *snapshots = nullptr;
@@ -5033,28 +5084,22 @@ void SpecMeasManager::showPreviousSpecFileUsesDialog( std::shared_ptr<SpectraFil
     {
       // TODO: pass userStatesWithFile into SnapshotBrowser
       snapshots = new SnapshotBrowser( this, m_viewer, header, nullptr, nullptr );
-      snapshots->finished().connect( boost::bind( &AuxWindow::deleteSelf, window) );
+      snapshots->finished().connect( boost::bind( &SpecMeasManager::handleClosePreviousStatesDialogAfterSelect,
+                                      this, window) );
     }//if( userStatesWithFile.size() )
     
     
     if( !modifiedFiles.empty() )
     {
       auto_saved = new AutosavedSpectrumBrowser( modifiedFiles, type, m_fileModel, this, header );
-      auto_saved->loadedASpectrum().connect( window, &AuxWindow::deleteSelf );
-      
-      WPushButton *cancel = window->addCloseButtonToFooter();
-      cancel->clicked().connect( window, &AuxWindow::hide );
-      window->finished().connect( boost::bind( &AuxWindow::deleteAuxWindow, window ) );
+      auto_saved->loadedASpectrum().connect( boost::bind( &SpecMeasManager::handleClosePreviousStatesDialogAfterSelect,
+                                                         this, window) );
       
       if( unModifiedFiles.empty() )
       {
         window->finished().connect( boost::bind( &SpecMeasManager::userCanceledResumeFromPreviousOpened,
-                                                this, nullptr, header ) );
-      }else
-      {
-        window->finished().connect( boost::bind( &AuxWindow::deleteAuxWindow, window ) );
-      }//if( unModifiedFiles.empty() ) / else
-      
+                                                this, header ) );
+      }
     }//if( !modifiedFiles.empty() )
   }catch( std::exception &e )
   {
@@ -5073,7 +5118,7 @@ void SpecMeasManager::showPreviousSpecFileUsesDialog( std::shared_ptr<SpectraFil
     passMessage( msg, WarningWidget::WarningMsgLevel::WarningMsgHigh)
     return;
   }// try / catch
-    
+  
   if( !snapshots && !auto_saved )
   {
     assert( 0 );
@@ -5112,30 +5157,11 @@ void SpecMeasManager::showPreviousSpecFileUsesDialog( std::shared_ptr<SpectraFil
   window->centerWindow();
   window->show();
   
+  m_previousStatesDialog = window;
+  window->finished().connect( boost::bind( &SpecMeasManager::handleCancelPreviousStatesDialog, this, window ) );
+  
   wApp->triggerUpdate();
 }//void showPreviousSpecFileUsesDialog(..)
-
-
-void SpecMeasManager::showDatabaseStatesHavingSpectrumFile( std::shared_ptr<SpectraFileHeader> header )
-{
-  const size_t num_states = SnapshotBrowser::num_saved_states( m_viewer, m_viewer->sql(), header );
-  
-  if( !num_states )
-    return;
-  
-  DbFileBrowser *browser = new DbFileBrowser( this, m_viewer, header );
-  
-  // \TODO: come up with a way to check if there are any states before going through and creating
-  //        the widget and everything.
-  if( browser->numSnapshots() <= 0 )
-  {
-    assert( 0 );
-    delete browser;
-    browser = nullptr;
-  }
-  
-  wApp->triggerUpdate();
-}
 
 
 void postErrorMessage( const string msg, const WarningWidget::WarningMsgLevel level )
@@ -5257,11 +5283,6 @@ void SpecMeasManager::checkIfPreviouslyOpened( const std::string sessionID,
     
     
     // If we are here, the user has either modified the file, or has it as part of the save-state.
-    //WServer::instance()->post( sessionID,
-    //                            boost::bind( &SpecMeasManager::showDatabaseStatesHavingSpectrumFile,
-    //                                        this, header) );
-      
-    
     WServer::instance()->post( sessionID,
                               boost::bind( &SpecMeasManager::showPreviousSpecFileUsesDialog,
                                           this, header, type, modifiedFiles, unModifiedFiles,
@@ -5346,6 +5367,9 @@ int SpecMeasManager::dataUploaded( Wt::WFileUpload *upload )
 bool SpecMeasManager::loadFromFileSystem( const string &name, SpecUtils::SpectrumType type,
                                          SpecUtils::ParserType parseType )
 {
+  if( m_previousStatesDialog )
+    handleCancelPreviousStatesDialog( m_previousStatesDialog );
+  
   const string origName = SpecUtils::filename( name );
   
   try
@@ -5391,6 +5415,9 @@ bool SpecMeasManager::loadFromFileSystem( const string &name, SpecUtils::Spectru
 
 int SpecMeasManager::dataUploaded( Wt::WFileUpload *upload, std::shared_ptr<SpecMeas> &measurement )
 {
+  if( m_previousStatesDialog )
+    handleCancelPreviousStatesDialog( m_previousStatesDialog );
+  
   const string fileName = upload->spoolFileName();
   const WString clientFileName = upload->clientFileName();
   const string origName = clientFileName.toUTF8();
