@@ -2366,9 +2366,50 @@ NucMatchResults fill_in_nuclide_info( const vector<RelActCalcManual::GenericPeak
     
     iso = nuc ? nuc->symbol : rctn->name();
     
+    // Make sure we try to use a U-data source, only for U, and the nuclides of it we have,
+    //  otherwise we'll default back to using SandiaDecay
     auto src = nuc_data_src;
     if( (nuc && (nuc->atomicNumber != 92)) || rctn )
+    {
       src = NucDataSrc::SandiaDecay;
+    }else if( nuc->atomicNumber == 92 )
+    {
+      auto has_U_nuc = [db]( const SandiaDecay::Nuclide *nuc, const vector<NuclideInfo> &input ) -> bool {
+        for( const NuclideInfo &inputnuc : input )
+        {
+          const SandiaDecay::Nuclide *inputnuc_ptr = db->nuclide( inputnuc.parent );
+          assert( inputnuc_ptr );
+          if( inputnuc_ptr == nuc )
+            return true;
+        }//for( const NuclideInfo &inputnuc : input )
+        return false;
+      };//filter_for_nuc(...)
+      
+      // TODO: we should probably give a warning that we are using SandiaDecay data if the
+      //       uranium dataset doesn't have this nuclide.
+      switch( src )
+      {
+        case NucDataSrc::Icrp107_U:
+          if( !has_U_nuc(nuc, icrp107) )
+            src = NucDataSrc::SandiaDecay;
+        break;
+          
+        case NucDataSrc::Lanl_U:
+          if( !has_U_nuc(nuc, lanl) )
+            src = NucDataSrc::SandiaDecay;
+        break;
+          
+        case NucDataSrc::IcrpLanlGadras_U:
+          if( !has_U_nuc(nuc, lanl_icrp_gad) )
+            src = NucDataSrc::SandiaDecay;
+        break;
+          
+        case NucDataSrc::SandiaDecay:
+        case NucDataSrc::Undefined:
+          break;
+      }//switch( src )
+    }//if( non-U nuclide ) / else
+    
     
     switch( src )
     {
@@ -2401,7 +2442,7 @@ NucMatchResults fill_in_nuclide_info( const vector<RelActCalcManual::GenericPeak
     };//filter_for_nuc(...)
     
     
-    switch( nuc_data_src )
+    switch( src )
     {
       case NucDataSrc::Icrp107_U:
       {
