@@ -1023,6 +1023,8 @@ void RelActManualGui::setGuiState( const GuiState &state )
     m_renderFlags |= RenderActions::UpdateCalc;
     scheduleRender();
   }
+  
+  assert( !m_renderFlags.testFlag(RenderActions::AddUndoRedoStep) );
 }//void setGuiState( const GuiState &state )
 
 

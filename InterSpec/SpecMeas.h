@@ -228,6 +228,8 @@ public:
                                 std::shared_ptr< PeakDeque > foundPeaks
                                 /*, std::shared_ptr< PeakDeque > intitalPeaks*/ );
   
+  std::set<std::set<int> > sampleNumsWithAutomatedSearchPeaks() const;
+  
   //peaksHaveBeenAdded(): marks this SpecUtils::SpecFile object as
   void setModified();
 

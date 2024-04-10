@@ -2040,6 +2040,18 @@ void SpecMeas::setAutomatedSearchPeaks( const std::set<int> &samplenums,
 }//setAutomatedSearchPeaks(...)
 
 
+std::set<std::set<int>> SpecMeas::sampleNumsWithAutomatedSearchPeaks() const
+{
+  std::set<std::set<int>> answer;
+  for( const SampleNumsToPeakMap::value_type &t : m_autoSearchPeaks )
+  {
+    if( t.second && !t.second->empty() )
+      answer.insert( t.first );
+  }
+  return answer;
+}//std::set<std::set<int> > sampleNumsWithAutomatedSearchPeaks() const
+
+
 std::shared_ptr< std::deque< std::shared_ptr<const PeakDef> > >
                              SpecMeas::peaks( const std::set<int> &samplenums )
 {

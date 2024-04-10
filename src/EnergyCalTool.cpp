@@ -127,6 +127,7 @@ namespace
   void do_undo_or_redo( const bool is_undo,
                         const SpecUtils::SpectrumType type,
                         const meas_old_new_peaks_t &meas_old_new_peaks,
+                        const meas_old_new_peaks_t &meas_old_new_hint_peaks,
                         const meas_old_new_cal_t &meas_old_new_cal,
                         const std::weak_ptr<SpecMeas> &specfile_weak )
   {
@@ -188,12 +189,21 @@ namespace
     for( const auto &m_o_n : meas_old_new_peaks )
     {
       const set<int> &samples = get<0>(m_o_n);
-      const deque<shared_ptr<const PeakDef>> &from_peaks = is_undo ? get<2>(m_o_n) : get<1>(m_o_n);
+      //const deque<shared_ptr<const PeakDef>> &from_peaks = is_undo ? get<2>(m_o_n) : get<1>(m_o_n);
       const deque<shared_ptr<const PeakDef>> &to_peaks = is_undo ? get<1>(m_o_n) : get<2>(m_o_n);
       
       specfile->setPeaks( to_peaks, samples );
       if( peakModel && (specfile == foreground) && (samples == foresamples) )
         peakModel->setPeakFromSpecMeas(foreground, foresamples);
+    }//for( loop over changed peaks )
+    
+    for( const auto &m_o_n : meas_old_new_hint_peaks )
+    {
+      const set<int> &samples = get<0>(m_o_n);
+      const deque<shared_ptr<const PeakDef>> &to_peaks = is_undo ? get<1>(m_o_n) : get<2>(m_o_n);
+      
+      auto peaks = make_shared<deque<shared_ptr<const PeakDef>>>( to_peaks );
+      specfile->setAutomatedSearchPeaks( samples, peaks );
     }//for( loop over changed peaks )
     
     viewer->refreshDisplayedCharts();
@@ -203,7 +213,7 @@ namespace
   
   /** We may make multiple calls to #EnergyCalTool::setEnergyCal and or #EnergyCalTool::addDeviationPair, or other function, for
    a single user-instigated change.  We want to combine multiple of these calls, so its a single user undo/redo operation, so we'll use
-   thread-local storage, and this `EnergyCalUndoRedoSentry` object to agregate all the changes, for a single user operation,
+   thread-local storage, and this `EnergyCalUndoRedoSentry` object to aggregate all the changes, for a single user operation,
    and have the destructor of #EnergyCalUndoRedoSentry actually insert the undo/redo step.
   */
   
@@ -217,6 +227,7 @@ namespace
   thread_local static int sm_undo_redo_level;
   thread_local static unique_ptr<SpecMeasToCalHistoryMap> sm_meas_old_new_cal_map;
   thread_local static unique_ptr<SpecMeasToPeakHistoryMap> sm_meas_old_new_peaks_map;
+  thread_local static unique_ptr<SpecMeasToPeakHistoryMap> sm_meas_old_new_hint_peaks_map;
   
   struct EnergyCalUndoRedoSentry
   {
@@ -227,10 +238,11 @@ namespace
         sm_undo_redo_level = 1;
         sm_meas_old_new_cal_map = make_unique<SpecMeasToCalHistoryMap>();
         sm_meas_old_new_peaks_map = make_unique<SpecMeasToPeakHistoryMap>();
+        sm_meas_old_new_hint_peaks_map = make_unique<SpecMeasToPeakHistoryMap>();
       }else
       {
         sm_undo_redo_level += 1;
-        assert( sm_meas_old_new_peaks_map );
+        assert( sm_meas_old_new_peaks_map && sm_meas_old_new_hint_peaks_map );
       }
     }//EnergyCalUndoRedoSentry()
       
@@ -248,9 +260,19 @@ namespace
     {
       assert( sm_meas_old_new_peaks_map );
       if( !sm_meas_old_new_peaks_map )
-        throw logic_error( "EnergyCalUndoRedoSentry: peak info not initied?" );
+        throw logic_error( "EnergyCalUndoRedoSentry: peak info not inited?" );
       
       SpecMeasToPeakHistoryMap &m = *sm_meas_old_new_peaks_map;
+      return m[meas];
+    }
+    
+    meas_old_new_peaks_t &hint_peak_info( const shared_ptr<SpecMeas> &meas )
+    {
+      assert( sm_meas_old_new_hint_peaks_map );
+      if( !sm_meas_old_new_hint_peaks_map )
+        throw logic_error( "EnergyCalUndoRedoSentry: hint peak info not inited?" );
+      
+      SpecMeasToPeakHistoryMap &m = *sm_meas_old_new_hint_peaks_map;
       return m[meas];
     }
     
@@ -260,8 +282,8 @@ namespace
       using namespace SpecUtils;
       
       sm_undo_redo_level -= 1;
-      assert( sm_meas_old_new_cal_map && sm_meas_old_new_peaks_map );
-      if( !sm_meas_old_new_cal_map || !sm_meas_old_new_peaks_map )
+      assert( sm_meas_old_new_cal_map && sm_meas_old_new_peaks_map && sm_meas_old_new_hint_peaks_map );
+      if( !sm_meas_old_new_cal_map || !sm_meas_old_new_peaks_map || !sm_meas_old_new_hint_peaks_map )
         return;
       
       if( sm_undo_redo_level > 0 )
@@ -272,12 +294,19 @@ namespace
       // Note, with C++14, we could capture unique_ptr into the lambdas, but we'll worry about that later
       const SpecMeasToCalHistoryMap meas_old_new_cal_map( std::move(*sm_meas_old_new_cal_map) );
       const SpecMeasToPeakHistoryMap meas_old_new_peaks_map( std::move(*sm_meas_old_new_peaks_map) );
+      const SpecMeasToPeakHistoryMap meas_old_new_hint_peaks_map( std::move(*sm_meas_old_new_hint_peaks_map) );
+      
       sm_meas_old_new_cal_map.reset();
       sm_meas_old_new_peaks_map.reset();
+      sm_meas_old_new_hint_peaks_map.reset();
       
-      // No changes regestered.
-      if( meas_old_new_cal_map.empty() && meas_old_new_peaks_map.empty() )
+      // No changes registered.
+      if( meas_old_new_cal_map.empty() 
+         && meas_old_new_peaks_map.empty()
+         && meas_old_new_hint_peaks_map.empty() )
+      {
         return;
+      }
       
       InterSpec *viewer = InterSpec::instance();
       assert( viewer );
@@ -297,8 +326,12 @@ namespace
       for( const SpectrumType type : types )
       {
         const shared_ptr<SpecMeas> m = viewer->measurment(type);
-        if( m && (meas_old_new_cal_map.count(m) || meas_old_new_peaks_map.count(m)) )
+        if( m && (meas_old_new_cal_map.count(m) 
+                  || meas_old_new_peaks_map.count(m)
+                  || meas_old_new_hint_peaks_map.count(m)) )
+        {
           meas_to_type[m] = type;
+        }
       }
       
       if( meas_to_type.empty() )
@@ -306,7 +339,8 @@ namespace
       
       // Lets avoid creating two copies of everything, and create a ptr to the undo/redo fcn
       auto doUndoOrRedo = make_shared<function<void(bool)>>(
-        [meas_to_type,meas_old_new_peaks_map,meas_old_new_cal_map]( const bool is_undo ){
+        [meas_to_type, meas_old_new_peaks_map, 
+         meas_old_new_hint_peaks_map, meas_old_new_cal_map]( const bool is_undo ){
           
           size_t num_peak_sets_used = 0;
           for( const auto &key : meas_old_new_cal_map )
@@ -322,13 +356,22 @@ namespace
               meas_old_new_peaks = peak_iter->second;
             }
             
+            meas_old_new_peaks_t meas_old_new_hint_peaks;
+            const auto hint_peak_iter = meas_old_new_hint_peaks_map.find(specfile_weak);
+            if( hint_peak_iter != end(meas_old_new_hint_peaks_map) )
+            {
+              //num_peak_sets_used += 1;
+              meas_old_new_hint_peaks = hint_peak_iter->second;
+            }
+            
             SpecUtils::SpectrumType type = SpecUtils::SpectrumType::Foreground;
             const auto type_iter = meas_to_type.find(specfile_weak);
             assert( type_iter != end(meas_to_type) );
             if( type_iter != end(meas_to_type) )
               type = type_iter->second;
             
-            do_undo_or_redo( is_undo, type, meas_old_new_peaks, meas_old_new_cal, specfile_weak );
+            do_undo_or_redo( is_undo, type, meas_old_new_peaks, 
+                            meas_old_new_hint_peaks, meas_old_new_cal, specfile_weak );
           }//for( const meas_old_new_cal_t &meas_old_new_cal : meas_old_new_cal_map )
           
           assert( num_peak_sets_used == meas_old_new_peaks_map.size() );
@@ -2439,6 +2482,7 @@ void EnergyCalTool::applyCalChange( std::shared_ptr<const SpecUtils::EnergyCalib
   // We will store updated peaks and not set any of them until we know all the energy calibrations
   //  and peak shifts were successfully done.
   map<shared_ptr<deque<shared_ptr<const PeakDef>>>,deque<shared_ptr<const PeakDef>>> updated_peaks;
+  map<shared_ptr<const deque<shared_ptr<const PeakDef>>>,deque<shared_ptr<const PeakDef>>> updated_hint_peaks;
   
   // const vector<MeasToApplyCoefChangeTo> changemeas = measurementsToApplyCoeffChangeTo();
   
@@ -2547,10 +2591,11 @@ void EnergyCalTool::applyCalChange( std::shared_ptr<const SpecUtils::EnergyCalib
     //  until we know we can update all the peaks
     
     const set<set<int>> samples_with_peaks = change.meas->sampleNumsWithPeaks();
+    const set<set<int>> samples_with_hint_peaks = change.meas->sampleNumsWithAutomatedSearchPeaks();
     
     // We may not be updating all samples, so we will only update peaks who are owned
     //  by sample numbers that are all in the samples being updated.
-    set<set<int>> peaksamples;
+    set<set<int>> peaksamples, hintPeakSamples;
     
     for( const set<int> &samples : samples_with_peaks )
     {
@@ -2560,6 +2605,16 @@ void EnergyCalTool::applyCalChange( std::shared_ptr<const SpecUtils::EnergyCalib
       
       if( all_samples )
         peaksamples.insert( samples );
+    }//for( const set<int> &samples : samples_with_peaks )
+    
+    for( const set<int> &samples : samples_with_hint_peaks )
+    {
+      bool all_samples = true;
+      for( const int sample : change.sample_numbers )
+        all_samples = (all_samples && samples.count(sample));
+      
+      if( all_samples )
+        hintPeakSamples.insert( samples );
     }//for( const set<int> &samples : samples_with_peaks )
     
     
@@ -2640,8 +2695,49 @@ void EnergyCalTool::applyCalChange( std::shared_ptr<const SpecUtils::EnergyCalib
         
         throw runtime_error( msg );
       }//try / catch
-      
     }//for( const set<int> &samples : peaksampels )
+    
+    
+    // Do similar loop to the above, but for hint peaks
+    for( const set<int> &samples : hintPeakSamples )
+    {
+      auto oldHintPeaks = change.meas->automatedSearchPeaks(samples);
+      auto oldcal = change.meas->suggested_sum_energy_calibration( samples, display_detectors );
+      
+      if( !oldHintPeaks || oldHintPeaks->empty() || !oldcal || !oldcal->valid() )
+      {
+        if( !oldHintPeaks || !oldcal || !oldcal->valid() )
+        {
+          assert( 0 );  //shouldnt get here
+        }
+        continue;
+      }
+      
+      const auto newcal_pos = old_to_new_cals.find(oldcal);
+      if( (newcal_pos == end(old_to_new_cals)) || !newcal_pos->second || !newcal_pos->second->valid() )
+      {
+        assert( 0 ); //shouldnt get here
+        continue;
+      }
+      
+      const shared_ptr<const EnergyCalibration> newcal = newcal_pos->second;
+      assert( newcal && newcal->valid() );
+      if( oldcal == newcal )
+        continue;
+      
+      try
+      {
+        auto newpeaks = EnergyCal::translatePeaksForCalibrationChange( *oldHintPeaks, oldcal, newcal );
+        updated_hint_peaks[oldHintPeaks] = newpeaks;
+      }catch( std::exception &e )
+      {
+        string msg = "There was an issue translating hint peaks for this energy change,"
+        " still applying, Error: " + string(e.what());
+  #if( PERFORM_DEVELOPER_CHECKS )
+        log_developer_error( __func__, msg.c_str() );
+  #endif
+      }//try / catch
+    }//for( const set<int> &samples : hintPeakSamples )
   }//for( const MeasToApplyCoefChangeTo &change : changemeas )
   
   if( old_to_new_cals.find(disp_prev_cal) == end(old_to_new_cals) )
@@ -2668,6 +2764,8 @@ void EnergyCalTool::applyCalChange( std::shared_ptr<const SpecUtils::EnergyCalib
     
     meas_old_new_cal_t &meas_old_new_cal = undo_sentry.cal_info( change.meas );
     meas_old_new_peaks_t &meas_old_new_peaks = undo_sentry.peak_info( change.meas );
+    meas_old_new_peaks_t &meas_old_new_hint_peaks = undo_sentry.hint_peak_info( change.meas );
+    
     
     for( const int sample : change.sample_numbers )
     {
@@ -2711,23 +2809,48 @@ void EnergyCalTool::applyCalChange( std::shared_ptr<const SpecUtils::EnergyCalib
     for( const set<int> &samples : peaksamples )
     {
       auto oldpeaks = change.meas->peaks(samples);
-      if( !oldpeaks )
-        continue;
-      
-      const auto pos = updated_peaks.find(oldpeaks);
-      if( pos == end(updated_peaks) )
+      if( oldpeaks )
       {
-        if( !oldpeaks->empty() )
-          cerr << "Couldnt find an expected entry in updated_peaks" << endl;
-        continue;
-      }
-      
-      meas_old_new_peaks.emplace_back( samples, *oldpeaks, pos->second );
-      
-      change.meas->setPeaks( pos->second, samples );
-      if( m_peakModel && (change.meas == forgrnd) && (samples == foresamples) )
-        m_peakModel->setPeakFromSpecMeas(forgrnd, foresamples);
+        const auto pos = updated_peaks.find(oldpeaks);
+        if( pos == end(updated_peaks) )
+        {
+          if( oldpeaks && !oldpeaks->empty() )
+            cerr << "Couldnt find an expected entry in updated_peaks" << endl;
+        }else
+        {
+          meas_old_new_peaks.emplace_back( samples, *oldpeaks, pos->second );
+          
+          change.meas->setPeaks( pos->second, samples );
+          if( m_peakModel && (change.meas == forgrnd) && (samples == foresamples) )
+            m_peakModel->setPeakFromSpecMeas(forgrnd, foresamples);
+        }//if( pos == end(updated_peaks) ) / else
+      }//if( oldpeaks )
     }//for( const set<int> &samples : peaksampels )
+    
+    
+    // Do similar thing for the hint peaks
+    const set<set<int>> hintPeakSamples = change.meas->sampleNumsWithAutomatedSearchPeaks();
+    for( const set<int> &samples : hintPeakSamples )
+    {
+      shared_ptr<const SpecMeas::PeakDeque> hintPeaks = change.meas->automatedSearchPeaks(samples);
+      assert( hintPeaks && !hintPeaks->empty() );
+      
+      if( hintPeaks && !hintPeaks->empty() )
+      {
+        const auto pos = updated_hint_peaks.find( hintPeaks );
+        if( pos == end(updated_hint_peaks) )
+        {
+          if( hintPeaks && !hintPeaks->empty() )
+            cerr << "Couldnt find an expected entry in updated_peaks" << endl;
+        }else if( !pos->second.empty() )
+        {
+          meas_old_new_hint_peaks.emplace_back( samples, *hintPeaks, pos->second );
+          
+          auto peaks = make_shared<deque<shared_ptr<const PeakDef>>>( pos->second );
+          change.meas->setAutomatedSearchPeaks( samples, peaks );
+        }//if( pos == end(updated_hint_peaks) ) / else
+      }//if( hintPeaks )
+    }//for( const set<int> &samples : hintPeakSamples )
   }//for( loop over SpecFiles for change )
   
   m_interspec->refreshDisplayedCharts();
@@ -2755,6 +2878,8 @@ void EnergyCalTool::setEnergyCal( shared_ptr<const SpecUtils::EnergyCalibration>
   // We will store updated peaks and not set any of them until we know all the energy calibrations
   //  and peak shifts were successfully done.
   map<shared_ptr<deque<shared_ptr<const PeakDef>>>,deque<shared_ptr<const PeakDef>>> updated_peaks;
+  map<shared_ptr<const deque<shared_ptr<const PeakDef>>>,deque<shared_ptr<const PeakDef>>> updated_hint_peaks;
+  
   
   // const vector<MeasToApplyCoefChangeTo> changemeas = measurementsToApplyCoeffChangeTo();
   
@@ -2878,6 +3003,47 @@ void EnergyCalTool::setEnergyCal( shared_ptr<const SpecUtils::EnergyCalibration>
       throw runtime_error( msg );
     }//try / catch
   }//for( const set<int> &samples : peaksampels )
+  
+  
+  // Now do same thing as for peaks, but for the hint peaks
+  const set<set<int>> hintPeakSamples = adjust_peaks
+                                            ? changemeas.meas->sampleNumsWithAutomatedSearchPeaks()
+                                            : set<set<int>>();
+  for( const set<int> &samples : hintPeakSamples )
+  {
+    auto oldHintPeaks = changemeas.meas->automatedSearchPeaks( samples );
+    auto oldcal = changemeas.meas->suggested_sum_energy_calibration( samples, dispdets );
+      
+    if( !oldHintPeaks || oldHintPeaks->empty() || !oldcal || !oldcal->valid() )
+      continue;
+    
+    const auto newcal_pos = old_to_new_cals.find(oldcal);
+    if( (newcal_pos == end(old_to_new_cals)) || !newcal_pos->second || !newcal_pos->second->valid() )
+      continue;
+      
+    const shared_ptr<const EnergyCalibration> newcal = newcal_pos->second;
+    assert( newcal && newcal->valid() );
+      
+    if( !newcal || !newcal->valid() || (oldcal == newcal) )
+    {
+      assert( 0 );
+      continue;
+    }
+    
+    try
+    {
+      auto newpeaks = EnergyCal::translatePeaksForCalibrationChange( *oldHintPeaks, oldcal, newcal );
+      updated_hint_peaks[oldHintPeaks] = newpeaks;
+    }catch( std::exception &e )
+    {
+#if( PERFORM_DEVELOPER_CHECKS )
+      string msg = "There was an issue translating hint peaks for this energy change.  Error: "
+                   + string(e.what());
+      log_developer_error( __func__, msg.c_str() );
+#endif
+    }//try / catch
+  }//for( const set<int> &samples : hintPeakSamples )
+  
     
   // For undo/redo, store changes to energy cal, and peaks.
   EnergyCalUndoRedoSentry undo_sentry;
@@ -2927,23 +3093,44 @@ void EnergyCalTool::setEnergyCal( shared_ptr<const SpecUtils::EnergyCalibration>
   for( const set<int> &samples : peaksamples )
   {
     auto oldpeaks = changemeas.meas->peaks(samples);
-    if( !oldpeaks )
-      continue;
-    
-    const auto pos = updated_peaks.find(oldpeaks);
-    if( pos == end(updated_peaks) )
+    if( oldpeaks )
     {
-      if( !oldpeaks->empty() )
-        cerr << "Couldnt find an expected entry in updated_peaks" << endl;
-      continue;
-    }
-    
-    meas_old_new_peaks_t &meas_old_new_peaks = undo_sentry.peak_info( changemeas.meas );
-    meas_old_new_peaks.emplace_back( samples, *oldpeaks, pos->second );
-    
-    changemeas.meas->setPeaks( pos->second, samples );
-    if( m_peakModel && (changemeas.meas == forgrnd) && (samples == foresamples) )
-      m_peakModel->setPeakFromSpecMeas(forgrnd, foresamples);
+      const auto pos = updated_peaks.find(oldpeaks);
+      if( pos == end(updated_peaks) )
+      {
+        if( oldpeaks && !oldpeaks->empty() )
+          cerr << "Couldnt find an expected entry in updated_peaks" << endl;
+      }else
+      {
+        meas_old_new_peaks_t &meas_old_new_peaks = undo_sentry.peak_info( changemeas.meas );
+        meas_old_new_peaks.emplace_back( samples, *oldpeaks, pos->second );
+        
+        changemeas.meas->setPeaks( pos->second, samples );
+        if( m_peakModel && (changemeas.meas == forgrnd) && (samples == foresamples) )
+          m_peakModel->setPeakFromSpecMeas(forgrnd, foresamples);
+      }//if( pos == end(updated_peaks) ) / else
+    }//if( oldpeaks )
+  }//for( const set<int> &samples : peaksampels )
+  
+  // And set the updated hint peaks
+  for( const set<int> &samples : hintPeakSamples )
+  {
+    auto hintPeaks = changemeas.meas->automatedSearchPeaks(samples);
+    if( hintPeaks && !hintPeaks->empty() )
+    {
+      const auto pos = updated_hint_peaks.find(hintPeaks);
+      if( pos == end(updated_hint_peaks) )
+      {
+        if( hintPeaks && !hintPeaks->empty() )
+          cerr << "Couldnt find an expected entry in updated_hint_peaks" << endl;
+      }else
+      {
+        meas_old_new_peaks_t &meas_old_new_hint_peaks = undo_sentry.hint_peak_info( changemeas.meas );
+        meas_old_new_hint_peaks.emplace_back( samples, *hintPeaks, pos->second );
+        auto peaks = make_shared<deque<shared_ptr<const PeakDef>>>( pos->second );
+        changemeas.meas->setAutomatedSearchPeaks( samples, peaks );
+      }//if( pos == end(updated_hint_peaks) ) / else
+    }//if( hintPeaks && !hintPeaks->empty() )
   }//for( const set<int> &samples : peaksampels )
 }//void setEnergyCal( new_cal, changemeas )
 
@@ -2965,6 +3152,7 @@ void EnergyCalTool::addDeviationPair( const std::pair<float,float> &new_pair )
   
   // We will also pre-calculate updated peaks
   map<shared_ptr<deque<shared_ptr<const PeakDef>>>,deque<shared_ptr<const PeakDef>>> updated_peaks;
+  map<shared_ptr<const deque<shared_ptr<const PeakDef>>>,deque<shared_ptr<const PeakDef>>> updated_hint_peaks;
   
   const vector<MeasToApplyCoefChangeTo> changemeas = measurementsToApplyCoeffChangeTo();
   
@@ -2977,6 +3165,7 @@ void EnergyCalTool::addDeviationPair( const std::pair<float,float> &new_pair )
     assert( change.meas );
     
     meas_old_new_peaks_t &meas_old_new_peaks = undo_sentry.peak_info(change.meas);
+    meas_old_new_peaks_t &meas_old_new_hint_peaks = undo_sentry.hint_peak_info(change.meas);
     
     try
     {
@@ -3105,6 +3294,51 @@ void EnergyCalTool::addDeviationPair( const std::pair<float,float> &new_pair )
         throw runtime_error( msg );
       }//try / catch
     }//for( const set<int> &samples : peaksampels )
+    
+    
+    //Now get new hint peaks
+    const set<set<int>> hintPeakSamples = change.meas->sampleNumsWithAutomatedSearchPeaks();
+    
+    for( const set<int> &samples : hintPeakSamples )
+    {
+      auto oldHintPeaks = change.meas->automatedSearchPeaks(samples);
+      auto oldcal = change.meas->suggested_sum_energy_calibration( samples, detnamesv );
+      
+      if( !oldHintPeaks || oldHintPeaks->empty()
+         || !oldcal || (oldcal->type() == EnergyCalType::InvalidEquationType) )
+      {
+        if( !oldHintPeaks || !oldcal || !oldcal->valid() )
+          cerr << "Failed to get peaks or oldcal!" << endl; //just for development
+        continue;
+      }
+      
+      const auto newcal_pos = old_to_new_cals.find(oldcal);
+      if( (newcal_pos == end(old_to_new_cals)) || !newcal_pos->second || !newcal_pos->second->valid() )
+      {
+        cerr << "Failed to get newcal for peaks shift!" << endl; //just for development, shouldnt happen I dont think
+        continue;
+      }
+      
+      const shared_ptr<const EnergyCalibration> newcal = newcal_pos->second;
+      assert( newcal && newcal->valid() );
+      if( !newcal || !newcal->valid() || (oldcal == newcal) )
+        continue;
+      
+      try
+      {
+        auto newpeaks = EnergyCal::translatePeaksForCalibrationChange( *oldHintPeaks, oldcal, newcal );
+        updated_hint_peaks[oldHintPeaks] = newpeaks;
+        
+        meas_old_new_hint_peaks.push_back( {samples, *oldHintPeaks, newpeaks} );
+      }catch( std::exception &e )
+      {
+        string msg = "There was an issue translating hint peaks for this energy change/"
+        "  Error: " + string(e.what());
+#if( PERFORM_DEVELOPER_CHECKS )
+        log_developer_error( __func__, msg.c_str() );
+#endif
+      }//try / catch
+    }//for( const set<int> &samples : peaksampels )
   }//for( const MeasToApplyCoefChangeTo &change : changemeas )
   
   
@@ -3163,7 +3397,7 @@ void EnergyCalTool::addDeviationPair( const std::pair<float,float> &new_pair )
       const auto pos = updated_peaks.find(oldpeaks);
       if( pos == end(updated_peaks) )
       {
-        if( !oldpeaks->empty() )
+        if( oldpeaks && !oldpeaks->empty() )
           cerr << "Couldnt find an expected entry in updated_peaks" << endl;
         continue;
       }
@@ -3171,6 +3405,26 @@ void EnergyCalTool::addDeviationPair( const std::pair<float,float> &new_pair )
       change.meas->setPeaks( pos->second, samples );
       if( m_peakModel && (change.meas == forgrnd) && (samples == foresamples) )
         m_peakModel->setPeakFromSpecMeas(forgrnd, foresamples);
+    }//for( const set<int> &samples : peaksampels )
+    
+    // Also grab the updated hint peaks
+    const set<set<int>> hintPeakSamples = change.meas->sampleNumsWithAutomatedSearchPeaks();
+    for( const set<int> &samples : hintPeakSamples )
+    {
+      auto oldHintPeaks = change.meas->automatedSearchPeaks( samples );
+      if( !oldHintPeaks || oldHintPeaks->empty() )
+        continue;
+      
+      const auto pos = updated_hint_peaks.find(oldHintPeaks);
+      if( pos == end(updated_hint_peaks) )
+      {
+        if( oldHintPeaks && !oldHintPeaks->empty() )
+          cerr << "Couldnt find an expected entry in updated_hint_peaks" << endl;
+      }else
+      {
+        auto peaks = make_shared<deque<shared_ptr<const PeakDef>>>( pos->second );
+        change.meas->setAutomatedSearchPeaks( samples, peaks );
+      }
     }//for( const set<int> &samples : peaksampels )
   }//for( loop over SpecFiles for change )
   
@@ -3422,6 +3676,7 @@ void EnergyCalTool::userChangedDeviationPair( EnergyCalImp::CalDisplay *display,
   // We will store updated peaks and not set any of them until we know all the energy calibrations
   //  and peak shifts were sucessfully done.
   map<shared_ptr<deque<shared_ptr<const PeakDef>>>,deque<shared_ptr<const PeakDef>>> updated_peaks;
+  map<shared_ptr<const deque<shared_ptr<const PeakDef>>>,deque<shared_ptr<const PeakDef>>> updated_hint_peaks;
   
   //const vector<string> &detnames = specfile->gamma_detector_names();
   const vector<string> &detnames = m_interspec->detectorsToDisplay( type );
@@ -3473,6 +3728,45 @@ void EnergyCalTool::userChangedDeviationPair( EnergyCalImp::CalDisplay *display,
     }//try / catch
   }//for( const set<int> &samples : samplesWithPeaks )
   
+  
+  const set<set<int>> samplesWithHintPeaks = specfile->sampleNumsWithAutomatedSearchPeaks();
+  for( const set<int> &samples : samplesWithHintPeaks )
+  {
+    try
+    {
+      auto dispcal = specfile->suggested_sum_energy_calibration( samples, detnames );
+      
+      const auto dispcaliter = old_to_new_cal.find(dispcal);
+      if( dispcaliter == end(old_to_new_cal) )
+        continue;
+      
+      bool detInSample = false;
+      for( auto iter = begin(samples); !detInSample && (iter != end(samples)); ++iter )
+      {
+        auto m = specfile->measurement( *iter, detname );
+        detInSample = !!m;
+      }
+      
+      if( !detInSample )
+        continue;
+      
+      auto oldHintPeaks = specfile->automatedSearchPeaks(samples);
+      if( !oldHintPeaks || oldHintPeaks->empty() )
+        continue;
+      
+      auto newpeaks = EnergyCal::translatePeaksForCalibrationChange( *oldHintPeaks, dispcaliter->first,
+                                                                    dispcaliter->second );
+      updated_hint_peaks[oldHintPeaks] = newpeaks;
+    }catch( std::exception &e )
+    {
+#if( PERFORM_DEVELOPER_CHECKS )
+      string msg = "There was an issue translating hint peaks for this deviation pair change."
+      " Error: " + string(e.what());
+      log_developer_error( __func__, msg.c_str() );
+#endif
+    }//try / catch
+  }//for( const set<int> &samples : samplesWithHintPeaks )
+  
   display->setDeviationPairsValid();
   
   
@@ -3482,6 +3776,7 @@ void EnergyCalTool::userChangedDeviationPair( EnergyCalImp::CalDisplay *display,
   EnergyCalUndoRedoSentry undo_sentry;
   meas_old_new_cal_t &meas_old_new_cal = undo_sentry.cal_info(forgrnd);
   meas_old_new_peaks_t &meas_old_new_peaks = undo_sentry.peak_info(forgrnd);
+  meas_old_new_peaks_t &meas_old_new_hint_peaks = undo_sentry.hint_peak_info(forgrnd);
   
   for( auto &m : specfile->measurements() )
   {
@@ -3501,7 +3796,7 @@ void EnergyCalTool::userChangedDeviationPair( EnergyCalImp::CalDisplay *display,
     if( (calpos == end(old_to_new_cal)) || !calpos->second || !calpos->second->valid() )
     {
 #if( PERFORM_DEVELOPER_CHECKS )
-      log_developer_error( __func__, "Unexpectedly found invalid calibation in old_to_new_cal" );
+      log_developer_error( __func__, "Unexpectedly found invalid calibration in old_to_new_cal" );
 #endif
       continue;
     }//if( sanity check that new calibration is valid - should always be )
@@ -3519,7 +3814,7 @@ void EnergyCalTool::userChangedDeviationPair( EnergyCalImp::CalDisplay *display,
     return;
   }
   
-  
+  // Now actually set the new peaks
   for( const set<int> &samples : samplesWithPeaks )
   {
     auto oldpeaks = specfile->peaks(samples);
@@ -3540,6 +3835,28 @@ void EnergyCalTool::userChangedDeviationPair( EnergyCalImp::CalDisplay *display,
     specfile->setPeaks( peakpos->second, samples );
     if( m_peakModel && (specfile == forgrnd) && (samples == foresamples) )
       m_peakModel->setPeakFromSpecMeas(forgrnd, foresamples);
+  }//for( const set<int> &samples : samplesWithPeaks )
+  
+  // And set the automated hint peaks
+  for( const set<int> &samples : samplesWithHintPeaks )
+  {
+    auto oldHintPeaks = specfile->automatedSearchPeaks(samples);
+    if( !oldHintPeaks || oldHintPeaks->empty() )
+      continue;
+    
+    const auto peakpos = updated_hint_peaks.find(oldHintPeaks);
+    if( peakpos == end(updated_hint_peaks) )
+    {
+#if( PERFORM_DEVELOPER_CHECKS )
+      log_developer_error( __func__, "Unexpectedly coudlnt find peaks in updated_peaks" );
+#endif
+      continue;
+    }//if( sanity check that shouldnt ever happen )
+    
+    meas_old_new_hint_peaks.emplace_back( samples, *oldHintPeaks, peakpos->second );
+    
+    auto peaks = make_shared<deque<shared_ptr<const PeakDef>>>( peakpos->second );
+    specfile->setAutomatedSearchPeaks( samples, peaks );
   }//for( const set<int> &samples : samplesWithPeaks )
   
   const size_t ndets = specfile->gamma_detector_names().size();

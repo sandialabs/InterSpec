@@ -1975,7 +1975,7 @@ RelEffSolution solve_relative_efficiency( const std::vector<GenericPeakInfo> &pe
   
   // Set a lower bound on relative activities to be 0
   for( size_t i = 0; i < num_nuclides; ++i )
-    problem.SetParameterLowerBound( pars, i, 0.0 );
+    problem.SetParameterLowerBound( pars, static_cast<int>(i), 0.0 );
   
   
   // Okay - we've set our problem up
@@ -2003,7 +2003,7 @@ RelEffSolution solve_relative_efficiency( const std::vector<GenericPeakInfo> &pe
   {
     ceres::Solve(ceres_options, &problem, &summary);
     
-    solution.m_num_function_eval_solution = cost_functor->m_ncalls;
+    solution.m_num_function_eval_solution = static_cast<int>( cost_functor->m_ncalls );
     
     switch( summary.termination_type )
     {
@@ -2031,18 +2031,12 @@ RelEffSolution solve_relative_efficiency( const std::vector<GenericPeakInfo> &pe
   
   
   //std::cout << summary.BriefReport() << "\n";
-  std::cout << summary.FullReport() << "\n";
-  cout << "Took " << solution.m_num_function_eval_solution << " calls to solve." << endl;
-  
-  cout << "\nFit rel_act parameters: {";
-  for( size_t i = 0; i < parameters.size(); ++i )
-  cout << (i ? ", " : "") << parameters[i];
-  cout << "}\n\n";
-  
-  //cout << "\n\n\nHackign in values of parameters!!!\n\n" << endl;
-  //parameters[0] = 0.528839;
-  //parameters[1] = 1.2962;
-  //parameters[2] = 0.538641;
+  //std::cout << summary.FullReport() << "\n";
+  //cout << "Took " << solution.m_num_function_eval_solution << " calls to solve." << endl;
+  //cout << "\nFit rel_act parameters: {";
+  //for( size_t i = 0; i < parameters.size(); ++i )
+  //cout << (i ? ", " : "") << parameters[i];
+  //cout << "}\n\n";
   
   try
   {
@@ -2156,7 +2150,7 @@ RelEffSolution solve_relative_efficiency( const std::vector<GenericPeakInfo> &pe
     
     
     solution.m_status = ManualSolutionStatus::Success;
-    solution.m_num_function_eval_total = cost_functor->m_ncalls;
+    solution.m_num_function_eval_total = static_cast<int>( cost_functor->m_ncalls );
   }catch( std::exception &e )
   {
     solution.m_status = ManualSolutionStatus::ErrorGettingSolution;
