@@ -195,7 +195,9 @@ public:
       else
         title = orig_file_name;
       
-      solution->print_html_report( response.out(), title, foreground, display_peaks );
+      auto background = m_interspec->displayedHistogram(SpecUtils::SpectrumType::Background);
+      const double back_sf = m_interspec->displayScaleFactor(SpecUtils::SpectrumType::Background);
+      solution->print_html_report( response.out(), title, foreground, display_peaks, background, back_sf );
     }catch( std::exception &e )
     {
       cerr << "Error handling request for RelActManualReportResource: " << e.what() << endl;

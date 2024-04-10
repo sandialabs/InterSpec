@@ -1544,7 +1544,9 @@ void RelEffSolution::get_mass_ratio_table( std::ostream &results_html ) const
 void RelEffSolution::print_html_report( ostream &output_html_file,
                                        string spectrum_title,
                                        shared_ptr<const SpecUtils::Measurement> spectrum,
-                                       vector<shared_ptr<const PeakDef>> display_peaks ) const
+                                       vector<shared_ptr<const PeakDef>> display_peaks,
+                                       shared_ptr<const SpecUtils::Measurement> background,
+                                       double background_normalization ) const
 {
   const SandiaDecay::SandiaDecayDataBase *db = DecayDataBaseServer::database();
   assert( db );
@@ -1840,8 +1842,47 @@ void RelEffSolution::print_html_report( ostream &output_html_file,
       peaks.push_back( make_shared<PeakDef>(*p) );
     spec_options.peaks_json = PeakDef::peak_json( peaks, spectrum );
     
+    
+    vector<pair<const SpecUtils::Measurement *,D3SpectrumExport::D3SpectrumOptions> > meas_to_plot;
+    
     const SpecUtils::Measurement * const meas_ptr = spectrum.get();
-    D3SpectrumExport::write_and_set_data_for_chart( set_js_str, "specchart", { std::make_pair(meas_ptr,spec_options) } );
+    meas_to_plot.emplace_back(meas_ptr, spec_options);
+    
+    if( background )
+    {
+      D3SpectrumExport::D3SpectrumOptions spec_options;
+      spec_options.spectrum_type = SpecUtils::SpectrumType::Background;
+      spec_options.line_color = "steelblue";
+      spec_options.display_scale_factor = 1.0;
+      
+      if( (background_normalization <= 0.0f)
+         || IsNan(background_normalization)
+         || IsInf(background_normalization) )
+      {
+        float back_lt = background->live_time();
+        if( (back_lt <= 0.0f) || IsNan(back_lt) || IsNan(back_lt) )
+          back_lt = background->real_time();
+        
+        float fore_lt = spectrum->live_time();
+        if( (fore_lt <= 0.0f) || IsNan(fore_lt) || IsNan(fore_lt) )
+          fore_lt = spectrum->real_time();
+        
+        background_normalization = fore_lt / back_lt;
+      }//if( background normalization wasnt provided )
+      
+      if( (background_normalization > 0.0f)
+         && !IsNan(background_normalization)
+         && !IsInf(background_normalization) )
+      {
+        spec_options.display_scale_factor = background_normalization;
+      }
+        
+      spec_options.title = "Background";
+      meas_to_plot.emplace_back(background.get(), spec_options);
+    }//if( background )
+    
+    
+    D3SpectrumExport::write_and_set_data_for_chart( set_js_str, "specchart", meas_to_plot );
     
     SpecUtils::ireplace_all( html, "${SPECTRUM_CHART_DIV}",
                             "<div id=\"specchart\" style=\"height: 30vw; flex: 1 2; overflow: hidden;\" class=\"SpecChart\"></div>" );

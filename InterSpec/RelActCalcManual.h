@@ -445,11 +445,16 @@ struct RelEffSolution
    @param spectrum_title The title to display on the HTML pace
    @param spectrum The optional spectrum to display on the HTML page (may be nullptr)
    @param spectrum_display_peaks The peaks to display on the spectrum; may be empty.
+   @param background The optional background spectrum to display on the HTML page (may be nullptr)
+   @param background_normalization The background normalization; if zero or negative, and a background
+          is provided, then spectrum live-times will be used for normalization.
    */
   void print_html_report( std::ostream &strm,
                          std::string spectrum_title,
                          std::shared_ptr<const SpecUtils::Measurement> spectrum,
-                         std::vector<std::shared_ptr<const PeakDef>> spectrum_display_peaks
+                         std::vector<std::shared_ptr<const PeakDef>> spectrum_display_peaks,
+                         std::shared_ptr<const SpecUtils::Measurement> background,
+                         double background_normalization
                          ) const;
   
   /** Makes a HTML table of the activity and mass fractions of all the nuclides.
