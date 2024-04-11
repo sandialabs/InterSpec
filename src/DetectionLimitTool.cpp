@@ -1412,6 +1412,17 @@ DetectionLimitTool::DetectionLimitTool( InterSpec *viewer,
   m_ageEdit->setAutoComplete( false );
   label->setBuddy( m_ageEdit );
   
+  const bool showToolTips = InterSpecUser::preferenceValue<bool>( "ShowTooltips", InterSpec::instance() );
+  const char *tooltip =
+  "<div>The age of the nuclide.</div>"
+  "<br />"
+  "<div>The age controls the amount of progeny in-growth; the activities of the parent"
+  " (i.e., entered) nuclide are always reported for at the time of measurement."
+  ".</div>";
+  HelpSystem::attachToolTipOn( {label, m_ageEdit},
+                              tooltip, showToolTips, HelpSystem::ToolTipPosition::Right,
+                              HelpSystem::ToolTipPrefOverride::RespectPreference );
+  
   m_ageEdit->changed().connect( this, &DetectionLimitTool::handleUserAgeChange );
   m_ageEdit->blurred().connect( this, &DetectionLimitTool::handleUserAgeChange );
   m_ageEdit->enterPressed().connect( this, &DetectionLimitTool::handleUserAgeChange );

@@ -306,6 +306,7 @@ public:
     label->setBuddy( m_nuclideEdit );
     
     label = new WLabel( "Age:" );
+    WLabel *ageLabel = label;
     layout->addWidget( label, 1, 0, AlignMiddle );
     label->addStyleClass( "DoseFieldLabel" );
     m_nuclideAgeEdit = new WLineEdit();
@@ -379,8 +380,16 @@ public:
       "similar to '<b>5.3y 8d 22m</b>' or in half lives like "
       "'<b>2.5 HL</b>'."
     "</div>"
+    "<br />"
     "<div>"
-      "Acceptible time units: <b>year</b>, <b>yr</b>, <b>y</b>, <b>day</b>, <b>d</b>, <b>hrs</b>, <b>hour</b>, <b>h</b>, <b>minute</b>, "
+      "The age does not effect the activity of the entered nuclide, it only effects the amount"
+      " of progeny in-growth (i.e. only alters progeny activities, not parent nuclide activity)"
+      " - the activity you entered will always be used for the parent nuclide you entered, no"
+      " matter the age."
+    "</div>"
+    "<br />"
+    "<div>"
+      "Acceptable time units: <b>year</b>, <b>yr</b>, <b>y</b>, <b>day</b>, <b>d</b>, <b>hrs</b>, <b>hour</b>, <b>h</b>, <b>minute</b>, "
       "<b>min</b>, <b>m</b>, <b>second</b>, <b>s</b>, <b>ms</b>, <b>microseconds</b>, <b>us</b>, <b>nanoseconds</b>, <b>ns</b>, or "
       "you can specify time period by <b>hh:mm:ss</b>. "
     "</div>"
@@ -390,7 +399,7 @@ public:
       "18 months and 3 minutes"
     "</div>";
     
-    HelpSystem::attachToolTipOn( m_nuclideAgeEdit, tooltip, showToolTips );
+    HelpSystem::attachToolTipOn( {ageLabel, m_nuclideAgeEdit}, tooltip, showToolTips );
   }//GammaSourceEnter constructor
   
   
