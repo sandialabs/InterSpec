@@ -823,6 +823,22 @@
     </p>
   </message>
 
+  <message id="peak-area-uncert" title="How the peak area uncertainty is determined">
+    <p>
+      The peak area uncertainty is determined during the non-linear optimization when
+      fitting for the peaks parameters.  The uncertainties of the parameters being fit
+      are determined simultaneously, and taking each other, and correlations/effects,
+      between parameters into account.
+      The non-linear optimizer does this by varying the parameters being fit, and
+      observing the effect on the &chi;<sup>2</sup> of the peak compared to the data.
+    </p>
+    <p>
+     The uncertainties are statistical only, and do not include any systematic effects
+     like the peak skew model or continuum models not being correct.  If you want, you can
+     manually edit the peak area uncertainty using the &quot;Peak Editor&quot;.
+    </p>
+  </message>
+
   <message id="short-lived-isos" title="Determining short lived isotope activities">
     When the spectrum acquisition time becomes relevant to a nuclides half-life,
     the &quot;Activity/Shielding Fit&quot; dialog has an option, &quot;Correct for decay during meas.&quot;,
