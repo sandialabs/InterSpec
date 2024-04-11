@@ -2098,6 +2098,13 @@ void ExportSpecFileTool::refreshSampleAndDetectorOptions()
     }
   }else if( max_records == 2 )
   {
+    size_t num_records = 0;
+    for( const int sample : samplesToUse )
+    {
+      for( const string &det : detsToUse )
+        num_records += ( spec->measurement(sample, det) ? 1 : 0);
+    }//for( const int samples : samplesToUse )
+    
     // QR code here
     if( use_fore_disp && use_seco_disp && use_back_disp )
     {
@@ -2110,7 +2117,7 @@ void ExportSpecFileTool::refreshSampleAndDetectorOptions()
              && (use_fore_disp != use_seco_disp) )
     {
       m_msg->setText( "A single spectrum will be produced." );
-    }else if( (samplesToUse.size() > 1) || (spec->gamma_detector_names().size() > 1) )
+    }else if( num_records > 2 )
     {
       m_msg->setText( "Records will be summed together." );
     }else
@@ -2451,7 +2458,6 @@ std::shared_ptr<const SpecMeas> ExportSpecFileTool::generateFileToSave()
       answer->set_position( -999.9, -999.9, SpecUtils::time_point_t{}, m );
   }//if( remove_gps )
   
-  
   if( start_spec->num_measurements() == 1 )
     return answer;
   
@@ -2492,6 +2498,7 @@ std::shared_ptr<const SpecMeas> ExportSpecFileTool::generateFileToSave()
     samplesToSum.insert( samples );
     sampleSourceTypes[samples] = SpecUtils::SourceType::Unknown;
   }//if( secondary to single record )
+  
   
   if( fore_plus_back_files )
   {
@@ -2789,9 +2796,13 @@ std::shared_ptr<const SpecMeas> ExportSpecFileTool::generateFileToSave()
         
         const auto typePos = sampleSourceTypes.find(sum_samples);
         if( typePos != end(sampleSourceTypes) )
+        {
           meas_to_add.back()->set_source_type( typePos->second );
-        
-        sampleSourceTypes[samples] = SpecUtils::SourceType::Background;
+          sampleSourceTypes[samples] = typePos->second;
+        }else
+        {
+          sampleSourceTypes[samples] = SpecUtils::SourceType::Background;
+        }
         
         meas_to_remove.insert( single_record );
       }
