@@ -89,7 +89,7 @@
 
 .ExportSpecFileTool .ExportSpecSamples
 {
-  min-width: 220px;
+  min-width: 235px; /* 220 px would be enough, unless there are so many options scroll bars are needed */
   overflow-y: auto;
 }
 

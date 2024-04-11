@@ -654,6 +654,7 @@ ExportSpecFileTool::ExportSpecFileTool( InterSpec *viewer, Wt::WContainerWidget 
   m_sumSecoToSingleRecord( nullptr ),
   m_backSubFore( nullptr ),
   m_sumDetsPerSample( nullptr ),
+  m_sumSamplesPerDets( nullptr ),
   m_excludeInterSpecInfo( nullptr ),
   m_excludeGpsInfo( nullptr ),
   m_msg( nullptr ),
@@ -703,6 +704,7 @@ ExportSpecFileTool::ExportSpecFileTool( const std::shared_ptr<const SpecMeas> &s
   m_sumSecoToSingleRecord( nullptr ),
   m_backSubFore( nullptr ),
   m_sumDetsPerSample( nullptr ),
+  m_sumSamplesPerDets( nullptr ),
   m_excludeInterSpecInfo( nullptr ),
   m_excludeGpsInfo( nullptr ),
   m_msg( nullptr ),
@@ -961,16 +963,29 @@ void ExportSpecFileTool::init()
   m_backSubFore->checked().connect( this, &ExportSpecFileTool::handleBackSubForeChanged );
   m_backSubFore->unChecked().connect( this, &ExportSpecFileTool::handleBackSubForeChanged );
   
-  m_sumDetsPerSample = new WCheckBox( "Sum Det. per sample", m_optionsHolder );
-  tooltip = "For each detector, sums all sample numbers together.<br />"
+  m_sumDetsPerSample = new WCheckBox( "Sum det. per sample", m_optionsHolder );
+  tooltip = "For each sample number, sum all detectors for that sample number together.<br />"
             "E.g., if you have 8 detectors in your spectrum file, each with 120 samples"
-            " then the results will have 8 spectra, each of which is the sum of the"
-            " 120 samples of their respective detectors.";
+            " then the results will have 120 spectra, each of which is the sum of the"
+            " 8 detectors of the respective samples.";
   HelpSystem::attachToolTipOn( m_sumDetsPerSample, tooltip, true,
                               HelpSystem::ToolTipPosition::Right,
                               HelpSystem::ToolTipPrefOverride::AlwaysShow );
   m_sumDetsPerSample->checked().connect( this, &ExportSpecFileTool::handleSumDetPerSampleChanged );
   m_sumDetsPerSample->unChecked().connect( this, &ExportSpecFileTool::handleSumDetPerSampleChanged );
+  
+  
+  m_sumSamplesPerDets = new WCheckBox( "Sum samples per det.", m_optionsHolder );
+  tooltip = "For each detector, sums all sample numbers together.<br />"
+            "E.g., if you have 8 detectors in your spectrum file, each with 120 samples"
+            " then the results will have 8 spectra, each of which is the sum of the"
+            " 120 samples of their respective detectors.";
+  HelpSystem::attachToolTipOn( m_sumSamplesPerDets, tooltip, true,
+                              HelpSystem::ToolTipPosition::Right,
+                              HelpSystem::ToolTipPrefOverride::AlwaysShow );
+  m_sumSamplesPerDets->checked().connect( this, &ExportSpecFileTool::handleSumSamplesPerDetChanged );
+  m_sumSamplesPerDets->unChecked().connect( this, &ExportSpecFileTool::handleSumSamplesPerDetChanged );
+  
   
   m_excludeInterSpecInfo = new WCheckBox( "Remove InterSpec info", m_optionsHolder );
   tooltip = "Removes detector response, peaks, and other analysis"
@@ -1893,6 +1908,17 @@ void ExportSpecFileTool::refreshSampleAndDetectorOptions()
     m_sumDetsPerSample->show();
   }
   
+  if( !spec || (max_records <= 2)
+     || (spec->sample_numbers().size() <= 1)
+     || (spec->gamma_detector_names().size() <= 1) )
+  {
+    m_sumSamplesPerDets->hide();
+  }else
+  {
+    m_sumSamplesPerDets->show();
+  }
+  
+  
   m_excludeGpsInfo->setHidden( !spec || !spec->has_gps_info() );
   
   if( !spec || (spec->sample_numbers().size() <= 1) )
@@ -1914,6 +1940,7 @@ void ExportSpecFileTool::refreshSampleAndDetectorOptions()
     
     m_backSubFore->hide();
     m_sumDetsPerSample->hide();
+    m_sumSamplesPerDets->hide();
     
     m_sampleSelectNotAppTxt->show();
     m_optionsNotAppTxt->setHidden( m_excludeGpsInfo->isVisible()
@@ -2016,12 +2043,27 @@ void ExportSpecFileTool::refreshSampleAndDetectorOptions()
     size_t num_dets = 0;
     for( const string &det : detsToUse )
       num_dets += !!spec->measurement( sample, det );
-    mult_dets_per_sample = ( num_dets > 1 );
+    mult_dets_per_sample = (num_dets > 1);
     if( mult_dets_per_sample )
       break;
   }//for( const int sample : samplesToUse )
   
+  // Loop over detectors, and see if there is more than one sample number for any detecotr,
+  //  and use this info to show/hide m_sumSamplesPerDets
+  bool mult_sample_per_dets = false;
+  for( const string &det : detsToUse )
+  {
+    size_t num_samples = 0;
+    for( const int sample : samplesToUse )
+      num_samples += !!spec->measurement( sample, det );
+      
+    mult_sample_per_dets = (num_samples > 1);
+    if( mult_sample_per_dets )
+      break;
+  }//for( const string &det : detsToUse )
+  
   m_sumDetsPerSample->setHidden( (max_records <= 2) || !mult_dets_per_sample );
+  m_sumSamplesPerDets->setHidden( (max_records <= 2) || !mult_sample_per_dets );
   m_filterDetector->setHidden( !mult_dets_per_sample );
   m_detectorFilterCbs->setHidden( !mult_dets_per_sample || !m_filterDetector->isChecked() );
   
@@ -2272,6 +2314,7 @@ void ExportSpecFileTool::handleSumToSingleRecordChanged()
     m_sumSecoToSingleRecord->setChecked( false );
     m_backSubFore->setChecked( false );
     m_sumDetsPerSample->setChecked( false );
+    m_sumSamplesPerDets->setChecked( false );
   }//if( m_sumAllToSingleRecord->isChecked() )
   
   refreshSampleAndDetectorOptions();
@@ -2289,6 +2332,7 @@ void ExportSpecFileTool::handleSumTypeToSingleRecordChanged()
     m_sumAllToSingleRecord->setChecked( false );
     m_backSubFore->setChecked( false );
     m_sumDetsPerSample->setChecked( false );
+    m_sumSamplesPerDets->setChecked( false );
   }
   
   refreshSampleAndDetectorOptions();
@@ -2306,6 +2350,7 @@ void ExportSpecFileTool::handleBackSubForeChanged()
     m_sumBackToSingleRecord->setChecked( false );
     m_sumSecoToSingleRecord->setChecked( false );
     m_sumDetsPerSample->setChecked( false );
+    m_sumSamplesPerDets->setChecked( false );
   }//if( m_backSubFore->isChecked() )
   
   refreshSampleAndDetectorOptions();
@@ -2323,10 +2368,29 @@ void ExportSpecFileTool::handleSumDetPerSampleChanged()
     m_sumBackToSingleRecord->setChecked( false );
     m_sumSecoToSingleRecord->setChecked( false );
     m_backSubFore->setChecked( false );
+    m_sumSamplesPerDets->setChecked( false );
   }//if( m_sumDetsPerSample->isChecked() )
   
   refreshSampleAndDetectorOptions();
 }//void handleSumDetPerSampleChanged()
+
+
+void ExportSpecFileTool::handleSumSamplesPerDetChanged()
+{
+  scheduleAddingUndoRedo();
+  
+  if( m_sumSamplesPerDets->isChecked() )
+  {
+    m_sumAllToSingleRecord->setChecked( false );
+    m_sumForeToSingleRecord->setChecked( false );
+    m_sumBackToSingleRecord->setChecked( false );
+    m_sumSecoToSingleRecord->setChecked( false );
+    m_backSubFore->setChecked( false );
+    m_sumDetsPerSample->setChecked( false );
+  }//if( m_sumSamplesPerDets->isChecked() )
+  
+  refreshSampleAndDetectorOptions();
+}//void handleSumSamplesPerDetChanged()
 
 
 void ExportSpecFileTool::handleIncludeInterSpecInfoChanged()
@@ -2344,6 +2408,7 @@ std::shared_ptr<const SpecMeas> ExportSpecFileTool::generateFileToSave()
   
   const bool remove_gps = (m_excludeGpsInfo->isVisible() && m_excludeGpsInfo->isChecked());
   const bool sum_per_sample = (m_sumDetsPerSample->isVisible() && m_sumDetsPerSample->isChecked());
+  const bool sum_per_det = (m_sumSamplesPerDets->isVisible() && m_sumSamplesPerDets->isChecked());
   const bool fore_plus_back_files = (m_forePlusBack && m_forePlusBack->isVisible() && m_forePlusBack->isChecked());
   const bool use_disp_fore = (m_dispForeSamples->isVisible() && m_dispForeSamples->isChecked());
   const bool use_disp_back = (m_dispBackSamples->isVisible() && m_dispBackSamples->isChecked());
@@ -2370,7 +2435,8 @@ std::shared_ptr<const SpecMeas> ExportSpecFileTool::generateFileToSave()
   const bool backToSingleRecord = (m_sumBackToSingleRecord->isVisible() && m_sumBackToSingleRecord->isChecked());
   const bool secoToSingleRecord = (m_sumSecoToSingleRecord->isVisible() && m_sumSecoToSingleRecord->isChecked());
   const bool filterDets = (m_filterDetector && m_filterDetector->isVisible() && m_filterDetector->isChecked());
-  const bool sumDetectorsPerSample = (sum_per_sample && ((max_records <= 2) && (detectors.size() > 1)));
+  const bool sumDetectorsPerSample = (sum_per_sample && !sum_per_det && ((max_records >= samples.size()) && (detectors.size() > 1)));
+  const bool sumSamplesPerDetector = (sum_per_det && !sum_per_sample && ((max_records >= detectors.size()) && (samples.size() > 1)));
   
   
   shared_ptr<SpecMeas> answer = make_shared<SpecMeas>();
@@ -2391,9 +2457,9 @@ std::shared_ptr<const SpecMeas> ExportSpecFileTool::generateFileToSave()
   
   set<set<int>> samplesToSum;
   map<set<int>,SpecUtils::SourceType> sampleSourceTypes;
-  if( sum_per_sample )
+  if( sumDetectorsPerSample )
   {
-    for( const int sample : answer->sample_numbers() )
+    for( const int sample : samples )
       samplesToSum.insert( set<int>{sample} );
   }//if( sum detectors per sample )
   
@@ -2777,6 +2843,38 @@ std::shared_ptr<const SpecMeas> ExportSpecFileTool::generateFileToSave()
       meas_to_remove.insert( m );
   }//for( const auto &m : answer->measurements() )
   
+  if( sumSamplesPerDetector )
+  {
+    assert( meas_to_add.empty() );
+    map<string,vector<shared_ptr<const SpecUtils::Measurement>>> det_to_meas;
+    for( const auto &m : answer->measurements() )
+    {
+      if( m && !meas_to_remove.count(m) )
+        det_to_meas[m->detector_name()].push_back( m );
+    }//for( const auto &m : answer->measurements() )
+    
+    for( const auto &det_meas : det_to_meas )
+    {
+      const string &det = det_meas.first;
+      const vector<shared_ptr<const SpecUtils::Measurement>> &meass = det_meas.second;
+      set<int> samples;
+      for( const auto &m : meass )
+        samples.insert( m->sample_number() );
+      
+      if( samples.size() > 1 )
+      {
+        auto sum_meas = answer->sum_measurements( samples, {det}, nullptr );
+        sum_meas->set_sample_number( *begin(samples) );
+        sum_meas->set_detector_name( det ); //just to make sure
+        
+        meas_to_add.push_back( sum_meas );
+        for( const auto &m : meass )
+          meas_to_remove.insert(m);
+      }//if( samples.size() > 1 )
+    }//for( const auto &det_meas : det_to_meas )
+  }//if( sumSamplesPerDetector )
+  
+  
   if( !meas_to_remove.empty() )
   {
     vector<shared_ptr<const SpecUtils::Measurement>> to_remove( begin(meas_to_remove), end(meas_to_remove) );
@@ -2791,6 +2889,7 @@ std::shared_ptr<const SpecMeas> ExportSpecFileTool::generateFileToSave()
   
   if( !meas_to_remove.empty() || !meas_to_add.empty() )
   {
+    answer->set_uuid( "" );
     answer->cleanup_after_load();
     
     // `detectors` and `samples` are maybe no longer valid, since we may have summed them together
@@ -3290,6 +3389,9 @@ void ExportSpecFileTool::handleAppUrl( std::string query_str )
   if( m_sumDetsPerSample )
     m_sumDetsPerSample->setChecked( parts.count("SUMDETSPERSAMPLE") );
   
+  if( m_sumSamplesPerDets )
+    m_sumSamplesPerDets->setChecked( parts.count("SUMSAMPLEPERDET") );
+  
   handleSumDetPerSampleChanged();
   
   if( m_excludeInterSpecInfo )
@@ -3410,6 +3512,9 @@ std::string ExportSpecFileTool::encodeStateToUrl() const
   
   if( m_sumDetsPerSample && m_sumDetsPerSample->isChecked() )
     answer += "&SumDetsPerSample=1";
+  
+  if( m_sumSamplesPerDets && m_sumSamplesPerDets->isChecked() )
+    answer += "&SumSamplePerDet=1";
   
   if( m_excludeInterSpecInfo && m_excludeInterSpecInfo->isChecked() )
     answer += "&NoInterSpecInfo=1";

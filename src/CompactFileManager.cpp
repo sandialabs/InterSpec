@@ -772,7 +772,7 @@ void CompactFileManager::handleDisplayChange( SpecUtils::SpectrumType spectrum_t
     const int totalNumber = *(total_sample_nums.rbegin());
     const int lastNumber = *(sample_numbers.rbegin());
     const int firstNumber = *(sample_numbers.begin());
-    snprintf( buffer, sizeof(buffer), "/%i", totalNumber+1 );
+    snprintf( buffer, sizeof(buffer), "/%i", totalNumber + ((firstNumber == 0) ? 1 : 0) );  
     m_displayedPostTexts[typeindex]->setText( buffer );
     if( lastNumber == firstNumber )
       snprintf( buffer, sizeof(buffer), "%i", lastNumber );
