@@ -524,6 +524,10 @@ MakeFwhmForDrf::MakeFwhmForDrf( const bool auto_fit_peaks,
       case DetectorPeakResponse::kSqrtEnergyPlusInverse:
         m_fwhmEqnType->addItem( "sqrt(A0 + A1*E + A2/E)" );
         break;
+        
+      case DetectorPeakResponse::kConstantPlusSqrtEnergy:
+        m_fwhmEqnType->addItem( "A0 + A1*sqrt(E)" );
+        break;
           
       case DetectorPeakResponse::kNumResolutionFnctForm:
         break;
@@ -718,6 +722,7 @@ void MakeFwhmForDrf::doRefitWork()
     switch( fwhm_type )
     {
       case DetectorPeakResponse::kGadrasResolutionFcn:
+      case DetectorPeakResponse::kConstantPlusSqrtEnergy:
         eqn = "FWHM(x): ";
         break;
         
@@ -774,6 +779,14 @@ void MakeFwhmForDrf::doRefitWork()
             eqn += " + " + val_str + "*x";
           else if( i == 2 )
             eqn += " + " + val_str + "/x";
+          break;
+          
+        case DetectorPeakResponse::kConstantPlusSqrtEnergy:
+          //pars[0] + pars[1]*sqrt(energy);
+          if( i == 0 )
+            eqn += val_str;
+          else if( i == 1 )
+            eqn += " + " + val_str + "*sqrt(x)";
           break;
           
         case DetectorPeakResponse::kSqrtPolynomial:
@@ -846,6 +859,9 @@ void MakeFwhmForDrf::setEquationToChart()
       break;
     case DetectorPeakResponse::kSqrtEnergyPlusInverse:
       chart_fwhm_type = MakeDrfChart::FwhmCoefType::SqrtEnergyPlusInverse;
+      break;
+    case DetectorPeakResponse::kConstantPlusSqrtEnergy:
+      chart_fwhm_type = MakeDrfChart::FwhmCoefType::ConstantPlusSqrtEnergy;
       break;
       
     case DetectorPeakResponse::kNumResolutionFnctForm:
@@ -998,6 +1014,10 @@ void MakeFwhmForDrf::handleFwhmEqnTypeChange()
       
     case DetectorPeakResponse::kSqrtEnergyPlusInverse:
       num_pars = 3;
+      break;
+      
+    case DetectorPeakResponse::kConstantPlusSqrtEnergy:
+      num_pars = 2;
       break;
       
     case DetectorPeakResponse::kNumResolutionFnctForm:

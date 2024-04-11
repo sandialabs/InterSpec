@@ -1476,6 +1476,7 @@ RelActAutoGui::RelActAutoGui( InterSpec *viewer, Wt::WContainerWidget *parent )
     {
       case RelActCalcAuto::FwhmForm::Gadras:       name = "Gadras"; break;
       case RelActCalcAuto::FwhmForm::SqrtEnergyPlusInverse:  name = "sqrt(A0 + A1*E + A2/E)"; break;
+      case RelActCalcAuto::FwhmForm::ConstantPlusSqrtEnergy: name = "A0 + A1*sqrt(E)"; break;
       case RelActCalcAuto::FwhmForm::Polynomial_2: name = "sqrt(A0 + A1*E)"; break;
       case RelActCalcAuto::FwhmForm::Polynomial_3: name = "sqrt(A0 + A1*E + A2*E*E)"; break;
       case RelActCalcAuto::FwhmForm::Polynomial_4: name = "sqrt(A0 + A1*E^1...A3*E^3)"; break;

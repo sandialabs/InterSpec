@@ -66,7 +66,7 @@
 using namespace std;
 using SpecUtils::Measurement;
 
-const int DetectorPeakResponse::sm_xmlSerializationVersion = 1;
+const int DetectorPeakResponse::sm_xmlSerializationVersion = 2;
 
 namespace
 {
@@ -623,6 +623,8 @@ bool DetectorPeakResponse::hasResolutionInfo() const
       return (m_resolutionCoeffs.size() == 3);
     case kSqrtEnergyPlusInverse:
       return (m_resolutionCoeffs.size() == 3);
+    case kConstantPlusSqrtEnergy:
+      return (m_resolutionCoeffs.size() == 2);
     case kSqrtPolynomial:
       return (m_resolutionCoeffs.size() > 1);
     case kNumResolutionFnctForm:
@@ -1359,6 +1361,9 @@ std::string DetectorPeakResponse::toAppUrl() const
     case kSqrtEnergyPlusInverse:
       parts["FWHMT"] = "FRAM";
       break;
+    case kConstantPlusSqrtEnergy:
+      parts["FWHMT"] = "GENIE";
+      break;
     case ResolutionFnctForm::kSqrtPolynomial:
       parts["FWHMT"] = "SQRTPOLY";
       break;
@@ -1669,6 +1674,9 @@ void DetectorPeakResponse::fromAppUrl( std::string url_query )
     }else if( parts["FWHMT"] == "FRAM" )
     {
       resolutionForm = ResolutionFnctForm::kSqrtEnergyPlusInverse;
+    }else if( parts["FWHMT"] == "GENIE" )
+    {
+      resolutionForm = ResolutionFnctForm::kConstantPlusSqrtEnergy;
     }else if( parts["FWHMT"] == "SQRTPOLY" )
     {
       resolutionForm = ResolutionFnctForm::kSqrtPolynomial;
@@ -1685,22 +1693,29 @@ void DetectorPeakResponse::fromAppUrl( std::string url_query )
     if( resolutionUncerts.size() && (resolutionUncerts.size() != resolutionCoeffs.size()) )
        throw runtime_error( "fromAppUrl: FWHMC and FWHMU different lengths" );
       
+    bool invalidNumCoef = false;
     switch( resolutionForm )
     {
       case ResolutionFnctForm::kGadrasResolutionFcn:
       case ResolutionFnctForm::kSqrtEnergyPlusInverse:
-       if( resolutionCoeffs.size() != 3 )
-         throw runtime_error( "fromAppUrl: invalid number resolution coefs" );
+        invalidNumCoef = (resolutionCoeffs.size() != 3);
+         
         break;
         
+      case ResolutionFnctForm::kConstantPlusSqrtEnergy:
+        invalidNumCoef = (resolutionCoeffs.size() != 2);
+         break;
+        
       case ResolutionFnctForm::kSqrtPolynomial:
-        if( resolutionCoeffs.size() < 2 )
-          throw runtime_error( "fromAppUrl: not enough resolution coefs" );
+        invalidNumCoef = (resolutionCoeffs.size() < 2);
         break;
        
       case ResolutionFnctForm::kNumResolutionFnctForm:
         break;
     }//switch( resolutionForm )
+    
+    if( invalidNumCoef )
+      throw runtime_error( "fromAppUrl: invalid number resolution coefs" );
   }//if( parts.count("FWHMT") )
       
   if( parts.count("ORIGIN") )
@@ -2234,6 +2249,11 @@ void DetectorPeakResponse::setFwhmCoefficients( const std::vector<float> &coefs,
       if( coefs.size() != 3 )
         throw runtime_error( "setFwhmCoefficients: sqrt(A0+A1*E+A2/E) equation must have three coefficients." );
       break;
+    
+    case ResolutionFnctForm::kConstantPlusSqrtEnergy:
+      if( coefs.size() != 2 )
+        throw runtime_error( "setFwhmCoefficients: A0 + A1*sqrt(E) equation must have two coefficients." );
+      break;
       
     case ResolutionFnctForm::kNumResolutionFnctForm:
       if( !coefs.empty() )
@@ -2259,8 +2279,15 @@ void DetectorPeakResponse::toXml( ::rapidxml::xml_node<char> *parent,
   parent->append_node( base_node );
   
   // We will write XML version 0, if m_geomType is not far-field (this was only change between 0 and 1)
-  static_assert( sm_xmlSerializationVersion == 1, "Update DetectorPeakResponse sm_xmlSerializationVersion");
-  snprintf( buffer, sizeof(buffer), "%i", ((m_geomType != EffGeometryType::FarField) ? sm_xmlSerializationVersion : 0) );
+  static_assert( sm_xmlSerializationVersion == 2, "Update DetectorPeakResponse sm_xmlSerializationVersion");
+  
+  if( m_resolutionForm == ResolutionFnctForm::kConstantPlusSqrtEnergy )
+  {
+    snprintf( buffer, sizeof(buffer), "%i", sm_xmlSerializationVersion );
+  }else
+  {
+    snprintf( buffer, sizeof(buffer), "%i", ((m_geomType != EffGeometryType::FarField) ? 1 : 0) );
+  }
   
   const char *value = doc->allocate_string( buffer );
   xml_attribute<char> *attr = doc->allocate_attribute( "version", value );
@@ -2308,10 +2335,11 @@ void DetectorPeakResponse::toXml( ::rapidxml::xml_node<char> *parent,
   
   switch( m_resolutionForm )
   {
-    case kGadrasResolutionFcn:   val = "GadrasResolutionFcn";   break;
-    case kSqrtEnergyPlusInverse: val = "SqrtEnergyPlusInverse"; break;
-    case kSqrtPolynomial:        val = "SqrtPolynomial";        break;
-    case kNumResolutionFnctForm: val = "Undefined";             break;
+    case kGadrasResolutionFcn:    val = "GadrasResolutionFcn";   break;
+    case kSqrtEnergyPlusInverse:  val = "SqrtEnergyPlusInverse"; break;
+    case kConstantPlusSqrtEnergy: val = "ConstantPlusSqrtEnergy"; break;
+    case kSqrtPolynomial:         val = "SqrtPolynomial";        break;
+    case kNumResolutionFnctForm:  val = "Undefined";             break;
   }//switch( m_resolutionForm )
 
   node = doc->allocate_node( node_element, "ResolutionForm", val );
@@ -2586,6 +2614,8 @@ void DetectorPeakResponse::fromXml( const ::rapidxml::xml_node<char> *parent )
     m_resolutionForm = kGadrasResolutionFcn;
   else if( compare(node->value(),node->value_size(),"SqrtEnergyPlusInverse",21,false) )
     m_resolutionForm = kSqrtEnergyPlusInverse;
+  else if( compare(node->value(),node->value_size(),"ConstantPlusSqrtEnergy",22,false) )
+    m_resolutionForm = kConstantPlusSqrtEnergy;
   else if( compare(node->value(),node->value_size(),"SqrtPolynomial",14,false) )
     m_resolutionForm = kSqrtPolynomial;
   else if( compare(node->value(),node->value_size(),"Undefined",9,false) )
@@ -3270,6 +3300,16 @@ float DetectorPeakResponse::peakResolutionFWHM( float energy,
       
       return sqrt(pars[0] + pars[1]*energy + pars[2]/energy);
     }//case kSqrtEnergyPlusInverse:
+      
+    case kConstantPlusSqrtEnergy:
+    {
+      if( pars.size() != 2 )
+        throw std::runtime_error( "DetectorPeakResponse::peakResolutionSigma():"
+                                 " pars not defined" );
+      energy /= PhysicalUnits::keV;
+      
+      return pars[0] + pars[1]*sqrt(energy);
+    }//case kConstantPlusSqrtEnergy:
       
     case kSqrtPolynomial:
     {

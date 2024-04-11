@@ -4009,8 +4009,14 @@ std::shared_ptr<DetectorPeakResponse> DrfSelect::parseRelEffCsvFile( const std::
       {
         if( SpecUtils::icontains( line, "Full width half maximum (FWHM) follows equation" ) )
         {
-          const bool isSqrt = SpecUtils::icontains( line, "sqrt(" );  //Else contains "GadrasEqn"
-          const auto form = isSqrt ? DetectorPeakResponse::ResolutionFnctForm::kSqrtPolynomial : DetectorPeakResponse::ResolutionFnctForm::kGadrasResolutionFcn;
+          const bool isConstPlusSqrt = SpecUtils::icontains( line, "A0 + A1*sqrt" );
+          const bool isSqrt = !isConstPlusSqrt && SpecUtils::icontains( line, "sqrt(" );  //Else contains "GadrasEqn"
+          auto form = DetectorPeakResponse::ResolutionFnctForm::kGadrasResolutionFcn;
+          if( isConstPlusSqrt )
+            form = DetectorPeakResponse::ResolutionFnctForm::kConstantPlusSqrtEnergy;
+          else if( isSqrt )
+            form = DetectorPeakResponse::ResolutionFnctForm::kSqrtPolynomial;
+          
           int nlinecheck = 0;
           while( SpecUtils::safe_get_line(csvfile, line, 2048)
                 && !SpecUtils::icontains(line, "Values")
@@ -4029,7 +4035,7 @@ std::shared_ptr<DetectorPeakResponse> DrfSelect::parseRelEffCsvFile( const std::
               for( size_t i = 1; i < fwhm_fields.size(); ++i )
                 coefs.push_back( stof(fwhm_fields[i]) );
               if( !coefs.empty() )
-                det->setFwhmCoefficients( coefs,form );
+                det->setFwhmCoefficients( coefs, form );
             }catch(...)
             {
             }

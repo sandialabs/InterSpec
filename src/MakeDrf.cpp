@@ -1498,6 +1498,10 @@ MakeDrf::MakeDrf( InterSpec *viewer, MaterialDB *materialDB,
         m_fwhmEqnType->addItem( "sqrt(A + B*E + C/E)" );
         break;
         
+      case DetectorPeakResponse::kConstantPlusSqrtEnergy:
+        m_fwhmEqnType->addItem( "A + B*sqrt(E)" );
+        break;
+        
       case DetectorPeakResponse::kSqrtPolynomial:
         m_fwhmEqnType->addItem( "Sqrt Power Series" );
         break;
@@ -2505,6 +2509,7 @@ void MakeDrf::handleFwhmTypeChanged()
   {
     case DetectorPeakResponse::kGadrasResolutionFcn:
     case DetectorPeakResponse::kSqrtEnergyPlusInverse:
+    case DetectorPeakResponse::kConstantPlusSqrtEnergy:
     case DetectorPeakResponse::kNumResolutionFnctForm:
       m_sqrtEqnOrder->hide();
       valid_fwhm_form = true;
@@ -2629,6 +2634,7 @@ void MakeDrf::fitFwhmEqn( std::vector< std::shared_ptr<const PeakDef> > peaks,
     case DetectorPeakResponse::kGadrasResolutionFcn:
     case DetectorPeakResponse::kNumResolutionFnctForm:
     case DetectorPeakResponse::kSqrtEnergyPlusInverse:
+    case DetectorPeakResponse::kConstantPlusSqrtEnergy:
       break;
       
     case DetectorPeakResponse::kSqrtPolynomial:
@@ -2706,6 +2712,11 @@ void MakeDrf::updateFwhmEqn( std::vector<float> coefs,
     
     case DetectorPeakResponse::ResolutionFnctForm::kSqrtEnergyPlusInverse:
       eqnType = MakeDrfChart::FwhmCoefType::SqrtEnergyPlusInverse;
+      valid_fcntform = true;
+      break;
+      
+    case DetectorPeakResponse::ResolutionFnctForm::kConstantPlusSqrtEnergy:
+      eqnType = MakeDrfChart::FwhmCoefType::ConstantPlusSqrtEnergy;
       valid_fcntform = true;
       break;
       
@@ -3131,6 +3142,10 @@ shared_ptr<DetectorPeakResponse> MakeDrf::assembleDrf( const string &name, const
         drf->setFwhmCoefficients( m_fwhmCoefs, DetectorPeakResponse::ResolutionFnctForm::kSqrtEnergyPlusInverse );
         break;
         
+      case DetectorPeakResponse::ResolutionFnctForm::kConstantPlusSqrtEnergy:
+        drf->setFwhmCoefficients( m_fwhmCoefs, DetectorPeakResponse::ResolutionFnctForm::kConstantPlusSqrtEnergy );
+        break;
+        
       case DetectorPeakResponse::ResolutionFnctForm::kSqrtPolynomial:
         drf->setFwhmCoefficients( m_fwhmCoefs, DetectorPeakResponse::ResolutionFnctForm::kSqrtPolynomial );
         break;
@@ -3360,6 +3375,18 @@ void MakeDrf::writeCsvSummary( std::ostream &out,
         
         break;
       }//case DetectorPeakResponse::kSqrtEnergyPlusInverse:
+        
+      case DetectorPeakResponse::kConstantPlusSqrtEnergy:
+      {
+        out << "FWHM = A0 + A1*sqrt( energy )" << endline
+        << "# Energy in keV" << endline
+        << "# ";
+        for( size_t i = 0; i < fwhmCoefs.size(); ++i )
+          out << ",A" << i;
+        out << endline;
+        
+        break;
+      }//case DetectorPeakResponse::kConstantPlusSqrtEnergy:
         
       case DetectorPeakResponse::kNumResolutionFnctForm:
         assert( 0 );
@@ -3614,6 +3641,18 @@ void MakeDrf::writeRefSheet( std::ostream &output, std::string drfname, std::str
         break;
       }//case DetectorPeakResponse::kSqrtEnergyPlusInverse:
         
+      case DetectorPeakResponse::kConstantPlusSqrtEnergy:
+      {
+        assert( m_fwhmCoefs.size() == 2 );
+        const float A0 = (m_fwhmCoefs.size()) > 0 ? m_fwhmCoefs[0] : 0.0f;
+        const float A1 = (m_fwhmCoefs.size()) > 1 ? m_fwhmCoefs[1] : 0.0f;
+        
+        char buffer[128] = { '\0' };
+        snprintf( buffer, sizeof(buffer), "FWHM(keV) = %.4g + %.4g*sqrt(x)", A0, A1 );
+        fwhm_eqn = buffer;
+        break;
+      }//case DetectorPeakResponse::kConstantPlusSqrtEnergy:
+        
       case DetectorPeakResponse::kSqrtPolynomial:
       {
         fwhm_eqn = "FWHM(keV) = sqrt(";
@@ -3748,6 +3787,10 @@ void MakeDrf::writeRefSheet( std::ostream &output, std::string drfname, std::str
         
       case DetectorPeakResponse::kSqrtEnergyPlusInverse:
         fwhmEqnType = MakeDrfChart::FwhmCoefType::SqrtEnergyPlusInverse;
+        break;
+      
+      case DetectorPeakResponse::kConstantPlusSqrtEnergy:
+        fwhmEqnType = MakeDrfChart::FwhmCoefType::ConstantPlusSqrtEnergy;
         break;
         
       case DetectorPeakResponse::kSqrtPolynomial:

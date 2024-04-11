@@ -317,6 +317,47 @@ double performResolutionFit( std::shared_ptr<const std::deque< std::shared_ptr<c
     }//case DetectorPeakResponse::kSqrtEnergyPlusInverse:
       
       
+    case DetectorPeakResponse::kConstantPlusSqrtEnergy:
+    {
+      if( highres )
+      {
+        //Based on pretty much nothing
+        a_initial = 1;
+        lowerA = -10.0;
+        upperA = 10.0;
+        
+        b_initial = 0.035;
+        lowerB = 0.0;
+        upperB = 5.0;
+      }else
+      {
+        //Based on zero detectors so far
+        a_initial = 0;
+        lowerA = -25.0;
+        upperA = 50.0;
+        
+        b_initial = 2.0;
+        lowerB = 0.0;
+        upperB = 50;
+      }//if( highres ) / else
+      
+      try
+      {
+        double chi2 = MakeDrfFit::fit_constant_plus_sqrt_fwhm_lls( *peaks, answer, uncerts );
+        
+        assert( answer.size() == 2 );
+        
+        fit_using_lls = true;
+      }catch( std::exception &e )
+      {
+        cerr << "MakeDrfFit::fit_constant_plus_sqrt_fwhm_lls threw exception: " << e.what() << endl;
+        
+      }//try / catch
+      
+      break;
+    }//case DetectorPeakResponse::kConstantPlusSqrtEnergy:
+      
+      
     case DetectorPeakResponse::kSqrtPolynomial:
     {
       if( sqrtEqnOrder < 1 )
@@ -446,6 +487,32 @@ double performResolutionFit( std::shared_ptr<const std::deque< std::shared_ptr<c
       
       break;
     }//case DetectorPeakResponse::kSqrtEnergyPlusInverse:
+      
+      
+    case DetectorPeakResponse::kConstantPlusSqrtEnergy:
+    {
+      if( fit_using_lls )
+      {
+        for( int order = 0; order < 2; ++order )
+        {
+          const string name = string("") + char('A' + order);
+          inputPrams.Add( name, answer[order], uncerts[order] );
+        }//for( int order = 0; order < sqrtEqnOrder; ++order )
+      }else
+      {
+        if( peaks->size() == 1 )
+        {
+          inputPrams.Add( "A", 0.0 );
+          inputPrams.Add( "B", b_initial, 0.1*(upperB-lowerB), lowerB, upperB );
+        }else if( peaks->size() >= 2 )
+        {
+          inputPrams.Add( "A", a_initial, 0.1*(upperA-lowerA), lowerA, upperA );
+          inputPrams.Add( "B", b_initial, 0.1*(upperB-lowerB), lowerB, upperB );
+        }
+      }//if( fit_using_lls )
+      
+      break;
+    }//case DetectorPeakResponse::kConstantPlusSqrtEnergy:
       
       
     case DetectorPeakResponse::kSqrtPolynomial:
@@ -734,12 +801,87 @@ double fit_sqrt_poly_fwhm_lls( const std::deque< std::shared_ptr<const PeakDef> 
   if( include_inv_term && (coeffs.size() > 1) )
   {
     // Swap the zeroth and first coefficients so things are as expected.
-    //  (i.e., constant term is zeroth, and energy dependant term is at index==1)
+    //  (i.e., constant term is zeroth, and energy dependent term is at index==1)
     std::swap( coeffs[0], coeffs[1] );
+    std::swap( coeff_uncerts[0], coeff_uncerts[1] );
   }
   
   return chi2;
 }//double fit_sqrt_poly_fwhm_lls(...)
+  
+  
+double fit_constant_plus_sqrt_fwhm_lls( const std::deque< std::shared_ptr<const PeakDef> > &peaks,
+                                  std::vector<float> &coeffs,
+                                  std::vector<float> &coeff_uncerts )
+{
+  const size_t nbin = peaks.size();
+  
+  if( nbin < 2 )
+    throw runtime_error( "fit_sqrt_poly_fwhm_lls: must have at least 2 input peak" );
+  
+  //log(eff(x)) = A0 + A1*logx + A2*logx^2 + A3*logx^3, where x is energy in MeV
+  vector<float> x, widths, widths_uncert;
+  x.resize( peaks.size() );
+  widths.resize( peaks.size() );
+  widths_uncert.resize( peaks.size() );
+  for( size_t i = 0; i < peaks.size(); ++i )
+  {
+    if( peaks[i]->gausPeak() )
+    {
+      x[i] = peaks[i]->mean();
+      widths[i] = peaks[i]->fwhm();
+      widths_uncert[i] = 2.35482*((peaks[i]->sigmaUncert() > 0.0) ? std::max( peaks[i]->sigmaUncert(), 0.01*widths[i]) : 0.05*widths[i]);
+    }
+  }//for( size_t i = 0; i < peaks.size(); ++i )
+  
+  //General Linear Least Squares fit
+  //Using variable names of section 15.4 of Numerical Recipes, 3rd edition
+  //Implementation is quite inneficient.
+  using namespace boost::numeric;
+  
+  const size_t num_fit_coefficients = 2;
+  ublas::matrix<double> A( nbin, num_fit_coefficients );
+  ublas::vector<double> b( nbin );
+  
+  
+  for( size_t row = 0; row < nbin; ++row )
+  {
+    const double data_y = widths[row];
+    const double data_y_uncert = widths_uncert[row];
+    
+    b(row) = data_y / data_y_uncert;
+    
+    A(row,0) = 1.0 / data_y_uncert;
+    A(row,1) = std::sqrt( x[row] ) / data_y_uncert;
+  }//for( int col = 0; col < num_fit_coefficients; ++col )
+  
+  const ublas::matrix<double> A_transpose = ublas::trans( A );
+  const ublas::matrix<double> alpha = prod( A_transpose, A );
+  ublas::matrix<double> C( alpha.size1(), alpha.size2() );
+  const bool success = matrix_invert( alpha, C );
+  if( !success )
+    throw runtime_error( "fit_constant_plus_sqrt_fwhm_lls(...): trouble inverting matrix" );
+  
+  const ublas::vector<double> beta = prod( A_transpose, b );
+  const ublas::vector<double> a = prod( C, beta );
+  
+  coeffs.resize( num_fit_coefficients );
+  coeff_uncerts.resize( num_fit_coefficients );
+  for( int coef = 0; coef < num_fit_coefficients; ++coef )
+  {
+    coeffs[coef] = static_cast<float>( a(coef) );
+    coeff_uncerts[coef] = static_cast<float>( C(coef,coef) );
+  }//for( int coef = 0; coef < num_fit_coefficients; ++coef )
+  
+  double chi2 = 0;
+  for( size_t bin = 0; bin < nbin; ++bin )
+  {
+    const double y_pred = a(0) + a(1) * sqrt( x[bin] );
+    chi2 += std::pow( (y_pred - widths[bin]) / widths_uncert[bin], 2.0 );
+  }//for( int bin = 0; bin < nbin; ++bin )
+  
+  return chi2;
+}//double fit_constant_plus_sqrt_fwhm_lls(...)
   
   
 double fit_intrinsic_eff_least_linear_squares( const std::vector<DetEffDataPoint> data,

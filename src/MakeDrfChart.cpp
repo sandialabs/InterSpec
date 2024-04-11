@@ -507,6 +507,7 @@ void MakeDrfChart::updateFwhmEquationToModel()
   
   if( ((m_fwhmEqnType==FwhmCoefType::Gadras) && m_fwhmCoefs.size() != 3)
      || ((m_fwhmEqnType==FwhmCoefType::SqrtEnergyPlusInverse) && m_fwhmCoefs.size() != 3)
+     || ((m_fwhmEqnType==FwhmCoefType::ConstantPlusSqrtEnergy) && m_fwhmCoefs.size() != 2)
      || (m_fwhmEqnType==FwhmCoefType::SqrtEqn && m_fwhmCoefs.size() < 1) )
   {
     if( m->data(0, sm_equation_fwhm_col).empty() )  //
@@ -527,6 +528,10 @@ void MakeDrfChart::updateFwhmEquationToModel()
       
     case FwhmCoefType::SqrtEnergyPlusInverse:
       eqnType = DetectorPeakResponse::ResolutionFnctForm::kSqrtEnergyPlusInverse;
+      break;
+    
+    case FwhmCoefType::ConstantPlusSqrtEnergy:
+      eqnType = DetectorPeakResponse::ResolutionFnctForm::kConstantPlusSqrtEnergy;
       break;
       
     case FwhmCoefType::SqrtEqn:

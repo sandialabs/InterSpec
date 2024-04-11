@@ -123,6 +123,12 @@ public:
      */
     kSqrtEnergyPlusInverse,
     
+    /**
+     FWHM = `A0 + A1*sqrt(E)`
+     
+     For use with other applications - do not recommend actually using.
+     */
+    kConstantPlusSqrtEnergy,
     
     kNumResolutionFnctForm
   };//enum ResolutionFnctForm
@@ -814,6 +820,9 @@ protected:
   
   /** On 20230916 updated from version 0 to 1, to account for `m_fixedGeometry` - will still write version 0 if
    `m_geomType == EffGeometryType::FarField`.
+   
+   On 20240410 updated from 1 to 2, to account for `ResolutionFnctForm::kConstantPlusSqrtEnergy` type of FWHM
+   being added.  However, will only write 2 if `m_resolutionForm == ResolutionFnctForm::kConstantPlusSqrtEnergy`.
    */
   static const int sm_xmlSerializationVersion;
   
