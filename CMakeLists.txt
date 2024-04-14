@@ -934,3 +934,7 @@ configure_file(
     ${PROJECT_BINARY_DIR}/data/sandia.decay.xml
     COPYONLY
 )
+
+INSTALL(TARGETS InterSpecExe DESTINATION bin)
+INSTALL(TARGETS InterSpecLib DESTINATION lib)
+INSTALL(DIRECTORY data example_spectra InterSpec_resources DESTINATION share/interspec)
