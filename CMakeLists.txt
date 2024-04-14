@@ -935,6 +935,9 @@ configure_file(
     COPYONLY
 )
 
-INSTALL(TARGETS InterSpecExe DESTINATION bin)
-INSTALL(TARGETS InterSpecLib DESTINATION lib)
-INSTALL(DIRECTORY data example_spectra InterSpec_resources DESTINATION share/interspec)
+# Only create an install target if this is a top-level project (e.g., not Electron, or iOS, etc)
+if( NOT hasParent )
+  INSTALL(TARGETS InterSpecExe DESTINATION bin)
+  INSTALL(TARGETS InterSpecLib DESTINATION lib)
+  INSTALL(DIRECTORY data example_spectra InterSpec_resources DESTINATION share/interspec)
+endif( NOT hasParent )
