@@ -2829,15 +2829,35 @@ std::shared_ptr<const SpecMeas> ExportSpecFileTool::generateFileToSave()
       else
         answer->setPeaks( {}, {m->sample_number()} );
       
+      // We will make a feeble attempt to preserve title, or for portal data
+      //  set it to background, for that sample
+      bool all_background = true;
+      set<string> titles;
       for( const int sample : sum_samples )
       {
         for( const string &det : detectors )
         {
-          auto m = answer->measurement( sample, det );
-          if( m )
-            meas_to_remove.insert( m );
-        }
-      }
+          auto orig = answer->measurement( sample, det );
+          if( orig )
+          {
+            const bool empty_title = orig->title().empty();
+            if( !empty_title )
+              titles.insert( orig->title() );
+            
+            all_background &= (SpecUtils::icontains( orig->title(), "Background")
+                               || (orig->source_type() == SpecUtils::SourceType::Background)
+                               || (answer->passthrough() && (orig->occupied() == SpecUtils::OccupancyStatus::NotOccupied)));
+            meas_to_remove.insert( orig );
+          }
+        }//for( const string &det : detectors )
+      }//for( const int sample : sum_samples )
+      
+      if( titles.size() == 1 )
+        m->set_title( *begin(titles) );
+      else if( all_background )
+        m->set_title( "Background" );
+      else
+        m->set_title( "" );
     }//if( !single_meas )
   }//for( const set<int> &samples : samplesToSum )
   
@@ -2954,7 +2974,12 @@ std::shared_ptr<const SpecMeas> ExportSpecFileTool::generateFileToSave()
     
     answer->remove_measurements( orig_meass );
     answer->add_measurement( sum_meas, true );
-  }else if( sumDetectorsPerSample && (answer->detector_names().size() > 1) )
+  }//if( sumAll )
+  
+  /*
+   // I think we have already summed the detectors, for each sample, together
+   //  so we shouldnt do it again
+   else if( sumDetectorsPerSample && (answer->detector_names().size() > 1) )
   {
     set<int> problem_samples;
     map<int,vector<shared_ptr<const SpecUtils::Measurement>>> sample_to_meas;
@@ -3014,7 +3039,7 @@ std::shared_ptr<const SpecMeas> ExportSpecFileTool::generateFileToSave()
       passMessage( msg, WarningWidget::WarningMsgHigh );
     }//if( problem_samples.size() )
   }//if( sum to single record ) / else if( sumDetectorsPerSample )
-  
+  */
   
   // We will check for this later as well, but we'll remove as much of the InterSpec info
   //  here as well (the displayed sample numbers and wont be removed though).
