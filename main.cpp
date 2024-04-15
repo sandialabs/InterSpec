@@ -51,15 +51,12 @@
 #include "InterSpec/BatchCommandLine.h"
 #endif
 
-// #include "InterSpec/QRSpectrum.h"
 
 int main( int argc, char **argv )
 {
 #ifdef _WIN32
   AppUtils::getUtf8Args( argc, argv );
 #endif
-  
-  //return QRSpectrum::dev_code();
   
 #if( BUILD_AS_COMMAND_LINE_CODE_DEVELOPMENT )
   return developcode::run_development_code();

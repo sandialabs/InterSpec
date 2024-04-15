@@ -2859,7 +2859,6 @@ ShieldingSourceDisplay::ShieldingSourceDisplay( PeakModel *peakModel,
   
   addStyleClass( "ShieldingSourceDisplay" );
   
-  
   const bool showToolTips = InterSpecUser::preferenceValue<bool>( "ShowTooltips", m_specViewer );
   
   setLayoutSizeAware( true );
@@ -3250,7 +3249,8 @@ ShieldingSourceDisplay::ShieldingSourceDisplay( PeakModel *peakModel,
   tooltip = "Enforce isotopes for the same element should all have the same "
             "age.";
   lineDiv->setToolTip( tooltip );
-  m_sameIsotopesAge->setChecked( isotopesHaveSameAge );
+  bool account_for_decay_during_meas = false;
+  m_sameIsotopesAge->setChecked( account_for_decay_during_meas );
   m_sameIsotopesAge->checked().connect( this, &ShieldingSourceDisplay::sameIsotopesAgeChanged );
   m_sameIsotopesAge->unChecked().connect( this, &ShieldingSourceDisplay::sameIsotopesAgeChanged );
 
@@ -3262,7 +3262,24 @@ ShieldingSourceDisplay::ShieldingSourceDisplay( PeakModel *peakModel,
             " is being taken.  Resulting activities correspond to the start time of the"
             " measurement. May take take additional computation time to find solution.";
   lineDiv->setToolTip( tooltip );
-  m_decayCorrect->setChecked( isotopesHaveSameAge );
+  
+  // We'll set decay correction on by default, only if the measurement time is at least
+  //  0.5% (arbitrary) of any of the nuclide half-lives.
+  //  This isnt actually super great, because it wont catch if nuclides are added later,
+  //  or something.
+  bool decayCorrectActivity = false;
+  const auto foreground = m_specViewer->displayedHistogram(SpecUtils::SpectrumType::Foreground);
+  const float real_time = foreground ? foreground->real_time() : 0.0f;
+  if( real_time > 0.0f )
+  {
+    for( int nuc_index = 0; nuc_index < m_sourceModel->numNuclides(); ++nuc_index )
+    {
+      const SandiaDecay::Nuclide * const nuc = m_sourceModel->nuclide(nuc_index);
+      decayCorrectActivity |= (nuc && (real_time > 0.005*nuc->halfLife));
+    }//for( loop over nuclides )
+  }//if( we have a foreground with non-zero real time )
+      
+  m_decayCorrect->setChecked( decayCorrectActivity );
   m_decayCorrect->checked().connect( this, &ShieldingSourceDisplay::decayCorrectChanged );
   m_decayCorrect->unChecked().connect( this, &ShieldingSourceDisplay::decayCorrectChanged );
       
@@ -5040,7 +5057,7 @@ void ShieldingSourceDisplay::decayCorrectChanged()
       }
     };
     
-    undoRedo->addUndoRedoStep( undo_redo, undo_redo, "Decay coorect activity changed." );
+    undoRedo->addUndoRedoStep( undo_redo, undo_redo, "Decay correct activity changed." );
   }//if( undoRedo )
   
   updateChi2Chart();

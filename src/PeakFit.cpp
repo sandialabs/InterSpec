@@ -8098,8 +8098,8 @@ bool find_spectroscopic_extent( std::shared_ptr<const Measurement> meas,
   
   if( lower_channel > (nbin/3) )
   {
-    cout << "The lower threshold bin (" << lower_channel << " of " << nbin
-    << ") is to high, skipping file for further analysis." << endl;
+    //cout << "The lower threshold bin (" << lower_channel << " of " << nbin
+    //<< ") is to high, skipping file for further analysis." << endl;
     lower_channel = upper_channel = 0;
     return false;
   }//
