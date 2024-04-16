@@ -905,7 +905,7 @@ void PeakDef::equalEnough( const PeakDef &lhs, const PeakDef &rhs )
     const double b = rhs.m_uncertainties[t];
     const double diff = fabs( a - b );
 
-    if( diff > 1.0E-6*max(fabs(a),fabs(b)) )
+    if( ((a > 0.0) || (b > 0.0)) && (diff > 1.0E-6*max(fabs(a),fabs(b))) )
     {
       snprintf(buffer, sizeof(buffer),
                "PeakDef uncertanity %s of LHS (%1.8E) vs RHS (%1.8E) is out of tolerance.",

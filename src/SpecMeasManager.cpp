@@ -770,8 +770,8 @@ function( sender_id, img )
   try
   {
     let canvas = document.createElement('canvas');
-    canvas.width = img.width;
-    canvas.height = img.height;
+    canvas.width = Math.max(img.width, img.naturalWidth ? img.naturalWidth : 0);
+    canvas.height = Math.max(img.height, img.naturalHeight ? img.naturalHeight : 0);
     
     let ctx = canvas.getContext('2d');
     ctx.drawImage(img, 0, 0);
@@ -1860,6 +1860,7 @@ bool SpecMeasManager::handleNonSpectrumFile( const std::string &displayName,
   const uint8_t jpeg5_mn[]  = { 0x69, 0x66, 0x00, 0x00 };
   const uint8_t png_mn[]    = { 0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A };
   const uint8_t bmp_mn[]    = { 0x42, 0x4D };
+  const uint8_t heic_mn[]     = { 0x66, 0x74, 0x79, 0x70, 0x68, 0x65, 0x69, 0x63 }; //HEIC (apple) pictures have "ftypheic" at offset 4
   
   const uint8_t pdf_mn[]    = { 0x25, 0x50, 0x44, 0x46 };
   const uint8_t ps_mn[]     = { 0x25, 0x21, 0x50, 0x53 };
@@ -1884,6 +1885,8 @@ bool SpecMeasManager::handleNonSpectrumFile( const std::string &displayName,
   const bool ispng = check_magic_number( data, png_mn );
   const bool isbmp = check_magic_number( data, bmp_mn );
   const bool issvg = header_contains( "<svg" );
+  const bool isheic = (0 == memcmp( heic_mn, data + 4, sizeof(heic_mn) ));
+  
   
   // Wt::Utils::guessImageMimeTypeData(<#const std::vector<unsigned char> &header#>)
   
@@ -1928,7 +1931,7 @@ bool SpecMeasManager::handleNonSpectrumFile( const std::string &displayName,
   }//if( ispdf | isps | istif )
   
   
-  if( isgif || isjpg || ispng || isbmp || issvg )
+  if( isgif || isjpg || ispng || isbmp || issvg || isheic )
   {
     const bool decode_raw = (isgif || isjpg || ispng);
     
@@ -1938,6 +1941,7 @@ bool SpecMeasManager::handleNonSpectrumFile( const std::string &displayName,
     else if( ispng ) mimetype = "image/png";
     else if( isbmp ) mimetype = "image/bmp";
     else if( issvg ) mimetype = "image/svg+xml";
+    else if( isheic ) mimetype = "image/heic";
     
     new UploadedImgDisplay( m_viewer, displayName, mimetype, filesize, infile, dialog );
     
@@ -5346,13 +5350,13 @@ void SpecMeasManager::saveToDatabase(
     if( !header->shouldSaveToDb() )
       return;
     
-//    boost::function<void(void)> worker
-//                      = app->bind( boost::bind( &SpectraFileHeader::saveToDatabaseWorker, meas, header ) );
-//    WServer::instance()->post( app->sessionId(), worker );
-    
     std::shared_ptr<SpecMeas> meas = header->parseFile();
-    boost::function<void(void)> worker = boost::bind( &SpectraFileHeader::saveToDatabaseWorker, meas, header );
-    WServer::instance()->ioService().boost::asio::io_service::post( worker );
+    boost::function<void(void)> worker
+                      = wApp->bind( boost::bind( &SpectraFileHeader::saveToDatabaseWorker, meas, header ) );
+    WServer::instance()->post( wApp->sessionId(), worker );
+    
+//    boost::function<void(void)> worker = boost::bind( &SpectraFileHeader::saveToDatabaseWorker, meas, header );
+//    WServer::instance()->ioService().boost::asio::io_service::post( worker );
   }//if( headermeas && (headermeas==meas) )
 }//void saveToDatabase( std::shared_ptr<const SpecMeas> meas ) const
 
@@ -5391,7 +5395,8 @@ void SpecMeasManager::userCanceledResumeFromPreviousOpened( shared_ptr<SpectraFi
   else
     f = boost::bind( &SpectraFileHeader::saveToDatabaseFromTempFileWorker, header );
   
-  WServer::instance()->ioService().boost::asio::io_service::post( f );
+  WServer::instance()->post( wApp->sessionId(), f );
+  //WServer::instance()->ioService().boost::asio::io_service::post( f );
 }//userCanceledResumeFromPreviousOpened(..)
 
 

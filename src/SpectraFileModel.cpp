@@ -123,7 +123,7 @@ namespace
   
   const char * const error_saving_spectrum_msg
                            = "There was an error saving a spectrum to the"
-                             " database from memmorry. It shouldnt effect"
+                             " database from memory. It shouldnt effect"
                              " this session, but possibly future ones using"
                              " the spectrum.";
   
