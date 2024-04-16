@@ -364,6 +364,8 @@ pair<AuxWindow *, DecayChainChart *>
   
   WPushButton *close = window->addCloseButtonToFooter();
   close->clicked().connect( boost::bind( &AuxWindow::hide, window ) );
+  window->rejectWhenEscapePressed();
+  window->finished().connect( boost::bind( &AuxWindow::deleteAuxWindow, window ) );
     
   WGridLayout *layout = window->stretcher();
   layout->addWidget( chart, 0, 0 );

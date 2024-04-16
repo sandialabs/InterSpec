@@ -36,6 +36,7 @@
 
 
 // Forward declarations
+class AuxWindow;
 namespace SandiaDecay
 {
   struct Nuclide;
@@ -78,14 +79,22 @@ public:
    */
   Wt::Signal<const SandiaDecay::Nuclide *> &nuclideChanged();
   
+  /** Returns current nuclide. */
+  const SandiaDecay::Nuclide *nuclide() const;
 protected:
   void setTemplateTxt();
   void showDecayChainChart();
   void showDecayThroughChart();
+  void handleDecayChartClose( AuxWindow *window );
+  void programmaticallyCloseDecayChart();
+  void implementShowDecayCharts( const bool through );
 
   const SandiaDecay::Nuclide *m_nuc;
+  std::vector<const SandiaDecay::Nuclide *> m_current_history;
   bool m_displayTitle;
   Wt::Signal<const SandiaDecay::Nuclide *> m_nuclideChanged;
+  
+  AuxWindow *m_decayWindow;
 };//class MoreNuclideInfoDisplay
 
 
@@ -95,8 +104,16 @@ public:
   MoreNuclideInfoWindow( const SandiaDecay::Nuclide *const nuc );
 
   void nuclideUpdated( const SandiaDecay::Nuclide *nuc );
+  
+  
+  const SandiaDecay::Nuclide *currentNuclide() const;
+  const SandiaDecay::Nuclide *originalNuclide() const;
+  
+  MoreNuclideInfoDisplay *display();
 protected:
   MoreNuclideInfoDisplay *m_display;
+  
+  const SandiaDecay::Nuclide *m_orig_nuc;
 };//class MoreNuclideInfoWindow
 
 #endif //MoreNuclideInfoDisplay_h

@@ -44,12 +44,15 @@
 
 #include "SandiaDecay/SandiaDecay.h"
 
+#include "InterSpec/AuxWindow.h"
 #include "InterSpec/InterSpec.h"
 #include "InterSpec/PhysicalUnits.h"
 #include "InterSpec/DecayChainChart.h"
+#include "InterSpec/UndoRedoManager.h"
 #include "InterSpec/MoreNuclideInfo.h"
 #include "InterSpec/DecayDataBaseServer.h"
 #include "InterSpec/MoreNuclideInfoDisplay.h"
+#include "InterSpec/ReferencePhotopeakDisplay.h"
 
 
 using namespace std;
@@ -189,7 +192,8 @@ MoreNuclideInfoDisplay::MoreNuclideInfoDisplay( const SandiaDecay::Nuclide *cons
   : WTemplate( parent ),
     m_nuc( nullptr ),
     m_displayTitle( display_title ),
-    m_nuclideChanged( this )
+    m_nuclideChanged( this ),
+    m_decayWindow( nullptr )
 {
   try
   {
@@ -206,17 +210,116 @@ MoreNuclideInfoDisplay::MoreNuclideInfoDisplay( const SandiaDecay::Nuclide *cons
 }//MoreNuclideInfoDisplay constructor
 
 
+void MoreNuclideInfoDisplay::handleDecayChartClose( AuxWindow *window )
+{
+  assert( window == m_decayWindow );
+  if( window != m_decayWindow )
+    cerr << "MoreNuclideInfoDisplay::handleDecayChartClose(...): passed in pointer ("
+         << window << ") not same as internal pointer (" << m_decayWindow << ")." << endl;
+  
+  m_decayWindow = nullptr;
+}//void handleDecayChartClose( AuxWindow *window )
+
+
+void MoreNuclideInfoDisplay::programmaticallyCloseDecayChart()
+{
+  UndoRedoManager::BlockUndoRedoInserts undo_blocker;
+  
+  if( m_decayWindow )
+  {
+    // Calling done seems to crash for some reason
+    //m_decayWindow->done( Wt::WDialog::DialogCode::Accepted );
+    AuxWindow::deleteAuxWindow( m_decayWindow );
+  }
+  m_decayWindow = nullptr;
+}//void programmaticallyCloseDecayChart()
+
+
+void MoreNuclideInfoDisplay::implementShowDecayCharts( const bool through )
+{
+  const auto type = through ? DecayChainChart::DecayChainType::DecayThrough
+                            : DecayChainChart::DecayChainType::DecayFrom;
+  const SandiaDecay::Nuclide *nuc = m_nuc;
+  
+  if( m_decayWindow )
+  {
+    m_decayWindow->done( Wt::WDialog::DialogCode::Accepted );
+    assert( !m_decayWindow );
+  }
+  
+  const pair<AuxWindow *, DecayChainChart *> results
+                         = DecayChainChart::show_decay_chart_window( nuc, type );
+  
+  m_decayWindow = results.first;
+  
+  if( m_decayWindow )
+  {
+    m_decayWindow->finished().connect( boost::bind(&MoreNuclideInfoDisplay::handleDecayChartClose,
+                                                   this, m_decayWindow) );
+  }
+  
+  auto get_display = []() -> MoreNuclideInfoDisplay * {
+    InterSpec *interspec = InterSpec::instance();
+    ReferencePhotopeakDisplay *display = interspec ? interspec->referenceLinesWidget() : nullptr;
+    MoreNuclideInfoWindow *window = display ? display->moreInfoWindow() : nullptr;
+    MoreNuclideInfoDisplay *infoDisplay = window ? window->display() : nullptr;
+    assert( infoDisplay );
+    return infoDisplay;
+  };
+  
+  m_decayWindow->finished().connect( std::bind( [through, get_display](){
+    UndoRedoManager *undoRedo = UndoRedoManager::instance();
+    if( undoRedo && undoRedo->canAddUndoRedoNow() )
+    {
+      auto undo = [through, get_display](){
+        MoreNuclideInfoDisplay *disp = get_display();
+        if( disp )
+          disp->implementShowDecayCharts( through );
+      };
+      
+      auto redo = [through, get_display](){
+        MoreNuclideInfoDisplay *disp = get_display();
+        if( disp )
+          disp->programmaticallyCloseDecayChart();
+      };
+      
+      undoRedo->addUndoRedoStep( undo, redo, "" );
+    }//if( disp && undoRedo && undoRedo->canAddUndoRedoNow() )
+  } ));
+  
+
+  UndoRedoManager *undoRedo = UndoRedoManager::instance();
+  if( undoRedo && undoRedo->canAddUndoRedoNow() )
+  {
+    auto undo = [get_display](){
+      MoreNuclideInfoDisplay *infoDisplay = get_display();
+      if( infoDisplay )
+        infoDisplay->programmaticallyCloseDecayChart();
+    };
+    
+    auto redo = [through, get_display](){
+      MoreNuclideInfoDisplay *infoDisplay = get_display();
+      if( infoDisplay )
+        infoDisplay->implementShowDecayCharts( through );
+    };
+    
+    const string desc = "Show " + (nuc ? nuc->symbol : string("null")) + " decay chart.";
+    undoRedo->addUndoRedoStep( undo, redo, desc );
+  }//if( undoRedo && undoRedo->canAddUndoRedoNow() )
+}//void implementShowDecayCharts( const bool through )
+
+
 void MoreNuclideInfoDisplay::showDecayChainChart()
 {
   if( m_nuc )
-    DecayChainChart::show_decay_chart_window( m_nuc, DecayChainChart::DecayChainType::DecayFrom );
+    implementShowDecayCharts( false );
 }//void showDecayChainChart()
   
 
 void MoreNuclideInfoDisplay::showDecayThroughChart()
 {
   if( m_nuc )
-    DecayChainChart::show_decay_chart_window( m_nuc, DecayChainChart::DecayChainType::DecayThrough );
+    implementShowDecayCharts( true );
 }//void showDecayThroughChart()
 
 
@@ -250,6 +353,10 @@ void MoreNuclideInfoDisplay::setNuclide( const SandiaDecay::Nuclide *const nuc,
   using namespace MoreNuclideInfo;
   
   WTemplate &tmplt = *this;
+  
+  const SandiaDecay::Nuclide * const orig_nuc = m_nuc;
+  vector<const SandiaDecay::Nuclide *> orig_history = m_current_history;
+  vector<const SandiaDecay::Nuclide *> input_history = history;
   
   try
   {
@@ -533,18 +640,52 @@ void MoreNuclideInfoDisplay::setNuclide( const SandiaDecay::Nuclide *const nuc,
     tmplt.setCondition( "if-invalid", false );
     
     m_nuc = nuc;
+    m_current_history = history;
     
     // Incase we are loading a nuclide, and the user had scrolled down - we'll scroll up
     doJavaScript( "try{" + jsRef() + ".parentElement.scrollTop=0;}catch{}" );
   }catch( std::exception &e )
   {
     m_nuc = nullptr;
+    m_current_history = history;
+    
     tmplt.setCondition( "if-valid", false );
     tmplt.setCondition( "if-invalid", true );
     tmplt.bindString( "error-message", e.what(), Wt::TextFormat::XHTMLText );
   }//try / catch
   
   m_nuclideChanged.emit( m_nuc );
+  
+  
+  UndoRedoManager *undoRedo = UndoRedoManager::instance();
+  if( undoRedo && undoRedo->canAddUndoRedoNow() )
+  {
+    // Pop the end nuclide off, to keep things consistent
+    if( !orig_history.empty() && (orig_history.back() == orig_nuc) )
+      orig_history.resize( orig_history.size() - 1 );
+    
+    auto setNuclideLambda = []( const SandiaDecay::Nuclide *newNuc, const vector<const SandiaDecay::Nuclide *> &newHist ){
+      InterSpec *interspec = InterSpec::instance();
+      ReferencePhotopeakDisplay *display = interspec ? interspec->referenceLinesWidget() : nullptr;
+      MoreNuclideInfoWindow *window = display ? display->moreInfoWindow() : nullptr;
+      MoreNuclideInfoDisplay *infoDisplay = window ? window->display() : nullptr;
+      assert( infoDisplay );
+      if( infoDisplay )
+        infoDisplay->setNuclide( newNuc, newHist );
+    };//setNuclideLambda
+    
+    
+    auto undo = [orig_nuc, orig_history, setNuclideLambda](){
+      setNuclideLambda( orig_nuc, orig_history );
+    };
+    
+    auto redo = [nuc, input_history, setNuclideLambda](){
+      setNuclideLambda( nuc, input_history );
+    };
+    
+    undoRedo->addUndoRedoStep( undo, redo, "Change more info nuclide." );
+  }//if( undoRedo && undoRedo->canAddUndoRedoNow() )
+  
 }//void setNuclide(...)
 
 
@@ -553,10 +694,16 @@ Wt::Signal<const SandiaDecay::Nuclide *> &MoreNuclideInfoDisplay::nuclideChanged
   return m_nuclideChanged;
 }
 
+const SandiaDecay::Nuclide *MoreNuclideInfoDisplay::nuclide() const
+{
+  return m_nuc;
+}//const SandiaDecay::Nuclide *nuclide() const;
+
 
 MoreNuclideInfoWindow::MoreNuclideInfoWindow( const SandiaDecay::Nuclide *const nuc )
   : SimpleDialog( "More info dialog" ), //We need some title text so `SimpleDialog::m_title` is created
-  m_display( nullptr )
+  m_display( nullptr ),
+  m_orig_nuc( nuc )
 {
   m_display = new MoreNuclideInfoDisplay( nuc, false, contents() );
   
@@ -573,3 +720,21 @@ void MoreNuclideInfoWindow::nuclideUpdated( const SandiaDecay::Nuclide *nuc )
   if( m_title )
     m_title->setText( "More Info on " + (nuc ? nuc->symbol : string("---")) );
 }//void nuclideUpdated( const SandiaDecay::Nuclide *nuc )
+
+
+const SandiaDecay::Nuclide *MoreNuclideInfoWindow::currentNuclide() const
+{
+  return m_display ? m_display->nuclide() : nullptr;
+}
+
+
+const SandiaDecay::Nuclide *MoreNuclideInfoWindow::originalNuclide() const
+{
+  return m_orig_nuc;
+}
+
+
+MoreNuclideInfoDisplay *MoreNuclideInfoWindow::display()
+{
+  return m_display;
+}//

@@ -40,6 +40,7 @@
 class MaterialDB;
 class SpectrumChart;
 class ShieldingSelect;
+class MoreNuclideInfoWindow;
 
 namespace SandiaDecay
 {
@@ -280,6 +281,10 @@ public:
    */
   std::shared_ptr<void> getDisableUndoRedoSentry();
   
+  void programmaticallyCloseMoreInfoWindow();
+  
+  MoreNuclideInfoWindow *moreInfoWindow();
+  
 protected:
   virtual void render( Wt::WFlags<Wt::RenderFlag> flags );
   
@@ -320,6 +325,7 @@ protected:
   void updateOtherNucsDisplay();
   void updateAssociatedNuclides();
   void showMoreInfoWindow();
+  void handleMoreInfoWindowClose( MoreNuclideInfoWindow *window );
 
   /** Function that will be called whenever any displayed spectrum
   gets changed (different file, or sample numbers).
@@ -340,7 +346,7 @@ protected:
    */
   bool m_currently_updating;
   
-  /** if `m_undo_redo_sentry.lock()` yeilds a valid pointer, than an undo/redo step wont be inserted.
+  /** if `m_undo_redo_sentry.lock()` yields a valid pointer, than an undo/redo step wont be inserted.
    \sa getDisableUndoRedoSentry();
    */
   std::weak_ptr<void> m_undo_redo_sentry;
@@ -425,6 +431,8 @@ protected:
   Wt::Signal<> m_displayingNuclide;
   
   Wt::Signal<> m_nuclidesCleared;
+  
+  MoreNuclideInfoWindow *m_nucInfoWindow;
   
   static const int sm_xmlSerializationVersion;
 };//class ReferencePhotopeakDisplay

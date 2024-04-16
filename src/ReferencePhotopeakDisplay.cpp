@@ -848,7 +848,11 @@ ReferencePhotopeakDisplay::ReferencePhotopeakDisplay(
     m_csvDownload( nullptr ),
     m_userHasPickedColor( false ),
     m_peaksGetAssignedRefLineColor( false ),
-    m_lineColors{ ns_def_line_colors }
+    m_lineColors{ ns_def_line_colors },
+    m_specificSourcelineColors{},
+    m_displayingNuclide( this ),
+    m_nuclidesCleared( this ),
+    m_nucInfoWindow( nullptr )
 {
   wApp->useStyleSheet("InterSpec_resources/ReferencePhotopeakDisplay.css");
   
@@ -1598,6 +1602,58 @@ void ReferencePhotopeakDisplay::updateAssociatedNuclides()
 }//void updateAssociatedNuclides()
 
 
+void ReferencePhotopeakDisplay::programmaticallyCloseMoreInfoWindow()
+{
+  if( m_nucInfoWindow )
+  {
+    UndoRedoManager::BlockUndoRedoInserts undo_blocker;
+    m_nucInfoWindow->done(Wt::WDialog::DialogCode::Accepted);
+  }
+  assert( !m_nucInfoWindow );
+  m_nucInfoWindow = nullptr;
+}//void programmaticallyCloseMoreInfoWindow()
+
+
+void ReferencePhotopeakDisplay::handleMoreInfoWindowClose( MoreNuclideInfoWindow *window )
+{
+  if( window == m_nucInfoWindow )
+  {
+    m_nucInfoWindow = nullptr;
+    
+    UndoRedoManager *undo_manager = UndoRedoManager::instance();
+    if( undo_manager && undo_manager->canAddUndoRedoNow() )
+    {
+      // I *think* calling `window->currentNuclide()` would be valid, but lets not risk it
+      auto undo = [](){
+        InterSpec *interspec = InterSpec::instance();
+        ReferencePhotopeakDisplay *disp = interspec ? interspec->referenceLinesWidget() : nullptr;
+        if( disp )
+          disp->showMoreInfoWindow();
+      };//
+      
+      auto redo = [](){
+        InterSpec *interspec = InterSpec::instance();
+        ReferencePhotopeakDisplay *disp = interspec ? interspec->referenceLinesWidget() : nullptr;
+        if( disp )
+          disp->programmaticallyCloseMoreInfoWindow();
+      };
+      
+      undo_manager->addUndoRedoStep( undo, redo, "Close nuclide more info window." );
+    }//if( undo_manager && undo_manager->canAddUndoRedoNow() )
+  }else
+  {
+    cerr << "ReferencePhotopeakDisplay::handleMoreInfoWindowClose: Received pointer (" << window
+         << "), not matching m_nuclidesCleared (" << m_nucInfoWindow << ")" << endl;
+  }
+}//void handleMoreInfoWindowClose( MoreNuclideInfoWindow *window );
+
+
+MoreNuclideInfoWindow *ReferencePhotopeakDisplay::moreInfoWindow()
+{
+  return m_nucInfoWindow;
+}
+
+
 void ReferencePhotopeakDisplay::showMoreInfoWindow()
 {
   const SandiaDecay::Nuclide * const nuc = m_currentlyShowingNuclide.m_nuclide;
@@ -1605,7 +1661,75 @@ void ReferencePhotopeakDisplay::showMoreInfoWindow()
   if( !nuc )
     return;
 
-  new MoreNuclideInfoWindow( nuc );
+  const SandiaDecay::Nuclide *prev_orig_nuc = nullptr, *prev_current_nuc = nullptr;
+  if( m_nucInfoWindow )
+  {
+    UndoRedoManager::BlockUndoRedoInserts undo_blocker;
+    
+    prev_orig_nuc = m_nucInfoWindow->originalNuclide();
+    prev_orig_nuc = m_nucInfoWindow->currentNuclide();
+    m_nucInfoWindow->done(Wt::WDialog::DialogCode::Accepted);
+    assert( m_nucInfoWindow == nullptr );
+    m_nucInfoWindow = nullptr;
+  }//if( m_nucInfoWindow )
+  
+  m_nucInfoWindow = new MoreNuclideInfoWindow( nuc );
+  m_nucInfoWindow->finished().connect( 
+                               boost::bind( &ReferencePhotopeakDisplay::handleMoreInfoWindowClose,
+                                 this, m_nucInfoWindow )
+  );
+  
+  // All of this undo/redo stuff is a little over the top since we will only ever show one more-info
+  //  window at a time, but oh well.
+  UndoRedoManager *undo_manager = UndoRedoManager::instance();
+  if( undo_manager && undo_manager->canAddUndoRedoNow() )
+  {
+    auto undo = [this, prev_orig_nuc, prev_current_nuc](){
+      InterSpec *interspec = InterSpec::instance();
+      ReferencePhotopeakDisplay *disp = interspec ? interspec->referenceLinesWidget() : nullptr;
+      assert( disp );
+      MoreNuclideInfoWindow *window = disp ? disp->moreInfoWindow() : nullptr;
+      if( !window )
+        return;
+      
+      window->done(Wt::WDialog::DialogCode::Accepted);
+      
+      if( prev_orig_nuc )
+      {
+        assert( !m_nucInfoWindow );
+        m_nucInfoWindow = new MoreNuclideInfoWindow( prev_orig_nuc );
+        m_nucInfoWindow->finished().connect( 
+                  boost::bind( &ReferencePhotopeakDisplay::handleMoreInfoWindowClose,
+                              this, m_nucInfoWindow )
+        );
+        
+        if( prev_current_nuc && (prev_orig_nuc != prev_current_nuc) )
+        {
+          // TODO: use prev_current_nuc to kinda track history or whatever
+        }
+      }//if( prev_orig_nuc )
+    };//undo
+    
+    auto redo = [this, nuc](){
+      InterSpec *interspec = InterSpec::instance();
+      ReferencePhotopeakDisplay *disp = interspec ? interspec->referenceLinesWidget() : nullptr;
+      assert( disp );
+      if( !disp )
+        return;
+      
+      if( disp->m_nucInfoWindow )
+        disp->m_nucInfoWindow->done(Wt::WDialog::DialogCode::Accepted);
+      
+      assert( !disp->moreInfoWindow() );
+      disp->m_nucInfoWindow = new MoreNuclideInfoWindow( nuc );
+      disp->m_nucInfoWindow->finished().connect(
+                              boost::bind( &ReferencePhotopeakDisplay::handleMoreInfoWindowClose,
+                              this, m_nucInfoWindow )
+      );
+    };//redo
+    
+    undo_manager->addUndoRedoStep( undo, redo, "Show " + nuc->symbol + " more info window." );
+  }//if( undo_manager && undo_manager->canAddUndoRedoNow() )
 }//void showMoreInfoWindow()
 
 
