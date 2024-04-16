@@ -178,7 +178,8 @@ public:
   //  the user.  If false, the file type is not known.
   //  Meant to be called from within the event loop.
   bool handleNonSpectrumFile( const std::string &displayName,
-                              const std::string &fileLocation );
+                              const std::string &fileLocation,
+                              SpecUtils::SpectrumType type );
   
   /** Handles parsing multiple DRF CSV/TSV files when dropped onto the app.
    

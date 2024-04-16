@@ -806,6 +806,8 @@ protected:
   std::string m_display_name;
   std::string m_mimetype;
   
+  SpecUtils::SpectrumType m_upload_type;
+  
   /** I like the QR -code auto search running automatically when a image is detected, but
    I'm not quite yet confident enough in the implementation to have things just run.
    
@@ -832,6 +834,97 @@ protected:
   
   void apply_uris( const vector<string> &uris )
   {
+    assert( !uris.empty() );
+    if( uris.empty() )
+      return;
+    
+    // For spectrum files, we could just call `m_viewer->handleAppUrl( uri );`, but then we
+    //  cant preserve if the user dropped it in as a foreground, background, or secondary,
+    //  and also I'm not sure how multi-qr-code URIs would work out, so we'll decode and
+    //  load spectrum file URIs totally here.
+    bool is_spec_uris = true;
+    for( const string &uri : uris )
+    {
+      is_spec_uris &= (SpecUtils::istarts_with(uri, "RADDATA://")
+                      || SpecUtils::istarts_with(uri, "interspec://G0/"));
+    }
+    
+    if( is_spec_uris )
+    {
+      try
+      {
+        bool decoded = false;
+        SpecUtils::EncodedSpectraInfo info;
+        
+        // The URIs may be percent encoded - we'll try up to 3 levels of decoding them
+        //  (probably not the case for QR-codes that they would ever be encoded more than
+        //  once, but JIC)
+        vector<string> unencoded_uris = uris;
+        for( size_t i = 0; !decoded && (i < 3); ++i )
+        {
+          try
+          {
+            info = SpecUtils::get_spectrum_url_info( unencoded_uris.front() );
+            decoded = true;
+          }catch( std::exception & )
+          {
+            // Assume all URIs are percent encoded the same number of times
+            for( string &uri : unencoded_uris )
+              uri = SpecUtils::url_decode( uri );
+          }//
+        }//for( try to decode URL as spectrum )
+        
+        if( decoded )
+        {
+          shared_ptr<SpecMeas> specmeas;
+          
+          vector<SpecUtils::UrlSpectrum> spectra;
+          if( info.m_number_urls == 1 )
+          {
+            spectra = SpecUtils::spectrum_decode_first_url( unencoded_uris.front() );
+          }else if( (info.m_number_urls > 1) && (info.m_number_urls == unencoded_uris.size()) )
+          {
+            spectra = SpecUtils::decode_spectrum_urls( unencoded_uris );
+          }//if( one URL ) / else
+          
+          if( spectra.empty() )
+            throw runtime_error( "No gamma measurements in URL/QR code" );
+          
+          shared_ptr<SpecUtils::SpecFile> specfile = SpecUtils::to_spec_file( spectra );
+          assert( specfile && specfile->num_measurements() );
+          
+          if( !specfile || (specfile->num_measurements() < 1) || (specfile->num_gamma_channels() < 7) )
+            throw runtime_error( "No gamma measurements in URL/QR code" );
+          
+          string display_name = m_display_name.empty() ? string("QR-code Picture") : m_display_name;
+          
+          specmeas = make_shared<SpecMeas>();
+          reinterpret_cast<SpecUtils::SpecFile &>( *specmeas ) = *specfile;
+          specmeas->set_filename( display_name );
+          
+          if( specmeas && (specmeas->num_measurements() >= 1) )
+          {
+            SpecMeasManager *fileManager = m_viewer->fileManager();
+            SpectraFileModel *fileModel = fileManager->model();
+            
+            auto header = make_shared<SpectraFileHeader>( m_viewer->m_user, true, m_viewer );
+            header->setFile( display_name, specmeas );
+            fileManager->addToTempSpectrumInfoCache( specmeas );
+            const int row = fileModel->addRow( header );
+            fileManager->displayFile( row, specmeas, m_upload_type, true, true, SpecMeasManager::VariantChecksToDo::None );
+            
+            m_close_parent_dialog();
+            return;
+          }//if( specmeas && (specmeas->num_measurements() >= 1) )
+        }//if( decoded )
+      }catch( std::exception &e )
+      {
+        cerr << "Failed to decode spectrum URI from image - will let handleAppUrl() deal with things: " << e.what() << endl;
+      }
+    }//if( a spectrum URI )
+    
+    // If we are here - its not valid spectrum file URIs, so we'll just handle them as if the OS
+    //  had past them off to the app.
     for( const string uri : uris )
       m_viewer->handleAppUrl( uri );
     
@@ -1040,11 +1133,13 @@ public:
                      const char *mimetype,
                      const size_t filesize,
                      std::ifstream &infile,
-                     SimpleDialog *dialog )
+                     SimpleDialog *dialog,
+                     SpecUtils::SpectrumType type )
     : WContainerWidget( dialog->contents() ),
   m_viewer( interspec ),
   m_display_name( display_name ),
   m_mimetype( mimetype ),
+  m_upload_type( type ),
   m_autoQrCodeSearch( false ),
   m_image( nullptr ),
   m_resource( nullptr ),
@@ -1734,7 +1829,8 @@ bool check_magic_number( const uint8_t (&magic_num)[N], const uint8_t (&data)[M]
 
 
 bool SpecMeasManager::handleNonSpectrumFile( const std::string &displayName,
-                                             const std::string &fileLocation )
+                                             const std::string &fileLocation,
+                                             SpecUtils::SpectrumType type )
 {
 #ifdef _WIN32
   const std::wstring wpathstr = SpecUtils::convert_from_utf8_to_utf16(fileLocation);
@@ -1943,7 +2039,7 @@ bool SpecMeasManager::handleNonSpectrumFile( const std::string &displayName,
     else if( issvg ) mimetype = "image/svg+xml";
     else if( isheic ) mimetype = "image/heic";
     
-    new UploadedImgDisplay( m_viewer, displayName, mimetype, filesize, infile, dialog );
+    new UploadedImgDisplay( m_viewer, displayName, mimetype, filesize, infile, dialog, type );
     
     add_undo_redo();
     
@@ -3243,7 +3339,7 @@ void SpecMeasManager::handleFileDropWorker( const std::string &name,
     //It is the responsibility of the caller to clean up the file.
   }catch( exception &e )
   {
-    if( !handleNonSpectrumFile( name, spoolName ) )
+    if( !handleNonSpectrumFile( name, spoolName, type ) )
     {
       displayInvalidFileMsg( name, e.what() );
     }
@@ -5780,7 +5876,7 @@ bool SpecMeasManager::loadFromFileSystem( const string &name, SpecUtils::Spectru
       return true;
     }
     
-    if( !handleNonSpectrumFile( origName, name ) )
+    if( !handleNonSpectrumFile( origName, name, type ) )
     {
       displayInvalidFileMsg(origName,e.what());
     }
