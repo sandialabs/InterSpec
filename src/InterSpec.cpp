@@ -10725,11 +10725,7 @@ void InterSpec::setSpectrum( std::shared_ptr<SpecMeas> meas,
     m_showRiidResults->setDisabled( !showRiid );
   }
   
-  if( m_showMultimedia )
-  {
-    const bool showPics = m_dataMeasurement && (m_dataMeasurement->multimedia_data().size() > 0);
-    m_showMultimedia->setDisabled( !showPics );
-  }
+  checkEnableViewImageMenuItem();
   
   //Right now, we will only search for hint peaks for foreground
 #if( !ANDROID && !IOS )
@@ -12324,6 +12320,16 @@ void InterSpec::refreshDisplayedCharts()
     }//if( either min or max range is outside of the data )
   }//if( possible energy range is valid )
 }//void refreshDisplayedCharts()
+
+
+void InterSpec::checkEnableViewImageMenuItem()
+{
+  if( m_showMultimedia )
+  {
+    const bool showPics = m_dataMeasurement && (m_dataMeasurement->multimedia_data().size() > 0);
+    m_showMultimedia->setDisabled( !showPics );
+  }
+}//void checkEnableViewImageMenuItem()
 
 
 std::set<int> InterSpec::sampleNumbersForTypeFromForegroundFile( const SpecUtils::SpectrumType type ) const

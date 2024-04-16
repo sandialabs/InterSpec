@@ -696,6 +696,451 @@ public:
   }//void addUrl( const string &url )
 };//MultiUrlSpectrumDialog
 #endif //USE_QR_CODES
+
+WT_DECLARE_WT_MEMBER
+(LookForQrCode, Wt::JavaScriptFunction, "LookForQrCode",
+async function( sender_id, u8Buffer )
+{
+  let zxing = await ZXing();
+  
+  let zxingBuffer = zxing._malloc(u8Buffer.length);
+  zxing.HEAPU8.set(u8Buffer, zxingBuffer);
+  
+  let results = zxing.readBarcodesFromImage(zxingBuffer, u8Buffer.length, true, "QRCode", 0xff);
+  zxing._free(zxingBuffer);
+  
+  const firstRes = (results.size() > 0) ? results.get(0) : null;
+  
+  if( (results.size() === 0)
+     || (firstRes && firstRes.error && (firstRes.error.length !== 0) && (!firstRes.text || firstRes.text.length)) )
+  {
+    if( firstRes && firstRes.error && (firstRes.error.length !== 0) )
+    {
+      console.log( "QR-code reading error:", firstRes.error );
+      Wt.emit( sender_id, 'QrDecodedFromImg', -1, firstRes.error );
+    }else
+    {
+      // No QR-code found
+      console.log( "No QR-code found." );
+      Wt.emit( sender_id, 'QrDecodedFromImg', 0, "" );
+    }
+  }else
+  {
+    console.log( "Successfully got QR-code results." );
+    let uri = "";
+    for( let i = 0; i < results.size(); i += 1)
+    {
+      const { format, text, bytes, error } = results.get(i);
+      uri += (uri.length ? "\n" : "") + btoa(text);
+      //console.log( "text: ", text, "\nerror:", error );
+    }
+    
+    Wt.emit( sender_id, 'QrDecodedFromImg', results.size(), uri );
+  }//if( error ) / else
+}
+);
+  
+  
+WT_DECLARE_WT_MEMBER
+(SearchForQrFromImgData, Wt::JavaScriptFunction, "SearchForQrFromImgData",
+function( sender_id, b64_img_data_str )
+{
+  let binaryString = atob(b64_img_data_str);
+  let bytes = new Uint8Array(binaryString.length);
+  for( let i = 0; i < binaryString.length; i++)
+    bytes[i] = binaryString.charCodeAt(i);
+    
+  let u8Buffer = new Uint8Array(bytes);
+  
+  Wt.WT.LookForQrCode(sender_id, u8Buffer).then( function(){
+    console.log( "Done calling qr decode" );
+  }).catch(function(err){
+    console.log( "qr decode error: ", err );
+    Wt.emit( sender_id, 'QrDecodedFromImg', -999, "There was an error calling decoding routine." );
+  });
+}
+);
+  
+  
+WT_DECLARE_WT_MEMBER
+(SearchForQrUsingCanvas, Wt::JavaScriptFunction, "SearchForQrUsingCanvas",
+function( sender_id, img )
+{
+  //Turn image into PNG, then call Wt.WT.LookForQrCode(sender_id, u8Buffer).then...
+  try
+  {
+    let canvas = document.createElement('canvas');
+    canvas.width = img.width;
+    canvas.height = img.height;
+    
+    let ctx = canvas.getContext('2d');
+    ctx.drawImage(img, 0, 0);
+    
+    // Convert the image to PNG format
+    function blobToQr(blobData){
+      blobData.arrayBuffer().then( function(arrBuf){
+        let u8Buffer = new Uint8Array( arrBuf );
+        Wt.WT.LookForQrCode(sender_id, u8Buffer).then( function(){
+          console.log( "Done calling qr decode for canvas blob" );
+        }).catch(function(err){
+          console.log( "qr decode error: ", err );
+          Wt.emit( sender_id, 'QrDecodedFromImg', -999, "Error calling decoding routine." );
+        });
+      });
+    };//blobToQr
+    
+    canvas.toBlob( blobToQr, 'image/png' );
+  }catch( err )
+  {
+    console.log( "qr decode error (1): ", err );
+    Wt.emit( sender_id, 'QrDecodedFromImg', -999, "There was an error when calling decoding routine." );
+  }
+}
+);
+  
+  
+class UploadedImgDisplay : public WContainerWidget
+{
+protected:
+  InterSpec *m_viewer;
+  std::string m_display_name;
+  std::string m_mimetype;
+  
+  /** I like the QR -code auto search running automatically when a image is detected, but
+   I'm not quite yet confident enough in the implementation to have things just run.
+   
+   After some more use/testing (including on the different platforms), we'll maybe always auto search.
+   */
+  bool m_autoQrCodeSearch;
+  
+  WImage *m_image;
+  WMemoryResource *m_resource;
+  
+  /** Will be nullptr. if `m_autoQrCodeSearch == true` */
+  WPushButton *m_checkForQrCodeBtn;
+  
+  /** Will be nullptr. if `m_autoQrCodeSearch == false` */
+  WText *m_qrCodeStatusTxt;
+  
+  JSignal<int,std::string> m_qrDecodeSignal;
+  boost::function<void()> m_close_parent_dialog;
+  
+  void close_parent_dialog()
+  {
+    m_close_parent_dialog();
+  }
+  
+  void apply_uris( const vector<string> &uris )
+  {
+    for( const string uri : uris )
+      m_viewer->handleAppUrl( uri );
+    
+    m_close_parent_dialog();
+  }//void apply_uris( const vector<string> &uris )
+  
+  
+  void qr_check_result( const int num_qr, const string b64_value )
+  {
+    vector<string> initial_uris;
+    if( num_qr > 1 )
+    {
+      SpecUtils::split( initial_uris, b64_value, "\n\r" );
+    }else
+    {
+      initial_uris.push_back( b64_value );
+    }
+    
+    if( (num_qr <= 0) || initial_uris.empty() || (initial_uris.size() > 14) )
+    {
+      if( m_autoQrCodeSearch && m_qrCodeStatusTxt )
+      {
+        m_qrCodeStatusTxt->setText( "No QR-codes found" );
+        return;
+      }//if( m_autoQrCodeSearch )
+      
+      string title, content;
+      
+      if( (num_qr == 0) && b64_value.empty() )
+      {
+        title = "No QR-code found";
+        content = "<p>"
+        "If there is a QR-code in the image, you can try cropping the photo or adjusting color level.<br/>"
+        "Using a 3rd party app/website, or the capabilities built into iOS or Android, will also often times work better."
+        "</p>";
+      }else
+      {
+        title = "Error searching for QR-code";
+        content = "<div>Error value: " + std::to_string(num_qr) + "</div>";
+        content += "<p>Error message:";
+        if( b64_value.size() < 128 )
+          content += Wt::Utils::htmlEncode(b64_value);
+        else
+          content += Wt::Utils::htmlEncode(b64_value.substr(0,125) + "...");
+        content += "</p>";
+      }//if( (num_qr == 0) && b64_value.empty() )
+      
+      SimpleDialog *dialog = new SimpleDialog( title, content );
+      dialog->addButton( "Okay" );
+      
+      return;
+    }//if( num_qr <= 0 )
+    
+
+    vector<string> cleaned_up_uris;
+    for( string &uri : initial_uris )
+    {
+      uri = Wt::Utils::base64Decode(uri);
+      
+      size_t uri_pos = SpecUtils::ifind_substr_ascii( uri, "interspec://" );
+      if( uri_pos == string::npos )
+        uri_pos = SpecUtils::ifind_substr_ascii( uri, "raddata://" );
+      
+      //TODO: maybe also accept text with a "G0/xxx/" or "G0/xxxx/" anywhere (where 'x' is a hex digit).
+      
+      if( uri_pos == 0 )
+        cleaned_up_uris.push_back( uri );
+      else if( uri_pos != string::npos )
+        cleaned_up_uris.push_back( uri.substr(uri_pos) );
+    }//for( string &val : initial_uris )
+    
+    
+    if( (cleaned_up_uris.size() != initial_uris.size()) || cleaned_up_uris.empty() )
+    {
+      // Right now we'll be conservative, and if any QR code had a invalid URI, we wont
+      //  use any of them
+      string content;
+      
+      if( initial_uris.size() > 1 )
+      {
+        const size_t num_invalid = initial_uris.size() -  cleaned_up_uris.size();
+        content = std::to_string(num_invalid) + " of the QR-codes had invalid URIs.";
+      }else
+      {
+        content = "The QR-code did not contain a <code>interspec://</code> or <code>raddata://</code> URI.";
+      }
+ 
+      if( m_autoQrCodeSearch && m_qrCodeStatusTxt )
+      {
+        m_qrCodeStatusTxt->setText( "Invalid QR-code" );
+        return;
+      }
+      
+      SimpleDialog *dialog = new SimpleDialog( "QR-code contained invalid URI", content );
+      dialog->addButton( "Okay" );
+      
+      return;
+    }//if( cleaned_up_uris.size() != initial_uris.size() )
+    
+    string title, content;
+    if( cleaned_up_uris.size() > 1 )
+    {
+      title = std::to_string(cleaned_up_uris.size()) + " QR-codes found";
+      content = "Would you like to use all of these?";
+      
+      if( m_autoQrCodeSearch && m_qrCodeStatusTxt )
+        m_qrCodeStatusTxt->setText( "Found " + std::to_string(cleaned_up_uris.size()) + " QR-codes" );
+    }else if( cleaned_up_uris.size() > 0 )
+    {
+      title = "Found QR-code";
+      
+      assert( !cleaned_up_uris.empty() );
+      string short_uri = cleaned_up_uris.front();
+      SpecUtils::utf8_limit_str_size(short_uri, 32);
+      
+      content = "Would you like to use the QR-code starting with <br />"
+                "<code>" + short_uri + "...</code>";
+      
+      if( m_autoQrCodeSearch && m_qrCodeStatusTxt )
+        m_qrCodeStatusTxt->setText( "Found QR-code" );
+    }//if( cleaned_up_uris.size() > 1 )
+    
+    SimpleDialog *dialog = new SimpleDialog( title, content );
+    WPushButton *btn = dialog->addButton( "Yes" );
+    btn->clicked().connect( boost::bind(&UploadedImgDisplay::apply_uris, this, cleaned_up_uris)  );
+    btn->clicked().connect( this, &UploadedImgDisplay::close_parent_dialog );
+    
+    btn = dialog->addButton( "No" );
+  }//void qr_check_result( const int num_qr, const string b64_value )
+  
+  
+  void check_for_qr_with_raw()
+  {
+    LOAD_JAVASCRIPT(wApp, "SpecMeasManager.cpp", "SpecMeasManager", wtjsLookForQrCode);
+    LOAD_JAVASCRIPT(wApp, "SpecMeasManager.cpp", "SpecMeasManager", wtjsSearchForQrFromImgData);
+    wApp->require( "InterSpec_resources/assets/js/zxing-cpp-wasm/zxing_reader.js", "zxing_reader.js" );
+    
+    vector<unsigned char> raw_data = m_resource->data();
+    string str_data( raw_data.size(), '\0' );
+    memcpy( (void *)&(str_data[0]), (void *)raw_data.data(), raw_data.size() );
+    string b64_data = Wt::Utils::base64Encode(str_data, false);
+    this->doJavaScript( "Wt.WT.SearchForQrFromImgData('" + this->id() + "','" + b64_data + "');" );
+  }//void check_for_qr_with_raw()
+  
+  
+  void check_for_qr_from_canvas()
+  {
+    LOAD_JAVASCRIPT(wApp, "SpecMeasManager.cpp", "SpecMeasManager", wtjsLookForQrCode);
+    LOAD_JAVASCRIPT(wApp, "SpecMeasManager.cpp", "SpecMeasManager", wtjsSearchForQrUsingCanvas);
+    wApp->require( "InterSpec_resources/assets/js/zxing-cpp-wasm/zxing_reader.js", "zxing_reader.js" );
+    
+    this->doJavaScript( "Wt.WT.SearchForQrUsingCanvas('" + this->id() + "'," + m_image->jsRef() + ");" );
+  }//void check_for_qr_from_canvas()
+  
+  
+  void embed_in_n42()
+  {
+    if( !m_resource )
+      return;
+    
+    const vector<unsigned char> data = m_resource->data();
+    if( data.empty() )
+    {
+      passMessage( "Error retrieving data to embed - not embedding image.", WarningWidget::WarningMsgHigh );
+      return;
+    }
+          
+    shared_ptr<SpecMeas> meas = m_viewer->measurment( SpecUtils::SpectrumType::Foreground );
+    if( !meas )
+    {
+      passMessage( "No foreground loaded - not embedding image.", WarningWidget::WarningMsgHigh );
+      return;
+    }
+          
+    SpecUtils::MultimediaData multi;
+    multi.remark_ = "Image file embedded using InterSpec.";
+    multi.descriptions_= "filename: " + m_display_name;
+          
+    string data_str;
+    data_str.resize( data.size() );
+    memcpy( &(data_str[0]), data.data(), data.size() );
+    const string base_64_encoded = Wt::Utils::base64Encode( data_str );
+    multi.data_.resize( base_64_encoded.size() );
+    memcpy( multi.data_.data(), base_64_encoded.data(), base_64_encoded.size() );
+    multi.data_encoding_ = SpecUtils::MultimediaData::EncodingType::BinaryBase64;
+    multi.capture_start_time_ = SpecUtils::time_point_t{};
+    multi.file_uri_ = m_display_name;
+    multi.mime_type_ = m_mimetype;
+          
+    meas->add_multimedia_data( multi );
+    m_viewer->checkEnableViewImageMenuItem();
+    
+    passMessage( "Image has been embedded in the foreground spectrum file; only exporting in"
+                  " N42-2012 file format will preserve this.", WarningWidget::WarningMsgInfo );
+          
+    //wApp->doJavaScript( "$('#" + dialog->id() + "').hide(); $('.Wt-dialogcover').hide();" );
+    wApp->doJavaScript( "$('.Wt-dialogcover').hide();" );
+      
+    m_close_parent_dialog();
+  }//void embed_in_n42()
+  
+public:
+  
+  UploadedImgDisplay( InterSpec *interspec,
+                     const std::string &display_name, 
+                     const char *mimetype,
+                     const size_t filesize,
+                     std::ifstream &infile,
+                     SimpleDialog *dialog )
+    : WContainerWidget( dialog->contents() ),
+  m_viewer( interspec ),
+  m_display_name( display_name ),
+  m_mimetype( mimetype ),
+  m_autoQrCodeSearch( false ),
+  m_image( nullptr ),
+  m_resource( nullptr ),
+  m_checkForQrCodeBtn( nullptr ),
+  m_qrCodeStatusTxt( nullptr ),
+  m_qrDecodeSignal( this, "QrDecodedFromImg", false)
+  {
+    m_close_parent_dialog = wApp->bind( boost::bind( &SimpleDialog::done, dialog, Wt::WDialog::DialogCode::Accepted ) );
+    
+    const char *msg = "This file looks to be an image, and not a spectrum file.";
+    WText *t = new WText( msg, this );
+    t->addStyleClass( "NonSpecOtherFile" );
+    
+    const size_t max_disp_size = 16*1024*1024;
+    
+    if( filesize > max_disp_size )
+    {
+      WText *errort = new WText( "Uploaded file was too large to try and display.", this );
+      errort->addStyleClass( "NonSpecError" );
+      return;
+    }//if( filesize > max_disp_size )
+      
+    vector<uint8_t> totaldata( filesize );
+    const bool success = infile.read( (char *)&(totaldata[0]), filesize ).good();
+      
+    if( !success )
+    {
+      WText *errort = new WText( "Couldn't read uploaded file.", this );
+      errort->addStyleClass( "NonSpecError" );
+      return;
+    }//if( !success )
+    
+    const bool is_gif_jpg_png = (SpecUtils::icontains(mimetype, "gif")
+                              || SpecUtils::icontains(mimetype, "jpeg")
+                              || SpecUtils::icontains(mimetype, "png"));
+    
+    m_resource = new WMemoryResource( mimetype, this );
+    m_resource->setData( totaldata );
+        
+    m_image = new WImage();
+    m_image->setImageLink( WLink(m_resource) );
+    m_image->addStyleClass( "NonSpecImgFile" );
+    addWidget( m_image );
+        
+    WContainerWidget *btn_div = new WContainerWidget( this );
+    btn_div->addStyleClass( "ImgFileBtnBar" );
+        
+    if( m_autoQrCodeSearch )
+    {
+      m_qrCodeStatusTxt = new WText( "Looking for QR-codes.", btn_div );
+    }else
+    {
+      m_checkForQrCodeBtn = new WPushButton( "Check for Qr-code", btn_div );
+      m_checkForQrCodeBtn->setStyleClass( "LinkBtn NonSpecQrCodeBtn" );
+    }//if( m_autoQrCodeSearch ) / else
+    
+    
+    m_qrDecodeSignal.connect( boost::bind( &UploadedImgDisplay::qr_check_result, this,
+                                          boost::placeholders::_1, boost::placeholders::_2 ) );
+    
+    if( is_gif_jpg_png )
+    {
+      // We will use the raw image data
+      if( m_autoQrCodeSearch )
+        check_for_qr_with_raw();
+      else
+        m_checkForQrCodeBtn->clicked().connect( this, &UploadedImgDisplay::check_for_qr_with_raw );
+    }else
+    {
+      // We will draw the image to a canvas, and use that
+      if( m_autoQrCodeSearch )
+      {
+        LOAD_JAVASCRIPT(wApp, "SpecMeasManager.cpp", "SpecMeasManager", wtjsLookForQrCode);
+        LOAD_JAVASCRIPT(wApp, "SpecMeasManager.cpp", "SpecMeasManager", wtjsSearchForQrUsingCanvas);
+        wApp->require( "InterSpec_resources/assets/js/zxing-cpp-wasm/zxing_reader.js", "zxing_reader.js" );
+        
+        m_image->imageLoaded().connect( "function(){ Wt.WT.SearchForQrUsingCanvas('" + this->id() + "'," + m_image->jsRef() + "); }" );
+      }else
+      {
+        m_checkForQrCodeBtn->clicked().connect( this, &UploadedImgDisplay::check_for_qr_from_canvas );
+        m_checkForQrCodeBtn->disable();
+        m_image->imageLoaded().connect( m_checkForQrCodeBtn, &WPushButton::enable );
+      }
+    }//if( zxing can read the image directly ) / else
+    
+        
+    if( m_viewer->measurment( SpecUtils::SpectrumType::Foreground ) )
+    {
+      WPushButton *embedbtn = new WPushButton( "Embed image in spectrum file", btn_div );
+      embedbtn->setStyleClass( "LinkBtn NonSpecEmbedBtn" );
+      embedbtn->clicked().connect( this, &UploadedImgDisplay::embed_in_n42 );
+    }//if( m_viewer->measurment( SpecUtils::SpectrumType::Foreground ) )
+  }//UploadedImgDisplay constructor
+  
+};//UploadedImgDisplay
+  
 }//namespace
 
 
@@ -1485,89 +1930,17 @@ bool SpecMeasManager::handleNonSpectrumFile( const std::string &displayName,
   
   if( isgif || isjpg || ispng || isbmp || issvg )
   {
-    const char *msg = "This file looks to be an image, and not a spectrum file.";
-    WText *t = new WText( msg, contents );
-    t->addStyleClass( "NonSpecOtherFile" );
-   
-    const size_t max_disp_size = 16*1024*1024;
+    const bool decode_raw = (isgif || isjpg || ispng);
     
-    if( filesize < max_disp_size )
-    {
-      const char *mimetype = "";
-      if( isgif ) mimetype = "image/gif";
-      else if( isjpg ) mimetype = "image/jpeg";
-      else if( ispng ) mimetype = "image/png";
-      else if( isbmp ) mimetype = "image/bmp";
-      else if( issvg ) mimetype = "image/svg+xml";
+    const char *mimetype = "";
+    if( isgif ) mimetype = "image/gif";
+    else if( isjpg ) mimetype = "image/jpeg";
+    else if( ispng ) mimetype = "image/png";
+    else if( isbmp ) mimetype = "image/bmp";
+    else if( issvg ) mimetype = "image/svg+xml";
     
-      std::unique_ptr<WImage> image( new WImage() );
-      WMemoryResource *resource = new WMemoryResource( mimetype, image.get() );
-      vector<uint8_t> totaldata( filesize );
-      const bool success = infile.read( (char *)&(totaldata[0]), filesize ).good();
-      
-      
-      if( success )
-      {
-        resource->setData( totaldata );
-        image->setImageLink( WLink(resource) );
-        image->addStyleClass( "NonSpecImgFile" );
-        contents->addWidget( image.release() );
-        
-        if( m_viewer->measurment( SpecUtils::SpectrumType::Foreground ) )
-        {
-          WPushButton *embedbtn = new WPushButton( "Embed image in spectrum file", contents );
-          embedbtn->setStyleClass( "LinkBtn NonSpecEmbedBtn" );
-          
-          embedbtn->clicked().connect( std::bind([this,resource,displayName,mimetype,dialog](){
-            const vector<unsigned char> data = resource->data();
-            if( data.empty() )
-            {
-              passMessage( "Error retirieving data to embed - not embeding image.", WarningWidget::WarningMsgHigh );
-              return;
-            }
-            
-            shared_ptr<SpecMeas> meas = m_viewer->measurment( SpecUtils::SpectrumType::Foreground );
-            if( !meas )
-            {
-              passMessage( "No foreground loaded - not embeding image.", WarningWidget::WarningMsgHigh );
-              return;
-            }
-            
-            SpecUtils::MultimediaData multi;
-            multi.remark_ = "Image file embeded using InterSpec.";
-            multi.descriptions_= "filename: " + displayName;
-            
-            string data_str;
-            data_str.resize( data.size() );
-            memcpy( &(data_str[0]), data.data(), data.size() );
-            const string base_64_encoded = Wt::Utils::base64Encode( data_str );
-            multi.data_.resize( base_64_encoded.size() );
-            memcpy( multi.data_.data(), base_64_encoded.data(), base_64_encoded.size() );
-            multi.data_encoding_ = SpecUtils::MultimediaData::EncodingType::BinaryBase64;
-            multi.capture_start_time_ = SpecUtils::time_point_t{};
-            multi.file_uri_ = displayName;
-            multi.mime_type_ = mimetype;
-            
-            meas->add_multimedia_data( multi );
-            passMessage( "Image has been embedded in the foreground spectrum file; only exporting in"
-                      " N42-2012 file format will preserve this.", WarningWidget::WarningMsgInfo );
-            
-            wApp->doJavaScript( "$('#" + dialog->id() + "').hide(); $('.Wt-dialogcover').hide();" );
-            dialog->done( Wt::WDialog::DialogCode::Accepted );
-          }));
-          
-        }//if( m_viewer->measurment( SpecUtils::SpectrumType::Foreground ) )
-      }else
-      {
-        WText *errort = new WText( "Couldn't read uploaded file.", contents );
-        errort->addStyleClass( "NonSpecError" );
-      }
-    }else
-    {
-      WText *errort = new WText( "Uploaded file was too large to try and display.", contents );
-      errort->addStyleClass( "NonSpecError" );
-    }//if( filesize < max_disp_size ) / else
-        
+    new UploadedImgDisplay( m_viewer, displayName, mimetype, filesize, infile, dialog );
+    
     add_undo_redo();
     
     return true;

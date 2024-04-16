@@ -893,6 +893,11 @@ public:
    */
   void refreshDisplayedCharts();
   
+  
+  /** Enables the "View" -> "Show Images" menu item, based on if the foreground
+   spectrum file contains any images.
+   */
+  void checkEnableViewImageMenuItem();
 protected:
 
   //doFinishupSetSpectrumWork(...): intended to do things like calculate the
