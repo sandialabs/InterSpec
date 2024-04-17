@@ -4727,11 +4727,11 @@ shared_ptr<DetectorPeakResponse> DrfSelect::initARelEffDetector( const SpecUtils
         return { "RadSeeker-DL" };
         
       case SpecUtils::DetectorType::RadSeekerLaBr:
-        //return { }
+        return { "Radseeker-LaBr3" };
         break;
         
       case SpecUtils::DetectorType::VerifinderNaI:
-        //return { }
+        return { "Verifinder-SN23N", "Verifinder-NaI" };
         break;
         
       case SpecUtils::DetectorType::VerifinderLaBr:
