@@ -11047,9 +11047,9 @@ void InterSpec::promptUserHowToOpenFile( std::shared_ptr<SpecMeas> meas,
   "<p>How would you like to open this spectrum file?</p>";
   
   string filename = header->displayName().toUTF8();
-  if( filename.size() > 48 )
+  if( filename.size() > 25 )
   {
-    SpecUtils::utf8_limit_str_size( filename, 48 );
+    SpecUtils::utf8_limit_str_size( filename, 25 );
     filename += "...";
   }
   
