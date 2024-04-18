@@ -518,7 +518,7 @@ namespace
       //  explicitly set its width to be less than 100%, then this crash doesnt happen.
       //  Again, totally bizarre, and took quiet a while to pin down.
       //  Perhaps there is something else going on???  Has to be, right?
-      m_descTxt->setWidth( WLength(80,WLength::Percentage) );
+      m_descTxt->setWidth( WLength(70,WLength::Percentage) );
       m_descTxt->addStyleClass( "DrfPeakInfoTxt" );
       m_backSubTxt = new WText( "", this );
       m_backSubTxt->addStyleClass( "DrfPeakBackSubTxt" );
@@ -3259,7 +3259,7 @@ void MakeDrf::writeCsvSummary( std::ostream &out,
   " Eff(x) = exp( C_0 + C_1*log(x) + C_2*log(x)^2 + ...) where x is energy in "
   << (effInMeV ? "MeV" : "keV") << endline
   << "#  i.e. equation for probability of gamma that hits the face of the detector being detected in the full energy photopeak." << endline
-  << "# Name,Relative Eff @ 661keV,eff.c name,c0,c1,c2,c3,c4,c5,c6,c7,p0,p1,p2,Calib Distance,Radius (cm),G factor,GeometryType" << endline
+  << "# Name,Relative Eff @ 1332 keV,eff.c name,c0,c1,c2,c3,c4,c5,c6,c7,p0,p1,p2,Calib Distance,Radius (cm),G factor,GeometryType" << endline
   << drfname << " Intrinsic," << (100.0*intrinsicEffAt1332/ns_NaI3x3IntrinsicEff_1332) << "%,";
   for( size_t i = 0; i < effEqnCoefs.size(); ++i )
     out << "," << effEqnCoefs[i];
@@ -3312,7 +3312,7 @@ void MakeDrf::writeCsvSummary( std::ostream &out,
     " Eff(x) = exp( C_0 + C_1*log(x) + C_2*log(x)^2 + ...) where x is energy in "
     << (effInMeV ? "MeV" : "keV") << " and at distance of 25 cm" << endline
     << "#  i.e. equation for probability of gamma emitted from source at 25cm being detected in the full energy photopeak." << endline
-    << "# Name,Relative Eff @ 661keV,eff.c name,c0,c1,c2,c3,c4,c5,c6,c7,p0,p1,p2,Calib Distance,Radius (cm),G factor" << endline
+    << "# Name,Relative Eff @ 1332 keV,eff.c name,c0,c1,c2,c3,c4,c5,c6,c7,p0,p1,p2,Calib Distance,Radius (cm),G factor" << endline
     << drfname << " Absolute," << (100.0*intrinsicEffAt1332/ns_NaI3x3IntrinsicEff_1332) << "%,";
     for( size_t i = 0; i < effEqnCoefs.size(); ++i )
       out << "," << ( (i==0 ? log(solidAngleAt25cm) : 0.0) + effEqnCoefs[i]);  //todo: make sure its not
