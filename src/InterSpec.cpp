@@ -2723,33 +2723,32 @@ PeakEditWindow *InterSpec::peakEdit()
 
 void InterSpec::deletePeakEdit()
 {
-  if( m_peakEditWindow )
+  if( !m_peakEditWindow )
+    return;
+  
+  PeakEdit *editor = m_peakEditWindow->peakEditor();
+  assert( editor );
+  
+  if( m_undo && m_undo->canAddUndoRedoNow() )
   {
-    PeakEdit *editor = m_peakEditWindow->peakEditor();
-    assert( editor );
     const double currentEnergy = editor ? editor->currentPeakEnergy() : 0.0;
     
-    auto doClose = [this](){
-      if( m_peakEditWindow )
-      {
-        delete m_peakEditWindow;
-        m_peakEditWindow = nullptr;
-      }
-    };
-    
-    auto undo = [this, currentEnergy, doClose](){
+    auto undo = [this, currentEnergy](){
       m_peakEditWindow = new PeakEditWindow( currentEnergy, m_peakModel, this );
-      m_peakEditWindow->editingDone().connect( std::bind(doClose) );
-      m_peakEditWindow->finished().connect( std::bind(doClose) );
+      m_peakEditWindow->editingDone().connect( this, &InterSpec::deletePeakEdit );
+      m_peakEditWindow->finished().connect( this, &InterSpec::deletePeakEdit );
       m_peakEditWindow->resizeToFitOnScreen();
     };//auto undo
     
-    if( m_undo )
-      m_undo->addUndoRedoStep( undo, doClose, "Close peak editor." );
+    auto redo = [this](){
+      deletePeakEdit();
+    };
     
-    delete m_peakEditWindow;
-    m_peakEditWindow = nullptr;
-  }
+    m_undo->addUndoRedoStep( undo, redo, "Close peak editor." );
+  }//if( m_undo && m_undo->canAddUndoRedoNow() )
+  
+  delete m_peakEditWindow;
+  m_peakEditWindow = nullptr;
 }//void deletePeakEdit()
 
 
