@@ -8339,7 +8339,7 @@ void InterSpec::create3DSearchModeChart()
   m_3dViewWindow->resizeScaledWindow( 0.7, 0.9 );
   m_3dViewWindow->centerWindow();
   m_3dViewWindow->setResizable( true );
-  m_3dViewWindow->finished().connect( this, &InterSpec::handle3DSearchModeChartClose );
+  m_3dViewWindow->finished().connect( boost::bind( &InterSpec::handle3DSearchModeChartClose, this, m_3dViewWindow ) );
   
   if( m_undo && m_undo->canAddUndoRedoNow() )
   {
@@ -8361,8 +8361,15 @@ void InterSpec::programmaticallyClose3DSearchModeChart()
 }//void programmaticallyClose3DSearchModeChart()
 
 
-void InterSpec::handle3DSearchModeChartClose()
+void InterSpec::handle3DSearchModeChartClose( AuxWindow *window )
 {
+  assert( window == m_3dViewWindow );
+  if( (window == m_3dViewWindow) && window )
+  {
+    m_3dViewWindow = nullptr;
+    AuxWindow::deleteAuxWindow( window );
+  }
+  
   m_3dViewWindow = nullptr;
   
   if( m_undo && m_undo->canAddUndoRedoNow() )

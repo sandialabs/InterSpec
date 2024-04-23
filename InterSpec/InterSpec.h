@@ -744,7 +744,7 @@ public:
 #if( USE_SEARCH_MODE_3D_CHART )
   void create3DSearchModeChart();
   void programmaticallyClose3DSearchModeChart();
-  void handle3DSearchModeChartClose();
+  void handle3DSearchModeChartClose( AuxWindow *window );
 #endif
 
   /** Show the RIID results included in the spectrum file; and sets `m_riidDisplay` to window pointer */
