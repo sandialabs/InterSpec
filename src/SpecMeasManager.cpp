@@ -945,16 +945,16 @@ protected:
     
     if( (num_qr <= 0) || initial_uris.empty() || (initial_uris.size() > 14) )
     {
-      if( m_autoQrCodeSearch && m_qrCodeStatusTxt )
-      {
-        m_qrCodeStatusTxt->setText( "No QR-codes found" );
-        return;
-      }//if( m_autoQrCodeSearch )
-      
       string title, content;
       
       if( (num_qr == 0) && b64_value.empty() )
       {
+        if( m_autoQrCodeSearch && m_qrCodeStatusTxt )
+        {
+          m_qrCodeStatusTxt->setText( "No QR-codes found &#9432;" );
+          return;
+        }
+        
         title = "No QR-code found";
         content = "<p>"
         "If there is a QR-code in the image, you can try cropping the photo or adjusting color level.<br/>"
@@ -970,6 +970,13 @@ protected:
         else
           content += Wt::Utils::htmlEncode(b64_value.substr(0,125) + "...");
         content += "</p>";
+        
+        if( m_autoQrCodeSearch && m_qrCodeStatusTxt )
+        {
+          m_qrCodeStatusTxt->setText( title + " &#9432;" );
+          passMessage( "<div>" + title + "</div>" + content, WarningWidget::WarningMsgHigh );
+          return;
+        }
       }//if( (num_qr == 0) && b64_value.empty() )
       
       SimpleDialog *dialog = new SimpleDialog( title, content );
@@ -1140,7 +1147,7 @@ public:
   m_display_name( display_name ),
   m_mimetype( mimetype ),
   m_upload_type( type ),
-  m_autoQrCodeSearch( false ),
+  m_autoQrCodeSearch( true ),
   m_image( nullptr ),
   m_resource( nullptr ),
   m_checkForQrCodeBtn( nullptr ),
@@ -1189,7 +1196,16 @@ public:
         
     if( m_autoQrCodeSearch )
     {
-      m_qrCodeStatusTxt = new WText( "Looking for QR-codes.", btn_div );
+      m_qrCodeStatusTxt = new WText( btn_div );
+      
+      const char *tooltip = "Images are automatically searched for QR-codes that may be useable by InterSpec.<br/>"
+                            "If there is a QR-code in the image that is not found, you may have"
+                            " better luck using a 3rd party app/website, or the capabilities built into iOS"
+                            " or Android.<br />"
+                            "If you use a 3rd part tool to extract the URI from the QR-code, you"
+                            " can enter it into InterSpec using the &quot;<b>Enter URL</b>&quot;"
+                            " item in the &quot;<b>Edit</b>&quot; menu.";
+      HelpSystem::attachToolTipOn( m_qrCodeStatusTxt, tooltip, true, HelpSystem::ToolTipPosition::Right );
     }else
     {
       m_checkForQrCodeBtn = new WPushButton( "Check for Qr-code", btn_div );
@@ -1204,9 +1220,14 @@ public:
     {
       // We will use the raw image data
       if( m_autoQrCodeSearch )
+      {
+        assert( m_qrCodeStatusTxt );
+        m_qrCodeStatusTxt->setText( "Looking for QR-codes." );
         check_for_qr_with_raw();
-      else
+      }else
+      {
         m_checkForQrCodeBtn->clicked().connect( this, &UploadedImgDisplay::check_for_qr_with_raw );
+      }
     }else
     {
       // We will draw the image to a canvas, and use that
@@ -1216,7 +1237,13 @@ public:
         LOAD_JAVASCRIPT(wApp, "SpecMeasManager.cpp", "SpecMeasManager", wtjsSearchForQrUsingCanvas);
         wApp->require( "InterSpec_resources/assets/js/zxing-cpp-wasm/zxing_reader.js", "zxing_reader.js" );
         
+        assert( m_qrCodeStatusTxt );
+        m_qrCodeStatusTxt->setText( "QR-code not found &#9432;" );
+        
+        // If `imageLoaded()` is never called, it means the image couldnt be displayed, for example
+        //  if image file is invalid, or a HEIC on Windows.
         m_image->imageLoaded().connect( "function(){ Wt.WT.SearchForQrUsingCanvas('" + this->id() + "'," + m_image->jsRef() + "); }" );
+        m_image->imageLoaded().connect( boost::bind( &WText::setText, m_qrCodeStatusTxt, WString("Looking for QR-codes.") ) );
       }else
       {
         m_checkForQrCodeBtn->clicked().connect( this, &UploadedImgDisplay::check_for_qr_from_canvas );
