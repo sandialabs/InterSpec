@@ -8955,7 +8955,6 @@ void InterSpec::addToolsMenu( Wt::WWidget *parent )
     
     m_relActManualMenuItem = popup->addMenuItem( "Isotopics from peaks" );
     HelpSystem::attachToolTipOn( m_relActManualMenuItem,
-                                "UNDER DEVELOPMENT."
                                 " Uses the peaks you have fit to determine the relative activities of"
                                 " nuclides.  Does not require knowing the detector response or"
                                 " shielding information." , showToolTips );

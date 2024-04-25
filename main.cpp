@@ -224,6 +224,19 @@ int main( int argc, char **argv )
       return -25;
     }
     
+    // We will make user data path absolute, so there wont be any ambiguity later on
+    //  (I dont think we ever change CWD, but JIC)
+    if( !SpecUtils::is_absolute_path(dev_user_data) )
+    {
+      const std::string cwd = SpecUtils::get_working_path();
+      const std::string trial_dir = SpecUtils::append_path( cwd, dev_user_data );
+      if( SpecUtils::is_directory(trial_dir) )
+      {
+        dev_user_data = trial_dir;
+        SpecUtils::make_canonical_path( dev_user_data );
+      }
+    }//if( !SpecUtils::is_absolute_path(userDir) )
+    
     user_data_dir = dev_user_data;
 #else
     std::cerr << "You must specify the directory to store user data to (the 'userdatadir' option)."
