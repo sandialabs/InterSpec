@@ -1699,9 +1699,7 @@ void RelActManualGui::updateGuiWithResults( shared_ptr<RelActCalcManual::RelEffS
       break;
   }//switch( add_uncert_type )
   
-  results_html << "<br />"
-  "The tool is is in an alpha-preview state only."
-  "</div>\n";
+  results_html << "</div>\n";
   
   
   new WText( results_html.str(), m_results );

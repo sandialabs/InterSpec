@@ -181,7 +181,7 @@ div.RelActManualGui
 
 .RelActManualGui .NoCalcResults
 {
-  text-align: centered;
+  text-align: center;
   font-weight: bold;
 }
 
@@ -189,7 +189,7 @@ div.RelActManualGui
 {
   color: red;
   font-weight: bold;
-  text-align: centered;
+  text-align: center;
   
   padding: 1em;
   margin: 2px;
@@ -201,7 +201,7 @@ div.RelActManualGui
 {
   color: navy;
   font-weight: bold;
-  text-align: centered;
+  text-align: center;
   
   padding: 1em;
   margin: 2px;
@@ -213,7 +213,7 @@ div.RelActManualGui
 {
   margin: 10px;
   font-weight: bold;
-  text-align: centered;
+  text-align: center;
 }
 
 

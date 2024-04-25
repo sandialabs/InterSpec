@@ -1241,6 +1241,9 @@ RelActAutoGui::RelActAutoGui( InterSpec *viewer, Wt::WContainerWidget *parent )
   
   const bool showToolTips = InterSpecUser::preferenceValue<bool>( "ShowTooltips", m_interspec );
   
+  WText *alpha_warning = new WText( "This tool is under active development - this is an early preview", this );
+  alpha_warning->addStyleClass( "RelActCalcAutoAlphaBuildWarning" );
+    
   WContainerWidget *upper_div = new WContainerWidget( this );
   upper_div->addStyleClass( "RelActAutoUpperArea" );
   
