@@ -435,7 +435,6 @@ void LicenseAndDisclaimersWindow::dataStorageCreator( Wt::WContainerWidget *pare
     ", except when the "
 #endif
 #if( USE_LEAFLET_MAP )
-    "Maps or External RID features are used"
   #if( USE_REMOTE_RID )
     "Maps or External RID features are used"
   #else
