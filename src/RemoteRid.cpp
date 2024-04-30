@@ -2489,6 +2489,25 @@ std::shared_ptr<SpecUtils::SpecFile> RemoteRid::fileForAnalysis( InterSpec *inte
     
     auto answer = make_shared<SpecUtils::SpecFile>( *foreground_file );
     
+    // Get rid of some information the external service doesnt need
+    answer->set_instrument_id( "" );
+    answer->set_uuid( "" );
+    answer->set_measurement_location_name( "" );
+    answer->set_parse_warnings( {} );
+    answer->set_filename( "" );
+    answer->set_remarks( {} );
+    answer->set_detectors_analysis( {} );
+    answer->clear_multimedia_data();
+    
+    for( const auto &m : answer->measurements() )
+    {
+      answer->set_title( "", m );
+      answer->set_remarks( {}, m );
+      if( m->has_gps_info() )
+        answer->set_position( -999.9, -999.9, SpecUtils::time_point_t{}, m );
+    }
+    
+    
     if( foreground_file->passthrough() && !flags.testFlag(OnlyDisplayedSearchSamples) )
       return answer;
     
@@ -2507,9 +2526,14 @@ std::shared_ptr<SpecUtils::SpecFile> RemoteRid::fileForAnalysis( InterSpec *inte
     if( disp_back )
     {
       auto back = make_shared<SpecUtils::Measurement>( *disp_back );
-      back->set_source_type(SpecUtils::SourceType::Background);
+      back->set_source_type( SpecUtils::SourceType::Background );
+      back->set_title( "" );
+      back->set_remarks( {} );
+      if( back->has_gps_info() )
+        back->set_position( -999.9, -999.9, SpecUtils::time_point_t{} );
+      
       answer->add_measurement( back, true );
-    }
+    }//if( disp_back )
     
     return answer;
   }catch( std::exception &e )
