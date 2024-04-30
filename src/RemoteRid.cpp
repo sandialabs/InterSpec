@@ -24,6 +24,7 @@
 #include "InterSpec_config.h"
 
 #include <mutex>
+#include <random>
 #include <string>
 #include <sstream>
 #include <iostream>
@@ -67,6 +68,7 @@
 #include <Wt/WStackedWidget>
 #include <Wt/WRegExpValidator>
 
+#include "SpecUtils/DateTime.h"
 #include "SpecUtils/SpecFile.h"
 #include "SpecUtils/Filesystem.h"
 #include "SpecUtils/StringAlgo.h"
@@ -2487,29 +2489,51 @@ std::shared_ptr<SpecUtils::SpecFile> RemoteRid::fileForAnalysis( InterSpec *inte
     if( !foreground_file )
       return nullptr;
     
+    
     auto answer = make_shared<SpecUtils::SpecFile>( *foreground_file );
     
-    // Get rid of some information the external service doesnt need
-    answer->set_instrument_id( "" );
-    answer->set_uuid( "" );
-    answer->set_measurement_location_name( "" );
-    answer->set_parse_warnings( {} );
-    answer->set_filename( "" );
-    answer->set_remarks( {} );
-    answer->set_detectors_analysis( {} );
-    answer->clear_multimedia_data();
     
-    for( const auto &m : answer->measurements() )
-    {
-      answer->set_title( "", m );
-      answer->set_remarks( {}, m );
-      if( m->has_gps_info() )
-        answer->set_position( -999.9, -999.9, SpecUtils::time_point_t{}, m );
-    }
+    // Get rid of some information the external service doesnt need
+    auto clear_meta_info = []( shared_ptr<SpecUtils::SpecFile> &spec ){
+    
+      const int64_t us_in_yr = static_cast<int64_t>( PhysicalUnits::year * 1.0E6 );
+      std::random_device generator;
+      std::uniform_int_distribution<int64_t> distribution( -us_in_yr, us_in_yr );
+      
+      const int64_t random_offset_us = distribution( generator );
+      const SpecUtils::time_point_t::duration random_offset = std::chrono::microseconds(random_offset_us);
+      assert( chrono::duration_cast<chrono::microseconds>(random_offset).count() >= -us_in_yr );
+      assert( chrono::duration_cast<chrono::microseconds>(random_offset).count() <= us_in_yr );
+      
+      spec->set_instrument_id( "" );
+      spec->set_uuid( "" );
+      spec->set_measurement_location_name( "" );
+      spec->set_parse_warnings( {} );
+      spec->set_filename( "" );
+      spec->set_remarks( {} );
+      spec->set_detectors_analysis( {} );
+      spec->clear_multimedia_data();
+      
+      for( const auto &m : spec->measurements() )
+      {
+        spec->set_title( "", m );
+        spec->set_remarks( {}, m );
+        
+        const SpecUtils::time_point_t start_time = m->start_time();
+        if( !SpecUtils::is_special(start_time) )
+          spec->set_start_time( start_time + random_offset, m );
+        
+        if( m->has_gps_info() )
+          spec->set_position( -999.9, -999.9, SpecUtils::time_point_t{}, m );
+      }//for( const auto &m : spec->measurements() )
+    };//clear_meta_info lambda
     
     
     if( foreground_file->passthrough() && !flags.testFlag(OnlyDisplayedSearchSamples) )
+    {
+      clear_meta_info( answer );
       return answer;
+    }
     
     answer->remove_measurements( answer->measurements() );
     
@@ -2527,13 +2551,11 @@ std::shared_ptr<SpecUtils::SpecFile> RemoteRid::fileForAnalysis( InterSpec *inte
     {
       auto back = make_shared<SpecUtils::Measurement>( *disp_back );
       back->set_source_type( SpecUtils::SourceType::Background );
-      back->set_title( "" );
-      back->set_remarks( {} );
-      if( back->has_gps_info() )
-        back->set_position( -999.9, -999.9, SpecUtils::time_point_t{} );
       
       answer->add_measurement( back, true );
     }//if( disp_back )
+    
+    clear_meta_info( answer );
     
     return answer;
   }catch( std::exception &e )
