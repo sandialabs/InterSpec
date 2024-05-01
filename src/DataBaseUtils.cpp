@@ -84,7 +84,7 @@ namespace
       {
         vector<Dbo::SqlConnection *> connections;
         
-        //By requesting as many connections as we created we are waitging for
+        //By requesting as many connections as we created we are waiting for
         //  all Dbo::Transactions to return their Dbo::Session object, which
         //  happened and the end of the transaction, thus assuring all database
         //  operations in progress are complete.
@@ -109,10 +109,20 @@ namespace
         
         if( nprevconn == 0 )
         {
+#if( USE_SQLITE3_DB )
+          // sqlite3 shouldnt be written to from multiple processes at the same time, which I assume
+          //  also means multiple threads, and sqlite3 documentation recommends avoiding threads.
+          //  Also, sometimes there appears to issues writing to the database, or keeping things
+          //  consistent or something, when multiple sessions are open, if we have multiple
+          //  connections - so we'll just have a single connection.
+          // https://www.sqlite.org/faq.html#q5
+          const int nconn = 1;
+#else
 #if( defined(IOS) || defined(ANDROID) )
           const int nconn = 1;
 #else
           const int nconn = 5;
+#endif
 #endif
           Dbo::SqlConnection *connection = DataBaseUtils::getDatabaseConnection();
           connection->setProperty( "show-queries", "false" );
@@ -121,6 +131,12 @@ namespace
                     = new Wt::Dbo::FixedSqlConnectionPool( connection, nconn );
           m_numconnection.store( nconn, std::memory_order_seq_cst );
           m_pool.reset( pool );
+          
+#if( USE_SQLITE3_DB )
+          // Incase we are somehow are dead-locked in a transaction, we'll only wait 5 seconds,
+          //  before having Wt throw an exception when trying to get the connection.
+          m_pool->setTimeout( 5000 );
+#endif
           
           Dbo::Session sesh;
           sesh.setConnectionPool( *pool );
