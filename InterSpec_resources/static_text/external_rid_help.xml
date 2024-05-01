@@ -1,6 +1,181 @@
+<!-- SAND2024-05481O -->
+
 <div align="center">
     <h1 id="external-rid"><b>External RID</b></h1>
     <hr />
 </div>
 
-To be documented later
+<p>
+  The <em>External RID</em> tool allows calling out to an external REST-based internet service,
+  or local executable to perform nuclide ID on spectra.
+</p>
+
+
+
+<table align="center" style="padding-top: 10px; max-width: 80%; margin-left: auto; margin-right: auto;">
+  <tr>
+    <td style="width: 50%">
+      <img src="InterSpec_resources/static_text/images/external_rid_setup-min.png" class="imageBorder"  style="max-width:95%; max-height:250px; display: block"/>
+      <div style="text-align: center; margin-left: 5px; margin-right: 15px;">The <em>External RID</em> tool with URL entered, and selecting for the external service to be called automatically every time a spectrum is loaded.</div>
+  </td>
+  <td>
+    <img src="InterSpec_resources/static_text/images/external_rid_setup_with_drf-min.png"  class="imageBorder" style="max-width:95%; max-height:250px;"/>
+    <div style="text-align: center; margin-left: 5px; margin-right: 15px;">The <em>External RID</em> tool after &quot;Retrieve DRFs&quot; button has been clicked, and the &quot;Detective-X&quot; DRF explicitly chosen.</div>
+  </td>
+  </tr>
+</table>
+
+
+
+
+
+<p>
+  Sandia National Laboratories provides a web-based Radioisotope ID service at 
+    <a href="https://full-spectrum.sandia.gov">https://full-spectrum.sandia.gov</a>,
+  that can be can be integrated for use within <code>InterSpec</code>, by entering
+  &quot;<code>https://full-spectrum.sandia.gov/api/v1/info</code>&quot;
+  into the <b>URL</b> field on the &quot;<em>Remote URL</em>&quot; tab, as shown above.
+</p>
+<p>
+  This web-service is free for anyone to use, and does not require an account.
+  However, using it causes information to leave your computer, so it is not enabled by
+  default in <code>InterSpec</code>, and you must explicitly enter the aforementioned URL into the
+  <em>External RID</em> tool; this is to be sure that it can not be accidentally enabled.
+  You will also be clearly warned before using this tool and notified anytime the service is used.
+  Unnecessary information will also be stripped out of the radiation data before sending it to the
+  service.
+</p>
+
+<p>
+  The <code>full-spectrum</code> executable that can be run locally is currently not available
+  for distribution, which is what the &quot;<em>Executable</em>&quot; tab is for in the tool.
+</p>
+
+<p>
+  The full list of detector models this web-service is available for can be found by visiting
+  <a href="https://full-spectrum.sandia.gov">https://full-spectrum.sandia.gov</a> and uploading
+  a spectrum, so you can then see the list of available detectors.  Or if you visit
+  <a href="https://full-spectrum.sandia.gov/api/v1/info">https://full-spectrum.sandia.gov/api/v1/info</a>,
+  some JSON will be returned that provides a list of available detectors, as well as all options
+  available in the service.
+</p>
+
+<p>
+  If you use this tool, and enable &quot;<em>Always call on spectrum load</em>&quot;, then whenever
+  you load a new spectrum file, the external service will be called, and you will be
+  notified of results by a &quot;Toast&quot; notification, or a dialog if you select the &quot;<em>Show dialog</em>&quot; option.
+  The identified nuclides will also be populated onto the <em>Reference Photopeak</em> tool, where
+  you can then click on the nuclides to display the photopeaks; an example of the Toast notification
+  and integration into the <em>Reference Photopeak</em> tool is shown below
+
+<table align="center" style="padding-top: 10px; max-width: 80%; margin-left: auto; margin-right: auto;">
+  <tr>
+    <td style="width: 50%; vertical-align: middle;">
+      <img src="InterSpec_resources/static_text/images/external_rid_toast-min.png" class="imageBorder"  style="max-width:95%; max-height:75px; display: block"/>
+      <div style="text-align: center; margin-left: 5px; margin-right: 15px; width: 60%;">
+        Example notification when a spectrum is loaded, and the
+        &quot;<em>Always call on spectrum load</em>&quot; option is selected.
+      </div>
+  </td>
+  <td>
+    <img src="InterSpec_resources/static_text/images/external_rid_photopeak-min.png"  class="imageBorder" style="max-width:95%; max-height:150px;"/>
+    <div style="text-align: center; margin-left: 5px; margin-right: 15px; width: 60%;">The external RID results
+      showing on the <em>Reference Photopeak</em> tab; the <code>Co60</code> can be clicked
+      to show those lines.
+    </div>
+  </td>
+  </tr>
+</table>
+</p>
+
+
+<div align="center" style="margin-top: 40px;">
+    <h3 id="external-rid"><b>Information sent from your computer</b></h3>
+    <hr />
+</div>
+The radiation data is sent to either the web-service or local executable as an N42 file.
+<br />
+However, before sending, information like GPS coordinates, serial numbers, embedded images,
+and similar information are removed, with the files measurement start times offset by a random duration between plus and minus 1 year.
+<br />
+For the web-service, information sent is kept fairly minimal, with an example request and response being:
+
+<table align="center" style="padding-top: 10px; max-width: 80%; margin-left: auto; margin-right: auto; margin-top: 20px;">
+  <tr>
+    <td>
+      <div style="font-weight: bold;">Request header information:</div>
+      <img src="InterSpec_resources/static_text/images/external_rid_request-min.png"  class="imageBorder" style="max-width:95%; max-height:350px; display: block"/>
+      <div style="font-weight: bold; margin-top: 10px;">Request body:</div>
+      <img src="InterSpec_resources/static_text/images/external_rid_request_data-min.png"  class="imageBorder" style="max-width:95%; max-height:350px; display: block"/>
+    </td>
+  </tr>
+  <tr>
+    <td>
+      <div style="font-weight: bold; margin-top: 25px;">Response JSON:</div>
+      <img src="InterSpec_resources/static_text/images/external_rid_response-min.png"  class="imageBorder" style="max-width:95%; max-height:350px;"/>
+    </td>
+  </tr>
+</table>
+
+<p>
+  On macOS, Windows WebView2, iOS, and Android builds of <code>InterSpec</code>, the system WebView
+  (which is also used to render the <code>InterSpec</code> GUI) is used to make the request and
+  receive the response.  On Electron builds of <code>InterSpec</code>, the Electron WebView is used.
+</p>
+
+
+<p> 
+  Sandia National Laboratories does not collect any telemetry, usage stats, etc. from InterSpec.
+  The only two places in <code>InterSpec</code> that receives or transmits external information
+  from over the network are the &quot;External RID&quot; and &quot;Map&quot; tools, which you will
+  be warned before using.
+</p>
+
+
+<div align="center" style="margin-top: 40px;">
+    <h3 id="external-rid"><b>Options for using an external executable</b></h3>
+    <hr />
+</div>
+
+Although the <code>full-spectrum</code> executable is not available for distribution,
+other executables or scripts could be used instead.  <code>InterSpec</code> expects
+the executable to put the output to <code>stdout</code> in a <code>JSON</code> format.
+The invocations of this external executable or script are described below.
+
+<p>
+  To perform a nuclide ID, <code>InterSpec</code> will create a temporary <code>N42</code>
+  file with the relevant foreground spectrum, and optionally background spectrum, and then
+  issue a command similar to:
+<pre>
+/path/to/your/exe --mode=command-line --out-format=json --drf auto /path/to/tmp/file.n42
+</pre>
+And if there is no background spectrum available, a &quot;<code>--synthesize-background=1</code>&quot;
+argument will also be added.
+<br />
+If a specific detector has been selected, the &quot;<code>auto</code>&quot; in the above command will
+be replaced with the detector name.
+</p>
+<br />
+  The executable is expected to output the same <code>JSON</code> that the web-service outputs; see above for example,
+  or see the
+  <div>
+    &nbsp;&nbsp;&nbsp;&nbsp;<a href="https://github.com/sandialabs/InterSpec/blob/1dc1c1d288c840082ad2d0bf3ae21d089da54a91/src/RemoteRid.cpp#L232">FullSpecResults json_to_results( const string &quot;input )</a>
+  </div>
+  function for the full options that can be used.
+
+
+
+<p>
+  <code>InterSpec</code> will query the executable for available detector system names, using the following command:
+<pre>
+/path/to/your/exe --command-line --out-format json --drfs
+</pre>
+And the results are expected to be output to <code>stdout</code> in the form of a <code>JSON</code> array of strings, similar to:
+<pre>
+    ["auto","Detective-EX","Detective-EX100",...]
+</pre>
+</p>
+
+<p>
+  Please email <a href="mailto:interspec@sandia.gov?subject=External%20RID%20Question" target="_blank">interspec@sandia.gov</a> with any questions about interfacing to the external REST or executable service.
+</p>
