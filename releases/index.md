@@ -1,4 +1,424 @@
 <div style="text-align: right;">SAND2023-05961O</div>
+# InterSpec v1.0.12 release notes (May 2024)
+
+InterSpec v1.0.12 adds a number of new features and improvements, as well as fixes many bugs.
+<br/>
+The largest new features are undo/redo support, new peak skew models, and a flexible spectrum file export tool.
+<br/>
+<br/>
+Most features added were user requested, and a large amount of the bugs fixed were user reported - so 
+please keep reporting issues and requesting improvements or information to InterSpec@sandia.gov.
+
+SAND2024-05524O.
+
+## New features and capabilities
+- Undo/redo support for many operations throughout the app.
+    - You can use ctrl-z/ctrl-shift-z (macOS: ⌘-z/⌘-shift-z), or undo/redo under the "Edit" menu
+    - E.g., if you modify a peaks range of interest (ROI), and don't like the result, simply hit ctrl-z.  Or if you zoom-out on the spectrum, but didn't want to, just hit ctrl-z. If you close a tool, but didn't mean to, hit ctrl-z. etc.
+    - Works for most general operations throughout the app, but there are some tools this functionality is not implemented for: "Isotopes by nuclides", "File Query Tool", "Color Themes...", "File Parameters", "Math/Command Terminal", "Make Detector Response", "Spectrum Manager", "Maps", and possibly a few other smaller dialogs/places.
+    - Because this support has been added on "after the fact", we may not have everything 100% correct yet; if any unexpected behavior is encountered, please send an email to InterSpec@sandia.gov with instructions on how to reproduce.
+    - The undo/redo is implemented so that you don't lose any of your steps, even if you undo a number of times, then make other changes, if you then undo again, the undoes will cycle through the initial steps that you undid as well.
+
+- Added five new peak skew models, and removed the previous (not-working) Landau Skew.
+  - You can select/change a peak skew model by 
+    - right-clicking on a peak, and use the "Change Skew Type" sub-menu, or
+    - Using the "Peak Editor", where you can also have more control over the skew parameters.
+    <table style="border: 1px solid black; border-collapse: collapse; width:60%; margin-left: auto; margin-right: auto;">
+      <tr>
+        <td style="border: 1px solid black; padding-top: 2px; padding-bottom: 2px; width:50%">
+          <a href="v1.0.12/change_skew_right_click-min.png">
+            <img src="v1.0.12/change_skew_right_click-min.png"  class="imageBorder" style="width: 95%; margin-left: auto; margin-right: auto; display: block;" />
+          </a>
+          <div style="text-align: center;">Example of using a right-click to change the skew type.</div>
+        </td>
+        <td style="border: 1px solid black; padding-top: 2px; padding-bottom: 2px; width:50%">
+          <a href="v1.0.12/peak_editor_skew-min.png">
+            <img src="v1.0.12/peak_editor_skew-min.png"  class="imageBorder" style="width: 95%; margin-left: auto; margin-right: auto; display: block;" />
+          </a>
+          <div style="text-align: center;">The skew-related options in the Peak Editor</div>
+        </td>
+      </tr>
+    </table>
+  - Currently, if you set a peak to use a skew, other peaks you then fit in that ROI will also have that same skew model, but peaks outside that ROI will not pickup that skew model preference.
+  - "Isotopics by nuclides", and a few other places throughout the app will also let you pick a skew model
+  - The five added peak's skews are, with an example fit for each, using the same energy range for a CZT detectors peak:
+  <table style="border: 1px solid black; border-collapse: collapse; width:100%">
+  <tr>
+    <td style="border: 1px solid black; padding-top: 2px; padding-bottom: 2px; width:40%">
+      <a href="v1.0.12/no_skew_1172keV_10.49cps.png">
+        <img src="v1.0.12/no_skew_1172keV_10.49cps.png"  class="imageBorder" style="width: 95%; margin-left: auto; margin-right: auto; display: block;" />
+      </a>
+    </td>
+    <td style="border: 1px solid black; padding-top: 2px; padding-bottom: 2px;">
+      <div style="text-align: center;">No Skew</div>
+    </td>
+  </tr>
+  <tr>
+    <td style="border: 1px solid black; padding-top: 2px; padding-bottom: 2px; width:40%">
+      <a href="v1.0.12/exp_dot_gauss_1172keV_11.31cps.png">
+        <img src="v1.0.12/exp_dot_gauss_1172keV_11.31cps.png"  class="imageBorder" style="width: 95%; margin-left: auto; margin-right: auto; display: block;" />
+      </a>
+    </td>
+    <td style="border: 1px solid black; padding-top: 2px; padding-bottom: 2px;">
+      <b>Exp*Gauss</b>: Convolution of Gaussian with a left-hand exponential multiplied by a
+      step function that goes to zero above the peak mean.<br />
+      See:
+      <div style="font-size: smaller">
+        &nbsp;&nbsp;&nbsp;&nbsp;Analytical function for fitting peaks in alpha-particle spectra from Si detectors<br/>
+        &nbsp;&nbsp;&nbsp;&nbsp;International Journal of Radiation Applications and Instrumentation. Part A. Applied Radiation and Isotopes<br/>
+        &nbsp;&nbsp;&nbsp;&nbsp;Volume 38, Issue 10, 1987, Pages 831-837<br/>
+        &nbsp;&nbsp;&nbsp;&nbsp;<a href="https://doi.org/10.1016/0883-2889(87)90180-8" target="_blank">https://doi.org/10.1016/0883-2889(87)90180-8</a><br/>
+      </div>
+      <p>
+        Although in the paper two exponentials are used, for gamma-spectroscopy a single exponential
+        appears to usually be sufficient, so <em>InterSpec</em> only implements a single exponential.
+      </p>
+    </td>
+  </tr>
+  <tr>
+    <td style="border: 1px solid black; padding-top: 2px; padding-bottom: 2px; width:40%">
+      <a href="v1.0.12/gauss_exp_1172keV_11.31cps.png">
+        <img src="v1.0.12/gauss_exp_1172keV_11.31cps.png"  class="imageBorder" style="width: 95%; margin-left: auto; margin-right: auto; display: block;" />
+      </a>
+    </td>
+    <td style="border: 1px solid black; padding-top: 2px; padding-bottom: 2px;">
+      <b>GaussExp</b>: An exponential tail stitched to a Gaussian core.<br />
+      See:
+      <div style="font-size: smaller">
+        &nbsp;&nbsp;&nbsp;&nbsp;A simple alternative to the Crystal Ball function.<br />
+        &nbsp;&nbsp;&nbsp;&nbsp;Souvik Das, arXiv:1603.08591<br />
+        &nbsp;&nbsp;&nbsp;&nbsp;<a href="https://arxiv.org/abs/1603.08591" target="_blank">https://arxiv.org/abs/1603.08591</a>
+      </div>
+    </td>
+  </tr>
+  <tr>
+    <td style="border: 1px solid black; padding-top: 2px; padding-bottom: 2px; width:40%">
+      <a href="v1.0.12/crystal_ball_1172keV_13.19cps.png">
+        <img src="v1.0.12/crystal_ball_1172keV_13.19cps.png"  class="imageBorder" style="width: 95%; margin-left: auto; margin-right: auto; display: block;" />
+      </a>
+    </td>
+    <td style="border: 1px solid black; padding-top: 2px; padding-bottom: 2px;">
+      <b>Crystal Ball</b>: A Gaussian core portion and a power-law low-end tail, below a threshold.<br />
+      See:
+      <div style="font-size: smaller">
+        &nbsp;&nbsp;&nbsp;&nbsp;<a href="https://en.wikipedia.org/wiki/Crystal_Ball_function" target="_blank">https://en.wikipedia.org/wiki/Crystal_Ball_function</a><br/>
+      </div>
+      <p>
+        Uses two skew parameters.
+        <ol>
+          <li><b>&alpha;</b>: defines the threshold (how many gaussian sigma away from the mean for the modified-tail to start).</li>
+          <li><b>n</b>: defines the power-law.
+        </ol>
+      </p>
+    </td>
+  </tr>
+  <tr>
+    <td style="border: 1px solid black; padding-top: 2px; padding-bottom: 2px; width:40%">
+      <a href="v1.0.12/exp_gauss_exp_1172keV_12.76cps.png">
+        <img src="v1.0.12/exp_gauss_exp_1172keV_12.76cps.png"  class="imageBorder" style="width: 95%; margin-left: auto; margin-right: auto; display: block;" />
+      </a>
+    </td>
+    <td style="border: 1px solid black; padding-top: 2px; padding-bottom: 2px;">
+      <b>ExpGaussExp</b>: A double-sided version of the <em>GaussExp</em> distribution, with separate parameters for the lower and upper tails.
+    </td>
+  </tr>
+  <tr>
+    <td style="border: 1px solid black; padding-top: 2px; padding-bottom: 2px; width:40%">
+      <a href="v1.0.12/double_crystal_ball_1172keV_21.31cps.png">
+        <img src="v1.0.12/double_crystal_ball_1172keV_21.31cps.png"  class="imageBorder" style="width: 95%; margin-left: auto; margin-right: auto; display: block;" />
+      </a>
+    </td>
+    <td style="border: 1px solid black; padding-top: 2px; padding-bottom: 2px;">
+      <b>Double Sided Crystal Ball</b>: A double-sided version of the <em>Crystal Ball</em> distribution, with separate <b>&alpha;</b> and <b>n</b> for the lower and upper tails.
+    </td>
+  </tr>
+</table>
+
+- Add accounting for nuclide decay during the measurement, for both the "Activity/Shielding fit" and "Isotopics from peaks" tools.
+  For Activity/Shielding fit, this option is not checked by default, but for the "Isotopics from peaks", if the measurement dwell time is greater than 0.5% of the parent nuclide half-life, then this option will be checked by default.
+  - This correction takes into account progeny ingrowth, decay, and subsequent changes in branching ratios, so some minor slow down of the answer computation may be observed because of these more involved calculations.
+  - The "Activity/Shielding Fit" tool log provides approximate values of how much this correction effected the activity answers.
+  <table style="border: 1px solid black; border-collapse: collapse; width:95%; margin-left: auto; margin-right: auto;">
+    <tr>
+      <td style="border: 1px solid black; padding-top: 2px; padding-bottom: 2px; width:30%;">
+        <a href="v1.0.12/decay_correct_activity-min.png">
+          <img src="v1.0.12/decay_correct_activity-min.png"  class="imageBorder" style="width: 95%; margin-left: auto; margin-right: auto; display: block;" />
+        </a>
+        <div style="text-align: center;">This option in the Activity/Shielding fit tool.</div>
+    </td>
+    <td style="border: 1px solid black; padding-top: 2px; padding-bottom: 2px;">
+      <a href="v1.0.12/decay_correct_relact-min.png">
+        <img src="v1.0.12/decay_correct_relact-min.png"  class="imageBorder" style="width: 95%; margin-left: auto; margin-right: auto; display: block;" />
+      </a>
+      <div style="text-align: center;">This option in the "Isotopics from peaks" tool; it can be controlled for each nuclide individually.</div>
+    </td>
+  </tr>
+  </table>
+
+- Added a "FAQs" to the in-app documentation.  These are some of the questions users have asked, or we have observed causing confusion.
+    See "Help" &rarr; "Welcome..." &rarr; "FAQs", or if you have already downloaded and run v1.0.12, you can click [here](interspec://welcome?topic=faqs) to open this tool.
+
+- Add a spectrum file export dialog.
+  This dialog allows you to choose the format to save the spectrum to, as well as how and what is written to the file.  Options that become available depend on the currently loaded and/or displayed data, as well as the spectrum file format being saved to.  This dialog hopefully contains all the options one might want, but if anything is missed, please send an email to InterSpec@sandia.gov.  If you hover the mouse over any of the options, a tooltip will appear with additional explanation.
+<a href="v1.0.12/spec_file_export-min.png">
+      <img src="v1.0.12/spec_file_export-min.png"  class="imageBorder" style="width: 50%; margin-left: auto; margin-right: auto; display: block;" />
+    </a>
+
+- Updated support for accepting and creating QR-codes that contain a spectrum.  
+  - Some options were added to allow creating a QR-code that generates an email, with a URI as its content
+  - The specification has been updated in [spectrum_in_a_qr_code_uur_latest.pdf](https://sandialabs.github.io/InterSpec/tutorials/references/spectrum_in_a_qr_code_uur_latest.pdf), and a overview of using QR-codes to represent spectra is available at [20230829_spectra_in_a_QR-code_SAND2023-08778O.pdf](https://sandialabs.github.io/InterSpec/tutorials/references/20230829_spectra_in_a_QR-code_SAND2023-08778O.pdf).
+  - If you drag-n-drop an image file (JPEG, PNG, SVG, BMP) that contains a QR-code onto InterSpec, you will be presented with a dialog showing the image, and it will be searched for QR-codes, and if a spectrum QR-code is found, you will be presented an option to open it like a normal spectrum file.
+  - QR-codes containing spectra can be created using the spectrum file export tool:
+  <table style="border: 1px solid black; border-collapse: collapse; width:95%; margin-left: auto; margin-right: auto;">
+    <tr>
+      <td style="border: 1px solid black; padding-top: 2px; padding-bottom: 2px; width:50%">
+        <a href="v1.0.12/qr_export_dialog-min.png">
+          <img src="v1.0.12/qr_export_dialog-min.png"  class="imageBorder" style="width: 95%; margin-left: auto; margin-right: auto; display: block;" />
+        </a>
+        <div style="text-align: center;">The file-format to choose in the export dialog to create a QR-code.</div>
+    </td>
+    <td style="border: 1px solid black; padding-top: 2px; padding-bottom: 2px;">
+      <a href="v1.0.12/qr_export_qr-min.png">
+        <img src="v1.0.12/qr_export_qr-min.png"  class="imageBorder" style="width: 95%; margin-left: auto; margin-right: auto; display: block;" />
+      </a>
+      <div style="text-align: center;">
+        The resulting QR-code representing the spectrum.  
+        Note that you can also copy the URI to the pasteboard, download an SVG, 
+        or instead create a QR-code that will create an email with the URI in the email body.
+      </div>
+    </td>
+  </tr>
+  </table>
+
+- Add efficiency functions for some additional detectors.
+  - Detectors added: Radiacode 102, Fulcrum40h, identiFINDER-R300, identiFINDER-R425, IdentiFINDER-R500-NaI, Radseeker-LaBr3, RadSeeker-NaI, BNC Sam-935, BNC Sam-940 1.5x1.5 LaBr, BNC Sam-940 3x3 NaI, BNC Sam-945, BNC SAM-950 3x3 NaI, Verifinder, ORTEC RadEagle, Mirion SPIR-Ace, CZT 1cm-1cm-1cm, CZT 1.5cm-2cm-2cm, NaI 2x4x16
+  - The efficiency functions for some, but not all, of these models will be automatically loaded when a spectrum file from the detector is loaded.  You can over-ride this by selecting a different efficiency function to be used by default for a particular model.  
+  - If a efficiency function is not loaded for your detector, you can click on the detector icon in various places throughout the app, then select the "Rel. Eff." tab on the resulting dialog, and then select your efficiency function.
+
+- Added capability to measure distances on the Map tool.  Select the <img src="v1.0.12/measure-min.png" style="display: inline-block; height: 20px;" /> icon on lower left of the Map tool to use this functionality.
+
+- Added a capability for users to define their own Reference Lines.
+    - Users can add a file, `add_ref_lines.xml` to their data directory (See "About InterSpec" &rarr; "Data" &rarr; user data directory, usually "<code>C:\\Users\\&lt;username&gt;\\AppData\\Roaming\\InterSpec\\</code>"), that defines additional lines.
+    - A `add_ref_lines.xml` file that contains documentation on how to define custom sources is distributed in the `data` directory of InterSpec, and can also be seen [here](https://github.com/sandialabs/InterSpec/blob/master/data/add_ref_line.xml).
+        - This file currently defines "HPGe(n,n)" (the "ski-slopes" seen on HPGe detectors from fast neutrons), "Pu low burnup", "Pu high burnup", "Pu heat source", "U depleted", "U natural", "U 3% enriched", and "U 93.3% enriched".  Typing these values into the "nuclide" field of the "Reference Photopeak" tab will show the respective lines.
+
+- Add option to add peaks from "Isotopics from nuclides" tool to the foreground spectrum.  This can be particularly useful for HPGe spectra with lots of peaks (e.g., Plutonium,  Eu152, etc).  This option can be accessed from the three-dot menu in the upper-right of the tool.
+
+- Improve spectrum file opening speed for large spectrum files on macOS, when you drag-n-drop the spectrum file onto InterSpec, by avoiding an intermediate slow file copy.  
+    - However, currently on Windows, the "WebView2" version of InterSpec still suffers from this intermediate slow file copy, so opening large spectrum files can be quite slow.  If you commonly open large spectrum files (larger than maybe a megabyte), consider using the "Electron" version of InterSpec which also bypasses this slow intermediate copy.
+
+- User peak-labels are now shown by default.
+- In the auto peak search result dialog, the peak in question for each row is now accentuated, relative to any other visible peaks.  See [Issue 27](https://github.com/sandialabs/InterSpec/issues/27)
+- If a reference photopeak line has multiple contributing gammas (all at the same energy), when you mouse over the reference line, the percentage contribution from each source is now shown.
+- Add option to display the y-axis as log for gammas on the time chart. See [Issue 26](https://github.com/sandialabs/InterSpec/issues/26).
+
+- Added a "External RID" capability.
+  This tool, available in the "Tools" menu, allows interfacing with the [https://full-spectrum.sandia.gov](https://full-spectrum.sandia.gov) service to perform automated nuclide ID on spectra.  This service is powered by the GADRAS Full Spectrum Isotope ID algorithm to provide an automated nuclide ID capability.
+  However, because it is a web-service that causes data/information to leave your computer, it is <b>not</b> enabled by default, and to use it, you must manually enter the <code>https://full-spectrum.sandia.gov/api/v1</code> URL into the tool; see figure of the tool below.
+  <div style="display: inline-block; width: 350px; float: right; padding-left: 10px; padding-bottom: 10px;">
+    <a href="v1.0.12/external_rid-min.png">
+      <img alt="Overview of the External RID tool" src="v1.0.12/external_rid-min.png" style="width: 100%; margin: 10px" />
+    </a>
+    <div>Overview of the External RID tool, where the <code>https://full-spectrum.sandia.gov/api/v1</code> URL has been entered, and it has been
+    selected to always call this service upon spectrum load, in which case RID results will be shown as a "Toast" message.  
+    If the "Show dialog" option is selected instead, a dialog with the results will instead always be shown.
+    </div>
+  </div>
+  
+  - If you do enable this capability, then there is an option to have InterSpec call out to this service any time you load a spectrum, in which case you will be notified of the results, and the "Reference Photopeak" tab will show the results, so you can easily click on the nuclide, and verify the ID.  If you do not enable this option, then you will need to explicitly go to this tool to get RID results.
+  
+  - To be clear, unless you manually enter this URL and enable this service, InterSpec never sends radiation data from your computer.  
+    If you do enable this service, you will be warned before using this tool, and you can always disable it. 
+    The only other time InterSpec will make any external network (i.e., internet) requests, or receive external information, is for the Map tool, to request map tiles, in which case no radiation data leaves your computer, and there is an option to use your own <a href="https://arcgis.com">https://arcgis.com</a> account.  
+    Sandia National Laboratories does not collect any telemetry, usage stats, etc. from InterSpec, and these two tools ("External RID" and "Map") are the only features in InterSpec that cause information to be requested or transmitted external to your computer.  Before sending radiation data to the service, information like GPS coordinates, serial numbers, embedded images, and similar information are removed, and measurement start times have a random offset between plus or minus 1 year added to them.
+  
+  - There is also a "<em>Executable</em>" option for this tool, that is intended to be used with a local version of the full-spectrum tool, or another similar tool.  However, we do not currently distribute the full-spectrum executable.
+  
+  - The help page for this tool gives a brief overview of the data format used for transmitting and receiving data to the <a href="https://full-spectrum.sandia.gov">https://full-spectrum.sandia.gov</a> service, or local executable.  If you are interested in using the REST service from another application from your scripts or application, please email <a href="InterSpec@sandia.gov">InterSpec@sandia.gov</a> for more complete information.
+
+- Added representing detector efficiencies as "fixed-geometries" -  e.g., activity per cm<sup>2</sup>, per m<sup>2</sup>, and per gram as options.  
+  Normally InterSpec treats detector efficiencies as "far-field" efficiencies that can be corrected for the current measurement distances.
+  However, fixed-geometry efficiencies are for configurations where allowing different distances doesn't make sense.  For example, an infinite plane, or an extended source whose extents are comparable to the distance to the detector.  So when using a fixed-geometry efficiency function, the option to input a distance will disappear, and answers will be quoted in the units intended by the efficiency function.
+
+- Added accepting ".ECC" files, produced by the ISOCS program, to use as a detector efficiency.  To import a .ECC file into InterSpec, just drag-n-drop the file onto InterSpec.
+  When loading the ".ECC" efficiency function, you will be prompted if the efficiency should be treated as a far-field response, or a fixed geometry.
+
+- Added some "deep-linking" capabilities throughout the app.  
+  This is to allow recording individual tool states to either use later, or to provide to others.
+  When you run InterSpec for the first time, URIs starting with "interspec://" and "raddata://" are associated with InterSpec to your operating system.  So after that, if you click on a URL in your web browser or other application, or ask your operating system to open one of these URIs, it will pass the URI off to InterSpec.
+  In some places throughout InterSpec you will see a QR-code icon in the lower left-hand of the tool, clicking this will cause a QR-code with the URI representing the current state to be generated, and there will also be an option to copy the URI to your pasteboard. 
+  - You can also copy/paste URIs into InterSpec by using the "Enter URL" tool available in the "Edit" menu.
+  - Some example URIs:
+    - [Calculating dose for Ba133](interspec://dose/dose%3fVER%3d1%26NUC%3dBa133%26ACT%3d10%26ACTINUNIT%3d%ce%bcCi%26ACTOUTUNIT%3dbecquerels%26DOSE%3d100%26DOSEINUNIT%3d%ce%bcR%2fhr%26DOSEOUTUNIT%3drem%2fhr%26DIST%3d100%20cm)
+    - [A 1/r2 calculation](interspec://1overr2/?V%3d1%26NEAR%3d0.00%26FAR%3d0.00%26BACK%3d0.00%26DIST%3d0.00%26POW%3d2)
+  - The full list of tools that can be passed one of these deep links can be found in the [InterSpec::handleAppUrl function](https://github.com/sandialabs/InterSpec/blob/4bfd0d518bf769fd7a7bf9d3fa683cad223a882b/src/InterSpec.cpp#L11150C1-L11150C67).
+
+- Improved some detection-system specific data loading.  Notable changes include:
+  - For Symetrica Verifinder detectors, now filters out calibration and stabilization measurements when the user selects "raw" or "derived" data, when loading the file.
+  - For RSI systems that contain "Virtual Detectors" (e.g., "VD1", "VD2N", etc), add in check for multiple "VD..." detectors on file load, and give users choice of selecting them.  These VD detectors may represent similar data, sums of other VD detectors, or other unknown configurations, so now the user will be prompted to choose what they want, since there is no way to automatically determine what the data represents.
+  - A number of various other spectrum file parsing improvements have been made.
+- Added a "Relative Efficiency" type chart to the &quot;<em>Search for Peaks</em>&quot; results dialog if nuclide reference photopeaks were being shown before searching for peaks.  
+  This chart can help detect correct assigning of nuclides to peaks, or presence of other interfering sources since the displayed data points are 
+  expected to form a smooth distribution (within statistics).  An example good distribution is:
+  <div style="display: inline-block; width: 95%;">
+    <a href="v1.0.12/peak_search_rel_eff-min.png">
+      <img alt="An example of the peak search relative efficiency chart." src="v1.0.12/peak_search_rel_eff-min.png" style="max-width: 230px; margin: 10px; padding-left: auto; padding-right: auto; display: block;" />
+    </a>
+    <div>
+      An example peak search results for the included example <code>Ba133</code> spectrum.  To get this result, <code>Ba133</code> reference photopeak
+      lines where showing, and the &quot;<em>Search for Peaks</em>&quot; button on the &quot;<em>Peak Manager</em>&quot; tab was clicked.  
+      The &quot;<em>Relative Efficiency Plot</em>&quot; was also expanded to be visible.
+    </div>
+  </div>
+  - Using the &quot;<em>Isotopics from peaks</em>&quot; tool is a more powerful way to detect incorrect assignments, or interfering nuclides being present.
+
+- Improved the Relative Efficiency chart for the "Isotopics from peaks" tool.
+  - Made chart layout more dynamic for resizes
+  - Changed it so the markers on the chart are the same color as dominant nuclide for that data point. Now if a nuclide is over 50% of a data point, the marker will get that nuclides color (i.e., the same as that nuclides peaks), or if there are multiple nuclides, but none over 50%, then the marker will be colored the same color as the background spectrum line.
+
+- On nuclide search tab, added option to assign all peaks near reference photopeak lines, or just peaks without a nuclide assigned, to the currently selected search-nuclide.
+  This is convenient if you tend to fit peaks before identifying their source nuclides, but would like to assign the source nuclides once you find a positive ID.
+  <div style="display: inline-block; width: 95%;">
+    <a href="v1.0.12/search_assign_peaks-min.png">
+      <img alt="Screenshot of using this feature." src="v1.0.12/search_assign_peaks-min.png" style="max-width: 230px; margin: 10px; padding-left: auto; padding-right: auto; display: block;" />
+    </a>
+    <div>
+      Example of how to assign all current peaks near the currently selected nuclide on the &quot;<em>Nuclide Search</em>&quot; tab, to that nuclide.
+    </div>
+  </div>
+
+
+- Added some more fields to the peak CSV export: peak skew type, continuum coefficients, and skew coefficients.  Also added in reading amplitude uncertainty.
+  If you export a CSV file from the "Peak Manager" tab, you can later drag-n-drop that CSV file onto InterSpec to fit those same peaks in a different spectrum file.
+
+- Added writing peaks to SPE (IAEA) spectrum files.
+  This is done by adding a "$PEAK_INFO_CSV:" to the file, under which the peak CSV information is written.
+
+- Add option to fix a peaks mean to the currently showing reference photopeak line, by right-clicking on the peak, and selecting the "Fix to X keV" option, where "X" is the reference photopeak line energy.  This can be useful for low-statistics peaks, or peaks that overlap with another larger peak.
+
+- Added option when you right-click on a peak, to fix the peak to the current detector resolutions FWHM.  If there is no current detector resolution available (i.e., the current detector efficiency function does not include this information, or no detector efficiency function is loaded), a dialog will be shown that allows you to fit the FWHM, as a function of energy, from your current foreground spectrum.
+<div style="display: inline-block; width: 95%;">
+    <a href="v1.0.12/UseFwhmFromDrf.png">
+      <img alt="Screenshot of right-clicking on a peak to use this feature." src="v1.0.12/UseFwhmFromDrf.png" style="max-width: 230px; margin: 10px; padding-left: auto; padding-right: auto; display: block;" />
+    </a>
+    <div>
+      Example of right-clicking on a peak to use this feature.
+    </div>
+  </div>
+  - <div style="display: inline-block; width: 95%;">
+    <a href="v1.0.12/FitFwhmFromDrfSelect_FitFwhm.png">
+      <img alt="Dialog asking if you would like to fit FWHM from current spectrum." src="v1.0.12/FitFwhmFromDrfSelect_FitFwhm.png" style="max-width: 175px; margin: 10px; padding-left: auto; padding-right: auto; display: block;" />
+    </a>
+    <div>
+      Dialog asking if you would like to fit FWHM from current spectrum, which will be shown if your currently selected detector doesn't have an associated FWHM functional form.
+    </div>
+  </div>
+  - <div style="display: inline-block; width: 95%;">
+    <a href="v1.0.12/FitFwhmFromCurrentSpectrumOverview.png">
+      <img alt="Overview of the tool to fit FWHM from current spectrum." src="v1.0.12/FitFwhmFromCurrentSpectrumOverview.png" style="max-width: 230px; margin: 10px; padding-left: auto; padding-right: auto; display: block;" />
+    </a>
+    <div>
+      Screenshot of the tool to fit the FWHM functional form, from current spectrum.<br/>
+      The tool uses both peaks you have already fit, as well as peaks that could be found doing an automatic peak search.<br/>
+      By default, outlier peaks are selected to not be used in the fit, but you can manually select whichever peaks you would like.  
+      You can also select the functional form you would like fit, as well as manually modify coefficient values, if you would like.
+    </div>
+  </div>
+  - <div style="display: inline-block; width: 95%;">
+    <a href="v1.0.12/FitFwhmFromDrfSelect.png">
+      <img alt="How to access fitting the FWHM using current data, from the detector selection tool." src="v1.0.12/FitFwhmFromDrfSelect.png" style="max-width: 230px; margin: 10px; padding-left: auto; padding-right: auto; display: block;" />
+    </a>
+    <div>
+      You can also access the tool to fit the FWHM function from the current data, via the detector selection tool.
+    </div>
+  </div>
+
+- Improved dragging a peak's ROI by its edge, so that the threshold for changing the currently fit peak evolves as you drag the ROI edge (instead of previously always comparing the current fit to the original peak to decide which one to use), to allow the peak fit to improve as you change the ROI.
+
+- Added allowing drag-n-drop of Activity/Shielding Fit XML config onto app.  From the Activity/Shielding fit tool, you can "Export Model" from the menu in the upper right-hand side, which will yield an XML file with the setup for the current fit.  If you drag-n-drop this XML file ont the app later, it will go to the Activity/Shielding fit tool and set it up the same way.  This is useful for complicated setups you may re-use multiple times. 
+
+- If you now hover the mouse over the spectrum legend, the "Live Time" text will change to tell you the dead time percentage, as well as additional neutron details.
+
+- Add support for energy calibration in radiacode spectrograms (thanks to @ckuethe)
+
+- Add explicitly parsing neutron live time from spectrum files.  
+  Previously for some spectrum files where the neutron information was parsed in the same record as the gamma information, it would be assumed the gamma real-time was the neutron live-time, which sometimes wasn't the case.  Additionally, when summing the records corresponding to a time period, neutron live-times wouldnt be tracked and the gamma real-time used instead, which could lead to the wrong CPS in some cases.  Now the neutron live-time is tracked separately from the gamma detectors, when the spectrum file provides this information, as well as for summing over records.
+- Parsing of search-mode or portal data has slightly changed so that the ordering may/usually default to the order in the file, instead of being sorted by measurement start time.
+
+- Various other smaller display, documentation, and UX improvements were made.
+
+
+
+
+## Bug fixes
+- Fix macOS Quick Look capability.  Spectrum file icons will now show previews of the files data, as will Finder gallery view, and similar.
+- Fix error uploading spectrum files that had non-ISO-8859-1 code points in the filename.
+- Work around apparent/possible issue in WebKit, where sometimes the second time you showed the "Make Detector Response" tool in a session, the WebView rendering process would crash, after allocating lots of memory (issue didnt happen in FireFox, and no reason why this happened could be found).
+- Fix potential invalid JS reference, on first load if Time Chart is not yet visible.
+- Fix the stub documentation for "Isotopics by nuclides" tool, to keep from messing the whole app up.
+- Fix bug converting from metric length to SAE length.
+- Fix quirk in updating energy range on new spectrum load.
+- Fix some display issues on phones.
+- Denote half-life as T1/2, hopefully throughout the app.
+- Fix simple dialog ending up behind other dialogs on tablets.
+- Fix bug causing crash on Windows where the SpecMeasManager::m_spectrumManagerWindow pointer was not initialized to `nullptr` (on other operating systems it *happened* to be set to `nullptr`).
+- Fix using non-Uranium nuclides in "Isotopics from peaks" tool when a non-SandiaDecay data source is selected.
+- Fix the automated-search peaks that are fit when you load a spectrum, but not displayed to the user, now get energy-translated when you change the energy calibrations.  These auto-search peaks that aren't shown to the user are used internally by InterSpec pretty much only to help provide nuclide ID suggestions.
+- Fix the HTML export "Isotopics from Peaks" to now include the background spectrum as well.
+- Fix bug setting nuclide age to default value when changing nuclides on Reference Photopeak tab.
+- Fix "Isotopics from peaks" background subtraction routine. The background peak counts were being subtracted from the primary peak multiple times (once additional time for every peak higher in energy).
+- Fix peak-editor not applying peak color change.
+- Fix showing some dialogs when window is less than 1000px.
+- Fix allowing use of annihilation gammas in the "Isotopics from peaks" tool.
+- Change so if a peak's mean is fixed, then the peak cant be used to adjust energy calibration.
+- Fix issue that if you loaded a application state from the internal database, and then subsequently changed foreground spectrum, and then back to the one from the DB state, your app state would no longer be connected to the database state (e.g., you couldnt update the original state in the database).
+- Fix Search-Mode 3D chart not displaying full time span on longer files, and also the user not being able to change the displayed number of time and energy slices.  Also improved the layout of this tool a little.
+- Improve spectrum file opening dialog to better indicate opening process.  This primarily effects the Windows WebView2 version of InterSpec, which still has a slow intermediate file copy step.
+- Fix "log-y" scale for nuclide decay chart.
+- Fix time inputs to allow a unit-less value of zero (i.e. "0").
+- Fix reference lines with multiple gammas not showing a description when you mouse-over the ref line on the spectrum. Thanks to @furutaka for finding and reporting this issue.
+- Fix links to open `http://` addresses in browser not working on macOS.  `http://` and `https://` links within InterSpec should open in your operating systems default web-browser.
+- Fix macOS Edit menu not clearing on &quot;Clear Session...&quot;
+- Fix issue where email-to spectrum URIs where having an option bit set into the URI, that should have.
+- Fix issue where values like &quot;5 micro-gram&quot; could be interpreted as an activity.
+- Fix detector efficiency percentage to be relative to a 3x3 NaI detector at 1332 keV, instead of 661 keV.
+- Fix bug fitting for FWHM when making a DRF. The FWHM equation type and order was not being treated consistently.
+- Fix some dialogs not being deleted when a &quot;Clear Session...&quot; was done. 
+- Fix copy-paste of DRF coefficients on the &quot;Formula&quot; tab "Detector Response Tool".  If you have a mathematical detector efficiency function, that is of the form `exp( A + B*log(x) + C*log(x)^2, ... )`, you can just paste the A, B, C, ... coefficients into the input field, and they will be interpreted as being this function. 
+- Fix/change spectrum file query widget to always use seconds for live/real times.  Some other fields in the CSV you can export have also been made a little spreadsheet friendly.
+- Fix the energy calibration when a HTML report is exported from the "Isotopics by nuclide" tool, and the energy calibration adjust option had been selected.
+- Fix issue de-serializing ShieldingSelect from XML; the areal density for generic shielding wasn't properly having the units divided out.
+- Fix bug when you typed a photo peak energy directly into a table giving peak information, it would then cause the table display to get messed up.
+- Fix android app crashing if opening file/URI without app already running.
+- Fix incorrect times being shown in the popup on the Map tool.
+- Fix fitting for mass-fractions in the Activity/Shielding Fit tool, and nuclide fractions being able to add up to more than 1.0, in GUI.
+- Fix issue where after right-clicking on the spectrum or energy slider, the mouse being let-up was not correctly detected
+- Fix and improve reading various vendor/model specific spectrum files 
+- Fix so date/time parsing always uses the &quot;C&quot; locale, and not users current locale; on Linux parsing date/times was sometimes failing, particularly for dates that included English month names.
+- Fix potential infinite recursion when using the energy strip chart.
+- Fix to allow polynomial energy calibration offset coefficient up to 5 MeV, primarily for alpha particle spectra.
+
+## Code-related changes
+- Started work on allowing &quot;batch&quot; peak fitting, and activity/shielding fitting.<br />
+  Eventually will hopefully support processing many similar spectra from the command line, using a "exemplar" file.  
+  That is, if you have many spectra that are similar, and you want to either fit peaks in them, or the activity of some nuclides, 
+  you will just have to manually analyze one spectrum in InterSpec, fitting all the peaks you might want and/or set up the activity/shielding fitting, 
+  and then after saving that spectrum to a N42-2012 file (which contains all your work), you will be able to try to fit these same peaks/activities/shielding 
+  in all your other spectra, using a &quot;batch&quot; mode from the command line.
+    - Currently have separated the business logic from the GUI, and able to perform this batch analysis on development builds, but reliability of results, or error reporting, or even output of results has not been implemented.
+    - Have setup some unit tests that take advantage of these capabilities, but currently they only run for one or two spectra.
+- Change it so wxWidgets version of app only share sessions with same build (e.g., multiple builds will now run independently).
+- Implement optimize initial app load when time-chart is initially hidden. However, this is currently disabled (behind the compile-time `OPTIMIZE_D3TimeChart_HIDDEN_LOAD` option) until after this release to allow for more testing.
+- There have been a number of improvements to the &quot;Detection Confidence Tool&quot;, which is not included in this release.
+- Also, made it so the same HTML tooltip can be added to multiple `WWebWidget`s, slightly reducing the DOM clutter.
+- Make some potential improvements to AndroidManifest.
+- Remove option to use native Electron menus.  This option hasn't been used for a number of Electron versions, and just using the HTML menus everywhere except macOS seems like the best option.
+- Various tests have been added (in both InterSpec repository, and SpecUtils)
+    
+
+
+## Expected features in v1.0.13
+The next release of InterSpec is expected to focus on improving peak fits, adding support for languages other than English, and adding an advanced minimum detectable activity and maximum detectable distance calculator.
 
 # v1.0.11 (June 01, 2023)
 InterSpec version 1.0.11 adds a number of new features and capabilities, many improvements, and a good amount of bug fixes.
