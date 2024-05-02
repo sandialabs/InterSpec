@@ -1,5 +1,6 @@
 # InterSpec v1.0.12 release notes (May 2024)
 
+<div style="text-align: right;">SAND2024-05524O</div>
 InterSpec v1.0.12 adds a number of new features and improvements, as well as fixes many bugs.
 <br/>
 The largest new features are undo/redo support, new peak skew models, and a flexible spectrum file export tool.
@@ -7,7 +8,6 @@ The largest new features are undo/redo support, new peak skew models, and a flex
 <br/>
 Most features added were user requested, and a large amount of the bugs fixed were user reported - so 
 please keep reporting issues and requesting improvements or information to InterSpec@sandia.gov.
-<div style="text-align: right;">SAND2024-05524O</div>
 
 
 ### New features and capabilities
@@ -428,13 +428,16 @@ please keep reporting issues and requesting improvements or information to Inter
 ### Expected features in v1.0.13
 The next release of InterSpec is expected to focus on improving peak fits, adding support for languages other than English, and adding an advanced minimum detectable activity and maximum detectable distance calculator.
 
+
+
+
 # v1.0.11 (June 01, 2023)
+<div style="text-align: right;">SAND2023-05961O</div>
 InterSpec version 1.0.11 adds a number of new features and capabilities, many improvements, and a good amount of bug fixes.
 
 Most of the added features were user requested, as were many of the improvements and bug fixes - thank you for these!
 
 Questions, bug reports, suggestions, and feature requests are very welcome at <a href="mailto:InterSpec@sandia.gov">InterSpec@sandia.gov</a>.
-<div style="text-align: right;">SAND2023-05961O</div>
 
 ## New Features
 - On the "Reference Photopeaks" tab, a "more info" link has been added, that when clicked, will give you additional information about the nuclide.  
