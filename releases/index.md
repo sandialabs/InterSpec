@@ -11,7 +11,7 @@ please keep reporting issues and requesting improvements or information to Inter
 
 SAND2024-05524O.
 
-## New features and capabilities
+### New features and capabilities
 - Undo/redo support for many operations throughout the app.
     - You can use ctrl-z/ctrl-shift-z (macOS: ⌘-z/⌘-shift-z), or undo/redo under the "Edit" menu
     - E.g., if you modify a peaks range of interest (ROI), and don't like the result, simply hit ctrl-z.  Or if you zoom-out on the spectrum, but didn't want to, just hit ctrl-z. If you close a tool, but didn't mean to, hit ctrl-z. etc.
@@ -43,96 +43,99 @@ SAND2024-05524O.
   - "Isotopics by nuclides", and a few other places throughout the app will also let you pick a skew model
   - The five added peak's skews are, with an example fit for each, using the same energy range for a CZT detectors peak:
   <table style="border: 1px solid black; border-collapse: collapse; width:100%">
-  <tr>
-    <td style="border: 1px solid black; padding-top: 2px; padding-bottom: 2px; width:40%">
-      <a href="v1.0.12/no_skew_1172keV_10.49cps.png">
-        <img src="v1.0.12/no_skew_1172keV_10.49cps.png"  class="imageBorder" style="width: 95%; margin-left: auto; margin-right: auto; display: block;" />
-      </a>
-    </td>
-    <td style="border: 1px solid black; padding-top: 2px; padding-bottom: 2px;">
-      <div style="text-align: center;">No Skew</div>
-    </td>
-  </tr>
-  <tr>
-    <td style="border: 1px solid black; padding-top: 2px; padding-bottom: 2px; width:40%">
-      <a href="v1.0.12/exp_dot_gauss_1172keV_11.31cps.png">
-        <img src="v1.0.12/exp_dot_gauss_1172keV_11.31cps.png"  class="imageBorder" style="width: 95%; margin-left: auto; margin-right: auto; display: block;" />
-      </a>
-    </td>
-    <td style="border: 1px solid black; padding-top: 2px; padding-bottom: 2px;">
-      <b>Exp*Gauss</b>: Convolution of Gaussian with a left-hand exponential multiplied by a
-      step function that goes to zero above the peak mean.<br />
-      See:
-      <div style="font-size: smaller">
-        &nbsp;&nbsp;&nbsp;&nbsp;Analytical function for fitting peaks in alpha-particle spectra from Si detectors<br/>
-        &nbsp;&nbsp;&nbsp;&nbsp;International Journal of Radiation Applications and Instrumentation. Part A. Applied Radiation and Isotopes<br/>
-        &nbsp;&nbsp;&nbsp;&nbsp;Volume 38, Issue 10, 1987, Pages 831-837<br/>
-        &nbsp;&nbsp;&nbsp;&nbsp;<a href="https://doi.org/10.1016/0883-2889(87)90180-8" target="_blank">https://doi.org/10.1016/0883-2889(87)90180-8</a><br/>
-      </div>
-      <p>
-        Although in the paper two exponentials are used, for gamma-spectroscopy a single exponential
-        appears to usually be sufficient, so <em>InterSpec</em> only implements a single exponential.
-      </p>
-    </td>
-  </tr>
-  <tr>
-    <td style="border: 1px solid black; padding-top: 2px; padding-bottom: 2px; width:40%">
-      <a href="v1.0.12/gauss_exp_1172keV_11.31cps.png">
-        <img src="v1.0.12/gauss_exp_1172keV_11.31cps.png"  class="imageBorder" style="width: 95%; margin-left: auto; margin-right: auto; display: block;" />
-      </a>
-    </td>
-    <td style="border: 1px solid black; padding-top: 2px; padding-bottom: 2px;">
-      <b>GaussExp</b>: An exponential tail stitched to a Gaussian core.<br />
-      See:
-      <div style="font-size: smaller">
-        &nbsp;&nbsp;&nbsp;&nbsp;A simple alternative to the Crystal Ball function.<br />
-        &nbsp;&nbsp;&nbsp;&nbsp;Souvik Das, arXiv:1603.08591<br />
-        &nbsp;&nbsp;&nbsp;&nbsp;<a href="https://arxiv.org/abs/1603.08591" target="_blank">https://arxiv.org/abs/1603.08591</a>
-      </div>
-    </td>
-  </tr>
-  <tr>
-    <td style="border: 1px solid black; padding-top: 2px; padding-bottom: 2px; width:40%">
-      <a href="v1.0.12/crystal_ball_1172keV_13.19cps.png">
-        <img src="v1.0.12/crystal_ball_1172keV_13.19cps.png"  class="imageBorder" style="width: 95%; margin-left: auto; margin-right: auto; display: block;" />
-      </a>
-    </td>
-    <td style="border: 1px solid black; padding-top: 2px; padding-bottom: 2px;">
-      <b>Crystal Ball</b>: A Gaussian core portion and a power-law low-end tail, below a threshold.<br />
-      See:
-      <div style="font-size: smaller">
-        &nbsp;&nbsp;&nbsp;&nbsp;<a href="https://en.wikipedia.org/wiki/Crystal_Ball_function" target="_blank">https://en.wikipedia.org/wiki/Crystal_Ball_function</a><br/>
-      </div>
-      <p>
-        Uses two skew parameters.
-        <ol>
-          <li><b>&alpha;</b>: defines the threshold (how many gaussian sigma away from the mean for the modified-tail to start).</li>
-          <li><b>n</b>: defines the power-law.
-        </ol>
-      </p>
-    </td>
-  </tr>
-  <tr>
-    <td style="border: 1px solid black; padding-top: 2px; padding-bottom: 2px; width:40%">
-      <a href="v1.0.12/exp_gauss_exp_1172keV_12.76cps.png">
-        <img src="v1.0.12/exp_gauss_exp_1172keV_12.76cps.png"  class="imageBorder" style="width: 95%; margin-left: auto; margin-right: auto; display: block;" />
-      </a>
-    </td>
-    <td style="border: 1px solid black; padding-top: 2px; padding-bottom: 2px;">
-      <b>ExpGaussExp</b>: A double-sided version of the <em>GaussExp</em> distribution, with separate parameters for the lower and upper tails.
-    </td>
-  </tr>
-  <tr>
-    <td style="border: 1px solid black; padding-top: 2px; padding-bottom: 2px; width:40%">
-      <a href="v1.0.12/double_crystal_ball_1172keV_21.31cps.png">
-        <img src="v1.0.12/double_crystal_ball_1172keV_21.31cps.png"  class="imageBorder" style="width: 95%; margin-left: auto; margin-right: auto; display: block;" />
-      </a>
-    </td>
-    <td style="border: 1px solid black; padding-top: 2px; padding-bottom: 2px;">
-      <b>Double Sided Crystal Ball</b>: A double-sided version of the <em>Crystal Ball</em> distribution, with separate <b>&alpha;</b> and <b>n</b> for the lower and upper tails.
-    </td>
-  </tr>
-</table>
+    <tr>
+      <td style="border: 1px solid black; padding-top: 2px; padding-bottom: 2px; width:40%">
+        <a href="v1.0.12/no_skew_1172keV_10.49cps.png">
+          <img src="v1.0.12/no_skew_1172keV_10.49cps.png"  class="imageBorder" style="width: 95%; margin-left: auto; margin-right: auto; display: block;" />
+        </a>
+      </td>
+      <td style="border: 1px solid black; padding-top: 2px; padding-bottom: 2px;">
+        <div style="text-align: center;">No Skew</div>
+      </td>
+    </tr>
+    <tr>
+      <td style="border: 1px solid black; padding-top: 2px; padding-bottom: 2px; width:40%">
+        <a href="v1.0.12/exp_dot_gauss_1172keV_11.31cps.png">
+          <img src="v1.0.12/exp_dot_gauss_1172keV_11.31cps.png"  class="imageBorder" style="width: 95%; margin-left: auto; margin-right: auto; display: block;" />
+        </a>
+      </td>
+      <td style="border: 1px solid black; padding-top: 2px; padding-bottom: 2px;">
+        <b>Exp*Gauss</b>: Convolution of Gaussian with a left-hand exponential multiplied by a
+        step function that goes to zero above the peak mean.
+        <br />
+        See:
+        <div style="font-size: smaller">
+          &nbsp;&nbsp;&nbsp;&nbsp;Analytical function for fitting peaks in alpha-particle spectra from Si detectors<br/>
+          &nbsp;&nbsp;&nbsp;&nbsp;International Journal of Radiation Applications and Instrumentation. Part A. Applied Radiation and Isotopes<br/>
+          &nbsp;&nbsp;&nbsp;&nbsp;Volume 38, Issue 10, 1987, Pages 831-837<br/>
+          &nbsp;&nbsp;&nbsp;&nbsp;<a href="https://doi.org/10.1016/0883-2889(87)90180-8" target="_blank">https://doi.org/10.1016/0883-2889(87)90180-8</a>
+        </div>
+        <div style="margin-top: 10px">
+          Although in the paper two exponentials are used, for gamma-spectroscopy a single exponential
+          appears to usually be sufficient, so <em>InterSpec</em> only implements a single exponential.
+        </div>
+      </td>
+    </tr>
+    <tr>
+      <td style="border: 1px solid black; padding-top: 2px; padding-bottom: 2px; width:40%">
+        <a href="v1.0.12/gauss_exp_1172keV_11.31cps.png">
+          <img src="v1.0.12/gauss_exp_1172keV_11.31cps.png"  class="imageBorder" style="width: 95%; margin-left: auto; margin-right: auto; display: block;" />
+        </a>
+      </td>
+      <td style="border: 1px solid black; padding-top: 2px; padding-bottom: 2px;">
+        <b>GaussExp</b>: An exponential tail stitched to a Gaussian core.
+        <br />
+        See:
+        <div style="font-size: smaller">
+          &nbsp;&nbsp;&nbsp;&nbsp;A simple alternative to the Crystal Ball function.<br />
+          &nbsp;&nbsp;&nbsp;&nbsp;Souvik Das, arXiv:1603.08591<br />
+          &nbsp;&nbsp;&nbsp;&nbsp;<a href="https://arxiv.org/abs/1603.08591" target="_blank">https://arxiv.org/abs/1603.08591</a>
+        </div>
+      </td>
+    </tr>
+    <tr>
+      <td style="border: 1px solid black; padding-top: 2px; padding-bottom: 2px; width:40%">
+        <a href="v1.0.12/crystal_ball_1172keV_13.19cps.png">
+          <img src="v1.0.12/crystal_ball_1172keV_13.19cps.png"  class="imageBorder" style="width: 95%; margin-left: auto; margin-right: auto; display: block;" />
+        </a>
+      </td>
+      <td style="border: 1px solid black; padding-top: 2px; padding-bottom: 2px;">
+        <b>Crystal Ball</b>: A Gaussian core portion and a power-law low-end tail, below a threshold.
+        <br />
+        See:
+        <div style="font-size: smaller">
+          &nbsp;&nbsp;&nbsp;&nbsp;<a href="https://en.wikipedia.org/wiki/Crystal_Ball_function" target="_blank">https://en.wikipedia.org/wiki/Crystal_Ball_function</a><br/>
+        </div>
+        <div style="margin-top: 10px">
+          Uses two skew parameters.
+          <ol>
+            <li><b>&alpha;</b>: defines the threshold (how many gaussian sigma away from the mean for the modified-tail to start).</li>
+            <li><b>n</b>: defines the power-law.</li>
+          </ol>
+        </div>
+      </td>
+    </tr>
+    <tr>
+      <td style="border: 1px solid black; padding-top: 2px; padding-bottom: 2px; width:40%">
+        <a href="v1.0.12/exp_gauss_exp_1172keV_12.76cps.png">
+          <img src="v1.0.12/exp_gauss_exp_1172keV_12.76cps.png"  class="imageBorder" style="width: 95%; margin-left: auto; margin-right: auto; display: block;" />
+        </a>
+      </td>
+      <td style="border: 1px solid black; padding-top: 2px; padding-bottom: 2px;">
+        <b>ExpGaussExp</b>: A double-sided version of the <em>GaussExp</em> distribution, with separate parameters for the lower and upper tails.
+      </td>
+    </tr>
+    <tr>
+      <td style="border: 1px solid black; padding-top: 2px; padding-bottom: 2px; width:40%">
+        <a href="v1.0.12/double_crystal_ball_1172keV_21.31cps.png">
+          <img src="v1.0.12/double_crystal_ball_1172keV_21.31cps.png"  class="imageBorder" style="width: 95%; margin-left: auto; margin-right: auto; display: block;" />
+        </a>
+      </td>
+      <td style="border: 1px solid black; padding-top: 2px; padding-bottom: 2px;">
+        <b>Double Sided Crystal Ball</b>: A double-sided version of the <em>Crystal Ball</em> distribution, with separate <b>&alpha;</b> and <b>n</b> for the lower and upper tails.
+      </td>
+    </tr>
+  </table>
 
 - Add accounting for nuclide decay during the measurement, for both the "Activity/Shielding fit" and "Isotopics from peaks" tools.
   For Activity/Shielding fit, this option is not checked by default, but for the "Isotopics from peaks", if the measurement dwell time is greater than 0.5% of the parent nuclide half-life, then this option will be checked by default.
@@ -280,7 +283,7 @@ SAND2024-05524O.
   This is convenient if you tend to fit peaks before identifying their source nuclides, but would like to assign the source nuclides once you find a positive ID.
   <div style="display: inline-block; width: 95%;">
     <a href="v1.0.12/search_assign_peaks-min.png">
-      <img alt="Screenshot of using this feature." src="v1.0.12/search_assign_peaks-min.png" style="max-width: 230px; margin: 10px; padding-left: auto; padding-right: auto; display: block;" />
+      <img alt="Screenshot of using this feature." src="v1.0.12/search_assign_peaks-min.png" style="max-width: 280px; margin: 10px; padding-left: auto; padding-right: auto; display: block;" />
     </a>
     <div>
       Example of how to assign all current peaks near the currently selected nuclide on the &quot;<em>Nuclide Search</em>&quot; tab, to that nuclide.
@@ -297,25 +300,31 @@ SAND2024-05524O.
 - Add option to fix a peaks mean to the currently showing reference photopeak line, by right-clicking on the peak, and selecting the "Fix to X keV" option, where "X" is the reference photopeak line energy.  This can be useful for low-statistics peaks, or peaks that overlap with another larger peak.
 
 - Added option when you right-click on a peak, to fix the peak to the current detector resolutions FWHM.  If there is no current detector resolution available (i.e., the current detector efficiency function does not include this information, or no detector efficiency function is loaded), a dialog will be shown that allows you to fit the FWHM, as a function of energy, from your current foreground spectrum.
-<div style="display: inline-block; width: 95%;">
+  <div style="display: inline-block; width: 95%;">
     <a href="v1.0.12/UseFwhmFromDrf.png">
-      <img alt="Screenshot of right-clicking on a peak to use this feature." src="v1.0.12/UseFwhmFromDrf.png" style="max-width: 230px; margin: 10px; padding-left: auto; padding-right: auto; display: block;" />
+      <img alt="Screenshot of right-clicking on a peak to use this feature." 
+            src="v1.0.12/UseFwhmFromDrf.png" 
+            style="max-width: 230px; margin: 10px; padding-left: auto; padding-right: auto; display: block;" />
     </a>
     <div>
       Example of right-clicking on a peak to use this feature.
     </div>
   </div>
-  - <div style="display: inline-block; width: 95%;">
+  <div style="display: inline-block; width: 95%; margin-top: 15px">
     <a href="v1.0.12/FitFwhmFromDrfSelect_FitFwhm.png">
-      <img alt="Dialog asking if you would like to fit FWHM from current spectrum." src="v1.0.12/FitFwhmFromDrfSelect_FitFwhm.png" style="max-width: 175px; margin: 10px; padding-left: auto; padding-right: auto; display: block;" />
+      <img alt="Dialog asking if you would like to fit FWHM from current spectrum." 
+            src="v1.0.12/FitFwhmFromDrfSelect_FitFwhm.png" 
+            style="max-width: 175px; margin: 10px; padding-left: auto; padding-right: auto; display: block;" />
     </a>
     <div>
       Dialog asking if you would like to fit FWHM from current spectrum, which will be shown if your currently selected detector doesn't have an associated FWHM functional form.
     </div>
   </div>
-  - <div style="display: inline-block; width: 95%;">
+  <div style="display: inline-block; width: 95%; margin-top: 15px">
     <a href="v1.0.12/FitFwhmFromCurrentSpectrumOverview.png">
-      <img alt="Overview of the tool to fit FWHM from current spectrum." src="v1.0.12/FitFwhmFromCurrentSpectrumOverview.png" style="max-width: 230px; margin: 10px; padding-left: auto; padding-right: auto; display: block;" />
+      <img alt="Overview of the tool to fit FWHM from current spectrum." 
+          src="v1.0.12/FitFwhmFromCurrentSpectrumOverview.png" 
+          style="max-width: 230px; margin: 10px; padding-left: auto; padding-right: auto; display: block;" />
     </a>
     <div>
       Screenshot of the tool to fit the FWHM functional form, from current spectrum.<br/>
@@ -324,7 +333,7 @@ SAND2024-05524O.
       You can also select the functional form you would like fit, as well as manually modify coefficient values, if you would like.
     </div>
   </div>
-  - <div style="display: inline-block; width: 95%;">
+  <div style="display: inline-block; width: 95%;">
     <a href="v1.0.12/FitFwhmFromDrfSelect.png">
       <img alt="How to access fitting the FWHM using current data, from the detector selection tool." src="v1.0.12/FitFwhmFromDrfSelect.png" style="max-width: 230px; margin: 10px; padding-left: auto; padding-right: auto; display: block;" />
     </a>
@@ -350,7 +359,7 @@ SAND2024-05524O.
 
 
 
-## Bug fixes
+### Bug fixes
 - Fix macOS Quick Look capability.  Spectrum file icons will now show previews of the files data, as will Finder gallery view, and similar.
 - Fix error uploading spectrum files that had non-ISO-8859-1 code points in the filename.
 - Work around apparent/possible issue in WebKit, where sometimes the second time you showed the "Make Detector Response" tool in a session, the WebView rendering process would crash, after allocating lots of memory (issue didnt happen in FireFox, and no reason why this happened could be found).
@@ -398,7 +407,7 @@ SAND2024-05524O.
 - Fix potential infinite recursion when using the energy strip chart.
 - Fix to allow polynomial energy calibration offset coefficient up to 5 MeV, primarily for alpha particle spectra.
 
-## Code-related changes
+### Code-related changes
 - Started work on allowing &quot;batch&quot; peak fitting, and activity/shielding fitting.<br />
   Eventually will hopefully support processing many similar spectra from the command line, using a "exemplar" file.  
   That is, if you have many spectra that are similar, and you want to either fit peaks in them, or the activity of some nuclides, 
@@ -417,7 +426,7 @@ SAND2024-05524O.
     
 
 
-## Expected features in v1.0.13
+### Expected features in v1.0.13
 The next release of InterSpec is expected to focus on improving peak fits, adding support for languages other than English, and adding an advanced minimum detectable activity and maximum detectable distance calculator.
 
 # v1.0.11 (June 01, 2023)
