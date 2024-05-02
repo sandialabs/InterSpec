@@ -26,8 +26,6 @@
 // Get rid of some issues lurking in the boost libraries.
 #pragma warning(disable:4244)
 #pragma warning(disable:4800)
-// Block out some UUID warnings
-#pragma warning(disable:4996)
 
 #include <ctime>
 #include <tuple>
@@ -43,25 +41,17 @@
 #include <sys/stat.h>
 
 #include <boost/ref.hpp>
-#include <boost/date_time/posix_time/posix_time.hpp>
-#include <boost/uuid/uuid.hpp>
-#include <boost/uuid/uuid_generators.hpp>
-#include <boost/uuid/uuid_io.hpp>
 
 #include <Wt/WText>
 #include <Wt/Utils>
 #include <Wt/WLabel>
 #include <Wt/WImage>
-#include <Wt/WBreak>
 #include <Wt/WPoint>
 #include <Wt/WServer>
 #include <Wt/Dbo/Dbo>
-#include <Wt/WSpinBox>
 #include <Wt/WTextArea>
 #include <Wt/WCheckBox>
-#include <Wt/WTemplate>
 #include <Wt/WIOService>
-#include <Wt/WAnimation>
 #include <Wt/WTabWidget>
 #include <Wt/WPopupMenu>
 #include <Wt/WPushButton>
@@ -71,8 +61,6 @@
 #include <Wt/WEnvironment>
 #include <Wt/WBorderLayout>
 #include <Wt/WSelectionBox>
-#include <Wt/WCssStyleSheet>
-#include <Wt/Json/Serializer>
 #include <Wt/WSuggestionPopup>
 #include <Wt/WContainerWidget>
 #include <Wt/WDefaultLoadingIndicator>
@@ -92,14 +80,18 @@
 #include "rapidxml/rapidxml_print.hpp"
 #include "rapidxml/rapidxml_utils.hpp"
 
+#include "SpecUtils/DateTime.h"
+#include "SpecUtils/SpecFile.h"
+#include "SpecUtils/Filesystem.h"
+#include "SpecUtils/StringAlgo.h"
+#include "SpecUtils/SpecUtilsAsync.h"
+
 #include "InterSpec/MakeDrf.h"
 #include "InterSpec/PeakFit.h"
 #include "InterSpec/AppUtils.h"
-#include "SpecUtils/DateTime.h"
 #include "InterSpec/FluxTool.h"
 #include "InterSpec/PeakEdit.h"
 #include "InterSpec/PopupDiv.h"
-#include "SpecUtils/SpecFile.h"
 #include "InterSpec/SpecMeas.h"
 #include "InterSpec/AuxWindow.h"
 #include "InterSpec/DrfSelect.h"
@@ -107,11 +99,9 @@
 #include "InterSpec/IsotopeId.h"
 #include "InterSpec/PeakModel.h"
 #include "InterSpec/ColorTheme.h"
-#include "SpecUtils/Filesystem.h"
 #include "InterSpec/GammaXsGui.h"
 #include "InterSpec/HelpSystem.h"
 #include "InterSpec/MaterialDB.h"
-#include "SpecUtils/StringAlgo.h"
 #include "InterSpec/ColorSelect.h"
 #include "InterSpec/DecayWindow.h"
 #include "InterSpec/InterSpecApp.h"
@@ -128,7 +118,6 @@
 #include "InterSpec/DoseCalcWidget.h"
 #include "InterSpec/ExportSpecFile.h"
 #include "InterSpec/MakeFwhmForDrf.h"
-#include "SpecUtils/SpecUtilsAsync.h"
 #include "InterSpec/PeakFitChi2Fcn.h"
 #include "InterSpec/PeakInfoDisplay.h"
 #include "InterSpec/SpecMeasManager.h"
@@ -524,9 +513,11 @@ InterSpec::InterSpec( WContainerWidget *parent )
       username = wApp->environment().getCookie( "SpectrumViewerUUID" );
     }catch(...)
     {
-      stringstream usernamestrm;
-      usernamestrm << boost::uuids::random_generator()();
-      username = usernamestrm.str();
+      // We'll set the user name to be a combination of the initial time, and a hash of the
+      //  Wt session ID to make sure its unique-enough, without bringing in anything heavyweight
+      auto now = chrono::time_point_cast<chrono::microseconds>( chrono::system_clock::now() );
+      username = "user-" + SpecUtils::to_iso_string(now)
+                 + "-" + std::to_string( std::hash<std::string>{}(wApp->sessionId()) );
       wApp->setCookie( "SpectrumViewerUUID", username, 3600*24*365 );
     }//try / catch
   }//if( no username )
@@ -3921,57 +3912,76 @@ void InterSpec::loadStateFromDb( Wt::Dbo::ptr<UserState> entry )
       m_spectrum->setShowPeakLabel( label, showing );
     }//for( loop over peak labels )
 
-    
-    if( entry->userOptionsJson.size() )
+    // We wont change user preferences if this state was an end of session state.
+    //  This is mostly for development: when developing we often kill process so
+    //  the state doesnt get saved, but then any preferences we've updated will
+    //  essentially get lost when auto-loading previous end of session state,
+    //  which is a bit annoying
+    if( entry->userOptionsJson.size()
+       && (entry->stateType != UserState::kEndOfSessionTemp) )
     {
       try
       {
-      Json::Value userOptionsVal( Json::ArrayType );
-      Json::parse( entry->userOptionsJson, userOptionsVal );
-      //cerr << "Parsed User Options, but not doing anything with them" << endl;
+        Json::Value userOptionsVal( Json::ArrayType );
+        Json::parse( entry->userOptionsJson, userOptionsVal );
+        //cerr << "Parsed User Options, but not doing anything with them" << endl;
         
-      const Json::Array &userOptions = userOptionsVal;
-      for( size_t i = 0; i < userOptions.size(); ++i )
-      {
+        const Json::Array &userOptions = userOptionsVal;
+        for( size_t i = 0; i < userOptions.size(); ++i )
+        {
           const Json::Object &obj = userOptions[i];
-          WString name = obj.get("name");
+          const WString &name_wstr = obj.get("name");
+          const string name = name_wstr.toUTF8();
+          
+          // Users probably wont expect loading a state to mess up preferences for how they
+          //  currently like things, so we wont set all preferences back to what they were
+          //  when the state was saved - we'll only set the ones that notably impact presentation
+          //  of the data, and are hopefully obvious
+          static const std::string prefs_to_keep[] = {
+            "ShowVerticalGridlines", "ShowHorizontalGridlines", "LogY", "ColorThemeIndex",
+            "ShowXAxisSlider", "CompactXAxis", "ShowYAxisScalers", "DisplayBecquerel"
+          };//
+          
+          if( std::find(begin(prefs_to_keep), end(prefs_to_keep), name) == end(prefs_to_keep) )
+            continue;
+          
           const int type = obj.get("type");
           const UserOption::DataType datatype = UserOption::DataType( type );
-      
+          
           switch( datatype )
           {
             case UserOption::String:
             {
               const std::string value = obj.get("value");
-              InterSpecUser::setPreferenceValue( m_user, name.toUTF8(), value, this );
+              InterSpecUser::setPreferenceValue( m_user, name, value, this );
               break;
             }//case UserOption::Boolean:
               
             case UserOption::Decimal:
             {
               const double value = obj.get("value");
-              InterSpecUser::setPreferenceValue( m_user, name.toUTF8(), value, this );
+              InterSpecUser::setPreferenceValue( m_user, name, value, this );
               break;
             }//case UserOption::Boolean:
               
             case UserOption::Integer:
             {
               const int value = obj.get("value");
-              InterSpecUser::setPreferenceValue( m_user, name.toUTF8(), value, this );
+              InterSpecUser::setPreferenceValue( m_user, name, value, this );
               break;
             }//case UserOption::Boolean:
               
             case UserOption::Boolean:
             {
               const bool value = obj.get("value");
-              InterSpecUser::setPreferenceValue( m_user, name.toUTF8(), value, this );
+              InterSpecUser::setPreferenceValue( m_user, name, value, this );
             }//case UserOption::Boolean:
           }//switch( datatype )
         }//for( size_t i = 0; i < userOptions.size(); ++i )
       }catch( std::exception &e )
       {
         cerr << "Failed to parse JSON user preference with error: "
-             << e.what() << endl;
+        << e.what() << endl;
         //well let this error slide (happens on OSX, Wt::JSON claims boost isnt
         //  new enough)
       }//try / catch
@@ -10177,144 +10187,6 @@ void InterSpec::doFinishupSetSpectrumWork( std::shared_ptr<SpecMeas> meas,
       meas->reset_modified_since_decode();
   }//end codeblock to access meas
 }//void InterSpec::doFinishupSetSpectrumWork( boost::function<void(void)> workers )
-
-// Development function to create JSON
-void printGeoLocationJson( std::shared_ptr<const SpecMeas> meas )
-{
-  if( !meas || !meas->has_gps_info() )
-  {
-    cout << "printGeoLocationJson: no measurement, or no GPS info" << endl;
-    return;
-  }
-  
-  Wt::Json::Object json;//( {{"userLabel", Wt::Json::Value( Wt::WString::fromUTF8(label) )} } );
-  json["fileName"] = Wt::WString::fromUTF8( meas->filename() );
-  
-  const vector<string> &det_names = meas->detector_names();
-  Wt::Json::Array detectors;
-  for( const auto det : det_names )
-    detectors.push_back( Wt::WString::fromUTF8(det) );
-  json["detectors"] = detectors;
-  
-  Wt::Json::Array samplesData;
-  
-  size_t numSamplesNoGps = 0;
-  SpecUtils::time_point_t start_times_offset{};
-  
-  for( const int sample : meas->sample_numbers() )
-  {
-    vector<shared_ptr<const SpecUtils::Measurement>> meass = meas->sample_measurements(sample);
-    
-    meass.erase( std::remove_if(meass.begin(), meass.end(),
-      [&](shared_ptr<const SpecUtils::Measurement> a){
-        return !a || (end(det_names) == find(begin(det_names), end(det_names), a->detector_name()));
-    }), meass.end() );
-    
-    
-    bool hadGps = false;
-    double latitude = -999.99, longitude = -999.99;
-    int numGammaDet = 0, numNeutDet = 0;
-    float realTime = 0.0f;
-    SpecUtils::SourceType source_type = SpecUtils::SourceType::Unknown;
-    double gammaRealTime = 0.0, gammaLiveTime = 0.0, gammaCounts = 0.0;
-    double neutronRealTime = 0.0, neutronCounts = 0.0;
-    
-    SpecUtils::time_point_t meas_start_time{};
-    
-    for( const shared_ptr<const SpecUtils::Measurement> &m : meass )
-    {
-      if( m->has_gps_info() )
-      {
-        hadGps = true;
-        // TODO: we could average or something here... not sure it matters much
-        latitude = m->latitude();
-        longitude = m->longitude();
-      }
-      
-      if( SpecUtils::is_special(meas_start_time) && !SpecUtils::is_special(m->start_time()) )
-      {
-        meas_start_time = m->start_time();
-        if( SpecUtils::is_special(start_times_offset) )
-          start_times_offset = meas_start_time;
-      }
-      
-      if( m->num_gamma_channels() >= 1 )
-      {
-        numGammaDet += 1;
-        realTime = std::max( realTime, m->real_time() );
-        gammaLiveTime += m->live_time();
-        gammaRealTime += m->real_time();
-        gammaCounts += m->gamma_count_sum();
-      }
-      
-      if( m->contained_neutron() )
-      {
-        numNeutDet += 1;
-        neutronRealTime += m->real_time();
-        neutronCounts += m->neutron_counts_sum();
-      }
-      
-      realTime = std::max( realTime, m->real_time() );
-      
-      if( m->source_type() != SpecUtils::SourceType::Unknown )
-        source_type = m->source_type();
-    }//for( const auto m : meass )
-    
-    if( !hadGps )
-    {
-      numSamplesNoGps += 1;
-      continue;
-    }
-    
-    if( !numNeutDet && !numGammaDet )
-      continue;
-    
-    Wt::Json::Object sample_json;
-    if( !SpecUtils::is_special(meas_start_time) )
-    {
-      const auto duration = start_times_offset - meas_start_time;
-      const auto millisecs = chrono::duration_cast<chrono::milliseconds>(duration);
-      sample_json["timeOffset"] = static_cast<long long int>( millisecs.count() );
-    }//if( SpecUtils::is_special(meas_start_time) )
-    
-    sample_json["nGDet"] = numGammaDet;
-    if( numGammaDet )
-    {
-      sample_json["gSum"] = gammaCounts;
-      sample_json["gRT"] = gammaRealTime;
-      sample_json["gLT"] = gammaLiveTime;
-    }
-    
-    sample_json["nNDet"] = numNeutDet;
-    if( numNeutDet )
-    {
-      sample_json["nSum"] = neutronCounts;
-      sample_json["nRT"] = neutronRealTime;
-    }
-    
-    sample_json["rt"] = realTime;
-    sample_json["src"] = static_cast<int>(source_type);
-    
-    Wt::Json::Array gps;
-    gps.push_back(latitude);
-    gps.push_back(longitude);
-    sample_json["gps"] = gps;
-    sample_json["sample"] = sample;
-    
-    samplesData.push_back( sample_json );
-  }//for( const int sample : meas->sample_numbers() )
-  
-  if( !SpecUtils::is_special(start_times_offset) )
-  {
-    const auto dur = start_times_offset.time_since_epoch();
-    const auto millisecs = chrono::duration_cast<chrono::milliseconds>(dur);
-    json["startTime"] = static_cast<long long int>( millisecs.count() );
-  }//if( !SpecUtils::is_special(start_times_offset) )
-  
-  json["samples"] = samplesData;
-  
-  cout << "JSON: " << Wt::Json::serialize(json) << endl;
-}//void printGeoLocationJson( std::shared_ptr<SpecMeas> meas )
 
 
 void InterSpec::setSpectrum( std::shared_ptr<SpecMeas> meas,

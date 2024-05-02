@@ -76,6 +76,16 @@ Options for using the tool:
 </ul>
 </p>
 
+
+<p>
+By default, reference lines for x-ray (dashed lines) and gammas are shown.
+However, if you select the sub menu, to the right of the color select (see the circled in the below image),
+you can select to see alpha energies, beta endpoints, true-coincidence sums (i.e., when two gammas are emitted at nearly same time, so may be summed by the detector), as well as a few other options.
+<div style="padding-top: 1px" align="center">
+<img src="InterSpec_resources/static_text/images/ref_gamma_lines_sub_menu.png"  class="imageBorder" style="max-width:45%;" />
+</div>
+</p>
+
 <p>
 To show reference lines for multiple nuclides at once:
 <ol>
