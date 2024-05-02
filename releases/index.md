@@ -44,23 +44,22 @@ SAND2024-05524O.
   - The five added peak's skews are, with an example fit for each, using the same energy range for a CZT detectors peak:
   <table style="border: 1px solid black; border-collapse: collapse; width:100%">
     <tr>
-      <td style="border: 1px solid black; padding-top: 2px; padding-bottom: 2px; width:40%">
+      <td style="border: 1px solid black; padding-top: 2px; padding-bottom: 2px; width:40%; vertical-align: middle;">
         <a href="v1.0.12/no_skew_1172keV_10.49cps.png">
           <img src="v1.0.12/no_skew_1172keV_10.49cps.png"  class="imageBorder" style="width: 95%; margin-left: auto; margin-right: auto; display: block;" />
         </a>
       </td>
-      <td style="border: 1px solid black; padding-top: 2px; padding-bottom: 2px;">
+      <td style="border: 1px solid black; padding-top: 2px; padding-bottom: 2px; vertical-align: middle;">
         <div style="text-align: center;">No Skew</div>
       </td>
     </tr>
-    </table><table style="border: 1px solid black; border-collapse: collapse; width:100%">
     <tr>
-      <td style="border: 1px solid black; padding-top: 2px; padding-bottom: 2px; width:40%">
+      <td style="border: 1px solid black; padding-top: 2px; padding-bottom: 2px; width:40%; vertical-align: middle;">
         <a href="v1.0.12/exp_dot_gauss_1172keV_11.31cps.png">
           <img src="v1.0.12/exp_dot_gauss_1172keV_11.31cps.png"  class="imageBorder" style="width: 95%; margin-left: auto; margin-right: auto; display: block;" />
         </a>
       </td>
-      <td style="border: 1px solid black; padding-top: 2px; padding-bottom: 2px;">
+      <td style="border: 1px solid black; padding-top: 2px; padding-bottom: 2px; vertical-align: middle;">
         <b>Exp*Gauss</b>: Convolution of Gaussian with a left-hand exponential multiplied by a
         step function that goes to zero above the peak mean.
         <br />
@@ -77,14 +76,13 @@ SAND2024-05524O.
         </div>
       </td>
     </tr>
-    </table><table style="border: 1px solid black; border-collapse: collapse; width:100%">
     <tr>
-      <td style="border: 1px solid black; padding-top: 2px; padding-bottom: 2px; width:40%">
+      <td style="border: 1px solid black; padding-top: 2px; padding-bottom: 2px; width:40%; vertical-align: middle;">
         <a href="v1.0.12/gauss_exp_1172keV_11.31cps.png">
           <img src="v1.0.12/gauss_exp_1172keV_11.31cps.png"  class="imageBorder" style="width: 95%; margin-left: auto; margin-right: auto; display: block;" />
         </a>
       </td>
-      <td style="border: 1px solid black; padding-top: 2px; padding-bottom: 2px;">
+      <td style="border: 1px solid black; padding-top: 2px; padding-bottom: 2px; vertical-align: middle;">
         <b>GaussExp</b>: An exponential tail stitched to a Gaussian core.
         <br />
         See:
@@ -95,14 +93,13 @@ SAND2024-05524O.
         </div>
       </td>
     </tr>
-    </table><table style="border: 1px solid black; border-collapse: collapse; width:100%">
     <tr>
-      <td style="border: 1px solid black; padding-top: 2px; padding-bottom: 2px; width:40%">
+      <td style="border: 1px solid black; padding-top: 2px; padding-bottom: 2px; width:40%; vertical-align: middle;">
         <a href="v1.0.12/crystal_ball_1172keV_13.19cps.png">
           <img src="v1.0.12/crystal_ball_1172keV_13.19cps.png"  class="imageBorder" style="width: 95%; margin-left: auto; margin-right: auto; display: block;" />
         </a>
       </td>
-      <td style="border: 1px solid black; padding-top: 2px; padding-bottom: 2px;">
+      <td style="border: 1px solid black; padding-top: 2px; padding-bottom: 2px; vertical-align: middle;">
         <b>Crystal Ball</b>: A Gaussian core portion and a power-law low-end tail, below a threshold.
         <br />
         See:
@@ -118,25 +115,23 @@ SAND2024-05524O.
         </div>
       </td>
     </tr>
-    </table><table style="border: 1px solid black; border-collapse: collapse; width:100%">
     <tr>
-      <td style="border: 1px solid black; padding-top: 2px; padding-bottom: 2px; width:40%">
+      <td style="border: 1px solid black; padding-top: 2px; padding-bottom: 2px; width:40%; vertical-align: middle;">
         <a href="v1.0.12/exp_gauss_exp_1172keV_12.76cps.png">
           <img src="v1.0.12/exp_gauss_exp_1172keV_12.76cps.png"  class="imageBorder" style="width: 95%; margin-left: auto; margin-right: auto; display: block;" />
         </a>
       </td>
-      <td style="border: 1px solid black; padding-top: 2px; padding-bottom: 2px;">
+      <td style="border: 1px solid black; padding-top: 2px; padding-bottom: 2px; vertical-align: middle;">
         <b>ExpGaussExp</b>: A double-sided version of the <em>GaussExp</em> distribution, with separate parameters for the lower and upper tails.
       </td>
     </tr>
-    </table><table style="border: 1px solid black; border-collapse: collapse; width:100%">
     <tr>
-      <td style="border: 1px solid black; padding-top: 2px; padding-bottom: 2px; width:40%">
+      <td style="border: 1px solid black; padding-top: 2px; padding-bottom: 2px; width:40%; vertical-align: middle;">
         <a href="v1.0.12/double_crystal_ball_1172keV_21.31cps.png">
           <img src="v1.0.12/double_crystal_ball_1172keV_21.31cps.png"  class="imageBorder" style="width: 95%; margin-left: auto; margin-right: auto; display: block;" />
         </a>
       </td>
-      <td style="border: 1px solid black; padding-top: 2px; padding-bottom: 2px;">
+      <td style="border: 1px solid black; padding-top: 2px; padding-bottom: 2px; vertical-align: middle;">
         <b>Double Sided Crystal Ball</b>: A double-sided version of the <em>Crystal Ball</em> distribution, with separate <b>&alpha;</b> and <b>n</b> for the lower and upper tails.
       </td>
     </tr>
