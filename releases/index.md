@@ -53,6 +53,7 @@ SAND2024-05524O.
         <div style="text-align: center;">No Skew</div>
       </td>
     </tr>
+    </table><table style="border: 1px solid black; border-collapse: collapse; width:100%">
     <tr>
       <td style="border: 1px solid black; padding-top: 2px; padding-bottom: 2px; width:40%">
         <a href="v1.0.12/exp_dot_gauss_1172keV_11.31cps.png">
@@ -76,6 +77,7 @@ SAND2024-05524O.
         </div>
       </td>
     </tr>
+    </table><table style="border: 1px solid black; border-collapse: collapse; width:100%">
     <tr>
       <td style="border: 1px solid black; padding-top: 2px; padding-bottom: 2px; width:40%">
         <a href="v1.0.12/gauss_exp_1172keV_11.31cps.png">
@@ -93,6 +95,7 @@ SAND2024-05524O.
         </div>
       </td>
     </tr>
+    </table><table style="border: 1px solid black; border-collapse: collapse; width:100%">
     <tr>
       <td style="border: 1px solid black; padding-top: 2px; padding-bottom: 2px; width:40%">
         <a href="v1.0.12/crystal_ball_1172keV_13.19cps.png">
@@ -115,6 +118,7 @@ SAND2024-05524O.
         </div>
       </td>
     </tr>
+    </table><table style="border: 1px solid black; border-collapse: collapse; width:100%">
     <tr>
       <td style="border: 1px solid black; padding-top: 2px; padding-bottom: 2px; width:40%">
         <a href="v1.0.12/exp_gauss_exp_1172keV_12.76cps.png">
@@ -125,6 +129,7 @@ SAND2024-05524O.
         <b>ExpGaussExp</b>: A double-sided version of the <em>GaussExp</em> distribution, with separate parameters for the lower and upper tails.
       </td>
     </tr>
+    </table><table style="border: 1px solid black; border-collapse: collapse; width:100%">
     <tr>
       <td style="border: 1px solid black; padding-top: 2px; padding-bottom: 2px; width:40%">
         <a href="v1.0.12/double_crystal_ball_1172keV_21.31cps.png">
@@ -283,7 +288,7 @@ SAND2024-05524O.
   This is convenient if you tend to fit peaks before identifying their source nuclides, but would like to assign the source nuclides once you find a positive ID.
   <div style="display: inline-block; width: 95%;">
     <a href="v1.0.12/search_assign_peaks-min.png">
-      <img alt="Screenshot of using this feature." src="v1.0.12/search_assign_peaks-min.png" style="max-width: 280px; margin: 10px; padding-left: auto; padding-right: auto; display: block;" />
+      <img alt="Screenshot of using this feature." src="v1.0.12/search_assign_peaks-min.png" style="max-width: 320px; margin: 10px; padding-left: auto; padding-right: auto; display: block;" />
     </a>
     <div>
       Example of how to assign all current peaks near the currently selected nuclide on the &quot;<em>Nuclide Search</em>&quot; tab, to that nuclide.
