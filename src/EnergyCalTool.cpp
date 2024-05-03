@@ -2600,8 +2600,14 @@ void EnergyCalTool::applyCalChange( std::shared_ptr<const SpecUtils::EnergyCalib
     for( const set<int> &samples : samples_with_peaks )
     {
       bool all_samples = true;
-      for( const int sample : change.sample_numbers )
-        all_samples = (all_samples && samples.count(sample));
+      
+      // Check if the peaks sample numbers are all getting re-calibrated
+      for( auto sample_num_iter = begin(samples);
+          all_samples && (sample_num_iter != end(samples));
+          ++sample_num_iter )
+      {
+        all_samples = (change.sample_numbers.count(*sample_num_iter) != 0u);
+      }
       
       if( all_samples )
         peaksamples.insert( samples );
@@ -2610,8 +2616,14 @@ void EnergyCalTool::applyCalChange( std::shared_ptr<const SpecUtils::EnergyCalib
     for( const set<int> &samples : samples_with_hint_peaks )
     {
       bool all_samples = true;
-      for( const int sample : change.sample_numbers )
-        all_samples = (all_samples && samples.count(sample));
+
+      // Check if the peaks sample numbers are all getting re-calibrated
+      for( auto sample_num_iter = begin(samples);
+          all_samples && (sample_num_iter != end(samples));
+          ++sample_num_iter )
+      {
+        all_samples = (change.sample_numbers.count(*sample_num_iter) != 0u);
+      }
       
       if( all_samples )
         hintPeakSamples.insert( samples );
