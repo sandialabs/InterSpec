@@ -146,8 +146,8 @@ enum class MoreActionsIndex : int
   NumMoreActionsIndex
 };//enum MoreActionsIndex
 
-/** A struct that indicates what SpecUtils::Measurement's to apply a coefficent change to.
-  \TODO: if (or hopefully when) the InterSpec class allows selecting detectors seperately for
+/** A struct that indicates what SpecUtils::Measurement's to apply a coefficient change to.
+  \TODO: if (or hopefully when) the InterSpec class allows selecting detectors separately for
          foreground/back/sec., we will need to consider upgrading how we indicate things \
          because there is an edge-case where detectors wanted will differ by sample number
  
@@ -251,7 +251,7 @@ public:
   std::string applyToSummaryTxt() const;
   
   /** Returns which SpecUtils::Measurement need to be updated, based on what files are loaded and
-   what options the user has choosen.
+   what options the user has chosen.
    */
   std::vector<MeasToApplyCoefChangeTo> measurementsToApplyCoeffChangeTo();
   
