@@ -236,7 +236,7 @@ if( InterSpec_FETCH_DEPENDENCIES )
 else( InterSpec_FETCH_DEPENDENCIES )
   set(Boost_USE_STATIC_LIBS ON)
   set(Boost_USE_MULTITHREADED ON)
-  find_package(Boost 1.68 REQUIRED COMPONENTS thread date_time system filesystem program_options regex random process )
+  find_package(Boost 1.68 REQUIRED COMPONENTS thread date_time system filesystem program_options regex random )
 
   if( USE_REL_ACT_TOOL )
     find_package( Eigen3 3.4 REQUIRED NO_MODULE )
