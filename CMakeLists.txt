@@ -236,7 +236,7 @@ if( InterSpec_FETCH_DEPENDENCIES )
 else( InterSpec_FETCH_DEPENDENCIES )
   set(Boost_USE_STATIC_LIBS ON)
   set(Boost_USE_MULTITHREADED ON)
-  find_package(Boost 1.68 REQUIRED COMPONENTS thread date_time system filesystem program_options regex random )
+  find_package(Boost 1.68 REQUIRED COMPONENTS thread date_time system filesystem program_options regex random process )
 
   if( USE_REL_ACT_TOOL )
     find_package( Eigen3 3.4 REQUIRED NO_MODULE )
@@ -688,7 +688,7 @@ target_include_directories( InterSpecLib
 if( InterSpec_FETCH_DEPENDENCIES )
   target_link_libraries( InterSpecLib
     PUBLIC
-      Boost::math Boost::scope_exit Boost::uuid Boost::iostreams Boost::assign Boost::multi_array Boost::crc
+      Boost::math Boost::scope_exit Boost::uuid Boost::iostreams Boost::assign Boost::multi_array Boost::crc Boost::process
       # Boost::signals2 Boost::asio Boost::multi_index
       wt
 #      wttest
