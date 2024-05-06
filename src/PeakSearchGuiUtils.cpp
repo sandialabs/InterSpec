@@ -2163,7 +2163,7 @@ namespace PeakSearchGuiUtils
     
     chart->setModel( dataModel );
     chart->setPeakModel( peakmodel );
-    peakmodel->setDataModel( dataModel );
+    peakmodel->setForeground( meas );
     peakmodel->setPeakFromSpecMeas( specmeas, specmeas->sample_numbers() );
     
     dataModel->setDataHistogram( meas );

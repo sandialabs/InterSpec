@@ -55,7 +55,6 @@
 #include "InterSpec/PeakFitUtils.h"
 #include "InterSpec/SpectrumChart.h"
 #include "InterSpec/UndoRedoManager.h"
-#include "InterSpec/SpectrumDataModel.h"
 #include "InterSpec/PeakSearchGuiUtils.h"
 #include "InterSpec/D3SpectrumDisplayDiv.h"
 
@@ -205,8 +204,12 @@ WT_DECLARE_WT_MEMBER
 D3SpectrumDisplayDiv::D3SpectrumDisplayDiv( WContainerWidget *parent )
 : WContainerWidget( parent ),
   m_renderFlags( 0 ),
-  m_model( new SpectrumDataModel( this ) ),
-  m_peakModel( 0 ),
+  m_peakModel( nullptr ),
+  m_foreground( nullptr ),
+  m_secondary( nullptr ),
+  m_background( nullptr ),
+  m_secondaryScale( 1.0f ),
+  m_backgroundScale( 1.0f ),
   m_compactAxis( false ),
   m_legendEnabled( true ),
   m_yAxisIsLog( true ),
@@ -458,8 +461,6 @@ void D3SpectrumDisplayDiv::setPeakModel( PeakModel *model )
 {
   if( !model )
     throw runtime_error( "setPeakModel(...): invalid input model" );
-  
-  model->setDataModel( m_model );
   
   m_peakModel = model;
 
@@ -830,7 +831,6 @@ void D3SpectrumDisplayDiv::setBackgroundSubtract( bool subtract )
     return;
   
   m_backgroundSubtract = subtract;
-  m_model->setBackgroundSubtract( subtract );
   
   if( isRendered() )
     doJavaScript( m_jsgraph + ".setBackgroundSubtract(" + jsbool(subtract) + ");" );
@@ -920,6 +920,34 @@ void D3SpectrumDisplayDiv::setYAxisRange( const double minimum,
 }//void setYAxisRange( const double minimum, const double maximum );
 
 
+void D3SpectrumDisplayDiv::doBackgroundLiveTimeNormalization()
+{
+  if( !m_background || !m_foreground
+     || (m_background->live_time() <= 0.0f)
+     || (m_foreground->live_time() <= 0.0f) )
+  {
+    m_backgroundScale = 1.0f;
+  }else
+  {
+    m_backgroundScale = m_foreground->live_time() / m_background->live_time();
+  }
+}//void doBackgroundLiveTimeNormalization()
+
+
+void D3SpectrumDisplayDiv::doSecondaryLiveTimeNormalization()
+{
+  if( !m_secondary || !m_foreground
+     || (m_secondary->live_time() <= 0.0f)
+     || (m_foreground->live_time() <= 0.0f) )
+  {
+    m_secondaryScale = 1.0f;
+  }else
+  {
+    m_secondaryScale = m_foreground->live_time() / m_secondary->live_time();
+  }
+}//void doSecondaryLiveTimeNormalization()
+
+
 void D3SpectrumDisplayDiv::setForegroundPeaksToClient()
 {
   string js;
@@ -930,7 +958,7 @@ void D3SpectrumDisplayDiv::setForegroundPeaksToClient()
     if( peaks )
     {
       vector< std::shared_ptr<const PeakDef> > inpeaks( peaks->begin(), peaks->end() );
-      std::shared_ptr<const Measurement> foreground = m_model->getData();
+      const std::shared_ptr<const Measurement> &foreground = m_foreground;
       js = PeakDef::peak_json( inpeaks, foreground );
     }
   }
@@ -956,85 +984,91 @@ void D3SpectrumDisplayDiv::scheduleForegroundPeakRedraw()
 
 void D3SpectrumDisplayDiv::setData( std::shared_ptr<const Measurement> data_hist, const bool keep_curent_xrange )
 {
-  const float oldBackSF = m_model->backgroundScaledBy();
-  const float oldSecondSF = m_model->secondDataScaledBy();
+  const float oldBackSF = m_backgroundScale;
+  const float oldSecondSF = m_secondaryScale;
   
-  m_model->setDataHistogram( data_hist );
+  m_foreground = data_hist;
+  m_peakModel->setForeground( data_hist );
   
   if( !keep_curent_xrange )
     m_renderFlags |= ResetXDomain;
   
   scheduleUpdateForeground();
   
+  // Update background and second SF
+  doBackgroundLiveTimeNormalization();
+  doSecondaryLiveTimeNormalization();
+  
+  
   //If the background or secondary data spectrum scale factors changed, we need
   //  to update those to the client as well.
-  const float newBackSF = m_model->backgroundScaledBy();
-  if( m_model->getBackground() && (fabs(newBackSF-oldBackSF)>0.000001f*std::max(newBackSF,oldBackSF)) )
+  if( m_background && (fabs(m_backgroundScale - oldBackSF) > 0.000001f*std::max(m_backgroundScale,oldBackSF)) )
     scheduleUpdateBackground();
   
-  const float newSecondSF = m_model->secondDataScaledBy();
-  if( m_model->getSecondData() && (fabs(newSecondSF-oldSecondSF)>0.000001f*std::max(newSecondSF,oldSecondSF)) )
+  if( m_secondary && (fabs(m_secondaryScale - oldSecondSF) > 0.000001f*std::max(m_secondaryScale,oldSecondSF)) )
     scheduleUpdateSecondData();
 }//void setData( std::shared_ptr<const Measurement> data_hist )
 
 
 std::shared_ptr<const Measurement> D3SpectrumDisplayDiv::data() const
 {
-  return m_model->getData();
+  return m_foreground;
 }//std::shared_ptr<const Measurement> data() const
 
 
 std::shared_ptr<const Measurement> D3SpectrumDisplayDiv::secondData() const
 {
-  return m_model->getSecondData();
+  return m_secondary;
 }//std::shared_ptr<const Measurement> secondData() const
 
 
 std::shared_ptr<const Measurement> D3SpectrumDisplayDiv::background() const
 {
-  return m_model->getBackground();
+  return m_background;
 }//std::shared_ptr<const Measurement> background() const
 
 
 float D3SpectrumDisplayDiv::foregroundLiveTime() const
 {
-  return m_model->dataLiveTime();
+  return m_foreground ? m_foreground->live_time() : 0.0f;
 }
 
 
 float D3SpectrumDisplayDiv::foregroundRealTime() const
 {
-  return m_model->dataRealTime();
+  return m_foreground ? m_foreground->real_time() : 0.0f;
 }
 
 
 float D3SpectrumDisplayDiv::backgroundLiveTime() const
 {
-  return m_model->backgroundLiveTime();
+  return m_background ? m_background->live_time() : 0.0f;
 }
 
 
 float D3SpectrumDisplayDiv::backgroundRealTime() const
 {
-  return m_model->backgroundRealTime();
+  return m_background ? m_background->real_time() : 0.0f;
 }
 
 
 float D3SpectrumDisplayDiv::secondForegroundLiveTime() const
 {
-  return m_model->secondDataLiveTime();
+  return m_secondary ? m_secondary->live_time() : 0.0f;
 }
 
 
 float D3SpectrumDisplayDiv::secondForegroundRealTime() const
 {
-  return m_model->secondDataRealTime();
+  return m_secondary ? m_secondary->real_time() : 0.0f;
 }
 
 
 std::shared_ptr<const Measurement> D3SpectrumDisplayDiv::histUsedForXAxis() const
 {
-  return m_model->histUsedForXAxis();
+  if( m_foreground )
+    return m_foreground;
+  return nullptr;
 }
 
 
@@ -1047,12 +1081,12 @@ void D3SpectrumDisplayDiv::setDisplayScaleFactor( const float sf,
       throw runtime_error( "setDisplayScaleFactor can not be called for foreground" );
       
     case SpecUtils::SpectrumType::SecondForeground:
-      m_model->setSecondDataScaleFactor( sf );
+      m_secondaryScale = sf;
       scheduleUpdateSecondData();
       break;
       
     case SpecUtils::SpectrumType::Background:
-      m_model->setBackgroundDataScaleFactor( sf );
+      m_backgroundScale = sf;
       scheduleUpdateBackground();
       break;
   }//switch( spectrum_type )
@@ -1066,10 +1100,9 @@ float D3SpectrumDisplayDiv::displayScaleFactor( const SpecUtils::SpectrumType sp
     case SpecUtils::SpectrumType::Foreground:
       return 1.0f;
     case SpecUtils::SpectrumType::SecondForeground:
-      return m_model->secondDataScaledBy();
+      return m_secondaryScale;
     case SpecUtils::SpectrumType::Background:
-      return m_model->backgroundScaledBy();
-      //  m_spectrumDiv->continuum();
+      return m_backgroundScale;
   }//switch( spectrum_type )
   
   throw runtime_error( "D3SpectrumDisplayDiv::displayScaleFactor(...): invalid input arg" );
@@ -1080,19 +1113,18 @@ float D3SpectrumDisplayDiv::displayScaleFactor( const SpecUtils::SpectrumType sp
 
 void D3SpectrumDisplayDiv::setBackground( std::shared_ptr<const Measurement> background )
 {
-  m_model->setBackgroundHistogram( background );
-  
-  if( !background && m_model->backgroundSubtract() )
+  m_background = background;
+  doBackgroundLiveTimeNormalization();
+  if( !background && m_backgroundSubtract )
     setBackgroundSubtract( false );
-  
   scheduleUpdateBackground();
 }//void D3SpectrumDisplayDiv::setBackground(...);
 
 
 void D3SpectrumDisplayDiv::setSecondData( std::shared_ptr<const Measurement> hist )
 {
-  m_model->setSecondDataHistogram( hist, false );
-  
+  m_secondary = hist;
+  doSecondaryLiveTimeNormalization();
   scheduleUpdateSecondData();
 }//void D3SpectrumDisplayDiv::setSecondData( std::shared_ptr<const Measurement> background );
 
@@ -1291,7 +1323,7 @@ void D3SpectrumDisplayDiv::scheduleUpdateSecondData()
 
 void D3SpectrumDisplayDiv::renderForegroundToClient()
 {
-  const std::shared_ptr<const Measurement> data_hist = m_model->getData();
+  const std::shared_ptr<const Measurement> &data_hist = m_foreground;
   
   string js;
   
@@ -1348,7 +1380,7 @@ void D3SpectrumDisplayDiv::renderForegroundToClient()
 void D3SpectrumDisplayDiv::renderBackgroundToClient()
 {
   string js;
-  const std::shared_ptr<const Measurement> background = m_model->getBackground();
+  const std::shared_ptr<const Measurement> &background = m_background;
   
   // Set the data for the chart
   if ( background ) {
@@ -1394,7 +1426,7 @@ void D3SpectrumDisplayDiv::renderBackgroundToClient()
 void D3SpectrumDisplayDiv::renderSecondDataToClient()
 {
   string js;
-  const std::shared_ptr<const Measurement> hist = m_model->getSecondData();
+  const std::shared_ptr<const Measurement> &hist = m_secondary;
   
   // Set the data for the chart
   if ( hist ) {
@@ -2300,7 +2332,7 @@ void D3SpectrumDisplayDiv::performDragCreateRoiWork( double lower_energy, double
 
 void D3SpectrumDisplayDiv::updateRoiBeingDragged( const vector<shared_ptr<const PeakDef> > &peaks )
 {
-  const shared_ptr<const Measurement> fore = m_model->getData();
+  const shared_ptr<const Measurement> &fore = m_foreground;
   const string json = peaks.empty() ? string("null") : PeakDef::gaus_peaks_to_json( peaks, fore );
   
   doJavaScript( "try{" + m_jsgraph + ".updateRoiBeingDragged(" + json + ");}catch(error){}" );
@@ -2321,13 +2353,13 @@ void D3SpectrumDisplayDiv::yAxisScaled( const double scale, const std::string &s
   }else if( spectrum == "BACKGROUND" )
   {
     type = SpecUtils::SpectrumType::Background;
-    previous_scale = m_model->backgroundScaledBy();
-    m_model->setBackgroundDataScaleFactor( scale );
+    previous_scale = m_backgroundScale;
+    m_backgroundScale = scale;
   }else if( spectrum == "SECONDARY" )
   {
     type = SpecUtils::SpectrumType::SecondForeground;
-    previous_scale = m_model->secondDataScaledBy();
-    m_model->setSecondDataScaleFactor( scale );
+    previous_scale = m_secondaryScale;
+    m_secondaryScale = scale;
   }else
   {
     cerr << "Received yscaled signal with scale " << scale << " and spectrum = '"

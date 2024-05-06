@@ -25,7 +25,6 @@ class SpecMeas;
 class PeakModel;
 class InterSpec;
 struct ColorTheme;
-class SpectrumDataModel;
 namespace Wt
 {
   class WCssTextRule;
@@ -40,10 +39,9 @@ namespace SpecUtils{ enum class SpectrumType : int; }
    internal flag, call WWidget::scheduleRender(0), and not load the JS/JSON to
    client until D3SpectrumDisplayDiv::render() is called.  Same thing with
    colors and scale factors.
- - Get rid of SpectrumDataModel.  Will also require modifying PeakModel.
- - The y-axis range is not propogated from the client to server after many
+ - The y-axis range is not propagated from the client to server after many
    operations; this should be fixed.  Also, not sure if x-axis range is always
-   propogated.
+   propagated.
  - showHistogramIntegralsInLegend() is not implemented client side
  - setTextInMiddleOfChart() is not implemented client side
  - assign unique spectrum ID's in the JSON for each spectrum; convert JS to
@@ -271,11 +269,6 @@ public:
   //  to include the SpectrumChart header for just this
   void setShowPeakLabel( int peakLabel, bool show );
   bool showingPeakLabel( int peakLabel ) const;
-  
-#if( BUILD_AS_UNIT_TEST_SUITE )
-  SpectrumDataModel *model(){ return m_model; }
-#endif
-  
     
   void setReferncePhotoPeakLines( const ReferenceLineInfo &nuc );
   void persistCurrentReferncePhotoPeakLines();
@@ -320,6 +313,9 @@ protected:
    */
   void initChangeableCssRules();
   
+  void doBackgroundLiveTimeNormalization();
+  void doSecondaryLiveTimeNormalization();
+  
   /** Sets the highlight regions to client - currently unimplemented. */
   void setHighlightRegionsToClient();
   
@@ -350,9 +346,13 @@ protected:
   
   Wt::WFlags<D3RenderActions> m_renderFlags;
   
-  //ToDo: should eliminate use of SpectrumDataModel in this class
-  SpectrumDataModel *m_model;
   PeakModel *m_peakModel;
+  
+  std::shared_ptr<const SpecUtils::Measurement> m_foreground;
+  std::shared_ptr<const SpecUtils::Measurement> m_secondary;
+  std::shared_ptr<const SpecUtils::Measurement> m_background;
+  float m_secondaryScale;
+  float m_backgroundScale;
   
   bool m_compactAxis;
   bool m_legendEnabled;
