@@ -4121,7 +4121,7 @@ void SpectrumChart::enableLegend( const bool forceMobileStyle )
 
   auto wtapp = wApp;
   InterSpecApp *app = dynamic_cast<InterSpecApp *>( wtapp );
-  if( forceMobileStyle || (app && app->isMobile()) || (BUILD_AS_COMMAND_LINE_CODE_DEVELOPMENT) )
+  if( forceMobileStyle || (app && app->isMobile()) )
   {
     m_legendType = OnChartLegend;
     update(); //force a re-draw

@@ -43,10 +43,6 @@
 #include "InterSpec/InterSpec.h"
 #include "InterSpec/InterSpecServer.h"
 
-#if( BUILD_AS_COMMAND_LINE_CODE_DEVELOPMENT )
-#include "testing/developcode.h"
-#endif
-
 #if( USE_BATCH_TOOLS )
 #include "InterSpec/BatchCommandLine.h"
 #endif
@@ -56,10 +52,6 @@ int main( int argc, char **argv )
 {
 #ifdef _WIN32
   AppUtils::getUtf8Args( argc, argv );
-#endif
-  
-#if( BUILD_AS_COMMAND_LINE_CODE_DEVELOPMENT )
-  return developcode::run_development_code();
 #endif
   
   std::cout << std::showbase << std::hex << "Running with Wt version "

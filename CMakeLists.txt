@@ -39,11 +39,6 @@ endif( hasParent )
 
 
 option(
-    BUILD_AS_COMMAND_LINE_CODE_DEVELOPMENT
-    "Build executable for use while testing new code, not running InterSpec"
-    OFF
-)
-option(
     INCLUDE_ANALYSIS_TEST_SUITE
     "Allow whether user can save and load test spectra"
     OFF
@@ -77,7 +72,7 @@ option(USE_DB_TO_STORE_SPECTRA "Use the database to store spectra" ON)
 option(
     USE_SPECRUM_FILE_QUERY_WIDGET
     "Enables compilation of the spectrum file query tool (not for web deployment)"
-    OFF
+    ON
 )
 option(
     USE_SEARCH_MODE_3D_CHART
@@ -86,7 +81,7 @@ option(
 )
 option(USE_TERMINAL_WIDGET "Enables use of terminal widget" ON)
 
-option(USE_DETECTION_LIMIT_TOOL "Enables under-development detection limit tool" OFF)
+option(USE_DETECTION_LIMIT_TOOL "Enables under-development detection limit tool" ON)
 
 option(USE_QR_CODES "Enables generating QR codes for like DRFs" ON)
 
@@ -179,14 +174,6 @@ if(NOT CMAKE_BUILD_TYPE)
         PROPERTY STRINGS "Debug" "Release" "MinSizeRel" "RelWithDebInfo"
     )
 endif(NOT CMAKE_BUILD_TYPE)
-
-
-if(BUILD_AS_COMMAND_LINE_CODE_DEVELOPMENT)
-    set(PERFORM_DEVELOPER_CHECKS ON CACHE INTERNAL "")
-    set(SpecUtils_ENABLE_EQUALITY_CHECKS ON CACHE INTERNAL "")
-endif(BUILD_AS_COMMAND_LINE_CODE_DEVELOPMENT)
-
-
 
 
 if(BUILD_FOR_WEB_DEPLOYMENT)
@@ -460,12 +447,6 @@ if(INCLUDE_ANALYSIS_TEST_SUITE)
 endif(INCLUDE_ANALYSIS_TEST_SUITE)
 
 
-if(BUILD_AS_COMMAND_LINE_CODE_DEVELOPMENT)
-    list(APPEND sources testing/developcode.cpp )
-    list(APPEND headers testing/developcode.h )
-endif(BUILD_AS_COMMAND_LINE_CODE_DEVELOPMENT)
-
-
 #if(IOS)
 #    list(APPEND sources target/ios/InterSpec/FileHandling.mm)
 #    list(APPEND headers target/ios/InterSpec/FileHandling.h)
@@ -662,10 +643,10 @@ target_link_libraries(
     ${CMAKE_DL_LIBS}
 )
 
-if(USE_SPECRUM_FILE_QUERY_WIDGET OR BUILD_AS_COMMAND_LINE_CODE_DEVELOPMENT)
+if( USE_SPECRUM_FILE_QUERY_WIDGET )
     add_subdirectory(external_libs/pugixml-1.9)
     target_link_libraries(InterSpecLib PUBLIC pugixml)
-endif()
+endif( USE_SPECRUM_FILE_QUERY_WIDGET )
 
 
 if(USE_MYSQL_DB EQUAL USE_SQLITE3_DB)
