@@ -53,11 +53,8 @@ class D3TimeChartFilters; //defined in D3TimeChart.cpp
 
  This saves about 200 KB (e.g., requires 1.5 MB, instead of 1.7 MB for full first-load, with a HPGe foreground+background state)
  loading because most common case is the time chart is initially hidden.
-
- As of 20240316, this has only been barely tested, so we wont enable until after releasing v1.0.12, so
- this way it can be well-tested for v1.0.13.
 */
-#define OPTIMIZE_D3TimeChart_HIDDEN_LOAD 0
+#define OPTIMIZE_D3TimeChart_HIDDEN_LOAD 1
 
 
 class D3TimeChart : public Wt::WContainerWidget
