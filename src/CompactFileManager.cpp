@@ -91,6 +91,9 @@ CompactFileManager::CompactFileManager( SpecMeasManager *fileManager,
   
   addStyleClass( "CompactFileManager" );
 
+  auto app = dynamic_cast<InterSpecApp *>( WApplication::instance() );
+  app->useMessageResourceBundle( "CompactFileManager" );
+      
 #if (USE_DB_TO_STORE_SPECTRA)
   std::shared_ptr<DataBaseUtils::DbSession> sql = hostViewer->sql();
 #endif
@@ -134,37 +137,43 @@ CompactFileManager::CompactFileManager( SpecMeasManager *fileManager,
         {
           case 0: tablabel = "Foreground"; break;
           case 1: tablabel = "Background"; break;
-          case 2: tablabel = "Second";     break;
+          case 2: tablabel = "Secondary";     break;
         }//switch( i )
         
-        tabWidget->addTab( wrapper, tablabel, WTabWidget::PreLoading );
+        tabWidget->addTab( wrapper, WString::tr(tablabel), WTabWidget::PreLoading );
         break;
       }//case Tabbed:
     }//switch( m_displayMode )
     
     SpecUtils::SpectrumType type;
     WLabel *label = NULL;
-
+    const char *style = "";
+    const char *txtKey = "";
+    
     switch( j )
     {
       case 0:
         type = SpecUtils::SpectrumType::Foreground;
-        wrapper->addStyleClass( "Foreground" );
-        label = new WLabel( "Foreground:", wrapper );
+        txtKey = "Foreground";
+        style = "Foreground";
       break;
       
       case 1:
         type = SpecUtils::SpectrumType::Background;
-        wrapper->addStyleClass( "Background" );
-        label = new WLabel( "Background:", wrapper );
+        style = "Background";
+        txtKey = "Background";
       break;
       
       case 2:
         type = SpecUtils::SpectrumType::SecondForeground;
-        wrapper->addStyleClass( "Secondary" );
-        label = new WLabel( "Second Foreground:", wrapper );
+        style = "Secondary";
+        txtKey = "second-foreground";
       break;
     }//switch( i )
+    
+    label = new WLabel( WString("{1}:").arg( WString::tr(txtKey) ), wrapper );
+    
+    wrapper->addStyleClass( style );
     
     const int typeindex = static_cast<int>(type);
     
@@ -200,11 +209,7 @@ CompactFileManager::CompactFileManager( SpecMeasManager *fileManager,
 #endif
     edit->setTextSize( 6 );
     
-    const char *tooltip = "Enter the sample number you'de like displayed here"
-                           ". You may enter a range of sample numbers similar"
-                           " to '33-39' or '33 to 39'; or CSV sample numbers"
-                           " like '34,39,84'";
-    HelpSystem::attachToolTipOn( edit, tooltip, showToolTips, HelpSystem::ToolTipPosition::Bottom );
+    HelpSystem::attachToolTipOn( edit, WString::tr("cfm-tt-sample-num"), showToolTips, HelpSystem::ToolTipPosition::Bottom );
     
     m_displaySampleNumEdits[typeindex] = edit;
     
@@ -246,7 +251,7 @@ CompactFileManager::CompactFileManager( SpecMeasManager *fileManager,
       auto scalerow = new WContainerWidget( bottomrow );
       scalerow->addStyleClass( "ScaleFactorRow" );
       
-      WLabel *label = new WLabel( "Scale Factor:&nbsp;", scalerow );
+      WLabel *label = new WLabel( WString::tr("cfm-scale-factor-label"), scalerow );
       m_scaleValueTxt[typeindex] = new NativeFloatSpinBox( scalerow );
       label->setBuddy( m_scaleValueTxt[typeindex] );
       //m_scaleValueTxt[typeindex]->setSingleStep(0.1);
@@ -258,14 +263,10 @@ CompactFileManager::CompactFileManager( SpecMeasManager *fileManager,
       m_scaleValueTxt[typeindex]->mouseWheel().connect( boost::bind( &CompactFileManager::handleUserEnterdScaleFactorWheel, this, type,
           boost::placeholders::_1) );
       
-      HelpSystem::attachToolTipOn( m_scaleValueTxt[typeindex],
-                                  "Factor to scale the spectrum by. Entering an"
-                                  " empty string will cause spectrum to be live"
-                                  " time normalized to foreground spectrum.",
-                                  showToolTips );
+      HelpSystem::attachToolTipOn( m_scaleValueTxt[typeindex], WString::tr("cfm-tt-scale-factor"), showToolTips );
       
       
-      m_rescaleByLiveTime[typeindex] = new WPushButton( "Normalize", scalerow );
+      m_rescaleByLiveTime[typeindex] = new WPushButton( WString::tr("cfm-norm-btn"), scalerow );
       m_rescaleByLiveTime[typeindex]->hide();
       m_rescaleByLiveTime[typeindex]->clicked().connect( boost::bind( &CompactFileManager::handleRenormalizeByLIveTime, this, type) );
       m_scaleValueTxt[typeindex]->disable();
@@ -287,11 +288,11 @@ CompactFileManager::CompactFileManager( SpecMeasManager *fileManager,
       helpBtn->addStyleClass( "Wt-icon ContentHelpBtn" );
       helpBtn->clicked().connect( boost::bind( &HelpSystem::createHelpWindow, "compact-file-manager" ) );
       
-      WPushButton *button = new WPushButton(  "Spectrum Manager...", buttons );
+      WPushButton *button = new WPushButton( WString::tr("app-mi-file-manager"), buttons );
       //button->setIcon(Wt::WLink("InterSpec_resources/images/computer.png" ));
       button->clicked().connect( m_interspec->fileManager(), &SpecMeasManager::startSpectrumManager );
 #if( USE_DB_TO_STORE_SPECTRA )
-      WPushButton *button2 = new WPushButton( "Previous...", buttons );
+      WPushButton *button2 = new WPushButton( WString::tr("app-mi-file-prev"), buttons );
       button2->clicked().connect( m_interspec->fileManager(), &SpecMeasManager::browsePrevSpectraAndStatesDb );
 #endif
     break;
@@ -302,7 +303,7 @@ CompactFileManager::CompactFileManager( SpecMeasManager *fileManager,
       //Add in a link to open files in the database, as
 #if( USE_DB_TO_STORE_SPECTRA )
       WContainerWidget *buttons = new WContainerWidget( this );
-      WPushButton *button = new WPushButton( "Prev. Saved Spectra", buttons );
+      WPushButton *button = new WPushButton( WString::tr("cfm-db-spec"), buttons );
       button->clicked().connect( fileManager, &SpecMeasManager::browsePrevSpectraAndStatesDb );
 #endif
       break;
@@ -375,7 +376,7 @@ void CompactFileManager::changeToSampleNum( int sampleNum,
         cfm->handleDisplayChange( type, meas, samples, dets );
       }
       
-      passMessage( "Sample number requested doesnt exist.", WarningWidget::WarningMsgHigh );
+      passMessage( WString::tr("cfm-err-invalid-sample-num"), WarningWidget::WarningMsgHigh );
       return;
     }//if( total_sample_nums.find(sampleNum) == total_sample_nums.end() )
 
@@ -386,8 +387,7 @@ void CompactFileManager::changeToSampleNum( int sampleNum,
 //    m_interspec->setSpectrum( meas, sampleNumToLoad, type, false );
   }else
   {
-    passMessage( "Cant change sample numbers, there is no current measurement",
-                 WarningWidget::WarningMsgHigh );
+    passMessage( WString::tr("cfm-err-no-meas"), WarningWidget::WarningMsgHigh );
   }//if( meas ) / else
 }//void changeToSampleNum(...)
 
@@ -410,8 +410,7 @@ void CompactFileManager::changeToSampleRange( int first, int last,
       const auto &samples = m_interspec->displayedSamples(type);
       
       handleDisplayChange( type, meas, samples, dets );
-      passMessage( "One of the sample number requested doesnt exist.",
-                  WarningWidget::WarningMsgHigh );
+      passMessage( WString::tr("cfm-err-missing-sample-num"), WarningWidget::WarningMsgHigh );
       return;
     }//if( total_sample_nums.find(sampleNum) == total_sample_nums.end() )
 
@@ -423,8 +422,7 @@ void CompactFileManager::changeToSampleRange( int first, int last,
 //    m_interspec->setSpectrum( meas, sampleNumToLoad, type, false );
   }else
   {
-    passMessage( "Can't change sample numbers, there is no current measurement",
-                 WarningWidget::WarningMsgHigh );
+    passMessage( WString::tr("cfm-err-no-meas"), WarningWidget::WarningMsgHigh );
   }//if( meas ) / else
 }//void changeToSampleRange(...)
 
@@ -494,8 +492,7 @@ void CompactFileManager::handleUserChangeSampleNum( SpecUtils::SpectrumType type
 
   if( !meas )
   {
-    passMessage( "Can't change sample numbers, there is no current measurement",
-                WarningWidget::WarningMsgHigh );
+    passMessage( WString::tr("cfm-err-no-meas"), WarningWidget::WarningMsgHigh );
     m_displaySampleNumEdits[typeindex]->setText( "" );
     return;
   }//if( !meas )
@@ -529,12 +526,10 @@ void CompactFileManager::handleUserChangeSampleNum( SpecUtils::SpectrumType type
 
         if( firstPos==samples.end() || lastPos==samples.end() )
         {
-          stringstream msg;
-          if( firstPos == samples.end() )
-            msg << "Sample number " << firstStr << " doesnt exist.";
-          else
-            msg << "Sample number " << lastStr << " doesnt exist.";
-          passMessage( msg.str(), WarningWidget::WarningMsgHigh );
+          WString msg = WString::tr("cfm-err-sample-num-doesnt-exist");
+          msg.arg( (firstPos == samples.end()) ? firstStr : lastStr );
+          passMessage( msg, WarningWidget::WarningMsgHigh );
+          
           const auto dets = m_interspec->detectorsToDisplay(type);
           const set<int> &samples = m_interspec->displayedSamples(type);
           handleDisplayChange( type, meas, samples, dets );
@@ -550,9 +545,10 @@ void CompactFileManager::handleUserChangeSampleNum( SpecUtils::SpectrumType type
         
         if( !samples.count(sample) )
         {
-          stringstream msg;
-          msg << "Sample number " << sample << " does not exist in the measurement.";
-          passMessage( msg.str(), WarningWidget::WarningMsgHigh );
+          WString msg = WString::tr("cfm-err-sample-num-doesnt-exist")
+                        .arg( sample );
+          passMessage( msg, WarningWidget::WarningMsgHigh );
+          
           const auto dets = m_interspec->detectorsToDisplay(type);
           const set<int> &samples = m_interspec->displayedSamples(type);
           handleDisplayChange( type, meas, samples, dets );
@@ -570,7 +566,7 @@ void CompactFileManager::handleUserChangeSampleNum( SpecUtils::SpectrumType type
   }catch( exception &e )
   { 
     cerr << "CompactFileManager::handleUserChangeSampleNum( SpecUtils::SpectrumType type )" << "\n\t" << e.what() << endl;
-    passMessage( "Error changing to requested sample number(s)", WarningWidget::WarningMsgHigh );
+    passMessage( WString::tr("cfm-err-general-1"), WarningWidget::WarningMsgHigh );
 
     if( meas )
     {
@@ -603,7 +599,7 @@ void CompactFileManager::handleUserIncrementSampleNum( SpecUtils::SpectrumType t
     std::shared_ptr<SpecMeas> meas = hostViewer->measurment( type );
 
     if( !meas )
-      throw std::runtime_error( "Unable to get measurment" );
+      throw std::runtime_error( "Unable to get measurement" );
 
     const set<int> total_sample_nums = meas->sample_numbers();
     const set<int> &currentSamples = hostViewer->displayedSamples( type );
@@ -646,10 +642,10 @@ void CompactFileManager::handleUserIncrementSampleNum( SpecUtils::SpectrumType t
   {
     cerr << "CompactFileManager::handleUserIncrementSampleNum(...): caught "
          << e.what() << endl;
-    passMessage( "Error advancing spectrum", WarningWidget::WarningMsgHigh );
+    passMessage( WString::tr("cfm-err-advancing"), WarningWidget::WarningMsgHigh );
   }catch(...)
   {
-    passMessage( "Error advancing spectrum", WarningWidget::WarningMsgHigh );
+    passMessage( WString::tr("cfm-err-advancing"), WarningWidget::WarningMsgHigh );
   }//try / catch
 }//void handleUserWantsNextSampleNum( SpecUtils::SpectrumType spectrum_type )
 
@@ -757,7 +753,8 @@ void CompactFileManager::handleDisplayChange( SpecUtils::SpectrumType spectrum_t
           m_titles[typeindex]->setText( "" );
       }else
       {
-        m_titles[typeindex]->setText( "Title: " + title );
+        WString title = WString::tr("{}: {}").arg( WString::tr("Title") ).arg( title );
+        m_titles[typeindex]->setText( title );
         m_titles[typeindex]->show();
       }
         
@@ -824,7 +821,7 @@ void CompactFileManager::refreshContents()
   if( m_files->rowCount() < 1 )
   {
     for( int i = 0; i < 3; ++i )
-      m_selects[i]->addItem( "No uploaded/available spectra." );
+      m_selects[i]->addItem( WString::tr("cfm-no-spectra") );
   }else
   {
     for( int i = 0; i < m_files->rowCount(); ++i )
@@ -835,9 +832,9 @@ void CompactFileManager::refreshContents()
         m_selects[i]->addItem( name + " (" + time + ")" );
     }//for( loop over available files )
 
-    m_selects[static_cast<int>(SpecUtils::SpectrumType::Foreground)]->addItem( "No foreground" );
-    m_selects[static_cast<int>(SpecUtils::SpectrumType::Background)]->addItem( "No background" );
-    m_selects[static_cast<int>(SpecUtils::SpectrumType::SecondForeground)]->addItem( "No second foreground" );
+    m_selects[static_cast<int>(SpecUtils::SpectrumType::Foreground)]->addItem( WString::tr("cfm-no-fore") );
+    m_selects[static_cast<int>(SpecUtils::SpectrumType::Background)]->addItem( WString::tr("cfm-no-back") );
+    m_selects[static_cast<int>(SpecUtils::SpectrumType::SecondForeground)]->addItem( WString::tr("cfm-no-second") );
 
     // Lastly, select the proper file. If there is no active file in that
     // category, just select the default "No _______" option.

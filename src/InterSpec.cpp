@@ -485,8 +485,6 @@ InterSpec::InterSpec( WContainerWidget *parent )
   //make it so InterSpec::instance() wont return nullptr for calls from within this constructor
   app->m_viewer = this;
     
-  app->useMessageResourceBundle( "InterSpec" );
-  
   //for notification div
   m_notificationDiv = new WContainerWidget();
   m_notificationDiv->setStyleClass("qtipDiv");
@@ -565,6 +563,11 @@ InterSpec::InterSpec( WContainerWidget *parent )
   
   detectClientDeviceType();
 
+  const string langPref = InterSpecUser::preferenceValue<string>("Language", this);
+  if( !langPref.empty() )
+    wApp->setLocale( WLocale(langPref) );
+      
+  app->useMessageResourceBundle( "InterSpec" );  
     
   // Now that we have m_sql and m_user setup, we can create the undo/redo manager, if we
   //  are using the desktop interface.  We will create this manager before any our widgets
