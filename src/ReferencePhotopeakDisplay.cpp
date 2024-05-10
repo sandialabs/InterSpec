@@ -619,15 +619,15 @@ boost::any DecayParticleModel::data( const WModelIndex &index, int role ) const
         case SandiaDecay::BetaPlusDecay:            return WString( "&beta;<sup>+</sup>" );
         case SandiaDecay::DoubleBetaDecay:          return WString( "double &beta;" );
 #endif
-        case SandiaDecay::IsometricTransitionDecay: return WString( "Iso" );
-        case SandiaDecay::ElectronCaptureDecay:     return WString( "e.c." );
-        case SandiaDecay::ProtonDecay:              return WString( "proton" );
-        case SandiaDecay::SpontaneousFissionDecay:  return WString( "s.f." );
+        case SandiaDecay::IsometricTransitionDecay: return WString::tr("rpd-tbl-iso");
+        case SandiaDecay::ElectronCaptureDecay:     return WString::tr( "rpd-tbl-el-cap" );
+        case SandiaDecay::ProtonDecay:              return WString::tr( "rpd-tbl-proton" );
+        case SandiaDecay::SpontaneousFissionDecay:  return WString::tr( "rpd-tbl-spont-fis" );
         case SandiaDecay::Carbon14Decay:            return WString( "C14" );
-        case RowData::XRayDecayMode:                return WString( "xray" );
-        case RowData::ReactionToGammaMode:          return WString( "Reaction" );
-        case RowData::NormGammaDecayMode:           return WString( "NORM" );
-        case RowData::CascadeSumMode:               return WString( "Cascade Sum" );
+        case RowData::XRayDecayMode:                return WString::tr( "rpd-tbl-xray" );
+        case RowData::ReactionToGammaMode:          return WString::tr( "rpd-tbl-reaction" );
+        case RowData::NormGammaDecayMode:           return WString::tr( "rpd-tbl-norm" );
+        case RowData::CascadeSumMode:               return WString::tr( "rpd-tbl-cascade-sum" );
       }//switch( dataRow.decayMode )
 
       return boost::any();
@@ -648,7 +648,7 @@ boost::any DecayParticleModel::data( const WModelIndex &index, int role ) const
 #endif
         case PositronParticle:        return WString( "e<sup>+</sup>" );
         case CaptureElectronParticle: return WString( "ec" );
-       case XrayParticle:            return WString( "xray" );
+        case XrayParticle:            return WString::tr( "rpd-tbl-xray" );
       }//switch( dataRow.particle )
       return boost::any();
     }//case kParticleType:
@@ -674,11 +674,11 @@ boost::any DecayParticleModel::headerData( int column,
   {
     switch( column )
     {
-      case kEnergy:         return WString( "Energy (keV)" );
-      case kBranchingRatio: return WString( "B.R." ); //"Phot/Decay" &gamma;/Decay  \u03B3/Decay  &#947;/Decay
-      case kResponsibleNuc: return WString( "Parent" );
-      case kDecayMode:      return WString( "Mode" );
-      case kParticleType:   return WString( "Particle" );
+      case kEnergy:         return WString::tr( "rpd-tbl-hdr-energy" );
+      case kBranchingRatio: return WString::tr( "rpd-tbl-hdr-br" ); //"Phot/Decay" &gamma;/Decay  \u03B3/Decay  &#947;/Decay
+      case kResponsibleNuc: return WString::tr( "rpd-tbl-hdr-parent" );
+      case kDecayMode:      return WString::tr( "rpd-tbl-hdr-mode" );
+      case kParticleType:   return WString::tr( "rpd-tbl-hdr-particle" );
       case kNumColumn:      return boost::any();
     }//switch( column )
   }else if( role == ToolTipRole )
@@ -686,19 +686,15 @@ boost::any DecayParticleModel::headerData( int column,
     switch( column )
     {
       case kEnergy:
-        return WString( "Energy of the particle produced" );
+        return WString::tr( "rpd-tbl-hdr-tt-energy" );
       case kBranchingRatio:
-        return WString( "Intensity of the particle, relative to the highest"
-                        " intensity of that particle. For gammas, this is after"
-                        " the optional shielding and detector effects are"
-                        " applied." );
+        return WString::tr( "rpd-tbl-hdr-tt-br" );
       case kResponsibleNuc:
-        return WString( "Actual nuclide which decayed to give this particle" );
+        return WString::tr( "rpd-tbl-hdr-tt-trans" );
       case kDecayMode:
-        return WString( "Decay mode of the parent nuclide, which produced this"
-                        " particle" );
+        return WString::tr( "rpd-tbl-hdr-tt-trans-mode" );
       case kParticleType:
-        return WString( "The type of particle produced" );
+        return WString::tr( "rpd-tbl-hdr-tt-type" );
       case kNumColumn:
       return boost::any();
     }//switch( column )
@@ -854,16 +850,18 @@ ReferencePhotopeakDisplay::ReferencePhotopeakDisplay(
     m_nuclidesCleared( this ),
     m_nucInfoWindow( nullptr )
 {
-  wApp->useStyleSheet("InterSpec_resources/ReferencePhotopeakDisplay.css");
-  
+  auto app = dynamic_cast<InterSpecApp *>( WApplication::instance() );
+  assert( app );
+  if( app )
+  {
+    app->useMessageResourceBundle( "ReferencePhotopeakDisplay" );
+    app->useStyleSheet("InterSpec_resources/ReferencePhotopeakDisplay.css");
+  }//if( app )
 
-  const char *tooltip = nullptr;
-  
   m_currentlyShowingNuclide.reset();
   
   if( !chart )
-    throw runtime_error( "ReferencePhotopeakDisplay: a valid chart"
-                         " must be passed in" );
+    throw runtime_error( "ReferencePhotopeakDisplay: a valid chart must be passed in" );
 
   const bool showToolTips = InterSpecUser::preferenceValue<bool>( "ShowTooltips", specViewer );
   
@@ -884,7 +882,7 @@ ReferencePhotopeakDisplay::ReferencePhotopeakDisplay(
   const WLength labelWidth(3.5,WLength::FontEm), fieldWidth(4,WLength::FontEm);
   const WLength optionWidth(5.25,WLength::FontEm), buttonWidth(5.25,WLength::FontEm);
   
-  WLabel *nucInputLabel = new WLabel( "Nuclide:" );
+  WLabel *nucInputLabel = new WLabel( WString("{1}:").arg( WString::tr("Nuclide") ) );
   nucInputLabel->setMinimumSize( labelWidth, WLength::Auto );
   m_nuclideEdit = new WLineEdit( "" );
   m_nuclideEdit->setMargin( 1 );
@@ -907,9 +905,8 @@ ReferencePhotopeakDisplay::ReferencePhotopeakDisplay(
   m_nuclideEdit->changed().connect( boost::bind( &ReferencePhotopeakDisplay::handleIsotopeChange, this, false ) );
   
 //  m_nuclideEdit->selected().connect( boost::bind( &ReferencePhotopeakDisplay::handleIsotopeChange, this, false ) );
-  m_persistLines = new WPushButton( "Add Another" );
-  tooltip = "Keep the currently displayed lines and add a new nuclide/source to display.";
-  HelpSystem::attachToolTipOn( m_persistLines, tooltip, showToolTips );
+  m_persistLines = new WPushButton( WString::tr("rpd-add-another-btn") );
+  HelpSystem::attachToolTipOn( m_persistLines, WString::tr("rpd-tt-add-another-btn"), showToolTips );
   m_persistLines->clicked().connect( this, &ReferencePhotopeakDisplay::persistCurentLines );
   m_persistLines->disable();
   
@@ -927,10 +924,7 @@ ReferencePhotopeakDisplay::ReferencePhotopeakDisplay(
   "}";
   m_nuclideEdit->keyWentDown().connect( keyDownJs );
   
-  tooltip = "ex. <b>U235</b>, <b>235 Uranium</b>, <b>U</b> (x-rays only)"
-            ", <b>Uranium</b> (x-rays), <b>U-235m</b> (meta stable state)"
-            ", <b>Cs137</b>, <b>background</b>, <b>H(n,g)</b>, etc.";
-  HelpSystem::attachToolTipOn( m_nuclideEdit, tooltip, showToolTips );
+  HelpSystem::attachToolTipOn( m_nuclideEdit, WString::tr("rpd-tt-nuc-edit"), showToolTips );
   
   string replacerJs, matcherJs;
   IsotopeNameFilterModel::replacerJs( replacerJs );
@@ -957,7 +951,7 @@ ReferencePhotopeakDisplay::ReferencePhotopeakDisplay(
   m_nuclideSuggest->forEdit( m_nuclideEdit, WSuggestionPopup::Editing );  // | WSuggestionPopup::DropDownIcon
 
 
-  WLabel *ageInputLabel = new WLabel( "Age:" );
+  WLabel *ageInputLabel = new WLabel( WString("{1}:").arg( WString::tr("Age") ) );
   m_ageEdit = new WLineEdit( "" );
   WRegExpValidator *validator = new WRegExpValidator( PhysicalUnits::sm_timeDurationHalfLiveOptionalRegex, this );
   validator->setFlags(Wt::MatchCaseInsensitive);
@@ -979,9 +973,9 @@ ReferencePhotopeakDisplay::ReferencePhotopeakDisplay(
   //Well make the "Clear All" button a little bit wider for phones so that
   //  "Gammas" will be on same line as its check box, a little bit hacky
   if( specViewer->isPhone() )
-    m_clearLines = new WPushButton( "Remove" );
+    m_clearLines = new WPushButton( WString::tr("Remove") );
     else
-      m_clearLines = new WPushButton( "Clear" );
+      m_clearLines = new WPushButton( WString::tr("Clear") );
       m_clearLines->disable();
       
       if( specViewer->isMobile() )
@@ -998,30 +992,8 @@ ReferencePhotopeakDisplay::ReferencePhotopeakDisplay(
   inputLayout->addWidget( m_ageEdit, 1, 1 );
   inputLayout->addWidget( m_clearLines, 1, 2 );
   
-  
-  tooltip = "<div>Age can be specified using a combination of time units, "
-  "similar to '<b>5.3y 8d 22m</b>' or in half lives like "
-  "'<b>2.5 HL</b>'.</div>"
-  "<div>"
-  "Acceptible time units: <b>year</b>, <b>yr</b>, <b>y</b>, <b>day</b>, <b>d</b>, <b>hrs</b>, <b>hour</b>, <b>h</b>, <b>minute</b>, "
-  "<b>min</b>, <b>m</b>, <b>second</b>, <b>s</b>, <b>ms</b>, <b>microseconds</b>, <b>us</b>, <b>nanoseconds</b>, <b>ns</b>, or "
-  "you can specify time period by <b>hh:mm:ss</b>. Half life units can be "
-  "specified using <b>hl</b>, <b>halflife</b>, <b>halflives</b>, <b>half-life</b>, <b>half-lives</b>, "
-  "<b>half lives</b>, or <b>half life</b>."
-  "</div>"
-  "<div>"
-  "Half life units or time periods can not be mixed with "
-  "other units. When multiple time periods are "
-  "specified, they are summed, e.x. '1y6months 3m' is interpreted as "
-  "18 months and 3 minutes"
-  "</div>";
-  
-  HelpSystem::attachToolTipOn( m_ageEdit, tooltip, showToolTips );
-  
-  
-  tooltip = "Clears all persisted lines, as well as the current non-persisted"
-  " lines.";
-  HelpSystem::attachToolTipOn( m_clearLines, tooltip, showToolTips );
+  HelpSystem::attachToolTipOn( m_ageEdit, WString::tr("rpd-tt-age"), showToolTips );
+  HelpSystem::attachToolTipOn( m_clearLines, WString::tr("rpd-tt-clear"), showToolTips );
   
   
   //If we use a single layout for all the input elements, it seems when we enter
@@ -1042,7 +1014,7 @@ ReferencePhotopeakDisplay::ReferencePhotopeakDisplay(
   m_halflife = new WText( hlRow );
   m_halflife->addStyleClass("Hl");
 
-  m_moreInfoBtn = new WPushButton( "more info", hlRow );
+  m_moreInfoBtn = new WPushButton( WString::tr("rpd-more-info"), hlRow );
   m_moreInfoBtn->addStyleClass( "LinkBtn MoreInfoBtn" );
   m_moreInfoBtn->clicked().connect( this, &ReferencePhotopeakDisplay::showMoreInfoWindow );
   m_moreInfoBtn->hide();
@@ -1072,7 +1044,7 @@ ReferencePhotopeakDisplay::ReferencePhotopeakDisplay(
   lowerInputLayout->addWidget( m_detectorDisplay, 1, 0 );
 
   m_shieldingSelect = new ShieldingSelect( m_materialDB, m_materialSuggest );
-  m_shieldingSelect->materialEdit()->setEmptyText( "<shielding material>" );
+  m_shieldingSelect->materialEdit()->setEmptyText( WString("<{1}>").arg( WString::tr("rpd-shield-mat") ) );
   m_shieldingSelect->materialChanged().connect( this, &ReferencePhotopeakDisplay::updateDisplayChange );
   m_shieldingSelect->materialModified().connect( this, &ReferencePhotopeakDisplay::updateDisplayChange );
   lowerInputLayout->addWidget( m_shieldingSelect, 2, 0 );
@@ -1123,7 +1095,7 @@ ReferencePhotopeakDisplay::ReferencePhotopeakDisplay(
 
   WContainerWidget* closerow = new WContainerWidget(m_options);
   closerow->addStyleClass( "ToolTabColumnTitle" );
-  WText *txt = new WText( "Options", closerow );
+  WText *txt = new WText( WString::tr("rpd-options"), closerow );
   WContainerWidget* closeIcon = new WContainerWidget(closerow);
   closeIcon->addStyleClass("closeicon-wtdefault");
   closeIcon->clicked().connect(this, &ReferencePhotopeakDisplay::toggleShowOptions);
@@ -1131,26 +1103,22 @@ ReferencePhotopeakDisplay::ReferencePhotopeakDisplay(
   m_optionsContent = new WContainerWidget( m_options );
   m_optionsContent->addStyleClass( "ToolTabTitledColumnContent" );
 
-  m_promptLinesOnly = new WCheckBox("Prompt Only", m_optionsContent );  //ɣ
-  
-  tooltip = "Gammas from only the original nuclide, and the descendants until one"
-    " of them has a longer half-life than the original nuclide; the"
-    " decay chain is in equilibrium till that point.";
-  HelpSystem::attachToolTipOn(m_promptLinesOnly, tooltip, showToolTips);
+  m_promptLinesOnly = new WCheckBox( WString::tr("rpd-opt-prompt"), m_optionsContent );  //ɣ
+  HelpSystem::attachToolTipOn(m_promptLinesOnly, WString::tr("rpd-opt-tt-prompt"), showToolTips);
   m_promptLinesOnly->checked().connect(this, &ReferencePhotopeakDisplay::updateDisplayChange);
   m_promptLinesOnly->unChecked().connect(this, &ReferencePhotopeakDisplay::updateDisplayChange);
   m_promptLinesOnly->hide();
 
-  m_showGammas = new WCheckBox( "Show Gammas", m_optionsContent );
-  m_showXrays = new WCheckBox( "Show X-rays", m_optionsContent );
-  m_showAlphas = new WCheckBox( "Show Alphas", m_optionsContent );
-  m_showBetas = new WCheckBox( "Show Betas", m_optionsContent );
-  m_showCascadeSums = new WCheckBox("Cascade Sums", m_optionsContent );
+  m_showGammas = new WCheckBox( WString::tr("rpd-opt-gamma"), m_optionsContent );
+  m_showXrays = new WCheckBox( WString::tr("rpd-opt-xray"), m_optionsContent );
+  m_showAlphas = new WCheckBox( WString::tr("rpd-opt-alphas"), m_optionsContent );
+  m_showBetas = new WCheckBox( WString::tr("rpd-opt-betas"), m_optionsContent );
+  m_showCascadeSums = new WCheckBox( WString::tr("rpd-opt-cascade"), m_optionsContent );
   m_showCascadeSums->hide();
   
-  m_showPrevNucs = new WCheckBox("Prev Nucs", m_optionsContent );
-  m_showRiidNucs = new WCheckBox("Det RID Nucs", m_optionsContent );
-  m_showAssocNucs = new WCheckBox("Assoc. Nucs", m_optionsContent );
+  m_showPrevNucs = new WCheckBox( WString::tr("rpd-prev-nucs"), m_optionsContent );
+  m_showRiidNucs = new WCheckBox( WString::tr("rpd-det-nucs"), m_optionsContent );
+  m_showAssocNucs = new WCheckBox( WString::tr("rpd-assoc-nucs"), m_optionsContent );
 
   m_showGammas->setWordWrap( false );
   m_showXrays->setWordWrap( false );
@@ -1201,7 +1169,7 @@ ReferencePhotopeakDisplay::ReferencePhotopeakDisplay(
 
   m_otherNucsColumn->addStyleClass("OtherNucs ToolTabSection ToolTabTitledColumn");
 
-  WText *otherNucTitle = new WText("Suggestions", m_otherNucsColumn);
+  WText *otherNucTitle = new WText( WString::tr("rpd-suggestions"), m_otherNucsColumn);
   otherNucTitle->addStyleClass("ToolTabColumnTitle");
 
   m_otherNucs = new WContainerWidget(m_otherNucsColumn);
@@ -1258,13 +1226,11 @@ ReferencePhotopeakDisplay::ReferencePhotopeakDisplay(
 #endif // BUILD_AS_OSX_APP / else
   
   csvButton->clicked().connect( std::bind([](){
-    passMessage( "The 'Nuclide Decay Info' tool provides additional capabilities for"
-                 " exporting nuclide, decay products, and decay information to CSV files.",
-                 WarningWidget::WarningMsgInfo );
+    passMessage( WString::tr("rpd-csv-export-msg"), WarningWidget::WarningMsgInfo );
     //TODO: check about calling WarningWidget::displayPopupMessageUnsafe( msg, level, 5000 ); directly with a longer time for the message to hang around
   }));
   
-  csvButton->setText( "CSV" );
+  csvButton->setText( WString::tr("CSV") );
   csvButton->disable();
   m_csvDownload = csvButton;
 
@@ -1410,8 +1376,7 @@ void ReferencePhotopeakDisplay::handleIsotopeChange( const bool useCurrentAge )
     {
       string defagestr;
       PeakDef::defaultDecayTime( nuc, &defagestr );
-      passMessage( "Changed age to a more reasonable value for " + nuc->symbol
-                   + " from '" + agestr + "' to '" + defagestr + "'",
+      passMessage( WString::tr("rpd-changed-age").arg(nuc->symbol).arg(agestr).arg(defagestr),
                    WarningWidget::WarningMsgLow );
       m_ageEdit->setText( defagestr );
     }else
@@ -1555,7 +1520,7 @@ void ReferencePhotopeakDisplay::updateAssociatedNuclides()
 
   const SandiaDecay::SandiaDecayDataBase *db = DecayDataBaseServer::database();
 
-  WText *header = new WText( "Assoc. Nucs" );
+  WText *header = new WText( WString::tr("rpd-assoc-nucs") );
   header->addStyleClass( "OtherNucTypeHeader" );
 
   m_otherNucs->insertWidget( 0, header );
@@ -1855,7 +1820,7 @@ void ReferencePhotopeakDisplay::updateOtherNucsDisplay()
 
   // TODO: Need to deal the "more info" button
 
-  auto displayDetectorOrExternal = [=]( string title, vector<pair<string,string>> nucs ){
+  auto displayDetectorOrExternal = [=]( const WString &title, vector<pair<string,string>> nucs ){
     if( nucs.empty() )
       return;
     
@@ -1864,7 +1829,7 @@ void ReferencePhotopeakDisplay::updateOtherNucsDisplay()
     if( nucs.size() > max_riid_res )
       nucs.resize( max_riid_res );
 
-    WText *header = new WText( WString::fromUTF8(title), m_otherNucs);
+    WText *header = new WText( title, m_otherNucs);
     header->addStyleClass("OtherNucTypeHeader");
     
     for( const auto &riid : nucs )
@@ -1886,18 +1851,18 @@ void ReferencePhotopeakDisplay::updateOtherNucsDisplay()
   };//displayDetectorOrExternal lamda
 
   if( !riid_nucs.empty() )
-    displayDetectorOrExternal( "Detector ID", riid_nucs );
+    displayDetectorOrExternal( WString::tr("rpd-det-id"), riid_nucs );
   
   if( !m_external_ids.empty() )
   {
-    string name = m_external_algo_name.empty() ? string("External RID") : m_external_algo_name;
+    WString name = m_external_algo_name.empty() ? WString::tr("rpd-ext-rid") : WString::fromUTF8(m_external_algo_name);
     displayDetectorOrExternal( name, m_external_ids );
   }//if( !m_external_ids.empty() )
   
   
   if( !prev_nucs.empty() )
   {
-    WText *header = new WText("Previous", m_otherNucs);
+    WText *header = new WText( WString::tr("rpd-prev"), m_otherNucs);
     header->addStyleClass("OtherNucTypeHeader");
     for( const auto &prev : prev_nucs )
     {
@@ -2062,8 +2027,8 @@ std::vector<DecayParticleModel::RowData> ReferencePhotopeakDisplay::createTableR
   }//for( const ReferenceLineInfo::RefLine &r : refLine.m_ref_lines )
 
 
-return inforows;
-}// vector<DecayParticleModel::RowData> createTableRows( const ReferenceLineInfo &refLine );
+  return inforows;
+}//vector<DecayParticleModel::RowData> createTableRows( const ReferenceLineInfo &refLine );
 
 
 Wt::WColor ReferencePhotopeakDisplay::colorForNewSource( const std::string &src )
@@ -2317,10 +2282,14 @@ void ReferencePhotopeakDisplay::updateDisplayFromInput( RefLineInput user_input 
   m_ageEdit->setText( WString::fromUTF8(agestr) );
   m_ageEdit->setEnabled( enable_aging );
   
-  const string hlstr = !nuclide ? string()
-  : ("T&frac12;="  //&lambda;<sub>&frac12;</sub>
-     +  PhysicalUnits::printToBestTimeUnits( nuclide->halfLife, 2 ));
-  m_halflife->setText( WString::fromUTF8(hlstr) );
+  
+  
+  const string hl_str = !nuclide ? string() : PhysicalUnits::printToBestTimeUnits( nuclide->halfLife, 2 );
+  
+  const WString hlstr = !nuclide 
+                        ? WString()
+                        : WString("{1}={2}").arg( WString::tr("T1/2") ).arg( hl_str );
+  m_halflife->setText( hlstr );
   
   m_persistLines->setEnabled( show_lines );
   m_clearLines->setDisabled( m_persisted.empty() && !show_lines );
@@ -2330,8 +2299,8 @@ void ReferencePhotopeakDisplay::updateDisplayFromInput( RefLineInput user_input 
   
   
   const bool isPhone = ( m_spectrumViewer && m_spectrumViewer->isPhone() );
-  const WString clearLineTxt = isPhone ? (m_persisted.empty() ? "Remove" : "Remove All")
-  : ( m_persisted.empty() ? "Clear" : "Clear All" );
+  const WString clearLineTxt = isPhone ? WString::tr(m_persisted.empty() ? "Remove" : "RemoveAll")
+                                       : WString::tr( m_persisted.empty() ? "Clear" : "ClearAll" );
   if( clearLineTxt != m_clearLines->text() )
     m_clearLines->setText( clearLineTxt );
   
@@ -2531,7 +2500,7 @@ void ReferencePhotopeakDisplay::updateDisplayFromInput( RefLineInput user_input 
     const bool showCascades = (ref_lines->m_has_coincidences && ref_lines->m_input.m_showCascades);
     if( showCascades && !m_cascadeWarn )
     {
-      m_cascadeWarn = new WText("x-rays are not included in cascades");
+      m_cascadeWarn = new WText( WString::tr("rpd-warn-cascade-xrays") );
       m_cascadeWarn->addStyleClass("CascadeGammaWarn");
       m_optionsContent->insertWidget( m_optionsContent->indexOf(m_showCascadeSums) + 1, m_cascadeWarn);
     }//if( show coincidences )
@@ -2595,9 +2564,9 @@ void ReferencePhotopeakDisplay::persistCurentLines()
   m_persistLines->disable();
   m_clearLines->enable();
   if( m_spectrumViewer && m_spectrumViewer->isPhone() )
-    m_clearLines->setText( "Remove All" );
+    m_clearLines->setText( WString::tr("RemoveAll") );
   else
-    m_clearLines->setText( "Clear All" );
+    m_clearLines->setText( WString::tr("ClearAll") );
   
   updateDisplayChange();
 }//void persistCurentLines()
@@ -3222,9 +3191,9 @@ void ReferencePhotopeakDisplay::clearAllLines()
     m_shieldingSelect->setSphericalThickness( 0.0 );
   
   if( m_spectrumViewer && m_spectrumViewer->isPhone() )
-    m_clearLines->setText( "Clear" );
+    m_clearLines->setText( WString::tr("Clear") );
   else
-    m_clearLines->setText( "Remove" );
+    m_clearLines->setText( WString::tr("Remove") );
 
   m_moreInfoBtn->hide();
   updateOtherNucsDisplay();

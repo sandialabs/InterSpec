@@ -34,6 +34,4 @@
   <message id="pid-tt-del-peaks">Deletes peak currently being edited.</message>
   <message id="pid-better-editor-hint">Right click on peaks for better editor</message>
   <message id="pid-tt-csv-export">Export information about the identified peaks to a comma separated format.</message>
-  <message id="pid-"></message>
-  <message id="pid-"></message>
 </messages>
