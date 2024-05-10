@@ -47,7 +47,6 @@
 #include <Wt/WApplication>
 #include <Wt/WEnvironment>
 #include <Wt/WItemDelegate>
-#include <Wt/WDoubleSpinBox>
 
 #include "SpecUtils/Filesystem.h"
 
@@ -59,14 +58,15 @@
 #include "InterSpec/InterSpec.h"
 #include "InterSpec/HelpSystem.h"
 #include "InterSpec/ColorSelect.h"
+#include "InterSpec/InterSpecApp.h"
 #include "InterSpec/PeakFitUtils.h"
 #include "InterSpec/SimpleDialog.h"
-#include "InterSpec/InterSpecApp.h"
 #include "InterSpec/WarningWidget.h"
 #include "InterSpec/PeakInfoDisplay.h"
 #include "InterSpec/UndoRedoManager.h"
 #include "InterSpec/RowStretchTreeView.h"
 #include "InterSpec/PeakSearchGuiUtils.h"
+#include "InterSpec/NativeFloatSpinBox.h"
 #include "InterSpec/D3SpectrumDisplayDiv.h"
 #include "InterSpec/DetectorPeakResponse.h"
 #include "InterSpec/IsotopeSelectionAids.h"
@@ -314,7 +314,7 @@ protected:
     auto app = wApp;
     if( !app || !app->domRoot()->findById(lineEditID) )
     {
-      cerr << "ItemDelegate: Somehow lineEdit disapeared from DOM" << endl;
+      cerr << "ItemDelegate: Somehow lineEdit disappeared from DOM" << endl;
       return false;
     }
     return true;
@@ -411,6 +411,10 @@ PeakInfoDisplay::PeakInfoDisplay( InterSpec *viewer,
 {
   assert( m_spectrumDisplayDiv );
   addStyleClass( "PeakInfoDisplay" );
+  
+  auto app = dynamic_cast<InterSpecApp *>( WApplication::instance() );
+  app->useMessageResourceBundle( "PeakInfoDisplay" );
+  
   init();
 //  setLayoutSizeAware(true);
 }//PeakInfoDisplay constructor
@@ -444,9 +448,9 @@ void PeakInfoDisplay::confirmRemoveAllPeaks()
    */
   
   
-  SimpleDialog *window = new SimpleDialog( "Erase All Peaks?", "" );
-  WPushButton *yes_button = window->addButton( "Yes" );
-  window->addButton( "No" );
+  SimpleDialog *window = new SimpleDialog( WString::tr("pid-dialog-peak-erase"), "" );
+  WPushButton *yes_button = window->addButton( WString::tr("Yes") );
+  window->addButton( WString::tr("No") );
   
   yes_button->clicked().connect( boost::bind( &PeakInfoDisplay::removeAllPeaks, this ) );
   
@@ -531,8 +535,7 @@ void PeakInfoDisplay::createNewPeak()
   
   if( !meas || meas->num_gamma_channels() < 7 )
   {
-    passMessage( "A foreground spectrum must be loaded to add a peak.",
-                WarningWidget::WarningMsgHigh );
+    passMessage( WString::tr("pid-err-no-foreground"), WarningWidget::WarningMsgHigh );
     return;
   }//if( we dont have a valid foreground )
   
@@ -616,8 +619,10 @@ void PeakInfoDisplay::createNewPeak()
   const float minEnergy = meas->gamma_channel_lower(0);
   const float maxEnergy = meas->gamma_channel_upper(nbin-1);
   
-  AuxWindow *window = new AuxWindow( "Add Peak",
-                                    (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::IsModal) | AuxWindowProperties::TabletNotFullScreen | AuxWindowProperties::DisableCollapse) );
+  AuxWindow *window = new AuxWindow( WString::tr("pid-dialog-add-peak-title"),
+                                    (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::IsModal)
+                                     | AuxWindowProperties::TabletNotFullScreen
+                                     | AuxWindowProperties::DisableCollapse) );
   window->rejectWhenEscapePressed();
   
   WTable *table = new WTable( window->contents() );
@@ -625,86 +630,80 @@ void PeakInfoDisplay::createNewPeak()
   table->setHeaderCount( 1, Wt::Orientation::Vertical );
   
   if( !wApp->styleSheet().isDefined("AddPeakTblCell") )
-    wApp->styleSheet().addRule( ".AddPeakTbl > tbody > tr > td", "padding-left: 10px; vertical-align: middle;", "AddPeakTblCell" );
+    wApp->styleSheet().addRule( ".AddPeakTbl > tbody > tr > td", "padding-left: 10px; vertical-align: middle; padding-top: 3px", "AddPeakTblCell" );
   
   if( isPhone && !wApp->styleSheet().isDefined("AddPeakTblMbl") )
     wApp->styleSheet().addRule( ".AddPeakTbl", "width: 100%; margin: 10px;", "AddPeakTblMbl" );
   
-  //WGridLayout *layout = window->stretcher();
   
-  
-  WLabel *label = new WLabel( "Peak Mean" );
+  WLabel *label = new WLabel( WString::tr("pid-peak-mean") );
   table->elementAt(0,0)->addWidget( label );
-  //layout->addWidget( label, 0, 0 );
   
-  WDoubleSpinBox *energySB = new WDoubleSpinBox();
+  const WLength inputWidth( 75, WLength::Unit::Pixel );
+  
+  NativeFloatSpinBox *energySB = new NativeFloatSpinBox();
+  energySB->setWidth( inputWidth );
   table->elementAt(0,1)->addWidget( energySB );
-  //layout->addWidget( energySB, 0, 1 );
   energySB->setRange( minEnergy, maxEnergy );
   energySB->setValue( initialEnergy );
   
   
-  label = new WLabel( "Peak FWHM" );
+  label = new WLabel( WString::tr("pid-peak-fwhm") );
   table->elementAt(1,0)->addWidget( label );
-  //layout->addWidget( label, 1, 0 );
   
-  WDoubleSpinBox *fwhmSB = new WDoubleSpinBox();
+  NativeFloatSpinBox *fwhmSB = new NativeFloatSpinBox();
+  fwhmSB->setWidth( inputWidth );
   table->elementAt(1,1)->addWidget( fwhmSB );
-  //layout->addWidget( fwhmSB, 1, 1 );
   fwhmSB->setRange( meas->gamma_channel_lower(0), meas->gamma_channel_upper(nbin-1) );
   fwhmSB->setRange( minfwhm, maxfwhm );
   fwhmSB->setValue( initialFWHM );
   
 
-  label = new WLabel( "Peak Amp." );
+  label = new WLabel( WString::tr("pid-peak-amp") );
   table->elementAt(2,0)->addWidget( label );
-  //layout->addWidget( label, 2, 0 );
-  WDoubleSpinBox *areaSB = new WDoubleSpinBox();
+  NativeFloatSpinBox *areaSB = new NativeFloatSpinBox();
+  areaSB->setWidth( inputWidth );
   table->elementAt(2,1)->addWidget( areaSB );
-  //layout->addWidget( areaSB, 2, 1 );
   areaSB->setRange( 0, meas->gamma_channels_sum(0, nbin-1) );
   areaSB->setValue( initialArea );
   
-  label = new WLabel( "ROI Lower" );
+  label = new WLabel( WString::tr("pid-roi-lower") );
   table->elementAt(3,0)->addWidget( label );
-  //layout->addWidget( label, 3, 0 );
-  WDoubleSpinBox *roiLowerSB = new WDoubleSpinBox();
+  NativeFloatSpinBox *roiLowerSB = new NativeFloatSpinBox();
+  roiLowerSB->setWidth( inputWidth );
   table->elementAt(3,1)->addWidget( roiLowerSB );
-  //layout->addWidget( roiLowerSB, 3, 1 );
   roiLowerSB->setRange( minEnergy, maxEnergy );
   roiLowerSB->setValue( initialRoiLower );
   
-  label = new WLabel( "ROI Upper" );
+  label = new WLabel( WString::tr("pid-roi-upper") );
   table->elementAt(4,0)->addWidget( label );
-  //layout->addWidget( label, 4, 0 );
-  WDoubleSpinBox *roiUpperSB = new WDoubleSpinBox();
+  NativeFloatSpinBox *roiUpperSB = new NativeFloatSpinBox();
+  roiUpperSB->setWidth( inputWidth );
   table->elementAt(4,1)->addWidget( roiUpperSB );
-  //layout->addWidget( roiUpperSB, 4, 1 );
   roiUpperSB->setRange( minEnergy, maxEnergy );
   roiUpperSB->setValue( initialRoiUpper );
   
   
-  label = new WLabel( "Continuum" );
+  label = new WLabel( WString::tr("Continuum") );
   table->elementAt(5,0)->addWidget( label );
-  //layout->addWidget( label, 5, 0 );
   WComboBox *contType = new WComboBox();
   table->elementAt(5,1)->addWidget( contType );
   //layout->addWidget( contType, 5, 1 );
-  contType->addItem( "None" );
-  contType->addItem( "Constant" );
-  contType->addItem( "Linear" );
-  contType->addItem( "Quadratic" );
-  contType->addItem( "Global Cont." );
+  contType->addItem( WString::tr("pct-none") );
+  contType->addItem( WString::tr("pct-constant") );
+  contType->addItem( WString::tr("pct-linear") );
+  contType->addItem( WString::tr("pct-quadratic") );
+  contType->addItem( WString::tr("pct-global") );
   contType->setCurrentIndex( 2 );
   
   auto fitCell = table->elementAt(6,0);
   fitCell->setColumnSpan( 2 );
   fitCell->setVerticalAlignment( Wt::AlignmentFlag::AlignBottom );
   //layout->addWidget( fitDiv, 0, 6, 1, 2 );
-  WPushButton *fitBtn = new WPushButton( "Fit", fitCell );
-  WCheckBox *fitEnergy = new WCheckBox( "Energy", fitCell );
-  WCheckBox *fitFWHM = new WCheckBox( "FWHM", fitCell );
-  WCheckBox *fitAmplitude = new WCheckBox( "Amp.", fitCell );
+  WPushButton *fitBtn = new WPushButton( WString::tr("Fit"), fitCell );
+  WCheckBox *fitEnergy = new WCheckBox( WString::tr("Energy"), fitCell );
+  WCheckBox *fitFWHM = new WCheckBox( WString::tr("FWHM"), fitCell );
+  WCheckBox *fitAmplitude = new WCheckBox( WString::tr("Amp."), fitCell );
   fitEnergy->setMargin(3,Wt::Left);
   fitFWHM->setMargin(3,Wt::Left);
   fitAmplitude->setMargin(3,Wt::Left);
@@ -724,7 +723,6 @@ void PeakInfoDisplay::createNewPeak()
   
   WText *chart = new WText( "", Wt::XHTMLUnsafeText );
   chart->setInline( false );
-  //chart->addStyleClass( "DrfPeakChart" );
   table->elementAt(0,2)->addWidget( chart );
   table->elementAt(0,2)->setRowSpan( 7 );
   if( isPhone )
@@ -732,13 +730,9 @@ void PeakInfoDisplay::createNewPeak()
     table->elementAt(0,2)->setVerticalAlignment( Wt::AlignmentFlag::AlignMiddle );
     table->elementAt(0,2)->setContentAlignment( Wt::AlignmentFlag::AlignCenter );
   }
-  //layout->addWidget( chart, 0, 2, 7, 1 );
-  //layout->addWidget( new WContainerWidget(), 6, 0 );
-  //layout->setRowStretch( 6, 1 );
   
   
-  
-  WText *msg = new WText( "For more advanced options, see the <em>Peak Editor</em> after adding." );
+  WText *msg = new WText( WString::tr("pid-tt-more-adv") );
   msg->decorationStyle().setFont( fitCbFont );
   if( isPhone )
   {
@@ -760,7 +754,7 @@ void PeakInfoDisplay::createNewPeak()
     
     if( ww < 350 )
     {
-      chart->setText( "Screen to small for preview." );
+      chart->setText( WString::tr("pid-screen-to-small") );
       return;
     }
     
@@ -768,7 +762,7 @@ void PeakInfoDisplay::createNewPeak()
     
     if( !meas )
     {
-      chart->setText( "No foreground spectrum" );
+      chart->setText( WString::tr("pid-err-no-foreground-1") );
       return;
     }
 
@@ -795,7 +789,7 @@ void PeakInfoDisplay::createNewPeak()
       chart->setText( strm.str() );
     }else
     {
-      chart->setText( "Error rendering preview" );
+      chart->setText( WString::tr("pid-err-preview") );
     }
 
   };//updateCandidatePeak lambda
@@ -935,7 +929,7 @@ void PeakInfoDisplay::createNewPeak()
     
     if( results.empty() )
     {
-      passMessage( "Fit Failed.", WarningWidget::WarningMsgLow );
+      passMessage( WString::tr("pid-err-fit-failed"), WarningWidget::WarningMsgLow );
     }else
     {
       *candidatePeak = results[0];
@@ -957,9 +951,9 @@ void PeakInfoDisplay::createNewPeak()
   fitBtn->clicked().connect( std::bind(doFit) );
   
   
-  WPushButton *closeButton = window->addCloseButtonToFooter("Cancel");
+  WPushButton *closeButton = window->addCloseButtonToFooter(WString::tr("Cancel"));
   closeButton->clicked().connect( window, &AuxWindow::hide );
-  WPushButton *doAdd = new WPushButton( "Add" , window->footer() );
+  WPushButton *doAdd = new WPushButton( WString::tr("Add"), window->footer() );
   
   doAdd->clicked().connect( std::bind( [=](){
     UndoRedoManager::PeakModelChange peak_undo_creator;
@@ -1202,19 +1196,17 @@ void PeakInfoDisplay::init()
   helpBtn->clicked().connect( boost::bind( &HelpSystem::createHelpWindow, "peak-manager" ) );
   
   
-  m_searchForPeaks = new WPushButton( "Search for Peaks", buttonDiv );
+  m_searchForPeaks = new WPushButton( WString::tr("pid-search-peaks-btn"), buttonDiv );
   m_searchForPeaks->addStyleClass("PeakSearchBtn");
   m_searchForPeaks->setIcon( "InterSpec_resources/images/magnifier.png" );
   
-  //m_searchForPeaks->setMargin(WLength(7),Wt::Left);
-  //m_searchForPeaks->setMargin(WLength(3),Wt::Bottom);
-  HelpSystem::attachToolTipOn( m_searchForPeaks, "Search for peaks using the automated peak finding "
-                              "algorithm.", showToolTips, HelpSystem::ToolTipPosition::Top  );
+  HelpSystem::attachToolTipOn( m_searchForPeaks, WString::tr("pid-tt-search-peaks-btn"),
+                              showToolTips, HelpSystem::ToolTipPosition::Top  );
   m_searchForPeaks->clicked().connect( boost::bind( &PeakSearchGuiUtils::automated_search_for_peaks, m_viewer, true ) );
 
   
-  WPushButton *clearPeaksButton = new WPushButton( "Clear all Peaks", buttonDiv );
-  HelpSystem::attachToolTipOn( clearPeaksButton, "Removes <b>all</b> existing peaks.",
+  WPushButton *clearPeaksButton = new WPushButton( WString::tr("pid-clear-peaks-btn"), buttonDiv );
+  HelpSystem::attachToolTipOn( clearPeaksButton, WString::tr("pid-tt-clear-peaks-btn"),
                               showToolTips, HelpSystem::ToolTipPosition::Top  );
   
   //clearPeaksButton->setMargin(WLength(2),Wt::Left);
@@ -1222,14 +1214,11 @@ void PeakInfoDisplay::init()
   clearPeaksButton->disable();
 
   //"Nuc. from Ref."
-  WPushButton *nucFromRefButton = new WPushButton( "Nuc. from Ref.", buttonDiv );
+  WPushButton *nucFromRefButton = new WPushButton( WString::tr("pid-nuc-from-ref-btn"), buttonDiv );
   nucFromRefButton->setIcon( "InterSpec_resources/images/assign_white.png" );
   
   //button->setMargin(WLength(2),Wt::Left|Wt::Right);
-  HelpSystem::attachToolTipOn( nucFromRefButton,
-                              "Assign peak nuclides from reference lines showing. Only applies to "
-                              "peaks which do not already have a nuclide associated "
-                              "with them." ,
+  HelpSystem::attachToolTipOn( nucFromRefButton, WString::tr("pid-tt-nuc-from-ref-btn"),
                               showToolTips , HelpSystem::ToolTipPosition::Top );
   nucFromRefButton->clicked().connect( boost::bind( &PeakInfoDisplay::assignNuclidesFromRefLines, this ) );
   nucFromRefButton->disable();
@@ -1264,7 +1253,7 @@ void PeakInfoDisplay::init()
 //                                           wApp->sessionId(), guessIsotopeWorker,
 //                                           boost::function<void ()>() ) );
   
-  WLabel *label = new WLabel("Peak: ", buttonDiv);
+  WLabel *label = new WLabel( WString("{1}: ").arg( WString::tr("Peak") ), buttonDiv);
   label->addStyleClass("buttonSeparator");
   label->setMargin(WLength(10),Wt::Left);
   
@@ -1289,13 +1278,15 @@ void PeakInfoDisplay::init()
     m_deletePeak->hide();
   }else
   {
-    WPushButton *addPeak = new WPushButton( "Add...", buttonDiv );
-    HelpSystem::attachToolTipOn( addPeak, "Manually add a new peak.", showToolTips, HelpSystem::ToolTipPosition::Top );
+    WPushButton *addPeak = new WPushButton( WString::tr("pid-add-peak-btn"), buttonDiv );
+    HelpSystem::attachToolTipOn( addPeak, WString::tr("pid-tt-add-peak-btn"),
+                                showToolTips, HelpSystem::ToolTipPosition::Top );
     addPeak->clicked().connect( this, &PeakInfoDisplay::createNewPeak );
     addPeak->setIcon( "InterSpec_resources/images/plus_min_white.svg" );
     
-    WPushButton *delPeak = new WPushButton( "Delete", buttonDiv );
-    HelpSystem::attachToolTipOn( delPeak, "Deletes peak currently being edited.", showToolTips, HelpSystem::ToolTipPosition::Top  );
+    WPushButton *delPeak = new WPushButton( WString::tr("Delete"), buttonDiv );
+    HelpSystem::attachToolTipOn( delPeak, WString::tr("pid-tt-del-peaks"),
+                                showToolTips, HelpSystem::ToolTipPosition::Top  );
     delPeak->setHiddenKeepsGeometry( true );
     delPeak->clicked().connect( this, &PeakInfoDisplay::deleteSelectedPeak );
     delPeak->setIcon( "InterSpec_resources/images/minus_min_white.png" );
@@ -1318,7 +1309,7 @@ void PeakInfoDisplay::init()
   }//for( int col = 0; col < m_model->columnCount(); ++col )
 
 #if( !ANDROID && !IOS )
-  WText *txt = new WText( "Right click on peaks for better editor", buttonDiv );
+  WText *txt = new WText( WString::tr("pid-better-editor-hint"), buttonDiv );
   txt->addStyleClass( "PeakEditHint" );
   txt->hide();
 //  mouseWentOver().connect( txt, &WText::show );
@@ -1348,7 +1339,7 @@ void PeakInfoDisplay::init()
 #endif //ANDROID
 #endif //#if( BUILD_AS_OSX_APP || IOS ) / else
   
-  csvButton->setText( "CSV" );
+  csvButton->setText( WString::tr("CSV") );
   csvButton->disable();
 
   auto enableDisableCsv = [this,csvButton](){
@@ -1364,8 +1355,7 @@ void PeakInfoDisplay::init()
   m_model->rowsInserted().connect( std::bind(enableDisableCsv) );
   m_model->layoutChanged().connect( std::bind(enableDisableCsv) );
   
-  HelpSystem::attachToolTipOn( csvButton,"Export information about the identified peaks to a "
-                              "comma separated format.", showToolTips );
+  HelpSystem::attachToolTipOn( csvButton, WString::tr("pid-tt-csv-export"), showToolTips );
 }//init()
 
 

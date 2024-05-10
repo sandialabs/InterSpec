@@ -17,9 +17,23 @@
   <message id="Secondary">Secondary</message>
   <message id="second-foreground">Second Foreground</message>
   <message id="Exit">Exit</message>
-  <message id="Title">Title</message>
   <message id="show-lines">Show Lines</message>
   <message id="Default">Default</message>
+
+  <!-- Words not used in InterSpec.cpp, but at least a few places throughout the app --> 
+  <message id="Continuum">Continuum</message>
+  <message id="Title">Title</message>
+  <message id="Fit">Fit</message>
+  <message id="Energy">Energy</message>
+  <message id="FWHM">FWHM</message>
+  <message id="Amp.">Amp.</message>
+  <message id="Add">Add</message>
+  <message id="Peak">Peak</message>
+  <message id="Delete">Delete</message>
+  <message id="Photopeak">Photopeak</message>
+  <message id="CSV">CSV</message>
+
+
 
 
   <!-- Text for the spectrum chart -->

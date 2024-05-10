@@ -218,6 +218,7 @@ const char *PeakEdit::rowLabel( const PeakPars t )
 
 void PeakEdit::init()
 {
+  wApp->useStyleSheet( "InterSpec_resources/PeakEdit.css" );
   addStyleClass( "PeakEdit" );
   
   m_valueTable = new WTable( this );

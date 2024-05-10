@@ -664,6 +664,13 @@ ul.Wt-popupmenu > li > a > span > span:hover
   margin-right: 5px;
 }
 
+.PeakInfoDisplay .PeakEditHint
+{
+color: gray;
+margin-left: 2em;
+font-size:66%
+}
+
 
 /* A button that shows up as a link. */
 .LinkBtn, .LinkBtn:hover {
