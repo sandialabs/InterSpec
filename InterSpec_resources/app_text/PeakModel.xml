@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- Strings from PeakModel - e.g., tables that display peak info.
+  pm- is short for PeakModel
+  -->
+  <message id="pm-tt-use-for-cal">If this peak should be used to help calibrate energy.
+    You must have a nuclide, reaction, or x-ray assigned to the peak, and you must not have fixed the mean energy value using the Peak Editor.</message>
+  <message id="pm-gaussian">Gaussian</message>
+  <message id="pm-region">Region</message>
+  <message id="pm-err-use-fit-no-nuc">You must associate a nuclide with the peak before using it for shielding/source-fitting.</message>
+  <message id="pm-err-use-cal-no-nuc">You must associate a nuclide, x-ray, or reaction with the peak before using it for calibration.</message>
+  <message id="pm-err-use-rel-act-no-nuc">Only peaks associated with a nuclides gamma can be used for relative activity analysis.</message>
+  <message id="pm-warn-use-xray-fit">Warning: using x-rays for fitting source nuclides is not usually a great idea, so please use caution.</message>
+  
+  <message id="pm-hdr-diff">Difference</message>
+  <message id="pm-hdr-cal-peak">Calib. Peak</message>
+  <message id="pm-hdr-rel-act">Rel Act</message>
+  <message id="pm-hdr-label">Label</message>
+  <message id="pm-hdr-color">Color</message>
+  <message id="pm-hdr-skew-amp">Skew Amp</message>
+  <message id="pm-hdr-peak-type">Peak Type</message>
+  <message id="pm-hdr-low-energy">Lower Energy</message>
+  <message id="pm-hdr-up-energy">Upper Energy</message>
+  <message id="pm-hdr-roi-counts">ROI Counts</message>
+  
+  
+  <message id="pm-hdr-tt-mean">"Mean Energy</message>
+  <message id="pm-hdr-tt-fwhm">Full Width at Half Maximum</message>
+  <message id="pm-hdr-tt-amp">Peak Area</message>
+  <message id="pm-hdr-tt-cps">Peak counts per second</message>
+  <message id="pm-hdr-tt-photopeak-energy">Photopeak Energy</message>
+  <message id="pm-hdr-tt-diff">Difference between photopeak and mean energy</message>
+  <message id="pm-hdr-tt-man-rel-eff">Use for "Isotopics from peaks" analysis.</message>
+  <message id="pm-hdr-tt-color">Peak color</message>
+  <message id="pm-hdr-tt-label">User specified label</message>
+  <message id="pm-hdr-tt-roi-counts">Integral of gamma counts over the region of interest</message>
+  <message id="pm-hdr-tt-"></message>
+
+</messages>

@@ -22,16 +22,25 @@
 
   <!-- Words not used in InterSpec.cpp, but at least a few places throughout the app --> 
   <message id="Continuum">Continuum</message>
+  <message id="cont-type">Cont. Type</message>
   <message id="Title">Title</message>
   <message id="Fit">Fit</message>
+  <message id="Use">Use</message>
   <message id="Energy">Energy</message>
+  <message id="Mean">Mean</message>
   <message id="FWHM">FWHM</message>
   <message id="Amp.">Amp.</message>
+  <message id="Area">Area</message>
   <message id="Add">Add</message>
   <message id="Peak">Peak</message>
   <message id="Delete">Delete</message>
   <message id="Photopeak">Photopeak</message>
+  <message id="Nuclide">Nuclide</message>
+  <message id="Skew">Skew</message>
+  <message id="CPS">CPS</message>
   <message id="CSV">CSV</message>
+  <message id="True">True</message>
+  <message id="False">False</message>
 
 
 

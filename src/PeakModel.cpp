@@ -1022,6 +1022,10 @@ PeakModel::PeakModel( Wt::WObject *parent )
     m_sortOrder( Wt::AscendingOrder ),
     m_csvResource( NULL )
 {
+  auto app = dynamic_cast<InterSpecApp *>( WApplication::instance() );
+  if( app )
+    app->useMessageResourceBundle( "PeakModel" );
+  
   m_csvResource = new PeakCsvResource( this );
   
 #if( PERFORM_DEVELOPER_CHECKS )
@@ -1835,10 +1839,7 @@ boost::any PeakModel::data( const WModelIndex &index, int role ) const
   if( role == ToolTipRole )
   {
     if( index.column() == kUseForCalibration )
-      return WString( "If this peak should be used to help calibrate energy.\n"
-                      "You must have a nuclide, reaction, or x-ray assigned to the"
-                      " peak, and you must not have fixed the mean energy value"
-                      " using the Peak Editor." );
+      return WString::tr("pm-tt-use-for-cal");
     return any();
   }//if( role == ToolTipRole )
   
@@ -2092,7 +2093,7 @@ boost::any PeakModel::data( const WModelIndex &index, int role ) const
       
     case kHasSkew:
     {
-      return WString( (peak->skewType() == PeakDef::NoSkew) ? "False" : "True" );
+      return WString::tr( (peak->skewType() == PeakDef::NoSkew) ? "False" : "True" );
     }//case kHasSkew:
       
     case kSkewAmount:
@@ -2132,9 +2133,9 @@ boost::any PeakModel::data( const WModelIndex &index, int role ) const
     case kType:
     {
       if( peak->gausPeak() )
-        return WString( "Gaussian" );
+        return WString::tr( "pm-gaussian" );
       else
-        return WString( "Region" );
+        return WString::tr( "pm-region" );
     }
       
     case kLowerX:
@@ -2859,20 +2860,14 @@ bool PeakModel::setData( const WModelIndex &index,
 //               << " mytrueebool value=" << boost::any_cast<bool>( mytrueebool)
 //               << " and typename=" << myfalsebool.type().name() << endl;
           if( use && !new_peak.parentNuclide() )
-            passMessage( "You must associate a nuclide with the"
-                        " peak before using it for shielding/source-fitting.",
-                        WarningWidget::WarningMsgHigh );
+            passMessage( WString::tr("pm-err-use-fit-no-nuc"), WarningWidget::WarningMsgHigh );
           
           if( new_peak.useForShieldingSourceFit() == use )
             return false;
           
           const SandiaDecay::RadParticle *radpart = new_peak.decayParticle();
           if( use && radpart && (radpart->type == SandiaDecay::XrayParticle) )
-          {
-            passMessage( "Warning: using x-rays for fitting source nuclides "
-                         "is not usually a great idea, so please use caution",
-                         WarningWidget::WarningMsgLow );
-          }
+            passMessage( WString::tr("pm-warn-use-xray-fit"), WarningWidget::WarningMsgLow );
           
           new_peak.useForShieldingSourceFit( use );
         }catch(...)
@@ -2891,9 +2886,7 @@ bool PeakModel::setData( const WModelIndex &index,
           const bool use = boost::any_cast<bool>( value );
           if( use && !new_peak.xrayElement() && !new_peak.parentNuclide()
               && !new_peak.reaction() )
-            passMessage( "You must associate a nuclide, x-ray, or reaction with"
-                         " the peak before using it for calibration",
-                         WarningWidget::WarningMsgHigh );
+            passMessage( WString::tr("pm-err-use-cal-no-nuc"), WarningWidget::WarningMsgHigh );
           
           if( use == new_peak.useForEnergyCalibration() )
             return false;
@@ -2921,8 +2914,7 @@ bool PeakModel::setData( const WModelIndex &index,
                                    || (new_peak.sourceGammaType() == PeakDef::SourceGammaType::AnnihilationGamma) );
             
             if( !has_parent || !is_gamma )
-               passMessage( "Only peaks associated with a nuclides gamma can be used for relative"
-                            " activity analysis.", WarningWidget::WarningMsgHigh );
+               passMessage( WString::tr("pm-err-use-rel-act-no-nuc"), WarningWidget::WarningMsgHigh );
           }//if( use )
           
           if( use == new_peak.useForManualRelEff() )
@@ -3054,26 +3046,26 @@ boost::any PeakModel::headerData( int section, Orientation orientation, int role
     //If we are here, we want the column title
     switch( section )
     {
-      case kMean:           return boost::any( WString("Mean") );
-      case kFwhm:           return boost::any( WString("FWHM") ); //\x03C3
-      case kAmplitude:      return boost::any( WString("Area") );
-      case kCps:            return boost::any( WString("CPS") );
-      case kIsotope:        return boost::any( WString("Nuclide") );
-      case kPhotoPeakEnergy:return boost::any( WString("Photopeak") );
-      case kDifference:     return boost::any( WString("Difference") );
-      case kUseForShieldingSourceFit: return boost::any( WString("Use") );
+      case kMean:           return boost::any( WString::tr("Mean") );
+      case kFwhm:           return boost::any( WString::tr("FWHM") ); //\x03C3
+      case kAmplitude:      return boost::any( WString::tr("Area") );
+      case kCps:            return boost::any( WString::tr("CPS") );
+      case kIsotope:        return boost::any( WString::tr("Nuclide") );
+      case kPhotoPeakEnergy:return boost::any( WString::tr("Photopeak") );
+      case kDifference:     return boost::any( WString::tr("pm-hdr-diff") );
+      case kUseForShieldingSourceFit: return boost::any( WString::tr("Use") );
       case kCandidateIsotopes:  return boost::any();
-      case kUseForCalibration:  return boost::any( WString("Calib. Peak") );
-      case kUseForManualRelEff: return boost::any( WString("Rel Act") );
-      case kUserLabel:      return boost::any( WString("Label") );
-      case kPeakLineColor:  return boost::any( WString("Color") );
-      case kHasSkew:        return boost::any( WString("Skew") );
-      case kSkewAmount:     return boost::any( WString("Skew Amp") );
-      case kType:           return boost::any( WString("Peak Type") );
-      case kLowerX:         return boost::any( WString("Lower Energy") );
-      case kUpperX:         return boost::any( WString("Upper Energy") );
-      case kRoiCounts:      return boost::any( WString("ROI Counts") );
-      case kContinuumType:  return boost::any( WString("Cont. Type") );
+      case kUseForCalibration:  return boost::any( WString::tr("pm-hdr-cal-peak") );
+      case kUseForManualRelEff: return boost::any( WString::tr("pm-hdr-rel-act") );
+      case kUserLabel:      return boost::any( WString::tr("pm-hdr-label") );
+      case kPeakLineColor:  return boost::any( WString::tr("pm-hdr-color") );
+      case kHasSkew:        return boost::any( WString::tr("Skew") );
+      case kSkewAmount:     return boost::any( WString::tr("pm-hdr-skew-amp") );
+      case kType:           return boost::any( WString::tr("pm-hdr-peak-type") );
+      case kLowerX:         return boost::any( WString::tr("pm-hdr-low-energy") );
+      case kUpperX:         return boost::any( WString::tr("pm-hdr-up-energy") );
+      case kRoiCounts:      return boost::any( WString::tr("pm-hdr-roi-counts") );
+      case kContinuumType:  return boost::any( WString::tr("cont-type") );
       case kNumColumns:     return boost::any();
     }//switch( section )
   } //DisplayRole
@@ -3081,20 +3073,20 @@ boost::any PeakModel::headerData( int section, Orientation orientation, int role
   {
     switch( section )
     {
-      case kMean:           return boost::any( WString("Mean Energy") );
-      case kFwhm:           return boost::any( WString("Full Width at Half Maximum") ); //\x03C3
-      case kAmplitude:      return boost::any( WString("Peak Area") );
-      case kCps:            return boost::any( WString("Peak counts per second") );
+      case kMean:           return boost::any( WString::tr("pm-hdr-tt-mean") );
+      case kFwhm:           return boost::any( WString::tr("pm-hdr-tt-fwhm") ); //\x03C3
+      case kAmplitude:      return boost::any( WString::tr("pm-hdr-tt-amp") );
+      case kCps:            return boost::any( WString::tr("pm-hdr-tt-cps") );
       case kIsotope:        return boost::any();
-      case kPhotoPeakEnergy:return boost::any( WString("Photopeak Energy") );
-      case kDifference:     return boost::any( WString("Difference between photopeak and mean energy") );
+      case kPhotoPeakEnergy:return boost::any( WString::tr("pm-hdr-tt-photopeak-energy") );
+      case kDifference:     return boost::any( WString::tr("pm-hdr-tt-diff") );
       case kUseForShieldingSourceFit: return boost::any();
       case kCandidateIsotopes:  return boost::any();
       case kUseForCalibration:  return boost::any();
-      case kUseForManualRelEff: return boost::any( WString("Use for \"Isotopics from peaks\" analysis.") );
-      case kPeakLineColor:     return boost::any( WString("Peak color") );
-      case kUserLabel:         return boost::any( WString("User specified label") );
-      case kRoiCounts:         return boost::any( WString("Integral of gamma counts over the region of interest") );
+      case kUseForManualRelEff: return boost::any( WString::tr("pm-hdr-tt-man-rel-eff") );
+      case kPeakLineColor:     return boost::any( WString::tr("pm-hdr-tt-color") );
+      case kUserLabel:         return boost::any( WString::tr("pm-hdr-tt-label") );
+      case kRoiCounts:         return boost::any( WString::tr("pm-hdr-tt-roi-counts") );
       case kHasSkew:
       case kSkewAmount:
       case kType:
