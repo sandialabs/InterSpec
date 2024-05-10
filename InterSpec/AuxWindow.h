@@ -261,7 +261,9 @@ public:
   //  "DialogClose"
   //The button is not connected to any slots (e.g. it does not actually close
   //  this dialog).
-  Wt::WPushButton *addCloseButtonToFooter(std::string overide="Close", bool floatright=false, Wt::WContainerWidget * footerOverride=NULL);
+  Wt::WPushButton *addCloseButtonToFooter( Wt::WString override_txt = "Close",
+                                           const bool float_right = false,
+                                           Wt::WContainerWidget *footerOverride = nullptr );
   
   //Help button add to footer
   static void addHelpInFooter(Wt::WContainerWidget *footer, std::string page );

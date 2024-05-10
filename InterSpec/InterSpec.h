@@ -337,7 +337,7 @@ public:
   //  WContainerWidget or a PopupDivMenu
   void addFileMenu( Wt::WWidget *menuDiv, const bool isAppTitlebar );
   void addEditMenu( Wt::WWidget *menuDiv );
-  void addDisplayMenu( Wt::WWidget *menuDiv );
+  void addViewMenu( Wt::WWidget *menuDiv );
   void addDetectorMenu( Wt::WWidget *menuDiv );
   void addToolsMenu( Wt::WWidget *menuDiv );
   void addPeakLabelSubMenu( PopupDivMenu *parentWidget );
@@ -865,12 +865,6 @@ public:
   /** Brings up a dialog asking the user to confirm starting a new session, and if they select so, will start new session. */
   void startClearSession();
   
-  
-  //showIEWarningDialog(): returns NULL if user previously specified to not show
-  //  again, otherwise it returns the AuxWIndow it is displaying.  The dialog
-  //  is by default shown visible, and will deleted when user is done with it.
-  AuxWindow *showIEWarningDialog();
-  
   // The user itself gets to be public--no need to protect access to it.
   //Note 20130116: m_user should be made protected, but really the whole
   //  preference thing should be re-done, see README
@@ -979,9 +973,6 @@ protected:
   //showNewWelcomeDialog(): see notes for showWelcomeDialog().  This function
   //  will eventually replace showWelcomeDialog().
   void showNewWelcomeDialog( bool force = false );
-
-  // Cookie management~  /*should be placed into user options*.
-  void setShowIEWarningDialogCookie( bool show );
 
   /** Adds menu items to "Tools" menu for the tools that are ordinarily shown
       as tabs.  This function is called when the "Hide Tool Tabs" menu option
@@ -1265,6 +1256,11 @@ protected:
   //  as of 20140110, but still pretty reasonable.
   void detectClientDeviceType();
   
+  /** Changes the local, to the language specified. 
+   
+   @param languageCode The code for the language, ex. "nl" for Dutch, "fr" for French, "en" for English, or "en_GB" for Great Britain.
+   */
+  void changeLocale( std::string languageCode );
   
 protected:
   PeakModel *m_peakModel;
@@ -1380,6 +1376,8 @@ protected:
   PopupDivMenuItem *m_saveStateAs;
   PopupDivMenuItem *m_createTag;
 #endif
+  
+  PopupDivMenu *m_languagesSubMenu;
   
   enum RightClickItems
   {

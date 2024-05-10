@@ -51,7 +51,7 @@ class SpectrumViewerTester;
 //Feature under development (20171203) to prompt user if they want to load their
 //  previous state, before actually doing it.
 // Could make this always true for anything but mobile devices...
-// Still deciding if I like this or not... laoding the state doesnt seem to be
+// Still deciding if I like this or not... loading the state doesnt seem to be
 //   a huge slowdown in the startup.
 #if( BUILD_AS_ELECTRON_APP || BUILD_AS_OSX_APP || BUILD_AS_WX_WIDGETS_APP )
 #define PROMPT_USER_BEFORE_LOADING_PREVIOUS_STATE 0
@@ -225,10 +225,25 @@ public:
    */
   bool handleAppUrl( const std::string &url );
   
-protected: 
+  /** Loads the XML file for current locale, to use for localizing strings
+   
+   \param name The base-name of the XML file to load.  For this, you will usually call with an argument
+          like "InterSpec", or "PeakEdit".  You do not need to give the path to the XML file, or the
+          extension; this function will take care of adding those.
+   
+   If the XML file has already been loaded, no action will be taken.
+   */
+  void useMessageResourceBundle( const std::string &name );
+  
+  /** Looks in `InterSpec_resources/app_text/` for files like `InterSpec_(.+).xml`, and returns
+   the list of the capture group.
+   */
+  static const std::set<std::string> &languagesAvailable();
+  
+protected:
 
-  //notify(): over-riding WApplication::notify inorder to catch any exceptions
-  //  that may happen during event handinling
+  //notify(): over-riding WApplication::notify in order to catch any exceptions
+  //  that may happen during event handling
   virtual void notify( const Wt::WEvent &event );
 
   //finalize(): called before destruction to take care of things that might

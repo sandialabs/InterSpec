@@ -1149,14 +1149,19 @@ bool AuxWindow::isPhone() const
   return m_isPhone;
 }
 
-Wt::WPushButton *AuxWindow::addCloseButtonToFooter(string override_txt, bool floatright,  Wt::WContainerWidget * footerOverride)
+Wt::WPushButton *AuxWindow::addCloseButtonToFooter( Wt::WString override_txt,
+                                                   const bool float_right,
+                                                   Wt::WContainerWidget *footerOverride )
 {
   WPushButton *close = new WPushButton();
+  
+  if( override_txt.key().empty() && (override_txt.toUTF8() == "Close") )
+    override_txt = WString::tr("Close");
   
   if( m_isPhone )
   {
     if( override_txt.empty() )
-      override_txt = "Back";
+      override_txt = WString::tr("Back");
     
     close->addStyleClass( "MobileBackBtn" );
     if( m_isAndroid )
@@ -1166,12 +1171,10 @@ Wt::WPushButton *AuxWindow::addCloseButtonToFooter(string override_txt, bool flo
   }else
   {
     if( override_txt.empty() )
-      override_txt = "Close";
-    
-    //If not fuule
+      override_txt = WString::tr("Close");
     
     close->setText( override_txt );
-    if( floatright )
+    if( float_right )
       close->addStyleClass( "DialogClose" );
   }//if( phone ) / else
  

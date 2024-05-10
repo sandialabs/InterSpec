@@ -693,7 +693,7 @@ namespace HelpSystem
    Attach a tooltip onto a widget.  Depending on preference, it might show immediately.
    
    */
-  void attachToolTipOn( Wt::WWebWidget* widget, const std::string &text,
+  void attachToolTipOn( Wt::WWebWidget* widget, const Wt::WString &text,
                         const bool enableShowing,
                         const ToolTipPosition position,
                         const ToolTipPrefOverride forceShowing )
@@ -702,7 +702,7 @@ namespace HelpSystem
   }
   
   void attachToolTipOn( std::initializer_list<Wt::WWebWidget*> widgets,
-                       const std::string &text,
+                       const Wt::WString &text,
                         const bool enableShowing,
                         const ToolTipPosition position,
                         const ToolTipPrefOverride forceShowing )
@@ -724,7 +724,7 @@ namespace HelpSystem
       PopupDivMenuItem *menuitem = dynamic_cast<PopupDivMenuItem *>( w );
       if( menuitem && menuitem->getNsMenuItem() )
       {
-        addOsxMenuItemToolTip( menuitem->getNsMenuItem(), text.c_str() );
+        addOsxMenuItemToolTip( menuitem->getNsMenuItem(), text.toUTF8().c_str() );
         return;
       }//if( menuitem )
     }//for( Wt::WWebWidget *w : widgets )
@@ -740,7 +740,7 @@ namespace HelpSystem
     Wt::WStringStream strm;
     
     //need to escape the ' in the text message, and also remove new-lines from the string
-    std::string val = text;
+    std::string val = text.toUTF8();
     boost::replace_all(val, "'", "\\'");
     boost::replace_all( val, "\r", "" );
     boost::replace_all( val, "\n", "" );

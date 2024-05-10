@@ -3316,7 +3316,8 @@ void change_continuum_type_from_right_click( InterSpec * const interspec,
     assert( oldContinuum );
     if( oldContinuum->type() == type )
     {
-      passMessage( "Continuum is already of type " + string(PeakContinuum::offset_type_label(type)),
+      
+      passMessage( "Continuum is already of type " + WString::tr(PeakContinuum::offset_type_label_tr(type)).toUTF8(),
                   WarningWidget::WarningMsgInfo)
       return;
     }
@@ -3373,7 +3374,7 @@ void change_continuum_type_from_right_click( InterSpec * const interspec,
       }else
       {
         passMessage( "Changing the continuum type to "
-                    + string(PeakContinuum::offset_type_label(type))
+                    + WString::tr(PeakContinuum::offset_type_label_tr(type)).toUTF8()
                     + " caused " + string( newCandidatePeaks.size() > 1 ? "at least one" : "the" )
                     + " peak to become insignificant.<br />"
                     "Please use the <b>Peak Editor</b> to make this change.",
@@ -3409,7 +3410,7 @@ void change_continuum_type_from_right_click( InterSpec * const interspec,
       {
         WStringStream msg;
         msg << "Naively changing the continuum type to "
-        << string(PeakContinuum::offset_type_label(type))
+        << Wt::WString::tr(PeakContinuum::offset_type_label_tr(type)).toUTF8()
         << " caused the peak to become insignificant.<br />"
         "Please use the <b>Peak Editor</b> to make this change.";
         

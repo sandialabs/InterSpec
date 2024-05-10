@@ -483,7 +483,7 @@ void PeakEdit::init()
   for( PeakContinuum::OffsetType t = PeakContinuum::OffsetType(0);
        t <= PeakContinuum::External; t = PeakContinuum::OffsetType(t+1) )
   {
-    m_continuumType->addItem( PeakContinuum::offset_type_label(t) );
+    m_continuumType->addItem( WString::tr(PeakContinuum::offset_type_label_tr(t)) );
   }//for( loop over PeakContinuum::OffsetType )
 
   row = m_valueTable->rowAt( PeakEdit::NumPeakPars+7 );

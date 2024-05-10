@@ -2161,7 +2161,7 @@ boost::any PeakModel::data( const WModelIndex &index, int role ) const
     }//case kRoiCounts:
       
     case kContinuumType:
-      return WString( PeakContinuum::offset_type_label(peak->continuum()->type()) );
+      return WString::tr( PeakContinuum::offset_type_label_tr(peak->continuum()->type()) );
       
     case kNumColumns:
       return any();

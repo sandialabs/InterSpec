@@ -4307,21 +4307,23 @@ double PeakDef::offset_integral( const double x0, const double x1,
 ////////////////////////////////////////////////////////////////////////////////
 
 /** Text appropriate for use as a label for the continuum type in the gui. */
-const char *PeakContinuum::offset_type_label( const PeakContinuum::OffsetType type )
+const char *PeakContinuum::offset_type_label_tr( const PeakContinuum::OffsetType type )
 {
   switch( type )
   {
-    case PeakContinuum::NoOffset:     return "None";
-    case PeakContinuum::Constant:     return "Constant";
-    case PeakContinuum::Linear:       return "Linear";
-    case PeakContinuum::Quadratic:    return "Quadratic";
-    case PeakContinuum::Cubic:        return "Cubic";
-    case PeakContinuum::FlatStep:     return "Flat Step";
-    case PeakContinuum::LinearStep:   return "Linear Step";
-    case PeakContinuum::BiLinearStep: return "Bi-linear Step";
-    case PeakContinuum::External:     return "Global Cont.";
+    case PeakContinuum::NoOffset:     return "pct-none";
+    case PeakContinuum::Constant:     return "pct-constant";
+    case PeakContinuum::Linear:       return "pct-linear";
+    case PeakContinuum::Quadratic:    return "pct-quadratic";
+    case PeakContinuum::Cubic:        return "pct-cubic";
+    case PeakContinuum::FlatStep:     return "pct-flat-step";
+    case PeakContinuum::LinearStep:   return "pct-linear-step";
+    case PeakContinuum::BiLinearStep: return "pct-bilinear-step";
+    case PeakContinuum::External:     return "pct-global";
   }//switch( type )
-  return "InvalidOffsetType";
+  
+  assert( 0 );
+  return "pct-invalid";
 }
 
 

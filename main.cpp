@@ -95,10 +95,11 @@ int main( int argc, char **argv )
    )
   ("docroot", po::value<std::string>(&docroot),
    "The directory that contains the 'InterSpec_resources' and 'data' directories.\n"
-   "All files in the docroot directory, and its subdirectories are available via HTTP.\n"
+   "All files in the docroot directory, and its subdirectories are available via HTTP."
 #if( !BUILD_FOR_WEB_DEPLOYMENT )
-   "Defaults to current working directory."
+   "\nDefaults to current working directory."
 #endif
+   "\nThis value sets Wts 'docroot' and 'approot' variables."
    )
   ("static-data-dir", "The static data directory (e.g., 'data' dir that holds cross-sections, "
    "nuclear-data, etc) to use.  If not specified, uses 'data' in the `docroot` directory."

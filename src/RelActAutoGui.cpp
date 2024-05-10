@@ -323,8 +323,8 @@ namespace
       // We wont allow "External" here
       for( int i = 0; i < static_cast<int>(PeakContinuum::OffsetType::External); ++i )
       {
-        const char *label = PeakContinuum::offset_type_label( PeakContinuum::OffsetType(i) );
-        m_continuum_type->addItem( label );
+        const char *key = PeakContinuum::offset_type_label_tr( PeakContinuum::OffsetType(i) );
+        m_continuum_type->addItem( WString::tr(key) );
       }//for( loop over PeakContinuum::OffsetType )
       
       m_continuum_type->setCurrentIndex( static_cast<int>(PeakContinuum::OffsetType::Linear) );
@@ -2351,7 +2351,7 @@ void RelActAutoGui::handleRightClick( const double energy, const double counts,
   for( auto type = PeakContinuum::OffsetType(0);
       type < PeakContinuum::External; type = PeakContinuum::OffsetType(type+1) )
   {
-    WMenuItem *item = continuum_menu->addItem( PeakContinuum::offset_type_label(type) );
+    WMenuItem *item = continuum_menu->addItem( WString::tr(PeakContinuum::offset_type_label_tr(type)) );
     item->triggered().connect( boost::bind( &RelActAutoEnergyRange::setContinuumType, range, type ) );
     if( type == roi.continuum_type )
       item->setDisabled( true );

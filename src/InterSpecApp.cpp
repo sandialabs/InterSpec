@@ -116,11 +116,11 @@ namespace
 
 InterSpecApp::InterSpecApp( const WEnvironment &env )
   :  WApplication( env ),
-     m_viewer( 0 ),
-     m_layout( nullptr ),
-     m_lastAccessTime( std::chrono::steady_clock::now() ),
-     m_activeTimeInSession{ std::chrono::seconds(0) },
-     m_hotkeySignal( domRoot(), "hotkey", false )
+    m_viewer( 0 ),
+    m_layout( nullptr ),
+    m_lastAccessTime( std::chrono::steady_clock::now() ),
+    m_activeTimeInSession{ std::chrono::seconds(0) },
+    m_hotkeySignal( domRoot(), "hotkey", false )
 #if( IOS )
     , m_orientation( InterSpecApp::DeviceOrientation::Unknown )
     , m_safeAreas{ 0.0f }
@@ -223,7 +223,9 @@ void InterSpecApp::setupDomEnvironment()
   
   enableUpdates( true );
   
-  setTitle( "InterSpec" );
+  useMessageResourceBundle( "InterSpecApp" );
+  
+  setTitle( WString::tr("interspec") );
   
   //Call tempDirectory() to set global variable holding path to the temp file
   //  directory, to ensure this will be available at all points in the future;
@@ -590,7 +592,7 @@ void InterSpecApp::setupWidgets( const bool attemptStateLoad  )
           loadedSpecFile = handleAppUrl( initial_file );
         }catch( std::exception &e )
         {
-          passMessage( "Error handling deep-link (1): " + string(e.what()),
+          passMessage( WString::tr("app-deep-link-error").arg( string("(1)+ ") + e.what()), 
                       WarningWidget::WarningMsgHigh );
           wApp->log( "error" ) << "InterSpecApp::setupWidgets: invalid URL: " << e.what();
         }
@@ -834,32 +836,20 @@ void InterSpecApp::setupWidgets( const bool attemptStateLoad  )
   auto showWelcomeCallback = [this,loadedSpecFile](){
     //If we already loaded a spectrum, then dont show welcome dialog (or IE
     //  warning dialog)
-    if (loadedSpecFile)
+    if( loadedSpecFile )
     {
       return;
     }
 
-    //If client is internet explorer, show a warning before the welcome dialog
-    if( !environment().agentIsIE() )
-    {
-      //Using WTimer as a workaround for iOS so screen size and safe-area and
-      //  such can all get setup before creating a AuxWindow; otherwise size of
-      //  window will be all messed up.
-      WTimer::singleShot( 10, boost::bind( &InterSpec::showWelcomeDialog, m_viewer, false) );
-      
+    //Using WTimer as a workaround for iOS so screen size and safe-area and
+    //  such can all get setup before creating a AuxWindow; otherwise size of
+    //  window will be all messed up.
+    WTimer::singleShot( 10, boost::bind( &InterSpec::showWelcomeDialog, m_viewer, false) );
+    
 #if( IOS || ANDROID )
-      //For iPhoneX* devices we should trigger a resize once
-      doJavaScript( javaScriptClass() + ".TriggerResizeEvent();" );
+    //For iPhoneX* devices we should trigger a resize once
+    doJavaScript( javaScriptClass() + ".TriggerResizeEvent();" );
 #endif
-      
-    }else
-    {
-      AuxWindow *dialog = m_viewer->showIEWarningDialog();
-      if( dialog )
-        dialog->finished().connect( boost::bind( &InterSpec::showWelcomeDialog, m_viewer, false ) );
-      else
-        m_viewer->showWelcomeDialog( false );
-    }// if( not in IE ) / else
   };//auto showWelcomeCallback
   
   if( !loadedSpecFile )
@@ -1552,16 +1542,97 @@ bool InterSpecApp::handleAppUrl( const std::string &url )
     m_viewer->handleAppUrl( url );
   }catch( std::exception &e )
   {
-    passMessage( "Error handling deep-link: " + string(e.what()), WarningWidget::WarningMsgHigh );
+    passMessage( WString::tr("app-deep-link-error").arg(e.what()), WarningWidget::WarningMsgHigh );
     cerr << "InterSpecApp::handleAppUrl: invalid URL: " << e.what() << endl;
     wApp->log( "error" ) << "InterSpecApp::handleAppUrl: invalid URL: " << e.what();
     
     return false;
-  }// try / catch to process th URL
+  }// try / catch to process the URL
   
   return true;
 }//bool handleAppUrl( std::string url )
 
+
+void InterSpecApp::useMessageResourceBundle( const std::string &name )
+{
+  // Get filesystem path to the 'InterSpec_resources' directory.
+  //  Properly, WApplication::docRoot() points to the directory that contains 'InterSpec_resources',
+  //  but we currently have WServer::appRoot() to point to the same directory, so we will
+  //  use appRoot(), so we can access it outside of a user session.
+  const string root = WServer::instance()->appRoot();
+  string resource_dir = SpecUtils::append_path( root, "InterSpec_resources" );
+  resource_dir = SpecUtils::append_path( resource_dir, "app_text" );
+  const string resource_base = SpecUtils::append_path( resource_dir, name );
+  
+  WMessageResourceBundle &bundle = WApplication::messageResourceBundle();
+  
+  // WMessageResourceBundle checks if this resource base path has been loaded, and
+  //  if it has, it wont be loaded a second time
+  const bool loadInMemory = true;
+  bundle.use( resource_base, loadInMemory );
+}//bool useMessageResourceBundle( const std::string &name )
+
+
+const set<string> &InterSpecApp::languagesAvailable()
+{
+  WServer *server = WServer::instance();
+  
+  static bool s_have_inited = false;
+  static set<string> s_languages;
+  std::mutex s_languages_mutex;
+  
+  std::lock_guard<std::mutex> lock( s_languages_mutex );
+  
+  if( s_have_inited )
+    return s_languages;
+  
+  assert( server );
+  if( !server )
+    return s_languages;
+  
+  s_have_inited = true;
+  
+  // Get filesystem path to the 'InterSpec_resources' directory.
+  //  Properly, WApplication::docRoot() points to the directory that contains 'InterSpec_resources',
+  //  but we currently have WServer::appRoot() to point to the same directory, so we will
+  //  use appRoot(), so we can access it outside of a user session.
+  const string root = server->appRoot();
+  string resource_dir = SpecUtils::append_path( root, "InterSpec_resources" );
+  resource_dir = SpecUtils::append_path( resource_dir, "app_text" );
+  
+  //  We will look for the languages available, by using the group from:
+  //      "InterSpec_resources/app_text/InterSpec_(.+).xml"
+  
+  auto matcher = []( const std::string &filename, void *userdata ) -> bool {
+    const string name = SpecUtils::filename(filename);
+    return SpecUtils::starts_with(name, "InterSpec_") && SpecUtils::iends_with(name, ".xml");
+  };
+
+  const vector<string> files = SpecUtils::ls_files_in_directory( resource_dir, matcher, nullptr );
+
+  s_languages.insert( "en" );
+  
+  for( const string &filename : files )
+  {
+    string name = SpecUtils::filename(filename);
+    
+    assert( SpecUtils::starts_with(name, "InterSpec_") );
+    assert( SpecUtils::iends_with(name, ".xml") );
+    
+    if( SpecUtils::starts_with(name, "InterSpec_")
+       && SpecUtils::iends_with(name, ".xml") )
+    {
+      name = name.substr( 10 );
+      assert( name.size() >= 4 );
+      if( name.size() >= 4 )
+        name = name.substr( 0, name.size() - 4 );
+      if( !name.empty() )
+        s_languages.insert( name );
+    }//
+  }//for( string name : files )
+  
+  return s_languages;
+}//vector<string> languagesAvailable();
 
 
 void InterSpecApp::finalize()

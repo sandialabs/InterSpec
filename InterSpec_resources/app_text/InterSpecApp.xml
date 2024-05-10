@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <message id='interspec'>InterSpec</message>
+  <message id='app-deep-link-error'>Error handling deep-link: {}</message>
+</messages>

@@ -852,6 +852,11 @@ list( APPEND OTHER_InterSpec_SUPPORT_FILES
 add_custom_target(interspec_resources SOURCES ${OTHER_InterSpec_SUPPORT_FILES})
 
 
+# Make a target for the XML files that hold the (internationalized) text for the app
+FILE(GLOB APP_TEXT_FILES InterSpec_resources/app_text/*.xml )
+add_custom_target( interspec_app_text SOURCES ${APP_TEXT_FILES} )
+
+
 #Copy files to the install directory
 foreach(_file ${OTHER_FILES})
     configure_file(
