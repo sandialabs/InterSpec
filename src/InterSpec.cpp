@@ -567,7 +567,7 @@ InterSpec::InterSpec( WContainerWidget *parent )
   if( !langPref.empty() )
     wApp->setLocale( WLocale(langPref) );
       
-  app->useMessageResourceBundle( "InterSpec" );  
+  app->useMessageResourceBundle( "InterSpec" );
     
   // Now that we have m_sql and m_user setup, we can create the undo/redo manager, if we
   //  are using the desktop interface.  We will create this manager before any our widgets
@@ -11051,6 +11051,14 @@ void InterSpec::handleAppUrlClosed()
 {
   m_enterUri = nullptr;
 }//void handleAppUrlClosed()
+
+
+void InterSpec::useMessageResourceBundle( const std::string &name )
+{
+  auto app = dynamic_cast<InterSpecApp *>( WApplication::instance() );
+  if( app )
+    app->useMessageResourceBundle( name );
+}
 
 
 void InterSpec::detectorsToDisplayChanged()

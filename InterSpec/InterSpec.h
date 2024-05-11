@@ -333,6 +333,13 @@ public:
   SimpleDialog *makeEnterAppUrlWindow();
   void handleAppUrlClosed();
   
+  /** Loads the XML file for current locale, to use for localizing strings.
+   
+   Simply passes through to the `InterSpecApp` function of the same name
+  \sa InterSpecApp::useMessageResourceBundle
+   */
+  void useMessageResourceBundle( const std::string &name );
+  
   //For the 'add*Menu(...)' functions, the menuDiv passed in *must* be a
   //  WContainerWidget or a PopupDivMenu
   void addFileMenu( Wt::WWidget *menuDiv, const bool isAppTitlebar );

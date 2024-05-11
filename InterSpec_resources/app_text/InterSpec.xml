@@ -16,6 +16,9 @@
   <message id="Background">Background</message>
   <message id="Secondary">Secondary</message>
   <message id="second-foreground">Second Foreground</message>
+  <message id="foreground">foreground</message> <!-- For use in middle of sentence -->
+  <message id="background">background</message> <!-- For use in middle of sentence -->
+  <message id="secondary">secondary</message>   <!-- For use in middle of sentence -->
   <message id="Exit">Exit</message>
   <message id="show-lines">Show Lines</message>
   <message id="Default">Default</message>
@@ -31,6 +34,7 @@
   <message id="FWHM">FWHM</message>
   <message id="Amp.">Amp.</message>
   <message id="Area">Area</message>
+  <message id="Age">Age</message>
   <message id="Add">Add</message>
   <message id="Peak">Peak</message>
   <message id="Delete">Delete</message>
@@ -41,7 +45,11 @@
   <message id="CSV">CSV</message>
   <message id="True">True</message>
   <message id="False">False</message>
-
+  <message id="Remove">Remove</message>
+  <message id="RemoveAll">Remove All</message>
+  <message id="Clear">Clear</message>
+  <message id="ClearAll">Clear All</message>
+  <message id="T1/2">T&frac12;</message>
 
 
 

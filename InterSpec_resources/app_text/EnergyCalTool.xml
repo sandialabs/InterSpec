@@ -1,0 +1,86 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- ect- is short for EnergyCalTool -->
+  <message id="ect-no-spec">No spectrum loaded</message>
+  <message id="ect-more-act">More Actions</message>
+  <message id="ect-linearize">Linearize...</message>
+  <message id="ect-tt-linearize">Linearizes spectra so that each energy channel has the same width.</message>
+  <message id="ect-truncate">Truncate Energy...</message>
+  <message id="ect-tt-truncate">Truncates the energy range of the spectrum by discarding data channels.</message>
+  <message id="ect-combine">Combine Channels...</message>
+  <message id="ect-tt-combine">Combines energy channels together so spectrum will have less data channels</message>
+  <message id="ect-to-frf">To FRF...</message>
+  <message id="ect-tt-to-frf">Converts the energy calibration type to Full Range Fraction</message>
+  <message id="ect-to-poly">To Polynomial...</message>
+  <message id="ect-tt-to-poly">Converts the energy calibration type to Polynomial.</message>
+  <message id="ect-multi-file">Multi File Cal...</message>
+  <message id="ect-tt-multi-file">
+    Allows using multiple spectra with peaks fit, from one or more spectrum files,
+    to perform an energy calibration.  Can especially be useful for
+    lower-resolution detectors where each spectrum has a different test source
+  </message>
+  <message id="ect-tt-CALp">Download a .CALp file that contains the current energy calibration.
+    You can drag-n-drop this file back onto InterSpec later to re-use this energy calibration.
+    This is especially useful if you often use data from a detector whose calibration needs to be
+    consistently adjusted.
+  </message>
+  <message id="ect-export-CALp-msg">You can apply this CALp file later to a different spectrum by dragging and dropping the CALp file onto InterSpec.</message>
+  <message id="ect-fit-coeff-btn">Fit Coeffs</message>
+  <message id="ect-tt-fit-coeff-btn">
+    Uses the expected energy of photopeaks associated with the fit peaks to fit for the energy coefficients.  
+    This button is disabled if no coefficients are selected to fit for, or less peaks than coefficients are selected.
+  </message>
+  <message id="ect-apply-changes-to">Apply Changes To</message>
+  <message id="ect-disp-dets">Displayed Detectors</message>
+  <message id="ect-all-dets">All Detectors</message>
+  <message id="ect-disp-samples">Displayed Samples</message>
+  <message id="ect-all-samples">All Samples</message>
+  <message id="ect-calib-coeffs">Calibration Coefficients</message>
+  <message id="ect-detector">Detector</message>
+  <message id="ect-cal-peaks">Calibration Peaks</message>
+  <message id="ect-CALp-no-meas">No measurement displayed for {1}</message>
+  <message id="ect-CALp-not-applic-det">Calibration change not applicable to any detector of {1}</message>
+  <message id="ect-CALp-not-applic-sample">Calibration change not applicable to any samples of {1}</message>
+  <message id="ect-CALp-invalid-input">Invalid input energy calibration</message>
+  <message id="ect-CALp-num-channel-mismatch">The number of new calibration channels ({1}) doesn't match old calibration ({2}).</message>
+  <message id="ect-CALp-missing-det">The CALp file is missing calibration for detectors: {1}.{2}</message>
+  <message id="ect-CALp-extra-det">  There were extra calibrations for non-existent detectors: {1}.</message>
+  <message id="ect-CALp-named-vs-unamed">All calibrations in CALp file specify a detector name, but current spectrum detector is unnamed.</message>
+  <message id="ect-CALp-no-cal-for-det">"No calibration available for detector '{1}'"</message>
+  <message id="ect-CALp-no-prev-for-det">Couldn't identify previous calibration to use for detector '{1}'.</message>
+  <message id="ect-CALp-nchannel-mismatch-det">The number of new calibration channels ({1}) doesn't match old calibration ({2}) for detector '{3}'.</message>
+  <message id="ect-import-CALp">Import CALp file</message>
+  <message id="ect-select-CALp"><p>Select the CALp file to use</p></message>
+  <message id="ect-upload-CALp-to-large">File to large to upload</message>
+  <message id="ect-invalid-CALp">Not a valid CALp file</message>
+  <message id="ect-CALp-drag-n-drop-note"><p style="font-size: small;">Note: you can also drag-n-drop CALp files onto InterSpec<br /></p></message>
+  <message id="ect-change-made-invalid">Calibration change made a energy calibration become invalid{1}.  Error: {2}</message>
+  <message id="ect-for-the-fore"> for the foreground</message>
+  <message id="ect-for-the-back"> for the background</message>
+  <message id="ect-for-the-sec"> for the secondary spectrum</message>
+  <message id="ect-set-cal-invalid-nchan">Sample {1}, Detector '{2}' has {3} channels but calibration being set has {4}.</message>
+  <message id="ect-error-setting-cal">Error setting new energy calibration: {1}</message>
+  <message id="ect-add-dev-pair-made-invalid">Adding deviation pair made energy calibration become invalid{1}. Error: {2}</message>
+  <message id="ect-unexpected-error-prev-coefs">Unexpected error retrieving previous calibration coefficients - not applying changes</message>
+  <message id="ect-changed-cal-not-selected">It looks like the energy calibration you changed isn't marked for changes to be applied to; please correct that.</message>
+  <message id="ect-dev-pair-change-invalid">Changing the deviation pair made energy calibration become invalid.  Error: {1}</message>
+  <message id="ect-set-dev-pair-err">There was an error setting deviation pairs for this detector.</message>
+  <message id="ect-dev-applied-dets-samples">Deviation pairs applied only to the '{1}' detector, but to all sample numbers{2}.</message>
+  <message id="ect-dev-applied-to-samples">Deviation pairs applied to all sample numbers{1}.</message>
+  <message id="ect-err-not-enough-peaks">Can not fit calibration coefficients right now.  You must select at least as many peaks for fitting as coefficients you have selected to fit for.</message>
+  <message id="ect-no-peaks">No peaks available.</message>
+  <message id="ect-select-cal-of-disp-det">Please select calibration of a displayed detector</message>
+  <message id="ect-not-enough-channel">Not enough channels in the data.</message>
+  <message id="ect-no-coeff-selected">You must select at least one coefficient to fit for.</message>
+  <message id="ect-fail-min">ErrorMsg Failed to fit energy calibration using both matrix and iterative approaches</message>
+  <message id="ect-fit-successful">Energy calibration has been updated from fitting.</message>
+  <message id="ect-fail-fit">Failed calibration by fitting peak means. {1}</message>
+  <message id="ect-del-graphical-msg">If you recalibrate again by ALT+CTRL+DRAG on another portion of the spectrum, you will be given the option of preserving the effects of this calibration as well.</message>
+  <message id="ect-lc-disp-dets">displayed detectors</message>
+  <message id="ect-lc-all-dets">all detectors</message>
+  <message id="ect-lc-all-samples">all samples</message>
+  <message id="ect-lc-disp-samples">displayed samples</message>
+  <message id="ect-short-fore">For.</message>
+  <message id="ect-short-back">Back</message>
+  <message id="ect-short-secondary">Sec.</message>
+</messages>
