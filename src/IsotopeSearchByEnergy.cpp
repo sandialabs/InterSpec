@@ -297,6 +297,8 @@ IsotopeSearchByEnergy::IsotopeSearchByEnergy( InterSpec *viewer,
   wApp->useStyleSheet( "InterSpec_resources/IsotopeSearchByEnergy.css" );
   
   addStyleClass( "IsotopeSearchByEnergy" );
+    
+  viewer->useMessageResourceBundle( "IsotopeSearchByEnergy" );
   
   shared_ptr<void> undo_sentry = getDisableUndoRedoSentry();
   
@@ -309,7 +311,7 @@ IsotopeSearchByEnergy::IsotopeSearchByEnergy( InterSpec *viewer,
   WContainerWidget *assignRow = new WContainerWidget( searchConditions );
   assignRow->addStyleClass( "AssignToSelectedRow" );
   
-  m_clearRefLines = new WPushButton( "Clear Ref. Photopeaks", assignRow );
+  m_clearRefLines = new WPushButton( WString::tr("isbe-clear-ref"), assignRow );
   m_clearRefLines->addStyleClass( "LightButton" );
   m_clearRefLines->clicked().connect( this, &IsotopeSearchByEnergy::clearSelectionAndRefLines );
   m_clearRefLines->hide();
@@ -330,15 +332,15 @@ IsotopeSearchByEnergy::IsotopeSearchByEnergy( InterSpec *viewer,
   
   WContainerWidget *sourceTypes = new WContainerWidget( searchConditions );
   sourceTypes->setStyleClass( "IsotopeSourceTypes" );
-  m_gammas = new WCheckBox( "Gammas", sourceTypes );
+  m_gammas = new WCheckBox( WString::tr("isbe-cb-gammas"), sourceTypes );
   m_gammas->changed().connect( this, &IsotopeSearchByEnergy::minBrOrHlChanged );
   m_gammas->setChecked();
 
-  m_xrays = new WCheckBox( "X-rays", sourceTypes );
+  m_xrays = new WCheckBox( WString::tr("X-rays"), sourceTypes );
   m_xrays->changed().connect( this, &IsotopeSearchByEnergy::minBrOrHlChanged );
   m_xrays->setChecked();
   
-  m_reactions = new WCheckBox( "Reactions", sourceTypes );
+  m_reactions = new WCheckBox( WString::tr("isbe-cb-rxnts"), sourceTypes );
   m_reactions->changed().connect( this, &IsotopeSearchByEnergy::minBrOrHlChanged );
 //  m_reactions->setChecked();
 
@@ -354,12 +356,12 @@ IsotopeSearchByEnergy::IsotopeSearchByEnergy( InterSpec *viewer,
   const bool showToolTips = InterSpecUser::preferenceValue<bool>( "ShowTooltips", m_viewer );
   
   WContainerWidget *optionDiv = new WContainerWidget( searchOptions );
-  WLabel *label = new WLabel( "Min. BR", optionDiv );
+  WLabel *label = new WLabel( WString::tr("isbe-min-br"), optionDiv );
 //  HelpSystem::attachToolTipOn( label,"Toggle or type minimum branching ratio.", showToolTips , HelpSystem::ToolTipPosition::Top);
 
   m_minBranchRatio = new NativeFloatSpinBox( optionDiv );
-  string tip = "Minimum branching ratio.";
-  HelpSystem::attachToolTipOn( m_minBranchRatio, tip, showToolTips , HelpSystem::ToolTipPosition::Top);
+  HelpSystem::attachToolTipOn( m_minBranchRatio, WString::tr("isbe-tt-min-br"),
+                              showToolTips , HelpSystem::ToolTipPosition::Top);
   
   m_minBranchRatio->setValue( m_minBr );
   m_minBranchRatio->setRange( 0.0f, 1.0f );
@@ -367,7 +369,7 @@ IsotopeSearchByEnergy::IsotopeSearchByEnergy( InterSpec *viewer,
   label->setBuddy( m_minBranchRatio );
   
   optionDiv = new WContainerWidget( searchOptions );
-  label = new WLabel( "Min. T\xc2\xbd", optionDiv );
+  label = new WLabel( WString::tr("isbe-min-hl"), optionDiv ); //"Min. T\xc2\xbd"
  
   m_minHalfLife = new WLineEdit( "6000 s", optionDiv );
   m_minHl = 6000.0 * PhysicalUnits::second;
@@ -378,20 +380,8 @@ IsotopeSearchByEnergy::IsotopeSearchByEnergy( InterSpec *viewer,
   m_minHalfLife->setAttributeValue( "spellcheck", "off" );
 #endif
     
-  tip = "Minimum half life of nuclides to be searched.<br />"
-      "<div>Age can be specified using a combination of time units, "
-      "similar to '<b>5.3y 8d 22m</b>'.</div>"
-      "<div>"
-      "Acceptable time units: <b>year</b>, <b>yr</b>, <b>y</b>, <b>day</b>, <b>d</b>, <b>hrs</b>, <b>hour</b>, <b>h</b>, <b>minute</b>, "
-      "<b>min</b>, <b>m</b>, <b>second</b>, <b>s</b>, <b>ms</b>, <b>microseconds</b>, <b>us</b>, <b>nanoseconds</b>, <b>ns</b>, or "
-      "you can specify time period by <b>hh:mm:ss</b>. "
-      "</div>"
-      "<div>"
-      "When multiple time periods are "
-      "specified, they are summed, e.x. '1y6months 3m' is interpreted as "
-      "18 months and 3 minutes"
-      "</div>";
-  HelpSystem::attachToolTipOn( {label,m_minHalfLife}, tip, showToolTips , HelpSystem::ToolTipPosition::Top );
+  HelpSystem::attachToolTipOn( {label,m_minHalfLife}, WString::tr("isbe-tt-min-hl"),
+                              showToolTips , HelpSystem::ToolTipPosition::Top );
 
   WRegExpValidator *validator = new WRegExpValidator( PhysicalUnits::sm_timeDurationRegex, this );
   validator->setFlags(Wt::MatchCaseInsensitive);
@@ -471,7 +461,7 @@ IsotopeSearchByEnergy::IsotopeSearchByEnergy( InterSpec *viewer,
   m_results->setSelectionBehavior( Wt::SelectRows );
   m_results->selectionChanged().connect( this, &IsotopeSearchByEnergy::resultSelectionChanged );
   
-  m_searching = new WText( "Searching", this );
+  m_searching = new WText( WString::tr("isbe-searching"), this );
   m_searching->addStyleClass( "IsotopeSearchInProgress" );
   m_searching->setInline( false );
   m_searching->hide();
@@ -918,7 +908,7 @@ void IsotopeSearchByEnergy::resultSelectionChanged()
     const string symbol = (nuc ? nuc->symbol : string())
                           + (el ? (el->symbol + " x-ray") : string())
                           + (rctn ? rctn->name() : string());
-    const string btntxt = "Assign peak" + string(nPeaksSearched > 1 ? "s to " : " to ") + symbol;
+    WString btntxt = WString::trn( "isbe-assign-to-btn", nPeaksSearched ).arg( symbol );
     
     m_assignPeakToSelected->actionButton()->setText( btntxt );
     
@@ -938,20 +928,20 @@ void IsotopeSearchByEnergy::resultSelectionChanged()
       
       if( !hide_menu_btn )
       {
-        string txt = "Assign searched energ" + string(nPeaksSearched > 1 ? "ies" : "y") + " to " + symbol;
+        WString txt = WString::trn( "isbe-assign-searched-energies", nPeaksSearched ).arg( symbol );
         WMenuItem *item = menu->addItem( txt );
         item->triggered().connect( this, &IsotopeSearchByEnergy::assignSearchedOnPeaksToSelectedNuclide );
         
         if( nPeaksNoIdOnNuc > nPeaksSearched )
         {
-          txt = "Assign matching peaks with no ID to " + symbol + "...";
+          txt = WString::tr("isbe-assign-matching-peaks-no-id").arg( symbol );
           item = menu->addItem( txt );
           item->triggered().connect( boost::bind( &IsotopeSearchByEnergy::assignPeaksNearReferenceLinesToSelectedNuclide, this, true) );
         }//if( nPeaksNoIdOnNuc > nPeaksSearched )
         
         if( nPeaksOnNuc > nPeaksSearched )
         {
-          txt = "Assign all matching peaks to " + symbol + "...";
+          txt = WString::tr("isbe-assign-all-matching-peaks").arg( symbol );
           item = menu->addItem( txt );
           item->triggered().connect( boost::bind( &IsotopeSearchByEnergy::assignPeaksNearReferenceLinesToSelectedNuclide, this, false) );
         }//if( nPeaksOnNuc > nPeaksSearched )
@@ -1121,11 +1111,11 @@ void IsotopeSearchByEnergy::assignSearchedOnPeaksToSelectedNuclide()
   
   WString nucstr;
   if( nuc )
-    nucstr = nuc->symbol;
+    nucstr = WString::fromUTF8( nuc->symbol );
   else if( el )
-    nucstr = el->symbol + " x-ray";
+    nucstr = WString( "{1} {2}" ).arg(el->symbol).arg( WString::tr("x-ray") );
   else if( rctn )
-    nucstr = rctn->name();
+    nucstr = WString::fromUTF8( rctn->name() );
   else
     return;
   
