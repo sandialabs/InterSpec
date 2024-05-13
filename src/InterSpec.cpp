@@ -1009,7 +1009,7 @@ InterSpec::InterSpec( WContainerWidget *parent )
   m_timeSeries->chartDragged().connect( this, &InterSpec::timeChartDragged );
   m_timeSeries->chartClicked().connect( this, &InterSpec::timeChartClicked );
   
-  m_spectrum->setXAxisTitle( WString::tr("spectrum_x_axis_title").toUTF8() );
+  m_spectrum->setXAxisTitle( WString::tr("Energy (keV)").toUTF8() );
   m_spectrum->setYAxisTitle( WString::tr("spectrum_y_axis_title").toUTF8() );
 
   m_spectrum->enableLegend();

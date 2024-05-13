@@ -1,6 +1,12 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <messages nplurals="2" plural="n==1 ? 0 : 1">
-  <!-- isbe- is short for IsotopeSearchByEnergy -->
+  <!-- 
+    This file contains the localizations for both IsotopeSearchByEnergy.cpp and IsotopeSearchByEnergyModel.cpp - e.g., the "Nuclide Search" tab.
+    (there wasnt enough content in IsotopeSearchByEnergyModel to justify the performance hit of adding in an extra localization file)
+
+    isbe- is short for IsotopeSearchByEnergy
+    isbem- is short for IsotopeSearchByEnergyModel
+  -->
   <message id="isbe-clear-ref">Clear Ref. Photopeaks</message>
   <message id="isbe-cb-gammas">Gammas</message>
 
@@ -34,5 +40,25 @@
   </message>
   <message id="isbe-assign-matching-peaks-no-id">Assign matching peaks with no ID to {1}...</message>
   <message id="isbe-assign-all-matching-peaks">Assign all matching peaks to {1}...</message>
-  <message id="isbe-"></message>
+
+  <!-- Messages for IsotopeSearchByEnergyModel are below here; i.e. the table headers -->
+  <message id="isbem-parent-nuc">Parent</message>
+  <message id="isbem-diff">Diff.</message>
+  <message id="isbem-rel-br">Rel. B.R.</message>
+  <message id="isbem-profile">Profile</message>
+  <message id="isbem-decay">Decay</message>
+  <message id="isbem-part-hl">Parent T&frac12;</message>
+  <message id="isbem-assumed-age">Assumed Age</message>
+  <message id="isbem-tt-parent-nuc">Parent nuclide of the decay chain.</message>
+  <message id="isbem-tt-diff">Difference between selected nuclide's energy level and searched energy level</message>
+  <message id="isbem-tt-energy">True gamma/x-ray energy</message>
+  <message id="isbem-tt-rel-bre">Branching ratio, relative to the nuclides largest yield gamma
+    (i.e., 1.0 indicates the most abundant gamma, not one gamma per decay)
+  </message>
+  <message id="isbem-tt-profile">A rough metric for how close the observed spectrum comes to having the expected peaks for the selected source.
+    A higher number is better, with a value of 1.0 being the highest - it is recommended to sort by this column for nuclide ID.  
+    See the help for this tool for a more complete description of this quantity.
+  </message>
+  <message id="isbem-tt-parent-hl">Parent half life</message>
+  <message id="isbem-tt-assumed-age">Assumed age of nuclide</message>
 </messages>

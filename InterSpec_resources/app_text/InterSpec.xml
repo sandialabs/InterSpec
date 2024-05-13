@@ -57,7 +57,7 @@
 
 
   <!-- Text for the spectrum chart -->
-  <message id="spectrum_x_axis_title">Energy (keV)</message>
+  <message id="Energy (keV)">Energy (keV)</message>
   <message id="spectrum_y_axis_title">Counts</message>
  
   <!-- The dialog when the user selects "Clear Session..." from the File menu -->

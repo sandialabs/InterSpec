@@ -1514,21 +1514,21 @@ boost::any IsotopeSearchByEnergyModel::headerData( int section,
     switch( section )
     {
       case IsotopeSearchByEnergyModel::Column::ParentIsotope:
-        return WString("Parent");
+        return WString::tr("isbem-parent-nuc");
       case IsotopeSearchByEnergyModel::Column::Distance:
-        return WString("Diff.");
+        return WString::tr("isbem-diff");
       case IsotopeSearchByEnergyModel::Column::Energy:
-        return WString("Energy (keV)");
+        return WString::tr("Energy (keV)");
       case IsotopeSearchByEnergyModel::Column::BranchRatio:
-        return WString("Rel. B.R.");
+        return WString::tr("isbem-rel-br");
       case IsotopeSearchByEnergyModel::Column::ProfileDistance:
-        return WString("Profile");
+        return WString::tr("isbem-profile");
       case IsotopeSearchByEnergyModel::Column::SpecificIsotope:
-        return WString("Decay");
+        return WString::tr("isbem-decay");
       case IsotopeSearchByEnergyModel::Column::ParentHalfLife:
-        return WString("Parent H.L.");
+        return WString::tr("isbem-part-hl");
       case IsotopeSearchByEnergyModel::Column::AssumedAge:
-        return WString("Assumed Age");
+        return WString::tr("isbem-assumed-age");
       case IsotopeSearchByEnergyModel::Column::NumColumns:
         break;
     }//switch( col )
@@ -1537,23 +1537,21 @@ boost::any IsotopeSearchByEnergyModel::headerData( int section,
     switch( section )
     {
       case IsotopeSearchByEnergyModel::Column::ParentIsotope:
-        return WString("Parent nuclide");
+        return WString::tr("isbem-tt-parent-nuc");
       case IsotopeSearchByEnergyModel::Column::Distance:
-        return WString("Difference between selected nuclide's energy level and searched energy level");
+        return WString::tr("isbem-tt-diff");
       case IsotopeSearchByEnergyModel::Column::Energy:
-        return WString("True gamma/x-ray energy");
+        return WString::tr("isbem-tt-energy");
       case IsotopeSearchByEnergyModel::Column::BranchRatio:
-        return WString("Branching ratio, relative to the nuclides largest yield gamma"
-                        " (i.e., 1.0 indicates the most abundant gamma, not one gamma per decay)");
+        return WString::tr("isbem-tt-rel-bre");
       case IsotopeSearchByEnergyModel::Column::ProfileDistance:
-        return WString("A rough metric for how close the observed spectrum comes to having the"
-                       " expected peaks for the selected source");
+        return WString::tr("isbem-tt-profile");
       case IsotopeSearchByEnergyModel::Column::SpecificIsotope:
         return boost::any();
       case IsotopeSearchByEnergyModel::Column::ParentHalfLife:
-        return WString("Parent half life");
+        return WString::tr("isbem-tt-parent-hl");
       case IsotopeSearchByEnergyModel::Column::AssumedAge:
-        return WString("Assumed age of nuclide");
+        return WString::tr("isbem-tt-assumed-age");
       case IsotopeSearchByEnergyModel::Column::NumColumns:
         break;
     }//switch( col )

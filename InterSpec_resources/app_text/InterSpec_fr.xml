@@ -45,7 +45,7 @@
 <message id="ClearAll">Tout Effacer</message>
 <message id="T1/2">T&frac12;</message>
 
-<message id="spectrum_x_axis_title">Énergie (keV)</message>
+<message id="Energy (keV)">Énergie (keV)</message>
 <message id="spectrum_y_axis_title">Comptes</message>
 <message id="clear-session">Effacer la session ?</message>
 <message id="clear-session-msg">Êtes-vous sûr de vouloir commencer une nouvelle session ?</message>
