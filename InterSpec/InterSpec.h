@@ -1053,7 +1053,7 @@ public:
   bool showingFeatureMarker( const FeatureMarkerType option );
   void setComptonPeakAngle( const int angle );
   void toggleFeatureMarkerWindow();
-  void deleteFeatureMarkerWindow();
+  void displayFeatureMarkerWindow( const bool show );
   
 public:
 

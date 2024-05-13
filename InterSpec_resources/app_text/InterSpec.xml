@@ -80,6 +80,8 @@
   <message id="window-title-3d">3D Data View</message>
   <message id="window-title-peak-rel-eff">Isotopics from user-fit peaks</message>
   <message id="window-title-compact-file">Select Opened Spectra to Display</message>
+  <message id="window-title-feature-markers">Feature Markers</message>
+
 
 
   <!-- The names of the tool-tabs at the bottom of the app -->

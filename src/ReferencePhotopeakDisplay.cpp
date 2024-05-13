@@ -73,6 +73,7 @@
 #include "InterSpec/NativeFloatSpinBox.h"
 #include "InterSpec/RowStretchTreeView.h"
 #include "InterSpec/DecayDataBaseServer.h"
+#include "InterSpec/FeatureMarkerWidget.h"
 #include "InterSpec/MassAttenuationTool.h"
 #include "InterSpec/D3SpectrumDisplayDiv.h"
 #include "InterSpec/GammaInteractionCalc.h"
@@ -833,6 +834,12 @@ ReferencePhotopeakDisplay::ReferencePhotopeakDisplay(
     m_showRiidNucs( NULL ),
     m_showPrevNucs( NULL ),
     m_showAssocNucs( NULL ),
+    m_showFeatureMarkers( nullptr ),
+    m_otherNucsColumn( nullptr ),
+    m_otherNucs( nullptr ),
+    m_prevNucs{},
+    m_external_ids{},
+    m_featureMarkerColumn( nullptr ),
     m_detectorDisplay( NULL ),
     m_materialDB( materialDB ),
     m_materialSuggest( materialSuggest ),
@@ -848,7 +855,8 @@ ReferencePhotopeakDisplay::ReferencePhotopeakDisplay(
     m_specificSourcelineColors{},
     m_displayingNuclide( this ),
     m_nuclidesCleared( this ),
-    m_nucInfoWindow( nullptr )
+    m_nucInfoWindow( nullptr ),
+    m_featureMarkers( nullptr )
 {
   auto app = dynamic_cast<InterSpecApp *>( WApplication::instance() );
   assert( app );
@@ -1119,7 +1127,8 @@ ReferencePhotopeakDisplay::ReferencePhotopeakDisplay(
   m_showPrevNucs = new WCheckBox( WString::tr("rpd-prev-nucs"), m_optionsContent );
   m_showRiidNucs = new WCheckBox( WString::tr("rpd-det-nucs"), m_optionsContent );
   m_showAssocNucs = new WCheckBox( WString::tr("rpd-assoc-nucs"), m_optionsContent );
-
+  m_showFeatureMarkers = new WCheckBox( WString::tr("rpd-feature-markers"), m_optionsContent );
+      
   m_showGammas->setWordWrap( false );
   m_showXrays->setWordWrap( false );
   m_showAlphas->setWordWrap( false );
@@ -1135,7 +1144,9 @@ ReferencePhotopeakDisplay::ReferencePhotopeakDisplay(
   m_showRiidNucs->unChecked().connect( this, &ReferencePhotopeakDisplay::updateOtherNucsDisplay );
   m_showAssocNucs->checked().connect( this, &ReferencePhotopeakDisplay::updateOtherNucsDisplay );
   m_showAssocNucs->unChecked().connect( this, &ReferencePhotopeakDisplay::updateOtherNucsDisplay );
-
+  m_showFeatureMarkers->checked().connect( this, &ReferencePhotopeakDisplay::featureMarkerCbToggled );
+  m_showFeatureMarkers->unChecked().connect( this, &ReferencePhotopeakDisplay::featureMarkerCbToggled );
+      
 
   //const bool showToolTips = InterSpecUser::preferenceValue<bool>("ShowTooltips", this);
   //HelpSystem::attachToolTipOn(m_showPrevNucs, "Show ", showToolTips);
@@ -1175,8 +1186,19 @@ ReferencePhotopeakDisplay::ReferencePhotopeakDisplay(
   m_otherNucs = new WContainerWidget(m_otherNucsColumn);
   m_otherNucs->addStyleClass( "OtherNucsContent ToolTabTitledColumnContent" );
 
-
-
+  m_featureMarkerColumn = new WContainerWidget();
+  m_featureMarkerColumn->addStyleClass("FeatureLines ToolTabSection ToolTabTitledColumn");
+  m_featureMarkerColumn->hide();
+  
+  WContainerWidget *featureMarkerTitleRow = new WContainerWidget( m_featureMarkerColumn );
+  featureMarkerTitleRow->addStyleClass( "ToolTabColumnTitle" );
+  WText *featureMarkerTitle = new WText( WString::tr("rpd-feature-markers"), featureMarkerTitleRow );
+  WContainerWidget *featureMarkerCloseIcon = new WContainerWidget(featureMarkerTitleRow);
+  featureMarkerCloseIcon->addStyleClass("closeicon-wtdefault");
+  //A little convoluted, but we will have the InterSpec class tell us to close feature marker widget,
+  //  so it can save its state, and update the app menu-item, and handle undo/redo.
+  featureMarkerCloseIcon->clicked().connect( boost::bind( &InterSpec::displayFeatureMarkerWindow, m_spectrumViewer, false) );
+      
   m_particleView = new RowStretchTreeView();
   
   m_particleView->setRootIsDecorated(	false ); //makes the tree look like a table! :)
@@ -1239,15 +1261,16 @@ ReferencePhotopeakDisplay::ReferencePhotopeakDisplay(
   overallLayout->setContentsMargins( 0, 0, 0, 0 );
   setLayout( overallLayout );
 
-  overallLayout->addWidget( inputDiv,          0, 0 );
-  overallLayout->addWidget( lowerInput,        1, 0 );
-  overallLayout->addWidget( m_options,         0, 1, 3, 1 );
-  overallLayout->addWidget( m_otherNucsColumn, 0, 2, 3, 1 );
-  overallLayout->addWidget( m_particleView,    0, 3, 3, 1 );
-  overallLayout->addWidget( bottomRow,         2, 0 );
+  overallLayout->addWidget( inputDiv,              0, 0 );
+  overallLayout->addWidget( lowerInput,            1, 0 );
+  overallLayout->addWidget( m_options,             0, 1, 3, 1 );
+  overallLayout->addWidget( m_otherNucsColumn,     0, 2, 3, 1 );
+  overallLayout->addWidget( m_featureMarkerColumn, 0, 3, 3, 1 );
+  overallLayout->addWidget( m_particleView,        0, 4, 3, 1 );
+  overallLayout->addWidget( bottomRow,             2, 0 );
 
   overallLayout->setRowStretch( 2, 1 );
-  overallLayout->setColumnStretch( 3, 1 );
+  overallLayout->setColumnStretch( 4, 1 );
 }//ReferencePhotopeakDisplay constructor
 
 
@@ -1617,6 +1640,56 @@ MoreNuclideInfoWindow *ReferencePhotopeakDisplay::moreInfoWindow()
 {
   return m_nucInfoWindow;
 }
+
+
+FeatureMarkerWidget *ReferencePhotopeakDisplay::featureMarkerTool()
+{
+  return m_featureMarkers;
+}
+
+
+FeatureMarkerWidget *ReferencePhotopeakDisplay::showFeatureMarkerTool()
+{
+  if( m_featureMarkers )
+    return m_featureMarkers;
+  
+  m_showFeatureMarkers->setChecked( true );
+  m_featureMarkerColumn->setHidden( false );
+  m_featureMarkers = new FeatureMarkerWidget( m_spectrumViewer, m_featureMarkerColumn );
+  
+  return m_featureMarkers;
+}//FeatureMarkerWidget *showFeatureMarkerTool()
+
+
+void ReferencePhotopeakDisplay::removeFeatureMarkerTool()
+{
+  if( !m_featureMarkers )
+    return;
+  
+  delete m_featureMarkers;
+  m_featureMarkers = nullptr;
+  m_featureMarkerColumn->hide();
+  m_showFeatureMarkers->setChecked( false );
+}//void removeFeatureMarkerTool()
+
+
+void ReferencePhotopeakDisplay::featureMarkerCbToggled()
+{
+  // This is a little convoluted, but we will call back to the InterSpec
+  //  class, which will then call to the appropriate `ReferencePhotopeakDisplay`
+  //  functions to create/remove the display.
+  //  This is to allow the InterSpec class to restore the widget to the correct
+  //  state, and also update its menu items, and handle undo/redo.
+  m_spectrumViewer->displayFeatureMarkerWindow( m_showFeatureMarkers->isChecked() );
+}//void featureMarkerCbToggled()
+
+
+void ReferencePhotopeakDisplay::emphasizeFeatureMarker()
+{
+  if( m_featureMarkers )
+    m_featureMarkers->doJavaScript( "$('#" + m_featureMarkers->id() + "')"
+                              ".fadeIn(100).fadeOut(100).fadeIn(100).fadeOut(100).fadeIn(100);" );
+}//void emphasizeFeatureMarker()
 
 
 void ReferencePhotopeakDisplay::showMoreInfoWindow()

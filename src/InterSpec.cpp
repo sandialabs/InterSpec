@@ -2832,16 +2832,24 @@ void InterSpec::setFeatureMarkerOption( const FeatureMarkerType option, const bo
   m_featureMarkersShown[static_cast<int>(option)] = show;
   m_spectrum->setFeatureMarkerOption( option, show );
   
-  if( m_featureMarkers && m_undo && !m_undo->isInUndoOrRedo() && (show != wasShown) )
+  if( m_undo && m_undo->canAddUndoRedoNow() && (show != wasShown) )
   {
     auto undo = [this,option,show](){
-      if( m_featureMarkers )
-        m_featureMarkers->setFeatureMarkerChecked( option, !show );
+      FeatureMarkerWidget *tool = m_featureMarkers ? m_featureMarkers->tool() : nullptr;
+      if( !tool && m_referencePhotopeakLines )
+        tool = m_referencePhotopeakLines->featureMarkerTool();
+        
+      if( tool )
+        tool->setFeatureMarkerChecked( option, !show );
       setFeatureMarkerOption( option, !show );
     };
     auto redo = [this,option,show](){
-      if( m_featureMarkers )
-        m_featureMarkers->setFeatureMarkerChecked( option, show );
+      FeatureMarkerWidget *tool = m_featureMarkers ? m_featureMarkers->tool() : nullptr;
+      if( !tool && m_referencePhotopeakLines )
+        tool = m_referencePhotopeakLines->featureMarkerTool();
+      
+      if( tool )
+        tool->setFeatureMarkerChecked( option, show );
       setFeatureMarkerOption( option, show );
     };
     
@@ -2861,72 +2869,128 @@ void InterSpec::setComptonPeakAngle( const int angle )
   const int prev_angle = m_spectrum->comptonPeakAngle();
   m_spectrum->setComptonPeakAngle( angle );
   
-  if( m_featureMarkers && m_undo && !m_undo->isInUndoOrRedo() && (prev_angle != angle) )
+  if( m_undo && m_undo->canAddUndoRedoNow() && (prev_angle != angle) )
   {
     auto undo = [this,prev_angle](){
-      if( m_featureMarkers )
-        m_featureMarkers->setDisplayedComptonPeakAngle( prev_angle );
+      FeatureMarkerWidget *tool = m_featureMarkers ? m_featureMarkers->tool() : nullptr;
+      if( !tool && m_referencePhotopeakLines )
+        tool = m_referencePhotopeakLines->featureMarkerTool();
+      
+      if( tool )
+        tool->setDisplayedComptonPeakAngle( prev_angle );
       m_spectrum->setComptonPeakAngle( prev_angle );
     };
     auto redo = [this,angle](){
-      if( m_featureMarkers )
-        m_featureMarkers->setDisplayedComptonPeakAngle( angle );
+      FeatureMarkerWidget *tool = m_featureMarkers ? m_featureMarkers->tool() : nullptr;
+      if( !tool && m_referencePhotopeakLines )
+        tool = m_referencePhotopeakLines->featureMarkerTool();
+      
+      if( tool )
+        tool->setDisplayedComptonPeakAngle( angle );
       m_spectrum->setComptonPeakAngle( angle );
     };
     
     m_undo->addUndoRedoStep( undo, redo, "Change Compton angle" );
-  }//if( m_undo && (show != wasShown) )
+  }//if( m_undo && (prev_angle != angle) )
 }//void setComptonPeakAngle( const float angle );
 
 
 void InterSpec::toggleFeatureMarkerWindow()
 {
-  if( m_undo )
-    m_undo->addUndoRedoStep( [this](){ toggleFeatureMarkerWindow(); },
-                            [this](){ toggleFeatureMarkerWindow(); },
-                            "Show feature marker window" );
+  const bool showing = (m_featureMarkers
+                  || (m_referencePhotopeakLines && m_referencePhotopeakLines->featureMarkerTool()));
   
-  if( m_featureMarkers )
-  {
-    deleteFeatureMarkerWindow();
-    return;
-  }//if( m_featureMarkers )
-
-  m_featureMarkers = new FeatureMarkerWindow( this );
-  m_featureMarkers->finished().connect( this, &InterSpec::toggleFeatureMarkerWindow );
-  
-  m_featureMarkerMenuItem->setText( WString::tr("app-mi-view-hide-feature-markers") );
-  
-  // Restore the widget state to previous opened state.
-  for( FeatureMarkerType i = FeatureMarkerType(0);
-       i < FeatureMarkerType::NumFeatureMarkers;
-       i = FeatureMarkerType(static_cast<int>(i)+1) )
-  {
-    const bool show = m_featureMarkersShown[static_cast<int>(i)];
-    m_spectrum->setFeatureMarkerOption( i, show );
-    m_featureMarkers->setFeatureMarkerChecked( i, show );
-  }//for( set FeatureMarkers to the last state of the window )
+  displayFeatureMarkerWindow( !showing );
 }//void toggleFeatureMarkerWindow()
 
 
-void InterSpec::deleteFeatureMarkerWindow()
+void InterSpec::displayFeatureMarkerWindow( const bool show )
 {
-  if( !m_featureMarkers )
-    return;
+  if( m_undo && m_undo->canAddUndoRedoNow() )
+    m_undo->addUndoRedoStep( [this,show](){ displayFeatureMarkerWindow(!show); },
+                            [this,show](){ displayFeatureMarkerWindow(show); },
+                            "Show feature marker window" );
   
-  AuxWindow::deleteAuxWindow( m_featureMarkers );
-  m_featureMarkers = nullptr;
-  m_featureMarkerMenuItem->setText( WString::tr("app-mi-view-feature-markers") );
+  const bool showing = (m_featureMarkers 
+                  || (m_referencePhotopeakLines && m_referencePhotopeakLines->featureMarkerTool()));
   
-  for( FeatureMarkerType i = FeatureMarkerType(0);
-       i < FeatureMarkerType::NumFeatureMarkers;
-       i = FeatureMarkerType(static_cast<int>(i)+1) )
+  if( showing == show )
   {
-    if( m_featureMarkersShown[static_cast<int>(i)] )
-      m_spectrum->setFeatureMarkerOption( i, false );
-      //setFeatureMarkerOption( i, false );
-  }
-}//void deleteFeatureMarkerWindow()
+    if( m_referencePhotopeakLines && m_referencePhotopeakLines->featureMarkerTool() )
+    {
+      assert( m_toolsTabs );
+      if( m_toolsTabs )
+      {
+        const int index = m_toolsTabs->indexOf(m_referencePhotopeakLines);
+        m_toolsTabs->setCurrentIndex( index );
+        m_currentToolsTab = index;
+      }
+      m_referencePhotopeakLines->emphasizeFeatureMarker();
+    }//if( reference photopeak tool is showing feature marker options )
+    
+    return;
+  }//if( showing == show )
+  
+  if( !show )
+  {
+    if( m_featureMarkers )
+    {
+      AuxWindow::deleteAuxWindow( m_featureMarkers );
+      m_featureMarkers = nullptr;
+    }else
+    {
+      assert( m_referencePhotopeakLines && m_referencePhotopeakLines->featureMarkerTool() );
+      m_referencePhotopeakLines->removeFeatureMarkerTool();
+    }
+    
+    for( FeatureMarkerType i = FeatureMarkerType(0);
+         i < FeatureMarkerType::NumFeatureMarkers;
+         i = FeatureMarkerType(static_cast<int>(i)+1) )
+    {
+      if( m_featureMarkersShown[static_cast<int>(i)] )
+        m_spectrum->setFeatureMarkerOption( i, false );
+    }
+    
+    m_featureMarkerMenuItem->setText( WString::tr("app-mi-view-feature-markers") );
+    
+    return;
+  }//if( !show )
+  
+  
+  m_featureMarkerMenuItem->setText( WString::tr("app-mi-view-hide-feature-markers") );
+  
+  // Initing the feature marker tool can add some undo/redo steps, by calling into
+  //  `InterSpec::setComptonPeakAngle(...)` or `InterSpec::displayFeatureMarkerWindow(bool)`
+  //  - lets block these calls.
+  UndoRedoManager::BlockUndoRedoInserts undo_blocker;
+  
+  FeatureMarkerWidget *widget = nullptr;
+  if( toolTabsVisible() && m_referencePhotopeakLines )
+  {
+    widget = m_referencePhotopeakLines->showFeatureMarkerTool();
+    assert( m_toolsTabs );
+    if( m_toolsTabs )
+      m_toolsTabs->setCurrentIndex( m_toolsTabs->indexOf(m_referencePhotopeakLines) );
+    m_referencePhotopeakLines->emphasizeFeatureMarker();
+  }else
+  {
+    m_featureMarkers = new FeatureMarkerWindow( this );
+    m_featureMarkers->finished().connect( boost::bind(&InterSpec::displayFeatureMarkerWindow, this, false) );
+    
+    widget = m_featureMarkers->tool();
+  }//if( toolTabsVisible() && m_referencePhotopeakLines ) / else
+  
+  // Restore the widget state to previous opened state.
+  for( FeatureMarkerType i = FeatureMarkerType(0);
+      i < FeatureMarkerType::NumFeatureMarkers;
+      i = FeatureMarkerType(static_cast<int>(i)+1) )
+  {
+    const bool show = m_featureMarkersShown[static_cast<int>(i)];
+    m_spectrum->setFeatureMarkerOption( i, show );
+    widget->setFeatureMarkerChecked( i, show );
+  }//for( set FeatureMarkers to the last state of the window )
+}//void displayFeatureMarkerWindow()
+
 
 
 Wt::Signal<SpecUtils::SpectrumType,std::shared_ptr<SpecMeas>, std::set<int>, vector<string> > &
@@ -6018,6 +6082,14 @@ void InterSpec::setToolTabsVisible( bool showToolTabs )
     undo_sentry = make_unique<UndoRedoManager::BlockUndoRedoInserts>();
   }//if( m_undo )
   
+  // If feature marker window, or column in "Reference Photopeak" tab is open, then we will close
+  //  this tool.  We will not open it up at the end of this function, because that seems a little
+  //  confusing (and also, it causes a JS exception....)
+  const bool showingFeatureMarkers = (m_featureMarkers
+                || (m_referencePhotopeakLines && m_referencePhotopeakLines->featureMarkerTool()));
+  if( showingFeatureMarkers )
+    displayFeatureMarkerWindow( false );
+  
   m_toolTabsVisibleItems[0]->setHidden( showToolTabs );
   m_toolTabsVisibleItems[1]->setHidden( !showToolTabs );
   
@@ -6265,23 +6337,20 @@ void InterSpec::setToolTabsVisible( bool showToolTabs )
     m_currentToolsTab = m_toolsTabs->currentIndex();
   else
     m_currentToolsTab = -1;
-    
-    
-    if (m_mobileBackButton && m_mobileForwardButton)
+  
+  if( m_mobileBackButton && m_mobileForwardButton )
+  {
+    if( !toolTabsVisible() && m_dataMeasurement && !m_dataMeasurement->passthrough()
+        && (m_dataMeasurement->sample_numbers().size() > 1) )
     {
-        if (!toolTabsVisible() && m_dataMeasurement && !m_dataMeasurement->passthrough()
-             && m_dataMeasurement->sample_numbers().size()> 1)
-        {
-            m_mobileBackButton->setHidden(false);
-            m_mobileForwardButton->setHidden(false);
-        }
-        else
-        {
-            m_mobileBackButton->setHidden(true);
-            m_mobileForwardButton->setHidden(true);
-            
-        }
+      m_mobileBackButton->setHidden(false);
+      m_mobileForwardButton->setHidden(false);
+    }else
+    {
+      m_mobileBackButton->setHidden(true);
+      m_mobileForwardButton->setHidden(true);
     }
+  }//if( m_mobileBackButton && m_mobileForwardButton )
   
   //Not sure _why_ this next statement is needed, but it is, or else the
   //  spectrum chart shows up with no data
@@ -6291,6 +6360,11 @@ void InterSpec::setToolTabsVisible( bool showToolTabs )
   
   m_timeSeries->scheduleRenderAll();
 #endif // USE_CSS_FLEX_LAYOUT / else
+  
+  // If we call `displayFeatureMarkerWindow(true);`, we'll get a JS exception - rather than
+  //  figure this out, we'll just not re-open it.
+  //if( showingFeatureMarkers )
+  //  displayFeatureMarkerWindow( true );
 }//void setToolTabsVisible( bool showToolTabs )
 
 
