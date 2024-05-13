@@ -5744,8 +5744,8 @@ void InterSpec::addFileMenu( WWidget *parent, const bool isAppTitlebar )
   
   if( !mobile )
   { 
-    item = m_fileMenuPopup->addMenuItem( WString::tr("app-mi-open-file") );
-    HelpSystem::attachToolTipOn( item, WString::tr("app-mi-tt-open-file"), showToolTips );
+    item = m_fileMenuPopup->addMenuItem( WString::tr("app-mi-file-open") );
+    HelpSystem::attachToolTipOn( item, WString::tr("app-mi-tt-file-open"), showToolTips );
     
 #if( ANDROID )
     item->triggered().connect( std::bind([this](){

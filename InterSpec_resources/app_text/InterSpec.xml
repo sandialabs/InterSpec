@@ -22,6 +22,10 @@
   <message id="Exit">Exit</message>
   <message id="show-lines">Show Lines</message>
   <message id="Default">Default</message>
+  <message id="Error">Error</message>
+  <message id="Name">Name</message>
+  <message id="Description">Description</message>
+
 
   <!-- Words not used in InterSpec.cpp, but at least a few places throughout the app --> 
   <message id="Continuum">Continuum</message>
@@ -140,12 +144,11 @@
    you can choose either the most recent save, or select past tagged versions.
   </message>
   <message id="app-mi-file-prev">Previous...</message>
-  <message id="app-mi-tt-file-prev">Opens previously saved states</message>
+  <message id="app-mi-tt-file-prev">Opens previously saved states or spectra.</message>
   <message id="app-mi-file-clear">Clear Session...</message>
   <message id="app-mi-tt-file-clear">Starts a clean application state with no spectra loaded</message>
   <message id="app-mi-samples">Samples</message>
-  <message id="app-mi-open-file">Open File...</message>
-  <message id="app-mi-tt-open-file">Creates a dialog to browse for a spectrum file on your file system.
+  <message id="app-mi-tt-file-open">Creates a dialog to browse for a spectrum file on your file system.
     Drag and drop the file directly into the app window as a quicker alternative.
   </message>
   <message id="app-mi-export-file">Export File...</message>

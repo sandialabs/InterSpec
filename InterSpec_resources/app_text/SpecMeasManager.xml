@@ -1,0 +1,256 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- This file contains most of the strings for SpecMeasManager.cpp - e.g., File -> "Manager..."
+    smm- is short for Spectrum Measurement Manager
+  -->
+  <message id="smm-window-title">Spectrum Manager</message>
+  <message id="smm-load-spec-from">Load spectrum from: </message>
+  <message id="smm-tt-upload-file">Import spectrum from file</message>
+
+  <message id="smm-err-zip">Error extracting file from zip</message>
+  <message id="smm-zip-sel-file-no-name">
+    Uploaded file is a ZIP file.
+    <br />
+    {2}
+    Select which file in it you'd like to open.
+  </message>
+  <message id="smm-zip-sel-file">
+    <b>{1}</b> is a ZIP file.
+    <br />
+    {2}
+    Select which file in it you'd like to open.
+  </message>
+  <message id="smm-zip-window-title">Uploaded ZIP File Contents</message>
+  <message id="smm-zip-filename-hdr">Filename</message>
+  <message id="smm-zip-kilobyte-hdr">kb</message>
+  <message id="smm-zip-display-btn">Display</message>
+  <message id="smm-empty-file">File was probably an empty file - not a spectrum file.</message>
+  <message id="smm-failed-reading-nonspec-file">Failed to read non-spectrum file.</message>
+  <message id="smm-not-spec-file">Not a spectrum file</message>
+  <message id="smm-icd2">This looks to be an N42 ICD2 file that contains analysis results
+    rather than raw spectra.
+    <br />
+    If you believe this to be a legitimate spectrum file, please email it to 
+    <a href="mailto:interspec@sandia.gov" target="_blank">interspec@sandia.gov</a>
+    to support this file type.
+  </message>
+  <message id="smm-invalid-zip">This file appears to be an invalid ZIP file (or xlsx, pptx, 
+    <br />
+    docx, odp, jar, apk, etc), sorry I cant open it :(
+  </message>
+  <message id="smm-unsupported-archive">This file looks to be an archive file, not supported by InterSpec yet.
+    Please contact 
+    <a href="mailto:wcjohns@sandia.gov" target="_blank">wcjohns@sandia.gov</a>
+    if you would like support for this archive type added.
+  </message>
+  <message id="smm-unsupported-document">This file looks to be a document file, and not supported by InterSpec.</message>
+  <message id="smm-invalid-peak-csv">Uploaded file looked like a Peak CSV file, but was invalid.</message>
+  <message id="smm-file-is-drf">
+    <p style="white-space: nowrap;">
+      This file looks to be a Detector Response Function.
+    </p>
+    <p style="text-align: left; white-space: nowrap;">
+      Name: {1}
+    </p>
+   <p>Would you like to use this DRF?</p>
+  </message>
+  <message id="smm-saved-drf-conf">
+    Saved '{1}' for later use, and will be available in the
+    "<em>Rel. Eff.</em>" portion of the "<em>Detector Response Function Select</em>" tool.
+  </message>
+  <message id="smm-err-saving-drf">Error saving DRF file for later use.</message>
+  <message id="smm-file-is-drf">This file looks to be a Detector Response Function.</message>
+  <message id="smm-file-is-multi-drf">This file contains multiple Detector Response Functions.</message>
+
+  <!-- Text for dialog that appears when user drag-n-drop a .CALp file onto InterSpec -->
+  <message id="smm-CALp-no-fore"><p>No currently displayed foreground - skipping CALp file.</p></message>
+  <message id="smm-CALp-invalid">
+    <p style="white-space: nowrap;">
+      The content of this CALp file was
+      <br />
+      unreadable or incompatible with the data
+    </p>
+  </message>
+  <message id="smm-CALp-contains-energy-cal">
+    <p style="white-space: nowrap;">This file looks to contain an energy calibration.</p>
+  </message>
+  <message id="smm-CALp-multi-dets"><p>There are calibrations for {1} detectors</p></message>
+  <message id="smm-warn-single-for-multi">
+    <p style="text-align: left; white-space: nowrap;">
+    Warning: This CALp file contains a single calibration; it will<br />
+    be applied to the primary displayed energy calibration, and<br />
+    the relative change will be applied to the other detectors<br />
+    energy calibrations, which is probably what you want.
+    </p>
+  </message>
+  <message id="smm-warn-multi-for-single">
+    <p style="text-align: left; white-space: nowrap;">
+    Warning: This energy calibration may not be consistent<br />
+    with the structure of the current data.
+    </p>
+  </message>
+  <message id="smm-CALp-cb-disp-samples-only">Apply only to displayed samples</message>
+  <message id="smm-CALp-cb-apply-to-fore">Apply to foreground</message>
+  <message id="smm-CALp-cb-apply-to-back">Apply to background</message>
+  <message id="smm-CALp-cb-apply-to-second">Apply to secondary</message>
+  <message id="smm-CALp-like-to-use"><p style="white-space: nowrap;">Would you like to use it?</p></message>
+  <message id="smm-CALp-err-applying-single">There was an error applying calibration:
+    <br />
+    {1}
+    <br />
+    <br />
+    Calibration was applied to foreground.
+  </message>
+  <message id="smm-CALp-err-applying-mult">There was an error applying calibration:
+    <br />
+    {1}
+    <br />
+    <br />
+    Calibration was applied to foreground and background.
+  </message>
+
+  <!-- Text for dialog that appears when user drag-n-drops a .ECC file onto InterSpec -->
+  <message id="smm-err-load-iso-by-nuc">Error loading <em>Isotopics by nuclide</em> XML config file: {1}</message>
+  <message id="smm-err-load-xml-iso-by-nuc">Error parsing config XML: {1}{2}</message>
+  <message id="smm-err-iso-by-nuc-window-title">Invalid <em>Isotopics by nuclide</em> XML config file.</message>
+  <message id="smm-ecc-curve">ISOCS Efficiency Calibration Curve DRF</message>
+  <message id="smm-ecc-how-to-interpret">How to interpret</message>
+  <message id="smm-ecc-far-field">Far Field DRF</message>
+  <message id="smm-ecc-fix-geom-total-act">Fixed Geometry - total activity</message>
+  <message id="smm-ecc-fix-geom-act-cm2">Fixed Geometry - activity per cm2</message>
+  <message id="smm-ecc-fix-geom-act-m2">Fixed Geometry - activity per m2</message>
+  <message id="smm-ecc-fix-geom-act-gram">Fixed Geometry - activity per gram</message>
+  <message id="smm-ecc-det-diam">Detector diam.</message>
+  <message id="smm-ecc-dist">Distance.</message>
+  <message id="smm-ecc-use-drf">Use DRF</message>
+  <message id="smm-ecc-error">Error creating DRF from ECC: {1}</message>
+
+  <!-- Text for dialog when user drag-n-drop the Activity/Shielding fit file onto app -->
+  <message id="smm-act-shield-xml">Activity/Shielding XML</message>
+  <message id="smm-act-shield-use">Use this Activity/Shielding fit setup?</message>
+  <message id="smm-err-act-shield">Sorry, there was an error loading Activity/Shielding Fit model: {1}</message>
+
+  <!-- Other errors -->
+  <message id="smm-upload-timeout">File upload has maybe timed-out - 120 seconds without receiving file data.</message>
+  <message id="smm-finishing-upload">Finishing upload</message>
+  <message id="smm-finishing-copying">Finishing copying file</message>
+  <message id="smm-finish-up-txt">of {1} {2} file - may take a minute.</message> <!-- ex. "of 112.2 kb foreground file - may take a minute."-->
+  <message id="smm-window-title-parsing">Parsing File</message>
+  <message id="smm-window-msg-parsing">This may take a second.</message>
+  <message id="smm-no-file-disp">Error, no {1} measurement displayed.</message>
+  <message id="smm-no-spec-disp">Sorry, the {1}  doesn't look to be displaying a spectrum.</message>
+  <message id="smm-err-parse-spec-title">Could Not Parse File</message>
+  <message id="smm-err-parse-spec">
+    <p>Sorry, I couldnt parse the file {1}:</p>
+  <p>Error: <em>{2}</em></p>
+  <p>If you think this is a valid spectrum file, please send it to 
+  <a href="mailto:interspec@sandia.gov" target="_blank">interspec@sandia.gov</a>, and
+   we'll try to fix this issue.</p>
+  </message>
+  <message id="smm-failed-combine">Failed in combining files: {1}</message>
+  <message id="smm-failed-sum">Failed summing spectra: {1}</message>
+
+  <!-- URI entry -->
+  <message id="smm-qr-no-meas">No gamma measurements in URL/QR code</message>
+  <message id="smm-qr-no-gamma">No gamma measurements in URL/QR code</message>
+  <message id="smm-qr-name-placeholder">From QR-code/URL</message>
+  <message id="smm-qr-err-decode">Error decoding spectrum URL/QR code: {1}</message>
+  <message id="smm-qr-couldnt-encode">
+    Spectrum could not be encoded to a QR code.
+    <br />
+    Likely due to requiring more than 9 QR codes.
+  </message>
+  <message id="smm-qr-encode-fail">Failed to encoded spectrum to a QR code: {1} </message>
+
+  <!-- Messages for "Virtual Detectors" at RSI systems -->
+  <message id="smm-vd-load-title">Virtual Detectors to load?</message>
+  <message id="smm-vd-load-msg">
+    <div>This file contained multiple "Virtual Detectors" which</div>
+    <div>may be sums of multiple physical detectors, or not.</div>
+    <div>If you load all, see the <b>View</b>&rarr;<b>Detectors</b> menu to</div>
+    <div>display a subset.</div>
+    {1}
+    <div style="margin-top: 20px; margin-bottom: 5px; white-space: nowrap; font-weight: bold;">
+      What detectors data would you like to load?
+    </div>
+  </message>
+  <message id="smm-vd-gt-5dets">
+    <div>There are {1} VDs, only "All" or first 5 selectable.</div>
+  </message>
+  <message id="smm-vd-all-btn">All</message>
+
+  <!-- Derived data related text-->
+  <message id="smm-derived-window-title">Use Derived Data?</message>
+  <message id="smm-derived-window-txt">
+    <div>This file contained "Derived Data" spectra, which are</div>
+    <div>usually what is used by the detection system for analysis.</div>
+    <div style="margin-top: 20px; margin-bottom: 5px; white-space: nowrap; font-weight: bold;">
+      What data would you like to load?
+    </div>
+  </message>
+  <message id="smm-derived-all">All Data</message>
+  <message id="smm-derived-raw">Raw Data</message>
+  <message id="smm-derived-derived">Derived Data</message>
+  <message id="smm-multiple-binnings-window-title">Select Energy Binning</message>
+  <message id="smm-multiple-binnings-window-txt">
+    <div style="white-space: nowrap;">Multiple energy binnings were found in the spectrum file.</div>
+    <div style="margin-top: 5px; margin-bottom: 5px;">Please select which one you would like</div>
+  </message>
+  <message id="smm-multiple-binnings-keep-all-btn">Keep All</message>
+  <message id="smm-warn-has-intrinsic">The uploaded file contained an intrinsic activity spectrum, but currently showing the other spectrum in the file.</message>
+  <message id="smm-warn-upload-mult-spec">The uploaded file contained {1} samples<br /></message>
+  <message id="smm-warn-upload-mult-showing-fore">The first foreground sample is being shown.<br /></message>
+  <message id="smm-warn-upload-mult-showing-first">The first sample is being shown.<br /></message>
+  <message id="smm-warn-upload-mult-showing-other">Sample {1} is being shown.<br /></message>
+  <message id="smm-warn-upload-use-spec-manager">Use the <b>Spectrum Files</b> tab, or the <b>File Manager</b> to select other records.</message>
+  <message id="smm-warn-upload-use-file-manager">Use the <b>File Manager</b> to select others.</message>
+
+  <message id="smm-multi-cal-present">The uploaded file contained {1} calibration or derived-data samples
+    <br />
+    {2}
+    will not be displayed.
+    <br />
+    Use the <b>Spectrum Files</b> tab or <b>File Manager</b> to change this.
+  </message>
+  <message id="smm-multi-cal-it">It</message>
+  <message id="smm-multi-cal-they">They</message>
+  <message id="smm-multi-spectra-using-back">File has multiple spectra, so only the background spectrum has been displayed.</message>
+  <message id="smm-multi-spectra-using-first">The uploaded file contained {1} samples so
+    <br />
+    am displaying the first one.
+    <br />
+    Use the <b>File Manager</b> to change this.
+  </message>
+
+
+  <!-- The visual components of the Spectrum Measurement Manager GUI -->
+  <message id="smm-selected-spec-label">Selected Spectrum: </message>
+  <message id="smm-disp-as-btn">Display As</message>
+  <message id="smm-to-new-file">To New File</message>
+  <message id="smm-tt-to-new-file">Creates a new in-memory spectrum file from the current selection.</message>
+  <message id="smm-as-new-file">As New File</message>
+  <message id="smm-tt-as-new-file">Creates a new in-memory spectrum file from the current selection.</message>
+  <message id="smm-sum-spectra">Sum Spectra</message>
+  <message id="smm-tt-sum-spectra">Creates a new in-memory spectrum file from the current selection.</message>
+  <message id="smm-export-btn">Export...</message>
+  <message id="smm-unload-btn">Unload</message>
+  <message id="smm-unassign-label">Unassign: </message>
+
+
+  <message id="smm-prev-states-window-title">Previously Stored States</message>
+  <message id="smm-err-prev-state-unexpected">Unexpected issue displaying available save-states: {1}</message>
+  <message id="smm-tab-saved-states">Saved States</message>
+  <message id="smm-tab-auto-saved">Auto-saved Spectra</message>
+  <message id="smm-auto-check-prev-cb">Automatically check for prev. work.</message>
+  <message id="smm-cant-save">Will not be able to save this file to the database. {1}</message>
+  <message id="smm-max-file-to-large">Attempted file is too large; max size is {1} kb, you tried to upload {2} kb.</message>
+  <message id="smm-must-specify-name">You must specify a name</message>
+  <message id="smm-save-spectype-as-window-title">Save {1} Spectrum As</message>
+  <message id="smm-save-spectype-name-empty-txt">(Name to store under)</message>
+  <message id="smm-save-spectype-desc-empty-txt">(Optional description)</message>
+  <message id="smm-save-state-toast">Saved state of {1}</message>
+  <message id="smm-save-spec-version-window-title">Save Spectrum Version</message>
+  <message id="smm-save-state">Save State</message>
+  <message id="smm-create-new-tag-toast">Created a new tag: '{1}'.</message>
+  
+</messages>

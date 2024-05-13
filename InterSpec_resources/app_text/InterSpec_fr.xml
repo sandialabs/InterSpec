@@ -97,8 +97,7 @@
 <message id="app-mi-file-clear">Effacer la session...</message>
 <message id="app-mi-tt-file-clear">Commence un état d'application propre sans spectres chargés</message>
 <message id="app-mi-samples">Échantillons</message>
-<message id="app-mi-open-file">Ouvrir un fichier...</message>
-<message id="app-mi-tt-open-file">Crée une boîte de dialogue pour parcourir un fichier de spectre sur votre système de fichiers. Glisser et déposer le fichier directement dans la fenêtre de l'application comme alternative plus rapide.</message>
+<message id="app-mi-tt-file-open">Crée une boîte de dialogue pour parcourir un fichier de spectre sur votre système de fichiers. Glisser et déposer le fichier directement dans la fenêtre de l'application comme alternative plus rapide.</message>
 <message id="app-mi-export-file">Exporter le fichier...</message>
 <message id="app-mi-samples-ba133">Ba-133 (16k canaux)</message>
 <message id="app-mi-samples-passthrough-mobile">Passthrough (16k canaux)</message>

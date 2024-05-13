@@ -2980,7 +2980,7 @@ DrfSelect::DrfSelect( std::shared_ptr<DetectorPeakResponse> currentDet,
 
 
 void DrfSelect::createChooseDrfDialog( vector<shared_ptr<DetectorPeakResponse>> inputdrfs,
-                                       string mainMsgHtml,
+                                       WString mainMsgHtml,
                                        string creditsHtml,
                                        std::function<void()> saveDrfsCallBack )
 {
