@@ -18,6 +18,13 @@
 <message id="Exit">Quitter</message>
 <message id="show-lines">Afficher les Lignes</message>
 <message id="Default">Par défaut</message>
+<message id="Error">Erreur</message>
+<message id="Name">Nom</message>
+<message id="Description">Description</message>
+<message id="Detector">Détecteur</message>
+<message id="Distance">Distance</message>
+<message id="Activity">Activité</message>
+<message id="Remark">Remarque</message>
 <message id="Continuum">Continuum</message>
 <message id="cont-type">Type de Cont.</message>
 <message id="Title">Titre</message>

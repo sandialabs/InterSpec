@@ -25,6 +25,11 @@
   <message id="Error">Error</message>
   <message id="Name">Name</message>
   <message id="Description">Description</message>
+  <message id="Detector">Detector</message>
+  <message id="Distance">Distance</message>
+  <message id="Activity">Activity</message>
+  <message id="Remark">Remark</message>
+
 
 
   <!-- Words not used in InterSpec.cpp, but at least a few places throughout the app --> 
