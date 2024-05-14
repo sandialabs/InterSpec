@@ -24,7 +24,7 @@
   <message id="pm-hdr-roi-counts">ROI Counts</message>
   
   
-  <message id="pm-hdr-tt-mean">"Mean Energy</message>
+  <message id="pm-hdr-tt-mean">Mean Energy</message>
   <message id="pm-hdr-tt-fwhm">Full Width at Half Maximum</message>
   <message id="pm-hdr-tt-amp">Peak Area</message>
   <message id="pm-hdr-tt-cps">Peak counts per second</message>
