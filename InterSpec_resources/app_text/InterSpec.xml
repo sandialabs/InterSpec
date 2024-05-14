@@ -54,8 +54,11 @@
   <message id="Clear">Clear</message>
   <message id="ClearAll">Clear All</message>
   <message id="T1/2">T&frac12;</message>
+  <message id="Gamma">Gamma</message>
   <message id="X-rays">X-rays</message>
   <message id="x-ray">x-ray</message>
+  <message id="Live Time">Live Time</message>
+  <message id="Real Time">Real Time</message>
   
 
 

@@ -416,7 +416,7 @@ InterSpec::InterSpec( WContainerWidget *parent )
   m_compactXAxisItems{ nullptr },
   m_tabToolsMenuItems{0},
   m_featureMarkersShown{false},
-  m_featureMarkers( nullptr ),
+  m_featureMarkersWindow( nullptr ),
   m_featureMarkerMenuItem( nullptr ),
   m_multimedia( nullptr ),
 #if( USE_REMOTE_RID )
@@ -1410,10 +1410,10 @@ D3SpectrumExport::D3SpectrumChartOptions InterSpec::getD3SpectrumOptions() const
   const bool showPeakEnergyLabels = m_spectrum->showingPeakLabel( SpectrumChart::kShowPeakEnergyLabel );
   const bool showPeakNuclideLabels = m_spectrum->showingPeakLabel( SpectrumChart::kShowPeakNuclideLabel );
   const bool showPeakNuclideEnergyLabels = m_spectrum->showingPeakLabel( SpectrumChart::kShowPeakNuclideEnergies );
-  const bool showEscapePeakMarker = (m_featureMarkers && m_featureMarkersShown[static_cast<int>(FeatureMarkerType::EscapePeakMarker)]);
-  const bool showComptonPeakMarker = (m_featureMarkers && m_featureMarkersShown[static_cast<int>(FeatureMarkerType::ComptonPeakMarker)]);
-  const bool showComptonEdgeMarker = (m_featureMarkers && m_featureMarkersShown[static_cast<int>(FeatureMarkerType::ComptonEdgeMarker)]);
-  const bool showSumPeakMarker = (m_featureMarkers && m_featureMarkersShown[static_cast<int>(FeatureMarkerType::SumPeakMarker)]);
+  const bool showEscapePeakMarker = (m_featureMarkersWindow && m_featureMarkersShown[static_cast<int>(FeatureMarkerType::EscapePeakMarker)]);
+  const bool showComptonPeakMarker = (m_featureMarkersWindow && m_featureMarkersShown[static_cast<int>(FeatureMarkerType::ComptonPeakMarker)]);
+  const bool showComptonEdgeMarker = (m_featureMarkersWindow && m_featureMarkersShown[static_cast<int>(FeatureMarkerType::ComptonEdgeMarker)]);
+  const bool showSumPeakMarker = (m_featureMarkersWindow && m_featureMarkersShown[static_cast<int>(FeatureMarkerType::SumPeakMarker)]);
   const bool backgroundSubtract = m_spectrum->backgroundSubtract();
   
   
@@ -2835,7 +2835,7 @@ void InterSpec::setFeatureMarkerOption( const FeatureMarkerType option, const bo
   if( m_undo && m_undo->canAddUndoRedoNow() && (show != wasShown) )
   {
     auto undo = [this,option,show](){
-      FeatureMarkerWidget *tool = m_featureMarkers ? m_featureMarkers->tool() : nullptr;
+      FeatureMarkerWidget *tool = m_featureMarkersWindow ? m_featureMarkersWindow->tool() : nullptr;
       if( !tool && m_referencePhotopeakLines )
         tool = m_referencePhotopeakLines->featureMarkerTool();
         
@@ -2844,7 +2844,7 @@ void InterSpec::setFeatureMarkerOption( const FeatureMarkerType option, const bo
       setFeatureMarkerOption( option, !show );
     };
     auto redo = [this,option,show](){
-      FeatureMarkerWidget *tool = m_featureMarkers ? m_featureMarkers->tool() : nullptr;
+      FeatureMarkerWidget *tool = m_featureMarkersWindow ? m_featureMarkersWindow->tool() : nullptr;
       if( !tool && m_referencePhotopeakLines )
         tool = m_referencePhotopeakLines->featureMarkerTool();
       
@@ -2872,7 +2872,7 @@ void InterSpec::setComptonPeakAngle( const int angle )
   if( m_undo && m_undo->canAddUndoRedoNow() && (prev_angle != angle) )
   {
     auto undo = [this,prev_angle](){
-      FeatureMarkerWidget *tool = m_featureMarkers ? m_featureMarkers->tool() : nullptr;
+      FeatureMarkerWidget *tool = m_featureMarkersWindow ? m_featureMarkersWindow->tool() : nullptr;
       if( !tool && m_referencePhotopeakLines )
         tool = m_referencePhotopeakLines->featureMarkerTool();
       
@@ -2881,7 +2881,7 @@ void InterSpec::setComptonPeakAngle( const int angle )
       m_spectrum->setComptonPeakAngle( prev_angle );
     };
     auto redo = [this,angle](){
-      FeatureMarkerWidget *tool = m_featureMarkers ? m_featureMarkers->tool() : nullptr;
+      FeatureMarkerWidget *tool = m_featureMarkersWindow ? m_featureMarkersWindow->tool() : nullptr;
       if( !tool && m_referencePhotopeakLines )
         tool = m_referencePhotopeakLines->featureMarkerTool();
       
@@ -2897,7 +2897,7 @@ void InterSpec::setComptonPeakAngle( const int angle )
 
 void InterSpec::toggleFeatureMarkerWindow()
 {
-  const bool showing = (m_featureMarkers
+  const bool showing = (m_featureMarkersWindow
                   || (m_referencePhotopeakLines && m_referencePhotopeakLines->featureMarkerTool()));
   
   displayFeatureMarkerWindow( !showing );
@@ -2911,7 +2911,7 @@ void InterSpec::displayFeatureMarkerWindow( const bool show )
                             [this,show](){ displayFeatureMarkerWindow(show); },
                             "Show feature marker window" );
   
-  const bool showing = (m_featureMarkers 
+  const bool showing = (m_featureMarkersWindow
                   || (m_referencePhotopeakLines && m_referencePhotopeakLines->featureMarkerTool()));
   
   if( showing == show )
@@ -2933,10 +2933,10 @@ void InterSpec::displayFeatureMarkerWindow( const bool show )
   
   if( !show )
   {
-    if( m_featureMarkers )
+    if( m_featureMarkersWindow )
     {
-      AuxWindow::deleteAuxWindow( m_featureMarkers );
-      m_featureMarkers = nullptr;
+      AuxWindow::deleteAuxWindow( m_featureMarkersWindow );
+      m_featureMarkersWindow = nullptr;
     }else
     {
       assert( m_referencePhotopeakLines && m_referencePhotopeakLines->featureMarkerTool() );
@@ -2974,10 +2974,10 @@ void InterSpec::displayFeatureMarkerWindow( const bool show )
     m_referencePhotopeakLines->emphasizeFeatureMarker();
   }else
   {
-    m_featureMarkers = new FeatureMarkerWindow( this );
-    m_featureMarkers->finished().connect( boost::bind(&InterSpec::displayFeatureMarkerWindow, this, false) );
+    m_featureMarkersWindow = new FeatureMarkerWindow( this );
+    m_featureMarkersWindow->finished().connect( boost::bind(&InterSpec::displayFeatureMarkerWindow, this, false) );
     
-    widget = m_featureMarkers->tool();
+    widget = m_featureMarkersWindow->tool();
   }//if( toolTabsVisible() && m_referencePhotopeakLines ) / else
   
   // Restore the widget state to previous opened state.
@@ -6073,7 +6073,7 @@ void InterSpec::setToolTabsVisible( bool showToolTabs )
 #endif
   
   unique_ptr<UndoRedoManager::BlockUndoRedoInserts> undo_sentry;
-  if( m_undo )
+  if( m_undo && m_undo->canAddUndoRedoNow() )
   {
     auto undo = [this, showToolTabs]{ setToolTabsVisible( !showToolTabs ); };
     auto redo = [this, showToolTabs]{ setToolTabsVisible( showToolTabs ); };
@@ -6085,7 +6085,7 @@ void InterSpec::setToolTabsVisible( bool showToolTabs )
   // If feature marker window, or column in "Reference Photopeak" tab is open, then we will close
   //  this tool.  We will not open it up at the end of this function, because that seems a little
   //  confusing (and also, it causes a JS exception....)
-  const bool showingFeatureMarkers = (m_featureMarkers
+  const bool showingFeatureMarkers = (m_featureMarkersWindow
                 || (m_referencePhotopeakLines && m_referencePhotopeakLines->featureMarkerTool()));
   if( showingFeatureMarkers )
     displayFeatureMarkerWindow( false );

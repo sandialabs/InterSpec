@@ -91,6 +91,7 @@ SimpleDialog *LeafletRadMap::showForMeasurement( const std::shared_ptr<const Spe
                                                  const bool forceNoWarning )
 {
   InterSpec *viewer = InterSpec::instance();
+  viewer->useMessageResourceBundle( "LeafletRadMap" );
   
   const bool showWarning = InterSpecUser::preferenceValue<bool>( "ShowMapDataWarning", viewer );
   
@@ -101,31 +102,29 @@ SimpleDialog *LeafletRadMap::showForMeasurement( const std::shared_ptr<const Spe
   }//if( !showWarning )
   
   // Show a warning dialog about requesting the data, before proceeding
-  const char *title = "Before Proceeding";
-  string msg =
-  "Map tiles will be requested from <a href=\"https://arcgis.com\">https://arcgis.com</a>."
-  " No radiation data will leave your device, but requests for"
-  " map tiles encompassing the measurements will be made to this service.";
+  
+  WString msg = WString::tr("lrm-pre-warn-content");
   
   const string user_key = LeafletRadMap::get_user_arcgis_key();
   if( user_key.length() > 6 )
   {
-    msg += "<p>Your custom arcgis key starting with '" + user_key.substr(0,6) + "' will be used"
-    " to request map tiles.</p>";
+    msg.arg( WString::tr("lrm-pre-warn-user-key").arg(user_key.substr(0,6)) );
   }else if( !user_key.empty() )
   {
-    msg += "<p>An invalid arcgis key was specified in arcgis_key.txt, so the built-in key will"
-    " be used.</p>";
+    msg.arg( WString::tr("lrm-pre-warn-invalid-user-key") );
+  }else
+  {
+    msg.arg( "" );
   }
   
-  SimpleDialog *dialog = new SimpleDialog( title );
+  SimpleDialog *dialog = new SimpleDialog( WString::tr("lrm-pre-warn-title") );
   dialog->setWidth( 400 );
   
   WText *message = new WText( msg, dialog->contents() );
   message->addStyleClass( "content" );
   message->setInline( false );
   
-  WCheckBox *cb = new WCheckBox( "Dont ask again", dialog->contents() );
+  WCheckBox *cb = new WCheckBox( WString::tr("lrm-pre-warn-dont-ask"), dialog->contents() );
   cb->setInline( false );
   cb->checked().connect( std::bind([cb](){
     InterSpec *viewer = InterSpec::instance();
@@ -133,9 +132,9 @@ SimpleDialog *LeafletRadMap::showForMeasurement( const std::shared_ptr<const Spe
       InterSpecUser::setPreferenceValue(viewer->m_user, "ShowMapDataWarning", !cb->isChecked(), viewer);
   }) );
   
-  WPushButton *accept = dialog->addButton( "Proceed" );
+  WPushButton *accept = dialog->addButton( WString::tr("lrm-pre-warn-proceed-btn") );
   accept->clicked().connect( boost::bind( &showMapWindow, meas, sample_numbers, detector_names, on_create) );
-  WPushButton *cancel = dialog->addButton( "Cancel" );
+  WPushButton *cancel = dialog->addButton( WString::tr("Cancel") );
   cancel->clicked().connect( std::bind([](){
     InterSpec *viewer = InterSpec::instance();
     if( viewer )
@@ -148,13 +147,14 @@ SimpleDialog *LeafletRadMap::showForMeasurement( const std::shared_ptr<const Spe
 
 
 LeafletRadMapWindow::LeafletRadMapWindow()
-: AuxWindow( "Map Tool",
+: AuxWindow( WString::tr("lrm-window-title"),
             (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::TabletNotFullScreen)
              | AuxWindowProperties::SetCloseable
              | AuxWindowProperties::EnableResize) ),
   m_map( nullptr )
 {
   InterSpec *viewer = InterSpec::instance();
+  viewer->useMessageResourceBundle( "LeafletRadMap" );
   
   m_map = new LeafletRadMap( contents() );
   m_map->setHeight( WLength(100,WLength::Percentage) );
@@ -252,7 +252,10 @@ LeafletRadMap::LeafletRadMap( Wt::WContainerWidget *parent )
   InterSpec *viewer = InterSpec::instance();
   assert( viewer );
   if( viewer )
+  {
+    viewer->useMessageResourceBundle( "LeafletRadMap" );
     viewer->displayedSpectrumChanged().connect( this, &LeafletRadMap::handleDisplayedSpectrumChanged );
+  }
 }//LeafletRadMap
 
 
@@ -342,13 +345,11 @@ void LeafletRadMap::defineJavaScript()
   
   if( key.length() > 6 )
   {
-    passMessage( "Will use user-specified arcgis key, begining with '"
-                + key.substr(0,6)
-                + "' to request maps with.",
+    passMessage( WString::tr("lrm-will-use-user-key").arg(key.substr(0,6)),
                 WarningWidget::WarningMsgLevel::WarningMsgInfo );
   }else if( key.length() )
   {
-    passMessage( "There was a arcgis_key.txt file, but it did not contain a valid key",
+    passMessage( WString::tr("lrm-user-key-invalid"),
                 WarningWidget::WarningMsgLevel::WarningMsgHigh );
   }
 #endif
@@ -356,7 +357,18 @@ void LeafletRadMap::defineJavaScript()
   if( key.length() < 6 )
     key = LEAFLET_MAPS_KEY;
   
-  string options = "{apiKey: '" + key + "'}";
+  const string options = "{apiKey: '" + key + "'"
+    ", foregroundTxt: '" + WString::tr("Foreground").toUTF8() + "'"
+    ", backgroundTxt: '" + WString::tr("Background").toUTF8() + "'"
+    ", secondaryTxt: '" + WString::tr("Secondary").toUTF8() + "'"
+    ", gammaTxt: '" + WString::tr("Gamma").toUTF8() + "'"
+    ", displayedAsTxt: '" + WString::tr("lrm-displayed-as").toUTF8() + "'"
+    ", cpsText: '" + WString::tr("CPS").toUTF8() + "'"
+    ", loadTxt: '" + WString::tr("lrm-Load").toUTF8() + "'"
+    ", measurementsAsTxt: '" + WString::tr("lrm-measurements-as").toUTF8() + "'"
+    ", realTimeTxt: '" + WString::tr("Real Time").toUTF8() + "'"
+    ", liveTimeTxt: '" + WString::tr("Live Time").toUTF8() + "'"
+  "}";
   
   setJavaScriptMember( "map", "new LeafletRadMap(" + jsRef() + "," + options + ");");
   
@@ -643,7 +655,7 @@ void LeafletRadMap::handleLoadSamples( const std::string &samples, const std::st
     }
   }catch( std::exception &e )
   {
-    passMessage( "Error loading map-selected samples: " + string(e.what()),
+    passMessage( WString::tr("lrm-err-loading-samples").arg(e.what()),
                 WarningWidget::WarningMsgLevel:: WarningMsgHigh );
   }//try / catch
 }//void handleLoadSamples( const std::vector<int> &samples, std::string meas_type );

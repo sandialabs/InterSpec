@@ -1449,14 +1449,14 @@ protected:
   Wt::WMenuItem *m_tabToolsMenuItems[static_cast<int>(ToolTabMenuItems::NumItems)];
   
   /** Tracks which features are being used
-   TODO: remove this member variable and, and use m_featureMarkers to track things
+   TODO: remove this member variable and, and use m_featureMarkersWindow to track things
    */
   bool m_featureMarkersShown[static_cast<int>(FeatureMarkerType::NumFeatureMarkers)];
   
   /** A window that controls if S.E., D.E., Compton Peak, Compton Edge, or Sum
    Peaks are shown.  Is null when window is not showing.
    */
-  FeatureMarkerWindow *m_featureMarkers;
+  FeatureMarkerWindow *m_featureMarkersWindow;
   
   PopupDivMenuItem *m_featureMarkerMenuItem;
 
