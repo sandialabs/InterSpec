@@ -31,7 +31,6 @@
   <message id="Remark">Remark</message>
 
 
-
   <!-- Words not used in InterSpec.cpp, but at least a few places throughout the app --> 
   <message id="Continuum">Continuum</message>
   <message id="cont-type">Cont. Type</message>
@@ -64,7 +63,10 @@
   <message id="x-ray">x-ray</message>
   <message id="Live Time">Live Time</message>
   <message id="Real Time">Real Time</message>
-  
+  <message id="Geometry">Geometry</message>
+  <message id="Load">Load</message>
+  <message id="Mass">Mass</message>
+  <message id="NA">NA</message>
 
 
 
@@ -89,6 +91,7 @@
   <message id="window-title-peak-rel-eff">Isotopics from user-fit peaks</message>
   <message id="window-title-compact-file">Select Opened Spectra to Display</message>
   <message id="window-title-feature-markers">Feature Markers</message>
+  <message id="window-title-act-shield-fit">Activity/Shielding Fit</message>
 
 
 

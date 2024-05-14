@@ -364,7 +364,7 @@ void LeafletRadMap::defineJavaScript()
     ", gammaTxt: '" + WString::tr("Gamma").toUTF8() + "'"
     ", displayedAsTxt: '" + WString::tr("lrm-displayed-as").toUTF8() + "'"
     ", cpsText: '" + WString::tr("CPS").toUTF8() + "'"
-    ", loadTxt: '" + WString::tr("lrm-Load").toUTF8() + "'"
+    ", loadTxt: '" + WString::tr("Load").toUTF8() + "'"
     ", measurementsAsTxt: '" + WString::tr("lrm-measurements-as").toUTF8() + "'"
     ", realTimeTxt: '" + WString::tr("Real Time").toUTF8() + "'"
     ", liveTimeTxt: '" + WString::tr("Live Time").toUTF8() + "'"

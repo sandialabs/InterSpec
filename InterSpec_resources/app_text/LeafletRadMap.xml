@@ -22,6 +22,5 @@
   <message id="lrm-user-key-invalid">There was a arcgis_key.txt file, but it did not contain a valid key</message>
   <message id="lrm-err-loading-samples">Error loading map-selected samples: {1}</message>
   <message id="lrm-displayed-as">Displayed as</message>
-  <message id="lrm-Load">Load</message>
   <message id="lrm-measurements-as">measurements as</message>
 </messages>

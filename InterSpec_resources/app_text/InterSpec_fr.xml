@@ -51,6 +51,15 @@
 <message id="Clear">Effacer</message>
 <message id="ClearAll">Tout Effacer</message>
 <message id="T1/2">T&frac12;</message>
+<message id="Gamma">Gamma</message>
+<message id="X-rays">Rayons X</message>
+<message id="x-ray">rayon X</message>
+<message id="Live Time">Temps réel</message>
+<message id="Real Time">Temps total</message>
+<message id="Geometry">Géométrie</message>
+<message id="Load">Charger</message>
+<message id="Mass">Masse</message>
+<message id="NA">N/A</message>
 
 <message id="Energy (keV)">Énergie (keV)</message>
 <message id="spectrum_y_axis_title">Comptes</message>
