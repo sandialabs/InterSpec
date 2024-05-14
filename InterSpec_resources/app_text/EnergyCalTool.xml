@@ -36,7 +36,6 @@
   <message id="ect-disp-samples">Displayed Samples</message>
   <message id="ect-all-samples">All Samples</message>
   <message id="ect-calib-coeffs">Calibration Coefficients</message>
-  <message id="ect-detector">Detector</message>
   <message id="ect-cal-peaks">Calibration Peaks</message>
   <message id="ect-CALp-no-meas">No measurement displayed for {1}</message>
   <message id="ect-CALp-not-applic-det">Calibration change not applicable to any detector of {1}</message>

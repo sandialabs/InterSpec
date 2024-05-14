@@ -32,8 +32,9 @@
 #include <Wt/WApplication>
 #include <Wt/WContainerWidget>
 
-#include "InterSpec/SpecMeas.h"
 #include "SpecUtils/SpecFile.h"
+
+#include "InterSpec/SpecMeas.h"
 #include "InterSpec/InterSpec.h"
 #include "SpecUtils/StringAlgo.h"
 #include "InterSpec/SimpleDialog.h"
@@ -165,9 +166,11 @@ public:
   {
     wApp->useStyleSheet( "InterSpec_resources/ShowRiidInstrumentsAna.css" );
     
+    InterSpec::instance()->useMessageResourceBundle( "ShowRiidInstrumentsAna" );
+    
     addStyleClass( "AnaResultDisplay" );
     
-    WText *algoInfo = new WText( "Algorithm Information:", this );
+    WText *algoInfo = new WText( WString::tr("srria-algo-info-label"), this );
     algoInfo->addStyleClass( "AlgoInfoTitle" );
     algoInfo->setInline( false );
     
@@ -175,12 +178,12 @@ public:
     m_table->addStyleClass( "AlgoInfoTbl" );
     m_table->setHeaderCount( 1, Wt::Orientation::Vertical );
     
-    addField( m_algorithm_name, m_table, "Name", AlgorithmName, 0 );
-    addField( m_algorithm_creator, m_table, "Creator", AlgorithmCreator, 0 );
-    addField( m_algorithm_version, m_table, "Version", AlgorithmVersion, 0 );
-    addField( m_algorithm_description, m_table, "Desc.", AlgorithmDescription, 0 );
-    addField( m_algorithm_result_description, m_table, "Desc.", AlgorithmResultDescription, 0 );
-    addField( m_algorithm_remarks, m_table, "Remarks", AlgorithmRemarks, 0 );
+    addField( m_algorithm_name, m_table, WString::tr("Name"), AlgorithmName, 0 );
+    addField( m_algorithm_creator, m_table, WString::tr("srria-creator"), AlgorithmCreator, 0 );
+    addField( m_algorithm_version, m_table, WString::tr("srria-version"), AlgorithmVersion, 0 );
+    addField( m_algorithm_description, m_table, WString::tr("Desc."), AlgorithmDescription, 0 );
+    addField( m_algorithm_result_description, m_table, WString::tr("Desc."), AlgorithmResultDescription, 0 );
+    addField( m_algorithm_remarks, m_table, WString::tr("srria-remarks"), AlgorithmRemarks, 0 );
     
 #if( ENABLE_EDIT_RESULTS )
     m_algorithm_name->changed().connect( boost::bind( &AnaResultDisplay::handleFieldUpdate, this, AlgorithmName) );
@@ -275,26 +278,29 @@ public:
     {
       string result;
       if( res.nuclide_.size() )
-        result = "<tr><th>Nuclide</th><td>" + res.nuclide_ + "</td></tr>";
+        result = "<tr><th>" + WString::tr("Nuclide").toUTF8() + "</th><td>" + res.nuclide_ + "</td></tr>";
       if( res.nuclide_type_.size() )
-        result += "<tr><th>Category</th><td>" + res.nuclide_type_ + "</td></tr>";
+        result += "<tr><th>" + WString::tr("srria-category").toUTF8() + "</th><td>" + res.nuclide_type_ + "</td></tr>";
       if( res.id_confidence_.size() )
-        result += "<tr><th>Confidence</th><td>" + res.id_confidence_ + "</td></tr>";
+        result += "<tr><th>" + WString::tr("srria-confidence").toUTF8() + "</th><td>" + res.id_confidence_ + "</td></tr>";
       if( res.detector_.size() )
-        result += "<tr><th>Detector</th><td>" + res.detector_ + "</td></tr>";
+        result += "<tr><th>" + WString::tr("Detector").toUTF8() + "</th><td>" + res.detector_ + "</td></tr>";
       
       if( res.dose_rate_ > 0.0 )
-        result += "<tr><th>Dose</th><td>"
-        + PhysicalUnits::printToBestEquivalentDoseRateUnits( 1.0E-6 * res.dose_rate_*PhysicalUnits::sievert/PhysicalUnits::hour ) + "</td></tr>";
+        result += "<tr><th>" + WString::tr("srria-dose").toUTF8() + "</th><td>"
+                  + PhysicalUnits::printToBestEquivalentDoseRateUnits( 1.0E-6 * res.dose_rate_*PhysicalUnits::sievert/PhysicalUnits::hour )
+                  + "</td></tr>";
       if( res.distance_ > 0.0 )
-        result += "<tr><th>Distance</th><td>" + PhysicalUnits::printToBestLengthUnits(0.1*res.distance_) + "</td></tr>";
+        result += "<tr><th>" + WString::tr("Distance").toUTF8()
+                     + "</th><td>" + PhysicalUnits::printToBestLengthUnits(0.1*res.distance_) + "</td></tr>";
       if( res.activity_ > 0.0 )
       {
         const bool useBq = InterSpecUser::preferenceValue<bool>( "DisplayBecquerel", InterSpec::instance() );
-        result += "<tr><th>Activity</th><td>" + PhysicalUnits::printToBestActivityUnits( res.activity_, 2, !useBq, 1.0 ) + "</td></tr>";
+        result += "<tr><th>" + WString::tr("Activity").toUTF8() + "</th><td>"
+                    + PhysicalUnits::printToBestActivityUnits( res.activity_, 2, !useBq, 1.0 ) + "</td></tr>";
       }
       if( res.remark_.size() > 0 )
-        result += "<tr><th>Remark</th><td>" + res.remark_ + "</td></tr>";
+        result += "<tr><th>" + WString::tr("Remark").toUTF8() + "</th><td>" + res.remark_ + "</td></tr>";
       
       //  float real_time_;           //in units of seconds (eg: 1.0 = 1 s)
       //  boost::posix_time::ptime start_time_;
@@ -304,17 +310,18 @@ public:
     }//for( const SpecUtils::DetectorAnalysisResult &res : ana->results_ )
     
     if( ana->results_.empty() )
-      anastr = "<div class=\"RiidNoResultsTxt\">No nuclide identifications provided.</div>";
+      anastr = "<div class=\"RiidNoResultsTxt\">" + WString::tr("srria-no-id-provided").toUTF8() + "</div>";
     
     if( anastr.size() > 2 )
     {
-      anastr = "<div class=\"RiidNuclideResults\"><div class=\"AlgoInfoTitle\">Algorithm Results:</div>" + anastr + "</div>";
+      anastr = "<div class=\"RiidNuclideResults\"><div class=\"AlgoInfoTitle\">"
+                + WString::tr("srria-algo-results").toUTF8() + ":</div>" + anastr + "</div>";
       m_summary = new WText( anastr );
       m_summary->setInline( false );
       this->addWidget( m_summary );
     }else
     {
-      m_summary = new WText( "No algorithm results available." );
+      m_summary = new WText( WString::tr("srria-no-algo-results") );
       m_summary->addStyleClass( "AlgoInfoTitle" );
       m_summary->setInline( false );
     }
@@ -369,7 +376,7 @@ std::string riidAnaSummary( const std::shared_ptr<const SpecMeas> &spec )
     summary = summary.substr(0,61) + "...";
   
   if( summary.empty() && ana->results_.empty() )
-    summary = "no nuclides identified.";
+    summary = WString::tr("srria-no-nucs").toUTF8();
   
   return Wt::Utils::htmlEncode( WString::fromUTF8(summary),0).toUTF8();
 }//riidAnaSummary(...)
@@ -379,10 +386,10 @@ SimpleDialog *showRiidInstrumentsAna( const std::shared_ptr<const SpecMeas> &spe
 {
   auto dialog = new SimpleDialog();
   //dialog->setModal( false ); //doesnt seem to have any effect
-  dialog->addButton( "Close" );
+  dialog->addButton( WString::tr("Close") );
   
   WContainerWidget *contents = dialog->contents();
-  WText *dialogTitle = new WText( "The Detectors ID Results", contents );
+  WText *dialogTitle = new WText( WString::tr("srria-inst-ana-window-title"), contents );
   dialogTitle->addStyleClass( "title RiidDialogTitle" );
   dialogTitle->setInline( false );
   

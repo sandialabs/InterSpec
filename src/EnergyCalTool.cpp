@@ -1756,7 +1756,7 @@ void EnergyCalTool::initWidgets( EnergyCalTool::LayoutType layoutType )
   m_detColLayout->setVerticalSpacing( 0 );
   m_detColLayout->setHorizontalSpacing( 0 );
   
-  auto detheader = new WText( WString::tr("ect-detector") );
+  auto detheader = new WText( WString::tr("Detector") );
   detheader->setInline( false );
   detheader->addStyleClass( "DetHdr Wt-itemview Wt-header Wt-label" );
   //detheader->resize( WLength::Auto, WLength(20,WLength::Unit::Pixel) );
