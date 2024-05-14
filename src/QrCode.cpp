@@ -249,8 +249,8 @@ pair<string,int> binary_to_svg_qr( const std::vector<std::uint8_t> &data )
 
 
 SimpleDialog *displayTxtAsQrCode( const std::string &url,
-                                 const std::string &title,
-                                 const std::string &description )
+                                 const Wt::WString &title,
+                                 const Wt::WString &description )
 {
   try
   {
@@ -302,7 +302,7 @@ SimpleDialog *displayTxtAsQrCode( const std::string &url,
     const unsigned char *svg_end = svg_begin + qr_svg_str.size();
     const vector<unsigned char> svg_data( svg_begin, svg_end );
     WMemoryResource *svgResource = new WMemoryResource( "image/svg+xml", svg_data, window );
-    if( title.size() )
+    if( !title.empty() )
       svgResource->suggestFileName( title + ".svg", WResource::Attachment );
     else
       svgResource->suggestFileName( "qr.svg", WResource::Attachment );
@@ -410,7 +410,7 @@ SimpleDialog *displayTxtAsQrCode( const std::string &url,
     }) );
     
     
-    if( description.length() )
+    if( !description.empty() )
     {
       WText *message = new WText( description );
       if( is_phone )

@@ -67,6 +67,8 @@
   <message id="Load">Load</message>
   <message id="Mass">Mass</message>
   <message id="NA">NA</message>
+  <message id="n/a">n/a</message>
+
 
 
 
@@ -92,6 +94,7 @@
   <message id="window-title-compact-file">Select Opened Spectra to Display</message>
   <message id="window-title-feature-markers">Feature Markers</message>
   <message id="window-title-act-shield-fit">Activity/Shielding Fit</message>
+  <message id="window-title-xs-calc">Gamma XS Calc</message>
 
 
 

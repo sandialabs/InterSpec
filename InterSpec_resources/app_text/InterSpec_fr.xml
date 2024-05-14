@@ -60,6 +60,7 @@
 <message id="Load">Charger</message>
 <message id="Mass">Masse</message>
 <message id="NA">N/A</message>
+<message id="n/a">n/a</message>
 
 <message id="Energy (keV)">Énergie (keV)</message>
 <message id="spectrum_y_axis_title">Comptes</message>
@@ -77,6 +78,7 @@
 <message id="window-title-3d">Vue des données 3D</message>
 <message id="window-title-peak-rel-eff">Isotopiques à partir des pics ajustés par l'utilisateur</message>
 <message id="window-title-compact-file">Sélectionner les spectres ouverts à afficher</message>
+<message id="window-title-xs-calc">Calcul XS Gamma</message>
 <message id="app-tab-peak-manager">Gestionnaire de pics</message>
 <message id="app-tab-ref-photopeak">Pics photoélectriques de référence</message>
 <message id="app-tab-energy-cal">Calibrage de l'énergie</message>

@@ -472,20 +472,27 @@ namespace
 void displayQrDialog( const vector<QRSpectrum::QrCodeEncodedSpec> urls, const size_t index,
                      const SpecUtils::SpectrumType type )
 {
-  string seqnum = "QR Code";
+  WString seqnum;
+  if( urls.size() <= 1 )
+    seqnum = WString::tr("smm-qr-sequence-single");
+  else
+    seqnum = WString::tr("smm-qr-sequence-multi")
+              .arg( static_cast<int>(index + 1) )
+              .arg( static_cast<int>(urls.size()) );
+  
+  WString title;
   if( urls.size() > 1 )
-    seqnum += " " + to_string(index + 1) + " of " + to_string( urls.size() );
+    title = WString::tr("smm-qr-title").arg( seqnum );
   
-  string title = "Spectrum File " + seqnum;
-  if( urls.size() == 1 )
-    title = "";
+  WString desc = WString::tr("smm-qr-desc")
+                  .arg(seqnum)
+                  .arg( WString::tr(SpecUtils::descriptionText(type)) );
   
-  string desc = seqnum + " for the " + string(SpecUtils::descriptionText(type)) + " spectrum.";
   SimpleDialog *dialog = QrCode::displayTxtAsQrCode( urls[index].m_url, title, desc );
   
   if( (index + 1) < urls.size() )
   {
-    WPushButton *btn = dialog->addButton( "Next QR code" );
+    WPushButton *btn = dialog->addButton( WString::tr("smm-next-qr") );
     btn->clicked().connect( std::bind([=](){
       displayQrDialog( urls, index + 1, type );
     }) );

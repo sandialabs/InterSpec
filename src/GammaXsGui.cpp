@@ -104,6 +104,8 @@ GammaXsGui::GammaXsGui( MaterialDB *materialDB,
 
   const bool showToolTips = InterSpecUser::preferenceValue<bool>( "ShowTooltips", m_specViewer );
 
+  m_specViewer->useMessageResourceBundle( "GammaXsGui" );
+  
   m_energyEdit = new WLineEdit( "100" );
   
   m_energyEdit->setAutoComplete( false );
@@ -121,7 +123,7 @@ GammaXsGui::GammaXsGui( MaterialDB *materialDB,
   m_energyEdit->blurred().connect( this, &GammaXsGui::calculateCrossSections );
 
   int row = 0;
-  WLabel *label = new WLabel( "Energy:" );
+  WLabel *label = new WLabel( WString::tr("{}:").arg( WString::tr("Energy")) );
   m_layout->addWidget( label, row, 0, 1, 1, AlignLeft );
   m_layout->addWidget( m_energyEdit, row, 1, 1, 1 );
   label = new WLabel( "keV" );
@@ -144,20 +146,14 @@ GammaXsGui::GammaXsGui( MaterialDB *materialDB,
 //  m_materialEdit->focussed().connect( this, &GammaXsGui::handleMaterialChange );
   m_materialEdit->blurred().connect( this, &GammaXsGui::handleMaterialChange );
 
-  const char *tooltip =  "You can either enter the name of a pre-defined"
-  " material or element (clear form text"
-  " and click arrow on right of form to see all predefined options), or you can"
-  " enter a chemical formula such as 'H0.112 O0.88' where the numbers are the"
-  " density in g/cm3, (or use mass fraction and Density field), of the"
-  " preceding element.";
-  HelpSystem::attachToolTipOn( {label,m_materialEdit}, tooltip, showToolTips );
+  HelpSystem::attachToolTipOn( {label,m_materialEdit}, WString::tr("gxsg-tt-material"), showToolTips );
   
   m_layout->addWidget( m_materialEdit, row, 1, 1, 2 );
   m_materialSuggestion->forEdit( m_materialEdit,
                   WSuggestionPopup::Editing | WSuggestionPopup::DropDownIcon );
 
   ++row;
-  label = new WLabel( "Total att. cross section" );
+  label = new WLabel( WString::tr("gxsg-total-atten-xs") );
   m_layout->addWidget( label, row, 0, 1, 1, AlignLeft );
   m_totalAttenuation = new WText();
   m_layout->addWidget( m_totalAttenuation, row, 1, 1, 1 );
@@ -169,7 +165,7 @@ GammaXsGui::GammaXsGui( MaterialDB *materialDB,
   m_layout->addWidget( label, row, 2, 1, 1, AlignLeft );
 
   ++row;
-  label = new WLabel( "Compton" );
+  label = new WLabel( WString::tr("gxsg-compton-label") );
   m_layout->addWidget( label, row, 0, 1, 1, AlignLeft );
   m_compton = new WText();
   m_layout->addWidget( m_compton, row, 1, 1, 1 );
@@ -182,7 +178,7 @@ GammaXsGui::GammaXsGui( MaterialDB *materialDB,
 
 #if( !USE_SNL_GAMMA_ATTENUATION_VALUES )
   ++row;
-  label = new WLabel( "Rayleigh" );
+  label = new WLabel( WString::tr("gxsg-rayleigh-label") );
   m_layout->addWidget( label, row, 0, 1, 1, AlignLeft );
   m_rayleigh = new WText();
   m_layout->addWidget( m_rayleigh, row, 1, 1, 1 );
@@ -195,7 +191,7 @@ GammaXsGui::GammaXsGui( MaterialDB *materialDB,
 #endif //#if( !USE_SNL_GAMMA_ATTENUATION_VALUES )
   
   ++row;
-  label = new WLabel( "Photoelectric" );
+  label = new WLabel( WString::tr("gxsg-photoelec-label") );
   m_layout->addWidget( label, row, 0, 1, 1, AlignLeft );
   m_photoElectric = new WText();
   m_layout->addWidget( m_photoElectric, row, 1, 1, 1 );
@@ -207,7 +203,7 @@ GammaXsGui::GammaXsGui( MaterialDB *materialDB,
   m_layout->addWidget( label, row, 2, 1, 1, AlignLeft );
 
   ++row;
-  label = new WLabel( "Pair production" );
+  label = new WLabel( WString::tr("gxsg-pp-label") );
   m_layout->addWidget( label, row, 0, 1, 1, AlignLeft );
   m_conversion = new WText();
   m_layout->addWidget( m_conversion, row, 1, 1, 1 );
@@ -219,19 +215,17 @@ GammaXsGui::GammaXsGui( MaterialDB *materialDB,
   m_layout->addWidget( label, row, 2, 1, 1, AlignLeft );
 
   ++row;
-  label = new WLabel( "Mass avrg atomic num" );
+  label = new WLabel( WString::tr("gxsg-mass-avrg-an") );
   m_effectiveZ = new WText( "" );
   m_layout->addWidget( label, row, 0, 1, 1, AlignLeft );
   m_layout->addWidget( m_effectiveZ, row, 1, 1, 1 );
   
   ++row;
-  WText *attText = new WText( "Attenuation (optional):" );
-//  attText->setMargin( WLength(1.0,WLength::FontEm), Top );
-//  attText->setPadding( WLength(1.0,WLength::FontEm), Top );
+  WText *attText = new WText( WString::tr("gxsg-opt-atten") );
   m_layout->addWidget( attText, row, 0, 1, 3, AlignBottom );
 
   ++row;
-  label = new WLabel( "Density:" );
+  label = new WLabel( WString::tr("gxsg-density-label") );
   m_layout->addWidget( label, row, 0, 1, 1, AlignLeft );
   m_density = new WLineEdit();
   
@@ -260,7 +254,7 @@ GammaXsGui::GammaXsGui( MaterialDB *materialDB,
   m_density->blurred().connect( this, &GammaXsGui::calculateCrossSections );
 
   ++row;
-  label = new WLabel( "Thickness:" );
+  label = new WLabel( WString::tr("gxsg-thickness-label") );
   m_layout->addWidget( label, row, 0, 1, 1, AlignLeft );
   m_thickness = new WLineEdit( "1 cm" );
   
@@ -281,20 +275,16 @@ GammaXsGui::GammaXsGui( MaterialDB *materialDB,
   m_thickness->enterPressed().connect( this, &GammaXsGui::calculateCrossSections );
   m_thickness->focussed().connect( this, &GammaXsGui::calculateCrossSections );
   m_thickness->blurred().connect( this, &GammaXsGui::calculateCrossSections );
-  HelpSystem::attachToolTipOn( m_thickness, "Thickness of the attenuator.", showToolTips );
+  HelpSystem::attachToolTipOn( m_thickness, WString::tr("gxsg-tt-thickness"), showToolTips );
   
   ++row;
-  label = new WLabel( "Trans. Frac." );
+  label = new WLabel( WString::tr("gxsg-trans-frac-label") );
   m_layout->addWidget( label, row, 0, 1, 1, AlignLeft );
   m_transmissionFraction = new WText();
   m_layout->addWidget( m_transmissionFraction, row, 1, 1, 2 );
   
-//  HelpSystem::attachToolTipOn( label,"This is the fraction of gammas that will make it through"
-//                                     " the specified shielding.", showToolTips );
-  
-  HelpSystem::attachToolTipOn( m_transmissionFraction,
-    "This is the fraction of gammas that will make it through the specified"
-    " shielding.", showToolTips );
+  HelpSystem::attachToolTipOn( {label, m_transmissionFraction}, WString::tr("gxsg-tt-trans-frac"),
+                              showToolTips );
   m_layout->setColumnStretch( 1, row );
 
   ++row;
@@ -304,7 +294,7 @@ GammaXsGui::GammaXsGui( MaterialDB *materialDB,
   m_layout->addWidget( m_detectorDisplay, row, 0, 1, 3 );
   
   ++row;
-  m_detectorDistanceLabel = new WLabel( "Distance" );
+  m_detectorDistanceLabel = new WLabel( WString::tr("Distance") );
   m_layout->addWidget( m_detectorDistanceLabel, row, 0, 1, 1, AlignLeft );
   m_detectorDistance = new WLineEdit("2 cm");
   
@@ -317,9 +307,7 @@ GammaXsGui::GammaXsGui( MaterialDB *materialDB,
   m_detectorDistance->setValidator( distValidator );
   m_layout->addWidget( m_detectorDistance, row, 1, 1, 2 );
 //  HelpSystem::attachToolTipOn( m_detectorLabel[detectorCount],"This is the distance of the selected detector.", showToolTips );
-  HelpSystem::attachToolTipOn( m_detectorDistance,
-    "This is the distance from the source center to the detector.",
-                              showToolTips );
+  HelpSystem::attachToolTipOn( m_detectorDistance, WString::tr("gxsg-tt-distance"), showToolTips );
   
   m_detectorDistance->changed().connect( this, &GammaXsGui::updateDetectorCalc );
   m_detectorDistance->enterPressed().connect( this, &GammaXsGui::updateDetectorCalc );
@@ -327,55 +315,44 @@ GammaXsGui::GammaXsGui( MaterialDB *materialDB,
   m_detectorDistance->blurred().connect( this, &GammaXsGui::updateDetectorCalc );
   
   ++row;
-  m_intrinsicEfficiencyLabel = new WLabel( "Intrinsic Efficiency" );
+  m_intrinsicEfficiencyLabel = new WLabel( WString::tr("gxsg-intrinsic-eff-label") );
   m_layout->addWidget( m_intrinsicEfficiencyLabel , row, 0, 1, 1, AlignLeft );
   m_intrinsicEfficiency = new WText();
   m_layout->addWidget( m_intrinsicEfficiency, row, 1, 1, 2 );
   
 //  HelpSystem::attachToolTipOn( m_detectorLabel[detectorCount],"Intrinsic efficiency (in-peak detection efficiency of gammas striking detector face).", showToolTips );
-  HelpSystem::attachToolTipOn( m_intrinsicEfficiency,
-    "Intrinsic efficiency (in-peak detection efficiency of gammas striking"
-    " detector face).", showToolTips );
+  HelpSystem::attachToolTipOn( m_intrinsicEfficiency, WString::tr("gxsg-tt-intrinsic-eff"),
+                              showToolTips );
   
   ++row;
-  m_fractionalAngleLabel = new WLabel( "Solid Angle Fraction" );
+  m_fractionalAngleLabel = new WLabel( WString::tr("gxsg-solid-angle-frac-label") );
   m_layout->addWidget( m_fractionalAngleLabel, row, 0, 1, 1, AlignLeft );
   m_fractionalAngle = new WText();
   m_layout->addWidget( m_fractionalAngle, row, 1, 1, 2 );
   
 //  HelpSystem::attachToolTipOn( m_detectorLabel[detectorCount],"Fractional solid angle of the selected detector at specified distance." , showToolTips );
-  HelpSystem::attachToolTipOn( m_fractionalAngle,
-    "Fractional solid angle of the selected detector at specified distance.",
+  HelpSystem::attachToolTipOn( m_fractionalAngle, WString::tr("gxsg-tt-solid-angle-frac"),
                               showToolTips );
   
   
   ++row;
-  m_efficiencyLabel = new WLabel( "Detection Efficiency" );
+  m_efficiencyLabel = new WLabel( WString::tr("gxsg-det-eff-label") );
   m_layout->addWidget( m_efficiencyLabel, row, 0, 1, 1, AlignLeft );
   m_efficiency = new WText();
   m_layout->addWidget( m_efficiency, row, 1, 1, 2 );
   
-  HelpSystem::attachToolTipOn( m_efficiencyLabel,
-    "Intrinsic efficiency times solid angle fraction. E.g. the fraction of"
-    " gammas making it out of the shielding that will be detected.",
+  HelpSystem::attachToolTipOn( {m_efficiencyLabel, m_efficiency}, WString::tr("gxsg-tt-det-eff"),
                               showToolTips );
-  HelpSystem::attachToolTipOn( m_efficiency,
-    "Intrinsic efficiency times the solid angle fraction. E.g. the fraction of"
-    " gammas making it out of the shielding that will be detected. Does not"
-    " include attenuation." , showToolTips );
-  
   
   ++row;
-  m_totalEfficiencyLabel = new WLabel( "Total Efficiency" );
+  m_totalEfficiencyLabel = new WLabel( WString::tr("gxsg-total-eff-label") );
   m_layout->addWidget( m_totalEfficiencyLabel, row, 0, 1, 1, AlignLeft );
   m_totalEfficiency = new WText();
   m_layout->addWidget( m_totalEfficiency, row, 1, 1, 2 );
   
   HelpSystem::attachToolTipOn( m_totalEfficiencyLabel,
     "Transmission fraction times detection efficiency." , showToolTips );
-  HelpSystem::attachToolTipOn( m_totalEfficiency,
-    "Transmission fraction times detection efficiency. E.g. the fraction of"
-    " gammas emitted from the source that will be detected.",
+  HelpSystem::attachToolTipOn( m_totalEfficiency, WString::tr("gxsg-tt-total-eff"),
                               showToolTips );
   
   m_specViewer->detectorChanged().connect( this, &GammaXsGui::handleDetectorChange );
@@ -474,10 +451,10 @@ void GammaXsGui::updateDetectorCalc()
   }catch( std::runtime_error & )
   {
     //could not get all the measurements for the detector
-    m_efficiency->setText( "n/a" );
-    m_intrinsicEfficiency->setText( "n/a" );
-    m_fractionalAngle->setText( "n/a" );
-    m_totalEfficiency->setText( "n/a" );
+    m_efficiency->setText( WString::tr("n/a") );
+    m_intrinsicEfficiency->setText( WString::tr("n/a") );
+    m_fractionalAngle->setText( WString::tr("n/a") );
+    m_totalEfficiency->setText( WString::tr("n/a") );
   }// try / catch(std::runtime_error& e)
 }//updateDetectorCalc()
 
@@ -525,8 +502,8 @@ vector<pair<const SandiaDecay::Element *, float> > GammaXsGui::parseMaterial()
       if( thisone.first )
         answer.push_back( thisone );
       else
-        cerr << "Waring in GammaXsGui::parseMaterial() - unexpected error "
-             << "finding the element for a nuclide - wrong anser presented!"
+        cerr << "Warning in GammaXsGui::parseMaterial() - unexpected error "
+             << "finding the element for a nuclide - wrong answer presented!"
              << endl;
     }//for( const Material::NuclideFractionPair &nf : material->nuclides )
 
@@ -701,7 +678,7 @@ void GammaXsGui::calculateCrossSections()
       comptonMu  += xsmult * MassAttenuation::massAttenuationCoeficient( AN, energy, MassAttenuation::GammaEmProcces::ComptonScatter ) ;
     }catch(exception &e)
     {
-      passMessage( string("XS Calculation may be suspect: ")+e.what(), 3 );
+      passMessage( WString("gxsg-warn-suspect").arg(e.what()) , 3 );
     }
 
 #if( !USE_SNL_GAMMA_ATTENUATION_VALUES )
@@ -710,7 +687,7 @@ void GammaXsGui::calculateCrossSections()
       rayleighMu += xsmult * MassAttenuation::massAttenuationCoeficient( AN, energy, MassAttenuation::GammaEmProcces::RayleighScatter );
     }catch(exception &e)
     {
-      passMessage( string("XS Calculation may be suspect: ")+e.what(), 3 );
+      passMessage( WString("gxsg-warn-suspect").arg(e.what()) , 3 );
     }
 #endif
 
@@ -719,7 +696,7 @@ void GammaXsGui::calculateCrossSections()
       photoMu    += xsmult * MassAttenuation::massAttenuationCoeficient( AN, energy, MassAttenuation::GammaEmProcces::PhotoElectric );
     }catch(exception &e)
     {
-      passMessage( string("XS Calculation may be suspect: ")+e.what(), 3 );
+      passMessage( WString("gxsg-warn-suspect").arg(e.what()) , 3 );
     }
 
     try
@@ -727,7 +704,7 @@ void GammaXsGui::calculateCrossSections()
       pairMu     += xsmult * MassAttenuation::massAttenuationCoeficient( AN, energy, MassAttenuation::GammaEmProcces::PairProduction );
     }catch(exception &e)
     {
-      passMessage( string("XS Calculation may be suspect: ")+e.what(), 3 );
+      passMessage( WString("gxsg-warn-suspect").arg(e.what()) , 3 );
     }
     
     try
@@ -735,7 +712,7 @@ void GammaXsGui::calculateCrossSections()
       totalMu += xsmult * MassAttenuation::massAttenuationCoeficient( AN, energy );
     }catch(exception &e)
     {
-      passMessage( string("XS Calculation may be suspect: ")+e.what(), 3 );
+      passMessage( WString("gxsg-warn-suspect").arg(e.what()) , 3 );
     }
   }//for( Material::NuclideFractionPair &nf : chemFormula )
 
@@ -857,7 +834,7 @@ void GammaXsGui::checkAndAddUndoRedo()
 GammaXsWindow::GammaXsWindow( MaterialDB *materialDB,
                               Wt::WSuggestionPopup *materialSuggestion ,
                               InterSpec* viewer)
-  : AuxWindow( "Gamma XS Calc",
+  : AuxWindow( WString::tr("window-title-xs-calc"),
               (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::PhoneNotFullScreen)
                | AuxWindowProperties::SetCloseable
                | AuxWindowProperties::DisableCollapse) ),
@@ -881,7 +858,7 @@ GammaXsWindow::GammaXsWindow( MaterialDB *materialDB,
     try
     {
       const string url = "interspec://gammaxs/?" + Wt::Utils::urlEncode(m_tool->encodeStateToUrl());
-      QrCode::displayTxtAsQrCode( url, "Gamma XS Tool State", "Current state of xs tool." );
+      QrCode::displayTxtAsQrCode( url, WString::tr("gxsg-tool-state-title"), WString::tr("gxsg-tool-state-text") );
     }catch( std::exception &e )
     {
       passMessage( "Error creating QR code: " + std::string(e.what()), WarningWidget::WarningMsgHigh );

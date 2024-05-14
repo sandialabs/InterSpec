@@ -167,7 +167,8 @@ std::string clean_uuid( string uuid )
     }//if( urls.size() == 1 )
     
     
-    SimpleDialog *dialog = QrCode::displayTxtAsQrCode( urls[index].m_url, title, desc );
+    SimpleDialog *dialog = QrCode::displayTxtAsQrCode( urls[index].m_url, WString::fromUTF8(title),
+                                                      WString::fromUTF8(desc) );
     
     if( (index + 1) < urls.size() )
     {
