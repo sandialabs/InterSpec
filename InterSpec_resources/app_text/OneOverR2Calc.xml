@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- oor2c- short for OneOverR2Calc
+  -->
+  <message id="oor2c-instructions">Use two measurement at different locations to find distance to an unseen source. E.g. when the source is behind a wall.</message>
+  <message id="oor2c-near-meas-label">Near Measurement Intensity:</message>
+  <message id="oor2c-far-meas-label">Far Measurement Intensity:</message>
+  <message id="oor2c-background-intensity">Background Intensity (optional):</message>
+  <message id="oor2c-dist-label">Distance between measurements:</message>
+  <message id="oor2c-power-law-label">Power Law</message>
+  <message id="oor2c-low-scatter">Low Scatter or using Peak Area, 1/r^2</message>
+  <message id="oor2c-mid-scatter">Mid Scatter Dose Rate, 1/r^1.85</message>
+  <message id="oor2c-high-scatter">High Scatter Dose Rate, 1/r^1.65</message>
+  <message id="oor2c-dist-to-near-label">Dist. near measurement to source:</message>
+  <message id="oor2c-bottom-message">Use the same units for near, background, and far
+    measurements. Results are in same units used for
+    distance between measurements.
+  </message>
+  <message id="oor2c-qr-state-title">1/r2 Calculator State</message>
+  <message id="oor2c-qr-state-txt">Current state of 1/r<sup>2</sup> calculator tool.</message>
+  <message id="oor2c-qr-err">Error creating QR code: {1}</message>
+  <message id="oor2c-invalid-near">Invalid near measurement</message>
+  <message id="oor2c-invalid-far">Invalid far measurement</message>
+  <message id="oor2c-invalid-dist">Invalid distance</message>
+  <message id="oor2c-far-larger-than-near">Far measurement must be less than near one</message>
+  <message id="oor2c-back-larger-than-far">The background must be less than the far one</message>
+  <message id="oor2c-near-is-zero">The near measurement must be non-zero</message>
+  <message id="oor2c-far-is-zero">The far measurement must be non-zero</message>
+  <message id="oor2c-dist-is-zero">Distance between measurements must be non-zero</message>
+</messages>

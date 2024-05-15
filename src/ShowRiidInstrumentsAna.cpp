@@ -287,7 +287,7 @@ public:
         result += "<tr><th>" + WString::tr("Detector").toUTF8() + "</th><td>" + res.detector_ + "</td></tr>";
       
       if( res.dose_rate_ > 0.0 )
-        result += "<tr><th>" + WString::tr("srria-dose").toUTF8() + "</th><td>"
+        result += "<tr><th>" + WString::tr("Dose").toUTF8() + "</th><td>"
                   + PhysicalUnits::printToBestEquivalentDoseRateUnits( 1.0E-6 * res.dose_rate_*PhysicalUnits::sievert/PhysicalUnits::hour )
                   + "</td></tr>";
       if( res.distance_ > 0.0 )
