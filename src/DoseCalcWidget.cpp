@@ -189,7 +189,7 @@ namespace
     }//if( minimum.IsAboveMaxEdm() )
     
     if( !minimum.IsValid() )
-      throw runtime_error( "Failed to converge on a amount of shielding." );
+      throw runtime_error( WString::tr("dcw-err-failed-fit-AD").toUTF8() );
     
     const ROOT::Minuit2::MnUserParameters params = minimum.UserState().Parameters();
     const vector<double> pars = params.Params();
@@ -204,7 +204,7 @@ namespace
 DoseCalcWindow::DoseCalcWindow( MaterialDB *materialDB,
                                 Wt::WSuggestionPopup *materialSuggestion,
                                 InterSpec *viewer )
-: AuxWindow( "Dose Calc",
+: AuxWindow( WString::tr("window-title-dose-calc"),
             (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::TabletNotFullScreen)
              | AuxWindowProperties::SetCloseable
              | AuxWindowProperties::DisableCollapse) )
@@ -219,7 +219,7 @@ DoseCalcWindow::DoseCalcWindow( MaterialDB *materialDB,
   
 #if( USE_QR_CODES )
   WPushButton *qr_btn = new WPushButton( footer() );
-  qr_btn->setText( "QR Code" );
+  qr_btn->setText( WString::tr("QR Code") );
   qr_btn->setIcon( "InterSpec_resources/images/qr-code.svg" );
   qr_btn->setStyleClass( "LinkBtn DownloadBtn DialogFooterQrBtn" );
   qr_btn->clicked().preventPropagation();
@@ -227,16 +227,17 @@ DoseCalcWindow::DoseCalcWindow( MaterialDB *materialDB,
     try
     {
       const string url = "interspec://dose/" + Wt::Utils::urlEncode(m_dose->encodeStateToUrl());
-      QrCode::displayTxtAsQrCode( url, "Dose Tool State", "Current state of dose tool." );
+      QrCode::displayTxtAsQrCode( url, WString::tr("dcw-qr-tool-state-title"),
+                                 WString::tr("dcw-qr-tool-state-txt") );
     }catch( std::exception &e )
     {
-      passMessage( "Error creating QR code: " + std::string(e.what()), WarningWidget::WarningMsgHigh );
+      passMessage( WString::tr("dcw-err-creating-qr").arg(e.what()), WarningWidget::WarningMsgHigh );
     }
   }) );
 #endif //USE_QR_CODES
 
   
-  WPushButton *closeButton = addCloseButtonToFooter();
+  WPushButton *closeButton = addCloseButtonToFooter( WString::tr("Close") );
   closeButton->clicked().connect( this, &AuxWindow::hide );
   
   show();
@@ -258,7 +259,7 @@ DoseCalcWindow::DoseCalcWindow( MaterialDB *materialDB,
   resizeToFitOnScreen();
   
   centerWindowHeavyHanded();
-}//GammaXsWindow(...) constrctor
+}//GammaXsWindow(...) constructor
 
 
 DoseCalcWindow::~DoseCalcWindow()
@@ -289,7 +290,7 @@ public:
 //    layout->setVerticalSpacing( 0 );
     layout->setContentsMargins( 0, 0, 0, 0 );
     
-    WLabel *label = new WLabel( "Nuclide:" );
+    WLabel *label = new WLabel( WString("{1}:").arg(WString::tr("Nuclide")) );
     layout->addWidget( label, 0, 0, AlignMiddle );
     label->addStyleClass( "DoseFieldLabel" );
     m_nuclideEdit = new WLineEdit();
@@ -305,7 +306,7 @@ public:
     m_nuclideEdit->setMinimumSize( 30, WLength::Auto );
     label->setBuddy( m_nuclideEdit );
     
-    label = new WLabel( "Age:" );
+    label = new WLabel( WString("{1}:").arg(WString::tr("Age")) );
     WLabel *ageLabel = label;
     layout->addWidget( label, 1, 0, AlignMiddle );
     label->addStyleClass( "DoseFieldLabel" );
@@ -318,7 +319,7 @@ public:
     m_nuclideAgeEdit->setAttributeValue( "autocorrect", "off" );
     m_nuclideAgeEdit->setAttributeValue( "spellcheck", "off" );
 #endif
-    m_nuclideAgeEdit->setPlaceholderText( "NA" );
+    m_nuclideAgeEdit->setPlaceholderText( WString::tr("N/A") );
     layout->addWidget( m_nuclideAgeEdit, 1, 1 );
     label->setBuddy( m_nuclideAgeEdit );
     
@@ -360,10 +361,7 @@ public:
 //    m_nuclideEdit->enterPressed().connect( this, &GammaSourceEnter::handleNuclideUserInput );
 //    m_nuclideEdit->blurred().connect( this, &GammaSourceEnter::handleNuclideUserInput );
 
-  
-    string tooltip = "ex. <b>U235</b>, <b>235 Uranium</b>, "
-                     "<b>U-235m</b> (meta stable state), <b>Cs137</b>, etc.";
-    HelpSystem::attachToolTipOn( m_nuclideEdit, tooltip, showToolTips );
+    HelpSystem::attachToolTipOn( m_nuclideEdit, WString::tr("dcw-tt-nuc-edit"), showToolTips );
     
     
     WRegExpValidator *validator = new WRegExpValidator( PhysicalUnits::sm_timeDurationHalfLiveOptionalRegex, this );
@@ -374,32 +372,8 @@ public:
     m_nuclideAgeEdit->blurred().connect( this, &GammaSourceEnter::handleAgeUserChange );
     m_nuclideAgeEdit->enterPressed().connect( this, &GammaSourceEnter::handleAgeUserChange );
     
-    tooltip =
-    "<div>"
-      "Age can be specified using a combination of time units, "
-      "similar to '<b>5.3y 8d 22m</b>' or in half lives like "
-      "'<b>2.5 HL</b>'."
-    "</div>"
-    "<br />"
-    "<div>"
-      "The age does not effect the activity of the entered nuclide, it only effects the amount"
-      " of progeny in-growth (i.e. only alters progeny activities, not parent nuclide activity)"
-      " - the activity you entered will always be used for the parent nuclide you entered, no"
-      " matter the age."
-    "</div>"
-    "<br />"
-    "<div>"
-      "Acceptable time units: <b>year</b>, <b>yr</b>, <b>y</b>, <b>day</b>, <b>d</b>, <b>hrs</b>, <b>hour</b>, <b>h</b>, <b>minute</b>, "
-      "<b>min</b>, <b>m</b>, <b>second</b>, <b>s</b>, <b>ms</b>, <b>microseconds</b>, <b>us</b>, <b>nanoseconds</b>, <b>ns</b>, or "
-      "you can specify time period by <b>hh:mm:ss</b>. "
-    "</div>"
-    "<div>Half life units or time periods can not be mixed with other units.</div>"
-    "<div>"
-      "When multiple time periods are specified, they are summed, e.x. '1y6months 3m' is interpreted as "
-      "18 months and 3 minutes"
-    "</div>";
-    
-    HelpSystem::attachToolTipOn( {ageLabel, m_nuclideAgeEdit}, tooltip, showToolTips );
+    HelpSystem::attachToolTipOn( {ageLabel, m_nuclideAgeEdit}, 
+                                WString::tr("dcw-tt-age-edit"), showToolTips );
   }//GammaSourceEnter constructor
   
   
@@ -433,8 +407,7 @@ public:
     WString hlstr;
     if( nuc )
       hlstr = PhysicalUnits::printToBestTimeUnits( nuc->halfLife, 2, SandiaDecay::second );
-    hlstr = " T&frac12;=" + hlstr;
-    m_halfLifeTxt->setText( hlstr );
+    m_halfLifeTxt->setText( WString("{1}={2}").arg(WString::tr("T1/2")).arg(hlstr) );
 
     bool useCurrentAge = false;
     const bool showPromptOnly = false; //m_promptLinesOnly
@@ -513,7 +486,7 @@ public:
       {
         if( IsInf(nuc->halfLife) )
         {
-          passMessage( isotopeLabel + " is stable", WarningWidget::WarningMsgHigh );
+          passMessage( WString::tr("dcw-nuc-is-stable").arg(isotopeLabel), WarningWidget::WarningMsgHigh );
         }else
         {
           passMessage( isotopeLabel + " is missing decay data", WarningWidget::WarningMsgHigh );
@@ -533,9 +506,11 @@ public:
       {
         string defagstr;
         PeakDef::defaultDecayTime( nuc, &defagstr );
-        passMessage( "Changed age to a more reasonable value for " + nuc->symbol
-                    + " from '" + agestr + "' to '" + defagstr + "'",
-                    WarningWidget::WarningMsgLow );
+        WString msg = WString::tr("dcw-made-age-reasonable")
+                        .arg(nuc->symbol)
+                        .arg(agestr)
+                        .arg(defagstr);
+        passMessage( msg, WarningWidget::WarningMsgLow );
         m_nuclideAgeEdit->setText( defagstr );
       }else
       {
@@ -572,7 +547,7 @@ public:
     
     if( age > 50.0*m_currentNuc->halfLife || age < 0.0 )
     {
-      passMessage( agestr + "is to many half lives to decay " + m_currentNuc->symbol,
+      passMessage( WString::tr("dcw-age-to-big").arg(agestr).arg(m_currentNuc->symbol),
                    WarningWidget::WarningMsgHigh );
       if( m_prevAgeTxt.count(m_currentNuc) )
         m_nuclideAgeEdit->setText( m_prevAgeTxt[m_currentNuc] );
@@ -853,7 +828,8 @@ void DoseCalcWidget::init()
   UndoRedoManager::BlockUndoRedoInserts undo_blocker;
   
   wApp->useStyleSheet( "InterSpec_resources/DoseCalcWidget.css" );
-  
+  m_viewer->useMessageResourceBundle( "DoseCalcWidget" );
+      
   addStyleClass( "DoseCalcWidget" );
   m_layout = new WGridLayout( this );
   m_layout->setContentsMargins( 0, 0, 0, 0 );
@@ -904,13 +880,13 @@ void DoseCalcWidget::init()
   WText *coltxt = 0;
   if( !isPhone )
   {
-    coltxt = new WText( "Inputs", enterDiv );
+    coltxt = new WText( WString::tr("dcw-inputs"), enterDiv );
     coltxt->addStyleClass( "DoseColLabel" );
     coltxt->setInline( false );
     enterLayout->addWidget( coltxt, 0, 0, AlignMiddle | AlignTop );
   }//if( !isPhone )
   
-  coltxt = new WText( "Answer" );
+  coltxt = new WText( WString::tr("dcw-answer") );
   coltxt->addStyleClass( "DoseColLabel" );
   coltxt->setInline( false );
   answerLayout->addWidget( coltxt, 0, 0, AlignMiddle | AlignTop );
@@ -919,15 +895,12 @@ void DoseCalcWidget::init()
   WContainerWidget *introDiv = new WContainerWidget();
   introDiv->addStyleClass( "DoseIntroDiv" );
   WGridLayout *intoTxtLayout = new WGridLayout( introDiv );
-  WText *txt = new WText( "Select quantity you would like to compute on the left" );
+  WText *txt = new WText( WString::tr("dcw-intro-instructions") );
   txt->addStyleClass( "DoseIntroTxtMain" );
   
   intoTxtLayout->addWidget( txt, 0, 0, AlignMiddle | AlignCenter );
   
-  txt = new WText( "Dose values computed using ANSI/ANS-6.1.1-1991 most"
-                   " conservative case: Anterior-Posterior orientation."
-                   " Dose calculations are a rough guide, at best, and are"
-                   " subject to many uncertainities or errors." );
+  txt = new WText( WString::tr("dcw-intro-calc-desc") );
   txt->addStyleClass( "DoseIntroTxtDetail" );
   
   intoTxtLayout->addWidget( txt, 1, 0, AlignCenter );
@@ -952,7 +925,7 @@ void DoseCalcWidget::init()
     
     if( !isPhone )
     {
-      txt = new WText( "Source:", sourcDiv );
+      txt = new WText( WString::tr("dcw-source-label"), sourcDiv );
       txt->addStyleClass( "DoseEnterInd" );
       txt->setInline( false );
     }//if( !isPhone )
@@ -961,14 +934,14 @@ void DoseCalcWidget::init()
     m_sourceType->checkedChanged().connect( this, &DoseCalcWidget::handleSourceTypeChange );
     
     WContainerWidget *buttonDiv = new WContainerWidget( sourcDiv );
-    WRadioButton *gammaButton = new Wt::WRadioButton( "Gamma", buttonDiv );
+    WRadioButton *gammaButton = new Wt::WRadioButton( WString::tr("Gamma"), buttonDiv );
     gammaButton->setMargin( 7, Wt::Right );
     m_sourceType->addButton( gammaButton, 0 );
     
-    WRadioButton *neutronButton = new Wt::WRadioButton( "Neutron", buttonDiv );
+    WRadioButton *neutronButton = new Wt::WRadioButton( WString::tr("dcw-neutron"), buttonDiv );
     m_sourceType->addButton( neutronButton, 1 );
     neutronButton->disable();
-    neutronButton->setToolTip( "Neutron dose calc not implemented yet." );
+    neutronButton->setToolTip( WString::tr("dcw-tt-neut-not-imp") );
     neutronButton->setAttributeValue( "style", "color: grey;" );
     
     m_sourceType->setSelectedButtonIndex( 0 );
@@ -992,17 +965,17 @@ void DoseCalcWidget::init()
   
   for( Quantity i = Quantity(0); i < NumQuantity; i = Quantity(i+1) )
   {
-    const char *label = "";
+    const char *label_key = "";
     switch( i )
     {
-      case Activity:  label = "Activity";  break;
-      case Distance:  label = "Distance";  break;
-      case Dose:      label = "Dose";      break;
-      case Shielding: label = "Shielding"; break;
+      case Activity:  label_key = "Activity";  break;
+      case Distance:  label_key = "Distance";  break;
+      case Dose:      label_key = "Dose";      break;
+      case Shielding: label_key = "Shielding"; break;
       case NumQuantity:                    break;
     }//switch( i )
     
-    WMenuItem *item = m_menu->addItem( label );
+    WMenuItem *item = m_menu->addItem( WString::tr(label_key) );
     item->clicked().connect( boost::bind(&right_select_item, m_menu, item) );
     item->triggered().connect( boost::bind( &DoseCalcWidget::handleQuantityClick, this, i ) );
 
@@ -1020,7 +993,7 @@ void DoseCalcWidget::init()
     {
       case Dose:
       {
-        txt = new WText( "Dose:", m_enterWidgets[i] );
+        txt = new WText( WString("{1}:").arg(WString::tr("Dose")), m_enterWidgets[i] );
         txt->addStyleClass( "DoseEnterInd" );
         if( !isPhone )
           txt->setInline( false );
@@ -1080,7 +1053,7 @@ void DoseCalcWidget::init()
         
       case Activity:
       {
-        txt = new WText( "Activity:" );
+        txt = new WText( WString("{1}:").arg(WString::tr("Activity")) );
         txt->addStyleClass( "DoseEnterInd" );
         if( !isPhone )
           txt->setInline( false );
@@ -1155,7 +1128,7 @@ void DoseCalcWidget::init()
         
       case Distance:
       {
-        txt = new WText( "Distance:" );
+        txt = new WText( WString("{1}:").arg(WString::tr("Distance")) );
         txt->addStyleClass( "DoseEnterInd" );
         if( !isPhone )
           txt->setInline( false );
@@ -1188,12 +1161,7 @@ void DoseCalcWidget::init()
         WRegExpValidator *validator = new WRegExpValidator( PhysicalUnits::sm_distanceUnitOptionalRegex, this );
         validator->setFlags( Wt::MatchCaseInsensitive );
         m_distanceEnter->setValidator( validator );
-        HelpSystem::attachToolTipOn( m_distanceEnter,
-            "Distance from center of source to face of detector. Number must be"
-            " followed by units; valid units are: meters, m, cm, mm, km, feet,"
-            " ft, ', in, inches, or \".  You may also add multiple distances,"
-            " such as '3ft 4in', or '3.6E-2 m 12 cm' which are equivalent to "
-            " 40inches and 15.6cm respectively.", showToolTips );
+        HelpSystem::attachToolTipOn( m_distanceEnter, WString::tr("dcw-tt-distance"), showToolTips );
         
         m_distanceEnter->changed().connect( boost::bind( &DoseCalcWidget::updateResult, this ) );
         m_distanceEnter->enterPressed().connect( boost::bind( &DoseCalcWidget::updateResult, this ) );
@@ -1206,7 +1174,7 @@ void DoseCalcWidget::init()
       {
         if( !isPhone )
         {
-          txt = new WText( "Shielding:" );
+          txt = new WText( WString("{1}:").arg(WString::tr("Shielding")) );
           txt->addStyleClass( "DoseEnterInd" );
           txt->setInline( false );
           m_enterWidgets[i]->addWidget( txt );
@@ -1225,7 +1193,7 @@ void DoseCalcWidget::init()
         
         if( isPhone )
         {
-          m_enterShieldingSelect->materialEdit()->setEmptyText( "Shielding Material" );
+          m_enterShieldingSelect->materialEdit()->setEmptyText( WString::tr("dcw-shield-empty-text") );
         }
         
         break;
@@ -1267,7 +1235,7 @@ void DoseCalcWidget::init()
     introDiv->clear();
     introDiv->setStyleClass( "DoseCalcRuntimeCheckFailMsg" );
     
-    auto errorintro = new WText( "Runtime sanity checks have failed!", introDiv );
+    auto errorintro = new WText( WString::tr("dcw-runtime-checks-failed"), introDiv );
     errorintro->setInline( false );
     errorintro->setStyleClass( "DoseCalcRuntimeCheckFailHdr" );
     
@@ -1275,16 +1243,11 @@ void DoseCalcWidget::init()
     errortxt->setInline( false );
     errortxt->setStyleClass( "DoseCalcRuntimeCheckMsgTxt" );
     
-    auto furthermsg = new WText( "<div>Do not trust results of this calculator utility</div>"
-                                 "Please email <a href=\"mailto:interspec@sandia.gov\">interspec@sandia.gov</a>"
-                                 " this error message and include your device type and model (e.g., iPad pro,"
-                                 " Windows 10 Dell laptop, etc.)", introDiv );
+    auto furthermsg = new WText( WString::tr("dcw-runtime-check-msg"), introDiv );
     furthermsg->setStyleClass( "DoseCalcRuntimeCheckInstuct" );
     furthermsg->setInline( false );
     
-    
-    
-    auto *errordiv = new WText( "Results Suspect - Do Not Trust" );
+    auto *errordiv = new WText( WString::tr("dcw-runtime-check-err-div") );
     errordiv->setStyleClass( "DoseCalcRuntimeCheckFailBanner" );
     const int row = m_layout->rowCount();
     m_layout->addWidget( errordiv, row, 0, 1, m_layout->columnCount(), AlignCenter );
@@ -1774,7 +1737,7 @@ void DoseCalcWidget::updateResultForGammaSource()
   
   if( !m_gammaSource->nuclide() )
   {
-    m_issueTxt->setText( "Empty or invalid source nuclide" );
+    m_issueTxt->setText( WString::tr("dcw-err-no-nuc") );
     quantity = NumQuantity;
   }
   
@@ -1832,7 +1795,7 @@ void DoseCalcWidget::updateResultForGammaSource()
         activity = enteredActivity();
       }catch( std::exception & )
       {
-        m_issueTxt->setText( "Activity is invalid" );
+        m_issueTxt->setText( WString::tr("dcw-act-invalid") );
         return;
       }
       
@@ -1879,7 +1842,7 @@ void DoseCalcWidget::updateResultForGammaSource()
     }//if( m_enterShieldingSelect->isGenericMaterial() ) / else
   }catch(...)
   {
-    m_issueTxt->setText( "Invalid shielding" );
+    m_issueTxt->setText( WString::tr("dcw-shield-invalid") );
     return;
   }
   
@@ -1898,7 +1861,7 @@ void DoseCalcWidget::updateResultForGammaSource()
     shielding_ad = 0.0;
   }else if( shielding_an <= 1.0 )
   {
-    m_issueTxt->setText( "Error calculating dose, invalid shielding, sorry :{" );
+    m_issueTxt->setText( WString::tr("dcw-generic-shield-invalid") );
     return;
   }
   
@@ -1919,7 +1882,7 @@ void DoseCalcWidget::updateResultForGammaSource()
       distance = PhysicalUnits::stringToDistance( diststr );
     }catch ( std::exception &e )
     {
-      m_issueTxt->setText( "Distance is invalid." );
+      m_issueTxt->setText( WString::tr("dcw-dist-invalid") );
       cerr << "Error: " << e.what() << endl;
       return;
     }
@@ -1932,7 +1895,7 @@ void DoseCalcWidget::updateResultForGammaSource()
                                         shielding_ad, shielding_an, distance, *m_scatter );
   }catch( std::exception &e )
   {
-    m_issueTxt->setText( "Error calculating dose from source, sorry :{" );
+    m_issueTxt->setText( WString::tr("dcw-err-other") );
     cerr << "Error: " << e.what() << endl;
     return;
   }//try / catch
@@ -1941,7 +1904,7 @@ void DoseCalcWidget::updateResultForGammaSource()
   {
     if( !(stringstream(m_doseEnter->text().toUTF8()) >> user_entered_dose) )
     {
-      m_issueTxt->setText( "Invalid source dose." );
+      m_issueTxt->setText( WString::tr("dcw-invalid-src-dose") );
       return;
     }
     
@@ -1974,7 +1937,7 @@ void DoseCalcWidget::updateResultForGammaSource()
         enteredActivity();
       }catch(...)
       {
-        m_issueTxt->setText( "Invalid source activity." );
+        m_issueTxt->setText( WString::tr("dcw-invalid-src-act") );
         return;
       }
       
@@ -1990,7 +1953,7 @@ void DoseCalcWidget::updateResultForGammaSource()
     {
       if( user_entered_dose <= 0.0 || IsInf(user_entered_dose) || IsNan(user_entered_dose) )
       {
-        m_issueTxt->setText( "Invalid source dose." );
+        m_issueTxt->setText( WString::tr("dcw-invalid-src-dose") );
         return;
       }
       
@@ -2030,8 +1993,8 @@ void DoseCalcWidget::updateResultForGammaSource()
         }//for( num_iters = 0; num_iters < max_bounds_iters; ++num_iters )
         
         if( num_iters >= max_bounds_iters )
-          throw runtime_error( "Failed to find lower bounding distance, at "
-                              + std::to_string(lower_dist/PhysicalUnits::cm) + "cm.");
+          throw runtime_error( WString::tr("dcw-failed-find-lower-dist")
+                              .arg(lower_dist/PhysicalUnits::cm).toUTF8() );
         
         // Find upper bounding distance
         for( num_iters = 0; num_iters < max_bounds_iters; ++num_iters )
@@ -2042,8 +2005,8 @@ void DoseCalcWidget::updateResultForGammaSource()
         }//for( num_iters = 0; num_iters < max_bounds_iters; ++num_iters )
         
         if( num_iters >= max_bounds_iters )
-          throw runtime_error( "Failed to find upper bounding distance, at "
-                              + std::to_string(upper_dist/PhysicalUnits::cm) + "cm.");
+          throw runtime_error( WString::tr("dcw-failed-find-upper-dist")
+                              .arg(upper_dist/PhysicalUnits::cm).toUTF8() );
         
         // Now find the actual distance to within 'dist_delta'
         num_iters = max_bisect_iters;
@@ -2051,14 +2014,14 @@ void DoseCalcWidget::updateResultForGammaSource()
            = boost::math::tools::bisect( dose_root_calc, lower_dist, upper_dist, term_cond, num_iters );
         
         if( num_iters >= max_bisect_iters )
-          throw runtime_error( "Couldnt find distance; exceeded max iterations." );
+          throw runtime_error( WString::tr("dcw-failed-find-dist").toUTF8() );
         
         assert( term_cond(bracketing_dists.first,bracketing_dists.second) );
         
         distance = 0.5*(bracketing_dists.first + bracketing_dists.second);
         
         if( distance <= 0.0 )
-          throw runtime_error( "Got negative distance: " + std::to_string(distance) );
+          throw runtime_error( WString::tr("dcw-got-neg-dist").arg(distance).toUTF8() );
         
         //const double final_dose = DoseCalc::gamma_dose_with_shielding( energies, intensities,
         //                                        shielding_ad, shielding_an, distance, *m_scatter );
@@ -2072,7 +2035,7 @@ void DoseCalcWidget::updateResultForGammaSource()
         m_distanceAnswer->setText( PhysicalUnits::printToBestLengthUnits(distance) );
       }catch( std::exception &e )
       {
-        m_issueTxt->setText( "Error calculating dose while searching for distance, sorry :{" );
+        m_issueTxt->setText( WString::tr("dcw-err-calc-dose-for-dist") );
         cerr << "Error calculating dose while searching for distance: " << e.what() << endl;
         return;
       }//try / catch
@@ -2097,7 +2060,7 @@ void DoseCalcWidget::updateResultForGammaSource()
         
           mat = m_answerShieldingSelect->material();
           if( !mat )
-            throw runtime_error( "Material not valid" );
+            throw runtime_error( WString::tr("dcw-material-not-valid").toUTF8() );
           
           shielding_an = mat->massWeightedAtomicNumber();
         }//if( isGeneric ) / else
@@ -2106,9 +2069,9 @@ void DoseCalcWidget::updateResultForGammaSource()
         if( shielding_an < 1.0 || shielding_an > 98.0 )
         {
           if( isGeneric )
-            m_issueTxt->setText( "You must enter the atomic number of the shielding material." );
+            m_issueTxt->setText( WString::tr("dcw-no-an-entered") );
           else
-            m_issueTxt->setText( "You must enter the shielding material type." );
+            m_issueTxt->setText( WString::tr("dcw-no-shield-name") );
           return;
         }//if( shielding_an < 1.0 )
       
@@ -2234,10 +2197,18 @@ void DoseCalcWidget::checkAndWarnForBrehmSource()
   if( (betaMaxFrac*gammaIntensity > betaIntensity) && !gammas.empty() )
     return;
   
-  string issuetxt = m_issueTxt->text().toUTF8();
-  if( issuetxt.size() )
-    issuetxt = "<div>" + issuetxt + "</div>";
-  issuetxt += "<div>Warning: Bremsstrahlung of beta decays not accounted for, results may not be trustworthy.</div>";
+  WString issuetxt = m_issueTxt->text();
+  if( issuetxt.empty() )
+  {
+    issuetxt = WString("<div>{1}</div>")
+      .arg( WString::tr("dcw-brehm-warning") );
+  }else
+  {
+    issuetxt = WString("<div>{1}</div><div>{2}</div>")
+      .arg(issuetxt)
+      .arg( WString::tr("dcw-brehm-warning") );
+  }
+  
   m_issueTxt->setText( issuetxt );
 }//void checkAndWarnForBrehmSource()
 
@@ -2267,14 +2238,14 @@ double DoseCalcWidget::currentDose()
   {
     case Dose:
       if( m_doseAnswer->text().empty() || (m_doseAnswerValue < FLT_MIN) )
-        throw runtime_error( "No numerical value entered for dose" );
+        throw runtime_error( WString::tr("dcw-no-dose-entered").toUTF8() );
       dose = m_doseAnswerValue;
       break;
       
     case Activity: case Distance: case Shielding:
     { 
       if( !(stringstream(m_doseEnter->text().toUTF8()) >> dose) )
-        throw runtime_error( "No numerical value entered for dose" );
+        throw runtime_error( WString::tr("dcw-no-dose-entered").toUTF8() );
       
       const int doseIndex = m_doseEnterUnits->currentIndex();
       if( doseIndex >= static_cast<int>(PhysicalUnits::sm_doseRateUnitHtmlNameValues.size()) || doseIndex < 0 )
@@ -2305,7 +2276,7 @@ void DoseCalcWidget::updateStayTime()
     if( !m_stayTime->hasStyleClass( "DoseStayTime" ) )
       m_stayTime->addStyleClass( "DoseStayTime" );
     
-    WText *header = new WText( "Stay Time", m_stayTime );
+    WText *header = new WText( WString::tr("dcw-stay-time"), m_stayTime );
     header->setInline( false );
     header->addStyleClass( "DoseStayTimeHeader" );
     
@@ -2316,7 +2287,7 @@ void DoseCalcWidget::updateStayTime()
     table->setVerticalSpacing( 0 );
     table->setContentsMargins( 0, 0, 0, 0 );
     
-    map<double,pair<string,string> > ref_doses;
+    map<double,pair<string,WString> > ref_doses;
     
     using PhysicalUnits::rem;
     
@@ -2324,16 +2295,16 @@ void DoseCalcWidget::updateStayTime()
     //ref_doses[0.000010*rem]  = make_pair( "10 " MU_CHARACTER "rem", "Eating one banana" );
     
     //http://www.nrc.gov/about-nrc/radiation/around-us/doses-daily-lives.html
-    ref_doses[0.0015*rem] = make_pair( "1.5 mrem", "Dental X-Ray" );
+    ref_doses[0.0015*rem] = make_pair( "1.5 mrem", WString::tr("dcw-dental-xray") );
     //Flight from NY to LA 2 to 5 mrem
     //Chest xray 10 mrem
-    ref_doses[0.620*rem]  = make_pair( "620 mrem", "Typ. Yearly Background" );
+    ref_doses[0.620*rem]  = make_pair( "620 mrem", WString::tr("dcw-annual-background") );
   
     //National Council on Radiation Protection (NCRP) dose guidelines for civilian radiation workers  (wcjohns did not verify)
-    ref_doses[5.0*rem]    = make_pair( "5 rem",    "Annual Occ. Limit" );
-    ref_doses[10.0*rem]   = make_pair( "10 rem",   "Save Valuable Property" );
-    ref_doses[25.0*rem]   = make_pair( "25 rem",   "Life Saving" );
-    ref_doses[100.0*rem]  = make_pair( "100 rem",  "Radiation Sickness" );
+    ref_doses[5.0*rem]    = make_pair( "5 rem",    WString::tr("dcw-annual-occ-limit") );
+    ref_doses[10.0*rem]   = make_pair( "10 rem",   WString::tr("dcw-save-property") );
+    ref_doses[25.0*rem]   = make_pair( "25 rem",   WString::tr("dcw-life-saving") );
+    ref_doses[100.0*rem]  = make_pair( "100 rem",  WString::tr("dcw-radiation-sickness") );
     
     
     //https://en.wikipedia.org/wiki/Sievert#Dose_examples_2
@@ -2356,14 +2327,14 @@ void DoseCalcWidget::updateStayTime()
     
     int nprinted = 0, ntriedprint = 0;
     
-    for( map<double,pair<string,string> >::const_iterator iter = ref_doses.begin();
+    for( map<double,pair<string,WString> >::const_iterator iter = ref_doses.begin();
         iter != ref_doses.end(); ++iter )
     {
       ++ntriedprint;
       
       const double refdose = iter->first;
       const string &dosestr = iter->second.first;
-      const string &descestr = iter->second.second;
+      const WString &descestr = iter->second.second;
       
       const double time = refdose / dose;
       

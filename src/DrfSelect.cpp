@@ -2886,7 +2886,7 @@ DrfSelect::DrfSelect( std::shared_ptr<DetectorPeakResponse> currentDet,
   
 #if( USE_QR_CODES )
   WPushButton *qr_btn = new WPushButton( m_footer );
-  qr_btn->setText( WString::tr("QR code") );
+  qr_btn->setText( WString::tr("QR Code") );
   qr_btn->setIcon( "InterSpec_resources/images/qr-code.svg" );
   qr_btn->setStyleClass( "LinkBtn DownloadBtn DrfXmlDownload" );
   
