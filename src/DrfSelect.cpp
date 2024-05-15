@@ -128,15 +128,8 @@ extern void android_download_workaround( Wt::WResource *resource, std::string de
 using SpecUtils::Measurement;
 using SpecUtils::DetectorType;
 
-const char * const DetectorDisplay::sm_noDetectorTxt
-  = "<font style=\"font-weight:100;color:#CFCFCF;\">&lt;click to select&gt;</font>";
-const char * const DetectorDisplay::sm_noDetectorTxtMbl
-= "<font style=\"font-weight:100;color:#CFCFCF;\">&lt;tap to select&gt;</font>";
-
 namespace
 {
-  const char * const ns_default_manual_det_name = "User Defined Detector";
-  
   void right_select_item( WMenu *menu, WMenuItem *item )
   {
     menu->select( item );
@@ -872,7 +865,7 @@ void RelEffFile::init()
 #if( BUILD_AS_ELECTRON_APP || IOS || ANDROID || BUILD_AS_OSX_APP || BUILD_AS_LOCAL_SERVER || BUILD_AS_WX_WIDGETS_APP )
   WPushButton *closeIcon = new WPushButton( topdiv );
   closeIcon->addStyleClass( "closeicon-wtdefault" );
-  closeIcon->setToolTip( "Remove file from list of files InterSpec will look for detector response functions in." );
+  closeIcon->setToolTip( WString::tr("ref-tt-remove-drf-file") );
   //closeIcon->setAttributeValue( "style", "position: relative; top: 3px; right: 3px;" + closeIcon->attributeValue("style") );
   closeIcon->clicked().connect( this, &RelEffFile::handleUserAskedRemove );
 #endif
@@ -932,11 +925,11 @@ void RelEffFile::handleUserAskedRemove()
     return;
   }
   
-  SimpleDialog *dialog = new SimpleDialog( "Remove Detector Responses?",
-                                          "Would you like to remove these DRFs from future use as well?" );
+  SimpleDialog *dialog = new SimpleDialog( WString::tr("ref-remove-drf-window-title"),
+                                          WString::tr("ref-remove-drf-window-txt") );
   
-  Wt::WPushButton *yes = dialog->addButton( "Yes" );
-  dialog->addButton( "No" );
+  Wt::WPushButton *yes = dialog->addButton( WString::tr("Yes") );
+  dialog->addButton( WString::tr("No") );
   
   string filepath = m_existingFilePath;
   yes->clicked().connect( std::bind([filepath](){
@@ -977,7 +970,7 @@ void RelEffFile::handleUserAskedRemove()
     }
     
     
-    passMessage( "File '" + SpecUtils::filename(pathToDel) + "' removed from future use.",
+    passMessage( WString::tr("ref-file-removed-toast").arg(SpecUtils::filename(pathToDel)),
                 WarningWidget::WarningMsgInfo );
   }) );
   
@@ -1039,16 +1032,14 @@ void RelEffFile::handleSaveFileForLater()
     
     m_existingFilePath = outputname;
     
-    passMessage( "Saved '" + filename + "' for later use, and will be available in the"
-                " &quot;<em>Rel. Eff.</em>&quot; portion of the"
-                " &quot;<em>Detector Response Function Select</em>&quot; tool.",
+    passMessage( WString::tr("ref-file-saved-for-later").arg(filename),
                 WarningWidget::WarningMsgInfo );
   }catch( std::exception &e )
   {
     // Dont ever expect to really get here.
     cerr << "RelEffFile::handleSaveFileForLater(): Caught exception trying to save '"
          << displayName << "' from '" << spoolPath << "'." << endl;
-    passMessage( "Error saving DRF file for later use; sorry.", WarningWidget::WarningMsgHigh );
+    passMessage( WString::tr("ref-err-saving-drf-file"), WarningWidget::WarningMsgHigh );
   }//try / catch
 }//void handleSaveFileForLater();
 #endif  //#if( BUILD_AS_ELECTRON_APP || IOS || ANDROID || BUILD_AS_OSX_APP || BUILD_AS_LOCAL_SERVER || BUILD_AS_WX_WIDGETS_APP )
@@ -1062,17 +1053,16 @@ void RelEffFile::handleFileUpload()
   
   if( m_responses.empty() )
   {
-    passMessage( "Not a valid TSV or CSV relative-efficiency DRF file.",
-                 WarningWidget::WarningMsgHigh );
+    passMessage( WString::tr("ref-err-invalid-csv-drf"), WarningWidget::WarningMsgHigh );
     return;
   }//if( invalid file )
   
 #if( BUILD_AS_ELECTRON_APP || IOS || ANDROID || BUILD_AS_OSX_APP || BUILD_AS_LOCAL_SERVER || BUILD_AS_WX_WIDGETS_APP )
-  SimpleDialog *dialog = new SimpleDialog( "Save Detector Responses?",
-                                "Would you like to save these detector responses for later use?" );
+  SimpleDialog *dialog = new SimpleDialog( WString::tr("ref-save-drf-window-title"),
+                                WString::tr("ref-save-drf-window-txt") );
   
-  Wt::WPushButton *yes = dialog->addButton( "Yes" );
-  dialog->addButton( "No" );
+  Wt::WPushButton *yes = dialog->addButton( WString::tr("Yes") );
+  dialog->addButton( WString::tr("No") );
   yes->clicked().connect( this, &RelEffFile::handleSaveFileForLater );
 #endif
 }//void handleFileUpload()
@@ -1147,10 +1137,10 @@ void RelEffFile::initDetectors()
   {
     if( m_fileUpload->empty() )
     {
-      m_detectorSelect->addItem( "<no responses in file>" );
+      m_detectorSelect->addItem( WString("<{1}>").arg( WString::tr("ref-dont-use-drf-in-file") ) );
       m_detectorSelect->setCurrentIndex( 0 );
       m_detectorSelect->hide();
-      m_credits->setText( "Upload a TSV/CSV file." );
+      m_credits->setText( WString::tr("ref-upload-csv-file") );
       
       return;
     }//if( m_fileUpload->empty() )
@@ -1181,32 +1171,32 @@ void RelEffFile::initDetectors()
     
     if( m_responses.empty() )
     {
-      m_detectorSelect->addItem( "<no responses in file>" );
+      m_detectorSelect->addItem( WString("<{1}>").arg( WString::tr("ref-dont-use-drf-in-file") ) );
       m_detectorSelect->hide();
     }else
     {
-      m_detectorSelect->addItem( "<select detector>" );
+      m_detectorSelect->addItem( WString("<{1}>").arg( WString::tr("ref-select-det-from-file") ) );
       m_detectorSelect->show();
     }
     
     if( m_responses.empty() )
-      credits.push_back( "<span style=\"color:red;\">No valid DRFs in file.</span>" );
+      credits.push_back( WString("<span style=\"color:red;\">{1}</span>").arg( WString::tr("ref-no-drfs-in-file") ).toUTF8() );
     
     for( const auto &det : m_responses )
       m_detectorSelect->addItem( det->name() );
   }else
   {
 #if( BUILD_FOR_WEB_DEPLOYMENT || defined(IOS) )
-    credits.push_back( "<span style=\"color:red;\">No Rel. Eff. DRFs available.</span>" );
+    credits.push_back( WString("<span style=\"color:red;\">{1}</span>").arg( WString::tr("ref-no-rel-eff-drfs-in-file") ).toUTF8() );
 #else
-    credits.push_back( "<span style=\"color:red;\">Could not open DRF file.</span>" );
+    credits.push_back( WString("<span style=\"color:red;\">{1}</span>").arg( WString::tr("ref-couldnt-open-drf-file") ).toUTF8() );
 #endif
-    m_detectorSelect->addItem( "<no responses available>" );
+    m_detectorSelect->addItem( WString("<{1}>").arg( WString::tr("ref-no-drfs-available") ) );
     m_detectorSelect->hide();
   }//if( file_opened )
   
   if( file_opened && m_responses.empty() )
-    credits.push_back( "<span style=\"color:red;\">File does not contain and DRFs</span>" );
+    credits.push_back( WString::tr("<span style=\"color:red;\">{1}</span>").arg( WString::tr("ref-file-has-no-drfs") ).toUTF8() );
   
   string creditHtml;
   for( string credit : credits )
@@ -1344,7 +1334,10 @@ void RelEffDetSelect::docreate()
 #if( !BUILD_FOR_WEB_DEPLOYMENT )
   WContainerWidget *holder = new WContainerWidget( this );
   holder->addStyleClass( "DrfSelectAreaFooter" );
-  holder->setToolTip( "Click the plus button to add an additional relative efficiency detector response function file." );
+  //holder->setToolTip( WString::tr("reds-tt-add-drf-btn") );
+  const bool showToolTips = InterSpecUser::preferenceValue<bool>( "ShowTooltips", m_interspec );
+  HelpSystem::attachToolTipOn( holder, WString::tr("reds-tt-add-drf-btn"),
+                              showToolTips, HelpSystem::ToolTipPosition::Left );
   
   WPushButton *addIcon = new WPushButton( holder );
   addIcon->setStyleClass( "DrfSelectAddFile Wt-icon" );
@@ -1467,7 +1460,10 @@ void GadrasDetSelect::docreate()
   footer->addStyleClass( "DrfSelectAreaFooter" );
   
 #if( !BUILD_FOR_WEB_DEPLOYMENT && !defined(IOS) )
-  footer->setToolTip( "Click the plus button to add an additional directory to recursively look for detector response functions in." );
+  //footer->setToolTip( WString::tr("reds-tt-add-dir") );
+  const bool showToolTips = InterSpecUser::preferenceValue<bool>( "ShowTooltips", m_interspec );
+  HelpSystem::attachToolTipOn( footer, WString::tr("reds-tt-add-dir"), showToolTips, HelpSystem::ToolTipPosition::Left );
+  
   
   WPushButton *addIcon = new WPushButton( footer );
   addIcon->setStyleClass( "DrfSelectAddFile Wt-icon" );
@@ -1556,15 +1552,12 @@ void GadrasDetSelect::docreate()
   }
 
 #if( IOS )
-  const char *gadrasToolTip = "You can place detector response functions imported"
-  " from GADRAS-DRF into <code>InterSpec</code>s directory within the <b>Files</b> app.";
+  const char *gadrasToolTip_key = "reds-gadras-drf-info-ios";
 #else
-  const char *gadrasToolTip = "These are detector response functions imported"
-  " from GADRAS-DRF.  Currently only the detector dimensions, "
-  " absolute efficiencies, and FWHM resolutions are used.";
+  const char *gadrasToolTip_key = "reds-gadras-drf-info";
 #endif
   
-  WText *useInfo = new WText( gadrasToolTip, footer );
+  WText *useInfo = new WText( WString::tr(gadrasToolTip_key), footer );
   useInfo->setStyleClass("DrfTypeDescrip");
 }//void docreate()
 
@@ -1639,7 +1632,8 @@ std::shared_ptr<DetectorPeakResponse> GadrasDetSelect::selectedDetector()
         return answer;
       }catch( std::exception &e )
       {
-        passMessage( "Failed to parse a GADRAS detector: " + string(e.what()), WarningWidget::WarningMsgHigh );
+        passMessage( WString::tr("reds-failed-parse-gadras-det").arg(e.what()),
+                    WarningWidget::WarningMsgHigh );
       }//try / catch
     }//if( user has selected an index )
   }//for( auto w : m_directories->children() )
@@ -1696,7 +1690,7 @@ void GadrasDetSelect::saveFilePathToUserPreferences()
     InterSpecUser::setPreferenceValue( m_interspec->m_user, "GadrasDRFPath", dirs, m_interspec );
   }catch( std::exception &e )
   {
-    passMessage( "Error saving GADRAS path to user preferences: " + string(e.what()), WarningWidget::WarningMsgHigh );
+    passMessage( WString::tr("reds-err-saving-gad-path").arg(e.what()), WarningWidget::WarningMsgHigh );
   }
 }//void saveFilePathToUserPreferences()
 #endif
@@ -1723,7 +1717,7 @@ GadrasDirectory::GadrasDirectory( std::string directory, GadrasDetSelect *parent
   m_directory( directory ),
 #else
   m_directoryEdit( new WLineEdit( Wt::WString::fromUTF8(directory) ) ),
-  m_setDirectoryButton( new WPushButton("Set") ),
+  m_setDirectoryButton( new WPushButton( WString::tr("ds-set-btn") ) ),
 #endif
   m_parent( parentSelect ),
   m_drfSelect( drfSelect ),
@@ -1739,10 +1733,17 @@ GadrasDirectory::GadrasDirectory( std::string directory, GadrasDetSelect *parent
 #else
   m_directoryEdit->setAttributeValue( "ondragstart", "return false" );
   
+  auto interspec = InterSpec::instance();
+  const bool showToolTips = InterSpecUser::preferenceValue<bool>( "ShowTooltips", interspec );
+  
+  
   WContainerWidget *topdiv = new WContainerWidget( this );
   m_deleteBtn = new WPushButton( topdiv );
   m_deleteBtn->addStyleClass( "closeicon-wtdefault" );
-  m_deleteBtn->setToolTip( "Remove directory from list of directories InterSpec will look in for detector response functions in." );
+  //m_deleteBtn->setToolTip( WString::tr("reds-tt-remove-gad-dir") );
+  HelpSystem::attachToolTipOn( m_deleteBtn, WString::tr("reds-tt-remove-gad-dir"),
+                              showToolTips, HelpSystem::ToolTipPosition::Left );
+  
   m_deleteBtn->clicked().connect( boost::bind( &GadrasDetSelect::removeDirectory, parentSelect, this ) );
   
   
@@ -1872,7 +1873,10 @@ GadrasDirectory::GadrasDirectory( std::string directory, GadrasDetSelect *parent
   topdiv->addWidget( m_setDirectoryButton );
   m_setDirectoryButton->setMargin( 5, Wt::Left );
   m_setDirectoryButton->disable();
-  m_setDirectoryButton->setToolTip( "Set entered directory to recursively look in for detector response functions." );
+  //m_setDirectoryButton->setToolTip( WString::tr("reds-tt-gad-set-dir") );
+  HelpSystem::attachToolTipOn( m_setDirectoryButton, WString::tr("reds-tt-gad-set-dir"),
+                              showToolTips, HelpSystem::ToolTipPosition::Left );
+  
   m_setDirectoryButton->clicked().connect( this, &GadrasDirectory::dirPathChanged );
   
   //m_fileEdit->changed().connect( m_setFileButton, &WPushButton::enable );
@@ -2061,9 +2065,9 @@ void GadrasDirectory::initDetectors()
   
   if( !SpecUtils::is_directory( basedir ) )
   {
-    m_msg->setText( "<span style=\"color:red;\">Not a valid directory.</span>" );
+    m_msg->setText( WString("<span style=\"color:red;\">{1}</span>").arg( WString::tr("reds-err-not-valid-dir") ) );
     m_msg->show();
-    m_detectorSelect->addItem( "<invalid directory>" );
+    m_detectorSelect->addItem( WString("<{1}>").arg( WString::tr("reds-invalid-dir") ) );
     m_detectorSelect->setCurrentIndex( 0 );
     m_detectorSelect->disable();
     return;
@@ -2096,11 +2100,11 @@ void GadrasDirectory::initDetectors()
     
     if( m_responses.empty() )
     {
-      m_detectorSelect->addItem( "<no responses in directory>" );
+      m_detectorSelect->addItem( WString("<{1}>").arg( WString::tr("reds-no-drf-in-dir") ) );
       m_detectorSelect->disable();
     }else
     {
-      m_detectorSelect->addItem( "<select detector>" );
+      m_detectorSelect->addItem( WString("<{1}>").arg( WString::tr("ref-select-det-from-file") ) );
       m_detectorSelect->enable();
     }
     
@@ -2119,7 +2123,7 @@ void GadrasDirectory::initDetectors()
     
     if( m_responses.empty() )
     {
-      m_msg->setText( "<span style=\"color:red;\">No valid DRFs in directory, or its subdirectories.</span>" );
+      m_msg->setText( WString("<span style=\"color:red;\">{1}</span>").arg("reds-recursive-no-drfs-in-dir") );
       m_msg->show();
     }else
     {
@@ -2189,14 +2193,17 @@ DetectorDisplay::DetectorDisplay( InterSpec *specViewer,
 {
   const bool showToolTips = InterSpecUser::preferenceValue<bool>( "ShowTooltips", specViewer );
   
-  HelpSystem::attachToolTipOn( this, "The currently selected detector.  Click to select a"
-                              " different detector, or modify this one.", showToolTips );
+  HelpSystem::attachToolTipOn( this, WString::tr("app-tt-det-disp"), showToolTips ); //"app-tt-det-disp" defined in InterSpec.xml localisation, so we dont need to load DrfSelect.xml for this widget
   
   addStyleClass( "DetectorDisplay" );  //In InterSpec.css since this widget is loaded almost always at initial load time anyway
 
   new WImage( "InterSpec_resources/images/detector_small_white.png", this );
-  new WText( "Detector:", this );
-  const char *txt = (m_interspec && m_interspec->isMobile()) ? sm_noDetectorTxtMbl : sm_noDetectorTxt;
+  new WText( WString("{1}:").arg(WString::tr("Detector") ), this );
+  const bool isMobile = (m_interspec && m_interspec->isMobile());
+  
+  WString txt = WString("<font style=\"font-weight:100;color:#CFCFCF;\">&lt;{1}&gt;</font>")
+                .arg( WString::tr(isMobile ? "app-det-select-txt-mobile" : "app-det-select-txt") );
+  
   m_text = new WText( txt, XHTMLText, this );
   m_text->addStyleClass( "DetName" );
 
@@ -2242,7 +2249,9 @@ void DetectorDisplay::setDetector( std::shared_ptr<DetectorPeakResponse> det )
     m_text->setText( det->name() );
   }else
   {
-    const char *txt = (m_interspec && m_interspec->isMobile()) ? sm_noDetectorTxtMbl : sm_noDetectorTxt;
+    const bool isMobile = (m_interspec && m_interspec->isMobile());
+    WString txt = WString("<font style=\"font-weight:100;color:#CFCFCF;\">&lt;{1}&gt;</font>")
+                  .arg( WString::tr(isMobile ? "app-det-select-txt-mobile" : "app-det-select-txt") );
     m_text->setText( txt );
   }
 }//void setDetector( std::shared_ptr<DetectorPeakResponse> det )
@@ -2307,6 +2316,7 @@ DrfSelect::DrfSelect( std::shared_ptr<DetectorPeakResponse> currentDet,
     m_defaultForDetectorModel( nullptr )
 {
   wApp->useStyleSheet( "InterSpec_resources/DrfSelect.css" );
+  m_interspec->useMessageResourceBundle( "DrfSelect" );
   
   const bool showToolTips = InterSpecUser::preferenceValue<bool>( "ShowTooltips", specViewer );
   
@@ -2418,16 +2428,7 @@ DrfSelect::DrfSelect( std::shared_ptr<DetectorPeakResponse> currentDet,
   
   WContainerWidget *uploadDetTab = new WContainerWidget();
   
-  const char *descrstr =
-  "<div style=\"white-space:nowrap;\">Intrinsic Efficiency CSV File:</div>"
-  "<div>The first column is energy in keV."
-  " Second column is the % efficient (0 through 100) for gammas at that"
-  " energy, incident on the detector, to be recorded in the photopeak.</div>"
-  "<div>You will also need to upload a GADRAS Detector.dat file, or enter the"
-  " detectors diameter, after uploading the efficiency file.</div>"
-  "<div>You can also upload CSV exported from the <em>Make Detector Response</em> tool.</div>";
-  
-  WText *descrip = new WText( descrstr, uploadDetTab );
+  WText *descrip = new WText( WString::tr("ds-csv-upload-desc"), uploadDetTab );
   descrip->setInline( false );
   descrip->setStyleClass("DetectorLabel");
   descrip->setInline( false );
@@ -2443,10 +2444,10 @@ DrfSelect::DrfSelect( std::shared_ptr<DetectorPeakResponse> currentDet,
  
   m_detectrDiameterDiv = new WContainerWidget( uploadDetTab );
   m_detectrDiameterDiv->addStyleClass( "DetectorDiamDiv" );
-  WLabel *label = new WLabel( "Enter detector diameter or upload Detector.dat file:", m_detectrDiameterDiv );
+  WLabel *label = new WLabel( WString::tr("ds-enter-gad-det-diam"), m_detectrDiameterDiv );
   label->setInline( false );
 
-  label = new WLabel( "Detector Diameter:", m_detectrDiameterDiv );
+  label = new WLabel( WString::tr("ds-det-diam"), m_detectrDiameterDiv );
   m_detectorDiameter = new WLineEdit( "0 cm", m_detectrDiameterDiv );
   label->setBuddy( m_detectorDiameter );
 
@@ -2462,7 +2463,7 @@ DrfSelect::DrfSelect( std::shared_ptr<DetectorPeakResponse> currentDet,
   m_detectorDiameter->enterPressed().connect( boost::bind( &DrfSelect::fileUploadedCallback, this, UploadCallbackReason::DetectorDiameterChanged ) );
   m_detectorDiameter->blurred().connect( boost::bind( &DrfSelect::fileUploadedCallback, this, UploadCallbackReason::DetectorDiameterChanged ) );
 
-  m_fixedGeometryCb = new WCheckBox( "Fixed Geometry", uploadDetTab );
+  m_fixedGeometryCb = new WCheckBox( WString::tr("ds-fixed-geom"), uploadDetTab );
   m_fixedGeometryCb->setInline( false );
   m_fixedGeometryCb->addStyleClass( "FixedGeometry" );
   m_fixedGeometryCb->hide();
@@ -2471,7 +2472,7 @@ DrfSelect::DrfSelect( std::shared_ptr<DetectorPeakResponse> currentDet,
   
   
   m_uploadedDetNameDiv = new WContainerWidget( m_detectrDiameterDiv );
-  label = new WLabel( "Name:", m_uploadedDetNameDiv );
+  label = new WLabel( WString("{1}:").arg( WString::tr("Name") ), m_uploadedDetNameDiv );
   m_uploadedDetName = new WLineEdit( m_uploadedDetNameDiv );
   label->setBuddy( m_uploadedDetName );
   
@@ -2487,7 +2488,7 @@ DrfSelect::DrfSelect( std::shared_ptr<DetectorPeakResponse> currentDet,
   m_detectrDotDatDiv = new WContainerWidget( m_detectrDiameterDiv );
   m_detectrDotDatDiv->addStyleClass( "DetectorDotDatDiv" );
 
-  label = new WLabel( "GADRAS Detector.Dat File:", m_detectrDotDatDiv );
+  label = new WLabel( WString::tr("ds-gad-det-file-label"), m_detectrDotDatDiv );
   label->setInline( false );
   m_detectorDotDatUpload = new WFileUpload( m_detectrDotDatDiv );
   m_detectorDotDatUpload->setInline( false );
@@ -2503,23 +2504,17 @@ DrfSelect::DrfSelect( std::shared_ptr<DetectorPeakResponse> currentDet,
   //--- 4)  Manual
   //-------------------------------------
 
-  const char * const fcn = "Example: exp(-9.8 - 8.1*log(x) + 4.62E-02*log(x)^2 + ...)\n"
-  "Or equivalently: -9.8 -8.1 4.62E-02 ...";
-  
   const char *const diamtxt = "2.2 cm";
-  const char *txt = "Detector efficiency defined by a mathematical formula, given the energy x;"
-  " or you can enter the coefficients for the standard equation form."
-  " Click the question mark icon for more info.";
     
   WContainerWidget *formulaDiv = new WContainerWidget();
-  WText *selfDefineLabel = new WText( txt, formulaDiv );
+  WText *selfDefineLabel = new WText( WString::tr("ds-manual-det-desc"), formulaDiv );
   selfDefineLabel->setInline( false );
   selfDefineLabel->setStyleClass("DetectorLabel");
   
   WTable *formulaTable = new WTable( formulaDiv );
   formulaTable->addStyleClass( "FormulaDrfTbl" );
   WTableCell *cell = formulaTable->elementAt( 0, 0 );
-  label = new WLabel("Detector name ", cell );
+  label = new WLabel( WString::tr("ds-manual-det-name-label"), cell );
   cell = formulaTable->elementAt( 0, 1 );
   m_detectorManualFunctionName = new WLineEdit( cell );
   label->setBuddy( m_detectorManualFunctionName );
@@ -2531,14 +2526,14 @@ DrfSelect::DrfSelect( std::shared_ptr<DetectorPeakResponse> currentDet,
 #endif
   
   m_detectorManualFunctionName->setStyleClass("DrfSelectFunctionalFormText");
-  m_detectorManualFunctionName->setText( ns_default_manual_det_name );
-  m_detectorManualFunctionName->setEmptyText("Unique Detector Name");
+  m_detectorManualFunctionName->setText( WString::tr("app-default-manual-det-name") );
+  m_detectorManualFunctionName->setEmptyText( WString::tr("ds-manual-det-name-empty-txt") );
   m_detectorManualFunctionName->setInline(false);
   //m_detectorManualFunctionName->keyWentUp().connect(boost::bind(&DrfSelect::verifyManualDefinition, this));
   m_detectorManualFunctionName->textInput().connect(boost::bind(&DrfSelect::verifyManualDefinition, this));
 
   cell = formulaTable->elementAt( 1, 0 );
-  label = new WLabel("Efficiency f(x) = ", cell );
+  label = new WLabel( WString::tr("ds-manual-function-label"), cell );
   cell = formulaTable->elementAt( 1, 1 );
   cell->setRowSpan( 2 );
   m_detectorManualFunctionText = new WTextArea( cell );
@@ -2547,8 +2542,8 @@ DrfSelect::DrfSelect( std::shared_ptr<DetectorPeakResponse> currentDet,
   
   m_detectorManualFunctionText->setRows(3);
   m_detectorManualFunctionText->setStyleClass("DrfSelectFunctionalFormText");
-  //m_detectorManualFunctionText->setText(fcn);
-  m_detectorManualFunctionText->setEmptyText(fcn);
+  //m_detectorManualFunctionText->setText( WString::tr("ds-manual-det-empty-fcn") );
+  m_detectorManualFunctionText->setEmptyText( WString::tr("ds-manual-det-empty-fcn") );
   m_detectorManualFunctionText->setInline(false);
   //m_detectorManualFunctionText->keyWentUp().connect(boost::bind(&DrfSelect::verifyManualDefinition, this));
   m_detectorManualFunctionText->textInput().connect(boost::bind(&DrfSelect::verifyManualDefinition, this));
@@ -2565,16 +2560,16 @@ DrfSelect::DrfSelect( std::shared_ptr<DetectorPeakResponse> currentDet,
   m_eqnEnergyGroup->checkedChanged().connect(boost::bind(&DrfSelect::verifyManualDefinition, this));
   m_eqnEnergyGroup->setSelectedButtonIndex( 0 );
     
-  HelpSystem::attachToolTipOn( energyContainer,"Energy unit for efficiency formula" ,
+  HelpSystem::attachToolTipOn( energyContainer, WString::tr("ds-tt-manual-energy-unit"),
                               showToolTips, HelpSystem::ToolTipPosition::Top );
 
   cell = formulaTable->elementAt( 3, 0 );
-  label = new WLabel("Description", cell );
+  label = new WLabel( WString::tr("Description"), cell );
   cell = formulaTable->elementAt( 3, 1 );
   m_detectorManualDescription = new WLineEdit( cell );
   label->setBuddy( m_detectorManualDescription );
   m_detectorManualDescription->setWidth( WLength(100,WLength::Percentage) );
-  m_detectorManualDescription->setEmptyText( "Description of this detector response" );
+  m_detectorManualDescription->setEmptyText( WString::tr("ds-tt-manual-desc") );
   m_detectorManualDescription->changed().connect(boost::bind(&DrfSelect::verifyManualDefinition, this));
   
   m_detectorManualDescription->setAttributeValue( "ondragstart", "return false" );
@@ -2584,7 +2579,7 @@ DrfSelect::DrfSelect( std::shared_ptr<DetectorPeakResponse> currentDet,
 #endif
   
   cell = formulaTable->elementAt( 4, 0 );
-  m_detectorManualDiameterLabel = new WLabel( "Detector diam.", cell );
+  m_detectorManualDiameterLabel = new WLabel( WString::tr("ds-manual-det-diam-label"), cell );
   cell = formulaTable->elementAt( 4, 1 );
   m_detectorManualDiameterText = new WLineEdit( cell );
   m_detectorManualDiameterLabel->setBuddy( m_detectorManualDiameterText );
@@ -2606,12 +2601,12 @@ DrfSelect::DrfSelect( std::shared_ptr<DetectorPeakResponse> currentDet,
   
   
   cell = formulaTable->elementAt( 5, 0 );
-  label = new WLabel("Energy Range", cell );
+  label = new WLabel( WString::tr("ds-energy-range"), cell );
   
   cell = formulaTable->elementAt( 5, 1 );
-  label = new WLabel("Min.", cell );
+  label = new WLabel( WString::tr("Min."), cell );
   m_detectorManualMinEnergy = new NativeFloatSpinBox( cell );
-  m_detectorManualMinEnergy->setPlaceholderText( "(optional)" );
+  m_detectorManualMinEnergy->setPlaceholderText( WString::tr("ds-(optional)") );
   m_detectorManualMinEnergy->setRange( 0, 15000 );
   m_detectorManualMinEnergy->setSpinnerHidden( true );
   m_detectorManualMinEnergy->setWidth( WLength(9,Wt::WLength::FontEx) );
@@ -2620,10 +2615,10 @@ DrfSelect::DrfSelect( std::shared_ptr<DetectorPeakResponse> currentDet,
   m_detectorManualMinEnergy->valueChanged().connect(boost::bind(&DrfSelect::verifyManualDefinition, this));
   
   
-  label = new WLabel("Max.", cell );
+  label = new WLabel( WString::tr("Max."), cell );
   label->setMargin( 20, Wt::Side::Left );
   m_detectorManualMaxEnergy = new NativeFloatSpinBox( cell );
-  m_detectorManualMaxEnergy->setPlaceholderText( "(optional)" );
+  m_detectorManualMaxEnergy->setPlaceholderText( WString::tr("ds-(optional)") );
   m_detectorManualMaxEnergy->setRange( 0, 15000 );
   m_detectorManualMaxEnergy->setSpinnerHidden( true );
   m_detectorManualMaxEnergy->setWidth( WLength(9,Wt::WLength::FontEx) );
@@ -2638,36 +2633,20 @@ DrfSelect::DrfSelect( std::shared_ptr<DetectorPeakResponse> currentDet,
   cell = formulaTable->elementAt( 6, 0 );
   cell->setColumnSpan( 2 );
   m_drfType = new WComboBox( cell );
-  m_drfType->addItem( "Intrinsic Efficiency" );
-  m_drfType->addItem( "Absolute Efficiency" );
-  m_drfType->addItem( "Fixed Geometry - total activity" );
-  m_drfType->addItem( "Fixed Geometry - activity per cm2" );
-  m_drfType->addItem( "Fixed Geometry - activity per m2" );
-  m_drfType->addItem( "Fixed Geometry - activity per gram" );
-  m_drfType->setToolTip( "How this efficiency should be interpreted.\n"
-  "\n"
-  "Intrinsic Efficiency: the probability for a x-ray or gamma striking the"
-  " face of the detector, to register a full-energy detection event.\n"
-  "\n"
-  "Absolute Efficiency: the probability for a x-ray or gamma from the source"
-  " to register a full-energy detection event, with it being appropriate to"
-  " allow scaling this efficiency by 1/r2 to other distances (i.g., is for a point-source).\n"
-  "\n"
-  "Fixed Geometry - total activity: the probability for a x-ray or gamma from the source"
-  " to register a full-energy detection event, and it is not appropriate to allow scaling this"
-  " efficiency to other distances (e.g., for a near, or large extended source).\n"
-  "\n"
-  "Fixed Geometry - activity per cm2: similar to total activity, but the efficiency curve"
-  " represents efficiency per decay, per square centimeter (i.e., surface contamination).\n"
-  "\n"
-  "Fixed Geometry - activity per m2: similar to per cm2, but for per square meter.\n"
-  "\n"
-  "Fixed Geometry - activity per g: similar to per cm2, but for per gram of source."
-  );
+  m_drfType->addItem( WString::tr("ds-intrinsic-eff") );
+  m_drfType->addItem( WString::tr("ds-abs-eff") );
+  m_drfType->addItem( WString::tr("ds-fixed-geom-total") );
+  m_drfType->addItem( WString::tr("ds-fixed-geom-cm2") );
+  m_drfType->addItem( WString::tr("ds-fixed-geom-m2") );
+  m_drfType->addItem( WString::tr("ds-fixed-geom-gram") );
+  //m_drfType->setToolTip( WString::tr("ds-tt-manual-drf-type") );
+  HelpSystem::attachToolTipOn( m_drfType, WString::tr("ds-tt-manual-drf-type"), showToolTips );
+  
+  
   m_drfType->setCurrentIndex( 0 );
   m_drfType->activated().connect( this, &DrfSelect::verifyManualDefinition );
   
-  m_detectorManualDistLabel = new WLabel( "Dist:", cell );
+  m_detectorManualDistLabel = new WLabel( WString::tr("ds-dist-label"), cell );
   m_detectorManualDistLabel->setMargin( 10, Wt::Left );
   
   m_detectorManualDistText = new Wt::WLineEdit( cell );
@@ -2681,7 +2660,7 @@ DrfSelect::DrfSelect( std::shared_ptr<DetectorPeakResponse> currentDet,
   
   
   
-  m_manualSetButton = new WPushButton( "Set", cell );
+  m_manualSetButton = new WPushButton( WString::tr("ds-set-btn"), cell );
   //m_manualSetButton->setInline(false);
   m_manualSetButton->setFloatSide( Wt::Right );
   //selfDefineLayout->setColumnStretch( 1, 1 );
@@ -2723,11 +2702,11 @@ DrfSelect::DrfSelect( std::shared_ptr<DetectorPeakResponse> currentDet,
   m_model->addColumn( "m_lastUsedUtc" );
   
   
-  m_model->setHeaderData(  0, Horizontal, WString("Name"), DisplayRole );
+  m_model->setHeaderData(  0, Horizontal, WString::tr("Name"), DisplayRole );
   m_DBtable->setColumnWidth( 0, 200 );
-  m_model->setHeaderData(  1, Horizontal, WString("Description"), DisplayRole );
+  m_model->setHeaderData(  1, Horizontal, WString::tr("Description"), DisplayRole );
   m_DBtable->setColumnWidth( 1, 150 );
-  m_model->setHeaderData(  2, Horizontal, WString("Last Used"), DisplayRole );
+  m_model->setHeaderData(  2, Horizontal, WString::tr("ds-last-used"), DisplayRole );
   m_DBtable->setColumnWidth( 2, 150 );
  
   
@@ -2746,18 +2725,18 @@ DrfSelect::DrfSelect( std::shared_ptr<DetectorPeakResponse> currentDet,
   
   m_DBtable->selectionChanged().connect( this, &DrfSelect::dbTableSelectionChanged );
 
-  m_deleteButton = new WPushButton( "Delete" );
+  m_deleteButton = new WPushButton( WString::tr("Delete") );
   m_deleteButton->setIcon( "InterSpec_resources/images/minus_min_white.png" );
   m_deleteButton->setDefault(true);
   m_deleteButton->disable();
   m_deleteButton->clicked().connect( this, &DrfSelect::deleteDBTableSelected );
 
   WComboBox *filter = new WComboBox();
-  filter->addItem( "All" );
-  filter->addItem( "Uploaded" );
-  filter->addItem( "Entered Formula" );
-  filter->addItem( "Made From Data" );
-  filter->addItem( "Included In N42 File" );
+  filter->addItem( WString::tr("ds-det-type-filter-all") );
+  filter->addItem( WString::tr("ds-det-type-filter-uploaded") );
+  filter->addItem( WString::tr("ds-det-type-filter-formula") );
+  filter->addItem( WString::tr("ds-det-type-filter-data") );
+  filter->addItem( WString::tr("ds-det-type-filter-N42") );
   filter->setCurrentIndex( 0 );
   
   filter->changed().connect( std::bind( [filter,this,userid](){
@@ -2804,11 +2783,11 @@ DrfSelect::DrfSelect( std::shared_ptr<DetectorPeakResponse> currentDet,
   recentDivLayout->addWidget( m_DBtable, 0, 0, 1, 3 );
   recentDivLayout->addWidget( m_deleteButton, 1, 0, AlignLeft);
   
-  label = new WLabel( "Show:" );
+  label = new WLabel( WString::tr("ds-show-label") );
   label->setBuddy( filter );
   recentDivLayout->addWidget( label, 1, 1, AlignRight | AlignMiddle );
   
-  recentDivLayout->addWidget( filter, 1, 2 );
+  recentDivLayout->addWidget( filter, 1, 2, AlignMiddle );
   recentDivLayout->setRowStretch( 0, 1 );
   //recentDiv->setOverflow(Wt::WContainerWidget::OverflowHidden);
   //recentDiv->setMaximumSize( WLength::Auto, 180 );
@@ -2817,19 +2796,19 @@ DrfSelect::DrfSelect( std::shared_ptr<DetectorPeakResponse> currentDet,
   
   //--------------------------------------------------------------------------------
   
-  WMenuItem *item = m_drfTypeMenu->addItem( "GADRAS", m_gadrasDetSelect );
+  WMenuItem *item = m_drfTypeMenu->addItem( WString::tr("ds-mi-gadras"), m_gadrasDetSelect );
   item->clicked().connect( boost::bind(&right_select_item, m_drfTypeMenu, item) );
   
-  item = m_drfTypeMenu->addItem( "Rel. Eff.", m_relEffSelect );
+  item = m_drfTypeMenu->addItem( WString::tr("ds-mi-rel-eff"), m_relEffSelect );
   item->clicked().connect( boost::bind(&right_select_item, m_drfTypeMenu, item) );
   
-  item = m_drfTypeMenu->addItem( "Import", uploadDetTab );
+  item = m_drfTypeMenu->addItem( WString::tr("ds-mi-import"), uploadDetTab );
   item->clicked().connect( boost::bind(&right_select_item, m_drfTypeMenu, item) );
   
-  item = m_drfTypeMenu->addItem( "Formula", formulaDiv );
+  item = m_drfTypeMenu->addItem( WString::tr("ds-mi-formula"), formulaDiv );
   item->clicked().connect( boost::bind(&right_select_item, m_drfTypeMenu, item) );
   
-  item = m_drfTypeMenu->addItem( "Previous", recentDiv );
+  item = m_drfTypeMenu->addItem( WString::tr("ds-mi-previous"), recentDiv );
   item->clicked().connect( boost::bind(&right_select_item, m_drfTypeMenu, item) );
   
   //m_drfTypeStack->setHeight( WLength(185.0) );
@@ -2843,7 +2822,7 @@ DrfSelect::DrfSelect( std::shared_ptr<DetectorPeakResponse> currentDet,
     if( !defaultOptions->hasStyleClass( "DrfDefaultOptions" ) )
       defaultOptions->addStyleClass( "DrfDefaultOptions" );
     
-    m_defaultForSerialNumber = new WCheckBox( "Use as default DRF for SN '" + meas->instrument_id() + "'", defaultOptions );
+    m_defaultForSerialNumber = new WCheckBox( WString::tr("ds-use-for-serialnum-cb").arg( meas->instrument_id() ), defaultOptions );
     m_defaultForSerialNumber->setInline( false );
     //mainLayout->addWidget( m_defaultForSerialNumber, mainLayout->rowCount(), 0, 1, mainLayout->columnCount() );
   }//if( have serial number )
@@ -2860,7 +2839,7 @@ DrfSelect::DrfSelect( std::shared_ptr<DetectorPeakResponse> currentDet,
     if( !defaultOptions->hasStyleClass( "DrfDefaultOptions" ) )
       defaultOptions->addStyleClass( "DrfDefaultOptions" );
     
-    m_defaultForDetectorModel = new WCheckBox( "Use as default DRF for model '" + model + "'", defaultOptions );
+    m_defaultForDetectorModel = new WCheckBox( WString::tr("ds-use-for-model-cb").arg(model), defaultOptions );
     m_defaultForDetectorModel->setInline( false );
     //mainLayout->addWidget( m_defaultForDetectorModel, mainLayout->rowCount(), 0, 1, mainLayout->columnCount() );
   }//if( have
@@ -2879,7 +2858,7 @@ DrfSelect::DrfSelect( std::shared_ptr<DetectorPeakResponse> currentDet,
   
   // Add cancel button first on phones, so it will stay all the way to the left
   if( auxWindow && auxWindow->isPhone() )
-    m_cancelButton = auxWindow->addCloseButtonToFooter( "Cancel" );
+    m_cancelButton = auxWindow->addCloseButtonToFooter( WString::tr("Cancel") );
   
   DrfDownloadResource *xmlResource = new DrfDownloadResource( this );
 #if( BUILD_AS_OSX_APP || IOS )
@@ -2907,7 +2886,7 @@ DrfSelect::DrfSelect( std::shared_ptr<DetectorPeakResponse> currentDet,
   
 #if( USE_QR_CODES )
   WPushButton *qr_btn = new WPushButton( m_footer );
-  qr_btn->setText( "QR Code" );
+  qr_btn->setText( WString::tr("QR code") );
   qr_btn->setIcon( "InterSpec_resources/images/qr-code.svg" );
   qr_btn->setStyleClass( "LinkBtn DownloadBtn DrfXmlDownload" );
   
@@ -2915,7 +2894,7 @@ DrfSelect::DrfSelect( std::shared_ptr<DetectorPeakResponse> currentDet,
   
     if( !m_detector || !m_detector->isValid() )
     {
-      passMessage( "No DRF loaded", WarningWidget::WarningMsgHigh );
+      passMessage( WString::tr("ds-no-drf-loaded"), WarningWidget::WarningMsgHigh );
       return;
     }
   
@@ -2926,27 +2905,27 @@ DrfSelect::DrfSelect( std::shared_ptr<DetectorPeakResponse> currentDet,
                                  WString::fromUTF8(m_detector->description()) );
     }catch( std::exception &e )
     {
-      passMessage( "Error creating QR code: " + std::string(e.what()), WarningWidget::WarningMsgHigh );
+      passMessage( WString::tr("ds-err-creating-qr").arg(e.what()), WarningWidget::WarningMsgHigh );
     }
   }) );
 #endif //USE_QR_CODES
   
-  m_noDrfButton = new WPushButton( "No Detector", m_footer );
+  m_noDrfButton = new WPushButton( WString::tr("ds-no-det-btn"), m_footer );
   m_noDrfButton->clicked().connect( this, &DrfSelect::finishWithNoDetector );
   if( specViewer && !specViewer->isPhone() )
     m_noDrfButton->addStyleClass( "NoDrfBtn" );
   
-  WPushButton *changeFwhm = new WPushButton( "Fit FWHM...", m_footer );
+  WPushButton *changeFwhm = new WPushButton( WString::tr("ds-fit-fwhm-btn"), m_footer );
   if( specViewer && !specViewer->isPhone() )
     changeFwhm->addStyleClass( "NoDrfBtn" );
   changeFwhm->clicked().connect( this, &DrfSelect::handleFitFwhmRequested );
   
   if( auxWindow && !auxWindow->isPhone() )
   {
-    m_cancelButton = auxWindow->addCloseButtonToFooter( "Cancel" );
+    m_cancelButton = auxWindow->addCloseButtonToFooter( WString::tr("Cancel") );
   }else if( !auxWindow )
   {
-    m_cancelButton = new WPushButton( "Close" );
+    m_cancelButton = new WPushButton( WString::tr("Close") );
     m_footer->insertWidget( m_footer->count(), m_cancelButton );
   }
   
@@ -2955,18 +2934,17 @@ DrfSelect::DrfSelect( std::shared_ptr<DetectorPeakResponse> currentDet,
   
   if( specViewer && !specViewer->isPhone() )
   {
-    m_acceptButton = new WPushButton( "Accept", m_footer );
+    m_acceptButton = new WPushButton( WString::tr("Accept"), m_footer );
     m_acceptButton->setFloatSide(Wt::Right);
     
     m_cancelButton->setIcon( "InterSpec_resources/images/reject.png" );
-    HelpSystem::attachToolTipOn( m_cancelButton, "Remove all changes or selections made by this"
-                                 " dialog, and close the dialog" , showToolTips );
+    HelpSystem::attachToolTipOn( m_cancelButton, WString::tr("ds-tt-cancel"), showToolTips );
     
     m_acceptButton->setIcon( "InterSpec_resources/images/accept.png" );
-    HelpSystem::attachToolTipOn( m_acceptButton, "Accept all changes/selections made and close dialog" , showToolTips );
+    HelpSystem::attachToolTipOn( m_acceptButton, WString::tr("ds-tt-accept"), showToolTips );
   }else
   {
-    m_acceptButton = new WPushButton( "Use Detector", m_footer );
+    m_acceptButton = new WPushButton( WString::tr("ds-use-det-btn"), m_footer );
     m_acceptButton->addStyleClass( "CenterBtnInMblAuxWindowHeader" );
   }//if( isMobile() ) / else
   
@@ -2999,17 +2977,18 @@ void DrfSelect::createChooseDrfDialog( vector<shared_ptr<DetectorPeakResponse>> 
   
   auto interspec = InterSpec::instance();
   auto meas = interspec ? interspec->measurment(SpecUtils::SpectrumType::Foreground) : nullptr;
-  
+  if( interspec )
+    interspec->useMessageResourceBundle( "DrfSelect" );
   
   auto selected_drf = make_shared<shared_ptr<DetectorPeakResponse>>();
   
-  const char *title = (drfs.size() == 1) ? "Use DRF?" : "Select DRF to Use";
+  const char *title_key = (drfs.size() == 1) ? "ds-use-drf" : "ds-select-drf";
   
-  SimpleDialog *dialog = new SimpleDialog( title );
+  SimpleDialog *dialog = new SimpleDialog( WString::tr(title_key) );
   dialog->addStyleClass( "DrfFileSelectDialog" );
   
-  WPushButton *cancel = dialog->addButton( "Cancel" );
-  WPushButton *accept = dialog->addButton( "Accept" );
+  WPushButton *cancel = dialog->addButton( WString::tr("Cancel") );
+  WPushButton *accept = dialog->addButton( WString::tr("Accept") );
   
   //WGridLayout *layout = new WGridLayout( dialog->contents() );
   //layout->setContentsMargins( 0, 0, 0, 0 );
@@ -3053,9 +3032,9 @@ void DrfSelect::createChooseDrfDialog( vector<shared_ptr<DetectorPeakResponse>> 
     (*selected_drf) = drf;
     chart->updateChart( drf );
     
-    string drfdesc = drf->description();
-    if( !drfdesc.empty() )
-      drfdesc = "<b>DRF Desc:</b>&nbsp;" + drfdesc;
+    WString drfdesc;
+    if( !drf->description().empty() )
+      drfdesc = WString("<b>{1}:</b>&nbsp;{2}").arg( WString::tr("ds-drf-desc") ).arg( drf->description() );
     
     drfDescription->setHidden( drfdesc.empty() );
     drfDescription->setText( drfdesc );
@@ -3161,7 +3140,7 @@ void DrfSelect::createChooseDrfDialog( vector<shared_ptr<DetectorPeakResponse>> 
   
   if( makeDrfsSaveCb )
   {
-    saveCb = new WCheckBox( "Save for later use?", saveCbDiv );
+    saveCb = new WCheckBox( WString::tr("ds-save-for-later-cb"), saveCbDiv );
     //layout->addWidget( saveCb, layout->rowCount(), 0, AlignLeft );
     saveCb->setInline( false );
     dialog->contents()->addWidget( saveCb );
@@ -3169,7 +3148,7 @@ void DrfSelect::createChooseDrfDialog( vector<shared_ptr<DetectorPeakResponse>> 
   
   if( makeSerialNumCb )
   {
-    string msg = "Use as default DRF for SN '" + meas->instrument_id() + "'";
+    WString msg = WString::tr("ds-use-for-serialnum-cb").arg( meas->instrument_id() );
     defaultForSerialNumber = new WCheckBox( msg, saveCbDiv );
     defaultForSerialNumber->setInline( false );
   }//if( have serial number )
@@ -3182,7 +3161,8 @@ void DrfSelect::createChooseDrfDialog( vector<shared_ptr<DetectorPeakResponse>> 
     else
       model = detectorTypeToString( meas->detector_type() );
     
-    string msg = "Use as default DRF for model '" + model + "'";
+    
+    WString msg = WString::tr("ds-use-for-model-cb").arg( model );
     defaultForDetectorModel = new WCheckBox( msg, saveCbDiv );
     defaultForDetectorModel->setInline( false );
   }//if( makeModelCb )
@@ -3264,7 +3244,7 @@ void DrfSelect::handle_app_url_drf( const std::string &url_query )
   }catch( std::exception &e )
   {
     wApp->log( "error" ) << "App URL was invalid DRF: " << e.what();
-    throw runtime_error( "Detector response function URL was invalid." );
+    throw runtime_error( WString::tr("ds-err-drf-uri-invalid").toUTF8() );
   }
 }//void DrfSelect::handle_app_url_drf( const std::string &url_query )
 
@@ -3559,9 +3539,12 @@ void DrfSelect::verifyManualDefinition()
       m_detectorManualDistText->setText( coef_formula_info.m_source_to_crystal_distance );
     }
     
-    const string prev_det_name = m_detectorManualFunctionName->text().toUTF8();
+    const WString &pre_det_wname = m_detectorManualFunctionName->text();
+    const string prev_det_name = pre_det_wname.toUTF8();
+    
+    
     if( !coef_formula_info.m_det_name.empty()
-       && (prev_det_name.empty() || (prev_det_name == ns_default_manual_det_name)) )
+       && (prev_det_name.empty() || (pre_det_wname.key() == "app-default-manual-det-name")) )
     {
       m_detectorManualFunctionName->setText( coef_formula_info.m_det_name );
     }
@@ -3741,14 +3724,14 @@ void DrfSelect::setFormulaDefineDetector()
     }
     
     if( !is_fixed_geom && (det_diam < (is_fixed_geom ? 0.0 : 0.0001)) )
-      throw runtime_error( "Detector diameters must be positive" );
+      throw runtime_error( WString::tr("ds-err-det-diam-pos").toUTF8() );
     
     if( is_absolute )
     {
       const string disttxt = m_detectorManualDistText->text().narrow();
       const float dist = (float)PhysicalUnits::stringToDistance( disttxt );
       if( dist < 0.0001f )
-        throw runtime_error( "Distance must be positive for absolute efficiencies" );
+        throw runtime_error( WString::tr("ds-err-det-dist-pos").toUTF8() );
       
       
       const double gfactor = DetectorPeakResponse::fractionalSolidAngle(
@@ -3775,8 +3758,7 @@ void DrfSelect::setFormulaDefineDetector()
       minEnergy = maxEnergy = 0.0f;
       m_detectorManualMinEnergy->setValueText( "" );
       m_detectorManualMaxEnergy->setValueText( "" );
-      passMessage( "Detector min. energy was greater than max. energy; ignoring energy range.",
-                  WarningWidget::WarningMsgHigh );
+      passMessage( WString::tr("ds-warn-min-max-energy-swapped"), WarningWidget::WarningMsgHigh );
     }//if( maxEnergy < minEnergy )
     
     if( m_detectorManualDiameterText->hasStyleClass("Wt-invalid") )
@@ -4188,7 +4170,7 @@ void DrfSelect::fileUploadedCallback( const UploadCallbackReason context )
   if( !isGadrasDet && !isDiamDet && !fixed_geometry )
   {
     if( diameter > 0.0 )
-      passMessage( "Need the detectors diameter", WarningWidget::WarningMsgHigh );
+      passMessage( WString::tr("ds-need-det-diam"), WarningWidget::WarningMsgHigh );
     return;
   }//if( !isGadrasDet && !isDiamDet )
 
@@ -4472,12 +4454,12 @@ void DrfSelect::setUserPrefferedDetector( std::shared_ptr<DetectorPeakResponse> 
     
     transaction.commit();
     
-    cout << "Added prefered detector to DB for criteria='" << criteria
+    cout << "Added preferred detector to DB for criteria='" << criteria
          << "', DRF index=" << drfindex << ", as UseDrfPref.id="
          << newid << endl;
   }catch( std::exception &e )
   {
-    cerr << "setUserPrefferedDetector: Got exception setting user preffered detector to DB: " << e.what() << endl;
+    cerr << "setUserPrefferedDetector: Got exception setting user preferred detector to DB: " << e.what() << endl;
   }//try catch see if the user has a preference
   
 }//void setUserPrefferedDetector(...)
