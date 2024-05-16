@@ -30,7 +30,10 @@
 #include <Wt/WDateEdit>
 #include <Wt/WLineEdit>
 #include <Wt/WCheckBox>
+#include <Wt/WMenuItem>
+#include <Wt/WPopupMenu>
 #include <Wt/WTableCell>
+#include <Wt/WPushButton>
 #include <Wt/WApplication>
 #include <Wt/WDoubleSpinBox>
 #include <Wt/WDoubleValidator>
@@ -38,6 +41,9 @@
 #include <Wt/WContainerWidget>
 #include <Wt/WSuggestionPopup>
 
+#include "SpecUtils/DateTime.h"
+#include "SpecUtils/Filesystem.h"
+#include "SpecUtils/ParseUtils.h"
 #include "SpecUtils/StringAlgo.h"
 
 #include "SandiaDecay/SandiaDecay.h"
@@ -50,6 +56,7 @@
 #include "InterSpec/PhysicalUnits.h"
 #include "InterSpec/ShieldingSelect.h"
 #include "InterSpec/NativeFloatSpinBox.h"
+#include "InterSpec/DecayDataBaseServer.h"
 #include "InterSpec/DetectorPeakResponse.h"
 #include "InterSpec/IsotopeSelectionAids.h"
 //#include "InterSpec/IsotopeNameFilterModel.h"
@@ -69,6 +76,116 @@ namespace
   const int sm_shield_material_row = 8;
   const int sm_options_row         = 9;
 }//namespace
+
+
+SrcLibLineInfo::SrcLibLineInfo()
+  : m_activity( 0.0 ),
+    m_nuclide( nullptr ),
+    m_activity_date{},
+    m_source_name{},
+    m_comments{},
+    m_line{}
+{
+}
+
+
+vector<SrcLibLineInfo> SrcLibLineInfo::sources_in_lib( const string &filename )
+{
+  const SandiaDecay::SandiaDecayDataBase * const db = DecayDataBaseServer::database();
+  
+  vector<SrcLibLineInfo> answer;
+#ifdef _WIN32
+  const std::wstring wfilename = SpecUtils::convert_from_utf8_to_utf16(filename);
+  ifstream file( wfilename.c_str(), ios::in | ios::binary );
+#else
+  ifstream file( filename.c_str(), ios::in | ios::binary );
+#endif
+  
+  if( !file || !db )
+    return answer;
+  
+  string line;
+  while( SpecUtils::safe_get_line( file, line) )
+  {
+    SpecUtils::trim( line );
+    
+    vector<string> fields;
+    SpecUtils::split( fields, line, " \t" );
+    if( fields.size() < 3 )
+      continue;
+    
+    const string::size_type underscore_pos = fields[0].find("_");
+    if( underscore_pos == string::npos )
+      continue;
+    const string nuc_str = fields[0].substr(0,underscore_pos);
+    
+    SrcLibLineInfo src_info;
+    src_info.m_nuclide = db->nuclide( nuc_str );
+    if( !src_info.m_nuclide )
+      continue;
+    
+    src_info.m_source_name = fields[0];
+    
+    try
+    {
+      src_info.m_activity = stod(fields[1]) * PhysicalUnits::bq;
+    }catch(...)
+    {
+      continue;
+    }
+    
+    if( (src_info.m_activity <= 0.0) || IsNan(src_info.m_activity) || IsInf(src_info.m_activity) )
+      continue;
+    
+    const SpecUtils::time_point_t datestr = SpecUtils::time_from_string( fields[2] );
+    src_info.m_activity_date = to_ptime(datestr);
+    if( src_info.m_activity_date.is_special() )
+      continue;
+    
+    for( size_t i = 3; i < fields.size(); ++i )
+      src_info.m_comments += ((i==3) ? "" : " ") + fields[i];
+    
+    src_info.m_line = std::move(line);
+    
+    answer.push_back( std::move(src_info) );
+  }//while( SpecUtils::safe_get_line( file, line) )
+  
+  return answer;
+}//sources_in_lib(...)
+
+
+std::vector<SrcLibLineInfo> SrcLibLineInfo::sources_in_all_libs()
+{
+  vector<SrcLibLineInfo> source_lib_srcs;
+  
+  vector<string> base_paths{ InterSpec::staticDataDirectory(), SpecUtils::get_working_path() };
+#if( BUILD_AS_ELECTRON_APP || IOS || ANDROID || BUILD_AS_OSX_APP || BUILD_AS_WX_WIDGETS_APP || BUILD_AS_LOCAL_SERVER )
+  try{ base_paths.push_back( InterSpec::writableDataDirectory() ); } catch(...){}
+#endif
+  vector<string> source_lib_files;
+  for( const string &path : base_paths )
+  {
+    const vector<string> files = SpecUtils::recursive_ls(path, "Source.lib" );
+    source_lib_files.insert( end(source_lib_files), begin(files), end(files) );
+  }
+  
+  for( const string &lib : source_lib_files )
+  {
+    const vector<SrcLibLineInfo> these_sources = SrcLibLineInfo::sources_in_lib( lib );
+    for( const auto &src : these_sources )
+    {
+      // Only add source if we havent already added it
+      const auto pos = std::find_if( begin(source_lib_srcs), end(source_lib_srcs),
+                                 [&src]( const SrcLibLineInfo &rhs ) -> bool {
+        return src.m_source_name == rhs.m_source_name;
+      } );
+      if( pos == end(source_lib_srcs) )
+        source_lib_srcs.push_back( src );
+    }//for( const auto &src : these_sources )
+  }//for( const string &lib : source_lib_files )
+  
+  return source_lib_srcs;
+}//sources_in_all_libs()
 
 
 MakeDrfSrcDef::MakeDrfSrcDef( const SandiaDecay::Nuclide *nuc,
@@ -93,7 +210,10 @@ MakeDrfSrcDef::MakeDrfSrcDef( const SandiaDecay::Nuclide *nuc,
   m_sourceInfoAtMeasurement( nullptr ),
   m_sourceAgeAtAssay( nullptr ),
   m_useShielding( nullptr ),
-  m_shieldingSelect( nullptr )
+  m_shieldingSelect( nullptr ),
+  m_lib_src_btn( nullptr ),
+  m_lib_srcs_for_nuc{},
+  m_updated( this )
 {
   wApp->useStyleSheet( "InterSpec_resources/MakeDrfSrcDef.css" );
   
@@ -121,9 +241,47 @@ Wt::Signal<> &MakeDrfSrcDef::updated()
   return m_updated;
 }
 
+
+void MakeDrfSrcDef::setSrcInfo( const SrcLibLineInfo &info )
+{
+  setAssayInfo( info.m_activity, info.m_activity_date );
+}//void setSrcInfo( const SrcLibLineInfo &info )
+
+
 void MakeDrfSrcDef::setNuclide( const SandiaDecay::Nuclide *nuc )
 {
   m_nuclide = nuc;
+  
+  m_lib_srcs_for_nuc.clear();
+  if( m_nuclide )
+  {
+    //TODO: we are currently re-parsing all the Source.lib files, every time this function
+    //      gets called, for every source... we should probably be a little friendlier
+    const vector<SrcLibLineInfo> all_srcs = SrcLibLineInfo::sources_in_all_libs();
+    for( const SrcLibLineInfo &info : all_srcs )
+    if( info.m_nuclide == m_nuclide )
+      m_lib_srcs_for_nuc.push_back( info );
+  }//if( m_nuclide )
+  
+  if( m_lib_src_btn )
+    m_lib_src_btn->setHidden( m_lib_srcs_for_nuc.empty() );
+  
+  WPopupMenu *menu = m_lib_src_btn ? m_lib_src_btn->menu() : nullptr;
+  if( menu )
+  {
+    vector<WMenuItem *> items = menu->items();
+    for( WMenuItem *item : items )
+      menu->removeItem( item );
+    
+    for( const SrcLibLineInfo &src : m_lib_srcs_for_nuc )
+    {
+      assert( src.m_nuclide == m_nuclide );
+      
+      WMenuItem *item = menu->addItem( src.m_source_name );
+      item->triggered().connect( boost::bind( &MakeDrfSrcDef::setSrcInfo, this, src) );
+    }//for( const SrcLibLineInfo &src : m_lib_srcs_for_nuc )
+  }//if( menu )
+  
   const bool notMuchEvolution = (!nuc || PeakDef::ageFitNotAllowed(nuc));
   
   m_table->rowAt(sm_age_at_assay_row)->setHidden( notMuchEvolution );
@@ -318,6 +476,21 @@ void MakeDrfSrcDef::create()
   //Wt::WDateEdit *m_sourceCreationDate;
   
   cell = m_table->elementAt(sm_options_row,0);
+  
+  m_lib_src_btn = new WPushButton( cell );
+  m_lib_src_btn->setIcon( "InterSpec_resources/images/db_small.png" );
+  m_lib_src_btn->setStyleClass( "LinkBtn DownloadBtn DialogFooterQrBtn" );
+  m_lib_src_btn->setFloatSide( Wt::Left );
+  WPopupMenu *menu = new WPopupMenu();
+  menu->setAutoHide( true );
+  m_lib_src_btn->setMenu( menu );
+  
+  const bool showToolTips = InterSpecUser::preferenceValue<bool>( "ShowTooltips", InterSpec::instance() );
+  const char *tooltip = "Sources defined in Source.lib file in your users data directory.<br/>"
+  "When clicked, this button will display a menu with all sources for this nuclide - and when"
+  " on of the items is selected, its information will be populated.";
+  HelpSystem::attachToolTipOn( m_lib_src_btn, tooltip, showToolTips, HelpSystem::ToolTipPosition::Right );
+  
   m_useAgeInfo = new WCheckBox( "Age?", cell );
   m_useAgeInfo->setFloatSide( Wt::Right );
   m_useAgeInfo->setChecked( false );
@@ -884,5 +1057,21 @@ std::string MakeDrfSrcDef::toGadrasLikeSourceString() const
   if( mayEvolve && age >= 0.0 )
     answer += " Age=" + PhysicalUnits::printToBestTimeUnits(age);
   
+  try
+  {
+    const double dist = distance();
+    if( dist > 0.0 )
+      answer += " Distance=" + PhysicalUnits::printToBestLengthUnits( dist, 6 );
+  }catch( std::exception &e )
+  {
+    // Fixed geometry or something
+  }
+  
   return answer;
 }//std::string toGadrasLikeSourceString() const
+
+
+const vector<SrcLibLineInfo> &MakeDrfSrcDef::lib_srcs_for_nuc()
+{
+  return m_lib_srcs_for_nuc;
+}

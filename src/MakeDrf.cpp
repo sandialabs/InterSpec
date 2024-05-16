@@ -832,7 +832,6 @@ namespace
       m_backgroundTxt->addStyleClass( "DrfSpecFileSampleBackgroundTxt" );
       m_backgroundTxt->hide();
       
-      
       m_sources = new WContainerWidget( body );
       
       setCollapsible( true );
@@ -866,7 +865,7 @@ namespace
       if( !summed_meas )
         summed_meas = meas->sum_measurements( samples, meas->detector_names(), nullptr );
       
-      //ToDo: inprinciple summed_meas->live_time() should equal livetime; should check
+      //ToDo: in principle, summed_meas->live_time() should equal livetime; should check
       
       int npeaks = 0;
       for( auto peak : *peaks )
@@ -894,67 +893,74 @@ namespace
       
       refreshSourcesVisible();
       
-      //See if the file conforms to GADRAS conventions
-      //if( samples.size() == 1 )
-      {
+      // Now loop over sources and check for information in the remarks about
+      // the source - we assume the GADRAS convention for things.
+      
+      
+      auto try_set_info = [meas,samples,db]( MakeDrfSrcDef *srcdef ){
+        
+        assert( srcdef );
+        assert( srcdef->nuclide() );
+        assert( !srcdef->nuclide()->isStable() );
+        
         string shielding;
-        bool is_background = false;
-        double distance = -1.0, activity = -1.0, age_at_meas = -1.0;
         boost::posix_time::ptime activityDate;
-        const SandiaDecay::Nuclide *nuc = nullptr;
+        double title_distance = -1.0;
+        double distance = -1.0, activity = -1.0, age_at_meas = -1.0;
+        
+        bool have_set_nuc_info = false;
         
         string srcinfo;
         const vector<string> &dets = meas->detector_names();
         for( const string &det : dets )
         {
+          if( have_set_nuc_info )
+            break;
+          
           for( const int sample : samples )
           {
+            if( have_set_nuc_info )
+              break;
+            
             auto m = meas->measurement(sample, det);
             if( !m )
               continue;
             
             string spectitle = m->title();
             
-            if( samples.size() == 1 )
+            if( title_distance <= 0.0 )
             {
-              is_background |= (m->source_type()==SpecUtils::SourceType::Background);
-              is_background |= SpecUtils::icontains( spectitle, "back" );
-              is_background |= SpecUtils::icontains( spectitle, "bgr" );
-            }//if( samples.size() == 1 )
-            
-            size_t pos = spectitle.find( "@" );
-            if( pos != string::npos )
-            {
-              //Look for distance and source info in title. Examples:
-              //  "U-232 @ 100 cm, H=100 cm"
-              //  "Background, H=100 cm"
-              string dist = spectitle.substr( pos+1 );
-              try
+              size_t pos = spectitle.find( "@" );
+              if( pos != string::npos )
               {
-                SpecUtils::trim( dist );
-                pos = dist.find_first_of( ",@" ); //ToDo: make finding the end of the distance more robust - like with a regex
-                if( pos != string::npos )
-                  dist = dist.substr(0, pos);
-                distance = PhysicalUnits::stringToDistance( dist );
-              }catch(...){}
-            }//if( pos != string::npos )
+                //Look for distance and source info in title. Examples:
+                //  "U-232 @ 100 cm, H=100 cm"
+                //  "Background, H=100 cm"
+                string dist = spectitle.substr( pos+1 );
+                try
+                {
+                  SpecUtils::trim( dist );
+                  pos = dist.find_first_of( ",@" ); //ToDo: make finding the end of the distance more robust - like with a regex
+                  if( pos != string::npos )
+                    dist = dist.substr(0, pos);
+                  title_distance = PhysicalUnits::stringToDistance( dist );
+                }catch(...)
+                {
+                }
+              }//if( pos != string::npos )
+            }//if( title_distance <= 0.0 )
             
-            //make work for strings like "133BA_something_something"
-            const size_t first_space = spectitle.find_first_of( " \t_" );
-            //ToDo: make this more robost for finding end of the nuclide, like requiring both numbers and letters.
-            
-            nuc = db->nuclide( spectitle.substr(0,first_space) );
+            //ToDo: make this more robust for finding end of the nuclide, like requiring both numbers and letters.
             
             vector<string> remarks = m->remarks();
             if( !spectitle.empty() )
               remarks.push_back( "Source:" + spectitle );
             
-            
             for( string remark : remarks )
             {
               if( !SpecUtils::istarts_with(remark, "Source:") )
                 continue;
-              
+
               remark = remark.substr(7);
               
               SpecUtils::trim( remark );
@@ -967,7 +973,7 @@ namespace
               {
                 try
                 {
-                  age_at_meas = PhysicalUnits::stringToTimeDurationPossibleHalfLife( mtch[2].str(), (nuc ? nuc->halfLife : -1.0) );
+                  age_at_meas = PhysicalUnits::stringToTimeDurationPossibleHalfLife( mtch[2].str(), srcdef->nuclide()->halfLife );
                 }catch( std::exception & )
                 {
                   cerr << "Failed to convert '" << mtch[2].str() << "' to an age." << endl;
@@ -986,20 +992,10 @@ namespace
                 }
               }//if( found "age = ..." )
               
-              const size_t openCurlyPos = remark.find( '{' );
-              if( shielding.empty() && (openCurlyPos != string::npos) )
-              {
-                const size_t closeCurlyPos = remark.find( '}', openCurlyPos );
-                if( (closeCurlyPos != string::npos) && ((openCurlyPos+4)<closeCurlyPos) )
-                {
-                  shielding = remark.substr(openCurlyPos+1, closeCurlyPos-openCurlyPos-1);
-                  remark = remark.substr(0,openCurlyPos);
-                  SpecUtils::trim(remark);
-                }
-              }//if( source had shielding defined )
+              
               
               /*
-               //Untested regex quivalent (or maybe a bit stricter) of the above.
+               //Untested regex equivalent (or maybe a bit stricter) of the above.
                std::smatch shieldmtch;
                std::regex expr( ".+({\\s*[+]?[0-9]*\\.?[0-9]+\\s*,\\s*[+]?[0-9]*\\.?[0-9]+\\s*}).*?" );  //could be optimized, and extended to arbitrary number of floats
                if( std::regex_match( remark, shieldmtch, expr ) )
@@ -1011,28 +1007,84 @@ namespace
                }
                */
               
-              if( !nuc )
-                nuc = db->nuclide( remark );  //Doesnt look like this gives a nuclide if there is anything invalid trailing the nuclide (ex, 'Ba133,10uCi')
               
-              const size_t commapos = remark.find(',');
-              const size_t underscorpos = remark.find('_'); //For a source database name like "133BA_<serial number>"
+              // This next line wont give a nuclide if there is anything invalid trailing the nuclide (ex, 'Ba133,10uCi')
+              const SandiaDecay::Nuclide *nuc = db->nuclide( remark );
               
-              if( !nuc && commapos!=string::npos )
+              size_t commapos = remark.find(',');
+              size_t underscorpos = remark.find('_'); //For a source database name like "133BA_<serial number>"
+              
+              if( !nuc && (commapos != string::npos) )
                 nuc = db->nuclide( remark.substr(0,commapos) );
               
-              if( !nuc && underscorpos!=string::npos )
+              if( !nuc && (underscorpos != string::npos) )
                 nuc = db->nuclide( remark.substr(0,underscorpos) );
               
-              if( !nuc )
-              {
-                //ToDo: come up with a Regex that will find any reasonable nuclide "Cs137, Cs-137, 137Cs, Cesium 137, U 238m 238mU, etc."
-                const size_t first_space = spectitle.find_first_of( " \t_" );
-                if( first_space != string::npos )
-                  nuc = db->nuclide( remark.substr(0,first_space) );
-              }
+              if( !nuc || (nuc != srcdef->nuclide()) )
+                continue;
               
-              if( (commapos < underscorpos)
-                 && (nuc == db->nuclide(remark.substr(0,commapos))) )
+              have_set_nuc_info = true;
+              
+              const size_t openCurlyPos = remark.find( '{' );
+              if( shielding.empty() && (openCurlyPos != string::npos) )
+              {
+                const size_t closeCurlyPos = remark.find( '}', openCurlyPos );
+                if( (closeCurlyPos != string::npos) && ((openCurlyPos+4)<closeCurlyPos) )
+                {
+                  shielding = remark.substr(openCurlyPos+1, closeCurlyPos-openCurlyPos-1);
+                  remark = remark.substr(0,openCurlyPos);
+                  SpecUtils::trim(remark);
+                  
+                  commapos = remark.find(',');
+                  underscorpos = remark.find('_'); //For a source database name like "133BA_<serial number>"
+                }
+              }//if( source had shielding defined )
+              
+              
+              distance = title_distance;
+              
+              std::smatch dist_mtch;
+              
+              // By default PhysicalUnits::sm_distanceRegex has a "^" character at begining, and "$"
+              //  character at end - lets get rid of these
+              string dist_regex = PhysicalUnits::sm_distanceRegex;
+              SpecUtils::ireplace_all( dist_regex, "^", "" );
+              SpecUtils::ireplace_all( dist_regex, "$", "" );
+              
+              std::regex dist_expr( string(".+([dist|distance]\\s*\\=\\s*(") + dist_regex + ")).*?", std::regex::icase );
+              
+              if( std::regex_match( remark, dist_mtch, dist_expr ) )
+              {
+                try
+                {
+                  double trial_distance = PhysicalUnits::stringToDistance( dist_mtch[2].str() );
+                  if( trial_distance >= 0.0 && !IsNan(trial_distance) && !IsInf(trial_distance) )
+                    distance = trial_distance;
+                }catch( std::exception & )
+                {
+                  cerr << "Failed to convert '" << dist_mtch[2].str() << "' to a distance." << endl;
+                }
+              }//if( std::regex_match( remark, dist_mtch, dist_expr ) )
+              
+              
+              if( underscorpos != string::npos )
+              {
+                auto pos = remark.find_first_of( " \t", underscorpos );
+                string src_name = remark.substr(0,pos); //fine if pos==string::npos
+                SpecUtils::trim( src_name );
+                
+                for( const SrcLibLineInfo &src : srcdef->lib_srcs_for_nuc() )
+                {
+                  if( SpecUtils::icontains( src_name, src.m_source_name)  )
+                  {
+                    activityDate = src.m_activity_date;
+                    activity = src.m_activity;
+                    break;
+                  }
+                }//for(
+              }//if( maybe a source name from a Source.lib )
+              
+              if( (commapos < underscorpos) && (activity <= 0.0) )
               {
                 //We have something like "133Ba,10uCi"
                 //ToDo: There may be multiple nuclides specified, for example:
@@ -1052,90 +1104,86 @@ namespace
                 }catch( std::exception & )
                 {
                 }
-              }//
-              
-              if( (activity < 0.0) && (underscorpos != string::npos)
-                 && (nuc == db->nuclide(remark.substr(0,underscorpos)) ))
-              {
-                //- Check for "*Source.lib" file in application directory,
-                //  and if found, scan through for the source identified in previous line, and put in date
-                vector<string> base_paths{ InterSpec::staticDataDirectory(), SpecUtils::get_working_path() };
-#if( BUILD_AS_ELECTRON_APP || IOS || ANDROID || BUILD_AS_OSX_APP || BUILD_AS_LOCAL_SERVER )
-                try{ base_paths.push_back( InterSpec::writableDataDirectory() ); } catch(...){}
-#endif
-                vector<string> source_lib_files;
-                for( const string &path : base_paths )
-                {
-                  const vector<string> files = SpecUtils::recursive_ls(path, "Source.lib" );
-                  source_lib_files.insert( end(source_lib_files), begin(files), end(files) );
-                }
-                
-                string comments;
-                for( const string &lib : source_lib_files )
-                {
-                  if( source_info_from_lib_file(remark, lib, activity, activityDate, comments) )
-                    break;
-                }//for( const string &lib : source_lib_files )
-              }//if( activty < 0.0 )
-              
+              }//if( commapos < underscorpos )
             }//for( string remark : m->remarks() )
           }//for( const int sample : samples )
-          
         }//for( const string &det : dets )
         
-        if( nuc )
+        if( distance > 0.0 )
+          srcdef->setDistance( distance );
+        else if( title_distance > 0.0 )
+          srcdef->setDistance( title_distance );
+        
+        if( (activity > 0.0) && activityDate.is_special() )
+          srcdef->setActivity( activity );
+        else if( activity > 0.0 )
+          srcdef->setAssayInfo( activity, activityDate );
+        
+        if( age_at_meas >= 0.0 )
+          srcdef->setAgeAtMeas( age_at_meas );
+        
+        if( !shielding.empty() )
         {
-          for( auto w : m_sources->children() )
+          try
           {
-            auto src = dynamic_cast<MakeDrfSrcDef *>(w);
-            if( src && src->nuclide()==nuc )
+            vector<float> an_ad;
+            SpecUtils::split_to_floats( shielding, an_ad );
+            
+            if( an_ad.size() >= 2
+               && an_ad[0] >= 1.0f && an_ad[0] <= 100.0f
+               && an_ad[1] >= 0.0f && an_ad[1] <= GammaInteractionCalc::sm_max_areal_density_g_cm2 )
             {
-              if( distance > 0.0 )
-                src->setDistance( distance );
-              
-              if( activity > 0.0 && activityDate.is_special() )
-                src->setActivity( activity );
-              else if( activity > 0.0 )
-                src->setAssayInfo( activity, activityDate );
-              
-              if( age_at_meas >= 0.0 )
-                src->setAgeAtMeas( age_at_meas );
-              
-              if( !shielding.empty() )
-              {
-                try
-                {
-                  vector<float> an_ad;
-                  SpecUtils::split_to_floats( shielding, an_ad );
-                  
-                  if( an_ad.size() >= 2
-                     && an_ad[0] >= 1.0f && an_ad[0] <= 100.0f
-                     && an_ad[1] >= 0.0f && an_ad[1] <= GammaInteractionCalc::sm_max_areal_density_g_cm2 )
-                  {
-                    src->setShielding( an_ad[0], an_ad[1]*PhysicalUnits::gram/PhysicalUnits::cm2 );
-                  }
-                }catch( std::exception &e )
-                {
-                  cerr << "DrfSpecFileSample: Caught exception setting shielding from '" << shielding << "': " << e.what() << endl;
-                }
-              }//if( !shielding.empty() )
-            }//if( we found the source )
-          }//for( auto w : m_sources->children() )
-        }//if( nuc )
-        
-        if( is_background )
-        {
-          m_background->setChecked( true );
-          m_backgroundTxt->show();
-          m_sources->hide();
-        
-          for( auto w : m_peaks->children() )
+              srcdef->setShielding( an_ad[0], an_ad[1]*PhysicalUnits::gram/PhysicalUnits::cm2 );
+            }
+          }catch( std::exception &e )
           {
-            if( auto p = dynamic_cast<DrfPeak *>( w ) )
-              p->setIsBackground( is_background );
-          }//for( auto w : m_peaks->children() )
-        }//if( is_background )
+            cerr << "DrfSpecFileSample: Caught exception setting shielding from '" << shielding << "': " << e.what() << endl;
+          }
+        }//if( !shielding.empty() )
+        
+      };// try_set_info lamda
+      
+      
+      bool is_background = false;
+      if( samples.size() == 1 )
+      {
+        for( const string &det : meas->detector_names() )
+        {
+          for( const int sample : samples )
+          {
+            auto m = meas->measurement(sample, det);
+            if( !m )
+              continue;
+            
+            is_background |= (m->source_type()==SpecUtils::SourceType::Background);
+            is_background |= SpecUtils::icontains( m->title(), "back" );
+            is_background |= SpecUtils::icontains( m->title(), "bgr" );
+          }//for( const int sample : samples )
+        }//for( const string &det : dets )
       }//if( samples.size() == 1 )
+      
+      
+      if( is_background )
+      {
+        m_background->setChecked( true );
+        m_backgroundTxt->show();
+        m_sources->hide();
+      
+        for( auto w : m_peaks->children() )
+        {
+          if( auto p = dynamic_cast<DrfPeak *>( w ) )
+            p->setIsBackground( is_background );
+        }//for( auto w : m_peaks->children() )
+      }else
+      {
+        for( auto w : m_sources->children() )
+        {
+          auto src = dynamic_cast<MakeDrfSrcDef *>(w);
+          if( src && src->nuclide() )
+            try_set_info( src );
+        }//for( auto w : m_sources->children() )
+      }//if( is_background ) / else
+      
     }//DrfSpecFileSample constructor
     
     void handleUserToggleAllNoneSum()

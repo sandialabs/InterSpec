@@ -1356,6 +1356,7 @@ void DoseCalcWidget::handleAppUrl( std::string path, std::string query_str )
   
   SpecUtils::ireplace_all( query_str, "%23", "#" );
   SpecUtils::ireplace_all( query_str, "%26", "&" );
+  SpecUtils::ireplace_all( query_str, "curries", "curies" ); //fix up me being a bad speller
   
   const map<string,string> parts = AppUtils::query_str_key_values( query_str );
   

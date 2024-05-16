@@ -26,6 +26,7 @@
 #include "InterSpec_config.h"
 
 #include <string>
+#include <vector>
 
 #include <boost/date_time/posix_time/posix_time.hpp>
 
@@ -43,6 +44,7 @@ namespace Wt
   class WCheckBox;
   class WDateEdit;
   class WComboBox;
+  class WPushButton;
   class WDoubleSpinBox;
   class WSuggestionPopup;
 }//namespace Wt
@@ -52,11 +54,49 @@ namespace SandiaDecay
   struct Nuclide;
 }//namespace SandiaDecay
 
+
+/** The user can have a Source.lib file in their data directory that contains
+ calibration source information.
+ 
+ Source lines should be in the format:
+  "[nuclide]_[serial num]  [activity in bq]  [activity reference date]  [comment]"
+  for example:
+  "22NA_01551910  5.107E+04  25-Aug-2022  West Rad Lab"
+    
+  If any field is not valid  (except comment can be blank), the line wont be included in the results.
+ 
+  Each line contains a different source.
+ */
+struct SrcLibLineInfo
+{
+  double m_activity;
+  const SandiaDecay::Nuclide *m_nuclide;
+  boost::posix_time::ptime m_activity_date;
+  std::string m_source_name;
+  std::string m_comments;
+  std::string m_line;
+  
+  SrcLibLineInfo();
+  
+  /** Source lines should be in the format:
+   "[nuclide]_[serial num]  [activity in bq]  [activity reference date]  [comment]"
+   for example:
+   "22NA_01551910  5.107E+04  25-Aug-2022  West Rad Lab"
+   
+   If any field is not valid  (except comment can be blank), the line wont be included in the results.
+   */
+  static std::vector<SrcLibLineInfo> sources_in_lib( const std::string &filename );
+  
+  /** Grabs sources in all Source.lib files in user and application data directories. */
+  static std::vector<SrcLibLineInfo> sources_in_all_libs();
+};//struct SrcLibLineInfo
+
+
 /* Widget to allow entering:
    - Nuclide
    - Activity
    - Date of activity
-   - Date of measurment being used for (can likely be auto-filed out)
+   - Date of measurement being used for (can likely be auto-filed out)
    - Potentially age when activity was determined
    - Activity uncertainty
    - Distance to source
@@ -175,11 +215,16 @@ public:
    */
   std::string toGadrasLikeSourceString() const;
   
+  /** Returns the sources defined in Sources.lib, for this nuclide. */
+  const std::vector<SrcLibLineInfo> &lib_srcs_for_nuc();
+  
 protected:
   /** Creates the widget, but doesnt fill out any of the information. */
   void create();
   
   void setNuclide( const SandiaDecay::Nuclide *nuc );
+  
+  void setSrcInfo( const SrcLibLineInfo &info );
   
   void updateAgedText();
   
@@ -260,6 +305,12 @@ protected:
   
   /** The widget to allow selecting shielding, is selected to do so. */
   ShieldingSelect *m_shieldingSelect;
+  
+  /** The sources in Source.lib that are for this nuclide. */
+  std::vector<SrcLibLineInfo> m_lib_srcs_for_nuc;
+  
+  /** Button that lets you select sources that might be in Source.lib files */
+  Wt::WPushButton *m_lib_src_btn;
   
   Wt::Signal<> m_updated;
 };//MakeDrfSrcDef
