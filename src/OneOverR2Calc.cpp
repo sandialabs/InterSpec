@@ -193,7 +193,7 @@ OneOverR2Calc::OneOverR2Calc()
                                  WString::tr("oor2c-qr-state-txt") );
     }catch( std::exception &e )
     {
-      passMessage( WString::tr("oor2c-qr-err").arg(e.what()), WarningWidget::WarningMsgHigh );
+      passMessage( WString::tr("app-qr-err").arg(e.what()), WarningWidget::WarningMsgHigh );
     }
   }) );
 #endif //USE_QR_CODES

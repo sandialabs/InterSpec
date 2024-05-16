@@ -1678,6 +1678,9 @@ DecayActivityDiv::DecayActivityDiv( InterSpec *viewer, Wt::WContainerWidget *par
   
   wApp->useStyleSheet( "InterSpec_resources/NuclideDecayInfo.css");
   
+  if( m_viewer )
+    m_viewer->useMessageResourceBundle( "DecayActivity" );
+  
   init();
 }//DecayActivityDiv constructor
 
@@ -1732,15 +1735,15 @@ void DecayActivityDiv::init()
   m_displayTimeLength->setValidator(validator);
 
   m_displayActivityUnitsCombo      = new WComboBox();
-  m_displayActivityUnitsLabel      = new WLabel( isPhone ? "Units:" : "Display Units:" );
-  m_logYScale                      = new WCheckBox( "Log-Y Scale" );
-  m_showGridLines                  = new WCheckBox( "Grid Lines" );
+  m_displayActivityUnitsLabel      = new WLabel( WString::tr(isPhone ? "dad-units-label-phone" : "dad-units-label") );
+  m_logYScale                      = new WCheckBox( WString::tr("dad-logy-cb") );
+  m_showGridLines                  = new WCheckBox( WString::tr("dad-grid-cb") );
   m_yAxisType                      = new WComboBox();
   m_parentNuclidesDiv              = new WContainerWidget();
   m_nuclidesAddedDiv               = new WContainerWidget();
-  m_createNewNuclideButton         = new WPushButton( "Add Nuclide..." );
-  m_clearNuclidesButton            = new WPushButton( isPhone ? "Clear" : "Remove All"  );
-  m_nuclideSelectDialog            = new AuxWindow( "Select Nuclide To Add",
+  m_createNewNuclideButton         = new WPushButton( WString::tr("dad-add-nucs") );
+  m_clearNuclidesButton            = new WPushButton( WString::tr(isPhone ? "Clear" : "dad-remove-all")  );
+  m_nuclideSelectDialog            = new AuxWindow( WString::tr("dad-sel-nuc-window-title"),
                                       (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::TabletNotFullScreen) | AuxWindowProperties::DisableCollapse) );
   
   m_nuclideSelect                  = new DecaySelectNuclide( isPhone, nullptr, m_nuclideSelectDialog );
@@ -1836,9 +1839,9 @@ void DecayActivityDiv::init()
   //////////////////
   // tab widget
   const WTabWidget::LoadPolicy loadPolicy = WTabWidget::LazyLoading; //WTabWidget::PreLoading;
-  m_chartTabWidget->addTab( decayDiv, "Activity Chart", loadPolicy );
+  m_chartTabWidget->addTab( decayDiv, WString::tr("dad-mi-act-chart"), loadPolicy );
 
-  m_chartTabWidget->addTab( decayChainDiv, "Decay Chain", loadPolicy );
+  m_chartTabWidget->addTab( decayChainDiv, WString::tr("dad-mi-decay-chain"), loadPolicy );
   m_chartTabWidget->currentChanged().connect( m_decayChainChart,
                                     &DecayChainChart::deleteMoreInfoDialog );
   m_decayChainChart->nuclideChanged().connect( this,
@@ -1851,7 +1854,7 @@ void DecayActivityDiv::init()
                             &DecayActivityDiv::manageActiveDecayChainNucStyling );
 
   m_calc = new DateLengthCalculator( this, NULL );
-  m_chartTabWidget->addTab( m_calc, "Calculator", loadPolicy );
+  m_chartTabWidget->addTab( m_calc, WString::tr("dad-mi-calc"), loadPolicy );
   
   
   WGridLayout *layout = new WGridLayout();
@@ -2139,7 +2142,7 @@ Wt::WContainerWidget *DecayActivityDiv::initDisplayOptionWidgets()
     m_displayActivityUnitsCombo->addItem( nuclide.first );
   }//for( each defined unit of activity )
 
-  m_displayActivityUnitsCombo->addItem( "Arbitrary" );
+  m_displayActivityUnitsCombo->addItem( WString::tr("dad-arbitrary") );
 
   const bool useBq = InterSpecUser::preferenceValue<bool>( "DisplayBecquerel", InterSpec::instance() );
   m_displayActivityUnitsCombo->setCurrentIndex( (useBq ? 2 : 7) ); //MBq : mCi
@@ -2149,7 +2152,7 @@ Wt::WContainerWidget *DecayActivityDiv::initDisplayOptionWidgets()
   displayOptionsDiv->addStyleClass( "displayOptionsDiv" );
   WContainerWidget *displOptUpper = new WContainerWidget( displayOptionsDiv );
   
-  WLabel *endLabel = new WLabel( "Time Span:" );
+  WLabel *endLabel = new WLabel( WString::tr("dad-time-span-label") );
   endLabel->setBuddy( m_displayTimeLength );
   displOptUpper->addWidget( endLabel );
   displOptUpper->addWidget( m_displayTimeLength );
@@ -2157,29 +2160,11 @@ Wt::WContainerWidget *DecayActivityDiv::initDisplayOptionWidgets()
   m_displayTimeLength->enterPressed().connect( boost::bind( &DecayActivityDiv::refreshDecayDisplay, this, true ) );
   
   
-  const char *tooltip = "<div>Age can be specified using a combination of time units, "
-  "similar to '<b>5.3y 8d 22m</b>' or in half lives like "
-  "'<b>2.5 HL</b>'.</div>"
-  "<div>"
-  "Acceptible time units: <b>year</b>, <b>yr</b>, <b>y</b>, <b>day</b>, <b>d</b>, <b>hrs</b>, <b>hour</b>, <b>h</b>, <b>minute</b>, "
-  "<b>min</b>, <b>m</b>, <b>second</b>, <b>s</b>, <b>ms</b>, <b>microseconds</b>, <b>us</b>, <b>nanoseconds</b>, <b>ns</b>, or "
-  "you can specify time period by <b>hh:mm:ss</b>. Half life units can be "
-  "specified using <b>hl</b>, <b>halflife</b>, <b>halflives</b>, <b>half-life</b>, <b>half-lives</b>, "
-  "<b>half lives</b>, or <b>half life</b>."
-  "</div>"
-  "<div>"
-  "Half life units or time periods can not be mixed with "
-  "other units, and if multiple nuclides are specified the first one is assumed. When multiple time periods are "
-  "specified, they are summed, e.x. '1y6months 3m' is interpreted as "
-  "18 months and 3 minutes"
-  "</div>";
-//  m_displayTimeLength->setToolTip( tooltip );
-  
   const bool showToolTips = m_viewer ? InterSpecUser::preferenceValue<bool>( "ShowTooltips", m_viewer ) : false;
   if( m_viewer )
-    HelpSystem::attachToolTipOn( m_displayTimeLength, tooltip, showToolTips );
+    HelpSystem::attachToolTipOn( m_displayTimeLength, WString::tr("dad-tt-age"), showToolTips );
   
-  WLabel *yaxisTypeLabel = new WLabel( isPhone ? "Y-Axis:" : "Y-Axis Type:", displOptUpper );
+  WLabel *yaxisTypeLabel = new WLabel( isPhone ? "dad-yaxis-label-phone" : "dad-yaxis-label", displOptUpper );
   yaxisTypeLabel->addStyleClass( "DecayChartYaxisTypeLabel" );
   
   displOptUpper->addWidget( m_yAxisType );
@@ -2187,10 +2172,10 @@ Wt::WContainerWidget *DecayActivityDiv::initDisplayOptionWidgets()
   {
     switch( y )
     {
-      case ActivityAxis: m_yAxisType->addItem( "Activity" );   break;
-      case GammasAxis:   m_yAxisType->addItem( "Gamma Rate" ); break;
-      case BetasAxis:    m_yAxisType->addItem( "Beta Rate" );  break;
-      case AlphasAxis:   m_yAxisType->addItem( "Alpha Rate" ); break;
+      case ActivityAxis: m_yAxisType->addItem( WString::tr("Activity") );   break;
+      case GammasAxis:   m_yAxisType->addItem( WString::tr("dad-gamma-rate") ); break;
+      case BetasAxis:    m_yAxisType->addItem( WString::tr("dad-beta-rate") );  break;
+      case AlphasAxis:   m_yAxisType->addItem( WString::tr("dad-alpha-rate") ); break;
       case NumYAxisType:                                       break;
     }//switch( y )
   }//for( Y-Axis type )
@@ -2226,7 +2211,7 @@ Wt::WContainerWidget *DecayActivityDiv::initDisplayOptionWidgets()
   {
     WPushButton *csvButton = new WPushButton( displOptLower );
     csvButton->setIcon( "InterSpec_resources/images/download_small.svg" );
-    csvButton->setText( "CSV..." );
+    csvButton->setText( WString("{1}...").arg( WString::tr("CSV") ) );
     csvButton->setStyleClass( "LinkBtn DownloadBtn" );
     csvButton->clicked().connect( this, &DecayActivityDiv::createCsvDownloadGui );
   }
@@ -2306,7 +2291,7 @@ void DecayActivityDiv::initCharts()
 //  m_decayChart->setMargin(0);
 //  m_decayChart->initLayout();
 
-  m_decayChart->setToolTip( "Click for more information" );
+  m_decayChart->setToolTip( WString::tr("dad-click-for-more-info") );
 //  m_decayChart->mouseMoved().connect( this, &DecayActivityDiv::updateMouseOver );
 }//void initCharts()
 
@@ -2463,9 +2448,7 @@ void DecayActivityDiv::addNuclide( const int z, const int a, const int iso,
   nuclide.display->doubleClicked().connect(
                     boost::bind( &DecayActivityDiv::sourceNuclideDoubleClicked,
                                  this, nuclide.display) );
-  nuclide.display->setToolTip( "Double click to edit this source nuclide. "
-                               "Single click to make the decay chain to display"
-                               " this nuclide" );
+  nuclide.display->setToolTip( WString::tr("dad-tt-double-click") );
   
   nuclide.updateTxt();
 
@@ -2676,8 +2659,7 @@ void DecayActivityDiv::displayMoreInfoPopup( const double time )
 
   summary->setMaximumSize( WLength::Auto, WLength( 0.8*m_viewer->renderedHeight() ,WLength::Pixel) );
   
-  string title = "Summary at t=";
-  title += PhysicalUnits::printToBestTimeUnits( time );
+  WString title = WString::tr("dad-summary-at-time").arg( PhysicalUnits::printToBestTimeUnits(time) );
 
   if( m_moreInfoDialog )
   {
@@ -3299,7 +3281,7 @@ void DecayActivityDiv::refreshDecayDisplay( const bool update_calc )
   }//for( loop over time points to add )
 
   //Now put in the sum of all the activities
-  const WString dateHeader = "Date (" + xUnitsPair.first + ")";
+  const WString dateHeader = WString::tr("dad-hdr-date").arg(xUnitsPair.first);
   m_decayModel->setHeaderData( 0, boost::any( dateHeader ) );
 
   for( int column = 1; column <= nElements; ++column )
@@ -3323,23 +3305,23 @@ void DecayActivityDiv::refreshDecayDisplay( const bool update_calc )
   {
     case ActivityAxis:
       m_decayModel->setHeaderData( nElements+1,
-                                   boost::any( WString( "Total Activity" ) ) );
+                                   boost::any( WString::tr("dad-hdr-total-act") ) );
       m_decayChart->axis(Chart::YAxis).setTitle( unitStr );
     break;
     case GammasAxis:
       m_decayModel->setHeaderData( nElements+1,
-                                   boost::any( WString( "Total Gammas" ) ) );
-      m_decayChart->axis(Chart::YAxis).setTitle( "Gammas/Second" );
+                                   boost::any( WString::tr("dad-hdr-total-gammas") ) );
+      m_decayChart->axis(Chart::YAxis).setTitle( WString::tr("dad-yaxis-title-total-gammas") );
     break;
     case BetasAxis:
       m_decayModel->setHeaderData( nElements+1,
-                                   boost::any( WString( "Total Betas" ) ) );
-      m_decayChart->axis(Chart::YAxis).setTitle( "Betas/Second" );
+                                   boost::any( WString::tr("dad-hdr-total-betas") ) );
+      m_decayChart->axis(Chart::YAxis).setTitle( WString::tr("dad-yaxis-title-total-betas") );
     break;
     case AlphasAxis:
       m_decayModel->setHeaderData( nElements+1,
-                                   boost::any( WString( "Total Alphas" ) ) );
-      m_decayChart->axis(Chart::YAxis).setTitle( "Alphas/Second" );
+                                   boost::any( WString::tr("dad-hdr-total-alphas") ) );
+      m_decayChart->axis(Chart::YAxis).setTitle( WString::tr("dad-yaxis-title-total-alphas") );
     break;
     case NumYAxisType:
     break;
@@ -3609,10 +3591,12 @@ void DecayActivityDiv::updateMouseOver( const Wt::WMouseEvent& event )
   }//if( user selected a standard unit ) /else
 
 
+  
+  
   stringstream tip;
-  tip << "Click for more information - "
-      << fixed << setprecision(4) << mouseTime/tUnit
-      << " " << tUnitStr <<  " after T0 we have:";
+  tip << WString::tr("dad-chart-click-more-info")
+          .arg( SpecUtils::printCompact(mouseTime/tUnit, 4) )
+          .arg( tUnitStr ).toUTF8();
 
   double totalActivity = 0.0;
 
@@ -3630,7 +3614,7 @@ void DecayActivityDiv::updateMouseOver( const Wt::WMouseEvent& event )
     tip << "\n  " << el->symbol << " " << activity/actunit << " " << actUnitStr;
   }//for( loop over population children )
 
-  tip << "\n  Total Activity: " << totalActivity/actunit << " " << actUnitStr;
+  tip << "\n  " << WString::tr("dad-hdr-total-act").toUTF8() << ": " << totalActivity/actunit << " " << actUnitStr;
 
   m_decayChart->setToolTip( tip.str() );
 }//void updateMouseOver()

@@ -7,7 +7,6 @@
   <message id="srria-remarks">Remarks</message>
   <message id="srria-category">Category</message>
   <message id="srria-confidence">Confidence</message>
-  <message id="srria-dose">Dose</message>
   <message id="srria-no-id-provided">No nuclide identifications provided.</message>
   <message id="srria-algo-results">Algorithm Results</message>
   <message id="srria-no-algo-results">No algorithm results available.</message>

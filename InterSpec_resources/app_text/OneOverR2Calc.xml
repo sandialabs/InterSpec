@@ -18,7 +18,6 @@
   </message>
   <message id="oor2c-qr-state-title">1/r2 Calculator State</message>
   <message id="oor2c-qr-state-txt">Current state of 1/r<sup>2</sup> calculator tool.</message>
-  <message id="oor2c-qr-err">Error creating QR code: {1}</message>
   <message id="oor2c-invalid-near">Invalid near measurement</message>
   <message id="oor2c-invalid-far">Invalid far measurement</message>
   <message id="oor2c-invalid-dist">Invalid distance</message>

@@ -4,7 +4,6 @@
   <message id="dcw-err-failed-fit-AD">Failed to converge on a amount of shielding.</message>
   <message id="dcw-qr-tool-state-title">Dose Tool State</message>
   <message id="dcw-qr-tool-state-txt">Current state of dose tool.</message>
-  <message id="dcw-err-creating-qr">Error creating QR code: {1}</message>
   <message id="dcw-tt-nuc-edit">ex. <b>U235</b>, <b>235 Uranium</b>, <b>U-235m</b> (meta stable state), <b>Cs137</b>, etc.</message>
   <message id="dcw-tt-age-edit">
     <div>

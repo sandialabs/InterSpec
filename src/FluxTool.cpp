@@ -808,7 +808,7 @@ FluxToolWindow::FluxToolWindow( InterSpec *viewer )
   
 #if( USE_QR_CODES )
   WPushButton *qr_btn = new WPushButton( footer() );
-  qr_btn->setText( WString::tr("QR Code" );
+  qr_btn->setText( WString::tr("QR Code") );
   qr_btn->setIcon( "InterSpec_resources/images/qr-code.svg" );
   qr_btn->setStyleClass( "LinkBtn DownloadBtn DialogFooterQrBtn" );
   qr_btn->clicked().preventPropagation();
@@ -820,7 +820,7 @@ FluxToolWindow::FluxToolWindow( InterSpec *viewer )
                                  WString::tr("ftw-qr-tool-state-text") );
     }catch( std::exception &e )
     {
-      passMessage( WString::tr("ftw-qr-err").arg(e.what()), WarningWidget::WarningMsgHigh );
+      passMessage( WString::tr("app-qr-err").arg(e.what()), WarningWidget::WarningMsgHigh );
     }
   }) );
 #endif //USE_QR_CODES

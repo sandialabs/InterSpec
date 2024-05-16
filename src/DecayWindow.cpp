@@ -57,11 +57,14 @@ using namespace std;
 
 
 DecayWindow::DecayWindow( InterSpec *viewer )
-: AuxWindow( "Nuclide Decay Information",
+: AuxWindow( WString::tr("window-title-nuc-decay"),
              //(Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::IsModal) | AuxWindowProperties::DisableCollapse) ),
             (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::DisableCollapse) | AuxWindowProperties::EnableResize) ),
   m_activityDiv( 0 )
 {
+  if( viewer )
+    viewer->useMessageResourceBundle( "DecayActivity" );
+  
   m_activityDiv = new DecayActivityDiv( viewer );
   
   WGridLayout *layout = stretcher();
@@ -83,7 +86,7 @@ DecayWindow::DecayWindow( InterSpec *viewer )
   
 #if( USE_QR_CODES )
   WPushButton *qr_btn = new WPushButton( footer() );
-  qr_btn->setText( "QR Code" );
+  qr_btn->setText( WString::tr("QR Code") );
   qr_btn->setIcon( "InterSpec_resources/images/qr-code.svg" );
   qr_btn->setStyleClass( "LinkBtn DownloadBtn DialogFooterQrBtn" );
   qr_btn->clicked().preventPropagation();
@@ -92,10 +95,10 @@ DecayWindow::DecayWindow( InterSpec *viewer )
     {
       const string url = "interspec://decay/"
                                      + Wt::Utils::urlEncode(m_activityDiv->encodeStateToUrl());
-      QrCode::displayTxtAsQrCode( url, "Decay Tool State", "Current State of decay tool state." );
+      QrCode::displayTxtAsQrCode( url, WString::tr("dw-qr-window-title"), WString::tr("dw-qr-window-text") );
     }catch( std::exception &e )
     {
-      passMessage( "Error creating QR code: " + std::string(e.what()), WarningWidget::WarningMsgHigh );
+      passMessage( WString::tr("app-qr-err").arg(e.what()), WarningWidget::WarningMsgHigh );
     }
   }) );
 #endif //USE_QR_CODES

@@ -2905,7 +2905,7 @@ DrfSelect::DrfSelect( std::shared_ptr<DetectorPeakResponse> currentDet,
                                  WString::fromUTF8(m_detector->description()) );
     }catch( std::exception &e )
     {
-      passMessage( WString::tr("ds-err-creating-qr").arg(e.what()), WarningWidget::WarningMsgHigh );
+      passMessage( WString::tr("app-qr-err").arg(e.what()), WarningWidget::WarningMsgHigh );
     }
   }) );
 #endif //USE_QR_CODES

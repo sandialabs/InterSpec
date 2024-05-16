@@ -581,7 +581,7 @@ UnitsConverterTool::UnitsConverterTool()
                                  WString::tr("uct-qr-window-txt") );
     }catch( std::exception &e )
     {
-      passMessage( WString::tr("uct-qr-err").arg(e.what()), WarningWidget::WarningMsgHigh );
+      passMessage( WString::tr("app-qr-err").arg(e.what()), WarningWidget::WarningMsgHigh );
     }
   }) );
 #endif //USE_QR_CODES

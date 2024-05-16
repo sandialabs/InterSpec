@@ -115,7 +115,6 @@
   <message id="ds-use-for-serialnum-cb">Use as default DRF for SN '{1}'</message>
   <message id="ds-use-for-model-cb">Use as default DRF for model '{1}'</message>
   <message id="ds-no-drf-loaded">No DRF loaded</message>
-  <message id="ds-err-creating-qr">Error creating QR code: {1}</message>
   <message id="ds-no-det-btn">No Detector</message>
   <message id="ds-fit-fwhm-btn">Fit FWHM...</message>
   <message id="ds-tt-cancel">Remove all changes or selections made by this dialog, and close the dialog.</message>

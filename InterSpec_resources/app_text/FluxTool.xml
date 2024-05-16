@@ -4,7 +4,6 @@
   -->
   <message id="ftw-qr-tool-state-title">Flux Tool State</message>
   <message id="ftw-qr-tool-state-text">Current state of flux tool.</message>
-  <message id="ftw-qr-err">Error creating QR code: {1}</message>
   <message id="ftw-hdr-intrinsic-eff">Intr. Eff.</message>
   <message id="ftw-hdr-geom-eff">Geom. Eff.</message>
   <message id="ftw-hdr-flux-on-det">Flux on Det. (ɣ/s)</message>

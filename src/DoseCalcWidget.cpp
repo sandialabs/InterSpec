@@ -231,7 +231,7 @@ DoseCalcWindow::DoseCalcWindow( MaterialDB *materialDB,
                                  WString::tr("dcw-qr-tool-state-txt") );
     }catch( std::exception &e )
     {
-      passMessage( WString::tr("dcw-err-creating-qr").arg(e.what()), WarningWidget::WarningMsgHigh );
+      passMessage( WString::tr("app-qr-err").arg(e.what()), WarningWidget::WarningMsgHigh );
     }
   }) );
 #endif //USE_QR_CODES

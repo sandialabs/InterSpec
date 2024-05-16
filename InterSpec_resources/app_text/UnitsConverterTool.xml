@@ -8,7 +8,6 @@
   </message>
   <message id="uct-input-label">Input: </message>
   <message id="uct-output-label">Output: </message>
-  <message id="uct-qr-err">Error creating QR code: {1}</message>
   <message id="uct-qr-window-title">Unit Converter State</message>
   <message id="uct-qr-window-txt">Current state of the unit converter tool.</message>
   <message id="uct-err-empty-input">Empty input</message>
