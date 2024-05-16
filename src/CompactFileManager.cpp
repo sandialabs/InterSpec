@@ -753,7 +753,7 @@ void CompactFileManager::handleDisplayChange( SpecUtils::SpectrumType spectrum_t
           m_titles[typeindex]->setText( "" );
       }else
       {
-        WString titleTxt = WString::tr("{}: {}").arg( WString::tr("Title") ).arg( title );
+        WString titleTxt = WString("{1}: {2}").arg( WString::tr("Title") ).arg( title );
         m_titles[typeindex]->setText( titleTxt );
         m_titles[typeindex]->show();
       }

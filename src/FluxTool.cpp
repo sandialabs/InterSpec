@@ -1029,7 +1029,7 @@ void FluxToolWidget::init()
         m_colnamesCsv[col] = WString::fromUTF8("Nuclide");
         break;
       case FluxPeakCpsCol:
-        m_colnames[col] = WString("{} {}").arg(WString::tr("Peak")).arg(WString::tr("CPS"));
+        m_colnames[col] = WString("{1} {2}").arg(WString::tr("Peak")).arg(WString::tr("CPS"));
         m_colnamesCsv[col] = WString::fromUTF8("Peak CPS");
         break;
       case FluxIntrinsicEffCol:

@@ -19,7 +19,6 @@
 <message id="show-lines">Afficher les Lignes</message>
 <message id="Default">Par défaut</message>
 <message id="Error">Erreur</message>
-<message id="Name">Nom</message>
 <message id="Description">Description</message>
 <message id="Detector">Détecteur</message>
 <message id="Distance">Distance</message>
@@ -61,6 +60,14 @@
 <message id="Mass">Masse</message>
 <message id="NA">N/A</message>
 <message id="n/a">n/a</message>
+<message id="N/A">N/D</message>
+<message id="Min.">Min.</message>
+<message id="Max.">Max.</message>
+<message id="QR Code">Code QR</message>
+<message id="Accept">Accepter</message>
+<message id="Dose">Dose</message>
+<message id="Shielding">Blindage</message>
+<message id="app-qr-err">Erreur de création du code QR : {1}</message>
 
 <message id="Energy (keV)">Énergie (keV)</message>
 <message id="spectrum_y_axis_title">Comptes</message>
@@ -79,6 +86,11 @@
 <message id="window-title-peak-rel-eff">Isotopiques à partir des pics ajustés par l'utilisateur</message>
 <message id="window-title-compact-file">Sélectionner les spectres ouverts à afficher</message>
 <message id="window-title-xs-calc">Calcul XS Gamma</message>
+<message id="window-title-dose-calc">Calcul de Dose</message>
+<message id="window-title-1/r2-calc">Calculateur 1/r<sup>2</sup></message>
+<message id="window-title-units-convert">Convertisseur d'Unités</message>
+<message id="window-title-flux-tool">Outil de Flux</message>
+<message id="window-title-nuc-decay">Informations sur la Décroissance Nucléide</message>
 <message id="app-tab-peak-manager">Gestionnaire de pics</message>
 <message id="app-tab-ref-photopeak">Pics photoélectriques de référence</message>
 <message id="app-tab-energy-cal">Calibrage de l'énergie</message>
@@ -349,5 +361,8 @@
       le <b>Gestionnaire de fichiers</b>, ou un échantillon avec des comptes gamma.
     </p>
 </message>
-
+<message id="app-tt-det-disp">Le détecteur actuellement sélectionné. Cliquez pour sélectionner un détecteur différent, ou pour modifier celui-ci.</message>
 </messages>
+<message id="app-det-select-txt">cliquez pour sélectionner</message>
+<message id="app-det-select-txt-mobile">touchez pour sélectionner</message>
+<message id="app-default-manual-det-name">Détecteur Défini par l'Utilisateur</message>

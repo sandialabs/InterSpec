@@ -23,7 +23,6 @@
   <message id="show-lines">Show Lines</message>
   <message id="Default">Default</message>
   <message id="Error">Error</message>
-  <message id="Name">Name</message>
   <message id="Description">Description</message>
   <message id="Detector">Detector</message>
   <message id="Distance">Distance</message>
@@ -68,7 +67,14 @@
   <message id="Mass">Mass</message>
   <message id="NA">NA</message>
   <message id="n/a">n/a</message>
-
+  <message id="N/A">N/A</message>
+  <message id="Min.">Min.</message>
+  <message id="Max.">Max.</message>
+  <message id="QR Code">QR Code</message>
+  <message id="Accept">Accept</message>
+  <message id="Dose">Dose</message>
+  <message id="Shielding">Shielding</message>
+  <message id="app-qr-err">Error creating QR code: {1}</message>
 
 
 
@@ -95,7 +101,11 @@
   <message id="window-title-feature-markers">Feature Markers</message>
   <message id="window-title-act-shield-fit">Activity/Shielding Fit</message>
   <message id="window-title-xs-calc">Gamma XS Calc</message>
-
+  <message id="window-title-dose-calc">Dose Calc</message>
+  <message id="window-title-1/r2-calc">1/r<sup>2</sup> Calculator</message>
+  <message id="window-title-units-convert">Units Converter</message>
+  <message id="window-title-flux-tool">Flux Tool</message>
+  <message id="window-title-nuc-decay">Nuclide Decay Information</message>
 
 
   <!-- The names of the tool-tabs at the bottom of the app -->
@@ -487,6 +497,10 @@
     </p>
   </message>
 
-
+  <!-- The detector display.  Defined here so we dont have to load a whole new XML file for just these few entries. -->
+  <message id="app-tt-det-disp">The currently selected detector.  Click to select a different detector, or modify this one.</message>
+  <message id="app-det-select-txt">click to select</message>
+  <message id="app-det-select-txt-mobile">tap to select</message>
+  <message id="app-default-manual-det-name">User Defined Detector</message>
 
 </messages>
