@@ -69,19 +69,44 @@ namespace SandiaDecay
  */
 struct SrcLibLineInfo
 {
+  /** Activity of source (in units of PhysicalUnits), on date specified. */
   double m_activity;
+  /** Nuclide of this source. */
   const SandiaDecay::Nuclide *m_nuclide;
+  /** The date the activity was specified for.
+   For sources that grow in, this is also assumed to be their T=0 date.
+   */
   boost::posix_time::ptime m_activity_date;
+  
+  /** The first field specified. */
   std::string m_source_name;
+  
+  /** Everything past activity field. */
   std::string m_comments;
+  
+  /** The entire line all the information was extracted from. */
   std::string m_line;
+  
+  /** Optional activity uncertainty (in units of PhysicalUnits activity - i.e., bq)
+   Will be zero or negative if not specified.
+   */
+  double m_activity_uncert;
+  
+  /** Optional distance used for the source.
+   Will be zero or negative if not specified.
+   */
+  double m_distance;
   
   SrcLibLineInfo();
   
   /** Source lines should be in the format:
    "[nuclide]_[serial num]  [activity in bq]  [activity reference date]  [comment]"
    for example:
-   "22NA_01551910  5.107E+04  25-Aug-2022  West Rad Lab"
+   "22NA_01551910  5.107E+04  25-Aug-2022  West Rad Lab, Distance=50cm, ActivityUncertainty=5.107E+03"
+   
+   The comment field can optionally contain both the distance, and activity uncertainty, for example:
+    - "Distance=50cm"
+    - "ActivityUncertainty=5.107E+03", where activity uncertainty is in Bq
    
    If any field is not valid  (except comment can be blank), the line wont be included in the results.
    */

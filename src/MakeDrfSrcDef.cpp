@@ -23,6 +23,8 @@
 
 #include "InterSpec_config.h"
 
+#include <regex>
+
 #include <Wt/WDate>
 #include <Wt/WTable>
 #include <Wt/WLabel>
@@ -84,7 +86,9 @@ SrcLibLineInfo::SrcLibLineInfo()
     m_activity_date{},
     m_source_name{},
     m_comments{},
-    m_line{}
+    m_line{},
+    m_activity_uncert( -1.0 ),
+    m_distance( -1.0 )
 {
 }
 
@@ -144,6 +148,40 @@ vector<SrcLibLineInfo> SrcLibLineInfo::sources_in_lib( const string &filename )
     
     for( size_t i = 3; i < fields.size(); ++i )
       src_info.m_comments += ((i==3) ? "" : " ") + fields[i];
+    
+    
+    // By default PhysicalUnits::sm_distanceRegex has a "^" character at beginning, and "$"
+    //  character at end - lets get rid of these
+    string dist_regex = PhysicalUnits::sm_distanceRegex;
+    SpecUtils::ireplace_all( dist_regex, "^", "" );
+    SpecUtils::ireplace_all( dist_regex, "$", "" );
+    
+    std::smatch dist_mtch;
+    std::regex dist_expr( string(".+([dist|distance]\\s*\\=\\s*(") 
+                         + dist_regex
+                         + ")).*?", std::regex::icase );
+    if( std::regex_match( src_info.m_comments, dist_mtch, dist_expr ) )
+    {
+      try
+      {
+        src_info.m_distance = PhysicalUnits::stringToDistance( dist_mtch[2].str() );
+      }catch( std::exception & )
+      {
+        src_info.m_distance = -1.0;
+      }
+    }//if( std::regex_match( remark, dist_mtch, dist_expr ) )
+    
+    std::smatch act_uncert_mtch;
+    std::regex act_uncert_expr( string(".+([ActivityUncertainty|ActivityUncert]\\s*\\=\\s*(") 
+                               + PhysicalUnits::sm_positiveDecimalRegex
+                               + ")).*?", std::regex::icase );
+    if( std::regex_match( src_info.m_comments, act_uncert_mtch, act_uncert_expr ) )
+    {
+      string strval = act_uncert_mtch[2].str();
+      if( !SpecUtils::parse_double( strval.c_str(), strval.size(), src_info.m_activity_uncert ) )
+        src_info.m_activity_uncert = -1.0;
+    }//if( std::regex_match( remark, dist_mtch, dist_expr ) )
+    
     
     src_info.m_line = std::move(line);
     
@@ -244,6 +282,12 @@ Wt::Signal<> &MakeDrfSrcDef::updated()
 
 void MakeDrfSrcDef::setSrcInfo( const SrcLibLineInfo &info )
 {
+  if( info.m_distance > 0.0 )
+    m_distanceEdit->setText( PhysicalUnits::printToBestLengthUnits(info.m_distance, 5) );
+  
+  if( info.m_activity_uncert > 0.0 )
+    m_activityUncertainty->setValue( 100 * info.m_activity_uncert / info.m_activity );
+  
   setAssayInfo( info.m_activity, info.m_activity_date );
 }//void setSrcInfo( const SrcLibLineInfo &info )
 
@@ -866,9 +910,15 @@ void MakeDrfSrcDef::setActivity( const double act )
 void MakeDrfSrcDef::setAssayInfo( const double activity,
                                   const boost::posix_time::ptime &assay_date )
 {
+  // We only want to update the UI at the end of this function - so block emitting updates until
+  //  then (and actually we'll possible get an error in calculation if we dont wait until
+  //  everything is updated)
+  const bool updateBlocked = m_updated.isBlocked();
+  m_updated.setBlocked( true );
+  
   m_useAgeInfo->setChecked( !assay_date.is_special() );
-  useAgeInfoUserToggled();
   m_assayDate->setDate( WDateTime::fromPosixTime(assay_date).date() );
+  useAgeInfoUserToggled();
   
   if( activity > 0.0 )
   {
@@ -879,6 +929,9 @@ void MakeDrfSrcDef::setAssayInfo( const double activity,
   
   validateDateFields();
   updateAgedText();
+  
+  m_updated.setBlocked( updateBlocked );
+  m_updated.emit();
 }//void setAssayInfo(..);
 
 
