@@ -1,0 +1,113 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- dp- is short for DrfPeak
+      dsfs- is short for DrfSpecFileSample
+      md- is short for MakeDrf
+  -->
+  <message id="dp-back-sub-txt">will sub. {1} cps for bckgrnd</message>
+  <message id="dp-no-peak-preview">Unable to generate preview</message>
+
+  <message id="dsfs-sample">Sample</message>
+  <message id="dsfs-samples">Samples</message>
+  <message id="dsfs-using-num-peaks"> (using {1} of {2} peaks)</message>
+  <message id="dsfs-back-peak-txt">These peaks will be subtracted from other samples</message>
+  <message id="dsfs-is-background-cb">Is Background?</message>
+  <message id="dsfs-all-peaks-cb">All Peaks</message>
+  
+  <message id="md-det-diam">Det. Diameter</message>
+  <message id="md-eff-type">Efficiency Type</message>
+  <message id="md-eqn-in-kev">Eqn. in keV</message>
+  <message id="md-eqn-in-mev">Eqn. in MeV</message>
+  <message id="md-geom-intrinsic-eff">Intrinsic Eff.</message>
+  <message id="md-geom-fixed-geom">Fixed Geometry</message>
+  <message id="md-geom-fixed-cm2">Fixed: per cm2</message>
+  <message id="md-geom-fixed-m2">Fixed: per m2</message>
+  <message id="md-geom-fixed-gram">Fixed: per gram</message>
+  <message id="md-tt-eff-interpret">
+    How this efficiency should be interpreted.<br />
+    <br />
+    Far Field: Point sources, or sources small compared to distance to detector; will allow
+    changing detection distance to scale for 1/r2.<br />
+    <br />
+    Fixed Geometry: For when characterization data geometry and distance matches measurements,
+    and you will want to calculate total activity of the source (e.x. Marinelli beaker).\n
+    <br />
+    Fixed per cm2: similar to total activity, but when calibration data and measurements are
+    for surface contamination, with values given per square centimeter.<br />
+    <br />
+    Fixed per m2: similar to total per cm2, but for per square meter.<br />
+    <br />
+    Fixed per gram: similar to per cm2, but for per gram of source.
+  </message>
+  <message id="md-fwhm-eqn-form-label">FWHM Eqn.</message>
+  <message id="md-fwhm-gadras">Gadras Equation</message>
+  <message id="md-sqrt-series">Sqrt Power Series</message>
+  <message id="md-atten-for-air-cb">Atten. for air</message>
+  <message id="md-tt-atten-for-air">
+    The attenuation by the air, between the source and detector will be accounted for, 
+    to allow distance scaling (using the efficiency function at different distances) more accurately.
+    <br />
+    This is a larger effect at lower energies, or larger calibration distances.
+  </message>
+  <message id="md-show-fwhm-markers">Show FWHM points</message>
+  <message id="md-display-energy-lower-label">Display Energy, Lower:</message>
+  <message id="md-display-energy-upper-label">Upper:</message>
+  <message id="md-mi-chart-phone">Chart/Options</message>
+  <message id="md-mi-peaks-phone">Peaks To Use</message>
+  <message id="md-export-btn">Store/Export...</message>
+  <message id="md-export-window-title">Store/Export DRF</message>
+  <message id="md-tt-name">
+    Name of the detector response function to save to <em>InterSpecs</em>
+    internal database so you can use the response function later.
+    Name must be a valid filename (e.g., no \, /, :, etc. characters).
+  </message>
+  <message id="md-tt-desc">Optional description of the DRF to help remind yourself of details when you use the DRF in the future.</message>
+  <message id="md-make-default-for-serial-cb">Make default DRF for serial number '{1}'</message>
+  <message id="md-tt-make-default-serial">
+    Make it so when spectra from a detector with a matching serial
+    number is loaded into InterSpec, this detector response function
+    will automatically be loaded and used.
+  </message>
+  <message id="md-make-default-for-model-cb">Make default DRF for model '{1}'</message>
+  <message id="md-tt-make-default-model">
+    Make it so when spectra from this model detector is loaded
+    into InterSpec, this detector response function will
+    automatically be loaded and used.
+  </message>
+  <message id="md-tt-export-n42">
+    Export a N42 file containing all spectra and peaks used to create this DRF.
+    Source and shielding information is also usually stored into the file as well to,
+    in principal, except for detector diameter and equation orders,
+    provide all the input information used to create the DRF.
+  </message>
+  <message id="md-export-as-csv">Export DRF as CSV.</message>
+  <message id="md-tt-export-as-csv">
+    Exports the DRF into a CSV file that contains all of the information of the DRF.
+    Especially useful for using with other tools.
+  </message>
+  <message id="md-export-quick-ref">Export quick ref card</message>
+  <message id="md-tt-export-quick-ref">Exports a 3x5 style card that has a brief summary of detector performance.</message>
+  <message id="md-det-name-not-valid">Detector name not valid.</message>
+  <message id="md-eqn-not-valid">Intrinsic Efficiency Equation is not valid.</message>
+  <message id="md-err-creating-drf">Error creating DRF: {1}</message>
+  <message id="md-err-saving-to-db">Error saving DetectorPeakResponse to data base: {1}</message>
+  <message id="md-saved-to-db">Saved '{1}' to the internal database.</message>
+  <message id="md-peak-counts">{1} {2} keV, Peak {3} counts</message>
+  <message id="md-peak-no-nuc">No assoc. nuclide, {1} keV, Peak {2} counts</message>
+  <message id="md-err-det-diam-invalid">Detector diameter is invalid - assuming 2.54 cm.</message>
+  <message id="md-err-some-src">Some sources had errors.</message>
+  <message id="md-n-fit-pars">{1} Fit Params</message>
+  <message id="md-html-eff-table-caption">Full-Energy Detection Efficiency (% total gammas)</message>
+  <message id="md-html-Intrinsic">Intrinsic</message>
+  <message id="md-html-Efficiency">Efficiency</message>
+  <message id="md-chart-data-intrinsic-eff-label">Data Intrinsic Eff.</message>
+  <message id="md-chart-data-fwhm-label">Data FWHM</message>
+  <message id="md-chart-fit-intrinsic-eff-label">Fit Intrinsic Eff.</message>
+  <message id="md-chart-intrinsic-eff-plus-label">Intrinsic Eff. +2σ</message>
+  <message id="md-chart-intrinsic-eff-minus-label">Fit Intrinsic Eff. -2σ</message>
+  <message id="md-chart-fit-fwhm-label"></message>
+  <message id="md-"></message>
+  <message id="md-"></message>
+  <message id="md-"></message>
+  
+</messages>

@@ -578,8 +578,8 @@ namespace
       if( beingsubtracted )
       {
         char buffer[64];
-        snprintf( buffer, sizeof(buffer)-1, "will sub. %.3f cps for bckgrnd", background_cps );
-        m_backSubTxt->setText( WString::fromUTF8(buffer) );
+        snprintf( buffer, sizeof(buffer)-1, "%.3f", background_cps );
+        m_backSubTxt->setText( WString::tr("dp-back-sub-txt").arg(buffer) );
         m_backSubTxt->show();
       }else
       {
@@ -647,7 +647,7 @@ namespace
         //ToDo: add a "X" in the corner so users can close the showing window.
       }catch( std::exception & )
       {
-        WText *msg = new WText( "Unable to generate preview" );
+        WText *msg = new WText( WString::tr("dp-no-peak-preview") );
         m_previewPopup = new WPopupWidget( msg, this );
       }//try / catch make a chart
       
@@ -734,19 +734,21 @@ namespace
         title = filename + (filename.empty() ? "" : ": ") + title;
       }else if( m_samples.size() == 1 && !title.empty() )
       {
-        title = filename + (filename.empty() ? "" : ": ") + "Sample " + std::to_string(*m_samples.begin()) + ", &quot;" + title + "&quot;";
+        title = filename + (filename.empty() ? "" : ": ") + WString::tr("dsfs-sample").toUTF8()
+                  + " " + std::to_string(*m_samples.begin()) + ", &quot;" + title + "&quot;";
       }else if( m_samples.size() == 1 && title.empty() )
       {
-        title = filename + (filename.empty() ? "" : ": ") + " Sample " + std::to_string(*m_samples.begin());
+        title = filename + (filename.empty() ? " " : ":  ") + WString::tr("dsfs-sample").toUTF8()
+                + " " + std::to_string(*m_samples.begin());
       }else if( title.empty() )
       {
-        title = filename + (filename.empty() ? "" : ": ") + " Samples {";
+        title = filename + (filename.empty() ? " " : ":  ") + WString::tr("dsfs-samples").toUTF8() + " {";
         for( auto iter = begin(m_samples); iter != end(m_samples); ++iter )
           title += (iter==begin(m_samples) ? "" : ",") + std::to_string(*iter);
         title += "}";
       }else  //we have a title and multiple sample numbers
       {
-        title = filename + ": &quot;" + title + "&quot; Samples {";
+        title = filename + ": &quot;" + title + "&quot; " + WString::tr("dsfs-samples").toUTF8() + " {";
         for( auto iter = begin(m_samples); iter != end(m_samples); ++iter )
           title += (iter==begin(m_samples) ? "" : ",") + std::to_string(*iter);
         title += "}";
@@ -762,7 +764,7 @@ namespace
         npeaksused += ((p && p->useForEffFit()) ? 1 : 0);
       }
       
-      title += " (using " + std::to_string(npeaksused) + " of " + std::to_string(npeaks) + " peaks)";
+      title += WString::tr("dsfs-using-num-peaks").arg(npeaksused).arg(npeaks).toUTF8();
       
       if( m_allNoneSome )
       {
@@ -824,11 +826,11 @@ namespace
       
       WContainerWidget *bckgrndDiv = new WContainerWidget( body );
       bckgrndDiv->addStyleClass( "DrfSpecFileSampleBackground" );
-      m_background = new WCheckBox( "Is Background?", bckgrndDiv );
+      m_background = new WCheckBox( WString::tr("dsfs-is-background-cb"), bckgrndDiv );
       m_background->checked().connect( this, &DrfSpecFileSample::isBackgroundToggled );
       m_background->unChecked().connect( this, &DrfSpecFileSample::isBackgroundToggled );
       m_background->setChecked( false );
-      m_backgroundTxt = new WText( "These peaks will be subtracted from other samples", bckgrndDiv );
+      m_backgroundTxt = new WText( WString::tr("dsfs-back-peak-txt"), bckgrndDiv );
       m_backgroundTxt->addStyleClass( "DrfSpecFileSampleBackgroundTxt" );
       m_backgroundTxt->hide();
       
@@ -884,7 +886,7 @@ namespace
       
       if( npeaks > 1 )
       {
-        m_allNoneSome = new WCheckBox( "All Peaks", titleBarWidget() );
+        m_allNoneSome = new WCheckBox( WString::tr("dsfs-all-peaks-cb"), titleBarWidget() );
         m_allNoneSome->clicked().preventPropagation();
         m_allNoneSome->addStyleClass( "DrfSpecFileAllNoneSomeCb" );
         m_allNoneSome->checked().connect( this, &DrfSpecFileSample::handleUserToggleAllNoneSum );
@@ -1410,8 +1412,12 @@ MakeDrf::MakeDrf( InterSpec *viewer, MaterialDB *materialDB,
   assert( m_materialSuggest );
   
   wApp->useStyleSheet( "InterSpec_resources/MakeDrf.css" );
+  if( m_interspec )
+    m_interspec->useMessageResourceBundle( "MakeDrf" );
   
   addStyleClass( "MakeDrf" );
+  
+  const bool showToolTips = InterSpecUser::preferenceValue<bool>("ShowTooltips", m_interspec );
   
   WGridLayout *upperLayout = new WGridLayout();
   upperLayout->setContentsMargins( 0, 0, 0, 0 );
@@ -1422,7 +1428,7 @@ MakeDrf::MakeDrf( InterSpec *viewer, MaterialDB *materialDB,
   fitOptionsDiv->addStyleClass( "MakeDrfOptions" );
   upperLayout->addWidget( fitOptionsDiv, 0, 0, 2, 1 );
   
-  m_detDiamGroup = new WGroupBox( "Det. Diameter", fitOptionsDiv );
+  m_detDiamGroup = new WGroupBox( WString::tr("md-det-diam"), fitOptionsDiv );
   m_detDiameter = new WLineEdit( m_detDiamGroup );
   WRegExpValidator *distValidator = new WRegExpValidator( PhysicalUnits::sm_distanceUnitOptionalRegex, this );
   distValidator->setFlags( Wt::MatchCaseInsensitive );
@@ -1437,7 +1443,7 @@ MakeDrf::MakeDrf( InterSpec *viewer, MaterialDB *materialDB,
   m_detDiameter->setAttributeValue( "spellcheck", "off" );
 #endif
   
-  m_effOptionGroup = new WGroupBox( "Efficiency Type", fitOptionsDiv );
+  m_effOptionGroup = new WGroupBox( WString::tr("md-eff-type"), fitOptionsDiv );
   m_effEqnOrder = new WComboBox( m_effOptionGroup );
   m_effEqnOrder->setNoSelectionEnabled( true );
   m_effEqnOrder->setInline( false );
@@ -1445,41 +1451,30 @@ MakeDrf::MakeDrf( InterSpec *viewer, MaterialDB *materialDB,
   
   m_effEqnUnits = new WComboBox( m_effOptionGroup );
   m_effEqnUnits->setInline( false );
-  m_effEqnUnits->addItem( "Eqn. in keV" );
-  m_effEqnUnits->addItem( "Eqn. in MeV" );
+  m_effEqnUnits->addItem( WString::tr("md-eqn-in-kev") );
+  m_effEqnUnits->addItem( WString::tr("md-eqn-in-mev") );
   m_effEqnUnits->setCurrentIndex( 1 );
   m_effEqnUnits->changed().connect( this, &MakeDrf::handleSourcesUpdates );
   
   m_geometry = new WComboBox( m_effOptionGroup );
   m_geometry->setInline( false );
   m_geometry->addStyleClass( "FixedGeomCombo" );
-  m_geometry->addItem( "Intrinsic Eff." );
-  m_geometry->addItem( "Fixed Geometry" );
-  m_geometry->addItem( "Fixed: per cm2" );
-  m_geometry->addItem( "Fixed: per m2" );
-  m_geometry->addItem( "Fixed: per gram" );
+  m_geometry->addItem( WString::tr("md-geom-intrinsic-eff") );
+  m_geometry->addItem( WString::tr("md-geom-fixed-geom") );
+  m_geometry->addItem( WString::tr("md-geom-fixed-cm2") );
+  m_geometry->addItem( WString::tr("md-geom-fixed-m2") );
+  m_geometry->addItem( WString::tr("md-geom-fixed-gram") );
   m_geometry->setCurrentIndex( 0 );
+
+  HelpSystem::attachToolTipOn( m_geometry, WString::tr("md-tt-eff-interpret"),
+                              showToolTips, HelpSystem::ToolTipPosition::Right,
+                              HelpSystem::ToolTipPrefOverride::AlwaysShow );
   
-  m_geometry->setToolTip( "How this efficiency should be interpreted.\n"
-    "\n"
-    "Far Field: Point sources, or sources small compared to distance to detector; will allow"
-    " changing detection distance to scale for 1/r2.\n"
-    "\n"
-    "Fixed Geometry: For when characterization data geometry and distance matches measurements,"
-    " and you will want to calculate total activity of the source (e.x. Marinelli beaker).\n"
-    "\n"
-    "Fixed per cm2: similar to total activity, but when calibration data and measurements are"
-    " for surface contamination, with values given per square centimeter.\n"
-    "\n"
-    "Fixed per m2: similar to total per cm2, but for per square meter.\n"
-    "\n"
-    "Fixed per gram: similar to per cm2, but for per gram of source."
-  );
   
   m_geometry->activated().connect( this, &MakeDrf::handleFixedGeometryChanged );
   
   
-  m_fwhmOptionGroup = new WGroupBox( "FWHM Eqn.", fitOptionsDiv );
+  m_fwhmOptionGroup = new WGroupBox( WString::tr("md-fwhm-eqn-form-label"), fitOptionsDiv );
   m_fwhmEqnType = new WComboBox( m_fwhmOptionGroup );
   m_fwhmEqnType->setNoSelectionEnabled( true );
   m_fwhmEqnType->setInline( false );
@@ -1491,7 +1486,7 @@ MakeDrf::MakeDrf( InterSpec *viewer, MaterialDB *materialDB,
     switch( i )
     {
       case DetectorPeakResponse::kGadrasResolutionFcn:
-        m_fwhmEqnType->addItem( "Gadras Equation" );
+        m_fwhmEqnType->addItem( WString::tr("md-fwhm-gadras") );
         break;
         
       case DetectorPeakResponse::kSqrtEnergyPlusInverse:
@@ -1503,7 +1498,7 @@ MakeDrf::MakeDrf( InterSpec *viewer, MaterialDB *materialDB,
         break;
         
       case DetectorPeakResponse::kSqrtPolynomial:
-        m_fwhmEqnType->addItem( "Sqrt Power Series" );
+        m_fwhmEqnType->addItem( WString::tr("md-sqrt-series") );
         break;
         
       case DetectorPeakResponse::kNumResolutionFnctForm:
@@ -1526,12 +1521,15 @@ MakeDrf::MakeDrf( InterSpec *viewer, MaterialDB *materialDB,
   
 
   WGroupBox *genOpts = new WGroupBox( fitOptionsDiv );
-  m_airAttenuate = new WCheckBox( "Atten. for air", genOpts );
+  m_airAttenuate = new WCheckBox( WString::tr("md-atten-for-air-cb"), genOpts );
   m_airAttenuate->setChecked( true );
   m_airAttenuate->setInline( false );
   m_airAttenuate->addStyleClass( "AirAttenCb" );
   m_airAttenuate->checked().connect( this, &MakeDrf::handleSourcesUpdates );
   m_airAttenuate->unChecked().connect( this, &MakeDrf::handleSourcesUpdates );
+  HelpSystem::attachToolTipOn( m_airAttenuate, WString::tr("md-tt-atten-for-air"),
+                              showToolTips, HelpSystem::ToolTipPosition::Right,
+                              HelpSystem::ToolTipPrefOverride::AlwaysShow );
   
   
   m_chart = new MakeDrfChart();
@@ -1541,17 +1539,17 @@ MakeDrf::MakeDrf( InterSpec *viewer, MaterialDB *materialDB,
   WContainerWidget *chartOptionsDiv = new WContainerWidget();
   chartOptionsDiv->addStyleClass( "MakeDrfChartOptions" );
   upperLayout->addWidget( chartOptionsDiv, 1, 1 );
-  m_showFwhmPoints = new WCheckBox( "Show FWHM points", chartOptionsDiv );
+  m_showFwhmPoints = new WCheckBox( WString::tr("md-show-fwhm-markers"), chartOptionsDiv );
   m_showFwhmPoints->setChecked( true );
   m_showFwhmPoints->checked().connect( this, &MakeDrf::handleShowFwhmPointsToggled );
   m_showFwhmPoints->unChecked().connect( this, &MakeDrf::handleShowFwhmPointsToggled );
   
-  WLabel *label = new WLabel( "Display Energy, Lower:", chartOptionsDiv );
+  WLabel *label = new WLabel( WString::tr("md-display-energy-lower-label"), chartOptionsDiv );
   label->setMargin(15,Wt::Left);
   m_chartLowerE = new WDoubleSpinBox( chartOptionsDiv );
   label->setBuddy( m_chartLowerE );
   
-  label = new WLabel( "Upper:", chartOptionsDiv );
+  label = new WLabel( WString::tr("md-display-energy-upper-label"), chartOptionsDiv );
   label->setMargin(5,Wt::Left);
   m_chartUpperE = new WDoubleSpinBox( chartOptionsDiv );
   m_chartUpperE->setRange(0, 10000);
@@ -1598,8 +1596,8 @@ MakeDrf::MakeDrf( InterSpec *viewer, MaterialDB *materialDB,
     layout->addWidget( tab, 0, 0 );
     WContainerWidget *chartTab = new WContainerWidget();
     chartTab->setLayout( upperLayout );
-    tab->addTab( chartTab, "Chart/Options" );
-    tab->addTab( fileHolder, "Peaks To Use" );
+    tab->addTab( chartTab, WString::tr("md-mi-chart-phone") );
+    tab->addTab( fileHolder, WString::tr("md-mi-peaks-phone") );
   }else
   {
     layout->addLayout( upperLayout, 0, 0 );
@@ -1663,7 +1661,7 @@ MakeDrf::~MakeDrf()
 
 AuxWindow *MakeDrf::makeDrfWindow( InterSpec *viewer, MaterialDB *materialDB, Wt::WSuggestionPopup *materialSuggest )
 {
-  AuxWindow *window = new AuxWindow( "Create Detector Response Function",
+  AuxWindow *window = new AuxWindow( WString::tr("window-title-create-drf"),
                                     (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::TabletNotFullScreen)
                                      | AuxWindowProperties::SetCloseable
                                      | AuxWindowProperties::DisableCollapse
@@ -1688,10 +1686,10 @@ AuxWindow *MakeDrf::makeDrfWindow( InterSpec *viewer, MaterialDB *materialDB, Wt
     
   AuxWindow::addHelpInFooter( window->footer(), "make-drf" );
     
-  WPushButton *closeButton = window->addCloseButtonToFooter( "Close" );
+  WPushButton *closeButton = window->addCloseButtonToFooter( WString::tr("Close") );
   closeButton->clicked().connect( window, &AuxWindow::hide );
     
-  WPushButton *saveAs = new WPushButton( "Store/Export...", window->footer() );
+  WPushButton *saveAs = new WPushButton( WString::tr("md-export-btn"), window->footer() );
   saveAs->clicked().connect( makeDrfWidget, &MakeDrf::startSaveAs );
   makeDrfWidget->intrinsicEfficiencyIsValid().connect( boost::bind( &WPushButton::setEnabled, saveAs,
                                                                    boost::placeholders::_1 ) );
@@ -1722,7 +1720,7 @@ void MakeDrf::startSaveAs()
     AuxWindow *w = new AuxWindow( "Error", windowprop );
     WText *t = new WText( "Sorry,&nbsp;DRF&nbsp;not&nbsp;valid.", Wt::XHTMLText, w->contents() );
     t->setInline( false );
-    WPushButton *b = new WPushButton( "Close", w->footer() );
+    WPushButton *b = new WPushButton( WString::tr("Close"), w->footer() );
     b->clicked().connect( w, &AuxWindow::hide );
     w->finished().connect( boost::bind( &AuxWindow::deleteAuxWindow, w) );
     w->rejectWhenEscapePressed();
@@ -1739,13 +1737,13 @@ void MakeDrf::startSaveAs()
   //      - add in a interface to select previously characterized detectors, and
   //        also upload them
   
-  AuxWindow *w = new AuxWindow( "Store/Export DRF", windowprop );
+  AuxWindow *w = new AuxWindow( WString::tr("md-export-window-title"), windowprop );
 
   WTable *table = new WTable( w->contents() );
   table->addStyleClass( "MakeDrfSaveAsTable" );
   
   WTableCell *cell = table->elementAt(0, 0);
-  WLabel *label = new WLabel( "Name", cell );
+  WLabel *label = new WLabel( WString::tr("Name"), cell );
   
   cell = table->elementAt(0, 1);
   WLineEdit *name = new WLineEdit( cell );
@@ -1768,13 +1766,11 @@ void MakeDrf::startSaveAs()
   cell = table->elementAt(0, 2);
   WImage *help = new WImage(Wt::WLink("InterSpec_resources/images/help_mobile.svg"), cell);
   help->addStyleClass( "MakeDrfSaveHelp" );
-  const char *tooltip = "Name of the detector response function to save to <em>InterSpecs</em>"
-                        " internal database so you can use the response function later."
-                        "  Name must be a valid filename (e.g., no \\\\, /, :, etc. characters).";
-  HelpSystem::attachToolTipOn( help, tooltip, true, HelpSystem::ToolTipPosition::Left, HelpSystem::ToolTipPrefOverride::AlwaysShow );
+  HelpSystem::attachToolTipOn( help, WString::tr("md-tt-name"), true,
+                              HelpSystem::ToolTipPosition::Left, HelpSystem::ToolTipPrefOverride::AlwaysShow );
   
   cell = table->elementAt(1, 0);
-  label = new WLabel( "Description", cell );
+  label = new WLabel( WString::tr("Description"), cell );
   cell = table->elementAt(1, 1);
   cell->setRowSpan( 2 );
   WTextArea *description = new WTextArea( cell );
@@ -1784,8 +1780,8 @@ void MakeDrf::startSaveAs()
   cell = table->elementAt(1, 2);
   help = new WImage(Wt::WLink("InterSpec_resources/images/help_mobile.svg"), cell);
   help->addStyleClass( "MakeDrfSaveHelp" );
-  tooltip = "Optional description of the DRF to help remind yourself of details when you use the DRF in the future.";
-  HelpSystem::attachToolTipOn( help, tooltip, true, HelpSystem::ToolTipPosition::Left, HelpSystem::ToolTipPrefOverride::AlwaysShow );
+  HelpSystem::attachToolTipOn( help, WString::tr("md-tt-desc"), true,
+                              HelpSystem::ToolTipPosition::Left, HelpSystem::ToolTipPrefOverride::AlwaysShow );
   
   std::shared_ptr<const SpecMeas> representative_meas;
   
@@ -1821,14 +1817,12 @@ void MakeDrf::startSaveAs()
       cell = table->elementAt(currentRow, 0);
       cell->setColumnSpan( 2 );
     
-      def_for_serial_cb = new WCheckBox( "Make default DRF for serial number '" + serial_number + "'", cell );
+      def_for_serial_cb = new WCheckBox( WString::tr("md-make-default-for-serial-cb").arg(serial_number), cell );
       cell = table->elementAt(currentRow, 2);
       help = new WImage(Wt::WLink("InterSpec_resources/images/help_mobile.svg"), cell);
       help->addStyleClass( "MakeDrfSaveHelp" );
-      tooltip = "Make it so when spectra from a detector with a matching serial"
-                " number is loaded into InterSpec, this detector response function"
-                " will automatically be loaded and used.";
-      HelpSystem::attachToolTipOn( help, tooltip, true, HelpSystem::ToolTipPosition::Left, HelpSystem::ToolTipPrefOverride::AlwaysShow );
+      HelpSystem::attachToolTipOn( help, WString::tr("md-tt-make-default-serial"),
+                                  true, HelpSystem::ToolTipPosition::Left, HelpSystem::ToolTipPrefOverride::AlwaysShow );
     }//if( serial_number.size() )
     
     string model;
@@ -1842,14 +1836,12 @@ void MakeDrf::startSaveAs()
       currentRow = table->rowCount();
       cell = table->elementAt(currentRow, 0);
       cell->setColumnSpan( 2 );
-      def_for_model_cb = new WCheckBox( "Make default DRF for model '" + model + "'", cell );
+      def_for_model_cb = new WCheckBox( WString::tr("md-make-default-for-model-cb").arg(model), cell );
       cell = table->elementAt(currentRow, 2);
       help = new WImage(Wt::WLink("InterSpec_resources/images/help_mobile.svg"), cell);
       help->addStyleClass( "MakeDrfSaveHelp" );
-      tooltip = "Make it so when spectra from this model detector is loaded"
-                " into InterSpec, this detector response function will"
-                " automatically be loaded and used.";
-      HelpSystem::attachToolTipOn( help, tooltip, true, HelpSystem::ToolTipPosition::Left, HelpSystem::ToolTipPrefOverride::AlwaysShow );
+      HelpSystem::attachToolTipOn( help, WString::tr("md-tt-make-default-model"),
+                                  true, HelpSystem::ToolTipPosition::Left, HelpSystem::ToolTipPrefOverride::AlwaysShow );
     }//if( !model.empty() )
   }//if( representative_meas )
   
@@ -1864,40 +1856,36 @@ void MakeDrf::startSaveAs()
   cell = table->elementAt(currentRow, 2);
   help = new WImage(Wt::WLink("InterSpec_resources/images/help_mobile.svg"), cell);
   help->addStyleClass( "MakeDrfSaveHelp" );
-  tooltip = "Export a N42 file containing all spectra and peaks used to create this DRF."
-            "  Source and shielding information is also usually stored into the file as well to,"
-            " in principal, except for detector diameter and equation orders,"
-            " provide all the input information used to create the DRF.";
-  HelpSystem::attachToolTipOn( help, tooltip, true, HelpSystem::ToolTipPosition::Left, HelpSystem::ToolTipPrefOverride::AlwaysShow );
+  HelpSystem::attachToolTipOn( help, WString::tr("md-tt-export-n42"), true,
+                  HelpSystem::ToolTipPosition::Left, HelpSystem::ToolTipPrefOverride::AlwaysShow );
   
   currentRow = table->rowCount();
   cell = table->elementAt(currentRow, 0);
   cell->setColumnSpan( 2 );
   CsvDrfDownloadResource *csvResource = new CsvDrfDownloadResource( this );
-  WAnchor *csvanchor = new WAnchor( csvResource, "Export DRF as CSV.", cell );
+  WAnchor *csvanchor = new WAnchor( csvResource, WString::tr("md-export-as-csv"), cell );
   csvanchor->setTarget( AnchorTarget::TargetNewWindow );
   
 
   cell = table->elementAt(currentRow, 2);
   help = new WImage(Wt::WLink("InterSpec_resources/images/help_mobile.svg"), cell);
   help->addStyleClass( "MakeDrfSaveHelp" );
-  tooltip = "Exports the DRF into a CSV file that contains all of the information of the DRF."
-  " Especially useful for using with other tools.";
-  HelpSystem::attachToolTipOn( help, tooltip, true, HelpSystem::ToolTipPosition::Left, HelpSystem::ToolTipPrefOverride::AlwaysShow );
+  HelpSystem::attachToolTipOn( help, WString::tr("md-tt-export-as-csv"), true,
+                  HelpSystem::ToolTipPosition::Left, HelpSystem::ToolTipPrefOverride::AlwaysShow );
   
   
   currentRow = table->rowCount();
   cell = table->elementAt(currentRow, 0);
   cell->setColumnSpan( 2 );
   RefSheetDownloadResource *refSheetResource = new RefSheetDownloadResource( this );
-  WAnchor *refSheetAnchor = new WAnchor( refSheetResource, "Export quick ref card", cell );
+  WAnchor *refSheetAnchor = new WAnchor( refSheetResource, WString::tr("md-export-quick-ref"), cell );
   refSheetAnchor->setTarget( AnchorTarget::TargetNewWindow );
   
   cell = table->elementAt(currentRow, 2);
   help = new WImage(Wt::WLink("InterSpec_resources/images/help_mobile.svg"), cell);
   help->addStyleClass( "MakeDrfSaveHelp" );
-  tooltip = "Exports a 3x5 style card that has a brief summary of detector performance.";
-  HelpSystem::attachToolTipOn( help, tooltip, true, HelpSystem::ToolTipPosition::Left, HelpSystem::ToolTipPrefOverride::AlwaysShow );
+  HelpSystem::attachToolTipOn( help, WString::tr("md-tt-export-quick-ref"), true,
+                  HelpSystem::ToolTipPosition::Left, HelpSystem::ToolTipPrefOverride::AlwaysShow );
   
   
 #if( ANDROID )
@@ -1946,7 +1934,7 @@ void MakeDrf::startSaveAs()
 
   
   
-  WPushButton *b = w->addCloseButtonToFooter( "Cancel" );
+  WPushButton *b = w->addCloseButtonToFooter( WString::tr("Cancel") );
   b->clicked().connect( w, &AuxWindow::hide );
   
   // TODO: Need to display messsage to user about how it is saved, how to access it again, and figure out why menus go away for people (maybe only on Windows?) - also should consider not closing AuxWindow - also fix assay date being invalid error (seems to cause uncaught exception).
@@ -1956,13 +1944,13 @@ void MakeDrf::startSaveAs()
     auto state = validator->validate(name->text()).state();
     if( name->text().empty() || state!=WValidator::Valid )
     {
-      passMessage( "Detector name not valid.", 3 );
+      passMessage( WString::tr("md-det-name-not-valid"), 3 );
       return;
     }
     
     if( m_effEqnCoefs.empty() )
     {
-      passMessage( "Intrinsic Efficiency Equation is not valid.", 3 );
+      passMessage( WString::tr("md-eqn-not-valid"), 3 );
       return;
     }
     
@@ -1977,7 +1965,7 @@ void MakeDrf::startSaveAs()
       drf = assembleDrf( drfname, drfdescrip );
     }catch( std::exception &e )
     {
-      passMessage( "Error creating DRF: " + string(e.what()), 3 );
+      passMessage( WString::tr("md-err-creating-drf").arg(e.what()), 3 );
       return;
     }
     
@@ -1997,7 +1985,7 @@ void MakeDrf::startSaveAs()
       transaction.commit();
     }catch( std::exception &e )
     {
-      passMessage( "Error saving DetectorPeakResponse to data base: " + std::string(e.what()), WarningWidget::WarningMsgHigh );
+      passMessage( WString::tr("md-err-saving-to-db").arg(e.what()), WarningWidget::WarningMsgHigh );
       return;
     }//try / catch
     
@@ -2025,10 +2013,10 @@ void MakeDrf::startSaveAs()
     w->hide();
     
     //m_finished.emit();
-    passMessage( "Saved '" + drfname + "' to the internal database.", 0 );
+    passMessage( WString::tr("md-saved-to-db").arg(drfname), 0 );
   };//auto doSave
   
-  WPushButton *save = w->addCloseButtonToFooter( "Save" );
+  WPushButton *save = w->addCloseButtonToFooter( WString::tr("Save") );
   save->clicked().connect( std::bind(doSave) );
   save->disable();
   
@@ -2386,19 +2374,23 @@ void MakeDrf::handleSourcesUpdates()
         point.background_peak_live_time = back_peak_lt;
         
         //ToDo: Add more/better source info.
-        char buffer[256] = { '\0' };
+        char energy[32] = { '\0' }, counts[32] = { '\0' };
+        snprintf( energy, sizeof(energy)-1, "%.1f", point.energy );
+        snprintf( counts, sizeof(counts)-1, "%.1f", point.peak_area );
         if( nuc )
         {
-          snprintf( buffer, sizeof(buffer)-1, "%s %.1f keV, Peak %.1f counts",
-                   nuc->symbol.c_str(), point.energy, point.peak_area );
+          point.source_information = WString::tr("md-peak-counts")
+                                      .arg(nuc->symbol)
+                                      .arg(energy)
+                                      .arg(counts)
+                                      .toUTF8();
         }else
         {
-          snprintf( buffer, sizeof(buffer)-1, "No assoc. nuclide, %.1f keV, Peak %.1f counts",
-                    point.energy, point.peak_area );
+          point.source_information = WString::tr("md-peak-no-nuc")
+                                      .arg(energy)
+                                      .arg(counts)
+                                      .toUTF8();
         }
-        
-        point.source_information = buffer;
-        
         
         effpoints.push_back( effpoint );
         peaks.push_back( peak );
@@ -2419,9 +2411,9 @@ void MakeDrf::handleSourcesUpdates()
   
   string msg;
   if( not_all_sources_used )
-    msg += "Some sources had errors.";
+    msg += WString::tr("md-err-some-src").toUTF8();
   if( detDiamInvalid )
-    msg += string(msg.empty() ? "" : "  ") + "Detector diameter is invalid - assuming 2.54 cm.";
+    msg += string(msg.empty() ? "" : "  ") + WString::tr("md-err-det-diam-invalid").toUTF8();
   
   m_errorMsg->setText( msg );
   m_errorMsg->setHidden( msg.empty() );
@@ -2438,7 +2430,7 @@ void MakeDrf::handleSourcesUpdates()
   {
     m_effEqnOrder->clear();
     for( int order = 0; order < numPeaks && order < 8; ++order )
-      m_effEqnOrder->addItem( std::to_string(order+1) + " Fit Params"  );
+      m_effEqnOrder->addItem( WString::tr("md-n-fit-pars").arg(order+1) );
     
     if( currentOrder > 0 )
     {
@@ -2468,7 +2460,7 @@ void MakeDrf::handleSourcesUpdates()
     {
       m_sqrtEqnOrder->clear();
       for( int order = 0; (order < numPeaks) && (order < 6); ++order )
-        m_sqrtEqnOrder->addItem( std::to_string(order+1) + " Fit Params"  );
+        m_sqrtEqnOrder->addItem( WString::tr("md-n-fit-pars").arg(order+1)  );
       m_sqrtEqnOrder->setCurrentIndex( std::min(currentSqrtOrder-1, m_sqrtEqnOrder->count()-1) );
     }//if( we need to adjust the how many orders are listed for FWHM )
     
@@ -3689,7 +3681,7 @@ void MakeDrf::writeRefSheet( std::ostream &output, std::string drfname, std::str
   const int eff_dist_cm[] = { 25, 50, 75, 100, 250 };
   
   efftable << "<table class=\"eff-table\">\n"
-              "\t\t<caption>Full-Energy Detection Efficiency (% total gammas)</caption>\n"
+              "\t\t<caption>" << WString::tr("md-html-eff-table-caption").toUTF8() << "</caption>\n"
               "\t<thead>\n"
               "\t\t<tr><th></th>";
   char buffer[128] = { '\0' };
@@ -3707,19 +3699,19 @@ void MakeDrf::writeRefSheet( std::ostream &output, std::string drfname, std::str
   switch( geom_type )
   {
     case DetectorPeakResponse::EffGeometryType::FarField:
-      efftable << "\t<tr><th>Intrinsic</th>";
+      efftable << "\t<tr><th>" << WString::tr("md-html-Intrinsic").toUTF8() << "</th>";
       break;
     case DetectorPeakResponse::EffGeometryType::FixedGeomTotalAct:
-      efftable << "\t<tr><th>Efficiency</th>";
+      efftable << "\t<tr><th>" << WString::tr("md-html-Efficiency").toUTF8() << "</th>";
       break;
     case DetectorPeakResponse::EffGeometryType::FixedGeomActPerCm2:
-      efftable << "\t<tr><th>Efficiency/cm2</th>";
+      efftable << "\t<tr><th>" << WString::tr("md-html-Efficiency").toUTF8() << "/cm2</th>";
       break;
     case DetectorPeakResponse::EffGeometryType::FixedGeomActPerM2:
-      efftable << "\t<tr><th>Efficiency/m2</th>";
+      efftable << "\t<tr><th>" << WString::tr("md-html-Efficiency").toUTF8() << "/m2</th>";
       break;
     case DetectorPeakResponse::EffGeometryType::FixedGeomActPerGram:
-      efftable << "\t<tr><th>Efficiency/gram</th>";
+      efftable << "\t<tr><th>" << WString::tr("md-html-Efficiency").toUTF8() << "/gram</th>";
       break;
   }//switch( geom_type )
   
