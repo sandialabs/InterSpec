@@ -167,7 +167,7 @@ namespace
 
 
 SpecFileSummary::SpecFileSummary( InterSpec *specViewer )
-  : AuxWindow( "File Parameters", AuxWindowProperties::IsModal ),
+  : AuxWindow( WString::tr("window-title-file-parameters"), AuxWindowProperties::IsModal ),
     m_specViewer( specViewer ),
     m_allowEditGroup( NULL ),
     m_displaySampleDiv( NULL ),
@@ -246,6 +246,9 @@ void SpecFileSummary::init()
 {
   wApp->useStyleSheet( "InterSpec_resources/SpecFileSummary.css" );
   
+  if( m_specViewer )
+    m_specViewer->useMessageResourceBundle( "SpecFileSummary" );
+  
   WContainerWidget *holder = new WContainerWidget( contents() );
   
   WGridLayout *overallLayout = new WGridLayout();
@@ -255,25 +258,25 @@ void SpecFileSummary::init()
   overallLayout->setContentsMargins( 9, 0, 9, 0 );
   
   WRadioButton *button = NULL;
-  WGroupBox *spectrumGroupBox = new WGroupBox( "Spectrum" );
+  WGroupBox *spectrumGroupBox = new WGroupBox( WString::tr("sfs-spectrum") );
   spectrumGroupBox->addStyleClass( "SpecSummChoose" );
   m_spectraGroup = new WButtonGroup( this );
-  button = new WRadioButton( "Foreground", spectrumGroupBox );
+  button = new WRadioButton( WString::tr("Foreground"), spectrumGroupBox );
   m_spectraGroup->addButton( button, static_cast<int>(SpecUtils::SpectrumType::Foreground) );
-  button = new WRadioButton( "Secondary", spectrumGroupBox );
+  button = new WRadioButton( WString::tr("Secondary"), spectrumGroupBox );
   m_spectraGroup->addButton( button, static_cast<int>(SpecUtils::SpectrumType::SecondForeground) );
-  button = new WRadioButton( "Background", spectrumGroupBox );
+  button = new WRadioButton( WString::tr("Background"), spectrumGroupBox );
   m_spectraGroup->addButton( button, static_cast<int>(SpecUtils::SpectrumType::Background) );
   m_spectraGroup->setCheckedButton( m_spectraGroup->button( static_cast<int>(SpecUtils::SpectrumType::Foreground) ) );
   m_spectraGroup->checkedChanged().connect( this, &SpecFileSummary::handleSpectrumTypeChanged );
   
   
-  WGroupBox *editGroupBox = new WGroupBox( "Allow Edit" );
+  WGroupBox *editGroupBox = new WGroupBox( WString::tr("sfs-alow-edit-cb") );
   editGroupBox->addStyleClass( "SpecSummAllowEdit" );
   m_allowEditGroup = new WButtonGroup( this );
-  button = new WRadioButton( "Yes", editGroupBox );
+  button = new WRadioButton( WString::tr("Yes"), editGroupBox );
   m_allowEditGroup->addButton( button, kAllowModify );
-  button = new WRadioButton( "No", editGroupBox );
+  button = new WRadioButton( WString::tr("No"), editGroupBox );
   m_allowEditGroup->addButton( button, kDontAllowModify );
   m_allowEditGroup->setCheckedButton( m_allowEditGroup->button(kDontAllowModify) );
   m_allowEditGroup->checkedChanged().connect( this, &SpecFileSummary::handleAllowModifyStatusChange );
@@ -286,51 +289,49 @@ void SpecFileSummary::init()
   upperlayout->addWidget( editGroupBox, 0, 1, 1, 1 );
   upperlayout->setColumnStretch( 1, 1 );
   
-  m_reloadSpectrum = new WPushButton( "Update Displays", editGroupBox );
-  m_reloadSpectrum->setToolTip( "The changes made on this screen may not be"
-                               " propagated to the GUI components until you"
-                               " reload the spectrum." );
+  m_reloadSpectrum = new WPushButton( WString::tr("sfs-update-display-btn"), editGroupBox );
+  m_reloadSpectrum->setToolTip( WString::tr("sfs-tt-update-display") );
   m_reloadSpectrum->setIcon( WLink("InterSpec_resources/images/arrow_refresh.svg") );
   m_reloadSpectrum->setFloatSide( Wt::Right );
   m_reloadSpectrum->clicked().connect( this, &SpecFileSummary::reloadCurrentSpectrum );
   m_reloadSpectrum->disable();
   
 
-  WGroupBox *filediv = new WGroupBox( "File Information" );
+  WGroupBox *filediv = new WGroupBox( WString::tr("sfs-file-info-title") );
   filediv->addStyleClass( "SpecFileInfo" );
   WGridLayout *fileInfoLayout = new WGridLayout();
   filediv->setLayout( fileInfoLayout );
   overallLayout->addWidget( filediv, 1, 0 );
   
-  addField( m_filename, fileInfoLayout, "File Name:", 0, 0, 1, 5 );
-  addField( m_sizeInMemmory, fileInfoLayout, "Mem Size:", 0, 6 );
-  addField( m_inspection, fileInfoLayout, "Inspection:", 1, 0 );
-  addField( m_laneNumber, fileInfoLayout, "Lane:", 1, 2 );
-  addField( m_measurement_location_name, fileInfoLayout, "Location:", 1, 4, 1, 1 );
+  addField( m_filename, fileInfoLayout, WString::tr("sfs-file-name-label"), 0, 0, 1, 5 );
+  addField( m_sizeInMemmory, fileInfoLayout, WString::tr("sfs-memory-size-label"), 0, 6 );
+  addField( m_inspection, fileInfoLayout, WString::tr("sfs-inspection-label"), 1, 0 );
+  addField( m_laneNumber, fileInfoLayout, WString::tr("sfs-lane-label"), 1, 2 );
+  addField( m_measurement_location_name, fileInfoLayout, WString::tr("sfs-location-label"), 1, 4, 1, 1 );
   
-  m_ana_button = new WPushButton( "No Det. ID" );
+  m_ana_button = new WPushButton( WString::tr("sfs-no-det-id-btn") );
   m_ana_button->disable();
   m_ana_button->clicked().connect( this, &SpecFileSummary::showRiidAnalysis );
   fileInfoLayout->addWidget( m_ana_button, 1, 6, 1, 1, AlignLeft );
   
-  m_multimedia_button = new WPushButton( "Show Pics" );
+  m_multimedia_button = new WPushButton( WString::tr("sfs-show-pics-btn") );
   m_multimedia_button->hide();
   m_multimedia_button->clicked().connect( this, &SpecFileSummary::showMultimedia );
   fileInfoLayout->addWidget( m_multimedia_button, 1, 7, 1, 1, AlignLeft );
   
-  addField( m_instrument_type, fileInfoLayout, "Instru. Type:", 2, 0 );
-  addField( m_manufacturer, fileInfoLayout, "Manufacturer:", 2, 2 );
-  addField( m_instrument_model, fileInfoLayout, "Model:", 2, 4, 1, 3 );
+  addField( m_instrument_type, fileInfoLayout, WString::tr("sfs-instrument-type-label"), 2, 0 );
+  addField( m_manufacturer, fileInfoLayout, WString::tr("sfs-manufacturer-label"), 2, 2 );
+  addField( m_instrument_model, fileInfoLayout, WString::tr("sfs-model-label"), 2, 4, 1, 3 );
   
-  addField( m_instrument_id, fileInfoLayout, "Instru. ID:", 3, 0, 1, 3 );
-  addField( m_uuid, fileInfoLayout, "UUID:", 3, 4, 1, 3 );
+  addField( m_instrument_id, fileInfoLayout, WString::tr("sfs-instrument-id-label"), 3, 0, 1, 3 );
+  addField( m_uuid, fileInfoLayout, WString::tr("sfs-uuid-label"), 3, 4, 1, 3 );
   
   WContainerWidget *labelHolder = new WContainerWidget();
   labelHolder->setAttributeValue( "style", "margin-top: auto; margin-bottom: auto;" );
-  WLabel *label = new WLabel( "File", labelHolder );
+  WLabel *label = new WLabel( WString::tr("sfs-file-label"), labelHolder );
   label->setStyleClass("SpectrumFileSummaryLabel");
   label->setInline( false );
-  label = new WLabel( "Remarks:", labelHolder );
+  label = new WLabel( WString::tr("sfs-remarks-label"), labelHolder );
   label->setStyleClass("SpectrumFileSummaryLabel");
   label->setInline( false );
   fileInfoLayout->addWidget( labelHolder, 4, 0, AlignMiddle );
@@ -348,33 +349,33 @@ void SpecFileSummary::init()
   fileInfoLayout->setColumnStretch( 7, 1 );
 
   
-  WGroupBox *measdiv = new WGroupBox( "Measurement Information" );
+  WGroupBox *measdiv = new WGroupBox( WString::tr("sfs-measurement-info-label") );
   measdiv->addStyleClass( "MeasInfo" );
   WGridLayout *measTable = new WGridLayout();
   measdiv->setLayout( measTable );
   overallLayout->addWidget( measdiv, 2, 0 );
   
   
-  addField( m_timeStamp, measTable, "Date/Time:", 0, 0, 1, 3 );
-  addField( m_displayedLiveTime, measTable, "Live Time:", 0, 4 );
-  addField( m_displayedRealTime, measTable, "Real Time:", 0, 6 );
-  addField( m_detector, measTable, "Det. Name:", 1, 0 );
-  addField( m_sampleNumber, measTable, "Sample Num:", 1, 2 );
-  addField( m_energyRange, measTable, "Energy(keV):", 1, 4 );
-  addField( m_numberOfBins, measTable, "Num Channels:", 1, 6 );
-  addField( m_gammaSum, measTable, "Sum Gamma:", 2, 0 );
-  addField( m_gammaCPS, measTable, "Gamma CPS:", 2, 2 );
-  addField( m_neutronSum, measTable, "Sum Neutron:", 2, 4 );
-  addField( m_neutronCPS, measTable, "Neutron CPS:", 2, 6 );
-  addField( m_latitude, measTable, "Latitude:", 3, 0 );
-  addField( m_longitude, measTable, "Longitude:", 3, 2 );
-  addField( m_gpsTimeStamp, measTable, "Position Time:", 3, 4 );
+  addField( m_timeStamp, measTable, WString::tr("sfs-date-time-label"), 0, 0, 1, 3 );
+  addField( m_displayedLiveTime, measTable, WString::tr("sfs-live-time-label"), 0, 4 );
+  addField( m_displayedRealTime, measTable, WString::tr("sfs-real-time-label"), 0, 6 );
+  addField( m_detector, measTable, WString::tr("sfs-detector-name-label"), 1, 0 );
+  addField( m_sampleNumber, measTable, WString::tr("sfs-sample-number-label"), 1, 2 );
+  addField( m_energyRange, measTable, WString::tr("sfs-energy-range-label"), 1, 4 );
+  addField( m_numberOfBins, measTable, WString::tr("sfs-number-channels-label"), 1, 6 );
+  addField( m_gammaSum, measTable, WString::tr("sfs-sum-gammas-label"), 2, 0 );
+  addField( m_gammaCPS, measTable, WString::tr("sfs-gamma-cps-label"), 2, 2 );
+  addField( m_neutronSum, measTable, WString::tr("sfs-sum-neutrons-label"), 2, 4 );
+  addField( m_neutronCPS, measTable, WString::tr("sfs-neutrons-cps-label"), 2, 6 );
+  addField( m_latitude, measTable, WString::tr("sfs-latitude-label"), 3, 0 );
+  addField( m_longitude, measTable, WString::tr("sfs-longitude-label"), 3, 2 );
+  addField( m_gpsTimeStamp, measTable, WString::tr("sfs-position-time-label"), 3, 4 );
   
-  m_latitude->setEmptyText( "dec or deg min' sec\" N/S" );
-  m_longitude->setEmptyText( "dec or deg min' sec\" E/W" );
+  m_latitude->setEmptyText( WString::tr("sfs-latitude-empty-text") );
+  m_longitude->setEmptyText( WString::tr("sfs-longitude-empty-text") );
   
 #if( USE_GOOGLE_MAP || USE_LEAFLET_MAP )
-  m_showMapButton = new WPushButton( "Show Map" );
+  m_showMapButton = new WPushButton( WString::tr("sfs-show-map-btn") );
   measTable->addWidget( m_showMapButton, 3, 6 );
 #if( USE_GOOGLE_MAP  )
   m_showMapButton->clicked().connect( this, &SpecFileSummary::showGoogleMap );
@@ -385,23 +386,23 @@ void SpecFileSummary::init()
   m_showMapButton->disable();
 #endif
   
-  addField( m_title, measTable, "Description:", 4, 0, 1, 5 );
+  addField( m_title, measTable, WString::tr("sfs-description-label"), 4, 0, 1, 5 );
   
-  addField( m_source, measTable, "Source Type:", 4, 6 );
+  addField( m_source, measTable, WString::tr("sfs-source-type-label"), 4, 6 );
   m_source->setNoSelectionEnabled( true );
   
   for( SpecUtils::SourceType i = SpecUtils::SourceType(0);
        i <= SpecUtils::SourceType::Unknown;
        i = SpecUtils::SourceType(static_cast<int>(i)+1) )
   {
-    const char *val = "";
+    WString val;
     switch( i )
     {
-      case SpecUtils::SourceType::IntrinsicActivity: val = "Intrinsic Activity"; break;
-      case SpecUtils::SourceType::Calibration:       val = "Calibration";        break;
-      case SpecUtils::SourceType::Background:        val = "Background";         break;
-      case SpecUtils::SourceType::Foreground:        val = "Foreground";         break;
-      case SpecUtils::SourceType::Unknown: val = "Unknown";            break;
+      case SpecUtils::SourceType::IntrinsicActivity: val = WString::tr("intrinsic-activity"); break;
+      case SpecUtils::SourceType::Calibration:       val = WString::tr("Calibration");        break;
+      case SpecUtils::SourceType::Background:        val = WString::tr("Background");         break;
+      case SpecUtils::SourceType::Foreground:        val = WString::tr("Foreground");         break;
+      case SpecUtils::SourceType::Unknown: val = WString::tr("Unknown");            break;
       default: break;
     }//switch( i )
     
@@ -411,10 +412,10 @@ void SpecFileSummary::init()
 
   labelHolder = new WContainerWidget();
   labelHolder->setAttributeValue( "style", "margin-top: auto; margin-bottom: auto;" );
-  label = new WLabel( "Spectra", labelHolder );
+  label = new WLabel( WString::tr("sfs-spectra-label"), labelHolder );
   label->setStyleClass("SpectrumFileSummaryLabel");
   label->setInline( false );
-  label = new WLabel( "Remarks:", labelHolder );
+  label = new WLabel( WString::tr("sfs-remarks-label"), labelHolder );
   label->setStyleClass("SpectrumFileSummaryLabel");
   label->setInline( false );
   measTable->addWidget( labelHolder, 5, 0, AlignMiddle );
@@ -703,8 +704,7 @@ void SpecFileSummary::showLeafletMap()
     LeafletRadMap::showForMeasurement(new_meas, sample_numbers, det_names);
   }catch( std::exception &e )
   {
-    passMessage( "Error trying to display coordinates: " + string(e.what()),
-                WarningWidget::WarningMsgHigh );
+    passMessage( WString::tr("sfs-err-show-map").arg(e.what()), WarningWidget::WarningMsgHigh );
   }
 }//void showLeafletMap()
 #endif
@@ -920,11 +920,11 @@ void SpecFileSummary::updateDisplayFromMemory()
     
     if( meas && meas->detectors_analysis() && !m_ana_button->isEnabled() )
     {
-      m_ana_button->setText( "Show Det. ID" );
+      m_ana_button->setText( WString::tr("sfs-show-det-id-btn") );
       m_ana_button->enable();
     }else if( m_ana_button->isEnabled() )
     {
-      m_ana_button->setText( "No Det. ID" );
+      m_ana_button->setText( WString::tr("sfs-no-det-id-btn") );
       m_ana_button->disable();
     }
     
@@ -1071,7 +1071,7 @@ void SpecFileSummary::handleFieldUpdate( EditableFields field )
 
       if( SpecUtils::is_special(newDate) )
       {
-        passMessage( "Error converting '" + newDateStr + string("' to a date/time string"),
+        passMessage( WString::tr("sfs-err-time-format").arg(newDateStr),
                     WarningWidget::WarningMsgHigh );
         m_timeStamp->setText( SpecUtils::to_extended_iso_string( sample->start_time() ) );
         return;
@@ -1128,8 +1128,7 @@ void SpecFileSummary::handleFieldUpdate( EditableFields field )
       }//if( !m_latitude->text().empty() )
       
       if( converror )
-        passMessage( "Error converting Long/Lat to valid float",
-                     WarningWidget::WarningMsgHigh );
+        passMessage( WString::tr("sfs-err-lat-lon"), WarningWidget::WarningMsgHigh );
       
       
       const string newDateStr = m_gpsTimeStamp->text().toUTF8();
@@ -1137,7 +1136,7 @@ void SpecFileSummary::handleFieldUpdate( EditableFields field )
       
       if( SpecUtils::is_special(newDate) && newDateStr.size() )
       {
-        passMessage( "Error converting '" + newDateStr + string("' to a date/time string"),
+        passMessage( WString::tr("sfs-err-time-format").arg(newDateStr),
                      WarningWidget::WarningMsgHigh );
         newDate = sample->position_time();
         m_timeStamp->setText( SpecUtils::to_extended_iso_string(newDate) );
