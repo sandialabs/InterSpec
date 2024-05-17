@@ -2354,7 +2354,7 @@ pair<AuxWindow *, RemoteRid *> RemoteRid::createDialog( InterSpec *viewer )
       QrCode::displayTxtAsQrCode( url, "Remote-RID State", "Current Remote-RID state." );
     }catch( std::exception &e )
     {
-      passMessage( "Error creating QR code: " + std::string(e.what()), WarningWidget::WarningMsgHigh );
+      passMessage(WString::tr("app-qr-err").arg(e.what()), WarningWidget::WarningMsgHigh );
     }
   }) );
 #endif //USE_QR_CODES

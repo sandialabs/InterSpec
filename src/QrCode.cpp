@@ -482,7 +482,7 @@ SimpleDialog *displayTxtAsQrCode( const std::string &url,
     return window;
   }catch( std::exception &e )
   {
-    passMessage( "Sorry, error creating QR code: " + string(e.what()), 3 );
+    passMessage( WString::tr("app-qr-err").arg(e.what()), 3 );
     cerr << "Error creating QR code window: " << e.what() << endl;
   }
   

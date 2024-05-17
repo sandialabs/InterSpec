@@ -850,7 +850,7 @@ GammaXsWindow::GammaXsWindow( MaterialDB *materialDB,
   
 #if( USE_QR_CODES )
   WPushButton *qr_btn = new WPushButton( footer() );
-  qr_btn->setText( "QR Code" );
+  qr_btn->setText( WString::tr("QR Code") );
   qr_btn->setIcon( "InterSpec_resources/images/qr-code.svg" );
   qr_btn->setStyleClass( "LinkBtn DownloadBtn DialogFooterQrBtn" );
   qr_btn->clicked().preventPropagation();
@@ -861,7 +861,7 @@ GammaXsWindow::GammaXsWindow( MaterialDB *materialDB,
       QrCode::displayTxtAsQrCode( url, WString::tr("gxsg-tool-state-title"), WString::tr("gxsg-tool-state-text") );
     }catch( std::exception &e )
     {
-      passMessage( "Error creating QR code: " + std::string(e.what()), WarningWidget::WarningMsgHigh );
+      passMessage( WString::tr("app-qr-err").arg(e.what()), WarningWidget::WarningMsgHigh );
     }
   }) );
 #endif //USE_QR_CODES

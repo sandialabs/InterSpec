@@ -3821,7 +3821,7 @@ void MakeDrf::writeRefSheet( std::ostream &output, std::string drfname, std::str
     qr_code = get<0>(qr_and_size);
   }catch(std::exception &e )
   {
-    qr_code = "Error creating QR code: " + string(e.what());
+    qr_code = WString::tr("app-qr-err").arg(e.what()).toUTF8();
     cerr << qr_code << endl;
   }
   

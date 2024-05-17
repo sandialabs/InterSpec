@@ -65,7 +65,7 @@ using namespace Wt;
 
 
 GammaCountDialog::GammaCountDialog( InterSpec *specViewer )
-: AuxWindow( "Energy Range Sum",
+: AuxWindow( WString::tr("window-title-energy-range-sum"),
              (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::PhoneNotFullScreen)
               | AuxWindowProperties::SetCloseable
               | AuxWindowProperties::DisableCollapse) ),
@@ -127,6 +127,8 @@ GammaCountDialog::~GammaCountDialog()
 
 void GammaCountDialog::init()
 {
+  m_specViewer->useMessageResourceBundle( "GammaCountDialog" );
+  
   wApp->useStyleSheet( "InterSpec_resources/GammaCountDialog.css" );
   wApp->useStyleSheet( "InterSpec_resources/GridLayoutHelpers.css" );
   const bool showToolTips = InterSpecUser::preferenceValue<bool>( "ShowTooltips", m_specViewer );
@@ -141,14 +143,14 @@ void GammaCountDialog::init()
   WContainerWidget *body = contents();
   body->addStyleClass( "GammaCountDialog" );
 
-  WText *text = new WText( "Count the number of gammas in the specified energy range.", body );
+  WText *text = new WText( WString::tr("gcd-summary"), body );
   text->setInline( true );
   text->setStyleClass( "line-below" );
   
   WContainerWidget *inputs = new WContainerWidget( body );
   inputs->addStyleClass( "inputs" );
 
-  WLabel *label = new WLabel( "Lower Energy", inputs );
+  WLabel *label = new WLabel( WString::tr("gcd-lower-energy-label"), inputs );
   label->addStyleClass( "GridFirstRow GridFirstCol EnergyLabel" );
   m_lowerEnergy = new NativeFloatSpinBox( inputs );
   m_lowerEnergy->addStyleClass( "GridFirstRow GridSecondCol" );
@@ -158,7 +160,7 @@ void GammaCountDialog::init()
   label->addStyleClass( "GridFirstRow GridThirdCol GridJustifyStart" );
   m_lowerEnergy->setRange( xlow, xhigh );
   
-  label = new WLabel( "Upper Energy", inputs );
+  label = new WLabel( WString::tr("gcd-upper-energy-label"), inputs );
   label->addStyleClass( "GridSecondRow GridFirstCol EnergyLabel", inputs );
   m_upperEnergy = new NativeFloatSpinBox( inputs );
   label->setBuddy( m_upperEnergy );
@@ -174,7 +176,7 @@ void GammaCountDialog::init()
     inputs->addStyleClass( "line-below" );
   }else
   {
-    string key_sequence = "Shift-Alt-Drag";  // Linux / Windows
+    WString key_sequence = WString::tr("gcd-shift-alt-drag");  // Linux / Windows
     const string &user_agent = wApp->environment().userAgent();
     if( SpecUtils::icontains( user_agent, "macos")
        || SpecUtils::icontains( user_agent, "macintel")
@@ -182,11 +184,10 @@ void GammaCountDialog::init()
        || SpecUtils::icontains( user_agent, "iphone")
        || SpecUtils::icontains( user_agent, "ipad") )
     {
-      key_sequence = "Shift-Option-Drag"; //Apple
+      key_sequence = WString::tr("gcd-shift-option-drag"); //Apple
     }
     
-    text = new WText("You can also <b>" + key_sequence + "</b> on the chart"
-                              " to select the energy range", body);
+    text = new WText( WString::tr("gcd-select-shortcut").arg(key_sequence), body);
     text->setInline( false );
     text->setStyleClass( "line-below shortcut-info" );
   }//if( !mobile )
@@ -203,17 +204,17 @@ void GammaCountDialog::init()
   WContainerWidget *answers = new WContainerWidget( body );
   answers->addStyleClass( "answers" );
   
-  label = new WLabel( "Foreground Counts:", answers );
+  label = new WLabel( WString::tr("gcd-foreground-counts-label"), answers );
   label->addStyleClass( "GridFirstRow GridFirstCol" );
   m_primaryGammaCount = new WText( answers );
   m_primaryGammaCount->addStyleClass( "GridFirstRow GridSecondCol" );
   
-  label = new WLabel( "Secondary Counts:", answers );
+  label = new WLabel( WString::tr("gcd-secondary-counts-label"), answers );
   label->addStyleClass( "GridSecondRow GridFirstCol" );
   m_secondaryGammaCount = new WText( answers );
   m_secondaryGammaCount->addStyleClass( "GridSecondRow GridSecondCol" );
   
-  label = new WLabel( "Background Counts:", answers );
+  label = new WLabel( WString::tr("gcd-background-counts-label"), answers );
   label->addStyleClass( "GridThirdRow GridFirstCol" );
   m_backgroundGammaCount = new WText( answers );
   m_backgroundGammaCount->addStyleClass( "GridThirdRow GridSecondCol" );
@@ -228,12 +229,8 @@ void GammaCountDialog::init()
   m_nsigmaHelp->decorationStyle().setCursor( Wt::Cursor::WhatsThisCursor );
   m_nsigmaHelp->setHidden( true );
   
-  const char *tooltip = "The number of sigma difference is calculated by dividing the"
-                        " difference between the foreground and the (scaled) background,"
-                        " divided by the uncertainty. The uncertainty is calculated by"
-                        " summing the statistical uncertainties of the foreground and background in"
-                        " quadrature, then taking the square root";
-  HelpSystem::attachToolTipOn( m_nsigmaHelp, tooltip, true, HelpSystem::ToolTipPosition::Right );
+  HelpSystem::attachToolTipOn( m_nsigmaHelp, WString::tr("gcd-tt-n-sigma"), true, 
+                              HelpSystem::ToolTipPosition::Right );
   
   m_liveTimeScaleNote = new WText( "", XHTMLText, answers );
   m_liveTimeScaleNote->addStyleClass( "GridFifthRow GridFirstCol GridJustifyCenter GridSpanThreeCol line-above LiveTimeScaleNote" );  //""
@@ -249,7 +246,7 @@ void GammaCountDialog::init()
   
 #if( USE_QR_CODES )
   WPushButton *qr_btn = new WPushButton( footer() );
-  qr_btn->setText( "QR Code" );
+  qr_btn->setText( WString::tr("QR Code") );
   qr_btn->setIcon( "InterSpec_resources/images/qr-code.svg" );
   qr_btn->setStyleClass( "LinkBtn DownloadBtn DialogFooterQrBtn" );
   qr_btn->clicked().preventPropagation();
@@ -257,10 +254,11 @@ void GammaCountDialog::init()
     try
     {
       const string url = "interspec://specsum/?" + Wt::Utils::urlEncode(encodeStateToUrl());
-      QrCode::displayTxtAsQrCode( url, "Energy Range Sum State", "Current state of energy range sum tool." );
+      QrCode::displayTxtAsQrCode( url, WString::tr("gcd-qr-window-title"),
+                                 WString::tr("gcd-qr-window-text") );
     }catch( std::exception &e )
     {
-      passMessage( "Error creating QR code: " + std::string(e.what()), WarningWidget::WarningMsgHigh );
+      passMessage( WString::tr("app-qr-err").arg(e.what()), WarningWidget::WarningMsgHigh );
     }
   }) );
 #endif //USE_QR_CODES
@@ -452,7 +450,7 @@ void GammaCountDialog::handleEnergyRangeChange()
         snprintf( onstack, sizeof(onstack), "%.2g", backgroundSF );
       backgroundSfStr = onstack;
       
-      livetimescale += "Background is being scaled by " + backgroundSfStr ;
+      livetimescale += WString::tr("gcd-background-scale-note").arg(backgroundSfStr).toUTF8();
     }//if( background )
 
     if( secondary )
@@ -465,9 +463,9 @@ void GammaCountDialog::handleEnergyRangeChange()
       secondarySfStr = onstack;
       
       if( background )
-        livetimescale += " and secondary by ";
+        livetimescale += WString::tr("gcd-and-secondary-scaled").toUTF8();
       else
-        livetimescale += "Secondary background is being scaled by ";
+        livetimescale += WString::tr("gcd-secondary-scale-note").toUTF8();
       
       livetimescale += secondarySfStr;
     }//if( secondary )
@@ -552,21 +550,8 @@ void GammaCountDialog::setUnceraintyText( std::shared_ptr<const SpecUtils::Measu
   snprintf( onstack, sizeof(onstack), "%.5g ", nsigma );
   string sigmatxt = onstack;
   
-//  stringstream sigmatxtstrm;
-//  if( nsigma > 100.0 || nsigma < 0.01 )
-//    sigmatxtstrm << std::setprecision(4) << std::scientific << nsigma;
-//  else
-//    sigmatxtstrm << std::setprecision(3) << std::fixed << nsigma;
-  
-  WString txt = "Foreground is " + sigmatxt;
-//  WString txt = "Foreground is " + sigmatxtstrm.str();
-  
-#ifndef WT_NO_STD_WSTRING
-  txt += L"\x03C3";
-#else
-  txt += "&sigma;";
-#endif
-  txt += (isneg ? " below background." : " above background.");
+  const char *key = isneg ? "gcd-foreground-below-background" : "gcd-foreground-above-background";
+  WString txt = WString::tr(key).arg(sigmatxt);
   
   if( nback == 0 )
   {
