@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- d3sdd- is short for D3SpectrumDisplayDiv
+
+    The part of the id coming after "d3sdd-", directly corresponds to the javascript variable name, the element value gets put into.
+
+    The JS 'xAxisTitle' variable is localized using the "Energy (keV)" key
+    The JS 'fwhm' variable is localized using the "FWHM" key
+  -->
+  <message id="d3sdd-yAxisTitle">Counts</message>
+  <message id="d3sdd-yAxisTitleMulti">Counts per {1} Channels</message>
+  <message id="d3sdd-realTime">Real Time</message>
+  <message id="d3sdd-liveTime">Live Time</message>
+  <message id="d3sdd-deadTime">Dead Time</message>
+  <message id="d3sdd-scaledBy">Scaled by</message>
+  <message id="d3sdd-zoomIn">Zoom In</message>
+  <message id="d3sdd-neutrons">neutrons</message>
+  <message id="d3sdd-Neutrons">Neutrons</message>
+  <message id="d3sdd-cps">cps</message>
+  <message id="d3sdd-roiCounts">ROI counts</message>
+  <message id="d3sdd-gammaCounts">Gamma Counts</message>
+  <message id="d3sdd-contArea">cont. area</message>
+  <message id="d3sdd-peakCps">peak cps</message>
+  <message id="d3sdd-peakArea">peak area</message>
+  <message id="d3sdd-mean">mean</message>
+  <message id="d3sdd-spectrum">Spectrum</message>
+  <message id="d3sdd-comptonEdge">Compton Edge</message>
+  <message id="d3sdd-sumPeak">Sum Peak</message>
+  <message id="d3sdd-firstEnergyClick">Click to set sum peak first energy.</message>
+  <message id="d3sdd-singleEscape">Single Escape</message>
+  <message id="d3sdd-doubleEscape">Double Escape</message>
+  <message id="d3sdd-eraseInRange">Will Erase Peaks In Range</message>
+  <message id="d3sdd-zoomInY">Zoom-In on Y-axis</message>
+  <message id="d3sdd-zoomOutY">Zoom-out on Y-axis</message>
+  <message id="d3sdd-touchDefineRoi">Move 2 fingers to right to define ROI</message>
+  <message id="d3sdd-foreNSigmaBelowBack">Foreground is {1} σ below background.</message>
+  <message id="d3sdd-foreNSigmaAboveBack">Foreground is {1} σ above background.</message>
+  <message id="d3sdd-backSubCounts">counts (BG sub)</message>
+  <message id="d3sdd-afterScalingBy">after scaling by </message>
+  <message id="d3sdd-clickedPeak">Clicked Peak</message>
+  <message id="d3sdd-recalFromTo">Recalibrate data from {1} to {2} keV</message>
+  <message id="d3sdd-sumFromTo">{1} to {2} keV</message>
+  <message id="d3sdd-comptonPeakAngle">{1}° Compton Peak</message>
+</messages>
