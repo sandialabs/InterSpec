@@ -63,7 +63,7 @@ enum AuxWindowProperties
   IsModal = 0x04,
   
   /** Styles the window to be an InterSpec help window. */
-  IsHelpWIndow = 0x08,
+  IsHelpWindow = 0x08,
   
   /** Dont allow the window to be collapsed.  TODO: invert this to default to not allowing collapse. */
   DisableCollapse = 0x10,

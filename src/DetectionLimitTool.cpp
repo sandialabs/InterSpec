@@ -1347,8 +1347,6 @@ DetectionLimitTool::DetectionLimitTool( InterSpec *viewer,
   
   
   m_chart->setCompactAxis( true );
-  m_chart->setXAxisTitle( "Energy (keV)" );
-  m_chart->setYAxisTitle( "Counts/Channel" );
   m_chart->disableLegend();
   m_chart->showHistogramIntegralsInLegend( true );
   

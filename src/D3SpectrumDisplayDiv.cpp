@@ -249,6 +249,8 @@ D3SpectrumDisplayDiv::D3SpectrumDisplayDiv( WContainerWidget *parent )
                      "event.cancelBubble = true; event.returnValue = false; return false;"
                     );
   
+    InterSpec::instance()->useMessageResourceBundle( "D3SpectrumDisplayDiv" );
+    
   //For development it may be useful to directly use the original JS/CSS files,
   //  but normally we should use the resources CMake will copy into
   //  InterSpec_resources (not checked that Andorid build systems will
@@ -286,8 +288,6 @@ D3SpectrumDisplayDiv::D3SpectrumDisplayDiv( WContainerWidget *parent )
 void D3SpectrumDisplayDiv::defineJavaScript()
 {
   string options = "{title: '', showAnimation: true, animationDuration: 200";
-  options += ", xlabel: '" + m_xAxisTitle + "'";
-  options += ", ylabel: '" + m_yAxisTitle + "'";
   options += ", compactXAxis: " + jsbool(m_compactAxis);
   options += ", allowDragRoiExtent: true";
   options += ", showRefLineInfoForMouseOver: " + jsbool(m_showRefLineInfoForMouseOver);
@@ -335,7 +335,7 @@ void D3SpectrumDisplayDiv::defineJavaScript()
 //  string double_click_time;
 //  if( wApp->readConfigurationProperty( "double-click-timeout", double_click_time ) )
 //    options += ", doubleClickDelay:" + double_click_time;
-  
+  options += ", txt: " + localizedStringsJson();
   options += "}";
   
   setJavaScriptMember( "chart", "new SpectrumChartD3(" + jsRef() + "," + options + ");");
@@ -696,6 +696,8 @@ void D3SpectrumDisplayDiv::highlightPeakAtEnergy( const double energy )
 
 void D3SpectrumDisplayDiv::render( Wt::WFlags<Wt::RenderFlag> flags )
 {
+  WContainerWidget::render( flags );
+  
   const bool renderFull = (flags & Wt::RenderFlag::RenderFull);
   //const bool renderUpdate = (flags & Wt::RenderFlag::RenderUpdate);
   
@@ -733,9 +735,77 @@ void D3SpectrumDisplayDiv::render( Wt::WFlags<Wt::RenderFlag> flags )
     setReferenceLinesToClient();
   
   m_renderFlags = 0;
+}//void render( flags )
+
+
+std::string D3SpectrumDisplayDiv::localizedStringsJson() const
+{
+  // Strings used in the chart that we will localize:
+  //SpectrumChartD3.prototype.setXAxisTitle
+  //  self.options.xlabel
+  //
+  //updateYAxisTitleText
+  //  this.options.ylabel
+  // this.options.ylabel + " per " + this.rebinFactor + " Channels" ---> "Counts per {1} Channels"
   
-  WContainerWidget::render( flags );
-}
+  // From these - lets choose to only localize a subset
+  // "Real Time", "Live Time", "Dead Time", "Scaled by", "counts", "chan", "Zoom In", "Neutrons", "neutrons", "cps"
+  // "ROI counts", "Gamma Counts", "cont. area", "peak cps", "peak area", "FWHM", "mean", "Spectrum"
+  // "Compton Edge", "Sum Peak", "Click to set sum peak first energy.", "Single Escape", "Double Escape"
+  // "Will Erase Peaks In Range", "Zoom-In on Y-axis", "Zoom-out on Y-axis"
+  
+  return "{\n\t"
+  "xAxisTitle: " + (m_xAxisTitle.empty() ? WString::tr("Energy (keV)").jsStringLiteral() : m_xAxisTitle)+ ",\n\t"
+  "yAxisTitle: " + (m_yAxisTitle.empty() ? WString::tr("d3sdd-yAxisTitle").jsStringLiteral() : m_yAxisTitle) + ",\n\t"                    // "Counts"
+  "yAxisTitleMulti: " + (m_yAxisTitleMulti.empty() ? WString::tr("d3sdd-yAxisTitleMulti").jsStringLiteral() : m_yAxisTitleMulti) + ",\n\t"          // "Counts per {1} Channels"
+  "realTime: " + WString::tr("d3sdd-realTime").jsStringLiteral() + ",\n\t"                        // "Real Time"
+  "liveTime: " + WString::tr("d3sdd-liveTime").jsStringLiteral() + ",\n\t"                        // "Live Time"
+  "deadTime: " + WString::tr("d3sdd-deadTime").jsStringLiteral() + ",\n\t"                        // "Dead Time"
+  "scaledBy: " + WString::tr("d3sdd-scaledBy").jsStringLiteral() + ",\n\t"                        // "Scaled by"
+  "zoomIn: " + WString::tr("d3sdd-zoomIn").jsStringLiteral() + ",\n\t"                            // "Zoom In"
+  "neutrons: " + WString::tr("d3sdd-neutrons").jsStringLiteral() + ",\n\t"                        // "neutrons"
+  "Neutrons: " + WString::tr("d3sdd-Neutrons").jsStringLiteral() + ",\n\t"                        // "Neutrons"
+  "cps: " + WString::tr("d3sdd-cps").jsStringLiteral() + ",\n\t"                                  // "cps"
+  "roiCounts: " + WString::tr("d3sdd-roiCounts").jsStringLiteral() + ",\n\t"                      // "ROI counts"
+  "gammaCounts: " + WString::tr("d3sdd-gammaCounts").jsStringLiteral() + ",\n\t"                  // "Gamma Counts"
+  "contArea: " + WString::tr("d3sdd-contArea").jsStringLiteral() + ",\n\t"                        // "cont. area"
+  "peakCps: " + WString::tr("d3sdd-peakCps").jsStringLiteral() + ",\n\t"                          // "peak cps"
+  "peakArea: " + WString::tr("d3sdd-peakArea").jsStringLiteral() + ",\n\t"                        // "peak area"
+  "fwhm: " + WString::tr("FWHM").jsStringLiteral() + ",\n\t"                                      // "FWHM"
+  "mean: " + WString::tr("d3sdd-mean").jsStringLiteral() + ",\n\t"                                // "mean"
+  "spectrum: " + WString::tr("d3sdd-spectrum").jsStringLiteral() + ",\n\t"                        // "Spectrum"
+  "comptonEdge: " + WString::tr("d3sdd-comptonEdge").jsStringLiteral() + ",\n\t"                  // "Compton Edge"
+  "sumPeak: " + WString::tr("d3sdd-sumPeak").jsStringLiteral() + ",\n\t"                          // "Sum Peak"
+  "firstEnergyClick: " + WString::tr("d3sdd-firstEnergyClick").jsStringLiteral() + ",\n\t"        // "Click to set sum peak first energy."
+  "singleEscape: " + WString::tr("d3sdd-singleEscape").jsStringLiteral() + ",\n\t"                // "Single Escape"
+  "doubleEscape: " + WString::tr("d3sdd-doubleEscape").jsStringLiteral() + ",\n\t"                // "Double Escape"
+  "eraseInRange: " + WString::tr("d3sdd-eraseInRange").jsStringLiteral() + ",\n\t"                // "Will Erase Peaks In Range"
+  "zoomInY: " + WString::tr("d3sdd-zoomInY").jsStringLiteral() + ",\n\t"                          // "Zoom-In on Y-axis"  (make sure to search for "Zoom-In")
+  "zoomOutY: " + WString::tr("d3sdd-zoomOutY").jsStringLiteral() + ",\n\t"                        // "Zoom-out on Y-axis" (make sure to search for "Zoom-Out")
+  "touchDefineRoi: " + WString::tr("d3sdd-touchDefineRoi").jsStringLiteral() + ",\n\t"            // "Move 2 fingers to right to define ROI"
+  "foreNSigmaBelowBack: " + WString::tr("d3sdd-foreNSigmaBelowBack").jsStringLiteral() + ",\n\t"  // "Foreground is {1} σ below background."
+  "foreNSigmaAboveBack: " + WString::tr("d3sdd-foreNSigmaAboveBack").jsStringLiteral() + ",\n\t"  // "Foreground is {1} σ above background."
+  "backSubCounts: " + WString::tr("d3sdd-backSubCounts").jsStringLiteral() + ",\n\t"              // "counts (BG sub)"
+  "afterScalingBy: " + WString::tr("d3sdd-afterScalingBy").jsStringLiteral() + ",\n\t"            // "after scaling by "
+  "clickedPeak: " + WString::tr("d3sdd-clickedPeak").jsStringLiteral() + ",\n\t"                  // "Clicked Peak"
+  "recalFromTo: " + WString::tr("d3sdd-recalFromTo").jsStringLiteral() + ",\n\t"                  // "Recalibrate data from {1} to {2} keV"
+  "sumFromTo: " + WString::tr("d3sdd-sumFromTo").jsStringLiteral() + ",\n\t"                      // "{1} to {2} keV"
+  "comptonPeakAngle: " + WString::tr("d3sdd-comptonPeakAngle").jsStringLiteral() + ",\n\t"        // "{1}° Compton Peak"
+  "}";
+  
+  // In JS, probably need to call: `self.handleResize( false );`
+}//std::string localizedStringsJson() const
+
+
+void D3SpectrumDisplayDiv::refresh()
+{
+  // If we are here, the language has probably been changed - we'll update the localization
+  //  phrases the JS uses.
+  WContainerWidget::refresh();
+
+  if( isRendered() )
+    doJavaScript( m_jsgraph + ".setLocalizations( " + localizedStringsJson() + ",\n  false);" );
+}//void refresh();
 
 
 double D3SpectrumDisplayDiv::xAxisMinimum() const
@@ -1153,21 +1223,38 @@ const string D3SpectrumDisplayDiv::yAxisTitle() const
 
 void D3SpectrumDisplayDiv::setXAxisTitle( const std::string &title )
 {
-  m_xAxisTitle = title;
-  SpecUtils::ireplace_all( m_xAxisTitle, "'", "&#39;" );
+  m_xAxisTitle = Wt::WWebWidget::jsStringLiteral( title, '\'' );
+  assert( (m_xAxisTitle.size() >= 2) && (m_xAxisTitle.front() == '\'') && (m_xAxisTitle.back() == '\'') ) ;
+  if( !m_xAxisTitle.empty() && (m_xAxisTitle.front() == '\'') )
+    m_xAxisTitle = m_xAxisTitle.substr(1);
+  if( !m_xAxisTitle.empty() && (m_xAxisTitle.back() == '\'') )
+    m_xAxisTitle = m_xAxisTitle.substr(0, m_xAxisTitle.size() - 1 );
   
   if( isRendered() )
-    doJavaScript( m_jsgraph + ".setXAxisTitle('" + title + "');" );
+    doJavaScript( m_jsgraph + ".setXAxisTitle(" + m_xAxisTitle + ");" );
 }//void setXAxisTitle( const std::string &title )
 
 
-void D3SpectrumDisplayDiv::setYAxisTitle( const std::string &title )
+void D3SpectrumDisplayDiv::setYAxisTitle( const std::string &title, const std::string &titleMulti )
 {
-  m_yAxisTitle = title;
-  SpecUtils::ireplace_all( m_yAxisTitle, "'", "&#39;" );
+  m_yAxisTitle = Wt::WWebWidget::jsStringLiteral( title, '\'' );
+  m_yAxisTitleMulti = Wt::WWebWidget::jsStringLiteral( titleMulti, '\'' );
+  
+  assert( (m_yAxisTitle.size() >= 2) && (m_yAxisTitle.front() == '\'') && (m_yAxisTitle.back() == '\'') ) ;
+  assert( (titleMulti.size() >= 2) && (titleMulti.front() == '\'') && (titleMulti.back() == '\'') ) ;
+  
+  if( !m_yAxisTitle.empty() && (m_yAxisTitle.front() == '\'') )
+    m_yAxisTitle = m_yAxisTitle.substr(1);
+  if( !m_yAxisTitle.empty() && (m_yAxisTitle.back() == '\'') )
+    m_yAxisTitle = m_yAxisTitle.substr(0, m_yAxisTitle.size() - 1 );
+  
+  if( !m_yAxisTitleMulti.empty() && (m_yAxisTitleMulti.front() == '\'') )
+    m_yAxisTitleMulti = m_yAxisTitleMulti.substr(1);
+  if( !m_yAxisTitleMulti.empty() && (m_yAxisTitleMulti.back() == '\'') )
+    m_yAxisTitleMulti = m_yAxisTitleMulti.substr(0, m_yAxisTitleMulti.size() - 1 );
   
   if( isRendered() )
-    doJavaScript( m_jsgraph + ".setYAxisTitle('" + title + "');" );
+    doJavaScript( m_jsgraph + ".setYAxisTitle('" + m_yAxisTitle + "', '" + m_yAxisTitleMulti + "');" );
 }//void setYAxisTitle( const std::string &title )
 
 
