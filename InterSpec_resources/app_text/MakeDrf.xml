@@ -105,9 +105,5 @@
   <message id="md-chart-fit-intrinsic-eff-label">Fit Intrinsic Eff.</message>
   <message id="md-chart-intrinsic-eff-plus-label">Intrinsic Eff. +2σ</message>
   <message id="md-chart-intrinsic-eff-minus-label">Fit Intrinsic Eff. -2σ</message>
-  <message id="md-chart-fit-fwhm-label"></message>
-  <message id="md-"></message>
-  <message id="md-"></message>
-  <message id="md-"></message>
-  
+  <message id="md-chart-fit-fwhm-label">Fit FWHM</message>
 </messages>

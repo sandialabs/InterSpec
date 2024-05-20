@@ -1260,8 +1260,6 @@ RelActAutoGui::RelActAutoGui( InterSpec *viewer, Wt::WContainerWidget *parent )
   m_spectrum = new D3SpectrumDisplayDiv();
   m_spectrum->setCompactAxis( true );
   m_spectrum->disableLegend();
-  m_spectrum->setXAxisTitle( "Energy (keV)" );
-  m_spectrum->setYAxisTitle( "Counts" );
   m_interspec->colorThemeChanged().connect( boost::bind( &D3SpectrumDisplayDiv::applyColorTheme, m_spectrum, boost::placeholders::_1 ) );
   m_spectrum->applyColorTheme( m_interspec->getColorTheme() );
   

@@ -942,7 +942,7 @@ AuxWindow::AuxWindow(const Wt::WString& windowTitle, Wt::WFlags<AuxWindowPropert
     doJavaScript("$('#" + m_expandIcon->id() + "').hide();");
 
 
-  if (properties.testFlag(AuxWindowProperties::IsHelpWIndow))
+  if (properties.testFlag(AuxWindowProperties::IsHelpWindow))
   {
     if (!m_isPhone)
     {

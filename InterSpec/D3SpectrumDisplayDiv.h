@@ -56,6 +56,11 @@ public:
   D3SpectrumDisplayDiv( Wt::WContainerWidget *parent = 0 );
   virtual ~D3SpectrumDisplayDiv();
   
+  /** Function called when the locale is changed. */
+  virtual void refresh();
+  
+  /** Returns the JSON object containing the localized strings to use within the chart. */
+  std::string localizedStringsJson() const;
   
   //setTextInMiddleOfChart(...): draws some large text over the middle of the
   //  chart - used int the spectrum quizzer for text based questions.
@@ -190,8 +195,16 @@ public:
   void visibleRange( double &xmin, double &xmax,
                     double &ymin, double &ymax ) const;
   
+  /** Sets the x-axis title, overriding whatever is set by the current localization. */
   virtual void setXAxisTitle( const std::string &title );
-  virtual void setYAxisTitle( const std::string &title );
+  
+  /** Sets the y-axis title, overriding whatever is set by the current localization.
+   
+   @param title Y-axis title when there is one channel per bin, defaults to "Counts"
+   @param titleMulti Y-axis title when there is more than one channel per bin, where the
+          substring {1} will be replaced with number of channels per bin. Default is  "Counts per {1} Channels"
+   */
+  virtual void setYAxisTitle( const std::string &title, const std::string &titleMulti );
   
   const std::string xAxisTitle() const;
   const std::string yAxisTitle() const;
@@ -373,6 +386,7 @@ protected:
   
   std::string m_xAxisTitle;
   std::string m_yAxisTitle;
+  std::string m_yAxisTitleMulti;
   
   // JSignals
   //for all the bellow, the doubles are all the <x,y> coordinated of the action
