@@ -31,7 +31,7 @@ Options for using the tool:
   <li><b>Age</b>: For isotopes where aging will have an effect on the distribution
    of gamma and/or x-ray amplitudes, age of the nuclide can be specfied using a
    combination of time units, similar to &quot;<b>5.3y 8d 22m</b>&quot; or in half lives like
-   &quot;<b>2.5 HL</b>&quot;.  Acceptible time units: <b>year</b>, <b>yr</b>,
+   &quot;<b>2.5 HL</b>&quot;.  Acceptable time units: <b>year</b>, <b>yr</b>,
    <b>y</b>, <b>day</b>, <b>d</b>, <b>hrs</b>, <b>hour</b>, <b>h</b>, <b>minute</b>,
    <b>min</b>, <b>m</b>, <b>second</b>, <b>s</b>, <b>ms</b>, <b>microseconds</b>,
    <b>us</b>, <b>nanoseconds</b>, <b>ns</b>, or you can specify time period by

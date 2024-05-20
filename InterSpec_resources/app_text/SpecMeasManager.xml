@@ -252,5 +252,12 @@
   <message id="smm-save-spec-version-window-title">Save Spectrum Version</message>
   <message id="smm-save-state">Save State</message>
   <message id="smm-create-new-tag-toast">Created a new tag: '{1}'.</message>
+
+  <message id="smm-next-qr">Next QR code</message>
+  <message id="smm-qr-desc">{1}  for the {2} spectrum.</message>
+  <message id="smm-qr-title">Spectrum File {1}</message>
+  <message id="smm-qr-sequence-single">QR Code</message>
+  <message id="smm-qr-sequence-multi">QR Code {1} of {2}</message>
+  <message id="smm-next-qr">Next QR code</message>
   
 </messages>

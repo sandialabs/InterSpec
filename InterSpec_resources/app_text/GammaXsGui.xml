@@ -25,16 +25,11 @@
   <message id="gxsg-tt-intrinsic-eff">Intrinsic efficiency (in-peak detection efficiency of gammas striking detector face).</message>
   <message id="gxsg-solid-angle-frac-label">Solid Angle Fraction</message>
   <message id="gxsg-tt-solid-angle-frac">Fractional solid angle of the selected detector at specified distance.</message>
-  <message id="gxsg-"></message>
-  <message id="gxsg-"></message>
-  <message id="gxsg-"></message>
-  <message id="gxsg-"></message>
-  <message id="gxsg-"></message>
-  <message id="gxsg-"></message>
-  <message id="gxsg-"></message>
-  <message id="gxsg-"></message>
-  <message id="gxsg-"></message>
-  <message id="gxsg-"></message>
-  <message id="gxsg-"></message>
-  <message id="gxsg-"></message>
+  <message id="gxsg-det-eff-label">Detection Efficiency</message>
+  <message id="gxsg-tt-det-eff">Intrinsic efficiency times solid angle fraction. E.g. the fraction of gammas making it out of the shielding that will be detected. Does not include attenuation.</message>
+  <message id="gxsg-total-eff-label">Total Efficiency</message>
+  <message id="gxsg-tt-total-eff">Transmission fraction times detection efficiency. E.g. the fraction of gammas emitted from the source that will be detected.</message>
+  <message id="gxsg-warn-suspect">XS Calculation may be suspect: {1}</message>
+  <message id="gxsg-tool-state-title">Gamma XS Tool State</message>
+  <message id="gxsg-tool-state-text">Current state of xs tool.</message>
 </messages>

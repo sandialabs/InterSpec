@@ -129,18 +129,4 @@
   <message id="ds-err-det-dist-pos">Distance must be positive for absolute efficiencies</message>
   <message id="ds-warn-min-max-energy-swapped">Detector min. energy was greater than max. energy; ignoring energy range.</message>
   <message id="ds-need-det-diam">Need the detectors diameter</message>
-  <message id="ds-"></message>
-  <message id="ds-"></message>
-  <message id="ds-"></message>
-  <message id="ds-"></message>
-  <message id="ds-"></message>
-  <message id="ds-"></message>
-  <message id="ds-"></message>
-  <message id="ds-"></message>
-  <message id="ds-"></message>
-  <message id="ds-"></message>
-  <message id="ds-"></message>
-  <message id="ds-"></message>
-  <message id="ds-"></message>
-  
 </messages>

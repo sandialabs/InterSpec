@@ -39,7 +39,6 @@
   <message id="rpd-prev-nucs">Prev Nucs</message>
   <message id="rpd-det-nucs">Det RID Nucs</message>
   <message id="rpd-assoc-nucs">Assoc. Nucs</message>
-  <message id="rpd-feature-markers">Feature Markers</message>
   <message id="rpd-suggestions">Suggestions</message>
   <message id="rpd-csv-export-msg">The 'Nuclide Decay Info' tool provides additional capabilities for exporting nuclide, decay products, and decay information to CSV files.</message>
   <message id="rpd-changed-age">Changed age to a more reasonable value for {1} from '{2}' to '{3}'</message>
@@ -65,9 +64,9 @@
   <message id="rpd-tbl-hdr-particle">Particle</message>
   <message id="rpd-tbl-hdr-tt-energy">Energy of the particle produced</message>
   <message id="rpd-tbl-hdr-tt-br">The number of the particle per second, per Bq of the parent nuclide.</message>
-  <message id="rpd-tbl-hdr-tt-"></message>
-  <message id="rpd-tbl-hdr-tt-"></message>
-  <message id="rpd-tbl-hdr-tt-"></message>
+  <message id="rpd-tbl-hdr-tt-trans">Actual nuclide which decayed to give this particle.</message>
+  <message id="rpd-tbl-hdr-tt-trans-mode">Decay mode of the parent nuclide, which produced this particle.</message>
+  <message id="rpd-tbl-hdr-tt-type">The type of particle produced</message>
   <message id="rpd-tbl-hdr-tt-"></message>
 
 

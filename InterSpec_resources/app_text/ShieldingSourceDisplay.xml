@@ -120,7 +120,7 @@
   <!-- SourceFitModel quantities -->
   <message id="sfm-tt-header-isotope">Nuclides are added or removed according to the photopeaks used for this fit, thus may not be edited in this table</message>
   <message id="sfm-tt-header-activity">Activity of the nuclide.  Entering a reasonable starting value may help the fit, or the activity does not have to be fit for.  Values may be entered in formats similar to '12.4 kBq', '1.0mCi', '55.3uCi', '15.82Mbq'</message>
-  <message id="sfm-tt-header-age">Age of the nuclide.  Values may be entered in format similar to: '23.3s' '2 hl' - (hf stands for half lives), '5.23y', '23:14:21.343', '19min', etc.  Note that nuclides that decay to stable children can not be aged.</message>
+  <message id="sfm-tt-header-age">Age of the nuclide.  Values may be entered in format similar to: '23.3s' '2 hl' - (hl stands for half lives), '5.23y', '23:14:21.343', '19min', etc.  Note that nuclides that decay to stable children can not be aged.</message>
   <message id="sfm-tt-header-fit-act">Should the fit try to find the nuclide activity as well, or assume the entered value is correct?</message>
   <message id="sfm-tt-header-fit-age">Should the fit try to find the nuclide age as well, or just assume the entered value is correct?  This option is not available for nuclides which decay to only stable children.</message>
   <message id="sfm-tt-header-iso-mass">This is the mass of the bare nuclide assuming the activity listed.</message>
@@ -140,8 +140,4 @@
     " is what is used to optimize the shielding and sources.</message>
   <message id="x2g-tt-chi-axis">The Y-axis is the peak area counts, minus the expected number of counts from the currently displayed source and shielding values, all divided by the statistical uncertainty.  The square of this is what is used to optimize the shielding and sources.</message>
   <message id="x2g-tt-scale-axis">The Y-axis is the multiple of observed peak counts, relative to what would be expected from the current source and shielding values.</message>
-  <message id="x2g-"></message>
-  <message id="x2g-"></message>
-  
-  
 </messages>

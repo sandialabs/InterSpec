@@ -32,12 +32,4 @@
   <message id="rr-error-parsing-service-info">Error parsing service information results: <code></code></message>
   <message id="rr-incorrect-url">incorrect URL or no internet.</message>
   <message id="rr-err-requesting-service-info">Error retrieving service information: <code>{1}</code></message>
-  <message id="rr-"></message>
-  <message id="rr-"></message>
-  <message id="rr-"></message>
-  <message id="rr-"></message>
-  <message id="rr-"></message>
-  <message id="rr-"></message>
-  <message id="rr-"></message>
-
 </messages>

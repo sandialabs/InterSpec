@@ -75,6 +75,9 @@
   <message id="Dose">Dose</message>
   <message id="Shielding">Shielding</message>
   <message id="app-qr-err">Error creating QR code: {1}</message>
+  <message id="intrinsic-activity">Intrinsic Activity</message>
+  <message id="Calibration">Calibration</message>
+  <message id="Unknown">Unknown</message>
 
 
 
@@ -106,6 +109,14 @@
   <message id="window-title-units-convert">Units Converter</message>
   <message id="window-title-flux-tool">Flux Tool</message>
   <message id="window-title-nuc-decay">Nuclide Decay Information</message>
+  <message id="window-title-add-fwhm">Add FWHM to Detector Response Function</message>
+  <message id="window-title-create-drf">Create Detector Response Function</message>
+  <message id="window-title-file-parameters">File Parameters</message>
+  <message id="window-title-energy-range-sum">Energy Range Sum</message>
+  <message id="window-title-external-rid">External RID</message>
+  <message id="window-title-license-credit">Disclaimers, Licenses, Credit, and Contact</message>
+  <message id="window-title-help">InterSpec Help</message>
+
 
 
   <!-- The names of the tool-tabs at the bottom of the app -->

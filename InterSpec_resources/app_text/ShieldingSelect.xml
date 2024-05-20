@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- ss- is short for ShieldingSelect
+  -->
+  <message id="ss-tt-shield-type-toggle">Toggle between material and generic shielding</message>
+  <message id="ss-tt-material-name">
+    You can either enter the name of a pre-defined material or element here
+    (clear form text and click arrow on right of form to see all predefined
+    options), or you can specify the atomic make up of the material, similar
+    to C0.5H0.2Ni0.6, where the numbers are the density in g/cm3 of the
+    preceding element in the material, so the example would have a total
+    density of 0.5+0.2+0.6=1.3 g/cm3.
+    To enter materials with isotopic components, you should single or double
+    quote the nuclide, ex: 'U238'0.2'U235'0.8
+  </message>
+  <message id="ss-tt-areal-density">Areal Density of the shielding in g/cm2</message>
+  <message id="ss-areal-density-empty-txt">Areal Density</message>
+  <message id="ss-tt-atomic-number">Atomic Number of the shielding</message>
+  <message id="ss-atomic-number-empty-txt">Atomic Number</message>
+  <message id="ss-source-for-cb">
+    When these nuclides are used as sources they are
+    treated as uniformly distributed in the material
+    (which is assumed spherical), so self attenuation
+    and other factors are accounted for.
+  </message>
+  <message id="ss-fit-mass-fractions-cb">Fit Mass Fractions</message>
+  <message id="ss-thickness">Thickness</message>
+  <message id="ss-radius">Radius</message>
+  <message id="ss-radial-thickness">Radial Thickness</message>
+  <message id="ss-half-length">Half-Length</message>
+  <message id="ss-length-thickness">Length Thickness</message>
+  <message id="ss-half-width">Half-Width</message>
+  <message id="ss-width-thickness">Width Thickness</message>
+  <message id="ss-half-height">Half-Height</message>
+  <message id="ss-height-thickness">Height Thickness</message>
+  <message id="ss-half-depth">Half-Depth</message>
+  <message id="ss-depth-thickness">Depth Thickness</message>
+  <message id="ss-tt-fit-mass-frac">If mass fractions are fit for, their fractional sum will remain constant in the fit.</message>
+  <message id="ss-fixed-non-src-frac">Assuming {1}{2}% other {3} isos</message>
+  <message id="ss-fixed">fixed</message>
+  <message id="ss-generic">Generic</message>
+  <message id="ss-consists-of-mass-frac">consist of (mass fraction, element)</message>
+  <message id="ss-err-invalid-material">{1} is not a valid material</message>
+  <message id="ss-invalid-mat">invalid mat.</message>
+  <message id="ss-"></message>
+  <message id="ss-"></message>
+  <message id="ss-"></message>
+</messages>
