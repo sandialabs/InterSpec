@@ -68,6 +68,9 @@
 <message id="Dose">Dose</message>
 <message id="Shielding">Blindage</message>
 <message id="app-qr-err">Erreur de création du code QR : {1}</message>
+<message id="intrinsic-activity">Activité Intrinsèque</message>
+<message id="Calibration">Calibration</message>
+<message id="Unknown">Inconnu</message>
 
 <message id="Energy (keV)">Énergie (keV)</message>
 <message id="spectrum_y_axis_title">Comptes</message>
@@ -91,6 +94,13 @@
 <message id="window-title-units-convert">Convertisseur d'Unités</message>
 <message id="window-title-flux-tool">Outil de Flux</message>
 <message id="window-title-nuc-decay">Informations sur la Décroissance Nucléide</message>
+<message id="window-title-add-fwhm">Ajouter FWHM à la Fonction de Réponse du Détecteur</message>
+<message id="window-title-create-drf">Créer une Fonction de Réponse du Détecteur</message>
+<message id="window-title-file-parameters">Paramètres du Fichier</message>
+<message id="window-title-energy-range-sum">Somme de la Plage d'Énergie</message>
+<message id="window-title-external-rid">RID Externe</message>
+<message id="window-title-license-credit">Avertissements, Licences, Crédits et Contact</message>
+<message id="window-title-help">Aide InterSpec</message>
 <message id="app-tab-peak-manager">Gestionnaire de pics</message>
 <message id="app-tab-ref-photopeak">Pics photoélectriques de référence</message>
 <message id="app-tab-energy-cal">Calibrage de l'énergie</message>

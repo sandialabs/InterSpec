@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- lrm- is short for LeafletRadMap
+  -->
+  <message id="lrm-pre-warn-title">Avant de Continuer</message>
+  <message id="lrm-pre-warn-content">
+      Des tuiles de carte seront demandées à <a href="https://arcgis.com" target="_blank">https://arcgis.com</a>.
+      Aucune donnée de radiation ne quittera votre appareil, mais des demandes pour
+      des tuiles de carte englobant les mesures seront faites à ce service.
+      {1}
+  </message>
+  <message id="lrm-pre-warn-user-key">
+      <p>Votre clé arcgis personnalisée commençant par '{1}' sera utilisée pour demander des tuiles de carte.</p>
+  </message>
+  <message id="lrm-pre-warn-invalid-user-key">
+      <p>Une clé arcgis invalide a été spécifiée dans arcgis_key.txt, donc la clé intégrée sera utilisée.</p>
+  </message>
+  <message id="lrm-pre-warn-dont-ask">Ne plus demander</message>
+  <message id="lrm-pre-warn-proceed-btn">Procéder</message>
+  <message id="lrm-window-title">Outil Cartographique</message>
+  <message id="lrm-will-use-user-key">Utilisera la clé arcgis spécifiée par l'utilisateur, commençant par '{1}' pour demander des cartes.</message>
+  <message id="lrm-user-key-invalid">Il y avait un fichier arcgis_key.txt, mais il ne contenait pas de clé valide</message>
+  <message id="lrm-err-loading-samples">Erreur lors du chargement des échantillons sélectionnés sur la carte : {1}</message>
+  <message id="lrm-displayed-as">Affiché comme</message>
+  <message id="lrm-measurements-as">mesures comme</message>
+</messages>

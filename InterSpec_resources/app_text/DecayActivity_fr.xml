@@ -1,0 +1,88 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- dw- short for DecayWindow.cpp, 
+       dad- short for DecayActivityDiv
+       dcc- short for DecayChainChart
+       dcn- DecaySelectNuclide
+  -->
+  <message id="dw-qr-window-title">État de l'Outil de Décroissance</message>
+<message id="dw-qr-window-text">État actuel de l'outil de décroissance.</message>
+<message id="dad-units-label">Unités d'Affichage :</message>
+<message id="dad-units-label-phone">Unités :</message>
+<message id="dad-logy-cb">Échelle Log-Y</message>
+<message id="dad-grid-cb">Lignes de Grille</message>
+<message id="dad-add-nucs">Ajouter un Nucléide...</message>
+<message id="dad-remove-all">Tout Supprimer</message>
+<message id="dad-sel-nuc-window-title">Sélectionner le Nucléide à Ajouter</message>
+<message id="dad-mi-act-chart">Graphique d'Activité</message>
+<message id="dad-mi-decay-chain">Chaîne de Décroissance</message>
+<message id="dad-mi-calc">Calculatrice</message>
+<message id="dad-arbitrary">Arbitraire</message>
+<message id="dad-time-span-label">Intervalle de Temps :</message>
+<message id="dad-tt-age">
+    <div>
+      L'âge peut être spécifié en utilisant une combinaison d'unités de temps, semblable à '<b>5.3a 8j 22m</b>' ou en demi-vies comme '<b>2.5 DV</b>'.
+    </div>
+    <div>
+      Unités de temps acceptables : <b>year</b>, <b>yr</b>, <b>y</b>, <b>day</b>, <b>d</b>, <b>hrs</b>, <b>hour</b>, <b>h</b>, <b>minute</b>,
+      <b>min</b>, <b>m</b>, <b>second</b>, <b>s</b>, <b>ms</b>, <b>microseconds</b>, <b>us</b>, <b>nanoseconds</b>, <b>ns</b>, ou
+      vous pouvez spécifier la période de temps par <b>hh:mm:ss</b>. Les unités de demi-vie peuvent être
+      spécifiées en utilisant <b>hl</b>, <b>halflife</b>, <b>halflives</b>, <b>half-life</b>, <b>half-lives</b>,
+      <b>half lives</b>, ou <b>half life</b>.
+    </div>
+    <div>
+      Les unités de demi-vie ou les périodes de temps ne peuvent pas être mélangées avec
+      d'autres unités, et si plusieurs nucléides sont spécifiés, le premier est supposé. Lorsque plusieurs périodes de temps sont
+      spécifiées, elles sont additionnées, par ex. '1a6mois 3m' est interprété comme
+      18 mois et 3 minutes.
+    </div>
+</message>
+<message id="dad-yaxis-label-phone">Axe Y :</message>
+<message id="dad-yaxis-label">Type d'Axe Y :</message>
+<message id="dad-gamma-rate">Taux de Gamma</message>
+<message id="dad-beta-rate">Taux de Bêta</message>
+<message id="dad-alpha-rate">Taux d'Alpha</message>
+<message id="dad-click-for-more-info">Cliquez pour plus d'informations</message>
+<message id="dad-tt-double-click">Double-cliquez pour éditer ce nucléide source. Cliquez une fois pour faire afficher la chaîne de décroissance de ce nucléide</message>
+<message id="dad-summary-at-time">Résumé à t={1}</message>
+<message id="dad-hdr-date">Date ({1})</message>
+<message id="dad-hdr-total-act">Activité Totale</message>
+<message id="dad-hdr-total-gammas">Total des Gammas</message>
+<message id="dad-yaxis-title-total-gammas">Gammas/Seconde</message>
+<message id="dad-hdr-total-betas">Total des Bêtas</message>
+<message id="dad-yaxis-title-total-betas">Bêtas/Seconde</message>
+<message id="dad-hdr-total-alphas">Total des Alphas</message>
+<message id="dad-yaxis-title-total-alphas">Alphas/Seconde</message>
+<message id="dad-chart-click-more-info">Cliquez pour plus d'informations - {1} {2} après T0 nous avons :</message>
+
+<message id="dcc-window-title-decay-chain">Chaîne de Décroissance de {1}</message>
+<message id="dcc-window-title-decay-through">Décroissance à travers {1}</message>
+<message id="dcc-nuc-info-protons">Protons : {1}</message>
+<message id="dcc-nuc-info-mass">Masse : {1} Da</message>
+<message id="dcc-nuc-info-hl-stable">Demi-vie : stable</message>
+<message id="dcc-nuc-info-hl">Demi-vie : {1}</message>
+<message id="dcc-nuc-info-br-from">TR de {1} : {2}</message>
+<message id="dcc-nuc-info-br-through">TR à travers {1} : {2}</message>
+<message id="dcc-nuc-info-specific-act">Act Spécifique : {1}</message>
+<message id="dcc-nuc-info-decay-mode">{1} se désintègre en {2}, TR {3}</message>
+<message id="dcc-particle-window-title">Énergies des Particules de Désintégration</message>
+<message id="dcc-particles-from">Particules de {1}</message>
+<message id="dcc-nuc-has-no-particles">Ce nucléide n'a pas de particules issues de la désintégration</message>
+<message id="dcc-particle">Particule</message>
+<message id="dcc-intensity">Intensité</message>
+<message id="dcc-decay-through-window-title">Désintégrations à travers {1}</message>
+
+<message id="dcc-xAxisTitle">Diminution de la Masse Atomique</message>
+<message id="dcc-yAxisTitle">Augmentation du Numéro Atomique</message>
+<message id="dcc-clickNucTxt">Cliquez sur le nucléide pour plus d'informations.</message>
+<message id="dcc-clickNucMoreInfoTxt1">Double-cliquez sur le nucléide pour les particules qu'il émet.</message>
+<message id="dcc-clickNucMoreInfoTxt2">Cliquez sur un nucléide source différent ci-dessus pour</message>
+<message id="dcc-clickNucMoreInfoTxt3">changer la chaîne de désintégration affichée.</message>
+<message id="dcc-clickNucMblTxt">Tapez sur le nucléide pour plus d'informations.</message>
+<message id="dcc-clickNucMblMoreInfoTxt1">Touchez le nucléide pendant 1 seconde pour les particules qu'il émet.</message>
+<message id="dcc-clickNucMblMoreInfoTxt2">Cliquez sur un nucléide source différent ci-dessus pour</message>
+<message id="dcc-clickNucMblMoreInfoTxt3">changer la chaîne de désintégration affichée.</message>
+
+<message id="dcn-initial-age">Âge Initial : </message>
+
+</messages>

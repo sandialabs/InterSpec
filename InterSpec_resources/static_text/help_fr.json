@@ -1,0 +1,249 @@
+[
+  {
+    "id": "getting-started",
+    "title": "Prise en Main",
+    "help-xml": "getting_started_help.xml",
+    "help-xml-mobile": "getting_started_mobile_help.xml",
+    "keywords": "Setting Up Uploading Files Format Drag Drop TXT CSV XML/N42 PCF Manager Add Foreground Secondary Background Getting Started",
+    "children": [
+      {
+        "id": "display",
+        "title": "Options d'Affichage",
+        "help-xml": "display_options_help.xml",
+        "keywords": "Display Linear Log Gridlines Horizontal Vertical Legend Dead Real Live Time Windows Notifications Options Detectors Graph"
+      },
+      {
+        "id": "spectrum-interactions",
+        "title": "Interagir avec le Graphique du Spectre",
+        "children": [
+          {
+            "id": "zoom-in",
+            "title": "Zoomer",
+            "help-xml": "zoom_in_help.xml",
+            "help-xml-mobile": "zoom_in_mobile_help.xml",
+            "keywords": "Navigating On The Graph Zoomed In Left Right Drag"
+          },
+          {
+            "id": "zoom-out",
+            "title": "Dézoomer",
+            "help-xml": "zoom_out_help.xml",
+            "help-xml-mobile": "zoom_out_mobile_help.xml",
+            "keywords": "Navigating On The Graph Zoomed In Left Right Drag"
+          },
+          {
+            "id": "energy-pan",
+            "title": "Changer la Plage d'Énergie",
+            "help-xml": "energy_pan_help.xml",
+            "help-xml-mobile": "energy_pan_mobile_help.xml",
+            "keywords": "Navigating On The Graph Zoomed In Move Moving Left Right Drag"
+          },
+          {
+            "id": "id-peaks",
+            "title": "Ajuster le(s) Pic(s)",
+            "help-xml": "peak_fit_help.xml",
+            "help-xml-mobile": "peak_fit_mobile_help.xml",
+            "keywords": "Navigating On The Graph Zoomed In Out Move Moving Left Right Drag Identify Peaks"
+          },
+          {
+            "id": "delete-peaks",
+            "title": "Supprimer le(s) Pic(s)",
+            "help-xml": "delete_peak_help.xml",
+            "help-xml-mobile": "delete_peak_mobile_help.xml",
+            "keywords": "Navigating On The Graph Zoomed In Out Move Moving Left Right Drag Delete Erase Peaks"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "tools",
+    "title": "Outils",
+    "help-xml": "tools_intro_help.xml",
+    "keywords": "Tool Tools Calibrate fit decay calculate calc edit",
+    "children": [
+      {
+        "id": "reference-gamma-lines-dialog",
+        "title": "Lignes Gamma de Référence",
+        "help-xml": "ref_gamma_lines_help.xml",
+        "keywords": "Trouble Fitting Peaks For Shielding Nuclide Age Accuracy Reference Photopeaks Tools Materials Calibration Units Spectrum"
+      },
+      {
+        "id": "energy-calibration",
+        "title": "Calibration d'Énergie",
+        "help-xml": "energy_calibration_help.xml",
+        "keywords": "Energy Calibration Tool Calibrate Adjust Offset Peaks Information Offset Linear Quadratic Normalize"
+      },
+      {
+        "id": "rel-act-manual",
+        "title": "Isotopiques à partir des Pics Utilisateur",
+        "help-xml": "rel_act_manual_help.xml",
+        "keywords": "isotopics relative activity mass efficiency enrichment tool"
+      },
+      {
+        "id": "peak-manager",
+        "title": "Gestionnaire de Pics",
+        "help-xml": "peak_manager_help.xml",
+        "keywords": "peak edit editor"
+      },
+      {
+        "id": "compact-file-manager",
+        "title": "Sélecteur de Fichier de Spectre",
+        "help-xml": "compact_file_manager_help.xml",
+        "keywords": "select file foreground background second manager"
+      },
+      {
+        "id": "detector-edit-dialog",
+        "title": "Sélection de Détecteur",
+        "help-xml": "detector_edit_help.xml",
+        "keywords": "Detectors Edit Select Tool Camera Icon GADRAS Relative Efficiency Upload Manually Recent Reference Photopeaks Intrinsic Efficiency Full Width at Half Maximum FWHM Defined Efficiency.csv Parameters Geometric Detector.dat Akima Interpolation Cubic Spline Absolute"
+      },
+      {
+        "id": "make-drf",
+        "title": "Créer une Fonction de Réponse du Détecteur",
+        "help-xml": "make_drf_help.xml",
+        "keywords": "Detectors Relative Efficiency Full Width at Half Maximum FWHM Absolute"
+      },
+      {
+        "id": "add-fwhm-to-drf",
+        "title": "Ajuster le FWHM à partir du spectre actuel",
+        "help-xml": "add_fwhm_to_drf_help.xml",
+        "keywords": "DRF Detector FWHM Full Width at Half Maximum FWHM"
+      },
+      {
+        "id": "activity-shielding-dialog",
+        "title": "Ajustement de l'Activité et du Blindage",
+        "help-xml": "activity_shielding_fit_help.xml",
+        "keywords": "Activity Shielding Fit Tools Multiple Nuclides Materials Common Generic Density Manual Thickness Upload Distance Measurement Off Adjust Accurate Accuracy False Source XML Model"
+      },
+      {
+        "id": "rel-act-dialog",
+        "title": "Isotopiques d'Activité Relative",
+        "help-xml": "rel_act_help.xml",
+        "keywords": "Relative Activity Efficiency Isotopics"
+      },
+      {
+        "id": "gamma-xs-dialog",
+        "title": "Calcul XS Gamma",
+        "help-xml": "gamma_cross_section_dialog_help.xml",
+        "keywords": "Cross Section Gammas Efficiency Estimates Energy Material Mass Formula Mass-Formula Total Att. Cross Section Density Length Trans. Frac. Fraction Transversal Detector Detection Attenuating"
+      },
+      {
+        "id": "peak-editor",
+        "title": "Éditeur de Pics",
+        "help-xml": "peak_editor_help.xml",
+        "keywords": "Peaks Editor Highlighted Nuclide Energetically Close Region of Interest ROI Refit Delete Add Fitting Difficult Change Continuum Specifying Select Show User Labels Algorithm Globally"
+      },
+      {
+        "id": "1/r2-calc-dialog",
+        "title": "Calcul 1/r2",
+        "help-xml": "one_over_r2_help.xml",
+        "keywords": "1/r2 Calculator Tool Distance Measurement Intensity Front Near Far Background Counts Millirem Source Gamma Sievert Attoparsecs Unknown Location Position"
+      },
+      {
+        "id": "decay-dialog",
+        "title": "Info sur la Décroissance Nucléide",
+        "help-xml": "nuclide_decay_dialog_help.xml",
+        "keywords": "Information Activity Chart Decay Chain Add Nuclides Aged Descendant Reference Photopeaks Gamma Beta Alpha Production Rates Graph Information Emission Emit Particles Time Span Y Axis Type Graph Log Linear Gives Off Branching Ratio"
+      },
+      {
+        "id": "color-theme-dialog",
+        "title": "Couleurs/Thème",
+        "help-xml": "color_theme_dialog_help.xml",
+        "keywords": "Color Theme line background area peak"
+      },
+      {
+        "id": "file-parameters-dialog",
+        "title": "Paramètres de Fichier",
+        "help-xml": "file_parameters_help.xml",
+        "keywords": "File Parameters Tool Not Calculating Activity Calculation Reload Spectrum"
+      },
+      {
+        "id": "energy-range-count",
+        "title": "Somme de la Plage d'Énergie",
+        "help-xml": "energy_range_count_help.xml",
+        "help-xml-mobile": "energy_range_count_mobile_help.xml",
+        "keywords": "Energy Range Count Sum Gammas Drag Select Region of Interest ROI"
+      },
+      {
+        "id": "dose-dialog",
+        "title": "Calculs de Dose",
+        "help-xml": "dose_tool_help.xml",
+        "keywords": "Dose Distance Shielding Source Neutron Neutrons Gamma Gammas"
+      },
+      {
+        "id": "flux-tool",
+        "title": "Outil de Flux",
+        "help-xml": "flux_tool_help.xml",
+        "keywords": "Gamma Gammas Flux rate pi steridians"
+      },
+      {
+        "id": "detection-confidence-tool",
+        "title": "Outil de Confiance de Détection",
+        "help-xml": "detection_confidence_tool_help.xml",
+        "keywords": "detection confidence upper limit 95 activity"
+      },
+      {
+        "id": "spectrum-file-query",
+        "title": "Outil de Requête de Fichier de Spectre",
+        "help-xml": "file_query_tool_help.xml",
+        "keywords": "Spectrum File Query Tool search match parameter"
+      },
+      {
+        "id": "nuclide-search-dialog",
+        "title": "Recherche de Nucléide par Énergie",
+        "help-xml": "nuclide_search_help.xml",
+        "keywords": "Search For Peaks Nuclides Gamma XRays X-Rays Reactions Half Life HL Half-Life Branching Ratio BR Energy Constraint Table Parent"
+      },
+      {
+        "id": "terminal-dialog",
+        "title": "Terminal de Commandes/Mathématiques",
+        "help-xml": "terminal_help.xml",
+        "keywords": "Calculator Math Terminal Tool command line commands CLI interface",
+        "children": [
+          {
+            "id": "math-commands",
+            "title": "Commandes/Fonctions Mathématiques",
+            "help-xml": "terminal_math_commands_help.xml",
+            "keywords": "math mathematical commands functions calculator compute"
+          },
+          {
+            "id": "interspec-commands",
+            "title": "Commandes/Fonctions InterSpec",
+            "help-xml": "terminal_interspec_commands_help.xml",
+            "keywords": "InterSpec commands functions command calculator compute"
+          }
+        ]
+      },
+      {
+        "id": "external-rid",
+        "title": "RID Externe",
+        "help-xml": "external_rid_help.xml",
+        "keywords": "RID RIID external isotope ID"
+      },
+      {
+        "id": "leaflet-rad-map",
+        "title": "Outil Cartographique",
+        "help-xml": "leaflet_rad_map_help.xml",
+        "keywords": "map geo gps plot lat lon latitude longitude heat"
+      }
+    ]
+  },
+  {
+    "id": "saving-work",
+    "title": "Sauvegarder Votre Travail",
+    "children": [
+      {
+        "id": "internal-db",
+        "title": "Sauvegarder le travail dans la Base de Données interne",
+        "help-xml": "save_to_db_help.xml",
+        "keywords": "Saving Work Stored Spectrum As App State Save Autosave Auto-Save"
+      },
+      {
+        "id": "export-spec-file",
+        "title": "Exporter les Fichiers de Spectre",
+        "help-xml": "export_spec_file_help.xml",
+        "keywords": "Save Work Spectrum N42 SPC XML"
+      }
+    ]
+  }
+]

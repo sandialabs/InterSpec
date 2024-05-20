@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- pid is short for PeakInfoDisplay -->
+
+  <message id="pid-peak-mean">Moyenne du Pic</message>
+<message id="pid-peak-fwhm">FWHM du Pic</message>
+<message id="pid-peak-amp">Amplitude du Pic</message>
+<message id="pid-roi-lower">Limite Inférieure de la ROI</message>
+<message id="pid-roi-upper">Limite Supérieure de la ROI</message>
+
+<message id="pid-dialog-peak-erase">Effacer Tous les Pics ?</message>
+<message id="pid-dialog-add-peak-title">Ajouter un Pic</message>
+
+<message id="pid-tt-more-adv">Pour plus d'options avancées, voir l'<em>Éditeur de Pics</em> après l'ajout.</message>
+<message id="pid-screen-to-small">Écran trop petit pour l'aperçu.</message>
+<message id="pid-err-preview">Erreur lors du rendu de l'aperçu</message>
+<message id="pid-err-fit-failed">L'ajustement a échoué.</message>
+
+<message id="pid-err-no-foreground">Un spectre de premier plan doit être chargé pour ajouter un pic.</message>
+<message id="pid-err-no-foreground-1">Aucun spectre de premier plan</message>
+
+<message id="pid-search-peaks-btn">Rechercher des Pics</message>
+<message id="pid-tt-search-peaks-btn">Rechercher des pics en utilisant l'algorithme de détection automatique des pics.</message>
+<message id="pid-clear-peaks-btn">Effacer tous les Pics</message>
+<message id="pid-tt-clear-peaks-btn">Supprime <b>tous</b> les pics existants.</message>
+<message id="pid-nuc-from-ref-btn">Nucl. à partir de Réf.</message>
+<message id="pid-tt-nuc-from-ref-btn">
+    Attribuer les nucléides des pics à partir des lignes de référence affichées. S'applique uniquement aux
+    pics qui n'ont pas déjà un nucléide associé.
+</message>
+
+<message id="pid-add-peak-btn">Ajouter...</message>
+<message id="pid-tt-add-peak-btn">Ajouter manuellement un nouveau pic.</message>
+<message id="pid-tt-del-peaks">Supprime le pic actuellement en cours d'édition.</message>
+<message id="pid-better-editor-hint">Cliquez avec le bouton droit sur les pics pour un meilleur éditeur</message>
+<message id="pid-tt-csv-export">Exporter les informations sur les pics identifiés dans un format séparé par des virgules.</message>
+</messages>

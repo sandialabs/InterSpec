@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- d3sdd- is short for D3SpectrumDisplayDiv
+
+    The part of the id coming after "d3sdd-", directly corresponds to the javascript variable name, the element value gets put into.
+
+    The JS 'xAxisTitle' variable is localized using the "Energy (keV)" key
+    The JS 'fwhm' variable is localized using the "FWHM" key
+  -->
+
+  <message id="d3sdd-yAxisTitle">Comptes</message>
+  <message id="d3sdd-yAxisTitleMulti">Comptes par {1} Canaux</message>
+  <message id="d3sdd-realTime">Temps Réel</message>
+  <message id="d3sdd-liveTime">Temps Actif</message>
+  <message id="d3sdd-deadTime">Temps Mort</message>
+  <message id="d3sdd-scaledBy">Échelonné par</message>
+  <message id="d3sdd-zoomIn">Zoomer</message>
+  <message id="d3sdd-neutrons">neutrons</message>
+  <message id="d3sdd-Neutrons">Neutrons</message>
+  <message id="d3sdd-cps">cps</message>
+  <message id="d3sdd-roiCounts">Comptes ROI</message>
+  <message id="d3sdd-gammaCounts">Comptes Gamma</message>
+  <message id="d3sdd-contArea">zone cont.</message>
+  <message id="d3sdd-peakCps">cps de pic</message>
+  <message id="d3sdd-peakArea">zone de pic</message>
+  <message id="d3sdd-mean">moyenne</message>
+  <message id="d3sdd-spectrum">Spectre</message>
+  <message id="d3sdd-comptonEdge">Bord de Compton</message>
+  <message id="d3sdd-sumPeak">Pic Somme</message>
+  <message id="d3sdd-firstEnergyClick">Cliquez pour définir la première énergie du pic somme.</message>
+  <message id="d3sdd-singleEscape">Échappement Simple</message>
+  <message id="d3sdd-doubleEscape">Échappement Double</message>
+  <message id="d3sdd-eraseInRange">Effacera les Pics dans la Plage</message>
+  <message id="d3sdd-zoomInY">Zoomer sur l'axe Y</message>
+  <message id="d3sdd-zoomOutY">Dézoomer sur l'axe Y</message>
+  <message id="d3sdd-touchDefineRoi">Déplacez 2 doigts vers la droite pour définir le ROI</message>
+  <message id="d3sdd-foreNSigmaBelowBack">Le premier plan est {1} σ sous l'arrière-plan.</message>
+  <message id="d3sdd-foreNSigmaAboveBack">Le premier plan est {1} σ au-dessus de l'arrière-plan.</message>
+  <message id="d3sdd-backSubCounts">comptes (soustraction de fond)</message>
+  <message id="d3sdd-afterScalingBy">après échelonnement par</message>
+  <message id="d3sdd-clickedPeak">Pic Cliqué</message>
+  <message id="d3sdd-recalFromTo">Recalibrer les données de {1} à {2} keV</message>
+  <message id="d3sdd-sumFromTo">De {1} à {2} keV</message>
+  <message id="d3sdd-comptonPeakAngle">Pic de Compton à {1}°</message>
+</messages>

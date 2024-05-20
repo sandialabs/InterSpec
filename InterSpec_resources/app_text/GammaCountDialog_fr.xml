@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- gcd- is short for GammaCountDialog
+  -->
+  <message id="gcd-summary">Compter le nombre de gammas dans la plage d'énergie spécifiée.</message>
+<message id="gcd-lower-energy-label">Énergie Inférieure</message>
+<message id="gcd-upper-energy-label">Énergie Supérieure</message>
+<message id="gcd-shift-alt-drag">Maj-Alt-Glisser</message>
+<message id="gcd-shift-option-drag">Maj-⌘-Glisser</message>
+<message id="gcd-select-shortcut">Vous pouvez également <b>{1}</b> sur le graphique pour sélectionner la plage d'énergie</message>
+<message id="gcd-foreground-counts-label">Comptes de Premier Plan :</message>
+<message id="gcd-secondary-counts-label">Comptes Secondaires :</message>
+<message id="gcd-background-counts-label">Comptes d'Arrière-plan :</message>
+<message id="gcd-tt-n-sigma">
+    Le nombre de différences sigma est calculé en divisant la
+    différence entre le premier plan et l'arrière-plan (échelonné),
+    divisée par l'incertitude. L'incertitude est calculée en
+    sommant les incertitudes statistiques du premier plan et de l'arrière-plan en
+    quadrature, puis en prenant la racine carrée
+</message>
+<message id="gcd-qr-window-title">État de la Somme de la Plage d'Énergie</message>
+<message id="gcd-qr-window-text">État actuel de l'outil de somme de la plage d'énergie.</message>
+<message id="gcd-background-scale-note">L'arrière-plan est échelonné par {1}</message>
+<message id="gcd-and-secondary-scaled"> et le secondaire par </message>
+<message id="gcd-secondary-scale-note">L'arrière-plan secondaire est échelonné par </message>
+<message id="gcd-foreground-above-background">Le premier plan est {1} σ sous l'arrière-plan.</message>
+<message id="gcd-foreground-below-background">Le premier plan est {1} σ au-dessus de l'arrière-plan.</message>
+</messages>
