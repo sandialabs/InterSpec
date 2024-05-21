@@ -537,9 +537,13 @@
   <message id="app-det-select-txt-mobile">tap to select</message>
   <message id="app-default-manual-det-name">User Defined Detector</message>
 
-  <!-- An incomplete list of possible languages - mapping the two letter code we receive as part of
-    the locale, to their native name.
-    You do not need to, and shouldnt, include these into translations of this file.
+
+  <!-- An incomplete list of possible languages - mapping the two letter code we receive as
+    part of the locale, to their native name - mostly picked by LLM result.
+    
+    A more complete listing of languages and countries can be found in commit e28dbb39.
+
+    You do not need to, and shouldnt, include these, or countries, into translations of this file.
   -->
   <message id="lang-en">English</message>
   <message id="lang-fr">Français</message>
@@ -551,64 +555,19 @@
   <message id="lang-ru">Русский</message>
   <message id="lang-it">Italiano</message>
   <message id="lang-ko">한국어</message>
-  <message id="lang-nl">Nederlands</message>
-  <message id="lang-pl">Polski</message>
-  <message id="lang-sv">Svenska</message>
-  <message id="lang-da">Dansk</message>
-  <message id="lang-fi">Suomi</message>
-  <message id="lang-no">Norsk</message>
-  <message id="lang-tr">Türkçe</message>
-  <!-- I am not sure how to deal with right-to-left languages at the moment
-  ar, العربية, المملكة العربية السعودية
-  he, עברית, ישראל)
-  ur, اردو, پاکستان)
-  fa, فارسی, ایران)
-  -->
-  <message id="lang-cs">Čeština</message>
-  <message id="lang-hu">Magyar</message>
-  <message id="lang-el">Ελληνικά</message>
-  <message id="lang-ro">Română</message>
-  <message id="lang-th">ไทย</message>
   <message id="lang-vi">Tiếng Việt</message>
-  <message id="lang-id">Bahasa Indonesia</message>
-  <message id="lang-ms">Bahasa Melayu</message>
-  <message id="lang-hi">हिन्दी</message>
-  <message id="lang-bn">বাংলা</message>
-  <message id="lang-af">Afrikaans</message>
-  <message id="lang-sw">Kiswahili</message>
-  <message id="lang-sq">Shqip</message>
-  <message id="lang-hy">Հայերեն</message>
-  <message id="lang-eu">Euskara</message>
-  <message id="lang-bs">Bosanski</message>
-  <message id="lang-bg">Български</message>
-  <message id="lang-hr">Hrvatski</message>
-  <message id="lang-et">Eesti</message>
-  <message id="lang-fo">Føroyskt</message>
-  <message id="lang-ka">ქართული</message>
-  <message id="lang-gl">Galego</message>
-  <message id="lang-is">Íslenska</message>
-  <message id="lang-ga">Gaeilge</message>
-  <message id="lang-lv">Latviešu</message>
-  <message id="lang-lt">Lietuvių</message>
-  <message id="lang-mk">Македонски</message>
-  <message id="lang-mt">Malti</message>
-  <message id="lang-mn">Монгол</message>
-  <message id="lang-sr">Српски</message>
-  <message id="lang-sk">Slovenčina</message>
-  <message id="lang-uk">Українська</message>
-  <message id="lang-cy">Cymraeg</message>
+  <message id="lang-tr">Türkçe</message>
 
 
   <!-- An incomplete list of possible countries - mapping the two letter code we receive as part of
-  the locale, to their native name.
-  You do not need to, and shouldnt, include these into translations of this file.
+  the locale, to their names to display.
   -->
   <message id="country-US">United States</message>
   <message id="country-GB">United Kingdom</message>
   <message id="country-AU">Australia</message>
   <message id="country-CA">Canada</message>
   <message id="country-FR">France</message>
-  <message id="country-ES"> España</message>
+  <message id="country-ES">España</message>
   <message id="country-MX">México</message>
   <message id="country-DE">Deutschland</message>
   <message id="country-JP">日本</message>
@@ -619,49 +578,5 @@
   <message id="country-RU">Россия</message>
   <message id="country-IT">Italia</message>
   <message id="country-KR">대한민국</message>
-  <message id="country-NL">Nederland</message>
-  <message id="country-PL">Polska</message>
-  <message id="country-SE">Sverige</message>
-  <message id="country-DK">Danmark</message>
-  <message id="country-FI">Suomi</message>
-  <message id="country-NO">Norge</message>
   <message id="country-TR">Türkiye</message>
-  <message id="country-SA">المملكة العربية السعودية</message>
-  <message id="country-IL">ישראל</message>
-  <message id="country-CZ">Česká republika</message>
-  <message id="country-HU">Magyarország</message>
-  <message id="country-GR">Ελλάδα</message>
-  <message id="country-RO">România</message>
-  <message id="country-TH">ประเทศไทย</message>
-  <message id="country-VN">Việt Nam</message>
-  <message id="country-ID">Indonesia</message>
-  <message id="country-MY">Malaysia</message>
-  <message id="country-IN">भारत</message>
-  <message id="country-BD">বাংলাদেশ</message>
-  <message id="country-PK">پاکستان</message>
-  <message id="country-IR">ایران</message>
-  <message id="country-ZA">Suid-Afrika</message>
-  <message id="country-TZ">anzania</message>
-  <message id="country-AL">Shqipëria</message>
-  <message id="country-AM">Հայաստան</message>
-  <message id="country-ES">Espainia</message>
-  <message id="country-BA">Bosna i Hercegovina</message>
-  <message id="country-BG">България</message>
-  <message id="country-HR">Hrvatska</message>
-  <message id="country-EE">Eesti</message>
-  <message id="country-FO">Føroyar</message>
-  <message id="country-GE">საქართველო</message>
-  <message id="country-IS">Ísland</message>
-  <message id="country-IE">Éire</message>
-  <message id="country-LV">Latvija</message>
-  <message id="country-LT">Lietuva</message>
-  <message id="country-MK">Северна Македонија</message>
-  <message id="country-MT">Malta</message>
-  <message id="country-MN">Монгол улс</message>
-  <message id="country-RS">Србија</message>
-  <message id="country-SK">Slovensko</message>
-  <message id="country-SI">Slovenija</message>
-  <message id="country-UA">Україна</message>
-  <message id="country-GB">Deyrnas Unedig</message>
-
 </messages>
