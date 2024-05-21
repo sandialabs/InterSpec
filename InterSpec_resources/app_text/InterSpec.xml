@@ -480,7 +480,9 @@
 
   <message id="info-user-default-drf">Using the detector response function you specified to use as default for this detector.</message>
   <message id="info-app-default-drf">Have loaded a default detector response function for this detection system.</message>
-  
+  <message id="info-recal-tab-selected">You can also recalibrate graphically by right-clicking and dragging the spectrum to where you want.</message>
+
+
   <!-- Toast message shown to user when they load a spectrum that has GPS coordinates -->
   <message id="info-has-gps-txt">File contains GPS coordinates.</message>
   <message id="info-has-gps-btn">Show on map</message>

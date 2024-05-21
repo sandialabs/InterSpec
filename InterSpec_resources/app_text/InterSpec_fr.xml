@@ -348,6 +348,7 @@
 <message id="window-hard-back-sub-round">Arrondir les comptes des canaux au nombre entier le plus proche</message>
 <message id="info-user-default-drf">Utilisation de la fonction de réponse du détecteur que vous avez spécifiée comme défaut pour ce détecteur.</message>
 <message id="info-app-default-drf">Une fonction de réponse du détecteur par défaut pour ce système de détection a été chargée.</message>
+<message id="info-recal-tab-selected">Vous pouvez également recalibrer graphiquement en cliquant avec le bouton droit et en faisant glisser le spectre là où vous le souhaitez.</message>
 <message id="info-has-gps-txt">Le fichier contient des coordonnées GPS.</message>
 <message id="info-has-gps-btn">Afficher sur la carte</message>
 <message id="info-has-rid-txt">Le fichier contenait des résultats RID embarqués</message>

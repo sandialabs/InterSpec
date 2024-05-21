@@ -1645,6 +1645,10 @@ protected:
   bool m_findingHintPeaks;
   std::deque<boost::function<void()> > m_hintQueue;
   
+  /** Some informational messages should only be shown once, like when you click on the
+   energy tab, so we'll keep track of if we have shown a message.
+   */
+  std::set<std::string> m_infoNotificationsMade;
   
 #if( INCLUDE_ANALYSIS_TEST_SUITE )
   friend class SpectrumViewerTester;

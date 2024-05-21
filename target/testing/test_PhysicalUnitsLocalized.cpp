@@ -23,10 +23,13 @@
 #include <map>
 #include <tuple>
 #include <cmath>
+#include <regex>
 #include <string>
 #include <vector>
 #include <cstdlib>
 
+#include <Wt/WServer>
+#include <Wt/WString>
 #include <Wt/WMessageResourceBundle>
 
 
@@ -305,5 +308,316 @@ BOOST_AUTO_TEST_CASE( testStringToTimeDurationPossibleHalfLifeLocalized ) {
       BOOST_CHECK_MESSAGE( false, "Failed to parse '" << input << "' using localized stringToTimeDurationPossibleHalfLife, recieved: " << e.what() << "." );
     }
   }
-}
+}//BOOST_AUTO_TEST_CASE( testStringToTimeDurationPossibleHalfLifeLocalized )
 
+
+BOOST_AUTO_TEST_CASE( testLocalizedRegexs ) {
+  set_app_text_dir();
+
+  const std::string should_match_english[] = {
+    "1.2E-3 year 2m +5s 14.5 ms +18.1y",
+    "1.2E-3 year",
+    "2m",
+    "+5s",
+    "14.5 ms",
+    "+18.1y",
+    "1.3ms",
+    "5 years",
+    "2.3E+01 hours",
+    "2.2 Days",
+    "5 y",
+    "+5 y",
+    "5 year",
+    "5.year",
+    "5 year 2d 3h 4s",
+    "3s 5min",
+    ".5s .25m",
+    ".5 second .25 m",
+    ".3ns ",
+    "8 nanosecond",
+    "3 minute",
+    "10m 23:59:59.100",
+    "88.3E+2s",
+    "23:59:59.100",
+    "23:59:59.100 + 10m",
+  };
+  
+  
+  const std::string should_match_french[] = {
+    "+18.1a",
+    "1.2E-3 year 2m +5s 14.5 ms +18.1y",
+    "1.2 an 3jours 5.1 heure",
+    "2.11années",
+    "1h 3ms",
+    "1.1E-3jour 1   heures +3.2min",
+    "1.1E-3 sec 3ms",
+    "1.1E-3années"
+  };
+  
+  const std::string should_match_english_hl[] = {
+    //"0",  //Shouldnt we be able to match 0, with no units?  Doesnt look like it
+    "5 half-life",
+    "5hl",
+    "1y 5halflives",
+    "5half lifes",
+    "5 half life",
+    "1.1E3hl",
+    "5hl 0.53day"
+  };
+  
+  const std::string should_match_french_hl[] = {
+    "5 demi vie",
+    "5dv",
+    "5demi-vies",
+    "5demi vie",
+    "5demi vies",
+    "1.1E3dv",
+    "5dv 0.53jour"
+  };
+  
+  
+  
+  const std::string should_match_english_negative[] = {
+    "-5 half-life",
+    "-5hl",
+    "1y -5halflives",
+    "-5half lifes",
+    "-5 half life",
+    "-1.1E3hl",
+    "-5hl 0.53day"
+  };
+  
+  const std::string should_match_french_negative[] = {
+    "-5 demi vie",
+    "-5dv",
+    "1a -5demi-vies",
+    "-5demi vie",
+    "-5demi vies",
+    "-1.1E3dv",
+    "-5dv 0.53jour"
+  };
+  
+  const std::string should_not_match[] = {
+    "year",
+    "1.0",
+    "0.001",
+    "1.2y somethign",
+    "1.2 yrr", //We want regext to match the whole line
+    "y1.2",
+    "1.2y a3",
+  };
+  
+  
+  WMessageResourceBundle *bundle_french = new WMessageResourceBundle();
+  WMessageResourceBundle *bundle_english = new WMessageResourceBundle();
+  
+  std::string path = SpecUtils::append_path(g_app_text_dir, "InterSpec");
+  bundle_english->use( path, true );
+  bundle_french->use( path + "_fr", true );
+
+  // We need to create a WServer, so strings can be localized
+  Wt::WServer server("","");
+  
+  pair<WMessageResourceBundle *,bool> languages[] = {
+    {bundle_french, true},
+    {bundle_english, false}
+  };
+  
+  for( const auto lang : languages )
+  {
+    WMessageResourceBundle *bundle = lang.first;
+    const bool test_french = lang.second;
+    
+    server.setLocalizedStrings( bundle ); //Takes ownership of bundle
+    
+    {//begin block to check ordinary duration regex
+      Wt::WString duration_regex;
+      BOOST_REQUIRE_NO_THROW( duration_regex = PhysicalUnitsLocalized::timeDurationRegex() );
+      
+      const std::string duration_regex_str = duration_regex.toUTF8();
+      BOOST_REQUIRE_NO_THROW( std::regex( duration_regex_str, std::regex::ECMAScript | std::regex::icase ) );
+      
+      try
+      {
+        std::regex duration_expression( duration_regex_str, std::regex::ECMAScript | std::regex::icase );
+        
+        for( const string &str : should_match_english )
+        {
+          std::smatch mtch;
+          BOOST_CHECK_MESSAGE( std::regex_match( str, mtch, duration_expression ),
+                              "Duration regex failed to match: '" << str << "'"
+                              << " with regex '" << duration_regex_str << "'" );
+        }
+        
+        if( test_french )
+        {
+          for( const string &str : should_match_french )
+          {
+            std::smatch mtch;
+            BOOST_CHECK_MESSAGE( std::regex_match( str, mtch, duration_expression ),
+                                "Duration regex failed to match: '" << str << "'"
+                                << " with regex '" << duration_regex_str << "'" );
+          }
+        }//if( test_french )
+        
+        for( const string &str : should_not_match )
+        {
+          std::smatch mtch;
+          BOOST_CHECK_MESSAGE( !std::regex_match( str, mtch, duration_expression ),
+                              "Duration regex matched when shouldnt have: '" << str << "'"
+                              << " with regex '" << duration_regex_str << "'" );
+        }
+      }catch( std::exception &e )
+      {
+        BOOST_CHECK_MESSAGE( false, "Caught exception testing regex.  Exception='" << e.what()
+                            << "', regex='" << duration_regex_str << "'" );
+      }
+    }// end block to check ordinary duration regex
+    
+    
+    { //begin block to check duration with possible HL regex
+      Wt::WString duration_hl_regex;
+      BOOST_REQUIRE_NO_THROW( duration_hl_regex = PhysicalUnitsLocalized::timeDurationHalfLiveOptionalRegex() );
+      
+      const std::string duration_regex_hl_str = duration_hl_regex.toUTF8();
+      BOOST_REQUIRE_NO_THROW( std::regex( duration_regex_hl_str, std::regex::ECMAScript | std::regex::icase ) );
+      
+      try
+      {
+        std::regex duration_expression( duration_regex_hl_str, std::regex::ECMAScript | std::regex::icase );
+        
+        for( const string &str : should_match_english )
+        {
+          std::smatch mtch;
+          BOOST_CHECK_MESSAGE( std::regex_match( str, mtch, duration_expression ),
+                              "Duration HL regex failed to match: '" << str << "'" );
+        }
+        
+        if( test_french )
+        {
+          for( const string &str : should_match_french )
+          {
+            std::smatch mtch;
+            BOOST_CHECK_MESSAGE( std::regex_match( str, mtch, duration_expression ),
+                                "Duration HL regex failed to match: '" << str << "'"
+                                << " with regex '" << duration_regex_hl_str << "'" );
+          }
+        }//if( test_french )
+        
+        
+        for( const string &str : should_match_english_hl )
+        {
+          std::smatch mtch;
+          BOOST_CHECK_MESSAGE( std::regex_match( str, mtch, duration_expression ),
+                              "Duration HL regex failed to match: '" << str << "'" );
+        }
+        
+        
+        if( test_french )
+        {
+          for( const string &str : should_match_french_hl )
+          {
+            std::smatch mtch;
+            BOOST_CHECK_MESSAGE( std::regex_match( str, mtch, duration_expression ),
+                                "Duration HL regex failed to match: '" << str << "'"
+                                << " with regex '" << duration_regex_hl_str << "'" );
+          }
+        }//if( test_french )
+        
+        
+        for( const string &str : should_not_match )
+        {
+          std::smatch mtch;
+          BOOST_CHECK_MESSAGE( !std::regex_match( str, mtch, duration_expression ),
+                              "Duration regex matched when shouldnt have HL: '" << str << "'"
+                              << " with regex '" << duration_regex_hl_str << "'" );
+        }
+      }catch( std::exception &e )
+      {
+        BOOST_CHECK_MESSAGE( false, "Caught exception testing HL regex.  Exception='"
+                            << e.what() << "', regex='" << duration_regex_hl_str << "'" );
+      }
+      
+    }//end block to check duration with possible HL regex
+    
+    
+    { //begin block to check duration with possible HL and negative regex
+      Wt::WString duration_hl_neg_regex;
+      BOOST_REQUIRE_NO_THROW( duration_hl_neg_regex = PhysicalUnitsLocalized::timeDurationHalfLiveOptionalPosOrNegRegex() );
+      
+      const std::string duration_regex_hl_neg_str = duration_hl_neg_regex.toUTF8();
+      BOOST_REQUIRE_NO_THROW( std::regex( duration_regex_hl_neg_str, std::regex::ECMAScript | std::regex::icase ) );
+      
+      try
+      {
+        std::regex duration_expression( duration_regex_hl_neg_str, std::regex::ECMAScript | std::regex::icase );
+        
+        for( const string &str : should_match_english )
+        {
+          std::smatch mtch;
+          BOOST_CHECK_MESSAGE( std::regex_match( str, mtch, duration_expression ),
+                              "Duration neg HL regex failed to match: '" << str << "'" );
+        }
+        
+        if( test_french )
+        {
+          for( const string &str : should_match_french )
+          {
+            std::smatch mtch;
+            BOOST_CHECK_MESSAGE( std::regex_match( str, mtch, duration_expression ),
+                                "Duration HL neg regex failed to match: '" << str << "'" << " with regex '"
+                                << duration_regex_hl_neg_str << "'" );
+          }
+        }//if( test_french )
+        
+        for( const string &str : should_not_match )
+        {
+          std::smatch mtch;
+          BOOST_CHECK_MESSAGE( !std::regex_match( str, mtch, duration_expression ),
+                              "Duration regex matched when shouldnt have HL neg: '" << str << "'"
+                              << " with regex '" << duration_regex_hl_neg_str << "'" );
+        }
+        
+        for( const string &str : should_match_english_hl )
+        {
+          std::smatch mtch;
+          BOOST_CHECK_MESSAGE( std::regex_match( str, mtch, duration_expression ),
+                              "Duration HL regex failed to match: '" << str << "'" );
+        }
+        
+        for( const string &str : should_match_english_negative )
+        {
+          std::smatch mtch;
+          BOOST_CHECK_MESSAGE( std::regex_match( str, mtch, duration_expression ),
+                              "Duration HL regex failed to match negative: '" << str << "'" );
+        }
+        
+        
+        if( test_french )
+        {
+          for( const string &str : should_match_french_hl )
+          {
+            std::smatch mtch;
+            BOOST_CHECK_MESSAGE( std::regex_match( str, mtch, duration_expression ),
+                                "Duration HL regex failed to match: '" << str << "'"
+                                << " with regex '" << duration_regex_hl_neg_str << "'" );
+          }
+          
+          for( const string &str : should_match_french_negative )
+          {
+            std::smatch mtch;
+            BOOST_CHECK_MESSAGE( std::regex_match( str, mtch, duration_expression ),
+                                "Duration HL regex failed to match french negative: '" << str << "'"
+                                << " with regex '" << duration_regex_hl_neg_str << "'" );
+          }
+        }//if( test_french )
+      }catch( std::exception &e )
+      {
+        BOOST_CHECK_MESSAGE( false, "Caught exception testing HL neg regex.  Exception='" << e.what()
+                            << "', regex='" << duration_regex_hl_neg_str << "'" );
+      }
+      
+    }//for( const auto lang : languages )
+    
+  }//begin block to check duration with possible HL and negative regex
+}//BOOST_AUTO_TEST_CASE( printToBestTimeUnitsLocalized ) {
