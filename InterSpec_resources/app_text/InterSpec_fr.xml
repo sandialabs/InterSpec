@@ -71,9 +71,22 @@
 <message id="intrinsic-activity">Activité Intrinsèque</message>
 <message id="Calibration">Calibration</message>
 <message id="Unknown">Inconnu</message>
-
 <message id="Energy (keV)">Énergie (keV)</message>
-<message id="spectrum_y_axis_title">Comptes</message>
+
+<!-- Unités que l'utilisateur peut utiliser pour écrire une durée (nous n'en avons pas besoin pour l'anglais, mais d'autres langues en ont besoin - donc nous les ajoutons ici) -->
+<message id="units-labels-second">secondes, seconde, sec, s</message>
+<message id="units-labels-minute">minutes, minute, min, m</message>
+<message id="units-labels-hours">heures, heure, h</message>
+<message id="units-labels-days">jours, jour, j</message>
+<message id="units-labels-year">années, année, an, a</message>
+<message id="units-labels-half-lives">dv, demi-vie, demi-vies, demi vie, demi vies</message>
+<!-- Unités à utiliser lors de l'écriture d'une durée -->
+<message id="units-label-seconds-short">s</message>
+<message id="units-label-minutes-short">m</message>
+<message id="units-label-hours-short">h</message>
+<message id="units-label-days-short">j</message>
+<message id="units-label-years-short">a</message>
+
 <message id="clear-session">Effacer la session ?</message>
 <message id="clear-session-msg">Êtes-vous sûr de vouloir commencer une nouvelle session ?</message>
 <message id="window-title-spec-file-query">Outil de requête de fichier de spectre</message>

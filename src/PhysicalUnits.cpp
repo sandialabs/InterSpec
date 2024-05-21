@@ -122,6 +122,8 @@ const char * const sm_timeDurationHalfLiveOptionalPosOrNegRegex
 
 
 const char * const sm_positiveDecimalRegex = POS_DECIMAL_REGEX;
+  
+const char * const sm_decimalRegex = DECIMAL_REGEX;
 
 const UnitNameValuePairV sm_lengthUnitNameValues{
   {"nm", nm},

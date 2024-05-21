@@ -145,6 +145,7 @@ namespace PhysicalUnits
   extern const char * const sm_timeDurationHalfLiveOptionalRegex;
   extern const char * const sm_timeDurationHalfLiveOptionalPosOrNegRegex;
   
+  extern const char * const sm_decimalRegex;
   extern const char * const sm_positiveDecimalRegex;
 
   //printToBest____Units(...): makes an attempt to turn the input into a user

@@ -138,6 +138,7 @@
 #include "InterSpec/DetectorPeakResponse.h"
 #include "InterSpec/IsotopeSearchByEnergy.h"
 #include "InterSpec/FileDragUploadResource.h"
+#include "InterSpec/PhysicalUnitsLocalized.h"
 #include "InterSpec/ShieldingSourceDisplay.h"
 #include "InterSpec/ShowRiidInstrumentsAna.h"
 #include "InterSpec/EnergyCalPreserveWindow.h"
@@ -568,6 +569,37 @@ InterSpec::InterSpec( WContainerWidget *parent )
     wApp->setLocale( WLocale(langPref) );
       
   app->useMessageResourceBundle( "InterSpec" );
+  
+    PhysicalUnitsLocalized::printToBestTimeUnits( 1.2*PhysicalUnits::second );
+    PhysicalUnitsLocalized::printToBestTimeUnits( 1.1E-6*PhysicalUnits::second );
+    PhysicalUnitsLocalized::printToBestTimeUnits( 1.09E-9*PhysicalUnits::second );
+    PhysicalUnitsLocalized::printToBestTimeUnits( 1.09E-12*PhysicalUnits::second );
+    PhysicalUnitsLocalized::printToBestTimeUnits( 1.3E-4*PhysicalUnits::second );
+    PhysicalUnitsLocalized::printToBestTimeUnits( 1.4E-2*PhysicalUnits::second );
+    PhysicalUnitsLocalized::printToBestTimeUnits( 3600*PhysicalUnits::second );
+    PhysicalUnitsLocalized::printToBestTimeUnits( 2*3600*PhysicalUnits::second );
+    PhysicalUnitsLocalized::printToBestTimeUnits( 2*2*3600*PhysicalUnits::second );
+    PhysicalUnitsLocalized::printToBestTimeUnits( 1.2*PhysicalUnits::year );
+    PhysicalUnitsLocalized::printToBestTimeUnits( 1.2E8*PhysicalUnits::year );
+    PhysicalUnitsLocalized::printToBestTimeUnits( 1.2E3*PhysicalUnits::year );
+    
+    PhysicalUnitsLocalized::stringToTimeDurationPossibleHalfLife( "1.2E-3 +18.1a", -1.0 );
+    PhysicalUnitsLocalized::stringToTimeDurationPossibleHalfLife( "1.2E-3 year 2m -5s 14.5 ms +18.1y", -1.0 );
+    
+    PhysicalUnitsLocalized::stringToTimeDurationPossibleHalfLife( "1.2E-3 , year 2m -5s , blah vl 14.5 ms +18.1y", -1.0 );
+    
+    PhysicalUnitsLocalized::stringToTimeDurationPossibleHalfLife( "1.2E-3", -1.0 );
+    PhysicalUnitsLocalized::stringToTimeDurationPossibleHalfLife( "year", -1.0 );
+    std::cout << "Now for French input" << endl;
+    PhysicalUnitsLocalized::stringToTimeDurationPossibleHalfLife( "1.1années", -1.0 );
+    PhysicalUnitsLocalized::stringToTimeDurationPossibleHalfLife( "1.1a 4j 3.2ms", -1.0 );
+    
+    PhysicalUnitsLocalized::stringToTimeDurationPossibleHalfLife( "1.1E-3jour 1   heures -3.2min", -1.0 );
+    PhysicalUnitsLocalized::stringToTimeDurationPossibleHalfLife( " 1 année  1   heures -3.2min", -1.0 );
+    
+    PhysicalUnitsLocalized::stringToTimeDurationPossibleHalfLife( "3.2 demi vie", -1.0 );
+    PhysicalUnitsLocalized::stringToTimeDurationPossibleHalfLife( "1.1E3dv", -1.0 );
+    
     
   // Now that we have m_sql and m_user setup, we can create the undo/redo manager, if we
   //  are using the desktop interface.  We will create this manager before any our widgets

@@ -240,6 +240,7 @@ set(sources
     src/IsotopeId.cpp
     src/MaterialDB.cpp
     src/PhysicalUnits.cpp
+    src/PhysicalUnitsLocalized.cpp
     src/MassAttenuationTool.cpp
     src/DetectorPeakResponse.cpp
     src/GammaInteractionCalc.cpp
@@ -343,6 +344,7 @@ set(headers
     InterSpec/IsotopeId.h
     InterSpec/MaterialDB.h
     InterSpec/PhysicalUnits.h
+    InterSpec/PhysicalUnitsLocalized.h
     InterSpec/MassAttenuationTool.h
     InterSpec/DetectorPeakResponse.h
     InterSpec/GammaInteractionCalc.h

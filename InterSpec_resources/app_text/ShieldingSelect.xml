@@ -42,7 +42,4 @@
   <message id="ss-consists-of-mass-frac">consist of (mass fraction, element)</message>
   <message id="ss-err-invalid-material">{1} is not a valid material</message>
   <message id="ss-invalid-mat">invalid mat.</message>
-  <message id="ss-"></message>
-  <message id="ss-"></message>
-  <message id="ss-"></message>
 </messages>
