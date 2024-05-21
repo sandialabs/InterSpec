@@ -82,6 +82,7 @@
 #include "InterSpec/D3SpectrumDisplayDiv.h"
 #include "InterSpec/DetectorPeakResponse.h"
 #include "InterSpec/IsotopeNameFilterModel.h"
+#include "InterSpec/PhysicalUnitsLocalized.h"
 #include "InterSpec/ReferencePhotopeakDisplay.h"
 
 
@@ -599,7 +600,7 @@ namespace
       m_age_edit = new WLineEdit( "", this );
       m_age_label->setBuddy( m_age_edit );
       
-      WRegExpValidator *validator = new WRegExpValidator( PhysicalUnits::sm_timeDurationHalfLiveOptionalRegex, this );
+      WRegExpValidator *validator = new WRegExpValidator( PhysicalUnitsLocalized::timeDurationHalfLiveOptionalRegex(), this );
       validator->setFlags(Wt::MatchCaseInsensitive);
       m_age_edit->setValidator(validator);
       m_age_edit->setAutoComplete( false );
@@ -823,7 +824,7 @@ namespace
       try
       {
         const string agestr = m_age_edit->text().toUTF8();
-        age = PhysicalUnits::stringToTimeDurationPossibleHalfLife( agestr, nuc->halfLife );
+        age = PhysicalUnitsLocalized::stringToTimeDurationPossibleHalfLife( agestr, nuc->halfLife );
       }catch( std::exception & )
       {
         age = PeakDef::defaultDecayTime( nuc );
@@ -895,7 +896,7 @@ namespace
         m_age_edit->setText( WString::fromUTF8(agestr) );
       }else
       {
-        const string agestr = PhysicalUnits::printToBestTimeUnits(info.age);
+        const string agestr = PhysicalUnitsLocalized::printToBestTimeUnits(info.age);
         m_age_edit->setText( WString::fromUTF8(agestr) );
       }
       // Not currently supported: info.gammas_to_exclude -> vector<double>;
@@ -4677,7 +4678,7 @@ void RelActAutoGui::updateFromCalc( std::shared_ptr<RelActCalcAuto::RelActAutoSo
       
       if( fit_nuc.nuclide == nuc->nuclide() )
       {
-        const string agestr = PhysicalUnits::printToBestTimeUnits( fit_nuc.age, 3 );
+        const string agestr = PhysicalUnitsLocalized::printToBestTimeUnits( fit_nuc.age, 3 );
         nuc->setAge( agestr );
         break;
       }//if( this is the widget for this nuclide )

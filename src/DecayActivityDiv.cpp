@@ -82,7 +82,7 @@
 #include "InterSpec/DecayDataBaseServer.h"
 #include "InterSpec/MassAttenuationTool.h"
 #include "InterSpec/DecaySelectNuclideDiv.h"
-
+#include "InterSpec/PhysicalUnitsLocalized.h"
 
 using namespace Wt;
 using namespace std;
@@ -542,7 +542,7 @@ class DateLengthCalculator : public WContainerWidget
 #endif
     label->setBuddy( m_duration );
     
-    WRegExpValidator *validator = new WRegExpValidator( PhysicalUnits::sm_timeDurationHalfLiveOptionalPosOrNegRegex, m_duration );
+    WRegExpValidator *validator = new WRegExpValidator( PhysicalUnitsLocalized::timeDurationHalfLiveOptionalPosOrNegRegex(), m_duration );
     validator->setFlags(Wt::MatchCaseInsensitive);
     m_duration->setValidator(validator);
     m_duration->changed().connect( this, &DateLengthCalculator::durationChanged );
@@ -598,7 +598,7 @@ class DateLengthCalculator : public WContainerWidget
       double duration = 0.0;
       try
       {
-        duration = PhysicalUnits::stringToTimeDurationPossibleHalfLife( durtxt, halfLife );
+        duration = PhysicalUnitsLocalized::stringToTimeDurationPossibleHalfLife( durtxt, halfLife );
 //        if( duration < 1*PhysicalUnits::second || duration > 100*PhysicalUnits::year )
   //        throw runtime_error( "Time span must be greater than one second and less than 100 years" );
         duration_valid = true;
@@ -625,7 +625,7 @@ class DateLengthCalculator : public WContainerWidget
         
         const int days = m_begindate->date().daysTo(m_enddate->date());
         duration = 24.0*3600.0*days*PhysicalUnits::second;
-        const string datestr = PhysicalUnits::printToBestTimeUnits( duration, 2 );
+        const string datestr = PhysicalUnitsLocalized::printToBestTimeUnits( duration, 2 );
         m_duration->setText( datestr );
         
         return duration;
@@ -680,7 +680,7 @@ class DateLengthCalculator : public WContainerWidget
     
     int days = m_begindate->date().daysTo(m_enddate->date());
     //days = abs(days);
-    string datestr = PhysicalUnits::printToBestTimeUnits( 24.0*3600.0*days*PhysicalUnits::second, 2 );
+    string datestr = PhysicalUnitsLocalized::printToBestTimeUnits( 24.0*3600.0*days*PhysicalUnits::second, 2 );
     m_duration->setText( datestr );
     
     pushCurrentToParent();
@@ -696,7 +696,7 @@ class DateLengthCalculator : public WContainerWidget
     {
       try
       {
-        const double duration = PhysicalUnits::stringToTimeDuration( durtxt );
+        const double duration = PhysicalUnitsLocalized::stringToTimeDuration( durtxt );
         
         double mintime = 1.0 * SandiaDecay::second;
         const SandiaDecay::SandiaDecayDataBase * const db = DecayDataBaseServer::database();
@@ -793,7 +793,7 @@ class DateLengthCalculator : public WContainerWidget
       return;
     
     //const string durationTxt = m_duration->text().toUTF8();
-    const string durationTxt = PhysicalUnits::printToBestTimeUnits( absTimeSpan );
+    const string durationTxt = PhysicalUnitsLocalized::printToBestTimeUnits( absTimeSpan );
     
     const std::vector<DecayActivityDiv::Nuclide> &nucs = m_activityDiv->m_nuclides;
     if( nucs.empty() )
@@ -940,7 +940,7 @@ class DateLengthCalculator : public WContainerWidget
       activityEdit->enterPressed().connect( std::bind( doActivityUpdate ) );
       
       
-      const string ageTxt = PhysicalUnits::printToBestTimeUnits( nucinfo.age );
+      const string ageTxt = PhysicalUnitsLocalized::printToBestTimeUnits( nucinfo.age );
       cell = nuctbl->elementAt(2 + rowOffset, 0);
       cell->setVerticalAlignment( AlignmentFlag::AlignMiddle );
       new WLabel( "Initial Age&nbsp;", cell );
@@ -953,7 +953,7 @@ class DateLengthCalculator : public WContainerWidget
       ageEdit->setAttributeValue( "spellcheck", "off" );
 #endif
 
-      WRegExpValidator *agevalidator = new WRegExpValidator( PhysicalUnits::sm_timeDurationRegex, ageEdit );
+      WRegExpValidator *agevalidator = new WRegExpValidator( PhysicalUnitsLocalized::timeDurationRegex(), ageEdit );
       agevalidator->setFlags(Wt::MatchCaseInsensitive);
       ageEdit->setValidator( agevalidator );
       ageEdit->setTextSize( 10 );
@@ -968,7 +968,7 @@ class DateLengthCalculator : public WContainerWidget
         
         try
         {
-          double age = PhysicalUnits::stringToTimeDuration( ageEdit->text().toUTF8() );
+          double age = PhysicalUnitsLocalized::stringToTimeDuration( ageEdit->text().toUTF8() );
           if( age < 0.0 )
             throw runtime_error( "Initial age must be zero or more" );
           
@@ -1491,7 +1491,7 @@ public:
     m_csvResouce = new DecayCsvResource( parent );
     
     const double displayTime = parent->timeToDisplayTill();
-    const string timeSpanStr = PhysicalUnits::printToBestTimeUnits( displayTime );
+    const string timeSpanStr = PhysicalUnitsLocalized::printToBestTimeUnits( displayTime );
     
     m_csvResouce->setTimeSpan( displayTime );
     m_csvResouce->setNumberRows( 400 );
@@ -1524,7 +1524,7 @@ public:
                        " '3.2 halflife' for multiples of the first parent"
                        " nuclides half life.");
     label->setBuddy( m_ageEdit );
-    WRegExpValidator *validator = new WRegExpValidator( PhysicalUnits::sm_timeDurationHalfLiveOptionalRegex, this );
+    WRegExpValidator *validator = new WRegExpValidator( PhysicalUnitsLocalized::timeDurationHalfLiveOptionalRegex(), this );
     validator->setFlags( Wt::MatchCaseInsensitive );
     m_ageEdit->setValidator(validator);
     m_ageEdit->changed().connect( this, &CsvDownloadGui::updateTimeSpan );
@@ -1631,13 +1631,13 @@ public:
         nuc = db->nuclide( m_parent->m_nuclides[0].z, m_parent->m_nuclides[0].a, m_parent->m_nuclides[0].iso );
       
       if( nuc )
-        timespan = PhysicalUnits::stringToTimeDurationPossibleHalfLife( input, nuc->halfLife );
+        timespan = PhysicalUnitsLocalized::stringToTimeDurationPossibleHalfLife( input, nuc->halfLife );
       else
-        timespan = PhysicalUnits::stringToTimeDuration( input );
+        timespan = PhysicalUnitsLocalized::stringToTimeDuration( input );
     }catch(...)
     {
       timespan = m_parent->timeToDisplayTill();
-      m_ageEdit->setText( PhysicalUnits::printToBestTimeUnits(timespan) );
+      m_ageEdit->setText( PhysicalUnitsLocalized::printToBestTimeUnits(timespan) );
     }
     
     m_csvResouce->setTimeSpan( timespan );
@@ -1730,7 +1730,7 @@ void DecayActivityDiv::init()
   m_displayTimeLength->setAttributeValue( "spellcheck", "off" );
 #endif
   
-  WRegExpValidator *validator = new WRegExpValidator( PhysicalUnits::sm_timeDurationHalfLiveOptionalRegex, m_displayTimeLength );
+  WRegExpValidator *validator = new WRegExpValidator( PhysicalUnitsLocalized::timeDurationHalfLiveOptionalRegex(), m_displayTimeLength );
   validator->setFlags(Wt::MatchCaseInsensitive);
   m_displayTimeLength->setValidator(validator);
 
@@ -2031,7 +2031,7 @@ void DecayActivityDiv::handleAppUrl( std::string path, std::string query_str )
       
       try
       {
-        const double ageFromStr = PhysicalUnits::stringToTimeDurationPossibleHalfLife( age_str, nuc->halfLife );
+        const double ageFromStr = PhysicalUnitsLocalized::stringToTimeDurationPossibleHalfLife( age_str, nuc->halfLife );
         if( ageFromStr >= 0.0 )
           age = ageFromStr;
       }catch(...)
@@ -2310,15 +2310,15 @@ double DecayActivityDiv::timeToDisplayTill()
   try
   {
     if( nuc )
-      return PhysicalUnits::stringToTimeDurationPossibleHalfLife( txt, nuc->halfLife, SandiaDecay::second);
+      return PhysicalUnitsLocalized::stringToTimeDurationPossibleHalfLife( txt, nuc->halfLife, SandiaDecay::second);
     else
-      return PhysicalUnits::stringToTimeDuration( txt );
+      return PhysicalUnitsLocalized::stringToTimeDuration( txt );
   }catch( std::exception & )
   {
     const double fracT0 = 0.1;
     const double finalTime = findTimeForActivityFrac( m_currentMixture, fracT0 );
     
-    txt = PhysicalUnits::printToBestTimeUnits( finalTime );
+    txt = PhysicalUnitsLocalized::printToBestTimeUnits( finalTime );
     m_displayTimeLength->setText( txt );
     return finalTime;
   }
@@ -2388,7 +2388,7 @@ void DecayActivityDiv::Nuclide::updateTxt()
   
   if( age > 0.0 )
   {
-    label << " " << PhysicalUnits::printToBestTimeUnits(age);
+    label << " " << PhysicalUnitsLocalized::printToBestTimeUnits(age);
   }//if( age > 0.0 )
   
   txt->setText( label.str() );
@@ -2659,7 +2659,7 @@ void DecayActivityDiv::displayMoreInfoPopup( const double time )
 
   summary->setMaximumSize( WLength::Auto, WLength( 0.8*m_viewer->renderedHeight() ,WLength::Pixel) );
   
-  WString title = WString::tr("dad-summary-at-time").arg( PhysicalUnits::printToBestTimeUnits(time) );
+  WString title = WString::tr("dad-summary-at-time").arg( PhysicalUnitsLocalized::printToBestTimeUnits(time) );
 
   if( m_moreInfoDialog )
   {
@@ -2717,13 +2717,13 @@ void DecayActivityDiv::checkTimeRangeValid()
   try
   {
     if( nuc )
-      timelen = PhysicalUnits::stringToTimeDurationPossibleHalfLife( txt, nuc->halfLife, SandiaDecay::second);
+      timelen = PhysicalUnitsLocalized::stringToTimeDurationPossibleHalfLife( txt, nuc->halfLife, SandiaDecay::second);
     else
-      timelen = PhysicalUnits::stringToTimeDuration( txt );
+      timelen = PhysicalUnitsLocalized::stringToTimeDuration( txt );
   }catch( std::exception & )
   {
     timelen = findTimeForActivityFrac( m_currentMixture, 0.1 );
-    txt = PhysicalUnits::printToBestTimeUnits( timelen );
+    txt = PhysicalUnitsLocalized::printToBestTimeUnits( timelen );
     m_displayTimeLength->setText( txt );
   }
 
@@ -2741,7 +2741,7 @@ void DecayActivityDiv::checkTimeRangeValid()
   if( timelen < 0.001*minhl )
   {
     timelen = 0.001*minhl;
-    txt = PhysicalUnits::printToBestTimeUnits( timelen );
+    txt = PhysicalUnitsLocalized::printToBestTimeUnits( timelen );
     m_displayTimeLength->setText( txt );
   }//if( nunits*unitpair.second < 0.001*minhl )
 }//void DecayActivityDiv::checkTimeRangeValid()
@@ -2762,14 +2762,14 @@ void DecayActivityDiv::setTimeLimitToDisplay()
   const double fracT0 = 0.1;
   const double finalTime = findTimeForActivityFrac( m_currentMixture, fracT0 );
   
-  string txt = PhysicalUnits::printToBestTimeUnits( finalTime );
+  string txt = PhysicalUnitsLocalized::printToBestTimeUnits( finalTime );
   m_displayTimeLength->setText( txt );
 }//void DecayActivityDiv::setTimeLimitToDisplay()
 
 
 void DecayActivityDiv::setDecayChartTimeRange( double finalTime )
 {
-  string txt = PhysicalUnits::printToBestTimeUnits( finalTime );
+  string txt = PhysicalUnitsLocalized::printToBestTimeUnits( finalTime );
   m_displayTimeLength->setText( txt );
 }//void setDecayChartTimeRange()
 
@@ -2902,7 +2902,7 @@ WContainerWidget *DecayActivityDiv::isotopesSummary( const double time ) const
     
       
     infostrm << "<div style=\"margin-top: 10px;\">The following nuclides are present at "
-      << PhysicalUnits::printToBestTimeUnits(time/SandiaDecay::second,4)
+      << PhysicalUnitsLocalized::printToBestTimeUnits(time/SandiaDecay::second,4)
       << " :</div>\n"
       << "<div style=\"margin-left: 20px; max-width: 60ex;\">";
     
@@ -3014,7 +3014,7 @@ WContainerWidget *DecayActivityDiv::nuclideInformation(
   ostr << "<pre class=\"NuclideInfo\">\n";
   ostr << nuclide->symbol << " Atomic Number " << nuclide->atomicNumber <<", Atomic Mass "
   << nuclide->massNumber << ", Isomer Number " << nuclide->isomerNumber << " "
-  << nuclide->atomicMass << " AMU, HalfLife=" << PhysicalUnits::printToBestTimeUnits(nuclide->halfLife);
+  << nuclide->atomicMass << " AMU, HalfLife=" << PhysicalUnitsLocalized::printToBestTimeUnits(nuclide->halfLife);
   const size_t nParents = nuclide->decaysFromParents.size();
   if( nParents )
     ostr << "\n  Parent";

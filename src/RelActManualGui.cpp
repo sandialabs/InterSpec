@@ -77,6 +77,7 @@
 #include "InterSpec/NativeFloatSpinBox.h"
 #include "InterSpec/DecayDataBaseServer.h"
 #include "InterSpec/IsotopeSelectionAids.h"
+#include "InterSpec/PhysicalUnitsLocalized.h"
 
 using namespace Wt;
 using namespace std;
@@ -287,7 +288,7 @@ public:
       {
         m_age_edit_tmp = new WLineEdit( agestr, cell );
         
-        WRegExpValidator *validator = new WRegExpValidator( PhysicalUnits::sm_timeDurationHalfLiveOptionalRegex, m_age_edit_tmp );
+        WRegExpValidator *validator = new WRegExpValidator( PhysicalUnitsLocalized::timeDurationHalfLiveOptionalRegex(), m_age_edit_tmp );
         validator->setFlags(Wt::MatchCaseInsensitive);
         m_age_edit_tmp->setValidator(validator);
         label->setBuddy( m_age_edit_tmp );
@@ -315,7 +316,7 @@ public:
       label = new WLabel( WString("<span style=\"font-size: small;\">{1}</span>").arg(WString::tr("T1/2")), cell );
       
       cell = m_nucContentTable->elementAt(1, 1);
-      WText *txt = new WText( PhysicalUnits::printToBestTimeUnits(nuc->halfLife), cell );
+      WText *txt = new WText( PhysicalUnitsLocalized::printToBestTimeUnits(nuc->halfLife), cell );
       
       cell = m_nucContentTable->elementAt(2, 0);
       label = new WLabel( WString::tr("mrend-spec-act"), cell );
@@ -424,7 +425,7 @@ public:
     {
       double age = 0;
       const string agestr = m_age_edit_tmp->text().toUTF8();
-      age = PhysicalUnits::stringToTimeDurationPossibleHalfLife( agestr, m_nuc->halfLife );
+      age = PhysicalUnitsLocalized::stringToTimeDurationPossibleHalfLife( agestr, m_nuc->halfLife );
       if( age < 0 )
         throw runtime_error( "Negative age not allowed." );
       
@@ -433,7 +434,7 @@ public:
     {
       if( m_current_age >= 0.0 )
       {
-        string agestr = PhysicalUnits::printToBestTimeUnits( m_current_age, 5 );
+        string agestr = PhysicalUnitsLocalized::printToBestTimeUnits( m_current_age, 5 );
         m_age_edit_tmp->setText( WString::fromUTF8(agestr) );
       }else
       {
@@ -460,7 +461,7 @@ public:
     if( !m_nuc || !m_age_edit_tmp  || (age < 0) || IsInf(age) || IsNan(age) )
       return;
     
-    const string agestr = PhysicalUnits::printToBestTimeUnits( age );
+    const string agestr = PhysicalUnitsLocalized::printToBestTimeUnits( age );
     m_age_edit_tmp->setText( WString::fromUTF8(agestr) );
     m_current_age = age;
     setCollapsed( false );

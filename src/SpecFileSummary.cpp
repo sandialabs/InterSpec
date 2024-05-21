@@ -60,6 +60,7 @@
 #include "InterSpec/PhysicalUnits.h"
 #include "InterSpec/WarningWidget.h"
 #include "InterSpec/SpecFileSummary.h"
+#include "InterSpec/PhysicalUnitsLocalized.h"
 #include "InterSpec/ShowRiidInstrumentsAna.h"
 
 #if( USE_GOOGLE_MAP )
@@ -1021,7 +1022,7 @@ void SpecFileSummary::handleFieldUpdate( EditableFields field )
       try
       {
         const string textStr = m_displayedLiveTime->text().toUTF8();
-        const float newLiveTime = static_cast<float>(PhysicalUnits::stringToTimeDuration( textStr ));
+        const float newLiveTime = static_cast<float>(PhysicalUnitsLocalized::stringToTimeDuration( textStr ));
         if( newLiveTime < 0.0 )
           throw runtime_error( "Live time must be zero or greater" );
         
@@ -1045,7 +1046,7 @@ void SpecFileSummary::handleFieldUpdate( EditableFields field )
       try
       {
         const string textStr = m_displayedRealTime->text().toUTF8();
-        const float newRealTime = static_cast<float>( PhysicalUnits::stringToTimeDuration(textStr) );
+        const float newRealTime = static_cast<float>( PhysicalUnitsLocalized::stringToTimeDuration(textStr) );
         if( newRealTime < 0.0 )
           throw runtime_error( "Real time must be zero or greater" );
         

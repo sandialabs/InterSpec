@@ -54,6 +54,7 @@
 #include "InterSpec/InterSpecApp.h"
 #include "InterSpec/PhysicalUnits.h"
 #include "InterSpec/UseInfoWindow.h"
+#include "InterSpec/PhysicalUnitsLocalized.h"
 #include "InterSpec/LicenseAndDisclaimersWindow.h"
 
 #ifdef _WIN32
@@ -372,7 +373,7 @@ void LicenseAndDisclaimersWindow::dataStorageCreator( Wt::WContainerWidget *pare
         totaltime += app->activeTimeInCurrentSession();
         const chrono::seconds numsecs = chrono::duration_cast<chrono::seconds>(totaltime);
         
-        totalUserTime = PhysicalUnits::printToBestTimeUnits( numsecs.count() );
+        totalUserTime = PhysicalUnitsLocalized::printToBestTimeUnits( numsecs.count() );
         
         
         const WDateTime utcStartTime = WDateTime::fromPosixTime( to_ptime(user->firstAccessUTC()) );

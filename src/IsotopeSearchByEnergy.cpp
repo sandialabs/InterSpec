@@ -63,6 +63,7 @@
 #include "InterSpec/DecayDataBaseServer.h"
 #include "InterSpec/D3SpectrumDisplayDiv.h"
 #include "InterSpec/IsotopeSearchByEnergy.h"
+#include "InterSpec/PhysicalUnitsLocalized.h"
 #include "InterSpec/ReferencePhotopeakDisplay.h"
 #include "InterSpec/IsotopeSearchByEnergyModel.h"
 
@@ -383,7 +384,7 @@ IsotopeSearchByEnergy::IsotopeSearchByEnergy( InterSpec *viewer,
   HelpSystem::attachToolTipOn( {label,m_minHalfLife}, WString::tr("isbe-tt-min-hl"),
                               showToolTips , HelpSystem::ToolTipPosition::Top );
 
-  WRegExpValidator *validator = new WRegExpValidator( PhysicalUnits::sm_timeDurationRegex, this );
+  WRegExpValidator *validator = new WRegExpValidator( PhysicalUnitsLocalized::timeDurationRegex(), this );
   validator->setFlags(Wt::MatchCaseInsensitive);
   m_minHalfLife->setValidator(validator);
   
@@ -750,11 +751,11 @@ void IsotopeSearchByEnergy::minBrOrHlChanged()
   
   try
   {
-    const string hltxt = m_minHalfLife->valueText().narrow();
-    m_minHl = PhysicalUnits::stringToTimeDuration( hltxt );
+    const string hltxt = m_minHalfLife->valueText().toUTF8();
+    m_minHl = PhysicalUnitsLocalized::stringToTimeDuration( hltxt );
   }catch(...)
   {
-    m_minHalfLife->setText( PhysicalUnits::printToBestTimeUnits(m_minHl,2) );
+    m_minHalfLife->setText( PhysicalUnitsLocalized::printToBestTimeUnits(m_minHl,2) );
   }//try / catch
 
   startSearch( true );

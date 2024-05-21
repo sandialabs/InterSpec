@@ -31,6 +31,8 @@
 #include <string>
 #include <utility>
 
+#include <Wt/WString>
+
 #include "InterSpec/PhysicalUnits.h"
 
 namespace Wt
@@ -42,6 +44,11 @@ namespace Wt
 */
 namespace PhysicalUnitsLocalized
 {
+  Wt::WString timeDurationRegex();
+  Wt::WString timeDurationHalfLiveOptionalRegex();
+  Wt::WString timeDurationHalfLiveOptionalPosOrNegRegex();
+ 
+  
   double stringToTimeDuration( std::string str, double second_def = PhysicalUnits::second );
   double stringToTimeDurationPossibleHalfLife( const std::string &str,
                                                const double halflife,
@@ -54,11 +61,11 @@ namespace PhysicalUnitsLocalized
   // Some definitions to allow unit testing
   double stringToTimeDurationPossibleHalfLife( const std::string &str,
                                                const double halflife,
-                                                double second_def = PhysicalUnits::second,
+                                                double second_def,
                                               Wt::WMessageResourceBundle &bundle );
   std::string printToBestTimeUnits( double time,
-                                    int maxNpostDecimal = 2,
-                                    double second_definition = PhysicalUnits::second,
+                                    int maxNpostDecimal,
+                                    double second_definition,
                                    Wt::WMessageResourceBundle &bundle );
  
 }//namespace PhysicalUnits

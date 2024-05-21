@@ -61,6 +61,7 @@
 #include "InterSpec/DecayDataBaseServer.h"
 #include "InterSpec/DetectorPeakResponse.h"
 #include "InterSpec/IsotopeSelectionAids.h"
+#include "InterSpec/PhysicalUnitsLocalized.h"
 //#include "InterSpec/IsotopeNameFilterModel.h"
 
 using namespace std;
@@ -340,14 +341,14 @@ void MakeDrfSrcDef::setNuclide( const SandiaDecay::Nuclide *nuc )
       ageval = log(10000.0)/log(2.0) * nuc->promptEquilibriumHalfLife();
     if( ageval > 20*PhysicalUnits::year )
       ageval = 20*PhysicalUnits::year;
-    m_sourceAgeAtAssay->setText( PhysicalUnits::printToBestTimeUnits(ageval) );
+    m_sourceAgeAtAssay->setText( PhysicalUnitsLocalized::printToBestTimeUnits(ageval) );
   }
   
   if( nuc )
   {
     const string label = "<span class=\"SrcTitleNuc\">" + nuc->symbol + "</span>,"
                          " <span class=\"SrcTitleHl\">T&frac12;="
-                         + PhysicalUnits::printToBestTimeUnits(nuc->halfLife) + "</span>";
+                         + PhysicalUnitsLocalized::printToBestTimeUnits(nuc->halfLife) + "</span>";
     m_nuclideLabel->setText( WString::fromUTF8(label) );
     m_useAgeInfo->show();
   }else
@@ -506,7 +507,7 @@ void MakeDrfSrcDef::create()
   m_sourceAgeAtAssay->changed().connect( this, &MakeDrfSrcDef::handleUserChangedAgeAtAssay );
   m_sourceAgeAtAssay->enterPressed().connect( this, &MakeDrfSrcDef::handleUserChangedAgeAtAssay );
   
-  val = new WRegExpValidator( PhysicalUnits::sm_timeDurationRegex, this );
+  val = new WRegExpValidator( PhysicalUnitsLocalized::timeDurationRegex(), this );
   val->setFlags( Wt::MatchCaseInsensitive );
   m_sourceAgeAtAssay->setValidator( val );
   m_sourceAgeAtAssay->setText( "0s" );
@@ -607,7 +608,7 @@ void MakeDrfSrcDef::updateAgedText()
     
     double activity = activityAtSpectrumTime();
     double age = ageAtSpectrumTime();
-    const string agestr = PhysicalUnits::printToBestTimeUnits(age);
+    const string agestr = PhysicalUnitsLocalized::printToBestTimeUnits(age);
     
     const string enteredAct = m_activityEdit->text().toUTF8();
     
@@ -694,7 +695,7 @@ void MakeDrfSrcDef::handleUserChangedAgeAtAssay()
     try
     {
       const double hl = m_nuclide ? m_nuclide->halfLife : -1.0;
-      PhysicalUnits::stringToTimeDurationPossibleHalfLife( agestr, hl );
+      PhysicalUnitsLocalized::stringToTimeDurationPossibleHalfLife( agestr, hl );
       if( m_activityEdit->hasStyleClass( "SrcInputError" ) )
         m_activityEdit->removeStyleClass( "SrcInputError" );
     }catch( std::exception &e )
@@ -864,7 +865,7 @@ double MakeDrfSrcDef::ageAtSpectrumTime() const
   
   double ageAtAssay = 0.0;
   if( !ageAtAssaystr.empty() && (ageAtAssaystr.find_first_not_of("+-0.")!=string::npos) )
-    ageAtAssay = PhysicalUnits::stringToTimeDurationPossibleHalfLife( ageAtAssaystr, m_nuclide->halfLife );
+    ageAtAssay = PhysicalUnitsLocalized::stringToTimeDurationPossibleHalfLife( ageAtAssaystr, m_nuclide->halfLife );
   
   const WDate measDate = m_drfMeasurementDate->date();
   const WDate assayDate = m_assayDate->date();
@@ -944,7 +945,7 @@ void MakeDrfSrcDef::setAgeAtAssay( const double age )
     useAgeInfoUserToggled();
     if( !m_assayDate->date().isValid() )
       m_assayDate->setDate( m_drfMeasurementDate->date() );
-    m_sourceAgeAtAssay->setText( PhysicalUnits::printToBestTimeUnits(age) );
+    m_sourceAgeAtAssay->setText( PhysicalUnitsLocalized::printToBestTimeUnits(age) );
   }else
   {
     setNuclide( m_nuclide );
@@ -996,7 +997,7 @@ void MakeDrfSrcDef::setAgeAtMeas( const double age )
     assayToMeasTime = 0.0;
   }
   
-  m_sourceAgeAtAssay->setText( PhysicalUnits::printToBestTimeUnits(age-assayToMeasTime) );
+  m_sourceAgeAtAssay->setText( PhysicalUnitsLocalized::printToBestTimeUnits(age-assayToMeasTime) );
 
   validateDateFields();
   updateAgedText();
@@ -1108,7 +1109,7 @@ std::string MakeDrfSrcDef::toGadrasLikeSourceString() const
   const bool mayEvolve = (m_nuclide && !PeakDef::ageFitNotAllowed(m_nuclide));
   const double age = ageAtSpectrumTime();
   if( mayEvolve && age >= 0.0 )
-    answer += " Age=" + PhysicalUnits::printToBestTimeUnits(age);
+    answer += " Age=" + PhysicalUnitsLocalized::printToBestTimeUnits(age);
   
   try
   {

@@ -37,6 +37,8 @@
 
 #include <boost/regex.hpp>
 
+#include "SpecUtils/StringAlgo.h"
+#include "SpecUtils/Filesystem.h"
 
 #include "InterSpec/PhysicalUnits.h"
 #include "InterSpec/PhysicalUnitsLocalized.h"
@@ -45,54 +47,138 @@
 using namespace std;
 using namespace boost::unit_test;
 
-using PhysicalUnitsLocalized::stringToDistance;
+using Wt::WMessageResourceBundle;
+using PhysicalUnitsLocalized::printToBestTimeUnits;
 using PhysicalUnitsLocalized::stringToTimeDuration;
+using PhysicalUnitsLocalized::stringToTimeDurationPossibleHalfLife;
+using PhysicalUnits::second;
+using PhysicalUnits::minute;
+using PhysicalUnits::hour;
+using PhysicalUnits::day;
+using PhysicalUnits::year;
+using PhysicalUnits::picosecond;
+using PhysicalUnits::nanosecond;
+using PhysicalUnits::microsecond;
+using PhysicalUnits::millisecond;
+using PhysicalUnits::month;
+using PhysicalUnits::curie;
+using PhysicalUnits::becquerel;
 
+string g_app_text_dir;
 
-
-BOOST_AUTO_TEST_CASE( testStringToDistance ) {
-  using PhysicalUnits::cm;
-  using PhysicalUnits::m;
-  const double inch = 2.54*PhysicalUnits::cm;
-  const double foot = 12*inch;
+void set_app_text_dir()
+{
+  // We only need to initialize things once
+  static bool s_have_set = false;
+  if( s_have_set )
+    return;
   
-  BOOST_CHECK_EQUAL( stringToDistance(" +0 "), 0.0 );
-  BOOST_CHECK_EQUAL( stringToDistance(" 0"), 0.0 );
-  BOOST_CHECK_EQUAL( stringToDistance("0"), 0.0 );
-  BOOST_CHECK_EQUAL( stringToDistance("+0 "), 0.0 );
-  BOOST_CHECK_EQUAL( stringToDistance("-0"), 0.0 );
-  BOOST_CHECK_CLOSE_FRACTION( stringToDistance("+8.3E-02ft .9cm"), 8.3E-02*foot + 0.9*cm, 1.0E-6 );
-  BOOST_CHECK_CLOSE_FRACTION( stringToDistance("3m"), 3.0*m, 1.0E-6 );
-  BOOST_CHECK_CLOSE_FRACTION( stringToDistance("+3.2m"), 3.2*m, 1.0E-6 );
-  BOOST_CHECK_CLOSE_FRACTION( stringToDistance("3'4\""), 3*foot + 4*inch, 1.0E-6 );
-  BOOST_CHECK_CLOSE_FRACTION( stringToDistance("3'4.5\""), 3*foot + 4.5*inch, 1.0E-6 );
-  BOOST_CHECK_CLOSE_FRACTION( stringToDistance("3.2'4.5\""), 3.2*foot + 4.5*inch, 1.0E-6 );
-  BOOST_CHECK_CLOSE_FRACTION( stringToDistance("8ft 9cm"), 8*foot + 9*cm, 1.0E-6 );
-  BOOST_CHECK_CLOSE_FRACTION( stringToDistance("3in 4ft"), 4*foot + 3*inch, 1.0E-6 );
-  BOOST_CHECK_CLOSE_FRACTION( stringToDistance("3 in + 4  ft"), 4*foot + 3*inch, 1.0E-6 );
-  BOOST_CHECK_CLOSE_FRACTION( stringToDistance("1.2E-10m"), 1.2E-10 * m, 1.0E-6 );
-  BOOST_CHECK_CLOSE_FRACTION( stringToDistance(".1m"), 0.1*m, 1.0E-6 );
-  BOOST_CHECK_CLOSE( stringToDistance("0m"), 0.0, 1.0E-12 );
-  BOOST_CHECK_CLOSE_FRACTION( stringToDistance("1m 2ft 3' 18cm"), 1*m + 2*foot + 3*foot + 18*cm, 1.0E-6 );
-  BOOST_CHECK_CLOSE_FRACTION( stringToDistance("1000000.1 '"), 1000000.1*foot, 1.0E-6 );
-  BOOST_CHECK_CLOSE_FRACTION( stringToDistance(".3m"), 0.3*m, 1.0E-6 );
-  BOOST_CHECK_CLOSE_FRACTION( stringToDistance("8m + 9cm"), 8*m + 9*cm, 1.0E-6 );
-
-  const string shouldFailDist[] ={
-    "8", "+8", "8m 3", "m8", "e.3m", "+-0.3m", "+-0.3m", "", "*1m", "1m ?",
-    "1m +- 3cm", "1m \\xC2\\xB1 3cm", "8a1m", "0 4m"
+  s_have_set = true;
+  
+  int argc = boost::unit_test::framework::master_test_suite().argc;
+  char **argv = boost::unit_test::framework::master_test_suite().argv;
+  
+  string datadir;
+  
+  for( int i = 1; i < argc; ++i )
+  {
+    cout << "Arg " << i << ": '" << argv[i] << "'" << endl;
+    const string arg = argv[i];
+    if( SpecUtils::istarts_with( arg, "--datadir=" ) )
+      datadir = arg.substr( 10 );
+  }//for( int arg = 1; arg < argc; ++ arg )
+  
+  SpecUtils::ireplace_all( datadir, "%20", " " );
+  SpecUtils::ireplace_all( g_app_text_dir, "%20", " " );
+  
+  // Search around a little for the app_text directory, if it wasnt specified
+  const string possible_paths[] = {
+    SpecUtils::append_path(datadir,".."), 
+    SpecUtils::append_path(datadir,"../.."),
+    ".", "../", "../../", "../../../", "/Users/wcjohns/rad_ana/InterSpec/"
   };
   
-  for( const string &val : shouldFailDist )
+  for( const auto &d : possible_paths )
   {
-    BOOST_CHECK_THROW( stringToDistance( val ), std::exception );
-  }
-}//BOOST_AUTO_TEST_CASE( testStringToDistance )
+    if( SpecUtils::is_file( SpecUtils::append_path(d, "InterSpec_resources/app_text/InterSpec_fr.xml") ) )
+    {
+      g_app_text_dir = SpecUtils::append_path(d, "InterSpec_resources/app_text/");
+      break;
+    }
+  }//for( loop over candidate dirs )
+  
+  
+  BOOST_REQUIRE_MESSAGE( !g_app_text_dir.empty(), "Error finding app_text dir" );
+}//void set_app_text_dir()
 
 
-BOOST_AUTO_TEST_CASE( testStringToTimeDuration ) {
+
+BOOST_AUTO_TEST_CASE( printToBestTimeUnitsLocalized ) {
+  set_app_text_dir();
+  
+  WMessageResourceBundle bundle;
+  
+  std::string path = SpecUtils::append_path(g_app_text_dir, "InterSpec_fr");
+  
+  const bool loadInMemory = true;
+  bundle.use( path, loadInMemory );
+  
+  bundle.refresh();
+  
+  const set<string> keys = bundle.keys( Wt::WMessageResourceBundle::Default );
+  BOOST_REQUIRE_MESSAGE( keys.count( "units-label-seconds-short" ), "Missing seconds short label" );
+  BOOST_REQUIRE_MESSAGE( keys.count( "units-label-minutes-short" ), "Missing seconds minutes label" );
+  BOOST_REQUIRE_MESSAGE( keys.count( "units-label-hours-short" ), "Missing seconds hours label" );
+  BOOST_REQUIRE_MESSAGE( keys.count( "units-label-days-short" ), "Missing seconds days label" );
+  BOOST_REQUIRE_MESSAGE( keys.count( "units-label-years-short" ), "Missing seconds years label" );
+  
+  BOOST_CHECK_EQUAL( printToBestTimeUnits(1.2E-6*PhysicalUnits::second, 2, PhysicalUnits::second, bundle), "1.20 us" );
+  BOOST_CHECK_EQUAL( printToBestTimeUnits(1.2*PhysicalUnits::second, 2, PhysicalUnits::second, bundle), "1.20 s" );
+  BOOST_CHECK_EQUAL( printToBestTimeUnits(0.0015*PhysicalUnits::second, 2, PhysicalUnits::second, bundle), "1.50 ms" );
+  BOOST_CHECK_EQUAL( printToBestTimeUnits(1*PhysicalUnits::year, 2, PhysicalUnits::second, bundle), "1.00 a" );
+  BOOST_CHECK_EQUAL( printToBestTimeUnits(3.2*60*PhysicalUnits::second, 2, PhysicalUnits::second, bundle), "3.20 m" );
+  BOOST_CHECK_EQUAL( printToBestTimeUnits(3.51*3600*PhysicalUnits::second, 2, PhysicalUnits::second, bundle), "3.51 h" );
+  BOOST_CHECK_EQUAL( printToBestTimeUnits(3.51*3600*24*PhysicalUnits::second, 2, PhysicalUnits::second, bundle), "3.51 j" );
+  
+  PhysicalUnitsLocalized::printToBestTimeUnits( 1.2*PhysicalUnits::second );
+  PhysicalUnitsLocalized::printToBestTimeUnits( 1.1E-6*PhysicalUnits::second );
+  PhysicalUnitsLocalized::printToBestTimeUnits( 1.09E-9*PhysicalUnits::second );
+  PhysicalUnitsLocalized::printToBestTimeUnits( 1.09E-12*PhysicalUnits::second );
+  PhysicalUnitsLocalized::printToBestTimeUnits( 1.3E-4*PhysicalUnits::second );
+  PhysicalUnitsLocalized::printToBestTimeUnits( 1.4E-2*PhysicalUnits::second );
+  PhysicalUnitsLocalized::printToBestTimeUnits( 3600*PhysicalUnits::second );
+  PhysicalUnitsLocalized::printToBestTimeUnits( 2*3600*PhysicalUnits::second );
+  PhysicalUnitsLocalized::printToBestTimeUnits( 2*2*3600*PhysicalUnits::second );
+  PhysicalUnitsLocalized::printToBestTimeUnits( 1.2*PhysicalUnits::year );
+  PhysicalUnitsLocalized::printToBestTimeUnits( 1.2E8*PhysicalUnits::year );
+  PhysicalUnitsLocalized::printToBestTimeUnits( 1.2E3*PhysicalUnits::year );
+}//BOOST_AUTO_TEST_CASE( printToBestTimeUnits )
+
+
+BOOST_AUTO_TEST_CASE( testStringToTimeDurationLocalized ) {
+  set_app_text_dir();
+  
+  WMessageResourceBundle bundle;
+  
+  std::string path = SpecUtils::append_path(g_app_text_dir, "InterSpec_fr");
+  
+  const bool loadInMemory = true;
+  bundle.use( path, loadInMemory );
+  
+  bundle.refresh();
+  
+  const set<string> keys = bundle.keys( Wt::WMessageResourceBundle::Default );
+  BOOST_REQUIRE_MESSAGE( keys.count( "units-labels-second" ), "Missing seconds localization" );
+  BOOST_REQUIRE_MESSAGE( keys.count( "units-labels-minute" ), "Missing minutes localization" );
+  BOOST_REQUIRE_MESSAGE( keys.count( "units-labels-hours" ), "Missing hours localization" );
+  BOOST_REQUIRE_MESSAGE( keys.count( "units-labels-days" ), "Missing days localization" );
+  BOOST_REQUIRE_MESSAGE( keys.count( "units-labels-year" ), "Missing years localization" );
+  BOOST_REQUIRE_MESSAGE( keys.count( "units-labels-half-lives" ), "Missing half-lives localization" );
+  
+  
   map<string,double> validCases;
-
+  
+  // Make sure English will always work
   validCases["5y"] = 5*year;
   validCases["5 y"] = 5*year;
   validCases["+5 y"] = 5*year;
@@ -138,6 +224,16 @@ BOOST_AUTO_TEST_CASE( testStringToTimeDuration ) {
   validCases["PT3H5M2.343S"] = 3*hour + 5*minute + 2.343*second;
   validCases["PT3m5h2s"] = 3*minute + 5*hour + 2*second;
   
+  
+  // French time periods.  Both pure French, and French mixed with English should work
+  validCases["+18.1a"] = 18.1*PhysicalUnits::year;
+  validCases["1.2E-3 year 2m -5s 14.5 ms +18.1y"] = 1.2E-3*PhysicalUnits::year + 2*60*second - 5*second + 0.0145*second + 18.1*year;
+  validCases["1.2 an 3jours 5.1 heure"] = 1.2*PhysicalUnits::year + 3*PhysicalUnits::day + 5.1*PhysicalUnits::hour;
+  validCases["2.11années"] = 2.11*PhysicalUnits::year;
+  validCases["1h 3ms"] = 1*PhysicalUnits::hour + 3*millisecond;
+  validCases["1.1E-3jour 1   heures -3.2min"] = 1.1E-3*day + 1*hour - 3.2*minute;
+  validCases["1.1E-3 sec 3ms"] = 1.1E-3*second + 3*millisecond;
+  validCases["1.1E-3années"] = 1.1E-3*year;
 
 
   for( map<string,double>::const_iterator iter = validCases.begin();
@@ -146,7 +242,7 @@ BOOST_AUTO_TEST_CASE( testStringToTimeDuration ) {
     try
     {
       const double expected = iter->second;
-      const double parsed = stringToTimeDuration( iter->first );
+      const double parsed = stringToTimeDurationPossibleHalfLife( iter->first, -1.0, second, bundle );
       BOOST_CHECK_CLOSE( parsed, expected, 1.0E-6 * fabs(expected) );
       BOOST_CHECK_CLOSE_FRACTION( parsed, expected, 1.0E-6 );
     }catch( std::exception &e )
@@ -154,57 +250,60 @@ BOOST_AUTO_TEST_CASE( testStringToTimeDuration ) {
       BOOST_CHECK_MESSAGE( false, "Failed to parse '" << iter->first << "' using stringToTimeDuration, recieved: " << e.what() << "." );
     }
   }
-
-  BOOST_CHECK_CLOSE_FRACTION( stringToTimeDuration( "1s", 1.0 ), 1.0, 1.0E-6 );
-  BOOST_CHECK_CLOSE_FRACTION( stringToTimeDuration( "1m", 1.0E-12 ), 60*1.0E-12, 1.0E-6 );
-  BOOST_CHECK_CLOSE_FRACTION( stringToTimeDuration( "1m", 1.0E+12 ), 60*1.0E+12, 1.0E-6 );
-  BOOST_CHECK_CLOSE_FRACTION( stringToTimeDuration( "1s 3h", 88.323 ), (3*3600 + 1)*88.323, 1.0E-6 );
-  BOOST_CHECK_CLOSE_FRACTION( stringToTimeDuration( "0", 99.9 ), 0.0, 1.0E-6 );
-  BOOST_CHECK_THROW( stringToTimeDuration( "1m", -1 ), std::exception );
-  BOOST_CHECK_THROW( stringToTimeDuration( "1m", -0 ), std::exception );
-  BOOST_CHECK_THROW( stringToTimeDuration( "1m", +0 ), std::exception );
 }
 
 
+BOOST_AUTO_TEST_CASE( testStringToTimeDurationPossibleHalfLifeLocalized ) {
 
-BOOST_AUTO_TEST_CASE( testStringToTimeDurationPossibleHalfLife ) {
-
-   //double stringToTimeDurationPossibleHalfLife( std::string str, double halflife, double sec_def = becquerel );
-
-   typedef std::tuple<string,double,double> StrHlVal;
-   vector<StrHlVal> cases;
-   cases.push_back( StrHlVal("5hl", 0.289*millisecond, 5*0.289*millisecond ) );
-   cases.push_back( StrHlVal(".5hl", 8*year, 4*year ) );
-   cases.push_back( StrHlVal("+.5hl", 8*year, 4*year ) );
-   cases.push_back( StrHlVal("+0.5hl", 8*year, 4*year ) );
-   cases.push_back( StrHlVal("-.5hl", 8*year, -4*year ) );
-   cases.push_back( StrHlVal("-0.5hl", 8*year, -4*year ) );
-   cases.push_back( StrHlVal("5 half lives", 1.3*second, 5*1.3*second) );
-   cases.push_back( StrHlVal("5 half lives 8min", 1.3*second, 5*1.3*second + 8*minute) );
-   cases.push_back( StrHlVal("8min 5hl", 1.3*second, 5*1.3*second + 8*minute) );
-   cases.push_back( StrHlVal("-5hl + 8min", 1.3*second, -5*1.3*second + 8*minute) );
-   cases.push_back( StrHlVal("5hl + 2hl", 1.3*second, 7*1.3*second) );
-   cases.push_back( StrHlVal("5hl  2.3hl", 1.3*second, 7.3*1.3*second) );
-   cases.push_back( StrHlVal("5hl  .3hl", 1.3*second, 5.3*1.3*second) );
-   cases.push_back( StrHlVal(".5hl  .3hl", 1.3*second, 0.8*1.3*second) );
-   cases.push_back( StrHlVal("8y \t5m 3.4s ", 1.3*second, 8*year + 5*minute + 3.4*second) );
-   
-
-
-   for( const StrHlVal &val : cases  )
-   {
-     const string input = get<0>(val);
-     const double hl = get<1>(val);
-     const double expected = get<2>(val);
-
-     try
-     {
-       const double parsed = stringToTimeDurationPossibleHalfLife( input, hl );
-       BOOST_CHECK_CLOSE( parsed, expected, 1.0E-6 * fabs(expected) );
-       BOOST_CHECK_CLOSE_FRACTION( parsed, expected, 1.0E-6 );
-     }catch( std::exception &e )
-     {
-       BOOST_CHECK_MESSAGE( false, "Failed to parse '" << input << "' using stringToTimeDurationPossibleHalfLife, recieved: " << e.what() << "." );
-     }
-   }
+  set_app_text_dir();
+  
+  WMessageResourceBundle bundle;
+  
+  std::string path = SpecUtils::append_path(g_app_text_dir, "InterSpec_fr");
+  
+  const bool loadInMemory = true;
+  bundle.use( path, loadInMemory );
+  
+  bundle.refresh();
+  
+  
+  typedef std::tuple<string,double,double> StrHlVal;
+  vector<StrHlVal> cases;
+  
+  cases.push_back( StrHlVal("5hl", 0.289*millisecond, 5*0.289*millisecond ) );
+  cases.push_back( StrHlVal(".5hl", 8*year, 4*year ) );
+  cases.push_back( StrHlVal("+0.5hl", 8*year, 4*year ) );
+  cases.push_back( StrHlVal("-.5hl", 8*year, -4*year ) );
+  cases.push_back( StrHlVal("-0.5hl", 8*year, -4*year ) );
+  cases.push_back( StrHlVal("5 half lives", 1.3*second, 5*1.3*second) );
+  cases.push_back( StrHlVal("5 half lives 8min", 1.3*second, 5*1.3*second + 8*minute) );
+  cases.push_back( StrHlVal("8min 5hl", 1.3*second, 5*1.3*second + 8*minute) );
+  cases.push_back( StrHlVal("-5hl + 8min", 1.3*second, -5*1.3*second + 8*minute) );
+  cases.push_back( StrHlVal("8y \t5m 3.4s ", 1.3*second, 8*year + 5*minute + 3.4*second) );
+  
+  cases.push_back( StrHlVal("5 demi vie", 1.3*second, 5*1.3*second) );
+  cases.push_back( StrHlVal("5dv", 1.3*second, 5*1.3*second) );
+  cases.push_back( StrHlVal("5demi-vies", 1.3*second, 5*1.3*second) );
+  cases.push_back( StrHlVal("5demi vie", 1.3*second, 5*1.3*second) );
+  cases.push_back( StrHlVal("5demi vies", 1.3*second, 5*1.3*second) );
+  cases.push_back( StrHlVal("1.1E3dv", 1.3*second, 1.1E3*1.3*second) );
+  cases.push_back( StrHlVal("5dv 0.53jour", 1.3*second, 5*1.3*second + 0.53*24*3600*second) );
+  
+  for( const StrHlVal &val : cases  )
+  {
+    const string input = get<0>(val);
+    const double hl = get<1>(val);
+    const double expected = get<2>(val);
+    
+    try
+    {
+      const double parsed = stringToTimeDurationPossibleHalfLife( input, hl, second, bundle );
+      BOOST_CHECK_CLOSE( parsed, expected, 1.0E-6 * fabs(expected) );
+      BOOST_CHECK_CLOSE_FRACTION( parsed, expected, 1.0E-6 );
+    }catch( std::exception &e )
+    {
+      BOOST_CHECK_MESSAGE( false, "Failed to parse '" << input << "' using localized stringToTimeDurationPossibleHalfLife, recieved: " << e.what() << "." );
+    }
+  }
 }
+

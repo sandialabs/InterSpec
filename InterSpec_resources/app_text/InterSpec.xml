@@ -83,16 +83,21 @@
   <!-- Units the user may use to write time duration.
     Note that we dont have very good changing case (i.e., from lower to upper, or upper to lower)
     in the C++ code, so to be sure the matching works, you should include common capitalization
-    schemes here - sorry
+    schemes here - sorry.
+
+    It is important that the | character is used, with no spaces, to seperate the different possible
+    units (this is because this string will become part of a regular-expression).
     
-    (we dont need these for English, but other languages do - so putting in here for reference)
+    These 'units-labels-*' string also MUST NOT be empty, or regex validation inputs will fail.
+    (you can leave the whole element out, to default to English, but if you put in a localized
+    element, the node must hav a value)
   -->
-  <message id="units-labels-second">seconds, second, sec, s, SECONDS, SECOND, SEC, S</message>
-  <message id="units-labels-minute">minute, minutes, min, m</message>
-  <message id="units-labels-hours">hours, hour, hrs, h</message>
-  <message id="units-labels-days">days, day, d</message>
-  <message id="units-labels-year">years, year, yr, y</message>
-  <message id="units-labels-half-lives">hl, halflife, halflives, half-life, half-lives, half lives, half life</message>
+  <message id="units-labels-second">seconds|second|sec|s|SECONDS|SECOND|SEC|S</message>
+  <message id="units-labels-minute">minute|minutes|min|m</message>
+  <message id="units-labels-hours">hours|hour|hrs|h</message>
+  <message id="units-labels-days">days|day|d</message>
+  <message id="units-labels-year">years|year|yr|y</message>
+  <message id="units-labels-half-lives">hl|halflife|halflives|half-life|half-lives|half lives|half life</message>
   <!-- Units to use when writing a time duration out -->
   <message id="units-label-seconds-short">s</message>
   <message id="units-label-minutes-short">m</message>

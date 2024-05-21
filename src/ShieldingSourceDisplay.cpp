@@ -111,6 +111,7 @@
 #include "InterSpec/GammaInteractionCalc.h"
 #include "InterSpec/IsotopeSelectionAids.h"
 #include "InterSpec/GammaInteractionCalc.h"
+#include "InterSpec/PhysicalUnitsLocalized.h"
 #include "InterSpec/ShieldingSourceDisplay.h"
 
 using namespace Wt;
@@ -1550,7 +1551,7 @@ boost::any SourceFitModel::data( const Wt::WModelIndex &index, int role ) const
     {
       WString msg = WString("{1}={2}")
                       .arg( WString::tr("T1/2") )
-                      .arg( PhysicalUnits::printToBestTimeUnits( isof.nuclide->halfLife, 2, PhysicalUnits::second ) );
+                      .arg( PhysicalUnitsLocalized::printToBestTimeUnits( isof.nuclide->halfLife, 2, PhysicalUnits::second ) );
       // TODO: should put in dominant photopeaks or other information here
       return boost::any( msg );
     }else if( column == kAge )
@@ -1652,9 +1653,9 @@ boost::any SourceFitModel::data( const Wt::WModelIndex &index, int role ) const
       if( !isof.ageIsFittable )
         return boost::any( WString::tr("NA") );
       
-      string ans = PhysicalUnits::printToBestTimeUnits( age, (extra_precision ? 8 : 2) );
+      string ans = PhysicalUnitsLocalized::printToBestTimeUnits( age, (extra_precision ? 8 : 2) );
       if( uncert > 0.0 )
-        ans += " \xC2\xB1 " + PhysicalUnits::printToBestTimeUnits( uncert, (extra_precision ? 8 : 1) );
+        ans += " \xC2\xB1 " + PhysicalUnitsLocalized::printToBestTimeUnits( uncert, (extra_precision ? 8 : 1) );
       
       return boost::any( WString(ans) );
     }//case kAge:
@@ -1706,7 +1707,7 @@ boost::any SourceFitModel::data( const Wt::WModelIndex &index, int role ) const
     {
       if( (!isof.ageIsFittable) || isof.ageUncertainty < 0.0 )
         return boost::any();
-      const string ans = PhysicalUnits::printToBestTimeUnits( isof.ageUncertainty, (extra_precision ? 8 : 2) );
+      const string ans = PhysicalUnitsLocalized::printToBestTimeUnits( isof.ageUncertainty, (extra_precision ? 8 : 2) );
       return boost::any( WString(ans) );
     }//case kAgeUncertainty:
 
@@ -1736,7 +1737,7 @@ boost::any SourceFitModel::data( const Wt::WModelIndex &index, int role ) const
     {
       if( !isof.truthAge )
         return boost::any();
-      const string ans = PhysicalUnits::printToBestTimeUnits( *isof.truthAge, (extra_precision ? 8 : 4) );
+      const string ans = PhysicalUnitsLocalized::printToBestTimeUnits( *isof.truthAge, (extra_precision ? 8 : 4) );
       return boost::any( WString(ans) );
     }
       
@@ -1744,7 +1745,7 @@ boost::any SourceFitModel::data( const Wt::WModelIndex &index, int role ) const
     {
       if( !isof.truthAgeTolerance )
         return boost::any();
-      const string ans = PhysicalUnits::printToBestTimeUnits( *isof.truthAgeTolerance, (extra_precision ? 8 : 4) );
+      const string ans = PhysicalUnitsLocalized::printToBestTimeUnits( *isof.truthAgeTolerance, (extra_precision ? 8 : 4) );
       return boost::any( WString(ans) );
     }
 #endif  //#if( INCLUDE_ANALYSIS_TEST_SUITE )
@@ -1898,7 +1899,7 @@ bool SourceFitModel::setData( const Wt::WModelIndex &index, const boost::any &va
         }else
         {
           const double hl = (iso.nuclide ? iso.nuclide->halfLife : -1.0);
-          iso.age = PhysicalUnits::stringToTimeDurationPossibleHalfLife( utf_str, hl );
+          iso.age = PhysicalUnitsLocalized::stringToTimeDurationPossibleHalfLife( utf_str, hl );
 
           if( iso.ageUncertainty >= 0.0 )
           {
@@ -1970,7 +1971,7 @@ bool SourceFitModel::setData( const Wt::WModelIndex &index, const boost::any &va
         if( iso.ageIsFittable && !value.empty() )
         {
           const double hl = (iso.nuclide ? iso.nuclide->halfLife : -1.0);
-          iso.ageUncertainty = PhysicalUnits::stringToTimeDurationPossibleHalfLife( utf_str, hl );
+          iso.ageUncertainty = PhysicalUnitsLocalized::stringToTimeDurationPossibleHalfLife( utf_str, hl );
         }//if( decays to stable children / else )
         
         if( m_sameAgeForIsotopes )
@@ -2009,7 +2010,7 @@ bool SourceFitModel::setData( const Wt::WModelIndex &index, const boost::any &va
         if( value.empty() )
           iso.truthAge.reset();
         else
-          iso.truthAge = PhysicalUnits::stringToTimeDurationPossibleHalfLife( utf_str, hl );
+          iso.truthAge = PhysicalUnitsLocalized::stringToTimeDurationPossibleHalfLife( utf_str, hl );
         break;
       }
          
@@ -2019,7 +2020,7 @@ bool SourceFitModel::setData( const Wt::WModelIndex &index, const boost::any &va
         if( value.empty() )
           iso.truthAgeTolerance.reset();
         else
-          iso.truthAgeTolerance = PhysicalUnits::stringToTimeDurationPossibleHalfLife( utf_str, hl );
+          iso.truthAgeTolerance = PhysicalUnitsLocalized::stringToTimeDurationPossibleHalfLife( utf_str, hl );
         break;
       }
 #endif
@@ -8598,8 +8599,8 @@ void ShieldingSourceDisplay::updateCalcLogWithFitResults(
       
       const double age = chi2Fcn->age( nuc, params );
       const double ageUncert = chi2Fcn->age( nuc, errors );
-      const string ageStr = PhysicalUnits::printToBestTimeUnits( age, 2 );
-      const string ageUncertStr = PhysicalUnits::printToBestTimeUnits( ageUncert, 2 );
+      const string ageStr = PhysicalUnitsLocalized::printToBestTimeUnits( age, 2 );
+      const string ageUncertStr = PhysicalUnitsLocalized::printToBestTimeUnits( ageUncert, 2 );
   
       string act_postfix = det_eff_geom_type_postfix(m_sourceModel->detType()), trace_total = "";
       if( chi2Fcn->isTraceSource(nuc) )

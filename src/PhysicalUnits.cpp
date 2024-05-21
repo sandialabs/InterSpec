@@ -47,7 +47,7 @@ namespace PhysicalUnits
 #define METRIC_PREFIX_UNITS "m|M|k|g|G|t|T|u|" MU_CHARACTER_1 "|" MU_CHARACTER_2 "|p|n|f|milli|micro|pico|nano|femto|kilo|mega|giga|terra"
 
 #define PLUS_MINUS_REGEX "(\\xC2?\\xB1|\\+\\-\\s*|\\-\\+\\s*)"
-#define TIME_UNIT_REGEX "(year|yr|y|day|d|hrs|hour|h|minutes|min|m|second|seconds|sec|s|ms|microseconds|us|nanoseconds|ns)"
+#define TIME_UNIT_REGEX "(years|year|yr|y|days|day|d|hrs|hours|hour|h|minute|minutes|min|m|second|seconds|sec|s|ms|microseconds|us|nanoseconds|ns)"
 #define HALF_LIFE_REGEX "(hl|halflife|halflives|half-life|half-lives|half lives|half life)"
 #define ACTIVITY_UNIT_REGEX "(bq|becquerel|ci|cu|curie|c)"
 #define ABSORBED_DOSE_UNIT_REGEX "(gray|Gy|gy|rad|erg|erg\\/g|erg per gram)"
@@ -849,7 +849,7 @@ double stringToTimeDurationPossibleHalfLife( std::string str,
                             "|us|micro\\-*sec|micro\\-*second"
                             "|ms|milli\\-*sec|milli\\-*second"
                             "|second|seconds|sec|s|minute|minutes|min|m"
-                            "|hours|hour|hrs|h|days|day|d|year|yr|y"
+                            "|hours|hour|hrs|h|days|day|d|year|years|yr|yrs|y"
                             "|hl|halflife|halflives|half\\-life|half\\-lives|half\\slives|half\\slife"
                             ")"
                             "\\s*((\\+|\\-)?(((\\d+(\\.\\d*)?)|(\\.\\d*)).*))?";

@@ -101,6 +101,7 @@
 #include "InterSpec/D3SpectrumDisplayDiv.h"
 #include "InterSpec/DetectorPeakResponse.h"
 #include "InterSpec/IsotopeNameFilterModel.h"
+#include "InterSpec/PhysicalUnitsLocalized.h"
 #include "InterSpec/ShieldingSourceDisplay.h"
 #include "InterSpec/ReferencePhotopeakDisplay.h"
 
@@ -1404,7 +1405,7 @@ DetectionLimitTool::DetectionLimitTool( InterSpec *viewer,
   
   m_ageEdit = new WLineEdit( "", inputTable );
   m_ageEdit->addStyleClass( "GridSecondCol GridSecondRow" );
-  WRegExpValidator *validator = new WRegExpValidator( PhysicalUnits::sm_timeDurationHalfLiveOptionalRegex, m_ageEdit );
+  WRegExpValidator *validator = new WRegExpValidator( PhysicalUnitsLocalized::timeDurationHalfLiveOptionalRegex(), m_ageEdit );
   validator->setFlags(Wt::MatchCaseInsensitive);
   m_ageEdit->setValidator(validator);
   m_ageEdit->setAutoComplete( false );
@@ -1843,7 +1844,7 @@ void DetectionLimitTool::handleNuclideChange( const bool update_to_default_age )
     
     try
     {
-      age = PhysicalUnits::stringToTimeDurationPossibleHalfLife( agestr, nuc->halfLife );
+      age = PhysicalUnitsLocalized::stringToTimeDurationPossibleHalfLife( agestr, nuc->halfLife );
       if( age > 100.0*nuc->halfLife || age < 0.0 )
         throw std::runtime_error( "" );
     }catch(...)

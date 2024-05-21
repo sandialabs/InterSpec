@@ -41,6 +41,83 @@ using namespace std;
 namespace PhysicalUnitsLocalized
 {
 #define PARTIAL_DECIMAL_REGEX "((\\d+(\\.\\d*)?)|(\\.\\d*))\\s*(?:[Ee][+\\-]?\\d+)?"
+
+  
+  Wt::WString timeDurationRegex()
+  {
+    string regexstr = PhysicalUnits::sm_timeDurationRegex;
+    const auto units_start = regexstr.find( "(years|" );
+    const auto units_end = regexstr.find( "|ns)" );
+    assert( units_start != string::npos );
+    assert( units_end != string::npos );
+    
+    if( (units_start == string::npos) || (units_end == string::npos) )
+      throw std::logic_error( "PhysicalUnits::sm_timeDurationRegex has unexpectedly changed." );
+    
+    //const string units = "|" + regexstr.substr( units_start + 1, 3 + units_end - units_start );
+    
+    string start_str = regexstr.substr(0,units_end + 3);
+    string end_str = regexstr.substr(units_end + 3);
+    regexstr = start_str + "|{1}|{2}|{3}|{4}|{5}" + end_str;
+    
+    return Wt::WString(regexstr)
+            .arg( Wt::WString::tr("units-labels-second") )
+            .arg( Wt::WString::tr("units-labels-minute") )
+            .arg( Wt::WString::tr("units-labels-hours") )
+            .arg( Wt::WString::tr("units-labels-days") )
+            .arg( Wt::WString::tr("units-labels-year") );
+  }//Wt::WString timeDurationRegex()
+  
+  Wt::WString modify_hl_regex( const char *input_regex )
+  {
+    string regexstr = input_regex;
+    auto units_start = regexstr.find( "(years|" );
+    auto units_end = regexstr.find( "|ns)" );
+    assert( units_start != string::npos );
+    assert( units_end != string::npos );
+    
+    if( (units_start == string::npos) || (units_end == string::npos) )
+      throw std::logic_error( "PhysicalUnits::sm_timeDurationHalfLiveOptionalRegex has unexpectedly changed." );
+    
+    //const string units = "|" + regexstr.substr( units_start + 1, 3 + units_end - units_start );
+    
+    string start_str = regexstr.substr(0,units_end + 3);
+    string end_str = regexstr.substr(units_end + 3);
+    regexstr = start_str + "|{1}|{2}|{3}|{4}|{5}" + end_str;
+    
+    units_start = regexstr.find( "(hl|" );
+    units_end = regexstr.find( "|half life)" );
+    
+    assert( units_start != string::npos );
+    assert( units_end != string::npos );
+    
+    if( (units_start == string::npos) || (units_end == string::npos) )
+      throw std::logic_error( "PhysicalUnits::sm_timeDurationHalfLiveOptionalRegex has unexpectedly changed in HLs." );
+    
+    start_str = regexstr.substr(0,units_end + 10);
+    end_str = regexstr.substr(units_end + 10);
+    regexstr = start_str + "|{6}" + end_str;
+    
+    return Wt::WString(regexstr)
+            .arg( Wt::WString::tr("units-labels-second") )
+            .arg( Wt::WString::tr("units-labels-minute") )
+            .arg( Wt::WString::tr("units-labels-hours") )
+            .arg( Wt::WString::tr("units-labels-days") )
+            .arg( Wt::WString::tr("units-labels-year") )
+            .arg( Wt::WString::tr("units-labels-half-lives") );
+  }
+  
+  Wt::WString timeDurationHalfLiveOptionalRegex()
+  {
+    return modify_hl_regex( PhysicalUnits::sm_timeDurationHalfLiveOptionalRegex );
+  }//
+  
+  
+  Wt::WString timeDurationHalfLiveOptionalPosOrNegRegex()
+  {
+    return modify_hl_regex( PhysicalUnits::sm_timeDurationHalfLiveOptionalPosOrNegRegex );
+  }
+  
   
   double stringToTimeDuration( std::string str, double second_def )
   {
@@ -54,44 +131,57 @@ namespace PhysicalUnitsLocalized
     const string locale_name = app ? app->locale().name() : string();
     if( locale_name.empty() || SpecUtils::istarts_with(locale_name, "en") )
       return PhysicalUnits::stringToTimeDurationPossibleHalfLife( str, hl, sec_def );
-  
-    map<string,vector<string>> to_units_from;
     
     Wt::WMessageResourceBundle &bundle = app->messageResourceBundle();
-    auto get_translations = [&]( const string &map_key, const string &val_key, const bool allow_space ){
+    return stringToTimeDurationPossibleHalfLife( str, hl, sec_def, bundle );
+  }//double stringToTimeDurationPossibleHalfLife(...)
+  
+  
+  std::string printToBestTimeUnits( double time, int maxNpostDecimal, double sec_def  )
+  {
+    Wt::WApplication *app = wApp;
+    const string locale_name = app ? app->locale().name() : string();
+    if( locale_name.empty() || SpecUtils::istarts_with(locale_name, "en") )
+      return PhysicalUnits::printToBestTimeUnits( time, maxNpostDecimal, sec_def );
+    
+    Wt::WMessageResourceBundle &bundle = app->messageResourceBundle();
+    return printToBestTimeUnits( time, maxNpostDecimal, sec_def, bundle );
+  }//std::string printToBestTimeUnits( double time, int maxNpostDecimal, double sec_def  )
+  
+  
+  double stringToTimeDurationPossibleHalfLife( const std::string &str,
+                                               const double halflife,
+                                                double sec_def,
+                                              Wt::WMessageResourceBundle &bundle )
+  {
+    map<string,vector<string>> to_units_from;
+    
+    auto get_translations = [&]( const string &map_key, const string &val_key ){
       string csv_list;
       if( bundle.resolveKey( val_key, csv_list ) )
       {
-        if( allow_space )
-        {
-          SpecUtils::split( to_units_from[map_key], csv_list, ", " );
-        }else
-        {
-          SpecUtils::split( to_units_from[map_key], csv_list, "," );
-          for( auto &str : to_units_from[map_key] )
-            SpecUtils::trim( str );
-        }
+        SpecUtils::split( to_units_from[map_key], csv_list, "|" );
       }else
       {
-        cerr << "Warning: Failed to resolve string key '" << val_key << "' for locale " << locale_name << endl;
+        cerr << "Warning: Failed to resolve string key '" << val_key << "'" << endl;
+        assert( 0 );
       }
     };//get_translations
     
-    get_translations( "seconds", "units-labels-second", true );
-    get_translations( "minutes", "units-labels-minute", true );
-    get_translations( "hours", "units-labels-hours", true );
-    get_translations( "days", "units-labels-days", true );
-    get_translations( "years", "units-labels-year", true );
-    //"half lives" may have space in it, so require comma delimiter
-    get_translations( "halflives", "units-labels-half-lives", false );
+    get_translations( "second", "units-labels-second" );
+    get_translations( "minute", "units-labels-minute" );
+    get_translations( "hour", "units-labels-hours" );
+    get_translations( "day", "units-labels-days" );
+    get_translations( "year", "units-labels-year" );
+    get_translations( "halflives", "units-labels-half-lives" );
 
     
     // We'll split every pair of number {number,unit}, and do a simple replace.
     //  Its simple, but something.
     
     // "[^\\s\\d\\+-]" means anything but space number , or +-.  We want something like \\w, but
-    //  \\w wont work for non-ascii characters forming a word
-    std::regex regex( "(?:^|\\s|,|\\+|-)((" PARTIAL_DECIMAL_REGEX ")\\s*([^\\s\\d\\+-]+))" );
+    //  \\w wont work for non-ascii characters forming a word.  Also, we want to allow like "half lives", or "demi vie"
+    std::regex regex( "(?:^|\\s|,|\\+|-)((" PARTIAL_DECIMAL_REGEX ")\\s*([^\\s\\d\\+]+([\\s-]?[^\\s\\d\\+-]+)?))" );
     std::sregex_iterator iter( begin(str), end(str), regex );
     const std::sregex_iterator str_end;
     
@@ -115,7 +205,7 @@ namespace PhysicalUnitsLocalized
       string en_unit = unit;
       for( const auto iter : to_units_from )
       {
-        if( iter.first == "seconds" )
+        if( iter.first == "second" )
         {
           // We will allow seconds to be prefixed with u, n, p, m
           for( const string &val : iter.second )
@@ -159,7 +249,7 @@ namespace PhysicalUnitsLocalized
       }//for( const auto iter : to_units_from )
       
       
-      //std::cout << "Number: " << number << ", Unit: " << unit << std::endl;
+      //std::cout << "Number: '" << number << "', Unit: '" << unit << "'" << std::endl;
       
       localized_str += (localized_str.empty() ? "" : " ") + number + en_unit;
 
@@ -168,23 +258,15 @@ namespace PhysicalUnitsLocalized
     
     localized_str += string( last_pos, end(str) );
     
-    // cout << "Localized string is: '" << localized_str << "'" << endl << endl;
+    //cout << "Localized string is: '" << localized_str << "'" << endl << endl;
     
-    return 0;
+    return PhysicalUnits::stringToTimeDurationPossibleHalfLife( localized_str, halflife, sec_def );
   }//double stringToTimeDurationPossibleHalfLife( std::string str, const double halflife, double second_def )
   
   
-  std::string printToBestTimeUnits( double time, int maxNpostDecimal, double sec_def  )
+  std::string printToBestTimeUnits( double time, int maxNpostDecimal, double sec_def, Wt::WMessageResourceBundle &bundle  )
   {
-    Wt::WApplication *app = wApp;
-    const string locale_name = app ? app->locale().name() : string();
-    if( locale_name.empty() || SpecUtils::istarts_with(locale_name, "en") )
-      return PhysicalUnits::printToBestTimeUnits( time, maxNpostDecimal, sec_def );
-    
     const string en_val = PhysicalUnits::printToBestTimeUnits( time, maxNpostDecimal, sec_def );
-    
-    
-    Wt::WMessageResourceBundle &bundle = app->messageResourceBundle();
 
     std::regex regex( "(?:^|\\s|,|\\+|-)((" PARTIAL_DECIMAL_REGEX "\\s*)([^\\s\\d\\+-]+))" );
     std::sregex_iterator iter( begin(en_val), end(en_val), regex );

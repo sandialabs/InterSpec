@@ -43,6 +43,7 @@
 #include "InterSpec/MassAttenuationTool.h"
 #include "InterSpec/DecayDataBaseServer.h"
 #include "InterSpec/DetectorPeakResponse.h"
+#include "InterSpec/PhysicalUnitsLocalized.h"
 #include "InterSpec/IsotopeSearchByEnergyModel.h"
 
 
@@ -767,7 +768,7 @@ void IsotopeSearchByEnergyModel::nuclidesWithAllEnergies(
           //        match.m_reactionEnergy;
           
           //        match.m_displayData[ParentHalfLife] = "";
-          match.m_displayData[AssumedAge] = PhysicalUnits::printToBestTimeUnits( 0.0 );
+          match.m_displayData[AssumedAge] = PhysicalUnitsLocalized::printToBestTimeUnits( 0.0 );
           //        match.m_displayData[SpecificIsotope] = "";
           if( match.m_element )
             match.m_displayData[ParentIsotope] = match.m_element->symbol;
@@ -898,9 +899,9 @@ void IsotopeSearchByEnergyModel::nuclidesWithAllEnergies(
           if( !i )
           {
             match.m_displayData[ParentHalfLife]
-            = PhysicalUnits::printToBestTimeUnits(match.m_nuclide->halfLife);
+            = PhysicalUnitsLocalized::printToBestTimeUnits(match.m_nuclide->halfLife);
             match.m_displayData[AssumedAge]
-            = PhysicalUnits::printToBestTimeUnits(match.m_age);
+            = PhysicalUnitsLocalized::printToBestTimeUnits(match.m_age);
           }//if( !i )
           
           dist += match.m_distance;
@@ -1055,7 +1056,7 @@ void IsotopeSearchByEnergyModel::xraysWithAllEnergies(
       match.m_element = el;
       match.m_xray = xray;
       match.m_reaction = NULL;
-      match.m_displayData[AssumedAge] = PhysicalUnits::printToBestTimeUnits( 0.0 );
+      match.m_displayData[AssumedAge] = PhysicalUnitsLocalized::printToBestTimeUnits( 0.0 );
       match.m_displayData[ParentIsotope] = match.m_element->symbol;
       
       snprintf( buffer, sizeof(buffer), "%.2f", xray->energy );
@@ -1168,7 +1169,7 @@ void IsotopeSearchByEnergyModel::reactionsWithAllEnergies(
       match.m_branchRatio = nearesteA.abundance;
       match.m_reactionEnergy = nearesteA;
       
-      match.m_displayData[AssumedAge] = PhysicalUnits::printToBestTimeUnits( 0.0 );
+      match.m_displayData[AssumedAge] = PhysicalUnitsLocalized::printToBestTimeUnits( 0.0 );
       match.m_displayData[ParentIsotope] = rctn->name();
       
       snprintf( buffer, sizeof(buffer), "%.2f", nearesteA.energy );

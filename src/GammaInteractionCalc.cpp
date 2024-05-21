@@ -76,6 +76,7 @@
 #include "InterSpec/DetectorPeakResponse.h"
 #include "InterSpec/GammaInteractionCalc.h"
 #include "InterSpec/DetectorPeakResponse.h"
+#include "InterSpec/PhysicalUnitsLocalized.h"
 #include "InterSpec/ShieldingSourceFitCalc.h"
 
 using namespace std;
@@ -5000,7 +5001,7 @@ void ShieldingSourceChi2Fcn::cluster_peak_activities( std::map<double,double> &e
     msg << "For ";
     for( int n = 0; n < mixture.numInitialNuclides(); ++n )
       msg << (n ? ", " : "") << mixture.initialNuclide(n)->symbol;
-    msg << " at age " << PhysicalUnits::printToBestTimeUnits(age) << ":";
+    msg << " at age " << PhysicalUnitsLocalized::printToBestTimeUnits(age) << ":";
     info->push_back( msg.str() );
   }//if( info )
 
@@ -5500,7 +5501,7 @@ vector< tuple<double,double,double,Wt::WColor,double> >
   {
     info->push_back( "LiveTime="
                     + std::to_string(m_liveTime/PhysicalUnits::second)
-                    + " s (" + PhysicalUnits::printToBestTimeUnits(m_liveTime)
+                    + " s (" + PhysicalUnitsLocalized::printToBestTimeUnits(m_liveTime)
                     + ")" );
     info->push_back( "Distance to source center from detector: "
                       + PhysicalUnits::printToBestLengthUnits(m_distance) );

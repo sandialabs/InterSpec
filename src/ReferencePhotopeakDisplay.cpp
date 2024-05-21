@@ -81,6 +81,7 @@
 #include "InterSpec/IsotopeSelectionAids.h"
 #include "InterSpec/IsotopeNameFilterModel.h"
 #include "InterSpec/MoreNuclideInfoDisplay.h"
+#include "InterSpec/PhysicalUnitsLocalized.h"
 #include "InterSpec/ReferencePhotopeakDisplay.h"
 
 using namespace std;
@@ -961,7 +962,7 @@ ReferencePhotopeakDisplay::ReferencePhotopeakDisplay(
 
   WLabel *ageInputLabel = new WLabel( WString("{1}:").arg( WString::tr("Age") ) );
   m_ageEdit = new WLineEdit( "" );
-  WRegExpValidator *validator = new WRegExpValidator( PhysicalUnits::sm_timeDurationHalfLiveOptionalRegex, this );
+  WRegExpValidator *validator = new WRegExpValidator( PhysicalUnitsLocalized::timeDurationHalfLiveOptionalRegex(), this );
   validator->setFlags(Wt::MatchCaseInsensitive);
   m_ageEdit->setValidator(validator);
   
@@ -1365,7 +1366,7 @@ void ReferencePhotopeakDisplay::handleIsotopeChange( const bool useCurrentAge )
         m_ageEdit->setText( "0y" );
       }else if( nuc->canObtainPromptEquilibrium() && m_promptLinesOnly->isChecked() )
       {
-        WString hlstr = PhysicalUnits::printToBestTimeUnits(
+        WString hlstr = PhysicalUnitsLocalized::printToBestTimeUnits(
                                           5.0*nuc->promptEquilibriumHalfLife(),
                                           2, SandiaDecay::second );
         m_ageEdit->setText( hlstr );
@@ -1377,7 +1378,7 @@ void ReferencePhotopeakDisplay::handleIsotopeChange( const bool useCurrentAge )
       }else
       {
         const double hl = (nuc ? nuc->halfLife : -1.0);
-        double age = PhysicalUnits::stringToTimeDurationPossibleHalfLife( agestr, hl );
+        double age = PhysicalUnitsLocalized::stringToTimeDurationPossibleHalfLife( agestr, hl );
         if( age > 100.0*nuc->halfLife || age < 0.0 )
           throw std::runtime_error( "" );
       }//if( nuc->decaysToStableChildren() ) / else
@@ -1388,7 +1389,7 @@ void ReferencePhotopeakDisplay::handleIsotopeChange( const bool useCurrentAge )
         // We dont need an age - we will set to zero - so dont throw exception from empty string
       }else
       {
-        double age = PhysicalUnits::stringToTimeDurationPossibleHalfLife( agestr, nuc->halfLife );
+        double age = PhysicalUnitsLocalized::stringToTimeDurationPossibleHalfLife( agestr, nuc->halfLife );
         if( age > 100.0*nuc->halfLife || age < 0.0 )
           throw std::runtime_error( "" );
       }
@@ -2350,14 +2351,31 @@ void ReferencePhotopeakDisplay::updateDisplayFromInput( RefLineInput user_input 
                               && !nuclide->decaysToStableChildren())
                              || (ref_lines->m_source_type == ReferenceLineInfo::SourceType::NuclideMixture) ) ;
   
-  const string agestr = (!enable_aging || !ref_lines) ? string() : ref_lines->m_input.m_age;
+  string agestr = (!enable_aging || !ref_lines) ? string() : ref_lines->m_input.m_age;
+  
+  if( !agestr.empty() )
+  {
+    try
+    {
+      const Wt::WLocale &locale = Wt::WLocale::currentLocale();
+      if( !locale.name().empty() && !SpecUtils::istarts_with(locale.name(), "en" ) )
+      {
+        const double hl = nuclide ? nuclide->halfLife : -1.0;
+        const double duration = PhysicalUnitsLocalized::stringToTimeDurationPossibleHalfLife( agestr, hl );
+        agestr = PhysicalUnitsLocalized::printToBestTimeUnits( duration );
+      }
+    }catch( std::exception &e )
+    {
+      cerr << "Error converting age ('" << agestr << "') to localized time-span: " << e.what() << endl;
+    }//
+  }//if( !agestr.empty() )
   
   m_ageEdit->setText( WString::fromUTF8(agestr) );
   m_ageEdit->setEnabled( enable_aging );
   
   
   
-  const string hl_str = !nuclide ? string() : PhysicalUnits::printToBestTimeUnits( nuclide->halfLife, 2 );
+  const string hl_str = !nuclide ? string() : PhysicalUnitsLocalized::printToBestTimeUnits( nuclide->halfLife, 2 );
   
   const WString hlstr = !nuclide 
                         ? WString()
@@ -2747,7 +2765,8 @@ void ReferencePhotopeakDisplay::serialize(
     node->append_node( element );
     
     name = "Age";
-    value = doc->allocate_string( m_ageEdit->text().toUTF8().c_str() );
+    string age_str = m_ageEdit->text().toUTF8();
+    value = doc->allocate_string( age_str.c_str() );
     element = doc->allocate_node( rapidxml::node_element, name, value );
     node->append_node( element );
 
@@ -3143,7 +3162,7 @@ void ReferencePhotopeakDisplay::setIsotope( const SandiaDecay::Nuclide *nuc,
   {
     m_nuclideEdit->setText( nuc->symbol );
     if( age >= 0.0 )
-      m_ageEdit->setText( PhysicalUnits::printToBestTimeUnits(age) );
+      m_ageEdit->setText( PhysicalUnitsLocalized::printToBestTimeUnits(age) );
   }else
   {
     if( m_nuclideEdit->valueText().empty() )

@@ -86,6 +86,7 @@
 #include "InterSpec/MassAttenuationTool.h"
 #include "InterSpec/IsotopeSelectionAids.h"
 #include "InterSpec/IsotopeNameFilterModel.h"
+#include "InterSpec/PhysicalUnitsLocalized.h"
 
 #if( USE_QR_CODES )
 #include <Wt/Utils>
@@ -364,7 +365,7 @@ public:
     HelpSystem::attachToolTipOn( m_nuclideEdit, WString::tr("dcw-tt-nuc-edit"), showToolTips );
     
     
-    WRegExpValidator *validator = new WRegExpValidator( PhysicalUnits::sm_timeDurationHalfLiveOptionalRegex, this );
+    WRegExpValidator *validator = new WRegExpValidator( PhysicalUnitsLocalized::timeDurationHalfLiveOptionalRegex(), this );
     validator->setFlags(Wt::MatchCaseInsensitive);
     m_nuclideAgeEdit->setValidator(validator);
     
@@ -406,7 +407,7 @@ public:
     
     WString hlstr;
     if( nuc )
-      hlstr = PhysicalUnits::printToBestTimeUnits( nuc->halfLife, 2, SandiaDecay::second );
+      hlstr = PhysicalUnitsLocalized::printToBestTimeUnits( nuc->halfLife, 2, SandiaDecay::second );
     m_halfLifeTxt->setText( WString("{1}={2}").arg(WString::tr("T1/2")).arg(hlstr) );
 
     bool useCurrentAge = false;
@@ -420,7 +421,7 @@ public:
       try
       {
         const double hl = (m_currentNuc ? m_currentNuc->halfLife : -1.0);
-        double x = PhysicalUnits::stringToTimeDurationPossibleHalfLife( agestr, hl );
+        double x = PhysicalUnitsLocalized::stringToTimeDurationPossibleHalfLife( agestr, hl );
         if( x < 0.0 )
           throw runtime_error("");
       }catch(...)
@@ -462,7 +463,7 @@ public:
           m_nuclideAgeEdit->disable();
         }else if( nuc->canObtainPromptEquilibrium() && showPromptOnly )
         {
-          WString hlstr = PhysicalUnits::printToBestTimeUnits(
+          WString hlstr = PhysicalUnitsLocalized::printToBestTimeUnits(
                                                               5.0*nuc->promptEquilibriumHalfLife(),
                                                               2, SandiaDecay::second );
           m_nuclideAgeEdit->setText( hlstr );
@@ -478,7 +479,7 @@ public:
       }else if( nuc && useCurrentAge )
       {
         const double hl = (nuc ? nuc->halfLife : -1.0);
-        double age = PhysicalUnits::stringToTimeDurationPossibleHalfLife( agestr, hl );
+        double age = PhysicalUnitsLocalized::stringToTimeDurationPossibleHalfLife( agestr, hl );
         if( age > 100.0*nuc->halfLife || age < 0.0 )
           throw std::runtime_error( "" );
         m_nuclideAgeEdit->setText( agestr );
@@ -542,7 +543,7 @@ public:
     try
     {
       const double hl = (m_currentNuc ? m_currentNuc->halfLife : -1.0);
-      age = PhysicalUnits::stringToTimeDurationPossibleHalfLife( agestr, hl );
+      age = PhysicalUnitsLocalized::stringToTimeDurationPossibleHalfLife( agestr, hl );
     }catch(...) {}
     
     if( age > 50.0*m_currentNuc->halfLife || age < 0.0 )
@@ -715,7 +716,7 @@ public:
       double ageval = 5.0*m_currentNuc->halfLife;
       if( m_currentNuc->canObtainPromptEquilibrium() )
         ageval = log(10000.0)/log(2.0) * m_currentNuc->promptEquilibriumHalfLife();
-      agestr = PhysicalUnits::printToBestTimeUnits( ageval );
+      agestr = PhysicalUnitsLocalized::printToBestTimeUnits( ageval );
       
 //      cerr << "Niave Agestr=" << agestr << endl;
 //      ageval = PeakDef::defaultDecayTime( m_currentNuc, &agestr );
@@ -729,7 +730,7 @@ public:
     }//if( m_nuclideAgeEdit->isDisabled() )
     
     const double hl = (m_currentNuc ? m_currentNuc->halfLife : -1.0);
-    const double age = PhysicalUnits::stringToTimeDurationPossibleHalfLife( agestr, hl );
+    const double age = PhysicalUnitsLocalized::stringToTimeDurationPossibleHalfLife( agestr, hl );
     if( age < 0 )
       throw runtime_error( "Invalid negative age" );
     
@@ -2344,7 +2345,7 @@ void DoseCalcWidget::updateStayTime()
       if( nprinted > 2 && time > 2.5*PhysicalUnits::year )
         break;
       
-      const string timestr = PhysicalUnits::printToBestTimeUnits(time);
+      const string timestr = PhysicalUnitsLocalized::printToBestTimeUnits(time);
       
       //Add to the table here
       WContainerWidget *labelDiv = new WContainerWidget();

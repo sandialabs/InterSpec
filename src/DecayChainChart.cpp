@@ -67,6 +67,7 @@
 #include "InterSpec/DecayChainChart.h"
 #include "InterSpec/DecayActivityDiv.h"
 #include "InterSpec/DecayDataBaseServer.h"
+#include "InterSpec/PhysicalUnitsLocalized.h"
 
 using namespace std;
 using namespace Wt;
@@ -492,7 +493,7 @@ void DecayChainChart::jsonInfoForNuclide( const SandiaDecay::Nuclide * const nuc
     
   vector<string> info = getTextInfoForNuclide( nuc, m_nuclide, m_useCurrie );
     
-  const string hl = (IsInf(nuc->halfLife) ? std::string("stable") : PhysicalUnits::printToBestTimeUnits(nuc->halfLife, 2));
+  const string hl = (IsInf(nuc->halfLife) ? std::string("stable") : PhysicalUnitsLocalized::printToBestTimeUnits(nuc->halfLife, 2));
     
   js << "{ \"nuclide\": \"" << nuc->symbol << "\","
     << " \"massNumber\": " << static_cast<int>(nuc->massNumber) << ","
@@ -619,7 +620,7 @@ std::vector<std::string> DecayChainChart::getTextInfoForNuclide( const SandiaDec
     information.push_back( WString::tr("dcc-nuc-info-hl-stable").toUTF8() );
   }else
   {
-    const string hl = PhysicalUnits::printToBestTimeUnits( nuc->halfLife );
+    const string hl = PhysicalUnitsLocalized::printToBestTimeUnits( nuc->halfLife );
     information.push_back( WString::tr("dcc-nuc-info-hl-stable").arg(hl).toUTF8() );
   }
   

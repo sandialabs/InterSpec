@@ -74,6 +74,7 @@
 #include "InterSpec/SpecMeasManager.h"
 #include "InterSpec/UndoRedoManager.h"
 #include "InterSpec/SpectraFileModel.h"
+#include "InterSpec/PhysicalUnitsLocalized.h"
 
 #if( USE_QR_CODES )
 #include "InterSpec/QrCode.h"
@@ -1257,7 +1258,7 @@ void ExportSpecFileTool::updateInfoAboutSelectedFile()
              << SpecUtils::printCompact( meas->mean_longitude(), 7 ) << "</div></td></tr>\n";
   }//if( meas->has_gps_info() )
   
-  const string total_time = PhysicalUnits::printToBestTimeUnits( meas->gamma_real_time() );
+  const string total_time = PhysicalUnitsLocalized::printToBestTimeUnits( meas->gamma_real_time() );
   tabletxt << "<tr><th>Total Time</th><td><div>" << total_time << "</div></td></tr>\n";
   
   tabletxt << "<tr><th>Sum Gamma</th><td><div>"

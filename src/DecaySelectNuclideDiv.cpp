@@ -48,14 +48,16 @@
 
 #include "SpecUtils/StringAlgo.h"
 
+#include "SandiaDecay/SandiaDecay.h"
+
 #include "InterSpec/InterSpec.h"
 #include "InterSpec/InterSpecUser.h"
 #include "InterSpec/PhysicalUnits.h"
-#include "SandiaDecay/SandiaDecay.h"
 #include "InterSpec/DecayActivityDiv.h"
 #include "InterSpec/DecayDataBaseServer.h"
 #include "InterSpec/DecaySelectNuclideDiv.h"
 #include "InterSpec/IsotopeNameFilterModel.h"
+#include "InterSpec/PhysicalUnitsLocalized.h"
 
 using namespace Wt;
 using namespace std;
@@ -145,7 +147,7 @@ void DecaySelectNuclide::setCurrentInfo( int a, int z, int iso,
   if( !el )
     return;
 
-  const string agestr = PhysicalUnits::printToBestTimeUnits( age );
+  const string agestr = PhysicalUnitsLocalized::printToBestTimeUnits( age );
   m_nuclideAgeEdit->setText( agestr );
 
   string actstr = activityStr;
@@ -373,7 +375,7 @@ void DecaySelectNuclide::initActivityAgeSelects()
   m_nuclideAgeEdit->setText( "0.0 us" );
   m_nuclideAgeEdit->setTextSize( 10 );
 
-  WRegExpValidator *agevalidator = new WRegExpValidator( PhysicalUnits::sm_timeDurationHalfLiveOptionalRegex, m_nuclideAgeEdit );
+  WRegExpValidator *agevalidator = new WRegExpValidator( PhysicalUnitsLocalized::timeDurationHalfLiveOptionalRegex(), m_nuclideAgeEdit );
   agevalidator->setFlags(Wt::MatchCaseInsensitive);
   m_nuclideAgeEdit->setValidator(agevalidator);
   
@@ -451,8 +453,8 @@ void DecaySelectNuclide::emitAccepted()
 
     bool validAct  = false, validAge = false;
     double activity = 0.0, age = 0.0;
-    const string activityTxt = m_nuclideActivityEdit->text().narrow();
-    const string ageText = m_nuclideAgeEdit->text().narrow();
+    const string activityTxt = m_nuclideActivityEdit->text().toUTF8();
+    const string ageText = m_nuclideAgeEdit->text().toUTF8();
     
     try
     {
@@ -468,7 +470,7 @@ void DecaySelectNuclide::emitAccepted()
       if( nuc )
         hl = nuc->halfLife;
       
-      age = PhysicalUnits::stringToTimeDurationPossibleHalfLife( ageText, hl );
+      age = PhysicalUnitsLocalized::stringToTimeDurationPossibleHalfLife( ageText, hl );
       validAge = true;
     }catch(...){ }
     

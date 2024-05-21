@@ -54,6 +54,7 @@
 #include "InterSpec/WarningWidget.h"
 #include "InterSpec/PhysicalUnits.h"
 #include "InterSpec/DecayDataBaseServer.h"
+#include "InterSpec/PhysicalUnitsLocalized.h"
 
 using namespace std;
 using SpecUtils::Measurement;
@@ -3391,7 +3392,7 @@ double PeakDef::defaultDecayTime( const SandiaDecay::Nuclide *nuclide, string *s
     if( decayTimeStr )
       *stranswer = decayTimeStr;
     else
-      *stranswer = PhysicalUnits::printToBestTimeUnits( decaytime, 2, SandiaDecay::second );
+      *stranswer = PhysicalUnitsLocalized::printToBestTimeUnits( decaytime, 2, SandiaDecay::second );
   }//if( stranswer )
   
   return decaytime;

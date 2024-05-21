@@ -88,6 +88,7 @@
 #include "InterSpec/DecayDataBaseServer.h"
 #include "InterSpec/GammaInteractionCalc.h"
 #include "InterSpec/DetectorPeakResponse.h"
+#include "InterSpec/PhysicalUnitsLocalized.h"
 
 
 // The regex in GCC 4.8.x does not have working regex
@@ -975,7 +976,7 @@ namespace
               {
                 try
                 {
-                  age_at_meas = PhysicalUnits::stringToTimeDurationPossibleHalfLife( mtch[2].str(), srcdef->nuclide()->halfLife );
+                  age_at_meas = PhysicalUnitsLocalized::stringToTimeDurationPossibleHalfLife( mtch[2].str(), srcdef->nuclide()->halfLife );
                 }catch( std::exception & )
                 {
                   cerr << "Failed to convert '" << mtch[2].str() << "' to an age." << endl;
