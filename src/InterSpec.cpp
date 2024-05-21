@@ -7446,9 +7446,30 @@ void InterSpec::addAboutMenu( Wt::WWidget *parent )
       item->addStyleClass( "CurrentLanguage" );
     item->triggered().connect( boost::bind( &InterSpec::changeLocale, this, "" ) );
     
+    
     for( const string &lang : languages )
     {
-      item = m_languagesSubMenu->addMenuItem( lang );
+      string label = lang;
+      
+      vector<string> parts;
+      SpecUtils::split( parts, lang, "-" );
+      
+      const string &lang_code = !parts.empty() ? parts[0] : lang;
+      if( !lang_code.empty() )
+      {
+        string language;
+        if( wApp->messageResourceBundle().resolveKey( "lang-" + lang_code, language ) )
+          label = language;
+      }//if( !lang_code.empty() )
+      
+      if( (parts.size() > 1) && !parts[1].empty() )
+      {
+        string country;
+        if( wApp->messageResourceBundle().resolveKey( "country-" + parts[1], country ) )
+          label += ", " + country;
+      }//if( (parts.size() > 1) && !parts[1].empty() )
+      
+      item = m_languagesSubMenu->addMenuItem( label );
       if( langPref == lang )
         item->addStyleClass( "CurrentLanguage" );
       item->triggered().connect( boost::bind( &InterSpec::changeLocale, this, lang ) );
