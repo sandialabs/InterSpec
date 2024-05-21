@@ -141,7 +141,10 @@ void batch_test()
   if( meas.num_measurements() != 1 )
     throw runtime_error( "Not exactly one measurement in the file" );
   
-  const shared_ptr<const SpecUtils::Measurement> spectrum = meas.measurement( size_t(0) );
+  vector<shared_ptr<const SpecUtils::Measurement>> meass = meas.measurements();
+  assert( !meass.empty() );
+  
+  const shared_ptr<const SpecUtils::Measurement> spectrum = meass.empty() ? nullptr : meass[0];
   if( !spectrum || (spectrum->num_gamma_channels() < 128) )
     throw runtime_error( "No spectrum" );
   
