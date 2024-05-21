@@ -6,4 +6,5 @@
   <message id="hw-tutorials-link">Tutorials and usage hints</message>
   <message id="hw-err-opening-xml">Help Page Not Found</message>
   <message id="hw-err-opening-json">Could not open help JSON file at '{1}'.</message>
+  <message id="hw-search-empty-text">Search</message>
 </messages>

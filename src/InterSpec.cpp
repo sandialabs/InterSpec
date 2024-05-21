@@ -469,7 +469,9 @@ InterSpec::InterSpec( WContainerWidget *parent )
   m_renderedWidth( 0 ),
   m_renderedHeight( 0 ),
   m_colorPeaksBasedOnReferenceLines( true ),
-  m_findingHintPeaks( false )
+  m_findingHintPeaks( false ),
+  m_hintQueue{},
+  m_infoNotificationsMade{}
 {
   //Initialization of the app (this function) takes about 11ms on my 2.6 GHz
   //  Intel Core i7, as of (20150316).
@@ -9691,10 +9693,12 @@ void InterSpec::handleToolTabChanged( int tab )
     
     if( focus && (current_tab == calibtab) )
     {
-      if( InterSpecUser::preferenceValue<bool>( "ShowTooltips", this ) )
-        passMessage( "You can also recalibrate graphically by right-clicking and "
-                    "dragging the spectrum to where you want",
-                    WarningWidget::WarningMsgInfo );
+      if( !m_infoNotificationsMade.count("recal-tab")
+         && InterSpecUser::preferenceValue<bool>( "ShowTooltips", this ) )
+      {
+        m_infoNotificationsMade.insert( "recal-tab" );
+        passMessage( WString::tr("info-recal-tab-selected"), WarningWidget::WarningMsgInfo );
+      }
     }//if( tab == calibtab )
     
     m_currentToolsTab = current_tab;

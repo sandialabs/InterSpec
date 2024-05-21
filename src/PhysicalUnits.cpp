@@ -47,8 +47,8 @@ namespace PhysicalUnits
 #define METRIC_PREFIX_UNITS "m|M|k|g|G|t|T|u|" MU_CHARACTER_1 "|" MU_CHARACTER_2 "|p|n|f|milli|micro|pico|nano|femto|kilo|mega|giga|terra"
 
 #define PLUS_MINUS_REGEX "(\\xC2?\\xB1|\\+\\-\\s*|\\-\\+\\s*)"
-#define TIME_UNIT_REGEX "(years|year|yr|y|days|day|d|hrs|hours|hour|h|minute|minutes|min|m|second|seconds|sec|s|ms|microseconds|us|nanoseconds|ns)"
-#define HALF_LIFE_REGEX "(hl|halflife|halflives|half-life|half-lives|half lives|half life)"
+#define TIME_UNIT_REGEX "(years|year|yr|y|days|day|d|hrs|hours|hour|h|minute|minutes|min|m|second|seconds|sec|s|ms|microseconds|us|nanosecond|nanoseconds|ns)"
+#define HALF_LIFE_REGEX "(hl|halflife|halflives|half-life|half-lives|half lives|half lifes|half live|halflive|half life)"
 #define ACTIVITY_UNIT_REGEX "(bq|becquerel|ci|cu|curie|c)"
 #define ABSORBED_DOSE_UNIT_REGEX "(gray|Gy|gy|rad|erg|erg\\/g|erg per gram)"
 #define EQUIVALENT_DOSE_UNIT_REGEX "(sievert|Sv|rem|roentgen|r" DIAERESIS_O "entgen)"

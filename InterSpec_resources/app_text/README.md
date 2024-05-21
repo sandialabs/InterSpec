@@ -39,9 +39,9 @@ To add a language, you do not need to translate all elements in an XML file, or 
 
 At a minimum, you must add a version of `InterSpec.xml` for the new language - preferably translating all elements, but this isn't required.  In the InterSpec app, the available languages (Help &rarr; Languages &rarr;) are populated according to which `InterSpec_xx-YY.xml` files are present.
 
-But in addition `InterSpec.xml` to You really should, at a minimum, modify:
+But in addition `InterSpec.xml` to you really should, at a minimum, modify:
     - `D3SpectrumDisplayDiv.xml`, `CompactFileManager.xml`, `ReferencePhotopeakDisplay.xml`, `PeakModel.xml`, `PeakInfoDisplay.xml`, `EnergyCalTool.xml`, `IsotopeSearchByEnergy.xml`
-This will translate the text seem in the application in its basic view, including all the tool-tabs that are open by default.
+This will translate the text seen in the application in its basic view, including all the tool-tabs that are open by default, so things will look consistent, until the user opens one of the specialized tools.
 
 
 ***
@@ -53,4 +53,9 @@ Some potential issues you may run into:
 - Unfortunately, if the file is not valid XML, or a un-allowed character entity is used, the error-messaging is not great.  When the application is loaded, the file wont be used, but on Windows, no error messages are printed out.  On macOS or Linux, if you run the InterSpec executable from the command-line, an error will be printed out to stderr, giving the location of the error in the XML file.
 
 
+***
 
+A note on performance 20240521:
+On an M1 mac, built in release mode, for local server, timing from the time the `InterSpec` class is created, to the ender of its first `render()` call (which I think should capture the added overhead of parsing the language XML, and localizing strings), I compared the pre-internationalization time, to the post-internationalization.
+On the first load, of post-internationalized, the worst performance I got was 49 ms, however, was usually ~35 ms.  On pre-internationalized, typical was 33ms.  On second load (without restarting app), the timings were essentially the same between apps, with it being 10 ms for second load, and 6 ms for subsequent loads.
+So all-in-all, internationalization does not cause a performance issue - assuming how I took the timings was valid.

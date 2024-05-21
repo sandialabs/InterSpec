@@ -98,6 +98,11 @@ void set_app_text_dir()
   const string possible_paths[] = {
     SpecUtils::append_path(datadir,".."), 
     SpecUtils::append_path(datadir,"../.."),
+    SpecUtils::get_working_path(),
+    SpecUtils::append_path( SpecUtils::get_working_path(), ".."),
+#ifdef _WIN32
+    "D:\\a\\InterSpec\\",
+#endif
     ".", "../", "../../", "../../../", "/Users/wcjohns/rad_ana/InterSpec/"
   };
   
