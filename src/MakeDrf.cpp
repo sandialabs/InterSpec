@@ -1344,8 +1344,16 @@ namespace
       return answer;
     }//vector<pair<DrfPeak *,MakeDrfSrcDef *>> peak_to_sources()
     
-    Wt::Signal<> &srcInfoUpdated(){ return m_srcInfoUpdated; };
     
+    void addSourceLibrary( const vector<shared_ptr<const SrcLibLineInfo>> &srcs, 
+                          const bool auto_populate )
+    {
+      for( MakeDrfSrcDef *src : sources() )
+        src->addSourceLibrary( srcs, auto_populate );
+    }//void addSourceLibrary(...)
+    
+    
+    Wt::Signal<> &srcInfoUpdated(){ return m_srcInfoUpdated; };
     
     std::shared_ptr<const SpecMeas> measurement() { return m_meas; }
     const set<int> &samples(){ return m_samples; }
@@ -1421,6 +1429,62 @@ namespace
     std::shared_ptr<const SpecMeas> measurement(){ return m_meas; }
   };//class DrfSpecFile
 }//namespace to implement DrfSpecFile and DrfSpecFileSample
+
+
+
+MakeDrfWindow::MakeDrfWindow( InterSpec *viewer,
+                MaterialDB *materialDB,
+                Wt::WSuggestionPopup *materialSuggest )
+: AuxWindow( WString::tr("window-title-create-drf"), 
+            (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::TabletNotFullScreen)
+             | AuxWindowProperties::SetCloseable
+             | AuxWindowProperties::DisableCollapse
+             | AuxWindowProperties::EnableResize
+             | AuxWindowProperties::IsModal) ),
+  m_tool( nullptr )
+{
+  const int ww = viewer->renderedWidth();
+  const int wh = viewer->renderedHeight();
+  if( ww > 100 && wh > 100 )
+  {
+    const int width = std::min( 3*ww/4, 900 );
+    const int height = ((wh < 420) ? wh : (19*wh)/20 );
+    
+    resizeWindow( width, height );
+    setMinimumSize( std::min(width,640), std::min(height,480) );
+  }//if( ww > 100 && wh > 100 )
+    
+  m_tool = new MakeDrf( viewer, materialDB, materialSuggest );
+  
+  stretcher()->addWidget( m_tool, 0, 0 );
+  stretcher()->setContentsMargins( 0, 0, 0, 0 );
+    
+  AuxWindow::addHelpInFooter( footer(), "make-drf" );
+    
+  WPushButton *closeButton = addCloseButtonToFooter( WString::tr("Close") );
+  closeButton->clicked().connect( this, &AuxWindow::hide );
+    
+  WPushButton *saveAs = new WPushButton( WString::tr("md-export-btn"), footer() );
+  saveAs->clicked().connect( m_tool, &MakeDrf::startSaveAs );
+  m_tool->intrinsicEfficiencyIsValid().connect( boost::bind( &WPushButton::setEnabled, saveAs,
+                                                                   boost::placeholders::_1 ) );
+  saveAs->disable();
+    
+  show();
+    
+  resizeToFitOnScreen();
+  centerWindow();
+  rejectWhenEscapePressed( false );
+  
+  m_tool->m_finished.connect( this, &AuxWindow::hide );
+}//MakeDrfWindow constructor
+  
+
+MakeDrf *MakeDrfWindow::tool()
+{
+  return m_tool;
+}
+  
 
 
 MakeDrf::MakeDrf( InterSpec *viewer, MaterialDB *materialDB,
@@ -1706,56 +1770,6 @@ MakeDrf::~MakeDrf()
 {
 
 }//~MakeDrf()
-
-
-AuxWindow *MakeDrf::makeDrfWindow( InterSpec *viewer, MaterialDB *materialDB, Wt::WSuggestionPopup *materialSuggest )
-{
-  AuxWindow *window = new AuxWindow( WString::tr("window-title-create-drf"),
-                                    (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::TabletNotFullScreen)
-                                     | AuxWindowProperties::SetCloseable
-                                     | AuxWindowProperties::DisableCollapse
-                                     | AuxWindowProperties::EnableResize
-                                     | AuxWindowProperties::IsModal) );
-  
-  const int ww = viewer->renderedWidth();
-  const int wh = viewer->renderedHeight();
-  if( ww > 100 && wh > 100 )
-  {
-    const int width = std::min( 3*ww/4, 900 );
-    const int height = ((wh < 420) ? wh : (19*wh)/20 );
-    
-    window->resizeWindow( width, height );
-    window->setMinimumSize( std::min(width,640), std::min(height,480) );
-  }//if( ww > 100 && wh > 100 )
-    
-  MakeDrf *makeDrfWidget = new MakeDrf( viewer, materialDB, materialSuggest );
-    
-  window->stretcher()->addWidget( makeDrfWidget, 0, 0 );
-  window->stretcher()->setContentsMargins( 0, 0, 0, 0 );
-    
-  AuxWindow::addHelpInFooter( window->footer(), "make-drf" );
-    
-  WPushButton *closeButton = window->addCloseButtonToFooter( WString::tr("Close") );
-  closeButton->clicked().connect( window, &AuxWindow::hide );
-    
-  WPushButton *saveAs = new WPushButton( WString::tr("md-export-btn"), window->footer() );
-  saveAs->clicked().connect( makeDrfWidget, &MakeDrf::startSaveAs );
-  makeDrfWidget->intrinsicEfficiencyIsValid().connect( boost::bind( &WPushButton::setEnabled, saveAs,
-                                                                   boost::placeholders::_1 ) );
-  saveAs->disable();
-    
-  window->finished().connect( boost::bind( &AuxWindow::deleteAuxWindow, window ) );
-    
-  window->show();
-    
-  window->resizeToFitOnScreen();
-  window->centerWindow();
-  window->rejectWhenEscapePressed( false );
-  
-  makeDrfWidget->m_finished.connect( window, &AuxWindow::hide );
-  
-  return window;
-}//AuxWindow *makeDrfWindow(...)
 
 
 void MakeDrf::startSaveAs()
@@ -3909,3 +3923,20 @@ double MakeDrf::detectorDiameter() const
     throw runtime_error( "Detector diameter less than or equal to zero." );
   return diam;
 }//double detectorDiameter() const
+
+
+
+void MakeDrf::useSourceLibrary( const vector<shared_ptr<const SrcLibLineInfo>> &srcs, 
+                               const bool auto_populate )
+{
+  for( auto w : m_files->children() )
+  {
+    auto f = dynamic_cast<DrfSpecFile *>( w );
+    if( f )
+    {
+      for( DrfSpecFileSample *sample : f->fileSamples() )
+        sample->addSourceLibrary( srcs, auto_populate );
+    }//if( this is a DrfSpecFile widget )
+  }//for( auto w : m_files->children() )
+  
+}//void useSourceLibrary( const vector<SrcLibLineInfo> &srcs );

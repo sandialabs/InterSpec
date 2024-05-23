@@ -109,6 +109,7 @@
 #include "SpecUtils/UriSpectrum.h"
 
 
+#include "InterSpec/MakeDrf.h"
 #include "InterSpec/DrfChart.h"
 #include "InterSpec/SpecMeas.h"
 #include "InterSpec/PopupDiv.h"
@@ -121,8 +122,9 @@
 #include "InterSpec/HelpSystem.h"
 #include "InterSpec/SimpleDialog.h"
 #include "InterSpec/InterSpecApp.h"
-#include "InterSpec/EnergyCalTool.h"
 #include "InterSpec/DataBaseUtils.h"
+#include "InterSpec/EnergyCalTool.h"
+#include "InterSpec/MakeDrfSrcDef.h"
 #include "InterSpec/WarningWidget.h"
 #include "InterSpec/ExportSpecFile.h"
 #include "InterSpec/SpecMeasManager.h"
@@ -2224,7 +2226,24 @@ bool SpecMeasManager::handleNonSpectrumFile( const std::string &displayName,
     return true;
   }//if( Shielding/Source fit XML file )
 
-  
+  if( m_viewer->makeDrfWindow() )
+  {
+    //Check if source lib file.  These are text files, with each line defining a source,
+    //  and looking like:
+    //  "22NA_01551910  5.107E+04  25-Aug-2022 Some Remarks
+    string datastr;
+    datastr.resize( boost::size(data) + 1, '\0' );
+    memcpy( &(datastr[0]), (const char *)&data[0], boost::size(data) );
+    
+    stringstream strm(datastr);
+    if( SrcLibLineInfo::is_candidate_src_lib( strm )
+       && handleSourceLibFile(infile, dialog) )
+    {
+      return true;
+    }//if( candidate source lib file )
+    
+  }//if( m_viewer->makeDrfWindow() )
+
   
   delete dialog;
   
@@ -3097,6 +3116,64 @@ bool SpecMeasManager::handleShieldingSourceFile( std::istream &input, SimpleDial
   
   return true;
 }//bool handleShieldingSourceFile( std::istream &input, SimpleDialog *dialog );
+
+
+bool SpecMeasManager::handleSourceLibFile( std::istream &input, SimpleDialog *dialog )
+{
+  MakeDrfWindow *tool = m_viewer->makeDrfWindow();
+  if( !tool )
+    return false;
+    
+  const size_t start_pos = input.tellg();
+  
+  try
+  {
+    const vector<SrcLibLineInfo> srcs = SrcLibLineInfo::sources_in_lib( input );
+    
+    if( srcs.empty() )
+      throw runtime_error( "No sources in file." );
+    
+    vector<shared_ptr<const SrcLibLineInfo>> src_ptrs;
+    for( const SrcLibLineInfo &info : srcs )
+      src_ptrs.push_back( make_shared<SrcLibLineInfo>(info) );
+    
+    assert( dialog );
+    dialog->contents()->clear();
+    dialog->footer()->clear();
+    
+    WText *title = new WText( WString::tr("smm-source-lib-title"), dialog->contents() );
+    title->addStyleClass( "title" );
+    title->setInline( false );
+    
+    WText *content = new WText( WString::tr("smm-source-source-use"), dialog->contents() );
+    content->addStyleClass( "content" );
+    content->setInline( false );
+    
+    dialog->footer()->clear();
+    
+    auto setter = [src_ptrs]( const bool autopopulate ){
+      InterSpec *viewer = InterSpec::instance();
+      MakeDrfWindow *tool = viewer ? viewer->makeDrfWindow() : nullptr;
+      assert( tool );
+      if( tool )
+        tool->tool()->useSourceLibrary( src_ptrs, autopopulate );
+    };
+    
+    WPushButton *btn = dialog->addButton( WString::tr("Yes") );
+    btn->clicked().connect( std::bind([setter](){ setter(true); }) );
+    
+    btn = dialog->addButton( WString::tr("No") );
+    btn->clicked().connect( std::bind([setter](){ setter(false); }) );
+    
+    dialog->addButton( WString::tr("Cancel") );
+  }catch( std::exception &e )
+  {
+    input.seekg( start_pos );
+    return false;
+  }//try caltch
+  
+  return true;
+}//bool handleSourceLibFile( std::istream &input, SimpleDialog *dialog )
 
 
 void SpecMeasManager::handleCancelPreviousStatesDialog( AuxWindow *dialog )

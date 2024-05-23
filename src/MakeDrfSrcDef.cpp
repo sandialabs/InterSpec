@@ -78,6 +78,38 @@ namespace
   const int sm_decayed_info_row    = 7;
   const int sm_shield_material_row = 8;
   const int sm_options_row         = 9;
+  
+  
+  // Returns if the candidate source is already in the vector of sources
+  bool is_already_in( const vector<SrcLibLineInfo> &srcs, const SrcLibLineInfo &candidate )
+  {
+    // Comparing SrcLibLineInfo::m_source_name would probably be enough, but oh well.
+    auto pos = std::find_if( begin(srcs), end(srcs),
+                            [&candidate]( const SrcLibLineInfo &lhs ) -> bool {
+      return( candidate.m_activity == lhs.m_activity
+         && candidate.m_nuclide == lhs.m_nuclide
+         && candidate.m_activity_date == lhs.m_activity_date
+             && candidate.m_source_name == lhs.m_source_name );
+    });
+    
+    return (pos != end(srcs));
+  }//bool is_already_in( const std::vector<SrcLibLineInfo> &srcs, const SrcLibLineInfo &candidate )
+
+  // Same as above, just for vector of pointers
+  bool is_already_in( const vector<shared_ptr<const SrcLibLineInfo>> &srcs, const SrcLibLineInfo &candidate )
+  {
+    // Comparing SrcLibLineInfo::m_source_name would probably be enough, but oh well.
+    auto pos = std::find_if( begin(srcs), end(srcs),
+                            [&candidate]( const shared_ptr<const SrcLibLineInfo> &lhs ) -> bool {
+      return( candidate.m_activity == lhs->m_activity
+         && candidate.m_nuclide == lhs->m_nuclide
+         && candidate.m_activity_date == lhs->m_activity_date
+             && candidate.m_source_name == lhs->m_source_name );
+    });
+    
+    return (pos != end(srcs));
+  }//bool is_already_in( const std::vector<SrcLibLineInfo> &srcs, const SrcLibLineInfo &candidate )
+  
 }//namespace
 
 
@@ -94,17 +126,11 @@ SrcLibLineInfo::SrcLibLineInfo()
 }
 
 
-vector<SrcLibLineInfo> SrcLibLineInfo::sources_in_lib( const string &filename )
+vector<SrcLibLineInfo> SrcLibLineInfo::sources_in_lib( std::istream &file )
 {
   const SandiaDecay::SandiaDecayDataBase * const db = DecayDataBaseServer::database();
   
   vector<SrcLibLineInfo> answer;
-#ifdef _WIN32
-  const std::wstring wfilename = SpecUtils::convert_from_utf8_to_utf16(filename);
-  ifstream file( wfilename.c_str(), ios::in | ios::binary );
-#else
-  ifstream file( filename.c_str(), ios::in | ios::binary );
-#endif
   
   if( !file || !db )
     return answer;
@@ -193,6 +219,68 @@ vector<SrcLibLineInfo> SrcLibLineInfo::sources_in_lib( const string &filename )
 }//sources_in_lib(...)
 
 
+vector<SrcLibLineInfo> SrcLibLineInfo::sources_in_lib( const string &filename )
+{
+#ifdef _WIN32
+  const std::wstring wfilename = SpecUtils::convert_from_utf8_to_utf16(filename);
+  ifstream file( wfilename.c_str(), ios::in | ios::binary );
+#else
+  ifstream file( filename.c_str(), ios::in | ios::binary );
+#endif
+  
+  return sources_in_lib( file );
+}//vector<SrcLibLineInfo> SrcLibLineInfo::sources_in_lib( const string &filename )
+
+
+bool SrcLibLineInfo::is_candidate_src_lib( std::istream &file )
+{
+  size_t linenum = 0;
+  string line;
+  while( SpecUtils::safe_get_line( file, line) )
+  {
+    ++linenum;
+    if( linenum > 5 )
+      return false;
+    
+    SpecUtils::trim( line );
+    if( (line.size() < 5) || (line.front() == '#') )
+      continue;
+    
+    vector<string> fields;
+    SpecUtils::split( fields, line, " \t" );
+    if( fields.size() < 3 )
+      return false;
+    
+    const auto underscore_pos = fields[0].find( "_" );
+    if( (underscore_pos == string::npos) || (underscore_pos < 2) )
+      return false;
+    
+    const SandiaDecay::SandiaDecayDataBase *db = DecayDataBaseServer::database();
+    const SandiaDecay::Nuclide *nuc = db->nuclide( fields[0].substr(0,underscore_pos) );
+    if( !nuc )
+      return false;
+    
+    try
+    {
+      double activity = stod(fields[1]);
+      if( (activity <= 0) || IsNan(activity) || IsInf(activity) )
+        return false;
+    }catch(...)
+    {
+      return false;
+    }
+    
+    const SpecUtils::time_point_t datestr = SpecUtils::time_from_string( fields[2] );
+    if( SpecUtils::is_special( datestr ) )
+      return false;
+    
+    return true;
+  }//while( SpecUtils::safe_get_line( file, line) )
+  
+  return false;
+}//bool is_candidate_src_lib( std::istream &strm );
+
+
 std::vector<SrcLibLineInfo> SrcLibLineInfo::sources_in_all_libs()
 {
   vector<SrcLibLineInfo> source_lib_srcs;
@@ -252,6 +340,8 @@ MakeDrfSrcDef::MakeDrfSrcDef( const SandiaDecay::Nuclide *nuc,
   m_shieldingSelect( nullptr ),
   m_lib_src_btn( nullptr ),
   m_lib_srcs_for_nuc{},
+  m_lib_srcs_from_file{},
+  m_lib_srcs_added{},
   m_updated( this )
 {
   wApp->useStyleSheet( "InterSpec_resources/MakeDrfSrcDef.css" );
@@ -293,19 +383,27 @@ void MakeDrfSrcDef::setSrcInfo( const SrcLibLineInfo &info )
 }//void setSrcInfo( const SrcLibLineInfo &info )
 
 
-void MakeDrfSrcDef::setNuclide( const SandiaDecay::Nuclide *nuc )
+void MakeDrfSrcDef::updateSourceLibNuclides()
 {
-  m_nuclide = nuc;
-  
   m_lib_srcs_for_nuc.clear();
   if( m_nuclide )
   {
     //TODO: we are currently re-parsing all the Source.lib files, every time this function
     //      gets called, for every source... we should probably be a little friendlier
-    const vector<SrcLibLineInfo> all_srcs = SrcLibLineInfo::sources_in_all_libs();
-    for( const SrcLibLineInfo &info : all_srcs )
-    if( info.m_nuclide == m_nuclide )
-      m_lib_srcs_for_nuc.push_back( info );
+    if( m_lib_srcs_from_file.empty() )
+      m_lib_srcs_from_file = SrcLibLineInfo::sources_in_all_libs();
+    
+    for( const shared_ptr<const SrcLibLineInfo> &info : m_lib_srcs_added )
+    {
+      if( (info->m_nuclide == m_nuclide) && !is_already_in(m_lib_srcs_for_nuc,*info) )
+        m_lib_srcs_for_nuc.push_back( *info );
+    }
+    
+    for( const SrcLibLineInfo &info : m_lib_srcs_from_file )
+    {
+      if( (info.m_nuclide == m_nuclide)  && !is_already_in(m_lib_srcs_for_nuc,info) )
+        m_lib_srcs_for_nuc.push_back( info );
+    }
   }//if( m_nuclide )
   
   if( m_lib_src_btn )
@@ -314,8 +412,8 @@ void MakeDrfSrcDef::setNuclide( const SandiaDecay::Nuclide *nuc )
   WPopupMenu *menu = m_lib_src_btn ? m_lib_src_btn->menu() : nullptr;
   if( menu )
   {
-    vector<WMenuItem *> items = menu->items();
-    for( WMenuItem *item : items )
+    const vector<WMenuItem *> old_items = menu->items();
+    for( WMenuItem *item : old_items )
       menu->removeItem( item );
     
     for( const SrcLibLineInfo &src : m_lib_srcs_for_nuc )
@@ -326,6 +424,14 @@ void MakeDrfSrcDef::setNuclide( const SandiaDecay::Nuclide *nuc )
       item->triggered().connect( boost::bind( &MakeDrfSrcDef::setSrcInfo, this, src) );
     }//for( const SrcLibLineInfo &src : m_lib_srcs_for_nuc )
   }//if( menu )
+}//void updateSourceLibNuclides()
+
+
+void MakeDrfSrcDef::setNuclide( const SandiaDecay::Nuclide *nuc )
+{
+  m_nuclide = nuc;
+  
+  updateSourceLibNuclides();
   
   const bool notMuchEvolution = (!nuc || PeakDef::ageFitNotAllowed(nuc));
   
@@ -1129,3 +1235,33 @@ const vector<SrcLibLineInfo> &MakeDrfSrcDef::lib_srcs_for_nuc()
 {
   return m_lib_srcs_for_nuc;
 }
+
+
+void MakeDrfSrcDef::addSourceLibrary( vector<shared_ptr<const SrcLibLineInfo>> srcs,
+                      const bool auto_populate )
+{
+  if( auto_populate && m_nuclide )
+  {
+    for( const shared_ptr<const SrcLibLineInfo> &info : srcs )
+    {
+      if( info->m_nuclide == m_nuclide )
+      {
+        setSrcInfo( *info);
+        break;
+      }
+    }
+  }//if( auto_populate )
+  
+  
+  // Put new sources in front
+  for( const shared_ptr<const SrcLibLineInfo> &info : m_lib_srcs_added )
+  {
+    if( !is_already_in(srcs, *info) )
+      srcs.push_back( info );
+  }
+  
+  m_lib_srcs_added.swap( srcs );
+  
+  // Update DB menu
+  updateSourceLibNuclides();
+}//void addSourceLibrary(...)

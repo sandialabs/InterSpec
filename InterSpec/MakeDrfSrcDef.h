@@ -27,6 +27,7 @@
 
 #include <string>
 #include <vector>
+#include <istream>
 
 #include <boost/date_time/posix_time/posix_time.hpp>
 
@@ -110,7 +111,13 @@ struct SrcLibLineInfo
    
    If any field is not valid  (except comment can be blank), the line wont be included in the results.
    */
+  static std::vector<SrcLibLineInfo> sources_in_lib( std::istream &strm );
+  
+  /** A convenience function for above, that takes a file path, instead of a stream. */
   static std::vector<SrcLibLineInfo> sources_in_lib( const std::string &filename );
+  
+  /** Checks if first valid-ish line is a valid source, and if so, returns true. */
+  static bool is_candidate_src_lib( std::istream &strm );
   
   /** Grabs sources in all Source.lib files in user and application data directories. */
   static std::vector<SrcLibLineInfo> sources_in_all_libs();
@@ -243,6 +250,13 @@ public:
   /** Returns the sources defined in Sources.lib, for this nuclide. */
   const std::vector<SrcLibLineInfo> &lib_srcs_for_nuc();
   
+  /** Adds sources from a Source.lib file to this widget.
+   
+   \param srcs The sources to add to the menu of `m_lib_src_btn` - only sources matching this sources nuclide will be added.
+   \param auto_populate If true, then the information will be set for the first matching nuclide found in `srcs`.
+   */
+  void addSourceLibrary( std::vector<std::shared_ptr<const SrcLibLineInfo>> srcs,
+                        const bool auto_populate );
 protected:
   /** Creates the widget, but doesnt fill out any of the information. */
   void create();
@@ -274,17 +288,19 @@ protected:
   /** Returns user entered activity.  Throws exception if invalid. */
   double enteredActivity() const;
   
+  void updateSourceLibNuclides();
+  
   Wt::WTable *m_table;
   
   /** The name of the nuclide this source represents. */
   const SandiaDecay::Nuclide *m_nuclide;
   
-  /** Pointer to shielding material database, garunteed non-null.
+  /** Pointer to shielding material database, guaranteed non-null.
       Not owned by this object.
    */
   MaterialDB *m_materialDB;
   
-  /** The material suggestion widget shared everywher within InterSpec.
+  /** The material suggestion widget shared everywhere within InterSpec.
       Not owned by this object.
    */
   Wt::WSuggestionPopup *m_materialSuggest;
@@ -333,6 +349,12 @@ protected:
   
   /** The sources in Source.lib that are for this nuclide. */
   std::vector<SrcLibLineInfo> m_lib_srcs_for_nuc;
+  
+  /** All sources from Source.lib files found on the device. */
+  std::vector<SrcLibLineInfo> m_lib_srcs_from_file;
+  
+  /** Sources added by dragging-n-dropping Source.lib onto app - via `addSourceLibrary(...)` */
+  std::vector<std::shared_ptr<const SrcLibLineInfo>> m_lib_srcs_added;
   
   /** Button that lets you select sources that might be in Source.lib files */
   Wt::WPushButton *m_lib_src_btn;

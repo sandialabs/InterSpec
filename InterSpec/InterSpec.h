@@ -52,6 +52,7 @@ class PopupDivMenu;
 class SimpleDialog;
 class EnergyCalTool;
 class GammaXsWindow;
+class MakeDrfWindow;
 class OneOverR2Calc;
 class SpectrumChart;
 class UseInfoWindow;
@@ -601,7 +602,12 @@ public:
   void setToolTabsVisible( bool show );
   bool toolTabsVisible() const;
   
-  void showMakeDrfWindow();
+  /** Makes a MakeDrf Window and returns it, or if one was already present, returns it. */
+  MakeDrfWindow *showMakeDrfWindow();
+  /** Returns the pointer to current MakeDrf Window.  Will by nullptr if not currently showing */
+  MakeDrfWindow *makeDrfWindow();
+  void handleCloseMakeDrfWindow( MakeDrfWindow *window );
+  
   DrfSelectWindow *showDrfSelectWindow();
   void closeDrfSelectWindow();
   
@@ -1477,6 +1483,7 @@ protected:
   OneOverR2Calc *m_1overR2Calc;
   UnitsConverterTool *m_unitsConverter;
   FluxToolWindow *m_fluxTool;
+  MakeDrfWindow *m_makeDrfTool;
   
   
 #if( USE_GOOGLE_MAP || USE_LEAFLET_MAP )

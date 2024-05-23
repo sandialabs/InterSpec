@@ -428,6 +428,7 @@ InterSpec::InterSpec( WContainerWidget *parent )
   m_1overR2Calc( nullptr ),
   m_unitsConverter( nullptr ),
   m_fluxTool( nullptr ),
+  m_makeDrfTool( nullptr ),
 #if( USE_GOOGLE_MAP || USE_LEAFLET_MAP )
   m_mapMenuItem( nullptr ),
 #if( USE_LEAFLET_MAP )
@@ -9280,11 +9281,51 @@ void InterSpec::deleteDoseCalcTool()
 }//void deleteDoseCalcTool();
 
 
-void InterSpec::showMakeDrfWindow()
+MakeDrfWindow *InterSpec::showMakeDrfWindow()
 {
-  AuxWindow *window = MakeDrf::makeDrfWindow( this, m_materialDB.get(), m_shieldingSuggestion );
-  new UndoRedoManager::BlockGuiUndoRedo( window ); // BlockGuiUndoRedo is WObject, so this `new` doesnt leak
+  assert( !m_makeDrfTool );
+  if( !m_makeDrfTool )
+  {
+    // Disable the "Make Detector Response" Tools menu item
+    assert( m_toolsMenuPopup );
+    for( WMenuItem *item : m_toolsMenuPopup->items() )
+    {
+      if( item->text().key() == "app-mi-tools-make-drf" )
+        item->setDisabled( true );
+    }//for( loop over "Tools" menu items )
+    
+    m_makeDrfTool = new MakeDrfWindow( this, m_materialDB.get(), m_shieldingSuggestion );
+    m_makeDrfTool->finished().connect( boost::bind( &InterSpec::handleCloseMakeDrfWindow, this, m_makeDrfTool ) );
+    new UndoRedoManager::BlockGuiUndoRedo( m_makeDrfTool ); // BlockGuiUndoRedo is WObject, so this `new` doesnt leak
+  }//if( !m_makeDrfTool )
+  
+  return m_makeDrfTool;
 }//void showDrfSelectWindow()
+
+
+MakeDrfWindow *InterSpec::makeDrfWindow()
+{
+  return m_makeDrfTool;
+}
+
+
+void InterSpec::handleCloseMakeDrfWindow( MakeDrfWindow *window )
+{
+  assert( window == m_makeDrfTool );
+  if( !window || (window != m_makeDrfTool) )
+    return;
+  
+  // Enable the "Make Detector Response" Tools menu item
+  assert( m_toolsMenuPopup );
+  for( WMenuItem *item : m_toolsMenuPopup->items() )
+  {
+    if( item->text().key() == "app-mi-tools-make-drf" )
+      item->setDisabled( false );
+  }//for( loop over "Tools" menu items )
+  
+  m_makeDrfTool = nullptr;
+  AuxWindow::deleteAuxWindow( window );
+}//void handleCloseMakeDrfWindow( MakeDrfWindow *window )
 
 
 DrfSelectWindow *InterSpec::showDrfSelectWindow()

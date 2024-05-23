@@ -130,6 +130,14 @@
   <message id="smm-act-shield-use">Use this Activity/Shielding fit setup?</message>
   <message id="smm-err-act-shield">Sorry, there was an error loading Activity/Shielding Fit model: {1}</message>
 
+  <!-- Text for dialog when user drag-n-drop a Source.lib file onto app, and the Make Detector Response tool is open -->
+  <message id="smm-source-lib-title">Characterization source library file</message>
+  <message id="smm-source-source-use">
+    This will use this Source.lib file in the Make Detector Response tool.
+    <br />
+    Would you like to auto-populate sources with first matching nuclide in library?
+  </message>
+
   <!-- Other errors -->
   <message id="smm-upload-timeout">File upload has maybe timed-out - 120 seconds without receiving file data.</message>
   <message id="smm-finishing-upload">Finishing upload</message>

@@ -127,6 +127,13 @@
 <message id="smm-act-shield-use">Utiliser cette configuration d'ajustement Activité/Blindage ?</message>
 <message id="smm-err-act-shield">Désolé, il y a eu une erreur lors du chargement du modèle d'ajustement Activité/Blindage : {1}</message>
 
+<message id="smm-source-lib-title">Fichier de bibliothèque de sources de caractérisation</message>
+<message id="smm-source-source-use">
+    Cela utilisera ce fichier Source.lib dans l'outil de création de réponse du détecteur.
+    <br />
+    Souhaitez-vous remplir automatiquement les sources avec le premier nucléide correspondant dans la bibliothèque ?
+</message>
+
 <message id="smm-upload-timeout">Le téléchargement du fichier a peut-être expiré - 120 secondes sans réception de données de fichier.</message>
 <message id="smm-finishing-upload">Finalisation du téléchargement</message>
 <message id="smm-finishing-copying">Finalisation de la copie du fichier</message>
