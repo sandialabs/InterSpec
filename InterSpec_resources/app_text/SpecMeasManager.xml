@@ -2,6 +2,8 @@
 <messages>
   <!-- This file contains most of the strings for SpecMeasManager.cpp - e.g., File -> "Manager..."
     smm- is short for Spectrum Measurement Manager
+    musd- is short for MultiUrlSpectrumDialog
+    uid- is short for UploadedImgDisplay.
   -->
   <message id="smm-window-title">Spectrum Manager</message>
   <message id="smm-load-spec-from">Load spectrum from: </message>
@@ -266,6 +268,64 @@
   <message id="smm-qr-title">Spectrum File {1}</message>
   <message id="smm-qr-sequence-single">QR Code</message>
   <message id="smm-qr-sequence-multi">QR Code {1} of {2}</message>
-  <message id="smm-next-qr">Next QR code</message>
   
+
+  <message id="musd-dialog-title">Multi-part QR/URL Spectrum</message>
+  <message id="musd-err-diff-spec">URL/QR-code received was from a different spectrum than previous URL/QR-code</message>
+  <message id="musd-err-duplicate-url">Have already received this URL/QR-code</message>
+  <message id="musd-from-qr-file-name">From QR-code/URL</message>
+  <message id="musd-err-decoding-url">Error decoding URL: {1}</message>
+  <message id="musd-received-urls-list">Have received urls {1} of {2}.<p>Waiting on more URLS/QR-codes</p></message>
+
+
+  <message id="uid-qr-code-pic">QR-code Picture</message>
+  <message id="uid-no-qr-found">No QR-codes found ⓘ</message>
+  <message id="uid-no-qr-found-title">No QR-code found</message>
+  <message id="uid-no-qr-content">
+    <p>
+      If there is a QR-code in the image, you can try cropping the photo or adjusting color level.
+      <br/>
+      Using a 3rd party app/website, or the capabilities built into iOS or Android, will also often times work better.
+    </p>
+  </message>
+  <message id="uid-err-qr-search-title">Error searching for QR-code</message>
+  <message id="uid-err-qr-search-content">
+    <div>
+      Error value: {1}
+    </div>
+    <p>
+      Error message: {2}
+    </p>
+  </message>
+  <message id="uid-some-invalid-qrs">{1} of the QR-codes had invalid URIs.</message>
+  <message id="uid-qr-didnt-have-uri">The QR-code did not contain a <code>interspec://</code> or <code>raddata://</code> URI.</message>
+  <message id="uid-invalid-qr">Invalid QR-code</message>
+  <message id="uid-invalid-uri">QR-code contained invalid URI</message>
+  <message id="uid-multi-qr-found-title">{1} QR-codes found</message>
+  <message id="uid-multi-qr-found-content">Would you like to use all of these?</message>
+  <message id="uid-multi-qr-status">Found {1} QR-codes</message>
+  <message id="uid-qr-found-title">Found QR-code</message>
+  <message id="uid-qr-found-content">Would you like to use the QR-code starting with <br /> <code>{1}...</code></message>
+  <message id="uid-found-qr">Found QR-code</message>
+  <message id="uid-err-getting-data">Error retrieving data to embed - not embedding image.</message>
+  <message id="uid-err-no-foreground-embedd">No foreground loaded - not embedding image.</message>
+  <message id="uid-image-embed-conf">Image has been embedded in the foreground spectrum file; only exporting in N42-2012 file format will preserve this.</message>
+  <message id="uid-image-not-spectrum">This file looks to be an image, and not a spectrum file.</message>
+  <message id="uid-err-to-large">Uploaded file was too large to try and display.</message>
+  <message id="uid-err-reading-upload">Couldn't read uploaded file.</message>
+  <message id="uid-embed-image-btn">Embed image in spectrum file</message>
+  <message id="uid-no-qr-found">QR-code not found ⓘ</message>
+  <message id="uid-looking-for-qr">Looking for QR-codes.</message>
+  <message id="uid-check-for-qr-btn">Check for Qr-code</message>
+  <message id="uid-tt-auto-qr">
+    Images are automatically searched for QR-codes that may be useable by InterSpec.
+    <br/>
+    If there is a QR-code in the image that is not found, you may have
+    better luck using a 3rd party app/website, or the capabilities built into iOS
+    or Android.
+    <br />
+    If you use a 3rd part tool to extract the URI from the QR-code, you
+    can enter it into InterSpec using the "<b>Enter URL</b>"
+    item in the "<b>Edit</b>" menu.
+  </message>
 </messages>
