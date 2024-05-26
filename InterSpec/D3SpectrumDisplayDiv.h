@@ -196,7 +196,7 @@ public:
                     double &ymin, double &ymax ) const;
   
   /** Sets the x-axis title, overriding whatever is set by the current localization. */
-  virtual void setXAxisTitle( const std::string &title );
+  virtual void setXAxisTitle( const Wt::WString &title );
   
   /** Sets the y-axis title, overriding whatever is set by the current localization.
    
@@ -204,10 +204,10 @@ public:
    @param titleMulti Y-axis title when there is more than one channel per bin, where the
           substring {1} will be replaced with number of channels per bin. Default is  "Counts per {1} Channels"
    */
-  virtual void setYAxisTitle( const std::string &title, const std::string &titleMulti );
+  virtual void setYAxisTitle( const Wt::WString &title, const Wt::WString &titleMulti );
   
-  const std::string xAxisTitle() const;
-  const std::string yAxisTitle() const;
+  const Wt::WString &xAxisTitle() const;
+  const Wt::WString &yAxisTitle() const;
 
   
   void enableLegend();
@@ -272,6 +272,14 @@ public:
   
   void setXAxisMinimum( const double minimum );
   void setXAxisMaximum( const double maximum );
+  
+  /** Set the visible energy range.
+   
+   Note that if you are setting the range in the same Wt event loop as you are calling 
+   `setData(data_hist,keep_curent_xrange)`, then you should have
+   `keep_curent_xrange = true`, or else the x-range wont have effect, since
+   the data isn't set to client until after all JS is sent.
+   */
   void setXAxisRange( const double minimum, const double maximum );
   
   void setYAxisMinimum( const double minimum );
@@ -384,9 +392,10 @@ protected:
   
   std::map<SpectrumChart::PeakLabels,bool> m_peakLabelsToShow;
   
-  std::string m_xAxisTitle;
-  std::string m_yAxisTitle;
-  std::string m_yAxisTitleMulti;
+  // Make all these WStrings, and initialize to their default WString::tr(...) strings, and then account for letting them be empty.
+  Wt::WString m_xAxisTitle;
+  Wt::WString m_yAxisTitle;
+  Wt::WString m_yAxisTitleMulti;
   
   // JSignals
   //for all the bellow, the doubles are all the <x,y> coordinated of the action
