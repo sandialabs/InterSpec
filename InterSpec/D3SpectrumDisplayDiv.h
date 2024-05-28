@@ -187,7 +187,7 @@ public:
   
 
   //setDisplayScaleFactor(): set the effective live time of 'spectrum_type'
-  //  to be 'sf' timess the live time of 'spectrum_type'.
+  //  to be 'sf' times the live time of 'spectrum_type'.
   void setDisplayScaleFactor( const float sf,
                              const SpecUtils::SpectrumType spectrum_type );
   
@@ -232,9 +232,22 @@ public:
   void setSearchEnergies( const std::vector<std::pair<double,double>> &energy_windows );
   
   bool removeDecorativeHighlightRegion( size_t regionid );
+  
+  /** How the highlight region is to be drawn. */
+  enum class HighlightRegionFill : int
+  {
+    /** Fills the full y-range of the chart. */
+    Full,
+    
+    /** Fills just the y-range of the chart, below the data. */
+    BelowData
+  };//enum class HighlightRegionFill
+  
   size_t addDecorativeHighlightRegion( const float lowerx,
                                       const float upperx,
-                                      const Wt::WColor &color );
+                                      const Wt::WColor &color,
+                                      const HighlightRegionFill fillType,
+                                      const Wt::WString &txt );
   void removeAllDecorativeHighlightRegions();
   
   //For the case of auto-ranging x-axis, the below _may_ return 0 when auto
@@ -388,11 +401,28 @@ protected:
   bool m_showYAxisScalers;
   
   std::vector<std::pair<double,double> > m_searchEnergies;
-  std::vector<SpectrumChart::HighlightRegion> m_highlights;
+  
+  //HighlightRegion is what is used to overlay a color on the chart.
+  //  The "Energy Range Sum" tool uses them, as well as the "Nuclide Search"
+  //  tool.
+  //  These regions are added and removed by addDecorativeHighlightRegion(...), and
+  //  removeDecorativeHighlightRegion(...).  When a region is added, a
+  //  unique ID is returned, so that region can be removed, without
+  //  effecting other decorative regions.
+  struct HighlightRegion
+  {
+    float lowerx, upperx;
+    size_t hash;
+    Wt::WColor color;
+    
+    HighlightRegionFill fill_type;
+    Wt::WString display_txt;
+  };//HighlightRegion
+  
+  std::vector<HighlightRegion> m_highlights;
   
   std::map<SpectrumChart::PeakLabels,bool> m_peakLabelsToShow;
   
-  // Make all these WStrings, and initialize to their default WString::tr(...) strings, and then account for letting them be empty.
   Wt::WString m_xAxisTitle;
   Wt::WString m_yAxisTitle;
   Wt::WString m_yAxisTitleMulti;

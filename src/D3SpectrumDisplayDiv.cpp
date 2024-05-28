@@ -362,10 +362,6 @@ void D3SpectrumDisplayDiv::defineJavaScript()
   
   callJavaScriptMember( "resizeObserver.observe", jsRef() );
   
-  //updateReferncePhotoPeakLines();
-  
-  //setHighlightRegionsToClient();
-  
   setSearchEnergies( m_searchEnergies );
   
   if( !m_xRangeChangedJS )
@@ -808,6 +804,8 @@ void D3SpectrumDisplayDiv::refresh()
 
   if( isRendered() )
     doJavaScript( m_jsgraph + ".setLocalizations( " + localizedStringsJson() + ",\n  false);" );
+  
+  m_renderFlags |= UpdateHighlightRegions;
 }//void refresh();
 
 
@@ -1313,19 +1311,26 @@ void D3SpectrumDisplayDiv::removeAllDecorativeHighlightRegions()
 
 size_t D3SpectrumDisplayDiv::addDecorativeHighlightRegion( const float lowerx,
                                                           const float upperx,
-                                                          const Wt::WColor &color )
+                                                          const Wt::WColor &color,
+                                                          const HighlightRegionFill fillType,
+                                                          const Wt::WString &txt  )
 {
-  SpectrumChart::HighlightRegion region;
+  D3SpectrumDisplayDiv::HighlightRegion region;
   region.lowerx = lowerx;
   region.upperx = upperx;
   region.color = color;
+  region.fill_type = fillType;
+  region.display_txt = txt;
   region.hash = 0;
+  
   boost::hash_combine( region.hash, lowerx );
   boost::hash_combine( region.hash, upperx );
   boost::hash_combine( region.hash, color.red() );
   boost::hash_combine( region.hash, color.green() );
   boost::hash_combine( region.hash, color.blue() );
   boost::hash_combine( region.hash, color.alpha() );
+  boost::hash_combine( region.hash, static_cast<int>(fillType) );
+  boost::hash_combine( region.hash, hash<string>()(txt.toUTF8()) );
   
   if( region.hash <= 2 )
     region.hash += 3;
@@ -1354,14 +1359,30 @@ void D3SpectrumDisplayDiv::setHighlightRegionsToClient()
     jsstrm << "([";
     for( size_t i = 0; i < m_highlights.size(); ++i )
     {
-      const SpectrumChart::HighlightRegion &region = m_highlights[i];
+      const D3SpectrumDisplayDiv::HighlightRegion &region = m_highlights[i];
       jsstrm << std::string(i ? ",{" : "{")
              << "lowerEnergy:" << static_cast<double>(region.lowerx)
              << ", upperEnergy:" << static_cast<double>(region.upperx)
              << ", fill: 'rgba(" << region.color.red() << "," << region.color.green()  //bug in Wt 3.3.4 means need to manually write out rgba()
                                  << "," << region.color.blue()
-                                 << "," << (region.color.alpha()/255.0) << ")'"
-             << ", hash:" << std::to_string(region.hash)
+             << "," << (region.color.alpha()/255.0) << ")'";
+      
+      switch( region.fill_type )
+      {
+        case HighlightRegionFill::Full:
+          // We'll skip putting this in - previous to 20240527 this field didnt exist, so we'll keep compatiblity
+          //jsstrm << ", drawRegion: 'All'";
+          break;
+          
+        case HighlightRegionFill::BelowData:
+          jsstrm << ", drawRegion: 'BelowData'";
+          break;
+      }//switch( region.fill_type )
+      
+      if( !region.display_txt.empty() )
+        jsstrm << ", text: " << region.display_txt.jsStringLiteral('\'');
+      
+      jsstrm << ", hash:" << std::to_string(region.hash)
              << "}";
     }//for( loop over m_highlights )
   

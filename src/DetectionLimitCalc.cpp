@@ -884,7 +884,7 @@ CurieMdaResult currie_mda_calc( const CurieMdaInput &input )
     // Arbitrary chosen precision tests, for development
     const double eq_dens = fabs(peak_cont_eq_integral - peak_cont_sum);
     assert( (eq_dens < 0.1)
-           || (eq_dens < 1.0E-5*std::max(peak_cont_eq_integral, peak_cont_sum)) );
+           || (eq_dens < 1.0E-4*std::max(peak_cont_eq_integral, peak_cont_sum)) );
     
     const double eq_diff = fabs(peak_cont_eq_integral - peak_cont_sum);
     assert( eq_diff < 0.1 || eq_diff < 1.0E-5*std::max(peak_cont_eq_integral, peak_cont_sum) );

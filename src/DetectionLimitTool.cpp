@@ -960,7 +960,70 @@ public:
       const DetectionLimitCalc::CurieMdaInput input = currieInput();
       const DetectionLimitCalc::CurieMdaResult result = DetectionLimitCalc::currie_mda_calc( input );
       
-
+      const double lower_lower_energy = m_input.measurement->gamma_channel_lower( result.first_lower_continuum_channel );
+      const double lower_upper_energy = m_input.measurement->gamma_channel_lower( result.first_upper_continuum_channel );
+      const double upper_lower_energy = m_input.measurement->gamma_channel_upper( result.last_lower_continuum_channel );
+      const double upper_upper_energy = m_input.measurement->gamma_channel_upper( result.last_upper_continuum_channel );
+      
+      // Add chart
+      InterSpec *viewer = InterSpec::instance();
+      assert( viewer );
+      D3SpectrumDisplayDiv *chart = new D3SpectrumDisplayDiv( dialog->contents() );
+      chart->addStyleClass( "MdaCurrieChart" );
+      chart->setXAxisTitle( "" );
+      chart->setYAxisTitle( "", "" );
+      shared_ptr<const SpecUtils::Measurement> hist = viewer->displayedHistogram(SpecUtils::SpectrumType::Foreground);
+      chart->setData( hist, true );
+      chart->setYAxisLog( false );
+      chart->applyColorTheme( viewer->getColorTheme() );
+      viewer->colorThemeChanged().connect( boost::bind( &D3SpectrumDisplayDiv::applyColorTheme, chart, boost::placeholders::_1 ) );
+      chart->disableLegend();
+      const double dx = upper_upper_energy - lower_lower_energy;
+      chart->setXAxisRange( lower_lower_energy - 0.5*dx, upper_upper_energy + 0.5*dx );
+      chart->setShowPeakLabel( SpectrumChart::PeakLabels::kShowPeakUserLabel, true );
+      
+      //TODO: set no interaction, and implement drawing the various areas...
+      
+      const int lower_ndec = 1 + static_cast<int>( std::ceil( fabs( std::log10( fabs(result.lower_continuum_counts_sum) ) ) ) );
+      const int mid_ndec = 1 + static_cast<int>( std::ceil( fabs( std::log10( fabs(result.peak_region_counts_sum) ) ) ) );
+      const int upper_ndec = 1 + static_cast<int>( std::ceil( fabs( std::log10( fabs(result.upper_continuum_counts_sum) ) ) ) );
+      const string lower_txt = SpecUtils::printCompact( result.lower_continuum_counts_sum, lower_ndec );
+      const string mid_txt = SpecUtils::printCompact( result.peak_region_counts_sum, mid_ndec );
+      const string upper_txt = SpecUtils::printCompact( result.upper_continuum_counts_sum, upper_ndec );
+      
+      shared_ptr<const ColorTheme> theme = viewer->getColorTheme();
+      
+      chart->addDecorativeHighlightRegion( lower_lower_energy, upper_lower_energy,
+                                          theme->timeHistoryBackgroundHighlight,
+                                          D3SpectrumDisplayDiv::HighlightRegionFill::BelowData,
+                                          lower_txt );
+      
+      chart->addDecorativeHighlightRegion( upper_lower_energy, lower_upper_energy,
+                                          theme->timeHistoryForegroundHighlight,
+                                          D3SpectrumDisplayDiv::HighlightRegionFill::BelowData,
+                                          mid_txt );
+      
+      chart->addDecorativeHighlightRegion( lower_upper_energy, upper_upper_energy,
+                                          theme->timeHistoryBackgroundHighlight,
+                                          D3SpectrumDisplayDiv::HighlightRegionFill::BelowData,
+                                          upper_txt );
+      
+      PeakModel *pmodel = new PeakModel( chart );
+      pmodel->setNoSpecMeasBacking();
+      chart->setPeakModel( pmodel );
+      pmodel->setForeground( hist );
+      const double peak_sigma = m_input.drf->hasResolutionInfo()
+                                ? m_input.drf->peakResolutionSigma(input.gamma_energy)
+                                : 0.25*(lower_upper_energy - upper_lower_energy);
+      PeakDef peak( input.gamma_energy, peak_sigma, 0.0 );
+      peak.continuum()->setRange( upper_lower_energy, lower_upper_energy );
+      
+      peak.continuum()->setType(PeakContinuum::OffsetType::Linear);
+      peak.continuum()->setParameters( input.gamma_energy, {result.continuum_eqn[0], result.continuum_eqn[1]}, {} );
+      // We will set the peak area, and user label using text from below, then add to the PeakModel
+      peak.setUserLabel( "Some Label" );
+      //peak.setUserLabel( "Cont. Est: " + result.estimated_peak_continuum_counts + " +- " + result.estimated_peak_continuum_uncert );
+      
       //Gross Counts in Peak Foreground: 1389.813
       WTable *table = new WTable( dialog->contents() );
       table->addStyleClass( "MdaCurrieMoreInfoTable" );
@@ -1012,6 +1075,9 @@ public:
             cell = table->elementAt( table->rowCount() - 1, 1 );
             new WText( "[" + lowerstr + ", " + upperstr + "]", cell );
             addTooltipToRow( "The activity range estimate, to the " + confidence_level + " confidence level." );
+            
+            peak.setPeakArea( result.source_counts );
+            peak.setUserLabel( "Obs: " + nomstr + " " + "[" + lowerstr + ", " + upperstr + "]"  );
           }else if( result.upper_limit < 0 )
           {
             // This can happen when there are a lot fewer counts in the peak region than predicted
@@ -1022,6 +1088,9 @@ public:
             new WText( "Activity &le; 0 " + unitstr, cell );
             addTooltipToRow( "Significantly fewer counts in peak region were observed,"
                             " than predicted by the neighboring regions." );
+            
+            peak.setPeakArea( 0.0 );
+            peak.setUserLabel( "Ac. &le; 0 " + unitstr );
           }else
           {
             // We will provide the upper bound on activity.
@@ -1035,6 +1104,9 @@ public:
             
             addTooltipToRow( "The upper limit on how much activity could be present, to the "
                             + confidence_level + " confidence level." );
+            
+            peak.setPeakArea( result.upper_limit );
+            peak.setUserLabel( "Upper Bound: " + mdastr + " @" + confidence_level  );
           }
           
           break;
@@ -1049,6 +1121,9 @@ public:
         }
       }//switch( m_input.limit_type )
       
+      if( hist )
+        pmodel->addPeaks( {peak} );
+      
       // Add a blank row
       cell = table->elementAt( table->rowCount(), 0 );
       WText *txt = new WText( "&nbsp;", TextFormat::XHTMLText, cell );
@@ -1060,8 +1135,7 @@ public:
       cell = table->elementAt( table->rowCount() - 1, 1 );
       txt = new WText( val, cell );
       
-      const double lower_lower_energy = m_input.measurement->gamma_channel_lower( result.first_lower_continuum_channel );
-      const double lower_upper_energy = m_input.measurement->gamma_channel_lower( result.last_lower_continuum_channel );
+      
       snprintf( buffer, sizeof(buffer), "The region above the peak in energy, that is being used"
                " to estimate the expected continuum counts in the peak region;"
                " corresponds to %.2f to %.2f keV", lower_lower_energy, lower_upper_energy );
@@ -1082,8 +1156,6 @@ public:
                     + std::to_string(result.last_upper_continuum_channel) + "]";
       cell = table->elementAt( table->rowCount() - 1, 1 );
       txt = new WText( val, cell );
-      const double upper_lower_energy = m_input.measurement->gamma_channel_lower( result.first_upper_continuum_channel );
-      const double upper_upper_energy = m_input.measurement->gamma_channel_lower( result.last_lower_continuum_channel );
       snprintf( buffer, sizeof(buffer), "The region above the peak in energy, that is being used"
                " to estimate the expected continuum counts in the peak region;"
                " corresponds to %.2f to %.2f keV", upper_lower_energy, upper_upper_energy );
@@ -1211,6 +1283,7 @@ public:
                       " per decay of the parent nuclide." );
     }catch( std::exception &e )
     {
+      cerr << "Error computing Currie limit information: " << e.what() << endl;
       WText *msg = new WText( "Error computing Currie limit information", dialog->contents() );
       msg->addStyleClass( "content" );
       msg->setInline( false );

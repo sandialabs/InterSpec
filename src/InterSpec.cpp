@@ -11374,7 +11374,9 @@ size_t InterSpec::addHighlightedEnergyRange( const float lowerEnergy,
                                             const float upperEnergy,
                                             const WColor &color )
 {
-  return m_spectrum->addDecorativeHighlightRegion( lowerEnergy, upperEnergy, color );
+  return m_spectrum->addDecorativeHighlightRegion( lowerEnergy, upperEnergy, color,
+                                                  D3SpectrumDisplayDiv::HighlightRegionFill::Full,
+                                                  "" );
 }//void setHighlightedEnergyRange( double lowerEnergy, double upperEnergy )
 
 
