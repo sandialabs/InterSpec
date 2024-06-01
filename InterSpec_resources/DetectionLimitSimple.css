@@ -1,0 +1,11 @@
+.DetectionLimitSimple{
+  display: flex;
+  flex-direction: column;
+}
+
+.DetectionLimitSimple .SimpleMdaChart
+{
+  width: 100%;
+  height: 200px;
+  margin-bottom: 15px;
+}
