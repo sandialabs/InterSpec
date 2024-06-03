@@ -123,6 +123,7 @@
 #include "InterSpec/SpecMeasManager.h"
 #include "InterSpec/SpecFileSummary.h"
 #include "InterSpec/UndoRedoManager.h"
+#include "InterSpec/AddNewPeakDialog.h"
 #include "InterSpec/ColorThemeWindow.h"
 #include "InterSpec/GammaCountDialog.h"
 #include "InterSpec/SpectraFileModel.h"
@@ -176,6 +177,7 @@
 
 #if( USE_DETECTION_LIMIT_TOOL )
 #include "InterSpec/DetectionLimitTool.h"
+#include "InterSpec/DetectionLimitSimple.h"
 #endif
 
 #if( USE_SPECRUM_FILE_QUERY_WIDGET )
@@ -451,6 +453,10 @@ InterSpec::InterSpec( WContainerWidget *parent )
   m_remoteRidMenuItem( nullptr ),
   m_remoteRid( nullptr ),
   m_remoteRidWindow( nullptr ),
+#endif
+#if( USE_DETECTION_LIMIT_TOOL )
+  m_simpleMdaWindow( nullptr ),
+  m_detectionLimitWindow( nullptr ),
 #endif
   m_clientDeviceType( 0x0 ),
   m_referencePhotopeakLines( 0 ),
@@ -1095,7 +1101,7 @@ InterSpec::InterSpec( WContainerWidget *parent )
         break;
       }
         
-      case kAddPeak:
+      case kAddPeakToRoi:
         m_rightClickMenutItems[i] = m_rightClickMenu->addMenuItem( WString::tr("rclick-mi-add-peak") );
         m_rightClickMenutItems[i]->triggered().connect( this, &InterSpec::addPeakFromRightClick );
         break;
@@ -1112,6 +1118,25 @@ InterSpec::InterSpec( WContainerWidget *parent )
         m_rightClickMenutItems[i] = m_rightClickMenu->addMenuItem( WString::tr("rclick-mi-own-cont") );
         m_rightClickMenutItems[i]->triggered().connect( this, &InterSpec::makePeakFromRightClickHaveOwnContinuum );
         break;
+        
+#if( USE_DETECTION_LIMIT_TOOL )
+      case kFitNewPeakNotInRoi:
+        m_rightClickMenutItems[i] = m_rightClickMenu->addMenuItem( WString::tr("rclick-mi-fit-new-peak") );
+        m_rightClickMenutItems[i]->triggered().connect( this, &InterSpec::fitNewPeakNotInRoiFromRightClick );
+      break;
+      case kAddPeakNotInRoi:
+        m_rightClickMenutItems[i] = m_rightClickMenu->addMenuItem( WString::tr("rclick-mi-add-new-peak") );
+        m_rightClickMenutItems[i]->triggered().connect( this, &InterSpec::startAddPeakFromRightClick );
+      break;
+      case kSearchEnergy:
+        m_rightClickMenutItems[i] = m_rightClickMenu->addMenuItem( WString::tr("rclick-mi-search-energy") );
+        m_rightClickMenutItems[i]->triggered().connect( this, &InterSpec::searchOnEnergyFromRightClick );
+      break;
+      case kSimpleMda:
+        m_rightClickMenutItems[i] = m_rightClickMenu->addMenuItem( WString::tr("rclick-simple-mda") );
+        m_rightClickMenutItems[i]->triggered().connect( this, &InterSpec::startSimpleMdaFromRightClick );
+      break;
+#endif
         
       case kNumRightClickItems:
         break;
@@ -2454,66 +2479,80 @@ void InterSpec::handleRightClick( double energy, double counts,
   const std::shared_ptr<const PeakDef> peak = nearestPeak( energy );
   m_rightClickEnergy = energy;
   
-  
-  typedef std::shared_ptr<const std::deque< PeakModel::PeakShrdPtr > > PeakContainer_t;
-  PeakContainer_t peaks = m_peakModel->peaks();
-  
+  shared_ptr<const deque<shared_ptr<const PeakDef>>> peaks = m_peakModel->peaks();
+
+#if( !USE_DETECTION_LIMIT_TOOL )
   if( !peaks || !peak )
     return;
+#endif
   
   //We actually need to make a copy of peaks since we will post to outside the
   //  main thread where the deque is expected to remain constant, however, the
   //  PeakModel deque may get changed by like the user deleting a peak.
-  peaks = make_shared< std::deque< PeakModel::PeakShrdPtr > >( begin(*peaks), end(*peaks) );
+  if( peaks )
+    peaks = make_shared< std::deque<shared_ptr<const PeakDef>>>( begin(*peaks), end(*peaks) );
+  else
+    peaks = make_shared<std::deque<shared_ptr<const PeakDef>>>();
   
+  char energy_str[32] = { '\0' };
+  snprintf( energy_str, sizeof(energy_str), "%.1f", energy );
   
   //see how many other peaks share ROI
   size_t npeaksInRoi = 0;
-  for( const PeakModel::PeakShrdPtr &p : *peaks )
-    npeaksInRoi += (p->continuum() == peak->continuum());
-  
-  std::deque< PeakModel::PeakShrdPtr >::const_iterator iter;
+  if( peak )
+  {
+    for( const PeakModel::PeakShrdPtr &p : *peaks )
+      npeaksInRoi += (p->continuum() == peak->continuum());
+  }//if( peak )
   
   for( RightClickItems i = RightClickItems(0);
       i < kNumRightClickItems; i = RightClickItems(i+1) )
   {
     switch( i )
     {
-      case kPeakEdit: case kDeletePeak: case kAddPeak:
-//        m_rightClickMenutItems[i]->setHidden( !peak );
+      case kPeakEdit: 
+      case kDeletePeak:
+      case kAddPeakToRoi:
+        m_rightClickMenutItems[i]->setHidden( !peak );
       break;
         
       case kChangeContinuum:
       {
-        if( !m_rightClickChangeContinuumMenu )
-          break;
+        m_rightClickMenutItems[i]->setHidden( !peak );
         
-        // Disable current continuum type, enable all others
-        const vector<WMenuItem *> items = m_rightClickChangeContinuumMenu->items();
-        const char *labelTxt = PeakContinuum::offset_type_label_tr( peak->continuum()->type() );
-        for( WMenuItem *item : items )
-          item->setDisabled( item->text().key() == labelTxt );
+        if( peak && m_rightClickChangeContinuumMenu )
+        {
+          // Disable current continuum type, enable all others
+          const vector<WMenuItem *> items = m_rightClickChangeContinuumMenu->items();
+          const char *labelTxt = PeakContinuum::offset_type_label_tr( peak->continuum()->type() );
+          for( WMenuItem *item : items )
+            item->setDisabled( item->text().key() == labelTxt );
+        }//if( peak )
         
         break;
       }//case kChangeContinuum:
         
       case kChangeSkew:
       {
-        if( !m_rightClickChangeSkewMenu )
-          break;
+        m_rightClickMenutItems[i]->setHidden( !peak );
         
-        // Disable current skew type, enable all others
-        const vector<WMenuItem *> items = m_rightClickChangeSkewMenu->items();
-        const char *labelTxt = PeakDef::to_label( peak->skewType() );
-        for( WMenuItem *item : items )
-          item->setDisabled( item->text() == labelTxt );
+        if( peak && m_rightClickChangeSkewMenu )
+        {
+          // Disable current skew type, enable all others
+          const vector<WMenuItem *> items = m_rightClickChangeSkewMenu->items();
+          const char *labelTxt = PeakDef::to_label( peak->skewType() );
+          for( WMenuItem *item : items )
+            item->setDisabled( item->text() == labelTxt );
+        }//if( peak && m_rightClickChangeSkewMenu )
       }//case kChangeSkew:
         
       case kChangeNuclide:
       {
         assert( m_rightClickNuclideSuggestMenu );
         
-        if( m_rightClickNuclideSuggestMenu )
+        m_rightClickMenutItems[i]->setHidden( !peak );
+        
+        if( peak && m_rightClickNuclideSuggestMenu )
         {
           for( WMenuItem *item : m_rightClickNuclideSuggestMenu->items() )
           {
@@ -2542,7 +2581,7 @@ void InterSpec::handleRightClick( double energy, double counts,
             if( !!meas )
               detector = meas->detector();
         
-            PeakContainer_t hintpeaks;
+            shared_ptr<const deque<shared_ptr<const PeakDef>>> hintpeaks;
             if( m_dataMeasurement )
               hintpeaks = m_dataMeasurement->automatedSearchPeaks( m_displayedSamples );
 //            if( !hintpeaks || (!!peaks && hintpeaks->size() <= peaks->size()) )
@@ -2568,114 +2607,195 @@ void InterSpec::handleRightClick( double energy, double counts,
             
             io.boost::asio::io_service::post( worker );
           }//if( server )
-        }//if( menu )
+        }//if( peak && m_rightClickNuclideSuggestMenu )
         
         break;
       }//case kChangeNuclide:
         
       case kRefitPeak:
-        m_rightClickMenutItems[i]->setHidden( !peak->gausPeak() || npeaksInRoi>1 );
+        m_rightClickMenutItems[i]->setHidden( !peak || !peak->gausPeak() || (npeaksInRoi > 1) );
       break;
         
       case kRefitROI:
-        m_rightClickMenutItems[i]->setHidden( !peak->gausPeak() || npeaksInRoi<2 );
+        m_rightClickMenutItems[i]->setHidden( !peak || !peak->gausPeak() || (npeaksInRoi < 2) );
       break;
         
       case kRefitPeakWithDrfFwhm:
-        m_rightClickMenutItems[i]->setHidden( !peak->gausPeak() );
+        m_rightClickMenutItems[i]->setHidden( !peak || !peak->gausPeak() );
       break;
         
       case kSetMeanToRefPhotopeak:
       {
-        const float energy = PeakSearchGuiUtils::reference_line_energy_near_peak( this, *peak );
-        const bool hide = (energy < 10.0f);
+        
+        const float energy = peak ? PeakSearchGuiUtils::reference_line_energy_near_peak( this, *peak ) : 0.0;
+        const bool hide = (!peak || (energy < 10.0f));
         m_rightClickMenutItems[i]->setHidden( hide );
         if( !hide )
-        {
-          char buffer[32] = { '\0' };
-          snprintf( buffer, sizeof(buffer), "%.1f", energy );
-          
-          m_rightClickMenutItems[i]->setText( WString::tr("rclick-mi-fix-energy").arg( buffer ) );
-        }//if( !hide )
+          m_rightClickMenutItems[i]->setText( WString::tr("rclick-mi-fix-energy").arg( energy_str ) );
         
         break;
       }//case kSetMeanToRefPhotopeak:
         
       case kShareContinuumWithLeftPeak:
       {
-        iter = std::find( peaks->begin(), peaks->end(), peak );
-        if( iter == peaks->begin() )
+        m_rightClickMenutItems[i]->setHidden( !peak );
+        
+        if( peaks && peak )
         {
-          m_rightClickMenutItems[i]->setHidden( true );
-          break;
-        }//if( iter == peaks.begin() )
+          auto iter = std::find( peaks->begin(), peaks->end(), peak );
+          if( iter == peaks->begin() )
+          {
+            m_rightClickMenutItems[i]->setHidden( true );
+            break;
+          }//if( iter == peaks.begin() )
+          
+          if( iter==peaks->end() || (*iter)!=peak )
+            throw runtime_error( "InterSpec::handleRightClick: "
+                                "error searching for peak I should have found 1" );
+          
+          PeakModel::PeakShrdPtr leftpeak = *(iter - 1);
+          if( leftpeak->continuum() == peak->continuum()
+             || !leftpeak->continuum()->isPolynomial() )
+          {
+            m_rightClickMenutItems[i]->setHidden( true );
+            break;
+          }//if( it alread shares a continuum with the left peak )
+          
+          const double leftupper = leftpeak->upperX();
+          const double rightlower = peak->lowerX();
+          const double rightupper = peak->upperX();
+          
+          //The below 2.0 is arbitrary
+          const bool show = ((rightlower-leftupper) < 2.0*(rightupper-rightlower));
+          m_rightClickMenutItems[i]->setHidden( !show );
+        }//if( peak )
         
-        if( iter==peaks->end() || (*iter)!=peak )
-          throw runtime_error( "InterSpec::handleRightClick: "
-                               "error searching for peak I should have found 1" );
-        
-        PeakModel::PeakShrdPtr leftpeak = *(iter - 1);
-        if( leftpeak->continuum() == peak->continuum()
-            || !leftpeak->continuum()->isPolynomial() )
-        {
-          m_rightClickMenutItems[i]->setHidden( true );
-          break;
-        }//if( it alread shares a continuum with the left peak )
-        
-        const double leftupper = leftpeak->upperX();
-        const double rightlower = peak->lowerX();
-        const double rightupper = peak->upperX();
-        
-        //The below 2.0 is arbitrary
-        const bool show = ((rightlower-leftupper) < 2.0*(rightupper-rightlower));
-        m_rightClickMenutItems[i]->setHidden( !show );
         break;
       }//case kShareContinuumWithLeftPeak:
         
         
       case kShareContinuumWithRightPeak:
       {
-        iter = std::find( peaks->begin(), peaks->end(), peak );
+        m_rightClickMenutItems[i]->setHidden( !peak );
         
-        if( iter==peaks->end() || (*iter)!=peak )
-          throw runtime_error( "InterSpec::handleRightClick: "
-                               "error searching for peak I should have found 2" );
-
-        if( (iter+1) == peaks->end() )
+        if( peaks && peak )
         {
-          m_rightClickMenutItems[i]->setHidden( true );
-          break;
-        }//if( iter == peaks.begin() )
+          auto iter = std::find( peaks->begin(), peaks->end(), peak );
+          
+          if( iter==peaks->end() || (*iter)!=peak )
+            throw runtime_error( "InterSpec::handleRightClick: "
+                                "error searching for peak I should have found 2" );
+          
+          if( (iter+1) == peaks->end() )
+          {
+            m_rightClickMenutItems[i]->setHidden( true );
+            break;
+          }//if( iter == peaks.begin() )
+          
+          
+          PeakModel::PeakShrdPtr rightpeak = *(iter + 1);
+          if( rightpeak->continuum() == peak->continuum()
+             || !rightpeak->continuum()->isPolynomial() )
+          {
+            m_rightClickMenutItems[i]->setHidden( true );
+            break;
+          }//if( it already shares a continuum with the left peak )
+          
+          const double rightlower = rightpeak->lowerX();
+          const double leftlower = peak->lowerX();
+          const double leftupper = peak->upperX();
+          
+          //The below 2.0 is arbitrary
+          const bool show = ((rightlower-leftupper) < 2.0*(leftupper-leftlower));
+          m_rightClickMenutItems[i]->setHidden( !show );
+        }//if( peaks && peak )
         
-        
-        PeakModel::PeakShrdPtr rightpeak = *(iter + 1);
-        if( rightpeak->continuum() == peak->continuum()
-            || !rightpeak->continuum()->isPolynomial() )
-        {
-          m_rightClickMenutItems[i]->setHidden( true );
-          break;
-        }//if( it alread shares a continuum with the left peak )
-        
-        const double rightlower = rightpeak->lowerX();
-        const double leftlower = peak->lowerX();
-        const double leftupper = peak->upperX();
-        
-        //The below 2.0 is arbitrary
-        const bool show = ((rightlower-leftupper) < 2.0*(leftupper-leftlower));
-        m_rightClickMenutItems[i]->setHidden( !show );
         break;
       }//case kShareContinuumWithRightPeak:
       
       
       case kMakeOwnContinuum:
       {
-        bool shares = false;
-        std::shared_ptr<const PeakContinuum> cont = peak->continuum();
-        for( PeakModel::PeakShrdPtr p : *peaks )
-          shares = (shares || (p!=peak && p->continuum()==cont) );
-        m_rightClickMenutItems[i]->setHidden( !shares );
+        m_rightClickMenutItems[i]->setHidden( !peak );
+        
+        if( peaks && peak )
+        {
+          bool shares = false;
+          std::shared_ptr<const PeakContinuum> cont = peak->continuum();
+          for( PeakModel::PeakShrdPtr p : *peaks )
+            shares = (shares || (p!=peak && p->continuum()==cont) );
+          m_rightClickMenutItems[i]->setHidden( !shares );
+        }//if( peaks && peak )
+        
         break;
       }//kMakeOwnContinuum
+        
+#if( USE_DETECTION_LIMIT_TOOL )
+      case kFitNewPeakNotInRoi:
+      {
+        m_rightClickMenutItems[i]->setHidden( !!peak );
+        
+        if( !peak )
+          m_rightClickMenutItems[i]->setText( WString::tr("rclick-mi-fit-new-peak").arg(energy_str) );
+        
+        break;
+      }//case kFitNewPeakNotInRoi:
+        
+      case kAddPeakNotInRoi:
+      {
+        m_rightClickMenutItems[i]->setHidden( !!peak ); //"Add peak..."
+        break;
+      }//case kAddPeakNotInRoi:
+      
+      case kSearchEnergy:
+      {
+        m_rightClickMenutItems[i]->setHidden( !!peak );
+        
+        if( !peak )
+          m_rightClickMenutItems[i]->setText( WString::tr("rclick-mi-search-energy").arg(energy_str) ); //"Search near {1} keV"
+        
+        break;
+      }//case kSearchEnergy:
+        
+      case kSimpleMda:
+      {
+        m_rightClickMenutItems[i]->setHidden( !!peak );
+        
+        if( !peak )
+        {
+          WString target_txt;
+          
+          const SandiaDecay::Nuclide *nuc = m_referencePhotopeakLines
+                                              ? m_referencePhotopeakLines->currentlyShowingNuclide().m_nuclide
+                                              : nullptr;
+          if( nuc )
+          {
+            double sigma = 0.025*(m_spectrum->xAxisMaximum() - m_spectrum->xAxisMinimum()); //2.5% visible energy range TODO: make something more reasonable
+            shared_ptr<DetectorPeakResponse> drf = m_dataMeasurement ? m_dataMeasurement->detector() : nullptr;
+            if( drf && drf->hasResolutionInfo() )
+              sigma = drf->peakResolutionSigma( energy );
+            
+            PeakDef tmppeak( energy, sigma, 100.0 );
+            const float ref_energy = PeakSearchGuiUtils::reference_line_energy_near_peak( this, tmppeak );
+            
+            if( ref_energy > 10.0 )
+            {
+              char buffer[64] = { '\0' };
+              snprintf( buffer, sizeof(buffer), "%s, %.1f keV", nuc->symbol.c_str(), ref_energy );
+              target_txt = WString::fromUTF8( buffer );
+            }//if( ref_energy > 10.0 )
+          }//if( nuc )
+          
+          if( target_txt.empty() )
+            target_txt = WString("{1} keV").arg(energy_str);
+          
+          m_rightClickMenutItems[i]->setText( WString::tr("rclick-simple-mda").arg(target_txt) ); //"Quick MDA {1}..."
+        }//if( !peak )
+        
+        break;
+      }//case kSimpleMda:
+#endif  //USE_DETECTION_LIMIT_TOOL
+        
         
       case kNumRightClickItems:
       break;
@@ -3255,7 +3375,7 @@ void InterSpec::saveStateToDb( Wt::Dbo::ptr<UserState> entry )
     if( m_unitsConverter )
     {
       entry.modify()->shownDisplayFeatures |= UserState::kShowingUnitConvertTool;
-      entry.modify()->fluxToolUri = m_unitsConverter->encodeStateToUrl();
+      entry.modify()->unitsConverterToolUri = m_unitsConverter->encodeStateToUrl();
     }
     
     if( m_decayInfoWindow )
@@ -3270,6 +3390,19 @@ void InterSpec::saveStateToDb( Wt::Dbo::ptr<UserState> entry )
       entry.modify()->energyRangeSumUri = m_gammaCountDialog->encodeStateToUrl();
     }
     
+#if( USE_DETECTION_LIMIT_TOOL )
+    if( m_detectionLimitWindow )
+    {
+      entry.modify()->shownDisplayFeatures |= UserState::kShowingDetectionSens;
+      entry.modify()->detectionSensitivityToolUri = m_simpleMdaWindow->tool()->encodeStateToUrl();
+    }//if( m_detectionLimitWindow )
+    
+    if( m_simpleMdaWindow )
+    {
+      entry.modify()->shownDisplayFeatures |= UserState::kShowingSimpleMda;
+      entry.modify()->simpleMdaUri = m_simpleMdaWindow->tool()->encodeStateToUrl();
+    }//if( m_simpleMdaWindow )
+#endif
     
     entry.modify()->backgroundSubMode = UserState::kNoSpectrumSubtract;
     if( m_spectrum->backgroundSubtract() )
@@ -3915,11 +4048,11 @@ void InterSpec::loadStateFromDb( Wt::Dbo::ptr<UserState> entry )
     }//if( m_fluxTool )
     
     if( (entry->shownDisplayFeatures & UserState::kShowingUnitConvertTool)
-       && !entry->fluxToolUri.empty() )
+       && !entry->unitsConverterToolUri.empty() )
     {
       UnitsConverterTool *converter = createUnitsConverterTool();
       if( converter )
-        converter->handleAppUrl( entry->fluxToolUri );
+        converter->handleAppUrl( entry->unitsConverterToolUri );
     }
     
     if( (entry->shownDisplayFeatures & UserState::kShowingNucDecayInfo)
@@ -3937,6 +4070,24 @@ void InterSpec::loadStateFromDb( Wt::Dbo::ptr<UserState> entry )
       if( dialog )
         dialog->handleAppUrl( entry->energyRangeSumUri );
     }
+    
+    
+#if( USE_DETECTION_LIMIT_TOOL )
+    if( (entry->shownDisplayFeatures & UserState::kShowingDetectionSens)
+       && !entry->detectionSensitivityToolUri.empty() )
+    {
+      showDetectionLimitTool( entry->detectionSensitivityToolUri );
+    }//if( m_detectionLimitWindow )
+    
+    if( (entry->shownDisplayFeatures & UserState::kShowingSimpleMda)
+       && !entry->simpleMdaUri.empty() )
+    {
+      auto dialog = showSimpleMdaWindow();
+      if( dialog )
+        dialog->tool()->handleAppUrl( entry->simpleMdaUri );
+    }//if( m_simpleMdaWindow )
+#endif
+    
     
     if( wasDocked )
     {
@@ -8038,11 +8189,259 @@ void InterSpec::deleteFwhmFromForegroundWindow()
 
 
 #if( USE_DETECTION_LIMIT_TOOL )
-void InterSpec::createDetectionLimitTool()
+void InterSpec::showDetectionLimitTool( const std::string &query_str )
 {
-  new DetectionLimitWindow( this, m_materialDB.get(), m_shieldingSuggestion );
-}
-#endif
+  if( m_detectionLimitWindow )
+    return;
+    
+  auto tool = createDetectionLimitTool();
+  if( tool && !query_str.empty() )
+    tool->tool()->handleAppUrl( query_str );
+  
+  if( m_undo && m_undo->canAddUndoRedoNow() )
+  {
+    auto undo = [this](){ programmaticallyCloseDetectionLimit(); };
+    auto redo = [this,query_str](){ showDetectionLimitTool(query_str); };
+    m_undo->addUndoRedoStep( std::move(undo), std::move(redo), "Show detection limit tool" );
+  }//if( dialog && m_undo && m_undo->canAddUndoRedoNow() )
+}//void InterSpec::showDetectionLimitTool()
+
+
+DetectionLimitWindow *InterSpec::createDetectionLimitTool()
+{
+  if( !m_detectionLimitWindow )
+  {
+    m_detectionLimitWindow = new DetectionLimitWindow( this, m_materialDB.get(), m_shieldingSuggestion );
+    m_detectionLimitWindow->finished().connect( this, &InterSpec::handleDetectionLimitWindowClose );
+  }//if( !m_detectionLimitWindow )
+  
+  return m_detectionLimitWindow;
+}//DetectionLimitWindow *createDetectionLimitTool()
+
+     
+void InterSpec::handleDetectionLimitWindowClose()
+{
+  auto *caller = dynamic_cast<DetectionLimitWindow *>( WObject::sender() );
+  assert( caller );
+  assert( !m_detectionLimitWindow || (caller == m_detectionLimitWindow) );
+  
+  if( !m_detectionLimitWindow )
+    return;
+    
+  auto dialog = m_detectionLimitWindow;
+  m_detectionLimitWindow = nullptr;
+  
+  const string state_uri = dialog->tool()->encodeStateToUrl();
+  
+  AuxWindow::deleteAuxWindow( dialog );
+  
+  if( m_undo && m_undo->canAddUndoRedoNow() )
+  {
+    // We'll just assume results for the foreground was showing, so we dont have to pass this around
+    auto undo = [this,state_uri](){
+      DetectionLimitWindow *tool = createDetectionLimitTool();
+      assert( tool );
+      if( tool && tool->tool() )
+        tool->tool()->handleAppUrl(state_uri);
+    };
+    auto redo = [this](){ programmaticallyCloseSimpleMda(); };
+    m_undo->addUndoRedoStep( std::move(undo), std::move(redo), "Close Simple MDA" );
+  }//if( dialog && m_undo && m_undo->canAddUndoRedoNow() )
+}//void handleDetectionLimitWindowClose()
+
+
+void InterSpec::programmaticallyCloseDetectionLimit()
+{
+  if( !m_detectionLimitWindow )
+    return;
+  
+  DetectionLimitWindow *dialog = m_detectionLimitWindow;
+  m_detectionLimitWindow = nullptr; //Prevents undo/redo
+  dialog->done( WDialog::DialogCode::Accepted );
+}//void programmaticallyCloseDetectionLimit()
+
+
+DetectionLimitSimpleWindow *InterSpec::showSimpleMdaWindow()
+{
+  if( m_simpleMdaWindow )
+    return m_simpleMdaWindow;
+  
+  m_simpleMdaWindow = new DetectionLimitSimpleWindow( m_materialDB.get(), m_shieldingSuggestion, this );
+  m_simpleMdaWindow->finished().connect( this, &InterSpec::handleSimpleMdaWindowClose );
+  
+  return m_simpleMdaWindow;
+}//DetectionLimitSimpleWindow *showSimpleMdaWindow()
+
+
+void InterSpec::programmaticallyCloseSimpleMda()
+{
+  if( !m_simpleMdaWindow )
+    return;
+  
+  DetectionLimitSimpleWindow *dialog = m_simpleMdaWindow;
+  m_simpleMdaWindow = nullptr; //Prevents undo/redo
+  dialog->done( WDialog::DialogCode::Accepted );
+}//void programmaticallyCloseSimpleMda()
+
+
+void InterSpec::handleSimpleMdaWindowClose()
+{
+  auto *caller = dynamic_cast<DetectionLimitSimpleWindow *>( WObject::sender() );
+  assert( caller );
+  assert( !m_simpleMdaWindow || (caller == m_simpleMdaWindow) );
+  
+  if( !m_simpleMdaWindow )
+    return;
+  
+  auto dialog = m_simpleMdaWindow;
+  m_simpleMdaWindow = nullptr;
+  
+  const string state_uri = dialog->tool()->encodeStateToUrl();
+  
+  AuxWindow::deleteAuxWindow( dialog );
+  
+  if( m_undo && m_undo->canAddUndoRedoNow() )
+  {
+    // We'll just assume results for the foreground was showing, so we dont have to pass this around
+    auto undo = [this,state_uri](){
+      DetectionLimitSimpleWindow *tool = showSimpleMdaWindow();
+      assert( tool );
+      if( tool && tool->tool() )
+        tool->tool()->handleAppUrl(state_uri);
+    };
+    auto redo = [this](){ programmaticallyCloseSimpleMda(); };
+    m_undo->addUndoRedoStep( std::move(undo), std::move(redo), "Close Simple MDA" );
+  }//if( dialog && m_undo && m_undo->canAddUndoRedoNow() )
+}//void handleSimpleMdaWindowClose()
+
+
+void InterSpec::fitNewPeakNotInRoiFromRightClick()
+{
+  searchForSinglePeak( m_rightClickEnergy );
+}//void fitNewPeakNotInRoiFromRightClick()
+
+
+void InterSpec::startAddPeakFromRightClick()
+{
+  // TODO: add AddNewPeakDialog pointer to InterSpec class, like other tools, to fully support undo/redo, and everything.
+  const double energy = m_rightClickEnergy;
+  
+  AddNewPeakDialog *window = new AddNewPeakDialog( energy );
+  window->finished().connect( boost::bind( &AuxWindow::deleteAuxWindow, window ) );
+  
+  if( m_undo && m_undo->canAddUndoRedoNow() )
+  {
+    auto redo = [energy](){
+      AddNewPeakDialog *window = new AddNewPeakDialog( energy );
+      window->finished().connect( boost::bind( &AuxWindow::deleteAuxWindow, window ) );
+    };
+    
+    auto closer = wApp->bind( boost::bind( &AuxWindow::deleteAuxWindow, window ) );
+    m_undo->addUndoRedoStep( closer, redo , "Start add peak dialog." );
+  }//if( undo )
+}//void startAddPeakFromRightClick()
+
+
+void InterSpec::searchOnEnergyFromRightClick()
+{
+  if( m_toolsTabs )
+  {
+    const int prevTab = m_toolsTabs->currentIndex();
+    
+    assert( m_nuclideSearchContainer );
+    m_toolsTabs->setCurrentWidget( m_nuclideSearchContainer );
+    
+    const int nowTab = m_toolsTabs->currentIndex();
+    
+    if( prevTab != nowTab )
+    {
+      if( m_undo && m_undo->canAddUndoRedoNow() )
+      {
+        auto undo = [this,prevTab](){ m_toolsTabs->setCurrentIndex(prevTab); };
+        auto redo = [this](){ m_toolsTabs->setCurrentWidget( m_nuclideSearchContainer ); };
+        m_undo->addUndoRedoStep( std::move(undo), std::move(redo), "Change to search tab." );
+      }//if( m_undo && m_undo->canAddUndoRedoNow() )
+    }
+  }else
+  {
+    const bool alreadyShowingWindow = (m_nuclideSearchWindow && m_nuclideSearchWindow->isVisible());
+    
+    showNuclideSearchWindow();
+    
+    if( !alreadyShowingWindow && m_undo && m_undo->canAddUndoRedoNow() )
+    {
+      auto undo = [this](){
+        if( m_nuclideSearchWindow )
+          m_nuclideSearchWindow->hide();
+      };
+      auto redo = [this](){ showNuclideSearchWindow(); };
+      m_undo->addUndoRedoStep( std::move(undo), std::move(redo), "Show energy search tool." );
+    }
+  }//if( m_toolsTabs ) / else
+  
+  assert( m_nuclideSearch );
+  
+  vector<IsotopeSearchByEnergy::SearchEnergy *> orig_searchs = m_nuclideSearch->searches();
+  for( size_t i = 1; i < orig_searchs.size(); ++i )
+    m_nuclideSearch->removeSearchEnergy( orig_searchs[i] );
+  
+  m_nuclideSearch->setNextSearchEnergy( m_rightClickEnergy ); //Adds its own undo/redo step
+}//void searchOnEnergyFromRightClick()
+
+
+void InterSpec::startSimpleMdaFromRightClick()
+{
+  string prevState;
+  bool wasShowing = false;
+  
+  if( m_simpleMdaWindow )
+  {
+    wasShowing = true;
+    prevState = m_simpleMdaWindow->tool()->encodeStateToUrl();
+  }else
+  {
+    showSimpleMdaWindow();
+  }
+  
+  assert( m_simpleMdaWindow );
+  if( !m_simpleMdaWindow )
+    return;
+  
+  // blah blah blah - set state
+  // Check if showing ref photopeak lines for a nuclide
+  // Check if near-enough reference photopeak line
+  // set nuclide and energy to tool
+  
+  const string currentState = m_simpleMdaWindow->tool()->encodeStateToUrl();
+  
+  if( m_undo && m_undo->canAddUndoRedoNow() )
+  {
+    auto undo = [=](){
+      if( wasShowing )
+      {
+        if( prevState.empty() )
+          programmaticallyCloseSimpleMda();
+        showSimpleMdaWindow();
+        if( m_simpleMdaWindow && !prevState.empty() )
+          m_simpleMdaWindow->tool()->handleAppUrl( prevState );
+      }else
+      {
+        programmaticallyCloseSimpleMda();
+      }
+    };//undo
+    
+    auto redo = [=](){
+      showSimpleMdaWindow();
+      assert( m_simpleMdaWindow );
+      if( m_simpleMdaWindow )
+        m_simpleMdaWindow->tool()->handleAppUrl( currentState );
+    };//redo
+    
+    m_undo->addUndoRedoStep( std::move(undo), std::move(redo), "Show Simple MDA Tool." );
+  }//if( m_undo && m_undo->canAddUndoRedoNow() )
+}//void startSimpleMdaFromRightClick()
+#endif //USE_DETECTION_LIMIT_TOOL
+
 
 void InterSpec::deleteDecayInfoWindow()
 {
@@ -9026,7 +9425,7 @@ void InterSpec::addToolsMenu( Wt::WWidget *parent )
 #if( USE_DETECTION_LIMIT_TOOL )
   item = popup->addMenuItem( WString::tr("app-mi-tools-mda") );
   HelpSystem::attachToolTipOn( item, WString::tr("app-mi-tt-tools-mda"), showToolTips );
-  item->triggered().connect( this, &InterSpec::createDetectionLimitTool );
+  item->triggered().connect( boost::bind( &InterSpec::showDetectionLimitTool, this, string() ) );
 #endif
   
   item = popup->addMenuItem( WString::tr("app-mi-tools-select-drf") );
@@ -11169,6 +11568,42 @@ void InterSpec::handleAppUrl( const std::string &url_encoded_url )
     RemoteRid::handleAppUrl( query_str );
   }
 #endif
+#if( USE_DETECTION_LIMIT_TOOL )
+  else if( SpecUtils::iequals_ascii(host,"detection-limit") )
+  {
+    showDetectionLimitTool( query_str );
+  }else if( SpecUtils::iequals_ascii(host,"simple-mda") )
+  {
+    string prev_state;
+    if( m_simpleMdaWindow )
+      prev_state = m_simpleMdaWindow->tool()->encodeStateToUrl();
+    
+    auto create_window = [this, query_str](){
+      DetectionLimitSimpleWindow *tool = showSimpleMdaWindow();
+      if( tool )
+        tool->tool()->handleAppUrl( query_str );
+    };//create_window lambda
+    
+    if( m_undo && m_undo->canAddUndoRedoNow() )
+    {
+      auto undo = [this,prev_state](){
+        if( !prev_state.empty() )
+        {
+          DetectionLimitSimpleWindow *tool = showSimpleMdaWindow();
+          if( tool )
+            tool->tool()->handleAppUrl( prev_state );
+        }else 
+        {
+          programmaticallyCloseSimpleMda();
+        }
+      };//undo lambda
+      
+      m_undo->addUndoRedoStep( std::move(undo), create_window, "Show Simple MDA URI" );
+    }//if( dialog && m_undo && m_undo->canAddUndoRedoNow() )
+    
+    create_window();
+  }
+#endif //USE_DETECTION_LIMIT_TOOL
   else
   {
     throw runtime_error( "App URL with purpose (host-component) '" + host + "' not supported." );

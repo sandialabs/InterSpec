@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- anpd is short for AddNewPeakDialog -->
+  <message id="anpd-dialog-add-peak-title">Add Peak</message>
+  <message id="anpd-err-no-foreground">A foreground spectrum must be loaded to add a peak.</message>
+  <message id="anpd-err-no-foreground-1">No foreground spectrum</message>
+  <message id="anpd-peak-mean">Peak Mean</message>
+  <message id="anpd-peak-fwhm">Peak FWHM</message>
+  <message id="anpd-peak-amp">Peak Amp.</message>
+  <message id="anpd-roi-lower">ROI Lower</message>
+  <message id="anpd-roi-upper">ROI Upper</message>
+  <message id="anpd-tt-more-adv">For more advanced options, see the <em>Peak Editor</em> after adding.</message>
+  <message id="anpd-screen-to-small">Screen to small for preview.</message>
+  <message id="anpd-err-preview">Error rendering preview</message>
+  <message id="anpd-err-fit-failed">Fit Failed.</message>
+</messages>

@@ -35,6 +35,7 @@
 #include <Wt/WMenuItem>
 #include <Wt/WLineEdit>
 #include <Wt/WComboBox>
+#include <Wt/WTabWidget>
 #include <Wt/WPushButton>
 #include <Wt/WGridLayout>
 #include <Wt/WButtonGroup>
@@ -88,6 +89,8 @@ DetectionLimitSimpleWindow::DetectionLimitSimpleWindow( MaterialDB *materialDB,
              | AuxWindowProperties::SetCloseable
              | AuxWindowProperties::DisableCollapse) )
 {
+  UndoRedoManager::BlockUndoRedoInserts undo_blocker;
+  
   rejectWhenEscapePressed( true );
   
   m_tool = new DetectionLimitSimple( materialDB, materialSuggestion, viewer, contents() );
@@ -196,6 +199,11 @@ void DetectionLimitSimple::init()
   WContainerWidget *generalInput = new WContainerWidget( this );
   
   
+  m_methodTabs = new WTabWidget( this );
+  m_methodTabs->addStyleClass( "MethodTabs" );
+  
+  // Create a Currie tab
+  // Create a "Deconvoluted" tab
 }//void DetectionLimitSimple::init()
 
 
@@ -205,7 +213,7 @@ DetectionLimitSimple::~DetectionLimitSimple()
 }//~DoseCalcWidget()
 
 
-void DetectionLimitSimple::handleAppUrl( std::string path, std::string query_str )
+void DetectionLimitSimple::handleAppUrl( std::string uri )
 {
   //blah blah blah handle all this
   /*

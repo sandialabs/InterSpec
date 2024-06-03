@@ -405,6 +405,11 @@
   <message id="rclick-mi-calc-status">...calculating...</message>
   <message id="rclick-mi-fix-energy">Fix to {1} keV</message>
   <message id="rclick-mi-no-nuc-suggestions">No Suggestions</message>
+  <message id="rclick-mi-fit-new-peak">Fit peak near {1} keV</message>
+  <message id="rclick-mi-add-new-peak">Add peak...</message>
+  <message id="rclick-mi-search-energy">Search near {1} keV</message>
+  <message id="rclick-simple-mda">Quick MDA {1}...</message>
+
 
   <!-- Error messages, the user probably wont see -->
   <message id="err-save-sate-to-db">I'm sorry there was a technical error saving your  user state to the database.</message>

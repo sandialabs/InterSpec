@@ -2,22 +2,9 @@
 <messages>
   <!-- pid is short for PeakInfoDisplay -->
 
-  <message id="pid-peak-mean">Peak Mean</message>
-  <message id="pid-peak-fwhm">Peak FWHM</message>
-  <message id="pid-peak-amp">Peak Amp.</message>
-  <message id="pid-roi-lower">ROI Lower</message>
-  <message id="pid-roi-upper">ROI Upper</message>
-
   <message id="pid-dialog-peak-erase">Erase All Peaks?</message>
-  <message id="pid-dialog-add-peak-title">Add Peak</message>
-
-  <message id="pid-tt-more-adv">For more advanced options, see the <em>Peak Editor</em> after adding.</message>
-  <message id="pid-screen-to-small">Screen to small for preview.</message>
-  <message id="pid-err-preview">Error rendering preview</message>
-  <message id="pid-err-fit-failed">Fit Failed.</message>
 
   <message id="pid-err-no-foreground">A foreground spectrum must be loaded to add a peak.</message>
-  <message id="pid-err-no-foreground-1">No foreground spectrum</message>
 
   <message id="pid-search-peaks-btn">Search for Peaks</message>
   <message id="pid-tt-search-peaks-btn">Search for peaks using the automated peak finding algorithm.</message>

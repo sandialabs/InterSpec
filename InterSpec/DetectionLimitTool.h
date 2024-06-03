@@ -134,6 +134,7 @@ public:
                              Wt::WSuggestionPopup *materialSuggest );
   virtual ~DetectionLimitWindow();
   
+  DetectionLimitTool *tool();
 protected:
   DetectionLimitTool *m_tool;
 };//class DetectionLimitWindow
@@ -163,6 +164,28 @@ public:
   
   void scheduleCalcUpdate();
   
+  
+  /** Handles receiving a "deep-link" url starting with "interspec://detection-limit/...".
+   
+   TODO: NOT CURRENTLY IMPLEMENTED
+   
+   Example URIs:
+   - "interspec://detection-limit?V=1&..."
+   
+   @param query_str The query portion of the URI.  So for example, if the URI has a value of
+   "interspec://detection-limit?V=1...", then this string would be "V=1...".
+   Assumes the string passed in has alaready been url-decoded.
+   If not a valid query_str, throws exception.
+   */
+  void handleAppUrl( std::string query_str );
+  
+  /** Encodes current tool state to app-url format.  Returned string does not include the
+   "interspec://" protocol, or "detection-limit" path; so will look something like "V=1&...",
+   and it will not be url-encoded.
+   
+   TODO: NOT CURRENTLY IMPLEMENTED - returns empty string
+   */
+  std::string encodeStateToUrl() const;
   
 protected:
   virtual void render( Wt::WFlags<Wt::RenderFlag> flags );

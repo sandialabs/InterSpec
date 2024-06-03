@@ -1565,10 +1565,14 @@ void IsotopeSearchByEnergy::addUndoRedoPoint()
 {
   const WidgetState prev_state = m_state;
   m_state = guiState();
+ 
+  // Dont update state if we are in an undo/redo
+  UndoRedoManager *undoManager = m_viewer->undoRedoManager();
+  if( undoManager && !undoManager->canAddUndoRedoNow() )
+    return;
   
   if( !m_undo_redo_sentry.lock() )
   {
-    UndoRedoManager *undoManager = m_viewer->undoRedoManager();
     if( undoManager && !(m_state == prev_state) )
     {
       auto undo = [prev_state](){

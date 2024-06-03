@@ -1331,11 +1331,17 @@ DetectionLimitWindow::DetectionLimitWindow( InterSpec *viewer,
   
   resizeToFitOnScreen();
   centerWindowHeavyHanded();
-}//DetectionLimitWindow(...) constrctor
+}//DetectionLimitWindow(...) constructor
 
 
 DetectionLimitWindow::~DetectionLimitWindow()
 {
+}
+
+
+DetectionLimitTool *DetectionLimitWindow::tool()
+{
+  return m_tool;
 }
 
 
@@ -2548,6 +2554,19 @@ void DetectionLimitTool::scheduleCalcUpdate()
   m_needsUpdate = true;
   scheduleRender();
 }//void scheduleCalcUpdate()
+
+
+std::string DetectionLimitTool::encodeStateToUrl() const
+{
+  cerr << "`DetectionLimitTool::encodeStateToUrl()`: Not Implemented - returning empty string!!!" << endl;
+  return "";
+}
+
+
+void DetectionLimitTool::handleAppUrl( std::string query_str )
+{
+  throw runtime_error( "DetectionLimitTool::handleAppUrl(...) not implemented!" );
+}
 
 
 void DetectionLimitTool::doCalc()

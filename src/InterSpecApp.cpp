@@ -618,7 +618,7 @@ void InterSpecApp::setupWidgets( const bool attemptStateLoad  )
 #if( USE_QR_CODES  && (BUILD_FOR_WEB_DEPLOYMENT || BUILD_AS_LOCAL_SERVER) )
   // Allow having an "internal" path where URI data is represented as part of the URL, for
   //   example https://interspec.example.com/?_=/G0/3000/eNrV...
-  //  It probably doesnt make sense to support "drf", "specsum", "flux", and "specexport" here.
+  //  It probably doesnt make sense to support "drf", "specsum", "flux", "specexport", "detection-limit", and "simple-mda" here.
   const string &internal_path = environment().internalPath();
   if( !loadedSpecFile
      && (SpecUtils::istarts_with(internal_path, "/G0/")
