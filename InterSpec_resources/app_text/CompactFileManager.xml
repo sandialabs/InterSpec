@@ -6,7 +6,7 @@
     You may enter a range of sample numbers similar to '33-39' or '33 to 39'; 
     or CSV sample numbers like '34,39,84'.
   </message>
-  <message id='cfm-scale-factor-label'>Scale Factor:&nbsp;</message>
+  <message id='cfm-scale-factor-label'>Scale Factor: </message>
   <message id='cfm-tt-scale-factor'>
     Factor to scale the spectrum by. Entering an empty string will cause 
     spectrum to be live time normalized to foreground spectrum.

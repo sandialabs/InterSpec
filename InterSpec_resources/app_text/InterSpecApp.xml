@@ -6,5 +6,5 @@
     Therefore, its probably not worth customizing this file to each language.
   -->
   <message id="interspec">InterSpec</message>
-  <message id="app-deep-link-error">Error handling deep-link: {}</message>
+  <message id="app-deep-link-error">Error handling deep-link: {1}</message>
 </messages>

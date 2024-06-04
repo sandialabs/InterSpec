@@ -36,7 +36,7 @@
   <message id="ssd-mi-from-db">Open From Database...</message>
   <message id="ssd-mi-save-to-db">Save To Database...</message>
   <message id="ssd-mi-clone-db-entry">Clone In Database...</message>
-  <message id="ssd-to-small-for-chart">(make window taller to show &chi;<sup>2</sup>)</message>
+  <message id="ssd-to-small-for-chart">(make window taller to show χ<sup>2</sup>)</message>
   <message id="ssd-tt-chi2-switch">Show the Chi of each peak for the current model on the chart, or the relative peak area multiple between current model and observed peak.</message>
   <message id="ssd-cb-all-peaks">All Peaks</message>
   <message id="ssd-multi-iso-per-peak">Multiple nuclides contribute to peak</message>

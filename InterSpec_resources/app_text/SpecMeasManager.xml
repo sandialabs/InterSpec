@@ -177,7 +177,7 @@
   <message id="smm-vd-load-msg">
     <div>This file contained multiple "Virtual Detectors" which</div>
     <div>may be sums of multiple physical detectors, or not.</div>
-    <div>If you load all, see the <b>View</b>&rarr;<b>Detectors</b> menu to</div>
+    <div>If you load all, see the <b>View</b>→<b>Detectors</b> menu to</div>
     <div>display a subset.</div>
     {1}
     <div style="margin-top: 20px; margin-bottom: 5px; white-space: nowrap; font-weight: bold;">

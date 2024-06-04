@@ -13,7 +13,7 @@
   <message id="isbe-cb-rxnts">Reactions</message>
   <message id="isbe-min-br">Min. BR</message>
   <message id="isbe-tt-min-br">Minimum branching ratio.</message>
-  <message id="isbe-min-hl">Min. T&frac12;</message>
+  <message id="isbe-min-hl">Min. T½</message>
   <message id="isbe-tt-min-hl">
     Minimum half life of nuclides to be searched.
     <br />
@@ -47,7 +47,7 @@
   <message id="isbem-rel-br">Rel. B.R.</message>
   <message id="isbem-profile">Profile</message>
   <message id="isbem-decay">Decay</message>
-  <message id="isbem-part-hl">Parent T&frac12;</message>
+  <message id="isbem-part-hl">Parent T½</message>
   <message id="isbem-assumed-age">Assumed Age</message>
   <message id="isbem-tt-parent-nuc">Parent nuclide of the decay chain.</message>
   <message id="isbem-tt-diff">Difference between selected nuclide's energy level and searched energy level</message>
