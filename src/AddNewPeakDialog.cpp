@@ -289,80 +289,9 @@ void AddNewPeakDialog::render( Wt::WFlags<Wt::RenderFlag> flags )
 
 float AddNewPeakDialog::estimateFWHM( const float energy )
 {
-  const auto peaks = m_peakModel->peakVec();
-  const auto user_lb = std::lower_bound( begin(peaks), end(peaks), PeakDef(energy,1.0,1.0), &PeakDef::lessThanByMean );
-  const auto user_ub = (user_lb == end(peaks)) ? end(peaks) : user_lb + 1;
-  if( (user_lb != end(peaks)) && (user_ub != end(peaks)) && user_lb->gausPeak() && user_ub->gausPeak() )
-  {
-    //Linearly interpolate between peaks ... should probably upgrade to interpolating based on sqrt(energy) between them.
-    const double lower_fwhm = user_lb->fwhm();
-    const double upper_fwhm = user_ub->fwhm();
-    const double lower_energy = user_lb->mean();
-    const double upper_energy = user_ub->mean();
-    const double fraction = (energy - lower_energy) / (upper_energy - lower_energy);
-    
-    return static_cast<float>( lower_fwhm + fraction*(upper_fwhm - lower_fwhm) );
-  }
+  float fwhm = PeakSearchGuiUtils::estimate_FWHM_of_foreground( energy );
   
-  std::shared_ptr<SpecMeas> specmeas = m_viewer->measurment(SpecUtils::SpectrumType::Foreground);
-  
-  std::shared_ptr<DetectorPeakResponse> drf = specmeas ? specmeas->detector() : nullptr;
-  if( drf && drf->hasResolutionInfo() )
-    return std::min( m_maxfwhm, std::max(m_minfwhm,drf->peakResolutionFWHM(energy)) );
-  
-  
-  // Check auto-fit peaks
-  const set<int> &dispSamples = m_viewer->displayedSamples(SpecUtils::SpectrumType::Foreground);
-  auto hintPeaks = specmeas->automatedSearchPeaks( dispSamples );
-  if( hintPeaks && !hintPeaks->empty() )
-  {
-    SpecMeas::PeakDeque autopeaks( begin(*hintPeaks), end(*hintPeaks) );
-    std::sort( begin(autopeaks), end(autopeaks), &PeakDef::lessThanByMeanShrdPtr ); //just to make sure
-    
-    auto dummy_peak = make_shared<const PeakDef>(energy,1.0,1.0);
-    const auto hint_lb = std::lower_bound( begin(autopeaks), end(autopeaks), dummy_peak, &PeakDef::lessThanByMeanShrdPtr );
-    const auto hint_ub = hint_lb==end(autopeaks) ? end(autopeaks) : hint_lb + 1;
-    if( (hint_lb != end(autopeaks)) && (hint_ub != end(autopeaks)) && (*hint_lb)->gausPeak() && (*hint_ub)->gausPeak() )
-    {
-      //Linearly interpolate between peaks ... should probably upgrade to interpolating based on sqrt(energy) between them.
-      const double lower_fwhm = (*hint_lb)->fwhm();
-      const double upper_fwhm = (*hint_ub)->fwhm();
-      const double lower_energy = (*hint_lb)->mean();
-      const double upper_energy = (*hint_ub)->mean();
-      const double fraction = (energy - lower_energy) / (upper_energy - lower_energy);
-      
-      return static_cast<float>( lower_fwhm + fraction*(upper_fwhm - lower_fwhm) );
-    }
-  }//if( hintPeaks && !hintPeaks->empty() )
-  
-  
-  if( peaks.empty() )
-  {
-    try
-    {
-      const string datadir = InterSpec::staticDataDirectory();
-      string drf_dir = SpecUtils::append_path(datadir, "GenericGadrasDetectors/HPGe 40%" );
-      
-      if( !PeakFitUtils::is_high_res(m_meas) )
-        drf_dir = SpecUtils::append_path(datadir, "GenericGadrasDetectors/NaI 1x1" );
-      
-      drf = make_shared<DetectorPeakResponse>();
-      drf->fromGadrasDirectory( drf_dir );
-      
-      return std::min( m_maxfwhm, std::max(m_minfwhm,drf->peakResolutionFWHM(energy)) );
-    }catch(...)
-    {
-      if( !PeakFitUtils::is_high_res(m_meas) )
-        return std::min( m_maxfwhm, std::max(m_minfwhm,2.35482f*17.5f*sqrt(energy/661.0f)) );
-      return std::min( m_maxfwhm, std::max(m_minfwhm,2.35482f*0.67f*sqrt(energy/661.0f)) );
-    }
-  }//if( peaks.empty() )
-  
-  const PeakDef &refpeak = (user_lb!=end(peaks) ? *user_lb : (peaks.front().mean() > energy) ? peaks.front() : peaks.back());
-  const double ref_width = refpeak.gausPeak() ? refpeak.fwhm() : 0.25f*refpeak.roiWidth();
-  const double ref_energy = refpeak.gausPeak() ? refpeak.mean() : 0.5*(refpeak.upperX() + refpeak.lowerX());
-  
-  return std::min( m_maxfwhm, std::max(m_minfwhm,static_cast<float>( ref_width*sqrt(energy/ref_energy) )) );
+  return std::min( m_maxfwhm, std::max(m_minfwhm,fwhm) );
 }//float estimateFWHM( const float energy )
 
 

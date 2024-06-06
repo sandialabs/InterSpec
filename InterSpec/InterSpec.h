@@ -877,6 +877,18 @@ public:
    */
   void handleExportSpectrumFileDialogClose();
   
+#if( USE_DETECTION_LIMIT_TOOL )
+  /** If `query_str` is not empty, the handle app URI function will be called. */
+  void showDetectionLimitTool( const std::string &query_str );
+  DetectionLimitWindow *createDetectionLimitTool();
+  void handleDetectionLimitWindowClose();
+  void programmaticallyCloseDetectionLimit();
+  
+  DetectionLimitSimpleWindow *showSimpleMdaWindow();
+  void handleSimpleMdaWindowClose();
+  void programmaticallyCloseSimpleMda();
+#endif //USE_DETECTION_LIMIT_TOOL
+  
   /** Brings up a dialog asking the user to confirm starting a new session, and if they select so, will start new session. */
   void startClearSession();
   
@@ -924,22 +936,11 @@ protected:
   void createFileParameterWindow();
   
 #if( USE_DETECTION_LIMIT_TOOL )
-  /** If `query_str` is not empty, the handle app URI function will be called. */
-  void showDetectionLimitTool( const std::string &query_str );
-  DetectionLimitWindow *createDetectionLimitTool();
-  void handleDetectionLimitWindowClose();
-  void programmaticallyCloseDetectionLimit();
-  
-  DetectionLimitSimpleWindow *showSimpleMdaWindow();
-  void handleSimpleMdaWindowClose();
-  void programmaticallyCloseSimpleMda();
-  
-  
   void fitNewPeakNotInRoiFromRightClick();
   void startAddPeakFromRightClick();
   void searchOnEnergyFromRightClick();
   void startSimpleMdaFromRightClick();
-#endif
+#endif //USE_DETECTION_LIMIT_TOOL
   
   void updateGuiForPrimarySpecChange( std::set<int> display_sample_nums );
   

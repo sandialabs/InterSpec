@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- dls- is short for DetectionLimitSimple
+  -->
+  <message id="dls-currie-tab-title">Currie</message>
+  <message id="dls-decon-tab-title">Deconvolution</message>
+  <message id="dls-err-no-input">No input entered - please enter nuclide, select gamma energy, and input distance.</message>
+  <message id="dls-err-calculating">Error calculating answer: {1}</message>
+  <message id="dls-"></message>
+  <message id="dls-"></message>
+  <message id="dls-"></message>
+  <message id="dls-"></message>
+
+</messages>

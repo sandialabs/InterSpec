@@ -39,7 +39,8 @@
 }
 
 
-.DoseFieldLabel {
+.DoseCalcWidget .NuclideSourceEnter {
+  margin-top: 3px;
   margin-left: 10px;
 }
 
@@ -84,13 +85,6 @@
   text-align: center;
 }
 
-.DoseHLTxt {
-  font-size: 75%;
-  width: 6em;
-  overflow: hidden;
-  margin-left: 2px;
-  white-space: nowrap;
-}
 
 .DoseColLabel {
   text-align: center;

@@ -3,13 +3,36 @@
   flex-direction: column;
 }
 
-.DetectionLimitSimple .SimpleMdaChart
+.DetectionLimitSimple .ErrMsg {
+  display: block;
+  color: red;
+}
+
+.DetectionLimitSimple button.MdaFitFwhm.Wt-btn.with-label.LightButton
 {
+  align-self: center;
+  color: red;
+  border: 1px solid red;
+}
+
+.DetectionLimitSimple .D3SpectrumDisplayDiv,
+.DetectionLimitSimple .ErrDisplay {
   width: 100%;
   height: 200px;
   margin-bottom: 15px;
 }
 
+.DetectionLimitSimple .GeneralInput {
+  display: grid;
+}
+
+.DetectionLimitSimple .GeneralInput .NuclideSourceEnter {
+  
+}
+
 .DetectionLimitSimple .MethodTabs {
   
 }
+
+
+

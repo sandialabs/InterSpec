@@ -55,7 +55,7 @@ namespace SandiaDecay
 class NuclideSourceEnter : public Wt::WContainerWidget
 {
 public:
-  NuclideSourceEnter( const bool showToolTips, Wt::WContainerWidget *parent );
+  NuclideSourceEnter( const bool showHalfLife, const bool showToolTips, Wt::WContainerWidget *parent );
   virtual ~NuclideSourceEnter();
   
   void setNuclideText( const std::string &txt );

@@ -54,12 +54,12 @@ using namespace std;
 using namespace Wt;
 
 
-NuclideSourceEnter::NuclideSourceEnter( const bool showToolTips, Wt::WContainerWidget *parent )
+NuclideSourceEnter::NuclideSourceEnter( const bool showHalfLife, const bool showToolTips, Wt::WContainerWidget *parent )
    : WContainerWidget( parent ),
-     m_nuclideEdit( 0 ),
-     m_nuclideAgeEdit( 0 ),
-     m_halfLifeTxt( 0 ),
-     m_currentNuc( 0 ),
+     m_nuclideEdit( nullptr ),
+     m_nuclideAgeEdit( nullptr ),
+     m_halfLifeTxt( nullptr ),
+     m_currentNuc( nullptr ),
      m_changed( this )
   {
     InterSpec::instance()->useMessageResourceBundle( "NuclideSourceEnter" );
@@ -67,14 +67,7 @@ NuclideSourceEnter::NuclideSourceEnter( const bool showToolTips, Wt::WContainerW
     wApp->useStyleSheet( "InterSpec_resources/NuclideSourceEnter.css" );
     addStyleClass( "NuclideSourceEnter" );
     
-    WGridLayout *layout = new WGridLayout( this );
-//    layout->setHorizontalSpacing( 0 );
-//    layout->setVerticalSpacing( 0 );
-    layout->setContentsMargins( 0, 0, 0, 0 );
-    
-    WLabel *label = new WLabel( WString("{1}:").arg(WString::tr("Nuclide")) );
-    layout->addWidget( label, 0, 0, AlignMiddle );
-    label->addStyleClass( "DoseFieldLabel" );
+    WLabel *nucLabel = new WLabel( WString("{1}:").arg(WString::tr("Nuclide")) );
     m_nuclideEdit = new WLineEdit();
     m_nuclideEdit->setAutoComplete( false );
     m_nuclideEdit->setAttributeValue( "ondragstart", "return false" );
@@ -82,16 +75,11 @@ NuclideSourceEnter::NuclideSourceEnter( const bool showToolTips, Wt::WContainerW
     m_nuclideEdit->setAttributeValue( "autocorrect", "off" );
     m_nuclideEdit->setAttributeValue( "spellcheck", "off" );
 #endif
-    layout->addWidget( m_nuclideEdit, 0, 1 );
-    m_nuclideEdit->addStyleClass( "DoseEnterTxt" );
     m_nuclideEdit->setAttributeValue( "spellcheck", "false" );
     m_nuclideEdit->setMinimumSize( 30, WLength::Auto );
-    label->setBuddy( m_nuclideEdit );
+    nucLabel->setBuddy( m_nuclideEdit );
     
-    label = new WLabel( WString("{1}:").arg(WString::tr("Age")) );
-    WLabel *ageLabel = label;
-    layout->addWidget( label, 1, 0, AlignMiddle );
-    label->addStyleClass( "DoseFieldLabel" );
+    WLabel *ageLabel = new WLabel( WString("{1}:").arg(WString::tr("Age")) );
     m_nuclideAgeEdit = new WLineEdit();
     m_nuclideAgeEdit->setMinimumSize( 30, WLength::Auto );
     
@@ -102,15 +90,46 @@ NuclideSourceEnter::NuclideSourceEnter( const bool showToolTips, Wt::WContainerW
     m_nuclideAgeEdit->setAttributeValue( "spellcheck", "off" );
 #endif
     m_nuclideAgeEdit->setPlaceholderText( WString::tr("N/A") );
+    ageLabel->setBuddy( m_nuclideAgeEdit );
+    
+    if( showHalfLife )
+    {
+      m_halfLifeTxt = new WText();
+      m_halfLifeTxt->addStyleClass( "HLTxt" );
+    }//if( showHalfLife )
+    
+#define USE_WLAYOUT_FOR_THIS 0
+#if( USE_WLAYOUT_FOR_THIS )
+    WGridLayout *layout = new WGridLayout( this );
+    layout->setContentsMargins( 0, 0, 0, 0 );
+    layout->addWidget( nucLabel, 0, 0, AlignMiddle );
+    layout->addWidget( m_nuclideEdit, 0, 1 );
+    layout->addWidget( ageLabel, 1, 0, AlignMiddle );
     layout->addWidget( m_nuclideAgeEdit, 1, 1 );
-    label->setBuddy( m_nuclideAgeEdit );
-    
-    m_halfLifeTxt = new WText();
-    m_halfLifeTxt->addStyleClass( "DoseHLTxt" );
-    layout->addWidget( m_halfLifeTxt, 0, 2, AlignMiddle );
-    
-//    layout->setColumnStretch( 0, 1 );
+    if( m_halfLifeTxt )
+      layout->addWidget( m_halfLifeTxt, 0, 2, AlignMiddle );
     layout->setColumnStretch( 1, 1 );
+#else
+    wApp->useStyleSheet( "InterSpec_resources/GridLayoutHelpers.css" );
+    nucLabel->addStyleClass( "GridFirstRow GridFirstCol GridVertCenter" );
+    addWidget( nucLabel );
+    
+    m_nuclideEdit->addStyleClass( "GridFirstRow GridSecondCol GridStretchCol" );
+    addWidget( m_nuclideEdit );
+    
+    if( m_halfLifeTxt )
+    {
+      m_halfLifeTxt->addStyleClass( "GridFirstRow GridThirdCol GridVertCenter" );
+      addWidget( m_halfLifeTxt );
+    }//if( m_halfLifeTxt )
+    
+    ageLabel->addStyleClass( "GridSecondRow GridFirstCol GridVertCenter" );
+    addWidget( ageLabel );
+    
+    m_nuclideAgeEdit->addStyleClass( "GridSecondRow GridSecondCol GridStretchCol" );
+    addWidget( m_nuclideAgeEdit );
+#endif
+    
     
     string replacerJs, matcherJs;
     PhotopeakDelegate::EditWidget::replacerJs( replacerJs );
@@ -186,10 +205,13 @@ NuclideSourceEnter::NuclideSourceEnter( const bool showToolTips, Wt::WContainerW
 
     m_currentNuc = nuc;
     
-    WString hlstr;
-    if( nuc )
-      hlstr = PhysicalUnitsLocalized::printToBestTimeUnits( nuc->halfLife, 2, SandiaDecay::second );
-    m_halfLifeTxt->setText( WString("{1}={2}").arg(WString::tr("T1/2")).arg(hlstr) );
+    if( m_halfLifeTxt )
+    {
+      WString hlstr;
+      if( nuc )
+        hlstr = PhysicalUnitsLocalized::printToBestTimeUnits( nuc->halfLife, 2, SandiaDecay::second );
+      m_halfLifeTxt->setText( WString("{1}={2}").arg(WString::tr("T1/2")).arg(hlstr) );
+    }//if( m_halfLifeTxt )
 
     bool useCurrentAge = false;
     const bool showPromptOnly = false; //m_promptLinesOnly

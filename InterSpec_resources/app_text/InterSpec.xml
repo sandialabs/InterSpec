@@ -16,9 +16,9 @@
   <message id="Background">Background</message>
   <message id="Secondary">Secondary</message>
   <message id="second-foreground">Second Foreground</message>
-  <message id="foreground">foreground</message> <!-- For use in middle of sentence -->
-  <message id="background">background</message> <!-- For use in middle of sentence -->
-  <message id="secondary">secondary</message>   <!-- For use in middle of sentence -->
+  <message id="foreground" comment="For use in middle of sentence">foreground</message>
+  <message id="background" comment="For use in middle of sentence">background</message>
+  <message id="secondary" comment="For use in middle of sentence">secondary</message>
   <message id="Exit">Exit</message>
   <message id="show-lines">Show Lines</message>
   <message id="Default">Default</message>
@@ -137,7 +137,7 @@
   <message id="window-title-external-rid">External RID</message>
   <message id="window-title-license-credit">Disclaimers, Licenses, Credit, and Contact</message>
   <message id="window-title-help">InterSpec Help</message>
-
+  <message id="window-title-simple-mda">Simple Minimum Detectable Activity Calculation</message>
 
 
   <!-- The names of the tool-tabs at the bottom of the app -->

@@ -2626,7 +2626,6 @@ void InterSpec::handleRightClick( double energy, double counts,
         
       case kSetMeanToRefPhotopeak:
       {
-        
         const float energy = peak ? PeakSearchGuiUtils::reference_line_energy_near_peak( this, *peak ) : 0.0;
         const bool hide = (!peak || (energy < 10.0f));
         m_rightClickMenutItems[i]->setHidden( hide );
@@ -2764,27 +2763,17 @@ void InterSpec::handleRightClick( double energy, double counts,
         if( !peak )
         {
           WString target_txt;
-          
-          const SandiaDecay::Nuclide *nuc = m_referencePhotopeakLines
-                                              ? m_referencePhotopeakLines->currentlyShowingNuclide().m_nuclide
-                                              : nullptr;
-          if( nuc )
+          const tuple<const SandiaDecay::Nuclide *, double, float> near
+                                = PeakSearchGuiUtils::nuclide_reference_line_near( this, energy );
+          const SandiaDecay::Nuclide *ref_nuc = get<0>(near);
+          const float ref_energy = get<2>(near);
+            
+          if( ref_nuc && (ref_energy > 10.0) )
           {
-            double sigma = 0.025*(m_spectrum->xAxisMaximum() - m_spectrum->xAxisMinimum()); //2.5% visible energy range TODO: make something more reasonable
-            shared_ptr<DetectorPeakResponse> drf = m_dataMeasurement ? m_dataMeasurement->detector() : nullptr;
-            if( drf && drf->hasResolutionInfo() )
-              sigma = drf->peakResolutionSigma( energy );
-            
-            PeakDef tmppeak( energy, sigma, 100.0 );
-            const float ref_energy = PeakSearchGuiUtils::reference_line_energy_near_peak( this, tmppeak );
-            
-            if( ref_energy > 10.0 )
-            {
-              char buffer[64] = { '\0' };
-              snprintf( buffer, sizeof(buffer), "%s, %.1f keV", nuc->symbol.c_str(), ref_energy );
-              target_txt = WString::fromUTF8( buffer );
-            }//if( ref_energy > 10.0 )
-          }//if( nuc )
+            char buffer[64] = { '\0' };
+            snprintf( buffer, sizeof(buffer), "%s, %.1f keV", ref_nuc->symbol.c_str(), ref_energy );
+            target_txt = WString::fromUTF8( buffer );
+          }//if( ref_energy > 10.0 )
           
           if( target_txt.empty() )
             target_txt = WString("{1} keV").arg(energy_str);
@@ -8407,14 +8396,23 @@ void InterSpec::startSimpleMdaFromRightClick()
   if( !m_simpleMdaWindow )
     return;
   
-  // blah blah blah - set state
   // Check if showing ref photopeak lines for a nuclide
   // Check if near-enough reference photopeak line
   // set nuclide and energy to tool
+  bool changedInput = false;
+  if( m_referencePhotopeakLines )
+  {
+    tuple<const SandiaDecay::Nuclide *, double, float> line
+                = PeakSearchGuiUtils::nuclide_reference_line_near( this, m_rightClickEnergy );
+    
+    if( get<0>(line) && (get<2>(line) > 10.0) )
+      m_simpleMdaWindow->tool()->setNuclide( get<0>(line), get<1>(line), get<2>(line) );
+  }//if( m_referencePhotopeakLines )
+  
   
   const string currentState = m_simpleMdaWindow->tool()->encodeStateToUrl();
   
-  if( m_undo && m_undo->canAddUndoRedoNow() )
+  if( m_undo && m_undo->canAddUndoRedoNow() && (!wasShowing || changedInput) )
   {
     auto undo = [=](){
       if( wasShowing )

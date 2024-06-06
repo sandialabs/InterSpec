@@ -114,3 +114,9 @@
 {
   grid-row-end: span 2;
 }
+
+
+.GridVertCenter
+{
+  align-self: center;
+}

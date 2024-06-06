@@ -447,7 +447,7 @@ void DoseCalcWidget::init()
     m_neutronSourceCombo->addItem( "U238" );
     m_neutronSourceCombo->activated().connect( this, &DoseCalcWidget::updateResult );
     
-    m_gammaSource = new NuclideSourceEnter( showToolTips, m_gammaSourceDiv );
+    m_gammaSource = new NuclideSourceEnter( true, showToolTips, m_gammaSourceDiv );
     m_gammaSource->changed().connect( this, &DoseCalcWidget::updateResult );
   }
   
