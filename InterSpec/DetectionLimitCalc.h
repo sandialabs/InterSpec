@@ -247,6 +247,15 @@ struct CurieMdaResult
 std::ostream &print_summary( std::ostream &strm, const CurieMdaResult &result, const float w );
 
 
+/** For a given ROI lower and upper energy, returns the first to last channels (inclusive) that comprise the ROI, by rounding to nearest
+ channels.
+ 
+ Throws exception if energy ranges are outside spectrum, or invalid spectrum passed in.
+*/
+std::pair<size_t,size_t> round_roi_to_channels( std::shared_ptr<const SpecUtils::Measurement> spectrum,
+                                    const float roi_lower_energy,
+                                    const float roi_upper_energy );
+  
 
 /** Performs the simple gross-counts in regions style calculation.
  

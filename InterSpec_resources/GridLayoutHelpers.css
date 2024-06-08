@@ -110,6 +110,11 @@
   grid-column-end: span 3;
 }
 
+.GridSpanFourCol
+{
+  grid-column-end: span 4;
+}
+
 .GridSpanTwoRows
 {
   grid-row-end: span 2;

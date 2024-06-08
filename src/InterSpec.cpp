@@ -8399,20 +8399,28 @@ void InterSpec::startSimpleMdaFromRightClick()
   // Check if showing ref photopeak lines for a nuclide
   // Check if near-enough reference photopeak line
   // set nuclide and energy to tool
-  bool changedInput = false;
   if( m_referencePhotopeakLines )
   {
     tuple<const SandiaDecay::Nuclide *, double, float> line
                 = PeakSearchGuiUtils::nuclide_reference_line_near( this, m_rightClickEnergy );
     
-    if( get<0>(line) && (get<2>(line) > 10.0) )
-      m_simpleMdaWindow->tool()->setNuclide( get<0>(line), get<1>(line), get<2>(line) );
+    const SandiaDecay::Nuclide *nuc = get<0>(line);
+    const double age = get<1>(line);
+    const float energy = get<2>(line);
+    
+    if( energy > 10.0f )
+      m_simpleMdaWindow->tool()->setNuclide( nuc, age, energy );
+    else
+      m_simpleMdaWindow->tool()->setNuclide( nullptr, 0.0, m_rightClickEnergy );
+  }else
+  {
+    m_simpleMdaWindow->tool()->setNuclide( nullptr, 0.0, m_rightClickEnergy );
   }//if( m_referencePhotopeakLines )
   
   
   const string currentState = m_simpleMdaWindow->tool()->encodeStateToUrl();
   
-  if( m_undo && m_undo->canAddUndoRedoNow() && (!wasShowing || changedInput) )
+  if( m_undo && m_undo->canAddUndoRedoNow() )
   {
     auto undo = [=](){
       if( wasShowing )

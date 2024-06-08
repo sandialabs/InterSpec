@@ -37,6 +37,7 @@ class DetectorDisplay;
 class NuclideSourceEnter;
 class DetectionLimitSimple;
 class DetectorPeakResponse;
+class NuclideSourceEnterController;
 
 class CurrieLimitArea;
 class DeconvolutionLimitArea;
@@ -51,6 +52,7 @@ namespace Wt
   class WPushButton;
   class WGridLayout;
   class WButtonGroup;
+  class WRadioButton;
   class WStackedWidget;
   class WSuggestionPopup;
 }//namespace Wt
@@ -61,6 +63,12 @@ namespace SandiaDecay
   struct Transition;
 }
 
+
+namespace DetectionLimitCalc
+{
+  struct CurieMdaResult;
+  struct DeconComputeResults;
+}//namespace DetectionLimitCalc
 
 class DetectionLimitSimpleWindow : public AuxWindow
 {
@@ -98,6 +106,10 @@ public:
    */
   void setNuclide( const SandiaDecay::Nuclide *nuc, const double age, const double energy );
   
+  float photopeakEnergy() const;
+  const SandiaDecay::Nuclide *nuclide() const;
+  
+  
   /** Handles receiving a "deep-link" url starting with "interspec://simple-mda/...".
    
    Example URIs:
@@ -125,6 +137,15 @@ protected:
   
   void init();
   
+  void roiDraggedCallback( double new_roi_lower_energy,
+                   double new_roi_upper_energy,
+                   double new_roi_lower_px,
+                   double new_roi_upper_px,
+                   double original_roi_lower_energy,
+                   bool is_final_range );
+  
+  void handleMethodChanged( Wt::WRadioButton *btn );
+  
   void handleNuclideChanged();
   
   void handleGammaChanged();
@@ -139,6 +160,12 @@ protected:
   
   void handleSpectrumChanged();
   
+  void handleUserChangedRoi();
+  
+  void handleUserChangedNumSideChannel();
+  
+  void updateSpectrumDecorations();
+  
   void updateResult();
   
   /** Currently only update or not */
@@ -146,7 +173,8 @@ protected:
   {
     UpdateLimit = 0x01,
     AddUndoRedoStep = 0x02,
-    UpdateDisplayedSpectrum = 0x04
+    UpdateDisplayedSpectrum = 0x04,
+    UpdateSpectrumDecorations = 0x08
   };//enum RenderActions
   
   Wt::WFlags<RenderActions> m_renderFlags;
@@ -162,8 +190,11 @@ protected:
   Wt::WPushButton *m_fitFwhmBtn;
   
   D3SpectrumDisplayDiv *m_spectrum;
-  
-  NuclideSourceEnter *m_nuclideEnter;
+  PeakModel *m_peakModel;
+
+  Wt::WLineEdit *m_nuclideEdit;
+  Wt::WLineEdit *m_nuclideAgeEdit;
+  NuclideSourceEnterController *m_nucEnterController;
   
   Wt::WComboBox *m_photoPeakEnergy;
   
@@ -172,7 +203,7 @@ protected:
    We could instead use our own `WAbstractItemModel` to power `m_photoPeakEnergy`,
    but just doing the dumb thing for the moment.
    */
-  std::vector<double> m_photoPeakEnergies;
+  std::vector<std::pair<double,double>> m_photoPeakEnergiesAndBr;
   
   
   Wt::WLineEdit *m_distance;
@@ -182,9 +213,19 @@ protected:
   
   DetectorDisplay *m_detectorDisplay;
   
-  Wt::WTabWidget *m_methodTabs;
+  Wt::WButtonGroup *m_methodGroup;
+  Wt::WStackedWidget *m_methodStack;
   CurrieLimitArea *m_currieLimitArea;
   DeconvolutionLimitArea *m_deconLimitArea;
+  
+  
+  float m_numFwhmWide;
+  NativeFloatSpinBox *m_lowerRoi;
+  NativeFloatSpinBox *m_upperRoi;
+  Wt::WLabel *m_numSideChannelLabel;
+  Wt::WSpinBox *m_numSideChannel;
+  
+  
   
   const SandiaDecay::Nuclide *m_currentNuclide;
   double m_currentAge;
@@ -202,6 +243,11 @@ protected:
    \sa handleAppUrl
    */
   std::string m_stateUri;
+  
+  std::shared_ptr<const DetectionLimitCalc::CurieMdaInput> m_currentCurrieInput;
+  std::shared_ptr<const DetectionLimitCalc::CurieMdaResult> m_currentCurrieResults;
+  
+  std::shared_ptr<const DetectionLimitCalc::DeconComputeResults> m_currentDeconResults;
   
   friend class CurrieLimitArea;
   friend class DeconvolutionLimitArea;

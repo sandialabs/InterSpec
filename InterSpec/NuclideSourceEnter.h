@@ -45,6 +45,47 @@ namespace SandiaDecay
   struct Nuclide;
 }
 
+/** Class to implement logic of reacting to user input change of nuclide or age.
+ */
+class NuclideSourceEnterController : public Wt::WObject
+{
+public:
+  /** Takes pointers to the user display widgets - does not take ownership of them.
+   
+   Sets appropriate validators
+   */
+  NuclideSourceEnterController( Wt::WLineEdit *nuclideEdit,
+                               Wt::WLineEdit *nuclideAgeEdit,
+                               Wt::WText *halfLifeTxt,
+                               Wt::WObject *parent );
+  
+  
+  void handleNuclideUserInput();
+  
+  void handleAgeUserChange();
+  
+  double nuclideAge() const;
+  Wt::WString nuclideAgeStr() const;
+  const SandiaDecay::Nuclide *nuclide() const;
+  
+  void setNuclideText( const std::string &txt );
+  
+  void setNuclideAgeTxt( const std::string &txt );
+  
+  Wt::Signal<> &changed();
+protected:
+  Wt::WLineEdit *m_nuclideEdit;
+  Wt::WLineEdit *m_nuclideAgeEdit;
+  Wt::WText *m_halfLifeTxt;
+  
+  const SandiaDecay::Nuclide *m_currentNuc;
+  std::map<const SandiaDecay::Nuclide *,std::string> m_prevAgeTxt;
+  
+  Wt::Signal<> m_changed;
+};//class NuclideSourceEnterController
+
+
+
 /** A class to handle user-input of nuclides, and their ages.
  * 
  * Currently (20240601) only used for DoseCalc tool, and simple activity limit.
@@ -62,9 +103,7 @@ public:
   
   void setNuclideAgeTxt( const std::string &txt );
   
-  void handleNuclideUserInput();
   
-  void handleAgeUserChange();
   
   enum EquilibriumType
   {
@@ -103,10 +142,7 @@ protected:
   Wt::WLineEdit *m_nuclideAgeEdit;
   Wt::WText *m_halfLifeTxt;
   
-  const SandiaDecay::Nuclide *m_currentNuc;
-  std::map<const SandiaDecay::Nuclide *,std::string> m_prevAgeTxt;
-  
-  Wt::Signal<> m_changed;
+  NuclideSourceEnterController *m_controller;
 };//class NuclideSourceEnter
 
 

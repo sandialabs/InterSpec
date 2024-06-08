@@ -32,6 +32,7 @@
 #include <Wt/WText>
 #include <Wt/WLabel>
 #include <Wt/WTable>
+#include <Wt/WSpinBox>
 #include <Wt/WMenuItem>
 #include <Wt/WLineEdit>
 #include <Wt/WComboBox>
@@ -59,16 +60,19 @@
 #include "InterSpec/InterSpecApp.h"
 #include "InterSpec/PhysicalUnits.h"
 #include "InterSpec/WarningWidget.h"
+#include "InterSpec/ShieldingSelect.h"
 #include "InterSpec/SpecMeasManager.h"
-#include "InterSpec/NuclideSourceEnter.h"
+#include "InterSpec/UndoRedoManager.h"
 #include "InterSpec/DetectionLimitCalc.h"
+#include "InterSpec/DetectionLimitTool.h"
+#include "InterSpec/NativeFloatSpinBox.h"
+#include "InterSpec/NuclideSourceEnter.h"
+#include "InterSpec/PeakSearchGuiUtils.h"
+#include "InterSpec/DecayDataBaseServer.h"
 #include "InterSpec/D3SpectrumDisplayDiv.h"
 #include "InterSpec/DetectionLimitSimple.h"
 #include "InterSpec/DetectorPeakResponse.h"
-#include "InterSpec/ShieldingSelect.h"
-#include "InterSpec/UndoRedoManager.h"
-#include "InterSpec/NativeFloatSpinBox.h"
-#include "InterSpec/DecayDataBaseServer.h"
+#include "InterSpec/GammaInteractionCalc.h"
 
 #if( USE_QR_CODES )
 #include <Wt/Utils>
@@ -79,9 +83,23 @@
 using namespace Wt;
 using namespace std;
 
+namespace
+{
+  bool use_curie_units()
+  {
+    InterSpec *interspec = InterSpec::instance();
+    if( !interspec )
+      return true;
+    
+    return !InterSpecUser::preferenceValue<bool>( "DisplayBecquerel", interspec );
+  }//bool use_curie_units()
+  
+}//namespace
+
 
 class CurrieLimitArea : public Wt::WContainerWidget
 {
+public:
   DetectionLimitSimple *m_calcTool;
   
 public:
@@ -90,17 +108,29 @@ public:
   m_calcTool( calcTool )
   {
     assert( m_calcTool );
+    addStyleClass( "CurrieLimitArea" );
     
-    new WText( "Currie Limit Area", this );
-    
-    // ROI Lower
-    // ROI Upper
-    // Num Side Channel
     
     // Result area
-  }
+
+  }//CurrieLimitArea constructor
   
-  
+  void handleUserRequestedMoreInfoDialog()
+  {
+    /*
+    const DetectionLimitCalc::CurieMdaInput input = currieInput();
+    const DetectionLimitCalc::CurieMdaResult result = DetectionLimitCalc::currie_mda_calc( input );
+    
+    DetectionLimitTool::createCurrieRoiMoreInfoWindow( const SandiaDecay::Nuclide *const nuclide,
+     const DetectionLimitCalc::CurieMdaResult &result,
+     std::shared_ptr<const DetectorPeakResponse> drf,
+     DetectionLimitTool::LimitType limitType,
+               const double distance,
+               const bool do_air_attenuation,
+               const double branch_ratio,
+               const double counts_per_bq_into_4pi );
+     */
+  }//void handleUserRequestedMoreInfoDialog()
 };//class CurrieLimitArea
 
 
@@ -117,9 +147,8 @@ public:
     
     new WText( "Deconvolution Limit Area", this );
   }
-  
-
 };//class DeconvolutionLimitArea
+
 
 
 DetectionLimitSimpleWindow::DetectionLimitSimpleWindow( MaterialDB *materialDB,
@@ -208,23 +237,35 @@ DetectionLimitSimple::DetectionLimitSimple( MaterialDB *materialDB,
   m_materialSuggest( materialSuggestion ),
   m_materialDB( materialDB ),
   m_spectrum( nullptr ),
+  m_peakModel( nullptr ),
   m_chartErrMsgStack( nullptr ),
   m_errMsg( nullptr ),
   m_fitFwhmBtn( nullptr ),
-  m_nuclideEnter( nullptr ),
+  m_nuclideEdit( nullptr ),
+  m_nuclideAgeEdit( nullptr ),
+  m_nucEnterController( nullptr ),
   m_photoPeakEnergy( nullptr ),
-  m_photoPeakEnergies{},
+  m_photoPeakEnergiesAndBr{},
   m_distance( nullptr ),
   m_confidenceLevel( nullptr ),
   m_detectorDisplay( nullptr ),
-  m_methodTabs( nullptr ),
+  m_methodGroup( nullptr ),
+  m_methodStack( nullptr ),
   m_currieLimitArea( nullptr ),
   m_deconLimitArea( nullptr ),
+  m_numFwhmWide( 2.5f ),
+  m_lowerRoi( nullptr ),
+  m_upperRoi( nullptr ),
+  m_numSideChannelLabel( nullptr ),
+  m_numSideChannel( nullptr ),
   m_currentNuclide( nullptr ),
   m_currentAge( 0.0 ),
   m_currentEnergy( 0.0 ),
   m_prevDistance{},
-  m_stateUri()
+  m_stateUri(),
+  m_currentCurrieInput( nullptr ),
+  m_currentCurrieResults( nullptr ),
+  m_currentDeconResults( nullptr )
 {
   init();
 }//DoseCalcWidget constructor
@@ -266,6 +307,8 @@ void DetectionLimitSimple::init()
   m_spectrum->disableLegend();
   m_spectrum->setShowPeakLabel( SpectrumChart::PeakLabels::kShowPeakUserLabel, true );
   
+  m_spectrum->existingRoiEdgeDragUpdate().connect( boost::bind( &DetectionLimitSimple::roiDraggedCallback, this, _1, _2, _3, _4, _5, _6 ) );
+  
   m_chartErrMsgStack->setCurrentIndex( 0 );
   
   m_viewer->displayedSpectrumChanged().connect( this, &DetectionLimitSimple::handleSpectrumChanged );
@@ -274,12 +317,43 @@ void DetectionLimitSimple::init()
   //m_spectrum->setData( hist, true );
   //m_spectrum->setXAxisRange( lower_lower_energy - 0.5*dx, upper_upper_energy + 0.5*dx );
   
+  m_peakModel = new PeakModel( m_spectrum );
+  m_peakModel->setNoSpecMeasBacking();
+  m_spectrum->setPeakModel( m_peakModel );
+  
   WContainerWidget *generalInput = new WContainerWidget( this );
   generalInput->addStyleClass( "GeneralInput" );
   
-  m_nuclideEnter = new NuclideSourceEnter( false, showToolTips, generalInput );
-  m_nuclideEnter->changed().connect( this, &DetectionLimitSimple::handleNuclideChanged );
-  m_nuclideEnter->addStyleClass( "GridFirstCol GridFirstRow GridSpanTwoCol GridSpanTwoRows" );
+  
+  WLabel *nucLabel = new WLabel( WString("{1}:").arg(WString::tr("Nuclide")), generalInput );
+  m_nuclideEdit = new WLineEdit( generalInput );
+  
+  m_nuclideEdit->setMinimumSize( 30, WLength::Auto );
+  nucLabel->setBuddy( m_nuclideEdit );
+  
+  WLabel *ageLabel = new WLabel( WString("{1}:").arg(WString::tr("Age")), generalInput );
+  m_nuclideAgeEdit = new WLineEdit( generalInput );
+  m_nuclideAgeEdit->setMinimumSize( 30, WLength::Auto );
+  m_nuclideAgeEdit->setPlaceholderText( WString::tr("N/A") );
+  ageLabel->setBuddy( m_nuclideAgeEdit );
+  
+  nucLabel->addStyleClass( "GridFirstCol GridFirstRow GridVertCenter" );
+  m_nuclideEdit->addStyleClass( "GridSecondCol GridFirstRow" );
+  ageLabel->addStyleClass( "GridFirstCol GridSecondRow GridVertCenter" );
+  m_nuclideAgeEdit->addStyleClass( "GridSecondCol GridSecondRow" );
+  
+  m_nucEnterController = new NuclideSourceEnterController( m_nuclideEdit, m_nuclideAgeEdit,
+                                                          nullptr, this );
+  
+  m_nucEnterController->changed().connect( this, &DetectionLimitSimple::handleNuclideChanged );
+  
+  m_viewer->useMessageResourceBundle( "NuclideSourceEnter" );
+  HelpSystem::attachToolTipOn( {nucLabel, m_nuclideEdit},
+                              WString::tr("dcw-tt-nuc-edit"), showToolTips );
+  
+  HelpSystem::attachToolTipOn( {ageLabel, m_nuclideAgeEdit},
+                              WString::tr("dcw-tt-age-edit"), showToolTips );
+  
   
   WLabel *gammaLabel = new WLabel( WString::tr("Gamma"), generalInput );
   gammaLabel->addStyleClass( "GridFirstCol GridThirdRow GridVertCenter" );
@@ -290,8 +364,9 @@ void DetectionLimitSimple::init()
   m_photoPeakEnergy->activated().connect( this, &DetectionLimitSimple::handleGammaChanged );
   m_photoPeakEnergy->addStyleClass( "GridSecondCol GridThirdRow GridVertCenter" );
   
-  m_methodTabs = new WTabWidget( this );
-  m_methodTabs->addStyleClass( "MethodTabs" );
+  // TODO: Add FWHM input.  Add text for DRF default, or the button to fit from data.
+  //       when user changes this value - dont change ROI limits, just recalc deconv, and redraw either decon or Currie
+  
   
   // Add Distance input
   WLabel *distanceLabel = new WLabel( WString::tr("Distance"), generalInput );
@@ -346,23 +421,189 @@ void DetectionLimitSimple::init()
   // Add DRF select
   SpectraFileModel *specFileModel = m_viewer->fileManager()->model();
   m_detectorDisplay = new DetectorDisplay( m_viewer, specFileModel, generalInput );
-  m_detectorDisplay->addStyleClass( "GridThirdCol GridThirdRow GridSpanTwoCol GridSpanTwoRows" );
+  m_detectorDisplay->addStyleClass( "GridThirdCol GridThirdRow GridSpanTwoCol GridSpanTwoRows GridVertCenter GridJustifyCenter" );
   m_viewer->detectorChanged().connect( boost::bind( &DetectionLimitSimple::handleDetectorChanged, this, boost::placeholders::_1 ) );
   m_viewer->detectorModified().connect( boost::bind( &DetectionLimitSimple::handleDetectorChanged, this, boost::placeholders::_1 ) );
+  
+  
+  
+  WLabel *lowerRoiLabel = new WLabel( "ROI Lower:", generalInput );
+  lowerRoiLabel->addStyleClass( "GridFirstCol GridFourthRow GridVertCenter" );
+  
+  m_lowerRoi = new NativeFloatSpinBox( generalInput );
+  m_lowerRoi->setSpinnerHidden();
+  lowerRoiLabel->setBuddy( m_lowerRoi );
+  m_lowerRoi->addStyleClass( "GridSecondCol GridFourthRow" );
+  
+  WLabel *upperRoiLabel = new WLabel( "ROI Upper:", generalInput );
+  upperRoiLabel->addStyleClass( "GridFirstCol GridFifthRow GridVertCenter" );
+  
+  m_upperRoi = new NativeFloatSpinBox( generalInput );
+  m_upperRoi->setSpinnerHidden();
+  upperRoiLabel->setBuddy( m_upperRoi );
+  m_upperRoi->addStyleClass( "GridSecondCol GridFifthRow" );
+  
+  m_lowerRoi->valueChanged().connect( this, &DetectionLimitSimple::handleUserChangedRoi );
+  m_upperRoi->valueChanged().connect( this, &DetectionLimitSimple::handleUserChangedRoi );
+  
+  // Num Side Channel
+  m_numSideChannelLabel = new WLabel( "Num Side Chan.:", generalInput );
+  m_numSideChannelLabel->addStyleClass( "GridThirdCol GridFifthRow GridVertCenter" );
+  m_numSideChannel = new WSpinBox( generalInput );
+  m_numSideChannel->addStyleClass( "GridFourthCol GridFifthRow" );
+  m_numSideChannel->setRange( 1, 64 );
+  m_numSideChannel->setValue( 4 );
+  m_numSideChannelLabel->setBuddy( m_numSideChannel );
+  m_numSideChannel->valueChanged().connect( this, &DetectionLimitSimple::handleUserChangedNumSideChannel );
+  
+  
+  
+  WContainerWidget *container = new WContainerWidget( generalInput );
+  container->addStyleClass( "MethodSelect GridFirstCol GridSixthRow GridSpanFourCol" );
+  
+  WLabel *methodLabel = new WLabel( "Calculation Method:", container);
+  
+  m_methodGroup = new WButtonGroup( container );
+  WRadioButton *currieBtn = new Wt::WRadioButton( WString::tr("dls-currie-tab-title"), container );
+  m_methodGroup->addButton(currieBtn, 0);
+  
+  WRadioButton *deconvBtn = new Wt::WRadioButton( WString::tr("dls-decon-tab-title"), container);
+  m_methodGroup->addButton(deconvBtn, 1);
+  m_methodGroup->setCheckedButton( currieBtn );
+  
+  m_methodGroup->checkedChanged().connect( boost::bind(&DetectionLimitSimple::handleMethodChanged, this, boost::placeholders::_1) );
   
   
   m_currieLimitArea = new CurrieLimitArea( this );
   m_deconLimitArea = new DeconvolutionLimitArea( this );
   
-  m_methodTabs->addTab( m_currieLimitArea, WString::tr("dls-currie-tab-title") );
-  m_methodTabs->addTab( m_deconLimitArea, WString::tr("dls-decon-tab-title") );
   
-  m_methodTabs->setCurrentIndex( 0 );
+  
+  
+  //m_methodTabs = new WTabWidget( this );
+  //m_methodTabs->addStyleClass( "MethodTabs" );
+  //m_methodTabs->addTab( m_currieLimitArea, WString::tr("dls-currie-tab-title") );
+  //m_methodTabs->addTab( m_deconLimitArea, WString::tr("dls-decon-tab-title") );
+  //m_methodTabs->setCurrentIndex( 0 );
+  
+  m_methodStack = new WStackedWidget( this );
+  m_methodStack->addStyleClass( "CalcMethodStack" );
+  
+  m_methodStack->addWidget( m_currieLimitArea );
+  m_methodStack->addWidget( m_deconLimitArea );
+  
+  m_methodStack->setCurrentIndex( 0 );
+  
   
   m_renderFlags |= DetectionLimitSimple::RenderActions::UpdateDisplayedSpectrum;
   m_renderFlags |= DetectionLimitSimple::RenderActions::UpdateLimit;
   scheduleRender();
 }//void DetectionLimitSimple::init()
+
+
+
+void DetectionLimitSimple::roiDraggedCallback( double new_roi_lower_energy,
+                 double new_roi_upper_energy,
+                 double new_roi_lower_px,
+                 double new_roi_upper_px,
+                 double original_roi_lower_energy,
+                 bool is_final_range )
+{
+  if( !is_final_range )
+    return;
+  
+  if( new_roi_upper_energy < new_roi_lower_energy )
+    std::swap( new_roi_upper_energy, new_roi_lower_energy );
+  
+  if( m_currentNuclide
+     && ((m_currentEnergy < new_roi_lower_energy) || (m_currentEnergy > new_roi_upper_energy)) )
+  {
+    passMessage( "Changing the ROI excluded primary gamma - not changing", WarningWidget::WarningMsgHigh );
+    return;
+  }
+  
+  m_lowerRoi->setValue( new_roi_lower_energy );
+  m_upperRoi->setValue( new_roi_upper_energy );
+}//void roiDraggedCallback(...)
+
+
+void DetectionLimitSimple::handleUserChangedRoi()
+{
+  // Round to nearest channel edge, swap values if necessary, and make sure stratles the current mean
+  
+  bool wasValid = true;
+  float lower_val = m_lowerRoi->value();
+  float upper_val = m_upperRoi->value();
+  
+  if( lower_val > upper_val )
+  {
+    wasValid = false;
+    std::swap( lower_val, upper_val );
+  }
+  
+  const float meanEnergy = photopeakEnergy();
+  const float fwhm = PeakSearchGuiUtils::estimate_FWHM_of_foreground( meanEnergy );
+  
+  if( meanEnergy > 10.0f )
+  {
+    if( lower_val >= meanEnergy )
+    {
+      wasValid = false;
+      lower_val = meanEnergy - 1.25f*std::max(1.0f,fwhm);
+    }
+    
+    if( upper_val <= meanEnergy )
+    {
+      wasValid = false;
+      upper_val = meanEnergy + 1.25f*std::max(1.0f,fwhm);
+    }
+  }//if( meanEnergy > 10.0f )
+  
+  if( wasValid && (fwhm > 0.1) && (meanEnergy > 10.0f) )
+    m_numFwhmWide = (upper_val - lower_val) / fwhm;
+  
+  const shared_ptr<const SpecUtils::Measurement> hist
+                  = m_viewer->displayedHistogram(SpecUtils::SpectrumType::Foreground);
+  
+  shared_ptr<const SpecUtils::EnergyCalibration> cal = hist ? hist->energy_calibration() : nullptr;
+  
+  if( cal && cal->valid() && (cal->num_channels() > 7) )
+  {
+    try
+    {
+      const float lower_channel = std::round( cal->channel_for_energy( lower_val ) );
+      m_lowerRoi->setValue( cal->energy_for_channel( static_cast<int>(lower_channel) ) );
+    }catch( std::exception &e )
+    {
+      cerr << "Error rounding lower ROI energy: " << e.what() << endl;
+      assert( 0 );
+    }
+    
+    try
+    {
+      const float upper_channel = std::round( cal->channel_for_energy( upper_val ) );
+      m_upperRoi->setValue( cal->energy_for_channel( static_cast<int>(upper_channel) ) );
+    }catch( std::exception &e )
+    {
+      cerr << "Error rounding upper ROI energy: " << e.what() << endl;
+      assert( 0 );
+    }
+  }//if( valid energy cal )
+  
+  m_renderFlags |= DetectionLimitSimple::RenderActions::UpdateLimit;
+  m_renderFlags |= DetectionLimitSimple::RenderActions::AddUndoRedoStep;
+  m_renderFlags |= DetectionLimitSimple::RenderActions::UpdateSpectrumDecorations;
+  scheduleRender();
+}//handleUserChangedRoi()
+
+
+void DetectionLimitSimple::handleUserChangedNumSideChannel()
+{
+  m_renderFlags |= DetectionLimitSimple::RenderActions::UpdateLimit;
+  m_renderFlags |= DetectionLimitSimple::RenderActions::AddUndoRedoStep;
+  m_renderFlags |= DetectionLimitSimple::RenderActions::UpdateSpectrumDecorations;
+  scheduleRender();
+}//void handleUserChangedNumSideChannel()
 
 
 DetectionLimitSimple::~DetectionLimitSimple()
@@ -371,20 +612,40 @@ DetectionLimitSimple::~DetectionLimitSimple()
 }//~DoseCalcWidget()
 
 
+void DetectionLimitSimple::handleMethodChanged( Wt::WRadioButton *btn )
+{
+  m_methodStack->setCurrentIndex( m_methodGroup->checkedId() );
+ 
+  const bool currieMethod = (m_methodGroup->checkedId() == 0);
+  
+  m_numSideChannelLabel->setHidden( !currieMethod );
+  m_numSideChannel->setHidden( !currieMethod );
+  
+  
+  m_renderFlags |= DetectionLimitSimple::RenderActions::UpdateLimit;
+  m_renderFlags |= DetectionLimitSimple::RenderActions::AddUndoRedoStep;
+  m_renderFlags |= DetectionLimitSimple::RenderActions::UpdateSpectrumDecorations;
+  scheduleRender();
+}//void handleMethodChanged( Wt::WRadioButton *btn )
+
+
 void DetectionLimitSimple::setNuclide( const SandiaDecay::Nuclide *nuc, 
                                       const double age,
                                       const double energy )
 {
-  m_nuclideEnter->setNuclideText( nuc ? nuc->symbol : string() );
-  if( age >= 0.0 )
+  if( energy > 10.0 )
+    m_currentEnergy = energy;
+  
+  m_nucEnterController->setNuclideText( nuc ? nuc->symbol : string() );
+  m_currentNuclide = nuc;
+  
+  if( (age >= 0.0) && !m_nucEnterController->nuclideAgeStr().empty() )
   {
-    const string agestr = PhysicalUnits::printToBestTimeUnits( age, 4 );
-    m_nuclideEnter->setNuclideAgeTxt( agestr );
+    const string agestr = PhysicalUnits::printToBestTimeUnits( age, 5 );
+    m_nucEnterController->setNuclideAgeTxt( agestr );
   }//if( age > 0.0 )
   
-  m_currentEnergy = energy;
-  
-  handleNuclideChanged();
+  handleGammaChanged();
   
   m_renderFlags |= DetectionLimitSimple::RenderActions::UpdateLimit;
   m_renderFlags |= DetectionLimitSimple::RenderActions::AddUndoRedoStep;
@@ -396,6 +657,25 @@ void DetectionLimitSimple::setNuclide( const SandiaDecay::Nuclide *nuc,
   if( undoRedo && !undoRedo->canAddUndoRedoNow() )
     m_renderFlags.clear( DetectionLimitSimple::RenderActions::AddUndoRedoStep );
 }//void setNuclide( const SandiaDecay::Nuclide *nuc, const double age, const double energy )
+
+
+float DetectionLimitSimple::photopeakEnergy() const
+{
+  if( !m_nucEnterController->nuclide() )
+    return 0.0f;
+  
+  const int energyIndex = m_photoPeakEnergy->currentIndex();
+  if( (energyIndex < 0) || (energyIndex >= static_cast<int>(m_photoPeakEnergiesAndBr.size())) )
+    return 0.0f;
+  
+  return static_cast<float>( m_photoPeakEnergiesAndBr[energyIndex].first );
+}//float energy() const
+
+
+const SandiaDecay::Nuclide *DetectionLimitSimple::nuclide() const
+{
+  return m_nucEnterController->nuclide();
+}//const SandiaDecay::Nuclide *nuclide()
 
 
 void DetectionLimitSimple::render( Wt::WFlags<Wt::RenderFlag> flags )
@@ -437,11 +717,20 @@ void DetectionLimitSimple::render( Wt::WFlags<Wt::RenderFlag> flags )
       
       m_stateUri = std::move(uri);
     }//if( undoRedo )
-    
   }//if( m_renderFlags.testFlag(RenderActions::AddUndoRedoStep) )
+  
   
   if( m_renderFlags.testFlag(RenderActions::UpdateLimit) )
     updateResult();
+  
+  if( m_renderFlags.testFlag(RenderActions::UpdateSpectrumDecorations)
+     || m_renderFlags.testFlag(RenderActions::UpdateDisplayedSpectrum) 
+     || m_renderFlags.testFlag(RenderActions::UpdateLimit) )
+  {
+    // Needs to be called after updating results
+    updateSpectrumDecorations();
+  }//if( update displayed spectrum )
+  
   
   m_renderFlags = 0;
   
@@ -454,8 +743,8 @@ void DetectionLimitSimple::render( Wt::WFlags<Wt::RenderFlag> flags )
 
 void DetectionLimitSimple::handleNuclideChanged()
 {
-  const SandiaDecay::Nuclide *nuc = m_nuclideEnter->nuclide();
-  const double age = nuc ? m_nuclideEnter->nuclideAge() : 0.0;
+  const SandiaDecay::Nuclide *nuc = m_nucEnterController->nuclide();
+  const double age = nuc ? m_nucEnterController->nuclideAge() : 0.0;
   
   const bool nucChanged = (nuc != m_currentNuclide);
   const bool ageChanged = (m_currentAge != age);
@@ -471,7 +760,7 @@ void DetectionLimitSimple::handleNuclideChanged()
   scheduleRender();
   
   m_photoPeakEnergy->clear();
-  m_photoPeakEnergies.clear();
+  m_photoPeakEnergiesAndBr.clear();
   
   m_currentNuclide = nuc;
   m_currentAge = age;
@@ -494,19 +783,20 @@ void DetectionLimitSimple::handleNuclideChanged()
   double energyToSelect = m_currentEnergy;
   
   // If we dont currently have an energy selected, pick the largest yield energy
-  if( energyToSelect < 10.0 )
+  
+  double maxYield = 0.0, maxYieldEnergy = 0.0;
+  for( const SandiaDecay::EnergyRatePair &erp : photons )
   {
-    double maxYield = 0.0;
-    for( const SandiaDecay::EnergyRatePair &erp : photons )
+    // Only consider energies above 10 keV
+    if( (erp.energy > 10.0) && (erp.numPerSecond >= maxYield) )
     {
-      // Only consider energies above 10 keV
-      if( (erp.energy > 10.0) && (erp.numPerSecond >= maxYield) )
-      {
-        maxYield = erp.numPerSecond;
+      maxYield = erp.numPerSecond;
+      maxYieldEnergy = erp.energy;
+      if( energyToSelect < 10.0 )
         energyToSelect = erp.energy;
-      }
-    }//for( const SandiaDecay::EnergyRatePair &erp : photons )
-  }//if( energyToSelect < 10.0 )
+    }
+  }//for( const SandiaDecay::EnergyRatePair &erp : photons )
+  
   
   
   shared_ptr<SpecMeas> meas = m_viewer->measurment(SpecUtils::SpectrumType::Foreground);
@@ -516,7 +806,7 @@ void DetectionLimitSimple::handleNuclideChanged()
   //  selecting the energy to choose.  If we haven't changed nuclide, then we'll use
   //  a negative resolution sigma, which will cause us to select the nearest energy,
   //  without considering yield (i.e. if nuclide is same, then don't change energy).
-  const double drfSigma = (det && (energyToSelect > 10.0) && nucChanged)
+  const double drfSigma = (det && det->hasResolutionInfo() && (energyToSelect > 10.0) && nucChanged)
                           ? det->peakResolutionSigma( static_cast<float>(energyToSelect) )
                           : -1.0;
   
@@ -533,7 +823,7 @@ void DetectionLimitSimple::handleNuclideChanged()
     energyToSelect = 510.998910;
   }else
   {
-    assert( 0 );
+    energyToSelect = maxYieldEnergy;
   }
   
   
@@ -563,7 +853,7 @@ void DetectionLimitSimple::handleNuclideChanged()
       snprintf( text, sizeof(text), "%.4f keV I=%.1e", energy, intensity );
     }//if( i < xrays.size() )
     
-    m_photoPeakEnergies.push_back( energy );
+    m_photoPeakEnergiesAndBr.push_back( make_pair(energy, intensity) );
     m_photoPeakEnergy->addItem( text );
   }//for each( const double energy, energies )
   
@@ -571,6 +861,8 @@ void DetectionLimitSimple::handleNuclideChanged()
   // we wont change `m_currentEnergy`, since the user might go back to their previous nuclide
   
   m_photoPeakEnergy->setCurrentIndex( currentIndex );
+  
+  handleGammaChanged();
   
   m_renderFlags |= DetectionLimitSimple::RenderActions::UpdateLimit;
   m_renderFlags |= DetectionLimitSimple::RenderActions::AddUndoRedoStep;
@@ -580,26 +872,36 @@ void DetectionLimitSimple::handleNuclideChanged()
 
 void DetectionLimitSimple::handleGammaChanged()
 {
-  if( !m_currentNuclide )
-    return;
-  
-  const int gamma_index = m_photoPeakEnergy->currentIndex();
-  
-  assert( gamma_index < static_cast<int>(m_photoPeakEnergies.size()) );
-  
-  if( (gamma_index < 0) || (gamma_index >= static_cast<int>(m_photoPeakEnergies.size())) )
+  if( m_currentNuclide )
   {
-    m_currentEnergy = m_photoPeakEnergies[gamma_index];
-  }else
+    const int gamma_index = m_photoPeakEnergy->currentIndex();
+    assert( gamma_index < static_cast<int>(m_photoPeakEnergiesAndBr.size()) );
+    
+    if(  (gamma_index >= 0) && (gamma_index < static_cast<int>(m_photoPeakEnergiesAndBr.size())) )
+    {
+      m_currentEnergy = m_photoPeakEnergiesAndBr[gamma_index].first;
+    }else
+    {
+      //m_currentEnergy = 0.0;
+    }
+  }//if( m_currentNuclide )
+  
+  if( m_currentEnergy > 10.0f )
   {
-    m_currentEnergy = 0.0;
-  }
+    const float fwhm = std::max( 0.1f, PeakSearchGuiUtils::estimate_FWHM_of_foreground(m_currentEnergy) );
+    
+    m_lowerRoi->setValue( m_currentEnergy - 0.5*m_numFwhmWide*fwhm );
+    m_upperRoi->setValue( m_currentEnergy + 0.5*m_numFwhmWide*fwhm );
+    
+    handleUserChangedRoi();
+  }//if( energy > 10.0f )
   
   //const string current_txt = m_photoPeakEnergy->currentText().toUTF8()
   //const bool is_xray = (current_txt.find("xray") != string::npos);
   
   m_renderFlags |= DetectionLimitSimple::RenderActions::UpdateLimit;
   m_renderFlags |= DetectionLimitSimple::RenderActions::AddUndoRedoStep;
+  m_renderFlags |= DetectionLimitSimple::RenderActions::UpdateSpectrumDecorations;
   scheduleRender();
 }//void handleGammaChanged()
 
@@ -667,54 +969,105 @@ void DetectionLimitSimple::handleFitFwhmRequested()
 
 void DetectionLimitSimple::handleSpectrumChanged()
 {
-  m_renderFlags |= DetectionLimitSimple::RenderActions::UpdateDisplayedSpectrum;
   m_renderFlags |= DetectionLimitSimple::RenderActions::UpdateLimit;
+  m_renderFlags |= DetectionLimitSimple::RenderActions::UpdateDisplayedSpectrum;
+  m_renderFlags |= DetectionLimitSimple::RenderActions::UpdateSpectrumDecorations;
   scheduleRender();
 }//void handleSpectrumChanged()
+
+
+
+void DetectionLimitSimple::updateSpectrumDecorations()
+{
+  shared_ptr<const ColorTheme> theme = m_viewer->getColorTheme();
+  assert( theme );
+  
+  const shared_ptr<const DetectorPeakResponse> drf = m_detectorDisplay->detector();
+  
+  m_peakModel->setPeaks( vector<shared_ptr<const PeakDef>>{} );
+  m_spectrum->removeAllDecorativeHighlightRegions();
+  
+  if( m_methodStack->currentIndex() == 0 )
+  {
+    if( m_currentCurrieInput )
+    {
+      double gammas_per_bq = -1.0, distance = -1.0, br = -1;
+      
+      try
+      {
+        distance = PhysicalUnits::stringToDistance( m_distance->text().toUTF8() );
+      }catch( std::exception & )
+      {
+      }
+      
+      const int energyIndex = m_photoPeakEnergy->currentIndex();
+      if( (energyIndex >= 0) && (energyIndex < static_cast<int>(m_photoPeakEnergiesAndBr.size())) )
+      {
+        // TODO: sum nearby gammas - maybe something like within 0.5 FWHM and within the ROI... something to think about
+        br = m_photoPeakEnergiesAndBr[energyIndex].second;
+      }
+        
+      
+      if( drf && drf->isValid() && (distance >= 0.0) && (br > 0) && m_currentCurrieInput->spectrum )
+      {
+        const bool fixed_geom = drf->isFixedGeometry();
+        const float energy = m_currentCurrieInput->gamma_energy;
+        const double det_eff = fixed_geom ? drf->intrinsicEfficiency(energy)
+                                          : drf->efficiency(energy, distance);
+        
+        boost::function<double(float)> att_coef_fcn, air_atten_fcn;
+        if( distance > 0.0 )
+          air_atten_fcn = boost::bind( &GammaInteractionCalc::transmission_coefficient_air, _1, distance );
+        
+        const double shield_transmission = att_coef_fcn.empty() ? 1.0 : exp( -1.0*att_coef_fcn(energy) );
+        const double air_transmission = air_atten_fcn.empty() ? 1.0 : exp( -1.0*air_atten_fcn(energy) );
+        const double counts_per_bq_into_4pi = br * shield_transmission * m_currentCurrieInput->spectrum->live_time();
+        const double counts_per_bq_into_4pi_with_air = air_transmission * counts_per_bq_into_4pi;
+        const double counts_4pi = fixed_geom ? counts_per_bq_into_4pi : counts_per_bq_into_4pi_with_air;
+
+        gammas_per_bq = counts_4pi * det_eff;
+      }//if( drf )
+      
+      const DetectionLimitTool::LimitType limitType = DetectionLimitTool::LimitType::Activity;
+      
+      DetectionLimitTool::update_spectrum_for_currie_result( m_spectrum, m_peakModel,
+              *m_currentCurrieInput, m_currentCurrieResults.get(), drf, limitType, gammas_per_bq );
+    }//if( m_currentCurrieInput )
+  }else
+  {
+    if( !m_currentDeconResults )
+    {
+      
+    }else
+    {
+      
+    }//if( no valid result
+  }//if( currently doing Currie-style limit ) / else
+  
+}//void updateSpectrumDecorations()
 
 
 void DetectionLimitSimple::updateResult()
 {
   //m_errMsg->setText( WString::tr("dls-err-no-input") );
   m_errMsg->setText( "" );
+  m_currentDeconResults.reset();
+  m_currentCurrieResults.reset();
   
   try
   {
     m_fitFwhmBtn->hide();
     
-    if( m_distance->validate() != WValidator::State::Valid )
-      throw runtime_error( "Invalid distance" );
-    
     std::shared_ptr<const SpecUtils::Measurement> hist = m_viewer->displayedHistogram(SpecUtils::SpectrumType::Foreground);
     if( !hist || (hist->num_gamma_channels() < 7) )
       throw runtime_error( "No foreground spectrum loaded." );
     
-    const SandiaDecay::Nuclide *nuc = m_nuclideEnter->nuclide();
-    if( !nuc )
-      throw runtime_error( "Please enter a nuclide." );
-    
+    double energy = 0.0;
     const int energyIndex = m_photoPeakEnergy->currentIndex();
-    if( (energyIndex < 0) || (energyIndex >= static_cast<int>(m_photoPeakEnergies.size())) )
-      throw runtime_error( "Please select gamma energy." );
-    
-    const double energy = m_photoPeakEnergies[energyIndex];
-    
-    
-    const shared_ptr<const DetectorPeakResponse> drf = m_detectorDisplay->detector();
-    
-    double distance = 0.0;
-    
-    try
-    {
-      const string dist_str = m_distance->text().toUTF8();
-      distance = PhysicalUnits::stringToDistance( dist_str );
-    }catch( std::exception & )
-    {
-      throw runtime_error( "invalid distance." );
-    }
-    
-    if( distance <= 0.0 )
-      throw runtime_error( "Distance cant be zero or negative." );
+    if( (energyIndex < 0) || (energyIndex >= static_cast<int>(m_photoPeakEnergiesAndBr.size())) )
+      energy = 0.5*(m_lowerRoi->value() + m_upperRoi->value());
+    else
+      energy = m_photoPeakEnergiesAndBr[energyIndex].first;
     
     const int clIndex = m_confidenceLevel->currentIndex();
     if( (clIndex < 0) || (clIndex >= ConfidenceLevel::NumConfidenceLevel) )
@@ -732,25 +1085,29 @@ void DetectionLimitSimple::updateResult()
       case NumConfidenceLevel: assert(0); break;
     }//switch( confidence )
     
-    
-    if( m_methodTabs->currentIndex() == 0 )
+    if( m_methodStack->currentIndex() == 0 )
     {
-      throw runtime_error( "Currie-style calculations not implemented yet" );
-      
       // We need to calculate Currie-style limit
-      DetectionLimitCalc::CurieMdaInput input;
-      input.spectrum = hist;
-      input.gamma_energy = energy;
-      //input.roi_lower_energy = ...;
-      //input.roi_upper_energy = ...;
-      //input.num_lower_side_channels = ...;
-      //input.num_upper_side_channels = ...;
-      input.detection_probability = confidenceLevel;
-      input.additional_uncertainty = 0.0f;  // TODO: can we get the DRFs contribution to form this?
+      auto input = make_shared<DetectionLimitCalc::CurieMdaInput>();
+      input->spectrum = hist;
+      input->gamma_energy = energy;
+      input->roi_lower_energy = m_lowerRoi->value();
+      input->roi_upper_energy = m_upperRoi->value();
+      input->num_lower_side_channels = static_cast<size_t>( m_numSideChannel->value() );
+      input->num_upper_side_channels = input->num_lower_side_channels;
+      input->detection_probability = confidenceLevel;
+      input->additional_uncertainty = 0.0f;  // TODO: can we get the DRFs contribution to form this?
       
-      DetectionLimitCalc::CurieMdaResult result = DetectionLimitCalc::currie_mda_calc( input );
+      m_currentCurrieInput = input;
+      DetectionLimitCalc::CurieMdaResult result = DetectionLimitCalc::currie_mda_calc( *input );
+      m_currentCurrieResults = make_shared<DetectionLimitCalc::CurieMdaResult>( result );
     }else
     {
+      if( (energyIndex < 0) || (energyIndex >= static_cast<int>(m_photoPeakEnergiesAndBr.size())) )
+        throw runtime_error( "Please select gamma energy." );
+      
+      const shared_ptr<const DetectorPeakResponse> drf = m_detectorDisplay->detector();
+      
       // We need to calculate deconvolution-style limit
       if( !drf )
         throw runtime_error( "Please select a detector efficiency function." );
@@ -760,6 +1117,22 @@ void DetectionLimitSimple::updateResult()
         m_fitFwhmBtn->show();
         throw runtime_error( "DRF does not have FWHM info - please fit for FWHM, or change DRF." );
       }
+      
+      
+      if( m_distance->validate() != WValidator::State::Valid )
+        throw runtime_error( "Invalid distance" );
+      
+      double distance = 0.0;
+      try
+      {
+        distance = PhysicalUnits::stringToDistance( m_distance->text().toUTF8() );
+      }catch( std::exception & )
+      {
+        throw runtime_error( "invalid distance." );
+      }
+      
+      if( distance < 0.0 )
+        throw runtime_error( "Distance can't be negative." );
       
       throw runtime_error( "Deconvolution calculations not implemented yet" );
       
@@ -793,10 +1166,11 @@ void DetectionLimitSimple::updateResult()
       input.roi_info.push_back( roiInfo );
     
       DetectionLimitCalc::DeconComputeResults results = DetectionLimitCalc::decon_compute_peaks( input );
+    
+      m_currentDeconResults = make_shared<DetectionLimitCalc::DeconComputeResults>( results );
     }//if( calc Currie-style limit ) / else
     
-    
-    
+    m_chartErrMsgStack->setCurrentIndex( 1 );
   }catch( std::exception &e )
   {
     m_chartErrMsgStack->setCurrentIndex( 0 );
@@ -941,7 +1315,7 @@ void DetectionLimitSimple::handleAppUrl( std::string uri )
   
    updateResult();
    m_stateUri = encodeStateToUrl();
-   m_currentNuclide = m_nuclideEnter->nuclide();
+   m_currentNuclide = m_nucEnterController->nuclide();
    m_currentEnergy = ;
    m_currentAge = ;
    

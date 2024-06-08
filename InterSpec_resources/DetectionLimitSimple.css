@@ -35,4 +35,19 @@
 }
 
 
+.DetectionLimitSimple .CalcMethodStack{
+  
+}
 
+.DetectionLimitSimple .MethodSelect {
+  display: flex;
+  flex-direction: row;
+  justify-content: flex-start;
+  align-items: center;
+  column-gap: 8px;
+}
+
+
+.CurrieLimitArea {
+  display: grid;
+}

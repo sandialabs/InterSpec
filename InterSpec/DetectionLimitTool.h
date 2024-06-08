@@ -96,6 +96,8 @@ class DetectorPeakResponse;
 
 namespace DetectionLimitCalc
 {
+  struct CurieMdaInput;
+  struct CurieMdaResult;
   struct DeconComputeInput;
   enum class DeconContinuumNorm : int;
 }
@@ -186,6 +188,33 @@ public:
    TODO: NOT CURRENTLY IMPLEMENTED - returns empty string
    */
   std::string encodeStateToUrl() const;
+  
+  /** Updates the decorative region, visible region, and text for a Currie limit result.
+   
+   @param chart Chart to update; must not be nullptr.
+   @param PeakModel Peak model to add resulting peak to; may be nullptr if you dont want a peak on chart.
+   @param input The Currie MDA input; must be filled out.
+   @param result The Currie limit results.  May be nullptr if it hasnt/couldnt be computed (in which case no peak/text will be drawn)
+   @param drf Only use for peak FWHM; if nullptr or no FWHM info, will use 0.25 ROI for peak sigma width.
+   @param limitType The limit type - currently only activity limit is supported
+   @param gammas_per_bq The expected detected gammas per Bq.  If zero or negative, will put text in terms of counts
+   */
+  static void update_spectrum_for_currie_result( D3SpectrumDisplayDiv *chart,
+                                         PeakModel *pmodel,
+                                         const DetectionLimitCalc::CurieMdaInput &input,
+                                         const DetectionLimitCalc::CurieMdaResult * const result,
+                                         std::shared_ptr<const DetectorPeakResponse> drf,
+                                         DetectionLimitTool::LimitType limitType,
+                                         const double gammas_per_bq );
+  
+  static void createCurrieRoiMoreInfoWindow( const SandiaDecay::Nuclide *const nuclide,
+                                  const DetectionLimitCalc::CurieMdaResult &result,
+                                  std::shared_ptr<const DetectorPeakResponse> drf,
+                                  DetectionLimitTool::LimitType limitType,
+                                            const double distance,
+                                            const bool do_air_attenuation,
+                                            const double branch_ratio,
+                                            const double counts_per_bq_into_4pi  );
   
 protected:
   virtual void render( Wt::WFlags<Wt::RenderFlag> flags );

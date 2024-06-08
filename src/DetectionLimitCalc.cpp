@@ -737,6 +737,43 @@ std::ostream &print_summary( std::ostream &strm, const CurieMdaResult &result, c
   return strm;
 };//print_summary( CurieMdaResult )
 
+  
+pair<size_t,size_t> round_roi_to_channels( shared_ptr<const SpecUtils::Measurement> spectrum,
+                                  const float roi_lower_energy,
+                                  const float roi_upper_energy )
+{
+  if( !spectrum )
+    throw runtime_error( "mda_counts_calc: no spectrum" );
+  
+  shared_ptr<const SpecUtils::EnergyCalibration> cal = spectrum->energy_calibration();
+  if( !cal || !cal->valid() )
+    throw runtime_error( "mda_counts_calc: invalid energy calibration" );
+  
+  const float peak_region_lower_ch = cal->channel_for_energy( roi_lower_energy );
+  const float peak_region_upper_ch = cal->channel_for_energy( roi_upper_energy );
+  
+  //if( (peak_region_lower_ch - num_lower_side_channels) < 0.0 )
+  //  throw runtime_error( "mda_counts_calc: lower energy goes off spectrum" );
+  
+  //if( (peak_region_upper_ch + num_upper_side_channels) > cal->num_channels() )
+  //  throw runtime_error( "mda_counts_calc: upper energy goes off spectrum" );
+  
+  size_t first_peak_region_channel = static_cast<size_t>( std::round(peak_region_lower_ch) );
+  
+  // If we pass in exactly the channel boundary, or really close to it, we want to round in the
+  //  reasonable way, otherwise we need to makeup for the channel number defining the left side of
+  //  each channel, so we will subtract off 0.5 from the channel we are supposed to go up through.
+  size_t last_peak_region_channel;
+  if( fabs(peak_region_upper_ch - std::floor(peak_region_upper_ch)) < 0.01 )
+    last_peak_region_channel = static_cast<size_t>( std::floor(peak_region_upper_ch) - 1 );
+  else
+    last_peak_region_channel = static_cast<size_t>( std::round(peak_region_upper_ch - 0.5) );
+  
+  return make_pair( first_peak_region_channel, last_peak_region_channel );
+}//round_roi_to_channels(...)
+  
+  
+  
 CurieMdaResult currie_mda_calc( const CurieMdaInput &input )
 {
   using namespace SpecUtils;
@@ -776,29 +813,13 @@ CurieMdaResult currie_mda_calc( const CurieMdaInput &input )
   
   assert( gamma_energies.size() == (gamma_counts.size() + 1) );
   
-  const float peak_region_lower_ch = cal->channel_for_energy( input.roi_lower_energy );
-  const float peak_region_upper_ch = cal->channel_for_energy( input.roi_upper_energy );
-  
-  if( (peak_region_lower_ch - input.num_lower_side_channels) < 0.0 )
-    throw runtime_error( "mda_counts_calc: lower energy goes off spectrum" );
-  
-  if( (peak_region_upper_ch + input.num_upper_side_channels) > cal->num_channels() )
-    throw runtime_error( "mda_counts_calc: upper energy goes off spectrum" );
+  const pair<size_t,size_t> channels = round_roi_to_channels( spec, input.roi_lower_energy, input.roi_upper_energy );
   
   CurieMdaResult result;
   result.input = input;
   
-  
-  result.first_peak_region_channel = static_cast<size_t>( std::round(peak_region_lower_ch) );
-  
-  // If we pass in exactly the channel boundary, or really close to it, we want to round in the
-  //  reasonable way, otherwise we need to makeup for the channel number defining the left side of
-  //  each channel, so we will subtract off 0.5 from the channel we are supposed to go up through.
-  if( fabs(peak_region_upper_ch - std::floor(peak_region_upper_ch)) < 0.01 )
-    result.last_peak_region_channel = static_cast<size_t>( std::floor(peak_region_upper_ch) - 1 );
-  else
-    result.last_peak_region_channel = static_cast<size_t>( std::round(peak_region_upper_ch - 0.5) );
-  
+  result.first_peak_region_channel = channels.first;
+  result.last_peak_region_channel = channels.second;
   
   if( result.first_peak_region_channel < (input.num_lower_side_channels + 1) )
     throw std::runtime_error( "mda_counts_calc: lower peak region is outside spectrum energy range" );
@@ -811,7 +832,6 @@ CurieMdaResult currie_mda_calc( const CurieMdaInput &input )
   
   if( result.last_upper_continuum_channel >= nchannel  )
     throw std::runtime_error( "mda_counts_calc: upper peak region is outside spectrum energy range" );
-  
   
   result.lower_continuum_counts_sum = spec->gamma_channels_sum(result.first_lower_continuum_channel, result.last_lower_continuum_channel);
   result.peak_region_counts_sum = spec->gamma_channels_sum(result.first_peak_region_channel, result.last_peak_region_channel);
