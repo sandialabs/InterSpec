@@ -1592,6 +1592,14 @@ void DetectionLimitTool::update_spectrum_for_currie_result( D3SpectrumDisplayDiv
       // We will set the peak area, and user label using text from below, then add to the PeakModel
       //peak.setUserLabel( "Cont. Est: " + result.estimated_peak_continuum_counts + " +- " + result.estimated_peak_continuum_uncert );
       
+      char cl_str_buffer[64] = {'\0'};
+      
+      if( confidence_level < 0.999 )
+        snprintf( cl_str_buffer, sizeof(cl_str_buffer), "%.1f%%", 100.0*confidence_level );
+      else
+        snprintf( cl_str_buffer, sizeof(cl_str_buffer), "1-%.2G", (1.0-confidence_level) );
+     
+      const string cl_str = cl_str_buffer;
       
       switch( limitType )
       {
@@ -1622,7 +1630,7 @@ void DetectionLimitTool::update_spectrum_for_currie_result( D3SpectrumDisplayDiv
               nomstr = SpecUtils::printCompact(result->lower_limit, 4);
             }
             
-            const string cl_str = SpecUtils::printCompact( 100.0*confidence_level, 3 );
+            //const string cl_str = SpecUtils::printCompact( 100.0*confidence_level, 3 );
             
             peak.setPeakArea( result->source_counts );
             peak.setUserLabel( "Peak for detected activity of " + nomstr
@@ -1649,12 +1657,10 @@ void DetectionLimitTool::update_spectrum_for_currie_result( D3SpectrumDisplayDiv
               mdastr = SpecUtils::printCompact( result->upper_limit, 4 ) + " counts";
             }
             
-            char cl_str_buffer[256] = {'\0'};
-            snprintf( cl_str_buffer, sizeof(cl_str_buffer), "Peak for upper bound of %s @%.1f%% CL",
-                     mdastr.c_str(), 100.0*confidence_level );
+            const string cl_txt = "Peak for upper bound of " + mdastr + " @" + cl_str + " CL";
             
             peak.setPeakArea( result->upper_limit );
-            peak.setUserLabel( cl_str_buffer  );
+            peak.setUserLabel( cl_txt  );
           }
           
           break;
@@ -1666,6 +1672,9 @@ void DetectionLimitTool::update_spectrum_for_currie_result( D3SpectrumDisplayDiv
           break;
         }
       }//switch( limitType )
+      
+      chart->setChartTitle( peak.userLabel() );
+      peak.setUserLabel( "" );
       
       pmodel->addPeaks( {peak} );
     }//if( result )
@@ -1726,7 +1735,11 @@ void DetectionLimitTool::createCurrieRoiMoreInfoWindow( const SandiaDecay::Nucli
     
     const double gammas_per_bq = counts_4pi * det_eff;
     
-    snprintf( buffer, sizeof(buffer), "%.1f%%", 100.0*conf_level );
+    if( conf_level < 0.999 )
+      snprintf( buffer, sizeof(buffer), "%.1f%%", 100.0*conf_level );
+    else
+      snprintf( buffer, sizeof(buffer), "1-%.3g", (1.0-conf_level) );
+    
     const string confidence_level = buffer;
     
     const double lower_lower_energy = input.spectrum->gamma_channel_lower( result.first_lower_continuum_channel );
@@ -2670,8 +2683,8 @@ void DetectionLimitTool::handleInputChange()
     input.roi_end = energy + 1.25*fwhm;
     input.num_side_channels = 4;
     input.confidence_level = confLevel;
-    input.trans_through_air = line.air_transmission;
-    input.trans_through_shielding = line.shield_transmission;
+    //input.trans_through_air = line.air_transmission;
+    //input.trans_through_shielding = line.shield_transmission;
     input.decon_cont_norm_method = DetectionLimitCalc::DeconContinuumNorm::Floating;
     input.decon_continuum_type = PeakContinuum::OffsetType::Linear;
     
@@ -2885,13 +2898,6 @@ void DetectionLimitTool::doCalc()
       return;
     }//if( !nused )
     
-    auto print_quantity = [is_dist_limit,det_geom,useCurie]( double quantity, int ndigits = 4 ) -> string {
-      if( is_dist_limit )
-        return PhysicalUnits::printToBestLengthUnits(quantity,ndigits);
-      return PhysicalUnits::printToBestActivityUnits(quantity,ndigits,useCurie)
-      + det_eff_geom_type_postfix(det_geom);
-    };//print_quantity
-    
     const bool shielding_has_thick = (!m_shieldingSelect->isGenericMaterial() && m_shieldingSelect->material());
     const double shield_thickness = (shielding_has_thick ? m_shieldingSelect->thickness() : 0.0);
     
@@ -2925,552 +2931,128 @@ void DetectionLimitTool::doCalc()
     
     m_errorMsg->hide();
     
-    const double yrange = 15;
-    
-    // TODO: we are scanning activity or distance, which is a single degree of freedom - but does it matter that
-    //       we are marginalizing over (i.e., fitting for) the nuisance parameters of the peaks and
-    //       stuff?  I dont *think* so.
-    const boost::math::chi_squared chi_squared_dist( 1.0 );
-    
-    const float wantedCl = currentConfidenceLevel();
-    
-    // We want interval corresponding to 95%, where the quantile will give us CDF up to that
-    //  point, so we actually want the quantile that covers 97.5% of cases.
-    const float twoSidedCl = 0.5 + 0.5*wantedCl;
-    
-    const double cl_chi2_delta = boost::math::quantile( chi_squared_dist, twoSidedCl );
-    
-    const size_t nchi2 = 25;  //approx num chi2 to compute
-    static_assert( nchi2 > 2, "We need at least two chi2" );
-    
-    vector<pair<double,double>> chi2s;
-    double overallBestChi2 = 0.0, overallBestQuantity = 0.0;
-    double upperLimit = 0.0, lowerLimit = 0.0;
-    bool foundUpperCl = false, foundUpperDisplay = false, foundLowerCl = false, foundLowerDisplay = false;
-    
-    //
-    double quantityRangeMin = 0.0, quantityRangeMax = 0.0;
     
     
-    /// \TODO: currently all this stuff assumes a smooth continuously increasing Chi2 with increasing
-    ///        activity, but this doesnt have to be the case, especially with quadratic continuums.
+    auto generateChartJson = []( const DetectionLimitCalc::DeconActivityOrDistanceLimitResult &result, const bool is_dist_limit ) -> Wt::Json::Object {
+      
+      const bool useCurie = use_curie_units();
+      const vector<pair<double,double>> &chi2s = result.chi2s;
+      
+      const double avrg_quantity = 0.5*(chi2s.front().first + chi2s.back().first);
+      const pair<string,double> &units = is_dist_limit
+      ? PhysicalUnits::bestLengthUnitHtml( avrg_quantity )
+      : PhysicalUnits::bestActivityUnitHtml( avrg_quantity, useCurie );
+      
+      double minchi2 = std::numeric_limits<double>::infinity();
+      for( size_t i = 0; i < chi2s.size(); ++i )
+        minchi2 = std::min( minchi2, chi2s[i].second );
+      
+      double maxchi2 = -std::numeric_limits<double>::infinity();
+      
+      // The first/last Chi2 may be a huge (like when distance approaches 0), so we'll protect
+      //  against this.
+      // TODO: use `result.foundUpperCl` and `result.foundLowerCl` to see if we need this, and also, perhaps maybe we should be smarter in picking which points to compute the Chi2 for
+      const double maxYRange = 15; //arbitrary
+      
+      
+      Wt::Json::Object json;
+      Wt::Json::Array chi2_xy;
+      for( size_t i = 0; i < chi2s.size(); ++i )
+      {
+        if( chi2s[i].second > (minchi2 + maxYRange) )
+          continue;
+        
+        maxchi2 = std::max( maxchi2, chi2s[i].second );
+        
+        Wt::Json::Object datapoint;
+        datapoint["x"] = (chi2s[i].first / units.second);
+        datapoint["y"] = chi2s[i].second;
+        chi2_xy.push_back( std::move(datapoint) );
+      }
+      
+      if( result.foundLowerCl && (result.lowerLimit > 0.0) )
+      {
+        //display lower limit to user...
+      }
+      
+      json["data"] = chi2_xy;
+      
+      
+      double chi2range = maxchi2 - minchi2;
+      if( IsInf(minchi2) || IsInf(maxchi2) ) //JIC
+      {
+        minchi2 = 0;
+        maxchi2 = 100;
+        chi2range = 0;
+      }
+      
+      //json["xunits"] = WString::fromUTF8(units.first);
+      
+      string unit_str = units.first;
+      SpecUtils::ireplace_all( unit_str, "&mu;", MU_CHARACTER );
+      json["xtitle"] = WString::fromUTF8( (is_dist_limit ? "Distance (" : "Activity (") + unit_str + ")");
+      json["ytitle"] = WString::fromUTF8( "\xCF\x87\xC2\xB2" ); //chi^2
+      
+      double xstart = (chi2s.front().first/units.second);
+      double xend = (chi2s.front().first/units.second);
+      //Blah blah blah, coarse labels to be round numbers
+      //const double initialrange = xend - xstart;
+      
+      //json["xrange"] = Wt::Json::Array{ Wt::Json::Array( Wt::Json::Value(xstart), Wt::Json::Value(xend) ) };
+      //json["yrange"] = Wt::Json::Array{ Wt::Json::Array( Wt::Json::Value(minchi2 - 0.1*chi2range), Wt::Json::Value(maxchi2 + 0.1*chi2range) ) };
+      
+      // TODO: draw line at upperLimit.
+      InterSpec *interspec = InterSpec::instance();
+      std::shared_ptr<const ColorTheme> theme = interspec ? interspec->getColorTheme() : nullptr;
+      if( theme )
+      {
+        auto csstxt = []( const Wt::WColor &c, const char * defcolor ) -> WString {
+          return WString::fromUTF8( (c.isDefault() ? string(defcolor) : c.cssText()) );
+        };
+        
+        json["lineColor"] = csstxt(theme->foregroundLine, "black");
+        //json["axisColor"] = csstxt(theme->spectrumAxisLines, "black");
+        json["chartBackgroundColor"] = csstxt(theme->spectrumChartBackground, "rgba(0,0,0,0)");
+        //json["textColor"] = csstxt(theme->spectrumChartText, "black");
+      }//if( theme )
+      
+      return json;
+    };//generateChartJson lambda
     
-    std::atomic<size_t> num_iterations( 0 );
     
-    //The boost::math::tools::bisect(...) function will make calls using the same value of activity,
-    //  so we will cache those values to save some time.
-    map<double,double> chi2cache;
-    std::mutex chi2cache_mutex;
     
     const double mid_search_quantity = 0.5*(min_search_quantity + max_search_quantity);
     const double base_act = is_dist_limit ?  other_quantity : mid_search_quantity;
     const double base_dist = is_dist_limit ? mid_search_quantity : other_quantity;
-    vector<PeakDef> base_peaks;
+    vector<PeakDef> dummy_peaks{};
     const shared_ptr<const DetectionLimitCalc::DeconComputeInput> base_input
-                                  = getComputeForActivityInput( base_act, base_dist, base_peaks );
-    if( !base_input )
-      throw runtime_error( "missing input quantity." );
+                    = getComputeForActivityInput( base_act, base_dist, dummy_peaks );
     
     
-    auto compute_chi2 = [is_dist_limit,&base_input]( const double quantity, int *numDOF = nullptr ) -> double {
-      assert( base_input );
-      DetectionLimitCalc::DeconComputeInput input = *base_input;
-      if( is_dist_limit )
-        input.distance = quantity;
-      else
-        input.activity = quantity;
-      const DetectionLimitCalc::DeconComputeResults results
-                                            = DetectionLimitCalc::decon_compute_peaks( input );
-      
-      if( (results.num_degree_of_freedom == 0) && (results.chi2 == 0.0) )
-        throw runtime_error( "No DOF" );
-      
-      if( numDOF )
-        *numDOF = results.num_degree_of_freedom;
-      
-      return results.chi2;
-    };//compute_chi2
-    
-
-    // This next lambda takes either distance or activity for its argument, depending which
-    //  limit is being computed
-    auto chi2ForQuantity = [this,&num_iterations,&chi2cache,&chi2cache_mutex,compute_chi2]( double const &quantity ) -> double {
-      
-      {//begin lock on achi2cache_mutex
-        std::lock_guard<std::mutex> lock( chi2cache_mutex );
-        const auto pos = chi2cache.find(quantity);
-        if( pos != end(chi2cache) )
-          return pos->second;
-      }//end lock on chi2cache_mutex
-      
-      if( quantity < 0.0 )
-        return std::numeric_limits<double>::max();
-      
-      const double chi2 = compute_chi2( quantity );
-      
-      ++num_iterations;
-      
-      {//begin lock on chi2cache_mutex
-        std::lock_guard<std::mutex> lock( chi2cache_mutex );
-        chi2cache.insert( std::pair<double,double>{quantity,chi2} );
-      }//end lock on chi2cache_mutex
-      
-      return chi2;
-    };//chi2ForQuantity
-    
-    
-    /// `search_range` returns {best-chi2,best-quantity}
-    auto search_range = [chi2ForQuantity]( double min_range, double max_range, boost::uintmax_t &max_iter ) -> pair<double, double> {
-      // boost::brent_find_minima first evaluates the input at the range midpoint, then endpoints
-      //  and so on - we could do a first pre-scan over the range to help make sure we dont miss
-      //  a global minimum.
-      
-      
-      //\TODO: if best activity is at min_search_quantity, it takes 50 iterations inside brent_find_minima
-      //      to confirm; we could save this time by using just a little bit of intelligence...
-      const int bits = 12; //Float has 24 bits of mantisa; should get us accurate to three significant figures
-      
-      return boost::math::tools::brent_find_minima( chi2ForQuantity, min_range, max_range, bits, max_iter );
-    };//search_range lambda
-    
-    boost::uintmax_t max_iter = 100;  //this variable gets changed each use, so you need to reset it afterwards
-    const pair<double, double> r = search_range( min_search_quantity, max_search_quantity, max_iter );
-    
-    overallBestChi2 = r.second;
-    overallBestQuantity = r.first;
-    
-    cout << "Found min X2=" << overallBestChi2 << " with activity "
-         << print_quantity(overallBestQuantity)
-         << " and it took " << std::dec << num_iterations.load() << " iterations; searched from "
-         << print_quantity(min_search_quantity)
-         << " to " << print_quantity(max_search_quantity)
-         << endl;
-    
-    //boost::math::tools::bracket_and_solve_root(...)
-    auto chi2ForRangeLimit = [&chi2ForQuantity, overallBestChi2, yrange]( double const &quantity ) -> double {
-      return chi2ForQuantity(quantity) - overallBestChi2 - yrange;
-    };
-    
-    auto chi2ForCL = [&chi2ForQuantity, overallBestChi2, cl_chi2_delta]( double const &quantity ) -> double {
-      return chi2ForQuantity(quantity) - overallBestChi2 - cl_chi2_delta;
-    };
-    
-    //Tolerance is called with two values of quantity (activity or distance, depending which limit
-    //  is being found); one with the chi2 below root, and one above
-    auto tolerance = [chi2ForCL](double quantity_1, double quantity_2) -> bool{
-      const double chi2_1 = chi2ForCL(quantity_1);
-      const double chi2_2 = chi2ForCL(quantity_2);
-      
-      // \TODO: make sure tolerance is being used correctly - when printing info out for every call I'm not sure it is being used right... (but answers seem reasonable, so...)
-      //cout << "Tolerance called with quantity_1=" << PhysicalUnits::printToBestActivityUnits(quantity_1,false)  //PhysicalUnits::printToBestLengthUnits(quantity_1)
-      //     << ", quantity_2=" << PhysicalUnits::printToBestActivityUnits(quantity_2,4,false)
-      //     << " ---> chi2_1=" << chi2_1 << ", chi2_2=" << chi2_2 << endl;
-      
-      return fabs(chi2_1 - chi2_2) < 0.025;
-    };//tolerance(...)
-    
-    //cout << "chi2ForCL(min_search_quantity)=" << chi2ForCL(min_search_quantity) << endl;
-    
-    SpecUtilsAsync::ThreadPool pool;
-    
-    //Before trying to find lower-bounding activity, make sure the best value isnt the lowest
-    //  possible value (i.e., zero in this case), and that if we go to the lowest possible value,
-    //  that the chi2 will increase at least by cl_chi2_delta
-    pool.post( [&lowerLimit,&quantityRangeMin,&foundLowerCl,&foundLowerDisplay,&num_iterations, //quantities we will modify
-                 min_search_quantity,overallBestQuantity,overallBestChi2,yrange, //values we can capture by value
-                 &tolerance,&chi2ForCL,&chi2ForQuantity,&print_quantity,&chi2ForRangeLimit //lamdas we will use
-               ](){
-      const double min_search_chi2 = chi2ForCL(min_search_quantity);
-      if( (fabs(min_search_quantity - overallBestQuantity) > 0.001)
-         && (min_search_chi2 > 0.0) )
-      {
-        pair<double,double> lower_val;
-        
-        boost::uintmax_t max_iter = 100;  //see note about needing to set before every use
-        lower_val = boost::math::tools::bisect( chi2ForCL, min_search_quantity, overallBestQuantity, tolerance, max_iter );
-        lowerLimit = 0.5*(lower_val.first + lower_val.second);
-        foundLowerCl = true;
-        cout << "lower_val CL activity="
-             << print_quantity(lowerLimit)
-             << " with Chi2(" << lowerLimit << ")=" << chi2ForQuantity(lowerLimit)
-             << " (Best Chi2(" << overallBestQuantity << ")=" << overallBestChi2
-             << "), num_iterations=" << std::dec << num_iterations.load() << " and search range from "
-             << print_quantity(min_search_quantity)
-             << " to "
-             << print_quantity(overallBestQuantity)
-             << endl;
-        
-        const double minActChi2 = chi2ForRangeLimit(min_search_quantity);
-        if( minActChi2 < 0.0 )
-        {
-          quantityRangeMin = min_search_quantity;
-          cout << "lower_val display activity being set to min_search_quantity (" 
-               << min_search_quantity << "): minActChi2=" << minActChi2
-               << ", with Chi2(" << quantityRangeMin << ")=" << chi2ForQuantity(quantityRangeMin) << endl;
-        }else
-        {
-          try
-          {
-            boost::uintmax_t max_iter = 100;
-            lower_val = boost::math::tools::bisect( chi2ForRangeLimit, min_search_quantity, lowerLimit, tolerance, max_iter );
-            quantityRangeMin = 0.5*(lower_val.first + lower_val.second);
-            foundLowerDisplay = true;
-            cout << "lower_val display quantity=" << print_quantity(quantityRangeMin)
-                 << " wih chi2=" << chi2ForQuantity(quantityRangeMin) << ", num_iterations=" << std::dec << num_iterations.load() << endl;
-          }catch( std::exception &e )
-          {
-            const double delta_act = 0.1*(lowerLimit - quantityRangeMin);
-            for( quantityRangeMin = lowerLimit; quantityRangeMin > 0; quantityRangeMin -= delta_act )
-            {
-              const double this_chi2 = chi2ForQuantity(quantityRangeMin);
-              if( this_chi2 >= (overallBestChi2 + yrange) )
-                break;
-            }
-            
-            cout << "Couldnt find lower-limit of display range properly, so scanned down and found "
-                 << print_quantity(quantityRangeMin)
-                 << " where LowerLimit=" << print_quantity(lowerLimit)
-                 << " and ActRangeMin=" << print_quantity(quantityRangeMin)
-                 << " and BestActivity" << print_quantity(overallBestQuantity)
-                 << endl;
-          }//try / catch
-        }//
-      }else
-      {
-        lowerLimit = 0.0;
-        //quantityRangeMin = overallBestQuantity;
-        quantityRangeMin = min_search_quantity;
-        cout << "lower_val activity/distance already at min" << endl;
-      }//if( fabs(min_search_quantity - overallBestQuantity) > 0.001*PhysicalUnits::bq ) / else
-    } );//pool.post( ... find lower limit ...)
-    
-    pool.post( [&upperLimit,&quantityRangeMax,&foundUpperCl,&foundUpperDisplay,&num_iterations, //quantities we will modify
-                 max_search_quantity,overallBestQuantity,overallBestChi2,yrange,is_dist_limit,min_search_quantity, //values we can capture by value
-                 &tolerance,&chi2ForCL,&chi2ForQuantity,&print_quantity,&chi2ForRangeLimit //lambdas we will use
-               ](){
-      const double max_search_chi2 = chi2ForCL(max_search_quantity);
-      if( (fabs(max_search_quantity - overallBestQuantity) > 0.001)
-         && (max_search_chi2 > 0.0)  )
-      {
-        pair<double,double> upper_val;
-        boost::uintmax_t max_iter = 100;
-        upper_val = boost::math::tools::bisect( chi2ForCL, overallBestQuantity, max_search_quantity, tolerance, max_iter );
-        upperLimit = 0.5*(upper_val.first + upper_val.second);
-        foundUpperCl = true;
-        cout << "upper_val CL activity=" << print_quantity(upperLimit)
-             << " wih chi2=" << chi2ForQuantity(upperLimit) << ", num_iterations=" << std::dec << num_iterations.load()
-             << " and search range from " << print_quantity(overallBestQuantity)
-             << " to "
-             << print_quantity(max_search_quantity)
-             << endl;
-        
-        const double maxSearchChi2 = chi2ForRangeLimit(max_search_quantity);
-        if( maxSearchChi2 < 0.0 )
-        {
-          quantityRangeMax = max_search_quantity;
-          cout << "upper_val display activity being set to max_search_quantity (" << max_search_quantity << "): maxSearchChi2=" << maxSearchChi2 << endl;
-        }else
-        {
-          try
-          {
-            max_iter = 100;
-            upper_val = boost::math::tools::bisect( chi2ForRangeLimit, upperLimit, max_search_quantity, tolerance, max_iter );
-            quantityRangeMax = 0.5*(upper_val.first + upper_val.second);
-            foundUpperDisplay = true;
-            cout << "upper_val display quantity=" << print_quantity(quantityRangeMax)
-                 << " wih chi2=" << chi2ForQuantity(quantityRangeMax) << ", num_iterations="
-                 << std::dec << num_iterations.load() << endl;
-          }catch( std::exception &e )
-          {
-            const double delta_act = std::max( 0.1*fabs(upperLimit - overallBestQuantity), 0.01*fabs(max_search_quantity - upperLimit) );
-            for( quantityRangeMax = upperLimit; quantityRangeMax < max_search_quantity; quantityRangeMax -= delta_act )
-            {
-              const double this_chi2 = chi2ForQuantity(quantityRangeMax);
-              if( this_chi2 >= (overallBestChi2 + yrange) )
-                break;
-            }
-            
-            cout << "Couldn't find upper-limit of display range properly, so scanned up and found "
-                 << print_quantity(quantityRangeMax)
-                 << " where UpperLimit Chi2(" << upperLimit << ")="
-                 << print_quantity(upperLimit)
-                 << " and ActRangeMax Chi2(" << quantityRangeMax << ")="
-                 << print_quantity(quantityRangeMax)
-                 << " and BestActivity Chi2(" << overallBestQuantity << ")="
-                 << print_quantity(overallBestQuantity)
-                 << endl;
-          }//try / catch
-        }
-      }else
-      {
-        upperLimit = overallBestQuantity;
-        quantityRangeMax = max_search_quantity;
-        
-        if( is_dist_limit )
-        {
-          // We might be at a huge distance, so lets find the distance at which we would start to
-          //  kinda see something, ever so slightly
-          try
-          {
-            auto chi2ForMinDelta = [&chi2ForQuantity, overallBestChi2, yrange]( double const &quantity ) -> double {
-              return chi2ForQuantity(quantity) - overallBestChi2 - 0.01;
-            };
-            
-            boost::uintmax_t max_iter = 100;
-            const auto effective_upper_val = boost::math::tools::bisect( chi2ForMinDelta, min_search_quantity, overallBestQuantity, tolerance, max_iter );
-            upperLimit = 0.5*(effective_upper_val.first + effective_upper_val.second);
-            quantityRangeMax = upperLimit;
-          }catch( std::exception &e )
-          {
-            assert( 0 );
-          }
-          //overallBestQuantity
-        }//if( is_dist_limit )
-        
-        cout << "upper_val activity already at max" << endl;
-      }
-    } );//pool.post( ... find upper limit ...)
-    
-    pool.join();
-    
-    cout << "Found best chi2 and ranges with num_iterations=" << std::dec << num_iterations.load() << endl;
-
-    assert( quantityRangeMin <= quantityRangeMax );
-    if( quantityRangeMax < quantityRangeMin )
-      std::swap( quantityRangeMin, quantityRangeMax );
-    
-    if( quantityRangeMax == quantityRangeMin )
-    {
-      assert( !foundLowerCl && !foundUpperCl );
-      quantityRangeMin = 0.9*quantityRangeMin;
-      quantityRangeMax = 1.1*quantityRangeMin;
-    }
-    
-    const double initialRangeDelta = fabs(quantityRangeMax - quantityRangeMin);
-    if( is_dist_limit && !foundUpperCl )
-    {
-      // This is when there are nearly zero or negative counts so the Chi2 will just stay flat
-      //  at larger and larger distances; in this case we have set quantityRangeMax to be approx
-      //  where you start getting a little effect, so now we'll add in a little area after
-      //  this point so you can see the Chi2 curve is flattened out
-      quantityRangeMax += 0.33 * initialRangeDelta;
-    }
-      
-    if( foundLowerDisplay )
-      quantityRangeMin = std::max( min_search_quantity, quantityRangeMin - 0.1*initialRangeDelta );
-    
-    if( foundUpperDisplay )
-      quantityRangeMax = std::min( max_search_quantity, quantityRangeMax + 0.1*initialRangeDelta );
-    
-    const double quantity_delta = fabs(quantityRangeMax - quantityRangeMin) / nchi2;
-    chi2s.resize( nchi2 );
-    
-    for( size_t i = 0; i < nchi2; ++i )
-    {
-      const double quantity = quantityRangeMin + quantity_delta*i;
-      pool.post( [i, quantity, &chi2s, &chi2ForQuantity](){
-        chi2s[i].first = quantity;
-        chi2s[i].second = chi2ForQuantity(quantity);
-      } );
-    }
-    pool.join();
-    
-    const double distance = is_dist_limit ? lowerLimit : other_quantity;
-    const double activity = is_dist_limit ? other_quantity : upperLimit;
-    
-    int numDOF = 0;
-    
-    const string quantity_str = print_quantity(overallBestQuantity, 3);
-    char buffer[128];
-    
-    string limit_str;
-    if( foundLowerCl && foundUpperCl )
-    {
-      vector<PeakDef> peaks;
-      double lowerQuantityChi2 = -999.9, upperQuantityChi2 = -999.9;
-      if( is_dist_limit )
-      {
-        computeForActivity( other_quantity, lowerLimit, peaks, lowerQuantityChi2, numDOF );
-        computeForActivity( other_quantity, upperLimit, peaks, upperQuantityChi2, numDOF );
-      }else
-      {
-        computeForActivity( lowerLimit, other_quantity, peaks, lowerQuantityChi2, numDOF );
-        computeForActivity( upperLimit, other_quantity, peaks, upperQuantityChi2, numDOF );
-      }
-      
-      limit_str = print_quantity( overallBestQuantity, 3 );
-      const string lower_limit_str = print_quantity( lowerLimit, 2 );
-      const string upper_limit_str = print_quantity( upperLimit, 2 );
-      
-      // Chi2 at upper and lower limits *should* be the same, but since I dont totally trust
-      //  everything yet, we'll allow showing a discrepancy so we can see something is up
-      if( fabs(lowerQuantityChi2 - upperQuantityChi2) < 0.05*std::max(lowerQuantityChi2, upperQuantityChi2) )
-        snprintf( buffer, sizeof(buffer), "%.1f", 0.5*(lowerQuantityChi2 + upperQuantityChi2) );
-      else
-        snprintf( buffer, sizeof(buffer), "%.1f and %.1f", lowerQuantityChi2, upperQuantityChi2 );
-      
-      const string chi2_str = buffer;
-      
-      //snprintf( buffer, sizeof(buffer), "%.1f%% coverage in [%s, %s], &chi;<sup>2</sup>=%s",
-      //         0.1*std::round(1000.0*wantedCl), lower_limit_str.c_str(), upper_limit_str.c_str(),
-      //         chi2_str.c_str() );
-      
-      snprintf( buffer, sizeof(buffer), "Between %s and %s at %.1f%% CL, &chi;<sup>2</sup>=%s",
-               lower_limit_str.c_str(), upper_limit_str.c_str(),
-               0.1*std::round(1000.0*wantedCl),
-               chi2_str.c_str() );
-    }else if( !foundLowerCl && !foundUpperCl )
-    {
-      limit_str = print_quantity( overallBestQuantity, 3 );
-      snprintf( buffer, sizeof(buffer), "Error: failed upper and lower limits at %.1f%%",
-               0.1*std::round(1000.0*wantedCl) );
-    }else if( foundLowerCl )
-    {
-      vector<PeakDef> peaks;
-      double lowerQuantityChi2 = -999.9;
-      if( is_dist_limit )
-      {
-        computeForActivity( other_quantity, lowerLimit, peaks, lowerQuantityChi2, numDOF );
-        
-        limit_str = print_quantity( lowerLimit, 3 );
-        const string print_limit_str = print_quantity( lowerLimit, 2 );
-        
-        //More stat-nerd-esk language, maybe, if its even correct, but lets print something
-        //  easier to interpret, for the commoners, like myself.
-        //snprintf( buffer, sizeof(buffer), "%.1f%% coverage at %s with &chi;<sup>2</sup>=%.1f",
-        //         0.1*std::round(1000.0*wantedCl), print_limit_str.c_str(), lowerQuantityChi2 );
-        
-        snprintf( buffer, sizeof(buffer), "Can detect at %s at %.1f%% CL, &chi;<sup>2</sup>=%.1f",
-                 print_limit_str.c_str(), 0.1*std::round(1000.0*wantedCl), lowerQuantityChi2 );
-      }else
-      {
-        //computeForActivity( lowerLimit, other_quantity, peaks, lowerQuantityChi2, numDOF );
-        snprintf( buffer, sizeof(buffer), "Error: Didn't find %.1f%% CL activity",
-                 0.1*std::round(1000.0*wantedCl));
-      }
-    }else
-    {
-      assert( foundUpperCl );
-      
-      if( is_dist_limit )
-      {
-        snprintf( buffer, sizeof(buffer), "Error: Didn't find %.1f%% CL det. distance",
-                 0.1*std::round(1000.0*wantedCl) );
-      }else
-      {
-        vector<PeakDef> peaks;
-        double upperQuantityChi2 = -999.9;
-        computeForActivity( upperLimit, other_quantity, peaks, upperQuantityChi2, numDOF );
-        limit_str = print_quantity(upperLimit,3);
-        const string print_limit_str = print_quantity( upperLimit, 2 );
-        //snprintf( buffer, sizeof(buffer), "%.1f%% coverage at %s with &chi;<sup>2</sup>=%.1f",
-        //         0.1*std::round(1000.0*wantedCl), print_limit_str.c_str(), upperQuantityChi2 );
-        snprintf( buffer, sizeof(buffer), "Can detect %s at %.1f%% CL, &chi;<sup>2</sup>=%.1f",
-                 print_limit_str.c_str(), 0.1*std::round(1000.0*wantedCl), upperQuantityChi2 );
-      }//if( is_dist_limit ) / else
-    }
+    const float wantedCl = currentConfidenceLevel();
+    DetectionLimitCalc::DeconActivityOrDistanceLimitResult result
+                  = DetectionLimitCalc::get_activity_or_distance_limits( wantedCl, base_input,
+                                                                  is_dist_limit, min_search_quantity,
+                                                                    max_search_quantity, useCurie );
     
     // TODO: This `m_upperLimit` text could be moved to where the warnings is, ot the title area where the "Gamma lines to use" is
     //       This would give us more room, and maybe be more obvious to the user
-    m_upperLimit->setText( WString::fromUTF8(buffer) );
+    m_upperLimit->setText( WString::fromUTF8(result.limitText) );
     
     if( is_dist_limit )
-    {
-      m_displayDistance->setText( WString::fromUTF8(limit_str) );
-      
-      if( foundUpperCl )
-      {
-        snprintf( buffer, sizeof(buffer), "Best &chi;<sup>2</sup> of %.1f at %s, %i DOF",
-                 overallBestChi2, quantity_str.c_str(), numDOF );
-      }else
-      {
-        snprintf( buffer, sizeof(buffer), "&chi;<sup>2</sup> is %.1f at large distance, %i DOF",
-                 overallBestChi2, numDOF );
-      }
-    }else
-    {
-      m_displayActivity->setText( WString::fromUTF8(limit_str) );
-      
-      snprintf( buffer, sizeof(buffer), "Best &chi;<sup>2</sup> of %.1f at %s, %i DOF",
-               overallBestChi2, quantity_str.c_str(), numDOF );
-    }//if( is_dist_limit ) / else
+      m_displayDistance->setText( WString::fromUTF8(result.quantityLimitStr) );
+    else
+      m_displayActivity->setText( WString::fromUTF8(result.quantityLimitStr) );
     
-    m_bestChi2Act->setText( buffer );
-    
-    
-    if( foundLowerCl && (lowerLimit > 0.0) )
-    {
-      //display lower limit to user...
-    }
-
-    
-    const double avrg_quantity = 0.5*(chi2s.front().first + chi2s.back().first);
-    const pair<string,double> &units = is_dist_limit
-                    ? PhysicalUnits::bestLengthUnitHtml( avrg_quantity )
-                    : PhysicalUnits::bestActivityUnitHtml( avrg_quantity, useCurie );
-
-    double minchi2 = std::numeric_limits<double>::infinity();
-    double maxchi2 = -std::numeric_limits<double>::infinity();
-    
-    Wt::Json::Object json;
-    Wt::Json::Array chi2_xy;
-    for( size_t i = 0; i < chi2s.size(); ++i )
-    {
-      minchi2 = std::min( minchi2, chi2s[i].second );
-      maxchi2 = std::max( maxchi2, chi2s[i].second );
-      
-      Wt::Json::Object datapoint;
-      datapoint["x"] = (chi2s[i].first / units.second);
-      datapoint["y"] = chi2s[i].second;
-      chi2_xy.push_back( std::move(datapoint) );
-    }
-    
-    json["data"] = chi2_xy;
-    
-    
-    double chi2range = maxchi2 - minchi2;
-    if( IsInf(minchi2) || IsInf(maxchi2) ) //JIC
-    {
-      minchi2 = 0;
-      maxchi2 = 100;
-      chi2range = 0;
-    }
-    
-    //json["xunits"] = WString::fromUTF8(units.first);
-    
-    string unit_str = units.first;
-    SpecUtils::ireplace_all( unit_str, "&mu;", MU_CHARACTER );
-    json["xtitle"] = WString::fromUTF8( (is_dist_limit ? "Distance (" : "Activity (") + unit_str + ")");
-    json["ytitle"] = WString::fromUTF8( "\xCF\x87\xC2\xB2" ); //chi^2
-    
-    double xstart = (chi2s.front().first/units.second);
-    double xend = (chi2s.front().first/units.second);
-    //Blah blah blah, coarse labels to be round numbers
-    //const double initialrange = xend - xstart;
-    
-    //json["xrange"] = Wt::Json::Array{ Wt::Json::Array( Wt::Json::Value(xstart), Wt::Json::Value(xend) ) };
-    //json["yrange"] = Wt::Json::Array{ Wt::Json::Array( Wt::Json::Value(minchi2 - 0.1*chi2range), Wt::Json::Value(maxchi2 + 0.1*chi2range) ) };
-      
-    // TODO: draw line at upperLimit.
-    
-    std::shared_ptr<const ColorTheme> theme = m_interspec ? m_interspec->getColorTheme() : nullptr;
-    if( theme )
-    {
-      auto csstxt = []( const Wt::WColor &c, const char * defcolor ) -> WString {
-        return WString::fromUTF8( (c.isDefault() ? string(defcolor) : c.cssText()) );
-      };
-       
-      json["lineColor"] = csstxt(theme->foregroundLine, "black");
-      //json["axisColor"] = csstxt(theme->spectrumAxisLines, "black");
-      json["chartBackgroundColor"] = csstxt(theme->spectrumChartBackground, "rgba(0,0,0,0)");
-      //json["textColor"] = csstxt(theme->spectrumChartText, "black");
-    }//if( theme )
+    m_bestChi2Act->setText( WString::fromUTF8(result.bestCh2Text) );
     
     m_results->show();
     
     const string jsgraph = m_chi2Chart->jsRef() + ".chart";
-    const string datajson = Wt::Json::serialize(json);
+    const Wt::Json::Object chartJson = generateChartJson( result, is_dist_limit );
+    const string datajson = Wt::Json::serialize(chartJson);
     m_chi2Chart->doJavaScript( jsgraph + ".setData(" + datajson + ");" );
+    
     
     updateShownPeaks();
   }catch( std::exception &e )
@@ -3570,6 +3152,18 @@ shared_ptr<DetectionLimitCalc::DeconComputeInput> DetectionLimitTool::getCompute
   input->activity = activity;
   if( !m_shieldingSelect->isGenericMaterial() && m_shieldingSelect->material() )
     input->shielding_thickness = m_shieldingSelect->thickness();
+  
+  /*
+   vector<DetectionLimitTool::MdaPeakRowInput> input_rois;
+   
+   for( auto w : m_peaks->children() )
+   {
+     auto rw = dynamic_cast<MdaPeakRow *>( w );
+     assert( rw );
+     if( rw && rw->input().use_for_likelihood )
+       input_rois.push_back( rw->input() );
+   }//for( auto w : m_peaks->children() )
+   */
   
   for( auto w : m_peaks->children() )
   {

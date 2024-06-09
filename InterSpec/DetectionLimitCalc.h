@@ -424,6 +424,49 @@ struct DeconComputeResults
  */
 DeconComputeResults decon_compute_peaks( const DeconComputeInput &input );
 
+  
+struct DeconActivityOrDistanceLimitResult
+{
+  bool isDistanceLimit = false;
+  
+  // TODO: refactor generating this text to a separate function.
+  std::string limitText;
+  std::string quantityLimitStr;
+  std::string bestCh2Text;
+  
+  double overallBestChi2 = 0.0;
+  double overallBestQuantity = 0.0;
+  
+  bool foundUpperCl = false;
+  double upperLimit = 0.0;
+  double upperLimitChi2 = -1.0;
+  
+  bool foundLowerCl = false;
+  double lowerLimit = 0.0;
+  double lowerLimitChi2 = -1.0;
+  
+  
+  bool foundUpperDisplay = false;
+  double upperDisplayRange = 0.0;
+  bool foundLowerDisplay = false;
+  double lowerDisplayRange = 0.0;
+  
+  /** The Chi2s for a series of the quantity being found - for generating the displayed Chi2 chart from
+   {quantity,Chi2}
+   */
+  std::vector<std::pair<double,double>> chi2s;
+  
+  DeconActivityOrDistanceLimitResult();
+};//struct DeconActivityOrDistanceLimitResult
+  
+  
+DeconActivityOrDistanceLimitResult get_activity_or_distance_limits( const float wantedCl,
+                        const std::shared_ptr<const DeconComputeInput> base_input,
+                        const bool is_dist_limit,
+                        const double min_search_quantity,
+                        const double max_search_quantity,
+                        const bool useCurie );
+  
 }//namespace DetectionLimitCalc
 
 

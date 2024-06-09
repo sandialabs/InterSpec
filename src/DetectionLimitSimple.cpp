@@ -1368,19 +1368,19 @@ void DetectionLimitSimple::updateResult()
       }//switch( continuumTypeIndex )
       
       
-      const int continuumPriorIndex = m_continuumPrior->currentIndex()
+      const int continuumPriorIndex = m_continuumPrior->currentIndex();
       switch( continuumPriorIndex )
       {
         case 0: // "Unknown or Present"
-          roiInfo.cont_norm_method = DeconContinuumNorm::Floating;
+          roiInfo.cont_norm_method = DetectionLimitCalc::DeconContinuumNorm::Floating;
           break;
           
         case 1: // "Not Present"
-          roiInfo.cont_norm_method = DeconContinuumNorm::FixedByFullRange;
+          roiInfo.cont_norm_method = DetectionLimitCalc::DeconContinuumNorm::FixedByFullRange;
           break;
           
         case 2: // "Cont. from sides"
-          roiInfo.cont_norm_method = DeconContinuumNorm::FixedByEdges;
+          roiInfo.cont_norm_method = DetectionLimitCalc::DeconContinuumNorm::FixedByEdges;
           break;
           
         default:
@@ -1443,6 +1443,24 @@ void DetectionLimitSimple::updateResult()
       input.roi_info.push_back( roiInfo );
     
       throw runtime_error( "We need to refactor DetectionLimitTool::doCalc(), to actually do the calculation" );
+      
+      /*
+       // Need to implement using the following to get info
+       const double mid_search_quantity = 0.5*(min_search_quantity + max_search_quantity);
+       const double base_act = is_dist_limit ?  other_quantity : mid_search_quantity;
+       const double base_dist = is_dist_limit ? mid_search_quantity : other_quantity;
+       vector<PeakDef> dummy_peaks{};
+       const shared_ptr<const DetectionLimitCalc::DeconComputeInput> base_input
+                       = getComputeForActivityInput( base_act, base_dist, dummy_peaks );
+       
+       
+       const float wantedCl = currentConfidenceLevel();
+       DetectionLimitCalc::DeconActivityOrDistanceLimitResult result
+                     = DetectionLimitCalc::get_activity_or_distance_limits( wantedCl, base_input,
+                                                                     is_dist_limit, min_search_quantity,
+                                                                       max_search_quantity, useCurie );
+       */
+      
       
       m_currentDeconInput = make_shared<DetectionLimitCalc::DeconComputeInput>( input );
       DetectionLimitCalc::DeconComputeResults results = DetectionLimitCalc::decon_compute_peaks( input );

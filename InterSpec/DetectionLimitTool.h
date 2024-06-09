@@ -411,8 +411,8 @@ public:
     double branch_ratio; //!< Decay branching ratio of nuclide
     double counts_per_bq_into_4pi; //!< This includes spectrum live time, shielding, and gamma BR.  This will need to be turned into some vector to cover multiple gamma lines
     double counts_per_bq_into_4pi_with_air;
-    double trans_through_air;
-    double trans_through_shielding;
+    //double trans_through_air;
+    //double trans_through_shielding;
     double distance;
     double activity;
     float roi_start;

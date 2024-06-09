@@ -6,8 +6,8 @@
   <message id="dls-decon-tab-title">Deconvolution</message>
   <message id="dls-err-no-input">No input entered - please enter nuclide, select gamma energy, and input distance.</message>
   <message id="dls-err-calculating">Error calculating answer: {1}</message>
-  <message id="dls-"></message>
-  <message id="dls-"></message>
+  <message id="dls-currie-desc">Currie method compares gross counts to prediction of surrounding channels</message>
+  <message id="dls-decon-desc">Deconvolution accounts for peak shape and data distribution</message>
   <message id="dls-"></message>
   <message id="dls-"></message>
 
