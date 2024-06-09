@@ -30,6 +30,13 @@
   
 }
 
+.DetectionLimitSimple .GeneralInput .FwhmSuggest {
+  font-style: italic;
+  font-size: xx-small;
+  margin-left: 10px;
+}
+
+
 .DetectionLimitSimple .MethodTabs {
   
 }
@@ -47,6 +54,12 @@
   column-gap: 8px;
 }
 
+
+.DetectionLimitSimple .CalcMethodDesc{
+  display: block;
+  font-style: italic;
+  font-size: xx-small;
+}
 
 .CurrieLimitArea {
   display: grid;

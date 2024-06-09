@@ -250,6 +250,7 @@ DetectionLimitSimple::DetectionLimitSimple( MaterialDB *materialDB,
   m_confidenceLevel( nullptr ),
   m_detectorDisplay( nullptr ),
   m_methodGroup( nullptr ),
+  m_methodDescription( nullptr ),
   m_methodStack( nullptr ),
   m_currieLimitArea( nullptr ),
   m_deconLimitArea( nullptr ),
@@ -258,13 +259,22 @@ DetectionLimitSimple::DetectionLimitSimple( MaterialDB *materialDB,
   m_upperRoi( nullptr ),
   m_numSideChannelLabel( nullptr ),
   m_numSideChannel( nullptr ),
+  m_fwhm( nullptr ),
+  m_fwhmSuggestTxt( nullptr ),
+  m_addFwhmBtn( nullptr ),
+  m_continuumPriorLabel( nullptr ),
+  m_continuumPrior( nullptr ),
+  m_continuumTypeLabel( nullptr ),
+  m_continuumType( nullptr ),
   m_currentNuclide( nullptr ),
   m_currentAge( 0.0 ),
   m_currentEnergy( 0.0 ),
+  m_clusterNumFwhm( 0.5 ),
   m_prevDistance{},
   m_stateUri(),
   m_currentCurrieInput( nullptr ),
   m_currentCurrieResults( nullptr ),
+  m_currentDeconInput( nullptr ),
   m_currentDeconResults( nullptr )
 {
   init();
@@ -355,7 +365,7 @@ void DetectionLimitSimple::init()
                               WString::tr("dcw-tt-age-edit"), showToolTips );
   
   
-  WLabel *gammaLabel = new WLabel( WString::tr("Gamma"), generalInput );
+  WLabel *gammaLabel = new WLabel( WString("{1}:").arg(WString::tr("Gamma")), generalInput );
   gammaLabel->addStyleClass( "GridFirstCol GridThirdRow GridVertCenter" );
   
   
@@ -456,12 +466,50 @@ void DetectionLimitSimple::init()
   m_numSideChannelLabel->setBuddy( m_numSideChannel );
   m_numSideChannel->valueChanged().connect( this, &DetectionLimitSimple::handleUserChangedNumSideChannel );
   
+  WLabel *fwhmLabel = new WLabel( "FWHM:", generalInput );
+  fwhmLabel->addStyleClass( "GridFirstCol GridSixthRow" );
+  m_fwhm = new NativeFloatSpinBox( generalInput );
+  m_fwhm->setRange( 0.05f, 250.0f );
+  m_fwhm->setSpinnerHidden();
+  m_fwhm->addStyleClass( "GridSecondCol GridSixthRow" );
+  fwhmLabel->setBuddy( m_fwhm );
+  m_fwhm->valueChanged().connect( this, &DetectionLimitSimple::handleUserChangedFwhm );
   
+  m_fwhmSuggestTxt = new WText( generalInput );
+  m_fwhmSuggestTxt->addStyleClass( "FwhmSuggest GridThirdCol GridSixthRow GridVertCenter" );
+  m_addFwhmBtn = new WPushButton( "Fit FWHM...", generalInput );
+  m_addFwhmBtn->clicked().connect( this, &DetectionLimitSimple::handleFitFwhmRequested );
+  m_addFwhmBtn->addStyleClass( "MdaFitFwhm LightButton GridFourthCol GridSixthRow" );
+  
+  
+  m_continuumPriorLabel = new WLabel( "Prior:", generalInput );
+  m_continuumPriorLabel->addStyleClass( "GridFirstCol GridSeventhRow GridVertCenter" );
+  m_continuumPrior = new WComboBox( generalInput );
+  m_continuumPrior->addItem( "Unknown or Present" );
+  m_continuumPrior->addItem( "Not Present" );
+  m_continuumPrior->addItem( "Cont. from sides" );
+  m_continuumPrior->setCurrentIndex( 0 );
+  m_continuumPrior->activated().connect( this, &DetectionLimitSimple::handleDeconPriorChange );
+  m_continuumPrior->addStyleClass( "GridSecondCol GridSeventhRow" );
+  
+  m_continuumTypeLabel = new WLabel( "Continuum Type:", generalInput );
+  m_continuumTypeLabel->addStyleClass( "GridThirdCol GridSeventhRow GridVertCenter" );
+  m_continuumType = new WComboBox( generalInput );
+  m_continuumType->addItem( "Linear" );
+  m_continuumType->addItem( "Quadratic" );
+  m_continuumType->setCurrentIndex( 0 );
+  m_continuumType->activated().connect( this, &DetectionLimitSimple::handleDeconContinuumTypeChange );
+  m_continuumType->addStyleClass( "GridFourthCol GridSeventhRow" );
+  
+  m_continuumPriorLabel->hide();
+  m_continuumPrior->hide();
+  m_continuumTypeLabel->hide();
+  m_continuumType->hide();
   
   WContainerWidget *container = new WContainerWidget( generalInput );
-  container->addStyleClass( "MethodSelect GridFirstCol GridSixthRow GridSpanFourCol" );
+  container->addStyleClass( "MethodSelect GridFirstCol GridEighthRow GridSpanFourCol" );
   
-  WLabel *methodLabel = new WLabel( "Calculation Method:", container);
+  WLabel *methodLabel = new WLabel( "Calc. Method:", container);
   
   m_methodGroup = new WButtonGroup( container );
   WRadioButton *currieBtn = new Wt::WRadioButton( WString::tr("dls-currie-tab-title"), container );
@@ -473,6 +521,8 @@ void DetectionLimitSimple::init()
   
   m_methodGroup->checkedChanged().connect( boost::bind(&DetectionLimitSimple::handleMethodChanged, this, boost::placeholders::_1) );
   
+  m_methodDescription = new WText( WString::tr("dls-currie-desc"), generalInput );
+  m_methodDescription->addStyleClass( "CalcMethodDesc GridSecondCol GridNinthRow GridSpanThreeCol" );
   
   m_currieLimitArea = new CurrieLimitArea( this );
   m_deconLimitArea = new DeconvolutionLimitArea( this );
@@ -510,7 +560,10 @@ void DetectionLimitSimple::roiDraggedCallback( double new_roi_lower_energy,
                  bool is_final_range )
 {
   if( !is_final_range )
+  {
+    // TODO: we could implement updating things as the user drags... not quite sure what is required though in PeakModel - need to check what InterSpec does
     return;
+  }
   
   if( new_roi_upper_energy < new_roi_lower_energy )
     std::swap( new_roi_upper_energy, new_roi_lower_energy );
@@ -518,12 +571,15 @@ void DetectionLimitSimple::roiDraggedCallback( double new_roi_lower_energy,
   if( m_currentNuclide
      && ((m_currentEnergy < new_roi_lower_energy) || (m_currentEnergy > new_roi_upper_energy)) )
   {
-    passMessage( "Changing the ROI excluded primary gamma - not changing", WarningWidget::WarningMsgHigh );
+    if( is_final_range )
+      passMessage( "Changing the ROI excluded primary gamma - not changing", WarningWidget::WarningMsgHigh );
     return;
   }
   
   m_lowerRoi->setValue( new_roi_lower_energy );
   m_upperRoi->setValue( new_roi_upper_energy );
+  
+  handleUserChangedRoi();
 }//void roiDraggedCallback(...)
 
 
@@ -590,6 +646,12 @@ void DetectionLimitSimple::handleUserChangedRoi()
     }
   }//if( valid energy cal )
   
+  
+  // If there isnt a photopeak selected, update predicted FWHM based on center of ROI
+  if( meanEnergy <= 10.0f )
+    setFwhmFromEstimate();
+  
+  
   m_renderFlags |= DetectionLimitSimple::RenderActions::UpdateLimit;
   m_renderFlags |= DetectionLimitSimple::RenderActions::AddUndoRedoStep;
   m_renderFlags |= DetectionLimitSimple::RenderActions::UpdateSpectrumDecorations;
@@ -606,6 +668,108 @@ void DetectionLimitSimple::handleUserChangedNumSideChannel()
 }//void handleUserChangedNumSideChannel()
 
 
+void DetectionLimitSimple::setFwhmFromEstimate()
+{
+  float energy = m_currentEnergy;
+  if( energy <= 10 )
+    energy = 0.5f*(m_lowerRoi->value() + m_upperRoi->value());
+  
+  float fwhm = 0.1f;
+  const shared_ptr<const DetectorPeakResponse> drf = m_detectorDisplay->detector();
+  if( drf && drf->hasResolutionInfo() )
+  {
+    m_addFwhmBtn->hide();
+    fwhm = drf->peakResolutionFWHM( energy );
+  }else
+  {
+    m_addFwhmBtn->show();
+    fwhm = std::max( 0.1f, PeakSearchGuiUtils::estimate_FWHM_of_foreground(energy) );
+  }
+  
+  m_fwhm->setValue( fwhm );
+  m_fwhmSuggestTxt->hide();
+}//setFwhmFromEstimate();
+
+
+void DetectionLimitSimple::handleUserChangedFwhm()
+{
+  float fwhm = m_fwhm->value();
+  float energy = m_currentEnergy;
+  if( energy <= 10 )
+    energy = 0.5f*(m_lowerRoi->value() + m_upperRoi->value());
+  
+  const shared_ptr<const DetectorPeakResponse> drf = m_detectorDisplay->detector();
+  
+  if( (m_fwhm->validate() != WValidator::State::Valid) || (m_fwhm->value() < 0.1f) )
+  {
+    // I'm not actually sure if we can ever make it here
+    if( drf && drf->hasResolutionInfo() )
+      fwhm = drf->peakResolutionFWHM( energy );
+    else
+      fwhm = std::max( 0.1f, PeakSearchGuiUtils::estimate_FWHM_of_foreground(energy) );
+    m_fwhm->setValue( fwhm );
+  }//if( invalid FWHM )
+  
+  
+  if( drf && drf->hasResolutionInfo() )
+  {
+    m_addFwhmBtn->hide();
+    
+    const double drf_fwhm = drf->peakResolutionFWHM( energy );
+    if( fabs(fwhm - drf_fwhm) > 0.1 )
+    {
+      char text[128] = { '\0' };
+      snprintf( text, sizeof(text), "Detector FWHM: %.2f keV", drf_fwhm );
+      m_fwhmSuggestTxt->setText( text );
+      m_fwhmSuggestTxt->show();
+    }else
+    {
+      m_fwhmSuggestTxt->hide();
+    }
+  }else
+  {
+    m_addFwhmBtn->show();
+    const float est_fwhm = std::max( 0.1f, PeakSearchGuiUtils::estimate_FWHM_of_foreground(energy) );
+    
+    char text[128] = { '\0' };
+    snprintf( text, sizeof(text), "Rough Est. FWHM: %.2f keV", est_fwhm );
+    m_fwhmSuggestTxt->setText( text ); //"No functional FWHM"
+    m_fwhmSuggestTxt->show();
+  }//if( DRF has FEHM info ) / else
+  
+  
+  m_renderFlags |= DetectionLimitSimple::RenderActions::UpdateLimit;
+  m_renderFlags |= DetectionLimitSimple::RenderActions::AddUndoRedoStep;
+  m_renderFlags |= DetectionLimitSimple::RenderActions::UpdateSpectrumDecorations;
+  scheduleRender();
+}//void handleUserChangedFwhm()
+
+
+void DetectionLimitSimple::handleDeconPriorChange()
+{
+  const bool currieMethod = (m_methodGroup->checkedId() == 0);
+  assert( !currieMethod );
+  
+  const bool useSideChan = (m_continuumPrior->currentIndex() == 2);
+  
+  m_numSideChannelLabel->setHidden( !currieMethod && !useSideChan );
+  m_numSideChannel->setHidden( !currieMethod && !useSideChan );
+  
+  m_renderFlags |= DetectionLimitSimple::RenderActions::UpdateLimit;
+  m_renderFlags |= DetectionLimitSimple::RenderActions::AddUndoRedoStep;
+  m_renderFlags |= DetectionLimitSimple::RenderActions::UpdateSpectrumDecorations;
+  scheduleRender();
+}//void handleDeconPriorChange()
+
+
+void DetectionLimitSimple::handleDeconContinuumTypeChange()
+{
+  m_renderFlags |= DetectionLimitSimple::RenderActions::UpdateLimit;
+  m_renderFlags |= DetectionLimitSimple::RenderActions::AddUndoRedoStep;
+  m_renderFlags |= DetectionLimitSimple::RenderActions::UpdateSpectrumDecorations;
+  scheduleRender();
+}//void handleDeconContinuumTypeChange()
+
 DetectionLimitSimple::~DetectionLimitSimple()
 {
   //nothing to do here
@@ -621,6 +785,16 @@ void DetectionLimitSimple::handleMethodChanged( Wt::WRadioButton *btn )
   m_numSideChannelLabel->setHidden( !currieMethod );
   m_numSideChannel->setHidden( !currieMethod );
   
+  const bool useSideChan = (m_continuumPrior->currentIndex() == 2);
+  m_numSideChannelLabel->setHidden( !currieMethod && !useSideChan );
+  m_numSideChannel->setHidden( !currieMethod && !useSideChan );
+  
+  m_continuumPriorLabel->setHidden( currieMethod );
+  m_continuumPrior->setHidden( currieMethod );
+  m_continuumTypeLabel->setHidden( currieMethod );
+  m_continuumType->setHidden( currieMethod );
+  
+  m_methodDescription->setText( WString::tr(currieMethod ? "dls-currie-desc" : "dls-decon-desc") );
   
   m_renderFlags |= DetectionLimitSimple::RenderActions::UpdateLimit;
   m_renderFlags |= DetectionLimitSimple::RenderActions::AddUndoRedoStep;
@@ -899,6 +1073,8 @@ void DetectionLimitSimple::handleGammaChanged()
   //const string current_txt = m_photoPeakEnergy->currentText().toUTF8()
   //const bool is_xray = (current_txt.find("xray") != string::npos);
   
+  setFwhmFromEstimate();
+  
   m_renderFlags |= DetectionLimitSimple::RenderActions::UpdateLimit;
   m_renderFlags |= DetectionLimitSimple::RenderActions::AddUndoRedoStep;
   m_renderFlags |= DetectionLimitSimple::RenderActions::UpdateSpectrumDecorations;
@@ -951,6 +1127,8 @@ void DetectionLimitSimple::handleDetectorChanged( std::shared_ptr<DetectorPeakRe
   //  to date.
   m_detectorDisplay->setDetector( new_drf );
   
+  handleUserChangedFwhm();
+  
   m_renderFlags |= DetectionLimitSimple::RenderActions::UpdateLimit;
   scheduleRender();
 }//void handleDetectorChanged( std::shared_ptr<DetectorPeakResponse> new_drf )
@@ -989,6 +1167,7 @@ void DetectionLimitSimple::updateSpectrumDecorations()
   
   if( m_methodStack->currentIndex() == 0 )
   {
+    // Currie method limit
     if( m_currentCurrieInput )
     {
       double gammas_per_bq = -1.0, distance = -1.0, br = -1;
@@ -1003,9 +1182,37 @@ void DetectionLimitSimple::updateSpectrumDecorations()
       const int energyIndex = m_photoPeakEnergy->currentIndex();
       if( (energyIndex >= 0) && (energyIndex < static_cast<int>(m_photoPeakEnergiesAndBr.size())) )
       {
-        // TODO: sum nearby gammas - maybe something like within 0.5 FWHM and within the ROI... something to think about
-        br = m_photoPeakEnergiesAndBr[energyIndex].second;
-      }
+        // TODO: consider being able to draw each peak individually.
+        const double energy = m_photoPeakEnergiesAndBr[energyIndex].first;
+        assert( fabs(energy - static_cast<float>(m_currentCurrieInput->gamma_energy)) < 0.1 );
+        
+        if( m_clusterNumFwhm > 0.0 )
+        {
+          //include any gamma within m_clusterNumFwhm*fwhm of the selected gamma.
+          br = 0.0;
+          
+          const float fwhm = m_fwhm->value();
+          const double roi_lower = m_lowerRoi->value();
+          const double roi_upper = m_upperRoi->value();
+          
+          for( const pair<double,double> &ppebr : m_photoPeakEnergiesAndBr )
+          {
+            if( (fabs(ppebr.first - energy) <= m_clusterNumFwhm*fwhm)
+               && (ppebr.first >= roi_lower)
+               && (ppebr.first <= roi_upper) )
+            {
+              br += ppebr.second;
+            }
+          }//for( const pair<double,double> &ppebr : m_photoPeakEnergiesAndBr )
+          
+          assert( br >= m_photoPeakEnergiesAndBr[energyIndex].second );
+          br = std::max( br, m_photoPeakEnergiesAndBr[energyIndex].second ); //JIC
+        }else
+        {
+          // Only use the selected gamma if m_clusterNumFwhm <= 0
+          br = m_photoPeakEnergiesAndBr[energyIndex].second;
+        }
+      }//if( an energy is selected )
         
       
       if( drf && drf->isValid() && (distance >= 0.0) && (br > 0) && m_currentCurrieInput->spectrum )
@@ -1035,6 +1242,7 @@ void DetectionLimitSimple::updateSpectrumDecorations()
     }//if( m_currentCurrieInput )
   }else
   {
+    // Deconvolution method limit
     if( !m_currentDeconResults )
     {
       
@@ -1051,7 +1259,11 @@ void DetectionLimitSimple::updateResult()
 {
   //m_errMsg->setText( WString::tr("dls-err-no-input") );
   m_errMsg->setText( "" );
+  
+  m_currentDeconInput.reset();
   m_currentDeconResults.reset();
+  
+  m_currentCurrieInput.reset();
   m_currentCurrieResults.reset();
   
   try
@@ -1090,7 +1302,7 @@ void DetectionLimitSimple::updateResult()
       // We need to calculate Currie-style limit
       auto input = make_shared<DetectionLimitCalc::CurieMdaInput>();
       input->spectrum = hist;
-      input->gamma_energy = energy;
+      input->gamma_energy = static_cast<float>( energy );
       input->roi_lower_energy = m_lowerRoi->value();
       input->roi_upper_energy = m_upperRoi->value();
       input->num_lower_side_channels = static_cast<size_t>( m_numSideChannel->value() );
@@ -1134,30 +1346,95 @@ void DetectionLimitSimple::updateResult()
       if( distance < 0.0 )
         throw runtime_error( "Distance can't be negative." );
       
-      throw runtime_error( "Deconvolution calculations not implemented yet" );
-      
       DetectionLimitCalc::DeconRoiInfo roiInfo;
-      //roiInfo.roi_start = ...; // Will be rounded to nearest channel edge.
-      //roiInfo.roi_end = ...;// Will be rounded to nearest channel edge.
-      roiInfo.continuum_type = PeakContinuum::OffsetType::Linear;
+      roiInfo.roi_start = m_lowerRoi->value(); // Will be rounded to nearest channel edge.
+      roiInfo.roi_end = m_upperRoi->value();// Will be rounded to nearest channel edge.
+      
         
-      //Whether to allow the continuum to float in the fit, or to fix the continuum using the peaks bordering the ROI, or use the whole ROI to determine the continuum with the assumption no signal is there.
-      //roiInfo.cont_norm_method = DeconContinuumNorm::;
-      //roiInfo.num_lower_side_channels = ; //Only used if `cont_norm_method` is `DeconContinuumNorm::FixedByEdges`.
-      //roiInfo.num_upper_side_channels = ; //Only used if `cont_norm_method` is `DeconContinuumNorm::FixedByEdges`.
+      const int continuumTypeIndex = m_continuumType->currentIndex();
+      switch( continuumTypeIndex )
+      {
+        case 0: 
+          roiInfo.continuum_type = PeakContinuum::OffsetType::Linear;
+          break;
+          
+        case 1:
+          roiInfo.continuum_type = PeakContinuum::OffsetType::Quadratic;
+          break;
+          
+        default:
+          assert( 0 );
+          throw std::logic_error( "Invalid continuuuum type selected" );
+      }//switch( continuumTypeIndex )
       
-      //DetectionLimitCalc::DeconRoiInfo::PeakInfo peakInfo;
-      //peakInfo.energy = ;
-      //peakInfo.fwhm = ;
-      //peakInfo.counts_per_bq_into_4pi = ;//must have effects of shielding already accounted for, but not air atten, or det intrinsic eff
-       
-      //roiInfo.peak_infos.push_back( peakInfo );
       
-      // TODO: put additional peaks...
+      const int continuumPriorIndex = m_continuumPrior->currentIndex()
+      switch( continuumPriorIndex )
+      {
+        case 0: // "Unknown or Present"
+          roiInfo.cont_norm_method = DeconContinuumNorm::Floating;
+          break;
+          
+        case 1: // "Not Present"
+          roiInfo.cont_norm_method = DeconContinuumNorm::FixedByFullRange;
+          break;
+          
+        case 2: // "Cont. from sides"
+          roiInfo.cont_norm_method = DeconContinuumNorm::FixedByEdges;
+          break;
+          
+        default:
+          assert( 0 );
+          throw std::logic_error( "Invalid continuuuum prior selected" );
+      }//switch( continuumPriorIndex )
+      
+      if( roiInfo.cont_norm_method == DetectionLimitCalc::DeconContinuumNorm::FixedByEdges )
+      {
+        // `roiInfo.num_*_side_channels` only used if `cont_norm_method` is `DeconContinuumNorm::FixedByEdges`.
+        roiInfo.num_lower_side_channels = static_cast<int>( m_numSideChannel->value() );
+        roiInfo.num_upper_side_channels = roiInfo.num_lower_side_channels;
+      }else
+      {
+        roiInfo.num_lower_side_channels = roiInfo.num_upper_side_channels = 0;
+      }
+      
+      const float roi_lower_energy = m_lowerRoi->value();
+      const float roi_upper_energy = m_upperRoi->value();
+      if( m_clusterNumFwhm > 0.0 )
+      {
+        // TODO: decide if we should limit to only within `m_clusterNumFwhm`, or entire ROI (right now: entire ROI).
+        const double gammaFwhm = m_fwhm->value();
+        const bool isDrfFwhm = (fabs(gammaFwhm - drf->peakResolutionFWHM(energy)) < 0.01);
+        
+        for( size_t i = 0; i < m_photoPeakEnergiesAndBr.size(); ++i )
+        {
+          const double thisEnergy = m_photoPeakEnergiesAndBr[i].first;
+          const double thisBr = m_photoPeakEnergiesAndBr[i].second;
+          
+          if( (thisEnergy >= roi_lower_energy) && (thisEnergy <= roi_upper_energy) )
+          {
+            DetectionLimitCalc::DeconRoiInfo::PeakInfo peakInfo;
+            peakInfo.energy = thisEnergy;
+            // if user has left FWHM to detector predicted value, then consult the DRF for each peak
+            peakInfo.fwhm = isDrfFwhm ? drf->peakResolutionFWHM(thisEnergy) : gammaFwhm;
+            peakInfo.counts_per_bq_into_4pi = thisBr;//must have effects of shielding already accounted for, but not air atten, or det intrinsic eff
+            roiInfo.peak_infos.push_back( peakInfo );
+          }
+        }//for( size_t i = 0; i < m_photoPeakEnergiesAndBr.size(); ++i )
+      }else
+      {
+        const double br = m_photoPeakEnergiesAndBr[energyIndex].second;
+        
+        DetectionLimitCalc::DeconRoiInfo::PeakInfo peakInfo;
+        peakInfo.energy = energy;
+        peakInfo.fwhm = m_fwhm->value();
+        peakInfo.counts_per_bq_into_4pi = br;//must have effects of shielding already accounted for, but not air atten, or det intrinsic eff
+        roiInfo.peak_infos.push_back( peakInfo );
+      }
       
       DetectionLimitCalc::DeconComputeInput input;
       input.distance = distance;
-      //dont need to fill out: input.activity;
+      //input.activity = ...; //This will need to be varied
       input.include_air_attenuation = true;
       input.shielding_thickness = 0.0;
       input.measurement = hist;
@@ -1165,6 +1442,9 @@ void DetectionLimitSimple::updateResult()
         
       input.roi_info.push_back( roiInfo );
     
+      throw runtime_error( "We need to refactor DetectionLimitTool::doCalc(), to actually do the calculation" );
+      
+      m_currentDeconInput = make_shared<DetectionLimitCalc::DeconComputeInput>( input );
       DetectionLimitCalc::DeconComputeResults results = DetectionLimitCalc::decon_compute_peaks( input );
     
       m_currentDeconResults = make_shared<DetectionLimitCalc::DeconComputeResults>( results );

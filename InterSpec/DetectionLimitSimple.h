@@ -66,7 +66,9 @@ namespace SandiaDecay
 
 namespace DetectionLimitCalc
 {
+  struct CurieMdaInput;
   struct CurieMdaResult;
+  struct DeconComputeInput;
   struct DeconComputeResults;
 }//namespace DetectionLimitCalc
 
@@ -108,7 +110,6 @@ public:
   
   float photopeakEnergy() const;
   const SandiaDecay::Nuclide *nuclide() const;
-  
   
   /** Handles receiving a "deep-link" url starting with "interspec://simple-mda/...".
    
@@ -164,6 +165,12 @@ protected:
   
   void handleUserChangedNumSideChannel();
   
+  void setFwhmFromEstimate();
+  void handleUserChangedFwhm();
+  
+  void handleDeconPriorChange();
+  void handleDeconContinuumTypeChange();
+  
   void updateSpectrumDecorations();
   
   void updateResult();
@@ -214,6 +221,7 @@ protected:
   DetectorDisplay *m_detectorDisplay;
   
   Wt::WButtonGroup *m_methodGroup;
+  Wt::WText *m_methodDescription;
   Wt::WStackedWidget *m_methodStack;
   CurrieLimitArea *m_currieLimitArea;
   DeconvolutionLimitArea *m_deconLimitArea;
@@ -225,11 +233,23 @@ protected:
   Wt::WLabel *m_numSideChannelLabel;
   Wt::WSpinBox *m_numSideChannel;
   
+  NativeFloatSpinBox *m_fwhm;
+  Wt::WText *m_fwhmSuggestTxt;
+  Wt::WPushButton *m_addFwhmBtn;
   
+  Wt::WLabel *m_continuumPriorLabel;
+  Wt::WComboBox *m_continuumPrior;
+  Wt::WLabel *m_continuumTypeLabel;
+  Wt::WComboBox *m_continuumType;
   
   const SandiaDecay::Nuclide *m_currentNuclide;
   double m_currentAge;
   double m_currentEnergy;
+  
+  /** If negative or zero, then only gamma specified will be used in the limit.
+   Otherwise, gammas within this number of FWHM, and in ROI, will be added to gamma specified.
+   */
+  double m_clusterNumFwhm;
   
   /** The most  recent valid distance - used to reset the distance field, if user enters an invalid distance. */
   Wt::WString m_prevDistance;
@@ -247,6 +267,7 @@ protected:
   std::shared_ptr<const DetectionLimitCalc::CurieMdaInput> m_currentCurrieInput;
   std::shared_ptr<const DetectionLimitCalc::CurieMdaResult> m_currentCurrieResults;
   
+  std::shared_ptr<const DetectionLimitCalc::DeconComputeInput> m_currentDeconInput;
   std::shared_ptr<const DetectionLimitCalc::DeconComputeResults> m_currentDeconResults;
   
   friend class CurrieLimitArea;

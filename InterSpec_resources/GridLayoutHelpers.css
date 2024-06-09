@@ -99,6 +99,25 @@
   grid-row-start: 6;
 }
 
+.GridSeventhRow
+{
+  grid-row-start: 7;
+}
+
+.GridEighthRow
+{
+  grid-row-start: 8;
+}
+
+.GridNinthRow
+{
+  grid-row-start: 9;
+}
+
+.GridTenthRow
+{
+  grid-row-start: 9;
+}
 
 .GridSpanTwoCol
 {

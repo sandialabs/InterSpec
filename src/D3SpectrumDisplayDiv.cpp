@@ -225,6 +225,7 @@ D3SpectrumDisplayDiv::D3SpectrumDisplayDiv( WContainerWidget *parent )
   m_xAxisTitle( WString::tr("Energy (keV)") ),
   m_yAxisTitle( WString::tr("d3sdd-yAxisTitle") ),
   m_yAxisTitleMulti( WString::tr("d3sdd-yAxisTitleMulti") ),
+  m_chartTitle(),
   // A bunch of signals m_shiftKeyDraggJS ... m_yAxisScaled
   m_jsgraph( jsRef() + ".chart" ),
   m_xAxisMinimum(0.0),
@@ -757,6 +758,7 @@ std::string D3SpectrumDisplayDiv::localizedStringsJson() const
   "xAxisTitle: " + m_xAxisTitle.jsStringLiteral('\'') + ",\n\t"                                   // "Energy (keV)"
   "yAxisTitle: " + m_yAxisTitle.jsStringLiteral('\'') + ",\n\t"                                   // "Counts"
   "yAxisTitleMulti: " + m_yAxisTitleMulti.jsStringLiteral('\'') + ",\n\t"                         // "Counts per {1} Channels"
+  "title: " + (m_chartTitle.empty() ? string("null") : m_chartTitle.jsStringLiteral('\'')) + ",\n\t" //""
   "realTime: " + WString::tr("d3sdd-realTime").jsStringLiteral() + ",\n\t"                        // "Real Time"
   "liveTime: " + WString::tr("d3sdd-liveTime").jsStringLiteral() + ",\n\t"                        // "Live Time"
   "deadTime: " + WString::tr("d3sdd-deadTime").jsStringLiteral() + ",\n\t"                        // "Dead Time"
@@ -1253,6 +1255,15 @@ Wt::Signal<double,double> &D3SpectrumDisplayDiv::shiftAltKeyDragged()
 {
   return m_shiftAltKeyDragg;
 }
+
+
+void D3SpectrumDisplayDiv::setChartTitle( const Wt::WString &title )
+{
+  m_chartTitle = title;
+  if( isRendered() )
+    doJavaScript( m_jsgraph + ".setTitle(" + title.jsStringLiteral('\'') + ");" );
+}//void setChartTitle( const Wt::WString &title )
+
 
 void D3SpectrumDisplayDiv::setSearchEnergies( const vector<pair<double,double>> &energies )
 {

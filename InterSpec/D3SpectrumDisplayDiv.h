@@ -209,6 +209,7 @@ public:
   const Wt::WString &xAxisTitle() const;
   const Wt::WString &yAxisTitle() const;
 
+  void setChartTitle( const Wt::WString &title );
   
   void enableLegend();
   void disableLegend();
@@ -426,6 +427,7 @@ protected:
   Wt::WString m_xAxisTitle;
   Wt::WString m_yAxisTitle;
   Wt::WString m_yAxisTitleMulti;
+  Wt::WString m_chartTitle;
   
   // JSignals
   //for all the bellow, the doubles are all the <x,y> coordinated of the action
