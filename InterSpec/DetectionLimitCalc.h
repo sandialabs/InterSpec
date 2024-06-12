@@ -72,6 +72,11 @@ class Measurement;
   https://pubs.acs.org/doi/10.1021/ac60259a007
  - P.A. Zyla et al. (Particle Data Group), Prog. Theor. Exp. Phys. 2020, 083C01 (2020) and 2021
   https://pdg.lbl.gov
+ 
+ General TODO items:
+ - The Currie-style limit assumes 100% of the peaks counts are within the ROI - perhaps allow a correction for this?
+ - The deconvolution-style limit should allow uncertainty on the FWHM and energy calibration, to better get limits
+ - More test cases need implementing
  */
 
 namespace DetectionLimitCalc
@@ -339,13 +344,19 @@ struct DeconRoiInfo
   
   /** The number of channels below #roi_lower_energy to use to estimate the continuum.
    
-   Only used if `cont_norm_method` is `DeconContinuumNorm::FixedByEdges`.
+   Directly used for `cont_norm_method` of `DeconContinuumNorm::FixedByEdges`,
+   and can not be zero for that case.  For the other continuum normalization methods, is used
+   for the initial starting continuum equations parameters that will be fit for; in these cases the
+   value will be clamped between 2 and 16 channels (incase z zero or garbage value is provided).
    */
   size_t num_lower_side_channels;
   
   /** The number of channels above #roi_upper_energy to use to estimate the continuum.
    
    Only used if `cont_norm_method` is `DeconContinuumNorm::FixedByEdges`.
+   
+   Note that for the other continuum normalizations, the initial (before fitting) continuum equation
+   parameters are estimated using number of side channels, which is currently fixed at 4.
    */
   size_t num_upper_side_channels;
   
@@ -364,6 +375,13 @@ struct DeconRoiInfo
      If applicable, must have effects of shielding already accounted for.
      This number must not have effects of attenuation in air, or detector intrinsic efficiency accounted for; these will be applied during
      call to #decon_compute_peaks.
+     
+     For example, this value would be `branching_ratio * live_time * shielding_attenuation`,
+     Where:
+      - `branching_ratio` is number of this energy gamma, per decay of the parent nuclide.
+      - `live_time` is the live time of the spectrum, and
+      - `shielding_attenuation` is the fraction of gammas through the shielding without interaction,
+      i.e. in range (0,1], where 1.0 is no shielding.
      */
     double counts_per_bq_into_4pi;
     
@@ -427,29 +445,36 @@ DeconComputeResults decon_compute_peaks( const DeconComputeInput &input );
   
 struct DeconActivityOrDistanceLimitResult
 {
-  bool isDistanceLimit = false;
+  /** The input variables to the calculations */
+  bool isDistanceLimit;
+  double confidenceLevel;
+  double minSearchValue;
+  double maxSearchValue;
+  DeconComputeInput baseInput;
   
   // TODO: refactor generating this text to a separate function.
   std::string limitText;
   std::string quantityLimitStr;
   std::string bestCh2Text;
   
-  double overallBestChi2 = 0.0;
-  double overallBestQuantity = 0.0;
+  double overallBestChi2;
+  double overallBestQuantity;
+  std::shared_ptr<const DeconComputeResults> overallBestResults;
   
-  bool foundUpperCl = false;
-  double upperLimit = 0.0;
-  double upperLimitChi2 = -1.0;
+  bool foundUpperCl;
+  double upperLimit;
+  double upperLimitChi2;
+  std::shared_ptr<const DeconComputeResults> upperLimitResults;
   
-  bool foundLowerCl = false;
-  double lowerLimit = 0.0;
-  double lowerLimitChi2 = -1.0;
-  
+  bool foundLowerCl;
+  double lowerLimit;
+  double lowerLimitChi2;
+  std::shared_ptr<const DeconComputeResults> lowerLimitResults;
   
   bool foundUpperDisplay = false;
-  double upperDisplayRange = 0.0;
-  bool foundLowerDisplay = false;
-  double lowerDisplayRange = 0.0;
+  double upperDisplayRange;
+  bool foundLowerDisplay;
+  double lowerDisplayRange;
   
   /** The Chi2s for a series of the quantity being found - for generating the displayed Chi2 chart from
    {quantity,Chi2}

@@ -189,6 +189,13 @@ public:
    */
   std::string encodeStateToUrl() const;
   
+  struct CurrieResultPeak
+  {
+    double energy = 0.0;
+    double fwhm = 0.0;
+    double counts_4pi = 0.0;
+  };
+  
   /** Updates the decorative region, visible region, and text for a Currie limit result.
    
    @param chart Chart to update; must not be nullptr.
@@ -198,6 +205,7 @@ public:
    @param drf Only use for peak FWHM; if nullptr or no FWHM info, will use 0.25 ROI for peak sigma width.
    @param limitType The limit type - currently only activity limit is supported
    @param gammas_per_bq The expected detected gammas per Bq.  If zero or negative, will put text in terms of counts
+   @param peaks Peaks to place on the plot; if empty, will create a peak using `gammas_per_bq`, and FWHM from drf
    */
   static void update_spectrum_for_currie_result( D3SpectrumDisplayDiv *chart,
                                          PeakModel *pmodel,
@@ -205,7 +213,8 @@ public:
                                          const DetectionLimitCalc::CurieMdaResult * const result,
                                          std::shared_ptr<const DetectorPeakResponse> drf,
                                          DetectionLimitTool::LimitType limitType,
-                                         const double gammas_per_bq );
+                                         const double gammas_per_bq,
+                                        const std::vector<CurrieResultPeak> &peaks );
   
   static void createCurrieRoiMoreInfoWindow( const SandiaDecay::Nuclide *const nuclide,
                                   const DetectionLimitCalc::CurieMdaResult &result,

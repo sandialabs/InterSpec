@@ -199,13 +199,15 @@ DetectionLimitSimpleWindow::DetectionLimitSimpleWindow( MaterialDB *materialDB,
   //  big enough, which it should be.
   const int screenW = viewer->renderedWidth();
   const int screenH = viewer->renderedHeight();
-  int width = 625, height = 435;
+  int width = 525, height = 800;
   if( (screenW > 100) && (screenW < width) )
     width = screenW;
   if( (screenH > 100) && (screenH < height) )
     height = screenH;
   
-  resizeWindow( width, height );
+  //resizeWindow( width, height );
+  setWidth( width );
+  setMaximumSize( WLength::Auto, height );
   
   // But I think this next call should fix things up, even if we do have a tiny screen
   resizeToFitOnScreen();
@@ -1160,6 +1162,7 @@ void DetectionLimitSimple::updateSpectrumDecorations()
   shared_ptr<const ColorTheme> theme = m_viewer->getColorTheme();
   assert( theme );
   
+  const bool use_curie = use_curie_units();
   const shared_ptr<const DetectorPeakResponse> drf = m_detectorDisplay->detector();
   
   m_peakModel->setPeaks( vector<shared_ptr<const PeakDef>>{} );
@@ -1171,6 +1174,7 @@ void DetectionLimitSimple::updateSpectrumDecorations()
     if( m_currentCurrieInput )
     {
       double gammas_per_bq = -1.0, distance = -1.0, br = -1;
+      vector<DetectionLimitTool::CurrieResultPeak> roi_peaks;
       
       try
       {
@@ -1191,17 +1195,28 @@ void DetectionLimitSimple::updateSpectrumDecorations()
           //include any gamma within m_clusterNumFwhm*fwhm of the selected gamma.
           br = 0.0;
           
-          const float fwhm = m_fwhm->value();
+          const double gammaFwhm = m_fwhm->value();
+          const bool isDrfFwhm = (drf && drf->hasResolutionInfo()
+                                  && (fabs(gammaFwhm - drf->peakResolutionFWHM(energy)) < 0.01));
+          
           const double roi_lower = m_lowerRoi->value();
           const double roi_upper = m_upperRoi->value();
           
           for( const pair<double,double> &ppebr : m_photoPeakEnergiesAndBr )
           {
-            if( (fabs(ppebr.first - energy) <= m_clusterNumFwhm*fwhm)
-               && (ppebr.first >= roi_lower)
+            if( //(fabs(ppebr.first - energy) <= m_clusterNumFwhm*gammaFwhm)
+               //&&
+               (ppebr.first >= roi_lower)
                && (ppebr.first <= roi_upper) )
             {
               br += ppebr.second;
+              
+              DetectionLimitTool::CurrieResultPeak p;
+              p.energy = ppebr.first;
+              p.fwhm = isDrfFwhm ? drf->peakResolutionFWHM(ppebr.first) : gammaFwhm;
+              p.counts_4pi = ppebr.second;
+              
+              roi_peaks.push_back( std::move(p) );
             }
           }//for( const pair<double,double> &ppebr : m_photoPeakEnergiesAndBr )
           
@@ -1211,6 +1226,12 @@ void DetectionLimitSimple::updateSpectrumDecorations()
         {
           // Only use the selected gamma if m_clusterNumFwhm <= 0
           br = m_photoPeakEnergiesAndBr[energyIndex].second;
+          
+          DetectionLimitTool::CurrieResultPeak p;
+          p.energy = energy;
+          p.fwhm = m_fwhm->value();
+          p.counts_4pi = br;
+          roi_peaks.push_back( std::move(p) );
         }
       }//if( an energy is selected )
         
@@ -1218,36 +1239,128 @@ void DetectionLimitSimple::updateSpectrumDecorations()
       if( drf && drf->isValid() && (distance >= 0.0) && (br > 0) && m_currentCurrieInput->spectrum )
       {
         const bool fixed_geom = drf->isFixedGeometry();
-        const float energy = m_currentCurrieInput->gamma_energy;
-        const double det_eff = fixed_geom ? drf->intrinsicEfficiency(energy)
-                                          : drf->efficiency(energy, distance);
         
         boost::function<double(float)> att_coef_fcn, air_atten_fcn;
         if( distance > 0.0 )
           air_atten_fcn = boost::bind( &GammaInteractionCalc::transmission_coefficient_air, _1, distance );
         
-        const double shield_transmission = att_coef_fcn.empty() ? 1.0 : exp( -1.0*att_coef_fcn(energy) );
-        const double air_transmission = air_atten_fcn.empty() ? 1.0 : exp( -1.0*air_atten_fcn(energy) );
-        const double counts_per_bq_into_4pi = br * shield_transmission * m_currentCurrieInput->spectrum->live_time();
-        const double counts_per_bq_into_4pi_with_air = air_transmission * counts_per_bq_into_4pi;
-        const double counts_4pi = fixed_geom ? counts_per_bq_into_4pi : counts_per_bq_into_4pi_with_air;
-
-        gammas_per_bq = counts_4pi * det_eff;
+        {//begin convert `br` to `gammas_per_bq`
+          const float energy = m_currentCurrieInput->gamma_energy;
+          const double det_eff = fixed_geom ? drf->intrinsicEfficiency(energy)
+          : drf->efficiency(energy, distance);
+          
+          const double shield_transmission = att_coef_fcn.empty() ? 1.0 : exp( -1.0*att_coef_fcn(energy) );
+          const double air_transmission = air_atten_fcn.empty() ? 1.0 : exp( -1.0*air_atten_fcn(energy) );
+          const double counts_per_bq_into_4pi = br * shield_transmission * m_currentCurrieInput->spectrum->live_time();
+          const double counts_per_bq_into_4pi_with_air = air_transmission * counts_per_bq_into_4pi;
+          const double counts_4pi = fixed_geom ? counts_per_bq_into_4pi : counts_per_bq_into_4pi_with_air;
+          
+          gammas_per_bq = counts_4pi * det_eff;
+        }//end convert `br` to `gammas_per_bq`
+        
+        //Now go through and correct get<2>(roi_peaks[i]) and then modify update_spectrum_for_currie_result
+        for( DetectionLimitTool::CurrieResultPeak &peak : roi_peaks )
+        {
+          const double &peak_energy = peak.energy;
+          const double peak_br = peak.counts_4pi;
+          const double shield_transmission = att_coef_fcn.empty() ? 1.0 : exp( -1.0*att_coef_fcn(peak_energy) );
+          const double air_transmission = air_atten_fcn.empty() ? 1.0 : exp( -1.0*air_atten_fcn(peak_energy) );
+          const double counts_per_bq_into_4pi = peak_br * shield_transmission * m_currentCurrieInput->spectrum->live_time();
+          const double counts_per_bq_into_4pi_with_air = air_transmission * counts_per_bq_into_4pi;
+          const double counts_4pi = fixed_geom ? counts_per_bq_into_4pi : counts_per_bq_into_4pi_with_air;
+          
+          const double det_eff = fixed_geom ? drf->intrinsicEfficiency(peak_energy)
+                                            : drf->efficiency(peak_energy, distance);
+          
+          peak.counts_4pi = counts_4pi * det_eff;
+        }//for( DetectionLimitTool::CurrieResultPeak &peak : roi_peaks )
       }//if( drf )
       
       const DetectionLimitTool::LimitType limitType = DetectionLimitTool::LimitType::Activity;
       
       DetectionLimitTool::update_spectrum_for_currie_result( m_spectrum, m_peakModel,
-              *m_currentCurrieInput, m_currentCurrieResults.get(), drf, limitType, gammas_per_bq );
+              *m_currentCurrieInput, m_currentCurrieResults.get(), drf, limitType, gammas_per_bq, roi_peaks );
     }//if( m_currentCurrieInput )
   }else
   {
     // Deconvolution method limit
+    
+    const double confidence_level = m_currentDeconResults->confidenceLevel;
+    char cl_str_buffer[64] = {'\0'};
+    
+    if( confidence_level < 0.999 )
+      snprintf( cl_str_buffer, sizeof(cl_str_buffer), "%.1f%%", 100.0*confidence_level );
+    else
+      snprintf( cl_str_buffer, sizeof(cl_str_buffer), "1-%.2G", (1.0-confidence_level) );
+   
+    const string cl_str = cl_str_buffer;
+    
+    std::vector<PeakDef> fit_peaks;
+    
     if( !m_currentDeconResults )
     {
-      
+      m_spectrum->setChartTitle( "Error computing result" );
+      m_peakModel->setPeaks( vector<PeakDef>{} );
     }else
     {
+      assert( !!m_currentDeconInput );
+      assert( m_currentDeconResults->isDistanceLimit == false );
+      
+      const DetectionLimitCalc::DeconActivityOrDistanceLimitResult &result = *m_currentDeconResults;
+      
+      //assert( result.foundLowerCl || result.foundUpperCl );
+      
+      WString chart_title;
+      double display_activity = 0.0;
+      
+      if( result.foundLowerCl && result.foundUpperCl )
+      {
+        display_activity = result.overallBestQuantity;
+        
+        const string nomstr = PhysicalUnits::printToBestActivityUnits(result.overallBestQuantity, 3, use_curie);
+        const string lowerstr = PhysicalUnits::printToBestActivityUnits(result.lowerLimit, 3, use_curie);
+        const string upperstr = PhysicalUnits::printToBestActivityUnits(result.upperLimit, 3, use_curie);
+        
+        const string cl_txt = "Peak for detected activity of " + nomstr
+                    + ". Range: [" + lowerstr + ", " + upperstr + "] @"  + cl_str + " CL" ;
+        
+        chart_title = WString::fromUTF8( cl_txt );
+        
+        assert( result.overallBestResults );
+        if( result.overallBestResults )
+          fit_peaks = result.overallBestResults->fit_peaks;
+      }else if( result.foundLowerCl )
+      {
+        assert( 0 );
+        display_activity = 0.0; //result.foundLowerCl
+        const string cl_txt = "Error: Didn't find " + cl_str + " CL activity";
+        chart_title = WString::fromUTF8( cl_txt );
+        //fit_peaks = result.lowerLimitResults.fit_peaks;
+      }else if( result.foundUpperCl )
+      {
+        display_activity = result.foundUpperCl;
+        const string upperstr = PhysicalUnits::printToBestActivityUnits(result.upperLimit, 3, use_curie);
+        
+        const string cl_txt = "Peak for upper bound of " + upperstr + " @" + cl_str + " CL";
+        chart_title = WString::fromUTF8( cl_txt );
+        assert( result.upperLimitResults );
+        if( result.upperLimitResults )
+          fit_peaks = result.upperLimitResults->fit_peaks;
+      }else
+      {
+        display_activity = 0.0;
+        const string cl_txt = "Error: failed upper or lower limits at " + cl_str;
+        chart_title = WString::fromUTF8( cl_txt );
+      }
+      
+      m_spectrum->setChartTitle( chart_title );
+      m_peakModel->setPeaks( fit_peaks );
+      
+      //m_currentDeconResults->foundUpperDisplay = false;
+      //m_currentDeconResults->upperDisplayRange = 0.0;
+      //m_currentDeconResults->foundLowerDisplay = false;
+      //m_currentDeconResults->lowerDisplayRange = 0.0;
+      //std::vector<std::pair<double,double>> m_currentDeconResults->chi2s;
       
     }//if( no valid result
   }//if( currently doing Currie-style limit ) / else
@@ -1297,23 +1410,26 @@ void DetectionLimitSimple::updateResult()
       case NumConfidenceLevel: assert(0); break;
     }//switch( confidence )
     
-    if( m_methodStack->currentIndex() == 0 )
-    {
-      // We need to calculate Currie-style limit
-      auto input = make_shared<DetectionLimitCalc::CurieMdaInput>();
-      input->spectrum = hist;
-      input->gamma_energy = static_cast<float>( energy );
-      input->roi_lower_energy = m_lowerRoi->value();
-      input->roi_upper_energy = m_upperRoi->value();
-      input->num_lower_side_channels = static_cast<size_t>( m_numSideChannel->value() );
-      input->num_upper_side_channels = input->num_lower_side_channels;
-      input->detection_probability = confidenceLevel;
-      input->additional_uncertainty = 0.0f;  // TODO: can we get the DRFs contribution to form this?
-      
-      m_currentCurrieInput = input;
-      DetectionLimitCalc::CurieMdaResult result = DetectionLimitCalc::currie_mda_calc( *input );
-      m_currentCurrieResults = make_shared<DetectionLimitCalc::CurieMdaResult>( result );
-    }else
+    
+    // We need to calculate currie-style limit, even if we want the deconvolution-style limit
+    auto currie_input = make_shared<DetectionLimitCalc::CurieMdaInput>();
+    currie_input->spectrum = hist;
+    currie_input->gamma_energy = static_cast<float>( energy );
+    currie_input->roi_lower_energy = m_lowerRoi->value();
+    currie_input->roi_upper_energy = m_upperRoi->value();
+    currie_input->num_lower_side_channels = static_cast<size_t>( m_numSideChannel->value() );
+    currie_input->num_upper_side_channels = currie_input->num_lower_side_channels;
+    currie_input->detection_probability = confidenceLevel;
+    currie_input->additional_uncertainty = 0.0f;  // TODO: can we get the DRFs contribution to form this?
+    
+    m_currentCurrieInput = currie_input;
+    const DetectionLimitCalc::CurieMdaResult currie_result = DetectionLimitCalc::currie_mda_calc( *currie_input );
+    m_currentCurrieResults = make_shared<DetectionLimitCalc::CurieMdaResult>( currie_result );
+    
+    
+    // Calculating the deconvolution-style limit is fairly CPU intensive, so we will only computer
+    //  it when its what the user actually wants.
+    if( m_methodStack->currentIndex() == 1 )
     {
       if( (energyIndex < 0) || (energyIndex >= static_cast<int>(m_photoPeakEnergiesAndBr.size())) )
         throw runtime_error( "Please select gamma energy." );
@@ -1398,6 +1514,7 @@ void DetectionLimitSimple::updateResult()
         roiInfo.num_lower_side_channels = roiInfo.num_upper_side_channels = 0;
       }
       
+      const float live_time = m_currentCurrieInput->spectrum->live_time();
       const float roi_lower_energy = m_lowerRoi->value();
       const float roi_upper_energy = m_upperRoi->value();
       if( m_clusterNumFwhm > 0.0 )
@@ -1417,7 +1534,7 @@ void DetectionLimitSimple::updateResult()
             peakInfo.energy = thisEnergy;
             // if user has left FWHM to detector predicted value, then consult the DRF for each peak
             peakInfo.fwhm = isDrfFwhm ? drf->peakResolutionFWHM(thisEnergy) : gammaFwhm;
-            peakInfo.counts_per_bq_into_4pi = thisBr;//must have effects of shielding already accounted for, but not air atten, or det intrinsic eff
+            peakInfo.counts_per_bq_into_4pi = live_time * thisBr;//must have effects of shielding already accounted for, but not air atten, or det intrinsic eff
             roiInfo.peak_infos.push_back( peakInfo );
           }
         }//for( size_t i = 0; i < m_photoPeakEnergiesAndBr.size(); ++i )
@@ -1428,44 +1545,100 @@ void DetectionLimitSimple::updateResult()
         DetectionLimitCalc::DeconRoiInfo::PeakInfo peakInfo;
         peakInfo.energy = energy;
         peakInfo.fwhm = m_fwhm->value();
-        peakInfo.counts_per_bq_into_4pi = br;//must have effects of shielding already accounted for, but not air atten, or det intrinsic eff
+        peakInfo.counts_per_bq_into_4pi = live_time * br;//must have effects of shielding already accounted for, but not air atten, or det intrinsic eff
         roiInfo.peak_infos.push_back( peakInfo );
       }
       
-      DetectionLimitCalc::DeconComputeInput input;
-      input.distance = distance;
-      //input.activity = ...; //This will need to be varied
-      input.include_air_attenuation = true;
-      input.shielding_thickness = 0.0;
-      input.measurement = hist;
-      input.drf = drf;
+      auto convo_input = make_shared<DetectionLimitCalc::DeconComputeInput>();
+      convo_input->distance = distance;
+      convo_input->activity = 0.0; //This will need to be varied
+      convo_input->include_air_attenuation = true;
+      convo_input->shielding_thickness = 0.0;
+      convo_input->measurement = hist;
+      convo_input->drf = drf;
+      convo_input->roi_info.push_back( roiInfo );
+      
+      double min_act = 0.0;
+      double max_act = 1E3*PhysicalUnits::ci;
+      
+      {// begin estimate range we should search for deconvolution
+        double src_gammas_per_bq = 0.0, gammas_per_bq = 1.0;
+        for( const DetectionLimitCalc::DeconRoiInfo::PeakInfo &peak_info : roiInfo.peak_infos )
+          src_gammas_per_bq += peak_info.counts_per_bq_into_4pi;
         
-      input.roi_info.push_back( roiInfo );
+        if( drf 
+           && drf->isValid()
+           && (distance >= 0.0)
+           && (src_gammas_per_bq > 0) 
+           && m_currentCurrieInput->spectrum )
+        {
+          const bool fixed_geom = drf->isFixedGeometry();
+          const float energy = m_currentCurrieInput->gamma_energy;
+          const double det_eff = fixed_geom ? drf->intrinsicEfficiency(energy)
+                                            : drf->efficiency(energy, distance);
+          
+          boost::function<double(float)> att_coef_fcn, air_atten_fcn;
+          if( distance > 0.0 )
+            air_atten_fcn = boost::bind( &GammaInteractionCalc::transmission_coefficient_air, _1, distance );
+          
+          const double shield_transmission = att_coef_fcn.empty() ? 1.0 : exp( -1.0*att_coef_fcn(energy) );
+          const double air_transmission = air_atten_fcn.empty() ? 1.0 : exp( -1.0*air_atten_fcn(energy) );
+          const double counts_per_bq_into_4pi = src_gammas_per_bq * shield_transmission;
+          const double counts_per_bq_into_4pi_with_air = air_transmission * counts_per_bq_into_4pi;
+          const double counts_4pi = fixed_geom ? counts_per_bq_into_4pi : counts_per_bq_into_4pi_with_air;
+
+          gammas_per_bq = counts_4pi * det_eff;
+        }//if( drf )
+        
+        // We want the limits going into `DetectionLimitCalc::get_activity_or_distance_limits(...)`
+        //  to definitely cover the entire possible activity range, so we will exaggerate the
+        //  expected range from Currie-style limit
+        //  The value of 5 is totally arbitrary, and I dont know what is actually a good range yet
+        const double diff_multiple = 5.0;
+        
+        if( currie_result.source_counts > currie_result.decision_threshold )
+        {
+          // There is enough excess counts to reliably detect this activity
+          const double lower_act = currie_result.lower_limit / gammas_per_bq;
+          const double upper_act = currie_result.upper_limit / gammas_per_bq;
+          const double nominal_act = currie_result.source_counts / gammas_per_bq;
+          assert( lower_act <= nominal_act );
+          assert( upper_act >= nominal_act );
+          
+          const double lower_diff = fabs(nominal_act - lower_act);
+          const double upper_diff = fabs(upper_act - nominal_act);
+          
+          min_act = max( 0.0, (nominal_act - diff_multiple*lower_act) );
+          max_act = max( 1.0/gammas_per_bq, (nominal_act + diff_multiple*upper_diff) );
+        }else if( currie_result.upper_limit < 0 )
+        {
+          // There are a lot fewer counts in the peak region than predicted from the sides
+          // We will just set the activity based on the Poisson uncertainty of the peak region
+          min_act = 0.0;
+          const double poison_uncert = sqrt(currie_result.peak_region_counts_sum);
+          max_act = max( 1.0/gammas_per_bq, diff_multiple*poison_uncert/gammas_per_bq );
+        }else
+        {
+          // No signal was detected, but we can estimate the minimum detectable activity
+          const double simple_mda = currie_result.upper_limit / gammas_per_bq;
+          min_act = 0.0;
+          max_act = diff_multiple*simple_mda;
+        }//if( detected signal ) / else / else
+      }// end estimate range we should search for deconvolution
+      
+      m_currentDeconInput = convo_input;
+      
+      const bool is_dist_limit = false;
+      const bool use_curie = use_curie_units();
+      cout << "Will search between " << PhysicalUnits::printToBestActivityUnits(min_act, 3, use_curie)
+      << " and " << PhysicalUnits::printToBestActivityUnits(max_act, 3, use_curie) << endl;
+      
+      const DetectionLimitCalc::DeconActivityOrDistanceLimitResult decon_result
+                     = DetectionLimitCalc::get_activity_or_distance_limits( confidenceLevel, 
+                                                                      convo_input, is_dist_limit,
+                                                                      min_act, max_act, use_curie );
     
-      throw runtime_error( "We need to refactor DetectionLimitTool::doCalc(), to actually do the calculation" );
-      
-      /*
-       // Need to implement using the following to get info
-       const double mid_search_quantity = 0.5*(min_search_quantity + max_search_quantity);
-       const double base_act = is_dist_limit ?  other_quantity : mid_search_quantity;
-       const double base_dist = is_dist_limit ? mid_search_quantity : other_quantity;
-       vector<PeakDef> dummy_peaks{};
-       const shared_ptr<const DetectionLimitCalc::DeconComputeInput> base_input
-                       = getComputeForActivityInput( base_act, base_dist, dummy_peaks );
-       
-       
-       const float wantedCl = currentConfidenceLevel();
-       DetectionLimitCalc::DeconActivityOrDistanceLimitResult result
-                     = DetectionLimitCalc::get_activity_or_distance_limits( wantedCl, base_input,
-                                                                     is_dist_limit, min_search_quantity,
-                                                                       max_search_quantity, useCurie );
-       */
-      
-      
-      m_currentDeconInput = make_shared<DetectionLimitCalc::DeconComputeInput>( input );
-      DetectionLimitCalc::DeconComputeResults results = DetectionLimitCalc::decon_compute_peaks( input );
-    
-      m_currentDeconResults = make_shared<DetectionLimitCalc::DeconComputeResults>( results );
+      m_currentDeconResults = make_shared<DetectionLimitCalc::DeconActivityOrDistanceLimitResult>( decon_result );
     }//if( calc Currie-style limit ) / else
     
     m_chartErrMsgStack->setCurrentIndex( 1 );

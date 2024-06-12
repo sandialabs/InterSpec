@@ -1468,7 +1468,8 @@ void DetectionLimitTool::update_spectrum_for_currie_result( D3SpectrumDisplayDiv
                                        const DetectionLimitCalc::CurieMdaResult * const result,
                                        std::shared_ptr<const DetectorPeakResponse> drf,
                                        DetectionLimitTool::LimitType limitType,
-                                       const double gammas_per_bq )
+                                       const double gammas_per_bq,
+                                       const vector<DetectionLimitTool::CurrieResultPeak> &peaks )
 {
   assert( chart );
   if( !chart )
@@ -1531,7 +1532,7 @@ void DetectionLimitTool::update_spectrum_for_currie_result( D3SpectrumDisplayDiv
       const size_t first_upper_continuum_channel = last_peak_region_channel + 1;
       const size_t last_upper_continuum_channel = first_upper_continuum_channel + input.num_upper_side_channels - 1;
       
-      if( last_upper_continuum_channel >= spectrum->num_gamma_channels()  )
+      if( last_upper_continuum_channel >= spectrum->num_gamma_channels() )
         throw std::runtime_error( "mda_counts_calc: upper peak region is outside spectrum energy range" );
       
       lower_lower_energy = spectrum->gamma_channel_lower( first_lower_continuum_channel );
@@ -1584,13 +1585,20 @@ void DetectionLimitTool::update_spectrum_for_currie_result( D3SpectrumDisplayDiv
       
       const DetectorPeakResponse::EffGeometryType det_geom = drf ? drf->geometryType() : DetectorPeakResponse::EffGeometryType::FarField;
       
-      PeakDef peak( input.gamma_energy, peak_sigma, 0.0 );
-      peak.continuum()->setRange( upper_lower_energy, lower_upper_energy );
+      PeakDef generic_peak( input.gamma_energy, peak_sigma, 0.0 );
+      generic_peak.continuum()->setRange( upper_lower_energy, lower_upper_energy );
+      generic_peak.continuum()->setType(PeakContinuum::OffsetType::Linear);
+      generic_peak.continuum()->setParameters( input.gamma_energy, {result->continuum_eqn[0], result->continuum_eqn[1]}, {} );
       
-      peak.continuum()->setType(PeakContinuum::OffsetType::Linear);
-      peak.continuum()->setParameters( input.gamma_energy, {result->continuum_eqn[0], result->continuum_eqn[1]}, {} );
-      // We will set the peak area, and user label using text from below, then add to the PeakModel
-      //peak.setUserLabel( "Cont. Est: " + result.estimated_peak_continuum_counts + " +- " + result.estimated_peak_continuum_uncert );
+      double sum_counts_4pi = 0.0;
+      vector<PeakDef> specific_peaks( peaks.size() );
+      for( size_t i = 0; i < peaks.size(); ++i )
+      {
+        sum_counts_4pi += peaks[i].counts_4pi;
+        specific_peaks[i].setMean( peaks[i].energy );
+        specific_peaks[i].setSigma( peaks[i].fwhm/2.35482 );
+        specific_peaks[i].setContinuum( generic_peak.continuum() );
+      }
       
       char cl_str_buffer[64] = {'\0'};
       
@@ -1599,6 +1607,7 @@ void DetectionLimitTool::update_spectrum_for_currie_result( D3SpectrumDisplayDiv
       else
         snprintf( cl_str_buffer, sizeof(cl_str_buffer), "1-%.2G", (1.0-confidence_level) );
      
+      WString chart_title;
       const string cl_str = cl_str_buffer;
       
       switch( limitType )
@@ -1631,18 +1640,27 @@ void DetectionLimitTool::update_spectrum_for_currie_result( D3SpectrumDisplayDiv
             }
             
             //const string cl_str = SpecUtils::printCompact( 100.0*confidence_level, 3 );
+            chart_title = "Peak for detected activity of " + nomstr
+                          + ". Range: [" + lowerstr + ", " + upperstr + "] @"  + cl_str + "% CL";
             
-            peak.setPeakArea( result->source_counts );
-            peak.setUserLabel( "Peak for detected activity of " + nomstr
-                        + ". Range: [" + lowerstr + ", " + upperstr + "] @"  + cl_str + "% CL"  );
+            generic_peak.setPeakArea( result->source_counts );
+            
+            for( size_t i = 0; i < peaks.size(); ++i )
+            {
+              const double area = result->source_counts * peaks[i].counts_4pi / sum_counts_4pi;
+              specific_peaks[i].setAmplitude( area );
+            }
           }else if( result->upper_limit < 0 )
           {
             // This can happen when there are a lot fewer counts in the peak region than predicted
             //  from the sides - since this is non-sensical, we'll just say zero.
             const string unitstr = useCuries ? "Ci" : "Bq";
             
-            peak.setPeakArea( 0.0 );
-            peak.setUserLabel( "Activity &le; 0 " + unitstr );
+            chart_title = "Activity < 0 " + unitstr;
+            
+            generic_peak.setPeakArea( 0.0 );
+            for( size_t i = 0; i < peaks.size(); ++i )
+              specific_peaks[i].setAmplitude( 0.0 );
           }else
           {
             // We will provide the upper bound on activity.
@@ -1657,11 +1675,15 @@ void DetectionLimitTool::update_spectrum_for_currie_result( D3SpectrumDisplayDiv
               mdastr = SpecUtils::printCompact( result->upper_limit, 4 ) + " counts";
             }
             
-            const string cl_txt = "Peak for upper bound of " + mdastr + " @" + cl_str + " CL";
+            chart_title = "Peak for upper bound of " + mdastr + " @" + cl_str + " CL";
             
-            peak.setPeakArea( result->upper_limit );
-            peak.setUserLabel( cl_txt  );
-          }
+            generic_peak.setPeakArea( result->upper_limit );
+            for( size_t i = 0; i < peaks.size(); ++i )
+            {
+              const double area = result->upper_limit * peaks[i].counts_4pi / sum_counts_4pi;
+              specific_peaks[i].setAmplitude( area );
+            }
+          }//if( detected ) / else if( ....)
           
           break;
         }//case DetectionLimitTool::LimitType::Activity:
@@ -1673,10 +1695,12 @@ void DetectionLimitTool::update_spectrum_for_currie_result( D3SpectrumDisplayDiv
         }
       }//switch( limitType )
       
-      chart->setChartTitle( peak.userLabel() );
-      peak.setUserLabel( "" );
+      chart->setChartTitle( chart_title );
       
-      pmodel->addPeaks( {peak} );
+      if( specific_peaks.size() > 0 )
+        pmodel->addPeaks( specific_peaks );
+      else
+        pmodel->addPeaks( {generic_peak} );
     }//if( result )
   }catch( std::exception &e )
   {
@@ -1771,7 +1795,8 @@ void DetectionLimitTool::createCurrieRoiMoreInfoWindow( const SandiaDecay::Nucli
     chart->setPeakModel( pmodel );
     pmodel->setForeground( hist );
     
-    update_spectrum_for_currie_result( chart, pmodel, input, &result, drf, limitType, gammas_per_bq );
+    vector<CurrieResultPeak> dummy_peaks; //We'll pass empty vector, so the function will create a single peak for us
+    update_spectrum_for_currie_result( chart, pmodel, input, &result, drf, limitType, gammas_per_bq, dummy_peaks );
     
     
     //Gross Counts in Peak Foreground: 1389.813

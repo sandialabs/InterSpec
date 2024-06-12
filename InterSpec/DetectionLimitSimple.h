@@ -69,7 +69,7 @@ namespace DetectionLimitCalc
   struct CurieMdaInput;
   struct CurieMdaResult;
   struct DeconComputeInput;
-  struct DeconComputeResults;
+  struct DeconActivityOrDistanceLimitResult;
 }//namespace DetectionLimitCalc
 
 class DetectionLimitSimpleWindow : public AuxWindow
@@ -268,7 +268,7 @@ protected:
   std::shared_ptr<const DetectionLimitCalc::CurieMdaResult> m_currentCurrieResults;
   
   std::shared_ptr<const DetectionLimitCalc::DeconComputeInput> m_currentDeconInput;
-  std::shared_ptr<const DetectionLimitCalc::DeconComputeResults> m_currentDeconResults;
+  std::shared_ptr<const DetectionLimitCalc::DeconActivityOrDistanceLimitResult> m_currentDeconResults;
   
   friend class CurrieLimitArea;
   friend class DeconvolutionLimitArea;

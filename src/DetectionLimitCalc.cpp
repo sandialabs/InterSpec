@@ -1091,7 +1091,7 @@ DeconComputeResults decon_compute_peaks( const DeconComputeInput &input )
     for( const DeconRoiInfo::PeakInfo &peak_info : roi.peak_infos )
     {
       const float &energy = peak_info.energy;
-      const float fwhm = input.drf->peakResolutionFWHM( energy );
+      const float fwhm = (peak_info.fwhm > 0.0f) ? peak_info.fwhm : input.drf->peakResolutionFWHM( energy );
       const float sigma = fwhm / 2.634;
       const double det_eff = fixed_geom ? input.drf->intrinsicEfficiency(energy)
                                         : input.drf->efficiency( energy, input.distance );
@@ -1121,12 +1121,29 @@ DeconComputeResults decon_compute_peaks( const DeconComputeInput &input )
         peak_continuum->setType( continuum_type );
         peak_continuum->setRange( roi_start, roi_end );
         
+        size_t nlowerside = num_lower_side_channels;
+        size_t nupperside = num_upper_side_channels;
+        if( roi.cont_norm_method != DeconContinuumNorm::FixedByEdges )
+        {
+          //if no value provided, use 4 channels
+          if( !nlowerside )
+            nlowerside = 4;
+          if( !nupperside )
+            nupperside = 4;
+          
+          // Clamp between 2 and 16 channels
+          nupperside = ((nupperside < 2) ? size_t(2) : ((nupperside > 16) ? size_t(16) : nupperside)); //std::clamp(...), C++17
+          nlowerside = ((nlowerside < 2) ? size_t(2) : ((nlowerside > 16) ? size_t(16) : nlowerside)); //std::clamp(...), C++17
+        }else
+        {
+          assert( num_lower_side_channels > 0 );
+          assert( num_upper_side_channels > 0 );
+        }
+        
         // First, we'll find a linear continuum as the starting point, and then go through
         //  and modify it how we need
         peak_continuum->calc_linear_continuum_eqn( input.measurement, reference_energy,
-                                                  roi_start, roi_end,
-                                                  num_lower_side_channels,
-                                                  num_upper_side_channels );
+                                                  roi_start, roi_end, nlowerside, nupperside );
         
         peak_continuum->setType( continuum_type );
         
@@ -1307,17 +1324,24 @@ DeconComputeResults decon_compute_peaks( const DeconComputeInput &input )
   
 DeconActivityOrDistanceLimitResult::DeconActivityOrDistanceLimitResult()
     : isDistanceLimit( false ),
+    confidenceLevel( 0.0 ),
+    minSearchValue( 0.0 ),
+    maxSearchValue( 0.0 ),
+    baseInput{},
     limitText(),
     quantityLimitStr(),
     bestCh2Text(),
     overallBestChi2( 0.0 ),
     overallBestQuantity( 0.0 ),
+    overallBestResults( nullptr ),
     foundUpperCl( false ),
     upperLimit( 0.0 ),
     upperLimitChi2( -1.0 ),
+    upperLimitResults( nullptr ),
     foundLowerCl( false ),
     lowerLimit( 0.0 ),
     lowerLimitChi2( -1.0 ),
+    lowerLimitResults( nullptr ),
     foundUpperDisplay( false ),
     upperDisplayRange( 0.0 ),
     foundLowerDisplay( false ),
@@ -1333,8 +1357,17 @@ DeconActivityOrDistanceLimitResult get_activity_or_distance_limits( const float 
                       const double max_search_quantity,
                       const bool useCurie )
 {
+  assert( base_input );
+  if( !base_input )
+    throw runtime_error( "get_activity_or_distance_limits: invalid base input." );
+  
   DeconActivityOrDistanceLimitResult result;
   result.isDistanceLimit = is_dist_limit;
+  
+  result.confidenceLevel = wantedCl;
+  result.minSearchValue = min_search_quantity;
+  result.maxSearchValue = max_search_quantity;
+  result.baseInput = *base_input;
   
   const double yrange = 15;
   
@@ -1354,7 +1387,8 @@ DeconActivityOrDistanceLimitResult get_activity_or_distance_limits( const float 
   
   vector<pair<double,double>> chi2s;
   double overallBestChi2 = 0.0, overallBestQuantity = 0.0;
-  double upperLimit = 0.0, lowerLimit = 0.0, upperLimitChi2 = -1.0, lowerLimitChi2 = -1.0;
+  double upperLimit = 0.0, lowerLimit = 0.0;
+  double upperLimitChi2 = -1.0, lowerLimitChi2 = -1.0;
   bool foundUpperCl = false, foundUpperDisplay = false, foundLowerCl = false, foundLowerDisplay = false;
   
   //
@@ -1382,7 +1416,7 @@ DeconActivityOrDistanceLimitResult get_activity_or_distance_limits( const float 
     else
       input.activity = quantity;
     const DetectionLimitCalc::DeconComputeResults results
-    = DetectionLimitCalc::decon_compute_peaks( input );
+                                                = DetectionLimitCalc::decon_compute_peaks( input );
     
     if( (results.num_degree_of_freedom == 0) && (results.chi2 == 0.0) )
       throw runtime_error( "No DOF" );
@@ -1719,8 +1753,9 @@ DeconActivityOrDistanceLimitResult get_activity_or_distance_limits( const float 
   const double activity = is_dist_limit ? base_input->activity : upperLimit;
   const double other_quantity = is_dist_limit ? activity : distance;
   
-  auto localComputeForActivity = [base_input]( const double activity, const double distance,
-                                              double &chi2, int &numDOF ){
+  const auto localComputeForActivity = [base_input]( const double activity, const double distance,
+                                              double &chi2, int &numDOF )
+      -> std::shared_ptr<const DetectionLimitCalc::DeconComputeResults> {
     chi2 = 0.0;
     numDOF = 0;
     std::vector<PeakDef> peaks;
@@ -1729,12 +1764,14 @@ DeconActivityOrDistanceLimitResult get_activity_or_distance_limits( const float 
     input->activity = activity;
     input->distance = distance;
     
-    const DetectionLimitCalc::DeconComputeResults results
-    = DetectionLimitCalc::decon_compute_peaks( *input );
+    DetectionLimitCalc::DeconComputeResults results
+                  = DetectionLimitCalc::decon_compute_peaks( *input );
     
     peaks = results.fit_peaks;
     chi2 = results.chi2;
     numDOF = results.num_degree_of_freedom;
+    
+    return make_shared<const DetectionLimitCalc::DeconComputeResults>(results);
   };//void localComputeForActivity(...)
   
   
@@ -1743,6 +1780,16 @@ DeconActivityOrDistanceLimitResult get_activity_or_distance_limits( const float 
   const string quantity_str = print_quantity(overallBestQuantity, 3);
   char buffer[128];
   
+  pool.post( [&result,is_dist_limit,&localComputeForActivity,other_quantity,overallBestQuantity](){
+    double dummy_chi2;
+    int dummy_numDOF;
+    if( is_dist_limit )
+      result.overallBestResults = localComputeForActivity( other_quantity, overallBestQuantity, dummy_chi2, dummy_numDOF );
+    else
+      result.overallBestResults = localComputeForActivity( overallBestQuantity, other_quantity, dummy_chi2, dummy_numDOF );
+  } );
+  
+  // TODO: put all below computations into another thread
   string limit_str;
   if( foundLowerCl && foundUpperCl )
   {
@@ -1750,13 +1797,16 @@ DeconActivityOrDistanceLimitResult get_activity_or_distance_limits( const float 
     std::vector<PeakDef> peaks;
     if( is_dist_limit )
     {
-      localComputeForActivity( other_quantity, lowerLimit, lowerQuantityChi2, numDOF );
-      localComputeForActivity( other_quantity, upperLimit, upperQuantityChi2, numDOF );
+      result.lowerLimitResults = localComputeForActivity( other_quantity, lowerLimit, lowerQuantityChi2, numDOF );
+      result.upperLimitResults = localComputeForActivity( other_quantity, upperLimit, upperQuantityChi2, numDOF );
     }else
     {
-      localComputeForActivity( lowerLimit, other_quantity, lowerQuantityChi2, numDOF );
-      localComputeForActivity( upperLimit, other_quantity, upperQuantityChi2, numDOF );
+      result.lowerLimitResults = localComputeForActivity( lowerLimit, other_quantity, lowerQuantityChi2, numDOF );
+      result.upperLimitResults = localComputeForActivity( upperLimit, other_quantity, upperQuantityChi2, numDOF );
     }
+    
+    assert( lowerQuantityChi2 == lowerLimitChi2 ); // TODO: check logic to make sure this is definitely true, then remove above computation
+    assert( upperQuantityChi2 == upperLimitChi2 ); // TODO: check logic to make sure this is definitely true, then remove above computation
     
     limit_str = print_quantity( overallBestQuantity, 3 );
     const string lower_limit_str = print_quantity( lowerLimit, 2 );
@@ -1782,14 +1832,16 @@ DeconActivityOrDistanceLimitResult get_activity_or_distance_limits( const float 
   }else if( !foundLowerCl && !foundUpperCl )
   {
     limit_str = print_quantity( overallBestQuantity, 3 );
-    snprintf( buffer, sizeof(buffer), "Error: failed upper and lower limits at %.1f%%",
+    snprintf( buffer, sizeof(buffer), "Error: failed upper or lower limits at %.1f%%",
              0.1*std::round(1000.0*wantedCl) );
   }else if( foundLowerCl )
   {
-    double lowerQuantityChi2 = -999.9;
     if( is_dist_limit )
     {
-      localComputeForActivity( other_quantity, lowerLimit, lowerQuantityChi2, numDOF );
+      double lowerQuantityChi2 = -999.9;
+      result.lowerLimitResults = localComputeForActivity( other_quantity, lowerLimit, lowerQuantityChi2, numDOF );
+      
+      assert( lowerQuantityChi2 == result.lowerLimitChi2 ); // TODO: check logic to make sure this is definitely true, then remove above computation
       
       limit_str = print_quantity( lowerLimit, 3 );
       const string print_limit_str = print_quantity( lowerLimit, 2 );
@@ -1803,7 +1855,9 @@ DeconActivityOrDistanceLimitResult get_activity_or_distance_limits( const float 
                print_limit_str.c_str(), 0.1*std::round(1000.0*wantedCl), lowerQuantityChi2 );
     }else
     {
-      //computeForActivity( lowerLimit, other_quantity, peaks, lowerQuantityChi2, numDOF );
+      assert( 0 );
+      //double lowerQuantityChi2 = -999.9;
+      //result.lowerLimitResults = localComputeForActivity( lowerLimit, other_quantity, peaks, lowerQuantityChi2, numDOF );
       snprintf( buffer, sizeof(buffer), "Error: Didn't find %.1f%% CL activity",
                0.1*std::round(1000.0*wantedCl));
     }
@@ -1813,12 +1867,20 @@ DeconActivityOrDistanceLimitResult get_activity_or_distance_limits( const float 
     
     if( is_dist_limit )
     {
+      assert( 0 );
       snprintf( buffer, sizeof(buffer), "Error: Didn't find %.1f%% CL det. distance",
                0.1*std::round(1000.0*wantedCl) );
     }else
     {
       double upperQuantityChi2 = -999.9;
-      localComputeForActivity( upperLimit, other_quantity, upperQuantityChi2, numDOF );
+      result.upperLimitResults = localComputeForActivity( upperLimit, other_quantity, upperQuantityChi2, numDOF );
+      
+      // TODO: check logic to make sure this is definitely true, then remove above computation
+      //  I think these quantities should be really close, but there may be a small amount of rounding
+      cout << "upperQuantityChi2=" << upperQuantityChi2 << ", upperLimitChi2=" << upperLimitChi2 << endl;
+      assert( (fabs(upperQuantityChi2 - upperLimitChi2) < 0.01)
+             || (fabs(upperQuantityChi2 - upperLimitChi2) < 0.01*std::max(upperQuantityChi2,upperLimitChi2)) );
+      
       limit_str = print_quantity(upperLimit,3);
       const string print_limit_str = print_quantity( upperLimit, 2 );
       //snprintf( buffer, sizeof(buffer), "%.1f%% coverage at %s with &chi;<sup>2</sup>=%.1f",
@@ -1827,6 +1889,8 @@ DeconActivityOrDistanceLimitResult get_activity_or_distance_limits( const float 
                print_limit_str.c_str(), 0.1*std::round(1000.0*wantedCl), upperQuantityChi2 );
     }//if( is_dist_limit ) / else
   }
+  
+  pool.join();
   
   
   result.limitText = buffer;
