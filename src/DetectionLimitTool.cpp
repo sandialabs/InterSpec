@@ -122,24 +122,6 @@ bool use_curie_units()
   return !InterSpecUser::preferenceValue<bool>( "DisplayBecquerel", interspec );
 }//bool use_curie_units()
 
-  
-string det_eff_geom_type_postfix( DetectorPeakResponse::EffGeometryType type )
-{
-  switch( type )
-  {
-    case DetectorPeakResponse::EffGeometryType::FarField:
-    case DetectorPeakResponse::EffGeometryType::FixedGeomTotalAct:
-      return "";
-    case DetectorPeakResponse::EffGeometryType::FixedGeomActPerCm2:
-      return "/cm2";
-    case DetectorPeakResponse::EffGeometryType::FixedGeomActPerM2:
-      return "/m2";
-    case DetectorPeakResponse::EffGeometryType::FixedGeomActPerGram:
-      return "/g";
-  }//switch( m_det_type )
-  assert( 0 );
-  return "";
-}//string det_eff_geom_type_postfix( DetectorPeakResponse::EffGeometryType )
 }//namespace
 
 // We cant have MdaPeakRow in a private namespace since we forward declare it in the header.
@@ -222,12 +204,12 @@ protected:
       : m_input.drf->efficiency(energy, distance);
       const double counts_4pi = ((m_input.do_air_attenuation && !fixed_geom)
                                  ? m_input.counts_per_bq_into_4pi_with_air
-                                 : m_input.counts_per_bq_into_4pi);
+                                 : m_input.counts_per_bq_into_4pi__);
       const double gammas_per_bq = counts_4pi * det_eff;
       
-      const DetectionLimitCalc::CurieMdaInput input = currieInput();
+      const DetectionLimitCalc::CurrieMdaInput input = currieInput();
       
-      const DetectionLimitCalc::CurieMdaResult result = DetectionLimitCalc::currie_mda_calc( input );
+      const DetectionLimitCalc::CurrieMdaResult result = DetectionLimitCalc::currie_mda_calc( input );
       //print_summary( cout, result, -1.0f );
       
       m_simple_excess_counts = result.source_counts;
@@ -247,11 +229,11 @@ protected:
             const float nominal_act = result.source_counts / gammas_per_bq;
             
             const string lowerstr = PhysicalUnits::printToBestActivityUnits( lower_act, 2, useCuries )
-            + det_eff_geom_type_postfix( det_geom );
+            + DetectorPeakResponse::det_eff_geom_type_postfix( det_geom );
             const string upperstr = PhysicalUnits::printToBestActivityUnits( upper_act, 2, useCuries )
-            + det_eff_geom_type_postfix( det_geom );
+            + DetectorPeakResponse::det_eff_geom_type_postfix( det_geom );
             const string nomstr = PhysicalUnits::printToBestActivityUnits( nominal_act, 2, useCuries )
-            + det_eff_geom_type_postfix( det_geom );
+            + DetectorPeakResponse::det_eff_geom_type_postfix( det_geom );
             
             //cout << "At " << m_input.energy << "keV observed " << result.source_counts
             //     << " counts, at distance " << PhysicalUnits::printToBestLengthUnits(m_input.distance)
@@ -267,7 +249,7 @@ protected:
           {
             // This can happen when there are a lot fewer counts in the peak region than predicted
             //  from the sides - since this is non-sensical, we'll just say zero.
-            const string unitstr = (useCuries ? "Ci" : "Bq") + det_eff_geom_type_postfix( det_geom );
+            const string unitstr = (useCuries ? "Ci" : "Bq") + DetectorPeakResponse::det_eff_geom_type_postfix( det_geom );
             m_poisonLimit->setText( "<div>MDA: &lt; 0" + unitstr + "</div><div>(sig. fewer counts in ROI than predicted)</div>" );
             m_poisonLimit->setToolTip( "Significantly fewer counts were observed in the"
                                       " Region Of Interest, than predicted by the neighboring channels." );
@@ -276,7 +258,7 @@ protected:
             // We will provide the upper bound on activity.
             const double simple_mda = result.upper_limit / gammas_per_bq;
             const string mdastr = PhysicalUnits::printToBestActivityUnits( simple_mda, 2, useCuries )
-            + det_eff_geom_type_postfix( det_geom );
+            + DetectorPeakResponse::det_eff_geom_type_postfix( det_geom );
             
             m_poisonLimit->setText( "MDA: " + mdastr );
             m_poisonLimit->setToolTip( "Minimum Detectable Activity, using just this Region Of"
@@ -315,7 +297,7 @@ protected:
           
           
           auto counts_at_distance = [this,intrinsic_eff,activity]( const double dist ) -> double {
-            const double counts_4pi_no_air = m_input.counts_per_bq_into_4pi;
+            const double counts_4pi_no_air = m_input.counts_per_bq_into_4pi__;
             const double geom_eff = m_input.drf->fractionalSolidAngle(m_input.drf->detectorDiameter(), dist);
             double air_eff = 1.0;
             if( m_input.do_air_attenuation )
@@ -654,7 +636,7 @@ public:
     const double det_eff = fixed_geom ? input.drf->intrinsicEfficiency(input.energy)
     : input.drf->efficiency( input.energy, input.distance );
     const double counts_4pi = (do_air_atten ? input.counts_per_bq_into_4pi_with_air
-                               : input.counts_per_bq_into_4pi);
+                               : input.counts_per_bq_into_4pi__);
     
     char buffer[64] = { '\0' };
     
@@ -672,7 +654,7 @@ public:
     
     const string fwhm_str = SpecUtils::printCompact(fwhm,3);
     const string cnts_per_bq_str = SpecUtils::printCompact(counts_4pi*det_eff, 3);
-    const string act_postfix = det_eff_geom_type_postfix( det_geom );
+    const string act_postfix = DetectorPeakResponse::det_eff_geom_type_postfix( det_geom );
     
     
     snprintf( buffer, sizeof(buffer), "FWHM=%s, %s cnts/bq%s",
@@ -902,7 +884,7 @@ public:
     return m_input;
   }
   
-  DetectionLimitCalc::CurieMdaInput currieInput() const
+  DetectionLimitCalc::CurrieMdaInput currieInput() const
   {
     auto m = m_input.measurement;
     if( !m || (m->num_gamma_channels() < 16) )
@@ -914,7 +896,7 @@ public:
     const size_t nsidebin = static_cast<size_t>( std::round( std::max( 1.0f, m_num_side_channels->value() ) ) );
     const size_t nchannels = m->num_gamma_channels();
     
-    DetectionLimitCalc::CurieMdaInput input;
+    DetectionLimitCalc::CurrieMdaInput input;
     input.spectrum = m;
     input.gamma_energy = m_input.energy;
     input.roi_lower_energy = m_roi_start->value();
@@ -925,7 +907,7 @@ public:
     input.additional_uncertainty = 0.0f;  // TODO: can we get the DRFs contribution to form this?
     
     return input;
-  }//DetectionLimitCalc::CurieMdaInput currieInput() const
+  }//DetectionLimitCalc::CurrieMdaInput currieInput() const
   
   void createMoreInfoWindow()
   {
@@ -937,8 +919,9 @@ public:
       if( !m_input.drf )
         throw runtime_error( "No detector efficiency function" );
       
-      const DetectionLimitCalc::CurieMdaInput input = currieInput();
-      const DetectionLimitCalc::CurieMdaResult result = DetectionLimitCalc::currie_mda_calc( input );
+      const DetectionLimitCalc::CurrieMdaInput input = currieInput();
+      const DetectionLimitCalc::CurrieMdaResult result = DetectionLimitCalc::currie_mda_calc( input );
+      
       
       DetectionLimitTool::createCurrieRoiMoreInfoWindow( m_nuclide,
                                  result,
@@ -947,7 +930,7 @@ public:
                                  m_input.distance,
                                  m_input.do_air_attenuation,                           
                                  m_input.branch_ratio,
-                                 m_input.counts_per_bq_into_4pi );
+                                 m_input.shield_transmission );
     }catch( std::exception &e )
     {
       char buffer[256];
@@ -1464,8 +1447,8 @@ DetectionLimitTool::~DetectionLimitTool()
 
 void DetectionLimitTool::update_spectrum_for_currie_result( D3SpectrumDisplayDiv *chart,
                                        PeakModel *pmodel,
-                                       const DetectionLimitCalc::CurieMdaInput &input,
-                                       const DetectionLimitCalc::CurieMdaResult * const result,
+                                       const DetectionLimitCalc::CurrieMdaInput &input,
+                                       const DetectionLimitCalc::CurrieMdaResult * const result,
                                        std::shared_ptr<const DetectorPeakResponse> drf,
                                        DetectionLimitTool::LimitType limitType,
                                        const double gammas_per_bq,
@@ -1495,7 +1478,7 @@ void DetectionLimitTool::update_spectrum_for_currie_result( D3SpectrumDisplayDiv
   
   const bool useCuries = use_curie_units();
   
-  const float confidence_level = input.detection_probability;
+  const double confidence_level = input.detection_probability;
   
   // We should only get an exception if the ROI goes of the spectrum, or invalid energy cal or something
   try
@@ -1627,21 +1610,23 @@ void DetectionLimitTool::update_spectrum_for_currie_result( D3SpectrumDisplayDiv
               const float nominal_act = result->source_counts / gammas_per_bq;
               
               lowerstr = PhysicalUnits::printToBestActivityUnits( lower_act, 2, useCuries )
-              + det_eff_geom_type_postfix( det_geom );
+              + DetectorPeakResponse::det_eff_geom_type_postfix( det_geom );
               upperstr = PhysicalUnits::printToBestActivityUnits( upper_act, 2, useCuries )
-              + det_eff_geom_type_postfix( det_geom );
+              + DetectorPeakResponse::det_eff_geom_type_postfix( det_geom );
               nomstr = PhysicalUnits::printToBestActivityUnits( nominal_act, 2, useCuries )
-              + det_eff_geom_type_postfix( det_geom );
+              + DetectorPeakResponse::det_eff_geom_type_postfix( det_geom );
+              
+              chart_title = "Estimated activity of " + nomstr + ".";
             }else
             {
               lowerstr = SpecUtils::printCompact(result->lower_limit, 4);
-              upperstr = SpecUtils::printCompact(result->source_counts, 4);
-              nomstr = SpecUtils::printCompact(result->lower_limit, 4);
+              upperstr = SpecUtils::printCompact(result->upper_limit, 4);
+              nomstr = SpecUtils::printCompact(result->source_counts, 4);
+              
+              chart_title = "Excess counts of " + nomstr + ".";
             }
             
             //const string cl_str = SpecUtils::printCompact( 100.0*confidence_level, 3 );
-            chart_title = "Peak for detected activity of " + nomstr
-                          + ". Range: [" + lowerstr + ", " + upperstr + "] @"  + cl_str + "% CL";
             
             generic_peak.setPeakArea( result->source_counts );
             
@@ -1669,7 +1654,7 @@ void DetectionLimitTool::update_spectrum_for_currie_result( D3SpectrumDisplayDiv
             {
               const double simple_mda = result->upper_limit / gammas_per_bq;
               mdastr = PhysicalUnits::printToBestActivityUnits( simple_mda, 2, useCuries )
-              + det_eff_geom_type_postfix( det_geom );
+              + DetectorPeakResponse::det_eff_geom_type_postfix( det_geom );
             }else
             {
               mdastr = SpecUtils::printCompact( result->upper_limit, 4 ) + " counts";
@@ -1710,16 +1695,20 @@ void DetectionLimitTool::update_spectrum_for_currie_result( D3SpectrumDisplayDiv
 
 
 void DetectionLimitTool::createCurrieRoiMoreInfoWindow( const SandiaDecay::Nuclide *const nuclide,
-                                const DetectionLimitCalc::CurieMdaResult &result,
+                                const DetectionLimitCalc::CurrieMdaResult &result,
                                 std::shared_ptr<const DetectorPeakResponse> drf,
                                 DetectionLimitTool::LimitType limitType,
                                 const double distance,
                                 const bool do_air_attenuation,
                                 const double branch_ratio,
-                                const double counts_per_bq_into_4pi )
+                                double shield_transmission )
 {
-  const DetectionLimitCalc::CurieMdaInput &input = result.input;
+  const DetectionLimitCalc::CurrieMdaInput &input = result.input;
   const float &energy = input.gamma_energy;
+  
+  assert( (shield_transmission > 0.0) && (shield_transmission <= 1.0) );
+  if( (shield_transmission <= 0.0) || (shield_transmission > 1.0) )
+    shield_transmission = 1.0;
   
   char buffer[256];
   snprintf( buffer, sizeof(buffer), "%s%.2f keV Info",
@@ -1728,34 +1717,40 @@ void DetectionLimitTool::createCurrieRoiMoreInfoWindow( const SandiaDecay::Nucli
   SimpleDialog *dialog = new SimpleDialog( buffer );
   dialog->addButton( "Close" );
   
+  if( drf && !drf->isValid() )
+    drf.reset();
+  
+  const float live_time = result.input.spectrum ? result.input.spectrum->live_time() : 1.0f;
+  
+  
   try
   {
     wApp->useStyleSheet( "InterSpec_resources/DetectionLimitTool.css" ); // JIC
     
     if( !input.spectrum )
       throw runtime_error( "No measurement" );
-    
-    if( !drf )
-      throw runtime_error( "No detector efficiency function" );
       
-    const float conf_level = input.detection_probability;
+    const double conf_level = input.detection_probability;
     
     const bool useCuries = use_curie_units();
-    const bool fixed_geom = drf->isFixedGeometry();
-    const DetectorPeakResponse::EffGeometryType det_geom = drf->geometryType();
-    const bool air_atten = (do_air_attenuation && !fixed_geom && (distance > 0));
-    const double intrinsic_eff = drf->intrinsicEfficiency( energy );
-    const double geom_eff = drf->fractionalSolidAngle( drf->detectorDiameter(), distance );
-    const double det_eff = fixed_geom ? intrinsic_eff : drf->efficiency(energy, distance);
+    const bool fixed_geom = drf ? drf->isFixedGeometry() : false;
+    const DetectorPeakResponse::EffGeometryType det_geom = drf ? drf->geometryType()
+                                                : DetectorPeakResponse::EffGeometryType::FarField;
+    const bool air_atten = (do_air_attenuation && !fixed_geom && (distance > 0.0));
+    const double intrinsic_eff = drf ? drf->intrinsicEfficiency( energy ) : 1.0f;
+    const double geom_eff = (drf && (distance >= 0.0)) ? drf->fractionalSolidAngle( drf->detectorDiameter(), distance ) : 1.0;
+    const double det_eff = fixed_geom ? intrinsic_eff : (drf ? drf->efficiency(energy, distance) : 1.0);
      
-    double counts_per_bq_into_4pi_with_air = counts_per_bq_into_4pi;
+    const double gammas_per_bq_into_4pi = branch_ratio * live_time * shield_transmission;
+    
+    double gammas_per_bq_into_4pi_with_air = gammas_per_bq_into_4pi;
     if( distance > 0.0 )
     {
       const double air_atten_coef = GammaInteractionCalc::transmission_coefficient_air( energy, distance );
-      counts_per_bq_into_4pi_with_air = counts_per_bq_into_4pi * exp( -1.0*air_atten_coef );
+      gammas_per_bq_into_4pi_with_air = gammas_per_bq_into_4pi * exp( -1.0*air_atten_coef );
     }
     
-    const double counts_4pi = air_atten ? counts_per_bq_into_4pi_with_air : counts_per_bq_into_4pi;
+    const double counts_4pi = air_atten ? gammas_per_bq_into_4pi_with_air : gammas_per_bq_into_4pi;
     
     const double gammas_per_bq = counts_4pi * det_eff;
     
@@ -1797,6 +1792,7 @@ void DetectionLimitTool::createCurrieRoiMoreInfoWindow( const SandiaDecay::Nucli
     
     vector<CurrieResultPeak> dummy_peaks; //We'll pass empty vector, so the function will create a single peak for us
     update_spectrum_for_currie_result( chart, pmodel, input, &result, drf, limitType, gammas_per_bq, dummy_peaks );
+    chart->setChartTitle( "" );
     
     
     //Gross Counts in Peak Foreground: 1389.813
@@ -1827,26 +1823,43 @@ void DetectionLimitTool::createCurrieRoiMoreInfoWindow( const SandiaDecay::Nucli
         {
           // There is enough excess counts that we would reliably detect this activity, so we will
           //  give the activity range.
-          const float lower_act = result.lower_limit / gammas_per_bq;
-          const float upper_act = result.upper_limit / gammas_per_bq;
-          const float nominal_act = result.source_counts / gammas_per_bq;
+          WString obs_label, range_label;
+          string lowerstr, upperstr, nomstr;
+          if( drf && (distance >= 0.0) && (gammas_per_bq > 0.0) )
+          {
+            obs_label = "Observed activity";
+            range_label = "Activity range";
+            
+            const float lower_act = result.lower_limit / gammas_per_bq;
+            const float upper_act = result.upper_limit / gammas_per_bq;
+            const float nominal_act = result.source_counts / gammas_per_bq;
+            
+            lowerstr = PhysicalUnits::printToBestActivityUnits( lower_act, 2, useCuries )
+                        + DetectorPeakResponse::det_eff_geom_type_postfix( det_geom );
+            upperstr = PhysicalUnits::printToBestActivityUnits( upper_act, 2, useCuries )
+                        + DetectorPeakResponse::det_eff_geom_type_postfix( det_geom );
+            nomstr = PhysicalUnits::printToBestActivityUnits( nominal_act, 2, useCuries )
+                      + DetectorPeakResponse::det_eff_geom_type_postfix( det_geom );
+          }else
+          {
+            obs_label = "Observed counts";
+            range_label = "Counts range";
+            
+            lowerstr = SpecUtils::printCompact(result.lower_limit, 4);
+            upperstr = SpecUtils::printCompact(result.upper_limit, 4);
+            nomstr = SpecUtils::printCompact(result.source_counts, 4);
+          }//if( drf ) / else
           
-          const string lowerstr = PhysicalUnits::printToBestActivityUnits( lower_act, 2, useCuries )
-                                  + det_eff_geom_type_postfix( det_geom );
-          const string upperstr = PhysicalUnits::printToBestActivityUnits( upper_act, 2, useCuries )
-                                  + det_eff_geom_type_postfix( det_geom );
-          const string nomstr = PhysicalUnits::printToBestActivityUnits( nominal_act, 2, useCuries )
-                                + det_eff_geom_type_postfix( det_geom );
           
           cell = table->elementAt( table->rowCount(), 0 );
-          new WText( "Observed activity", cell );
+          new WText( obs_label, cell );
           cell = table->elementAt( table->rowCount() - 1, 1 );
           new WText( nomstr, cell );
           addTooltipToRow( "Greater than the &quot;critical level&quot;, L<sub>c</sub>,"
                           " counts were observed in the peak region." );
           
           cell = table->elementAt( table->rowCount(), 0 );
-          new WText( "Activity range", cell );
+          new WText( range_label, cell );
           cell = table->elementAt( table->rowCount() - 1, 1 );
           new WText( "[" + lowerstr + ", " + upperstr + "]", cell );
           addTooltipToRow( "The activity range estimate, to the " + confidence_level + " confidence level." );
@@ -1854,21 +1867,39 @@ void DetectionLimitTool::createCurrieRoiMoreInfoWindow( const SandiaDecay::Nucli
         {
           // This can happen when there are a lot fewer counts in the peak region than predicted
           //  from the sides - since this is non-sensical, we'll just say zero.
-          const string unitstr = useCuries ? "Ci" : "Bq";
+          const string unitstr = drf ? (useCuries ? "Ci" : "Bq") : " counts";
           cell = table->elementAt( table->rowCount(), 1 );
           cell->setColumnSpan( 2 );
-          new WText( "Activity &le; 0 " + unitstr, cell );
+          if( drf && (distance >= 0.0) && (gammas_per_bq > 0.0) )
+          {
+            new WText( "Activity &le; 0 " + unitstr, cell );
+          }else
+          {
+            new WText( "Counts &le; 0", cell );
+          }
+          
           addTooltipToRow( "Significantly fewer counts in peak region were observed,"
                           " than predicted by the neighboring regions." );
         }else
         {
           // We will provide the upper bound on activity.
-          const double simple_mda = result.upper_limit / gammas_per_bq;
-          const string mdastr = PhysicalUnits::printToBestActivityUnits( simple_mda, 2, useCuries )
-                                + det_eff_geom_type_postfix( det_geom );
+          string mdastr;
+          WString label_txt;
+          if( drf && (distance >= 0.0) && (gammas_per_bq > 0.0) )
+          {
+            label_txt = "Activity upper bound";
+            
+            const double simple_mda = result.upper_limit / gammas_per_bq;
+            mdastr = PhysicalUnits::printToBestActivityUnits( simple_mda, 2, useCuries )
+                      + DetectorPeakResponse::det_eff_geom_type_postfix( det_geom );
+          }else
+          {
+            label_txt = "Counts upper bound";
+            mdastr = SpecUtils::printCompact( result.upper_limit, 4 ) + " counts";
+          }
           
           cell = table->elementAt( table->rowCount(), 0 );
-          new WText( "Activity upper bound", cell );
+          new WText( label_txt, cell );
           cell = table->elementAt( table->rowCount() - 1, 1 );
           new WText( mdastr , cell);
           
@@ -1969,12 +2000,19 @@ void DetectionLimitTool::createCurrieRoiMoreInfoWindow( const SandiaDecay::Nucli
     //   reliably recognized as "detected"
     cell = table->elementAt( table->rowCount(), 0 );
     txt = new WText( "Peak critical limit", cell );
-    const double decision_threshold_act = result.decision_threshold / gammas_per_bq;
-    val = SpecUtils::printCompact( result.decision_threshold, 4 )
-          + " <span style=\"font-size: smaller;\">("
-          + PhysicalUnits::printToBestActivityUnits( decision_threshold_act, 2, useCuries )
-          + det_eff_geom_type_postfix( det_geom )
-          + ")</span>";
+    if( drf && (distance >= 0.0) && (gammas_per_bq > 0.0) )
+    {
+      const double decision_threshold_act = result.decision_threshold / gammas_per_bq;
+      val = SpecUtils::printCompact( result.decision_threshold, 4 )
+            + " <span style=\"font-size: smaller;\">("
+            + PhysicalUnits::printToBestActivityUnits( decision_threshold_act, 2, useCuries )
+            + DetectorPeakResponse::det_eff_geom_type_postfix( det_geom )
+            + ")</span>";
+    }else
+    {
+      val = SpecUtils::printCompact( result.decision_threshold, 4 ) + " counts";
+    }
+    
     cell = table->elementAt( table->rowCount() - 1, 1 );
     txt = new WText( val, cell );
     addTooltipToRow( "Corresponds to Currie's &quot;critical level&quot;, L<sub>c</sub>,"
@@ -1986,12 +2024,19 @@ void DetectionLimitTool::createCurrieRoiMoreInfoWindow( const SandiaDecay::Nucli
     //       is the “true” net signal level which may be a priori expected to lead to detection.
     cell = table->elementAt( table->rowCount(), 0 );
     txt = new WText( "Peak detection limit", cell );
-    const double detection_limit_act = result.detection_limit / gammas_per_bq;
-    val = SpecUtils::printCompact( result.detection_limit, 4 )
-          + " <span style=\"font-size: smaller;\">("
-          + PhysicalUnits::printToBestActivityUnits( detection_limit_act, 2, useCuries )
-          + det_eff_geom_type_postfix( det_geom )
-          + ")</span>";
+    
+    if( drf && (distance >= 0.0) && (gammas_per_bq > 0.0) )
+    {
+      const double detection_limit_act = result.detection_limit / gammas_per_bq;
+      val = SpecUtils::printCompact( result.detection_limit, 4 )
+            + " <span style=\"font-size: smaller;\">("
+            + PhysicalUnits::printToBestActivityUnits( detection_limit_act, 2, useCuries )
+            + DetectorPeakResponse::det_eff_geom_type_postfix( det_geom )
+            + ")</span>";
+    }else
+    {
+      val = SpecUtils::printCompact( result.detection_limit, 4 ) + " counts";
+    }
     
     cell = table->elementAt( table->rowCount() - 1, 1 );
     txt = new WText( val, cell );
@@ -2003,48 +2048,60 @@ void DetectionLimitTool::createCurrieRoiMoreInfoWindow( const SandiaDecay::Nucli
     // Add a blank row
     cell = table->elementAt( table->rowCount(), 0 );
     txt = new WText( "&nbsp;", TextFormat::XHTMLText, cell );
+    if( drf )
+    {
+      cell = table->elementAt( table->rowCount(), 0 );
+      txt = new WText( "Detector Intrinsic Eff.", cell );
+      val = SpecUtils::printCompact( intrinsic_eff, 5 );
+      cell = table->elementAt( table->rowCount() - 1, 1 );
+      txt = new WText( val, cell );
+      addTooltipToRow( "The efficiency for a gamma hitting the detector face,"
+                      " to be detected in the full-energy peak." );
+      
+      if( distance >= 0.0 )
+      {
+        cell = table->elementAt( table->rowCount(), 0 );
+        txt = new WText( "Solid angle fraction", cell );
+        val = SpecUtils::printCompact( geom_eff, 5 );
+        cell = table->elementAt( table->rowCount() - 1, 1 );
+        txt = new WText( val, cell );
+        addTooltipToRow( "The fraction of the solid angle, the detector face takes up, at the specified distance." );
+      }//if( distance >= 0.0 )
+    }//if( drf )
     
-    cell = table->elementAt( table->rowCount(), 0 );
-    txt = new WText( "Detector Intrinsic Eff.", cell );
-    val = SpecUtils::printCompact( intrinsic_eff, 5 );
-    cell = table->elementAt( table->rowCount() - 1, 1 );
-    txt = new WText( val, cell );
-    addTooltipToRow( "The efficiency for a gamma hitting the detector face,"
-                    " to be detected in the full-energy peak." );
+    if( shield_transmission != 1.0 )
+    {
+      const double shield_trans = gammas_per_bq_into_4pi / branch_ratio / input.spectrum->live_time();
+      cell = table->elementAt( table->rowCount(), 0 );
+      txt = new WText( "Shielding transmission", cell );
+      val = SpecUtils::printCompact( shield_transmission, 5 );
+      cell = table->elementAt( table->rowCount() - 1, 1 );
+      txt = new WText( val, cell );
+      addTooltipToRow( "The fraction of gammas, at this energy, that will make it through the shielding without interacting." );
+    }//if( branch_ratio != counts_per_bq_into_4pi )
     
+    if( air_atten )
+    {
+      const double air_trans = gammas_per_bq_into_4pi_with_air / gammas_per_bq_into_4pi;
+      cell = table->elementAt( table->rowCount(), 0 );
+      txt = new WText( "Air transmission", cell );
+      val = SpecUtils::printCompact( air_trans, 5 );
+      cell = table->elementAt( table->rowCount() - 1, 1 );
+      txt = new WText( val, cell );
+      addTooltipToRow( "The fraction of gammas, at this energy, that will make it through the air (assuming sea level) without interacting." );
+    }//if( air_atten )
     
-    cell = table->elementAt( table->rowCount(), 0 );
-    txt = new WText( "Solid angle fraction", cell );
-    val = SpecUtils::printCompact( geom_eff, 5 );
-    cell = table->elementAt( table->rowCount() - 1, 1 );
-    txt = new WText( val, cell );
-    addTooltipToRow( "The fraction of the solid angle, the detector face takes up, at the specified distance." );
-    
-    const double shield_trans = counts_per_bq_into_4pi / branch_ratio / input.spectrum->live_time();
-    cell = table->elementAt( table->rowCount(), 0 );
-    txt = new WText( "Shielding transmission", cell );
-    val = SpecUtils::printCompact( shield_trans, 5 );
-    cell = table->elementAt( table->rowCount() - 1, 1 );
-    txt = new WText( val, cell );
-    addTooltipToRow( "The fraction of gammas, at this energy, that will make it through the shielding without interacting." );
-    
-    const double air_trans = counts_per_bq_into_4pi_with_air / counts_per_bq_into_4pi;
-    cell = table->elementAt( table->rowCount(), 0 );
-    txt = new WText( "Air transmission", cell );
-    val = SpecUtils::printCompact( air_trans, 5 );
-    cell = table->elementAt( table->rowCount() - 1, 1 );
-    txt = new WText( val, cell );
-    addTooltipToRow( "The fraction of gammas, at this energy, that will make it through the air (assuming sea level) without interacting." );
-    
-    
-    cell = table->elementAt( table->rowCount(), 0 );
-    txt = new WText( "Nuclide branching ratio", cell );
-    val = SpecUtils::printCompact( branch_ratio, 5 );
-    cell = table->elementAt( table->rowCount() - 1, 1 );
-    txt = new WText( val, cell );
-    addTooltipToRow( "The number of gamma rays emitted at this energy, from the radioactive"
-                    " source before any shielding, but accounting for nuclide age,"
-                    " per decay of the parent nuclide." );
+    if( branch_ratio > 0.0 )
+    {
+      cell = table->elementAt( table->rowCount(), 0 );
+      txt = new WText( "Nuclide branching ratio", cell );
+      val = SpecUtils::printCompact( branch_ratio, 5 );
+      cell = table->elementAt( table->rowCount() - 1, 1 );
+      txt = new WText( val, cell );
+      addTooltipToRow( "The number of gamma rays emitted at this energy, from the radioactive"
+                      " source before any shielding, but accounting for nuclide age,"
+                      " per decay of the parent nuclide." );
+    }//if( branch_ratio > 0.0 )
   }catch( std::exception &e )
   {
     cerr << "Error computing Currie limit information: " << e.what() << endl;
@@ -2053,6 +2110,94 @@ void DetectionLimitTool::createCurrieRoiMoreInfoWindow( const SandiaDecay::Nucli
     msg->setInline( false );
   }//try / catch
 }//void createCurrieRoiMoreInfoWindow()
+
+
+Wt::Json::Object DetectionLimitTool::generateChartJson( const DetectionLimitCalc::DeconActivityOrDistanceLimitResult &result, const bool is_dist_limit )
+{
+  
+  const bool useCurie = use_curie_units();
+  const vector<pair<double,double>> &chi2s = result.chi2s;
+  
+  const double avrg_quantity = 0.5*(chi2s.front().first + chi2s.back().first);
+  const pair<string,double> &units = is_dist_limit
+  ? PhysicalUnits::bestLengthUnitHtml( avrg_quantity )
+  : PhysicalUnits::bestActivityUnitHtml( avrg_quantity, useCurie );
+  
+  double minchi2 = std::numeric_limits<double>::infinity();
+  for( size_t i = 0; i < chi2s.size(); ++i )
+    minchi2 = std::min( minchi2, chi2s[i].second );
+  
+  double maxchi2 = -std::numeric_limits<double>::infinity();
+  
+  // The first/last Chi2 may be a huge (like when distance approaches 0), so we'll protect
+  //  against this.
+  // TODO: use `result.foundUpperCl` and `result.foundLowerCl` to see if we need this, and also, perhaps maybe we should be smarter in picking which points to compute the Chi2 for
+  const double maxYRange = 15; //arbitrary
+  
+  
+  Wt::Json::Object json;
+  Wt::Json::Array chi2_xy;
+  for( size_t i = 0; i < chi2s.size(); ++i )
+  {
+    if( chi2s[i].second > (minchi2 + maxYRange) )
+      continue;
+    
+    maxchi2 = std::max( maxchi2, chi2s[i].second );
+    
+    Wt::Json::Object datapoint;
+    datapoint["x"] = (chi2s[i].first / units.second);
+    datapoint["y"] = chi2s[i].second;
+    chi2_xy.push_back( std::move(datapoint) );
+  }
+  
+  if( result.foundLowerCl && (result.lowerLimit > 0.0) )
+  {
+    //display lower limit to user...
+  }
+  
+  json["data"] = chi2_xy;
+  
+  
+  double chi2range = maxchi2 - minchi2;
+  if( IsInf(minchi2) || IsInf(maxchi2) ) //JIC
+  {
+    minchi2 = 0;
+    maxchi2 = 100;
+    chi2range = 0;
+  }
+  
+  //json["xunits"] = WString::fromUTF8(units.first);
+  
+  string unit_str = units.first;
+  SpecUtils::ireplace_all( unit_str, "&mu;", MU_CHARACTER );
+  json["xtitle"] = WString::fromUTF8( (is_dist_limit ? "Distance (" : "Activity (") + unit_str + ")");
+  json["ytitle"] = WString::fromUTF8( "\xCF\x87\xC2\xB2" ); //chi^2
+  
+  double xstart = (chi2s.front().first/units.second);
+  double xend = (chi2s.front().first/units.second);
+  //Blah blah blah, coarse labels to be round numbers
+  //const double initialrange = xend - xstart;
+  
+  //json["xrange"] = Wt::Json::Array{ Wt::Json::Array( Wt::Json::Value(xstart), Wt::Json::Value(xend) ) };
+  //json["yrange"] = Wt::Json::Array{ Wt::Json::Array( Wt::Json::Value(minchi2 - 0.1*chi2range), Wt::Json::Value(maxchi2 + 0.1*chi2range) ) };
+  
+  // TODO: draw line at upperLimit.
+  InterSpec *interspec = InterSpec::instance();
+  std::shared_ptr<const ColorTheme> theme = interspec ? interspec->getColorTheme() : nullptr;
+  if( theme )
+  {
+    auto csstxt = []( const Wt::WColor &c, const char * defcolor ) -> WString {
+      return WString::fromUTF8( (c.isDefault() ? string(defcolor) : c.cssText()) );
+    };
+    
+    json["lineColor"] = csstxt(theme->foregroundLine, "black");
+    //json["axisColor"] = csstxt(theme->spectrumAxisLines, "black");
+    json["chartBackgroundColor"] = csstxt(theme->spectrumChartBackground, "rgba(0,0,0,0)");
+    //json["textColor"] = csstxt(theme->spectrumChartText, "black");
+  }//if( theme )
+  
+  return json;
+};//generateChartJson lambda
 
 
 
@@ -2672,7 +2817,7 @@ void DetectionLimitTool::handleInputChange()
     return;
   }
   
-  const float confLevel = currentConfidenceLevel();
+  const double confLevel = currentConfidenceLevel();
   
   for( const auto &line : lines )
   {
@@ -2700,7 +2845,8 @@ void DetectionLimitTool::handleInputChange()
     
     input.energy = energy;
     input.branch_ratio = br;
-    input.counts_per_bq_into_4pi = line.gammas_into_4pi*spec->live_time();
+    input.shield_transmission = line.shield_transmission;
+    input.counts_per_bq_into_4pi__ = line.gammas_into_4pi*spec->live_time();
     input.counts_per_bq_into_4pi_with_air = line.gammas_4pi_after_air_attenuation*spec->live_time();
     input.distance = distance;
     input.activity = activity;
@@ -2744,21 +2890,21 @@ void DetectionLimitTool::handleInputChange()
 }//void handleInputChange()
 
 
-float DetectionLimitTool::currentConfidenceLevel()
+double DetectionLimitTool::currentConfidenceLevel()
 {
   const auto cl = ConfidenceLevel( m_confidenceLevel->currentIndex() );
   switch( cl )
   {
-    case OneSigma:   return 0.682689492137086f;
-    case TwoSigma:   return 0.954499736103642f;
-    case ThreeSigma: return 0.997300203936740f;
-    case FourSigma:  return 0.999936657516334f;
-    case FiveSigma:  return 0.999999426696856f;
+    case OneSigma:   return 0.682689492137086;
+    case TwoSigma:   return 0.954499736103642;
+    case ThreeSigma: return 0.997300203936740;
+    case FourSigma:  return 0.999936657516334;
+    case FiveSigma:  return 0.999999426696856;
     case NumConfidenceLevel: break;
   }//switch( cl )
   
   assert( 0 );
-  return 0.95f;
+  return 0.95;
 }//float DetectionLimitTool::currentConfidenceLevel()
 
 
@@ -2886,7 +3032,7 @@ void DetectionLimitTool::doCalc()
             const double def_dist = 1.0*PhysicalUnits::meter;
             const double det_eff_1m = fixed_geom ? input.drf->intrinsicEfficiency(input.energy)
             : input.drf->efficiency(input.energy, def_dist);
-            const double counts_4pi = input.counts_per_bq_into_4pi;
+            const double counts_4pi = input.counts_per_bq_into_4pi__;
             
             const double activity = other_quantity;
             
@@ -2899,7 +3045,7 @@ void DetectionLimitTool::doCalc()
             const double det_eff = fixed_geom ? input.drf->intrinsicEfficiency(input.energy)
             : input.drf->efficiency(input.energy, input.distance);
             const double counts_4pi = (air_atten ? input.counts_per_bq_into_4pi_with_air
-                                       : input.counts_per_bq_into_4pi);
+                                       : input.counts_per_bq_into_4pi__);
             const double gammas_per_bq = det_eff * counts_4pi;
             
             const double nominalActivity = rw->simple_excess_counts() / gammas_per_bq;
@@ -2955,96 +3101,6 @@ void DetectionLimitTool::doCalc()
     }
     
     m_errorMsg->hide();
-    
-    
-    
-    auto generateChartJson = []( const DetectionLimitCalc::DeconActivityOrDistanceLimitResult &result, const bool is_dist_limit ) -> Wt::Json::Object {
-      
-      const bool useCurie = use_curie_units();
-      const vector<pair<double,double>> &chi2s = result.chi2s;
-      
-      const double avrg_quantity = 0.5*(chi2s.front().first + chi2s.back().first);
-      const pair<string,double> &units = is_dist_limit
-      ? PhysicalUnits::bestLengthUnitHtml( avrg_quantity )
-      : PhysicalUnits::bestActivityUnitHtml( avrg_quantity, useCurie );
-      
-      double minchi2 = std::numeric_limits<double>::infinity();
-      for( size_t i = 0; i < chi2s.size(); ++i )
-        minchi2 = std::min( minchi2, chi2s[i].second );
-      
-      double maxchi2 = -std::numeric_limits<double>::infinity();
-      
-      // The first/last Chi2 may be a huge (like when distance approaches 0), so we'll protect
-      //  against this.
-      // TODO: use `result.foundUpperCl` and `result.foundLowerCl` to see if we need this, and also, perhaps maybe we should be smarter in picking which points to compute the Chi2 for
-      const double maxYRange = 15; //arbitrary
-      
-      
-      Wt::Json::Object json;
-      Wt::Json::Array chi2_xy;
-      for( size_t i = 0; i < chi2s.size(); ++i )
-      {
-        if( chi2s[i].second > (minchi2 + maxYRange) )
-          continue;
-        
-        maxchi2 = std::max( maxchi2, chi2s[i].second );
-        
-        Wt::Json::Object datapoint;
-        datapoint["x"] = (chi2s[i].first / units.second);
-        datapoint["y"] = chi2s[i].second;
-        chi2_xy.push_back( std::move(datapoint) );
-      }
-      
-      if( result.foundLowerCl && (result.lowerLimit > 0.0) )
-      {
-        //display lower limit to user...
-      }
-      
-      json["data"] = chi2_xy;
-      
-      
-      double chi2range = maxchi2 - minchi2;
-      if( IsInf(minchi2) || IsInf(maxchi2) ) //JIC
-      {
-        minchi2 = 0;
-        maxchi2 = 100;
-        chi2range = 0;
-      }
-      
-      //json["xunits"] = WString::fromUTF8(units.first);
-      
-      string unit_str = units.first;
-      SpecUtils::ireplace_all( unit_str, "&mu;", MU_CHARACTER );
-      json["xtitle"] = WString::fromUTF8( (is_dist_limit ? "Distance (" : "Activity (") + unit_str + ")");
-      json["ytitle"] = WString::fromUTF8( "\xCF\x87\xC2\xB2" ); //chi^2
-      
-      double xstart = (chi2s.front().first/units.second);
-      double xend = (chi2s.front().first/units.second);
-      //Blah blah blah, coarse labels to be round numbers
-      //const double initialrange = xend - xstart;
-      
-      //json["xrange"] = Wt::Json::Array{ Wt::Json::Array( Wt::Json::Value(xstart), Wt::Json::Value(xend) ) };
-      //json["yrange"] = Wt::Json::Array{ Wt::Json::Array( Wt::Json::Value(minchi2 - 0.1*chi2range), Wt::Json::Value(maxchi2 + 0.1*chi2range) ) };
-      
-      // TODO: draw line at upperLimit.
-      InterSpec *interspec = InterSpec::instance();
-      std::shared_ptr<const ColorTheme> theme = interspec ? interspec->getColorTheme() : nullptr;
-      if( theme )
-      {
-        auto csstxt = []( const Wt::WColor &c, const char * defcolor ) -> WString {
-          return WString::fromUTF8( (c.isDefault() ? string(defcolor) : c.cssText()) );
-        };
-        
-        json["lineColor"] = csstxt(theme->foregroundLine, "black");
-        //json["axisColor"] = csstxt(theme->spectrumAxisLines, "black");
-        json["chartBackgroundColor"] = csstxt(theme->spectrumChartBackground, "rgba(0,0,0,0)");
-        //json["textColor"] = csstxt(theme->spectrumChartText, "black");
-      }//if( theme )
-      
-      return json;
-    };//generateChartJson lambda
-    
-    
     
     const double mid_search_quantity = 0.5*(min_search_quantity + max_search_quantity);
     const double base_act = is_dist_limit ?  other_quantity : mid_search_quantity;
@@ -3238,7 +3294,7 @@ shared_ptr<DetectionLimitCalc::DeconComputeInput> DetectionLimitTool::getCompute
     
     peak_info.energy = row_input.energy;
     peak_info.fwhm = input->drf->peakResolutionFWHM(row_input.energy);
-    peak_info.counts_per_bq_into_4pi = row_input.counts_per_bq_into_4pi;
+    peak_info.counts_per_bq_into_4pi = row_input.counts_per_bq_into_4pi__;
     
     roi_info.peak_infos.push_back( peak_info );
     

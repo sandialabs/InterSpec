@@ -58,6 +58,7 @@
 #include "InterSpec/MaterialDB.h"
 #include "InterSpec/HelpSystem.h"
 #include "InterSpec/InterSpecApp.h"
+#include "InterSpec/SimpleDialog.h"
 #include "InterSpec/PhysicalUnits.h"
 #include "InterSpec/WarningWidget.h"
 #include "InterSpec/ShieldingSelect.h"
@@ -95,60 +96,6 @@ namespace
   }//bool use_curie_units()
   
 }//namespace
-
-
-class CurrieLimitArea : public Wt::WContainerWidget
-{
-public:
-  DetectionLimitSimple *m_calcTool;
-  
-public:
-  CurrieLimitArea( DetectionLimitSimple *calcTool, Wt::WContainerWidget *parent = 0 )
-  : Wt::WContainerWidget( parent ),
-  m_calcTool( calcTool )
-  {
-    assert( m_calcTool );
-    addStyleClass( "CurrieLimitArea" );
-    
-    
-    // Result area
-
-  }//CurrieLimitArea constructor
-  
-  void handleUserRequestedMoreInfoDialog()
-  {
-    /*
-    const DetectionLimitCalc::CurieMdaInput input = currieInput();
-    const DetectionLimitCalc::CurieMdaResult result = DetectionLimitCalc::currie_mda_calc( input );
-    
-    DetectionLimitTool::createCurrieRoiMoreInfoWindow( const SandiaDecay::Nuclide *const nuclide,
-     const DetectionLimitCalc::CurieMdaResult &result,
-     std::shared_ptr<const DetectorPeakResponse> drf,
-     DetectionLimitTool::LimitType limitType,
-               const double distance,
-               const bool do_air_attenuation,
-               const double branch_ratio,
-               const double counts_per_bq_into_4pi );
-     */
-  }//void handleUserRequestedMoreInfoDialog()
-};//class CurrieLimitArea
-
-
-class DeconvolutionLimitArea : public Wt::WContainerWidget
-{
-  DetectionLimitSimple *m_calcTool;
-  
-public:
-  DeconvolutionLimitArea( DetectionLimitSimple *calcTool, Wt::WContainerWidget *parent = 0 )
-  : Wt::WContainerWidget( parent ),
-  m_calcTool( calcTool )
-  {
-    assert( m_calcTool );
-    
-    new WText( "Deconvolution Limit Area", this );
-  }
-};//class DeconvolutionLimitArea
-
 
 
 DetectionLimitSimpleWindow::DetectionLimitSimpleWindow( MaterialDB *materialDB,
@@ -240,6 +187,8 @@ DetectionLimitSimple::DetectionLimitSimple( MaterialDB *materialDB,
   m_materialDB( materialDB ),
   m_spectrum( nullptr ),
   m_peakModel( nullptr ),
+  m_resultTxt( nullptr ),
+  m_moreInfoButton( nullptr ),
   m_chartErrMsgStack( nullptr ),
   m_errMsg( nullptr ),
   m_fitFwhmBtn( nullptr ),
@@ -253,9 +202,6 @@ DetectionLimitSimple::DetectionLimitSimple( MaterialDB *materialDB,
   m_detectorDisplay( nullptr ),
   m_methodGroup( nullptr ),
   m_methodDescription( nullptr ),
-  m_methodStack( nullptr ),
-  m_currieLimitArea( nullptr ),
-  m_deconLimitArea( nullptr ),
   m_numFwhmWide( 2.5f ),
   m_lowerRoi( nullptr ),
   m_upperRoi( nullptr ),
@@ -271,7 +217,7 @@ DetectionLimitSimple::DetectionLimitSimple( MaterialDB *materialDB,
   m_currentNuclide( nullptr ),
   m_currentAge( 0.0 ),
   m_currentEnergy( 0.0 ),
-  m_clusterNumFwhm( 0.5 ),
+  m_allGammasInRoi( true ),
   m_prevDistance{},
   m_stateUri(),
   m_currentCurrieInput( nullptr ),
@@ -294,7 +240,10 @@ void DetectionLimitSimple::init()
  
   const bool showToolTips = InterSpecUser::preferenceValue<bool>( "ShowTooltips", m_viewer );
   
-  m_chartErrMsgStack = new WStackedWidget( this );
+  WContainerWidget *resultsDiv = new WContainerWidget( this );
+  resultsDiv->addStyleClass( "ResultsArea" );
+  
+  m_chartErrMsgStack = new WStackedWidget( resultsDiv );
   
   WContainerWidget *errorDiv = new WContainerWidget();
   errorDiv->addStyleClass( "ErrDisplay" );
@@ -332,6 +281,20 @@ void DetectionLimitSimple::init()
   m_peakModel = new PeakModel( m_spectrum );
   m_peakModel->setNoSpecMeasBacking();
   m_spectrum->setPeakModel( m_peakModel );
+  
+  
+  m_resultTxt = new WText( "&nbsp;", resultsDiv );
+  m_resultTxt->addStyleClass( "ResultsTxtArea" );
+  m_resultTxt->setInline( false );
+  
+  // Now put the "more info..." link below here and to the right
+  m_moreInfoButton = new WPushButton( resultsDiv );
+  m_moreInfoButton->setText( "further details..." );
+  m_moreInfoButton->setStyleClass( "LinkBtn MdaMoreInfoBtn" );
+  m_moreInfoButton->clicked().connect( this, &DetectionLimitSimple::createMoreInfoWindow );
+  m_moreInfoButton->setHiddenKeepsGeometry( true );
+  m_moreInfoButton->hide();
+ 
   
   WContainerWidget *generalInput = new WContainerWidget( this );
   generalInput->addStyleClass( "GeneralInput" );
@@ -525,27 +488,6 @@ void DetectionLimitSimple::init()
   
   m_methodDescription = new WText( WString::tr("dls-currie-desc"), generalInput );
   m_methodDescription->addStyleClass( "CalcMethodDesc GridSecondCol GridNinthRow GridSpanThreeCol" );
-  
-  m_currieLimitArea = new CurrieLimitArea( this );
-  m_deconLimitArea = new DeconvolutionLimitArea( this );
-  
-  
-  
-  
-  //m_methodTabs = new WTabWidget( this );
-  //m_methodTabs->addStyleClass( "MethodTabs" );
-  //m_methodTabs->addTab( m_currieLimitArea, WString::tr("dls-currie-tab-title") );
-  //m_methodTabs->addTab( m_deconLimitArea, WString::tr("dls-decon-tab-title") );
-  //m_methodTabs->setCurrentIndex( 0 );
-  
-  m_methodStack = new WStackedWidget( this );
-  m_methodStack->addStyleClass( "CalcMethodStack" );
-  
-  m_methodStack->addWidget( m_currieLimitArea );
-  m_methodStack->addWidget( m_deconLimitArea );
-  
-  m_methodStack->setCurrentIndex( 0 );
-  
   
   m_renderFlags |= DetectionLimitSimple::RenderActions::UpdateDisplayedSpectrum;
   m_renderFlags |= DetectionLimitSimple::RenderActions::UpdateLimit;
@@ -780,8 +722,6 @@ DetectionLimitSimple::~DetectionLimitSimple()
 
 void DetectionLimitSimple::handleMethodChanged( Wt::WRadioButton *btn )
 {
-  m_methodStack->setCurrentIndex( m_methodGroup->checkedId() );
- 
   const bool currieMethod = (m_methodGroup->checkedId() == 0);
   
   m_numSideChannelLabel->setHidden( !currieMethod );
@@ -904,7 +844,7 @@ void DetectionLimitSimple::render( Wt::WFlags<Wt::RenderFlag> flags )
      || m_renderFlags.testFlag(RenderActions::UpdateLimit) )
   {
     // Needs to be called after updating results
-    updateSpectrumDecorations();
+    updateSpectrumDecorationsAndResultText();
   }//if( update displayed spectrum )
   
   
@@ -1157,7 +1097,7 @@ void DetectionLimitSimple::handleSpectrumChanged()
 
 
 
-void DetectionLimitSimple::updateSpectrumDecorations()
+void DetectionLimitSimple::updateSpectrumDecorationsAndResultText()
 {
   shared_ptr<const ColorTheme> theme = m_viewer->getColorTheme();
   assert( theme );
@@ -1165,10 +1105,24 @@ void DetectionLimitSimple::updateSpectrumDecorations()
   const bool use_curie = use_curie_units();
   const shared_ptr<const DetectorPeakResponse> drf = m_detectorDisplay->detector();
   
+  m_resultTxt->setText( "---" );
+  m_moreInfoButton->hide();
   m_peakModel->setPeaks( vector<shared_ptr<const PeakDef>>{} );
   m_spectrum->removeAllDecorativeHighlightRegions();
   
-  if( m_methodStack->currentIndex() == 0 )
+  const double confidence_level = m_currentDeconResults ? m_currentDeconResults->confidenceLevel : currentConfidenceLevel();
+  
+  const string cl_str = ([confidence_level]() -> string {
+    char cl_str_buffer[64] = {'\0'};
+    if( confidence_level < 0.999 )
+      snprintf( cl_str_buffer, sizeof(cl_str_buffer), "%.1f%%", 100.0*confidence_level );
+    else
+      snprintf( cl_str_buffer, sizeof(cl_str_buffer), "1-%.2G", (1.0-confidence_level) );
+    return cl_str_buffer;
+  })();
+  
+  const bool currieMethod = (m_methodGroup->checkedId() == 0);
+  if( currieMethod )
   {
     // Currie method limit
     if( m_currentCurrieInput )
@@ -1190,9 +1144,9 @@ void DetectionLimitSimple::updateSpectrumDecorations()
         const double energy = m_photoPeakEnergiesAndBr[energyIndex].first;
         assert( fabs(energy - static_cast<float>(m_currentCurrieInput->gamma_energy)) < 0.1 );
         
-        if( m_clusterNumFwhm > 0.0 )
+        if( m_allGammasInRoi )
         {
-          //include any gamma within m_clusterNumFwhm*fwhm of the selected gamma.
+          //include any gamma within ROI
           br = 0.0;
           
           const double gammaFwhm = m_fwhm->value();
@@ -1204,10 +1158,7 @@ void DetectionLimitSimple::updateSpectrumDecorations()
           
           for( const pair<double,double> &ppebr : m_photoPeakEnergiesAndBr )
           {
-            if( //(fabs(ppebr.first - energy) <= m_clusterNumFwhm*gammaFwhm)
-               //&&
-               (ppebr.first >= roi_lower)
-               && (ppebr.first <= roi_upper) )
+            if( (ppebr.first >= roi_lower) && (ppebr.first <= roi_upper) )
             {
               br += ppebr.second;
               
@@ -1224,7 +1175,7 @@ void DetectionLimitSimple::updateSpectrumDecorations()
           br = std::max( br, m_photoPeakEnergiesAndBr[energyIndex].second ); //JIC
         }else
         {
-          // Only use the selected gamma if m_clusterNumFwhm <= 0
+          // Only use the selected gamma
           br = m_photoPeakEnergiesAndBr[energyIndex].second;
           
           DetectionLimitTool::CurrieResultPeak p;
@@ -1278,23 +1229,99 @@ void DetectionLimitSimple::updateSpectrumDecorations()
       
       const DetectionLimitTool::LimitType limitType = DetectionLimitTool::LimitType::Activity;
       
+      const DetectionLimitCalc::CurrieMdaResult * const result = m_currentCurrieResults.get();
+      
       DetectionLimitTool::update_spectrum_for_currie_result( m_spectrum, m_peakModel,
-              *m_currentCurrieInput, m_currentCurrieResults.get(), drf, limitType, gammas_per_bq, roi_peaks );
+              *m_currentCurrieInput, result, drf, limitType, gammas_per_bq, roi_peaks );
+      
+      
+      WString result_txt;
+      const bool use_curie = use_curie_units();
+      const DetectorPeakResponse::EffGeometryType det_geom = drf ? drf->geometryType() : DetectorPeakResponse::EffGeometryType::FarField;
+      
+      if( result->source_counts > result->decision_threshold )
+      {
+        // There is enough excess counts that we would reliably detect this activity, so we will
+        //  give the activity range.
+        string lowerstr, upperstr, nomstr;
+        
+        if( gammas_per_bq > 0.0 )
+        {
+          const float lower_act = result->lower_limit / gammas_per_bq;
+          const float upper_act = result->upper_limit / gammas_per_bq;
+          const float nominal_act = result->source_counts / gammas_per_bq;
+          
+          lowerstr = PhysicalUnits::printToBestActivityUnits( lower_act, 2, use_curie )
+          + DetectorPeakResponse::det_eff_geom_type_postfix( det_geom );
+          upperstr = PhysicalUnits::printToBestActivityUnits( upper_act, 2, use_curie )
+          + DetectorPeakResponse::det_eff_geom_type_postfix( det_geom );
+          nomstr = PhysicalUnits::printToBestActivityUnits( nominal_act, 2, use_curie )
+          + DetectorPeakResponse::det_eff_geom_type_postfix( det_geom );
+          
+          result_txt = "Detected activity of " + nomstr + ", with range "
+                       "[" + lowerstr + ", " + upperstr + "], @"  + cl_str + " CL";
+        }else
+        {
+          lowerstr = SpecUtils::printCompact(result->lower_limit, 4);
+          upperstr = SpecUtils::printCompact(result->upper_limit, 4);
+          nomstr = SpecUtils::printCompact(result->source_counts, 4);
+          
+          result_txt = "Excess counts of " + nomstr + ", "
+                       "with range [" + lowerstr + ", " + upperstr + "] @"  + cl_str + " CL";
+        }
+      }else if( result->upper_limit < 0 )
+      {
+        // This can happen when there are a lot fewer counts in the peak region than predicted
+        //  from the sides - since this is non-sensical, we'll just say zero.
+        const string unitstr = use_curie ? "Ci" : "Bq";
+        
+        if( gammas_per_bq > 0.0 )
+        {
+          result_txt = "Activity < 0 " + unitstr + " "
+          "(observed significantly fewer counts than expected).";
+        }else
+        {
+          result_txt = "Excess counts < 0 " + unitstr + " "
+          "(observed significantly fewer counts than expected).";
+        }
+      }else
+      {
+        // We will provide the upper bound on activity.
+        string mdastr;
+        if( gammas_per_bq > 0.0 )
+        {
+          const double simple_mda = result->upper_limit / gammas_per_bq;
+          mdastr = PhysicalUnits::printToBestActivityUnits( simple_mda, 2, use_curie )
+                  + DetectorPeakResponse::det_eff_geom_type_postfix( det_geom );
+        }else
+        {
+          mdastr = SpecUtils::printCompact( result->upper_limit, 4 ) + " signal counts";
+        }
+        
+        result_txt = "Less than " + mdastr + " present @" + cl_str + " CL.";
+      }//if( detected ) / else if( ....)
+      
+      result_txt += "<br/>";
+      if( gammas_per_bq > 0.0 )
+      {
+        result_txt += "Minimum reliably detectable activity: ";
+        const double detection_act = result->detection_limit / gammas_per_bq;
+        result_txt += PhysicalUnits::printToBestActivityUnits( detection_act, 2, use_curie )
+                      + DetectorPeakResponse::det_eff_geom_type_postfix( det_geom )
+                      + ".";
+      }else
+      {
+        result_txt += "Minimum reliably detectable excess counts: ";
+        result_txt += SpecUtils::printCompact(result->detection_limit, 4);
+      }
+      
+      
+      m_resultTxt->setText( result_txt );
+      m_moreInfoButton->show();
     }//if( m_currentCurrieInput )
   }else
   {
     // Deconvolution method limit
-    
-    const double confidence_level = m_currentDeconResults->confidenceLevel;
-    char cl_str_buffer[64] = {'\0'};
-    
-    if( confidence_level < 0.999 )
-      snprintf( cl_str_buffer, sizeof(cl_str_buffer), "%.1f%%", 100.0*confidence_level );
-    else
-      snprintf( cl_str_buffer, sizeof(cl_str_buffer), "1-%.2G", (1.0-confidence_level) );
-   
-    const string cl_str = cl_str_buffer;
-    
     std::vector<PeakDef> fit_peaks;
     
     if( !m_currentDeconResults )
@@ -1310,21 +1337,68 @@ void DetectionLimitSimple::updateSpectrumDecorations()
       
       //assert( result.foundLowerCl || result.foundUpperCl );
       
-      WString chart_title;
+      if( !m_currentNuclide )
+      {
+        // Sanity check that we filled out the limit input how we expect it.
+        assert( result.baseInput.roi_info.size() == 1 );
+        assert( result.baseInput.roi_info[0].peak_infos.size() == 1 );
+        assert( result.baseInput.roi_info[0].peak_infos[0].counts_per_bq_into_4pi == result.baseInput.measurement->live_time() );
+      }//if( !m_currentNuclide )
+      
+      WString chart_title, result_txt;
       double display_activity = 0.0;
       
       if( result.foundLowerCl && result.foundUpperCl )
       {
         display_activity = result.overallBestQuantity;
         
-        const string nomstr = PhysicalUnits::printToBestActivityUnits(result.overallBestQuantity, 3, use_curie);
-        const string lowerstr = PhysicalUnits::printToBestActivityUnits(result.lowerLimit, 3, use_curie);
-        const string upperstr = PhysicalUnits::printToBestActivityUnits(result.upperLimit, 3, use_curie);
-        
-        const string cl_txt = "Peak for detected activity of " + nomstr
-                    + ". Range: [" + lowerstr + ", " + upperstr + "] @"  + cl_str + " CL" ;
-        
-        chart_title = WString::fromUTF8( cl_txt );
+        if( !m_currentNuclide )
+        {
+          //result.lowerLimit
+          assert( result.lowerLimitResults
+                 && (result.lowerLimitResults->fit_peaks.size() == 1) );
+          assert( result.overallBestResults
+                 && (result.overallBestResults->fit_peaks.size() == 1) );
+          assert( result.upperLimitResults
+                 && (result.upperLimitResults->fit_peaks.size() == 1) );
+          
+          const double lower_limit_counts = (result.lowerLimitResults
+                                  && (result.lowerLimitResults->fit_peaks.size() == 1))
+                                        ? result.lowerLimitResults->fit_peaks[0].amplitude() : -1.0;
+          const double nominal_counts = (result.overallBestResults
+                                  && (result.overallBestResults->fit_peaks.size() == 1))
+                                       ? result.overallBestResults->fit_peaks[0].amplitude() : -1.0;
+          const double upper_limit_counts = (result.upperLimitResults
+                                  && (result.upperLimitResults->fit_peaks.size() == 1))
+                                        ? result.upperLimitResults->fit_peaks[0].amplitude() : -1.0;
+          
+          const string lowerstr = SpecUtils::printCompact(lower_limit_counts, 4);
+          const string nomstr = SpecUtils::printCompact(nominal_counts, 4);
+          const string upperstr = SpecUtils::printCompact(upper_limit_counts, 4);
+          
+          const string cl_txt = "Estimated counts of " + nomstr + ".";
+          
+          const string sum_txt = "Detected counts of " + nomstr + "."
+          "<br/>"
+          "Range: [" + lowerstr + ", " + upperstr + "] @"  + cl_str + " CL";
+          
+          chart_title = WString::fromUTF8( cl_txt );
+          result_txt = WString::fromUTF8( sum_txt );
+        }else
+        {
+          const string nomstr = PhysicalUnits::printToBestActivityUnits(result.overallBestQuantity, 3, use_curie);
+          const string lowerstr = PhysicalUnits::printToBestActivityUnits(result.lowerLimit, 3, use_curie);
+          const string upperstr = PhysicalUnits::printToBestActivityUnits(result.upperLimit, 3, use_curie);
+          
+          const string cl_txt = "Estimated activity of " + nomstr + ".";
+          
+          const string sum_txt = "Detected activity of " + nomstr + "."
+          "<br/>"
+          "Range: [" + lowerstr + ", " + upperstr + "] @"  + cl_str + " CL";
+          
+          chart_title = WString::fromUTF8( cl_txt );
+          result_txt = WString::fromUTF8( sum_txt );
+        }//if( !m_currentNuclide ) / else
         
         assert( result.overallBestResults );
         if( result.overallBestResults )
@@ -1334,15 +1408,39 @@ void DetectionLimitSimple::updateSpectrumDecorations()
         assert( 0 );
         display_activity = 0.0; //result.foundLowerCl
         const string cl_txt = "Error: Didn't find " + cl_str + " CL activity";
+        const string sum_txt = "Error: Didn't find " + cl_str + " CL activity";
+        
         chart_title = WString::fromUTF8( cl_txt );
+        result_txt = WString::fromUTF8( sum_txt );
+        
         //fit_peaks = result.lowerLimitResults.fit_peaks;
       }else if( result.foundUpperCl )
       {
         display_activity = result.foundUpperCl;
-        const string upperstr = PhysicalUnits::printToBestActivityUnits(result.upperLimit, 3, use_curie);
         
-        const string cl_txt = "Peak for upper bound of " + upperstr + " @" + cl_str + " CL";
-        chart_title = WString::fromUTF8( cl_txt );
+        if( !m_currentNuclide )
+        {
+          const double upper_limit_counts = (result.upperLimitResults
+                                  && (result.upperLimitResults->fit_peaks.size() == 1))
+                                        ? result.upperLimitResults->fit_peaks[0].amplitude() : -1.0;
+          const string upperstr = SpecUtils::printCompact(upper_limit_counts, 4);
+          
+          const string cl_txt = "Peak for upper bound of " + upperstr + " counts @" + cl_str + " CL";
+          chart_title = WString::fromUTF8( cl_txt );
+          
+          const string sum_txt = "Less than " + upperstr + " signal counts present @" + cl_str + " CL";
+          result_txt = WString::fromUTF8( sum_txt );
+        }else
+        {
+          const string upperstr = PhysicalUnits::printToBestActivityUnits(result.upperLimit, 3, use_curie);
+          
+          const string cl_txt = "Peak for upper bound of " + upperstr + " @" + cl_str + " CL";
+          chart_title = WString::fromUTF8( cl_txt );
+          
+          const string sum_txt = "Less than " + upperstr + " @" + cl_str + " CL";
+          result_txt = WString::fromUTF8( sum_txt );
+        }//if( !m_currentNuclide ) / else
+        
         assert( result.upperLimitResults );
         if( result.upperLimitResults )
           fit_peaks = result.upperLimitResults->fit_peaks;
@@ -1351,21 +1449,274 @@ void DetectionLimitSimple::updateSpectrumDecorations()
         display_activity = 0.0;
         const string cl_txt = "Error: failed upper or lower limits at " + cl_str;
         chart_title = WString::fromUTF8( cl_txt );
+        
+        const string sum_txt = "Error: failed upper or lower limits at " + cl_str;
+        result_txt = WString::fromUTF8( sum_txt );
       }
+      
+      const float lower_energy = m_lowerRoi->value();
+      const float upper_energy = m_upperRoi->value();
+      const double dx = upper_energy - lower_energy;
+      m_spectrum->setXAxisRange( lower_energy - 0.5*dx, upper_energy + 0.5*dx );
       
       m_spectrum->setChartTitle( chart_title );
       m_peakModel->setPeaks( fit_peaks );
+      m_resultTxt->setText( result_txt );
+      m_moreInfoButton->show();
       
       //m_currentDeconResults->foundUpperDisplay = false;
       //m_currentDeconResults->upperDisplayRange = 0.0;
       //m_currentDeconResults->foundLowerDisplay = false;
       //m_currentDeconResults->lowerDisplayRange = 0.0;
       //std::vector<std::pair<double,double>> m_currentDeconResults->chi2s;
-      
     }//if( no valid result
   }//if( currently doing Currie-style limit ) / else
+}//void updateSpectrumDecorationsAndResultText()
+
+
+double DetectionLimitSimple::currentConfidenceLevel() const
+{
+  double confidenceLevel = 0.95;
   
-}//void updateSpectrumDecorations()
+  const int clIndex = m_confidenceLevel->currentIndex();
+  const ConfidenceLevel confidence = ConfidenceLevel(clIndex);
+  
+  switch( confidence )
+  {
+    case OneSigma:   confidenceLevel = 0.682689492137086; break;
+    case TwoSigma:   confidenceLevel = 0.954499736103642; break;
+    case ThreeSigma: confidenceLevel = 0.997300203936740; break;
+    case FourSigma:  confidenceLevel = 0.999936657516334; break;
+    case FiveSigma:  confidenceLevel = 0.999999426696856; break;
+    case NumConfidenceLevel: assert(0); break;
+  }//switch( confidence )
+  
+  return confidenceLevel;
+}//double currentConfidenceLevel() const
+
+
+void DetectionLimitSimple::createDeconvolutionLimitMoreInfo()
+{
+  if( !m_currentDeconInput || !m_currentDeconResults )
+    throw runtime_error( "No solution available." );
+  
+  const bool use_curie = use_curie_units();
+  const DetectionLimitCalc::DeconComputeInput &input = *m_currentDeconInput;
+  const DetectionLimitCalc::DeconActivityOrDistanceLimitResult &result = *m_currentDeconResults;
+  
+  assert( result.baseInput.roi_info.size() == 1 );
+  if( !result.baseInput.roi_info.size() )
+    throw runtime_error( "No ROI info available" );
+  
+  shared_ptr<const SpecUtils::Measurement> measurement = result.baseInput.measurement;
+  assert( measurement );
+  if( !measurement )
+    throw runtime_error( "No measurement available" );
+  
+  double energy = 0.0;
+  const int energyIndex = m_photoPeakEnergy->currentIndex();
+  if( (energyIndex < 0) || (energyIndex >= static_cast<int>(m_photoPeakEnergiesAndBr.size())) )
+    energy = 0.5*(m_lowerRoi->value() + m_upperRoi->value());
+  else
+    energy = m_photoPeakEnergiesAndBr[energyIndex].first;
+  
+  const float roi_start = result.baseInput.roi_info[0].roi_start;
+  const float roi_end = result.baseInput.roi_info[0].roi_end;
+  
+  wApp->require( "InterSpec_resources/DetectionLimitTool.js" );
+  
+  char buffer[256];
+  snprintf( buffer, sizeof(buffer), "%s%.2f keV Info",
+           (m_currentNuclide ? (m_currentNuclide->symbol + " ").c_str() : ""), energy );
+  
+  SimpleDialog *dialog = new SimpleDialog( buffer );
+  dialog->addButton( WString::tr("Close") );
+  
+  WContainerWidget *contents = new WContainerWidget( dialog->contents() );
+  contents->addStyleClass( "DeconvMoreInfo" );
+  
+  // Create a chi2 chart
+  WContainerWidget *chi2Chart = new WContainerWidget( contents );
+  chi2Chart->addStyleClass( "DeconChi2Chart" );
+  
+  chi2Chart->setJavaScriptMember( "chart", "new MdaChi2Chart(" + chi2Chart->jsRef() + ", {});");
+  const string jsgraph = chi2Chart->jsRef() + ".chart";
+  
+  chi2Chart->setJavaScriptMember( "resizeObserver",
+    "new ResizeObserver(entries => {"
+      "for (let entry of entries) {"
+        "if( entry.target && (entry.target.id === '" + chi2Chart->id() + "') && "
+             + chi2Chart->jsRef() + " && " + jsgraph + " )"
+          + jsgraph + ".redraw();"
+        "}"
+      "});"
+  );
+  chi2Chart->callJavaScriptMember( "resizeObserver.observe", chi2Chart->jsRef() );
+  
+  const Wt::Json::Object chartJson = DetectionLimitTool::generateChartJson( result, false );
+  const string datajson = Wt::Json::serialize(chartJson);
+  chi2Chart->doJavaScript( jsgraph + ".setData(" + datajson + ");" );
+  
+  if( !m_currentNuclide )
+  {
+    WText *txt = new WText( "(activity is assuming a BR=1.0)", contents );
+    txt->addStyleClass( "AssumedBrNote" );
+    txt->setInline( false );
+  }//if( !m_currentNuclide )
+  
+  // Now create rows of text information.
+  WTable *table = new WTable( dialog->contents() );
+  table->addStyleClass( "DeconvoMoreInfoTable" );
+  
+  
+  
+  
+  const auto print_result = [table, use_curie, measurement, roi_start, roi_end]( const DetectionLimitCalc::DeconComputeResults &result, const bool is_best, const WString typestr ){
+    WString label = WString("{1} Activity").arg(typestr);
+    WString value = PhysicalUnits::printToBestActivityUnits( result.input.activity, 3, use_curie );
+    
+    WTableCell *cell = table->elementAt( table->rowCount(), 0 );
+    new WText( label, cell );
+    cell = table->elementAt( table->rowCount() - 1, 1 );
+    new WText( value, cell );
+    
+    
+    label = WString("{1} Counts").arg(typestr);
+    double counts = 0.0, uncert = 0.0;
+    for( const auto peak : result.fit_peaks )
+    {
+      counts += peak.peakArea();
+      uncert += peak.peakAreaUncert() * peak.peakAreaUncert();
+    }
+    value = PhysicalUnits::printValueWithUncertainty(counts, sqrt(uncert), 5);
+    
+    cell = table->elementAt( table->rowCount(), 0 );
+    new WText( label, cell );
+    cell = table->elementAt( table->rowCount() - 1, 1 );
+    new WText( value, cell );
+    
+    label = WString("{1} &chi;<sup>2</sup>").arg(typestr);
+    value = SpecUtils::printCompact(result.chi2, 4);
+    cell = table->elementAt( table->rowCount(), 0 );
+    new WText( label, cell );
+    cell = table->elementAt( table->rowCount() - 1, 1 );
+    new WText( value, cell );
+    
+    if( !is_best )
+      return;
+    
+    label = "DOF";
+    value = std::to_string( result.num_degree_of_freedom );
+    cell = table->elementAt( table->rowCount(), 0 );
+    new WText( label, cell );
+    cell = table->elementAt( table->rowCount() - 1, 1 );
+    new WText( value, cell );
+    
+    if( result.fit_peaks.size() )
+    {
+      label = "Cont. Area";
+      const PeakDef &peak = result.fit_peaks.front();
+      const double cont_area = peak.continuum()->offset_integral(roi_start, roi_end, measurement);
+      value = SpecUtils::printCompact(cont_area, 5);
+      
+      cell = table->elementAt( table->rowCount(), 0 );
+      new WText( label, cell );
+      cell = table->elementAt( table->rowCount() - 1, 1 );
+      new WText( value, cell );
+    }//if( result.overallBestResults->fit_peaks.size() )
+  };//const auto print_result
+  
+  
+  if( result.overallBestResults )
+    print_result( *result.overallBestResults, true, "Best" );
+  
+  if( result.foundLowerCl && result.lowerLimitResults )
+    print_result( *result.lowerLimitResults, false, "Lower" );
+  
+  if( result.foundUpperCl && result.upperLimitResults )
+    print_result( *result.upperLimitResults, false, "Upper" );
+  
+  // Assumed FWHM
+  // Lower energy range
+  // Upper energy range
+  // Number of FWHM in range
+  // Number of channels
+  
+}//void createDeconvolutionLimitMoreInfo()
+
+
+void DetectionLimitSimple::createMoreInfoWindow()
+{
+  double distance = 0.0;
+  try
+  {
+    distance = PhysicalUnits::stringToDistance( m_distance->text().toUTF8() );
+  }catch( std::exception & )
+  {
+    distance = -1.0;
+  }
+  
+  double energy = 0.0;
+  const int energyIndex = m_photoPeakEnergy->currentIndex();
+  if( (energyIndex < 0) || (energyIndex >= static_cast<int>(m_photoPeakEnergiesAndBr.size())) )
+    energy = 0.5*(m_lowerRoi->value() + m_upperRoi->value());
+  else
+    energy = m_photoPeakEnergiesAndBr[energyIndex].first;
+  
+  shared_ptr<const DetectorPeakResponse> drf = m_detectorDisplay->detector();
+  if( drf && !drf->isValid() )
+    drf.reset();
+  
+  try
+  {
+    const bool currieMethod = (m_methodGroup->checkedId() == 0);
+    
+    if( currieMethod )
+    {
+      shared_ptr<const SpecUtils::Measurement> hist = m_viewer->displayedHistogram(SpecUtils::SpectrumType::Foreground);
+      if( !hist || hist->num_gamma_channels() < 7 )
+        throw runtime_error( "No displayed foreground" );
+      
+      if( !m_currentCurrieInput || !m_currentCurrieResults )
+        throw runtime_error( "No current results" );
+      
+      double branch_ratio = 0.0;
+      
+      if( m_currentNuclide )
+      {
+        const double roi_lower = m_lowerRoi->value();
+        const double roi_upper = m_upperRoi->value();
+        
+        for( const pair<double,double> &ppebr : m_photoPeakEnergiesAndBr )
+        {
+          if( (ppebr.first >= roi_lower) && (ppebr.first <= roi_upper) )
+            branch_ratio += ppebr.second;
+        }//for( const pair<double,double> &ppebr : m_photoPeakEnergiesAndBr )
+        
+        assert( branch_ratio >= m_photoPeakEnergiesAndBr[energyIndex].second );
+        branch_ratio = std::max( branch_ratio, m_photoPeakEnergiesAndBr[energyIndex].second ); //JIC
+      }//if( m_currentNuclide )
+      
+      const double shield_transmission = 1.0;
+      
+      const bool do_air_atten = (distance > 0.0);
+      DetectionLimitTool::createCurrieRoiMoreInfoWindow( m_currentNuclide,
+                    *m_currentCurrieResults, drf, DetectionLimitTool::LimitType::Activity,
+                    distance, do_air_atten, branch_ratio, shield_transmission );
+    }else
+    {
+      createDeconvolutionLimitMoreInfo();
+    }//if( currieMethod ) / else
+  }catch( std::exception &e )
+  {
+    char buffer[256];
+    snprintf( buffer, sizeof(buffer), "Error computing limit..." );
+    
+    SimpleDialog *dialog = new SimpleDialog( buffer,
+                                            WString("Error computing limit information: {1}").arg(e.what()) );
+    dialog->addButton( "Close" );
+  }//try / catch
+}//void createMoreInfoWindow()
 
 
 void DetectionLimitSimple::updateResult()
@@ -1387,10 +1738,13 @@ void DetectionLimitSimple::updateResult()
     if( !hist || (hist->num_gamma_channels() < 7) )
       throw runtime_error( "No foreground spectrum loaded." );
     
+    const float roi_lower_energy = m_lowerRoi->value();
+    const float roi_upper_energy = m_upperRoi->value();
+    
     double energy = 0.0;
     const int energyIndex = m_photoPeakEnergy->currentIndex();
     if( (energyIndex < 0) || (energyIndex >= static_cast<int>(m_photoPeakEnergiesAndBr.size())) )
-      energy = 0.5*(m_lowerRoi->value() + m_upperRoi->value());
+      energy = 0.5*(roi_lower_energy + roi_upper_energy);
     else
       energy = m_photoPeakEnergiesAndBr[energyIndex].first;
     
@@ -1398,21 +1752,10 @@ void DetectionLimitSimple::updateResult()
     if( (clIndex < 0) || (clIndex >= ConfidenceLevel::NumConfidenceLevel) )
       throw runtime_error( "Please select confidence level." );
       
-    float confidenceLevel = 0.95;
-    const ConfidenceLevel confidence = ConfidenceLevel(clIndex);
-    switch( confidence )
-    {
-      case OneSigma:   confidenceLevel = 0.682689492137086f; break;
-      case TwoSigma:   confidenceLevel = 0.954499736103642f; break;
-      case ThreeSigma: confidenceLevel = 0.997300203936740f; break;
-      case FourSigma:  confidenceLevel = 0.999936657516334f; break;
-      case FiveSigma:  confidenceLevel = 0.999999426696856f; break;
-      case NumConfidenceLevel: assert(0); break;
-    }//switch( confidence )
-    
+    const double confidenceLevel = currentConfidenceLevel();
     
     // We need to calculate currie-style limit, even if we want the deconvolution-style limit
-    auto currie_input = make_shared<DetectionLimitCalc::CurieMdaInput>();
+    auto currie_input = make_shared<DetectionLimitCalc::CurrieMdaInput>();
     currie_input->spectrum = hist;
     currie_input->gamma_energy = static_cast<float>( energy );
     currie_input->roi_lower_energy = m_lowerRoi->value();
@@ -1423,16 +1766,22 @@ void DetectionLimitSimple::updateResult()
     currie_input->additional_uncertainty = 0.0f;  // TODO: can we get the DRFs contribution to form this?
     
     m_currentCurrieInput = currie_input;
-    const DetectionLimitCalc::CurieMdaResult currie_result = DetectionLimitCalc::currie_mda_calc( *currie_input );
-    m_currentCurrieResults = make_shared<DetectionLimitCalc::CurieMdaResult>( currie_result );
+    const DetectionLimitCalc::CurrieMdaResult currie_result = DetectionLimitCalc::currie_mda_calc( *currie_input );
+    m_currentCurrieResults = make_shared<DetectionLimitCalc::CurrieMdaResult>( currie_result );
     
     
     // Calculating the deconvolution-style limit is fairly CPU intensive, so we will only computer
     //  it when its what the user actually wants.
-    if( m_methodStack->currentIndex() == 1 )
+    const bool currieMethod = (m_methodGroup->checkedId() == 0);
+    if( !currieMethod )
     {
-      if( (energyIndex < 0) || (energyIndex >= static_cast<int>(m_photoPeakEnergiesAndBr.size())) )
-        throw runtime_error( "Please select gamma energy." );
+      const float live_time = m_currentCurrieInput->spectrum->live_time();
+      
+      //if( !m_currentNuclide )
+      //  throw runtime_error( "Please enter a nuclide." );
+      
+      //if( (energyIndex < 0) || (energyIndex >= static_cast<int>(m_photoPeakEnergiesAndBr.size())) )
+      //  throw runtime_error( "Please select gamma energy." );
       
       const shared_ptr<const DetectorPeakResponse> drf = m_detectorDisplay->detector();
       
@@ -1514,40 +1863,46 @@ void DetectionLimitSimple::updateResult()
         roiInfo.num_lower_side_channels = roiInfo.num_upper_side_channels = 0;
       }
       
-      const float live_time = m_currentCurrieInput->spectrum->live_time();
-      const float roi_lower_energy = m_lowerRoi->value();
-      const float roi_upper_energy = m_upperRoi->value();
-      if( m_clusterNumFwhm > 0.0 )
+      if( !m_currentNuclide )
       {
-        // TODO: decide if we should limit to only within `m_clusterNumFwhm`, or entire ROI (right now: entire ROI).
-        const double gammaFwhm = m_fwhm->value();
-        const bool isDrfFwhm = (fabs(gammaFwhm - drf->peakResolutionFWHM(energy)) < 0.01);
-        
-        for( size_t i = 0; i < m_photoPeakEnergiesAndBr.size(); ++i )
-        {
-          const double thisEnergy = m_photoPeakEnergiesAndBr[i].first;
-          const double thisBr = m_photoPeakEnergiesAndBr[i].second;
-          
-          if( (thisEnergy >= roi_lower_energy) && (thisEnergy <= roi_upper_energy) )
-          {
-            DetectionLimitCalc::DeconRoiInfo::PeakInfo peakInfo;
-            peakInfo.energy = thisEnergy;
-            // if user has left FWHM to detector predicted value, then consult the DRF for each peak
-            peakInfo.fwhm = isDrfFwhm ? drf->peakResolutionFWHM(thisEnergy) : gammaFwhm;
-            peakInfo.counts_per_bq_into_4pi = live_time * thisBr;//must have effects of shielding already accounted for, but not air atten, or det intrinsic eff
-            roiInfo.peak_infos.push_back( peakInfo );
-          }
-        }//for( size_t i = 0; i < m_photoPeakEnergiesAndBr.size(); ++i )
-      }else
-      {
-        const double br = m_photoPeakEnergiesAndBr[energyIndex].second;
-        
         DetectionLimitCalc::DeconRoiInfo::PeakInfo peakInfo;
         peakInfo.energy = energy;
         peakInfo.fwhm = m_fwhm->value();
-        peakInfo.counts_per_bq_into_4pi = live_time * br;//must have effects of shielding already accounted for, but not air atten, or det intrinsic eff
+        peakInfo.counts_per_bq_into_4pi = live_time; //Put in BR of 1
         roiInfo.peak_infos.push_back( peakInfo );
-      }
+      }else
+      {
+        if( m_allGammasInRoi )
+        {
+          const double gammaFwhm = m_fwhm->value();
+          const bool isDrfFwhm = (fabs(gammaFwhm - drf->peakResolutionFWHM(energy)) < 0.01);
+          
+          for( size_t i = 0; i < m_photoPeakEnergiesAndBr.size(); ++i )
+          {
+            const double thisEnergy = m_photoPeakEnergiesAndBr[i].first;
+            const double thisBr = m_photoPeakEnergiesAndBr[i].second;
+            
+            if( (thisEnergy >= roi_lower_energy) && (thisEnergy <= roi_upper_energy) )
+            {
+              DetectionLimitCalc::DeconRoiInfo::PeakInfo peakInfo;
+              peakInfo.energy = thisEnergy;
+              // if user has left FWHM to detector predicted value, then consult the DRF for each peak
+              peakInfo.fwhm = isDrfFwhm ? drf->peakResolutionFWHM(thisEnergy) : gammaFwhm;
+              peakInfo.counts_per_bq_into_4pi = live_time * thisBr;//must have effects of shielding already accounted for, but not air atten, or det intrinsic eff
+              roiInfo.peak_infos.push_back( peakInfo );
+            }
+          }//for( size_t i = 0; i < m_photoPeakEnergiesAndBr.size(); ++i )
+        }else
+        {
+          const double br = m_photoPeakEnergiesAndBr[energyIndex].second;
+          
+          DetectionLimitCalc::DeconRoiInfo::PeakInfo peakInfo;
+          peakInfo.energy = energy;
+          peakInfo.fwhm = m_fwhm->value();
+          peakInfo.counts_per_bq_into_4pi = live_time * br;//must have effects of shielding already accounted for, but not air atten, or det intrinsic eff
+          roiInfo.peak_infos.push_back( peakInfo );
+        }
+      }//if( !m_currentNuclide )
       
       auto convo_input = make_shared<DetectionLimitCalc::DeconComputeInput>();
       convo_input->distance = distance;

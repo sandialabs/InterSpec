@@ -28,6 +28,7 @@
 #include <tuple>
 #include <vector>
 
+#include <Wt/Json/Object>
 #include <Wt/WContainerWidget>
 
 #include "InterSpec/AuxWindow.h"
@@ -96,9 +97,10 @@ class DetectorPeakResponse;
 
 namespace DetectionLimitCalc
 {
-  struct CurieMdaInput;
-  struct CurieMdaResult;
+  struct CurrieMdaInput;
+  struct CurrieMdaResult;
   struct DeconComputeInput;
+  struct DeconActivityOrDistanceLimitResult;
   enum class DeconContinuumNorm : int;
 }
 
@@ -209,22 +211,35 @@ public:
    */
   static void update_spectrum_for_currie_result( D3SpectrumDisplayDiv *chart,
                                          PeakModel *pmodel,
-                                         const DetectionLimitCalc::CurieMdaInput &input,
-                                         const DetectionLimitCalc::CurieMdaResult * const result,
+                                         const DetectionLimitCalc::CurrieMdaInput &input,
+                                         const DetectionLimitCalc::CurrieMdaResult * const result,
                                          std::shared_ptr<const DetectorPeakResponse> drf,
                                          DetectionLimitTool::LimitType limitType,
                                          const double gammas_per_bq,
                                         const std::vector<CurrieResultPeak> &peaks );
   
+  /** Creates a dialog window with lots of info about the Currie-style limit.
+   
+   @param nuclide Nuclide this limit is for - may be nullptr (only used for window title)
+   @param result The limit result to display info for
+   @param drf The detector efficiency function to use for computing efficiencies.  If nullptr, limit will be given in terms of counts, not activity.
+   @param limitType Wether this is for activity limit, or distance limit.  Distance limit not currently supported.
+   @param distance The distance this limit is for - used to compute detector efficiency.  If negative, limit will be given in terms of counts, not activity.
+   @param do_air_attenuation Wether to include air attenuation, if limit is given in terms of activity.
+   @param branch_ratio The number of gammas per decay of the parent nuclide.  If negative, limit will be given in terms of counts, not activity.
+   @param shield_transmission This is the fraction of gammas that will make it through the shielding without interacting.
+        e.g., with no shielding will have value of 1.0, with heavy shielding will go towards zero.
+   */
   static void createCurrieRoiMoreInfoWindow( const SandiaDecay::Nuclide *const nuclide,
-                                  const DetectionLimitCalc::CurieMdaResult &result,
+                                  const DetectionLimitCalc::CurrieMdaResult &result,
                                   std::shared_ptr<const DetectorPeakResponse> drf,
                                   DetectionLimitTool::LimitType limitType,
                                             const double distance,
                                             const bool do_air_attenuation,
                                             const double branch_ratio,
-                                            const double counts_per_bq_into_4pi  );
+                                            double shield_transmission );
   
+  static Wt::Json::Object generateChartJson( const DetectionLimitCalc::DeconActivityOrDistanceLimitResult &result, const bool is_dist_limit );
 protected:
   virtual void render( Wt::WFlags<Wt::RenderFlag> flags );
   
@@ -287,7 +302,7 @@ protected:
   /** Gets DRF from GUI widget, and if that isnt valid, gets it from the spectrum. */
   std::shared_ptr<const DetectorPeakResponse> detector();
   
-  float currentConfidenceLevel();
+  double currentConfidenceLevel();
   
   /** Returns either the current user entered distance (if determining activity limit), or the current display distance (if determining
    distance limit).
@@ -418,7 +433,8 @@ public:
     
     float energy;
     double branch_ratio; //!< Decay branching ratio of nuclide
-    double counts_per_bq_into_4pi; //!< This includes spectrum live time, shielding, and gamma BR.  This will need to be turned into some vector to cover multiple gamma lines
+    double shield_transmission;
+    double counts_per_bq_into_4pi__; //!< This includes spectrum live time, shielding, and gamma BR.  This will need to be turned into some vector to cover multiple gamma lines
     double counts_per_bq_into_4pi_with_air;
     //double trans_through_air;
     //double trans_through_shielding;
@@ -427,7 +443,7 @@ public:
     float roi_start;
     float roi_end;
     size_t num_side_channels;
-    float confidence_level;
+    double confidence_level;
     
     /** How we should normalize the continuum.
      E.g., allowed to float as normal, fixed using the edges of the continuum, or fixed using the whole ROI, assuming no signal

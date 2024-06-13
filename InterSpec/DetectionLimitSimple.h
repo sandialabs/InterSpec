@@ -39,9 +39,6 @@ class DetectionLimitSimple;
 class DetectorPeakResponse;
 class NuclideSourceEnterController;
 
-class CurrieLimitArea;
-class DeconvolutionLimitArea;
-
 namespace Wt
 {
   class WMenu;
@@ -66,8 +63,8 @@ namespace SandiaDecay
 
 namespace DetectionLimitCalc
 {
-  struct CurieMdaInput;
-  struct CurieMdaResult;
+  struct CurrieMdaInput;
+  struct CurrieMdaResult;
   struct DeconComputeInput;
   struct DeconActivityOrDistanceLimitResult;
 }//namespace DetectionLimitCalc
@@ -171,7 +168,14 @@ protected:
   void handleDeconPriorChange();
   void handleDeconContinuumTypeChange();
   
-  void updateSpectrumDecorations();
+  void updateSpectrumDecorationsAndResultText();
+  
+  /** Returns the confidence level (ex., 0.95, 0.9973, etc) that is selected by the GUI. */
+  double currentConfidenceLevel() const;
+  
+  void createDeconvolutionLimitMoreInfo();
+  
+  void createMoreInfoWindow();
   
   void updateResult();
   
@@ -199,6 +203,10 @@ protected:
   D3SpectrumDisplayDiv *m_spectrum;
   PeakModel *m_peakModel;
 
+  Wt::WText *m_resultTxt;
+  
+  Wt::WPushButton *m_moreInfoButton;
+  
   Wt::WLineEdit *m_nuclideEdit;
   Wt::WLineEdit *m_nuclideAgeEdit;
   NuclideSourceEnterController *m_nucEnterController;
@@ -222,9 +230,6 @@ protected:
   
   Wt::WButtonGroup *m_methodGroup;
   Wt::WText *m_methodDescription;
-  Wt::WStackedWidget *m_methodStack;
-  CurrieLimitArea *m_currieLimitArea;
-  DeconvolutionLimitArea *m_deconLimitArea;
   
   
   float m_numFwhmWide;
@@ -246,10 +251,10 @@ protected:
   double m_currentAge;
   double m_currentEnergy;
   
-  /** If negative or zero, then only gamma specified will be used in the limit.
-   Otherwise, gammas within this number of FWHM, and in ROI, will be added to gamma specified.
+  /** If false, then only gamma specified will be used in the limit.
+   Otherwise, all gammas within the ROI will be added to gamma specified.
    */
-  double m_clusterNumFwhm;
+  bool m_allGammasInRoi;
   
   /** The most  recent valid distance - used to reset the distance field, if user enters an invalid distance. */
   Wt::WString m_prevDistance;
@@ -264,14 +269,11 @@ protected:
    */
   std::string m_stateUri;
   
-  std::shared_ptr<const DetectionLimitCalc::CurieMdaInput> m_currentCurrieInput;
-  std::shared_ptr<const DetectionLimitCalc::CurieMdaResult> m_currentCurrieResults;
+  std::shared_ptr<const DetectionLimitCalc::CurrieMdaInput> m_currentCurrieInput;
+  std::shared_ptr<const DetectionLimitCalc::CurrieMdaResult> m_currentCurrieResults;
   
   std::shared_ptr<const DetectionLimitCalc::DeconComputeInput> m_currentDeconInput;
   std::shared_ptr<const DetectionLimitCalc::DeconActivityOrDistanceLimitResult> m_currentDeconResults;
-  
-  friend class CurrieLimitArea;
-  friend class DeconvolutionLimitArea;
 };//class DoseCalcWidget
 
 #endif //DetectionLimitSimple_h

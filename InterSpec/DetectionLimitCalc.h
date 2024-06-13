@@ -88,7 +88,7 @@ void batch_test();
 /** The input to a simple "Currie" style minimum detectable activity and detection confidence interval calculation.
  
  */
-struct CurieMdaInput
+struct CurrieMdaInput
 {
   /** The spectrum the calculations will be performed on.  */
   std::shared_ptr<const SpecUtils::Measurement> spectrum;
@@ -96,7 +96,7 @@ struct CurieMdaInput
   /** The energy (in keV) of the photopeak limit is being derived for.
    
    This value doesnt enter into the calculation, other than it is the reference energy used for the continuum equation
-   (see #CurieMdaResult::continuum_eqn), and also its assumed this is the energy #detection_probability is derived from.
+   (see #CurrieMdaResult::continuum_eqn), and also its assumed this is the energy #detection_probability is derived from.
    
    Required to be between #roi_lower_energy and #roi_upper_energy, or else exception will be thrown.
    */
@@ -106,7 +106,7 @@ struct CurieMdaInput
    
    Must be within range of #spectrum.
    
-   The actual energy used will be rounded to the nearest channel boundary; see #CurieMdaResult::first_peak_region_channel.
+   The actual energy used will be rounded to the nearest channel boundary; see #CurrieMdaResult::first_peak_region_channel.
    */
   float roi_lower_energy;
   
@@ -114,7 +114,7 @@ struct CurieMdaInput
    
    Must be greater than #roi_lower_energy and within range of #spectrum.
    
-   The actual energy used will be rounded to the nearest channel boundary; see #CurieMdaResult::last_peak_region_channel.
+   The actual energy used will be rounded to the nearest channel boundary; see #CurrieMdaResult::last_peak_region_channel.
    */
   float roi_upper_energy;
   
@@ -130,7 +130,7 @@ struct CurieMdaInput
    - alpha: probability of false-positive decision (saying the signal is there, when it isnt)
    - beta: probability of false-negative decision (saying no signal, when there is signal there)
    */
-  float detection_probability;
+  double detection_probability;
   
   /** The additional uncertainty to include when calculating limits.
    This would probably be from DRF and distance uncertainties.
@@ -141,14 +141,14 @@ struct CurieMdaInput
   
   
   /** Default constructor that just zeros everything out. */
-  CurieMdaInput();
-};//struct CurieMdaInput
+  CurrieMdaInput();
+};//struct CurrieMdaInput
 
 
 /** The results of simple "Currie" style (e.g., ) calculations. */
-struct CurieMdaResult
+struct CurrieMdaResult
 {
-  CurieMdaInput input;
+  CurrieMdaInput input;
   
   size_t first_lower_continuum_channel;
   size_t last_lower_continuum_channel;
@@ -208,7 +208,7 @@ struct CurieMdaResult
    
    Note: may be less than zero.
    
-   \sa CurieMdaInput::detection_probability
+   \sa CurrieMdaInput::detection_probability
    */
   float lower_limit;
   
@@ -216,13 +216,13 @@ struct CurieMdaResult
   /** This gives the upper limit, in terms of counts, on the true number of counts from signal.
    E.g. corresponds to the number of expected signal counts that we can be 95% certain the true signal is less than.
    
-   \sa CurieMdaInput::detection_probability
+   \sa CurrieMdaInput::detection_probability
    */
   float upper_limit;
   
   
   /** Default constructor that just zeros everything out. */
-  CurieMdaResult();
+  CurrieMdaResult();
   
   
 #if( PERFORM_DEVELOPER_CHECKS )
@@ -231,16 +231,16 @@ struct CurieMdaResult
    Code for checking the continuum equation is currently commented out (if there is something wrong with the continuum computation
    it will be caught by one of the other values anyway).
    */
-  static void equal_enough( const CurieMdaResult &test, const CurieMdaResult &expected );
+  static void equal_enough( const CurrieMdaResult &test, const CurrieMdaResult &expected );
 #endif
   
   //std::ostream &operator<<( std::ostream &strm )
   //{
   //  return strm;
   //}
-};//struct CurieMdaResult
+};//struct CurrieMdaResult
 
-/** Prints a summary of a CurieMdaResult.
+/** Prints a summary of a CurrieMdaResult.
  
  @param strm The stream to print information out to.
  @param result The results to print out
@@ -249,7 +249,7 @@ struct CurieMdaResult
  
  Primarily for development/debugging.
  */
-std::ostream &print_summary( std::ostream &strm, const CurieMdaResult &result, const float w );
+std::ostream &print_summary( std::ostream &strm, const CurrieMdaResult &result, const float w );
 
 
 /** For a given ROI lower and upper energy, returns the first to last channels (inclusive) that comprise the ROI, by rounding to nearest
@@ -266,7 +266,7 @@ std::pair<size_t,size_t> round_roi_to_channels( std::shared_ptr<const SpecUtils:
  
  Will throw exception if input is invalid, or runs into any errors.
  */
-CurieMdaResult currie_mda_calc( const CurieMdaInput &input );
+CurrieMdaResult currie_mda_calc( const CurrieMdaInput &input );
 
 
 /** How the continuum for peaks should be normalized.
