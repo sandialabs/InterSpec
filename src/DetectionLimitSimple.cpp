@@ -210,6 +210,7 @@ DetectionLimitSimple::DetectionLimitSimple( MaterialDB *materialDB,
   m_fwhm( nullptr ),
   m_fwhmSuggestTxt( nullptr ),
   m_addFwhmBtn( nullptr ),
+  m_selectDetectorBtn( nullptr ),
   m_continuumPriorLabel( nullptr ),
   m_continuumPrior( nullptr ),
   m_continuumTypeLabel( nullptr ),
@@ -450,10 +451,18 @@ void DetectionLimitSimple::init()
   
   m_fwhmSuggestTxt = new WText( generalInput );
   m_fwhmSuggestTxt->addStyleClass( "FwhmSuggest GridThirdCol GridSixthRow GridVertCenter GridSpanTwoCol" );
+  
   m_addFwhmBtn = new WPushButton( WString::tr("dls-fit-fwhm-btn"), generalInput );
   m_addFwhmBtn->clicked().connect( this, &DetectionLimitSimple::handleFitFwhmRequested );
   m_addFwhmBtn->addStyleClass( "MdaFitFwhm LightButton GridFifthCol GridSixthRow" );
   
+  m_selectDetectorBtn = new WPushButton( WString::tr("dls-select-drf-btn"), generalInput );
+  m_selectDetectorBtn->clicked().connect( this, &DetectionLimitSimple::handleSelectDetectorRequested );
+  m_selectDetectorBtn->addStyleClass( "MdaFitFwhm LightButton GridFifthCol GridSixthRow" );
+  
+  const shared_ptr<const DetectorPeakResponse> drf = m_detectorDisplay->detector();
+  m_addFwhmBtn->setHidden( !drf || !drf->isValid() || drf->hasResolutionInfo() );
+  m_selectDetectorBtn->setHidden( drf && drf->isValid() );
   
   m_continuumPriorLabel = new WLabel( WString::tr("dls-deon-cont-norm-label"), generalInput );
   m_continuumPriorLabel->addStyleClass( "GridFirstCol GridSeventhRow GridVertCenter" );
@@ -631,13 +640,15 @@ void DetectionLimitSimple::setFwhmFromEstimate()
   
   float fwhm = 0.1f;
   const shared_ptr<const DetectorPeakResponse> drf = m_detectorDisplay->detector();
+  
+  m_addFwhmBtn->setHidden( !drf || !drf->isValid() || drf->hasResolutionInfo() );
+  m_selectDetectorBtn->setHidden( drf && drf->isValid() );
+  
   if( drf && drf->hasResolutionInfo() )
   {
-    m_addFwhmBtn->hide();
     fwhm = drf->peakResolutionFWHM( energy );
   }else
   {
-    m_addFwhmBtn->show();
     fwhm = std::max( 0.1f, PeakSearchGuiUtils::estimate_FWHM_of_foreground(energy) );
   }
   
@@ -665,11 +676,11 @@ void DetectionLimitSimple::handleUserChangedFwhm()
     m_fwhm->setValue( fwhm );
   }//if( invalid FWHM )
   
+  m_addFwhmBtn->setHidden( !drf || !drf->isValid() || drf->hasResolutionInfo() );
+  m_selectDetectorBtn->setHidden( drf && drf->isValid() );
   
   if( drf && drf->hasResolutionInfo() )
   {
-    m_addFwhmBtn->hide();
-    
     const double drf_fwhm = drf->peakResolutionFWHM( energy );
     if( fabs(fwhm - drf_fwhm) > 0.1 )
     {
@@ -683,7 +694,6 @@ void DetectionLimitSimple::handleUserChangedFwhm()
     }
   }else
   {
-    m_addFwhmBtn->show();
     const float est_fwhm = std::max( 0.1f, PeakSearchGuiUtils::estimate_FWHM_of_foreground(energy) );
     
     char text[32] = { '\0' };
@@ -1084,6 +1094,9 @@ void DetectionLimitSimple::handleDetectorChanged( std::shared_ptr<DetectorPeakRe
   //  to date.
   m_detectorDisplay->setDetector( new_drf );
   
+  m_addFwhmBtn->setHidden( !new_drf || !new_drf->isValid() || new_drf->hasResolutionInfo() );
+  m_selectDetectorBtn->setHidden( new_drf && new_drf->isValid() );
+  
   handleUserChangedFwhm();
   
   m_renderFlags |= DetectionLimitSimple::RenderActions::UpdateLimit;
@@ -1100,6 +1113,12 @@ void DetectionLimitSimple::handleFitFwhmRequested()
     // probably nothing to do here
   }
 }//void handleFitFwhmRequested()
+
+
+void DetectionLimitSimple::handleSelectDetectorRequested()
+{
+  m_detectorDisplay->editDetector();
+}//void handleSelectDetectorRequested()
 
 
 void DetectionLimitSimple::handleSpectrumChanged()
@@ -1578,13 +1597,10 @@ SimpleDialog *DetectionLimitSimple::createDeconvolutionLimitMoreInfo()
   WTable *table = new WTable( contents );
   table->addStyleClass( "DeconvoMoreInfoTable" );
   
-  
-  
-  
   const auto print_result = [table, use_curie, measurement, roi_start, roi_end]( 
                                         const DetectionLimitCalc::DeconComputeResults &result,
                                         const bool is_best, const WString typestr ){
-    WString label = WString("{1} {2}").arg(typestr).arg( WString::tr("dls-Limit") );
+    WString label = WString("{1} {2}").arg(typestr).arg( WString::tr( (is_best ? "Activity" : "dls-Limit") ) );
     WString value = PhysicalUnits::printToBestActivityUnits( result.input.activity, 3, use_curie );
     
     WTableCell *cell = table->elementAt( table->rowCount(), 0 );
@@ -1593,7 +1609,7 @@ SimpleDialog *DetectionLimitSimple::createDeconvolutionLimitMoreInfo()
     new WText( value, cell );
     
     
-    label = WString("{1} {2}").arg(typestr).arg( WString::tr("dls-Limit") );
+    label = WString("{1} {2}").arg(typestr).arg( WString::tr( (is_best ? "Counts" : "dls-Limit") ) );
     double counts = 0.0, uncert = 0.0;
     for( const auto peak : result.fit_peaks )
     {
@@ -1762,6 +1778,8 @@ SimpleDialog *DetectionLimitSimple::createDeconvolutionLimitMoreInfo()
     //                " source before any shielding, but accounting for nuclide age,"
     //                " per decay of the parent nuclide." );
   }//if( branch_ratio > 0.0 )
+  
+  return dialog;
 }//void createDeconvolutionLimitMoreInfo()
 
 

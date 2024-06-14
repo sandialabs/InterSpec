@@ -156,6 +156,8 @@ protected:
   
   void handleFitFwhmRequested();
   
+  void handleSelectDetectorRequested();
+  
   void handleSpectrumChanged();
   
   void handleUserChangedRoi();
@@ -250,6 +252,7 @@ protected:
   NativeFloatSpinBox *m_fwhm;
   Wt::WText *m_fwhmSuggestTxt;
   Wt::WPushButton *m_addFwhmBtn;
+  Wt::WPushButton *m_selectDetectorBtn;
   
   Wt::WLabel *m_continuumPriorLabel;
   Wt::WComboBox *m_continuumPrior;

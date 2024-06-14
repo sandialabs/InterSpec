@@ -3,6 +3,7 @@
   <!-- dls- is short for DetectionLimitSimple
   -->
   <message id="dls-fit-fwhm-btn">Fit FWHM...</message>
+  <message id="dls-select-drf-btn">Select detector...</message>
   <message id="dls-further-details-link">further details...</message>
   <message id="dls-conf-level-label">Confidence Level:</message>
   <message id="dls-roi-lower-label">ROI Lower:</message>
@@ -57,7 +58,21 @@
   <message id="dls-Limit">Limit</message>
   <message id="dls-continuum-area">Cont. Area</message>
   <message id="dls-DOF" remark="Degrees of freedom abbreviation">DOF</message>
-  <message id="dls-"></message>
+  <message id="dls-Upper">Upper</message>
+  <message id="dls-Lower">Lower</message>
+  <message id="dls-Best">Best</message>
+  <message id="dls-ROI-range-label">ROI Range (keV)</message>
+  <message id="dls-ROI-Channels-label">ROI Channels</message>
+  <message id="dls-ROI-Width">ROI Width</message>
+  <message id="dls-det-intrinsic-eff">Det. Intrinsic Eff.</message>
+  <message id="dls-solid-angle-frac">Solid angle frac.</message>
+  <message id="dls-air-trans">Air transmission</message>
+  <message id="dls-gamma-intensity">Gamma Intensity</message>
+  <message id="dls-err-more-info-title">Error computing limit...</message>
+  <message id="dls-err-more-info-content">Error computing limit information: {1}</message>
+  <message id="dls-err-select-det">Please select a detector efficiency function.</message>
+  <message id="dls-err-neg-distance">Distance can't be negative.</message>
+  <message id="dls-err-no-fwhm-info">Detector efficiency function does not have FWHM info - please fit for FWHM, or change detector.</message>
   <message id="dls-"></message>
   <message id="dls-"></message>
   <message id="dls-"></message>

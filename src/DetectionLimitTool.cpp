@@ -2045,6 +2045,51 @@ SimpleDialog *DetectionLimitTool::createCurrieRoiMoreInfoWindow( const SandiaDec
                     " expected to lead to detection." );
     
     
+    switch( limitType )
+    {
+      case DetectionLimitTool::LimitType::Activity:
+      {
+        if( result.source_counts <= result.decision_threshold )
+        {
+          // There is NOT enough excess counts that we would reliably detect this activity, so we
+          //  didnt give nominal activity above, so we'll do that here
+          WString obs_label;
+          string lowerstr, upperstr, nomstr;
+          if( drf && (distance >= 0.0) && (gammas_per_bq > 0.0) )
+          {
+            obs_label = "Activity";
+            const float nominal_act = result.source_counts / gammas_per_bq;
+            
+            nomstr = PhysicalUnits::printToBestActivityUnits( nominal_act, 2, useCuries )
+                      + DetectorPeakResponse::det_eff_geom_type_postfix( det_geom );
+            if( nominal_act < 0 )
+              nomstr = "< " + PhysicalUnits::printToBestActivityUnits( 0.0, 2, useCuries )
+                        + DetectorPeakResponse::det_eff_geom_type_postfix( det_geom );
+          }else
+          {
+            obs_label = "Observed counts";
+            nomstr = SpecUtils::printCompact(result.source_counts, 4);
+            
+            if( result.source_counts < 0 )
+              nomstr = "&lt; 0 counts";
+          }//if( drf ) / else
+          
+          nomstr += " <span style=\"font-size: smaller;\">(below L<sub>c</sub>)</span>";
+          
+          cell = table->elementAt( table->rowCount(), 0 );
+          new WText( obs_label, cell );
+          cell = table->elementAt( table->rowCount() - 1, 1 );
+          new WText( nomstr, cell );
+          addTooltipToRow( "The observed signal counts is less than the &quot;critical level&quot;, L<sub>c</sub>,"
+                          " so a detection can not be declared, but this is the excess over expected counts/activity." );
+        }//if( result.source_counts <= result.decision_threshold )
+      }//case DetectionLimitTool::LimitType::Activity:
+        
+      case DetectionLimitTool::LimitType::Distance:
+        break;
+    }//switch( limitType )
+    
+    
     // Add a blank row
     cell = table->elementAt( table->rowCount(), 0 );
     txt = new WText( "&nbsp;", TextFormat::XHTMLText, cell );

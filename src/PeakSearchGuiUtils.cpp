@@ -3131,7 +3131,7 @@ std::pair<std::unique_ptr<ReferenceLineInfo>,int> reference_line_near_peak( Inte
       const double dist = fabs( l.m_energy - mean );
       const double w = l.m_normalized_intensity / (0.25*sigma + dist);
       
-      if( (w > largest_w) && (l.m_energy < ux) && (l.m_energy > lx) && (dist < 4*sigma) )
+      if( (w > largest_w) && (l.m_energy < ux) && (l.m_energy > lx) && (dist < 5*sigma) )
       {
         largest_w = w;
         best_energy = l.m_energy;
@@ -3183,8 +3183,30 @@ float reference_line_energy_near_peak( InterSpec * const interspec, const PeakDe
 tuple<const SandiaDecay::Nuclide *, double, float>
     nuclide_reference_line_near( InterSpec *viewer, const float energy )
 {
-  const double sigma = estimate_FWHM_of_foreground( energy );
+  double sigma = estimate_FWHM_of_foreground( energy );
   
+  // For HPGe zoomed out, its really hard to be within the 5-peak-sigmas of the reference
+  //  line that `reference_line_near_peak(...)` requires, so we'll also take into account
+  //  the number of pixels a peak would show up as.
+  //  Note: `SpectrumChartD3.prototype.updateMouseCoordText(...)` basically requires within 10px
+  const shared_ptr<const SpecUtils::Measurement> hist
+                = viewer->displayedHistogram(SpecUtils::SpectrumType::Foreground);
+  if( PeakFitUtils::is_high_res(hist) )
+  {
+    double xmin, xmax, ymin, ymax;
+    viewer->displayedSpectrumRange( xmin, xmax, ymin, ymax );
+    
+    const int ww = viewer->renderedWidth();
+    
+    if( (xmin < xmax) && ((xmax - xmin) > 50.0) && (ww > 200) )
+    {
+      // Will assume chart plot-area is 100px narrower than total window (unchecked).
+      const double keV_per_pixel = (xmax - xmin) / (ww - 100);
+      // set peak-sigma to be 2 pixels, giving us to require 10 pixels of accuracy from the user
+      sigma = std::max( sigma, 2.0*keV_per_pixel );
+    }//if( x-range and render size seem reasonable )
+  }//if( PeakFitUtils::is_high_res(hist) )
+      
   PeakDef tmppeak( energy, std::max(sigma,0.1), 100.0 );
   
   const pair<unique_ptr<ReferenceLineInfo>,int> refline
