@@ -57,7 +57,7 @@ struct NuclideSelectedInfo
 {
   int z, a, metasable;
   double activity, initialAge;  //in units of PhysicalUnits
-  bool useCurrie;  //used purely for display purposes
+  bool useCurie;  //used purely for display purposes
   std::string activityStr; // for display purposes
 };//struct NuclideSelectedInfo
 
@@ -156,7 +156,7 @@ public:
   void setNuclideSearchToFocus();
   
   void setCurrentInfo( int a, int z, int iso, double age, double activity, 
-                        bool useCurrie, std::string activityStr);
+                        bool useCurie, std::string activityStr);
   
   //The "Add" button can have either the text "Add" or "Accept" depending
   //  if the intention is to add, or to edit a displayed nuclide.  The following

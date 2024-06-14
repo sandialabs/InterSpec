@@ -114,7 +114,7 @@ public:
    - "interspec://simple-mda/convoluted?ver=1&nuc=u235&energy=185&dist=100cm&..."
    
    @param query_str The query portion of the URI.  So for example, if the URI has a value of
-          "interspec://simple-mda/curie?nuc=u238...", then this string would be "curie?nuc=u238...",
+          "interspec://simple-mda/currie?nuc=u238...", then this string would be "curie?nuc=u238...",
           showing the Curie-style limit.
           This string is is in standard URL format of "key1=value1&key2=value2&..." with ordering not mattering.
           Capitalization is not important.
@@ -124,7 +124,7 @@ public:
   void handleAppUrl( std::string uri );
   
   /** Encodes current tool state to app-url format.  Returned string does not include the
-   "interspec://" protocol, or "dose" authority; so will look something like "curie?nuc=Cs137&energy=661&dist=100cm&...",
+   "interspec://" protocol, or "simple-mda" authority; so will look something like "decon?nuc=Cs137&energy=661&dist=100cm&...",
    The path part of the URI specifies tab the tool is on.
    and it will not be url-encoded.
    */

@@ -327,19 +327,19 @@ std::wstring printToBestLengthUnits( double length, double uncert,
   
 std::string printToBestActivityUnits( double activity,
                                       int maxNpostDecimal,
-                                      bool useCurries,
+                                      bool useCuries,
                                       double bq_definition )
 {
   using namespace std;
   activity *= becquerel / bq_definition;
 
   char formatflag[32], buffer[64];
-  const char *unitstr = useCurries ? "Ci" : "Bq";
+  const char *unitstr = useCuries ? "Ci" : "Bq";
   
   snprintf(formatflag, sizeof(formatflag), "%%.%if %%s%s", maxNpostDecimal, unitstr );
   
 
-  if( useCurries )
+  if( useCuries )
     activity /= curie;
   else
     activity /= becquerel;
@@ -1488,13 +1488,13 @@ std::string printCompact( const double value, const size_t sig_figs )
 
 
 const UnitNameValuePair &bestActivityUnit( const double activity,
-                                           bool useCurries )
+                                           bool useCuries )
 {
   assert( sm_activityUnitNameValues.size() == 13 );
   
   UnitNameValuePairV::const_iterator begin, end, iter;
   
-  if( useCurries )
+  if( useCuries )
   {
     begin = sm_activityUnitNameValues.begin() + 7;
     end = sm_activityUnitNameValues.end();
@@ -1508,7 +1508,7 @@ const UnitNameValuePair &bestActivityUnit( const double activity,
     
     if( activity == 0.0 )
       return sm_activityUnitNameValues[2];  // return just "bq", no prefix
-  }//if( useCurries ) / else
+  }//if( useCuries ) / else
 
 
   for( iter = begin; iter != end; ++iter )
@@ -1550,9 +1550,9 @@ const UnitNameValuePair &bestDoseUnitHtml( const double activity,
   
   
 const UnitNameValuePair &bestActivityUnitHtml( const double activity,
-                                                bool useCurries )
+                                                bool useCuries )
 {
-  const UnitNameValuePair &a = bestActivityUnit( activity, useCurries );
+  const UnitNameValuePair &a = bestActivityUnit( activity, useCuries );
   
   const auto begin = sm_activityUnitNameValues.begin();
   const auto end = sm_activityUnitNameValues.end();

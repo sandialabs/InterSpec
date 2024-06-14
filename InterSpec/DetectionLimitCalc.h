@@ -57,6 +57,7 @@ class Measurement;
   and better takes into account all information provided, as well as using multiple peaks of an isotope to derive limits.  This methodology
   seems to follow the intent of Annex B of ISO 11929-3:2019, but instead these calculations form a large chi2/likelihood calculation to
   co-compute everything and hopefully do a better job.
+ - Note that "Currie" is the detection-limit name, while "Curie" is the activity unit.
   
  Note: As of 20210724, these calculations have only had cursory checks performed, and have not been verified and validated to a level
   appropriate to use them for anything of importance.

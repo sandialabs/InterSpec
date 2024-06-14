@@ -2272,8 +2272,25 @@ void DetectionLimitSimple::handleAppUrl( std::string uri )
 
 std::string DetectionLimitSimple::encodeStateToUrl() const
 {
+  NuclideSourceEnterController *m_nucEnterController;
+  Wt::WComboBox *m_photoPeakEnergy;
+  Wt::WLineEdit *m_distance;
+  enum ConfidenceLevel { OneSigma, TwoSigma, ThreeSigma, FourSigma, FiveSigma, NumConfidenceLevel };
+  Wt::WComboBox *m_confidenceLevel;
+  Wt::WButtonGroup *m_methodGroup;
+  NativeFloatSpinBox *m_lowerRoi;
+  NativeFloatSpinBox *m_upperRoi;
+  Wt::WSpinBox *m_numSideChannel;
+  NativeFloatSpinBox *m_fwhm;
+  Wt::WComboBox *m_continuumPrior;
+  Wt::WComboBox *m_continuumType;
+  const SandiaDecay::Nuclide *m_currentNuclide;
+  double m_currentAge;
+  double m_currentEnergy;
+  bool m_allGammasInRoi;
+  
   /*
-  // "interspec://dose/act?nuc=u238&dose=1.1ur/h&dist=100cm&..."
+  // "interspec://simple-mda/act?nuc=u238&dose=1.1ur/h&dist=100cm&..."
   
   string answer;
   
