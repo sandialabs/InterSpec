@@ -332,6 +332,8 @@ set(sources
     src/AppUtils.cpp
     src/ExportSpecFile.cpp
     src/EnterAppUrlWindow.cpp
+    src/NuclideSourceEnter.cpp
+    src/AddNewPeakDialog.cpp
     js/SpectrumChart.js
     js/InterSpec.js
 )
@@ -433,6 +435,8 @@ set(headers
     InterSpec/AppUtils.h
     InterSpec/ExportSpecFile.h
     InterSpec/EnterAppUrlWindow.h
+    InterSpec/NuclideSourceEnter.h
+    InterSpec/AddNewPeakDialog.h
 )
 
 
@@ -476,8 +480,8 @@ if(USE_TERMINAL_WIDGET)
 endif(USE_TERMINAL_WIDGET)
 
 if(USE_DETECTION_LIMIT_TOOL)
-    list( APPEND sources src/DetectionLimitCalc.cpp src/DetectionLimitTool.cpp )
-    list( APPEND headers InterSpec/DetectionLimitCalc.h InterSpec/DetectionLimitTool.h  )
+    list( APPEND sources src/DetectionLimitCalc.cpp src/DetectionLimitTool.cpp src/DetectionLimitSimple.cpp )
+    list( APPEND headers InterSpec/DetectionLimitCalc.h InterSpec/DetectionLimitTool.h InterSpec/DetectionLimitSimple.h )
 endif(USE_DETECTION_LIMIT_TOOL)
 
 if(USE_QR_CODES)

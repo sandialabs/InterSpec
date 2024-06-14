@@ -650,12 +650,12 @@ std::string UnitsConverterTool::convert( std::string val )
       const double actPerGram = PhysicalUnits::bq * nuc->activityPerGram() / SandiaDecay::Bq;
       const double activity = actPerGram * grams;
       
-      bool useCurries = false;
+      bool useCuries = false;
       InterSpec *viewer = InterSpec::instance();
       if( viewer)
-        useCurries = !InterSpecUser::preferenceValue<bool>( "DisplayBecquerel", viewer );
+        useCuries = !InterSpecUser::preferenceValue<bool>( "DisplayBecquerel", viewer );
       
-      return PhysicalUnits::printToBestActivityUnits( activity, num_sig_figs(val), useCurries );
+      return PhysicalUnits::printToBestActivityUnits( activity, num_sig_figs(val), useCuries );
     }catch(...)
     {
     }

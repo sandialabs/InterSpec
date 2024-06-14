@@ -482,6 +482,25 @@ double FormulaWrapper::operator()( const float x )
   return efficiency(x);
 }
 
+const std::string &DetectorPeakResponse::det_eff_geom_type_postfix( const DetectorPeakResponse::EffGeometryType type )
+{
+  static const string s_empty{}, s_cm2{"/cm2"}, s_m2{"/m2"}, s_gram{"/g"};
+  switch( type )
+  {
+    case DetectorPeakResponse::EffGeometryType::FarField:
+    case DetectorPeakResponse::EffGeometryType::FixedGeomTotalAct:
+      return s_empty;
+    case DetectorPeakResponse::EffGeometryType::FixedGeomActPerCm2:
+      return s_cm2;
+    case DetectorPeakResponse::EffGeometryType::FixedGeomActPerM2:
+      return s_m2;
+    case DetectorPeakResponse::EffGeometryType::FixedGeomActPerGram:
+      return s_gram;
+  }//switch( m_det_type )
+  assert( 0 );
+  return s_empty;
+}//string det_eff_geom_type_postfix( DetectorPeakResponse::EffGeometryType )
+
 
 DetectorPeakResponse::DetectorPeakResponse()
   : m_name( "DetectorPeakResponse" ),

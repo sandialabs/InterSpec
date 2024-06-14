@@ -1,0 +1,64 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- dls- is short for DetectionLimitSimple
+  -->
+  <message id="dls-fit-fwhm-btn">Fit FWHM...</message>
+  <message id="dls-further-details-link">further details...</message>
+  <message id="dls-conf-level-label">Confidence Level:</message>
+  <message id="dls-roi-lower-label">ROI Lower:</message>
+  <message id="dls-roi-upper-label">ROI Upper:</message>
+  <message id="dls-num-side-channel-label">Num Side Chan.:</message>
+  <message id="dls-fwhm-label">FWHM:</message>
+  <message id="dls-deon-cont-norm-label">Prior:</message>
+  <message id="dls-cont-norm-unknown">Unknown/Present</message>
+  <message id="dls-cont-norm-not-present">Not Present</message>
+  <message id="dls-cont-norm-fixed-by-sides">Cont. from sides</message>
+  <message id="dls-roi-changed-no-gamma">Changing the ROI excluded primary gamma - not changing</message>
+  <message id="dls-suggest-fwhm">Detector FWHM: {1} keV</message>
+  <message id="dls-rough-est-fwhm">Rough Est. FWHM: {1} keV</message>
+  <message id="dls-calc-method">Calc. Method:</message>
+  <message id="dls-currie-tab-title">Currie</message>
+  <message id="dls-decon-tab-title">Deconvolution</message>
+  <message id="dls-err-no-input">No input entered - please enter nuclide, select gamma energy, and input distance.</message>
+  <message id="dls-err-calculating">Error calculating answer: {1}</message>
+  <message id="dls-currie-desc">Currie method compares gross counts to prediction of surrounding channels</message>
+  <message id="dls-decon-desc">Deconvolution accounts for peak shape and data distribution</message>
+  <message id="dls-qr-tool-state-title">Simple MDA Tool State</message>
+  <message id="dls-qr-tool-state-txt">Current state of the Simple MDA tool.</message>
+
+  <message id="dls-det-act-with-range">Detected activity of {1}, with range [{2}, {3}], @{4} CL</message>
+  <message id="dls-det-counts-with-range">Excess counts of {1}, with range [{2}, {3}], @{4} CL</message>
+  <message id="dls-det-act-less-zero">Activity &lt; 0 {1} (observed significantly fewer counts than expected).</message>
+  <message id="dls-det-counts-less-zero">Excess counts &lt; 0 {2} (observed significantly fewer counts than expected).</message>
+  <message id="dls-det-upper-bound">Less than {1} present @{2} CL.</message>
+  <message id="dls-min-detectable-act">Minimum reliably detectable activity: {1}.</message>
+  <message id="dls-min-detectable-counts">Minimum reliably detectable excess counts: {1}</message>
+  <message id="dls-error-computing-results">Error computing result</message>
+  <message id="dls-chart-title-estimated-counts">Estimated counts of {1}.</message>
+  <message id="dls-results-txt-estimated-counts">
+    Detected counts of {1}.
+    <br/>
+    Range: [{2}, {3}] @{4} CL
+  </message>
+  <message id="dls-chart-title-estimated-act">Estimated activity of {1}.</message>
+  <message id="dls-results-txt-estimated-act">
+    Detected activity of {1}.
+    <br/>
+    Range: [{2}, {3}] @{4} CL
+  </message>
+  <message id="dls-chart-title-upper-bound-act">Peak for upper bound of {1} @{2} CL</message>
+  <message id="dls-results-txt-upper-bound-act">Less than {1} @{2} CL</message>
+  <message id="dls-chart-title-upper-bound-counts">Peak for upper bound of {1} counts @{2} CL</message>
+  <message id="dls-results-txt-upper-bound-counts">Less than {1} signal counts present @{2} CL</message>
+  <message id="dls-err-no-meas">No measurement available</message>
+  
+  <message id="dls-Info">Info</message>
+  <message id="dls-assumed-br=1">(activity is assuming a BR=1.0)</message>
+  <message id="dls-Limit">Limit</message>
+  <message id="dls-continuum-area">Cont. Area</message>
+  <message id="dls-DOF" remark="Degrees of freedom abbreviation">DOF</message>
+  <message id="dls-"></message>
+  <message id="dls-"></message>
+  <message id="dls-"></message>
+  <message id="dls-"></message>
+</messages>

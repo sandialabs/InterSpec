@@ -291,7 +291,7 @@ private:
 
 DecayChainChart::DecayChainChart( WContainerWidget *parent  )
   : WContainerWidget( parent ),
-  m_useCurrie( true ),
+  m_useCurie( true ),
   m_jsLoaded( false ),
   m_nuclide( nullptr ),
   m_moreInfoDialog( nullptr ),
@@ -422,12 +422,12 @@ void DecayChainChart::render( Wt::WFlags<Wt::RenderFlag> flags )
 }//render(...)
   
   
-void DecayChainChart::setNuclide( const SandiaDecay::Nuclide * const nuc, const bool useCurrie, const DecayChainType decayType )
+void DecayChainChart::setNuclide( const SandiaDecay::Nuclide * const nuc, const bool useCurie, const DecayChainType decayType )
 {
   const bool actuallyChanged = (m_nuclide != nuc);
   
   m_nuclide = nuc;
-  m_useCurrie = useCurrie;
+  m_useCurie = useCurie;
   
   switch( decayType )
   {
@@ -491,7 +491,7 @@ void DecayChainChart::jsonInfoForNuclide( const SandiaDecay::Nuclide * const nuc
 {
   assert( nuc );
     
-  vector<string> info = getTextInfoForNuclide( nuc, m_nuclide, m_useCurrie );
+  vector<string> info = getTextInfoForNuclide( nuc, m_nuclide, m_useCurie );
     
   const string hl = (IsInf(nuc->halfLife) ? std::string("stable") : PhysicalUnitsLocalized::printToBestTimeUnits(nuc->halfLife, 2));
     
@@ -592,7 +592,7 @@ void DecayChainChart::setJsonForDecaysThrough( const SandiaDecay::Nuclide * cons
   
 std::vector<std::string> DecayChainChart::getTextInfoForNuclide( const SandiaDecay::Nuclide * const nuc,
                                                                   const SandiaDecay::Nuclide * const parentNuclide,
-                                                                  const bool useCurrie )
+                                                                  const bool useCurie )
 {
   vector<string> information;
   
@@ -643,7 +643,7 @@ std::vector<std::string> DecayChainChart::getTextInfoForNuclide( const SandiaDec
   if( !IsInf(nuc->halfLife) )
   {
     const double specificActivity = nuc->activityPerGram() / PhysicalUnits::gram;
-    const string sa = PhysicalUnits::printToBestSpecificActivityUnits( specificActivity, 3, useCurrie );
+    const string sa = PhysicalUnits::printToBestSpecificActivityUnits( specificActivity, 3, useCurie );
     information.push_back( WString::tr("dcc-nuc-info-specific-act").arg(sa).toUTF8() );
   }//if( not stable )
   
@@ -827,7 +827,7 @@ void DecayChainChart::showPossibleParents( const SandiaDecay::Nuclide *nuclide )
   
   m_moreInfoDialog = new AuxWindow( WString::tr("dcc-decay-through-window-title").arg(nuclide->symbol), windowProp );
   DecayChainChart *w = new DecayChainChart();
-  w->setNuclide( nuclide, m_useCurrie, DecayChainChart::DecayChainType::DecayThrough );
+  w->setNuclide( nuclide, m_useCurie, DecayChainChart::DecayChainType::DecayThrough );
   m_moreInfoDialog->stretcher()->addWidget( w, 0, 0  );
   
   m_moreInfoDialog->resizeWindow( std::max( 800, static_cast<int>(std::min(ww,1.3*wh) ) ), std::max( 600, static_cast<int>(wh) ) );

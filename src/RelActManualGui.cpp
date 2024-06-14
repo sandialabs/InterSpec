@@ -322,9 +322,9 @@ public:
       label = new WLabel( WString::tr("mrend-spec-act"), cell );
       
       cell = m_nucContentTable->elementAt(2, 1);
-      const bool useCurrie = !InterSpecUser::preferenceValue<bool>( "DisplayBecquerel", InterSpec::instance() );
+      const bool useCurie = !InterSpecUser::preferenceValue<bool>( "DisplayBecquerel", InterSpec::instance() );
       const double specificActivity = nuc->activityPerGram() / PhysicalUnits::gram;
-      const string sa = PhysicalUnits::printToBestSpecificActivityUnits( specificActivity, 3, useCurrie );
+      const string sa = PhysicalUnits::printToBestSpecificActivityUnits( specificActivity, 3, useCurie );
       txt = new WText( sa, cell );
       
       if( meas_time > 0.005*m_nuc->halfLife ) //0.005 times HL is arbitrary

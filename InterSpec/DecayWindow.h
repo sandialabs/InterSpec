@@ -38,7 +38,7 @@ public:
   
   void clearAllNuclides();
   void addNuclide( const int z, const int a, const int iso,
-                  const double activity, const bool useCurries,
+                  const double activity, const bool useCuries,
                   const double age, std::string activityStr, 
                   const double maxtime = -1.0 );
   

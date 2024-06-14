@@ -45,6 +45,7 @@
 #include <Wt/Chart/WDataSeries>
 
 #include "SpecUtils/SpecFile.h"
+#include "SpecUtils/Filesystem.h"
 #include "SpecUtils/StringAlgo.h"
 
 #include "InterSpec/PeakDef.h"
@@ -66,6 +67,7 @@
 #include "InterSpec/PeakSearchGuiUtils.h"
 #include "InterSpec/DecayDataBaseServer.h"
 #include "InterSpec/DetectorPeakResponse.h"
+#include "InterSpec/PhysicalUnitsLocalized.h"
 #include "InterSpec/ReferencePhotopeakDisplay.h"
 
 using namespace Wt;
@@ -3092,6 +3094,65 @@ void refit_peaks_with_drf_fwhm( InterSpec * const interspec, const double rightC
   }
 }//void refit_peaks_with_drf_fwhm( InterSpec * const interspec, const double rightClickEnergy )
 
+  
+std::pair<std::unique_ptr<ReferenceLineInfo>,int> reference_line_near_peak( InterSpec * const interspec,
+                                          const PeakDef &peak,
+                                          const bool only_nuclide )
+{
+  auto refLineTool = interspec->referenceLinesWidget();
+  if( !refLineTool )
+    return pair<unique_ptr<ReferenceLineInfo>,int>( nullptr, -1 );
+  
+  const double mean = peak.mean(), sigma = peak.sigma();
+  const double lx = peak.lowerX(), ux = peak.upperX();
+    
+  double largest_w = -9999, best_energy = -1.0f;
+  
+  const vector<ReferenceLineInfo> showingNucs = refLineTool->showingNuclides();
+  size_t best_info_index = showingNucs.size();
+  size_t best_line_index = 0;
+  
+  for( size_t info_index = 0; info_index < showingNucs.size(); ++info_index )
+  {
+    const ReferenceLineInfo &info = showingNucs[info_index];
+    for( size_t line_index = 0; line_index < info.m_ref_lines.size(); ++line_index )
+    {
+      const ReferenceLineInfo::RefLine &l = info.m_ref_lines[line_index];
+      
+      if( only_nuclide
+         && (!l.m_parent_nuclide
+             || ((l.m_particle_type != ReferenceLineInfo::RefLine::Particle::Gamma)
+                 && (l.m_particle_type != ReferenceLineInfo::RefLine::Particle::Xray) )) )
+      {
+        // Only consider lines who have a nuclide parent, and are a Gamma or Xray
+        continue;
+      }
+      
+      const double dist = fabs( l.m_energy - mean );
+      const double w = l.m_normalized_intensity / (0.25*sigma + dist);
+      
+      if( (w > largest_w) && (l.m_energy < ux) && (l.m_energy > lx) && (dist < 4*sigma) )
+      {
+        largest_w = w;
+        best_energy = l.m_energy;
+        
+        best_info_index = info_index;
+        best_line_index = line_index;
+      }//if( best candidate so far )
+    }//for( const ReferenceLineInfo::RefLine &line : info.m_ref_lines )
+  }//for( const ReferenceLineInfo &info : m_referencePhotopeakLines->showingNuclides() )
+    
+  if( (largest_w > 0) && (best_energy > 0) && (best_info_index < showingNucs.size()) )
+  {
+    const ReferenceLineInfo &best_info = showingNucs[best_info_index];
+    assert( best_line_index < best_info.m_ref_lines.size() );
+    return pair<unique_ptr<ReferenceLineInfo>,int>( make_unique<ReferenceLineInfo>(best_info),
+                                                   static_cast<int>(best_line_index) );
+  }
+  
+  return pair<unique_ptr<ReferenceLineInfo>,int>( nullptr, -1 );
+}//reference_line_near_peak(...)
+  
 
 float reference_line_energy_near_peak( InterSpec * const interspec, const PeakDef &peak )
 {
@@ -3105,35 +3166,150 @@ float reference_line_energy_near_peak( InterSpec * const interspec, const PeakDe
   {
   }
   
-  auto refLineTool = interspec->referenceLinesWidget();
-  if( !refLineTool )
+  const bool only_nucs = false;
+  pair<unique_ptr<ReferenceLineInfo>,int> refline
+                              = reference_line_near_peak( interspec, peak, only_nucs );
+  
+  if( !refline.first || refline.second < 0 )
     return -999.9f;
   
-  const double mean = peak.mean(), sigma = peak.sigma();
-  const double lx = peak.lowerX(), ux = peak.upperX();
-    
-  double largest_w = -9999, best_energy = -1.0f;
-  for( const ReferenceLineInfo &info : refLineTool->showingNuclides() )
-  {
-    for( const ReferenceLineInfo::RefLine &l : info.m_ref_lines )
-    {
-      const double dist = fabs( l.m_energy - mean );
-      const double w = l.m_normalized_intensity / (0.25*sigma + dist);
-      
-      if( (w > largest_w) && (l.m_energy < ux) && (l.m_energy > lx) && (dist < 4*sigma) )
-      {
-        largest_w = w;
-        best_energy = l.m_energy;
-      }//if( best candidate so far )
-    }//for( const ReferenceLineInfo::RefLine &line : info.m_ref_lines )
-  }//for( const ReferenceLineInfo &info : m_referencePhotopeakLines->showingNuclides() )
-    
-  if( (largest_w > 0) && (best_energy > 0) )
-    return static_cast<float>(best_energy);
+  const ReferenceLineInfo::RefLine &line = refline.first->m_ref_lines[refline.second];
   
-  return -999.9f;
+  return static_cast<float>( line.m_energy );
 }//float reference_line_energy_near_peak( InterSpec * const interspec, const PeakDef &peak )
 
+  
+  
+tuple<const SandiaDecay::Nuclide *, double, float>
+    nuclide_reference_line_near( InterSpec *viewer, const float energy )
+{
+  const double sigma = estimate_FWHM_of_foreground( energy );
+  
+  PeakDef tmppeak( energy, std::max(sigma,0.1), 100.0 );
+  
+  const pair<unique_ptr<ReferenceLineInfo>,int> refline
+        = reference_line_near_peak( viewer, tmppeak, true );
+  
+  if( !refline.first || (refline.second < 0) )
+    return tuple<const SandiaDecay::Nuclide *, double, float>( nullptr, 0.0, 0.0f );
+  
+  assert( refline.second < static_cast<int>(refline.first->m_ref_lines.size()) );
+  ReferenceLineInfo::RefLine &line = refline.first->m_ref_lines[refline.second];
+  
+  const SandiaDecay::Nuclide *nuc = line.m_parent_nuclide;
+  if( !nuc )
+    return tuple<const SandiaDecay::Nuclide *, double, float>( nullptr, 0.0, 0.0f );
+  
+  
+  double age = -1.0;
+  const string &age_str = refline.first->m_input.m_age;
+  if( !age_str.empty() )
+  {
+    try
+    {
+      age = PhysicalUnitsLocalized::stringToTimeDurationPossibleHalfLife( age_str, nuc ? nuc->halfLife : -1.0 );
+    }catch( std::exception )
+    {
+      assert( 0 );
+    }
+  }//if( !age_str.empty() )
+  
+  return tuple<const SandiaDecay::Nuclide *, double, float>(line.m_parent_nuclide, age, line.m_energy);
+}//nuclide_reference_line_near(...)
+  
+  
+float estimate_FWHM_of_foreground( const float energy )
+{
+  InterSpec *viewer = InterSpec::instance();
+  assert( viewer );
+  if( !viewer )
+    return 0.0f;
+  
+  PeakModel *peakmodel = viewer->peakModel();
+  assert( peakmodel );
+  if( !peakmodel )
+    return 0.0f;
+  
+  const auto peaks = peakmodel->peakVec();
+  const auto user_lb = std::lower_bound( begin(peaks), end(peaks), PeakDef(energy,1.0,1.0), &PeakDef::lessThanByMean );
+  const auto user_ub = (user_lb == end(peaks)) ? end(peaks) : user_lb + 1;
+  if( (user_lb != end(peaks)) && (user_ub != end(peaks)) && user_lb->gausPeak() && user_ub->gausPeak() )
+  {
+    //Linearly interpolate between peaks ... should probably upgrade to interpolating based on sqrt(energy) between them.
+    const double lower_fwhm = user_lb->fwhm();
+    const double upper_fwhm = user_ub->fwhm();
+    const double lower_energy = user_lb->mean();
+    const double upper_energy = user_ub->mean();
+    const double fraction = (energy - lower_energy) / (upper_energy - lower_energy);
+      
+    return static_cast<float>( lower_fwhm + fraction*(upper_fwhm - lower_fwhm) );
+  }
+    
+  std::shared_ptr<SpecMeas> specmeas = viewer->measurment(SpecUtils::SpectrumType::Foreground);
+    
+  std::shared_ptr<DetectorPeakResponse> drf = specmeas ? specmeas->detector() : nullptr;
+  if( drf && drf->hasResolutionInfo() )
+    return drf->peakResolutionFWHM(energy);
+    
+    
+  // Check auto-fit peaks
+  const set<int> &dispSamples = viewer->displayedSamples(SpecUtils::SpectrumType::Foreground);
+  auto hintPeaks = specmeas->automatedSearchPeaks( dispSamples );
+  if( hintPeaks && !hintPeaks->empty() )
+  {
+    SpecMeas::PeakDeque autopeaks( begin(*hintPeaks), end(*hintPeaks) );
+    std::sort( begin(autopeaks), end(autopeaks), &PeakDef::lessThanByMeanShrdPtr ); //just to make sure
+    
+    auto dummy_peak = make_shared<const PeakDef>(energy,1.0,1.0);
+    const auto hint_lb = std::lower_bound( begin(autopeaks), end(autopeaks), dummy_peak, &PeakDef::lessThanByMeanShrdPtr );
+    const auto hint_ub = hint_lb==end(autopeaks) ? end(autopeaks) : hint_lb + 1;
+    if( (hint_lb != end(autopeaks)) && (hint_ub != end(autopeaks)) && (*hint_lb)->gausPeak() && (*hint_ub)->gausPeak() )
+    {
+      //Linearly interpolate between peaks ... should probably upgrade to interpolating based on sqrt(energy) between them.
+      const double lower_fwhm = (*hint_lb)->fwhm();
+      const double upper_fwhm = (*hint_ub)->fwhm();
+      const double lower_energy = (*hint_lb)->mean();
+      const double upper_energy = (*hint_ub)->mean();
+      const double fraction = (energy - lower_energy) / (upper_energy - lower_energy);
+      
+      return static_cast<float>( lower_fwhm + fraction*(upper_fwhm - lower_fwhm) );
+    }
+  }//if( hintPeaks && !hintPeaks->empty() )
+    
+    
+  if( !peaks.empty() )
+  {
+    const PeakDef &refpeak = (user_lb!=end(peaks) ? *user_lb : (peaks.front().mean() > energy) ? peaks.front() : peaks.back());
+    const double ref_width = refpeak.gausPeak() ? refpeak.fwhm() : 0.25f*refpeak.roiWidth();
+    const double ref_energy = refpeak.gausPeak() ? refpeak.mean() : 0.5*(refpeak.upperX() + refpeak.lowerX());
+    
+    return static_cast<float>( ref_width*sqrt(energy/ref_energy) );
+  }//if( !peaks.empty() )
+  
+  const shared_ptr<const SpecUtils::Measurement> meas
+                              = viewer->displayedHistogram(SpecUtils::SpectrumType::Foreground);
+  
+  try
+  {
+    const string datadir = InterSpec::staticDataDirectory();
+    string drf_dir = SpecUtils::append_path(datadir, "GenericGadrasDetectors/HPGe 40%" );
+    
+    if( !PeakFitUtils::is_high_res(meas) )
+      drf_dir = SpecUtils::append_path(datadir, "GenericGadrasDetectors/NaI 1x1" );
+    
+    drf = make_shared<DetectorPeakResponse>();
+    drf->fromGadrasDirectory( drf_dir );
+    
+    return drf->peakResolutionFWHM(energy);
+  }catch(...)
+  {
+  }
+  
+  if( !PeakFitUtils::is_high_res(meas) )
+    return 2.35482f*17.5f*sqrt(energy/661.0f);
+  return 2.35482f*0.67f*sqrt(energy/661.0f);
+}//float estimate_FWHM_of_foreground( const float energy )
+  
   
 void refit_peak_with_photopeak_mean( InterSpec * const interspec, const double rightClickEnergy )
 {

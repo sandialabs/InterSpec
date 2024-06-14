@@ -146,6 +146,12 @@
         "keywords": "Information Activity Chart Decay Chain Add Nuclides Aged Descendant Reference Photopeaks Gamma Beta Alpha Production Rates Graph Information Emission Emit Particles Time Span Y Axis Type Graph Log Linear Gives Off Branching Ratio"
       },
       {
+        "id":"simple-mda-dialog",
+        "title": "Simple MDA",
+        "help-xml":"simple_mda_help.xml",
+        "keywords":"MDA Detectable simple"
+      },
+      {
         "id": "color-theme-dialog",
         "title": "Couleurs/Thème",
         "help-xml": "color_theme_dialog_help.xml",

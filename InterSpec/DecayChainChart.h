@@ -89,7 +89,7 @@ public:
 
   virtual void doJavaScript( const std::string &js ) override;
   virtual void render( Wt::WFlags<Wt::RenderFlag> flags ) override;
-  void setNuclide( const SandiaDecay::Nuclide * const nuc, const bool useCurrie, const DecayChainType decayType );
+  void setNuclide( const SandiaDecay::Nuclide * const nuc, const bool useCurie, const DecayChainType decayType );
   const SandiaDecay::Nuclide *nuclide() const;
   
   void colorThemeChanged();
@@ -109,12 +109,12 @@ public:
    interested in (e.g. the nuclide the decay chain is drawn for); is
    used to give the branching ratio that the infoNuclide is decayed
    through.
-   @param useCurrie Wether to use Ci or Bq for displaying specific activities.
+   @param useCurie Wether to use Ci or Bq for displaying specific activities.
    */
   static std::vector<std::string>
     getTextInfoForNuclide( const SandiaDecay::Nuclide * const infoNuclide,
                            const SandiaDecay::Nuclide * const parentNuclide,
-                           const bool useCurrie );
+                           const bool useCurie );
   
   void showDecayParticleInfo( const std::string &csvIsotopeNames );
   void showPossibleParents( const SandiaDecay::Nuclide *nuclide );
@@ -141,7 +141,7 @@ protected:
   
 private:
   /** Whether to use Curies or Bequerels for displaying specific activity. */
-  bool m_useCurrie;
+  bool m_useCurie;
   
   /** Until the widget is fully rendered, the JavaScript wont have been fully
    defined; this variable keeps track of this so we know if the JS can be

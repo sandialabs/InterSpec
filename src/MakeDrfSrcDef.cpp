@@ -718,8 +718,8 @@ void MakeDrfSrcDef::updateAgedText()
     
     const string enteredAct = m_activityEdit->text().toUTF8();
     
-    const bool useCurrie = (enteredAct.find_first_of( "cC" ) != string::npos);
-    const string actstr = PhysicalUnits::printToBestActivityUnits(activity, 1, useCurrie );
+    const bool useCurie = (enteredAct.find_first_of( "cC" ) != string::npos);
+    const string actstr = PhysicalUnits::printToBestActivityUnits(activity, 1, useCurie );
     
     string txt = actstr;
     if( !PeakDef::ageFitNotAllowed(m_nuclide) )

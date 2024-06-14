@@ -340,7 +340,7 @@ struct ReferenceLineInfo
     */
     RefGammaType m_source_type;
 
-    /** Element giving rise to this flourescent x-ray.  
+    /** Element giving rise to this fluorescent x-ray.  
     Will be element peak is assigned to, if non-null. 
     */
     const SandiaDecay::Element *m_element;
