@@ -2763,10 +2763,10 @@ void InterSpec::handleRightClick( double energy, double counts,
         if( !peak )
         {
           WString target_txt;
-          const tuple<const SandiaDecay::Nuclide *, double, float> near
+          const tuple<const SandiaDecay::Nuclide *, double, float> near_line
                                 = PeakSearchGuiUtils::nuclide_reference_line_near( this, energy );
-          const SandiaDecay::Nuclide *ref_nuc = get<0>(near);
-          const float ref_energy = get<2>(near);
+          const SandiaDecay::Nuclide *ref_nuc = get<0>(near_line);
+          const float ref_energy = get<2>(near_line);
             
           if( ref_nuc && (ref_energy > 10.0) )
           {
