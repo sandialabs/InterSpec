@@ -3765,16 +3765,16 @@ void MakeDrf::writeRefSheet( std::ostream &output, std::string drfname, std::str
       efftable << "\t<tr><th>" << WString::tr("md-html-Intrinsic").toUTF8() << "</th>";
       break;
     case DetectorPeakResponse::EffGeometryType::FixedGeomTotalAct:
-      efftable << "\t<tr><th>" << WString::tr("md-html-Efficiency").toUTF8() << "</th>";
+      efftable << "\t<tr><th>" << WString::tr("Efficiency").toUTF8() << "</th>";
       break;
     case DetectorPeakResponse::EffGeometryType::FixedGeomActPerCm2:
-      efftable << "\t<tr><th>" << WString::tr("md-html-Efficiency").toUTF8() << "/cm2</th>";
+      efftable << "\t<tr><th>" << WString::tr("Efficiency").toUTF8() << "/cm2</th>";
       break;
     case DetectorPeakResponse::EffGeometryType::FixedGeomActPerM2:
-      efftable << "\t<tr><th>" << WString::tr("md-html-Efficiency").toUTF8() << "/m2</th>";
+      efftable << "\t<tr><th>" << WString::tr("Efficiency").toUTF8() << "/m2</th>";
       break;
     case DetectorPeakResponse::EffGeometryType::FixedGeomActPerGram:
-      efftable << "\t<tr><th>" << WString::tr("md-html-Efficiency").toUTF8() << "/gram</th>";
+      efftable << "\t<tr><th>" << WString::tr("Efficiency").toUTF8() << "/gram</th>";
       break;
   }//switch( geom_type )
   

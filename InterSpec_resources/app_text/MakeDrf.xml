@@ -99,7 +99,6 @@
   <message id="md-n-fit-pars">{1} Fit Params</message>
   <message id="md-html-eff-table-caption">Full-Energy Detection Efficiency (% total gammas)</message>
   <message id="md-html-Intrinsic">Intrinsic</message>
-  <message id="md-html-Efficiency">Efficiency</message>
   <message id="md-chart-data-intrinsic-eff-label">Data Intrinsic Eff.</message>
   <message id="md-chart-data-fwhm-label">Data FWHM</message>
   <message id="md-chart-fit-intrinsic-eff-label">Fit Intrinsic Eff.</message>

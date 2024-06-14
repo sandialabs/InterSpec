@@ -813,7 +813,7 @@ void MakeDrfChart::setDataPoints( const std::vector<MakeDrfChart::DataPoint> &da
   if( det_diameter > 0.0 )
     axis(Chart::YAxis).setTitle( WString::tr("md-geom-intrinsic-eff") );
   else
-    axis(Chart::YAxis).setTitle( WString::tr("md-html-Efficiency") );
+    axis(Chart::YAxis).setTitle( WString::tr("Efficiency") );
   
   if( update_xrange )
     m_xRangeChanged.emit(m_det_lower_energy,m_det_upper_energy);

@@ -98,7 +98,6 @@
 <message id="md-n-fit-pars">{1} Paramètres d'Ajustement</message>
 <message id="md-html-eff-table-caption">Efficacité de Détection en Énergie Pleine (% total des gammas)</message>
 <message id="md-html-Intrinsic">Intrinsèque</message>
-<message id="md-html-Efficiency">Efficacité</message>
 <message id="md-chart-data-intrinsic-eff-label">Données Efficacité Intrinsèque</message>
 <message id="md-chart-data-fwhm-label">Données FWHM</message>
 <message id="md-chart-fit-intrinsic-eff-label">Ajustement Efficacité Intrinsèque</message>

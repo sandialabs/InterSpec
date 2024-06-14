@@ -981,8 +981,11 @@ void DetectionLimitSimple::handleNuclideChanged()
       snprintf( text, sizeof(text), "%.4f keV I=%.1e", energy, intensity );
     }//if( i < xrays.size() )
     
-    m_photoPeakEnergiesAndBr.push_back( make_pair(energy, intensity) );
-    m_photoPeakEnergy->addItem( text );
+    if( intensity > std::numeric_limits<double>::epsilon() )
+    {
+      m_photoPeakEnergiesAndBr.push_back( make_pair(energy, intensity) );
+      m_photoPeakEnergy->addItem( text );
+    }//if( intensity > 0.0 )
   }//for each( const double energy, energies )
   
   
@@ -2249,11 +2252,16 @@ void DetectionLimitSimple::handleAppUrl( std::string uri )
     const double age = m_nucEnterController->nuclideAge(); //mmm - using this maybe makes this check not totally independent???
     
     SandiaDecay::NuclideMixture mixture;
-    mixture.addAgedNuclideByActivity( nuc, 0.001*SandiaDecay::curie, age );
+    const double dummy_activity = 0.001*SandiaDecay::curie;
+    mixture.addAgedNuclideByActivity( nuc, dummy_activity, age );
     
-    const vector<SandiaDecay::EnergyRatePair> xrays = mixture.xrays( 0.0, SandiaDecay::NuclideMixture::HowToOrder::OrderByEnergy );
+    vector<SandiaDecay::EnergyRatePair> photons = mixture.xrays( 0.0, SandiaDecay::NuclideMixture::HowToOrder::OrderByEnergy );
     const vector<SandiaDecay::EnergyRatePair> gammas = mixture.gammas( 0.0, SandiaDecay::NuclideMixture::HowToOrder::OrderByEnergy, true );
-    assert( m_photoPeakEnergiesAndBr.size() == (xrays.size() + gammas.size()) );
+    photons.insert( end(photons), begin(gammas), end(gammas) );
+    size_t num_non_zero = 0;
+    for( const auto &erp : photons )
+      num_non_zero += ((erp.numPerSecond/dummy_activity) > std::numeric_limits<double>::epsilon());
+    assert( m_photoPeakEnergiesAndBr.size() == num_non_zero );
   }else
   {
     assert( m_photoPeakEnergiesAndBr.empty() );
