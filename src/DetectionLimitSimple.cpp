@@ -213,6 +213,7 @@ DetectionLimitSimple::DetectionLimitSimple( MaterialDB *materialDB,
   m_continuumPriorLabel( nullptr ),
   m_continuumPrior( nullptr ),
   m_continuumTypeLabel( nullptr ),
+  m_moreInfoWindow( nullptr ),
   m_continuumType( nullptr ),
   m_currentNuclide( nullptr ),
   m_currentAge( 0.0 ),
@@ -488,13 +489,13 @@ void DetectionLimitSimple::init()
   
   m_methodGroup = new WButtonGroup( container );
   WRadioButton *currieBtn = new Wt::WRadioButton( WString::tr("dls-currie-tab-title"), container );
-  m_methodGroup->addButton(currieBtn, 0);
+  m_methodGroup->addButton(currieBtn, static_cast<int>(MethodIds::Currie) );
   
   WRadioButton *deconvBtn = new Wt::WRadioButton( WString::tr("dls-decon-tab-title"), container);
-  m_methodGroup->addButton(deconvBtn, 1);
+  m_methodGroup->addButton(deconvBtn, static_cast<int>(MethodIds::Deconvolution) );
   m_methodGroup->setCheckedButton( currieBtn );
   
-  m_methodGroup->checkedChanged().connect( boost::bind(&DetectionLimitSimple::handleMethodChanged, this, boost::placeholders::_1) );
+  m_methodGroup->checkedChanged().connect( this, &DetectionLimitSimple::handleMethodChanged );
   
   m_methodDescription = new WText( WString::tr("dls-currie-desc"), generalInput );
   m_methodDescription->addStyleClass( "CalcMethodDesc GridSecondCol GridNinthRow GridSpanFourCol" );
@@ -701,7 +702,7 @@ void DetectionLimitSimple::handleUserChangedFwhm()
 
 void DetectionLimitSimple::handleDeconPriorChange()
 {
-  const bool currieMethod = (m_methodGroup->checkedId() == 0);
+  const bool currieMethod = (m_methodGroup->checkedId() == static_cast<int>(MethodIds::Currie));
   assert( !currieMethod );
   
   const bool useSideChan = (m_continuumPrior->currentIndex() == 2);
@@ -730,9 +731,9 @@ DetectionLimitSimple::~DetectionLimitSimple()
 }//~DoseCalcWidget()
 
 
-void DetectionLimitSimple::handleMethodChanged( Wt::WRadioButton *btn )
+void DetectionLimitSimple::handleMethodChanged()
 {
-  const bool currieMethod = (m_methodGroup->checkedId() == 0);
+  const bool currieMethod = (m_methodGroup->checkedId() == static_cast<int>(MethodIds::Currie));
   
   m_numSideChannelLabel->setHidden( !currieMethod );
   m_numSideChannel->setHidden( !currieMethod );
@@ -752,7 +753,7 @@ void DetectionLimitSimple::handleMethodChanged( Wt::WRadioButton *btn )
   m_renderFlags |= DetectionLimitSimple::RenderActions::AddUndoRedoStep;
   m_renderFlags |= DetectionLimitSimple::RenderActions::UpdateSpectrumDecorations;
   scheduleRender();
-}//void handleMethodChanged( Wt::WRadioButton *btn )
+}//void handleMethodChanged()
 
 
 void DetectionLimitSimple::setNuclide( const SandiaDecay::Nuclide *nuc, 
@@ -886,6 +887,7 @@ void DetectionLimitSimple::handleNuclideChanged()
   scheduleRender();
   
   m_photoPeakEnergy->clear();
+  m_photoPeakEnergy->setDisabled( true );
   m_photoPeakEnergiesAndBr.clear();
   
   m_currentNuclide = nuc;
@@ -985,7 +987,7 @@ void DetectionLimitSimple::handleNuclideChanged()
   
   
   // we wont change `m_currentEnergy`, since the user might go back to their previous nuclide
-  
+  m_photoPeakEnergy->setDisabled( (m_photoPeakEnergy->count() == 0) );
   m_photoPeakEnergy->setCurrentIndex( currentIndex );
   
   handleGammaChanged();
@@ -1131,7 +1133,7 @@ void DetectionLimitSimple::updateSpectrumDecorationsAndResultText()
     return cl_str_buffer;
   })();
   
-  const bool currieMethod = (m_methodGroup->checkedId() == 0);
+  const bool currieMethod = (m_methodGroup->checkedId() == static_cast<int>(MethodIds::Currie));
   if( currieMethod )
   {
     // Currie method limit
@@ -1489,7 +1491,7 @@ double DetectionLimitSimple::currentConfidenceLevel() const
 }//double currentConfidenceLevel() const
 
 
-void DetectionLimitSimple::createDeconvolutionLimitMoreInfo()
+SimpleDialog *DetectionLimitSimple::createDeconvolutionLimitMoreInfo()
 {
   if( !m_currentDeconInput || !m_currentDeconResults )
     throw runtime_error( "No solution available." );
@@ -1762,6 +1764,9 @@ void DetectionLimitSimple::createDeconvolutionLimitMoreInfo()
 
 void DetectionLimitSimple::createMoreInfoWindow()
 {
+  assert( !m_moreInfoWindow );
+  m_moreInfoWindow = nullptr; // we really shouldnt need to do this
+  
   double distance = 0.0;
   try
   {
@@ -1784,7 +1789,7 @@ void DetectionLimitSimple::createMoreInfoWindow()
   
   try
   {
-    const bool currieMethod = (m_methodGroup->checkedId() == 0);
+    const bool currieMethod = (m_methodGroup->checkedId() == static_cast<int>(MethodIds::Currie));
     
     if( currieMethod )
     {
@@ -1815,20 +1820,88 @@ void DetectionLimitSimple::createMoreInfoWindow()
       const double shield_transmission = 1.0;
       
       const bool do_air_atten = (distance > 0.0);
-      DetectionLimitTool::createCurrieRoiMoreInfoWindow( m_currentNuclide,
+      m_moreInfoWindow = DetectionLimitTool::createCurrieRoiMoreInfoWindow( m_currentNuclide,
                     *m_currentCurrieResults, drf, DetectionLimitTool::LimitType::Activity,
                     distance, do_air_atten, branch_ratio, shield_transmission );
     }else
     {
-      createDeconvolutionLimitMoreInfo();
+      m_moreInfoWindow = createDeconvolutionLimitMoreInfo();
     }//if( currieMethod ) / else
   }catch( std::exception &e )
   {
-    SimpleDialog *dialog = new SimpleDialog( WString::tr("dls-err-more-info-title"),
+    assert( !m_moreInfoWindow );
+    m_moreInfoWindow = new SimpleDialog( WString::tr("dls-err-more-info-title"),
                                             WString::tr("dls-err-more-info-content").arg(e.what()) );
-    dialog->addButton( WString::tr("Close") );
+    m_moreInfoWindow->addButton( WString::tr("Close") );
   }//try / catch
+  
+  assert( m_moreInfoWindow );
+  if( m_moreInfoWindow )
+    m_moreInfoWindow->finished().connect( boost::bind(&DetectionLimitSimple::handleMoreInfoWindowClose, this, m_moreInfoWindow) );
+  
+  UndoRedoManager *undoRedo = UndoRedoManager::instance();
+  if( undoRedo && undoRedo->canAddUndoRedoNow() )
+  {
+    auto undo_redo = []( const bool is_show ){
+      DetectionLimitSimpleWindow *mdawin = InterSpec::instance()->showSimpleMdaWindow();
+      DetectionLimitSimple *tool = mdawin ? mdawin->tool() : nullptr;
+      assert( tool );
+      if( tool && is_show )
+        tool->createMoreInfoWindow();
+      else if( tool )
+        tool->programmaticallyCloseMoreInfoWindow();
+    };//undo_redo
+      
+    auto undo = [undo_redo](){ undo_redo(false); };
+    auto redo = [undo_redo](){ undo_redo(true); };
+    undoRedo->addUndoRedoStep( std::move(undo), std::move(redo), "Show Simple MDA more info window." );
+  }//if( undoRedo && undoRedo->canAddUndoRedoNow() )
 }//void createMoreInfoWindow()
+
+
+void DetectionLimitSimple::handleMoreInfoWindowClose( SimpleDialog *dialog )
+{
+  assert( dialog == dynamic_cast<SimpleDialog *>( WObject::sender() ) );
+  assert( dialog == m_moreInfoWindow );
+  SimpleDialog *current = m_moreInfoWindow;
+  m_moreInfoWindow = nullptr;
+  
+  if( current && (current == dialog) )
+  {
+    UndoRedoManager *undoRedo = UndoRedoManager::instance();
+    if( undoRedo && undoRedo->canAddUndoRedoNow() )
+    {
+      auto undo_redo = []( const bool is_show ){
+        DetectionLimitSimpleWindow *mdawin = InterSpec::instance()->showSimpleMdaWindow();
+        DetectionLimitSimple *tool = mdawin ? mdawin->tool() : nullptr;
+        assert( tool );
+        if( tool && is_show )
+          tool->createMoreInfoWindow();
+        else if( tool )
+          tool->programmaticallyCloseMoreInfoWindow();
+      };//undo_redo
+        
+      auto undo = [undo_redo](){ undo_redo(true); };
+      auto redo = [undo_redo](){ undo_redo(false); };
+      undoRedo->addUndoRedoStep( std::move(undo), std::move(redo), "Close Simple MDA more info window." );
+    }//if( undoRedo && undoRedo->canAddUndoRedoNow() )
+  }//if( m_moreInfoWindow && (m_moreInfoWindow == dialog) )
+}//void handleMoreInfoWindowClose( SimpleDialog *dialog );
+
+
+void DetectionLimitSimple::programmaticallyCloseMoreInfoWindow()
+{
+  SimpleDialog *dialog = m_moreInfoWindow;
+  m_moreInfoWindow = nullptr;
+  
+  if( dialog )
+  {
+    // Note: dialog wont emit the finished() signal
+    if( dialog->isModal() )
+      dialog->setModal(false);
+    delete dialog;
+  }//if( dialog )
+}//void programmaticallyCloseMoreInfoWindow()
 
 
 void DetectionLimitSimple::updateResult()
@@ -1884,7 +1957,7 @@ void DetectionLimitSimple::updateResult()
     
     // Calculating the deconvolution-style limit is fairly CPU intensive, so we will only computer
     //  it when its what the user actually wants.
-    const bool currieMethod = (m_methodGroup->checkedId() == 0);
+    const bool currieMethod = (m_methodGroup->checkedId() == static_cast<int>(MethodIds::Currie));
     if( !currieMethod )
     {
       const float live_time = m_currentCurrieInput->spectrum->live_time();
@@ -2119,248 +2192,383 @@ void DetectionLimitSimple::updateResult()
 
 void DetectionLimitSimple::handleAppUrl( std::string uri )
 {
-  //blah blah blah handle all this
-  /*
-#if( PERFORM_DEVELOPER_CHECKS )
-  const string expected_uri = path + "?" + query_str;
-#endif
+  // This function is fairly forgiving to the URI, in terms of not requiring
+  //  all fields, and trooping along when it encounters invalid values.
+  //  We might want to change this at some point.
+  //
+  // Example input:
+  //  uri = "decon?nuc=Cs137&energy=661&dist=100 cm&..."
+
+ 
+  const SandiaDecay::SandiaDecayDataBase *db = DecayDataBaseServer::database();
+  if( !db )
+    throw std::logic_error( "No SandiaDecayDataBase" );
   
-   m_currentEnergy
-   
+  const bool undoWasSet = m_renderFlags.testFlag(RenderActions::AddUndoRedoStep);
   UndoRedoManager::BlockUndoRedoInserts undo_blocker;
+ 
+  string host_str, path_str, query_str, fragment_str;
+  AppUtils::split_uri( uri, host_str, path_str, query_str, fragment_str );
   
-  Quantity calcQuantity;
-  if( SpecUtils::iequals_ascii(path, "dose") )
-    calcQuantity = Quantity::Dose;
-  else if( SpecUtils::iequals_ascii(path, "act") )
-    calcQuantity = Quantity::Activity;
-  else if( SpecUtils::iequals_ascii(path, "dist") )
-    calcQuantity = Quantity::Distance;
-  else if( SpecUtils::iequals_ascii(path, "shield") )
-    calcQuantity = Quantity::Shielding;
-  else if( SpecUtils::iequals_ascii(path, "intro") )
+  const map<string,string> values = AppUtils::query_str_key_values( query_str );
+  
+  if( path_str.empty() )
+    path_str = host_str; //A URI of "CURRIE?VER=1&..." will give a host value, and not a path value
+  
+  MethodIds methodIndex = MethodIds::Currie;
+  if( SpecUtils::istarts_with(path_str, "CUR") )
+    methodIndex = MethodIds::Currie;
+  else if( SpecUtils::istarts_with(path_str, "DEC") )
+    methodIndex = MethodIds::Deconvolution;
+  else
+    throw runtime_error( "DetectionLimitSimple::handleAppUrl: URI doesnt start with valid path" );
+  
+  if( m_methodGroup->checkedId() != static_cast<int>(methodIndex) )
   {
-    handleQuantityClick( Quantity::NumQuantity );
-    return;
+    m_methodGroup->setCheckedButton( m_methodGroup->button(static_cast<int>(methodIndex)) );
+    handleMethodChanged();
+  }//if( m_methodGroup->checkedId() != static_cast<int>(methodIndex) )
+  
+  auto qpos = values.find( "VER" );
+  
+  const string ver = ((qpos != end(values)) && !qpos->second.empty()) ? qpos->second : "1";
+  if( (ver != "1") && !SpecUtils::istarts_with(ver, "1.") )
+    throw runtime_error( "DetectionLimitSimple: invalid URI version" );
+  
+  qpos = values.find( "NUC" );
+  const SandiaDecay::Nuclide *nuc = nullptr;
+  if( qpos != end(values) )
+    nuc = db->nuclide( qpos->second );
+  
+  m_nucEnterController->setNuclideText( nuc ? nuc->symbol : string() );
+  
+  // A sanity check for initial testing
+#ifndef NDEBUG
+  if( nuc )
+  {
+    const double age = m_nucEnterController->nuclideAge(); //mmm - using this maybe makes this check not totally independent???
+    
+    SandiaDecay::NuclideMixture mixture;
+    mixture.addAgedNuclideByActivity( nuc, 0.001*SandiaDecay::curie, age );
+    
+    const vector<SandiaDecay::EnergyRatePair> xrays = mixture.xrays( 0.0, SandiaDecay::NuclideMixture::HowToOrder::OrderByEnergy );
+    const vector<SandiaDecay::EnergyRatePair> gammas = mixture.gammas( 0.0, SandiaDecay::NuclideMixture::HowToOrder::OrderByEnergy, true );
+    assert( m_photoPeakEnergiesAndBr.size() == (xrays.size() + gammas.size()) );
   }else
-    throw runtime_error( "Dose Calc tool: invalid URI path." );
-  
-    
-  string inshielduri, outshielduri;
-  const size_t shieldpos = query_str.find( "&INSHIELD=&" );
-  
-  if( shieldpos != string::npos )
   {
-    inshielduri = query_str.substr(shieldpos + 11);
-    query_str = query_str.substr(0, shieldpos);
+    assert( m_photoPeakEnergiesAndBr.empty() );
   }
+#endif  //#ifndef NDEBUG
   
-  size_t outshieldpos = inshielduri.find("&OUTSHIELD=&");
-  if( outshieldpos != string::npos )
+  
+  qpos = values.find( "AGE" );
+  if( (qpos != end(values)) && !qpos->second.empty() )
   {
-    outshielduri = inshielduri.substr(outshieldpos + 12);
-    inshielduri = inshielduri.substr(0, outshieldpos);
-  }else if( (outshieldpos = query_str.find("&OUTSHIELD=&")) != string::npos )
-  {
-    outshielduri = query_str.substr(outshieldpos + 12);
-    query_str = query_str.substr(0, outshieldpos);
-  }
-  
-  if( inshielduri.empty() )
-    m_enterShieldingSelect->setToNoShielding();
-  else
-    m_enterShieldingSelect->handleAppUrl( inshielduri );
-  
-  if( outshielduri.empty() )
-    m_answerShieldingSelect->setToNoShielding();
-  else
-    m_answerShieldingSelect->handleAppUrl( outshielduri );
-  
-  SpecUtils::ireplace_all( query_str, "%23", "#" );
-  SpecUtils::ireplace_all( query_str, "%26", "&" );
-  SpecUtils::ireplace_all( query_str, "curries", "curies" ); //fix up me being a bad speller
-  
-  const map<string,string> parts = AppUtils::query_str_key_values( query_str );
-  const auto ver_iter = parts.find( "VER" );
-  if( ver_iter == end(parts) )
-    Wt::log("warn") << "No 'VER' field in Dose Calc tool URI.";
-  else if( ver_iter->second != "1" && !SpecUtils::starts_with(ver_iter->second, "1.") )
-    throw runtime_error( "Can not read Dose Calc tool URI version '" + ver_iter->second + "'" );
-  
-  auto findUnitIndex = [&parts]( const string &key, Wt::WComboBox *combo ) -> int {
-    const auto act_unit_iter = parts.find(key);
-    if( act_unit_iter == end(parts) )
-      return -1;
-    
-    for( int i = 0; i < combo->count(); ++i )
+    const string age = qpos->second;
+    try
     {
-      if( SpecUtils::iequals_ascii( combo->itemText(i).toUTF8(), act_unit_iter->second ) )
-        return i;
+      PhysicalUnits::stringToTimeDurationPossibleHalfLife(age, nuc ? nuc->halfLife : -1.0 );
+      m_nucEnterController->setNuclideAgeTxt( age );
+    }catch( std::exception &e )
+    {
+      cerr << "Failed to decode AGE string, '" << age << "', - but trooping along" << endl;
     }
-    assert( 0 );
-    return -1;
-  };//findUnitIndex
-  
-  const int act_in_unit_index = findUnitIndex( "ACTINUNIT", m_activityEnterUnits );
-  const int act_out_unit_index = findUnitIndex( "ACTOUTUNIT", m_activityAnswerUnits );
-  const int dose_in_unit_index = findUnitIndex( "DOSEINUNIT", m_doseEnterUnits );
-  const int dose_out_unit_index = findUnitIndex( "DOSEOUTUNIT", m_doseAnswerUnits );
-  
-  const auto act_iter = parts.find("ACT");
-  if( act_iter != end(parts) && !act_iter->second.empty() && (act_in_unit_index < 0) )
-    throw runtime_error( "Dose Calc tool URI does not contain activity unit info." );
-  
-  const auto dose_iter = parts.find("DOSE");
-  if( dose_iter != end(parts) && !dose_iter->second.empty() && (dose_in_unit_index < 0) )
-    throw runtime_error( "Dose Calc tool URI does not contain dose unit info." );
-  
-  m_menu->select( static_cast<int>(calcQuantity) );
-  handleQuantityClick( calcQuantity );
-  
-  if( act_in_unit_index >= 0 )
-    m_activityEnterUnits->setCurrentIndex( act_in_unit_index );
-  if( act_out_unit_index >= 0 )
-    m_activityAnswerUnits->setCurrentIndex( act_out_unit_index );
-  if( dose_in_unit_index >= 0 )
-    m_doseEnterUnits->setCurrentIndex( dose_in_unit_index );
-  if( dose_out_unit_index >= 0 )
-    m_doseAnswerUnits->setCurrentIndex( dose_out_unit_index );
-  
-  const auto nuc_iter = parts.find("NUC");
-  if( nuc_iter != end(parts) )
-    m_gammaSource->setNuclideText( nuc_iter->second );
-  
-  const auto age_iter = parts.find("AGE");
-  if( age_iter != end(parts) )
-    m_gammaSource->setNuclideAgeTxt( age_iter->second );
-  
-  if( act_iter != end(parts) )
-    m_activityEnter->setText( WString::fromUTF8(act_iter->second) );
-  else
-    m_activityEnter->setText( "" );
-  
-  if( dose_iter != end(parts) )
-    m_doseEnter->setText( WString::fromUTF8(dose_iter->second) );
-  else
-    m_doseEnter->setText( "" );
-  
-  const auto dist_iter = parts.find("DIST");
-  if( dist_iter != end(parts) )
-    m_distanceEnter->setText( WString::fromUTF8(dist_iter->second) );
-  else
-    m_distanceEnter->setText( "" );
+  }//if( qpos != end(values) )
   
   
-   updateResult();
-   m_stateUri = encodeStateToUrl();
-   m_currentNuclide = m_nucEnterController->nuclide();
-   m_currentEnergy = ;
-   m_currentAge = ;
-   
   
-#if( PERFORM_DEVELOPER_CHECKS )
-  if( m_stateUri != expected_uri )
+  float energy = 0.0f;
+  bool setEnergy = false;
+  qpos = values.find( "ENERGY" );
+  if( nuc && (qpos != end(values)) && (stringstream(qpos->second) >> energy) )
   {
-    Wt::log("warn") << "DoseCalcWidget::handleAppUrl: input URI doesnt match current URI.\n\t input: '"
-                    << expected_uri.c_str() << "'\n\tresult: '" << m_stateUri.c_str() << "'";
+    // `m_photoPeakEnergiesAndBr` should have been updated
+    double bestDiff = energy;
+    size_t nearestEnergyIndex = m_photoPeakEnergiesAndBr.size();
+    
+    for( size_t i = 0; i < m_photoPeakEnergiesAndBr.size(); ++i )
+    {
+      const double diff = fabs( energy - m_photoPeakEnergiesAndBr[i].first );
+      if( diff < bestDiff )
+      {
+        bestDiff = diff;
+        nearestEnergyIndex = i;
+      }
+    }//for( size_t i = 0; i < m_photoPeakEnergiesAndBr.size(); ++i )
+    
+    if( (bestDiff < 0.1) && (nearestEnergyIndex < m_photoPeakEnergiesAndBr.size()) )
+    {
+      m_photoPeakEnergy->setCurrentIndex( static_cast<int>(nearestEnergyIndex) );
+      energy = m_photoPeakEnergiesAndBr[nearestEnergyIndex].first;
+      m_currentEnergy = energy;
+      setEnergy = true;
+      handleGammaChanged();
+    }else
+    {
+      cerr << "Failed to find photopeak for energy=" << energy << endl;
+    }
+  }//if( URI contains ENERGY )
+  
+  float lowerRoi = m_lowerRoi->value(), upperRoi = m_upperRoi->value(), dummyFloat;
+  qpos = values.find( "LROI" );
+  if( (qpos != end(values)) && (stringstream(qpos->second) >> dummyFloat) )
+    lowerRoi = dummyFloat;
+  
+  qpos = values.find( "UROI" );
+  if( (qpos != end(values)) && (stringstream(qpos->second) >> dummyFloat) )
+    upperRoi = dummyFloat;
+  
+  if( (energy < 10.0f) || ((lowerRoi < energy) && (upperRoi > energy)) )
+  {
+    m_lowerRoi->setValue( lowerRoi );
+    m_upperRoi->setValue( upperRoi );
   }
-#endif
-   
-   */
+  
+  if( !setEnergy )
+  {
+    energy = 0.5*(lowerRoi + upperRoi);
+    m_currentEnergy = energy;
+  }
+  
+  qpos = values.find( "DIST" );
+  if( qpos != end(values) )
+  {
+    try 
+    {
+      const double dist = PhysicalUnits::stringToDistance( qpos->second );
+      if( dist >= 0.0 )
+        m_distance->setValueText( WString::fromUTF8(qpos->second) );
+    }catch( std::exception & )
+    {
+      cerr << "Failed to convert URI dist, '" << qpos->second << "' to a distance - trooping on" << endl;
+    }
+  }//if( URI has "DIST" )
+  
+  qpos = values.find( "CL" );
+  if( qpos != end(values) )
+  {
+    int nsigma;
+    if( (stringstream(qpos->second) >> nsigma) && (nsigma >= 1) && (nsigma <= 5) )
+    {
+      m_confidenceLevel->setCurrentIndex( nsigma - 1 );
+    }else
+    {
+      cerr << "Failed to convert URI CL, '" << qpos->second << "' to a to an int between 1 and 5" << endl;
+    }
+  }//if( URI has CL )
+
+  int continuumNormIndex = -1;
+  qpos = values.find( "CONTNORM" );
+  if( qpos != end(values) )
+  {
+    if( SpecUtils::istarts_with(qpos->second, "UNKN") )
+      continuumNormIndex = 0;
+    else if( SpecUtils::istarts_with(qpos->second, "NOS") )
+      continuumNormIndex = 1;
+    else if( SpecUtils::istarts_with(qpos->second, "FIX") )
+      continuumNormIndex = 2;
+    else
+      cerr << "Unexpected 'CONTNORM' value: '" << qpos->second << "'" << endl;
+  }//if( URI had continuum norm value )
+    
+  
+  if( (m_methodGroup->checkedId() == static_cast<int>(MethodIds::Currie))
+     || (continuumNormIndex >= 0) )
+  {
+    qpos = values.find( "NSIDE" );
+    if( qpos != end(values) )
+    {
+      int nside;
+      if( (stringstream(qpos->second) >> nside) && (nside >= 1) && (nside <= 64) )
+        m_numSideChannel->setValue( nside );
+      else
+        cerr << "Invalid 'NSIDE' value: '" << qpos->second << "'" << endl;
+    }//if( URI has NSIDE )
+  }//if( want value of number of side channels )
+  
+  bool setFwhm = false;
+  qpos = values.find( "FWHM" );
+  if( qpos != end(values) )
+  {
+    float fwhm;
+    if( stringstream(qpos->second) >> fwhm )
+    {
+      m_fwhm->setValue( fwhm );
+      setFwhm = true;
+    }else
+    {
+      cerr << "Invalid 'FWHM' value: '" << qpos->second << "'" << endl;
+    }
+  }//if( have FWHM value )
+  
+  if( !setFwhm )
+  {
+    m_fwhm->setValue( -1.0f ); //force `handleUserChangedFwhm()` to reset FWHM value
+    handleUserChangedFwhm();
+  }
+  
+  if( m_methodGroup->checkedId() == static_cast<int>(MethodIds::Deconvolution) )
+  {
+    if( continuumNormIndex >= 0 )
+      m_continuumPrior->setCurrentIndex( continuumNormIndex );
+    
+    
+    qpos = values.find( "CONTTYPE" );
+    if( qpos != end(values) )
+    {
+      int continuumTypeIndex = -1;
+      if( SpecUtils::istarts_with(qpos->second, "LIN") )
+        continuumTypeIndex = 0;
+      else if( SpecUtils::istarts_with(qpos->second, "QUAD") )
+        continuumTypeIndex = 1;
+      else
+        cerr << "Invalid 'CONTTYPE' value: '" << qpos->second << "'" << endl;
+      
+      if( continuumTypeIndex >= 0 )
+        m_continuumType->setCurrentIndex( continuumTypeIndex );
+    }//if( continuum type provided )
+  }//if( methodIndex == MethodIds::Deconvolution )
+  
+  m_allGammasInRoi = true;
+  qpos = values.find( "ALLGAMMA" );
+  if( qpos != end(values) )
+  {
+    if( (qpos->second == "0") || SpecUtils::iequals_ascii(qpos->second, "NO") || SpecUtils::iequals_ascii(qpos->second, "FALSE") )
+      m_allGammasInRoi = false;
+  }//if( URI contains 'ALLGAMMA' )
+  
+  // Set render flags... JIC
+  m_renderFlags |= DetectionLimitSimple::RenderActions::UpdateLimit;
+  m_renderFlags |= DetectionLimitSimple::RenderActions::UpdateDisplayedSpectrum;
+  m_renderFlags |= DetectionLimitSimple::RenderActions::UpdateSpectrumDecorations;
+  
+  if( !undoWasSet )
+    m_renderFlags.clear(RenderActions::AddUndoRedoStep);
 }//void handleAppUrl( std::string uri )
 
 
 std::string DetectionLimitSimple::encodeStateToUrl() const
 {
-  NuclideSourceEnterController *m_nucEnterController;
-  Wt::WComboBox *m_photoPeakEnergy;
-  Wt::WLineEdit *m_distance;
-  enum ConfidenceLevel { OneSigma, TwoSigma, ThreeSigma, FourSigma, FiveSigma, NumConfidenceLevel };
-  Wt::WComboBox *m_confidenceLevel;
-  Wt::WButtonGroup *m_methodGroup;
-  NativeFloatSpinBox *m_lowerRoi;
-  NativeFloatSpinBox *m_upperRoi;
-  Wt::WSpinBox *m_numSideChannel;
-  NativeFloatSpinBox *m_fwhm;
-  Wt::WComboBox *m_continuumPrior;
-  Wt::WComboBox *m_continuumType;
-  const SandiaDecay::Nuclide *m_currentNuclide;
-  double m_currentAge;
-  double m_currentEnergy;
-  bool m_allGammasInRoi;
-  
-  /*
-  // "interspec://simple-mda/act?nuc=u238&dose=1.1ur/h&dist=100cm&..."
-  
   string answer;
   
-  switch( m_currentCalcQuantity )
-  {
-    case Dose:        answer += "dose";   break;
-    case Activity:    answer += "act";    break;
-    case Distance:    answer += "dist";   break;
-    case Shielding:   answer += "shield"; break;
-    case NumQuantity: answer += "intro"; break;
-  }//switch( m_currentCalcQuantity )
+  const bool currieMethod = (m_methodGroup->checkedId() == static_cast<int>(MethodIds::Currie));
+  answer += currieMethod ? "CURRIE" : "DECON";
   
   answer += "?VER=1";
-
-  if( m_currentCalcQuantity == NumQuantity )
-    return answer;
   
-  // We could limit what info we put in the URL, based on current m_currentCalcQuantity,
-  //  but we might as well put the full state into the URI.
-  
-  auto addTxtField = [&answer]( const string &key, Wt::WLineEdit *edit ){
-    string txt = edit->text().toUTF8();
-    SpecUtils::ireplace_all( txt, "#", "%23" );
-    SpecUtils::ireplace_all( txt, "&", "%26" );
-    answer += "&" + key + "=" + txt;
-  };
-
-  const SandiaDecay::Nuclide *nuc = m_gammaSource->nuclide();
+  const SandiaDecay::Nuclide *nuc = m_nucEnterController->nuclide();
   if( nuc )
-    answer += "&NUC=" + nuc->symbol;
-  
-  if( nuc && !PeakDef::ageFitNotAllowed(nuc) )
-    answer += "&AGE=" + m_gammaSource->nuclideAgeStr().toUTF8();
-  
-  addTxtField( "ACT", m_activityEnter );
-  answer += "&ACTINUNIT=" + m_activityEnterUnits->currentText().toUTF8();
-  answer += "&ACTOUTUNIT=" + m_activityAnswerUnits->currentText().toUTF8();
-  
-  addTxtField( "DOSE", m_doseEnter );
-  answer += "&DOSEINUNIT=" + m_doseEnterUnits->currentText().toUTF8();
-  answer += "&DOSEOUTUNIT=" + m_doseAnswerUnits->currentText().toUTF8();
-  
-  addTxtField( "DIST", m_distanceEnter );
-  
-  // We'll mark shielding URL starting with the below, and everything after this is the shielding.
-  //  Having an order-independent method would be better, but for the moment...
-  switch( m_currentCalcQuantity )
   {
-    case Dose:
-    case Activity:
-    case Distance:
-      if( !m_enterShieldingSelect->isNoShielding() )
-        answer += "&INSHIELD=&" + m_enterShieldingSelect->encodeStateToUrl();
-      break;
+    answer += "&NUC=" + nuc->symbol;  //SpecUtils::to_upper_ascii(nuc->symbol)
+    
+    WString age = m_nucEnterController->nuclideAgeStr();
+    if( !age.empty() )
+    {
+      answer += "&AGE=";
       
-    case Shielding:
-      if( !m_answerShieldingSelect->isNoShielding() )
-        answer += "&OUTSHIELD=&" + m_answerShieldingSelect->encodeStateToUrl();
-      break;
-      
-    case NumQuantity:
-      break;
-  }//switch( m_currentCalcQuantity )
+      // We need to make sure the age is always in English
+      const string origAge = age.toUTF8();
+      try
+      {
+        PhysicalUnits::stringToTimeDurationPossibleHalfLife(origAge, nuc->halfLife );
+        
+        // If here, we could interpret age without current localization - should be in English,
+        //  use the string exactly.
+        answer += origAge;
+      }catch( std::exception & )
+      {
+        // Count number of orig significant figures
+        int num_sig_fig = 0;
+        for( const char &c : origAge )
+          num_sig_fig += ((c >= '0') && (c <= '9'));
+        
+        num_sig_fig = std::max( 3, num_sig_fig ); //JIC we messed up, use at least 3 sig figs
+        const double age = m_nucEnterController->nuclideAge();
+        answer += PhysicalUnits::printToBestTimeUnits( age, num_sig_fig );
+      }//try / catch to convert string to
+    }//if( !age.empty() )
+  }//if( m_nucEnterController->nuclide() )
+  
+  float energy = DetectionLimitSimple::photopeakEnergy();
+  if( energy > 10.0 )
+  {
+    answer += "&ENERGY=" + SpecUtils::printCompact( energy, 6 );
+  }else
+  {
+    // We wont explicitly put energy here, since tool assumes center of ROI
+    assert( !nuc );
+    energy = 0.5f*(m_lowerRoi->value() + m_upperRoi->value());
+  }//if( have photopeak energy )
+  
+  answer += "&LROI=" + m_lowerRoi->valueText().toUTF8();
+  answer += "&UROI=" + m_upperRoi->valueText().toUTF8();
+  
+  if( m_distance->validate() == WValidator::State::Valid )
+  {
+    // We dont (currently?) localize distance, so we should be good to directly
+    //  embed the users text to the URL.
+    answer += "&DIST=" + m_distance->text().toUTF8();
+  }
+  
+  answer += "&CL=";
+  const int clIndex = m_confidenceLevel->currentIndex();
+  const ConfidenceLevel confidence = ConfidenceLevel(clIndex);
+  
+  switch( confidence )
+  {
+    case OneSigma:   answer += "1"; break;
+    case TwoSigma:   answer += "2"; break;
+    case ThreeSigma: answer += "3"; break;
+    case FourSigma:  answer += "4"; break;
+    case FiveSigma:  answer += "5"; break;
+    case NumConfidenceLevel: assert(0); break;
+  }//switch( confidence )
+  
+  const bool useSideChan = (m_continuumPrior->currentIndex() == 2);
+  if( currieMethod || useSideChan )
+    answer += "&NSIDE=" + std::to_string(m_numSideChannel->value());
   
   
+  shared_ptr<const DetectorPeakResponse> drf = m_detectorDisplay->detector();
+  if( drf && (!drf->isValid() || !drf->hasResolutionInfo()) )
+    drf.reset();
+  
+  // Only include FWHM if its set by the user, or there is no DRF
+  //  I'm not totally decided how to handle this quantity
+  if( !drf || (fabs(m_fwhm->value() - drf->peakResolutionFWHM(energy)) > 0.1) )
+    answer += "&FWHM=" + m_fwhm->valueText().toUTF8();
+  
+  if( !currieMethod )
+  {
+    answer += "&CONTNORM=";
+    switch( m_continuumPrior->currentIndex() )
+    {
+      case 0: answer += "UNKNOWN"; break;
+      case 1: answer += "NOSIG"; break;
+      case 2: answer += "FIXED"; break;
+        
+      default:
+        assert( 0 );
+        throw logic_error( "Invalid m_continuumPrior" );
+    }//switch( m_continuumPrior->currentIndex() )
+    
+    answer += "&CONTTYPE=";
+    
+    const int continuumTypeIndex = m_continuumType->currentIndex();
+    switch( continuumTypeIndex )
+    {
+      case 0: answer += "LIN"; break;
+      case 1: answer += "QUAD"; break;
+      default:
+        assert( 0 );
+        throw std::logic_error( "Invalid continuuuum type selected" );
+    }//switch( continuumTypeIndex )
+  }//if( !currieMethod )
+  
+  if( !m_allGammasInRoi )
+    answer += "&ALLGAMMA=0";
   
   return answer;
-   */
-  //blah blah blah handle all this
-  return "";
 }//std::string encodeStateToUrl() const;
 
 

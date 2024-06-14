@@ -124,9 +124,9 @@ public:
   void handleAppUrl( std::string uri );
   
   /** Encodes current tool state to app-url format.  Returned string does not include the
-   "interspec://" protocol, or "simple-mda" authority; so will look something like "decon?nuc=Cs137&energy=661&dist=100cm&...",
+   "interspec://" protocol, or "simple-mda" authority; so will look something like "decon?nuc=Cs137&energy=661&dist=100 cm&...",
    The path part of the URI specifies tab the tool is on.
-   and it will not be url-encoded.
+   and it will not be url-encoded (will likely contain spaces).
    */
   std::string encodeStateToUrl() const;
 protected:
@@ -142,7 +142,7 @@ protected:
                    double original_roi_lower_energy,
                    bool is_final_range );
   
-  void handleMethodChanged( Wt::WRadioButton *btn );
+  void handleMethodChanged();
   
   void handleNuclideChanged();
   
@@ -173,9 +173,11 @@ protected:
   /** Returns the confidence level (ex., 0.95, 0.9973, etc) that is selected by the GUI. */
   double currentConfidenceLevel() const;
   
-  void createDeconvolutionLimitMoreInfo();
+  SimpleDialog *createDeconvolutionLimitMoreInfo();
   
   void createMoreInfoWindow();
+  void handleMoreInfoWindowClose( SimpleDialog *dialog );
+  void programmaticallyCloseMoreInfoWindow();
   
   void updateResult();
   
@@ -228,6 +230,13 @@ protected:
   
   DetectorDisplay *m_detectorDisplay;
   
+  /** Enum to track ID of `m_methodGroup` */
+  enum class MethodIds : int
+  {
+    Currie = 0,
+    Deconvolution = 1
+  };
+  
   Wt::WButtonGroup *m_methodGroup;
   Wt::WText *m_methodDescription;
   
@@ -246,6 +255,8 @@ protected:
   Wt::WComboBox *m_continuumPrior;
   Wt::WLabel *m_continuumTypeLabel;
   Wt::WComboBox *m_continuumType;
+  
+  SimpleDialog *m_moreInfoWindow;
   
   const SandiaDecay::Nuclide *m_currentNuclide;
   double m_currentAge;

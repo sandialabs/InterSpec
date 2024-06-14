@@ -230,7 +230,7 @@ public:
    @param shield_transmission This is the fraction of gammas that will make it through the shielding without interacting.
         e.g., with no shielding will have value of 1.0, with heavy shielding will go towards zero.
    */
-  static void createCurrieRoiMoreInfoWindow( const SandiaDecay::Nuclide *const nuclide,
+  static SimpleDialog *createCurrieRoiMoreInfoWindow( const SandiaDecay::Nuclide *const nuclide,
                                   const DetectionLimitCalc::CurrieMdaResult &result,
                                   std::shared_ptr<const DetectorPeakResponse> drf,
                                   DetectionLimitTool::LimitType limitType,

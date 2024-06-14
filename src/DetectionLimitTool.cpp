@@ -1694,7 +1694,7 @@ void DetectionLimitTool::update_spectrum_for_currie_result( D3SpectrumDisplayDiv
 }//void update_spectrum_for_currie_result( D3SpectrumDisplayDiv *chart, PeakModel *pmodel )
 
 
-void DetectionLimitTool::createCurrieRoiMoreInfoWindow( const SandiaDecay::Nuclide *const nuclide,
+SimpleDialog *DetectionLimitTool::createCurrieRoiMoreInfoWindow( const SandiaDecay::Nuclide *const nuclide,
                                 const DetectionLimitCalc::CurrieMdaResult &result,
                                 std::shared_ptr<const DetectorPeakResponse> drf,
                                 DetectionLimitTool::LimitType limitType,
@@ -2109,7 +2109,9 @@ void DetectionLimitTool::createCurrieRoiMoreInfoWindow( const SandiaDecay::Nucli
     msg->addStyleClass( "content" );
     msg->setInline( false );
   }//try / catch
-}//void createCurrieRoiMoreInfoWindow()
+  
+  return dialog;
+}//SimpleDialog *createCurrieRoiMoreInfoWindow()
 
 
 Wt::Json::Object DetectionLimitTool::generateChartJson( const DetectionLimitCalc::DeconActivityOrDistanceLimitResult &result, const bool is_dist_limit )
