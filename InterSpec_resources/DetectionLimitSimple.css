@@ -53,6 +53,36 @@
 
 .DetectionLimitSimple .GeneralInput {
   display: grid;
+  margin-left: 20px;
+  margin-right: 20px;
+  margin-top: 5px;
+  
+  row-gap: 5px;
+  column-gap: 5px;
+}
+
+.DetectionLimitSimple .GeneralInput .DetectorDisplay {
+  /* justify-self: stretch; */
+  width: 229px;
+}
+
+.DetectionLimitSimple .GeneralInput > input {
+  /* justify-self: stretch; */
+  width: 105px;
+}
+
+.DetectionLimitSimple .GeneralInput > select {
+  /* justify-self: stretch; */
+  width: 110px;
+}
+
+.DetectionLimitSimple .GeneralInput input.Wt-spinbox {
+  /* justify-self: stretch; */
+  width: 89px;
+}
+
+.DetectionLimitSimple .GeneralInput .SpacerColumn {
+  width: 15px;
 }
 
 .DetectionLimitSimple .GeneralInput .NuclideSourceEnter {
@@ -85,12 +115,16 @@
 .DeconvMoreInfo {
   display: flex;
   flex-direction: column;
+  align-items: center;
 }
 
 .DeconvMoreInfo .DeconChi2Chart {
   overflow: hidden;
-  width: 250px;
+  width: 300px;
   height: 200px;
+  margin-bottom: 10px;
+  margin-left: 10px;
+  margin-right: 10px;
 }
 
 

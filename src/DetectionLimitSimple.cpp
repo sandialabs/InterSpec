@@ -126,8 +126,8 @@ DetectionLimitSimpleWindow::DetectionLimitSimpleWindow( MaterialDB *materialDB,
     try
     {
       const string url = "interspec://simple-mda/" + Wt::Utils::urlEncode(m_tool->encodeStateToUrl());
-      QrCode::displayTxtAsQrCode( url, WString::tr("dlsw-qr-tool-state-title"),
-                                 WString::tr("dlsw-qr-tool-state-txt") );
+      QrCode::displayTxtAsQrCode( url, WString::tr("dls-qr-tool-state-title"),
+                                 WString::tr("dls-qr-tool-state-txt") );
     }catch( std::exception &e )
     {
       passMessage( WString::tr("app-qr-err").arg(e.what()), WarningWidget::WarningMsgHigh );
@@ -252,7 +252,7 @@ void DetectionLimitSimple::init()
   m_errMsg = new WText( WString::tr("dls-err-no-input"), errorDiv );
   m_errMsg->addStyleClass( "ErrMsg" );
   
-  m_fitFwhmBtn = new WPushButton( "Fit FWHM...", errorDiv );
+  m_fitFwhmBtn = new WPushButton( WString::tr("dls-fit-fwhm-btn"), errorDiv );
   m_fitFwhmBtn->addStyleClass( "MdaFitFwhm LightButton" );
   m_fitFwhmBtn->clicked().connect( this, &DetectionLimitSimple::handleFitFwhmRequested );
   m_fitFwhmBtn->hide();
@@ -289,7 +289,7 @@ void DetectionLimitSimple::init()
   
   // Now put the "more info..." link below here and to the right
   m_moreInfoButton = new WPushButton( resultsDiv );
-  m_moreInfoButton->setText( "further details..." );
+  m_moreInfoButton->setText( WString::tr("dls-further-details-link") );
   m_moreInfoButton->setStyleClass( "LinkBtn MdaMoreInfoBtn" );
   m_moreInfoButton->clicked().connect( this, &DetectionLimitSimple::createMoreInfoWindow );
   m_moreInfoButton->setHiddenKeepsGeometry( true );
@@ -314,6 +314,11 @@ void DetectionLimitSimple::init()
   
   nucLabel->addStyleClass( "GridFirstCol GridFirstRow GridVertCenter" );
   m_nuclideEdit->addStyleClass( "GridSecondCol GridFirstRow" );
+  
+  WText *dummyThirdRow = new WText( "&nbsp;", generalInput );
+  dummyThirdRow->addStyleClass( "GridThirdCol GridFirstRow GridStretchCol SpacerColumn" );
+  
+  
   ageLabel->addStyleClass( "GridFirstCol GridSecondRow GridVertCenter" );
   m_nuclideAgeEdit->addStyleClass( "GridSecondCol GridSecondRow" );
   
@@ -335,21 +340,20 @@ void DetectionLimitSimple::init()
   
   
   m_photoPeakEnergy = new WComboBox( generalInput );
-  m_photoPeakEnergy->setWidth( WLength(13.5,WLength::FontEm) );
   m_photoPeakEnergy->activated().connect( this, &DetectionLimitSimple::handleGammaChanged );
-  m_photoPeakEnergy->addStyleClass( "GridSecondCol GridThirdRow GridVertCenter" );
+  m_photoPeakEnergy->addStyleClass( "GridSecondCol GridThirdRow GridVertCenter PhotopeakComboBox" );
   
   // TODO: Add FWHM input.  Add text for DRF default, or the button to fit from data.
   //       when user changes this value - dont change ROI limits, just recalc deconv, and redraw either decon or Currie
   
   
   // Add Distance input
-  WLabel *distanceLabel = new WLabel( WString::tr("Distance"), generalInput );
-  distanceLabel->addStyleClass( "GridThirdCol GridFirstRow GridVertCenter" );
+  WLabel *distanceLabel = new WLabel( WString("{1}:").arg(WString::tr("Distance")), generalInput );
+  distanceLabel->addStyleClass( "GridFourthCol GridFirstRow GridVertCenter" );
   
   m_prevDistance = "100 cm";
   m_distance = new WLineEdit( m_prevDistance, generalInput );
-  m_distance->addStyleClass( "GridFourthCol GridFirstRow GridStretchCol" );
+  m_distance->addStyleClass( "GridFifthCol GridFirstRow GridStretchCol" );
   distanceLabel->setBuddy( m_distance );
   
   m_distance->setAttributeValue( "ondragstart", "return false" );
@@ -367,10 +371,10 @@ void DetectionLimitSimple::init()
   
   
   // Add confidence select
-  WLabel *confidenceLabel = new WLabel( "Confidence Level:", generalInput );
-  confidenceLabel->addStyleClass( "GridThirdCol GridSecondRow GridVertCenter" );
+  WLabel *confidenceLabel = new WLabel( WString::tr("dls-conf-level-label"), generalInput );
+  confidenceLabel->addStyleClass( "GridFourthCol GridSecondRow GridVertCenter" );
   m_confidenceLevel = new WComboBox( generalInput );
-  m_confidenceLevel->addStyleClass( "GridFourthCol GridSecondRow" );
+  m_confidenceLevel->addStyleClass( "GridFifthCol GridSecondRow ClComboBox" );
   
   for( auto cl = ConfidenceLevel(0); cl < NumConfidenceLevel; cl = ConfidenceLevel(cl+1) )
   {
@@ -396,13 +400,13 @@ void DetectionLimitSimple::init()
   // Add DRF select
   SpectraFileModel *specFileModel = m_viewer->fileManager()->model();
   m_detectorDisplay = new DetectorDisplay( m_viewer, specFileModel, generalInput );
-  m_detectorDisplay->addStyleClass( "GridThirdCol GridThirdRow GridSpanTwoCol GridSpanTwoRows GridVertCenter GridJustifyCenter" );
+  m_detectorDisplay->addStyleClass( "DetectorDisplay GridFourthCol GridThirdRow GridSpanTwoCol GridSpanTwoRows GridVertCenter" );
   m_viewer->detectorChanged().connect( boost::bind( &DetectionLimitSimple::handleDetectorChanged, this, boost::placeholders::_1 ) );
   m_viewer->detectorModified().connect( boost::bind( &DetectionLimitSimple::handleDetectorChanged, this, boost::placeholders::_1 ) );
   
   
   
-  WLabel *lowerRoiLabel = new WLabel( "ROI Lower:", generalInput );
+  WLabel *lowerRoiLabel = new WLabel( WString::tr("dls-roi-lower-label"), generalInput );
   lowerRoiLabel->addStyleClass( "GridFirstCol GridFourthRow GridVertCenter" );
   
   m_lowerRoi = new NativeFloatSpinBox( generalInput );
@@ -410,7 +414,7 @@ void DetectionLimitSimple::init()
   lowerRoiLabel->setBuddy( m_lowerRoi );
   m_lowerRoi->addStyleClass( "GridSecondCol GridFourthRow" );
   
-  WLabel *upperRoiLabel = new WLabel( "ROI Upper:", generalInput );
+  WLabel *upperRoiLabel = new WLabel( WString::tr("dls-roi-upper-label"), generalInput );
   upperRoiLabel->addStyleClass( "GridFirstCol GridFifthRow GridVertCenter" );
   
   m_upperRoi = new NativeFloatSpinBox( generalInput );
@@ -422,16 +426,19 @@ void DetectionLimitSimple::init()
   m_upperRoi->valueChanged().connect( this, &DetectionLimitSimple::handleUserChangedRoi );
   
   // Num Side Channel
-  m_numSideChannelLabel = new WLabel( "Num Side Chan.:", generalInput );
-  m_numSideChannelLabel->addStyleClass( "GridThirdCol GridFifthRow GridVertCenter" );
+  m_numSideChannelLabel = new WLabel( WString::tr("dls-num-side-channel-label"), generalInput );
+  m_numSideChannelLabel->addStyleClass( "GridFourthCol GridFifthRow GridVertCenter" );
   m_numSideChannel = new WSpinBox( generalInput );
-  m_numSideChannel->addStyleClass( "GridFourthCol GridFifthRow" );
+  m_numSideChannel->addStyleClass( "GridFifthCol GridFifthRow" );
   m_numSideChannel->setRange( 1, 64 );
   m_numSideChannel->setValue( 4 );
   m_numSideChannelLabel->setBuddy( m_numSideChannel );
   m_numSideChannel->valueChanged().connect( this, &DetectionLimitSimple::handleUserChangedNumSideChannel );
   
-  WLabel *fwhmLabel = new WLabel( "FWHM:", generalInput );
+  m_numSideChannelLabel->setHiddenKeepsGeometry( true );
+  m_numSideChannel->setHiddenKeepsGeometry( true );
+  
+  WLabel *fwhmLabel = new WLabel( WString::tr("dls-fwhm-label"), generalInput );
   fwhmLabel->addStyleClass( "GridFirstCol GridSixthRow" );
   m_fwhm = new NativeFloatSpinBox( generalInput );
   m_fwhm->setRange( 0.05f, 250.0f );
@@ -441,30 +448,33 @@ void DetectionLimitSimple::init()
   m_fwhm->valueChanged().connect( this, &DetectionLimitSimple::handleUserChangedFwhm );
   
   m_fwhmSuggestTxt = new WText( generalInput );
-  m_fwhmSuggestTxt->addStyleClass( "FwhmSuggest GridThirdCol GridSixthRow GridVertCenter" );
-  m_addFwhmBtn = new WPushButton( "Fit FWHM...", generalInput );
+  m_fwhmSuggestTxt->addStyleClass( "FwhmSuggest GridThirdCol GridSixthRow GridVertCenter GridSpanTwoCol" );
+  m_addFwhmBtn = new WPushButton( WString::tr("dls-fit-fwhm-btn"), generalInput );
   m_addFwhmBtn->clicked().connect( this, &DetectionLimitSimple::handleFitFwhmRequested );
-  m_addFwhmBtn->addStyleClass( "MdaFitFwhm LightButton GridFourthCol GridSixthRow" );
+  m_addFwhmBtn->addStyleClass( "MdaFitFwhm LightButton GridFifthCol GridSixthRow" );
   
   
-  m_continuumPriorLabel = new WLabel( "Prior:", generalInput );
+  m_continuumPriorLabel = new WLabel( WString::tr("dls-deon-cont-norm-label"), generalInput );
   m_continuumPriorLabel->addStyleClass( "GridFirstCol GridSeventhRow GridVertCenter" );
   m_continuumPrior = new WComboBox( generalInput );
-  m_continuumPrior->addItem( "Unknown or Present" );
-  m_continuumPrior->addItem( "Not Present" );
-  m_continuumPrior->addItem( "Cont. from sides" );
+  m_continuumPrior->addItem( WString::tr("dls-cont-norm-unknown") );
+  m_continuumPrior->addItem( WString::tr("dls-cont-norm-not-present") );
+  m_continuumPrior->addItem( WString::tr("dls-cont-norm-fixed-by-sides") );
   m_continuumPrior->setCurrentIndex( 0 );
   m_continuumPrior->activated().connect( this, &DetectionLimitSimple::handleDeconPriorChange );
-  m_continuumPrior->addStyleClass( "GridSecondCol GridSeventhRow" );
+  m_continuumPrior->addStyleClass( "ContTypeCombo GridSecondCol GridSeventhRow" );
+  
+  m_continuumPriorLabel->setHiddenKeepsGeometry( true );
+  m_continuumPrior->setHiddenKeepsGeometry( true );
   
   m_continuumTypeLabel = new WLabel( "Continuum Type:", generalInput );
-  m_continuumTypeLabel->addStyleClass( "GridThirdCol GridSeventhRow GridVertCenter" );
+  m_continuumTypeLabel->addStyleClass( "GridFourthCol GridSeventhRow GridVertCenter" );
   m_continuumType = new WComboBox( generalInput );
-  m_continuumType->addItem( "Linear" );
-  m_continuumType->addItem( "Quadratic" );
+  m_continuumType->addItem( WString::tr( PeakContinuum::offset_type_label_tr(PeakContinuum::OffsetType::Linear) ) );
+  m_continuumType->addItem( WString::tr( PeakContinuum::offset_type_label_tr(PeakContinuum::OffsetType::Quadratic) ) );
   m_continuumType->setCurrentIndex( 0 );
   m_continuumType->activated().connect( this, &DetectionLimitSimple::handleDeconContinuumTypeChange );
-  m_continuumType->addStyleClass( "GridFourthCol GridSeventhRow" );
+  m_continuumType->addStyleClass( "GridFifthCol GridSeventhRow" );
   
   m_continuumPriorLabel->hide();
   m_continuumPrior->hide();
@@ -472,9 +482,9 @@ void DetectionLimitSimple::init()
   m_continuumType->hide();
   
   WContainerWidget *container = new WContainerWidget( generalInput );
-  container->addStyleClass( "MethodSelect GridFirstCol GridEighthRow GridSpanFourCol" );
+  container->addStyleClass( "MethodSelect GridFirstCol GridEighthRow GridSpanFiveCol" );
   
-  WLabel *methodLabel = new WLabel( "Calc. Method:", container);
+  WLabel *methodLabel = new WLabel( WString::tr("dls-calc-method"), container);
   
   m_methodGroup = new WButtonGroup( container );
   WRadioButton *currieBtn = new Wt::WRadioButton( WString::tr("dls-currie-tab-title"), container );
@@ -487,7 +497,7 @@ void DetectionLimitSimple::init()
   m_methodGroup->checkedChanged().connect( boost::bind(&DetectionLimitSimple::handleMethodChanged, this, boost::placeholders::_1) );
   
   m_methodDescription = new WText( WString::tr("dls-currie-desc"), generalInput );
-  m_methodDescription->addStyleClass( "CalcMethodDesc GridSecondCol GridNinthRow GridSpanThreeCol" );
+  m_methodDescription->addStyleClass( "CalcMethodDesc GridSecondCol GridNinthRow GridSpanFourCol" );
   
   m_renderFlags |= DetectionLimitSimple::RenderActions::UpdateDisplayedSpectrum;
   m_renderFlags |= DetectionLimitSimple::RenderActions::UpdateLimit;
@@ -516,7 +526,7 @@ void DetectionLimitSimple::roiDraggedCallback( double new_roi_lower_energy,
      && ((m_currentEnergy < new_roi_lower_energy) || (m_currentEnergy > new_roi_upper_energy)) )
   {
     if( is_final_range )
-      passMessage( "Changing the ROI excluded primary gamma - not changing", WarningWidget::WarningMsgHigh );
+      passMessage( WString::tr("dls-roi-changed-no-gamma"), WarningWidget::WarningMsgHigh );
     return;
   }
   
@@ -662,9 +672,9 @@ void DetectionLimitSimple::handleUserChangedFwhm()
     const double drf_fwhm = drf->peakResolutionFWHM( energy );
     if( fabs(fwhm - drf_fwhm) > 0.1 )
     {
-      char text[128] = { '\0' };
-      snprintf( text, sizeof(text), "Detector FWHM: %.2f keV", drf_fwhm );
-      m_fwhmSuggestTxt->setText( text );
+      char text[32] = { '\0' };
+      snprintf( text, sizeof(text), "%.2f", drf_fwhm );
+      m_fwhmSuggestTxt->setText( WString::tr("dls-suggest-fwhm").arg(text) );
       m_fwhmSuggestTxt->show();
     }else
     {
@@ -675,9 +685,9 @@ void DetectionLimitSimple::handleUserChangedFwhm()
     m_addFwhmBtn->show();
     const float est_fwhm = std::max( 0.1f, PeakSearchGuiUtils::estimate_FWHM_of_foreground(energy) );
     
-    char text[128] = { '\0' };
-    snprintf( text, sizeof(text), "Rough Est. FWHM: %.2f keV", est_fwhm );
-    m_fwhmSuggestTxt->setText( text ); //"No functional FWHM"
+    char text[32] = { '\0' };
+    snprintf( text, sizeof(text), "%.2f", est_fwhm );
+    m_fwhmSuggestTxt->setText( WString::tr("dls-rough-est-fwhm").arg(est_fwhm) ); //"No functional FWHM"
     m_fwhmSuggestTxt->show();
   }//if( DRF has FEHM info ) / else
   
@@ -1258,16 +1268,14 @@ void DetectionLimitSimple::updateSpectrumDecorationsAndResultText()
           nomstr = PhysicalUnits::printToBestActivityUnits( nominal_act, 2, use_curie )
           + DetectorPeakResponse::det_eff_geom_type_postfix( det_geom );
           
-          result_txt = "Detected activity of " + nomstr + ", with range "
-                       "[" + lowerstr + ", " + upperstr + "], @"  + cl_str + " CL";
+          result_txt = WString::tr("dls-det-act-with-range").arg(nomstr).arg(lowerstr).arg(upperstr).arg(cl_str);
         }else
         {
           lowerstr = SpecUtils::printCompact(result->lower_limit, 4);
           upperstr = SpecUtils::printCompact(result->upper_limit, 4);
           nomstr = SpecUtils::printCompact(result->source_counts, 4);
           
-          result_txt = "Excess counts of " + nomstr + ", "
-                       "with range [" + lowerstr + ", " + upperstr + "] @"  + cl_str + " CL";
+          result_txt = WString::tr("dls-det-counts-with-range").arg(nomstr).arg(lowerstr).arg(upperstr).arg(cl_str);
         }
       }else if( result->upper_limit < 0 )
       {
@@ -1277,12 +1285,10 @@ void DetectionLimitSimple::updateSpectrumDecorationsAndResultText()
         
         if( gammas_per_bq > 0.0 )
         {
-          result_txt = "Activity < 0 " + unitstr + " "
-          "(observed significantly fewer counts than expected).";
+          result_txt = WString::tr("dls-det-act-less-zero").arg(unitstr);
         }else
         {
-          result_txt = "Excess counts < 0 " + unitstr + " "
-          "(observed significantly fewer counts than expected).";
+          result_txt = WString::tr("dls-det-counts-less-zero").arg(unitstr);
         }
       }else
       {
@@ -1298,25 +1304,26 @@ void DetectionLimitSimple::updateSpectrumDecorationsAndResultText()
           mdastr = SpecUtils::printCompact( result->upper_limit, 4 ) + " signal counts";
         }
         
-        result_txt = "Less than " + mdastr + " present @" + cl_str + " CL.";
+        result_txt = WString::tr("dls-det-upper-bound").arg(mdastr).arg(cl_str);
       }//if( detected ) / else if( ....)
       
-      result_txt += "<br/>";
+      WString full_result_txt( "{1}<br/>{2}" );
+      full_result_txt.arg(result_txt);
+      
       if( gammas_per_bq > 0.0 )
       {
-        result_txt += "Minimum reliably detectable activity: ";
         const double detection_act = result->detection_limit / gammas_per_bq;
-        result_txt += PhysicalUnits::printToBestActivityUnits( detection_act, 2, use_curie )
-                      + DetectorPeakResponse::det_eff_geom_type_postfix( det_geom )
-                      + ".";
+        const string act = PhysicalUnits::printToBestActivityUnits( detection_act, 2, use_curie )
+                          + DetectorPeakResponse::det_eff_geom_type_postfix( det_geom );
+        
+        full_result_txt.arg( WString::tr("dls-min-detectable-act").arg(act) );
       }else
       {
-        result_txt += "Minimum reliably detectable excess counts: ";
-        result_txt += SpecUtils::printCompact(result->detection_limit, 4);
+        const string counts = SpecUtils::printCompact(result->detection_limit, 4);
+        full_result_txt.arg( WString::tr("dls-min-detectable-counts").arg( counts ) );
       }
       
-      
-      m_resultTxt->setText( result_txt );
+      m_resultTxt->setText( full_result_txt );
       m_moreInfoButton->show();
     }//if( m_currentCurrieInput )
   }else
@@ -1326,7 +1333,7 @@ void DetectionLimitSimple::updateSpectrumDecorationsAndResultText()
     
     if( !m_currentDeconResults )
     {
-      m_spectrum->setChartTitle( "Error computing result" );
+      m_spectrum->setChartTitle( WString::tr("dls-error-computing-results") );
       m_peakModel->setPeaks( vector<PeakDef>{} );
     }else
     {
@@ -1376,14 +1383,8 @@ void DetectionLimitSimple::updateSpectrumDecorationsAndResultText()
           const string nomstr = SpecUtils::printCompact(nominal_counts, 4);
           const string upperstr = SpecUtils::printCompact(upper_limit_counts, 4);
           
-          const string cl_txt = "Estimated counts of " + nomstr + ".";
-          
-          const string sum_txt = "Detected counts of " + nomstr + "."
-          "<br/>"
-          "Range: [" + lowerstr + ", " + upperstr + "] @"  + cl_str + " CL";
-          
-          chart_title = WString::fromUTF8( cl_txt );
-          result_txt = WString::fromUTF8( sum_txt );
+          chart_title = WString::tr("dls-chart-title-estimated-counts").arg( nomstr );
+          result_txt = WString::tr("dls-results-txt-estimated-counts").arg(nomstr).arg(lowerstr).arg(upperstr).arg(cl_str);
         }else
         {
           const string nomstr = PhysicalUnits::printToBestActivityUnits(result.overallBestQuantity, 3, use_curie);
@@ -1396,8 +1397,8 @@ void DetectionLimitSimple::updateSpectrumDecorationsAndResultText()
           "<br/>"
           "Range: [" + lowerstr + ", " + upperstr + "] @"  + cl_str + " CL";
           
-          chart_title = WString::fromUTF8( cl_txt );
-          result_txt = WString::fromUTF8( sum_txt );
+          chart_title = WString::tr("dls-chart-title-estimated-act").arg(nomstr);
+          result_txt = WString::tr("dls-results-txt-estimated-act").arg(nomstr).arg(lowerstr).arg(upperstr).arg(cl_str);
         }//if( !m_currentNuclide ) / else
         
         assert( result.overallBestResults );
@@ -1425,20 +1426,13 @@ void DetectionLimitSimple::updateSpectrumDecorationsAndResultText()
                                         ? result.upperLimitResults->fit_peaks[0].amplitude() : -1.0;
           const string upperstr = SpecUtils::printCompact(upper_limit_counts, 4);
           
-          const string cl_txt = "Peak for upper bound of " + upperstr + " counts @" + cl_str + " CL";
-          chart_title = WString::fromUTF8( cl_txt );
-          
-          const string sum_txt = "Less than " + upperstr + " signal counts present @" + cl_str + " CL";
-          result_txt = WString::fromUTF8( sum_txt );
+          chart_title = WString::tr("dls-chart-title-upper-bound-counts").arg(upperstr).arg(cl_str);
+          result_txt = WString::tr("dls-results-txt-upper-bound-counts").arg(upperstr).arg(cl_str);
         }else
         {
           const string upperstr = PhysicalUnits::printToBestActivityUnits(result.upperLimit, 3, use_curie);
-          
-          const string cl_txt = "Peak for upper bound of " + upperstr + " @" + cl_str + " CL";
-          chart_title = WString::fromUTF8( cl_txt );
-          
-          const string sum_txt = "Less than " + upperstr + " @" + cl_str + " CL";
-          result_txt = WString::fromUTF8( sum_txt );
+          chart_title = WString::tr("dls-chart-title-upper-bound-act").arg(upperstr).arg(cl_str);
+          result_txt = WString::tr("dls-results-txt-upper-bound-act").arg(upperstr).arg(cl_str);
         }//if( !m_currentNuclide ) / else
         
         assert( result.upperLimitResults );
@@ -1508,10 +1502,21 @@ void DetectionLimitSimple::createDeconvolutionLimitMoreInfo()
   if( !result.baseInput.roi_info.size() )
     throw runtime_error( "No ROI info available" );
   
+  assert( !result.isDistanceLimit );
+  
+  double distance = 0.0;
+  try
+  {
+    distance = PhysicalUnits::stringToDistance( m_distance->text().toUTF8() );
+  }catch( std::exception & )
+  {
+    distance = -1.0;
+  }
+  
   shared_ptr<const SpecUtils::Measurement> measurement = result.baseInput.measurement;
   assert( measurement );
   if( !measurement )
-    throw runtime_error( "No measurement available" );
+    throw runtime_error( WString::tr("dls-err-no-meas").toUTF8() );
   
   double energy = 0.0;
   const int energyIndex = m_photoPeakEnergy->currentIndex();
@@ -1525,11 +1530,11 @@ void DetectionLimitSimple::createDeconvolutionLimitMoreInfo()
   
   wApp->require( "InterSpec_resources/DetectionLimitTool.js" );
   
-  char buffer[256];
-  snprintf( buffer, sizeof(buffer), "%s%.2f keV Info",
+  char buffer[256] = { '\0' };
+  snprintf( buffer, sizeof(buffer), "%s%.2f keV {1}",
            (m_currentNuclide ? (m_currentNuclide->symbol + " ").c_str() : ""), energy );
   
-  SimpleDialog *dialog = new SimpleDialog( buffer );
+  SimpleDialog *dialog = new SimpleDialog( WString(buffer).arg(WString::tr("dls-Info")) );
   dialog->addButton( WString::tr("Close") );
   
   WContainerWidget *contents = new WContainerWidget( dialog->contents() );
@@ -1559,20 +1564,22 @@ void DetectionLimitSimple::createDeconvolutionLimitMoreInfo()
   
   if( !m_currentNuclide )
   {
-    WText *txt = new WText( "(activity is assuming a BR=1.0)", contents );
+    WText *txt = new WText( WString::tr("dls-assumed-br=1"), contents );
     txt->addStyleClass( "AssumedBrNote" );
     txt->setInline( false );
   }//if( !m_currentNuclide )
   
   // Now create rows of text information.
-  WTable *table = new WTable( dialog->contents() );
+  WTable *table = new WTable( contents );
   table->addStyleClass( "DeconvoMoreInfoTable" );
   
   
   
   
-  const auto print_result = [table, use_curie, measurement, roi_start, roi_end]( const DetectionLimitCalc::DeconComputeResults &result, const bool is_best, const WString typestr ){
-    WString label = WString("{1} Activity").arg(typestr);
+  const auto print_result = [table, use_curie, measurement, roi_start, roi_end]( 
+                                        const DetectionLimitCalc::DeconComputeResults &result,
+                                        const bool is_best, const WString typestr ){
+    WString label = WString("{1} {2}").arg(typestr).arg( WString::tr("dls-Limit") );
     WString value = PhysicalUnits::printToBestActivityUnits( result.input.activity, 3, use_curie );
     
     WTableCell *cell = table->elementAt( table->rowCount(), 0 );
@@ -1581,14 +1588,15 @@ void DetectionLimitSimple::createDeconvolutionLimitMoreInfo()
     new WText( value, cell );
     
     
-    label = WString("{1} Counts").arg(typestr);
+    label = WString("{1} {2}").arg(typestr).arg( WString::tr("dls-Limit") );
     double counts = 0.0, uncert = 0.0;
     for( const auto peak : result.fit_peaks )
     {
       counts += peak.peakArea();
-      uncert += peak.peakAreaUncert() * peak.peakAreaUncert();
+      uncert += peak.peakAreaUncert() * peak.peakAreaUncert(); //We dont actually hav an uncertainty
     }
-    value = PhysicalUnits::printValueWithUncertainty(counts, sqrt(uncert), 5);
+    value = SpecUtils::printCompact(counts, 5) + " counts";
+    //value = PhysicalUnits::printValueWithUncertainty(counts, sqrt(uncert), 5);
     
     cell = table->elementAt( table->rowCount(), 0 );
     new WText( label, cell );
@@ -1605,7 +1613,7 @@ void DetectionLimitSimple::createDeconvolutionLimitMoreInfo()
     if( !is_best )
       return;
     
-    label = "DOF";
+    label = WString::tr("dls-DOF");
     value = std::to_string( result.num_degree_of_freedom );
     cell = table->elementAt( table->rowCount(), 0 );
     new WText( label, cell );
@@ -1614,7 +1622,7 @@ void DetectionLimitSimple::createDeconvolutionLimitMoreInfo()
     
     if( result.fit_peaks.size() )
     {
-      label = "Cont. Area";
+      label = WString::tr("dls-continuum-area");
       const PeakDef &peak = result.fit_peaks.front();
       const double cont_area = peak.continuum()->offset_integral(roi_start, roi_end, measurement);
       value = SpecUtils::printCompact(cont_area, 5);
@@ -1626,22 +1634,129 @@ void DetectionLimitSimple::createDeconvolutionLimitMoreInfo()
     }//if( result.overallBestResults->fit_peaks.size() )
   };//const auto print_result
   
-  
-  if( result.overallBestResults )
-    print_result( *result.overallBestResults, true, "Best" );
+  if( result.foundUpperCl && result.upperLimitResults )
+    print_result( *result.upperLimitResults, false, WString::tr("dls-Upper") );
   
   if( result.foundLowerCl && result.lowerLimitResults )
-    print_result( *result.lowerLimitResults, false, "Lower" );
+    print_result( *result.lowerLimitResults, false, WString::tr("dls-Lower") );
   
-  if( result.foundUpperCl && result.upperLimitResults )
-    print_result( *result.upperLimitResults, false, "Upper" );
+  if( result.overallBestResults )
+    print_result( *result.overallBestResults, true, WString::tr("dls-Best") );
   
-  // Assumed FWHM
-  // Lower energy range
-  // Upper energy range
-  // Number of FWHM in range
-  // Number of channels
   
+  WString label, value;
+  
+  label = WString::tr("FWHM");
+  const double fwhm = m_fwhm->value();
+  snprintf( buffer, sizeof(buffer), "%.2f keV", fwhm );
+  value = WString::fromUTF8( buffer );
+  WTableCell *cell = table->elementAt( table->rowCount(), 0 );
+  new WText( label, cell );
+  cell = table->elementAt( table->rowCount() - 1, 1 );
+  new WText( value, cell );
+  
+  label = WString::tr("dls-ROI-range-label");
+  snprintf( buffer, sizeof(buffer), "[%.2f, %.2f]", roi_start, roi_end );
+  value = WString::fromUTF8( buffer );
+  cell = table->elementAt( table->rowCount(), 0 );
+  new WText( label, cell );
+  cell = table->elementAt( table->rowCount() - 1, 1 );
+  new WText( value, cell );
+  
+  label = WString::tr("dls-ROI-Channels-label");
+  const size_t lower_chan = measurement->find_gamma_channel( roi_start + 0.0001 );
+  const size_t upper_chan = measurement->find_gamma_channel( roi_end - 0.0001 );
+  const string channels_str = "[" + std::to_string(lower_chan) + ", " + std::to_string(upper_chan) + "]";
+  value = WString::fromUTF8( channels_str );
+  cell = table->elementAt( table->rowCount(), 0 );
+  new WText( label, cell );
+  cell = table->elementAt( table->rowCount() - 1, 1 );
+  new WText( value, cell );
+  
+  label = WString::tr("dls-ROI-Width");
+  snprintf( buffer, sizeof(buffer), "%.3f %s", (roi_end - roi_start)/fwhm, WString::tr("FWHM").toUTF8().c_str() );
+  value = WString::fromUTF8( buffer );
+  cell = table->elementAt( table->rowCount(), 0 );
+  new WText( label, cell );
+  cell = table->elementAt( table->rowCount() - 1, 1 );
+  new WText( value, cell );
+  
+  shared_ptr<const DetectorPeakResponse> drf = m_detectorDisplay->detector();
+  
+  // Add a blank row
+  cell = table->elementAt( table->rowCount(), 0 );
+  new WText( "&nbsp;", TextFormat::XHTMLText, cell );
+  
+  if( drf && drf->isValid() )
+  {
+    const double intrinsic_eff = drf->intrinsicEfficiency( energy );
+    
+    label = WString::tr("dls-det-intrinsic-eff");
+    value = SpecUtils::printCompact( intrinsic_eff, 5 );
+    
+    cell = table->elementAt( table->rowCount(), 0 );
+    new WText( label, cell );
+    cell = table->elementAt( table->rowCount() - 1, 1 );
+    new WText( value, cell );
+    //addTooltipToRow( "The efficiency for a gamma hitting the detector face,"
+    //                " to be detected in the full-energy peak." );
+    
+    if( distance >= 0.0 )
+    {
+      const double geom_eff = drf->fractionalSolidAngle( drf->detectorDiameter(), distance );
+      
+      label = WString::tr("dls-solid-angle-frac");
+      value = SpecUtils::printCompact( geom_eff, 5 );
+      
+      cell = table->elementAt( table->rowCount(), 0 );
+      new WText( label, cell );
+      cell = table->elementAt( table->rowCount() - 1, 1 );
+      new WText( value, cell );
+      //addTooltipToRow( "The fraction of the solid angle, the detector face takes up, at the specified distance." );
+    }//if( distance >= 0.0 )
+  }//if( drf )
+  
+  
+  
+  if( (distance > 0.0)
+     && (!drf || (drf->geometryType() == DetectorPeakResponse::EffGeometryType::FarField) ) 
+     && result.baseInput.include_air_attenuation )
+  {
+    const double air_atten_coef = GammaInteractionCalc::transmission_coefficient_air( energy, distance );
+    const double air_transmission = exp( -1.0 * air_atten_coef );
+    
+    label = WString::tr("dls-air-trans");
+    value = SpecUtils::printCompact( air_transmission, 5 );
+    
+    cell = table->elementAt( table->rowCount(), 0 );
+    new WText( label, cell );
+    cell = table->elementAt( table->rowCount() - 1, 1 );
+    new WText( value, cell );
+    //addTooltipToRow( "The fraction of gammas, at this energy, that will make it through the air (assuming sea level) without interacting." );
+  }//if( air_atten )
+  
+  double branch_ratio = 0.0;
+  const float live_time = measurement->live_time();
+  
+  for( const auto &roi : result.baseInput.roi_info )
+  {
+    for( const DetectionLimitCalc::DeconRoiInfo::PeakInfo &peak : roi.peak_infos )
+      branch_ratio += peak.counts_per_bq_into_4pi / live_time;
+  }//for( const auto &roi : result.baseInput.roi_info )
+  
+  if( branch_ratio > 0.0 )
+  {
+    label = WString::tr("dls-gamma-intensity");
+    value = SpecUtils::printCompact( branch_ratio, 5 );
+    
+    cell = table->elementAt( table->rowCount(), 0 );
+    new WText( label, cell );
+    cell = table->elementAt( table->rowCount() - 1, 1 );
+    new WText( value, cell );
+    //addTooltipToRow( "The number of gamma rays emitted at this energy, from the radioactive"
+    //                " source before any shielding, but accounting for nuclide age,"
+    //                " per decay of the parent nuclide." );
+  }//if( branch_ratio > 0.0 )
 }//void createDeconvolutionLimitMoreInfo()
 
 
@@ -1709,12 +1824,9 @@ void DetectionLimitSimple::createMoreInfoWindow()
     }//if( currieMethod ) / else
   }catch( std::exception &e )
   {
-    char buffer[256];
-    snprintf( buffer, sizeof(buffer), "Error computing limit..." );
-    
-    SimpleDialog *dialog = new SimpleDialog( buffer,
-                                            WString("Error computing limit information: {1}").arg(e.what()) );
-    dialog->addButton( "Close" );
+    SimpleDialog *dialog = new SimpleDialog( WString::tr("dls-err-more-info-title"),
+                                            WString::tr("dls-err-more-info-content").arg(e.what()) );
+    dialog->addButton( WString::tr("Close") );
   }//try / catch
 }//void createMoreInfoWindow()
 
@@ -1783,17 +1895,18 @@ void DetectionLimitSimple::updateResult()
       //if( (energyIndex < 0) || (energyIndex >= static_cast<int>(m_photoPeakEnergiesAndBr.size())) )
       //  throw runtime_error( "Please select gamma energy." );
       
-      const shared_ptr<const DetectorPeakResponse> drf = m_detectorDisplay->detector();
+      shared_ptr<const DetectorPeakResponse> drf = m_detectorDisplay->detector();
+      if( drf && !drf->isValid() )
+        drf.reset();
       
+      // TODO: we could modify the deconvolution-style computations to not need a DRF for activity limits.
       // We need to calculate deconvolution-style limit
       if( !drf )
-        throw runtime_error( "Please select a detector efficiency function." );
+        throw runtime_error( WString::tr("dls-err-select-det").toUTF8() );
         
-      if( !drf->hasResolutionInfo() )
-      {
-        m_fitFwhmBtn->show();
-        throw runtime_error( "DRF does not have FWHM info - please fit for FWHM, or change DRF." );
-      }
+      m_fitFwhmBtn->setHidden( !drf || drf->hasResolutionInfo() );
+      if( !drf || !drf->hasResolutionInfo() )
+        throw runtime_error( WString::tr("dls-err-no-fwhm-info").toUTF8() );
       
       
       if( m_distance->validate() != WValidator::State::Valid )
@@ -1809,7 +1922,7 @@ void DetectionLimitSimple::updateResult()
       }
       
       if( distance < 0.0 )
-        throw runtime_error( "Distance can't be negative." );
+        throw runtime_error( WString::tr("dls-err-neg-distance").toUTF8() );
       
       DetectionLimitCalc::DeconRoiInfo roiInfo;
       roiInfo.roi_start = m_lowerRoi->value(); // Will be rounded to nearest channel edge.
@@ -1921,8 +2034,7 @@ void DetectionLimitSimple::updateResult()
         for( const DetectionLimitCalc::DeconRoiInfo::PeakInfo &peak_info : roiInfo.peak_infos )
           src_gammas_per_bq += peak_info.counts_per_bq_into_4pi;
         
-        if( drf 
-           && drf->isValid()
+        if( drf
            && (distance >= 0.0)
            && (src_gammas_per_bq > 0) 
            && m_currentCurrieInput->spectrum )
