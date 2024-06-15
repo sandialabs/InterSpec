@@ -2063,7 +2063,7 @@ SimpleDialog *DetectionLimitTool::createCurrieRoiMoreInfoWindow( const SandiaDec
             nomstr = PhysicalUnits::printToBestActivityUnits( nominal_act, 2, useCuries )
                       + DetectorPeakResponse::det_eff_geom_type_postfix( det_geom );
             if( nominal_act < 0 )
-              nomstr = "< " + PhysicalUnits::printToBestActivityUnits( 0.0, 2, useCuries )
+              nomstr = "&lt; " + PhysicalUnits::printToBestActivityUnits( 0.0, 2, useCuries )
                         + DetectorPeakResponse::det_eff_geom_type_postfix( det_geom );
           }else
           {

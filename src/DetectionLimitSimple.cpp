@@ -1415,12 +1415,6 @@ void DetectionLimitSimple::updateSpectrumDecorationsAndResultText()
           const string lowerstr = PhysicalUnits::printToBestActivityUnits(result.lowerLimit, 3, use_curie);
           const string upperstr = PhysicalUnits::printToBestActivityUnits(result.upperLimit, 3, use_curie);
           
-          const string cl_txt = "Estimated activity of " + nomstr + ".";
-          
-          const string sum_txt = "Detected activity of " + nomstr + "."
-          "<br/>"
-          "Range: [" + lowerstr + ", " + upperstr + "] @"  + cl_str + " CL";
-          
           chart_title = WString::tr("dls-chart-title-estimated-act").arg(nomstr);
           result_txt = WString::tr("dls-results-txt-estimated-act").arg(nomstr).arg(lowerstr).arg(upperstr).arg(cl_str);
         }//if( !m_currentNuclide ) / else

@@ -27,8 +27,8 @@
   <message id="dls-qr-tool-state-title">Simple MDA Tool State</message>
   <message id="dls-qr-tool-state-txt">Current state of the Simple MDA tool.</message>
 
-  <message id="dls-det-act-with-range">Detected activity of {1}, with range [{2}, {3}], @{4} CL</message>
-  <message id="dls-det-counts-with-range">Excess counts of {1}, with range [{2}, {3}], @{4} CL</message>
+  <message id="dls-det-act-with-range">Detected: {1}, range [{2}, {3}], @{4} CL</message>
+  <message id="dls-det-counts-with-range">Excess counts: {1}, range [{2}, {3}], @{4} CL</message>
   <message id="dls-det-act-less-zero">Activity &lt; 0 {1} (observed significantly fewer counts than expected).</message>
   <message id="dls-det-counts-less-zero">Excess counts &lt; 0 {2} (observed significantly fewer counts than expected).</message>
   <message id="dls-det-upper-bound">Less than {1} present @{2} CL.</message>
