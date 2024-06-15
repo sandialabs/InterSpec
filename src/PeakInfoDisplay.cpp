@@ -568,8 +568,6 @@ void PeakInfoDisplay::createNewPeak()
     auto closer = wApp->bind( boost::bind( &AuxWindow::deleteAuxWindow, window ) );
     undoManager->addUndoRedoStep( closer, nullptr , "Open add peak dialog." );
   }//if( undoManager )
-  
-  return window;
 }//createNewPeak()
 
 
