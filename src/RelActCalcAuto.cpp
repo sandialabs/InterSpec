@@ -4667,7 +4667,7 @@ void RelActAutoSolution::print_html_report( std::ostream &out ) const
                cps_over_yield,
                fit_rel_eff,
                100*fit_rel_eff_uncert,
-               PeakContinuum::offset_type_label( info.continuum()->type() ),
+               Wt::WString::tr(PeakContinuum::offset_type_label_tr( info.continuum()->type() )).toUTF8().c_str(),
                info.continuum()->lowerEnergy(),
                info.continuum()->upperEnergy()
                );

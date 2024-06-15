@@ -82,6 +82,7 @@
 #include "InterSpec/D3SpectrumDisplayDiv.h"
 #include "InterSpec/DetectorPeakResponse.h"
 #include "InterSpec/IsotopeNameFilterModel.h"
+#include "InterSpec/PhysicalUnitsLocalized.h"
 #include "InterSpec/ReferencePhotopeakDisplay.h"
 
 
@@ -323,8 +324,8 @@ namespace
       // We wont allow "External" here
       for( int i = 0; i < static_cast<int>(PeakContinuum::OffsetType::External); ++i )
       {
-        const char *label = PeakContinuum::offset_type_label( PeakContinuum::OffsetType(i) );
-        m_continuum_type->addItem( label );
+        const char *key = PeakContinuum::offset_type_label_tr( PeakContinuum::OffsetType(i) );
+        m_continuum_type->addItem( WString::tr(key) );
       }//for( loop over PeakContinuum::OffsetType )
       
       m_continuum_type->setCurrentIndex( static_cast<int>(PeakContinuum::OffsetType::Linear) );
@@ -599,7 +600,7 @@ namespace
       m_age_edit = new WLineEdit( "", this );
       m_age_label->setBuddy( m_age_edit );
       
-      WRegExpValidator *validator = new WRegExpValidator( PhysicalUnits::sm_timeDurationHalfLiveOptionalRegex, this );
+      WRegExpValidator *validator = new WRegExpValidator( PhysicalUnitsLocalized::timeDurationHalfLiveOptionalRegex(), this );
       validator->setFlags(Wt::MatchCaseInsensitive);
       m_age_edit->setValidator(validator);
       m_age_edit->setAutoComplete( false );
@@ -823,7 +824,7 @@ namespace
       try
       {
         const string agestr = m_age_edit->text().toUTF8();
-        age = PhysicalUnits::stringToTimeDurationPossibleHalfLife( agestr, nuc->halfLife );
+        age = PhysicalUnitsLocalized::stringToTimeDurationPossibleHalfLife( agestr, nuc->halfLife );
       }catch( std::exception & )
       {
         age = PeakDef::defaultDecayTime( nuc );
@@ -895,7 +896,7 @@ namespace
         m_age_edit->setText( WString::fromUTF8(agestr) );
       }else
       {
-        const string agestr = PhysicalUnits::printToBestTimeUnits(info.age);
+        const string agestr = PhysicalUnitsLocalized::printToBestTimeUnits(info.age);
         m_age_edit->setText( WString::fromUTF8(agestr) );
       }
       // Not currently supported: info.gammas_to_exclude -> vector<double>;
@@ -1260,8 +1261,6 @@ RelActAutoGui::RelActAutoGui( InterSpec *viewer, Wt::WContainerWidget *parent )
   m_spectrum = new D3SpectrumDisplayDiv();
   m_spectrum->setCompactAxis( true );
   m_spectrum->disableLegend();
-  m_spectrum->setXAxisTitle( "Energy (keV)" );
-  m_spectrum->setYAxisTitle( "Counts" );
   m_interspec->colorThemeChanged().connect( boost::bind( &D3SpectrumDisplayDiv::applyColorTheme, m_spectrum, boost::placeholders::_1 ) );
   m_spectrum->applyColorTheme( m_interspec->getColorTheme() );
   
@@ -2351,7 +2350,7 @@ void RelActAutoGui::handleRightClick( const double energy, const double counts,
   for( auto type = PeakContinuum::OffsetType(0);
       type < PeakContinuum::External; type = PeakContinuum::OffsetType(type+1) )
   {
-    WMenuItem *item = continuum_menu->addItem( PeakContinuum::offset_type_label(type) );
+    WMenuItem *item = continuum_menu->addItem( WString::tr(PeakContinuum::offset_type_label_tr(type)) );
     item->triggered().connect( boost::bind( &RelActAutoEnergyRange::setContinuumType, range, type ) );
     if( type == roi.continuum_type )
       item->setDisabled( true );
@@ -4679,7 +4678,7 @@ void RelActAutoGui::updateFromCalc( std::shared_ptr<RelActCalcAuto::RelActAutoSo
       
       if( fit_nuc.nuclide == nuc->nuclide() )
       {
-        const string agestr = PhysicalUnits::printToBestTimeUnits( fit_nuc.age, 3 );
+        const string agestr = PhysicalUnitsLocalized::printToBestTimeUnits( fit_nuc.age, 3 );
         nuc->setAge( agestr );
         break;
       }//if( this is the widget for this nuclide )

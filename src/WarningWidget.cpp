@@ -528,10 +528,30 @@ void WarningWidget::addMessageUnsafe( const Wt::WString &msg,
     
     
     // Remove any script so we wont store that
-    WString sanitized = msg;
+    WString sanitized;
+    
     // Wt::Utils::removeScript() will print out a message like
     //  "[secure] "XSS: discarding invalid attribute: onclick:..."
-    // when it removes stuff.
+    // when it removes stuff - this is annoying, so lets manually remove
+    // this attribute so I dont have to see this warning so much
+    string msg_utf8 = msg.toUTF8();
+    const auto onclick_pos = msg_utf8.find( "onclick=\"");
+    if( onclick_pos != string::npos )
+    {
+      const auto end_pos = msg_utf8.find( "return false;\"", onclick_pos );
+      if( end_pos != string::npos )
+      {
+        msg_utf8 = msg_utf8.substr(0,onclick_pos) + msg_utf8.substr(end_pos + 14);
+        sanitized = WString::fromUTF8( msg_utf8 );
+      }else
+      {
+        sanitized = msg;
+      }
+    }else
+    {
+      sanitized = msg;
+    }//if( onclick_pos != string::npos ) / else
+    
     if( !Wt::Utils::removeScript(sanitized) )
       sanitized = Wt::Utils::htmlEncode( sanitized, Wt::Utils::HtmlEncodingFlag::EncodeNewLines );
     

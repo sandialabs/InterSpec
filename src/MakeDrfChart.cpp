@@ -111,6 +111,8 @@ MakeDrfChart::MakeDrfChart( Wt::WContainerWidget *parent )
   
   setPreferredMethod( WPaintedWidget::HtmlCanvas );
   
+  InterSpec::instance()->useMessageResourceBundle( "MakeDrf" );
+    
   setType( Chart::ScatterPlot );
   //m_chart->axis(Chart::XAxis).setLabelFormat( "%.2f" );
   axis(Chart::XAxis).setScale( Chart::LinearScale );
@@ -174,10 +176,10 @@ MakeDrfChart::MakeDrfChart( Wt::WContainerWidget *parent )
   setPlotAreaPadding(25, Wt::Bottom);
   
   axis(Chart::YAxis).setVisible( true );
-  axis(Chart::YAxis).setTitle( "Intrinsic Eff." );
+  axis(Chart::YAxis).setTitle( WString::tr("md-geom-intrinsic-eff") );
   
   axis(Chart::Y2Axis).setVisible( true );
-  axis(Chart::Y2Axis).setTitle( "FWHM" );
+  axis(Chart::Y2Axis).setTitle( WString::tr("FWHM") );
 
 #if( WT_VERSION >= 0x3030400 )
   axis(Wt::Chart::Y1Axis).setTitleOrientation( Wt::Vertical );
@@ -188,13 +190,13 @@ MakeDrfChart::MakeDrfChart( Wt::WContainerWidget *parent )
   axis(Chart::Y1Axis).setMargin( 0 );
   axis(Chart::Y2Axis).setMargin( 0 );
   
-  m->setHeaderData( sm_energy_col, Wt::Horizontal, boost::any(WString("Energy (keV)")), Wt::DisplayRole );
-  m->setHeaderData( sm_data_eff_col, Wt::Horizontal, boost::any(WString("Data Intrinsic Eff.")), Wt::DisplayRole );
-  m->setHeaderData( sm_data_fwhm_col, Wt::Horizontal, boost::any(WString("Data FWHM")), Wt::DisplayRole );
-  m->setHeaderData( sm_equation_eff_col, Wt::Horizontal, boost::any(WString("Fit Intrinsic Eff.")), Wt::DisplayRole );
-  m->setHeaderData( sm_equation_eff_neg_uncert_col, Wt::Horizontal, boost::any(WString("Intrinsic Eff. +2&#963;")), Wt::DisplayRole );
-  m->setHeaderData( sm_equation_eff_pos_uncert_col, Wt::Horizontal, boost::any(WString("Fit Intrinsic Eff. -2&#963;")), Wt::DisplayRole );
-  m->setHeaderData( sm_equation_fwhm_col, Wt::Horizontal, boost::any(WString("Fit FWHM")), Wt::DisplayRole );
+  m->setHeaderData( sm_energy_col, Wt::Horizontal, boost::any( WString::tr("Energy (keV)") ), Wt::DisplayRole );
+  m->setHeaderData( sm_data_eff_col, Wt::Horizontal, boost::any(WString::tr("md-chart-data-intrinsic-eff-label")), Wt::DisplayRole );
+  m->setHeaderData( sm_data_fwhm_col, Wt::Horizontal, boost::any(WString::tr("md-chart-data-fwhm-label")), Wt::DisplayRole );
+  m->setHeaderData( sm_equation_eff_col, Wt::Horizontal, boost::any(WString::tr("md-chart-fit-intrinsic-eff-label")), Wt::DisplayRole );
+  m->setHeaderData( sm_equation_eff_neg_uncert_col, Wt::Horizontal, boost::any(WString::tr("md-chart-intrinsic-eff-plus-label")), Wt::DisplayRole );
+  m->setHeaderData( sm_equation_eff_pos_uncert_col, Wt::Horizontal, boost::any(WString::tr("md-chart-intrinsic-eff-minus-label")), Wt::DisplayRole );
+  m->setHeaderData( sm_equation_fwhm_col, Wt::Horizontal, boost::any(WString::tr("md-chart-fit-fwhm-label")), Wt::DisplayRole );
   
   setLegendEnabled( true );
   setLegendLocation( Wt::Chart::LegendLocation::LegendInside, Wt::Top, Wt::AlignmentFlag::AlignRight );
@@ -809,9 +811,9 @@ void MakeDrfChart::setDataPoints( const std::vector<MakeDrfChart::DataPoint> &da
   updateDataToModel();
   
   if( det_diameter > 0.0 )
-    axis(Chart::YAxis).setTitle( "Intrinsic Eff." );
+    axis(Chart::YAxis).setTitle( WString::tr("md-geom-intrinsic-eff") );
   else
-    axis(Chart::YAxis).setTitle( "Efficiency" );
+    axis(Chart::YAxis).setTitle( WString::tr("Efficiency") );
   
   if( update_xrange )
     m_xRangeChanged.emit(m_det_lower_energy,m_det_upper_energy);

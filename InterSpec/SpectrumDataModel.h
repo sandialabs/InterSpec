@@ -42,10 +42,9 @@ namespace SpecUtils{ class Measurement; }
 
 class SpectrumDataModel: public Wt::WAbstractItemModel
 {
-  /********\
-  | This class is a holding area for data on the graph. It allows for
-  | accessing, modifying, etc. the data points in order to shift data
-  | and then draw it.
+  /**
+  | This is used to store foreground/background/secondary spectra for use
+  | within the `SpectrumChart` class.
   |
   | When using any of the WAbstractItemModel or WModelIndex function calls,
   | this class has each column correspond to a piece of data:
@@ -57,8 +56,7 @@ class SpectrumDataModel: public Wt::WAbstractItemModel
   | The given x value for a bin is the center of the bin, not either edge.
   | Note that ROOT TH1s use the lower edge as the x value, and this is _not_
   | the case.
-  |
-  \********/
+  */
 
 public:
   // Some convenient constants for addressing the columns.
@@ -78,8 +76,14 @@ public:
   // If one of the following functions that add or change a histogram would
   // encounter a binning inconsistency, it might throw an std::runtime_error
   
-  //setDataHistogram(): also sets m_secondSF and m_backgroundSF to
-  //  m_dataLiveTime/m_{Second|Background}LiveTime
+  /** Sets the foreground data histogram.
+   
+   Also sets `m_secondSF` and `m_backgroundSF` to
+      `m_dataLiveTime/m_{Second|Background}LiveTime`
+   
+   If you are also using a `PeakModel` with the `SpectrumChart`, make sure to also
+   set the data to it as well, or hook it up to `dataSet()` signal as well.
+   */
   void setDataHistogram( std::shared_ptr<const SpecUtils::Measurement> hist );
   
   //setSecondDataHistogram(): also sets m_secondSF to m_dataLiveTime/m_secondDataLiveTime

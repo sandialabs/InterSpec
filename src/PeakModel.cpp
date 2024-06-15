@@ -63,7 +63,6 @@
 #include "InterSpec/PeakFitChi2Fcn.h"
 #include "InterSpec/PeakInfoDisplay.h"  //Only for ALLOW_PEAK_COLOR_DELEGATE
 #include "InterSpec/UndoRedoManager.h"
-#include "InterSpec/SpectrumDataModel.h"
 #include "InterSpec/DecayDataBaseServer.h"
 
 
@@ -1006,7 +1005,7 @@ void PeakModel::PeakCsvResource::handleRequest( const Wt::Http::Request &/*reque
   if( !m_model || !m_model->m_peaks )
     return;
 
-  std::shared_ptr<const SpecUtils::Measurement> data = m_model->m_dataModel->getData();
+  const shared_ptr<const SpecUtils::Measurement> &data = m_model->m_foreground;
   
   PeakModel::write_peak_csv( response.out(), specfilename, *m_model->m_peaks, data );
 }//void handleRequest(...)
@@ -1018,11 +1017,15 @@ void PeakModel::PeakCsvResource::handleRequest( const Wt::Http::Request &/*reque
 
 PeakModel::PeakModel( Wt::WObject *parent )
   : WAbstractItemModel( parent ),
-    m_dataModel( NULL ),
+    m_foreground( nullptr ),
     m_sortColumn( kMean ),
     m_sortOrder( Wt::AscendingOrder ),
     m_csvResource( NULL )
 {
+  auto app = dynamic_cast<InterSpecApp *>( WApplication::instance() );
+  if( app )
+    app->useMessageResourceBundle( "PeakModel" );
+  
   m_csvResource = new PeakCsvResource( this );
   
 #if( PERFORM_DEVELOPER_CHECKS )
@@ -1035,12 +1038,10 @@ PeakModel::~PeakModel()
 }//~PeakModel()
 
 
-
-void PeakModel::setDataModel( SpectrumDataModel *dataModel )
+void PeakModel::setForeground( shared_ptr<const SpecUtils::Measurement> spec )
 {
-  m_dataModel = dataModel;
-}//void setDataModel( SpectrumDataModel *dataModel );
-
+  m_foreground = std::move(spec);
+}//void setForeground( std::shared_ptr<const SpecUtils::Measurement> spec )
 
 
 void PeakModel::setPeakFromSpecMeas( std::shared_ptr<SpecMeas> meas,
@@ -1073,7 +1074,7 @@ void PeakModel::setPeakFromSpecMeas( std::shared_ptr<SpecMeas> meas,
   {
     boost::function<bool(const PeakShrdPtr &, const PeakShrdPtr &)> sortfcn, meansort;
     
-    shared_ptr<const SpecUtils::Measurement> data = m_dataModel ? m_dataModel->getData() : nullptr;
+    const shared_ptr<const SpecUtils::Measurement> &data = m_foreground;
     sortfcn = boost::bind( &PeakModel::compare, boost::placeholders::_1, boost::placeholders::_2,
                           m_sortColumn, m_sortOrder, data );
     meansort = boost::bind( &PeakModel::compare, boost::placeholders::_1, boost::placeholders::_2,
@@ -1154,7 +1155,7 @@ PeakModel::PeakShrdPtr PeakModel::nearestPeak( double energy ) const
     return nullptr;
   
   boost::function<bool( const PeakShrdPtr &, const PeakShrdPtr &)> meansort;
-  shared_ptr<const SpecUtils::Measurement> data = m_dataModel ? m_dataModel->getData() : nullptr;
+  const shared_ptr<const SpecUtils::Measurement> &data = m_foreground;
   meansort = boost::bind( &PeakModel::compare, boost::placeholders::_1, boost::placeholders::_2,
                          kMean, Wt::AscendingOrder, data );
   PeakDef *new_peak_ptr = new PeakDef();
@@ -1230,22 +1231,19 @@ std::vector<PeakDef> PeakModel::peakVec() const
 
 bool PeakModel::isWithinRange( const PeakDef &peak ) const
 {
-  if( !m_dataModel )
-    return false;
-
-  std::shared_ptr<const SpecUtils::Measurement> xaxis = m_dataModel->histUsedForXAxis();
-
-  if( !xaxis )
+  assert( m_foreground );
+  
+  if( !m_foreground )
   {
     cerr << "PeakModel::isWithinRange(...)\n\tThere is no xaxis!" << endl;
     return false;
   }
 
-  const auto energycal = xaxis->energy_calibration();
+  const auto energycal = m_foreground->energy_calibration();
   assert( energycal );
   
-  const double lowerx = xaxis->gamma_energy_min();
-  const double upperx = xaxis->gamma_energy_max();
+  const double lowerx = m_foreground->gamma_energy_min();
+  const double upperx = m_foreground->gamma_energy_max();
 
   switch( peak.type() )
   {
@@ -1307,7 +1305,7 @@ std::pair<std::shared_ptr<const PeakDef>,Wt::WModelIndex> PeakModel::addNewPeakI
   //Need to go through and estimate the Chi2Dof here.
   
   boost::function<bool(const PeakShrdPtr &, const PeakShrdPtr &)> sortfcn, meansort;
-  shared_ptr<const SpecUtils::Measurement> data = m_dataModel ? m_dataModel->getData() : nullptr;
+  const shared_ptr<const SpecUtils::Measurement> &data = m_foreground;
   sortfcn = boost::bind( &PeakModel::compare, boost::placeholders::_1, boost::placeholders::_2,
                         m_sortColumn, m_sortOrder, data );
   meansort = boost::bind( &PeakModel::compare, boost::placeholders::_1, boost::placeholders::_2,
@@ -1341,26 +1339,22 @@ void PeakModel::addPeaks( const vector<PeakDef> &peaks )
 
 void PeakModel::definePeakXRange( PeakDef &peak )
 {
-  std::shared_ptr<const SpecUtils::Measurement> data, continuum;
-  std::shared_ptr<PeakContinuum> peakcont = peak.continuum();
+  const shared_ptr<const SpecUtils::Measurement> &data = m_foreground;
+ 
+  shared_ptr<PeakContinuum> peakcont = peak.continuum();
+  assert( peakcont );
   
-  if( m_dataModel )
+  if( !peakcont->energyRangeDefined() )
   {
-    data = m_dataModel->getData();
+    // We'll set the peak limits to save cpu (or rather memory-time) later
     
-    if( peakcont->type() == PeakContinuum::External )
-      continuum = peakcont->externalContinuum();
-  }//if( m_dataModel )
-  
-  if( !peakcont->energyRangeDefined() && peakcont->isPolynomial() )
-  {
+    // TODO: We could do a better job setting the range if external continuum defined.
+    //       i.e. if( peakcont->type() == PeakContinuum::External ){}
+    
     double lowerEnengy, upperEnergy;
-    std::shared_ptr<const SpecUtils::Measurement> data;
-    if( m_dataModel )
-      data = m_dataModel->getData();
     findROIEnergyLimits( lowerEnengy, upperEnergy, peak, data );
     peakcont->setRange( lowerEnengy, upperEnergy );
-  }//if( we should set the peak limits to save cpu (or rather memmorry-time) later
+  }//if( !peakcont->energyRangeDefined() )
 }//void definePeakXRange( PeakDef &peak )
 
 
@@ -1433,7 +1427,7 @@ void PeakModel::setPeaks( vector<shared_ptr<const PeakDef>> peaks )
   
   if( npeaksadd )
   {
-    shared_ptr<const SpecUtils::Measurement> data = m_dataModel ? m_dataModel->getData() : nullptr;
+    const shared_ptr<const SpecUtils::Measurement> &data = m_foreground;
      
     auto sortfcn = [this, data]( const PeakShrdPtr &lhs, const PeakShrdPtr &rhs ) -> bool {
       return PeakModel::compare( lhs, rhs, m_sortColumn, m_sortOrder, data );
@@ -1499,7 +1493,7 @@ void PeakModel::setPeaks( vector<PeakDef> peaks )
 //    need to go through and estimate the chi2DOF here
     
     boost::function<bool(const PeakShrdPtr &, const PeakShrdPtr &)> sortfcn, meansort;
-    shared_ptr<const SpecUtils::Measurement> data = m_dataModel ? m_dataModel->getData() : nullptr;
+    const shared_ptr<const SpecUtils::Measurement> &data = m_foreground;
     sortfcn = boost::bind( &PeakModel::compare, boost::placeholders::_1, boost::placeholders::_2,
                           m_sortColumn, m_sortOrder, data );
     meansort = boost::bind( &PeakModel::compare, boost::placeholders::_1, boost::placeholders::_2,
@@ -1845,10 +1839,7 @@ boost::any PeakModel::data( const WModelIndex &index, int role ) const
   if( role == ToolTipRole )
   {
     if( index.column() == kUseForCalibration )
-      return WString( "If this peak should be used to help calibrate energy.\n"
-                      "You must have a nuclide, reaction, or x-ray assigned to the"
-                      " peak, and you must not have fixed the mean energy value"
-                      " using the Peak Editor." );
+      return WString::tr("pm-tt-use-for-cal");
     return any();
   }//if( role == ToolTipRole )
   
@@ -1886,30 +1877,22 @@ boost::any PeakModel::data( const WModelIndex &index, int role ) const
         
       case PeakDef::DataDefined:
       {
-        if( !m_dataModel )
+        if( !m_foreground )
           return boost::any();
         
         double contArea = 0.0;
-        std::shared_ptr<const SpecUtils::Measurement> dataH = m_dataModel->getData();
+        const std::shared_ptr<const SpecUtils::Measurement> &dataH = m_foreground;
         
         if( !dataH )
           return boost::any();
         
+        assert( peak->continuum()->parametersProbablySet() );
         if( peak->continuum()->parametersProbablySet() )
         {
           double lowx(0.0), upperx(0.0);
           findROIEnergyLimits( lowx, upperx, *peak, dataH );
           contArea = peak->offset_integral( lowx, upperx, dataH );
-        }else
-        {
-          std::shared_ptr<const SpecUtils::Measurement> continuum = m_dataModel->getBackground();
-          if( continuum )
-          {
-            size_t lower_channel, upper_channel;
-            estimatePeakFitRange( *peak, continuum, lower_channel, upper_channel );
-            contArea = continuum->gamma_channels_sum(lower_channel, upper_channel);
-          }
-        }//if( peak->continuumDefined() ) / else
+        }
         
         size_t lower_channel, upper_channel;
         estimatePeakFitRange( *peak, dataH, lower_channel, upper_channel );
@@ -1948,7 +1931,7 @@ boost::any PeakModel::data( const WModelIndex &index, int role ) const
         return areaAny;
       
       const double area = boost::any_cast<double>(areaAny);
-      std::shared_ptr<const SpecUtils::Measurement> dataH = m_dataModel->getData();
+      const shared_ptr<const SpecUtils::Measurement> &dataH = m_foreground;
       const float liveTime = dataH ? dataH->live_time() : -1.0f;
       if( liveTime <= 0.0f )
         return boost::any();
@@ -2110,7 +2093,7 @@ boost::any PeakModel::data( const WModelIndex &index, int role ) const
       
     case kHasSkew:
     {
-      return WString( (peak->skewType() == PeakDef::NoSkew) ? "False" : "True" );
+      return WString::tr( (peak->skewType() == PeakDef::NoSkew) ? "False" : "True" );
     }//case kHasSkew:
       
     case kSkewAmount:
@@ -2150,41 +2133,36 @@ boost::any PeakModel::data( const WModelIndex &index, int role ) const
     case kType:
     {
       if( peak->gausPeak() )
-        return WString( "Gaussian" );
+        return WString::tr( "pm-gaussian" );
       else
-        return WString( "Region" );
+        return WString::tr( "pm-region" );
     }
       
     case kLowerX:
     case kUpperX:
     {
-      if( !m_dataModel )
-        return boost::any();
-      std::shared_ptr<const SpecUtils::Measurement> dataH = m_dataModel->getData();
+      shared_ptr<const PeakContinuum> continuum = peak->continuum();
+      if( continuum->energyRangeDefined() )
+        return (column == kLowerX) ? continuum->lowerEnergy() : continuum->upperEnergy();
+        
       double lowx(0.0), upperx(0.0);
-      findROIEnergyLimits( lowx, upperx, *peak, dataH );
-      if( column == kLowerX )
-        return lowx;
-      else
-        return upperx;
+      findROIEnergyLimits( lowx, upperx, *peak, m_foreground );
+      return (column == kLowerX) ? lowx : upperx;
     }//case kLowerX / case kUpperX:
     
       
     case kRoiCounts:
     {
-      if( !m_dataModel )
-        return boost::any();
-      std::shared_ptr<const SpecUtils::Measurement> dataH = m_dataModel->getData();
-      if( !dataH )
+      if( !m_foreground )
         return boost::any();
       
       double lowx(0.0), upperx(0.0);
-      findROIEnergyLimits( lowx, upperx, *peak, dataH );
-      return dataH->gamma_integral( lowx, upperx );
+      findROIEnergyLimits( lowx, upperx, *peak, m_foreground );
+      return m_foreground->gamma_integral( lowx, upperx );
     }//case kRoiCounts:
       
     case kContinuumType:
-      return WString( PeakContinuum::offset_type_label(peak->continuum()->type()) );
+      return WString::tr( PeakContinuum::offset_type_label_tr(peak->continuum()->type()) );
       
     case kNumColumns:
       return any();
@@ -2882,20 +2860,14 @@ bool PeakModel::setData( const WModelIndex &index,
 //               << " mytrueebool value=" << boost::any_cast<bool>( mytrueebool)
 //               << " and typename=" << myfalsebool.type().name() << endl;
           if( use && !new_peak.parentNuclide() )
-            passMessage( "You must associate a nuclide with the"
-                        " peak before using it for shielding/source-fitting.",
-                        WarningWidget::WarningMsgHigh );
+            passMessage( WString::tr("pm-err-use-fit-no-nuc"), WarningWidget::WarningMsgHigh );
           
           if( new_peak.useForShieldingSourceFit() == use )
             return false;
           
           const SandiaDecay::RadParticle *radpart = new_peak.decayParticle();
           if( use && radpart && (radpart->type == SandiaDecay::XrayParticle) )
-          {
-            passMessage( "Warning: using x-rays for fitting source nuclides "
-                         "is not usually a great idea, so please use caution",
-                         WarningWidget::WarningMsgLow );
-          }
+            passMessage( WString::tr("pm-warn-use-xray-fit"), WarningWidget::WarningMsgLow );
           
           new_peak.useForShieldingSourceFit( use );
         }catch(...)
@@ -2914,9 +2886,7 @@ bool PeakModel::setData( const WModelIndex &index,
           const bool use = boost::any_cast<bool>( value );
           if( use && !new_peak.xrayElement() && !new_peak.parentNuclide()
               && !new_peak.reaction() )
-            passMessage( "You must associate a nuclide, x-ray, or reaction with"
-                         " the peak before using it for calibration",
-                         WarningWidget::WarningMsgHigh );
+            passMessage( WString::tr("pm-err-use-cal-no-nuc"), WarningWidget::WarningMsgHigh );
           
           if( use == new_peak.useForEnergyCalibration() )
             return false;
@@ -2944,8 +2914,7 @@ bool PeakModel::setData( const WModelIndex &index,
                                    || (new_peak.sourceGammaType() == PeakDef::SourceGammaType::AnnihilationGamma) );
             
             if( !has_parent || !is_gamma )
-               passMessage( "Only peaks associated with a nuclides gamma can be used for relative"
-                            " activity analysis.", WarningWidget::WarningMsgHigh );
+               passMessage( WString::tr("pm-err-use-rel-act-no-nuc"), WarningWidget::WarningMsgHigh );
           }//if( use )
           
           if( use == new_peak.useForManualRelEff() )
@@ -3077,26 +3046,26 @@ boost::any PeakModel::headerData( int section, Orientation orientation, int role
     //If we are here, we want the column title
     switch( section )
     {
-      case kMean:           return boost::any( WString("Mean") );
-      case kFwhm:           return boost::any( WString("FWHM") ); //\x03C3
-      case kAmplitude:      return boost::any( WString("Area") );
-      case kCps:            return boost::any( WString("CPS") );
-      case kIsotope:        return boost::any( WString("Nuclide") );
-      case kPhotoPeakEnergy:return boost::any( WString("Photopeak") );
-      case kDifference:     return boost::any( WString("Difference") );
-      case kUseForShieldingSourceFit: return boost::any( WString("Use") );
+      case kMean:           return boost::any( WString::tr("Mean") );
+      case kFwhm:           return boost::any( WString::tr("FWHM") ); //\x03C3
+      case kAmplitude:      return boost::any( WString::tr("Area") );
+      case kCps:            return boost::any( WString::tr("CPS") );
+      case kIsotope:        return boost::any( WString::tr("Nuclide") );
+      case kPhotoPeakEnergy:return boost::any( WString::tr("Photopeak") );
+      case kDifference:     return boost::any( WString::tr("pm-hdr-diff") );
+      case kUseForShieldingSourceFit: return boost::any( WString::tr("Use") );
       case kCandidateIsotopes:  return boost::any();
-      case kUseForCalibration:  return boost::any( WString("Calib. Peak") );
-      case kUseForManualRelEff: return boost::any( WString("Rel Act") );
-      case kUserLabel:      return boost::any( WString("Label") );
-      case kPeakLineColor:  return boost::any( WString("Color") );
-      case kHasSkew:        return boost::any( WString("Skew") );
-      case kSkewAmount:     return boost::any( WString("Skew Amp") );
-      case kType:           return boost::any( WString("Peak Type") );
-      case kLowerX:         return boost::any( WString("Lower Energy") );
-      case kUpperX:         return boost::any( WString("Upper Energy") );
-      case kRoiCounts:      return boost::any( WString("ROI Counts") );
-      case kContinuumType:  return boost::any( WString("Cont. Type") );
+      case kUseForCalibration:  return boost::any( WString::tr("pm-hdr-cal-peak") );
+      case kUseForManualRelEff: return boost::any( WString::tr("pm-hdr-rel-act") );
+      case kUserLabel:      return boost::any( WString::tr("pm-hdr-label") );
+      case kPeakLineColor:  return boost::any( WString::tr("pm-hdr-color") );
+      case kHasSkew:        return boost::any( WString::tr("Skew") );
+      case kSkewAmount:     return boost::any( WString::tr("pm-hdr-skew-amp") );
+      case kType:           return boost::any( WString::tr("pm-hdr-peak-type") );
+      case kLowerX:         return boost::any( WString::tr("pm-hdr-low-energy") );
+      case kUpperX:         return boost::any( WString::tr("pm-hdr-up-energy") );
+      case kRoiCounts:      return boost::any( WString::tr("pm-hdr-roi-counts") );
+      case kContinuumType:  return boost::any( WString::tr("cont-type") );
       case kNumColumns:     return boost::any();
     }//switch( section )
   } //DisplayRole
@@ -3104,20 +3073,20 @@ boost::any PeakModel::headerData( int section, Orientation orientation, int role
   {
     switch( section )
     {
-      case kMean:           return boost::any( WString("Mean Energy") );
-      case kFwhm:           return boost::any( WString("Full Width at Half Maximum") ); //\x03C3
-      case kAmplitude:      return boost::any( WString("Peak Area") );
-      case kCps:            return boost::any( WString("Peak counts per second") );
+      case kMean:           return boost::any( WString::tr("pm-hdr-tt-mean") );
+      case kFwhm:           return boost::any( WString::tr("pm-hdr-tt-fwhm") ); //\x03C3
+      case kAmplitude:      return boost::any( WString::tr("pm-hdr-tt-amp") );
+      case kCps:            return boost::any( WString::tr("pm-hdr-tt-cps") );
       case kIsotope:        return boost::any();
-      case kPhotoPeakEnergy:return boost::any( WString("Photopeak Energy") );
-      case kDifference:     return boost::any( WString("Difference between photopeak and mean energy") );
+      case kPhotoPeakEnergy:return boost::any( WString::tr("pm-hdr-tt-photopeak-energy") );
+      case kDifference:     return boost::any( WString::tr("pm-hdr-tt-diff") );
       case kUseForShieldingSourceFit: return boost::any();
       case kCandidateIsotopes:  return boost::any();
       case kUseForCalibration:  return boost::any();
-      case kUseForManualRelEff: return boost::any( WString("Use for \"Isotopics from peaks\" analysis.") );
-      case kPeakLineColor:     return boost::any( WString("Peak color") );
-      case kUserLabel:         return boost::any( WString("User specified label") );
-      case kRoiCounts:         return boost::any( WString("Integral of gamma counts over the region of interest") );
+      case kUseForManualRelEff: return boost::any( WString::tr("pm-hdr-tt-man-rel-eff") );
+      case kPeakLineColor:     return boost::any( WString::tr("pm-hdr-tt-color") );
+      case kUserLabel:         return boost::any( WString::tr("pm-hdr-tt-label") );
+      case kRoiCounts:         return boost::any( WString::tr("pm-hdr-tt-roi-counts") );
       case kHasSkew:
       case kSkewAmount:
       case kType:
@@ -3195,7 +3164,7 @@ void PeakModel::sort( int col, Wt::SortOrder order )
     m_sortColumn = kMean;
 
   boost::function<bool(const PeakShrdPtr &, const PeakShrdPtr &)> sortfcn;
-  shared_ptr<const SpecUtils::Measurement> data = m_dataModel ? m_dataModel->getData() : nullptr;
+  const shared_ptr<const SpecUtils::Measurement> &data = m_foreground;
   sortfcn = boost::bind( &PeakModel::compare, boost::placeholders::_1, boost::placeholders::_2,
                         m_sortColumn, order, data );
 

@@ -256,14 +256,17 @@ namespace InterSpecServer
     char httpaddr_param_value[] = "127.0.0.1";
     char httpport_param_name[]  = "--http-port";
     char httpport_param_value[] = "0";           //Assign port automatically
-    char docroot_param_name[]   = "--docroot";
+    char docroot_param_name[]   = "--docroot";   // docroot is the base-path to files that can be served over html; this is the directory containing "resources" (from Wt) and "InterSpec_resources"; e.g., CSS, JS, etc
     char docroot_param_value[]  = ".";
+    char approot_param_name[]   = "--approot";   // approot is base-path to resources the application needs, like data, databases, etc.  Currently for InterSpec, this is same as docroot.
+    char approot_param_value[]  = ".";
     char accesslog_param_value[]  = "--accesslog=-";  //quite down printing all the GET and POST and such
     
     char *argv_wthttp[] = { argv[0],
       httpaddr_param_name, httpaddr_param_value,
       httpport_param_name, httpport_param_value,
       docroot_param_name, docroot_param_value,
+      approot_param_name, approot_param_value,
       accesslog_param_value
     };
     const int argc_wthttp = sizeof(argv_wthttp)/sizeof(argv_wthttp[0]);
@@ -287,6 +290,11 @@ namespace InterSpecServer
       //  Using the minimized coincidence version of sandia.decay.xml increases parse time
       //  by about 170 ms.
       ns_server->ioService().boost::asio::io_service::post( &DecayDataBaseServer::initialize );
+      
+      // Checking for available languages probably doesnt take too long, but lets do it now anyway.
+      ns_server->ioService().boost::asio::io_service::post( [](){
+        InterSpecApp::languagesAvailable();
+      } );
       
       const int port = ns_server->httpPort();
       std::string this_url = "http://127.0.0.1:" + boost::lexical_cast<string>(port);
@@ -345,11 +353,11 @@ namespace InterSpecServer
     if( port_str.empty() )
       port_str = "0";
     char *httpport_param_value = &(port_str[0]);
-    //char httpport_param_value[] = "0";           //Assign port automatically
-    char docroot_param_name[]   = "--docroot";
+    //char httpport_param_value[] = "0";         //Assign port automatically
+    char docroot_param_name[]   = "--docroot";   // docroot is the base-path to files that can be served over html; e.g., CSS, JS, etc
     char *docroot_param_value  = &(basedir[0]);
-    //char approot_param_name[]   = "--approot";
-    //char *approot_param_value  = &(basedir[0]);
+    char approot_param_name[]   = "--approot";   // approot is base-path to resources the application needs, like data, databases, etc.  Currently for InterSpec, this is same as docroot.
+    char *approot_param_value  = &(basedir[0]);
     char accesslog_param_value[]  = "--accesslog=-";  //quite down printing all the GET and POST and such
 
     
@@ -357,6 +365,7 @@ namespace InterSpecServer
       httpaddr_param_name, httpaddr_param_value,
       httpport_param_name, httpport_param_value,
       docroot_param_name, docroot_param_value,
+      approot_param_name, approot_param_value,
       accesslog_param_value
     };
     const int argc_wthttp = sizeof(argv_wthttp)/sizeof(argv_wthttp[0]);
@@ -371,6 +380,11 @@ namespace InterSpecServer
       ns_server->ioService().boost::asio::io_service::post( [](){
         DecayDataBaseServer::initialize();
         ReferenceLineInfo::load_nuclide_mixtures();
+      } );
+      
+      // Checking for available languages probably doesnt take too long, but lets do it now anyway.
+      ns_server->ioService().boost::asio::io_service::post( [](){
+        InterSpecApp::languagesAvailable();
       } );
       
       const int port = ns_server->httpPort();

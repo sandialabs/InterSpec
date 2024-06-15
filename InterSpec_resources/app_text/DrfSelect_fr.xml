@@ -1,0 +1,81 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- ds- is short for DrfSelect
+       ref- is short for RelEffFile
+       reds- is short for RelEffDetSelect
+  -->
+  <message id="ds-default-manual-det-name">Détecteur Défini par l'Utilisateur</message>
+
+<message id="ref-tt-remove-drf-file">Supprimer le fichier de la liste des fichiers dans lesquels InterSpec recherchera des fonctions de réponse du détecteur.</message>
+<message id="ref-remove-drf-window-title">Supprimer les Réponses des Détecteurs ?</message>
+<message id="ref-remove-drf-window-txt">Souhaitez-vous également supprimer ces DRF pour une utilisation future ?</message>
+<message id="ref-file-removed-toast">Fichier '{1}' supprimé de l'utilisation future.</message>
+<message id="ref-file-saved-for-later">Sauvegardé '{1}' pour une utilisation ultérieure, et sera disponible dans la partie "<em>Rel. Eff.</em>" de l'outil "<em>Sélection de la Fonction de Réponse du Détecteur</em>".</message>
+<message id="ref-err-saving-drf-file">Erreur lors de la sauvegarde du fichier DRF pour une utilisation ultérieure ; désolé.</message>
+<message id="ref-err-invalid-csv-drf">Fichier DRF d'efficacité relative TSV ou CSV non valide.</message>
+<message id="ref-save-drf-window-title">Sauvegarder les Réponses des Détecteurs ?</message>
+<message id="ref-save-drf-window-txt">Souhaitez-vous sauvegarder ces réponses des détecteurs pour une utilisation ultérieure ?</message>
+<message id="ref-upload-csv-file">Télécharger un fichier TSV/CSV.</message>
+<message id="ref-dont-use-drf-in-file">aucune réponse dans le fichier</message>
+<message id="ref-select-det-from-file">sélectionner le détecteur</message>
+<message id="ref-no-drfs-in-file">Aucun DRF valide dans le fichier.</message>
+<message id="ref-couldnt-open-drf-file">Impossible d'ouvrir le fichier DRF.</message>
+<message id="ref-no-rel-eff-drfs-in-file">Aucun DRF Rel. Eff. disponible.</message>
+<message id="ref-no-drfs-available">aucune réponse disponible</message>
+<message id="ref-file-has-no-drfs">Le fichier ne contient aucun DRF</message>
+<message id="reds-tt-add-drf-btn">Cliquez sur le bouton plus pour ajouter un fichier de fonction de réponse d'efficacité relative supplémentaire.</message>
+<message id="reds-tt-add-dir">Cliquez sur le bouton plus pour ajouter un répertoire supplémentaire à rechercher de manière récursive pour les fonctions de réponse des détecteurs.</message>
+<message id="reds-gadras-drf-info-ios">Vous pouvez placer les fonctions de réponse des détecteurs importées de GADRAS-DRF dans le répertoire <code>InterSpec</code> dans l'application <b>Fichiers</b>.</message>
+<message id="reds-gadras-drf-info">Ce sont des fonctions de réponse des détecteurs importées de GADRAS-DRF. Actuellement, seules les dimensions des détecteurs, les efficacités absolues et les résolutions FWHM sont utilisées.</message>
+<message id="reds-failed-parse-gadras-det">Échec de l'analyse d'un détecteur GADRAS : {1}</message>
+<message id="reds-err-saving-gad-path">Erreur lors de la sauvegarde du chemin GADRAS dans les préférences utilisateur : {1}</message>
+<message id="reds-tt-remove-gad-dir">Supprimer le répertoire de la liste des répertoires dans lesquels InterSpec recherchera des fonctions de réponse des détecteurs.</message>
+<message id="reds-tt-gad-set-dir">Définir le répertoire entré pour rechercher de manière récursive des fonctions de réponse des détecteurs.</message>
+<message id="reds-err-not-valid-dir">Répertoire non valide.</message>
+<message id="reds-invalid-dir">répertoire invalide</message>
+<message id="reds-no-drf-in-dir">aucune réponse dans le répertoire</message>
+<message id="reds-recursive-no-drfs-in-dir">Aucun DRF valide dans le répertoire, ni dans ses sous-répertoires.</message>
+<message id="ds-csv-upload-desc">
+    <div style="white-space:nowrap;">
+      Fichier CSV d'Efficacité Intrinsèque :
+    </div>
+    <div>
+      La première colonne est l'énergie en keV.
+      La deuxième colonne est l'efficacité en % (de 0 à 100) pour les gammas à cette
+      énergie, incident sur le détecteur, pour être enregistré dans le pic photoélectrique.
+    </div>
+    <div>
+      Vous devrez également télécharger un fichier GADRAS Detector.dat, ou entrer le
+      diamètre des détecteurs après avoir téléchargé le fichier d'efficacité.
+    </div>
+    <div>
+      Vous pouvez également télécharger un CSV exporté de l'outil <em>Créer une Fonction de Réponse du Détecteur</em>.
+    </div>
+</message>
+<message id="ds-enter-gad-det-diam">Entrez le diamètre du détecteur ou téléchargez le fichier Detector.dat :</message>
+<message id="ds-det-diam">Diamètre du Détecteur :</message>
+<message id="ds-fixed-geom">Géométrie Fixe</message>
+<message id="ds-gad-det-file-label">Fichier GADRAS Detector.Dat :</message>
+<message id="ds-manual-det-empty-fcn">Exemple : exp(-9.8 - 8.1*log(x) + 4.62E-02*log(x)^2 + ...)\n
+    Ou de manière équivalente : -9.8 -8.1 4.62E-02 ...</message>
+<message id="ds-manual-det-desc">Efficacité du détecteur définie par une formule mathématique, donnée l'énergie x;
+     ou vous pouvez entrer les coefficients pour la forme d'équation standard. Cliquez sur l'icône point d'interrogation pour plus d'infos.
+</message>
+<message id="ds-manual-det-name-label">Nom du détecteur </message>
+<message id="ds-manual-det-name-empty-txt">Nom Unique du Détecteur</message>
+<message id="ds-manual-function-label">Efficacité f(x) = </message>
+<message id="ds-tt-manual-energy-unit">Unité d'énergie pour la formule d'efficacité</message>
+<message id="ds-tt-manual-desc">Description de cette fonction de réponse du détecteur</message>
+<message id="ds-manual-det-diam-label">Diam. du détecteur</message>
+<message id="ds-energy-range">Plage d'Énergie</message>
+<message id="ds-(optional)">(facultatif)</message>
+<message id="ds-min.">Min.</message>
+<message id="ds-max.">Max.</message>
+<message id="ds-intrinsic-eff">Efficacité Intrinsèque</message>
+<message id="ds-abs-eff">Efficacité Absolue</message>
+<message id="ds-fixed-geom-total">Géométrie Fixe - activité totale</message>
+<message id="ds-fixed-geom-cm2">Géométrie Fixe - activité par cm²</message>
+<message id="ds-fixed-geom-m2">Géométrie Fixe - activité par m²</message>
+<message id="ds-fixed-geom-gram">Géométrie Fixe - activité par gramme</message>
+  
+</messages>

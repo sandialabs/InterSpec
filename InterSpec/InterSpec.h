@@ -52,6 +52,7 @@ class PopupDivMenu;
 class SimpleDialog;
 class EnergyCalTool;
 class GammaXsWindow;
+class MakeDrfWindow;
 class OneOverR2Calc;
 class SpectrumChart;
 class UseInfoWindow;
@@ -71,6 +72,7 @@ class PopupWarningWidget;
 class UnitsConverterTool;
 class FeatureMarkerWindow;
 class D3SpectrumDisplayDiv;
+class DetectionLimitWindow;
 class DetectorPeakResponse;
 class ExportSpecFileWindow;
 class MakeFwhmForDrfWindow;
@@ -78,6 +80,7 @@ class IsotopeSearchByEnergy;
 class ShieldingSourceDisplay;
 class EnergyCalPreserveWindow;
 class ReferencePhotopeakDisplay;
+class DetectionLimitSimpleWindow;
 class LicenseAndDisclaimersWindow;
 namespace HelpSystem{ class HelpWindow; }
 namespace D3SpectrumExport{ struct D3SpectrumChartOptions; }
@@ -333,11 +336,18 @@ public:
   SimpleDialog *makeEnterAppUrlWindow();
   void handleAppUrlClosed();
   
+  /** Loads the XML file for current locale, to use for localizing strings.
+   
+   Simply passes through to the `InterSpecApp` function of the same name
+  \sa InterSpecApp::useMessageResourceBundle
+   */
+  void useMessageResourceBundle( const std::string &name );
+  
   //For the 'add*Menu(...)' functions, the menuDiv passed in *must* be a
   //  WContainerWidget or a PopupDivMenu
   void addFileMenu( Wt::WWidget *menuDiv, const bool isAppTitlebar );
   void addEditMenu( Wt::WWidget *menuDiv );
-  void addDisplayMenu( Wt::WWidget *menuDiv );
+  void addViewMenu( Wt::WWidget *menuDiv );
   void addDetectorMenu( Wt::WWidget *menuDiv );
   void addToolsMenu( Wt::WWidget *menuDiv );
   void addPeakLabelSubMenu( PopupDivMenu *parentWidget );
@@ -594,7 +604,12 @@ public:
   void setToolTabsVisible( bool show );
   bool toolTabsVisible() const;
   
-  void showMakeDrfWindow();
+  /** Makes a MakeDrf Window and returns it, or if one was already present, returns it. */
+  MakeDrfWindow *showMakeDrfWindow();
+  /** Returns the pointer to current MakeDrf Window.  Will by nullptr if not currently showing */
+  MakeDrfWindow *makeDrfWindow();
+  void handleCloseMakeDrfWindow( MakeDrfWindow *window );
+  
   DrfSelectWindow *showDrfSelectWindow();
   void closeDrfSelectWindow();
   
@@ -862,14 +877,20 @@ public:
    */
   void handleExportSpectrumFileDialogClose();
   
+#if( USE_DETECTION_LIMIT_TOOL )
+  /** If `query_str` is not empty, the handle app URI function will be called. */
+  void showDetectionLimitTool( const std::string &query_str );
+  DetectionLimitWindow *createDetectionLimitTool();
+  void handleDetectionLimitWindowClose();
+  void programmaticallyCloseDetectionLimit();
+  
+  DetectionLimitSimpleWindow *showSimpleMdaWindow();
+  void handleSimpleMdaWindowClose();
+  void programmaticallyCloseSimpleMda();
+#endif //USE_DETECTION_LIMIT_TOOL
+  
   /** Brings up a dialog asking the user to confirm starting a new session, and if they select so, will start new session. */
   void startClearSession();
-  
-  
-  //showIEWarningDialog(): returns NULL if user previously specified to not show
-  //  again, otherwise it returns the AuxWIndow it is displaying.  The dialog
-  //  is by default shown visible, and will deleted when user is done with it.
-  AuxWindow *showIEWarningDialog();
   
   // The user itself gets to be public--no need to protect access to it.
   //Note 20130116: m_user should be made protected, but really the whole
@@ -915,8 +936,11 @@ protected:
   void createFileParameterWindow();
   
 #if( USE_DETECTION_LIMIT_TOOL )
-  void createDetectionLimitTool();
-#endif
+  void fitNewPeakNotInRoiFromRightClick();
+  void startAddPeakFromRightClick();
+  void searchOnEnergyFromRightClick();
+  void startSimpleMdaFromRightClick();
+#endif //USE_DETECTION_LIMIT_TOOL
   
   void updateGuiForPrimarySpecChange( std::set<int> display_sample_nums );
   
@@ -979,9 +1003,6 @@ protected:
   //showNewWelcomeDialog(): see notes for showWelcomeDialog().  This function
   //  will eventually replace showWelcomeDialog().
   void showNewWelcomeDialog( bool force = false );
-
-  // Cookie management~  /*should be placed into user options*.
-  void setShowIEWarningDialogCookie( bool show );
 
   /** Adds menu items to "Tools" menu for the tools that are ordinarily shown
       as tabs.  This function is called when the "Hide Tool Tabs" menu option
@@ -1055,7 +1076,7 @@ public:
   bool showingFeatureMarker( const FeatureMarkerType option );
   void setComptonPeakAngle( const int angle );
   void toggleFeatureMarkerWindow();
-  void deleteFeatureMarkerWindow();
+  void displayFeatureMarkerWindow( const bool show );
   
 public:
 
@@ -1265,6 +1286,11 @@ protected:
   //  as of 20140110, but still pretty reasonable.
   void detectClientDeviceType();
   
+  /** Changes the local, to the language specified. 
+   
+   @param languageCode The code for the language, ex. "nl" for Dutch, "fr" for French, "en" for English, or "en_GB" for Great Britain.
+   */
+  void changeLocale( std::string languageCode );
   
 protected:
   PeakModel *m_peakModel;
@@ -1381,6 +1407,8 @@ protected:
   PopupDivMenuItem *m_createTag;
 #endif
   
+  PopupDivMenu *m_languagesSubMenu;
+  
   enum RightClickItems
   {
     kPeakEdit,
@@ -1392,10 +1420,18 @@ protected:
     kChangeContinuum,
     kChangeSkew,
     kDeletePeak,
-    kAddPeak,
+    kAddPeakToRoi,
     kShareContinuumWithLeftPeak,
     kShareContinuumWithRightPeak,
     kMakeOwnContinuum,
+
+#if( USE_DETECTION_LIMIT_TOOL )
+    kFitNewPeakNotInRoi,
+    kAddPeakNotInRoi,
+    kSearchEnergy,
+    kSimpleMda,
+#endif
+    
     kNumRightClickItems
   };//enum RightClickItems
   
@@ -1444,14 +1480,14 @@ protected:
   Wt::WMenuItem *m_tabToolsMenuItems[static_cast<int>(ToolTabMenuItems::NumItems)];
   
   /** Tracks which features are being used
-   TODO: remove this member variable and, and use m_featureMarkers to track things
+   TODO: remove this member variable and, and use m_featureMarkersWindow to track things
    */
   bool m_featureMarkersShown[static_cast<int>(FeatureMarkerType::NumFeatureMarkers)];
   
   /** A window that controls if S.E., D.E., Compton Peak, Compton Edge, or Sum
    Peaks are shown.  Is null when window is not showing.
    */
-  FeatureMarkerWindow *m_featureMarkers;
+  FeatureMarkerWindow *m_featureMarkersWindow;
   
   PopupDivMenuItem *m_featureMarkerMenuItem;
 
@@ -1472,6 +1508,7 @@ protected:
   OneOverR2Calc *m_1overR2Calc;
   UnitsConverterTool *m_unitsConverter;
   FluxToolWindow *m_fluxTool;
+  MakeDrfWindow *m_makeDrfTool;
   
   
 #if( USE_GOOGLE_MAP || USE_LEAFLET_MAP )
@@ -1504,7 +1541,10 @@ protected:
   AuxWindow        *m_remoteRidWindow;
 #endif
 
-  
+#if( USE_DETECTION_LIMIT_TOOL )
+  DetectionLimitSimpleWindow *m_simpleMdaWindow;
+  DetectionLimitWindow *m_detectionLimitWindow;
+#endif
   
   std::set<int> m_excludedSamples;//these are samples that should not be displayed for the primary spectrum
   std::set<int> m_displayedSamples;
@@ -1640,6 +1680,10 @@ protected:
   bool m_findingHintPeaks;
   std::deque<boost::function<void()> > m_hintQueue;
   
+  /** Some informational messages should only be shown once, like when you click on the
+   energy tab, so we'll keep track of if we have shown a message.
+   */
+  std::set<std::string> m_infoNotificationsMade;
   
 #if( INCLUDE_ANALYSIS_TEST_SUITE )
   friend class SpectrumViewerTester;

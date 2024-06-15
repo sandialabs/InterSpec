@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- sm3dc- is short for SearchMode3DChart -->
+  <message id="sm3dc-loading">Loading...</message>
+  <message id="sm3dc-min-energy">Min Energy</message>
+  <message id="sm3dc-max-energy">Max Energy</message>
+  <message id="sm3dc-min-time">Min Time (s)</message>
+  <message id="sm3dc-max-time">Max Time (s)</message>
+  <message id="sm3dc-time-bins">Time display bins</message>
+  <message id="sm3dc-tt-time-bins">
+    The maximum number of time divisions to plot; if your data has more time-samples than
+    this in the displayed range, time-samples will be combined together, until it is less than this value.
+    <br />
+    <br />
+    For example, if this value is 60, but your measurement has 208 samples, then each 4
+    samples will be summed together for a single bin for the time axis,
+    with a total of 52 bins on the time axis.
+    <br />
+    If the product of the number of time channels, times the number of energy channels
+    is too large, performance issues may be encountered.
+  </message>
+  <message id="sm3dc-energy-bins">Energy display bins</message>
+  <message id="sm3dc-tt-energy-bins">
+    The maximum number of energy divisions to plot; if your data has more energy-channels than
+    this in the displayed range, channels will be combined together, until it is less than this value.
+    <br />
+    <br />
+    If the product of the number of time channels, times the number of energy channels
+    is too large, performance issues may be encountered.
+  </message>
+  <message id="sm3dc-time-axis-label">Time (seconds)</message>
+  <message id="sm3dc-counts-axis-label">Counts per Channel</message>
+</messages>

@@ -74,6 +74,11 @@
   margin-left: 20px;
 }
 
+.SaveSpecTagLabel
+{
+  font-weight: bold;
+}
+
 .NonSpecDialogBody
 {
   max-height: calc(95vh - 120px);

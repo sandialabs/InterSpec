@@ -99,7 +99,7 @@ public:
   {
     Occupied,
     NotOccupied
-  };//enum HighlightRegionType
+  };//enum OccupancyRegionType
   
   //HighlightRegion is what is used to overlay a color over the chart, and are
   //  used for roughly two different usages:

@@ -39,11 +39,6 @@ endif( hasParent )
 
 
 option(
-    BUILD_AS_COMMAND_LINE_CODE_DEVELOPMENT
-    "Build executable for use while testing new code, not running InterSpec"
-    OFF
-)
-option(
     INCLUDE_ANALYSIS_TEST_SUITE
     "Allow whether user can save and load test spectra"
     OFF
@@ -77,7 +72,7 @@ option(USE_DB_TO_STORE_SPECTRA "Use the database to store spectra" ON)
 option(
     USE_SPECRUM_FILE_QUERY_WIDGET
     "Enables compilation of the spectrum file query tool (not for web deployment)"
-    OFF
+    ON
 )
 option(
     USE_SEARCH_MODE_3D_CHART
@@ -86,7 +81,7 @@ option(
 )
 option(USE_TERMINAL_WIDGET "Enables use of terminal widget" ON)
 
-option(USE_DETECTION_LIMIT_TOOL "Enables under-development detection limit tool" OFF)
+option(USE_DETECTION_LIMIT_TOOL "Enables under-development detection limit tool" ON)
 
 option(USE_QR_CODES "Enables generating QR codes for like DRFs" ON)
 
@@ -181,14 +176,6 @@ if(NOT CMAKE_BUILD_TYPE)
 endif(NOT CMAKE_BUILD_TYPE)
 
 
-if(BUILD_AS_COMMAND_LINE_CODE_DEVELOPMENT)
-    set(PERFORM_DEVELOPER_CHECKS ON CACHE INTERNAL "")
-    set(SpecUtils_ENABLE_EQUALITY_CHECKS ON CACHE INTERNAL "")
-endif(BUILD_AS_COMMAND_LINE_CODE_DEVELOPMENT)
-
-
-
-
 if(BUILD_FOR_WEB_DEPLOYMENT)
     set(TRY_TO_STATIC_LINK ON)
     set(CMAKE_BUILD_TYPE:STRING "Release")
@@ -253,6 +240,7 @@ set(sources
     src/IsotopeId.cpp
     src/MaterialDB.cpp
     src/PhysicalUnits.cpp
+    src/PhysicalUnitsLocalized.cpp
     src/MassAttenuationTool.cpp
     src/DetectorPeakResponse.cpp
     src/GammaInteractionCalc.cpp
@@ -344,6 +332,8 @@ set(sources
     src/AppUtils.cpp
     src/ExportSpecFile.cpp
     src/EnterAppUrlWindow.cpp
+    src/NuclideSourceEnter.cpp
+    src/AddNewPeakDialog.cpp
     js/SpectrumChart.js
     js/InterSpec.js
 )
@@ -356,6 +346,7 @@ set(headers
     InterSpec/IsotopeId.h
     InterSpec/MaterialDB.h
     InterSpec/PhysicalUnits.h
+    InterSpec/PhysicalUnitsLocalized.h
     InterSpec/MassAttenuationTool.h
     InterSpec/DetectorPeakResponse.h
     InterSpec/GammaInteractionCalc.h
@@ -444,6 +435,8 @@ set(headers
     InterSpec/AppUtils.h
     InterSpec/ExportSpecFile.h
     InterSpec/EnterAppUrlWindow.h
+    InterSpec/NuclideSourceEnter.h
+    InterSpec/AddNewPeakDialog.h
 )
 
 
@@ -458,12 +451,6 @@ if(INCLUDE_ANALYSIS_TEST_SUITE)
     list(APPEND sources src/SpectrumViewerTester.cpp)
     list(APPEND headers InterSpec/SpectrumViewerTester.h)
 endif(INCLUDE_ANALYSIS_TEST_SUITE)
-
-
-if(BUILD_AS_COMMAND_LINE_CODE_DEVELOPMENT)
-    list(APPEND sources testing/developcode.cpp )
-    list(APPEND headers testing/developcode.h )
-endif(BUILD_AS_COMMAND_LINE_CODE_DEVELOPMENT)
 
 
 #if(IOS)
@@ -493,8 +480,8 @@ if(USE_TERMINAL_WIDGET)
 endif(USE_TERMINAL_WIDGET)
 
 if(USE_DETECTION_LIMIT_TOOL)
-    list( APPEND sources src/DetectionLimitCalc.cpp src/DetectionLimitTool.cpp )
-    list( APPEND headers InterSpec/DetectionLimitCalc.h InterSpec/DetectionLimitTool.h  )
+    list( APPEND sources src/DetectionLimitCalc.cpp src/DetectionLimitTool.cpp src/DetectionLimitSimple.cpp )
+    list( APPEND headers InterSpec/DetectionLimitCalc.h InterSpec/DetectionLimitTool.h InterSpec/DetectionLimitSimple.h )
 endif(USE_DETECTION_LIMIT_TOOL)
 
 if(USE_QR_CODES)
@@ -662,10 +649,10 @@ target_link_libraries(
     ${CMAKE_DL_LIBS}
 )
 
-if(USE_SPECRUM_FILE_QUERY_WIDGET OR BUILD_AS_COMMAND_LINE_CODE_DEVELOPMENT)
+if( USE_SPECRUM_FILE_QUERY_WIDGET )
     add_subdirectory(external_libs/pugixml-1.9)
     target_link_libraries(InterSpecLib PUBLIC pugixml)
-endif()
+endif( USE_SPECRUM_FILE_QUERY_WIDGET )
 
 
 if(USE_MYSQL_DB EQUAL USE_SQLITE3_DB)
@@ -688,7 +675,7 @@ target_include_directories( InterSpecLib
 if( InterSpec_FETCH_DEPENDENCIES )
   target_link_libraries( InterSpecLib
     PUBLIC
-      Boost::math Boost::scope_exit Boost::uuid Boost::iostreams Boost::assign Boost::multi_array Boost::crc
+      Boost::math Boost::scope_exit Boost::uuid Boost::iostreams Boost::assign Boost::multi_array Boost::crc Boost::process
       # Boost::signals2 Boost::asio Boost::multi_index
       wt
 #      wttest
@@ -869,6 +856,11 @@ list( APPEND OTHER_InterSpec_SUPPORT_FILES
   )
 
 add_custom_target(interspec_resources SOURCES ${OTHER_InterSpec_SUPPORT_FILES})
+
+
+# Make a target for the XML files that hold the (internationalized) text for the app
+FILE(GLOB APP_TEXT_FILES InterSpec_resources/app_text/*.xml )
+add_custom_target( interspec_app_text SOURCES ${APP_TEXT_FILES} )
 
 
 #Copy files to the install directory

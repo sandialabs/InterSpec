@@ -47,8 +47,8 @@ namespace PhysicalUnits
 #define METRIC_PREFIX_UNITS "m|M|k|g|G|t|T|u|" MU_CHARACTER_1 "|" MU_CHARACTER_2 "|p|n|f|milli|micro|pico|nano|femto|kilo|mega|giga|terra"
 
 #define PLUS_MINUS_REGEX "(\\xC2?\\xB1|\\+\\-\\s*|\\-\\+\\s*)"
-#define TIME_UNIT_REGEX "(year|yr|y|day|d|hrs|hour|h|minutes|min|m|second|seconds|sec|s|ms|microseconds|us|nanoseconds|ns)"
-#define HALF_LIFE_REGEX "(hl|halflife|halflives|half-life|half-lives|half lives|half life)"
+#define TIME_UNIT_REGEX "(years|year|yr|y|days|day|d|hrs|hours|hour|h|minute|minutes|min|m|second|seconds|sec|s|ms|microseconds|us|nanosecond|nanoseconds|ns)"
+#define HALF_LIFE_REGEX "(hl|halflife|halflives|half-life|half-lives|half lives|half lifes|half live|halflive|half life)"
 #define ACTIVITY_UNIT_REGEX "(bq|becquerel|ci|cu|curie|c)"
 #define ABSORBED_DOSE_UNIT_REGEX "(gray|Gy|gy|rad|erg|erg\\/g|erg per gram)"
 #define EQUIVALENT_DOSE_UNIT_REGEX "(sievert|Sv|rem|roentgen|r" DIAERESIS_O "entgen)"
@@ -122,6 +122,8 @@ const char * const sm_timeDurationHalfLiveOptionalPosOrNegRegex
 
 
 const char * const sm_positiveDecimalRegex = POS_DECIMAL_REGEX;
+  
+const char * const sm_decimalRegex = DECIMAL_REGEX;
 
 const UnitNameValuePairV sm_lengthUnitNameValues{
   {"nm", nm},
@@ -325,19 +327,19 @@ std::wstring printToBestLengthUnits( double length, double uncert,
   
 std::string printToBestActivityUnits( double activity,
                                       int maxNpostDecimal,
-                                      bool useCurries,
+                                      bool useCuries,
                                       double bq_definition )
 {
   using namespace std;
   activity *= becquerel / bq_definition;
 
   char formatflag[32], buffer[64];
-  const char *unitstr = useCurries ? "Ci" : "Bq";
+  const char *unitstr = useCuries ? "Ci" : "Bq";
   
   snprintf(formatflag, sizeof(formatflag), "%%.%if %%s%s", maxNpostDecimal, unitstr );
   
 
-  if( useCurries )
+  if( useCuries )
     activity /= curie;
   else
     activity /= becquerel;
@@ -847,7 +849,7 @@ double stringToTimeDurationPossibleHalfLife( std::string str,
                             "|us|micro\\-*sec|micro\\-*second"
                             "|ms|milli\\-*sec|milli\\-*second"
                             "|second|seconds|sec|s|minute|minutes|min|m"
-                            "|hours|hour|hrs|h|days|day|d|year|yr|y"
+                            "|hours|hour|hrs|h|days|day|d|year|years|yr|yrs|y"
                             "|hl|halflife|halflives|half\\-life|half\\-lives|half\\slives|half\\slife"
                             ")"
                             "\\s*((\\+|\\-)?(((\\d+(\\.\\d*)?)|(\\.\\d*)).*))?";
@@ -1486,13 +1488,13 @@ std::string printCompact( const double value, const size_t sig_figs )
 
 
 const UnitNameValuePair &bestActivityUnit( const double activity,
-                                           bool useCurries )
+                                           bool useCuries )
 {
   assert( sm_activityUnitNameValues.size() == 13 );
   
   UnitNameValuePairV::const_iterator begin, end, iter;
   
-  if( useCurries )
+  if( useCuries )
   {
     begin = sm_activityUnitNameValues.begin() + 7;
     end = sm_activityUnitNameValues.end();
@@ -1506,7 +1508,7 @@ const UnitNameValuePair &bestActivityUnit( const double activity,
     
     if( activity == 0.0 )
       return sm_activityUnitNameValues[2];  // return just "bq", no prefix
-  }//if( useCurries ) / else
+  }//if( useCuries ) / else
 
 
   for( iter = begin; iter != end; ++iter )
@@ -1548,9 +1550,9 @@ const UnitNameValuePair &bestDoseUnitHtml( const double activity,
   
   
 const UnitNameValuePair &bestActivityUnitHtml( const double activity,
-                                                bool useCurries )
+                                                bool useCuries )
 {
-  const UnitNameValuePair &a = bestActivityUnit( activity, useCurries );
+  const UnitNameValuePair &a = bestActivityUnit( activity, useCuries );
   
   const auto begin = sm_activityUnitNameValues.begin();
   const auto end = sm_activityUnitNameValues.end();

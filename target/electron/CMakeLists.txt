@@ -39,6 +39,8 @@ set_target_properties(${PROJECT_NAME} PROPERTIES CXX_STANDARD 14 CXX_STANDARD_RE
 
 target_include_directories( ${PROJECT_NAME} PUBLIC 
                             node_modules/node-addon-api/ 
+                            node_modules/node-api-headers/
+                            node_modules/node-api-headers/include
                             ${CMAKE_CURRENT_SOURCE_DIR}/../.. 
 )
 

@@ -99,6 +99,25 @@
   grid-row-start: 6;
 }
 
+.GridSeventhRow
+{
+  grid-row-start: 7;
+}
+
+.GridEighthRow
+{
+  grid-row-start: 8;
+}
+
+.GridNinthRow
+{
+  grid-row-start: 9;
+}
+
+.GridTenthRow
+{
+  grid-row-start: 9;
+}
 
 .GridSpanTwoCol
 {
@@ -110,7 +129,23 @@
   grid-column-end: span 3;
 }
 
+.GridSpanFourCol
+{
+  grid-column-end: span 4;
+}
+
+.GridSpanFiveCol
+{
+  grid-column-end: span 5;
+}
+
 .GridSpanTwoRows
 {
   grid-row-end: span 2;
+}
+
+
+.GridVertCenter
+{
+  align-self: center;
 }

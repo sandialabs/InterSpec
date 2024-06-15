@@ -110,8 +110,8 @@ struct PeakContinuum
     External
   };//enum OffsetType
   
-  /** Text appropriate for use as a label for the continuum type in the gui. */
-  static const char *offset_type_label( const OffsetType type );
+  /** The `WString::tr` key to use to render text appropriate for use as a label for the continuum type in the gui. */
+  static const char *offset_type_label_tr( const OffsetType type );
   
   /** Returns string to be used for XML or JSON identification of continuum type. */
   static const char *offset_type_str( const OffsetType type );

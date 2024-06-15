@@ -210,7 +210,7 @@ public:
   
   int nuclideIndex( const SandiaDecay::Nuclide *nuc ) const;
  
-  //setSharredAgeNuclide(): in order to make it so all isotopes of an element
+  //setSharedAgeNuclide(): in order to make it so all isotopes of an element
   //  can be made to have the same age, we'll have it so one of the isotopes
   //  controls the age (and if it can be fit) for all of them in a nuclide.
   //The dependantNucs' age will be controlled by definingNuc.  Setting the definingNuc
@@ -218,7 +218,7 @@ public:
   //  control this age.
   //If dependantNuc->atomicNumber != definingNuc->atomicNumber, an exception will
   //  be thrown
-  void setSharredAgeNuclide( const SandiaDecay::Nuclide *dependantNuc,
+  void setSharedAgeNuclide( const SandiaDecay::Nuclide *dependantNuc,
                              const SandiaDecay::Nuclide *definingNuc );
   
   //ageDefiningNuclide(...): returns the nuclide that controlls the age for the
@@ -306,7 +306,7 @@ public:
 protected:
   Wt::SortOrder m_sortOrder;
   Columns m_sortColumn;
-  bool m_displayCurries;
+  bool m_displayCuries;
   PeakModel *m_peakModel;
   std::vector<ShieldingSourceFitCalc::IsoFitStruct> m_nuclides;
   bool m_sameAgeForIsotopes;

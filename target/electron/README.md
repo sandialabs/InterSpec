@@ -12,7 +12,7 @@ To compile the InterSpec code, and package the Electron app, with the manually c
 npm install -g cmake-js 
 
 # For macOS only, you may want to define a deployment target
-export MACOSX_DEPLOYMENT_TARGET=10.12
+export MACOSX_DEPLOYMENT_TARGET=10.13
 
 cd /path/to/InterSpec/target/electron
 
@@ -146,7 +146,7 @@ docker pull quay.io/pypa/manylinux2014_x86_64:latest
 
 # Start a shell session within the image, mapping the InterSpec source 
 #  directory to /interspec.  We'll also map port 8081 for testing.
-docker run --rm -it -v `pwd`:/interspec quay.io/pypa/manylinux2014_x86_64:latest sh
+docker run --rm -it -v `pwd`:/interspec quay.io/pypa/manylinux2014_x86_64:latest bash
 
 # Get the dependancies we need to build InterSpec
 yum update
@@ -184,15 +184,6 @@ cp ../../NOTICE.html ./release-builds/InterSpec-linux-x64/
 ## Linux Considerations
 The `InterSpec` module is really a shared library that node.js loads, therefore you need the `-fPIC` C/C++ compiler flag enabled not just for the `InterSpec` code, but for all of the static libraries you link it against, including boost, Wt, and zlib - which isnt the default when compiling static libraries for any of them, so when building them you may want to add `-fPIC -std=c++11` flags to the flags.
 
-## Building for 32-bit Windows
-To build for 32-bit Windows, you should install 32bit node.js; you will then need to build the dependencies (boost, Wt, Eigen, etc) with the cmake flag `-A Win32`, or for boost, use the b2.exe flag `address-model=32 architecture=x86` (you may also need to create a `project-config.jam` file to explicitly point to the x86 cl.exe compiler).
-
-You should also consider modifying package.json to make sure the Electron version used is compatible with the version of Windows you want to run it on.
-
-Then to configure and build the project, you will need to use a command like:
-```bash
-cmake-js --generator "Visual Studio 17 2022" --CDBoost_USE_STATIC_RUNTIME=ON --CDCMAKE_BUILD_TYPE="Release" --CDUSE_LEAFLET_MAP=ON --CDLEAFLET_MAPS_KEY="..." --CDUSE_REL_ACT_TOOL=ON --CDInterSpec_FETCH_DEPENDENCIES=OFF --CDCMAKE_PREFIX_PATH="C:\Path\To\Prefix" --out="build_win_x86" --CDBoost_COMPILER="vc173" --CDZLIB_USE_STATIC_LIBS=ON --arch=ia32 --architecture ia32 --arch=ia32 --CDCMAKE_VS_PLATFORM_TOOLSET_HOST_ARCHITECTURE=x86 -A Win32 --target install
-```
 
 ## Future Work
 - In the future the build process may be improved to do the final packaging through CMake.  

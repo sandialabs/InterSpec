@@ -124,7 +124,7 @@ namespace HelpSystem
    Note: when the widget is deleted from memory, server-side, the tooltip will be removed from the DOM client-side.
    */
   void attachToolTipOn( Wt::WWebWidget* widget,
-                       const std::string &text,
+                       const Wt::WString &text,
                        const bool enableShowing,
                        const ToolTipPosition pos = HelpSystem::ToolTipPosition::Right,
                        const ToolTipPrefOverride forceShowing
@@ -135,7 +135,7 @@ namespace HelpSystem
    The lifetime of the tooltip is governed by the first element in the list.
    */
   void attachToolTipOn( std::initializer_list<Wt::WWebWidget*> widgets,
-                        const std::string &text,
+                        const Wt::WString &text,
                         const bool enableShowing,
                         const ToolTipPosition pos = HelpSystem::ToolTipPosition::Right,
                         const ToolTipPrefOverride forceShowing

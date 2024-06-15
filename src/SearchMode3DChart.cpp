@@ -99,14 +99,16 @@ void SearchMode3DChart::init()
   
   setLayoutSizeAware( true );
   
-  const char *tooltip = "";
+  if( m_viewer )
+    m_viewer->useMessageResourceBundle( "SearchMode3DChart" );
+  
   const bool showToolTips = InterSpecUser::preferenceValue<bool>("ShowTooltips", InterSpec::instance());
   
   m_layout = new WGridLayout();
   m_layout->setContentsMargins( 9, 9, 9, 0 ); //left, top, right, bottom (default is 9 pixels on each side)
   setLayout( m_layout );
   
-  m_loadingTxt = new WText( "Loading..." );
+  m_loadingTxt = new WText( WString::tr("sm3dc-loading") );
   m_layout->addWidget( m_loadingTxt, 0, 0, AlignCenter | AlignMiddle );
   
   WContainerWidget *controlsDiv = new WContainerWidget();
@@ -127,7 +129,7 @@ void SearchMode3DChart::init()
   */
   
   //Creates a editable textbox that allows users to input the minimum energy they are interested in
-  WLabel *label = new WLabel( "Min Energy", controlsDiv );
+  WLabel *label = new WLabel( WString::tr("sm3dc-min-energy"), controlsDiv );
   label->addStyleClass( "GridFirstRow GridFirstCol" );
   m_inputMinEnergy = new NativeFloatSpinBox( controlsDiv );
   m_inputMinEnergy->addStyleClass( "GridFirstRow GridSecondCol" );
@@ -136,7 +138,7 @@ void SearchMode3DChart::init()
   m_inputMinEnergy->valueChanged().connect( boost::bind(&SearchMode3DChart::updateRange, this) );
     
   //Creates a editable textbox that allows users to input the maximum energy they are interested in
-  label = new WLabel( "Max Energy", controlsDiv );
+  label = new WLabel( WString::tr("sm3dc-max-energy"), controlsDiv );
   label->addStyleClass( "GridFirstRow GridThirdCol" );
   m_inputMaxEnergy = new NativeFloatSpinBox( controlsDiv );
   m_inputMaxEnergy->addStyleClass( "GridFirstRow GridFourthCol" );
@@ -145,7 +147,7 @@ void SearchMode3DChart::init()
   m_inputMaxEnergy->valueChanged().connect( boost::bind(&SearchMode3DChart::updateRange, this) );
     
   //Creates a editable textbox that allows users to input the minimum energy they are interested in
-  label = new WLabel( "Min Time (s)", controlsDiv );
+  label = new WLabel( WString::tr("sm3dc-min-time"), controlsDiv );
   label->addStyleClass( "GridSecondRow GridFirstCol" );
   m_inputMinTime = new NativeFloatSpinBox( controlsDiv );
   m_inputMinTime->addStyleClass( "GridSecondRow GridSecondCol" );
@@ -154,7 +156,7 @@ void SearchMode3DChart::init()
   m_inputMinTime->valueChanged().connect( boost::bind(&SearchMode3DChart::updateRange, this) );
     
   //Creates a editable textbox that allows users to input the maximum energy they are interested in
-  label = new WLabel( "Max Time (s)", controlsDiv );
+  label = new WLabel( WString::tr("sm3dc-max-time"), controlsDiv );
   label->addStyleClass( "GridSecondRow GridThirdCol" );
   m_inputMaxTime = new NativeFloatSpinBox( controlsDiv );
   m_inputMaxTime->addStyleClass( "GridSecondRow GridFourthCol" );
@@ -166,7 +168,7 @@ void SearchMode3DChart::init()
   WText *spacer = new WText( "&nbsp;", controlsDiv );
   spacer->addStyleClass( "GridFirstRow GridFifthCol" );
   
-  label = new WLabel( "Time display bins", controlsDiv );
+  label = new WLabel( WString::tr("sm3dc-time-bins"), controlsDiv );
   label->addStyleClass( "GridFirstRow GridSixthCol" );
   m_timeDivisions = new WSpinBox( controlsDiv );
   m_timeDivisions->addStyleClass( "GridFirstRow GridSeventhCol" );
@@ -176,17 +178,10 @@ void SearchMode3DChart::init()
   m_timeDivisions->changed().connect( this, &SearchMode3DChart::handleNumTimeDivsChanged );
   m_timeDivisions->enterPressed().connect( this, &SearchMode3DChart::handleNumTimeDivsChanged );
   
-  tooltip = "The maximum number of time divisions to plot; if your data has more time-samples than"
-            " this in the displayed range, time-samples will be combined together, until it is less than this value.<br />"
-            "<br />"
-            "For example, if this value is 60, but your measurement has 208 samples, then each 4"
-            " samples will be summed together for a single bin for the time axis,"
-            " with a total of 52 bins on the time axis.<br />"
-            "If the product of the number of time channels, times the number of energy channels"
-            " is too large, performance issues may be encountered";
-  HelpSystem::attachToolTipOn( {label,m_timeDivisions}, tooltip, showToolTips, HelpSystem::ToolTipPosition::Left );
+  HelpSystem::attachToolTipOn( {label,m_timeDivisions}, WString::tr("sm3dc-tt-time-bins"),
+                              showToolTips, HelpSystem::ToolTipPosition::Left );
   
-  label = new WLabel( "Energy display bins", controlsDiv );
+  label = new WLabel( WString::tr("sm3dc-energy-bins"), controlsDiv );
   label->addStyleClass( "GridSecondRow GridSixthCol" );
   m_energyDivisions = new WSpinBox( controlsDiv );
   m_energyDivisions->addStyleClass( "GridSecondRow GridSeventhCol" );
@@ -196,12 +191,8 @@ void SearchMode3DChart::init()
   m_energyDivisions->changed().connect( this, &SearchMode3DChart::handleNumEnergyDivsChanged );
   m_energyDivisions->enterPressed().connect( this, &SearchMode3DChart::handleNumEnergyDivsChanged );
   
-  tooltip = "The maximum number of energy divisions to plot; if your data has more energy-channels than"
-  " this in the displayed range, channels will be combined together, until it is less than this value.<br />"
-  "<br />"
-  "If the product of the number of time channels, times the number of energy channels"
-  " is too large, performance issues may be encountered";
-  HelpSystem::attachToolTipOn( {label,m_energyDivisions}, tooltip, showToolTips, HelpSystem::ToolTipPosition::Left );
+  HelpSystem::attachToolTipOn( {label,m_energyDivisions}, WString::tr("sm3dc-tt-energy-bins"),
+                              showToolTips, HelpSystem::ToolTipPosition::Left );
   
   m_viewer->displayedSpectrumChanged().connect(
             boost::bind( &SearchMode3DChart::newSpectralDataSet, this,
@@ -269,14 +260,14 @@ void SearchMode3DChart::initChart()
   //m_chart->setTitle("3D Data View");
   
   //Creates X axis
-  m_chart->axis(Chart::XAxis_3D).setTitle( "Time (seconds)" );
+  m_chart->axis(Chart::XAxis_3D).setTitle( WString::tr("sm3dc-time-axis-label") );
   m_chart->axis(Chart::XAxis_3D).setTitleOffset( 10 );
   m_chart->axis(Chart::XAxis_3D).setLabelFormat( "%1.1f" );
   m_chart->axis(Chart::XAxis_3D).setLabelBasePoint( 0 );
   m_chart->axis(Chart::XAxis_3D).setLabelAngle( 90 );
   
   //Creates Y axis
-  m_chart->axis(Chart::YAxis_3D).setTitle( "Energy (keV)" );
+  m_chart->axis(Chart::YAxis_3D).setTitle( WString::tr("Energy (keV)") );
   m_chart->axis(Chart::YAxis_3D).setTitleOffset( 10 );
   m_chart->axis(Chart::YAxis_3D).setLabelFormat( "%.1f" );
   m_chart->axis(Chart::YAxis_3D).setLabelBasePoint( 0 );
@@ -284,7 +275,7 @@ void SearchMode3DChart::initChart()
   m_chart->axis(Chart::YAxis_3D).setLabelAngle( 90 );
   
   //Creates Z axis
-  m_chart->axis(Chart::ZAxis_3D).setTitle( "Counts" );
+  m_chart->axis(Chart::ZAxis_3D).setTitle( WString::tr("Counts") );
   //m_chart->axis(Chart::ZAxis_3D).setTitle( "Counts per Channels" );
   m_chart->axis(Chart::ZAxis_3D).setTitleOffset( 20 );
   m_chart->axis(Chart::ZAxis_3D).setLabelFormat( "%.1f" );
@@ -300,7 +291,7 @@ void SearchMode3DChart::initChart()
   m_chart->setGridEnabled(Chart::YZ_Plane, Chart::ZAxis_3D, true);
   
   m_data = new Chart::WGridData( m_model );
-  m_data->setTitle( "Counts per Channel" );
+  m_data->setTitle( WString::tr("sm3dc-counts-axis-label") );
   m_data->setType( Wt::Chart::SurfaceSeries3D );
   
   m_data->setSurfaceMeshEnabled( true );

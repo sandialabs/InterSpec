@@ -55,7 +55,6 @@
 #include "InterSpec/PeakFitUtils.h"
 #include "InterSpec/SpectrumChart.h"
 #include "InterSpec/UndoRedoManager.h"
-#include "InterSpec/SpectrumDataModel.h"
 #include "InterSpec/PeakSearchGuiUtils.h"
 #include "InterSpec/D3SpectrumDisplayDiv.h"
 
@@ -205,8 +204,12 @@ WT_DECLARE_WT_MEMBER
 D3SpectrumDisplayDiv::D3SpectrumDisplayDiv( WContainerWidget *parent )
 : WContainerWidget( parent ),
   m_renderFlags( 0 ),
-  m_model( new SpectrumDataModel( this ) ),
-  m_peakModel( 0 ),
+  m_peakModel( nullptr ),
+  m_foreground( nullptr ),
+  m_secondary( nullptr ),
+  m_background( nullptr ),
+  m_secondaryScale( 1.0f ),
+  m_backgroundScale( 1.0f ),
   m_compactAxis( false ),
   m_legendEnabled( true ),
   m_yAxisIsLog( true ),
@@ -216,6 +219,14 @@ D3SpectrumDisplayDiv::D3SpectrumDisplayDiv( WContainerWidget *parent )
   m_showHistogramIntegralsInLegend( true ),
   m_showXAxisSliderChart( false ),
   m_showYAxisScalers( false ),
+  m_searchEnergies{},
+  m_highlights{},
+  m_peakLabelsToShow{},
+  m_xAxisTitle( WString::tr("Energy (keV)") ),
+  m_yAxisTitle( WString::tr("d3sdd-yAxisTitle") ),
+  m_yAxisTitleMulti( WString::tr("d3sdd-yAxisTitleMulti") ),
+  m_chartTitle(),
+  // A bunch of signals m_shiftKeyDraggJS ... m_yAxisScaled
   m_jsgraph( jsRef() + ".chart" ),
   m_xAxisMinimum(0.0),
   m_xAxisMaximum(0.0),
@@ -246,6 +257,8 @@ D3SpectrumDisplayDiv::D3SpectrumDisplayDiv( WContainerWidget *parent )
                      "event.cancelBubble = true; event.returnValue = false; return false;"
                     );
   
+    InterSpec::instance()->useMessageResourceBundle( "D3SpectrumDisplayDiv" );
+    
   //For development it may be useful to directly use the original JS/CSS files,
   //  but normally we should use the resources CMake will copy into
   //  InterSpec_resources (not checked that Andorid build systems will
@@ -283,8 +296,6 @@ D3SpectrumDisplayDiv::D3SpectrumDisplayDiv( WContainerWidget *parent )
 void D3SpectrumDisplayDiv::defineJavaScript()
 {
   string options = "{title: '', showAnimation: true, animationDuration: 200";
-  options += ", xlabel: '" + m_xAxisTitle + "'";
-  options += ", ylabel: '" + m_yAxisTitle + "'";
   options += ", compactXAxis: " + jsbool(m_compactAxis);
   options += ", allowDragRoiExtent: true";
   options += ", showRefLineInfoForMouseOver: " + jsbool(m_showRefLineInfoForMouseOver);
@@ -332,7 +343,7 @@ void D3SpectrumDisplayDiv::defineJavaScript()
 //  string double_click_time;
 //  if( wApp->readConfigurationProperty( "double-click-timeout", double_click_time ) )
 //    options += ", doubleClickDelay:" + double_click_time;
-  
+  options += ", txt: " + localizedStringsJson();
   options += "}";
   
   setJavaScriptMember( "chart", "new SpectrumChartD3(" + jsRef() + "," + options + ");");
@@ -351,10 +362,6 @@ void D3SpectrumDisplayDiv::defineJavaScript()
   );
   
   callJavaScriptMember( "resizeObserver.observe", jsRef() );
-  
-  //updateReferncePhotoPeakLines();
-  
-  //setHighlightRegionsToClient();
   
   setSearchEnergies( m_searchEnergies );
   
@@ -458,8 +465,6 @@ void D3SpectrumDisplayDiv::setPeakModel( PeakModel *model )
 {
   if( !model )
     throw runtime_error( "setPeakModel(...): invalid input model" );
-  
-  model->setDataModel( m_model );
   
   m_peakModel = model;
 
@@ -695,11 +700,17 @@ void D3SpectrumDisplayDiv::highlightPeakAtEnergy( const double energy )
 
 void D3SpectrumDisplayDiv::render( Wt::WFlags<Wt::RenderFlag> flags )
 {
+  WContainerWidget::render( flags );
+  
   const bool renderFull = (flags & Wt::RenderFlag::RenderFull);
   //const bool renderUpdate = (flags & Wt::RenderFlag::RenderUpdate);
   
   if( renderFull )
+  {
+    // Note that we are doing any JS calls we've made (like set x-axis range),
+    //  before setting the data, so they may get squashed.
     defineJavaScript();
+  }
   
   // We will render background and secondary spectra first; this way
   //  if we are loading a new foreground, and unloading the background
@@ -732,9 +743,72 @@ void D3SpectrumDisplayDiv::render( Wt::WFlags<Wt::RenderFlag> flags )
     setReferenceLinesToClient();
   
   m_renderFlags = 0;
+}//void render( flags )
+
+
+std::string D3SpectrumDisplayDiv::localizedStringsJson() const
+{
+  // Strings used in the chart that we will localize, most, but probably not quite all:
+  // "Real Time", "Live Time", "Dead Time", "Scaled by", "counts", "chan", "Zoom In", "Neutrons", "neutrons", "cps"
+  // "ROI counts", "Gamma Counts", "cont. area", "peak cps", "peak area", "FWHM", "mean", "Spectrum"
+  // "Compton Edge", "Sum Peak", "Click to set sum peak first energy.", "Single Escape", "Double Escape"
+  // "Will Erase Peaks In Range", "Zoom-In on Y-axis", "Zoom-out on Y-axis"
   
-  WContainerWidget::render( flags );
-}
+  return "{\n\t"
+  "xAxisTitle: " + m_xAxisTitle.jsStringLiteral('\'') + ",\n\t"                                   // "Energy (keV)"
+  "yAxisTitle: " + m_yAxisTitle.jsStringLiteral('\'') + ",\n\t"                                   // "Counts"
+  "yAxisTitleMulti: " + m_yAxisTitleMulti.jsStringLiteral('\'') + ",\n\t"                         // "Counts per {1} Channels"
+  "title: " + (m_chartTitle.empty() ? string("null") : m_chartTitle.jsStringLiteral('\'')) + ",\n\t" //""
+  "realTime: " + WString::tr("d3sdd-realTime").jsStringLiteral() + ",\n\t"                        // "Real Time"
+  "liveTime: " + WString::tr("d3sdd-liveTime").jsStringLiteral() + ",\n\t"                        // "Live Time"
+  "deadTime: " + WString::tr("d3sdd-deadTime").jsStringLiteral() + ",\n\t"                        // "Dead Time"
+  "scaledBy: " + WString::tr("d3sdd-scaledBy").jsStringLiteral() + ",\n\t"                        // "Scaled by"
+  "zoomIn: " + WString::tr("d3sdd-zoomIn").jsStringLiteral() + ",\n\t"                            // "Zoom In"
+  "neutrons: " + WString::tr("d3sdd-neutrons").jsStringLiteral() + ",\n\t"                        // "neutrons"
+  "Neutrons: " + WString::tr("d3sdd-Neutrons").jsStringLiteral() + ",\n\t"                        // "Neutrons"
+  "cps: " + WString::tr("d3sdd-cps").jsStringLiteral() + ",\n\t"                                  // "cps"
+  "roiCounts: " + WString::tr("d3sdd-roiCounts").jsStringLiteral() + ",\n\t"                      // "ROI counts"
+  "gammaCounts: " + WString::tr("d3sdd-gammaCounts").jsStringLiteral() + ",\n\t"                  // "Gamma Counts"
+  "contArea: " + WString::tr("d3sdd-contArea").jsStringLiteral() + ",\n\t"                        // "cont. area"
+  "peakCps: " + WString::tr("d3sdd-peakCps").jsStringLiteral() + ",\n\t"                          // "peak cps"
+  "peakArea: " + WString::tr("d3sdd-peakArea").jsStringLiteral() + ",\n\t"                        // "peak area"
+  "fwhm: " + WString::tr("FWHM").jsStringLiteral() + ",\n\t"                                      // "FWHM"
+  "mean: " + WString::tr("d3sdd-mean").jsStringLiteral() + ",\n\t"                                // "mean"
+  "spectrum: " + WString::tr("d3sdd-spectrum").jsStringLiteral() + ",\n\t"                        // "Spectrum"
+  "comptonEdge: " + WString::tr("d3sdd-comptonEdge").jsStringLiteral() + ",\n\t"                  // "Compton Edge"
+  "sumPeak: " + WString::tr("d3sdd-sumPeak").jsStringLiteral() + ",\n\t"                          // "Sum Peak"
+  "firstEnergyClick: " + WString::tr("d3sdd-firstEnergyClick").jsStringLiteral() + ",\n\t"        // "Click to set sum peak first energy."
+  "singleEscape: " + WString::tr("d3sdd-singleEscape").jsStringLiteral() + ",\n\t"                // "Single Escape"
+  "doubleEscape: " + WString::tr("d3sdd-doubleEscape").jsStringLiteral() + ",\n\t"                // "Double Escape"
+  "eraseInRange: " + WString::tr("d3sdd-eraseInRange").jsStringLiteral() + ",\n\t"                // "Will Erase Peaks In Range"
+  "zoomInY: " + WString::tr("d3sdd-zoomInY").jsStringLiteral() + ",\n\t"                          // "Zoom-In on Y-axis"  (make sure to search for "Zoom-In")
+  "zoomOutY: " + WString::tr("d3sdd-zoomOutY").jsStringLiteral() + ",\n\t"                        // "Zoom-out on Y-axis" (make sure to search for "Zoom-Out")
+  "touchDefineRoi: " + WString::tr("d3sdd-touchDefineRoi").jsStringLiteral() + ",\n\t"            // "Move 2 fingers to right to define ROI"
+  "foreNSigmaBelowBack: " + WString::tr("d3sdd-foreNSigmaBelowBack").jsStringLiteral() + ",\n\t"  // "Foreground is {1} σ below background."
+  "foreNSigmaAboveBack: " + WString::tr("d3sdd-foreNSigmaAboveBack").jsStringLiteral() + ",\n\t"  // "Foreground is {1} σ above background."
+  "backSubCounts: " + WString::tr("d3sdd-backSubCounts").jsStringLiteral() + ",\n\t"              // "counts (BG sub)"
+  "afterScalingBy: " + WString::tr("d3sdd-afterScalingBy").jsStringLiteral() + ",\n\t"            // "after scaling by "
+  "clickedPeak: " + WString::tr("d3sdd-clickedPeak").jsStringLiteral() + ",\n\t"                  // "Clicked Peak"
+  "recalFromTo: " + WString::tr("d3sdd-recalFromTo").jsStringLiteral() + ",\n\t"                  // "Recalibrate data from {1} to {2} keV"
+  "sumFromTo: " + WString::tr("d3sdd-sumFromTo").jsStringLiteral() + ",\n\t"                      // "{1} to {2} keV"
+  "comptonPeakAngle: " + WString::tr("d3sdd-comptonPeakAngle").jsStringLiteral() + ",\n\t"        // "{1}° Compton Peak"
+  "}";
+  
+  // In JS, probably need to call: `self.handleResize( false );`
+}//std::string localizedStringsJson() const
+
+
+void D3SpectrumDisplayDiv::refresh()
+{
+  // If we are here, the language has probably been changed - we'll update the localization
+  //  phrases the JS uses.
+  WContainerWidget::refresh();
+
+  if( isRendered() )
+    doJavaScript( m_jsgraph + ".setLocalizations( " + localizedStringsJson() + ",\n  false);" );
+  
+  m_renderFlags |= UpdateHighlightRegions;
+}//void refresh();
 
 
 double D3SpectrumDisplayDiv::xAxisMinimum() const
@@ -830,7 +904,6 @@ void D3SpectrumDisplayDiv::setBackgroundSubtract( bool subtract )
     return;
   
   m_backgroundSubtract = subtract;
-  m_model->setBackgroundSubtract( subtract );
   
   if( isRendered() )
     doJavaScript( m_jsgraph + ".setBackgroundSubtract(" + jsbool(subtract) + ");" );
@@ -920,6 +993,34 @@ void D3SpectrumDisplayDiv::setYAxisRange( const double minimum,
 }//void setYAxisRange( const double minimum, const double maximum );
 
 
+void D3SpectrumDisplayDiv::doBackgroundLiveTimeNormalization()
+{
+  if( !m_background || !m_foreground
+     || (m_background->live_time() <= 0.0f)
+     || (m_foreground->live_time() <= 0.0f) )
+  {
+    m_backgroundScale = 1.0f;
+  }else
+  {
+    m_backgroundScale = m_foreground->live_time() / m_background->live_time();
+  }
+}//void doBackgroundLiveTimeNormalization()
+
+
+void D3SpectrumDisplayDiv::doSecondaryLiveTimeNormalization()
+{
+  if( !m_secondary || !m_foreground
+     || (m_secondary->live_time() <= 0.0f)
+     || (m_foreground->live_time() <= 0.0f) )
+  {
+    m_secondaryScale = 1.0f;
+  }else
+  {
+    m_secondaryScale = m_foreground->live_time() / m_secondary->live_time();
+  }
+}//void doSecondaryLiveTimeNormalization()
+
+
 void D3SpectrumDisplayDiv::setForegroundPeaksToClient()
 {
   string js;
@@ -930,7 +1031,7 @@ void D3SpectrumDisplayDiv::setForegroundPeaksToClient()
     if( peaks )
     {
       vector< std::shared_ptr<const PeakDef> > inpeaks( peaks->begin(), peaks->end() );
-      std::shared_ptr<const Measurement> foreground = m_model->getData();
+      const std::shared_ptr<const Measurement> &foreground = m_foreground;
       js = PeakDef::peak_json( inpeaks, foreground );
     }
   }
@@ -956,85 +1057,92 @@ void D3SpectrumDisplayDiv::scheduleForegroundPeakRedraw()
 
 void D3SpectrumDisplayDiv::setData( std::shared_ptr<const Measurement> data_hist, const bool keep_curent_xrange )
 {
-  const float oldBackSF = m_model->backgroundScaledBy();
-  const float oldSecondSF = m_model->secondDataScaledBy();
+  const float oldBackSF = m_backgroundScale;
+  const float oldSecondSF = m_secondaryScale;
   
-  m_model->setDataHistogram( data_hist );
+  m_foreground = data_hist;
+  if( m_peakModel )
+    m_peakModel->setForeground( data_hist );
   
   if( !keep_curent_xrange )
     m_renderFlags |= ResetXDomain;
   
   scheduleUpdateForeground();
   
+  // Update background and second SF
+  doBackgroundLiveTimeNormalization();
+  doSecondaryLiveTimeNormalization();
+  
+  
   //If the background or secondary data spectrum scale factors changed, we need
   //  to update those to the client as well.
-  const float newBackSF = m_model->backgroundScaledBy();
-  if( m_model->getBackground() && (fabs(newBackSF-oldBackSF)>0.000001f*std::max(newBackSF,oldBackSF)) )
+  if( m_background && (fabs(m_backgroundScale - oldBackSF) > 0.000001f*std::max(m_backgroundScale,oldBackSF)) )
     scheduleUpdateBackground();
   
-  const float newSecondSF = m_model->secondDataScaledBy();
-  if( m_model->getSecondData() && (fabs(newSecondSF-oldSecondSF)>0.000001f*std::max(newSecondSF,oldSecondSF)) )
+  if( m_secondary && (fabs(m_secondaryScale - oldSecondSF) > 0.000001f*std::max(m_secondaryScale,oldSecondSF)) )
     scheduleUpdateSecondData();
 }//void setData( std::shared_ptr<const Measurement> data_hist )
 
 
 std::shared_ptr<const Measurement> D3SpectrumDisplayDiv::data() const
 {
-  return m_model->getData();
+  return m_foreground;
 }//std::shared_ptr<const Measurement> data() const
 
 
 std::shared_ptr<const Measurement> D3SpectrumDisplayDiv::secondData() const
 {
-  return m_model->getSecondData();
+  return m_secondary;
 }//std::shared_ptr<const Measurement> secondData() const
 
 
 std::shared_ptr<const Measurement> D3SpectrumDisplayDiv::background() const
 {
-  return m_model->getBackground();
+  return m_background;
 }//std::shared_ptr<const Measurement> background() const
 
 
 float D3SpectrumDisplayDiv::foregroundLiveTime() const
 {
-  return m_model->dataLiveTime();
+  return m_foreground ? m_foreground->live_time() : 0.0f;
 }
 
 
 float D3SpectrumDisplayDiv::foregroundRealTime() const
 {
-  return m_model->dataRealTime();
+  return m_foreground ? m_foreground->real_time() : 0.0f;
 }
 
 
 float D3SpectrumDisplayDiv::backgroundLiveTime() const
 {
-  return m_model->backgroundLiveTime();
+  return m_background ? m_background->live_time() : 0.0f;
 }
 
 
 float D3SpectrumDisplayDiv::backgroundRealTime() const
 {
-  return m_model->backgroundRealTime();
+  return m_background ? m_background->real_time() : 0.0f;
 }
 
 
 float D3SpectrumDisplayDiv::secondForegroundLiveTime() const
 {
-  return m_model->secondDataLiveTime();
+  return m_secondary ? m_secondary->live_time() : 0.0f;
 }
 
 
 float D3SpectrumDisplayDiv::secondForegroundRealTime() const
 {
-  return m_model->secondDataRealTime();
+  return m_secondary ? m_secondary->real_time() : 0.0f;
 }
 
 
 std::shared_ptr<const Measurement> D3SpectrumDisplayDiv::histUsedForXAxis() const
 {
-  return m_model->histUsedForXAxis();
+  if( m_foreground )
+    return m_foreground;
+  return nullptr;
 }
 
 
@@ -1047,12 +1155,12 @@ void D3SpectrumDisplayDiv::setDisplayScaleFactor( const float sf,
       throw runtime_error( "setDisplayScaleFactor can not be called for foreground" );
       
     case SpecUtils::SpectrumType::SecondForeground:
-      m_model->setSecondDataScaleFactor( sf );
+      m_secondaryScale = sf;
       scheduleUpdateSecondData();
       break;
       
     case SpecUtils::SpectrumType::Background:
-      m_model->setBackgroundDataScaleFactor( sf );
+      m_backgroundScale = sf;
       scheduleUpdateBackground();
       break;
   }//switch( spectrum_type )
@@ -1066,10 +1174,9 @@ float D3SpectrumDisplayDiv::displayScaleFactor( const SpecUtils::SpectrumType sp
     case SpecUtils::SpectrumType::Foreground:
       return 1.0f;
     case SpecUtils::SpectrumType::SecondForeground:
-      return m_model->secondDataScaledBy();
+      return m_secondaryScale;
     case SpecUtils::SpectrumType::Background:
-      return m_model->backgroundScaledBy();
-      //  m_spectrumDiv->continuum();
+      return m_backgroundScale;
   }//switch( spectrum_type )
   
   throw runtime_error( "D3SpectrumDisplayDiv::displayScaleFactor(...): invalid input arg" );
@@ -1080,19 +1187,18 @@ float D3SpectrumDisplayDiv::displayScaleFactor( const SpecUtils::SpectrumType sp
 
 void D3SpectrumDisplayDiv::setBackground( std::shared_ptr<const Measurement> background )
 {
-  m_model->setBackgroundHistogram( background );
-  
-  if( !background && m_model->backgroundSubtract() )
+  m_background = background;
+  doBackgroundLiveTimeNormalization();
+  if( !background && m_backgroundSubtract )
     setBackgroundSubtract( false );
-  
   scheduleUpdateBackground();
 }//void D3SpectrumDisplayDiv::setBackground(...);
 
 
 void D3SpectrumDisplayDiv::setSecondData( std::shared_ptr<const Measurement> hist )
 {
-  m_model->setSecondDataHistogram( hist, false );
-  
+  m_secondary = hist;
+  doSecondaryLiveTimeNormalization();
   scheduleUpdateSecondData();
 }//void D3SpectrumDisplayDiv::setSecondData( std::shared_ptr<const Measurement> background );
 
@@ -1107,35 +1213,34 @@ void D3SpectrumDisplayDiv::visibleRange( double &xmin, double &xmax,
 }
 
 
-const string D3SpectrumDisplayDiv::xAxisTitle() const
+const Wt::WString &D3SpectrumDisplayDiv::xAxisTitle() const
 {
   return m_xAxisTitle;
 }//const Wt::WString &xAxisTitle() const;
 
 
-const string D3SpectrumDisplayDiv::yAxisTitle() const
+const Wt::WString &D3SpectrumDisplayDiv::yAxisTitle() const
 {
   return m_yAxisTitle;
 }//const Wt::WString &yAxisTitle() const;
 
 
-void D3SpectrumDisplayDiv::setXAxisTitle( const std::string &title )
+void D3SpectrumDisplayDiv::setXAxisTitle( const Wt::WString &title )
 {
   m_xAxisTitle = title;
-  SpecUtils::ireplace_all( m_xAxisTitle, "'", "&#39;" );
-  
   if( isRendered() )
-    doJavaScript( m_jsgraph + ".setXAxisTitle('" + title + "');" );
+    doJavaScript( m_jsgraph + ".setXAxisTitle(" + m_xAxisTitle.jsStringLiteral('\'') + "');" );
 }//void setXAxisTitle( const std::string &title )
 
 
-void D3SpectrumDisplayDiv::setYAxisTitle( const std::string &title )
+void D3SpectrumDisplayDiv::setYAxisTitle( const Wt::WString &title, const Wt::WString &titleMulti )
 {
   m_yAxisTitle = title;
-  SpecUtils::ireplace_all( m_yAxisTitle, "'", "&#39;" );
+  m_yAxisTitleMulti = titleMulti;
   
   if( isRendered() )
-    doJavaScript( m_jsgraph + ".setYAxisTitle('" + title + "');" );
+    doJavaScript( m_jsgraph + ".setYAxisTitle(" + m_yAxisTitle.jsStringLiteral('\'')
+                 + ", " + m_yAxisTitleMulti.jsStringLiteral('\'') + ");" );
 }//void setYAxisTitle( const std::string &title )
 
 
@@ -1150,6 +1255,15 @@ Wt::Signal<double,double> &D3SpectrumDisplayDiv::shiftAltKeyDragged()
 {
   return m_shiftAltKeyDragg;
 }
+
+
+void D3SpectrumDisplayDiv::setChartTitle( const Wt::WString &title )
+{
+  m_chartTitle = title;
+  if( isRendered() )
+    doJavaScript( m_jsgraph + ".setTitle(" + title.jsStringLiteral('\'') + ");" );
+}//void setChartTitle( const Wt::WString &title )
+
 
 void D3SpectrumDisplayDiv::setSearchEnergies( const vector<pair<double,double>> &energies )
 {
@@ -1208,19 +1322,26 @@ void D3SpectrumDisplayDiv::removeAllDecorativeHighlightRegions()
 
 size_t D3SpectrumDisplayDiv::addDecorativeHighlightRegion( const float lowerx,
                                                           const float upperx,
-                                                          const Wt::WColor &color )
+                                                          const Wt::WColor &color,
+                                                          const HighlightRegionFill fillType,
+                                                          const Wt::WString &txt  )
 {
-  SpectrumChart::HighlightRegion region;
+  D3SpectrumDisplayDiv::HighlightRegion region;
   region.lowerx = lowerx;
   region.upperx = upperx;
   region.color = color;
+  region.fill_type = fillType;
+  region.display_txt = txt;
   region.hash = 0;
+  
   boost::hash_combine( region.hash, lowerx );
   boost::hash_combine( region.hash, upperx );
   boost::hash_combine( region.hash, color.red() );
   boost::hash_combine( region.hash, color.green() );
   boost::hash_combine( region.hash, color.blue() );
   boost::hash_combine( region.hash, color.alpha() );
+  boost::hash_combine( region.hash, static_cast<int>(fillType) );
+  boost::hash_combine( region.hash, hash<string>()(txt.toUTF8()) );
   
   if( region.hash <= 2 )
     region.hash += 3;
@@ -1249,14 +1370,30 @@ void D3SpectrumDisplayDiv::setHighlightRegionsToClient()
     jsstrm << "([";
     for( size_t i = 0; i < m_highlights.size(); ++i )
     {
-      const SpectrumChart::HighlightRegion &region = m_highlights[i];
+      const D3SpectrumDisplayDiv::HighlightRegion &region = m_highlights[i];
       jsstrm << std::string(i ? ",{" : "{")
              << "lowerEnergy:" << static_cast<double>(region.lowerx)
              << ", upperEnergy:" << static_cast<double>(region.upperx)
              << ", fill: 'rgba(" << region.color.red() << "," << region.color.green()  //bug in Wt 3.3.4 means need to manually write out rgba()
                                  << "," << region.color.blue()
-                                 << "," << (region.color.alpha()/255.0) << ")'"
-             << ", hash:" << std::to_string(region.hash)
+             << "," << (region.color.alpha()/255.0) << ")'";
+      
+      switch( region.fill_type )
+      {
+        case HighlightRegionFill::Full:
+          // We'll skip putting this in - previous to 20240527 this field didnt exist, so we'll keep compatiblity
+          //jsstrm << ", drawRegion: 'All'";
+          break;
+          
+        case HighlightRegionFill::BelowData:
+          jsstrm << ", drawRegion: 'BelowData'";
+          break;
+      }//switch( region.fill_type )
+      
+      if( !region.display_txt.empty() )
+        jsstrm << ", text: " << region.display_txt.jsStringLiteral('\'');
+      
+      jsstrm << ", hash:" << std::to_string(region.hash)
              << "}";
     }//for( loop over m_highlights )
   
@@ -1291,7 +1428,7 @@ void D3SpectrumDisplayDiv::scheduleUpdateSecondData()
 
 void D3SpectrumDisplayDiv::renderForegroundToClient()
 {
-  const std::shared_ptr<const Measurement> data_hist = m_model->getData();
+  const std::shared_ptr<const Measurement> &data_hist = m_foreground;
   
   string js;
   
@@ -1348,7 +1485,7 @@ void D3SpectrumDisplayDiv::renderForegroundToClient()
 void D3SpectrumDisplayDiv::renderBackgroundToClient()
 {
   string js;
-  const std::shared_ptr<const Measurement> background = m_model->getBackground();
+  const std::shared_ptr<const Measurement> &background = m_background;
   
   // Set the data for the chart
   if ( background ) {
@@ -1394,7 +1531,7 @@ void D3SpectrumDisplayDiv::renderBackgroundToClient()
 void D3SpectrumDisplayDiv::renderSecondDataToClient()
 {
   string js;
-  const std::shared_ptr<const Measurement> hist = m_model->getSecondData();
+  const std::shared_ptr<const Measurement> &hist = m_secondary;
   
   // Set the data for the chart
   if ( hist ) {
@@ -2300,7 +2437,7 @@ void D3SpectrumDisplayDiv::performDragCreateRoiWork( double lower_energy, double
 
 void D3SpectrumDisplayDiv::updateRoiBeingDragged( const vector<shared_ptr<const PeakDef> > &peaks )
 {
-  const shared_ptr<const Measurement> fore = m_model->getData();
+  const shared_ptr<const Measurement> &fore = m_foreground;
   const string json = peaks.empty() ? string("null") : PeakDef::gaus_peaks_to_json( peaks, fore );
   
   doJavaScript( "try{" + m_jsgraph + ".updateRoiBeingDragged(" + json + ");}catch(error){}" );
@@ -2321,13 +2458,13 @@ void D3SpectrumDisplayDiv::yAxisScaled( const double scale, const std::string &s
   }else if( spectrum == "BACKGROUND" )
   {
     type = SpecUtils::SpectrumType::Background;
-    previous_scale = m_model->backgroundScaledBy();
-    m_model->setBackgroundDataScaleFactor( scale );
+    previous_scale = m_backgroundScale;
+    m_backgroundScale = scale;
   }else if( spectrum == "SECONDARY" )
   {
     type = SpecUtils::SpectrumType::SecondForeground;
-    previous_scale = m_model->secondDataScaledBy();
-    m_model->setSecondDataScaleFactor( scale );
+    previous_scale = m_secondaryScale;
+    m_secondaryScale = scale;
   }else
   {
     cerr << "Received yscaled signal with scale " << scale << " and spectrum = '"

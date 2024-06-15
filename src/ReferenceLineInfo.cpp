@@ -28,6 +28,7 @@
 #include <string>
 #include <stdexcept>
 
+#include <Wt/WLocale>
 #include <Wt/WWebWidget>  //For quoting strings only
 
 #include "rapidxml/rapidxml.hpp"
@@ -52,6 +53,7 @@
 #include "InterSpec/DecayDataBaseServer.h"
 #include "InterSpec/MassAttenuationTool.h"
 #include "InterSpec/GammaInteractionCalc.h"
+#include "InterSpec/PhysicalUnitsLocalized.h"
 
 
 using namespace std;
@@ -1566,7 +1568,37 @@ void RefLineInput::serialize( rapidxml::xml_node<char> *parent_node ) const
   if( !m_age.empty() )
   {
     name = "Age";
-    value = doc->allocate_string( m_age.c_str() );
+
+    string age_str = m_age;
+    
+    {// begin scope to convert age into English
+      const SandiaDecay::SandiaDecayDataBase *db = DecayDataBaseServer::database();
+      const SandiaDecay::Nuclide *nuc = db->nuclide( m_input_txt );
+      const double hl = nuc ? nuc->halfLife : -1.0;
+      
+      try
+      {
+        // If we can convert from text to duration, using non-localized function, we probably
+        //  dont need to convert things
+        PhysicalUnits::stringToTimeDurationPossibleHalfLife( age_str, hl );
+      }catch( std::exception &e )
+      {
+        const Wt::WLocale &locale = Wt::WLocale::currentLocale();
+        if( !locale.name().empty() && !SpecUtils::istarts_with(locale.name(), "en" ) )
+        {
+          try
+          {
+            const double duration = PhysicalUnitsLocalized::stringToTimeDurationPossibleHalfLife( age_str, hl );
+            age_str = PhysicalUnits::printToBestTimeUnits( duration );
+          }catch( std::exception &e )
+          {
+            cerr << "Error converting age ('" << age_str << "') to English time-span: " << e.what() << endl;
+          }
+        }//if( we are in a non-English locale )
+      }//try / catch - see if we can read it in
+    }// End scope to convert age into English
+    
+    value = doc->allocate_string( age_str.c_str() );
     node = doc->allocate_node( rapidxml::node_element, name, value );
     base_node->append_node( node );
   }//if( age >= 0.0 )
@@ -1799,7 +1831,7 @@ std::shared_ptr<ReferenceLineInfo> ReferenceLineInfo::generateRefLineInfo( RefLi
     if( input.m_promptLinesOnly )
     {
       age = 5.0*nuc->promptEquilibriumHalfLife();
-      input.m_age = PhysicalUnits::printToBestTimeUnits(age, 2);
+      input.m_age = PhysicalUnitsLocalized::printToBestTimeUnits(age, 2);
     }else if( input.m_age == "" )
     {
       age = PeakDef::defaultDecayTime( nuc, &input.m_age );
@@ -1816,7 +1848,7 @@ std::shared_ptr<ReferenceLineInfo> ReferenceLineInfo::generateRefLineInfo( RefLi
     {
       try
       {
-        age = PhysicalUnits::stringToTimeDurationPossibleHalfLife( input.m_age, nuc->halfLife );
+        age = PhysicalUnitsLocalized::stringToTimeDurationPossibleHalfLife( input.m_age, nuc->halfLife );
       }catch( std::exception & )
       {
         answer.m_input_warnings.push_back( "Invalid nuclide age input." );
@@ -1938,7 +1970,7 @@ std::shared_ptr<ReferenceLineInfo> ReferenceLineInfo::generateRefLineInfo( RefLi
       {
         try
         {
-          age = PhysicalUnits::stringToTimeDuration( input.m_age );
+          age = PhysicalUnitsLocalized::stringToTimeDuration( input.m_age );
         }catch( std::exception & )
         {
           answer.m_input_warnings.push_back( "Invalid age input." );

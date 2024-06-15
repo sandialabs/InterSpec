@@ -1,0 +1,15 @@
+<messages>
+  <!-- pid is short for PeakInfoDisplay -->
+  <message id="anpd-dialog-add-peak-title">Ajouter un Pic</message>
+  <message id="anpd-err-no-foreground">Un spectre de premier plan doit être chargé pour ajouter un pic.</message>
+  <message id="anpd-err-no-foreground-1">Aucun spectre de premier plan</message>
+  <message id="anpd-peak-mean">Moyenne du Pic</message>
+  <message id="anpd-peak-fwhm">FWHM du Pic</message>
+  <message id="anpd-peak-amp">Amplitude du Pic</message>
+  <message id="anpd-roi-lower">Limite Inférieure de la ROI</message>
+  <message id="anpd-roi-upper">Limite Supérieure de la ROI</message>
+  <message id="anpd-tt-more-adv">Pour plus d'options avancées, voir l'<em>Éditeur de Pics</em> après l'ajout.</message>
+  <message id="anpd-screen-to-small">Écran trop petit pour l'aperçu.</message>
+  <message id="anpd-err-preview">Erreur lors du rendu de l'aperçu</message>
+  <message id="anpd-err-fit-failed">L'ajustement a échoué.</message>
+  </messages>

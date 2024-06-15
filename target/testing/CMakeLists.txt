@@ -67,6 +67,13 @@ add_test( NAME PhysicalUnits
   WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
 )
 
+add_executable( test_PhysicalUnitsLocalized test_PhysicalUnitsLocalized.cpp )
+target_link_libraries( test_PhysicalUnitsLocalized PRIVATE InterSpecLib )
+add_test( NAME test_PhysicalUnitsLocalized
+  COMMAND $<TARGET_FILE:test_PhysicalUnitsLocalized> ${BOOST_TEST_CL_ARGS} -- ${DATA_DIR_ARGS}
+  WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
+)
+
 
 add_executable( test_findCharacteristics test_findCharacteristics.cpp )
 target_link_libraries( test_findCharacteristics PRIVATE InterSpecLib )

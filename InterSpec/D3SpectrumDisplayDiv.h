@@ -25,7 +25,6 @@ class SpecMeas;
 class PeakModel;
 class InterSpec;
 struct ColorTheme;
-class SpectrumDataModel;
 namespace Wt
 {
   class WCssTextRule;
@@ -40,10 +39,9 @@ namespace SpecUtils{ enum class SpectrumType : int; }
    internal flag, call WWidget::scheduleRender(0), and not load the JS/JSON to
    client until D3SpectrumDisplayDiv::render() is called.  Same thing with
    colors and scale factors.
- - Get rid of SpectrumDataModel.  Will also require modifying PeakModel.
- - The y-axis range is not propogated from the client to server after many
+ - The y-axis range is not propagated from the client to server after many
    operations; this should be fixed.  Also, not sure if x-axis range is always
-   propogated.
+   propagated.
  - showHistogramIntegralsInLegend() is not implemented client side
  - setTextInMiddleOfChart() is not implemented client side
  - assign unique spectrum ID's in the JSON for each spectrum; convert JS to
@@ -58,6 +56,11 @@ public:
   D3SpectrumDisplayDiv( Wt::WContainerWidget *parent = 0 );
   virtual ~D3SpectrumDisplayDiv();
   
+  /** Function called when the locale is changed. */
+  virtual void refresh();
+  
+  /** Returns the JSON object containing the localized strings to use within the chart. */
+  std::string localizedStringsJson() const;
   
   //setTextInMiddleOfChart(...): draws some large text over the middle of the
   //  chart - used int the spectrum quizzer for text based questions.
@@ -184,7 +187,7 @@ public:
   
 
   //setDisplayScaleFactor(): set the effective live time of 'spectrum_type'
-  //  to be 'sf' timess the live time of 'spectrum_type'.
+  //  to be 'sf' times the live time of 'spectrum_type'.
   void setDisplayScaleFactor( const float sf,
                              const SpecUtils::SpectrumType spectrum_type );
   
@@ -192,12 +195,21 @@ public:
   void visibleRange( double &xmin, double &xmax,
                     double &ymin, double &ymax ) const;
   
-  virtual void setXAxisTitle( const std::string &title );
-  virtual void setYAxisTitle( const std::string &title );
+  /** Sets the x-axis title, overriding whatever is set by the current localization. */
+  virtual void setXAxisTitle( const Wt::WString &title );
   
-  const std::string xAxisTitle() const;
-  const std::string yAxisTitle() const;
+  /** Sets the y-axis title, overriding whatever is set by the current localization.
+   
+   @param title Y-axis title when there is one channel per bin, defaults to "Counts"
+   @param titleMulti Y-axis title when there is more than one channel per bin, where the
+          substring {1} will be replaced with number of channels per bin. Default is  "Counts per {1} Channels"
+   */
+  virtual void setYAxisTitle( const Wt::WString &title, const Wt::WString &titleMulti );
+  
+  const Wt::WString &xAxisTitle() const;
+  const Wt::WString &yAxisTitle() const;
 
+  void setChartTitle( const Wt::WString &title );
   
   void enableLegend();
   void disableLegend();
@@ -221,9 +233,22 @@ public:
   void setSearchEnergies( const std::vector<std::pair<double,double>> &energy_windows );
   
   bool removeDecorativeHighlightRegion( size_t regionid );
+  
+  /** How the highlight region is to be drawn. */
+  enum class HighlightRegionFill : int
+  {
+    /** Fills the full y-range of the chart. */
+    Full,
+    
+    /** Fills just the y-range of the chart, below the data. */
+    BelowData
+  };//enum class HighlightRegionFill
+  
   size_t addDecorativeHighlightRegion( const float lowerx,
                                       const float upperx,
-                                      const Wt::WColor &color );
+                                      const Wt::WColor &color,
+                                      const HighlightRegionFill fillType,
+                                      const Wt::WString &txt );
   void removeAllDecorativeHighlightRegions();
   
   //For the case of auto-ranging x-axis, the below _may_ return 0 when auto
@@ -261,6 +286,14 @@ public:
   
   void setXAxisMinimum( const double minimum );
   void setXAxisMaximum( const double maximum );
+  
+  /** Set the visible energy range.
+   
+   Note that if you are setting the range in the same Wt event loop as you are calling 
+   `setData(data_hist,keep_curent_xrange)`, then you should have
+   `keep_curent_xrange = true`, or else the x-range wont have effect, since
+   the data isn't set to client until after all JS is sent.
+   */
   void setXAxisRange( const double minimum, const double maximum );
   
   void setYAxisMinimum( const double minimum );
@@ -271,11 +304,6 @@ public:
   //  to include the SpectrumChart header for just this
   void setShowPeakLabel( int peakLabel, bool show );
   bool showingPeakLabel( int peakLabel ) const;
-  
-#if( BUILD_AS_UNIT_TEST_SUITE || BUILD_AS_COMMAND_LINE_CODE_DEVELOPMENT )
-  SpectrumDataModel *model(){ return m_model; }
-#endif
-  
     
   void setReferncePhotoPeakLines( const ReferenceLineInfo &nuc );
   void persistCurrentReferncePhotoPeakLines();
@@ -320,6 +348,9 @@ protected:
    */
   void initChangeableCssRules();
   
+  void doBackgroundLiveTimeNormalization();
+  void doSecondaryLiveTimeNormalization();
+  
   /** Sets the highlight regions to client - currently unimplemented. */
   void setHighlightRegionsToClient();
   
@@ -350,9 +381,13 @@ protected:
   
   Wt::WFlags<D3RenderActions> m_renderFlags;
   
-  //ToDo: should eliminate use of SpectrumDataModel in this class
-  SpectrumDataModel *m_model;
   PeakModel *m_peakModel;
+  
+  std::shared_ptr<const SpecUtils::Measurement> m_foreground;
+  std::shared_ptr<const SpecUtils::Measurement> m_secondary;
+  std::shared_ptr<const SpecUtils::Measurement> m_background;
+  float m_secondaryScale;
+  float m_backgroundScale;
   
   bool m_compactAxis;
   bool m_legendEnabled;
@@ -367,12 +402,32 @@ protected:
   bool m_showYAxisScalers;
   
   std::vector<std::pair<double,double> > m_searchEnergies;
-  std::vector<SpectrumChart::HighlightRegion> m_highlights;
+  
+  //HighlightRegion is what is used to overlay a color on the chart.
+  //  The "Energy Range Sum" tool uses them, as well as the "Nuclide Search"
+  //  tool.
+  //  These regions are added and removed by addDecorativeHighlightRegion(...), and
+  //  removeDecorativeHighlightRegion(...).  When a region is added, a
+  //  unique ID is returned, so that region can be removed, without
+  //  effecting other decorative regions.
+  struct HighlightRegion
+  {
+    float lowerx, upperx;
+    size_t hash;
+    Wt::WColor color;
+    
+    HighlightRegionFill fill_type;
+    Wt::WString display_txt;
+  };//HighlightRegion
+  
+  std::vector<HighlightRegion> m_highlights;
   
   std::map<SpectrumChart::PeakLabels,bool> m_peakLabelsToShow;
   
-  std::string m_xAxisTitle;
-  std::string m_yAxisTitle;
+  Wt::WString m_xAxisTitle;
+  Wt::WString m_yAxisTitle;
+  Wt::WString m_yAxisTitleMulti;
+  Wt::WString m_chartTitle;
   
   // JSignals
   //for all the bellow, the doubles are all the <x,y> coordinated of the action

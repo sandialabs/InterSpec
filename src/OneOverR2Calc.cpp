@@ -58,7 +58,7 @@ using namespace Wt;
 using namespace std;
 
 OneOverR2Calc::OneOverR2Calc()
-  : AuxWindow( "1/r<sup>2</sup> Calculator",
+  : AuxWindow( WString::tr("window-title-1/r2-calc"),
               (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::PhoneNotFullScreen)
                | AuxWindowProperties::SetCloseable
                | AuxWindowProperties::DisableCollapse) ),
@@ -71,24 +71,19 @@ OneOverR2Calc::OneOverR2Calc()
     m_prevValues{ 0.0f, 0.0f, 0.0f, 0.0f, 0.0f }
 {
   wApp->useStyleSheet( "InterSpec_resources/OneOverR2Calc.css" );
+  InterSpec::instance()->useMessageResourceBundle( "OneOverR2Calc" );
   
   WContainerWidget *contentDiv = contents();
   addStyleClass( "OneOverR2CalcWindow" );
   contentDiv->addStyleClass( "OneOverR2Calc" );
   
-  WText *message = NULL;
-
-  const char *topMessage = "Use two measurement at different locations to find "
-                           "distance to an unseen source. E.g. when "
-                            "the source is behind a wall.";
-  
-  message = new WText( topMessage, Wt::XHTMLText, contentDiv );
+  WText *message = new WText( WString::tr("oor2c-instructions"), Wt::XHTMLText, contentDiv );
   message->setInline( false );
   message->addStyleClass( "OneOverR2IntroTxt" );
 
   WTable *layoutTable = new WTable( contentDiv );
   WTableCell *cell = layoutTable->elementAt( 0, 0 );
-  WText *label = new WText( "Near Measurement Intensity:", cell );
+  WText *label = new WText( WString::tr("oor2c-near-meas-label"), cell );
   
   //TODO:  HelpSystem::attachToolTipOn( label,Intensity can be specified using any unit of measurement (ex. <b>rem</b>, <b>millirem</b>, <b>sievert/hour, gamma counts per second) as long as it is consistent among the fields. , showToolTips );
   
@@ -103,7 +98,7 @@ OneOverR2Calc::OneOverR2Calc()
   m_nearMeasurement->enterPressed().connect( this, &OneOverR2Calc::doCalc );
 
   cell = layoutTable->elementAt( 1, 0 );
-  label = new WText( "Far Measurement Intensity:", cell );
+  label = new WText( WString::tr("oor2c-far-meas-label"), cell );
 
   cell = layoutTable->elementAt( 1, 1 );
   m_farMeasurement = new WDoubleSpinBox( cell );
@@ -116,7 +111,7 @@ OneOverR2Calc::OneOverR2Calc()
   m_farMeasurement->enterPressed().connect( this, &OneOverR2Calc::doCalc );
 
   cell = layoutTable->elementAt( 2, 0 );
-  label = new WText( "Background Intensity (optional):", cell );
+  label = new WText( WString::tr("oor2c-background-intensity"), cell );
 
   cell = layoutTable->elementAt( 2, 1 );
   m_backgroundMeasurment = new WDoubleSpinBox( cell );
@@ -129,7 +124,7 @@ OneOverR2Calc::OneOverR2Calc()
   m_backgroundMeasurment->enterPressed().connect( this, &OneOverR2Calc::doCalc );
   
   cell = layoutTable->elementAt( 3, 0 );
-  label = new WText( "Distance between measurements:", cell );
+  label = new WText( WString::tr("oor2c-dist-label"), cell );
   
   cell = layoutTable->elementAt( 3, 1 );
   m_distance = new WDoubleSpinBox( cell );
@@ -152,17 +147,17 @@ OneOverR2Calc::OneOverR2Calc()
   powerLayout->setHorizontalSpacing( 0 );
   powerLawDiv->setLayout( powerLayout );
   m_powerLawSelect = new WComboBox();
-  label = new WText( "Power Law");
+  label = new WText( WString::tr("oor2c-power-law-label") );
   powerLayout->addWidget( label, 0, 0 );
   powerLayout->addWidget( m_powerLawSelect, 0, 1 );
-  m_powerLawSelect->addItem( "Low Scatter or using Peak Area, 1/r^2" );
-  m_powerLawSelect->addItem( "Mid Scatter Dose Rate, 1/r^1.85" );
-  m_powerLawSelect->addItem( "High Scatter Dose Rate, 1/r^1.65" );
+  m_powerLawSelect->addItem( WString::tr("oor2c-low-scatter") );
+  m_powerLawSelect->addItem( WString::tr("oor2c-mid-scatter") );
+  m_powerLawSelect->addItem( WString::tr("oor2c-high-scatter") );
   m_powerLawSelect->setCurrentIndex( 0 );
   m_powerLawSelect->activated().connect( this, &OneOverR2Calc::powerLawSelected );
   
   cell = layoutTable->elementAt( 5, 0 );
-  label = new WText( "Dist. near measurement to source:", cell );
+  label = new WText( WString::tr("oor2c-dist-to-near-label"), cell );
 
   cell = layoutTable->elementAt( 5, 1 );
   m_answer  = new WLineEdit( cell );
@@ -171,10 +166,7 @@ OneOverR2Calc::OneOverR2Calc()
 
   m_backgroundMeasurment->setText( "" );
 
-  const char *bottomMessage = "Use the same units for near, background, and far "
-                              "measurements. Results are in same units used for "
-                              "distance between measurements.";
-  message = new WText( bottomMessage, Wt::XHTMLText, contents() );
+  message = new WText( WString::tr("oor2c-bottom-message"), Wt::XHTMLText, contents() );
   message->addStyleClass( "OneOverR2TextRow" );
   message->setInline( false );
   
@@ -189,7 +181,7 @@ OneOverR2Calc::OneOverR2Calc()
   
 #if( USE_QR_CODES )
   WPushButton *qr_btn = new WPushButton( footer() );
-  qr_btn->setText( "QR Code" );
+  qr_btn->setText( WString::tr("QR Code") );
   qr_btn->setIcon( "InterSpec_resources/images/qr-code.svg" );
   qr_btn->setStyleClass( "LinkBtn DownloadBtn DialogFooterQrBtn" );
   qr_btn->clicked().preventPropagation();
@@ -197,10 +189,11 @@ OneOverR2Calc::OneOverR2Calc()
     try
     {
       const string url = "interspec://1overr2/?" + Wt::Utils::urlEncode(encodeStateToUrl());
-      QrCode::displayTxtAsQrCode( url, "1/r2 Calculator State", "Current state of 1/r<sup>2</sup> calculator tool." );
+      QrCode::displayTxtAsQrCode( url, WString::tr("oor2c-qr-state-title"),
+                                 WString::tr("oor2c-qr-state-txt") );
     }catch( std::exception &e )
     {
-      passMessage( "Error creating QR code: " + std::string(e.what()), WarningWidget::WarningMsgHigh );
+      passMessage( WString::tr("app-qr-err").arg(e.what()), WarningWidget::WarningMsgHigh );
     }
   }) );
 #endif //USE_QR_CODES
@@ -272,14 +265,14 @@ void OneOverR2Calc::doCalc()
 
   if( m_nearMeasurement->validate() != WValidator::Valid )
   {
-    m_message->setText( "Invalid near measurment" );
+    m_message->setText( WString::tr("oor2c-invalid-near") );
     m_message->show();
     return;
   }//if( invalid near measurment )
 
   if( m_farMeasurement->validate() != WValidator::Valid )
   {
-    m_message->setText( "Invalid far measurment" );
+    m_message->setText( WString::tr("oor2c-invalid-far") );
     m_message->show();
     return;
   }//if( invalid far measurment )
@@ -287,7 +280,7 @@ void OneOverR2Calc::doCalc()
 
   if( m_distance->validate() != WValidator::Valid )
   {
-    m_message->setText( "Invalid distance" );
+    m_message->setText( WString::tr("oor2c-invalid-dist") );
     m_message->show();
     return;
   }//if( invalid far measurment )
@@ -314,35 +307,35 @@ void OneOverR2Calc::doCalc()
   
   if( farStrength >= nearStrength )
   {
-    m_message->setText( "Far measurement must be less than near one" );
+    m_message->setText( WString::tr("oor2c-far-larger-than-near") );
     m_message->show();
     return;
   }//if( near is larger than far )
 
   if( (background > 1E-6) && (farStrength <= 1E-6) )
   {
-    m_message->setText( "The background must be less than the far one" );
+    m_message->setText( WString::tr("oor2c-back-larger-than-far") );
     m_message->show();
     return;
   }//if( background is bigger than the far measurment )
 
   if( nearStrength <= 1E-6 )
   {
-    m_message->setText( "The near measurement must be non-zero" );
+    m_message->setText( WString::tr("oor2c-near-is-zero") );
     m_message->show();
     return;
   }//if( near strength is zero )
 
   if( farStrength <= 1E-6 )
   {
-    m_message->setText( "The far measurement must be non-zero" );
+    m_message->setText( WString::tr("oor2c-far-is-zero") );
     m_message->show();
     return;
   }//if( far strength is zero )
 
   if( distance < 1E-6 )
   {
-    m_message->setText( "Distance between measurements must be non-zero" );
+    m_message->setText( WString::tr("oor2c-dist-is-zero") );
     m_message->show();
     return;
   }//if( far strength is zero )

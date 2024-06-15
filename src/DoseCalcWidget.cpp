@@ -81,11 +81,13 @@
 #include "InterSpec/ShieldingSelect.h"
 #include "InterSpec/UndoRedoManager.h"
 #include "InterSpec/NativeFloatSpinBox.h"
+#include "InterSpec/NuclideSourceEnter.h"
 #include "InterSpec/MassAttenuationTool.h"
 #include "InterSpec/DecayDataBaseServer.h"
 #include "InterSpec/MassAttenuationTool.h"
 #include "InterSpec/IsotopeSelectionAids.h"
 #include "InterSpec/IsotopeNameFilterModel.h"
+#include "InterSpec/PhysicalUnitsLocalized.h"
 
 #if( USE_QR_CODES )
 #include <Wt/Utils>
@@ -189,7 +191,7 @@ namespace
     }//if( minimum.IsAboveMaxEdm() )
     
     if( !minimum.IsValid() )
-      throw runtime_error( "Failed to converge on a amount of shielding." );
+      throw runtime_error( WString::tr("dcw-err-failed-fit-AD").toUTF8() );
     
     const ROOT::Minuit2::MnUserParameters params = minimum.UserState().Parameters();
     const vector<double> pars = params.Params();
@@ -204,7 +206,7 @@ namespace
 DoseCalcWindow::DoseCalcWindow( MaterialDB *materialDB,
                                 Wt::WSuggestionPopup *materialSuggestion,
                                 InterSpec *viewer )
-: AuxWindow( "Dose Calc",
+: AuxWindow( WString::tr("window-title-dose-calc"),
             (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::TabletNotFullScreen)
              | AuxWindowProperties::SetCloseable
              | AuxWindowProperties::DisableCollapse) )
@@ -219,7 +221,7 @@ DoseCalcWindow::DoseCalcWindow( MaterialDB *materialDB,
   
 #if( USE_QR_CODES )
   WPushButton *qr_btn = new WPushButton( footer() );
-  qr_btn->setText( "QR Code" );
+  qr_btn->setText( WString::tr("QR Code") );
   qr_btn->setIcon( "InterSpec_resources/images/qr-code.svg" );
   qr_btn->setStyleClass( "LinkBtn DownloadBtn DialogFooterQrBtn" );
   qr_btn->clicked().preventPropagation();
@@ -227,16 +229,17 @@ DoseCalcWindow::DoseCalcWindow( MaterialDB *materialDB,
     try
     {
       const string url = "interspec://dose/" + Wt::Utils::urlEncode(m_dose->encodeStateToUrl());
-      QrCode::displayTxtAsQrCode( url, "Dose Tool State", "Current state of dose tool." );
+      QrCode::displayTxtAsQrCode( url, WString::tr("dcw-qr-tool-state-title"),
+                                 WString::tr("dcw-qr-tool-state-txt") );
     }catch( std::exception &e )
     {
-      passMessage( "Error creating QR code: " + std::string(e.what()), WarningWidget::WarningMsgHigh );
+      passMessage( WString::tr("app-qr-err").arg(e.what()), WarningWidget::WarningMsgHigh );
     }
   }) );
 #endif //USE_QR_CODES
 
   
-  WPushButton *closeButton = addCloseButtonToFooter();
+  WPushButton *closeButton = addCloseButtonToFooter( WString::tr("Close") );
   closeButton->clicked().connect( this, &AuxWindow::hide );
   
   show();
@@ -258,7 +261,7 @@ DoseCalcWindow::DoseCalcWindow( MaterialDB *materialDB,
   resizeToFitOnScreen();
   
   centerWindowHeavyHanded();
-}//GammaXsWindow(...) constrctor
+}//GammaXsWindow(...) constructor
 
 
 DoseCalcWindow::~DoseCalcWindow()
@@ -271,545 +274,6 @@ DoseCalcWidget *DoseCalcWindow::tool()
   return m_dose;
 }
 
-class GammaSourceEnter : public Wt::WContainerWidget
-{
-public:
-  GammaSourceEnter( const bool showToolTips, Wt::WContainerWidget *parent )
-   : WContainerWidget( parent ),
-     m_nuclideEdit( 0 ),
-     m_nuclideAgeEdit( 0 ),
-     m_halfLifeTxt( 0 ),
-     m_currentNuc( 0 ),
-     m_changed( this )
-  {
-    addStyleClass( "GammaSourceEnter" );
-    
-    WGridLayout *layout = new WGridLayout( this );
-//    layout->setHorizontalSpacing( 0 );
-//    layout->setVerticalSpacing( 0 );
-    layout->setContentsMargins( 0, 0, 0, 0 );
-    
-    WLabel *label = new WLabel( "Nuclide:" );
-    layout->addWidget( label, 0, 0, AlignMiddle );
-    label->addStyleClass( "DoseFieldLabel" );
-    m_nuclideEdit = new WLineEdit();
-    m_nuclideEdit->setAutoComplete( false );
-    m_nuclideEdit->setAttributeValue( "ondragstart", "return false" );
-#if( BUILD_AS_OSX_APP || IOS )
-    m_nuclideEdit->setAttributeValue( "autocorrect", "off" );
-    m_nuclideEdit->setAttributeValue( "spellcheck", "off" );
-#endif
-    layout->addWidget( m_nuclideEdit, 0, 1 );
-    m_nuclideEdit->addStyleClass( "DoseEnterTxt" );
-    m_nuclideEdit->setAttributeValue( "spellcheck", "false" );
-    m_nuclideEdit->setMinimumSize( 30, WLength::Auto );
-    label->setBuddy( m_nuclideEdit );
-    
-    label = new WLabel( "Age:" );
-    WLabel *ageLabel = label;
-    layout->addWidget( label, 1, 0, AlignMiddle );
-    label->addStyleClass( "DoseFieldLabel" );
-    m_nuclideAgeEdit = new WLineEdit();
-    m_nuclideAgeEdit->setMinimumSize( 30, WLength::Auto );
-    
-    m_nuclideAgeEdit->setAutoComplete( false );
-    m_nuclideAgeEdit->setAttributeValue( "ondragstart", "return false" );
-#if( BUILD_AS_OSX_APP || IOS )
-    m_nuclideAgeEdit->setAttributeValue( "autocorrect", "off" );
-    m_nuclideAgeEdit->setAttributeValue( "spellcheck", "off" );
-#endif
-    m_nuclideAgeEdit->setPlaceholderText( "NA" );
-    layout->addWidget( m_nuclideAgeEdit, 1, 1 );
-    label->setBuddy( m_nuclideAgeEdit );
-    
-    m_halfLifeTxt = new WText();
-    m_halfLifeTxt->addStyleClass( "DoseHLTxt" );
-    layout->addWidget( m_halfLifeTxt, 0, 2, AlignMiddle );
-    
-//    layout->setColumnStretch( 0, 1 );
-    layout->setColumnStretch( 1, 1 );
-    
-    string replacerJs, matcherJs;
-    PhotopeakDelegate::EditWidget::replacerJs( replacerJs );
-    PhotopeakDelegate::EditWidget::nuclideNameMatcherJs( matcherJs );
-    
-    WSuggestionPopup *suggestions = new WSuggestionPopup( matcherJs, replacerJs );
-#if( WT_VERSION < 0x3070000 ) //I'm not sure what version of Wt "wtNoReparent" went away.
-    suggestions->setJavaScriptMember("wtNoReparent", "true");
-#endif
-    
-    suggestions->setMaximumSize( WLength::Auto, WLength(15, WLength::FontEm) );
-    suggestions->setWidth( WLength(70, Wt::WLength::Unit::Pixel) );
-    suggestions->forEdit( m_nuclideEdit,
-                         WSuggestionPopup::Editing | WSuggestionPopup::DropDownIcon );
-    
-    
-    IsotopeNameFilterModel *filterModel = new IsotopeNameFilterModel( this );
-    
-    filterModel->excludeNuclides( false );
-    filterModel->excludeXrays( true );
-    filterModel->excludeEscapes( true );
-    filterModel->excludeReactions( true );
-    
-    filterModel->filter( "" );
-    suggestions->setFilterLength( -1 );
-    suggestions->setModel( filterModel );
-    suggestions->filterModel().connect( filterModel, &IsotopeNameFilterModel::filter );
-    
-    m_nuclideEdit->changed().connect( this, &GammaSourceEnter::handleNuclideUserInput );
-//    m_nuclideEdit->enterPressed().connect( this, &GammaSourceEnter::handleNuclideUserInput );
-//    m_nuclideEdit->blurred().connect( this, &GammaSourceEnter::handleNuclideUserInput );
-
-  
-    string tooltip = "ex. <b>U235</b>, <b>235 Uranium</b>, "
-                     "<b>U-235m</b> (meta stable state), <b>Cs137</b>, etc.";
-    HelpSystem::attachToolTipOn( m_nuclideEdit, tooltip, showToolTips );
-    
-    
-    WRegExpValidator *validator = new WRegExpValidator( PhysicalUnits::sm_timeDurationHalfLiveOptionalRegex, this );
-    validator->setFlags(Wt::MatchCaseInsensitive);
-    m_nuclideAgeEdit->setValidator(validator);
-    
-    m_nuclideAgeEdit->changed().connect( this, &GammaSourceEnter::handleAgeUserChange );
-    m_nuclideAgeEdit->blurred().connect( this, &GammaSourceEnter::handleAgeUserChange );
-    m_nuclideAgeEdit->enterPressed().connect( this, &GammaSourceEnter::handleAgeUserChange );
-    
-    tooltip =
-    "<div>"
-      "Age can be specified using a combination of time units, "
-      "similar to '<b>5.3y 8d 22m</b>' or in half lives like "
-      "'<b>2.5 HL</b>'."
-    "</div>"
-    "<br />"
-    "<div>"
-      "The age does not effect the activity of the entered nuclide, it only effects the amount"
-      " of progeny in-growth (i.e. only alters progeny activities, not parent nuclide activity)"
-      " - the activity you entered will always be used for the parent nuclide you entered, no"
-      " matter the age."
-    "</div>"
-    "<br />"
-    "<div>"
-      "Acceptable time units: <b>year</b>, <b>yr</b>, <b>y</b>, <b>day</b>, <b>d</b>, <b>hrs</b>, <b>hour</b>, <b>h</b>, <b>minute</b>, "
-      "<b>min</b>, <b>m</b>, <b>second</b>, <b>s</b>, <b>ms</b>, <b>microseconds</b>, <b>us</b>, <b>nanoseconds</b>, <b>ns</b>, or "
-      "you can specify time period by <b>hh:mm:ss</b>. "
-    "</div>"
-    "<div>Half life units or time periods can not be mixed with other units.</div>"
-    "<div>"
-      "When multiple time periods are specified, they are summed, e.x. '1y6months 3m' is interpreted as "
-      "18 months and 3 minutes"
-    "</div>";
-    
-    HelpSystem::attachToolTipOn( {ageLabel, m_nuclideAgeEdit}, tooltip, showToolTips );
-  }//GammaSourceEnter constructor
-  
-  
-  virtual ~GammaSourceEnter()
-  {
-  }
-  
-  void setNuclideText( const string &txt )
-  {
-    m_nuclideEdit->setText( WString::fromUTF8(txt) );
-    handleNuclideUserInput();
-  }
-  
-  void setNuclideAgeTxt( const string &txt )
-  {
-    m_nuclideAgeEdit->setText( txt );
-    handleAgeUserChange();
-  }
-  
-  void handleNuclideUserInput()
-  {
-    const SandiaDecay::SandiaDecayDataBase *db = DecayDataBaseServer::database();
-    const string isotopeLabel = m_nuclideEdit->text().toUTF8();
-    const SandiaDecay::Nuclide *nuc = db->nuclide( isotopeLabel );
-    
-    if( nuc == m_currentNuc )
-      return;
-
-    m_currentNuc = nuc;
-    
-    WString hlstr;
-    if( nuc )
-      hlstr = PhysicalUnits::printToBestTimeUnits( nuc->halfLife, 2, SandiaDecay::second );
-    hlstr = " T&frac12;=" + hlstr;
-    m_halfLifeTxt->setText( hlstr );
-
-    bool useCurrentAge = false;
-    const bool showPromptOnly = false; //m_promptLinesOnly
-    
-    string agestr = useCurrentAge ? m_nuclideAgeEdit->text().toUTF8() : string();
-    if( m_currentNuc && m_prevAgeTxt.count(m_currentNuc) )
-    {
-      useCurrentAge = true;
-      agestr = m_prevAgeTxt[m_currentNuc];
-      try
-      {
-        const double hl = (m_currentNuc ? m_currentNuc->halfLife : -1.0);
-        double x = PhysicalUnits::stringToTimeDurationPossibleHalfLife( agestr, hl );
-        if( x < 0.0 )
-          throw runtime_error("");
-      }catch(...)
-      {
-        useCurrentAge = false;
-        agestr = "";
-        m_prevAgeTxt.erase( m_currentNuc );
-      }
-    }else
-    {
-      agestr = "";
-      useCurrentAge = false;
-    }
-    
-    m_nuclideAgeEdit->enable();
-    
-    if( nuc )
-    {
-      const bool prompt = (nuc->canObtainPromptEquilibrium() && showPromptOnly);
-      const bool notMuchEvolution = PeakDef::ageFitNotAllowed(nuc);
-      
-      if( (prompt || notMuchEvolution) && m_nuclideAgeEdit->isEnabled() )
-      {
-        m_nuclideAgeEdit->disable();
-        m_nuclideAgeEdit->setText( "" );
-      }
-    }//if( nuc )
-    
-    try
-    {
-      if( nuc && !IsInf(nuc->halfLife) && !nuc->decaysToChildren.empty() && !useCurrentAge )
-      {
-        if( agestr.size() )
-          m_nuclideAgeEdit->setText( agestr );
-      
-        if( PeakDef::ageFitNotAllowed(nuc) )
-        {
-          m_nuclideAgeEdit->setText( "" );
-          m_nuclideAgeEdit->disable();
-        }else if( nuc->canObtainPromptEquilibrium() && showPromptOnly )
-        {
-          WString hlstr = PhysicalUnits::printToBestTimeUnits(
-                                                              5.0*nuc->promptEquilibriumHalfLife(),
-                                                              2, SandiaDecay::second );
-          m_nuclideAgeEdit->setText( hlstr );
-        }else if( agestr.empty() )
-        {
-          string agstr;
-          PeakDef::defaultDecayTime( nuc, &agstr );
-          m_nuclideAgeEdit->setText( agstr );
-        }else
-        {
-          m_nuclideAgeEdit->setText( agestr );
-        }
-      }else if( nuc && useCurrentAge )
-      {
-        const double hl = (nuc ? nuc->halfLife : -1.0);
-        double age = PhysicalUnits::stringToTimeDurationPossibleHalfLife( agestr, hl );
-        if( age > 100.0*nuc->halfLife || age < 0.0 )
-          throw std::runtime_error( "" );
-        m_nuclideAgeEdit->setText( agestr );
-      }else if( nuc )
-      {
-        if( IsInf(nuc->halfLife) )
-        {
-          passMessage( isotopeLabel + " is stable", WarningWidget::WarningMsgHigh );
-        }else
-        {
-          passMessage( isotopeLabel + " is missing decay data", WarningWidget::WarningMsgHigh );
-        }
-        
-        m_nuclideEdit->setText( "" );
-        m_nuclideAgeEdit->setText( "" );
-        m_nuclideAgeEdit->disable();
-      }else if( !nuc )
-      {
-        m_nuclideAgeEdit->setText( "" );
-        m_nuclideAgeEdit->disable();
-      }//if( nuc && !IsInf(nuc->halfLife) ) / else
-    }catch(...)
-    {
-      if( nuc )
-      {
-        string defagstr;
-        PeakDef::defaultDecayTime( nuc, &defagstr );
-        passMessage( "Changed age to a more reasonable value for " + nuc->symbol
-                    + " from '" + agestr + "' to '" + defagstr + "'",
-                    WarningWidget::WarningMsgLow );
-        m_nuclideAgeEdit->setText( defagstr );
-      }else
-      {
-        m_nuclideAgeEdit->setText( "0y" );
-      }//if( nuc ) / else
-    }//try / catch
-    
-    m_changed.emit();
-  }//void handleNuclideUserInput()
-  
-  
-  void handleAgeUserChange()
-  {
-    if( !m_currentNuc )
-    {
-      m_nuclideAgeEdit->setText( "" );
-      m_nuclideAgeEdit->disable();
-      return;
-    }//if( !m_currentNuc )
-    
-    
-    //Validate the age is something reasonable - if not, change it.
-    if( m_nuclideAgeEdit->text().empty() )
-      m_nuclideAgeEdit->setText( "0y" );
-    
-    double age = DBL_MAX;
-    string agestr = m_nuclideAgeEdit->text().toUTF8();
-    
-    try
-    {
-      const double hl = (m_currentNuc ? m_currentNuc->halfLife : -1.0);
-      age = PhysicalUnits::stringToTimeDurationPossibleHalfLife( agestr, hl );
-    }catch(...) {}
-    
-    if( age > 50.0*m_currentNuc->halfLife || age < 0.0 )
-    {
-      passMessage( agestr + "is to many half lives to decay " + m_currentNuc->symbol,
-                   WarningWidget::WarningMsgHigh );
-      if( m_prevAgeTxt.count(m_currentNuc) )
-        m_nuclideAgeEdit->setText( m_prevAgeTxt[m_currentNuc] );
-    }//if( age > 50.0*m_currentNuc->halfLife )
-    
-    m_prevAgeTxt[m_currentNuc] = m_nuclideAgeEdit->text().toUTF8();
-    
-    m_changed.emit();
-  }//void handleAgeUserChange()
-  
-  enum EquilibriumType
-  {
-    SecularEquilibrium, PromptEquilibrium, NoEquilibrium
-  };
-  
-  
-  static double getMaximumHalfLife( const SandiaDecay::Nuclide* nuclide )
-  {
-    double halfLife = nuclide->halfLife;
-    
-    if( nuclide->halfLife < std::numeric_limits<double>::infinity() )
-    {
-      const vector<const SandiaDecay::Nuclide *> children = nuclide->descendants();
-      for( size_t i = 1; i < children.size(); ++i )
-      {
-        const double childHalfLife = children[i]->halfLife;
-        if( childHalfLife < std::numeric_limits<double>::infinity() )
-        {
-          if( childHalfLife > halfLife )
-            halfLife = childHalfLife;
-        }
-      }
-    }
-    
-    return halfLife;
-  }
-  
-  static void getMaximumHalfLifeInDescension( const SandiaDecay::Nuclide * const nuclide, double parentHalfLife, double &halfLife )
-  {
-    if( !nuclide )
-    {
-      halfLife = 0;
-      return;
-    }
-    
-    if (nuclide->halfLife < parentHalfLife)
-    {
-      if( nuclide->halfLife > halfLife )
-        halfLife = nuclide->halfLife;
-      
-      for( size_t decN = 0; decN < nuclide->decaysToChildren.size(); ++decN )
-      {
-        const SandiaDecay::Transition * const transition = nuclide->decaysToChildren[decN];
-        if( !transition )
-          continue; // spontaneous fission
-        
-        const SandiaDecay::Nuclide * const child = transition->child;
-        if( !child )
-          continue; // not sure...
-        
-        const double childHalfLife = child->halfLife;
-        if( childHalfLife < nuclide->halfLife && child->decayConstant() > 1e-50 )
-        {
-          getMaximumHalfLifeInDescension(child, parentHalfLife, halfLife);
-        }
-      }
-    }
-  }//getMaximumHalfLifeInDescension(...)
-  
-  static bool trySecularEquilibrium( const SandiaDecay::Nuclide * const nuclide, double &age )
-  {
-    if( !nuclide )
-      return false;
-    
-    double maxHalfLife = getMaximumHalfLife(nuclide);
-    
-    if( maxHalfLife < nuclide->halfLife )
-    {
-      age = log(10000.0)/log(2.0) * maxHalfLife; // 99.99% of longest-lived descendant activity reached
-      return true;
-    }
-    return false;
-  }
-  
-  static bool tryPromptEquilibrium( const SandiaDecay::Nuclide * const nuclide, double &age )
-  {
-    if( !nuclide )
-      return false;
-    
-    // find maximum half life in monotonically decreasing half lives
-    double maxHalfLife = 0.0;
-    for( size_t decN = 0; decN < nuclide->decaysToChildren.size(); ++decN )
-    {
-      const SandiaDecay::Transition * const transition = nuclide->decaysToChildren[decN];
-      if( !transition )
-        continue; // spontaneous fission
-      
-      const SandiaDecay::Nuclide * const child = transition->child;
-      if( !child )
-        continue; // not sure...
-      
-      if( child->decayConstant() > 1e-50 )
-        getMaximumHalfLifeInDescension(child, nuclide->halfLife, maxHalfLife);
-    }//for( size_t decN = 0; decN < nuclide->decaysToChildren.size(); ++decN )
-    
-    if( maxHalfLife < nuclide->halfLife )
-    {
-      age = log(10000.0) * maxHalfLife; // 99.99% of longest-lived descendants activity reached
-      return true;
-    }
-    
-    return false;
-  }
-  
-  
-  static EquilibriumType getEquilibrium( const SandiaDecay::Nuclide* nuclide, double &age, EquilibriumType eqCode )
-  {
-    switch( eqCode )
-    {
-      case SecularEquilibrium:
-        if( trySecularEquilibrium(nuclide, age) )
-          return SecularEquilibrium;
-        
-        if( tryPromptEquilibrium(nuclide, age) )
-          return PromptEquilibrium;
-        
-        age = 0.0;
-        return NoEquilibrium;
-        break;
-        
-      case PromptEquilibrium:
-        if( tryPromptEquilibrium(nuclide, age) )
-          return PromptEquilibrium;
-        
-        if( trySecularEquilibrium(nuclide, age) )
-          return SecularEquilibrium;
-        
-        age = 0.0;
-        return NoEquilibrium;
-        break;
-        
-      default:
-        return NoEquilibrium;
-    }
-  }
-  
-  Wt::WString nuclideAgeStr() const
-  {
-    if( m_nuclideAgeEdit->isDisabled() )
-      return WString();
-    return m_nuclideAgeEdit->text();
-  }
-  
-  double nuclideAge() const
-  {
-    if( !m_currentNuc )
-      throw runtime_error( "No current nuclide" );
-    
-    string agestr = m_nuclideAgeEdit->text().toUTF8();
-    
-    //m_nuclideAgeEdit should only be disabled if the isotope returns true for
-    //  PeakDef::ageFitNotAllowed(nuc).
-    if( m_nuclideAgeEdit->isDisabled() )
-    {
-      double ageval = 5.0*m_currentNuc->halfLife;
-      if( m_currentNuc->canObtainPromptEquilibrium() )
-        ageval = log(10000.0)/log(2.0) * m_currentNuc->promptEquilibriumHalfLife();
-      agestr = PhysicalUnits::printToBestTimeUnits( ageval );
-      
-//      cerr << "Niave Agestr=" << agestr << endl;
-//      ageval = PeakDef::defaultDecayTime( m_currentNuc, &agestr );
-//      cerr << "defaultDecayTime Agestr=" << agestr << endl;
-      
-//      double gregsage = 0.0;
-//      EquilibriumType actual_type = getEquilibrium( m_currentNuc, gregsage, SecularEquilibrium );
-//      cerr << "gregsage=" << PhysicalUnits::printToBestTimeUnits(gregsage) << endl;
-      
-//      cerr << "Agestr=" << agestr << endl;
-    }//if( m_nuclideAgeEdit->isDisabled() )
-    
-    const double hl = (m_currentNuc ? m_currentNuc->halfLife : -1.0);
-    const double age = PhysicalUnits::stringToTimeDurationPossibleHalfLife( agestr, hl );
-    if( age < 0 )
-      throw runtime_error( "Invalid negative age" );
-    
-    return age;
-  }//double nuclideAge()
-  
-  /** 
-   * \returns empty results if no valid isotope, an invalid age, or negative or 
-   *          zero activity. Other wise returns <energy,gamma/sec> pairs.
-   */
-  std::vector< std::pair<float,float> > photonEnergyAndIntensity( const double activity ) const
-  {
-    std::vector< std::pair<float,float> > answer;
-    
-    if( !m_currentNuc || activity <= 0.0 )
-      return answer;
-    
-    double age = 0.0;
-    try
-    {
-      age = nuclideAge();
-    }catch(...)
-    {
-      return answer;
-    }
-    
-    SandiaDecay::NuclideMixture mix;
-    mix.addAgedNuclideByActivity( m_currentNuc, activity, age );
-    
-    const auto results = mix.photons(0.0, SandiaDecay::NuclideMixture::OrderByEnergy);
-    
-    for( const SandiaDecay::EnergyRatePair &aep : results )
-      answer.push_back( make_pair( static_cast<float>(aep.energy), static_cast<float>(aep.numPerSecond) ) );
-    
-    return answer;
-  }//std::vector< std::pair<float,float> > photonEnergyAndIntensity() const
-  
-  Wt::Signal<> &changed()
-  {
-    return m_changed;
-  }
-  
-  const SandiaDecay::Nuclide *nuclide() const{ return m_currentNuc; }
-  
-  
-protected:
-  Wt::WLineEdit *m_nuclideEdit;
-  Wt::WLineEdit *m_nuclideAgeEdit;
-  Wt::WText *m_halfLifeTxt;
-  
-  const SandiaDecay::Nuclide *m_currentNuc;
-  std::map<const SandiaDecay::Nuclide *,std::string> m_prevAgeTxt;
-  
-  Wt::Signal<> m_changed;
-};//class GammaSourceEnter
 
 
 DoseCalcWidget::DoseCalcWidget( MaterialDB *materialDB,
@@ -853,7 +317,8 @@ void DoseCalcWidget::init()
   UndoRedoManager::BlockUndoRedoInserts undo_blocker;
   
   wApp->useStyleSheet( "InterSpec_resources/DoseCalcWidget.css" );
-  
+  m_viewer->useMessageResourceBundle( "DoseCalcWidget" );
+      
   addStyleClass( "DoseCalcWidget" );
   m_layout = new WGridLayout( this );
   m_layout->setContentsMargins( 0, 0, 0, 0 );
@@ -904,13 +369,13 @@ void DoseCalcWidget::init()
   WText *coltxt = 0;
   if( !isPhone )
   {
-    coltxt = new WText( "Inputs", enterDiv );
+    coltxt = new WText( WString::tr("dcw-inputs"), enterDiv );
     coltxt->addStyleClass( "DoseColLabel" );
     coltxt->setInline( false );
     enterLayout->addWidget( coltxt, 0, 0, AlignMiddle | AlignTop );
   }//if( !isPhone )
   
-  coltxt = new WText( "Answer" );
+  coltxt = new WText( WString::tr("dcw-answer") );
   coltxt->addStyleClass( "DoseColLabel" );
   coltxt->setInline( false );
   answerLayout->addWidget( coltxt, 0, 0, AlignMiddle | AlignTop );
@@ -919,15 +384,12 @@ void DoseCalcWidget::init()
   WContainerWidget *introDiv = new WContainerWidget();
   introDiv->addStyleClass( "DoseIntroDiv" );
   WGridLayout *intoTxtLayout = new WGridLayout( introDiv );
-  WText *txt = new WText( "Select quantity you would like to compute on the left" );
+  WText *txt = new WText( WString::tr("dcw-intro-instructions") );
   txt->addStyleClass( "DoseIntroTxtMain" );
   
   intoTxtLayout->addWidget( txt, 0, 0, AlignMiddle | AlignCenter );
   
-  txt = new WText( "Dose values computed using ANSI/ANS-6.1.1-1991 most"
-                   " conservative case: Anterior-Posterior orientation."
-                   " Dose calculations are a rough guide, at best, and are"
-                   " subject to many uncertainities or errors." );
+  txt = new WText( WString::tr("dcw-intro-calc-desc") );
   txt->addStyleClass( "DoseIntroTxtDetail" );
   
   intoTxtLayout->addWidget( txt, 1, 0, AlignCenter );
@@ -952,7 +414,7 @@ void DoseCalcWidget::init()
     
     if( !isPhone )
     {
-      txt = new WText( "Source:", sourcDiv );
+      txt = new WText( WString::tr("dcw-source-label"), sourcDiv );
       txt->addStyleClass( "DoseEnterInd" );
       txt->setInline( false );
     }//if( !isPhone )
@@ -961,14 +423,14 @@ void DoseCalcWidget::init()
     m_sourceType->checkedChanged().connect( this, &DoseCalcWidget::handleSourceTypeChange );
     
     WContainerWidget *buttonDiv = new WContainerWidget( sourcDiv );
-    WRadioButton *gammaButton = new Wt::WRadioButton( "Gamma", buttonDiv );
+    WRadioButton *gammaButton = new Wt::WRadioButton( WString::tr("Gamma"), buttonDiv );
     gammaButton->setMargin( 7, Wt::Right );
     m_sourceType->addButton( gammaButton, 0 );
     
-    WRadioButton *neutronButton = new Wt::WRadioButton( "Neutron", buttonDiv );
+    WRadioButton *neutronButton = new Wt::WRadioButton( WString::tr("dcw-neutron"), buttonDiv );
     m_sourceType->addButton( neutronButton, 1 );
     neutronButton->disable();
-    neutronButton->setToolTip( "Neutron dose calc not implemented yet." );
+    neutronButton->setToolTip( WString::tr("dcw-tt-neut-not-imp") );
     neutronButton->setAttributeValue( "style", "color: grey;" );
     
     m_sourceType->setSelectedButtonIndex( 0 );
@@ -985,24 +447,24 @@ void DoseCalcWidget::init()
     m_neutronSourceCombo->addItem( "U238" );
     m_neutronSourceCombo->activated().connect( this, &DoseCalcWidget::updateResult );
     
-    m_gammaSource = new GammaSourceEnter( showToolTips, m_gammaSourceDiv );
+    m_gammaSource = new NuclideSourceEnter( true, showToolTips, m_gammaSourceDiv );
     m_gammaSource->changed().connect( this, &DoseCalcWidget::updateResult );
   }
   
   
   for( Quantity i = Quantity(0); i < NumQuantity; i = Quantity(i+1) )
   {
-    const char *label = "";
+    const char *label_key = "";
     switch( i )
     {
-      case Activity:  label = "Activity";  break;
-      case Distance:  label = "Distance";  break;
-      case Dose:      label = "Dose";      break;
-      case Shielding: label = "Shielding"; break;
+      case Activity:  label_key = "Activity";  break;
+      case Distance:  label_key = "Distance";  break;
+      case Dose:      label_key = "Dose";      break;
+      case Shielding: label_key = "Shielding"; break;
       case NumQuantity:                    break;
     }//switch( i )
     
-    WMenuItem *item = m_menu->addItem( label );
+    WMenuItem *item = m_menu->addItem( WString::tr(label_key) );
     item->clicked().connect( boost::bind(&right_select_item, m_menu, item) );
     item->triggered().connect( boost::bind( &DoseCalcWidget::handleQuantityClick, this, i ) );
 
@@ -1020,7 +482,7 @@ void DoseCalcWidget::init()
     {
       case Dose:
       {
-        txt = new WText( "Dose:", m_enterWidgets[i] );
+        txt = new WText( WString("{1}:").arg(WString::tr("Dose")), m_enterWidgets[i] );
         txt->addStyleClass( "DoseEnterInd" );
         if( !isPhone )
           txt->setInline( false );
@@ -1080,7 +542,7 @@ void DoseCalcWidget::init()
         
       case Activity:
       {
-        txt = new WText( "Activity:" );
+        txt = new WText( WString("{1}:").arg(WString::tr("Activity")) );
         txt->addStyleClass( "DoseEnterInd" );
         if( !isPhone )
           txt->setInline( false );
@@ -1155,7 +617,7 @@ void DoseCalcWidget::init()
         
       case Distance:
       {
-        txt = new WText( "Distance:" );
+        txt = new WText( WString("{1}:").arg(WString::tr("Distance")) );
         txt->addStyleClass( "DoseEnterInd" );
         if( !isPhone )
           txt->setInline( false );
@@ -1188,12 +650,7 @@ void DoseCalcWidget::init()
         WRegExpValidator *validator = new WRegExpValidator( PhysicalUnits::sm_distanceUnitOptionalRegex, this );
         validator->setFlags( Wt::MatchCaseInsensitive );
         m_distanceEnter->setValidator( validator );
-        HelpSystem::attachToolTipOn( m_distanceEnter,
-            "Distance from center of source to face of detector. Number must be"
-            " followed by units; valid units are: meters, m, cm, mm, km, feet,"
-            " ft, ', in, inches, or \".  You may also add multiple distances,"
-            " such as '3ft 4in', or '3.6E-2 m 12 cm' which are equivalent to "
-            " 40inches and 15.6cm respectively.", showToolTips );
+        HelpSystem::attachToolTipOn( m_distanceEnter, WString::tr("dcw-tt-distance"), showToolTips );
         
         m_distanceEnter->changed().connect( boost::bind( &DoseCalcWidget::updateResult, this ) );
         m_distanceEnter->enterPressed().connect( boost::bind( &DoseCalcWidget::updateResult, this ) );
@@ -1206,7 +663,7 @@ void DoseCalcWidget::init()
       {
         if( !isPhone )
         {
-          txt = new WText( "Shielding:" );
+          txt = new WText( WString("{1}:").arg(WString::tr("Shielding")) );
           txt->addStyleClass( "DoseEnterInd" );
           txt->setInline( false );
           m_enterWidgets[i]->addWidget( txt );
@@ -1225,7 +682,7 @@ void DoseCalcWidget::init()
         
         if( isPhone )
         {
-          m_enterShieldingSelect->materialEdit()->setEmptyText( "Shielding Material" );
+          m_enterShieldingSelect->materialEdit()->setEmptyText( WString::tr("dcw-shield-empty-text") );
         }
         
         break;
@@ -1267,7 +724,7 @@ void DoseCalcWidget::init()
     introDiv->clear();
     introDiv->setStyleClass( "DoseCalcRuntimeCheckFailMsg" );
     
-    auto errorintro = new WText( "Runtime sanity checks have failed!", introDiv );
+    auto errorintro = new WText( WString::tr("dcw-runtime-checks-failed"), introDiv );
     errorintro->setInline( false );
     errorintro->setStyleClass( "DoseCalcRuntimeCheckFailHdr" );
     
@@ -1275,16 +732,11 @@ void DoseCalcWidget::init()
     errortxt->setInline( false );
     errortxt->setStyleClass( "DoseCalcRuntimeCheckMsgTxt" );
     
-    auto furthermsg = new WText( "<div>Do not trust results of this calculator utility</div>"
-                                 "Please email <a href=\"mailto:interspec@sandia.gov\">interspec@sandia.gov</a>"
-                                 " this error message and include your device type and model (e.g., iPad pro,"
-                                 " Windows 10 Dell laptop, etc.)", introDiv );
+    auto furthermsg = new WText( WString::tr("dcw-runtime-check-msg"), introDiv );
     furthermsg->setStyleClass( "DoseCalcRuntimeCheckInstuct" );
     furthermsg->setInline( false );
     
-    
-    
-    auto *errordiv = new WText( "Results Suspect - Do Not Trust" );
+    auto *errordiv = new WText( WString::tr("dcw-runtime-check-err-div") );
     errordiv->setStyleClass( "DoseCalcRuntimeCheckFailBanner" );
     const int row = m_layout->rowCount();
     m_layout->addWidget( errordiv, row, 0, 1, m_layout->columnCount(), AlignCenter );
@@ -1356,10 +808,9 @@ void DoseCalcWidget::handleAppUrl( std::string path, std::string query_str )
   
   SpecUtils::ireplace_all( query_str, "%23", "#" );
   SpecUtils::ireplace_all( query_str, "%26", "&" );
+  SpecUtils::ireplace_all( query_str, "curries", "curies" ); //fix up me being a bad speller
   
   const map<string,string> parts = AppUtils::query_str_key_values( query_str );
-  
-  
   const auto ver_iter = parts.find( "VER" );
   if( ver_iter == end(parts) )
     Wt::log("warn") << "No 'VER' field in Dose Calc tool URI.";
@@ -1775,7 +1226,7 @@ void DoseCalcWidget::updateResultForGammaSource()
   
   if( !m_gammaSource->nuclide() )
   {
-    m_issueTxt->setText( "Empty or invalid source nuclide" );
+    m_issueTxt->setText( WString::tr("dcw-err-no-nuc") );
     quantity = NumQuantity;
   }
   
@@ -1833,7 +1284,7 @@ void DoseCalcWidget::updateResultForGammaSource()
         activity = enteredActivity();
       }catch( std::exception & )
       {
-        m_issueTxt->setText( "Activity is invalid" );
+        m_issueTxt->setText( WString::tr("dcw-act-invalid") );
         return;
       }
       
@@ -1880,7 +1331,7 @@ void DoseCalcWidget::updateResultForGammaSource()
     }//if( m_enterShieldingSelect->isGenericMaterial() ) / else
   }catch(...)
   {
-    m_issueTxt->setText( "Invalid shielding" );
+    m_issueTxt->setText( WString::tr("dcw-shield-invalid") );
     return;
   }
   
@@ -1899,7 +1350,7 @@ void DoseCalcWidget::updateResultForGammaSource()
     shielding_ad = 0.0;
   }else if( shielding_an <= 1.0 )
   {
-    m_issueTxt->setText( "Error calculating dose, invalid shielding, sorry :{" );
+    m_issueTxt->setText( WString::tr("dcw-generic-shield-invalid") );
     return;
   }
   
@@ -1920,7 +1371,7 @@ void DoseCalcWidget::updateResultForGammaSource()
       distance = PhysicalUnits::stringToDistance( diststr );
     }catch ( std::exception &e )
     {
-      m_issueTxt->setText( "Distance is invalid." );
+      m_issueTxt->setText( WString::tr("dcw-dist-invalid") );
       cerr << "Error: " << e.what() << endl;
       return;
     }
@@ -1933,7 +1384,7 @@ void DoseCalcWidget::updateResultForGammaSource()
                                         shielding_ad, shielding_an, distance, *m_scatter );
   }catch( std::exception &e )
   {
-    m_issueTxt->setText( "Error calculating dose from source, sorry :{" );
+    m_issueTxt->setText( WString::tr("dcw-err-other") );
     cerr << "Error: " << e.what() << endl;
     return;
   }//try / catch
@@ -1942,7 +1393,7 @@ void DoseCalcWidget::updateResultForGammaSource()
   {
     if( !(stringstream(m_doseEnter->text().toUTF8()) >> user_entered_dose) )
     {
-      m_issueTxt->setText( "Invalid source dose." );
+      m_issueTxt->setText( WString::tr("dcw-invalid-src-dose") );
       return;
     }
     
@@ -1961,8 +1412,8 @@ void DoseCalcWidget::updateResultForGammaSource()
       const double answer = activity * user_entered_dose / dose_from_source;
       
       
-      const bool useCurries = (m_activityAnswerUnits->currentIndex() == 0);
-      const string answerstr = PhysicalUnits::printToBestActivityUnits( answer, 2, useCurries );
+      const bool useCuries = (m_activityAnswerUnits->currentIndex() == 0);
+      const string answerstr = PhysicalUnits::printToBestActivityUnits( answer, 2, useCuries );
       m_activityAnswer->setText( answerstr );
       
       break;
@@ -1975,7 +1426,7 @@ void DoseCalcWidget::updateResultForGammaSource()
         enteredActivity();
       }catch(...)
       {
-        m_issueTxt->setText( "Invalid source activity." );
+        m_issueTxt->setText( WString::tr("dcw-invalid-src-act") );
         return;
       }
       
@@ -1991,7 +1442,7 @@ void DoseCalcWidget::updateResultForGammaSource()
     {
       if( user_entered_dose <= 0.0 || IsInf(user_entered_dose) || IsNan(user_entered_dose) )
       {
-        m_issueTxt->setText( "Invalid source dose." );
+        m_issueTxt->setText( WString::tr("dcw-invalid-src-dose") );
         return;
       }
       
@@ -2031,8 +1482,8 @@ void DoseCalcWidget::updateResultForGammaSource()
         }//for( num_iters = 0; num_iters < max_bounds_iters; ++num_iters )
         
         if( num_iters >= max_bounds_iters )
-          throw runtime_error( "Failed to find lower bounding distance, at "
-                              + std::to_string(lower_dist/PhysicalUnits::cm) + "cm.");
+          throw runtime_error( WString::tr("dcw-failed-find-lower-dist")
+                              .arg(lower_dist/PhysicalUnits::cm).toUTF8() );
         
         // Find upper bounding distance
         for( num_iters = 0; num_iters < max_bounds_iters; ++num_iters )
@@ -2043,8 +1494,8 @@ void DoseCalcWidget::updateResultForGammaSource()
         }//for( num_iters = 0; num_iters < max_bounds_iters; ++num_iters )
         
         if( num_iters >= max_bounds_iters )
-          throw runtime_error( "Failed to find upper bounding distance, at "
-                              + std::to_string(upper_dist/PhysicalUnits::cm) + "cm.");
+          throw runtime_error( WString::tr("dcw-failed-find-upper-dist")
+                              .arg(upper_dist/PhysicalUnits::cm).toUTF8() );
         
         // Now find the actual distance to within 'dist_delta'
         num_iters = max_bisect_iters;
@@ -2052,14 +1503,14 @@ void DoseCalcWidget::updateResultForGammaSource()
            = boost::math::tools::bisect( dose_root_calc, lower_dist, upper_dist, term_cond, num_iters );
         
         if( num_iters >= max_bisect_iters )
-          throw runtime_error( "Couldnt find distance; exceeded max iterations." );
+          throw runtime_error( WString::tr("dcw-failed-find-dist").toUTF8() );
         
         assert( term_cond(bracketing_dists.first,bracketing_dists.second) );
         
         distance = 0.5*(bracketing_dists.first + bracketing_dists.second);
         
         if( distance <= 0.0 )
-          throw runtime_error( "Got negative distance: " + std::to_string(distance) );
+          throw runtime_error( WString::tr("dcw-got-neg-dist").arg(distance).toUTF8() );
         
         //const double final_dose = DoseCalc::gamma_dose_with_shielding( energies, intensities,
         //                                        shielding_ad, shielding_an, distance, *m_scatter );
@@ -2073,7 +1524,7 @@ void DoseCalcWidget::updateResultForGammaSource()
         m_distanceAnswer->setText( PhysicalUnits::printToBestLengthUnits(distance) );
       }catch( std::exception &e )
       {
-        m_issueTxt->setText( "Error calculating dose while searching for distance, sorry :{" );
+        m_issueTxt->setText( WString::tr("dcw-err-calc-dose-for-dist") );
         cerr << "Error calculating dose while searching for distance: " << e.what() << endl;
         return;
       }//try / catch
@@ -2098,7 +1549,7 @@ void DoseCalcWidget::updateResultForGammaSource()
         
           mat = m_answerShieldingSelect->material();
           if( !mat )
-            throw runtime_error( "Material not valid" );
+            throw runtime_error( WString::tr("dcw-material-not-valid").toUTF8() );
           
           shielding_an = mat->massWeightedAtomicNumber();
         }//if( isGeneric ) / else
@@ -2107,9 +1558,9 @@ void DoseCalcWidget::updateResultForGammaSource()
         if( shielding_an < 1.0 || shielding_an > 98.0 )
         {
           if( isGeneric )
-            m_issueTxt->setText( "You must enter the atomic number of the shielding material." );
+            m_issueTxt->setText( WString::tr("dcw-no-an-entered") );
           else
-            m_issueTxt->setText( "You must enter the shielding material type." );
+            m_issueTxt->setText( WString::tr("dcw-no-shield-name") );
           return;
         }//if( shielding_an < 1.0 )
       
@@ -2235,10 +1686,18 @@ void DoseCalcWidget::checkAndWarnForBrehmSource()
   if( (betaMaxFrac*gammaIntensity > betaIntensity) && !gammas.empty() )
     return;
   
-  string issuetxt = m_issueTxt->text().toUTF8();
-  if( issuetxt.size() )
-    issuetxt = "<div>" + issuetxt + "</div>";
-  issuetxt += "<div>Warning: Bremsstrahlung of beta decays not accounted for, results may not be trustworthy.</div>";
+  WString issuetxt = m_issueTxt->text();
+  if( issuetxt.empty() )
+  {
+    issuetxt = WString("<div>{1}</div>")
+      .arg( WString::tr("dcw-brehm-warning") );
+  }else
+  {
+    issuetxt = WString("<div>{1}</div><div>{2}</div>")
+      .arg(issuetxt)
+      .arg( WString::tr("dcw-brehm-warning") );
+  }
+  
   m_issueTxt->setText( issuetxt );
 }//void checkAndWarnForBrehmSource()
 
@@ -2268,14 +1727,14 @@ double DoseCalcWidget::currentDose()
   {
     case Dose:
       if( m_doseAnswer->text().empty() || (m_doseAnswerValue < FLT_MIN) )
-        throw runtime_error( "No numerical value entered for dose" );
+        throw runtime_error( WString::tr("dcw-no-dose-entered").toUTF8() );
       dose = m_doseAnswerValue;
       break;
       
     case Activity: case Distance: case Shielding:
     { 
       if( !(stringstream(m_doseEnter->text().toUTF8()) >> dose) )
-        throw runtime_error( "No numerical value entered for dose" );
+        throw runtime_error( WString::tr("dcw-no-dose-entered").toUTF8() );
       
       const int doseIndex = m_doseEnterUnits->currentIndex();
       if( doseIndex >= static_cast<int>(PhysicalUnits::sm_doseRateUnitHtmlNameValues.size()) || doseIndex < 0 )
@@ -2306,7 +1765,7 @@ void DoseCalcWidget::updateStayTime()
     if( !m_stayTime->hasStyleClass( "DoseStayTime" ) )
       m_stayTime->addStyleClass( "DoseStayTime" );
     
-    WText *header = new WText( "Stay Time", m_stayTime );
+    WText *header = new WText( WString::tr("dcw-stay-time"), m_stayTime );
     header->setInline( false );
     header->addStyleClass( "DoseStayTimeHeader" );
     
@@ -2317,7 +1776,7 @@ void DoseCalcWidget::updateStayTime()
     table->setVerticalSpacing( 0 );
     table->setContentsMargins( 0, 0, 0, 0 );
     
-    map<double,pair<string,string> > ref_doses;
+    map<double,pair<string,WString> > ref_doses;
     
     using PhysicalUnits::rem;
     
@@ -2325,16 +1784,16 @@ void DoseCalcWidget::updateStayTime()
     //ref_doses[0.000010*rem]  = make_pair( "10 " MU_CHARACTER "rem", "Eating one banana" );
     
     //http://www.nrc.gov/about-nrc/radiation/around-us/doses-daily-lives.html
-    ref_doses[0.0015*rem] = make_pair( "1.5 mrem", "Dental X-Ray" );
+    ref_doses[0.0015*rem] = make_pair( "1.5 mrem", WString::tr("dcw-dental-xray") );
     //Flight from NY to LA 2 to 5 mrem
     //Chest xray 10 mrem
-    ref_doses[0.620*rem]  = make_pair( "620 mrem", "Typ. Yearly Background" );
+    ref_doses[0.620*rem]  = make_pair( "620 mrem", WString::tr("dcw-annual-background") );
   
     //National Council on Radiation Protection (NCRP) dose guidelines for civilian radiation workers  (wcjohns did not verify)
-    ref_doses[5.0*rem]    = make_pair( "5 rem",    "Annual Occ. Limit" );
-    ref_doses[10.0*rem]   = make_pair( "10 rem",   "Save Valuable Property" );
-    ref_doses[25.0*rem]   = make_pair( "25 rem",   "Life Saving" );
-    ref_doses[100.0*rem]  = make_pair( "100 rem",  "Radiation Sickness" );
+    ref_doses[5.0*rem]    = make_pair( "5 rem",    WString::tr("dcw-annual-occ-limit") );
+    ref_doses[10.0*rem]   = make_pair( "10 rem",   WString::tr("dcw-save-property") );
+    ref_doses[25.0*rem]   = make_pair( "25 rem",   WString::tr("dcw-life-saving") );
+    ref_doses[100.0*rem]  = make_pair( "100 rem",  WString::tr("dcw-radiation-sickness") );
     
     
     //https://en.wikipedia.org/wiki/Sievert#Dose_examples_2
@@ -2357,14 +1816,14 @@ void DoseCalcWidget::updateStayTime()
     
     int nprinted = 0, ntriedprint = 0;
     
-    for( map<double,pair<string,string> >::const_iterator iter = ref_doses.begin();
+    for( map<double,pair<string,WString> >::const_iterator iter = ref_doses.begin();
         iter != ref_doses.end(); ++iter )
     {
       ++ntriedprint;
       
       const double refdose = iter->first;
       const string &dosestr = iter->second.first;
-      const string &descestr = iter->second.second;
+      const WString &descestr = iter->second.second;
       
       const double time = refdose / dose;
       
@@ -2374,7 +1833,7 @@ void DoseCalcWidget::updateStayTime()
       if( nprinted > 2 && time > 2.5*PhysicalUnits::year )
         break;
       
-      const string timestr = PhysicalUnits::printToBestTimeUnits(time);
+      const string timestr = PhysicalUnitsLocalized::printToBestTimeUnits(time);
       
       //Add to the table here
       WContainerWidget *labelDiv = new WContainerWidget();

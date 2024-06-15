@@ -412,9 +412,9 @@ void SourceFitDef::deSerialize( const ::rapidxml::xml_node<char> *src_node )
     if( !value )
       return;
     string strval;
-    const bool useCurries = true;
+    const bool useCuries = true;
     if( isActivity )
-      strval = PhysicalUnits::printToBestActivityUnits( *value, 6, useCurries );
+      strval = PhysicalUnits::printToBestActivityUnits( *value, 6, useCuries );
     else
       strval = PhysicalUnits::printToBestTimeUnits( *value, 6 );
     
