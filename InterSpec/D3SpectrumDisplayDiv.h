@@ -409,6 +409,8 @@ protected:
   
   std::unique_ptr<Wt::JSignal<> > m_legendClosedJS;
   
+  std::unique_ptr<Wt::JSignal<bool> > m_sliderDisplayed;
+  
   // Wt Signals
   //for all the bellow, the doubles are all the <x,y> coordinated of the action
   //  where x is in energy, and y is in counts.
@@ -463,6 +465,9 @@ protected:
   //  y-axis to be auto-range
   void chartXRangeChangedCallback( double x, double y, double chart_width_px, double chart_height_px,
                                    bool user_action );
+  
+  /** Called when user shows or closes the slider chart, by using the SVG buttons */
+  void sliderChartDisplayedCallback( const bool madeVisisble );
   
   /** The javascript variable name used to refer to the SpecrtumChartD3 object.
       Currently is `jsRef() + ".chart"`.
