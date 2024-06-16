@@ -389,6 +389,7 @@ protected:
   float m_secondaryScale;
   float m_backgroundScale;
   
+  /** Compact axis applies only when the xAxis slider chart is not showing. */
   bool m_compactAxis;
   bool m_legendEnabled;
   bool m_yAxisIsLog;
@@ -399,6 +400,7 @@ protected:
   bool m_showHistogramIntegralsInLegend;  //Not currently used/implemented
   
   bool m_showXAxisSliderChart;
+  bool m_compactXAxisWithSliderChart;
   bool m_showYAxisScalers;
   
   std::vector<std::pair<double,double> > m_searchEnergies;

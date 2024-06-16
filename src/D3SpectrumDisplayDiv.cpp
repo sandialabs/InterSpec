@@ -218,6 +218,7 @@ D3SpectrumDisplayDiv::D3SpectrumDisplayDiv( WContainerWidget *parent )
   m_showHorizontalLines( false ),
   m_showHistogramIntegralsInLegend( true ),
   m_showXAxisSliderChart( false ),
+  m_compactXAxisWithSliderChart( true ),
   m_showYAxisScalers( false ),
   m_searchEnergies{},
   m_highlights{},
@@ -306,6 +307,7 @@ void D3SpectrumDisplayDiv::defineJavaScript()
   options += ", gridx: " + jsbool(m_showVerticalLines);
   options += ", gridy: " + jsbool(m_showHorizontalLines);
   options += ", showXAxisSliderChart: " + jsbool(m_showXAxisSliderChart);
+  options += ", compactXAxisWithSliderChart: " + jsbool(m_compactXAxisWithSliderChart);
   options += ", scaleBackgroundSecondary: " + jsbool(m_showYAxisScalers);
   options += ", wheelScrollYAxis: true";
   options += ", sliderChartHeightFraction: 0.1";  //ToDo: track this in C++
@@ -2511,7 +2513,7 @@ void D3SpectrumDisplayDiv::chartXRangeChangedCallback( double x0, double x1,
 void D3SpectrumDisplayDiv::sliderChartDisplayedCallback( const bool madeVisisble )
 {
   // The call into InterSpec will call back to showXAxisSliderChart(...), which which
-  //  will set `m_showXAxisSliderChart`, and also restore x-axis to compact or not
+  //  will set `m_showXAxisSliderChart`
   //  (as well as make another call to the javascript to show or hide the strip chart,
   //  but this should be harmless)
   InterSpec::instance()->setXAxisSlider( madeVisisble );
