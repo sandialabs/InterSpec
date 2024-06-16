@@ -306,7 +306,7 @@ public:
 protected:
   Wt::SortOrder m_sortOrder;
   Columns m_sortColumn;
-  bool m_displayCurries;
+  bool m_displayCuries;
   PeakModel *m_peakModel;
   std::vector<ShieldingSourceFitCalc::IsoFitStruct> m_nuclides;
   bool m_sameAgeForIsotopes;

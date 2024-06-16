@@ -37,8 +37,8 @@ class MaterialDB;
 class DoseCalcWidget;
 class InterSpec;
 class ShieldingSelect;
-class GammaSourceEnter;
 class GadrasScatterTable;
+class NuclideSourceEnter;
 
 
 namespace Wt
@@ -156,7 +156,7 @@ protected:
   ShieldingSelect *m_enterShieldingSelect;
   ShieldingSelect *m_answerShieldingSelect;
 
-  GammaSourceEnter *m_gammaSource;
+  NuclideSourceEnter *m_gammaSource;
   Wt::WButtonGroup *m_sourceType;
   Wt::WContainerWidget *m_gammaSourceDiv;
   Wt::WContainerWidget *m_neutronSourceDiv;

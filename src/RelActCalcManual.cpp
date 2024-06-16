@@ -1510,8 +1510,8 @@ void RelEffSolution::get_mass_ratio_table( std::ostream &results_html ) const
       {
         const double i_to_j_act_ratio_uncert = activity_ratio_uncert( nuc_i_str, nuc_j_str );
         const double j_to_i_act_ratio_uncert = activity_ratio_uncert( nuc_j_str, nuc_i_str );
-        const double i_to_j_mass_ratio_uncert = i_to_j_act_ratio_uncert * i_to_j_specific_act;
-        const double j_to_i_mass_ratio_uncert = j_to_i_act_ratio_uncert * j_to_i_specific_act;
+        const double i_to_j_mass_ratio_uncert = i_to_j_act_ratio_uncert * j_to_i_specific_act;
+        const double j_to_i_mass_ratio_uncert = j_to_i_act_ratio_uncert * i_to_j_specific_act;
         
         results_html << "<tr><td>" << nuc_i->symbol << "/" << nuc_j->symbol
         << "</td><td>" << PhysicalUnits::printValueWithUncertainty( i_to_j_mass_ratio, i_to_j_mass_ratio_uncert, nsigfig )

@@ -288,6 +288,21 @@ namespace DataBaseVersionUpgrade
       setDBVersion( version, sqlSession );
     }//if( version<11 && version<DB_SCHEMA_VERSION )
     
+    if( version<12 && version<DB_SCHEMA_VERSION )
+    {
+      std::shared_ptr<Wt::Dbo::Session> sqlSession = getSession( database );
+      
+      //The following has only been checked for SQLite3.  Positions 'ColorThemeJson'
+      //  after the previous last column, witch I think Dbo needs.
+      const char *sql_statement = "ALTER TABLE UserState ADD COLUMN DetectionSensitivityToolUri text;";
+      executeSQL( sql_statement, sqlSession );
+      sql_statement = "ALTER TABLE UserState ADD COLUMN SimpleMdaUri text;";
+      executeSQL( sql_statement, sqlSession );
+      
+      version = 12;
+      setDBVersion( version, sqlSession );
+    }//if( version<11 && version<DB_SCHEMA_VERSION )
+    
     /// ******************************************************************
     /// DB_SCHEMA_VERSION is at 11.  Add Version 12 here.  Update InterSpecUser.h!
     /// ******************************************************************

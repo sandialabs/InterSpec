@@ -263,3 +263,11 @@
   border-collapse: separate;
   border-spacing: 5px 5px;
 }
+
+
+.MdaCurrieChart
+{
+  width: 100%;
+  height: 200px;
+  margin-bottom: 15px;
+}

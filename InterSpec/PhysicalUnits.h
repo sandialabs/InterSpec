@@ -161,7 +161,7 @@ namespace PhysicalUnits
                                       const double cm_definition = cm );
   std::string printToBestActivityUnits( double activity,
                                         int maxNpostDecimal = 2,
-                                        bool useCurries = true, //or else use becquerel
+                                        bool useCuries = true, //or else use becquerel
                                         double bq_definition = becquerel );
   std::string printToBestTimeUnits( double time,
                                     int maxNpostDecimal = 2,
@@ -315,11 +315,11 @@ namespace PhysicalUnits
 
   //Returns a reference to an element in sm_activityUnitNameValues.
   const UnitNameValuePair &bestActivityUnit( const double activity,
-                                             bool useCurries = true );
+                                             bool useCuries = true );
   
   //Returns a reference to an element in sm_activityUnitHtmlNameValues
   const UnitNameValuePair &bestActivityUnitHtml( const double activity,
-                                                 bool useCurries = true );
+                                                 bool useCuries = true );
   
   const UnitNameValuePair &bestDoseUnitHtml( const double dose,
                                                 bool useRem = true );

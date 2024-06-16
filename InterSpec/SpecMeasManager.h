@@ -222,6 +222,9 @@ public:
   /** Handles the Shielding/Source fit XML file */
   bool handleShieldingSourceFile( std::istream &input, SimpleDialog *dialog );
   
+  /** Handles Source.lib files dropped onto the app. */
+  bool handleSourceLibFile( std::istream &input, SimpleDialog *dialog );
+  
   /** Handles the user dropping a .ECC file produced from ISOCS. */
   bool handleEccFile( std::istream &input, SimpleDialog *dialog );
   

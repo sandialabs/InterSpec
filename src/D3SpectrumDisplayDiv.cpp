@@ -219,6 +219,14 @@ D3SpectrumDisplayDiv::D3SpectrumDisplayDiv( WContainerWidget *parent )
   m_showHistogramIntegralsInLegend( true ),
   m_showXAxisSliderChart( false ),
   m_showYAxisScalers( false ),
+  m_searchEnergies{},
+  m_highlights{},
+  m_peakLabelsToShow{},
+  m_xAxisTitle( WString::tr("Energy (keV)") ),
+  m_yAxisTitle( WString::tr("d3sdd-yAxisTitle") ),
+  m_yAxisTitleMulti( WString::tr("d3sdd-yAxisTitleMulti") ),
+  m_chartTitle(),
+  // A bunch of signals m_shiftKeyDraggJS ... m_yAxisScaled
   m_jsgraph( jsRef() + ".chart" ),
   m_xAxisMinimum(0.0),
   m_xAxisMaximum(0.0),
@@ -355,10 +363,6 @@ void D3SpectrumDisplayDiv::defineJavaScript()
   );
   
   callJavaScriptMember( "resizeObserver.observe", jsRef() );
-  
-  //updateReferncePhotoPeakLines();
-  
-  //setHighlightRegionsToClient();
   
   setSearchEnergies( m_searchEnergies );
   
@@ -705,7 +709,11 @@ void D3SpectrumDisplayDiv::render( Wt::WFlags<Wt::RenderFlag> flags )
   //const bool renderUpdate = (flags & Wt::RenderFlag::RenderUpdate);
   
   if( renderFull )
+  {
+    // Note that we are doing any JS calls we've made (like set x-axis range),
+    //  before setting the data, so they may get squashed.
     defineJavaScript();
+  }
   
   // We will render background and secondary spectra first; this way
   //  if we are loading a new foreground, and unloading the background
@@ -743,24 +751,17 @@ void D3SpectrumDisplayDiv::render( Wt::WFlags<Wt::RenderFlag> flags )
 
 std::string D3SpectrumDisplayDiv::localizedStringsJson() const
 {
-  // Strings used in the chart that we will localize:
-  //SpectrumChartD3.prototype.setXAxisTitle
-  //  self.options.xlabel
-  //
-  //updateYAxisTitleText
-  //  this.options.ylabel
-  // this.options.ylabel + " per " + this.rebinFactor + " Channels" ---> "Counts per {1} Channels"
-  
-  // From these - lets choose to only localize a subset
+  // Strings used in the chart that we will localize, most, but probably not quite all:
   // "Real Time", "Live Time", "Dead Time", "Scaled by", "counts", "chan", "Zoom In", "Neutrons", "neutrons", "cps"
   // "ROI counts", "Gamma Counts", "cont. area", "peak cps", "peak area", "FWHM", "mean", "Spectrum"
   // "Compton Edge", "Sum Peak", "Click to set sum peak first energy.", "Single Escape", "Double Escape"
   // "Will Erase Peaks In Range", "Zoom-In on Y-axis", "Zoom-out on Y-axis"
   
   return "{\n\t"
-  "xAxisTitle: " + (m_xAxisTitle.empty() ? WString::tr("Energy (keV)").jsStringLiteral() : m_xAxisTitle)+ ",\n\t"
-  "yAxisTitle: " + (m_yAxisTitle.empty() ? WString::tr("d3sdd-yAxisTitle").jsStringLiteral() : m_yAxisTitle) + ",\n\t"                    // "Counts"
-  "yAxisTitleMulti: " + (m_yAxisTitleMulti.empty() ? WString::tr("d3sdd-yAxisTitleMulti").jsStringLiteral() : m_yAxisTitleMulti) + ",\n\t"          // "Counts per {1} Channels"
+  "xAxisTitle: " + m_xAxisTitle.jsStringLiteral('\'') + ",\n\t"                                   // "Energy (keV)"
+  "yAxisTitle: " + m_yAxisTitle.jsStringLiteral('\'') + ",\n\t"                                   // "Counts"
+  "yAxisTitleMulti: " + m_yAxisTitleMulti.jsStringLiteral('\'') + ",\n\t"                         // "Counts per {1} Channels"
+  "title: " + (m_chartTitle.empty() ? string("null") : m_chartTitle.jsStringLiteral('\'')) + ",\n\t" //""
   "realTime: " + WString::tr("d3sdd-realTime").jsStringLiteral() + ",\n\t"                        // "Real Time"
   "liveTime: " + WString::tr("d3sdd-liveTime").jsStringLiteral() + ",\n\t"                        // "Live Time"
   "deadTime: " + WString::tr("d3sdd-deadTime").jsStringLiteral() + ",\n\t"                        // "Dead Time"
@@ -808,6 +809,8 @@ void D3SpectrumDisplayDiv::refresh()
 
   if( isRendered() )
     doJavaScript( m_jsgraph + ".setLocalizations( " + localizedStringsJson() + ",\n  false);" );
+  
+  m_renderFlags |= UpdateHighlightRegions;
 }//void refresh();
 
 
@@ -1061,7 +1064,8 @@ void D3SpectrumDisplayDiv::setData( std::shared_ptr<const Measurement> data_hist
   const float oldSecondSF = m_secondaryScale;
   
   m_foreground = data_hist;
-  m_peakModel->setForeground( data_hist );
+  if( m_peakModel )
+    m_peakModel->setForeground( data_hist );
   
   if( !keep_curent_xrange )
     m_renderFlags |= ResetXDomain;
@@ -1212,52 +1216,34 @@ void D3SpectrumDisplayDiv::visibleRange( double &xmin, double &xmax,
 }
 
 
-const string D3SpectrumDisplayDiv::xAxisTitle() const
+const Wt::WString &D3SpectrumDisplayDiv::xAxisTitle() const
 {
   return m_xAxisTitle;
 }//const Wt::WString &xAxisTitle() const;
 
 
-const string D3SpectrumDisplayDiv::yAxisTitle() const
+const Wt::WString &D3SpectrumDisplayDiv::yAxisTitle() const
 {
   return m_yAxisTitle;
 }//const Wt::WString &yAxisTitle() const;
 
 
-void D3SpectrumDisplayDiv::setXAxisTitle( const std::string &title )
+void D3SpectrumDisplayDiv::setXAxisTitle( const Wt::WString &title )
 {
-  m_xAxisTitle = Wt::WWebWidget::jsStringLiteral( title, '\'' );
-  assert( (m_xAxisTitle.size() >= 2) && (m_xAxisTitle.front() == '\'') && (m_xAxisTitle.back() == '\'') ) ;
-  if( !m_xAxisTitle.empty() && (m_xAxisTitle.front() == '\'') )
-    m_xAxisTitle = m_xAxisTitle.substr(1);
-  if( !m_xAxisTitle.empty() && (m_xAxisTitle.back() == '\'') )
-    m_xAxisTitle = m_xAxisTitle.substr(0, m_xAxisTitle.size() - 1 );
-  
+  m_xAxisTitle = title;
   if( isRendered() )
-    doJavaScript( m_jsgraph + ".setXAxisTitle(" + m_xAxisTitle + ");" );
+    doJavaScript( m_jsgraph + ".setXAxisTitle(" + m_xAxisTitle.jsStringLiteral('\'') + "');" );
 }//void setXAxisTitle( const std::string &title )
 
 
-void D3SpectrumDisplayDiv::setYAxisTitle( const std::string &title, const std::string &titleMulti )
+void D3SpectrumDisplayDiv::setYAxisTitle( const Wt::WString &title, const Wt::WString &titleMulti )
 {
-  m_yAxisTitle = Wt::WWebWidget::jsStringLiteral( title, '\'' );
-  m_yAxisTitleMulti = Wt::WWebWidget::jsStringLiteral( titleMulti, '\'' );
-  
-  assert( (m_yAxisTitle.size() >= 2) && (m_yAxisTitle.front() == '\'') && (m_yAxisTitle.back() == '\'') ) ;
-  assert( (titleMulti.size() >= 2) && (titleMulti.front() == '\'') && (titleMulti.back() == '\'') ) ;
-  
-  if( !m_yAxisTitle.empty() && (m_yAxisTitle.front() == '\'') )
-    m_yAxisTitle = m_yAxisTitle.substr(1);
-  if( !m_yAxisTitle.empty() && (m_yAxisTitle.back() == '\'') )
-    m_yAxisTitle = m_yAxisTitle.substr(0, m_yAxisTitle.size() - 1 );
-  
-  if( !m_yAxisTitleMulti.empty() && (m_yAxisTitleMulti.front() == '\'') )
-    m_yAxisTitleMulti = m_yAxisTitleMulti.substr(1);
-  if( !m_yAxisTitleMulti.empty() && (m_yAxisTitleMulti.back() == '\'') )
-    m_yAxisTitleMulti = m_yAxisTitleMulti.substr(0, m_yAxisTitleMulti.size() - 1 );
+  m_yAxisTitle = title;
+  m_yAxisTitleMulti = titleMulti;
   
   if( isRendered() )
-    doJavaScript( m_jsgraph + ".setYAxisTitle('" + m_yAxisTitle + "', '" + m_yAxisTitleMulti + "');" );
+    doJavaScript( m_jsgraph + ".setYAxisTitle(" + m_yAxisTitle.jsStringLiteral('\'')
+                 + ", " + m_yAxisTitleMulti.jsStringLiteral('\'') + ");" );
 }//void setYAxisTitle( const std::string &title )
 
 
@@ -1272,6 +1258,15 @@ Wt::Signal<double,double> &D3SpectrumDisplayDiv::shiftAltKeyDragged()
 {
   return m_shiftAltKeyDragg;
 }
+
+
+void D3SpectrumDisplayDiv::setChartTitle( const Wt::WString &title )
+{
+  m_chartTitle = title;
+  if( isRendered() )
+    doJavaScript( m_jsgraph + ".setTitle(" + title.jsStringLiteral('\'') + ");" );
+}//void setChartTitle( const Wt::WString &title )
+
 
 void D3SpectrumDisplayDiv::setSearchEnergies( const vector<pair<double,double>> &energies )
 {
@@ -1330,19 +1325,26 @@ void D3SpectrumDisplayDiv::removeAllDecorativeHighlightRegions()
 
 size_t D3SpectrumDisplayDiv::addDecorativeHighlightRegion( const float lowerx,
                                                           const float upperx,
-                                                          const Wt::WColor &color )
+                                                          const Wt::WColor &color,
+                                                          const HighlightRegionFill fillType,
+                                                          const Wt::WString &txt  )
 {
-  SpectrumChart::HighlightRegion region;
+  D3SpectrumDisplayDiv::HighlightRegion region;
   region.lowerx = lowerx;
   region.upperx = upperx;
   region.color = color;
+  region.fill_type = fillType;
+  region.display_txt = txt;
   region.hash = 0;
+  
   boost::hash_combine( region.hash, lowerx );
   boost::hash_combine( region.hash, upperx );
   boost::hash_combine( region.hash, color.red() );
   boost::hash_combine( region.hash, color.green() );
   boost::hash_combine( region.hash, color.blue() );
   boost::hash_combine( region.hash, color.alpha() );
+  boost::hash_combine( region.hash, static_cast<int>(fillType) );
+  boost::hash_combine( region.hash, hash<string>()(txt.toUTF8()) );
   
   if( region.hash <= 2 )
     region.hash += 3;
@@ -1371,14 +1373,30 @@ void D3SpectrumDisplayDiv::setHighlightRegionsToClient()
     jsstrm << "([";
     for( size_t i = 0; i < m_highlights.size(); ++i )
     {
-      const SpectrumChart::HighlightRegion &region = m_highlights[i];
+      const D3SpectrumDisplayDiv::HighlightRegion &region = m_highlights[i];
       jsstrm << std::string(i ? ",{" : "{")
              << "lowerEnergy:" << static_cast<double>(region.lowerx)
              << ", upperEnergy:" << static_cast<double>(region.upperx)
              << ", fill: 'rgba(" << region.color.red() << "," << region.color.green()  //bug in Wt 3.3.4 means need to manually write out rgba()
                                  << "," << region.color.blue()
-                                 << "," << (region.color.alpha()/255.0) << ")'"
-             << ", hash:" << std::to_string(region.hash)
+             << "," << (region.color.alpha()/255.0) << ")'";
+      
+      switch( region.fill_type )
+      {
+        case HighlightRegionFill::Full:
+          // We'll skip putting this in - previous to 20240527 this field didnt exist, so we'll keep compatiblity
+          //jsstrm << ", drawRegion: 'All'";
+          break;
+          
+        case HighlightRegionFill::BelowData:
+          jsstrm << ", drawRegion: 'BelowData'";
+          break;
+      }//switch( region.fill_type )
+      
+      if( !region.display_txt.empty() )
+        jsstrm << ", text: " << region.display_txt.jsStringLiteral('\'');
+      
+      jsstrm << ", hash:" << std::to_string(region.hash)
              << "}";
     }//for( loop over m_highlights )
   

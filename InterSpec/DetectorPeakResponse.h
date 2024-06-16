@@ -173,6 +173,13 @@ public:
     FixedGeomActPerGram = 0x08
   };//enum class EffGeometryType
   
+  /** Returns the postfix to add to an activity value, for the type of geometry the DRF is for.
+   
+   For far-field and fixed-total-act, returns empty string.
+   Otherwise, returns "/cm2", "/m2", or "/g", as appropriate.
+   */
+  static const std::string &det_eff_geom_type_postfix( const EffGeometryType type );
+  
   
   /** Enum used to indicate where the DRF came from.  This is used primarily to
       help decide what DRFs to show when user browses database.

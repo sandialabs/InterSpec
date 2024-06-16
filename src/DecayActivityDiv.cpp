@@ -808,8 +808,8 @@ class DateLengthCalculator : public WContainerWidget
         continue;
       
       double entered_activity = nucinfo.activity;
-      const bool useCurrie = nucinfo.useCurrie;
-      //const bool useCurrie = !InterSpecUser::preferenceValue<bool>( "DisplayBecquerel", InterSpec::instance() );
+      const bool useCurie = nucinfo.useCurie;
+      //const bool useCurie = !InterSpecUser::preferenceValue<bool>( "DisplayBecquerel", InterSpec::instance() );
       
       if( timeSpan < 0.0 )
       {
@@ -839,7 +839,7 @@ class DateLengthCalculator : public WContainerWidget
           local_mix->addNuclideByActivity( nuc, initial_activity );
       }//if( timeSpan < 0.0 )
       
-      string actTxt = PhysicalUnits::printToBestActivityUnits( entered_activity, 3, useCurrie );
+      string actTxt = PhysicalUnits::printToBestActivityUnits( entered_activity, 3, useCurie );
       if (!nucinfo.activityStr.empty())
       {
         assert((entered_activity < 1.0E-6)
@@ -1001,18 +1001,18 @@ class DateLengthCalculator : public WContainerWidget
       ageEdit->enterPressed().connect( std::bind( doAgeUpdate ) );
     }//for( size_t i = 0; i < nucs.size(); ++i )
     
-    auto checkUseCurries = [&nucs,db]( const SandiaDecay::NuclideActivityPair &nap ) -> bool {
+    auto checkUseCuries = [&nucs,db]( const SandiaDecay::NuclideActivityPair &nap ) -> bool {
       
       for( size_t nucn = 0; nucn < nucs.size(); ++nucn )
       {
         const vector<const SandiaDecay::Nuclide *> parents = nap.nuclide->forebearers();
         const SandiaDecay::Nuclide *nuc = db->nuclide( nucs[nucn].z, nucs[nucn].a, nucs[nucn].iso );
         if( std::find(parents.begin(),parents.end(),nuc) != parents.end() )
-          return nucs[nucn].useCurrie;
+          return nucs[nucn].useCurie;
       }//for( size_t nucn = 0; nucn < nucs.size(); ++nucn )
       
       return true;
-    };//checkUseCurries
+    };//checkUseCuries
     
     
     if( timeSpan < 0.0 )
@@ -1052,11 +1052,11 @@ class DateLengthCalculator : public WContainerWidget
         row_num += 1;
         
         //Figure out if user inputed activity in Ci or Bq for this nuclide
-        const bool useCurries = checkUseCurries( nap );
+        const bool useCuries = checkUseCuries( nap );
         
         beforeTable->elementAt(static_cast<int>(row_num),0)->addWidget( new WText(nap.nuclide->symbol) );
         
-        const string actstr = PhysicalUnits::printToBestActivityUnits( nap.activity, 3, useCurries, SandiaDecay::becquerel );
+        const string actstr = PhysicalUnits::printToBestActivityUnits( nap.activity, 3, useCuries, SandiaDecay::becquerel );
         beforeTable->elementAt(static_cast<int>(row_num),1)->addWidget( new WText(actstr) );
         
         const SandiaDecay::NuclideNumAtomsPair *natomp = NULL;
@@ -1110,11 +1110,11 @@ class DateLengthCalculator : public WContainerWidget
         continue;
       
       //Figure out if user inputed activity in Ci or Bq for this nuclide
-      const bool useCurries = checkUseCurries( nap );
+      const bool useCuries = checkUseCuries( nap );
       
       infotable->elementAt(row_num,0)->addWidget( new WText(nap.nuclide->symbol) );
       
-      string actstr = PhysicalUnits::printToBestActivityUnits( nap.activity, maxDecimal, useCurries );
+      string actstr = PhysicalUnits::printToBestActivityUnits( nap.activity, maxDecimal, useCuries );
       if( IsInf(nap.nuclide->halfLife) )
         actstr = "stable";
       infotable->elementAt(row_num,1)->addWidget( new WText(actstr) );
@@ -1330,21 +1330,21 @@ namespace
         const SandiaDecay::SandiaDecayDataBase * const db = DecayDataBaseServer::database();
       
         string name;
-        bool use_curries = false;
+        bool use_curies = false;
         for( const DecayActivityDiv::Nuclide &n : m_display->m_nuclides )
         {
           const SandiaDecay::Nuclide *nuc = db->nuclide( n.z, n.a, n.iso );
           if( nuc && !IsInf(nuc->halfLife) )  //dont print out activity for stable nuclides.
           {
-            use_curries = (use_curries || n.useCurrie);
+            use_curies = (use_curies || n.useCurie);
             name += (!name.empty() ? "_" : "") + nuc->symbol;
             if( n.age > std::numeric_limits<float>::epsilon() )
               name += remove_space_copy( PhysicalUnits::printToBestTimeUnits(n.age) );
           }
         }
         
-        const double act_unit = use_curries ? PhysicalUnits::curie : PhysicalUnits::becquerel;
-        const string act_unit_str = use_curries ? "ci" : "bq";
+        const double act_unit = use_curies ? PhysicalUnits::curie : PhysicalUnits::becquerel;
+        const string act_unit_str = use_curies ? "ci" : "bq";
         
         const auto bestTimeUnit = PhysicalUnits::bestTimeUnit( timeSpan );
         
@@ -2352,7 +2352,7 @@ void DecayActivityDiv::sourceNuclideDoubleClicked( Wt::WContainerWidget *w )
     m_nuclideSelectDialog->show();
     m_nuclideSelect->setNuclideSearchToFocus();
     m_nuclideSelect->setCurrentInfo( nuc.a, nuc.z, nuc.iso,
-                                     nuc.age, nuc.activity, nuc.useCurrie, nuc.activityStr );
+                                     nuc.age, nuc.activity, nuc.useCurie, nuc.activityStr );
     m_nuclideSelect->setAddButtonToAccept();
     m_nuclideSelectDialog->centerWindow();
     m_nuclideSelectDialog->resizeToFitOnScreen();
@@ -2364,7 +2364,7 @@ void DecayActivityDiv::sourceNuclideDoubleClicked( Wt::WContainerWidget *w )
 void DecayActivityDiv::addTheNuclide( const NuclideSelectedInfo &n )
 {
   addNuclide( n.z, n.a, n.metasable, n.activity, 
-              n.useCurrie, n.initialAge, n.activityStr);
+              n.useCurie, n.initialAge, n.activityStr);
 }//void addTheNuclide( const NuclideSelectedInfo &nuc )
 
 
@@ -2384,7 +2384,7 @@ void DecayActivityDiv::Nuclide::updateTxt()
     label << iso;
   
   label << "</font></sup>" << elementName;
-  label << " " << PhysicalUnits::printToBestActivityUnits(activity, 2, useCurrie );
+  label << " " << PhysicalUnits::printToBestActivityUnits(activity, 2, useCurie );
   
   if( age > 0.0 )
   {
@@ -2396,7 +2396,7 @@ void DecayActivityDiv::Nuclide::updateTxt()
 
 
 void DecayActivityDiv::addNuclide( const int z, const int a, const int iso,
-                                 const double activity, const bool useCurrie,
+                                 const double activity, const bool useCurie,
                                  const double age, const std::string &activityStr )
 {
   //See if we are actually editing a Nuclide
@@ -2418,7 +2418,7 @@ void DecayActivityDiv::addNuclide( const int z, const int a, const int iso,
   nuclide.a         = a;
   nuclide.z         = z;
   nuclide.activity  = activity;
-  nuclide.useCurrie = useCurrie;
+  nuclide.useCurie  = useCurie;
   nuclide.activityStr = activityStr;
   nuclide.iso       = iso;
   nuclide.age       = age;
@@ -2441,7 +2441,7 @@ void DecayActivityDiv::addNuclide( const int z, const int a, const int iso,
   {
     nuclide.display->clicked().connect(
           boost::bind( &DecayChainChart::setNuclide,
-                       m_decayChainChart, nuc, useCurrie,
+                       m_decayChainChart, nuc, useCurie,
                        DecayChainChart::DecayChainType::DecayFrom) );
   }//if( nuc )
   
@@ -2468,7 +2468,7 @@ void DecayActivityDiv::addNuclide( const int z, const int a, const int iso,
   setTimeLimitToDisplay();
 
   const auto nucptr = db->nuclide(z, a, iso);
-  m_decayChainChart->setNuclide( nucptr, useCurrie, DecayChainChart::DecayChainType::DecayFrom );
+  m_decayChainChart->setNuclide( nucptr, useCurie, DecayChainChart::DecayChainType::DecayFrom );
 
   refreshDecayDisplay( true );
 }//void addNuclide(..)
@@ -2500,7 +2500,7 @@ void DecayActivityDiv::removeNuclide( Wt::WContainerWidget *frame )
       const SandiaDecay::SandiaDecayDataBase *db = DecayDataBaseServer::database();
       const DecayActivityDiv::Nuclide nuc = m_nuclides[m_nuclides.size() - 2];
       const SandiaDecay::Nuclide * const nucptr = db->nuclide(nuc.z, nuc.a, nuc.iso);
-      m_decayChainChart->setNuclide( nucptr, nuc.useCurrie, DecayChainChart::DecayChainType::DecayThrough );
+      m_decayChainChart->setNuclide( nucptr, nuc.useCurie, DecayChainChart::DecayChainType::DecayThrough );
     }
   }
 
@@ -2878,7 +2878,7 @@ WContainerWidget *DecayActivityDiv::isotopesSummary( const double time ) const
         const SandiaDecay::Nuclide * const nuclide = db->nuclide( nuc.z, nuc.a, nuc.iso );
         const vector<const SandiaDecay::Nuclide *> children = nuclide->descendants();
         if( std::find(begin(children),end(children),initial_nuc) != end(children) )
-          return nuc.useCurrie;
+          return nuc.useCurie;
       }
       
       return !InterSpecUser::preferenceValue<bool>( "DisplayBecquerel", InterSpec::instance() );
@@ -2890,10 +2890,10 @@ WContainerWidget *DecayActivityDiv::isotopesSummary( const double time ) const
         for( int i = 0; i < m_currentMixture->numInitialNuclides(); ++i )
         {
           const SandiaDecay::Nuclide *initial_nuc = m_currentMixture->initialNuclide(i);
-          const bool useCurrie = use_curry( initial_nuc );
+          const bool useCurie = use_curry( initial_nuc );
           
           const double initial_act = m_currentMixture->initialActivity(i);
-          const string initial_act_str = PhysicalUnits::printToBestActivityUnits(initial_act,2,useCurrie,SandiaDecay::becquerel);
+          const string initial_act_str = PhysicalUnits::printToBestActivityUnits(initial_act,2,useCurie,SandiaDecay::becquerel);
           infostrm << (i ? "," : "") << initial_act_str << " " << initial_nuc->symbol;
         }//for( loop over orignal nuclides )
       }//end codeblock to put starting nuclides information into the stream
@@ -2914,8 +2914,8 @@ WContainerWidget *DecayActivityDiv::isotopesSummary( const double time ) const
       if( IsInf(pair.nuclide->halfLife) || IsNan(pair.nuclide->halfLife) )
         continue;
       
-      const bool useCurrie = use_curry( pair.nuclide );
-      const string act_str = PhysicalUnits::printToBestActivityUnits(pair.activity,2,useCurrie,SandiaDecay::becquerel);
+      const bool useCurie = use_curry( pair.nuclide );
+      const string act_str = PhysicalUnits::printToBestActivityUnits(pair.activity,2,useCurie,SandiaDecay::becquerel);
       infostrm << (nparents?", ":"") << act_str << " " << pair.nuclide->symbol;
       ++nparents;
     }//for( loop over activities )

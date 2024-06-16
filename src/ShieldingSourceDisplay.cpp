@@ -156,24 +156,6 @@ function(id,info)
 
 namespace
 {
-  string det_eff_geom_type_postfix( DetectorPeakResponse::EffGeometryType type )
-  {
-    switch( type )
-    {
-      case DetectorPeakResponse::EffGeometryType::FarField:
-      case DetectorPeakResponse::EffGeometryType::FixedGeomTotalAct:
-        return "";
-      case DetectorPeakResponse::EffGeometryType::FixedGeomActPerCm2:
-        return "/cm2";
-      case DetectorPeakResponse::EffGeometryType::FixedGeomActPerM2:
-        return "/m2";
-      case DetectorPeakResponse::EffGeometryType::FixedGeomActPerGram:
-        return "/g";
-    }//switch( m_det_type )
-    assert( 0 );
-    return "";
-  }//string det_eff_geom_type_postfix( DetectorPeakResponse::EffGeometryType )
-  
   class StringDownloadResource : public Wt::WResource
   {
     ShieldingSourceDisplay *m_display;
@@ -370,11 +352,11 @@ SourceFitModel::SourceFitModel( PeakModel *peakModel,
   auto interspec = InterSpec::instance();
   if( !interspec )
   {
-    m_displayCurries = true;
+    m_displayCuries = true;
   }else
   {
     interspec->useMessageResourceBundle( "ShieldingSourceDisplay" ); //jic
-    m_displayCurries = !InterSpecUser::preferenceValue<bool>( "DisplayBecquerel", interspec );
+    m_displayCuries = !InterSpecUser::preferenceValue<bool>( "DisplayBecquerel", interspec );
     InterSpecUser::addCallbackWhenChanged( interspec->m_user, "DisplayBecquerel", this, &SourceFitModel::displayUnitsChanged );
   }//if( !interspec ) / else
   
@@ -397,9 +379,9 @@ void SourceFitModel::displayUnitsChanged( bool useBq )
   //cout << "in SourceFitModel::displayUnitsChanged" << endl;
   try
   {
-    if( useBq == m_displayCurries )
+    if( useBq == m_displayCuries )
     {
-      m_displayCurries = !useBq;
+      m_displayCuries = !useBq;
       const int nrow = rowCount();
       if( nrow > 0 )
         dataChanged().emit( createIndex(0,0,nullptr), createIndex(nrow-1,kNumColumns-1,nullptr) );
@@ -410,7 +392,7 @@ void SourceFitModel::displayUnitsChanged( bool useBq )
     cerr << "SourceFitModel::displayUnitsChanged: Failed to convert boost any: " << e.what() << endl;
   }
   
-  //cout << "m_displayCurries is now: " << m_displayCurries << endl;
+  //cout << "m_displayCuries is now: " << m_displayCuries << endl;
 }//void SourceFitModel::displayUnitsChanged( boost::any value )
 
 
@@ -1494,7 +1476,7 @@ boost::any SourceFitModel::headerData( int section, Orientation orientation, int
         case DetectorPeakResponse::EffGeometryType::FixedGeomActPerGram:
           return boost::any( WString("{1}{2}")
                             .arg( WString::tr("Activity"))
-                            .arg( det_eff_geom_type_postfix(m_det_type) ) );
+                            .arg( DetectorPeakResponse::det_eff_geom_type_postfix(m_det_type) ) );
       }//switch( m_det_type )
       assert( 0 );
       break;
@@ -1571,8 +1553,8 @@ boost::any SourceFitModel::data( const Wt::WModelIndex &index, int role ) const
     case kActivity:
     {
       const double act = isof.activity;
-      string ans = PhysicalUnits::printToBestActivityUnits( act, (extra_precision ? 8 : 3), m_displayCurries );
-      ans += det_eff_geom_type_postfix(m_det_type);
+      string ans = PhysicalUnits::printToBestActivityUnits( act, (extra_precision ? 8 : 3), m_displayCuries );
+      ans += DetectorPeakResponse::det_eff_geom_type_postfix(m_det_type);
       
       // We'll require the uncertainty to be non-zero to show it - 1 micro-bq is an arbitrary cutoff to
       //  consider anything below it zero.
@@ -1597,8 +1579,8 @@ boost::any SourceFitModel::data( const Wt::WModelIndex &index, int role ) const
       
       if( shouldHaveUncert )
       {
-        ans += " \xC2\xB1 " + PhysicalUnits::printToBestActivityUnits( uncert, (extra_precision ? 5 : 2), m_displayCurries );
-        ans += det_eff_geom_type_postfix(m_det_type);
+        ans += " \xC2\xB1 " + PhysicalUnits::printToBestActivityUnits( uncert, (extra_precision ? 5 : 2), m_displayCuries );
+        ans += DetectorPeakResponse::det_eff_geom_type_postfix(m_det_type);
       }//if( shouldHaveUncert )
       
       return boost::any( WString(ans) );
@@ -1697,8 +1679,8 @@ boost::any SourceFitModel::data( const Wt::WModelIndex &index, int role ) const
         return boost::any();
       
       double act = isof.activityUncertainty;
-      string ans = PhysicalUnits::printToBestActivityUnits( act, (extra_precision ? 8 : 2), m_displayCurries );
-      ans += det_eff_geom_type_postfix(m_det_type);
+      string ans = PhysicalUnits::printToBestActivityUnits( act, (extra_precision ? 8 : 2), m_displayCuries );
+      ans += DetectorPeakResponse::det_eff_geom_type_postfix(m_det_type);
       
       return boost::any( WString(ans) );
     }//case kActivityUncertainty:
@@ -1717,8 +1699,8 @@ boost::any SourceFitModel::data( const Wt::WModelIndex &index, int role ) const
       if( !isof.truthActivity )
         return boost::any();
       
-      string ans = PhysicalUnits::printToBestActivityUnits( *isof.truthActivity, (extra_precision ? 8 : 4), m_displayCurries );
-      ans += det_eff_geom_type_postfix(m_det_type);
+      string ans = PhysicalUnits::printToBestActivityUnits( *isof.truthActivity, (extra_precision ? 8 : 4), m_displayCuries );
+      ans += DetectorPeakResponse::det_eff_geom_type_postfix(m_det_type);
       
       return boost::any( WString(ans) );
     }
@@ -1727,8 +1709,8 @@ boost::any SourceFitModel::data( const Wt::WModelIndex &index, int role ) const
     {
       if( !isof.truthActivityTolerance )
         return boost::any();
-      string ans = PhysicalUnits::printToBestActivityUnits( *isof.truthActivityTolerance, (extra_precision ? 8 : 4), m_displayCurries );
-      ans += det_eff_geom_type_postfix(m_det_type);
+      string ans = PhysicalUnits::printToBestActivityUnits( *isof.truthActivityTolerance, (extra_precision ? 8 : 4), m_displayCuries );
+      ans += DetectorPeakResponse::det_eff_geom_type_postfix(m_det_type);
       
       return boost::any( WString(ans) );
     }
@@ -4586,13 +4568,13 @@ tuple<bool,int,int,vector<string>> ShieldingSourceDisplay::testCurrentFitAgainst
         
         textInfoLines.push_back( "For " + nuc->symbol + " fit activity "
                                 + PhysicalUnits::printToBestActivityUnits(fitAct)
-                                + det_eff_geom_type_postfix(m_sourceModel->detType()) + " with the"
+                                + DetectorPeakResponse::det_eff_geom_type_postfix(m_sourceModel->detType()) + " with the"
                                 " truth value of "
                                 + PhysicalUnits::printToBestActivityUnits(*truthAct)
-                                + det_eff_geom_type_postfix(m_sourceModel->detType())
+                                + DetectorPeakResponse::det_eff_geom_type_postfix(m_sourceModel->detType())
                                 + " and tolerance "
                                 + PhysicalUnits::printToBestActivityUnits(*tolerance)
-                                + det_eff_geom_type_postfix(m_sourceModel->detType())
+                                + DetectorPeakResponse::det_eff_geom_type_postfix(m_sourceModel->detType())
                                 + (closeEnough ? " - within tolerance." : " - out of tolerance." )
                                 );
       }//if( fit activity )
@@ -8602,13 +8584,13 @@ void ShieldingSourceDisplay::updateCalcLogWithFitResults(
       const string ageStr = PhysicalUnitsLocalized::printToBestTimeUnits( age, 2 );
       const string ageUncertStr = PhysicalUnitsLocalized::printToBestTimeUnits( ageUncert, 2 );
   
-      string act_postfix = det_eff_geom_type_postfix(m_sourceModel->detType()), trace_total = "";
+      string act_postfix = DetectorPeakResponse::det_eff_geom_type_postfix(m_sourceModel->detType()), trace_total = "";
       if( chi2Fcn->isTraceSource(nuc) )
       {
         const double total_act = chi2Fcn->totalActivity(nuc,params);
         trace_total = "Total activity "
                       + PhysicalUnits::printToBestActivityUnits( total_act, 2, useCi )
-                      + det_eff_geom_type_postfix(m_sourceModel->detType()) + ", ";
+                      + DetectorPeakResponse::det_eff_geom_type_postfix(m_sourceModel->detType()) + ", ";
         
         switch( chi2Fcn->traceSourceActivityType(nuc) )
         {

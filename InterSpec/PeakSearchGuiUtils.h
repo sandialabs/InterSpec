@@ -26,6 +26,7 @@
 #include "InterSpec_config.h"
 
 #include <deque>
+#include <tuple>
 #include <memory>
 #include <vector>
 #include <string>
@@ -100,6 +101,17 @@ void fit_peak_from_double_click( InterSpec *interspec,
 /** Performs the automated search for peaks - setting the results to the GUI. */
 void automated_search_for_peaks( InterSpec *interspec, const bool keep_old_peaks );
 
+/** Uses the currently displayed foreground to estimate the expected FWHM for the wanted energy.
+ 
+ Value returned, is the first successful one of:
+ - Interpolate between user-fit peaks
+ - Use FWHM function of current detector efficiency function
+ - Interpolate between auto-search peaks
+ - sqrt(energy) interpolate from a single peak
+ - Use a generic HPGe or NaI detector
+ - return 0.0f - shouldnt happen.
+ */
+float estimate_FWHM_of_foreground( const float energy );
 
 /** For all peaks currently fit for, this function attempts to assign them a source
  based on currently showing reference lines.
@@ -168,11 +180,48 @@ void refit_peaks_from_right_click( InterSpec * const interspec, const double rig
  Assumes you are in the Wt app primary thread.
  */
 void refit_peaks_with_drf_fwhm( InterSpec * const interspec, const double rightClickEnergy );
-
+  
 /** Returns the energy of its assigned nuclides gamma line, or peak doesnt have assigned gamma line, returns the
  nearest showing Reference Photopeak line. Returns a negative value if neither can be found
+ 
  */
-float reference_line_energy_near_peak( InterSpec * const interspec, const PeakDef &peak );
+float reference_line_energy_near_peak( InterSpec * const interspec, 
+                                      const PeakDef &peak );
+  
+/** Returns the reference line info, and index for the specific reference line
+ 
+ @param only_nuclide If true, then only lines with a parent nuclide, who are a gamma or xray, will be considered
+ 
+ Example usage:
+ ```
+ auto refline = reference_line_near_peak( interspec, peak, false );
+ if( refline.first )
+ {
+   ReferenceLineInfo::RefLine &line = refline.first->m_ref_lines[refline.second];
+   ...
+ }else
+ {
+   // No line found
+ }
+ ```
+ */
+std::pair<std::unique_ptr<ReferenceLineInfo>,int> reference_line_near_peak( 
+                                                                  InterSpec * const interspec,
+                                                                  const PeakDef &peak,
+                                                                  const bool only_nuclide );
+  
+/** Returns the reference line nuclide and energy near the given energy, that the user probably intends.
+   
+  Intended to be called with the energy of a users click - takes into account detectors resolution and nuclide yields.
+   
+  @returns The nuclide, its age, and energy of the reference line.  If not near a line, or no reference line, or a non-nuc reference
+          line is showing, will return {nullptr, 0.0, 0.0f}.
+   
+  \sa PeakSearchGuiUtils::reference_line_energy_near_peak
+*/
+std::tuple<const SandiaDecay::Nuclide *, double /* age */, float /* energy */>
+  nuclide_reference_line_near( InterSpec *viewer, const float energy );
+  
   
 /** Set the peak nearest `rightClickEnergy` to preferably its assigned gamma energy, or if none assigned, to
  nearest showing reference photopeak energy, and then refits peak.

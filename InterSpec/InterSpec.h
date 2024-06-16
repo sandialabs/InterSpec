@@ -52,6 +52,7 @@ class PopupDivMenu;
 class SimpleDialog;
 class EnergyCalTool;
 class GammaXsWindow;
+class MakeDrfWindow;
 class OneOverR2Calc;
 class SpectrumChart;
 class UseInfoWindow;
@@ -71,6 +72,7 @@ class PopupWarningWidget;
 class UnitsConverterTool;
 class FeatureMarkerWindow;
 class D3SpectrumDisplayDiv;
+class DetectionLimitWindow;
 class DetectorPeakResponse;
 class ExportSpecFileWindow;
 class MakeFwhmForDrfWindow;
@@ -78,6 +80,7 @@ class IsotopeSearchByEnergy;
 class ShieldingSourceDisplay;
 class EnergyCalPreserveWindow;
 class ReferencePhotopeakDisplay;
+class DetectionLimitSimpleWindow;
 class LicenseAndDisclaimersWindow;
 namespace HelpSystem{ class HelpWindow; }
 namespace D3SpectrumExport{ struct D3SpectrumChartOptions; }
@@ -601,7 +604,12 @@ public:
   void setToolTabsVisible( bool show );
   bool toolTabsVisible() const;
   
-  void showMakeDrfWindow();
+  /** Makes a MakeDrf Window and returns it, or if one was already present, returns it. */
+  MakeDrfWindow *showMakeDrfWindow();
+  /** Returns the pointer to current MakeDrf Window.  Will by nullptr if not currently showing */
+  MakeDrfWindow *makeDrfWindow();
+  void handleCloseMakeDrfWindow( MakeDrfWindow *window );
+  
   DrfSelectWindow *showDrfSelectWindow();
   void closeDrfSelectWindow();
   
@@ -869,6 +877,18 @@ public:
    */
   void handleExportSpectrumFileDialogClose();
   
+#if( USE_DETECTION_LIMIT_TOOL )
+  /** If `query_str` is not empty, the handle app URI function will be called. */
+  void showDetectionLimitTool( const std::string &query_str );
+  DetectionLimitWindow *createDetectionLimitTool();
+  void handleDetectionLimitWindowClose();
+  void programmaticallyCloseDetectionLimit();
+  
+  DetectionLimitSimpleWindow *showSimpleMdaWindow();
+  void handleSimpleMdaWindowClose();
+  void programmaticallyCloseSimpleMda();
+#endif //USE_DETECTION_LIMIT_TOOL
+  
   /** Brings up a dialog asking the user to confirm starting a new session, and if they select so, will start new session. */
   void startClearSession();
   
@@ -916,8 +936,11 @@ protected:
   void createFileParameterWindow();
   
 #if( USE_DETECTION_LIMIT_TOOL )
-  void createDetectionLimitTool();
-#endif
+  void fitNewPeakNotInRoiFromRightClick();
+  void startAddPeakFromRightClick();
+  void searchOnEnergyFromRightClick();
+  void startSimpleMdaFromRightClick();
+#endif //USE_DETECTION_LIMIT_TOOL
   
   void updateGuiForPrimarySpecChange( std::set<int> display_sample_nums );
   
@@ -1397,10 +1420,18 @@ protected:
     kChangeContinuum,
     kChangeSkew,
     kDeletePeak,
-    kAddPeak,
+    kAddPeakToRoi,
     kShareContinuumWithLeftPeak,
     kShareContinuumWithRightPeak,
     kMakeOwnContinuum,
+
+#if( USE_DETECTION_LIMIT_TOOL )
+    kFitNewPeakNotInRoi,
+    kAddPeakNotInRoi,
+    kSearchEnergy,
+    kSimpleMda,
+#endif
+    
     kNumRightClickItems
   };//enum RightClickItems
   
@@ -1477,6 +1508,7 @@ protected:
   OneOverR2Calc *m_1overR2Calc;
   UnitsConverterTool *m_unitsConverter;
   FluxToolWindow *m_fluxTool;
+  MakeDrfWindow *m_makeDrfTool;
   
   
 #if( USE_GOOGLE_MAP || USE_LEAFLET_MAP )
@@ -1509,7 +1541,10 @@ protected:
   AuxWindow        *m_remoteRidWindow;
 #endif
 
-  
+#if( USE_DETECTION_LIMIT_TOOL )
+  DetectionLimitSimpleWindow *m_simpleMdaWindow;
+  DetectionLimitWindow *m_detectionLimitWindow;
+#endif
   
   std::set<int> m_excludedSamples;//these are samples that should not be displayed for the primary spectrum
   std::set<int> m_displayedSamples;

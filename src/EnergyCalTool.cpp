@@ -137,6 +137,9 @@ namespace
     assert( specfile );
     InterSpec * const viewer = InterSpec::instance();
     assert( viewer );
+    if( !viewer )
+      return;
+
     const shared_ptr<SpecMeas> specfile_now = viewer ? viewer->measurment( type ) : nullptr;
     assert( specfile == specfile_now );
     if( !specfile || (specfile != specfile_now) )

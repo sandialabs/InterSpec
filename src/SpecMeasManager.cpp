@@ -109,6 +109,7 @@
 #include "SpecUtils/UriSpectrum.h"
 
 
+#include "InterSpec/MakeDrf.h"
 #include "InterSpec/DrfChart.h"
 #include "InterSpec/SpecMeas.h"
 #include "InterSpec/PopupDiv.h"
@@ -121,8 +122,9 @@
 #include "InterSpec/HelpSystem.h"
 #include "InterSpec/SimpleDialog.h"
 #include "InterSpec/InterSpecApp.h"
-#include "InterSpec/EnergyCalTool.h"
 #include "InterSpec/DataBaseUtils.h"
+#include "InterSpec/EnergyCalTool.h"
+#include "InterSpec/MakeDrfSrcDef.h"
 #include "InterSpec/WarningWidget.h"
 #include "InterSpec/ExportSpecFile.h"
 #include "InterSpec/SpecMeasManager.h"
@@ -513,7 +515,7 @@ class MultiUrlSpectrumDialog : public SimpleDialog
   
 public:
   MultiUrlSpectrumDialog( SpecMeasManager *manager, InterSpec *viewer )
-  : SimpleDialog( "Multi-part QR/URL Spectrum", "&nbsp;" ),
+  : SimpleDialog( WString::tr("musd-dialog-title"), "&nbsp;" ),
     m_manager( manager ),
     m_interspec( viewer )
   {
@@ -521,9 +523,9 @@ public:
     assert( viewer );
 
 #if( IOS || ANDROID )
-    WPushButton *btn = addButton( "Cancel" );
+    WPushButton *btn = addButton( WString::tr("Cancel") );
 #else
-    addButton( "Cancel" );
+    addButton( WString::tr("Cancel") );
 #endif
     
     finished().connect( m_manager, &SpecMeasManager::multiSpectrumDialogDone );
@@ -614,8 +616,7 @@ public:
       // Check if incoming CRC-16 matches previous (i.e., is same spectrum)
       if( !m_urls.empty() && (info.m_crc != m_urls[0].m_crc) )
       {
-        passMessage( "URL/QR-code received was from a different spectrum than previous URL/QR-code",
-                    WarningWidget::WarningMsgMedium );
+        passMessage( WString::tr("musd-err-diff-spec"), WarningWidget::WarningMsgMedium );
         m_urls.clear();
       }
       
@@ -624,8 +625,7 @@ public:
       {
         if( i.m_url_num == info.m_url_num )
         {
-          passMessage( "Have already received this URL/QR-code",
-                      WarningWidget::WarningMsgMedium );
+          passMessage( WString::tr("musd-err-duplicate-url"), WarningWidget::WarningMsgMedium );
           return;
         }
       }//for( const QRSpectrum::EncodedSpectraInfo &i : m_urls )
@@ -655,7 +655,7 @@ public:
         
         m_manager->multiSpectrumDialogDone();
         
-        string display_name = "From QR-code/URL";
+        string display_name = WString::tr("musd-from-qr-file-name").toUTF8();
         if( specs.size() && (specs[0].m_title.size() > 2) )
           display_name = specs[0].m_title;
         
@@ -673,17 +673,19 @@ public:
       //  vector<UrlSpectrum> spec = spectrum_decode_first_url( m_urls[0].m_data );
       //std::shared_ptr<SpecUtils::SpecFile> to_spec_file( const std::vector<UrlSpectrum> &meas );
       
-      string msg = "Have received urls ";
+      string urls_list;
       for( size_t i = 0; i < m_urls.size(); ++i )
       {
         if( i && (i+1)== m_urls.size() )
-          msg += " and ";
+          urls_list += " and ";
         else if( i )
-          msg += ", ";
-        msg += std::to_string( 1 + m_urls[i].m_url_num );
+          urls_list += ", ";
+        urls_list += std::to_string( 1 + m_urls[i].m_url_num );
       }
       
-      msg += " of " + std::to_string(info.m_number_urls) + ".<p>Waiting on more URLS/QR-codes</p>";
+      WString msg = WString::tr("musd-received-urls-list")
+                      .arg(urls_list)
+                      .arg( static_cast<int>(info.m_number_urls) );
       assert( m_msgContents );
       m_msgContents->setText( msg );
       
@@ -694,7 +696,7 @@ public:
     {
       assert( m_title );
       assert( m_msgContents );
-      m_msgContents->setText( "Error decoding URL: " + string(e.what()) );
+      m_msgContents->setText( WString::tr("musd-err-decoding-url").arg(e.what()) );
       
 #if( IOS || ANDROID )
       removePrevUrlsFile();
@@ -903,7 +905,7 @@ protected:
           if( !specfile || (specfile->num_measurements() < 1) || (specfile->num_gamma_channels() < 7) )
             throw runtime_error( "No gamma measurements in URL/QR code" );
           
-          string display_name = m_display_name.empty() ? string("QR-code Picture") : m_display_name;
+          string display_name = m_display_name.empty() ? WString::tr("uid-qr-code-pic").toUTF8() : m_display_name;
           
           specmeas = make_shared<SpecMeas>();
           reinterpret_cast<SpecUtils::SpecFile &>( *specmeas ) = *specfile;
@@ -952,42 +954,39 @@ protected:
     
     if( (num_qr <= 0) || initial_uris.empty() || (initial_uris.size() > 14) )
     {
-      string title, content;
+      WString title, content;
       
       if( (num_qr == 0) && b64_value.empty() )
       {
         if( m_autoQrCodeSearch && m_qrCodeStatusTxt )
         {
-          m_qrCodeStatusTxt->setText( "No QR-codes found &#9432;" );
+          m_qrCodeStatusTxt->setText( WString::tr("uid-no-qr-found") );
           return;
         }
         
-        title = "No QR-code found";
-        content = "<p>"
-        "If there is a QR-code in the image, you can try cropping the photo or adjusting color level.<br/>"
-        "Using a 3rd party app/website, or the capabilities built into iOS or Android, will also often times work better."
-        "</p>";
+        title = WString::tr("uid-no-qr-found-title");
+        content = WString::tr("uid-no-qr-content");
       }else
       {
-        title = "Error searching for QR-code";
-        content = "<div>Error value: " + std::to_string(num_qr) + "</div>";
-        content += "<p>Error message:";
+        title = WString::tr("uid-err-qr-search-title");
+        content = WString::tr("uid-err-qr-search-content");
+        content.arg( num_qr );
+        
         if( b64_value.size() < 128 )
-          content += Wt::Utils::htmlEncode(b64_value);
+          content.arg( Wt::Utils::htmlEncode(b64_value) );
         else
-          content += Wt::Utils::htmlEncode(b64_value.substr(0,125) + "...");
-        content += "</p>";
+          content.arg( Wt::Utils::htmlEncode(b64_value.substr(0,125) + "...") );
         
         if( m_autoQrCodeSearch && m_qrCodeStatusTxt )
         {
-          m_qrCodeStatusTxt->setText( title + " &#9432;" );
-          passMessage( "<div>" + title + "</div>" + content, WarningWidget::WarningMsgHigh );
+          m_qrCodeStatusTxt->setText( WString("{1} &#9432;").arg(title) );
+          passMessage( WString::tr("<div>{1}</div>{2}").arg(title).arg(content), WarningWidget::WarningMsgHigh );
           return;
         }
       }//if( (num_qr == 0) && b64_value.empty() )
       
       SimpleDialog *dialog = new SimpleDialog( title, content );
-      dialog->addButton( "Okay" );
+      dialog->addButton( WString::tr("Okay") );
       
       return;
     }//if( num_qr <= 0 )
@@ -1015,58 +1014,57 @@ protected:
     {
       // Right now we'll be conservative, and if any QR code had a invalid URI, we wont
       //  use any of them
-      string content;
+      WString content;
       
       if( initial_uris.size() > 1 )
       {
         const size_t num_invalid = initial_uris.size() -  cleaned_up_uris.size();
-        content = std::to_string(num_invalid) + " of the QR-codes had invalid URIs.";
+        content = WString::tr("uid-some-invalid-qrs").arg( static_cast<int>(num_invalid) );
       }else
       {
-        content = "The QR-code did not contain a <code>interspec://</code> or <code>raddata://</code> URI.";
+        content = WString::tr("uid-qr-didnt-have-uri");
       }
  
       if( m_autoQrCodeSearch && m_qrCodeStatusTxt )
       {
-        m_qrCodeStatusTxt->setText( "Invalid QR-code" );
+        m_qrCodeStatusTxt->setText( WString::tr("uid-invalid-qr") );
         return;
       }
       
-      SimpleDialog *dialog = new SimpleDialog( "QR-code contained invalid URI", content );
-      dialog->addButton( "Okay" );
+      SimpleDialog *dialog = new SimpleDialog( WString::tr("uid-invalid-uri"), content );
+      dialog->addButton( WString::tr("Okay") );
       
       return;
     }//if( cleaned_up_uris.size() != initial_uris.size() )
     
-    string title, content;
+    WString title, content;
     if( cleaned_up_uris.size() > 1 )
     {
-      title = std::to_string(cleaned_up_uris.size()) + " QR-codes found";
-      content = "Would you like to use all of these?";
+      title = WString::tr("uid-multi-qr-found-title").arg( static_cast<int>(cleaned_up_uris.size()) );
+      content = WString::tr("uid-multi-qr-found-content");
       
       if( m_autoQrCodeSearch && m_qrCodeStatusTxt )
-        m_qrCodeStatusTxt->setText( "Found " + std::to_string(cleaned_up_uris.size()) + " QR-codes" );
+        m_qrCodeStatusTxt->setText(  WString::tr("uid-multi-qr-status").arg( static_cast<int>(cleaned_up_uris.size()) )  );
     }else if( cleaned_up_uris.size() > 0 )
     {
-      title = "Found QR-code";
+      title = WString::tr("uid-qr-found-title");
       
       assert( !cleaned_up_uris.empty() );
       string short_uri = cleaned_up_uris.front();
       SpecUtils::utf8_limit_str_size(short_uri, 32);
       
-      content = "Would you like to use the QR-code starting with <br />"
-                "<code>" + short_uri + "...</code>";
+      content = WString::tr("uid-qr-found-content").arg( short_uri );
       
       if( m_autoQrCodeSearch && m_qrCodeStatusTxt )
-        m_qrCodeStatusTxt->setText( "Found QR-code" );
+        m_qrCodeStatusTxt->setText( WString::tr("uid-found-qr") );
     }//if( cleaned_up_uris.size() > 1 )
     
     SimpleDialog *dialog = new SimpleDialog( title, content );
-    WPushButton *btn = dialog->addButton( "Yes" );
+    WPushButton *btn = dialog->addButton( WString::tr("Yes") );
     btn->clicked().connect( boost::bind(&UploadedImgDisplay::apply_uris, this, cleaned_up_uris)  );
     btn->clicked().connect( this, &UploadedImgDisplay::close_parent_dialog );
     
-    btn = dialog->addButton( "No" );
+    btn = dialog->addButton( WString::tr("No") );
   }//void qr_check_result( const int num_qr, const string b64_value )
   
   
@@ -1102,14 +1100,14 @@ protected:
     const vector<unsigned char> data = m_resource->data();
     if( data.empty() )
     {
-      passMessage( "Error retrieving data to embed - not embedding image.", WarningWidget::WarningMsgHigh );
+      passMessage( WString::tr("uid-err-getting-data"), WarningWidget::WarningMsgHigh );
       return;
     }
           
     shared_ptr<SpecMeas> meas = m_viewer->measurment( SpecUtils::SpectrumType::Foreground );
     if( !meas )
     {
-      passMessage( "No foreground loaded - not embedding image.", WarningWidget::WarningMsgHigh );
+      passMessage( WString::tr("uid-err-no-foreground-embedd"), WarningWidget::WarningMsgHigh );
       return;
     }
           
@@ -1131,8 +1129,7 @@ protected:
     meas->add_multimedia_data( multi );
     m_viewer->checkEnableViewImageMenuItem();
     
-    passMessage( "Image has been embedded in the foreground spectrum file; only exporting in"
-                  " N42-2012 file format will preserve this.", WarningWidget::WarningMsgInfo );
+    passMessage( WString::tr("uid-image-embed-conf"), WarningWidget::WarningMsgInfo );
           
     //wApp->doJavaScript( "$('#" + dialog->id() + "').hide(); $('.Wt-dialogcover').hide();" );
     wApp->doJavaScript( "$('.Wt-dialogcover').hide();" );
@@ -1163,15 +1160,14 @@ public:
   {
     m_close_parent_dialog = wApp->bind( boost::bind( &SimpleDialog::done, dialog, Wt::WDialog::DialogCode::Accepted ) );
     
-    const char *msg = "This file looks to be an image, and not a spectrum file.";
-    WText *t = new WText( msg, this );
+    WText *t = new WText( WString::tr("uid-image-not-spectrum"), this );
     t->addStyleClass( "NonSpecOtherFile" );
     
     const size_t max_disp_size = 16*1024*1024;
     
     if( filesize > max_disp_size )
     {
-      WText *errort = new WText( "Uploaded file was too large to try and display.", this );
+      WText *errort = new WText( WString::tr("uid-err-to-large"), this );
       errort->addStyleClass( "NonSpecError" );
       return;
     }//if( filesize > max_disp_size )
@@ -1181,7 +1177,7 @@ public:
       
     if( !success )
     {
-      WText *errort = new WText( "Couldn't read uploaded file.", this );
+      WText *errort = new WText( WString::tr("uid-err-reading-upload"), this );
       errort->addStyleClass( "NonSpecError" );
       return;
     }//if( !success )
@@ -1204,18 +1200,11 @@ public:
     if( m_autoQrCodeSearch )
     {
       m_qrCodeStatusTxt = new WText( btn_div );
-      
-      const char *tooltip = "Images are automatically searched for QR-codes that may be useable by InterSpec.<br/>"
-                            "If there is a QR-code in the image that is not found, you may have"
-                            " better luck using a 3rd party app/website, or the capabilities built into iOS"
-                            " or Android.<br />"
-                            "If you use a 3rd part tool to extract the URI from the QR-code, you"
-                            " can enter it into InterSpec using the &quot;<b>Enter URL</b>&quot;"
-                            " item in the &quot;<b>Edit</b>&quot; menu.";
-      HelpSystem::attachToolTipOn( m_qrCodeStatusTxt, tooltip, true, HelpSystem::ToolTipPosition::Right );
+      HelpSystem::attachToolTipOn( m_qrCodeStatusTxt, WString::tr("uid-tt-auto-qr"),
+                                  true, HelpSystem::ToolTipPosition::Right );
     }else
     {
-      m_checkForQrCodeBtn = new WPushButton( "Check for Qr-code", btn_div );
+      m_checkForQrCodeBtn = new WPushButton( WString::tr("uid-check-for-qr-btn"), btn_div );
       m_checkForQrCodeBtn->setStyleClass( "LinkBtn NonSpecQrCodeBtn" );
     }//if( m_autoQrCodeSearch ) / else
     
@@ -1229,7 +1218,7 @@ public:
       if( m_autoQrCodeSearch )
       {
         assert( m_qrCodeStatusTxt );
-        m_qrCodeStatusTxt->setText( "Looking for QR-codes." );
+        m_qrCodeStatusTxt->setText( WString::tr("uid-looking-for-qr") );
         check_for_qr_with_raw();
       }else
       {
@@ -1245,7 +1234,7 @@ public:
         wApp->require( "InterSpec_resources/assets/js/zxing-cpp-wasm/zxing_reader.js", "zxing_reader.js" );
         
         assert( m_qrCodeStatusTxt );
-        m_qrCodeStatusTxt->setText( "QR-code not found &#9432;" );
+        m_qrCodeStatusTxt->setText( WString::tr("uid-no-qr-found") );
         
         // If `imageLoaded()` is never called, it means the image couldnt be displayed, for example
         //  if image file is invalid, or a HEIC on Windows.
@@ -1262,7 +1251,7 @@ public:
         
     if( m_viewer->measurment( SpecUtils::SpectrumType::Foreground ) )
     {
-      WPushButton *embedbtn = new WPushButton( "Embed image in spectrum file", btn_div );
+      WPushButton *embedbtn = new WPushButton( WString::tr("uid-embed-image-btn"), btn_div );
       embedbtn->setStyleClass( "LinkBtn NonSpecEmbedBtn" );
       embedbtn->clicked().connect( this, &UploadedImgDisplay::embed_in_n42 );
     }//if( m_viewer->measurment( SpecUtils::SpectrumType::Foreground ) )
@@ -1289,21 +1278,21 @@ public:
     WGridLayout *layout = new Wt::WGridLayout();
     contents()->setLayout(layout);
     
-    WText *uploadText = new WText( "Foreground: " );
+    WText *uploadText = new WText( WString("{1}: ").arg( WString::tr("Foreground") ) );
     WFileUpload *m_fileUpload = new WFileUpload(  );
     m_fileUpload->changed().connect( m_fileUpload, &Wt::WFileUpload::upload );
     m_fileUpload->uploaded().connect( boost::bind( &SpecMeasManager::dataUploaded2, m_manager, m_fileUpload, SpectrumType::Foreground));
     m_fileUpload->fileTooLarge().connect( boost::bind( &SpecMeasManager::fileTooLarge,
                                                       boost::placeholders::_1 ) );
 
-    WText *uploadText2 = new WText( "Background: " );
+    WText *uploadText2 = new WText( WString("{1}: ").arg( WString::tr("Background") ) );
     WFileUpload *m_fileUpload2 = new WFileUpload(  );
     m_fileUpload2->changed().connect( m_fileUpload2, &Wt::WFileUpload::upload );
     m_fileUpload2->uploaded().connect( boost::bind( &SpecMeasManager::dataUploaded2, m_manager, m_fileUpload2, SpectrumType::Background));
     m_fileUpload2->fileTooLarge().connect( boost::bind( &SpecMeasManager::fileTooLarge,
                                                        boost::placeholders::_1 ) );
     
-    WText *uploadText3 = new WText( "Secondary Foreground: " );
+    WText *uploadText3 = new WText( WString("{1}: ").arg( WString::tr("second-foreground") ) );
     WFileUpload *m_fileUpload3 = new WFileUpload(  );
     m_fileUpload3->changed().connect( m_fileUpload3, &Wt::WFileUpload::upload );
     m_fileUpload3->uploaded().connect( boost::bind( &SpecMeasManager::dataUploaded2, m_manager, m_fileUpload3, SpectrumType::SecondForeground));
@@ -2224,7 +2213,24 @@ bool SpecMeasManager::handleNonSpectrumFile( const std::string &displayName,
     return true;
   }//if( Shielding/Source fit XML file )
 
-  
+  if( m_viewer->makeDrfWindow() )
+  {
+    //Check if source lib file.  These are text files, with each line defining a source,
+    //  and looking like:
+    //  "22NA_01551910  5.107E+04  25-Aug-2022 Some Remarks
+    string datastr;
+    datastr.resize( boost::size(data) + 1, '\0' );
+    memcpy( &(datastr[0]), (const char *)&data[0], boost::size(data) );
+    
+    stringstream strm(datastr);
+    if( SrcLibLineInfo::is_candidate_src_lib( strm )
+       && handleSourceLibFile(infile, dialog) )
+    {
+      return true;
+    }//if( candidate source lib file )
+    
+  }//if( m_viewer->makeDrfWindow() )
+
   
   delete dialog;
   
@@ -3097,6 +3103,64 @@ bool SpecMeasManager::handleShieldingSourceFile( std::istream &input, SimpleDial
   
   return true;
 }//bool handleShieldingSourceFile( std::istream &input, SimpleDialog *dialog );
+
+
+bool SpecMeasManager::handleSourceLibFile( std::istream &input, SimpleDialog *dialog )
+{
+  MakeDrfWindow *tool = m_viewer->makeDrfWindow();
+  if( !tool )
+    return false;
+    
+  const size_t start_pos = input.tellg();
+  
+  try
+  {
+    const vector<SrcLibLineInfo> srcs = SrcLibLineInfo::sources_in_lib( input );
+    
+    if( srcs.empty() )
+      throw runtime_error( "No sources in file." );
+    
+    vector<shared_ptr<const SrcLibLineInfo>> src_ptrs;
+    for( const SrcLibLineInfo &info : srcs )
+      src_ptrs.push_back( make_shared<SrcLibLineInfo>(info) );
+    
+    assert( dialog );
+    dialog->contents()->clear();
+    dialog->footer()->clear();
+    
+    WText *title = new WText( WString::tr("smm-source-lib-title"), dialog->contents() );
+    title->addStyleClass( "title" );
+    title->setInline( false );
+    
+    WText *content = new WText( WString::tr("smm-source-source-use"), dialog->contents() );
+    content->addStyleClass( "content" );
+    content->setInline( false );
+    
+    dialog->footer()->clear();
+    
+    auto setter = [src_ptrs]( const bool autopopulate ){
+      InterSpec *viewer = InterSpec::instance();
+      MakeDrfWindow *tool = viewer ? viewer->makeDrfWindow() : nullptr;
+      assert( tool );
+      if( tool )
+        tool->tool()->useSourceLibrary( src_ptrs, autopopulate );
+    };
+    
+    WPushButton *btn = dialog->addButton( WString::tr("Yes") );
+    btn->clicked().connect( std::bind([setter](){ setter(true); }) );
+    
+    btn = dialog->addButton( WString::tr("No") );
+    btn->clicked().connect( std::bind([setter](){ setter(false); }) );
+    
+    dialog->addButton( WString::tr("Cancel") );
+  }catch( std::exception &e )
+  {
+    input.seekg( start_pos );
+    return false;
+  }//try caltch
+  
+  return true;
+}//bool handleSourceLibFile( std::istream &input, SimpleDialog *dialog )
 
 
 void SpecMeasManager::handleCancelPreviousStatesDialog( AuxWindow *dialog )

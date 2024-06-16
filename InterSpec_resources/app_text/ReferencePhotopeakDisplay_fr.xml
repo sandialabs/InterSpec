@@ -40,6 +40,7 @@
 <message id="rpd-det-nucs">Nucl. RID Dét.</message>
 <message id="rpd-assoc-nucs">Nucl. Assoc.</message>
 <message id="rpd-suggestions">Suggestions</message>
+<message id="rpd-feature-markers">Marqueurs de Fonctionnalités</message>
 <message id="rpd-csv-export-msg">L'outil 'Info de Décroissance de Nucléide' offre des capacités supplémentaires pour exporter les nucléides, les produits de désintégration, et les informations de désintégration vers des fichiers CSV.</message>
 <message id="rpd-changed-age">Âge modifié pour une valeur plus raisonnable pour {1} de '{2}' à '{3}'</message>
 <message id="rpd-det-id">ID du Détecteur</message>

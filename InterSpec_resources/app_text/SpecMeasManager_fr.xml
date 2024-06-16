@@ -127,6 +127,13 @@
 <message id="smm-act-shield-use">Utiliser cette configuration d'ajustement Activité/Blindage ?</message>
 <message id="smm-err-act-shield">Désolé, il y a eu une erreur lors du chargement du modèle d'ajustement Activité/Blindage : {1}</message>
 
+<message id="smm-source-lib-title">Fichier de bibliothèque de sources de caractérisation</message>
+<message id="smm-source-source-use">
+    Cela utilisera ce fichier Source.lib dans l'outil de création de réponse du détecteur.
+    <br />
+    Souhaitez-vous remplir automatiquement les sources avec le premier nucléide correspondant dans la bibliothèque ?
+</message>
+
 <message id="smm-upload-timeout">Le téléchargement du fichier a peut-être expiré - 120 secondes sans réception de données de fichier.</message>
 <message id="smm-finishing-upload">Finalisation du téléchargement</message>
 <message id="smm-finishing-copying">Finalisation de la copie du fichier</message>
@@ -257,6 +264,65 @@
 <message id="smm-qr-title">Fichier de spectre {1}</message>
 <message id="smm-qr-sequence-single">Code QR</message>
 <message id="smm-qr-sequence-multi">Code QR {1} sur {2}</message>
-<message id="smm-next-qr">Code QR suivant</message>
+
+<message id="musd-dialog-title">Spectre Multi-parties QR/URL</message>
+<message id="musd-err-diff-spec">Le code URL/QR reçu provient d'un spectre différent du code URL/QR précédent</message>
+<message id="musd-err-duplicate-url">Ce code URL/QR a déjà été reçu</message>
+<message id="musd-from-qr-file-name">Depuis le code QR/URL</message>
+<message id="musd-err-decoding-url">Erreur de décodage de l'URL : {1}</message>
+<message id="musd-received-urls-list">URLs reçues {1} sur {2}.<p>En attente de plus d'URLs/codes QR</p></message>
+
+<message id="uid-qr-code-pic">Image du code QR</message>
+<message id="uid-no-qr-found">Aucun code QR trouvé ⓘ</message>
+<message id="uid-no-qr-found-title">Aucun code QR trouvé</message>
+<message id="uid-no-qr-content">
+    <p>
+      Si une image contient un code QR, vous pouvez essayer de recadrer la photo ou d'ajuster le niveau de couleur.
+      <br/>
+      L'utilisation d'une application/site web tiers, ou des fonctionnalités intégrées à iOS ou Android, fonctionnera souvent mieux.
+    </p>
+</message>
+<message id="uid-err-qr-search-title">Erreur lors de la recherche de code QR</message>
+<message id="uid-err-qr-search-content">
+    <div>
+      Valeur de l'erreur : {1}
+    </div>
+    <p>
+      Message d'erreur : {2}
+    </p>
+</message>
+<message id="uid-some-invalid-qrs">{1} des codes QR avaient des URI invalides.</message>
+<message id="uid-qr-didnt-have-uri">Le code QR ne contenait pas d'URI <code>interspec://</code> ou <code>raddata://</code>.</message>
+<message id="uid-invalid-qr">Code QR invalide</message>
+<message id="uid-invalid-uri">Le code QR contenait une URI invalide</message>
+<message id="uid-multi-qr-found-title">{1} codes QR trouvés</message>
+<message id="uid-multi-qr-found-content">Souhaitez-vous utiliser tous ces codes ?</message>
+<message id="uid-multi-qr-status">Trouvé {1} codes QR</message>
+<message id="uid-qr-found-title">Code QR trouvé</message>
+<message id="uid-qr-found-content">Souhaitez-vous utiliser le code QR commençant par <br /> <code>{1}...</code></message>
+<message id="uid-found-qr">Code QR trouvé</message>
+<message id="uid-err-getting-data">Erreur lors de la récupération des données à intégrer - image non intégrée.</message>
+<message id="uid-err-no-foreground-embedd">Aucun premier plan chargé - image non intégrée.</message>
+<message id="uid-image-embed-conf">L'image a été intégrée dans le fichier de spectre de premier plan ; seul l'export au format de fichier N42-2012 conservera ceci.</message>
+<message id="uid-image-not-spectrum">Ce fichier semble être une image, et non un fichier de spectre.</message>
+<message id="uid-err-to-large">Le fichier téléchargé était trop volumineux pour essayer de l'afficher.</message>
+<message id="uid-err-reading-upload">Impossible de lire le fichier téléchargé.</message>
+<message id="uid-embed-image-btn">Intégrer l'image dans le fichier de spectre</message>
+<message id="uid-no-qr-found">Code QR non trouvé ⓘ</message>
+<message id="uid-looking-for-qr">Recherche de codes QR.</message>
+<message id="uid-check-for-qr-btn">Vérifier le code QR</message>
+<message id="uid-tt-auto-qr">
+    Les images sont automatiquement recherchées pour les codes QR qui peuvent être utilisables par InterSpec.
+    <br/>
+    Si une image contient un code QR qui n'est pas trouvé, vous pourriez avoir
+    plus de chance en utilisant une application/site web tiers, ou les fonctionnalités intégrées à iOS
+    ou Android.
+    <br />
+    Si vous utilisez un outil tiers pour extraire l'URI du code QR, vous
+    pouvez l'entrer dans InterSpec en utilisant l'option "<b>Entrer URL</b>"
+    dans le menu "<b>Éditer</b>".
+</message>
+
+
   
 </messages>

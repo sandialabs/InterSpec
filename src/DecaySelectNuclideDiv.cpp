@@ -139,7 +139,7 @@ void DecaySelectNuclide::setAddButtonToAccept()
 
 void DecaySelectNuclide::setCurrentInfo( int a, int z, int iso,
                                        double age, double activity, 
-                                       bool useCurrie, std::string activityStr )
+                                       bool useCurie, std::string activityStr )
 {
   const SandiaDecay::SandiaDecayDataBase * const db = DecayDataBaseServer::database();
   
@@ -153,7 +153,7 @@ void DecaySelectNuclide::setCurrentInfo( int a, int z, int iso,
   string actstr = activityStr;
   if (actstr.empty())
   {
-    actstr = PhysicalUnits::printToBestActivityUnits(activity, 2, useCurrie);
+    actstr = PhysicalUnits::printToBestActivityUnits(activity, 2, useCurie);
   }
   else
   {
@@ -495,11 +495,11 @@ void DecaySelectNuclide::emitAccepted()
     const string::size_type unitpos = activityTxt.find_first_of( "CcBb" );
     
     if( unitpos == string::npos )
-      selected.useCurrie = !InterSpecUser::preferenceValue<bool>( "DisplayBecquerel", InterSpec::instance() );
+      selected.useCurie = !InterSpecUser::preferenceValue<bool>( "DisplayBecquerel", InterSpec::instance() );
     else if( activityTxt[unitpos]=='C' || activityTxt[unitpos]=='c' )
-      selected.useCurrie = true;
+      selected.useCurie = true;
     else
-      selected.useCurrie = false;
+      selected.useCurie = false;
     
     m_selectedSignal.emit( selected );
     m_doneSignal.emit();

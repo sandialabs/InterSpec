@@ -69,10 +69,10 @@ namespace rapidxml
 }//namespace rapidxml
 
 
-//The database this Interspec is using; if higher than database registry, will
+//The database this InterSpec is using; if higher than database registry, will
 //  automatically update tables at next execution
 //  See DataBaseVersionUpgrade.cpp/.h
-#define DB_SCHEMA_VERSION 11
+#define DB_SCHEMA_VERSION 12
 
 
 namespace Wt
@@ -909,6 +909,10 @@ struct UserState
   , kShowingNucDecayInfo    = 0x010000
   , kShowingEnergyRangeSum  = 0x020000
   , kShowingFluxTool        = 0x040000
+#if( USE_DETECTION_LIMIT_TOOL )
+  , kShowingDetectionSens   = 0x080000
+  , kShowingSimpleMda       = 0x100000
+#endif //USE_DETECTION_LIMIT_TOOL
   };//enum ShownDisplayFeatures
   
   //UserState(): default constructor, initializes values to reasonable defaults
@@ -978,6 +982,8 @@ struct UserState
   std::string nucDecayInfoUri;
   std::string energyRangeSumUri;
   std::string fluxToolUri;
+  std::string detectionSensitivityToolUri;
+  std::string simpleMdaUri;
   
   int showingMarkers;        //bitwise or of FeatureMarkers (not implemented yet)
   int disabledNotifications; //bitwise or of (0x1<<WarningWidget::WarningMsgLevel)
@@ -1045,6 +1051,8 @@ struct UserState
     Wt::Dbo::field( a, nucDecayInfoUri, "NucDecayInfoUri" );
     Wt::Dbo::field( a, energyRangeSumUri, "EnergyRangeSumUri" );
     Wt::Dbo::field( a, fluxToolUri, "FluxToolUri" );
+    Wt::Dbo::field( a, detectionSensitivityToolUri, "DetectionSensitivityToolUri" );
+    Wt::Dbo::field( a, simpleMdaUri, "SimpleMdaUri" );
   }//void persist( Action &a )
 
 private:
