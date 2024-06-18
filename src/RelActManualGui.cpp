@@ -350,6 +350,7 @@ public:
         case AlphaProton:             infostr = WString::tr("mrend-X(a,p)").arg(target); break;
         case NeutronCapture:          infostr = WString::tr("mrend-X(n,g)").arg(target); break;
         case NeutronInelasticScatter: infostr = WString::tr("mrend-X(n,n)").arg(target); break;
+        case AlphaInelasticScatter:   infostr = WString::tr("mrend-X(a,a)").arg(target); break;
         case AnnihilationReaction:    infostr = WString::tr("mrend-annih");              break;
         case NumReactionType:         infostr = WString::tr("mrend-unknown-rxctn");      break;
       }//switch( m_reaction->type )

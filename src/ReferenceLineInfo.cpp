@@ -2401,6 +2401,7 @@ std::shared_ptr<ReferenceLineInfo> ReferenceLineInfo::generateRefLineInfo( RefLi
       line.m_decay_intensity = eip.abundance;
       line.m_particle_type = ReferenceLineInfo::RefLine::Particle::Gamma;
       line.m_source_type = ReferenceLineInfo::RefLine::RefGammaType::Normal;
+      line.m_decaystr = eip.remark;
       
       lines.push_back( line );
     }//for( const SandiaDecay::EnergyIntensityPair &eip : element->xrays )
@@ -2659,6 +2660,7 @@ std::shared_ptr<ReferenceLineInfo> ReferenceLineInfo::generateRefLineInfo( RefLi
             case AlphaProton:    line.m_decaystr = "Alphas on "; break;
             case NeutronCapture: line.m_decaystr = "Neutron capture by "; break;
             case NeutronInelasticScatter: line.m_decaystr = "Neutron inelastic scatter on "; break;
+            case AlphaInelasticScatter:   line.m_decaystr = "Alpha inelastic scatter on "; break;
             case AnnihilationReaction: break;
             case NumReactionType:      break;
           }//switch( line.m_reaction->type )

@@ -17,6 +17,7 @@
   <message id="mrend-X(a,p)">Alphas on {1} creating protons</message>
   <message id="mrend-X(n,g)">Slow neutrons on {1} being captured</message>
   <message id="mrend-X(n,n)">Fast neutrons inelastically scattering off {1}</message>
+  <message id="mrend-X(a,a)">Inelastic alpha scattering off {1}</message>
   <message id="mrend-annih">Annihilation gammas</message>
   <message id="mrend-unknown-rxctn">Unknown reaction</message>
   <message id="mrend-X(,)"></message>

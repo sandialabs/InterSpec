@@ -1149,9 +1149,9 @@ void IsotopeSearchByEnergyModel::reactionsWithAllEnergies(
     {
       const double energy = energies[i];
       double smallestDelta = 999999999.9;
-      ReactionGamma::EnergyAbundance nearesteA;
+      ReactionGamma::Reaction::EnergyYield nearesteA;
       
-      for( const ReactionGamma::EnergyAbundance &ea : rctn->gammas )
+      for( const ReactionGamma::Reaction::EnergyYield &ea : rctn->gammas )
       {
         const double delta = fabs( ea.energy - energy );
         if( delta < smallestDelta  )
@@ -1191,7 +1191,7 @@ void IsotopeSearchByEnergyModel::reactionsWithAllEnergies(
     
     {//begin code to get profile distance
       vector<SandiaDecay::EnergyRatePair> srcgammas;
-      for( const ReactionGamma::EnergyAbundance &ea : rctn->gammas )
+      for( const ReactionGamma::Reaction::EnergyYield &ea : rctn->gammas )
         srcgammas.emplace_back( ea.abundance, ea.energy );
       
       matches[0].m_profileDistance

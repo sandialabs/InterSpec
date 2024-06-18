@@ -2337,7 +2337,7 @@ PeakModel::SetGammaSource PeakModel::setReaction( PeakDef &peak,
   }
   
   double best_delta_e = std::numeric_limits<double>::max(), nearestE = 0.0;
-  for( const ReactionGamma::EnergyAbundance &eip : rctn->gammas )
+  for( const ReactionGamma::Reaction::EnergyYield &eip : rctn->gammas )
   {
     if( eip.abundance <= 0.0 )
       continue;
@@ -2820,7 +2820,7 @@ bool PeakModel::setData( const WModelIndex &index,
         }else if( rctn )
         {
           double nearestE = -999.9;
-          for( const ReactionGamma::EnergyAbundance &eip : rctn->gammas )
+          for( const ReactionGamma::Reaction::EnergyYield &eip : rctn->gammas )
             if( fabs(eip.energy-energy) < fabs(nearestE-energy) )
               nearestE = eip.energy;
           if( nearestE > 0.0 )

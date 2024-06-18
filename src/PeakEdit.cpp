@@ -2692,7 +2692,7 @@ void PeakEdit::apply()
             if( rctn )
             {
               double nearestE = -999.9;
-              for( const ReactionGamma::EnergyAbundance &eip : rctn->gammas )
+              for( const ReactionGamma::Reaction::EnergyYield &eip : rctn->gammas )
                 if( fabs(eip.energy-energy) < fabs(nearestE-energy) )
                   nearestE = eip.energy;
               m_currentPeak.setReaction( rctn, static_cast<float>(nearestE), srcType );

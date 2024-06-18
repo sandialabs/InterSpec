@@ -37,6 +37,7 @@ enum ReactionType
   AlphaProton,     //gammas produced by alpha,p sources; X(a,p).  ex. N14 + alpha -> O17 + proton + gammas
   NeutronCapture,  //neutron capture reactions; X(a,n).           nucleus + neutron -> (nucleus+1n) + gammas
   NeutronInelasticScatter, //inelastic scatters; X(a,n).          nucleus + neutron -> nucleus + neutron + gammas
+  AlphaInelasticScatter,   //inelastic scatters; X(a,a).          nucleus + alpha -> nucleus + alpha + gammas
   AnnihilationReaction,
   NumReactionType
 };//enum ReactionType
@@ -121,7 +122,17 @@ public:
     std::string name() const;
 
     ReactionType type;
-    std::vector<EnergyAbundance> gammas;  //sorted by energy
+    
+    std::string remark;
+    
+    struct EnergyYield
+    {
+      float energy;
+      float abundance;
+      std::string remark; //will be empty if not given
+    };//struct EnergyYield
+    
+    std::vector<EnergyYield> gammas;  //sorted by energy
     const SandiaDecay::Nuclide *targetNuclide;  //may be null if rates given for natural abundance
     const SandiaDecay::Element *targetElement;  //may be null if rate is given for individual nuclide
     const SandiaDecay::Nuclide *productNuclide; //may be null if targetNuclide is null
@@ -139,6 +150,7 @@ public:
     const Reaction *reaction;  //only valid as long as the ReactionGamma object
                                //  used to create this is; not owned by this
                                //  ReactionPhotopeak
+    std::string remark;
   };//struct ReactionPhotopeak
 
   //ReactionGamma(...): will throw exception on mis-formed XML or invalid
@@ -162,6 +174,7 @@ public:
   //(a,p) is alphaproton    : N14, Al27
   //(n,g) is neutroncapture : Al27, Be9, Bi, Ca, C, Cl, Cr, Cu, Fe, Ge, H, Mg, N, Ni, O, Pb, Si, Ta,
   //(n,n') is neutroninelasticscatter : Al27, Fe
+  //(a,a') is alphainelasticscatter
   std::string gammas( const std::string &name,
                       std::vector<ReactionPhotopeak> &answer ) const;
 

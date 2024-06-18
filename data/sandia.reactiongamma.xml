@@ -12,6 +12,10 @@
     <!-- 
     This is the database for gamma radiation produced
     by alpha,n sources.
+
+    Reactions from Giles and Peisach, and their associated remarks have
+    been compiled by Michael Enghauser (Sandia National Laboratories), 
+    and David Mercer (Los Alamos National Laboratory).
     -->
     <target>
       <nuclide>Be9</nuclide>
@@ -109,6 +113,169 @@
         <yield>0.058</yield>
       </yields>
     </target>
+
+    <target>
+      <remark>Al-27(α,nγ), from Giles and Peisach, 1979, added 2024 (entry may not be complete)</remark>
+      <nuclide>Al27</nuclide>
+      <product>P30</product>
+      <energies>
+        <energy>677.01</energy>
+        <energy remark="Narrow">708.7</energy>
+        <energy remark="Slight DB">1454.23</energy>
+      </energies>
+      <yields>
+        <yield>4.0</yield>
+        <yield>27.1</yield>
+        <yield>3.1</yield>
+      </yields>
+    </target>
+
+    <target>
+      <remark>B-11(α,nγ), from Giles and Peisach, 1979, added 2024 (entry may not be complete)</remark>
+      <nuclide>B11</nuclide>
+      <product>N14</product>
+      <energies>
+        <energy remark="DB, Weak">1635.2</energy>
+        <energy remark="DB, Strong">2312.59</energy>
+      </energies>
+      <yields>
+        <yield remark="yield not specified, using 100% as a placeholder">100</yield>
+        <yield remark="yield not specified, using 100% as a placeholder">100</yield>
+      </yields>
+    </target>
+
+    <target>
+      <remark>F19(α,nγ), from Giles and Peisach, 1979, added 2024 (entry may not be complete)</remark>
+      <nuclide>F19</nuclide>
+      <product>Na22</product>
+      <energies>
+        <energy remark="Narrow">73.9</energy>
+        <energy remark="Narrow, Strong">583.04</energy>
+        <energy remark="Weak">637.5</energy>
+        <energy remark="Narrow, String">890.89</energy>
+        <energy remark="DB, on 1275 keV shoulder">1280.5</energy>
+        <energy remark="Narrow">1368.7</energy>
+        <energy remark="Slight DB">1400.4</energy>
+        <energy remark="Narrow">1528.1</energy>
+        <energy remark="Narrow, Weak">1554.2</energy>
+      </energies>
+      <yields>
+        <yield>2.50</yield>
+        <yield>21.20</yield>
+        <yield>0.20</yield>
+        <yield>5.20</yield>
+        <yield remark="yield not specified, using 100% as a placeholder">100</yield>
+        <yield>0.40</yield>
+        <yield>0.10</yield>
+        <yield>1.10</yield>
+        <yield>0.25</yield>
+      </yields>
+    </target>
+
+    <target>
+      <remark>Mg-26(α,nγ), from Giles and Peisach, 1979, added 2024 (entry may not be complete)</remark>
+      <nuclide>Mg25</nuclide>
+      <product>Si28</product>
+      <energies>
+        <energy remark="DB, Strong">1778.969</energy>
+        <energy remark="DB">2839.29</energy>
+        <energy remark="DB, Weak">3200.7</energy>
+        <energy remark="DB, Weak">4496.92</energy>
+        <energy remark="DB, Weak">754.84</energy>
+        <energy remark="DB, Strong">1273.39</energy>
+        <energy remark="Narrow">1595.5</energy>
+        <energy remark="DB, on 1779 keV shoulder ">1793.83</energy>
+        <energy remark="DB">2028.09</energy>
+        <energy remark="DB">2425.73</energy>
+      </energies>
+      <yields>
+        <yield>58.60</yield>
+        <yield>8.30</yield>
+        <yield remark="yield not specified, using 1% as a placeholder">1</yield>
+        <yield remark="yield not specified, using 1% as a placeholder">1</yield>
+        <yield>9.00</yield>
+        <yield>100.00</yield>
+        <yield remark="yield not specified, using 100% as a placeholder">100</yield>
+        <yield>5.50</yield>
+        <yield>10.70</yield>
+        <yield>12.40</yield>
+      </yields>
+    </target>
+
+    <target>
+      <remark>Na-23(α,nγ), from Giles and Peisach, 1979, added 2024 (entry may not be complete)</remark>
+      <nuclide>Na23</nuclide>
+      <product>Al26</product>
+      <energies>
+        <energy remark="Narrow, Strong">416.85</energy>
+        <energy remark="DB">829.3</energy>
+      </energies>
+      <yields>
+        <yield>66.20</yield>
+        <yield>2.00</yield>
+      </yields>
+    </target>
+
+    <target>
+      <remark>O-17(α,nγ), from Giles and Peisach, 1979, added 2024 (entry may not be complete)</remark>
+      <nuclide>O17</nuclide>
+      <product>Ne20</product>
+      <energies>
+        <energy remark="DB">1633.602</energy>
+        <energy remark="DB, Weak">2613.8</energy>
+      </energies>
+      <yields>
+        <yield>1.80</yield>
+        <yield>0.10</yield>
+      </yields>
+    </target>
+
+    <target>
+      <remark>O-18(α,nγ), from Giles and Peisach, 1979, added 2024 (entry may not be complete)</remark>
+      <nuclide>O18</nuclide>
+      <product>Ne21</product>
+      <energies>
+        <energy remark="Narrow">350.272</energy>
+        <energy remark="DB">1395.131</energy>
+        <energy remark="Narrow">2437.84</energy>
+        <energy remark="Narrow, source: ENSDF">2787.87</energy>
+      </energies>
+      <yields>
+        <yield>100.00</yield>
+        <yield>5.70</yield>
+        <yield>1.00</yield>
+        <yield remark="yield not specified, using 100% as a placeholder">100</yield>
+      </yields>
+    </target>
+
+    <target>
+      <remark>Ti-48(α,nγ), from Giles and Peisach, 1979, added 2024 (entry may not be complete)</remark>
+      <nuclide>Ti48</nuclide>
+      <product>Cr51</product>
+      <energies>
+        <energy remark="Narrow">749.07</energy>
+      </energies>
+      <yields>
+        <yield>4.10</yield>
+      </yields>
+    </target>
+
+    <target>
+      <remark>V-51(α,nγ), from Giles and Peisach, 1979, added 2024 (entry may not be complete)</remark>
+      <nuclide>V51</nuclide>
+      <product>Mn54</product>
+      <energies>
+        <energy remark="Narrow">54.4</energy>
+        <energy remark="Narrow">156.27</energy>
+        <energy remark="Narrow">211.98</energy>
+      </energies>
+      <yields>
+        <yield>0.80</yield>
+        <yield>5.20</yield>
+        <yield>1.60</yield>
+      </yields>
+    </target>
+    
   </alphaneutron>
 
   <neutronalpha>
@@ -277,6 +444,7 @@
       </yields>
     </target>
 
+<!--
     <target>
       <nuclide>Al27</nuclide>
       <product>Si30</product>
@@ -289,7 +457,230 @@
         <yield>100.0</yield>
       </yields>
     </target>
+-->
 
+    <target>
+      <remark>Al-27(α,pγ), from Giles and Peisach, 1979, added 2024 (entry may not be complete)</remark>
+      <nuclide>Al27</nuclide>
+      <product>Si30</product>
+      <energies>
+        <energy remark="Doppler Broadened, Strong">1263.13</energy>
+        <energy remark="Doppler Broadened">1311.8</energy>
+        <energy remark="Doppler Broadened, Weak">0.90</energy>
+        <energy remark="Doppler Broadened">1534.12</energy>
+        <energy remark="Narrow, Weak">1552.36</energy>
+        <energy remark="Doppler Broadened, on SE shoulder">1732.7</energy>
+        <energy remark="Doppler Broadened + Narrow, Strong,">2235.23</energy>
+        <energy remark="Doppler Broadened, Weak">2574.8</energy>
+        <energy remark="Doppler Broadened">2595.39</energy>
+        <energy remark="Doppler Broadened, Near S.E., ENSDF">3044.8</energy>
+        <energy remark="Doppler Broadened, Strong">3498.33</energy>
+        <energy remark="Doppler Broadened">3769.22</energy>
+        <energy remark="Doppler Broadened">4810</energy>
+      </energies>
+      <yields>
+        <yield>36.40</yield>
+        <yield>4.50</yield>
+        <yield>1332.48</yield>
+        <yield>4.9</yield>
+        <yield>2.1</yield>
+        <yield remark="yield not specified, using 100% as a placeholder">100</yield>
+        <yield>100.0</yield>
+        <yield>0.4</yield>
+        <yield>7.1</yield>
+        <yield remark="yield not specified, using 100% as a placeholder">100</yield>
+        <yield>11.4</yield>
+        <yield>2.9</yield>
+        <yield remark="yield not specified, using 100% as a placeholder">100</yield>
+      </yields>
+    </target>
+
+    <target>
+      <remark>B-10(α,pγ), from Giles and Peisach, 1979, added 2024 (entry may not be complete)</remark>
+      <nuclide>B10</nuclide>
+      <product>C13</product>
+      <energies>
+        <energy remark="Narrow">169.3</energy>
+        <energy remark="Weak">595.01</energy>
+        <energy remark="Narrow, Weak">764.32</energy>
+        <energy remark="Doppler Broadened">3089.05</energy>
+        <energy remark="Doppler Broadened + Narrow, Strong">3683.92</energy>
+        <energy remark="Narrow, Strong">3853.17</energy>
+      </energies>
+      <yields>
+        <yield>100.00</yield>
+        <yield remark="yield not specified, using 1% as a placeholder">1</yield>
+        <yield>0.80</yield>
+        <yield>4.90</yield>
+        <yield>27.70</yield>
+        <yield>9.80</yield>
+      </yields>
+    </target>
+
+    <target>
+      <remark>B-11, from Giles and Peisach, 1979, added 2024 (entry may not be complete)</remark>
+      <nuclide>B11</nuclide>
+      <product>C14</product>
+      <energies>
+        <energy>2313</energy>
+      </energies>
+      <yields>
+        <yield>100</yield>
+      </yields>
+    </target>
+
+    <target>
+      <remark>Cl-35(α,pγ), from Giles and Peisach, 1979, added 2024 (entry may not be complete)</remark>
+      <nuclide>Cl35</nuclide>
+      <product>Ar38</product>
+      <energies>
+        <energy remark="Narrow, Weak">1209.4</energy>
+        <energy remark="Doppler Broadened, Weak">1642.66</energy>
+        <energy remark="Doppler Broadened, Strong">2167.405</energy>
+        <energy remark="Weak, Touches K40">1460.82</energy>
+      </energies>
+      <yields>
+        <yield>3.40</yield>
+        <yield>11.30</yield>
+        <yield>100.00</yield>
+        <yield>1.80</yield>
+      </yields>
+    </target>
+
+    <target>
+      <remark>F-19(α,pγ), from Giles and Peisach, 1979, added 2024 (entry may not be complete)</remark>
+      <nuclide>F19</nuclide>
+      <product>Ne22</product>
+      <energies>
+        <energy remark="Strong, Narrow + Doppler Broadened">1274.357</energy>
+        <energy remark="Doppler Broadened">2082.6</energy>
+        <energy remark="Doppler Broadened">3181.4</energy>
+      </energies>
+      <yields>
+        <yield>18.80</yield>
+        <yield>1.40</yield>
+        <yield>0.20</yield>
+      </yields>
+    </target>
+
+    <target>
+      <remark>K-39(α,pγ), from Giles and Peisach, 1979, added 2024 (entry may not be complete)</remark>
+      <nuclide>K39</nuclide>
+      <product>Ca42</product>
+      <energies>
+        <energy>312.6</energy>
+        <energy>899.41</energy>
+        <energy>1524.71</energy>
+      </energies>
+      <yields>
+        <yield>20.00</yield>
+        <yield>11.40</yield>
+        <yield>100.00</yield>
+      </yields>
+    </target>
+
+    <target>
+      <remark>Mg-24(α,pγ), from Giles and Peisach, 1979, added 2024 (entry may not be complete)</remark>
+      <nuclide>Mg24</nuclide>
+      <product>Al27</product>
+      <energies>
+        <energy remark="Narrow, 27Al(a,a) Same E">843.76</energy>
+        <energy remark="Slight Doppler Broadened">1014.52</energy>
+      </energies>
+      <yields>
+        <yield>93.10</yield>
+        <yield>55.20</yield>
+      </yields>
+    </target>
+
+    <target>
+      <remark>N-14(α,pγ), from Giles and Peisach, 1979, added 2024 (entry may not be complete)</remark>
+      <nuclide>N14</nuclide>
+      <product>O17</product>
+      <energies>
+        <energy remark="Narrow">870.71</energy>
+      </energies>
+      <yields>
+        <yield>100.00</yield>
+      </yields>
+    </target>
+
+    <target>
+      <remark>Na-23(α,pγ), from Giles and Peisach, 1979, added 2024 (entry may not be complete)</remark>
+      <nuclide>Na23</nuclide>
+      <product>Mg26</product>
+      <energies>
+        <energy remark="Slight Doppler Broadened">1003.19</energy>
+        <energy remark="Doppler Broadened, Strong">1129.61</energy>
+        <energy remark="Doppler Broadened, Weak">1411.72</energy>
+        <energy remark="Narrow">1779.76</energy>
+        <energy remark="Doppler Broadened + Narrow, Strong">1808.68</energy>
+        <energy remark="Doppler Broadened, Weak">1896.72</energy>
+        <energy remark="Slight Doppler Broadened">2132.71</energy>
+        <energy remark="Doppler Broadened, Touches 2524">2510.02</energy>
+        <energy remark="Doppler Broadened, Touches 2510">2523.69</energy>
+        <energy remark="Doppler Broadened, Touches 2524">2541.22</energy>
+        <energy remark="Doppler Broadened">2938.16</energy>
+        <energy remark="Doppler Broadened">3092.31</energy>
+      </energies>
+      <yields>
+        <yield>8.50</yield>
+        <yield>51.50</yield>
+        <yield>2.60</yield>
+        <yield>2.80</yield>
+        <yield>100.00</yield>
+        <yield>0.10</yield>
+        <yield>2.30</yield>
+        <yield>2.30</yield>
+        <yield>1.50</yield>
+        <yield>1.20</yield>
+        <yield>2.10</yield>
+        <yield>0.20</yield>
+      </yields>
+    </target>
+
+    <target>
+      <remark>P-31(α,pγ), from Giles and Peisach, 1979, added 2024 (entry may not be complete)</remark>
+      <nuclide>P31</nuclide>
+      <product>S34</product>
+      <energies>
+        <energy remark="Doppler Broadened, weak">1176.65</energy>
+        <energy remark="Doppler Broadened">2127.564</energy>
+        <energy remark="Doppler Broadened">3304.031</energy>
+      </energies>
+      <yields>
+        <yield>15.70</yield>
+        <yield>100.00</yield>
+        <yield>2.10</yield>
+      </yields>
+    </target>
+
+    <target>
+      <remark>Si-28(α,pγ), from Giles and Peisach, 1979, added 2024 (entry may not be complete)</remark>
+      <nuclide>Si28</nuclide>
+      <product>P31</product>
+      <energies>
+        <energy remark="Doppler Broadened">1266.1</energy>
+        <energy remark="Doppler Broadened, 30Si(a,a) similar E, ENSDF">2233.63</energy>
+      </energies>
+      <yields>
+        <yield>7.60</yield>
+        <yield>29.90</yield>
+      </yields>
+    </target>
+
+    <target>
+      <remark>Si-29(α,pγ), from Giles and Peisach, 1979, added 2024 (entry may not be complete)</remark>
+      <nuclide>Si29</nuclide>
+      <product>P32</product>
+      <energies>
+        <energy remark="Doppler Broadened">78.05</energy>
+      </energies>
+      <yields>
+        <yield>100.00</yield>
+      </yields>
+    </target>
+    
   </alphaproton>
 
 
@@ -86044,4 +86435,331 @@ https://arxiv.org/abs/2001.11140
     </target>
   </neutroninelasticscatter>
 
+  <alphainelasticscatter>
+    <target>
+      <remark>Al-27(α,α'γ), from Giles and Peisach, 1979, added 2024 (entry may not be complete)</remark>
+      <nuclide>Al27</nuclide>
+      <product>Al27</product>
+      <energies>
+        <energy remark="Narrow">843.76</energy>
+        <energy remark="">1014.52</energy>
+        <energy remark="ENSDF, Doppler Broadened, on 2236 keV SE shoulder">1720.3</energy>
+        <energy remark="ENSDF, Doppler Broadened">2212.01</energy>
+      </energies>
+      <yields>
+        <yield remark="actual value 6.5%">100</yield>
+        <yield remark="actual value 5.5">100</yield>
+        <yield remark="yield not specified, using 100% as a placeholder">100</yield>
+        <yield remark="yield not specified, using 100% as a placeholder">100</yield>
+      </yields>
+    </target>
+
+    <target>
+      <remark>B-10(α,α'γ), from Giles and Peisach, 1979, added 2024 (entry may not be complete)</remark>
+      <nuclide>B10</nuclide>
+      <product>B10</product>
+      <energies>
+        <energy remark="Narrow">718.35</energy>
+      </energies>
+      <yields>
+        <yield>66.00</yield>
+      </yields>
+    </target>
+
+    <target>
+      <remark>C-12(α,α'γ), from ENSDF, added 2024 (entry may not be complete)</remark>
+      <nuclide>C12</nuclide>
+      <product>C12</product>
+      <energies>
+        <energy>4439.82</energy>
+      </energies>
+      <yields>
+        <yield remark="yield not specified, using 100% as a placeholder">100</yield>
+      </yields>
+    </target>
+    
+    <target>
+      <remark>Cr-50(α,α'γ), from Giles and Peisach, 1979, added 2024 (entry may not be complete)</remark>
+      <nuclide>Cr50</nuclide>
+      <product>Cr50</product>
+      <energies>
+        <energy remark="">783.3</energy>
+      </energies>
+      <yields>
+        <yield>100.00</yield>
+      </yields>
+    </target>
+
+    <target>
+      <remark>Cr-52(α,α'γ), from ENSDF, added 2024 (entry may not be complete)</remark>
+      <nuclide>Cr52</nuclide>
+      <product>Cr52</product>
+      <energies>
+        <energy remark="Giles did not observe">1434.068</energy>
+      </energies>
+      <yields>
+        <yield remark="yield not specified, using 100% as a placeholder">100</yield>
+      </yields>
+    </target>
+
+    <target>
+      <remark>Cr-53(α,α'γ), from Giles and Peisach, 1979, added 2024 (entry may not be complete)</remark>
+      <nuclide>Cr53</nuclide>
+      <product>Cr53</product>
+      <energies>
+        <energy>564.03</energy>
+      </energies>
+      <yields>
+        <yield>97.60</yield>
+      </yields>
+    </target>
+
+    <target>
+      <remark>Cr-54(α,α'γ), from Giles and Peisach, 1979, added 2024 (entry may not be complete)</remark>
+      <nuclide>Cr54</nuclide>
+      <product>Cr54</product>
+      <energies>
+        <energy>834.855</energy>
+      </energies>
+      <yields>
+        <yield>41.70</yield>
+      </yields>
+    </target>
+
+    <target>
+      <remark>F-19(α,α'γ), from Giles and Peisach, 1979, added 2024 (entry may not be complete)</remark>
+      <nuclide>F19</nuclide>
+      <product>F19</product>
+      <energies>
+        <energy remark="Narrow">109.9</energy>
+        <energy remark="Narrow, Strong">197.1</energy>
+        <energy remark="Narrow">1235.8</energy>
+        <energy remark="Doppler Broadened, on 1275 keV shoulder">1261.6</energy>
+        <energy remark="Doppler Broadened">1348.8</energy>
+        <energy remark="Doppler Broadened">1356.9</energy>
+        <energy remark="Doppler Broadened">1458.7</energy>
+      </energies>
+      <yields>
+        <yield>56.50</yield>
+        <yield>100.00</yield>
+        <yield>1.40</yield>
+        <yield remark="yield not specified, using 100% as a placeholder">100</yield>
+        <yield>1.30</yield>
+        <yield>0.30</yield>
+        <yield>0.30</yield>
+      </yields>
+    </target>
+
+    <target>
+      <remark>Fe-56(α,α'γ), from Giles and Peisach, 1979, and ENSDF, added 2024 (entry may not be complete)</remark>
+      <nuclide>Fe56</nuclide>
+      <product>Fe56</product>
+      <energies>
+        <energy remark="">846.78</energy>
+        <energy remark="ENSDF">1238</energy>
+      </energies>
+      <yields>
+        <yield>84.30</yield>
+        <yield remark="yield not specified, using 100% as a placeholder">100</yield>
+      </yields>
+    </target>
+
+    <target>
+      <remark>Fe-57(α,α'γ), from Giles and Peisach, 1979, added 2024 (entry may not be complete)</remark>
+      <nuclide>Fe57</nuclide>
+      <product>Fe57</product>
+      <energies>
+        <energy>122.061</energy>
+        <energy>136.47</energy>
+      </energies>
+      <yields>
+        <yield>100.00</yield>
+        <yield>12.30</yield>
+      </yields>
+    </target>
+
+    <target>
+      <remark>Fe-58(α,α'γ), from Giles and Peisach, 1979, added 2024 (entry may not be complete)</remark>
+      <nuclide>Fe58</nuclide>
+      <product>Fe58</product>
+      <energies>
+        <energy remark="Weak">810.77</energy>
+      </energies>
+      <yields>
+        <yield>0.80</yield>
+      </yields>
+    </target>
+
+    <target>
+      <remark>Li-7(α,α'γ), from Giles and Peisach, 1979, added 2024 (entry may not be complete)</remark>
+      <nuclide>Li7</nuclide>
+      <product>Li7</product>
+      <energies>
+        <energy remark="Strong, Doppler Broadened (triangular)">477.595</energy>
+      </energies>
+      <yields>
+        <yield>100.00</yield>
+      </yields>
+    </target>
+
+    <target>
+      <remark>Mg-24(α,α'γ), from ENSDF, 1979, added 2024 (entry may not be complete)</remark>
+      <nuclide>Mg24</nuclide>
+      <product>Mg24</product>
+      <energies>
+        <energy remark="Slight Doppler Broadened">1368.625</energy>
+      </energies>
+      <yields>
+        <yield>100</yield>
+      </yields>
+    </target>
+
+    <target>
+      <remark>Mg-25(α,α'γ), from Giles and Peisach, 1979, added 2024 (entry may not be complete)</remark>
+      <nuclide>Mg25</nuclide>
+      <product>Mg25</product>
+      <energies>
+        <energy remark="Narrow">585.028</energy>
+      </energies>
+      <yields>
+        <yield>58.60</yield>
+      </yields>
+    </target>
+
+    <target>
+      <remark>Mo-94(α,α'γ), from Giles and Peisach, 1979, added 2024 (entry may not be complete)</remark>
+      <nuclide>Mo94</nuclide>
+      <product>Mo94</product>
+      <energies>
+        <energy remark="">871.098</energy>
+      </energies>
+      <yields>
+        <yield>100</yield>
+      </yields>
+    </target>
+
+    <target>
+      <remark>Na-23(α,α'γ), from Giles and Peisach, 1979, added 2024 (entry may not be complete)</remark>
+      <nuclide>Na23</nuclide>
+      <product>Na23</product>
+      <energies>
+        <energy remark="Slight Doppler Broadened, Strong">440.5</energy>
+      </energies>
+      <yields>
+        <yield>100.00</yield>
+      </yields>
+    </target>
+
+    <target>
+      <remark>Ni-58(α,α'γ), ENSDF, added 2024 (entry may not be complete)</remark>
+      <nuclide>Ni58</nuclide>
+      <product>Ni58</product>
+      <energies>
+        <energy remark="Narrow">1454.28</energy>
+      </energies>
+      <yields>
+        <yield>100</yield>
+      </yields>
+    </target>
+
+    <target>
+      <remark>P-31(α,α'γ), from Giles and Peisach, 1979, added 2024 (entry may not be complete)</remark>
+      <nuclide>P31</nuclide>
+      <product>P31</product>
+      <energies>
+        <energy>1266.08</energy>
+      </energies>
+      <yields>
+        <yield>3.40</yield>
+      </yields>
+    </target>
+
+    <target>
+      <remark>Si-28(α,α'γ), from Giles and Peisach, 1979, added 2024 (entry may not be complete)</remark>
+      <nuclide>Si28</nuclide>
+      <product>Si28</product>
+      <energies>
+        <energy remark="Doppler Broadened">	1778.969</energy>
+      </energies>
+      <yields>
+        <yield>4.30</yield>
+      </yields>
+    </target>
+
+    <target>
+      <remark>Si-29, from Giles and Peisach, 1979, added 2024 (entry may not be complete)</remark>
+      <nuclide>Si29</nuclide>
+      <product>Si29</product>
+      <energies>
+        <energy remark="Doppler Broadened">1273.361</energy>
+      </energies>
+      <yields>
+        <yield>3.20</yield>
+      </yields>
+    </target>
+
+    <target>
+      <remark>Si-30(α,α'γ), from ENSDF, added 2024 (entry may not be complete)</remark>
+      <nuclide>Si30</nuclide>
+      <product>Si30</product>
+      <energies>
+        <energy remark="Doppler Broadened, 28Si(a,p) similar E">2235.322</energy>
+      </energies>
+      <yields>
+        <yield remark="yield not specified, using 100% as a placeholder">100</yield>
+      </yields>
+    </target>
+
+    <target>
+      <remark>Ti-46(α,α'γ), from Giles and Peisach, 1979, added 2024 (entry may not be complete)</remark>
+      <nuclide>Ti46</nuclide>
+      <product>Ti46</product>
+      <energies>
+        <energy remark="Narrow">889.277</energy>
+      </energies>
+      <yields>
+        <yield>2.80</yield>
+      </yields>
+    </target>
+
+    <target>
+      <remark>Ti-47(α,α'γ), from Giles and Peisach, 1979, added 2024 (entry may not be complete)</remark>
+      <nuclide>Ti47</nuclide>
+      <product>Ti47</product>
+      <energies>
+        <energy remark="Narrow, Strong">159.373</energy>
+      </energies>
+      <yields>
+        <yield>100.00</yield>
+      </yields>
+    </target>
+
+    <target>
+      <remark>Ti-48(α,α'γ), from Giles and Peisach, 1979, added 2024 (entry may not be complete)</remark>
+      <nuclide>Ti48</nuclide>
+      <product>Ti48</product>
+      <energies>
+        <energy remark="Narrow">983.521</energy>
+      </energies>
+      <yields>
+        <yield>10.30</yield>
+      </yields>
+    </target>
+    
+    <target>
+      <remark>V-51(α,α'γ), from Giles and Peisach, 1979, added 2024 (entry may not be complete)</remark>
+      <nuclide>V51</nuclide>
+      <product>V51</product>
+      <energies>
+        <energy remark="Narrow, Strong">320.0835</energy>
+        <energy remark="Narrow, Weak">608.55</energy>
+        <energy remark="Narrow, Weak">928.64</energy>
+      </energies>
+      <yields>
+        <yield>100.00</yield>
+        <yield>0.10</yield>
+        <yield>0.40</yield>
+      </yields>
+    </target>
+  </alphainelasticscatter>
 </document>
