@@ -2620,7 +2620,33 @@ std::shared_ptr<ReferenceLineInfo> ReferenceLineInfo::generateRefLineInfo( RefLi
     
     
     // Now lets fill out line.m_decaystr
-    if( line.m_decaystr.empty() )
+    if( line.m_reaction )
+    {
+      // TODO: we can probably come up with a better way to describe reactions
+      if( line.m_reaction->targetNuclide && line.m_reaction->targetElement )
+      {
+        const string orig_deacystr = line.m_decaystr;
+        switch( line.m_reaction->type )
+        {
+          case AlphaNeutron:   line.m_decaystr = "Alphas on "; break;
+          case NeutronAlpha:   line.m_decaystr = "Neutrons on "; break;
+          case AlphaProton:    line.m_decaystr = "Alphas on "; break;
+          case NeutronCapture: line.m_decaystr = "Neutron capture by "; break;
+          case NeutronInelasticScatter: line.m_decaystr = "Neutron inelastic scatter on "; break;
+          case AlphaInelasticScatter:   line.m_decaystr = "Alpha inelastic scatter on "; break;
+          case AnnihilationReaction:    line.m_decaystr = ""; break;
+          case NumReactionType:         line.m_decaystr = ""; break;
+        }//switch( line.m_reaction->type )
+        
+        line.m_decaystr += line.m_reaction->targetNuclide->symbol;
+        
+        if( !orig_deacystr.empty() )
+          line.m_decaystr += ". " + orig_deacystr;
+        
+        //if( line.m_reaction->productNuclide )
+        //  line.m_decaystr += " to give " + line.m_reaction->productNuclide->symbol;
+      }//
+    }else if( line.m_decaystr.empty() )
     {
       if( line.m_transition )
       {
@@ -2648,27 +2674,6 @@ std::shared_ptr<ReferenceLineInfo> ReferenceLineInfo::generateRefLineInfo( RefLi
           default:
             break;
         }//switch( line.m_transition->mode )
-      }else if( line.m_reaction )
-      {
-        // TODO: we can probably come up with a better way to describe reactions
-        if( line.m_reaction->targetNuclide && line.m_reaction->targetElement )
-        {
-          switch( line.m_reaction->type )
-          {
-            case AlphaNeutron:   line.m_decaystr = "Alphas on "; break;
-            case NeutronAlpha:   line.m_decaystr = "Neutrons on "; break;
-            case AlphaProton:    line.m_decaystr = "Alphas on "; break;
-            case NeutronCapture: line.m_decaystr = "Neutron capture by "; break;
-            case NeutronInelasticScatter: line.m_decaystr = "Neutron inelastic scatter on "; break;
-            case AlphaInelasticScatter:   line.m_decaystr = "Alpha inelastic scatter on "; break;
-            case AnnihilationReaction: break;
-            case NumReactionType:      break;
-          }//switch( line.m_reaction->type )
-          
-          line.m_decaystr += line.m_reaction->targetNuclide->symbol;
-          //if( line.m_reaction->productNuclide )
-          //  line.m_decaystr += " to give " + line.m_reaction->productNuclide->symbol;
-        }
       }else if( line.m_element )
       {
         line.m_decaystr = line.m_element->name + " fluorescence";

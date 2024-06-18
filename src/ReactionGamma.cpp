@@ -637,7 +637,7 @@ void ReactionGamma::populate_reaction( const rapidxml::xml_node<char> *parent,
           if( remark && remark->value_size() )
           {
             if( !rctn.gammas[yeild_num].remark.empty() )
-              rctn.gammas[yeild_num].remark += " ";
+              rctn.gammas[yeild_num].remark += ". ";
             rctn.gammas[yeild_num].remark.append( remark->value(), remark->value_size() );
           }//if( remark && remark->value_size() )
           

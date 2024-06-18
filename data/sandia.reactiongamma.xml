@@ -139,8 +139,8 @@
         <energy remark="DB, Strong">2312.59</energy>
       </energies>
       <yields>
-        <yield remark="yield not specified, using 100% as a placeholder">100</yield>
-        <yield remark="yield not specified, using 100% as a placeholder">100</yield>
+        <yield remark="Yield not specified, using 100% as a placeholder">100</yield>
+        <yield remark="Yield not specified, using 100% as a placeholder">100</yield>
       </yields>
     </target>
 
@@ -164,7 +164,7 @@
         <yield>21.20</yield>
         <yield>0.20</yield>
         <yield>5.20</yield>
-        <yield remark="yield not specified, using 100% as a placeholder">100</yield>
+        <yield remark="Yield not specified, using 100% as a placeholder">100</yield>
         <yield>0.40</yield>
         <yield>0.10</yield>
         <yield>1.10</yield>
@@ -191,11 +191,11 @@
       <yields>
         <yield>58.60</yield>
         <yield>8.30</yield>
-        <yield remark="yield not specified, using 1% as a placeholder">1</yield>
-        <yield remark="yield not specified, using 1% as a placeholder">1</yield>
+        <yield remark="Yield not specified, using 1% as a placeholder">1</yield>
+        <yield remark="Yield not specified, using 1% as a placeholder">1</yield>
         <yield>9.00</yield>
         <yield>100.00</yield>
-        <yield remark="yield not specified, using 100% as a placeholder">100</yield>
+        <yield remark="Yield not specified, using 100% as a placeholder">100</yield>
         <yield>5.50</yield>
         <yield>10.70</yield>
         <yield>12.40</yield>
@@ -244,7 +244,7 @@
         <yield>100.00</yield>
         <yield>5.70</yield>
         <yield>1.00</yield>
-        <yield remark="yield not specified, using 100% as a placeholder">100</yield>
+        <yield remark="Yield not specified, using 100% as a placeholder">100</yield>
       </yields>
     </target>
 
@@ -484,14 +484,14 @@
         <yield>1332.48</yield>
         <yield>4.9</yield>
         <yield>2.1</yield>
-        <yield remark="yield not specified, using 100% as a placeholder">100</yield>
+        <yield remark="Yield not specified, using 100% as a placeholder">100</yield>
         <yield>100.0</yield>
         <yield>0.4</yield>
         <yield>7.1</yield>
-        <yield remark="yield not specified, using 100% as a placeholder">100</yield>
+        <yield remark="Yield not specified, using 100% as a placeholder">100</yield>
         <yield>11.4</yield>
         <yield>2.9</yield>
-        <yield remark="yield not specified, using 100% as a placeholder">100</yield>
+        <yield remark="Yield not specified, using 100% as a placeholder">100</yield>
       </yields>
     </target>
 
@@ -509,7 +509,7 @@
       </energies>
       <yields>
         <yield>100.00</yield>
-        <yield remark="yield not specified, using 1% as a placeholder">1</yield>
+        <yield remark="Yield not specified, using 1% as a placeholder">1</yield>
         <yield>0.80</yield>
         <yield>4.90</yield>
         <yield>27.70</yield>
@@ -86443,14 +86443,14 @@ https://arxiv.org/abs/2001.11140
       <energies>
         <energy remark="Narrow">843.76</energy>
         <energy remark="">1014.52</energy>
-        <energy remark="ENSDF, Doppler Broadened, on 2236 keV SE shoulder">1720.3</energy>
-        <energy remark="ENSDF, Doppler Broadened">2212.01</energy>
+        <energy remark="from ENSDF, Doppler Broadened, on 2236 keV SE shoulder">1720.3</energy>
+        <energy remark="from ENSDF, Doppler Broadened">2212.01</energy>
       </energies>
       <yields>
-        <yield remark="actual value 6.5%">100</yield>
-        <yield remark="actual value 5.5">100</yield>
-        <yield remark="yield not specified, using 100% as a placeholder">100</yield>
-        <yield remark="yield not specified, using 100% as a placeholder">100</yield>
+        <yield remark="Actual yield 6.5%, but using 100% as placeholder">100</yield>
+        <yield remark="Actual yield 5.5%, but using 100% as placeholder">100</yield>
+        <yield remark="Yield not specified, using 100% as a placeholder">100</yield>
+        <yield remark="Yield not specified, using 100% as a placeholder">100</yield>
       </yields>
     </target>
 
@@ -86474,7 +86474,7 @@ https://arxiv.org/abs/2001.11140
         <energy>4439.82</energy>
       </energies>
       <yields>
-        <yield remark="yield not specified, using 100% as a placeholder">100</yield>
+        <yield remark="Yield not specified, using 100% as a placeholder">100</yield>
       </yields>
     </target>
     
@@ -86498,7 +86498,7 @@ https://arxiv.org/abs/2001.11140
         <energy remark="Giles did not observe">1434.068</energy>
       </energies>
       <yields>
-        <yield remark="yield not specified, using 100% as a placeholder">100</yield>
+        <yield remark="Yield not specified, using 100% as a placeholder">100</yield>
       </yields>
     </target>
 
@@ -86543,7 +86543,7 @@ https://arxiv.org/abs/2001.11140
         <yield>56.50</yield>
         <yield>100.00</yield>
         <yield>1.40</yield>
-        <yield remark="yield not specified, using 100% as a placeholder">100</yield>
+        <yield remark="Yield not specified, using 100% as a placeholder">100</yield>
         <yield>1.30</yield>
         <yield>0.30</yield>
         <yield>0.30</yield>
@@ -86560,7 +86560,7 @@ https://arxiv.org/abs/2001.11140
       </energies>
       <yields>
         <yield>84.30</yield>
-        <yield remark="yield not specified, using 100% as a placeholder">100</yield>
+        <yield remark="Yield not specified, using 100% as a placeholder">100</yield>
       </yields>
     </target>
 
@@ -86706,7 +86706,7 @@ https://arxiv.org/abs/2001.11140
         <energy remark="Doppler Broadened, 28Si(a,p) similar E">2235.322</energy>
       </energies>
       <yields>
-        <yield remark="yield not specified, using 100% as a placeholder">100</yield>
+        <yield remark="Yield not specified, using 100% as a placeholder">100</yield>
       </yields>
     </target>
 
