@@ -38,6 +38,7 @@
 #include "InterSpec/ColorTheme.h"
 #include "InterSpec/ColorSelect.h"
 #include "InterSpec/ColorThemeWidget.h"
+#include "InterSpec/NativeFloatSpinBox.h"
 #include "InterSpec/IsotopeNameFilterModel.h"
 
 using namespace std;
@@ -58,6 +59,8 @@ ColorThemeWidget::ColorThemeWidget(WContainerWidget *parent)
   m_noTimeBackground( nullptr ),
   m_noTimeMargin( nullptr ),
 	m_peaksTakeRefLineColor( nullptr ),
+  m_peakLabelFontSize( nullptr ),
+  m_peakLabelAngle( nullptr ),
   m_referenceLineColor{ nullptr },
   m_specificRefLineName{ nullptr },
   m_specificRefLineColor{ nullptr }
@@ -473,11 +476,63 @@ ColorThemeWidget::ColorThemeWidget(WContainerWidget *parent)
   
   
   
+  
+  row = 0;
+  table = new WTable( this );
+  table->addStyleClass( "ColorThemePeakLabelTable" );
+  
+  cell = table->elementAt(row, 0);
+  cell->setColumnSpan(3);
+  cell->setContentAlignment(Wt::AlignmentFlag::AlignCenter);
+  cell->addStyleClass( "ThemePeakLabelTitle" );
+  new WText("Peak Label Options", cell);
+  
+  ++row;
+  cell = table->elementAt(row, 0);
+  cell->addStyleClass( "CTRowLabel" );
+  new WLabel("Peak label size", cell);
+  cell = table->elementAt(row, 1);
+  cell->addStyleClass( "CTSelect" );
+  m_peakLabelFontSize = new WComboBox( cell);
+  m_peakLabelFontSize->addItem( "Default" );
+  m_peakLabelFontSize->addItem( "smaller" );
+  m_peakLabelFontSize->addItem( "larger" );
+  m_peakLabelFontSize->addItem( "xx-small" );
+  m_peakLabelFontSize->addItem( "x-small" );
+  m_peakLabelFontSize->addItem( "small" );
+  m_peakLabelFontSize->addItem( "medium" );
+  m_peakLabelFontSize->addItem( "large" );
+  m_peakLabelFontSize->addItem( "x-large" );
+  cell = table->elementAt(row, 2);
+  cell->addStyleClass( "CTRowDesc" );
+  new WText("Specifies font-size of peak labels", cell);
+  
+  
+  ++row;
+  cell = table->elementAt(row, 0);
+  cell->addStyleClass( "CTRowLabel" );
+  new WLabel("Peak label angle", cell);
+  cell = table->elementAt(row, 1);
+  cell->addStyleClass( "CTSelect" );
+  m_peakLabelAngle = new NativeFloatSpinBox( cell);
+  m_peakLabelAngle->setSpinnerHidden( true );
+  m_peakLabelAngle->setRange( -180, 270 );
+  m_peakLabelAngle->setWidth( 30 );
+  cell = table->elementAt(row, 2);
+  cell->addStyleClass( "CTRowDesc" );
+  new WText("Rotation, in degrees, of peak labels", cell);
+  
+  
+  
+  
   m_themeTitle->changed().connect( boost::bind( &ColorThemeWidget::titleChangedCallback, this ) );
   m_themeDescription->changed().connect( boost::bind( &ColorThemeWidget::descriptionChangedCallback, this ) );
   m_peaksTakeRefLineColor->checked().connect( boost::bind( &ColorThemeWidget::peaksTakeRefLineColorChangedCallback, this ) );
   m_peaksTakeRefLineColor->unChecked().connect( boost::bind( &ColorThemeWidget::peaksTakeRefLineColorChangedCallback, this ) );
 
+  m_peakLabelFontSize->activated().connect( boost::bind( &ColorThemeWidget::peakLabelFontSizeChanged, this ) );
+  m_peakLabelAngle->valueChanged().connect( boost::bind( &ColorThemeWidget::peakLabelRotationChanged, this ) );
+  
   m_nonChartAreaCssTheme->changed().connect( boost::bind( &ColorThemeWidget::nonChartAreaThemeChanged, this ) );
   
   m_specMarginSameAsBackground->checked().connect( boost::bind( &ColorThemeWidget::newColorSelectedCallback, this, SpectrumChartMargins ) );
@@ -556,6 +611,19 @@ void ColorThemeWidget::setTheme(const ColorTheme *theme, const bool modifieable)
 	m_themeTitle->setText(theme->theme_name);
 	m_themeDescription->setText(theme->theme_description);
 
+  
+  m_peakLabelFontSize->setCurrentIndex(0);
+  for( int i = 1; i < m_peakLabelFontSize->count(); ++i )
+  {
+    if( m_peakLabelFontSize->itemText(i).toUTF8() == theme->spectrumPeakLabelSize )
+    {
+      m_peakLabelFontSize->setCurrentIndex(i);
+      break;
+    }
+  }//
+  
+  m_peakLabelAngle->setValue( -static_cast<float>(theme->spectrumPeakLabelRotation) );
+  
   if( theme->nonChartAreaTheme.empty() || theme->nonChartAreaTheme=="default" )
   {
     m_nonChartAreaCssTheme->setCurrentIndex( 0 );
@@ -892,6 +960,36 @@ void ColorThemeWidget::peaksTakeRefLineColorChangedCallback()
   m_currentTheme->peaksTakeOnReferenceLineColor = m_peaksTakeRefLineColor->isChecked();
   m_edited.emit();
 }//void peaksTakeRefLineColorChangedCallback()
+
+
+void ColorThemeWidget::peakLabelFontSizeChanged()
+{
+  if( !m_currentTheme )
+  {
+    assert( m_origTheme );
+    m_currentTheme.reset( new ColorTheme(*m_origTheme) );
+  }
+  
+  if( m_peakLabelFontSize->currentIndex() == 0 )
+    m_currentTheme->spectrumPeakLabelSize = "";
+  else
+    m_currentTheme->spectrumPeakLabelSize = m_peakLabelFontSize->currentText();
+  
+  m_edited.emit();
+}//void peakLabelFontSizeChanged()
+
+
+void ColorThemeWidget::peakLabelRotationChanged()
+{
+  if( !m_currentTheme )
+  {
+    assert( m_origTheme );
+    m_currentTheme.reset( new ColorTheme(*m_origTheme) );
+  }
+  
+  m_currentTheme->spectrumPeakLabelRotation = -m_peakLabelAngle->value();
+  m_edited.emit();
+}//void peakLabelRotationChanged()
 
 
 void ColorThemeWidget::genericRefLineColorChangedCallback( const int num )
