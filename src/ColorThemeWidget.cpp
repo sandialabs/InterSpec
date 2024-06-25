@@ -61,6 +61,7 @@ ColorThemeWidget::ColorThemeWidget(WContainerWidget *parent)
 	m_peaksTakeRefLineColor( nullptr ),
   m_peakLabelFontSize( nullptr ),
   m_peakLabelAngle( nullptr ),
+  m_logYAxisMin( nullptr ),
   m_referenceLineColor{ nullptr },
   m_specificRefLineName{ nullptr },
   m_specificRefLineColor{ nullptr }
@@ -479,13 +480,13 @@ ColorThemeWidget::ColorThemeWidget(WContainerWidget *parent)
   
   row = 0;
   table = new WTable( this );
-  table->addStyleClass( "ColorThemePeakLabelTable" );
+  table->addStyleClass( "ColorThemeOtherOptionsTable" );
   
   cell = table->elementAt(row, 0);
   cell->setColumnSpan(3);
   cell->setContentAlignment(Wt::AlignmentFlag::AlignCenter);
   cell->addStyleClass( "ThemePeakLabelTitle" );
-  new WText("Peak Label Options", cell);
+  new WText("Other Options", cell);
   
   ++row;
   cell = table->elementAt(row, 0);
@@ -517,12 +518,26 @@ ColorThemeWidget::ColorThemeWidget(WContainerWidget *parent)
   m_peakLabelAngle = new NativeFloatSpinBox( cell);
   m_peakLabelAngle->setSpinnerHidden( true );
   m_peakLabelAngle->setRange( -180, 270 );
-  m_peakLabelAngle->setWidth( 30 );
+  m_peakLabelAngle->setWidth( 50 );
   cell = table->elementAt(row, 2);
   cell->addStyleClass( "CTRowDesc" );
   new WText("Rotation, in degrees, of peak labels", cell);
   
   
+  ++row;
+  cell = table->elementAt(row, 0);
+  cell->addStyleClass( "CTRowLabel" );
+  new WLabel("Log-Y minimum", cell);
+  cell = table->elementAt(row, 1);
+  cell->addStyleClass( "CTSelect" );
+  m_logYAxisMin = new NativeFloatSpinBox( cell);
+  m_logYAxisMin->setSpinnerHidden( true );
+  m_logYAxisMin->setRange( 1.0E-8, 1000 );
+  m_logYAxisMin->setWidth( 50 );
+  cell = table->elementAt(row, 2);
+  cell->addStyleClass( "CTRowDesc" );
+  new WText("The minimum value displayed on the logarithmic y-axis, when there is a channel"
+            " with zero or negative counts in the displayed x-range.", cell);
   
   
   m_themeTitle->changed().connect( boost::bind( &ColorThemeWidget::titleChangedCallback, this ) );
@@ -532,6 +547,7 @@ ColorThemeWidget::ColorThemeWidget(WContainerWidget *parent)
 
   m_peakLabelFontSize->activated().connect( boost::bind( &ColorThemeWidget::peakLabelFontSizeChanged, this ) );
   m_peakLabelAngle->valueChanged().connect( boost::bind( &ColorThemeWidget::peakLabelRotationChanged, this ) );
+  m_logYAxisMin->valueChanged().connect( boost::bind( &ColorThemeWidget::logYAxisMinValueChanged, this ) );
   
   m_nonChartAreaCssTheme->changed().connect( boost::bind( &ColorThemeWidget::nonChartAreaThemeChanged, this ) );
   
@@ -623,6 +639,10 @@ void ColorThemeWidget::setTheme(const ColorTheme *theme, const bool modifieable)
   }//
   
   m_peakLabelAngle->setValue( -static_cast<float>(theme->spectrumPeakLabelRotation) );
+  if( theme->spectrumLogYAxisMin > 0.0 )
+    m_logYAxisMin->setValue( static_cast<float>(theme->spectrumLogYAxisMin) );
+  else
+    m_logYAxisMin->setValue( 0.1f );
   
   if( theme->nonChartAreaTheme.empty() || theme->nonChartAreaTheme=="default" )
   {
@@ -990,6 +1010,26 @@ void ColorThemeWidget::peakLabelRotationChanged()
   m_currentTheme->spectrumPeakLabelRotation = -m_peakLabelAngle->value();
   m_edited.emit();
 }//void peakLabelRotationChanged()
+
+
+void ColorThemeWidget::logYAxisMinValueChanged()
+{
+  if( !m_currentTheme )
+  {
+    assert( m_origTheme );
+    m_currentTheme.reset( new ColorTheme(*m_origTheme) );
+  }
+  
+  float val = m_logYAxisMin->value();
+  if( val <= 0.0f )
+  {
+    val = 0.1f;
+    m_logYAxisMin->setValue( val );
+  }
+  
+  m_currentTheme->spectrumLogYAxisMin = val;
+  m_edited.emit();
+}//void logYAxisMinValueChanged()
 
 
 void ColorThemeWidget::genericRefLineColorChangedCallback( const int num )

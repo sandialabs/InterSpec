@@ -89,6 +89,7 @@ public:
   void peaksTakeRefLineColorChangedCallback();
   void peakLabelFontSizeChanged();
   void peakLabelRotationChanged();
+  void logYAxisMinValueChanged();
 
   void genericRefLineColorChangedCallback( const int num );
   void specificRefLineSourceChangedCallback( const int num );
@@ -120,6 +121,7 @@ public:
 
   Wt::WComboBox *m_peakLabelFontSize;
   NativeFloatSpinBox *m_peakLabelAngle;
+  NativeFloatSpinBox *m_logYAxisMin;
   
   static const int sm_numRefLineColors = 12;
   ColorSelect *m_referenceLineColor[sm_numRefLineColors];

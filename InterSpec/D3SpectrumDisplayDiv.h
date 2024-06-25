@@ -183,6 +183,11 @@ public:
    */
   void setPeakLabelRotation( const double rotation );
 
+  /** Sets the y-axis minimum value that will be displayed, if using log-y axis, and there is a zero or negative data count.
+   
+   If a value of 0.0 or is given, an exception will be thrown.
+   */
+  void setLogYAxisMin( const double ymin );
   
   // These 3 functions retrieve the corresponding info from the model.
   std::shared_ptr<const SpecUtils::Measurement> data()       const;
@@ -562,6 +567,7 @@ protected:
   
   std::string m_peakLabelFontSize;
   double m_peakLabelRotationDegrees;
+  double m_logYAxisMin;
   
   std::map<std::string,Wt::WCssTextRule *> m_cssRules;
   

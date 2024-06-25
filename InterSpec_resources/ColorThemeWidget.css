@@ -9,7 +9,7 @@
 .ColorThemeSelectTable > tbody > tr {
 }
 
-.ColorThemeSelectTable > tbody > tr > td, .ColorThemePeakLabelTable > tbody > tr > td{
+.ColorThemeSelectTable > tbody > tr > td, .ColorThemeOtherOptionsTable > tbody > tr > td{
   padding-top: 5px;
   padding-bottom: 5px;
 }
@@ -78,7 +78,7 @@
   
 }
 
-.ColorThemePeakLabelTable{
+.ColorThemeOtherOptionsTable{
   border-top: solid 1px #e1e1e1;
   margin-top: 5px;
 }

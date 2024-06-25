@@ -166,6 +166,13 @@ struct ColorTheme
    */
   double spectrumPeakLabelRotation;
   
+  /** The minimum value the y-axis will go down to, if there there is a channel count
+   with zero or less counts.
+   Must be greater than zero.
+   Untested with anything besides powers of 10, e.g., 0.1, 0.001, etc
+   */
+  double spectrumLogYAxisMin;
+  
   /** The color for the line that indicates the gamma counts on the time chart
    */
   Wt::WColor timeChartGammaLine;
