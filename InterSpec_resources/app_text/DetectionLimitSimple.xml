@@ -10,10 +10,18 @@
   <message id="dls-roi-upper-label">ROI Upper:</message>
   <message id="dls-num-side-channel-label">Num Side Chan.:</message>
   <message id="dls-fwhm-label">FWHM:</message>
-  <message id="dls-deon-cont-norm-label">Prior:</message>
-  <message id="dls-cont-norm-unknown">Unknown/Present</message>
-  <message id="dls-cont-norm-not-present">Not Present</message>
-  <message id="dls-cont-norm-fixed-by-sides">Cont. from sides</message>
+  <message id="dls-decon-cont-norm-label">Cont. Norm:</message>
+  <message id="dls-is-background-spectrum-cb">Background spectrum</message>
+  <message id="dls-is-background-spectrum-tt">
+    Checking this option asserts that there is no signal present in this spectrum.
+    <p>
+      The peak-region itself will be used to estimate the expected background.
+      The option to choose side-channels adjacent to the peak-region becomes no-longer relevant, so will be hidden.
+    </p>
+  </message>
+  <message id="dls-cont-norm-unknown">Floating</message>
+  <message id="dls-cont-norm-not-present">As no signal</message>
+  <message id="dls-cont-norm-fixed-by-sides">From sides</message>
   <message id="dls-roi-changed-no-gamma">Changing the ROI excluded primary gamma - not changing</message>
   <message id="dls-suggest-fwhm">Detector FWHM: {1} keV</message>
   <message id="dls-rough-est-fwhm">Rough Est. FWHM: {1} keV</message>

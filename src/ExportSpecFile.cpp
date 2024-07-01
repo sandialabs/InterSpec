@@ -827,7 +827,7 @@ void ExportSpecFileTool::init()
         
         HelpSystem::attachToolTipOn( img, description, true,
                                     HelpSystem::ToolTipPosition::Right,
-                                    HelpSystem::ToolTipPrefOverride::AlwaysShow );
+                                    HelpSystem::ToolTipPrefOverride::InstantAlways );
       }//if( we have the description of the file )
     }//if( !isMobile )
   };//addFormatItem lambda
