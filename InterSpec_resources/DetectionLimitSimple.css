@@ -112,6 +112,14 @@
 }
 
 
+.DetectionLimitSimple .BackCbDiv {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: flex-end;
+  column-gap: 5px;
+}
+
 .DeconvMoreInfo {
   display: flex;
   flex-direction: column;
@@ -138,3 +146,4 @@
   border-collapse: separate;
   border-spacing: 5px 5px;
 }
+

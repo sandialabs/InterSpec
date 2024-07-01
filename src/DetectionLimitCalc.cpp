@@ -800,10 +800,14 @@ CurrieMdaResult currie_mda_calc( const CurrieMdaInput &input )
       || (input.gamma_energy > input.roi_upper_energy) )
     throw runtime_error( "mda_counts_calc: gamma energy must be between lower and upper ROI." );
   
-  if( input.num_lower_side_channels < 1 || (input.num_lower_side_channels >= nchannel)  )
+  if( ((input.num_lower_side_channels == 0) || (input.num_upper_side_channels == 0))
+     && (input.num_lower_side_channels != input.num_upper_side_channels) )
+    throw runtime_error( "mda_counts_calc: lower or upper side channels was zero, but not both." );
+  
+  if( input.num_lower_side_channels >= nchannel  )
     throw runtime_error( "mda_counts_calc: invalid num_lower_side_channels." );
   
-  if( input.num_upper_side_channels < 1 || (input.num_upper_side_channels >= nchannel) )
+  if( input.num_upper_side_channels >= nchannel )
     throw runtime_error( "mda_counts_calc: invalid num_upper_side_channels." );
   
   if( input.detection_probability <= 0.05 || input.detection_probability >= 1.0 )
@@ -828,18 +832,36 @@ CurrieMdaResult currie_mda_calc( const CurrieMdaInput &input )
   if( result.first_peak_region_channel < (input.num_lower_side_channels + 1) )
     throw std::runtime_error( "mda_counts_calc: lower peak region is outside spectrum energy range" );
   
-  result.last_lower_continuum_channel = result.first_peak_region_channel - 1;
-  result.first_lower_continuum_channel = result.last_lower_continuum_channel - input.num_lower_side_channels + 1;
+  if( input.num_lower_side_channels == 0 )
+  {
+    result.first_lower_continuum_channel = 0;
+    result.last_lower_continuum_channel  = 0;
+    result.lower_continuum_counts_sum    = 0;
+  }else
+  {
+    result.last_lower_continuum_channel = result.first_peak_region_channel - 1;
+    result.first_lower_continuum_channel = result.last_lower_continuum_channel - input.num_lower_side_channels + 1;
+    result.lower_continuum_counts_sum = spec->gamma_channels_sum(result.first_lower_continuum_channel, result.last_lower_continuum_channel);
+  }
   
-  result.first_upper_continuum_channel = result.last_peak_region_channel + 1;
-  result.last_upper_continuum_channel = result.first_upper_continuum_channel + input.num_upper_side_channels - 1;
-  
-  if( result.last_upper_continuum_channel >= nchannel  )
-    throw std::runtime_error( "mda_counts_calc: upper peak region is outside spectrum energy range" );
-  
-  result.lower_continuum_counts_sum = spec->gamma_channels_sum(result.first_lower_continuum_channel, result.last_lower_continuum_channel);
+  if( input.num_upper_side_channels == 0 )
+  {
+    result.first_upper_continuum_channel = 0;
+    result.last_upper_continuum_channel  = 0;
+    result.upper_continuum_counts_sum    = 0;
+  }else
+  {
+    result.first_upper_continuum_channel = result.last_peak_region_channel + 1;
+    result.last_upper_continuum_channel = result.first_upper_continuum_channel + input.num_upper_side_channels - 1;
+    
+    if( result.last_upper_continuum_channel >= nchannel  )
+      throw std::runtime_error( "mda_counts_calc: upper peak region is outside spectrum energy range" );
+    
+    result.upper_continuum_counts_sum = spec->gamma_channels_sum(result.first_upper_continuum_channel, result.last_upper_continuum_channel);
+  }
+
   result.peak_region_counts_sum = spec->gamma_channels_sum(result.first_peak_region_channel, result.last_peak_region_channel);
-  result.upper_continuum_counts_sum = spec->gamma_channels_sum(result.first_upper_continuum_channel, result.last_upper_continuum_channel);
+  
   
   /*
    cout << "Lower region:\n\tChan\tEne\tCounts" << endl;
@@ -858,65 +880,80 @@ CurrieMdaResult currie_mda_calc( const CurrieMdaInput &input )
    cout << "\tSum: " << result.upper_continuum_counts_sum << endl;
    */
   
-  const double lower_cont_counts = spec->gamma_channels_sum(result.first_lower_continuum_channel, result.last_lower_continuum_channel);
-  const double upper_cont_counts = spec->gamma_channels_sum(result.first_upper_continuum_channel, result.last_upper_continuum_channel);
-  const double lower_cont_width = spec->gamma_channel_upper(result.last_lower_continuum_channel)
-  - spec->gamma_channel_lower(result.first_lower_continuum_channel);
-  const double upper_cont_width = spec->gamma_channel_upper(result.last_upper_continuum_channel)
-  - spec->gamma_channel_lower(result.first_upper_continuum_channel);
+  double peak_cont_sum_uncert = -999.9f, peak_cont_sum = -999.9f;
   
-  const double lower_cont_density = lower_cont_counts / lower_cont_width;
-  const double lower_cont_density_uncert = ((lower_cont_counts <= 0.0) ? 0.0 : (lower_cont_density / sqrt(lower_cont_counts)));
+  if( input.num_upper_side_channels == 0 )
+  {
+    peak_cont_sum = result.peak_region_counts_sum;
+    peak_cont_sum_uncert = sqrt( peak_cont_sum );
+    
+    const double peak_area_width = spec->gamma_channel_upper(result.last_peak_region_channel)
+                                    - spec->gamma_channel_lower(result.first_peak_region_channel);
+    result.continuum_eqn[1] = 0.0;
+    result.continuum_eqn[0] = peak_cont_sum / peak_area_width;
+  }else
+  {
+    const double lower_cont_counts = spec->gamma_channels_sum(result.first_lower_continuum_channel, result.last_lower_continuum_channel);
+    const double upper_cont_counts = spec->gamma_channels_sum(result.first_upper_continuum_channel, result.last_upper_continuum_channel);
+    const double lower_cont_width = spec->gamma_channel_upper(result.last_lower_continuum_channel)
+                                    - spec->gamma_channel_lower(result.first_lower_continuum_channel);
+    const double upper_cont_width = spec->gamma_channel_upper(result.last_upper_continuum_channel)
+                                    - spec->gamma_channel_lower(result.first_upper_continuum_channel);
+    
+    const double lower_cont_density = lower_cont_counts / lower_cont_width;
+    const double lower_cont_density_uncert = ((lower_cont_counts <= 0.0) ? 0.0 : (lower_cont_density / sqrt(lower_cont_counts)));
+    
+    const double upper_cont_density = upper_cont_counts / upper_cont_width;
+    const double upper_cont_density_uncert = ((upper_cont_counts <= 0.0) ? 0.0 : (upper_cont_density / sqrt(upper_cont_counts)));
+    
+    const double peak_cont_density = 0.5*(lower_cont_density + upper_cont_density);
+    const double peak_cont_density_uncert = 0.5*sqrt( upper_cont_density_uncert*upper_cont_density_uncert
+                                                     + lower_cont_density_uncert*lower_cont_density_uncert );
+    const double peak_cont_frac_uncert = ((peak_cont_density > 0.0) ? (peak_cont_density_uncert / peak_cont_density) : 1.0);
+    
+    const double peak_area_width = spec->gamma_channel_upper(result.last_peak_region_channel)
+                                    - spec->gamma_channel_lower(result.first_peak_region_channel);
+    
+    peak_cont_sum = peak_cont_density * peak_area_width;
+    peak_cont_sum_uncert = peak_cont_sum * peak_cont_frac_uncert;
+    
+    // The equation is centered around the input.gamma_energy with the density of counts at normal
+    //  value at that point.  The Slope will be through the midpoints of each continuum.
+    // TODO: should do a proper least-squares fit to the continuum; I think this will give us a slightly true-er answer
+    
+    const double lower_cont_mid_energy = spec->gamma_channel_lower(result.first_lower_continuum_channel) + 0.5*lower_cont_width;
+    const double upper_cont_mid_energy = spec->gamma_channel_lower(result.first_upper_continuum_channel) + 0.5*upper_cont_width;
+    
+    result.continuum_eqn[1] = (upper_cont_density - lower_cont_density) / (upper_cont_mid_energy - lower_cont_mid_energy);
+    result.continuum_eqn[0] = lower_cont_density - result.continuum_eqn[1]*(lower_cont_mid_energy - input.gamma_energy);
+    
+#if( PERFORM_DEVELOPER_CHECKS )
+    {// begin sanity check on continuum eqn
+      const double peak_start_eq = spec->gamma_channel_lower(result.first_peak_region_channel) - input.gamma_energy;
+      const double peak_end_eq = spec->gamma_channel_upper(result.last_peak_region_channel) - input.gamma_energy;
+      
+      const double peak_cont_eq_integral = result.continuum_eqn[0] * (peak_end_eq - peak_start_eq)
+      + result.continuum_eqn[1] * 0.5 * (peak_end_eq*peak_end_eq - peak_start_eq*peak_start_eq);
+      const double upper_cont_eq = result.continuum_eqn[0] + (upper_cont_mid_energy - input.gamma_energy)*result.continuum_eqn[1];
+      
+      // Precision tests, for development - if we go down to a precision of 1E-4, instead of 1E-3,
+      //  then these tests fail for NaI systems - I'm not sure if its something actually wrong, or
+      //  just really bad numerical accuracy (although its hard to imagine going down to only 4
+      //  or so, significant figures)
+      const double eq_dens = fabs(peak_cont_eq_integral - peak_cont_sum);
+      assert( (eq_dens < 0.1)
+             || (eq_dens < 1.0E-3*std::max(peak_cont_eq_integral, peak_cont_sum)) );
+      
+      const double eq_diff = fabs(peak_cont_eq_integral - peak_cont_sum);
+      assert( eq_diff < 0.1 || eq_diff < 1.0E-3*std::max(peak_cont_eq_integral, peak_cont_sum) );
+    }// end sanity check on continuum eqn
+#endif //PERFORM_DEVELOPER_CHECKS
+  }//if( input.num_upper_side_channels == 0 ) / else
   
-  const double upper_cont_density = upper_cont_counts / upper_cont_width;
-  const double upper_cont_density_uncert = ((upper_cont_counts <= 0.0) ? 0.0 : (upper_cont_density / sqrt(upper_cont_counts)));
-  
-  const double peak_cont_density = 0.5*(lower_cont_density + upper_cont_density);
-  const double peak_cont_density_uncert = 0.5*sqrt( upper_cont_density_uncert*upper_cont_density_uncert
-                                                   + lower_cont_density_uncert*lower_cont_density_uncert );
-  const double peak_cont_frac_uncert = ((peak_cont_density > 0.0) ? (peak_cont_density_uncert / peak_cont_density) : 1.0);
-  
-  
-  const double peak_area_width = spec->gamma_channel_upper(result.last_peak_region_channel)
-                                  - spec->gamma_channel_lower(result.first_peak_region_channel);
-  const double peak_cont_sum = peak_cont_density * peak_area_width;
-  const double peak_cont_sum_uncert = peak_cont_sum * peak_cont_frac_uncert;
-  
+  assert( peak_cont_sum_uncert != -999.9f );
+  assert( peak_cont_sum != -999.9f );
   result.estimated_peak_continuum_counts = static_cast<float>( peak_cont_sum );
   result.estimated_peak_continuum_uncert = static_cast<float>( peak_cont_sum_uncert );
-  
-  
-  // The equation is centered around the input.gamma_energy with the density of counts at normal
-  //  value at that point.  The Slope will be through the midpoints of each continuum.
-  // TODO: should do a proper least-squares fit to the continuum; I think this will give us a slightly true-er answer
-  
-  const double lower_cont_mid_energy = spec->gamma_channel_lower(result.first_lower_continuum_channel) + 0.5*lower_cont_width;
-  const double upper_cont_mid_energy = spec->gamma_channel_lower(result.first_upper_continuum_channel) + 0.5*upper_cont_width;
-  
-  result.continuum_eqn[1] = (upper_cont_density - lower_cont_density) / (upper_cont_mid_energy - lower_cont_mid_energy);
-  result.continuum_eqn[0] = lower_cont_density - result.continuum_eqn[1]*(lower_cont_mid_energy - input.gamma_energy);
-  
-#if( PERFORM_DEVELOPER_CHECKS )
-  {// begin sanity check on continuum eqn
-    const double peak_start_eq = spec->gamma_channel_lower(result.first_peak_region_channel) - input.gamma_energy;
-    const double peak_end_eq = spec->gamma_channel_upper(result.last_peak_region_channel) - input.gamma_energy;
-    
-    const double peak_cont_eq_integral = result.continuum_eqn[0] * (peak_end_eq - peak_start_eq)
-          + result.continuum_eqn[1] * 0.5 * (peak_end_eq*peak_end_eq - peak_start_eq*peak_start_eq);
-    const double upper_cont_eq = result.continuum_eqn[0] + (upper_cont_mid_energy - input.gamma_energy)*result.continuum_eqn[1];
-    
-    // Precision tests, for development - if we go down to a precision of 1E-4, instead of 1E-3,
-    //  then these tests fail for NaI systems - I'm not sure if its something actually wrong, or
-    //  just really bad numerical accuracy (although its hard to imagine going down to only 4
-    //  or so, significant figures)
-    const double eq_dens = fabs(peak_cont_eq_integral - peak_cont_sum);
-    assert( (eq_dens < 0.1)
-           || (eq_dens < 1.0E-3*std::max(peak_cont_eq_integral, peak_cont_sum)) );
-    
-    const double eq_diff = fabs(peak_cont_eq_integral - peak_cont_sum);
-    assert( eq_diff < 0.1 || eq_diff < 1.0E-3*std::max(peak_cont_eq_integral, peak_cont_sum) );
-  }// end sanity check on continuum eqn
-#endif //PERFORM_DEVELOPER_CHECKS
   
   typedef boost::math::policies::policy<boost::math::policies::digits10<6> > my_pol_6;
   const boost::math::normal_distribution<double,my_pol_6> gaus_dist( 0.0, 1.0 );

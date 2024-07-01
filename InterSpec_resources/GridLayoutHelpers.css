@@ -13,7 +13,7 @@
   justify-self: stretch;
 }
 
-.GridJustifyCenter
+.GridJustifyCenter, .GridHorCenter
 {
   justify-self: center;
 }
