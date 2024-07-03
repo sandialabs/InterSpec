@@ -153,6 +153,26 @@ struct ColorTheme
    */
   Wt::WColor spectrumChartText;
   
+  /** The peak label size.
+   Example values: "8px", "smaller", "12", "10px", "x-small", etc.
+   Empty string gives default size
+   */
+  Wt::WString spectrumPeakLabelSize;
+  
+  /** Peak label rotation angle, in degrees.
+   
+   A negative value rotates it the direction you probably want.
+   A value of 0 is horizontal, a value of -90 is vertical (i.e. up-and-down).  Only tested [0,-90]
+   */
+  double spectrumPeakLabelRotation;
+  
+  /** The minimum value the y-axis will go down to, if there there is a channel count
+   with zero or less counts.
+   Must be greater than zero.
+   Untested with anything besides powers of 10, e.g., 0.1, 0.001, etc
+   */
+  double spectrumLogYAxisMin;
+  
   /** The color for the line that indicates the gamma counts on the time chart
    */
   Wt::WColor timeChartGammaLine;

@@ -165,6 +165,29 @@ public:
   void setChartBackgroundColor( const Wt::WColor &color );
   void setDefaultPeakColor( const Wt::WColor &color );
   
+  /** Sets the charts font size.
+   
+   Example values: "8px", "smaller", "12", "10px", "x-small", etc.
+   An empty string sets to default chart font size.
+   
+   Does not cause the chart to be re-rendered.
+   */
+  void setPeakLabelSize( const std::string &fontSize );
+  
+  /** Sets the Peak label rotation angle.
+   
+   A negative value rotates it the direction you probably want.
+   A value of 0 is horizontal, a value of -90 is vertical (i.e. up-and-down).  Only tested [0,-90]
+   
+   Does not cause the chart to be re-rendered.
+   */
+  void setPeakLabelRotation( const double rotation );
+
+  /** Sets the y-axis minimum value that will be displayed, if using log-y axis, and there is a zero or negative data count.
+   
+   If a value of 0.0 or is given, an exception will be thrown.
+   */
+  void setLogYAxisMin( const double ymin );
   
   // These 3 functions retrieve the corresponding info from the model.
   std::shared_ptr<const SpecUtils::Measurement> data()       const;
@@ -548,6 +571,10 @@ protected:
   Wt::WColor m_chartMarginColor;
   Wt::WColor m_chartBackgroundColor;
   Wt::WColor m_defaultPeakColor;
+  
+  std::string m_peakLabelFontSize;
+  double m_peakLabelRotationDegrees;
+  double m_logYAxisMin;
   
   std::map<std::string,Wt::WCssTextRule *> m_cssRules;
   

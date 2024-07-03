@@ -185,6 +185,10 @@ ColorTheme::ColorTheme()
   spectrumChartMargins = WColor();
   spectrumChartText = WColor( GlobalColor::black );
   
+  spectrumPeakLabelSize = WString();
+  spectrumPeakLabelRotation = 0.0;
+  spectrumLogYAxisMin = 0.1;
+  
   timeChartGammaLine = WColor( GlobalColor::black );
   timeChartNeutronLine = Wt::WColor( GlobalColor::darkGreen );
   
@@ -247,7 +251,12 @@ std::string ColorTheme::toJson( const ColorTheme &info )
     spectrum["chartMargins"] = WString( info.spectrumChartMargins.cssText(false) );
   if( !info.spectrumChartText.isDefault() )
     spectrum["chartText"] = WString( info.spectrumChartText.cssText(false) );
-  
+  if( !info.spectrumPeakLabelSize.empty() )
+    spectrum["peakLabelSize"] = info.spectrumPeakLabelSize;
+  if( info.spectrumPeakLabelRotation != 0.0 )
+    spectrum["peakLabelRotation"] = info.spectrumPeakLabelRotation;
+  if( info.spectrumLogYAxisMin > 0.0 )
+    spectrum["logYAxisMin"] = info.spectrumLogYAxisMin;
   
   Json::Object &timechart = base["timeChart"] = Json::Value(Json::ObjectType);
   if( !info.timeHistoryForegroundHighlight.isDefault() )
@@ -382,6 +391,16 @@ void ColorTheme::fromJson( const std::string &json, ColorTheme &info )
       info.spectrumChartMargins = WColor( static_cast<const WString &>(spectrum["chartMargins"]) );
     if( spectrum.contains("chartText") )
       info.spectrumChartText = WColor( static_cast<const WString &>(spectrum["chartText"]) );
+    if( spectrum.contains("peakLabelSize") )
+      info.spectrumPeakLabelSize = spectrum["peakLabelSize"];
+    if( spectrum.contains("peakLabelRotation") )
+      info.spectrumPeakLabelRotation = spectrum["peakLabelRotation"];
+    if( spectrum.contains("logYAxisMin") )
+    {
+      info.spectrumLogYAxisMin = spectrum["logYAxisMin"];
+      if( info.spectrumLogYAxisMin <= 0.0 || IsNan(info.spectrumLogYAxisMin) || IsInf(info.spectrumLogYAxisMin) )
+        info.spectrumLogYAxisMin = 0.1;
+    }//
   }//if( spectrum node )
   
   if( base.contains("timeChart") )

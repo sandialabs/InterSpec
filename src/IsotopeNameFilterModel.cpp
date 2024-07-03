@@ -638,11 +638,14 @@ std::vector<const ReactionGamma::Reaction *>
   for( const SandiaDecay::Nuclide *nuc : suggestions )
     reactionDb->reactions( nuc, suggest_reactions );
     
-  //make all rections uniqe and sorted (in not the most effiecient manor...)
+  //make all reactions unique and sorted (in not the most efficient manor...)
   vector<const ReactionGamma::Reaction *>::iterator new_end;
   std::sort( suggest_reactions.begin(), suggest_reactions.end(),
             &less_than_by_name );
-  new_end = std::unique( suggest_reactions.begin(), suggest_reactions.end() );
+  new_end = std::unique( suggest_reactions.begin(), suggest_reactions.end(),
+                        []( const ReactionGamma::Reaction *lhs, const ReactionGamma::Reaction *rhs) -> bool {
+    return ((lhs == rhs) || (lhs && rhs && (lhs->name() == rhs->name())));
+  } );
   suggest_reactions.erase( new_end, suggest_reactions.end() );
     
   //Now make sure if the user has specified particle types, only show those

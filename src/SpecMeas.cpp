@@ -2269,6 +2269,59 @@ void SpecMeas::cleanup_orphaned_info()
 }//void cleanup_orphaned_info()
 
 
+void SpecMeas::change_sample_numbers( const vector<pair<int,int>> &from_to_sample_nums )
+{
+  SpecFile::change_sample_numbers( from_to_sample_nums );
+  
+  // I *think*, m_peaks, m_autoSearchPeaks, and m_dbUserStateIndexes are the only
+  //  SpecMeas specific things that use the sample numbers
+  
+  auto update_peak_map = [&from_to_sample_nums]( SampleNumsToPeakMap &peaks ){
+    SampleNumsToPeakMap new_peak_map;
+    
+    for( const SampleNumsToPeakMap::value_type &t : peaks )
+    {
+      set<int> new_samples;
+      for( const int orig_sample : t.first )
+      {
+        const auto pos = std::find_if( begin(from_to_sample_nums), end(from_to_sample_nums),
+                    [orig_sample]( const pair<int,int> &val ){ return val.first == orig_sample;} );
+        new_samples.insert( (pos == end(from_to_sample_nums)) ? orig_sample : pos->second );
+      }//for( loop over original sample numbers )
+      
+      new_peak_map[new_samples] = t.second;
+    }//for( const SampleNumsToPeakMap::value_type &t : peaks )
+    
+    peaks = new_peak_map;
+  };//update_peak_map
+  
+  if( m_peaks )
+    update_peak_map( *m_peaks );
+  
+  update_peak_map( m_autoSearchPeaks );
+
+  
+  // Need to update m_dbUserStateIndexes
+  map<set<int>,long long int> newDbUserStateIndexes;
+  for( const auto &samplenums_dbindex : m_dbUserStateIndexes )
+  {
+    set<int> new_sample_nums;
+    for( const int sample : samplenums_dbindex.first )
+    {
+      // Put original sample number in `new_sample_nums`, unless it is one of the sample numbers
+      //  to change, in which case put in the new sample number
+      const auto pos = std::find_if( begin(from_to_sample_nums), end(from_to_sample_nums),
+                      [sample](const pair<int,int> &lhs) -> bool { return lhs.first == sample; } );
+      
+      new_sample_nums.insert( (pos == end(from_to_sample_nums)) ? sample : pos->second );
+    }//for( const int sample : samplenums_dbindex.first )
+    
+    newDbUserStateIndexes[new_sample_nums] = samplenums_dbindex.second;
+  }//for( const auto &samplenums_dbindex : m_dbUserStateIndexes )
+  
+  m_dbUserStateIndexes = newDbUserStateIndexes;
+}//void change_sample_numbers( const std::vector<std::pair<int,int>> &from_to_sample_nums );
+
 
 Wt::Signal<> &SpecMeas::aboutToBeDeleted()
 {

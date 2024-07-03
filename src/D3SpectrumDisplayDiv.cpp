@@ -245,6 +245,9 @@ D3SpectrumDisplayDiv::D3SpectrumDisplayDiv( WContainerWidget *parent )
   m_chartMarginColor(),
   m_chartBackgroundColor(),
   m_defaultPeakColor( 0, 51, 255, 155 ),
+  m_peakLabelFontSize{},
+  m_peakLabelRotationDegrees(0.0),
+  m_logYAxisMin(0.1),
   m_cssRules{},
   m_pendingJs{},
   m_last_drag_time{},
@@ -341,6 +344,12 @@ void D3SpectrumDisplayDiv::defineJavaScript()
     }//switch( option )
   }//for( loop over FeatureMarkerType's )
   options += ", comptonPeakAngle:" + std::to_string(m_comptonPeakAngle);
+  
+  const string labelFontSize = m_peakLabelFontSize.empty() ? string("null") : Wt::WWebWidget::jsStringLiteral(m_peakLabelFontSize,'\'');
+  options += ", peakLabelSize: " + labelFontSize;
+  options += ", peakLabelRotation: " + std::to_string(m_peakLabelRotationDegrees);
+  if( m_logYAxisMin > 0 )
+    options += ", logYAxisMin: " + std::to_string(m_logYAxisMin);
   
 //Reading the configuration property from wt_config.xml doesnt seem to work; didnt spend time to debug
 //  string double_click_time;
@@ -1584,6 +1593,10 @@ void D3SpectrumDisplayDiv::applyColorTheme( std::shared_ptr<const ColorTheme> th
     setChartMarginColor( theme->spectrumChartMargins );
     setChartBackgroundColor( theme->spectrumChartBackground );
     setTextColor( theme->spectrumChartText );
+    
+    setPeakLabelSize( theme->spectrumPeakLabelSize.toUTF8() );
+    setPeakLabelRotation( theme->spectrumPeakLabelRotation );
+    setLogYAxisMin( theme->spectrumLogYAxisMin );
   }else
   {
     setForegroundSpectrumColor( {} );
@@ -1595,6 +1608,10 @@ void D3SpectrumDisplayDiv::applyColorTheme( std::shared_ptr<const ColorTheme> th
     setChartMarginColor( {} );
     setChartBackgroundColor( {} );
     setTextColor( {} );
+    
+    setPeakLabelSize( "" );
+    setPeakLabelRotation( 0.0 );
+    setLogYAxisMin( 0.1 );
   }
 }//void applyColorTheme( std::shared_ptr<const ColorTheme> theme );
 
@@ -1712,6 +1729,52 @@ void D3SpectrumDisplayDiv::setDefaultPeakColor( const Wt::WColor &color )
   //  need to reload the foreground to client to update the color.
   scheduleUpdateForeground();
 }
+
+
+/** Sets the charts font size.
+ 
+ Example values: "8px", "smaller", "12", "10px", "x-small", etc.
+ An empty string sets to default chart font size.
+ */
+void D3SpectrumDisplayDiv::setPeakLabelSize( const std::string &fontSize )
+{
+  m_peakLabelFontSize = fontSize;
+  
+  if( isRendered() )
+  {
+    string str = fontSize.empty() ? string("null") : Wt::WWebWidget::jsStringLiteral(fontSize,'\'');
+    doJavaScript( m_jsgraph + ".setPeakLabelSize(" + str + ");" );
+  }
+  
+  scheduleUpdateForeground(); //JIC, the JS setPeakLabelSize(...) wont cause a re-draw
+}//void setPeakLabelSize( const std::string &fontSize );
+
+
+void D3SpectrumDisplayDiv::setPeakLabelRotation( const double rotation )
+{
+  m_peakLabelRotationDegrees = rotation;
+  
+  if( isRendered() )
+    doJavaScript( m_jsgraph + ".setPeakLabelRotation(" + std::to_string(rotation) + ");" );
+  
+  scheduleUpdateForeground(); //JIC, the JS setPeakLabelRotation(...) wont cause a re-draw
+}//void setPeakLabelRotation( const double rotation )
+
+
+void D3SpectrumDisplayDiv::setLogYAxisMin( const double ymin )
+{
+  assert( ymin >= 0 );
+  
+  if( ymin <= 0.0 )
+    throw runtime_error( "Log Y-Axis min must be larger than zero." );
+  
+  m_logYAxisMin = ymin;
+  
+  if( isRendered() )
+    doJavaScript( m_jsgraph + ".setLogYAxisMin(" + std::to_string(ymin) + ");" );
+  
+  scheduleUpdateForeground(); //JIC, the JS setPeakLabelRotation(...) wont cause a re-draw
+}//void setPeakLabelRotation( const double rotation )
 
 
 void D3SpectrumDisplayDiv::saveChartToImg( const std::string &filename, const bool asPng )
