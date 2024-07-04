@@ -60,7 +60,7 @@ FetchContent_Declare(
   boost
   #URL /Users/wcjohns/install/wt_fetch_contents/boost-5df8086b733798c8e08e316626a16babe11bd0d2.zip
   GIT_REPOSITORY https://github.com/boostorg/boost.git
-  GIT_TAG        5df8086b733798c8e08e316626a16babe11bd0d2 # release-1.79 - beta 1
+  GIT_TAG        ab7968a0bbcf574a7859240d1d8443f58ed6f6cf # release-1.85.0
   GIT_SHALLOW    ON
   # GIT_PROGRESS TRUE # Also need FETCHCONTENT_QUIET 
 )

@@ -593,11 +593,11 @@ set(SpecUtils_NO_BOOST_LIB OFF
     CACHE BOOL "Use boost for threading primitives in SpecUtils"
 )
 
-if( APPLE )
+if( APPLE OR ANDROID )
   set(SpecUtils_USE_WT_THREADPOOL OFF CACHE BOOL "")
-else( APPLE )
+else( APPLE or ANDROID  )
   set(SpecUtils_USE_WT_THREADPOOL ON CACHE BOOL "")
-endif( APPLE )
+endif( APPLE or ANDROID  )
 set(SpecUtils_EXTERNALLY_DEFINED_LOG_MESSAGE ON CACHE BOOL "")
 set(SpecUtils_BUILD_UNIT_TESTS OFF CACHE BOOL "")
 set(SpecUtils_BUILD_REGRESSION_TEST OFF CACHE BOOL "")
@@ -675,7 +675,7 @@ target_include_directories( InterSpecLib
 if( InterSpec_FETCH_DEPENDENCIES )
   target_link_libraries( InterSpecLib
     PUBLIC
-      Boost::math Boost::scope_exit Boost::uuid Boost::iostreams Boost::assign Boost::multi_array Boost::crc Boost::process
+      Boost::math Boost::scope_exit Boost::uuid Boost::iostreams Boost::assign Boost::multi_array Boost::crc Boost::process Boost::crc
       # Boost::signals2 Boost::asio Boost::multi_index
       wt
 #      wttest
