@@ -218,6 +218,7 @@ D3SpectrumDisplayDiv::D3SpectrumDisplayDiv( WContainerWidget *parent )
   m_showHorizontalLines( false ),
   m_showHistogramIntegralsInLegend( true ),
   m_showXAxisSliderChart( false ),
+  m_compactXAxisWithSliderChart( true ),
   m_showYAxisScalers( false ),
   m_searchEnergies{},
   m_highlights{},
@@ -299,6 +300,7 @@ D3SpectrumDisplayDiv::D3SpectrumDisplayDiv( WContainerWidget *parent )
 void D3SpectrumDisplayDiv::defineJavaScript()
 {
   string options = "{title: '', showAnimation: true, animationDuration: 200";
+  options += ", showSliderCloseBtn: true";
   options += ", compactXAxis: " + jsbool(m_compactAxis);
   options += ", allowDragRoiExtent: true";
   options += ", showRefLineInfoForMouseOver: " + jsbool(m_showRefLineInfoForMouseOver);
@@ -308,6 +310,7 @@ void D3SpectrumDisplayDiv::defineJavaScript()
   options += ", gridx: " + jsbool(m_showVerticalLines);
   options += ", gridy: " + jsbool(m_showHorizontalLines);
   options += ", showXAxisSliderChart: " + jsbool(m_showXAxisSliderChart);
+  options += ", compactXAxisWithSliderChart: " + jsbool(m_compactXAxisWithSliderChart);
   options += ", scaleBackgroundSecondary: " + jsbool(m_showYAxisScalers);
   options += ", wheelScrollYAxis: true";
   options += ", sliderChartHeightFraction: 0.1";  //ToDo: track this in C++
@@ -433,6 +436,8 @@ void D3SpectrumDisplayDiv::defineJavaScript()
     }) );
   }//if( !m_xRangeChangedJS )
   
+  m_sliderDisplayed.reset( new Wt::JSignal<bool>(this, "sliderChartDisplayed") );
+  m_sliderDisplayed->connect( boost::bind( &D3SpectrumDisplayDiv::sliderChartDisplayedCallback, this, boost::placeholders::_1 ) );
   
   for( const string &js : m_pendingJs )
     doJavaScript( js );
@@ -1633,14 +1638,13 @@ void D3SpectrumDisplayDiv::setTextColor( const Wt::WColor &color )
 {
   m_textColor = color.isDefault() ? WColor(0,0,0) : color;
   const string c = m_textColor.cssText();
-  
   const string rulename = "TextColor";
   
   WCssStyleSheet &style = wApp->styleSheet();
   if( m_cssRules.count(rulename) )
     style.removeRule( m_cssRules[rulename] );
   
-  m_cssRules[rulename] = style.addRule( ".xaxistitle, .yaxistitle, .yaxis, .yaxislabel, .xaxis, .xaxis > .tick > text, .yaxis > .tick > text", "fill: " + c );
+  m_cssRules[rulename] = style.addRule( ":root", "--d3spec-text-color: " + c + ";" );
 }
 
 
@@ -1653,7 +1657,9 @@ void D3SpectrumDisplayDiv::setAxisLineColor( const Wt::WColor &color )
   WCssStyleSheet &style = wApp->styleSheet();
   if( m_cssRules.count(rulename) )
     style.removeRule( m_cssRules[rulename] );
-  m_cssRules[rulename] = style.addRule( ".xaxis > .domain, .yaxis > .domain, .xaxis > .tick > line, .yaxis > .tick > line, .yaxistick", "stroke: " + m_axisColor.cssText() );
+  
+  m_cssRules[rulename] = style.addRule( ":root", "--d3spec-axis-color: " + m_axisColor.cssText() );
+  
   
   //ToDo: is setting feature line colors okay like this
   rulename = "FeatureLinesColor";
@@ -2565,6 +2571,17 @@ void D3SpectrumDisplayDiv::chartXRangeChangedCallback( double x0, double x1,
   
   m_xRangeChanged.emit( x0, x1, oldXmin, oldXmax, user_action );
 }//void D3SpectrumDisplayDiv::chartXRangeChangedCallback(...)
+
+
+void D3SpectrumDisplayDiv::sliderChartDisplayedCallback( const bool madeVisisble )
+{
+  // The call into InterSpec will call back to showXAxisSliderChart(...), which which
+  //  will set `m_showXAxisSliderChart`
+  //  (as well as make another call to the javascript to show or hide the strip chart,
+  //  but this should be harmless)
+  InterSpec::instance()->setXAxisSlider( madeVisisble );
+}//void sliderChartDisplayedCallback( const bool madeVisisble );
+
 
 D3SpectrumDisplayDiv::~D3SpectrumDisplayDiv()
 {

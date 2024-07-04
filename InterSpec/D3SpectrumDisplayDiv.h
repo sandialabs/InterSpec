@@ -412,6 +412,7 @@ protected:
   float m_secondaryScale;
   float m_backgroundScale;
   
+  /** Compact axis applies only when the xAxis slider chart is not showing. */
   bool m_compactAxis;
   bool m_legendEnabled;
   bool m_yAxisIsLog;
@@ -422,6 +423,7 @@ protected:
   bool m_showHistogramIntegralsInLegend;  //Not currently used/implemented
   
   bool m_showXAxisSliderChart;
+  bool m_compactXAxisWithSliderChart;
   bool m_showYAxisScalers;
   
   std::vector<std::pair<double,double> > m_searchEnergies;
@@ -472,6 +474,8 @@ protected:
   std::unique_ptr<Wt::JSignal<double,std::string> > m_yAxisDraggedJS;
   
   std::unique_ptr<Wt::JSignal<> > m_legendClosedJS;
+  
+  std::unique_ptr<Wt::JSignal<bool> > m_sliderDisplayed;
   
   // Wt Signals
   //for all the bellow, the doubles are all the <x,y> coordinated of the action
@@ -527,6 +531,9 @@ protected:
   //  y-axis to be auto-range
   void chartXRangeChangedCallback( double x, double y, double chart_width_px, double chart_height_px,
                                    bool user_action );
+  
+  /** Called when user shows or closes the slider chart, by using the SVG buttons */
+  void sliderChartDisplayedCallback( const bool madeVisisble );
   
   /** The javascript variable name used to refer to the SpecrtumChartD3 object.
       Currently is `jsRef() + ".chart"`.

@@ -54,7 +54,6 @@
 #include "InterSpec/PeakModel.h"
 #include "InterSpec/InterSpec.h"
 #include "InterSpec/ColorTheme.h"
-#include "InterSpec/RelEffChart.h"
 #include "InterSpec/PeakFitUtils.h"
 #include "InterSpec/SimpleDialog.h"
 #include "InterSpec/InterSpecApp.h"
@@ -69,6 +68,10 @@
 #include "InterSpec/DetectorPeakResponse.h"
 #include "InterSpec/PhysicalUnitsLocalized.h"
 #include "InterSpec/ReferencePhotopeakDisplay.h"
+
+#if( USE_REL_ACT_TOOL )
+#include "InterSpec/RelEffChart.h"
+#endif
 
 using namespace Wt;
 using namespace std;
@@ -117,8 +120,10 @@ class PeakSelectorWindow : public AuxWindow
   Wt::WCheckBox *m_keepRefLinePeaksOnly;
   Wt::WCheckBox *m_showAllPeaks;
   
+#if( USE_REL_ACT_TOOL )
   Wt::WPanel *m_chartPanel;
   RelEffChart *m_rel_eff_chart;
+#endif
   
   const PeakSelectorWindowReason m_reason;
   const vector<PeakDef> m_orig_peaks;
@@ -172,8 +177,10 @@ public:
     m_previewChartColumn( -1 ),
     m_keepRefLinePeaksOnly( nullptr ),
     m_showAllPeaks( nullptr ),
+#if( USE_REL_ACT_TOOL )
     m_chartPanel( nullptr ),
     m_rel_eff_chart( nullptr ),
+#endif
     m_reason( reason ),
     m_orig_peaks( orig_peaks ),
     m_data( data ),
@@ -342,8 +349,10 @@ public:
     }//if( m_showAllPeaks )
     
     
+#if( USE_REL_ACT_TOOL )
     // Potentially create a rel eff chart to help the user decide about interferences and such
     setupRelEffChart();
+#endif
     contents()->setOverflow( WContainerWidget::Overflow::OverflowAuto, Orientation::Vertical );
     m_table = new WTable( contents() );
     m_table->addStyleClass( "PeakSelectorTable" );
@@ -620,7 +629,9 @@ public:
 
     
     keepPeakChanged();
+#if( USE_REL_ACT_TOOL )
     refreshRelEffChart();
+#endif
     
     WPushButton *acceptButton = addCloseButtonToFooter( "Accept", true );
     acceptButton->clicked().connect( boost::bind( &AuxWindow::hide, this ) );
@@ -694,7 +705,7 @@ public:
                 || (p->sourceGammaType() == PeakDef::XrayGamma)));
   };//eligible_for_rel_eff_chart(...)
   
-  
+#if( USE_REL_ACT_TOOL )
   /** The rel eff chart is close, but not fully debugged */
   void setupRelEffChart()
   {
@@ -751,7 +762,7 @@ public:
     m_rel_eff_chart->setYAxisTitle( "Rel. Peak Area / BR" );
     layout->addWidget( m_rel_eff_chart, 0, 0 );
   }//void setupRelEffChart()
-  
+ 
   
   void refreshRelEffChart()
   {
@@ -918,7 +929,7 @@ public:
     string relEffEqn = "";
     m_rel_eff_chart->setData( peaks, relActsColors, relEffEqn );
   }//void refreshRelEffChart()
-  
+#endif // USE_REL_ACT_TOOL
   
   
   void showAllPeaksCbChanged()
@@ -1065,7 +1076,9 @@ public:
     }//for( size_t i = 0; i < m_old_to_new_peaks.size(); ++i )
     
     m_keepRefLinePeaksOnly->setChecked( !anyNonAssignedPeaks );
+#if( USE_REL_ACT_TOOL )
     refreshRelEffChart();
+#endif
   }//void keepPeakChanged()
   
   
@@ -1092,7 +1105,9 @@ public:
     }//for( size_t i = 0; i < m_old_to_new_peaks.size(); ++i )
     
     keepPeakChanged();
+#if( USE_REL_ACT_TOOL )
     refreshRelEffChart();
+#endif
   }//void keepOnlyRefLinesCbChanged()
   
   
@@ -1327,7 +1342,9 @@ public:
       
       updatePreviewPlot(i);
       keepPeakChanged();
+#if( USE_REL_ACT_TOOL )
       refreshRelEffChart();
+#endif
       return;
     }//if( keepOriginal )
     
@@ -1349,7 +1366,9 @@ public:
       
       updatePreviewPlot(i);
       keepPeakChanged();
+#if( USE_REL_ACT_TOOL )
       refreshRelEffChart();
+#endif
       return;
     }//if( no source )
     
@@ -1410,7 +1429,9 @@ public:
     
     updatePreviewPlot(i);
     keepPeakChanged();
+#if( USE_REL_ACT_TOOL )
     refreshRelEffChart();
+#endif
   }//void nucSelectChanged( const size_t i )
   
   

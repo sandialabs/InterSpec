@@ -7228,7 +7228,6 @@ void InterSpec::setXAxisSlider( bool show )
     if( m_compactXAxisItems[1] )
       m_compactXAxisItems[1]->setHidden( false );
     
-     m_spectrum->setCompactAxis( true );
     m_timeSeries->setCompactAxis( true );
   }else
   {
@@ -7240,7 +7239,7 @@ void InterSpec::setXAxisSlider( bool show )
     if( m_compactXAxisItems[1] )
       m_compactXAxisItems[1]->setHidden( !makeCompact );
     
-    m_spectrum->setCompactAxis( makeCompact );
+    m_spectrum->setCompactAxis( makeCompact ); // This shouldnt be necassary, but JIC
     m_timeSeries->setCompactAxis( makeCompact );
   }//show /hide
   
