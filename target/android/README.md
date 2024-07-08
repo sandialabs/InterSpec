@@ -10,7 +10,7 @@ So you should just need to:
    - ```bash
      cd target/android/InterSpec
      export JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home/"
-     ./gradlew assembleUniversal
+     ./gradlew assembleUniversal        #debug build
      ./gradlew installUniversalRelease
      #or to make iterating a little faster (min of 1.5 minutes instead of 5 minutes), use just the ARM release
      ./gradlew assembleArm7 && ./gradlew installArm7Release

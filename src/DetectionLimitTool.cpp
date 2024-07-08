@@ -1430,7 +1430,7 @@ DetectionLimitTool::DetectionLimitTool( InterSpec *viewer,
       snprintf( msg, sizeof(msg),
                "Static 'Air' definition differed from database: static=%f, database=%f, diff=%f",
                air_coef, mat_coef, diff );
-      log_developer_error( BOOST_CURRENT_FUNCTION, msg );
+      log_developer_error( __func__, msg );
       assert( 0 );
     }
   }
@@ -2427,7 +2427,7 @@ void DetectionLimitTool::roiDraggedCallback( double new_roi_lower_energy,
   #if( PERFORM_DEVELOPER_CHECKS )
     char msg[512];
     snprintf( msg, sizeof(msg), "Failed to find a ROI that started at %f keV", new_roi_lower_energy );
-    log_developer_error( BOOST_CURRENT_FUNCTION, msg );
+    log_developer_error( __func__, msg );
   #endif
 
   cerr << "Failed to find a ROI that started at " << new_roi_lower_energy <<  " keV" << endl;
