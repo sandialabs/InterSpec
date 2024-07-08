@@ -215,7 +215,7 @@ ColorThemeWidget::ColorThemeWidget(WContainerWidget *parent)
 	++row;
 	cell = table->elementAt(row, 0);
   cell->addStyleClass( "CTRowLabel" );
-	new WLabel("Spectrum Chart Background", cell);
+	new WLabel("Spectrum Area", cell);
 	cell = table->elementAt(row, 1);
   
   if( nativeColorSelect )
@@ -232,7 +232,7 @@ ColorThemeWidget::ColorThemeWidget(WContainerWidget *parent)
 	++row;
 	cell = table->elementAt(row, 0);
   cell->addStyleClass( "CTRowLabel" );
-	new WLabel("Spectrum Chart Margins", cell);
+	new WLabel("Spectrum Chart Bckgrnd", cell);
 	cell = table->elementAt(row, 1);
   cell->addStyleClass( "CTSelect" );
   if( nativeColorSelect )
@@ -244,7 +244,7 @@ ColorThemeWidget::ColorThemeWidget(WContainerWidget *parent)
 	cell = table->elementAt(row, 2);
   cell->addStyleClass( "CTRowDesc" );
 	new WText("Color for spectrum chart margins", cell);
-	m_specMarginSameAsBackground = new WCheckBox("Same as background", cell);
+	m_specMarginSameAsBackground = new WCheckBox("Same as spectrum area", cell);
 	m_specMarginSameAsBackground->setInline(false);
 
 

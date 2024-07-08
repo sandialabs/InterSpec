@@ -455,9 +455,8 @@ void D3SpectrumDisplayDiv::defineJavaScript()
 void D3SpectrumDisplayDiv::initChangeableCssRules()
 {
   WCssStyleSheet &style = wApp->styleSheet();
-
-  m_cssRules["GridColor"] = style.addRule( ".xgrid > .tick, .ygrid > .tick", "stroke: #b3b3b3" );
-  m_cssRules["MinorGridColor"] = style.addRule( ".minorgrid", "stroke: #e6e6e6" );  
+  m_cssRules["GridColor"] = style.addRule( ":root", "--d3spec-grid-major-color: #b3b3b3;" );      //Not actually needed, as CSS will default to this
+  m_cssRules["MinorGridColor"] = style.addRule( ":root", "--d3spec-grid-minor-color: #e6e6e6;" ); //Not actually needed, as CSS will default to this
 }//void initChangeableCssRules()
 
 
@@ -1664,14 +1663,9 @@ void D3SpectrumDisplayDiv::setAxisLineColor( const Wt::WColor &color )
   if( m_cssRules.count(rulename) )
     style.removeRule( m_cssRules[rulename] );
   
+  // Sets axis colors, and ".peakLine, .escapeLineForward, .mouseLine, .secondaryMouseLine"
+  
   m_cssRules[rulename] = style.addRule( ":root", "--d3spec-axis-color: " + m_axisColor.cssText() );
-  
-  
-  //ToDo: is setting feature line colors okay like this
-  rulename = "FeatureLinesColor";
-  if( m_cssRules.count(rulename) )
-    style.removeRule( m_cssRules[rulename] );
-  m_cssRules[rulename] = style.addRule( ".peakLine, .escapeLineForward, .mouseLine, .secondaryMouseLine", "stroke: " + m_axisColor.cssText() );
   
   //ToDo: figure out how to make grid lines look okay.
   //rulename = "GridColor";
@@ -1707,8 +1701,9 @@ void D3SpectrumDisplayDiv::setChartMarginColor( const Wt::WColor &color )
   if( m_cssRules.count(rulename) )
     style.removeRule( m_cssRules[rulename] );
   
+  m_cssRules[rulename] = style.addRule( ":root", "--d3spec-background-color: " + color.cssText() + ";" );
   //Actually this will set the background for the entire chart...
-  m_cssRules[rulename] = style.addRule( "#" + id() + " > svg", "background: " + color.cssText() );
+  //m_cssRules[rulename] = style.addRule( "#" + id() + " > svg", "background: " + color.cssText() ); // to set background color for just this chart
 }//setChartMarginColor(...)
 
 
@@ -1723,8 +1718,9 @@ void D3SpectrumDisplayDiv::setChartBackgroundColor( const Wt::WColor &color )
   
   if( m_cssRules.count(rulename) )
     style.removeRule( m_cssRules[rulename] );
-  
-  m_cssRules[rulename] = style.addRule( "#chartarea" + id(), "fill: " + c );
+    
+  m_cssRules[rulename] = style.addRule( ":root", "--d3spec-chart-area-color: " + c + ";" );
+  //m_cssRules[rulename] = style.addRule( "#chartarea" + id(), "fill: " + c ); //If we wanted to apply this color to only this chart
 }
 
 void D3SpectrumDisplayDiv::setDefaultPeakColor( const Wt::WColor &color )
