@@ -76,6 +76,7 @@
 #include "InterSpec/DetectorPeakResponse.h"
 #include "InterSpec/GammaInteractionCalc.h"
 #include "InterSpec/DetectorPeakResponse.h"
+#include "InterSpec/PhysicalUnitsLocalized.h"
 #include "InterSpec/ShieldingSourceFitCalc.h"
 
 using namespace std;
@@ -250,7 +251,7 @@ vector<SandiaDecay::EnergyRatePair> decay_during_meas_corrected_gammas(
   //
   // TODO: if nuclide decays to stable children, then just use standard formula to correct for decay (see below developer check for this)
   //
-  // We want to get the activity at the beggining of the measurement, but we want
+  // We want to get the activity at the beginning of the measurement, but we want
   //  to account for decay (or build up!) throughout the measurement; rather than
   //  being intelligent about it, we'll just average throughout the dwell time
   //
@@ -261,6 +262,10 @@ vector<SandiaDecay::EnergyRatePair> decay_during_meas_corrected_gammas(
   //            For 50:  0.82692
   //            For 25:  0.826913
   //            For 10:  0.826869
+  //
+  //  A spot check using Mn56 (hl=9283.8s), and a meas duration of 86423.86s, with 50 timeslices
+  //    gives a correction factor of 0.15473519892011101, vs analytical answer of 0.1547364350135815
+  
   const size_t characteristic_time_slices = 50; // Maybe at least ~5 sig figs
   
   if( mixture.numInitialNuclides() != 1 )
@@ -283,6 +288,11 @@ vector<SandiaDecay::EnergyRatePair> decay_during_meas_corrected_gammas(
   
   vector<SandiaDecay::EnergyRatePair> gammas
                              = mixture.photons( age, SandiaDecay::NuclideMixture::OrderByEnergy );
+  
+  assert( std::is_sorted(begin(gammas), end(gammas),
+         []( const SandiaDecay::EnergyRatePair &lhs, const SandiaDecay::EnergyRatePair &rhs ){
+    return lhs.energy < rhs.energy;
+  }) );
   
   vector<vector<SandiaDecay::EnergyRatePair>> energy_rate_pairs( nthread,
                                                                 vector<SandiaDecay::EnergyRatePair>(gammas.size(), {0.0,0.0}) );
@@ -368,6 +378,11 @@ vector<SandiaDecay::EnergyRatePair> decay_during_meas_corrected_gammas(
   }//if( we can use standard formula to correct )
 #endif //#if( PERFORM_DEVELOPER_CHECKS )
   //cout << endl << endl << endl;
+  
+  assert( std::is_sorted(begin(corrected_gammas), end(corrected_gammas),
+         []( const SandiaDecay::EnergyRatePair &lhs, const SandiaDecay::EnergyRatePair &rhs ){
+    return lhs.energy < rhs.energy;
+  }) );
   
   return corrected_gammas;
 }//decay_during_meas_corrected_gammas(...)
@@ -4986,7 +5001,7 @@ void ShieldingSourceChi2Fcn::cluster_peak_activities( std::map<double,double> &e
     msg << "For ";
     for( int n = 0; n < mixture.numInitialNuclides(); ++n )
       msg << (n ? ", " : "") << mixture.initialNuclide(n)->symbol;
-    msg << " at age " << PhysicalUnits::printToBestTimeUnits(age) << ":";
+    msg << " at age " << PhysicalUnitsLocalized::printToBestTimeUnits(age) << ":";
     info->push_back( msg.str() );
   }//if( info )
 
@@ -5486,7 +5501,7 @@ vector< tuple<double,double,double,Wt::WColor,double> >
   {
     info->push_back( "LiveTime="
                     + std::to_string(m_liveTime/PhysicalUnits::second)
-                    + " s (" + PhysicalUnits::printToBestTimeUnits(m_liveTime)
+                    + " s (" + PhysicalUnitsLocalized::printToBestTimeUnits(m_liveTime)
                     + ")" );
     info->push_back( "Distance to source center from detector: "
                       + PhysicalUnits::printToBestLengthUnits(m_distance) );

@@ -33,7 +33,6 @@ class MaterialDB;
 class DoseCalcWidget;
 class InterSpec;
 class ShieldingSelect;
-class GammaSourceEnter;
 class GadrasScatterTable;
 
 

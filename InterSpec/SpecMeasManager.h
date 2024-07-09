@@ -32,6 +32,7 @@
 #include <string>
 
 #include <boost/any.hpp>
+#include <boost/asio/deadline_timer.hpp>
 
 #include <Wt/WString>
 #include <Wt/WResource>
@@ -47,10 +48,10 @@
 #include "InterSpec/AuxWindow.h"
 #include "InterSpec/SpectraFileModel.h"
 
+// Some forward declarations
 namespace SpecUtils{ enum class ParserType : int; }
 namespace SpecUtils{ enum class SpectrumType : int; }
 
-// Some forward declarations
 namespace Wt
 {
   class JSlot;
@@ -177,7 +178,8 @@ public:
   //  the user.  If false, the file type is not known.
   //  Meant to be called from within the event loop.
   bool handleNonSpectrumFile( const std::string &displayName,
-                              const std::string &fileLocation );
+                              const std::string &fileLocation,
+                              SpecUtils::SpectrumType type );
   
   /** Handles parsing multiple DRF CSV/TSV files when dropped onto the app.
    
@@ -220,15 +222,37 @@ public:
   /** Handles the Shielding/Source fit XML file */
   bool handleShieldingSourceFile( std::istream &input, SimpleDialog *dialog );
   
+  /** Handles Source.lib files dropped onto the app. */
+  bool handleSourceLibFile( std::istream &input, SimpleDialog *dialog );
+  
   /** Handles the user dropping a .ECC file produced from ISOCS. */
   bool handleEccFile( std::istream &input, SimpleDialog *dialog );
   
+  /** Some input files contain duplicate data - we will ask the user how they want to handle
+   this, first handling "Derived Data", then "Multiple Energy Calibration Types", then
+   "Multiple Virtual Detectors"
+   */
   enum class VariantChecksToDo
   {
+    /** No checks for things like multiple energy cals, derived data, or virtual detectors. */
     None = 0,
-    MultipleEnergyCal = 1,
-    DerivedDataAndEnergy = 2
-  };
+    
+    /** RSI systems may have multiple Virtual Detectors (ex "VD1", "VD2", etc) defined, that may be sums of
+     multiple detection elements, or not, or be overlapping, or whatever - so lets alert the user, and let them
+     choose what to do.
+     */
+    MultiVirtualDets = 1,
+    
+    /** Some spectrum files will include both linear and compressed spectra, or multiple energy ranges of
+     the same data.  The user may want to only load one of these, so they arent seeing duplicate data.
+     */
+    MultiEnergyCalsAndMultiVirtualDets = 2,
+    
+    /** For some files, the user may just want to see the derived data.
+     Or perhaps just the raw data, without the essentially duplicate derived data.
+     */
+    DerivedDataAndMultiEnergyAndMultipleVirtualDets = 3
+  };//enum class VariantChecksToDo
   
   // displayFile(...) displays the file passed in as specified type, if it can.
   //  --if kForground is specified and the measurment contains a background
@@ -330,8 +354,6 @@ public:
                                 std::shared_ptr< std::mutex > mutex,
                                 std::shared_ptr<bool> destructed );
   
-  void showDatabaseStatesHavingSpectrumFile( std::shared_ptr<SpectraFileHeader> header );
-  
   
   void showPreviousSpecFileUsesDialog( std::shared_ptr<SpectraFileHeader> header,
                                    const SpecUtils::SpectrumType type,
@@ -341,8 +363,7 @@ public:
   
   
   
-  void userCanceledResumeFromPreviousOpened( AuxWindow *window,
-                                 std::shared_ptr<SpectraFileHeader> header );
+  void userCanceledResumeFromPreviousOpened( std::shared_ptr<SpectraFileHeader> header );
   
   //saveToDatabase(...): saves the SpecMeas to the database in another thread;
   //  must be called from a thread where WApplication::instance() is available
@@ -396,6 +417,10 @@ public:
                               AuxWindow *window,
                               Wt::WModelIndex index );
   
+  /** Called by FileDragUploadResource, as files are being uploaded; if file is larger than `sm_minNumBytesShowUploadProgressDialog`,
+   then will create a status message dialog, `m_processingUploadDialog`.
+   */
+  void handleDataRecievedStatus( uint64_t num_bytes_recieved, uint64_t num_bytes_total, SpecUtils::SpectrumType type );
   
   //Handles a file dropped onto the application, or finishes opening files from
   //  filesystem URL.
@@ -414,7 +439,7 @@ public:
                        Wt::WApplication *app );
 
 #if( USE_QR_CODES )
-  void handleSpectrumUrl( const std::string &url );
+  void handleSpectrumUrl( std::string &&url );
   void displaySpectrumQrCode( const SpecUtils::SpectrumType type );
   void multiSpectrumDialogDone();
 #endif
@@ -432,7 +457,7 @@ protected:
                                               const SpecUtils::SpectrumType type,
                                               const bool checkIfPreviouslyOpened,
                                               const bool doPreviousEnergyRangeCheck,
-                                              const VariantChecksToDo viewingChecks );
+                                              VariantChecksToDo viewingChecks );
 
   void selectEnergyBinning( const std::string binning,
                             std::shared_ptr<SpectraFileHeader> header,
@@ -449,6 +474,18 @@ protected:
                            const bool checkIfPreviouslyOpened,
                            const bool doPreviousEnergyRangeCheck );
   
+  void selectVirtualDetectorChoice( const std::set<std::string> tokeep,
+                           std::shared_ptr<SpectraFileHeader> header,
+                           std::shared_ptr<SpecMeas> meas,
+                           const SpecUtils::SpectrumType type,
+                           const bool checkIfPreviouslyOpened,
+                           const bool doPreviousEnergyRangeCheck );
+  
+  void handleCancelPreviousStatesDialog( AuxWindow *dialog );
+  void handleClosePreviousStatesDialogAfterSelect( AuxWindow *dialog );
+  
+  /** Deletes the dialog, but only if the passed in dialog is the same as `m_processingUploadDialog` */
+  void checkCloseUploadDialog( SimpleDialog *dialog, Wt::WApplication *app );
   
 private:
   Wt::WContainerWidget *createButtonBar();
@@ -489,9 +526,27 @@ protected:
   //m_sql same as m_viewer->sql();
   std::shared_ptr<DataBaseUtils::DbSession> m_sql;
   
-  std::shared_ptr< std::mutex > m_destructMutex;
-  std::shared_ptr< bool > m_destructed;
+  std::shared_ptr<std::mutex> m_destructMutex;
+  std::shared_ptr<bool> m_destructed;
   
+  /** Dialog shown when user loads a file that has been previously either explicitly saved state, or automatically saved. */
+  AuxWindow *m_previousStatesDialog;
+  
+  /** Dialog created when a file is uploading, from `handleDataRecievedStatus()`, letting the user know that something is going on.
+   On the client-side there is an upload status that is shown, but for large files the upload status in JS can be significantly off from what
+   the server is seeing, leading to a potentially long gap between the client-side status, and when the file actually finishes uploading and
+   is being parsed (which another dialog will be shown for parsing large files) - so this dialog covers this time gap to keep the user informed.
+   */
+  SimpleDialog *m_processingUploadDialog;
+  
+  /** Timer used to make sure the dialog is destroyed, even if upload stalls-out; reset in every call to `handleDataRecievedStatus()`,
+   with a timeout of 30 seconds.
+   
+   Did not use a `Wt::WTimer` so we dont effect the DOM when creating and resetting timer, as the WTimer gets inserted into the DOM, and
+   maybe also added to the client-side JS (but I didnt check if creating/resetting a WTimer would cause a network request, but a quick glance at
+   the Wt source code did look like this might be the case, but also maybe not if its server-side only connection)
+   */
+  std::unique_ptr<boost::asio::deadline_timer> m_processingUploadTimer;
 
 #if( !defined(MAX_SPECTRUM_MEMMORY_SIZE_MB) ||  MAX_SPECTRUM_MEMMORY_SIZE_MB < 0 )
   static const size_t sm_maxTempCacheSize = 0;
@@ -499,6 +554,8 @@ protected:
   static const size_t sm_maxTempCacheSize = 1024 * 1024 * MAX_SPECTRUM_MEMMORY_SIZE_MB;
 #endif
 
+  const static size_t sm_minNumBytesShowUploadProgressDialog = 100 * 1024;
+  
   mutable std::deque< std::shared_ptr<const SpecMeas> > m_tempSpectrumInfoCache;
 };//class SpecMeasManager
 

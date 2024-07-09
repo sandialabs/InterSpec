@@ -1150,12 +1150,12 @@ void SpectrumChart::renderAxes( Wt::WPainter &painter,
   
   if( m )
   {
-    renderXAxis( painter, axis(Chart::XAxis), properties);
+    renderXAxis( painter, axis(Chart::XAxis), properties );
     renderYAxis( painter, axis(Chart::Y1Axis), properties );
     renderYAxis( painter, axis(Chart::Y2Axis), properties );
   }else
   {
-    renderAxis( painter, axis(Chart::XAxis), properties);
+    renderAxis( painter, axis(Chart::XAxis), properties );
     renderAxis( painter, axis(Chart::Y1Axis), properties );
     renderAxis( painter, axis(Chart::Y2Axis), properties );
   }//if( m ) / else
@@ -1285,10 +1285,11 @@ void SpectrumChart::renderYAxis( Wt::WPainter &painter,
   
   WPainterPath ticksPath;
   
+  painter.save();
   const WFont oldFont = painter.font();
   const WPen oldPen = painter.pen();
-  
-  painter.setFont( yaxis.labelFont() );
+  WFont labelFont = yaxis.labelFont();
+  painter.setFont( labelFont );
   
   for( size_t i = 0; i < nticks; ++i )
   {
@@ -1339,13 +1340,16 @@ void SpectrumChart::renderYAxis( Wt::WPainter &painter,
     if( (properties & Chart::Labels) && !ticks[i].label.empty() )
     {   
       painter.setPen( m_textPen );
+      painter.setFont( labelFont );
       painter.drawText( WRectF(labelxpx, labelypx, txtwidth, txtheight),
                         labelAlignFlags, ticks[i].label);
       painter.setPen( oldPen );
     }
   }//for( size_t i = 0; i < nticks; ++i )
   
+  painter.restore();
   painter.setFont( oldFont );
+  painter.setPen( oldPen );
   
   if ((properties & Chart::Line) && !ticksPath.isEmpty() )
     painter.strokePath( ticksPath, yaxis.pen() );
@@ -1773,10 +1777,6 @@ SpectrumChart::SpectrumChart( Wt::WContainerWidget *parent )
   
   axis(Chart::XAxis).setMinimum( 0.0 );
   axis(Chart::XAxis).setMaximum( 3000.0 );
-  
-  //make it so we can use control-drag and right click on the cavas without
-  //  the browsers context menu poping up
-  setAttributeValue( "oncontextmenu", "return false;" );
 }//SpectrumChart( constructor )
 
 
@@ -2941,7 +2941,7 @@ void SpectrumChart::drawIndependantGausPeak( const PeakDef &peak,
   
   if( doFill )
   {
-    color.setRgb( color.red(), color.green(), color.blue(), 155 );
+    color.setRgb( color.red(), color.green(), color.blue(), (155.0/255.0)*color.alpha() );
     painter.setBrush( WBrush(color) );
     painter.setPen( WPen(WColor(color.red(),color.green(),color.blue())) );
     painter.drawPath( path );
@@ -3265,7 +3265,7 @@ void SpectrumChart::paintGausPeaks( const vector<std::shared_ptr<const PeakDef> 
       path.lineTo( start_point );
       
       WColor color = peak->lineColor().isDefault() ? m_defaultPeakColor : peak->lineColor();
-      color.setRgb( color.red(), color.green(), color.blue(), 155 );
+      color.setRgb( color.red(), color.green(), color.blue(), (155.0/255.0)*color.alpha() );
       
       painter.fillPath( path, WBrush(color) );
     }//for( size_t j = 1; j < peak_yval.size(); ++j )
@@ -3417,7 +3417,7 @@ void SpectrumChart::paintGausPeaks( const vector<std::shared_ptr<const PeakDef> 
       if( !outline )
       {
         WColor color = peak.lineColor().isDefault() ? m_defaultPeakColor : peak.lineColor();
-        color.setRgb( color.red(), color.green(), color.blue(), 155 );
+        color.setRgb( color.red(), color.green(), color.blue(), (155.0/255.0)*color.alpha() );
         
         //if( lineColors.size() > 1 )
         //{
@@ -3480,7 +3480,7 @@ void SpectrumChart::paintGausPeaks( const vector<std::shared_ptr<const PeakDef> 
         path->lineTo( mapToDevice( iter->second.first, iter->second.second ) );
      
       WColor color = peaks.front()->lineColor().isDefault() ? m_defaultPeakColor : peaks.front()->lineColor();
-      color.setRgb( color.red(), color.green(), color.blue(), 155 );
+      color.setRgb( color.red(), color.green(), color.blue(), (155.0/255.0)*color.alpha() );
       painter.fillPath( *path, WBrush(color) );
     }//if( path )
   }else if( hadGlobalCont && continuumVals.size()>2 )
@@ -4121,7 +4121,7 @@ void SpectrumChart::enableLegend( const bool forceMobileStyle )
 
   auto wtapp = wApp;
   InterSpecApp *app = dynamic_cast<InterSpecApp *>( wtapp );
-  if( forceMobileStyle || (app && app->isMobile()) || (BUILD_AS_COMMAND_LINE_CODE_DEVELOPMENT) )
+  if( forceMobileStyle || (app && app->isMobile()) )
   {
     m_legendType = OnChartLegend;
     update(); //force a re-draw

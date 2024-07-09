@@ -162,7 +162,7 @@ void fit_peaks_in_files( const std::string &exemplar_filename,
   {
     const BatchPeakFitResult fit_results
                  = fit_peaks_in_file( exemplar_filename, exemplar_sample_nums,
-                                     cached_exemplar_n42, filename, options );
+                                     cached_exemplar_n42, filename, nullptr, {}, options );
     
     if( !cached_exemplar_n42 )
       cached_exemplar_n42 = fit_results.exemplar;
@@ -264,6 +264,8 @@ BatchPeak::BatchPeakFitResult fit_peaks_in_file( const std::string &exemplar_fil
                           std::set<int> exemplar_sample_nums,
                           std::shared_ptr<const SpecMeas> cached_exemplar_n42,
                           const std::string &filename,
+                          std::shared_ptr<SpecMeas> cached_spectrum,
+                          std::set<int> foreground_sample_numbers,
                           const BatchPeakFitOptions &options )
 {
   shared_ptr<const SpecMeas> exemplar_n42 = cached_exemplar_n42;
@@ -400,74 +402,97 @@ BatchPeak::BatchPeakFitResult fit_peaks_in_file( const std::string &exemplar_fil
   results.success = false;
   
   {
-    shared_ptr<SpecMeas> specfile = make_shared<SpecMeas>();
-    const bool loaded = specfile->load_file( filename, SpecUtils::ParserType::Auto, filename );
-    if( !loaded || !specfile->num_measurements() )
+    shared_ptr<SpecMeas> specfile;
+    
+    if( cached_spectrum )
     {
-      results.warnings.push_back( "Couldnt read in '" + filename + "' as a spectrum file -- skipping." );
-      
-      return results;
-    }//if( !loaded )
+      specfile = cached_spectrum;
+    }else
+    {
+      specfile = make_shared<SpecMeas>();
+      const bool loaded = specfile->load_file( filename, SpecUtils::ParserType::Auto, filename );
+      if( !loaded || !specfile->num_measurements() )
+      {
+        results.warnings.push_back( "Couldnt read in '" + filename + "' as a spectrum file -- skipping." );
+        
+        return results;
+      }//if( !loaded )
+    }//if( cached_spectrum ) / else
     
     results.measurement = specfile;
     
-    set<int> used_sample_nums;
+    shared_ptr<SpecUtils::Measurement> spec;
     const vector<string> det_names = specfile->detector_names();
     
-    shared_ptr<SpecUtils::Measurement> spec;
-    if( specfile->sample_numbers().size() == 1 )
+    set<int> used_sample_nums;
+    if( !foreground_sample_numbers.empty() )
     {
-      used_sample_nums = specfile->sample_numbers();
-      spec = specfile->sum_measurements( used_sample_nums, det_names, nullptr );
-    }else
-    {
-      set<int> foregroundSamples, backgroundSamples, unknownSamples, otherSamples;
-      for( const int sample_num : specfile->sample_numbers() )
+      try
       {
-        for( const string det_name : det_names )
-        {
-          auto m = specfile->measurement( sample_num, det_name );
-          if( !m )
-            continue;
-          switch( m->source_type() )
-          {
-            case SpecUtils::SourceType::IntrinsicActivity:
-            case SpecUtils::SourceType::Calibration:
-              otherSamples.insert( sample_num );
-              break;
-            case SpecUtils::SourceType::Background:
-              backgroundSamples.insert( sample_num );
-              break;
-            case SpecUtils::SourceType::Foreground:
-              foregroundSamples.insert( sample_num );
-              break;
-            case SpecUtils::SourceType::Unknown:
-              unknownSamples.insert( sample_num );
-              break;
-          }//switch( m->source_type() )
-        }//for( const string det_name : det_names )
-      }//for( const int sample_num : specfile.sample_numbers() )
-      
-      if( foregroundSamples.size() == 1 )
+        spec = specfile->sum_measurements( foreground_sample_numbers, det_names, nullptr );
+        used_sample_nums = foreground_sample_numbers;
+      }catch( std::exception &e )
       {
-        used_sample_nums = foregroundSamples;
-      }else if( unknownSamples.size() == 1 )
-      {
-        used_sample_nums = unknownSamples;
-      }else if( backgroundSamples.size() == 1 )
-      {
-        used_sample_nums = backgroundSamples;
-      }else if( otherSamples.size() == 1 )
-      {
-        used_sample_nums = otherSamples;
-      }else
-      {
-        results.warnings.push_back( "Spectrum file '" + filename + "' was ambiguous of which spectrum to use for peak fitting." );
+        results.warnings.push_back( "Invalid sample numbers specified to sum: " + string(e.what()) );
+        results.success = false;
         return results;
       }
-      
-      spec = specfile->sum_measurements( used_sample_nums, det_names, nullptr );
-    }//if( specfile.sample_numbers().size() == 1 ) / else
+    }else
+    {
+      if( specfile->sample_numbers().size() == 1 )
+      {
+        used_sample_nums = specfile->sample_numbers();
+        spec = specfile->sum_measurements( used_sample_nums, det_names, nullptr );
+      }else
+      {
+        set<int> foregroundSamples, backgroundSamples, unknownSamples, otherSamples;
+        for( const int sample_num : specfile->sample_numbers() )
+        {
+          for( const string det_name : det_names )
+          {
+            auto m = specfile->measurement( sample_num, det_name );
+            if( !m )
+              continue;
+            switch( m->source_type() )
+            {
+              case SpecUtils::SourceType::IntrinsicActivity:
+              case SpecUtils::SourceType::Calibration:
+                otherSamples.insert( sample_num );
+                break;
+              case SpecUtils::SourceType::Background:
+                backgroundSamples.insert( sample_num );
+                break;
+              case SpecUtils::SourceType::Foreground:
+                foregroundSamples.insert( sample_num );
+                break;
+              case SpecUtils::SourceType::Unknown:
+                unknownSamples.insert( sample_num );
+                break;
+            }//switch( m->source_type() )
+          }//for( const string det_name : det_names )
+        }//for( const int sample_num : specfile.sample_numbers() )
+        
+        if( foregroundSamples.size() == 1 )
+        {
+          used_sample_nums = foregroundSamples;
+        }else if( unknownSamples.size() == 1 )
+        {
+          used_sample_nums = unknownSamples;
+        }else if( backgroundSamples.size() == 1 )
+        {
+          used_sample_nums = backgroundSamples;
+        }else if( otherSamples.size() == 1 )
+        {
+          used_sample_nums = otherSamples;
+        }else
+        {
+          results.warnings.push_back( "Spectrum file '" + filename + "' was ambiguous of which spectrum to use for peak fitting." );
+          return results;
+        }
+        
+        spec = specfile->sum_measurements( used_sample_nums, det_names, nullptr );
+      }//if( specfile.sample_numbers().size() == 1 ) / else
+    }//if( !foreground_sample_numbers.empty() ) / else
     
     assert( spec );
     if( !spec )
@@ -533,6 +558,7 @@ BatchPeak::BatchPeakFitResult fit_peaks_in_file( const std::string &exemplar_fil
       return results;
     }
     
+    set<int> back_sample_nums;
     shared_ptr<const SpecMeas> background_n42;
     if( !options.background_subtract_file.empty() )
     {
@@ -540,19 +566,34 @@ BatchPeak::BatchPeakFitResult fit_peaks_in_file( const std::string &exemplar_fil
       if( !background->load_file( options.background_subtract_file, SpecUtils::ParserType::Auto ) )
         throw runtime_error( "Couldnt open background file '" + options.background_subtract_file + "'" );
       
-      if( background->sample_numbers().size() != 1 )
-        throw runtime_error( "There should only be a single sample in background subtract file." );
-      
       background_n42 = background;
+      
+      if( options.background_subtract_samples.empty() )
+      {
+        back_sample_nums = background->sample_numbers();
+        if( back_sample_nums.size() != 1 )
+          throw runtime_error( "There should only be a single sample in background subtract file." );
+      }else
+      {
+        back_sample_nums = options.background_subtract_samples;
+      }
       
       if( background->num_measurements() == 1 )
       {
+        assert( !back_sample_nums.empty() );
+        if( !back_sample_nums.empty()
+           && ((*begin(back_sample_nums)) != background->measurements()[0]->sample_number() ) )
+        {
+          results.warnings.push_back( "Specified background sample number invalid." );
+          return results;
+        }
+        
         results.background = background->measurements()[0];
       }else
       {
         try
         {
-          results.background = background->sum_measurements( background->sample_numbers(), background->detector_names(), nullptr );
+          results.background = background->sum_measurements( back_sample_nums, background->detector_names(), nullptr );
         }catch( std::exception &e )
         {
           results.warnings.push_back( "Failed to sum spectrum from background '"

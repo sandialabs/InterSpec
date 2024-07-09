@@ -123,7 +123,7 @@ namespace
   
   const char * const error_saving_spectrum_msg
                            = "There was an error saving a spectrum to the"
-                             " database from memmorry. It shouldnt effect"
+                             " database from memory. It shouldnt effect"
                              " this session, but possibly future ones using"
                              " the spectrum.";
   
@@ -1017,6 +1017,12 @@ std::shared_ptr<SpecMeas> SpectraFileHeader::initFile(
 
     if( success )
     {
+      //Make sure the file we're opening doesn't have erroneous DB state indexes in it, which could
+      //  cause us to overwrite a state.
+      // I *think* all opening of spectrum files from filesystem go through here of `setFile(...)`.
+      //Currently we are not writing this info to the SpecFile, so this call is not actually needed.
+      info->clearAllDbStateId(); //JIV
+      
       RecursiveLock lock( m_mutex );
       m_weakMeasurmentPtr = info;
       return info;
@@ -1126,8 +1132,7 @@ void SpectraFileHeader::saveToFileSystem( std::shared_ptr<SpecMeas> measurment )
     
     
     if( (from_mem && measurment) && (from_mem!=measurment) )
-      throw runtime_error( "Measurment passed in is not same as currently "
-                           "in memmorry" );
+      throw runtime_error( "Measurement passed in is not same as currently in memory" );
 
     if( !measurment && !from_mem )
       from_mem = parseFile();
@@ -1152,19 +1157,25 @@ void SpectraFileHeader::saveToFileSystem( std::shared_ptr<SpecMeas> measurment )
       if( !m_fileSystemLocation.empty() )
         SpecUtils::remove_file( m_fileSystemLocation );
       m_fileSystemLocation = "";
-    }catch(...){}
+    }catch(...)
+    {
+    }
 
     const string tempfile = SpecUtils::temp_file_name( m_displayName, InterSpecApp::tempDirectory() );
 
     {
       RecursiveLock lock( m_mutex );
       m_fileSystemLocation = tempfile;
+      
+      m_userStateDbIndexes = info->dbUserStateIndexes();
     }
     
     success = true;
+    
 //    success = info->save_native_file( tempfile.generic_string() );
     boost::function<void()> error_callback = boost::bind( &SpectraFileHeader::errorSavingCallback, this, tempfile, info );
     SpecMeas::save2012N42FileInClientThread( info, tempfile, error_callback );
+    
     
 //#if( USE_DB_TO_STORE_SPECTRA )
 //    if( m_app && shouldSaveToDb() )
@@ -1358,6 +1369,13 @@ void SpectraFileHeader::setFile( const std::string &displayFileName, std::shared
   
   info->reset_modified();
   info->reset_modified_since_decode();
+  
+  //Make sure the file we're opening doesn't have erroneous DB state indexes in it, which could
+  //  cause us to overwrite a state.
+  // I *think* all opening of spectrum files from filesystem go through here of `initFile(...)`.
+  //Currently we are not writing this info to the SpecFile, so this call is not actually needed.
+  info->clearAllDbStateId(); //JIC
+  
   m_modifiedSinceDecode = false;
   
   setMeasurmentInfo( info );
@@ -1369,7 +1387,7 @@ std::shared_ptr<SpecMeas> SpectraFileHeader::setFile(
                                    const std::string &filename,
                                    SpecUtils::ParserType parseType )
 {
-  cerr << "SpectraFileHeader::setFile" << endl;
+  cerr << "SpectraFileHeader::setFile('" << displayFileName << "', '" << filename << "')" << endl;
   try
   {
     if( !SpecUtils::is_file(filename) )
@@ -1437,9 +1455,15 @@ std::shared_ptr<SpecMeas> SpectraFileHeader::parseFile() const
       m_cachedMeasurement = info;
     m_weakMeasurmentPtr = info;
     
-    //XXX - Should consider using an on error callback for following connections
+    // TODO: Should consider using an on error callback for following connections
     if( info )
     {
+      // Restore mappings of sample numbers in this file, to UserState indexes in the database
+      info->clearAllDbStateId(); //JIC, but not needed
+      for( const auto &sn_index : m_userStateDbIndexes )
+        info->setDbStateId( sn_index.second, sn_index.first );
+      m_userStateDbIndexes.clear();
+      
       if( m_aboutToBeDeletedConnection.connected() )
         m_aboutToBeDeletedConnection.disconnect();
       m_aboutToBeDeletedConnection = info->aboutToBeDeleted().connect(

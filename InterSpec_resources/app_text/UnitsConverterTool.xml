@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- uct- is short for UnitsConverterTool
+  -->
+  <message id="uct-mult-nucs">Multiple nuclides ({1} + {2})</message>
+  <message id="uct-instructions">Convert between radiation related units.<br />
+    Ex: 5 MBq, 2 nCi, 1.2rad, 15E-3gy, 0.2mrem, 8feet, 9milli-sievert, 10 gram U235, 1.2 uCi Pu238
+  </message>
+  <message id="uct-input-label">Input: </message>
+  <message id="uct-output-label">Output: </message>
+  <message id="uct-qr-window-title">Unit Converter State</message>
+  <message id="uct-qr-window-txt">Current state of the unit converter tool.</message>
+  <message id="uct-err-empty-input">Empty input</message>
+  <message id="uct-couldnt-find-units">Couldn't determine units</message>
+  <message id="uct-nuc-unknown">Couldnt do anything with {1} '{2}'</message>
+  <message id="uct-invalid-input">Invalid input</message>
+  <message id="uct-err-gen">Error: {1}.<br />
+    Allowed activity units: bq, becquerel, ci, curie, gray, Gy, rad, sievert, Sv, rem,
+    roentgen, m, meter, ft, inch, in, gram, g, ounce, oz, pound, lb, and grain.<br />
+    Allowed (optional) prefixes: n, nano, u, µ, micro, m, milli,
+     k, killo, M, mega, G, Giga, T, and Tera
+  </message>
+</messages>

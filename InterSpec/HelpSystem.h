@@ -25,6 +25,8 @@
 
 #include "InterSpec_config.h"
 
+#include <initializer_list>
+
 #include <Wt/WObject>
 #include <Wt/WMessageResourceBundle>
 
@@ -96,7 +98,8 @@ namespace HelpSystem
   enum class ToolTipPrefOverride
   {
     AlwaysShow,
-    RespectPreference
+    RespectPreference,
+    InstantAlways
   };
   
   enum class ToolTipPosition
@@ -122,11 +125,22 @@ namespace HelpSystem
    Note: when the widget is deleted from memory, server-side, the tooltip will be removed from the DOM client-side.
    */
   void attachToolTipOn( Wt::WWebWidget* widget,
-                       const std::string &text,
+                       const Wt::WString &text,
                        const bool enableShowing,
                        const ToolTipPosition pos = HelpSystem::ToolTipPosition::Right,
                        const ToolTipPrefOverride forceShowing
                                             = HelpSystem::ToolTipPrefOverride::RespectPreference );
+  
+  /** Same as above, but attaches the same tooltip to multiple elements.
+   
+   The lifetime of the tooltip is governed by the first element in the list.
+   */
+  void attachToolTipOn( std::initializer_list<Wt::WWebWidget*> widgets,
+                        const Wt::WString &text,
+                        const bool enableShowing,
+                        const ToolTipPosition pos = HelpSystem::ToolTipPosition::Right,
+                        const ToolTipPrefOverride forceShowing
+                                  = HelpSystem::ToolTipPrefOverride::RespectPreference );
   
 } //namespace HelpSystem
 #endif //HelpSystem_h

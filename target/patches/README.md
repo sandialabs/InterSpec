@@ -103,7 +103,7 @@ curl -L https://github.com/emweb/wt/archive/3.7.1.tar.gz --output wt-3.7.1.tar.g
 tar -xzvf wt-3.7.1.tar.gz
 
 cd wt-3.7.1
-patch -u src/Wt/Render/CssParser.C -i ${PATCH_DIR}/wt/3.7.1/NormalBuild/CssParser.C.patch
+git apply --reject --ignore-space-change --ignore-whitespace "${PATCH_DIR}/wt/3.7.1/NormalBuild/wt_3.7.1_git.patch"
 mkdir build
 cd build
 

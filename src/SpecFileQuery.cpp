@@ -1172,6 +1172,8 @@ namespace SpecFileQuery
           case SpecUtils::DetectorType::Sam945:
           case SpecUtils::DetectorType::Srpm210:
           case SpecUtils::DetectorType::IdentiFinderTungsten:
+          case SpecUtils::DetectorType::IdentiFinderR425NaI:
+          case SpecUtils::DetectorType::IdentiFinderR425LaBr:
           case SpecUtils::DetectorType::IdentiFinderR500NaI:
           case SpecUtils::DetectorType::IdentiFinderR500LaBr:
           case SpecUtils::DetectorType::IdentiFinderUnknown:
@@ -1184,6 +1186,10 @@ namespace SpecFileQuery
           case SpecUtils::DetectorType::VerifinderLaBr:
           case SpecUtils::DetectorType::KromekD3S:
           case SpecUtils::DetectorType::RadiaCode:
+          case SpecUtils::DetectorType::Fulcrum:
+          case SpecUtils::DetectorType::Fulcrum40h:
+          case SpecUtils::DetectorType::Sam950:
+            
             gotit = true;
             break;
         }

@@ -30,7 +30,7 @@ OSStatus GeneratePreviewForURL(void *thisInterface, QLPreviewRequestRef preview,
   CFStringRef filepath = CFURLCopyFileSystemPath(url, kCFURLPOSIXPathStyle);
   if( !filepath )
   {
-    printf( "SpecFilePreview: Failed to get filepath!\n" );
+    printf( "SpecFile Preview: Failed to get filepath!\n" );
     return 1;
   }
   
@@ -49,10 +49,11 @@ OSStatus GeneratePreviewForURL(void *thisInterface, QLPreviewRequestRef preview,
   
     // Load the property list from the URL
   
+  printf( "SpecFilePreview: will check if cancelled\n" );
     // The above might have taken some time, so before proceeding make sure the user didn't cancel the request
   if( QLPreviewRequestIsCancelled(preview) )
   {
-    printf( "SpecFilePreview: preview canceled 0" );
+    printf( "SpecFilePreview: preview canceled 0\n" );
     return noErr;
   }
    
@@ -77,23 +78,26 @@ OSStatus GeneratePreviewForURL(void *thisInterface, QLPreviewRequestRef preview,
     //fprintf(f, "Preview\n" );
     //fclose(f);
     
+    printf( "SpecFilePreview: about to render to preview\n" );
+
     uint8_t *preview_data = NULL;
     size_t preview_data_length = 0;
     render_spec_file_to_preview( &preview_data, &preview_data_length, filename_buffer, 800, 600, SpectrumPreview );
   
     if( !preview_data || preview_data_length==0 )
     {
-      printf( "SpecFilePreview: failed to grab spectrum data" );
+      printf( "SpecFilePreview: failed to grab spectrum data\n" );
       return noErr;
     }
     
     if( QLPreviewRequestIsCancelled(preview) )
     {
-      printf( "SpecFilePreview: preview canceled 1" );
+      printf( "SpecFilePreview: preview canceled 1\n" );
       free( preview_data );
       return noErr;
     }
   
+    printf( "SpecFilePreview: done rendering to preview\n" );
   
     CFDataRef hmtl_dataref = CFDataCreate( kCFAllocatorDefault, (const UInt8 *)preview_data, preview_data_length );
   

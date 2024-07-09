@@ -78,6 +78,8 @@ namespace RelActCalc
     gamma-x-ray coincidences (or is it the case we can just assume constant fraction between any
     gamma and any nuclide?), so we might need two parameters, one for gamams, one for gamma-neutrons
     and I guess maybe xray-xray?
+ - Should add option to give each branching-ratio an independent uncertainty (like 1% or something),
+   as well the same for FWHM
  */
 
 namespace RelActCalcAuto
@@ -193,10 +195,15 @@ enum class FwhmForm : int
    */
   Gadras,
   
-  /** The equation FWHM = sqrt( A_0 + A_1*Energy + A_2/Energy ).
+  /** The equation `FWHM = sqrt( A_0 + A_1*Energy + A_2/Energy )`.
    This is what FRAM uses.
    */
   SqrtEnergyPlusInverse,
+  
+  /** The equation `FWHM = A_0 + A_1*sqrt(Energy)`
+   This is what some commercial applications use - but should probably only be used for cases of interfacing to the.
+   */
+  ConstantPlusSqrtEnergy,
   
   /** The linear polynomial: e.g. FWHM = sqrt(A_0 + A_1*1*0.001*Energy)
    The "2" refers to how many parameters are being fit

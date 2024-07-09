@@ -35,7 +35,8 @@
 #include "InterSpec/SimpleDialog.h"
 
 
-// Forward declerations
+// Forward declarations
+class AuxWindow;
 namespace SandiaDecay
 {
   struct Nuclide;
@@ -45,7 +46,16 @@ namespace SandiaDecay
 class MoreNuclideInfoDisplay : public Wt::WTemplate
 {
 public:
-  MoreNuclideInfoDisplay( const SandiaDecay::Nuclide *const nuc,
+  /** Constructor for MoreNuclideInfoDisplay
+   
+   @par nuc The (initial) nuclide to display information for.
+   @par displayTitle If the title (e.g., "More info on U238") should be displayed within the
+        widget, or if you will maybe display your own title (e.x., in the title section of
+        SimpleDialog)
+   @par parent The standard Wt parent widget.
+   */
+  MoreNuclideInfoDisplay( const SandiaDecay::Nuclide * const nuc,
+                         const bool displayTitle,
                           Wt::WContainerWidget *parent = nullptr);
 
 
@@ -63,12 +73,28 @@ public:
   void setNuclide( const SandiaDecay::Nuclide *const nuc,
                    std::vector<const SandiaDecay::Nuclide *> history );
 
+  /** Signal emitted when the nuclide that information is being displayed for, is changed.
+   
+   Can be used, for example, to update the title, if you are displaying the title yourself.
+   */
+  Wt::Signal<const SandiaDecay::Nuclide *> &nuclideChanged();
+  
+  /** Returns current nuclide. */
+  const SandiaDecay::Nuclide *nuclide() const;
 protected:
   void setTemplateTxt();
   void showDecayChainChart();
   void showDecayThroughChart();
+  void handleDecayChartClose( AuxWindow *window );
+  void programmaticallyCloseDecayChart();
+  void implementShowDecayCharts( const bool through );
 
   const SandiaDecay::Nuclide *m_nuc;
+  std::vector<const SandiaDecay::Nuclide *> m_current_history;
+  bool m_displayTitle;
+  Wt::Signal<const SandiaDecay::Nuclide *> m_nuclideChanged;
+  
+  AuxWindow *m_decayWindow;
 };//class MoreNuclideInfoDisplay
 
 
@@ -77,8 +103,17 @@ class MoreNuclideInfoWindow : public SimpleDialog
 public:
   MoreNuclideInfoWindow( const SandiaDecay::Nuclide *const nuc );
 
+  void nuclideUpdated( const SandiaDecay::Nuclide *nuc );
+  
+  
+  const SandiaDecay::Nuclide *currentNuclide() const;
+  const SandiaDecay::Nuclide *originalNuclide() const;
+  
+  MoreNuclideInfoDisplay *display();
 protected:
   MoreNuclideInfoDisplay *m_display;
+  
+  const SandiaDecay::Nuclide *m_orig_nuc;
 };//class MoreNuclideInfoWindow
 
 #endif //MoreNuclideInfoDisplay_h

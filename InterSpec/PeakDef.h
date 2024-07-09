@@ -110,8 +110,8 @@ struct PeakContinuum
     External
   };//enum OffsetType
   
-  /** Text appropriate for use as a label for the continuum type in the gui. */
-  static const char *offset_type_label( const OffsetType type );
+  /** The `WString::tr` key to use to render text appropriate for use as a label for the continuum type in the gui. */
+  static const char *offset_type_label_tr( const OffsetType type );
   
   /** Returns string to be used for XML or JSON identification of continuum type. */
   static const char *offset_type_str( const OffsetType type );
@@ -1163,12 +1163,15 @@ void PeakDef::setAmplitudeUncert( const double a )
 
 bool PeakDef::useForEnergyCalibration() const
 {
-  return ( m_useForEnergyCal &&
-           ( (m_radparticleIndex>=0 && m_transition && m_parentNuclide)
-            || (m_parentNuclide && (m_sourceGammaType==PeakDef::AnnihilationGamma))
-            || (m_xrayElement && m_xrayEnergy>0.0)
-            || (m_reaction && m_reactionEnergy>0.0)
-           ) );
+  // We wont use this peak for fitting for energy calibration if the mean
+  //  has been fixed
+  return ( m_useForEnergyCal && m_fitFor[PeakDef::Mean]
+          && ( (m_radparticleIndex>=0 && m_transition && m_parentNuclide)
+               || (m_parentNuclide && (m_sourceGammaType==PeakDef::AnnihilationGamma))
+               || (m_xrayElement && m_xrayEnergy>0.0)
+               || (m_reaction && m_reactionEnergy>0.0)
+             )
+         );
 }//void useForEnergyCalibration() const
 
 
@@ -1213,10 +1216,10 @@ bool PeakDef::useForManualRelEff() const
   switch( m_sourceGammaType )
   {
     case PeakDef::NormalGamma:
+    case PeakDef::AnnihilationGamma:
       return m_useForManualRelEff;
       
     case PeakDef::XrayGamma:
-    case PeakDef::AnnihilationGamma:
     case PeakDef::SingleEscapeGamma:
     case PeakDef::DoubleEscapeGamma:
       break;

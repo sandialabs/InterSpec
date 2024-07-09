@@ -269,7 +269,17 @@ IT &quot;AS IS.&quot;
         <li>
           <b><a href="https://github.com/CliffCloud/Leaflet.EasyButton" target="_blank">Leaflet.EasyButton</a></b> (version 2.4.0): The easiest way to add buttons with Leaflet. <b>Leaflet.EasyButton</b> is <a href="https://opensource.org/licenses/MIT" target="_blank">MIT licensed</a> library.
         </li>
+        <li>
+          <b><a href="https://github.com/ptma/Leaflet.Measure" target="_blank">Leaflet.Measure</a></b> (git hash 20e0e7d): A leaflet plugin for measuring distances and areas. <b>Leaflet.Measure</b> is <a href="https://opensource.org/licenses/MIT" target="_blank">MIT licensed</a> library.
+        </li>
       </ul>
+    </li>
+
+    <li><b><a href="https://github.com/zxing-cpp/zxing-cpp" target="_blank">ZXing-C++</a></b> (git hash 9ca0684): ZXing-C++ ("zebra crossing") is an open-source, multi-format linear/matrix barcode image processing library implemented in C++.
+      <div style="margin-left: 1em; font-size: small;">
+      <b>ZXing-C++</b> is used to look for QR-codes in images that are opened in InterSpec.
+      <b>ZXing-C++</b> is <a href="https://www.apache.org/licenses/LICENSE-2.0" target="_blank">Apache License 2.0</a> library.
+      </div>
     </li>
 
     <li>&nbsp;</li>

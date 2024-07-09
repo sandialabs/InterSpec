@@ -1128,8 +1128,8 @@ void findCharacteristics( vector<string> &characteristicnucs,
         
         for( const ReactionGamma::Reaction *rctn : reactions )
         {
-          const vector<ReactionGamma::EnergyAbundance> &gammas = rctn->gammas;
-          for( const ReactionGamma::EnergyAbundance &g : gammas )
+          const vector<ReactionGamma::Reaction::EnergyYield> &gammas = rctn->gammas;
+          for( const ReactionGamma::Reaction::EnergyYield &g : gammas )
           {
             if( fabs(g.energy - energy) < 2.0 )
             {
@@ -1330,7 +1330,7 @@ void isotopesFromOtherPeaks( vector<string> &otherpeaknucs,
       }//for( const SandiaDecay::EnergyIntensityPair &xray : el->xrays )
     }else if( p->reaction() && reactionDb )
     {
-      for( const ReactionGamma::EnergyAbundance &g : p->reaction()->gammas )
+      for( const ReactionGamma::Reaction::EnergyYield &g : p->reaction()->gammas )
       {
         if( g.energy > minenergy && g.energy < maxenergy )
         {
@@ -1368,6 +1368,7 @@ void peakCandidateSourceFromRefLines( std::shared_ptr<const PeakDef> peak, const
         break;
         
       case ReferenceLineInfo::SourceType::CustomEnergy:
+      case ReferenceLineInfo::SourceType::OneOffSrcLines:
       case ReferenceLineInfo::SourceType::None:
         continue;
         break;

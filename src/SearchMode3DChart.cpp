@@ -25,42 +25,42 @@
 
 #include <set>
 #include <cmath>
+#include <math.h>
 #include <string>
 #include <vector>
-#include <math.h>
+#include <ctype.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <ctype.h>
 
 #include <Wt/WText>
 #include <Wt/WLabel>
-#include <Wt/WColor>
 #include <Wt/WBorder>
 #include <Wt/WString>
 #include <Wt/WServer>
+#include <Wt/WSpinBox>
 #include <Wt/WCheckBox>
-#include <Wt/WLineEdit>
 #include <Wt/WModelIndex>
 #include <Wt/WGridLayout>
-#include <Wt/WPushButton>
 #include <Wt/WApplication>
-#include <Wt/WDoubleSpinBox>
 #include <Wt/Chart/WGridData>
 #include <Wt/WContainerWidget>
-#include <Wt/WDoubleValidator>
-#include <Wt/WAbstractTableModel>
-#include <Wt/WCssDecorationStyle>
 #include <Wt/Chart/WCartesian3DChart>
 #include <Wt/Chart/WStandardColorMap>
 
 #include "InterSpec/SpecMeas.h"
 #include "InterSpec/InterSpec.h"
+#include "InterSpec/HelpSystem.h"
+#include "InterSpec/InterSpecUser.h"
 #include "InterSpec/SearchMode3DChart.h"
+#include "InterSpec/NativeFloatSpinBox.h"
 #include "InterSpec/SearchMode3DDataModel.h"
 
 using namespace Wt;
 using namespace std;
 
+const int SearchMode3DChart::sm_maxTimeDivs = 512;
+const int SearchMode3DChart::sm_maxEnergyDivs = 1024;
+const int SearchMode3DChart::sm_minTimeOrEnergyDivs = 8;
 
 SearchMode3DChart::SearchMode3DChart( InterSpec *viewer,
                                       WContainerWidget *parent )
@@ -76,7 +76,10 @@ SearchMode3DChart::SearchMode3DChart( InterSpec *viewer,
    m_inputMinEnergy( nullptr ),
    m_inputMaxEnergy( nullptr ),
    m_inputMinTime( nullptr ),
-   m_inputMaxTime( nullptr )
+   m_inputMaxTime( nullptr ),
+   m_timeDivisions( nullptr ),
+   m_energyDivisions( nullptr ),
+   m_loadingTxt( nullptr )
 {
   init();
 }//SearchMode3DChart constructor
@@ -90,74 +93,116 @@ SearchMode3DChart::~SearchMode3DChart()
 void SearchMode3DChart::init()
 {
   wApp->useStyleSheet( "InterSpec_resources/SearchMode3DChart.css" );
+  wApp->useStyleSheet( "InterSpec_resources/GridLayoutHelpers.css" );
   
   addStyleClass( "SearchMode3DChart" );
   
   setLayoutSizeAware( true );
   
+  if( m_viewer )
+    m_viewer->useMessageResourceBundle( "SearchMode3DChart" );
+  
+  const bool showToolTips = InterSpecUser::preferenceValue<bool>("ShowTooltips", InterSpec::instance());
+  
   m_layout = new WGridLayout();
+  m_layout->setContentsMargins( 9, 9, 9, 0 ); //left, top, right, bottom (default is 9 pixels on each side)
   setLayout( m_layout );
   
-  m_layout->addWidget( new WText( "Loading..." ), 0, 0, 1, 5 );
+  m_loadingTxt = new WText( WString::tr("sm3dc-loading") );
+  m_layout->addWidget( m_loadingTxt, 0, 0, AlignCenter | AlignMiddle );
+  
+  WContainerWidget *controlsDiv = new WContainerWidget();
+  m_layout->addWidget( controlsDiv, 1, 0 );
+  controlsDiv->addStyleClass( "SearchMode3DControls" );
+  
+  m_layout->setRowStretch( 0, 1 );
+  m_layout->setColumnStretch( 0, 1 );
   
   /*
    FIXME: I cant seem to get the actual data display to properly become log, so disabling the checkbox for now
   //Creates Checkbox and connects with logScaleToggleSwitchOn and logScaleToggleSwitchOff
-  WCheckBox *logScaleCheckBox = new WCheckBox( "Log Scale" );
+  WCheckBox *logScaleCheckBox = new WCheckBox( "Log Scale", controlsDiv );
+  logScaleCheckBox->addStyleClass( "GridFirstRow GridFithCol" );
   logScaleCheckBox->setChecked( false );
   logScaleCheckBox->checked().connect( boost::bind( &SearchMode3DChart::setLogZ, this, true ) );
   logScaleCheckBox->unChecked().connect( boost::bind( &SearchMode3DChart::setLogZ, this, false ) );
-  m_layout->addWidget( logScaleCheckBox, 1, 4, AlignRight );
   */
   
   //Creates a editable textbox that allows users to input the minimum energy they are interested in
-  WLabel *label = new WLabel( "Min Energy" );
-  m_layout->addWidget( label, 2, 0 );
-  m_inputMinEnergy = new WDoubleSpinBox();
-  m_inputMinEnergy->setWidth( WLength(10,WLength::FontEx) );
+  WLabel *label = new WLabel( WString::tr("sm3dc-min-energy"), controlsDiv );
+  label->addStyleClass( "GridFirstRow GridFirstCol" );
+  m_inputMinEnergy = new NativeFloatSpinBox( controlsDiv );
+  m_inputMinEnergy->addStyleClass( "GridFirstRow GridSecondCol" );
+  m_inputMinEnergy->setSpinnerHidden( true );
   label->setBuddy( m_inputMinEnergy );
-  m_inputMinEnergy->changed().connect( boost::bind(&SearchMode3DChart::updateRange, this) );
-  //m_inputMinEnergy->enterPressed().connect( boost::bind(&SearchMode3DChart::updateDisplay, this) );
-  //m_inputMinEnergy->blurred().connect( boost::bind(&SearchMode3DChart::updateDisplay, this) );
-  //WDoubleValidator *val = new WDoubleValidator( container );
-  //inputMinEnergy->setInputMask("999999");
-  m_layout->addWidget( m_inputMinEnergy, 2, 1 );
+  m_inputMinEnergy->valueChanged().connect( boost::bind(&SearchMode3DChart::updateRange, this) );
     
   //Creates a editable textbox that allows users to input the maximum energy they are interested in
-  //m_inputMaxEnergy = new Wt::WDoubleSpinBox( container );
-  label = new WLabel( "Max Energy" );
-  m_layout->addWidget( label, 2, 2 );
-  m_inputMaxEnergy = new WDoubleSpinBox();
-  m_inputMaxEnergy->setWidth( WLength(10,WLength::FontEx) );
+  label = new WLabel( WString::tr("sm3dc-max-energy"), controlsDiv );
+  label->addStyleClass( "GridFirstRow GridThirdCol" );
+  m_inputMaxEnergy = new NativeFloatSpinBox( controlsDiv );
+  m_inputMaxEnergy->addStyleClass( "GridFirstRow GridFourthCol" );
+  m_inputMaxEnergy->setSpinnerHidden( true );
   label->setBuddy( m_inputMaxEnergy );
-  m_inputMaxEnergy->changed().connect( boost::bind(&SearchMode3DChart::updateRange, this) );
-  m_layout->addWidget( m_inputMaxEnergy, 2, 3 );
+  m_inputMaxEnergy->valueChanged().connect( boost::bind(&SearchMode3DChart::updateRange, this) );
     
   //Creates a editable textbox that allows users to input the minimum energy they are interested in
-  label = new WLabel( "Min Time" );
-  m_layout->addWidget( label, 3, 0 );
-  m_inputMinTime = new WDoubleSpinBox();
-  m_inputMinTime->setWidth( WLength(10,WLength::FontEx) );
+  label = new WLabel( WString::tr("sm3dc-min-time"), controlsDiv );
+  label->addStyleClass( "GridSecondRow GridFirstCol" );
+  m_inputMinTime = new NativeFloatSpinBox( controlsDiv );
+  m_inputMinTime->addStyleClass( "GridSecondRow GridSecondCol" );
+  m_inputMinTime->setSpinnerHidden( true );
   label->setBuddy( m_inputMinTime );
-  m_inputMinTime->changed().connect( boost::bind(&SearchMode3DChart::updateRange, this) );
-  m_layout->addWidget( m_inputMinTime, 3, 1 );
+  m_inputMinTime->valueChanged().connect( boost::bind(&SearchMode3DChart::updateRange, this) );
     
   //Creates a editable textbox that allows users to input the maximum energy they are interested in
-  //m_inputMaxEnergy = new Wt::WDoubleSpinBox( container );
-  label = new WLabel( "Max Time" );
-  m_layout->addWidget( label, 3, 2 );
-  m_inputMaxTime = new WDoubleSpinBox();
-  m_inputMaxTime->setWidth( WLength(10,WLength::FontEx) );
+  label = new WLabel( WString::tr("sm3dc-max-time"), controlsDiv );
+  label->addStyleClass( "GridSecondRow GridThirdCol" );
+  m_inputMaxTime = new NativeFloatSpinBox( controlsDiv );
+  m_inputMaxTime->addStyleClass( "GridSecondRow GridFourthCol" );
+  m_inputMaxTime->setSpinnerHidden( true );
   label->setBuddy( m_inputMaxTime );
-  m_inputMaxTime->changed().connect( boost::bind(&SearchMode3DChart::updateRange, this) );
-  m_layout->addWidget( m_inputMaxTime, 3, 3 );
+  m_inputMaxTime->valueChanged().connect( boost::bind(&SearchMode3DChart::updateRange, this) );
   
-  //If this chart window is opened, and the user changes the spectrum, lets
-  //  update the chart.
-  //TODO: if the user changes the displayed sample numbers, or the background
-  //      or secondary spectrum, the updateDisplay() function will be called as
-  //      well.
-  m_viewer->displayedSpectrumChanged().connect( this, &SearchMode3DChart::newSpectralDataSet );
+  
+  WText *spacer = new WText( "&nbsp;", controlsDiv );
+  spacer->addStyleClass( "GridFirstRow GridFifthCol" );
+  
+  label = new WLabel( WString::tr("sm3dc-time-bins"), controlsDiv );
+  label->addStyleClass( "GridFirstRow GridSixthCol" );
+  m_timeDivisions = new WSpinBox( controlsDiv );
+  m_timeDivisions->addStyleClass( "GridFirstRow GridSeventhCol" );
+  m_timeDivisions->setValue( 60 );
+  m_timeDivisions->setRange( sm_minTimeOrEnergyDivs, sm_maxTimeDivs );
+  label->setBuddy( m_timeDivisions );
+  m_timeDivisions->changed().connect( this, &SearchMode3DChart::handleNumTimeDivsChanged );
+  m_timeDivisions->enterPressed().connect( this, &SearchMode3DChart::handleNumTimeDivsChanged );
+  
+  HelpSystem::attachToolTipOn( {label,m_timeDivisions}, WString::tr("sm3dc-tt-time-bins"),
+                              showToolTips, HelpSystem::ToolTipPosition::Left );
+  
+  label = new WLabel( WString::tr("sm3dc-energy-bins"), controlsDiv );
+  label->addStyleClass( "GridSecondRow GridSixthCol" );
+  m_energyDivisions = new WSpinBox( controlsDiv );
+  m_energyDivisions->addStyleClass( "GridSecondRow GridSeventhCol" );
+  m_energyDivisions->setValue( 128 );
+  m_energyDivisions->setRange( sm_minTimeOrEnergyDivs, sm_maxEnergyDivs );
+  label->setBuddy( m_energyDivisions );
+  m_energyDivisions->changed().connect( this, &SearchMode3DChart::handleNumEnergyDivsChanged );
+  m_energyDivisions->enterPressed().connect( this, &SearchMode3DChart::handleNumEnergyDivsChanged );
+  
+  HelpSystem::attachToolTipOn( {label,m_energyDivisions}, WString::tr("sm3dc-tt-energy-bins"),
+                              showToolTips, HelpSystem::ToolTipPosition::Left );
+  
+  m_viewer->displayedSpectrumChanged().connect(
+            boost::bind( &SearchMode3DChart::newSpectralDataSet, this,
+                         boost::placeholders::_1, boost::placeholders::_2,
+                         boost::placeholders::_3, boost::placeholders::_4 )
+  );
+  
+  // Disable any form widgets getting focus
+  m_inputMinEnergy->setFocus(true);
+  m_inputMinEnergy->setFocus(false);
   
   //If you do anything that involves the detector resolution, you might want
   //  to un-comment out the following line.
@@ -184,15 +229,20 @@ void SearchMode3DChart::initChart()
   assert( !m_model );
   assert( !m_chart );
   
+  if( m_loadingTxt )
+  {
+    delete m_loadingTxt;
+    m_loadingTxt = nullptr;
+  }
+  
+  setBinningLimits();
+  
   m_model = new SearchMode3DDataModel( this );
-  m_model->setMaxNumTimeSamples( 60 );
-  m_model->setMaxNumEnergyChannels( 128 );
+  m_model->setMaxNumTimeSamples( m_timeDivisions->value() );
+  m_model->setMaxNumEnergyChannels( m_energyDivisions->value() );
   
   m_chart = new Chart::WCartesian3DChart();
-  m_layout->addWidget( m_chart, 0, 0, 1, 5 );
-  m_layout->setRowStretch( 0, 1 );
-  m_layout->setColumnStretch( 4, 1 );
-  
+  m_layout->addWidget( m_chart, 0, 0 );
   m_chart->setType( Chart::ScatterPlot );
   
   m_chart->decorationStyle().setBorder( WBorder(WBorder::Solid, WBorder::Thin, Wt::black) );
@@ -210,14 +260,14 @@ void SearchMode3DChart::initChart()
   //m_chart->setTitle("3D Data View");
   
   //Creates X axis
-  m_chart->axis(Chart::XAxis_3D).setTitle( "Time (seconds)" );
+  m_chart->axis(Chart::XAxis_3D).setTitle( WString::tr("sm3dc-time-axis-label") );
   m_chart->axis(Chart::XAxis_3D).setTitleOffset( 10 );
   m_chart->axis(Chart::XAxis_3D).setLabelFormat( "%1.1f" );
   m_chart->axis(Chart::XAxis_3D).setLabelBasePoint( 0 );
   m_chart->axis(Chart::XAxis_3D).setLabelAngle( 90 );
   
   //Creates Y axis
-  m_chart->axis(Chart::YAxis_3D).setTitle( "Energy (keV)" );
+  m_chart->axis(Chart::YAxis_3D).setTitle( WString::tr("Energy (keV)") );
   m_chart->axis(Chart::YAxis_3D).setTitleOffset( 10 );
   m_chart->axis(Chart::YAxis_3D).setLabelFormat( "%.1f" );
   m_chart->axis(Chart::YAxis_3D).setLabelBasePoint( 0 );
@@ -225,7 +275,7 @@ void SearchMode3DChart::initChart()
   m_chart->axis(Chart::YAxis_3D).setLabelAngle( 90 );
   
   //Creates Z axis
-  m_chart->axis(Chart::ZAxis_3D).setTitle( "Counts" );
+  m_chart->axis(Chart::ZAxis_3D).setTitle( WString::tr("Counts") );
   //m_chart->axis(Chart::ZAxis_3D).setTitle( "Counts per Channels" );
   m_chart->axis(Chart::ZAxis_3D).setTitleOffset( 20 );
   m_chart->axis(Chart::ZAxis_3D).setLabelFormat( "%.1f" );
@@ -241,7 +291,7 @@ void SearchMode3DChart::initChart()
   m_chart->setGridEnabled(Chart::YZ_Plane, Chart::ZAxis_3D, true);
   
   m_data = new Chart::WGridData( m_model );
-  m_data->setTitle( "Counts per Channel" );
+  m_data->setTitle( WString::tr("sm3dc-counts-axis-label") );
   m_data->setType( Wt::Chart::SurfaceSeries3D );
   
   m_data->setSurfaceMeshEnabled( true );
@@ -267,7 +317,8 @@ void SearchMode3DChart::setLogZ( const bool log )
   //The client side data doesnt actually become log (but the axises do)... cant
   //  figure out how to force it.
   //m_model->dataChanged().emit( m_model->index(0, 0), m_model->index(m_model->rowCount()-1, m_model->columnCount()-1) );
-  newSpectralDataSet();
+  newSpectralDataSet( SpecUtils::SpectrumType::Foreground, nullptr, {}, {} );
+  
   m_model->modelReset().emit();
 }//void setLogZ( const bool log )
 
@@ -330,19 +381,86 @@ void SearchMode3DChart::setEnergyLimits()
 }//void setEnergyLimits()
 
 
-void SearchMode3DChart::newSpectralDataSet()
+void SearchMode3DChart::setBinningLimits()
 {
-  if( !m_chart )
+  auto meas = m_viewer->measurment(SpecUtils::SpectrumType::Foreground);
+  if( !meas )
     return;
   
-  //Note that if the user changes the displayed sample
-  //  numbers, or the background/secondary spectrum, the updateDisplay()
+  const int prevTimeDivs = std::min( std::max(m_timeDivisions->value(),sm_minTimeOrEnergyDivs), sm_maxTimeDivs );
+  const int prevEnergyDivs = std::min( std::max(m_energyDivisions->value(),sm_minTimeOrEnergyDivs), sm_maxEnergyDivs );
+  
+  const int num_samples = static_cast<int>( meas->sample_numbers().size() );
+  const int num_channels = static_cast<int>( meas->num_gamma_channels() );
+  if( (num_samples > sm_minTimeOrEnergyDivs) && (num_channels > sm_minTimeOrEnergyDivs) )
+  {
+    m_timeDivisions->setRange( sm_minTimeOrEnergyDivs, std::min(num_samples,sm_maxTimeDivs) );
+    m_energyDivisions->setRange( sm_minTimeOrEnergyDivs, std::min(num_channels,sm_maxEnergyDivs) );
+    
+    m_timeDivisions->setSingleStep( (m_timeDivisions->maximum() - m_timeDivisions->minimum())/5 );
+    m_energyDivisions->setSingleStep( (m_energyDivisions->maximum() - m_energyDivisions->minimum())/5 );
+    
+    if( prevTimeDivs > m_timeDivisions->maximum() )
+    {
+      m_timeDivisions->setValue( m_timeDivisions->maximum() );
+      m_model->setMaxNumTimeSamples( m_timeDivisions->value() );
+    }
+    
+    if( prevEnergyDivs > m_energyDivisions->maximum() )
+    {
+      m_energyDivisions->setValue( m_energyDivisions->maximum() );
+      m_model->setMaxNumEnergyChannels( m_energyDivisions->value() );
+    }
+  }//if( we have non-zero
+}//void setBinningLimits();
+
+
+void SearchMode3DChart::newSpectralDataSet( const SpecUtils::SpectrumType type,
+                                           const std::shared_ptr<SpecMeas> &meas,
+                                           const std::set<int> &sample_numbers,
+                                           const std::vector<std::string> &detectors )
+{
+  if( !m_chart || (type != SpecUtils::SpectrumType::Foreground) )
+    return;
+  
+  //Note that if the user changes the displayed sample numbers the updateDisplay()
   //  function will be called as well, so we could implement a check to see if
   //  things actually need to be re-rendered, but whatever for now.
     
+  setBinningLimits();
   updateDisplay();
   updateRange();
 }//void newSpectralDataSet()
+
+
+void SearchMode3DChart::handleNumTimeDivsChanged()
+{
+  int timeDivs = std::min( std::max(m_timeDivisions->value(),sm_minTimeOrEnergyDivs), sm_maxTimeDivs );
+  timeDivs = std::min( timeDivs, m_timeDivisions->maximum() );
+  
+  // If user entered a value outside of valid range, put it back in range
+  if( timeDivs != m_timeDivisions->value() )
+    m_timeDivisions->setValue( timeDivs );
+  
+  m_model->setMaxNumTimeSamples( timeDivs );
+  updateDisplay();
+  updateRange();
+}//void handleNumTimeDivsChanged()
+
+
+void SearchMode3DChart::handleNumEnergyDivsChanged()
+{
+  int energyDivs = std::min( std::max(m_energyDivisions->value(),sm_minTimeOrEnergyDivs), sm_maxEnergyDivs );
+  energyDivs = std::min( energyDivs, m_energyDivisions->maximum() );
+  
+  // If user entered a value outside of valid range, put it back in range
+  if( energyDivs != m_energyDivisions->value() )
+    m_energyDivisions->setValue( energyDivs );
+  
+  m_model->setMaxNumEnergyChannels( energyDivs );
+  updateDisplay();
+  updateRange();
+}//void handleNumEnergyDivsChanged()
 
 
 void SearchMode3DChart::updateRange()

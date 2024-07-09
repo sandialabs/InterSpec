@@ -435,3 +435,44 @@ a.DownloadLink.RelActDownload > span
   padding-left: 0px;
   margin-left: 0px;
 }
+
+.SetToPeaksDialog
+{
+  
+}
+
+.SetToPeaksDialog .AddOrReplaceSwitchRow
+{
+  display: flex;
+  justify-content: center;
+  margin-bottom: 10px;
+}
+
+.SetToPeaksDialog .AddOrReplaceRefitRow
+{
+  display: flex;
+  justify-content: right;
+  padding-right: 10px;
+  margin-bottom: 10px;
+}
+
+.SetToPeaksDialog .AddOrReplaceRefitRow label
+{
+  /* Make the  checkbox and label line up in the center. */
+  display: flex;
+  justify-content: center;
+}
+
+.RelActAutoGui .RelActCalcAutoAlphaBuildWarning
+{
+  display: block;
+  
+  color: navy;
+  font-weight: bold;
+  text-align: center;
+
+  padding: 2px;
+  margin: 1px;
+  border: 1px solid grey;
+  background: yellow;
+}

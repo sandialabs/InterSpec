@@ -59,6 +59,7 @@
 #include "SpecUtils/SpecFile.h"
 #include "SpecUtils/Filesystem.h"
 #include "SpecUtils/StringAlgo.h"
+#include "SpecUtils/UriSpectrum.h"
 #include "SpecUtils/D3SpectrumExport.h"
 
 #include "InterSpec/PeakDef.h"
@@ -73,6 +74,7 @@
 #include "InterSpec/SpecMeasManager.h"
 #include "InterSpec/UndoRedoManager.h"
 #include "InterSpec/SpectraFileModel.h"
+#include "InterSpec/PhysicalUnitsLocalized.h"
 
 #if( USE_QR_CODES )
 #include "InterSpec/QrCode.h"
@@ -114,7 +116,7 @@ const std::vector<std::pair<SpecUtils::SaveSpectrumAsType,std::string>> sm_file_
   { SpecUtils::SaveSpectrumAsType::HtmlD3, "HTML" },
 #endif
 #if( USE_QR_CODES )
-  { SpecUtils::SaveSpectrumAsType::NumTypes, "QR-code" },
+  { SpecUtils::SaveSpectrumAsType::Uri, "QR-code" },
 #endif
 };//sm_file_type_to_uri_name
 }//namespace
@@ -143,7 +145,7 @@ std::string clean_uuid( string uuid )
 }//std::string clean_uuid( string uuid )
 
 
-  void displayQrDialog( const vector<QRSpectrum::UrlEncodedSpec> urls,
+  void displayQrDialog( const vector<QRSpectrum::QrCodeEncodedSpec> urls,
                        const size_t index,
                        boost::function<void()> successfullyDone,
                        const bool as_emailto,
@@ -166,7 +168,8 @@ std::string clean_uuid( string uuid )
     }//if( urls.size() == 1 )
     
     
-    SimpleDialog *dialog = QrCode::displayTxtAsQrCode( urls[index].m_url, title, desc );
+    SimpleDialog *dialog = QrCode::displayTxtAsQrCode( urls[index].m_url, WString::fromUTF8(title),
+                                                      WString::fromUTF8(desc) );
     
     if( (index + 1) < urls.size() )
     {
@@ -203,10 +206,10 @@ std::string clean_uuid( string uuid )
       dialog->footer()->insertWidget( 0, btn );
       btn->clicked().connect( std::bind(toogleEmailVsUri) );
     }//if( toogleEmailVsUri )
-  }//void displayQr( vector<QRSpectrum::UrlEncodedSpec> urls )
+  }//void displayQr( vector<QRSpectrum::QrCodeEncodedSpec> urls )
 
 
-void displayQrCode( const vector<QRSpectrum::UrlSpectrum> urlspec,
+void displayQrCode( const vector<SpecUtils::UrlSpectrum> urlspec,
                    shared_ptr<const SpecMeas> spec,
                    boost::function<void()> successfullyDone,
                    const bool as_emailto )
@@ -215,10 +218,10 @@ void displayQrCode( const vector<QRSpectrum::UrlSpectrum> urlspec,
   {
     uint8_t encode_options = 0;
     if( as_emailto )
-      encode_options = QRSpectrum::EncodeOptions::UseUrlSafeBase64
-                        | QRSpectrum::EncodeOptions::AsMailToUri;
+      encode_options = SpecUtils::EncodeOptions::UseUrlSafeBase64
+                        | SpecUtils::EncodeOptions::AsMailToUri;
     
-    vector<QRSpectrum::UrlEncodedSpec> urls;
+    vector<QRSpectrum::QrCodeEncodedSpec> urls;
     QRSpectrum::QrErrorCorrection ecc = QRSpectrum::QrErrorCorrection::High;
     
     auto do_encode = [&](){
@@ -228,7 +231,7 @@ void displayQrCode( const vector<QRSpectrum::UrlSpectrum> urlspec,
       {
         try
         {
-          urls = QRSpectrum::url_encode_spectra( urlspec, ecc, encode_options );
+          urls = QRSpectrum::qr_code_encode_spectra( urlspec, ecc, encode_options );
         }catch( std::exception & )
         {
         }//try / catch
@@ -239,7 +242,7 @@ void displayQrCode( const vector<QRSpectrum::UrlSpectrum> urlspec,
         try
         {
           ecc = QRSpectrum::QrErrorCorrection::Medium;
-          urls = QRSpectrum::url_encode_spectra( urlspec, ecc, encode_options );
+          urls = QRSpectrum::qr_code_encode_spectra( urlspec, ecc, encode_options );
         }catch( std::exception & )
         {
         }//try / catch
@@ -250,7 +253,7 @@ void displayQrCode( const vector<QRSpectrum::UrlSpectrum> urlspec,
         try
         {
           ecc = QRSpectrum::QrErrorCorrection::Low;
-          urls = QRSpectrum::url_encode_spectra( urlspec, ecc, encode_options );
+          urls = QRSpectrum::qr_code_encode_spectra( urlspec, ecc, encode_options );
         }catch( std::exception & )
         {
         }//try / catch
@@ -261,9 +264,12 @@ void displayQrCode( const vector<QRSpectrum::UrlSpectrum> urlspec,
     
     if( urls.empty() )
     {
+      string msg = (urlspec.size() == 1) ? "<p>Likely due to requiring more than 9 QR codes<p>"
+                                         : "<p>Likely due to not being able to fit multiple spectra"
+                                           " into a single QR code.</p>";
+      
       auto dialog = new SimpleDialog( "Error",
-                                     "Spectrum could not be encoded to a QR code.<br />"
-                                     "Likely due to requiring more than 9 QR codes." );
+                                     "<p>Spectrum could not be encoded to a QR code.</p>" + msg );
       dialog->addButton( "Ok" );
       return;
     }//if( urls.empty() )
@@ -279,7 +285,7 @@ void displayQrCode( const vector<QRSpectrum::UrlSpectrum> urlspec,
     auto dialog = new SimpleDialog( "Error", "Failed to display spectrum as a QR code: " + string(e.what()) );
     dialog->addButton( "Ok" );
   }//try catch
-}//void displayQrCode( const vector<QRSpectrum::UrlSpectrum> urlspec, const bool as_emailto )
+}//void displayQrCode( const vector<SpecUtils::UrlSpectrum> urlspec, const bool as_emailto )
 }//namespace
 #endif //USE_QR_CODES
 
@@ -411,6 +417,11 @@ namespace ExportSpecFileTool_imp
           response.setMimeType( "text/html" );
         break;
     #endif //#if( USE_D3_EXPORTING )
+          
+#if( USE_QR_CODES )
+        case SpecUtils::SaveSpectrumAsType::Uri:
+        break;
+#endif
           
         case SpecUtils::SaveSpectrumAsType::NumTypes:
         break;
@@ -602,6 +613,12 @@ namespace ExportSpecFileTool_imp
         break;
   #endif //#if( USE_D3_EXPORTING )
         
+#if( USE_QR_CODES )
+      case SpecUtils::SaveSpectrumAsType::Uri:
+        assert( 0 );
+        measurement->write_uri( output, 1, 0x0 );
+      break;
+#endif
       case SpecUtils::SaveSpectrumAsType::NumTypes:
         break;
     }//switch( type )
@@ -639,6 +656,7 @@ ExportSpecFileTool::ExportSpecFileTool( InterSpec *viewer, Wt::WContainerWidget 
   m_sumSecoToSingleRecord( nullptr ),
   m_backSubFore( nullptr ),
   m_sumDetsPerSample( nullptr ),
+  m_sumSamplesPerDets( nullptr ),
   m_excludeInterSpecInfo( nullptr ),
   m_excludeGpsInfo( nullptr ),
   m_msg( nullptr ),
@@ -688,6 +706,7 @@ ExportSpecFileTool::ExportSpecFileTool( const std::shared_ptr<const SpecMeas> &s
   m_sumSecoToSingleRecord( nullptr ),
   m_backSubFore( nullptr ),
   m_sumDetsPerSample( nullptr ),
+  m_sumSamplesPerDets( nullptr ),
   m_excludeInterSpecInfo( nullptr ),
   m_excludeGpsInfo( nullptr ),
   m_msg( nullptr ),
@@ -808,7 +827,7 @@ void ExportSpecFileTool::init()
         
         HelpSystem::attachToolTipOn( img, description, true,
                                     HelpSystem::ToolTipPosition::Right,
-                                    HelpSystem::ToolTipPrefOverride::AlwaysShow );
+                                    HelpSystem::ToolTipPrefOverride::InstantAlways );
       }//if( we have the description of the file )
     }//if( !isMobile )
   };//addFormatItem lambda
@@ -832,7 +851,7 @@ void ExportSpecFileTool::init()
   addFormatItem( "HTML", SpecUtils::SaveSpectrumAsType::HtmlD3 );
 #endif
 #if( USE_QR_CODES )
-  addFormatItem( "QR-code/URL", SpecUtils::SaveSpectrumAsType::NumTypes );
+  addFormatItem( "QR-code/URL", SpecUtils::SaveSpectrumAsType::Uri );
 #endif
   
   // Meas/samples to include
@@ -906,14 +925,31 @@ void ExportSpecFileTool::init()
   
   
   m_sumAllToSingleRecord = new WCheckBox( "Sum to single record", m_optionsHolder );
+  tooltip = "All selected samples and/or detectors will be summed together into a single spectrum.<br />"
+            "Caution: if you have both foreground and background selected, they will be summed together.";
+  HelpSystem::attachToolTipOn( m_sumAllToSingleRecord, tooltip, true,
+                              HelpSystem::ToolTipPosition::Right,
+                              HelpSystem::ToolTipPrefOverride::AlwaysShow );
   m_sumAllToSingleRecord->checked().connect( this, &ExportSpecFileTool::handleSumToSingleRecordChanged );
   m_sumAllToSingleRecord->unChecked().connect( this, &ExportSpecFileTool::handleSumToSingleRecordChanged );
   
   m_sumForeToSingleRecord = new WCheckBox( "Sum Fore to single record", m_optionsHolder );
+  tooltip = "There are either multiple sample numbers, or multiple detectors that comprise the"
+            " displayed foreground; checking this option will sum all these to a single spectrum"
+            " in the output file.";
+  HelpSystem::attachToolTipOn( m_sumForeToSingleRecord, tooltip, true,
+                              HelpSystem::ToolTipPosition::Right,
+                              HelpSystem::ToolTipPrefOverride::AlwaysShow );
   m_sumForeToSingleRecord->checked().connect( this, &ExportSpecFileTool::handleSumTypeToSingleRecordChanged );
   m_sumForeToSingleRecord->unChecked().connect( this, &ExportSpecFileTool::handleSumTypeToSingleRecordChanged );
   
   m_sumBackToSingleRecord = new WCheckBox( "Sum Back to single record", m_optionsHolder );
+  tooltip = "There are either multiple sample numbers, or multiple detectors that comprise the"
+            " displayed background; checking this option will sum all these to a single spectrum"
+            " in the output file.";
+  HelpSystem::attachToolTipOn( m_sumForeToSingleRecord, tooltip, true,
+                              HelpSystem::ToolTipPosition::Right,
+                              HelpSystem::ToolTipPrefOverride::AlwaysShow );
   m_sumBackToSingleRecord->checked().connect( this, &ExportSpecFileTool::handleSumTypeToSingleRecordChanged );
   m_sumBackToSingleRecord->unChecked().connect( this, &ExportSpecFileTool::handleSumTypeToSingleRecordChanged );
   
@@ -922,16 +958,43 @@ void ExportSpecFileTool::init()
   m_sumSecoToSingleRecord->unChecked().connect( this, &ExportSpecFileTool::handleSumTypeToSingleRecordChanged );
   
   m_backSubFore = new WCheckBox( "Background subtract", m_optionsHolder );
+  tooltip = "The output spectrum will be the foreground, minus the background.";
+  HelpSystem::attachToolTipOn( m_backSubFore, tooltip, true,
+                              HelpSystem::ToolTipPosition::Right,
+                              HelpSystem::ToolTipPrefOverride::AlwaysShow );
   m_backSubFore->checked().connect( this, &ExportSpecFileTool::handleBackSubForeChanged );
   m_backSubFore->unChecked().connect( this, &ExportSpecFileTool::handleBackSubForeChanged );
   
-  m_sumDetsPerSample = new WCheckBox( "Sum Det. per sample", m_optionsHolder );
+  m_sumDetsPerSample = new WCheckBox( "Sum det. per sample", m_optionsHolder );
+  tooltip = "For each sample number, sum all detectors for that sample number together.<br />"
+            "E.g., if you have 8 detectors in your spectrum file, each with 120 samples"
+            " then the results will have 120 spectra, each of which is the sum of the"
+            " 8 detectors of the respective samples.";
+  HelpSystem::attachToolTipOn( m_sumDetsPerSample, tooltip, true,
+                              HelpSystem::ToolTipPosition::Right,
+                              HelpSystem::ToolTipPrefOverride::AlwaysShow );
   m_sumDetsPerSample->checked().connect( this, &ExportSpecFileTool::handleSumDetPerSampleChanged );
   m_sumDetsPerSample->unChecked().connect( this, &ExportSpecFileTool::handleSumDetPerSampleChanged );
   
+  
+  m_sumSamplesPerDets = new WCheckBox( "Sum samples per det.", m_optionsHolder );
+  tooltip = "For each detector, sums all sample numbers together.<br />"
+            "E.g., if you have 8 detectors in your spectrum file, each with 120 samples"
+            " then the results will have 8 spectra, each of which is the sum of the"
+            " 120 samples of their respective detectors.";
+  HelpSystem::attachToolTipOn( m_sumSamplesPerDets, tooltip, true,
+                              HelpSystem::ToolTipPosition::Right,
+                              HelpSystem::ToolTipPrefOverride::AlwaysShow );
+  m_sumSamplesPerDets->checked().connect( this, &ExportSpecFileTool::handleSumSamplesPerDetChanged );
+  m_sumSamplesPerDets->unChecked().connect( this, &ExportSpecFileTool::handleSumSamplesPerDetChanged );
+  
+  
   m_excludeInterSpecInfo = new WCheckBox( "Remove InterSpec info", m_optionsHolder );
-  m_excludeInterSpecInfo->setToolTip( "Removes detector response, peaks, and other analysis"
-                                      " results you may have added in InterSpec." );
+  tooltip = "Removes detector response, peaks, and other analysis"
+            " results you may have added in InterSpec.";
+  HelpSystem::attachToolTipOn( m_excludeInterSpecInfo, tooltip, true,
+                              HelpSystem::ToolTipPosition::Right,
+                              HelpSystem::ToolTipPrefOverride::AlwaysShow );
   m_excludeInterSpecInfo->checked().connect( this, &ExportSpecFileTool::handleIncludeInterSpecInfoChanged );
   m_excludeInterSpecInfo->unChecked().connect( this, &ExportSpecFileTool::handleIncludeInterSpecInfoChanged );
   
@@ -1190,19 +1253,19 @@ void ExportSpecFileTool::updateInfoAboutSelectedFile()
   if( meas->has_gps_info() )
   {
     tabletxt << "<tr><th>Latitude</th><td><div>"
-             << PhysicalUnits::printCompact( meas->mean_latitude(), 7 ) << "</div></td></tr>\n";
+             << SpecUtils::printCompact( meas->mean_latitude(), 7 ) << "</div></td></tr>\n";
     tabletxt << "<tr><th>Longitude</th><td><div>"
-             << PhysicalUnits::printCompact( meas->mean_longitude(), 7 ) << "</div></td></tr>\n";
+             << SpecUtils::printCompact( meas->mean_longitude(), 7 ) << "</div></td></tr>\n";
   }//if( meas->has_gps_info() )
   
-  const string total_time = PhysicalUnits::printToBestTimeUnits( meas->gamma_real_time() );
+  const string total_time = PhysicalUnitsLocalized::printToBestTimeUnits( meas->gamma_real_time() );
   tabletxt << "<tr><th>Total Time</th><td><div>" << total_time << "</div></td></tr>\n";
   
   tabletxt << "<tr><th>Sum Gamma</th><td><div>"
-           << PhysicalUnits::printCompact( meas->gamma_count_sum(), 5) << "</div></td></tr>\n";
+           << SpecUtils::printCompact( meas->gamma_count_sum(), 5) << "</div></td></tr>\n";
   if( meas->contained_neutron() )
     tabletxt << "<tr><th>Sum Neut.</th><td><div>"
-             << PhysicalUnits::printCompact( meas->neutron_counts_sum(), 5) << "</div></td></tr>\n";
+             << SpecUtils::printCompact( meas->neutron_counts_sum(), 5) << "</div></td></tr>\n";
   
   //const string &instrument_type = meas->instrument_type();
   const string &manufacturer = meas->manufacturer();
@@ -1612,11 +1675,7 @@ SpecUtils::SaveSpectrumAsType ExportSpecFileTool::currentSaveType() const
   if( currentFormatItem )
   {
     const uint64_t data = reinterpret_cast<uint64_t>( currentFormatItem->data() );
-#if( USE_QR_CODES )
-    assert( data <= static_cast<int>(SpecUtils::SaveSpectrumAsType::NumTypes) );
-#else
     assert( data < static_cast<int>(SpecUtils::SaveSpectrumAsType::NumTypes) );
-#endif
     return SpecUtils::SaveSpectrumAsType( data );
   }//if( currentFormatItem )
   
@@ -1639,10 +1698,10 @@ uint16_t ExportSpecFileTool::maxRecordsInCurrentSaveType( shared_ptr<const SpecM
     case SpecUtils::SaveSpectrumAsType::ExploraniumGr130v0:
     case SpecUtils::SaveSpectrumAsType::ExploraniumGr135v2:
       return std::numeric_limits<uint16_t>::max();
-    
+      
 #if( USE_QR_CODES )
     // Spectrum file types that can have two spectra in them (foreground + background)
-    case SpecUtils::SaveSpectrumAsType::NumTypes:
+    case SpecUtils::SaveSpectrumAsType::Uri:
       if( !spec )
         spec = currentlySelectedFile();
       return (spec && (spec->num_gamma_channels() < 2075)) ? 2 : 1;
@@ -1668,6 +1727,10 @@ uint16_t ExportSpecFileTool::maxRecordsInCurrentSaveType( shared_ptr<const SpecM
       assert( 0 );
       break;
 #endif
+    
+    case SpecUtils::SaveSpectrumAsType::NumTypes:
+      assert( 0 );
+      break;
   }//switch( save_format )
   
   assert( 0 );
@@ -1752,7 +1815,7 @@ void ExportSpecFileTool::refreshSampleAndDetectorOptions()
       cb->unChecked().connect( this, &ExportSpecFileTool::handleDetectorsToFilterChanged );
     }//
     
-    if( (max_records <= 1) || (max_records == 2) )
+    if( (max_records <= 1) || (max_records == 2) || !spec )
     {
       m_sumAllToSingleRecord->hide();
       m_sumForeToSingleRecord->hide();
@@ -1761,9 +1824,57 @@ void ExportSpecFileTool::refreshSampleAndDetectorOptions()
     }else
     {
       m_sumAllToSingleRecord->show();
-      m_sumForeToSingleRecord->setHidden( !(m_dispForeSamples->isVisible() && m_dispForeSamples->isChecked()) );
-      m_sumBackToSingleRecord->setHidden( !(m_dispBackSamples->isVisible() && m_dispBackSamples->isChecked()) );
-      m_sumSecoToSingleRecord->setHidden( !(m_dispSecondSamples->isVisible() && m_dispSecondSamples->isChecked()) );
+      
+      const bool forePlusBack = (m_forePlusBack && m_forePlusBack->isVisible() && m_forePlusBack->isChecked());
+      const bool useDispForeSamples = (m_dispForeSamples->isVisible() && m_dispForeSamples->isChecked());
+      const bool useDispBackSamples = (m_dispBackSamples->isVisible() && m_dispBackSamples->isChecked());
+      const bool useDispSecondSamples = (m_dispSecondSamples->isVisible() && m_dispSecondSamples->isChecked());
+      
+      size_t numForeRecords = 0, numBackRecords = 0, numSecRecords = 0;
+      if( forePlusBack )
+      {
+        for( const auto &m : spec->measurements() )
+        {
+          switch( m->source_type() )
+          {
+            case SpecUtils::SourceType::IntrinsicActivity: assert( 0 );       break;
+            case SpecUtils::SourceType::Calibration:       assert( 0 );       break;
+            case SpecUtils::SourceType::Foreground:        ++numForeRecords;  break;
+            case SpecUtils::SourceType::Background:        ++numBackRecords;  break;
+            case SpecUtils::SourceType::Unknown:           ++numSecRecords;   break;
+          }//switch( meass[i]->source_type() )
+        }//for( size_t i = 0; (!hasBackground || !hasSecondary) && (i < meass.size()); ++i )
+      }else //if( forePlusBack )
+      {
+        using SpecUtils::SpectrumType;
+        for( auto t : {SpectrumType::Foreground, SpectrumType::Background,
+                        SpectrumType::SecondForeground} )
+        {
+          size_t nrecords = 0;
+          const vector<string> dets = m_interspec->detectorsToDisplay(t);
+          const set<int> &samples = m_interspec->displayedSamples(t);
+          for( const int sample : samples )
+          {
+            for( const string &det : dets )
+              nrecords += spec->measurement(sample, det) ? 1 : 0;
+          }//for( const int sample : samples )
+          
+          switch ( t )
+          {
+            case SpectrumType::Foreground:       numForeRecords = nrecords; break;
+            case SpectrumType::SecondForeground: numSecRecords  = nrecords; break;
+            case SpectrumType::Background:       numBackRecords = nrecords; break;
+          }
+        }//for( auto t : {SpectrumType::Foreground, SpectrumType::Background, SpectrumType::SecondForeground} )
+      }//if( forePlusBack ) / else
+      
+      const bool showForeToSingle = ((useDispForeSamples || forePlusBack) && (numForeRecords > 1));
+      const bool showBackToSingle = ((useDispBackSamples || forePlusBack) && (numBackRecords > 1));
+      const bool showSecondToSingle = ((useDispSecondSamples || forePlusBack) && (numSecRecords > 1));
+      
+      m_sumForeToSingleRecord->setHidden( !showForeToSingle );
+      m_sumBackToSingleRecord->setHidden( !showBackToSingle );
+      m_sumSecoToSingleRecord->setHidden( !showSecondToSingle );
     }
   }//if( spec->gamma_detector_names().size() <= 1 ) / else
   
@@ -1799,6 +1910,17 @@ void ExportSpecFileTool::refreshSampleAndDetectorOptions()
     m_sumDetsPerSample->show();
   }
   
+  if( !spec || (max_records <= 2)
+     || (spec->sample_numbers().size() <= 1)
+     || (spec->gamma_detector_names().size() <= 1) )
+  {
+    m_sumSamplesPerDets->hide();
+  }else
+  {
+    m_sumSamplesPerDets->show();
+  }
+  
+  
   m_excludeGpsInfo->setHidden( !spec || !spec->has_gps_info() );
   
   if( !spec || (spec->sample_numbers().size() <= 1) )
@@ -1820,7 +1942,7 @@ void ExportSpecFileTool::refreshSampleAndDetectorOptions()
     
     m_backSubFore->hide();
     m_sumDetsPerSample->hide();
-    m_excludeInterSpecInfo->hide();
+    m_sumSamplesPerDets->hide();
     
     m_sampleSelectNotAppTxt->show();
     m_optionsNotAppTxt->setHidden( m_excludeGpsInfo->isVisible()
@@ -1923,14 +2045,29 @@ void ExportSpecFileTool::refreshSampleAndDetectorOptions()
     size_t num_dets = 0;
     for( const string &det : detsToUse )
       num_dets += !!spec->measurement( sample, det );
-    mult_dets_per_sample = ( num_dets > 1 );
+    mult_dets_per_sample = (num_dets > 1);
     if( mult_dets_per_sample )
       break;
   }//for( const int sample : samplesToUse )
   
+  // Loop over detectors, and see if there is more than one sample number for any detecotr,
+  //  and use this info to show/hide m_sumSamplesPerDets
+  bool mult_sample_per_dets = false;
+  for( const string &det : detsToUse )
+  {
+    size_t num_samples = 0;
+    for( const int sample : samplesToUse )
+      num_samples += !!spec->measurement( sample, det );
+      
+    mult_sample_per_dets = (num_samples > 1);
+    if( mult_sample_per_dets )
+      break;
+  }//for( const string &det : detsToUse )
+  
   m_sumDetsPerSample->setHidden( (max_records <= 2) || !mult_dets_per_sample );
-  if( !mult_dets_per_sample )
-    m_filterDetector->hide();
+  m_sumSamplesPerDets->setHidden( (max_records <= 2) || !mult_sample_per_dets );
+  m_filterDetector->setHidden( !mult_dets_per_sample );
+  m_detectorFilterCbs->setHidden( !mult_dets_per_sample || !m_filterDetector->isChecked() );
   
   size_t num_sample_showing = 0, num_option_showing = 0;
   for( const auto w : m_samplesHolder->children() )
@@ -1953,9 +2090,23 @@ void ExportSpecFileTool::refreshSampleAndDetectorOptions()
   if( (max_records < 2)
      && ( (spec->gamma_detector_names().size() > 1) || (samplesToUse.size() > 1 ) ) )
   {
-    m_msg->setText( "Records will be summed together." );
+    if( m_backSubFore->isVisible() && m_backSubFore->isEnabled() && m_backSubFore->isChecked()
+       && (use_fore_disp != use_seco_disp) )
+    {
+      m_msg->setText( "A single spectrum will be produced." );
+    }else
+    {
+      m_msg->setText( "Records will be summed together." );
+    }
   }else if( max_records == 2 )
   {
+    size_t num_records = 0;
+    for( const int sample : samplesToUse )
+    {
+      for( const string &det : detsToUse )
+        num_records += ( spec->measurement(sample, det) ? 1 : 0);
+    }//for( const int samples : samplesToUse )
+    
     // QR code here
     if( use_fore_disp && use_seco_disp && use_back_disp )
     {
@@ -1964,7 +2115,11 @@ void ExportSpecFileTool::refreshSampleAndDetectorOptions()
        && (!m_sumAllToSingleRecord->isVisible() || !m_sumAllToSingleRecord->isChecked()) )
     {
       m_msg->setText( "QR will have 2 spectrum" );
-    }else if( (samplesToUse.size() > 1) || (spec->gamma_detector_names().size() > 1) )
+    }else if( m_backSubFore->isVisible() && m_backSubFore->isEnabled() && m_backSubFore->isChecked()
+             && (use_fore_disp != use_seco_disp) )
+    {
+      m_msg->setText( "A single spectrum will be produced." );
+    }else if( num_records > 2 )
     {
       m_msg->setText( "Records will be summed together." );
     }else
@@ -2093,7 +2248,7 @@ void ExportSpecFileTool::handleFormatChange()
   const SpecUtils::SaveSpectrumAsType save_format = currentSaveType();
   
 #if( USE_QR_CODES )
-  const bool is_qr = (save_format == SpecUtils::SaveSpectrumAsType::NumTypes);
+  const bool is_qr = (save_format == SpecUtils::SaveSpectrumAsType::Uri);
   m_export_btn->setHidden( is_qr );
   m_show_qr_btn->setHidden( !is_qr );
 #else
@@ -2134,12 +2289,11 @@ void ExportSpecFileTool::handleFilterDetectorCbChanged()
   if( !m_filterDetector || !m_detectorFilterCbs )
     return;
   
-  if( m_filterDetector->isChecked() )
+  const bool use_all_det = (m_filterDetector->isHidden() || !m_filterDetector->isChecked());
+  m_detectorFilterCbs->setHidden( use_all_det );
+  
+  if( use_all_det )
   {
-    m_detectorFilterCbs->show();
-  }else
-  {
-    m_detectorFilterCbs->hide();
     for( const auto w : m_detectorFilterCbs->children() )
     {
       WCheckBox *cb = dynamic_cast<WCheckBox *>( w );
@@ -2169,6 +2323,7 @@ void ExportSpecFileTool::handleSumToSingleRecordChanged()
     m_sumSecoToSingleRecord->setChecked( false );
     m_backSubFore->setChecked( false );
     m_sumDetsPerSample->setChecked( false );
+    m_sumSamplesPerDets->setChecked( false );
   }//if( m_sumAllToSingleRecord->isChecked() )
   
   refreshSampleAndDetectorOptions();
@@ -2186,6 +2341,7 @@ void ExportSpecFileTool::handleSumTypeToSingleRecordChanged()
     m_sumAllToSingleRecord->setChecked( false );
     m_backSubFore->setChecked( false );
     m_sumDetsPerSample->setChecked( false );
+    m_sumSamplesPerDets->setChecked( false );
   }
   
   refreshSampleAndDetectorOptions();
@@ -2203,6 +2359,7 @@ void ExportSpecFileTool::handleBackSubForeChanged()
     m_sumBackToSingleRecord->setChecked( false );
     m_sumSecoToSingleRecord->setChecked( false );
     m_sumDetsPerSample->setChecked( false );
+    m_sumSamplesPerDets->setChecked( false );
   }//if( m_backSubFore->isChecked() )
   
   refreshSampleAndDetectorOptions();
@@ -2220,10 +2377,29 @@ void ExportSpecFileTool::handleSumDetPerSampleChanged()
     m_sumBackToSingleRecord->setChecked( false );
     m_sumSecoToSingleRecord->setChecked( false );
     m_backSubFore->setChecked( false );
+    m_sumSamplesPerDets->setChecked( false );
   }//if( m_sumDetsPerSample->isChecked() )
   
   refreshSampleAndDetectorOptions();
 }//void handleSumDetPerSampleChanged()
+
+
+void ExportSpecFileTool::handleSumSamplesPerDetChanged()
+{
+  scheduleAddingUndoRedo();
+  
+  if( m_sumSamplesPerDets->isChecked() )
+  {
+    m_sumAllToSingleRecord->setChecked( false );
+    m_sumForeToSingleRecord->setChecked( false );
+    m_sumBackToSingleRecord->setChecked( false );
+    m_sumSecoToSingleRecord->setChecked( false );
+    m_backSubFore->setChecked( false );
+    m_sumDetsPerSample->setChecked( false );
+  }//if( m_sumSamplesPerDets->isChecked() )
+  
+  refreshSampleAndDetectorOptions();
+}//void handleSumSamplesPerDetChanged()
 
 
 void ExportSpecFileTool::handleIncludeInterSpecInfoChanged()
@@ -2241,6 +2417,8 @@ std::shared_ptr<const SpecMeas> ExportSpecFileTool::generateFileToSave()
   
   const bool remove_gps = (m_excludeGpsInfo->isVisible() && m_excludeGpsInfo->isChecked());
   const bool sum_per_sample = (m_sumDetsPerSample->isVisible() && m_sumDetsPerSample->isChecked());
+  const bool sum_per_det = (m_sumSamplesPerDets->isVisible() && m_sumSamplesPerDets->isChecked());
+  const bool fore_plus_back_files = (m_forePlusBack && m_forePlusBack->isVisible() && m_forePlusBack->isChecked());
   const bool use_disp_fore = (m_dispForeSamples->isVisible() && m_dispForeSamples->isChecked());
   const bool use_disp_back = (m_dispBackSamples->isVisible() && m_dispBackSamples->isChecked());
   const bool use_disp_seco = (m_dispSecondSamples->isVisible() && m_dispSecondSamples->isChecked());
@@ -2253,17 +2431,21 @@ std::shared_ptr<const SpecMeas> ExportSpecFileTool::generateFileToSave()
   if( (start_spec->num_measurements() == 1) && !remove_gps )
     return start_spec;
   
-  const set<int> samples = currentlySelectedSamples();
-  const vector<string> detectors = currentlySelectedDetectors();
+  set<int> samples = currentlySelectedSamples();
+  vector<string> detectors = currentlySelectedDetectors();
+  
+  // TODO: we should probably filter out unwanted detectors and samples up front, rather than
+  //       waiting for the summing step
   
   const bool backgroundSub = (m_backSubFore && m_backSubFore->isVisible() && m_backSubFore->isChecked());
   const bool sumAll = ((m_sumAllToSingleRecord->isVisible() && m_sumAllToSingleRecord->isChecked())
-                       || (max_records <= 2));
+                       || (max_records < 2));
   const bool foreToSingleRecord = (m_sumForeToSingleRecord->isVisible() && m_sumForeToSingleRecord->isChecked());
   const bool backToSingleRecord = (m_sumBackToSingleRecord->isVisible() && m_sumBackToSingleRecord->isChecked());
   const bool secoToSingleRecord = (m_sumSecoToSingleRecord->isVisible() && m_sumSecoToSingleRecord->isChecked());
   const bool filterDets = (m_filterDetector && m_filterDetector->isVisible() && m_filterDetector->isChecked());
-  const bool sumDetectorsPerSample = (sum_per_sample && ((max_records <= 2) && (detectors.size() > 1)));
+  const bool sumDetectorsPerSample = (sum_per_sample && !sum_per_det && ((max_records >= samples.size()) && (detectors.size() > 1)));
+  const bool sumSamplesPerDetector = (sum_per_det && !sum_per_sample && ((max_records >= detectors.size()) && (samples.size() > 1)));
   
   
   shared_ptr<SpecMeas> answer = make_shared<SpecMeas>();
@@ -2278,41 +2460,92 @@ std::shared_ptr<const SpecMeas> ExportSpecFileTool::generateFileToSave()
       answer->set_position( -999.9, -999.9, SpecUtils::time_point_t{}, m );
   }//if( remove_gps )
   
-  
   if( start_spec->num_measurements() == 1 )
     return answer;
   
   set<set<int>> samplesToSum;
-  if( sum_per_sample )
+  map<set<int>,SpecUtils::SourceType> sampleSourceTypes;
+  if( sumDetectorsPerSample )
   {
-    for( const int sample : answer->sample_numbers() )
+    for( const int sample : samples )
       samplesToSum.insert( set<int>{sample} );
   }//if( sum detectors per sample )
   
 
-  if( foreToSingleRecord || (use_disp_fore && (max_records <= 2)) )
+  if( (foreToSingleRecord || (use_disp_fore && (max_records <= 2))) && !fore_plus_back_files )
   {
     assert( use_disp_fore );
+    assert( !fore_plus_back_files );
     const set<int> &samples = m_interspec->displayedSamples(SpecUtils::SpectrumType::Foreground);
     samplesToSum.insert( samples );
+    sampleSourceTypes[samples] = SpecUtils::SourceType::Foreground;
   }//if( foreground to single record )
   
   
-  if( backToSingleRecord || (use_disp_back && (max_records <= 2)) )
+  if( (backToSingleRecord || (use_disp_back && (max_records <= 2))) && !fore_plus_back_files )
   {
     assert( use_disp_back );
+    assert( !fore_plus_back_files );
     const set<int> &samples = m_interspec->displayedSamples(SpecUtils::SpectrumType::Background);
     samplesToSum.insert( samples );
+    sampleSourceTypes[samples] = SpecUtils::SourceType::Background;
   }//if( background to single record )
   
   
-  if( secoToSingleRecord || (use_disp_seco && (max_records <= 2)) )
+  if( (secoToSingleRecord || (use_disp_seco && (max_records <= 2))) && !fore_plus_back_files )
   {
     assert( use_disp_seco );
+    assert( !fore_plus_back_files );
     const set<int> &samples = m_interspec->displayedSamples(SpecUtils::SpectrumType::SecondForeground);
     samplesToSum.insert( samples );
+    sampleSourceTypes[samples] = SpecUtils::SourceType::Unknown;
   }//if( secondary to single record )
   
+  
+  if( fore_plus_back_files )
+  {
+    vector<SpecUtils::SourceType> src_types;
+    if( max_records <= 2 )
+    {
+      src_types = vector<SpecUtils::SourceType>{ SpecUtils::SourceType::IntrinsicActivity,
+        SpecUtils::SourceType::Calibration,
+        SpecUtils::SourceType::Foreground,
+        SpecUtils::SourceType::Background,
+        SpecUtils::SourceType::Unknown
+        };//src_types array definition
+    }else
+    {
+      if( foreToSingleRecord )
+        src_types.push_back( SpecUtils::SourceType::Foreground );
+      if( backToSingleRecord )
+        src_types.push_back( SpecUtils::SourceType::Background );
+      if( secoToSingleRecord )
+        src_types.push_back( SpecUtils::SourceType::Unknown );
+    }//if( max_records <= 2 ) / else
+    
+    for( const SpecUtils::SourceType type : src_types )
+    {
+      set<int> samples;
+      for( const auto &m : answer->measurements() )
+      {
+        if( m->source_type() == type )
+          samples.insert( m->sample_number() );
+      }
+      
+      // We dont expect Intrinsic or Calibration to ever be present when a foreground
+      //  and background file has been combined into a single file
+      //  See `currentlySelectedFile()` implementation.
+      assert( (type != SpecUtils::SourceType::IntrinsicActivity)
+             && (type != SpecUtils::SourceType::Calibration)
+             || samples.empty() );
+      
+      if( !samples.empty() )
+      {
+        samplesToSum.insert( samples );
+        sampleSourceTypes[samples] = type;
+      }
+    }//for( SpecUtils::SourceType type : src_types )
+  }//if( fore_plus_back_files )
   
   set<set<int>> peaks_to_remove;
   map<set<int>,shared_ptr<const deque<shared_ptr<const PeakDef>>>> peaks_to_set;
@@ -2562,6 +2795,17 @@ std::shared_ptr<const SpecMeas> ExportSpecFileTool::generateFileToSave()
         assert( single_record );
         single_meas = true;
         meas_to_add.push_back( make_shared<SpecUtils::Measurement>(*single_record) );
+        
+        const auto typePos = sampleSourceTypes.find(sum_samples);
+        if( typePos != end(sampleSourceTypes) )
+        {
+          meas_to_add.back()->set_source_type( typePos->second );
+          sampleSourceTypes[samples] = typePos->second;
+        }else
+        {
+          sampleSourceTypes[samples] = SpecUtils::SourceType::Background;
+        }
+        
         meas_to_remove.insert( single_record );
       }
     }//if( sum_samples.size() == 1 )
@@ -2575,6 +2819,10 @@ std::shared_ptr<const SpecMeas> ExportSpecFileTool::generateFileToSave()
       
       shared_ptr<SpecUtils::Measurement> m = answer->sum_measurements( sum_samples, detectors, nullptr );
       m->set_sample_number( *begin(sum_samples) );
+      const auto typePos = sampleSourceTypes.find(sum_samples);
+      if( typePos != end(sampleSourceTypes) )
+        m->set_source_type( typePos->second );
+      
       meas_to_add.push_back( m );
       
       answer->setPeaks( {}, sum_samples );
@@ -2583,15 +2831,35 @@ std::shared_ptr<const SpecMeas> ExportSpecFileTool::generateFileToSave()
       else
         answer->setPeaks( {}, {m->sample_number()} );
       
+      // We will make a feeble attempt to preserve title, or for portal data
+      //  set it to background, for that sample
+      bool all_background = true;
+      set<string> titles;
       for( const int sample : sum_samples )
       {
         for( const string &det : detectors )
         {
-          auto m = answer->measurement( sample, det );
-          if( m )
-            meas_to_remove.insert( m );
-        }
-      }
+          auto orig = answer->measurement( sample, det );
+          if( orig )
+          {
+            const bool empty_title = orig->title().empty();
+            if( !empty_title )
+              titles.insert( orig->title() );
+            
+            all_background &= (SpecUtils::icontains( orig->title(), "Background")
+                               || (orig->source_type() == SpecUtils::SourceType::Background)
+                               || (answer->passthrough() && (orig->occupied() == SpecUtils::OccupancyStatus::NotOccupied)));
+            meas_to_remove.insert( orig );
+          }
+        }//for( const string &det : detectors )
+      }//for( const int sample : sum_samples )
+      
+      if( titles.size() == 1 )
+        m->set_title( *begin(titles) );
+      else if( all_background )
+        m->set_title( "Background" );
+      else
+        m->set_title( "" );
     }//if( !single_meas )
   }//for( const set<int> &samples : samplesToSum )
   
@@ -2608,19 +2876,93 @@ std::shared_ptr<const SpecMeas> ExportSpecFileTool::generateFileToSave()
       meas_to_remove.insert( m );
   }//for( const auto &m : answer->measurements() )
   
+  if( sumSamplesPerDetector )
+  {
+    assert( meas_to_add.empty() );
+    map<string,vector<shared_ptr<const SpecUtils::Measurement>>> det_to_meas;
+    for( const auto &m : answer->measurements() )
+    {
+      if( m && !meas_to_remove.count(m) )
+        det_to_meas[m->detector_name()].push_back( m );
+    }//for( const auto &m : answer->measurements() )
+    
+    for( const auto &det_meas : det_to_meas )
+    {
+      const string &det = det_meas.first;
+      const vector<shared_ptr<const SpecUtils::Measurement>> &meass = det_meas.second;
+      set<int> samples;
+      for( const auto &m : meass )
+        samples.insert( m->sample_number() );
+      
+      if( samples.size() > 1 )
+      {
+        auto sum_meas = answer->sum_measurements( samples, {det}, nullptr );
+        sum_meas->set_sample_number( *begin(samples) );
+        sum_meas->set_detector_name( det ); //just to make sure
+        
+        meas_to_add.push_back( sum_meas );
+        for( const auto &m : meass )
+          meas_to_remove.insert(m);
+      }//if( samples.size() > 1 )
+    }//for( const auto &det_meas : det_to_meas )
+  }//if( sumSamplesPerDetector )
+  
   
   if( !meas_to_remove.empty() )
   {
     vector<shared_ptr<const SpecUtils::Measurement>> to_remove( begin(meas_to_remove), end(meas_to_remove) );
-    answer->remove_measurements( to_remove );
+    answer->remove_measurements( to_remove ); //This calls `cleanup_after_load(...)`
   }
   
   if( !meas_to_add.empty() )
   {
     for( const shared_ptr<SpecUtils::Measurement> &i : meas_to_add )
       answer->add_measurement( i, false );
-    answer->cleanup_after_load();
   }
+  
+  if( !meas_to_remove.empty() || !meas_to_add.empty() )
+  {
+    answer->set_uuid( "" );
+    answer->cleanup_after_load( SpecUtils::SpecFile::DontChangeOrReorderSamples );
+    
+    // `detectors` and `samples` are maybe no longer valid, since we may have summed them together
+    //  - we will fix this up, although it probably makes more sense to just filter out unwanted
+    //  detectors and samples, up front (but this maybe creates other problems?)
+    const vector<string> &dets_now = answer->detector_names();
+    const set<int> &samples_now = answer->sample_numbers();
+    vector<string> names_to_remove;
+    for( const string &d : detectors )
+    {
+      if( std::find(begin(dets_now), end(dets_now), d) == end(dets_now) )
+        names_to_remove.push_back( d );
+    }//for( const string &d : detectors )
+    
+    for( const string &d : names_to_remove )
+    {
+      assert( std::find( begin(detectors), end(detectors), d ) != end(detectors) );
+      detectors.erase( std::find( begin(detectors), end(detectors), d ) );
+    }
+    
+    set<int> samples_to_remove;
+    for( const int sample : samples )
+    {
+      if( !samples_now.count(sample) )
+        samples_to_remove.insert(sample);
+    }
+    for( const int sample : samples_to_remove )
+      samples.erase( sample );
+    
+    // Now lets map sample numbers to 1 through N
+    int new_sample_number = 0;
+    vector<pair<int,int>> old_to_new_samplenum;
+    for( const int old_sample_number : answer->sample_numbers() )
+    {
+      ++new_sample_number;
+      old_to_new_samplenum.emplace_back( old_sample_number, new_sample_number );
+    }//for( loop over sample numbers )
+    
+    answer->change_sample_numbers( old_to_new_samplenum );
+  }//if( !meas_to_remove.empty() || !meas_to_add.empty() )
   
   
   if( sumAll )
@@ -2645,7 +2987,12 @@ std::shared_ptr<const SpecMeas> ExportSpecFileTool::generateFileToSave()
     
     answer->remove_measurements( orig_meass );
     answer->add_measurement( sum_meas, true );
-  }else if( sumDetectorsPerSample && (answer->detector_names().size() > 1) )
+  }//if( sumAll )
+  
+  /*
+   // I think we have already summed the detectors, for each sample, together
+   //  so we shouldnt do it again
+   else if( sumDetectorsPerSample && (answer->detector_names().size() > 1) )
   {
     set<int> problem_samples;
     map<int,vector<shared_ptr<const SpecUtils::Measurement>>> sample_to_meas;
@@ -2705,7 +3052,7 @@ std::shared_ptr<const SpecMeas> ExportSpecFileTool::generateFileToSave()
       passMessage( msg, WarningWidget::WarningMsgHigh );
     }//if( problem_samples.size() )
   }//if( sum to single record ) / else if( sumDetectorsPerSample )
-  
+  */
   
   // We will check for this later as well, but we'll remove as much of the InterSpec info
   //  here as well (the displayed sample numbers and wont be removed though).
@@ -2759,14 +3106,14 @@ void ExportSpecFileTool::handleGenerateQrCode()
     if( model.empty() )
       model = spec->instrument_model();
   
-    const vector<QRSpectrum::UrlSpectrum> urlspec = QRSpectrum::to_url_spectra( spec->measurements(), model );
+    const vector<SpecUtils::UrlSpectrum> urlspec = SpecUtils::to_url_spectra( spec->measurements(), model );
     
     auto successfullyDone = wApp->bind( boost::bind( &ExportSpecFileTool::emitDone, this, true ) );
     
     displayQrCode( urlspec, spec, successfullyDone, false );
   }catch( std::exception &e )
   {
-    auto dialog = new SimpleDialog( "Error", "Failed to encoded spectrum to a QR code: " + string(e.what()) );
+    auto dialog = new SimpleDialog( "Error", "Failed to encoded spectrum to a URI: " + string(e.what()) );
     dialog->addButton( "Ok" );
   }//try catch
 }//void handleGenerateQrCode()
@@ -3091,6 +3438,9 @@ void ExportSpecFileTool::handleAppUrl( std::string query_str )
   if( m_sumDetsPerSample )
     m_sumDetsPerSample->setChecked( parts.count("SUMDETSPERSAMPLE") );
   
+  if( m_sumSamplesPerDets )
+    m_sumSamplesPerDets->setChecked( parts.count("SUMSAMPLEPERDET") );
+  
   handleSumDetPerSampleChanged();
   
   if( m_excludeInterSpecInfo )
@@ -3211,6 +3561,9 @@ std::string ExportSpecFileTool::encodeStateToUrl() const
   
   if( m_sumDetsPerSample && m_sumDetsPerSample->isChecked() )
     answer += "&SumDetsPerSample=1";
+  
+  if( m_sumSamplesPerDets && m_sumSamplesPerDets->isChecked() )
+    answer += "&SumSamplePerDet=1";
   
   if( m_excludeInterSpecInfo && m_excludeInterSpecInfo->isChecked() )
     answer += "&NoInterSpecInfo=1";

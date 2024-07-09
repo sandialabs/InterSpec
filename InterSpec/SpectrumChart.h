@@ -61,7 +61,7 @@ class PeakModel;
 //See comments about SpectrumChart::setLeftYAxisPadding() for what
 //  DYNAMICALLY_ADJUST_LEFT_CHART_PADDING controls.  This feature has not
 //  been tested well enough to fully use yet, although it seems to work well.
-#define DYNAMICALLY_ADJUST_LEFT_CHART_PADDING 1
+#define DYNAMICALLY_ADJUST_LEFT_CHART_PADDING 0
 
 class SeriesRenderer;
 class LabelRenderIterator;
@@ -80,13 +80,6 @@ class SpectrumChart : public Wt::Chart::WCartesianChart
 // workaround, for more info see XXX note in SpectrumChart::handleDrag(...)
  
 public:
-  enum DragAction
-  {
-    ZoomIn,
-    HighLight,
-    NoAction
-  };//enum DragAction
-
   enum XAxisUnits
   {
     kkeV,
@@ -106,7 +99,7 @@ public:
   {
     Occupied,
     NotOccupied
-  };//enum HighlightRegionType
+  };//enum OccupancyRegionType
   
   //HighlightRegion is what is used to overlay a color over the chart, and are
   //  used for roughly two different usages:
@@ -304,7 +297,7 @@ public:
   
   //enableLegend():  Makes it so the legend will be rendered, with some caviots.
   //  If no spectrums are present, will not be rendered.
-  //  If a time series chart (DragAction==Highlight), only rendered if more than
+  //  If a time series chart, only rendered if more than
   //  one sereies is to be plotted.
   //  For non-phone devices, creates a globablly floating legend (AuxWindow)
   //  that will be kept at a consistent distance from the top and right hand

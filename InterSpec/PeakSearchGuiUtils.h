@@ -26,6 +26,7 @@
 #include "InterSpec_config.h"
 
 #include <deque>
+#include <tuple>
 #include <memory>
 #include <vector>
 #include <string>
@@ -38,10 +39,14 @@ class PeakDef;
 class PeakModel;
 class InterSpec;
 struct ColorTheme;
-namespace SpecUtils{ class Measurement; }
+class SpectrumChart;
 struct ReferenceLineInfo;
 class DetectorPeakResponse;
 class ReferencePhotopeakDisplay;
+
+namespace SpecUtils{
+  class Measurement;
+}
 
 namespace Wt{
   class WSvgImage;
@@ -73,6 +78,17 @@ std::shared_ptr<Wt::WSvgImage> renderChartToSvg( std::shared_ptr<const SpecUtils
                                               const int width_px, const int height_px,
                                               std::shared_ptr<const ColorTheme> theme,
                                                 const bool compact );
+
+/** Same as `renderChartToSvg(...)`, but returns  a `SpectrumChart` that may be painted in a <canvas/> element,
+ or whatever.
+ (note: Wt 3.7.1 seems to have a issue in rendering to SVG, where sometimes there will be lines and artifacts, so this is a workaround)
+ */
+SpectrumChart *createFixedSpectrumDisplay( std::shared_ptr<const SpecUtils::Measurement> inmeas,
+                            std::shared_ptr<const std::deque<std::shared_ptr<const PeakDef> > > peaks,
+                            const std::vector<std::shared_ptr<const ReferenceLineInfo>> &displayed,
+                            double lowx, double upperx,
+                            const int width, const int height,
+                            std::shared_ptr<const ColorTheme> theme );
   
 /** Function that is called when the user double-left-clicks on the spectrum.
  */
@@ -85,12 +101,27 @@ void fit_peak_from_double_click( InterSpec *interspec,
 /** Performs the automated search for peaks - setting the results to the GUI. */
 void automated_search_for_peaks( InterSpec *interspec, const bool keep_old_peaks );
 
+/** Uses the currently displayed foreground to estimate the expected FWHM for the wanted energy.
+ 
+ Value returned, is the first successful one of:
+ - Interpolate between user-fit peaks
+ - Use FWHM function of current detector efficiency function
+ - Interpolate between auto-search peaks
+ - sqrt(energy) interpolate from a single peak
+ - Use a generic HPGe or NaI detector
+ - return 0.0f - shouldnt happen.
+ */
+float estimate_FWHM_of_foreground( const float energy );
 
-/** For all peaks currently fit for, that do not already have a
-   nuclide/xray/reaction assigned, it attempts to assign them a source
-   based on currently showing reference lines.
+/** For all peaks currently fit for, this function attempts to assign them a source
+ based on currently showing reference lines.
+ 
+ @param only_peaks_with_no_src If true, only consider peaks that do not currently have an assigned nuclide/x-ray/reaction.
+ @param only_current_ref_lines If true, then only use the current (e.g., top-most) reference lines, and not the "persisted" lines.
 */
-void assign_peak_nuclides_from_reference_lines( InterSpec *viewer );
+void assign_peak_nuclides_from_reference_lines( InterSpec *viewer,
+                                               const bool only_peaks_with_no_src,
+                                               const bool only_current_ref_lines );
   
 /** Attempts to assign a nuclide/xray/reaction from the currently displayed
    reference gamma lines.  This is called for instance when you are showing
@@ -126,15 +157,18 @@ void search_for_peaks_worker( std::weak_ptr<const SpecUtils::Measurement> weak_d
                                const bool singleThread);
   
 /** Assigns peak nuclides/xrays/reactions from the reference photopeak lines by
-   modifying the peaks passed in.  If a peak already has a nuclide set, it wont
-   be changed unless a new peak is a better candidate for it, and there is
-   another ref line that explains it.
+   modifying the peaks passed in.  
+ 
+ @param only_peaks_with_no_src If false, If a peak already has a nuclide set, it wont be changed unless a new peak is a
+        better candidate for it, and there is another ref line that explains it.  If true, peaks with any nuclide/x-ray-reaction assigned
+        will be skipped.
  */
 void assign_srcs_from_ref_lines( const std::shared_ptr<const SpecUtils::Measurement> &data,
                                  std::shared_ptr<std::vector<std::shared_ptr<const PeakDef> > > peaks,
                                 const std::vector<ReferenceLineInfo> &displayed,
                                  const bool setColor,
-                                const bool showingEscapePeakFeature );
+                                const bool showingEscapePeakFeature,
+                                const bool only_peaks_with_no_src );
   
 /** Refits the peaks from a right-click refit request.
  Assumes you are in the Wt app primary thread.
@@ -146,11 +180,48 @@ void refit_peaks_from_right_click( InterSpec * const interspec, const double rig
  Assumes you are in the Wt app primary thread.
  */
 void refit_peaks_with_drf_fwhm( InterSpec * const interspec, const double rightClickEnergy );
-
+  
 /** Returns the energy of its assigned nuclides gamma line, or peak doesnt have assigned gamma line, returns the
  nearest showing Reference Photopeak line. Returns a negative value if neither can be found
+ 
  */
-float reference_line_energy_near_peak( InterSpec * const interspec, const PeakDef &peak );
+float reference_line_energy_near_peak( InterSpec * const interspec, 
+                                      const PeakDef &peak );
+  
+/** Returns the reference line info, and index for the specific reference line
+ 
+ @param only_nuclide If true, then only lines with a parent nuclide, who are a gamma or xray, will be considered
+ 
+ Example usage:
+ ```
+ auto refline = reference_line_near_peak( interspec, peak, false );
+ if( refline.first )
+ {
+   ReferenceLineInfo::RefLine &line = refline.first->m_ref_lines[refline.second];
+   ...
+ }else
+ {
+   // No line found
+ }
+ ```
+ */
+std::pair<std::unique_ptr<ReferenceLineInfo>,int> reference_line_near_peak( 
+                                                                  InterSpec * const interspec,
+                                                                  const PeakDef &peak,
+                                                                  const bool only_nuclide );
+  
+/** Returns the reference line nuclide and energy near the given energy, that the user probably intends.
+   
+  Intended to be called with the energy of a users click - takes into account detectors resolution and nuclide yields.
+   
+  @returns The nuclide, its age, and energy of the reference line.  If not near a line, or no reference line, or a non-nuc reference
+          line is showing, will return {nullptr, 0.0, 0.0f}.
+   
+  \sa PeakSearchGuiUtils::reference_line_energy_near_peak
+*/
+std::tuple<const SandiaDecay::Nuclide *, double /* age */, float /* energy */>
+  nuclide_reference_line_near( InterSpec *viewer, const float energy );
+  
   
 /** Set the peak nearest `rightClickEnergy` to preferably its assigned gamma energy, or if none assigned, to
  nearest showing reference photopeak energy, and then refits peak.

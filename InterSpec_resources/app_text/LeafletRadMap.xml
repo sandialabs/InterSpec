@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- lrm- is short for LeafletRadMap
+  -->
+  <message id="lrm-pre-warn-title">Before Proceeding</message>
+  <message id="lrm-pre-warn-content">
+    Map tiles will be requested from <a href="https://arcgis.com" target="_blank">https://arcgis.com</a>.
+    No radiation data will leave your device, but requests for
+    map tiles encompassing the measurements will be made to this service.
+    {1}
+  </message>
+  <message id="lrm-pre-warn-user-key">
+    <p>Your custom arcgis key starting with '{1}' will be used to request map tiles.</p>
+  </message>
+  <message id="lrm-pre-warn-invalid-user-key">
+    <p>An invalid arcgis key was specified in arcgis_key.txt, so the built-in key will be used.</p>
+  </message>
+  <message id="lrm-pre-warn-dont-ask">Don't ask again</message>
+  <message id="lrm-pre-warn-proceed-btn">Proceed</message>
+  <message id="lrm-window-title">Map Tool</message>
+  <message id="lrm-will-use-user-key">Will use user-specified arcgis key, beginning with '{1}' to request maps with.</message>
+  <message id="lrm-user-key-invalid">There was a arcgis_key.txt file, but it did not contain a valid key</message>
+  <message id="lrm-err-loading-samples">Error loading map-selected samples: {1}</message>
+  <message id="lrm-displayed-as">Displayed as</message>
+  <message id="lrm-measurements-as">measurements as</message>
+</messages>

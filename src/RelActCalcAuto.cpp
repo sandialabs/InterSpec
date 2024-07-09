@@ -300,6 +300,16 @@ const rapidxml::xml_node<char> *get_required_node( const rapidxml::xml_node<char
           fit_order = 3;
           drf_form_to_fit = DetectorPeakResponse::ResolutionFnctForm::kSqrtEnergyPlusInverse;
           break;
+   
+        case RelActCalcAuto::FwhmForm::ConstantPlusSqrtEnergy:
+          fit_order = 2;
+          drf_form_to_fit = DetectorPeakResponse::ResolutionFnctForm::kConstantPlusSqrtEnergy;
+          break;
+   
+        case RelActCalcAuto::FwhmForm::ConstantPlusSqrtEnergy:
+          fit_order = 2;
+          drf_form_to_fit = DetectorPeakResponse::ResolutionFnctForm::kConstantPlusSqrtEnergy;
+        break;
           
         case RelActCalcAuto::FwhmForm::Polynomial_2:
         case RelActCalcAuto::FwhmForm::Polynomial_3:
@@ -332,6 +342,10 @@ const rapidxml::xml_node<char> *get_required_node( const rapidxml::xml_node<char
     cout << "            case RelActCalcAuto::FwhmForm::SqrtEnergyPlusInverse:" << endl;
     fitFromGadras( highres_pars, true, RelActCalcAuto::FwhmForm::SqrtEnergyPlusInverse );
     cout << "            break;" << endl;
+   
+    cout << "            case RelActCalcAuto::FwhmForm::ConstantPlusSqrtEnergy:" << endl;
+    fitFromGadras( highres_pars, true, RelActCalcAuto::FwhmForm::ConstantPlusSqrtEnergy );
+    cout << "            break;" << endl;
     
     cout << "            case RelActCalcAuto::FwhmForm::Polynomial_2:" << endl;
     fitFromGadras( highres_pars, true, RelActCalcAuto::FwhmForm::Polynomial_2 );
@@ -363,6 +377,10 @@ const rapidxml::xml_node<char> *get_required_node( const rapidxml::xml_node<char
     
     cout << "            case RelActCalcAuto::FwhmForm::SqrtEnergyPlusInverse:" << endl;
     fitFromGadras( lowres_pars, false, RelActCalcAuto::FwhmForm::SqrtEnergyPlusInverse );
+    cout << "            break;" << endl;
+   
+    cout << "            case RelActCalcAuto::FwhmForm::ConstantPlusSqrtEnergy:" << endl;
+    fitFromGadras( lowres_pars, false, RelActCalcAuto::FwhmForm::ConstantPlusSqrtEnergy );
     cout << "            break;" << endl;
     
     cout << "            case RelActCalcAuto::FwhmForm::Polynomial_2:" << endl;
@@ -1430,12 +1448,16 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
           needToFitOtherType = (drf_fwhm_type != DetectorPeakResponse::kSqrtEnergyPlusInverse);
         break;
           
+        case RelActCalcAuto::FwhmForm::ConstantPlusSqrtEnergy:
+          needToFitOtherType = (drf_fwhm_type != DetectorPeakResponse::kConstantPlusSqrtEnergy);
+        break;
+          
         case RelActCalcAuto::FwhmForm::Polynomial_2:
         case RelActCalcAuto::FwhmForm::Polynomial_3:
         case RelActCalcAuto::FwhmForm::Polynomial_4:
         case RelActCalcAuto::FwhmForm::Polynomial_5:
         case RelActCalcAuto::FwhmForm::Polynomial_6:
-          assert( num_parameters(rel_act_fwhm_form) == static_cast<size_t>(rel_act_fwhm_form) );
+          assert( num_parameters(rel_act_fwhm_form) == (static_cast<size_t>(rel_act_fwhm_form)-1) );
           
           needToFitOtherType = ((drf_fwhm_type != DetectorPeakResponse::kSqrtPolynomial)
                                 || (drfpars.size() != num_parameters(rel_act_fwhm_form)) );
@@ -1471,6 +1493,11 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
           case RelActCalcAuto::FwhmForm::SqrtEnergyPlusInverse:
             assert( num_fwhm_pars == 3 );
             formToFit = DetectorPeakResponse::ResolutionFnctForm::kSqrtEnergyPlusInverse;
+            break;
+            
+          case RelActCalcAuto::FwhmForm::ConstantPlusSqrtEnergy:
+            assert( num_fwhm_pars == 2 );
+            formToFit = DetectorPeakResponse::ResolutionFnctForm::kConstantPlusSqrtEnergy;
             break;
          
           case RelActCalcAuto::FwhmForm::Polynomial_2:
@@ -1525,6 +1552,11 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
             parameters[fwhm_start + 2] = 27.9835;
           break;
             
+          case RelActCalcAuto::FwhmForm::ConstantPlusSqrtEnergy:
+            parameters[fwhm_start + 0] = 1.0;
+            parameters[fwhm_start + 1] = 0.035;
+          break;
+            
           case RelActCalcAuto::FwhmForm::Polynomial_2:
             parameters[fwhm_start + 0] = 2.10029;
             parameters[fwhm_start + 1] = 2.03657;
@@ -1576,6 +1608,11 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
             parameters[fwhm_start + 0] = -592.865;
             parameters[fwhm_start + 1] = 4.44776;
             parameters[fwhm_start + 2] = 21173.6;
+          break;
+          
+          case RelActCalcAuto::FwhmForm::ConstantPlusSqrtEnergy:
+            parameters[fwhm_start + 0] = -7.0;
+            parameters[fwhm_start + 1] = 2.0;
           break;
             
           case RelActCalcAuto::FwhmForm::Polynomial_2:
@@ -3795,7 +3832,8 @@ const char *to_str( const FwhmForm form )
   switch( form )
   {
     case FwhmForm::Gadras:       return "Gadras";
-    case FwhmForm::SqrtEnergyPlusInverse: return "SqrtEnergyPlusInverse";
+    case FwhmForm::SqrtEnergyPlusInverse:  return "SqrtEnergyPlusInverse";
+    case FwhmForm::ConstantPlusSqrtEnergy: return "ConstantPlusSqrtEnergy";
     case FwhmForm::Polynomial_2: return "Polynomial_2";
     case FwhmForm::Polynomial_3: return "Polynomial_3";
     case FwhmForm::Polynomial_4: return "Polynomial_4";
@@ -3838,6 +3876,10 @@ float eval_fwhm( const float energy, const FwhmForm form, const vector<float> &d
       
     case RelActCalcAuto::FwhmForm::SqrtEnergyPlusInverse:
       fctntype = DetectorPeakResponse::ResolutionFnctForm::kSqrtEnergyPlusInverse;
+      break;
+      
+    case RelActCalcAuto::FwhmForm::ConstantPlusSqrtEnergy:
+      fctntype = DetectorPeakResponse::ResolutionFnctForm::kConstantPlusSqrtEnergy;
       break;
       
     case RelActCalcAuto::FwhmForm::Polynomial_2:
@@ -4175,12 +4217,13 @@ void Options::fromXml( const ::rapidxml::xml_node<char> *parent )
 
 size_t num_parameters( const FwhmForm eqn_form )
 {
-  static_assert( static_cast<int>(RelActCalcAuto::FwhmForm::Polynomial_2) == 2, "FwhmForm enum needs updating" );
+  static_assert( static_cast<int>(RelActCalcAuto::FwhmForm::Polynomial_2) == 3, "FwhmForm enum needs updating" );
   
   switch( eqn_form )
   {
     case FwhmForm::Gadras:       return 3;
-    case FwhmForm::SqrtEnergyPlusInverse: return 3;
+    case FwhmForm::SqrtEnergyPlusInverse:  return 3;
+    case FwhmForm::ConstantPlusSqrtEnergy: return 2;
     case FwhmForm::Polynomial_2: return 2;
     case FwhmForm::Polynomial_3: return 3;
     case FwhmForm::Polynomial_4: return 4;
@@ -4361,16 +4404,16 @@ std::ostream &RelActAutoSolution::print_summary( std::ostream &out ) const
     }//for( const auto &act : m_rel_activities )
     
     if( nuclides.count( "Pu238" ) )
-      out << "\tPu238: " << PhysicalUnits::printCompact(100.0*m_corrected_pu->pu238_mass_frac, 4) << "\n";
+      out << "\tPu238: " << SpecUtils::printCompact(100.0*m_corrected_pu->pu238_mass_frac, 4) << "\n";
     if( nuclides.count( "Pu239" ) )
-      out << "\tPu239: " << PhysicalUnits::printCompact(100.0*m_corrected_pu->pu239_mass_frac, 4) << "\n";
+      out << "\tPu239: " << SpecUtils::printCompact(100.0*m_corrected_pu->pu239_mass_frac, 4) << "\n";
     if( nuclides.count( "Pu240" ) )
-      out << "\tPu40: " << PhysicalUnits::printCompact(100.0*m_corrected_pu->pu240_mass_frac, 4) << "\n";
+      out << "\tPu40: " << SpecUtils::printCompact(100.0*m_corrected_pu->pu240_mass_frac, 4) << "\n";
     if( nuclides.count( "Pu241" ) )
-      out << "\tPu241: " << PhysicalUnits::printCompact(100.0*m_corrected_pu->pu241_mass_frac, 4) << "\n";
-    out << "\tPu242 (by corr): " << PhysicalUnits::printCompact(100.0*m_corrected_pu->pu242_mass_frac, 4) << "\n";
+      out << "\tPu241: " << SpecUtils::printCompact(100.0*m_corrected_pu->pu241_mass_frac, 4) << "\n";
+    out << "\tPu242 (by corr): " << SpecUtils::printCompact(100.0*m_corrected_pu->pu242_mass_frac, 4) << "\n";
     if( nuclides.count( "Am241" ) )
-      out << "\tAm241: " << PhysicalUnits::printCompact(100.0*m_corrected_pu->am241_mass_frac, 4) << "\n";
+      out << "\tAm241: " << SpecUtils::printCompact(100.0*m_corrected_pu->am241_mass_frac, 4) << "\n";
     out << "\n";
   }//if( m_corrected_pu )
   
@@ -4443,26 +4486,26 @@ void RelActAutoSolution::print_html_report( std::ostream &out ) const
     
     if( nuclides.count( "Pu238" ) )
       results_html << "  <tr><td>Pu238</td><td>"
-                   << PhysicalUnits::printCompact(100.0*m_corrected_pu->pu238_mass_frac, 4)
+                   << SpecUtils::printCompact(100.0*m_corrected_pu->pu238_mass_frac, 4)
                    << "</td></tr>\n";
     if( nuclides.count( "Pu239" ) )
       results_html << "  <tr><td>Pu239</td><td>"
-      << PhysicalUnits::printCompact(100.0*m_corrected_pu->pu239_mass_frac, 4)
+      << SpecUtils::printCompact(100.0*m_corrected_pu->pu239_mass_frac, 4)
       << "</td></tr>\n";
     if( nuclides.count( "Pu240" ) )
       results_html << "  <tr><td>Pu40</td><td>"
-      << PhysicalUnits::printCompact(100.0*m_corrected_pu->pu240_mass_frac, 4)
+      << SpecUtils::printCompact(100.0*m_corrected_pu->pu240_mass_frac, 4)
       << "</td></tr>\n";
     if( nuclides.count( "Pu241" ) )
       results_html << "  <tr><td>Pu241</td><td>"
-      << PhysicalUnits::printCompact(100.0*m_corrected_pu->pu241_mass_frac, 4)
+      << SpecUtils::printCompact(100.0*m_corrected_pu->pu241_mass_frac, 4)
       << "</td></tr>\n";
     results_html << "  <tr><td>Pu242 (by corr)</td><td>"
-      << PhysicalUnits::printCompact(100.0*m_corrected_pu->pu242_mass_frac, 4)
+      << SpecUtils::printCompact(100.0*m_corrected_pu->pu242_mass_frac, 4)
       << "</td></tr>\n";
     if( nuclides.count( "Am241" ) )
       results_html << "  <tr><td>Am241</td><td>"
-      << PhysicalUnits::printCompact(100.0*m_corrected_pu->am241_mass_frac, 4)
+      << SpecUtils::printCompact(100.0*m_corrected_pu->am241_mass_frac, 4)
       << "</td></tr>\n";
     results_html << "  </tbody>\n"
     << "</table>\n\n";
@@ -4624,7 +4667,7 @@ void RelActAutoSolution::print_html_report( std::ostream &out ) const
                cps_over_yield,
                fit_rel_eff,
                100*fit_rel_eff_uncert,
-               PeakContinuum::offset_type_label( info.continuum()->type() ),
+               Wt::WString::tr(PeakContinuum::offset_type_label_tr( info.continuum()->type() )).toUTF8().c_str(),
                info.continuum()->lowerEnergy(),
                info.continuum()->upperEnergy()
                );
@@ -4763,8 +4806,6 @@ void RelActAutoSolution::print_html_report( std::ostream &out ) const
   const string d3_js = load_file_contents( "d3.v3.min.js" );
   const string spectrum_chart_d3_js = load_file_contents( "SpectrumChartD3.js" );
   const string spectrum_chart_d3_css = load_file_contents( "SpectrumChartD3.css" );
-  //const string spectrum_chart_d3_standalone_css = load_file_contents( "SpectrumChartD3StandAlone.css" );
-  
   
   SpecUtils::ireplace_all( html, "\\;", ";" );
   

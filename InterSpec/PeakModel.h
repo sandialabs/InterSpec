@@ -39,7 +39,6 @@
 #include "InterSpec/PeakDef.h"
 
 class SpecMeas;
-class SpectrumDataModel;
 
 namespace SpecUtils{ class Measurement; }
 
@@ -91,10 +90,8 @@ public:
   PeakModel( Wt::WObject *parent = 0 );
   virtual ~PeakModel();
 
-  //Inorder to display continuum area of peaks, you need to set the data model
-  // XXX - note that with PeakDef refactorization that happened in Dec 2013,
-  //       this requirement/paradyn could be eliminated probably
-  void setDataModel( SpectrumDataModel *dataModel );
+  /** Sets the foreground spectrum - necessary for stepped continua. */
+  void setForeground( std::shared_ptr<const SpecUtils::Measurement> spec );
 
   //setPeakFromSpecMeas(...): when the primary spectrum is changed (either file,
   //  or the displayed sample numbers), then this function should be called to
@@ -411,7 +408,7 @@ protected:
   void removePeakInternal( std::shared_ptr<const PeakDef> peak );
   
   
-  SpectrumDataModel *m_dataModel;
+  std::shared_ptr<const SpecUtils::Measurement> m_foreground;
 
   //m_peaks and m_sortedPeaks contain the same peaks, they just differ in how
   //  they are sorted.

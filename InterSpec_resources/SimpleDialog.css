@@ -7,7 +7,6 @@
   /* We have to set min width in the C++ */
   overflow: hidden;
   box-shadow: 0 1px 6px rgba(0,0,0,.06),0 2px 32px rgba(0,0,0,.16) !important;
-  max-width: 50vw;
   max-height: 95vh;
 }
 
@@ -41,16 +40,34 @@ dialog
 /* Note: the dialog .body position and height is adjusted by Wt layout JS. */
 .simple-dialog .body
 {
-  padding: 0px 0px 0px 0px;
+  /* Use 15px padding on right and left, instead of margin, so this way scroll bar will be
+   along right edge of dialog, if it is present.
+   */
+  padding: 0px 15px 0px 15px;
+  margin: 0px 0px 0px 0px;
   
   /* The 95vh is from .simple-dialog, and the 90px is the header and footer height. */
   max-height: calc( 95vh - 90px );
   overflow-y: auto;
+}
+
+@media screen and (max-width: 1000px) {
+  .simple-dialog {
+    max-width: min( 500px, 99vw );
+  }
   
-  margin-left: 15px;
-  margin-right: 15px;
-  
-  max-width: calc( 50vw - 30px );
+  .simple-dialog .body {
+    max-width: min( 530px, calc(99vw - 30px) );
+  }
+}
+
+@media screen and (min-width: 1000px) {
+  .simple-dialog {
+    max-width: 50vw;
+  }
+  .simple-dialog .body {
+    max-width: calc( 50vw - 30px );
+  }
 }
 
 .simple-dialog .content

@@ -101,7 +101,7 @@
   
 }
 
-.SnapshotBrowserFooter button
+.SnapshotBrowserFooter button, .SnapshotBrowserFooter button:hover
 {
   margin-left: 5px;
   margin-top: 5px;

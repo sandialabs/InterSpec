@@ -20,7 +20,6 @@
 #include "SpecUtils/SpecFile.h"
 #include "SpecUtils/StringAlgo.h"
 
-
 using namespace Wt;
 using namespace std;
 
@@ -113,7 +112,7 @@ void QLSpecMeas::addPeaksFromXml( const ::rapidxml::xml_node<char> *peaksnode )
   std::lock_guard<std::recursive_mutex> scoped_lock( mutex_ );
   
   if( !m_peaks )
-    m_peaks.reset( new SampleNumsToPeakMap() );
+    m_peaks = std::make_shared<SampleNumsToPeakMap>();
   
   int version = 1;
   const xml_attribute<char> *version_att = peaksnode->first_attribute("version",7);
@@ -224,12 +223,16 @@ void QLSpecMeas::addPeaksFromXml( const ::rapidxml::xml_node<char> *peaksnode )
                                                     = id_to_peak.find( peakid );
         if( iter == id_to_peak.end() )
           throw runtime_error( "Could not find peak with id '"
-                               + boost::lexical_cast<string>(peakid)
+                               + std::to_string(peakid)
                                + "' in the XML for sample numbers '"
                                + xml_value(samples_node) );
         peaks->push_back( iter->second );
-      }//for( const int peakid, peakids )
+      }//for( const int peakid : peakids )
       
+      //The problem here is that the sample numbers can change; what we need to
+      //  do is create a <RadMeasurementGroup> and use this to associate peaks
+      //  with measurements.  We should also do the same for analysis, and also
+      //  dispalyed sample numbers
       
       switch( source )
       {
@@ -296,7 +299,16 @@ void QLSpecMeas::decodeSpecMeasStuffFromXml( const ::rapidxml::xml_node<char> *i
   
   node = interspecnode->first_node( "Peaks", 5 );
   if( node )
-    addPeaksFromXml( node );
+  {
+    try
+    {
+      addPeaksFromXml( node );
+    }
+    catch(const std::exception& e)
+    {
+      std::cerr << "Failed to parse peaks: " << e.what() << '\n';
+    }
+  }
 }//void decodeSpecMeasStuffFromXml( ::rapidxml::xml_node<char> *parent )
 
 

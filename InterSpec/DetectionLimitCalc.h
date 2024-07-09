@@ -57,6 +57,7 @@ class Measurement;
   and better takes into account all information provided, as well as using multiple peaks of an isotope to derive limits.  This methodology
   seems to follow the intent of Annex B of ISO 11929-3:2019, but instead these calculations form a large chi2/likelihood calculation to
   co-compute everything and hopefully do a better job.
+ - Note that "Currie" is the detection-limit name, while "Curie" is the activity unit.
   
  Note: As of 20210724, these calculations have only had cursory checks performed, and have not been verified and validated to a level
   appropriate to use them for anything of importance.
@@ -72,6 +73,11 @@ class Measurement;
   https://pubs.acs.org/doi/10.1021/ac60259a007
  - P.A. Zyla et al. (Particle Data Group), Prog. Theor. Exp. Phys. 2020, 083C01 (2020) and 2021
   https://pdg.lbl.gov
+ 
+ General TODO items:
+ - The Currie-style limit assumes 100% of the peaks counts are within the ROI - perhaps allow a correction for this?
+ - The deconvolution-style limit should allow uncertainty on the FWHM and energy calibration, to better get limits
+ - More test cases need implementing
  */
 
 namespace DetectionLimitCalc
@@ -83,7 +89,7 @@ void batch_test();
 /** The input to a simple "Currie" style minimum detectable activity and detection confidence interval calculation.
  
  */
-struct CurieMdaInput
+struct CurrieMdaInput
 {
   /** The spectrum the calculations will be performed on.  */
   std::shared_ptr<const SpecUtils::Measurement> spectrum;
@@ -91,7 +97,7 @@ struct CurieMdaInput
   /** The energy (in keV) of the photopeak limit is being derived for.
    
    This value doesnt enter into the calculation, other than it is the reference energy used for the continuum equation
-   (see #CurieMdaResult::continuum_eqn), and also its assumed this is the energy #detection_probability is derived from.
+   (see #CurrieMdaResult::continuum_eqn), and also its assumed this is the energy #detection_probability is derived from.
    
    Required to be between #roi_lower_energy and #roi_upper_energy, or else exception will be thrown.
    */
@@ -101,7 +107,7 @@ struct CurieMdaInput
    
    Must be within range of #spectrum.
    
-   The actual energy used will be rounded to the nearest channel boundary; see #CurieMdaResult::first_peak_region_channel.
+   The actual energy used will be rounded to the nearest channel boundary; see #CurrieMdaResult::first_peak_region_channel.
    */
   float roi_lower_energy;
   
@@ -109,7 +115,7 @@ struct CurieMdaInput
    
    Must be greater than #roi_lower_energy and within range of #spectrum.
    
-   The actual energy used will be rounded to the nearest channel boundary; see #CurieMdaResult::last_peak_region_channel.
+   The actual energy used will be rounded to the nearest channel boundary; see #CurrieMdaResult::last_peak_region_channel.
    */
   float roi_upper_energy;
   
@@ -125,7 +131,7 @@ struct CurieMdaInput
    - alpha: probability of false-positive decision (saying the signal is there, when it isnt)
    - beta: probability of false-negative decision (saying no signal, when there is signal there)
    */
-  float detection_probability;
+  double detection_probability;
   
   /** The additional uncertainty to include when calculating limits.
    This would probably be from DRF and distance uncertainties.
@@ -136,14 +142,14 @@ struct CurieMdaInput
   
   
   /** Default constructor that just zeros everything out. */
-  CurieMdaInput();
-};//struct CurieMdaInput
+  CurrieMdaInput();
+};//struct CurrieMdaInput
 
 
 /** The results of simple "Currie" style (e.g., ) calculations. */
-struct CurieMdaResult
+struct CurrieMdaResult
 {
-  CurieMdaInput input;
+  CurrieMdaInput input;
   
   size_t first_lower_continuum_channel;
   size_t last_lower_continuum_channel;
@@ -203,7 +209,7 @@ struct CurieMdaResult
    
    Note: may be less than zero.
    
-   \sa CurieMdaInput::detection_probability
+   \sa CurrieMdaInput::detection_probability
    */
   float lower_limit;
   
@@ -211,13 +217,13 @@ struct CurieMdaResult
   /** This gives the upper limit, in terms of counts, on the true number of counts from signal.
    E.g. corresponds to the number of expected signal counts that we can be 95% certain the true signal is less than.
    
-   \sa CurieMdaInput::detection_probability
+   \sa CurrieMdaInput::detection_probability
    */
   float upper_limit;
   
   
   /** Default constructor that just zeros everything out. */
-  CurieMdaResult();
+  CurrieMdaResult();
   
   
 #if( PERFORM_DEVELOPER_CHECKS )
@@ -226,16 +232,16 @@ struct CurieMdaResult
    Code for checking the continuum equation is currently commented out (if there is something wrong with the continuum computation
    it will be caught by one of the other values anyway).
    */
-  static void equal_enough( const CurieMdaResult &test, const CurieMdaResult &expected );
+  static void equal_enough( const CurrieMdaResult &test, const CurrieMdaResult &expected );
 #endif
   
   //std::ostream &operator<<( std::ostream &strm )
   //{
   //  return strm;
   //}
-};//struct CurieMdaResult
+};//struct CurrieMdaResult
 
-/** Prints a summary of a CurieMdaResult.
+/** Prints a summary of a CurrieMdaResult.
  
  @param strm The stream to print information out to.
  @param result The results to print out
@@ -244,16 +250,62 @@ struct CurieMdaResult
  
  Primarily for development/debugging.
  */
-std::ostream &print_summary( std::ostream &strm, const CurieMdaResult &result, const float w );
+std::ostream &print_summary( std::ostream &strm, const CurrieMdaResult &result, const float w );
 
 
+/** For a given ROI lower and upper energy, returns the first to last channels (inclusive) that comprise the ROI, by rounding to nearest
+ channels.
+ 
+ Throws exception if energy ranges are outside spectrum, or invalid spectrum passed in.
+*/
+std::pair<size_t,size_t> round_roi_to_channels( std::shared_ptr<const SpecUtils::Measurement> spectrum,
+                                    const float roi_lower_energy,
+                                    const float roi_upper_energy );
+  
 
 /** Performs the simple gross-counts in regions style calculation.
  
  Will throw exception if input is invalid, or runs into any errors.
  */
-CurieMdaResult currie_mda_calc( const CurieMdaInput &input );
+CurrieMdaResult currie_mda_calc( const CurrieMdaInput &input );
 
+
+/** How the continuum for peaks should be normalized.
+ */
+enum class DeconContinuumNorm : int
+{
+  /** The Gaussian (at a given activity) plus continuum are summed and compared to data (e.g., normal peak fitting). 
+   
+   I think this gives you what you usually want, e.g., the most likely peak with your current data, at the activity you
+   are asserting.
+   
+   Note that with this option a large activity will cause the continuum to clearly be below the data, and above data for too small of activity;
+   e.g., the continuum will help make up for the incorrectness of the Gaussian area.
+   */
+  Floating,
+  
+  /** A straight line is created from the edges past the ROI.
+   
+   I think this is sorta equivalent of saying the amplitude of the signal will not affect the
+   area in the ROI, of your current data.
+   
+   With this option, then the continuum offset+linear coefficients will be fixed by the channels above and below the ROI, as
+   specified by `DeconRoiInfo::num_lower_side_channels` and `DeconRoiInfo::num_upper_side_channels`.
+   Currently when this is done, the statistical uncertainty of the above/below regions are not accounted for, and the continuum
+   is just fixed - I need to put in more thought around properly handling this.
+   */
+  FixedByEdges,
+  
+  /** The continuum is fit, assuming a Gaussian area of zero, then the Gaussian component is added on top of this.
+   
+   This options is asserting there is no signal in your current data (most if you are doing an MDA).
+   
+   No uncertainty is used with the ROI (which is slightly kinda sorta, just a tiny bi defensible, if you are asserting there
+   is no signal present in the data - the data variance will be used when evaluating the Chi2 anyway).
+   */
+  FixedByFullRange
+};//enum class DeconContinuumNorm
+  
 
 /** Information about a single Region Of Interest (ROI) that is input to the deconvolution method of estimating peaks and chi2 for a
  given activity and distance.
@@ -283,29 +335,29 @@ struct DeconRoiInfo
    */
   PeakContinuum::OffsetType continuum_type;
   
-  /** Whether to allow the continuum to float in the fit, or to fix the continuum using the peaks bordering the ROI.
-   
-   If this parameter is false, a large activity will cause the continuum to clearly be below the data, and above data fo too small of activity;
-   e.g., the continuum will help make up for the incorrectness of the Gaussian area.
-   If this parameter is true, then the continuum offset+linear coefficients will be fixed by the channels above and below the ROI, as
-   specified by #num_lower_side_channels and #num_upper_side_channels.  Currently when this is done, the statistical uncertainty of
-   the above/below regions are not accounted for, and the continuum is just fixed - I need to put in more thought around properly
-   handling this.
+  /** Whether to allow the continuum to float in the fit, or to fix the continuum using the peaks bordering the ROI, or
+   use the whole ROI to determine the continuum with the assumption no signal is there.
    
    \sa num_lower_side_channels
    \sa num_upper_side_channels
    */
-  bool fix_continuum_to_edges;
+  DeconContinuumNorm cont_norm_method;
   
   /** The number of channels below #roi_lower_energy to use to estimate the continuum.
    
-   Only used if #fix_continuum_to_edges is true.
+   Directly used for `cont_norm_method` of `DeconContinuumNorm::FixedByEdges`,
+   and can not be zero for that case.  For the other continuum normalization methods, is used
+   for the initial starting continuum equations parameters that will be fit for; in these cases the
+   value will be clamped between 2 and 16 channels (incase z zero or garbage value is provided).
    */
   size_t num_lower_side_channels;
   
   /** The number of channels above #roi_upper_energy to use to estimate the continuum.
    
-   Only used if #fix_continuum_to_edges is true.
+   Only used if `cont_norm_method` is `DeconContinuumNorm::FixedByEdges`.
+   
+   Note that for the other continuum normalizations, the initial (before fitting) continuum equation
+   parameters are estimated using number of side channels, which is currently fixed at 4.
    */
   size_t num_upper_side_channels;
   
@@ -324,6 +376,13 @@ struct DeconRoiInfo
      If applicable, must have effects of shielding already accounted for.
      This number must not have effects of attenuation in air, or detector intrinsic efficiency accounted for; these will be applied during
      call to #decon_compute_peaks.
+     
+     For example, this value would be `branching_ratio * live_time * shielding_attenuation`,
+     Where:
+      - `branching_ratio` is number of this energy gamma, per decay of the parent nuclide.
+      - `live_time` is the live time of the spectrum, and
+      - `shielding_attenuation` is the fraction of gammas through the shielding without interaction,
+      i.e. in range (0,1], where 1.0 is no shielding.
      */
     double counts_per_bq_into_4pi;
     
@@ -384,6 +443,56 @@ struct DeconComputeResults
  */
 DeconComputeResults decon_compute_peaks( const DeconComputeInput &input );
 
+  
+struct DeconActivityOrDistanceLimitResult
+{
+  /** The input variables to the calculations */
+  bool isDistanceLimit;
+  double confidenceLevel;
+  double minSearchValue;
+  double maxSearchValue;
+  DeconComputeInput baseInput;
+  
+  // TODO: refactor generating this text to a separate function.
+  std::string limitText;
+  std::string quantityLimitStr;
+  std::string bestCh2Text;
+  
+  double overallBestChi2;
+  double overallBestQuantity;
+  std::shared_ptr<const DeconComputeResults> overallBestResults;
+  
+  bool foundUpperCl;
+  double upperLimit;
+  double upperLimitChi2;
+  std::shared_ptr<const DeconComputeResults> upperLimitResults;
+  
+  bool foundLowerCl;
+  double lowerLimit;
+  double lowerLimitChi2;
+  std::shared_ptr<const DeconComputeResults> lowerLimitResults;
+  
+  bool foundUpperDisplay = false;
+  double upperDisplayRange;
+  bool foundLowerDisplay;
+  double lowerDisplayRange;
+  
+  /** The Chi2s for a series of the quantity being found - for generating the displayed Chi2 chart from
+   {quantity,Chi2}
+   */
+  std::vector<std::pair<double,double>> chi2s;
+  
+  DeconActivityOrDistanceLimitResult();
+};//struct DeconActivityOrDistanceLimitResult
+  
+  
+DeconActivityOrDistanceLimitResult get_activity_or_distance_limits( const float wantedCl,
+                        const std::shared_ptr<const DeconComputeInput> base_input,
+                        const bool is_dist_limit,
+                        const double min_search_quantity,
+                        const double max_search_quantity,
+                        const bool useCurie );
+  
 }//namespace DetectionLimitCalc
 
 

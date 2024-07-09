@@ -72,6 +72,14 @@ namespace MakeDrfFit
                                        std::vector<float> &coeffs,
                                        std::vector<float> &coeff_uncerts );
   
+  /** Fits `FWHM = A_0 + A_1*sqrt(x)
+   
+   Throws exception if fit fails.
+   */
+  double fit_constant_plus_sqrt_fwhm_lls( const std::deque< std::shared_ptr<const PeakDef> > &peaks,
+                                  std::vector<float> &coeffs,
+                                  std::vector<float> &coeff_uncerts );
+  
   double peak_width_chi2( double predicted_sigma, const PeakDef &peak );
   
   

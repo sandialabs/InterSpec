@@ -6,7 +6,21 @@
 .MoreNuclideInfoDisplay
 {
   text-align: left;
-  width: min(400px, 40vw);
+}
+
+/* To define the width, we will use same media queries that SimpleDialog
+uses to control its maximum width.
+ */
+@media screen and (max-width: 1000px) {
+  .MoreNuclideInfoDisplay {
+    width: min(400px, calc(99vw - 50px) );
+  }
+}
+
+@media screen and (min-width: 1000px) {
+  .MoreNuclideInfoDisplay {
+    width: min(400px, 40vw);
+  }
 }
 
 .MoreNuclideInfoDisplay a
@@ -24,14 +38,14 @@
   margin-top: 10px;
 }
 
-.MoreNuclideInfoDisplay .MoreNucInfoPrev
-{
-  margin-bottom: 5px;
-}
-
 .MoreNuclideInfoDisplay .MoreNucInfoTitle:first-letter
 {
   text-transform: uppercase;
+}
+
+.MoreNuclideInfoDisplay .MoreNucInfoPrev
+{
+  margin-bottom: 5px;
 }
 
 .MoreNuclideInfoDisplay .MoreNucInfoSection

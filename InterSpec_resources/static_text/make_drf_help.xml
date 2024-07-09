@@ -340,6 +340,66 @@ icon will display additional tips for each item in this dialog.
 </p>
 </div>
 
+<div style="display:table-row">
+<h4>Using a Source.lib file to define sources</h4>
+If you commonly use the same radioactive check sources to perform detector characterizations,
+you can avoid manually entering source information every time you do a characterization, by
+defining a <code>Source.lib</code> file, which is a text file that source information for
+multiple sources.
+
+<p>
+The file is formatted like:
+<pre>
+  [nuclide]_[serial num 1]  [activity in bq]  [activity reference date]  [comment]
+  [nuclide]_[serial num 2]  [activity in bq]  [activity reference date]  [comment]
+  ...
+</pre>
+<br />
+With a concrete example looking like:
+<pre>
+22NA_01551910  5.107E+04  25-Aug-2022  West Rad Lab
+137Cs_1513a11  8.31E+04  12-Jul-2018  red src, ActivityUncert=8.31E+05
+241Am_a5fi451  3.7E+05  02-Jan-2001  ActivityUncert=1.85E+06, Distance=50cm
+...
+</pre>
+
+<br />
+Where the source name (first field of each line) <em>must</em> be a nuclide, followed by an underscore
+(no spaces between), followed by source serial/tracking number or similar (with no spaces in it).
+<br />
+The source activity (second field) is the activity in becquerel, on the date given (third field).
+<br />
+The fourth field (i.e., the remaining portion of the line) is an optional comment that can describe
+the source location, owner, etc.  It can also contain expressions, like seen above, that give
+activity uncertainty (again, in becquerel), and distance.  If you include this optional information
+in the comment  portion of the line, the information will be auto-filled out into the GUI when the
+source is selected.
+<br />Spaces or tabs can be used to delimit fields on each line.
+</p>
+
+
+<p>
+  You can add this text file, named exactly <code>Source.lib</code>, to the
+  <code>InterSpec</code> user data directory, or the <code>data</code> directory within the
+  apps distribution -
+  see &quot;<b>Help</b>&quot;&rarr;&quot;<b>About InterSpec...</b>&quot;&rarr;&quot;<b>Data</b>&quot;
+  for these locations.
+  <br />
+  When this file is found, a small icon, <img src="InterSpec_resources/images/db_small.png" width=16 height=16 />,
+  will appear in the lower-left area of each source input whose nuclide is defined in <code>Source.lib</code>.
+  Clicking on this icon will create a popup menu with all sources defined - if you select a source in
+  this menu, that sources information will be filled out on the input.
+</p>
+<p>Or, while the &quot;<b>Make Detector Response Function</b>&quot; is open, you can drag-n-drop a
+  <code>Source.lib</code> file (the name doesn't matter in this case, just the contents must be
+  formatted as described above) onto <code>InterSpec</code>, in which case you will then be prompted
+  if you would like to auto-populate this source information into the inputs.  If you select &quot;Yes&quot;, the
+  first matching nuclide in the <code>Source.lib</code> file will be filled out into each input.
+  If you select &quot;No&quot;, then you can access the added source informations in pop-up menu of
+  each source.
+</p>
+</div>
+
 <div style="display: table-row; clear: both;">
 <h4>Miscellaneous Information:</h4>
 <ul>
@@ -393,5 +453,6 @@ icon will display additional tips for each item in this dialog.
 </div>
 <div style="clear: both" />
 </div>
+
 
 </div>

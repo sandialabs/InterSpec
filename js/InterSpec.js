@@ -49,17 +49,33 @@ function()
       
       if( !validin )
       {
-        alert( 'You can only upload a single file at a time unless the name is'
-               + ' prefixed with "i-", "b-", "k-" or has back/fore/item/calib'
-               + ' in the file name, and there is at most one of each spectrum type.' );
+        const msg = 'showMsg-error-You can only upload a single file at a time unless the name is'
+                    + ' prefixed with "i-", "b-", "k-" or has back/fore/item/calib'
+                    + ' in the file name, and there is at most one of each spectrum type.';
+        
+        Wt.emit( $('.specviewer').attr('id'), {name:'miscSignal'}, msg );
         return;
       }
       
       function removeUploading(){
         //console.log( 'removeUploading' );
         $('#Uploading').remove();
+        
+        // Clear the time-out timer, if we have one
+        clearTimeout( $('.Wt-domRoot').data('UploadCoverTimer') );
+        $('.Wt-domRoot').data( 'UploadCoverTimer', null );
       };
       
+      
+      /* Lets set a 1-minute timeout so we will eventually remove the uploading cover if no traffic. */
+      function setUploadTimer(){
+        clearTimeout( $('.Wt-domRoot').data('UploadCoverTimer') );
+        const coverTimer = setTimeout( function(){
+          console.error("The request to upload file timed out.");
+          removeUploading();
+        }, 60000 );
+        $('.Wt-domRoot').data( 'UploadCoverTimer', coverTimer );
+      };
       
       function errfcn(){
         removeUploading();
@@ -102,36 +118,62 @@ function()
         xhr.setRequestHeader("Cache-Control", "no-cache");
         xhr.setRequestHeader("X-Requested-With", "XMLHttpRequest");
         // Filename may have non-ISO-8859-1 code points, so we need to URI encode it
-        xhr.setRequestHeader("X-File-Name", encodeURIComponent(file.name));
+        const filename_uri = encodeURIComponent(file.name);
+        xhr.setRequestHeader("X-File-Name", filename_uri);
         
-//#if( BUILD_AS_ELECTRON_APP ) //C++ preprocessors dont look to work here...
-        if( lookForPath && (typeof file.path === "string") && (file.path.length > 2) && !file.path.toLowerCase().includes('fake') ) {
-          // For Electron builds, file.path gives the full path (including filename), so we
-          //   will just upload the path so we can read it in the c++ to avoid lots of copying and
-          //   stuff.  But we also need to fallback, JIC c++ fails for some unforeseen reason.
-          //   See #FileDragUploadResource::handleRequest for the other part of this logic
-          xhr.setRequestHeader("Is-File-Path", "1" );
+        
+        if( lookForPath && file.name && (file.name.length > 3) ){
+          let fspath = null;
+          if( (typeof file.path === "string") && file.path.length > 3 ){
+            fspath = file.path;
+          }else{
+            const fns = $(document).data('dragOverFilePaths');
+            if( fns && Array.isArray(fns.filenames) && fns.time && (Math.abs(fns.time - (new Date())) < 30000) ){
+              for( let i = 0; i < fns.filenames.length; ++i ) {
+                if( encodeURIComponent(fns.filenames[i]).endsWith(filename_uri) ){
+                  fspath = fns.filenames[i];
+                  //remove this filename from the array, incase there are multiple files with same leaf-name, but diff paths
+                  fns.filenames = fns.filenames.splice(i,i);
+                  console.log( "Matched filenames: ", file.name, " vs ", fspath );
+                  console.log( "Remaining files: ", fns.filenames );
+                  if( fns.filenames.length === 0 )
+                    $(document).data('dragOverFilePaths', null);
+                  break;
+                }//if( native fn ends with browsers fn )
+              }//for( loop over fns.filenames.length )
+            }//if( we have 'dragOverFilePaths' object, and its valid )
+          }//if( we have `file.path` available ) else if( we have 'dragOverFilePaths' avaiable )
           
-          console.log( 'Will send file path, instead of actual file; path: ', file.path );
+          if( (typeof fspath === "string") && (fspath.length > 2) && !fspath.toLowerCase().includes('fake') ) {
+            // For Electron and macOS builds, fspath gives the full path (including filename), so we
+            //   will just upload the path so we can read it in the c++ to avoid lots of copying and
+            //   stuff.  But we also need to fallback, JIC c++ fails for some unforeseen reason.
+            //   See #FileDragUploadResource::handleRequest for the other part of this logic
+            xhr.setRequestHeader("Is-File-Path", "1" );
           
-          xhr.onload = function(){
-            removeUploading();
+            console.log( 'Will send native file-system path, instead of actual file; path: ', fspath );
+          
+            xhr.onload = function(){
+              removeUploading();
             
-            if( (xhr.readyState === 4) && (xhr.status !== 200) ){
-              console.log( 'Failed to upload via Electron path.' );
-              uploadFileToUrl( uploadURL, file, false );
-            }else if( xhr.readyState === 4 ) {
-              console.log( 'Successfully uploaded path to Electron.' );
-            }
-          };
+              if( (xhr.readyState === 4) && (xhr.status !== 200) ){
+                // Fallback to standard http upload, since reading in c++ failed
+                console.log( 'Failed to upload via native file-system path.' );
+                uploadFileToUrl( uploadURL, file, false );
+              }else if( xhr.readyState === 4 ) {
+                // Reading in c++ succeeded
+                console.log( 'Successfully uploaded native file-system path.' );
+                uploadNextFile();
+              }
+            };
           
-          xhr.onloadend = removeUploading;
+            xhr.onloadend = removeUploading;
         
-          const body = JSON.stringify( { fullpath: file.path} );
-          xhr.send(body);
-          return;
-        }//if( have full path on Electron build )
-//#endif
+            const body = JSON.stringify( { fullpath: fspath} );
+            xhr.send(body);
+            return;
+          }//if( have full path on Electron or macOS build )
+        }
         
         xhr.onerror = errfcn;
         xhr.onload = function(){
@@ -157,6 +199,7 @@ function()
               $('#UploadingProgress').text( Math.trunc(100*pe.loaded/pe.total) + '%' );
             }
           }
+          setUploadTimer(); //reset the upload timer, since we have recieved some data
         });
         
         xhr.upload.addEventListener("load", removeUploading);
@@ -183,19 +226,6 @@ function()
           removeUploading();
         });
         
-        
-        /* Lets set a 1-minute timeout so we will eventually remove the uploading cover...
-         
-         TODO: What we should really do is setup a timeout that fires if 'progress' is never never
-         called with an appropriate status, and then once it does get called set another timer
-         as upload is finished, to get the response.  I.e., get rid of xhr.ontimeout.
-         */
-        xhr.timeout = 60000;
-        xhr.ontimeout = function () {
-          console.error("The request to upload file timed out.");
-          removeUploading();
-        };
-        
           
         xhr.send(file);
       };//uploadFileToUrl
@@ -210,6 +240,8 @@ function()
       + '<div id=\"UploadingProgress\">--%</div>'
       + '</div></div></div>'
       + '</div>').appendTo(target);
+      
+      setUploadTimer();
     }catch(error)
     {
       console.log( "Error in HandleDrop: " + error );

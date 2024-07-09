@@ -37,15 +37,18 @@
 #include <Wt/WServer>
 #include <Wt/WIOService>
 
-#include "InterSpec/PeakDef.h"
-#include "SpecUtils/SpecFile.h"
-#include "InterSpec/SpecMeas.h"
-#include "InterSpec/PeakModel.h"
-#include "SpecUtils/Filesystem.h"
-#include "SpecUtils/StringAlgo.h"
 #include "SandiaDecay/SandiaDecay.h"
+
+#include "SpecUtils/SpecFile.h"
+#include "SpecUtils/Filesystem.h"
+#include "SpecUtils/ParseUtils.h"
+#include "SpecUtils/StringAlgo.h"
 #include "SpecUtils/RapidXmlUtils.hpp"
 #include "SpecUtils/EnergyCalibration.h"
+
+#include "InterSpec/PeakDef.h"
+#include "InterSpec/SpecMeas.h"
+#include "InterSpec/PeakModel.h"
 #include "InterSpec/DetectorPeakResponse.h"
 
 using namespace Wt;
@@ -543,6 +546,8 @@ void SpecMeas::uniqueCopyContents( const SpecMeas &rhs )
 #endif
   
   m_fileWasFromInterSpec = rhs.m_fileWasFromInterSpec;
+  
+  m_dbUserStateIndexes = rhs.m_dbUserStateIndexes;
 }//void uniqueCopyContents( const SpecMeas &rhs )
 
 
@@ -914,7 +919,79 @@ void SpecMeas::addPeaksFromXml( const ::rapidxml::xml_node<char> *peaksnode )
 }//void addPeaksFromXml( ::rapidxml::xml_node<char> *peaksnode );
 
 
+/*
+void SpecMeas::addDbStateIdsToXml( ::rapidxml::xml_node<char> *db_state_index_node ) const
+{
+  auto doc = db_state_index_node ? db_state_index_node->document() : nullptr;
+  assert( doc );
+  if( !doc )
+    return;
+  
+  for( const auto &index_id : m_dbUserStateIndexes )
+  {
+    rapidxml::xml_node<char> *state_node = doc->allocate_node( rapidxml::node_element, "SamplesToUserState" );
+    db_state_index_node->append_node( state_node );
+    
+    const vector<int> vsamples( begin(index_id.first), end(index_id.first) );
+    stringstream samples_strm;
+    for( size_t i = 0; i < vsamples.size(); ++i )
+      samples_strm << (i?" ":"") << vsamples[i];
+    
+    const char *val = doc->allocate_string( samples_strm.str().c_str() );
+    rapidxml::xml_node<char> *samples_node = doc->allocate_node( rapidxml::node_element, "Samples", val );
+    state_node->append_node( samples_node );
+    
+    val = doc->allocate_string( std::to_string(index_id.second).c_str() );
+    rapidxml::xml_node<char> *index_node = doc->allocate_node( rapidxml::node_element, "DbIndex", val );
+    state_node->append_node( index_node );
+  }//for( const auto &index_id : m_dbUserStateIndexes )
+}//void addDbStateIdsToXml( ::rapidxml::xml_node<char> *peaksnode ) const
+
+
+void SpecMeas::addDbStateIdsFromXml( const ::rapidxml::xml_node<char> *node )
+{
+  if( !node )
+    return;
+  
+  assert( SpecUtils::xml_name_str(node) == "DbUserStateIndexes" );
+  
+  XML_FOREACH_CHILD( state_node, node, "SamplesToUserState")
+  {
+    try
+    {
+      const rapidxml::xml_node<char> * const samples = XML_FIRST_NODE( state_node, "Samples" );
+      const rapidxml::xml_node<char> * const index = XML_FIRST_NODE( state_node, "DbIndex" );
+      if( !samples || !index || !samples->value_size() || !index->value_size() )
+        throw runtime_error( "Invalid UserStates xml node" );
+      
+      vector<int> contents;
+      if( !SpecUtils::split_to_ints( samples->value(), samples->value_size(), contents ) )
+        throw runtime_error( "Invalid list of sample numbers" );
+      
+      const set<int> sample_set( begin(contents), end(contents) );
+      if( sample_set.empty() )
+        throw runtime_error( "Empty list of sample numbers" );
+      
+      long long int index_value = -1;
+      if( !(stringstream( SpecUtils::xml_value_str(index) ) >> index_value) || (index_value < 0) )
+        throw runtime_error( "Invalid index value" );
+      
+      m_dbUserStateIndexes[sample_set] = index_value;
+    }catch( std::exception &e )
+    {
+      cerr << "Failed to parse UserStates XML node: " << e.what() << endl;
+    }//try / catch
+  }//XML_FOREACH_CHILD( state_node , node, "SamplesToUserState")
+}//void addDbStateIdsFromXml( const ::rapidxml::xml_node<char> *db_state_index_node );
+*/
+
 rapidxml::xml_document<char> *SpecMeas::shieldingSourceModel()
+{
+  std::lock_guard<std::recursive_mutex> scoped_lock( mutex_ );
+  return m_shieldingSourceModel.get();
+}
+
+const rapidxml::xml_document<char> *SpecMeas::shieldingSourceModel() const
 {
   std::lock_guard<std::recursive_mutex> scoped_lock( mutex_ );
   return m_shieldingSourceModel.get();
@@ -1116,71 +1193,99 @@ bool SpecMeas::write_iaea_spe( std::ostream &output,
   
   const deque< std::shared_ptr<const PeakDef> > &peaks = *peakiter->second;
   
-  //I think PEAKLABELS is a PeakEasy specific addition
-  output << "$PEAKLABELS:\r\n";
-  
-  for( deque< std::shared_ptr<const PeakDef> >::const_iterator iter = peaks.begin();
-      iter != peaks.end(); ++iter )
+  // I think PEAKLABELS is a PeakEasy specific addition, and we do not read them back in.
+  // PEAK_INFO_CSV is a InterSpec specific addition we will read back in
+  if( !peaks.empty() )
   {
-    const PeakDef &peak = **iter;
+    output << "$PEAKLABELS:\r\n";
     
-    if( peak.userLabel().size() || peak.gammaParticleEnergy() > 0.0f )
+    for( deque< std::shared_ptr<const PeakDef> >::const_iterator iter = peaks.begin();
+        iter != peaks.end(); ++iter )
     {
-      // The channel should be a floating point number
-      double channel = 0.0;
-      const shared_ptr<const SpecUtils::EnergyCalibration> energycal = summed->energy_calibration();
-      try
+      const PeakDef &peak = **iter;
+      
+      if( peak.userLabel().size() || peak.hasSourceGammaAssigned() )
       {
-        if( energycal && (energycal->type() != SpecUtils::EnergyCalType::InvalidEquationType) )
+        // The channel should be a floating point number
+        double channel = 0.0;
+        const shared_ptr<const SpecUtils::EnergyCalibration> energycal = summed->energy_calibration();
+        try
         {
-          try
+          if( energycal && (energycal->type() != SpecUtils::EnergyCalType::InvalidEquationType) )
           {
-            if( peak.xrayElement() || peak.nuclearTransition() || peak.reaction() )
-              channel = energycal->channel_for_energy( peak.gammaParticleEnergy() );
-            else
+            try
+            {
+              if( peak.xrayElement() || peak.nuclearTransition() || peak.reaction() )
+                channel = energycal->channel_for_energy( peak.gammaParticleEnergy() );
+              else
+                channel = energycal->channel_for_energy( peak.mean() );
+            }catch(...)
+            {
               channel = energycal->channel_for_energy( peak.mean() );
-          }catch(...)
-          {
-            channel = energycal->channel_for_energy( peak.mean() );
-          }
-        }//if( we have energy calibration info - which we should )
-      }catch(...)
-      {
-        // We probably shouldnt really get to here unless the peak is outside of reasonable range
-        //  of the energy calibration
-        continue;
-      }
+            }
+          }//if( we have energy calibration info - which we should )
+        }catch(...)
+        {
+          // We probably shouldnt really get to here unless the peak is outside of reasonable range
+          //  of the energy calibration
+          continue;
+        }
+        
+        string label = peak.userLabel();
+        if( peak.parentNuclide() )
+          label += " " + peak.parentNuclide()->symbol;
+        if( peak.xrayElement() )
+          label += " " + peak.xrayElement()->symbol + " xray";
+        if( peak.reaction() )
+          label += " " + peak.reaction()->name();
+        
+        switch( peak.sourceGammaType() )
+        {
+          case PeakDef::NormalGamma:                            break;
+          case PeakDef::AnnihilationGamma: label += " annih."; break;
+          case PeakDef::SingleEscapeGamma: label += " s.e.";   break;
+          case PeakDef::DoubleEscapeGamma: label += " d.e.";   break;
+          case PeakDef::XrayGamma:         label += " xray";   break;
+        }//switch( peak.sourceGammaType() )
+        
+        SpecUtils::ireplace_all( label, "\r\n", " " );
+        SpecUtils::ireplace_all( label, "\r", " " );
+        SpecUtils::ireplace_all( label, "\n", " " );
+        SpecUtils::ireplace_all( label, "\"", "&quot;" );
+        SpecUtils::ireplace_all( label, "  ", " " );
+        
+        if( label.size() && label[0]==' ' )
+          label = label.substr( 1, label.size() - 1 );
+        
+        if( label.size() )
+          output << channel << ", \"" << label << "\"\r\n";
+      }//if( there is a label for the peak )
+    }//for( loop over peaks )
+    
+    // Now add PEAK_INFO_CSV
+    shared_ptr<const SpecUtils::Measurement> summed;
+    if( measurements_.size() == 1 )
+      summed = measurements_[0];
+    else
+      summed = sum_measurements( sample_nums, detnames, nullptr );
+    
+    
+    if( summed )
+    {
+      stringstream peak_csv;
+      PeakModel::write_peak_csv( peak_csv, filename(), peaks, summed );
       
-      string label = peak.userLabel();
-      if( peak.parentNuclide() )
-        label += " " + peak.parentNuclide()->symbol;
-      if( peak.xrayElement() )
-        label += " " + peak.xrayElement()->symbol + " xray";
-      if( peak.reaction() )
-        label += " " + peak.reaction()->name();
+      // Just in case, remove all $ and : characters (should only come from peak labels),
+      //  to not confuse parsers
+      string peak_csv_str = peak_csv.str();
+      SpecUtils::ireplace_all(peak_csv_str, "$", " ");
+      SpecUtils::ireplace_all(peak_csv_str, ":", " ");
+      SpecUtils::ireplace_all(peak_csv_str, "\t", " ");
       
-      switch( peak.sourceGammaType() )
-      {
-        case PeakDef::NormalGamma:                            break;
-        case PeakDef::AnnihilationGamma: label += " annih."; break;
-        case PeakDef::SingleEscapeGamma: label += " s.e.";   break;
-        case PeakDef::DoubleEscapeGamma: label += " d.e.";   break;
-        case PeakDef::XrayGamma:         label += " xray";   break;
-      }//switch( peak.sourceGammaType() )
-      
-      SpecUtils::ireplace_all( label, "\r\n", " " );
-      SpecUtils::ireplace_all( label, "\r", " " );
-      SpecUtils::ireplace_all( label, "\n", " " );
-      SpecUtils::ireplace_all( label, "\"", "&quot;" );
-      SpecUtils::ireplace_all( label, "  ", " " );
-      
-      if( label.size() && label[0]==' ' )
-        label = label.substr( 1, label.size() - 1 );
-      
-      if( label.size() )
-        output << channel << ", \"" << label << "\"\r\n";
-    }//if( there is a label for the peak )
-  }//for( loop over peaks )
+      // Now write info to file
+      output << "$PEAK_INFO_CSV:\r\n" << peak_csv_str << "\r\n";
+    }//if( summed )
+  }//if( !peaks.empty() )
   
    //$ROI: This group contains the regions of interest marked in the spectrum.
    //      The first line the number of regions, the following lines contain the
@@ -1190,6 +1295,69 @@ bool SpecMeas::write_iaea_spe( std::ostream &output,
   
   return true;
 }//write_iaea_spe...
+
+
+bool SpecMeas::load_from_iaea( std::istream &istr )
+{
+  const size_t start_pos = istr.tellg();
+  if( !SpecUtils::SpecFile::load_from_iaea(istr) )
+    return false;
+  
+  const size_t end_pos = istr.tellg();
+  const ios::iostate end_state = istr.rdstate();
+  istr.clear();
+  istr.seekg( start_pos );
+  
+  string line;
+  while( SpecUtils::safe_get_line(istr, line) && (istr.tellg() < end_pos) )
+  {
+    SpecUtils::trim(line);
+    if( !SpecUtils::istarts_with( line, "$PEAK_INFO_CSV:") )
+      continue;
+    
+    stringstream csv;
+    while( SpecUtils::safe_get_line(istr, line) && (istr.tellg() < end_pos) )
+    {
+      SpecUtils::trim(line);
+      if( SpecUtils::istarts_with( line, "$") )
+        break;
+      csv << line << "\r\n";
+    }
+    
+    try 
+    {
+      shared_ptr<const SpecUtils::Measurement> summed;
+      if( measurements_.size() == 1 )
+        summed = measurements_[0];
+      else
+        summed = sum_measurements( sample_numbers_, detector_names_, nullptr );
+      
+      if( !summed )
+        throw runtime_error( "Failed to sum measurement for detector" );
+      
+      const vector<PeakDef> peaks = PeakModel::csv_to_candidate_fit_peaks( summed, csv );
+      
+      deque<shared_ptr<const PeakDef>> peakdeque;
+      for( const PeakDef &p : peaks )
+        peakdeque.push_back( make_shared<PeakDef>(p) );
+      
+      setPeaks( peakdeque, sample_numbers_ );
+      
+      break;
+    }catch( std::exception &e )
+    {
+      parse_warnings_.push_back( "IAEA format file contained peaks, but error reading them in: "
+                                + string(e.what()) );
+    }//try / catch
+  }//while( loop over file, looking for "$PEAK_INFO_CSV:" )
+  
+  istr.seekg( end_pos );
+  istr.clear( end_state );
+  
+  return true;
+}//bool SpecMeas::load_from_iaea( std::istream &istr )
+
+
 
 
 
@@ -1379,6 +1547,12 @@ void SpecMeas::decodeSpecMeasStuffFromXml( const ::rapidxml::xml_node<char> *int
     if( !filename.empty() )
       filename_ = filename;
   }//if( !filename_.empty() )
+  
+  
+  m_dbUserStateIndexes.clear();
+  //node = XML_FIRST_NODE( interspecnode, "DbUserStateIndexes" );
+  //if( node )
+  //  addDbStateIdsFromXml( node );
 }//void decodeSpecMeasStuffFromXml( ::rapidxml::xml_node<char> *parent )
 
 
@@ -1505,10 +1679,15 @@ rapidxml::xml_node<char> *SpecMeas::appendDisplayedDetectorsToXml(
     interspec_node->append_node( node );
   }//if( !filename_.empty() )
   
+  //if( !m_dbUserStateIndexes.empty() )
+  //{
+  //  xml_node<char> *db_state_index_node = doc->allocate_node( node_element, "DbUserStateIndexes" );
+  //  interspec_node->append_node( db_state_index_node );
+  //  addDbStateIdsToXml( db_state_index_node );
+  //}//if( !m_dbUserStateIndexes.empty() )
+  
   return interspec_node;
 }//appendSpecMeasStuffToXml(...);
-
-
 
 
 std::shared_ptr< ::rapidxml::xml_document<char> > SpecMeas::create_2012_N42_xml() const
@@ -1774,7 +1953,10 @@ std::set<std::set<int> > SpecMeas::sampleNumsWithPeaks() const
   if( !m_peaks )
     return answer;
   for( const SampleNumsToPeakMap::value_type &t : *m_peaks )
-    answer.insert( t.first );
+  {
+    if( t.second && !t.second->empty() )
+      answer.insert( t.first );
+  }
   return answer;
 }//sampleNumsWithPeaks() const
 
@@ -1856,6 +2038,18 @@ void SpecMeas::setAutomatedSearchPeaks( const std::set<int> &samplenums,
 // "previous work" popup even on spectra that we just opened up, and didnt do anything with.
 //  setModified();
 }//setAutomatedSearchPeaks(...)
+
+
+std::set<std::set<int>> SpecMeas::sampleNumsWithAutomatedSearchPeaks() const
+{
+  std::set<std::set<int>> answer;
+  for( const SampleNumsToPeakMap::value_type &t : m_autoSearchPeaks )
+  {
+    if( t.second && !t.second->empty() )
+      answer.insert( t.first );
+  }
+  return answer;
+}//std::set<std::set<int> > sampleNumsWithAutomatedSearchPeaks() const
 
 
 std::shared_ptr< std::deque< std::shared_ptr<const PeakDef> > >
@@ -1967,6 +2161,42 @@ void SpecMeas::setModified()
   modified_ = modifiedSinceDecode_ = true;
 }
 
+
+long long int SpecMeas::dbStateId( const set<int> &samplenums ) const
+{
+  const auto pos = m_dbUserStateIndexes.find(samplenums);
+  if( pos == end(m_dbUserStateIndexes) )
+    return -1;
+  return pos->second;
+}//long long int dbStateId( const set<int> &samplenums ) const
+
+
+void SpecMeas::setDbStateId( const long long int db_id, const std::set<int> &samplenums )
+{
+  if( db_id < 0 )
+  {
+    const auto pos = m_dbUserStateIndexes.find(samplenums);
+    if( pos != end(m_dbUserStateIndexes) )
+      m_dbUserStateIndexes.erase(pos);
+    return;
+  }//if( db_id < 0 )
+  
+  m_dbUserStateIndexes[samplenums] = db_id;
+}//void setDbStateId( const long long int db_id, const std::set<int> &samplenums )
+
+
+void SpecMeas::clearAllDbStateId()
+{
+  m_dbUserStateIndexes.clear();
+}
+
+
+const map<set<int>,long long int> &SpecMeas::dbUserStateIndexes() const
+{
+  return m_dbUserStateIndexes;
+}//const map<set<int>,long long int> &dbUserStateIndexs() const
+
+
 void SpecMeas::cleanup_after_load( const unsigned int flags )
 {
   if( m_fileWasFromInterSpec )
@@ -2038,6 +2268,59 @@ void SpecMeas::cleanup_orphaned_info()
   setModified();
 }//void cleanup_orphaned_info()
 
+
+void SpecMeas::change_sample_numbers( const vector<pair<int,int>> &from_to_sample_nums )
+{
+  SpecFile::change_sample_numbers( from_to_sample_nums );
+  
+  // I *think*, m_peaks, m_autoSearchPeaks, and m_dbUserStateIndexes are the only
+  //  SpecMeas specific things that use the sample numbers
+  
+  auto update_peak_map = [&from_to_sample_nums]( SampleNumsToPeakMap &peaks ){
+    SampleNumsToPeakMap new_peak_map;
+    
+    for( const SampleNumsToPeakMap::value_type &t : peaks )
+    {
+      set<int> new_samples;
+      for( const int orig_sample : t.first )
+      {
+        const auto pos = std::find_if( begin(from_to_sample_nums), end(from_to_sample_nums),
+                    [orig_sample]( const pair<int,int> &val ){ return val.first == orig_sample;} );
+        new_samples.insert( (pos == end(from_to_sample_nums)) ? orig_sample : pos->second );
+      }//for( loop over original sample numbers )
+      
+      new_peak_map[new_samples] = t.second;
+    }//for( const SampleNumsToPeakMap::value_type &t : peaks )
+    
+    peaks = new_peak_map;
+  };//update_peak_map
+  
+  if( m_peaks )
+    update_peak_map( *m_peaks );
+  
+  update_peak_map( m_autoSearchPeaks );
+
+  
+  // Need to update m_dbUserStateIndexes
+  map<set<int>,long long int> newDbUserStateIndexes;
+  for( const auto &samplenums_dbindex : m_dbUserStateIndexes )
+  {
+    set<int> new_sample_nums;
+    for( const int sample : samplenums_dbindex.first )
+    {
+      // Put original sample number in `new_sample_nums`, unless it is one of the sample numbers
+      //  to change, in which case put in the new sample number
+      const auto pos = std::find_if( begin(from_to_sample_nums), end(from_to_sample_nums),
+                      [sample](const pair<int,int> &lhs) -> bool { return lhs.first == sample; } );
+      
+      new_sample_nums.insert( (pos == end(from_to_sample_nums)) ? sample : pos->second );
+    }//for( const int sample : samplenums_dbindex.first )
+    
+    newDbUserStateIndexes[new_sample_nums] = samplenums_dbindex.second;
+  }//for( const auto &samplenums_dbindex : m_dbUserStateIndexes )
+  
+  m_dbUserStateIndexes = newDbUserStateIndexes;
+}//void change_sample_numbers( const std::vector<std::pair<int,int>> &from_to_sample_nums );
 
 
 Wt::Signal<> &SpecMeas::aboutToBeDeleted()

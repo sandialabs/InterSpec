@@ -1,0 +1,58 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- dcw- is short for DoseCalcWidget -->
+  <message id="dcw-err-failed-fit-AD">Failed to converge on a amount of shielding.</message>
+  <message id="dcw-qr-tool-state-title">Dose Tool State</message>
+  <message id="dcw-qr-tool-state-txt">Current state of dose tool.</message>
+  <message id="dcw-inputs">Inputs</message>
+  <message id="dcw-answer">Answer</message>
+  <message id="dcw-intro-instructions">Select quantity you would like to compute on the left</message>
+  <message id="dcw-intro-calc-desc">Dose values computed using ANSI/ANS-6.1.1-1991 most
+    conservative case: Anterior-Posterior orientation.
+    Dose calculations are a rough guide, at best, and are
+    subject to many uncertainties or errors.
+  </message>
+  <message id="dcw-source-label">Source:</message>
+  <message id="dcw-neutron">Neutron</message>
+  <message id="dcw-tt-neut-not-imp">Neutron dose calc not implemented yet.</message>
+  <message id="dcw-tt-distance">Distance from center of source to face of detector. Number must be"
+    " followed by units; valid units are: meters, m, cm, mm, km, feet,"
+    " ft, ', in, inches, or \".  You may also add multiple distances,"
+    " such as '3ft 4in', or '3.6E-2 m 12 cm' which are equivalent to "
+    " 40inches and 15.6cm respectively.</message>
+  <message id="dcw-shield-empty-text">Shielding Material</message>
+  <message id="dcw-runtime-checks-failed">Runtime sanity checks have failed!</message>
+  <message id="dcw-runtime-check-msg">
+    <div>Do not trust results of this calculator utility</div>
+    Please email <a href="mailto:interspec@sandia.gov">interspec@sandia.gov</a>
+    this error message and include your device type and model (e.g., iPad pro,
+    Windows 10 Dell laptop, etc.)
+  </message>
+  <message id="dcw-runtime-check-err-div">Results Suspect - Do Not Trust</message>
+  <message id="dcw-err-no-nuc">Empty or invalid source nuclide</message>
+  <message id="dcw-act-invalid">Activity is invalid</message>
+  <message id="dcw-shield-invalid">Invalid shielding</message>
+  <message id="dcw-generic-shield-invalid">Error calculating dose, invalid shielding, sorry :{</message>
+  <message id="dcw-dist-invalid">Distance is invalid.</message>
+  <message id="dcw-err-other">Error calculating dose from source, sorry :{</message>
+  <message id="dcw-invalid-src-dose">Invalid source dose.</message>
+  <message id="dcw-invalid-src-act">Invalid source activity.</message>
+  <message id="dcw-invalid-src-dose">Invalid source dose.</message>
+  <message id="dcw-failed-find-lower-dist">Failed to find lower bounding distance, at {1} cm.</message>
+  <message id="dcw-failed-find-upper-dist">Failed to find upper bounding distance, at {1} cm.</message>
+  <message id="dcw-failed-find-dist">Couldn't find distance; exceeded max iterations.</message>
+  <message id="dcw-got-neg-dist">Got negative distance: {1}</message>
+  <message id="dcw-err-calc-dose-for-dist">Error calculating dose while searching for distance, sorry :{</message>
+  <message id="dcw-material-not-valid">Material not valid</message>
+  <message id="dcw-no-an-entered">You must enter the atomic number of the shielding material.</message>
+  <message id="dcw-no-shield-name">You must enter the shielding material type.</message>
+  <message id="dcw-brehm-warning">Warning: Bremsstrahlung of beta decays not accounted for, results may not be trustworthy.</message>
+  <message id="dcw-no-dose-entered">No numerical value entered for dose</message>
+  <message id="dcw-stay-time">Stay Time</message>
+  <message id="dcw-dental-xray">Dental X-Ray</message>
+  <message id="dcw-annual-background">Typ. Yearly Background</message>
+  <message id="dcw-annual-occ-limit">Annual Occ. Limit</message>
+  <message id="dcw-save-property">Save Valuable Property</message>
+  <message id="dcw-life-saving">Life Saving</message>
+  <message id="dcw-radiation-sickness">Radiation Sickness</message>
+</messages>

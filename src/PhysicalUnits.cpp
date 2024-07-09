@@ -47,8 +47,8 @@ namespace PhysicalUnits
 #define METRIC_PREFIX_UNITS "m|M|k|g|G|t|T|u|" MU_CHARACTER_1 "|" MU_CHARACTER_2 "|p|n|f|milli|micro|pico|nano|femto|kilo|mega|giga|terra"
 
 #define PLUS_MINUS_REGEX "(\\xC2?\\xB1|\\+\\-\\s*|\\-\\+\\s*)"
-#define TIME_UNIT_REGEX "(year|yr|y|day|d|hrs|hour|h|minutes|min|m|second|seconds|sec|s|ms|microseconds|us|nanoseconds|ns)"
-#define HALF_LIFE_REGEX "(hl|halflife|halflives|half-life|half-lives|half lives|half life)"
+#define TIME_UNIT_REGEX "(years|year|yr|y|days|day|d|hrs|hours|hour|h|minute|minutes|min|m|second|seconds|sec|s|ms|microseconds|us|nanosecond|nanoseconds|ns)"
+#define HALF_LIFE_REGEX "(hl|halflife|halflives|half-life|half-lives|half lives|half lifes|half live|halflive|half life)"
 #define ACTIVITY_UNIT_REGEX "(bq|becquerel|ci|cu|curie|c)"
 #define ABSORBED_DOSE_UNIT_REGEX "(gray|Gy|gy|rad|erg|erg\\/g|erg per gram)"
 #define EQUIVALENT_DOSE_UNIT_REGEX "(sievert|Sv|rem|roentgen|r" DIAERESIS_O "entgen)"
@@ -122,7 +122,28 @@ const char * const sm_timeDurationHalfLiveOptionalPosOrNegRegex
 
 
 const char * const sm_positiveDecimalRegex = POS_DECIMAL_REGEX;
+  
+const char * const sm_decimalRegex = DECIMAL_REGEX;
 
+const UnitNameValuePairV sm_lengthUnitNameValues{
+  {"nm", nm},
+  {"um", um},
+  {"mm", mm},
+  {"cm", cm},
+  {"m", meter},
+  {"km", 1.0E3*meter}
+};
+  
+const UnitNameValuePairV sm_lengthUnitHtmlNameValues{
+  {"nm", nm},
+  {"&mu;m", um},
+  {"mm", mm},
+  {"cm", cm},
+  {"m", meter},
+  {"km", 1.0E3*meter}
+};
+    
+  
 const UnitNameValuePairV sm_activityUnitNameValues{
   {"uBq", 1.0E-6*bq},
   {"mBq", 1.0E-3*bq},
@@ -306,19 +327,19 @@ std::wstring printToBestLengthUnits( double length, double uncert,
   
 std::string printToBestActivityUnits( double activity,
                                       int maxNpostDecimal,
-                                      bool useCurries,
+                                      bool useCuries,
                                       double bq_definition )
 {
   using namespace std;
   activity *= becquerel / bq_definition;
 
   char formatflag[32], buffer[64];
-  const char *unitstr = useCurries ? "Ci" : "Bq";
+  const char *unitstr = useCuries ? "Ci" : "Bq";
   
   snprintf(formatflag, sizeof(formatflag), "%%.%if %%s%s", maxNpostDecimal, unitstr );
   
 
-  if( useCurries )
+  if( useCuries )
     activity /= curie;
   else
     activity /= becquerel;
@@ -828,7 +849,7 @@ double stringToTimeDurationPossibleHalfLife( std::string str,
                             "|us|micro\\-*sec|micro\\-*second"
                             "|ms|milli\\-*sec|milli\\-*second"
                             "|second|seconds|sec|s|minute|minutes|min|m"
-                            "|hours|hour|hrs|h|days|day|d|year|yr|y"
+                            "|hours|hour|hrs|h|days|day|d|year|years|yr|yrs|y"
                             "|hl|halflife|halflives|half\\-life|half\\-lives|half\\slives|half\\slife"
                             ")"
                             "\\s*((\\+|\\-)?(((\\d+(\\.\\d*)?)|(\\.\\d*)).*))?";
@@ -1460,248 +1481,20 @@ std::string printValueWithUncertainty( double value, double uncert, size_t unsig
 }//printValueWithUncertainty(...)
 
 
-// A function to convert floats to their shortest text representation with at least the
-//  specified precision (e.g., number of sig figs),
-// Definitely not a very efficient function, or even optimal, but better than nothing.
-string printCompact_trial( double val, size_t precision, const bool use_scientific )
+std::string printCompact( const double value, const size_t sig_figs )
 {
-  assert( precision > 0 );
-  if( !precision )
-    precision = 1;
-  
-  //Note that using %.{precision}G will cause snprintf to use the
-  //  IEEE 754 rounding rule of "round to nearest and ties to even"...
-  
-  char buffer[256] = { '\0' };
-  if( use_scientific )
-  {
-    snprintf( buffer, sizeof(buffer), ("%." + to_string(precision) + "E").c_str(), val );
-  }else
-  {
-    // We add 1 to precision to avoid double-rounding that leads to errors (I think 1 is
-    //  probably enough, but we're not exactly being efficient anyway)
-    //  Ex. 1.2345 to precision=3, if "%.3f" then will be "1.235", which we would then round to
-    //      "1.24", which is not correct
-    size_t ndec = precision + 2;
-    if( (fabs(val) < 1.0) && (fabs(val) > std::numeric_limits<float>::min()) )
-      ndec = 2 + precision + std::ceil( fabs( std::log10( fabs(val) ) ) );
-    
-    snprintf( buffer, sizeof(buffer), ("%." + to_string(ndec) + "f").c_str(), val );
-  }
-  
-  string power;
-  string decimal = buffer;
-  
-  const string::size_type e_pos = decimal.find( 'E' );
-  if( e_pos != string::npos )
-  {
-    power = decimal.substr( e_pos );
-    decimal = decimal.substr( 0, e_pos );
-  }//if( scientific notation )
-  
-  if( decimal.find('.') != string::npos )
-  {
-    while( decimal.size() && (decimal.back() == '0') )
-      decimal.resize( decimal.size() - 1 );
-    
-    if( decimal.size() && (decimal.back() == '.') )
-      decimal.resize( decimal.size() - 1 );
-  }//if( decimal.find('.') != string::npos )
-  
-  
-  
-  auto round_at_pos = []( string input, size_t pos ) -> string {
-    //pos indicates the first digit we do not want
-    if( pos >= input.size() )
-      return input;
-    
-    assert( (input[pos] >= '0') && (input[pos] <= '9') );
-    
-    for( size_t i = pos + 1; i < input.size(); ++i )
-    input[i] = '0';
-    
-    // We'll attempt to do some rounding - man, is this horrible
-    bool no_round = (input[pos] < '5');
-    if( input[pos] == '5' )
-    {
-      // round to nearest and ties to even
-      char prevchar = '\0';
-      if( (pos > 0) && (input[pos-1] != '.') )
-        prevchar = input[pos-1];
-      else if( pos > 1 )
-        prevchar = input[pos-2];
-      
-      const int digval = prevchar - '0';
-      no_round = !(digval % 2);
-    }//if( input[pos] == '5' )
-    
-    
-    if( no_round )
-    {
-      input = input.substr( 0, pos );
-    }else
-    {
-      input = input.substr( 0, pos );
-      
-      const bool is_negative = (input[0] == '-');
-      if( is_negative )
-        input = input.substr( 1 );
-      
-      for( size_t index = input.size() - 1; index > 0; --index )
-      {
-        if( input[index] != '.' )
-        {
-          assert( input[index] >= '0' && input[index] <= '9' );
-          
-          if( input[index] != '9' )
-          {
-            input[index] += 1;
-            break;
-          }
-          
-          assert( input[index] == '9' );
-          
-          input[index] = '0';
-        }//if( input[index] != '.' )
-        
-        if( index == 1 )
-        {
-          if( input[0] == '.' )
-          {
-            input = "1" + input;
-          }else if( input[0] != '9' )
-          {
-            input[0] += 1;
-          }else
-          {
-            input[0] = '0';
-            input = "1" + input;
-            break;
-          }
-        }
-      }//for( size_t index = decimal.size() - 1; index > 0; --index )
-      
-      if( is_negative )
-        input = "-" + input;
-    }//if( we need to round our last digit up )
-    
-    return input;
-  };//round_at_pos
-  
-  
-  bool hit_dec = false, hit_nonzero = false;
-  size_t num_digit = 0;
-  for( size_t i = 0; i < decimal.size(); ++i )
-  {
-    if( decimal[i] == '-' )
-      continue;
-    
-    if( decimal[i] == '.' )
-    {
-      hit_dec = true;
-      
-      if( (num_digit >= precision) && hit_nonzero && ((i+1) < decimal.size()) )
-      {
-        decimal = round_at_pos( decimal, i+1 );
-        break;
-      }
-      
-      continue;
-    }//if( decimal[i] == '.' )
-    
-    assert( (decimal[i] >= '0') && (decimal[i] <= '9') );
-    
-    if( decimal[i] != '0' )
-      hit_nonzero = true;
-    
-    if( !hit_nonzero )
-      continue;
-    
-    num_digit += 1;
-    
-    if( num_digit >= precision )
-    {
-      // If were at the last character, theres nothing to do
-      if( (i+1) == decimal.size() )
-        break;
-      
-      // If we're already past the decimal, get rid of everything past current character
-      if( hit_dec )
-      {
-        decimal = round_at_pos( decimal, i + 1 );
-        break;
-      }//if( hit_dec )
-    }//if( we already have enough digits )
-  }//for( loop over digits before "E" )
-  
-  
-  
-  // Remove trailing zeros after the decimal
-  const bool has_per = (decimal.find( '.' ) != string::npos );
-  if( has_per )
-  {
-    while( decimal.size() && (decimal.back() == '0') )
-      decimal.resize( decimal.size() - 1 );
-    
-    // Dont leave a dangling decimal
-    if( decimal.size() && decimal.back() == '.' )
-      decimal.resize( decimal.size() - 1 );
-  }//if( has_per )
-  
-  
-  if( !power.empty() )
-  {
-    power = power.substr(1);
-    int intpow = atoi( power.c_str() );
-    
-    if( (decimal.find('.') == string::npos) && (decimal.size() >= 2) )
-    {
-      // decimal could now be "10", so we could increment the power, and remove a zero
-      size_t ndecdigit = decimal.size();
-      if( ndecdigit && (decimal[0] == '-') )
-        ndecdigit -= 1;
-      
-      if( (ndecdigit > 0) && (decimal.back() == '0') )
-      {
-        intpow += 1;
-        decimal.resize( decimal.size() - 1 );
-      }
-    }//if( decimal is maybe reducable )
-    
-    power = "E" + std::to_string( intpow );
-  }//if( !power.empty() )
-  
-  return decimal + power;
-};//printCompact
-
- 
-string printCompact( const double val, const size_t precision )
-{
-  if( IsNan(val) )
-    return "nan";
-  
-  if( IsInf(val) )
-    return "inf";
-  
-  const string as_science = printCompact_trial( val, precision, true );
-  const string as_fixed = printCompact_trial( val, precision, false );
-  
-  return ((as_fixed.size() <= as_science.size()) ? as_fixed : as_science);
-  
-  //char buffer[64] = { '\0' };
-  //snprintf( buffer, sizeof(buffer), ("%." + std::to_string(precision) + "G").c_str(), val );
-  //return buffer;
-}//string printCompact( double val, const size_t precision )
+  return SpecUtils::printCompact( value, sig_figs );
+}
 
 
 const UnitNameValuePair &bestActivityUnit( const double activity,
-                                           bool useCurries )
+                                           bool useCuries )
 {
   assert( sm_activityUnitNameValues.size() == 13 );
   
   UnitNameValuePairV::const_iterator begin, end, iter;
   
-  if( useCurries )
+  if( useCuries )
   {
     begin = sm_activityUnitNameValues.begin() + 7;
     end = sm_activityUnitNameValues.end();
@@ -1715,7 +1508,7 @@ const UnitNameValuePair &bestActivityUnit( const double activity,
     
     if( activity == 0.0 )
       return sm_activityUnitNameValues[2];  // return just "bq", no prefix
-  }//if( useCurries ) / else
+  }//if( useCuries ) / else
 
 
   for( iter = begin; iter != end; ++iter )
@@ -1757,9 +1550,9 @@ const UnitNameValuePair &bestDoseUnitHtml( const double activity,
   
   
 const UnitNameValuePair &bestActivityUnitHtml( const double activity,
-                                                bool useCurries )
+                                                bool useCuries )
 {
-  const UnitNameValuePair &a = bestActivityUnit( activity, useCurries );
+  const UnitNameValuePair &a = bestActivityUnit( activity, useCuries );
   
   const auto begin = sm_activityUnitNameValues.begin();
   const auto end = sm_activityUnitNameValues.end();
@@ -1779,6 +1572,44 @@ const UnitNameValuePair &bestActivityUnitHtml( const double activity,
   return sm_activityUnitHtmlNameValues[0];  //shouldnt ever happen
 }//const UnitNameValuePair &bestActivityUnitHtml(...)
 
+
+const UnitNameValuePair &bestLengthUnit( const double length )
+{
+  if( length == 0.0 )
+  {
+    assert( sm_lengthUnitNameValues[sm_lengthUnitNameValues.size() - 2].first == "m" );
+    return sm_lengthUnitNameValues[sm_lengthUnitNameValues.size() - 2];  // return just "m", no prefix
+  }
+
+  for( size_t index = 0; (index + 1) < sm_lengthUnitNameValues.size(); ++index )
+  {
+    const UnitNameValuePair &next_unit = sm_lengthUnitNameValues[index + 1];
+    if( length <= next_unit.second )
+      return sm_lengthUnitNameValues[index];
+  }//for( iter = begin; begin != end; ++begin )
+
+  return sm_lengthUnitNameValues.back();
+}//const UnitNameValuePair &bestLengthUnit( const double length )
+  
+  
+const UnitNameValuePair &bestLengthUnitHtml( const double length )
+{
+  if( length == 0.0 )
+  {
+    assert( sm_lengthUnitHtmlNameValues[sm_lengthUnitHtmlNameValues.size() - 2].first == "m" );
+    return sm_lengthUnitHtmlNameValues[sm_lengthUnitHtmlNameValues.size() - 2];  // return just "m", no prefix
+  }
+
+  for( size_t index = 0; (index + 1) < sm_lengthUnitHtmlNameValues.size(); ++index )
+  {
+    const UnitNameValuePair &next_unit = sm_lengthUnitHtmlNameValues[index + 1];
+    if( length <= next_unit.second )
+      return sm_lengthUnitHtmlNameValues[index];
+  }//for( iter = begin; begin != end; ++begin )
+
+  return sm_lengthUnitHtmlNameValues.back();
+}//const UnitNameValuePair &bestLengthUnitHtml( const double length )
+  
   
 UnitNameValuePair bestTimeUnit( double t )
 {

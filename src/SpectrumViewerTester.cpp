@@ -254,6 +254,7 @@ void SpectrumViewerTester::writeStateStaticHtmlHeader( std::ostream &strm,
                                                     const UserState *dbstate )
 {
   const string username = dbstate->user ? dbstate->user->userName() : string("Unknown");
+  const int state_id = dbstate->user ? static_cast<int>(dbstate->user.id()) : -1;
   const string now = WDateTime::currentDateTime().toString( DATE_TIME_FORMAT_STR ).toUTF8();
   
   writeHtmlHeader( strm, dbstate->name.toUTF8() );
@@ -271,7 +272,7 @@ void SpectrumViewerTester::writeStateStaticHtmlHeader( std::ostream &strm,
        << "\t\t\t<tr><th>Description</th><td>"
           << dbstate->description.toUTF8() << "</td></tr>\n"
        << "\t\t\t<tr><th>User State ID</th><td>"
-          << viewer->m_currentStateID << "</td></tr>\n"
+          << state_id << "</td></tr>\n"
        << "\t\t\t<tr><th>Foreground ID</th><td>"
           << dbstate->foregroundId << "</td></tr>\n"
        << "\t\t\t<tr><th>Background ID</th><td>"
@@ -937,9 +938,11 @@ SpectrumViewerTester::Score SpectrumViewerTester::doTest( SpectrumViewerTester::
       throw runtime_error( "SpectrumViewerTester::doTest: invalid TestType" );
       break;
   }//switch( type )
-  #if( USE_DB_TO_STORE_SPECTRA )
-  score.m_dbid = m_viewer->m_currentStateID;
-  #endif
+#if( USE_DB_TO_STORE_SPECTRA )
+  score.m_dbid = -1;
+  if( m_viewer->m_dataMeasurement )
+    score.m_dbid = m_viewer->m_dataMeasurement->dbStateId( m_viewer->m_displayedSamples );
+#endif
   return score;
 }//Score doTest( TestType type )
 
@@ -2307,8 +2310,7 @@ SpectrumViewerTester::Score SpectrumViewerTester::testMultiplePeakFitRangeVaried
         }//if( !found )
       }//for( size_t i = 0; i < preFitPeaks.size(); ++i )
       
-      SpectrumDataModel *model = m_viewer->m_spectrum->m_model;
-      auto axisH = model->histUsedForXAxis();
+      auto axisH = m_viewer->m_spectrum->histUsedForXAxis();
 
       minx -= 20.0;
       maxx += 20.0;

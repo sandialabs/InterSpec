@@ -56,7 +56,7 @@
 }
 
 
-.RefLinesOptions .ToolTabColumnTitle .closeicon-wtdefault {
+.ToolTabColumnTitle .closeicon-wtdefault {
     float: right;
     /* margin-right: 5px; */
     /* margin-top: 5px; */
@@ -101,11 +101,11 @@
   flex-direction: column;
 }
 
-    .ReferencePhotopeakDisplay .OtherNucs .OtherNucTypeHeader {
-        margin-top: 5px;
-        background: #EEEEEE;
-        text-align: center;
-    }
+.ReferencePhotopeakDisplay .OtherNucs .OtherNucTypeHeader {
+  margin-top: 5px;
+  background: #EEEEEE;
+  text-align: center;
+}
 
 .OtherNucsContent.ToolTabTitledColumnContent > button.Wt-btn.with-label.LinkBtn {
     flex: 0 0 17px;
@@ -115,6 +115,15 @@
     overflow: hidden;
     white-space: nowrap;
     text-overflow: ellipsis;
+}
+
+.ReferencePhotopeakDisplay .FeatureLines {
+    width: 140px;
+}
+
+.ReferencePhotopeakDisplay .FeatureMarkerWidget {
+  margin-left: auto;
+  margin-right: auto;
 }
 
 .HlOptRow button.Wt-btn.with-label.LinkBtn.MoreInfoBtn {

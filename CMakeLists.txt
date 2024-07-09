@@ -39,11 +39,6 @@ endif( hasParent )
 
 
 option(
-    BUILD_AS_COMMAND_LINE_CODE_DEVELOPMENT
-    "Build executable for use while testing new code, not running InterSpec"
-    OFF
-)
-option(
     INCLUDE_ANALYSIS_TEST_SUITE
     "Allow whether user can save and load test spectra"
     OFF
@@ -77,7 +72,7 @@ option(USE_DB_TO_STORE_SPECTRA "Use the database to store spectra" ON)
 option(
     USE_SPECRUM_FILE_QUERY_WIDGET
     "Enables compilation of the spectrum file query tool (not for web deployment)"
-    OFF
+    ON
 )
 option(
     USE_SEARCH_MODE_3D_CHART
@@ -86,7 +81,7 @@ option(
 )
 option(USE_TERMINAL_WIDGET "Enables use of terminal widget" ON)
 
-option(USE_DETECTION_LIMIT_TOOL "Enables under-development detection limit tool" OFF)
+option(USE_DETECTION_LIMIT_TOOL "Enables under-development detection limit tool" ON)
 
 option(USE_QR_CODES "Enables generating QR codes for like DRFs" ON)
 
@@ -181,14 +176,6 @@ if(NOT CMAKE_BUILD_TYPE)
 endif(NOT CMAKE_BUILD_TYPE)
 
 
-if(BUILD_AS_COMMAND_LINE_CODE_DEVELOPMENT)
-    set(PERFORM_DEVELOPER_CHECKS ON CACHE INTERNAL "")
-    set(SpecUtils_ENABLE_EQUALITY_CHECKS ON CACHE INTERNAL "")
-endif(BUILD_AS_COMMAND_LINE_CODE_DEVELOPMENT)
-
-
-
-
 if(BUILD_FOR_WEB_DEPLOYMENT)
     set(TRY_TO_STATIC_LINK ON)
     set(CMAKE_BUILD_TYPE:STRING "Release")
@@ -253,6 +240,7 @@ set(sources
     src/IsotopeId.cpp
     src/MaterialDB.cpp
     src/PhysicalUnits.cpp
+    src/PhysicalUnitsLocalized.cpp
     src/MassAttenuationTool.cpp
     src/DetectorPeakResponse.cpp
     src/GammaInteractionCalc.cpp
@@ -334,7 +322,6 @@ set(sources
     src/D3SpectrumDisplayDiv.cpp
     external_libs/SpecUtils/d3_resources/SpectrumChartD3.js
     external_libs/SpecUtils/d3_resources/SpectrumChartD3.css
-    external_libs/SpecUtils/d3_resources/SpectrumChartD3StandAlone.css
     src/D3TimeChart.cpp
     src/ZipArchive.cpp
     src/MultimediaDisplay.cpp
@@ -344,6 +331,8 @@ set(sources
     src/AppUtils.cpp
     src/ExportSpecFile.cpp
     src/EnterAppUrlWindow.cpp
+    src/NuclideSourceEnter.cpp
+    src/AddNewPeakDialog.cpp
     js/SpectrumChart.js
     js/InterSpec.js
 )
@@ -356,6 +345,7 @@ set(headers
     InterSpec/IsotopeId.h
     InterSpec/MaterialDB.h
     InterSpec/PhysicalUnits.h
+    InterSpec/PhysicalUnitsLocalized.h
     InterSpec/MassAttenuationTool.h
     InterSpec/DetectorPeakResponse.h
     InterSpec/GammaInteractionCalc.h
@@ -444,6 +434,8 @@ set(headers
     InterSpec/AppUtils.h
     InterSpec/ExportSpecFile.h
     InterSpec/EnterAppUrlWindow.h
+    InterSpec/NuclideSourceEnter.h
+    InterSpec/AddNewPeakDialog.h
 )
 
 
@@ -458,12 +450,6 @@ if(INCLUDE_ANALYSIS_TEST_SUITE)
     list(APPEND sources src/SpectrumViewerTester.cpp)
     list(APPEND headers InterSpec/SpectrumViewerTester.h)
 endif(INCLUDE_ANALYSIS_TEST_SUITE)
-
-
-if(BUILD_AS_COMMAND_LINE_CODE_DEVELOPMENT)
-    list(APPEND sources testing/developcode.cpp )
-    list(APPEND headers testing/developcode.h )
-endif(BUILD_AS_COMMAND_LINE_CODE_DEVELOPMENT)
 
 
 #if(IOS)
@@ -493,8 +479,8 @@ if(USE_TERMINAL_WIDGET)
 endif(USE_TERMINAL_WIDGET)
 
 if(USE_DETECTION_LIMIT_TOOL)
-    list( APPEND sources src/DetectionLimitCalc.cpp src/DetectionLimitTool.cpp )
-    list( APPEND headers InterSpec/DetectionLimitCalc.h InterSpec/DetectionLimitTool.h  )
+    list( APPEND sources src/DetectionLimitCalc.cpp src/DetectionLimitTool.cpp src/DetectionLimitSimple.cpp )
+    list( APPEND headers InterSpec/DetectionLimitCalc.h InterSpec/DetectionLimitTool.h InterSpec/DetectionLimitSimple.h )
 endif(USE_DETECTION_LIMIT_TOOL)
 
 if(USE_QR_CODES)
@@ -555,11 +541,13 @@ if( USE_BATCH_TOOLS )
   list( APPEND sources
         src/BatchCommandLine.cpp
         src/BatchPeak.cpp
+        src/BatchActivity.cpp
   )
   
   list( APPEND headers
-        InterSpec/BatchPeak.h
         InterSpec/BatchCommandLine.h
+        InterSpec/BatchPeak.h
+        InterSpec/BatchActivity.h
   )
 endif( USE_BATCH_TOOLS )
 
@@ -581,10 +569,7 @@ deploy_js_resource("${CMAKE_CURRENT_SOURCE_DIR}/external_libs/SpecUtils/d3_resou
          
 )
 
-set(CSS_RESOURCES_TO_COPY
-        "SpectrumChartD3.css"
-        "SpectrumChartD3StandAlone.css"
-)
+set( CSS_RESOURCES_TO_COPY "SpectrumChartD3.css" )
     
 foreach(_file ${CSS_RESOURCES_TO_COPY})
   deploy_css_resource("${CMAKE_CURRENT_SOURCE_DIR}/external_libs/SpecUtils/d3_resources/${_file}"
@@ -604,11 +589,11 @@ set(SpecUtils_NO_BOOST_LIB OFF
     CACHE BOOL "Use boost for threading primitives in SpecUtils"
 )
 
-if( APPLE )
+if( APPLE OR ANDROID )
   set(SpecUtils_USE_WT_THREADPOOL OFF CACHE BOOL "")
-else( APPLE )
+else( APPLE or ANDROID  )
   set(SpecUtils_USE_WT_THREADPOOL ON CACHE BOOL "")
-endif( APPLE )
+endif( APPLE or ANDROID  )
 set(SpecUtils_EXTERNALLY_DEFINED_LOG_MESSAGE ON CACHE BOOL "")
 set(SpecUtils_BUILD_UNIT_TESTS OFF CACHE BOOL "")
 set(SpecUtils_BUILD_REGRESSION_TEST OFF CACHE BOOL "")
@@ -617,6 +602,7 @@ set(SpecUtils_JAVA_SWIG OFF CACHE BOOL "")
 set(SpecUtils_ENABLE_D3_CHART ON CACHE BOOL "")
 set(SpecUtils_D3_SUPPORT_FILE_STATIC OFF CACHE BOOL "")
 set(SpecUtils_D3_SCRIPTS_RUNTIME_DIR "InterSpec_resources" CACHE STRING "")
+set(SpecUtils_ENABLE_URI_SPECTRA ${USE_QR_CODES} CACHE BOOL "")
 
 #add in all the subdirectories the project will always use
 add_subdirectory(external_libs/Minuit2)
@@ -659,10 +645,10 @@ target_link_libraries(
     ${CMAKE_DL_LIBS}
 )
 
-if(USE_SPECRUM_FILE_QUERY_WIDGET OR BUILD_AS_COMMAND_LINE_CODE_DEVELOPMENT)
+if( USE_SPECRUM_FILE_QUERY_WIDGET )
     add_subdirectory(external_libs/pugixml-1.9)
     target_link_libraries(InterSpecLib PUBLIC pugixml)
-endif()
+endif( USE_SPECRUM_FILE_QUERY_WIDGET )
 
 
 if(USE_MYSQL_DB EQUAL USE_SQLITE3_DB)
@@ -685,7 +671,7 @@ target_include_directories( InterSpecLib
 if( InterSpec_FETCH_DEPENDENCIES )
   target_link_libraries( InterSpecLib
     PUBLIC
-      Boost::math Boost::scope_exit Boost::uuid Boost::iostreams Boost::assign Boost::multi_array Boost::crc
+      Boost::math Boost::scope_exit Boost::uuid Boost::iostreams Boost::assign Boost::multi_array Boost::crc Boost::process Boost::crc
       # Boost::signals2 Boost::asio Boost::multi_index
       wt
 #      wttest
@@ -846,8 +832,9 @@ endif( WIN32 )
 
 # I cant seems to get more complex regexs to work, so we'll use many simple ones.
 FILE(GLOB JS_BASE_FILES InterSpec_resources/*.js )
-FILE(GLOB CSS_BASE_FILES InterSpec_resources/*.css )
+FILE(GLOB_RECURSE CSS_BASE_FILES LIST_DIRECTORIES TRUE InterSpec_resources/*.css )
 list(FILTER CSS_BASE_FILES EXCLUDE REGEX ".*SpectrumChartD3.*css")
+list(FILTER CSS_BASE_FILES EXCLUDE REGEX ".min.css")
 FILE(GLOB STATIC_XML_FILES InterSpec_resources/static_text/*.xml )
 FILE(GLOB STATIC_HTML_TMPLTS_FILES InterSpec_resources/static_text/*.html )
 FILE(GLOB STATIC_ADD_XML_FILES InterSpec_resources/static_text/*/*.xml )
@@ -865,6 +852,11 @@ list( APPEND OTHER_InterSpec_SUPPORT_FILES
   )
 
 add_custom_target(interspec_resources SOURCES ${OTHER_InterSpec_SUPPORT_FILES})
+
+
+# Make a target for the XML files that hold the (internationalized) text for the app
+FILE(GLOB APP_TEXT_FILES InterSpec_resources/app_text/*.xml )
+add_custom_target( interspec_app_text SOURCES ${APP_TEXT_FILES} )
 
 
 #Copy files to the install directory
@@ -930,3 +922,10 @@ configure_file(
     ${PROJECT_BINARY_DIR}/data/sandia.decay.xml
     COPYONLY
 )
+
+# Only create an install target if this is a top-level project (e.g., not Electron, or iOS, etc)
+if( NOT hasParent )
+  INSTALL(TARGETS InterSpecExe DESTINATION bin)
+  INSTALL(TARGETS InterSpecLib DESTINATION lib)
+  INSTALL(DIRECTORY data example_spectra InterSpec_resources DESTINATION share/interspec)
+endif( NOT hasParent )

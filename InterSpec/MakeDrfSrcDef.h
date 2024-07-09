@@ -26,6 +26,8 @@
 #include "InterSpec_config.h"
 
 #include <string>
+#include <vector>
+#include <istream>
 
 #include <boost/date_time/posix_time/posix_time.hpp>
 
@@ -43,6 +45,7 @@ namespace Wt
   class WCheckBox;
   class WDateEdit;
   class WComboBox;
+  class WPushButton;
   class WDoubleSpinBox;
   class WSuggestionPopup;
 }//namespace Wt
@@ -52,11 +55,80 @@ namespace SandiaDecay
   struct Nuclide;
 }//namespace SandiaDecay
 
+
+/** The user can have a Source.lib file in their data directory that contains
+ calibration source information.
+ 
+ Source lines should be in the format:
+  "[nuclide]_[serial num]  [activity in bq]  [activity reference date]  [comment]"
+  for example:
+  "22NA_01551910  5.107E+04  25-Aug-2022  West Rad Lab"
+    
+  If any field is not valid  (except comment can be blank), the line wont be included in the results.
+ 
+  Each line contains a different source.
+ */
+struct SrcLibLineInfo
+{
+  /** Activity of source (in units of PhysicalUnits), on date specified. */
+  double m_activity;
+  /** Nuclide of this source. */
+  const SandiaDecay::Nuclide *m_nuclide;
+  /** The date the activity was specified for.
+   For sources that grow in, this is also assumed to be their T=0 date.
+   */
+  boost::posix_time::ptime m_activity_date;
+  
+  /** The first field specified. */
+  std::string m_source_name;
+  
+  /** Everything past activity field. */
+  std::string m_comments;
+  
+  /** The entire line all the information was extracted from. */
+  std::string m_line;
+  
+  /** Optional activity uncertainty (in units of PhysicalUnits activity - i.e., bq)
+   Will be zero or negative if not specified.
+   */
+  double m_activity_uncert;
+  
+  /** Optional distance used for the source.
+   Will be zero or negative if not specified.
+   */
+  double m_distance;
+  
+  SrcLibLineInfo();
+  
+  /** Source lines should be in the format:
+   "[nuclide]_[serial num]  [activity in bq]  [activity reference date]  [comment]"
+   for example:
+   "22NA_01551910  5.107E+04  25-Aug-2022  West Rad Lab, Distance=50cm, ActivityUncertainty=5.107E+03"
+   
+   The comment field can optionally contain both the distance, and activity uncertainty, for example:
+    - "Distance=50cm"
+    - "ActivityUncertainty=5.107E+03", where activity uncertainty is in Bq
+   
+   If any field is not valid  (except comment can be blank), the line wont be included in the results.
+   */
+  static std::vector<SrcLibLineInfo> sources_in_lib( std::istream &strm );
+  
+  /** A convenience function for above, that takes a file path, instead of a stream. */
+  static std::vector<SrcLibLineInfo> sources_in_lib( const std::string &filename );
+  
+  /** Checks if first valid-ish line is a valid source, and if so, returns true. */
+  static bool is_candidate_src_lib( std::istream &strm );
+  
+  /** Grabs sources in all Source.lib files in user and application data directories. */
+  static std::vector<SrcLibLineInfo> sources_in_all_libs();
+};//struct SrcLibLineInfo
+
+
 /* Widget to allow entering:
    - Nuclide
    - Activity
    - Date of activity
-   - Date of measurment being used for (can likely be auto-filed out)
+   - Date of measurement being used for (can likely be auto-filed out)
    - Potentially age when activity was determined
    - Activity uncertainty
    - Distance to source
@@ -175,11 +247,23 @@ public:
    */
   std::string toGadrasLikeSourceString() const;
   
+  /** Returns the sources defined in Sources.lib, for this nuclide. */
+  const std::vector<SrcLibLineInfo> &lib_srcs_for_nuc();
+  
+  /** Adds sources from a Source.lib file to this widget.
+   
+   \param srcs The sources to add to the menu of `m_lib_src_btn` - only sources matching this sources nuclide will be added.
+   \param auto_populate If true, then the information will be set for the first matching nuclide found in `srcs`.
+   */
+  void addSourceLibrary( std::vector<std::shared_ptr<const SrcLibLineInfo>> srcs,
+                        const bool auto_populate );
 protected:
   /** Creates the widget, but doesnt fill out any of the information. */
   void create();
   
   void setNuclide( const SandiaDecay::Nuclide *nuc );
+  
+  void setSrcInfo( const SrcLibLineInfo &info );
   
   void updateAgedText();
   
@@ -204,17 +288,19 @@ protected:
   /** Returns user entered activity.  Throws exception if invalid. */
   double enteredActivity() const;
   
+  void updateSourceLibNuclides();
+  
   Wt::WTable *m_table;
   
   /** The name of the nuclide this source represents. */
   const SandiaDecay::Nuclide *m_nuclide;
   
-  /** Pointer to shielding material database, garunteed non-null.
+  /** Pointer to shielding material database, guaranteed non-null.
       Not owned by this object.
    */
   MaterialDB *m_materialDB;
   
-  /** The material suggestion widget shared everywher within InterSpec.
+  /** The material suggestion widget shared everywhere within InterSpec.
       Not owned by this object.
    */
   Wt::WSuggestionPopup *m_materialSuggest;
@@ -260,6 +346,18 @@ protected:
   
   /** The widget to allow selecting shielding, is selected to do so. */
   ShieldingSelect *m_shieldingSelect;
+  
+  /** The sources in Source.lib that are for this nuclide. */
+  std::vector<SrcLibLineInfo> m_lib_srcs_for_nuc;
+  
+  /** All sources from Source.lib files found on the device. */
+  std::vector<SrcLibLineInfo> m_lib_srcs_from_file;
+  
+  /** Sources added by dragging-n-dropping Source.lib onto app - via `addSourceLibrary(...)` */
+  std::vector<std::shared_ptr<const SrcLibLineInfo>> m_lib_srcs_added;
+  
+  /** Button that lets you select sources that might be in Source.lib files */
+  Wt::WPushButton *m_lib_src_btn;
   
   Wt::Signal<> m_updated;
 };//MakeDrfSrcDef

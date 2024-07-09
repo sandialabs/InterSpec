@@ -8,6 +8,7 @@ set( TRY_TO_STATIC_LINK ON CACHE BOOL "Lets statically link everything" )
 set( BUILD_AS_LOCAL_SERVER OFF CACHE BOOL "N/A" )
 set( USE_OSX_NATIVE_MENU OFF CACHE BOOL "N/A" )
 set( USE_SPECRUM_FILE_QUERY_WIDGET ON CACHE BOOL "Enable Spectrum File Query Widget" )
+set( USE_REMOTE_RID ON CACHE BOOL "Enables using remote RID tool" )
 
 IF(WIN32)
   add_definitions(-DBOOST_ALL_NO_LIB) #Prevent boost auto-linking, which seems to call in vc141 boost libs instead of vc142
@@ -38,6 +39,8 @@ set_target_properties(${PROJECT_NAME} PROPERTIES CXX_STANDARD 14 CXX_STANDARD_RE
 
 target_include_directories( ${PROJECT_NAME} PUBLIC 
                             node_modules/node-addon-api/ 
+                            node_modules/node-api-headers/
+                            node_modules/node-api-headers/include
                             ${CMAKE_CURRENT_SOURCE_DIR}/../.. 
 )
 

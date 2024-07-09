@@ -43,6 +43,13 @@ public:
   void setChartBackgroundColor( const Wt::WColor &color );
   void setDefaultMarkerColor( const Wt::WColor &color );
   
+  void setXAxisTitle( const std::string &title );
+  void setYAxisTitle( const std::string &title );
+  
+  /** Set the chart content margins (e.g. how many pixels inside the <svg /> element the titles or axises should be drawn).
+   */
+  void setContentMargins( int top, int right, int bottom, int left );
+  
 protected:
   void defineJavaScript();
   
@@ -54,6 +61,21 @@ protected:
    Currently is `jsRef() + ".chart"`.
    */
   const std::string m_jsgraph;
+  
+  std::string m_xAxisTitle;
+  std::string m_yAxisTitle;
+  
+  /** Margins between the edge of the SVG, and where the plot contents start getting drawn, in pixels.
+   It would be reasonable to instead implement this as CSS margin on the <div /> object the SVG is in,
+   but leaving for the moment.
+   */
+  int m_topMargin;
+  int m_rightMargin;
+  int m_bottomMargin;
+  int m_leftMargin;
+  
+  /** The distance between the axis title (if present), and the axis numbers.  Defaults to -3 to make compact. */
+  int m_titlePadding;
   
   std::map<std::string,Wt::WCssTextRule *> m_cssRules;
   

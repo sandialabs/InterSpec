@@ -1,0 +1,149 @@
+.DetectionLimitSimple{
+  display: flex;
+  flex-direction: column;
+}
+
+.DetectionLimitSimple .ErrMsg {
+  display: block;
+  color: red;
+}
+
+.DetectionLimitSimple button.MdaFitFwhm.Wt-btn.with-label.LightButton
+{
+  align-self: center;
+  color: red;
+  border: 1px solid red;
+  
+}
+
+.DetectionLimitSimple .ResultsArea {
+  border: 1px solid #e1e1e1;
+  margin-bottom: 5px;
+}
+
+.DetectionLimitSimple .ResultsTxtArea {
+  display: flex;
+  justify-content: center; /* Align horizontal */
+  align-items: center; /* Align vertical */
+  text-align: center;
+  
+  border: 1px solid #e1e1e1;
+  margin-left: 10px;
+  margin-right: 10px;
+  
+  height: 41px;
+  
+  font-size: 14px;
+  font-weight: 500;
+  background: white;
+  border-radius: 3px;
+}
+
+.DetectionLimitSimple .D3SpectrumDisplayDiv,
+.DetectionLimitSimple .ErrDisplay {
+  width: 100%;
+  height: 200px;
+  margin-bottom: 5px;
+}
+
+.DetectionLimitSimple .MdaMoreInfoBtn {
+  text-align: right;
+  font-size: small;
+}
+
+.DetectionLimitSimple .GeneralInput {
+  display: grid;
+  margin-left: 20px;
+  margin-right: 20px;
+  margin-top: 5px;
+  
+  row-gap: 5px;
+  column-gap: 5px;
+}
+
+.DetectionLimitSimple .GeneralInput .DetectorDisplay {
+  /* justify-self: stretch; */
+  width: 229px;
+}
+
+.DetectionLimitSimple .GeneralInput > input {
+  /* justify-self: stretch; */
+  width: 105px;
+}
+
+.DetectionLimitSimple .GeneralInput > select {
+  /* justify-self: stretch; */
+  width: 110px;
+}
+
+.DetectionLimitSimple .GeneralInput input.Wt-spinbox {
+  /* justify-self: stretch; */
+  width: 89px;
+}
+
+.DetectionLimitSimple .GeneralInput .SpacerColumn {
+  width: 15px;
+}
+
+.DetectionLimitSimple .GeneralInput .NuclideSourceEnter {
+  
+}
+
+.DetectionLimitSimple .GeneralInput .FwhmSuggest {
+  font-style: italic;
+  font-size: xx-small;
+  margin-left: 10px;
+}
+
+
+.DetectionLimitSimple .MethodSelect {
+  display: flex;
+  flex-direction: row;
+  justify-content: flex-start;
+  align-items: center;
+  column-gap: 8px;
+}
+
+
+.DetectionLimitSimple .CalcMethodDesc{
+  display: block;
+  font-style: italic;
+  font-size: xx-small;
+}
+
+
+.DetectionLimitSimple .BackCbDiv {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: flex-end;
+  column-gap: 5px;
+}
+
+.DeconvMoreInfo {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.DeconvMoreInfo .DeconChi2Chart {
+  overflow: hidden;
+  width: 300px;
+  height: 200px;
+  margin-bottom: 10px;
+  margin-left: 10px;
+  margin-right: 10px;
+}
+
+
+.DeconvMoreInfo .AssumedBrNote {
+  text-align: center;
+}
+
+
+.DeconvMoreInfo .DeconvoMoreInfoTable {
+  white-space: nowrap;
+  border-collapse: separate;
+  border-spacing: 5px 5px;
+}
+

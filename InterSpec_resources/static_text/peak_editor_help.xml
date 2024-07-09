@@ -9,13 +9,11 @@
       <div>This tool allows you to have fine grained control over peak parameters
 by either directly specifying the parameters, or by specifying which parameters
 should be fit for, and then re-fitting the peak.  The <b>Peak Editor</b> also allows
-you to edit the nuclide associated with this peak, or change the continuum type
+you to edit the nuclide associated with this peak, or change the skew or continuum types
 used for the peak.</div>
       <div style="padding-top: 10px">
          To access the <b>Peak Editor</b> dialog,
-         <!-- <u>right-click</u> -->
-tap and hold for about a second,
-         within the region of
+         <u>right-click</u>, or on touch devices <u>tap and hold</u> for about a second, within the region of
 interest (ROI) of an identified peak, and then
          <u>select</u>
          &#34;<b>Peak Editor</b>&#34;:
@@ -26,13 +24,7 @@ interest (ROI) of an identified peak, and then
       <div style="padding-top: 10px"> 
 If you have multiple peaks next to each other sharing a ROI, the peak
 nearest where you <u>right-clicked</u> is chosen; while the <b>Peak Editor</b> window is
-open, you can change the peak it pertains to by
-         <u>right-clicking</u>
-         a new peak and
-         <u>selecting</u>
-         the
-         <b>Peak Editor</b>
-         option once again.
+open, you can change the peak it pertains to by using the arrows in the lower left and right portions of the <b>Peak Editor</b> to cycle through the peaks in the ROI.
       </div>
 	  <div style="padding-top: 10px">
 	           <u>Check/Uncheck</u>
@@ -49,8 +41,11 @@ values in the
 <ul>
 <div style="padding-top: 10px">
 <u>Clicking</u> the <b>Cancel</b> button will revert the peak to the last time you
-clicked <b>Apply</b>, or if you haven't <u>clicked</u> <b>Apply</b>, it will revert the
+clicked <b>Apply</b> or <b>Refit</b>, or if you haven't <u>clicked</u> <b>Apply</b> or <b>Refit</b>, it will revert the
 peak back to before you opened the dialog and close the dialog.
+The application-level undo/redo does not track changes in individual fields, but instead
+tracks the opening of the dialog, every time the <b>Apply</b> or <b>Refit</b> button is pressed, and
+when the dialog is accepted or closed.
 </div>
 <div style="padding-top: 10px">
 Closing the dialog via the upper right
@@ -106,6 +101,45 @@ and two skew distributions that modify both the lower and upper energy tails of 
   </li>
 </ul>
 
+
+<p>
+An example showing each of the distributions to the same data is:
+
+<table style="border: 1px solid black; border-collapse: collapse; table-layout: fixed">
+  <tr>
+    <td style="border: 1px solid black; padding-top: 2px; padding-bottom: 2px;">
+      <img src="InterSpec_resources/static_text/images/no_skew_1172keV_10.49cps.png"  class="imageBorder" style="width: 95%; margin-left: auto; margin-right: auto; display: block;" />
+    <div style="text-align: center;">No Skew</div>
+    </td>
+    <td style="border: 1px solid black; padding-top: 2px; padding-bottom: 2px;">
+      <img src="InterSpec_resources/static_text/images/exp_dot_gauss_1172keV_11.31cps.png"  class="imageBorder" style="width: 95%; margin-left: auto; margin-right: auto; display: block;" />
+      <div style="text-align: center;">Exp*Gauss</div>
+    </td>
+    <td style="border: 1px solid black; padding-top: 2px; padding-bottom: 2px;">
+    <img src="InterSpec_resources/static_text/images/gauss_exp_1172keV_11.31cps.png"  class="imageBorder" style="width: 95%; margin-left: auto; margin-right: auto; display: block;" />
+      <div style="text-align: center;">GaussExp</div>
+    </td>
+  </tr>
+  <tr>
+    <td style="border: 1px solid black; padding-top: 2px; padding-bottom: 2px;">
+      <img src="InterSpec_resources/static_text/images/crystal_ball_1172keV_13.19cps.png"  class="imageBorder" style="width: 95%; margin-left: auto; margin-right: auto; display: block;" />
+      <div style="text-align: center;">Crystal Ball</div>
+    </td>
+    <td style="border: 1px solid black; padding-top: 2px; padding-bottom: 2px;">
+      <img src="InterSpec_resources/static_text/images/exp_gauss_exp_1172keV_12.76cps.png"  class="imageBorder" style="width: 95%; margin-left: auto; margin-right: auto; display: block;" />
+      <div style="text-align: center;">ExpGaussExp</div>
+    </td>
+    <td style="border: 1px solid black; padding-top: 2px; padding-bottom: 2px;">
+      <img src="InterSpec_resources/static_text/images/double_crystal_ball_1172keV_21.31cps.png"  class="imageBorder" style="width: 95%; margin-left: auto; margin-right: auto; display: block;" />
+      <div style="text-align: center;">Double Sided Crystal Ball</div>
+    </td>
+  </tr>
+</table>
+</p>
+
+
+
+
       <h3>Example Use Cases</h3>
       <div style="padding-top: 10px">
 	  The following are typical reasons to refer to the <b>Peak Editor</b> tool.
@@ -156,26 +190,6 @@ parameters for the other peaks.</ul></div>
          <li style="padding-top: 10px">Many of the fields do not have error checking beyond verifying a floating point
 number was entered.  For instance you could specify a ROI which does not contain
 the peak centroid, resulting in the peak not even showing up on the chart.</li>
-         <li style="padding-top: 10px">
-            There are currently (as of 20140506) a number of options you can select that are
-not fully supported: 
-<ul>
-<li style="padding-top: 10px">
-selecting the continuum to be a globally defined continuum,
-</li>
-<li style="padding-top: 10px">
-peak types other than Gaussian are not well supported everywhere, and we are
-</li>
-<li style="padding-top: 10px">
-expecting to change the model of the peak skew from a Landau based scheme to be
-consistent with
-            <em>GADRAS</em>
-</li>
-</ul>
-<i>
-            We have left these options in the GUI because we plan to better support them, and
-this way it will remind us to fix the issues (nobody said we were professionals!).</i>
-         </li>
          <li style="padding-top: 10px"> There can be only one <b>Peak Editor</b> dialog open at a time; trying to open the <b>Peak Editor</b>
 for a second peak will only change which peak the current dialog corresponds to.</li>
          <li style="padding-top: 10px">

@@ -145,6 +145,7 @@ namespace PhysicalUnits
   extern const char * const sm_timeDurationHalfLiveOptionalRegex;
   extern const char * const sm_timeDurationHalfLiveOptionalPosOrNegRegex;
   
+  extern const char * const sm_decimalRegex;
   extern const char * const sm_positiveDecimalRegex;
 
   //printToBest____Units(...): makes an attempt to turn the input into a user
@@ -160,7 +161,7 @@ namespace PhysicalUnits
                                       const double cm_definition = cm );
   std::string printToBestActivityUnits( double activity,
                                         int maxNpostDecimal = 2,
-                                        bool useCurries = true, //or else use becquerel
+                                        bool useCuries = true, //or else use becquerel
                                         double bq_definition = becquerel );
   std::string printToBestTimeUnits( double time,
                                     int maxNpostDecimal = 2,
@@ -296,15 +297,8 @@ namespace PhysicalUnits
    */
   std::string printValueWithUncertainty( double value, double uncert, size_t nsigfig );
 
-  /** Prints the most compact string representation of the value, with at least the specified
-   number of significant figures; if more significant figures can be included without increasing
-   result length, they will be included.
-   
-   Uses the "round to nearest and ties to even" convention.
-   
-   Note: this function is hand-rolled, and extremely slow, and likely missing some edge cases or
-         something.  There is likely a much more elegant and correct implementation for this.
-   */
+  /** A simple passthrough to `SpecUtils::printCompact`, for compatibility. */
+  [[deprecated("Use SpecUtils::printCompact(double,size_t).")]]
   std::string printCompact( const double value, const size_t sig_figs );
 
   //Functions below here were imported 20121014 from some other code I have
@@ -313,20 +307,26 @@ namespace PhysicalUnits
   typedef std::pair<std::string,double>    UnitNameValuePair;
   typedef std::vector< UnitNameValuePair > UnitNameValuePairV;
 
+  extern const UnitNameValuePairV sm_lengthUnitNameValues;
   extern const UnitNameValuePairV sm_activityUnitNameValues;
+  extern const UnitNameValuePairV sm_lengthUnitHtmlNameValues;
   extern const UnitNameValuePairV sm_activityUnitHtmlNameValues;
   extern const UnitNameValuePairV sm_doseRateUnitHtmlNameValues;
 
   //Returns a reference to an element in sm_activityUnitNameValues.
   const UnitNameValuePair &bestActivityUnit( const double activity,
-                                             bool useCurries = true );
+                                             bool useCuries = true );
   
   //Returns a reference to an element in sm_activityUnitHtmlNameValues
   const UnitNameValuePair &bestActivityUnitHtml( const double activity,
-                                                 bool useCurries = true );
+                                                 bool useCuries = true );
   
   const UnitNameValuePair &bestDoseUnitHtml( const double dose,
                                                 bool useRem = true );
+  
+  const UnitNameValuePair &bestLengthUnit( const double length );
+  const UnitNameValuePair &bestLengthUnitHtml( const double length );
+  
   UnitNameValuePair bestTimeUnit( double time );
 }//namespace PhysicalUnits
 #endif

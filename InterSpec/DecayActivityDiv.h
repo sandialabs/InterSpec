@@ -84,7 +84,7 @@ public:
   virtual ~DecayActivityDiv();
   
   void addNuclide( const int z, const int a, const int iso,
-                  const double activity, const bool useCurrie,
+                  const double activity, const bool useCurie,
                   const double age, const std::string &activityStr );
   
   void clearAllNuclides();
@@ -160,7 +160,7 @@ public:
     int iso;
     double age;
     double activity;
-    bool useCurrie;
+    bool useCurie;
 
     /* The user input activity string; used for round-tripping to put back into user inputs, and tracking number of 
     significant figures.

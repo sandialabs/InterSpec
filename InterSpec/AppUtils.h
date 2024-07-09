@@ -40,6 +40,9 @@ namespace AppUtils
    if you pass in a URI of "interspec://decay/chain?nuclide=U238&activity=3uCi..."
    then host=="decay", path=="chain", and query=="nuclide=U238&activity=3uCi..."
    
+   Please note, if you pass in a URI of "currie?ver=1&nuc=Ba133&...", then host=="currie",
+   path=="", and query=="ver=1&nuc=Ba133&...".
+   
    You should url-decode the uri, before passing it in, because, for example the '?' character
    is not in the allowed QR code ascii set
    */

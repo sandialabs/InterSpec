@@ -66,6 +66,7 @@
   
   // We wont handle promises here, so this way WkWebView will keep handling them,
   //  But here is some code to intercept them, in case it turns out we should.
+  //  (TODO: double check Mail and Outlook attachments can be dragged in)
   //NSPasteboard *pboard = [sender draggingPasteboard];
   //NSDictionary *options = @{};
   //NSArray<Class> *promises_class = @[[NSFilePromiseReceiver class]];
@@ -619,6 +620,8 @@ Wt::WApplication *createApplication(const Wt::WEnvironment& env)
     if( !doResume )
       actualURL = [NSString stringWithFormat:@"%@&restore=no", actualURL];
     
+    // WkWebView registers _window for registerForDraggedTypes; if it didnt, we could use the following line
+    //[_window registerForDraggedTypes: [NSArray arrayWithObjects:NSFilenamesPboardType, NSURLPboardType, nil]];
     
     /*
      //Right now drag-n-drop from Outlook does not work - should investigate this:

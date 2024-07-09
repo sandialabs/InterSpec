@@ -229,8 +229,8 @@ struct ReferenceLineInfo
    */
   static std::shared_ptr<ReferenceLineInfo> generateRefLineInfo( RefLineInput input );
   
-  /** The additional nuclide mixtures defined in `data/add_ref_line.xml` */
-  static std::vector<std::string> additional_nuclide_mixtures();
+  /** The additional nuclide mixtures and one-off sources defined in `data/add_ref_line.xml` */
+  static std::vector<std::string> additional_ref_line_sources();
   
   /** Loads nuclide mixtures  defined in `data/add_ref_line.xml` into memory.
    
@@ -340,7 +340,7 @@ struct ReferenceLineInfo
     */
     RefGammaType m_source_type;
 
-    /** Element giving rise to this flourescent x-ray.  
+    /** Element giving rise to this fluorescent x-ray.  
     Will be element peak is assigned to, if non-null. 
     */
     const SandiaDecay::Element *m_element;
@@ -373,6 +373,7 @@ struct ReferenceLineInfo
     Background,
     CustomEnergy,
     NuclideMixture,
+    OneOffSrcLines,
     None
   };//enum class SourceType : int
 

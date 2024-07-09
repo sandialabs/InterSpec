@@ -54,6 +54,7 @@
 #include "InterSpec/WarningWidget.h"
 #include "InterSpec/PhysicalUnits.h"
 #include "InterSpec/DecayDataBaseServer.h"
+#include "InterSpec/PhysicalUnitsLocalized.h"
 
 using namespace std;
 using SpecUtils::Measurement;
@@ -905,7 +906,7 @@ void PeakDef::equalEnough( const PeakDef &lhs, const PeakDef &rhs )
     const double b = rhs.m_uncertainties[t];
     const double diff = fabs( a - b );
 
-    if( diff > 1.0E-6*max(fabs(a),fabs(b)) )
+    if( ((a > 0.0) || (b > 0.0)) && (diff > 1.0E-6*max(fabs(a),fabs(b))) )
     {
       snprintf(buffer, sizeof(buffer),
                "PeakDef uncertanity %s of LHS (%1.8E) vs RHS (%1.8E) is out of tolerance.",
@@ -2991,7 +2992,7 @@ std::string PeakDef::gaus_peaks_to_json(const std::vector<std::shared_ptr<const 
       }//switch( t )
       
       double coef = p.coefficient(t), uncert = p.uncertainty(t);
-      assert( !IsInf(coef) && !IsNan(coef) );
+      assert( !IsInf(coef) && !IsNan(coef) || (t == PeakDef::Chi2DOF) ); // PeakDef::Chi2DOF may be +inf, if it wasnt evaluated
       if( IsInf(coef) || IsNan(coef) )
       {
         //throw runtime_error( "Peak ceoff is inf or nan" );
@@ -3345,7 +3346,7 @@ bool PeakDef::ageFitNotAllowed( const SandiaDecay::Nuclide *nuc )
 
 double PeakDef::defaultDecayTime( const SandiaDecay::Nuclide *nuclide, string *stranswer )
 {
-  string decayTimeStr = "";
+  const char *decayTimeStr = nullptr;
   double decaytime = 0;
   if( nuclide->canObtainSecularEquilibrium() )
   {
@@ -3386,11 +3387,13 @@ double PeakDef::defaultDecayTime( const SandiaDecay::Nuclide *nuclide, string *s
     decayTimeStr = "7 HL";
   }
   
-  if( decayTimeStr.empty() )
-    decayTimeStr = PhysicalUnits::printToBestTimeUnits( decaytime, 2, SandiaDecay::second );
-  
   if( stranswer )
-    *stranswer = decayTimeStr;
+  {
+    if( decayTimeStr )
+      *stranswer = decayTimeStr;
+    else
+      *stranswer = PhysicalUnitsLocalized::printToBestTimeUnits( decaytime, 2, SandiaDecay::second );
+  }//if( stranswer )
   
   return decaytime;
 }//string defaultDecayTime(..)
@@ -4305,21 +4308,23 @@ double PeakDef::offset_integral( const double x0, const double x1,
 ////////////////////////////////////////////////////////////////////////////////
 
 /** Text appropriate for use as a label for the continuum type in the gui. */
-const char *PeakContinuum::offset_type_label( const PeakContinuum::OffsetType type )
+const char *PeakContinuum::offset_type_label_tr( const PeakContinuum::OffsetType type )
 {
   switch( type )
   {
-    case PeakContinuum::NoOffset:     return "None";
-    case PeakContinuum::Constant:     return "Constant";
-    case PeakContinuum::Linear:       return "Linear";
-    case PeakContinuum::Quadratic:    return "Quadratic";
-    case PeakContinuum::Cubic:        return "Cubic";
-    case PeakContinuum::FlatStep:     return "Flat Step";
-    case PeakContinuum::LinearStep:   return "Linear Step";
-    case PeakContinuum::BiLinearStep: return "Bi-linear Step";
-    case PeakContinuum::External:     return "Global Cont.";
+    case PeakContinuum::NoOffset:     return "pct-none";
+    case PeakContinuum::Constant:     return "pct-constant";
+    case PeakContinuum::Linear:       return "pct-linear";
+    case PeakContinuum::Quadratic:    return "pct-quadratic";
+    case PeakContinuum::Cubic:        return "pct-cubic";
+    case PeakContinuum::FlatStep:     return "pct-flat-step";
+    case PeakContinuum::LinearStep:   return "pct-linear-step";
+    case PeakContinuum::BiLinearStep: return "pct-bilinear-step";
+    case PeakContinuum::External:     return "pct-global";
   }//switch( type )
-  return "InvalidOffsetType";
+  
+  assert( 0 );
+  return "pct-invalid";
 }
 
 

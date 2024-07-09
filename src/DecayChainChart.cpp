@@ -67,6 +67,7 @@
 #include "InterSpec/DecayChainChart.h"
 #include "InterSpec/DecayActivityDiv.h"
 #include "InterSpec/DecayDataBaseServer.h"
+#include "InterSpec/PhysicalUnitsLocalized.h"
 
 using namespace std;
 using namespace Wt;
@@ -290,27 +291,19 @@ private:
 
 DecayChainChart::DecayChainChart( WContainerWidget *parent  )
   : WContainerWidget( parent ),
-  m_useCurrie( true ),
+  m_useCurie( true ),
   m_jsLoaded( false ),
   m_nuclide( nullptr ),
   m_moreInfoDialog( nullptr ),
   m_showDecayParticles( this, "ShowDecayParticleInfo", true ),
   m_showDecaysThrough( this, "ShowDecaysThrough", true )
 {
-  //To keep Wt from loading d3.js again, if it loaded it fo D3SpectrumDisplay, then
-  //  it looks like (for Wt 3.3.4 anyway) we need the same URL, not just the same
-  //  second argument - so the loading here matches D3SpectrumDisplay.
-#if( defined(NDEBUG) || IOS || ANDROID || BUILD_AS_ELECTRON_APP || BUILD_AS_OSX_APP || BUILD_AS_WX_WIDGETS_APP )
-  //THe NDEBUG should be enough, but just making sure
   wApp->require( "InterSpec_resources/d3.v3.min.js", "d3.v3.js" );
-#else
-  wApp->require( "external_libs/SpecUtils/d3_resources/d3.v3.min.js", "d3.v3.js" );
-#endif
-  
-  //wApp->require( "InterSpec_resources/d3.v3.min.js", "d3.v3.js" );
   wApp->require( "InterSpec_resources/DecayChainChart.js" );
   wApp->useStyleSheet( "InterSpec_resources/DecayChainChart.css" );
   addStyleClass( "DecayChainChart" );
+  
+  InterSpec::instance()->useMessageResourceBundle( "DecayActivity" );
   
   m_showDecayParticles.connect( boost::bind( &DecayChainChart::showDecayParticleInfo, this,
                                             boost::placeholders::_1 ) );
@@ -353,16 +346,17 @@ pair<AuxWindow *, DecayChainChart *>
   if( !nuc )
     return pair<AuxWindow *, DecayChainChart *>( nullptr, nullptr );
 
+  InterSpec::instance()->useMessageResourceBundle( "DecayActivity" );
   
-  string title;
+  WString title;
   switch( type )
   {
     case DecayChainChart::DecayChainType::DecayFrom:
-      title = nuc->symbol + " Decay Chain";
+      title = WString::tr("dcc-window-title-decay-chain").arg( nuc->symbol );
       break;
 
     case DecayChainChart::DecayChainType::DecayThrough:
-      title = "Decays through " + nuc->symbol;
+      title = WString::tr("dcc-window-title-decay-through").arg( nuc->symbol );
       break;
   }//switch( type )
   
@@ -374,6 +368,8 @@ pair<AuxWindow *, DecayChainChart *>
   
   WPushButton *close = window->addCloseButtonToFooter();
   close->clicked().connect( boost::bind( &AuxWindow::hide, window ) );
+  window->rejectWhenEscapePressed();
+  window->finished().connect( boost::bind( &AuxWindow::deleteAuxWindow, window ) );
     
   WGridLayout *layout = window->stretcher();
   layout->addWidget( chart, 0, 0 );
@@ -426,12 +422,12 @@ void DecayChainChart::render( Wt::WFlags<Wt::RenderFlag> flags )
 }//render(...)
   
   
-void DecayChainChart::setNuclide( const SandiaDecay::Nuclide * const nuc, const bool useCurrie, const DecayChainType decayType )
+void DecayChainChart::setNuclide( const SandiaDecay::Nuclide * const nuc, const bool useCurie, const DecayChainType decayType )
 {
   const bool actuallyChanged = (m_nuclide != nuc);
   
   m_nuclide = nuc;
-  m_useCurrie = useCurrie;
+  m_useCurie = useCurie;
   
   switch( decayType )
   {
@@ -495,9 +491,9 @@ void DecayChainChart::jsonInfoForNuclide( const SandiaDecay::Nuclide * const nuc
 {
   assert( nuc );
     
-  vector<string> info = getTextInfoForNuclide( nuc, m_nuclide, m_useCurrie );
+  vector<string> info = getTextInfoForNuclide( nuc, m_nuclide, m_useCurie );
     
-  const string hl = (IsInf(nuc->halfLife) ? std::string("stable") : PhysicalUnits::printToBestTimeUnits(nuc->halfLife, 2));
+  const string hl = (IsInf(nuc->halfLife) ? std::string("stable") : PhysicalUnitsLocalized::printToBestTimeUnits(nuc->halfLife, 2));
     
   js << "{ \"nuclide\": \"" << nuc->symbol << "\","
     << " \"massNumber\": " << static_cast<int>(nuc->massNumber) << ","
@@ -596,7 +592,7 @@ void DecayChainChart::setJsonForDecaysThrough( const SandiaDecay::Nuclide * cons
   
 std::vector<std::string> DecayChainChart::getTextInfoForNuclide( const SandiaDecay::Nuclide * const nuc,
                                                                   const SandiaDecay::Nuclide * const parentNuclide,
-                                                                  const bool useCurrie )
+                                                                  const bool useCurie )
 {
   vector<string> information;
   
@@ -606,10 +602,10 @@ std::vector<std::string> DecayChainChart::getTextInfoForNuclide( const SandiaDec
   char buffer[512];
   
   information.push_back( nuc->symbol );
-  snprintf( buffer, sizeof(buffer), "Protons: %i", nuc->atomicNumber );
-  information.push_back( buffer );
-  snprintf( buffer, sizeof(buffer), "Mass: %.1f Da", nuc->atomicMass );
-  information.push_back( buffer );
+  information.push_back( WString::tr("dcc-nuc-info-protons").arg( static_cast<int>(nuc->atomicNumber) ).toUTF8() );
+  
+  snprintf( buffer, sizeof(buffer), "%.1f", nuc->atomicMass );
+  information.push_back( WString::tr("dcc-nuc-info-mass").arg(buffer).toUTF8() );
   
   //if( nuc == parentNuclide )
   //{
@@ -621,11 +617,11 @@ std::vector<std::string> DecayChainChart::getTextInfoForNuclide( const SandiaDec
   
   if( IsInf(nuc->halfLife) )
   {
-    information.push_back("Half Life: stable" );
+    information.push_back( WString::tr("dcc-nuc-info-hl-stable").toUTF8() );
   }else
   {
-    const string hl = PhysicalUnits::printToBestTimeUnits( nuc->halfLife );
-    information.push_back("Half Life: " + hl );
+    const string hl = PhysicalUnitsLocalized::printToBestTimeUnits( nuc->halfLife );
+    information.push_back( WString::tr("dcc-nuc-info-hl-stable").arg(hl).toUTF8() );
   }
   
   if( parentNuclide && (nuc != parentNuclide) )
@@ -634,18 +630,21 @@ std::vector<std::string> DecayChainChart::getTextInfoForNuclide( const SandiaDec
     const float br_to = parentNuclide->branchRatioToDecendant(nuc);     //will be >0 when plotting decays from a nuclide
     
     if( br_from <= 0.0 || br_to > 0.0 )
-      snprintf( buffer, sizeof(buffer), "BR from %s: %.5g", parentNuclide->symbol.c_str(), br_to );
-    else
-      snprintf( buffer, sizeof(buffer), "BR through %s: %.5g", parentNuclide->symbol.c_str(), br_from );
-      
-    information.push_back( buffer );
+    {
+      snprintf( buffer, sizeof(buffer), "%.5g", br_to );
+      information.push_back( WString::tr("dcc-nuc-info-br-from").arg(parentNuclide->symbol).arg(buffer).toUTF8() );
+    }else
+    {
+      snprintf( buffer, sizeof(buffer), "%.5g", br_from );
+      information.push_back( WString::tr("dcc-nuc-info-br-through").arg(parentNuclide->symbol).arg(buffer).toUTF8() );
+    }
   }//if( nuc == parentNuclide )
   
   if( !IsInf(nuc->halfLife) )
   {
     const double specificActivity = nuc->activityPerGram() / PhysicalUnits::gram;
-    const string sa = PhysicalUnits::printToBestSpecificActivityUnits( specificActivity, 3, useCurrie );
-    information.push_back("Specific Act: " + sa );
+    const string sa = PhysicalUnits::printToBestSpecificActivityUnits( specificActivity, 3, useCurie );
+    information.push_back( WString::tr("dcc-nuc-info-specific-act").arg(sa).toUTF8() );
   }//if( not stable )
   
   
@@ -654,8 +653,8 @@ std::vector<std::string> DecayChainChart::getTextInfoForNuclide( const SandiaDec
     if( transition->child && (transition->branchRatio > 0.0) )
     {
       const string decay_mode = SandiaDecay::to_str( transition->mode );
-      const string br = PhysicalUnits::printCompact(transition->branchRatio, 4);
-      const string txt = decay_mode + " decays to " + transition->child->symbol + ", BR " + br;
+      const string br = SpecUtils::printCompact(transition->branchRatio, 4);
+      const string txt = WString::tr("dcc-nuc-info-decay-mode").arg(decay_mode).arg(transition->child->symbol).arg(br).toUTF8();
       
       information.push_back( txt );
     }//if( transition->child )
@@ -691,8 +690,18 @@ void DecayChainChart::defineJavaScript()
     options += ", linkColor: " + csstxt(theme->defaultPeakLine,"blue");
   }//if( theme )
   
+  options += ", xAxisTitle: '" + WString::tr("dcc-xAxisTitle").toUTF8() + "'";
+  options += ", yAxisTitle: '" + WString::tr("dcc-yAxisTitle").toUTF8() + "'";
+  options += ", clickNucTxt: '" + WString::tr("dcc-clickNucTxt").toUTF8() + "'";
+  options += ", clickNucMoreInfoTxt1: '" + WString::tr("dcc-clickNucMoreInfoTxt1").toUTF8() + "'";
+  options += ", clickNucMoreInfoTxt2: '" + WString::tr("dcc-clickNucMoreInfoTxt2").toUTF8() + "'";
+  options += ", clickNucMoreInfoTxt3: '" + WString::tr("dcc-clickNucMoreInfoTxt3").toUTF8() + "'";
+  options += ", clickNucMblTxt: '" + WString::tr("dcc-clickNucMblTxt").toUTF8() + "'";
+  options += ", clickNucMblMoreInfoTxt1: '" + WString::tr("dcc-clickNucMblMoreInfoTxt1").toUTF8() + "'";
+  options += ", clickNucMblMoreInfoTxt2: '" + WString::tr("dcc-clickNucMblMoreInfoTxt2").toUTF8() + "'";
+  options += ", clickNucMblMoreInfoTxt3: '" + WString::tr("dcc-clickNucMblMoreInfoTxt3").toUTF8() + "'";
+
   options += "}";
-  
   
   setJavaScriptMember( "chart", "new DecayChainChart(" + jsRef() + "," + options + ");");
   setJavaScriptMember( WT_RESIZE_JS, "function(self, w, h, layout){ " + jsRef() + ".chart.handleResize();}" );
@@ -738,7 +747,7 @@ void DecayChainChart::showDecayParticleInfo( const std::string &csvIsotopeNames 
   
   deleteMoreInfoDialog();
   
-  m_moreInfoDialog = new AuxWindow( "Decay Particle Energies" );
+  m_moreInfoDialog = new AuxWindow( WString::tr("dcc-particle-window-title") );
   m_moreInfoDialog->contents()->setMinimumSize(250, 80);
   m_moreInfoDialog->contents()->setMaximumSize(330, 400);
   m_moreInfoDialog->contents()->setOverflow(Wt::WContainerWidget::OverflowAuto, Wt::Vertical);
@@ -748,13 +757,13 @@ void DecayChainChart::showDecayParticleInfo( const std::string &csvIsotopeNames 
   m_moreInfoDialog->disableCollapse();
   m_moreInfoDialog->centerWindow();
   m_moreInfoDialog->finished().connect( this, &DecayChainChart::deleteMoreInfoDialog );
-  WPushButton *ok = m_moreInfoDialog->addCloseButtonToFooter("Close");
+  WPushButton *ok = m_moreInfoDialog->addCloseButtonToFooter( WString::tr("Close") );
   ok->clicked().connect( this, &DecayChainChart::deleteMoreInfoDialog );
   
   int nucs = 0;
   for( const auto &nuc_infos : nucinfos )
   {
-    auto header = new Wt::WText( "Particles from " + nuc_infos.first, m_moreInfoDialog->contents() );
+    auto header = new Wt::WText(  WString::tr("dcc-particles-from").arg(nuc_infos.first), m_moreInfoDialog->contents() );
     header->addStyleClass( "DecayPartInfoHeader" );
     header->setInline( false );
     
@@ -763,8 +772,8 @@ void DecayChainChart::showDecayParticleInfo( const std::string &csvIsotopeNames 
     
     if( nuc_infos.second.empty() )
     {
-      const char *msg = "<center>This nuclide has no particles from decay</center>";
-      auto blank = new Wt::WText( msg, Wt::XHTMLText, m_moreInfoDialog->contents() );
+      WString msg = WString("<center>{1}</center>").arg( WString::tr("dcc-nuc-has-no-particles") );
+      auto blank = new WText( msg, Wt::XHTMLText, m_moreInfoDialog->contents() );
       blank->setInline( false );
       continue;
     }
@@ -772,9 +781,9 @@ void DecayChainChart::showDecayParticleInfo( const std::string &csvIsotopeNames 
     WTable *table = new Wt::WTable( m_moreInfoDialog->contents() );
     table->addStyleClass( "DecayChainChartTable" );
     table->setHeaderCount( 1 );
-    table->elementAt(0, 0)->addWidget( new Wt::WText("Particle") );
-    table->elementAt(0, 1)->addWidget( new Wt::WText("Energy (keV)") );
-    table->elementAt(0, 2)->addWidget( new Wt::WText("Intensity") );
+    table->elementAt(0, 0)->addWidget( new Wt::WText( WString::tr("dcc-particle") ) );
+    table->elementAt(0, 1)->addWidget( new Wt::WText( WString::tr("Energy (keV)")) );
+    table->elementAt(0, 2)->addWidget( new Wt::WText( WString::tr("dcc-intensity") ) );
     
     int row = 0;
     for( const auto &infos : nuc_infos.second )
@@ -816,9 +825,9 @@ void DecayChainChart::showPossibleParents( const SandiaDecay::Nuclide *nuclide )
   | AuxWindowProperties::SetCloseable
   | AuxWindowProperties::EnableResize;
   
-  m_moreInfoDialog = new AuxWindow( "Decays Through " + nuclide->symbol, windowProp );
+  m_moreInfoDialog = new AuxWindow( WString::tr("dcc-decay-through-window-title").arg(nuclide->symbol), windowProp );
   DecayChainChart *w = new DecayChainChart();
-  w->setNuclide( nuclide, m_useCurrie, DecayChainChart::DecayChainType::DecayThrough );
+  w->setNuclide( nuclide, m_useCurie, DecayChainChart::DecayChainType::DecayThrough );
   m_moreInfoDialog->stretcher()->addWidget( w, 0, 0  );
   
   m_moreInfoDialog->resizeWindow( std::max( 800, static_cast<int>(std::min(ww,1.3*wh) ) ), std::max( 600, static_cast<int>(wh) ) );
@@ -826,7 +835,7 @@ void DecayChainChart::showPossibleParents( const SandiaDecay::Nuclide *nuclide )
   
   m_moreInfoDialog->rejectWhenEscapePressed();
   m_moreInfoDialog->finished().connect( this, &DecayChainChart::deleteMoreInfoDialog );
-  WPushButton *ok = m_moreInfoDialog->addCloseButtonToFooter("Close");
+  WPushButton *ok = m_moreInfoDialog->addCloseButtonToFooter( WString::tr("Close") );
   ok->clicked().connect( this, &DecayChainChart::deleteMoreInfoDialog );
   
   

@@ -88,11 +88,73 @@ namespace
       if( !app || !app->domRoot() )
         return;
       
-      const string js = "try{ $('#qtip-" + id() + "').qtip('destroy', true);}catch(error){}";  //I dont think try/catch is necassary, but JIC
+      const string js = "try{ $('#qtip-" + id() + "').qtip('destroy', true);}catch(error){}";  //I dont think try/catch is necessary, but JIC
       app->doJavaScript( js );
     }
   };//RmHelpFromDom
   
+  /** Returns the contents of the localized, specified file, as a string.
+   
+   It doesn't directly open the file you specify, but uses the same logic as wt-3.7.1/src/Wt/WMessageResources.C
+   to find the version of the specified file closest to the current locale.
+   
+   Throws exception, with descriptive message, if couldn't open file.
+   */
+  string getInternationalizedFileContents( const string &orig_filepath )
+  {
+    string filepath = orig_filepath;
+    string extension = SpecUtils::file_extension(filepath);
+    if( !extension.empty() )
+      filepath = filepath.substr(0,filepath.size() - extension.size());
+    else
+      extension = ".xml";
+    
+    string locale = WLocale::currentLocale().name();
+    
+    for( ; ; )
+    {
+      const string trial_path = filepath + (locale.length() > 0 ? "_" : "") + locale + extension;
+      
+#ifdef _WIN32
+      const std::wstring wfilepath = SpecUtils::convert_from_utf8_to_utf16(trial_path);
+      ifstream infile( wfilepath.c_str() );
+#else
+      ifstream infile( trial_path.c_str() );
+#endif
+      
+      if( !infile.is_open() )
+      {
+        if( locale.empty() )
+          break;
+        
+        /* try a lesser specified variant */
+        std::string::size_type l = locale.rfind('-');
+        if( l != std::string::npos )
+          locale.erase(l);
+        else
+          locale = "";
+        
+        continue;
+      }//if( !infile.is_open() )
+
+      infile.seekg(0, std::ios::end);
+      const size_t size = infile.tellg();
+      infile.seekg(0);
+      
+      if( size < 128*1024 )
+      {
+        string contents( size, ' ' );
+        infile.read( &(contents[0]), size );
+        return contents;
+      }
+      
+      throw runtime_error( "'" + filepath + "' is too large a file - not loading contents." );
+    }//for( ; ; )
+    
+    throw runtime_error( "Could not open expected file: '" + orig_filepath + "'" );
+    
+    return "";
+  };//getInternationalizedFileContents(...)
 }//namespace
 
 
@@ -104,9 +166,9 @@ namespace HelpSystem
   }//void createHelpWindow( const std::string &preselect )
   
   HelpWindow::HelpWindow(std::string preselect)
-   : AuxWindow( "InterSpec Help",
+   : AuxWindow( WString::tr("window-title-help"),
                (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::IsModal)
-                 | AuxWindowProperties::IsHelpWIndow
+                 | AuxWindowProperties::IsHelpWindow
                  | AuxWindowProperties::EnableResize) ),
      m_tree ( new Wt::WTree() ),
      m_searchText( new Wt::WLineEdit() )
@@ -114,6 +176,7 @@ namespace HelpSystem
     UndoRedoManager::BlockUndoRedoInserts undo_blocker;
     
     wApp->useStyleSheet( "InterSpec_resources/HelpWindow.css" );
+    InterSpec::instance()->useMessageResourceBundle( "HelpSystem" );
     
     m_tree->setSelectionMode(Wt::SingleSelection);
     
@@ -127,21 +190,12 @@ namespace HelpSystem
     const string docroot = wApp->docRoot();
     const std::string help_json = SpecUtils::append_path(docroot,"InterSpec_resources/static_text/help.json");
     
-    
-#ifdef _WIN32
-    const std::wstring whelp_json = SpecUtils::convert_from_utf8_to_utf16(help_json);
-    ifstream helpinfo( whelp_json.c_str() );
-#else
-    ifstream helpinfo( help_json.c_str() );
-#endif
-    
-    if( helpinfo.is_open() )
+    try
     {
-      m_helpLookupTable = string( (std::istreambuf_iterator<char>(helpinfo)),
-                                 std::istreambuf_iterator<char>());
-    }else
+      m_helpLookupTable = getInternationalizedFileContents(help_json);
+    }catch( std::exception & )
     {
-      passMessage( "Could not open help JSON file at '" + string(help_json) + "'", 2 );
+      passMessage( WString::tr("hw-err-opening-json").arg(help_json), 2 );
     }
     
     initialize();
@@ -162,7 +216,7 @@ namespace HelpSystem
     contents()->keyPressed().connect( this, &HelpWindow::handleArrowPress );
     WGridLayout *layout = stretcher();
     m_searchText->setStyleClass("searchBox");
-    m_searchText->setPlaceholderText("Search");
+    m_searchText->setPlaceholderText( WString::tr("hw-search-empty-text") );
     m_searchText->setMinimumSize(Wt::WLength::Auto, WLength(1.5,Wt::WLength::FontEm));
     m_searchText->setMargin(WLength(5,WLength::Pixel));
 //    m_searchText->keyPressed().connect( this, &HelpWindow::initialize );
@@ -195,14 +249,14 @@ namespace HelpSystem
       if( app->viewer()->isMobile() )
       {
         WPushButton *ancor = new WPushButton( bottom );
-        ancor->setText( "Welcome..." );
+        ancor->setText( WString::tr("hw-welcome-link") );
         ancor->setStyleClass( "LinkBtn" );
         ancor->setFloatSide( Wt::Right );
         ancor->clicked().connect( boost::bind( &InterSpec::showWelcomeDialog, app->viewer(), true ) );
       }
       else
       {
-          WAnchor *anchor = new WAnchor( WLink(), "Tutorials and usage hints", bottom );
+          WAnchor *anchor = new WAnchor( WLink(), WString::tr("hw-tutorials-link"), bottom );
           anchor->setFloatSide( Wt::Left );
           anchor->addStyleClass( "InfoLink" );
           anchor->clicked().connect( boost::bind( &AuxWindow::hide, this ) );
@@ -432,7 +486,7 @@ namespace HelpSystem
     }//for( const auto &nameToNode : m_treeLookup )
     
     if( !content )
-      content = new WTemplate( WString("Help Page Not Found") );
+      content = new WTemplate( WString::tr("hw-err-opening-xml") );
     
     m_helpWindowContent->addWidget( content );
     
@@ -507,31 +561,13 @@ namespace HelpSystem
       filepath = SpecUtils::append_path( "InterSpec_resources/static_text", filepath );
       filepath = SpecUtils::append_path(docroot, filepath);
       
-#ifdef _WIN32
-      const std::wstring wfilepath = SpecUtils::convert_from_utf8_to_utf16(filepath);
-      ifstream infile( wfilepath.c_str() );
-#else
-      ifstream infile( filepath.c_str() );
-#endif
-
-      if( !infile.is_open() )
+      try
       {
-        helpStr = "Could not open expected file: " + filepath + "";
-      }else
+        helpStr = getInternationalizedFileContents(filepath);
+      }catch( std::exception &e )
       {
-        infile.seekg(0, std::ios::end);
-        const size_t size = infile.tellg();
-        infile.seekg(0);
-        
-        if( size < 128*1024 )
-        {
-          helpStr = std::string( size, ' ' );
-          infile.read( &(helpStr[0]), size );
-        }else
-        {
-          helpStr = filepath + " is too large a file - not loading contents.";
-        }
-      }//if( !infile.is_open() ) / else.
+        helpStr = e.what();
+      }
     }//if( filepath.empty() )
     
     return helpStr;
@@ -693,24 +729,41 @@ namespace HelpSystem
    Attach a tooltip onto a widget.  Depending on preference, it might show immediately.
    
    */
-  void attachToolTipOn( Wt::WWebWidget* widget, const std::string &text,
+  void attachToolTipOn( Wt::WWebWidget* widget, const Wt::WString &text,
                         const bool enableShowing,
                         const ToolTipPosition position,
                         const ToolTipPrefOverride forceShowing )
   {
-      
+    attachToolTipOn( {widget}, text, enableShowing, position, forceShowing );
+  }
+  
+  void attachToolTipOn( std::initializer_list<Wt::WWebWidget*> widgets,
+                       const Wt::WString &text,
+                        const bool enableShowing,
+                        const ToolTipPosition position,
+                        const ToolTipPrefOverride forceShowing )
+  {
+    assert( widgets.size() );
+    if( !widgets.size() )
+      return;
+    
     //if is gesture controlled, we do not want to add tooltips to objects
     InterSpecApp *app = dynamic_cast<InterSpecApp *>( wApp );
     if (app && app->isMobile())
        return;
     
+    Wt::WWebWidget *first_widget = *begin(widgets);
+    
 #if( USE_OSX_NATIVE_MENU )
-    PopupDivMenuItem *menuitem = dynamic_cast<PopupDivMenuItem *>( widget );
-    if( menuitem && menuitem->getNsMenuItem() )
+    for( Wt::WWebWidget *w : widgets )
     {
-      addOsxMenuItemToolTip( menuitem->getNsMenuItem(), text.c_str() );
-      return;
-    }//if( menuitem )
+      PopupDivMenuItem *menuitem = dynamic_cast<PopupDivMenuItem *>( w );
+      if( menuitem && menuitem->getNsMenuItem() )
+      {
+        addOsxMenuItemToolTip( menuitem->getNsMenuItem(), text.toUTF8().c_str() );
+        return;
+      }//if( menuitem )
+    }//for( Wt::WWebWidget *w : widgets )
 #endif
     
     //get the InterSpecApp so we can access the value set (from the preferences) whether
@@ -718,12 +771,13 @@ namespace HelpSystem
     //the tooltip when they start typing.
     
     const bool overrideShow = (forceShowing == ToolTipPrefOverride::AlwaysShow);
+    const bool instantShow = (forceShowing == ToolTipPrefOverride::InstantAlways);
     
     //Create popup notifications
     Wt::WStringStream strm;
     
     //need to escape the ' in the text message, and also remove new-lines from the string
-    std::string val = text;
+    std::string val = text.toUTF8();
     boost::replace_all(val, "'", "\\'");
     boost::replace_all( val, "\r", "" );
     boost::replace_all( val, "\n", "" );
@@ -738,11 +792,14 @@ namespace HelpSystem
       case ToolTipPosition::Left:   pos = "my: 'right center', at: 'left center', "; break;
     }//switch( position )
     
-
-    RmHelpFromDom *remover = new RmHelpFromDom( widget );
+    string selector;
+    for( const auto w : widgets )
+      selector += (selector.empty() ? "#" : ",#") + w->id();
+    
+    RmHelpFromDom *remover = new RmHelpFromDom( first_widget );
     
     //Note: need to pre-render, as toggling requires tooltip already rendered.
-    strm << "$('#"<< widget->id() <<"').qtip({ "
+    strm << "$('"<< selector <<"').qtip({ "
         "id: '" << remover->id() << "',"
         "prerender: true, "
         "content:  { text: '" << val << "'}, "
@@ -752,8 +809,9 @@ namespace HelpSystem
                         "method: 'flipinvert flipinvert', "
                         "x:5} "
                     "},"
-        "show:  {  event: '" << string(enableShowing ? "mouseenter focus" : "") << "', delay: 500 },"
-        "hide:  {  fixed: true, event: 'mouseleave focusout keypress click'  },"
+        "show:  {  event: '" << (enableShowing ? (string("mouseenter") + (overrideShow ? " focus" : "")) : string(""))
+                << "', delay: " << string(instantShow ? "0" : "500") << " },"
+        "hide:  {  fixed: true, event: 'mouseleave focusout" << string(instantShow ? "" : " keypress click") << "'  },"
         "style: { classes: 'qtip-rounded qtip-shadow" << string(overrideShow ? "" : " canDisableTt") << "',"
                   "tip: {"
                         "corner: true, "
@@ -762,7 +820,7 @@ namespace HelpSystem
                 "}"
         "});";
     
-    widget->doJavaScript( strm.str() );
+    first_widget->doJavaScript( strm.str() );
   }//void attachToolTipOn( Wt::WWebWidget* widget, const std::string &text, bool force)
 
 } //namespace HelpSystem

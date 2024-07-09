@@ -277,7 +277,12 @@ namespace
                 case 36: val = static_cast<int>(SpecUtils::DetectorType::VerifinderLaBr); break;
                 case 37: val = static_cast<int>(SpecUtils::DetectorType::KromekD3S); break;
                 case 38: val = static_cast<int>(SpecUtils::DetectorType::RadiaCode); break;
-                case 39: val = static_cast<int>(SpecUtils::DetectorType::Unknown); break;
+                case 39: val = static_cast<int>(SpecUtils::DetectorType::Fulcrum); break;
+                case 40: val = static_cast<int>(SpecUtils::DetectorType::Fulcrum40h); break;
+                case 41: val = static_cast<int>(SpecUtils::DetectorType::IdentiFinderR425NaI); break;
+                case 42: val = static_cast<int>(SpecUtils::DetectorType::IdentiFinderR425LaBr); break;
+                case 43: val = static_cast<int>(SpecUtils::DetectorType::Sam950); break;
+                case 44: val = static_cast<int>(SpecUtils::DetectorType::Unknown); break;
                   
                 default:
                   throw runtime_error( "Unknown DetectionSystemType value type" );
@@ -553,7 +558,7 @@ namespace
               {
                 // Convert to decimal number of seconds, for ease of use in Excel
                 const double t = PhysicalUnits::stringToTimeDuration( utf8txt );
-                utf8txt = PhysicalUnits::printCompact( t/PhysicalUnits::second, 7 );
+                utf8txt = SpecUtils::printCompact( t/PhysicalUnits::second, 7 );
               }catch(...)
               {
               }
@@ -575,7 +580,7 @@ namespace
                 try
                 {
                   const double t = PhysicalUnits::stringToTimeDuration( v );
-                  answer += PhysicalUnits::printCompact( t, 7 );
+                  answer += SpecUtils::printCompact( t, 7 );
                 }catch(...)
                 {
                   answer += v;
@@ -638,7 +643,7 @@ namespace
       //snprintf(buffer, sizeof(buffer), "%.3f", (time/PhysicalUnits::second) );
       
       const size_t precision = static_cast<size_t>( max(0.0, ceil(log10(time))) + 3 );
-      return PhysicalUnits::printCompact(time, precision);
+      return SpecUtils::printCompact(time, precision);
     };
 #endif
     
@@ -2276,7 +2281,11 @@ void SpecFileQueryWidget::updateNumberFiles( const string srcdir,
     const wstring wsrcdir = SpecUtils::convert_from_utf8_to_utf16( srcdir );
     boost::filesystem::recursive_directory_iterator diriter( wsrcdir, boost::filesystem::symlink_option::recurse );
 #else
+#if BOOST_VERSION >= 108400 && BOOST_FILESYSTEM_VERSION >= 3
+    boost::filesystem::recursive_directory_iterator diriter( srcdir, boost::filesystem::directory_options::follow_directory_symlink );
+#else
     boost::filesystem::recursive_directory_iterator diriter( srcdir, boost::filesystem::symlink_option::recurse );
+#endif
 #endif
     const boost::filesystem::recursive_directory_iterator dirend;
 
@@ -2298,7 +2307,11 @@ void SpecFileQueryWidget::updateNumberFiles( const string srcdir,
       if( !recursive && is_dir )
       {
         is_file = false; //JIC
+#if BOOST_VERSION >= 108400 && BOOST_FILESYSTEM_VERSION >= 3
+        diriter.disable_recursion_pending();
+#else
         diriter.no_push();  //Dont recurse down into directories if we arent doing a recursive search
+#endif
       }
 
       bool is_simlink_dir = false;
@@ -2319,7 +2332,13 @@ void SpecFileQueryWidget::updateNumberFiles( const string srcdir,
         resvedpath = boost::filesystem::canonical( resvedpath );
         auto pcanon = boost::filesystem::canonical( diriter->path().parent_path() );
         if( SpecUtils::starts_with( pcanon.string<string>(), resvedpath.string<string>().c_str() ) )
+        {
+#if BOOST_VERSION >= 108400 && BOOST_FILESYSTEM_VERSION >= 3
+          diriter.disable_recursion_pending();
+#else
           diriter.no_push();  //Dont recurse down into directories
+#endif
+        }
       }//if( is_simlink_dir && recursive )
 
 
@@ -2798,7 +2817,11 @@ void SpecFileQueryWidget::doSearch( const std::string basedir,
     const std::wstring wbasedir = SpecUtils::convert_from_utf8_to_utf16( basedir );
     boost::filesystem::recursive_directory_iterator diriter( wbasedir, boost::filesystem::symlink_option::recurse );
 #else
+#if BOOST_VERSION >= 108400 && BOOST_FILESYSTEM_VERSION >= 3
+    boost::filesystem::recursive_directory_iterator diriter( basedir, boost::filesystem::directory_options::follow_directory_symlink );
+#else
     boost::filesystem::recursive_directory_iterator diriter( basedir, boost::filesystem::symlink_option::recurse );
+#endif
 #endif
     const boost::filesystem::recursive_directory_iterator dirend;
     
@@ -2820,7 +2843,11 @@ void SpecFileQueryWidget::doSearch( const std::string basedir,
       if( !recursive && is_dir )
       {
         is_file = false; //JIC
+#if BOOST_VERSION >= 108400 && BOOST_FILESYSTEM_VERSION >= 3
+        diriter.disable_recursion_pending();
+#else
         diriter.no_push();  //Dont recurse down into directories if we arent doing a recursive search
+#endif
       }
       
       bool is_simlink_dir = false;
@@ -2841,7 +2868,13 @@ void SpecFileQueryWidget::doSearch( const std::string basedir,
         resvedpath = boost::filesystem::canonical( resvedpath );
         auto pcanon = boost::filesystem::canonical( diriter->path().parent_path() );
         if( SpecUtils::starts_with( pcanon.string<string>(), resvedpath.string<string>().c_str() ) )
+        {
+#if BOOST_VERSION >= 108400 && BOOST_FILESYSTEM_VERSION >= 3
+          diriter.disable_recursion_pending();
+#else
           diriter.no_push();  //Dont recurse down into directories
+#endif
+        }
       }//if( is_simlink_dir && recursive )
       
       

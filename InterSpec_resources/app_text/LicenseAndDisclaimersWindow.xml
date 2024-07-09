@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- ladw- is short for LicenseAndDisclaimersWindow
+  -->
+  <message id="ladw-mi-disclaimer">Disclaimer</message>
+  <message id="ladw-mi-credits">Credits</message>
+  <message id="ladw-mi-contact">Contact</message>
+  <message id="ladw-mi-license">License</message>
+  <message id="ladw-data-location-user">
+    User data is stored in
+    <div class="DataLocation">{1}</div>
+  </message>
+  <message id="ladw-data-location-static">
+    The data that comes with InterSpec, such as nuclear decay info, cross-section, and similar is stored in
+    <div class="DataLocation">{1}</div>
+  </message>
+  <message id="ladw-data-location-network">
+    You can also use InterSpec from your browser at (port number will change when you restart InterSpec):
+    <div class="DataLocation">http://127.0.0.1:{1}</div>
+  </message>
+  <message id="ladw-user-stats">
+      You have actively used InterSpec for approximately {1}, to open {2} files, over {3} sessions since {4}.
+  </message>
+  <message id="ladw-external-none">InterSpec does not send or receive data external to your device.</message>
+  <message id="ladw-external-only-remote-rid">InterSpec does not send or receive data external to your device, except when the External RID feature is used.</message>
+  <message id="ladw-external-only-map">InterSpec does not send or receive data external to your device, except when the Map feature is used.</message>
+  <message id="ladw-external-remote-rid-and-map">InterSpec does not send or receive data external to your device, except when the Maps or External RID features are used.</message>
+  <message id="ladw-local-store-info">
+    <br />
+    InterSpec does locally store preferences, spectra you load, saved app states, and use statistics.
+    This information does not leave your device, and can be deleted by removing the user data directory shown above.
+  </message>
+  <message id="ladw-google-map">
+    <br />
+    When the Google Maps feature is used, the spectrum file location information is sent to Google in order to receive maps of the relevant location.
+  </message>
+  <message id="ladw-leaflet-map">
+    <br />
+    When the Maps tool is used, map tiles are requested from <a href="https://arcgis.com">https://arcgis.com</a>
+    for the area encompassing the GPS coordinates of the radiation measurements, but marking/displaying of the radiation data on the maps is done on your device.
+  </message>
+  <message id="ladw-remote-rid">
+    <br />
+    For the External RID tool, please consult privacy policy of
+    <div class="DataLocation">{1}</div>
+  </message>
+  <message id="ladw-remote-rid-none">
+    For the External RID tool, please consult privacy policy for the URL you enter.
+  </message>
+</messages>

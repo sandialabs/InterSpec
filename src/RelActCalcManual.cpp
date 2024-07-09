@@ -1438,18 +1438,18 @@ void RelEffSolution::get_mass_fraction_table( std::ostream &results_html ) const
     const double uncert_percent = 100.0 * act.m_rel_activity_uncert / act.m_rel_activity;
     
     results_html << "  <tr><td>" << act.m_isotope << "</td>"
-    << "<td>" << PhysicalUnits::printCompact( act.m_rel_activity, nsigfig ) << "</td>";
+    << "<td>" << SpecUtils::printCompact( act.m_rel_activity, nsigfig ) << "</td>";
     
     try
     {
       const double frac_mass = mass_fraction(act.m_isotope);
-      results_html << "<td>" << PhysicalUnits::printCompact(100.0*frac_mass, nsigfig)      << "%</td>";
+      results_html << "<td>" << SpecUtils::printCompact(100.0*frac_mass, nsigfig)      << "%</td>";
     }catch( std::exception & )
     {
       results_html << "<td>N.A.</td>";
     }
     
-    results_html << "<td>" << PhysicalUnits::printCompact(uncert_percent, nsigfig-1)       << "%</td>"
+    results_html << "<td>" << SpecUtils::printCompact(uncert_percent, nsigfig-1)       << "%</td>"
     << "</tr>\n";
   }
   results_html << "  </tbody>\n"
@@ -1510,8 +1510,8 @@ void RelEffSolution::get_mass_ratio_table( std::ostream &results_html ) const
       {
         const double i_to_j_act_ratio_uncert = activity_ratio_uncert( nuc_i_str, nuc_j_str );
         const double j_to_i_act_ratio_uncert = activity_ratio_uncert( nuc_j_str, nuc_i_str );
-        const double i_to_j_mass_ratio_uncert = i_to_j_act_ratio_uncert * i_to_j_specific_act;
-        const double j_to_i_mass_ratio_uncert = j_to_i_act_ratio_uncert * j_to_i_specific_act;
+        const double i_to_j_mass_ratio_uncert = i_to_j_act_ratio_uncert * j_to_i_specific_act;
+        const double j_to_i_mass_ratio_uncert = j_to_i_act_ratio_uncert * i_to_j_specific_act;
         
         results_html << "<tr><td>" << nuc_i->symbol << "/" << nuc_j->symbol
         << "</td><td>" << PhysicalUnits::printValueWithUncertainty( i_to_j_mass_ratio, i_to_j_mass_ratio_uncert, nsigfig )
@@ -1525,13 +1525,13 @@ void RelEffSolution::get_mass_ratio_table( std::ostream &results_html ) const
       }else
       {
         results_html << "<tr><td>" << nuc_i->symbol << "/" << nuc_j->symbol
-        << "</td><td>" << PhysicalUnits::printCompact(i_to_j_mass_ratio, nsigfig) << " \xC2\xB1 n/a"
-        << "</td><td>" << PhysicalUnits::printCompact(i_to_j_act_ratio, nsigfig) << " \xC2\xB1 n/a"
+        << "</td><td>" << SpecUtils::printCompact(i_to_j_mass_ratio, nsigfig) << " \xC2\xB1 n/a"
+        << "</td><td>" << SpecUtils::printCompact(i_to_j_act_ratio, nsigfig) << " \xC2\xB1 n/a"
         << "</td></tr>\n";
         
         results_html << "<tr><td>" <<nuc_j->symbol << "/" << nuc_i->symbol
-        << "</td><td>" << PhysicalUnits::printCompact(j_to_i_mass_ratio, nsigfig) << " \xC2\xB1 n/a"
-        << "</td><td>" << PhysicalUnits::printCompact(j_to_i_act_ratio, nsigfig) << " \xC2\xB1 n/a"
+        << "</td><td>" << SpecUtils::printCompact(j_to_i_mass_ratio, nsigfig) << " \xC2\xB1 n/a"
+        << "</td><td>" << SpecUtils::printCompact(j_to_i_act_ratio, nsigfig) << " \xC2\xB1 n/a"
         << "</td></tr>\n";
       }//if( we have covariance ) / else
     }//for( size_t j = 0; j < i; ++j )
@@ -1544,7 +1544,9 @@ void RelEffSolution::get_mass_ratio_table( std::ostream &results_html ) const
 void RelEffSolution::print_html_report( ostream &output_html_file,
                                        string spectrum_title,
                                        shared_ptr<const SpecUtils::Measurement> spectrum,
-                                       vector<shared_ptr<const PeakDef>> display_peaks ) const
+                                       vector<shared_ptr<const PeakDef>> display_peaks,
+                                       shared_ptr<const SpecUtils::Measurement> background,
+                                       double background_normalization ) const
 {
   const SandiaDecay::SandiaDecayDataBase *db = DecayDataBaseServer::database();
   assert( db );
@@ -1555,9 +1557,9 @@ void RelEffSolution::print_html_report( ostream &output_html_file,
   
   
   stringstream results_html;
-  results_html << "<div>&chi;<sup>2</sup>=" << PhysicalUnits::printCompact(m_chi2, nsigfig)
+  results_html << "<div>&chi;<sup>2</sup>=" << SpecUtils::printCompact(m_chi2, nsigfig)
   << " and there were " << m_dof << " DOF; &chi;<sup>2</sup>/dof="
-  << PhysicalUnits::printCompact(m_chi2/m_dof, nsigfig)
+  << SpecUtils::printCompact(m_chi2/m_dof, nsigfig)
   << " </div>\n";
   
   results_html << "<div class=\"releffeqn\">Rel. Eff. Eqn: y = "
@@ -1606,14 +1608,14 @@ void RelEffSolution::print_html_report( ostream &output_html_file,
       const double meas_rel_eff_uncert = 100* info.m_counts_uncert / info.m_counts;
       
       results_html << "<td>" << line.m_isotope
-      << "</td><td>" << PhysicalUnits::printCompact( line.m_yield, nsigfig )
-      << "</td><td>" << PhysicalUnits::printCompact( info.m_counts, nsigfig )
-      << "</td><td>" << PhysicalUnits::printCompact( info.m_counts_uncert, nsigfig )
-      << "</td><td>" << PhysicalUnits::printCompact( counts_over_yield, nsigfig )
-      << "</td><td>" << PhysicalUnits::printCompact( counts_uncert_percent, nsigfig ) << "%"
-      << "</td><td>" << PhysicalUnits::printCompact( info.m_base_rel_eff_uncert, nsigfig )
-      << "</td><td>" << PhysicalUnits::printCompact( meas_rel_eff, nsigfig )
-      << "</td><td>" << PhysicalUnits::printCompact( meas_rel_eff_uncert, nsigfig ) << "%";
+      << "</td><td>" << SpecUtils::printCompact( line.m_yield, nsigfig )
+      << "</td><td>" << SpecUtils::printCompact( info.m_counts, nsigfig )
+      << "</td><td>" << SpecUtils::printCompact( info.m_counts_uncert, nsigfig )
+      << "</td><td>" << SpecUtils::printCompact( counts_over_yield, nsigfig )
+      << "</td><td>" << SpecUtils::printCompact( counts_uncert_percent, nsigfig ) << "%"
+      << "</td><td>" << SpecUtils::printCompact( info.m_base_rel_eff_uncert, nsigfig )
+      << "</td><td>" << SpecUtils::printCompact( meas_rel_eff, nsigfig )
+      << "</td><td>" << SpecUtils::printCompact( meas_rel_eff_uncert, nsigfig ) << "%";
       
       if( has_decay_corr )
       {
@@ -1631,7 +1633,7 @@ void RelEffSolution::print_html_report( ostream &output_html_file,
             
             const double ratio = line.m_yield / un_corr_line.m_yield;
             if( !IsInf(ratio) && !IsNan(ratio) )
-              results_html << " " << PhysicalUnits::printCompact( ratio, nsigfig );
+              results_html << " " << SpecUtils::printCompact( ratio, nsigfig );
             else
               results_html << "--";
           }//for( loop over un_corr_peak.m_source_gammas )
@@ -1840,8 +1842,47 @@ void RelEffSolution::print_html_report( ostream &output_html_file,
       peaks.push_back( make_shared<PeakDef>(*p) );
     spec_options.peaks_json = PeakDef::peak_json( peaks, spectrum );
     
+    
+    vector<pair<const SpecUtils::Measurement *,D3SpectrumExport::D3SpectrumOptions> > meas_to_plot;
+    
     const SpecUtils::Measurement * const meas_ptr = spectrum.get();
-    D3SpectrumExport::write_and_set_data_for_chart( set_js_str, "specchart", { std::make_pair(meas_ptr,spec_options) } );
+    meas_to_plot.emplace_back(meas_ptr, spec_options);
+    
+    if( background )
+    {
+      D3SpectrumExport::D3SpectrumOptions spec_options;
+      spec_options.spectrum_type = SpecUtils::SpectrumType::Background;
+      spec_options.line_color = "steelblue";
+      spec_options.display_scale_factor = 1.0;
+      
+      if( (background_normalization <= 0.0f)
+         || IsNan(background_normalization)
+         || IsInf(background_normalization) )
+      {
+        float back_lt = background->live_time();
+        if( (back_lt <= 0.0f) || IsNan(back_lt) || IsNan(back_lt) )
+          back_lt = background->real_time();
+        
+        float fore_lt = spectrum->live_time();
+        if( (fore_lt <= 0.0f) || IsNan(fore_lt) || IsNan(fore_lt) )
+          fore_lt = spectrum->real_time();
+        
+        background_normalization = fore_lt / back_lt;
+      }//if( background normalization wasnt provided )
+      
+      if( (background_normalization > 0.0f)
+         && !IsNan(background_normalization)
+         && !IsInf(background_normalization) )
+      {
+        spec_options.display_scale_factor = background_normalization;
+      }
+        
+      spec_options.title = "Background";
+      meas_to_plot.emplace_back(background.get(), spec_options);
+    }//if( background )
+    
+    
+    D3SpectrumExport::write_and_set_data_for_chart( set_js_str, "specchart", meas_to_plot );
     
     SpecUtils::ireplace_all( html, "${SPECTRUM_CHART_DIV}",
                             "<div id=\"specchart\" style=\"height: 30vw; flex: 1 2; overflow: hidden;\" class=\"SpecChart\"></div>" );
@@ -1934,7 +1975,7 @@ RelEffSolution solve_relative_efficiency( const std::vector<GenericPeakInfo> &pe
   
   // Set a lower bound on relative activities to be 0
   for( size_t i = 0; i < num_nuclides; ++i )
-    problem.SetParameterLowerBound( pars, i, 0.0 );
+    problem.SetParameterLowerBound( pars, static_cast<int>(i), 0.0 );
   
   
   // Okay - we've set our problem up
@@ -1962,7 +2003,7 @@ RelEffSolution solve_relative_efficiency( const std::vector<GenericPeakInfo> &pe
   {
     ceres::Solve(ceres_options, &problem, &summary);
     
-    solution.m_num_function_eval_solution = cost_functor->m_ncalls;
+    solution.m_num_function_eval_solution = static_cast<int>( cost_functor->m_ncalls );
     
     switch( summary.termination_type )
     {
@@ -1990,18 +2031,12 @@ RelEffSolution solve_relative_efficiency( const std::vector<GenericPeakInfo> &pe
   
   
   //std::cout << summary.BriefReport() << "\n";
-  std::cout << summary.FullReport() << "\n";
-  cout << "Took " << solution.m_num_function_eval_solution << " calls to solve." << endl;
-  
-  cout << "\nFit rel_act parameters: {";
-  for( size_t i = 0; i < parameters.size(); ++i )
-  cout << (i ? ", " : "") << parameters[i];
-  cout << "}\n\n";
-  
-  //cout << "\n\n\nHackign in values of parameters!!!\n\n" << endl;
-  //parameters[0] = 0.528839;
-  //parameters[1] = 1.2962;
-  //parameters[2] = 0.538641;
+  //std::cout << summary.FullReport() << "\n";
+  //cout << "Took " << solution.m_num_function_eval_solution << " calls to solve." << endl;
+  //cout << "\nFit rel_act parameters: {";
+  //for( size_t i = 0; i < parameters.size(); ++i )
+  //cout << (i ? ", " : "") << parameters[i];
+  //cout << "}\n\n";
   
   try
   {
@@ -2115,7 +2150,7 @@ RelEffSolution solve_relative_efficiency( const std::vector<GenericPeakInfo> &pe
     
     
     solution.m_status = ManualSolutionStatus::Success;
-    solution.m_num_function_eval_total = cost_functor->m_ncalls;
+    solution.m_num_function_eval_total = static_cast<int>( cost_functor->m_ncalls );
   }catch( std::exception &e )
   {
     solution.m_status = ManualSolutionStatus::ErrorGettingSolution;
@@ -2331,9 +2366,50 @@ NucMatchResults fill_in_nuclide_info( const vector<RelActCalcManual::GenericPeak
     
     iso = nuc ? nuc->symbol : rctn->name();
     
+    // Make sure we try to use a U-data source, only for U, and the nuclides of it we have,
+    //  otherwise we'll default back to using SandiaDecay
     auto src = nuc_data_src;
     if( (nuc && (nuc->atomicNumber != 92)) || rctn )
+    {
       src = NucDataSrc::SandiaDecay;
+    }else if( nuc->atomicNumber == 92 )
+    {
+      auto has_U_nuc = [db]( const SandiaDecay::Nuclide *nuc, const vector<NuclideInfo> &input ) -> bool {
+        for( const NuclideInfo &inputnuc : input )
+        {
+          const SandiaDecay::Nuclide *inputnuc_ptr = db->nuclide( inputnuc.parent );
+          assert( inputnuc_ptr );
+          if( inputnuc_ptr == nuc )
+            return true;
+        }//for( const NuclideInfo &inputnuc : input )
+        return false;
+      };//filter_for_nuc(...)
+      
+      // TODO: we should probably give a warning that we are using SandiaDecay data if the
+      //       uranium dataset doesn't have this nuclide.
+      switch( src )
+      {
+        case NucDataSrc::Icrp107_U:
+          if( !has_U_nuc(nuc, icrp107) )
+            src = NucDataSrc::SandiaDecay;
+        break;
+          
+        case NucDataSrc::Lanl_U:
+          if( !has_U_nuc(nuc, lanl) )
+            src = NucDataSrc::SandiaDecay;
+        break;
+          
+        case NucDataSrc::IcrpLanlGadras_U:
+          if( !has_U_nuc(nuc, lanl_icrp_gad) )
+            src = NucDataSrc::SandiaDecay;
+        break;
+          
+        case NucDataSrc::SandiaDecay:
+        case NucDataSrc::Undefined:
+          break;
+      }//switch( src )
+    }//if( non-U nuclide ) / else
+    
     
     switch( src )
     {
@@ -2366,7 +2442,7 @@ NucMatchResults fill_in_nuclide_info( const vector<RelActCalcManual::GenericPeak
     };//filter_for_nuc(...)
     
     
-    switch( nuc_data_src )
+    switch( src )
     {
       case NucDataSrc::Icrp107_U:
       {
@@ -2423,12 +2499,12 @@ NucMatchResults fill_in_nuclide_info( const vector<RelActCalcManual::GenericPeak
             // See what the decay correction is here, and note to then include in the results.
             assert( corr_photons.size() == photons.size() );
             assert( std::is_sorted(begin(corr_photons), end(corr_photons),
-                   []( const SandiaDecay::EnergyRatePair &lhs, const SandiaDecay::EnergyRatePair &rhs ){ 
-              return lhs.energy <= rhs.energy;
+                   []( const SandiaDecay::EnergyRatePair &lhs, const SandiaDecay::EnergyRatePair &rhs ){
+              return lhs.energy < rhs.energy;
             }) );
             assert( std::is_sorted(begin(photons), end(photons),
                    []( const SandiaDecay::EnergyRatePair &lhs, const SandiaDecay::EnergyRatePair &rhs ){
-              return lhs.energy <= rhs.energy;
+              return lhs.energy < rhs.energy;
             }) );
             //for( size_t i = 0; i < std::min(photons.size(),corr_photons.size()); ++i ){
             //  assert( fabs(photons[i].energy - corr_photons[i].energy) < 0.001 );

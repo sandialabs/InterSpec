@@ -124,11 +124,14 @@ public:
   //                               m_displayType, m_displayedSampleNumbers;
   virtual bool write_2006_N42( std::ostream &ostr ) const;
 
-  //write_iaea_spe(...) Writes ascii IAEA SPE file; the specialization in
-  //  SpecMeas also adds in peak information.
+  /** Writes ascii IAEA SPE file; calls `SpecUtils::SpecFile::write_iaea_spe(...)`, and then adds
+   peak information.
+   */
   virtual bool write_iaea_spe( std::ostream &output,
                                std::set<int> sample_nums,
                                const std::set<int> &det_nums ) const;
+  /** Adds reading back in peak information (only from InterSpec exported SPE files though). */
+  virtual bool load_from_iaea( std::istream &istr );
   
   virtual std::shared_ptr< ::rapidxml::xml_document<char> > create_2012_N42_xml() const;
   
@@ -152,7 +155,7 @@ public:
    */
   const std::set<int> &displayedSampleNumbers() const;
 
-  //aboutToBeDeleted(): signal emited right before object destructions - useful
+  //aboutToBeDeleted(): signal emitted right before object destructions - useful
   //  if you want to serialize changes to disk
   Wt::Signal<> &aboutToBeDeleted();
 
@@ -184,6 +187,8 @@ public:
    This function is primarily useful if you remove some sample numbers.
    */
   void cleanup_orphaned_info();
+  
+  virtual void change_sample_numbers( const std::vector<std::pair<int,int>> &from_to_sample_nums );
   
   std::shared_ptr< std::deque< std::shared_ptr<const PeakDef> > >
                                  peaks( const std::set<int> &samplenums );
@@ -225,9 +230,31 @@ public:
                                 std::shared_ptr< PeakDeque > foundPeaks
                                 /*, std::shared_ptr< PeakDeque > intitalPeaks*/ );
   
+  std::set<std::set<int> > sampleNumsWithAutomatedSearchPeaks() const;
+  
   //peaksHaveBeenAdded(): marks this SpecUtils::SpecFile object as
   void setModified();
 
+  /** The database UserState table index for the state associated with the passed in sample numbers.
+   
+   @returns The db index value that is >=0, if there is a state associated with this spectrum, otherwise returns -1.
+   
+   This quantity is stored when the user loads or saves the application state.
+   This value is not currently persisted into the XML.
+   */
+  long long int dbStateId( const std::set<int> &samplenums ) const;
+  
+  /** Sets the database UserState table index for the state associated with the passed in sample numbers. 
+   
+   Passing in a ID of less than zero removes the index for the specified sample numbers.
+   */
+  void setDbStateId( const long long int db_id, const std::set<int> &samplenums );
+  
+  /** Clears all UserState table index associations. */
+  void clearAllDbStateId();
+  
+  /** Returns the full map from sample numbers, to database UserState indexes. */
+  const std::map<std::set<int>,long long int> &dbUserStateIndexes() const;
   
   //shiftPeaksForRecalibration: shift the peaks for when you apply a
   //  recalibration to the spectrum, for instance after calling
@@ -284,6 +311,14 @@ public:
   void addPeaksToXml( ::rapidxml::xml_node<char> *peaksnode ) const;
   void addPeaksFromXml( const ::rapidxml::xml_node<char> *peaksnode );
   
+  // I dont think we ever want to store the database index(es) into the written N42
+  //  file, but if we ever do, these next two functions implement writing to, and
+  //  reading from the xml.
+  //  If you change this, at a minimum, check for commented out calls to
+  //  `SpecMeas::clearAllDbStateId()`, so we don't erroneously setup to write over
+  //  existing database states, that may not be related to the data being loaded.
+  // void addDbStateIdsToXml( ::rapidxml::xml_node<char> *db_state_index_node ) const;
+  // void addDbStateIdsFromXml( const ::rapidxml::xml_node<char> *db_state_index_node );
   
 #if( PERFORM_DEVELOPER_CHECKS )
   //equalEnough(...): tests whether the passed in Measurement objects are
@@ -299,6 +334,7 @@ public:
       make sure another thread doesn't change the model on you.
    */
   rapidxml::xml_document<char> *shieldingSourceModel();
+  const rapidxml::xml_document<char> *shieldingSourceModel() const;
   
   /** Sets the shielding source model that was serialized by the gui. */
   void setShieldingSourceModel( std::unique_ptr<rapidxml::xml_document<char>> &&model );
@@ -371,10 +407,15 @@ protected:
    */
   bool m_fileWasFromInterSpec;
   
+  /** A mapping of sample numbers, to the UserState table, if the user has saved state to the DB.
+   
+   Not currently serialized to N42.
+   */
+  std::map<std::set<int>,long long int> m_dbUserStateIndexes;
+  
   /** Version of XML serialization of the <DHS:InterSpec> node.
    Changes:
    - Added version field to xml 20200807, with initial value 1.  Added <DisplayedDetectors> field.
-   
    */
   static const int sm_specMeasSerializationVersion;
   

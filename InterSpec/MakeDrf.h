@@ -51,6 +51,23 @@ namespace Wt
 
 namespace { class DrfPeak; }
 
+class MakeDrf;
+struct SrcLibLineInfo;
+
+/** Create a AuxWindow with the MakeDrf widget as the primary content. */
+class MakeDrfWindow : public AuxWindow
+{
+public:
+  MakeDrfWindow( InterSpec *viewer, 
+                MaterialDB *materialDB,
+                Wt::WSuggestionPopup *materialSuggest );
+  
+  MakeDrf *tool();
+  
+protected:
+  MakeDrf *m_tool;
+};//class MakeDrfWindow
+
 
 class MakeDrf : public Wt::WContainerWidget
 {
@@ -62,13 +79,6 @@ public:
   
   virtual ~MakeDrf();
   
-  /** Create a AuxWindow with the MakeDrf widget as the primary content.
-      Returns pointer to the created AuxWindow, but is will already be shown,
-      and have the signals to delete it when closed hooked up, so you probably
-      wont need the window.
-   */
-  static AuxWindow *makeDrfWindow( InterSpec *viewer, MaterialDB *materialDB,
-                                   Wt::WSuggestionPopup *materialSuggest );
   
   /** Creates a "Save As..." dialog.  If the current DRF is not valid, the
      dialog that will pop up will state as such.
@@ -123,6 +133,12 @@ public:
    */
   double detectorDiameter() const;
   
+  /** Called when user drag-n-drops a Source.lib onto app.
+   
+   Auto-populates all sources to the first matching nuclide in the library.
+   */
+  void useSourceLibrary( const std::vector<std::shared_ptr<const SrcLibLineInfo>> &srcs,
+                         const bool auto_populate );
 protected:
   void handleSourcesUpdates();
   void handleSqrtEqnOrderChange();

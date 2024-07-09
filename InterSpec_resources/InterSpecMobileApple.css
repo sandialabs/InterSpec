@@ -1,4 +1,6 @@
-button, button:hover {
+button, button:hover,
+  .btn-group /* WSplitButton spans */
+{
   font-weight:bold;
   vertical-align: middle;
   border:1px solid rgb(0,122,255);

@@ -1,0 +1,98 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- ramrr- short for RelActManualReportResource
+       mrend- short for ManRelEffNucDisp
+       ramg-  short for RelActManualGui
+  -->
+
+  <!-- Messages when creating HTML report -->
+  <message id="ramrr-no-solution-title">No Rel. Activity Solution Available</message>
+  <message id="ramrr-no-solution-text"></message>
+  <message id="ramrr-err-report">Error getting spectrum file currently being shown: {1}</message>
+  
+  <!-- Messages in the nuclide component of the GUI -->
+  <message id="mrend-spec-act">Spec. Act.</message>
+  <message id="mrend-X(a,n)">Alphas on {1} creating neutrons</message>
+  <message id="mrend-X(n,a)">Neutrons on {1} creating alphas</message>
+  <message id="mrend-X(a,p)">Alphas on {1} creating protons</message>
+  <message id="mrend-X(n,g)">Slow neutrons on {1} being captured</message>
+  <message id="mrend-X(n,n)">Fast neutrons inelastically scattering off {1}</message>
+  <message id="mrend-X(a,a)">Inelastic alpha scattering off {1}</message>
+  <message id="mrend-annih">Annihilation gammas</message>
+  <message id="mrend-unknown-rxctn">Unknown reaction</message>
+  <message id="mrend-X(,)"></message>
+  <message id="mrend-cb-decay-during-meas">Decay during meas.</message>
+  <message id="mrend-tt-decay-during-meas">When checked, the nuclides decay during the measurement will be accounted for, with the quoted relative activity being the activity at the start of measurement.</message>
+  
+  <!-- Message on the general GUI interface -->
+  <message id="ramg-eqn-form-label">Eqn Form</message>
+  <message id="ramg-options-label">Options</message>
+  <message id="ramg-tt-eqn-form">
+    The functional form to use for the relative efficiency curve.
+    <br />
+    Options are:
+    <table style="margin-left: 10px;">
+      <tr><th>Log(energy):</th>               <th>y = a + b*ln(x) + c*(ln(x))^2 + d*(ln(x))^3 + ...</th></tr>
+      <tr><th>Log(rel. eff.):</th>            <th>y = exp( a + b*x + c/x + d/x^2 + e/x^3 + ... )</th></tr>
+      <tr><th>Log(energy)Log(rel. eff.):</th> <th>y = exp( a  + b*(lnx) + c*(lnx)^2 + d*(lnx)^3 + ... )</th></tr>
+      <tr><th>FRAM Empirical:</th>            <th>y = exp( a + b/x^2 + c*(lnx) + d*(lnx)^2 + e*(lnx)^3 )</th></tr>
+    </table>
+  </message>
+  <message id="ramg-eqn-order-label">Eqn Order</message>
+  <message id="ramg-tt-eqn-order">The order (how many energy-dependent terms) relative efficiency equation to use.</message>
+  <message id="ramg-yield-info-label">Yield Info</message>
+  <message id="ramg-tt-data-src">The nuclear data source for gamma branching ratios.</message>
+  <message id="ramg-match-tol-label">Match tol.</message>
+  <message id="ramg-tt-match-tol">
+    The number of FWHM, from the peak mean, to include source gammas from as contributing to a peaks area.
+    <br />
+    For some photopeaks of some nuclides multiple gammas that are close in energy may contribute
+    to creating a detected peak area.  This match tolerance specifies how many FWHM from the
+    observed peak mean source gammas should be summed to determine the branching ratio to use.
+    <br />
+    Specifying a value of zero will will cause only the gamma energy assigned to a peak to
+    be used, even if there are very nearby other gammas.
+  </message>
+  <message id="ramg-add-uncert-label">Add. Uncert</message>
+  <message id="ramg-tt-add-uncert">
+    An additional uncertainty to add to the relative efficiency line, for each fit photopeak.
+    <br />
+    Small deviations in efficiency of detection for one or a few high statistics peaks can cause the
+    efficiency curve to notably deviate from the other points if only statical uncertainties are
+    used; when an additional uncertainty is added the relative efficiency will then do a better job
+    of visibly going through all the data points, and from limited testing produce more accurate
+    results.  You can think of this as adding a systematic uncertainty to each detected photopeak,
+    that is uncorrelated between peaks.  From limited testing the value used is not hugely
+    important, just as long as there is something.  You can also choose to use an unweighted fit,
+    where each peak will contribute to the fit equally, no matter its statistical uncertainty.
+  </message>
+  <message id="ramg-unweighted-label">Unweighted</message>
+  <message id="ramg-stat-only-label">Stat. Only</message>
+  <message id="ramg-back-sub-cb">Background Subtract</message>
+  <message id="ramg-html-export-label">HTML Report</message>
+  <message id="ramg-nucs-label">Nuclides</message>
+  <message id="ramg-peaks-to-use-label">Peaks to Use</message>
+  <message id="ramg-results-label">Results</message>
+  <message id="ramg-mi-results">Results</message>
+  <message id="ramg-mi-chart">Chart</message>
+  <message id="ramg-back-sub-neg">After background subtraction, peak at {1} keV had negative counts so was not used.</message>
+  <message id="ramg-warn-reaction">Using reaction photopeaks is likely not valid, unless the gammas are emitted homogeneously from a single object.</message>
+  <message id="ramg-warn-no-bkg-sub-used">Subtraction of background peaks was selected, but no background peaks matched to the selected foreground peaks.</message>
+  <message id="ramg-warn-rel-eff-u/pu-xray">The relative efficiency curve does not account for x-ray absorption edges - using peaks under 120 keV for U or Pu problems is not recommended.</message>
+  <message id="ramg-warn-rel-eff-other-xray">The relative efficiency curve does not account for x-ray absorption edges of any potential shielding - please ensure the peaks used do not span across absorption edges of any shielding.</message>
+  <message id="ramg-warn-match-outside-tol">The assigned gamma{1} of {2} keV are outside of the match tolerance with the peak{1} of {3}; note that the assigned gamma energy is used to compensate for nearby gammas, and not the fit peak mean.</message>
+  <message id="ramg-warn-failed-match">Failed to match nuclide{1} to any peaks: {2}</message>
+  <message id="ramg-err-setting-up-calc">Error setting up Relative Efficiency calculation: {1}</message>
+  <message id="ramg-err-performing-calc">Error performing Relative Efficiency calculation: {1}</message>
+  <message id="ramg-no-results-available">No results available.</message>
+  <message id="ramg-result-error-msg">Error: {1}</message>
+  <message id="ramg-result-warn-msg">Warning: {1}</message>
+  <message id="ramg-and-there-were">and there were</message>
+  <message id="ramg-dof">DOF</message> <!-- Degrees of freedom -->
+  <message id="ramg-fit-unweighted-txt">Fit was unweighted; uncertainties may not make sense.</message>
+  <message id="ramg-fit-stat-only">Uncertainties are statistical only.</message>
+  <message id="ramg-fit-uncert-increased">Uncertainties artificially increased by "Add. Uncert".</message>
+  <message id="ramg-consider-add-uncert-u">You may want to consider adding "Add. Uncert" for Uranium problems.</message>
+  <message id="ramg-you-using-add-uncert-u">You are adding "Add. Uncert" - interpret computed uncertainties with care.</message>
+  <message id="ramg-you-using-add-uncert-non-u">You are currently adding "Add. Uncert", which will cause computed uncertainties to not be correct.</message>
+</messages>

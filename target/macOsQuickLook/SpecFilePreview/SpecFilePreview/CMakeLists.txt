@@ -10,9 +10,23 @@ set( CMAKE_CXX_STANDARD_REQUIRED ON )
 find_package( ZLIB REQUIRED )
 find_package( Threads REQUIRED )
 
+if( NOT DEFINED InterSpec_BASE_DIR )
+  find_file( wt_find_file 
+          NAMES "FindWt.cmake" 
+          PATHS "${InterSpec_BASE_DIR}/cmake" 
+                "../../../cmake" "../../../../cmake" 
+                NO_DEFAULT_PATH 
+                REQUIRED 
+  )
+  get_filename_component( InterSpec_BASE_DIR ${wt_find_file} DIRECTORY )
+  get_filename_component( InterSpec_BASE_DIR ${InterSpec_BASE_DIR} DIRECTORY )
+endif( NOT DEFINED InterSpec_BASE_DIR )
+
+
 message( "InterSpec_BASE_DIR=${InterSpec_BASE_DIR}" )
 message( "CMAKE_PREFIX_PATH=${CMAKE_PREFIX_PATH}" )
-INCLUDE( ${InterSpec_BASE_DIR}/cmake/FindWt.cmake )
+
+INCLUDE( "${InterSpec_BASE_DIR}/cmake/FindWt.cmake" )
 
 
 

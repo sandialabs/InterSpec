@@ -48,14 +48,16 @@
 
 #include "SpecUtils/StringAlgo.h"
 
+#include "SandiaDecay/SandiaDecay.h"
+
 #include "InterSpec/InterSpec.h"
 #include "InterSpec/InterSpecUser.h"
 #include "InterSpec/PhysicalUnits.h"
-#include "SandiaDecay/SandiaDecay.h"
 #include "InterSpec/DecayActivityDiv.h"
 #include "InterSpec/DecayDataBaseServer.h"
 #include "InterSpec/DecaySelectNuclideDiv.h"
 #include "InterSpec/IsotopeNameFilterModel.h"
+#include "InterSpec/PhysicalUnitsLocalized.h"
 
 using namespace Wt;
 using namespace std;
@@ -124,20 +126,20 @@ void DecaySelectNuclide::setNuclideSearchToFocus()
 
 void DecaySelectNuclide::setAddButtonToAdd()
 {
-  m_acceptButton->setText( "Add" );
+  m_acceptButton->setText( WString::tr("Add") );
   m_acceptButton->setIcon( "InterSpec_resources/images/plus_min_white.svg" );
 }
 
 void DecaySelectNuclide::setAddButtonToAccept()
 {
-  m_acceptButton->setText( "Accept" );
+  m_acceptButton->setText( WString::tr("Accept") );
   m_acceptButton->setIcon( "InterSpec_resources/images/accept.png" );
 }
 
 
 void DecaySelectNuclide::setCurrentInfo( int a, int z, int iso,
                                        double age, double activity, 
-                                       bool useCurrie, std::string activityStr )
+                                       bool useCurie, std::string activityStr )
 {
   const SandiaDecay::SandiaDecayDataBase * const db = DecayDataBaseServer::database();
   
@@ -145,13 +147,13 @@ void DecaySelectNuclide::setCurrentInfo( int a, int z, int iso,
   if( !el )
     return;
 
-  const string agestr = PhysicalUnits::printToBestTimeUnits( age );
+  const string agestr = PhysicalUnitsLocalized::printToBestTimeUnits( age );
   m_nuclideAgeEdit->setText( agestr );
 
   string actstr = activityStr;
   if (actstr.empty())
   {
-    actstr = PhysicalUnits::printToBestActivityUnits(activity, 2, useCurrie);
+    actstr = PhysicalUnits::printToBestActivityUnits(activity, 2, useCurie);
   }
   else
   {
@@ -213,6 +215,8 @@ void DecaySelectNuclide::setCurrentInfo( int a, int z, int iso,
 
 void DecaySelectNuclide::init()
 {
+  InterSpec::instance()->useMessageResourceBundle( "DecayActivity" );
+  
   const SandiaDecay::SandiaDecayDataBase * const db = DecayDataBaseServer::database();
   
   WContainerWidget::clear();
@@ -222,7 +226,7 @@ void DecaySelectNuclide::init()
   m_massSelection            = new WSelectionBox();
   m_nuclideActivityEdit      = new WLineEdit();
   m_nuclideAgeEdit           = new WLineEdit();
-  m_selectedIsotopeHalfLife  = new WText( "T&frac12;=", Wt::TextFormat::XHTMLText );
+  m_selectedIsotopeHalfLife  = new WText( WString("{1}=").arg(WString::tr("T1/2")) );
   m_isotopeSearch            = new WLineEdit();
 
   m_nuclideActivityEdit->setAttributeValue( "ondragstart", "return false" );
@@ -299,10 +303,10 @@ void DecaySelectNuclide::init()
   m_elementSelection->setNoSelectionEnabled( true );
   
   
-  m_acceptButton = new WPushButton( "Add" ,m_footer);
+  m_acceptButton = new WPushButton( WString::tr("Add"), m_footer);
   m_acceptButton->setFloatSide(Wt::Right);
   m_acceptButton->clicked().connect( this, &DecaySelectNuclide::emitAccepted );
-  WPushButton *cancelButton = m_auxWindow->addCloseButtonToFooter("Close");
+  WPushButton *cancelButton = m_auxWindow->addCloseButtonToFooter( WString::tr("Close") );
   cancelButton->clicked().connect( this, &DecaySelectNuclide::emitDone );
 
   m_elementSelection->addStyleClass( "m_elementSelection" );
@@ -332,16 +336,16 @@ void DecaySelectNuclide::init()
   layout->addWidget( m_elementSelection,        0, 0, 1, 1 );
   layout->addWidget( m_massSelection,           0, 1, 1, 1 );
   
-  label = new WLabel( "Nuclide: " );
+  label = new WLabel( WString("{1}: ").arg(WString::tr("Nuclide")) );
   layout->addWidget( label, 1, 0, 1, 1 );
   layout->addWidget( m_isotopeSearch, 1, 1, 1, 1 );
   layout->addWidget( m_selectedIsotopeHalfLife, 2, 0, 1, 2, Wt::AlignCenter );
   
-  label = new WLabel( "Activity: " );
+  label = new WLabel( WString("{1}: ").arg(WString::tr("Activity")) );
   layout->addWidget( label,                      3, 0, 1, 1 );
   layout->addWidget( m_nuclideActivityEdit,      3, 1, 1, 1 );
   
-  label = new WLabel( "Initial Age: " );
+  label = new WLabel( WString::tr("dcn-initial-age") );
   layout->addWidget( label,                   4, 0, 1, 1 );
   layout->addWidget( m_nuclideAgeEdit,        4, 1, 1, 1 );
   
@@ -371,7 +375,7 @@ void DecaySelectNuclide::initActivityAgeSelects()
   m_nuclideAgeEdit->setText( "0.0 us" );
   m_nuclideAgeEdit->setTextSize( 10 );
 
-  WRegExpValidator *agevalidator = new WRegExpValidator( PhysicalUnits::sm_timeDurationHalfLiveOptionalRegex, m_nuclideAgeEdit );
+  WRegExpValidator *agevalidator = new WRegExpValidator( PhysicalUnitsLocalized::timeDurationHalfLiveOptionalRegex(), m_nuclideAgeEdit );
   agevalidator->setFlags(Wt::MatchCaseInsensitive);
   m_nuclideAgeEdit->setValidator(agevalidator);
   
@@ -449,8 +453,8 @@ void DecaySelectNuclide::emitAccepted()
 
     bool validAct  = false, validAge = false;
     double activity = 0.0, age = 0.0;
-    const string activityTxt = m_nuclideActivityEdit->text().narrow();
-    const string ageText = m_nuclideAgeEdit->text().narrow();
+    const string activityTxt = m_nuclideActivityEdit->text().toUTF8();
+    const string ageText = m_nuclideAgeEdit->text().toUTF8();
     
     try
     {
@@ -466,7 +470,7 @@ void DecaySelectNuclide::emitAccepted()
       if( nuc )
         hl = nuc->halfLife;
       
-      age = PhysicalUnits::stringToTimeDurationPossibleHalfLife( ageText, hl );
+      age = PhysicalUnitsLocalized::stringToTimeDurationPossibleHalfLife( ageText, hl );
       validAge = true;
     }catch(...){ }
     
@@ -491,11 +495,11 @@ void DecaySelectNuclide::emitAccepted()
     const string::size_type unitpos = activityTxt.find_first_of( "CcBb" );
     
     if( unitpos == string::npos )
-      selected.useCurrie = !InterSpecUser::preferenceValue<bool>( "DisplayBecquerel", InterSpec::instance() );
+      selected.useCurie = !InterSpecUser::preferenceValue<bool>( "DisplayBecquerel", InterSpec::instance() );
     else if( activityTxt[unitpos]=='C' || activityTxt[unitpos]=='c' )
-      selected.useCurrie = true;
+      selected.useCurie = true;
     else
-      selected.useCurrie = false;
+      selected.useCurie = false;
     
     m_selectedSignal.emit( selected );
     m_doneSignal.emit();
@@ -585,7 +589,7 @@ void DecaySelectNuclide::updateSelectedHalfLife()
 {
   const SandiaDecay::SandiaDecayDataBase * const db = DecayDataBaseServer::database();
   
-  m_selectedIsotopeHalfLife->setText( "T&frac12;=" );
+  m_selectedIsotopeHalfLife->setText( WString("{1}=").arg(WString::tr("T1/2")) );
 
   int a, z, meta;
   currentlySelectedIsotope( a, z, meta );
@@ -602,8 +606,8 @@ void DecaySelectNuclide::updateSelectedHalfLife()
     return;
   }//if( !nuclide )
 
-  const string text = "T&frac12;="
-                       + PhysicalUnits::printToBestTimeUnits(nuclide->halfLife,2);
+  const string hl = PhysicalUnits::printToBestTimeUnits(nuclide->halfLife,2);
+  WString text = WString("{1}={2}").arg(WString::tr("T1/2")).arg( hl );
   m_selectedIsotopeHalfLife->setText( text );
 }//void updateSelectedHalfLife()
 

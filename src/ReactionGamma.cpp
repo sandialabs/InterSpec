@@ -134,6 +134,7 @@ string ReactionGamma::Reaction::name() const
     case AlphaProton:             answer += "(a,p)";        break;
     case NeutronCapture:          answer += "(n,g)";        break;
     case NeutronInelasticScatter: answer += "(n,n)";        break; // TODO: Add a prime to the second n, the nuclide suggestion code will then need to be updated - the character to add is probably: "\xE2\x80\xB2", "&prime;", "&#8242;" 
+    case AlphaInelasticScatter:   answer += "(a,a)";        break; // TODO: Add a prime to the second a...
     case AnnihilationReaction:    answer =  "Annihilation"; break;
     case NumReactionType:         break;
   }//switch( type )
@@ -214,6 +215,7 @@ ReactionGamma::ReactionParticle ReactionGamma::ingoing_particle( ReactionType ty
     case AlphaProton:             return AlphaParticle;
     case NeutronCapture:          return NeutronParticle;
     case NeutronInelasticScatter: return NeutronParticle;
+    case AlphaInelasticScatter:   return AlphaParticle;
     case AnnihilationReaction:    return GammaParticle;
     case NumReactionType: break;
   }//switch( type )
@@ -231,6 +233,7 @@ ReactionGamma::ReactionParticle ReactionGamma::outgoing_particle( ReactionType t
     case AlphaProton:             return ProtonParticle;
     case NeutronCapture:          return GammaParticle;
     case NeutronInelasticScatter: return NeutronParticle;
+    case AlphaInelasticScatter:   return AlphaParticle;
     case AnnihilationReaction:    return GammaParticle;
     case NumReactionType: break;
   }//switch( type )
@@ -250,6 +253,7 @@ ReactionGamma::ReactionParticle ReactionGamma::outgoing_particle( ReactionType t
 //(a,p) is alphaproton    : N14, Al27
 //(n,g) is neutroncapture : Al27, Be9, Bi, Ca, C, Cl, Cr, Cu, Fe, Ge, H, Mg, N, Ni, O, Pb, Si, Ta,
 //(n,n') is neutroninelasticscatter : Al27, Fe
+//(a,a') is alphainelasticscatter : Al(27(a,a'g),
 std::string ReactionGamma::gammas( const string &name,
                          vector<ReactionGamma::ReactionPhotopeak> &answer ) const
 {
@@ -325,6 +329,8 @@ std::string ReactionGamma::gammas( const string &name,
     reaction_type = NeutronCapture;
   else if( first_prtcl==NeutronParticle && second_prtcl==NeutronParticle )
     reaction_type = NeutronInelasticScatter;
+  else if( first_prtcl==AlphaParticle && second_prtcl==AlphaParticle )
+    reaction_type = AlphaInelasticScatter;
   else
     throw runtime_error( "Invalid reaction: " + first_rctn + "->"+second_rctn );
 
@@ -342,11 +348,12 @@ std::string ReactionGamma::gammas( const string &name,
     //      isotope per atom, if this changes
     if( (rctn_el && (el==rctn_el)) || (rctn_nuc && nuc && (nuc==rctn_nuc)) )
     {
-      for( const EnergyAbundance &ea : rctn->gammas )
+      for( const Reaction::EnergyYield &ea : rctn->gammas )
       {
         ReactionPhotopeak rp;
         rp.energy = ea.energy;
         rp.abundance = ea.abundance;
+        rp.remark = ea.remark;
         rp.reaction = rctn;
         answer.push_back( rp );
       }//for( const EnergyAbundance &ea : rctn->gammas )
@@ -358,11 +365,12 @@ std::string ReactionGamma::gammas( const string &name,
     }else if( rctn_nuc && el && (el==db->element(rctn_nuc->atomicNumber)) )
     {
 //      answer.insert( answer.end(), rctn->gammas.begin(), rctn->gammas.end() );
-      for( const EnergyAbundance &ea : rctn->gammas )
+      for( const Reaction::EnergyYield &ea : rctn->gammas )
       {
         ReactionPhotopeak rp;
         rp.energy = ea.energy;
         rp.abundance = ea.abundance;
+        rp.remark = ea.remark;
         rp.reaction = rctn;
         answer.push_back( rp );
       }//for( const EnergyAbundance &ea : rctn->gammas )
@@ -461,10 +469,10 @@ void ReactionGamma::reactions( float lower_energy,
     for( size_t i = 0; i < rctns.size(); ++i )
     {
       const Reaction *reaction = rctns[i];
-      const vector<EnergyAbundance> &gammas = reaction->gammas;
+      const vector<Reaction::EnergyYield> &gammas = reaction->gammas;
       for( size_t j = 0; j < gammas.size(); ++j )
       {
-        const EnergyAbundance &ea = gammas[j];
+        const Reaction::EnergyYield &ea = gammas[j];
         if( ea.energy >= lower_energy && ea.energy <= upper_energy )
         {
           answer.push_back( reaction );
@@ -488,15 +496,16 @@ void ReactionGamma::reactions( float lower_energy,
   {
     const Reaction *reaction = input[i];
 
-    const vector<EnergyAbundance> &gammas = reaction->gammas;
+    const vector<Reaction::EnergyYield> &gammas = reaction->gammas;
     for( size_t j = 0; j < gammas.size(); ++j )
     {
-      const EnergyAbundance &ea = gammas[j];
+      const Reaction::EnergyYield &ea = gammas[j];
       if( ea.energy >= lower_energy && ea.energy <= upper_energy )
       {
         ReactionPhotopeak photopeak;
         photopeak.abundance = ea.abundance;
         photopeak.energy = ea.energy;
+        photopeak.remark = ea.remark;
         photopeak.reaction = reaction;
         answer.push_back( photopeak );
       }//if( ea.energy >= lower_energy && ea.energy <= upper_energy )
@@ -534,7 +543,8 @@ void ReactionGamma::populate_reaction( const rapidxml::xml_node<char> *parent,
       const rapidxml::xml_node<char> *product_node  = node->first_node( "product", 7 );
       const rapidxml::xml_node<char> *energies_node = node->first_node( "energies", 8 );
       const rapidxml::xml_node<char> *yeilds_node   = node->first_node( "yields", 6 );
-
+      const rapidxml::xml_node<char> *remark_node   = node->first_node( "remark", 6 );
+      
       Reaction rctn;
       rctn.type = type;
 
@@ -552,8 +562,11 @@ void ReactionGamma::populate_reaction( const rapidxml::xml_node<char> *parent,
                              "find energies node for a target" );
       if( !yeilds_node )
         throw runtime_error( "ReactionGamma::populate_reaction(...) Could not "
-                             "find yeilds node for a target" );
+                             "find yields node for a target" );
 
+      if( remark_node && remark_node->value_size() )
+        rctn.remark.append( remark_node->value(), remark_node->value_size() );
+      
       const SandiaDecay::SandiaDecayDataBase *db = m_decayDatabase;
 
       const string nuclide_name = nuclide_node->value();
@@ -571,8 +584,9 @@ void ReactionGamma::populate_reaction( const rapidxml::xml_node<char> *parent,
       }//if( the nuclide is listed ) / else
 
       if( !rctn.targetNuclide && !rctn.targetElement )
-        throw runtime_error( "ReactionGamma::populate_reaction(...) Couldnt "
-                             "find a isotope or element for a target" );
+        throw runtime_error( "ReactionGamma::populate_reaction(...) Couldn't "
+                             "find a isotope or element by the name '" + nuclide_name
+                              + "', for a target." );
 
       if( product_node && product_node->value() && product_node->value_size() )
       {
@@ -588,11 +602,16 @@ void ReactionGamma::populate_reaction( const rapidxml::xml_node<char> *parent,
         if( enode->value() )
         {
           const string str = enode->value();
-          EnergyAbundance val;
+          Reaction::EnergyYield val;
           if( !(stringstream(str) >> val.energy) )
             throw runtime_error( "ReactionGamma::populate_reaction(...) "
                                  "Couldnt convert " + str + " to a float" );
           val.energy *= static_cast<float>(PhysicalUnits::keV);
+          
+          const rapidxml::xml_attribute<char> *remark = enode->first_attribute( "remark", 6 );
+          if( remark && remark->value_size() )
+            val.remark.append( remark->value(), remark->value_size() );
+          
           rctn.gammas.push_back( val );
         }//if( enode->value() )
       }//for( loop over energy nodes )
@@ -613,6 +632,15 @@ void ReactionGamma::populate_reaction( const rapidxml::xml_node<char> *parent,
             throw runtime_error( "ReactionGamma::populate_reaction(...) Couldnt"
                                  " convert '" + str + "' to a float" );
           rctn.gammas[yeild_num].abundance /= 100.0;
+          
+          const rapidxml::xml_attribute<char> *remark = ynode->first_attribute( "remark", 6 );
+          if( remark && remark->value_size() )
+          {
+            if( !rctn.gammas[yeild_num].remark.empty() )
+              rctn.gammas[yeild_num].remark += ". ";
+            rctn.gammas[yeild_num].remark.append( remark->value(), remark->value_size() );
+          }//if( remark && remark->value_size() )
+          
           ++yeild_num;
         }//if( ynode->value() )
       }//for( loop over yeild nodes )
@@ -630,7 +658,7 @@ void ReactionGamma::populate_reaction( const rapidxml::xml_node<char> *parent,
     for( size_t i = 0; i < results.size(); ++i )
       delete results[i];
     results.clear();
-    throw e;
+    throw;
   }//try / catch
 }//void populate_reaction(...)
 
@@ -656,12 +684,14 @@ void ReactionGamma::init( const string &input )
   const rapidxml::xml_node<char> *alphaproton_node = doc_node->first_node( "alphaproton", 11 );
   const rapidxml::xml_node<char> *capture_node = doc_node->first_node( "neutroncapture", 14 );
   const rapidxml::xml_node<char> *scatter_node = doc_node->first_node( "neutroninelasticscatter", 23 );
+  const rapidxml::xml_node<char> *alpha_scatter_node = doc_node->first_node( "alphainelasticscatter", 21 );
 
   populate_reaction( alphaneutron_node, AlphaNeutron, m_reactions[AlphaNeutron] );
   populate_reaction( neutronalpha_node, NeutronAlpha, m_reactions[NeutronAlpha] );
   populate_reaction( alphaproton_node, AlphaProton, m_reactions[AlphaProton] );
   populate_reaction( capture_node, NeutronCapture, m_reactions[NeutronCapture] );
   populate_reaction( scatter_node, NeutronInelasticScatter, m_reactions[NeutronInelasticScatter] );
+  populate_reaction( alpha_scatter_node, AlphaInelasticScatter, m_reactions[AlphaInelasticScatter] );
   
   Reaction *annrctn = new Reaction();
   annrctn->type = AnnihilationReaction;

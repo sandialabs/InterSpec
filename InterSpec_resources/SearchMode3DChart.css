@@ -2,3 +2,37 @@
 {
 }
 
+
+.SearchMode3DChart div.SearchMode3DControls
+{
+  display: grid;
+  grid-column-gap: 5px;
+  row-gap: 4px;
+  padding-top: 5px;
+  
+  grid-template-columns: auto auto auto auto 1fr auto auto;
+}
+
+
+.SearchMode3DChart div.SearchMode3DControls label
+{
+  margin-right: 5px;
+  align-self: center;
+}
+
+
+/* The input areas for min/max time/energy */
+.SearchMode3DChart div.SearchMode3DControls input
+{
+  align-self: center;
+  margin-right: 15px;
+  width: 5em;
+}
+
+
+/* The number of time and energy divisions input */
+.SearchMode3DChart div.SearchMode3DControls .Wt-spinbox
+{
+  margin-right: 0px;
+  width: 4em;
+}

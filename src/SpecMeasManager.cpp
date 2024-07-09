@@ -43,13 +43,14 @@
 #include <boost/range.hpp>
 #include <boost/scope_exit.hpp>
 #include <boost/system/error_code.hpp>
+#include <boost/asio/deadline_timer.hpp>
 
 #include <Wt/WLink>
 #include <Wt/WText>
 #include <Wt/Utils>
-#include <Wt/WTable>
 #include <Wt/WImage>
 #include <Wt/WLabel>
+#include <Wt/WTable>
 #include <Wt/WAnchor>
 #include <Wt/WString>
 #include <Wt/WServer>
@@ -105,8 +106,10 @@
 #include "SpecUtils/Filesystem.h"
 #include "SpecUtils/StringAlgo.h"
 #include "SpecUtils/ParseUtils.h"
+#include "SpecUtils/UriSpectrum.h"
 
 
+#include "InterSpec/MakeDrf.h"
 #include "InterSpec/DrfChart.h"
 #include "InterSpec/SpecMeas.h"
 #include "InterSpec/PopupDiv.h"
@@ -119,8 +122,9 @@
 #include "InterSpec/HelpSystem.h"
 #include "InterSpec/SimpleDialog.h"
 #include "InterSpec/InterSpecApp.h"
-#include "InterSpec/EnergyCalTool.h"
 #include "InterSpec/DataBaseUtils.h"
+#include "InterSpec/EnergyCalTool.h"
+#include "InterSpec/MakeDrfSrcDef.h"
 #include "InterSpec/WarningWidget.h"
 #include "InterSpec/ExportSpecFile.h"
 #include "InterSpec/SpecMeasManager.h"
@@ -467,28 +471,35 @@ namespace
   };//class FileUploadDialog
 
 #if( USE_QR_CODES )
-void displayQrDialog( const vector<QRSpectrum::UrlEncodedSpec> urls, const size_t index,
+void displayQrDialog( const vector<QRSpectrum::QrCodeEncodedSpec> urls, const size_t index,
                      const SpecUtils::SpectrumType type )
 {
-  string seqnum = "QR Code";
+  WString seqnum;
+  if( urls.size() <= 1 )
+    seqnum = WString::tr("smm-qr-sequence-single");
+  else
+    seqnum = WString::tr("smm-qr-sequence-multi")
+              .arg( static_cast<int>(index + 1) )
+              .arg( static_cast<int>(urls.size()) );
+  
+  WString title;
   if( urls.size() > 1 )
-    seqnum += " " + to_string(index + 1) + " of " + to_string( urls.size() );
+    title = WString::tr("smm-qr-title").arg( seqnum );
   
-  string title = "Spectrum File " + seqnum;
-  if( urls.size() == 1 )
-    title = "";
+  WString desc = WString::tr("smm-qr-desc")
+                  .arg(seqnum)
+                  .arg( WString::tr(SpecUtils::descriptionText(type)) );
   
-  string desc = seqnum + " for the " + string(SpecUtils::descriptionText(type)) + " spectrum.";
   SimpleDialog *dialog = QrCode::displayTxtAsQrCode( urls[index].m_url, title, desc );
   
   if( (index + 1) < urls.size() )
   {
-    WPushButton *btn = dialog->addButton( "Next QR code" );
+    WPushButton *btn = dialog->addButton( WString::tr("smm-next-qr") );
     btn->clicked().connect( std::bind([=](){
       displayQrDialog( urls, index + 1, type );
     }) );
   }//if( (index + 1) < urls.size() )
-}//void displayQr( vector<QRSpectrum::UrlEncodedSpec> urls )
+}//void displayQr( vector<QRSpectrum::QrCodeEncodedSpec> urls )
 
 /** This dialog box gets shown when a multi-part QR code is received, but not all parts.
  Once all parts are handed to this dialog, it will load the spectrum, and close.
@@ -500,11 +511,11 @@ class MultiUrlSpectrumDialog : public SimpleDialog
 {
   SpecMeasManager *m_manager;
   InterSpec *m_interspec;
-  vector<QRSpectrum::EncodedSpectraInfo> m_urls;
+  vector<SpecUtils::EncodedSpectraInfo> m_urls;
   
 public:
   MultiUrlSpectrumDialog( SpecMeasManager *manager, InterSpec *viewer )
-  : SimpleDialog( "Multi-part QR/URL Spectrum", "&nbsp;" ),
+  : SimpleDialog( WString::tr("musd-dialog-title"), "&nbsp;" ),
     m_manager( manager ),
     m_interspec( viewer )
   {
@@ -512,9 +523,9 @@ public:
     assert( viewer );
 
 #if( IOS || ANDROID )
-    WPushButton *btn = addButton( "Cancel" );
+    WPushButton *btn = addButton( WString::tr("Cancel") );
 #else
-    addButton( "Cancel" );
+    addButton( WString::tr("Cancel") );
 #endif
     
     finished().connect( m_manager, &SpecMeasManager::multiSpectrumDialogDone );
@@ -559,7 +570,7 @@ public:
     {
       rapidxml::xml_document<char> doc;
       
-      for( const QRSpectrum::EncodedSpectraInfo &url : m_urls )
+      for( const SpecUtils::EncodedSpectraInfo &url : m_urls )
       {
         const char *value = doc.allocate_string( url.m_orig_url.c_str(), url.m_orig_url.size() + 1 );
         rapidxml::xml_node<> *node = doc.allocate_node( rapidxml::node_element, "Url", value );
@@ -594,29 +605,27 @@ public:
   
   void addUrl( const string &url_unencoded_url )
   {
-    using QRSpectrum::EncodedSpectraInfo;
+    using SpecUtils::EncodedSpectraInfo;
     
     try
     {
-      const EncodedSpectraInfo info = QRSpectrum::get_spectrum_url_info( url_unencoded_url );
+      const EncodedSpectraInfo info = SpecUtils::get_spectrum_url_info( url_unencoded_url );
       assert( info.m_number_urls > 1 );
       
       
       // Check if incoming CRC-16 matches previous (i.e., is same spectrum)
       if( !m_urls.empty() && (info.m_crc != m_urls[0].m_crc) )
       {
-        passMessage( "URL/QR-code received was from a different spectrum than previous URL/QR-code",
-                    WarningWidget::WarningMsgMedium );
+        passMessage( WString::tr("musd-err-diff-spec"), WarningWidget::WarningMsgMedium );
         m_urls.clear();
       }
       
       // Check to see if we have already received this URL
-      for( const QRSpectrum::EncodedSpectraInfo &i : m_urls )
+      for( const SpecUtils::EncodedSpectraInfo &i : m_urls )
       {
-        if( i.m_spectrum_number == info.m_spectrum_number )
+        if( i.m_url_num == info.m_url_num )
         {
-          passMessage( "Have already received this URL/QR-code",
-                      WarningWidget::WarningMsgMedium );
+          passMessage( WString::tr("musd-err-duplicate-url"), WarningWidget::WarningMsgMedium );
           return;
         }
       }//for( const QRSpectrum::EncodedSpectraInfo &i : m_urls )
@@ -625,7 +634,7 @@ public:
       
       std::sort( begin(m_urls), end(m_urls),
           []( const EncodedSpectraInfo &lhs, const EncodedSpectraInfo &rhs ) -> bool {
-        return lhs.m_spectrum_number < rhs.m_spectrum_number;
+        return lhs.m_url_num < rhs.m_url_num;
       } );
       
       if( m_urls.size() == info.m_number_urls )
@@ -634,13 +643,19 @@ public:
         for( const auto &i : m_urls )
           urls.push_back( i.m_orig_url );
         
-        vector<QRSpectrum::UrlSpectrum> specs = QRSpectrum::decode_spectrum_urls( urls );
+        vector<SpecUtils::UrlSpectrum> specs = SpecUtils::decode_spectrum_urls( urls );
         assert( specs.size() == 1 );
-        shared_ptr<SpecMeas> specfile = QRSpectrum::to_spec_file( specs );
+        
+        
+        auto specmeas = make_shared<SpecMeas>();
+        {
+          shared_ptr<SpecUtils::SpecFile> specfile = SpecUtils::to_spec_file( specs );
+          reinterpret_cast<SpecUtils::SpecFile &>( *specmeas ) = *specfile;
+        }
         
         m_manager->multiSpectrumDialogDone();
         
-        string display_name = "From QR-code/URL";
+        string display_name = WString::tr("musd-from-qr-file-name").toUTF8();
         if( specs.size() && (specs[0].m_title.size() > 2) )
           display_name = specs[0].m_title;
         
@@ -648,7 +663,7 @@ public:
         removePrevUrlsFile();
 #endif
         
-        m_interspec->userOpenFile( specfile, display_name );
+        m_interspec->userOpenFile( specmeas, display_name );
         accept();
       }//if( m_urls.size() == info.m_number_urls )
       
@@ -658,17 +673,19 @@ public:
       //  vector<UrlSpectrum> spec = spectrum_decode_first_url( m_urls[0].m_data );
       //std::shared_ptr<SpecUtils::SpecFile> to_spec_file( const std::vector<UrlSpectrum> &meas );
       
-      string msg = "Have received urls ";
+      string urls_list;
       for( size_t i = 0; i < m_urls.size(); ++i )
       {
         if( i && (i+1)== m_urls.size() )
-          msg += " and ";
+          urls_list += " and ";
         else if( i )
-          msg += ", ";
-        msg += std::to_string( 1 + m_urls[i].m_spectrum_number );
+          urls_list += ", ";
+        urls_list += std::to_string( 1 + m_urls[i].m_url_num );
       }
       
-      msg += " of " + std::to_string(info.m_number_urls) + ".<p>Waiting on more URLS/QR-codes</p>";
+      WString msg = WString::tr("musd-received-urls-list")
+                      .arg(urls_list)
+                      .arg( static_cast<int>(info.m_number_urls) );
       assert( m_msgContents );
       m_msgContents->setText( msg );
       
@@ -679,7 +696,7 @@ public:
     {
       assert( m_title );
       assert( m_msgContents );
-      m_msgContents->setText( "Error decoding URL: " + string(e.what()) );
+      m_msgContents->setText( WString::tr("musd-err-decoding-url").arg(e.what()) );
       
 #if( IOS || ANDROID )
       removePrevUrlsFile();
@@ -688,6 +705,560 @@ public:
   }//void addUrl( const string &url )
 };//MultiUrlSpectrumDialog
 #endif //USE_QR_CODES
+
+WT_DECLARE_WT_MEMBER
+(LookForQrCode, Wt::JavaScriptFunction, "LookForQrCode",
+async function( sender_id, u8Buffer )
+{
+  let zxing = await ZXing();
+  
+  let zxingBuffer = zxing._malloc(u8Buffer.length);
+  zxing.HEAPU8.set(u8Buffer, zxingBuffer);
+  
+  let results = zxing.readBarcodesFromImage(zxingBuffer, u8Buffer.length, true, "QRCode", 0xff);
+  zxing._free(zxingBuffer);
+  
+  const firstRes = (results.size() > 0) ? results.get(0) : null;
+  
+  if( (results.size() === 0)
+     || (firstRes && firstRes.error && (firstRes.error.length !== 0) && (!firstRes.text || firstRes.text.length)) )
+  {
+    if( firstRes && firstRes.error && (firstRes.error.length !== 0) )
+    {
+      console.log( "QR-code reading error:", firstRes.error );
+      Wt.emit( sender_id, 'QrDecodedFromImg', -1, firstRes.error );
+    }else
+    {
+      // No QR-code found
+      console.log( "No QR-code found." );
+      Wt.emit( sender_id, 'QrDecodedFromImg', 0, "" );
+    }
+  }else
+  {
+    console.log( "Successfully got QR-code results." );
+    let uri = "";
+    for( let i = 0; i < results.size(); i += 1)
+    {
+      const { format, text, bytes, error } = results.get(i);
+      uri += (uri.length ? "\n" : "") + btoa(text);
+      //console.log( "text: ", text, "\nerror:", error );
+    }
+    
+    Wt.emit( sender_id, 'QrDecodedFromImg', results.size(), uri );
+  }//if( error ) / else
+}
+);
+  
+  
+WT_DECLARE_WT_MEMBER
+(SearchForQrFromImgData, Wt::JavaScriptFunction, "SearchForQrFromImgData",
+function( sender_id, b64_img_data_str )
+{
+  let binaryString = atob(b64_img_data_str);
+  let bytes = new Uint8Array(binaryString.length);
+  for( let i = 0; i < binaryString.length; i++)
+    bytes[i] = binaryString.charCodeAt(i);
+    
+  let u8Buffer = new Uint8Array(bytes);
+  
+  Wt.WT.LookForQrCode(sender_id, u8Buffer).then( function(){
+    console.log( "Done calling qr decode" );
+  }).catch(function(err){
+    console.log( "qr decode error: ", err );
+    Wt.emit( sender_id, 'QrDecodedFromImg', -999, "There was an error calling decoding routine." );
+  });
+}
+);
+  
+  
+WT_DECLARE_WT_MEMBER
+(SearchForQrUsingCanvas, Wt::JavaScriptFunction, "SearchForQrUsingCanvas",
+function( sender_id, img )
+{
+  //Turn image into PNG, then call Wt.WT.LookForQrCode(sender_id, u8Buffer).then...
+  try
+  {
+    let canvas = document.createElement('canvas');
+    canvas.width = Math.max(img.width, img.naturalWidth ? img.naturalWidth : 0);
+    canvas.height = Math.max(img.height, img.naturalHeight ? img.naturalHeight : 0);
+    
+    let ctx = canvas.getContext('2d');
+    ctx.drawImage(img, 0, 0);
+    
+    // Convert the image to PNG format
+    function blobToQr(blobData){
+      blobData.arrayBuffer().then( function(arrBuf){
+        let u8Buffer = new Uint8Array( arrBuf );
+        Wt.WT.LookForQrCode(sender_id, u8Buffer).then( function(){
+          console.log( "Done calling qr decode for canvas blob" );
+        }).catch(function(err){
+          console.log( "qr decode error: ", err );
+          Wt.emit( sender_id, 'QrDecodedFromImg', -999, "Error calling decoding routine." );
+        });
+      });
+    };//blobToQr
+    
+    canvas.toBlob( blobToQr, 'image/png' );
+  }catch( err )
+  {
+    console.log( "qr decode error (1): ", err );
+    Wt.emit( sender_id, 'QrDecodedFromImg', -999, "There was an error when calling decoding routine." );
+  }
+}
+);
+  
+  
+class UploadedImgDisplay : public WContainerWidget
+{
+protected:
+  InterSpec *m_viewer;
+  std::string m_display_name;
+  std::string m_mimetype;
+  
+  SpecUtils::SpectrumType m_upload_type;
+  
+  /** I like the QR -code auto search running automatically when a image is detected, but
+   I'm not quite yet confident enough in the implementation to have things just run.
+   
+   After some more use/testing (including on the different platforms), we'll maybe always auto search.
+   */
+  bool m_autoQrCodeSearch;
+  
+  WImage *m_image;
+  WMemoryResource *m_resource;
+  
+  /** Will be nullptr. if `m_autoQrCodeSearch == true` */
+  WPushButton *m_checkForQrCodeBtn;
+  
+  /** Will be nullptr. if `m_autoQrCodeSearch == false` */
+  WText *m_qrCodeStatusTxt;
+  
+  JSignal<int,std::string> m_qrDecodeSignal;
+  boost::function<void()> m_close_parent_dialog;
+  
+  void close_parent_dialog()
+  {
+    m_close_parent_dialog();
+  }
+  
+  void apply_uris( const vector<string> &uris )
+  {
+    assert( !uris.empty() );
+    if( uris.empty() )
+      return;
+    
+    // For spectrum files, we could just call `m_viewer->handleAppUrl( uri );`, but then we
+    //  cant preserve if the user dropped it in as a foreground, background, or secondary,
+    //  and also I'm not sure how multi-qr-code URIs would work out, so we'll decode and
+    //  load spectrum file URIs totally here.
+    bool is_spec_uris = true;
+    for( const string &uri : uris )
+    {
+      is_spec_uris &= (SpecUtils::istarts_with(uri, "RADDATA://")
+                      || SpecUtils::istarts_with(uri, "interspec://G0/"));
+    }
+    
+    if( is_spec_uris )
+    {
+      try
+      {
+        bool decoded = false;
+        SpecUtils::EncodedSpectraInfo info;
+        
+        // The URIs may be percent encoded - we'll try up to 3 levels of decoding them
+        //  (probably not the case for QR-codes that they would ever be encoded more than
+        //  once, but JIC)
+        vector<string> unencoded_uris = uris;
+        for( size_t i = 0; !decoded && (i < 3); ++i )
+        {
+          try
+          {
+            info = SpecUtils::get_spectrum_url_info( unencoded_uris.front() );
+            decoded = true;
+          }catch( std::exception & )
+          {
+            // Assume all URIs are percent encoded the same number of times
+            for( string &uri : unencoded_uris )
+              uri = SpecUtils::url_decode( uri );
+          }//
+        }//for( try to decode URL as spectrum )
+        
+        if( decoded )
+        {
+          shared_ptr<SpecMeas> specmeas;
+          
+          vector<SpecUtils::UrlSpectrum> spectra;
+          if( info.m_number_urls == 1 )
+          {
+            spectra = SpecUtils::spectrum_decode_first_url( unencoded_uris.front() );
+          }else if( (info.m_number_urls > 1) && (info.m_number_urls == unencoded_uris.size()) )
+          {
+            spectra = SpecUtils::decode_spectrum_urls( unencoded_uris );
+          }//if( one URL ) / else
+          
+          if( spectra.empty() )
+            throw runtime_error( "No gamma measurements in URL/QR code" );
+          
+          shared_ptr<SpecUtils::SpecFile> specfile = SpecUtils::to_spec_file( spectra );
+          assert( specfile && specfile->num_measurements() );
+          
+          if( !specfile || (specfile->num_measurements() < 1) || (specfile->num_gamma_channels() < 7) )
+            throw runtime_error( "No gamma measurements in URL/QR code" );
+          
+          string display_name = m_display_name.empty() ? WString::tr("uid-qr-code-pic").toUTF8() : m_display_name;
+          
+          specmeas = make_shared<SpecMeas>();
+          reinterpret_cast<SpecUtils::SpecFile &>( *specmeas ) = *specfile;
+          specmeas->set_filename( display_name );
+          
+          if( specmeas && (specmeas->num_measurements() >= 1) )
+          {
+            SpecMeasManager *fileManager = m_viewer->fileManager();
+            SpectraFileModel *fileModel = fileManager->model();
+            
+            auto header = make_shared<SpectraFileHeader>( m_viewer->m_user, true, m_viewer );
+            header->setFile( display_name, specmeas );
+            fileManager->addToTempSpectrumInfoCache( specmeas );
+            const int row = fileModel->addRow( header );
+            fileManager->displayFile( row, specmeas, m_upload_type, true, true, SpecMeasManager::VariantChecksToDo::None );
+            
+            m_close_parent_dialog();
+            return;
+          }//if( specmeas && (specmeas->num_measurements() >= 1) )
+        }//if( decoded )
+      }catch( std::exception &e )
+      {
+        cerr << "Failed to decode spectrum URI from image - will let handleAppUrl() deal with things: " << e.what() << endl;
+      }
+    }//if( a spectrum URI )
+    
+    // If we are here - its not valid spectrum file URIs, so we'll just handle them as if the OS
+    //  had past them off to the app.
+    for( const string uri : uris )
+      m_viewer->handleAppUrl( uri );
+    
+    m_close_parent_dialog();
+  }//void apply_uris( const vector<string> &uris )
+  
+  
+  void qr_check_result( const int num_qr, const string b64_value )
+  {
+    vector<string> initial_uris;
+    if( num_qr > 1 )
+    {
+      SpecUtils::split( initial_uris, b64_value, "\n\r" );
+    }else
+    {
+      initial_uris.push_back( b64_value );
+    }
+    
+    if( (num_qr <= 0) || initial_uris.empty() || (initial_uris.size() > 14) )
+    {
+      WString title, content;
+      
+      if( (num_qr == 0) && b64_value.empty() )
+      {
+        if( m_autoQrCodeSearch && m_qrCodeStatusTxt )
+        {
+          m_qrCodeStatusTxt->setText( WString::tr("uid-no-qr-found") );
+          return;
+        }
+        
+        title = WString::tr("uid-no-qr-found-title");
+        content = WString::tr("uid-no-qr-content");
+      }else
+      {
+        title = WString::tr("uid-err-qr-search-title");
+        content = WString::tr("uid-err-qr-search-content");
+        content.arg( num_qr );
+        
+        if( b64_value.size() < 128 )
+          content.arg( Wt::Utils::htmlEncode(b64_value) );
+        else
+          content.arg( Wt::Utils::htmlEncode(b64_value.substr(0,125) + "...") );
+        
+        if( m_autoQrCodeSearch && m_qrCodeStatusTxt )
+        {
+          m_qrCodeStatusTxt->setText( WString("{1} &#9432;").arg(title) );
+          passMessage( WString::tr("<div>{1}</div>{2}").arg(title).arg(content), WarningWidget::WarningMsgHigh );
+          return;
+        }
+      }//if( (num_qr == 0) && b64_value.empty() )
+      
+      SimpleDialog *dialog = new SimpleDialog( title, content );
+      dialog->addButton( WString::tr("Okay") );
+      
+      return;
+    }//if( num_qr <= 0 )
+    
+
+    vector<string> cleaned_up_uris;
+    for( string &uri : initial_uris )
+    {
+      uri = Wt::Utils::base64Decode(uri);
+      
+      size_t uri_pos = SpecUtils::ifind_substr_ascii( uri, "interspec://" );
+      if( uri_pos == string::npos )
+        uri_pos = SpecUtils::ifind_substr_ascii( uri, "raddata://" );
+      
+      //TODO: maybe also accept text with a "G0/xxx/" or "G0/xxxx/" anywhere (where 'x' is a hex digit).
+      
+      if( uri_pos == 0 )
+        cleaned_up_uris.push_back( uri );
+      else if( uri_pos != string::npos )
+        cleaned_up_uris.push_back( uri.substr(uri_pos) );
+    }//for( string &val : initial_uris )
+    
+    
+    if( (cleaned_up_uris.size() != initial_uris.size()) || cleaned_up_uris.empty() )
+    {
+      // Right now we'll be conservative, and if any QR code had a invalid URI, we wont
+      //  use any of them
+      WString content;
+      
+      if( initial_uris.size() > 1 )
+      {
+        const size_t num_invalid = initial_uris.size() -  cleaned_up_uris.size();
+        content = WString::tr("uid-some-invalid-qrs").arg( static_cast<int>(num_invalid) );
+      }else
+      {
+        content = WString::tr("uid-qr-didnt-have-uri");
+      }
+ 
+      if( m_autoQrCodeSearch && m_qrCodeStatusTxt )
+      {
+        m_qrCodeStatusTxt->setText( WString::tr("uid-invalid-qr") );
+        return;
+      }
+      
+      SimpleDialog *dialog = new SimpleDialog( WString::tr("uid-invalid-uri"), content );
+      dialog->addButton( WString::tr("Okay") );
+      
+      return;
+    }//if( cleaned_up_uris.size() != initial_uris.size() )
+    
+    WString title, content;
+    if( cleaned_up_uris.size() > 1 )
+    {
+      title = WString::tr("uid-multi-qr-found-title").arg( static_cast<int>(cleaned_up_uris.size()) );
+      content = WString::tr("uid-multi-qr-found-content");
+      
+      if( m_autoQrCodeSearch && m_qrCodeStatusTxt )
+        m_qrCodeStatusTxt->setText(  WString::tr("uid-multi-qr-status").arg( static_cast<int>(cleaned_up_uris.size()) )  );
+    }else if( cleaned_up_uris.size() > 0 )
+    {
+      title = WString::tr("uid-qr-found-title");
+      
+      assert( !cleaned_up_uris.empty() );
+      string short_uri = cleaned_up_uris.front();
+      SpecUtils::utf8_limit_str_size(short_uri, 32);
+      
+      content = WString::tr("uid-qr-found-content").arg( short_uri );
+      
+      if( m_autoQrCodeSearch && m_qrCodeStatusTxt )
+        m_qrCodeStatusTxt->setText( WString::tr("uid-found-qr") );
+    }//if( cleaned_up_uris.size() > 1 )
+    
+    SimpleDialog *dialog = new SimpleDialog( title, content );
+    WPushButton *btn = dialog->addButton( WString::tr("Yes") );
+    btn->clicked().connect( boost::bind(&UploadedImgDisplay::apply_uris, this, cleaned_up_uris)  );
+    btn->clicked().connect( this, &UploadedImgDisplay::close_parent_dialog );
+    
+    btn = dialog->addButton( WString::tr("No") );
+  }//void qr_check_result( const int num_qr, const string b64_value )
+  
+  
+  void check_for_qr_with_raw()
+  {
+    LOAD_JAVASCRIPT(wApp, "SpecMeasManager.cpp", "SpecMeasManager", wtjsLookForQrCode);
+    LOAD_JAVASCRIPT(wApp, "SpecMeasManager.cpp", "SpecMeasManager", wtjsSearchForQrFromImgData);
+    wApp->require( "InterSpec_resources/assets/js/zxing-cpp-wasm/zxing_reader.js", "zxing_reader.js" );
+    
+    vector<unsigned char> raw_data = m_resource->data();
+    string str_data( raw_data.size(), '\0' );
+    memcpy( (void *)&(str_data[0]), (void *)raw_data.data(), raw_data.size() );
+    string b64_data = Wt::Utils::base64Encode(str_data, false);
+    this->doJavaScript( "Wt.WT.SearchForQrFromImgData('" + this->id() + "','" + b64_data + "');" );
+  }//void check_for_qr_with_raw()
+  
+  
+  void check_for_qr_from_canvas()
+  {
+    LOAD_JAVASCRIPT(wApp, "SpecMeasManager.cpp", "SpecMeasManager", wtjsLookForQrCode);
+    LOAD_JAVASCRIPT(wApp, "SpecMeasManager.cpp", "SpecMeasManager", wtjsSearchForQrUsingCanvas);
+    wApp->require( "InterSpec_resources/assets/js/zxing-cpp-wasm/zxing_reader.js", "zxing_reader.js" );
+    
+    this->doJavaScript( "Wt.WT.SearchForQrUsingCanvas('" + this->id() + "'," + m_image->jsRef() + ");" );
+  }//void check_for_qr_from_canvas()
+  
+  
+  void embed_in_n42()
+  {
+    if( !m_resource )
+      return;
+    
+    const vector<unsigned char> data = m_resource->data();
+    if( data.empty() )
+    {
+      passMessage( WString::tr("uid-err-getting-data"), WarningWidget::WarningMsgHigh );
+      return;
+    }
+          
+    shared_ptr<SpecMeas> meas = m_viewer->measurment( SpecUtils::SpectrumType::Foreground );
+    if( !meas )
+    {
+      passMessage( WString::tr("uid-err-no-foreground-embedd"), WarningWidget::WarningMsgHigh );
+      return;
+    }
+          
+    SpecUtils::MultimediaData multi;
+    multi.remark_ = "Image file embedded using InterSpec.";
+    multi.descriptions_= "filename: " + m_display_name;
+          
+    string data_str;
+    data_str.resize( data.size() );
+    memcpy( &(data_str[0]), data.data(), data.size() );
+    const string base_64_encoded = Wt::Utils::base64Encode( data_str );
+    multi.data_.resize( base_64_encoded.size() );
+    memcpy( multi.data_.data(), base_64_encoded.data(), base_64_encoded.size() );
+    multi.data_encoding_ = SpecUtils::MultimediaData::EncodingType::BinaryBase64;
+    multi.capture_start_time_ = SpecUtils::time_point_t{};
+    multi.file_uri_ = m_display_name;
+    multi.mime_type_ = m_mimetype;
+          
+    meas->add_multimedia_data( multi );
+    m_viewer->checkEnableViewImageMenuItem();
+    
+    passMessage( WString::tr("uid-image-embed-conf"), WarningWidget::WarningMsgInfo );
+          
+    //wApp->doJavaScript( "$('#" + dialog->id() + "').hide(); $('.Wt-dialogcover').hide();" );
+    wApp->doJavaScript( "$('.Wt-dialogcover').hide();" );
+      
+    m_close_parent_dialog();
+  }//void embed_in_n42()
+  
+public:
+  
+  UploadedImgDisplay( InterSpec *interspec,
+                     const std::string &display_name, 
+                     const char *mimetype,
+                     const size_t filesize,
+                     std::ifstream &infile,
+                     SimpleDialog *dialog,
+                     SpecUtils::SpectrumType type )
+    : WContainerWidget( dialog->contents() ),
+  m_viewer( interspec ),
+  m_display_name( display_name ),
+  m_mimetype( mimetype ),
+  m_upload_type( type ),
+  m_autoQrCodeSearch( true ),
+  m_image( nullptr ),
+  m_resource( nullptr ),
+  m_checkForQrCodeBtn( nullptr ),
+  m_qrCodeStatusTxt( nullptr ),
+  m_qrDecodeSignal( this, "QrDecodedFromImg", false)
+  {
+    m_close_parent_dialog = wApp->bind( boost::bind( &SimpleDialog::done, dialog, Wt::WDialog::DialogCode::Accepted ) );
+    
+    WText *t = new WText( WString::tr("uid-image-not-spectrum"), this );
+    t->addStyleClass( "NonSpecOtherFile" );
+    
+    const size_t max_disp_size = 16*1024*1024;
+    
+    if( filesize > max_disp_size )
+    {
+      WText *errort = new WText( WString::tr("uid-err-to-large"), this );
+      errort->addStyleClass( "NonSpecError" );
+      return;
+    }//if( filesize > max_disp_size )
+      
+    vector<uint8_t> totaldata( filesize );
+    const bool success = infile.read( (char *)&(totaldata[0]), filesize ).good();
+      
+    if( !success )
+    {
+      WText *errort = new WText( WString::tr("uid-err-reading-upload"), this );
+      errort->addStyleClass( "NonSpecError" );
+      return;
+    }//if( !success )
+    
+    const bool is_gif_jpg_png = (SpecUtils::icontains(mimetype, "gif")
+                              || SpecUtils::icontains(mimetype, "jpeg")
+                              || SpecUtils::icontains(mimetype, "png"));
+    
+    m_resource = new WMemoryResource( mimetype, this );
+    m_resource->setData( totaldata );
+        
+    m_image = new WImage();
+    m_image->setImageLink( WLink(m_resource) );
+    m_image->addStyleClass( "NonSpecImgFile" );
+    addWidget( m_image );
+        
+    WContainerWidget *btn_div = new WContainerWidget( this );
+    btn_div->addStyleClass( "ImgFileBtnBar" );
+        
+    if( m_autoQrCodeSearch )
+    {
+      m_qrCodeStatusTxt = new WText( btn_div );
+      HelpSystem::attachToolTipOn( m_qrCodeStatusTxt, WString::tr("uid-tt-auto-qr"),
+                                  true, HelpSystem::ToolTipPosition::Right );
+    }else
+    {
+      m_checkForQrCodeBtn = new WPushButton( WString::tr("uid-check-for-qr-btn"), btn_div );
+      m_checkForQrCodeBtn->setStyleClass( "LinkBtn NonSpecQrCodeBtn" );
+    }//if( m_autoQrCodeSearch ) / else
+    
+    
+    m_qrDecodeSignal.connect( boost::bind( &UploadedImgDisplay::qr_check_result, this,
+                                          boost::placeholders::_1, boost::placeholders::_2 ) );
+    
+    if( is_gif_jpg_png )
+    {
+      // We will use the raw image data
+      if( m_autoQrCodeSearch )
+      {
+        assert( m_qrCodeStatusTxt );
+        m_qrCodeStatusTxt->setText( WString::tr("uid-looking-for-qr") );
+        check_for_qr_with_raw();
+      }else
+      {
+        m_checkForQrCodeBtn->clicked().connect( this, &UploadedImgDisplay::check_for_qr_with_raw );
+      }
+    }else
+    {
+      // We will draw the image to a canvas, and use that
+      if( m_autoQrCodeSearch )
+      {
+        LOAD_JAVASCRIPT(wApp, "SpecMeasManager.cpp", "SpecMeasManager", wtjsLookForQrCode);
+        LOAD_JAVASCRIPT(wApp, "SpecMeasManager.cpp", "SpecMeasManager", wtjsSearchForQrUsingCanvas);
+        wApp->require( "InterSpec_resources/assets/js/zxing-cpp-wasm/zxing_reader.js", "zxing_reader.js" );
+        
+        assert( m_qrCodeStatusTxt );
+        m_qrCodeStatusTxt->setText( WString::tr("uid-no-qr-found") );
+        
+        // If `imageLoaded()` is never called, it means the image couldnt be displayed, for example
+        //  if image file is invalid, or a HEIC on Windows.
+        m_image->imageLoaded().connect( "function(){ Wt.WT.SearchForQrUsingCanvas('" + this->id() + "'," + m_image->jsRef() + "); }" );
+        m_image->imageLoaded().connect( boost::bind( &WText::setText, m_qrCodeStatusTxt, WString("Looking for QR-codes.") ) );
+      }else
+      {
+        m_checkForQrCodeBtn->clicked().connect( this, &UploadedImgDisplay::check_for_qr_from_canvas );
+        m_checkForQrCodeBtn->disable();
+        m_image->imageLoaded().connect( m_checkForQrCodeBtn, &WPushButton::enable );
+      }
+    }//if( zxing can read the image directly ) / else
+    
+        
+    if( m_viewer->measurment( SpecUtils::SpectrumType::Foreground ) )
+    {
+      WPushButton *embedbtn = new WPushButton( WString::tr("uid-embed-image-btn"), btn_div );
+      embedbtn->setStyleClass( "LinkBtn NonSpecEmbedBtn" );
+      embedbtn->clicked().connect( this, &UploadedImgDisplay::embed_in_n42 );
+    }//if( m_viewer->measurment( SpecUtils::SpectrumType::Foreground ) )
+  }//UploadedImgDisplay constructor
+  
+};//UploadedImgDisplay
+  
 }//namespace
 
 
@@ -707,21 +1278,21 @@ public:
     WGridLayout *layout = new Wt::WGridLayout();
     contents()->setLayout(layout);
     
-    WText *uploadText = new WText( "Foreground: " );
+    WText *uploadText = new WText( WString("{1}: ").arg( WString::tr("Foreground") ) );
     WFileUpload *m_fileUpload = new WFileUpload(  );
     m_fileUpload->changed().connect( m_fileUpload, &Wt::WFileUpload::upload );
     m_fileUpload->uploaded().connect( boost::bind( &SpecMeasManager::dataUploaded2, m_manager, m_fileUpload, SpectrumType::Foreground));
     m_fileUpload->fileTooLarge().connect( boost::bind( &SpecMeasManager::fileTooLarge,
                                                       boost::placeholders::_1 ) );
 
-    WText *uploadText2 = new WText( "Background: " );
+    WText *uploadText2 = new WText( WString("{1}: ").arg( WString::tr("Background") ) );
     WFileUpload *m_fileUpload2 = new WFileUpload(  );
     m_fileUpload2->changed().connect( m_fileUpload2, &Wt::WFileUpload::upload );
     m_fileUpload2->uploaded().connect( boost::bind( &SpecMeasManager::dataUploaded2, m_manager, m_fileUpload2, SpectrumType::Background));
     m_fileUpload2->fileTooLarge().connect( boost::bind( &SpecMeasManager::fileTooLarge,
                                                        boost::placeholders::_1 ) );
     
-    WText *uploadText3 = new WText( "Secondary Foreground: " );
+    WText *uploadText3 = new WText( WString("{1}: ").arg( WString::tr("second-foreground") ) );
     WFileUpload *m_fileUpload3 = new WFileUpload(  );
     m_fileUpload3->changed().connect( m_fileUpload3, &Wt::WFileUpload::upload );
     m_fileUpload3->uploaded().connect( boost::bind( &SpecMeasManager::dataUploaded2, m_manager, m_fileUpload3, SpectrumType::SecondForeground));
@@ -785,13 +1356,18 @@ SpecMeasManager::SpecMeasManager( InterSpec *viewer )
     m_backgroundDragNDrop( new FileDragUploadResource(this) ),
     m_multiUrlSpectrumDialog( nullptr ),
     m_destructMutex( new std::mutex() ),
-    m_destructed( new bool(false) )
+    m_destructed( new bool(false) ),
+    m_previousStatesDialog( nullptr ),
+    m_processingUploadDialog( nullptr ),
+    m_processingUploadTimer{}
 {
   std::unique_ptr<UndoRedoManager::BlockUndoRedoInserts> undo_blocker;
   if( viewer && viewer->undoRedoManager() )
     undo_blocker.reset( new UndoRedoManager::BlockUndoRedoInserts() );
   
   wApp->useStyleSheet( "InterSpec_resources/SpecMeasManager.css" );
+  if( viewer )
+    viewer->useMessageResourceBundle( "SpecMeasManager" );
   
   m_treeView = new RowStretchTreeView();
   m_fileModel = new SpectraFileModel( m_treeView );
@@ -815,6 +1391,18 @@ SpecMeasManager::SpecMeasManager( InterSpec *viewer )
                                                          boost::placeholders::_1,
                                                          boost::placeholders::_2,
                                                          SpectrumType::Background ) );
+  
+  m_foregroundDragNDrop->setUploadProgress( true );
+  m_foregroundDragNDrop->dataReceived().connect( boost::bind( &SpecMeasManager::handleDataRecievedStatus, this,
+                                      boost::placeholders::_1, boost::placeholders::_2, SpectrumType::Foreground ) );
+  
+  m_secondForegroundDragNDrop->setUploadProgress( true );
+  m_secondForegroundDragNDrop->dataReceived().connect( boost::bind( &SpecMeasManager::handleDataRecievedStatus, this,
+                                      boost::placeholders::_1, boost::placeholders::_2, SpectrumType::SecondForeground ) );
+  
+  m_backgroundDragNDrop->setUploadProgress( true );
+  m_backgroundDragNDrop->dataReceived().connect( boost::bind( &SpecMeasManager::handleDataRecievedStatus, this,
+                                      boost::placeholders::_1, boost::placeholders::_2, SpectrumType::Background ) );
 }// SpecMeasManager
 
 //Moved what use to be SpecMeasManager, out to a startSpectrumManager() to correct modal issues
@@ -831,7 +1419,7 @@ void  SpecMeasManager::startSpectrumManager()
     return;
   }//if( m_spectrumManagerWindow )
   
-    m_spectrumManagerWindow = new AuxWindow( "Spectrum Manager",
+    m_spectrumManagerWindow = new AuxWindow( WString::tr("smm-window-title"),
                     (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::IsModal)
                      | AuxWindowProperties::TabletNotFullScreen
                      | AuxWindowProperties::DisableCollapse
@@ -849,19 +1437,21 @@ void  SpecMeasManager::startSpectrumManager()
     uploadDiv->setStyleClass( "uploadDiv" );
     
     //WText* spec =
-    new WText("Load spectrum from: ", uploadDiv);
+    new WText( WString::tr("smm-load-spec-from"), uploadDiv);
     //spec->setIcon( "InterSpec_resources/images/plus_min_white.svg" );
     
-    Wt::WPushButton* uploadButton = new Wt::WPushButton("File...",uploadDiv);
+    Wt::WPushButton* uploadButton = new Wt::WPushButton( WString::tr("app-mi-file-open"),uploadDiv);
     uploadButton->clicked().connect(  this, &SpecMeasManager::uploadSpectrum );
-    HelpSystem::attachToolTipOn(uploadButton, "Import spectrum from file", showToolTips, HelpSystem::ToolTipPosition::Bottom );
+    HelpSystem::attachToolTipOn(uploadButton, WString::tr("smm-tt-upload-file"),
+                                showToolTips, HelpSystem::ToolTipPosition::Bottom );
     uploadButton->setIcon( "InterSpec_resources/images/file_search.png" );
     uploadButton->setMargin(10,Wt::Left);
     
 #if( USE_DB_TO_STORE_SPECTRA )
-    Wt::WPushButton* importButton = new Wt::WPushButton( "Previous...", uploadDiv );
+    Wt::WPushButton* importButton = new Wt::WPushButton( WString::tr("app-mi-file-prev"), uploadDiv );
     importButton->clicked().connect( boost::bind( &SpecMeasManager::browsePrevSpectraAndStatesDb, this ) );
-    HelpSystem::attachToolTipOn(importButton, "Imports previously saved spectrum", showToolTips , HelpSystem::ToolTipPosition::Bottom);
+    HelpSystem::attachToolTipOn(importButton, WString::tr("app-mi-tt-file-prev"), 
+                                showToolTips, HelpSystem::ToolTipPosition::Bottom );
     importButton->setIcon( "InterSpec_resources/images/db_small_white.png" );
     importButton->setMargin(2,Wt::Left);
     
@@ -945,7 +1535,7 @@ FileDragUploadResource *SpecMeasManager::dragNDrop( SpecUtils::SpectrumType type
       return m_backgroundDragNDrop;
   }//switch( type )
 
-  throw std::runtime_error( "Seriou problem in SpecMeasManager::dragNDrop(..)" );
+  throw std::runtime_error( "Serious problem in SpecMeasManager::dragNDrop(..)" );
   return NULL;
 }//FileDragUploadResource *dragNDrop( SpecUtils::SpectrumType type )
 
@@ -1016,7 +1606,7 @@ void SpecMeasManager::extractAndOpenFromZip( const std::string &spoolName,
     SpecUtils::remove_file( tmpfile );
   }catch( std::exception & )
   {
-    passMessage( "Error extracting file from zip", 2 );
+    passMessage( WString::tr("smm-err-zip"), 2 );
   }//try / catch
   
   delete window;
@@ -1065,17 +1655,9 @@ bool SpecMeasManager::handleZippedFile( const std::string &name,
                              || (spectrum_type==SpectrumType::SecondForeground)
                              || (spectrum_type==SpectrumType::Background));
 
-    
-    string txt;
-    if( name.size() )
-      txt += "<b>" + name + "</b>";
-    else
-      txt += "Uploaded file";
-    txt += " is a ZIP file.";
-    txt += (m_viewer->isPhone() ? "<br />" : "<br /><br />");
-    
-    txt += "Select which file in it you'd like to open";
-    
+    WString txt = WString::tr( name.size() ? "smm-zip-sel-file" : "smm-zip-sel-file-no-name")
+                  .arg( name )
+                  .arg( (m_viewer->isPhone() ? "" : "<br />") );
     WText *t = new WText( txt );
     //WSelectionBox *selection = new WSelectionBox();
     
@@ -1087,8 +1669,8 @@ bool SpecMeasManager::handleZippedFile( const std::string &name,
     WStandardItemModel *model = new WStandardItemModel( table );
     table->setModel( model );
     model->insertColumns( 0, 2 );
-    model->setHeaderData(  0, Horizontal, WString("Filename"), DisplayRole );
-    model->setHeaderData(  1, Horizontal, WString("kb"), DisplayRole );
+    model->setHeaderData(  0, Horizontal, WString::tr("smm-zip-filename-hdr"), DisplayRole );
+    model->setHeaderData(  1, Horizontal, WString::tr("smm-zip-kilobyte-hdr"), DisplayRole );
     WItemDelegate *delegate = new WItemDelegate( table );
     delegate->setTextFormat( "%.1f" );
     table->setItemDelegateForColumn( 1, delegate );
@@ -1100,13 +1682,13 @@ bool SpecMeasManager::handleZippedFile( const std::string &name,
     cblayout->setVerticalSpacing( 0 );
     cblayout->setHorizontalSpacing( 0 );
     WButtonGroup *group = new WButtonGroup(typecb);
-    Wt::WRadioButton *button = new WRadioButton( "Foreground" );
+    Wt::WRadioButton *button = new WRadioButton( WString::tr("Foreground") );
     cblayout->addWidget( button, 0, 0, AlignCenter );
     group->addButton(button, toint(SpectrumType::Foreground) );
-    button = new WRadioButton("Background", typecb);
+    button = new WRadioButton( WString::tr("Background"), typecb);
     cblayout->addWidget( button, 0, 1, AlignCenter );
     group->addButton(button, toint(SpectrumType::Background) );
-    button = new Wt::WRadioButton("Secondary", typecb);
+    button = new Wt::WRadioButton( WString::tr("Secondary"), typecb);
     cblayout->addWidget( button, 0, 2, AlignCenter );
     group->addButton(button, toint(SpectrumType::SecondForeground) );
     
@@ -1123,7 +1705,7 @@ bool SpecMeasManager::handleZippedFile( const std::string &name,
       group->setCheckedButton( group->button(toint(SpectrumType::Foreground)) );
     }
     
-    AuxWindow *window = new AuxWindow( "Uploaded ZIP File Contents",
+    AuxWindow *window = new AuxWindow( WString::tr("smm-zip-window-title"),
                   (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::IsModal)
                    | AuxWindowProperties::TabletNotFullScreen
                    | AuxWindowProperties::EnableResize) );
@@ -1226,11 +1808,11 @@ bool SpecMeasManager::handleZippedFile( const std::string &name,
     }//if( !m_viewer->isPhone() )
     
     window->rejectWhenEscapePressed();
-    Wt::WPushButton *closeButton = window->addCloseButtonToFooter("Cancel",true);
+    Wt::WPushButton *closeButton = window->addCloseButtonToFooter( WString::tr("Cancel"),true);
     closeButton->clicked().connect( boost::bind( &AuxWindow::deleteAuxWindow, window ) );
     window->finished().connect( boost::bind( &AuxWindow::deleteAuxWindow, window ) );
     
-    WPushButton *openButton = new WPushButton( "Display" );
+    WPushButton *openButton = new WPushButton( WString::tr("smm-zip-display-btn") );
     openButton->disable();
     //selection->activated().connect( openButton, &WPushButton::enable );
     table->clicked().connect( openButton, &WPushButton::enable );
@@ -1266,7 +1848,8 @@ bool check_magic_number( const uint8_t (&magic_num)[N], const uint8_t (&data)[M]
 
 
 bool SpecMeasManager::handleNonSpectrumFile( const std::string &displayName,
-                                             const std::string &fileLocation )
+                                             const std::string &fileLocation,
+                                             SpecUtils::SpectrumType type )
 {
 #ifdef _WIN32
   const std::wstring wpathstr = SpecUtils::convert_from_utf8_to_utf16(fileLocation);
@@ -1285,7 +1868,7 @@ bool SpecMeasManager::handleNonSpectrumFile( const std::string &displayName,
   
   if( filesize <= 128 )
   {
-    passMessage( "File was probably an empty file - not a spectrum file.", 2 );
+    passMessage( WString::tr("smm-empty-file"), 2 );
     return true;
   }
   
@@ -1293,7 +1876,7 @@ bool SpecMeasManager::handleNonSpectrumFile( const std::string &displayName,
   
   if( !infile.read( (char *)data, std::min(sizeof(data), filesize) ) )
   {
-    passMessage( "Failed to read non-spectrum file.", 2 );
+    passMessage( WString::tr("smm-failed-reading-nonspec-file"), 2 );
     return true;
   }
   infile.seekg(0);
@@ -1323,10 +1906,10 @@ bool SpecMeasManager::handleNonSpectrumFile( const std::string &displayName,
   
   
   SimpleDialog *dialog = new SimpleDialog();
-  dialog->addButton( "Close" );
+  dialog->addButton( WString::tr("Close") );
   WContainerWidget *contents = dialog->contents();
   contents->addStyleClass( "NonSpecDialogBody" );
-  WText *title = new WText( "Not a spectrum file", contents );
+  WText *title = new WText( WString::tr("smm-not-spec-file"), contents );
   title->addStyleClass( "title" );
   
   auto add_undo_redo = [dialog](){
@@ -1358,12 +1941,7 @@ bool SpecMeasManager::handleNonSpectrumFile( const std::string &displayName,
        || SpecUtils::icontains( datastr, "DNDOEWSchema" )
        || SpecUtils::icontains( datastr, "DNDOARSchema" ) )
     {
-      WText *t = new WText( "This looks to be an N42 ICD2 file that contains analysis results"
-                            " rather than raw spectra.<br />"
-                            "If you believe this to be a legitimate spectrum file, please email it"
-                            " to <a href=\"mailto:interspec@sandia.gov\" "
-                            "target=\"_blank\">interspec@sandia.gov</a> "
-                            "to support this file type.", contents );
+      WText *t = new WText( WString::tr("smm-icd2"), contents );
       t->addStyleClass( "NonSpecOtherFile" );
       add_undo_redo();
       return true;
@@ -1392,6 +1970,7 @@ bool SpecMeasManager::handleNonSpectrumFile( const std::string &displayName,
   const uint8_t jpeg5_mn[]  = { 0x69, 0x66, 0x00, 0x00 };
   const uint8_t png_mn[]    = { 0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A };
   const uint8_t bmp_mn[]    = { 0x42, 0x4D };
+  const uint8_t heic_mn[]     = { 0x66, 0x74, 0x79, 0x70, 0x68, 0x65, 0x69, 0x63 }; //HEIC (apple) pictures have "ftypheic" at offset 4
   
   const uint8_t pdf_mn[]    = { 0x25, 0x50, 0x44, 0x46 };
   const uint8_t ps_mn[]     = { 0x25, 0x21, 0x50, 0x53 };
@@ -1416,16 +1995,15 @@ bool SpecMeasManager::handleNonSpectrumFile( const std::string &displayName,
   const bool ispng = check_magic_number( data, png_mn );
   const bool isbmp = check_magic_number( data, bmp_mn );
   const bool issvg = header_contains( "<svg" );
+  const bool isheic = (0 == memcmp( heic_mn, data + 4, sizeof(heic_mn) ));
+  
   
   // Wt::Utils::guessImageMimeTypeData(<#const std::vector<unsigned char> &header#>)
   
   if( iszip )
   {
-    const char *msg = NULL;
-  //zip (but can be xlsx, pptx, docx, odp, jar, apk) 50 4B 03 04
-    msg = "This file appears to be an invalid ZIP file (or xlsx, pptx, <br />"
-          "docx, odp, jar, apk, etc), sorry I cant open it :(";
-    WText *t = new WText( msg, contents );
+    //zip (but can be xlsx, pptx, docx, odp, jar, apk) 50 4B 03 04
+    WText *t = new WText( WString::tr("smm-invalid-zip"), contents );
     t->addStyleClass( "NonSpecOtherFile" );
     
     add_undo_redo();
@@ -1434,12 +2012,7 @@ bool SpecMeasManager::handleNonSpectrumFile( const std::string &displayName,
   
   if( israr || istar || iszip7 || isgz )
   {
-    const char *msg = "This file looks to be an archive file, not supported by InterSpec yet."
-                      "Please contact "
-                      "<a href=\"mailto:wcjohns@sandia.gov\" target=\"_blank\">wcjohns@sandia.gov</a> "
-                      "if you would like support for this archive type added.";
-    
-    WText *t = new WText( msg, contents );
+    WText *t = new WText( WString::tr("smm-unsupported-archive"), contents );
     t->addStyleClass( "NonSpecOtherFile" );
     
     add_undo_redo();
@@ -1450,8 +2023,7 @@ bool SpecMeasManager::handleNonSpectrumFile( const std::string &displayName,
   
   if( ispdf | isps | istif )
   {
-    const char *msg = "This file looks to be a document file, and not supported by InterSpec.";
-    WText *t = new WText( msg, contents );
+    WText *t = new WText( WString::tr("smm-unsupported-document"), contents );
     t->addStyleClass( "NonSpecOtherFile" );
     
     add_undo_redo();
@@ -1460,91 +2032,20 @@ bool SpecMeasManager::handleNonSpectrumFile( const std::string &displayName,
   }//if( ispdf | isps | istif )
   
   
-  if( isgif || isjpg || ispng || isbmp || issvg )
+  if( isgif || isjpg || ispng || isbmp || issvg || isheic )
   {
-    const char *msg = "This file looks to be an image, and not a spectrum file.";
-    WText *t = new WText( msg, contents );
-    t->addStyleClass( "NonSpecOtherFile" );
-   
-    const size_t max_disp_size = 16*1024*1024;
+    const bool decode_raw = (isgif || isjpg || ispng);
     
-    if( filesize < max_disp_size )
-    {
-      const char *mimetype = "";
-      if( isgif ) mimetype = "image/gif";
-      else if( isjpg ) mimetype = "image/jpeg";
-      else if( ispng ) mimetype = "image/png";
-      else if( isbmp ) mimetype = "image/bmp";
-      else if( issvg ) mimetype = "image/svg+xml";
+    const char *mimetype = "";
+    if( isgif ) mimetype = "image/gif";
+    else if( isjpg ) mimetype = "image/jpeg";
+    else if( ispng ) mimetype = "image/png";
+    else if( isbmp ) mimetype = "image/bmp";
+    else if( issvg ) mimetype = "image/svg+xml";
+    else if( isheic ) mimetype = "image/heic";
     
-      std::unique_ptr<WImage> image( new WImage() );
-      WMemoryResource *resource = new WMemoryResource( mimetype, image.get() );
-      vector<uint8_t> totaldata( filesize );
-      const bool success = infile.read( (char *)&(totaldata[0]), filesize ).good();
-      
-      
-      if( success )
-      {
-        resource->setData( totaldata );
-        image->setImageLink( WLink(resource) );
-        image->addStyleClass( "NonSpecImgFile" );
-        contents->addWidget( image.release() );
-        
-        if( m_viewer->measurment( SpecUtils::SpectrumType::Foreground ) )
-        {
-          WPushButton *embedbtn = new WPushButton( "Embed image in spectrum file", contents );
-          embedbtn->setStyleClass( "LinkBtn NonSpecEmbedBtn" );
-          
-          embedbtn->clicked().connect( std::bind([this,resource,displayName,mimetype,dialog](){
-            const vector<unsigned char> data = resource->data();
-            if( data.empty() )
-            {
-              passMessage( "Error retirieving data to embed - not embeding image.", WarningWidget::WarningMsgHigh );
-              return;
-            }
-            
-            shared_ptr<SpecMeas> meas = m_viewer->measurment( SpecUtils::SpectrumType::Foreground );
-            if( !meas )
-            {
-              passMessage( "No foreground loaded - not embeding image.", WarningWidget::WarningMsgHigh );
-              return;
-            }
-            
-            SpecUtils::MultimediaData multi;
-            multi.remark_ = "Image file embeded using InterSpec.";
-            multi.descriptions_= "filename: " + displayName;
-            
-            string data_str;
-            data_str.resize( data.size() );
-            memcpy( &(data_str[0]), data.data(), data.size() );
-            const string base_64_encoded = Wt::Utils::base64Encode( data_str );
-            multi.data_.resize( base_64_encoded.size() );
-            memcpy( multi.data_.data(), base_64_encoded.data(), base_64_encoded.size() );
-            multi.data_encoding_ = SpecUtils::MultimediaData::EncodingType::BinaryBase64;
-            multi.capture_start_time_ = SpecUtils::time_point_t{};
-            multi.file_uri_ = displayName;
-            multi.mime_type_ = mimetype;
-            
-            meas->add_multimedia_data( multi );
-            passMessage( "Image has been embedded in the foreground spectrum file; only exporting in"
-                      " N42-2012 file format will preserve this.", WarningWidget::WarningMsgInfo );
-            
-            wApp->doJavaScript( "$('#" + dialog->id() + "').hide(); $('.Wt-dialogcover').hide();" );
-            dialog->done( Wt::WDialog::DialogCode::Accepted );
-          }));
-          
-        }//if( m_viewer->measurment( SpecUtils::SpectrumType::Foreground ) )
-      }else
-      {
-        WText *errort = new WText( "Couldn't read uploaded file.", contents );
-        errort->addStyleClass( "NonSpecError" );
-      }
-    }else
-    {
-      WText *errort = new WText( "Uploaded file was too large to try and display.", contents );
-      errort->addStyleClass( "NonSpecError" );
-    }//if( filesize < max_disp_size ) / else
-        
+    new UploadedImgDisplay( m_viewer, displayName, mimetype, filesize, infile, dialog, type );
+    
     add_undo_redo();
     
     return true;
@@ -1603,7 +2104,7 @@ bool SpecMeasManager::handleNonSpectrumFile( const std::string &displayName,
       return true;
     }catch( exception &e )
     {
-      WText *errort = new WText( "Uploaded file looked like a Peak CSV file, but was invalid.", contents );
+      WText *errort = new WText( WString::tr("smm-invalid-peak-csv"), contents );
       errort->addStyleClass( "NonSpecError" );
       
       errort = new WText( string(e.what()), contents );
@@ -1659,17 +2160,7 @@ bool SpecMeasManager::handleNonSpectrumFile( const std::string &displayName,
       // TODO: allow users to rename the DRF.
       
       const string name = Wt::Utils::htmlEncode( det->name() );
-      
-      string msg = "<p style=\"white-space: nowrap;\">"
-        "This file looks to be a Detector Response Function."
-      "</p>"
-      "<p style=\"text-align: left; white-space: nowrap;\">"
-      "Name: " + name +
-      "</p>"
-      "<p>Would you like to use this DRF?</p>"
-      ;
-      
-      DrfSelect::createChooseDrfDialog( {det}, msg, "" );
+      DrfSelect::createChooseDrfDialog( {det}, WString::tr("smm-file-is-drf").arg(name), "" );
       
       delete dialog;
       
@@ -1722,7 +2213,24 @@ bool SpecMeasManager::handleNonSpectrumFile( const std::string &displayName,
     return true;
   }//if( Shielding/Source fit XML file )
 
-  
+  if( m_viewer->makeDrfWindow() )
+  {
+    //Check if source lib file.  These are text files, with each line defining a source,
+    //  and looking like:
+    //  "22NA_01551910  5.107E+04  25-Aug-2022 Some Remarks
+    string datastr;
+    datastr.resize( boost::size(data) + 1, '\0' );
+    memcpy( &(datastr[0]), (const char *)&data[0], boost::size(data) );
+    
+    stringstream strm(datastr);
+    if( SrcLibLineInfo::is_candidate_src_lib( strm )
+       && handleSourceLibFile(infile, dialog) )
+    {
+      return true;
+    }//if( candidate source lib file )
+    
+  }//if( m_viewer->makeDrfWindow() )
+
   
   delete dialog;
   
@@ -1814,24 +2322,16 @@ bool SpecMeasManager::handleMultipleDrfCsv( std::istream &input,
         throw runtime_error( "Failed writing '" + outputname + "'" );
       }//
       
-      passMessage( "Saved '" + filename + "' for later use, and will be available in the"
-                  " &quot;<em>Rel. Eff.</em>&quot; portion of the"
-                  " &quot;<em>Detector Response Function Select</em>&quot; tool.",
-                  WarningWidget::WarningMsgInfo );
+      passMessage( WString::tr("smm-saved-drf-conf").arg(filename), WarningWidget::WarningMsgInfo );
     }catch( std::exception &e )
     {
       cerr << "handleMultipleDrfCsv: error saving multiple DRF file: " << e.what() << endl;
-      passMessage( "Error saving DRF file for later use.", WarningWidget::WarningMsgHigh );
+      passMessage( WString::tr("smm-err-saving-drf"), WarningWidget::WarningMsgHigh );
     }//try / catch to save file
   };//saveDrfFile
 #endif
   
-  
-  string dialogmsg;
-  if( drfs.size() == 1 )
-    dialogmsg += "This file looks to be a Detector Response Function.";
-  else
-    dialogmsg += "This file contains multiple Detector Response Functions.";
+  WString dialogmsg = WString::tr( (drfs.size()==1) ? "smm-file-is-drf" : "smm-file-is-multi-drf");
 
   string creditsHtml;
   if( credits.size() )
@@ -1849,7 +2349,6 @@ bool SpecMeasManager::handleMultipleDrfCsv( std::istream &input,
 
 bool SpecMeasManager::handleCALpFile( std::istream &infile, SimpleDialog *dialog, bool autoApply )
 {
-  // Blah blah blah Add undo/redo support
   WGridLayout *stretcher = nullptr;
   WPushButton *closeButton = nullptr;
   
@@ -1858,7 +2357,7 @@ bool SpecMeasManager::handleCALpFile( std::istream &infile, SimpleDialog *dialog
     dialog->contents()->clear();
     dialog->footer()->clear();
     
-    closeButton = dialog->addButton( "Close" );
+    closeButton = dialog->addButton( WString::tr("Close") );
     stretcher = new WGridLayout();
     
     // If we set the contents margins to 0, then scroll-bars may appear.
@@ -1867,7 +2366,7 @@ bool SpecMeasManager::handleCALpFile( std::istream &infile, SimpleDialog *dialog
     dialog->contents()->setOverflow( WContainerWidget::Overflow::OverflowHidden, Wt::Orientation::Horizontal );
     
     dialog->contents()->setLayout( stretcher );
-    WText *title = new WText( "Not a spectrum file" );
+    WText *title = new WText( WString::tr("smm-not-spec-file") );
     title->addStyleClass( "title" );
     stretcher->addWidget( title, 0, 0 );
   };//clear_dialog lamda
@@ -1879,8 +2378,7 @@ bool SpecMeasManager::handleCALpFile( std::istream &infile, SimpleDialog *dialog
     clear_dialog();
     assert( stretcher && closeButton );
     
-    const string msg = "<p>No currently displayed foreground - skipping CALp file.</p>";
-    WText *t = new WText( WString::fromUTF8(msg) );
+    WText *t = new WText( WString::tr("smm-CALp-no-fore") );
     stretcher->addWidget( t, stretcher->rowCount(), 0, AlignCenter | AlignMiddle );
     t->setTextAlignment( Wt::AlignCenter );
     
@@ -1907,12 +2405,17 @@ bool SpecMeasManager::handleCALpFile( std::istream &infile, SimpleDialog *dialog
     // Note that num_display_channel is for the displayed data - the individual detectors may
     //  have different numbers of channels - we'll fix this up after initially loading the cal
     //  (we need to know the detectors name the cal is for in order to fix it up)
-    shared_ptr<SpecUtils::EnergyCalibration> cal = EnergyCal::energy_cal_from_CALp_file( infile, num_display_channel, name );
+    shared_ptr<SpecUtils::EnergyCalibration> cal;
     
-    if( !cal )
+    try
+    {
+      cal = SpecUtils::energy_cal_from_CALp_file( infile, num_display_channel, name );
+      assert( cal && cal->valid() );
+    }catch( std::exception &e )
     {
       // Display message to user to let them know it was a CALp file, but we couldn't use it.
       //  TODO: improve this error message with details, ex if it was a lower-channel-energy CALp, and number of channels didnt match, we should display this to the user
+      
       if( det_to_cal.empty() /* && SpecUtils::iends_with( displayName, "CALp" ) */ )
       {
         infile.seekg( start_pos, ios::beg );
@@ -1920,11 +2423,7 @@ bool SpecMeasManager::handleCALpFile( std::istream &infile, SimpleDialog *dialog
         clear_dialog();
         assert( stretcher && closeButton );
         
-        const string msg = "<p style=\"white-space: nowrap;\">"
-        "The content of this CALp file was<br />"
-        "unreadable or incompatible with the data"
-        "</p>";
-        WText *t = new WText( WString::fromUTF8(msg) );
+        WText *t = new WText( WString::tr("smm-CALp-invalid") );
         stretcher->addWidget( t, stretcher->rowCount(), 0, AlignCenter | AlignMiddle );
         t->setTextAlignment( Wt::AlignCenter );
         dialog->contents()->setOverflow( WContainerWidget::Overflow::OverflowVisible,
@@ -1933,7 +2432,8 @@ bool SpecMeasManager::handleCALpFile( std::istream &infile, SimpleDialog *dialog
       }//if( we didnt get any calibrations )
       
       break;
-    }//if( !cal )
+    }//try / catch
+
     
     if( !cal->valid() )
     {
@@ -2028,9 +2528,7 @@ bool SpecMeasManager::handleCALpFile( std::istream &infile, SimpleDialog *dialog
   if( (det_to_cal.size() == 1) && ((fore_energy_cals.size() == 1) || (fore_dets.size() == 1)) )
     have_cal_for_all_dets = true;
   
-  string msg = "<p style=\"white-space: nowrap;\">"
-  "This file looks to contain an energy calibration."
-  "</p>";
+  WString msg = WString::tr("smm-CALp-contains-energy-cal");
   
   
   if( (det_to_cal.size() == 1) && det_to_cal.begin()->second )
@@ -2052,7 +2550,7 @@ bool SpecMeasManager::handleCALpFile( std::istream &infile, SimpleDialog *dialog
           msg += "Polynomial:";
         
         for( size_t i = 0; i < cal->coefficients().size() && i < 4; ++i )
-          msg += PhysicalUnits::printCompact( cal->coefficients()[i], 4 );
+          msg += SpecUtils::printCompact( cal->coefficients()[i], 4 );
         if( cal->coefficients().size() > 4 )
           msg += "...";
         
@@ -2072,30 +2570,13 @@ bool SpecMeasManager::handleCALpFile( std::istream &infile, SimpleDialog *dialog
     }//switch( type )
   }else
   {
-    msg += "<p>There are calibrations for " + std::to_string(det_to_cal.size()) + " detectors</p>";
+    msg += WString::tr("smm-CALp-multi-dets").arg( static_cast<int>(det_to_cal.size()) );
   }
   
   if( !have_cal_for_all_dets )
-  {
-    if( det_to_cal.size() == 1 )
-    {
-      msg += "<p style=\"text-align: left; white-space: nowrap;\">"
-      "Warning: This CALp file contains a single calibration; it will<br />"
-      "be applied to the primary displayed energy calibration, and<br />"
-      "the relative change will be applied to the other detectors<br />"
-      "energy calibrations, which is probably what you want."
-      "</p>";
-    }else
-    {
-      msg += "<p style=\"text-align: left; white-space: nowrap;\">"
-      "Warning: This energy calibration may not be consistent<br />"
-      "with the structure of the current data."
-      "</p>";
-    }
-  }//if( !have_cal_for_all_dets )
+    msg += WString::tr( (det_to_cal.size() == 1) ? "smm-warn-single-for-multi" : "smm-warn-multi-for-single" );
   
-  
-  WText *t = new WText( WString::fromUTF8(msg) );
+  WText *t = new WText( msg );
   stretcher->addWidget( t, stretcher->rowCount(), 0, AlignCenter | AlignMiddle );
   t->setTextAlignment( Wt::AlignCenter );
   
@@ -2104,7 +2585,7 @@ bool SpecMeasManager::handleCALpFile( std::istream &infile, SimpleDialog *dialog
   
   if( fore_samples.size() != foreground->sample_numbers().size() )
   {
-    applyOnlyCurrentlyVisible = new WCheckBox( "Apply only to displayed samples" );
+    applyOnlyCurrentlyVisible = new WCheckBox( WString::tr("smm-CALp-cb-disp-samples-only") );
     stretcher->addWidget( applyOnlyCurrentlyVisible, stretcher->rowCount(), 0, AlignLeft );
   }//if( not displaying all foreground samples )
   
@@ -2114,28 +2595,27 @@ bool SpecMeasManager::handleCALpFile( std::istream &infile, SimpleDialog *dialog
   //Only have
   if( (back && (back != foreground)) || (second && (second != foreground)) )
   {
-    applyForeground = new WCheckBox( "Apply to foreground" );
+    applyForeground = new WCheckBox( WString::tr("smm-CALp-cb-apply-to-fore") );
     applyForeground->setChecked( true );
     stretcher->addWidget( applyForeground, stretcher->rowCount(), 0, AlignLeft );
   }
   
   if( back && (back != foreground) )
   {
-    applyBackground = new WCheckBox( "Apply to background" );
+    applyBackground = new WCheckBox( WString::tr("smm-CALp-cb-apply-to-back") );
     applyBackground->setChecked( true );
     stretcher->addWidget( applyBackground, stretcher->rowCount(), 0, AlignLeft );
   }
   
   if( second && (second != foreground) && (second != back) )
   {
-    applySecondary = new WCheckBox( "Apply to secondary" );
+    applySecondary = new WCheckBox( WString::tr("smm-CALp-cb-apply-to-second") );
     applySecondary->setChecked( true );
     stretcher->addWidget( applySecondary, stretcher->rowCount(), 0, AlignLeft );
   }
   
   
-  msg = "<p style=\"white-space: nowrap;\">Would you like to use it?</p>";
-  t = new WText( WString::fromUTF8(msg) );
+  t = new WText( WString::tr("smm-CALp-like-to-use") );
   stretcher->addWidget( t, stretcher->rowCount(), 0, AlignCenter | AlignMiddle );
   t->setTextAlignment( Wt::AlignCenter );
   
@@ -2181,14 +2661,8 @@ bool SpecMeasManager::handleCALpFile( std::istream &infile, SimpleDialog *dialog
       }
     }catch( std::exception &e )
     {
-      string msg = "There was an error applying calibration:<br />";
-      msg += e.what();
-      if( napplied == 1 )
-        msg += "<br /><br />Calibration was applied to foreground.";
-      else if( napplied == 2 )
-        msg += "<br /><br />Calibration was applied to foreground and background.";
-      
-      passMessage( msg, WarningWidget::WarningMsgHigh );
+      const char *key = (napplied == 1) ? "smm-CALp-err-applying-single" : "mm-CALp-err-applying-mult";
+      passMessage( WString::tr(key).arg( e.what() ), WarningWidget::WarningMsgHigh );
     }//try / catch
   };//applyLambda(...)
   
@@ -2200,8 +2674,8 @@ bool SpecMeasManager::handleCALpFile( std::istream &infile, SimpleDialog *dialog
     return true;
   }
   
-  dialog->addButton( "No" ); //no further action necessary if user clicks no; dialog will close
-  closeButton->setText( "Yes" );
+  dialog->addButton( WString::tr("No") ); //no further action necessary if user clicks no; dialog will close
+  closeButton->setText( WString::tr("Yes") );
   closeButton->clicked().connect( std::bind( applyLambda ) );
   
   return true;
@@ -2212,7 +2686,7 @@ bool SpecMeasManager::handleCALpFile( std::istream &infile, SimpleDialog *dialog
 bool SpecMeasManager::handleRelActAutoXmlFile( std::istream &input, SimpleDialog *dialog )
 {
   // blah blah blah add undo/redo support
-  string error_msg;
+  WString error_msg;
   try
   {
     input.seekg(0, ios::end);
@@ -2241,6 +2715,8 @@ bool SpecMeasManager::handleRelActAutoXmlFile( std::istream &input, SimpleDialog
     return true;
   }catch( rapidxml::parse_error &e )
   {
+    error_msg = WString::tr("smm-err-load-xml-iso-by-nuc").arg( e.what() );
+    
     error_msg = "Error parsing config XML: " + string(e.what());
     const char * const position = e.where<char>();
     if( position && *position )
@@ -2248,19 +2724,21 @@ bool SpecMeasManager::handleRelActAutoXmlFile( std::istream &input, SimpleDialog
       const char *end_pos = position;
       for( size_t i = 0; (*end_pos) && (i < 80); ++i )
         end_pos += 1;
-      error_msg += "<br />&nbsp;&nbsp;At: " + std::string(position, end_pos);
-    }//if( position )
+      error_msg.arg( "<br />&nbsp;&nbsp;At: " + std::string(position, end_pos) );
+    }else
+    {
+      error_msg.arg( "" );
+    }//if( position ) / else
   }catch( std::exception &e )
   {
-    error_msg = "Error loading <em>Isotopics by nuclide</em> XML config file: "
-                  + string(e.what());
+    error_msg = WString::tr("smm-err-load-iso-by-nuc").arg( e.what() ).toUTF8();
   }//try / cat to read the XML
   
   
   dialog->contents()->clear();
   dialog->footer()->clear();
     
-  WPushButton *closeButton = dialog->addButton( "Close" );
+  WPushButton *closeButton = dialog->addButton( WString::tr("Close") );
   WGridLayout *stretcher = new WGridLayout();
     
   // If we set the contents margins to 0, then scroll-bars may appear.
@@ -2269,7 +2747,7 @@ bool SpecMeasManager::handleRelActAutoXmlFile( std::istream &input, SimpleDialog
   //dialog->contents()->setOverflow( WContainerWidget::Overflow::OverflowHidden );
     
   dialog->contents()->setLayout( stretcher );
-  WText *title = new WText( "Invalid <em>Isotopics by nuclide</em> XML config file." );
+  WText *title = new WText( WString::tr("smm-err-iso-by-nuc-window-title") );
   title->addStyleClass( "title" );
   stretcher->addWidget( title, 0, 0 );
   
@@ -2321,7 +2799,7 @@ bool SpecMeasManager::handleEccFile( std::istream &input, SimpleDialog *dialog )
   chartw = std::max( chartw, 300 );
   charth = std::max( charth, 175 );
   
-  WText *title = new WText( "ISOCS Efficiency Calibration Curve DRF", dialog->contents() );
+  WText *title = new WText( WString::tr("smm-ecc-curve"), dialog->contents() );
   title->addStyleClass( "title" );
   title->setInline( false );
   
@@ -2381,26 +2859,26 @@ bool SpecMeasManager::handleEccFile( std::istream &input, SimpleDialog *dialog )
   
   map<int,DetectorPeakResponse::EffGeometryType> index_to_geom;
   
-  WLabel *geom_label = new WLabel( "How to interpret", btn_div );
+  WLabel *geom_label = new WLabel( WString::tr("smm-ecc-how-to-interpret"), btn_div );
   WComboBox *geom_combo = new WComboBox( btn_div );
-  geom_combo->addItem( "Far Field DRF" );
+  geom_combo->addItem( WString::tr("smm-ecc-far-field") );
   index_to_geom[geom_combo->count() - 1] = DetectorPeakResponse::EffGeometryType::FarField;
   
-  geom_combo->addItem( "Fixed Geometry - total activity" );
+  geom_combo->addItem( WString::tr("smm-ecc-fix-geom-total-act") );
   index_to_geom[geom_combo->count() - 1] = DetectorPeakResponse::EffGeometryType::FixedGeomTotalAct;
   
   if( source_area > 0.0 )
   {
-    geom_combo->addItem( "Fixed Geometry - activity per cm2" );
+    geom_combo->addItem( WString::tr("smm-ecc-fix-geom-act-cm2") );
     index_to_geom[geom_combo->count() - 1] = DetectorPeakResponse::EffGeometryType::FixedGeomActPerCm2;
     
-    geom_combo->addItem( "Fixed Geometry - activity per m2" );
+    geom_combo->addItem( WString::tr("smm-ecc-fix-geom-act-m2") );
     index_to_geom[geom_combo->count() - 1] = DetectorPeakResponse::EffGeometryType::FixedGeomActPerM2;
   }//if( source_area > 0.0 )
   
   if( source_mass > 0 )
   {
-    geom_combo->addItem( "Fixed Geometry - activity per gram" );
+    geom_combo->addItem( WString::tr("smm-ecc-fix-geom-act-gram") );
     index_to_geom[geom_combo->count() - 1] = DetectorPeakResponse::EffGeometryType::FixedGeomActPerGram;
   }//if( source_mass > 0 )
   
@@ -2416,7 +2894,7 @@ bool SpecMeasManager::handleEccFile( std::istream &input, SimpleDialog *dialog )
   dist_validator->setMandatory( true );
     
   WTableCell *cell = far_field_opt->elementAt( 0, 0 );
-  WLabel *label = new WLabel( "Detector diam.", cell );
+  WLabel *label = new WLabel( WString::tr("smm-ecc-det-diam"), cell );
   cell = far_field_opt->elementAt( 0, 1 );
   WLineEdit *diameter_edit = new WLineEdit( "", cell );
   label->setBuddy( diameter_edit );
@@ -2424,7 +2902,7 @@ bool SpecMeasManager::handleEccFile( std::istream &input, SimpleDialog *dialog )
   diameter_edit->setEmptyText( "0 cm" );
   
   cell = far_field_opt->elementAt( 1, 0 );
-  label = new WLabel( "Distance.", cell );
+  label = new WLabel( WString::tr("smm-ecc-dist"), cell );
   cell = far_field_opt->elementAt( 1, 1 );
   WLineEdit *distance_edit = new WLineEdit( "", cell );
   label->setBuddy( distance_edit );
@@ -2437,8 +2915,8 @@ bool SpecMeasManager::handleEccFile( std::istream &input, SimpleDialog *dialog )
   
   // TODO: make option to make DRF default for detector model, or serial number
   
-  dialog->addButton( "Cancel" );
-  WPushButton *accept = dialog->addButton( "Use DRF" );
+  dialog->addButton( WString::tr("Cancel") );
+  WPushButton *accept = dialog->addButton( WString::tr("smm-ecc-use-drf") );
   
   
   auto try_create_farfield = [=]() -> shared_ptr<DetectorPeakResponse> {
@@ -2535,8 +3013,7 @@ bool SpecMeasManager::handleEccFile( std::istream &input, SimpleDialog *dialog )
       }//switch( geom_type )
     }catch( std::exception &e )
     {
-      passMessage( "Error creating DRF from ECC: " + string(e.what()),
-                    WarningWidget::WarningMsgHigh );
+      passMessage( WString::tr("smm-ecc-error").arg(e.what()), WarningWidget::WarningMsgHigh );
       return;
     }//try / catch
     
@@ -2592,17 +3069,17 @@ bool SpecMeasManager::handleShieldingSourceFile( std::istream &input, SimpleDial
     dialog->contents()->clear();
     dialog->footer()->clear();
     
-    WText *title = new WText( "Activity/Shielding XML", dialog->contents() );
+    WText *title = new WText( WString::tr("smm-act-shield-xml"), dialog->contents() );
     title->addStyleClass( "title" );
     title->setInline( false );
     
-    WText *content = new WText( "Use this Activity/Shielding fit setup?", dialog->contents() );
+    WText *content = new WText( WString::tr("smm-act-shield-use"), dialog->contents() );
     content->addStyleClass( "content" );
     content->setInline( false );
     
     dialog->footer()->clear();
-    dialog->addButton( "Cancel" );
-    WPushButton *btn = dialog->addButton( "Yes" );
+    dialog->addButton( WString::tr("Cancel") );
+    WPushButton *btn = dialog->addButton( WString::tr("Yes") );
     btn->clicked().connect( std::bind([this,data,xml_doc](){
       InterSpec *viewer = InterSpec::instance();
       if( !viewer || !data || !xml_doc )
@@ -2615,8 +3092,7 @@ bool SpecMeasManager::handleShieldingSourceFile( std::istream &input, SimpleDial
           display->deSerialize( xml_doc->first_node() );
       }catch( std::exception &e )
       {
-        passMessage( "Sorry, there was an error loading Activity/Shielding Fit model: "
-                    + std::string(e.what()), WarningWidget::WarningMsgHigh );
+        passMessage( WString::tr("smm-err-act-shield").arg(e.what()), WarningWidget::WarningMsgHigh );
       }
     }) );
   }catch( std::exception &e )
@@ -2627,6 +3103,206 @@ bool SpecMeasManager::handleShieldingSourceFile( std::istream &input, SimpleDial
   
   return true;
 }//bool handleShieldingSourceFile( std::istream &input, SimpleDialog *dialog );
+
+
+bool SpecMeasManager::handleSourceLibFile( std::istream &input, SimpleDialog *dialog )
+{
+  MakeDrfWindow *tool = m_viewer->makeDrfWindow();
+  if( !tool )
+    return false;
+    
+  const size_t start_pos = input.tellg();
+  
+  try
+  {
+    const vector<SrcLibLineInfo> srcs = SrcLibLineInfo::sources_in_lib( input );
+    
+    if( srcs.empty() )
+      throw runtime_error( "No sources in file." );
+    
+    vector<shared_ptr<const SrcLibLineInfo>> src_ptrs;
+    for( const SrcLibLineInfo &info : srcs )
+      src_ptrs.push_back( make_shared<SrcLibLineInfo>(info) );
+    
+    assert( dialog );
+    dialog->contents()->clear();
+    dialog->footer()->clear();
+    
+    WText *title = new WText( WString::tr("smm-source-lib-title"), dialog->contents() );
+    title->addStyleClass( "title" );
+    title->setInline( false );
+    
+    WText *content = new WText( WString::tr("smm-source-source-use"), dialog->contents() );
+    content->addStyleClass( "content" );
+    content->setInline( false );
+    
+    dialog->footer()->clear();
+    
+    auto setter = [src_ptrs]( const bool autopopulate ){
+      InterSpec *viewer = InterSpec::instance();
+      MakeDrfWindow *tool = viewer ? viewer->makeDrfWindow() : nullptr;
+      assert( tool );
+      if( tool )
+        tool->tool()->useSourceLibrary( src_ptrs, autopopulate );
+    };
+    
+    WPushButton *btn = dialog->addButton( WString::tr("Yes") );
+    btn->clicked().connect( std::bind([setter](){ setter(true); }) );
+    
+    btn = dialog->addButton( WString::tr("No") );
+    btn->clicked().connect( std::bind([setter](){ setter(false); }) );
+    
+    dialog->addButton( WString::tr("Cancel") );
+  }catch( std::exception &e )
+  {
+    input.seekg( start_pos );
+    return false;
+  }//try caltch
+  
+  return true;
+}//bool handleSourceLibFile( std::istream &input, SimpleDialog *dialog )
+
+
+void SpecMeasManager::handleCancelPreviousStatesDialog( AuxWindow *dialog )
+{
+  assert( dialog == m_previousStatesDialog );
+  if( !dialog )
+    return;
+  
+  if( dialog != m_previousStatesDialog )
+  {
+    cerr << "SpecMeasManager::handleCancelPreviousStatesDialog: dialog passed in isnt as expected"
+    << " - not doing anything." << endl;
+    return;
+  }
+  
+  m_previousStatesDialog = nullptr;
+  AuxWindow::deleteAuxWindow( dialog );
+}//void handleCancelPreviousStatesDialog( AuxWindow *dialog )
+
+
+void SpecMeasManager::handleClosePreviousStatesDialogAfterSelect( AuxWindow *dialog )
+{
+  handleCancelPreviousStatesDialog( dialog );
+}//void handleClosePreviousStatesDialogAfterSelect( AuxWindow *dialog )
+
+
+void SpecMeasManager::checkCloseUploadDialog( SimpleDialog *dialog, WApplication *app )
+{
+  WApplication::UpdateLock lock( app );
+  assert( lock );
+  if( !lock )
+    return;
+  
+  if( dialog != m_processingUploadDialog )
+    return;
+  
+  if( m_processingUploadTimer )
+  {
+    boost::system::error_code ec;
+    m_processingUploadTimer->cancel( ec );
+    if( ec )
+      cerr << "SpecMeasManager::checkCloseUploadDialog(): error cancelling timer: " << ec.message() << endl;
+    m_processingUploadTimer.reset();
+  }//if( m_processingUploadTimer )
+  
+  if( m_processingUploadDialog )
+  {
+    m_processingUploadDialog->done(WDialog::DialogCode::Accepted);
+    m_processingUploadDialog = nullptr;
+  }//if( m_processingUploadDialog )
+  
+  passMessage( WString::tr("smm-upload-timeout"), WarningWidget::WarningMsgHigh ) ;
+}//void checkCloseUploadDialog( SimpleDialog *dialog )
+
+
+void SpecMeasManager::handleDataRecievedStatus( uint64_t num_bytes_recieved, uint64_t num_bytes_total,
+                                               SpecUtils::SpectrumType type )
+{
+  if( num_bytes_total < sm_minNumBytesShowUploadProgressDialog )
+    return;
+  
+  //cout << "SpecMeasManager::handleDataRecievedStatus: " << num_bytes_recieved << " of " << num_bytes_total << " total." << endl;
+  
+  auto app = WApplication::instance();
+  assert( app );
+  if( !app )
+    return;
+  
+  WApplication::UpdateLock lock( app );
+  assert( lock );
+  if( !lock )
+    return;
+  
+  auto make_timer = [this,app]( SimpleDialog *dialog ){
+    Wt::WServer *server = Wt::WServer::instance();
+    if( !server )
+      return;
+    
+    if( m_processingUploadTimer )
+    {
+      boost::system::error_code ec;
+      m_processingUploadTimer->cancel( ec );
+      if( ec )
+        cerr << "SpecMeasManager::handleDataRecievedStatus(): error cancelling timer: " << ec.message() << endl;
+      m_processingUploadTimer.reset();
+    }//if( m_processingUploadTimer )
+    
+    auto timeoutfcn = app->bind( boost::bind(&SpecMeasManager::checkCloseUploadDialog, this, dialog, app) );
+    m_processingUploadTimer = make_unique<boost::asio::deadline_timer>( server->ioService() );
+    m_processingUploadTimer->expires_from_now( boost::posix_time::seconds(120) );
+    m_processingUploadTimer->async_wait( [timeoutfcn](const boost::system::error_code &ec){ if(!ec) timeoutfcn(); } );
+  };//make_timer lamda
+  
+  
+  if( m_processingUploadDialog )
+  {
+    assert( m_processingUploadTimer );
+    
+    // TODO: could occasionally (every few seconds) update dialog text with current status
+    
+    make_timer( m_processingUploadDialog );
+    return;
+  }//if( m_processingUploadDialog )
+  
+  assert( !m_processingUploadTimer );
+  
+#if( BUILD_AS_LOCAL_SERVER || BUILD_FOR_WEB_DEPLOYMENT )
+  const WString title = WString::tr("smm-finishing-upload");
+#else
+  const WString title = WString::tr("smm-finishing-copying");
+#endif
+  
+  WString msg = WString::tr("smm-finish-up-txt");
+  {//begin codeblock to add file size to string
+    char filesize_str[64] = { '\0' };
+    if( num_bytes_total < 1024*1024 )
+      snprintf( filesize_str, sizeof(filesize_str), "%.1f kb", num_bytes_total/1024.0 );
+    else
+      snprintf( filesize_str, sizeof(filesize_str), "%.1f Mb", num_bytes_total/(1024.0*1024.0) );
+    
+    msg.arg( filesize_str );
+    
+    switch( type )
+    {
+      case SpecUtils::SpectrumType::Foreground:
+        msg.arg( WString::tr("foreground") );
+        break;
+      case SpecUtils::SpectrumType::SecondForeground:
+        msg.arg( WString::tr("secondary") );
+        break;
+      case SpecUtils::SpectrumType::Background:
+        msg.arg( WString::tr("background") );
+        break;
+    }//switch( type )
+  }//end codeblock to add file size to string
+   
+  m_processingUploadDialog = new SimpleDialog( title, msg );
+  
+  make_timer( m_processingUploadDialog );
+  
+  app->triggerUpdate();
+}//void handleDataRecievedStatus(...)
 
 
 void SpecMeasManager::handleFileDropWorker( const std::string &name,
@@ -2686,12 +3362,13 @@ void SpecMeasManager::handleFileDropWorker( const std::string &name,
     
     const int modelRow = setFile( name, spoolName, header, measurement );
 
-    displayFile( modelRow, measurement, type, true, true, SpecMeasManager::VariantChecksToDo::DerivedDataAndEnergy );
+    displayFile( modelRow, measurement, type, true, true, 
+              SpecMeasManager::VariantChecksToDo::DerivedDataAndMultiEnergyAndMultipleVirtualDets );
     
     //It is the responsibility of the caller to clean up the file.
   }catch( exception &e )
   {
-    if( !handleNonSpectrumFile( name, spoolName ) )
+    if( !handleNonSpectrumFile( name, spoolName, type ) )
     {
       displayInvalidFileMsg( name, e.what() );
     }
@@ -2704,6 +3381,24 @@ void SpecMeasManager::handleFileDrop( const std::string &name,
                                              const std::string &spoolName,
                                              SpecUtils::SpectrumType type )
 {
+  if( m_processingUploadTimer )
+  {
+    boost::system::error_code ec;
+    m_processingUploadTimer->cancel( ec );
+    if( ec )
+      cerr << "SpecMeasManager::handleFileDrop(): error cancelling timer: " << ec.message() << endl;
+    m_processingUploadTimer.reset();
+  }//if( m_processingUploadTimer )
+  
+  if( m_processingUploadDialog )
+  {
+    m_processingUploadDialog->done(WDialog::DialogCode::Accepted);
+    m_processingUploadDialog = nullptr;
+  }//if( m_processingUploadDialog )
+  
+  if( m_previousStatesDialog )
+    handleCancelPreviousStatesDialog( m_previousStatesDialog );
+  
   // If file is small, and not csv/txt (these are really slow to parse), dont display the parsing
   //  message.
   if( (SpecUtils::file_size(spoolName) < 512*1024)
@@ -2714,7 +3409,8 @@ void SpecMeasManager::handleFileDrop( const std::string &name,
   }
   
   // Its a larger file - display a message letting the user know its being parsed.
-  auto dialog = new SimpleDialog( "Parsing File", "This may take a second." );
+  auto dialog = new SimpleDialog( WString::tr("smm-window-title-parsing"),
+                                 WString::tr("smm-window-msg-parsing") );
   
   wApp->triggerUpdate();
   
@@ -2731,11 +3427,40 @@ void SpecMeasManager::handleFileDrop( const std::string &name,
 
 
 #if( USE_QR_CODES )
-void SpecMeasManager::handleSpectrumUrl( const std::string &unencoded )
+void SpecMeasManager::handleSpectrumUrl( std::string &&unencoded )
 {
   try
   {
-    const QRSpectrum::EncodedSpectraInfo info = QRSpectrum::get_spectrum_url_info( unencoded );
+    if( m_previousStatesDialog )
+      handleCancelPreviousStatesDialog( m_previousStatesDialog );
+    
+    //Remove everything leading up to "RADDATA://G0/"
+    const size_t uri_pos = SpecUtils::ifind_substr_ascii( unencoded, "RADDATA://" );
+    if( (uri_pos != string::npos) && (uri_pos > 0) )
+      unencoded = unencoded.substr( 0, uri_pos );
+    
+    
+    SpecUtils::EncodedSpectraInfo info;
+    
+    try
+    {
+      info = SpecUtils::get_spectrum_url_info( unencoded );
+    }catch( std::exception &e )
+    {
+      // We'll try one extra URL decode
+      string second_chance = SpecUtils::url_decode( unencoded );
+      try
+      {
+        info = SpecUtils::get_spectrum_url_info( second_chance );
+        unencoded = second_chance;
+      }catch( std::exception & )
+      {
+        // No go - give up
+        throw runtime_error( e.what() );
+      }
+    }//try / catch, SpecUtils::get_spectrum_url_info
+    
+    
     if( info.m_number_urls == 1 )
     {
       if( m_multiUrlSpectrumDialog )
@@ -2744,21 +3469,24 @@ void SpecMeasManager::handleSpectrumUrl( const std::string &unencoded )
         multiSpectrumDialogDone();
       }
       
-      vector<QRSpectrum::UrlSpectrum> spectra = QRSpectrum::spectrum_decode_first_url( unencoded );
+      vector<SpecUtils::UrlSpectrum> spectra = SpecUtils::spectrum_decode_first_url( unencoded );
       if( spectra.empty() )
-        throw runtime_error( "No gamma measurements in URL/QR code" );
+        throw runtime_error( WString::tr("smm-qr-no-meas").toUTF8() );
       
-      shared_ptr<SpecMeas> specfile = QRSpectrum::to_spec_file( spectra );
+      shared_ptr<SpecUtils::SpecFile> specfile = SpecUtils::to_spec_file( spectra );
       assert( specfile && specfile->num_measurements() );
       
       if( !specfile || (specfile->num_measurements() < 1) || (specfile->num_gamma_channels() < 7) )
-        throw runtime_error( "No gamma measurements in URL/QR code" );
+        throw runtime_error( WString::tr("smm-qr-no-gamma").toUTF8() );
       
       string display_name = spectra[0].m_title;
       if( display_name.size() < 3 )
-        display_name = "From QR-code/URL";
+        display_name = WString::tr("smm-qr-name-placeholder").toUTF8();
+
+      auto specmeas = make_shared<SpecMeas>();
+      reinterpret_cast<SpecUtils::SpecFile &>( *specmeas ) = *specfile;
       
-      m_viewer->userOpenFile( specfile, display_name );
+      m_viewer->userOpenFile( specmeas, display_name );
     }else
     {
       auto dialog = dynamic_cast<MultiUrlSpectrumDialog *>( m_multiUrlSpectrumDialog );
@@ -2768,8 +3496,9 @@ void SpecMeasManager::handleSpectrumUrl( const std::string &unencoded )
     }
   }catch( std::exception &e )
   {
-    auto dialog = new SimpleDialog( "Error", "Error decoding spectrum URL/QR code: " + string(e.what()) );
-    dialog->addButton( "Ok" );
+    auto dialog = new SimpleDialog( WString::tr("Error"), 
+                                   WString::tr("smm-qr-err-decode").arg(e.what()) );
+    dialog->addButton( WString::tr("Close") );
   }//try /catch
 }//void handleSpectrumUrl( const std::string &url );
 
@@ -2779,8 +3508,9 @@ void SpecMeasManager::displaySpectrumQrCode( const SpecUtils::SpectrumType type 
   const shared_ptr<SpecMeas> meas = m_viewer->measurment( type );
   if( !meas )
   {
-    passMessage( "Error, no " + string(SpecUtils::descriptionText(type)) + " measurement displayed",
-                WarningWidget::WarningMsgHigh ) ;
+    WString msg = WString::tr("smm-no-file-disp")
+                    .arg( WString::tr(SpecUtils::descriptionText(type)) );
+    passMessage( msg, WarningWidget::WarningMsgHigh ) ;
     return;
   }//if( !spec )
   
@@ -2810,9 +3540,9 @@ void SpecMeasManager::displaySpectrumQrCode( const SpecUtils::SpectrumType type 
   
   if( !spec || (spec->num_gamma_channels() < 1) )
   {
-    passMessage( "Sorry, the " + string(SpecUtils::descriptionText(type))
-                + " doesn't look to be displaying a spectrum.",
-                WarningWidget::WarningMsgHigh ) ;
+    WString msg = WString::tr("smm-no-spec-disp")
+                    .arg( WString::tr(SpecUtils::descriptionText(type)) );
+    passMessage( msg, WarningWidget::WarningMsgHigh ) ;
     return;
   }//if( !spec )
   
@@ -2824,10 +3554,10 @@ void SpecMeasManager::displaySpectrumQrCode( const SpecUtils::SpectrumType type 
     if( model.empty() )
       model = meas->instrument_model();
   
-    vector<QRSpectrum::UrlSpectrum> urlspec = QRSpectrum::to_url_spectra( {spec}, model );
+    vector<SpecUtils::UrlSpectrum> urlspec = SpecUtils::to_url_spectra( {spec}, model );
     
     const uint8_t encode_options = 0;
-    vector<QRSpectrum::UrlEncodedSpec> urls;
+    vector<QRSpectrum::QrCodeEncodedSpec> urls;
     QRSpectrum::QrErrorCorrection ecc = QRSpectrum::QrErrorCorrection::High;
     
     // We'll try to only use a single QR-code, but also use highest error-correction we can.
@@ -2836,7 +3566,7 @@ void SpecMeasManager::displaySpectrumQrCode( const SpecUtils::SpectrumType type 
     {
       try
       {
-        urls = QRSpectrum::url_encode_spectra( urlspec, ecc, encode_options );
+        urls = QRSpectrum::qr_code_encode_spectra( urlspec, ecc, encode_options );
       }catch( std::exception & )
       {
       }//try / catch
@@ -2847,7 +3577,7 @@ void SpecMeasManager::displaySpectrumQrCode( const SpecUtils::SpectrumType type 
       try
       {
         ecc = QRSpectrum::QrErrorCorrection::Medium;
-        urls = QRSpectrum::url_encode_spectra( urlspec, ecc, encode_options );
+        urls = QRSpectrum::qr_code_encode_spectra( urlspec, ecc, encode_options );
       }catch( std::exception & )
       {
       }//try / catch
@@ -2858,7 +3588,7 @@ void SpecMeasManager::displaySpectrumQrCode( const SpecUtils::SpectrumType type 
       try
       {
         ecc = QRSpectrum::QrErrorCorrection::Low;
-        urls = QRSpectrum::url_encode_spectra( urlspec, ecc, encode_options );
+        urls = QRSpectrum::qr_code_encode_spectra( urlspec, ecc, encode_options );
       }catch( std::exception & )
       {
       }//try / catch
@@ -2866,27 +3596,26 @@ void SpecMeasManager::displaySpectrumQrCode( const SpecUtils::SpectrumType type 
     
     if( urls.empty() )
     {
-      auto dialog = new SimpleDialog( "Error",
-                                     "Spectrum could not be encoded to a QR code.<br />"
-                                     "Likely due to requiring more than 9 QR codes." );
-      dialog->addButton( "Ok" );
+      auto dialog = new SimpleDialog( WString::tr("Error"), WString::tr("smm-qr-couldnt-encode") );
+      dialog->addButton( WString::tr("Close") );
       return;
     }//if( urls.empty() )
     
     displayQrDialog( urls, 0, type );
   }catch( std::exception &e )
   {
-    auto dialog = new SimpleDialog( "Error", "Failed to encoded spectrum to a QR code: " + string(e.what()) );
-    dialog->addButton( "Ok" );
+    auto dialog = new SimpleDialog( WString::tr("Error"),
+                                   WString::tr("smm-qr-encode-fail").arg(e.what()) );
+    dialog->addButton( WString::tr("Close") );
   }//try catch
 }//void displaySpectrumQrCode( const SpecUtils::SpectrumType type )
+
 
 void SpecMeasManager::multiSpectrumDialogDone()
 {
   m_multiUrlSpectrumDialog = nullptr;
 }//void SpecMeasManager::multiSpectrumDialogDone()
 #endif
-
 
 
 void SpecMeasManager::displayInvalidFileMsg( std::string filename, std::string errormsg )
@@ -2904,19 +3633,13 @@ void SpecMeasManager::displayInvalidFileMsg( std::string filename, std::string e
   lastpart = Wt::Utils::htmlEncode(lastpart);
   errormsg = Wt::Utils::htmlEncode(errormsg);
   
-  string msg =
-  "<p>Sorry, I couldnt parse the file " + lastpart + ":</p>"
-  "<p>Error: <em>" + errormsg + "</em></p>"
-  "<p>If you think this is a valid spectrum file, please send it to "
-  "<a href=\"mailto:interspec@sandia.gov\" target=\"_blank\">interspec@sandia.gov</a>, and"
-  " we'll try to fix this issue.</p>";
+  WString msg = WString::tr("smm-err-parse-spec").arg(lastpart).arg(errormsg);
   
-  //passMessage( msg.str(), 2 );
-  
-  SimpleDialog *dialog = new SimpleDialog( "Could Not Parse File", msg );
-  dialog->addButton( "Okay" );
+  SimpleDialog *dialog = new SimpleDialog( WString::tr("smm-err-parse-spec-title"), msg );
+  dialog->addButton( WString::tr("Close") );
   wApp->triggerUpdate();
 }//void displayInvalidFileMsg( std::string filename, std::string errormsg )
+
 
 std::set<int> SpecMeasManager::selectedSampleNumbers() const
 {
@@ -2964,42 +3687,41 @@ Returns a vector of all the selected files.  If you just need one, use selectedF
 **/
 vector<std::shared_ptr<SpectraFileHeader> > SpecMeasManager::getSelectedFiles() const
 {
-    const WModelIndexSet selected = m_treeView->selectedIndexes();
-    vector<std::shared_ptr<SpectraFileHeader> >  ret;
-    
-    
-    if( selected.empty() )
-    {
-        return ret;
-    }
-    
-    for (WModelIndexSet::iterator iter = selected.begin(); iter!=selected.end(); iter++)
-    {
-        std::shared_ptr<SpectraFileHeader> header;
-
-        const WModelIndex &index = *(iter);
-        
-        const SpectraFileModel::Level indexLevel = m_fileModel->level(index);
-        switch( indexLevel )
-        {
-            case SpectraFileModel::FileHeaderLevel:
-                header = m_fileModel->fileHeader( index.row() );
-                break;
-                
-            case SpectraFileModel::SampleLevel:
-                //Do not return SampleLevel
-                continue;
-                //header = m_fileModel->fileHeader( index.parent().row() );
-                break;
-                
-            case SpectraFileModel::InvalidLevel:
-                continue;
-                break;
-        } // switch( level(index) )
-        ret.push_back(header);
-    }
+  const WModelIndexSet selected = m_treeView->selectedIndexes();
+  vector<std::shared_ptr<SpectraFileHeader> >  ret;
+  
+  if( selected.empty() )
     return ret;
-} // std::shared_ptr<SpectraFileHeader> SpecMeasManager::selectedFile() const
+  
+  for( WModelIndexSet::iterator iter = selected.begin(); iter!=selected.end(); ++iter )
+  {
+    std::shared_ptr<SpectraFileHeader> header;
+    
+    const WModelIndex &index = *(iter);
+    
+    const SpectraFileModel::Level indexLevel = m_fileModel->level(index);
+    switch( indexLevel )
+    {
+      case SpectraFileModel::FileHeaderLevel:
+        header = m_fileModel->fileHeader( index.row() );
+        break;
+        
+      case SpectraFileModel::SampleLevel:
+        //Do not return SampleLevel
+        continue;
+        //header = m_fileModel->fileHeader( index.parent().row() );
+        break;
+        
+      case SpectraFileModel::InvalidLevel:
+        continue;
+        break;
+    }// switch( level(index) )
+    ret.push_back(header);
+  }//for( loop over selected )
+  
+  return ret;
+}//std::shared_ptr<SpectraFileHeader> SpecMeasManager::selectedFile() const
+
 
 //Only returns the first selected file.  use getSelectedFiles() for more than 1
 std::shared_ptr<SpectraFileHeader> SpecMeasManager::selectedFile() const
@@ -3045,7 +3767,7 @@ std::shared_ptr<SpectraFileHeader> SpecMeasManager::selectedFile() const
   }//for( const WModelIndex &index : selected )
 
   return header;
-} // std::shared_ptr<SpectraFileHeader> SpecMeasManager::selectedFile() const
+}//shared_ptr<SpectraFileHeader> SpecMeasManager::selectedFile() const
 
 
 void SpecMeasManager::unDisplay( SpecUtils::SpectrumType type )
@@ -3118,7 +3840,8 @@ void SpecMeasManager::finishQuickUpload( Wt::WFileUpload *upload,
     return;
   } // if( row < 0 )
 
-  displayFile( row, measement_ptr, type, true, true, SpecMeasManager::VariantChecksToDo::DerivedDataAndEnergy );
+  displayFile( row, measement_ptr, type, true, true, 
+              SpecMeasManager::VariantChecksToDo::DerivedDataAndMultiEnergyAndMultipleVirtualDets );
 }//void finishQuickUpload(...)
 
 
@@ -3144,9 +3867,10 @@ void SpecMeasManager::selectEnergyBinning( const string binning,
   {
     try
     {
-      meas->keep_energy_cal_variant( binning );
+      meas->keep_energy_cal_variants( {binning} );
     }catch( std::exception &e )
     {
+      // not expected
       passMessage( "There was an error separating energy cal type; loading all (error: "
                    + std::string(e.what()) + ")", WarningWidget::WarningMsgHigh )
     }
@@ -3159,8 +3883,8 @@ void SpecMeasManager::selectEnergyBinning( const string binning,
   }//if( binning != "Keep All" ) / else
   
   displayFile( index.row(), meas, type, checkIfPreviouslyOpened, doPreviousEnergyRangeCheck,
-              SpecMeasManager::VariantChecksToDo::None );
-}//
+              SpecMeasManager::VariantChecksToDo::MultiVirtualDets );
+}//SpecMeasManager::selectEnergyBinning(...)
 
 
 void SpecMeasManager::selectDerivedDataChoice( const SpecMeasManager::DerivedDataToKeep tokeep,
@@ -3184,11 +3908,11 @@ void SpecMeasManager::selectDerivedDataChoice( const SpecMeasManager::DerivedDat
   switch( tokeep )
   {
     case DerivedDataToKeep::All:
-      furtherChecks = VariantChecksToDo::MultipleEnergyCal;
+      furtherChecks = VariantChecksToDo::MultiEnergyCalsAndMultiVirtualDets;
       break;
       
     case DerivedDataToKeep::RawOnly:
-      furtherChecks = VariantChecksToDo::MultipleEnergyCal;
+      furtherChecks = VariantChecksToDo::MultiEnergyCalsAndMultiVirtualDets;
       break;
       
     case DerivedDataToKeep::DerivedOnly:
@@ -3211,13 +3935,48 @@ void SpecMeasManager::selectDerivedDataChoice( const SpecMeasManager::DerivedDat
       
       meas->keep_derived_data_variant( keeptype );
       
+      if( (meas->detector_type() == SpecUtils::DetectorType::VerifinderNaI)
+         || (meas->detector_type() == SpecUtils::DetectorType::VerifinderLaBr)
+         || SpecUtils::icontains(meas->manufacturer(), "Symetrica") )
+      {
+        // Remove the calibration and stabilization measurements; user probably doesnt want these.
+        vector<shared_ptr<const SpecUtils::Measurement>> meas_to_remove;
+        const vector<shared_ptr<const SpecUtils::Measurement>> orig_meas = meas->measurements();
+        for( const shared_ptr<const SpecUtils::Measurement> &m : orig_meas )
+        {
+          if( SpecUtils::icontains( m->title(), "StabMeas" ) 
+             || SpecUtils::icontains( m->title(), "Gamma Cal" )
+             || SpecUtils::icontains( m->title(), "CalMeasurement" ) )
+          {
+            meas_to_remove.push_back( m );
+          }
+        }//for( loop over remaining measurements )
+        
+        if( !meas_to_remove.empty() )
+        {
+          meas->set_uuid( "" );
+          meas->remove_measurements( meas_to_remove );
+        }
+        
+        // Also, a lot of times there are multiple energy calibrations, like "ECalVirtual3keV"
+        //  and/or something like "ECalGamma-SG_xxxxx-xxxxx", so we'll have detectors named
+        //  "DetectorInfoGamma", "DetectorInfoGamma_intercal_ECalVirtual3keV", etc.
+        //  So lets also rename these detectors.
+        const set<string> energy_cal_variants = meas->energy_cal_variants();
+        if( !energy_cal_variants.empty() )
+        {
+          meas->set_uuid( "" );
+          meas->keep_energy_cal_variants( energy_cal_variants );
+        }
+      }//if( a Symetrica detector )
+      
       // Trigger a refresh of row info and selected rows in File Manager
       m_fileModel->removeRows( index.row(), 1 );
       header->setMeasurmentInfo( meas );
       m_fileModel->addRow( header );
       index = m_fileModel->index( header );
       break;
-    }
+    }//case RawOnly or DerivedOnly
   }//switch( tokeep )
   
   
@@ -3227,12 +3986,54 @@ void SpecMeasManager::selectDerivedDataChoice( const SpecMeasManager::DerivedDat
 
 
 
+void SpecMeasManager::selectVirtualDetectorChoice( const std::set<std::string> tokeep,
+                         std::shared_ptr<SpectraFileHeader> header,
+                         std::shared_ptr<SpecMeas> meas,
+                         const SpecUtils::SpectrumType type,
+                         const bool checkIfPreviouslyOpened,
+                         const bool doPreviousEnergyRangeCheck )
+{
+  WModelIndex index = m_fileModel->index( header );
+  
+  if( !index.isValid() || !meas )
+  {
+    passMessage( "Aborting loading of file after selecting virtual detector type to keep - "
+                "the file is no longer available in memory. please report "
+                "this bug to interspec@sandia.gov", WarningWidget::WarningMsgHigh );
+    return;
+  }//if( !index.isValid() )
+  
+  if( !tokeep.empty() )
+  {
+    set<string> dets_to_remove;
+    for( const string &name : meas->gamma_detector_names() )
+    {
+      if( SpecUtils::istarts_with(name, "VD") && !tokeep.count(name) )
+        dets_to_remove.insert( name );
+    }
+    
+    meas->remove_detectors_data( dets_to_remove );
+    
+    // Trigger a refresh of row info and selected rows in File Manager
+    m_fileModel->removeRows( index.row(), 1 );
+    header->setMeasurmentInfo( meas );
+    m_fileModel->addRow( header );
+    index = m_fileModel->index( header );
+  }//if( !tokeep.empty() )
+  
+  const VariantChecksToDo furtherChecks = VariantChecksToDo::None;
+  
+  displayFile( index.row(), meas, type, checkIfPreviouslyOpened, doPreviousEnergyRangeCheck,
+              furtherChecks );
+}//void selectVirtualDetectorChoice(...)
+
+
 bool SpecMeasManager::checkForAndPromptUserForDisplayOptions( std::shared_ptr<SpectraFileHeader> header,
                                             std::shared_ptr<SpecMeas> meas,
                                             const SpecUtils::SpectrumType type,
                                             const bool checkIfPreviouslyOpened,
                                             const bool doPreviousEnergyRangeCheck,
-                                            const VariantChecksToDo viewingChecks )
+                                            VariantChecksToDo viewingChecks )
 {
   if( !header || !meas )
     throw runtime_error( "SpecMeasManager::checkForAndPromptUserForDisplayOptions(): Invalid input" );
@@ -3240,8 +4041,12 @@ bool SpecMeasManager::checkForAndPromptUserForDisplayOptions( std::shared_ptr<Sp
   if( viewingChecks == VariantChecksToDo::None )
     return false;
   
+  // We will first deal with "Derived Data" being present, then "Multiple Energy Calibrations",
+  //  and then finally "Multiple Virtual Detectors"
+  
+  
   bool derivedData = false, energyCal = false;
-  if( viewingChecks == VariantChecksToDo::DerivedDataAndEnergy )
+  if( viewingChecks == VariantChecksToDo::DerivedDataAndMultiEnergyAndMultipleVirtualDets )
     derivedData = (meas->contains_derived_data() && meas->contains_non_derived_data());
   
   set<string> cals;
@@ -3252,33 +4057,83 @@ bool SpecMeasManager::checkForAndPromptUserForDisplayOptions( std::shared_ptr<Sp
     energyCal = (cals.size() > 1);
   }
   
+  if( (!derivedData && !energyCal && (viewingChecks == VariantChecksToDo::DerivedDataAndMultiEnergyAndMultipleVirtualDets))
+     || (!energyCal && (viewingChecks == VariantChecksToDo::MultiEnergyCalsAndMultiVirtualDets))
+     || (viewingChecks == VariantChecksToDo::MultiVirtualDets) )
+  {
+    vector<string> virtual_detectors;
+    for( const string &name : meas->gamma_detector_names() )
+    {
+      if( SpecUtils::istarts_with( name, "VD" ) )
+        virtual_detectors.push_back( name );
+    }
+    
+    if( virtual_detectors.size() > 1 )
+    {
+      WString msgtxt = WString::tr("smm-vd-load-msg");
+      if( virtual_detectors.size() > 5 )
+        msgtxt.arg( WString::tr("smm-vd-gt-5dets").arg( static_cast<int>(virtual_detectors.size()) ) );
+      else
+        msgtxt.arg( "" );
+      
+      SimpleDialog *dialog = new SimpleDialog( WString::tr("smm-vd-load-title"), msgtxt );
+      
+      auto add_button = [=]( string btn_txt, const set<string> &dets, size_t max_txt_size ){
+        if( btn_txt.size() > max_txt_size )
+        {
+          SpecUtils::utf8_limit_str_size( btn_txt, max_txt_size - 1 );
+          btn_txt += "...";
+        }
+        btn_txt = Wt::Utils::htmlEncode( btn_txt );
+          
+        WPushButton *button = dialog->addButton( btn_txt );
+        button->clicked().connect( boost::bind( &SpecMeasManager::selectVirtualDetectorChoice, this,
+                                               dets, header, meas, type,
+                                               checkIfPreviouslyOpened, doPreviousEnergyRangeCheck ) );
+      };//add_button
+      
+      add_button( WString::tr("smm-vd-all-btn").toUTF8(), set<string>{}, 6 );
+      
+      for( size_t i = 0; (i < 5) && (i < virtual_detectors.size()); ++i )
+      {
+        add_button( virtual_detectors[i], set<string>{virtual_detectors[i]}, 6 );
+      }//for( size_t i = 0; (i < 5) && (i < virtual_detectors.size()); ++i )
+      
+      // If three detectors, let them choose any 1, any 2, or all
+      if( virtual_detectors.size() == 3 )
+      {
+        string btn_txt = virtual_detectors[0] + "+" + virtual_detectors[1];
+        add_button( btn_txt, {virtual_detectors[0], virtual_detectors[1]}, 9 );
+        
+        btn_txt = virtual_detectors[1] + "+" + virtual_detectors[2];
+        add_button( btn_txt, {virtual_detectors[1], virtual_detectors[2]}, 9 );
+      }//if( virtual_detectors.size() <= 3 )
+      
+      return true;
+    }//if( virtual_detectors.size() > 1 )
+  }//if( viewingChecks == VariantChecksToDo::DerivedDataAndMultiEnergyAndMultipleVirtualDets )
+  
+  
   if( !derivedData && !energyCal )
     return false;
 
   
   if( derivedData )
   {
-    const char *title = "Use Derived Data?";
-    const char *msgtxt
-    = "<div>This file contained &quot;Derived Data&quot; spectra, which are</div>"
-      "<div>usually what is used by the detection system for analysis.</div>"
-      "<div style=\"margin-top: 20px; margin-bottom: 5px; white-space: nowrap; font-weight: bold;\">"
-        "What data would you like to load?"
-      "</div>";
-    
-    SimpleDialog *dialog = new SimpleDialog( title, msgtxt );
-    WPushButton *button = dialog->addButton( "All Data" );
+    SimpleDialog *dialog = new SimpleDialog( WString::tr("smm-derived-window-title"),
+                                            WString::tr("smm-derived-window-txt") );
+    WPushButton *button = dialog->addButton( WString::tr("smm-derived-all") );
     
     button->clicked().connect( boost::bind( &SpecMeasManager::selectDerivedDataChoice, this,
                                            DerivedDataToKeep::All, header, meas, type,
                                            checkIfPreviouslyOpened, doPreviousEnergyRangeCheck ) );
     
-    button = dialog->addButton( "Raw Data" );
+    button = dialog->addButton( WString::tr("smm-derived-raw") );
     button->clicked().connect( boost::bind( &SpecMeasManager::selectDerivedDataChoice, this,
                                            DerivedDataToKeep::RawOnly, header, meas, type,
                                            checkIfPreviouslyOpened, doPreviousEnergyRangeCheck ) );
     
-    button = dialog->addButton( "Derived Data" );
+    button = dialog->addButton( WString::tr("smm-derived-derived") );
     button->clicked().connect( boost::bind( &SpecMeasManager::selectDerivedDataChoice, this,
                                            DerivedDataToKeep::DerivedOnly, header, meas, type,
                                            checkIfPreviouslyOpened, doPreviousEnergyRangeCheck ) );
@@ -3286,14 +4141,19 @@ bool SpecMeasManager::checkForAndPromptUserForDisplayOptions( std::shared_ptr<Sp
     return true;
   }//if( derivedData )
 
-  const char *title = "Select Binning";
-  const char *msgtxt
-   = "<div style=\"white-space: nowrap;\">Multiple energy binnings were found in the spectrum file.</div>"
-     "<div style=\"margin-top: 5px; margin-bottom: 5px;\">Please select which one you would like</div>";
+  // Everything past here is for selecting energy binning - lets check to make sure we are supposed
+  //  to check for this
+  if( viewingChecks == VariantChecksToDo::MultiVirtualDets )
+  {
+    return false;
+  }
+  
+  const char *title_key = "smm-multiple-binnings-window-title";
+  const char *msgtxt_key = "smm-multiple-binnings-window-txt";
   
   if( cals.size() > 3 )
   {
-    SimpleDialog *dialog = new SimpleDialog( title );
+    SimpleDialog *dialog = new SimpleDialog( WString::tr(title_key) );
     
     int ncolwide = (derivedData ? 3 : static_cast<int>(cals.size() + 1));
     if( ncolwide > 4 )
@@ -3301,13 +4161,13 @@ bool SpecMeasManager::checkForAndPromptUserForDisplayOptions( std::shared_ptr<Sp
   
     WTable *table = new WTable( dialog->contents() );
   
-    WText *msg = new WText( msgtxt , XHTMLText );
+    WText *msg = new WText( WString::tr(msgtxt_key), XHTMLText );
     //layout->addWidget( msg, 0, 0, 1, ncolwide );
     WTableCell *cell = table->elementAt( 0, 0 );
     cell->addWidget( msg );
     cell->setColumnSpan( ncolwide );
-  
-    WPushButton *button = new WPushButton( "Keep All" );
+    
+    WPushButton *button = new WPushButton( WString::tr("smm-multiple-binnings-keep-all-btn") );
     cell = table->elementAt( 1, 0 );
     cell->addWidget( button );
     button->setWidth( WLength(95.0,WLength::Percentage) );
@@ -3341,12 +4201,12 @@ bool SpecMeasManager::checkForAndPromptUserForDisplayOptions( std::shared_ptr<Sp
     }//for( loop over calibrations )
   }else  //if( cals.size() > 3 )
   {
-    SimpleDialog *dialog = new SimpleDialog( title );
+    SimpleDialog *dialog = new SimpleDialog( WString::tr(title_key) );
     
-    WText *msg = new WText( msgtxt , XHTMLText, dialog->contents() );
+    WText *msg = new WText( WString::tr(msgtxt_key), XHTMLText, dialog->contents() );
     msg->addStyleClass( "content" );
     
-    WPushButton *button = dialog->addButton( "Keep All" );
+    WPushButton *button = dialog->addButton( WString::tr("smm-multiple-binnings-keep-all-btn") );
     button->clicked().connect( boost::bind( &SpecMeasManager::selectEnergyBinning, this,
                                            string("Keep All"), header, meas, type,
                                            checkIfPreviouslyOpened, doPreviousEnergyRangeCheck ) );
@@ -3456,7 +4316,9 @@ void SpecMeasManager::displayFile( int row,
     if( checkForAndPromptUserForDisplayOptions( header, measement_ptr,
                                 type, checkIfPreviouslyOpened,
                                 doPreviousEnergyRangeCheck, viewingChecks ) )
+    {
       return;
+    }
   }//if( checkIfAppropriateForViewing )
   
   
@@ -3526,26 +4388,24 @@ void SpecMeasManager::displayFile( int row,
         
         if( numIntrinsic )
         {
-          warningmsg << "The uploaded file contained an intrinsic activity"
-                        " spectrum, but currently showing the other spectrum"
-                        " in the file.";
+          warningmsg << WString::tr("smm-warn-has-intrinsic").toUTF8();
         }else
         {
-          warningmsg << "The uploaded file contained " << nsamples
-                     << " samples<br />";
+          warningmsg << WString::tr("smm-warn-upload-mult-spec").arg(nsamples).toUTF8();
           
           if( numForeground )
-            warningmsg << "The first foreground sample is being shown.<br />";
+            warningmsg << WString::tr("smm-warn-upload-mult-showing-fore").toUTF8();
           else if( childrow == 0 )
-            warningmsg << "The first sample is being shown.<br />";
+            warningmsg << WString::tr("smm-warn-upload-mult-showing-first").toUTF8();
           else
-            warningmsg << "Sample " << header->m_samples[childrow].sample_number << " is being shown.<br />";
+            warningmsg << WString::tr("smm-warn-upload-mult-showing-other")
+                            .arg(header->m_samples[childrow].sample_number)
+                            .toUTF8();
           
           if( m_viewer->toolTabsVisible() )
-            warningmsg << "Use the <b>Spectrum Files</b> tab, or the "
-                          "<b>File Manager</b> to select other records";
+            warningmsg << WString::tr("smm-warn-upload-use-spec-manager").toUTF8();
           else
-            warningmsg << "Use the <b>File Manager</b> to select others.";
+            warningmsg << WString::tr("smm-warn-upload-use-file-manager").toUTF8();
         }//if( decide how to customize the info message ) / else
 
         //If we have an unambiguos background, and arent currently displaying a background
@@ -3601,14 +4461,10 @@ void SpecMeasManager::displayFile( int row,
           selected.erase( index );
 
           warningmsgLevel = max( WarningWidget::WarningMsgInfo, warningmsgLevel );
-          warningmsg << "The uploaded file contained " << ncalibration
-                       << " calibration or derived-data samples<br />";
-
-
-          if( ncalibration == 1 ) warningmsg << "It";
-          else                    warningmsg << "They";
-          warningmsg  << " will not be displayed.<br />"
-                      << "Use the <b>Spectrum Files</b> tab or <b>File Manager</b> to change this.";
+          warningmsg << WString::tr("smm-multi-cal-present")
+            .arg( ncalibration )
+            .arg( WString::tr( (ncalibration == 1) ? "smm-multi-cal-it" : "smm-multi-cal-they" ) )
+            .toUTF8();
         } // if( ncalibration > 0 )
       }// if( passthrough )
 
@@ -3629,8 +4485,7 @@ void SpecMeasManager::displayFile( int row,
           if( foundBackground )
           {
             warningmsgLevel = max( WarningWidget::WarningMsgLow, warningmsgLevel );
-            warningmsg << "File has mutliple spectra, so only the background"
-                          " spectrum has been displayed.";
+            warningmsg << WString::tr("smm-multi-spectra-using-back").toUTF8();
             selected.clear();
             selected.insert( index.child(sample,0) );
             break;
@@ -3640,9 +4495,7 @@ void SpecMeasManager::displayFile( int row,
         if( !foundBackground )
         {
           warningmsgLevel = max(WarningWidget::WarningMsgHigh, warningmsgLevel );
-          warningmsg << "The uploaded file contained " << nspectra_header << " samples so<br />"
-                     << "am displaying the first one.<br />"
-                     << "Use the <b>File Manager</b> to change this.";
+          warningmsg << WString::tr("smm-multi-spectra-using-first").arg(nspectra_header).toUTF8();
           selected.clear();
           selected.insert( index.child(0,0) );
         }//if( !foundBackground )
@@ -4207,12 +5060,10 @@ void SpecMeasManager::newFileFromSelection()
     }// if( index.isValid() )
   }catch( std::exception &e )
   {
-    stringstream msg;
-    msg << "Failed in combining files: " << e.what();
-    passMessage( msg.str(), WarningWidget::WarningMsgHigh );
+    passMessage( WString::tr("smm-failed-combine").arg(e.what()), WarningWidget::WarningMsgHigh );
     
 #if( PERFORM_DEVELOPER_CHECKS )
-    log_developer_error( __func__, msg.str().c_str() );
+    log_developer_error( __func__, WString::tr("smm-failed-combine").arg(e.what()).toUTF8().c_str() );
 #endif
   }
 }//void SpecMeasManager::newFileFromSelection()
@@ -4245,11 +5096,11 @@ void SpecMeasManager::sumSelectedSpectra()
     }// if( index.isValid() )
   }catch( std::exception &e )
   {
-    const string msg = "Failed summing spectra: " + string( e.what() );
+    WString msg = WString::tr("smm-failed-sum").arg(e.what());
     passMessage( msg, WarningWidget::WarningMsgHigh );
     
 #if( PERFORM_DEVELOPER_CHECKS )
-    log_developer_error( __func__, msg.c_str() );
+    log_developer_error( __func__, msg.toUTF8().c_str() );
 #endif
   }//try / catch
 }//void SpecMeasManager::sumSelectedSpectra()
@@ -4452,17 +5303,17 @@ WContainerWidget *SpecMeasManager::createButtonBar()
   WContainerWidget *m_newDiv = new WContainerWidget( );
   buttonAlignment->addWidget( m_newDiv, 1, 0 );
   m_newDiv->setStyleClass( "LoadSpectrumUploadDiv" );
-  new WText( "Selected Spectrum: " , m_newDiv );
+  new WText( WString::tr("smm-selected-spec-label"), m_newDiv );
   
-  m_setButton = new Wt::WPushButton("Assign As",m_newDiv);
+  m_setButton = new WPushButton( WString::tr("smm-disp-as-btn"), m_newDiv);
   m_setButton->setIcon( "InterSpec_resources/images/bullet_arrow_down.png" );
   
-  Wt::WPopupMenu *setPopup = new Wt::WPopupMenu();
-  m_setAsForeground = setPopup->addItem("Foreground");
+  WPopupMenu *setPopup = new WPopupMenu();
+  m_setAsForeground = setPopup->addItem( WString::tr("Foreground") );
   m_setAsForeground->triggered().connect( boost::bind( &SpecMeasManager::loadSelected, this, SpecUtils::SpectrumType::Foreground, true) );
-  m_setAsBackground = setPopup->addItem("Background");
+  m_setAsBackground = setPopup->addItem( WString::tr("Background") );
   m_setAsBackground->triggered().connect( boost::bind( &SpecMeasManager::loadSelected, this, SpecUtils::SpectrumType::Background, true) );
-  m_setAsSecForeground = setPopup->addItem("Secondary Foreground");
+  m_setAsSecForeground = setPopup->addItem( WString::tr("second-foreground") );
   m_setAsSecForeground->triggered().connect( boost::bind( &SpecMeasManager::loadSelected, this, SpecUtils::SpectrumType::SecondForeground, true ) );
   m_setButton->setMenu(setPopup);
   m_setButton->hide();
@@ -4470,35 +5321,35 @@ WContainerWidget *SpecMeasManager::createButtonBar()
   // Note: the only difference between the m_combineToNewFileButton and
   //  m_subsetOfMeasToNewFileButton buttons are the icons, and a slight difference in text, but the
   //  functionality they trigger is the same either way.
-  m_combineToNewFileButton = new Wt::WPushButton( "To New File", m_newDiv );
-  m_combineToNewFileButton->setToolTip( "Creates a new in-memory spectrum file from the current selection." );
+  m_combineToNewFileButton = new WPushButton( WString::tr("smm-to-new-file"), m_newDiv );
+  m_combineToNewFileButton->setToolTip( WString::tr("smm-tt-to-new-file") );
   m_combineToNewFileButton->addStyleClass("InvertInDark");
   m_combineToNewFileButton->setIcon( "InterSpec_resources/images/arrow_join.svg" );
   m_combineToNewFileButton->clicked().connect( boost::bind( &SpecMeasManager::newFileFromSelection, this ) );
   m_combineToNewFileButton->hide();
   
-  m_subsetOfMeasToNewFileButton = new Wt::WPushButton( "As New File", m_newDiv );
-  m_subsetOfMeasToNewFileButton->setToolTip( "Creates a new in-memory spectrum file from the current selection." );
+  m_subsetOfMeasToNewFileButton = new WPushButton( WString::tr("smm-as-new-file"), m_newDiv );
+  m_subsetOfMeasToNewFileButton->setToolTip( WString::tr("smm-tt-as-new-file") );
   m_subsetOfMeasToNewFileButton->addStyleClass("InvertInDark");
   m_subsetOfMeasToNewFileButton->setIcon( "InterSpec_resources/images/partial.svg" );
   m_subsetOfMeasToNewFileButton->clicked().connect( boost::bind( &SpecMeasManager::newFileFromSelection, this ) );
   m_subsetOfMeasToNewFileButton->hide();
   
   
-  m_sumSpectraButton = new Wt::WPushButton( "Sum Spectra", m_newDiv );
-  m_sumSpectraButton->setToolTip( "Creates a new in-memory spectrum file from the current selection." );
+  m_sumSpectraButton = new WPushButton( WString::tr("smm-sum-spectra"), m_newDiv );
+  m_sumSpectraButton->setToolTip( WString::tr("smm-tt-sum-spectra") );
   m_sumSpectraButton->addStyleClass("InvertInDark");
   m_sumSpectraButton->setIcon( "InterSpec_resources/images/sum_symbol.svg" );
   m_sumSpectraButton->clicked().connect( boost::bind( &SpecMeasManager::sumSelectedSpectra, this ) );
   m_sumSpectraButton->hide();
   
   
-  m_saveButton = new Wt::WPushButton( "Export...", m_newDiv );
+  m_saveButton = new WPushButton( WString::tr("smm-export-btn"), m_newDiv );
   m_saveButton->clicked().connect( this, &SpecMeasManager::startSaveSelected );
   m_saveButton->hide();
   
   
-  m_deleteButton = new Wt::WPushButton("Unload",m_newDiv);
+  m_deleteButton = new WPushButton( WString::tr("smm-unload-btn"), m_newDiv);
   m_deleteButton->setIcon( "InterSpec_resources/images/minus_min_white.png" );
   m_deleteButton->clicked().connect( boost::bind( &SpecMeasManager::removeSelected, this ) );
   m_deleteButton->hide();
@@ -4509,24 +5360,24 @@ WContainerWidget *SpecMeasManager::createButtonBar()
   m_newDiv2->setStyleClass( "LoadSpectrumUploadDiv" );
   
   //WText *text =
-  new WText( "Unassign: ", m_newDiv2 );
+  new WText( WString::tr("smm-unassign-label"), m_newDiv2 );
   
-  m_removeForeButton = new Wt::WPushButton("Foreground",m_newDiv2);
+  m_removeForeButton = new WPushButton( WString::tr("Foreground"), m_newDiv2 );
 //      m_removeForeButton->setIcon( "InterSpec_resources/images/minus_min.png" );
   m_removeForeButton->clicked().connect( boost::bind( &SpecMeasManager::unDisplay, this, SpecUtils::SpectrumType::Foreground) );
   m_removeForeButton  ->setHidden( true, WAnimation() );
 //  m_removeForeButton->setHiddenKeepsGeometry( true );
   
-  m_removeBackButton = new Wt::WPushButton("Background",m_newDiv2);
+  m_removeBackButton = new WPushButton( WString::tr("Background"), m_newDiv2 );
 //          m_removeBackButton->setIcon( "InterSpec_resources/images/minus_min.png" );
   m_removeBackButton->clicked().connect( boost::bind( &SpecMeasManager::unDisplay, this, SpecUtils::SpectrumType::Background ) );
   m_removeBackButton  ->setHidden( true, WAnimation() );
 //  m_removeBackButton->setHiddenKeepsGeometry( true );
   
-  m_removeFore2Button = new Wt::WPushButton("Secondary Foreground",m_newDiv2);
+  m_removeFore2Button = new WPushButton( WString::tr("second-foreground"), m_newDiv2 );
 //              m_removeFore2Button->setIcon( "InterSpec_resources/images/minus_min.png" );
   m_removeFore2Button->clicked().connect( boost::bind( &SpecMeasManager::unDisplay, this, SpecUtils::SpectrumType::SecondForeground ) );
-  m_removeFore2Button  ->setHidden( true, WAnimation() );
+  m_removeFore2Button->setHidden( true, WAnimation() );
 //  m_removeFore2Button->setHiddenKeepsGeometry( true );
   
 //  Wt::WPushButton *m_removeButton = new Wt::WPushButton("Remove",m_newDiv);
@@ -4591,13 +5442,13 @@ void SpecMeasManager::saveToDatabase(
     if( !header->shouldSaveToDb() )
       return;
     
-//    boost::function<void(void)> worker
-//                      = app->bind( boost::bind( &SpectraFileHeader::saveToDatabaseWorker, meas, header ) );
-//    WServer::instance()->post( app->sessionId(), worker );
-    
     std::shared_ptr<SpecMeas> meas = header->parseFile();
-    boost::function<void(void)> worker = boost::bind( &SpectraFileHeader::saveToDatabaseWorker, meas, header );
-    WServer::instance()->ioService().boost::asio::io_service::post( worker );
+    boost::function<void(void)> worker
+                      = wApp->bind( boost::bind( &SpectraFileHeader::saveToDatabaseWorker, meas, header ) );
+    WServer::instance()->post( wApp->sessionId(), worker );
+    
+//    boost::function<void(void)> worker = boost::bind( &SpectraFileHeader::saveToDatabaseWorker, meas, header );
+//    WServer::instance()->ioService().boost::asio::io_service::post( worker );
   }//if( headermeas && (headermeas==meas) )
 }//void saveToDatabase( std::shared_ptr<const SpecMeas> meas ) const
 
@@ -4625,12 +5476,8 @@ int SpecMeasManager::setDbEntry( Wt::Dbo::ptr<UserFileInDb> dbfile,
 }//int setDbEntry(...)
 
 
-void SpecMeasManager::userCanceledResumeFromPreviousOpened( AuxWindow *window,
-                                  std::shared_ptr<SpectraFileHeader> header )
+void SpecMeasManager::userCanceledResumeFromPreviousOpened( shared_ptr<SpectraFileHeader> header )
 {
-  if( window )
-    delete window;
-
   std::shared_ptr<SpecMeas> meas = header->measurementIfInMemory();
   
   boost::function<void(void)> f;
@@ -4638,12 +5485,10 @@ void SpecMeasManager::userCanceledResumeFromPreviousOpened( AuxWindow *window,
   if( meas )
     f = boost::bind( &SpectraFileHeader::saveToDatabaseWorker, meas, header );
   else
-    f = boost::bind( &SpectraFileHeader::saveToDatabaseFromTempFileWorker,
-                     header );
+    f = boost::bind( &SpectraFileHeader::saveToDatabaseFromTempFileWorker, header );
   
-//  boost::function<void(void)> worker = wApp->bind( f );
-//  WServer::instance()->post( wApp->sessionId(), worker );
-  WServer::instance()->ioService().boost::asio::io_service::post( f );
+  WServer::instance()->post( wApp->sessionId(), f );
+  //WServer::instance()->ioService().boost::asio::io_service::post( f );
 }//userCanceledResumeFromPreviousOpened(..)
 
 
@@ -4685,12 +5530,17 @@ void SpecMeasManager::showPreviousSpecFileUsesDialog( std::shared_ptr<SpectraFil
     }//try / catch
   }//if( unModifiedFiles.size() )
 
-  AuxWindow *window = new AuxWindow( "Previously Stored States",
+  if( m_previousStatesDialog )
+    handleCancelPreviousStatesDialog( m_previousStatesDialog );
+  
+  AuxWindow *window = new AuxWindow( WString::tr("smm-prev-states-window-title"),
                                     (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::DisableCollapse)
                                      | AuxWindowProperties::EnableResize
                                      | AuxWindowProperties::TabletNotFullScreen) );
   window->rejectWhenEscapePressed();
   window->addStyleClass( "ShowPrevSpecFileUses" );
+  WPushButton *cancel = window->addCloseButtonToFooter();
+  cancel->clicked().connect( window, &AuxWindow::hide );
   
   //bool auto_save_states = false;
   SnapshotBrowser *snapshots = nullptr;
@@ -4704,28 +5554,22 @@ void SpecMeasManager::showPreviousSpecFileUsesDialog( std::shared_ptr<SpectraFil
     {
       // TODO: pass userStatesWithFile into SnapshotBrowser
       snapshots = new SnapshotBrowser( this, m_viewer, header, nullptr, nullptr );
-      snapshots->finished().connect( boost::bind( &AuxWindow::deleteSelf, window) );
+      snapshots->finished().connect( boost::bind( &SpecMeasManager::handleClosePreviousStatesDialogAfterSelect,
+                                      this, window) );
     }//if( userStatesWithFile.size() )
     
     
     if( !modifiedFiles.empty() )
     {
       auto_saved = new AutosavedSpectrumBrowser( modifiedFiles, type, m_fileModel, this, header );
-      auto_saved->loadedASpectrum().connect( window, &AuxWindow::deleteSelf );
-      
-      WPushButton *cancel = window->addCloseButtonToFooter();
-      cancel->clicked().connect( window, &AuxWindow::hide );
-      window->finished().connect( boost::bind( &AuxWindow::deleteAuxWindow, window ) );
+      auto_saved->loadedASpectrum().connect( boost::bind( &SpecMeasManager::handleClosePreviousStatesDialogAfterSelect,
+                                                         this, window) );
       
       if( unModifiedFiles.empty() )
       {
         window->finished().connect( boost::bind( &SpecMeasManager::userCanceledResumeFromPreviousOpened,
-                                                this, nullptr, header ) );
-      }else
-      {
-        window->finished().connect( boost::bind( &AuxWindow::deleteAuxWindow, window ) );
-      }//if( unModifiedFiles.empty() ) / else
-      
+                                                this, header ) );
+      }
     }//if( !modifiedFiles.empty() )
   }catch( std::exception &e )
   {
@@ -4740,11 +5584,11 @@ void SpecMeasManager::showPreviousSpecFileUsesDialog( std::shared_ptr<SpectraFil
     auto_saved = nullptr;
     window = nullptr;
     
-    string msg = "Unexpected issue displaying available save-states: " + string( e.what() );
+    WString msg = WString::tr("smm-err-prev-state-unexpected").arg( e.what() );
     passMessage( msg, WarningWidget::WarningMsgLevel::WarningMsgHigh)
     return;
   }// try / catch
-    
+  
   if( !snapshots && !auto_saved )
   {
     assert( 0 );
@@ -4758,8 +5602,8 @@ void SpecMeasManager::showPreviousSpecFileUsesDialog( std::shared_ptr<SpectraFil
     WTabWidget *tabbed = new WTabWidget();
     layout->addWidget( tabbed, 0, 0 );
     
-    tabbed->addTab( snapshots, "Saved States", WTabWidget::LoadPolicy::PreLoading );
-    tabbed->addTab( auto_saved, "Auto-saved Spectra", WTabWidget::LoadPolicy::PreLoading );
+    tabbed->addTab( snapshots, WString::tr("smm-tab-saved-states"), WTabWidget::LoadPolicy::PreLoading );
+    tabbed->addTab( auto_saved, WString::tr("smm-tab-auto-saved"), WTabWidget::LoadPolicy::PreLoading );
   }else
   {
     if( snapshots )
@@ -4768,7 +5612,7 @@ void SpecMeasManager::showPreviousSpecFileUsesDialog( std::shared_ptr<SpectraFil
       layout->addWidget( auto_saved, 0, 0 );
   }//if( snapshots && auto_saved ) / else
   
-  WCheckBox *cb = new WCheckBox( "Automatically check for prev. work." );
+  WCheckBox *cb = new WCheckBox( WString::tr("smm-auto-check-prev-cb") );
   cb->addStyleClass( "PrefCb" );
   layout->addWidget( cb, 1, 0 );
   layout->setRowStretch( 0, 1 );
@@ -4783,30 +5627,11 @@ void SpecMeasManager::showPreviousSpecFileUsesDialog( std::shared_ptr<SpectraFil
   window->centerWindow();
   window->show();
   
+  m_previousStatesDialog = window;
+  window->finished().connect( boost::bind( &SpecMeasManager::handleCancelPreviousStatesDialog, this, window ) );
+  
   wApp->triggerUpdate();
 }//void showPreviousSpecFileUsesDialog(..)
-
-
-void SpecMeasManager::showDatabaseStatesHavingSpectrumFile( std::shared_ptr<SpectraFileHeader> header )
-{
-  const size_t num_states = SnapshotBrowser::num_saved_states( m_viewer, m_viewer->sql(), header );
-  
-  if( !num_states )
-    return;
-  
-  DbFileBrowser *browser = new DbFileBrowser( this, m_viewer, header );
-  
-  // \TODO: come up with a way to check if there are any states before going through and creating
-  //        the widget and everything.
-  if( browser->numSnapshots() <= 0 )
-  {
-    assert( 0 );
-    delete browser;
-    browser = nullptr;
-  }
-  
-  wApp->triggerUpdate();
-}
 
 
 void postErrorMessage( const string msg, const WarningWidget::WarningMsgLevel level )
@@ -4903,10 +5728,11 @@ void SpecMeasManager::checkIfPreviouslyOpened( const std::string sessionID,
         }//if( header->shouldSaveToDb() )
       }catch( FileToLargeForDbException &e )
       {
-        string msg = "Will not be able to save this file to the database. ";
-        msg += e.what();
-        cerr << msg << endl;
-        passMessage( msg, WarningWidget::WarningMsgInfo );
+        WString msg = WString::tr("smm-cant-save").arg(e.what());
+        cerr << msg.toUTF8() << endl;
+        
+        WServer::instance()->post( sessionID,
+                  boost::bind( &postErrorMessage, msg.toUTF8(), WarningWidget::WarningMsgHigh ) );
       }
       return;
     }//if( this is a new-to-us file )
@@ -4928,11 +5754,6 @@ void SpecMeasManager::checkIfPreviouslyOpened( const std::string sessionID,
     
     
     // If we are here, the user has either modified the file, or has it as part of the save-state.
-    //WServer::instance()->post( sessionID,
-    //                            boost::bind( &SpecMeasManager::showDatabaseStatesHavingSpectrumFile,
-    //                                        this, header) );
-      
-    
     WServer::instance()->post( sessionID,
                               boost::bind( &SpecMeasManager::showPreviousSpecFileUsesDialog,
                                           this, header, type, modifiedFiles, unModifiedFiles,
@@ -5001,7 +5822,8 @@ int SpecMeasManager::dataUploaded2( Wt::WFileUpload *upload , SpecUtils::Spectru
 {
   std::shared_ptr<SpecMeas> measurement;
   int row= dataUploaded( upload, measurement );
-  displayFile( row, measurement, type, true, true, SpecMeasManager::VariantChecksToDo::DerivedDataAndEnergy );
+  displayFile( row, measurement, type, true, true, 
+              SpecMeasManager::VariantChecksToDo::DerivedDataAndMultiEnergyAndMultipleVirtualDets );
   return row;
 } // int SpecMeasManager::dataUploaded( Wt::WFileUpload )
 
@@ -5016,6 +5838,9 @@ int SpecMeasManager::dataUploaded( Wt::WFileUpload *upload )
 bool SpecMeasManager::loadFromFileSystem( const string &name, SpecUtils::SpectrumType type,
                                          SpecUtils::ParserType parseType )
 {
+  if( m_previousStatesDialog )
+    handleCancelPreviousStatesDialog( m_previousStatesDialog );
+  
   const string origName = SpecUtils::filename( name );
   
   try
@@ -5032,7 +5857,8 @@ bool SpecMeasManager::loadFromFileSystem( const string &name, SpecUtils::Spectru
     m_treeView->setSelectedIndexes( WModelIndexSet() );    
 //    passMessage( "Successfully uploaded file.", 0 );
 
-    displayFile( row, measurement, type, true, true, SpecMeasManager::VariantChecksToDo::DerivedDataAndEnergy );
+    displayFile( row, measurement, type, true, true, 
+              SpecMeasManager::VariantChecksToDo::DerivedDataAndMultiEnergyAndMultipleVirtualDets );
   }catch( const std::exception &e )
   {
     {
@@ -5047,7 +5873,7 @@ bool SpecMeasManager::loadFromFileSystem( const string &name, SpecUtils::Spectru
       return true;
     }
     
-    if( !handleNonSpectrumFile( origName, name ) )
+    if( !handleNonSpectrumFile( origName, name, type ) )
     {
       displayInvalidFileMsg(origName,e.what());
     }
@@ -5060,6 +5886,9 @@ bool SpecMeasManager::loadFromFileSystem( const string &name, SpecUtils::Spectru
 
 int SpecMeasManager::dataUploaded( Wt::WFileUpload *upload, std::shared_ptr<SpecMeas> &measurement )
 {
+  if( m_previousStatesDialog )
+    handleCancelPreviousStatesDialog( m_previousStatesDialog );
+  
   const string fileName = upload->spoolFileName();
   const WString clientFileName = upload->clientFileName();
   const string origName = clientFileName.toUTF8();
@@ -5233,10 +6062,12 @@ void SpecMeasManager::addToTempSpectrumInfoCache( std::shared_ptr<const SpecMeas
 void SpecMeasManager::fileTooLarge( const ::int64_t size_tried )
 {
   const int max_size = static_cast<int>( WApplication::instance()->maximumRequestSize() );
-  stringstream msg;
-  msg << "Attempted file is too large; max size is " << (max_size/1012)
-      << " you tried to upload " << (size_tried/1012) << " kb";
-  passMessage( msg.str(), WarningWidget::WarningMsgHigh );
+  
+  WString msg = WString::tr("smm-max-file-to-large")
+                  .arg( static_cast<int>(max_size/1024) )
+                  .arg( static_cast<int>(size_tried/1024) );
+  
+  passMessage( msg, WarningWidget::WarningMsgHigh );
 } // void SpecMeasManager::fileTooLarge()
 
 
@@ -5249,6 +6080,9 @@ void SpecMeasManager::startSaveSelected()
 {
   if (!m_spectrumManagerWindow || m_spectrumManagerWindow->isHidden())
     return;
+  
+  // We shouldnt see these error messages (unless there is a logic error), so we
+  //  wont internationalize.
   
   vector<shared_ptr<SpectraFileHeader>> files = getSelectedFiles();
   if( files.empty() )
@@ -5322,7 +6156,7 @@ void SpecMeasManager::finishStoreAsSpectrumInDb( Wt::WLineEdit *nameWidget,
   
   if( name.empty() )
   {
-    passMessage( "You must specify a name", WarningWidget::WarningMsgHigh );
+    passMessage( WString::tr("smm-must-specify-name"), WarningWidget::WarningMsgHigh );
     return;
   }//if( name.empty() )
   
@@ -5399,7 +6233,9 @@ void SpecMeasManager::startStoreSpectraAsInDb()
       continue;
     
     const string typestr = descriptionText(type);
-    AuxWindow *window = new AuxWindow( "Save " + typestr + " Spectrum As" ,
+    WString title = WString::tr("smm-save-spectype-as-window-title").arg( WString::tr(typestr) );
+    
+    AuxWindow *window = new AuxWindow( title,
                                       (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::IsModal)
                                       | AuxWindowProperties::TabletNotFullScreen
                                       | AuxWindowProperties::SetCloseable) );
@@ -5408,7 +6244,7 @@ void SpecMeasManager::startStoreSpectraAsInDb()
   
     WGridLayout *layout = window->stretcher();
     WLineEdit *edit = new WLineEdit();
-    edit->setEmptyText( "(Name to store under)" );
+    edit->setEmptyText( WString::tr("smm-save-spectype-name-empty-txt") );
     edit->setAttributeValue( "ondragstart", "return false" );
     
     std::shared_ptr<SpectraFileHeader> header
@@ -5417,13 +6253,13 @@ void SpecMeasManager::startStoreSpectraAsInDb()
     if( !filename.empty() )
       edit->setText( filename );
     
-    WText *label = new WText( "Name" );
+    WText *label = new WText( WString::tr("Name") );
     layout->addWidget( label, 0, 0 );
     layout->addWidget( edit,  0, 1 );
   
     WTextArea *summary = new WTextArea();
-    label = new WText( "Desc." );
-    summary->setEmptyText( "(Optional description)" );
+    label = new WText( WString::tr("Desc.") );
+    summary->setEmptyText( WString::tr("smm-save-spectype-desc-empty-txt") );
     layout->addWidget( label, 1, 0 );
     layout->addWidget( summary, 1, 1 );
     layout->setColumnStretch( 1, 1 );
@@ -5438,11 +6274,11 @@ void SpecMeasManager::startStoreSpectraAsInDb()
     
   
 
-    WPushButton *save = new WPushButton( "Save",window->footer() );
+    WPushButton *save = new WPushButton( WString::tr("Save"), window->footer() );
     save->setFloatSide(Right);
     save->setIcon( "InterSpec_resources/images/disk2.png" );
     
-    WPushButton *cancel = new WPushButton( "Cancel" , window->footer());
+    WPushButton *cancel = new WPushButton( WString::tr("Cancel"), window->footer());
     cancel->setFloatSide(Right);
     cancel->clicked().connect( boost::bind( &AuxWindow::deleteAuxWindow, window ) );
 
@@ -5516,7 +6352,8 @@ void SpecMeasManager::finishSaveSnapshotInDb(
       UserFileInDb::makeWriteProtected( dbptr );
       
       transaction.commit();
-      passMessage( "Saved state of " + dbptr->filename, WarningWidget::WarningMsgSave );
+      passMessage( WString::tr("smm-save-state-toast").arg(dbptr->filename),
+                  WarningWidget::WarningMsgSave );
     }catch( FileToLargeForDbException &e )
     {
       transaction.rollback();
@@ -5578,74 +6415,77 @@ void SpecMeasManager::storeSpectraSnapshotInDb( const std::string tagname )
   
   vector<Wt::WCheckBox *> cbs;
     
-  if (tagname.length()==0)
+  if( tagname.length() == 0 )
   {
+    AuxWindow *window = new AuxWindow( WString::tr("smm-save-spec-version-window-title"),
+                                      (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::TabletNotFullScreen)
+                                       | AuxWindowProperties::IsModal) );
+    window->setWidth( 250 );
+    
+    WGridLayout *layout = window->stretcher();
+    WText *label = new WText( WString::tr("Spectrum") );
+    label->addStyleClass( "SaveSpecTagLabel" );
+    layout->addWidget( label, 0, 0 );
+    
+    label = new WText( WString::tr("Description") );
+    label->addStyleClass( "SaveSpecTagLabel" );
+    layout->addWidget( label, 0, 1 );
+    if( specs.size() > 2 )
+    {
+      label = new WText( WString::tr("smm-save-state") );
+      label->addStyleClass( "SaveSpecTagLabel" );
+      layout->addWidget( label, 0, 2 );
+    }
+    
+    for( int i = 0; i < static_cast<int>(specs.size()); ++i )
+    {
+      layout->addWidget( labels[i], i+1, 0, AlignLeft );
+      layout->addWidget( edits[i], i+1, 1 );
       
-      AuxWindow *window = new AuxWindow( "Save Spectrum Version",
-                          (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::TabletNotFullScreen)
-                           | AuxWindowProperties::IsModal) );
-      window->setWidth( 250 );
-      
-      WGridLayout *layout = window->stretcher();
-      layout->addWidget( new WText("<b>Spectrum</b>", XHTMLText), 0, 0 );
-      layout->addWidget( new WText("<b>Description</b>", XHTMLText), 0, 1 );
       if( specs.size() > 2 )
-          layout->addWidget( new WText("<b>Save State</b>", XHTMLText), 0, 2 );
-      
-      for( int i = 0; i < static_cast<int>(specs.size()); ++i )
       {
-          layout->addWidget( labels[i], i+1, 0, AlignLeft );
-          layout->addWidget( edits[i], i+1, 1 );
-          
-          if( specs.size() > 2 )
-          {
-              WCheckBox *cb = new WCheckBox();
-              cb->setChecked( true );
-              layout->addWidget( cb, i+1, 2, AlignLeft );
-              cbs.push_back( cb );
-          }//if( specs.size() > 2 )
-      }//for( int i = 0; i < specs.size(); ++i )
-      
-      layout->setColumnStretch( 1, 1 );
-      
-      WPushButton *store = new WPushButton( "Save" , window->footer());
-      store->setIcon( "InterSpec_resources/images/disk2.png" );
-      store->setFloatSide(Right);
-      store->clicked().connect( boost::bind( &SpecMeasManager::finishSaveSnapshotInDb,
-                                            this, specs, dbs, edits, cbs, window ) );
-      
-      WPushButton *cancel = new WPushButton( "Cancel" , window->footer());
-      cancel->setFloatSide(Right);
-      cancel->clicked().connect( boost::bind( &AuxWindow::deleteAuxWindow, window ) );
-      window->finished().connect( boost::bind( &AuxWindow::deleteAuxWindow, window ) );
-      
-      if( edits.size() == 1 )
-          edits[0]->enterPressed().connect(
-                                           boost::bind( &SpecMeasManager::finishSaveSnapshotInDb,
-                                                       this, specs, dbs, edits, cbs, window ) );
-      
-      window->disableCollapse();
-      window->rejectWhenEscapePressed();
-      window->centerWindow();
-      window->show();
-  } // tagname.length()==0
-  else
+        WCheckBox *cb = new WCheckBox();
+        cb->setChecked( true );
+        layout->addWidget( cb, i+1, 2, AlignLeft );
+        cbs.push_back( cb );
+      }//if( specs.size() > 2 )
+    }//for( int i = 0; i < specs.size(); ++i )
+    
+    layout->setColumnStretch( 1, 1 );
+    
+    WPushButton *store = new WPushButton( WString::tr("Save"), window->footer());
+    store->setIcon( "InterSpec_resources/images/disk2.png" );
+    store->setFloatSide(Right);
+    store->clicked().connect( boost::bind( &SpecMeasManager::finishSaveSnapshotInDb,
+                                          this, specs, dbs, edits, cbs, window ) );
+    
+    WPushButton *cancel = new WPushButton( WString::tr("Cancel"), window->footer());
+    cancel->setFloatSide(Right);
+    cancel->clicked().connect( boost::bind( &AuxWindow::deleteAuxWindow, window ) );
+    window->finished().connect( boost::bind( &AuxWindow::deleteAuxWindow, window ) );
+    
+    if( edits.size() == 1 )
+      edits[0]->enterPressed().connect(
+                                       boost::bind( &SpecMeasManager::finishSaveSnapshotInDb,
+                                                   this, specs, dbs, edits, cbs, window ) );
+    
+    window->disableCollapse();
+    window->rejectWhenEscapePressed();
+    window->centerWindow();
+    window->show();
+  }else // tagname.length()==0
   {
-        //Given name, save version
-        edits.clear();
-        for( int i = 0; i < static_cast<int>(specs.size()); ++i )
-        {
-           //just give it the name
-           edits.push_back(new WLineEdit(WString(tagname)));
-        }//for( int i = 0; i < specs.size(); ++i )
-        finishSaveSnapshotInDb(specs, dbs, edits, cbs, NULL);
-      
-      WString msg = "Created a new tag '";
-      msg += tagname;
-      msg += "' for '";
-      msg += "'";
-      passMessage( msg, WarningWidget::WarningMsgInfo );
-      
+    //Given name, save version
+    edits.clear();
+    for( int i = 0; i < static_cast<int>(specs.size()); ++i )
+    {
+      //just give it the name
+      edits.push_back(new WLineEdit(WString(tagname)));
+    }//for( int i = 0; i < specs.size(); ++i )
+    finishSaveSnapshotInDb(specs, dbs, edits, cbs, NULL);
+    
+    passMessage( WString::tr("smm-create-new-tag-toast").arg(tagname), 
+                WarningWidget::WarningMsgInfo );
   } // name.length>1
 }//void storeSpectraSnapshotInDb()
 

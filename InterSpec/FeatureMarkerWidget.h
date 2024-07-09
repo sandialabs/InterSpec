@@ -56,6 +56,8 @@ public:
   
   /** Sets the display angle to specified value - does not emit signals, or propogate changes to the GUI. */
   void setDisplayedComptonPeakAngle( const int angle );
+  
+  FeatureMarkerWidget *tool();
 protected:
   FeatureMarkerWidget *m_feature;
 };//class FeatureMarkerWindow
@@ -78,6 +80,8 @@ protected:
   void init();
   
   void handleComptonAngleChanged();
+  
+  void handleFeatureMarkerOptionChanged( const FeatureMarkerType option, const bool checked );
   
   InterSpec *m_viewer;
   

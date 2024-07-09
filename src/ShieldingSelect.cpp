@@ -1989,13 +1989,15 @@ shared_ptr<const string> ShieldingSelect::getStateAsXml() const
 void ShieldingSelect::init()
 {
   wApp->useStyleSheet( "InterSpec_resources/ShieldingSelect.css" );
+ 
+  InterSpec *interspec = InterSpec::instance();
   
   //TODO/NOTE: had to hard code this as false because there is no way
   //to easily get the preference via InterSpec because
   //is still initializing when calling at this moment.
-  bool showToolTips = false;
-  if( auto interspec = InterSpec::instance() )
-    showToolTips = InterSpecUser::preferenceValue<bool>( "ShowTooltips", interspec );
+  const bool showToolTips = interspec ? InterSpecUser::preferenceValue<bool>( "ShowTooltips", interspec ) : false;
+  if( interspec )
+    interspec->useMessageResourceBundle( "ShieldingSelect" );
   
   addStyleClass( "ShieldingSelect" );
   
@@ -2014,8 +2016,7 @@ void ShieldingSelect::init()
  
   m_toggleImage->clicked().connect( this, &ShieldingSelect::handleUserChangeForUndoRedo );
   
-  HelpSystem::attachToolTipOn( m_toggleImage,
-    "Toggle between material and generic shielding",
+  HelpSystem::attachToolTipOn( m_toggleImage, WString::tr("ss-tt-shield-type-toggle"),
                               showToolTips, HelpSystem::ToolTipPosition::Top );
   
   materialDivLayout->addWidget( m_toggleImage, 0, 0, AlignLeft );
@@ -2044,15 +2045,7 @@ void ShieldingSelect::init()
     materialDivLayout->addWidget( m_materialEdit, 0, 1 );
   }
   
-  HelpSystem::attachToolTipOn( m_materialEdit,
-    "You can either enter the name of a pre-defined material or element here"
-    " (clear form text and click arrow on right of form to see all predefined"
-    " options), or you can specify the atomic make up of the material, similar"
-    " to C0.5H0.2Ni0.6, where the numbers are the density in g/cm3 of the"
-    " preceding element in the material, so the example would have a total"
-    " density of 0.5+0.2+0.6=1.3 g/cm3."
-    " To enter materials with isotopic components, you should single or double"
-    " quote the nuclide, ex: 'U238'0.2'U235'0.8",
+  HelpSystem::attachToolTipOn( m_materialEdit, WString::tr("ss-tt-material-name"),
                               showToolTips, HelpSystem::ToolTipPosition::Top );
 
   
@@ -2085,7 +2078,7 @@ void ShieldingSelect::init()
   genericMatLayout->setContentsMargins(3,3,3,3);
   WLabel *label = new WLabel( "AD" );
   label->setAttributeValue( "style", "padding-left: 1em;" );
-  label->setToolTip( "Areal Density of the shielding in g/cm2" );
+  //label->setToolTip( WString::tr("ss-tt-areal-density") );
   genericMatLayout->addWidget( label, 0, 2+m_forFitting, AlignMiddle );
   
   m_arealDensityEdit = new NativeFloatSpinBox();
@@ -2095,15 +2088,18 @@ void ShieldingSelect::init()
   m_arealDensityEdit->setRange( 0.0f,
                             static_cast<float>(GammaInteractionCalc::sm_max_areal_density_g_cm2) );
   label->setBuddy( m_arealDensityEdit );
-  m_arealDensityEdit->setToolTip( "Areal Density of the shielding in g/cm2" );
+  //m_arealDensityEdit->setToolTip( WString::tr("ss-tt-areal-density") );
   
   if( m_forFitting )
     m_arealDensityEdit->setValue( 15.0f );
   else
-    m_arealDensityEdit->setPlaceholderText( "Areal Density" );
+    m_arealDensityEdit->setPlaceholderText( WString::tr("ss-areal-density-empty-txt") );
   
   genericMatLayout->addWidget( m_arealDensityEdit, 0, 3+m_forFitting, AlignMiddle );
   genericMatLayout->setColumnStretch( 3+m_forFitting, 1 );
+  
+  HelpSystem::attachToolTipOn( {label, m_arealDensityEdit}, WString::tr("ss-tt-areal-density"),
+                              showToolTips, HelpSystem::ToolTipPosition::Top );
   
   label = new WLabel( "g/cm<sup>2</sup>");
   label->setAttributeValue( "style", "font-size: 75%;" );
@@ -2111,13 +2107,13 @@ void ShieldingSelect::init()
   
   if( m_forFitting )
   {
-    m_fitArealDensityCB = new WCheckBox( "Fit" );
+    m_fitArealDensityCB = new WCheckBox( WString::tr("Fit") );
     m_fitArealDensityCB->setChecked( true );
     genericMatLayout->addWidget( m_fitArealDensityCB, 0, 6, AlignMiddle );
   }
   
   label = new WLabel( "AN" );
-  label->setToolTip( "Atomic Number of the shielding" );
+  //label->setToolTip( WString::tr("ss-tt-atomic-number") );
   genericMatLayout->addWidget( label, 0, 0, AlignMiddle );
   
   m_atomicNumberEdit = new NativeFloatSpinBox();
@@ -2127,16 +2123,18 @@ void ShieldingSelect::init()
   m_atomicNumberEdit->setRange( MassAttenuation::sm_min_xs_atomic_number,
                                  MassAttenuation::sm_max_xs_atomic_number );
   label->setBuddy( m_atomicNumberEdit );
-  m_atomicNumberEdit->setToolTip( "Atomic Number of the shielding" );
+  //m_atomicNumberEdit->setToolTip( WString::tr("ss-tt-atomic-number") );
   
   if( m_forFitting )
     m_atomicNumberEdit->setValue( 15.0f );
   else
-    m_atomicNumberEdit->setPlaceholderText( "Atomic Number" );
+    m_atomicNumberEdit->setPlaceholderText( WString::tr("ss-atomic-number-empty-txt") );
   
   genericMatLayout->addWidget( m_atomicNumberEdit, 0, 1, AlignMiddle );
   genericMatLayout->setColumnStretch( 1, 1 );
   
+  HelpSystem::attachToolTipOn( {label, m_atomicNumberEdit}, WString::tr("ss-tt-atomic-number"),
+                              showToolTips, HelpSystem::ToolTipPosition::Top );
   
   if( m_forFitting )
   {
@@ -2149,13 +2147,8 @@ void ShieldingSelect::init()
     label = new WLabel( "Source for:", m_asSourceCBs );
     label->setInline( false );
     m_asSourceCBs->hide();
-    const char *tooltip = "When these nuclides are used as sources they are"
-    " treated as uniformly distributed in the material"
-    " (which is assumed spherical), so self attenuation"
-    " and other factors are accounted for.";
-    
-    HelpSystem::attachToolTipOn( m_asSourceCBs,tooltip, showToolTips );
-    m_fitMassFrac = new WCheckBox( "Fit Mass Fractions", m_asSourceCBs );
+    HelpSystem::attachToolTipOn( m_asSourceCBs, WString::tr("ss-source-for-cb"), showToolTips );
+    m_fitMassFrac = new WCheckBox( WString::tr("ss-fit-mass-fractions-cb"), m_asSourceCBs );
     m_fitMassFrac->hide();
     m_fitMassFrac->setInline( false );
     m_fitMassFrac->checked().connect( this, &ShieldingSelect::handleUserChangeForUndoRedo );
@@ -2175,7 +2168,7 @@ void ShieldingSelect::init()
   
   
   // A lamda for setting up dimension edits for the various geometry dimensions
-  auto setupDimEdit = [this,distValidator]( const char *labelTxt, WLineEdit *&edit, WCheckBox *&fitCb, WGridLayout *grid ){
+  auto setupDimEdit = [this,distValidator]( const WString &labelTxt, WLineEdit *&edit, WCheckBox *&fitCb, WGridLayout *grid ){
     const int row = grid->rowCount();
     
     WLabel *label = new WLabel( labelTxt );
@@ -2216,7 +2209,7 @@ void ShieldingSelect::init()
       //edit->setWidth( 150 );
       grid->addWidget( edit, row, 1, AlignMiddle );
       
-      fitCb = new WCheckBox( "Fit" );
+      fitCb = new WCheckBox( WString::tr("Fit") );
       fitCb->setChecked( false );
       grid->addWidget( fitCb, row, 2, AlignMiddle | AlignRight );
       
@@ -2241,8 +2234,8 @@ void ShieldingSelect::init()
   
   const bool fistShield = (!m_shieldSrcDisp || !m_shieldSrcDisp->numberShieldings());
   
-  const char *lbltxt = "Thickness"; //fistShield ? "Radius" : "Thickness";
-  setupDimEdit( lbltxt, m_thicknessEdit, m_fitThicknessCB, sphericalLayout );
+  const char *lbltxt_key = "ss-thickness"; //fistShield ? "Radius" : "Thickness";
+  setupDimEdit( WString::tr(lbltxt_key), m_thicknessEdit, m_fitThicknessCB, sphericalLayout );
   
   if( !m_forFitting )
   {
@@ -2263,10 +2256,10 @@ void ShieldingSelect::init()
   cylindricalLayout->setContentsMargins( 3, 3, 3, 3 );
   cylindricalLayout->setColumnStretch( 1, 1 );
   
-  lbltxt = fistShield ? "Radius" : "Radial Thickness";
-  setupDimEdit( lbltxt, m_cylRadiusEdit, m_fitCylRadiusCB, cylindricalLayout );
-  lbltxt = fistShield ? "Half-Length" : "Length Thickness";
-  setupDimEdit( lbltxt, m_cylLengthEdit, m_fitCylLengthCB, cylindricalLayout );
+  lbltxt_key = fistShield ? "ss-radius" : "ss-radial-thickness";
+  setupDimEdit( WString::tr(lbltxt_key), m_cylRadiusEdit, m_fitCylRadiusCB, cylindricalLayout );
+  lbltxt_key = fistShield ? "ss-half-length" : "ss-length-thickness";
+  setupDimEdit( WString::tr(lbltxt_key), m_cylLengthEdit, m_fitCylLengthCB, cylindricalLayout );
 
   
   // Begin setting up rectangular widgets
@@ -2278,12 +2271,12 @@ void ShieldingSelect::init()
   rectangularLayout->setContentsMargins( 3, 3, 3, 3 );
   rectangularLayout->setColumnStretch( 1, 1 );
   
-  lbltxt = fistShield ? "Half-Width"  : "Width Thickness";
-  setupDimEdit( lbltxt, m_rectWidthEdit, m_fitRectWidthCB, rectangularLayout );
-  lbltxt = fistShield ? "Half-Height" : "Height Thickness";
-  setupDimEdit( lbltxt, m_rectHeightEdit, m_fitRectHeightCB, rectangularLayout );
-  lbltxt = fistShield ? "Half-Depth"  : "Depth Thickness";
-  setupDimEdit( lbltxt, m_rectDepthEdit, m_fitRectDepthCB, rectangularLayout );
+  lbltxt_key = fistShield ? "ss-half-width"  : "ss-width-thickness";
+  setupDimEdit( WString::tr(lbltxt_key), m_rectWidthEdit, m_fitRectWidthCB, rectangularLayout );
+  lbltxt_key = fistShield ? "ss-half-height" : "ss-height-thickness";
+  setupDimEdit( WString::tr(lbltxt_key), m_rectHeightEdit, m_fitRectHeightCB, rectangularLayout );
+  lbltxt_key = fistShield ? "ss-half-depth"  : "ss-depth-thickness";
+  setupDimEdit( WString::tr(lbltxt_key), m_rectDepthEdit, m_fitRectDepthCB, rectangularLayout );
   
   // We're all done creating the widgets
   
@@ -3847,8 +3840,7 @@ void ShieldingSelect::updateSelfAttenOtherNucFractionTxt()
     {
       otherfractxt = new WText( vt.second );
       otherfractxt->addStyleClass( "MassFracNoFit" );
-      otherfractxt->setToolTip( "If mass fractions are fit for, their fractional"
-                                " sum will remain constant in the fit." );
+      otherfractxt->setToolTip( WString::tr("ss-tt-fit-mass-frac") );
     }//if( we have source isotopes, but no text )
     
     if( otherfractxt )
@@ -3861,14 +3853,12 @@ void ShieldingSelect::updateSelfAttenOtherNucFractionTxt()
         otherfractxt = nullptr;
       }else
       {
-        char buffer[128];
         const bool fit = (m_fitMassFrac && m_fitMassFrac->isVisible() && m_fitMassFrac->isChecked());
         const double percent_other = 100.0*(1.0-frac_accounted_for);
-        const char *elsym = vt.first->symbol.c_str();
-      
-        snprintf( buffer, sizeof(buffer), "Assuming %s%.2f%% other %s isos",
-                  (fit ? "fixed " : ""), percent_other, elsym );
-        otherfractxt->setText( buffer );
+        otherfractxt->setText( WString::tr("ss-fixed-non-src-frac")
+                              .arg( (fit ? WString::tr("fixed") : WString()) )
+                              .arg( SpecUtils::printCompact(percent_other, 4) )
+                              .arg( vt.first->symbol ) );
       }
     }//if( otherfractxt )
   }//for( ElementToNuclideMap::value_type &vt : m_sourceIsotopes )
@@ -3970,7 +3960,7 @@ void ShieldingSelect::handleToggleGeneric()
     //See if we can convert the current material into AN, AD
     m_dimensionsStack->setCurrentWidget( m_genericDiv );
     m_materialSummary->setText( "" );
-    m_materialEdit->setText( "Generic" );
+    m_materialEdit->setText( WString::tr("ss-generic") );
     m_materialEdit->disable();
     m_toggleImage->setImageLink( Wt::WLink("InterSpec_resources/images/atom_black.png") );
     
@@ -4196,7 +4186,7 @@ void ShieldingSelect::handleMaterialChange()
   if( m_isGenericMaterial )
   {
     m_materialSummary->setText( "" );
-    m_materialEdit->setText( "Generic" );
+    m_materialEdit->setText( WString::tr("ss-generic") );
     m_materialEdit->disable();
     m_toggleImage->setImageLink( Wt::WLink("InterSpec_resources/images/atom_black.png") );
     
@@ -4256,7 +4246,7 @@ void ShieldingSelect::handleMaterialChange()
         
         
         
-        tooltip += newMaterial->name + " consist of (mass fraction, element):\n";
+        tooltip += newMaterial->name + " " + WString::tr("ss-consists-of-mass-frac").toUTF8() + ":\n";
 
         for( const ElementFrac &ef : newMaterial->elements )
         {
@@ -4285,10 +4275,8 @@ void ShieldingSelect::handleMaterialChange()
     }else if( m_materialEdit->text().narrow().length() )
     {
       snprintf( summary, sizeof(summary), "invalid mat." );
-      WStringStream msg;
-      msg << "'" << m_materialEdit->text().toUTF8()
-          << "' is not a valid material";
-      passMessage( msg.str(), WarningWidget::WarningMsgInfo );
+      passMessage( WString::tr("ss-err-invalid-material").arg(m_materialEdit->text()),
+                  WarningWidget::WarningMsgInfo );
     }//if( material ) / else
     
 

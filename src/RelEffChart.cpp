@@ -29,6 +29,7 @@
 #include <vector>
 
 
+#include <Wt/Utils>
 #include <Wt/WColor>
 #include <Wt/WPoint>
 #include <Wt/WLength>
@@ -54,30 +55,48 @@ using namespace std;
 
 RelEffChart::RelEffChart( WContainerWidget *parent )
 : WContainerWidget( parent ),
-  m_jsgraph( jsRef() + ".chart" )
+  m_jsgraph( jsRef() + ".chart" ),
+  m_xAxisTitle{},
+  m_yAxisTitle{},
+  m_topMargin( 5 ),
+  m_rightMargin( 5 ),
+  m_bottomMargin( 0 ),
+  m_leftMargin( 5 ),
+  m_titlePadding( -3 )
 {
   addStyleClass( "RelEffChart" );
   setOverflow(Overflow::OverflowHidden);
   
-  const string resource_base = "InterSpec_resources/";
-  
   // We will actually totally define the CSS through WApplication, rather than using the same CSS
   //  file we use for the self-contained HTML reports.
-  //wApp->useStyleSheet( resource_base + "RelEffPlot.css" );
+  //wApp->useStyleSheet( "InterSpec_resources/RelEffPlot.css" );
   
   setCssRules();
   InterSpec *interspec = InterSpec::instance();
   if( interspec )
     interspec->colorThemeChanged().connect( this, &RelEffChart::setCssRules );
   
-  wApp->require( resource_base + "d3.v3.min.js", "d3.v3.js" );
-  wApp->require( resource_base + "RelEffPlot.js" );
+  wApp->require( "InterSpec_resources/d3.v3.min.js", "d3.v3.js" );
+  wApp->require( "InterSpec_resources/RelEffPlot.js" );
 }//RelEffChart constructor
 
 
 void RelEffChart::defineJavaScript()
 {
-  string options = "{ margins: { top: 5, right: 20, bottom: 20, left: 40 } }";
+  string options = "{ "
+  "margins: {"
+  " top: " + std::to_string(m_topMargin) + ","
+  " right: " + std::to_string(m_rightMargin) + ","
+  " bottom: " + std::to_string(m_bottomMargin) + ","
+  " left: " + std::to_string(m_leftMargin) +
+  " }, "
+  " titleToAxisPadding: " + std::to_string(m_titlePadding);
+  
+  if( !m_xAxisTitle.empty() )
+    options += ", xAxisTitle: \"" + m_xAxisTitle + "\"";
+  if( !m_yAxisTitle.empty() )
+    options += ", yAxisTitle: \"" + m_yAxisTitle + "\"";
+  options += " }";
   
   setJavaScriptMember( "chart", "new RelEffPlot(" + jsRef() + ", " + options + ");");
   
@@ -112,7 +131,6 @@ void RelEffChart::render( Wt::WFlags<Wt::RenderFlag> flags )
   if( renderFull )
     defineJavaScript();
 }
-
 
 
 void RelEffChart::setData( const double live_time,
@@ -192,7 +210,7 @@ void RelEffChart::setData( const std::vector<RelActCalcManual::GenericPeakInfo> 
     if( nuc.empty() || color.empty() || nucs_with_colors.count(nuc) )
       continue;
     
-    const string rulename = ".RelEffPlot circle." + nuc;
+    const string rulename = "#" + id() + " .RelEffPlot circle." + nuc;
     if( m_cssRules.count(rulename) )
       style.removeRule( m_cssRules[rulename] );
     
@@ -266,6 +284,9 @@ void RelEffChart::setData( const std::vector<RelActCalcManual::GenericPeakInfo> 
   if( relEffEqn.empty() )
     relEffEqn = "null";
   
+  if( njson_entries < 1 )
+    rel_eff_plot_values.str("null");
+  
   const string js = m_jsgraph + ".setRelEffData(" + rel_eff_plot_values.str() + "," + relEffEqn + ");";
   if( isRendered() )
     doJavaScript( js );
@@ -289,11 +310,19 @@ void RelEffChart::setCssRules()
   //m_cssRules[".RelEffPlot"] = style.addRule( ".RelEffPlot", "" );
   string rulename = ".RelEffPlot circle - cursor";
   if( !m_cssRules.count(rulename) )
-    m_cssRules[rulename] = style.addRule( ".RelEffPlot circle", "cursor: pointer;" );
+    m_cssRules[rulename] = style.addRule( "#" + id() + " .RelEffPlot circle", "cursor: pointer;" );
   
   rulename = "div.RelEffPlotTooltip";
   if( !m_cssRules.count(rulename) )
-    m_cssRules[rulename] = style.addRule( "div.RelEffPlotTooltip", "position: fixed; padding: 6px; font: 12px sans-serif; background: #ffffcc; border: 0px; border-radius: 8px; pointer-events: none; color: #444422;" );
+    m_cssRules[rulename] = style.addRule( "#" + id() + " div.RelEffPlotTooltip",
+                                         "position: fixed;"
+                                         " padding: 6px;"
+                                         " font: 12px sans-serif;"
+                                         " background: #ffffcc;"
+                                         " border: 0px;"
+                                         " border-radius: 8px;"
+                                         " pointer-events: none;"
+                                         " color: #444422;" );
   
   setLineColor( theme->foregroundLine );
   setDefaultMarkerColor( theme->backgroundLine );
@@ -312,14 +341,19 @@ void RelEffChart::setLineColor( const Wt::WColor &color )
   if( m_cssRules.count(rulename) )
     style.removeRule( m_cssRules[rulename] );
   
-  m_cssRules[rulename] = style.addRule( ".RelEffPlot path", "stroke: " + lineColor.cssText() + "; stroke-width: 2; fill: none;" );
+  m_cssRules[rulename] = style.addRule( "#" + id() + " .RelEffPlot path",
+                                       "stroke: " + lineColor.cssText() + ";"
+                                       " stroke-width: 2; fill: none;" );
   
   
   rulename = ".RelEffPlot .errorbar";
   if( m_cssRules.count(rulename) )
     style.removeRule( m_cssRules[rulename] );
   
-  m_cssRules[rulename] = style.addRule( ".RelEffPlot .errorbar", "fill: none; stroke-width: 1; stroke: " + lineColor.cssText() + ";" );
+  m_cssRules[rulename] = style.addRule( "#" + id() + " .RelEffPlot .errorbar",
+                                       "fill: none;"
+                                       " stroke-width: 1;"
+                                       " stroke: " + lineColor.cssText() + ";" );
 }//setLineColor(...)
 
 
@@ -333,7 +367,13 @@ void RelEffChart::setTextColor( const Wt::WColor &color )
   WCssStyleSheet &style = wApp->styleSheet();
   if( m_cssRules.count(rulename) )
     style.removeRule( m_cssRules[rulename] );
-  m_cssRules[rulename] = style.addRule( ".RelEffPlot .xaxistitle, .RelEffPlot .yaxistitle, .RelEffPlot .yaxis, .RelEffPlot .yaxislabel, .RelEffPlot .xaxis, .RelEffPlot .tick text", "fill: " + c );
+  
+  const string div_sel = "#" + id() + " ";
+  m_cssRules[rulename] = style.addRule( div_sel + ".RelEffPlot .xaxistitle, "
+                                        + div_sel + ".RelEffPlot .yaxistitle, "
+                                        + div_sel + ".RelEffPlot .yaxis, .RelEffPlot .yaxislabel, "
+                                        + div_sel + ".RelEffPlot .xaxis, "
+                                        + div_sel + ".RelEffPlot .tick text", "fill: " + c );
 }
 
 
@@ -347,8 +387,15 @@ void RelEffChart::setAxisLineColor( const Wt::WColor &color )
   if( m_cssRules.count(rulename) )
     style.removeRule( m_cssRules[rulename] );
   
-  const char * const selector = ".RelEffPlot .xAxis path, .RelEffPlot .xAxis line, .RelEffPlot .yAxis path, .RelEffPlot .yAxis line";
-  const string css = "fill: none; stroke-width: 1; shape-rendering: crispEdges; stroke: " + axisColor.cssText() + ";";
+  const string div_sel = "#" + id() + " ";
+  const string selector = div_sel + ".RelEffPlot .xAxis path, "
+                        + div_sel + ".RelEffPlot .xAxis line, "
+                        + div_sel + ".RelEffPlot .yAxis path, "
+                        + div_sel + ".RelEffPlot .yAxis line";
+  const string css = "fill: none;"
+                     " stroke-width: 1;"
+                     " shape-rendering: crispEdges;"
+                     " stroke: " + axisColor.cssText() + ";";
   m_cssRules[rulename] = style.addRule( selector, css );
 }
 
@@ -383,9 +430,47 @@ void RelEffChart::setDefaultMarkerColor( const Wt::WColor &color )
   if( m_cssRules.count(rulename) )
     style.removeRule( m_cssRules[rulename] );
   
-  m_cssRules[rulename] = style.addRule( ".RelEffPlot circle, .RelEffPlot circle.noiso, .RelEffPlot circle.multiiso",
-                                        "fill: " + markerColor.cssText() + ";" );
+  const string div_sel = "#" + id() + " ";
+  const string selector = div_sel + ".RelEffPlot circle, "
+                        + div_sel + ".RelEffPlot circle.noiso, "
+                        + div_sel + ".RelEffPlot circle.multiiso";
+  m_cssRules[rulename] = style.addRule( selector, "fill: " + markerColor.cssText() + ";" );
 }
+
+void RelEffChart::setXAxisTitle( const std::string &title )
+{
+  m_xAxisTitle = Wt::Utils::htmlEncode( title );
+  if( isRendered() )
+    doJavaScript( m_jsgraph + ".setXAxisTitle(\"" + m_xAxisTitle + "\",true);" );
+}//
+
+
+void RelEffChart::setYAxisTitle( const std::string &title )
+{
+  m_yAxisTitle = Wt::Utils::htmlEncode( title );
+  if( isRendered() )
+    doJavaScript( m_jsgraph + ".setYAxisTitle(\"" + m_yAxisTitle + "\",true);" );
+}
+
+
+void RelEffChart::setContentMargins( int top, int right, int bottom, int left )
+{
+  m_topMargin = top;
+  m_rightMargin = right;
+  m_bottomMargin = bottom;
+  m_leftMargin = left;
+  
+  if( isRendered() )
+  {
+    const string margins = "{"
+    " top: " + std::to_string(m_topMargin) + ","
+    " right: " + std::to_string(m_rightMargin) + ","
+    " bottom: " + std::to_string(m_bottomMargin) + ","
+    " left: " + std::to_string(m_leftMargin) +
+    " }";
+    doJavaScript( m_jsgraph + ".setMargins(" + margins + ");" );
+  }//if( isRendered() )
+}//void setContentMargins( int top, int right, int bottom, int left );
 
 
 RelEffChart::~RelEffChart()

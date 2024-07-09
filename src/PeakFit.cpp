@@ -869,7 +869,7 @@ void findPeaksInUserRange( double x0, double x1, int nPeaks,
                           double &chi2 )
 {
   //Current (main) problems with the results of this function
-  //  --Results can be catostropically wrong, depending on exact input range
+  //  --Results can be catastrophically wrong, depending on exact input range
   
   if( method != FromInputPeaks )
     answer.clear();
@@ -6043,8 +6043,8 @@ void fitPeaks( const std::vector<PeakDef> &all_near_peaks,
       if( !peak->fitFor(PeakDef::GaussAmplitude) )
         continue;
       
-      // Dont enforce a significance test if we are reftting the peak, and 
-      //  Sigma and Mean are fixed - the user probably probably what they  
+      // Dont enforce a significance test if we are refitting the peak, and
+      //  Sigma and Mean are fixed - the user probably knows what they
       //  are are doing.
       if( (method == PeakFitChi2Fcn::kRefitPeakParameters)
         && !peak->fitFor(PeakDef::Sigma)
@@ -6408,6 +6408,10 @@ double fit_amp_and_offset( const float *x, const float *data, const size_t nbin,
     
     SpecUtilsAsync::ThreadPool pool;
     
+    // 20240325: for complicated problems, it kinda looks like multiple cores arent being used that
+    //           efficiently (perhaps because each thread is only getting <10 channels to work on).
+    //           Perhaps it would be better to put each peak into a thread, for all channels, then
+    //           sum results at the end (using vector operations).
     const size_t nbin_per_thread = 1 + (nbin / nthread);
     
     for( size_t start_channel = 0; start_channel < nbin; start_channel += nbin_per_thread )
@@ -8094,8 +8098,8 @@ bool find_spectroscopic_extent( std::shared_ptr<const Measurement> meas,
   
   if( lower_channel > (nbin/3) )
   {
-    cout << "The lower threshold bin (" << lower_channel << " of " << nbin
-    << ") is to high, skipping file for further analysis." << endl;
+    //cout << "The lower threshold bin (" << lower_channel << " of " << nbin
+    //<< ") is to high, skipping file for further analysis." << endl;
     lower_channel = upper_channel = 0;
     return false;
   }//

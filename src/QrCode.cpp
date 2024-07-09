@@ -59,7 +59,7 @@ namespace
 {
 WT_DECLARE_WT_MEMBER
  (CopyUrlToClipboard, Wt::JavaScriptFunction, "CopyUrlToClipboard",
-  function( sender, event, id, domSignalId, text )
+  function( sender, event, id, text )
 {
   const success_msg = 'showMsg-info-Copied URL to clipboard';
   const fail_msg = 'showMsg-error-Failed to copy URL to clipboard';
@@ -87,11 +87,11 @@ WT_DECLARE_WT_MEMBER
     if( successful )
     {
       console.log('Copied text to clipboard via appending textarea to DOM');
-      Wt.emit( domSignalId, {name:'miscSignal'}, success_msg );
+      Wt.emit( $('.specviewer').attr('id'), {name:'miscSignal'}, success_msg );
     }else
     {
       console.warn('Failed to copy to clipboard using textarea');
-      Wt.emit( domSignalId, {name:'miscSignal'}, fail_msg );
+      Wt.emit( $('.specviewer').attr('id'), {name:'miscSignal'}, fail_msg );
     }
     
     return successful;
@@ -99,10 +99,10 @@ WT_DECLARE_WT_MEMBER
   
   navigator.clipboard.writeText(text).then(function() {
     console.log('Copying text to clipboard using async method.');
-    Wt.emit( domSignalId, {name:'miscSignal'}, success_msg );
+    Wt.emit( $('.specviewer').attr('id'), {name:'miscSignal'}, success_msg );
   }, function(err) {
     console.warn('Failed copying text to clipboard using async method.: ', err);
-    Wt.emit( domSignalId, {name:'miscSignal'}, fail_msg );
+    Wt.emit( $('.specviewer').attr('id'), {name:'miscSignal'}, fail_msg );
   });
 }
   );
@@ -249,8 +249,8 @@ pair<string,int> binary_to_svg_qr( const std::vector<std::uint8_t> &data )
 
 
 SimpleDialog *displayTxtAsQrCode( const std::string &url,
-                                 const std::string &title,
-                                 const std::string &description )
+                                 const Wt::WString &title,
+                                 const Wt::WString &description )
 {
   try
   {
@@ -302,7 +302,7 @@ SimpleDialog *displayTxtAsQrCode( const std::string &url,
     const unsigned char *svg_end = svg_begin + qr_svg_str.size();
     const vector<unsigned char> svg_data( svg_begin, svg_end );
     WMemoryResource *svgResource = new WMemoryResource( "image/svg+xml", svg_data, window );
-    if( title.size() )
+    if( !title.empty() )
       svgResource->suggestFileName( title + ".svg", WResource::Attachment );
     else
       svgResource->suggestFileName( "qr.svg", WResource::Attachment );
@@ -410,7 +410,7 @@ SimpleDialog *displayTxtAsQrCode( const std::string &url,
     }) );
     
     
-    if( description.length() )
+    if( !description.empty() )
     {
       WText *message = new WText( description );
       if( is_phone )
@@ -467,7 +467,7 @@ SimpleDialog *displayTxtAsQrCode( const std::string &url,
     // TODO: there is probably a way to get wApp->root()->id() directly in the JS
     const string escaped_url = WString(url).jsStringLiteral();
     copyBtn->clicked().connect( "function(s,e){ "
-                                 "Wt.WT.CopyUrlToClipboard(s,e,'" + copyBtn->id() + "','" + wApp->root()->id() + "'," + escaped_url + ");"
+                                 "Wt.WT.CopyUrlToClipboard(s,e,'" + copyBtn->id() + "'," + escaped_url + ");"
                                  "}" );
     if( is_phone )
     {
@@ -482,7 +482,7 @@ SimpleDialog *displayTxtAsQrCode( const std::string &url,
     return window;
   }catch( std::exception &e )
   {
-    passMessage( "Sorry, error creating QR code: " + string(e.what()), 3 );
+    passMessage( WString::tr("app-qr-err").arg(e.what()), 3 );
     cerr << "Error creating QR code window: " << e.what() << endl;
   }
   

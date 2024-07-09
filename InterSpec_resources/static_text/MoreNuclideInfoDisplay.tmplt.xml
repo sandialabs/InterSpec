@@ -5,9 +5,11 @@ ${</if-invalid>}
 
 ${<if-valid>}
 
+${<display-title>}
 <div class="MoreNucInfoTitle">
   More Info on ${element-symbol}${mass-number}${meta-state}
 </div>
+${</display-title>}
 
 ${<if-have-prev>}
 <div class="MoreNucInfoPrev">

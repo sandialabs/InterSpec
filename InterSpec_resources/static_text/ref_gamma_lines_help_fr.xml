@@ -1,0 +1,103 @@
+<div align="center">
+    <h1 id="reference-gamma-lines-dialog"><b>Lignes Gamma de Référence</b></h1>
+    <hr />
+    </div>
+    <div>
+    
+    <p>
+      L'outil des lignes gamma de référence montre les énergies des rayons gamma et des rayons X émis
+      par un isotope, à la fois dans un tableau à l'intérieur de l'outil et également comme lignes sur le spectre.
+    </p>
+    
+    <div style="padding-top: 1px" align="center">
+    <img src="InterSpec_resources/static_text/images/ref_gamma_lines_widget.png"  class="imageBorder" style="max-width:55%;" />
+    <img src="InterSpec_resources/static_text/images/ref_gamma_line_spectrum.png"  class="imageBorder" style="max-width:30%" />
+    </div>
+    
+    <p>
+    Une partie clé de la réalisation d'une analyse avec <b>InterSpec</b> est d'associer les pics
+    avec des rayons gamma ou des rayons X spécifiques d'un nucléide - la manière la plus simple de
+    réaliser cela est d'afficher les lignes de référence pour un nucléide <em>avant</em>
+    d'ajuster les pics. Lorsque les lignes de référence sont affichées, et qu'un pic est ajusté, si
+    il y a une ligne de référence raisonnablement proche du pic ajusté, alors ce pic sera
+    attribué à ce rayon gamma ou rayon X. Une fois cela fait, ce pic peut être utilisé
+    pour la calibration d'énergie, ou pour ajuster l'activité de la source, l'âge, ou le blindage.
+    </p>
+    
+    <p>
+    Options pour utiliser l'outil :
+    <ul>
+      <li><b>Nucléide</b> à afficher : Tous les nucléides non stables sont disponibles pour l'affichage.</li>
+      <li><b>Âge</b> : Pour les isotopes où le vieillissement aura un effet sur la distribution
+       des amplitudes des rayons gamma et/ou X, l'âge du nucléide peut être spécifié en utilisant une
+       combinaison d'unités de temps, similaire à &quot;<b>5.3y 8d 22m</b>&quot; ou en demi-vies comme
+       &quot;<b>2.5 DV</b>&quot;. Unités de temps acceptables : <b>year</b>, <b>yr</b>,
+       <b>y</b>, <b>day</b>, <b>d</b>, <b>hrs</b>, <b>hour</b>, <b>h</b>, <b>minute</b>,
+       <b>min</b>, <b>m</b>, <b>second</b>, <b>s</b>, <b>ms</b>, <b>microseconds</b>,
+       <b>us</b>, <b>nanoseconds</b>, <b>ns</b>, ou vous pouvez spécifier la période de temps par
+       <b>hh:mm:ss</b>. Les unités de demi-vie peuvent être spécifiées en utilisant <b>hl</b>, <b>halflife</b>,
+       <b>halflives</b>, <b>half-life</b>, <b>half-lives</b>, <b>half lives</b>, or
+       <b>half life</b>.<br />
+       Les unités de demi-vie ou les périodes de temps ne peuvent pas être mélangées avec d'autres unités.<br />
+       Lorsque plusieurs périodes de temps sont spécifiées, elles sont additionnées,
+       par ex. &quot;1a6mois 3m&quot; est interprété comme 18 mois et 3 minutes.
+       <br />
+       L'âge initial utilisé lorsqu'un nucléide est entré est basé sur une heuristique qui
+       fonctionne généralement bien, mais dans le cas de nucléides fraîchement produits, ou largement vieillis
+       peut nécessiter d'être ajusté.
+       <br />
+       Ajuster l'âge n'est pas autorisé pour les nucléides dont les signatures ne changent pas significativement avec l'âge.
+      </li>
+      <li><b>Prompt Only</b> : Pour les nucléides qui ont des chaînes de désintégration où à un certain moment une demi-vie enfant est plus longue que celle de ses parents, sélectionner cette option fera en sorte que seulement les
+        nucléides dans la chaîne de désintégration jusqu'à ce point soient inclus dans les
+        lignes de référence affichées, avec tous en équilibre statique.<br />
+        Cette option est seulement affichée pour les nucléides où elle s'applique, comme U-238, Th-232, etc.
+      </li>
+      <li><b><span style="color:red;">C</span><span style="color:green;">o</span><span style="color:blue;">u</span><span style="color:yellow;">l</span><span style="color:violet;">e</span><span style="color:orange;">u</span><span style="color:black;">r</span></b>:
+        Vous pouvez sélectionner la couleur dans laquelle vous souhaitez que les lignes de référence apparaissent sur le
+        spectre - cela fera également en sorte que les pics ajustés tout en montrant les lignes de référence
+        qui peuvent être attribués au nucléide, soient de cette couleur également. Cela est utile
+        pour identifier rapidement quels pics sont attribués à différents nucléides.
+      </li>
+      <li><b>Fonction de Réponse du Détecteur</b> : Si une fonction de réponse du détecteur (FRD) est sélectionnée
+        alors l'amplitude des lignes tracées sur le spectre, sera convoluée avec la FRD
+        de sorte que les lignes auxquelles votre détecteur a une sensibilité plus faible seront affichées avec une plus petite
+        amplitude.  <br />
+        La FRD n'affecte pas le <b>B.R.</b> affiché dans le tableau de l'outil.
+      </li>
+      <li><b>Blindage</b> : Parce que le blindage peut altérer considérablement la distribution attendue
+        des gammas et des rayons X, vous pouvez entrer un type de blindage et une épaisseur
+        pour que les lignes de référence affichées sur le spectre soient modulées par l'atténuation
+        de ce blindage.<br />
+        Le blindage n'affecte pas le <b>B.R.</b> affiché dans le tableau de l'outil.
+      </li>
+    </ul>
+    </p>
+    
+    
+    <p>
+    Par défaut, les lignes de référence pour les rayons X (lignes pointillées) et les gammas sont affichées.
+    Cependant, si vous sélectionnez le sous-menu, à droite de la sélection de couleur (voir l'image encerclée ci-dessous),
+    vous pouvez choisir de voir les énergies alpha, les points finaux bêta, les sommes de coïncidence vraie (c'est-à-dire, lorsque deux gammas sont émis presque en même temps, ils peuvent être sommés par le détecteur), ainsi que quelques autres options.
+    <div style="padding-top: 1px" align="center">
+    <img src="InterSpec_resources/static_text/images/ref_gamma_lines_sub_menu.png"  class="imageBorder" style="max-width:45%;" />
+    </div>
+    </p>
+    
+    <p>
+    Pour afficher les lignes de référence pour plusieurs nucléides à la fois :
+    <ol>
+      <li>Entrez le premier nucléide, et ajustez toutes les options (blindage, âge, FRD).</li>
+      <li>Cliquez sur le bouton &quot;<em>Ajouter un autre</em>&quot;, à ce moment le champ du nucléide sera vidé du nucléide actuel ; cependant les lignes du premier nucléide seront
+        toujours affichées sur le spectre</li>
+      <li>Entrez le second nucléide et ajustez toutes les options. Les lignes pour les deux nucléides
+        seront affichées sur le spectre, mais le tableau de l'outil ne montrera que les valeurs pour
+        le spectre le plus récemment entré.
+      </li>
+      <li>Cliquez sur &quot;<em>Ajouter un autre</em>&quot;, et répétez pour tous les nucléides souhaités.</li>
+      <li>Cliquez sur le bouton &quot;<em>Effacer</em>&quot; pour supprimer les lignes pour tous les nucléides.</li>
+    </ol>
+    
+    </p>
+    
+    </div>

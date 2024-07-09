@@ -112,8 +112,24 @@ public:
   enum ResolutionFnctForm
   {
     kGadrasResolutionFcn, //See peakResolutionFWHM() implementation
-    kSqrtPolynomial,  //FWHM = sqrt( Sum_i{A_i*pow(x/1000,i)} );
+    
+    /**  
+     FWHM = sqrt( Sum_i{A_i*pow(x/1000,i)} );
+     */
+    kSqrtPolynomial,  //
+    
+    /**
+     FWHM = `sqrt(A0 + A1*E + A2/E)`
+     */
     kSqrtEnergyPlusInverse,
+    
+    /**
+     FWHM = `A0 + A1*sqrt(E)`
+     
+     For use with other applications - do not recommend actually using.
+     */
+    kConstantPlusSqrtEnergy,
+    
     kNumResolutionFnctForm
   };//enum ResolutionFnctForm
 
@@ -156,6 +172,13 @@ public:
      */
     FixedGeomActPerGram = 0x08
   };//enum class EffGeometryType
+  
+  /** Returns the postfix to add to an activity value, for the type of geometry the DRF is for.
+   
+   For far-field and fixed-total-act, returns empty string.
+   Otherwise, returns "/cm2", "/m2", or "/g", as appropriate.
+   */
+  static const std::string &det_eff_geom_type_postfix( const EffGeometryType type );
   
   
   /** Enum used to indicate where the DRF came from.  This is used primarily to
@@ -804,6 +827,9 @@ protected:
   
   /** On 20230916 updated from version 0 to 1, to account for `m_fixedGeometry` - will still write version 0 if
    `m_geomType == EffGeometryType::FarField`.
+   
+   On 20240410 updated from 1 to 2, to account for `ResolutionFnctForm::kConstantPlusSqrtEnergy` type of FWHM
+   being added.  However, will only write 2 if `m_resolutionForm == ResolutionFnctForm::kConstantPlusSqrtEnergy`.
    */
   static const int sm_xmlSerializationVersion;
   

@@ -90,6 +90,10 @@ SimpleDialog *createEntryWindow( InterSpec *viewer )
 #if( USE_REMOTE_RID )
     , "remoterid"
 #endif
+#if( USE_DETECTION_LIMIT_TOOL )
+    , "detection-limit"
+    , "simple-mda"
+#endif
   };//acceptable_paths[]
     
   

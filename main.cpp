@@ -43,26 +43,15 @@
 #include "InterSpec/InterSpec.h"
 #include "InterSpec/InterSpecServer.h"
 
-#if( BUILD_AS_COMMAND_LINE_CODE_DEVELOPMENT )
-#include "testing/developcode.h"
-#endif
-
 #if( USE_BATCH_TOOLS )
 #include "InterSpec/BatchCommandLine.h"
 #endif
 
-// #include "InterSpec/QRSpectrum.h"
 
 int main( int argc, char **argv )
 {
 #ifdef _WIN32
   AppUtils::getUtf8Args( argc, argv );
-#endif
-  
-  //return QRSpectrum::dev_code();
-  
-#if( BUILD_AS_COMMAND_LINE_CODE_DEVELOPMENT )
-  return developcode::run_development_code();
 #endif
   
   std::cout << std::showbase << std::hex << "Running with Wt version "
@@ -106,10 +95,11 @@ int main( int argc, char **argv )
    )
   ("docroot", po::value<std::string>(&docroot),
    "The directory that contains the 'InterSpec_resources' and 'data' directories.\n"
-   "All files in the docroot directory, and its subdirectories are available via HTTP.\n"
+   "All files in the docroot directory, and its subdirectories are available via HTTP."
 #if( !BUILD_FOR_WEB_DEPLOYMENT )
-   "Defaults to current working directory."
+   "\nDefaults to current working directory."
 #endif
+   "\nThis value sets Wts 'docroot' and 'approot' variables."
    )
   ("static-data-dir", "The static data directory (e.g., 'data' dir that holds cross-sections, "
    "nuclear-data, etc) to use.  If not specified, uses 'data' in the `docroot` directory."
@@ -226,6 +216,19 @@ int main( int argc, char **argv )
                 << std::endl;
       return -25;
     }
+    
+    // We will make user data path absolute, so there wont be any ambiguity later on
+    //  (I dont think we ever change CWD, but JIC)
+    if( !SpecUtils::is_absolute_path(dev_user_data) )
+    {
+      const std::string cwd = SpecUtils::get_working_path();
+      const std::string trial_dir = SpecUtils::append_path( cwd, dev_user_data );
+      if( SpecUtils::is_directory(trial_dir) )
+      {
+        dev_user_data = trial_dir;
+        SpecUtils::make_canonical_path( dev_user_data );
+      }
+    }//if( !SpecUtils::is_absolute_path(userDir) )
     
     user_data_dir = dev_user_data;
 #else

@@ -27,7 +27,10 @@
 #include <iostream>
 #include <stdexcept>
 
+#include <boost/math/tools/roots.hpp>
+#include <boost/math/tools/minima.hpp>
 #include <boost/math/distributions/normal.hpp>
+#include <boost/math/distributions/chi_squared.hpp>
 
 //Roots Minuit2 includes
 #include "Minuit2/FCNBase.h"
@@ -45,6 +48,7 @@
 
 
 #include "SpecUtils/SpecFile.h"
+#include "SpecUtils/SpecUtilsAsync.h"
 #include "SpecUtils/EnergyCalibration.h"
 
 #include "InterSpec/PeakFit.h"
@@ -98,7 +102,7 @@ float round_to_nearest_channel_edge( const float energy, const shared_ptr<const 
 }//float round_to_nearest_channel_edge( float energy )
   
   
-DetectionLimitCalc::CurieMdaInput currie_input( const float energy,
+DetectionLimitCalc::CurrieMdaInput currie_input( const float energy,
                                                 const shared_ptr<const SpecUtils::Measurement> &m,
                                                 shared_ptr<const DetectorPeakResponse> &det,
                                                const double detection_probability )
@@ -108,14 +112,14 @@ DetectionLimitCalc::CurieMdaInput currie_input( const float energy,
   
   const size_t nsidebin = 4;
   //const float num_fwhm = 2.5;
-  const float nfwhm = 1.19f;
+  const float nfwhm = 1.25; // recommended by ISO 11929:2010, could instead use 1.19
   const double confidence_level = detection_probability;
   
   const float fwhm = det->peakResolutionFWHM( energy );
   const float roi_lower_energy = round_to_nearest_channel_edge( energy - nfwhm*fwhm, m ) + 0.0001f;
   const float roi_upper_energy = round_to_nearest_channel_edge( energy + nfwhm*fwhm, m ) - 0.0001f;
   
-  DetectionLimitCalc::CurieMdaInput input;
+  DetectionLimitCalc::CurrieMdaInput input;
   input.spectrum = m;
   input.gamma_energy = energy;
   input.roi_lower_energy = roi_lower_energy;
@@ -126,7 +130,7 @@ DetectionLimitCalc::CurieMdaInput currie_input( const float energy,
   input.additional_uncertainty = 0.0f;  // TODO: can we get the DRFs contribution to form this?
   
   return input;
-}//CurieMdaInput currie_input(...)
+}//CurrieMdaInput currie_input(...)
   
   
 void batch_test()
@@ -141,7 +145,10 @@ void batch_test()
   if( meas.num_measurements() != 1 )
     throw runtime_error( "Not exactly one measurement in the file" );
   
-  const shared_ptr<const SpecUtils::Measurement> spectrum = meas.measurement( size_t(0) );
+  vector<shared_ptr<const SpecUtils::Measurement>> meass = meas.measurements();
+  assert( !meass.empty() );
+  
+  const shared_ptr<const SpecUtils::Measurement> spectrum = meass.empty() ? nullptr : meass[0];
   if( !spectrum || (spectrum->num_gamma_channels() < 128) )
     throw runtime_error( "No spectrum" );
   
@@ -247,9 +254,9 @@ void batch_test()
       if( gammas_per_bq_per_sec < 1.0E-16 )
         continue;
       
-      const CurieMdaInput mda_input = currie_input( erp.energy, spectrum, det, detection_probability );
+      const CurrieMdaInput mda_input = currie_input( erp.energy, spectrum, det, detection_probability );
       
-      const CurieMdaResult result = DetectionLimitCalc::currie_mda_calc( mda_input );
+      const CurrieMdaResult result = DetectionLimitCalc::currie_mda_calc( mda_input );
       
       const double counts_per_bq = det_eff * shield_trans * gammas_per_bq_per_sec * live_time;
       
@@ -280,45 +287,45 @@ void batch_test()
            << result.last_lower_continuum_channel << "]"
            << endl;
       cout << std::left << std::setw(label_width) << "\tLower region counts:"
-           << PhysicalUnits::printCompact( result.lower_continuum_counts_sum, 5 )
+           << SpecUtils::printCompact( result.lower_continuum_counts_sum, 5 )
            << endl;
       cout << std::left << std::setw(label_width) << "\tUpper region channels:"
            << "[" << result.first_upper_continuum_channel << ", "
            << result.last_upper_continuum_channel << "]"
            << endl;
       cout << std::left << std::setw(label_width) << "\tUpper region counts:"
-           << PhysicalUnits::printCompact( result.upper_continuum_counts_sum, 5 ) << endl;
+           << SpecUtils::printCompact( result.upper_continuum_counts_sum, 5 ) << endl;
       cout << std::left << std::setw(label_width) << "\tPeak area channels:"
            << "[" << (result.last_lower_continuum_channel + 1) << ", "
            << (result.first_upper_continuum_channel - 1) << "]"
            << endl;
       cout << std::left << std::setw(label_width) << "\tPeak region counts:"
-           << PhysicalUnits::printCompact( result.peak_region_counts_sum, 5 )
+           << SpecUtils::printCompact( result.peak_region_counts_sum, 5 )
            << endl;
       cout << std::left << std::setw(label_width) << "\tPeak region null est.:"
-           << PhysicalUnits::printCompact( result.estimated_peak_continuum_counts, 5 )
-           << " +- " << PhysicalUnits::printCompact( result.estimated_peak_continuum_uncert, 5 )
+           << SpecUtils::printCompact( result.estimated_peak_continuum_counts, 5 )
+           << " +- " << SpecUtils::printCompact( result.estimated_peak_continuum_uncert, 5 )
            << endl;
       cout << std::left << std::setw(label_width) << "\tPeak critical limit:"
-           << PhysicalUnits::printCompact( result.decision_threshold, 5 )
+           << SpecUtils::printCompact( result.decision_threshold, 5 )
            << endl;
       cout << std::left << std::setw(label_width) << "\tPeak detection limit:"
-           << PhysicalUnits::printCompact( result.detection_limit, 5 )
+           << SpecUtils::printCompact( result.detection_limit, 5 )
            << endl;
       cout << endl;
       const double intrinsic_eff = det->intrinsicEfficiency( erp.energy );
       const double geom_eff = det->fractionalSolidAngle( det->detectorDiameter(), distance );
       cout << std::left << std::setw(label_width) << "\tDetector Intrinsic Eff.:"
-           << PhysicalUnits::printCompact( intrinsic_eff, 5 )
+           << SpecUtils::printCompact( intrinsic_eff, 5 )
            << endl;
       cout << std::left << std::setw(label_width) << "\tSolid angle fraction:"
-           << PhysicalUnits::printCompact( geom_eff, 5 )
+           << SpecUtils::printCompact( geom_eff, 5 )
            << endl;
       cout << std::left << std::setw(label_width) << "\tShielding transmission:"
-           << PhysicalUnits::printCompact( shield_trans, 5 )
+           << SpecUtils::printCompact( shield_trans, 5 )
            << endl;
       cout << std::left << std::setw(label_width) << "\tNuclide branching ratio:"
-           << PhysicalUnits::printCompact( gammas_per_bq_per_sec, 5 )
+           << SpecUtils::printCompact( gammas_per_bq_per_sec, 5 )
            << endl;
       cout << endl;
       */
@@ -458,7 +465,7 @@ void batch_test()
 }//void batch_test()
 #endif
 
-CurieMdaInput::CurieMdaInput()
+CurrieMdaInput::CurrieMdaInput()
   : spectrum(nullptr),
     gamma_energy(0.0f), roi_lower_energy(0.0f), roi_upper_energy(0.0f),
     num_lower_side_channels(0), num_upper_side_channels(0),
@@ -467,7 +474,7 @@ CurieMdaInput::CurieMdaInput()
 }
 
 
-CurieMdaResult::CurieMdaResult()
+CurrieMdaResult::CurrieMdaResult()
   : first_lower_continuum_channel(0), last_lower_continuum_channel(0), lower_continuum_counts_sum(0.0f),
     first_upper_continuum_channel(0), last_upper_continuum_channel(0), upper_continuum_counts_sum(0.0f),
     first_peak_region_channel(0), last_peak_region_channel(0), peak_region_counts_sum(0.0f),
@@ -496,9 +503,9 @@ bool floats_equiv_enough( const T a, const T b )
 };
 
 
-void CurieMdaResult::equal_enough( const CurieMdaResult &test, const CurieMdaResult &expected )
+void CurrieMdaResult::equal_enough( const CurrieMdaResult &test, const CurrieMdaResult &expected )
 {
-  //CurieMdaInput::equal_enough( test.input, expected.input );
+  //CurrieMdaInput::equal_enough( test.input, expected.input );
   
   vector<string> errors;
   char buffer[512];
@@ -654,17 +661,17 @@ void CurieMdaResult::equal_enough( const CurieMdaResult &test, const CurieMdaRes
   if( errors.empty() )
     return;
   
-  string err_msg = "CurieMdaResult::equal_enough: test and expected values are not equal\n";
+  string err_msg = "CurrieMdaResult::equal_enough: test and expected values are not equal\n";
   for( size_t i = 0; i < errors.size(); ++i )
     err_msg += (i ? "\n\t" : "\t") + errors[i];
     
   throw runtime_error( err_msg );
-}//CurieMdaResult::equal_enough(...)
+}//CurrieMdaResult::equal_enough(...)
 #endif //PERFORM_DEVELOPER_CHECKS
 
 
 
-std::ostream &print_summary( std::ostream &strm, const CurieMdaResult &result, const float w )
+std::ostream &print_summary( std::ostream &strm, const CurrieMdaResult &result, const float w )
 {
   /*
    {
@@ -732,9 +739,46 @@ std::ostream &print_summary( std::ostream &strm, const CurieMdaResult &result, c
        << ", with x=energy-" << result.input.gamma_energy << endl;
   
   return strm;
-};//print_summary( CurieMdaResult )
+};//print_summary( CurrieMdaResult )
 
-CurieMdaResult currie_mda_calc( const CurieMdaInput &input )
+  
+pair<size_t,size_t> round_roi_to_channels( shared_ptr<const SpecUtils::Measurement> spectrum,
+                                  const float roi_lower_energy,
+                                  const float roi_upper_energy )
+{
+  if( !spectrum )
+    throw runtime_error( "mda_counts_calc: no spectrum" );
+  
+  shared_ptr<const SpecUtils::EnergyCalibration> cal = spectrum->energy_calibration();
+  if( !cal || !cal->valid() )
+    throw runtime_error( "mda_counts_calc: invalid energy calibration" );
+  
+  const float peak_region_lower_ch = cal->channel_for_energy( roi_lower_energy );
+  const float peak_region_upper_ch = cal->channel_for_energy( roi_upper_energy );
+  
+  //if( (peak_region_lower_ch - num_lower_side_channels) < 0.0 )
+  //  throw runtime_error( "mda_counts_calc: lower energy goes off spectrum" );
+  
+  //if( (peak_region_upper_ch + num_upper_side_channels) > cal->num_channels() )
+  //  throw runtime_error( "mda_counts_calc: upper energy goes off spectrum" );
+  
+  size_t first_peak_region_channel = static_cast<size_t>( std::round(peak_region_lower_ch) );
+  
+  // If we pass in exactly the channel boundary, or really close to it, we want to round in the
+  //  reasonable way, otherwise we need to makeup for the channel number defining the left side of
+  //  each channel, so we will subtract off 0.5 from the channel we are supposed to go up through.
+  size_t last_peak_region_channel;
+  if( fabs(peak_region_upper_ch - std::floor(peak_region_upper_ch)) < 0.01 )
+    last_peak_region_channel = static_cast<size_t>( std::floor(peak_region_upper_ch) - 1 );
+  else
+    last_peak_region_channel = static_cast<size_t>( std::round(peak_region_upper_ch - 0.5) );
+  
+  return make_pair( first_peak_region_channel, last_peak_region_channel );
+}//round_roi_to_channels(...)
+  
+  
+  
+CurrieMdaResult currie_mda_calc( const CurrieMdaInput &input )
 {
   using namespace SpecUtils;
   
@@ -756,13 +800,17 @@ CurieMdaResult currie_mda_calc( const CurieMdaInput &input )
       || (input.gamma_energy > input.roi_upper_energy) )
     throw runtime_error( "mda_counts_calc: gamma energy must be between lower and upper ROI." );
   
-  if( input.num_lower_side_channels < 1 || (input.num_lower_side_channels >= nchannel)  )
+  if( ((input.num_lower_side_channels == 0) || (input.num_upper_side_channels == 0))
+     && (input.num_lower_side_channels != input.num_upper_side_channels) )
+    throw runtime_error( "mda_counts_calc: lower or upper side channels was zero, but not both." );
+  
+  if( input.num_lower_side_channels >= nchannel  )
     throw runtime_error( "mda_counts_calc: invalid num_lower_side_channels." );
   
-  if( input.num_upper_side_channels < 1 || (input.num_upper_side_channels >= nchannel) )
+  if( input.num_upper_side_channels >= nchannel )
     throw runtime_error( "mda_counts_calc: invalid num_upper_side_channels." );
   
-  if( input.detection_probability <= 0.05f || input.detection_probability >= 1.0f )
+  if( input.detection_probability <= 0.05 || input.detection_probability >= 1.0 )
     throw runtime_error( "mda_counts_calc: invalid detection_probability." );
   
   if( input.additional_uncertainty < 0.0f || input.additional_uncertainty >= 1.0f )
@@ -773,46 +821,47 @@ CurieMdaResult currie_mda_calc( const CurieMdaInput &input )
   
   assert( gamma_energies.size() == (gamma_counts.size() + 1) );
   
-  const float peak_region_lower_ch = cal->channel_for_energy( input.roi_lower_energy );
-  const float peak_region_upper_ch = cal->channel_for_energy( input.roi_upper_energy );
+  const pair<size_t,size_t> channels = round_roi_to_channels( spec, input.roi_lower_energy, input.roi_upper_energy );
   
-  if( (peak_region_lower_ch - input.num_lower_side_channels) < 0.0 )
-    throw runtime_error( "mda_counts_calc: lower energy goes off spectrum" );
-  
-  if( (peak_region_upper_ch + input.num_upper_side_channels) > cal->num_channels() )
-    throw runtime_error( "mda_counts_calc: upper energy goes off spectrum" );
-  
-  CurieMdaResult result;
+  CurrieMdaResult result;
   result.input = input;
   
-  
-  result.first_peak_region_channel = static_cast<size_t>( std::round(peak_region_lower_ch) );
-  
-  // If we pass in exactly the channel boundary, or really close to it, we want to round in the
-  //  reasonable way, otherwise we need to makeup for the channel number defining the left side of
-  //  each channel, so we will subtract off 0.5 from the channel we are supposed to go up through.
-  if( fabs(peak_region_upper_ch - std::floor(peak_region_upper_ch)) < 0.01 )
-    result.last_peak_region_channel = static_cast<size_t>( std::floor(peak_region_upper_ch) - 1 );
-  else
-    result.last_peak_region_channel = static_cast<size_t>( std::round(peak_region_upper_ch - 0.5) );
-  
+  result.first_peak_region_channel = channels.first;
+  result.last_peak_region_channel = channels.second;
   
   if( result.first_peak_region_channel < (input.num_lower_side_channels + 1) )
     throw std::runtime_error( "mda_counts_calc: lower peak region is outside spectrum energy range" );
   
-  result.last_lower_continuum_channel = result.first_peak_region_channel - 1;
-  result.first_lower_continuum_channel = result.last_lower_continuum_channel - input.num_lower_side_channels + 1;
+  if( input.num_lower_side_channels == 0 )
+  {
+    result.first_lower_continuum_channel = 0;
+    result.last_lower_continuum_channel  = 0;
+    result.lower_continuum_counts_sum    = 0;
+  }else
+  {
+    result.last_lower_continuum_channel = result.first_peak_region_channel - 1;
+    result.first_lower_continuum_channel = result.last_lower_continuum_channel - input.num_lower_side_channels + 1;
+    result.lower_continuum_counts_sum = spec->gamma_channels_sum(result.first_lower_continuum_channel, result.last_lower_continuum_channel);
+  }
   
-  result.first_upper_continuum_channel = result.last_peak_region_channel + 1;
-  result.last_upper_continuum_channel = result.first_upper_continuum_channel + input.num_upper_side_channels - 1;
-  
-  if( result.last_upper_continuum_channel >= nchannel  )
-    throw std::runtime_error( "mda_counts_calc: upper peak region is outside spectrum energy range" );
-  
-  
-  result.lower_continuum_counts_sum = spec->gamma_channels_sum(result.first_lower_continuum_channel, result.last_lower_continuum_channel);
+  if( input.num_upper_side_channels == 0 )
+  {
+    result.first_upper_continuum_channel = 0;
+    result.last_upper_continuum_channel  = 0;
+    result.upper_continuum_counts_sum    = 0;
+  }else
+  {
+    result.first_upper_continuum_channel = result.last_peak_region_channel + 1;
+    result.last_upper_continuum_channel = result.first_upper_continuum_channel + input.num_upper_side_channels - 1;
+    
+    if( result.last_upper_continuum_channel >= nchannel  )
+      throw std::runtime_error( "mda_counts_calc: upper peak region is outside spectrum energy range" );
+    
+    result.upper_continuum_counts_sum = spec->gamma_channels_sum(result.first_upper_continuum_channel, result.last_upper_continuum_channel);
+  }
+
   result.peak_region_counts_sum = spec->gamma_channels_sum(result.first_peak_region_channel, result.last_peak_region_channel);
-  result.upper_continuum_counts_sum = spec->gamma_channels_sum(result.first_upper_continuum_channel, result.last_upper_continuum_channel);
+  
   
   /*
    cout << "Lower region:\n\tChan\tEne\tCounts" << endl;
@@ -831,70 +880,88 @@ CurieMdaResult currie_mda_calc( const CurieMdaInput &input )
    cout << "\tSum: " << result.upper_continuum_counts_sum << endl;
    */
   
-  const double lower_cont_counts = spec->gamma_channels_sum(result.first_lower_continuum_channel, result.last_lower_continuum_channel);
-  const double upper_cont_counts = spec->gamma_channels_sum(result.first_upper_continuum_channel, result.last_upper_continuum_channel);
-  const double lower_cont_width = spec->gamma_channel_upper(result.last_lower_continuum_channel)
-  - spec->gamma_channel_lower(result.first_lower_continuum_channel);
-  const double upper_cont_width = spec->gamma_channel_upper(result.last_upper_continuum_channel)
-  - spec->gamma_channel_lower(result.first_upper_continuum_channel);
+  double peak_cont_sum_uncert = -999.9f, peak_cont_sum = -999.9f;
   
-  const double lower_cont_density = lower_cont_counts / lower_cont_width;
-  const double lower_cont_density_uncert = ((lower_cont_counts <= 0.0) ? 0.0 : (lower_cont_density / sqrt(lower_cont_counts)));
+  if( input.num_upper_side_channels == 0 )
+  {
+    peak_cont_sum = result.peak_region_counts_sum;
+    peak_cont_sum_uncert = sqrt( peak_cont_sum );
+    
+    const double peak_area_width = spec->gamma_channel_upper(result.last_peak_region_channel)
+                                    - spec->gamma_channel_lower(result.first_peak_region_channel);
+    result.continuum_eqn[1] = 0.0;
+    result.continuum_eqn[0] = peak_cont_sum / peak_area_width;
+  }else
+  {
+    const double lower_cont_counts = spec->gamma_channels_sum(result.first_lower_continuum_channel, result.last_lower_continuum_channel);
+    const double upper_cont_counts = spec->gamma_channels_sum(result.first_upper_continuum_channel, result.last_upper_continuum_channel);
+    const double lower_cont_width = spec->gamma_channel_upper(result.last_lower_continuum_channel)
+                                    - spec->gamma_channel_lower(result.first_lower_continuum_channel);
+    const double upper_cont_width = spec->gamma_channel_upper(result.last_upper_continuum_channel)
+                                    - spec->gamma_channel_lower(result.first_upper_continuum_channel);
+    
+    const double lower_cont_density = lower_cont_counts / lower_cont_width;
+    const double lower_cont_density_uncert = ((lower_cont_counts <= 0.0) ? 0.0 : (lower_cont_density / sqrt(lower_cont_counts)));
+    
+    const double upper_cont_density = upper_cont_counts / upper_cont_width;
+    const double upper_cont_density_uncert = ((upper_cont_counts <= 0.0) ? 0.0 : (upper_cont_density / sqrt(upper_cont_counts)));
+    
+    const double peak_cont_density = 0.5*(lower_cont_density + upper_cont_density);
+    const double peak_cont_density_uncert = 0.5*sqrt( upper_cont_density_uncert*upper_cont_density_uncert
+                                                     + lower_cont_density_uncert*lower_cont_density_uncert );
+    const double peak_cont_frac_uncert = ((peak_cont_density > 0.0) ? (peak_cont_density_uncert / peak_cont_density) : 1.0);
+    
+    const double peak_area_width = spec->gamma_channel_upper(result.last_peak_region_channel)
+                                    - spec->gamma_channel_lower(result.first_peak_region_channel);
+    
+    peak_cont_sum = peak_cont_density * peak_area_width;
+    peak_cont_sum_uncert = peak_cont_sum * peak_cont_frac_uncert;
+    
+    // The equation is centered around the input.gamma_energy with the density of counts at normal
+    //  value at that point.  The Slope will be through the midpoints of each continuum.
+    // TODO: should do a proper least-squares fit to the continuum; I think this will give us a slightly true-er answer
+    
+    const double lower_cont_mid_energy = spec->gamma_channel_lower(result.first_lower_continuum_channel) + 0.5*lower_cont_width;
+    const double upper_cont_mid_energy = spec->gamma_channel_lower(result.first_upper_continuum_channel) + 0.5*upper_cont_width;
+    
+    result.continuum_eqn[1] = (upper_cont_density - lower_cont_density) / (upper_cont_mid_energy - lower_cont_mid_energy);
+    result.continuum_eqn[0] = lower_cont_density - result.continuum_eqn[1]*(lower_cont_mid_energy - input.gamma_energy);
+    
+#if( PERFORM_DEVELOPER_CHECKS )
+    {// begin sanity check on continuum eqn
+      const double peak_start_eq = spec->gamma_channel_lower(result.first_peak_region_channel) - input.gamma_energy;
+      const double peak_end_eq = spec->gamma_channel_upper(result.last_peak_region_channel) - input.gamma_energy;
+      
+      const double peak_cont_eq_integral = result.continuum_eqn[0] * (peak_end_eq - peak_start_eq)
+      + result.continuum_eqn[1] * 0.5 * (peak_end_eq*peak_end_eq - peak_start_eq*peak_start_eq);
+      const double upper_cont_eq = result.continuum_eqn[0] + (upper_cont_mid_energy - input.gamma_energy)*result.continuum_eqn[1];
+      
+      // Precision tests, for development - if we go down to a precision of 1E-4, instead of 1E-3,
+      //  then these tests fail for NaI systems - I'm not sure if its something actually wrong, or
+      //  just really bad numerical accuracy (although its hard to imagine going down to only 4
+      //  or so, significant figures)
+      const double eq_dens = fabs(peak_cont_eq_integral - peak_cont_sum);
+      assert( (eq_dens < 0.1)
+             || (eq_dens < 1.0E-3*std::max(peak_cont_eq_integral, peak_cont_sum)) );
+      
+      const double eq_diff = fabs(peak_cont_eq_integral - peak_cont_sum);
+      assert( eq_diff < 0.1 || eq_diff < 1.0E-3*std::max(peak_cont_eq_integral, peak_cont_sum) );
+    }// end sanity check on continuum eqn
+#endif //PERFORM_DEVELOPER_CHECKS
+  }//if( input.num_upper_side_channels == 0 ) / else
   
-  const double upper_cont_density = upper_cont_counts / upper_cont_width;
-  const double upper_cont_density_uncert = ((upper_cont_counts <= 0.0) ? 0.0 : (upper_cont_density / sqrt(upper_cont_counts)));
-  
-  const double peak_cont_density = 0.5*(lower_cont_density + upper_cont_density);
-  const double peak_cont_density_uncert = 0.5*sqrt( upper_cont_density_uncert*upper_cont_density_uncert
-                                                   + lower_cont_density_uncert*lower_cont_density_uncert );
-  const double peak_cont_frac_uncert = ((peak_cont_density > 0.0) ? (peak_cont_density_uncert / peak_cont_density) : 1.0);
-  
-  
-  const double peak_area_width = spec->gamma_channel_upper(result.last_peak_region_channel)
-  - spec->gamma_channel_lower(result.first_peak_region_channel);
-  const double peak_cont_sum = peak_cont_density * peak_area_width;
-  const double peak_cont_sum_uncert = peak_cont_sum * peak_cont_frac_uncert;
-  
+  assert( peak_cont_sum_uncert != -999.9f );
+  assert( peak_cont_sum != -999.9f );
   result.estimated_peak_continuum_counts = static_cast<float>( peak_cont_sum );
   result.estimated_peak_continuum_uncert = static_cast<float>( peak_cont_sum_uncert );
   
-  
-  // The equation is centered around the input.gamma_energy with the density of counts at normal
-  //  value at that point.  The Slope will be through the midpoints of each continuum.
-  // TODO: should do a proper least-squares fit to the continuum; I think this will give us a slightly true-er answer
-  
-  const double lower_cont_mid_energy = spec->gamma_channel_lower(result.first_lower_continuum_channel) + 0.5*lower_cont_width;
-  const double upper_cont_mid_energy = spec->gamma_channel_lower(result.first_upper_continuum_channel) + 0.5*upper_cont_width;
-  
-  result.continuum_eqn[1] = (upper_cont_density - lower_cont_density) / (upper_cont_mid_energy - lower_cont_mid_energy);
-  result.continuum_eqn[0] = lower_cont_density - result.continuum_eqn[1]*(lower_cont_mid_energy - input.gamma_energy);
-  
-#if( PERFORM_DEVELOPER_CHECKS )
-  {// begin sanity check on continuum eqn
-    const double peak_start_eq = spec->gamma_channel_lower(result.first_peak_region_channel) - input.gamma_energy;
-    const double peak_end_eq = spec->gamma_channel_upper(result.last_peak_region_channel) - input.gamma_energy;
-    
-    const double peak_cont_eq_integral = result.continuum_eqn[0] * (peak_end_eq - peak_start_eq)
-          + result.continuum_eqn[1] * 0.5 * (peak_end_eq*peak_end_eq - peak_start_eq*peak_start_eq);
-    const double upper_cont_eq = result.continuum_eqn[0] + (upper_cont_mid_energy - input.gamma_energy)*result.continuum_eqn[1];
-    
-    // Arbitrary chosen precision tests, for development
-    const double eq_dens = fabs(peak_cont_eq_integral - peak_cont_sum);
-    assert( (eq_dens < 0.1)
-           || (eq_dens < 1.0E-5*std::max(peak_cont_eq_integral, peak_cont_sum)) );
-    
-    const double eq_diff = fabs(peak_cont_eq_integral - peak_cont_sum);
-    assert( eq_diff < 0.1 || eq_diff < 1.0E-5*std::max(peak_cont_eq_integral, peak_cont_sum) );
-  }// end sanity check on continuum eqn
-#endif //PERFORM_DEVELOPER_CHECKS
-  
   typedef boost::math::policies::policy<boost::math::policies::digits10<6> > my_pol_6;
-  const boost::math::normal_distribution<float,my_pol_6> gaus_dist( 0.0f, 1.0f );
+  const boost::math::normal_distribution<double,my_pol_6> gaus_dist( 0.0, 1.0 );
   
   //  TODO: If/when we start having k_alpha != k_beta, then we probably need to be more careful
   //        around single vs double sided quantile.
   //   Will map 0.8414->1.00023, 0.95->1.64485, 0.975->1.95996, 0.995->2.57583, ...
-  const float k = boost::math::quantile( gaus_dist, input.detection_probability );
+  const double k = boost::math::quantile( gaus_dist, input.detection_probability );
   
   
   const double peak_cont_sigma = sqrt( peak_cont_sum_uncert*peak_cont_sum_uncert + peak_cont_sum );
@@ -959,7 +1026,7 @@ DeconRoiInfo::DeconRoiInfo()
 : roi_start( 0.0f ),
   roi_end( 0.0f ),
   continuum_type( PeakContinuum::OffsetType::NoOffset ),
-  fix_continuum_to_edges( false ),
+  cont_norm_method( DeconContinuumNorm::Floating ),
   num_lower_side_channels( 0 ),
   num_upper_side_channels( 0 ),
   peak_infos()
@@ -1026,14 +1093,27 @@ DeconComputeResults decon_compute_peaks( const DeconComputeInput &input )
   const bool fixed_geom = input.drf->isFixedGeometry();
   
   // We should be good to go,
-  vector<PeakDef> inputPeaks, fitPeaks;
+  vector<PeakDef> inputPeaks, fittedPeaks;
   
   for( const DeconRoiInfo &roi : input.roi_info )
   {
     const float  &roi_start = roi.roi_start; //This _should_ already be rounded to nearest bin edge; TODO: check that this is rounded
     const float  &roi_end = roi.roi_end; //This _should_ already be rounded to nearest bin edge; TODO: check that this is rounded
-    const bool   &fix_continuum = roi.fix_continuum_to_edges;
-    const PeakContinuum::OffsetType &continuum_type = roi.continuum_type;
+    
+    const DeconContinuumNorm &cont_norm_method = roi.cont_norm_method;
+    PeakContinuum::OffsetType continuum_type = roi.continuum_type;
+    switch( cont_norm_method )
+    {
+      case DeconContinuumNorm::Floating:
+      case DeconContinuumNorm::FixedByFullRange:
+        break;
+        
+      case DeconContinuumNorm::FixedByEdges:
+        assert( continuum_type == PeakContinuum::OffsetType::Linear );
+        continuum_type = PeakContinuum::OffsetType::Linear;
+        break;
+    }//switch( cont_norm_method )
+    
     const size_t &num_lower_side_channels = roi.num_lower_side_channels;
     const size_t &num_upper_side_channels = roi.num_upper_side_channels;
     
@@ -1051,7 +1131,7 @@ DeconComputeResults decon_compute_peaks( const DeconComputeInput &input )
     for( const DeconRoiInfo::PeakInfo &peak_info : roi.peak_infos )
     {
       const float &energy = peak_info.energy;
-      const float fwhm = input.drf->peakResolutionFWHM( energy );
+      const float fwhm = (peak_info.fwhm > 0.0f) ? peak_info.fwhm : input.drf->peakResolutionFWHM( energy );
       const float sigma = fwhm / 2.634;
       const double det_eff = fixed_geom ? input.drf->intrinsicEfficiency(energy)
                                         : input.drf->efficiency( energy, input.distance );
@@ -1081,19 +1161,81 @@ DeconComputeResults decon_compute_peaks( const DeconComputeInput &input )
         peak_continuum->setType( continuum_type );
         peak_continuum->setRange( roi_start, roi_end );
         
+        size_t nlowerside = num_lower_side_channels;
+        size_t nupperside = num_upper_side_channels;
+        if( roi.cont_norm_method != DeconContinuumNorm::FixedByEdges )
+        {
+          //if no value provided, use 4 channels
+          if( !nlowerside )
+            nlowerside = 4;
+          if( !nupperside )
+            nupperside = 4;
+          
+          // Clamp between 2 and 16 channels
+          nupperside = ((nupperside < 2) ? size_t(2) : ((nupperside > 16) ? size_t(16) : nupperside)); //std::clamp(...), C++17
+          nlowerside = ((nlowerside < 2) ? size_t(2) : ((nlowerside > 16) ? size_t(16) : nlowerside)); //std::clamp(...), C++17
+        }else
+        {
+          assert( num_lower_side_channels > 0 );
+          assert( num_upper_side_channels > 0 );
+        }
+        
         // First, we'll find a linear continuum as the starting point, and then go through
         //  and modify it how we need
         peak_continuum->calc_linear_continuum_eqn( input.measurement, reference_energy,
-                                                  roi_start, roi_end,
-                                                  num_lower_side_channels,
-                                                  num_upper_side_channels );
-        
-        peak_continuum->setType( PeakContinuum::OffsetType::Linear );
-        
-        for( size_t order = 0; order < 2; ++order )  //peak_continuum->parameters().size()
-          peak_continuum->setPolynomialCoefFitFor( order, !fix_continuum );
+                                                  roi_start, roi_end, nlowerside, nupperside );
         
         peak_continuum->setType( continuum_type );
+        
+        
+        if( cont_norm_method == DeconContinuumNorm::FixedByFullRange )
+        {
+          // We'll set a peaks amplitude for zero
+          for( size_t order = 0; order < peak_continuum->parameters().size(); ++order )
+            peak_continuum->setPolynomialCoefFitFor( order, true );
+          
+          PeakDef worker_peak( 0.5*(roi_start + roi_end), sigma, 0.0 );
+          worker_peak.setContinuum( peak_continuum );
+          worker_peak.setFitFor( PeakDef::CoefficientType::Mean, false );
+          worker_peak.setFitFor( PeakDef::CoefficientType::Sigma, false );
+          worker_peak.setFitFor( PeakDef::CoefficientType::GaussAmplitude, false );
+          
+          std::vector<PeakDef> fit_peak;
+          fitPeaks( {worker_peak}, -1.0, -1.0, input.measurement, fit_peak, {}, false );
+          
+          assert( fit_peak.size() == 1 );
+          if( fit_peak.size() == 1 )
+          {
+            peak_continuum = fit_peak[0].continuum();
+            peak.setContinuum( peak_continuum );
+          }else
+          {
+            string msg = "Error fitting DeconContinuumNorm::FixedByFullRange continuum - failed to"
+                        " get a peak out - expected 1, got " + std::to_string(fit_peak.size());
+            cerr << msg << endl;
+#if( PERFORM_DEVELOPER_CHECKS )
+            log_developer_error( __func__, msg.c_str() );
+            throw runtime_error( msg );
+#endif
+          }//if( fit_peak.size() == 1 ) / else
+        }//if( cont_norm_method == DeconContinuumNorm::FixedByFullRange )
+        
+        
+        for( size_t order = 0; order < peak_continuum->parameters().size(); ++order )
+        {
+          switch( cont_norm_method )
+          {
+            case DeconContinuumNorm::Floating:
+              peak_continuum->setPolynomialCoefFitFor( order, true );
+              break;
+              
+            case DeconContinuumNorm::FixedByFullRange:
+            case DeconContinuumNorm::FixedByEdges:
+              peak_continuum->setPolynomialCoefFitFor( order, false );
+              break;
+          }//switch( cont_norm_method )
+        }//for( size_t order = 0; order < peak_continuum->parameters().size(); ++order )
+        
         
         switch( continuum_type )
         {
@@ -1189,36 +1331,631 @@ DeconComputeResults decon_compute_peaks( const DeconComputeInput &input )
   
   vector<double> fitpars = fitParams.Params();
   vector<double> fiterrors = fitParams.Errors();
-  chi2Fcn.parametersToPeaks( fitPeaks, &fitpars[0], &fiterrors[0] );
+  chi2Fcn.parametersToPeaks( fittedPeaks, &fitpars[0], &fiterrors[0] );
   
   double initialChi2 = chi2Fcn.chi2( &fitpars[0] );
   
   //Lets try to keep whether or not to fit parameters should be the same for
   //  the output peaks as the input peaks.
   //Note that this doesnt account for peaks swapping with each other in the fit
-  assert( fitPeaks.size() == inputPeaks.size() );
+  assert( fittedPeaks.size() == inputPeaks.size() );
   
   //for( size_t i = 0; i < near_peaks.size(); ++i )
-  //  fitpeaks[i].inheritUserSelectedOptions( near_peaks[i], true );
+  //  fittedPeaks[i].inheritUserSelectedOptions( near_peaks[i], true );
   //for( size_t i = 0; i < fixedpeaks.size(); ++i )
-  //  fitpeaks[i+near_peaks.size()].inheritUserSelectedOptions( fixedpeaks[i], true );
+  //  fittedPeaks[i+near_peaks.size()].inheritUserSelectedOptions( fixedpeaks[i], true );
   
-  const double totalNDF = set_chi2_dof( input.measurement, fitPeaks, 0, fitPeaks.size() );
+  const double totalNDF = set_chi2_dof( input.measurement, fittedPeaks, 0, fittedPeaks.size() );
   
   result.chi2 = initialChi2;
   result.num_degree_of_freedom = static_cast<int>( std::round(totalNDF) );
   
-  for( auto &peak : fitPeaks )
+  for( auto &peak : fittedPeaks )
   {
     peak.setFitFor( PeakDef::CoefficientType::Mean, false );
     peak.setFitFor( PeakDef::CoefficientType::Sigma, false );
   }
   
-  result.fit_peaks = fitPeaks;
+  result.fit_peaks = fittedPeaks;
   
   return result;
 }//DeconComputeResults decon_compute_peaks( const DeconComputeInput &input )
 
+  
+DeconActivityOrDistanceLimitResult::DeconActivityOrDistanceLimitResult()
+    : isDistanceLimit( false ),
+    confidenceLevel( 0.0 ),
+    minSearchValue( 0.0 ),
+    maxSearchValue( 0.0 ),
+    baseInput{},
+    limitText(),
+    quantityLimitStr(),
+    bestCh2Text(),
+    overallBestChi2( 0.0 ),
+    overallBestQuantity( 0.0 ),
+    overallBestResults( nullptr ),
+    foundUpperCl( false ),
+    upperLimit( 0.0 ),
+    upperLimitChi2( -1.0 ),
+    upperLimitResults( nullptr ),
+    foundLowerCl( false ),
+    lowerLimit( 0.0 ),
+    lowerLimitChi2( -1.0 ),
+    lowerLimitResults( nullptr ),
+    foundUpperDisplay( false ),
+    upperDisplayRange( 0.0 ),
+    foundLowerDisplay( false ),
+    lowerDisplayRange( 0.0 ),
+  chi2s{}
+{
+}
 
+DeconActivityOrDistanceLimitResult get_activity_or_distance_limits( const float wantedCl,
+                      const shared_ptr<const DetectionLimitCalc::DeconComputeInput> base_input,
+                      const bool is_dist_limit,
+                      const double min_search_quantity,
+                      const double max_search_quantity,
+                      const bool useCurie )
+{
+  assert( base_input );
+  if( !base_input )
+    throw runtime_error( "get_activity_or_distance_limits: invalid base input." );
+  
+  DeconActivityOrDistanceLimitResult result;
+  result.isDistanceLimit = is_dist_limit;
+  
+  result.confidenceLevel = wantedCl;
+  result.minSearchValue = min_search_quantity;
+  result.maxSearchValue = max_search_quantity;
+  result.baseInput = *base_input;
+  
+  const double yrange = 15;
+  
+  // TODO: we are scanning activity or distance, which is a single degree of freedom - but does it matter that
+  //       we are marginalizing over (i.e., fitting for) the nuisance parameters of the peaks and
+  //       stuff?  I dont *think* so.
+  const boost::math::chi_squared chi_squared_dist( 1.0 );
+  
+  // We want interval corresponding to 95%, where the quantile will give us CDF up to that
+  //  point, so we actually want the quantile that covers 97.5% of cases.
+  const float twoSidedCl = 0.5 + 0.5*wantedCl;
+  
+  const double cl_chi2_delta = boost::math::quantile( chi_squared_dist, twoSidedCl );
+  
+  const size_t nchi2 = 25;  //approx num chi2 to compute
+  static_assert( nchi2 > 2, "We need at least two chi2" );
+  
+  vector<pair<double,double>> chi2s;
+  double overallBestChi2 = 0.0, overallBestQuantity = 0.0;
+  double upperLimit = 0.0, lowerLimit = 0.0;
+  double upperLimitChi2 = -1.0, lowerLimitChi2 = -1.0;
+  bool foundUpperCl = false, foundUpperDisplay = false, foundLowerCl = false, foundLowerDisplay = false;
+  
+  //
+  double quantityRangeMin = 0.0, quantityRangeMax = 0.0;
+  
+  
+  /// \TODO: currently all this stuff assumes a smooth continuously increasing Chi2 with increasing
+  ///        activity, but this doesnt have to be the case, especially with quadratic continuums.
+  
+  std::atomic<size_t> num_iterations( 0 );
+  
+  //The boost::math::tools::bisect(...) function will make calls using the same value of activity,
+  //  so we will cache those values to save some time.
+  map<double,double> chi2cache;
+  std::mutex chi2cache_mutex;
+  
+  if( !base_input )
+    throw runtime_error( "missing input quantity." );
+  
+  auto compute_chi2 = [is_dist_limit,&base_input]( const double quantity, int *numDOF = nullptr ) -> double {
+    assert( base_input );
+    DetectionLimitCalc::DeconComputeInput input = *base_input;
+    if( is_dist_limit )
+      input.distance = quantity;
+    else
+      input.activity = quantity;
+    const DetectionLimitCalc::DeconComputeResults results
+                                                = DetectionLimitCalc::decon_compute_peaks( input );
+    
+    if( (results.num_degree_of_freedom == 0) && (results.chi2 == 0.0) )
+      throw runtime_error( "No DOF" );
+    
+    if( numDOF )
+      *numDOF = results.num_degree_of_freedom;
+    
+    return results.chi2;
+  };//compute_chi2
+  
+  
+  // This next lambda takes either distance or activity for its argument, depending which
+  //  limit is being computed
+  auto chi2ForQuantity = [&num_iterations,&chi2cache,&chi2cache_mutex,compute_chi2]( double const &quantity ) -> double {
+    
+    {//begin lock on achi2cache_mutex
+      std::lock_guard<std::mutex> lock( chi2cache_mutex );
+      const auto pos = chi2cache.find(quantity);
+      if( pos != end(chi2cache) )
+        return pos->second;
+    }//end lock on chi2cache_mutex
+    
+    if( quantity < 0.0 )
+      return std::numeric_limits<double>::max();
+    
+    const double chi2 = compute_chi2( quantity );
+    
+    ++num_iterations;
+    
+    {//begin lock on chi2cache_mutex
+      std::lock_guard<std::mutex> lock( chi2cache_mutex );
+      chi2cache.insert( std::pair<double,double>{quantity,chi2} );
+    }//end lock on chi2cache_mutex
+    
+    return chi2;
+  };//chi2ForQuantity
+  
+  
+  /// `search_range` returns {best-chi2,best-quantity}
+  auto search_range = [chi2ForQuantity]( double min_range, double max_range, boost::uintmax_t &max_iter ) -> pair<double, double> {
+    // boost::brent_find_minima first evaluates the input at the range midpoint, then endpoints
+    //  and so on - we could do a first pre-scan over the range to help make sure we dont miss
+    //  a global minimum.
+    
+    
+    //\TODO: if best activity is at min_search_quantity, it takes 50 iterations inside brent_find_minima
+    //      to confirm; we could save this time by using just a little bit of intelligence...
+    const int bits = 12; //Float has 24 bits of mantisa; should get us accurate to three significant figures
+    
+    return boost::math::tools::brent_find_minima( chi2ForQuantity, min_range, max_range, bits, max_iter );
+  };//search_range lambda
+  
+  boost::uintmax_t max_iter = 100;  //this variable gets changed each use, so you need to reset it afterwards
+  const pair<double, double> r = search_range( min_search_quantity, max_search_quantity, max_iter );
+  
+  overallBestChi2 = r.second;
+  overallBestQuantity = r.first;
+  
+  const DetectorPeakResponse::EffGeometryType det_geom
+  = base_input->drf ? base_input->drf->geometryType()
+  : DetectorPeakResponse::EffGeometryType::FarField;
+  
+  auto print_quantity = [is_dist_limit,det_geom,useCurie]( double quantity, int ndigits = 4 ) -> string {
+    if( is_dist_limit )
+      return PhysicalUnits::printToBestLengthUnits(quantity,ndigits);
+    return PhysicalUnits::printToBestActivityUnits(quantity,ndigits,useCurie)
+    + DetectorPeakResponse::det_eff_geom_type_postfix(det_geom);
+  };//print_quantity
+  
+  cout << "Found min X2=" << overallBestChi2 << " with activity "
+  << print_quantity(overallBestQuantity)
+  << " and it took " << std::dec << num_iterations.load() << " iterations; searched from "
+  << print_quantity(min_search_quantity)
+  << " to " << print_quantity(max_search_quantity)
+  << endl;
+  
+  //boost::math::tools::bracket_and_solve_root(...)
+  auto chi2ForRangeLimit = [&chi2ForQuantity, overallBestChi2, yrange]( double const &quantity ) -> double {
+    return chi2ForQuantity(quantity) - overallBestChi2 - yrange;
+  };
+  
+  auto chi2ForCL = [&chi2ForQuantity, overallBestChi2, cl_chi2_delta]( double const &quantity ) -> double {
+    return chi2ForQuantity(quantity) - overallBestChi2 - cl_chi2_delta;
+  };
+  
+  //Tolerance is called with two values of quantity (activity or distance, depending which limit
+  //  is being found); one with the chi2 below root, and one above
+  auto tolerance = [chi2ForCL](double quantity_1, double quantity_2) -> bool{
+    const double chi2_1 = chi2ForCL(quantity_1);
+    const double chi2_2 = chi2ForCL(quantity_2);
+    
+    // \TODO: make sure tolerance is being used correctly - when printing info out for every call I'm not sure it is being used right... (but answers seem reasonable, so...)
+    //cout << "Tolerance called with quantity_1=" << PhysicalUnits::printToBestActivityUnits(quantity_1,false)  //PhysicalUnits::printToBestLengthUnits(quantity_1)
+    //     << ", quantity_2=" << PhysicalUnits::printToBestActivityUnits(quantity_2,4,false)
+    //     << " ---> chi2_1=" << chi2_1 << ", chi2_2=" << chi2_2 << endl;
+    
+    return fabs(chi2_1 - chi2_2) < 0.025;
+  };//tolerance(...)
+  
+  //cout << "chi2ForCL(min_search_quantity)=" << chi2ForCL(min_search_quantity) << endl;
+  
+  SpecUtilsAsync::ThreadPool pool;
+  
+  //Before trying to find lower-bounding activity, make sure the best value isnt the lowest
+  //  possible value (i.e., zero in this case), and that if we go to the lowest possible value,
+  //  that the chi2 will increase at least by cl_chi2_delta
+  pool.post( [&lowerLimit,&quantityRangeMin,&foundLowerCl,&lowerLimitChi2,&foundLowerDisplay,&num_iterations, //quantities we will modify
+               min_search_quantity,overallBestQuantity,overallBestChi2,yrange, //values we can capture by value
+               &tolerance,&chi2ForCL,&chi2ForQuantity,&print_quantity,&chi2ForRangeLimit //lamdas we will use
+             ](){
+    const double min_search_chi2 = chi2ForCL(min_search_quantity);
+    if( (fabs(min_search_quantity - overallBestQuantity) > 0.001)
+       && (min_search_chi2 > 0.0) )
+    {
+      pair<double,double> lower_val;
+      
+      boost::uintmax_t max_iter = 100;  //see note about needing to set before every use
+      lower_val = boost::math::tools::bisect( chi2ForCL, min_search_quantity, overallBestQuantity, tolerance, max_iter );
+      lowerLimit = 0.5*(lower_val.first + lower_val.second);
+      foundLowerCl = true;
+      lowerLimitChi2 = chi2ForQuantity(lowerLimit);
+      cout << "lower_val CL activity="
+      << print_quantity(lowerLimit)
+      << " with Chi2(" << lowerLimit << ")=" << lowerLimitChi2
+      << " (Best Chi2(" << overallBestQuantity << ")=" << overallBestChi2
+      << "), num_iterations=" << std::dec << num_iterations.load() << " and search range from "
+      << print_quantity(min_search_quantity)
+      << " to "
+      << print_quantity(overallBestQuantity)
+      << endl;
+      
+      const double minActChi2 = chi2ForRangeLimit(min_search_quantity);
+      if( minActChi2 < 0.0 )
+      {
+        quantityRangeMin = min_search_quantity;
+        cout << "lower_val display activity being set to min_search_quantity ("
+        << min_search_quantity << "): minActChi2=" << minActChi2
+        << ", with Chi2(" << quantityRangeMin << ")=" << chi2ForQuantity(quantityRangeMin) << endl;
+      }else
+      {
+        try
+        {
+          boost::uintmax_t max_iter = 100;
+          lower_val = boost::math::tools::bisect( chi2ForRangeLimit, min_search_quantity, lowerLimit, tolerance, max_iter );
+          quantityRangeMin = 0.5*(lower_val.first + lower_val.second);
+          foundLowerDisplay = true;
+          cout << "lower_val display quantity=" << print_quantity(quantityRangeMin)
+          << " wih chi2=" << chi2ForQuantity(quantityRangeMin) << ", num_iterations=" << std::dec << num_iterations.load() << endl;
+        }catch( std::exception &e )
+        {
+          const double delta_act = 0.1*(lowerLimit - quantityRangeMin);
+          for( quantityRangeMin = lowerLimit; quantityRangeMin > 0; quantityRangeMin -= delta_act )
+          {
+            const double this_chi2 = chi2ForQuantity(quantityRangeMin);
+            if( this_chi2 >= (overallBestChi2 + yrange) )
+              break;
+          }
+          
+          cout << "Couldnt find lower-limit of display range properly, so scanned down and found "
+          << print_quantity(quantityRangeMin)
+          << " where LowerLimit=" << print_quantity(lowerLimit)
+          << " and ActRangeMin=" << print_quantity(quantityRangeMin)
+          << " and BestActivity" << print_quantity(overallBestQuantity)
+          << endl;
+        }//try / catch
+      }//
+    }else
+    {
+      lowerLimit = 0.0;
+      //quantityRangeMin = overallBestQuantity;
+      quantityRangeMin = min_search_quantity;
+      cout << "lower_val activity/distance already at min" << endl;
+    }//if( fabs(min_search_quantity - overallBestQuantity) > 0.001*PhysicalUnits::bq ) / else
+  } );//pool.post( ... find lower limit ...)
+  
+  pool.post( [&upperLimit,&quantityRangeMax,&foundUpperCl,&upperLimitChi2,&foundUpperDisplay,&num_iterations, //quantities we will modify
+               max_search_quantity,overallBestQuantity,overallBestChi2,yrange,is_dist_limit,min_search_quantity, //values we can capture by value
+               &tolerance,&chi2ForCL,&chi2ForQuantity,&print_quantity,&chi2ForRangeLimit //lambdas we will use
+             ](){
+    const double max_search_chi2 = chi2ForCL(max_search_quantity);
+    if( (fabs(max_search_quantity - overallBestQuantity) > 0.001)
+       && (max_search_chi2 > 0.0)  )
+    {
+      pair<double,double> upper_val;
+      boost::uintmax_t max_iter = 100;
+      upper_val = boost::math::tools::bisect( chi2ForCL, overallBestQuantity, max_search_quantity, tolerance, max_iter );
+      upperLimit = 0.5*(upper_val.first + upper_val.second);
+      foundUpperCl = true;
+      upperLimitChi2 = chi2ForQuantity(upperLimit);
+      
+      cout << "upper_val CL activity=" << print_quantity(upperLimit)
+      << " wih chi2=" << upperLimitChi2 << ", num_iterations=" << std::dec << num_iterations.load()
+      << " and search range from " << print_quantity(overallBestQuantity)
+      << " to "
+      << print_quantity(max_search_quantity)
+      << endl;
+      
+      const double maxSearchChi2 = chi2ForRangeLimit(max_search_quantity);
+      if( maxSearchChi2 < 0.0 )
+      {
+        quantityRangeMax = max_search_quantity;
+        cout << "upper_val display activity being set to max_search_quantity (" << max_search_quantity << "): maxSearchChi2=" << maxSearchChi2 << endl;
+      }else
+      {
+        try
+        {
+          max_iter = 100;
+          upper_val = boost::math::tools::bisect( chi2ForRangeLimit, upperLimit, max_search_quantity, tolerance, max_iter );
+          quantityRangeMax = 0.5*(upper_val.first + upper_val.second);
+          foundUpperDisplay = true;
+          cout << "upper_val display quantity=" << print_quantity(quantityRangeMax)
+          << " wih chi2=" << chi2ForQuantity(quantityRangeMax) << ", num_iterations="
+          << std::dec << num_iterations.load() << endl;
+        }catch( std::exception &e )
+        {
+          const double delta_act = std::max( 0.1*fabs(upperLimit - overallBestQuantity), 0.01*fabs(max_search_quantity - upperLimit) );
+          for( quantityRangeMax = upperLimit; quantityRangeMax < max_search_quantity; quantityRangeMax -= delta_act )
+          {
+            const double this_chi2 = chi2ForQuantity(quantityRangeMax);
+            if( this_chi2 >= (overallBestChi2 + yrange) )
+              break;
+          }
+          
+          cout << "Couldn't find upper-limit of display range properly, so scanned up and found "
+          << print_quantity(quantityRangeMax)
+          << " where UpperLimit Chi2(" << upperLimit << ")="
+          << print_quantity(upperLimit)
+          << " and ActRangeMax Chi2(" << quantityRangeMax << ")="
+          << print_quantity(quantityRangeMax)
+          << " and BestActivity Chi2(" << overallBestQuantity << ")="
+          << print_quantity(overallBestQuantity)
+          << endl;
+        }//try / catch
+      }
+    }else
+    {
+      upperLimit = overallBestQuantity;
+      quantityRangeMax = max_search_quantity;
+      
+      if( is_dist_limit )
+      {
+        // We might be at a huge distance, so lets find the distance at which we would start to
+        //  kinda see something, ever so slightly
+        try
+        {
+          auto chi2ForMinDelta = [&chi2ForQuantity, overallBestChi2, yrange]( double const &quantity ) -> double {
+            return chi2ForQuantity(quantity) - overallBestChi2 - 0.01;
+          };
+          
+          boost::uintmax_t max_iter = 100;
+          const auto effective_upper_val = boost::math::tools::bisect( chi2ForMinDelta, min_search_quantity, overallBestQuantity, tolerance, max_iter );
+          upperLimit = 0.5*(effective_upper_val.first + effective_upper_val.second);
+          quantityRangeMax = upperLimit;
+        }catch( std::exception &e )
+        {
+          assert( 0 );
+        }
+        //overallBestQuantity
+      }//if( is_dist_limit )
+      
+      cout << "upper_val activity already at max" << endl;
+    }
+  } );//pool.post( ... find upper limit ...)
+  
+  pool.join();
+  
+  cout << "Found best chi2 and ranges with num_iterations=" << std::dec << num_iterations.load() << endl;
+  
+  assert( quantityRangeMin <= quantityRangeMax );
+  if( quantityRangeMax < quantityRangeMin )
+    std::swap( quantityRangeMin, quantityRangeMax );
+  
+  if( quantityRangeMax == quantityRangeMin )
+  {
+    assert( !foundLowerCl && !foundUpperCl );
+    quantityRangeMin = 0.9*quantityRangeMin;
+    quantityRangeMax = 1.1*quantityRangeMin;
+  }
+  
+  const double initialRangeDelta = fabs(quantityRangeMax - quantityRangeMin);
+  if( is_dist_limit && !foundUpperCl )
+  {
+    // This is when there are nearly zero or negative counts so the Chi2 will just stay flat
+    //  at larger and larger distances; in this case we have set quantityRangeMax to be approx
+    //  where you start getting a little effect, so now we'll add in a little area after
+    //  this point so you can see the Chi2 curve is flattened out
+    quantityRangeMax += 0.33 * initialRangeDelta;
+  }
+  
+  if( foundLowerDisplay )
+    quantityRangeMin = std::max( min_search_quantity, quantityRangeMin - 0.1*initialRangeDelta );
+  
+  if( foundUpperDisplay )
+    quantityRangeMax = std::min( max_search_quantity, quantityRangeMax + 0.1*initialRangeDelta );
+  
+  // If we didnt find an upper limit, then only display to a fwe multiples of lower limit,
+  //  not entire range
+  if( is_dist_limit && !foundUpperCl && !foundUpperDisplay && foundLowerCl )
+    quantityRangeMax = std::min(quantityRangeMax, 3*lowerLimit ); //3 is arbirary
+  
+  // TODO: be a little more intelligent in
+  const double quantity_delta = fabs(quantityRangeMax - quantityRangeMin) / nchi2;
+  chi2s.resize( nchi2 );
+  
+  for( size_t i = 0; i < nchi2; ++i )
+  {
+    const double quantity = quantityRangeMin + quantity_delta*i;
+    pool.post( [i, quantity, &chi2s, &chi2ForQuantity](){
+      chi2s[i].first = quantity;
+      chi2s[i].second = chi2ForQuantity(quantity);
+    } );
+  }
+  pool.join();
+  
+  const double distance = is_dist_limit ? lowerLimit : base_input->distance;
+  const double activity = is_dist_limit ? base_input->activity : upperLimit;
+  const double other_quantity = is_dist_limit ? activity : distance;
+  
+  const auto localComputeForActivity = [base_input]( const double activity, const double distance,
+                                              double &chi2, int &numDOF )
+      -> std::shared_ptr<const DetectionLimitCalc::DeconComputeResults> {
+    chi2 = 0.0;
+    numDOF = 0;
+    std::vector<PeakDef> peaks;
+    
+    shared_ptr<DetectionLimitCalc::DeconComputeInput> input = make_shared<DetectionLimitCalc::DeconComputeInput>( *base_input );
+    input->activity = activity;
+    input->distance = distance;
+    
+    DetectionLimitCalc::DeconComputeResults results
+                  = DetectionLimitCalc::decon_compute_peaks( *input );
+    
+    peaks = results.fit_peaks;
+    chi2 = results.chi2;
+    numDOF = results.num_degree_of_freedom;
+    
+    return make_shared<const DetectionLimitCalc::DeconComputeResults>(results);
+  };//void localComputeForActivity(...)
+  
+  
+  int numDOF = 0;
+  
+  const string quantity_str = print_quantity(overallBestQuantity, 3);
+  char buffer[128];
+  
+  pool.post( [&result,is_dist_limit,&localComputeForActivity,other_quantity,overallBestQuantity](){
+    double dummy_chi2;
+    int dummy_numDOF;
+    if( is_dist_limit )
+      result.overallBestResults = localComputeForActivity( other_quantity, overallBestQuantity, dummy_chi2, dummy_numDOF );
+    else
+      result.overallBestResults = localComputeForActivity( overallBestQuantity, other_quantity, dummy_chi2, dummy_numDOF );
+  } );
+  
+  // TODO: put all below computations into another thread
+  string limit_str;
+  if( foundLowerCl && foundUpperCl )
+  {
+    double lowerQuantityChi2 = -999.9, upperQuantityChi2 = -999.9;
+    std::vector<PeakDef> peaks;
+    if( is_dist_limit )
+    {
+      result.lowerLimitResults = localComputeForActivity( other_quantity, lowerLimit, lowerQuantityChi2, numDOF );
+      result.upperLimitResults = localComputeForActivity( other_quantity, upperLimit, upperQuantityChi2, numDOF );
+    }else
+    {
+      result.lowerLimitResults = localComputeForActivity( lowerLimit, other_quantity, lowerQuantityChi2, numDOF );
+      result.upperLimitResults = localComputeForActivity( upperLimit, other_quantity, upperQuantityChi2, numDOF );
+    }
+    
+    assert( lowerQuantityChi2 == lowerLimitChi2 ); // TODO: check logic to make sure this is definitely true, then remove above computation
+    assert( upperQuantityChi2 == upperLimitChi2 ); // TODO: check logic to make sure this is definitely true, then remove above computation
+    
+    limit_str = print_quantity( overallBestQuantity, 3 );
+    const string lower_limit_str = print_quantity( lowerLimit, 2 );
+    const string upper_limit_str = print_quantity( upperLimit, 2 );
+    
+    // Chi2 at upper and lower limits *should* be the same, but since I dont totally trust
+    //  everything yet, we'll allow showing a discrepancy so we can see something is up
+    if( fabs(lowerQuantityChi2 - upperQuantityChi2) < 0.05*std::max(lowerQuantityChi2, upperQuantityChi2) )
+      snprintf( buffer, sizeof(buffer), "%.1f", 0.5*(lowerQuantityChi2 + upperQuantityChi2) );
+    else
+      snprintf( buffer, sizeof(buffer), "%.1f and %.1f", lowerQuantityChi2, upperQuantityChi2 );
+    
+    const string chi2_str = buffer;
+    
+    //snprintf( buffer, sizeof(buffer), "%.1f%% coverage in [%s, %s], &chi;<sup>2</sup>=%s",
+    //         0.1*std::round(1000.0*wantedCl), lower_limit_str.c_str(), upper_limit_str.c_str(),
+    //         chi2_str.c_str() );
+    
+    snprintf( buffer, sizeof(buffer), "Between %s and %s at %.1f%% CL, &chi;<sup>2</sup>=%s",
+             lower_limit_str.c_str(), upper_limit_str.c_str(),
+             0.1*std::round(1000.0*wantedCl),
+             chi2_str.c_str() );
+  }else if( !foundLowerCl && !foundUpperCl )
+  {
+    limit_str = print_quantity( overallBestQuantity, 3 );
+    snprintf( buffer, sizeof(buffer), "Error: failed upper or lower limits at %.1f%%",
+             0.1*std::round(1000.0*wantedCl) );
+  }else if( foundLowerCl )
+  {
+    if( is_dist_limit )
+    {
+      double lowerQuantityChi2 = -999.9;
+      result.lowerLimitResults = localComputeForActivity( other_quantity, lowerLimit, lowerQuantityChi2, numDOF );
+      
+      assert( lowerQuantityChi2 == result.lowerLimitChi2 ); // TODO: check logic to make sure this is definitely true, then remove above computation
+      
+      limit_str = print_quantity( lowerLimit, 3 );
+      const string print_limit_str = print_quantity( lowerLimit, 2 );
+      
+      //More stat-nerd-esk language, maybe, if its even correct, but lets print something
+      //  easier to interpret, for the commoners, like myself.
+      //snprintf( buffer, sizeof(buffer), "%.1f%% coverage at %s with &chi;<sup>2</sup>=%.1f",
+      //         0.1*std::round(1000.0*wantedCl), print_limit_str.c_str(), lowerQuantityChi2 );
+      
+      snprintf( buffer, sizeof(buffer), "Can detect at %s at %.1f%% CL, &chi;<sup>2</sup>=%.1f",
+               print_limit_str.c_str(), 0.1*std::round(1000.0*wantedCl), lowerQuantityChi2 );
+    }else
+    {
+      assert( 0 );
+      //double lowerQuantityChi2 = -999.9;
+      //result.lowerLimitResults = localComputeForActivity( lowerLimit, other_quantity, peaks, lowerQuantityChi2, numDOF );
+      snprintf( buffer, sizeof(buffer), "Error: Didn't find %.1f%% CL activity",
+               0.1*std::round(1000.0*wantedCl));
+    }
+  }else
+  {
+    assert( foundUpperCl );
+    
+    if( is_dist_limit )
+    {
+      assert( 0 );
+      snprintf( buffer, sizeof(buffer), "Error: Didn't find %.1f%% CL det. distance",
+               0.1*std::round(1000.0*wantedCl) );
+    }else
+    {
+      double upperQuantityChi2 = -999.9;
+      result.upperLimitResults = localComputeForActivity( upperLimit, other_quantity, upperQuantityChi2, numDOF );
+      
+      // TODO: check logic to make sure this is definitely true, then remove above computation
+      //  I think these quantities should be really close, but there may be a small amount of rounding
+      cout << "upperQuantityChi2=" << upperQuantityChi2 << ", upperLimitChi2=" << upperLimitChi2 << endl;
+      assert( (fabs(upperQuantityChi2 - upperLimitChi2) < 0.01)
+             || (fabs(upperQuantityChi2 - upperLimitChi2) < 0.01*std::max(upperQuantityChi2,upperLimitChi2)) );
+      
+      limit_str = print_quantity(upperLimit,3);
+      const string print_limit_str = print_quantity( upperLimit, 2 );
+      //snprintf( buffer, sizeof(buffer), "%.1f%% coverage at %s with &chi;<sup>2</sup>=%.1f",
+      //         0.1*std::round(1000.0*wantedCl), print_limit_str.c_str(), upperQuantityChi2 );
+      snprintf( buffer, sizeof(buffer), "Can detect %s at %.1f%% CL, &chi;<sup>2</sup>=%.1f",
+               print_limit_str.c_str(), 0.1*std::round(1000.0*wantedCl), upperQuantityChi2 );
+    }//if( is_dist_limit ) / else
+  }
+  
+  pool.join();
+  
+  
+  result.limitText = buffer;
+  result.quantityLimitStr = limit_str;
+  
+  result.overallBestChi2 = overallBestChi2;
+  result.overallBestQuantity = overallBestQuantity;
+  result.upperLimit = upperLimit;
+  result.upperLimitChi2 = upperLimitChi2;
+  result.lowerLimit = lowerLimit;
+  result.lowerLimitChi2 = lowerLimitChi2;
+  result.foundUpperCl = foundUpperCl;
+  result.foundUpperDisplay = foundUpperDisplay;
+  result.upperDisplayRange = quantityRangeMax;
+  result.foundLowerCl = foundLowerCl;
+  result.foundLowerDisplay = foundLowerDisplay;
+  result.lowerDisplayRange = quantityRangeMin;
+  
+  
+  if( is_dist_limit )
+  {
+    if( foundUpperCl )
+    {
+      snprintf( buffer, sizeof(buffer), "Best &chi;<sup>2</sup> of %.1f at %s, %i DOF",
+               overallBestChi2, quantity_str.c_str(), numDOF );
+    }else
+    {
+      snprintf( buffer, sizeof(buffer), "&chi;<sup>2</sup> is %.1f at large distance, %i DOF",
+               overallBestChi2, numDOF );
+    }
+  }else
+  {
+    snprintf( buffer, sizeof(buffer), "Best &chi;<sup>2</sup> of %.1f at %s, %i DOF",
+             overallBestChi2, quantity_str.c_str(), numDOF );
+  }//if( is_dist_limit ) / else
+  
+  
+  result.bestCh2Text = buffer;
+  result.chi2s = chi2s;
+  
+  return result;
+};//get_activity_or_distance_limits(...).
+  
+  
 }//namespace DetectionLimitCalc
 

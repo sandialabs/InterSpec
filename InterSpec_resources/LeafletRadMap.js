@@ -68,7 +68,29 @@ LeafletRadMap = function (elem,options) {
     this.options.minMarkerOpacity = 0.1;
   if( typeof this.options.showHeatMap !== "boolean" )
     this.options.showHeatMap = false;
-
+    
+  // Text we might need to localize
+  if( typeof this.options.foregroundTxt !== "string" )
+    this.options.foregroundTxt = "Foreground";
+  if( typeof this.options.backgroundTxt !== "string" )
+    this.options.backgroundTxt = "Background";
+  if( typeof this.options.secondaryTxt !== "string" )
+    this.options.secondaryTxt = "Secondary";
+  if( typeof this.options.gammaTxt !== "string" )
+    this.options.gammaTxt = "Gamma";
+  if( typeof this.options.displayedAsTxt !== "string" )
+    this.options.displayedAsTxt = "Displayed as";
+  if( typeof this.options.cpsText !== "string" )
+    this.options.cpsText = "CPS";
+  if( typeof this.options.loadTxt !== "string" )
+    this.options.loadTxt = "Load";
+  if( typeof this.options.measurementsAsTxt !== "string" )
+    this.options.measurementsAsTxt = "measurements as";
+  if( typeof this.options.realTimeTxt !== "string" )
+    this.options.realTimeTxt = "Real Time";
+  if( typeof this.options.liveTimeTxt !== "string" )
+    this.options.liveTimeTxt = "Live Time";
+    
   this.map = L.map(this.mapDiv, {
     minZoom: 2,
     maxZoom: 23, // the heatmap plugin needs some help understanding the map's maxZoom
@@ -101,6 +123,8 @@ LeafletRadMap = function (elem,options) {
   });
   
   L.control.scale({metric: true, imperial: false, position: 'bottomleft'}).addTo(this.map);
+  
+  L.control.measure({position: "bottomleft"}).addTo(this.map);
   
   this.markerGradientStops = {
     0.4: 'blue',
@@ -179,7 +203,7 @@ LeafletRadMap.prototype.handleResize = function() {
   //console.log( 'handleResize, isAutoZoomed=', this.isAutoZoomed );
 
   // FIXME: this.isAutoZoomed will be set to false during normal data
-  //        loading (unfortuanetly), not just when the the user changes
+  //        loading (unfortunately), not just when the the user changes
   //        things.
 
   if( !this.isAutoZoomed || !this.markerLayer )
@@ -238,11 +262,14 @@ LeafletRadMap.prototype.updateMarkerLegend = function(){
     return;
   
   if( have_fore )
-    self.markerLegendDiv.innerHTML += '<div class="LegEntry"><div class="RadMapMarkerInner DispAsFore"></div><div>Foreground</div></div>';
+    self.markerLegendDiv.innerHTML += '<div class="LegEntry"><div class="RadMapMarkerInner DispAsFore"></div><div>'
+                                      + self.options.foregroundTxt + '</div></div>';
   if( have_back )
-    self.markerLegendDiv.innerHTML += '<div class="LegEntry"><div class="RadMapMarkerInner DispAsBack"></div><div>Background</div></div>';
+    self.markerLegendDiv.innerHTML += '<div class="LegEntry"><div class="RadMapMarkerInner DispAsBack"></div><div>'
+                                      + self.options.backgroundTxt + '</div></div>';
   if( have_second )
-    self.markerLegendDiv.innerHTML += '<div class="LegEntry"><div class="RadMapMarkerInner DispAsSecond"></div><div>Secondary</div></div>';
+    self.markerLegendDiv.innerHTML += '<div class="LegEntry"><div class="RadMapMarkerInner DispAsSecond"></div><div>'
+                                      + self.options.secondaryTxt + '</div></div>';
   if( have_other )
     self.markerLegendDiv.innerHTML += '<div class="LegEntry"><div class="RadMapMarkerInner"></div><div>Not Displayed</div></div>';
   
@@ -266,11 +293,11 @@ LeafletRadMap.prototype.handleUserDrawingUpdate = function(){
   self.btnsDiv.innerHTML = '';
 
   const msg = document.createElement('div');
-  msg.innerHTML = "Load " + wantedSamples.length + " measurements as:";
+  msg.innerHTML = self.options.loadTxt + " " + wantedSamples.length + " " + self.options.measurementsAsTxt + ":";
   self.btnsDiv.appendChild( msg );
 
   const foreground = document.createElement('button');
-  foreground.innerHTML = "Foreground";
+  foreground.innerHTML = self.options.foregroundTxt;
   foreground.classList.add("Wt-btn");
   foreground.classList.add("with-label");
   foreground.addEventListener("click", function(evt){
@@ -278,7 +305,7 @@ LeafletRadMap.prototype.handleUserDrawingUpdate = function(){
   });
 
   const background = document.createElement('button');
-  background.innerHTML = "Background";
+  background.innerHTML = self.options.backgroundTxt;
   background.classList.add("Wt-btn");
   background.classList.add("with-label");
   background.addEventListener("click", function(evt){
@@ -286,7 +313,7 @@ LeafletRadMap.prototype.handleUserDrawingUpdate = function(){
   });
 
   const secondary = document.createElement('button');
-  secondary.innerHTML = "Secondary";
+  secondary.innerHTML = self.options.secondaryTxt;
   secondary.classList.add("Wt-btn");
   secondary.classList.add("with-label");
   secondary.addEventListener("click", function(evt){
@@ -567,11 +594,11 @@ LeafletRadMap.prototype.refresh = function( dont_update_zoom ){
       let html = "";
       
       html += "<table class=\"MapMousePopup\">";
-      html += `<tr><td>Gamma CPS</td><td>${m.gammaCps.toFixed(2)}</td></tr>`;
+      html += `<tr><td>${self.options.gammaTxt} ${self.options.cpsText}</td><td>${m.gammaCps.toFixed(2)}</td></tr>`;
       if( typeof m.neutronCps === "number" )
-        html += `<tr><td>Neutron CPS</td><td>${m.neutronCps.toFixed(4)}</td></tr>`;
-      html += `<tr><td>Real Time</td><td>${m.realTime.toFixed(3)}</td></tr>`;
-      html += `<tr><td>Live Time</td><td>${m.gammaLiveTime.toFixed(3)}</td></tr>`;
+        html += `<tr><td>Neutron ${self.options.cpsText}</td><td>${m.neutronCps.toFixed(4)}</td></tr>`;
+      html += `<tr><td>${self.options.realTimeTxt}</td><td>${m.realTime.toFixed(3)}</td></tr>`;
+      html += `<tr><td>${self.options.liveTimeTxt}</td><td>${m.gammaLiveTime.toFixed(3)}</td></tr>`;
       if( m.startTime )
       {
         const datetime = m.startTime.toISOString().slice(0, -1).split("T");
@@ -582,10 +609,10 @@ LeafletRadMap.prototype.refresh = function( dont_update_zoom ){
       }
       
       if( m.displayType >= 0 && m.displayType < 3 ){
-        html += '<tr><td>Displayed as</td><td>';
-        if( m.displayType == 0 ) html += "Foreground";
-        else if( m.displayType == 1 ) html += "Secondary";
-        else if( m.displayType == 2 ) html += "Background";
+        html += '<tr><td>' + self.options.displayedAsTxt + '</td><td>';
+        if( m.displayType == 0 ) html += self.options.foregroundTxt;
+        else if( m.displayType == 1 ) html += self.options.secondaryTxt;
+        else if( m.displayType == 2 ) html += self.options.backgroundTxt;
         html += '</td></tr>';
       }
       
@@ -749,8 +776,8 @@ LeafletRadMap.prototype.refresh = function( dont_update_zoom ){
       mincps = Math.round(mincps)
       
 
-    self.legendUpperCps.innerHTML = maxcps + "<br />CPS";
-    self.legendLowerCps.innerHTML = mincps + "<br />CPS";
+    self.legendUpperCps.innerHTML = maxcps + "<br />" + self.options.cpsText;
+    self.legendLowerCps.innerHTML = mincps + "<br />" + self.options.cpsText;
 
     const width = self.legendCanvas.clientWidth;
     const height = self.legendCanvas.clientHeight;

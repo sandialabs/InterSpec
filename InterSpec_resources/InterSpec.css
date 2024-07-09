@@ -230,14 +230,43 @@ width:100%;
 }
 
 
-/* A lighter-appearing button, with no background color, and text matching border. */
-button.Wt-btn.with-label.LightButton
+/* A lighter-appearing button, with no background color, and text matching border. 
+ We will also allow applying this style to WSplitButton
+ */
+button.Wt-btn.LightButton, .btn-group.LightButton
 {
   font-weight: normal;
   background-color: rgba(0,0,0,0);
   color: rgb(86,88,90);
 }
 
+/* .btn-group is for WSplitButton */
+.btn-group.LightButton > button.Wt-btn
+{
+  border-top: none;
+  border-bottom: none;
+  margin-top: -1px;
+  padding-top: 3px;
+}
+
+.btn-group.LightButton > button.Wt-btn.dropdown-toggle.LightButton
+{
+  border-right: none;
+  border-radius: 0px;
+}
+
+.btn-group.LightButton > button.Wt-btn.with-label.LightButton
+{
+  border: none;
+}
+
+.btn-group > .Wt-btn.dropdown-toggle
+{
+  width: 20px;
+  background-image: url('../InterSpec_resources/images/bullet_arrow_down.png');
+  background-position: right center;
+  background-repeat: no-repeat, no-repeat;
+}
 
 .Wt-icon {
   display: inline-block;
@@ -635,6 +664,13 @@ ul.Wt-popupmenu > li > a > span > span:hover
   margin-right: 5px;
 }
 
+.PeakInfoDisplay .PeakEditHint
+{
+color: gray;
+margin-left: 2em;
+font-size:66%
+}
+
 
 /* A button that shows up as a link. */
 .LinkBtn, .LinkBtn:hover {
@@ -802,7 +838,9 @@ opacity:0.4;
 }
 
 
-button, button:hover {
+button, button:hover,
+  .btn-group  /* WSplitButton spans */
+{
   font-weight:bold;
   vertical-align: middle;
   border:1px solid #e1e1e1;
@@ -836,248 +874,248 @@ button[disabled]
 li{ padding-top: 0; }
 table { margin-bottom:0; }
 a:hover { color:#E88400; border-bottom:none; }
-th, td { border: none; padding: 0; vertical-align: none; text-align: none; }
-
-
-
-body
-{
-  background: none;
-  color: none;
-  background-color: none;
-  font-size: 14px;
-  font-family:Helvetica, Arial, Verdana, sans-serif;
-  padding:5px;
-}
-
-h1 
-{ 
-  color: black;
-  font-size: 2em;
-  font-weight: bold;
-  margin-bottom:0;
-  font-family: Times;
-  margin-before: 0.15em;
-  margin-after: 0.25em;
--webkit-margin-before: 0.15em;
--webkit-margin-after: 0.25em;
--webkit-margin-start: 0px;
--webkit-margin-end: 0px;
-}
-
-.Wt-tableview .Wt-spacer
-{
-  /* background: white;*/
-}
-
-
-.HideSpinners .HideSpinners
-{
-  width: 8em;
-  /* remove the up/down spinbox for Firefox - if you re-enable this, also re-enable the c++ code to set step size */
-  -moz-appearance: textfield;
-}
-
-input.HideSpinners::-webkit-outer-spin-button, input.HideSpinners::-webkit-inner-spin-button
-{
-  /* Remove the up/down arrow on spin box for Chrome, Safari, Edge, Opera - if you re-enable this, also re-enable the c++ code to set step size */
-  -webkit-appearance: none;
-  margin: 0;
-}
-
-
-.clearsession
-{
-  padding-top: 7px;
-  text-align: center;
-}
-
-.clearsessiontxt, .RemoteRidToastButtons > div
-{
-  padding: 3px;
-  padding-top: 4px;
-  border: 1px solid grey;
+  th, td { border: none; padding: 0; vertical-align: none; text-align: none; }
   
-  cursor: pointer;
-  -moz-border-radius: 4px;
-  -webkit-border-radius: 4px;
-  border-radius: 4px;
-  background-color: #EEEEEE;
-}
-
-.clearsessiontxt
-{
-  margin-left: auto;
-  margin-right: auto;
-}
-
-.RemoteRidToastButtons
-{
-  padding-top: 7px;
-  display: flex;
-  flex-flow: row wrap;
-  justify-content: space-evenly;
-}
-
-.RemoteRidToastButtons > div
-{
-}
-
-/* The MenuBar CSS class is added to the title bar both for browser-based, and Electron based (that
- use HTML menu) app sessions
- */
-.MenuBar
-{
-  border-bottom: 1px solid grey;
-  background: #FFF;
-}
-
-/* The WebMenuBar CSS class is added to the title bar, for browser-based desktop app sessions (e.g.,
- not added for electron builds that use HTML menus)
- */
-.WebMenuBar
-{
-  padding-left: 8px;
-  height: 24px;  /*pics are 18px with 3px top padding*/
-  font-size: 15px;
-  padding-top: 0px;
-}
-
-
-/* This is the SNL logo that is placed on the right-hand side of the title bar on desktop browser-based sessions. */
-.SnlWebMenuBarLogo
-{
-  padding-top: 3px;
-  padding-right: 8px;
-  float: right;
-}
-
-
-
-/* The PopupDivMenu or PopupDivMenuPhone CSS class is added to the actual popup div that holds the
-   menu items for all instances of the C++ PopupDivMenu class.  
- 
- AppMenu CSS class is added to the same popup divs, but only for the app-level menus (i.e. "InterSpec",
- "View", "Tools", and "Help") on non-mobile.
- */
-.PopupDivMenu
-{
-  background-color: #FAFAFA;
-  border: solid 1px #e1e1e1;
-  max-height: 90%;
-  overflow-y: auto;
-  /* right click on a peak, then "Change Nuclide" submenu can overflow with a long list, which adding
-   the vertical scroll bar onto this list will cause the need for a horizontal scroll bar - which then
-   just looks bad - so we'll hide horizontal scroll, even though it would be better to just resize the
-   menu width, but I'm not immediately sure how to do that.
+  
+  
+  body
+  {
+    background: none;
+    color: none;
+    background-color: none;
+    font-size: 14px;
+    font-family:Helvetica, Arial, Verdana, sans-serif;
+    padding:5px;
+  }
+  
+  h1
+  {
+    color: black;
+    font-size: 2em;
+    font-weight: bold;
+    margin-bottom:0;
+    font-family: Times;
+    margin-before: 0.15em;
+    margin-after: 0.25em;
+    -webkit-margin-before: 0.15em;
+    -webkit-margin-after: 0.25em;
+    -webkit-margin-start: 0px;
+    -webkit-margin-end: 0px;
+  }
+  
+  .Wt-tableview .Wt-spacer
+  {
+    /* background: white;*/
+  }
+  
+  
+  .HideSpinners .HideSpinners
+  {
+    width: 8em;
+    /* remove the up/down spinbox for Firefox - if you re-enable this, also re-enable the c++ code to set step size */
+    -moz-appearance: textfield;
+  }
+  
+  input.HideSpinners::-webkit-outer-spin-button, input.HideSpinners::-webkit-inner-spin-button
+  {
+    /* Remove the up/down arrow on spin box for Chrome, Safari, Edge, Opera - if you re-enable this, also re-enable the c++ code to set step size */
+    -webkit-appearance: none;
+    margin: 0;
+  }
+  
+  
+  .clearsession
+  {
+    padding-top: 7px;
+    text-align: center;
+  }
+  
+  .clearsessiontxt, .RemoteRidToastButtons > div
+  {
+    padding: 3px;
+    padding-top: 4px;
+    border: 1px solid grey;
+    
+    cursor: pointer;
+    -moz-border-radius: 4px;
+    -webkit-border-radius: 4px;
+    border-radius: 4px;
+    background-color: #EEEEEE;
+  }
+  
+  .clearsessiontxt
+  {
+    margin-left: auto;
+    margin-right: auto;
+  }
+  
+  .RemoteRidToastButtons
+  {
+    padding-top: 7px;
+    display: flex;
+    flex-flow: row wrap;
+    justify-content: space-evenly;
+  }
+  
+  .RemoteRidToastButtons > div
+  {
+  }
+  
+  /* The MenuBar CSS class is added to the title bar both for browser-based, and Electron based (that
+   use HTML menu) app sessions
    */
-  overflow-x: hidden;
-}
-
-/* Add a drop-shadow for the app-level menus. */
-.PopupDivMenu.AppMenu 
-{
-  box-shadow: 0 5px 5px -3px rgba(0,0,0,.2), 0 8px 10px 1px rgba(0,0,0,.14), 0 3px 14px 2px rgba(0,0,0,.12);
+  .MenuBar
+  {
+    border-bottom: 1px solid grey;
+    background: #FFF;
+  }
   
-  /* If vertical scroll-bars show, then sub-menus will be inside the parent 
-      (this is due, I think, to positionAtWidget JS function in Wt/src/web/skeleton/Wt.js), 
-      so we will just disable vertical scroll-bars, for the moment. 
-  */
-  overflow-y: hidden;
-}
-
-/* Add a slightly more petite drop shadow for sub-menus.
- TODO: it would be nice to move the sub-menu to the right by a couple pixels, but I dont see how to hack the CSS so the Wt.fitToWindow JS function wont clober the efforts
- */
-.PopupDivMenu.AppSubMenu
-{
-  box-shadow: 0 5px 3px -3px rgba(0,0,0,.12), 4px 8px 6px 1px rgba(0,0,0,.08), 5px 3px 6px 1px rgba(0,0,0,.06);
-}
-
-.PopupDivMenu.ContextSubMenu
-{
-
-}
-
-
-/*
- TODO: it would be nice to hide separators that are at the bottom and top of menus; this happens when all the menu items above or below the separator is hidden.  For some reason selectors like the next dont actually function (but they will aw part of a jQuery selector).
-.PopupDivMenu > li.Wt-separator:visible:last
-{
-  border-top: 0px;
-  border-bottom: 0px;
-  margin: 0px 0px;
-}
- */
-
-.PopupDivMenuItem-disabled
-{
-  background: none;
-  color: #D2D2D2;
-}
-
-.PopupDivMenu li
-{
-  padding-top: 4px;
-  padding-bottom: 4px;
-}
-
-.PopupDivMenu li.Wt-separator
-{
-  padding-top: 0px;
-  padding-bottom: 0px;
-}
-
-
-.PopupMenuParentButton, .PopupMenuParentButton:hover
-{
-  height: 23px; /*leave 1 px for WebMenuBar lower border */
-  padding: 4px 8px 3px 8px;
-  margin:0px 0px;
-  font-weight:normal;
-  background: #FFFFFF;
-  color: black;
-  border: none;
-  vertical-align: top; /* necessary or else on Safari the titlebar border will be partially overlapped - not entirely sure why*/
-  -moz-border-radius: 2px;
-  -webkit-border-radius: 2px;
-  border-radius: 2px;
+  /* The WebMenuBar CSS class is added to the title bar, for browser-based desktop app sessions (e.g.,
+   not added for electron builds that use HTML menus)
+   */
+  .WebMenuBar
+  {
+    padding-left: 8px;
+    height: 24px;  /*pics are 18px with 3px top padding*/
+    font-size: 15px;
+    padding-top: 0px;
+  }
   
-  -moz-box-shadow: none !important;
-  -webkit-box-shadow: none !important;
-  box-shadow: none !important;
-  outline: none;
-}
-
-
-.PopupMenuParentButton:hover:not(.active)
-{
-  background: rgba(128, 128, 128, 0.25);
-}
-
-.PopupMenuParentButton.active
-{
-  background: rgba(128, 128, 128, 1.0);
   
-  -moz-box-shadow: none !important;
-  -webkit-box-shadow: none !important;
-  box-shadow: none !important;
-}
-
-
-.PopupDivMenuWidget.active
-{
-  background-color: #FAFAFA;
-  color: black;
-}
-
-
-.NumPeakSelect
-{
-  border:2px solid blue;
-}
-
-.RoundMenuIcon, .RoundMenuIcon:hover, button.RoundMenuIcon, button.RoundMenuIcon:hover {
+  /* This is the SNL logo that is placed on the right-hand side of the title bar on desktop browser-based sessions. */
+  .SnlWebMenuBarLogo
+  {
+    padding-top: 3px;
+    padding-right: 8px;
+    float: right;
+  }
+  
+  
+  
+  /* The PopupDivMenu or PopupDivMenuPhone CSS class is added to the actual popup div that holds the
+   menu items for all instances of the C++ PopupDivMenu class.
+   
+   AppMenu CSS class is added to the same popup divs, but only for the app-level menus (i.e. "InterSpec",
+   "View", "Tools", and "Help") on non-mobile.
+   */
+  .PopupDivMenu
+  {
+    background-color: #FAFAFA;
+    border: solid 1px #e1e1e1;
+    max-height: 90%;
+    overflow-y: auto;
+    /* right click on a peak, then "Change Nuclide" submenu can overflow with a long list, which adding
+     the vertical scroll bar onto this list will cause the need for a horizontal scroll bar - which then
+     just looks bad - so we'll hide horizontal scroll, even though it would be better to just resize the
+     menu width, but I'm not immediately sure how to do that.
+     */
+    overflow-x: hidden;
+  }
+  
+  /* Add a drop-shadow for the app-level menus. */
+  .PopupDivMenu.AppMenu
+  {
+    box-shadow: 0 5px 5px -3px rgba(0,0,0,.2), 0 8px 10px 1px rgba(0,0,0,.14), 0 3px 14px 2px rgba(0,0,0,.12);
+    
+    /* If vertical scroll-bars show, then sub-menus will be inside the parent
+     (this is due, I think, to positionAtWidget JS function in Wt/src/web/skeleton/Wt.js),
+     so we will just disable vertical scroll-bars, for the moment.
+     */
+    overflow-y: hidden;
+  }
+  
+  /* Add a slightly more petite drop shadow for sub-menus.
+   TODO: it would be nice to move the sub-menu to the right by a couple pixels, but I dont see how to hack the CSS so the Wt.fitToWindow JS function wont clober the efforts
+   */
+  .PopupDivMenu.AppSubMenu
+  {
+    box-shadow: 0 5px 3px -3px rgba(0,0,0,.12), 4px 8px 6px 1px rgba(0,0,0,.08), 5px 3px 6px 1px rgba(0,0,0,.06);
+  }
+  
+  .PopupDivMenu.ContextSubMenu
+  {
+    
+  }
+  
+  
+  /*
+   TODO: it would be nice to hide separators that are at the bottom and top of menus; this happens when all the menu items above or below the separator is hidden.  For some reason selectors like the next dont actually function (but they will aw part of a jQuery selector).
+   .PopupDivMenu > li.Wt-separator:visible:last
+   {
+   border-top: 0px;
+   border-bottom: 0px;
+   margin: 0px 0px;
+   }
+   */
+  
+  .PopupDivMenuItem-disabled
+  {
+    background: none;
+    color: #D2D2D2;
+  }
+  
+  .PopupDivMenu li
+  {
+    padding-top: 4px;
+    padding-bottom: 4px;
+  }
+  
+  .PopupDivMenu li.Wt-separator
+  {
+    padding-top: 0px;
+    padding-bottom: 0px;
+  }
+  
+  
+  .PopupMenuParentButton, .PopupMenuParentButton:hover
+  {
+    height: 23px; /*leave 1 px for WebMenuBar lower border */
+    padding: 4px 8px 3px 8px;
+    margin:0px 0px;
+    font-weight:normal;
+    background: #FFFFFF;
+    color: black;
+    border: none;
+    vertical-align: top; /* necessary or else on Safari the titlebar border will be partially overlapped - not entirely sure why*/
+    -moz-border-radius: 2px;
+    -webkit-border-radius: 2px;
+    border-radius: 2px;
+    
+    -moz-box-shadow: none !important;
+    -webkit-box-shadow: none !important;
+    box-shadow: none !important;
+    outline: none;
+  }
+  
+  
+  .PopupMenuParentButton:hover:not(.active)
+  {
+    background: rgba(128, 128, 128, 0.25);
+  }
+  
+  .PopupMenuParentButton.active
+  {
+    background: rgba(128, 128, 128, 1.0);
+    
+    -moz-box-shadow: none !important;
+    -webkit-box-shadow: none !important;
+    box-shadow: none !important;
+  }
+  
+  
+  .PopupDivMenuWidget.active
+  {
+    background-color: #FAFAFA;
+    color: black;
+  }
+  
+  
+  .NumPeakSelect
+  {
+    border:2px solid blue;
+  }
+  
+  .RoundMenuIcon, .RoundMenuIcon:hover, button.RoundMenuIcon, button.RoundMenuIcon:hover {
     /* background-image: url('../InterSpec_resources/images/menu_icon_round.svg'); */
     background-image: url('../InterSpec_resources/images/more_menu_icon.svg');
     background-repeat: no-repeat;
@@ -1088,157 +1126,157 @@ input.HideSpinners::-webkit-outer-spin-button, input.HideSpinners::-webkit-inner
     cursor: pointer;
     border-radius: 12px;
     background-position: 0.25px;
-}
-
-.RoundMenuIcon {
-  opacity: 0.6;
-}
-
-.RoundMenuIcon:hover {
-  opacity: 0.9;
-}
-
-.RoundMenuIcon.active {
-  opacity: 1.0;
-}
-
-
-
-
-.legend {
+  }
+  
+  .RoundMenuIcon {
+    opacity: 0.6;
+  }
+  
+  .RoundMenuIcon:hover {
+    opacity: 0.9;
+  }
+  
+  .RoundMenuIcon.active {
+    opacity: 1.0;
+  }
+  
+  
+  
+  
+  .legend {
     border: none;
     background: none;
     -webkit-border-radius: 5px;
     -moz-border-radius: 5px;
     border-radius: 5px;
-}
-
-
-.legend-body
-{
-/*  background: #EEEEEE;*/
-/*background: #FAFAFA;*/
-background: rgba(245,245,245,0.5);
-padding: 4px 6px 4px;
-border: solid 1px rgba(185,185,185,0.80); /*#909090;*/
-border-top:none;
--webkit-border-bottom-right-radius: 5px;
--webkit-border-bottom-left-radius: 5px;
--moz-border-radius-bottomright: 5px;
--moz-border-radius-bottomleft: 5px;
-border-bottom-right-radius: 5px;
-border-bottom-left-radius: 5px;
-color:#000000;
-}
-
-.legend-body
-{
-  white-space:nowrap;
-}
-
-.legend-title
-{
- min-width: 7em;
- background-color: rgba(185,185,185,0.80) !important;
- height: 20px;
-border: solid 1px rgba(185,185,185,0.80); /*#909090;*/
-border-bottom:none;
--webkit-border-top-right-radius: 5px;
--webkit-border-top-left-radius: 5px;
--moz-border-radius-topright: 5px;
--moz-border-radius-topleft: 5px;
-border-top-right-radius: 5px;
-border-top-left-radius: 5px;
-}
-
-.legend-title .closeicon
-{
-top: 3px;
-}
-
-.legend-title:hover
-{
-background-color: #909090 !important;
-border: solid 1px #909090;
-}
-
-.closeicon-wtdefault
-{
-background: transparent url(images/closeicons-tab.png) no-repeat scroll right top;
-margin: 2px 4px 0px 0px;
-height: 13px;
-width: 13px;
-border: 0px;
-padding: 0px;
-/*margin-top: 2px;*/
-cursor: default;
-}
-
-.closeicon-wtdefault:hover
-{
-background-position: right -13px;
-margin: 2px 4px 0px 0px;
-height: 13px;
-width: 13px;
-border: 0px;
-padding: 0px;
-cursor: default;
-}
-
-.closeicon-wtdefault.Wt-disabled
-{
-  background-color: transparent;
-}
-
-
-.DownloadBtn, .DownloadBtn:hover
-{
-  display:flex;
-  align-items: flex-end;
-}
-
-.DownloadBtn.Wt-btn.with-label img, .UploadBtn.Wt-btn.with-label img
-{
-  padding-right: 1px;
-}
-
-a.DownloadLink > span
-{
-  background-image: url('../InterSpec_resources/images/download_small.svg');
-  padding-left: 24px;
-  background-repeat: no-repeat;
-  background-position: bottom 0px left 0px;
-  display: inline-block;
-  margin-top: 5px;
-}
-
-.loading
-{
-  cursor: wait !important;
-}
-
-
-.img-centered
-{
-  display: block;
-  margin-left: auto;
-  margin-right: auto;
-  text-align: centered;
-}
-
-
-/*
- This allows buttons and links to work
- */
-.TransparentFooter > button, .TransparentFooter > a, .TransparentFooter > img, .TransparentFooter > input
-{
+  }
+  
+  
+  .legend-body
+  {
+    /*  background: #EEEEEE;*/
+    /*background: #FAFAFA;*/
+    background: rgba(245,245,245,0.5);
+    padding: 4px 6px 4px;
+    border: solid 1px rgba(185,185,185,0.80); /*#909090;*/
+    border-top:none;
+    -webkit-border-bottom-right-radius: 5px;
+    -webkit-border-bottom-left-radius: 5px;
+    -moz-border-radius-bottomright: 5px;
+    -moz-border-radius-bottomleft: 5px;
+    border-bottom-right-radius: 5px;
+    border-bottom-left-radius: 5px;
+    color:#000000;
+  }
+  
+  .legend-body
+  {
+    white-space:nowrap;
+  }
+  
+  .legend-title
+  {
+    min-width: 7em;
+    background-color: rgba(185,185,185,0.80) !important;
+    height: 20px;
+    border: solid 1px rgba(185,185,185,0.80); /*#909090;*/
+    border-bottom:none;
+    -webkit-border-top-right-radius: 5px;
+    -webkit-border-top-left-radius: 5px;
+    -moz-border-radius-topright: 5px;
+    -moz-border-radius-topleft: 5px;
+    border-top-right-radius: 5px;
+    border-top-left-radius: 5px;
+  }
+  
+  .legend-title .closeicon
+  {
+    top: 3px;
+  }
+  
+  .legend-title:hover
+  {
+    background-color: #909090 !important;
+    border: solid 1px #909090;
+  }
+  
+  .closeicon-wtdefault
+  {
+    background: transparent url(images/closeicons-tab.png) no-repeat scroll right top;
+    margin: 2px 4px 0px 0px;
+    height: 13px;
+    width: 13px;
+    border: 0px;
+    padding: 0px;
+    /*margin-top: 2px;*/
+    cursor: default;
+  }
+  
+  .closeicon-wtdefault:hover
+  {
+    background-position: right -13px;
+    margin: 2px 4px 0px 0px;
+    height: 13px;
+    width: 13px;
+    border: 0px;
+    padding: 0px;
+    cursor: default;
+  }
+  
+  .closeicon-wtdefault.Wt-disabled
+  {
+    background-color: transparent;
+  }
+  
+  
+  .DownloadBtn, .DownloadBtn:hover
+  {
+    display:flex;
+    align-items: flex-end;
+  }
+  
+  .DownloadBtn.Wt-btn.with-label img, .UploadBtn.Wt-btn.with-label img
+  {
+    padding-right: 1px;
+  }
+  
+  a.DownloadLink > span
+  {
+    background-image: url('../InterSpec_resources/images/download_small.svg');
+    padding-left: 24px;
+    background-repeat: no-repeat;
+    background-position: bottom 0px left 0px;
+    display: inline-block;
+    margin-top: 5px;
+  }
+  
+  .loading
+  {
+    cursor: wait !important;
+  }
+  
+  
+  .img-centered
+  {
+    display: block;
+    margin-left: auto;
+    margin-right: auto;
+    text-align: centered;
+  }
+  
+  
+  /*
+   This allows buttons and links to work
+   */
+  .TransparentFooter > button, .TransparentFooter > a, .TransparentFooter > img, .TransparentFooter > input
+  {
     pointer-events:auto;
-
-}
-
-.TransparentFooter
-{
-/*    padding: 2px 2px 10px; */
+    
+  }
+  
+  .TransparentFooter
+  {
+    /*    padding: 2px 2px 10px; */
     margin-bottom: 0;
     text-align: right;
     white-space:nowrap;
@@ -1247,293 +1285,299 @@ a.DownloadLink > span
     
     pointer-events:none;
     background:rgba(0,0,0,0.2);
-}
-
-
-.LoadingIndicator
-{
+  }
+  
+  
+  .LoadingIndicator
+  {
     /* Set the index really high */
     z-index:2000000000 !important;
-}
-.HeaderIcon
-{
-/*  position: 3px center;*/
-  padding: 4px;
-  padding-right: 6px;
-/*  padding-top: 5px;*/
-}
-
-
-a.LoadSpectrumSaveAsLink
-{
-color: #454545;
-}
-a.LoadSpectrumSaveAsLink:hover
-{
-color: blue;
-}
-
-
-
-.DetectorDisplay
-{
-  display: flex;
-  flex-direction: row;
-  flex-wrap: nowrap;
-  align-items: center;
-  align-content: flex-start;
-  gap: 5px;
+  }
+  .HeaderIcon
+  {
+    /*  position: 3px center;*/
+    padding: 4px;
+    padding-right: 6px;
+    /*  padding-top: 5px;*/
+  }
   
-  padding: 0px;
-  padding-left: 5px;
-  padding-right: 2px;
-  margin: 0px;
-  font-weight: bold;
-  background: #888888; color: #FFFFFF;
-  border: 1px solid #e1e1e1;
-  cursor: pointer;
-  height: 24px;
-  white-space: nowrap;
-  width: 250px;
-}
-
-.DetectorDisplay .DetName
-{
-  display: inline-block;
-  white-space: nowrap;
-  text-overflow: ellipsis;
-  overflow: hidden;
-}
-
-
-.UseInstructionHeader
-{
-  font-size: 24px;
-  font-weight: bold;
-  margin-top: 5px;
-  text-align :center;
-}
-
-.UseInstructionSection
-{
-  border: solid 1px grey;
-  margin-bottom:10px;
-}
-
-
-.qtip-grey
-{
-  background-color: rgba(255, 255, 255, 0.96);
-  border-color: rgba(182, 182, 182, 0.7);
-  color: rgb(187, 187, 187)
-}
-
-.qtip-titlebar
-{
-  background-color:#B0DE78
-}
-
-/* Customize WTabWidget to look a little more modern/flat */
-br.Wt-tabs-clear
-{
-  /*Fix an undesired display issue with WTabWidget (at least Wt pre 3.3.4)*/
-  display: none;
-}
-
-.Wt-tabs {
-  display: -webkit-box;
-  display: -ms-flexbox;
-  display: flex;
-  -ms-flex-wrap: wrap;
-  flex-wrap: wrap;
-  zoom: 1;
-  width: 100%;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-  list-style-type: none;
-  background: none;
-  border-bottom: 1px solid rgba(136, 136, 136, 1);
-  overflow: visible; /* necessary - took a few hours to figure this out. */
-}
-
-.Wt-tabs li {
-  padding-top: 0;
-  background: none;
-  margin-right: 2px;
-  /*float:left; display:block;*/
-  display: list-item;
-  cursor:pointer;
-  cursor:hand;
-  font-size: small; font-weight: bold;
-  border: none;
-}
-
-.Wt-tabs li:first-child {
-  margin-left: 5px;
-}
-
-.Wt-tabs li:after, .Wt-tabs li:before {
-  box-sizing: border-box;
-}
-
-body.Wt-rtl .Wt-tabs a {
-  float: right;
-}
-
-.Wt-tabs .itemselected a, .Wt-tabs .itemselected a:hover {
-  background-position: 0%;
-  /* If the parent background isnt white, then the below will have a white line in it... TODO: fix */
-  border-color: grey grey white grey;
-  background-color: inherit;
-}
-
-
-.Wt-popup .Wt-tabs .itemselected a, .Wt-tabs .itemselected a:hover {
-  /* Fix for the white-line when in a AuxWindow */
-  border-color: grey grey #EEEEEE grey;
-}
-
-.Wt-tabs a {
-  display: block;
-  background: none;
-  white-space: nowrap;
-  padding: 6px 9px 4px;
-  color: black;
-  border: 1px solid transparent;
-  -moz-border-top-left-radius: .25rem;
-  -webkit-border-top-left-radius: .25rem;
-  border-top-left-radius: .25rem;
-  -moz-border-top-right-radius: .25rem;
-  -webkit-border-top-right-radius: .25rem;
-  border-top-right-radius: .25rem;
-  margin-bottom: -1px;
-}
-
-.Wt-tabs a:focus, .Wt-tabs a:hover {
-  text-decoration: none;
-  background: rgba(136, 136, 136, 0.08);
-  border: 1px solid rgba(136, 136, 136, 0.15);
-  /* If the parent background isnt white, then the below will have a white line in it... TODO: fix */
-  /*border-bottom: 1px solid white;*/
-  border-bottom: 1px solid rgba(136, 136, 136, 0.4);
-}
-
-
-.Wt-tabs .itemselected a:focus, .Wt-tabs .itemselected a:hover {
-  /* Get rid of line on selected tab when you mouse over it */
-  border-bottom: 1px solid white;
-}
-
-.Wt-popup .Wt-tabs .itemselected a:focus, .Wt-popup .Wt-tabs .itemselected a:hover {
-  /* For AuxWindow, get rid of line on selected tab when you mouse over it */
-  border-bottom: 1px solid #EEEEEE;
-}
-
-.Wt-tabs .Wt-closable a {
-  padding-right: 17px;
-}
-
-.Wt-tabs .closeicon {
-  background: transparent url(images/closeicons-tab.png) no-repeat scroll right top;
-  margin: 6px 4px 0px 0px;
-  height: 13px;
-  width: 13px;
-  border: 0px;
-  padding: 0px;
-  cursor: default;
-  float: right;
-  margin-right: 15px;
-}
-
-.Wt-tabs .closeicon:hover {
-  background-position: right -13px;
-}
-
-.Wt-tabs:after { content: ""; display: block; height: 0; clear: both; }
-.Wt-tabs { clear-after: both; }
-
-/* Some CSS for putting spectrum and time charts in a div with flex layout. */
-.InterSpec .charts {
-  display: flex;
-  flex-direction: column;
-  flex-wrap: nowrap;
-}
-
-.InterSpec .charts .D3SpectrumDisplayDiv {
-  flex: 3;
-  min-height: 70px;
-}
-
-.InterSpec .charts .D3TimeChartParent {
-  flex: 2;
-  min-height: 65px;
-}
-
-/* The entries from here below are only used when USE_CSS_FLEX_LAYOUT is tru in the C++ (experimental at the moment) */
-.InterSpecFlex {
-  display: flex;
-  flex-direction: column;
-  flex-wrap: nowrap;
-}
-
-.InterSpecFlex .D3SpectrumDisplayDiv {
-  flex: 3;
-  overflow: hidden;
-}
-
-.InterSpecFlex .D3TimeChartParent {
-  flex: 2;
-  overflow: hidden;
-}
-
-.FloatInput:invalid {
-  background-color: pink;
-}
-
-
-.ToolTabSection 
-{
-  border: 2px solid #e1e1e1;
-}
-
-.ToolTabTitledColumn
-{
-  border-right: 1px solid #e1e1e1;
-  padding-bottom: 3px;
-}
-
-.ToolTabTitledColumn .ContentHelpBtn
-{
-  position: absolute;
-  margin-left: 5px;
-  bottom: 0px;
-}
-
-
-.ToolTabTitledColumn .ToolTabColumnTitle
-{
-  white-space: nowrap;
-  font-size: 10pt;
-  text-align: center;
-  font-weight: bold;
-  padding-top: 4px;
-  padding-bottom: 1px;
-  padding-left: 3px;
-  padding-right: 3px;
-  margin-bottom: 2px;
-  border-bottom: 1px solid #e1e1e1;
-}
-
-.ToolTabTitledColumn .ToolTabTitledColumnContent
-{
-  margin-left: 5px;
-  margin-right: 5px;
-  margin-top: 5px;
-}
-
-.DialogFooterQrBtn, .DialogFooterQrBtn:hover
-{
-  float: left;
-  padding-right: 20px;
-}
+  
+  a.LoadSpectrumSaveAsLink
+  {
+    color: #454545;
+  }
+  a.LoadSpectrumSaveAsLink:hover
+  {
+    color: blue;
+  }
+  
+  
+  
+  .DetectorDisplay
+  {
+    display: flex;
+    flex-direction: row;
+    flex-wrap: nowrap;
+    align-items: center;
+    align-content: flex-start;
+    gap: 5px;
+    
+    padding: 0px;
+    padding-left: 5px;
+    padding-right: 2px;
+    margin: 0px;
+    font-weight: bold;
+    background: #888888; color: #FFFFFF;
+    border: 1px solid #e1e1e1;
+    cursor: pointer;
+    height: 24px;
+    white-space: nowrap;
+    width: 250px;
+  }
+  
+  .DetectorDisplay .DetName
+  {
+    display: inline-block;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+    overflow: hidden;
+  }
+  
+  
+  .UseInstructionHeader
+  {
+    font-size: 24px;
+    font-weight: bold;
+    margin-top: 5px;
+    text-align :center;
+  }
+  
+  .UseInstructionSection
+  {
+    border: solid 1px grey;
+    margin-bottom:10px;
+  }
+  
+  
+  .qtip-grey
+  {
+    background-color: rgba(255, 255, 255, 0.96);
+    border-color: rgba(182, 182, 182, 0.7);
+    color: rgb(187, 187, 187)
+  }
+  
+  .qtip-titlebar
+  {
+    background-color:#B0DE78
+  }
+  
+  /* Customize WTabWidget to look a little more modern/flat */
+  br.Wt-tabs-clear
+  {
+    /*Fix an undesired display issue with WTabWidget (at least Wt pre 3.3.4)*/
+    display: none;
+  }
+  
+  .Wt-tabs {
+    display: -webkit-box;
+    display: -ms-flexbox;
+    display: flex;
+    -ms-flex-wrap: wrap;
+    flex-wrap: wrap;
+    zoom: 1;
+    width: 100%;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    list-style-type: none;
+    background: none;
+    border-bottom: 1px solid rgba(136, 136, 136, 1);
+    overflow: visible; /* necessary - took a few hours to figure this out. */
+  }
+  
+  .Wt-tabs li {
+    padding-top: 0;
+    background: none;
+    margin-right: 2px;
+    /*float:left; display:block;*/
+    display: list-item;
+    cursor:pointer;
+    cursor:hand;
+    font-size: small; font-weight: bold;
+    border: none;
+  }
+  
+  .Wt-tabs li:first-child {
+    margin-left: 5px;
+  }
+  
+  .Wt-tabs li:after, .Wt-tabs li:before {
+    box-sizing: border-box;
+  }
+  
+  body.Wt-rtl .Wt-tabs a {
+    float: right;
+  }
+  
+  .Wt-tabs .itemselected a, .Wt-tabs .itemselected a:hover {
+    background-position: 0%;
+    /* If the parent background isnt white, then the below will have a white line in it... TODO: fix */
+    border-color: grey grey white grey;
+    background-color: inherit;
+  }
+  
+  
+  .Wt-popup .Wt-tabs .itemselected a, .Wt-tabs .itemselected a:hover {
+    /* Fix for the white-line when in a AuxWindow */
+    border-color: grey grey #EEEEEE grey;
+  }
+  
+  .Wt-tabs a {
+    display: block;
+    background: none;
+    white-space: nowrap;
+    padding: 6px 9px 4px;
+    color: black;
+    border: 1px solid transparent;
+    -moz-border-top-left-radius: .25rem;
+    -webkit-border-top-left-radius: .25rem;
+    border-top-left-radius: .25rem;
+    -moz-border-top-right-radius: .25rem;
+    -webkit-border-top-right-radius: .25rem;
+    border-top-right-radius: .25rem;
+    margin-bottom: -1px;
+  }
+  
+  .Wt-tabs a:focus, .Wt-tabs a:hover {
+    text-decoration: none;
+    background: rgba(136, 136, 136, 0.08);
+    border: 1px solid rgba(136, 136, 136, 0.15);
+    /* If the parent background isnt white, then the below will have a white line in it... TODO: fix */
+    /*border-bottom: 1px solid white;*/
+    border-bottom: 1px solid rgba(136, 136, 136, 0.4);
+  }
+  
+  
+  .Wt-tabs .itemselected a:focus, .Wt-tabs .itemselected a:hover {
+    /* Get rid of line on selected tab when you mouse over it */
+    border-bottom: 1px solid white;
+  }
+  
+  .Wt-popup .Wt-tabs .itemselected a:focus, .Wt-popup .Wt-tabs .itemselected a:hover {
+    /* For AuxWindow, get rid of line on selected tab when you mouse over it */
+    border-bottom: 1px solid #EEEEEE;
+  }
+  
+  .Wt-tabs .Wt-closable a {
+    padding-right: 17px;
+  }
+  
+  .Wt-tabs .closeicon {
+    background: transparent url(images/closeicons-tab.png) no-repeat scroll right top;
+    margin: 6px 4px 0px 0px;
+    height: 13px;
+    width: 13px;
+    border: 0px;
+    padding: 0px;
+    cursor: default;
+    float: right;
+    margin-right: 15px;
+  }
+  
+  .Wt-tabs .closeicon:hover {
+    background-position: right -13px;
+  }
+  
+  .Wt-tabs:after { content: ""; display: block; height: 0; clear: both; }
+  .Wt-tabs { clear-after: both; }
+  
+  /* Some CSS for putting spectrum and time charts in a div with flex layout. */
+  .InterSpec .charts {
+    display: flex;
+    flex-direction: column;
+    flex-wrap: nowrap;
+  }
+  
+  .InterSpec .charts .D3SpectrumDisplayDiv {
+    flex: 3;
+    min-height: 70px;
+  }
+  
+  .InterSpec .charts .D3TimeChartParent {
+    flex: 2;
+    min-height: 65px;
+  }
+  
+  /* The entries from here below are only used when USE_CSS_FLEX_LAYOUT is tru in the C++ (experimental at the moment) */
+  .InterSpecFlex {
+    display: flex;
+    flex-direction: column;
+    flex-wrap: nowrap;
+  }
+  
+  .InterSpecFlex .D3SpectrumDisplayDiv {
+    flex: 3;
+    overflow: hidden;
+  }
+  
+  .InterSpecFlex .D3TimeChartParent {
+    flex: 2;
+    overflow: hidden;
+  }
+  
+  .FloatInput:invalid {
+    background-color: pink;
+  }
+  
+  
+  .ToolTabSection
+  {
+    border: 2px solid #e1e1e1;
+  }
+  
+  .ToolTabTitledColumn
+  {
+    border-right: 1px solid #e1e1e1;
+    padding-bottom: 3px;
+  }
+  
+  .ToolTabTitledColumn .ContentHelpBtn
+  {
+    position: absolute;
+    margin-left: 5px;
+    bottom: 0px;
+  }
+  
+  
+  .ToolTabTitledColumn .ToolTabColumnTitle
+  {
+    white-space: nowrap;
+    font-size: 10pt;
+    text-align: center;
+    font-weight: bold;
+    padding-top: 4px;
+    padding-bottom: 1px;
+    padding-left: 3px;
+    padding-right: 3px;
+    margin-bottom: 2px;
+    border-bottom: 1px solid #e1e1e1;
+  }
+  
+  .ToolTabTitledColumn .ToolTabTitledColumnContent
+  {
+    margin-left: 5px;
+    margin-right: 5px;
+    margin-top: 5px;
+  }
+  
+  .DialogFooterQrBtn, .DialogFooterQrBtn:hover
+  {
+    float: left;
+    padding-right: 20px;
+  }
+  
+  .CurrentLanguage
+  {
+    /* TODO: style and make selector more specific */
+    color: red;
+  }

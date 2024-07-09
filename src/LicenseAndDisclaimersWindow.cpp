@@ -54,6 +54,7 @@
 #include "InterSpec/InterSpecApp.h"
 #include "InterSpec/PhysicalUnits.h"
 #include "InterSpec/UseInfoWindow.h"
+#include "InterSpec/PhysicalUnitsLocalized.h"
 #include "InterSpec/LicenseAndDisclaimersWindow.h"
 
 #ifdef _WIN32
@@ -67,13 +68,21 @@ using namespace std;
 
 
 LicenseAndDisclaimersWindow::LicenseAndDisclaimersWindow( int screen_width, int screen_height )
-: AuxWindow("Disclaimers, Licenses, Credit, and Contact",
+: AuxWindow( WString::tr("window-title-license-credit"),
             (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::IsModal)
                | AuxWindowProperties::DisableCollapse | AuxWindowProperties::EnableResize) ),
   m_menu( nullptr )
 {
   setClosable( true );
   rejectWhenEscapePressed();
+  
+  InterSpec *interspec = InterSpec::instance();
+  if( interspec )
+    interspec->useMessageResourceBundle( "LicenseAndDisclaimersWindow" );
+  
+  wApp->useStyleSheet( "InterSpec_resources/LicenseAndDisclaimersWindow.css" );
+  
+  addStyleClass( "LicenseAndDisclaimersWindow" );
   
   const string docroot = wApp->docRoot();
   m_resourceBundle.use( SpecUtils::append_path(docroot,"InterSpec_resources/static_text/copyright_and_about") ,false);
@@ -144,10 +153,10 @@ LicenseAndDisclaimersWindow::LicenseAndDisclaimersWindow( int screen_width, int 
   title->bindString("copyright", copyright );
   
   //Add items to the left menu; the contents wont be loaded until shown.
-  makeItem( "Disclaimer", "dhs-disclaimer" );
+  makeItem( WString::tr("ladw-mi-disclaimer"), "dhs-disclaimer" );
   makeLgplLicenseItem();
-  makeItem( "Credits", "credits" );
-  makeItem( "Contact", "contact" );
+  makeItem( WString::tr("ladw-mi-credits"), "credits" );
+  makeItem( WString::tr("ladw-mi-contact"), "contact" );
 #if( BUILD_AS_ELECTRON_APP || BUILD_AS_OSX_APP || BUILD_AS_LOCAL_SERVER || BUILD_AS_WX_WIDGETS_APP )
   makeDataStorageItem();
 #endif
@@ -291,8 +300,9 @@ void LicenseAndDisclaimersWindow::lgplLicenseCreator( Wt::WContainerWidget *pare
   }//try catch
   
   WText *text = new WText( license_content, XHTMLText, parent );
+  
   if( !error_reading )
-    text->setAttributeValue( "style", "display: block; font-family: monospace; white-space: pre; margin: 1em 0; font-size: x-small;" );
+    text->addStyleClass( "LicenseContent" );
 }//void lgplLicenseCreator()
 
 
@@ -305,7 +315,7 @@ SideMenuItem *LicenseAndDisclaimersWindow::makeLgplLicenseItem()
   WWidget *w = deferCreate( f );
   w->addStyleClass( "UseInfoItem" );
   
-  SideMenuItem *item = new SideMenuItem( "License", w );
+  SideMenuItem *item = new SideMenuItem( WString::tr("ladw-mi-license"), w );
   
   item->clicked().connect( boost::bind( &LicenseAndDisclaimersWindow::right_select_item, this, item) );
   item->mouseWentDown().connect( boost::bind( &LicenseAndDisclaimersWindow::right_select_item, this, item) );
@@ -322,7 +332,6 @@ void LicenseAndDisclaimersWindow::dataStorageCreator( Wt::WContainerWidget *pare
   
   InterSpec *viewer = app ? app->viewer() : nullptr;
   
-  string contents;
   if( viewer )
   {
     string datadir;
@@ -364,7 +373,7 @@ void LicenseAndDisclaimersWindow::dataStorageCreator( Wt::WContainerWidget *pare
         totaltime += app->activeTimeInCurrentSession();
         const chrono::seconds numsecs = chrono::duration_cast<chrono::seconds>(totaltime);
         
-        totalUserTime = PhysicalUnits::printToBestTimeUnits( numsecs.count() );
+        totalUserTime = PhysicalUnitsLocalized::printToBestTimeUnits( numsecs.count() );
         
         
         const WDateTime utcStartTime = WDateTime::fromPosixTime( to_ptime(user->firstAccessUTC()) );
@@ -386,88 +395,83 @@ void LicenseAndDisclaimersWindow::dataStorageCreator( Wt::WContainerWidget *pare
     auto server = WServer::instance();
     const int httpPort = server ? server->httpPort() : 0;
     
-    const string style = "font-family: monospace;"
-                         " background: white;"
-                         " color: black;"
-                         " white-space: nowrap;"
-                         " padding: 4px 5px 4px 10px;"
-                         " overflow-x: auto;"
-                         " -webkit-user-select: all;"
-                         " user-select: all;";
+    WText *text = new WText( WString::tr("ladw-data-location-user").arg(datadir), parent );
+    text->addStyleClass( "DataLocationSection" );
     
-    contents =
-    "<p>User data is stored in"
-    "<div style=\"" + style + "\">" + datadir + "</div>"
-    "</p>"
-    "<p>The data that comes with InterSpec, such as nuclear decay info,"
-    " cross-section, and similar is stored in"
-    "<div style=\"" + style + "\">" + staticdir + "</div>"
-    "</p>"
+    text = new WText( WString::tr("ladw-data-location-static").arg(staticdir), parent );
+    text->addStyleClass( "DataLocationSection" );
     
-    "<p>You can also use InterSpec from your browser at"
-    " (port number will change when you restart InterSpec):"
-    "<div style=\"" + style + "\">http://127.0.0.1:" + std::to_string(httpPort) + "</div>"
-    "</p>"
-    ;
+    text = new WText( WString::tr("ladw-data-location-network").arg(httpPort), parent );
+    text->addStyleClass( "DataLocationSection" );
     
 #if( USE_DB_TO_STORE_SPECTRA )
     if( displayStats )
     {
-      contents += "<div style=\"margin-top: 10px\"><p>"
-      "You have actively used InterSpec for approximately "
-      + totalUserTime + ", to open " + totalFilesOpened
-      + " files, over " + totalSessions + " sessions since " + firstAccess + "."
-      "</p></div>";
+      text = new WText( WString::tr("ladw-user-stats")
+                          .arg(totalUserTime)
+                          .arg(totalFilesOpened)
+                          .arg(totalSessions)
+                          .arg(firstAccess), parent );
+      text->addStyleClass( "DataLocationSection" );
     }//if( displayStats )
 #endif //if( USE_DB_TO_STORE_SPECTRA )
     
+    WString content("{1}{2}{3}{4}");
     
 #if( BUILD_FOR_WEB_DEPLOYMENT )
     // Statement here would depend on web-server policies
+    content.arg( "please contact web-administrator." ).arg( "" ).arg( "" );
 #else
-    contents +=
-    "<div style=\"margin-top: 10px\"><p>"
-    "InterSpec does not send or receive data external to your device"
-#if( USE_GOOGLE_MAP )
-    ", except when the Google Maps feature is used"
+    
+#if( USE_LEAFLET_MAP  || USE_GOOGLE_MAP )
+  #if( USE_REMOTE_RID )
+    content.arg( WString::tr("ladw-external-remote-rid-and-map") );
+  #else
+    content.arg( WString::tr("ladw-external-only-map") );
+  #endif
+#elif( USE_REMOTE_RID )
+    content.arg( WString::tr("ladw-external-only-remote-rid") );
+#else
+    content.arg( WString::tr("ladw-external-none") );
 #endif
-#if( USE_LEAFLET_MAP )
-    ", except when the Maps feature is used"
-#endif
-    "."
     
 #if( USE_DB_TO_STORE_SPECTRA )
-    "<br />InterSpec does locally"
-    " store preferences, spectra you load, saved app states, and use"
-    " statistics."
-    " This information does not leave your device, and can be deleted by removing the user data"
-    " directory shown above."
+    content.arg( WString::tr("ladw-local-store-info") );
+#else
+    content.arg( "" );
 #endif
     
 #if( USE_GOOGLE_MAP )
-    "<br />When the Google Maps feature is used, the spectrum file location information is sent to"
-    " Google in order to receive maps of the relevant location."
+    content.arg( WString::tr("ladw-google-map") );
+#elif( USE_LEAFLET_MAP )
+    content.arg( WString::tr("ladw-leaflet-map") );
+#else
+    content.arg( "" );
 #endif
-#if( USE_LEAFLET_MAP )
-    "<br />When the Maps tool is used, map tiles are requested from"
-    " <a href=\"https://arcgis.com\">https://arcgis.com</a>"
-    " for the area encompassing the GPS coordinates of the radiation measurements, but"
-    " marking/displaying of the radiation data on the maps is done on your device."
-#endif
-    "</p></div>";
     
+#if( USE_REMOTE_RID )
+    const string urls = InterSpecUser::preferenceValue<string>( "ExternalRidUrl", viewer );
+    const string exes = InterSpecUser::preferenceValue<string>( "ExternalRidExe", viewer );
+    if( urls.empty() && exes.empty() )
+      content.arg( WString::tr("ladw-remote-rid-none") );
+    
+    if( !urls.empty() )
+      content.arg( WString::tr("ladw-remote-rid").arg(urls) );
+    
+    if( !exes.empty() )
+      content.arg( WString::tr("ladw-remote-rid").arg(exes) );
+#else
+    content.arg( "" );
+#endif
 #endif //#if( BUILD_FOR_WEB_DEPLOYMENT ) / else
-
     
-    
-    
+    text = new WText( content, parent );
+    text->addStyleClass( "DataLocationSection" );
   }else
   {
-    contents = "Error retrieving directory data";
+    WText *text = new WText( "Error retrieving directory data", parent );
+    text->addStyleClass( "DataLocationSection" );
   }
-  
-  WText *text = new WText( WString::fromUTF8(contents), XHTMLText, parent );
-  text->setAttributeValue( "style", "display: block; margin: 1em 0;" );
 }//void dataStorageCreator( Wt::WContainerWidget *parent );
 
 
