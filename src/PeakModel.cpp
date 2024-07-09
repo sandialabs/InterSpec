@@ -2583,7 +2583,7 @@ bool PeakModel::setData( const WModelIndex &index,
 
     switch( column )
     {
-      case kMean: case kFwhm: case kAmplitude:
+      case kMean:
       case kIsotope:
       case kPhotoPeakEnergy:
       case kCandidateIsotopes:
@@ -2593,6 +2593,21 @@ bool PeakModel::setData( const WModelIndex &index,
       case kUserLabel:
       case kPeakLineColor:
       break;
+        
+      case kFwhm:
+      case kAmplitude:
+      {
+        switch( m_sortedPeaks[row]->type() )
+        {
+          case PeakDef::GaussianDefined:
+            break;
+          case PeakDef::DataDefined:
+            cerr << "PeakModel::setData(...)\n\tCant set area or FWHM for non-Gaussian peak" << endl;
+            return false;
+        }//switch( m_sortedPeaks[row]->type() )
+        
+        break;
+      }//case kFwhm or kAmplitude
 
       case kCps: case kHasSkew: case kSkewAmount: case kType: case kLowerX: case kUpperX:
       case kRoiCounts: case kContinuumType: case kNumColumns: case kDifference:
@@ -3097,13 +3112,30 @@ WFlags<ItemFlag> PeakModel::flags( const WModelIndex &index ) const
 {
   switch( index.column() )
   {
-    case kMean: case kFwhm: case kAmplitude: case kUserLabel:
+    case kMean: case kUserLabel:
     case kIsotope: case kPhotoPeakEnergy:
 #if( ALLOW_PEAK_COLOR_DELEGATE )
     case kPeakLineColor:
 #endif
       return ItemIsEditable | ItemIsSelectable; //ItemIsSelectabl
 
+    case kFwhm: case kAmplitude:
+    {
+      const int row = index.row();
+      if( row < static_cast<int>(m_sortedPeaks.size()) )
+      {
+        switch( m_sortedPeaks[row]->type() )
+        {
+          case PeakDef::GaussianDefined:
+            return ItemIsEditable | ItemIsSelectable;
+          case PeakDef::DataDefined:
+            return ItemIsSelectable;
+        }//switch( peak type )
+      }//if( a valid row of a peak )
+      
+      return ItemIsEditable | ItemIsSelectable;
+    }//case kFwhm: case kAmplitude:
+      
     case kUseForShieldingSourceFit:
     case kUseForCalibration:
     case kUseForManualRelEff:
