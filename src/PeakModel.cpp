@@ -1921,7 +1921,38 @@ boost::any PeakModel::data( const WModelIndex &index, int role ) const
       }//switch( peak->type() )
       
     case kAmplitude:
-      return getPeakArea();
+    {
+      boost::any areaAny = getPeakArea();
+      if( areaAny.empty() )
+        return areaAny;
+      
+      const double area = boost::any_cast<double>(areaAny);
+      double uncert = peak->amplitudeUncert();
+      
+      switch( peak->type() )
+      {
+        case PeakDef::GaussianDefined:
+          break;
+        case PeakDef::DataDefined:
+          uncert = -1.0; // JIC
+          break;
+      }//switch( peak->type() )
+      
+      if( uncert <= 0.0 )
+      {
+        char text[64];
+        snprintf( text, sizeof(text), "%.2f", area );
+        return WString::fromUTF8(text);
+      }
+      
+      // TODO: Figure out how many significant figures to show - this is kinda a guess for the moment
+      const int numValLeft = 1 + static_cast<int>( std::floor( std::log10(area) ) );  //1.2 will give 1, 10.1 will give 2
+      //const int numUncertLeft = 1 + static_cast<int>( std::floor( std::log10(uncert) ) ); //0.11 will give 0, 0.011 will give -1
+        
+      const int nsigfig = 1 + ((area > 1.0) ? std::min(std::max(3,numValLeft), 6) : 4); //we'll print out one place past decimal point
+      const string txt = PhysicalUnits::printValueWithUncertainty( area, uncert, nsigfig );
+      return WString::fromUTF8(txt);
+    }//case kAmplitude:
       
     case PeakModel::kCps:
     {
@@ -2570,7 +2601,7 @@ bool PeakModel::setData( const WModelIndex &index,
         return false;
     }//switch( section )
 
-    double dbl_val = 0.0;
+    double dbl_val = 0.0, uncert_val = -1.0;
     WString txt_val;
 
     try
@@ -2584,7 +2615,67 @@ bool PeakModel::setData( const WModelIndex &index,
       case kMean: case kFwhm: case kAmplitude:
         try
         {
-          dbl_val = std::stod( txt_val.toUTF8() );
+          const string strval = txt_val.toUTF8();
+          
+          const auto parseValWithUncert = []( const string &input, string &value, string &uncert ){
+            string::size_type pos = input.find( "\xC2\xB1" );
+            if( pos == string::npos )
+              pos = input.find( "+-" );
+            if( pos == string::npos )
+              pos = input.find( "-+" );
+            if( pos == string::npos )
+            {
+              value = input;
+              SpecUtils::trim(value);
+              return;
+            }
+            
+            value = input.substr(0, pos);
+            uncert = input.substr(pos + 2); //All "+-" strings are two bytes long
+            SpecUtils::trim(value);
+            SpecUtils::trim(uncert);
+          };
+          
+          string valstr, uncertstr;
+          parseValWithUncert( strval, valstr, uncertstr );
+          
+          dbl_val = std::stod( valstr );
+          if( !uncertstr.empty() )
+            uncert_val = std::stod( uncertstr );
+          
+          // There could be some rounding in the string representation of the uncertainty, or the
+          //  area so lets avoid this if the user hasnt changed that part of it
+          const boost::any prevData = data( index, role );
+          if( !prevData.empty() )
+          {
+            WString prevDataWstr = boost::any_cast<WString>( prevData );
+            
+            assert( row < m_sortedPeaks.size() );
+            const PeakShrdPtr &peak = m_sortedPeaks[row];
+            
+            string prevValStr, prevUncertStr;
+            parseValWithUncert( prevDataWstr.toUTF8(), prevValStr, prevUncertStr );
+            
+            if( prevValStr == valstr )
+            {
+              if( column == kMean )
+                dbl_val = peak->mean();
+              else if( column == kFwhm )
+                dbl_val = peak->fwhm();
+              else if( column == kAmplitude && (peak->type() == PeakDef::GaussianDefined) )
+                dbl_val = peak->amplitude();
+            }//if( prevValStr == valstr )
+            
+            if( (uncert_val > 0.0) && (prevUncertStr == uncertstr) )
+            {
+              if( column == kMean )
+                uncert_val = peak->meanUncert();
+              else if( column == kFwhm )
+                uncert_val = 2.3548201 * peak->sigmaUncert();
+              else if( column == kAmplitude && (peak->type() == PeakDef::GaussianDefined) )
+                uncert_val = peak->amplitudeUncert();
+            }//if( prevValStr == valstr )
+          }//if( prevData, so we can potentially avoid rounding values )
         }catch(...)
         {
           cerr << "PeakModel::setData(...)\n\tUnable to convert '" << txt_val
@@ -2611,6 +2702,8 @@ bool PeakModel::setData( const WModelIndex &index,
         {
           case PeakDef::GaussianDefined:
             new_peak.setMean( dbl_val );
+            if( uncert_val > 0.0 )
+              new_peak.setMeanUncert( uncert_val );
           break;
             
           case PeakDef::DataDefined:
@@ -2624,6 +2717,8 @@ bool PeakModel::setData( const WModelIndex &index,
         {
           case PeakDef::GaussianDefined:
             new_peak.setSigma( dbl_val / 2.3548201 );
+            if( uncert_val > 0.0 )
+              new_peak.setSigmaUncert( uncert_val / 2.3548201 );
           break;
           
           case PeakDef::DataDefined:
@@ -2637,6 +2732,8 @@ bool PeakModel::setData( const WModelIndex &index,
         {
           case PeakDef::GaussianDefined:
             new_peak.setAmplitude( dbl_val );
+            if( uncert_val > 0.0 )
+              new_peak.setAmplitudeUncert( uncert_val );
           break;
           
           case PeakDef::DataDefined:
@@ -2962,10 +3059,11 @@ bool PeakModel::setData( const WModelIndex &index,
 
     if( column != kIsotope
         && column != kPhotoPeakEnergy
-        && column != kMean )
+        && column != kMean 
+        && column != kAmplitude )
     {
       dataChanged().emit( index, index );
-    }else if( column == kPhotoPeakEnergy )
+    }else if( (column == kPhotoPeakEnergy) || (column == kAmplitude) )
     {
       if( changedFit )
         dataChanged().emit( PeakModel::index(row, kIsotope), PeakModel::index(row, kNumColumns-1) ); //just update whole row, jic

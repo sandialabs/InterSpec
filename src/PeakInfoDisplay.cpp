@@ -708,7 +708,7 @@ void PeakInfoDisplay::init()
 
   dblDelagate = new ItemDelegate( m_infoView );
   dblDelagate->setTextFormat( "%.0f" );
-  m_infoView->setItemDelegateForColumn( PeakModel::kAmplitude, dblDelagate );
+  //m_infoView->setItemDelegateForColumn( PeakModel::kAmplitude, dblDelagate ); // We'll actually return a string for peak amplitude
   m_infoView->setItemDelegateForColumn( PeakModel::kRoiCounts, dblDelagate );
 
   //tweak column widths
