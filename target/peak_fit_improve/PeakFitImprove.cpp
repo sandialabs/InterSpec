@@ -29,6 +29,7 @@
 #include <map>
 #include <mutex>
 #include <string>
+#include <numeric>
 #include <iostream>
 
 #include <boost/program_options.hpp>
@@ -40,8 +41,11 @@
 #include "SpecUtils/SpecUtilsAsync.h"
 #include "SpecUtils/EnergyCalibration.h"
 
+#include "InterSpec/PeakFit.h"
 #include "InterSpec/AppUtils.h"
+#include "InterSpec/DrfSelect.h"
 #include "InterSpec/InterSpec.h"
+#include "InterSpec/MakeDrfFit.h"
 #include "InterSpec/InterSpecServer.h"
 
 using namespace std;
@@ -102,14 +106,33 @@ int main( int argc, char **argv )
   const string base_dir = "/Users/wcjohns/rad_ana/peak_area_optimization/resolution_study_inject/";
   
   const vector<string> num_channels{ "512_channels", "1024_channels", "2048_channels", "4096_channels", "8192_channels" };
+  //const vector<string> num_channels{ "2048_channels" };
   const vector<string> det_types{ "CZT", "CsI", "HPGe", "LaBr3", "NaI" };
-  // Detector names
+  //const vector<string> det_types{ "NaI" };
   const vector<string> time_strs{ "30_seconds", "300_seconds", "1800_seconds" };
+  //const vector<string> time_strs{ "300_seconds" };
+  
+  const string drfpaths = SpecUtils::append_path( datadir, "GenericGadrasDetectors" );
+  const string nai_drf_path = SpecUtils::append_path( drfpaths, "NaI 3x3" );
+  const string labr_drf_path = SpecUtils::append_path( drfpaths, "LaBr 10%" );
+  const string hpge_drf_path = SpecUtils::append_path( drfpaths, "HPGe 40%" );
+  
+  shared_ptr<DetectorPeakResponse> nai_drf = DrfSelect::initAGadrasDetectorFromDirectory( nai_drf_path );
+  shared_ptr<DetectorPeakResponse> labr_drf = DrfSelect::initAGadrasDetectorFromDirectory( labr_drf_path );
+  shared_ptr<DetectorPeakResponse> hpge_drf = DrfSelect::initAGadrasDetectorFromDirectory( hpge_drf_path );
+  assert( nai_drf && nai_drf->isValid() && nai_drf->hasResolutionInfo() );
+  assert( labr_drf && labr_drf->isValid() && labr_drf->hasResolutionInfo() );
+  assert( hpge_drf && hpge_drf->isValid() && hpge_drf->hasResolutionInfo() );
+  
+  
+  //Also see:
+  // void expected_peak_width_limits( const float energy, const bool highres, float &min_sigma_width_kev, float &max_sigma_width_kev )
   
   SpecUtilsAsync::ThreadPool pool;
   
-  std::mutex channel_correlations_mutex;
-  std::map<CoarseResolutionType,vector<double>> channel_correlations;
+  std::mutex intemed_res_mutex;
+  std::map<CoarseResolutionType,vector<double>> intemed_res;
+  std::map<CoarseResolutionType,tuple<int,int,int,int>> peak_to_drf_comp;
   
   for( const string &nchan_str : num_channels )
   {
@@ -125,6 +148,12 @@ int main( int argc, char **argv )
         expected_type = CoarseResolutionType::High;
       else
         throw runtime_error( "Unknown detector type: " + det_type_str );
+     
+      if( expected_type == CoarseResolutionType::High )
+      {
+        if( (nchan_str != "4096_channels") && (nchan_str != "8192_channels") )
+          continue;
+      }
       
       assert( expected_type != CoarseResolutionType::Unknown );
       
@@ -140,9 +169,10 @@ int main( int argc, char **argv )
           const string final_parent_path = SpecUtils::append_path(det_path, time_str);
           const vector<string> pcf_files = SpecUtils::recursive_ls( final_parent_path, ".pcf" );
           
-          cout << "For " << det_name << " (" << det_type_str << " - " << time_str << ") there are " << pcf_files.size() << " files." << endl;
+          //cout << "For " << det_name << " (" << det_type_str << " - " << time_str << ") there are "
+          //     << pcf_files.size() << " files." << endl;
           
-          const auto analyze_file = [&channel_correlations_mutex, &channel_correlations]( const string filename, const CoarseResolutionType expected  ){
+          const auto analyze_file = [&intemed_res_mutex, &intemed_res, &peak_to_drf_comp, nai_drf, labr_drf, hpge_drf]( const string filename, const CoarseResolutionType expected  ){
             SpecUtils::SpecFile file;
             if( !file.load_file(filename, SpecUtils::ParserType::Pcf ) )
             {
@@ -163,37 +193,204 @@ int main( int argc, char **argv )
             
             assert( foreground && background && (background->title() == "Background") );
             
-            /*
-            secondDerivativePeakCanidates( const std::shared_ptr<const SpecUtils::Measurement> data,
-                                          size_t start_channel,
-                                          size_t end_channel,
-                                          std::vector< std::tuple<float,float,float> > &results );
-             */
+            const size_t nchannel = foreground->num_gamma_channels();
+            assert( nchannel > 64 );
             
-            assert( !!foreground->gamma_channel_contents() );
-            const vector<float> &channel_contents = *foreground->gamma_channel_contents();
-            double corr = 0.0;
-            for( size_t i = 1; i < channel_contents.size(); ++i )
+            
+            //vector<tuple<float,float,float>> peak_candidates; //{mean,sigma,area}
+            //secondDerivativePeakCanidates( foreground, 0, nchannel - 1, peak_candidates );
+            
+            //const double x0 = foreground->gamma_channel_lower(0);
+            //const double x1 = foreground->gamma_channel_lower(nchannel-1);
+            //const double ncausalitysigma = 0.0;
+            //const double stat_threshold = 0.0;
+            //const double hypothesis_threshold = 0.0;
+            //const bool isRefit = false;
+            //const vector<PeakDef> peak_candidates = fitPeaksInRange( x0, x1,
+            //                              ncausalitysigma, stat_threshold, hypothesis_threshold,
+            //                              {}, foreground, {}, isRefit );
+            
+            vector<shared_ptr<const PeakDef>> peak_candidates
+              = ExperimentalAutomatedPeakSearch::search_for_peaks( foreground, nullptr, {}, true );
+            
+            //cout << "'" << filename << "'" << endl;
+            //cout << "peak_candidates.size()=" << peak_candidates.size() << endl;
+            double low_w = 0, med_w = 0, high_w = 0, all_w = 0;
+            for( const auto &p : peak_candidates )
             {
-              const float &prev_val = channel_contents[i-1];
-              const float &this_val = channel_contents[i];
-              const float diff = fabs(this_val - prev_val);
-              const float avrg = 0.5f*(prev_val + this_val);
-              const double this_corr = diff / sqrt( ((avrg > 1.0) ? avrg : 1.0f) );
-              corr += this_corr;
-            }
+              const double drf_low_fwhm = nai_drf->peakResolutionFWHM( p->mean() );
+              const double drf_med_fwhm = labr_drf->peakResolutionFWHM( p->mean() );
+              const double drf_high_fwhm = hpge_drf->peakResolutionFWHM( p->mean() );
+              
+              const double chi_dof = p->chi2dof();
+              const double stat_sig = p->peakArea() / p->peakAreaUncert();
+              
+              if( (p->mean() > 3000) || (p->mean() < 50) )
+                continue;
+              
+              const double w = std::min( stat_sig, 10.0 );// / std::max( chi_dof, 0.5 );
+              
+              all_w += w;
+              
+              const double low_diff = fabs(p->fwhm() - drf_low_fwhm);
+              const double med_diff = fabs(p->fwhm() - drf_med_fwhm);
+              const double high_diff = fabs(p->fwhm() - drf_high_fwhm);
+              if( (low_diff < med_diff) && (low_diff < high_diff) )
+                low_w += w;
+              else if( med_diff < high_diff )
+                med_w += w;
+              else
+                high_w += w;
+            }//for( const auto &p : peak_candidates )
             
-            corr /= channel_contents.size();
+            if( all_w > 0 )
+            {
+              low_w /= all_w;
+              med_w /= all_w;
+              high_w /= all_w;
+            }//if( all_w > 0 )
             
             
-            std::lock_guard<std::mutex> lock( channel_correlations_mutex );
-            channel_correlations[expected].push_back( corr );
+            double cs137_fwhm = 0.0;
+            if( peak_candidates.size() > 0 )
+            {
+              try
+              {
+                auto peaks = make_shared< deque<shared_ptr<const PeakDef>> >();
+                //for( const auto &p : peak_candidates )
+                //  peaks->push_back( make_shared<PeakDef>(get<0>(p), get<1>(p), get<2>(p)) );
+                
+                //for( const auto &p : peak_candidates )
+                //  peaks->push_back( make_shared<PeakDef>(p) );
+                
+                size_t num_closer_NaI = 0, num_closer_HPGe = 0;
+                for( const auto &p : peak_candidates )
+                {
+                  peaks->push_back( p );
+                  const double nai_fwhm = nai_drf->peakResolutionFWHM( p->mean() );
+                  const double hpge_fwhm = hpge_drf->peakResolutionFWHM( p->mean() );
+                  
+                  if( fabs(nai_fwhm - p->fwhm()) < fabs(hpge_fwhm - p->fwhm()) )
+                    num_closer_NaI += 1;
+                  else
+                    num_closer_HPGe += 1;
+                }
+                
+                DetectorPeakResponse::ResolutionFnctForm form = DetectorPeakResponse::ResolutionFnctForm::kSqrtPolynomial;
+                if( peak_candidates.size() == 1 )
+                  form = DetectorPeakResponse::ResolutionFnctForm::kGadrasResolutionFcn;
+                
+                const bool highResolution = (num_closer_HPGe > num_closer_NaI); //This only matters if LLS fit to FWHM fails, or uses GADRAS FWHM
+                
+                // Lets go through 
+                
+                const int sqrtEqnOrder = 2; //
+                vector<float> fwhm_coeffs, fwhm_coeff_uncerts;
+                MakeDrfFit::performResolutionFit( peaks, form, highResolution, sqrtEqnOrder,
+                                                 fwhm_coeffs, fwhm_coeff_uncerts );
+                
+                double initial_cs137_fwhm = DetectorPeakResponse::peakResolutionFWHM( 661, form, fwhm_coeffs );
+                //cout << "Initial FWHM=" << 100*initial_cs137_fwhm/661 << "%" << endl;
+                if( IsNan(initial_cs137_fwhm) && (peak_candidates.size() > 1) )
+                {
+                  // This can happen if we have 2 or 3 peaks, below 661 keV, so that by the time we
+                  //  get up to 661, the equation is invalid
+                  peaks->erase( begin(*peaks) );
+                  
+                  //if( peak_candidates.size() == 1 )
+                    form = DetectorPeakResponse::ResolutionFnctForm::kGadrasResolutionFcn;
+                  
+                  MakeDrfFit::performResolutionFit( peaks, form, highResolution, sqrtEqnOrder,
+                                                   fwhm_coeffs, fwhm_coeff_uncerts );
+                  
+                  initial_cs137_fwhm = DetectorPeakResponse::peakResolutionFWHM( 661, form, fwhm_coeffs );
+                  //cout << "After removing lowest energy peak FWHM=" << 100*initial_cs137_fwhm/661 << "%" << endl;
+                }//if( IsNan(initial_cs137_fwhm) && (peak_candidates.size() > 1) )
+                
+                if( IsNan(initial_cs137_fwhm) || ((100*initial_cs137_fwhm/661) < 1) )
+                {
+                  cout << "Peaks: ";
+                  for( const auto &p : peak_candidates )
+                    cout << "{m=" << p->mean() << ", fwhm=" << p->fwhm() << "}, ";
+                  cout << endl;
+                  cout << "Coefs: {";
+                  for( const auto l : fwhm_coeffs )
+                    cout << l << ", ";
+                  cout << "}" << endl;
+                  
+                  if( IsNan(initial_cs137_fwhm) )
+                  {
+                    cout << "Not sure..." << endl;
+                  }
+                }
+                
+                // Go through and remove outliers....
+                if( peaks->size() > 5 )
+                {
+                  auto new_peaks = make_shared< deque<shared_ptr<const PeakDef>> >();
+                  vector<pair<double,shared_ptr<const PeakDef>>> distances;
+                  for( const auto &p : *peaks )
+                  {
+                    double pred_fwhm = 0.0;
+                    const double mean_MeV = 0.001 * p->mean();  //kSqrtPolynomial
+                    for( size_t i = 0; i < fwhm_coeffs.size(); ++i )
+                      pred_fwhm += fwhm_coeffs[i] * std::pow( mean_MeV, 1.0*i );
+                    pred_fwhm = sqrt( pred_fwhm );
+                    //pred_fwhm = fwhm_coeffs[0] + fwhm_coeffs[1]*sqrt( p->mean() ); //
+                    
+                    const double frac_diff = fabs( p->fwhm() - pred_fwhm ) / p->fwhm();
+                    if( !IsNan(frac_diff) && !IsInf(frac_diff) )
+                      distances.emplace_back( frac_diff, p );
+                  }//for( const auto &p : initial_fit_peaks )
+                  
+                  std::sort( begin(distances), end(distances),
+                    []( const pair<double,shared_ptr<const PeakDef>> &lhs,
+                        const pair<double,shared_ptr<const PeakDef>> &rhs) -> bool {
+                      return lhs.first > rhs.first;
+                    } );
+
+                  // Limit to un-selecting max of 20% of peaks (arbitrarily chosen), if the deviate
+                  // more than 25% from the fit (again, arbitrarily chosen).
+                  const size_t max_remove = static_cast<size_t>( std::ceil( 0.2*distances.size() ) );
+                  for( size_t index = 0; index < distances.size(); ++index )
+                  {
+                    if( (distances[index].first < 0.25) || (index > max_remove) )
+                      new_peaks->push_back( distances[index].second );
+                  }
+                  
+                  MakeDrfFit::performResolutionFit( new_peaks, form, highResolution, sqrtEqnOrder,
+                                                   fwhm_coeffs, fwhm_coeff_uncerts );
+                }//if( peaks->size() > 5 )
+                
+                cs137_fwhm = DetectorPeakResponse::peakResolutionFWHM( 661, form, fwhm_coeffs );
+                
+                //cout << "Final FWHM=" << 100*cs137_fwhm/661 << "%" << endl;
+              }catch( std::exception &e )
+              {
+                cerr << ("Caught exception: " + string(e.what()) + "\n");
+              }
+            }//if( peak_candidates.size() > 0 )
+            
+            cout << endl;
+            
+            std::lock_guard<std::mutex> lock( intemed_res_mutex );
+            intemed_res[expected].push_back( 100 * cs137_fwhm / 661.0 );
+            
+            
+            if( all_w <= 0.0 )
+              get<0>(peak_to_drf_comp[expected]) += 1;
+            else if( (low_w > med_w) && (low_w > high_w) )
+              get<1>(peak_to_drf_comp[expected]) += 1;
+            else if( (med_w > high_w) )
+              get<2>(peak_to_drf_comp[expected]) += 1;
+            else
+              get<3>(peak_to_drf_comp[expected]) += 1;
           };//analyze_file lambda
-          
           
           for( const string input : pcf_files )
           {
             pool.post( [=](){ analyze_file( input, expected_type ); } );
+            //analyze_file( input, expected_type );
           }//for( const string input : pcf_files )
         }//for( const string &time_str : time_strs )
       }//for( const string &det_path : detector_paths )
@@ -204,7 +401,7 @@ int main( int argc, char **argv )
   
   double min_corr = std::numeric_limits<double>::max(), max_corr = 0.0;
   
-  for( const auto &t_v : channel_correlations )
+  for( const auto &t_v : intemed_res )
   {
     for( const auto &v : t_v.second )
     {
@@ -213,15 +410,17 @@ int main( int argc, char **argv )
     }
   }
   
-  const size_t num_channel = 512;
+  max_corr = std::min( max_corr, 25.0 );
+  
+  const size_t num_channel = 1024;
   std::map<CoarseResolutionType,vector<float>> channel_correlation_hists;
-  for( const auto &t_v : channel_correlations )
+  for( const auto &t_v : intemed_res )
     channel_correlation_hists[t_v.first] = vector<float>( num_channel, 0.0f );
   
   auto cal = make_shared<SpecUtils::EnergyCalibration>();
   cal->set_full_range_fraction( num_channel, {0.0f, static_cast<float>(max_corr)}, {} );
   
-  for( const auto &t_v : channel_correlations )
+  for( const auto &t_v : intemed_res )
   {
     for( const auto &v : t_v.second )
     {
@@ -232,19 +431,43 @@ int main( int argc, char **argv )
   }
   
   SpecUtils::SpecFile output_hists;
-  for( const auto &t_v : channel_correlations )
+  for( const auto &t_v : intemed_res )
   {
     auto meas = make_shared<SpecUtils::Measurement>();
     auto counts = make_shared<vector<float>>( channel_correlation_hists[t_v.first] );
-    meas->set_gamma_counts( counts, 1.0f, 1.0f );
+    const double ncounts = std::accumulate( begin(*counts), end(*counts), 0.0f );
+    meas->set_gamma_counts( counts, ncounts, ncounts );
     meas->set_energy_calibration( cal );
     meas->set_title( title_str(t_v.first) );
     output_hists.add_measurement( meas, false );
   }
+  
+  
+  for( const auto &t_v : peak_to_drf_comp )
+  {
+    auto meas = make_shared<SpecUtils::Measurement>();
+    auto counts = make_shared<vector<float>>( 16, 0.0 );
+    (*counts)[1] = get<0>( t_v.second );
+    (*counts)[3] = get<1>( t_v.second );
+    (*counts)[5] = get<2>( t_v.second );
+    (*counts)[7] = get<3>( t_v.second );
+    
+    const double ncounts = std::accumulate( begin(*counts), end(*counts), 0.0f );
+    meas->set_gamma_counts( counts, ncounts, ncounts );
+    
+    auto cal = make_shared<SpecUtils::EnergyCalibration>();
+    cal->set_full_range_fraction( 16, {0.0f, 16.0f}, {} );
+    
+    meas->set_energy_calibration( cal );
+    meas->set_title( string(title_str(t_v.first)) + " Nearest Type" );
+    output_hists.add_measurement( meas, false );
+  }
+  const SpecUtils::time_point_t time = std::chrono::time_point_cast<std::chrono::microseconds>(std::chrono::system_clock::now());
+  output_hists.set_uuid( SpecUtils::to_iso_string(time) );
   output_hists.cleanup_after_load( SpecUtils::SpecFile::DontChangeOrReorderSamples );
   
   {// Begin write output
-    const char *outname = "correlation.n42";
+    const char *outname = "results.n42";
     ofstream coor_output( outname );
     if( output_hists.write_2012_N42( coor_output ) )
       cout << "Wrote '" << outname << "'" << endl;
