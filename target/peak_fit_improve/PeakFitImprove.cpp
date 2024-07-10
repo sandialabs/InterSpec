@@ -125,7 +125,7 @@ CoarseResolutionType coarse_resolution_from_peaks( const vector<shared_ptr<const
     const double stat_sig = p->peakArea() / p->peakAreaUncert();
     max_sig = std::max( max_sig, stat_sig );
     
-    const double w = std::min( stat_sig, 10.0 );// / std::max( chi_dof, 0.5 );
+    const double w = p->peakArea(); //std::min( stat_sig, 10.0 );// / std::max( chi_dof, 0.5 );
     
     all_w += w;
     
@@ -138,7 +138,7 @@ CoarseResolutionType coarse_resolution_from_peaks( const vector<shared_ptr<const
       med_w += w;
     else
       high_w += w;
-  }//for( const auto &p : peak_candidates )
+  }//for( const auto &p : auto_fit_peaks )
   
   if( (num_peaks == 1) && (max_sig < 5) )
     return CoarseResolutionType::Unknown;
@@ -272,30 +272,30 @@ int main( int argc, char **argv )
             //const double stat_threshold = 0.0;
             //const double hypothesis_threshold = 0.0;
             //const bool isRefit = false;
-            //const vector<PeakDef> peak_candidates = fitPeaksInRange( x0, x1,
+            //const vector<PeakDef> auto_fit_peaks = fitPeaksInRange( x0, x1,
             //                              ncausalitysigma, stat_threshold, hypothesis_threshold,
             //                              {}, foreground, {}, isRefit );
             
-            vector<shared_ptr<const PeakDef>> peak_candidates
+            vector<shared_ptr<const PeakDef>> auto_fit_peaks
               = ExperimentalAutomatedPeakSearch::search_for_peaks( foreground, nullptr, {}, true );
             
             //cout << "'" << filename << "'" << endl;
-            //cout << "peak_candidates.size()=" << peak_candidates.size() << endl;
+            //cout << "auto_fit_peaks.size()=" << auto_fit_peaks.size() << endl;
             
             double cs137_fwhm = 0.0;
-            if( peak_candidates.size() > 0 )
+            if( auto_fit_peaks.size() > 0 )
             {
               try
               {
                 auto peaks = make_shared< deque<shared_ptr<const PeakDef>> >();
-                //for( const auto &p : peak_candidates )
+                //for( const auto &p : auto_fit_peaks )
                 //  peaks->push_back( make_shared<PeakDef>(get<0>(p), get<1>(p), get<2>(p)) );
                 
-                //for( const auto &p : peak_candidates )
+                //for( const auto &p : auto_fit_peaks )
                 //  peaks->push_back( make_shared<PeakDef>(p) );
                 
                 size_t num_closer_NaI = 0, num_closer_HPGe = 0;
-                for( const auto &p : peak_candidates )
+                for( const auto &p : auto_fit_peaks )
                 {
                   peaks->push_back( p );
                   const double nai_fwhm = nai_fwhm_fcn( p->mean() );
@@ -308,7 +308,7 @@ int main( int argc, char **argv )
                 }
                 
                 DetectorPeakResponse::ResolutionFnctForm form = DetectorPeakResponse::ResolutionFnctForm::kSqrtPolynomial;
-                if( peak_candidates.size() == 1 )
+                if( auto_fit_peaks.size() == 1 )
                   form = DetectorPeakResponse::ResolutionFnctForm::kGadrasResolutionFcn;
                 
                 const bool highResolution = (num_closer_HPGe > num_closer_NaI); //This only matters if LLS fit to FWHM fails, or uses GADRAS FWHM
@@ -322,13 +322,13 @@ int main( int argc, char **argv )
                 
                 double initial_cs137_fwhm = DetectorPeakResponse::peakResolutionFWHM( 661, form, fwhm_coeffs );
                 //cout << "Initial FWHM=" << 100*initial_cs137_fwhm/661 << "%" << endl;
-                if( IsNan(initial_cs137_fwhm) && (peak_candidates.size() > 1) )
+                if( IsNan(initial_cs137_fwhm) && (auto_fit_peaks.size() > 1) )
                 {
                   // This can happen if we have 2 or 3 peaks, below 661 keV, so that by the time we
                   //  get up to 661, the equation is invalid
                   peaks->erase( begin(*peaks) );
                   
-                  //if( peak_candidates.size() == 1 )
+                  //if( auto_fit_peaks.size() == 1 )
                     form = DetectorPeakResponse::ResolutionFnctForm::kGadrasResolutionFcn;
                   
                   MakeDrfFit::performResolutionFit( peaks, form, highResolution, sqrtEqnOrder,
@@ -336,12 +336,12 @@ int main( int argc, char **argv )
                   
                   initial_cs137_fwhm = DetectorPeakResponse::peakResolutionFWHM( 661, form, fwhm_coeffs );
                   //cout << "After removing lowest energy peak FWHM=" << 100*initial_cs137_fwhm/661 << "%" << endl;
-                }//if( IsNan(initial_cs137_fwhm) && (peak_candidates.size() > 1) )
+                }//if( IsNan(initial_cs137_fwhm) && (auto_fit_peaks.size() > 1) )
                 
                 if( IsNan(initial_cs137_fwhm) || ((100*initial_cs137_fwhm/661) < 1) )
                 {
                   cout << "Peaks: ";
-                  for( const auto &p : peak_candidates )
+                  for( const auto &p : auto_fit_peaks )
                     cout << "{m=" << p->mean() << ", fwhm=" << p->fwhm() << "}, ";
                   cout << endl;
                   cout << "Coefs: {";
@@ -400,12 +400,25 @@ int main( int argc, char **argv )
               {
                 cerr << ("Caught exception: " + string(e.what()) + "\n");
               }
-            }//if( peak_candidates.size() > 0 )
+            }//if( auto_fit_peaks.size() > 0 )
             
             
+            //const CoarseResolutionType type_from_peaks = coarse_resolution_from_peaks( auto_fit_peaks );
+            
+            
+            size_t lower_channel = 0, upper_channel = 0;
+            vector<std::shared_ptr<PeakDef>> candidates
+             = secondDerivativePeakCanidatesWithROI( foreground, lower_channel, upper_channel );
+            vector<shared_ptr<const PeakDef>> peak_candidates;
+            for( const std::shared_ptr<PeakDef> &p : candidates )
+            {
+              p->setAmplitudeUncert( sqrt( std::max(1.0,p->amplitude())));
+              peak_candidates.push_back( p );
+            }
             const CoarseResolutionType type_from_peaks = coarse_resolution_from_peaks( peak_candidates );
             
-            if( !peak_candidates.empty() && (type_from_peaks == CoarseResolutionType::Low && expected == CoarseResolutionType::High) )
+            
+            if( !auto_fit_peaks.empty() && (type_from_peaks == CoarseResolutionType::Low && expected == CoarseResolutionType::High) )
             {
               cerr << ("File '" + filename + "' failed.\n");
               cerr << endl;
@@ -511,7 +524,7 @@ int main( int argc, char **argv )
   output_hists.cleanup_after_load( SpecUtils::SpecFile::DontChangeOrReorderSamples );
   
   {// Begin write output
-    const char *outname = "results.n42";
+    const char *outname = "results_candidate_peaks.n42";
     ofstream coor_output( outname );
     if( output_hists.write_2012_N42( coor_output ) )
       cout << "Wrote '" << outname << "'" << endl;
