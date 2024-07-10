@@ -81,6 +81,85 @@ const char *title_str( const CoarseResolutionType type )
 }//const char *title_str( const CoarseResolutionType type )
 
 
+float nai_fwhm_fcn( const float energy )
+{
+  static const vector<float> nai_fwhm_coefs{ -4.0f, 6.3f, 0.6f };   //"NaI 3x3"
+  return DetectorPeakResponse::peakResolutionFWHM( energy,
+                DetectorPeakResponse::ResolutionFnctForm::kGadrasResolutionFcn, nai_fwhm_coefs );
+}//float nai_fwhm_fcn( const float energy )
+
+
+float labr_fwhm_fcn( const float energy )
+{
+  static const vector<float> labr_fwhm_coefs{ 5.0f, 3.0f, 0.55f };  //"LaBr 10%"
+  return DetectorPeakResponse::peakResolutionFWHM( energy,
+                DetectorPeakResponse::ResolutionFnctForm::kGadrasResolutionFcn, labr_fwhm_coefs );
+}//float labr_fwhm_fcn( const float energy )
+
+float hpge_fwhm_fcn( const float energy )
+{
+  static const vector<float> hpge_fwhm_coefs{ 1.55f, 0.25f, 0.35f };//"HPGe 40%"
+  return DetectorPeakResponse::peakResolutionFWHM( energy,
+    DetectorPeakResponse::ResolutionFnctForm::kGadrasResolutionFcn, hpge_fwhm_coefs );
+}//float hpge_fwhm_fcn( const float energy )
+
+
+CoarseResolutionType coarse_resolution_from_peaks( const vector<shared_ptr<const PeakDef>> &peaks )
+{
+  size_t num_peaks = 0;
+  double max_sig = 0.0;
+  double low_w = 0, med_w = 0, high_w = 0, all_w = 0;
+  
+  for( const auto &p : peaks )
+  {
+    if( !p || (p->mean() > 3000) || (p->mean() < 50) )
+      continue;
+    
+    num_peaks += 1;
+    
+    const double drf_low_fwhm = nai_fwhm_fcn( p->mean() );
+    const double drf_med_fwhm = labr_fwhm_fcn( p->mean() );
+    const double drf_high_fwhm = hpge_fwhm_fcn( p->mean() );
+    
+    const double chi_dof = p->chi2dof();
+    const double stat_sig = p->peakArea() / p->peakAreaUncert();
+    max_sig = std::max( max_sig, stat_sig );
+    
+    const double w = std::min( stat_sig, 10.0 );// / std::max( chi_dof, 0.5 );
+    
+    all_w += w;
+    
+    const double low_diff = fabs(p->fwhm() - drf_low_fwhm);
+    const double med_diff = fabs(p->fwhm() - drf_med_fwhm);
+    const double high_diff = fabs(p->fwhm() - drf_high_fwhm);
+    if( (low_diff < med_diff) && (low_diff < high_diff) )
+      low_w += w;
+    else if( med_diff < high_diff )
+      med_w += w;
+    else
+      high_w += w;
+  }//for( const auto &p : peak_candidates )
+  
+  if( (num_peaks == 1) && (max_sig < 5) )
+    return CoarseResolutionType::Unknown;
+  
+  if( all_w <= 0.0 )
+    return CoarseResolutionType::Unknown;
+  
+  //if( low_w > high_w )
+  //  return CoarseResolutionType::Low;
+  
+  
+  if( (low_w > med_w) && (low_w > high_w) )
+    return CoarseResolutionType::Low;
+  
+  if( (med_w > high_w) )
+    return CoarseResolutionType::Medium;
+  
+  return CoarseResolutionType::High;
+}//CoarseResolutionType coarse_resolution_from_peaks( const vector<shared_ptr<const PeakDef>> &peaks )
+
+
 int main( int argc, char **argv )
 {
   const double start_wall = SpecUtils::get_wall_time();
@@ -109,21 +188,9 @@ int main( int argc, char **argv )
   //const vector<string> num_channels{ "2048_channels" };
   const vector<string> det_types{ "CZT", "CsI", "HPGe", "LaBr3", "NaI" };
   //const vector<string> det_types{ "NaI" };
-  const vector<string> time_strs{ "30_seconds", "300_seconds", "1800_seconds" };
-  //const vector<string> time_strs{ "300_seconds" };
-  
-  const string drfpaths = SpecUtils::append_path( datadir, "GenericGadrasDetectors" );
-  const string nai_drf_path = SpecUtils::append_path( drfpaths, "NaI 3x3" );
-  const string labr_drf_path = SpecUtils::append_path( drfpaths, "LaBr 10%" );
-  const string hpge_drf_path = SpecUtils::append_path( drfpaths, "HPGe 40%" );
-  
-  shared_ptr<DetectorPeakResponse> nai_drf = DrfSelect::initAGadrasDetectorFromDirectory( nai_drf_path );
-  shared_ptr<DetectorPeakResponse> labr_drf = DrfSelect::initAGadrasDetectorFromDirectory( labr_drf_path );
-  shared_ptr<DetectorPeakResponse> hpge_drf = DrfSelect::initAGadrasDetectorFromDirectory( hpge_drf_path );
-  assert( nai_drf && nai_drf->isValid() && nai_drf->hasResolutionInfo() );
-  assert( labr_drf && labr_drf->isValid() && labr_drf->hasResolutionInfo() );
-  assert( hpge_drf && hpge_drf->isValid() && hpge_drf->hasResolutionInfo() );
-  
+  //const vector<string> time_strs{ "30_seconds", "300_seconds", "1800_seconds" };
+  const vector<string> time_strs{ "300_seconds" };
+
   
   //Also see:
   // void expected_peak_width_limits( const float energy, const bool highres, float &min_sigma_width_kev, float &max_sigma_width_kev )
@@ -172,7 +239,7 @@ int main( int argc, char **argv )
           //cout << "For " << det_name << " (" << det_type_str << " - " << time_str << ") there are "
           //     << pcf_files.size() << " files." << endl;
           
-          const auto analyze_file = [&intemed_res_mutex, &intemed_res, &peak_to_drf_comp, nai_drf, labr_drf, hpge_drf]( const string filename, const CoarseResolutionType expected  ){
+          const auto analyze_file = [&intemed_res_mutex, &intemed_res, &peak_to_drf_comp]( const string filename, const CoarseResolutionType expected  ){
             SpecUtils::SpecFile file;
             if( !file.load_file(filename, SpecUtils::ParserType::Pcf ) )
             {
@@ -196,7 +263,6 @@ int main( int argc, char **argv )
             const size_t nchannel = foreground->num_gamma_channels();
             assert( nchannel > 64 );
             
-            
             //vector<tuple<float,float,float>> peak_candidates; //{mean,sigma,area}
             //secondDerivativePeakCanidates( foreground, 0, nchannel - 1, peak_candidates );
             
@@ -215,41 +281,6 @@ int main( int argc, char **argv )
             
             //cout << "'" << filename << "'" << endl;
             //cout << "peak_candidates.size()=" << peak_candidates.size() << endl;
-            double low_w = 0, med_w = 0, high_w = 0, all_w = 0;
-            for( const auto &p : peak_candidates )
-            {
-              const double drf_low_fwhm = nai_drf->peakResolutionFWHM( p->mean() );
-              const double drf_med_fwhm = labr_drf->peakResolutionFWHM( p->mean() );
-              const double drf_high_fwhm = hpge_drf->peakResolutionFWHM( p->mean() );
-              
-              const double chi_dof = p->chi2dof();
-              const double stat_sig = p->peakArea() / p->peakAreaUncert();
-              
-              if( (p->mean() > 3000) || (p->mean() < 50) )
-                continue;
-              
-              const double w = std::min( stat_sig, 10.0 );// / std::max( chi_dof, 0.5 );
-              
-              all_w += w;
-              
-              const double low_diff = fabs(p->fwhm() - drf_low_fwhm);
-              const double med_diff = fabs(p->fwhm() - drf_med_fwhm);
-              const double high_diff = fabs(p->fwhm() - drf_high_fwhm);
-              if( (low_diff < med_diff) && (low_diff < high_diff) )
-                low_w += w;
-              else if( med_diff < high_diff )
-                med_w += w;
-              else
-                high_w += w;
-            }//for( const auto &p : peak_candidates )
-            
-            if( all_w > 0 )
-            {
-              low_w /= all_w;
-              med_w /= all_w;
-              high_w /= all_w;
-            }//if( all_w > 0 )
-            
             
             double cs137_fwhm = 0.0;
             if( peak_candidates.size() > 0 )
@@ -267,8 +298,8 @@ int main( int argc, char **argv )
                 for( const auto &p : peak_candidates )
                 {
                   peaks->push_back( p );
-                  const double nai_fwhm = nai_drf->peakResolutionFWHM( p->mean() );
-                  const double hpge_fwhm = hpge_drf->peakResolutionFWHM( p->mean() );
+                  const double nai_fwhm = nai_fwhm_fcn( p->mean() );
+                  const double hpge_fwhm = hpge_fwhm_fcn( p->mean() );
                   
                   if( fabs(nai_fwhm - p->fwhm()) < fabs(hpge_fwhm - p->fwhm()) )
                     num_closer_NaI += 1;
@@ -371,20 +402,33 @@ int main( int argc, char **argv )
               }
             }//if( peak_candidates.size() > 0 )
             
-            cout << endl;
+            
+            const CoarseResolutionType type_from_peaks = coarse_resolution_from_peaks( peak_candidates );
+            
+            if( !peak_candidates.empty() && (type_from_peaks == CoarseResolutionType::Low && expected == CoarseResolutionType::High) )
+            {
+              cerr << ("File '" + filename + "' failed.\n");
+              cerr << endl;
+            }
             
             std::lock_guard<std::mutex> lock( intemed_res_mutex );
             intemed_res[expected].push_back( 100 * cs137_fwhm / 661.0 );
             
-            
-            if( all_w <= 0.0 )
-              get<0>(peak_to_drf_comp[expected]) += 1;
-            else if( (low_w > med_w) && (low_w > high_w) )
-              get<1>(peak_to_drf_comp[expected]) += 1;
-            else if( (med_w > high_w) )
-              get<2>(peak_to_drf_comp[expected]) += 1;
-            else
-              get<3>(peak_to_drf_comp[expected]) += 1;
+            switch( type_from_peaks )
+            {
+              case CoarseResolutionType::Low:
+                get<1>(peak_to_drf_comp[expected]) += 1;
+                break;
+              case CoarseResolutionType::Medium:
+                get<2>(peak_to_drf_comp[expected]) += 1;
+                break;
+              case CoarseResolutionType::High:
+                get<3>(peak_to_drf_comp[expected]) += 1;
+                break;
+              case CoarseResolutionType::Unknown:
+                get<0>(peak_to_drf_comp[expected]) += 1;
+                break;
+            }//switch( type_from_peaks )
           };//analyze_file lambda
           
           for( const string input : pcf_files )
