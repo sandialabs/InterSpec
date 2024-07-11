@@ -1337,10 +1337,20 @@ std::pair<std::shared_ptr<const PeakDef>,Wt::WModelIndex> PeakModel::addNewPeakI
 
 void PeakModel::addPeaks( const vector<PeakDef> &peaks )
 {
-  
   for( size_t i = 0; i < peaks.size(); ++i )
     addNewPeak( peaks[i] );
 }//void addPeaks( const vector<PeakDef> &peaks )
+
+
+void PeakModel::addPeaks( const std::vector<std::shared_ptr<const PeakDef>> &peaks )
+{
+  for( const auto &p : peaks )
+  {
+    assert( p );
+    if( p )
+      addNewPeak( *p );
+  }//for( const auto &p : peaks )
+}//void addPeaks( const std::vector<std::shared_ptr<const PeakDef>> peaks &peaks )
 
 
 void PeakModel::definePeakXRange( PeakDef &peak )

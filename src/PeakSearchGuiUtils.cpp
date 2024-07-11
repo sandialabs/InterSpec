@@ -2604,14 +2604,14 @@ void assign_peak_nuclides_from_reference_lines( InterSpec *viewer,
       displayed.insert( displayed.begin(), currentNuclide );
   }
   
-  auto resultpeaks = std::make_shared< std::vector<std::shared_ptr<const PeakDef> > >();
+  vector<shared_ptr<const PeakDef>> resultpeaks;
   for( const PeakDef &p : peaks )
-    resultpeaks->push_back( make_shared<PeakDef>(p) );
+    resultpeaks.push_back( make_shared<PeakDef>(p) );
   
-  assign_srcs_from_ref_lines( foreground, resultpeaks, displayed, assignColor, 
+  resultpeaks = assign_srcs_from_ref_lines( foreground, resultpeaks, displayed, assignColor,
                              showingEscapePeakFeature, only_peaks_with_no_src );
   
-  for( const auto &foundpeak : *resultpeaks )
+  for( const auto &foundpeak : resultpeaks )
   {
     PeakDef p = *foundpeak;
     
@@ -2629,7 +2629,7 @@ void assign_peak_nuclides_from_reference_lines( InterSpec *viewer,
     }//if( a source was found )
     
     result_peaks.push_back( p );
-  }//for( const auto &foundpeak : *resultpeaks )
+  }//for( const auto &foundpeak : resultpeaks )
   
   
   //Hack because I'm short on time
@@ -2742,7 +2742,7 @@ void search_for_peaks_worker( std::weak_ptr<const SpecUtils::Measurement> weak_d
   {
     *resultpeaks = ExperimentalAutomatedPeakSearch::search_for_peaks( data, drf, existingPeaks, singleThread );
     
-    assign_srcs_from_ref_lines( data, resultpeaks, displayed, setColor, false, true );
+    *resultpeaks = assign_srcs_from_ref_lines( data, *resultpeaks, displayed, setColor, false, true );
   }catch( std::exception &e )
   {
     string msg = "InterSpec::search_for_peaks_worker(): caught exception: '";
@@ -2761,22 +2761,43 @@ void search_for_peaks_worker( std::weak_ptr<const SpecUtils::Measurement> weak_d
 }//void search_for_peaks_worker(...)
 
   
-/**
-*/
-void assign_srcs_from_ref_lines( const std::shared_ptr<const SpecUtils::Measurement> &data,
-                                  std::shared_ptr<std::vector<std::shared_ptr<const PeakDef> > > resultpeaks,
+std::vector<std::shared_ptr<const PeakDef>> assign_srcs_from_ref_lines( const std::shared_ptr<const SpecUtils::Measurement> &data,
+                                     const std::vector<std::shared_ptr<const PeakDef>> &peaks,
+                                     const ReferencePhotopeakDisplay * const refwidget,
+                                     const bool setColor,
+                                     const bool showingEscapePeakFeature,
+                                     const bool only_peaks_with_no_src )
+{
+  if( !data || !refwidget || peaks.empty() )
+    return peaks;
+  
+  const ReferenceLineInfo &currentNuclide = refwidget->currentlyShowingNuclide();
+  vector<ReferenceLineInfo> displayed = refwidget->persistedNuclides();
+  if( currentNuclide.m_validity == ReferenceLineInfo::InputValidity::Valid )
+    displayed.insert( displayed.begin(), currentNuclide );
+  
+  if( displayed.empty() )
+    return peaks;
+  
+  return assign_srcs_from_ref_lines( data, peaks, displayed, setColor,
+                                    showingEscapePeakFeature, only_peaks_with_no_src );
+}//assign_srcs_from_ref_lines(....)
+  
+  
+vector<shared_ptr<const PeakDef>> assign_srcs_from_ref_lines( const std::shared_ptr<const SpecUtils::Measurement> &data,
+                                  const std::vector<std::shared_ptr<const PeakDef>> &input_peaks,
                                   const vector<ReferenceLineInfo> &displayed,
                                   const bool setColor,
                                   const bool showingEscapePeakFeature,
                                   const bool only_peaks_with_no_src )
 {
-  if( !resultpeaks || !data )
-    return;
+  if( input_peaks.empty() || !data || displayed.empty() )
+    return input_peaks;
   
   auto answerpeaks = make_shared< deque< shared_ptr<const PeakDef> > >();
   vector< shared_ptr<PeakDef> > unassignedpeaks;
   
-  for( const auto &p : *resultpeaks )
+  for( const auto &p : input_peaks )
   {
     if( only_peaks_with_no_src && p->hasSourceGammaAssigned() )
       answerpeaks->push_back( p );
@@ -2830,9 +2851,7 @@ void assign_srcs_from_ref_lines( const std::shared_ptr<const SpecUtils::Measurem
     std::sort( begin(*answerpeaks), end(*answerpeaks), peak_less_than_by_energy );
   }//for( PeakDef peak : unassignedpeaks )
   
-  resultpeaks->clear();
-  for( auto &p : *answerpeaks )
-    resultpeaks->push_back( p );
+  return vector<shared_ptr<const PeakDef>>( begin(*answerpeaks), end(*answerpeaks) );
 }//void assign_srcs_from_ref_lines(...)
   
   

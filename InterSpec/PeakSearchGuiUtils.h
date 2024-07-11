@@ -163,12 +163,20 @@ void search_for_peaks_worker( std::weak_ptr<const SpecUtils::Measurement> weak_d
         better candidate for it, and there is another ref line that explains it.  If true, peaks with any nuclide/x-ray-reaction assigned
         will be skipped.
  */
-void assign_srcs_from_ref_lines( const std::shared_ptr<const SpecUtils::Measurement> &data,
-                                 std::shared_ptr<std::vector<std::shared_ptr<const PeakDef> > > peaks,
+std::vector<std::shared_ptr<const PeakDef>> assign_srcs_from_ref_lines( const std::shared_ptr<const SpecUtils::Measurement> &data,
+                                 const std::vector<std::shared_ptr<const PeakDef>> &input_peaks,
                                 const std::vector<ReferenceLineInfo> &displayed,
                                  const bool setColor,
                                 const bool showingEscapePeakFeature,
                                 const bool only_peaks_with_no_src );
+  
+/** A convenience function for the above */
+std::vector<std::shared_ptr<const PeakDef>> assign_srcs_from_ref_lines( const std::shared_ptr<const SpecUtils::Measurement> &data,
+                                   const std::vector<std::shared_ptr<const PeakDef>> &input_peaks,
+                                   const ReferencePhotopeakDisplay * const refwidget,
+                                   const bool setColor,
+                                   const bool showingEscapePeakFeature,
+                                   const bool only_peaks_with_no_src );
   
 /** Refits the peaks from a right-click refit request.
  Assumes you are in the Wt app primary thread.
