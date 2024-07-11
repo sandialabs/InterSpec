@@ -2352,6 +2352,7 @@ void fit_peak_from_double_click( InterSpec *interspec, const double x, const dou
   if( !data )
     return;
   
+  const bool isHPGe = PeakFitUtils::is_likely_high_res( interspec );
   
   vector< PeakModel::PeakShrdPtr > origPeaks;
   if( !!pmodel->peaks() )
@@ -2367,7 +2368,7 @@ void fit_peak_from_double_click( InterSpec *interspec, const double x, const dou
   }//if( pmodel->peaks() )
   
   pair< PeakShrdVec, PeakShrdVec > foundPeaks;
-  foundPeaks = searchForPeakFromUser( x, pixPerKeV, data, origPeaks, det );
+  foundPeaks = searchForPeakFromUser( x, pixPerKeV, data, origPeaks, det, isHPGe );
   
   //cerr << "Found " << foundPeaks.first.size() << " peaks to add, and "
   //     << foundPeaks.second.size() << " peaks to remove" << endl;
@@ -2550,6 +2551,8 @@ void automated_search_for_peaks( InterSpec *viewer,
   
   auto foreground = viewer->measurment(SpecUtils::SpectrumType::Foreground);
   shared_ptr<const DetectorPeakResponse> drf = foreground ? foreground->detector() : nullptr;
+
+  const bool isHPGe = PeakFitUtils::is_likely_high_res( viewer );
   
   Wt::WServer *server = Wt::WServer::instance();
   if( !server )
@@ -2560,7 +2563,7 @@ void automated_search_for_peaks( InterSpec *viewer,
   
   server->ioService().boost::asio::io_service::post( std::bind( [=](){
     search_for_peaks_worker( weakdata, drf, startingPeaks, displayed, setColor,
-                            searchresults, callback, seshid, false );
+                            searchresults, callback, seshid, false, isHPGe );
     
   } ) );
 }//void automated_search_for_peaks( InterSpec *interspec, const bool keep_old_peaks )
@@ -2724,7 +2727,8 @@ void search_for_peaks_worker( std::weak_ptr<const SpecUtils::Measurement> weak_d
                                std::shared_ptr<std::vector<std::shared_ptr<const PeakDef> > > resultpeaks,
                                boost::function<void(void)> callback,
                                const std::string sessionID,
-                               const bool singleThread )
+                               const bool singleThread,
+                               const bool isHPGe )
 {
   Wt::WServer *server = Wt::WServer::instance();
   if( !server )  //shouldnt ever happen,
@@ -2740,7 +2744,7 @@ void search_for_peaks_worker( std::weak_ptr<const SpecUtils::Measurement> weak_d
   
   try
   {
-    *resultpeaks = ExperimentalAutomatedPeakSearch::search_for_peaks( data, drf, existingPeaks, singleThread );
+    *resultpeaks = ExperimentalAutomatedPeakSearch::search_for_peaks( data, drf, existingPeaks, singleThread, isHPGe );
     
     *resultpeaks = assign_srcs_from_ref_lines( data, *resultpeaks, displayed, setColor, false, true );
   }catch( std::exception &e )

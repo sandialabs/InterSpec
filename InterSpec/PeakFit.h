@@ -218,7 +218,8 @@ void combine_peaks_to_roi( PeakShrdVec &coFitPeaks,
                           const double mean0,
                           const double sigma0,
                           const double area0,
-                          const double pixelPerKev );
+                          const double pixelPerKev,
+                          const bool isHPGe );
 
 bool check_lowres_single_peak_fit( const std::shared_ptr<const PeakDef> peak,
                                   const std::shared_ptr<const SpecUtils::Measurement> &dataH,
@@ -243,7 +244,8 @@ std::pair< PeakShrdVec, PeakShrdVec > searchForPeakFromUser( const double x,
                                            double pixelPerKev,
                                            const std::shared_ptr<const SpecUtils::Measurement> &data,
                                            const PeakShrdVec &existing_peaks,
-                                           std::shared_ptr<const DetectorPeakResponse> drf );
+                                           std::shared_ptr<const DetectorPeakResponse> drf,
+                                                            const bool isHPGe );
 
 //refitPeaksThatShareROI: intended to refit peaks fit for by
 //  searchForPeakFromUser(...), for instance when you modify the ROI range.
@@ -419,7 +421,8 @@ namespace ExperimentalAutomatedPeakSearch
               search_for_peaks( const std::shared_ptr<const SpecUtils::Measurement> meas,
                                 const std::shared_ptr<const DetectorPeakResponse> drf,
                                 std::shared_ptr<const std::deque< std::shared_ptr<const PeakDef> > > origpeaks,
-                                const bool singleThreaded );
+                                const bool singleThreaded,
+                               const bool isHPGe );
 }//namespace ExperimentalAutomatedPeakSearch
 
 

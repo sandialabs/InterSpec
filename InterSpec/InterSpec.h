@@ -1110,7 +1110,8 @@ public:
   //searchForHintPeaks(): launches the job to search for peaks (single threaded)
   //  which will call setHintPeaks(...) when done.
   void searchForHintPeaks( const std::shared_ptr<SpecMeas> &data,
-                           const std::set<int> &samples );
+                           const std::set<int> &samples,
+                          const bool isHPGe );
   
   //setHintPeaks(): sets the hint peaks (SpecMeas::m_autoSearchPeaks and
   //  SpecMeas::m_autoSearchInitialPeaks) if spectrum.lock() yeilds a valid ptr.

@@ -10328,7 +10328,10 @@ void InterSpec::changeDisplayedSampleNums( const std::set<int> &samples,
     case SpecUtils::SpectrumType::Foreground:
       if( !!m_dataMeasurement
          && !m_dataMeasurement->automatedSearchPeaks(samples) )
-        searchForHintPeaks( m_dataMeasurement, samples );
+      {
+        const bool isHPGe = PeakFitUtils::is_likely_high_res( this );
+        searchForHintPeaks( m_dataMeasurement, samples, isHPGe );
+      }
       break;
       
     case SpecUtils::SpectrumType::SecondForeground:
@@ -11086,7 +11089,10 @@ void InterSpec::setSpectrum( std::shared_ptr<SpecMeas> meas,
       {
         auto peaks = m_dataMeasurement->automatedSearchPeaks(sample_numbers);
         if( !peaks )
-          searchForHintPeaks( m_dataMeasurement, sample_numbers );
+        {
+          const bool isHPGe = PeakFitUtils::is_likely_high_res( this );
+          searchForHintPeaks( m_dataMeasurement, sample_numbers, isHPGe );
+        }
       }
       break;
     }
@@ -11978,7 +11984,8 @@ bool InterSpec::colorPeaksBasedOnReferenceLines() const
 
 
 void InterSpec::searchForHintPeaks( const std::shared_ptr<SpecMeas> &data,
-                                         const std::set<int> &samples )
+                                   const std::set<int> &samples,
+                                   const bool isHPGe )
 {
   std::shared_ptr<const deque< PeakModel::PeakShrdPtr > > origPeaks
                                                         = m_peakModel->peaks();
@@ -11999,7 +12006,7 @@ void InterSpec::searchForHintPeaks( const std::shared_ptr<SpecMeas> &data,
   
   boost::function<void(void)> worker = [=](){
     PeakSearchGuiUtils::search_for_peaks_worker( weakdata, drf, origPeaks, {}, false, searchresults,
-                                                callback, sessionId, true );
+                                                callback, sessionId, true, isHPGe );
   };
   
 

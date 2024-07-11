@@ -1110,7 +1110,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
   {
     const auto start_time = std::chrono::high_resolution_clock::now();
     
-    const bool isHPGe = PeakFitUtils::is_high_res( foreground );
+    bool isHPGe = PeakFitUtils::is_high_res( foreground );
     
     RelActCalcAuto::RelActAutoSolution solution;
     
@@ -1128,7 +1128,14 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     
     
     if( input_drf && input_drf->isValid() && input_drf->hasResolutionInfo() )
+    {
       solution.m_drf = input_drf;
+      const float hpge_exp_fwhm = PeakFitUtils::hpge_fwhm_fcn(661.0f);
+      const float nai_exp_fwhm = PeakFitUtils::nai_fwhm_fcn(661.0f);
+      const float drf_fwhm = solution.m_drf->peakResolutionFWHM(661.0f);
+      
+      isHPGe = (fabs(drf_fwhm - hpge_exp_fwhm) < fabs(drf_fwhm - nai_exp_fwhm));
+    }
     
     // We will make a (potentially background subtracted) spectrum - we also need to track the
     //  uncertainties in each channel
@@ -1187,7 +1194,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     {
       //if( input_drf && input_drf->isValid() && input_drf->hasResolutionInfo() )
         
-      all_peaks = ExperimentalAutomatedPeakSearch::search_for_peaks( spectrum, nullptr, {}, false );
+      all_peaks = ExperimentalAutomatedPeakSearch::search_for_peaks( spectrum, nullptr, {}, false, isHPGe );
     }
     
     solution.m_spectrum_peaks = all_peaks;

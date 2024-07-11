@@ -138,6 +138,7 @@ void do_peak_automated_searchfit( const double x,
                                   const std::shared_ptr<const Measurement> &meas,
                                   const std::shared_ptr<const DetectorPeakResponse> &drf,
                                   const PeakShrdVec &inpeaks,
+                                  const bool isHPGe,
                                   std::pair< PeakShrdVec, PeakShrdVec > &answer )
 {
   try
@@ -145,7 +146,7 @@ void do_peak_automated_searchfit( const double x,
 #if( PRINT_DEBUG_INFO_FOR_PEAK_SEARCH_FIT_LEVEL > 0 )
     DebugLog(cout) << "Will try fitting peak clicked on at " << x << "\n";
 #endif
-    answer = searchForPeakFromUser( x, -1.0, meas, inpeaks, drf );
+    answer = searchForPeakFromUser( x, -1.0, meas, inpeaks, drf, isHPGe );
   }catch( std::exception &e )
   {
     cerr << "do_peak_searchfit(...): caught unexpected exception: '" << e.what()
@@ -279,8 +280,8 @@ std::vector<std::shared_ptr<const PeakDef> > filter_anomolous_width_peaks_highre
 
         PeakShrdVec onepeak( 1, input[i] );
         pair< PeakShrdVec, PeakShrdVec > twoPeaksPlus, twoPeaksMinus;
-        twoPeaksPlus = searchForPeakFromUser( m + s, -1.0, meas, onepeak, nullptr );
-        twoPeaksMinus = searchForPeakFromUser( m - s, -1.0, meas, onepeak, nullptr );
+        twoPeaksPlus = searchForPeakFromUser( m + s, -1.0, meas, onepeak, nullptr, true );
+        twoPeaksMinus = searchForPeakFromUser( m - s, -1.0, meas, onepeak, nullptr, true );
         
         if( twoPeaksPlus.first.size() == 2 && twoPeaksMinus.first.size() == 2 )
         {
@@ -347,7 +348,8 @@ std::vector<std::shared_ptr<const PeakDef> > filter_anomolous_width_peaks_highre
 std::vector<std::shared_ptr<const PeakDef> > search_for_peaks_multithread(
                                        const std::shared_ptr<const Measurement> meas,
                                        const std::shared_ptr<const DetectorPeakResponse> &drf,
-                                       std::shared_ptr<const deque< std::shared_ptr<const PeakDef> > > origpeaks )
+                                       std::shared_ptr<const deque< std::shared_ptr<const PeakDef> > > origpeaks,
+                                       const bool isHPGe )
 {
   typedef std::shared_ptr<PeakDef> PeakPtr;
   typedef std::shared_ptr<const PeakDef> PeakConstPtr;
@@ -475,7 +477,9 @@ std::vector<std::shared_ptr<const PeakDef> > search_for_peaks_multithread(
       const double mean = candidatesBeingFitFor[i]->mean();
       pool.post( boost::bind( &do_peak_automated_searchfit, mean,
                              boost::cref(meas), boost::cref(drf),
-                             boost::cref(fitpeakvec), boost::ref(results[i]) ));
+                             boost::cref(fitpeakvec), 
+                             isHPGe,
+                             boost::ref(results[i]) ));
     }//for( size_t i = 0; i < peaksToTryIndices.size(); ++i )
     
     pool.join();
@@ -529,7 +533,8 @@ std::vector<std::shared_ptr<const PeakDef> > search_for_peaks_multithread(
 vector<std::shared_ptr<const PeakDef> > search_for_peaks_singlethread(
                         const std::shared_ptr<const Measurement> meas,
                         const std::shared_ptr<const DetectorPeakResponse> &drf,
-                        std::shared_ptr<const deque< std::shared_ptr<const PeakDef> > > origpeaks )
+                        std::shared_ptr<const deque< std::shared_ptr<const PeakDef> > > origpeaks,
+                        const bool isHPGe )
 {
   typedef std::shared_ptr<PeakDef> PeakPtr;
   typedef std::shared_ptr<const PeakDef> PeakConstPtr;
@@ -590,7 +595,7 @@ vector<std::shared_ptr<const PeakDef> > search_for_peaks_singlethread(
 #endif
     
     pair< PeakShrdVec, PeakShrdVec > results;
-    do_peak_automated_searchfit( p.mean(), meas, drf, fitpeakvec, results );
+    do_peak_automated_searchfit( p.mean(), meas, drf, fitpeakvec, isHPGe, results );
     
     const PeakShrdVec &toadd = results.first;
     const PeakShrdVec &toremove = results.second;
@@ -623,14 +628,15 @@ vector<std::shared_ptr<const PeakDef> > search_for_peaks(
                               const std::shared_ptr<const Measurement> meas,
                               const std::shared_ptr<const DetectorPeakResponse> drf,
                               std::shared_ptr<const deque< std::shared_ptr<const PeakDef> > > origpeaks,
-                              const bool singleThreaded )
+                              const bool singleThreaded,
+                              const bool isHPGe )
 {
   vector<std::shared_ptr<const PeakDef> > answer;
   
   if( singleThreaded )
-    answer = search_for_peaks_singlethread( meas, drf, origpeaks );
+    answer = search_for_peaks_singlethread( meas, drf, origpeaks, isHPGe );
   else
-    answer = search_for_peaks_multithread( meas, drf, origpeaks );
+    answer = search_for_peaks_multithread( meas, drf, origpeaks, isHPGe );
   
   return answer;
 }
@@ -2527,7 +2533,8 @@ void combine_peaks_to_roi( PeakShrdVec &coFitPeaks,
                           const double mean0,
                           const double sigma0,
                           const double area0,
-                          const double pixelPerKev )
+                          const double pixelPerKev,
+                          const bool isHPGe )
 {
   typedef std::shared_ptr<const PeakDef> PeakDefShrdPtr;
   
@@ -2535,9 +2542,6 @@ void combine_peaks_to_roi( PeakShrdVec &coFitPeaks,
   const double lowres_overlap_min_frac_to_combine = 0.2;
   const double lowres_nsigma_apart_to_combine = 5.0;
   const double lowres_max_nsigma_apart_to_combine = 10.0;
-  
-  const auto coarseResType = PeakFitUtils::coarse_resolution_from_peaks(inpeaks);
-  const bool isHPGe = (coarseResType == PeakFitUtils::CoarseResolutionType::High);
   
   assert( dataH );
   coFitPeaks.clear();
@@ -2961,7 +2965,8 @@ void fit_peak_for_user_click( PeakShrdVec &results,
                               const double mean0, const double sigma0,
                               const double area0,
                               const vector<double> &lowerEnergies,
-                              const vector<double> &upperEnergies )
+                              const vector<double> &upperEnergies,
+                             const bool isHPGe )
 {
   typedef std::shared_ptr<const PeakDef> PeakDefShrdPtr;
   
@@ -2974,12 +2979,11 @@ void fit_peak_for_user_click( PeakShrdVec &results,
   const size_t nchannels = dataH->num_gamma_channels();
   const size_t midbin = dataH->find_gamma_channel( mean0 );
   const float binwidth = dataH->gamma_channel_width( midbin );
-  const bool highres = PeakFitUtils::is_high_res( dataH );
   const size_t nFitPeaks = coFitPeaks.size() + 1;
   
   //The below should probably go off the number of bins in the ROI
   PeakContinuum::OffsetType offsetType;
-  if( highres )
+  if( isHPGe )
     offsetType = (nFitPeaks < 3) ? PeakContinuum::Linear : PeakContinuum::Quadratic;
   else
     offsetType = (nFitPeaks < 2) ? PeakContinuum::Linear : PeakContinuum::Quadratic;
@@ -3029,7 +3033,7 @@ void fit_peak_for_user_click( PeakShrdVec &results,
         }
         
         
-        if( !highres )
+        if( !isHPGe )
         {
 //          cout << "Testing setting peak resolution limits based on expected_lowres_peak_width_limits" << endl;
           float lowersigma, uppersigma;
@@ -4784,7 +4788,8 @@ pair< PeakShrdVec, PeakShrdVec > searchForPeakFromUser( const double x,
                                                         double pixelPerKev,
                                                         const std::shared_ptr<const Measurement> &dataH,
                                                         const PeakShrdVec &inpeaks,
-                                                        std::shared_ptr<const DetectorPeakResponse> drf )
+                                                        std::shared_ptr<const DetectorPeakResponse> drf,
+                                                       const bool isHPGe )
 {
   typedef std::shared_ptr<const PeakDef> PeakDefShrdPtr;
   
@@ -4813,11 +4818,21 @@ pair< PeakShrdVec, PeakShrdVec > searchForPeakFromUser( const double x,
   try
   {
     combine_peaks_to_roi( coFitPeaks, roiLower, roiUpper, lowstatregion,
-                          dataH, inpeaks, mean0, sigma0, area0, pixelPerKev );
-  }catch( std::exception & )
+                          dataH, inpeaks, mean0, sigma0, area0, pixelPerKev, isHPGe );
+  }catch( std::exception &e )
   {
-    return pair<PeakShrdVec,PeakShrdVec>();
-  }
+    if( !inpeaks.empty() )
+    {
+      return pair<PeakShrdVec,PeakShrdVec>();
+    }else
+    {
+      const double rough_fwhm = isHPGe ? PeakFitUtils::hpge_fwhm_fcn( static_cast<float>(mean0) )
+                                        : PeakFitUtils::nai_fwhm_fcn( static_cast<float>(mean0) );
+      cerr << "Failed to calc ROI range, will WAG" << endl;
+      roiLower = mean0 - std::max( 2*std::max(rough_fwhm,sigma0), 3.0 );
+      roiUpper = mean0 + std::max( 2*std::max(rough_fwhm,sigma0), 3.0 );
+    }
+  }// try / catch
   
   const size_t nFitPeaks = coFitPeaks.size() + 1;
   
@@ -4863,12 +4878,12 @@ pair< PeakShrdVec, PeakShrdVec > searchForPeakFromUser( const double x,
 #if( !USE_LM_PEAK_FIT )
   PeakShrdVec initialfitpeaks;
   fit_peak_for_user_click( initialfitpeaks, chi2Dof, dataH, coFitPeaks,
-                          mean0, sigma0, area0, lowerEnergies, upperEnergies );
+                          mean0, sigma0, area0, lowerEnergies, upperEnergies, isHPGe );
 #else
   PeakShrdVec mnInitialfitpeaks;
   const auto t1 = std::chrono::high_resolution_clock::now();
   fit_peak_for_user_click( mnInitialfitpeaks, chi2Dof, dataH, coFitPeaks,
-                           mean0, sigma0, area0, lowerEnergies, upperEnergies );
+                           mean0, sigma0, area0, lowerEnergies, upperEnergies, isHPGe );
   const auto t2 = std::chrono::high_resolution_clock::now();
   
   for( size_t i = 0; i < mnInitialfitpeaks.size(); ++i )
@@ -4932,13 +4947,11 @@ pair< PeakShrdVec, PeakShrdVec > searchForPeakFromUser( const double x,
   if( initialfitpeaks.empty() )
     return pair<PeakShrdVec,PeakShrdVec>();
   
-  const bool highres = PeakFitUtils::is_high_res( dataH );
-  
   if( initialfitpeaks.size() > 1 )
   {
     PeakRejectionStatus status;
     
-    if( highres )
+    if( isHPGe )
       status = check_highres_multi_peak_fit( initialfitpeaks, coFitPeaks,
                                                  dataH, automated );
     else
@@ -4974,7 +4987,7 @@ pair< PeakShrdVec, PeakShrdVec > searchForPeakFromUser( const double x,
       try
       {
         combine_peaks_to_roi( coFitPeaks, roiLower, roiUpper, lowstatregion,
-                    dataH, PeakShrdVec(), mean0, sigma0, area0, pixelPerKev );
+                    dataH, PeakShrdVec(), mean0, sigma0, area0, pixelPerKev, isHPGe );
       }catch( std::exception & )
       {
         return pair<PeakShrdVec,PeakShrdVec>();
@@ -4984,7 +4997,7 @@ pair< PeakShrdVec, PeakShrdVec > searchForPeakFromUser( const double x,
       upperEnergies = vector<double>( 1, roiUpper );
       
       fit_peak_for_user_click( initialfitpeaks, chi2Dof, dataH, coFitPeaks,
-                          mean0, sigma0, area0, lowerEnergies, upperEnergies );
+                          mean0, sigma0, area0, lowerEnergies, upperEnergies, isHPGe );
       
 #if( USE_LM_PEAK_FIT )
       for( size_t i = 0; i < initialfitpeaks.size(); ++i )
@@ -5009,12 +5022,12 @@ pair< PeakShrdVec, PeakShrdVec > searchForPeakFromUser( const double x,
     {
       return pair<PeakShrdVec,PeakShrdVec>();
     }
-  }//if( !highres && initialfitpeaks.size() > 1 )
+  }//if( !isHPGe && initialfitpeaks.size() > 1 )
   
-  if( !highres && lowres_shrink_roi_for_multipeaks && (initialfitpeaks.size() > 1 || lowstatregion) )
+  if( !isHPGe && lowres_shrink_roi_for_multipeaks && (initialfitpeaks.size() > 1 || lowstatregion) )
     initialfitpeaks = lowres_shrink_roi( initialfitpeaks, dataH, lowstatregion, automated );
   
-  if( highres && initialfitpeaks.size()==1 )
+  if( isHPGe && initialfitpeaks.size()==1 )
     initialfitpeaks = highres_shrink_roi( initialfitpeaks, dataH, lowstatregion, automated );
   
   if( initialfitpeaks.size() == 1 )
@@ -5022,7 +5035,7 @@ pair< PeakShrdVec, PeakShrdVec > searchForPeakFromUser( const double x,
     std::shared_ptr<const PeakDef> p = initialfitpeaks[0];
     
     bool passed;
-    if( highres )
+    if( isHPGe )
       passed = check_highres_single_peak_fit( p, dataH, automated );
     else
       passed = check_lowres_single_peak_fit( p, dataH, lowstatregion, automated );
@@ -5031,7 +5044,7 @@ pair< PeakShrdVec, PeakShrdVec > searchForPeakFromUser( const double x,
       return std::make_pair( initialfitpeaks, coFitPeaks );
     
     return pair<PeakShrdVec,PeakShrdVec>();
-  }//if( !highres && fitpeaks.size()==1 )
+  }//if( !isHPGe && fitpeaks.size()==1 )
   
   
   pair<PeakShrdVec,PeakShrdVec> answer;

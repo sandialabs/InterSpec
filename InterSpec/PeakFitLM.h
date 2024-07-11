@@ -48,7 +48,8 @@ void fit_peak_for_user_click_LM( std::vector< std::shared_ptr<const PeakDef> > &
                                 const double mean0, const double sigma0,
                                 const double area0,
                                 const float roiLowerEnergy,
-                                const float roiUpperEnergy );
+                                const float roiUpperEnergy,
+                                const bool isHPGe );
 }//namespace PeakFitLM
 
 

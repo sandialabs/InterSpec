@@ -178,9 +178,9 @@ bool is_likely_high_res( InterSpec *viewer )
   assert( meas );
   
   shared_ptr<const SpecUtils::Measurement> foreground = viewer->displayedHistogram(SpecUtils::SpectrumType::Foreground);
-  assert( foreground && (foreground->num_gamma_channels() > 64) );
+  assert( foreground );
   
-  if( !meas || !foreground || (foreground->num_gamma_channels() < 64) )
+  if( !meas || !foreground || (foreground->num_gamma_channels() < 512) )
     return false;
   
   switch( meas->detector_type() )

@@ -2178,7 +2178,9 @@ void RelActAutoGui::handleDoubleLeftClick( const double energy, const double /* 
       det = meas ? meas->detector() : nullptr;
     }//if( solution didnt have DRF )
     
-    const auto found_peaks = searchForPeakFromUser( energy, pixPerKeV, m_foreground, {}, det );
+    const bool isHPGe = PeakFitUtils::is_likely_high_res( m_interspec );
+    
+    const auto found_peaks = searchForPeakFromUser( energy, pixPerKeV, m_foreground, {}, det, isHPGe );
     
     // If we didnt fit a peak, and we dont
     double lower_energy = energy - 10;
