@@ -483,8 +483,7 @@ double minDetectableCounts( std::shared_ptr<const PeakDef> peak, std::shared_ptr
   double contArea = 0.0;
   if( peak->continuum()->parametersProbablySet() )
   {
-    double lowx(0.0), upperx(0.0);
-    findROIEnergyLimits( lowx, upperx, *peak, data );
+    const double lowx = peak->lowerX(), upperx = peak->upperX();
     contArea = peak->offset_integral( lowx, upperx, data );
   }else
   {
@@ -946,7 +945,7 @@ void findCandidates( vector<string> &suggestednucs,
         detPtr->fromGadrasDefinition( csv, datFile );
       }else
       {
-        cerr << "guessIsotopesForPeaks(...): error opening default detector file" << endl;
+        cerr << "findCandidates(...): error opening default detector file" << endl;
         //ToDo: get approximate intrinsic efficiency formula for a HPGe and NaI detector here, and just use those for this function.
         detPtr->setIntrinsicEfficiencyFormula( "1.0", 3.0*PhysicalUnits::cm, PhysicalUnits::keV,
                                                0.0f, 0.0f, DetectorPeakResponse::EffGeometryType::FarField );

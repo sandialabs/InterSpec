@@ -102,8 +102,10 @@ m_chart( nullptr )
   
   m_candidatePeak = make_shared<PeakDef>(initialEnergy,initialFWHM/2.35482,initialArea);
   
+  const bool isHPGe = PeakFitUtils::is_likely_high_res( m_viewer );
+  
   size_t roi_lower_channel, roi_upper_channel;
-  estimatePeakFitRange( *m_candidatePeak, m_meas, roi_lower_channel, roi_upper_channel );
+  estimatePeakFitRange( *m_candidatePeak, m_meas, isHPGe, roi_lower_channel, roi_upper_channel );
   //I think we are garunteed the bins to be in range, but we'll enforce this JIC
   roi_upper_channel = std::min( roi_upper_channel, m_meas->num_gamma_channels()-1 );
   
@@ -493,10 +495,12 @@ void AddNewPeakDialog::doFit()
   m_candidatePeak->setFitFor( PeakDef::CoefficientType::Sigma, m_fitFWHM->isChecked() );
   m_candidatePeak->setFitFor( PeakDef::CoefficientType::GaussAmplitude, m_fitAmplitude->isChecked() );
   
+  const bool isHPGe = PeakFitUtils::is_likely_high_res( m_viewer ); //Or we could use the current peaks FWHM to estimate this...
+  
   vector<PeakDef> input_peaks( 1, *m_candidatePeak ), results;
   const double stat_threshold  = 0.0, hypothesis_threshold = 0.0;
   
-  fitPeaks( input_peaks, stat_threshold, hypothesis_threshold, meas, results, std::vector<PeakDef>{}, false );
+  fitPeaks( input_peaks, stat_threshold, hypothesis_threshold, meas, results, {}, false, isHPGe );
   
   if( results.empty() )
   {

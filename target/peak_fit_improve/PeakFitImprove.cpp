@@ -46,118 +46,27 @@
 #include "InterSpec/DrfSelect.h"
 #include "InterSpec/InterSpec.h"
 #include "InterSpec/MakeDrfFit.h"
+#include "InterSpec/PeakFitUtils.h"
 #include "InterSpec/InterSpecServer.h"
 
 using namespace std;
 
 
-enum class CoarseResolutionType : int
-{
-  /** Csi, NaI*/
-  Low,
-  
-  /** LaBr, CZT */
-  Medium,
-  
-  /** HPGe */
-  High,
-  
-  /** Unknown */
-  Unknown
-};//enum class CoarseResolutionType
 
-const char *title_str( const CoarseResolutionType type )
+
+const char *title_str( const PeakFitUtils::CoarseResolutionType type )
 {
   switch( type )
   {
-    case CoarseResolutionType::Low:     return "Low Resolution";
-    case CoarseResolutionType::Medium:  return "Medium Resolution";
-    case CoarseResolutionType::High:    return "High Resolution";
-    case CoarseResolutionType::Unknown: return "Unknown Resolution";
+    case PeakFitUtils::CoarseResolutionType::Low:     return "Low Resolution";
+    case PeakFitUtils::CoarseResolutionType::Medium:  return "Medium Resolution";
+    case PeakFitUtils::CoarseResolutionType::High:    return "High Resolution";
+    case PeakFitUtils::CoarseResolutionType::Unknown: return "Unknown Resolution";
   }//switch( type )
   
   assert( 0 );
   return "";
 }//const char *title_str( const CoarseResolutionType type )
-
-
-float nai_fwhm_fcn( const float energy )
-{
-  static const vector<float> nai_fwhm_coefs{ -4.0f, 6.3f, 0.6f };   //"NaI 3x3"
-  return DetectorPeakResponse::peakResolutionFWHM( energy,
-                DetectorPeakResponse::ResolutionFnctForm::kGadrasResolutionFcn, nai_fwhm_coefs );
-}//float nai_fwhm_fcn( const float energy )
-
-
-float labr_fwhm_fcn( const float energy )
-{
-  static const vector<float> labr_fwhm_coefs{ 5.0f, 3.0f, 0.55f };  //"LaBr 10%"
-  return DetectorPeakResponse::peakResolutionFWHM( energy,
-                DetectorPeakResponse::ResolutionFnctForm::kGadrasResolutionFcn, labr_fwhm_coefs );
-}//float labr_fwhm_fcn( const float energy )
-
-float hpge_fwhm_fcn( const float energy )
-{
-  static const vector<float> hpge_fwhm_coefs{ 1.55f, 0.25f, 0.35f };//"HPGe 40%"
-  return DetectorPeakResponse::peakResolutionFWHM( energy,
-    DetectorPeakResponse::ResolutionFnctForm::kGadrasResolutionFcn, hpge_fwhm_coefs );
-}//float hpge_fwhm_fcn( const float energy )
-
-
-CoarseResolutionType coarse_resolution_from_peaks( const vector<shared_ptr<const PeakDef>> &peaks )
-{
-  size_t num_peaks = 0;
-  double max_sig = 0.0;
-  double low_w = 0, med_w = 0, high_w = 0, all_w = 0;
-  
-  for( const auto &p : peaks )
-  {
-    if( !p || (p->mean() > 3000) || (p->mean() < 50) )
-      continue;
-    
-    num_peaks += 1;
-    
-    const double drf_low_fwhm = nai_fwhm_fcn( p->mean() );
-    const double drf_med_fwhm = labr_fwhm_fcn( p->mean() );
-    const double drf_high_fwhm = hpge_fwhm_fcn( p->mean() );
-    
-    const double chi_dof = p->chi2dof();
-    const double stat_sig = p->peakArea() / p->peakAreaUncert();
-    max_sig = std::max( max_sig, stat_sig );
-    
-    const double w = p->peakArea(); //std::min( stat_sig, 10.0 );// / std::max( chi_dof, 0.5 );
-    
-    all_w += w;
-    
-    const double low_diff = fabs(p->fwhm() - drf_low_fwhm);
-    const double med_diff = fabs(p->fwhm() - drf_med_fwhm);
-    const double high_diff = fabs(p->fwhm() - drf_high_fwhm);
-    if( (low_diff < med_diff) && (low_diff < high_diff) )
-      low_w += w;
-    else if( med_diff < high_diff )
-      med_w += w;
-    else
-      high_w += w;
-  }//for( const auto &p : auto_fit_peaks )
-  
-  if( (num_peaks == 1) && (max_sig < 5) )
-    return CoarseResolutionType::Unknown;
-  
-  if( all_w <= 0.0 )
-    return CoarseResolutionType::Unknown;
-  
-  //if( low_w > high_w )
-  //  return CoarseResolutionType::Low;
-  
-  
-  if( (low_w > med_w) && (low_w > high_w) )
-    return CoarseResolutionType::Low;
-  
-  if( (med_w > high_w) )
-    return CoarseResolutionType::Medium;
-  
-  return CoarseResolutionType::High;
-}//CoarseResolutionType coarse_resolution_from_peaks( const vector<shared_ptr<const PeakDef>> &peaks )
 
 
 int main( int argc, char **argv )
@@ -198,31 +107,31 @@ int main( int argc, char **argv )
   SpecUtilsAsync::ThreadPool pool;
   
   std::mutex intemed_res_mutex;
-  std::map<CoarseResolutionType,vector<double>> intemed_res;
-  std::map<CoarseResolutionType,tuple<int,int,int,int>> peak_to_drf_comp;
+  std::map<PeakFitUtils::CoarseResolutionType,vector<double>> intemed_res;
+  std::map<PeakFitUtils::CoarseResolutionType,tuple<int,int,int,int>> peak_to_drf_comp;
   
   for( const string &nchan_str : num_channels )
   {
     const string nchan_path = SpecUtils::append_path(base_dir, nchan_str);
     for( const string &det_type_str : det_types )
     {
-      CoarseResolutionType expected_type = CoarseResolutionType::Unknown;
+      PeakFitUtils::CoarseResolutionType expected_type = PeakFitUtils::CoarseResolutionType::Unknown;
       if( (det_type_str == "CsI") || (det_type_str == "NaI") )
-        expected_type = CoarseResolutionType::Low;
+        expected_type = PeakFitUtils::CoarseResolutionType::Low;
       else if( (det_type_str == "CZT") || (det_type_str == "LaBr3") )
-        expected_type = CoarseResolutionType::Medium;
+        expected_type = PeakFitUtils::CoarseResolutionType::Medium;
       else if( det_type_str == "HPGe" )
-        expected_type = CoarseResolutionType::High;
+        expected_type = PeakFitUtils::CoarseResolutionType::High;
       else
         throw runtime_error( "Unknown detector type: " + det_type_str );
      
-      if( expected_type == CoarseResolutionType::High )
+      if( expected_type == PeakFitUtils::CoarseResolutionType::High )
       {
         if( (nchan_str != "4096_channels") && (nchan_str != "8192_channels") )
           continue;
       }
       
-      assert( expected_type != CoarseResolutionType::Unknown );
+      assert( expected_type != PeakFitUtils::CoarseResolutionType::Unknown );
       
       const string det_type_path = SpecUtils::append_path(nchan_path, det_type_str);
       const vector<string> detector_paths =  SpecUtils::ls_directories_in_directory( det_type_path );
@@ -239,7 +148,7 @@ int main( int argc, char **argv )
           //cout << "For " << det_name << " (" << det_type_str << " - " << time_str << ") there are "
           //     << pcf_files.size() << " files." << endl;
           
-          const auto analyze_file = [&intemed_res_mutex, &intemed_res, &peak_to_drf_comp]( const string filename, const CoarseResolutionType expected  ){
+          const auto analyze_file = [&intemed_res_mutex, &intemed_res, &peak_to_drf_comp]( const string filename, const PeakFitUtils::CoarseResolutionType expected  ){
             SpecUtils::SpecFile file;
             if( !file.load_file(filename, SpecUtils::ParserType::Pcf ) )
             {
@@ -276,6 +185,8 @@ int main( int argc, char **argv )
             //                              ncausalitysigma, stat_threshold, hypothesis_threshold,
             //                              {}, foreground, {}, isRefit );
             
+            const bool isHPGe = PeakFitUtils::is_high_res( foreground );
+            
             vector<shared_ptr<const PeakDef>> auto_fit_peaks
               = ExperimentalAutomatedPeakSearch::search_for_peaks( foreground, nullptr, {}, true );
             
@@ -298,8 +209,8 @@ int main( int argc, char **argv )
                 for( const auto &p : auto_fit_peaks )
                 {
                   peaks->push_back( p );
-                  const double nai_fwhm = nai_fwhm_fcn( p->mean() );
-                  const double hpge_fwhm = hpge_fwhm_fcn( p->mean() );
+                  const double nai_fwhm = PeakFitUtils::nai_fwhm_fcn( p->mean() );
+                  const double hpge_fwhm = PeakFitUtils::hpge_fwhm_fcn( p->mean() );
                   
                   if( fabs(nai_fwhm - p->fwhm()) < fabs(hpge_fwhm - p->fwhm()) )
                     num_closer_NaI += 1;
@@ -311,13 +222,13 @@ int main( int argc, char **argv )
                 if( auto_fit_peaks.size() == 1 )
                   form = DetectorPeakResponse::ResolutionFnctForm::kGadrasResolutionFcn;
                 
-                const bool highResolution = (num_closer_HPGe > num_closer_NaI); //This only matters if LLS fit to FWHM fails, or uses GADRAS FWHM
+                //const bool highResolution = (num_closer_HPGe > num_closer_NaI); //This only matters if LLS fit to FWHM fails, or uses GADRAS FWHM
                 
                 // Lets go through 
                 
                 const int sqrtEqnOrder = 2; //
                 vector<float> fwhm_coeffs, fwhm_coeff_uncerts;
-                MakeDrfFit::performResolutionFit( peaks, form, highResolution, sqrtEqnOrder,
+                MakeDrfFit::performResolutionFit( peaks, form, sqrtEqnOrder,
                                                  fwhm_coeffs, fwhm_coeff_uncerts );
                 
                 double initial_cs137_fwhm = DetectorPeakResponse::peakResolutionFWHM( 661, form, fwhm_coeffs );
@@ -331,7 +242,7 @@ int main( int argc, char **argv )
                   //if( auto_fit_peaks.size() == 1 )
                     form = DetectorPeakResponse::ResolutionFnctForm::kGadrasResolutionFcn;
                   
-                  MakeDrfFit::performResolutionFit( peaks, form, highResolution, sqrtEqnOrder,
+                  MakeDrfFit::performResolutionFit( peaks, form, sqrtEqnOrder,
                                                    fwhm_coeffs, fwhm_coeff_uncerts );
                   
                   initial_cs137_fwhm = DetectorPeakResponse::peakResolutionFWHM( 661, form, fwhm_coeffs );
@@ -389,7 +300,7 @@ int main( int argc, char **argv )
                       new_peaks->push_back( distances[index].second );
                   }
                   
-                  MakeDrfFit::performResolutionFit( new_peaks, form, highResolution, sqrtEqnOrder,
+                  MakeDrfFit::performResolutionFit( new_peaks, form, sqrtEqnOrder,
                                                    fwhm_coeffs, fwhm_coeff_uncerts );
                 }//if( peaks->size() > 5 )
                 
@@ -403,22 +314,12 @@ int main( int argc, char **argv )
             }//if( auto_fit_peaks.size() > 0 )
             
             
-            //const CoarseResolutionType type_from_peaks = coarse_resolution_from_peaks( auto_fit_peaks );
+            const PeakFitUtils::CoarseResolutionType type_from_peaks = PeakFitUtils::coarse_resolution_from_peaks( auto_fit_peaks );
             
             
-            size_t lower_channel = 0, upper_channel = 0;
-            vector<std::shared_ptr<PeakDef>> candidates
-             = secondDerivativePeakCanidatesWithROI( foreground, lower_channel, upper_channel );
-            vector<shared_ptr<const PeakDef>> peak_candidates;
-            for( const std::shared_ptr<PeakDef> &p : candidates )
-            {
-              p->setAmplitudeUncert( sqrt( std::max(1.0,p->amplitude())));
-              peak_candidates.push_back( p );
-            }
-            const CoarseResolutionType type_from_peaks = coarse_resolution_from_peaks( peak_candidates );
-            
-            
-            if( !auto_fit_peaks.empty() && (type_from_peaks == CoarseResolutionType::Low && expected == CoarseResolutionType::High) )
+            if( !auto_fit_peaks.empty()
+               && (type_from_peaks == PeakFitUtils::CoarseResolutionType::Low)
+               && (expected == PeakFitUtils::CoarseResolutionType::High) )
             {
               cerr << ("File '" + filename + "' failed.\n");
               cerr << endl;
@@ -429,16 +330,16 @@ int main( int argc, char **argv )
             
             switch( type_from_peaks )
             {
-              case CoarseResolutionType::Low:
+              case PeakFitUtils::CoarseResolutionType::Low:
                 get<1>(peak_to_drf_comp[expected]) += 1;
                 break;
-              case CoarseResolutionType::Medium:
+              case PeakFitUtils::CoarseResolutionType::Medium:
                 get<2>(peak_to_drf_comp[expected]) += 1;
                 break;
-              case CoarseResolutionType::High:
+              case PeakFitUtils::CoarseResolutionType::High:
                 get<3>(peak_to_drf_comp[expected]) += 1;
                 break;
-              case CoarseResolutionType::Unknown:
+              case PeakFitUtils::CoarseResolutionType::Unknown:
                 get<0>(peak_to_drf_comp[expected]) += 1;
                 break;
             }//switch( type_from_peaks )
@@ -470,7 +371,7 @@ int main( int argc, char **argv )
   max_corr = std::min( max_corr, 25.0 );
   
   const size_t num_channel = 1024;
-  std::map<CoarseResolutionType,vector<float>> channel_correlation_hists;
+  std::map<PeakFitUtils::CoarseResolutionType,vector<float>> channel_correlation_hists;
   for( const auto &t_v : intemed_res )
     channel_correlation_hists[t_v.first] = vector<float>( num_channel, 0.0f );
   
@@ -524,7 +425,7 @@ int main( int argc, char **argv )
   output_hists.cleanup_after_load( SpecUtils::SpecFile::DontChangeOrReorderSamples );
   
   {// Begin write output
-    const char *outname = "results_candidate_peaks.n42";
+    const char *outname = "results.n42";
     ofstream coor_output( outname );
     if( output_hists.write_2012_N42( coor_output ) )
       cout << "Wrote '" << outname << "'" << endl;

@@ -77,10 +77,6 @@ protected:
   
 protected:
   PeakModel *m_model;
-  //m_viewer is only necessary for calling guessIsotopesForPeaks(...), could
-  //  change to instead have a method which sets a member variable
-  //  DetectorPeakResponse when the InterSpec::detectorChanged() signal
-  //  is emitted.
   InterSpec *m_viewer;
   D3SpectrumDisplayDiv *m_spectrumDisplayDiv;
 

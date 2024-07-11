@@ -326,7 +326,7 @@ protected:
 
 //findROILimit(...): returns the channel number that should be the extent of the
 //  region of interest, for the peak with the given mean and sigma.  If
-//  high==true, then the bin higher in energy than the mean will be returned,
+//  upper_side==true, then the bin higher in energy than the mean will be returned,
 //  otherwise it will be the bin on the lower energy side of the mean.
 //  The basic idea is to include a maximum of 11.75 sigma away from the mean
 //  of the peak, but then start at ~1.5 sigma from mean, and try to detect if
@@ -339,14 +339,19 @@ protected:
 //  This is kinda similar in principle to how PCGAP does it, but with further
 //  modifications, and I'm sure some differences; see,
 //  http://www.inl.gov/technicalpublications/Documents/3318133.pdf
-size_t findROILimit( const PeakDef &peak, const std::shared_ptr<const SpecUtils::Measurement> &data, bool high);
+size_t findROILimit( const PeakDef &peak, 
+                    const std::shared_ptr<const SpecUtils::Measurement> &data,
+                    const bool upper_side,
+                    const bool isHPGe );
 
 
 //findROIEnergyLimits(...): a convience function that calls findROILimit(...)
 //  inorder to set 'lowerEnengy' and 'upperEnergy'.  IF data is an invalid
 //  pointer, then PeakDef::lowerX() and PeakDef::upperX() are used.
 void findROIEnergyLimits( double &lowerEnengy, double &upperEnergy,
-                         const PeakDef &peak, const std::shared_ptr<const SpecUtils::Measurement> &data );
+                         const PeakDef &peak, 
+                         const std::shared_ptr<const SpecUtils::Measurement> &data,
+                         const bool isHPGe );
 
 //Returns if area from start2 to end2 is greater than or equal to the
 //  area of (start1 to end1 minus nsigma).
@@ -359,8 +364,11 @@ bool isStatisticallyGreaterOrEqual( const size_t start1, const size_t end1,
 //If a polynomial continuum and the peakdoesnt specify the range, then it
 //  will look at the data histogram for when data starts increasing, and set
 //  this as the limit.
+//  `isHPGe` is only used if the peak does not have the energy range already defined.
 //Does nothing if the histogram is null.
-void estimatePeakFitRange( const PeakDef &peak, const std::shared_ptr<const SpecUtils::Measurement> &dataH,
+void estimatePeakFitRange( const PeakDef &peak, 
+                          const std::shared_ptr<const SpecUtils::Measurement> &dataH,
+                          const bool isHPGe,
                           size_t &lower_channel, size_t &upper_channel );
 
 

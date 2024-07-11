@@ -165,7 +165,8 @@ public:
   static void addPeaksToFitter( ROOT::Minuit2::MnUserParameters &paramaters,
                                 const std::vector<PeakDef> &near_peaks,
                                 std::shared_ptr<const SpecUtils::Measurement> data,
-                                AddPeaksToFitterMethod method );
+                                AddPeaksToFitterMethod method,
+                                const bool isHPGe );
   
   static void setSharedIndexToContinuumInfo( double &info, int index );
   static void setOffsetTypeToContinuumInfo( double &info,

@@ -2157,21 +2157,28 @@ void D3SpectrumDisplayDiv::performDragCreateRoiWork( double lower_energy, double
 
   InterSpecApp *app = dynamic_cast<InterSpecApp *>(wApp);
   InterSpec *viewer = app ? app->viewer() : nullptr;
+  if( !viewer )
+    return;
+  
   PeakModel *peakModel = spectrum->m_peakModel;
   std::shared_ptr<const SpecMeas> meas = viewer ? viewer->measurment(SpecUtils::SpectrumType::Foreground) : nullptr;
   std::shared_ptr<const DetectorPeakResponse> detector = meas ? meas->detector() : nullptr;
 
   std::shared_ptr<const Measurement> foreground = spectrum->data();
   
-  if( !foreground )
+  if( !foreground || !meas )
   {
     updateRoiBeingDragged( {} );
     return;
   }
   
-  auto fcnworker = [foreground,detector,lower_energy,upper_energy,nForcedPeaks,isfinal,window_xpx,window_ypx,app,spectrum,peakModel](){
+  // Lets determine if this is a HPGe spectrum or not - this is used for minimum width
+  //  we will consider fitting a peak for, as well as the maximum number of peaks we
+  //  will consider - so to be safe, we will assume HPGe by default.
+  const bool isHpge = PeakFitUtils::is_likely_high_res( viewer );
   
-    const bool isHpge = PeakFitUtils::is_high_res( foreground );
+  auto fcnworker = [foreground,detector,lower_energy,upper_energy,nForcedPeaks,isfinal,window_xpx,window_ypx,app,spectrum,peakModel,isHpge](){
+  
     const float erange = upper_energy - lower_energy;
     const float midenergy = 0.5f*(lower_energy + upper_energy);
     
@@ -2201,7 +2208,7 @@ void D3SpectrumDisplayDiv::performDragCreateRoiWork( double lower_energy, double
       nPeaks = std::max( nPeaks, 1 );
       nPeaks = std::min( nPeaks, static_cast<int>(2*erange/min_sigma_width_kev) );
       //Always allow for fitting at least three different number of peaks, even if only single core.
-      // But note! Results are currently dependant on how many cores the users computer has!
+      // But note! Results are currently dependent on how many cores the users computer has!
       //  (I dont like this, in principle - need to do some benchmarking to see how long things
       //   take (on low end devices) to see if we can make the same for all devices)
       const size_t ncores = static_cast<size_t>( std::max(3, SpecUtilsAsync::num_physical_cpu_cores()) );

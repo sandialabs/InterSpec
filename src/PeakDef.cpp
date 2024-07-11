@@ -144,7 +144,9 @@ namespace
 
 
 void findROIEnergyLimits( double &lowerEnengy, double &upperEnergy,
-                         const PeakDef &peak, const std::shared_ptr<const Measurement> &data )
+                         const PeakDef &peak, 
+                         const std::shared_ptr<const Measurement> &data,
+                         const bool isHPGe )
 {
   std::shared_ptr<const PeakContinuum> continuum = peak.continuum();
   if( continuum->energyRangeDefined() )
@@ -161,8 +163,8 @@ void findROIEnergyLimits( double &lowerEnengy, double &upperEnergy,
     return;
   }//if( !data )
   
-  const size_t lowbin = findROILimit( peak, data, false );
-  const size_t upbin  = findROILimit( peak, data, true );
+  const size_t lowbin = findROILimit( peak, data, false, isHPGe );
+  const size_t upbin  = findROILimit( peak, data, true, isHPGe );
   if( lowbin == 0 )
     lowerEnengy = data->gamma_channel_center( lowbin );
   else
@@ -172,8 +174,6 @@ void findROIEnergyLimits( double &lowerEnengy, double &upperEnergy,
     upperEnergy = data->gamma_channel_center( std::min(upbin,data->num_gamma_channels()-1) );
   else
     upperEnergy = data->gamma_channel_upper( upbin );
-  
-
 }//void findROIEnergyLimits(...)
 
 
@@ -310,7 +310,10 @@ size_t findROILimitHighRes( const PeakDef &peak, const std::shared_ptr<const Mea
 }//findROILimitHighRes(...)
  
 
-size_t findROILimit( const PeakDef &peak, const std::shared_ptr<const Measurement> &dataH, bool high )
+size_t findROILimit( const PeakDef &peak, 
+                    const std::shared_ptr<const Measurement> &dataH,
+                    const bool high,
+                    const bool isHPGe )
 {
   if( !peak.gausPeak() )
     return dataH->find_gamma_channel( (high ? peak.upperX() : peak.lowerX()) );
@@ -339,9 +342,6 @@ size_t findROILimit( const PeakDef &peak, const std::shared_ptr<const Measuremen
   if( nchannel<128 )
     throw runtime_error( "findROILimit(...): Invalid input" );
   
-  const bool highres = PeakFitUtils::is_high_res(dataH);
-  
-  
   const vector<float> &contents = *dataH->gamma_channel_contents();
   
   
@@ -354,7 +354,7 @@ size_t findROILimit( const PeakDef &peak, const std::shared_ptr<const Measuremen
   if( definedRange )
     return dataH->find_gamma_channel( (high ? (highxrange-0.00001) : lowxrange) );
   
-  if( PeakFitUtils::is_high_res(dataH) )
+  if( isHPGe )
     return findROILimitHighRes( peak, dataH, high );
   
   
@@ -406,7 +406,7 @@ size_t findROILimit( const PeakDef &peak, const std::shared_ptr<const Measuremen
     assert( channel < (dataH->num_gamma_channels() + 100) );
     const float val = contents[channel];
     
-    if( val <= minVal && (!highres || (contents[channel+direction] <= minVal)) )
+    if( val <= minVal && (!isHPGe || (contents[channel+direction] <= minVal)) )
     {
       minVal = val;
       minChannel = channel;
@@ -437,7 +437,7 @@ size_t findROILimit( const PeakDef &peak, const std::shared_ptr<const Measuremen
       //  the lower ROI range for peaks on a falling continuum can be much to short.
       //  (not tested for HPGe)
 
-      if( (nbackbin > 2) && !highres && channel > nbackbin )
+      if( (nbackbin > 2) && !isHPGe && channel > nbackbin )
       {
         try
         {
@@ -477,7 +477,7 @@ size_t findROILimit( const PeakDef &peak, const std::shared_ptr<const Measuremen
       
       
       
-      if( val > max_allowable && (!highres || contents[channel+direction] > max_allowable) )
+      if( val > max_allowable && (!isHPGe || contents[channel+direction] > max_allowable) )
       {
         //XXX - the below 3 is purely empircal, and meant to help avoid
         //      contamination due to the new feature
@@ -583,8 +583,8 @@ size_t findROILimit( const PeakDef &peak, const std::shared_ptr<const Measuremen
     //  ROI.  It could probably be done for low resolution spectra, but I havent
     //  tested if (since single lowres peaks ROIs typically get calculated by
     //  find_roi_for_2nd_deriv_candidate(...) anyway
-    if( (val>max_allowable && (!highres ||nextval>max_allowable))
-        || (val<min_allowable && (!highres || nextval<min_allowable)) )
+    if( (val>max_allowable && (!isHPGe ||nextval>max_allowable))
+        || (val<min_allowable && (!isHPGe || nextval<min_allowable)) )
     {
 #if( PRINT_ROI_DEBUG_INFO )
       if( debug_this_peak )
@@ -658,16 +658,20 @@ size_t findROILimit( const PeakDef &peak, const std::shared_ptr<const Measuremen
     //    }
   }//if( abs(lastbin-mean_bin) > abs(good_cont_bin-mean_bin) )
   
+  if( lastchannel < 0 )
+    lastchannel = 0;
+  else if( lastchannel >= static_cast<indexing_t>(dataH->num_gamma_channels()) )
+    lastchannel = static_cast<indexing_t>(dataH->num_gamma_channels()) - 1;
   
   float val = dataH->gamma_channel_center(lastchannel);
   if( direction < 0 )
   {
     if( ((mean-val)/sigma) < 1.75 )
-      lastchannel = dataH->find_gamma_channel( mean - 1.75*sigma );
+      lastchannel = static_cast<indexing_t>( dataH->find_gamma_channel( mean - 1.75*sigma ) );
   }else
   {
     if( ((val-mean)/sigma) < 1.75 )
-      lastchannel = dataH->find_gamma_channel( mean + 1.75*sigma );
+      lastchannel = static_cast<indexing_t>( dataH->find_gamma_channel( mean + 1.75*sigma ) );
   }
   
 #if( PRINT_ROI_DEBUG_INFO )
@@ -720,6 +724,7 @@ bool isStatisticallyGreaterOrEqual( const size_t start1, const size_t end1,
 
 
 void estimatePeakFitRange( const PeakDef &peak, const std::shared_ptr<const Measurement> &dataH,
+                           const bool isHPGe,
                            size_t &lower_channel, size_t &upper_channel )
 {
   const size_t nchannel = dataH ? dataH->num_gamma_channels() : size_t(0);
@@ -756,8 +761,8 @@ void estimatePeakFitRange( const PeakDef &peak, const std::shared_ptr<const Meas
   const bool polyContinuum = continuum->isPolynomial();
   if( polyContinuum )
   {
-    lower_channel = findROILimit( peak, dataH, false );
-    upper_channel = findROILimit( peak, dataH, true );
+    lower_channel = findROILimit( peak, dataH, false, isHPGe );
+    upper_channel = findROILimit( peak, dataH, true, isHPGe );
   }else
   {
     lower_channel = dataH->find_gamma_channel( mean - 4.0*sigma );

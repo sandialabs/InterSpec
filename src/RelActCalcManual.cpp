@@ -647,7 +647,7 @@ void fit_rel_eff_eqn_lls( const RelActCalc::RelEffEqnForm fcn_form,
     throw runtime_error( "fit_rel_eff_eqn_lls: no isotopes specified." );
   
   const int poly_terms = static_cast<int>(order) + 1;
-  const int num_peaks = peak_infos.size();
+  const int num_peaks = static_cast<int>( peak_infos.size() );
   
   vector<double> energies(num_peaks,0.0), meas_rel_eff(num_peaks,0.0), meas_rel_eff_uncert(num_peaks,0.0);
   
@@ -1106,8 +1106,8 @@ void fit_act_to_rel_eff( const RelActCalc::RelEffEqnForm eqn_form,
   // https://eigen.tuxfamily.org/dox/group__LeastSquares.html
   
   
-  const int num_isotopes = static_cast<int>(isotopes.size());
-  const int num_peaks = peak_infos.size();
+  const int num_isotopes = static_cast<int>( isotopes.size() );
+  const int num_peaks = static_cast<int>( peak_infos.size() );
   
   Eigen::MatrixXd A = Eigen::MatrixXd::Zero( num_peaks, num_isotopes );
   Eigen::VectorXd b( num_peaks );

@@ -1779,13 +1779,22 @@ std::unique_ptr<std::pair<PeakModel::PeakShrdPtr,std::string>>
     const float always_check_escape_thresh = 4000.0f;
     const float escape_suppression_factor = 0.5;
     const float xray_suppression_factor = 0.2;
-    const bool isHPGe = PeakFitUtils::is_high_res(data);
+    
+    // We will consider escape peaks if it is likely a HPGe detector.
+    //  We'll judge this off the current peak width
+    vector<std::shared_ptr<const PeakDef>> peakv( 1, make_shared<const PeakDef>(peak) );
+    const PeakFitUtils::CoarseResolutionType resolutionType
+                              = PeakFitUtils::coarse_resolution_from_peaks( peakv );
+    bool isHPGe = (resolutionType == PeakFitUtils::CoarseResolutionType::High);
+    if( !isHPGe && data && (data->num_gamma_channels() > 1024) && InterSpec::instance() )
+      isHPGe = PeakFitUtils::is_likely_high_res( InterSpec::instance() );
+    
     
     double mindist = 99999999.9;
     double nearestEnergy = -999.9;
     
-    double minx(0.0), maxx(0.0);
-    findROIEnergyLimits( minx, maxx, peak, data );
+    const double minx = peak.lowerX();
+    const double maxx = peak.upperX();
     
     const SandiaDecay::Nuclide *nuclide = NULL;
     const SandiaDecay::Element *element = NULL;
@@ -2306,8 +2315,6 @@ std::vector<std::shared_ptr<const PeakDef>>
   if( !data )
     return inital_fit.first;
     
-  const bool isHPGe = PeakFitUtils::is_high_res(data);
-  
   // Check ROI range, and limit it to a specified number of FWHM
   
   // Try a few different continuums - including flat and linear step - but first check if worthwhile
@@ -2896,10 +2903,11 @@ void refit_peaks_from_right_click( InterSpec * const interspec, const double rig
     const double hypothesis_threshold = 0.0;
     
     const bool isRefit = true;
+    const bool isHPGe = PeakFitUtils::is_likely_high_res(interspec); //Only used if peak range is defined, so shouldnt be needed
     
     outputPeak = fitPeaksInRange( lowE, upE, ncausalitysigma, stat_threshold,
                                  hypothesis_threshold, inputPeak, data,
-                                 fixedPeaks, isRefit );
+                                 fixedPeaks, isRefit, isHPGe );
     if( outputPeak.size() != inputPeak.size() )
     {
       WStringStream msg;
@@ -3085,9 +3093,10 @@ void refit_peaks_with_drf_fwhm( InterSpec * const interspec, const double rightC
     const double hypothesis_threshold = -1000.0;
     
     const bool isRefit = false;
+    const bool isHPGe = PeakFitUtils::is_likely_high_res(interspec); //Only used if peak range is defined, so shouldnt be needed
     outputPeak = fitPeaksInRange( lowE, upE, ncausalitysigma, stat_threshold,
                                  hypothesis_threshold, inputPeak, data,
-                                 fixedPeaks, isRefit );
+                                 fixedPeaks, isRefit, isHPGe );
     if( outputPeak.size() != inputPeak.size() )
     {
       WStringStream msg;
@@ -3435,9 +3444,10 @@ void refit_peak_with_photopeak_mean( InterSpec * const interspec, const double r
     const double hypothesis_threshold = 0;
   
     const bool isRefit = false;
+    const bool isHPGe = PeakFitUtils::is_likely_high_res(interspec); //Only used if peak range is defined, so shouldnt be needed
     outputPeak = fitPeaksInRange( lowE, upE, ncausalitysigma, stat_threshold,
                                hypothesis_threshold, inputPeak, data,
-                               fixedPeaks, isRefit );
+                               fixedPeaks, isRefit, isHPGe );
     if( outputPeak.size() != inputPeak.size() )
     {
       WStringStream msg;
@@ -3620,10 +3630,10 @@ void change_continuum_type_from_right_click( InterSpec * const interspec,
       
       // Classifying this as a re-fit will keep the means and widths, from wandering too much.
       const bool isRefit = true;
-      
+      const bool isHPGe = PeakFitUtils::is_likely_high_res(interspec); //Only used if peak range is defined, so shouldnt be needed
       outputPeak = fitPeaksInRange( lowE, upE, ncausalitysigma, stat_threshold,
                                    hypothesis_threshold, inputPeak, data,
-                                   fixedPeaks, isRefit );
+                                   fixedPeaks, isRefit, isHPGe );
       
       if( outputPeak.empty() )
       {
@@ -3851,10 +3861,10 @@ void change_skew_type_from_right_click( InterSpec * const interspec,
       
       // We'll let the means and widths change significantly
       const bool isRefit = false;
-      
+      const bool isHPGe = PeakFitUtils::is_likely_high_res(interspec); //Only used if peak range is defined, so shouldnt be needed
       outputPeak = fitPeaksInRange( lowE, upE, ncausalitysigma, stat_threshold,
                                    hypothesis_threshold, inputPeak, data,
-                                   fixedPeaks, isRefit );
+                                   fixedPeaks, isRefit, isHPGe );
       
       if( outputPeak.empty() )
       {
@@ -3945,6 +3955,18 @@ void fit_template_peaks( InterSpec *interspec, std::shared_ptr<const SpecUtils::
     candidate_peaks.push_back( peak );
   }//for( auto &peak : input_peaks )
   
+  bool isHPGe = false;
+  
+  {// Begin block to see if HPGe
+    const vector<PeakDef> &peaks_for_test = orig_peaks.empty() ? input_peaks : orig_peaks;
+    vector<shared_ptr<const PeakDef>> peaks;
+    for( const PeakDef &p : peaks_for_test )
+      peaks.push_back( make_shared<const PeakDef>( p ) );
+    
+    const PeakFitUtils::CoarseResolutionType type = PeakFitUtils::coarse_resolution_from_peaks( peaks );
+    isHPGe = (type == PeakFitUtils::CoarseResolutionType::High);
+  }// End block to see if HPGe
+  
   
   const bool isRefit = true;
   const double x0 = data->gamma_energy_min();
@@ -3955,7 +3977,7 @@ void fit_template_peaks( InterSpec *interspec, std::shared_ptr<const SpecUtils::
   
   vector<PeakDef> fitpeaks = fitPeaksInRange( x0, x1, ncausalitysigma,
                                              stat_threshold, hypothesis_threshold,
-                                             candidate_peaks, data, orig_peaks, isRefit );
+                                             candidate_peaks, data, orig_peaks, isRefit, isHPGe );
   
   //Add back in data_def_peaks and orig_peaks.
   fitpeaks.insert( end(fitpeaks), begin(data_def_peaks), end(data_def_peaks) );
@@ -4090,6 +4112,17 @@ void prepare_and_add_gadras_peaks( std::shared_ptr<const SpecUtils::Measurement>
     }//if( we should combine these peaks ) / else
   }//for( size_t i = 1; i < candidate_peaks.size(); ++i )
   
+  bool isHPGe = false;
+  
+  {// Begin block to see if HPGe
+    const vector<PeakDef> &peaks_for_test = orig_peaks.empty() ? gadras_peaks : orig_peaks;
+    vector<shared_ptr<const PeakDef>> peaks;
+    for( const PeakDef &p : peaks_for_test )
+      peaks.push_back( make_shared<const PeakDef>( p ) );
+    
+    const PeakFitUtils::CoarseResolutionType type = PeakFitUtils::coarse_resolution_from_peaks( peaks );
+    isHPGe = (type == PeakFitUtils::CoarseResolutionType::High);
+  }// End block to see if HPGe
   
   const bool isRefit = false;
   const double x0 = data->gamma_energy_min();
@@ -4100,7 +4133,7 @@ void prepare_and_add_gadras_peaks( std::shared_ptr<const SpecUtils::Measurement>
   
   vector<PeakDef> fitpeaks = fitPeaksInRange( x0, x1, ncausalitysigma,
                                              stat_threshold, hypothesis_threshold,
-                                             candidate_peaks, data, orig_peaks, isRefit );
+                                             candidate_peaks, data, orig_peaks, isRefit, isHPGe );
   
   //Add back in data_def_peaks and orig_peaks.
   fitpeaks.insert( end(fitpeaks), begin(data_def_peaks), end(data_def_peaks) );

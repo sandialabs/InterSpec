@@ -2087,9 +2087,11 @@ void InterSpec::makePeakFromRightClickHaveOwnContinuum()
                                 = std::make_shared<PeakContinuum>( *oldcont );
   newpeak.setContinuum( cont );
   
+  const bool isHPGe = PeakFitUtils::is_likely_high_res( this );
+  
   cont->setRange( -1.0, -1.0 );
-  size_t lowbin = findROILimit( newpeak, data, false );
-  size_t upbin  = findROILimit( newpeak, data, true );
+  size_t lowbin = findROILimit( newpeak, data, false, isHPGe );
+  size_t upbin  = findROILimit( newpeak, data, true, isHPGe );
   double minx = data->gamma_channel_lower( lowbin );
   double maxx = data->gamma_channel_upper( upbin );
   cont->setRange( minx, maxx );
@@ -2117,8 +2119,8 @@ void InterSpec::makePeakFromRightClickHaveOwnContinuum()
     if( (*iter)->continuum() == oldcont )
     {
       oldneighbors.push_back( *iter );
-      lowbin = findROILimit( *(*iter), data, false );
-      upbin  = findROILimit( *(*iter), data, true );
+      lowbin = findROILimit( *(*iter), data, false, isHPGe );
+      upbin  = findROILimit( *(*iter), data, true, isHPGe );
       const double a = data->gamma_channel_lower( lowbin );
       const double z = data->gamma_channel_upper( upbin );
       minx = std::min( minx, a );
@@ -2925,8 +2927,10 @@ void InterSpec::setIsotopeSearchEnergy( double energy )
       
       //For low res spectra make relatively less wide
       const auto spectrum = displayedHistogram(SpecUtils::SpectrumType::Foreground);
-      if( m_dataMeasurement && !PeakFitUtils::is_high_res(spectrum) )
+      if( m_dataMeasurement && spectrum && !PeakFitUtils::is_likely_high_res(this) )
+      {
         sigma *= 0.35;
+      }
     }//if( within 3 sigma of peak )
   }//if( !!peak )
   
@@ -7170,13 +7174,17 @@ void InterSpec::finishHardBackgroundSub( std::shared_ptr<bool> truncate_neg, std
       try
       {
         vector<PeakDef> input_peaks;
+        
         for( const auto &i : *orig_peaks )
           input_peaks.push_back( *i );
+        
+        const auto res_type = PeakFitUtils::coarse_resolution_from_peaks( *orig_peaks );
+        const bool isHPGe = (res_type == PeakFitUtils::CoarseResolutionType::High);
         
         const double lowE = newspec->gamma_energy_min();
         const double upE = newspec->gamma_energy_max();
       
-        refit_peaks = fitPeaksInRange( lowE, upE, 0.0, 0.0, 0.0, input_peaks, newspec, {}, true );
+        refit_peaks = fitPeaksInRange( lowE, upE, 0.0, 0.0, 0.0, input_peaks, newspec, {}, true, isHPGe );
         
         std::deque<std::shared_ptr<const PeakDef> > peakdeque;
         for( const auto &p : refit_peaks )
@@ -11980,6 +11988,7 @@ void InterSpec::searchForHintPeaks( const std::shared_ptr<SpecMeas> &data,
   std::shared_ptr< vector<std::shared_ptr<const PeakDef> > > searchresults
             = std::make_shared< vector<std::shared_ptr<const PeakDef> > >();
   
+  const string sessionId = wApp->sessionId();
   std::weak_ptr<const SpecUtils::Measurement> weakdata = m_spectrum->data();
   auto drf = data->detector();
   std::weak_ptr<SpecMeas> spectrum = data;
@@ -11988,16 +11997,11 @@ void InterSpec::searchForHintPeaks( const std::shared_ptr<SpecMeas> &data,
                 boost::bind(&InterSpec::setHintPeaks,
                 this, spectrum, samples, origPeaks, searchresults) );
   
-  boost::function<void(void)> worker = boost::bind( &PeakSearchGuiUtils::search_for_peaks_worker,
-                                                   weakdata,
-                                                   drf, 
-                                                   origPeaks,
-                                                   vector<ReferenceLineInfo>(),
-                                                   false,
-                                                   searchresults,
-                                                   callback,
-                                                   wApp->sessionId(),
-                                                   true );
+  boost::function<void(void)> worker = [=](){
+    PeakSearchGuiUtils::search_for_peaks_worker( weakdata, drf, origPeaks, {}, false, searchresults,
+                                                callback, sessionId, true );
+  };
+  
 
   if( m_findingHintPeaks )
   {
@@ -12125,6 +12129,7 @@ void InterSpec::excludePeaksFromRange( double x0, double x1 )
       all_peaks.erase( iter );
   }//for( peak in range ...)
   
+  const bool isHPGe = PeakFitUtils::is_likely_high_res( this );
   
   vector<PeakDef> peaks_to_keep;
   double minEffectedPeak = DBL_MAX, maxEffectedPeak = -DBL_MAX;
@@ -12137,7 +12142,7 @@ void InterSpec::excludePeaksFromRange( double x0, double x1 )
     std::shared_ptr<PeakContinuum> continuum = peak.continuum();
     
     double lowx = 0.0, upperx = 0.0;
-    findROIEnergyLimits( lowx, upperx, peak, data );
+    findROIEnergyLimits( lowx, upperx, peak, data, isHPGe );
     
     minEffectedPeak = std::min( minEffectedPeak, peak.mean() );
     maxEffectedPeak = std::max( maxEffectedPeak, peak.mean() );
@@ -12231,165 +12236,6 @@ void InterSpec::excludePeaksFromRange( double x0, double x1 )
   
   m_peakModel->setPeaks( all_peaks );
 }//void excludePeaksFromRange( const double x0, const double x1 )
-
-
-void InterSpec::guessIsotopesForPeaks( WApplication *app )
-{
-  InterSpec *viewer = this;
-  if( !m_peakModel )
-    throw runtime_error( "InterSpec::refitPeakAmplitudes(...): "
-                         "shoudnt be called if peak model isnt set.");
-  
-  std::shared_ptr<const SpecUtils::Measurement> data;
-  std::shared_ptr<const DetectorPeakResponse> detector;
-  std::shared_ptr<const deque< PeakModel::PeakShrdPtr > > all_peaks;
-  
-  {//begin code-block to get input data
-    std::unique_ptr<WApplication::UpdateLock> applock;
-    if( app )
-      applock.reset( new WApplication::UpdateLock(app) );
-    
-    if( app && m_peakModel->peaks() )
-      all_peaks = std::make_shared<deque<PeakModel::PeakShrdPtr> >( *m_peakModel->peaks() );
-    else
-      all_peaks = m_peakModel->peaks();
-    
-    if( !all_peaks || all_peaks->empty() )
-      return;
-    
-    data = m_spectrum->data();
-  
-    if( viewer && viewer->measurment(SpecUtils::SpectrumType::Foreground) )
-    {
-      detector = viewer->measurment(SpecUtils::SpectrumType::Foreground)->detector();
-      
-      if( detector )
-      {
-        DetectorPeakResponse *resp = new DetectorPeakResponse( *detector );
-        detector.reset( resp );
-      }//if( detector )
-    }//if( viewer && viewer->measurment(SpecUtils::SpectrumType::Foreground) )
-  
-    if( detector && !detector->hasResolutionInfo() )
-    {
-      try
-      {
-        std::shared_ptr<DetectorPeakResponse> newdetector = std::make_shared<DetectorPeakResponse>( *detector );
-        newdetector->fitResolution( all_peaks, data, DetectorPeakResponse::kGadrasResolutionFcn );
-        detector = newdetector;
-      }catch( std::exception & )
-      {
-        detector.reset();
-      }
-    }
-    
-    if( !detector || !detector->isValid() )
-    {
-      DetectorPeakResponse *detPtr = new DetectorPeakResponse();
-      detector.reset( detPtr );
-    
-      string drf_dir;
-      if( PeakFitUtils::is_high_res(data) )
-        drf_dir = SpecUtils::append_path(ns_staticDataDirectory, "GenericGadrasDetectors/HPGe 40%" );
-      else
-        drf_dir = SpecUtils::append_path(ns_staticDataDirectory, "GenericGadrasDetectors/NaI 1x1" );
-      
-      detPtr->fromGadrasDirectory( drf_dir );
-    }//if( !detector || !detector->isValid() )
-  }//end code-block to get input data
-  
-  vector<IsotopeId::PeakToNuclideMatch> idd( all_peaks->size() );
-  
-  size_t peakn = 0, rownum = 0;
-  vector<size_t> rownums;
-  SpecUtilsAsync::ThreadPool threadpool;
-//  vector< boost::function<void()> > workers;
-  vector<PeakModel::PeakShrdPtr> inputpeaks;
-  vector<PeakDef> modifiedPeaks;
-  for( PeakModel::PeakShrdPtr peak : *all_peaks )
-  {
-    ++rownum;
-    inputpeaks.push_back( peak );
-    
-    if( (peak->parentNuclide()
-         && (peak->nuclearTransition()
-             || (peak->sourceGammaType()==PeakDef::AnnihilationGamma) ))
-        || peak->reaction() || peak->xrayElement() )
-    {
-      modifiedPeaks.push_back( *peak );
-      continue;
-    }
-    
-    threadpool.post( boost::bind( &IsotopeId::suggestNuclides,
-                                  boost::ref(idd[peakn]), peak, all_peaks,
-                                  data, detector ) );
-//    workers.push_back( boost::bind( &suggestNuclides, boost::ref(idd[peakn]),
-//                                   peak, all_peaks, data, detector ) ) );
-    rownums.push_back( rownum-1 );
-    ++peakn;
-  }//for( PeakModel::PeakShrdPtr peak : *all_peaks )
-  
-  threadpool.join();
-//  SpecUtils::do_asyncronous_work( workers, false );
-
-    
-  for( size_t resultnum = 0; resultnum < rownums.size(); ++resultnum )
-  {
-    const size_t row = rownums[resultnum];
-    const PeakModel::PeakShrdPtr peak = m_peakModel->peakPtr( row ); 
-    PeakDef newPeak = *inputpeaks[row];
-      
-    if( newPeak.parentNuclide() || newPeak.reaction() || newPeak.xrayElement() )
-    {
-      modifiedPeaks.push_back( newPeak );
-      continue;
-    }//if( !isotopeData.empty() )
-      
-    const IsotopeId::PeakToNuclideMatch match = idd[resultnum];
-    vector<PeakDef::CandidateNuclide> candidates;
-      
-    for( size_t j = 0; j < match.nuclideWeightPairs.size(); ++j )
-    {
-      const IsotopeId::NuclideStatWeightPair &p = match.nuclideWeightPairs[j];
-      
-      PeakDef::SourceGammaType sourceGammaType = PeakDef::NormalGamma;
-      size_t radparticleIndex;
-      const SandiaDecay::Transition *transition = NULL;
-      const double sigma = newPeak.gausPeak() ? newPeak.sigma() : 0.125*newPeak.roiWidth();
-      PeakDef::findNearestPhotopeak( p.nuclide, match.energy,
-                                       4.0*sigma, false, transition,
-                                       radparticleIndex, sourceGammaType );
-      if( j == 0 )
-        newPeak.setNuclearTransition( p.nuclide, transition,
-                                      int(radparticleIndex), sourceGammaType );
-        
-      if( transition || (sourceGammaType==PeakDef::AnnihilationGamma) )
-      {
-        PeakDef::CandidateNuclide candidate;
-        candidate.nuclide          = p.nuclide;
-        candidate.weight           = p.weight;
-        candidate.transition       = transition;
-        candidate.sourceGammaType  = sourceGammaType;
-        candidate.radparticleIndex = static_cast<int>(radparticleIndex);
-        candidates.push_back( candidate );
-      }//if( transition )
-    }//for( size_t j = 0; j < match.nuclideWeightPairs.size(); ++j )
-
-    newPeak.setCandidateNuclides( candidates );
-    modifiedPeaks.push_back( newPeak );
-  }//for( size_t i = 0; i < idd.size(); ++i )
-
-  {//begin codeblock to set modified peaks
-    std::unique_ptr<WApplication::UpdateLock> applock;
-    if( app )
-      applock.reset( new WApplication::UpdateLock(app) );
-    
-    m_peakModel->setPeaks( modifiedPeaks );
-    
-    if( app )
-      app->triggerUpdate();
-  }//end codeblock to set modified peaks
-}//void guessIsotopesForPeaks()
 
 
 vector<pair<float,int> > InterSpec::passthroughTimeToSampleNumber() const

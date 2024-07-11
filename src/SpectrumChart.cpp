@@ -2677,8 +2677,8 @@ bool SpectrumChart::gausPeakDrawRange( int &minrow, int &maxrow,
   std::shared_ptr<const Measurement> dataH = th1Model->getData();
   if( dataH )
   {
-    size_t lower_channel, upper_channel;
-    estimatePeakFitRange( peak, dataH, lower_channel, upper_channel );
+    const size_t lower_channel = dataH->find_gamma_channel( peak.lowerX() );
+    const size_t upper_channel = dataH->find_gamma_channel( peak.upperX() );
     minx = dataH->gamma_channel_lower(lower_channel) + 0.001;
     maxx = dataH->gamma_channel_upper(upper_channel);
   }//if( dataH )
@@ -3536,8 +3536,8 @@ void SpectrumChart::paintPeaks( Wt::WPainter& painter ) const
   {
     for( const PeakModel::PeakShrdPtr &ptr : *peaksDeque )
     {
-      double lowx(0.0), upperx(0.0);
-      findROIEnergyLimits( lowx, upperx, *ptr, dataH );
+      const double lowx = ptr->lowerX();
+      const double upperx = ptr->upperX();
       
       if( !ptr || lowx>maxx || upperx<minx )
         continue;

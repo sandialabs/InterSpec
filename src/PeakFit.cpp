@@ -352,8 +352,6 @@ std::vector<std::shared_ptr<const PeakDef> > search_for_peaks_multithread(
   typedef std::shared_ptr<PeakDef> PeakPtr;
   typedef std::shared_ptr<const PeakDef> PeakConstPtr;
   
-  const bool highres = PeakFitUtils::is_high_res( meas );
-  
   size_t lower_channel = 0, upper_channel = 0;
   //    ExperimentalPeakSearch::find_spectroscopic_extent( meas, lower_channel, upper_channel );
   //    cout << "Start at " << meas->gamma_channel_center( lower_channel ) << " and going through "
@@ -437,7 +435,8 @@ std::vector<std::shared_ptr<const PeakDef> > search_for_peaks_multithread(
       inpeaks.insert( inpeaks.end(), candidates.begin()+i+1, candidates.end() );
       inpeaks.push_back( peak );
       
-      const double nsigma = highres ? 10.0 : 5.0;
+      //const double nsigma = isHPGe ? 10.0 : 5.0;
+      const double nsigma = 7.5;
       const vector< vector<std::shared_ptr<const PeakDef> > > disconnectedpeaks
                               = causilyDisconnectedPeaks(  nsigma, true, inpeaks );
       
@@ -518,9 +517,9 @@ std::vector<std::shared_ptr<const PeakDef> > search_for_peaks_multithread(
     candidates.swap( nextcandidates );
   }//while( !candidates.empty() )
   
-  if( highres )
+  const auto detResolution = PeakFitUtils::coarse_resolution_from_peaks( fitpeakvec );
+  if( detResolution == PeakFitUtils::CoarseResolutionType::High )
     fitpeakvec = filter_anomolous_width_peaks_highres( meas, fitpeakvec );
-  
   
   return fitpeakvec;
 }//search_for_peaks_multithread(...)
@@ -534,8 +533,6 @@ vector<std::shared_ptr<const PeakDef> > search_for_peaks_singlethread(
 {
   typedef std::shared_ptr<PeakDef> PeakPtr;
   typedef std::shared_ptr<const PeakDef> PeakConstPtr;
-  
-  const bool highres = PeakFitUtils::is_high_res( meas );
   
   size_t lower_channel = 0, upper_channel = 0;
   vector<PeakPtr> candidates
@@ -614,7 +611,8 @@ vector<std::shared_ptr<const PeakDef> > search_for_peaks_singlethread(
               &PeakDef::lessThanByMeanShrdPtr );
   }//while( !candidates.empty() )
   
-  if( highres )
+  const auto detResolution = PeakFitUtils::coarse_resolution_from_peaks( fitpeakvec );
+  if( detResolution == PeakFitUtils::CoarseResolutionType::High )
     fitpeakvec = filter_anomolous_width_peaks_highres( meas, fitpeakvec );
   
   return fitpeakvec;
@@ -625,7 +623,7 @@ vector<std::shared_ptr<const PeakDef> > search_for_peaks(
                               const std::shared_ptr<const Measurement> meas,
                               const std::shared_ptr<const DetectorPeakResponse> drf,
                               std::shared_ptr<const deque< std::shared_ptr<const PeakDef> > > origpeaks,
-                              const bool singleThreaded  )
+                              const bool singleThreaded )
 {
   vector<std::shared_ptr<const PeakDef> > answer;
   
@@ -1556,7 +1554,8 @@ std::vector<PeakDef> fitPeaksInRange( const double x0,
                                      std::vector<PeakDef> input_peaks,
                                      std::shared_ptr<const Measurement> data,
                                      const std::vector<PeakDef> &fixedpeaks,
-                                     bool amplitudeOnly )
+                                     bool amplitudeOnly,
+                                     const bool isHPGe )
 {
   //20120309: For the Ba133 example spectrum with default settings on my newer
   //          mac book pro, this function takes:
@@ -1643,7 +1642,8 @@ std::vector<PeakDef> fitPeaksInRange( const double x0,
                                  data,
                                  boost::ref( fit_peak_ranges[peakn] ),
                                  boost::cref( fixed_seperated_peaks[peakn] ),
-                                 amplitudeOnly ) );
+                                 amplitudeOnly,
+                                 isHPGe ) );
   }//for( size_t peakn = 0; peakn < seperated_peaks.size(); ++peakn )
   
   threadpool.join();
@@ -1681,7 +1681,7 @@ std::vector<PeakDef> fitPeaksInRange( const double x0,
     
     return fitPeaksInRange( x0, x1, ncausality,
                            stat_threshold, hypothesis_threshold,
-                           input_peaks, data, fixedpeaks, amplitudeOnly );
+                           input_peaks, data, fixedpeaks, amplitudeOnly, isHPGe );
   }//if( migration )
   
   //  cout << "Fit took: " << timer.format() << endl;
@@ -1786,8 +1786,9 @@ double chi2_for_region( const PeakShrdVec &peaks,
       
       for( const PeakShrdPtr &peak : peaks )
       {
-        size_t lower_channel, upper_channel;
-        estimatePeakFitRange( *peak, data, lower_channel, upper_channel );
+        size_t lower_channel = data->find_gamma_channel( peak->lowerX() );
+        size_t upper_channel = data->find_gamma_channel( peak->upperX() - 0.00001 );
+        
         for( size_t channel = lower_channel; channel <= upper_channel; ++channel )
         {
           if( !predicted.count(channel) )
@@ -1973,9 +1974,13 @@ PeakShrdVec refitPeaksThatShareROI( const std::shared_ptr<const Measurement> &da
         for( const auto &p : inpeaks )
           input_peaks.push_back( *p );
         
+        const auto resType = PeakFitUtils::coarse_resolution_from_peaks(inpeaks);
+        const bool isHPGe = (resType == PeakFitUtils::CoarseResolutionType::High);
+        
+        
         vector<PeakDef> output_peak = fitPeaksInRange( lx, ux, ncausalitysigma, stat_threshold,
                                      hypothesis_threshold, input_peaks, dataH,
-                                     fixed_peaks, isRefit );
+                                     fixed_peaks, isRefit, isHPGe );
         
         if( output_peak.size() == inpeaks.size() )
         {
@@ -2154,7 +2159,8 @@ void find_roi_for_2nd_deriv_candidate(
                                       double &lowerEnengy,
                                       double &upperEnergy,
                                       const float peakmean,
-                                      const std::shared_ptr<const Measurement> &data )
+                                      const std::shared_ptr<const Measurement> &data,
+                                      const bool isHPGe )
 {
   if( !data || !data->num_gamma_channels() )
     throw runtime_error( "find_roi_for_2nd_deriv_candidate: invalid input" );
@@ -2530,13 +2536,14 @@ void combine_peaks_to_roi( PeakShrdVec &coFitPeaks,
   const double lowres_nsigma_apart_to_combine = 5.0;
   const double lowres_max_nsigma_apart_to_combine = 10.0;
   
+  const auto coarseResType = PeakFitUtils::coarse_resolution_from_peaks(inpeaks);
+  const bool isHPGe = (coarseResType == PeakFitUtils::CoarseResolutionType::High);
+  
   assert( dataH );
   coFitPeaks.clear();
   roiLower = roiUpper = -1.0;
   
   const size_t nchannels = dataH->num_gamma_channels();
-  const bool highres = PeakFitUtils::is_high_res( dataH );
-  
   double minEnergy = mean0 - 2.0*sigma0 - 20.0/pixelPerKev;
   double maxEnergy = mean0 + 2.0*sigma0 + 20.0/pixelPerKev;
   
@@ -2548,7 +2555,7 @@ void combine_peaks_to_roi( PeakShrdVec &coFitPeaks,
 #endif
     
     PeakDef dummypeak( mean0, sigma0, area0 );
-    findROIEnergyLimits( roiLowerFeature, roiUpperFeature, dummypeak, dataH );
+    findROIEnergyLimits( roiLowerFeature, roiUpperFeature, dummypeak, dataH, isHPGe );
 
     roiLower = roiLowerFeature;
     roiUpper = roiUpperFeature;
@@ -2567,17 +2574,17 @@ void combine_peaks_to_roi( PeakShrdVec &coFitPeaks,
                    << "Goes to roiLower=" << roiLower << ", roiUpper=" << roiUpper << "\n";
 #endif
 
-    if( !highres )
+    if( !isHPGe )
     {
       try
       {
-        find_roi_for_2nd_deriv_candidate( roiLower, roiUpper, mean0, dataH );
+        find_roi_for_2nd_deriv_candidate( roiLower, roiUpper, mean0, dataH, isHPGe );
       }catch( std::exception &e )
       {
-        cerr << "find_roi_for_2nd_deriv_candidate failed: " << e.what() << endl;
+        //cerr << "find_roi_for_2nd_deriv_candidate failed: " << e.what() << endl;
         throw runtime_error( string("find_roi_for_2nd_deriv_candidate failed: ") + e.what() );
       }
-    }//if( !highres )
+    }//if( !isHPGe )
     
 #if( PRINT_DEBUG_INFO_FOR_PEAK_SEARCH_FIT_LEVEL > 0 )
     DebugLog(cout) << "after Goes to roiLower=" << roiLower << ", roiUpper=" << roiUpper << ", sigma0=" << sigma0 << "\n";
@@ -2601,7 +2608,7 @@ void combine_peaks_to_roi( PeakShrdVec &coFitPeaks,
     double peakmax = peak->upperX();
     
     //Doing this can cause the regions to no longer overlap
-    //    if( !highres )
+    //    if( !isHPGe )
     //      try{ find_roi_for_2nd_deriv_candidate( peakmin, peakmax, peak->mean(), dataH ); }catch(...){ }
     
     if( roiUpper>=peakmin && roiUpper<=peakmax )
@@ -2639,7 +2646,7 @@ void combine_peaks_to_roi( PeakShrdVec &coFitPeaks,
     << "\n";
 #endif
     
-    if( highres )
+    if( isHPGe )
     {
       //numbers below arent based on much, as ov yet
       const double highres_nsigma_apart_combine = 8.5;
@@ -2679,7 +2686,7 @@ void combine_peaks_to_roi( PeakShrdVec &coFitPeaks,
         else
           minEnergy = std::max( minEnergy, peak->mean() );
       }
-    }//if( highres ) / else
+    }//if( isHPGe ) / else
   }//for( nearPeaks )
   
   //Should handle special case where the ROI wont be combined by the above, but
@@ -2732,7 +2739,7 @@ void combine_peaks_to_roi( PeakShrdVec &coFitPeaks,
     {
       double thisROILower, thisROIUpper;
       PeakDef dummy( mean0, sigma0, 100.0 );
-      findROIEnergyLimits( thisROILower, thisROIUpper, dummy, dataH );
+      findROIEnergyLimits( thisROILower, thisROIUpper, dummy, dataH, isHPGe );
       
       roiLower = std::min( roiLower, thisROILower );
       roiUpper = std::max( roiUpper, thisROIUpper );
@@ -2742,27 +2749,27 @@ void combine_peaks_to_roi( PeakShrdVec &coFitPeaks,
       else
         dummy = PeakDef( coFitPeaks.front()->mean(), std::max(coFitPeaks.front()->sigma(),sigma0), coFitPeaks.front()->amplitude() );
       
-      findROIEnergyLimits( thisROILower, thisROIUpper, dummy, dataH );
+      findROIEnergyLimits( thisROILower, thisROIUpper, dummy, dataH, isHPGe );
       
       roiLower = std::min( roiLower, thisROILower );
       roiUpper = std::max( roiUpper, thisROIUpper );
 
-      if( !highres )
+      if( !isHPGe )
       {
         try
         {
           double testLeftLower, testLeftUpper, testRightLower, testRightUpper;
           find_roi_for_2nd_deriv_candidate( testLeftLower, testLeftUpper,
-                                           coFitPeaks.front()->mean(), dataH );
+                                           coFitPeaks.front()->mean(), dataH, isHPGe );
           find_roi_for_2nd_deriv_candidate( testRightLower, testRightUpper,
-                                           coFitPeaks.back()->mean(), dataH );
+                                           coFitPeaks.back()->mean(), dataH, isHPGe );
           roiLower = std::min( roiLower, testLeftLower );
           roiUpper = std::max( roiUpper, testRightUpper );
         }catch( std::exception & )
         {
           cerr << "Failed to find candidate peak for multipeak region - continuuing on" << endl;
         }
-      }//if( !highres )
+      }//if( !isHPGe )
     }//if( newIsLowest || newIsHighest )
   }//if( we should re-estimate the ROI )
 }//void combine_peaks_to_roi(...)
@@ -4833,11 +4840,6 @@ pair< PeakShrdVec, PeakShrdVec > searchForPeakFromUser( const double x,
   lowerEnergies.push_back( roiLower );
   upperEnergies.push_back( roiUpper );
   
-//  double roiLowerFeature, roiUpperFeature;
-//  findROIEnergyLimits( roiLowerFeature, roiUpperFeature, dummypeak, dataH );
-//  initialLowerEnergies.push_back( roiLowerFeature );
-//  initialUpperEnergies.push_back( roiUpperFeature );
-  
   /** Using google Ceres to fit peaks is an experiment in using Ceres.
    
    Its actually maybe a slower (although this is probably not the fault of Ceres - but of my
@@ -5541,7 +5543,7 @@ std::vector<std::shared_ptr<PeakDef> > secondDerivativePeakCanidatesWithROI( std
       std::shared_ptr<PeakDef> peak( new PeakDef( mean, sigma, amplitude ) );
       
       double lowerEnengy, upperEnergy;
-      findROIEnergyLimits( lowerEnengy, upperEnergy, *peak, dataH );
+      findROIEnergyLimits( lowerEnengy, upperEnergy, *peak, dataH, highres );
       
       //Clamp the ROI to not get ridiculous
       lowerEnengy = std::max( lowerEnengy, mean-5.0*sigma );
@@ -5574,8 +5576,6 @@ std::vector<std::shared_ptr<PeakDef> > secondDerivativePeakCanidatesWithROI( std
             << ", new_amp=" << new_amp << ", FOM=" << figure_of_merit << "\n"
             << "\n";
 #endif
-      
-      //      findROIEnergyLimits( lowerEnengy, upperEnergy, peak, dataH );
       
       assert( fabs(sigma-peak->sigma()) < FLT_EPSILON );
       bool rangeOk = ((upperEnergy-lowerEnengy)>range_nsigma_thresh*sigma);
@@ -5872,7 +5872,8 @@ void fitPeaks( const std::vector<PeakDef> &all_near_peaks,
               std::shared_ptr<const Measurement> data,
               std::vector<PeakDef> &fitpeaks,
               const std::vector<PeakDef> &all_fixedpeaks,
-              bool amplitudeOnly ) throw()
+              bool amplitudeOnly,
+              const bool isHPGe ) throw()
 {
   try
   {
@@ -5924,9 +5925,10 @@ void fitPeaks( const std::vector<PeakDef> &all_near_peaks,
     {
       const PeakDef &lowgaus = near_peaks.front();
       const PeakDef &highgaus = near_peaks.back();
+      
       double dummy = 0.0;
-      findROIEnergyLimits( lowx, dummy, lowgaus, data );
-      findROIEnergyLimits( dummy, highx, highgaus, data );
+      findROIEnergyLimits( lowx, dummy, lowgaus, data, isHPGe );
+      findROIEnergyLimits( dummy, highx, highgaus, data, isHPGe );
     }
     
     const int npeaks = static_cast<int>( near_peaks.size() + fixedpeaks.size() );
@@ -5958,9 +5960,9 @@ void fitPeaks( const std::vector<PeakDef> &all_near_peaks,
                                                      ? PeakFitChi2Fcn::kRefitPeakParameters
                                                      : PeakFitChi2Fcn::kFitForPeakParameters);
     
-    PeakFitChi2Fcn::addPeaksToFitter( inputPrams, near_peaks, data, method );
+    PeakFitChi2Fcn::addPeaksToFitter( inputPrams, near_peaks, data, method, isHPGe );
     PeakFitChi2Fcn::addPeaksToFitter( inputPrams, fixedpeaks, data,
-                                     PeakFitChi2Fcn::kFixPeakParameters );
+                                     PeakFitChi2Fcn::kFixPeakParameters, isHPGe );
     
     if( inputPrams.VariableParameters() == 0 )
     {
@@ -6106,7 +6108,7 @@ void fitPeaks( const std::vector<PeakDef> &all_near_peaks,
         
     if( removed_peak )
       fitPeaks( fitpeaks, stat_threshold, hypothesis_threshold,
-                data, fitpeaks, fixedpeaks, false );
+                data, fitpeaks, fixedpeaks, false, isHPGe );
         
     if( datadefined_peaks.size() )
     {
@@ -6869,9 +6871,10 @@ bool chi2_significance_test( PeakDef peak,
   vector<double> paramsForOtherPeaks, zeroPeakParams, paramsForPeak;
           
   {//start code block to create PeakFitChi2Fcn parameters for other peaks
+    const bool isHPGe = false; //doesnt matter, since peaks already have ROI range defined
     ROOT::Minuit2::MnUserParameters mnparams;
     PeakFitChi2Fcn::addPeaksToFitter( mnparams, other_peaks,
-                                    data, PeakFitChi2Fcn::kFixPeakParameters );
+                                    data, PeakFitChi2Fcn::kFixPeakParameters, isHPGe );
     paramsForOtherPeaks = mnparams.Params();
   }//end code block to create PeakFitChi2Fcn parameters for other peaks
           
@@ -6879,26 +6882,34 @@ bool chi2_significance_test( PeakDef peak,
     PeakDef zeropeak = peak;
     zeropeak.setAmplitude( 0.0 );
     
+    assert( zeropeak.continuum()->energyRangeDefined() );
+    const bool isHPGe = false; //doesnt matter, since peaks already have ROI range defined
     ROOT::Minuit2::MnUserParameters mnparams;
     PeakFitChi2Fcn::addPeaksToFitter( mnparams, vector<PeakDef>(1,zeropeak),
-                                      data, PeakFitChi2Fcn::kFixPeakParameters );
+                                      data, PeakFitChi2Fcn::kFixPeakParameters, isHPGe);
     zeroPeakParams = mnparams.Params();
             
     //I dont think this next little bit is necessary, but I left in to be sure
     //  to be compatible w/ legacy code pre 20131230
     if( !zeropeak.continuum()->energyRangeDefined() )
     {
-      double xmin, xmax;
-      findROIEnergyLimits( xmin, xmax, peak, data );
+      //double xmin, xmax;
+      //findROIEnergyLimits( xmin, xmax, peak, data );
+      
+      assert( peak.continuum()->energyRangeDefined() );
+      const double xmin = peak.lowerX();
+      const double xmax = peak.upperX();
+      
       zeroPeakParams[PeakFitChi2Fcn::RangeStartEnergy] = xmin;
       zeroPeakParams[PeakFitChi2Fcn::RangeEndEnergy]   = xmax;
     }//if( !zeropeak.continuum()->energyRangeDefined() )
   }//end code block to create PeakFitChi2Fcn parameters for zero amp test peak
           
   {//start code block to create PeakFitChi2Fcn parameters for test peak
+    const bool isHPGe = false; //Doesnt matter, since peaks already have ROI range defined
     ROOT::Minuit2::MnUserParameters mnparams;
     PeakFitChi2Fcn::addPeaksToFitter( mnparams, vector<PeakDef>(1,peak),
-                                      data, PeakFitChi2Fcn::kFixPeakParameters );
+                                      data, PeakFitChi2Fcn::kFixPeakParameters, isHPGe );
     paramsForPeak = mnparams.Params();
   }//end code block to create PeakFitChi2Fcn parameters for test peak
           
@@ -7131,7 +7142,7 @@ std::vector<PeakDef> AutoPeakSearchChi2Fcn::candidate_peaks( const vector<float>
          upperEnergy = 0.5*(energies[upperbin] + energies[upperbin+1]);
          */
         
-        findROIEnergyLimits( lowerEnengy, upperEnergy, peak, m_meas );
+        findROIEnergyLimits( lowerEnengy, upperEnergy, peak, m_meas, highres );
         lower_channel = m_meas->find_gamma_channel( lowerEnengy );
         upper_channel = m_meas->find_gamma_channel( upperEnergy );
       }//if( highres ) / else
@@ -8129,21 +8140,20 @@ bool find_spectroscopic_extent( std::shared_ptr<const Measurement> meas,
 }//bool find_spectroscopic_extent(...)
 
 std::vector<PeakDef> search_for_peaks( const std::shared_ptr<const Measurement> meas,
-                                      const std::vector<PeakDef> &origpeaks )
+                                      const std::vector<PeakDef> &origpeaks,
+                                      const bool isHPGe )
 {
   if( !meas || !meas->gamma_counts() )
     return origpeaks;
   
-  const bool highres = PeakFitUtils::is_high_res( meas );
-  
-  const double min_chi2_dof_thresh         = highres ? 0.2   : 3.5;
-  const double min_gross_counts_sig_thresh = highres ? 3.0   : 3;
-  const double above_line_chi2_thresh      = highres ? 4.075 : 4.075;
-  const int side_bins                      = highres ? 7     : 10;
-  const int smooth_order                   = highres ? 3     : 2;
-  const double second_deriv_thresh         = highres ? -0.02 : 0.04;
-  const double stat_thresh                 = highres ? 1.0   : 2;
-  const double width_thresh                = highres ? 0.0   : 0.0;
+  const double min_chi2_dof_thresh         = isHPGe ? 0.2   : 3.5;
+  const double min_gross_counts_sig_thresh = isHPGe ? 3.0   : 3;
+  const double above_line_chi2_thresh      = isHPGe ? 4.075 : 4.075;
+  const int side_bins                      = isHPGe ? 7     : 10;
+  const int smooth_order                   = isHPGe ? 3     : 2;
+  const double second_deriv_thresh         = isHPGe ? -0.02 : 0.04;
+  const double stat_thresh                 = isHPGe ? 1.0   : 2;
+  const double width_thresh                = isHPGe ? 0.0   : 0.0;
   
   
   //initial_above_line_chi2_thresh: 3.5,
@@ -8156,7 +8166,7 @@ std::vector<PeakDef> search_for_peaks( const std::shared_ptr<const Measurement> 
                           min_gross_counts_sig_thresh,
                           above_line_chi2_thresh, side_bins, smooth_order,
                           second_deriv_thresh, stat_thresh, width_thresh,
-                          origpeaks
+                          origpeaks, isHPGe
 #if( WRITE_CANDIDATE_PEAK_INFO_TO_FILE )
                           , std::shared_ptr<const DetectorPeakResponse>()
 #endif
@@ -8173,7 +8183,8 @@ std::vector<PeakDef> search_for_peaks( const std::shared_ptr<const Measurement> 
                                       const double second_deriv_thresh,
                                       const double stat_thresh,
                                       const double width_thresh,
-                                      const std::vector<PeakDef> &origpeaks /*included in result, unmodified, wont have duplciate */
+                                      const std::vector<PeakDef> &origpeaks, /*included in result, unmodified, wont have duplciate */
+                                      const bool isHPGe
 #if( WRITE_CANDIDATE_PEAK_INFO_TO_FILE )
                                       , std::shared_ptr<const DetectorPeakResponse> detector
 #endif
@@ -8703,7 +8714,7 @@ std::vector<PeakDef> search_for_peaks( const std::shared_ptr<const Measurement> 
       for( size_t j = 0; j < groupsofpeaks[i].size(); ++j )
       {
         double lowerEnengy, upperEnergy;
-        findROIEnergyLimits( lowerEnengy, upperEnergy, groupsofpeaks[i][j], meas );
+        findROIEnergyLimits( lowerEnengy, upperEnergy, groupsofpeaks[i][j], meas, isHPGe );
         lx = std::min( lx, lowerEnengy );
         ux = std::max( ux, upperEnergy );
         if( j )

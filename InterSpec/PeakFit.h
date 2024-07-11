@@ -161,7 +161,8 @@ void expected_peak_width_limits( const float energy,
 //  isnt negative, or data is invalid.
 void find_roi_for_2nd_deriv_candidate( double &lowerEnengy, double &upperEnergy,
                             const float peakmean,
-                            const std::shared_ptr<const SpecUtils::Measurement> &data );
+                            const std::shared_ptr<const SpecUtils::Measurement> &data,
+                            const bool isHPGe );
 
 //For meaning of stat_threshold and hypothesis_threshold see notes for
 //  the chi2_significance_test(..) function
@@ -171,6 +172,7 @@ void find_roi_for_2nd_deriv_candidate( double &lowerEnengy, double &upperEnergy,
 //  of the peaks; see kRefitPeakParameters notes above.
 //Results includes all the 'all_peaks' passed in, with the ones in the specified
 //  range having been refit.
+// isHPGe is only used if a peak doesnt have its ROI range already defined.
 std::vector<PeakDef> fitPeaksInRange( const double x0, const double x1,
                                       const double ncausalitysigma,
                                       const double stat_threshold,
@@ -178,7 +180,8 @@ std::vector<PeakDef> fitPeaksInRange( const double x0, const double x1,
                                       std::vector<PeakDef> all_peaks,
                                       std::shared_ptr<const SpecUtils::Measurement> data,
                                       const std::vector<PeakDef> &fixedpeaks,
-                                      bool isRefit = false );
+                                      bool isRefit,
+                                      const bool isHPGe );
 
 
 
@@ -266,7 +269,8 @@ void fitPeaks( const std::vector<PeakDef> &input_peaks,
                       std::shared_ptr<const SpecUtils::Measurement> data,
                       std::vector<PeakDef> &results,
                       const std::vector<PeakDef> &fixedpeaks,
-                      bool amplitudeOnly ) throw();
+                      bool amplitudeOnly,
+                      const bool isHPGe ) throw();
 
 enum MultiPeakInitialGuessMethod
 {
@@ -428,7 +432,8 @@ namespace ExperimentalPeakSearch
   //search_for_peaks(): a convienience function to call below
   //  search_for_peaks(...) that uses the current best guess of arguments
   std::vector<PeakDef> search_for_peaks( const std::shared_ptr<const SpecUtils::Measurement> meas,
-                                         const std::vector<PeakDef> &origpeaks );
+                                         const std::vector<PeakDef> &origpeaks,
+                                        const bool isHPGe );
   
   
 bool find_spectroscopic_extent( std::shared_ptr<const SpecUtils::Measurement> meas,
@@ -444,7 +449,8 @@ std::vector<PeakDef> search_for_peaks( const std::shared_ptr<const SpecUtils::Me
                                       const double second_deriv_thresh,
                                       const double stat_thresh,
                                       const double width_thresh,
-                                      const std::vector<PeakDef> &origpeaks /*included in result, unmodified, wont have duplciate */
+                                      const std::vector<PeakDef> &origpeaks, /*included in result, unmodified, wont have duplciate */
+                                      const bool isHPGe
 #if( WRITE_CANDIDATE_PEAK_INFO_TO_FILE )
                                       , std::shared_ptr<const DetectorPeakResponse> detector
 #endif

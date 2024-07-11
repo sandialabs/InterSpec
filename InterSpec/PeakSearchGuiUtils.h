@@ -154,7 +154,7 @@ void search_for_peaks_worker( std::weak_ptr<const SpecUtils::Measurement> weak_d
                                std::shared_ptr<std::vector<std::shared_ptr<const PeakDef> > > resultpeaks,
                                boost::function<void(void)> callback,
                                const std::string sessionID,
-                               const bool singleThread);
+                               const bool singleThread );
   
 /** Assigns peak nuclides/xrays/reactions from the reference photopeak lines by
    modifying the peaks passed in.  

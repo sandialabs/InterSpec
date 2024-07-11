@@ -747,10 +747,9 @@ void MakeFwhmForDrf::doRefitWork()
     }//switch( fwhm_type )
     
     auto meas = m_interspec->displayedHistogram(SpecUtils::SpectrumType::Foreground);
-    const bool highres = PeakFitUtils::is_high_res(meas);
     
     vector<float> result, uncerts;
-    const double chi2 = MakeDrfFit::performResolutionFit( peaks_deque, fwhm_type, highres,
+    const double chi2 = MakeDrfFit::performResolutionFit( peaks_deque, fwhm_type,
                                                          sqrtEqnOrder, result, uncerts );
     
     m_parameters = result;
@@ -945,10 +944,9 @@ void MakeFwhmForDrf::setPeaksFromAutoSearch( vector<shared_ptr<const PeakDef>> u
       const auto fwhm_type = DetectorPeakResponse::ResolutionFnctForm::kSqrtPolynomial;
       
       auto meas = m_interspec->displayedHistogram(SpecUtils::SpectrumType::Foreground);
-      const bool highres = PeakFitUtils::is_high_res(meas);
       
       vector<float> result, uncerts;
-      const double chi2 = MakeDrfFit::performResolutionFit( peaks_deque, fwhm_type, highres,
+      const double chi2 = MakeDrfFit::performResolutionFit( peaks_deque, fwhm_type,
                                                             sqrt_eqn_order, result, uncerts );
       
       vector<pair<double,shared_ptr<const PeakDef>>> distances;

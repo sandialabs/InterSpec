@@ -3656,6 +3656,8 @@ void DetectionLimitTool::do_development()
   //Then increase the activity until the Chi2 increases by quantile(chi_squared(n_pars),0.95)
   
   
+  const bool isHPGe = false; //Whatever, for now
+  
   for( size_t i = 0; i < energies.size(); ++i )
   {
     const float mean = energies[i];
@@ -3669,7 +3671,7 @@ void DetectionLimitTool::do_development()
     cont->setType( PeakContinuum::OffsetType::Linear );
     
     double lowerEnengy, upperEnergy;
-    findROIEnergyLimits( lowerEnengy, upperEnergy, peak, spec );
+    findROIEnergyLimits( lowerEnengy, upperEnergy, peak, spec, isHPGe );
     cont->setRange( lowerEnengy, upperEnergy );
     cont->calc_linear_continuum_eqn( spec, mean, lowerEnengy, upperEnergy, 4, 4 );
     cont->setPolynomialCoefFitFor( 0, true );
@@ -3679,7 +3681,7 @@ void DetectionLimitTool::do_development()
   }//for( size_t i = 0; i < energies.size(); ++i )
   
   ROOT::Minuit2::MnUserParameters inputFitPars;
-  PeakFitChi2Fcn::addPeaksToFitter( inputFitPars, inputPeaks, spec, PeakFitChi2Fcn::kFitForPeakParameters );
+  PeakFitChi2Fcn::addPeaksToFitter( inputFitPars, inputPeaks, spec, PeakFitChi2Fcn::kFitForPeakParameters, isHPGe );
   
       
   const int npeaks = static_cast<int>( inputPeaks.size() );

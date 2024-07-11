@@ -52,6 +52,7 @@
 #include "SpecUtils/EnergyCalibration.h"
 
 #include "InterSpec/PeakFit.h"
+#include "InterSpec/PeakFitUtils.h"
 #include "InterSpec/PhysicalUnits.h"
 #include "InterSpec/PeakFitChi2Fcn.h"
 #include "InterSpec/DetectionLimitCalc.h"
@@ -1194,14 +1195,22 @@ DeconComputeResults decon_compute_peaks( const DeconComputeInput &input )
           for( size_t order = 0; order < peak_continuum->parameters().size(); ++order )
             peak_continuum->setPolynomialCoefFitFor( order, true );
           
+          const double mean = 0.5*(roi_start + roi_end);
           PeakDef worker_peak( 0.5*(roi_start + roi_end), sigma, 0.0 );
           worker_peak.setContinuum( peak_continuum );
           worker_peak.setFitFor( PeakDef::CoefficientType::Mean, false );
           worker_peak.setFitFor( PeakDef::CoefficientType::Sigma, false );
           worker_peak.setFitFor( PeakDef::CoefficientType::GaussAmplitude, false );
           
+          // Use peak sigma to determine if its a high or low resolution detector, but I dont think
+          //  it matters much since the range is defined for the peak, and that is the only place
+          //  `isHPGe` is used, I think.
+          const double hpge_fwhm = PeakFitUtils::hpge_fwhm_fcn(mean);
+          const double nai_fwhm = PeakFitUtils::nai_fwhm_fcn(mean);
+          const bool isHPGe = (fabs(fwhm - hpge_fwhm) < fabs(fwhm - nai_fwhm));
+          
           std::vector<PeakDef> fit_peak;
-          fitPeaks( {worker_peak}, -1.0, -1.0, input.measurement, fit_peak, {}, false );
+          fitPeaks( {worker_peak}, -1.0, -1.0, input.measurement, fit_peak, {}, false, isHPGe );
           
           assert( fit_peak.size() == 1 );
           if( fit_peak.size() == 1 )
@@ -1267,8 +1276,18 @@ DeconComputeResults decon_compute_peaks( const DeconComputeInput &input )
   if( inputPeaks.empty() )
     throw runtime_error( "decon_compute_peaks: No peaks given in ROI(s)" );
 
+  // `isHPGe` is only used to define ROI, I think, so it doesnt matter much
+  const bool isHPGe = ([=]() -> bool {
+    vector<shared_ptr<const PeakDef>> peakv;
+    for( const auto &p : inputPeaks )
+      peakv.push_back( make_shared<const PeakDef>(p) );
+    const auto m = PeakFitUtils::coarse_resolution_from_peaks(peakv);
+    return (m == PeakFitUtils::CoarseResolutionType::High);
+  })();
+  
+  
   ROOT::Minuit2::MnUserParameters inputFitPars;
-  PeakFitChi2Fcn::addPeaksToFitter( inputFitPars, inputPeaks, input.measurement, PeakFitChi2Fcn::kFitForPeakParameters );
+  PeakFitChi2Fcn::addPeaksToFitter( inputFitPars, inputPeaks, input.measurement, PeakFitChi2Fcn::kFitForPeakParameters, isHPGe );
   
   const int npeaks = static_cast<int>( inputPeaks.size() );
   PeakFitChi2Fcn chi2Fcn( npeaks, input.measurement, nullptr );

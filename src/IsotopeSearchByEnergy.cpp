@@ -53,6 +53,7 @@
 #include "InterSpec/InterSpec.h"
 #include "InterSpec/HelpSystem.h"
 #include "InterSpec/InterSpecApp.h"
+#include "InterSpec/PeakFitUtils.h"
 #include "InterSpec/WarningWidget.h"
 #include "InterSpec/ReactionGamma.h"
 #include "InterSpec/PhysicalUnits.h"
@@ -1660,6 +1661,7 @@ void IsotopeSearchByEnergy::startSearch( const bool refreshBr )
   workingspace->windows = windows;
   workingspace->sortColumn = m_model->sortColumn();
   workingspace->sortOrder = m_model->sortOrder();
+  //workingspace->isHPGe = PeakFitUtils::is_likely_high_res( m_viewer );
   workingspace->undoSentry = getDisableUndoRedoSentry(); //m_undo_redo_sentry.lock();
   
   std::shared_ptr<SpecMeas> foreground = m_viewer->measurment( SpecUtils::SpectrumType::Foreground );

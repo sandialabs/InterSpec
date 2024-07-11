@@ -510,8 +510,8 @@ double PeakFitChi2Fcn::chi2( const double *params ) const
     
     for( const PeakDef *peak : peaks )
     {
-      size_t lower_channel, upper_channel;
-      estimatePeakFitRange( *peak, m_data, lower_channel, upper_channel );
+      size_t lower_channel = m_data->find_gamma_channel( peak->lowerX() );
+      size_t upper_channel = m_data->find_gamma_channel( peak->upperX() - 0.00001 );
       
       if( m_lower_channel != m_upper_channel )
       {
@@ -599,7 +599,8 @@ double PeakFitChi2Fcn::chi2( const double *params ) const
 void PeakFitChi2Fcn::addPeaksToFitter( ROOT::Minuit2::MnUserParameters &params,
                       const std::vector<PeakDef> &near_peaks,
                       std::shared_ptr<const SpecUtils::Measurement> data,
-                      PeakFitChi2Fcn::AddPeaksToFitterMethod method )
+                      PeakFitChi2Fcn::AddPeaksToFitterMethod method,
+                                      const bool isHPGe )
 {
   if( near_peaks.empty() )
     return;
@@ -613,8 +614,8 @@ void PeakFitChi2Fcn::addPeaksToFitter( ROOT::Minuit2::MnUserParameters &params,
     double dummy;
     const PeakDef &lowgaus = near_peaks.front();
     const PeakDef &highgaus = near_peaks.back();
-    findROIEnergyLimits( lowx, dummy, lowgaus, data );
-    findROIEnergyLimits( dummy, highx, highgaus, data );
+    findROIEnergyLimits( lowx, dummy, lowgaus, data, isHPGe );
+    findROIEnergyLimits( dummy, highx, highgaus, data, isHPGe );
     fitrange = highx - lowx;
   }
   
@@ -647,9 +648,8 @@ void PeakFitChi2Fcn::addPeaksToFitter( ROOT::Minuit2::MnUserParameters &params,
     }//if( problem with input peak )
     
     
-    
     size_t lower_channel, upper_channel;
-    estimatePeakFitRange( peak, data, lower_channel, upper_channel );
+    estimatePeakFitRange( peak, data, isHPGe, lower_channel, upper_channel );
     const double lowerEdgeX = data->gamma_channel_lower(lower_channel);
     const double upperEdgeX = data->gamma_channel_upper(upper_channel);
     const double avrgbinwidth = (upperEdgeX - lowerEdgeX) / (1 + upper_channel - lower_channel);

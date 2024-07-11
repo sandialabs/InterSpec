@@ -3859,6 +3859,14 @@ void RelActAutoGui::setPeaksToForeground()
       for( const PeakDef &peak : solution_peaks )
         rois[peak.continuum()].push_back( make_shared<PeakDef>(peak) );
       
+      
+      vector<shared_ptr<const PeakDef>> solution_peaks_ptrs;
+      for( const PeakDef &p : solution_peaks )
+        solution_peaks_ptrs.push_back( make_shared<const PeakDef>(p) );
+      const auto resType = PeakFitUtils::coarse_resolution_from_peaks(solution_peaks_ptrs);
+      
+      const bool isHPGe = (resType == PeakFitUtils::CoarseResolutionType::High); //Shouldnt matter since peaks all have defined ROIs, but JIC
+      
       vector< vector<shared_ptr<const PeakDef>> > fit_peaks( rois.size() );
       
       SpecUtilsAsync::ThreadPool pool;
@@ -3867,7 +3875,7 @@ void RelActAutoGui::setPeaksToForeground()
       {
         const vector<shared_ptr<const PeakDef>> *peaks = &(cont_peaks.second);
         
-        pool.post( [&fit_peaks, roi_num, foreground, peaks, ana_drf](){
+        pool.post( [&fit_peaks, roi_num, foreground, peaks, ana_drf, isHPGe](){
           
           // If two peaks are near each other, we wont be able to resolve them in the fit,
           //  so just get rid of the smaller amplitude peak
@@ -3934,7 +3942,7 @@ void RelActAutoGui::setPeaksToForeground()
             
             const vector<PeakDef> retry_peak = fitPeaksInRange( lx, ux, ncausality, stat_threshold,
                                                           hypothesis_threshold, input_peaks,
-                                                          foreground, fixed_peaks, true );
+                                                          foreground, fixed_peaks, true, isHPGe );
             
             if( (retry_peak.size() == peaks_to_refit.size())
                || (fit_peaks[roi_num].empty() && !retry_peak.empty()) )

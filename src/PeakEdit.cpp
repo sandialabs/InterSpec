@@ -49,6 +49,7 @@
 #include "InterSpec/InterSpec.h"
 #include "InterSpec/PeakModel.h"
 #include "InterSpec/ColorSelect.h"
+#include "InterSpec/PeakFitUtils.h"
 #include "InterSpec/WarningWidget.h"
 #include "InterSpec/UndoRedoManager.h"
 #include "InterSpec/DecayDataBaseServer.h"
@@ -673,8 +674,10 @@ void PeakEdit::changePeak( const double energy )
   
   double lowerx(0.0), upperx(0.0);
   if( nearPeak )
-    findROIEnergyLimits( lowerx, upperx, *nearPeak,
-                         m_viewer->displayedHistogram(SpecUtils::SpectrumType::Foreground) );
+  {
+    lowerx = nearPeak->lowerX();
+    upperx = nearPeak->upperX();
+  }
   
   if( nearPeak && (energy<lowerx || energy>upperx) )
     nearPeak.reset();
@@ -990,13 +993,23 @@ void PeakEdit::refreshPeakInfo()
             
             if( data )
             {
-              size_t lower_channel, upper_channel;
-              estimatePeakFitRange( m_currentPeak, data, lower_channel, upper_channel );
-              val = data->gamma_channels_sum( lower_channel, upper_channel );
-              
-              // \TODO: The next line I think would be equivalent (or maybe more correct) than
-              //        previous line, but I think edge-cases need checking
-              //val = data->gamma_integral( m_currentPeak.lowerX(), m_currentPeak.upperX() );
+              assert( m_currentPeak.continuum()->energyRangeDefined() );
+              if( m_currentPeak.continuum()->energyRangeDefined() )
+              {
+                const size_t lower_channel = data->find_gamma_channel( m_currentPeak.lowerX() );
+                const size_t upper_channel = data->find_gamma_channel( m_currentPeak.upperX() - 0.00001 );
+                const double dataArea = data->gamma_channels_sum( lower_channel, upper_channel );
+                
+                val = data->gamma_channels_sum( lower_channel, upper_channel );
+                
+                // \TODO: The next line I think would be equivalent (or maybe more correct) than
+                //        previous line, but I think edge-cases need checking
+                //val = data->gamma_integral( m_currentPeak.lowerX(), m_currentPeak.upperX() );
+              }else
+              {
+                assert( 0 );
+                val = -1;
+              }
             }else
             {
               val = 0.0;
@@ -1099,6 +1112,7 @@ void PeakEdit::refreshPeakInfo()
       case PeakEdit::RangeStartEnergy:
       case PeakEdit::RangeEndEnergy:
         uncert = 0.0;
+        assert( continuum->energyRangeDefined() );
         
         if( continuum->energyRangeDefined() )
         {
@@ -1106,14 +1120,18 @@ void PeakEdit::refreshPeakInfo()
                                     : continuum->lowerEnergy();
         }else
         {
-          const std::shared_ptr<const Measurement> data = m_viewer->displayedHistogram(SpecUtils::SpectrumType::Foreground);
+          // We shouldnt ever get here, I dont think
+          const shared_ptr<const Measurement> data = m_viewer->displayedHistogram(SpecUtils::SpectrumType::Foreground);
 
           if( data )
           {
+            const bool isHPGe = PeakFitUtils::is_likely_high_res( m_viewer );
+            
             size_t lower_channel, upper_channel;
-            estimatePeakFitRange( m_currentPeak, data, lower_channel, upper_channel );
+            estimatePeakFitRange( m_currentPeak, data, isHPGe, lower_channel, upper_channel );
+            
             if( t == PeakEdit::RangeEndEnergy )
-              val += data->gamma_channel_upper( upper_channel );
+              val = data->gamma_channel_upper( upper_channel );
             else
               val = data->gamma_channel_lower( lower_channel );
           }//if( data )
@@ -2144,9 +2162,10 @@ void PeakEdit::refit()
   }else
   {
     const bool isRefit = true;
+    const bool isHPGe = PeakFitUtils::is_likely_high_res( m_viewer );
     outputPeak = fitPeaksInRange( lowE, upE, ncausalitysigma, stat_threshold,
                                   hypothesis_threshold, inputPeak, data,
-                                  fixedPeaks, isRefit );
+                                  fixedPeaks, isRefit, isHPGe );
   }
   
   
@@ -2573,9 +2592,7 @@ void PeakEdit::apply()
           if( !continuum->energyRangeDefined() )
           {
             std::shared_ptr<const Measurement> data = m_viewer->displayedHistogram(SpecUtils::SpectrumType::Foreground);
-            double lowe, highe;
-            findROIEnergyLimits( lowe, highe, m_currentPeak, data );
-            continuum->setRange( lowe, highe );
+            continuum->setRange( m_currentPeak.lowerX(), m_currentPeak.upperX() );
           }//if( !m_currentPeak.xRangeDefined() )
           
           const double middle = 0.5*(m_currentPeak.lowerX() + m_currentPeak.upperX() );

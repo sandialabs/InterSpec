@@ -1125,16 +1125,6 @@ public:
   
   void excludePeaksFromRange( double x0, double x1 );
   
-  //guessIsotopesForPeaks(): makes a best guess for which isotopes are
-  //  responsible for the identified photopeaks.  Does not modify peaks which
-  //  have already been assigned an isotope.
-  //If you wish to perform the work outside of the event loop (e./g. in a
-  //  background thread), you should pass in the WApplication pointer, however
-  //  the work takes an application lock, so gui will become unresponsive anyway
-  //  The InterSpec pointer is actually only necessary for the
-  //  DetectorPeakResponse.
-  void guessIsotopesForPeaks( Wt::WApplication *app );
-  
   /** Returns if detected this is a mobile device, based on user-agent string, or compile-time
    options.
    

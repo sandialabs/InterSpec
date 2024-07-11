@@ -264,7 +264,7 @@ const rapidxml::xml_node<char> *get_required_node( const rapidxml::xml_node<char
    ///  nominal high and low resolution parameters.
   void fit_nominal_gadras_pars()
   {
-    auto fitFromGadras = []( const vector<float> &gadras_coefs, const bool highres, const RelActCalcAuto::FwhmForm form_to_fit ){
+    auto fitFromGadras = []( const vector<float> &gadras_coefs, const bool isHPGe, const RelActCalcAuto::FwhmForm form_to_fit ){
       assert( gadras_coefs.size() == 3 );
       
       const float lower_energy = 50;
@@ -322,7 +322,7 @@ const rapidxml::xml_node<char> *get_required_node( const rapidxml::xml_node<char
       }//switch( rel_act_fwhm_form )
       
       vector<float> answer, uncerts;
-      MakeDrfFit::performResolutionFit( fake_peaks, drf_form_to_fit, highres, fit_order, answer, uncerts );
+      MakeDrfFit::performResolutionFit( fake_peaks, drf_form_to_fit, fit_order, answer, uncerts );
       
       for( size_t i = 0; i < answer.size(); ++i )
         cout << "          parameters[fwhm_start + " << i << "] = " << answer[i] << endl;
@@ -331,7 +331,7 @@ const rapidxml::xml_node<char> *get_required_node( const rapidxml::xml_node<char
     const vector<float> highres_pars{1.54f,0.264f,0.33f};
     const vector<float> lowres_pars{-6.5f,7.5f,0.55f};
     
-    cout << "        if( highres )" << endl;
+    cout << "        if( isHPGe )" << endl;
     cout << "        {" << endl;
     cout << "          switch( cost_functor->m_options.fwhm_form )" << endl;
     cout << "          {" << endl;
@@ -895,7 +895,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     
     
     //Need to initialize m_energy_ranges
-    const bool highres = PeakFitUtils::is_high_res( spectrum );
+    const bool isHPGe = PeakFitUtils::is_high_res( spectrum );
     
     for( size_t roi_index = 0; roi_index < energy_ranges.size(); ++roi_index )
     {
@@ -942,10 +942,10 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
       vector<pair<double,double>> gammas_in_range;
       
       // Define a helper function to add a gamma at an energy into \c gammas_in_range
-      auto add_peak_to_range = [&gammas_in_range, this, highres, &roi_range, num_sigma_half_roi]( const double energy ){
+      auto add_peak_to_range = [&gammas_in_range, this, isHPGe, &roi_range, num_sigma_half_roi]( const double energy ){
         double energy_sigma;
         float min_sigma, max_sigma;
-        expected_peak_width_limits( energy, highres, min_sigma, max_sigma );
+        expected_peak_width_limits( energy, isHPGe, min_sigma, max_sigma );
         
         if( m_drf && m_drf->hasResolutionInfo() )
         {
@@ -1110,7 +1110,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
   {
     const auto start_time = std::chrono::high_resolution_clock::now();
     
-    const bool highres = PeakFitUtils::is_high_res( foreground );
+    const bool isHPGe = PeakFitUtils::is_high_res( foreground );
     
     RelActCalcAuto::RelActAutoSolution solution;
     
@@ -1184,7 +1184,12 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     
     
     if( (!cancel_calc || !cancel_calc->load()) && all_peaks.empty() )
+    {
+      //if( input_drf && input_drf->isValid() && input_drf->hasResolutionInfo() )
+        
       all_peaks = ExperimentalAutomatedPeakSearch::search_for_peaks( spectrum, nullptr, {}, false );
+    }
+    
     solution.m_spectrum_peaks = all_peaks;
     
     vector<shared_ptr<const PeakDef>> peaks_in_rois;
@@ -1511,7 +1516,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
         
         vector<float> new_sigma_coefs, sigma_coef_uncerts;
         MakeDrfFit::performResolutionFit( fake_peaks, formToFit,
-                                       highres, num_fwhm_pars, new_sigma_coefs, sigma_coef_uncerts );
+                                          num_fwhm_pars, new_sigma_coefs, sigma_coef_uncerts );
       
         assert( new_sigma_coefs.size() == num_fwhm_pars );
         
@@ -1533,7 +1538,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
       solution.m_warnings.push_back( "Failed to create initial FWHM estimation, but will continue anyway: "
                                     + string(e.what()) );
       
-      if( highres )
+      if( isHPGe )
       {
         // The following parameters fit from the GADRAS parameters {1.54f, 0.264f, 0.33f}, using the
         // fit_nominal_gadras_pars() commented out above.
@@ -1650,7 +1655,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
             parameters[fwhm_start + 5] = -286.53;
           break;
         }//switch( cost_functor->m_options.fwhm_form )
-      }//if( highres ) / else
+      }//if( isHPGe ) / else
     }//try / catch
     
     

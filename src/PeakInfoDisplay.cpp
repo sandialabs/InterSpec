@@ -824,24 +824,6 @@ void PeakInfoDisplay::init()
   m_model->rowsInserted().connect( std::bind(enableDisableNucRef) );
   m_model->layoutChanged().connect( std::bind(enableDisableNucRef) );
   
-/*
-  WPushButton *button = new WPushButton( "ID Nuclides", buttonDiv );
-  button->setIcon( "InterSpec_resources/images/assign_white.png" );
-  button->setMargin(WLength(2),Wt::Left|Wt::Right);
-  HelpSystem::attachToolTipOn( button,
-                              "Guess nuclides responsible for peaks. Only applies to "
-                              "peaks which do not already have a nuclide associated "
-                              "with them.  Works best once all peaks have been fit for." ,
- showToolTips , HelpSystem::ToolTipPosition::Top );
-  button->clicked().connect( boost::bind( &InterSpec::guessIsotopesForPeaks, m_viewer, (WApplication *)0 ) );
-*/
-  
-  //If you want to post the below, so the ID isnt carried out in the main event loop, use the following
-//  boost::function<void ()> guessIsotopeWorker = boost::bind( &InterSpec::guessIsotopesForPeaks, m_viewer, wApp );
-//  button->clicked().connect( boost::bind( &WServer::post, WServer::instance(),
-//                                           wApp->sessionId(), guessIsotopeWorker,
-//                                           boost::function<void ()>() ) );
-  
   WLabel *label = new WLabel( WString("{1}: ").arg( WString::tr("Peak") ), buttonDiv);
   label->addStyleClass("buttonSeparator");
   label->setMargin(WLength(10),Wt::Left);

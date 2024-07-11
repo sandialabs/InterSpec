@@ -56,8 +56,10 @@
 #include "InterSpec/PeakDef.h"
 #include "InterSpec/PeakFit.h"
 #include "InterSpec/SpecMeas.h"
+#include "InterSpec/InterSpec.h" //only needed for a InterSpec::instance() to guess if high or low resolution spectrum
 #include "InterSpec/PeakModel.h"
 #include "InterSpec/InterSpecApp.h"
+#include "InterSpec/PeakFitUtils.h"
 #include "InterSpec/PhysicalUnits.h"
 #include "InterSpec/WarningWidget.h"
 #include "InterSpec/PeakFitChi2Fcn.h"
@@ -623,8 +625,12 @@ std::vector<PeakDef> PeakModel::csv_to_candidate_fit_peaks(
         peak.continuum()->calc_linear_continuum_eqn( meas, centroid, roi_lower, roi_upper, 3, 3 );
       }else
       {
+        vector<std::shared_ptr<const PeakDef>> peakv( 1, make_shared<const PeakDef>(peak) );
+        const auto resolution_type = PeakFitUtils::coarse_resolution_from_peaks( peakv );
+        const bool isHPGe = (resolution_type == PeakFitUtils::CoarseResolutionType::High);
+        
         double lowerEnengy, upperEnergy;
-        findROIEnergyLimits( lowerEnengy, upperEnergy, peak, meas );
+        findROIEnergyLimits( lowerEnengy, upperEnergy, peak, meas, isHPGe );
         
         peak.continuum()->setRange( lowerEnengy, upperEnergy );
         peak.continuum()->calc_linear_continuum_eqn( meas, centroid, lowerEnengy, upperEnergy, 3, 3 );
@@ -1344,7 +1350,27 @@ void PeakModel::definePeakXRange( PeakDef &peak )
   shared_ptr<PeakContinuum> peakcont = peak.continuum();
   assert( peakcont );
   
-  if( !peakcont->energyRangeDefined() )
+  if( peakcont->energyRangeDefined() )
+    return;
+  
+  vector<shared_ptr<const PeakDef>> all_peaks(begin(m_sortedPeaks), end(m_sortedPeaks));
+  all_peaks.push_back( make_shared<const PeakDef>(peak) );
+  
+  auto res_type = PeakFitUtils::coarse_resolution_from_peaks( all_peaks );
+  if( res_type == PeakFitUtils::CoarseResolutionType::Unknown )
+  {
+    InterSpec *interspec = InterSpec::instance();
+    if( interspec )
+    {
+      if( PeakFitUtils::is_likely_high_res(interspec) )
+        res_type = PeakFitUtils::CoarseResolutionType::High;
+      else
+        res_type = PeakFitUtils::CoarseResolutionType::Low;
+    }
+  }//if( res_type == PeakFitUtils::CoarseResolutionType::Unknown )
+  
+  const bool isHPGe = (res_type == PeakFitUtils::CoarseResolutionType::High);
+  
   {
     // We'll set the peak limits to save cpu (or rather memory-time) later
     
@@ -1352,7 +1378,7 @@ void PeakModel::definePeakXRange( PeakDef &peak )
     //       i.e. if( peakcont->type() == PeakContinuum::External ){}
     
     double lowerEnengy, upperEnergy;
-    findROIEnergyLimits( lowerEnengy, upperEnergy, peak, data );
+    findROIEnergyLimits( lowerEnengy, upperEnergy, peak, data, isHPGe );
     peakcont->setRange( lowerEnengy, upperEnergy );
   }//if( !peakcont->energyRangeDefined() )
 }//void definePeakXRange( PeakDef &peak )
@@ -1886,17 +1912,18 @@ boost::any PeakModel::data( const WModelIndex &index, int role ) const
         if( !dataH )
           return boost::any();
         
+        assert( peak->continuum()->energyRangeDefined() );
+        const double lowx = peak->lowerX();
+        const double upperx = peak->upperX();
+        
         assert( peak->continuum()->parametersProbablySet() );
         if( peak->continuum()->parametersProbablySet() )
-        {
-          double lowx(0.0), upperx(0.0);
-          findROIEnergyLimits( lowx, upperx, *peak, dataH );
           contArea = peak->offset_integral( lowx, upperx, dataH );
-        }
         
-        size_t lower_channel, upper_channel;
-        estimatePeakFitRange( *peak, dataH, lower_channel, upper_channel );
-        const double dataArea = dataH->gamma_channels_sum(lower_channel, upper_channel);
+        
+        const size_t lower_channel = dataH->find_gamma_channel( lowx );
+        const size_t upper_channel = dataH->find_gamma_channel( upperx - 0.00001 );
+        const double dataArea = dataH->gamma_channels_sum( lower_channel, upper_channel );
         
         return (dataArea - contArea);
       }//case PeakDef::DataDefined:
@@ -2173,12 +2200,8 @@ boost::any PeakModel::data( const WModelIndex &index, int role ) const
     case kUpperX:
     {
       shared_ptr<const PeakContinuum> continuum = peak->continuum();
-      if( continuum->energyRangeDefined() )
-        return (column == kLowerX) ? continuum->lowerEnergy() : continuum->upperEnergy();
-        
-      double lowx(0.0), upperx(0.0);
-      findROIEnergyLimits( lowx, upperx, *peak, m_foreground );
-      return (column == kLowerX) ? lowx : upperx;
+      assert( continuum->energyRangeDefined() );
+      return (column == kLowerX) ? peak->lowerX() : peak->upperX();
     }//case kLowerX / case kUpperX:
     
       
@@ -2187,8 +2210,10 @@ boost::any PeakModel::data( const WModelIndex &index, int role ) const
       if( !m_foreground )
         return boost::any();
       
-      double lowx(0.0), upperx(0.0);
-      findROIEnergyLimits( lowx, upperx, *peak, m_foreground );
+      assert( peak->continuum()->energyRangeDefined() );
+      const double lowx = peak->lowerX();
+      const double upperx = peak->upperX();
+      
       return m_foreground->gamma_integral( lowx, upperx );
     }//case kRoiCounts:
       
@@ -3499,15 +3524,17 @@ void PeakModel::write_peak_csv( std::ostream &outstrm,
   {
     const PeakDef &peak = *peaks[peakn];
     
+    const double xlow = peak.lowerX();
+    const double xhigh = peak.upperX();
+    
     float live_time = 1.0f;
+    double region_area = 0.0;
     SpecUtils::time_point_t meastime{};
-    double region_area = 0.0, xlow = 0.0, xhigh = 0.0;
     
     if( data )
     {
       live_time = data->live_time();
       meastime = data->start_time();
-      findROIEnergyLimits( xlow, xhigh, peak, data );
       region_area = gamma_integral( data, xlow, xhigh );
     }//if( data )
     

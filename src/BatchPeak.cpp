@@ -38,6 +38,7 @@
 #include "InterSpec/BatchPeak.h"
 #include "InterSpec/EnergyCal.h"
 #include "InterSpec/PeakModel.h"
+#include "InterSpec/PeakFitUtils.h"
 #include "InterSpec/DecayDataBaseServer.h"
 
 
@@ -775,6 +776,8 @@ BatchPeak::BatchPeakFitResult fit_peaks_in_file( const std::string &exemplar_fil
       candidate_peaks.push_back( peak );
     }//for( const auto &p : exemplar_peaks )
     
+    const bool isHPGe = PeakFitUtils::is_high_res( spec );
+    
     if( options.refit_energy_cal )
     {
       // We will refit the energy calibration - maybe a few times - to really hone in on things
@@ -790,19 +793,19 @@ BatchPeak::BatchPeakFitResult fit_peaks_in_file( const std::string &exemplar_fil
         
         vector<PeakDef> peaks = fitPeaksInRange( lower_energy, uppper_energy, ncausalitysigma,
                                                 stat_threshold, hypothesis_threshold,
-                                                energy_cal_peaks, spec, {}, isRefit );
+                                                energy_cal_peaks, spec, {}, isRefit, isHPGe );
         fit_energy_cal_from_fit_peaks( spec, peaks, 4 );
       }//for( size_t i = 0; i < 1; ++i )
     }//if( options.refit_energy_cal )
     
     vector<PeakDef> fit_peaks = fitPeaksInRange( lower_energy, uppper_energy, ncausalitysigma,
                                                 stat_threshold, hypothesis_threshold,
-                                                candidate_peaks, spec, {}, isRefit );
+                                                candidate_peaks, spec, {}, isRefit, isHPGe );
     
     // Could re-fit the peaks again...
     fit_peaks = fitPeaksInRange( lower_energy, uppper_energy, ncausalitysigma,
                                 stat_threshold, hypothesis_threshold,
-                                fit_peaks, spec, {}, true );
+                                fit_peaks, spec, {}, true, isHPGe );
     
     //cout << "Fit for the following " << fit_peaks.size() << " peaks (the exemplar file had "
     //<< starting_peaks.size() <<  ") from the raw spectrum:"
