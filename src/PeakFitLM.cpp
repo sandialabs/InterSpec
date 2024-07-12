@@ -448,7 +448,8 @@ void fit_peak_for_user_click_LM( PeakShrdVec &results,
                              const double mean0, const double sigma0,
                              const double area0,
                              const float roiLowerEnergy,
-                             const float roiUpperEnergy )
+                             const float roiUpperEnergy,
+                             const bool isHPGe )
 {
   /** For this first go, we will have Ceres solve everything very stupidly.
    
@@ -496,14 +497,13 @@ void fit_peak_for_user_click_LM( PeakShrdVec &results,
     const size_t nchannels = dataH->num_gamma_channels();
     const size_t midbin = dataH->find_gamma_channel( mean0 );
     const float binwidth = dataH->gamma_channel_width( midbin );
-    const bool highres = PeakFitUtils::is_high_res( dataH );
     const size_t num_fit_peaks = coFitPeaks.size() + 1;
     
     double reference_energy = roiLowerEnergy;
     
     //The below should probably go off the number of bins in the ROI
     PeakContinuum::OffsetType offset_type;
-    if( highres )
+    if( isHPGe )
       offset_type = (num_fit_peaks < 3) ? PeakContinuum::Linear : PeakContinuum::Quadratic;
     else
       offset_type = (num_fit_peaks < 2) ? PeakContinuum::Linear : PeakContinuum::Quadratic;
@@ -661,7 +661,7 @@ void fit_peak_for_user_click_LM( PeakShrdVec &results,
       }else
       {
         float lowersigma, uppersigma;
-        expected_peak_width_limits( mean, highres, lowersigma, uppersigma );
+        expected_peak_width_limits( mean, isHPGe, lowersigma, uppersigma );
         if( !i )
           minsigma = lowersigma;
         if( i == (coFitPeaks.size()-1) )

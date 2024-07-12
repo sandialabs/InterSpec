@@ -4893,7 +4893,7 @@ pair< PeakShrdVec, PeakShrdVec > searchForPeakFromUser( const double x,
   PeakShrdVec lmInitialfitpeaks;
   const auto t3 = std::chrono::high_resolution_clock::now();
   PeakFitLM::fit_peak_for_user_click_LM( lmInitialfitpeaks, chi2Dof, dataH, coFitPeaks,
-                             mean0, sigma0, area0, lowerEnergies[0], upperEnergies[0] );
+                             mean0, sigma0, area0, lowerEnergies[0], upperEnergies[0], isHPGe );
   const auto t4 = std::chrono::high_resolution_clock::now();
   
   
@@ -5006,7 +5006,7 @@ pair< PeakShrdVec, PeakShrdVec > searchForPeakFromUser( const double x,
       
       
       PeakFitLM::fit_peak_for_user_click_LM( initialfitpeaks, chi2Dof, dataH, coFitPeaks,
-                                 mean0, sigma0, area0, lowerEnergies[0], upperEnergies[0] );
+                                 mean0, sigma0, area0, lowerEnergies[0], upperEnergies[0], isHPGe );
       
       for( size_t i = 0; i < initialfitpeaks.size(); ++i )
       {
