@@ -292,7 +292,7 @@ public:
                   + "</td></tr>";
       if( res.distance_ > 0.0 )
         result += "<tr><th>" + WString::tr("Distance").toUTF8()
-                     + "</th><td>" + PhysicalUnits::printToBestLengthUnits(0.1*res.distance_) + "</td></tr>";
+                     + "</th><td>" + PhysicalUnits::printToBestLengthUnits(res.distance_/PhysicalUnits::mm,4) + "</td></tr>";
       if( res.activity_ > 0.0 )
       {
         const bool useBq = InterSpecUser::preferenceValue<bool>( "DisplayBecquerel", InterSpec::instance() );
