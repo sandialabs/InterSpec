@@ -1381,11 +1381,13 @@ SpectrumViewerTester::Score SpectrumViewerTester::testAutomatedPeakSearch()
 
   peakModel->setPeaks( std::vector<PeakDef>() );
   
+  const bool isHPGe = PeakFitUtils::is_likely_high_res( m_viewer );
+  
   shared_ptr<const SpecUtils::Measurement> data = m_viewer->m_spectrum->data();
   try
   {
     //This will take a minute, and app will look paused, but whatever.
-    auto resultpeaks = ExperimentalAutomatedPeakSearch::search_for_peaks( data, nullptr, nullptr, false );
+    auto resultpeaks = ExperimentalAutomatedPeakSearch::search_for_peaks( data, nullptr, nullptr, false, isHPGe );
     
     for( const auto &p : resultpeaks )
       testpeaks.push_back( *p );

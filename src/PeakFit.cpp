@@ -360,7 +360,7 @@ std::vector<std::shared_ptr<const PeakDef> > search_for_peaks_multithread(
   //    << meas->gamma_channel_center( upper_channel ) << endl;
   
   const vector<std::shared_ptr<PeakDef> > initialcandidates
-    = secondDerivativePeakCanidatesWithROI( meas, lower_channel, upper_channel );
+    = secondDerivativePeakCanidatesWithROI( meas, isHPGe, lower_channel, upper_channel );
   
 #if( PRINT_DEBUG_INFO_FOR_PEAK_SEARCH_FIT_LEVEL > 0 )
   {
@@ -541,7 +541,7 @@ vector<std::shared_ptr<const PeakDef> > search_for_peaks_singlethread(
   
   size_t lower_channel = 0, upper_channel = 0;
   vector<PeakPtr> candidates
-   = secondDerivativePeakCanidatesWithROI( meas, lower_channel, upper_channel );
+   = secondDerivativePeakCanidatesWithROI( meas, isHPGe, lower_channel, upper_channel );
   
 #if( PRINT_DEBUG_INFO_FOR_PEAK_SEARCH_FIT_LEVEL > 0 )
   {
@@ -869,6 +869,7 @@ void findPeaksInUserRange( double x0, double x1, int nPeaks,
                           MultiPeakInitialGuessMethod method,
                           std::shared_ptr<const Measurement> dataH,
                           std::shared_ptr<const DetectorPeakResponse> detector,
+                          const bool isHPGe,
                           vector<std::shared_ptr<PeakDef> > &answer,
                           double &chi2 )
 {
@@ -1039,7 +1040,7 @@ void findPeaksInUserRange( double x0, double x1, int nPeaks,
 #if( USE_QUICK_PEAK_CANDIDATE )
       intputSharesContinuum = false;
       std::vector< std::tuple<float,float,float> > candidates;  //{mean,sigma,area}
-      secondDerivativePeakCanidates( dataH, start_channel, end_channel, candidates );
+      secondDerivativePeakCanidates( dataH, isHPGe, start_channel, end_channel, candidates );
       std::sort( begin(candidates), end(candidates),
                 []( const tuple<float,float,float> &lhs, const tuple<float,float,float> &rhs) -> bool {
                   return std::get<2>(lhs) > std::get<2>(rhs);
@@ -1047,7 +1048,7 @@ void findPeaksInUserRange( double x0, double x1, int nPeaks,
 #else
       typedef std::shared_ptr<PeakDef> PeakPtr;
       const vector<PeakPtr> derivative_peaks
-        = secondDerivativePeakCanidatesWithROI( dataH, start_channel, end_channel );
+        = secondDerivativePeakCanidatesWithROI( dataH, isHPGe, start_channel, end_channel );
       map<double,PeakPtr> candidates;
       for( const PeakPtr &p : derivative_peaks )
         candidates[-p->amplitude()] = p;
@@ -1150,7 +1151,6 @@ void findPeaksInUserRange( double x0, double x1, int nPeaks,
       inputPrams.Add( "P3",  0.0, 0.25 );
   }//if( intputSharesContinuum ) / else
   
-  const bool isHpge = PeakFitUtils::is_high_res( dataH );
   
   for( size_t i = 0; i < inpeaks.size(); ++i )
   {
@@ -1161,12 +1161,12 @@ void findPeaksInUserRange( double x0, double x1, int nPeaks,
     const bool fixAmp = (method==FromInputPeaks && !inpeaks[i].fitFor(PeakDef::GaussAmplitude));
     
     double maxsigma = fabs(x1-x0)/nPeaks;
-    double minsigma = (isHpge ? 0.0025 : 0.02) * inpeaks[i].mean();
+    double minsigma = (isHPGe ? 0.0025 : 0.02) * inpeaks[i].mean();
     
     if( !fixSigma )
     {
       float minw, maxw;
-      expected_peak_width_limits( inpeaks[i].mean(), isHpge, minw, maxw );
+      expected_peak_width_limits( inpeaks[i].mean(), isHPGe, minw, maxw );
       
       maxsigma = std::max( maxsigma, double(maxw) );
       minsigma = std::min( minsigma, double(minw) );
@@ -1250,6 +1250,7 @@ void findPeaksInUserRange_linsubsolve( double x0, double x1, int nPeaks,
                                       MultiPeakInitialGuessMethod method,
                           std::shared_ptr<const Measurement> dataH,
                           std::shared_ptr<const DetectorPeakResponse> detector,
+                                      const bool isHPGe,
                           vector<std::shared_ptr<PeakDef> > &answer,
                           double &chi2 )
 {
@@ -1293,12 +1294,9 @@ void findPeaksInUserRange_linsubsolve( double x0, double x1, int nPeaks,
   
   LinearProblemSubSolveChi2Fcn chi2fcn( nPeaks, dataH, offsetType, skew_type, x0, x1 );
   
-  
-  const bool isHpge = PeakFitUtils::is_high_res( dataH );
-  
   float minw_lower, maxw_lower, minw_upper, maxw_upper;
-  expected_peak_width_limits( x0, isHpge, minw_lower, maxw_lower );
-  expected_peak_width_limits( x1, isHpge, minw_upper, maxw_upper );
+  expected_peak_width_limits( x0, isHPGe, minw_lower, maxw_lower );
+  expected_peak_width_limits( x1, isHPGe, minw_upper, maxw_upper );
   
   float minsigma = std::min( minw_lower, minw_upper );
   float maxsigma = std::min( maxw_lower, maxw_upper );
@@ -1364,7 +1362,7 @@ void findPeaksInUserRange_linsubsolve( double x0, double x1, int nPeaks,
 #if( USE_QUICK_PEAK_CANDIDATE )
       intputSharesContinuum = false;
       std::vector< std::tuple<float,float,float> > candidates;  //{mean,sigma,area}
-      secondDerivativePeakCanidates( dataH, start_channel, end_channel, candidates );
+      secondDerivativePeakCanidates( dataH, isHPGe, start_channel, end_channel, candidates );
       std::sort( begin(candidates), end(candidates),
                 []( const tuple<float,float,float> &lhs, const tuple<float,float,float> &rhs) -> bool {
                   return std::get<2>(lhs) > std::get<2>(rhs);
@@ -1372,7 +1370,7 @@ void findPeaksInUserRange_linsubsolve( double x0, double x1, int nPeaks,
 #else
       typedef std::shared_ptr<PeakDef> PeakPtr;
       const vector<PeakPtr> derivative_peaks
-      = secondDerivativePeakCanidatesWithROI( dataH, start_channel, end_channel );
+      = secondDerivativePeakCanidatesWithROI( dataH, isHPGe, start_channel, end_channel );
       map<double,PeakPtr> candidates;
       for( const PeakPtr &p : derivative_peaks )
         candidates[-p->amplitude()] = p;
@@ -2172,28 +2170,27 @@ void find_roi_for_2nd_deriv_candidate(
     throw runtime_error( "find_roi_for_2nd_deriv_candidate: invalid input" );
   
   const size_t nchannel = data->num_gamma_channels();
-  const bool highres = PeakFitUtils::is_high_res( data );
   
   const size_t meanchannel = data->find_gamma_channel( peakmean );
   
   //Changing spoothing to be based in middle channel, not the channel of the
   //  candidate mean, to be more consistent with
   //  const float binwidth = data->gamma_channel_width( meanchannel );
-  //  int side_bins = highres ? 4 : std::max( 5, static_cast<int>( floor(0.022*peakmean/binwidth+0.5) ) );
+  //  int side_bins = isHPGe ? 4 : std::max( 5, static_cast<int>( floor(0.022*peakmean/binwidth+0.5) ) );
   //  const size_t midchannel = data->num_gamma_channels() / 2;
   //  const float midenergy = data->gamma_channel_lower( midchannel );
   //  const float binwidth = data->gamma_channel_width( midchannel );
-  //  const int side_bins = highres ? 4 : std::max( 5, static_cast<int>( floor(0.022*peakmean/binwidth+0.5) ) );
+  //  const int side_bins = isHPGe ? 4 : std::max( 5, static_cast<int>( floor(0.022*peakmean/binwidth+0.5) ) );
   
-  //   const int order = highres ? 3 : 2;
+  //   const int order = isHPGe ? 3 : 2;
   
   //The below should be same as in secondDerivativePeakCanidatesWithROI(...)
   const size_t midbin = data->num_gamma_channels() / 2;// (start_channel + end_channel) / 2;
   const float midenergy = data->gamma_channel_center( midbin );
   const float midbinwidth = data->gamma_channel_width( midbin );
   
-  const int order = highres ? 3 : 2;
-  const size_t side_bins = highres ? 4 : std::max( size_t(5), static_cast<size_t>( 0.022f*midenergy/midbinwidth + 0.5f ) );
+  const int order = isHPGe ? 3 : 2;
+  const size_t side_bins = isHPGe ? 4 : std::max( size_t(5), static_cast<size_t>( 0.022f*midenergy/midbinwidth + 0.5f ) );
   
 
   vector<float> smoothed, second_deriv;
@@ -2203,7 +2200,7 @@ void find_roi_for_2nd_deriv_candidate(
   
   //This next part should be kept the same as in
   //  secondDerivativePeakCanidatesWithROI(...) during development.
-  if( !highres && side_bins > 5 && nchannel >= 512 )
+  if( !isHPGe && side_bins > 5 && nchannel >= 512 )
   {
     //We should also have a minbimum statistics requirment here.
     
@@ -2230,7 +2227,7 @@ void find_roi_for_2nd_deriv_candidate(
     }
     
 //    cout << "Transition occurs at " << data->gamma_channel_center(index) << " kev" << endl;
-  }//if( !highres )
+  }//if( !isHPGe )
   
   
   
@@ -2784,6 +2781,7 @@ void get_candidate_peak_estimates_for_user_click(
                                  const double x,
                                  const double pixelPerKev,
                                  const std::shared_ptr<const Measurement> &dataH,
+                                 const bool isHPGe,
                                  const PeakShrdVec &inpeaks )
 {
   typedef std::shared_ptr<PeakDef> PeakPtr;
@@ -2793,7 +2791,6 @@ void get_candidate_peak_estimates_for_user_click(
   const double upper_energy_mult = 0.2;
   
   const size_t nchannels = dataH->num_gamma_channels();
-  const bool highres = PeakFitUtils::is_high_res( dataH );
   
   const size_t midbin = dataH->find_gamma_channel( x );
   
@@ -2805,7 +2802,7 @@ void get_candidate_peak_estimates_for_user_click(
   size_t highchannel = ((midbin + upper_chan_sub) >= nchannels) ? nchannels-1 : static_cast<size_t>(midbin + upper_chan_sub);
   
   float min_sigma_width_kev, max_sigma_width_kev;
-  expected_peak_width_limits( x, highres, min_sigma_width_kev, max_sigma_width_kev );
+  expected_peak_width_limits( x, isHPGe, min_sigma_width_kev, max_sigma_width_kev );
   
   
   
@@ -2822,13 +2819,13 @@ void get_candidate_peak_estimates_for_user_click(
   
   
   const vector<PeakPtr> candidates
-       = secondDerivativePeakCanidatesWithROI( dataH, lowchannel, highchannel );
+       = secondDerivativePeakCanidatesWithROI( dataH, isHPGe, lowchannel, highchannel );
   
 
   float min_sigma, max_sigma;
-  expected_peak_width_limits( x, highres, min_sigma, max_sigma );
+  expected_peak_width_limits( x, isHPGe, min_sigma, max_sigma );
   
-  sigma0 = 0.5*(min_sigma + max_sigma) * (highres ? 0.20 : 0.25);  //expected_peak_width_limits multiplies max width by  4 for highres, and 3 for lowres
+  sigma0 = 0.5*(min_sigma + max_sigma) * (isHPGe ? 0.20 : 0.25);  //expected_peak_width_limits multiplies max width by  4 for isHPGe, and 3 for lowres
   mean0 = x;
   area0 = 100.0;
   
@@ -4807,7 +4804,7 @@ pair< PeakShrdVec, PeakShrdVec > searchForPeakFromUser( const double x,
   
   double sigma0, mean0, area0;
   get_candidate_peak_estimates_for_user_click( sigma0, mean0, area0, x,
-                                              pixelPerKev, dataH, inpeaks );
+                                              pixelPerKev, dataH, isHPGe, inpeaks );
   
   if( drf && drf->isValid() && drf->hasResolutionInfo() )
     sigma0 = drf->peakResolutionSigma( mean0 );
@@ -5056,6 +5053,7 @@ pair< PeakShrdVec, PeakShrdVec > searchForPeakFromUser( const double x,
 
 
 void secondDerivativePeakCanidates( const std::shared_ptr<const Measurement> data,
+                                   const bool isHPGe,
                                    size_t start_channel,
                                    size_t end_channel,
                                    std::vector< std::tuple<float,float,float> > &results )
@@ -5077,7 +5075,6 @@ void secondDerivativePeakCanidates( const std::shared_ptr<const Measurement> dat
     return;
   
   const size_t nchannel = data->num_gamma_channels();
-  const bool highres = PeakFitUtils::is_high_res( data );
   
   if( start_channel >= nchannel )
     start_channel = 0;
@@ -5085,14 +5082,14 @@ void secondDerivativePeakCanidates( const std::shared_ptr<const Measurement> dat
     end_channel = nchannel - 2;
   
   const double threshold_FOM = 1.3;
-  //const double range_nsigma_thresh = highres ? 5.0 : 2.75;
+  //const double range_nsigma_thresh = isHPGe ? 5.0 : 2.75;
   const float pos_sum_threshold_sf = -0.01f;
   //We will let one bin fluctate negative to avoid fluctations near threshold_FOM
   //Untested for HPGe data.
   //  Currently (20141209) for low res data, this should be kept the same as
   //  in find_roi_for_2nd_deriv_candidate(...) {although all this is under
   //  development}.
-  const size_t nFluxuate = highres ? 2 : 2;
+  const size_t nFluxuate = isHPGe ? 2 : 2;
   assert( nFluxuate >= 1 );
   
   
@@ -5103,8 +5100,8 @@ void secondDerivativePeakCanidates( const std::shared_ptr<const Measurement> dat
   const float midenergy = data->gamma_channel_center( midbin );
   const float midbinwidth = data->gamma_channel_width( midbin );
   
-  const int order = highres ? 3 : 2;
-  const size_t side_bins = highres ? 4 : std::max( size_t(5), static_cast<size_t>( 0.022f*midenergy/midbinwidth + 0.5f ) );
+  const int order = isHPGe ? 3 : 2;
+  const size_t side_bins = isHPGe ? 4 : std::max( size_t(5), static_cast<size_t>( 0.022f*midenergy/midbinwidth + 0.5f ) );
   
   
   vector<float> second_deriv;
@@ -5115,7 +5112,7 @@ void secondDerivativePeakCanidates( const std::shared_ptr<const Measurement> dat
   //  wont detect low energy peaks
   //Note this code should be kept the same as in
   //  find_roi_for_2nd_deriv_candidate(...) while all of this is in development
-  if( !highres && side_bins > 5 && nchannel >= 512
+  if( !isHPGe && side_bins > 5 && nchannel >= 512
      && start_channel < (nchannel/15) )
   {
     //We should also have a minbimum statistics requirment here.
@@ -5135,7 +5132,7 @@ void secondDerivativePeakCanidates( const std::shared_ptr<const Measurement> dat
       + (1.0f-factor)*second_deriv_lower[current];
     }
     
-  }//if( !highres )
+  }//if( !isHPGe )
   
 #if( PRINT_DEBUG_INFO_FOR_PEAK_SEARCH_FIT_LEVEL > 0 )
   {
@@ -5254,7 +5251,7 @@ void secondDerivativePeakCanidates( const std::shared_ptr<const Measurement> dat
 #endif
         
         bool passescuts = true;
-        if( !highres && energies[minbin] < 130.0f )
+        if( !isHPGe && energies[minbin] < 130.0f )
         {
           //look 2 sigma forward and make sure the data has dropped enough
           const size_t p2sigmbin = data->find_gamma_channel( mean + 1.5*sigma );
@@ -5284,9 +5281,9 @@ void secondDerivativePeakCanidates( const std::shared_ptr<const Measurement> dat
             << ", p2contents=" << p2contents << ", actualdiff="
             << actualdiff << ", expecteddiff=" << expecteddiff << "\n";
 #endif
-        }//if( !highres && energies[minbin] < 130.0f )
+        }//if( !isHPGe && energies[minbin] < 130.0f )
         
-        if( !highres && passescuts )
+        if( !isHPGe && passescuts )
         {
           //For really wide peaks, we'll let there be a bit more fluxuation,
           //  since sometimes
@@ -5337,7 +5334,7 @@ void secondDerivativePeakCanidates( const std::shared_ptr<const Measurement> dat
             << ", ((secondzero-firstzero)/side_bins)=" << ((secondzero-firstzero)/side_bins)
             << "\n";
 #endif
-        }//if( !highres )
+        }//if( !isHPGe )
         
         if( passescuts )
           results.push_back( std::tuple<float,float,float>{mean, sigma, amplitude} );
@@ -5392,6 +5389,7 @@ void secondDerivativePeakCanidates( const std::shared_ptr<const Measurement> dat
 
 
 std::vector<std::shared_ptr<PeakDef> > secondDerivativePeakCanidatesWithROI( std::shared_ptr<const Measurement> dataH,
+                                                                            const bool isHPGe,
                                                           size_t start_channel,
                                                           size_t end_channel )
 {
@@ -5412,7 +5410,6 @@ std::vector<std::shared_ptr<PeakDef> > secondDerivativePeakCanidatesWithROI( std
     return candidates;
   
   const size_t nchannel = dataH->num_gamma_channels();
-  const bool highres = PeakFitUtils::is_high_res( dataH );
   
   if( start_channel >= nchannel )
     start_channel = 0;
@@ -5420,14 +5417,14 @@ std::vector<std::shared_ptr<PeakDef> > secondDerivativePeakCanidatesWithROI( std
     end_channel = nchannel - 2;
   
   const double threshold_FOM = 1.3;
-  const double range_nsigma_thresh = highres ? 5.0 : 2.75;
+  const double range_nsigma_thresh = isHPGe ? 5.0 : 2.75;
   const float pos_sum_threshold_sf = -0.01f;
   //We will let one bin fluctate negative to avoid fluctations near threshold_FOM
   //Untested for HPGe data.
   //  Currently (20141209) for low res data, this should be kept the same as
   //  in find_roi_for_2nd_deriv_candidate(...) {although all this is under
   //  development}.
-  const size_t nFluxuate = highres ? 2 : 2;
+  const size_t nFluxuate = isHPGe ? 2 : 2;
   assert( nFluxuate >= 1 );
   
   
@@ -5438,8 +5435,8 @@ std::vector<std::shared_ptr<PeakDef> > secondDerivativePeakCanidatesWithROI( std
   const float midenergy = dataH->gamma_channel_center( midbin );
   const float midbinwidth = dataH->gamma_channel_width( midbin );
   
-  const int order = highres ? 3 : 2;
-  const size_t side_bins = highres ? 4 : std::max( size_t(5), static_cast<size_t>( 0.022f*midenergy/midbinwidth + 0.5f ) );
+  const int order = isHPGe ? 3 : 2;
+  const size_t side_bins = isHPGe ? 4 : std::max( size_t(5), static_cast<size_t>( 0.022f*midenergy/midbinwidth + 0.5f ) );
   
   
   vector<float> second_deriv;
@@ -5450,7 +5447,7 @@ std::vector<std::shared_ptr<PeakDef> > secondDerivativePeakCanidatesWithROI( std
   //  wont detect low energy peaks
   //Note this code should be kept the same as in
   //  find_roi_for_2nd_deriv_candidate(...) while all of this is in development
-  if( !highres && side_bins > 5 && nchannel >= 512
+  if( !isHPGe && side_bins > 5 && nchannel >= 512
       && start_channel < (nchannel/15) )
   {
     //We should also have a minbimum statistics requirment here.
@@ -5470,7 +5467,7 @@ std::vector<std::shared_ptr<PeakDef> > secondDerivativePeakCanidatesWithROI( std
       + (1.0f-factor)*second_deriv_lower[current];
     }
     
-  }//if( !highres )
+  }//if( !isHPGe )
   
 #if( PRINT_DEBUG_INFO_FOR_PEAK_SEARCH_FIT_LEVEL > 0 )
   {
@@ -5556,7 +5553,7 @@ std::vector<std::shared_ptr<PeakDef> > secondDerivativePeakCanidatesWithROI( std
       std::shared_ptr<PeakDef> peak( new PeakDef( mean, sigma, amplitude ) );
       
       double lowerEnengy, upperEnergy;
-      findROIEnergyLimits( lowerEnengy, upperEnergy, *peak, dataH, highres );
+      findROIEnergyLimits( lowerEnengy, upperEnergy, *peak, dataH, isHPGe );
       
       //Clamp the ROI to not get ridiculous
       lowerEnengy = std::max( lowerEnengy, mean-5.0*sigma );
@@ -5595,7 +5592,7 @@ std::vector<std::shared_ptr<PeakDef> > secondDerivativePeakCanidatesWithROI( std
       
       //A problem here is if we are near another definite peak, then the ROI
       //  for this one may be small, causing the check for this below to fail.
-      if( !rangeOk && highres && candidates.size() )
+      if( !rangeOk && isHPGe && candidates.size() )
       {
         const PeakDef &last = *candidates.back();
         const double s = 0.5*(last.sigma() + sigma);
@@ -5618,7 +5615,7 @@ std::vector<std::shared_ptr<PeakDef> > secondDerivativePeakCanidatesWithROI( std
 #endif
         
         bool passescuts = true;
-        if( !highres && energies[minbin] < 130.0f )
+        if( !isHPGe && energies[minbin] < 130.0f )
         {
           //look 2 sigma forward and make sure the data has dropped enough
           const size_t p2sigmbin = dataH->find_gamma_channel( mean + 1.5*sigma );
@@ -5647,9 +5644,9 @@ std::vector<std::shared_ptr<PeakDef> > secondDerivativePeakCanidatesWithROI( std
                  << ", p2contents=" << p2contents << ", actualdiff="
                  << actualdiff << ", expecteddiff=" << expecteddiff << "\n";
 #endif
-        }//if( !highres && energies[minbin] < 130.0f )
+        }//if( !isHPGe && energies[minbin] < 130.0f )
         
-        if( !highres && passescuts )
+        if( !isHPGe && passescuts )
         {
           //For really wide peaks, we'll let there be a bit more fluxuation,
           //  since sometimes 
@@ -5700,7 +5697,7 @@ std::vector<std::shared_ptr<PeakDef> > secondDerivativePeakCanidatesWithROI( std
                  << ", ((secondzero-firstzero)/side_bins)=" << ((secondzero-firstzero)/side_bins)
                  << "\n";
 #endif
-        }//if( !highres )
+        }//if( !isHPGe )
         
         if( passescuts )
           candidates.push_back( peak );
@@ -7001,9 +6998,11 @@ namespace ExperimentalPeakSearch
 {
 
 AutoPeakSearchChi2Fcn::AutoPeakSearchChi2Fcn( std::shared_ptr<const Measurement> data,
-                                             const std::vector<PeakDef > &fixed_peaks )
+                                             const std::vector<PeakDef > &fixed_peaks,
+                                             const bool isHPGe )
 : ROOT::Minuit2::FCNBase(),
-m_inited( false )
+  m_inited( false ),
+  m_isHPGe( isHPGe )
 {
   if( !data )
     throw runtime_error( "AutoPeakSearchChi2Fcn: invalid input for construction" );
@@ -7014,13 +7013,11 @@ m_inited( false )
   
   m_fixed_peaks = fixed_peaks;
   
-  const bool highres = PeakFitUtils::is_high_res( data );
-  
-  m_side_bins           = highres ? 7    : 10;
-  m_smooth_order        = highres ? 3    : 2;
-  m_second_deriv_thresh = highres ? -0.02 : 0.05;
-  m_stat_thresh         = highres ? 1.0   : 1.3;
-  m_width_thresh        = 0.0;//highres ? 3.5  : 4.5;
+  m_side_bins           = m_isHPGe ? 7    : 10;
+  m_smooth_order        = m_isHPGe ? 3    : 2;
+  m_second_deriv_thresh = m_isHPGe ? -0.02 : 0.05;
+  m_stat_thresh         = m_isHPGe ? 1.0   : 1.3;
+  m_width_thresh        = 0.0;//m_isHPGe ? 3.5  : 4.5;
   
   m_min_chi2_dof_thresh = 1.5;
   m_min_gross_counts_sig_thresh = 2.0;
@@ -7053,7 +7050,6 @@ std::vector<PeakDef> AutoPeakSearchChi2Fcn::candidate_peaks( const vector<float>
   vector<PeakDef> candidates;
   
   const int nchannel = static_cast<int>( channel_counts.size() );
-  const bool highres = PeakFitUtils::is_high_res( m_meas );
   
   vector<float> second_deriv;
   second_derivative( channel_counts, second_deriv );
@@ -7113,7 +7109,7 @@ std::vector<PeakDef> AutoPeakSearchChi2Fcn::candidate_peaks( const vector<float>
       double lowerEnengy = -999.9, upperEnergy = -999.9;
       
       //Set the ROI width here according to the second derivative.
-      if( highres )
+      if( m_isHPGe )
       {
         int i, j;
         
@@ -7155,10 +7151,10 @@ std::vector<PeakDef> AutoPeakSearchChi2Fcn::candidate_peaks( const vector<float>
          upperEnergy = 0.5*(energies[upperbin] + energies[upperbin+1]);
          */
         
-        findROIEnergyLimits( lowerEnengy, upperEnergy, peak, m_meas, highres );
+        findROIEnergyLimits( lowerEnengy, upperEnergy, peak, m_meas, m_isHPGe );
         lower_channel = m_meas->find_gamma_channel( lowerEnengy );
         upper_channel = m_meas->find_gamma_channel( upperEnergy );
-      }//if( highres ) / else
+      }//if( m_isHPGe ) / else
       
       //Clamp the ROI to not get riducuolouse
       //      lowerEnengy = std::max( lowerEnengy, mean-5.0*sigma );
@@ -7298,9 +7294,6 @@ bool AutoPeakSearchChi2Fcn::init()
   }//for( const PeakDef &p : m_candidates )
 #endif
   
-  
-  const bool highres = PeakFitUtils::is_high_res( m_meas );
-  
   const size_t npeaks = m_fixed_peaks.size() + m_candidates.size();
   
   if( npeaks == 1 )
@@ -7309,7 +7302,7 @@ bool AutoPeakSearchChi2Fcn::init()
   //      m_resolution_type = SqrtEnergy;
   else if( npeaks < 4 )
     m_resolution_type = Polynomial1stOrder;
-  else if( npeaks < 5 || !highres )
+  else if( npeaks < 5 || !m_isHPGe )
     m_resolution_type = Polynomial2ndOrder;
   else
     m_resolution_type = Polynomial3rdOrder;
@@ -7361,7 +7354,7 @@ bool AutoPeakSearchChi2Fcn::init()
       
       //XXX - deciding the order of the continuum is purely a guess right now
       PeakContinuum::OffsetType type = PeakContinuum::Linear;
-      if( highres )
+      if( m_isHPGe )
       {
         if( currentgroup.size() > 2 )
           type = PeakContinuum::Quadratic;
@@ -7389,7 +7382,7 @@ bool AutoPeakSearchChi2Fcn::init()
   std::shared_ptr<PeakContinuum> cont = currentgroup.back().continuum();
   
   PeakContinuum::OffsetType type = PeakContinuum::Linear;
-  if( highres )
+  if( m_isHPGe )
   {
     if( currentgroup.size() > 2 )
       type = PeakContinuum::Quadratic;
@@ -7566,13 +7559,12 @@ ROOT::Minuit2::MnUserParameters AutoPeakSearchChi2Fcn::initial_parameters() cons
   meanwidth /= npeaks;
   const double span = m_x->back() - m_x->front();
   const double meanbinwidth = span / m_x->size();
-  const bool highres = PeakFitUtils::is_high_res( m_meas );
   
   switch( m_resolution_type )
   {
     case Polynomial0thOrder:
     {
-      const double minwidth = highres ? meanbinwidth : 4*meanbinwidth;
+      const double minwidth = m_isHPGe ? meanbinwidth : 4*meanbinwidth;
       pars.Add( "ResolutionZeroth", meanwidth, meanbinwidth,  minwidth, 2.0*maxsigma );
       
       break;
@@ -8211,7 +8203,7 @@ std::vector<PeakDef> search_for_peaks( const std::shared_ptr<const Measurement> 
   
   // TODO: currently doesn't account for/fit peak skew
   
-  AutoPeakSearchChi2Fcn chi2fcn( meas, origpeaks );
+  AutoPeakSearchChi2Fcn chi2fcn( meas, origpeaks, isHPGe );
   chi2fcn.m_min_chi2_dof_thresh = min_chi2_dof_thresh;
   chi2fcn.m_min_gross_counts_sig_thresh = min_gross_counts_sig_thresh;
   chi2fcn.m_nsigma_near_group = 3.0;

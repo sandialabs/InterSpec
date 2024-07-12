@@ -1966,6 +1966,7 @@ void InterSpec::addPeakFromRightClick()
   if( !inserted )
     throw runtime_error( "Logic error 2 in InterSpec::addPeakFromRightClick()" );
 
+  const bool isHPGe = PeakFitUtils::is_likely_high_res( this );
   
   const MultiPeakInitialGuessMethod methods[] = { FromInputPeaks, UniformInitialGuess, FromDataInitialGuess };
   
@@ -1979,7 +1980,7 @@ void InterSpec::addPeakFromRightClick()
         orig_answer.push_back( make_shared<PeakDef>( *p ) );
       
       findPeaksInUserRange( x0, x1, int(answer.size()), method, dataH,
-                           m_dataMeasurement->detector(), answer, fitChi2 );
+                           m_dataMeasurement->detector(), isHPGe, answer, fitChi2 );
       
       std::vector<PeakDef> newRoiPeaks;
       for( size_t i = 0; i < answer.size(); ++i )

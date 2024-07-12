@@ -3244,7 +3244,10 @@ tuple<const SandiaDecay::Nuclide *, double, float>
   //  Note: `SpectrumChartD3.prototype.updateMouseCoordText(...)` basically requires within 10px
   const shared_ptr<const SpecUtils::Measurement> hist
                 = viewer->displayedHistogram(SpecUtils::SpectrumType::Foreground);
-  if( PeakFitUtils::is_high_res(hist) )
+      
+  const bool isHPGe = PeakFitUtils::is_likely_high_res(viewer);
+      
+  if( isHPGe )
   {
     double xmin, xmax, ymin, ymax;
     viewer->displayedSpectrumRange( xmin, xmax, ymin, ymax );
@@ -3258,7 +3261,7 @@ tuple<const SandiaDecay::Nuclide *, double, float>
       // set peak-sigma to be 2 pixels, giving us to require 10 pixels of accuracy from the user
       sigma = std::max( sigma, 2.0*keV_per_pixel );
     }//if( x-range and render size seem reasonable )
-  }//if( PeakFitUtils::is_high_res(hist) )
+  }//if( isHPGe )
       
   PeakDef tmppeak( energy, std::max(sigma,0.1), 100.0 );
   
@@ -3364,12 +3367,14 @@ float estimate_FWHM_of_foreground( const float energy )
   const shared_ptr<const SpecUtils::Measurement> meas
                               = viewer->displayedHistogram(SpecUtils::SpectrumType::Foreground);
   
+  const bool isHPGe = PeakFitUtils::is_likely_high_res( viewer );
+  
   try
   {
     const string datadir = InterSpec::staticDataDirectory();
     string drf_dir = SpecUtils::append_path(datadir, "GenericGadrasDetectors/HPGe 40%" );
     
-    if( !PeakFitUtils::is_high_res(meas) )
+    if( !isHPGe )
       drf_dir = SpecUtils::append_path(datadir, "GenericGadrasDetectors/NaI 1x1" );
     
     drf = make_shared<DetectorPeakResponse>();
@@ -3380,7 +3385,7 @@ float estimate_FWHM_of_foreground( const float energy )
   {
   }
   
-  if( !PeakFitUtils::is_high_res(meas) )
+  if( !isHPGe )
     return 2.35482f*17.5f*sqrt(energy/661.0f);
   return 2.35482f*0.67f*sqrt(energy/661.0f);
 }//float estimate_FWHM_of_foreground( const float energy )

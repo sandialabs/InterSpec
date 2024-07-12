@@ -2171,11 +2171,11 @@ void D3SpectrumDisplayDiv::performDragCreateRoiWork( double lower_energy, double
   // Lets determine if this is a HPGe spectrum or not - this is used for minimum width
   //  we will consider fitting a peak for, as well as the maximum number of peaks we
   //  will consider.
-  const bool isHpge = PeakFitUtils::is_likely_high_res( viewer );
+  const bool isHPGe = PeakFitUtils::is_likely_high_res( viewer );
   
   std::vector<std::shared_ptr<const PeakDef>> prev_shown_peaks = m_last_being_added_peaks;
   
-  auto fcnworker = [foreground,detector,lower_energy,upper_energy,nForcedPeaks,isfinal,window_xpx,window_ypx,app,spectrum,peakModel,isHpge,prev_shown_peaks](){
+  auto fcnworker = [foreground,detector,lower_energy,upper_energy,nForcedPeaks,isfinal,window_xpx,window_ypx,app,spectrum,peakModel,isHPGe,prev_shown_peaks](){
   
     const float erange = upper_energy - lower_energy;
     const float midenergy = 0.5f*(lower_energy + upper_energy);
@@ -2186,7 +2186,7 @@ void D3SpectrumDisplayDiv::performDragCreateRoiWork( double lower_energy, double
       //const auto start_wall_time = SpecUtils::get_wall_time();
       
       float min_sigma_width_kev, max_sigma_width_kev;
-      expected_peak_width_limits( midenergy, isHpge, min_sigma_width_kev, max_sigma_width_kev );
+      expected_peak_width_limits( midenergy, isHPGe, min_sigma_width_kev, max_sigma_width_kev );
       
       if( erange < min_sigma_width_kev )
         throw runtime_error( "to small range" );
@@ -2196,10 +2196,10 @@ void D3SpectrumDisplayDiv::performDragCreateRoiWork( double lower_energy, double
       const size_t end_channel = foreground->find_gamma_channel(upper_energy);
       
       std::vector< std::tuple<float,float,float> > candidate_peaks;
-      secondDerivativePeakCanidates( foreground, start_channel, end_channel, candidate_peaks );
+      secondDerivativePeakCanidates( foreground, isHPGe, start_channel, end_channel, candidate_peaks );
       const size_t ncandidates = candidate_peaks.size();
       
-      //const auto derivative_peaks = secondDerivativePeakCanidatesWithROI( foreground, start_channel, end_channel );
+      //const auto derivative_peaks = secondDerivativePeakCanidatesWithROI( foreground, isHPGe, start_channel, end_channel );
       //const size_t ncandidates = derivative_peaks.size();
       
       nPeaks = static_cast<int>( ncandidates );
@@ -2246,7 +2246,7 @@ void D3SpectrumDisplayDiv::performDragCreateRoiWork( double lower_energy, double
       
       //cout << "ncandidates=" << ncandidates << endl;
       
-      auto worker = [&chi2s, &results, &npeakstry, ncandidates,
+      auto worker = [&chi2s, &results, &npeakstry, ncandidates, isHPGe,
                      lower_energy, upper_energy, foreground, detector]( const size_t index ){
         std::vector<std::shared_ptr<PeakDef> > newpeaks;
         const auto method = (static_cast<size_t>(npeakstry[index])==ncandidates)
@@ -2270,10 +2270,10 @@ void D3SpectrumDisplayDiv::performDragCreateRoiWork( double lower_energy, double
         //This next function call duplicates a lot of work between threads - may
         //  be a place that can be optimized if it turns out to be needed.
         findPeaksInUserRange( lower_energy, upper_energy, npeakstry[index], method,
-                             foreground, detector, newpeaks, chi2s[index] );
+                             foreground, detector, isHPGe, newpeaks, chi2s[index] );
         
         //findPeaksInUserRange_linsubsolve( lower_energy, upper_energy, npeakstry[index], method,
-        //                     foreground, detector, newpeaks, chi2s[index] );
+        //                     foreground, detector, isHpge, newpeaks, chi2s[index] );
         
         //Note: InterSpec::findPeakFromControlDrag(...) adjusts Chi2 as:
         //const size_t nbin = end_channel - start_channel;
