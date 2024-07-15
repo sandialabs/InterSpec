@@ -611,6 +611,36 @@ index 0fe20e9f..4a23938d 100644
  
  private:
    std::vector<std::string> options_;
+diff --git a/src/http/WServer.C b/src/http/WServer.C
+index 9eb05058..04a683d7 100644
+--- a/src/http/WServer.C
++++ b/src/http/WServer.C
+@@ -26,9 +26,9 @@
+ #include <process.h>
+ #endif
+ 
+-#ifdef ANDROID
+-#include "Android.h"
+-#endif
++//#ifdef ANDROID
++//#include "Android.h"
++//#endif
+ 
+ namespace {
+   static void parseArgsPartially(int argc, char *argv[],
+@@ -59,9 +59,9 @@ struct WServer::Impl
+     : serverConfiguration_(0),
+       server_(0)
+   {
+-#ifdef ANDROID
+-    preventRemoveOfSymbolsDuringLinking();
+-#endif
++//#ifdef ANDROID
++//    preventRemoveOfSymbolsDuringLinking();
++//#endif
+   }
+ 
+   ~Impl()
 diff --git a/src/web/FileUtils.C b/src/web/FileUtils.C
 index 5a15b09f..1b8774af 100644
 --- a/src/web/FileUtils.C

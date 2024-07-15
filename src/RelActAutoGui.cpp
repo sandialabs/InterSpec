@@ -89,6 +89,11 @@
 using namespace Wt;
 using namespace std;
 
+#if( ANDROID )
+// Defined in target/android/android.cpp
+extern void android_download_workaround( Wt::WResource *resource, std::string description );
+#endif
+
 namespace
 {
   //DeleteOnClosePopupMenu - same class as from D3SpectrumDisplayDiv... should refactor
@@ -4031,8 +4036,8 @@ void RelActAutoGui::addDownloadAndUploadLinks( Wt::WContainerWidget *parent )
 
 #if( ANDROID )
   // Using hacked saving to temporary file in Android, instead of via network download of file.
-  m_downloadHtmlReport->clicked().connect( std::bind([this](){
-    android_download_workaround( m_calpResource, "isotopics_by_nuclide.html");
+  btn->clicked().connect( std::bind([this](){
+    android_download_workaround( m_html_download_rsc, "isotopics_by_nuclide.html");
   }) );
 #endif //ANDROID
 #endif
@@ -4057,8 +4062,8 @@ void RelActAutoGui::addDownloadAndUploadLinks( Wt::WContainerWidget *parent )
   
 #if( ANDROID )
   // Using hacked saving to temporary file in Android, instead of via network download of file.
-  m_downloadHtmlReport->clicked().connect( std::bind([this](){
-    android_download_workaround( m_calpResource, "isotopics_by_nuclide_config.html");
+  btn->clicked().connect( std::bind([this](){
+    android_download_workaround( m_xml_download_rsc, "isotopics_by_nuclide_config.html");
   }) );
 #endif //ANDROID
   
