@@ -98,7 +98,8 @@ namespace HelpSystem
   enum class ToolTipPrefOverride
   {
     AlwaysShow,
-    RespectPreference
+    RespectPreference,
+    InstantAlways
   };
   
   enum class ToolTipPosition

@@ -1486,18 +1486,44 @@ void DetectionLimitTool::update_spectrum_for_currie_result( D3SpectrumDisplayDiv
     double lower_continuum_counts_sum, peak_region_counts_sum, upper_continuum_counts_sum;
     double lower_lower_energy, lower_upper_energy, upper_lower_energy, upper_upper_energy;
     
+    // If number of of side channels is zero, then we expect the following
+    //  variables to all be zero
+    assert( (result->input.num_lower_side_channels != 0)
+           || ((result->first_lower_continuum_channel == 0)
+               && (result->last_lower_continuum_channel == 0)
+               && (result->lower_continuum_counts_sum == 0)
+               && (result->first_upper_continuum_channel == 0)
+               && (result->last_upper_continuum_channel == 0)
+               && (result->upper_continuum_counts_sum == 0))
+           );
+    
+    const bool assertedNoSignal = (result->input.num_lower_side_channels == 0);
+    
     // We will prefer to set the highlight regions from the results, but if we dont have results
     //  we'll do it from the input.
     if( result )
     {
-      lower_lower_energy = spectrum->gamma_channel_lower( result->first_lower_continuum_channel );
-      lower_upper_energy = spectrum->gamma_channel_lower( result->first_upper_continuum_channel );
-      upper_lower_energy = spectrum->gamma_channel_upper( result->last_lower_continuum_channel );
-      upper_upper_energy = spectrum->gamma_channel_upper( result->last_upper_continuum_channel );
-      
-      lower_continuum_counts_sum = result->lower_continuum_counts_sum;
-      peak_region_counts_sum = result->peak_region_counts_sum;
-      upper_continuum_counts_sum = result->upper_continuum_counts_sum;
+      if( assertedNoSignal )
+      {
+        lower_upper_energy = spectrum->gamma_channel_upper( result->last_peak_region_channel );
+        upper_upper_energy = lower_upper_energy;
+        upper_lower_energy = spectrum->gamma_channel_lower( result->first_peak_region_channel );
+        lower_lower_energy = upper_lower_energy;
+        
+        lower_continuum_counts_sum = 0;
+        peak_region_counts_sum = result->peak_region_counts_sum;
+        upper_continuum_counts_sum = 0;
+      }else
+      {
+        lower_lower_energy = spectrum->gamma_channel_lower( result->first_lower_continuum_channel );
+        lower_upper_energy = spectrum->gamma_channel_lower( result->first_upper_continuum_channel ); //need
+        upper_lower_energy = spectrum->gamma_channel_upper( result->last_lower_continuum_channel );  //need
+        upper_upper_energy = spectrum->gamma_channel_upper( result->last_upper_continuum_channel );
+        
+        lower_continuum_counts_sum = result->lower_continuum_counts_sum;
+        peak_region_counts_sum = result->peak_region_counts_sum;
+        upper_continuum_counts_sum = result->upper_continuum_counts_sum;
+      }
     }else
     {
       const pair<size_t,size_t> channels 
@@ -1506,27 +1532,45 @@ void DetectionLimitTool::update_spectrum_for_currie_result( D3SpectrumDisplayDiv
       const size_t first_peak_region_channel = channels.first;
       const size_t last_peak_region_channel = channels.second;
       
-      if( first_peak_region_channel < (input.num_lower_side_channels + 1) )
-        throw std::runtime_error( "mda_counts_calc: lower peak region is outside spectrum energy range" );
-      
-      const size_t last_lower_continuum_channel = first_peak_region_channel - 1;
-      const size_t first_lower_continuum_channel = last_lower_continuum_channel - input.num_lower_side_channels + 1;
-      
-      const size_t first_upper_continuum_channel = last_peak_region_channel + 1;
-      const size_t last_upper_continuum_channel = first_upper_continuum_channel + input.num_upper_side_channels - 1;
-      
-      if( last_upper_continuum_channel >= spectrum->num_gamma_channels() )
-        throw std::runtime_error( "mda_counts_calc: upper peak region is outside spectrum energy range" );
-      
-      lower_lower_energy = spectrum->gamma_channel_lower( first_lower_continuum_channel );
-      lower_upper_energy = spectrum->gamma_channel_lower( first_upper_continuum_channel );
-      upper_lower_energy = spectrum->gamma_channel_upper( last_lower_continuum_channel );
-      upper_upper_energy = spectrum->gamma_channel_upper( last_upper_continuum_channel );
-      
-      lower_continuum_counts_sum = spectrum->gamma_channels_sum(first_lower_continuum_channel, last_lower_continuum_channel);
-      peak_region_counts_sum =     spectrum->gamma_channels_sum(first_peak_region_channel, last_peak_region_channel);
-      upper_continuum_counts_sum = spectrum->gamma_channels_sum(first_upper_continuum_channel, last_upper_continuum_channel);
+      if( assertedNoSignal )
+      {
+        lower_upper_energy = spectrum->gamma_channel_upper( last_peak_region_channel );
+        upper_upper_energy = lower_upper_energy;
+        upper_lower_energy = spectrum->gamma_channel_lower( first_peak_region_channel );
+        lower_lower_energy = upper_lower_energy;
+        
+        lower_continuum_counts_sum = 0;
+        peak_region_counts_sum = spectrum->gamma_channels_sum(first_peak_region_channel, last_peak_region_channel);
+        upper_continuum_counts_sum = 0;
+      }else
+      {
+        if( first_peak_region_channel < (input.num_lower_side_channels + 1) )
+          throw std::runtime_error( "mda_counts_calc: lower peak region is outside spectrum energy range" );
+        
+        const size_t last_lower_continuum_channel = first_peak_region_channel - 1;
+        const size_t first_lower_continuum_channel = last_lower_continuum_channel - input.num_lower_side_channels + 1;
+        
+        const size_t first_upper_continuum_channel = last_peak_region_channel + 1;
+        const size_t last_upper_continuum_channel = first_upper_continuum_channel + input.num_upper_side_channels - 1;
+        
+        if( last_upper_continuum_channel >= spectrum->num_gamma_channels() )
+          throw std::runtime_error( "mda_counts_calc: upper peak region is outside spectrum energy range" );
+        
+        lower_lower_energy = spectrum->gamma_channel_lower( first_lower_continuum_channel );
+        lower_upper_energy = spectrum->gamma_channel_lower( first_upper_continuum_channel ); //need
+        upper_lower_energy = spectrum->gamma_channel_upper( last_lower_continuum_channel ); //need
+        upper_upper_energy = spectrum->gamma_channel_upper( last_upper_continuum_channel );
+        
+        lower_continuum_counts_sum = spectrum->gamma_channels_sum(first_lower_continuum_channel, last_lower_continuum_channel);
+        peak_region_counts_sum =     spectrum->gamma_channels_sum(first_peak_region_channel, last_peak_region_channel);
+        upper_continuum_counts_sum = spectrum->gamma_channels_sum(first_upper_continuum_channel, last_upper_continuum_channel);
+      }//if( assertedNoSignal )
     }//if( result ) / else
+    
+    assert( !assertedNoSignal
+           || ((lower_continuum_counts_sum == 0)
+               && (upper_continuum_counts_sum == 0))
+           );
     
     const double dx = upper_upper_energy - lower_lower_energy;
     chart->setXAxisRange( lower_lower_energy - 0.5*dx, upper_upper_energy + 0.5*dx );
@@ -1535,29 +1579,34 @@ void DetectionLimitTool::update_spectrum_for_currie_result( D3SpectrumDisplayDiv
     const int mid_ndec = 1 + static_cast<int>( std::ceil( fabs( std::log10( fabs(peak_region_counts_sum) ) ) ) );
     const int upper_ndec = 1 + static_cast<int>( std::ceil( fabs( std::log10( fabs(upper_continuum_counts_sum) ) ) ) );
     
-    const string lower_txt = SpecUtils::printCompact( lower_continuum_counts_sum, lower_ndec );
-    const string mid_txt = SpecUtils::printCompact( peak_region_counts_sum, mid_ndec );
-    const string upper_txt = SpecUtils::printCompact( upper_continuum_counts_sum, upper_ndec );
-    
     shared_ptr<const ColorTheme> theme = viewer->getColorTheme();
     assert( theme );
     if( !theme )
       throw runtime_error( "Invalid color theme" );
     
-    chart->addDecorativeHighlightRegion( lower_lower_energy, upper_lower_energy,
-                                        theme->timeHistoryBackgroundHighlight,
-                                        D3SpectrumDisplayDiv::HighlightRegionFill::BelowData,
-                                        lower_txt );
+    if( !assertedNoSignal )
+    {
+      const string lower_txt = SpecUtils::printCompact( lower_continuum_counts_sum, lower_ndec );
+      chart->addDecorativeHighlightRegion( lower_lower_energy, upper_lower_energy,
+                                          theme->timeHistoryBackgroundHighlight,
+                                          D3SpectrumDisplayDiv::HighlightRegionFill::BelowData,
+                                          lower_txt );
+    }//if( !assertedNoSignal )
     
+    const string mid_txt = SpecUtils::printCompact( peak_region_counts_sum, mid_ndec );
     chart->addDecorativeHighlightRegion( upper_lower_energy, lower_upper_energy,
                                         theme->timeHistoryForegroundHighlight,
                                         D3SpectrumDisplayDiv::HighlightRegionFill::BelowData,
                                         mid_txt );
     
-    chart->addDecorativeHighlightRegion( lower_upper_energy, upper_upper_energy,
-                                        theme->timeHistoryBackgroundHighlight,
-                                        D3SpectrumDisplayDiv::HighlightRegionFill::BelowData,
-                                        upper_txt );
+    if( !assertedNoSignal )
+    {
+      const string upper_txt = SpecUtils::printCompact( upper_continuum_counts_sum, upper_ndec );
+      chart->addDecorativeHighlightRegion( lower_upper_energy, upper_upper_energy,
+                                          theme->timeHistoryBackgroundHighlight,
+                                          D3SpectrumDisplayDiv::HighlightRegionFill::BelowData,
+                                          upper_txt );
+    }//if( !assertedNoSignal )
     
     // We will only put the peak on the chart if there is a result
     if( result && pmodel )
@@ -1599,6 +1648,8 @@ void DetectionLimitTool::update_spectrum_for_currie_result( D3SpectrumDisplayDiv
         {
           if( result->source_counts > result->decision_threshold )
           {
+            assert( !assertedNoSignal );
+            
             // There is enough excess counts that we would reliably detect this activity, so we will
             //  give the activity range.
             string lowerstr, upperstr, nomstr;
@@ -1637,6 +1688,8 @@ void DetectionLimitTool::update_spectrum_for_currie_result( D3SpectrumDisplayDiv
             }
           }else if( result->upper_limit < 0 )
           {
+            assert( !assertedNoSignal );
+            
             // This can happen when there are a lot fewer counts in the peak region than predicted
             //  from the sides - since this is non-sensical, we'll just say zero.
             const string unitstr = useCuries ? "Ci" : "Bq";
@@ -1648,26 +1701,51 @@ void DetectionLimitTool::update_spectrum_for_currie_result( D3SpectrumDisplayDiv
               specific_peaks[i].setAmplitude( 0.0 );
           }else
           {
-            // We will provide the upper bound on activity.
-            string mdastr;
-            if( gammas_per_bq > 0.0 )
+            if( assertedNoSignal )
             {
-              const double simple_mda = result->upper_limit / gammas_per_bq;
-              mdastr = PhysicalUnits::printToBestActivityUnits( simple_mda, 2, useCuries )
-              + DetectorPeakResponse::det_eff_geom_type_postfix( det_geom );
+              // We will provide minimum counts reliably detectable
+              string mdastr;
+              if( gammas_per_bq > 0.0 )
+              {
+                const double simple_mda = result->detection_limit / gammas_per_bq;
+                mdastr = PhysicalUnits::printToBestActivityUnits( simple_mda, 2, useCuries )
+                      + DetectorPeakResponse::det_eff_geom_type_postfix( det_geom );
+              }else
+              {
+                mdastr = SpecUtils::printCompact( result->detection_limit, 4 ) + " counts";
+              }
+              
+              chart_title = "Data + peak for " + mdastr;
+              
+              generic_peak.setPeakArea( result->detection_limit );
+              for( size_t i = 0; i < peaks.size(); ++i )
+              {
+                const double area = result->detection_limit * peaks[i].counts_4pi / sum_counts_4pi;
+                specific_peaks[i].setAmplitude( area );
+              }
             }else
             {
-              mdastr = SpecUtils::printCompact( result->upper_limit, 4 ) + " counts";
-            }
-            
-            chart_title = "Peak for upper bound of " + mdastr + " @" + cl_str + " CL";
-            
-            generic_peak.setPeakArea( result->upper_limit );
-            for( size_t i = 0; i < peaks.size(); ++i )
-            {
-              const double area = result->upper_limit * peaks[i].counts_4pi / sum_counts_4pi;
-              specific_peaks[i].setAmplitude( area );
-            }
+              // We will provide the upper bound on activity.
+              string mdastr;
+              if( gammas_per_bq > 0.0 )
+              {
+                const double simple_mda = result->upper_limit / gammas_per_bq;
+                mdastr = PhysicalUnits::printToBestActivityUnits( simple_mda, 2, useCuries )
+                      + DetectorPeakResponse::det_eff_geom_type_postfix( det_geom );
+              }else
+              {
+                mdastr = SpecUtils::printCompact( result->upper_limit, 4 ) + " counts";
+              }
+              
+              chart_title = "Peak for upper bound of " + mdastr + " @" + cl_str + " CL";
+              
+              generic_peak.setPeakArea( result->upper_limit );
+              for( size_t i = 0; i < peaks.size(); ++i )
+              {
+                const double area = result->upper_limit * peaks[i].counts_4pi / sum_counts_4pi;
+                specific_peaks[i].setAmplitude( area );
+              }
+            }//if( assertedNoSignal ) / else
           }//if( detected ) / else if( ....)
           
           break;
@@ -1682,10 +1760,20 @@ void DetectionLimitTool::update_spectrum_for_currie_result( D3SpectrumDisplayDiv
       
       chart->setChartTitle( chart_title );
       
-      if( specific_peaks.size() > 0 )
-        pmodel->addPeaks( specific_peaks );
-      else
-        pmodel->addPeaks( {generic_peak} );
+      vector<PeakDef> peaks = (specific_peaks.size() > 0) ? std::move(specific_peaks) : vector<PeakDef>{generic_peak};
+      
+      if( assertedNoSignal )
+      {
+        for( PeakDef &p : peaks )
+        {
+          p.continuum()->setType( PeakContinuum::OffsetType::External );
+          p.continuum()->setExternalContinuum( spectrum );
+        }
+      }//if( specIsBackground )
+      
+      set_chi2_dof( spectrum, peaks, 0, peaks.size() ); // Compute Chi2 for peaks
+      
+      pmodel->addPeaks( peaks );
     }//if( result )
   }catch( std::exception &e )
   {
@@ -1761,10 +1849,12 @@ SimpleDialog *DetectionLimitTool::createCurrieRoiMoreInfoWindow( const SandiaDec
     
     const string confidence_level = buffer;
     
-    const double lower_lower_energy = input.spectrum->gamma_channel_lower( result.first_lower_continuum_channel );
-    const double lower_upper_energy = input.spectrum->gamma_channel_lower( result.first_upper_continuum_channel );
-    const double upper_lower_energy = input.spectrum->gamma_channel_upper( result.last_lower_continuum_channel );
-    const double upper_upper_energy = input.spectrum->gamma_channel_upper( result.last_upper_continuum_channel );
+    const bool assertedNoSignal = (result.input.num_lower_side_channels == 0);
+    
+    const double lower_upper_energy = input.spectrum->gamma_channel_lower( result.first_peak_region_channel );
+    const double lower_lower_energy = assertedNoSignal ? lower_upper_energy : input.spectrum->gamma_channel_lower( result.first_lower_continuum_channel );
+    const double upper_lower_energy = input.spectrum->gamma_channel_upper( result.last_peak_region_channel );
+    const double upper_upper_energy = assertedNoSignal ? upper_lower_energy : input.spectrum->gamma_channel_upper( result.last_upper_continuum_channel );
     
     // Add chart
     InterSpec *viewer = InterSpec::instance();
@@ -1811,7 +1901,7 @@ SimpleDialog *DetectionLimitTool::createCurrieRoiMoreInfoWindow( const SandiaDec
       img->decorationStyle().setCursor( Wt::Cursor::WhatsThisCursor );
       
       HelpSystem::attachToolTipOn( img, tt, true, HelpSystem::ToolTipPosition::Right,
-                                  HelpSystem::ToolTipPrefOverride::AlwaysShow );
+                                  HelpSystem::ToolTipPrefOverride::InstantAlways );
     };//addTooltipToRow
     
     
@@ -1821,6 +1911,8 @@ SimpleDialog *DetectionLimitTool::createCurrieRoiMoreInfoWindow( const SandiaDec
       {
         if( result.source_counts > result.decision_threshold )
         {
+          assert( !assertedNoSignal );
+          
           // There is enough excess counts that we would reliably detect this activity, so we will
           //  give the activity range.
           WString obs_label, range_label;
@@ -1865,6 +1957,8 @@ SimpleDialog *DetectionLimitTool::createCurrieRoiMoreInfoWindow( const SandiaDec
           addTooltipToRow( "The activity range estimate, to the " + confidence_level + " confidence level." );
         }else if( result.upper_limit < 0 )
         {
+          assert( !assertedNoSignal );
+          
           // This can happen when there are a lot fewer counts in the peak region than predicted
           //  from the sides - since this is non-sensical, we'll just say zero.
           const string unitstr = drf ? (useCuries ? "Ci" : "Bq") : " counts";
@@ -1920,74 +2014,82 @@ SimpleDialog *DetectionLimitTool::createCurrieRoiMoreInfoWindow( const SandiaDec
     }//switch( limitType )
     
     // Add a blank row
+    string val;
     cell = table->elementAt( table->rowCount(), 0 );
     WText *txt = new WText( "&nbsp;", TextFormat::XHTMLText, cell );
     
+    if( !assertedNoSignal )
+    {
+      cell = table->elementAt( table->rowCount(), 0 );
+      txt = new WText( "Lower region channels", cell );
+      val = "[" + std::to_string(result.first_lower_continuum_channel) + ", "
+            + std::to_string(result.last_lower_continuum_channel) + "]";
+      cell = table->elementAt( table->rowCount() - 1, 1 );
+      txt = new WText( val, cell );
+      
+      
+      snprintf( buffer, sizeof(buffer), "The region above the peak in energy, that is being used"
+               " to estimate the expected continuum counts in the peak region;"
+               " corresponds to %.2f to %.2f keV", lower_lower_energy, lower_upper_energy );
+      addTooltipToRow( buffer );
+      
+      
+      cell = table->elementAt( table->rowCount(), 0 );
+      txt = new WText( "Lower region counts", cell );
+      val = SpecUtils::printCompact( result.lower_continuum_counts_sum, 5 );
+      cell = table->elementAt( table->rowCount() - 1, 1 );
+      txt = new WText( val, cell );
+      addTooltipToRow( "The number of counts observed in the region below the peak region,"
+                      " that is being used to estimate expected peak-region expected counts" );
+      
+      cell = table->elementAt( table->rowCount(), 0 );
+      txt = new WText( "Upper region channels", cell );
+      val = "[" + std::to_string(result.first_upper_continuum_channel) + ", "
+      + std::to_string(result.last_upper_continuum_channel) + "]";
+      cell = table->elementAt( table->rowCount() - 1, 1 );
+      txt = new WText( val, cell );
+      snprintf( buffer, sizeof(buffer), "The region above the peak in energy, that is being used"
+               " to estimate the expected continuum counts in the peak region;"
+               " corresponds to %.2f to %.2f keV", upper_lower_energy, upper_upper_energy );
+      addTooltipToRow( buffer );
+      
+      cell = table->elementAt( table->rowCount(), 0 );
+      txt = new WText( "Upper region counts", cell );
+      val = SpecUtils::printCompact( result.upper_continuum_counts_sum, 5 );
+      cell = table->elementAt( table->rowCount() - 1, 1 );
+      txt = new WText( val, cell );
+      addTooltipToRow( "The number of counts observed in the region above the peak region,"
+                      " that is being used to estimate expected peak-region expected counts" );
+    }else
+    {
+      cell = table->elementAt( table->rowCount(), 0 );
+      cell->setColumnSpan( 2 );
+      txt = new WText( "Using ROI area as background estimate", cell );
+    }//if( !assertedNoSignal ) / else
+    
     cell = table->elementAt( table->rowCount(), 0 );
-    txt = new WText( "Lower region channels", cell );
-    string val = "[" + std::to_string(result.first_lower_continuum_channel) + ", "
-                  + std::to_string(result.last_lower_continuum_channel) + "]";
+    txt = new WText( assertedNoSignal ? "ROI area channels" : "Peak area channels", cell );
+    val = "[" + std::to_string(result.first_peak_region_channel) + ", "
+                  + std::to_string(result.last_peak_region_channel) + "]";
     cell = table->elementAt( table->rowCount() - 1, 1 );
     txt = new WText( val, cell );
     
-    
-    snprintf( buffer, sizeof(buffer), "The region above the peak in energy, that is being used"
-             " to estimate the expected continuum counts in the peak region;"
-             " corresponds to %.2f to %.2f keV", lower_lower_energy, lower_upper_energy );
-    addTooltipToRow( buffer );
-    
-    
-    cell = table->elementAt( table->rowCount(), 0 );
-    txt = new WText( "Lower region counts", cell );
-    val = SpecUtils::printCompact( result.lower_continuum_counts_sum, 5 );
-    cell = table->elementAt( table->rowCount() - 1, 1 );
-    txt = new WText( val, cell );
-    addTooltipToRow( "The number of counts observed in the region below the peak region,"
-                    " that is being used to estimate expected peak-region expected counts" );
-    
-    cell = table->elementAt( table->rowCount(), 0 );
-    txt = new WText( "Upper region channels", cell );
-    val = "[" + std::to_string(result.first_upper_continuum_channel) + ", "
-                  + std::to_string(result.last_upper_continuum_channel) + "]";
-    cell = table->elementAt( table->rowCount() - 1, 1 );
-    txt = new WText( val, cell );
-    snprintf( buffer, sizeof(buffer), "The region above the peak in energy, that is being used"
-             " to estimate the expected continuum counts in the peak region;"
-             " corresponds to %.2f to %.2f keV", upper_lower_energy, upper_upper_energy );
-    addTooltipToRow( buffer );
-    
-    cell = table->elementAt( table->rowCount(), 0 );
-    txt = new WText( "Upper region counts", cell );
-    val = SpecUtils::printCompact( result.upper_continuum_counts_sum, 5 );
-    cell = table->elementAt( table->rowCount() - 1, 1 );
-    txt = new WText( val, cell );
-    addTooltipToRow( "The number of counts observed in the region above the peak region,"
-                    " that is being used to estimate expected peak-region expected counts" );
-    
-    
-    cell = table->elementAt( table->rowCount(), 0 );
-    txt = new WText( "Peak area channels", cell );
-    val = "[" + std::to_string(result.last_lower_continuum_channel + 1) + ", "
-                  + std::to_string(result.first_upper_continuum_channel - 1) + "]";
-    cell = table->elementAt( table->rowCount() - 1, 1 );
-    txt = new WText( val, cell );
-    
-    const double peak_lower_energy = input.spectrum->gamma_channel_lower( result.last_lower_continuum_channel + 1 );
-    const double peak_upper_energy = input.spectrum->gamma_channel_lower( result.first_upper_continuum_channel - 1 );
+    const double peak_lower_energy = input.spectrum->gamma_channel_lower( result.first_peak_region_channel );
+    const double peak_upper_energy = input.spectrum->gamma_channel_upper( result.last_peak_region_channel );
     snprintf( buffer, sizeof(buffer), "The region the peak is being assumed to be within;"
              " corresponds to %.2f to %.2f keV", peak_lower_energy, peak_upper_energy );
     addTooltipToRow( buffer );
     
     
     cell = table->elementAt( table->rowCount(), 0 );
-    txt = new WText( "Peak region counts", cell );
+    txt = new WText( assertedNoSignal ? "ROI region counts" : "Peak region counts", cell );
     val = SpecUtils::printCompact( result.peak_region_counts_sum, 5 );
     cell = table->elementAt( table->rowCount() - 1, 1 );
     txt = new WText( val, cell );
     addTooltipToRow( "The observed number of counts in the peak region" );
     
     cell = table->elementAt( table->rowCount(), 0 );
-    txt = new WText( "Peak region null est.", cell );
+    txt = new WText( assertedNoSignal ? "ROI region null est.": "Peak region null est.", cell );
     val = SpecUtils::printCompact( result.estimated_peak_continuum_counts, 5 )
           + " &plusmn; " + SpecUtils::printCompact( result.estimated_peak_continuum_uncert, 5 );
     cell = table->elementAt( table->rowCount() - 1, 1 );
@@ -1999,7 +2101,7 @@ SimpleDialog *DetectionLimitTool::createCurrieRoiMoreInfoWindow( const SandiaDec
     //   the net signal level (instrument response) above which an observed signal may be
     //   reliably recognized as "detected"
     cell = table->elementAt( table->rowCount(), 0 );
-    txt = new WText( "Peak critical limit", cell );
+    txt = new WText( "Peak critical limit <span style=\"font-size: smaller;\">(L<sub>c</sub>)</span>", cell );
     if( drf && (distance >= 0.0) && (gammas_per_bq > 0.0) )
     {
       const double decision_threshold_act = result.decision_threshold / gammas_per_bq;
@@ -2023,7 +2125,7 @@ SimpleDialog *DetectionLimitTool::createCurrieRoiMoreInfoWindow( const SandiaDec
     // Note: I believe this quantity corresponds to Currie's "detection limit" (L_d) that
     //       is the “true” net signal level which may be a priori expected to lead to detection.
     cell = table->elementAt( table->rowCount(), 0 );
-    txt = new WText( "Peak detection limit", cell );
+    txt = new WText( "Peak detection limit <span style=\"font-size: smaller;\">(L<sub>d</sub>)</span>", cell );
     
     if( drf && (distance >= 0.0) && (gammas_per_bq > 0.0) )
     {
@@ -2074,14 +2176,17 @@ SimpleDialog *DetectionLimitTool::createCurrieRoiMoreInfoWindow( const SandiaDec
               nomstr = "&lt; 0 counts";
           }//if( drf ) / else
           
-          nomstr += " <span style=\"font-size: smaller;\">(below L<sub>c</sub>)</span>";
-          
-          cell = table->elementAt( table->rowCount(), 0 );
-          new WText( obs_label, cell );
-          cell = table->elementAt( table->rowCount() - 1, 1 );
-          new WText( nomstr, cell );
-          addTooltipToRow( "The observed signal counts is less than the &quot;critical level&quot;, L<sub>c</sub>,"
-                          " so a detection can not be declared, but this is the excess over expected counts/activity." );
+          if( !assertedNoSignal )
+          {
+            nomstr += " <span style=\"font-size: smaller;\">(below L<sub>c</sub>)</span>";
+            
+            cell = table->elementAt( table->rowCount(), 0 );
+            new WText( obs_label, cell );
+            cell = table->elementAt( table->rowCount() - 1, 1 );
+            new WText( nomstr, cell );
+            addTooltipToRow( "The observed signal counts is less than the &quot;critical level&quot;, L<sub>c</sub>,"
+                            " so a detection can not be declared, but this is the excess over expected counts/activity." );
+          }//if( !assertedNoSignal )
         }//if( result.source_counts <= result.decision_threshold )
       }//case DetectionLimitTool::LimitType::Activity:
         

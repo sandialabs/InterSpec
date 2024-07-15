@@ -258,10 +258,9 @@ D3SpectrumDisplayDiv::D3SpectrumDisplayDiv( WContainerWidget *parent )
   
   // Cancel right-click events for the div, we handle it all in JS
   setAttributeValue( "oncontextmenu",
-                     "event.cancelBubble = true; event.returnValue = false; return false;"
-                    );
+                     "event.cancelBubble = true; event.returnValue = false; return false;" );
   
-    InterSpec::instance()->useMessageResourceBundle( "D3SpectrumDisplayDiv" );
+  InterSpec::instance()->useMessageResourceBundle( "D3SpectrumDisplayDiv" );
     
   //For development it may be useful to directly use the original JS/CSS files,
   //  but normally we should use the resources CMake will copy into
@@ -434,10 +433,14 @@ void D3SpectrumDisplayDiv::defineJavaScript()
       m_legendEnabled = false;
       m_legendDisabledSignal.emit();
     }) );
+    
+    
+    m_sliderDisplayed.reset( new Wt::JSignal<bool>(this, "sliderChartDisplayed") );
+    m_sliderDisplayed->connect( boost::bind( &D3SpectrumDisplayDiv::sliderChartDisplayedCallback, this, boost::placeholders::_1 ) );
+    
+    m_yAxisTypeChanged.reset( new Wt::JSignal<string>(this, "yAxisTypeChanged") );
+    m_yAxisTypeChanged->connect( boost::bind( &D3SpectrumDisplayDiv::yAxisTypeChangedCallback, this, boost::placeholders::_1 ) );
   }//if( !m_xRangeChangedJS )
-  
-  m_sliderDisplayed.reset( new Wt::JSignal<bool>(this, "sliderChartDisplayed") );
-  m_sliderDisplayed->connect( boost::bind( &D3SpectrumDisplayDiv::sliderChartDisplayedCallback, this, boost::placeholders::_1 ) );
   
   for( const string &js : m_pendingJs )
     doJavaScript( js );
@@ -452,9 +455,8 @@ void D3SpectrumDisplayDiv::defineJavaScript()
 void D3SpectrumDisplayDiv::initChangeableCssRules()
 {
   WCssStyleSheet &style = wApp->styleSheet();
-
-  m_cssRules["GridColor"] = style.addRule( ".xgrid > .tick, .ygrid > .tick", "stroke: #b3b3b3" );
-  m_cssRules["MinorGridColor"] = style.addRule( ".minorgrid", "stroke: #e6e6e6" );  
+  m_cssRules["GridColor"] = style.addRule( ":root", "--d3spec-grid-major-color: #b3b3b3;" );      //Not actually needed, as CSS will default to this
+  m_cssRules["MinorGridColor"] = style.addRule( ":root", "--d3spec-grid-minor-color: #e6e6e6;" ); //Not actually needed, as CSS will default to this
 }//void initChangeableCssRules()
 
 
@@ -867,6 +869,9 @@ bool D3SpectrumDisplayDiv::yAxisIsLog() const
 
 void D3SpectrumDisplayDiv::setYAxisLog( bool log )
 {
+  if( m_yAxisIsLog == log )
+    return;
+  
   m_yAxisIsLog = log;
   if( isRendered() )
     doJavaScript( m_jsgraph + (log ? ".setLogY();" : ".setLinearY();") );
@@ -1658,14 +1663,9 @@ void D3SpectrumDisplayDiv::setAxisLineColor( const Wt::WColor &color )
   if( m_cssRules.count(rulename) )
     style.removeRule( m_cssRules[rulename] );
   
+  // Sets axis colors, and ".peakLine, .escapeLineForward, .mouseLine, .secondaryMouseLine"
+  
   m_cssRules[rulename] = style.addRule( ":root", "--d3spec-axis-color: " + m_axisColor.cssText() );
-  
-  
-  //ToDo: is setting feature line colors okay like this
-  rulename = "FeatureLinesColor";
-  if( m_cssRules.count(rulename) )
-    style.removeRule( m_cssRules[rulename] );
-  m_cssRules[rulename] = style.addRule( ".peakLine, .escapeLineForward, .mouseLine, .secondaryMouseLine", "stroke: " + m_axisColor.cssText() );
   
   //ToDo: figure out how to make grid lines look okay.
   //rulename = "GridColor";
@@ -1701,8 +1701,9 @@ void D3SpectrumDisplayDiv::setChartMarginColor( const Wt::WColor &color )
   if( m_cssRules.count(rulename) )
     style.removeRule( m_cssRules[rulename] );
   
+  m_cssRules[rulename] = style.addRule( ":root", "--d3spec-background-color: " + color.cssText() + ";" );
   //Actually this will set the background for the entire chart...
-  m_cssRules[rulename] = style.addRule( "#" + id() + " > svg", "background: " + color.cssText() );
+  //m_cssRules[rulename] = style.addRule( "#" + id() + " > svg", "background: " + color.cssText() ); // to set background color for just this chart
 }//setChartMarginColor(...)
 
 
@@ -1717,8 +1718,9 @@ void D3SpectrumDisplayDiv::setChartBackgroundColor( const Wt::WColor &color )
   
   if( m_cssRules.count(rulename) )
     style.removeRule( m_cssRules[rulename] );
-  
-  m_cssRules[rulename] = style.addRule( "#chartarea" + id(), "fill: " + c );
+    
+  m_cssRules[rulename] = style.addRule( ":root", "--d3spec-chart-area-color: " + c + ";" );
+  //m_cssRules[rulename] = style.addRule( "#chartarea" + id(), "fill: " + c ); //If we wanted to apply this color to only this chart
 }
 
 void D3SpectrumDisplayDiv::setDefaultPeakColor( const Wt::WColor &color )
@@ -2581,6 +2583,26 @@ void D3SpectrumDisplayDiv::sliderChartDisplayedCallback( const bool madeVisisble
   //  but this should be harmless)
   InterSpec::instance()->setXAxisSlider( madeVisisble );
 }//void sliderChartDisplayedCallback( const bool madeVisisble );
+
+
+void D3SpectrumDisplayDiv::yAxisTypeChangedCallback( const std::string &type )
+{
+  const bool isLogY = (type == "log");
+  if( isLogY == m_yAxisIsLog )
+    return;
+  
+  m_yAxisIsLog = isLogY;
+  InterSpec *interspec = InterSpec::instance();
+  interspec->setLogY( m_yAxisIsLog ); //toggles menu items, but wont put in undo/redo step
+  
+  UndoRedoManager *undoRedo = UndoRedoManager::instance();
+  if( undoRedo && undoRedo->canAddUndoRedoNow() )
+  {
+    undoRedo->addUndoRedoStep( [isLogY](){ InterSpec::instance()->setLogY(!isLogY); },
+                            [isLogY](){ InterSpec::instance()->setLogY(isLogY); },
+                            "Toggle log-y axis" );
+  }
+}//void yAxisTypeChanged( const std::string &type )
 
 
 D3SpectrumDisplayDiv::~D3SpectrumDisplayDiv()

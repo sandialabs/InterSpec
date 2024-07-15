@@ -4806,8 +4806,6 @@ void RelActAutoSolution::print_html_report( std::ostream &out ) const
   const string d3_js = load_file_contents( "d3.v3.min.js" );
   const string spectrum_chart_d3_js = load_file_contents( "SpectrumChartD3.js" );
   const string spectrum_chart_d3_css = load_file_contents( "SpectrumChartD3.css" );
-  //const string spectrum_chart_d3_standalone_css = load_file_contents( "SpectrumChartD3StandAlone.css" );
-  
   
   SpecUtils::ireplace_all( html, "\\;", ";" );
   

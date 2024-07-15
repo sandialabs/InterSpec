@@ -3665,6 +3665,15 @@ pair<shared_ptr<GammaInteractionCalc::ShieldingSourceChi2Fcn>, ROOT::Minuit2::Mn
       }//case ShieldingSourceFitCalc::ModelSourceType::Trace:
     }//switch( m_sourceModel->sourceType(ison) )
       
+    // If we are fitting activity or age, we can possibly get into a situation where the
+    //  values have become NaN - if this is the case, lets put in a number, to hopefully
+    //  help get out of this badness
+    if( srcdef.fitAge && (IsInf(srcdef.age) || IsNan(srcdef.age)) )
+      srcdef.age = PeakDef::defaultDecayTime( nuclide, nullptr );
+    
+    if( srcdef.fitActivity && (IsInf(srcdef.activity) || IsNan(srcdef.activity)) )
+      srcdef.activity = 1.0E-6 * PhysicalUnits::curie;
+    
     src_definitions.push_back( srcdef );
   }//for( const SandiaDecay::Nuclide *nuc : nuclides )
     

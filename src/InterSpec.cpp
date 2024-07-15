@@ -7637,7 +7637,7 @@ void InterSpec::toggleToolTip( const bool showToolTips )
   //update all existing qtips
   if( showToolTips )
   {
-    wApp->doJavaScript( "$('.qtip-rounded.canDisableTt').qtip('option', 'show.event', 'mouseenter focus');" );
+    wApp->doJavaScript( "$('.qtip-rounded.canDisableTt').qtip('option', 'show.event', 'mouseenter');" );
   }else
   {
     wApp->doJavaScript( "$('.qtip-rounded.canDisableTt').qtip('option', 'show.event', '');" );

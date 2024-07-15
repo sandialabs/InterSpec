@@ -30,9 +30,11 @@
 
 #include <Wt/WMenu>
 #include <Wt/WText>
+#include <Wt/WImage>
 #include <Wt/WLabel>
 #include <Wt/WTable>
 #include <Wt/WSpinBox>
+#include <Wt/WCheckBox>
 #include <Wt/WMenuItem>
 #include <Wt/WLineEdit>
 #include <Wt/WComboBox>
@@ -211,6 +213,8 @@ DetectionLimitSimple::DetectionLimitSimple( MaterialDB *materialDB,
   m_fwhmSuggestTxt( nullptr ),
   m_addFwhmBtn( nullptr ),
   m_selectDetectorBtn( nullptr ),
+  m_isBackgroundDiv( nullptr ),
+  m_isBackgroundSpectrum( nullptr ),
   m_continuumPriorLabel( nullptr ),
   m_continuumPrior( nullptr ),
   m_continuumTypeLabel( nullptr ),
@@ -384,18 +388,20 @@ void DetectionLimitSimple::init()
     
     switch( cl )
     {
-      case ConfidenceLevel::OneSigma:   txt = "68%";     break;
-      case ConfidenceLevel::TwoSigma:   txt = "95%";     break;
-      case ConfidenceLevel::ThreeSigma: txt = "99%";     break;
-      case ConfidenceLevel::FourSigma:  txt = "4-sigma"; break;
-      case ConfidenceLevel::FiveSigma:  txt = "5-sigma"; break;
-      case ConfidenceLevel::NumConfidenceLevel:          break;
+      case ConfidenceLevel::NinetyFivePercent:  txt = "95%";        break;
+      case ConfidenceLevel::NinetyNinePercent:  txt = "99%";        break;
+      case ConfidenceLevel::OneSigma:           txt = "1σ (68.2%)"; break;
+      case ConfidenceLevel::TwoSigma:           txt = "2σ (95.4%)"; break;
+      case ConfidenceLevel::ThreeSigma:         txt = "3σ (99.7%)"; break;
+      case ConfidenceLevel::FourSigma:          txt = "4σ";         break; //1-6.3E-5
+      case ConfidenceLevel::FiveSigma:          txt = "5σ";         break; //1-5.7E-7
+      case ConfidenceLevel::NumConfidenceLevel: assert( 0 );        break;
     }//switch( cl )
     
     m_confidenceLevel->addItem( txt );
   }//for( loop over confidence levels )
   
-  m_confidenceLevel->setCurrentIndex( ConfidenceLevel::TwoSigma );
+  m_confidenceLevel->setCurrentIndex( ConfidenceLevel::NinetyFivePercent );
   m_confidenceLevel->activated().connect(this, &DetectionLimitSimple::handleConfidenceLevelChanged );
   
   
@@ -464,7 +470,24 @@ void DetectionLimitSimple::init()
   m_addFwhmBtn->setHidden( !drf || !drf->isValid() || drf->hasResolutionInfo() );
   m_selectDetectorBtn->setHidden( drf && drf->isValid() );
   
-  m_continuumPriorLabel = new WLabel( WString::tr("dls-deon-cont-norm-label"), generalInput );
+  m_isBackgroundDiv = new WContainerWidget( generalInput );
+  m_isBackgroundDiv->addStyleClass( "BackCbDiv GridFirstCol GridSeventhRow GridVertCenter GridSpanTwoCol" );
+  m_isBackgroundSpectrum = new WCheckBox( WString::tr("dls-is-background-spectrum-cb"), m_isBackgroundDiv );
+  m_isBackgroundSpectrum->checked().connect( this, &DetectionLimitSimple::handleNoSignalPresentChanged );
+  m_isBackgroundSpectrum->unChecked().connect( this, &DetectionLimitSimple::handleNoSignalPresentChanged );
+  
+  {
+    m_isBackgroundSpectrum->setWordWrap( false );
+    WImage *img = new WImage( m_isBackgroundDiv );
+    img->setImageLink(Wt::WLink("InterSpec_resources/images/help_minimal.svg") );
+    img->resize( 16, 16 );  //setStyleClass("Wt-icon");
+    img->decorationStyle().setCursor( Wt::Cursor::WhatsThisCursor );
+    WString tt = WString::tr("dls-is-background-spectrum-tt");
+    HelpSystem::attachToolTipOn( img, tt, true, HelpSystem::ToolTipPosition::Right,
+                                HelpSystem::ToolTipPrefOverride::InstantAlways );
+  }
+  
+  m_continuumPriorLabel = new WLabel( WString::tr("dls-decon-cont-norm-label"), generalInput );
   m_continuumPriorLabel->addStyleClass( "GridFirstCol GridSeventhRow GridVertCenter" );
   m_continuumPrior = new WComboBox( generalInput );
   m_continuumPrior->addItem( WString::tr("dls-cont-norm-unknown") );
@@ -474,8 +497,10 @@ void DetectionLimitSimple::init()
   m_continuumPrior->activated().connect( this, &DetectionLimitSimple::handleDeconPriorChange );
   m_continuumPrior->addStyleClass( "ContTypeCombo GridSecondCol GridSeventhRow" );
   
-  m_continuumPriorLabel->setHiddenKeepsGeometry( true );
-  m_continuumPrior->setHiddenKeepsGeometry( true );
+  //m_continuumPriorLabel->setHiddenKeepsGeometry( true );
+  //m_continuumPrior->setHiddenKeepsGeometry( true );
+  m_continuumPriorLabel->hide();
+  m_continuumPrior->hide();
   
   m_continuumTypeLabel = new WLabel( "Continuum Type:", generalInput );
   m_continuumTypeLabel->addStyleClass( "GridFourthCol GridSeventhRow GridVertCenter" );
@@ -485,11 +510,8 @@ void DetectionLimitSimple::init()
   m_continuumType->setCurrentIndex( 0 );
   m_continuumType->activated().connect( this, &DetectionLimitSimple::handleDeconContinuumTypeChange );
   m_continuumType->addStyleClass( "GridFifthCol GridSeventhRow" );
-  
-  m_continuumPriorLabel->hide();
-  m_continuumPrior->hide();
-  m_continuumTypeLabel->hide();
-  m_continuumType->hide();
+  m_continuumTypeLabel->setHidden( true );
+  m_continuumType->setHidden( true );
   
   WContainerWidget *container = new WContainerWidget( generalInput );
   container->addStyleClass( "MethodSelect GridFirstCol GridEighthRow GridSpanFiveCol" );
@@ -720,11 +742,30 @@ void DetectionLimitSimple::handleDeconPriorChange()
   m_numSideChannelLabel->setHidden( !currieMethod && !useSideChan );
   m_numSideChannel->setHidden( !currieMethod && !useSideChan );
   
+  m_continuumTypeLabel->setHidden( useSideChan );
+  m_continuumType->setHidden( useSideChan );
+  
   m_renderFlags |= DetectionLimitSimple::RenderActions::UpdateLimit;
   m_renderFlags |= DetectionLimitSimple::RenderActions::AddUndoRedoStep;
   m_renderFlags |= DetectionLimitSimple::RenderActions::UpdateSpectrumDecorations;
   scheduleRender();
 }//void handleDeconPriorChange()
+
+
+void DetectionLimitSimple::handleNoSignalPresentChanged()
+{
+  const bool noSignal = m_isBackgroundSpectrum->isChecked();
+  const bool currieMethod = (m_methodGroup->checkedId() == static_cast<int>(MethodIds::Currie));
+  assert( currieMethod );
+  
+  m_numSideChannelLabel->setHidden( !currieMethod || noSignal );
+  m_numSideChannel->setHidden( !currieMethod || noSignal );
+  
+  m_renderFlags |= DetectionLimitSimple::RenderActions::UpdateLimit;
+  m_renderFlags |= DetectionLimitSimple::RenderActions::AddUndoRedoStep;
+  m_renderFlags |= DetectionLimitSimple::RenderActions::UpdateSpectrumDecorations;
+  scheduleRender();
+}//void handleNoSignalPresentChanged()
 
 
 void DetectionLimitSimple::handleDeconContinuumTypeChange()
@@ -745,17 +786,26 @@ void DetectionLimitSimple::handleMethodChanged()
 {
   const bool currieMethod = (m_methodGroup->checkedId() == static_cast<int>(MethodIds::Currie));
   
-  m_numSideChannelLabel->setHidden( !currieMethod );
-  m_numSideChannel->setHidden( !currieMethod );
-  
-  const bool useSideChan = (m_continuumPrior->currentIndex() == 2);
-  m_numSideChannelLabel->setHidden( !currieMethod && !useSideChan );
-  m_numSideChannel->setHidden( !currieMethod && !useSideChan );
-  
+  m_isBackgroundDiv->setHidden( !currieMethod );
   m_continuumPriorLabel->setHidden( currieMethod );
   m_continuumPrior->setHidden( currieMethod );
-  m_continuumTypeLabel->setHidden( currieMethod );
-  m_continuumType->setHidden( currieMethod );
+  
+  if( currieMethod )
+  {
+    const bool noSignal = m_isBackgroundSpectrum->isChecked();
+    m_numSideChannelLabel->setHidden( noSignal );
+    m_numSideChannel->setHidden( noSignal );
+    
+    m_continuumTypeLabel->setHidden( true );
+    m_continuumType->setHidden( true );
+  }else
+  {
+    const bool useSideChan = (m_continuumPrior->currentIndex() == 2);
+    m_numSideChannelLabel->setHidden( !useSideChan );
+    m_numSideChannel->setHidden( !useSideChan );
+    m_continuumTypeLabel->setHidden( useSideChan );
+    m_continuumType->setHidden( useSideChan );
+  }//if( currieMethod ) / else
   
   m_methodDescription->setText( WString::tr(currieMethod ? "dls-currie-desc" : "dls-decon-desc") );
   
@@ -1156,6 +1206,9 @@ void DetectionLimitSimple::updateSpectrumDecorationsAndResultText()
   })();
   
   const bool currieMethod = (m_methodGroup->checkedId() == static_cast<int>(MethodIds::Currie));
+  
+  assert( m_isBackgroundDiv->isVisible() == currieMethod );
+  
   if( currieMethod )
   {
     // Currie method limit
@@ -1273,8 +1326,17 @@ void DetectionLimitSimple::updateSpectrumDecorationsAndResultText()
       const bool use_curie = use_curie_units();
       const DetectorPeakResponse::EffGeometryType det_geom = drf ? drf->geometryType() : DetectorPeakResponse::EffGeometryType::FarField;
       
+      assert( (result->input.num_lower_side_channels != 0)
+             || (result->input.num_upper_side_channels != 0)
+             || (result->input.num_lower_side_channels == result->input.num_upper_side_channels) );
+      
+      const bool assertedIsBackground = ((result->input.num_lower_side_channels == 0) 
+                                          && (result->input.num_upper_side_channels == 0));
+      
       if( result->source_counts > result->decision_threshold )
       {
+        assert( !assertedIsBackground );
+        
         // There is enough excess counts that we would reliably detect this activity, so we will
         //  give the activity range.
         string lowerstr, upperstr, nomstr;
@@ -1303,6 +1365,7 @@ void DetectionLimitSimple::updateSpectrumDecorationsAndResultText()
         }
       }else if( result->upper_limit < 0 )
       {
+        assert( !assertedIsBackground );
         // This can happen when there are a lot fewer counts in the peak region than predicted
         //  from the sides - since this is non-sensical, we'll just say zero.
         const string unitstr = use_curie ? "Ci" : "Bq";
@@ -1331,8 +1394,16 @@ void DetectionLimitSimple::updateSpectrumDecorationsAndResultText()
         result_txt = WString::tr("dls-det-upper-bound").arg(mdastr).arg(cl_str);
       }//if( detected ) / else if( ....)
       
-      WString full_result_txt( "{1}<br/>{2}" );
-      full_result_txt.arg(result_txt);
+      WString full_result_txt;
+      
+      if( assertedIsBackground )
+      {
+        full_result_txt = WString( "{1}" );
+      }else
+      {
+        full_result_txt = WString( "{1}<br/>{2}" );
+        full_result_txt.arg(result_txt);
+      }//if( assertedIsBackground ) / else
       
       if( gammas_per_bq > 0.0 )
       {
@@ -1495,12 +1566,14 @@ double DetectionLimitSimple::currentConfidenceLevel() const
   
   switch( confidence )
   {
-    case OneSigma:   confidenceLevel = 0.682689492137086; break;
-    case TwoSigma:   confidenceLevel = 0.954499736103642; break;
-    case ThreeSigma: confidenceLevel = 0.997300203936740; break;
-    case FourSigma:  confidenceLevel = 0.999936657516334; break;
-    case FiveSigma:  confidenceLevel = 0.999999426696856; break;
-    case NumConfidenceLevel: assert(0); break;
+    case ConfidenceLevel::NinetyFivePercent:  confidenceLevel = 0.95;     break;
+    case ConfidenceLevel::NinetyNinePercent:  confidenceLevel = 0.99;     break;
+    case ConfidenceLevel::OneSigma:           confidenceLevel = 0.682689492137086; break;
+    case ConfidenceLevel::TwoSigma:           confidenceLevel = 0.954499736103642; break;
+    case ConfidenceLevel::ThreeSigma:         confidenceLevel = 0.997300203936740; break;
+    case ConfidenceLevel::FourSigma:          confidenceLevel = 0.999936657516334; break;
+    case ConfidenceLevel::FiveSigma:          confidenceLevel = 0.999999426696856; break;
+    case ConfidenceLevel::NumConfidenceLevel: assert(0); break;
   }//switch( confidence )
   
   return confidenceLevel;
@@ -1938,6 +2011,8 @@ void DetectionLimitSimple::updateResult()
     if( !hist || (hist->num_gamma_channels() < 7) )
       throw runtime_error( "No foreground spectrum loaded." );
     
+    const bool currieMethod = (m_methodGroup->checkedId() == static_cast<int>(MethodIds::Currie));
+    
     const float roi_lower_energy = m_lowerRoi->value();
     const float roi_upper_energy = m_upperRoi->value();
     
@@ -1962,6 +2037,12 @@ void DetectionLimitSimple::updateResult()
     currie_input->roi_upper_energy = m_upperRoi->value();
     currie_input->num_lower_side_channels = static_cast<size_t>( m_numSideChannel->value() );
     currie_input->num_upper_side_channels = currie_input->num_lower_side_channels;
+    if( currieMethod && m_isBackgroundSpectrum->isChecked() )
+    {
+      currie_input->num_lower_side_channels = 0;
+      currie_input->num_upper_side_channels = 0;
+    }
+    
     currie_input->detection_probability = confidenceLevel;
     currie_input->additional_uncertainty = 0.0f;  // TODO: can we get the DRFs contribution to form this?
     
@@ -1972,7 +2053,6 @@ void DetectionLimitSimple::updateResult()
     
     // Calculating the deconvolution-style limit is fairly CPU intensive, so we will only computer
     //  it when its what the user actually wants.
-    const bool currieMethod = (m_methodGroup->checkedId() == static_cast<int>(MethodIds::Currie));
     if( !currieMethod )
     {
       const float live_time = m_currentCurrieInput->spectrum->live_time();
@@ -2033,7 +2113,6 @@ void DetectionLimitSimple::updateResult()
           throw std::logic_error( "Invalid continuuuum type selected" );
       }//switch( continuumTypeIndex )
       
-      
       const int continuumPriorIndex = m_continuumPrior->currentIndex();
       switch( continuumPriorIndex )
       {
@@ -2046,6 +2125,7 @@ void DetectionLimitSimple::updateResult()
           break;
           
         case 2: // "Cont. from sides"
+          roiInfo.continuum_type = PeakContinuum::OffsetType::Linear;
           roiInfo.cont_norm_method = DetectionLimitCalc::DeconContinuumNorm::FixedByEdges;
           break;
           
@@ -2053,6 +2133,11 @@ void DetectionLimitSimple::updateResult()
           assert( 0 );
           throw std::logic_error( "Invalid continuuuum prior selected" );
       }//switch( continuumPriorIndex )
+      
+      //if( assertNoSignal )
+      //  roiInfo.cont_norm_method = DetectionLimitCalc::DeconContinuumNorm::FixedByFullRange; // "Not Present"
+      //else
+      //  roiInfo.cont_norm_method = DetectionLimitCalc::DeconContinuumNorm::Floating; // "Unknown or Present"
       
       if( roiInfo.cont_norm_method == DetectionLimitCalc::DeconContinuumNorm::FixedByEdges )
       {
@@ -2178,6 +2263,13 @@ void DetectionLimitSimple::updateResult()
           const double simple_mda = currie_result.upper_limit / gammas_per_bq;
           min_act = 0.0;
           max_act = diff_multiple*simple_mda;
+          
+          //if( assertNoSignal )
+          //{
+          //  assert( currie_result.source_counts == 0.0f );
+          //  const double niave_max = currie_result.peak_region_counts_sum / gammas_per_bq;
+          //  max_act = diff_multiple * std::max( simple_mda, niave_max );
+          //}
         }//if( detected signal ) / else / else
       }// end estimate range we should search for deconvolution
       
@@ -2243,6 +2335,8 @@ void DetectionLimitSimple::handleAppUrl( std::string uri )
     m_methodGroup->setCheckedButton( m_methodGroup->button(static_cast<int>(methodIndex)) );
     handleMethodChanged();
   }//if( m_methodGroup->checkedId() != static_cast<int>(methodIndex) )
+  
+  const bool currieMethod = (m_methodGroup->checkedId() == static_cast<int>(MethodIds::Currie));
   
   auto qpos = values.find( "VER" );
   
@@ -2368,43 +2462,63 @@ void DetectionLimitSimple::handleAppUrl( std::string uri )
   if( qpos != end(values) )
   {
     int nsigma;
-    if( (stringstream(qpos->second) >> nsigma) && (nsigma >= 1) && (nsigma <= 5) )
+    if( (stringstream(qpos->second) >> nsigma) )
     {
-      m_confidenceLevel->setCurrentIndex( nsigma - 1 );
+      ConfidenceLevel cl = ConfidenceLevel::NinetyFivePercent;
+      
+      switch( nsigma )
+      {
+        case 1:  cl = ConfidenceLevel::OneSigma;          break;
+        case 2:  cl = ConfidenceLevel::TwoSigma;          break;
+        case 3:  cl = ConfidenceLevel::ThreeSigma;        break;
+        case 4:  cl = ConfidenceLevel::FourSigma;         break;
+        case 5:  cl = ConfidenceLevel::FiveSigma;         break;
+        case 95: cl = ConfidenceLevel::NinetyFivePercent; break;
+        case 99: cl = ConfidenceLevel::NinetyNinePercent; break;
+        default:
+          cerr << "Invalid URI CL, '" << qpos->second << "' to a valid CL." << endl;
+          break;
+      }//switch( nsigma )
+      
+      m_confidenceLevel->setCurrentIndex( static_cast<int>(cl) );
     }else
     {
-      cerr << "Failed to convert URI CL, '" << qpos->second << "' to a to an int between 1 and 5" << endl;
+      cerr << "Failed to convert URI CL, '" << qpos->second << "' to a to an integer." << endl;
     }
   }//if( URI has CL )
-
-  int continuumNormIndex = -1;
-  qpos = values.find( "CONTNORM" );
-  if( qpos != end(values) )
-  {
-    if( SpecUtils::istarts_with(qpos->second, "UNKN") )
-      continuumNormIndex = 0;
-    else if( SpecUtils::istarts_with(qpos->second, "NOS") )
-      continuumNormIndex = 1;
-    else if( SpecUtils::istarts_with(qpos->second, "FIX") )
-      continuumNormIndex = 2;
-    else
-      cerr << "Unexpected 'CONTNORM' value: '" << qpos->second << "'" << endl;
-  }//if( URI had continuum norm value )
-    
   
-  if( (m_methodGroup->checkedId() == static_cast<int>(MethodIds::Currie))
-     || (continuumNormIndex >= 0) )
+  if( currieMethod )
   {
+    bool noSignal = false;
+    qpos = values.find( "ISBACK" );
+    if( qpos != end(values) )
+    {
+      if( (qpos->second == "0") || SpecUtils::iequals_ascii(qpos->second, "NO") || SpecUtils::iequals_ascii(qpos->second, "FALSE") )
+        noSignal = false;
+      else if( (qpos->second == "1") || SpecUtils::iequals_ascii(qpos->second, "YES") || SpecUtils::iequals_ascii(qpos->second, "TRUE") )
+        noSignal = true;
+      else
+        cerr << "Unexpected 'ISBACK' value: '" << qpos->second << "' (non-bool)" << endl;
+    }//if( URI had is background value )
+    
+    m_isBackgroundSpectrum->setChecked( noSignal );
+    m_numSideChannelLabel->setHidden( noSignal );
+    m_numSideChannel->setHidden( noSignal );
+    
     qpos = values.find( "NSIDE" );
     if( qpos != end(values) )
     {
+      // In principle we shouldnt have the NSIDE argument if the "is background" checkbox is checked
+      //  but whatever.
+      assert( !noSignal );
+      
       int nside;
       if( (stringstream(qpos->second) >> nside) && (nside >= 1) && (nside <= 64) )
         m_numSideChannel->setValue( nside );
       else
         cerr << "Invalid 'NSIDE' value: '" << qpos->second << "'" << endl;
     }//if( URI has NSIDE )
-  }//if( want value of number of side channels )
+  }//if( currieMethod )
   
   bool setFwhm = false;
   qpos = values.find( "FWHM" );
@@ -2427,10 +2541,32 @@ void DetectionLimitSimple::handleAppUrl( std::string uri )
     handleUserChangedFwhm();
   }
   
-  if( m_methodGroup->checkedId() == static_cast<int>(MethodIds::Deconvolution) )
+  if( !currieMethod )
   {
-    if( continuumNormIndex >= 0 )
-      m_continuumPrior->setCurrentIndex( continuumNormIndex );
+    qpos = values.find( "CONTNORM" );
+    if( qpos != end(values) )
+    {
+      int priorTypeIndex = -1;
+      if( SpecUtils::istarts_with(qpos->second, "UNK") )
+        priorTypeIndex = 0;
+      else if( SpecUtils::istarts_with(qpos->second, "NOS") )
+        priorTypeIndex = 1;
+      else if( SpecUtils::istarts_with(qpos->second, "FIX") )
+        priorTypeIndex = 2;
+      else
+        cerr << "Invalid 'CONTNORM' value: '" << qpos->second << "'" << endl;
+      
+      if( priorTypeIndex >= 0 )
+      {
+        m_continuumPrior->setCurrentIndex( priorTypeIndex );
+        
+        m_numSideChannelLabel->setHidden( priorTypeIndex != 2 );
+        m_numSideChannel->setHidden( priorTypeIndex != 2 );
+        
+        m_continuumTypeLabel->setHidden( priorTypeIndex == 2 );
+        m_continuumType->setHidden( priorTypeIndex == 2 );
+      }//if( prior type provided )
+    }//if( continuum prior provided )
     
     
     qpos = values.find( "CONTTYPE" );
@@ -2536,18 +2672,19 @@ std::string DetectionLimitSimple::encodeStateToUrl() const
   
   switch( confidence )
   {
-    case OneSigma:   answer += "1"; break;
-    case TwoSigma:   answer += "2"; break;
-    case ThreeSigma: answer += "3"; break;
-    case FourSigma:  answer += "4"; break;
-    case FiveSigma:  answer += "5"; break;
-    case NumConfidenceLevel: assert(0); break;
+    case ConfidenceLevel::NinetyFivePercent:  answer += "95"; break;
+    case ConfidenceLevel::NinetyNinePercent:  answer += "99"; break;
+    case ConfidenceLevel::OneSigma:           answer += "1";  break;
+    case ConfidenceLevel::TwoSigma:           answer += "2";  break;
+    case ConfidenceLevel::ThreeSigma: 	      answer += "3";  break;
+    case ConfidenceLevel::FourSigma:          answer += "4";  break;
+    case ConfidenceLevel::FiveSigma:          answer += "5";  break;
+    case ConfidenceLevel::NumConfidenceLevel: assert(0);      break;
   }//switch( confidence )
   
   const bool useSideChan = (m_continuumPrior->currentIndex() == 2);
-  if( currieMethod || useSideChan )
+  if( (currieMethod && !m_isBackgroundSpectrum->isChecked()) || useSideChan )
     answer += "&NSIDE=" + std::to_string(m_numSideChannel->value());
-  
   
   shared_ptr<const DetectorPeakResponse> drf = m_detectorDisplay->detector();
   if( drf && (!drf->isValid() || !drf->hasResolutionInfo()) )
@@ -2558,7 +2695,11 @@ std::string DetectionLimitSimple::encodeStateToUrl() const
   if( !drf || (fabs(m_fwhm->value() - drf->peakResolutionFWHM(energy)) > 0.1) )
     answer += "&FWHM=" + m_fwhm->valueText().toUTF8();
   
-  if( !currieMethod )
+  if( currieMethod )
+  {
+    const bool noSignal = m_isBackgroundSpectrum->isChecked();
+    answer += "&ISBACK=" + string(noSignal ? "1" : "0");
+  }else
   {
     answer += "&CONTNORM=";
     switch( m_continuumPrior->currentIndex() )
@@ -2572,18 +2713,19 @@ std::string DetectionLimitSimple::encodeStateToUrl() const
         throw logic_error( "Invalid m_continuumPrior" );
     }//switch( m_continuumPrior->currentIndex() )
     
-    answer += "&CONTTYPE=";
-    
-    const int continuumTypeIndex = m_continuumType->currentIndex();
-    switch( continuumTypeIndex )
+    if( m_continuumPrior->currentIndex() != 2 )
     {
-      case 0: answer += "LIN"; break;
-      case 1: answer += "QUAD"; break;
-      default:
-        assert( 0 );
-        throw std::logic_error( "Invalid continuuuum type selected" );
-    }//switch( continuumTypeIndex )
-  }//if( !currieMethod )
+      answer += "&CONTTYPE=";
+      switch( m_continuumType->currentIndex() )
+      {
+        case 0: answer += "LIN"; break;
+        case 1: answer += "QUAD"; break;
+        default:
+          assert( 0 );
+          throw std::logic_error( "Invalid continuum type selected" );
+      }//switch( continuumTypeIndex )
+    }//if( m_continuumPrior->currentIndex() != 2 )
+  }//if( currieMethod ) / else
   
   if( !m_allGammasInRoi )
     answer += "&ALLGAMMA=0";

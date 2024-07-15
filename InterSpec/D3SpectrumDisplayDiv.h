@@ -476,6 +476,7 @@ protected:
   std::unique_ptr<Wt::JSignal<> > m_legendClosedJS;
   
   std::unique_ptr<Wt::JSignal<bool> > m_sliderDisplayed;
+  std::unique_ptr<Wt::JSignal<std::string> > m_yAxisTypeChanged;
   
   // Wt Signals
   //for all the bellow, the doubles are all the <x,y> coordinated of the action
@@ -534,6 +535,9 @@ protected:
   
   /** Called when user shows or closes the slider chart, by using the SVG buttons */
   void sliderChartDisplayedCallback( const bool madeVisisble );
+  
+  /** Called when the user double-clicks on y-axis title, which toggles between linear and log y-axis */
+  void yAxisTypeChangedCallback( const std::string &type );
   
   /** The javascript variable name used to refer to the SpecrtumChartD3 object.
       Currently is `jsRef() + ".chart"`.

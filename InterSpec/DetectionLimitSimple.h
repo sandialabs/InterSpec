@@ -43,6 +43,7 @@ namespace Wt
 {
   class WMenu;
   class WText;
+  class WCheckBox;
   class WComboBox;
   class WLineEdit;
   class WTabWidget;
@@ -168,6 +169,7 @@ protected:
   void handleUserChangedFwhm();
   
   void handleDeconPriorChange();
+  void handleNoSignalPresentChanged();
   void handleDeconContinuumTypeChange();
   
   void updateSpectrumDecorationsAndResultText();
@@ -227,7 +229,18 @@ protected:
   
   Wt::WLineEdit *m_distance;
   
-  enum ConfidenceLevel { OneSigma, TwoSigma, ThreeSigma, FourSigma, FiveSigma, NumConfidenceLevel };
+  enum ConfidenceLevel 
+  {
+    NinetyFivePercent, //0.95
+    NinetyNinePercent, //0.99
+    OneSigma,          //0.682689492137086
+    TwoSigma,          //0.954499736103642
+    ThreeSigma,        //0.997300203936740
+    FourSigma,         //0.999936657516334
+    FiveSigma,         //0.999999426696856
+    NumConfidenceLevel
+  };//enum ConfidenceLevel
+  
   Wt::WComboBox *m_confidenceLevel;
   
   DetectorDisplay *m_detectorDisplay;
@@ -254,6 +267,8 @@ protected:
   Wt::WPushButton *m_addFwhmBtn;
   Wt::WPushButton *m_selectDetectorBtn;
   
+  WContainerWidget *m_isBackgroundDiv;
+  Wt::WCheckBox *m_isBackgroundSpectrum;
   Wt::WLabel *m_continuumPriorLabel;
   Wt::WComboBox *m_continuumPrior;
   Wt::WLabel *m_continuumTypeLabel;

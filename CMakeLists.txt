@@ -322,7 +322,6 @@ set(sources
     src/D3SpectrumDisplayDiv.cpp
     external_libs/SpecUtils/d3_resources/SpectrumChartD3.js
     external_libs/SpecUtils/d3_resources/SpectrumChartD3.css
-    external_libs/SpecUtils/d3_resources/SpectrumChartD3StandAlone.css
     src/D3TimeChart.cpp
     src/ZipArchive.cpp
     src/MultimediaDisplay.cpp
@@ -570,10 +569,7 @@ deploy_js_resource("${CMAKE_CURRENT_SOURCE_DIR}/external_libs/SpecUtils/d3_resou
          
 )
 
-set(CSS_RESOURCES_TO_COPY
-        "SpectrumChartD3.css"
-        "SpectrumChartD3StandAlone.css"
-)
+set( CSS_RESOURCES_TO_COPY "SpectrumChartD3.css" )
     
 foreach(_file ${CSS_RESOURCES_TO_COPY})
   deploy_css_resource("${CMAKE_CURRENT_SOURCE_DIR}/external_libs/SpecUtils/d3_resources/${_file}"

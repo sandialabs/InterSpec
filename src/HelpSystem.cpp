@@ -771,6 +771,7 @@ namespace HelpSystem
     //the tooltip when they start typing.
     
     const bool overrideShow = (forceShowing == ToolTipPrefOverride::AlwaysShow);
+    const bool instantShow = (forceShowing == ToolTipPrefOverride::InstantAlways);
     
     //Create popup notifications
     Wt::WStringStream strm;
@@ -808,8 +809,9 @@ namespace HelpSystem
                         "method: 'flipinvert flipinvert', "
                         "x:5} "
                     "},"
-        "show:  {  event: '" << string(enableShowing ? "mouseenter focus" : "") << "', delay: 500 },"
-        "hide:  {  fixed: true, event: 'mouseleave focusout keypress click'  },"
+        "show:  {  event: '" << (enableShowing ? (string("mouseenter") + (overrideShow ? " focus" : "")) : string(""))
+                << "', delay: " << string(instantShow ? "0" : "500") << " },"
+        "hide:  {  fixed: true, event: 'mouseleave focusout" << string(instantShow ? "" : " keypress click") << "'  },"
         "style: { classes: 'qtip-rounded qtip-shadow" << string(overrideShow ? "" : " canDisableTt") << "',"
                   "tip: {"
                         "corner: true, "
