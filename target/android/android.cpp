@@ -274,7 +274,7 @@ else
 
   // TODO:
   JNIEnv* env = nullptr;
-  jint status = sm_jvm->AttachCurrentThread( &env, nullptr );
+  jint status = sm_jvm->AttachCurrentThread( (void **)&env, nullptr );
 
   auto exc = env->ExceptionOccurred();
   if (exc)

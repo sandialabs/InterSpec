@@ -82,6 +82,11 @@
 using namespace Wt;
 using namespace std;
 
+#if( ANDROID )
+// Defined in target/android/android.cpp
+extern void android_download_workaround( Wt::WResource *resource, std::string description );
+#endif
+
 const int RelActManualGui::sm_xmlSerializationMajorVersion = 0;
 const int RelActManualGui::sm_xmlSerializationMinorVersion = 1;
 
@@ -733,7 +738,7 @@ void RelActManualGui::init()
 #if( ANDROID )
   // Using hacked saving to temporary file in Android, instead of via network download of file.
   m_downloadHtmlReport->clicked().connect( std::bind([this](){
-    android_download_workaround( m_calpResource, "rel_eff.html");
+    android_download_workaround( m_htmlResource, "rel_eff.html");
   }) );
 #endif //ANDROID
 #endif

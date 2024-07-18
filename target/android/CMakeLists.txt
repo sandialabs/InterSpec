@@ -1,5 +1,9 @@
 cmake_minimum_required(VERSION 3.15...3.23)
  
+set( SpecUtils_JAVA_SWIG OFF CACHE INTERNAL "" )
+set( SpecUtils_USE_WT_THREADPOOL ON CACHE INTERNAL "" )
+set( SpecUtils_D3_SUPPORT_FILE_STATIC OFF CACHE INTERNAL "" )
+
 set( ANDROID_CPP_FEATURES "rtti exceptions" CACHE INTERNAL "" )
 set( ANDROID_PIE ON CACHE INTERNAL "" )
 set( ANDROID_STL "c++_static" CACHE INTERNAL "" )
@@ -20,7 +24,7 @@ set( MAX_SPECTRUM_MEMMORY_SIZE_MB 32 CACHE INTERNAL "" )
 set( USE_DB_TO_STORE_SPECTRA ON CACHE INTERNAL "" )
 set( USE_SPECRUM_FILE_QUERY_WIDGET OFF CACHE INTERNAL "" )
 # Building the RelAct tool currently fails for Android because of erroring finding Eigen (which should be fetched) - I didnt spend time trying to fix. 
-set( USE_REL_ACT_TOOL OFF CACHE INTERNAL "" )
+set( USE_REL_ACT_TOOL ON CACHE INTERNAL "" )
 set( USE_LEAFLET_MAP ON CACHE INTERNAL "" )
 
 
