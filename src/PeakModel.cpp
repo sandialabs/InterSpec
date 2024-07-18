@@ -3486,12 +3486,12 @@ void PeakModel::write_peak_csv( std::ostream &outstrm,
   outstrm <<
   "Centroid,  Net_Area,   Net_Area,      Peak, FWHM,   FWHM,Reduced, ROI_Total,ROI, "
   "File,         ,     ,     , Nuclide, Photopeak_Energy, ROI_Lower_Energy, ROI_Upper_Energy, Color, User_Label, Continuum_Type, "
-  "Skew_Type, Continuum_Coefficients, Skew_Coefficients"
+  "Skew_Type, Continuum_Coefficients, Skew_Coefficients,         "
   << eol_char
   <<
   "     keV,    Counts,Uncertainty,       CPS,  keV,Percent,Chi_Sqr,    Counts,ID#, "
   "Name, LiveTime, Date, Time,        ,              keV,              keV,              keV, (css),           ,               , "
-  "         ,                       ,                  "
+  "         ,                       ,                  , LiveTime"
   << eol_char;
   
   
@@ -3499,13 +3499,14 @@ void PeakModel::write_peak_csv( std::ostream &outstrm,
   {
     const PeakDef &peak = *peaks[peakn];
     
-    float live_time = 1.0f;
+    float live_time = 1.0f, real_time = 0.0f;
     SpecUtils::time_point_t meastime{};
     double region_area = 0.0, xlow = 0.0, xhigh = 0.0;
     
     if( data )
     {
       live_time = data->live_time();
+      real_time = data->real_time();
       meastime = data->start_time();
       findROIEnergyLimits( xlow, xhigh, peak, data );
       region_area = gamma_integral( data, xlow, xhigh );
@@ -3630,6 +3631,13 @@ void PeakModel::write_peak_csv( std::ostream &outstrm,
       live_time_str = buffer;
     }
     
+    string real_time_str;
+    if( real_time > 0.0f )
+    {
+      snprintf( buffer, sizeof(buffer), "%.3f", real_time );
+      real_time_str = buffer;
+    }
+    
     string datestr, timestr;
     if( !SpecUtils::is_special(meastime) )
     {
@@ -3748,6 +3756,7 @@ void PeakModel::write_peak_csv( std::ostream &outstrm,
     << ',' << skew_type
     << ',' << cont_coefs
     << ',' << skew_coefs
+    << ',' << real_time_str
     << eol_char;
   }//for( loop over peaks, peakn )
 }//void PeakModel::write_peak_csv(...)
