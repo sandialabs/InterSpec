@@ -35,8 +35,21 @@ set(TEST_SUITE_BASE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/test_data"
 
 add_subdirectory( ${CMAKE_CURRENT_SOURCE_DIR}/../.. ${CMAKE_CURRENT_BINARY_DIR}/LibInterSpec )
 
+include(FetchContent)
+FetchContent_Declare(
+  openGA
+  GIT_REPOSITORY git@github.com:Arash-codedev/openGA.git
+  GIT_TAG        b2f292eaccfda77363bcc8f30c001392f3b71241 # latest as of 20240718
+  GIT_SHALLOW    ON
+)
+FetchContent_MakeAvailable( openGA )
+
+
 add_executable( PeakFitImprove PeakFitImprove.cpp )
 target_link_libraries( PeakFitImprove PRIVATE InterSpecLib )
+
+# For some reason ${openGA_SOURCE_DIR} doesnt look to be set - oh well, I'll just hard code things
+target_include_directories( PeakFitImprove PUBLIC "${openGA_SOURCE_DIR}/src" "${CMAKE_CURRENT_BINARY_DIR}/_deps/openga-src/src/" )
 
 
 if( CMAKE_GENERATOR STREQUAL "Xcode" )
