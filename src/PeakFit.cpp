@@ -726,7 +726,7 @@ void SavitzyGolayCoeffs::smooth( const float *input,
   //This function assumes data is flat on either end of the input
   output.clear();
   output.resize( nSamples );
-  const int nCoeffs = static_cast<int>( coeffs.size() );
+  const int nCoeffs = static_cast<int>( coeffs.size() ); // Of size `bins_left + bins_right + 1`
   
   if( nSamples < nCoeffs || nSamples==0 )
     throw runtime_error( "SavitzyGolayCoeffs::smooth(...)\n\tInvalid input size" );
