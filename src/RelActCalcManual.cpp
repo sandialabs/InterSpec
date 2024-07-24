@@ -1429,16 +1429,28 @@ void RelEffSolution::get_mass_fraction_table( std::ostream &results_html ) const
                  " <th scope=\"col\">Nuclide</th>"
                  " <th scope=\"col\">Rel. Act.</th>"
                  " <th scope=\"col\">Mass Frac.</th>"
-                 " <th scope=\"col\">Uncert.</th>"
+                 //" <th scope=\"col\" title=\"This is percentage uncertainty - i.e., the percent error on the reported percent.\">Uncert.</th>"
+                 " <th scope=\"col\" >2&sigma; range</th>"
                  " </tr></thead>\n";
   results_html << "  <tbody>\n";
+  
+  // We will put the normalized relative activity (i.e., activity divided by largest activity) in
+  //  a tool-tip.
+  //  However - we should probably just do this for the actual display - I'm just nervous of messing something up somewhere
+  //  If we had more room, we could add a "Norm Act." column.
+  double largest_rel_act = 0.0;
+  for( const auto &act : m_rel_activities )
+    largest_rel_act = std::max( largest_rel_act, act.m_rel_activity );
+  
   for( size_t index = 0; index < m_rel_activities.size(); ++index )
   {
     const IsotopeRelativeActivity &act = m_rel_activities[index];
-    const double uncert_percent = 100.0 * act.m_rel_activity_uncert / act.m_rel_activity;
+    const double uncert_percent = 100.0 * act.m_rel_activity_uncert / act.m_rel_activity;  //"percentage uncertainty"
     
     results_html << "  <tr><td>" << act.m_isotope << "</td>"
-    << "<td>" << SpecUtils::printCompact( act.m_rel_activity, nsigfig ) << "</td>";
+    << "<td title=\"The normalized relative activity (i.e., divided by largest rel. act.) is "
+    << SpecUtils::printCompact( act.m_rel_activity / largest_rel_act, nsigfig + 1)
+    << "\">" << SpecUtils::printCompact( act.m_rel_activity, nsigfig ) << "</td>";
     
     try
     {
@@ -1449,7 +1461,40 @@ void RelEffSolution::get_mass_fraction_table( std::ostream &results_html ) const
       results_html << "<td>N.A.</td>";
     }
     
-    results_html << "<td>" << SpecUtils::printCompact(uncert_percent, nsigfig-1)       << "%</td>"
+    string error_tt;
+    try
+    {
+      const double frac_mass = mass_fraction(act.m_isotope);
+      
+      error_tt = "The 1-sigma mass fraction uncertainty is "
+      + SpecUtils::printCompact(uncert_percent*frac_mass, nsigfig+1)
+      + "%, which gives a 1-sigma mass fraction range of "
+      + SpecUtils::printCompact((100.0 - uncert_percent)*frac_mass, nsigfig+1)
+      + "% to "
+      + SpecUtils::printCompact((100.0 + uncert_percent)*frac_mass, nsigfig+1)
+      + "%. \nThe 1-sigma percentage uncertainty (i.e., the percent of the percent value) is "
+      + SpecUtils::printCompact(uncert_percent, nsigfig+1)
+      + "%";
+    }catch( std::exception & )
+    {
+      
+    }
+    
+    results_html << "<td title=\"" << error_tt << "\">" ;
+    //<< SpecUtils::printCompact(uncert_percent, nsigfig-1)
+    try
+    {
+      const double frac_mass = mass_fraction(act.m_isotope);
+      results_html << SpecUtils::printCompact((100.0 - 2*uncert_percent)*frac_mass, nsigfig-1)
+      << "%, "
+      << SpecUtils::printCompact((100.0 + 2*uncert_percent)*frac_mass, nsigfig-1)
+      << "%";
+    }catch( std::exception & )
+    {
+      
+    }
+    
+    results_html << "</td>"
     << "</tr>\n";
   }
   results_html << "  </tbody>\n"

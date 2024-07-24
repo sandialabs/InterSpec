@@ -1680,6 +1680,8 @@ void PeakContinuum::toXml( rapidxml::xml_node<char> *parent, const int contId ) 
   node = doc->allocate_node( node_element, "Type", type );
   cont_node->append_node( node );
   
+  // Note: it could be energy range is not defined, in which case we could just
+  //       not write "LowerEnergy" and "UpperEnergy"
   snprintf( buffer, sizeof(buffer), "%1.8e", m_lowerEnergy );
   val = doc->allocate_string( buffer );
   node = doc->allocate_node( node_element, "LowerEnergy", val );
@@ -1803,19 +1805,38 @@ void PeakContinuum::fromXml( const rapidxml::xml_node<char> *cont_node, int &con
   
   float dummyval;
   node = cont_node->first_node( "LowerEnergy", 11 );
-  if( !node || !node->value() || (sscanf(node->value(),"%e",&dummyval) != 1) )
-    throw runtime_error( "Continuum didnt have LowerEnergy" );
-  m_lowerEnergy = dummyval;
+  if( node )
+  {
+    if( !node->value() || (sscanf(node->value(),"%e",&dummyval) != 1) )
+      throw runtime_error( "Continuum didnt have valid LowerEnergy" );
     
-  node = cont_node->first_node( "UpperEnergy", 11 );
-  if( !node || !node->value() || (sscanf(node->value(),"%e",&dummyval) != 1) )
-    throw runtime_error( "Continuum didnt have UpperEnergy" );
-  m_upperEnergy = dummyval;
+    m_lowerEnergy = dummyval;
+    
+    node = cont_node->first_node( "UpperEnergy", 11 );
+    if( !node || !node->value() || (sscanf(node->value(),"%e",&dummyval) != 1) )
+      throw runtime_error( "Continuum didnt have UpperEnergy" );
+    m_upperEnergy = dummyval;
+  }else
+  {
+    m_lowerEnergy = m_upperEnergy = 0.0;
+    node = cont_node->first_node( "UpperEnergy", 11 );
+    if( node )
+      throw runtime_error( "Continuum didnt have LowerEnergy, but did have UpperEnergy" );
+  }//if( have <LowerEnergy> ) / else
+  
   
   node = cont_node->first_node( "ReferenceEnergy", 15 );
-  if( !node || !node->value() || (sscanf(node->value(),"%e",&dummyval) != 1) )
-    throw runtime_error( "Continuum didnt have ReferenceEnergy" );
-  m_referenceEnergy = dummyval;
+  if( node )
+  {
+    if( !node->value() || (sscanf(node->value(),"%e",&dummyval) != 1) )
+      throw runtime_error( "Continuum didnt have ReferenceEnergy" );
+    m_referenceEnergy = dummyval;
+  }else
+  {
+    if( m_lowerEnergy != m_upperEnergy )
+      throw runtime_error( "Continuum didnt have ReferenceEnergy, but did have energy range defined" );
+    m_referenceEnergy = 0.0;
+  }//if( have <ReferenceEnergy> ) / else
   
   if( m_type != NoOffset && m_type != External )
   {
@@ -2621,8 +2642,15 @@ std::string PeakDef::gaus_peaks_to_json(const std::vector<std::shared_ptr<const 
     case PeakContinuum::BiLinearStep: answer << "BiLinearStep"; break;
     case PeakContinuum::External:     answer << "External";     break;
   }//switch( continuum->type() )
-  answer << q << "," << q << "lowerEnergy" << q << ":" << continuum->lowerEnergy()
-         << "," << q << "upperEnergy" << q << ":" << continuum->upperEnergy();
+  
+  
+  // We use the peaks defined range, and not the continuum, as the continuum may not
+  //  have the range defined (but normally should).
+  //  This next statement assumes peaks are sorted in increasing mean (but this only
+  //  matters if ROI range is not defined) - we could check this, but maybe not
+  //  worth the overhead for the edge case, that we might never encounter.
+  answer << q << "," << q << "lowerEnergy" << q << ":" << peaks.front()->lowerX()
+         << "," << q << "upperEnergy" << q << ":" << peaks.back()->upperX();
   
   
   if( foreground && foreground->channel_energies() && foreground->channel_energies()->size() > 2 )
