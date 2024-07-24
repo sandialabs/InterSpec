@@ -186,7 +186,7 @@ namespace ShieldingSourceFitCalc
     bool m_isGenericMaterial;
     
     /** A kinda vestigial variable that indicates if the user input that made this info was Shielding/Source fit tool,
-     or somewhere else where fitting the material dimesnions or AN/AD wasnt intended.
+     or somewhere else where fitting the material dimensions or AN/AD wasnt intended.
      */
     bool m_forFitting;
     

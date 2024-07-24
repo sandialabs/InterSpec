@@ -472,11 +472,19 @@ public:
   //serialize(...): saves state as a <Shielding />  node.
   void serialize( rapidxml::xml_node<char> *parent_node ) const;
   
-  //deSerialize(...): returns to the state that serialize(...) saved.
-  //  However, m_forFitting must be the same in the XML as object this function
-  //  is being called on (or else an exception is thrown).
-  //  Throws exception on invalid XML or m_forFitting mismatch
-  void deSerialize( const rapidxml::xml_node<char> *shielding_node );
+  /** Returns the widget to the state specified by the XML node
+   
+   However,  `m_forFitting` must be the same in the XML as object this function
+   is being called on (or else an exception is thrown).
+    
+   @param shielding_node The XML node saved by `serialize(...)`
+   @param is_fixed_geom_det If the current DetectorPeakResponse is for fixed geometry or not.
+          If false, then intrinsic and trace sources will not be allowed, which prevents some callback that will hit asserts.
+   
+   Throws exception on invalid XML or `m_forFitting` mismatch
+   */
+  void deSerialize( const rapidxml::xml_node<char> *shielding_node,
+                   const bool is_fixed_geom_det );
   
   /** Encodes current tool state to app-url format.  Returned string is just the query portion of URL;
    so will look something like "V=1&G=S&D1=1.2cm", and it will not be url-encoded.

@@ -3050,7 +3050,8 @@ void ReferencePhotopeakDisplay::deSerialize( std::string &xml_data  )
     {
       m_shieldingSelect->materialChanged().setBlocked( true );
       m_shieldingSelect->materialModified().setBlocked( true );
-      m_shieldingSelect->deSerialize( node );
+      const bool is_fixed_geom = false; //Shouldnt have an effect either way
+      m_shieldingSelect->deSerialize( node, is_fixed_geom );
       m_shieldingSelect->materialChanged().setBlocked( false );
       m_shieldingSelect->materialModified().setBlocked( false );
     }

@@ -1523,7 +1523,9 @@ void ShieldingSelect::setMassFraction( const SandiaDecay::Nuclide *nuc,
 {
   for( const ElementToNuclideMap::value_type &etnm : m_sourceIsotopes )
   {
-    for( WWidget *widget : etnm.second->children() )
+    const vector<WWidget *> kids = etnm.second->children();
+    
+    for( WWidget *widget : kids )
     {
       SourceCheckbox *src = dynamic_cast<SourceCheckbox *>( widget );
       if( src && (nuc == src->isotope()) )
@@ -2355,7 +2357,8 @@ void ShieldingSelect::emitRemoveSignal()
   // Remove trace sources so model will get updated
   if( m_traceSources )
   {
-    for( WWidget *w : m_traceSources->children() )
+    const vector<WWidget *> kids = m_traceSources->children();
+    for( WWidget *w : kids )
     {
       TraceSrcDisplay *src = dynamic_cast<TraceSrcDisplay *>( w );
       assert( src );
@@ -2479,7 +2482,9 @@ void ShieldingSelect::removeTraceSourceWidget( TraceSrcDisplay *toRemove )
   
   UndoRedoManager::BlockUndoRedoInserts block;
   
-  for( WWidget *w : m_traceSources->children() )
+  const vector<WWidget *> kids = m_traceSources->children();
+  
+  for( WWidget *w : kids )
   {
     TraceSrcDisplay *src = dynamic_cast<TraceSrcDisplay *>( w );
     assert( src );
@@ -2914,12 +2919,13 @@ void ShieldingSelect::setFixedGeometry( const bool fixed_geom )
     
     if( m_traceSources )
     {
-      for( WWidget *w : m_traceSources->children() )
+      const vector<WWidget *> kids = m_traceSources->children();
+      for( WWidget *w : kids )
       {
         TraceSrcDisplay *src = dynamic_cast<TraceSrcDisplay *>( w );
         if( src )
         {
-          src->deSelectNuclideNoEmit();
+          //src->deSelectNuclideNoEmit();
           removeTraceSourceWidget( src );
         }
       }
@@ -2929,7 +2935,8 @@ void ShieldingSelect::setFixedGeometry( const bool fixed_geom )
     {
       for( const ElementToNuclideMap::value_type &etnp : m_sourceIsotopes )
       {
-        for( WWidget *child : etnp.second->children() )
+        const vector<WWidget *> kids = etnp.second->children();
+        for( WWidget *child : kids )
         {
           SourceCheckbox *cb = dynamic_cast<SourceCheckbox *>( child );
           if( cb && cb->useAsSource() && cb->isotope() )
@@ -3335,12 +3342,13 @@ void ShieldingSelect::isotopeCheckedCallback( const SandiaDecay::Nuclide *nuc )
       if( other_nuc_of_el_sum > 1.0 )
       {
         this_src_cb->setMassFraction( 0.0 );
-        for( WWidget *child : pos->second->children() )
+        const vector<WWidget *> kids = pos->second->children();
+        for( WWidget *child : kids )
         {
           SourceCheckbox *cb = dynamic_cast<SourceCheckbox *>( child );
           if( cb && cb->useAsSource() && (cb->isotope() != nuc) )
             cb->setMassFraction( cb->massFraction() / other_nuc_of_el_sum );
-        }//for( WWidget *child : pos->second->children() )
+        }//for( loop over SourceCheckBox )
       }else if( (other_nuc_of_el_sum + this_src_cb->massFraction()) > 1.0 )
       {
         this_src_cb->setMassFraction( 1.0 - other_nuc_of_el_sum );
@@ -3369,7 +3377,8 @@ void ShieldingSelect::uncheckSourceIsotopeCheckBox( const SandiaDecay::Nuclide *
   
   if( m_traceSources )
   {
-    for( WWidget *w : m_traceSources->children() )
+    const vector<WWidget *> kids = m_traceSources->children();
+    for( WWidget *w : kids )
     {
       TraceSrcDisplay *src = dynamic_cast<TraceSrcDisplay *>( w );
       assert( src );
@@ -3415,7 +3424,8 @@ void ShieldingSelect::sourceRemovedFromModel( const SandiaDecay::Nuclide *nuc )
   if( m_traceSources )
   {
     vector<TraceSrcDisplay *> todel;
-    for( WWidget *w : m_traceSources->children() )
+    const vector<WWidget *> kids = m_traceSources->children();
+    for( WWidget *w : kids )
     {
       TraceSrcDisplay *src = dynamic_cast<TraceSrcDisplay *>( w );
       assert( src );
@@ -3637,7 +3647,8 @@ void ShieldingSelect::modelNuclideAdded( const SandiaDecay::Nuclide *iso )
   // Make sure no trace sources are using nuc, and if they are, remove that trace source
   if( m_traceSources )
   {
-    for( WWidget *w : m_traceSources->children() )
+    const vector<WWidget *> kids = m_traceSources->children();
+    for( WWidget *w : kids )
     {
       TraceSrcDisplay *src = dynamic_cast<TraceSrcDisplay *>( w );
       assert( src );
@@ -4192,7 +4203,8 @@ void ShieldingSelect::handleMaterialChange()
     
     if( m_traceSources )
     {
-      for( WWidget *w : m_traceSources->children() )
+      const vector<WWidget *> kids = m_traceSources->children();
+      for( WWidget *w : kids )
       {
         TraceSrcDisplay *src = dynamic_cast<TraceSrcDisplay *>( w );
         assert( src );
@@ -4990,13 +5002,27 @@ void ShieldingSelect::serialize( rapidxml::xml_node<char> *parent_node ) const
 }//void serialize( rapidxml::xml_document<> &doc ) const;
 
 
-void ShieldingSelect::deSerialize( const rapidxml::xml_node<char> *shield_node )
+void ShieldingSelect::deSerialize( const rapidxml::xml_node<char> *shield_node,
+                                  const bool is_fixed_geom_det )
 {
   ShieldingSourceFitCalc::ShieldingInfo info;
   info.deSerialize( shield_node, m_materialDB );
+  
+  // If not for fitting, we shouldnt have intrinsic or trace sources
+  assert( info.m_forFitting || info.m_traceSources.empty() );
+  assert( info.m_forFitting || info.m_nuclideFractions.empty() );
+  
+  if( is_fixed_geom_det )
+  {
+    info.m_fitMassFrac = false;
+    info.m_nuclideFractions.clear();
+    info.m_traceSources.clear();
+    info.m_geometry = GammaInteractionCalc::GeometryType::Spherical;
+  }//if( is_fixed_geom_det )
+  
   fromShieldingInfo( info );
   
-  // Reachinto the XML and set distances exactly equal to user input text
+  // Reach into the XML and set distances exactly equal to user input text
   if( !m_isGenericMaterial )
   {
     rapidxml::xml_node<char> * const material_node = XML_FIRST_NODE(shield_node, "Material");

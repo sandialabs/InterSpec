@@ -1359,6 +1359,7 @@ SpecMeasManager::SpecMeasManager( InterSpec *viewer )
     m_destructed( new bool(false) ),
     m_previousStatesDialog( nullptr ),
     m_processingUploadDialog( nullptr ),
+    m_nonSpecFileDialog( nullptr ),
     m_processingUploadTimer{}
 {
   std::unique_ptr<UndoRedoManager::BlockUndoRedoInserts> undo_blocker;
@@ -1520,6 +1521,9 @@ SpecMeasManager::~SpecMeasManager()
   std::lock_guard<std::mutex> lock( *m_destructMutex );
   
   (*m_destructed) = true;
+  
+  if( m_nonSpecFileDialog )
+    delete m_nonSpecFileDialog;
 } // SpecMeasManager::~SpecMeasManager()
 
 
@@ -1904,27 +1908,172 @@ bool SpecMeasManager::handleNonSpectrumFile( const std::string &displayName,
     return (pos != char_end);
   };//header_contains lambda
   
-  
+  // SpecMeasManager will keep track of this next dialog, so we can do undo/redo a little better
   SimpleDialog *dialog = new SimpleDialog();
+  
+  if( m_nonSpecFileDialog )
+  {
+    delete m_nonSpecFileDialog; //The `destroyed()` signal will set `m_nonSpecFileDialog` to nullptr
+    cerr << "m_nonSpecFileDialog was not nullptr" << endl;
+  }
+  assert( !m_nonSpecFileDialog );
+  
+  m_nonSpecFileDialog = dialog;
+  cout << "Assigning m_nonSpecFileDialog to " << dialog << endl;
+  
+  // The dialog may get deleted, and never accepted, so we will hook up to the
+  //  `destroyed()` signal to keep track of `m_nonSpecFileDialog`
+  m_nonSpecFileDialog->destroyed().connect( std::bind([dialog](){
+    InterSpec *interspec = InterSpec::instance();
+    SpecMeasManager *manager = interspec ? interspec->fileManager() : nullptr;
+    assert( manager );
+    if( !manager )
+      return;
+    
+    cerr << "deleting m_nonSpecFileDialog of" << manager->m_nonSpecFileDialog << endl;
+    
+    assert( !manager->m_nonSpecFileDialog || (dialog == manager->m_nonSpecFileDialog) );
+    
+    manager->m_nonSpecFileDialog = nullptr;
+  }) );
+  
   dialog->addButton( WString::tr("Close") );
   WContainerWidget *contents = dialog->contents();
   contents->addStyleClass( "NonSpecDialogBody" );
   WText *title = new WText( WString::tr("smm-not-spec-file"), contents );
   title->addStyleClass( "title" );
   
-  auto add_undo_redo = [dialog](){
+  auto add_undo_redo = [dialog, displayName, filesize, &infile, type](){
     UndoRedoManager *undoRedo = UndoRedoManager::instance();
     if( !undoRedo )
       return;
     
-    const string dialog_id = dialog->id();
-    auto closer = wApp->bind( boost::bind( &WDialog::done, dialog, Wt::WDialog::DialogCode::Accepted ) );
-    auto undo = [dialog_id,closer](){
-      wApp->doJavaScript( "$('#" + dialog_id + "').hide(); $('.Wt-dialogcover').hide();" );
-      closer();
+    auto closeDialog = [](){
+      InterSpec *interspec = InterSpec::instance();
+      SpecMeasManager *manager = interspec ? interspec->fileManager() : nullptr;
+      assert( manager );
+      if( manager )
+        manager->closeNonSpecFileDialog();
     };
     
-    undoRedo->addUndoRedoStep( std::move(undo), nullptr, "Open non-spectrum file dialog." );
+    std::function<void()> reOpenDialog;
+    
+    // If input size isnt too horrible large, we'll save it in memory and create a redo point
+    if( filesize <= 10*1024*1024 )
+    {
+      infile.clear();
+      infile.seekg(0, std::ios::beg);
+        
+      auto file_data = make_shared<vector<uint8_t>>( filesize, '\0' );
+      infile.read( (char *)(&((*file_data)[0])), static_cast<streamsize>(filesize) );
+      infile.clear();
+      infile.seekg(0, std::ios::beg);
+      
+      // If file is more than 64 kb (arbitrarily chosen), we will only keep the data in memory for
+      //  ~5 minutes
+      std::weak_ptr<vector<uint8_t>> wk_ptr = file_data;
+      if( filesize > 64*1024 )
+      {
+        shared_ptr<vector<uint8_t>> data_ptr = file_data;
+        file_data = nullptr;
+        
+        auto clear_mem = [data_ptr](){
+          cout << "Clearing memory of file: " << data_ptr.use_count() << endl;
+        };
+        
+        const int milliSeconds = 5*60*1000;
+        WServer::instance()->schedule( milliSeconds, wApp->sessionId(), clear_mem, clear_mem );
+      }//if( filesize > 64*1024 )
+      
+      const std::string dispname = displayName;
+      
+      reOpenDialog = [wk_ptr, file_data, dispname, type](){
+        
+        shared_ptr<vector<uint8_t>> data_ptr = wk_ptr.lock();
+        if( !data_ptr )
+        {
+          cout << "Was NOT able to get `file_data` - must have been cleared in memory" << endl;
+          return;
+        }else
+        {
+          // Not sure if we need to force the compiler to potentially keep `file_data` around
+          cout << "file_data.use_count=" << file_data.use_count() << endl;
+        }
+        
+        InterSpec *interspec = InterSpec::instance();
+        SpecMeasManager *manager = interspec ? interspec->fileManager() : nullptr;
+        assert( interspec && manager );
+        if( !manager )
+          return;
+        
+        const string tmpdir = SpecUtils::temp_dir();
+        const string tmpname = SpecUtils::temp_file_name( "non_spec_file", tmpdir );
+        assert( !SpecUtils::is_file(tmpname) );
+        
+        if( SpecUtils::is_file(tmpname) )
+        {
+          cerr << "Unexpectedly tmp filename is a file: '" << tmpname << "'." << endl;
+          return;
+        }
+        
+        bool wrote_tmp_file = false;
+          
+        {//begin write tmp file
+#ifdef _WIN32
+          const std::wstring wtmpfile = SpecUtils::convert_from_utf8_to_utf16(tmpname);
+          ofstream outfilestrm( wtmpfile.c_str(), ios::out | ios::binary );
+#else
+          ofstream outfilestrm( tmpname.c_str(), ios::out | ios::binary );
+#endif
+          wrote_tmp_file = (outfilestrm
+                              && outfilestrm.write( (char *)data_ptr->data(), data_ptr->size()) );
+        }//end write tmp file
+          
+        if( wrote_tmp_file )
+        {
+          try
+          {
+            manager->handleNonSpectrumFile( dispname, tmpname, type );
+          }catch( std::exception &e )
+          {
+            cerr << "Unexpected exception from `handleNonSpectrumFile(...)`" << endl;
+          }
+            
+          SpecUtils::remove_file( tmpname );
+        }else
+        {
+          cerr << "Failed to write '" << dispname << "' to temporary file." << endl;
+        }
+      };//redo lambda
+    }//if( filesize <= 256*1024 )
+    
+    if( undoRedo->canAddUndoRedoNow() )
+      undoRedo->addUndoRedoStep( closeDialog, reOpenDialog, "Open non-spectrum file dialog." );
+    
+    // Find close/cancel button
+    vector<WWidget *> btns;
+    if( dialog->footer() )
+      btns = dialog->footer()->children();
+    for( WWidget *w : btns )
+    {
+      WPushButton *btn = dynamic_cast<WPushButton *>( w );
+      if( !btn || ((btn->text().key() != "Close") && (btn->text().key() != "Cancel")) )
+      {
+        // TODO: We could add this undo/redo step for all buttons, so in the case the
+        //       user accepted the DRF, or peaks to fit, or whatever, that action should already
+        //       be hooked up to undo/redo, but right now if we hooked it up, they would have to do
+        //       undo again...  maybe when we aggregate multiple undo/redo steps into a single one
+        //       every WApplication event loop, then we can enable this.
+        continue;
+      }
+      
+      btn->clicked().connect( std::bind([=](){
+        // The `undo` call wont do anything, since it is currently bound to a now deleted dialog,
+        //  but leaving in in case we upgrade things a bit in the future to have the dialog tracked
+        //  by SpecMeasManager
+        undoRedo->addUndoRedoStep( reOpenDialog, closeDialog, "Close non-spectrum file dialog." );
+      }) );
+    }//for( WWidget *w : btns )
   };//add_undo_redo
   
   //Check if ICD2 file
@@ -2236,6 +2385,20 @@ bool SpecMeasManager::handleNonSpectrumFile( const std::string &displayName,
   
   return false;
 }//void handleNonSpectrumFile(...)
+
+
+void SpecMeasManager::closeNonSpecFileDialog()
+{
+  //assert( m_nonSpecFileDialog );
+  if( !m_nonSpecFileDialog )
+    return;
+
+  const string dialog_id = m_nonSpecFileDialog->id();
+  wApp->doJavaScript( "$('#" + dialog_id + "').hide(); $('.Wt-dialogcover').hide();" );
+  
+  m_nonSpecFileDialog->accept(); //This will delete the dialog, and cause `m_nonSpecFileDialog` to be set to nullptr
+  m_nonSpecFileDialog = nullptr;
+}//void closeNonSpecFileDialog()
 
 
 bool SpecMeasManager::handleMultipleDrfCsv( std::istream &input,
@@ -2913,6 +3076,9 @@ bool SpecMeasManager::handleEccFile( std::istream &input, SimpleDialog *dialog )
   
   far_field_opt->hide();
   
+  auto fore = InterSpec::instance()->measurment( SpecUtils::SpectrumType::Foreground );
+  shared_ptr<DetectorPeakResponse> prev = fore ? prev = fore->detector() : nullptr;
+  
   // TODO: make option to make DRF default for detector model, or serial number
   
   dialog->addButton( WString::tr("Cancel") );
@@ -3025,6 +3191,26 @@ bool SpecMeasManager::handleEccFile( std::istream &input, SimpleDialog *dialog )
     auto user = interspec->m_user;
     DrfSelect::updateLastUsedTimeOrAddToDb( new_drf, user.id(), sql );
     interspec->detectorChanged().emit( new_drf ); //This loads it to the foreground spectrum file
+    
+    UndoRedoManager *undoManager = InterSpec::instance()->undoRedoManager();
+    if( undoManager && undoManager->canAddUndoRedoNow() )
+    {
+      auto undo = [prev](){
+        InterSpec *viewer = InterSpec::instance();
+        if( viewer )
+          viewer->detectorChanged().emit( prev );
+      };
+      
+      auto redo = [new_drf](){
+        InterSpec *viewer = InterSpec::instance();
+        if( viewer )
+          viewer->detectorChanged().emit( new_drf );
+      };
+       
+      // This next undo/redo wont bring up the dialog, but it will at least get us back
+      //  to the original detector.
+      undoManager->addUndoRedoStep( undo, redo, "Change to ECC DRF" );
+    }
   }) );
     
   return true;

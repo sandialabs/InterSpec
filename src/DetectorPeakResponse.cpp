@@ -75,6 +75,9 @@ namespace
   float calcA( const size_t i,
               const std::vector<DetectorPeakResponse::EnergyEfficiencyPair> &xy )
   {
+    assert( i >= 2 );
+    assert( (i + 2) < xy.size() );
+    
     const size_t n = xy.size();
     const float x_i  = xy[i].energy;
     const float x_m1 = xy[i-1].energy;
@@ -3127,7 +3130,7 @@ float DetectorPeakResponse::akimaInterpolate( const float z,
   const float y_i = xy[i].efficiency;
   const float y_p1 = xy[i+1].efficiency;
   
-  if( n < 6 || i < 2 || (n-i) < 3  ) //We'll just use linear interpolation here
+  if( (n < 6) || (i < 2) || ((n-i) <= 3)  ) //We'll just use linear interpolation here
   {
     const float d = (z - x_i) / (x_p1 - x_i);
     return y_i + d*(y_p1 - y_i);

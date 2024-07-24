@@ -491,7 +491,7 @@ private:
   Wt::WContainerWidget *createButtonBar();
   void deleteSpectrumManager();
   Wt::WContainerWidget *createTreeViewDiv();
-
+  void closeNonSpecFileDialog();
   
 protected:
   AuxWindow *m_spectrumManagerWindow;
@@ -548,6 +548,10 @@ protected:
    */
   std::unique_ptr<boost::asio::deadline_timer> m_processingUploadTimer;
 
+  /** Dialog created when a non-spectrum file is dropped on the app. */
+  SimpleDialog *m_nonSpecFileDialog;
+  
+  
 #if( !defined(MAX_SPECTRUM_MEMMORY_SIZE_MB) ||  MAX_SPECTRUM_MEMMORY_SIZE_MB < 0 )
   static const size_t sm_maxTempCacheSize = 0;
 #else

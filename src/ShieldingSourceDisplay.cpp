@@ -514,6 +514,34 @@ void SourceFitModel::setDetectorType( const DetectorPeakResponse::EffGeometryTyp
     const WModelIndex uncert_first = index( 0, col );
     const WModelIndex uncert_second = index( static_cast<int>(m_nuclides.size()-1), col );
     dataChanged().emit(uncert_first, uncert_second);
+    
+    switch( det_type )
+    {
+      case DetectorPeakResponse::EffGeometryType::FarField:
+        break;
+        
+      case DetectorPeakResponse::EffGeometryType::FixedGeomTotalAct:
+      case DetectorPeakResponse::EffGeometryType::FixedGeomActPerCm2:
+      case DetectorPeakResponse::EffGeometryType::FixedGeomActPerM2:
+      case DetectorPeakResponse::EffGeometryType::FixedGeomActPerGram:
+      {
+        for( const ShieldingSourceFitCalc::IsoFitStruct &iso : m_nuclides )
+        {
+          switch( iso.sourceType )
+          {
+            case ShieldingSourceFitCalc::ModelSourceType::Point:
+              break;
+              
+            case ShieldingSourceFitCalc::ModelSourceType::Intrinsic:
+            case ShieldingSourceFitCalc::ModelSourceType::Trace:
+              setSourceType( iso.nuclide, ShieldingSourceFitCalc::ModelSourceType::Point );
+              break;
+          }//switch( iso.sourceType )
+        }//for( loop over m_nuclides )
+        
+        break;
+      }//case Fixed Geometry
+    }//switch( det_type )
   }//if( !m_nuclides.empty() )
 }//void setDetectorType( const int detector_EffGeometryType )
 
@@ -5474,8 +5502,8 @@ void ShieldingSourceDisplay::handleDetectorChanged( std::shared_ptr<DetectorPeak
       any_volume_src |= m_sourceModel->isVolumetricSource( nuc_num );
     
     UndoRedoManager *undoRedo = UndoRedoManager::instance();
-    if( any_volume_src && (geometry() != GeometryType::Spherical)
-       && undoRedo && !undoRedo->isInUndoOrRedo() )
+    if( undoRedo && undoRedo->canAddUndoRedoNow()
+       && (any_volume_src || (geometry() != GeometryType::Spherical)) )
     {
       state_undo_creator = make_unique<ShieldSourceChange>( this, "Change to fixed-geometry DRF" );
     }
@@ -5538,6 +5566,7 @@ void ShieldingSourceDisplay::handleDetectorChanged( std::shared_ptr<DetectorPeak
         }//if( fitting_dims )
       }//if( !select->isGenericMaterial() )
       
+      // This next call removed all intrinsic and trace sources
       select->setFixedGeometry( true );
       
       assert( select->traceSourceNuclides().empty() );
@@ -5549,6 +5578,15 @@ void ShieldingSourceDisplay::handleDetectorChanged( std::shared_ptr<DetectorPeak
         m_sourceModel->setData( index, boost::any(true), Wt::CheckStateRole );
       }
     }//for( WWidget *widget : m_shieldingSelects->children() )
+    
+    
+    const int nnuc = m_sourceModel->numNuclides();
+    for( int nucn = 0; nucn < nnuc; ++nucn )
+    {
+      const SandiaDecay::Nuclide *nuc = m_sourceModel->nuclide(nucn);
+      if( nuc )
+        m_sourceModel->setSourceType( nuc, ShieldingSourceFitCalc::ModelSourceType::Point );
+    }
   }//if( DRF is fixed geometry, but layout is for non-fixed geometry )
   
   if( !fixed_geom /* && m_distanceLabel->isHidden() */ )
@@ -6853,11 +6891,15 @@ void ShieldingSourceDisplay::deSerializeShieldings( const rapidxml::xml_node<cha
   
   const shared_ptr<const DetectorPeakResponse> det = m_detectorDisplay->detector();
   
+  // If our Detector Peak Efficiency is for fixed-geometry, we wont allow intrinsic
+  //  or trace sources
+  const bool is_fixed_geom = det && det->isFixedGeometry();
+  
   for( shield_node = shiledings->first_node( "Shielding", 9 );
       shield_node; shield_node = shield_node->next_sibling( "Shielding", 9 ) )
   {
     ShieldingSelect *select = addShielding( nullptr, false );
-    select->deSerialize( shield_node );
+    select->deSerialize( shield_node, is_fixed_geom );
     
 #if( PERFORM_DEVELOPER_CHECKS )
     for( const SandiaDecay::Nuclide *nuc : select->traceSourceNuclides() )
@@ -7758,7 +7800,10 @@ void ShieldingSourceDisplay::handleShieldingUndoRedoPoint( const ShieldingSelect
     return;
   }
   
-  auto undo_redo = [prev_state, current_state, index]( const bool is_undo ){
+  const shared_ptr<const DetectorPeakResponse> det = m_detectorDisplay->detector();
+  const bool is_fixed_geom = det && det->isFixedGeometry();
+  
+  auto undo_redo = [prev_state, current_state, index, is_fixed_geom]( const bool is_undo ){
     
     // TODO: We arent totally getting things right for trace and self-attenuating sources.
     // TODO: I think we are getting multiple undo/redo steps for a single user action for some things related to trace and self-attenuating sources.
@@ -7793,10 +7838,13 @@ void ShieldingSourceDisplay::handleShieldingUndoRedoPoint( const ShieldingSelect
       rapidxml::xml_document<char> doc;
       const int flags = rapidxml::parse_normalize_whitespace | rapidxml::parse_trim_whitespace;
       doc.parse<flags>( &(xml_state_cpy[0]) );
-      select->deSerialize( doc.first_node() );
+      select->deSerialize( doc.first_node(), is_fixed_geom );
       
       const vector<const SandiaDecay::Nuclide *> post_trace_nucs = select->traceSourceNuclides();
       const vector<const SandiaDecay::Nuclide *> post_self_att_nucs = select->selfAttenNuclides();
+      
+      assert( !is_fixed_geom || post_trace_nucs.empty() );
+      assert( !is_fixed_geom || post_self_att_nucs.empty() );
       
       for( auto *pre_nuc : pre_trace_nucs )
       {
