@@ -1573,50 +1573,54 @@ void PeakDef::gammaTypeFromUserInput( std::string &txt,
   {
     type = PeakDef::SingleEscapeGamma;
     SpecUtils::ireplace_all( txt, "s.e.", "" );
-  }
-  
-  if( SpecUtils::icontains( txt, "single escape" ) )
+  }else if( SpecUtils::icontains( txt, "single escape" ) )
   {
     type = PeakDef::SingleEscapeGamma;
     SpecUtils::ireplace_all( txt, "single escape", "" );
-  }
-  
-  if( SpecUtils::icontains( txt, "se " ) && txt.size() > 5 )
+  }else if( SpecUtils::iequals_ascii( txt, "s.e." )
+     || SpecUtils::iequals_ascii( txt, "se" )
+     || SpecUtils::iequals_ascii( txt, "escape" ) )
+  {
+    type = PeakDef::SingleEscapeGamma;
+    txt = "";
+  }else if( SpecUtils::icontains( txt, "se " ) && txt.size() > 5 )
   {
     type = PeakDef::SingleEscapeGamma;
     SpecUtils::ireplace_all( txt, "se ", "" );
-  }
-  
-  if( SpecUtils::icontains( txt, "d.e." ) )
+  }else if( SpecUtils::icontains( txt, " se" ) && txt.size() > 5 )
+  {
+    type = PeakDef::SingleEscapeGamma;
+    SpecUtils::ireplace_all( txt, " se", "" );
+  }else if( SpecUtils::icontains( txt, "d.e." ) )
   {
     type = PeakDef::DoubleEscapeGamma;
     SpecUtils::ireplace_all( txt, "d.e.", "" );
-  }
-  
-  if( SpecUtils::icontains( txt, "double escape" ) )
+  }else if( SpecUtils::icontains( txt, "double escape" ) )
   {
     type = PeakDef::DoubleEscapeGamma;
     SpecUtils::ireplace_all( txt, "double escape", "" );
-  }
-  
-  if( SpecUtils::icontains( txt, "de " ) && txt.size() > 5 )
+  }else if( SpecUtils::icontains( txt, "de " ) && txt.size() > 5 )
   {
     type = PeakDef::DoubleEscapeGamma;
     SpecUtils::ireplace_all( txt, "de ", "" );
-  }
-  
-  if( SpecUtils::icontains( txt, "x-ray" )
+  }else if( SpecUtils::icontains( txt, " de" ) && txt.size() > 5 )
+  {
+    type = PeakDef::DoubleEscapeGamma;
+    SpecUtils::ireplace_all( txt, " de", "" );
+  }else if( SpecUtils::iequals_ascii( txt, "d.e." )
+           || SpecUtils::iequals_ascii( txt, "de" )  )
+  {
+    type = PeakDef::DoubleEscapeGamma;
+    txt = "";
+  }else if( SpecUtils::icontains( txt, "x-ray" )
       || SpecUtils::icontains( txt, "xray" )
      || SpecUtils::icontains( txt, "x ray" ) )
   {
-    
     type = PeakDef::XrayGamma;
     SpecUtils::ireplace_all( txt, "xray", "" );
     SpecUtils::ireplace_all( txt, "x-ray", "" );
     SpecUtils::ireplace_all( txt, "x ray", "" );
   }
-  
-  
 }//PeakDef::SourceGammaType gammaType( std::string txt )
 
 

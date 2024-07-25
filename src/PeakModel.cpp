@@ -2833,10 +2833,9 @@ bool PeakModel::setData( const WModelIndex &index,
           unit = 0.001;
 
         SpecUtils::trim( text );
-        stringstream convertstr( text );
 
         double energy = -999.0;
-        if( !(convertstr >> energy) )
+        if( !(stringstream(text) >> energy) )
         {
           switch( srcType )
           {
