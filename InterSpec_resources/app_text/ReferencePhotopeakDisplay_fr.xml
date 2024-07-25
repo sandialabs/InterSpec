@@ -36,6 +36,7 @@
 <message id="rpd-opt-alphas">Afficher les Alphas</message>
 <message id="rpd-opt-betas">Afficher les Bêtas</message>
 <message id="rpd-opt-cascade">Sommes en Cascade</message>
+<message id="rpd-opt-escapes">Sommets d'évasion</message>
 <message id="rpd-prev-nucs">Nucl. Précédents</message>
 <message id="rpd-det-nucs">Nucl. RID Dét.</message>
 <message id="rpd-assoc-nucs">Nucl. Assoc.</message>

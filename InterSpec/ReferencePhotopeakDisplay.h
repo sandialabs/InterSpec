@@ -390,8 +390,9 @@ protected:
   Wt::WCheckBox *m_showXrays;
   Wt::WCheckBox *m_showAlphas;
   Wt::WCheckBox *m_showBetas;
-  Wt::WCheckBox* m_showCascadeSums;
+  Wt::WCheckBox *m_showCascadeSums;
   Wt::WText* m_cascadeWarn;
+  Wt::WCheckBox *m_showEscapes;
   Wt::WCheckBox *m_showRiidNucs;
   Wt::WCheckBox *m_showPrevNucs;
   Wt::WCheckBox *m_showAssocNucs;

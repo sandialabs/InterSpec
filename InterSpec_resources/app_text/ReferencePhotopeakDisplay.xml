@@ -36,6 +36,7 @@
   <message id="rpd-opt-alphas">Show Alphas</message>
   <message id="rpd-opt-betas">Show Betas</message>
   <message id="rpd-opt-cascade">Cascade Sums</message>
+  <message id="rpd-opt-escapes">Escape Peaks</message>
   <message id="rpd-prev-nucs">Prev Nucs</message>
   <message id="rpd-det-nucs">Det RID Nucs</message>
   <message id="rpd-assoc-nucs">Assoc. Nucs</message>

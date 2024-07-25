@@ -831,6 +831,7 @@ ReferencePhotopeakDisplay::ReferencePhotopeakDisplay(
     m_showAlphas( NULL ),
     m_showBetas( NULL ),
     m_showCascadeSums( NULL ),
+    m_showEscapes( NULL ),
     m_cascadeWarn( NULL ),
     m_showRiidNucs( NULL ),
     m_showPrevNucs( NULL ),
@@ -1124,7 +1125,8 @@ ReferencePhotopeakDisplay::ReferencePhotopeakDisplay(
   m_showBetas = new WCheckBox( WString::tr("rpd-opt-betas"), m_optionsContent );
   m_showCascadeSums = new WCheckBox( WString::tr("rpd-opt-cascade"), m_optionsContent );
   m_showCascadeSums->hide();
-  
+  m_showEscapes = new WCheckBox( WString::tr("rpd-opt-escapes"), m_optionsContent );
+      
   m_showPrevNucs = new WCheckBox( WString::tr("rpd-prev-nucs"), m_optionsContent );
   m_showRiidNucs = new WCheckBox( WString::tr("rpd-det-nucs"), m_optionsContent );
   m_showAssocNucs = new WCheckBox( WString::tr("rpd-assoc-nucs"), m_optionsContent );
@@ -1135,6 +1137,7 @@ ReferencePhotopeakDisplay::ReferencePhotopeakDisplay(
   m_showAlphas->setWordWrap( false );
   m_showBetas->setWordWrap( false );
   m_showCascadeSums->setWordWrap( false );
+  m_showEscapes->setWordWrap( false );
   m_showPrevNucs->setWordWrap( false );
   m_showRiidNucs->setWordWrap( false );
   m_showAssocNucs->setWordWrap( false );
@@ -1177,6 +1180,9 @@ ReferencePhotopeakDisplay::ReferencePhotopeakDisplay(
   m_showCascadeSums->checked().connect(this, &ReferencePhotopeakDisplay::updateDisplayChange);
   m_showCascadeSums->unChecked().connect(this, &ReferencePhotopeakDisplay::updateDisplayChange);
   
+  m_showEscapes->checked().connect(this, &ReferencePhotopeakDisplay::updateDisplayChange);
+  m_showEscapes->unChecked().connect(this, &ReferencePhotopeakDisplay::updateDisplayChange);
+      
   m_otherNucsColumn = new WContainerWidget();
 
   m_otherNucsColumn->addStyleClass("OtherNucs ToolTabSection ToolTabTitledColumn");
@@ -1966,7 +1972,8 @@ RefLineInput ReferencePhotopeakDisplay::userInput() const
   input.m_showAlphas = (m_showAlphas && m_showAlphas->isChecked());
   input.m_showBetas = (m_showBetas && m_showBetas->isChecked());
   input.m_showCascades = (m_showCascadeSums && m_showCascadeSums->isChecked());
-
+  input.m_showEscapes = (m_showEscapes && m_showEscapes->isChecked());
+  
   if( m_detectorDisplay->detector() )
   {
     input.m_det_intrinsic_eff = m_detectorDisplay->detector()->intrinsicEfficiencyFcn();
@@ -2396,17 +2403,17 @@ void ReferencePhotopeakDisplay::updateDisplayFromInput( RefLineInput user_input 
     m_clearLines->setText( clearLineTxt );
   
   
-  bool showGammaCB = true, showXrayCb = true, showAplhaCb = true, showBetaCb = true;
+  bool showGammaCB = true, showXrayCb = true, showAplhaCb = true, showBetaCb = true, showEscapeCb = true;
   switch( src_type )
   {
     case ReferenceLineInfo::SourceType::Nuclide:
       // Show everything
-      showGammaCB = showXrayCb = showAplhaCb = showBetaCb = true;
+      showGammaCB = showXrayCb = showAplhaCb = showBetaCb = showEscapeCb = true;
       break;
       
     case ReferenceLineInfo::SourceType::FluorescenceXray:
       // Only show x-ray option - but really we shouldnt show any of them
-      showGammaCB = showAplhaCb = showBetaCb = false;
+      showGammaCB = showAplhaCb = showBetaCb = showEscapeCb = false;
       break;
       
     case ReferenceLineInfo::SourceType::Reaction:
@@ -2416,7 +2423,7 @@ void ReferencePhotopeakDisplay::updateDisplayFromInput( RefLineInput user_input 
       
     case ReferenceLineInfo::SourceType::Background:
     case ReferenceLineInfo::SourceType::NuclideMixture:
-      showAplhaCb = showBetaCb = false;
+      showAplhaCb = showBetaCb = showEscapeCb = false;
       break;
       
     case ReferenceLineInfo::SourceType::CustomEnergy:
@@ -2435,6 +2442,7 @@ void ReferencePhotopeakDisplay::updateDisplayFromInput( RefLineInput user_input 
   m_showAlphas->setHidden( !showAplhaCb );
   m_showBetas->setHidden( !showBetaCb );
   m_showCascadeSums->setHidden( !ref_lines || !ref_lines->m_has_coincidences );
+  m_showEscapes->setHidden( !showEscapeCb );
   
   if( ref_lines && (ref_lines->m_validity == ReferenceLineInfo::InputValidity::Valid) )
   {
@@ -2443,6 +2451,7 @@ void ReferencePhotopeakDisplay::updateDisplayFromInput( RefLineInput user_input 
     m_showAlphas->setChecked( ref_lines->m_input.m_showAlphas );
     m_showBetas->setChecked( ref_lines->m_input.m_showBetas );
     m_showCascadeSums->setChecked( ref_lines->m_input.m_showCascades );
+    m_showEscapes->setChecked( ref_lines->m_input.m_showEscapes );
   }
   
   
@@ -2804,6 +2813,11 @@ void ReferencePhotopeakDisplay::serialize(
     value = (m_showCascadeSums->isChecked() ? "1" : "0");
     element = doc->allocate_node(rapidxml::node_element, name, value);
     node->append_node(element);
+    
+    name = "ShowEscapes";
+    value = (m_showEscapes->isChecked() ? "1" : "0");
+    element = doc->allocate_node(rapidxml::node_element, name, value);
+    node->append_node(element);
   }else
   {
     node = doc->allocate_node( rapidxml::node_element, "CurrentLines" );
@@ -2979,6 +2993,10 @@ void ReferencePhotopeakDisplay::deSerialize( std::string &xml_data  )
       node = gui_node->first_node("ShowCascades", 12);
       if (node && node->value() && strlen(node->value()))
         m_showCascadeSums->setChecked((node->value()[0] == '1'));
+      
+      node = gui_node->first_node("ShowEscapes", 11);
+      if (node && node->value() && strlen(node->value()))
+        m_showEscapes->setChecked((node->value()[0] == '1'));
     }//if( gui_node )
     
     if( showing_node )

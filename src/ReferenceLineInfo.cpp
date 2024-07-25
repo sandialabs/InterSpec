@@ -419,6 +419,18 @@ namespace
     return &(pos->second);
   }//const NucMix *get_custom_nuc_mix( std::string label )
   
+  
+  //The efficiency of S.E. and D.E. peaks, relative to F.E. peak, for the 20% Generic GADRAS DRF
+  //  included in InterSpec, is given pretty well by the following (energy in keV):
+  double ns_single_escape_sf( const double x ) 
+  {
+    return std::max( 0.0, (1.8768E-11 *x*x*x) - (9.1467E-08 *x*x) + (2.1565E-04 *x) - 0.16367 );
+  };
+  
+  double ns_double_escape_sf( const double x )
+  {
+    return std::max( 0.0, (1.8575E-11 *x*x*x) - (9.0329E-08 *x*x) + (2.1302E-04 *x) - 0.16176 );
+  };
 }//namespace
 
 
@@ -921,6 +933,7 @@ RefLineInput::RefLineInput()
   m_showAlphas( false ),
   m_showBetas( false ),
   m_showCascades( false ),
+  m_showEscapes( false ),
   m_detector_name(),
   m_det_intrinsic_eff(),
   m_shielding_name(),
@@ -949,6 +962,7 @@ bool RefLineInput::operator==(const RefLineInput &rhs) const
   && (m_showAlphas == rhs.m_showAlphas)
   && (m_showBetas == rhs.m_showBetas)
   && (m_showCascades == rhs.m_showCascades)
+  && (m_showEscapes == rhs.m_showEscapes)
   && (m_detector_name == rhs.m_detector_name)
   //&& (m_det_intrinsic_eff == rhs.)
   && (m_shielding_name == rhs.m_shielding_name)
@@ -1391,8 +1405,11 @@ void RefLineInput::deSerialize( const rapidxml::xml_node<char> *base_node )
     input.m_showBetas = (node->value()[0] == '1');
   
   node = base_node->first_node("ShowCascades", 12);
-  if (node && node->value_size())
+  if( node && node->value_size() )
     input.m_showCascades = (node->value()[0] == '1');
+  
+  node = base_node->first_node("ShowEscapes", 11);
+  input.m_showEscapes = node && node->value_size() && (node->value()[0] == '1');
   
   //node = base_node->first_node( "ShowLines", 9 );
   //if( node && node->value_size() )
@@ -1639,6 +1656,11 @@ void RefLineInput::serialize( rapidxml::xml_node<char> *parent_node ) const
   node = doc->allocate_node(rapidxml::node_element, name, value);
   base_node->append_node(node);
 
+  name = "ShowEscapes";
+  value = (m_showEscapes ? "1" : "0");
+  node = doc->allocate_node(rapidxml::node_element, name, value);
+  base_node->append_node(node);
+  
   name = "PromptLinesOnly";
   value = (m_promptLinesOnly ? "1" : "0");
   node = doc->allocate_node( rapidxml::node_element, name, value );
@@ -1943,11 +1965,27 @@ std::shared_ptr<ReferenceLineInfo> ReferenceLineInfo::generateRefLineInfo( RefLi
   {
     try
     {
+      const auto lineType = OtherRefLineType::OtherBackground;
       const float energy = static_cast<float>(PhysicalUnits::stringToEnergy( input.m_input_txt ));
       
       //BackgroundLine<Energy, RelBranchRatio, "Symbol", OtherRefLineType, "Description">
-      OtherRefLine line{energy, 1.0f, "", OtherRefLineType::OtherBackground, input.m_input_txt};
+      OtherRefLine line{energy, 1.0f, "", lineType, input.m_input_txt};
       otherRefLinesToShow.push_back( line );
+      
+      if( input.m_showEscapes && (energy > 1022.0) )
+      {
+        const float se_energy = static_cast<float>( energy - 510.9989 );
+        const float de_energy = static_cast<float>( energy - 2.0*510.9989 );
+        const float se_rel_amp = static_cast<float>( ns_single_escape_sf(energy) );
+        const float de_rel_amp = static_cast<float>( ns_double_escape_sf(energy) );
+        
+        OtherRefLine se_line{ se_energy, se_rel_amp, "", lineType, "Generic HPGe S.E. fraction" };
+        OtherRefLine de_line{ de_energy, de_rel_amp, "", lineType, "Generic HPGe D.E. fraction" };
+        
+        otherRefLinesToShow.push_back( se_line );
+        otherRefLinesToShow.push_back( de_line );
+      }//if( input.m_showEscapes && (energy > 1022.0) )
+      
       is_custom_energy = true;
       input.m_age = "";
     }catch( std::exception & )
@@ -2003,15 +2041,7 @@ std::shared_ptr<ReferenceLineInfo> ReferenceLineInfo::generateRefLineInfo( RefLi
     return answer_ptr;
   }//if( we couldnt match input text to a source )
   
-  answer.m_validity = ReferenceLineInfo::InputValidity::Valid;
-  
-  input.m_showGammas = input.m_showGammas;
-  input.m_showXrays = input.m_showXrays;
-  input.m_showAlphas = input.m_showAlphas;
-  input.m_showBetas  = input.m_showBetas;
-  // We will also update showing cascades later based on answer.m_has_coincidences
-  input.m_showCascades = input.m_showCascades;
-  
+  answer_ptr->m_validity = ReferenceLineInfo::InputValidity::Valid;
   answer_ptr->m_input = input;
   
   
@@ -2047,7 +2077,7 @@ std::shared_ptr<ReferenceLineInfo> ReferenceLineInfo::generateRefLineInfo( RefLi
         break;
         
       case SandiaDecay::ProductType::GammaParticle:
-        use_particle[type] = (input.m_showGammas || input.m_showCascades);
+        use_particle[type] = (input.m_showGammas || input.m_showCascades || input.m_showEscapes);
         break;
         
       case SandiaDecay::ProductType::AlphaParticle:
@@ -2212,13 +2242,6 @@ std::shared_ptr<ReferenceLineInfo> ReferenceLineInfo::generateRefLineInfo( RefLi
             }//for( loop over coincidences )
           }//if( show cascade gammas )
           
-          
-          // If type is GammaParticle, we could be here if user selected to show cascade, but
-          //  not actual gammas, so we need to check for this, and if so not add this gamma
-          //  in to be shown
-          if( (particle.type == SandiaDecay::GammaParticle) && !input.m_showGammas )
-            continue;
-          
           line.m_decay_intensity = br;
           line.m_source_type = ReferenceLineInfo::RefLine::RefGammaType::Normal;
           
@@ -2243,6 +2266,38 @@ std::shared_ptr<ReferenceLineInfo> ReferenceLineInfo::generateRefLineInfo( RefLi
               continue;
               break;
           }//switch( particle.type )
+          
+          if( input.m_showEscapes
+             && (particle.type == SandiaDecay::GammaParticle)
+             && (line.m_energy > 1022.0) && (br > 0.0) )
+          {
+            ReferenceLineInfo::RefLine se_line = line;
+            ReferenceLineInfo::RefLine de_line = line;
+            
+            se_line.m_energy -= (510.9989 * PhysicalUnits::keV);
+            de_line.m_energy -= (2.0 * 510.9989 * PhysicalUnits::keV);
+            se_line.m_decay_intensity = br * ns_single_escape_sf( line.m_energy );
+            de_line.m_decay_intensity = br * ns_double_escape_sf( line.m_energy );
+            se_line.m_source_type = ReferenceLineInfo::RefLine::RefGammaType::SingleEscape;
+            de_line.m_source_type = ReferenceLineInfo::RefLine::RefGammaType::DoubleEscape;
+            
+            char descTxt[128] = { '\0' };
+            snprintf( descTxt, sizeof(descTxt), "S.E. of %.1f keV (generic HPGe eff.)", line.m_energy );
+            se_line.m_decaystr = descTxt + ((se_line.m_decaystr.empty() ? "" : " ") + se_line.m_decaystr );
+            
+            snprintf( descTxt, sizeof(descTxt), "D.E. of %.1f keV (generic HPGe eff.)", line.m_energy );
+            de_line.m_decaystr = descTxt + ((de_line.m_decaystr.empty() ? "" : " ") + de_line.m_decaystr );
+            
+            nuc_lines.push_back( se_line );
+            nuc_lines.push_back( de_line );
+          }//if( input.m_showEscapes && (particle.type == SandiaDecay::GammaParticle) )
+          
+          
+          // If type is GammaParticle, we could be here if user selected to show cascade, but
+          //  not actual gammas, so we need to check for this, and if so not add this gamma
+          //  in to be shown
+          if( (particle.type == SandiaDecay::GammaParticle) && !input.m_showGammas )
+            continue;
           
           nuc_lines.push_back( line );
         }//for( const SandiaDecay::RadParticle &particle : transition->products )

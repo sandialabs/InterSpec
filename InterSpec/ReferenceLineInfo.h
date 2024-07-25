@@ -123,6 +123,7 @@ struct RefLineInput
   bool m_showAlphas;
   bool m_showBetas;
   bool m_showCascades;
+  bool m_showEscapes;
   
   
   /** The name of the detector to display as having had the reference

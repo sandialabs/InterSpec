@@ -3574,6 +3574,7 @@ void DetectionLimitTool::setRefLinesAndGetLineInfo()
   ref_input.m_showAlphas = false;
   ref_input.m_showBetas = false;
   ref_input.m_showCascades = false;
+  ref_input.m_showEscapes = false;
     
   ref_input.m_detector_name = drf->name();
   
