@@ -1488,7 +1488,8 @@ void DetectionLimitTool::update_spectrum_for_currie_result( D3SpectrumDisplayDiv
     
     // If number of of side channels is zero, then we expect the following
     //  variables to all be zero
-    assert( (result->input.num_lower_side_channels != 0)
+    assert( !result
+           || (result->input.num_lower_side_channels != 0)
            || ((result->first_lower_continuum_channel == 0)
                && (result->last_lower_continuum_channel == 0)
                && (result->lower_continuum_counts_sum == 0)
@@ -1497,7 +1498,7 @@ void DetectionLimitTool::update_spectrum_for_currie_result( D3SpectrumDisplayDiv
                && (result->upper_continuum_counts_sum == 0))
            );
     
-    const bool assertedNoSignal = (result->input.num_lower_side_channels == 0);
+    const bool assertedNoSignal = (input.num_lower_side_channels == 0);
     
     // We will prefer to set the highlight regions from the results, but if we dont have results
     //  we'll do it from the input.

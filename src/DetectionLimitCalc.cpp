@@ -753,8 +753,8 @@ pair<size_t,size_t> round_roi_to_channels( shared_ptr<const SpecUtils::Measureme
   if( !cal || !cal->valid() )
     throw runtime_error( "mda_counts_calc: invalid energy calibration" );
   
-  const float peak_region_lower_ch = cal->channel_for_energy( roi_lower_energy );
-  const float peak_region_upper_ch = cal->channel_for_energy( roi_upper_energy );
+  const double peak_region_lower_ch = std::max(0.0, cal->channel_for_energy( roi_lower_energy ) );
+  const double peak_region_upper_ch = std::max(0.0, cal->channel_for_energy( roi_upper_energy ) );
   
   //if( (peak_region_lower_ch - num_lower_side_channels) < 0.0 )
   //  throw runtime_error( "mda_counts_calc: lower energy goes off spectrum" );
