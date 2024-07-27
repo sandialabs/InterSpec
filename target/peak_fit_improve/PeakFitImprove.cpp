@@ -29,6 +29,7 @@
 #include <map>
 #include <deque>
 #include <mutex>
+#include <atomic>
 #include <chrono>
 #include <string>
 #include <fstream>
@@ -73,7 +74,7 @@ using namespace std;
 //  well as PeakDefs
 #define RETURN_PeakDef_Candidates 1
 
-bool debug_printout = true;
+bool debug_printout = false;
 
 
 /** The weights and limits to apply to the various optimizations.
@@ -168,6 +169,229 @@ struct FindCandidateSettings
     return Wt::Json::serialize( data );
   }//std::string to_json() const
 };//struct FindCandidateSettings
+
+
+// Eval function to:
+//  - Takes in a spectrum
+//  - Uses optimum `FindCandidateSettings` that is already set, to find candidates
+//  - Fits those candidates.
+//  - Filters, combines, adds, and modifies initial fits, based on input settings
+//    - Filter significance using `chi2_significance_test(...)` function:
+//      - "initial_stat_threshold", "initial_hypothesis_threshold"
+//      !these two parameters should be optimized separate from everything else!
+//    - Combine based on how near means are, and how much initial ROIs are overlapping
+//      - "combine_nsigma_near", "combine_ROI_overlap_frac"
+//    - Determine coarse FWHM form
+//      - "FWHM_interpolation_type" (functional form and order)
+//    - Adds peaks based on now kinda known FWHM functional form.
+//      Lets just do something stupid, and slide along non-ROI areas, and have an ROI ~5 sigma wide,
+//      and draw a line using surrounding channels to fit a flat continuum, and if the deficit is
+//      some reasonable value (2.5 sigma? - need to do a time-tradeoff comparison to get something
+//      reasonable), then call `fit_amp_and_offset(...)` and `chi2_significance_test(...)`
+//      "search_roi_nsigma_deficit", "search_stat_threshold", "search_hypothesis_threshold"
+//    - Add peaks to ROIs, based on deficits in the ~1.5 to ~7.5 sigma ranges. Can probably do something
+//      stupid like scan a ~2sigma wide area, and look for a deficit of counts.  Or could just go
+//      slightly crazy and try calling `fit_amp_and_offset(...)` and look at improvements.
+//      "ROI_add_nsigma_required", "ROI_add_chi2dof_improve"
+//    - Modify continuum type, based on peak area, and difference between left-and-right side heights,
+//      and slope on either side of ROI
+//      "cont_type_peak_nsigma_threshold" (how many nsigma the peak is, to consider),
+//      "cont_type_left_right_nsigma" (how many stat higher the left is than the right, where stat is based of side edge area),
+//      "cont_type_sum_slopes" (to see if linear or bilinear continuum)
+//      "cont_type_step_improve" (refit peak with different steps, and this is the chi2/dof needed to accept solution)
+//    - Check if should add skew or not.
+//      Right now maybe just just ratio of area between continuum and data for -1 to -4 sigma from mean,
+//      compared to peak area, or maybe the ratio of sqrt of the areas.
+//      "skew_nsigma"
+//    - Determine ROI left and right widths for single peak ROIs
+//      Have a base-width, and then add/subtract based off some multiple.
+//      The multiple can be peak-area within +-1 FWHM, and continuum-area in +- 1 FWHM
+//      Have an int to select subtract type, maybe, linear, sqrt, exp, and log
+//      "roi_extent_low_num_fwhm_base", "roi_extent_high_num_fwhm_base"
+//      "roi_extent_mult_type" (linear, sqrt),
+//      "roi_extent_low_stat_multiple", "roi_extent_high_stat_multiple"
+//    - Determine ROI left and right widths for multiple peak ROIs
+//      Use single peak peak value for starting, then have an additional add/subtract on each side
+//      "multi_roi_extent_low_fwhm_mult", "multi_roi_extent_high_fwhm_mult"
+//    - A bool value to see how many times each ROI should be refit
+//
+//
+//
+// An example where we should have a stepped continuum
+//  503 to 507: data=125.1
+//  517 to 521: data=20.5
+//  Peak area 19679.5, FWHM=2.1, Mean=511.9
+struct InitialPeakFindSettings
+{
+  /** Filter significance, after initial fit, using `chi2_significance_test(...)` function
+   
+   These two parameters should be optimized separate from everything else
+   
+   `initial_stat_threshold`: This is how incompatible with background/continuum the data
+   must be, before a peak is allowed to exist. A reasonable search range of values is maybe between 0 and 8.
+   
+   `initial_hypothesis_threshold`:  this specifies how well the peak must match in shape to a gaussian
+   in order to keep the peak.  The higher this number, the more like a gaussian it must be. It is actually the ratio of
+   the null hypothesis chi2 to the test hypothesis chi2.  A reasonable search range of values is maybe between -0.1 and 10.
+   */
+  double initial_stat_threshold, initial_hypothesis_threshold;
+  
+  double initial_min_nsigma_roi, initial_max_nsigma_roi;
+  
+  enum class FwhmFcnForm : int {
+    Gadras,
+    
+    SqrtPolynomialTwoCoefs,  //FWHM = sqrt( Sum_i{A_i*pow(x/1000,i)} );
+    SqrtPolynomialThreeCoefs,
+    
+    SqrtEnergyPlusInverse, // FWHM = `sqrt(A0 + A1*E + A2/E)`
+    
+    NumFwhmFcnForm
+  };
+  
+  FwhmFcnForm fwhm_fcn_form;
+  
+  
+  /** Adds peaks based on now kinda known FWHM functional form.
+   Lets just do something stupid, and slide along non-ROI areas, and have an ROI ~5 sigma wide,
+   and draw a line using surrounding channels to fit a flat continuum, and if the deficit is
+   some reasonable value (2.5 sigma? - need to do a time-tradeoff comparison to get something
+   reasonable), then call `fit_amp_and_offset(...)` and `chi2_significance_test(...)`
+   
+   `search_roi_nsigma_deficit`: Reasonable search range of 1 to 10.
+   `search_stat_threshold`: Reasonable search range of 0 and 8.
+   `search_hypothesis_threshold`: Reasonable search range of 0 and 8. -0.1 and 10.
+   `search_stat_significance`: Reasonable search range of 1 and 6.
+   */
+  double search_roi_nsigma_deficit, search_stat_threshold, search_hypothesis_threshold, search_stat_significance;
+  
+  /** Add peaks to ROIs.  WIP.
+   `ROI_add_nsigma_required`: required previous and new peaks to be better than. Reasonable search range: 1 to 8
+   `ROI_add_chi2dof_improve`: Reasonable search range: 0 to 8
+   */
+  double ROI_add_nsigma_required, ROI_add_chi2dof_improve;
+  
+  std::string print( const string &var_name ) const
+  {
+    string fwhm_fcn_form_string;
+    switch( fwhm_fcn_form )
+    {
+      case FwhmFcnForm::Gadras:                   fwhm_fcn_form_string = "Gadras";                   break;
+      case FwhmFcnForm::SqrtPolynomialTwoCoefs:   fwhm_fcn_form_string = "SqrtPolynomialTwoCoefs";   break;
+      case FwhmFcnForm::SqrtPolynomialThreeCoefs: fwhm_fcn_form_string = "SqrtPolynomialThreeCoefs"; break;
+      case FwhmFcnForm::SqrtEnergyPlusInverse:    fwhm_fcn_form_string = "SqrtEnergyPlusInverse";    break;
+      case FwhmFcnForm::NumFwhmFcnForm:           fwhm_fcn_form_string = "NumFwhmFcnForm";           break;
+    }//switch( fwhm_fcn_form )
+    
+    return var_name + ".initial_stat_threshold = "  + std::to_string(initial_stat_threshold)       + ";\n"
+    + var_name + ".initial_hypothesis_threshold = " + std::to_string(initial_hypothesis_threshold) + ";\n"
+    + var_name + ".initial_min_nsigma_roi = "       + std::to_string(initial_min_nsigma_roi)       + ";\n"
+    + var_name + ".initial_max_nsigma_roi = "       + std::to_string(initial_max_nsigma_roi)       + ";\n"
+    + var_name + ".fwhm_fcn_form_string = "         + fwhm_fcn_form_string                         + ";\n"
+    + var_name + ".search_roi_nsigma_deficit = "    + std::to_string(search_roi_nsigma_deficit)    + ";\n"
+    + var_name + ".search_stat_threshold = "        + std::to_string(search_stat_threshold)        + ";\n"
+    + var_name + ".search_hypothesis_threshold = "  + std::to_string(search_hypothesis_threshold)  + ";\n"
+    + var_name + ".search_stat_significance = "     + std::to_string(search_stat_significance)     + ";\n"
+    + var_name + ".ROI_add_nsigma_required = "      + std::to_string(ROI_add_nsigma_required)      + ";\n"
+    + var_name + ".ROI_add_chi2dof_improve = "      + std::to_string(ROI_add_chi2dof_improve)      + ";\n"
+    ;
+  }//std::string print( const string &var_name ) const
+};//struct InitialPeakFindSettings
+  
+
+
+struct FinalPeakFitSettings
+{
+  /** Combine ROIs, based on how near means are, and how much initial ROIs are overlapping.
+   
+   `combine_nsigma_near`: Reasonable search range of 1 to 10
+   `combine_ROI_overlap_frac`: Reasonable search range of -1 to 1
+   */
+  double combine_nsigma_near, combine_ROI_overlap_frac;
+  
+   
+  /** How many nsigma the peak needs to be to consider modifying the continuum type.
+   
+   Reasonable search range: 5 to 25. ???
+   */
+  double cont_type_peak_nsigma_threshold;
+  
+  /** How many stat higher the left is than the right, where stat is based of side edge area, to consider a stepped continuum.
+   
+   Reasonable search range: 1 to 20. ???
+   */
+  double cont_type_left_right_nsigma;
+  
+  /** To see if flat, linear, or bilinear stepped continuum
+   //Cont P1: -1.6985 on left, -0.3472 on right
+   */
+  //double cont_type_sum_slopes;
+  
+  /** Refit peak with different steps, and this is the chi2/dof needed to accept solution
+   
+   Reasonable search range: 0 to 4. ???
+   */
+  double cont_type_step_improve;
+  
+  /** How much of an improvement quadratic or cubic continuum type needs to be to actually use.
+   
+   Reasonable search range: 0 to 4. ???
+   */
+  double cont_poly_order_increase_chi2dof_required;
+  
+  /** Check if we should add skew.
+      Right now maybe just just ratio of area between continuum and data for -1 to -4 sigma from mean,
+      compared to peak area, or maybe the ratio of sqrt of the areas.
+   
+   Reasonable search range: 0 to 10. ???
+   */
+  double skew_nsigma;
+  
+  /** How much adding skew needs to improve the ROI threshold in order to keep it.
+   
+   Reasonable search range: 0 to 4. ???
+   */
+  double skew_improve_chi2_dof_threshold;
+  
+  
+  /** Determine ROI left and right base-widths for single peak ROIs.
+   Width will be modified based on stat uncert of initial fit.
+   
+   Reasonable search range: 0.5 to 7. ???
+  */
+  double roi_extent_low_num_fwhm_base, roi_extent_high_num_fwhm_base;
+  
+  /** How to add/subtract based the multiple based of statistical significance.
+   */
+  enum class RoiExtentMultType : int
+  {
+    Linear, Sqrt
+  };
+  
+  RoiExtentMultType roi_extent_mult_type;
+  
+  /** The multiple to add/subtract from ROI width
+   
+   The multiple can be peak-area within +-1 FWHM, and continuum-area in +- 1 FWHM
+   
+   Reasonable search range: 0 to 1. ???
+   */
+  double roi_extent_lower_side_stat_multiple, roi_extent_upper_side_stat_multiple;
+  
+  /** The multiple to add/subtract from multiple-peak ROI widths
+   
+   Use single peak peak value for starting, then have an additional add/subtract on each side
+   
+   Reasonable search range: -1 to 2. ???
+   */
+  double multi_roi_extent_lower_side_fwhm_mult, multi_roi_extent_upper_side_fwhm_mult;
+  
+  /** A value to see how many times each ROI should be refit for the final fit.
+   
+   Reasonable search range: 1 to 3.
+   */
+  int num_refit_final;
+};//struct FinalPeakFitSettings
 
 
 namespace CandidatePeak_GA
@@ -387,14 +611,21 @@ namespace CandidatePeak_GA
   
   bool m_set_best_genes = false;
   CandidatePeakSolution m_best_genes;
+  double m_best_total_cost = 1.0E99;
   
   void SO_report_generation(
     int generation_number,
     const EA::GenerationType<CandidatePeakSolution,CandidatePeakCost> &last_generation,
     const CandidatePeakSolution& best_genes)
   {
-    m_set_best_genes = true;
-    m_best_genes = best_genes;
+    bool best_yet = false;
+    if( !m_set_best_genes || (last_generation.best_total_cost < m_best_total_cost) )
+    {
+      best_yet = true;
+      m_set_best_genes = true;
+      m_best_genes = best_genes;
+      m_best_total_cost = last_generation.best_total_cost;
+    }
     
     cout <<"Generation ["<<generation_number<<"], "
     <<"Best="<<last_generation.best_total_cost << ", "
@@ -464,6 +695,319 @@ namespace CandidatePeak_GA
 }//namespace CandidatePeak_GA
 
 
+
+namespace InitialFit_GA
+{
+  atomic<size_t> ns_num_evals_this_generation( 0 );
+  
+  std::function<double( const InitialPeakFindSettings &)> ns_ga_eval_fcn;
+  
+  
+  
+  // I think we could actually just use `InitialPeakFindSettings` instead of defining this struck - but I'll wait on that until we get it up and going a bit
+  struct InitialFitSolution
+  {
+    double initial_stat_threshold;
+    double initial_hypothesis_threshold;
+    double initial_min_nsigma_roi;
+    double initial_max_nsigma_roi;
+    int fwhm_fcn_form;
+    double search_roi_nsigma_deficit;
+    double search_stat_threshold;
+    double search_hypothesis_threshold;
+    double search_stat_significance;
+    double ROI_add_nsigma_required;
+    double ROI_add_chi2dof_improve;
+
+
+    string to_string( const string &separator ) const
+    {
+      return
+        string("initial_stat_threshold: ")           + std::to_string(initial_stat_threshold)
+      + separator + "initial_hypothesis_threshold: " + std::to_string(initial_hypothesis_threshold)
+      + separator + "initial_min_nsigma_roi: "       + std::to_string(initial_min_nsigma_roi)
+      + separator + "initial_max_nsigma_roi: "       + std::to_string(initial_max_nsigma_roi)
+      + separator + "fwhm_fcn_form: "                + std::to_string(fwhm_fcn_form)
+      + separator + "search_roi_nsigma_deficit: "    + std::to_string(search_roi_nsigma_deficit)
+      + separator + "search_stat_threshold: "        + std::to_string(search_stat_threshold)
+      + separator + "search_hypothesis_threshold: "  + std::to_string(search_hypothesis_threshold)
+      + separator + "search_stat_significance: "     + std::to_string(search_stat_significance)
+      + separator + "ROI_add_nsigma_required: "      + std::to_string(ROI_add_nsigma_required)
+      + separator + "ROI_add_chi2dof_improve: "      + std::to_string(ROI_add_chi2dof_improve)
+      ;
+    }//to_string( separator )
+    
+  };//struct InitialFitSolution
+
+  static InitialPeakFindSettings genes_to_settings( const InitialFitSolution &solution )
+  {
+    InitialPeakFindSettings settings;
+    
+    settings.initial_stat_threshold = solution.initial_stat_threshold;
+    settings.initial_hypothesis_threshold = solution.initial_hypothesis_threshold;
+    
+    settings.initial_min_nsigma_roi = solution.initial_min_nsigma_roi;
+    settings.initial_max_nsigma_roi = solution.initial_max_nsigma_roi;
+    
+    settings.fwhm_fcn_form = static_cast<InitialPeakFindSettings::FwhmFcnForm>( solution.fwhm_fcn_form );
+    assert( settings.fwhm_fcn_form == InitialPeakFindSettings::FwhmFcnForm::Gadras
+           || settings.fwhm_fcn_form == InitialPeakFindSettings::FwhmFcnForm::SqrtPolynomialTwoCoefs
+           || settings.fwhm_fcn_form == InitialPeakFindSettings::FwhmFcnForm::SqrtPolynomialThreeCoefs
+           || settings.fwhm_fcn_form == InitialPeakFindSettings::FwhmFcnForm::SqrtEnergyPlusInverse
+           //|| settings.fwhm_fcn_form == InitialPeakFindSettings::FwhmFcnForm::NumFwhmFcnForm
+           );
+    
+    settings.search_roi_nsigma_deficit = solution.search_roi_nsigma_deficit;
+    settings.search_stat_threshold = solution.search_stat_threshold;
+    settings.search_hypothesis_threshold = solution.search_hypothesis_threshold;
+    settings.search_stat_significance = solution.search_stat_significance;
+    settings.ROI_add_nsigma_required = solution.ROI_add_nsigma_required;
+    settings.ROI_add_chi2dof_improve = solution.ROI_add_chi2dof_improve;
+    
+    return settings;
+  }//InitialPeakFindSettings genes_to_settings( const InitialFitSolution &solution )
+  
+  
+  struct InitialFitCost
+  {
+    // This is where the results of simulation
+    // is stored but not yet finalized.
+    double objective1;
+  };
+
+  typedef EA::Genetic<InitialFitSolution,InitialFitCost> GA_Type;
+  typedef EA::GenerationType<InitialFitSolution,InitialFitCost> Generation_Type;
+
+  void init_genes(InitialFitSolution& p,const std::function<double(void)> &rnd01)
+  {
+    // rnd01() gives a random number in 0~1
+    p.initial_stat_threshold=0.0+8*rnd01();
+    p.initial_hypothesis_threshold=-0.1+10.1*rnd01();
+    p.initial_min_nsigma_roi=2+6*rnd01();
+    p.initial_max_nsigma_roi=4+8*rnd01();
+    p.fwhm_fcn_form=0+3*rnd01();
+    p.search_roi_nsigma_deficit=1+9*rnd01();
+    p.search_stat_threshold=0.0+8*rnd01();
+    p.search_hypothesis_threshold=-0.1+10.1*rnd01();
+    p.search_stat_significance=1+5*rnd01();
+    p.ROI_add_nsigma_required=1+7*rnd01();
+    p.ROI_add_chi2dof_improve=0.0+8*rnd01();
+  }
+
+  bool eval_solution( const InitialFitSolution &p, InitialFitCost &c )
+  {
+    const InitialPeakFindSettings settings = genes_to_settings( p );
+    
+    c.objective1 = ns_ga_eval_fcn( settings );
+    
+    ns_num_evals_this_generation += 1;
+    if( (ns_num_evals_this_generation % 1) == 0 )
+      cout << "Have evaluated " << ns_num_evals_this_generation.load() << " individuals this generation." << endl;
+    
+    
+    if( IsNan(c.objective1) || IsInf(c.objective1) )
+    {
+      cerr << "Got an objective of " << c.objective1 << " for " << p.to_string(", ") << endl;
+      return false;
+    }
+    
+    return true; // solution is accepted
+  }
+
+  InitialFitSolution mutate(
+    const InitialFitSolution& X_base,
+    const std::function<double(void)> &rnd01,
+    double shrink_scale)
+  {
+    InitialFitSolution X_new;
+    const double mu = 0.2*shrink_scale; // mutation radius (adjustable)
+    bool in_range;
+    
+    size_t num_tries = 0;
+    
+    do{
+      num_tries += 1;
+      if( num_tries > 1000 )
+      {
+        cerr << "Has taken over " << num_tries << " tries to find some genes.\nX_new={\n"
+        << X_new.to_string( "\n\t" )
+        << "}\nX_base={\n"
+        << X_base.to_string("\n\t" )
+        << "}\nWill return new randomly inited gene.\n"
+        << endl;
+        
+        std::random_device rng;
+        std::uniform_real_distribution<double> unif_dist( 0.0, 1.0 );
+        
+        init_genes( X_new, [&](){return unif_dist(rng);} );
+        return X_new;
+      }
+      
+      in_range = true;
+      X_new = X_base;
+      X_new.initial_stat_threshold += mu*(rnd01()-rnd01());
+      in_range = in_range&&(X_new.initial_stat_threshold>=0.0 && X_new.initial_stat_threshold<8);
+      X_new.initial_hypothesis_threshold+=mu*(rnd01()-rnd01());
+      in_range=in_range&&(X_new.initial_hypothesis_threshold>=-0.1 && X_new.initial_hypothesis_threshold<10.0);
+      X_new.initial_min_nsigma_roi+=mu*(rnd01()-rnd01());
+      in_range=in_range&&(X_new.initial_min_nsigma_roi>=2 && X_new.initial_min_nsigma_roi<8);
+      X_new.initial_max_nsigma_roi+=mu*(rnd01()-rnd01());
+      in_range=in_range&&(X_new.initial_max_nsigma_roi>=4 && X_new.initial_max_nsigma_roi<12);
+      X_new.fwhm_fcn_form+=mu*(rnd01()-rnd01());
+      in_range=in_range&&(X_new.fwhm_fcn_form>=0 && X_new.fwhm_fcn_form<3);
+      X_new.search_roi_nsigma_deficit+=mu*(rnd01()-rnd01());
+      in_range=in_range&&(X_new.search_roi_nsigma_deficit>=1 && X_new.search_roi_nsigma_deficit<10.0);
+      X_new.search_stat_threshold+=mu*(rnd01()-rnd01());
+      in_range=in_range&&(X_new.search_stat_threshold>=0.0 && X_new.search_stat_threshold<8);
+      X_new.search_hypothesis_threshold+=mu*(rnd01()-rnd01());
+      in_range=in_range&&(X_new.search_hypothesis_threshold>=-0.1 && X_new.search_hypothesis_threshold<10.0);
+      X_new.search_stat_significance+=mu*(rnd01()-rnd01());
+      in_range=in_range&&(X_new.search_stat_significance>=1 && X_new.search_stat_significance<6);
+      X_new.ROI_add_nsigma_required+=mu*(rnd01()-rnd01());
+      in_range=in_range&&(X_new.ROI_add_nsigma_required>=1 && X_new.ROI_add_nsigma_required<8);
+      X_new.ROI_add_chi2dof_improve+=mu*(rnd01()-rnd01());
+      in_range=in_range&&(X_new.ROI_add_chi2dof_improve>=0.0 && X_new.ROI_add_chi2dof_improve<8);
+    } while(!in_range);
+    return X_new;
+  }
+
+  InitialFitSolution crossover(
+    const InitialFitSolution& X1,
+    const InitialFitSolution& X2,
+    const std::function<double(void)> &rnd01)
+  {
+    InitialFitSolution X_new;
+    double r;
+    r=rnd01();
+    X_new.initial_stat_threshold=r*X1.initial_stat_threshold+(1.0-r)*X2.initial_stat_threshold;
+    r=rnd01();
+    X_new.initial_hypothesis_threshold=r*X1.initial_hypothesis_threshold+(1.0-r)*X2.initial_hypothesis_threshold;
+    r=rnd01();
+    X_new.initial_min_nsigma_roi=r*X1.initial_min_nsigma_roi+(1.0-r)*X2.initial_min_nsigma_roi;
+    r=rnd01();
+    X_new.initial_max_nsigma_roi=r*X1.initial_max_nsigma_roi+(1.0-r)*X2.initial_max_nsigma_roi;
+    r=rnd01();
+    X_new.fwhm_fcn_form=r*X1.fwhm_fcn_form+(1.0-r)*X2.fwhm_fcn_form;
+    r=rnd01();
+    X_new.search_roi_nsigma_deficit=r*X1.search_roi_nsigma_deficit+(1.0-r)*X2.search_roi_nsigma_deficit;
+    r=rnd01();
+    X_new.search_stat_threshold=r*X1.search_stat_threshold+(1.0-r)*X2.search_stat_threshold;
+    r=rnd01();
+    X_new.search_hypothesis_threshold=r*X1.search_hypothesis_threshold+(1.0-r)*X2.search_hypothesis_threshold;
+    r=rnd01();
+    X_new.search_stat_significance=r*X1.search_stat_significance+(1.0-r)*X2.search_stat_significance;
+    r=rnd01();
+    X_new.ROI_add_nsigma_required=r*X1.ROI_add_nsigma_required+(1.0-r)*X2.ROI_add_nsigma_required;
+    r=rnd01();
+    X_new.ROI_add_chi2dof_improve=r*X1.ROI_add_chi2dof_improve+(1.0-r)*X2.ROI_add_chi2dof_improve;
+    return X_new;
+  }
+
+  double calculate_SO_total_fitness(const GA_Type::thisChromosomeType &X)
+  {
+    // finalize the cost
+    double final_cost=0.0;
+    final_cost+=X.middle_costs.objective1;
+    return final_cost;
+  }
+
+  std::ofstream output_file;
+
+  
+  bool m_set_best_genes = false;
+  InitialFitSolution m_best_genes;
+  double m_best_total_cost = 1.0E99;
+  
+  
+  void SO_report_generation(
+    int generation_number,
+    const EA::GenerationType<InitialFitSolution,InitialFitCost> &last_generation,
+    const InitialFitSolution& best_genes)
+  {
+    bool best_yet = false;
+    if( !m_set_best_genes || (last_generation.best_total_cost < m_best_total_cost) )
+    {
+      best_yet = true;
+      m_set_best_genes = true;
+      m_best_genes = best_genes;
+      m_best_total_cost = last_generation.best_total_cost;
+    }
+    
+    output_file
+      << generation_number <<"\t"
+      << last_generation.average_cost <<"\t"
+      << last_generation.best_total_cost <<"\t"
+      << "{" << best_genes.to_string(", ") << "}"
+      << "\t" << (best_yet ? "BestYet" : "NoImprovement")
+      << "\n\n";
+    
+    cout
+      <<"Generation ["<<generation_number<<"], "
+      <<"Best="<<last_generation.best_total_cost<<", "
+      <<"Average="<<last_generation.average_cost<<", "
+      << ", " << (best_yet ? "Best generation yet" : "no improvement")
+      <<"\n  Best genes: {\n\t" <<best_genes.to_string("\n\t")  << "\n}\n"
+      <<"Exe_time="<<last_generation.exe_time
+      << endl;
+    
+    ns_num_evals_this_generation = 0;
+  }//SO_report_generation( ... )
+  
+
+  InitialPeakFindSettings do_ga_eval( std::function<double( const InitialPeakFindSettings &)> ga_eval_fcn )
+  {
+    assert( RETURN_PeakDef_Candidates ); //dont want to do a static_assert - since I am still compiling all this code both ways...
+    if( !RETURN_PeakDef_Candidates )
+    {
+      cerr << "Please change 'RETURN_PeakDef_Candidates' to true and recompile." << endl;
+      exit(1);
+    }
+
+    assert( !!ga_eval_fcn );
+    if( !ga_eval_fcn )
+      throw runtime_error( "Invalid eval function passed in." );
+    
+    ns_ga_eval_fcn = ga_eval_fcn;
+  
+    output_file.open( "initial_fit_results.txt" );
+    output_file << "step" << "\t" << "cost_avg" << "\t" << "cost_best" << "\t" << "solution_best" << "\n";
+
+    EA::Chronometer timer;
+    timer.tic();
+
+    GA_Type ga_obj;
+    ga_obj.problem_mode=EA::GA_MODE::SOGA;
+    ga_obj.multi_threading = true;
+    ga_obj.idle_delay_us = 1; // switch between threads quickly
+    ga_obj.dynamic_threading = false;
+    ga_obj.verbose = false;
+    ga_obj.population = 100;
+    ga_obj.generation_max = 450;
+    ga_obj.calculate_SO_total_fitness=calculate_SO_total_fitness;
+    ga_obj.init_genes=init_genes;
+    ga_obj.eval_solution=eval_solution;
+    ga_obj.mutate=mutate;
+    ga_obj.crossover=crossover;
+    ga_obj.SO_report_generation=SO_report_generation;
+    ga_obj.crossover_fraction=0.7;
+    ga_obj.mutation_rate=0.2;
+    ga_obj.best_stall_max=10;
+    ga_obj.elite_count=10;
+    ga_obj.N_threads = 8; //Keep some free cores on my M1 max so I can still use the computer
+    EA::StopReason stop_reason = ga_obj.solve();
+
+    cout<<"The problem is optimized in "<<timer.toc()<<" seconds."<<endl;
+
+    output_file.close();
+    
+    cout << "Stop reason was: " << ga_obj.stop_reason_to_string( stop_reason) << endl;
+    cout << "The problem is optimized in " << timer.toc() << " seconds." << endl;
+    
+    output_file.close();
+    
+    return genes_to_settings( m_best_genes );
+  }
+}//namespace InitialFit_GA
 
 
 std::vector<PeakDef> find_candidate_peaks( const std::shared_ptr<const SpecUtils::Measurement> data,
@@ -976,6 +1520,7 @@ std::vector<PeakDef> find_candidate_peaks( const std::shared_ptr<const SpecUtils
           chi2_dof += val;
         }
         chi2_dof /= (roi_end_index - roi_begin_index);
+        
         if( debug_printout )
           cout << "Straight-line Chi2 = " << chi2_dof << " and max_chi2=" << max_chi2 << " for energy=" << mean << endl;
         
@@ -997,9 +1542,9 @@ std::vector<PeakDef> find_candidate_peaks( const std::shared_ptr<const SpecUtils
       if( (figure_of_merit > threshold_FOM) && passed_higher_scrutiny )
       {
         if( debug_printout )
-          cout << "Accepted: energy=" << mean << ", FOM=" << figure_of_merit 
+          cout << "Accepted: energy=" << mean << ", FOM=" << figure_of_merit
           << ", amp=" << amplitude << ", FWHM=" << sigma*2.35482f
-          << ", data_area=" << data_area << ", rougher_FOM=" << rougher_FOM 
+          << ", data_area=" << data_area << ", rougher_FOM=" << rougher_FOM
           //<< ", min_required=" << min_required_data
           << endl;
         
@@ -1021,12 +1566,12 @@ std::vector<PeakDef> find_candidate_peaks( const std::shared_ptr<const SpecUtils
 #endif
       }else
       {
-        if( debug_printout )
-          cout << "Rejected: energy=" << mean << ", FOM=" << figure_of_merit 
-          << ", amp=" << amplitude << ", FWHM=" << sigma*2.35482f
-          << ", data_area=" << data_area  << ", rougher_FOM=" << rougher_FOM 
-          //<< ", min_required=" << min_required_data
-          << endl;
+       if( debug_printout )
+        cout << "Rejected: energy=" << mean << ", FOM=" << figure_of_merit
+        << ", amp=" << amplitude << ", FWHM=" << sigma*2.35482f
+        << ", data_area=" << data_area  << ", rougher_FOM=" << rougher_FOM
+        //<< ", min_required=" << min_required_data
+        << endl;
       }//if( region we were just in passed_threshold )
       
       secondsum = 0.0;
@@ -1249,10 +1794,11 @@ ExpectedPhotopeakInfo create_expected_photopeak( const InjectSourceInfo &info, c
     << info.file_base_path << "." << endl;
   }
   
-  assert( (total_area > 4.0E5) //large skew with such areas
+  assert( (total_area > 1.0E5) //large skew with such areas
          || ((total_area - peak.peak_area) > -8.0*sqrt(peak.peak_area))
          || ((total_area - peak.peak_area) > -5.0)
-         || (peak.roi_upper > info.src_no_poisson->gamma_energy_max()) );
+         || (peak.roi_upper > info.src_no_poisson->gamma_energy_max()) 
+         || (info.src_no_poisson->live_time() < 0.85*info.src_no_poisson->real_time()) );
   
   peak.continuum_area = std::max( 0.0, total_area - peak.peak_area );
   peak.nsigma_over_background = peak.peak_area / sqrt( std::max(1.0, peak.continuum_area) );
@@ -1395,203 +1941,6 @@ InjectSourceInfo parse_inject_source_files( const string &base_name )
 }//InjectSourceInfo parse_inject_source_files( const string &base_name )
 
 
-// Eval function to:
-//  - Takes in a spectrum
-//  - Uses optimum `FindCandidateSettings` that is already set, to find candidates
-//  - Fits those candidates.
-//  - Filters, combines, adds, and modifies initial fits, based on input settings
-//    - Filter significance using `chi2_significance_test(...)` function:
-//      - "initial_stat_threshold", "initial_hypothesis_threshold"
-//      !these two parameters should be optimized separate from everything else!
-//    - Combine based on how near means are, and how much initial ROIs are overlapping
-//      - "combine_nsigma_near", "combine_ROI_overlap_frac"
-//    - Determine coarse FWHM form
-//      - "FWHM_interpolation_type" (functional form and order)
-//    - Adds peaks based on now kinda known FWHM functional form.
-//      Lets just do something stupid, and slide along non-ROI areas, and have an ROI ~5 sigma wide,
-//      and draw a line using surrounding channels to fit a flat continuum, and if the deficit is
-//      some reasonable value (2.5 sigma? - need to do a time-tradeoff comparison to get something
-//      reasonable), then call `fit_amp_and_offset(...)` and `chi2_significance_test(...)`
-//      "search_roi_nsigma_deficit", "search_stat_threshold", "search_hypothesis_threshold"
-//    - Add peaks to ROIs, based on deficits in the ~1.5 to ~7.5 sigma ranges. Can probably do something
-//      stupid like scan a ~2sigma wide area, and look for a deficit of counts.  Or could just go
-//      slightly crazy and try calling `fit_amp_and_offset(...)` and look at improvements.
-//      "ROI_add_nsigma_required", "ROI_add_chi2dof_improve"
-//    - Modify continuum type, based on peak area, and difference between left-and-right side heights,
-//      and slope on either side of ROI
-//      "cont_type_peak_nsigma_threshold" (how many nsigma the peak is, to consider),
-//      "cont_type_left_right_nsigma" (how many stat higher the left is than the right, where stat is based of side edge area),
-//      "cont_type_sum_slopes" (to see if linear or bilinear continuum)
-//      "cont_type_step_improve" (refit peak with different steps, and this is the chi2/dof needed to accept solution)
-//    - Check if should add skew or not.
-//      Right now maybe just just ratio of area between continuum and data for -1 to -4 sigma from mean,
-//      compared to peak area, or maybe the ratio of sqrt of the areas.
-//      "skew_nsigma"
-//    - Determine ROI left and right widths for single peak ROIs
-//      Have a base-width, and then add/subtract based off some multiple.
-//      The multiple can be peak-area within +-1 FWHM, and continuum-area in +- 1 FWHM
-//      Have an int to select subtract type, maybe, linear, sqrt, exp, and log
-//      "roi_extent_low_num_fwhm_base", "roi_extent_high_num_fwhm_base"
-//      "roi_extent_mult_type" (linear, sqrt),
-//      "roi_extent_low_stat_multiple", "roi_extent_high_stat_multiple"
-//    - Determine ROI left and right widths for multiple peak ROIs
-//      Use single peak peak value for starting, then have an additional add/subtract on each side
-//      "multi_roi_extent_low_fwhm_mult", "multi_roi_extent_high_fwhm_mult"
-//    - A bool value to see how many times each ROI should be refit
-//
-//
-//
-// An example where we should have a stepped continuum
-//  503 to 507: data=125.1
-//  517 to 521: data=20.5
-//  Peak area 19679.5, FWHM=2.1, Mean=511.9
-struct InitialPeakFindSettings
-{
-  /** Filter significance, after initial fit, using `chi2_significance_test(...)` function
-   
-   These two parameters should be optimized separate from everything else
-   
-   `initial_stat_threshold`: This is how incompatible with background/continuum the data
-   must be, before a peak is allowed to exist. A reasonable search range of values is maybe between 0 and 8.
-   
-   `initial_hypothesis_threshold`:  this specifies how well the peak must match in shape to a gaussian
-   in order to keep the peak.  The higher this number, the more like a gaussian it must be. It is actually the ratio of
-   the null hypothesis chi2 to the test hypothesis chi2.  A reasonable search range of values is maybe between -0.1 and 10.
-   */
-  double initial_stat_threshold, initial_hypothesis_threshold;
-  
-  double initial_min_nsigma_roi, initial_max_nsigma_roi;
-  
-  enum class FwhmFcnForm : int {
-    Gadras,
-    
-    SqrtPolynomialTwoCoefs,  //FWHM = sqrt( Sum_i{A_i*pow(x/1000,i)} );
-    SqrtPolynomialThreeCoefs,
-    
-    SqrtEnergyPlusInverse, // FWHM = `sqrt(A0 + A1*E + A2/E)`
-    
-    NumFwhmFcnForm
-  };
-  
-  FwhmFcnForm fwhm_fcn_form;
-  
-  
-  /** Adds peaks based on now kinda known FWHM functional form.
-   Lets just do something stupid, and slide along non-ROI areas, and have an ROI ~5 sigma wide,
-   and draw a line using surrounding channels to fit a flat continuum, and if the deficit is
-   some reasonable value (2.5 sigma? - need to do a time-tradeoff comparison to get something
-   reasonable), then call `fit_amp_and_offset(...)` and `chi2_significance_test(...)`
-   
-   `search_roi_nsigma_deficit`: Reasonable search range of 1 to 10.
-   `search_stat_threshold`: Reasonable search range of 0 and 8.
-   `search_hypothesis_threshold`: Reasonable search range of 0 and 8. -0.1 and 10.
-   `search_stat_significance`: Reasonable search range of 1 and 6.
-   */
-  double search_roi_nsigma_deficit, search_stat_threshold, search_hypothesis_threshold, search_stat_significance;
-  
-  /** Add peaks to ROIs.  WIP.
-   `ROI_add_nsigma_required`: required previous and new peaks to be better than. Reasonable search range: 1 to 8
-   `ROI_add_chi2dof_improve`: Reasonable search range: 0 to 8
-   */
-  double ROI_add_nsigma_required, ROI_add_chi2dof_improve;
-};//struct InitialPeakFindSettings
-  
-
-
-struct FinalPeakFitSettings
-{
-  /** Combine ROIs, based on how near means are, and how much initial ROIs are overlapping.
-   
-   `combine_nsigma_near`: Reasonable search range of 1 to 10
-   `combine_ROI_overlap_frac`: Reasonable search range of -1 to 1
-   */
-  double combine_nsigma_near, combine_ROI_overlap_frac;
-  
-   
-  /** How many nsigma the peak needs to be to consider modifying the continuum type.
-   
-   Reasonable search range: 5 to 25. ???
-   */
-  double cont_type_peak_nsigma_threshold;
-  
-  /** How many stat higher the left is than the right, where stat is based of side edge area, to consider a stepped continuum. 
-   
-   Reasonable search range: 1 to 20. ???
-   */
-  double cont_type_left_right_nsigma;
-  
-  /** To see if flat, linear, or bilinear stepped continuum
-   //Cont P1: -1.6985 on left, -0.3472 on right
-   */
-  //double cont_type_sum_slopes;
-  
-  /** Refit peak with different steps, and this is the chi2/dof needed to accept solution 
-   
-   Reasonable search range: 0 to 4. ???
-   */
-  double cont_type_step_improve;
-  
-  /** How much of an improvement quadratic or cubic continuum type needs to be to actually use. 
-   
-   Reasonable search range: 0 to 4. ???
-   */
-  double cont_poly_order_increase_chi2dof_required;
-  
-  /** Check if we should add skew.
-      Right now maybe just just ratio of area between continuum and data for -1 to -4 sigma from mean,
-      compared to peak area, or maybe the ratio of sqrt of the areas.
-   
-   Reasonable search range: 0 to 10. ???
-   */
-  double skew_nsigma;
-  
-  /** How much adding skew needs to improve the ROI threshold in order to keep it. 
-   
-   Reasonable search range: 0 to 4. ???
-   */
-  double skew_improve_chi2_dof_threshold;
-  
-  
-  /** Determine ROI left and right base-widths for single peak ROIs.
-   Width will be modified based on stat uncert of initial fit.
-   
-   Reasonable search range: 0.5 to 7. ???
-  */
-  double roi_extent_low_num_fwhm_base, roi_extent_high_num_fwhm_base;
-  
-  /** How to add/subtract based the multiple based of statistical significance.
-   */
-  enum class RoiExtentMultType : int
-  {
-    Linear, Sqrt
-  };
-  
-  RoiExtentMultType roi_extent_mult_type;
-  
-  /** The multiple to add/subtract from ROI width
-   
-   The multiple can be peak-area within +-1 FWHM, and continuum-area in +- 1 FWHM
-   
-   Reasonable search range: 0 to 1. ???
-   */
-  double roi_extent_lower_side_stat_multiple, roi_extent_upper_side_stat_multiple;
-  
-  /** The multiple to add/subtract from multiple-peak ROI widths
-   
-   Use single peak peak value for starting, then have an additional add/subtract on each side
-   
-   Reasonable search range: -1 to 2. ???
-   */
-  double multi_roi_extent_lower_side_fwhm_mult, multi_roi_extent_upper_side_fwhm_mult;
-  
-  /** A value to see how many times each ROI should be refit for the final fit. 
-   
-   Reasonable search range: 1 to 3.
-   */
-  int num_refit_final;
-};//struct FinalPeakFitSettings
-
-
 /**
  
  */
@@ -1646,6 +1995,27 @@ vector<PeakDef> initial_peak_find_and_fit( const InitialPeakFindSettings &fit_se
   bool amplitudeOnly = false;
   vector<PeakDef> zeroth_fit_results, initial_fit_results;
   const std::vector<PeakDef> dummy_fixedpeaks;
+  
+  if( false )
+  {//Begin optimization block - delte when done optimizing `fitPeaks(...)`
+    const double start_wall = SpecUtils::get_wall_time();
+    const double start_cpu = SpecUtils::get_cpu_time();
+    
+    for( size_t i = 0; i < 20; ++i )
+    //while( true )
+    {
+      vector<PeakDef> zeroth_fit_results, initial_fit_results;
+      fitPeaks( candidate_peaks,
+               fit_settings.initial_stat_threshold, fit_settings.initial_hypothesis_threshold,
+               data, zeroth_fit_results, dummy_fixedpeaks, amplitudeOnly, isHPGe );
+    }
+    
+    const double end_wall = SpecUtils::get_wall_time();
+    const double end_cpu = SpecUtils::get_cpu_time();
+    
+    cout << "Eval took " << (end_wall - start_wall) << " s, wall and " << (end_cpu - start_cpu) << " s cpu" << endl;
+    exit(1);
+  }//End optimization block
   
   /* For some reason calling `fitPeaksInRange(...)` works a lot better than directly calling
    `fitPeaks(...)`, even though it is what `fitPeaksInRange` calls/uses.
@@ -1788,11 +2158,13 @@ vector<PeakDef> initial_peak_find_and_fit( const InitialPeakFindSettings &fit_se
     
     
     const PeakFitUtils::CoarseResolutionType coarse_res_type
-    = PeakFitUtils::coarse_resolution_from_peaks( *peaks );
+                                  = PeakFitUtils::coarse_resolution_from_peaks( *peaks );
     if( coarse_res_type != PeakFitUtils::CoarseResolutionType::High )
     {
+#ifndef NDEBUG
       cerr << "Found coarse_res_type=" << static_cast<int>(coarse_res_type) << " with " << initial_fit_results.size() << " peaks." << endl;
       cerr << endl;
+#endif
     }
     
 #warning "initial_peak_find_and_fit: always assuming HPGe right now - for dev"
@@ -1871,7 +2243,8 @@ vector<PeakDef> initial_peak_find_and_fit( const InitialPeakFindSettings &fit_se
     //cout << "Final FWHM=" << 100*cs137_fwhm/661 << "%" << endl;
   }catch( std::exception &e )
   {
-    cerr << ("Caught exception: " + string(e.what()) + "\n");
+    if( debug_printout )
+      cerr << ("Caught exception: " + string(e.what()) + "\n");
     
     fwhm_coeffs.clear();
     fwhm_coeff_uncerts.clear();
@@ -2192,16 +2565,20 @@ vector<PeakDef> initial_peak_find_and_fit( const InitialPeakFindSettings &fit_se
     const size_t end_chnl = old_roi_upper_chnl + num_extra_chnl;
     
     
-    double avrg_sigma = 0.0;
+    double avrg_gaus_sigma = 0.0, max_significance = 0.0;
     vector<double> means, sigmas;
     for( const shared_ptr<const PeakDef> &p : peaks_in_roi )
     {
-      avrg_sigma += p->sigma();
+      avrg_gaus_sigma += p->sigma();
       means.push_back( p->mean() );
       sigmas.push_back( p->sigma() );
+      
+      assert( (p->peakArea() < 0.0) || (p->peakAreaUncert() > 0.0) );
+      if( p->peakAreaUncert() > 0.0 )
+        max_significance = std::max( max_significance, p->peakArea() / p->peakAreaUncert() );
     }
     
-    avrg_sigma /= peaks_in_roi.size();
+    avrg_gaus_sigma /= peaks_in_roi.size();
     
     
     // Variable to track which channel is best to have new peak mean at, by using statistical
@@ -2223,8 +2600,8 @@ vector<PeakDef> initial_peak_find_and_fit( const InitialPeakFindSettings &fit_se
       if( other_cont == orig_continuum )
         continue;
       
-      const double other_lower_roi = other_cont->lowerEnergy() - 7*avrg_sigma;
-      const double other_upper_roi = other_cont->lowerEnergy() + 7*avrg_sigma;
+      const double other_lower_roi = other_cont->lowerEnergy() - 7*avrg_gaus_sigma;
+      const double other_upper_roi = other_cont->lowerEnergy() + 7*avrg_gaus_sigma;
       
       if( (other_lower_roi < old_upper_energy) && (other_upper_roi > old_lower_energy) )
       {
@@ -2255,8 +2632,8 @@ vector<PeakDef> initial_peak_find_and_fit( const InitialPeakFindSettings &fit_se
       
       // We'll make sure the ROI goes at least 1.5 (chosen arbitrarily) FWHM to each side of added peak
       const double min_fwhm_roi_extend = 1.5;
-      size_t trial_start_chnl = std::min( old_roi_lower_chnl, data->find_gamma_channel(added_mean - min_fwhm_roi_extend*avrg_sigma*PhysicalUnits::fwhm_nsigma) );
-      size_t trial_end_chnl = std::max( old_roi_upper_chnl, data->find_gamma_channel(added_mean + min_fwhm_roi_extend*avrg_sigma*PhysicalUnits::fwhm_nsigma) );
+      size_t trial_start_chnl = std::min( old_roi_lower_chnl, data->find_gamma_channel(added_mean - min_fwhm_roi_extend*avrg_gaus_sigma*PhysicalUnits::fwhm_nsigma) );
+      size_t trial_end_chnl = std::max( old_roi_upper_chnl, data->find_gamma_channel(added_mean + min_fwhm_roi_extend*avrg_gaus_sigma*PhysicalUnits::fwhm_nsigma) );
       
       assert( trial_start_chnl < num_channels || trial_end_chnl < num_channels );
       if( trial_start_chnl >= num_channels || trial_end_chnl >= num_channels )
@@ -2268,7 +2645,7 @@ vector<PeakDef> initial_peak_find_and_fit( const InitialPeakFindSettings &fit_se
       
       
       // Lets check the other ROIs and see if we are overlapping with them
-      double edge_ish = (chnl < lowest_mean_channel) ? added_mean - 2.0*avrg_sigma : added_mean + 2.0*avrg_sigma;
+      //double edge_ish = (chnl < lowest_mean_channel) ? added_mean - 2.0*avrg_gaus_sigma : added_mean + 2.0*avrg_gaus_sigma;
         
       bool overlaps = false;
       for( const auto &other_c_p : roi_to_peaks )
@@ -2277,8 +2654,10 @@ vector<PeakDef> initial_peak_find_and_fit( const InitialPeakFindSettings &fit_se
         if( other_cont == orig_continuum )
           continue;
         
-        if( (edge_ish > other_cont->lowerEnergy())
-            && (edge_ish < other_cont->upperEnergy()) )
+        //if( (edge_ish > other_cont->lowerEnergy())
+        //    && (edge_ish < other_cont->upperEnergy()) )
+        if( (added_mean > other_cont->lowerEnergy())
+           && (added_mean < other_cont->upperEnergy()) )
         {
           overlaps = true;
           break;
@@ -2302,8 +2681,20 @@ vector<PeakDef> initial_peak_find_and_fit( const InitialPeakFindSettings &fit_se
         
         const float * const energies = &(channel_energies[trial_start_chnl]);
         const float * const data_cnts = &(channel_counts[trial_start_chnl]);
-        const int num_polynomial_terms = std::max( num_prev_poly, 2 );
-        const bool step_continuum = PeakContinuum::is_step_continuum( orig_continuum->type() );
+        int num_polynomial_terms = std::max( num_prev_poly, 2 );
+        
+        //Really high stat HPGe peaks that have a "step" in them are susceptible to getting a bunch
+        //  of peaks added on in the low-energy range.  So for these we'll make the continuum
+        //  step-functions - either flat, or if higher-stat, linear.
+        //  These threshold are pure guesses - but its maybe not worth the effort to include in the optimization?
+        const double significance_for_flat_step_continuum = 40;
+        const double significance_for_linear_step_continuum = 60;
+        
+        bool step_continuum = (PeakContinuum::is_step_continuum( orig_continuum->type() )
+                                    || (max_significance > significance_for_flat_step_continuum));
+        if( significance_for_linear_step_continuum > 50 )
+          num_polynomial_terms = std::max( num_polynomial_terms, 3 );
+        
         const double ref_energy = orig_continuum->referenceEnergy();
         vector<double> trial_means = means, trial_sigmas = sigmas;
         
@@ -2321,7 +2712,7 @@ vector<PeakDef> initial_peak_find_and_fit( const InitialPeakFindSettings &fit_se
         const double initial_peak_area = std::accumulate( begin(amplitudes), end(amplitudes), 0.0 );
         
         trial_means.push_back( added_mean );
-        trial_sigmas.push_back( avrg_sigma );
+        trial_sigmas.push_back( avrg_gaus_sigma );
         const double with_new_peak_chi2 = fit_amp_and_offset( energies, data_cnts,
                               num_trial_channel, num_polynomial_terms, step_continuum, ref_energy,
                               trial_means, trial_sigmas, nearbyOtherRoiPeaks, PeakDef::SkewType::NoSkew,
@@ -2369,7 +2760,9 @@ vector<PeakDef> initial_peak_find_and_fit( const InitialPeakFindSettings &fit_se
         
         if( (nsigma > max_stat_sig)
            && (nsigma > fit_settings.ROI_add_nsigma_required)
-           && (chi2_dof_improve > fit_settings.ROI_add_chi2dof_improve) )
+           && (chi2_dof_improve > fit_settings.ROI_add_chi2dof_improve) 
+           && ((nsigma < significance_for_linear_step_continuum) || (chi2_dof_improve > 2*fit_settings.ROI_add_chi2dof_improve) ) //This is totally ad-hoc, and not tested
+           )
         {
           max_stat_sig = nsigma;
           
@@ -2430,6 +2823,7 @@ vector<PeakDef> initial_peak_find_and_fit( const InitialPeakFindSettings &fit_se
         }//if( nsigma > max_stat_sig )
         
         //if( (mean > 950 && mean < 975) || (mean > 1080 && mean < 1100) )
+        if( false )
         {
           cout << "At " << added_mean << " keV, before adding peak, chi2=" << without_new_peak_chi2
           << ", and after adding chi2=" << with_new_peak_chi2
@@ -2530,6 +2924,38 @@ double eval_initial_peak_find_and_fit( const InitialPeakFindSettings &fit_settin
   
   map<const ExpectedPhotopeakInfo *,vector<PeakDef>> found_maybe_wanted, found_def_wanted;
   
+  
+  // Single and double escape fraction for 20% generic HPGe
+  const auto single_escape_sf = []( const double x ) -> double {
+    return std::max( 0.0, (1.8768E-11 *x*x*x) - (9.1467E-08 *x*x) + (2.1565E-04 *x) - 0.16367 );
+  };
+  
+  const auto double_escape_sf = []( const double x ) -> double {
+    return std::max( 0.0, (1.8575E-11 *x*x*x) - (9.0329E-08 *x*x) + (2.1302E-04 *x) - 0.16176 );
+  };
+  
+  vector<tuple<double,double,double,double>> possible_escape_peak_parents;
+  for( const auto &p : src_info.expected_photopeaks )
+  {
+    if( p.effective_energy > 1060 )
+    {
+      const double se_area = p.peak_area * single_escape_sf( p.effective_energy );
+      const double de_area = p.peak_area * double_escape_sf( p.effective_energy );
+      possible_escape_peak_parents.emplace_back( p.effective_energy, p.peak_area, se_area, de_area );
+    }//if( p.effective_energy > 1060 )
+  }//for( const auto &p : src_info.expected_photopeaks )
+  
+  // Sort by S.E. amplitude
+  std::sort( begin(possible_escape_peak_parents), end(possible_escape_peak_parents),
+    []( const tuple<double,double,double,double> &lhs, const tuple<double,double,double,double> &rhs ){
+      return get<2>(lhs) > get<2>(rhs);
+  });
+  
+  // Pick only top 10 (arbitrary) energies to create single escape peaks
+  if( possible_escape_peak_parents.size() > 10 )
+    possible_escape_peak_parents.resize( 10 );
+  
+  
   // We'll just pick the closest expected peak in energy, to the detected peak.
   //   This isnt perfect, but close enough for our purposes, maybe
   for( PeakDef &found_peak : initial_peaks )
@@ -2549,7 +2975,7 @@ double eval_initial_peak_find_and_fit( const InitialPeakFindSettings &fit_settin
         }
       }
     }//for( const ExpectedPhotopeakInfo &expected_peak : src_info.expected_photopeaks )
-    
+  
     
     if( nearest_expected_peak )
     {
@@ -2569,6 +2995,39 @@ double eval_initial_peak_find_and_fit( const InitialPeakFindSettings &fit_settin
     {
       found_peak.setUserLabel( "Not Expected" );
       found_peak.setLineColor( Wt::GlobalColor::red );
+      
+      
+      static const Wt::WColor purple( 235, 33, 188 );
+      
+      
+      // If HPGe, check if this is a single or double escape peak - we dont have these in the
+      //  "truth" lines.
+      if( (found_energy > 508) && (found_energy < 514) )
+      {
+        found_peak.setUserLabel( "Annih." );
+        found_peak.setLineColor( purple );
+      }else if( data->num_gamma_channels() > 4098 )
+      {
+        const double range = found_peak.fwhm();
+        const double se_parent = found_energy + 510.9989;
+        const double de_parent = found_energy + 2*510.9989;
+        
+        for( const auto &ep : possible_escape_peak_parents )
+        {
+          if( fabs(get<0>(ep) - se_parent) < range )
+          {
+            found_peak.setLineColor( purple );
+            found_peak.setUserLabel( "Possibly S.E. of " + to_string( get<0>(ep) ) );
+            break;
+          }else if( fabs(get<0>(ep) - de_parent) < range )
+          {
+            found_peak.setLineColor( purple );
+            found_peak.setUserLabel( "Possibly D.E. of " + to_string( get<0>(ep) ) );
+            break;
+          }
+        }//for( loop over possible escape peak parents )
+      }//if( data->num_gamma_channels() > 4098 )
+      
       found_not_expected.push_back( found_peak );
     }//if( nearest_expected_peak )
   }//for( const PeakDef &found_peak : initial_peaks )
@@ -2590,9 +3049,12 @@ double eval_initial_peak_find_and_fit( const InitialPeakFindSettings &fit_settin
     }//
   }//for( const ExpectedPhotopeakInfo &epi : expected_photopeaks )
   
-  cout << "Found " << found_def_wanted.size() << " of " << (def_wanted_not_found.size() + found_def_wanted.size())
-  << " peaks definetly wanted.  Found " << found_maybe_wanted.size() << " of " << (maybe_wanted_not_found.size() + found_maybe_wanted.size())
-  << " maybe wanted peak.  Found " << found_not_expected.size() << " unexpected peaks." << endl;
+  if( debug_printout )
+  {
+    cout << "Found " << found_def_wanted.size() << " of " << (def_wanted_not_found.size() + found_def_wanted.size())
+    << " peaks definetly wanted.  Found " << found_maybe_wanted.size() << " of " << (maybe_wanted_not_found.size() + found_maybe_wanted.size())
+    << " maybe wanted peak.  Found " << found_not_expected.size() << " unexpected peaks." << endl;
+  }
   
   double score = found_def_wanted.size();
   
@@ -2601,10 +3063,18 @@ double eval_initial_peak_find_and_fit( const InitialPeakFindSettings &fit_settin
     const ExpectedPhotopeakInfo * epi = pp.first;
     if( epi->nsigma_over_background > JudgmentFactors::lower_want_nsigma )
     {
-      const double amount_short = JudgmentFactors::def_want_nsigma - epi->nsigma_over_background;
-      const double fraction_short = amount_short / (JudgmentFactors::def_want_nsigma - JudgmentFactors::lower_want_nsigma);
-      assert( (fraction_short >= 0.0) && (fraction_short <= 1.0) );
-      score += JudgmentFactors::min_initial_fit_maybe_want_score + (1.0 - JudgmentFactors::min_initial_fit_maybe_want_score)*(1 - fraction_short);
+      if( epi->peak_area > JudgmentFactors::min_def_wanted_counts )
+      {
+        const double amount_short = JudgmentFactors::def_want_nsigma - epi->nsigma_over_background;
+        const double fraction_short = amount_short / (JudgmentFactors::def_want_nsigma - JudgmentFactors::lower_want_nsigma);
+        assert( (fraction_short >= 0.0) && (fraction_short <= 1.0) );
+        score += JudgmentFactors::min_initial_fit_maybe_want_score + (1.0 - JudgmentFactors::min_initial_fit_maybe_want_score)*(1 - fraction_short);
+      }else
+      {
+        const double fraction_short = 1.0 - (epi->peak_area / JudgmentFactors::min_def_wanted_counts);
+        assert( (fraction_short >= 0.0) && (fraction_short <= 1.0) );
+        score += JudgmentFactors::min_initial_fit_maybe_want_score + (1.0 - JudgmentFactors::min_initial_fit_maybe_want_score)*(1 - fraction_short);
+      }
     }else
     {
       score += 0.0; //No punishment, but no reward.
@@ -2617,10 +3087,13 @@ double eval_initial_peak_find_and_fit( const InitialPeakFindSettings &fit_settin
   //  remove this one from the score
   for( const auto &p : found_not_expected )
   {
-    if( (p.mean() < 508) || (p.mean() > 514) ) // we dont have annihilation
+    // we dont have "truth" lines for annihilation or escape peaks
+    if( SpecUtils::icontains(p.userLabel(), "S.E.")
+             || SpecUtils::icontains(p.userLabel(), "D.E.")
+             || SpecUtils::icontains(p.userLabel(), "Annih.") )
     {
-      num_found_not_expected -= 1;
-      break;
+      if( num_found_not_expected > 0 )
+        num_found_not_expected -= 1;
     }
   }
     
@@ -2629,12 +3102,12 @@ double eval_initial_peak_find_and_fit( const InitialPeakFindSettings &fit_settin
   
   // Now punish for extra time fitting more peaks
   assert( num_add_candidates_fit_for >= num_add_candidates_accepted );
-  score -= JudgmentFactors::extra_add_fits_punishment * (num_add_candidates_fit_for - num_add_candidates_accepted) / num_add_candidates_fit_for;
+  if( num_add_candidates_fit_for > 0 )
+    score -= JudgmentFactors::extra_add_fits_punishment * (num_add_candidates_fit_for - num_add_candidates_accepted) / num_add_candidates_fit_for;
   
   // blah - blah blah - so now we need to test this function by walking through a few spectra.
-  if( true )
+  if( debug_printout )
   {
-    //We ll
     SpecMeas output;
     auto new_meas = make_shared<SpecUtils::Measurement>( *data );
     new_meas->set_sample_number( 1 );
@@ -2678,14 +3151,29 @@ double eval_initial_peak_find_and_fit( const InitialPeakFindSettings &fit_settin
     output.setPeaks( peaks, {1} );
     output.cleanup_after_load( SpecUtils::SpecFile::DontChangeOrReorderSamples );
     
+    string outdir = "output_n42";
+    if( !SpecUtils::is_directory(outdir) && SpecUtils::create_directory(outdir) )
+      cerr << "Failed to create directory '" << outdir << "'" << endl;
     
-    const string filename = "current_eval.n42";
+    outdir = SpecUtils::append_path( outdir, src_info.detector_name );
+    if( !SpecUtils::is_directory(outdir) && SpecUtils::create_directory(outdir) )
+      cerr << "Failed to create directory '" << outdir << "'" << endl;
     
-    output.save2012N42File( filename, [=](){
-      cerr << "Failed to write '" << filename << "'" << endl;
+    outdir = SpecUtils::append_path( outdir, src_info.location_name );
+    if( !SpecUtils::is_directory(outdir) && !SpecUtils::create_directory(outdir) )
+      cerr << "Failed to create directory '" << outdir << "'" << endl;
+    
+    outdir = SpecUtils::append_path( outdir, src_info.live_time_name );
+    if( !SpecUtils::is_directory(outdir) && !SpecUtils::create_directory(outdir) )
+      cerr << "Failed to create directory '" << outdir << "'" << endl;
+    
+    const string out_n42 = SpecUtils::append_path( outdir, src_info.src_info.src_name ) + "_initial_fit.n42";
+    
+    output.save2012N42File( out_n42, [=](){
+      cerr << "Failed to write '" << out_n42 << "'" << endl;
     });
     
-    cout << "Wrote: " << filename << endl;
+    cout << "Wrote: " << out_n42 << endl;
   }//if( write output N42 file to inspect
   
   
@@ -2716,7 +3204,7 @@ double eval_final_peak_fit( const FindCandidateSettings &candidate_settings,
   throw runtime_error( "eval_final_peak_fit not implemented yet" );
   
   return 0.0;
-}//double eval_initial_peak_find_and_fit(...)
+}//double eval_final_peak_fit(...)
 
 
 int main( int argc, char **argv )
@@ -2860,12 +3348,14 @@ int main( int argc, char **argv )
             continue;
           }
           
+          
           if( debug_printout )
           {
             const vector<string> wanted_sources{
               //"Ac225_Unsh",
               "Eu152_Sh",
-              //"Fe59_Phant"
+              //"Fe59_Phant",
+              //"Am241_Unsh"
             };
             bool wanted = wanted_sources.empty();
             for( const string &src : wanted_sources )
@@ -3081,9 +3571,8 @@ int main( int argc, char **argv )
   cout << "Used " << num_accepted_inputs << " of total " << num_inputs << " input files." << endl;
   
    
-  auto eval_settings = [&input_srcs](
-                                                            const FindCandidateSettings settings,
-                                                            const bool write_n42 )
+  auto eval_candidate_settings = [&input_srcs]( const FindCandidateSettings settings,
+                                                const bool write_n42 )
       -> tuple<double,size_t,size_t,size_t,size_t,size_t> //<score, num_peaks_found, num_possibly_accepted_peaks_not_found, num_extra_peaks>
   {
     double sum_score = 0.0;
@@ -3237,7 +3726,7 @@ int main( int argc, char **argv )
       {
         //const string src_dir = SpecUtils::parent_path( info.src_info.file_base_path );
         
-        string outdir = "/Users/wcjohns/rad_ana/InterSpec/target/peak_fit_improve/build_xcode/output_n42";
+        string outdir = "output_n42";
         if( !SpecUtils::is_directory(outdir) && !SpecUtils::create_directory(outdir) )
           cerr << "Failed to create directory '" << outdir << "'" << endl;
         
@@ -3253,7 +3742,7 @@ int main( int argc, char **argv )
         if( !SpecUtils::is_directory(outdir) && !SpecUtils::create_directory(outdir) )
           cerr << "Failed to create directory '" << outdir << "'" << endl;
         
-        const string out_n42 = SpecUtils::append_path( outdir, info.src_info.src_name ) + ".n42";
+        const string out_n42 = SpecUtils::append_path( outdir, info.src_info.src_name ) + "_peak_candidates.n42";
         
         SpecMeas output;
         
@@ -3433,7 +3922,7 @@ int main( int argc, char **argv )
     //cout << "Avrg score: " << sum_score/input_srcs.size() << endl;
     
     return {sum_score / input_srcs.size(), num_peaks_found, num_def_wanted_not_found, num_def_wanted_peaks_found, num_possibly_accepted_peaks_not_found, num_extra_peaks};
-  };//eval_settings lambda
+  };//eval_candidate_settings lambda
   
   
   /**
@@ -3460,9 +3949,9 @@ int main( int argc, char **argv )
   bool done_posting = false;
   size_t num_evaluations = 0, last_percent_printed = 0, num_posted = 0;
   std::mutex score_mutex;
-  auto eval_settings_fcn = [&]( const FindCandidateSettings settings, const bool write_n42 ){
+  auto eval_candidate_settings_fcn = [&]( const FindCandidateSettings settings, const bool write_n42 ){
     
-    const tuple<double,size_t,size_t,size_t,size_t,size_t> result = eval_settings( settings, write_n42 );
+    const tuple<double,size_t,size_t,size_t,size_t,size_t> result = eval_candidate_settings( settings, write_n42 );
   
     const double score = std::get<0>(result);
     const size_t num_peaks_found = std::get<1>(result);
@@ -3506,166 +3995,264 @@ int main( int argc, char **argv )
   //best_settings.smooth_polynomial_order = 2;  // highres 3, lowres 2
   //best_settings.threshold_FOM = 1.3;
   //best_settings.pos_sum_threshold_sf = 0.16f;
-  //eval_settings_fcn( best_settings, false );
+  //eval_candidate_settings_fcn( best_settings, false );
   
-  if( debug_printout )
+  
+  enum class OptimizationAction : int
   {
-    cerr << "Setting best_settings instead of actually finding them!" << endl;
-    // Some non-optimal settings, to use for just development.
-    best_settings.num_smooth_side_channels = 9;
-    best_settings.smooth_polynomial_order = 2;
-    best_settings.threshold_FOM = 0.914922;
-    best_settings.more_scrutiny_FOM_threshold = best_settings.threshold_FOM + 0.643457;
-    best_settings.pos_sum_threshold_sf = 0.048679;
-    best_settings.num_chan_fluctuate = 1;
-    best_settings.more_scrutiny_coarser_FOM = best_settings.threshold_FOM + 2.328440;
-    best_settings.more_scrutiny_min_dev_from_line = 5.875653;
-    best_settings.amp_to_apply_line_test_below = 6;
-    
-    
-    // Some real guess settings, to use just for development
-    InitialPeakFindSettings fit_settings;
-    fit_settings.initial_stat_threshold = 2.5; //  A reasonable search range of values is maybe between 0 and 8.
-    fit_settings.initial_hypothesis_threshold = 0;  //A reasonable search range of values is maybe between -0.1 and 10.
-    fit_settings.initial_min_nsigma_roi = 4;
-    fit_settings.initial_max_nsigma_roi = 12;
-    fit_settings.fwhm_fcn_form = InitialPeakFindSettings::FwhmFcnForm::SqrtPolynomialTwoCoefs;
-    fit_settings.search_roi_nsigma_deficit = 2;//Reasonable search range of 1 to 10.
-    fit_settings.search_stat_threshold = 3;//Reasonable search range of 0 and 8.
-    fit_settings.search_hypothesis_threshold = 2;//Reasonable search range of 0 and 8. -0.1 and 10.
-    fit_settings.search_stat_significance = 2.5;
-    
-    fit_settings.ROI_add_nsigma_required = 3;
-    fit_settings.ROI_add_chi2dof_improve = 0.5;
-    
-    
-    for( const DataSrcInfo &info : input_srcs )
+    Candidate,
+    InitialFit,
+    CodeDev
+  };//enum class OptimizationAction : int
+  
+  const OptimizationAction action = OptimizationAction::InitialFit;
+  
+  switch( action )
+  {
+    case OptimizationAction::Candidate:
     {
-      cout << "Evaluating " << info.location_name << "/" << info.live_time_name << "/" << info.detector_name << "/" << info.src_info.src_name << endl;
+      // code to run candidate peak optimization
+      const auto ga_eval = [&eval_candidate_settings](const FindCandidateSettings &settings) -> double {
+        const tuple<double,size_t,size_t,size_t,size_t,size_t> score = eval_candidate_settings( settings, false );
+        return get<0>( score );
+      };
       
-      const double weight = eval_initial_peak_find_and_fit( fit_settings, best_settings, info );
-      cout << "Got weight=" << weight << endl;
-    }//for( const DataSrcInfo &info : input_srcs )
-    
-    cerr << "Not making N42 files and stuff" << endl;
-    return 0;
-    
-  }else
-  {
-    // code to run candidate peak optimization
-    const auto ga_eval = [&eval_settings](const FindCandidateSettings &settings) -> double {
-      const tuple<double,size_t,size_t,size_t,size_t,size_t> score = eval_settings( settings, false );
-      return get<0>( score );
-    };
-    
-    best_settings = CandidatePeak_GA::do_ga_eval( ga_eval );
-    
-    
-    
-    
-    /*
-    SpecUtilsAsync::ThreadPool pool;
-    
-    // With this many nested loops, its really easy for the number of iterations to explode to an
-    // intractable amount
-    //for( int num_side = 8; num_side < 11; ++num_side )
-    for( int num_side = 7; num_side < 12; ++num_side )
-    {
-      for( int poly_order = 2; poly_order < 3; ++poly_order )
+      best_settings = CandidatePeak_GA::do_ga_eval( ga_eval );
+      
+      /*
+      SpecUtilsAsync::ThreadPool pool;
+      
+      // With this many nested loops, its really easy for the number of iterations to explode to an
+      // intractable amount
+      //for( int num_side = 8; num_side < 11; ++num_side )
+      for( int num_side = 7; num_side < 12; ++num_side )
       {
-        //for( double threshold_FOM = 1.3; threshold_FOM < 2.0; threshold_FOM += 0.2 )
-        for( double threshold_FOM = 1.1; threshold_FOM < 1.8; threshold_FOM += 0.1 )
+        for( int poly_order = 2; poly_order < 3; ++poly_order )
         {
-          for( double more_scrutiny_FOM_threshold = threshold_FOM-0.001; more_scrutiny_FOM_threshold < (threshold_FOM + 1.25); more_scrutiny_FOM_threshold += 0.05 )
-          //for( double more_scrutiny_FOM_threshold = 0; more_scrutiny_FOM_threshold == 0; more_scrutiny_FOM_threshold += 0.25 )
+          //for( double threshold_FOM = 1.3; threshold_FOM < 2.0; threshold_FOM += 0.2 )
+          for( double threshold_FOM = 1.1; threshold_FOM < 1.8; threshold_FOM += 0.1 )
           {
-            //for( float pos_sum_threshold_sf = -0.06f; pos_sum_threshold_sf < 0.01; pos_sum_threshold_sf += 0.02 )
-            for( float pos_sum_threshold_sf = 0.0f; pos_sum_threshold_sf < 0.01; pos_sum_threshold_sf += 0.02 )
+            for( double more_scrutiny_FOM_threshold = threshold_FOM-0.001; more_scrutiny_FOM_threshold < (threshold_FOM + 1.25); more_scrutiny_FOM_threshold += 0.05 )
+            //for( double more_scrutiny_FOM_threshold = 0; more_scrutiny_FOM_threshold == 0; more_scrutiny_FOM_threshold += 0.25 )
             {
-              for( float more_scrutiny_coarser_FOM = threshold_FOM; more_scrutiny_coarser_FOM < (threshold_FOM + 1.0); more_scrutiny_coarser_FOM += 0.2 )
-              //for( float more_scrutiny_coarser_FOM = threshold_FOM; more_scrutiny_coarser_FOM <= threshold_FOM; more_scrutiny_coarser_FOM += 1.0 )
+              //for( float pos_sum_threshold_sf = -0.06f; pos_sum_threshold_sf < 0.01; pos_sum_threshold_sf += 0.02 )
+              for( float pos_sum_threshold_sf = 0.0f; pos_sum_threshold_sf < 0.01; pos_sum_threshold_sf += 0.02 )
               {
-                for( float more_scrutiny_min_dev_from_line = 2; more_scrutiny_min_dev_from_line < 4.0; more_scrutiny_min_dev_from_line += 0.5 )
+                for( float more_scrutiny_coarser_FOM = threshold_FOM; more_scrutiny_coarser_FOM < (threshold_FOM + 1.0); more_scrutiny_coarser_FOM += 0.2 )
+                //for( float more_scrutiny_coarser_FOM = threshold_FOM; more_scrutiny_coarser_FOM <= threshold_FOM; more_scrutiny_coarser_FOM += 1.0 )
                 {
-                  for( float amp_to_apply_line_test_below = 50; amp_to_apply_line_test_below < 110; amp_to_apply_line_test_below += 10 )
+                  for( float more_scrutiny_min_dev_from_line = 2; more_scrutiny_min_dev_from_line < 4.0; more_scrutiny_min_dev_from_line += 0.5 )
                   {
+                    for( float amp_to_apply_line_test_below = 50; amp_to_apply_line_test_below < 110; amp_to_apply_line_test_below += 10 )
                     {
-                      std::lock_guard<std::mutex> lock( score_mutex );
-                      ++num_posted;
-                    }
-                    
-                    FindCandidateSettings settings;
-                    settings.num_smooth_side_channels = num_side; // low res more
-                    settings.smooth_polynomial_order = poly_order;  // highres 3, lowres 2
-                    settings.threshold_FOM = threshold_FOM;
-                    settings.more_scrutiny_FOM_threshold = more_scrutiny_FOM_threshold;
-                    settings.pos_sum_threshold_sf = pos_sum_threshold_sf;
-                    //settings.min_counts_per_channel = min_counts_per_ch;
-                    settings.more_scrutiny_coarser_FOM = more_scrutiny_coarser_FOM;
-                    settings.more_scrutiny_min_dev_from_line = more_scrutiny_min_dev_from_line;
-                    settings.amp_to_apply_line_test_below = amp_to_apply_line_test_below;
-                    
-                    pool.post( [eval_settings_fcn,settings,&score_mutex](){
-                      try
                       {
-                        eval_settings_fcn( settings, false );
-                      }catch( std::exception &e )
-                      {
-                        //std::lock_guard<std::mutex> lock( score_mutex );
-                        //cerr << "Caught exception: " << e.what() << ", for:" << endl
-                        //<< settings.print("\tsettings") << endl;
+                        std::lock_guard<std::mutex> lock( score_mutex );
+                        ++num_posted;
                       }
-                    } );
-                  }//for( loop over amp_to_apply_line_test_below )
-                }//for( loop over more_scrutiny_min_dev_from_line )
-              }//for( loop over more_scrutiny_coarser_FOM )
-            }//for( loop over pos_sum_threshold_sf )
-          }//for( loop over more_scrutiny_FOM_threshold )
-        }//for( loop over threshold_FOM )
-      }//for( loop over poly_order )
-    }//for( loop over num_side )
-    
+                      
+                      FindCandidateSettings settings;
+                      settings.num_smooth_side_channels = num_side; // low res more
+                      settings.smooth_polynomial_order = poly_order;  // highres 3, lowres 2
+                      settings.threshold_FOM = threshold_FOM;
+                      settings.more_scrutiny_FOM_threshold = more_scrutiny_FOM_threshold;
+                      settings.pos_sum_threshold_sf = pos_sum_threshold_sf;
+                      //settings.min_counts_per_channel = min_counts_per_ch;
+                      settings.more_scrutiny_coarser_FOM = more_scrutiny_coarser_FOM;
+                      settings.more_scrutiny_min_dev_from_line = more_scrutiny_min_dev_from_line;
+                      settings.amp_to_apply_line_test_below = amp_to_apply_line_test_below;
+                      
+                      pool.post( [eval_candidate_settings_fcn,settings,&score_mutex](){
+                        try
+                        {
+                          eval_candidate_settings_fcn( settings, false );
+                        }catch( std::exception &e )
+                        {
+                          //std::lock_guard<std::mutex> lock( score_mutex );
+                          //cerr << "Caught exception: " << e.what() << ", for:" << endl
+                          //<< settings.print("\tsettings") << endl;
+                        }
+                      } );
+                    }//for( loop over amp_to_apply_line_test_below )
+                  }//for( loop over more_scrutiny_min_dev_from_line )
+                }//for( loop over more_scrutiny_coarser_FOM )
+              }//for( loop over pos_sum_threshold_sf )
+            }//for( loop over more_scrutiny_FOM_threshold )
+          }//for( loop over threshold_FOM )
+        }//for( loop over poly_order )
+      }//for( loop over num_side )
+      
+      {
+        std::lock_guard<std::mutex> lock( score_mutex );
+        done_posting = true;
+      }
+      cout << "Posted " << num_posted << " evaluations." << endl;
+      
+      pool.join();
+       */
+      
+      eval_candidate_settings_fcn( best_settings, true );
+      cout << "Wrote N42s with best settings." << endl;
+      
+      const double end_wall = SpecUtils::get_wall_time();
+      const double end_cpu = SpecUtils::get_cpu_time();
+      auto now = std::chrono::time_point_cast<std::chrono::microseconds>(std::chrono::system_clock::now());
+      
+      stringstream outmsg;
+      outmsg << "Finish Time: " << SpecUtils::to_iso_string(now) << endl
+      << endl
+      << best_settings.print("\tbest_settings") << endl
+      << endl
+      << "found_extra_punishment = " << JudgmentFactors::found_extra_punishment << endl
+      << "Best settings had score " << best_sum_score << ", with values:" << endl
+      << best_settings.print("\tsettings")
+      << "And:\n"
+      << "\tnum_peaks_found:" << best_score_num_peaks_found << endl
+      << "\tdef_wanted_peaks_found:" << best_score_def_wanted_peaks_found << endl
+      << "\tdef_wanted_peaks_not_found:" << best_score_def_wanted_peaks_not_found << endl
+      << "\tnum_possibly_accepted_peaks_not_found:" << best_score_num_possibly_accepted_peaks_not_found << endl
+      << "\tnum_extra_peaks:" << best_score_num_extra_peaks << endl
+      << endl << endl
+      << "Ran in {wall=" << (end_wall - start_wall)
+      << ", cpu=" << (end_cpu - start_cpu) << "} seconds" << endl;
+
+      {
+        ofstream best_settings_file( "best_candidate_settings.txt" );
+        best_settings_file << outmsg.str();
+      }
+      
+      cout << outmsg.str()<< endl;
+      break;
+    }//case OptimizationAction::Candidate:
+      
+    case OptimizationAction::InitialFit:
     {
-      std::lock_guard<std::mutex> lock( score_mutex );
-      done_posting = true;
-    }
-    cout << "Posted " << num_posted << " evaluations." << endl;
-    
-    pool.join();
-     */
-  }//if( debug_printout ) / else
+      // FindCandidateSettings:
+      //   Apply best settings found; Generation 491, population best score: -18.1076, population average score: -14.9656
+      best_settings.num_smooth_side_channels = 9;
+      best_settings.smooth_polynomial_order = 2;
+      best_settings.threshold_FOM = 1.127040;
+      best_settings.more_scrutiny_FOM_threshold = best_settings.threshold_FOM + 0.498290;
+      best_settings.pos_sum_threshold_sf = 0.081751;
+      best_settings.num_chan_fluctuate = 1;
+      best_settings.more_scrutiny_coarser_FOM = best_settings.threshold_FOM + 1.451548;
+      best_settings.more_scrutiny_min_dev_from_line = 5.866464;
+      best_settings.amp_to_apply_line_test_below = 6;
+      
+      std::function<double( const InitialPeakFindSettings &)> ga_eval_fcn 
+            = [best_settings, &input_srcs]( const InitialPeakFindSettings &settings ) -> double {
+        double score_sum = 0.0;
+        for( const DataSrcInfo &info : input_srcs )
+        {
+          const double score = eval_initial_peak_find_and_fit( settings, best_settings, info );
+          score_sum += score;
+        }
+        
+        return -score_sum;
+      };// set InitialFit_GA::ns_ga_eval_fcn
+      
+      const InitialPeakFindSettings best_initial_fit_settings = InitialFit_GA::do_ga_eval( ga_eval_fcn );
+      
+      
+      //eval_candidate_settings_fcn( best_settings, best_initial_fit_settings, true );
+      //cout << "Wrote N42s with best settings." << endl;
+      
+      const double end_wall = SpecUtils::get_wall_time();
+      const double end_cpu = SpecUtils::get_cpu_time();
+      auto now = std::chrono::time_point_cast<std::chrono::microseconds>(std::chrono::system_clock::now());
+      
+      stringstream outmsg;
+      outmsg << "Finish Time: " << SpecUtils::to_iso_string(now) << endl
+      << endl
+      << "Candidate settings used:\n"
+      << best_settings.print("\tbest_settings") << endl
+      << endl
+      << best_initial_fit_settings.print("\tbest_initial_fit_settings")
+      //<< "Best settings had score " << best_sum_score << ", with values:" << endl
+      << endl << endl
+      << "Ran in {wall=" << (end_wall - start_wall)
+      << ", cpu=" << (end_cpu - start_cpu) << "} seconds" << endl;
 
-  eval_settings_fcn( best_settings, true );
-  cout << "Wrote N42s with best settings." << endl;
+      {
+        ofstream best_settings_file( "best_candidate_settings.txt" );
+        best_settings_file << outmsg.str();
+      }
+      
+      cout << outmsg.str()<< endl;
+      
+      break;
+    }//case OptimizationAction::InitialFit:
+      
+      
+    case OptimizationAction::CodeDev:
+    {
+      cerr << "Setting best_settings instead of actually finding them!" << endl;
+      // Some non-optimal settings, to use for just development.
+      best_settings.num_smooth_side_channels = 9;
+      best_settings.smooth_polynomial_order = 2;
+      best_settings.threshold_FOM = 0.914922;
+      best_settings.more_scrutiny_FOM_threshold = best_settings.threshold_FOM + 0.643457;
+      best_settings.pos_sum_threshold_sf = 0.048679;
+      best_settings.num_chan_fluctuate = 1;
+      best_settings.more_scrutiny_coarser_FOM = best_settings.threshold_FOM + 2.328440;
+      best_settings.more_scrutiny_min_dev_from_line = 5.875653;
+      best_settings.amp_to_apply_line_test_below = 6;
+      
+      if( false )
+      {
+        for( const DataSrcInfo &info : input_srcs )
+        {
+          const double start_wall = SpecUtils::get_wall_time();
+          const double start_cpu = SpecUtils::get_cpu_time();
+          
+          for( size_t i = 0; i < 5000; ++i )
+          {
+            std::vector< std::tuple<float,float,float> > results;
+            find_candidate_peaks( info.src_info.src_spectra[0], 0, 0, results, best_settings );
+          }
+          
+          const double end_wall = SpecUtils::get_wall_time();
+          const double end_cpu = SpecUtils::get_cpu_time();
+          
+          cout << "Eval took " << (end_wall - start_wall) << " s, wall and " << (end_cpu - start_cpu) << " s cpu" << endl;
+          exit( 0 );
+        }
+      }//if( benchmark find_candidate_peaks )
+      
+      
+      // Some real guess settings, to use just for development
+      InitialPeakFindSettings fit_settings;
+      fit_settings.initial_stat_threshold = 2.5; //  A reasonable search range of values is maybe between 0 and 8.
+      fit_settings.initial_hypothesis_threshold = 0;  //A reasonable search range of values is maybe between -0.1 and 10.
+      fit_settings.initial_min_nsigma_roi = 4;
+      fit_settings.initial_max_nsigma_roi = 12;
+      fit_settings.fwhm_fcn_form = InitialPeakFindSettings::FwhmFcnForm::SqrtPolynomialTwoCoefs;
+      fit_settings.search_roi_nsigma_deficit = 2;//Reasonable search range of 1 to 10.
+      fit_settings.search_stat_threshold = 3;//Reasonable search range of 0 and 8.
+      fit_settings.search_hypothesis_threshold = 2;//Reasonable search range of 0 and 8. -0.1 and 10.
+      fit_settings.search_stat_significance = 2.5;
+      
+      fit_settings.ROI_add_nsigma_required = 3;
+      fit_settings.ROI_add_chi2dof_improve = 0.5;
+      
+      double sum_weight = 0.0;
+      for( const DataSrcInfo &info : input_srcs )
+      {
+        if( debug_printout )
+          cout << "Evaluating " << info.location_name << "/" << info.live_time_name << "/" << info.detector_name << "/" << info.src_info.src_name << endl;
+        
+        const double weight = eval_initial_peak_find_and_fit( fit_settings, best_settings, info );
+        sum_weight += weight;
+        if( debug_printout )
+          cout << "Got weight=" << weight << endl;
+      }//for( const DataSrcInfo &info : input_srcs )
+      
+      cout << "Average weight of " << input_srcs.size() << " files is " << (sum_weight/input_srcs.size()) << endl;
+      break;
+    }//case OptimizationAction::CodeDev:
+  }//switch( action )
   
-  const double end_wall = SpecUtils::get_wall_time();
-  const double end_cpu = SpecUtils::get_cpu_time();
-  auto now = std::chrono::time_point_cast<std::chrono::microseconds>(std::chrono::system_clock::now());
   
-  stringstream outmsg;
-  outmsg << "Finish Time: " << SpecUtils::to_iso_string(now) << endl
-  << endl
-  << best_settings.print("\tbest_settings") << endl 
-  << endl
-  << "found_extra_punishment = " << JudgmentFactors::found_extra_punishment << endl
-  << "Best settings had score " << best_sum_score << ", with values:" << endl
-  << best_settings.print("\tsettings")
-  << "And:\n"
-  << "\tnum_peaks_found:" << best_score_num_peaks_found << endl
-  << "\tdef_wanted_peaks_found:" << best_score_def_wanted_peaks_found << endl
-  << "\tdef_wanted_peaks_not_found:" << best_score_def_wanted_peaks_not_found << endl
-  << "\tnum_possibly_accepted_peaks_not_found:" << best_score_num_possibly_accepted_peaks_not_found << endl
-  << "\tnum_extra_peaks:" << best_score_num_extra_peaks << endl
-  << endl << endl
-  << "Ran in {wall=" << (end_wall - start_wall)
-  << ", cpu=" << (end_cpu - start_cpu) << "} seconds" << endl;
-
-  {
-    ofstream best_settings_file( "best_settings.txt" );
-    best_settings_file << outmsg.str();
-  }
   
-  cout << outmsg.str()<< endl;
   
   return EXIT_SUCCESS;
 }//int main( int argc, const char * argv[] )

@@ -592,7 +592,9 @@ double performResolutionFit( std::shared_ptr<const std::deque< std::shared_ptr<c
     << endl;
     if( minimum.IsAboveMaxEdm() )
       msg << "\t\tEDM=" << minimum.Edm() << endl;
+#ifndef NDEBUG
     cerr << endl << msg.str() << endl;
+#endif
     throw std::runtime_error( msg.str() );
   }//if( !minimum.IsValid() )
   
