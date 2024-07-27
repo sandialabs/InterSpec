@@ -30,6 +30,8 @@
 #include <boost/math/special_functions/erf.hpp>
 #include <boost/math/distributions/poisson.hpp>
 
+#include <unsupported/Eigen/SpecialFunctions>
+
 #include "InterSpec/PeakDef.h"
 #include "InterSpec/PeakDists.h"
 
@@ -49,6 +51,9 @@ namespace PeakDists
    so not switching to it yet.
    
    Surprisingly, the erf() function is the major bottleneck for peak fitting.
+   
+   Another alternative is to use `Eigen::numext::erf(...)`, but it is slightly slower than
+   this function, for the double case, but slightly faster if we use float
    */
   double boost_erf_imp( double z )
   {
@@ -1130,17 +1135,53 @@ namespace PeakDists
       return;
     
     const double sqrt2 = boost::math::constants::root_two<double>();
+    const double sqrt2sigma = sqrt2 * peak_sigma;
+    const double amp_mult = 0.5 * peak_amplitude;
+    
+    // TODO: it looks like Eigen might support vectorized `erf`; should update to take advantage of.
+    //       In which case we could maybe vectorize this function.  However, on Apple NEON there is
+    //       apparently a bug (although maybe I'm mis-reading the Eigen source code), so it isnt
+    //       supported there.  But for for x64, should try and see if this could speed things up.
     
     // We will keep track of the channels lower value of erf, so we dont have to re-compute
     //  it for each channel (this is the who advantage of )
-    double erflow = boost_erf_imp( (energies[channel] - peak_mean)/(sqrt2*peak_sigma) );
+    double erfarg = (energies[channel] - peak_mean) / sqrt2sigma;
+    
+    // `Eigen::numext::erf<float>(erfarg)` is a little faster than `boost_erf_imp(erfarg)`,
+    //    but a little less accurate (it even clamps values to +-1 outside of fabs(erfarg) of 4),
+    //    so we'll only use it where we wont notice this slight reduction of accuracy
+    double erflow = (amp_mult > 1.0E5)
+                      ? boost_erf_imp(erfarg)
+                      : static_cast<double>( Eigen::numext::erf(static_cast<float>(erfarg)) );
+
+#ifndef NDEBUG
+    // We'll check that things area as accurate as we expect
+    // Should maybe enable this check using PERFORM_DEVELOPER_CHECKS
+    double boost_erflow = boost_erf_imp(erfarg);
+    double eigen_erflow = Eigen::numext::erf(static_cast<float>(erfarg));
+#endif
     
     while( (channel < nchannel) && (energies[channel] < stop_energy) )
     {
-      const double erfhigharg = (energies[channel+1] - peak_mean)/(sqrt2*peak_sigma);
-      const double erfhigh = boost_erf_imp( erfhigharg );
+      erfarg = (energies[channel+1] - peak_mean) / sqrt2sigma;
       
-      channels[channel] += 0.5 * peak_amplitude * (erfhigh - erflow);
+#ifndef NDEBUG
+      const double boost_erfhigh = boost_erf_imp( erfarg );
+      const double eigen_erfhigh = Eigen::numext::erf(static_cast<float>(erfarg));
+      const double boost_val = amp_mult * (boost_erfhigh - boost_erflow);
+      const double eigen_val = amp_mult * (eigen_erfhigh - eigen_erflow);
+      
+      assert( (fabs(boost_val - eigen_val) < 0.001) && (fabs(boost_val - eigen_val) < 1.0E-6*amp_mult) );
+      
+      boost_erflow = boost_erfhigh;
+      eigen_erflow = eigen_erfhigh;
+#endif
+      
+      const double erfhigh = (amp_mult > 1.0E5) 
+                               ? boost_erf_imp( erfarg )
+                               : static_cast<double>( Eigen::numext::erf(static_cast<float>(erfarg)) );
+      
+      channels[channel] += amp_mult * (erfhigh - erflow);
       channel += 1;
       erflow = erfhigh;
     }//while( (channel < nchannel) && (energies[channel] < stop_energy) )

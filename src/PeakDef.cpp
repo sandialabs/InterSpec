@@ -3153,7 +3153,7 @@ string PeakDef::peak_json(const vector<std::shared_ptr<const PeakDef> > &inpeaks
 }//string peak_json( inpeaks )
 #endif //#if( SpecUtils_ENABLE_D3_CHART )
 
-std::shared_ptr<PeakContinuum> PeakDef::continuum()
+const std::shared_ptr<PeakContinuum> &PeakDef::continuum()
 {
   return m_continuum;
 }
@@ -4894,6 +4894,14 @@ double PeakContinuum::offset_integral( const double x0, const double x1,
 }//double offset_integral( const double x0, const double x1 ) const
 
 
+/*
+void PeakContinuum::offset_integral( const float *energies, double *channels, const size_t nchannel,
+                     const std::shared_ptr<const SpecUtils::Measurement> &data ) const
+{
+  assert( 0);
+  throw std::logic_error( "Shouldnt be here" );
+}//
+*/
 
 void PeakContinuum::eqn_from_offsets( size_t lowchannel,
                              size_t highchannel,
@@ -5065,7 +5073,7 @@ double PeakContinuum::offset_eqn_integral( const double *coefs,
   x0 -= peak_mean;
   x1 -= peak_mean;
   
-  //Explicitly evaluating the ppolynomial speeds up peak fitting by about a factor of two - suprising!
+  //Explicitly evaluating the polynomial speeds up peak fitting by about a factor of two - suprising!
   //const int maxorder = static_cast<int>( type );
   //for( int order = 0; order < maxorder; ++order )
   //{

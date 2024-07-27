@@ -28,6 +28,10 @@
 #include <vector>
 #include <memory>
 
+#if( PERFORM_DEVELOPER_CHECKS || !defined(NDEBUG) )
+#include <mutex>
+#endif
+
 #include "InterSpec/PeakDef.h"
 
 #include "Math/IFunction.h"
@@ -104,7 +108,9 @@ public:
                   const size_t lower_bin, const size_t upper_bin,
                   std::shared_ptr<const SpecUtils::Measurement> data,
                   std::shared_ptr<const SpecUtils::Measurement> continuum );
-
+  
+  ~PeakFitChi2Fcn();
+  
   void useReducedChi2( const bool use = true );        //default is true
   
   //setUseMultiPeakPunishment(bool): sets whether or not when fitting for
@@ -129,11 +135,14 @@ public:
 
   double evalMultiPeakPunishment( const std::vector<const PeakDef *> &peaks ) const;
   
-  //Creates the peaks from the given parameters, and if passed in the parameter
-  //  errors, adds those to the peaks as well.
-  //Note that the peaks will not have a Chi2DOF set, so you must do this
-  //  manually.
-  void parametersToPeaks( std::vector<PeakDef> &peaks,
+  /** Creates the peaks from the given parameters, and if passed in the parameter errors, adds those to the peaks as well.
+  
+   Note that the peaks will not have a Chi2DOF set, so you must do this manually.
+   
+   @returns The number of ROIs (e.g. number of unique `std::shared_ptr<PeakContinuum>` the
+            peaks will have) the resulting peaks have.
+   */
+  size_t parametersToPeaks( std::vector<PeakDef> &peaks,
                           const double *parameters,
                           const double *errors = 0 ) const;
   
@@ -186,6 +195,25 @@ protected:
   int m_npeaks;
   std::shared_ptr<const SpecUtils::Measurement> m_data;
   std::shared_ptr<const SpecUtils::Measurement> m_continium;
+  
+  // A good amount of the time spent in `double chi2( const double * )` is just
+  //  in allocating memory - we can avoid this by using a variable  to hold the memory
+  //  between calls to `chi2(...)`.
+  //  We have a choice of wither using a thread-local variable, or a mutable member variable.
+  //  Right now, I think we only call `chi2(...)` from a single thread, so we will use
+  //  that method, so we dont bloat the memory size of every thread.  But we'll also have
+  //  a test for development to make sure this is the case, and hopefully catch if we ever
+  //  change this behavior.
+#define PeakFitChi2Fcn_USE_USE_THREAD_LOCAL_CACHE 0
+  
+#if( PeakFitChi2Fcn_USE_USE_THREAD_LOCAL_CACHE )
+  static thread_local std::vector<PeakDef> m_peaks_cache;
+#else
+  mutable std::vector<PeakDef> m_peaks_cache;
+#if( PERFORM_DEVELOPER_CHECKS || !defined(NDEBUG) )
+  mutable std::mutex m_sanity_checker;
+#endif
+#endif //PeakFitChi2Fcn_USE_USE_THREAD_LOCAL_CACHE
   
 private:
   virtual double DoEval( const double *x ) const;

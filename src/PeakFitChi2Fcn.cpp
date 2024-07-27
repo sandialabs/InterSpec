@@ -79,6 +79,9 @@ namespace
   }//matrix_invert
 }
 
+#if( PeakFitChi2Fcn_USE_USE_THREAD_LOCAL_CACHE )
+thread_local std::vector<PeakDef> PeakFitChi2Fcn::m_peaks_cache;
+#endif
 
 PeakFitChi2Fcn::PeakFitChi2Fcn( const int npeaks,
                                 std::shared_ptr<const SpecUtils::Measurement> data,
@@ -90,6 +93,12 @@ PeakFitChi2Fcn::PeakFitChi2Fcn( const int npeaks,
      m_npeaks( npeaks ),
      m_data( data ),
      m_continium( continium )
+#if( !PeakFitChi2Fcn_USE_USE_THREAD_LOCAL_CACHE )
+    , m_peaks_cache{}
+#if( PERFORM_DEVELOPER_CHECKS || !defined(NDEBUG) )
+    , m_sanity_checker{}
+#endif
+#endif
 {
 }
 
@@ -285,10 +294,11 @@ PeakContinuum::OffsetType PeakFitChi2Fcn::continuumInfoToOffsetType( double info
 }//continuumInfoToOffsetType(...)
 
 
-void PeakFitChi2Fcn::parametersToPeaks( std::vector<PeakDef> &peaks,
+size_t PeakFitChi2Fcn::parametersToPeaks( std::vector<PeakDef> &peaks,
                                         const double *params,
                                         const double *errors ) const
 {
+  size_t num_rois = 0;
   peaks.resize( m_npeaks );
   
   for( int peakn = 0; peakn < m_npeaks; ++peakn )
@@ -329,10 +339,12 @@ void PeakFitChi2Fcn::parametersToPeaks( std::vector<PeakDef> &peaks,
       candidate_peak.setContinuum( peaks[sharedContIndex].continuum() );
     }else
     {
-      PeakContinuum::OffsetType offset = continuumInfoToOffsetType( contInfo );
+      num_rois += 1;
+      
+      const PeakContinuum::OffsetType offset = continuumInfoToOffsetType( contInfo );
       const double lowx = these_params[RangeStartEnergy];
       const double highx = these_params[RangeEndEnergy];
-      std::shared_ptr<PeakContinuum> continuum = candidate_peak.continuum();
+      const shared_ptr<PeakContinuum> &continuum = candidate_peak.continuum();
       continuum->setRange( lowx, highx );
       continuum->setType( offset );
     
@@ -405,6 +417,8 @@ void PeakFitChi2Fcn::parametersToPeaks( std::vector<PeakDef> &peaks,
     //log_developer_error( __func__, "Invalid CSS color called back " );
 #endif //PERFORM_DEVELOPER_CHECKS
   }//for( int peakn = 0; peakn < npeak; ++peakn )
+  
+  return num_rois;
 }//parametersToPeak(...)
 
 
@@ -459,13 +473,21 @@ double PeakFitChi2Fcn::evalMultiPeakPunishment( const vector<const PeakDef *> &p
 }//evalMultiPeakInsentive(...)
 
 
+PeakFitChi2Fcn::~PeakFitChi2Fcn()
+{
+#if( PeakFitChi2Fcn_USE_USE_THREAD_LOCAL_CACHE )
+  // Reclaim the memory.
+  m_peaks_cache.clear();
+  std::vector<PeakDef> dummy;
+  m_peaks_cache.swap( dummy );
+  //m_peaks_cache.shrink_to_fit(); //not guaranteed
+#endif
+}
+
 double PeakFitChi2Fcn::chi2( const double *params ) const
 {
   assert( m_data );
-  if( m_continium )
-  {
-    assert( m_data->num_gamma_channels() == m_continium->num_gamma_channels() );
-  }
+  assert( !m_continium || (m_data->num_gamma_channels() == m_continium->num_gamma_channels()) );
 
   const int nfitpar = m_npeaks * NumFitPars;
   for( int i = 0; i < nfitpar; ++i )
@@ -484,28 +506,77 @@ double PeakFitChi2Fcn::chi2( const double *params ) const
   double chi2 = 0.0;
   int num_effective_bins = 0;
   
-//  vector<double> gaussians( nbin, 0.0 );
-  std::vector<PeakDef> peaks;
-  parametersToPeaks( peaks, params );
+#if( !PeakFitChi2Fcn_USE_USE_THREAD_LOCAL_CACHE )
+#if( PERFORM_DEVELOPER_CHECKS || !defined(NDEBUG) )
+  const bool did_lock = m_sanity_checker.try_lock();
+  assert( did_lock );
+  if( !did_lock )
+    throw std::logic_error( "PeakFitChi2Fcn::chi2( const double * ) must be being called from multiple threads - fix this!" );
+  m_sanity_checker.unlock();
   
-  typedef map< std::shared_ptr<const PeakContinuum>, vector<const PeakDef *> > ContToPeakMap_t;
-  ContToPeakMap_t contToPeakMap;
+  std::lock_guard<std::mutex> lock( m_sanity_checker );
+#endif
+#endif
   
+  std::vector<PeakDef> &peaks = m_peaks_cache;
+  const size_t num_rois = parametersToPeaks( peaks, params );
+  
+  vector<pair<const PeakContinuum *, vector<const PeakDef *>>> cont_to_peaks;
+  cont_to_peaks.reserve( num_rois );
+  
+  if( num_rois == 1 )
+  {
+    const shared_ptr<PeakContinuum> &cont = peaks[0].continuum();
+    cont_to_peaks.emplace_back( cont.get(), vector<const PeakDef *>{} );
+    cont_to_peaks.back().second.reserve( peaks.size() );
+  }else
+  {
+    cont_to_peaks.reserve( num_rois );
+  }
+  
+  int prev_roi_index = -1;
   for( int peakn = 0; peakn < m_npeaks; ++peakn )
   {
-    const PeakDef &peak = peaks[peakn];
-    std::shared_ptr<const PeakContinuum> continuum = peak.continuum();
+    const std::shared_ptr<PeakContinuum> &cont = peaks[peakn].continuum();
+    const PeakContinuum * continuum = cont.get();
     if( continuum->type() == PeakContinuum::External )
-      continuum.reset();
-    contToPeakMap[continuum].push_back( &peaks[peakn] );
+      continuum = nullptr;
+    
+    int roi_index = -1;
+    if( num_rois == 1 )
+    {
+      roi_index = 0;
+    }else if( (prev_roi_index >= 0) && (cont_to_peaks[prev_roi_index].first == continuum) )
+    {
+      roi_index = prev_roi_index;
+    }else
+    {
+      for( int i = 0; i < static_cast<int>(cont_to_peaks.size()); ++i )
+      {
+        if( cont_to_peaks[i].first == continuum )
+        {
+          roi_index = i;
+          break;
+        }
+      }
+      
+      if( roi_index < 0 )
+      {
+        cont_to_peaks.emplace_back( continuum, vector<const PeakDef *>{} );
+        roi_index = static_cast<int>( cont_to_peaks.size() - 1 );
+      }
+    }//
+    
+    prev_roi_index = roi_index;
+    cont_to_peaks[roi_index].second.push_back( &peaks[peakn] );
   }//for( size_t peak = 0; peak < m_npeaks; ++peak )
   
-  for( const ContToPeakMap_t::value_type &vt : contToPeakMap )
+  
+  for( const pair<const PeakContinuum *, vector<const PeakDef *>> &vt : cont_to_peaks )
   {
     const vector<const PeakDef *> &peaks = vt.second;
-    const std::shared_ptr<const PeakContinuum> continuum = peaks[0]->continuum();
-    
-    std::set<size_t> binsToEval;
+    const PeakContinuum * const continuum = vt.first;
+      
     vector<pair<size_t,size_t>> ranges; //the first channel number of range, and the number of channels in the range
     
     for( const PeakDef *peak : peaks )
@@ -518,9 +589,6 @@ double PeakFitChi2Fcn::chi2( const double *params ) const
         lower_channel = std::max( m_lower_channel, lower_channel );
         upper_channel = std::min( m_upper_channel, upper_channel );
       }//if( m_lowerbin != m_upperbin )
-      
-      for( size_t channel = lower_channel; channel <= upper_channel; ++channel )
-        binsToEval.insert( channel );
       
       const size_t nchannel = 1 + (upper_channel - lower_channel);
       ranges.push_back( make_pair(lower_channel, nchannel) );
@@ -535,20 +603,30 @@ double PeakFitChi2Fcn::chi2( const double *params ) const
       assert( channel_energies );
       const float * const channel_energies_array = &((*channel_energies)[0]);
       
+      const shared_ptr<const vector<float>> &gamma_counts_ptr = m_data->gamma_counts();
+      assert( gamma_counts_ptr );
+      const vector<float> &gamma_counts = *gamma_counts_ptr;
+      
       const size_t nchannel = ranges[0].second;
       const size_t start_channel = ranges[0].first;
       const float * const energies = channel_energies_array + start_channel;
       
+      assert( (start_channel + nchannel) <= gamma_counts.size() );
+      
       vector<double> peak_counts( nchannel, 0.0 );
+      
+      
+     // continuum->offset_integral( energies, &(peak_counts[0]), nchannel, m_data );
       
       for( const PeakDef *peak : peaks )
         peak->gauss_integral( energies, &(peak_counts[0]), nchannel );
       
       num_effective_bins += nchannel;
+      
       for( size_t i = 0; i < nchannel; ++i )
       {
         const size_t channel = start_channel + i;
-        const double ndata = m_data->gamma_channel_content(channel);
+        const double ndata = gamma_counts[channel];
         const double nfitpeak = peak_counts[i];
         const double ncontinuum = continuum->offset_integral(energies[i], energies[i+1], m_data);
         
@@ -559,6 +637,22 @@ double PeakFitChi2Fcn::chi2( const double *params ) const
       }
     }else
     {
+      // 20240726: we probably wont ever end up here - I think, since we define the energy range
+      //           for the continuum, I think always.  But since I'm not sure, we'll leave this
+      //           code-block in for now.
+      assert( 0 );
+      
+      // `ranges` _could_ overlap, so we need to get the unique set of channels to evaluate.
+      //  However, note that using this set<> to do that, takes up as much time as everything
+      //  else in this function (!!), so if its found that we actually do get to this block of
+      //  code, we should manually, and more-efficiently, get the range of relevant channels.
+      set<size_t> binsToEval;
+      for( const auto &range : ranges )
+      {
+        for( size_t i = 0; i < range.second; ++i )
+          binsToEval.insert( range.first + i );
+      }
+      
       for( const size_t channel : binsToEval )
       {
         ++num_effective_bins;

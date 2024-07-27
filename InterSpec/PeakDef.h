@@ -208,6 +208,25 @@ struct PeakContinuum
   double offset_integral( const double x0, const double x1,
                           const std::shared_ptr<const SpecUtils::Measurement> &data ) const;
   
+  /*
+   TODO: the offset_integral(...) takes up a good portion of the time fitting peaks (I think particularly for step continuum), so should create optimized version that computes all channels for the ROI at once (I think this should be faster).
+   
+   Adds each channels continuum component to the `channels` array.
+   
+   Particularly when you have a stepped continuum, this
+   
+   \param energies Array of lower channel energies; must have at least one more entry than
+          `nchannel`
+   \param channels Channel count array integrals of Gaussian and Skew will be _added_ to (e.g.,
+          will not be zeroed); must have at least `nchannel` entries
+   \param nchannel The number of channels to do the integration over.
+   \param data The spectrum (only used for stepped continua).
+   
+   void offset_integral( const float *energies, double *channels, const size_t nchannel,
+                        const std::shared_ptr<const SpecUtils::Measurement> &data ) const;
+   */
+  
+  
   /** Returns true if a _valid_ polynomial, step, or external continuum type.
    Where valid polynomial and step continuums means any of the coefficients are non zero, not that they actually make sense.
    */
@@ -574,7 +593,7 @@ public:
 //  const PeakDef &operator=( const PeakDef &rhs );
 
   //continuum(): access the continuum
-  std::shared_ptr<PeakContinuum> continuum();
+  const std::shared_ptr<PeakContinuum> &continuum();
   std::shared_ptr<const PeakContinuum> continuum() const;
   
   //getContinuum(): garunteed to be a valid pointer

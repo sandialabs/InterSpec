@@ -1681,7 +1681,9 @@ std::vector<PeakDef> fitPeaksInRange( const double x0,
   
   if( migration )
   {
+#ifndef NDEBUG
     cerr << "fitPeaksInRange(...)\n\tWarning: Migration happened!" << endl;
+#endif
     
     return fitPeaksInRange( x0, x1, ncausality,
                            stat_threshold, hypothesis_threshold,
@@ -6004,7 +6006,8 @@ void fitPeaks( const std::vector<PeakDef> &all_near_peaks,
     if( !minimum.IsValid() )
     {
       //XXX - should we try to re-fit here? Or do something to handle the
-      //      faliure in some reasonable way?
+      //      failure in some reasonable way?
+#ifndef NDEBUG
       cerr << endl << endl << "status is not valid"
            << "\n\tHasMadePosDefCovar: " << minimum.HasMadePosDefCovar()
            << "\n\tHasAccurateCovar: " << minimum.HasAccurateCovar()
@@ -6015,6 +6018,7 @@ void fitPeaks( const std::vector<PeakDef> &all_near_peaks,
            << endl;
       if( minimum.IsAboveMaxEdm() )
         cout << "\t\tEDM=" << minimum.Edm() << endl;
+#endif
     }//if( !minimum.IsValid() )
     
     
