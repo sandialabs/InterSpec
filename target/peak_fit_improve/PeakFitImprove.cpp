@@ -378,6 +378,13 @@ struct FinalPeakFitSettings
    */
   double roi_extent_lower_side_stat_multiple, roi_extent_upper_side_stat_multiple;
   
+  //- Add in upper-bounds on stat uncert for peak (e.g., no differenace above 60 sigma or something)
+  //- Add in a lower-bound for min number of sigma before allowing step continuum
+  //- Add in seperate extent for stepped peaks
+  //- Add in a left vs right height, that is an "or" to just trying to fit a step
+  //- Or maybe it should be height mult or divided by stat significance
+  
+  
   /** The multiple to add/subtract from multiple-peak ROI widths
    
    Use single peak peak value for starting, then have an additional add/subtract on each side
@@ -3181,8 +3188,7 @@ double eval_initial_peak_find_and_fit( const InitialPeakFindSettings &fit_settin
 }//double eval_initial_peak_find_and_fit(...)
 
 
-vector<PeakDef> final_peak_fit( const FindCandidateSettings &candidate_settings,
-                               const InitialPeakFindSettings &initial_fit_settings,
+vector<PeakDef> final_peak_fit( const vector<PeakDef> &pre_fit_peaks,
                                const FinalPeakFitSettings &final_fit_settings,
                                const DataSrcInfo &src_info )
 {
@@ -3205,6 +3211,60 @@ double eval_final_peak_fit( const FindCandidateSettings &candidate_settings,
   
   return 0.0;
 }//double eval_final_peak_fit(...)
+
+
+void do_final_peak_fit_ga_optimization( const FindCandidateSettings &candidate_settings,
+                           const InitialPeakFindSettings &initial_fit_settings,
+                           const vector<DataSrcInfo> &input_srcs )
+{
+  vector<vector<PeakDef>> initial_peak_fits( input_srcs.size(), {} );
+  
+  {// Begin get initial peak fit
+    cout << "Starting to fit initial peaks." << endl;
+    const double start_wall = SpecUtils::get_wall_time();
+    const double start_cpu = SpecUtils::get_cpu_time();
+    SpecUtilsAsync::ThreadPool pool;
+    
+    for( size_t input_src_index = 0; input_src_index < input_srcs.size(); ++input_src_index )
+    {
+      const DataSrcInfo &src = input_srcs[input_src_index];
+      vector<PeakDef> *result = &(initial_peak_fits[input_src_index]);
+      shared_ptr<const SpecUtils::Measurement> data = src.src_info.src_spectra[0];
+      
+      auto fit_initial_peaks_worker = [&candidate_settings, &initial_fit_settings, data, result](){
+        size_t dummy1, dummy2;
+        *result = initial_peak_find_and_fit( initial_fit_settings, candidate_settings, data, dummy1, dummy2 )
+      }; //fit_initial_peaks_worker
+      
+      pool.post( fit_initial_peaks_worker );
+    }//for( loop over input_srcs )
+    
+    pool.join();
+    
+    const double end_wall = SpecUtils::get_wall_time();
+    const double end_cpu = SpecUtils::get_cpu_time();
+    cout << "Finished fitting initial peaks - took"
+    << " {wall: " << (end_wall - start_wall)
+    << " s, cpu: " << (end_cpu - start_cpu) << " s}."
+    << endl;
+  }// end get initial peak fit
+  
+  cout << "Will use candidate and initial fit settings:"
+  candidate_settings.print( "\tcandidate_settings" );
+  initial_fit_settings.print( "\tinitial_fit_settings" );
+  cout << "\n" << endl;
+  
+  // Now go through and setup genetic algorithm, as well implement final peak fitting code
+  
+  //TODO:
+  // - Should time using LinearProblemSubSolveChi2Fcn - may be faster/better?
+  // - Also, try using Ceres instead of Minuit.  Look for `USE_LM_PEAK_FIT`
+  // -Compare using PeakFitLM::fit_peak_for_user_click_LM(...) vs
+  //  `refitPeaksThatShareROI(...)`
+  // - See what works better for peaks - `LinearProblemSubSolveChi2Fcn` or `PeakFitChi2Fcn` - e.g. more accurate answers for some default fit scenarios.
+  
+}//void do_final_peak_fit_ga_optimization(...)
+
 
 
 int main( int argc, char **argv )
@@ -4002,6 +4062,7 @@ int main( int argc, char **argv )
   {
     Candidate,
     InitialFit,
+    FinalFit,
     CodeDev
   };//enum class OptimizationAction : int
   
@@ -4182,6 +4243,38 @@ int main( int argc, char **argv )
       break;
     }//case OptimizationAction::InitialFit:
       
+      
+    case OptimizationAction::FinalFit:
+    {
+      FindCandidateSettings candidate_settings;
+      candidate_settings.num_smooth_side_channels = 9;
+      candidate_settings.smooth_polynomial_order = 2;
+      candidate_settings.threshold_FOM = 1.127040;
+      candidate_settings.more_scrutiny_FOM_threshold = best_settings.threshold_FOM + 0.498290;
+      candidate_settings.pos_sum_threshold_sf = 0.081751;
+      candidate_settings.num_chan_fluctuate = 1;
+      candidate_settings.more_scrutiny_coarser_FOM = best_settings.threshold_FOM + 1.451548;
+      candidate_settings.more_scrutiny_min_dev_from_line = 5.866464;
+      candidate_settings.amp_to_apply_line_test_below = 6;
+      best_settings = candidate_settings
+      
+      InitialPeakFindSettings initial_fit_settings;
+      initial_fit_settings.initial_stat_threshold = ;
+      initial_fit_settings.initial_hypothesis_threshold = ;
+      initial_fit_settings.initial_min_nsigma_roi = ;
+      initial_fit_settings.initial_max_nsigma_roi = ;
+      initial_fit_settings.fwhm_fcn_form = FwhmFcnForm::;
+      initial_fit_settings.search_roi_nsigma_deficit = ;
+      initial_fit_settings.search_stat_threshold = ;
+      initial_fit_settings.search_hypothesis_threshold = ;
+      initial_fit_settings.search_stat_significance = ;
+      initial_fit_settings.ROI_add_nsigma_required = ;
+      initial_fit_settings.ROI_add_chi2dof_improve = ;
+      
+      do_final_peak_fit_ga_optimization( candidate_settings, initial_fit_settings, input_srcs );
+      
+      break;
+    }//case OptimizationAction::FinalFit
       
     case OptimizationAction::CodeDev:
     {

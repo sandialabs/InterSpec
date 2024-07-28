@@ -25,6 +25,7 @@
 
 #include <regex>
 #include <memory>
+#include <numeric>
 #include <iostream>
 
 #include <boost/math/constants/constants.hpp>
@@ -4838,12 +4839,9 @@ double PeakContinuum::offset_integral( const double x0, const double x1,
       if( !data || !data->num_gamma_channels() )
         throw runtime_error( "PeakContinuum::offset_integral: invalid data spectrum passed in" );
       
-      // If you change any of this, make sure you update fit_amp_and_offset(...) as well
-      
-      // TODO: this is not efficient, tested, or correct if integration limits do not correspond to channel limits
-#ifndef _WIN32  
-      #warning "TODO: Flat/Linear/BiLinear-Step offset_integral is not efficient, tested, or correct"
-#endif
+      // If you change any of this, make sure you update fit_amp_and_offset(...), as well as
+      //  the as well `PeakContinuum::offset_integral( const float *, double *, size_t, data )`.
+
       double roi_lower, roi_upper, cumulative_data, roi_data_sum;
       integrate_for_step( roi_lower, roi_upper, cumulative_data, roi_data_sum );
       
@@ -4880,7 +4878,7 @@ double PeakContinuum::offset_integral( const double x0, const double x1,
       
       const double contrib = ((1.0 - frac_data) * left_poly) + (frac_data * right_poly);
       
-      return contrib;
+      return std::max( 0.0, contrib );
     }//case BiLinearStep:
       
     case External:
@@ -4894,14 +4892,184 @@ double PeakContinuum::offset_integral( const double x0, const double x1,
 }//double offset_integral( const double x0, const double x1 ) const
 
 
-/*
+
 void PeakContinuum::offset_integral( const float *energies, double *channels, const size_t nchannel,
                      const std::shared_ptr<const SpecUtils::Measurement> &data ) const
 {
-  assert( 0);
-  throw std::logic_error( "Shouldnt be here" );
-}//
-*/
+  // This function should give the same answer as
+  //  `PeakContinuum::offset_integral( double x0, const double x1, data)`, on a channel-by-channel
+  //  basis, just be a little faster computationally, especially for stepped continua.
+  
+  assert( nchannel > 0 );
+  if( !nchannel )
+    return;
+  
+  switch( m_type )
+  {
+    case NoOffset:
+      return;
+      
+    case Constant: case Linear: case Quadratic: case Cubic:
+    {
+      for( size_t i = 0; i < nchannel; ++i )
+      {
+        const double x0 = energies[i] - m_referenceEnergy;
+        const double x1 = energies[i+1] - m_referenceEnergy;
+        
+        double answer = 0.0;
+        switch( m_type )
+        {
+          case NoOffset: case External: case FlatStep: case LinearStep: case BiLinearStep:
+            assert( 0 );
+            
+          case Cubic:
+            assert( m_values.size() == 4 );
+            answer += 0.25*m_values[3]*(x1*x1*x1*x1 - x0*x0*x0*x0);
+            //fall-through intentional
+            
+          case Quadratic:
+            assert( m_values.size() >= 3 );
+            answer += 0.333333333333333*m_values[2]*(x1*x1*x1 - x0*x0*x0);
+            //fall-through intentional
+            
+          case Linear:
+            assert( m_values.size() >= 2 );
+            answer += 0.5*m_values[1]*(x1*x1 - x0*x0);
+            //fall-through intentional
+            
+          case Constant:
+            assert( m_values.size() >= 1 );
+            answer += m_values[0]*(x1 - x0);
+            break;
+        };//switch( type )
+        
+        assert( std::max(answer,0.0) == offset_eqn_integral( &(m_values[0]), m_type, energies[i], energies[i+1], m_referenceEnergy ) );
+        
+        channels[i] += std::max( answer, 0.0 );
+      }//for( size_t i = 0; i < nchannel; ++i )
+      
+      break;
+    }//case Constant: case Linear: case Quadratic: case Cubic:
+      
+      
+    case FlatStep:
+    case LinearStep:
+    case BiLinearStep:
+    {
+      if( !data || !data->num_gamma_channels() )
+        throw runtime_error( "PeakContinuum::offset_integral: invalid data spectrum passed in" );
+      
+      // To be consistent with how fit_amp_and_offset(...) handles things, we will do our own
+      //  summing here, rather than calling Measurement::gamma_integral.
+      const size_t roi_lower_channel = data->find_gamma_channel( m_lowerEnergy );
+      const size_t roi_upper_channel = data->find_gamma_channel( m_upperEnergy );
+      
+      //const double roi_lower = data->gamma_channel_lower(roi_lower_channel);
+      //const double roi_upper = data->gamma_channel_upper(roi_upper_channel);
+      
+      const vector<float> &counts = *data->gamma_counts();
+      
+      assert( roi_lower_channel < counts.size() );
+      assert( roi_upper_channel < counts.size() );
+      
+      
+      const double roi_data_sum = std::accumulate( begin(counts) + roi_lower_channel, begin(counts) + roi_upper_channel + 1,  0.0 );
+      // Might be able to take advantage of vectorized sum using something like:
+      //const double roi_data_sum = Eigen::VectorXf::Map( &(counts[roi_lower_channel]), (1 + roi_upper_channel - roi_lower_channel) ).sum();
+      
+      
+      const size_t begin_channel = data->find_gamma_channel( energies[0] );
+      assert( energies[0] == data->gamma_channel_lower(begin_channel) );
+      const size_t end_channel = begin_channel + nchannel; //one past last channel we want
+      
+      // Lets check that `energies` points into the lower channel energies of `data`.
+      //  We actually only care that the values of the array are the same, but we'll be
+      //  a little tighter for development.
+      const vector<float> &data_energies = *data->channel_energies();
+      
+      if( (energies[0] != data->gamma_channel_lower(begin_channel))
+         || (energies[nchannel] != data->gamma_channel_lower(begin_channel+nchannel)) )
+        throw std::logic_error( "PeakContinuum::offset_integral: for stepped continua" );
+      
+      double cumulative_data = 0.0;
+      
+      // Incase we are starting
+      if( begin_channel > roi_lower_channel )
+      {
+        for( size_t i = begin_channel; i < begin_channel; ++i )
+          cumulative_data += counts[i];
+      }//if( begin_channel > lower_channel )
+      
+      
+      for( size_t i = begin_channel; i < end_channel; ++i )
+      {
+        const size_t input_index = i - begin_channel;
+        assert( data_energies[i] == energies[input_index] );
+        
+        const double x0_rel = data_energies[i] - m_referenceEnergy;
+        const double x1_rel = data_energies[i+1] - m_referenceEnergy;
+        
+        if( i >= roi_lower_channel && i <= roi_upper_channel )
+          cumulative_data += 0.5*counts[i];
+        
+        const double frac_data = cumulative_data / roi_data_sum;
+        
+        switch( m_type )
+        {
+          case FlatStep:
+          case LinearStep:
+          {
+            const double offset = m_values[0]*(x1_rel - x0_rel);
+            const double linear = ((m_type == FlatStep) ? 0.0 :  0.5*m_values[1]*(x1_rel*x1_rel - x0_rel*x0_rel));
+            const size_t step_index = ((m_type == FlatStep) ? 1 : 2);
+            const double step_contribution = m_values[step_index] * frac_data * (x1_rel - x0_rel);
+            
+            const double answer = std::max( 0.0, offset + linear + step_contribution );
+            
+            assert( answer == offset_integral( data_energies[i], data_energies[i+1], data ) );
+            
+            channels[input_index] += answer;
+            break;
+          }//case FlatStep: case LinearStep:
+            
+          case BiLinearStep:
+          {
+            assert( m_values.size() == 4 );
+            const double left_poly = m_values[0]*(x1_rel - x0_rel) + 0.5*m_values[1]*(x1_rel*x1_rel - x0_rel*x0_rel);
+            const double right_poly = m_values[2]*(x1_rel - x0_rel) + 0.5*m_values[3]*(x1_rel*x1_rel - x0_rel*x0_rel);
+            const double contrib = std::max( 0.0, ((1.0 - frac_data) * left_poly) + (frac_data * right_poly) );
+            
+            assert( contrib == offset_integral( data_energies[i], data_energies[i+1], data ) );
+            
+            channels[input_index] += contrib;
+            break;
+          }//case BiLinearStep:
+            
+          case NoOffset: case Constant: case Linear: case Quadratic: case Cubic: case External:
+            assert( 0 );
+            break;
+        }//switch( m_type )
+        
+        if( i >= roi_lower_channel && i <= roi_upper_channel )
+          cumulative_data += 0.5*counts[i];
+      }//for( size_t i = 0; i < channels; ++i )
+      
+      break;
+    }//case FlatStep/LinearStep/BiLinearStep
+      
+    case External:
+    {
+      assert( m_externalContinuum );
+      if( !m_externalContinuum )
+        break;
+      
+      for( size_t i = 0; i < nchannel; ++i )
+        channels[i] += gamma_integral( m_externalContinuum, energies[i], energies[i+1] );
+      break;
+    }//case External:
+  }//switch( m_type )
+}//void PeakContinuum::offset_integral( ... ) const
+
 
 void PeakContinuum::eqn_from_offsets( size_t lowchannel,
                              size_t highchannel,

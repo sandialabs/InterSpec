@@ -615,11 +615,10 @@ double PeakFitChi2Fcn::chi2( const double *params ) const
       
       vector<double> peak_counts( nchannel, 0.0 );
       
-      
-     // continuum->offset_integral( energies, &(peak_counts[0]), nchannel, m_data );
-      
       for( const PeakDef *peak : peaks )
         peak->gauss_integral( energies, &(peak_counts[0]), nchannel );
+      
+      continuum->offset_integral( energies, &(peak_counts[0]), nchannel, m_data );
       
       num_effective_bins += nchannel;
       
@@ -628,12 +627,11 @@ double PeakFitChi2Fcn::chi2( const double *params ) const
         const size_t channel = start_channel + i;
         const double ndata = gamma_counts[channel];
         const double nfitpeak = peak_counts[i];
-        const double ncontinuum = continuum->offset_integral(energies[i], energies[i+1], m_data);
         
         if( ndata > 0.000001 )
-          chi2 += pow( (ndata - ncontinuum - nfitpeak), 2.0 ) / ndata;
+          chi2 += pow( (ndata - nfitpeak), 2.0 ) / ndata;
         else
-          chi2 += fabs(nfitpeak + ncontinuum);  //This is a bit ad-hoc - is there a better solution? //XXX untested
+          chi2 += fabs(nfitpeak );  //This is a bit ad-hoc - is there a better solution? //XXX untested
       }
     }else
     {
