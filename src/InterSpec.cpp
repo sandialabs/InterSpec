@@ -5886,6 +5886,16 @@ void InterSpec::addFileMenu( WWidget *parent, const bool isAppTitlebar )
     
     HelpSystem::attachToolTipOn(m_createTag, WString::tr("app-mi-tt-file-tag"), showToolTips );
     
+#if( PERFORM_DEVELOPER_CHECKS || !defined(NDEBUG) )
+    // During development the app often gets killed by the IDE, before the state can
+    //  be updated - lets add in a way to trigger updating the on-load app state
+    item = m_fileMenuPopup->addMenuItem( "Store EoS" );
+    HelpSystem::attachToolTipOn(item,
+      "For development purposes - Stores current state as your end of session state, "
+      "for loading on next launch.", showToolTips );
+    item->triggered().connect( dynamic_cast<InterSpecApp *>(wApp), &InterSpecApp::prepareForEndOfSession );
+#endif
+    
     m_fileMenuPopup->addSeparator();
     
     item = m_fileMenuPopup->addMenuItem( WString::tr("app-mi-file-prev") , "InterSpec_resources/images/db_small.png");
