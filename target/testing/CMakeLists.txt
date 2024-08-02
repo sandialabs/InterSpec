@@ -121,6 +121,14 @@ add_test( NAME TShieldingSourceFitCalc
 )
 
 
+add_executable( test_MakeDrfSrcDef test_MakeDrfSrcDef.cpp )
+target_link_libraries( test_MakeDrfSrcDef PRIVATE InterSpecLib )
+add_test( NAME TMakeDrfSrcDef
+  COMMAND $<TARGET_FILE:test_MakeDrfSrcDef> ${BOOST_TEST_CL_ARGS} -- ${DATA_DIR_ARGS}
+  WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
+)
+
+
 # ./test_offlineAnalysis.cpp
 #target_link_libraries(test_offlineAnalysis PUBLIC 
 #            debug "${Wt_TEST_DEBUG_LIBRARY}"

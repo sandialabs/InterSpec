@@ -51,6 +51,7 @@
 #include "SandiaDecay/SandiaDecay.h"
 
 #include "InterSpec/PeakDef.h"
+#include "InterSpec/PopupDiv.h"
 #include "InterSpec/InterSpec.h"
 #include "InterSpec/MaterialDB.h"
 #include "InterSpec/HelpSystem.h"
@@ -141,7 +142,11 @@ vector<SrcLibLineInfo> SrcLibLineInfo::sources_in_lib( std::istream &file )
     SpecUtils::trim( line );
     
     vector<string> fields;
-    SpecUtils::split( fields, line, " \t" );
+    // We will allow for a space, a tab, or the U+2002 (Unicode En Space) character to separate fields
+    boost::algorithm::split( fields, line,
+                            boost::is_any_of(" \t") || boost::is_any_of("\xe2\x80\x82"),
+                            boost::token_compress_on );
+    
     if( fields.size() < 3 )
       continue;
     
@@ -199,12 +204,13 @@ vector<SrcLibLineInfo> SrcLibLineInfo::sources_in_lib( std::istream &file )
     }//if( std::regex_match( remark, dist_mtch, dist_expr ) )
     
     std::smatch act_uncert_mtch;
-    std::regex act_uncert_expr( string(".+([ActivityUncertainty|ActivityUncert]\\s*\\=\\s*(") 
-                               + PhysicalUnits::sm_positiveDecimalRegex
-                               + ")).*?", std::regex::icase );
+    const string act_uncert_expr_str = string(".*((Act|Activity)(Uncert|Uncertainty)\\s*[\\=:]\\s*(")
+                                        + PhysicalUnits::sm_positiveDecimalRegex + ")).*?";
+    
+    std::regex act_uncert_expr( act_uncert_expr_str, std::regex::icase );
     if( std::regex_match( src_info.m_comments, act_uncert_mtch, act_uncert_expr ) )
     {
-      string strval = act_uncert_mtch[2].str();
+      string strval = act_uncert_mtch[4].str();
       if( !SpecUtils::parse_double( strval.c_str(), strval.size(), src_info.m_activity_uncert ) )
         src_info.m_activity_uncert = -1.0;
     }//if( std::regex_match( remark, dist_mtch, dist_expr ) )
@@ -339,6 +345,7 @@ MakeDrfSrcDef::MakeDrfSrcDef( const SandiaDecay::Nuclide *nuc,
   m_useShielding( nullptr ),
   m_shieldingSelect( nullptr ),
   m_lib_src_btn( nullptr ),
+  m_lib_src_menu( nullptr ),
   m_lib_srcs_for_nuc{},
   m_lib_srcs_from_file{},
   m_lib_srcs_added{},
@@ -362,6 +369,11 @@ MakeDrfSrcDef::MakeDrfSrcDef( const SandiaDecay::Nuclide *nuc,
 
 MakeDrfSrcDef::~MakeDrfSrcDef()
 {
+#if( WT_VERSION >= 0x3070000 )
+  if( m_lib_src_menu )
+    delete m_lib_src_menu;
+  m_lib_src_menu = nullptr;
+#endif
 }
 
 
@@ -409,7 +421,7 @@ void MakeDrfSrcDef::updateSourceLibNuclides()
   if( m_lib_src_btn )
     m_lib_src_btn->setHidden( m_lib_srcs_for_nuc.empty() );
   
-  WPopupMenu *menu = m_lib_src_btn ? m_lib_src_btn->menu() : nullptr;
+  WPopupMenu *menu = m_lib_src_menu;
   if( menu )
   {
     const vector<WMenuItem *> old_items = menu->items();
@@ -632,9 +644,25 @@ void MakeDrfSrcDef::create()
   m_lib_src_btn->setIcon( "InterSpec_resources/images/db_small.png" );
   m_lib_src_btn->setStyleClass( "LinkBtn DownloadBtn DialogFooterQrBtn" );
   m_lib_src_btn->setFloatSide( Wt::Left );
-  WPopupMenu *menu = new WPopupMenu();
-  menu->setAutoHide( true );
-  m_lib_src_btn->setMenu( menu );
+  
+#if( WT_VERSION < 0x3070000 )
+  m_lib_src_menu = new PopupDivMenu( m_lib_src_btn, PopupDivMenu::TransientMenu );
+  m_lib_src_menu->setJavaScriptMember("wtNoReparent", "true");
+#else
+  // If we have the button own the popup menu, the menu will be placed in our current div holding
+  //  all src info, that may have a significant amount of scroll in it, so we will then have to
+  //  scroll this div, to see all the menu items, which is annoying.
+  //  So instead we'll make the menu a global widget, and just pop it up at the clicked location.
+  //  This is a little less than optimal, and make auto-hide of menu not quite as good, but maybe
+  //  better than the alternative.
+  m_lib_src_menu = new PopupDivMenu( nullptr, PopupDivMenu::TransientMenu );
+  m_lib_src_menu->setMaximumSize( WLength::Auto, WLength(15, WLength::FontEm) );
+  m_lib_src_btn->clicked().connect( boost::bind( 
+          static_cast<void (WPopupMenu::*)(const WMouseEvent &)>(&WPopupMenu::popup),
+          m_lib_src_menu, boost::placeholders::_1 ) );
+#endif
+  
+  m_lib_src_menu->setAutoHide( true, 2500 );
   
   const bool showToolTips = InterSpecUser::preferenceValue<bool>( "ShowTooltips", InterSpec::instance() );
   const char *tooltip = "Sources defined in Source.lib file in your users data directory.<br/>"
