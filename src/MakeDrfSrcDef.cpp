@@ -25,6 +25,8 @@
 
 #include <regex>
 
+#include <boost/algorithm/string/regex.hpp>
+
 #include <Wt/WDate>
 #include <Wt/WTable>
 #include <Wt/WLabel>
@@ -142,10 +144,12 @@ vector<SrcLibLineInfo> SrcLibLineInfo::sources_in_lib( std::istream &file )
     SpecUtils::trim( line );
     
     vector<string> fields;
-    // We will allow for a space, a tab, or the U+2002 (Unicode En Space) character to separate fields
-    boost::algorithm::split( fields, line,
-                            boost::is_any_of(" \t") || boost::is_any_of("\xe2\x80\x82"),
-                            boost::token_compress_on );
+    // We will allow for a space, a tab, or the U+2002 (Unicode En Space) character to separate
+    //  fields.  In order to do this properly, we need to use `split_regex`, and then manually
+    //  remove empty fields
+    boost::algorithm::split_regex( fields, line, boost::regex( "\\s|\xe2\x80\x82" ) );
+    fields.erase( std::remove_if(begin(fields), end(fields), 
+                    [](const string &v){return v.empty();}), end(fields) );
     
     if( fields.size() < 3 )
       continue;

@@ -186,7 +186,7 @@ BOOST_AUTO_TEST_CASE( sources_in_lib ) {
     BOOST_CHECK_CLOSE_FRACTION( src.m_distance, expected.m_distance, 1.0E-6 );
   };
   
-  string src_line = "60Co_12916 5.03E+03   01-Jan-2024 ActivityUncert=1.0e3, Distance=5cm";
+  string src_line = "60Co_12916\xe2\x80\x82+5.03E+03   01-Jan-2024 ActivityUncert=1.0e3, Distance=5cm";
   SrcLibLineInfo expected;
   expected.m_activity = 5.03E+03 * PhysicalUnits::bq;
   expected.m_nuclide = db->nuclide( "Co60" );
@@ -255,6 +255,11 @@ BOOST_AUTO_TEST_CASE( sources_in_lib ) {
     BOOST_CHECK( info.size() == 0 );
   }
   
+  {
+    stringstream strm("22NA_08251\xe2\x80+4.107E+04  1-Aug-2019 \n"); //\xe2\x80 is missing \x82
+    vector<SrcLibLineInfo> info = SrcLibLineInfo::sources_in_lib( strm );
+    BOOST_CHECK( info.size() == 0 );
+  }
   
   {
     stringstream strm("22NotANuc_08251  4.107E+04  1-Aug-2019  SomePlace\n");
