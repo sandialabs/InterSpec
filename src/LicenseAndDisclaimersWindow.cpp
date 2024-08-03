@@ -369,11 +369,10 @@ void LicenseAndDisclaimersWindow::dataStorageCreator( Wt::WContainerWidget *pare
         totalSessions = std::to_string( user->accessCount() );
         totalFilesOpened = std::to_string( user->numSpectraFilesOpened() );
         chrono::steady_clock::time_point::duration totaltime = user->totalTimeInApp();
-        // Note that if user has multiple sessions going, this next line wont be exactly correct, but close enough.
-        totaltime += app->activeTimeInCurrentSession();
+        totaltime += app->timeSinceTotalUseTimeUpdated();
         const chrono::seconds numsecs = chrono::duration_cast<chrono::seconds>(totaltime);
         
-        totalUserTime = PhysicalUnitsLocalized::printToBestTimeUnits( numsecs.count() );
+        totalUserTime = PhysicalUnitsLocalized::printToBestTimeUnits( numsecs.count(), 2, 1.0 );
         
         
         const WDateTime utcStartTime = WDateTime::fromPosixTime( to_ptime(user->firstAccessUTC()) );

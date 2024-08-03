@@ -120,6 +120,7 @@ InterSpecApp::InterSpecApp( const WEnvironment &env )
     m_layout( nullptr ),
     m_lastAccessTime( std::chrono::steady_clock::now() ),
     m_activeTimeInSession{ std::chrono::seconds(0) },
+    m_activeTimeSinceDbUpdate{ std::chrono::seconds(0) },
     m_hotkeySignal( domRoot(), "hotkey", false )
 #if( IOS )
     , m_orientation( InterSpecApp::DeviceOrientation::Unknown )
@@ -139,6 +140,9 @@ InterSpecApp::InterSpecApp( const WEnvironment &env )
   setupDomEnvironment();
   setupWidgets( true );
 
+  WServer::instance()->schedule( 60*1000, sessionId(),
+                                boost::bind(&InterSpecApp::updateUsageTimeToDb, this, true) );
+  
   Wt::log("debug") << "Done in InterSpecApp constructor.";
 }//InterSpecApp constructor
 
@@ -1057,6 +1061,11 @@ std::chrono::steady_clock::time_point::duration InterSpecApp::activeTimeInCurren
   return m_activeTimeInSession;
 }
 
+std::chrono::steady_clock::time_point::duration InterSpecApp::timeSinceTotalUseTimeUpdated() const
+{
+  return m_activeTimeSinceDbUpdate;
+}
+
 #if( !BUILD_FOR_WEB_DEPLOYMENT )
 std::string InterSpecApp::externalToken()
 {
@@ -1210,8 +1219,11 @@ void InterSpecApp::notify( const Wt::WEvent& event )
     {
       const auto thistime = std::chrono::steady_clock::now();
       const auto duration = thistime - m_lastAccessTime;
-      if( duration < std::chrono::seconds(300) )
+      if( duration < std::chrono::seconds(60) )
+      {
         m_activeTimeInSession += duration;
+        m_activeTimeSinceDbUpdate += duration;
+      }
       m_lastAccessTime = thistime;
     }//if( userEvent )
 
@@ -1241,32 +1253,56 @@ void InterSpecApp::unload()
 }//void unload()
 
 
+void InterSpecApp::updateUsageTimeToDb( const bool schedule_more )
+{
+  if( m_activeTimeSinceDbUpdate > std::chrono::seconds(0) )
+  {
+    try
+    {
+      std::shared_ptr<DataBaseUtils::DbSession> sql = m_viewer->sql();
+      
+      {//Begin db transaction
+        DataBaseUtils::DbTransaction transaction( *sql );
+        
+        // Other sessions may have added to the session - we'll reread from the DB
+        m_viewer->m_user.reread();
+        m_viewer->m_user.modify()->addUsageTimeDuration( m_activeTimeSinceDbUpdate );
+        
+        transaction.commit();
+      }//End db transaction
+      
+      m_activeTimeSinceDbUpdate = std::chrono::seconds(0);
+    }catch( std::exception &e )
+    {
+      Wt::log("error") << "InterSpecApp::updateUsageTimeToDb() caught: " << e.what();
+    }//try / catch
+  }//if( m_activeTimeSinceDbUpdate > std::chrono::seconds(0) )
+  
+  if( schedule_more )
+  {
+    // Update again in 1 minute (arbitrarily chosen).
+    WServer::instance()->schedule( 60*1000, sessionId(),
+                                  boost::bind(&InterSpecApp::updateUsageTimeToDb, this, true) );
+  }//if( schedule_more )
+}//void updateUsageTimeToDb()
+
+
 void InterSpecApp::prepareForEndOfSession()
 {
   if( !m_viewer || !m_viewer->m_user )
     return;
 
+  updateUsageTimeToDb( false );
+  
   try
   {
-      std::shared_ptr<DataBaseUtils::DbSession> sql = m_viewer->sql();
-      
-      {
-        DataBaseUtils::DbTransaction transaction( *sql );
-        
-        //If the user has multiple sessions going on, the below will quash
-        //  each other out.  Could probably be fixed by
-        //  m_viewer->m_user.reread();
-        
-        m_viewer->m_user.modify()->addUsageTimeDuration( m_activeTimeInSession );
-        
-        const chrono::milliseconds nmilli = chrono::duration_cast<chrono::milliseconds>(m_activeTimeInSession);
-        Wt::log("info") << "At session end, added " << nmilli.count() << " ms usage time for user "
-             << m_viewer->m_user->userName();
-        
-        m_activeTimeInSession = std::chrono::seconds(0);
-        transaction.commit();
-      }
-      
+    std::shared_ptr<DataBaseUtils::DbSession> sql = m_viewer->sql();
+    
+    const chrono::milliseconds nmilli = chrono::duration_cast<chrono::milliseconds>(m_activeTimeInSession);
+    Wt::log("info") << "At session end, actively used for " << nmilli.count() << " ms for user "
+    << m_viewer->m_user->userName();
+    
+    
 #if( USE_DB_TO_STORE_SPECTRA )
       //Check to see if we should save the apps state
       const bool saveState = InterSpecUser::preferenceValue<bool>( "AutoSaveSpectraToDb", m_viewer );

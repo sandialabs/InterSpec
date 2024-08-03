@@ -5862,6 +5862,10 @@ void SpecMeasManager::checkIfPreviouslyOpened( const std::string sessionID,
       std::shared_ptr<DataBaseUtils::DbSession> sql = m_viewer->sql();
       DataBaseUtils::DbTransaction transaction( *sql );
       
+      // Update our in-memory values, since another session may have updated
+      //  things on us.
+      m_viewer->m_user.reread();
+      
       typedef Dbo::collection< Dbo::ptr<UserFileInDb> > UserFileInDbColl;
 
 //      UserFileInDbColl files = m_viewer->m_user->userFiles().find()

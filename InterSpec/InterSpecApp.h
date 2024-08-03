@@ -98,6 +98,9 @@ public:
 
   std::chrono::steady_clock::time_point::duration activeTimeInCurrentSession() const;
   
+  /** Returns the amount of use-time since `InterSpecUser::totalTimInApp()` has been updated. */
+  std::chrono::steady_clock::time_point::duration timeSinceTotalUseTimeUpdated() const;
+  
   
   //userNameFromOS(): Caution, will return 'apache' if being served, from
   //  an apache server, 'mobile' if on a iOS device, or blank upon failure.
@@ -259,6 +262,9 @@ protected:
   //  state if their preferences ask for it
   virtual void prepareForEndOfSession();
   
+  /** Adds `m_activeTimeSinceDbUpdate` to the database, saving the updated result. */
+  void updateUsageTimeToDb( const bool schedule_more );
+  
 #if(  BUILD_AS_WX_WIDGETS_APP )
   virtual void handleJavaScriptError( const std::string &errorText );
 #endif
@@ -292,6 +298,10 @@ protected:
   
   std::chrono::steady_clock::time_point m_lastAccessTime;
   std::chrono::steady_clock::time_point::duration m_activeTimeInSession;
+  /** We will occasionally update the use duration in the database - this field tracks how long of
+   active use since the database was last updated.
+   */
+  std::chrono::steady_clock::time_point::duration m_activeTimeSinceDbUpdate;
   
 #define OPTIMISTICALLY_SAVE_USER_STATE 0
   //If OPTIMISTICALLY_SAVE_USER_STATE is enabled, then the users state will
