@@ -1463,10 +1463,11 @@ void D3SpectrumDisplayDiv::renderForegroundToClient()
     D3SpectrumExport::D3SpectrumOptions foregroundOptions;
     
     // Set options for the spectrum
-    foregroundOptions.line_color = m_foregroundLineColor.isDefault() ? string("black") : m_foregroundLineColor.cssText();
     foregroundOptions.peak_color = m_defaultPeakColor.isDefault() ? string("blue") : m_defaultPeakColor.cssText();
     foregroundOptions.spectrum_type = SpecUtils::SpectrumType::Foreground;
     foregroundOptions.display_scale_factor = displayScaleFactor( SpecUtils::SpectrumType::Foreground );  //will always be 1.0f
+    // Leave line color blank, as we set a CSS rule for `--d3spec-fore-line-color`
+    //foregroundOptions.line_color = m_foregroundLineColor.isDefault() ? string("black") : m_foregroundLineColor.cssText();
     
     // Set the peak data for the spectrum
     if ( m_peakModel )
@@ -1515,9 +1516,10 @@ void D3SpectrumDisplayDiv::renderBackgroundToClient()
     D3SpectrumExport::D3SpectrumOptions backgroundOptions;
     
     // Set options for the spectrum
-    backgroundOptions.line_color = m_backgroundLineColor.isDefault() ? string("green") : m_backgroundLineColor.cssText();
     backgroundOptions.spectrum_type = SpecUtils::SpectrumType::Background;
     backgroundOptions.display_scale_factor = displayScaleFactor( SpecUtils::SpectrumType::Background );
+    // Leave line color blank, as we set a CSS rule for `--d3spec-back-line-color`
+    //backgroundOptions.line_color = m_backgroundLineColor.isDefault() ? string("green") : m_backgroundLineColor.cssText();
     
     // We cant currently access the parent InterSpec class, but if we could, then
     //  we could draw the background peaks by doing something like:
@@ -1561,9 +1563,10 @@ void D3SpectrumDisplayDiv::renderSecondDataToClient()
     D3SpectrumExport::D3SpectrumOptions secondaryOptions;
     
     // Set options for the spectrum
-    secondaryOptions.line_color = m_secondaryLineColor.isDefault() ? string("steelblue") : m_secondaryLineColor.cssText();
     secondaryOptions.spectrum_type = SpecUtils::SpectrumType::SecondForeground;
     secondaryOptions.display_scale_factor = displayScaleFactor( SpecUtils::SpectrumType::SecondForeground );
+    // Leave line color blank, as we set a CSS rule for `--d3spec-second-line-color`
+    //secondaryOptions.line_color = m_secondaryLineColor.isDefault() ? string("steelblue") : m_secondaryLineColor.cssText();
     
     measurements.push_back( pair<const Measurement *,D3SpectrumExport::D3SpectrumOptions>(hist.get(), secondaryOptions) );
     
@@ -1624,19 +1627,40 @@ void D3SpectrumDisplayDiv::applyColorTheme( std::shared_ptr<const ColorTheme> th
 void D3SpectrumDisplayDiv::setForegroundSpectrumColor( const Wt::WColor &color )
 {
   m_foregroundLineColor = color.isDefault() ? WColor( 0x00, 0x00, 0x00 ) : color;
-  scheduleUpdateForeground();
+  
+  string rulename = "ForeSpecLineColor";
+  WCssStyleSheet &style = wApp->styleSheet();
+  if( m_cssRules.count(rulename) )
+    style.removeRule( m_cssRules[rulename] );
+  m_cssRules[rulename] = style.addRule( ":root", "--d3spec-fore-line-color: " + m_foregroundLineColor.cssText() );
+  
+  //scheduleUpdateForeground();
 }
 
 void D3SpectrumDisplayDiv::setBackgroundSpectrumColor( const Wt::WColor &color )
 {
   m_backgroundLineColor = color.isDefault() ? WColor(0x00,0xff,0xff) : color;
-  scheduleUpdateBackground();
+  
+  string rulename = "BackSpecLineColor";
+  WCssStyleSheet &style = wApp->styleSheet();
+  if( m_cssRules.count(rulename) )
+    style.removeRule( m_cssRules[rulename] );
+  m_cssRules[rulename] = style.addRule( ":root", "--d3spec-back-line-color: " + m_backgroundLineColor.cssText() );
+  
+  //scheduleUpdateBackground();
 }
 
 void D3SpectrumDisplayDiv::setSecondarySpectrumColor( const Wt::WColor &color )
 {
   m_secondaryLineColor = color.isDefault() ? WColor(0x00,0x80,0x80) : color;
-  scheduleUpdateSecondData();
+  
+  string rulename = "SecondSpecLineColor";
+  WCssStyleSheet &style = wApp->styleSheet();
+  if( m_cssRules.count(rulename) )
+    style.removeRule( m_cssRules[rulename] );
+  m_cssRules[rulename] = style.addRule( ":root", "--d3spec-second-line-color: " + m_secondaryLineColor.cssText() );
+  
+  //scheduleUpdateSecondData();
 }
 
 void D3SpectrumDisplayDiv::setTextColor( const Wt::WColor &color )
@@ -1666,6 +1690,7 @@ void D3SpectrumDisplayDiv::setAxisLineColor( const Wt::WColor &color )
   // Sets axis colors, and ".peakLine, .escapeLineForward, .mouseLine, .secondaryMouseLine"
   
   m_cssRules[rulename] = style.addRule( ":root", "--d3spec-axis-color: " + m_axisColor.cssText() );
+  
   
   //ToDo: figure out how to make grid lines look okay.
   //rulename = "GridColor";
