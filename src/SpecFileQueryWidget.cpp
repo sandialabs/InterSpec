@@ -1486,8 +1486,6 @@ void SpecFileQueryWidget::init()
   wApp->useStyleSheet( "InterSpec_resources/assets/js/QueryBuilder2.5.2/css/query-builder.default.min.css" );
   wApp->useStyleSheet( "InterSpec_resources/assets/js/QueryBuilder2.5.2/css/QueryBuilderFakeBootstrap.css" );
   
-  wApp->require( "InterSpec_resources/assets/js/moment-2.22.2/moment.min.js" );
-  
   wApp->require( "InterSpec_resources/assets/js/QueryBuilder2.5.2/js/query-builder.standalone.min.js" );
   wApp->require( "InterSpec_resources/assets/js/QueryBuilder2.5.2/i18n/query-builder.en.js" );
   
@@ -1992,9 +1990,24 @@ std::string SpecFileQueryWidget::prepareEventXmlFilters()
     
         case EventXmlFilterInfo::InputType::Date:
         {
-          thisfilter += ",\n\ttype: 'date'";
-          thisfilter += ",\n\tvalidation: {format:'YYYY/MM/DD'}";
-          thisfilter += ",\n\tplaceholder: 'YYYY/MM/DD'";
+          // We could do:
+          //    thisfilter += ",\n\ttype: 'date'";
+          //    thisfilter += ",\n\tvalidation: {format:'YYYY/MM/DD'}";
+          // But this would require using moment.js, but since this is the only
+          //  place that uses that library, we'll just to the validation on the
+          //  server-side.  There is a client-side regex to validate below, that works,
+          //  but then this limits the formats the users can input, which maybe wouldnt
+          //  be a bad thing...
+          
+          thisfilter += ",\n\ttype: 'string'";
+          //thisfilter += ",\n\tvalidation:"
+          //"{format:/"
+          //  "^([2][0]\\d{2}\\/([0]\\d|[1][0-2])\\/([0-2]\\d|[3][0-1]))$|^"
+          //  "([2][0]\\d{2}\\/([0]\\d|[1][0-2])\\/([0-2]\\d|[3][0-1])(\\s([0-1]\\d|[2][0-3])\\:[0-5]\\d(\\:[0-5]\\d)?))?"
+          //"$/}";
+          thisfilter += ",\n\tplaceholder: 'YYYY/MM/DD HH:mm:ss'";
+          
+          break;
         }//
       }//switch( et.second.m_type )
     
@@ -3040,9 +3053,13 @@ void SpecFileQueryWidget::openSelectedFilesParentDir()
     ILFree( item_list );
   }//if( item_list )
 #elif( __APPLE__ )
-  // Doesnt highlight the specific file
   //  See https://chromium.googlesource.com/chromium/src/+/refs/heads/main/chrome/browser/platform_util_mac.mm for how this could/should be implemented, at least for BUILD_AS_OSX_APP
-  const string command = "open '" + parentdir + "'";
+  // But the gist of it is:
+  // NSString *nsstr_filepath = @(filepath.c_str());
+  // NSURL *nsurl_filepath = [NSURL fileURLWithPath:nsstr_filepath];
+  // [[NSWorkspace sharedWorkspace] activateFileViewerSelectingURLs:@[ nsurl_filepath ]];
+  // Should probably add to target/osx/macOsUtils.h/.mm
+  const string command = "open -R '" + filepath + "'"; //The "-R" option reveals file in Finder, with it highlighted
   system( command.c_str() );
 #else
   // See https://chromium.googlesource.com/chromium/src/+/refs/heads/main/chrome/browser/platform_util_linux.cc

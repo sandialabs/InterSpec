@@ -149,7 +149,7 @@ namespace PhysicalUnits
   extern const char * const sm_positiveDecimalRegex;
 
   //printToBest____Units(...): makes an attempt to turn the input into a user
-  //  readable string.  The optional defineitions of units are convience
+  //  readable string.  The optional definitions of units are convenience
   //  variables for when you're working in units that are not from this
   //  namespace.
   //  TODO: instead of specifying number of digits past the decimal, should convert to using number of significant figures.
