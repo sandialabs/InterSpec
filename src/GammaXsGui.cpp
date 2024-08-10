@@ -123,7 +123,7 @@ GammaXsGui::GammaXsGui( MaterialDB *materialDB,
   m_energyEdit->blurred().connect( this, &GammaXsGui::calculateCrossSections );
 
   int row = 0;
-  WLabel *label = new WLabel( WString::tr("{1}:").arg( WString::tr("Energy")) );
+  WLabel *label = new WLabel( WString("{1}:").arg( WString::tr("Energy")) );
   m_layout->addWidget( label, row, 0, 1, 1, AlignLeft );
   m_layout->addWidget( m_energyEdit, row, 1, 1, 1 );
   label = new WLabel( "keV" );
