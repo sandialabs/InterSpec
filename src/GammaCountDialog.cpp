@@ -92,20 +92,30 @@ GammaCountDialog::GammaCountDialog( InterSpec *specViewer )
   show();
   
   InterSpecApp *app = dynamic_cast<InterSpecApp *>(wApp);
-  
-  if( app && app->isPhone() )
+  InterSpec *viewer = InterSpec::instance();
+  if( app && viewer && viewer->isPhone() )
   {
-    if( app->viewer() )
+    
+    int w = viewer->renderedWidth();
+    int h = viewer->renderedHeight();
+    if( w < 100 )
     {
+      w = app->environment().screenWidth();
+      h = app->environment().screenHeight();
+    }
+    
+    if( (w > 100) && (w > h) )
       titleBar()->hide();
-      
+    
+    if( w > 100 )
+    {
       float safeAreas[4] = { 0.0f };
 #if( IOS )
       InterSpecApp::DeviceOrientation orientation = InterSpecApp::DeviceOrientation::Unknown;
       app->getSafeAreaInsets( orientation, safeAreas[0], safeAreas[1], safeAreas[2], safeAreas[3] );
 #endif
       repositionWindow( -32768, static_cast<int>(std::max(3.0f,0.5f*safeAreas[0])) );
-      setMaximumSize( WLength::Auto, app->viewer()->renderedHeight() - std::max(0.5f*(safeAreas[0]+safeAreas[2]),6.0f) );
+      setMaximumSize( WLength::Auto, h - std::max(0.5f*(safeAreas[0]+safeAreas[2]),6.0f) );
     }
   }else
   {
@@ -601,6 +611,4 @@ void GammaCountDialog::handleSpectrumChange( const SpecUtils::SpectrumType /*typ
 {
   handleEnergyRangeChange();
 }//void handleSpectrumChange(...)
-
-
 

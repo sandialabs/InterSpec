@@ -86,6 +86,8 @@ LeafletRadMap = function (elem,options) {
     this.options.loadTxt = "Load";
   if( typeof this.options.measurementsAsTxt !== "string" )
     this.options.measurementsAsTxt = "measurements as";
+  if( typeof this.options.loadTxtShort !== "string" )
+    this.options.loadTxtShort = "Load as";
   if( typeof this.options.realTimeTxt !== "string" )
     this.options.realTimeTxt = "Real Time";
   if( typeof this.options.liveTimeTxt !== "string" )
@@ -293,7 +295,10 @@ LeafletRadMap.prototype.handleUserDrawingUpdate = function(){
   self.btnsDiv.innerHTML = '';
 
   const msg = document.createElement('div');
-  msg.innerHTML = self.options.loadTxt + " " + wantedSamples.length + " " + self.options.measurementsAsTxt + ":";
+  if( window.innerWidth < 675 )
+    msg.innerHTML = self.options.loadTxtShort + ":";
+  else
+    msg.innerHTML = self.options.loadTxt + " " + wantedSamples.length + " " + self.options.measurementsAsTxt + ":";
   self.btnsDiv.appendChild( msg );
 
   const foreground = document.createElement('button');

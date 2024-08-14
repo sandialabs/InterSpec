@@ -903,10 +903,9 @@ void RelEffFile::init()
   
   m_detectorSelect = new WComboBox( bottomDiv );
   m_detectorSelect->setInline( false );
+  m_detectorSelect->setMaximumSize( WLength(90,WLength::Percentage), WLength::Auto );
   m_detectorSelect->setNoSelectionEnabled( true );
   m_detectorSelect->activated().connect( this, &RelEffFile::detectorSelectCallback );
-  
-  
   
   
   m_credits = new WText( "", Wt::XHTMLText, bottomDiv );
@@ -2339,7 +2338,19 @@ DrfSelect::DrfSelect( std::shared_ptr<DetectorPeakResponse> currentDet,
 #endif
   
   const bool is_mobile = (!specViewer || specViewer->isMobile());
-  mainLayout->setVerticalSpacing( is_mobile ? 15 : 5 ); //so the chart resizer handle will show up
+  const bool is_phone = (!specViewer || specViewer->isMobile());
+  int w = m_interspec->renderedWidth();
+  int h = m_interspec->renderedHeight();
+  if( is_mobile && (w < 100) )
+  {
+    w = wApp->environment().screenWidth();
+    h = wApp->environment().screenHeight();
+  }
+  const bool narrow_layout = (is_phone && ((w > 100) && (w < 600)));
+  if( narrow_layout )
+    addStyleClass( "DrfSelectNarrow" );
+  
+  mainLayout->setVerticalSpacing( (is_mobile && !narrow_layout) ? 15 : 5 ); //so the chart resizer handle will show up
   
   specViewer->detectorChanged().connect( this, &DrfSelect::setDetector );
   specViewer->detectorModified().connect( this, &DrfSelect::setDetector );
@@ -2356,10 +2367,11 @@ DrfSelect::DrfSelect( std::shared_ptr<DetectorPeakResponse> currentDet,
   
   m_chart = new DrfChart();
   
-  const bool is_phone = (!specViewer || specViewer->isPhone() || (specViewer->renderedHeight() < 500 ));
   if( is_phone )
   {
-    m_chart->resize( 325, 125 );
+    const double chart_width = narrow_layout ? std::min( std::max( 100.0, w - 40.0 ), 450.0 ) : 325;
+    const double chart_height = chart_width * 125.0/325.0;
+    m_chart->resize( chart_width, chart_height );
     mainLayout->addWidget( m_chart, 0, 0, AlignCenter );
   }else
   {
@@ -2389,14 +2401,30 @@ DrfSelect::DrfSelect( std::shared_ptr<DetectorPeakResponse> currentDet,
   m_drfTypeStack->addStyleClass( "UseInfoStack DetEditContent" );
   
   m_drfTypeMenu = new WMenu( m_drfTypeStack, Wt::Vertical );
-  m_drfTypeMenu->addStyleClass( "VerticalNavMenu SideMenu HeavyNavMenu DetEditMenu" );
   WContainerWidget *menuHolder = new WContainerWidget();
-  menuHolder->setOverflow( WContainerWidget::Overflow::OverflowAuto, Wt::Orientation::Vertical );
-  menuHolder->setOverflow( WContainerWidget::Overflow::OverflowHidden, Wt::Orientation::Horizontal );
-  
   menuHolder->addWidget( m_drfTypeMenu );
-  lowerLayout->addWidget( menuHolder, 0, 0, 2, 1 );
-  lowerLayout->addWidget( m_drfTypeStack, 0, 1 );
+  
+  if( narrow_layout )
+  {
+    m_drfTypeMenu->addStyleClass( "VerticalNavMenu HorizontalMenu HeavyNavMenu DetEditMenuHorizontal" );
+    menuHolder->setOverflow( WContainerWidget::Overflow::OverflowAuto, Wt::Orientation::Horizontal );
+    menuHolder->setOverflow( WContainerWidget::Overflow::OverflowHidden, Wt::Orientation::Vertical );
+    
+    lowerLayout->addWidget( menuHolder, 0, 0 );
+    lowerLayout->addWidget( m_drfTypeStack, 1, 0 );
+    lowerLayout->setRowStretch( 1, 1 );
+  }else
+  {
+    m_drfTypeMenu->addStyleClass( "VerticalNavMenu SideMenu HeavyNavMenu DetEditMenu" );
+    menuHolder->setOverflow( WContainerWidget::Overflow::OverflowAuto, Wt::Orientation::Vertical );
+    menuHolder->setOverflow( WContainerWidget::Overflow::OverflowHidden, Wt::Orientation::Horizontal );
+    
+    lowerLayout->addWidget( menuHolder, 0, 0, 2, 1 );
+    lowerLayout->addWidget( m_drfTypeStack, 0, 1 );
+    lowerLayout->setColumnStretch( 1, 1 );
+  }
+  
+  
   
   WContainerWidget *defaultOptions = new WContainerWidget();
   mainLayout->addWidget( defaultOptions, 2, 0 );
@@ -2405,8 +2433,6 @@ DrfSelect::DrfSelect( std::shared_ptr<DetectorPeakResponse> currentDet,
   mainLayout->setRowResizable( 0, true, WLength(is_phone ? 125 : 250, WLength::Unit::Pixel) );
   
   mainLayout->setRowStretch( 1, 1 );
-  
-  lowerLayout->setColumnStretch( 1, 1 );
   
   
   //-------------------------------------
@@ -2507,7 +2533,11 @@ DrfSelect::DrfSelect( std::shared_ptr<DetectorPeakResponse> currentDet,
   const char *const diamtxt = "2.2 cm";
     
   WContainerWidget *formulaDiv = new WContainerWidget();
-  WText *selfDefineLabel = new WText( WString::tr("ds-manual-det-desc"), formulaDiv );
+  WString nameLabel = WString::tr("ds-manual-det-desc");
+  if( narrow_layout )
+    nameLabel = WString("{1}:").arg(nameLabel);
+  
+  WText *selfDefineLabel = new WText( nameLabel, formulaDiv );
   selfDefineLabel->setInline( false );
   selfDefineLabel->setStyleClass("DetectorLabel");
   
@@ -2515,7 +2545,14 @@ DrfSelect::DrfSelect( std::shared_ptr<DetectorPeakResponse> currentDet,
   formulaTable->addStyleClass( "FormulaDrfTbl" );
   WTableCell *cell = formulaTable->elementAt( 0, 0 );
   label = new WLabel( WString::tr("ds-manual-det-name-label"), cell );
-  cell = formulaTable->elementAt( 0, 1 );
+  if( narrow_layout )
+  {
+    cell = formulaTable->elementAt( 1, 0 );
+    cell->setColumnSpan( 2 );
+  }else
+  {
+    cell = formulaTable->elementAt( 0, 1 );
+  }
   m_detectorManualFunctionName = new WLineEdit( cell );
   label->setBuddy( m_detectorManualFunctionName );
 
@@ -2532,9 +2569,22 @@ DrfSelect::DrfSelect( std::shared_ptr<DetectorPeakResponse> currentDet,
   //m_detectorManualFunctionName->keyWentUp().connect(boost::bind(&DrfSelect::verifyManualDefinition, this));
   m_detectorManualFunctionName->textInput().connect(boost::bind(&DrfSelect::verifyManualDefinition, this));
 
-  cell = formulaTable->elementAt( 1, 0 );
+  if( narrow_layout )
+  {
+    m_detectorManualFunctionName->setWidth( WLength(w - 65,WLength::Pixel) );
+    m_detectorManualFunctionName->setMargin( WLength::Auto, Wt::Side::Left );
+  }
+  
+  cell = formulaTable->elementAt( formulaTable->rowCount(), 0 );
   label = new WLabel( WString::tr("ds-manual-function-label"), cell );
-  cell = formulaTable->elementAt( 1, 1 );
+  if( narrow_layout )
+  {
+    cell = formulaTable->elementAt( formulaTable->rowCount(), 0 );
+    cell->setColumnSpan( 2 );
+  }else
+  {
+    cell = formulaTable->elementAt( cell->row(), 1 );
+  }
   cell->setRowSpan( 2 );
   m_detectorManualFunctionText = new WTextArea( cell );
   //m_detectorManualFunctionText->setColumns(60);
@@ -2548,7 +2598,17 @@ DrfSelect::DrfSelect( std::shared_ptr<DetectorPeakResponse> currentDet,
   //m_detectorManualFunctionText->keyWentUp().connect(boost::bind(&DrfSelect::verifyManualDefinition, this));
   m_detectorManualFunctionText->textInput().connect(boost::bind(&DrfSelect::verifyManualDefinition, this));
   
-  cell = formulaTable->elementAt( 2, 0 );
+  if( narrow_layout )
+  {
+    m_detectorManualFunctionText->setWidth( WLength(w - 65,WLength::Pixel) );
+    m_detectorManualFunctionText->setMargin( WLength::Auto, Wt::Side::Left );
+  }
+  
+  if( narrow_layout )
+    cell = formulaTable->elementAt( cell->row() + 2, 0 );
+  else
+    cell = formulaTable->elementAt( cell->row() + 1, 0 );
+  
   Wt::WContainerWidget *energyContainer = new Wt::WContainerWidget( cell );
   energyContainer->setMargin( 6, Wt::Top );
   m_eqnEnergyGroup = new WButtonGroup( energyContainer );
@@ -2563,12 +2623,32 @@ DrfSelect::DrfSelect( std::shared_ptr<DetectorPeakResponse> currentDet,
   HelpSystem::attachToolTipOn( energyContainer, WString::tr("ds-tt-manual-energy-unit"),
                               showToolTips, HelpSystem::ToolTipPosition::Top );
 
-  cell = formulaTable->elementAt( 3, 0 );
-  label = new WLabel( WString::tr("Description"), cell );
-  cell = formulaTable->elementAt( 3, 1 );
+  cell = formulaTable->elementAt( formulaTable->rowCount(), 0 );
+  
+  WString descLabel = WString::tr("Description");
+  if( narrow_layout )
+    descLabel = WString("{1}:").arg(descLabel);
+  
+  label = new WLabel( descLabel, cell );
+  if( narrow_layout )
+  {
+    cell = formulaTable->elementAt( formulaTable->rowCount(), 0 );
+    cell->setColumnSpan( 2 );
+  }else
+  {
+    cell = formulaTable->elementAt( cell->row(), 1 );
+  }
   m_detectorManualDescription = new WLineEdit( cell );
   label->setBuddy( m_detectorManualDescription );
-  m_detectorManualDescription->setWidth( WLength(100,WLength::Percentage) );
+  if( narrow_layout )
+  {
+    m_detectorManualDescription->setWidth( WLength(w - 65,WLength::Pixel) );
+    m_detectorManualDescription->setMargin( WLength::Auto, Wt::Side::Left );
+    m_detectorManualDescription->setInline( false );
+  }else
+  {
+    m_detectorManualDescription->setWidth( WLength(100,WLength::Percentage) );
+  }
   m_detectorManualDescription->setEmptyText( WString::tr("ds-tt-manual-desc") );
   m_detectorManualDescription->changed().connect(boost::bind(&DrfSelect::verifyManualDefinition, this));
   
@@ -2578,9 +2658,9 @@ DrfSelect::DrfSelect( std::shared_ptr<DetectorPeakResponse> currentDet,
   m_detectorManualDescription->setAttributeValue( "spellcheck", "off" );
 #endif
   
-  cell = formulaTable->elementAt( 4, 0 );
+  cell = formulaTable->elementAt( formulaTable->rowCount(), 0 );
   m_detectorManualDiameterLabel = new WLabel( WString::tr("ds-manual-det-diam-label"), cell );
-  cell = formulaTable->elementAt( 4, 1 );
+  cell = formulaTable->elementAt( cell->row(), 1 );
   m_detectorManualDiameterText = new WLineEdit( cell );
   m_detectorManualDiameterLabel->setBuddy( m_detectorManualDiameterText );
   m_detectorManualDiameterText->setValidator( distValidator );
@@ -2600,10 +2680,10 @@ DrfSelect::DrfSelect( std::shared_ptr<DetectorPeakResponse> currentDet,
 #endif
   
   
-  cell = formulaTable->elementAt( 5, 0 );
+  cell = formulaTable->elementAt( formulaTable->rowCount(), 0 );
   label = new WLabel( WString::tr("ds-energy-range"), cell );
   
-  cell = formulaTable->elementAt( 5, 1 );
+  cell = formulaTable->elementAt( cell->row(), 1 );
   label = new WLabel( WString::tr("Min."), cell );
   m_detectorManualMinEnergy = new NativeFloatSpinBox( cell );
   m_detectorManualMinEnergy->setPlaceholderText( WString::tr("ds-(optional)") );
@@ -2614,9 +2694,12 @@ DrfSelect::DrfSelect( std::shared_ptr<DetectorPeakResponse> currentDet,
   label->setBuddy( m_detectorManualMinEnergy );
   m_detectorManualMinEnergy->valueChanged().connect(boost::bind(&DrfSelect::verifyManualDefinition, this));
   
-  
+  if( narrow_layout )
+    cell = formulaTable->elementAt( formulaTable->rowCount(), 1 );
+    
   label = new WLabel( WString::tr("Max."), cell );
-  label->setMargin( 20, Wt::Side::Left );
+  if( !narrow_layout )
+    label->setMargin( 20, Wt::Side::Left );
   m_detectorManualMaxEnergy = new NativeFloatSpinBox( cell );
   m_detectorManualMaxEnergy->setPlaceholderText( WString::tr("ds-(optional)") );
   m_detectorManualMaxEnergy->setRange( 0, 15000 );
@@ -2624,13 +2707,16 @@ DrfSelect::DrfSelect( std::shared_ptr<DetectorPeakResponse> currentDet,
   m_detectorManualMaxEnergy->setWidth( WLength(9,Wt::WLength::FontEx) );
   m_detectorManualMaxEnergy->setText( "" );
   label->setBuddy( m_detectorManualMaxEnergy );
-  label = new WLabel("(keV)", cell );
-  label->setMargin( 10, Wt::Side::Left );
+  if( !narrow_layout )
+  {
+    label = new WLabel("(keV)", cell );
+    label->setMargin( 10, Wt::Side::Left );
+  }
   
   m_detectorManualMaxEnergy->valueChanged().connect(boost::bind(&DrfSelect::verifyManualDefinition, this));
   
   
-  cell = formulaTable->elementAt( 6, 0 );
+  cell = formulaTable->elementAt( formulaTable->rowCount(), 0 );
   cell->setColumnSpan( 2 );
   m_drfType = new WComboBox( cell );
   m_drfType->addItem( WString::tr("ds-intrinsic-eff") );
@@ -2646,20 +2732,26 @@ DrfSelect::DrfSelect( std::shared_ptr<DetectorPeakResponse> currentDet,
   m_drfType->setCurrentIndex( 0 );
   m_drfType->activated().connect( this, &DrfSelect::verifyManualDefinition );
   
+  if( narrow_layout )
+    cell = formulaTable->elementAt( formulaTable->rowCount(), 0 );
   m_detectorManualDistLabel = new WLabel( WString::tr("ds-dist-label"), cell );
   m_detectorManualDistLabel->setMargin( 10, Wt::Left );
   
+  if( narrow_layout )
+    cell = formulaTable->elementAt( formulaTable->rowCount(), 1 );
   m_detectorManualDistText = new Wt::WLineEdit( cell );
   m_detectorManualDistText->setValidator( distValidator );
   m_detectorManualDistText->setEmptyText("1 m");
-  m_detectorManualDistText->setHiddenKeepsGeometry( true );
+  if( !narrow_layout )
+    m_detectorManualDistText->setHiddenKeepsGeometry( true );
   m_detectorManualDistLabel->hide();
   m_detectorManualDistText->hide();
   //m_detectorManualDistText->keyWentUp().connect(boost::bind(&DrfSelect::verifyManualDefinition, this));
   m_detectorManualDistText->textInput().connect(boost::bind(&DrfSelect::verifyManualDefinition, this));
   
   
-  
+  if( narrow_layout )
+    cell = formulaTable->elementAt( formulaTable->rowCount(), 1 );
   m_manualSetButton = new WPushButton( WString::tr("ds-set-btn"), cell );
   //m_manualSetButton->setInline(false);
   m_manualSetButton->setFloatSide( Wt::Right );
@@ -2844,13 +2936,23 @@ DrfSelect::DrfSelect( std::shared_ptr<DetectorPeakResponse> currentDet,
     //mainLayout->addWidget( m_defaultForDetectorModel, mainLayout->rowCount(), 0, 1, mainLayout->columnCount() );
   }//if( have
   
-  
+  WContainerWidget *secondFooter = nullptr;
   if( auxWindow )
   {
     m_footer = auxWindow->footer();
+    if( narrow_layout )
+    {
+      secondFooter = new WContainerWidget();
+      mainLayout->addWidget( secondFooter, mainLayout->rowCount(), 0, 1, 2 );
+      secondFooter->addStyleClass( "DetEditNarrowSecondFooter" );
+    }else
+    {
+      secondFooter = m_footer;
+    }
   }else
   {
     m_footer = new WContainerWidget();
+    secondFooter = m_footer;
     mainLayout->addWidget( m_footer, mainLayout->rowCount(), 0, 1, 2 );
   }
   
@@ -2862,11 +2964,11 @@ DrfSelect::DrfSelect( std::shared_ptr<DetectorPeakResponse> currentDet,
   
   DrfDownloadResource *xmlResource = new DrfDownloadResource( this );
 #if( BUILD_AS_OSX_APP || IOS )
-  m_xmlDownload = new WAnchor( WLink(xmlResource), m_footer );
+  m_xmlDownload = new WAnchor( WLink(xmlResource), secondFooter );
   m_xmlDownload->setTarget( AnchorTarget::TargetNewWindow );
   m_xmlDownload->setStyleClass( "LinkBtn DownloadLink DrfXmlDownload" );
 #else
-  m_xmlDownload = new WPushButton( m_footer );
+  m_xmlDownload = new WPushButton( secondFooter );
   m_xmlDownload->setIcon( "InterSpec_resources/images/download_small.svg" );
   m_xmlDownload->setLink( WLink(xmlResource) );
   m_xmlDownload->setLinkTarget( Wt::TargetNewWindow );
@@ -2885,7 +2987,7 @@ DrfSelect::DrfSelect( std::shared_ptr<DetectorPeakResponse> currentDet,
   m_xmlDownload->setHidden( !m_detector || !m_detector->isValid() );
   
 #if( USE_QR_CODES )
-  WPushButton *qr_btn = new WPushButton( m_footer );
+  WPushButton *qr_btn = new WPushButton( secondFooter );
   qr_btn->setText( WString::tr("QR Code") );
   qr_btn->setIcon( "InterSpec_resources/images/qr-code.svg" );
   qr_btn->setStyleClass( "LinkBtn DownloadBtn DrfXmlDownload" );
@@ -2910,12 +3012,12 @@ DrfSelect::DrfSelect( std::shared_ptr<DetectorPeakResponse> currentDet,
   }) );
 #endif //USE_QR_CODES
   
-  m_noDrfButton = new WPushButton( WString::tr("ds-no-det-btn"), m_footer );
+  m_noDrfButton = new WPushButton( WString::tr("ds-no-det-btn"), secondFooter );
   m_noDrfButton->clicked().connect( this, &DrfSelect::finishWithNoDetector );
   if( specViewer && !specViewer->isPhone() )
     m_noDrfButton->addStyleClass( "NoDrfBtn" );
   
-  WPushButton *changeFwhm = new WPushButton( WString::tr("ds-fit-fwhm-btn"), m_footer );
+  WPushButton *changeFwhm = new WPushButton( WString::tr("ds-fit-fwhm-btn"), secondFooter );
   if( specViewer && !specViewer->isPhone() )
     changeFwhm->addStyleClass( "NoDrfBtn" );
   changeFwhm->clicked().connect( this, &DrfSelect::handleFitFwhmRequested );

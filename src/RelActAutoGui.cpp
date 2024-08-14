@@ -1281,7 +1281,8 @@ RelActAutoGui::RelActAutoGui( InterSpec *viewer, Wt::WContainerWidget *parent )
       set_lin_y();
   };
   
-  InterSpecUser::addCallbackWhenChanged( m_interspec->m_user, "LogY", m_spectrum, &D3SpectrumDisplayDiv::setYAxisLog );
+  InterSpecUser::addCallbackWhenChanged( m_interspec->m_user, m_interspec,
+                                        "LogY", m_spectrum, &D3SpectrumDisplayDiv::setYAxisLog );
   
   m_peak_model = new PeakModel( m_spectrum );
   m_peak_model->setNoSpecMeasBacking();

@@ -218,15 +218,21 @@ ul.HorizontalMenu > li {
   padding-right: 2px;
 }
 
-.IsPhone.Portrait button
-{
+.IsPhone.Portrait button {
   font-size: x-small;
 }
 
+.IsPhone.Portrait .modal-footer button, .IsPhone.Portrait .PhoneAuxWindowHeader button {
+  font-size: 10pt;
+}
+
 @media (max-width: 350px) {
-  .IsPhone.Portrait button
-  {
+  .IsPhone.Portrait button {
     font-size: 6pt;
+  }
+  
+  .IsPhone.Portrait .modal-footer button, .IsPhone.Portrait .PhoneAuxWindowHeader button {
+    font-size: 10pt;
   }
 }
 

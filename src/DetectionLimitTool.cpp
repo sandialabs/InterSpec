@@ -814,7 +814,7 @@ public:
     //Right now we are just having DetectionLimitTool completely refresh on activity units change,
     //  but we could be a little more fine-grained about this.
     //InterSpec *viewer = InterSpec::instance();
-    //InterSpecUser::addCallbackWhenChanged( viewer->m_user, "DisplayBecquerel",
+    //InterSpecUser::addCallbackWhenChanged( viewer->m_user, viewer, "DisplayBecquerel",
     //                                      boost::bind(&MdaPeakRow::setSimplePoisonTxt, this) );
   }//MdaPeakRow constructor
   
@@ -1398,7 +1398,7 @@ DetectionLimitTool::DetectionLimitTool( InterSpec *viewer,
   handleUserNuclideChange();
   
   // Update the displayed activity units, when the user changes this preference.
-  InterSpecUser::addCallbackWhenChanged( viewer->m_user, "DisplayBecquerel",
+  InterSpecUser::addCallbackWhenChanged( viewer->m_user, viewer, "DisplayBecquerel",
                                         boost::bind(&DetectionLimitTool::handleInputChange, this) );
   
   

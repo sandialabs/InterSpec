@@ -34,6 +34,8 @@
 #include <Wt/WValidator>
 #include <Wt/WPushButton>
 #include <Wt/WGridLayout>
+#include <Wt/WApplication>
+#include <Wt/WEnvironment>
 #include <Wt/WContainerWidget>
 #include <Wt/WRegExpValidator>
 
@@ -468,7 +470,8 @@ UnitsConverterTool::UnitsConverterTool()
   run_tests();
 #endif
   
-  InterSpec::instance()->useMessageResourceBundle( "UnitsConverterTool" );
+  InterSpec *viewer = InterSpec::instance();
+  viewer->useMessageResourceBundle( "UnitsConverterTool" );
   
   //addStyleClass( "UnitsConverterTool" );
   
@@ -598,12 +601,24 @@ UnitsConverterTool::UnitsConverterTool()
   resizeToFitOnScreen();
 
   //Keep the keyboard form popping up
-  InterSpecApp *app = dynamic_cast<InterSpecApp *>(WApplication::instance());
-  if( app && app->isMobile() )
+  if( viewer->isMobile() )
   {
+    if( viewer->isPhone() )
+    {
+      int w = viewer->renderedWidth();
+      int h = viewer->renderedHeight();
+      if( w < 100 )
+      {
+        w = wApp->environment().screenWidth();
+        h = wApp->environment().screenHeight();
+      }
+      
+      if(  (w > 100) && (w > h) )
+        titleBar()->hide();
+    }//if( viewer->isPhone() )
+    
     closeButton->setFocus();
-    titleBar()->hide();
-  }
+  }//if( viewer->isMobile() )
   
 }//UnitsConverterTool constructor
 

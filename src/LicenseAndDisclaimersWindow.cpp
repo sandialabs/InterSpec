@@ -67,7 +67,7 @@ using namespace std;
 //Or could just use: __DATE__
 
 
-LicenseAndDisclaimersWindow::LicenseAndDisclaimersWindow( int screen_width, int screen_height )
+LicenseAndDisclaimersWindow::LicenseAndDisclaimersWindow( InterSpec *interspec )
 : AuxWindow( WString::tr("window-title-license-credit"),
             (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::IsModal)
                | AuxWindowProperties::DisableCollapse | AuxWindowProperties::EnableResize) ),
@@ -76,7 +76,7 @@ LicenseAndDisclaimersWindow::LicenseAndDisclaimersWindow( int screen_width, int 
   setClosable( true );
   rejectWhenEscapePressed();
   
-  InterSpec *interspec = InterSpec::instance();
+  assert( interspec );
   if( interspec )
     interspec->useMessageResourceBundle( "LicenseAndDisclaimersWindow" );
   
@@ -87,13 +87,26 @@ LicenseAndDisclaimersWindow::LicenseAndDisclaimersWindow( int screen_width, int 
   const string docroot = wApp->docRoot();
   m_resourceBundle.use( SpecUtils::append_path(docroot,"InterSpec_resources/static_text/copyright_and_about") ,false);
   
-  double width = 0.5*screen_width, height = 0.8*screen_height;
+  int screen_width = interspec ? interspec->renderedWidth() : 0;
+  int screen_height = interspec ? interspec->renderedHeight() : 0;
+  if( (screen_width < 100) && interspec && interspec->isMobile() )
+  {
+    screen_width = wApp->environment().screenWidth();
+    screen_height = wApp->environment().screenHeight();
+  }
+  
+  const bool narrow_layout = ((screen_width > 100) 
+                              && (screen_width < 500)
+                              && (screen_width < screen_height));
+  
+  double width = 0.5*screen_width;
+  double height = 0.8*screen_height;
 
   if( height < 512.0 )
     height = 1.0*std::min( screen_height, 512 );
   height = std::min( height, 1024.0 );  //1024 not actually tested, could maybye bee 800
 
-  if( width < 715.0 || height < 512.0 )
+  if( !narrow_layout && ((width < 715.0) || (height < 512.0)) )
   {
     setMinimumSize(715,512);
     resize( WLength(50, WLength::FontEm), WLength(80,WLength::Percentage));
@@ -110,13 +123,17 @@ LicenseAndDisclaimersWindow::LicenseAndDisclaimersWindow( int screen_width, int 
   stack->setTransitionAnimation( animation, true );
   
   m_menu = new WMenu( stack, Wt::Vertical );
-  m_menu->addStyleClass( "VerticalNavMenu HeavyNavMenu SideMenu" );
+  if( narrow_layout )
+    m_menu->addStyleClass( "VerticalNavMenu HeavyNavMenu HorizontalMenu" );
+  else
+    m_menu->addStyleClass( "VerticalNavMenu HeavyNavMenu SideMenu" );
+  
+  //HorizontalMenu
   
   WDialog::contents()->setOverflow( WContainerWidget::OverflowHidden );
   
   //If on phone, need to make text much smaller!
-  auto app = dynamic_cast<InterSpecApp *>( WApplication::instance() );
-  const bool phone = (app && app->isPhone());
+  const bool phone = (interspec && interspec->isPhone());
   //const bool tablet = (app && app->isTablet());
   if( phone )
     WDialog::contents()->addStyleClass( "PhoneCopywriteContent" );
@@ -126,16 +143,27 @@ LicenseAndDisclaimersWindow::LicenseAndDisclaimersWindow( int screen_width, int 
   WBorder border(WBorder::Solid, WBorder::Explicit, Wt::gray);
   border.setWidth( WBorder::Explicit, WLength(1) );
   
-  topDiv->decorationStyle().setBorder( border,  Wt::Bottom );
-  stack->decorationStyle().setBorder( border,  Wt::Right | Wt::Left );
-  m_menu->decorationStyle().setBorder( border,  Wt::Left );
-  
   WGridLayout *layout = stretcher();
   
-  layout->addWidget( topDiv,    0, 0, 1, 2 );
-  layout->addWidget( m_menu,    1, 0 );
-  layout->addWidget( stack,     1, 1, 1, 1 );
-  layout->setRowStretch( 1, 1 );
+  if( narrow_layout )
+  {
+    m_menu->setMargin( 5, Wt::Side::Bottom );
+    
+    layout->addWidget( topDiv,    0, 0 );
+    layout->addWidget( m_menu,    1, 0 );
+    layout->addWidget( stack,     2, 0 );
+    layout->setRowStretch( 2, 1 );
+  }else
+  {
+    topDiv->decorationStyle().setBorder( border,  Wt::Bottom );
+    stack->decorationStyle().setBorder( border,  Wt::Right | Wt::Left );
+    m_menu->decorationStyle().setBorder( border,  Wt::Left );
+    
+    layout->addWidget( topDiv,    0, 0, 1, 2 );
+    layout->addWidget( m_menu,    1, 0 );
+    layout->addWidget( stack,     1, 1, 1, 1 );
+    layout->setRowStretch( 1, 1 );
+  }
   layout->setVerticalSpacing( 0 );
   layout->setHorizontalSpacing( 0 );
   

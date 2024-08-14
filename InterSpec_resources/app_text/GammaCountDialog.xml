@@ -23,6 +23,6 @@
   <message id="gcd-background-scale-note">Background is being scaled by {1}</message>
   <message id="gcd-and-secondary-scaled"> and secondary by </message>
   <message id="gcd-secondary-scale-note">Secondary background is being scaled by </message>
-  <message id="gcd-foreground-above-background">Foreground is {1} σ below background.</message>
-  <message id="gcd-foreground-below-background">Foreground is {1} σ above background.</message>
+  <message id="gcd-foreground-above-background">Foreground is {1} σ above background.</message>
+  <message id="gcd-foreground-below-background">Foreground is {1} σ below background.</message>
 </messages>

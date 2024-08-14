@@ -382,8 +382,8 @@ void DoseCalcWidget::init()
     workLayout->addWidget( enterDiv, 0, 0 );
     workLayout->addWidget( answerDiv, 1, 0 );
     workLayout->setColumnStretch( 0, 1 );
-    //workLayout->setRowStretch( 0, 1 );
-    //workLayout->setRowStretch( 1, 1 );
+    workLayout->setRowStretch( 0, 1 );
+    workLayout->setRowStretch( 1, 1 );
   }else
   {
     answerLayout->setContentsMargins( 9, 1, 9, 5 );
@@ -757,12 +757,15 @@ void DoseCalcWidget::init()
   m_issueTxt->addStyleClass( "DoseIssueTxt" );
   answerLayout->addWidget( m_issueTxt, answerLayout->rowCount(), 0, AlignBottom );
   
-  for( int i = 1; i < answerLayout->rowCount(); ++i )
-    answerLayout->setRowStretch( i, 1 );
-  answerLayout->setRowStretch( stayRow, 2 );
-  
-  for( int i = 1; i < enterLayout->rowCount(); ++i )
-    enterLayout->setRowStretch( i, 1 );
+  if( !narrowLayout )
+  {
+    for( int i = 1; i < answerLayout->rowCount(); ++i )
+      answerLayout->setRowStretch( i, 1 );
+    answerLayout->setRowStretch( stayRow, 2 );
+    
+    for( int i = 1; i < enterLayout->rowCount(); ++i )
+      enterLayout->setRowStretch( i, 1 );
+  }//if( !narrowLayout )
   
   try
   {

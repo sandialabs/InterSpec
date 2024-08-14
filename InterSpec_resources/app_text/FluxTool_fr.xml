@@ -19,7 +19,8 @@
 <message id="ftw-simple">Simple</message>
 <message id="ftw-standard">Standard</message>
 <message id="ftw-more">Plus</message>
-<message id="ftw-copy">ftw-copy-btn</message>
+<message id="ftw-copy-btn">Copier</message>
+<message id="ftw-copy-btn-narrow">Copier</message>
 <message id="ftw-invalid-dist">Distance Invalide</message>
 <message id="ftw-no-drf">Aucune Fonction de Réponse du Détecteur Choisie</message>
 <message id="ftw-no-foreground">Aucun spectre de premier plan chargé</message>

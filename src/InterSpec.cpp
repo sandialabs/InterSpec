@@ -4619,7 +4619,7 @@ void InterSpec::showLicenseAndDisclaimersWindow()
     return;
   }
   
-  m_licenseWindow = new LicenseAndDisclaimersWindow( renderedWidth(), renderedHeight() );
+  m_licenseWindow = new LicenseAndDisclaimersWindow( this );
   
   m_licenseWindow->finished().connect( this, &InterSpec::deleteLicenseAndDisclaimersWindow );
   
@@ -6812,7 +6812,7 @@ void InterSpec::addViewMenu( WWidget *parent )
   m_logYItems[0]->triggered().connect( boost::bind( &InterSpec::setLogY, this, true  ) );
   m_logYItems[1]->triggered().connect( boost::bind( &InterSpec::setLogY, this, false ) );
   m_spectrum->setYAxisLog( logypref );
-  InterSpecUser::addCallbackWhenChanged( m_user, "LogY", this, &InterSpec::setLogY );
+  InterSpecUser::addCallbackWhenChanged( m_user, this, "LogY", this, &InterSpec::setLogY );
   
   
   const bool verticleLines = InterSpecUser::preferenceValue<bool>( "ShowVerticalGridlines", this );
@@ -6826,7 +6826,7 @@ void InterSpec::addViewMenu( WWidget *parent )
   m_verticalLinesItems[1]->setHidden( !verticleLines );
   m_spectrum->showVerticalLines( verticleLines );
   m_timeSeries->showVerticalLines( verticleLines );
-  InterSpecUser::addCallbackWhenChanged( m_user, "ShowVerticalGridlines", this, &InterSpec::setVerticalLines );
+  InterSpecUser::addCallbackWhenChanged( m_user, this, "ShowVerticalGridlines", this, &InterSpec::setVerticalLines );
   
   const bool horizontalLines = InterSpecUser::preferenceValue<bool>( "ShowHorizontalGridlines", this );
   m_horizantalLinesItems[0] = chartmenu->addMenuItem( WString::tr("app-mi-view-show-horz"),
@@ -6839,7 +6839,7 @@ void InterSpec::addViewMenu( WWidget *parent )
   m_horizantalLinesItems[1]->setHidden( !horizontalLines );
   m_spectrum->showHorizontalLines( horizontalLines );
   m_timeSeries->showHorizontalLines( horizontalLines );
-  InterSpecUser::addCallbackWhenChanged( m_user, "ShowHorizontalGridlines", this, &InterSpec::setHorizantalLines );
+  InterSpecUser::addCallbackWhenChanged( m_user, this, "ShowHorizontalGridlines", this, &InterSpec::setHorizantalLines );
   
   
   if( isPhone() )
@@ -6855,7 +6855,7 @@ void InterSpec::addViewMenu( WWidget *parent )
     m_compactXAxisItems[1]->triggered().connect( boost::bind( &InterSpec::setXAxisCompact, this, false ) );
     m_compactXAxisItems[0]->setHidden( makeCompact );
     m_compactXAxisItems[1]->setHidden( !makeCompact );
-    InterSpecUser::addCallbackWhenChanged( m_user, "CompactXAxis", this, &InterSpec::setXAxisCompact );
+    InterSpecUser::addCallbackWhenChanged( m_user, this, "CompactXAxis", this, &InterSpec::setXAxisCompact );
   }
   
   //What we should do here is have a dialog that pops up that lets users  select
@@ -6893,7 +6893,7 @@ void InterSpec::addViewMenu( WWidget *parent )
   m_showXAxisSliderItems[1]->triggered().connect( boost::bind( &InterSpec::setXAxisSlider, this, false ) );
   m_showXAxisSliderItems[0]->setHidden( showSlider );
   m_showXAxisSliderItems[1]->setHidden( !showSlider );
-  InterSpecUser::addCallbackWhenChanged( m_user, "ShowXAxisSlider", this, &InterSpec::setXAxisSlider );
+  InterSpecUser::addCallbackWhenChanged( m_user, this, "ShowXAxisSlider", this, &InterSpec::setXAxisSlider );
   
   
   const bool showScalers = InterSpecUser::preferenceValue<bool>( "ShowYAxisScalers", this );
@@ -6905,7 +6905,7 @@ void InterSpec::addViewMenu( WWidget *parent )
   m_showYAxisScalerItems[1]->triggered().connect( boost::bind( &InterSpec::setShowYAxisScalers, this, false ) );
   m_showYAxisScalerItems[0]->setHidden( showScalers );
   m_showYAxisScalerItems[1]->setHidden( !showScalers );
-  InterSpecUser::addCallbackWhenChanged( m_user, "ShowYAxisScalers", this, &InterSpec::setShowYAxisScalers );
+  InterSpecUser::addCallbackWhenChanged( m_user, this, "ShowYAxisScalers", this, &InterSpec::setShowYAxisScalers );
   
   m_displayOptionsPopupDiv->addSeparator();
   
@@ -7793,7 +7793,7 @@ void InterSpec::addAboutMenu( Wt::WWidget *parent )
                               true, HelpSystem::ToolTipPosition::Right );
   InterSpecUser::associateWidget( m_user, "AutoDarkFromOs", autoDarkCb, this );
   
-  InterSpecUser::addCallbackWhenChanged( m_user, "AutoDarkFromOs", std::bind([](){
+  InterSpecUser::addCallbackWhenChanged( m_user, this, "AutoDarkFromOs", std::bind([](){
     InterSpec *viewer = InterSpec::instance();
     if( viewer )
       viewer->doJavaScript( "try{ Wt.WT.DetectOsColorThemeJs('" + viewer->id() + "'); }"
@@ -9676,19 +9676,27 @@ void InterSpec::addToolsMenu( Wt::WWidget *parent )
   item->triggered().connect( boost::bind( &InterSpec::createDecayInfoWindow, this ) );
 
 #if( USE_DETECTION_LIMIT_TOOL )
-  item = popup->addMenuItem( WString::tr("app-mi-tools-mda") );
-  HelpSystem::attachToolTipOn( item, WString::tr("app-mi-tt-tools-mda"), showToolTips );
-  item->triggered().connect( boost::bind( &InterSpec::showDetectionLimitTool, this, string() ) );
+  if( !isPhone() )
+  {
+    // TODO: modify formatting of Detection Confidence tool to work on phones
+    item = popup->addMenuItem( WString::tr("app-mi-tools-mda") );
+    HelpSystem::attachToolTipOn( item, WString::tr("app-mi-tt-tools-mda"), showToolTips );
+    item->triggered().connect( boost::bind( &InterSpec::showDetectionLimitTool, this, string() ) );
+  }//if( !isPhone() )
 #endif
   
   item = popup->addMenuItem( WString::tr("app-mi-tools-select-drf") );
   HelpSystem::attachToolTipOn( item, WString::tr("app-mi-tt-tools-select-drf"), showToolTips );
   item->triggered().connect( boost::bind( &InterSpec::showDrfSelectWindow, this ) );
   
-  item = popup->addMenuItem( WString::tr("app-mi-tools-make-drf") );
-  HelpSystem::attachToolTipOn( item, WString::tr("app-mi-tt-tools-make-drf"), showToolTips );
-  item->triggered().connect( boost::bind( &InterSpec::showMakeDrfWindow, this ) );
-
+  if( !isPhone() )
+  {
+    // The create DRF tool wont layout very good on phones - I dont think this is "phone"
+    //  work anyway, so we'll just skip it.
+    item = popup->addMenuItem( WString::tr("app-mi-tools-make-drf") );
+    HelpSystem::attachToolTipOn( item, WString::tr("app-mi-tt-tools-make-drf"), showToolTips );
+    item->triggered().connect( boost::bind( &InterSpec::showMakeDrfWindow, this ) );
+  }
   
   item = popup->addMenuItem( WString::tr("app-mi-tools-file-par") );
   HelpSystem::attachToolTipOn( item, WString::tr("app-mi-tt-tools-file-par"), showToolTips );

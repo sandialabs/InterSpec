@@ -366,6 +366,7 @@ void LeafletRadMap::defineJavaScript()
     ", cpsText: '" + WString::tr("CPS").toUTF8() + "'"
     ", loadTxt: '" + WString::tr("Load").toUTF8() + "'"
     ", measurementsAsTxt: '" + WString::tr("lrm-measurements-as").toUTF8() + "'"
+    ", loadTxtShort: '" + WString::tr("lrm-load-meas-as-short").toUTF8() + "'"
     ", realTimeTxt: '" + WString::tr("Real Time").toUTF8() + "'"
     ", liveTimeTxt: '" + WString::tr("Live Time").toUTF8() + "'"
   "}";

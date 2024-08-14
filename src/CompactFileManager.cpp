@@ -47,6 +47,10 @@
 #include <Wt/WDoubleValidator>
 #include <Wt/WRegExpValidator>
 
+#if( !USE_GOOGLE_MAP && !USE_LEAFLET_MAP )
+#include <Wt/WAnchor>
+#endif
+                                   
 // Disable streamsize <=> size_t warnings in boost
 #pragma warning(disable:4244)
 
@@ -894,7 +898,7 @@ void CompactFileManager::updateSummaryTable( SpecUtils::SpectrumType type,
   
   table->show();
   
-  char buffer[64] = { '\0' };
+  char buffer[128] = { '\0' };
   const WString second_label = WString::tr("units-label-seconds-short");
   const WString live_time_label = WString::tr("Live Time");
   const WString real_time_label = WString::tr("Real Time");
@@ -1003,12 +1007,22 @@ void CompactFileManager::updateSummaryTable( SpecUtils::SpectrumType type,
     cell = table->elementAt(table_pos / num_info_col, 1 + 2*(table_pos % num_info_col) );
     
     snprintf( buffer, sizeof(buffer), "%.4f,%.4f", hist->latitude(), hist->longitude() );
+#if( USE_GOOGLE_MAP || USE_LEAFLET_MAP )
+    snprintf( buffer, sizeof(buffer), "%.4f,%.4f", hist->latitude(), hist->longitude() );
     WPushButton *gps = new WPushButton( buffer, cell );
     gps->addStyleClass( "LinkBtn GpsBtn" );
     gps->clicked().connect( boost::bind( &InterSpec::createMapWindow, m_interspec, type, false) );
     
     snprintf( buffer, sizeof(buffer), "%.6f,%.6f - click to show a map", hist->latitude(), hist->longitude() );
     gps->setToolTip( buffer );
+#else
+    // Make a link to google maps
+    WString coordText = WString::fromUTF8(buffer);
+    snprintf( buffer, sizeof(buffer), "https://maps.google.com/?q=%.7f,%.7f", hist->latitude(), hist->longitude() );
+    WAnchor *mapLink = new WAnchor( WLink(buffer), coordText, cell );
+    mapLink->setTarget( AnchorTarget::TargetNewWindow );
+    mapLink->setToolTip( "Will open a web browser window showing this location." );
+#endif
   }//if( hist->has_gps_info() )
   
   if( meas && !meas->manufacturer().empty() )

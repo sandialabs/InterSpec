@@ -492,7 +492,7 @@ void InterSpecUser::associateWidget( Wt::Dbo::ptr<InterSpecUser> user,
   const bool value = preferenceValue<bool>( name, viewer );
   cb->setChecked( value );
   
-  InterSpecUser::addCallbackWhenChanged( user, name, cb, &WCheckBox::setChecked );
+  InterSpecUser::addCallbackWhenChanged( user, viewer, name, cb, &WCheckBox::setChecked );
 
   cb->checked().connect( boost::bind( &InterSpecUser::setBoolPreferenceValue, user, name, true, viewer ) );
   cb->unChecked().connect( boost::bind( &InterSpecUser::setBoolPreferenceValue, user, name, false, viewer ) );

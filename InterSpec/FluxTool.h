@@ -175,6 +175,9 @@ protected:
   InterSpec *m_interspec;
   DetectorDisplay *m_detector;
   
+  /** Wether layout out for portrait phones or not. */
+  bool m_narrowLayout;
+  
   Wt::WText *m_msg;
   Wt::WLineEdit *m_distance;
   Wt::WString m_prevDistance; // For undo/redo

@@ -322,6 +322,7 @@ public:
    */
   template<class T, class V>
   static void addCallbackWhenChanged( Wt::Dbo::ptr<InterSpecUser> &user,
+                                      InterSpec *viewer,
                                       const std::string &name, T *target,
                                       void (V::*method)(bool) );
   
@@ -338,6 +339,7 @@ public:
    */
   template<class T>
   static void addCallbackWhenChanged( Wt::Dbo::ptr<InterSpecUser> &user,
+                                     InterSpec *viewer,
                                      const std::string &name,
                                      const T &fcn );
   
@@ -1240,14 +1242,17 @@ void InterSpecUser::setPreferenceValue( Wt::Dbo::ptr<InterSpecUser> user,
 
 template<class T>
 void InterSpecUser::addCallbackWhenChanged( Wt::Dbo::ptr<InterSpecUser> &user,
+                                           InterSpec *viewer,
                                            const std::string &name, const T &fcn )
 {
   assert( user );
   if( !user ) //shouldnt ever happen
     return;
   
-  //Make sure a valid bool preference
-  user->preferenceValue<bool>( name );
+  //Make sure a valid bool preference (note using call with pointer to InterSpec
+  //  incase the user has never changed the preference value, so not in
+  //  `user->m_preferences` yet.
+  user->preferenceValue<bool>( name, viewer );
   
   std::shared_ptr<Wt::Signals::signal<void(bool)>> &signal = user->m_onBoolChangeSignals[name];
   if( !signal )
@@ -1258,6 +1263,7 @@ void InterSpecUser::addCallbackWhenChanged( Wt::Dbo::ptr<InterSpecUser> &user,
 
 template<class T, class V>
 void InterSpecUser::addCallbackWhenChanged( Wt::Dbo::ptr<InterSpecUser> &user,
+                                            InterSpec *viewer,
                                             const std::string &name,
                                             T *target, void (V::*method)(bool) )
 {
@@ -1265,8 +1271,10 @@ void InterSpecUser::addCallbackWhenChanged( Wt::Dbo::ptr<InterSpecUser> &user,
   if( !user ) //shouldnt ever happen
     return;
   
-  //Make sure a valid bool preference
-  user->preferenceValue<bool>( name );
+  //Make sure a valid bool preference (note using call with pointer to InterSpec
+  //  incase the user has never changed the preference value, so not in
+  //  `user->m_preferences` yet.
+  user->preferenceValue<bool>( name, viewer );
   
   // Retrieve (or create) the signal, and connect things up
   std::shared_ptr<Wt::Signals::signal<void(bool)>> &signal = user->m_onBoolChangeSignals[name];

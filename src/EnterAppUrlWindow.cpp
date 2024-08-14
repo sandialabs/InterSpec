@@ -72,7 +72,16 @@ SimpleDialog *createEntryWindow( InterSpec *viewer )
   WTextArea *text = new WTextArea( window->contents() );
   text->setObjectName( "txtarea" );
   text->setInline( false );
-  text->setWidth( 450 );
+  
+  int w = viewer->renderedWidth();
+  //int h = viewer->renderedHeight();
+  //if( viewer->isMobile() && (w < 100) )
+  //{
+  //  w = wApp->environment().screenWidth();
+  //  h = wApp->environment().screenHeight();
+  //}
+  
+  text->setWidth( ((w < 100) || (w > 530)) ? 450 : w - 80 );
   
   const char *desctxt = "<div style=\"margin-top: 10px;\">Enter, usually through copy/paste, InterSpec URLs.</div>"
                         "<div>These URLs start with either <code>interspec://</code>, or <code>raddata://</code>.</div>";

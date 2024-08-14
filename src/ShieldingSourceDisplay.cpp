@@ -357,7 +357,8 @@ SourceFitModel::SourceFitModel( PeakModel *peakModel,
   {
     interspec->useMessageResourceBundle( "ShieldingSourceDisplay" ); //jic
     m_displayCuries = !InterSpecUser::preferenceValue<bool>( "DisplayBecquerel", interspec );
-    InterSpecUser::addCallbackWhenChanged( interspec->m_user, "DisplayBecquerel", this, &SourceFitModel::displayUnitsChanged );
+    InterSpecUser::addCallbackWhenChanged( interspec->m_user, interspec, "DisplayBecquerel",
+                                          this, &SourceFitModel::displayUnitsChanged );
   }//if( !interspec ) / else
   
   peakModel->rowsAboutToBeRemoved().connect( this, &SourceFitModel::peakModelRowsRemovedCallback );
