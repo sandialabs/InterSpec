@@ -175,11 +175,11 @@ if( USE_REL_ACT_TOOL )
 
   FetchContent_MakeAvailable( eigen )
   
-  # For Android
-  if( ANDROID )
+  # For Android and iOS, we need to force the path information for Eigen, for some reason.
+  if( CMAKE_CROSSCOMPILING )
     set( CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${eigen_BINARY_DIR}" CACHE STRING "Modules for CMake" FORCE )
     set( Eigen3_DIR "${eigen_BINARY_DIR}" CACHE PATH "" FORCE )  #${eigen_SOURCE_DIR}
-  endif( ANDROID )
+  endif( CMAKE_CROSSCOMPILING )
 
   
   # Set some Google Ceres options; both to allow compiling without further dependancies, and

@@ -277,7 +277,9 @@ IsotopeSearchByEnergy::IsotopeSearchByEnergy( InterSpec *viewer,
 : WContainerWidget( parent ),
   m_viewer( viewer ),
   m_chart( chart ),
+  m_searchConditionsColumn( nullptr ),
   m_searchEnergies( NULL ),
+  m_assignBtnRow( nullptr ),
   m_clearRefLines( nullptr ),
   m_assignPeakToSelected( nullptr ),
   m_currentSearch( 0 ),
@@ -303,35 +305,40 @@ IsotopeSearchByEnergy::IsotopeSearchByEnergy( InterSpec *viewer,
   
   shared_ptr<void> undo_sentry = getDisableUndoRedoSentry();
   
-  WContainerWidget *searchConditions = new WContainerWidget( this );
-  searchConditions->setStyleClass( "IsotopeSearchConditions" );
+  m_searchConditionsColumn = new WContainerWidget( this );
+  m_searchConditionsColumn->setStyleClass( "IsotopeSearchConditions" );
   
-  m_searchEnergies = new WContainerWidget( searchConditions );
+  m_searchEnergies = new WContainerWidget( m_searchConditionsColumn );
   m_searchEnergies->setStyleClass( "IsotopeSearchEnergies" );
   
-  WContainerWidget *assignRow = new WContainerWidget( searchConditions );
-  assignRow->addStyleClass( "AssignToSelectedRow" );
+  m_assignBtnRow = new WContainerWidget( m_searchConditionsColumn );
+  m_assignBtnRow->addStyleClass( "AssignToSelectedRow" );
   
-  m_clearRefLines = new WPushButton( WString::tr("isbe-clear-ref"), assignRow );
+  m_clearRefLines = new WPushButton( WString::tr("isbe-clear-ref"), m_assignBtnRow );
   m_clearRefLines->addStyleClass( "LightButton" );
   m_clearRefLines->clicked().connect( this, &IsotopeSearchByEnergy::clearSelectionAndRefLines );
   m_clearRefLines->hide();
   
   
-  m_assignPeakToSelected = new WSplitButton( "&nbsp;", assignRow ); //Space is needed so Wt will add the ".with-label" style class
+  m_assignPeakToSelected = new WSplitButton( "&nbsp;", m_assignBtnRow ); //Space is needed so Wt will add the ".with-label" style class
   m_assignPeakToSelected->addStyleClass( "LightButton" );
   m_assignPeakToSelected->actionButton()->addStyleClass( "LightButton" );
   m_assignPeakToSelected->dropDownButton()->addStyleClass( "LightButton" );
   m_assignPeakToSelected->actionButton()->clicked().connect( this, &IsotopeSearchByEnergy::assignSearchedOnPeaksToSelectedNuclide );
   m_assignPeakToSelected->hide();
-  WPopupMenu *assignPeakMenu = new PopupDivMenu( nullptr, PopupDivMenu::MenuType::TransientMenu);
+  
+  WPopupMenu *assignPeakMenu = nullptr;
+  if( m_viewer->isMobile() )
+    assignPeakMenu = new WPopupMenu();
+  else
+    assignPeakMenu = new PopupDivMenu( nullptr, PopupDivMenu::MenuType::TransientMenu);
   m_assignPeakToSelected->setMenu( assignPeakMenu );
   // We will add relevant menu items to this button when the time comes
   
   
   
   
-  WContainerWidget *sourceTypes = new WContainerWidget( searchConditions );
+  WContainerWidget *sourceTypes = new WContainerWidget( m_searchConditionsColumn );
   sourceTypes->setStyleClass( "IsotopeSourceTypes" );
   m_gammas = new WCheckBox( WString::tr("isbe-cb-gammas"), sourceTypes );
   m_gammas->changed().connect( this, &IsotopeSearchByEnergy::minBrOrHlChanged );
@@ -346,7 +353,7 @@ IsotopeSearchByEnergy::IsotopeSearchByEnergy( InterSpec *viewer,
 //  m_reactions->setChecked();
 
   
-  WContainerWidget *searchOptions = new WContainerWidget( searchConditions );
+  WContainerWidget *searchOptions = new WContainerWidget( m_searchConditionsColumn );
   searchOptions->setStyleClass( "IsotopeSearchMinimums" );
 
   
@@ -409,54 +416,57 @@ IsotopeSearchByEnergy::IsotopeSearchByEnergy( InterSpec *viewer,
   m_results->setModel( m_model );
   m_results->addStyleClass( "IsotopeSearchResultTable ToolTabSection" );
   m_results->setAlternatingRowColors( true );
-  //m_results->sortByColumn( IsotopeSearchByEnergyModel::Distance, Wt::AscendingOrder );
   m_results->sortByColumn( IsotopeSearchByEnergyModel::Column::ProfileDistance, Wt::DescendingOrder );
   
-  for( IsotopeSearchByEnergyModel::Column col = IsotopeSearchByEnergyModel::Column(0);
-      col < IsotopeSearchByEnergyModel::NumColumns;
-      col = IsotopeSearchByEnergyModel::Column(col+1) )
-  {
-    m_results->setColumnHidden( col, false );
-    m_results->setSortingEnabled( col, true );
-
-    switch( col )
+#if( InterSpec_PHONE_ROTATE_FOR_TABS )
+  setResultTableColumnWidths( false );
+#else
+    for( IsotopeSearchByEnergyModel::Column col = IsotopeSearchByEnergyModel::Column(0);
+        col < IsotopeSearchByEnergyModel::NumColumns;
+        col = IsotopeSearchByEnergyModel::Column(col+1) )
     {
-      case IsotopeSearchByEnergyModel::ParentIsotope:
-        m_results->setColumnWidth( col, WLength(5,WLength::FontEm) );
-      break;
-        
-      case IsotopeSearchByEnergyModel::Energy:
-        m_results->setColumnWidth( col, WLength(7,WLength::FontEm) );
-      break;
-        
-      case IsotopeSearchByEnergyModel::Distance:
-        m_results->setColumnWidth( col, WLength(5,WLength::FontEm) );
-      break;
-        
-      case IsotopeSearchByEnergyModel::BranchRatio:
-        m_results->setColumnWidth( col, WLength(5,WLength::FontEm) );
-      break;
-        
-      case IsotopeSearchByEnergyModel::ProfileDistance:
-        m_results->setColumnWidth( col, WLength(5,WLength::FontEm) );
+      m_results->setColumnHidden( col, false );
+      m_results->setSortingEnabled( col, true );
+
+      switch( col )
+      {
+        case IsotopeSearchByEnergyModel::ParentIsotope:
+          m_results->setColumnWidth( col, WLength(5,WLength::FontEm) );
         break;
-        
-      case IsotopeSearchByEnergyModel::SpecificIsotope:
-        m_results->setColumnWidth( col, WLength(8,WLength::FontEm) );
-      break;
-        
-      case IsotopeSearchByEnergyModel::ParentHalfLife:
-        m_results->setColumnWidth( col, WLength(7,WLength::FontEm) );
-      break;
-        
-      case IsotopeSearchByEnergyModel::AssumedAge:
-        m_results->setColumnWidth( col, WLength(7,WLength::FontEm) );
-      break;
-        
-      case IsotopeSearchByEnergyModel::NumColumns:
-      break;
-    }//switch( col )
-  }//for( loop over peak columns )
+          
+        case IsotopeSearchByEnergyModel::Energy:
+          m_results->setColumnWidth( col, WLength(7,WLength::FontEm) );
+        break;
+          
+        case IsotopeSearchByEnergyModel::Distance:
+          m_results->setColumnWidth( col, WLength(5,WLength::FontEm) );
+        break;
+          
+        case IsotopeSearchByEnergyModel::BranchRatio:
+          m_results->setColumnWidth( col, WLength(5,WLength::FontEm) );
+        break;
+          
+        case IsotopeSearchByEnergyModel::ProfileDistance:
+          m_results->setColumnWidth( col, WLength(5,WLength::FontEm) );
+          break;
+          
+        case IsotopeSearchByEnergyModel::SpecificIsotope:
+          m_results->setColumnWidth( col, WLength(8,WLength::FontEm) );
+        break;
+          
+        case IsotopeSearchByEnergyModel::ParentHalfLife:
+          m_results->setColumnWidth( col, WLength(7,WLength::FontEm) );
+        break;
+          
+        case IsotopeSearchByEnergyModel::AssumedAge:
+          m_results->setColumnWidth( col, WLength(7,WLength::FontEm) );
+        break;
+          
+        case IsotopeSearchByEnergyModel::NumColumns:
+        break;
+      }//switch( col )
+    }//for( loop over peak columns )
+#endif //InterSpec_PHONE_ROTATE_FOR_TABS / else
   
   m_results->setSelectionMode( Wt::SingleSelection );
   m_results->setSelectionBehavior( Wt::SelectRows );
@@ -600,6 +610,239 @@ vector<IsotopeSearchByEnergy::SearchEnergy *> IsotopeSearchByEnergy::searches()
   return searchEnergies;
 }//vector<SearchEnergy *> searches()
 
+
+#if( InterSpec_PHONE_ROTATE_FOR_TABS )
+void IsotopeSearchByEnergy::setResultTableColumnWidths( const bool narrow )
+{
+  if( narrow )
+  {
+    m_results->setLineHeight( 13 );
+    m_results->setHeaderHeight( 15 );
+    
+    for( IsotopeSearchByEnergyModel::Column col = IsotopeSearchByEnergyModel::Column(0);
+        col < IsotopeSearchByEnergyModel::NumColumns;
+        col = IsotopeSearchByEnergyModel::Column(col+1) )
+    {
+      m_results->setSortingEnabled( col, true );
+      
+      switch( col )
+      {
+        case IsotopeSearchByEnergyModel::ParentIsotope:
+          m_results->setColumnWidth( col, WLength(50,WLength::Pixel) );
+          m_results->setColumnHidden( col, false );
+        break;
+          
+        case IsotopeSearchByEnergyModel::Energy:
+          m_results->setColumnWidth( col, WLength(50,WLength::Pixel) );
+          m_results->setColumnHidden( col, false );
+        break;
+          
+        case IsotopeSearchByEnergyModel::Distance:
+          m_results->setColumnWidth( col, WLength(35,WLength::Pixel) );
+          m_results->setColumnHidden( col, false );
+        break;
+          
+        case IsotopeSearchByEnergyModel::BranchRatio:
+          m_results->setColumnWidth( col, WLength(50,WLength::Pixel) );
+          m_results->setColumnHidden( col, false );
+        break;
+          
+        case IsotopeSearchByEnergyModel::ProfileDistance:
+          m_results->setColumnWidth( col, WLength(50,WLength::Pixel) );
+          m_results->setColumnHidden( col, false );
+          break;
+          
+        case IsotopeSearchByEnergyModel::SpecificIsotope:
+          m_results->setColumnWidth( col, WLength(8,WLength::FontEm) );
+          m_results->setColumnHidden( col, true );
+        break;
+          
+        case IsotopeSearchByEnergyModel::ParentHalfLife:
+          m_results->setColumnWidth( col, WLength(7,WLength::FontEm) );
+          m_results->setColumnHidden( col, true );
+        break;
+          
+        case IsotopeSearchByEnergyModel::AssumedAge:
+          m_results->setColumnWidth( col, WLength(7,WLength::FontEm) );
+          m_results->setColumnHidden( col, true );
+        break;
+          
+        case IsotopeSearchByEnergyModel::NumColumns:
+        break;
+      }//switch( col )
+    }//for( loop over peak columns )
+  }else
+  {
+    m_results->setLineHeight( 20 );
+    m_results->setHeaderHeight( 20 );
+    
+    for( IsotopeSearchByEnergyModel::Column col = IsotopeSearchByEnergyModel::Column(0);
+        col < IsotopeSearchByEnergyModel::NumColumns;
+        col = IsotopeSearchByEnergyModel::Column(col+1) )
+    {
+      m_results->setColumnHidden( col, false );
+      m_results->setSortingEnabled( col, true );
+      
+      switch( col )
+      {
+        case IsotopeSearchByEnergyModel::ParentIsotope:
+          m_results->setColumnWidth( col, WLength(5,WLength::FontEm) );
+          break;
+          
+        case IsotopeSearchByEnergyModel::Energy:
+          m_results->setColumnWidth( col, WLength(7,WLength::FontEm) );
+          break;
+          
+        case IsotopeSearchByEnergyModel::Distance:
+          m_results->setColumnWidth( col, WLength(5,WLength::FontEm) );
+          break;
+          
+        case IsotopeSearchByEnergyModel::BranchRatio:
+          m_results->setColumnWidth( col, WLength(5,WLength::FontEm) );
+          break;
+          
+        case IsotopeSearchByEnergyModel::ProfileDistance:
+          m_results->setColumnWidth( col, WLength(5,WLength::FontEm) );
+          break;
+          
+        case IsotopeSearchByEnergyModel::SpecificIsotope:
+          m_results->setColumnWidth( col, WLength(8,WLength::FontEm) );
+          break;
+          
+        case IsotopeSearchByEnergyModel::ParentHalfLife:
+          m_results->setColumnWidth( col, WLength(7,WLength::FontEm) );
+          break;
+          
+        case IsotopeSearchByEnergyModel::AssumedAge:
+          m_results->setColumnWidth( col, WLength(7,WLength::FontEm) );
+          break;
+          
+        case IsotopeSearchByEnergyModel::NumColumns:
+          break;
+      }//switch( col )
+    }//for( loop over peak columns )
+  }//if( narrow ) / else
+}//void setResultTableColumnWidths( const bool narrow )
+
+
+void IsotopeSearchByEnergy::setNarrowPhoneLayout( const bool narrow )
+{
+  //WWidget *p = m_results->parent();
+  //if( p )
+  //  p->removeChild( m_results );
+  
+  if( narrow )
+  {
+    addStyleClass( "NarrowNuclideSearch" );
+    m_searchConditionsColumn->insertBefore( m_results, m_assignBtnRow );
+    m_results->setLineHeight( 13 );
+    m_results->setHeaderHeight( 15 );
+    
+    for( IsotopeSearchByEnergyModel::Column col = IsotopeSearchByEnergyModel::Column(0);
+        col < IsotopeSearchByEnergyModel::NumColumns;
+        col = IsotopeSearchByEnergyModel::Column(col+1) )
+    {
+      switch( col )
+      {
+        case IsotopeSearchByEnergyModel::ParentIsotope:
+          m_results->setColumnWidth( col, WLength(50,WLength::Pixel) );
+          m_results->setColumnHidden( col, false );
+        break;
+          
+        case IsotopeSearchByEnergyModel::Energy:
+          m_results->setColumnWidth( col, WLength(50,WLength::Pixel) );
+          m_results->setColumnHidden( col, false );
+        break;
+          
+        case IsotopeSearchByEnergyModel::Distance:
+          m_results->setColumnWidth( col, WLength(35,WLength::Pixel) );
+          m_results->setColumnHidden( col, false );
+        break;
+          
+        case IsotopeSearchByEnergyModel::BranchRatio:
+          m_results->setColumnWidth( col, WLength(50,WLength::Pixel) );
+          m_results->setColumnHidden( col, false );
+        break;
+          
+        case IsotopeSearchByEnergyModel::ProfileDistance:
+          m_results->setColumnWidth( col, WLength(50,WLength::Pixel) );
+          m_results->setColumnHidden( col, false );
+          break;
+          
+        case IsotopeSearchByEnergyModel::SpecificIsotope:
+          m_results->setColumnWidth( col, WLength(8,WLength::FontEm) );
+          m_results->setColumnHidden( col, true );
+        break;
+          
+        case IsotopeSearchByEnergyModel::ParentHalfLife:
+          m_results->setColumnWidth( col, WLength(7,WLength::FontEm) );
+          m_results->setColumnHidden( col, true );
+        break;
+          
+        case IsotopeSearchByEnergyModel::AssumedAge:
+          m_results->setColumnWidth( col, WLength(7,WLength::FontEm) );
+          m_results->setColumnHidden( col, true );
+        break;
+          
+        case IsotopeSearchByEnergyModel::NumColumns:
+        break;
+      }//switch( col )
+    }//for( loop over peak columns )
+  }else
+  {
+    removeStyleClass( "NarrowNuclideSearch" );
+    addWidget( m_results );
+    m_results->setLineHeight( 20 );
+    m_results->setHeaderHeight( 20 );
+    
+    for( IsotopeSearchByEnergyModel::Column col = IsotopeSearchByEnergyModel::Column(0);
+        col < IsotopeSearchByEnergyModel::NumColumns;
+        col = IsotopeSearchByEnergyModel::Column(col+1) )
+    {
+      m_results->setColumnHidden( col, false );
+      m_results->setSortingEnabled( col, true );
+
+      switch( col )
+      {
+        case IsotopeSearchByEnergyModel::ParentIsotope:
+          m_results->setColumnWidth( col, WLength(5,WLength::FontEm) );
+        break;
+          
+        case IsotopeSearchByEnergyModel::Energy:
+          m_results->setColumnWidth( col, WLength(7,WLength::FontEm) );
+        break;
+          
+        case IsotopeSearchByEnergyModel::Distance:
+          m_results->setColumnWidth( col, WLength(5,WLength::FontEm) );
+        break;
+          
+        case IsotopeSearchByEnergyModel::BranchRatio:
+          m_results->setColumnWidth( col, WLength(5,WLength::FontEm) );
+        break;
+          
+        case IsotopeSearchByEnergyModel::ProfileDistance:
+          m_results->setColumnWidth( col, WLength(5,WLength::FontEm) );
+          break;
+          
+        case IsotopeSearchByEnergyModel::SpecificIsotope:
+          m_results->setColumnWidth( col, WLength(8,WLength::FontEm) );
+        break;
+          
+        case IsotopeSearchByEnergyModel::ParentHalfLife:
+          m_results->setColumnWidth( col, WLength(7,WLength::FontEm) );
+        break;
+          
+        case IsotopeSearchByEnergyModel::AssumedAge:
+          m_results->setColumnWidth( col, WLength(7,WLength::FontEm) );
+        break;
+          
+        case IsotopeSearchByEnergyModel::NumColumns:
+        break;
+      }//switch( col )
+    }//for( loop over peak columns )
+  }
+}//void setNarrowPhoneLayout( const bool narrow )
+#endif //InterSpec_PHONE_ROTATE_FOR_TABS
 
 std::shared_ptr<void> IsotopeSearchByEnergy::getDisableUndoRedoSentry()
 {

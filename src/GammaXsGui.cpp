@@ -32,6 +32,8 @@
 #include <Wt/WLineEdit>
 #include <Wt/WGridLayout>
 #include <Wt/WPushButton>
+#include <Wt/WApplication>
+#include <Wt/WEnvironment>
 #include <Wt/WDoubleValidator>
 #include <Wt/WSuggestionPopup>
 #include <Wt/WRegExpValidator>
@@ -869,7 +871,15 @@ GammaXsWindow::GammaXsWindow( MaterialDB *materialDB,
   WPushButton *closeButton = addCloseButtonToFooter();
   closeButton->clicked().connect( this, &AuxWindow::hide );
   
-  if( viewer->isPhone() )
+  int w = viewer->renderedWidth();
+  int h = viewer->renderedHeight();
+  if( viewer->isPhone() && (w < 100) )
+  {
+    w = wApp->environment().screenWidth();
+    h = wApp->environment().screenHeight();
+  }
+  
+  if( viewer->isPhone() && (w > h) && (w > 100) )
     titleBar()->hide();
   
   show();

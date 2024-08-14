@@ -163,6 +163,7 @@ void FeatureMarkerWidget::init()
   
   m_escapePeaks = new WCheckBox( WString::tr("fmw-escape-peaks"), this );
   m_escapePeaks->setInline( false );
+  m_escapePeaks->setWordWrap( false );
   m_escapePeaks->checked().connect( boost::bind( &FeatureMarkerWidget::handleFeatureMarkerOptionChanged, this,
                                        FeatureMarkerType::EscapePeakMarker, true ) );
   m_escapePeaks->unChecked().connect( boost::bind( &FeatureMarkerWidget::handleFeatureMarkerOptionChanged, this,
@@ -170,6 +171,7 @@ void FeatureMarkerWidget::init()
   
   m_comptonPeak = new WCheckBox( WString::tr("fmw-compton-peak"), this );
   m_comptonPeak->setInline( false );
+  m_comptonPeak->setWordWrap( false );
   m_comptonPeak->checked().connect( boost::bind( &FeatureMarkerWidget::handleFeatureMarkerOptionChanged, this,
                                                 FeatureMarkerType::ComptonPeakMarker, true ) );
   m_comptonPeak->unChecked().connect( boost::bind( &FeatureMarkerWidget::handleFeatureMarkerOptionChanged, this,
@@ -194,6 +196,7 @@ void FeatureMarkerWidget::init()
   
   m_comptonEdge = new WCheckBox( WString::tr("fmw-compton-edge"), this );
   m_comptonEdge->setInline( false );
+  m_comptonEdge->setWordWrap( false );
   m_comptonEdge->checked().connect( boost::bind( &FeatureMarkerWidget::handleFeatureMarkerOptionChanged, this,
                                                 FeatureMarkerType::ComptonEdgeMarker, true ) );
   m_comptonEdge->unChecked().connect( boost::bind( &FeatureMarkerWidget::handleFeatureMarkerOptionChanged, this,
@@ -202,6 +205,7 @@ void FeatureMarkerWidget::init()
   
   m_sumPeaks = new WCheckBox( WString::tr("fmw-sum-peak"), this );
   m_sumPeaks->setInline( false );
+  m_sumPeaks->setWordWrap( false );
   m_sumPeaks->checked().connect( boost::bind( &FeatureMarkerWidget::handleFeatureMarkerOptionChanged, this,
                                                 FeatureMarkerType::SumPeakMarker, true ) );
   m_sumPeaks->unChecked().connect( boost::bind( &FeatureMarkerWidget::handleFeatureMarkerOptionChanged, this,

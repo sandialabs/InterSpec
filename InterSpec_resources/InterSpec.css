@@ -647,6 +647,13 @@ ul.Wt-popupmenu > li > a > span > span:hover
 
 .PeakInfoDisplayButtonDiv {
   padding-left: 3px;
+  display: flex;
+  align-items: center;
+}
+
+.PeakInfoDisplayButtonDiv > .LinkBtn.DownloadBtn.Wt-btn.with-label
+{
+  margin-left: auto;
 }
 
 .PeakInfoHlpBtn {
@@ -1561,6 +1568,10 @@ a:hover { color:#E88400; border-bottom:none; }
     padding-right: 3px;
     margin-bottom: 2px;
     border-bottom: 1px solid #e1e1e1;
+  }
+  
+  .IsPhone.Portrait .ToolTabTitledColumn .ToolTabColumnTitle {
+    font-size: 7pt;
   }
   
   .ToolTabTitledColumn .ToolTabTitledColumnContent

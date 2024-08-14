@@ -38,7 +38,9 @@
 #include <Wt/WComboBox>
 #include <Wt/WPushButton>
 #include <Wt/WGridLayout>
+#include <Wt/WApplication>
 #include <Wt/WButtonGroup>
+#include <Wt/WEnvironment>
 #include <Wt/WRadioButton>
 #include <Wt/WStackedWidget>
 #include <Wt/WDoubleValidator>
@@ -220,7 +222,7 @@ DoseCalcWindow::DoseCalcWindow( MaterialDB *materialDB,
   
   
 #if( USE_QR_CODES )
-  WPushButton *qr_btn = new WPushButton( footer() );
+  WPushButton *qr_btn = new WPushButton();
   qr_btn->setText( WString::tr("QR Code") );
   qr_btn->setIcon( "InterSpec_resources/images/qr-code.svg" );
   qr_btn->setStyleClass( "LinkBtn DownloadBtn DialogFooterQrBtn" );
@@ -236,11 +238,18 @@ DoseCalcWindow::DoseCalcWindow( MaterialDB *materialDB,
       passMessage( WString::tr("app-qr-err").arg(e.what()), WarningWidget::WarningMsgHigh );
     }
   }) );
+  if( !viewer->isPhone() )
+    footer()->addWidget( qr_btn );
 #endif //USE_QR_CODES
 
   
   WPushButton *closeButton = addCloseButtonToFooter( WString::tr("Close") );
   closeButton->clicked().connect( this, &AuxWindow::hide );
+  
+#if( USE_QR_CODES )
+  if( viewer->isPhone() )
+    footer()->addWidget( qr_btn );
+#endif
   
   show();
   
@@ -341,6 +350,15 @@ void DoseCalcWidget::init()
   }//try / catch
   
   const bool isPhone = m_viewer->isPhone();
+  int w = m_viewer->renderedWidth();
+  int h = m_viewer->renderedHeight();
+  if(  m_viewer->isMobile() && (w < 100) )
+  {
+    w = wApp->environment().screenWidth();
+    h = wApp->environment().screenHeight();
+  }
+  
+  const bool narrowLayout = ((w > 100) && (w < 450));
   const bool showToolTips = InterSpecUser::preferenceValue<bool>( "ShowTooltips", m_viewer );
   const bool useBq = InterSpecUser::preferenceValue<bool>( "DisplayBecquerel", InterSpec::instance() );
   
@@ -349,19 +367,34 @@ void DoseCalcWidget::init()
   WGridLayout *enterLayout = new WGridLayout( enterDiv );
   WGridLayout *answerLayout = new WGridLayout( answerDiv );
   
-  answerLayout->setContentsMargins( 9, 1, 9, 5 );
-  enterLayout->setContentsMargins( 9, 1, 9, 5 );
-  
   enterDiv->addStyleClass( "DoseEnterDiv" );
   answerDiv->addStyleClass( "DoseAnswerDiv" );
   
   WContainerWidget *workDiv = new WContainerWidget();
   WGridLayout *workLayout = new WGridLayout( workDiv );
 
-  workLayout->addWidget( enterDiv, 0, 0 );
-  workLayout->addWidget( answerDiv, 0, 1 );
-  workLayout->setColumnStretch( 0, 1 );
-  workLayout->setColumnStretch( 1, 1 );
+  if( narrowLayout )
+  {
+    addStyleClass( "NarrowDose" );
+    answerLayout->setContentsMargins( 5, 1, 5, 1 );
+    enterLayout->setContentsMargins( 5, 1, 5, 1 );
+    
+    workLayout->addWidget( enterDiv, 0, 0 );
+    workLayout->addWidget( answerDiv, 1, 0 );
+    workLayout->setColumnStretch( 0, 1 );
+    //workLayout->setRowStretch( 0, 1 );
+    //workLayout->setRowStretch( 1, 1 );
+  }else
+  {
+    answerLayout->setContentsMargins( 9, 1, 9, 5 );
+    enterLayout->setContentsMargins( 9, 1, 9, 5 );
+    
+    workLayout->addWidget( enterDiv, 0, 0 );
+    workLayout->addWidget( answerDiv, 0, 1 );
+    workLayout->setColumnStretch( 0, 1 );
+    workLayout->setColumnStretch( 1, 1 );
+  }
+  
   workLayout->setContentsMargins( 0, 0, 0, 0 );
   workLayout->setVerticalSpacing( 0 );
   workLayout->setHorizontalSpacing( 0 );
@@ -384,7 +417,8 @@ void DoseCalcWidget::init()
   WContainerWidget *introDiv = new WContainerWidget();
   introDiv->addStyleClass( "DoseIntroDiv" );
   WGridLayout *intoTxtLayout = new WGridLayout( introDiv );
-  WText *txt = new WText( WString::tr("dcw-intro-instructions") );
+  const char * const instr_key = narrowLayout ? "dcw-intro-instructions-vert-phone" : "dcw-intro-instructions";
+  WText *txt = new WText( WString::tr(instr_key) );
   txt->addStyleClass( "DoseIntroTxtMain" );
   
   intoTxtLayout->addWidget( txt, 0, 0, AlignMiddle | AlignCenter );
@@ -396,16 +430,30 @@ void DoseCalcWidget::init()
   intoTxtLayout->setRowStretch( 0, 10 );
   
   m_menu = new WMenu();
-  m_menu->addStyleClass( (isPhone ? "VerticalNavMenuPhone HeavyNavMenuPhone SideMenuPhone" : "VerticalNavMenu HeavyNavMenu SideMenu") );
   m_menu->addStyleClass( "DoseCalcSideMenu" );
-  
   m_stack = new WStackedWidget();
 //  m_stack->setTransitionAnimation( WAnimation(WAnimation::Fade, WAnimation::Linear, 500), false );
   m_stack->addWidget( introDiv );
   m_stack->addWidget( workDiv );
-  m_layout->addWidget( m_menu, 0, 0 );
-  m_layout->addWidget( m_stack, 0, 1 );
-  m_layout->setColumnStretch( 1, 1 );
+  
+  
+  if( narrowLayout )
+  {
+    m_menu->addStyleClass( "VerticalNavMenuPhone HeavyNavMenuPhone HorizontalMenu" );
+    
+    m_layout->addWidget( m_menu, 0, 0 );
+    m_layout->addWidget( m_stack, 1, 0 );
+    m_layout->setColumnStretch( 0, 1 );
+    m_layout->setRowStretch( 1, 1 );
+  }else
+  {
+    // Phone is horizontal
+    m_menu->addStyleClass( isPhone ? "VerticalNavMenuPhone HeavyNavMenuPhone SideMenuPhone" 
+                                    : "VerticalNavMenu HeavyNavMenu SideMenu" );
+    m_layout->addWidget( m_menu, 0, 0 );
+    m_layout->addWidget( m_stack, 0, 1 );
+    m_layout->setColumnStretch( 1, 1 );
+  }//if( narrow ) / else horizontal
   
   //First need to put source capability in
   {

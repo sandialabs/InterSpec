@@ -16,7 +16,11 @@
   display: flex;
   flex-flow: column nowrap;
   
-  width: 325px;
+  width: min(325px, calc(100vw - 15px));
+}
+
+.NarrowNuclideSearch .IsotopeSearchConditions {
+  width: 100%;
 }
 
 
@@ -213,4 +217,45 @@ div.AddSearchEnergy.Wt-disabled, div.DeleteSearchEnergy.Wt-disabled
 .SearchEnergySpacer
 {
   flex: 1 10 auto;
+}
+
+/* Phone specific CSS */
+@media (max-device-width: 480px) {
+  
+  .IsPhone.Portrait .IsotopeSearchByEnergy {
+    font-size: x-small;
+  }
+  
+  .IsPhone.Portrait .IsotopeSearchEnergies {
+    height: 65px;
+    flex: 0 1 auto;
+  }
+  
+  .IsPhone.Portrait .IsotopeSearchByEnergy input.FloatInput {
+    font-size: 9px;
+    height: 12px;
+  }
+  
+  .SearchEnergy {
+    padding-top: 2px;
+    padding-bottom: 2px;
+  }
+  
+  .IsotopeSourceTypes {
+    padding-top: 2px;
+    padding-bottom: 2px;
+  }
+  
+  .NarrowNuclideSearch .AssignToSelectedRow {
+    height: 14px;
+    margin-top: 2px;
+  }
+  
+  .NarrowNuclideSearch .AssignToSelectedRow .LightButton {
+    height: 14px;
+  }
+  
+  .NarrowNuclideSearch .Wt-itemview.Wt-treeview.IsotopeSearchResultTable.ToolTabSection {
+    font-size: 9px;
+  }
 }

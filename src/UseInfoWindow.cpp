@@ -594,7 +594,7 @@ UseInfoWindow::UseInfoWindow( std::function<void(bool)> showAgainCallback,
 
   
   const string tips_file = "InterSpec_resources/static_text/faqs/faqs";
-  item = makeTextItem( "FAQs", tips_file );
+  SideMenuItem *faqsItem = makeTextItem( "FAQs", tips_file );
   
   // ---- Cheat sheet PDF
 /*
@@ -698,6 +698,8 @@ UseInfoWindow::UseInfoWindow( std::function<void(bool)> showAgainCallback,
     text->addStyleClass( "MobileWelcomePoscriptText" );
     //welcomeContainer->addWidget( text );
     rightLayout->addWidget( text, 2, 0 );
+    
+    faqsItem->addStyleClass( "PhoneSideMenuTextItem" );
     
     /*
      //"Spectra attached to emails can be copied into <code>InterSpec</code> from within your mail app.<br />"

@@ -120,17 +120,12 @@ void log_developer_error( const char *location, const char *error );
 //  Ex, "9-Sep-2014 15:02:15"
 #define DATE_TIME_FORMAT_STR "d-MMM-yyyy hh:mm:ss"
 
-/** Define a number of channels where if the spectrum has more than this, we'll assume this is high-resolution.
- 
- TODO: should instead define an average keV per channel for this purpose.  Some limited energy
- range HPGe detectors may only have 4096 channels.
- */
-#define HIGH_RES_NUM_CHANNELS 5000
-
 
 // Prevent some compile warnings from using like _1 instead of
 //  boost::placeholders::_1 (I think this must be in the Wt
 //  headers, since our code uses the namespace prefixes)
 #define BOOST_BIND_GLOBAL_PLACEHOLDERS
+
+#define InterSpec_PHONE_ROTATE_FOR_TABS 1
 
 #endif // InterSpec_config_h

@@ -301,6 +301,11 @@ public:
   
   MoreNuclideInfoWindow *moreInfoWindow();
   
+#if( InterSpec_PHONE_ROTATE_FOR_TABS )
+  /** Currently just hides or shows the table with gamma info. */
+  void setNarrowPhoneLayout( const bool narrow );
+#endif
+  
 protected:
   virtual void render( Wt::WFlags<Wt::RenderFlag> flags );
   

@@ -495,7 +495,8 @@ WT_DECLARE_WT_MEMBER
       var ws = Wt.WT.windowSize();
       el.style.marginLeft = '0px';
       el.style.marginTop = '0px';
-      el.style.bottom = null; el.style.right=null;
+      el.style.bottom = null; 
+      el.style.right = null;
     }
   }
   
@@ -767,6 +768,9 @@ AuxWindow::AuxWindow(const Wt::WString& windowTitle, Wt::WFlags<AuxWindowPropert
     setResizable(false);
     resizeScaledWindow(1.0, 1.0);
     m_isPhone = true; //disables any of future AuxWindow calls to change behavior
+#if( InterSpec_PHONE_ROTATE_FOR_TABS )
+    addStyleClass( "PhoneFullScreenDialog" );
+#endif
   }
 
   setModal(m_modalOrig);

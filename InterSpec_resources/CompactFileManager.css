@@ -25,7 +25,14 @@
   
   display: flex;
   flex-direction: column;
-  justify-content: space-around
+  justify-content: space-around;
+  
+  overflow: hidden;
+}
+
+.CompactFileManager.Tabbed div.DispType {
+  margin-top: 0px;
+  border-top: none;
 }
 
 .CompactFileManager.LeftToRight div.DispType.Foreground {
@@ -108,7 +115,60 @@ div.DispType .SpecTitle {
   overflow: hidden;
 }
 
+div.DispType .StretcherRow {
+  flex-grow: 10;
+  flex-shrink: 10;
+}
+
+div.DispType .SummaryTable {
+  align-self: center;
+  font-size: xx-small;
+  margin-top: 5px;
+  white-space: nowrap;
+  border-collapse: collapse;
+  border: 1px solid #e1e1e1;
+}
+
+div.DispType .SummaryTable td {
+  padding-top: 1px;
+  padding-bottom: 1px;
+  padding-left: 2px;
+  border-bottom: 1px solid #e1e1e1;
+}
+
+div.DispType .SummaryTable td:nth-child(odd) {
+  font-weight: bold;
+  text-align: center;
+}
+
+div.DispType .SummaryTable td:nth-child(even) {
+  text-align: left;
+  border-right: 1px solid #e1e1e1;
+  
+  max-width: 60px;
+  text-overflow: ellipsis;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+button.LinkBtn.GpsBtn, button.LinkBtn.GpsBtn:hover {
+  float: none;
+  height: 10px;
+  padding: 0px;
+  font-size: 6px;
+}
+
+button.LinkBtn.MoreInfoBtn, button.LinkBtn.MoreInfoBtn:hover {
+  float: right;
+  margin-right: 5px;
+  margin-left: auto; /* This is what makes the button float to the right side */
+  font-size: 6px;
+}
+
 div.DispType .BottomRow {
+  width: 100%;
+  overflow-x: hidden;
+  
   flex-grow: 1;
   
   display: flex;
@@ -135,4 +195,35 @@ div.DispType div.ScaleFactorRow{
 
 .SpecNormTxt {
   width: 5em;
+}
+
+.CompactFileManager .TitleRow {
+  display: flex;
+  flex-direction: row;
+  /* justify-content: space-between; */
+  column-gap: 8px;
+}
+
+.CompactFileManager .SpecLeg {
+  
+}
+
+.CompactFileManager .CompactFMLegBackground{
+  fill: var(--d3spec-chart-area-color, rgba(0,0,0,0));
+}
+
+.CompactFileManager .CompactFMLegLine {
+  stroke-width: 1px;
+}
+
+.CompactFileManager .CompactFMSpecLineForeground {
+  stroke: var(--d3spec-fore-line-color, black);
+}
+
+.CompactFileManager .CompactFMSpecLineBackground {
+  stroke: var(--d3spec-back-line-color, rgb(0,255,255) ); /* default cyan */
+}
+
+.CompactFileManager .CompactFMSpecLineSecondary {
+  stroke: var(--d3spec-second-line-color, rgb(0,128,128) ); /* default dark green */
 }

@@ -6,7 +6,7 @@
 
 .ShieldingSelectContainer
 {
-   min-width: 23em;
+   min-width: min(23em, calc(100vw - 15px));
    min-height: 10em;
    overflow-y: auto;
    

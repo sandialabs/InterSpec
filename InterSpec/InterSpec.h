@@ -604,6 +604,13 @@ public:
   void setToolTabsVisible( bool show );
   bool toolTabsVisible() const;
   
+#if( InterSpec_PHONE_ROTATE_FOR_TABS )
+  /** Function called when user changes the tool tab height.
+   We will remember this, so we can set it back
+   */
+  void toolTabContentHeightChanged( int height );
+#endif
+  
   /** Makes a MakeDrf Window and returns it, or if one was already present, returns it. */
   MakeDrfWindow *showMakeDrfWindow();
   /** Returns the pointer to current MakeDrf Window.  Will by nullptr if not currently showing */
@@ -919,6 +926,8 @@ public:
    spectrum file contains any images.
    */
   void checkEnableViewImageMenuItem();
+  
+  void createFileParameterWindow( const SpecUtils::SpectrumType type );
 protected:
 
   //doFinishupSetSpectrumWork(...): intended to do things like calculate the
@@ -932,8 +941,6 @@ protected:
   //  this function from within the main loop.
   void doFinishupSetSpectrumWork( std::shared_ptr<SpecMeas> meas,
                             std::vector<boost::function<void(void)> > workers );
-  
-  void createFileParameterWindow();
   
 #if( USE_DETECTION_LIMIT_TOOL )
   void fitNewPeakNotInRoiFromRightClick();
@@ -1343,13 +1350,16 @@ protected:
   //m_currentToolsTab: used to track which tab is currently showing when the
   //  tools tab is shown.  This variable is necessary so that handleToolTabChanged(...)
   //  can know what tab is being changed from, and not just what tab is being
-  //  changed to.  In everyother function this variable will always be up to
+  //  changed to.  In every other function this variable will always be up to
   //  date when in tool tabs are shown.
   int m_currentToolsTab;
   
   //m_toolsTabs: will be null when not tool tabs are hidden, and non-null in
   //  when they are visible
   Wt::WTabWidget *m_toolsTabs;
+#if( InterSpec_PHONE_ROTATE_FOR_TABS )
+  int m_toolsTabsContentHeight;
+#endif
 
   EnergyCalTool          *m_energyCalTool;
   AuxWindow              *m_energyCalWindow;

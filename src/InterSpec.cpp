@@ -340,6 +340,39 @@ namespace
       ptr = nullptr;
     }
   }//void del_ptr_set_null( T * &ptr )
+  
+#if( InterSpec_PHONE_ROTATE_FOR_TABS )
+    /** A simple wrapper for holding the tool-tabs.
+     When/if the user resizes the tool-tabs height, this function will call back and let the
+     InterSpec class know, so we can restore this same hight when/if the tool tabs are
+     toggled.
+     */
+    class ToolTabContentWrapper : public Wt::WContainerWidget
+    {
+      int m_height;
+      InterSpec *m_interspec;
+    
+    public:
+      ToolTabContentWrapper( InterSpec *interspec, WContainerWidget *parent = nullptr )
+      : WContainerWidget( parent ),
+      m_height( 0 ),
+      m_interspec( interspec )
+      {
+        assert( m_interspec );
+        setLayoutSizeAware( true );
+      }
+      
+      virtual void layoutSizeChanged( int width, int height )
+      {
+        //cout << "ToolTabContentWrapper: w x h=" << width << " x " << height << endl;
+        if( m_height == height )
+          return;
+        
+        m_height = height;
+        m_interspec->toolTabContentHeightChanged( height );
+      }
+    };//class ToolTabContentWrapper
+#endif // InterSpec_PHONE_ROTATE_FOR_TABS
 }//namespace
 
 
@@ -369,8 +402,11 @@ InterSpec::InterSpec( WContainerWidget *parent )
     m_peakInfoDisplay( 0 ),
     m_peakInfoWindow( 0 ),
     m_peakEditWindow( 0 ),
-    m_currentToolsTab( 0 ),
+    m_currentToolsTab( -1 ),
     m_toolsTabs( 0 ),
+#if( InterSpec_PHONE_ROTATE_FOR_TABS )
+    m_toolsTabsContentHeight( 0 ),
+#endif
     m_energyCalTool( 0 ),
     m_energyCalWindow( 0 ),
     m_gammaCountDialog( 0 ),
@@ -613,7 +649,7 @@ InterSpec::InterSpec( WContainerWidget *parent )
     );
     
     doJavaScript( js );
-  }//if( isPhone() )
+  }//if( isMobile() )
   
   m_spectrum->setPeakModel( m_peakModel );
   m_spectrum->existingRoiEdgeDragUpdate().connect( m_spectrum, &D3SpectrumDisplayDiv::performExistingRoiEdgeDragWork );
@@ -1199,11 +1235,17 @@ InterSpec::InterSpec( WContainerWidget *parent )
     setToolTabsVisible( true );
   }else
   {
+#if( InterSpec_PHONE_ROTATE_FOR_TABS )
+    const WEnvironment &env = wApp->environment();
+    const bool isVertical = (env.screenWidth() < env.screenHeight());
+    setToolTabsVisible( !isVertical );
+#else
     //Disallow showing tool tabs when on a phone
     m_toolTabsVisibleItems[1]->setHidden(true);
     
     //Add Ref photopeaks, etc. to tool menu
     addToolsTabToMenuItems();
+#endif //#endif InterSpec_PHONE_ROTATE_FOR_TABS
   }//If( start with tool tabs showing ) / else
  
   initDragNDrop();
@@ -1475,6 +1517,24 @@ void InterSpec::layoutSizeChanged( int w, int h )
 {
   m_renderedWidth = w;
   m_renderedHeight = h;
+  
+  
+#if( InterSpec_PHONE_ROTATE_FOR_TABS )
+  if( isPhone() )
+  {
+    if( (w <= 20) || (h <= 20) )
+    {
+      w = wApp->environment().screenWidth();
+      h = wApp->environment().screenHeight();
+    }
+    
+    if( (w > 20) && (h > 20) )
+    {
+      const bool isVertical = (h > w);
+      setToolTabsVisible( isVertical );
+    }
+  }//if( isPhone() )
+#endif
   
   const bool comactX = (h <= 420); //Apple iPhone 6+, 6s+, 7+, 8+
   if( (h > 20) && (comactX != m_spectrum->isAxisCompacted()) )
@@ -3674,10 +3734,21 @@ void InterSpec::loadStateFromDb( Wt::Dbo::ptr<UserState> entry )
     if( m_shieldingSourceFitWindow && !m_shieldingSourceFitWindow->isHidden() )
       m_shieldingSourceFitWindow->hide();
     
+#if( InterSpec_PHONE_ROTATE_FOR_TABS )
+    bool wasDocked = (entry->shownDisplayFeatures & UserState::kDockedWindows);
+    if( isPhone() )
+    {
+      wasDocked = (m_toolsTabs != nullptr);
+    }else if( toolTabsVisible() != wasDocked )
+    {
+      setToolTabsVisible( wasDocked );
+    }
+#else
     bool wasDocked = (entry->shownDisplayFeatures & UserState::kDockedWindows);
     if( toolTabsVisible() != wasDocked )
       setToolTabsVisible( wasDocked );
-
+#endif
+    
     //Now start reloading the state
     std::shared_ptr<SpecMeas> foreground, second, background;
     std::shared_ptr<SpecMeas> snapforeground, snapsecond, snapbackground;
@@ -4097,6 +4168,56 @@ void InterSpec::loadStateFromDb( Wt::Dbo::ptr<UserState> entry )
         case UserState::kNoTabs:                                               break;
       };//switch( entry->currentTab )
       
+#if( InterSpec_PHONE_ROTATE_FOR_TABS )
+      if( isPhone() )
+      {
+        switch( entry->currentTab )
+        {
+          case UserState::kPeakInfo:
+            m_toolsTabs->setCurrentIndex( 1 ); //m_peakInfoDisplay
+            break;
+          case UserState::kGammaLines:
+            m_toolsTabs->setCurrentIndex( 2 ); //m_referencePhotopeakLines
+            break;
+          case UserState::kCalibration:
+            m_toolsTabs->setCurrentIndex( 3 ); //m_energyCalTool
+            break;
+          case UserState::kIsotopeSearch:  
+            m_toolsTabs->setCurrentIndex( 4 ); //m_nuclideSearchContainer
+            break;
+          case UserState::kFileTab:
+            m_toolsTabs->setCurrentIndex( 0 ); //CompactFileManager
+            break;
+  #if( USE_TERMINAL_WIDGET )
+          case UserState::kTerminalTab:
+            if( m_terminal )
+              m_toolsTabs->setCurrentWidget( m_terminal );
+            break;
+  #endif
+  #if( USE_REL_ACT_TOOL )
+          case UserState::kRelActManualTab: 
+            if( m_relActManualGui )
+              m_toolsTabs->setCurrentWidget( m_relActManualGui );
+            break;
+  #endif
+          case UserState::kNoTabs:  
+            // Leave it where it was
+            break;
+        };//switch( entry->currentTab )
+      }else
+      {
+        for( int tab = 0; tab < m_toolsTabs->count(); ++tab )
+        {
+          if( m_toolsTabs->tabText(tab).key() == titleKey )
+          {
+            // Note: this causes handleToolTabChanged(...) to be called
+            m_toolsTabs->setCurrentIndex( tab );
+            m_currentToolsTab = tab;
+            break;
+          }//if( m_toolsTabs->tabText( tab ) == title )
+        }//for( int tab = 0; tab < m_toolsTabs->count(); ++tab )
+      }
+#else
       for( int tab = 0; tab < m_toolsTabs->count(); ++tab )
       {
         if( m_toolsTabs->tabText(tab).key() == titleKey )
@@ -4107,6 +4228,7 @@ void InterSpec::loadStateFromDb( Wt::Dbo::ptr<UserState> entry )
           break;
         }//if( m_toolsTabs->tabText( tab ) == title )
       }//for( int tab = 0; tab < m_toolsTabs->count(); ++tab )
+#endif
     }//if( wasDocked )
     
     
@@ -6130,6 +6252,15 @@ bool InterSpec::toolTabsVisible() const
   return m_toolsTabs;
 }
 
+
+#if( InterSpec_PHONE_ROTATE_FOR_TABS )
+void InterSpec::toolTabContentHeightChanged( int height )
+{
+  m_toolsTabsContentHeight = height;
+}
+#endif
+
+
 void InterSpec::addToolsTabToMenuItems()
 {
   if( !m_toolsMenuPopup )
@@ -6255,6 +6386,10 @@ void InterSpec::setToolTabsVisible( bool showToolTabs )
 #else
   
   const int layoutVertSpacing = isMobile() ? 10 : 5;
+
+#if( InterSpec_PHONE_ROTATE_FOR_TABS )
+    const bool phone = isPhone();
+#endif
   
   if( showToolTabs )
   { //We are showing the tool tabs
@@ -6300,16 +6435,31 @@ void InterSpec::setToolTabsVisible( bool showToolTabs )
     m_toolsTabs = new WTabWidget();
     m_toolsTabs->addStyleClass( "ToolsTabs" );
     
+#if( InterSpec_PHONE_ROTATE_FOR_TABS )
+    const CompactFileManager::DisplayMode cfmDispMode = phone ? CompactFileManager::Tabbed : CompactFileManager::LeftToRight;
+    CompactFileManager *compact = new CompactFileManager( m_fileManager, this, cfmDispMode );
+    WString tabTitle = phone ? WString() : WString::tr(FileTabTitleKey);
+    WMenuItem *fileTab = m_toolsTabs->addTab( compact, tabTitle, TabLoadPolicy );
+    if( phone )
+      fileTab->setIcon( "InterSpec_resources/images/spec_files.svg" );
+#else
     CompactFileManager *compact = new CompactFileManager( m_fileManager, this, CompactFileManager::LeftToRight );
     m_toolsTabs->addTab( compact, WString::tr(FileTabTitleKey), TabLoadPolicy );
+#endif
     
     m_spectrum->yAxisScaled().connect( boost::bind( &CompactFileManager::handleSpectrumScale, compact,
                                                    boost::placeholders::_1,
                                                    boost::placeholders::_2,
                                                    boost::placeholders::_3 ) );
-    
-    //WMenuItem * peakManTab =
+#if( InterSpec_PHONE_ROTATE_FOR_TABS )
+    m_peakInfoDisplay->setNarrowPhoneLayout( phone );
+    tabTitle = phone ? WString() : WString::tr(PeakInfoTabTitleKey);
+    WMenuItem *peakManTab = m_toolsTabs->addTab( m_peakInfoDisplay, tabTitle, TabLoadPolicy );
+    if( phone )
+      peakManTab->setIcon( "InterSpec_resources/images/peakmanager.svg" ); //
+#else
     m_toolsTabs->addTab( m_peakInfoDisplay, WString::tr(PeakInfoTabTitleKey), TabLoadPolicy );
+#endif
 //    WString tooltip = WString::tr("app-tab-tt-peak-manager");
 //    HelpSystem::attachToolTipOn( peakManTab, tooltip, showToolTips, HelpSystem::ToolTipPosition::Top );
     
@@ -6335,16 +6485,35 @@ void InterSpec::setToolTabsVisible( bool showToolTabs )
     //XXX In Wt 3.3.4 at least, the contents of m_referencePhotopeakLines
     //  are not actually loaded to the client until the tab is clicked, and I
     //  cant seem to get this to actually happen.
-//  WMenuItem *refPhotoTab =
+#if( InterSpec_PHONE_ROTATE_FOR_TABS )
+    m_referencePhotopeakLines->setNarrowPhoneLayout( phone );
+    tabTitle = phone ? WString(): WString::tr(GammaLinesTabTitleKey);
+    WMenuItem *refPhotoTab = m_toolsTabs->addTab( m_referencePhotopeakLines, tabTitle, TabLoadPolicy );
+    if( phone )
+      refPhotoTab->setIcon( "InterSpec_resources/images/reflines.svg" );
+#else
     m_toolsTabs->addTab( m_referencePhotopeakLines, WString::tr(GammaLinesTabTitleKey), TabLoadPolicy );
+#endif
 //   WString tooltip = WString::tr("app-tab-tt-ref-photopeak");
 //      HelpSystem::attachToolTipOn( refPhotoTab, tooltip, showToolTips, HelpSystem::ToolTipPosition::Top );
       
     m_toolsTabs->currentChanged().connect( this, &InterSpec::handleToolTabChanged );
     
+#if( InterSpec_PHONE_ROTATE_FOR_TABS )
+    if( phone )
+      m_energyCalTool->setTallLayout();
+    else
+      m_energyCalTool->setWideLayout();
+      
+    tabTitle = phone ? WString() : WString::tr(CalibrationTabTitleKey);
+    WMenuItem *energyCalTab = m_toolsTabs->addTab( m_energyCalTool, tabTitle, TabLoadPolicy );
+    if( phone )
+      energyCalTab->setIcon( "InterSpec_resources/images/calibrate.svg" );
+#else
     m_energyCalTool->setWideLayout();
-//  WMenuItem *energyCalTab =
     m_toolsTabs->addTab( m_energyCalTool, WString::tr(CalibrationTabTitleKey), TabLoadPolicy );
+#endif
+    
 //  WString tooltip = WString::tr("app-tab-tt-energy-cal");
 //  HelpSystem::attachToolTipOn( energyCalTab, tooltip, showToolTips, HelpSystem::ToolTipPosition::Top );
     
@@ -6370,9 +6539,31 @@ void InterSpec::setToolTabsVisible( bool showToolTabs )
     //  if it is explicitly set, when different tabs are clicked (unless a
     //  manual resize is performed by the user first)
     //m_layout->addLayout( toolsLayout,   ++row, 0 );
-    WContainerWidget *toolsWrapper = new WContainerWidget();
+#if( InterSpec_PHONE_ROTATE_FOR_TABS )
+    WContainerWidget *toolsWrapper = new ToolTabContentWrapper( this );
     toolsWrapper->setLayout( m_toolsLayout );
+    if( (m_toolsTabsContentHeight <= 100)  //No height set yet (e.g., app is just loading), or user made way to small
+       || (m_renderedHeight < 100)         //App is loading
+       || ((m_renderedHeight > 0) && (m_toolsTabsContentHeight > (m_renderedHeight/2))) ) //No more than half the screen
+    {
+      if( phone )
+      {
+        m_toolsTabsContentHeight = 280;
+        if( m_renderedHeight > 100 )
+          m_toolsTabsContentHeight = std::max( 245, std::min( m_toolsTabsContentHeight, m_renderedHeight/2 ) );
+        else
+          m_toolsTabsContentHeight = std::max( 245, std::min( m_toolsTabsContentHeight, wApp->environment().screenHeight()/2 ) );
+      }else
+      {
+        m_toolsTabsContentHeight = 245;
+      }
+    }
+    toolsWrapper->setHeight( m_toolsTabsContentHeight );
+#else
+    WContainerWidget *toolsWrapper = new WContainerWidget();
     toolsWrapper->setHeight( 245 );
+#endif
+    
     m_layout->addWidget( toolsWrapper, ++row, 0 );
     m_layout->setRowStretch( row, 0 );
     
@@ -6396,8 +6587,15 @@ void InterSpec::setToolTabsVisible( bool showToolTabs )
     isoSearchLayout->setRowStretch( 0, 1 );
     isoSearchLayout->setColumnStretch( 0, 1 );
     
-//  WMenuItem *nuclideTab =
+#if( InterSpec_PHONE_ROTATE_FOR_TABS )
+    m_nuclideSearch->setNarrowPhoneLayout( phone );
+    tabTitle = phone ? WString() : WString::tr(NuclideSearchTabTitleKey);
+    WMenuItem *nuclideTab = m_toolsTabs->addTab( m_nuclideSearchContainer, tabTitle, TabLoadPolicy );
+    if( phone )
+      nuclideTab->setIcon( "InterSpec_resources/images/magnifier_black.svg" );
+#else
     m_toolsTabs->addTab( m_nuclideSearchContainer, WString::tr(NuclideSearchTabTitleKey), TabLoadPolicy );
+#endif
 //  WString tooltip = WString::tr("app-tab-tt-nuc-search");
 //  HelpSystem::attachToolTipOn( nuclideTab, tooltip, showToolTips, HelpSystem::ToolTipPosition::Top );
     
@@ -6407,8 +6605,22 @@ void InterSpec::setToolTabsVisible( bool showToolTabs )
     m_toolsTabs->tabClosed().connect( boost::bind( &InterSpec::handleToolTabClosed, this, boost::placeholders::_1 ) );
 #endif
     
+#if( InterSpec_PHONE_ROTATE_FOR_TABS )
+    if( (m_currentToolsTab >= 0) && (m_currentToolsTab < m_toolsTabs->count()) )
+    {
+      m_toolsTabs->setCurrentIndex( m_currentToolsTab );
+    }else
+    {
+      //These next `setCurrentWidget(...)` lines will cause `handleToolTabChanged(...)` to be called
+      if( phone )
+        m_toolsTabs->setCurrentWidget( m_referencePhotopeakLines );
+      else
+        m_toolsTabs->setCurrentWidget( m_peakInfoDisplay );
+    }
+#else
     //Make sure the current tab is the peak info display
     m_toolsTabs->setCurrentWidget( m_peakInfoDisplay );
+#endif
     
     if( m_referencePhotopeakLines && refNucXmlState.size() )
       m_referencePhotopeakLines->deSerialize( refNucXmlState );
@@ -6486,8 +6698,35 @@ void InterSpec::setToolTabsVisible( bool showToolTabs )
   
   if( m_toolsTabs )
     m_currentToolsTab = m_toolsTabs->currentIndex();
-  else
-    m_currentToolsTab = -1;
+  //else
+  //  m_currentToolsTab = -1;
+  
+#if( InterSpec_PHONE_ROTATE_FOR_TABS )
+    if( phone )
+    {
+      const int w = (m_renderedWidth > 100) ? m_renderedWidth : wApp->environment().screenWidth();
+      const int h = (m_renderedWidth > 100) ? m_renderedHeight : wApp->environment().screenHeight();
+      if( w < h )
+      {
+        // On portrait phone, remove the scaler slider, without altering preference
+        m_showYAxisScalerItems[0]->show();
+        m_showYAxisScalerItems[1]->hide();
+        m_spectrum->showYAxisScalers( false );
+        
+        // TODO: adjust padding in spectrum chart, e.g. in JS:
+        //  SpectrumChartD3.padding.labelPad = 5
+        //  SpectrumChartD3.padding.left = 5
+        //  SpectrumChartD3.padding.right = 10
+      }else
+      {
+        // The phone is landscape, restore showing scaler to user preference
+        const bool showScalers = InterSpecUser::preferenceValue<bool>( "ShowYAxisScalers", this );
+        m_showYAxisScalerItems[0]->setHidden( showScalers );
+        m_showYAxisScalerItems[1]->setHidden( !showScalers );
+        m_spectrum->showYAxisScalers( showScalers );
+      }
+    }//if( phone )
+#endif
   
   if( m_mobileBackButton && m_mobileForwardButton )
   {
@@ -6546,7 +6785,6 @@ void InterSpec::addViewMenu( WWidget *parent )
   m_toolTabsVisibleItems[0]->triggered().connect( boost::bind( &InterSpec::setToolTabsVisible, this, true ) );
   m_toolTabsVisibleItems[1]->triggered().connect( boost::bind( &InterSpec::setToolTabsVisible, this, false ) );
 
-  
   if( isPhone() )
   {
     //hide Dock mode on small phone screens
@@ -6667,7 +6905,6 @@ void InterSpec::addViewMenu( WWidget *parent )
   m_showYAxisScalerItems[1]->triggered().connect( boost::bind( &InterSpec::setShowYAxisScalers, this, false ) );
   m_showYAxisScalerItems[0]->setHidden( showScalers );
   m_showYAxisScalerItems[1]->setHidden( !showScalers );
-  m_showYAxisScalerItems[(showScalers ? 1 : 0)]->disable();
   InterSpecUser::addCallbackWhenChanged( m_user, "ShowYAxisScalers", this, &InterSpec::setShowYAxisScalers );
   
   m_displayOptionsPopupDiv->addSeparator();
@@ -7296,10 +7533,7 @@ void InterSpec::setShowYAxisScalers( bool show )
   assert( m_showYAxisScalerItems[1] );
   
   m_showYAxisScalerItems[0]->setHidden( show );
-  m_showYAxisScalerItems[0]->setDisabled( !show && !hasSecond );
-  
   m_showYAxisScalerItems[1]->setHidden( !show );
-  m_showYAxisScalerItems[1]->setDisabled( show && !hasSecond );
   
   const bool wasShowing = m_spectrum->yAxisScalersIsVisible();
   m_spectrum->showYAxisScalers( show );
@@ -8480,9 +8714,9 @@ void InterSpec::deleteDecayInfoWindow()
 }//void deleteDecayInfoWindow()
 
 
-void InterSpec::createFileParameterWindow()
+void InterSpec::createFileParameterWindow( const SpecUtils::SpectrumType type )
 {
-  SpecFileSummary *window = new SpecFileSummary( this );
+  SpecFileSummary *window = new SpecFileSummary( type, this );
   new UndoRedoManager::BlockGuiUndoRedo( window ); // BlockGuiUndoRedo is WObject, so this `new` doesnt leak
 }//void createFileParameterWindow()
 
@@ -9356,6 +9590,10 @@ void InterSpec::handleToolTabClosed( const int tabnum )
   handleRelActManualClose();
   //static_assert( 0, "Need to update handleToolTabClosed logic" );  //20230913 - no updates look to be needed
 #endif
+  
+#if( InterSpec_PHONE_ROTATE_FOR_TABS )
+  m_currentToolsTab = m_toolsTabs->currentIndex();
+#endif
 }//void handleToolTabClosed( const int tabnum )
 #endif
 
@@ -9454,7 +9692,7 @@ void InterSpec::addToolsMenu( Wt::WWidget *parent )
   
   item = popup->addMenuItem( WString::tr("app-mi-tools-file-par") );
   HelpSystem::attachToolTipOn( item, WString::tr("app-mi-tt-tools-file-par"), showToolTips );
-  item->triggered().connect( this, &InterSpec::createFileParameterWindow );
+  item->triggered().connect( boost::bind( &InterSpec::createFileParameterWindow, this, SpecUtils::SpectrumType::Foreground ) );
 
   item = popup->addMenuItem( WString::tr("app-mi-tools-en-sum") );
   HelpSystem::attachToolTipOn( item, WString::tr("app-mi-tt-tools-en-sum"), showToolTips );
@@ -10133,6 +10371,12 @@ void InterSpec::closeGammaLinesWindow()
                                                    this );
     setReferenceLineColors( nullptr );
     
+    
+#if( InterSpec_PHONE_ROTATE_FOR_TABS )
+    if( isPhone() && (renderedHeight() > renderedWidth()) )
+      m_referencePhotopeakLines->setNarrowPhoneLayout( true );
+#endif
+    
     m_toolsTabs->addTab( m_referencePhotopeakLines, WString::tr(GammaLinesTabTitleKey), TabLoadPolicy );
     
     if( xmlstate.size() )
@@ -10170,7 +10414,8 @@ void InterSpec::handleToolTabChanged( int tab )
     if( focus && (current_tab == calibtab) )
     {
       if( !m_infoNotificationsMade.count("recal-tab")
-         && InterSpecUser::preferenceValue<bool>( "ShowTooltips", this ) )
+         && InterSpecUser::preferenceValue<bool>( "ShowTooltips", this )
+         && !isMobile() )
       {
         m_infoNotificationsMade.insert( "recal-tab" );
         passMessage( WString::tr("info-recal-tab-selected"), WarningWidget::WarningMsgInfo );
@@ -10913,9 +11158,7 @@ void InterSpec::setSpectrum( std::shared_ptr<SpecMeas> meas,
     const int windex_0 = m_spectrum->yAxisScalersIsVisible() ? 0 : 1;
     const int windex_1 = m_spectrum->yAxisScalersIsVisible() ? 1 : 0;
     m_showYAxisScalerItems[windex_0]->hide();
-    m_showYAxisScalerItems[windex_0]->enable();
     m_showYAxisScalerItems[windex_1]->show();
-    m_showYAxisScalerItems[windex_1]->setDisabled( !enableScaler );
   }//if( !sameSpecFile )
   
   //Making fcn call take current data as a argument so that if this way a
@@ -12770,10 +13013,7 @@ void InterSpec::displayForegroundData( const bool current_energy_range )
     m_backgroundSubItems[0]->show();
     m_backgroundSubItems[1]->hide();
     m_hardBackgroundSub->disable();
-    
-    m_showYAxisScalerItems[0]->setDisabled( m_showYAxisScalerItems[0]->isVisible() );
-    m_showYAxisScalerItems[1]->setDisabled( m_showYAxisScalerItems[1]->isVisible() );
-    
+        
     if( m_spectrum->data() )
     {
       m_spectrum->setData( nullptr, false );

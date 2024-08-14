@@ -2,6 +2,7 @@
 <messages>
   <!-- rpd- is short for ReferencePhotopeakDisplay -->
   <message id="rpd-add-another-btn">Add Another</message>
+  <message id="rpd-add-another-btn-narrow">Add</message>
   <message id="rpd-tt-add-another-btn">Keep the currently displayed lines and add a new nuclide/source to display.</message>
   <message id="rpd-tt-nuc-edit">ex. <b>U235</b>, <b>235 Uranium</b>, <b>U</b> (x-rays only), <b>Uranium</b> (x-rays), <b>U-235m</b> (meta stable state), <b>Cs137</b>, <b>background</b>, <b>H(n,g)</b>, etc.</message>
   <message id="rpd-tt-age">

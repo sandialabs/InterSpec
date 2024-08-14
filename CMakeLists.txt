@@ -46,12 +46,12 @@ option(
 option(
     PERFORM_DEVELOPER_CHECKS
     "Performs additional computationally expensive tests during execution"
-    off
+    OFF
 )
 option(
     USE_OSX_NATIVE_MENU
     "Mirrors WMenus with OSX native NSMenu (not fully implemented)"
-    off
+    OFF
 )
 
 
@@ -591,9 +591,9 @@ set(SpecUtils_NO_BOOST_LIB OFF
 
 if( APPLE OR ANDROID )
   set(SpecUtils_USE_WT_THREADPOOL OFF CACHE BOOL "")
-else( APPLE or ANDROID  )
+else( APPLE OR ANDROID  )
   set(SpecUtils_USE_WT_THREADPOOL ON CACHE BOOL "")
-endif( APPLE or ANDROID  )
+endif( APPLE OR ANDROID  )
 set(SpecUtils_EXTERNALLY_DEFINED_LOG_MESSAGE ON CACHE BOOL "")
 set(SpecUtils_BUILD_UNIT_TESTS OFF CACHE BOOL "")
 set(SpecUtils_BUILD_REGRESSION_TEST OFF CACHE BOOL "")
@@ -624,6 +624,14 @@ endif()
 
 set_target_properties(InterSpecLib PROPERTIES PREFIX "")
 set_target_properties(InterSpecLib PROPERTIES OUTPUT_NAME "InterSpec")
+
+# Turn off some compiler warnings
+target_compile_options(InterSpecLib PRIVATE
+     $<$<OR:$<CXX_COMPILER_ID:Clang>,$<CXX_COMPILER_ID:AppleClang>,$<CXX_COMPILER_ID:GNU>>:
+          -Wno-inconsistent-missing-override>  # Turn off a bunch of warnings like: WTreeView:399:20: warning: 'headerWidget' overrides a member function but is not marked 'override' [-Winconsistent-missing-override]
+     $<$<CXX_COMPILER_ID:MSVC>:
+          >)
+
 
 target_link_libraries(
     InterSpecLib

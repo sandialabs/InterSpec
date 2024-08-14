@@ -37,6 +37,7 @@ class D3SpectrumDisplayDiv;
 namespace Wt
 {
   class WImage;
+  class WLabel;
   class WWidget;
   class WMenuItem;
   class WTabWidget;
@@ -60,6 +61,11 @@ public:
   void enablePeakSearchButton( bool enable );
   
   void handleChartLeftClick( const double energy );
+  
+#if( InterSpec_PHONE_ROTATE_FOR_TABS )
+  /** Currently just makes the buttons at the bottom be minimal. */
+  void setNarrowPhoneLayout( const bool narrow );
+#endif
   
 protected:
   //init() must be called exactly once
@@ -91,6 +97,10 @@ protected:
   Wt::WInteractWidget *m_deletePeak;
   
   Wt::WPushButton *m_searchForPeaks;
+  
+  Wt::WPushButton *m_clearPeaksButton;
+  Wt::WPushButton *m_nucFromRefButton;
+  Wt::WLabel *m_peakAddRemoveLabel;
 };//class PeakInfoDisplay
 
 #endif // #ifndef PeakInfoDisplay_h

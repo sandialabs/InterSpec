@@ -887,10 +887,9 @@ ReferencePhotopeakDisplay::ReferencePhotopeakDisplay(
   
   const bool isPhone = m_spectrumViewer->isPhone();
   if( isPhone )
-    addStyleClass( "ReferencePhotopeakDisplayMobile" );
+    addStyleClass( "RefDispMobile" );
   
   const WLength labelWidth(3.5,WLength::FontEm), fieldWidth(4,WLength::FontEm);
-  const WLength optionWidth(5.25,WLength::FontEm), buttonWidth(5.25,WLength::FontEm);
   
   WLabel *nucInputLabel = new WLabel( WString("{1}:").arg( WString::tr("Nuclide") ) );
   nucInputLabel->setMinimumSize( labelWidth, WLength::Auto );
@@ -1141,6 +1140,7 @@ ReferencePhotopeakDisplay::ReferencePhotopeakDisplay(
   m_showPrevNucs->setWordWrap( false );
   m_showRiidNucs->setWordWrap( false );
   m_showAssocNucs->setWordWrap( false );
+  m_showFeatureMarkers->setWordWrap( false );
 
   m_showPrevNucs->checked().connect( this, &ReferencePhotopeakDisplay::updateOtherNucsDisplay );
   m_showPrevNucs->unChecked().connect( this, &ReferencePhotopeakDisplay::updateOtherNucsDisplay );
@@ -1489,16 +1489,29 @@ std::map<std::string,std::vector<Wt::WColor>> ReferencePhotopeakDisplay::current
 
 void ReferencePhotopeakDisplay::toggleShowOptions()
 {
-  if (m_options->isHidden())
+  if( m_options->isHidden() )
   {
     m_options->show();
     //m_options->animateShow(WAnimation(WAnimation::AnimationEffect::Pop, WAnimation::TimingFunction::Linear, 250) );
     m_options_icon->addStyleClass("active");
+    
+#if( InterSpec_PHONE_ROTATE_FOR_TABS )
+    if( m_particleView->isHidden() ) //Narrow phone display
+    {
+      m_otherNucsColumn->setHidden( true );
+      m_featureMarkerColumn->setHidden( true );
+    }
+#endif
   }else
   {
     m_options->hide();
     //m_options->animateHide(WAnimation(WAnimation::AnimationEffect::Pop, WAnimation::TimingFunction::Linear, 250));
     m_options_icon->removeStyleClass("active");
+    
+#if( InterSpec_PHONE_ROTATE_FOR_TABS )
+    if( m_otherNucsColumn->isHidden() ) //Narrow phone display
+      m_otherNucsColumn->setHidden( m_featureMarkerColumn->isVisible() );
+#endif
   }
 }//void toggleShowOptions()
 
@@ -1648,6 +1661,34 @@ MoreNuclideInfoWindow *ReferencePhotopeakDisplay::moreInfoWindow()
   return m_nucInfoWindow;
 }
 
+#if( InterSpec_PHONE_ROTATE_FOR_TABS )
+void ReferencePhotopeakDisplay::setNarrowPhoneLayout( const bool narrow )
+{
+  if( m_particleView->isHidden() == narrow )
+    return;
+  
+  m_particleView->setHidden( narrow );
+  
+  const char *add_key = narrow ? "rpd-add-another-btn-narrow" : "rpd-add-another-btn";
+  m_persistLines->setText( WString::tr(add_key) );
+  
+  WGridLayout *lay = dynamic_cast<WGridLayout *>( layout() );
+  assert( lay );
+  if( lay )
+  {
+    if( narrow )
+    {
+      lay->setColumnStretch( 4, 0 );
+      lay->setColumnStretch( 0, 1 );
+    }else
+    {
+      lay->setColumnStretch( 4, 1 );
+      lay->setColumnStretch( 0, 0 );
+    }
+  }//if( lay )
+}//void setNarrowPhoneLayout( const bool narrow )
+#endif //InterSpec_PHONE_ROTATE_FOR_TABS
+
 
 FeatureMarkerWidget *ReferencePhotopeakDisplay::featureMarkerTool()
 {
@@ -1664,6 +1705,15 @@ FeatureMarkerWidget *ReferencePhotopeakDisplay::showFeatureMarkerTool()
   m_featureMarkerColumn->setHidden( false );
   m_featureMarkers = new FeatureMarkerWidget( m_spectrumViewer, m_featureMarkerColumn );
   
+#if( InterSpec_PHONE_ROTATE_FOR_TABS )
+  if( m_particleView->isHidden() ) //Narrow phone display
+  {
+    if( !m_options->isHidden() )
+      toggleShowOptions();
+    m_otherNucsColumn->setHidden( true );
+  }//
+#endif
+  
   return m_featureMarkers;
 }//FeatureMarkerWidget *showFeatureMarkerTool()
 
@@ -1677,6 +1727,11 @@ void ReferencePhotopeakDisplay::removeFeatureMarkerTool()
   m_featureMarkers = nullptr;
   m_featureMarkerColumn->hide();
   m_showFeatureMarkers->setChecked( false );
+  
+#if( InterSpec_PHONE_ROTATE_FOR_TABS )
+  if( m_particleView->isHidden() ) //Narrow phone display
+    m_otherNucsColumn->setHidden( !m_options->isHidden() );
+#endif
 }//void removeFeatureMarkerTool()
 
 
@@ -1792,8 +1847,13 @@ void ReferencePhotopeakDisplay::updateOtherNucsDisplay()
     return;
   }
 
+#if( InterSpec_PHONE_ROTATE_FOR_TABS )
+  if( m_particleView->isHidden() ) //Narrow phone display
+    m_otherNucsColumn->setHidden( m_options->isVisible() || m_featureMarkerColumn->isVisible() );
+#else
   m_otherNucsColumn->show();
-
+#endif
+  
   vector<RefLineInput> prev_nucs;
   const string &currentInput = m_currentlyShowingNuclide.m_input.m_input_txt;
 

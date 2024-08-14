@@ -1513,7 +1513,7 @@ void EnergyCalTool::initWidgets( EnergyCalTool::LayoutType layoutType )
   if( wide )
     m_layout->addWidget( m_moreActionsColumn, 0, 1 );
   else
-    m_layout->addWidget( m_moreActionsColumn, 2, 0 );
+    m_layout->addWidget( m_moreActionsColumn, 3, 0 );
   
   WGridLayout *collayout = new WGridLayout( m_moreActionsColumn );
   collayout->setContentsMargins( 0, 0, 0, 0 );
@@ -1648,7 +1648,7 @@ void EnergyCalTool::initWidgets( EnergyCalTool::LayoutType layoutType )
   if( wide )
     m_layout->addWidget( m_applyToColumn, 0, 2 );
   else
-    m_layout->addWidget( m_applyToColumn, 2, 1 );
+    m_layout->addWidget( m_applyToColumn, 3, 1 );
   
   collayout = new WGridLayout( m_applyToColumn );
   collayout->setContentsMargins( 0, 0, 0, 0 );
@@ -1776,7 +1776,7 @@ void EnergyCalTool::initWidgets( EnergyCalTool::LayoutType layoutType )
     m_layout->setColumnStretch( 4, 1 );
   }else
   {
-    m_layout->addWidget( m_peakTableColumn, 3, 0, 1, 2 );
+    m_layout->addWidget( m_peakTableColumn, 2, 0, 1, 2 );
   }
 
   collayout = new WGridLayout( m_peakTableColumn );

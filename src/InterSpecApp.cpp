@@ -94,6 +94,10 @@ using namespace Wt;
 
 #define INLINE_JAVASCRIPT(...) #__VA_ARGS__
 
+#if(IOS || ANDROID)
+static_assert( !PERFORM_DEVELOPER_CHECKS, "PERFORM_DEVELOPER_CHECKS should not be on for iOS or Android builds" );
+#endif//IOS || ANDROID
+
 #if( BUILD_AS_ELECTRON_APP )
 WT_DECLARE_WT_MEMBER
 (IsElectronInstance, Wt::JavaScriptFunction, "IsElectronInstance",
@@ -550,12 +554,12 @@ void InterSpecApp::setupWidgets( const bool attemptStateLoad  )
   
   // TODO: we could add an explicit CSS class 
   // @media screen and (max-device-width: 640px) { ... }
-  //if( isPhone() )
-  //  root()->addStyleClass( "is-phone" );  //see also LandscapeRight and LandscapeLeft CSS classes
-  //else if( isTablet() )
-  //  root()->addStyleClass( "is-tablet" );
-  //if( isMobile() )
-  //  root()->addStyleClass( "is-mobile" );
+  if( isPhone() )
+    domRoot()->addStyleClass( "IsPhone" );  //see also LandscapeRight, LandscapeLeft, and Portrait CSS classes
+  else if( isTablet() )
+    domRoot()->addStyleClass( "IsTablet" );
+  if( isMobile() )
+    domRoot()->addStyleClass( "IsMobile" );
   
   if( !m_miscSignal )
   {
@@ -1189,8 +1193,8 @@ void InterSpecApp::setSafeAreaInsets( const int orientation, const float top,
   //ToDo: see if triggering a resize event is ever necessary
   //  doJavaScript( javaScriptClass() + ".TriggerResizeEvent();" );
   
-  // Note that CSS takes care of insets, mostly by detecting the LandscapeLeft and LandscapeRight
-  //  CSS classes, which are set by the `DoOrientationChange` javascript function
+  // Note that CSS takes care of insets, mostly by detecting the LandscapeLeft, LandscapeRight,
+  //  and Portrait CSS classes, which are set by the `DoOrientationChange` javascript function
   
   Wt::log("debug") << "Set safe area insets: orientation=" << orientation
        << ", safeAreas={" << top << ", " << right << ", "

@@ -412,7 +412,10 @@ PeakInfoDisplay::PeakInfoDisplay( InterSpec *viewer,
     m_infoLayout( NULL ),
     m_infoView( NULL ),
     m_deletePeak( NULL ),
-    m_searchForPeaks( NULL )
+    m_searchForPeaks( NULL ),
+    m_clearPeaksButton( nullptr ),
+    m_nucFromRefButton( nullptr ),
+    m_peakAddRemoveLabel( nullptr )
 {
   assert( m_spectrumDisplayDiv );
   addStyleClass( "PeakInfoDisplay" );
@@ -527,6 +530,21 @@ void PeakInfoDisplay::handleChartLeftClick( const double energy )
   
   enablePeakDelete( index );
 }//void handleChartLeftClick( const double energy )
+
+
+#if( InterSpec_PHONE_ROTATE_FOR_TABS )
+void PeakInfoDisplay::setNarrowPhoneLayout( const bool narrow )
+{
+  // m_deletePeak //If mobile, will not have text, and minus_min_black.svg icon
+  // addPeak //if mobile, will not have text, and plus_min_black.svg icon
+  
+  m_searchForPeaks->setText( narrow ? WString() : WString::tr("pid-search-peaks-btn") ); //Has magnifier.png as icon
+  m_clearPeaksButton->setText( narrow ? WString() : WString::tr("pid-clear-peaks-btn") ); //By default, no icon
+  m_clearPeaksButton->setIcon( narrow ? WLink("InterSpec_resources/images/sweep.svg") : WLink() );
+  m_nucFromRefButton->setText( narrow ? WString() : WString::tr("pid-nuc-from-ref-btn") ); //assign_white.png as icon
+  m_peakAddRemoveLabel->setHidden( narrow );
+}//void setNarrowPhoneLayout( const bool narrow )
+#endif
 
 
 void PeakInfoDisplay::createNewPeak()
@@ -794,29 +812,29 @@ void PeakInfoDisplay::init()
   m_searchForPeaks->clicked().connect( boost::bind( &PeakSearchGuiUtils::automated_search_for_peaks, m_viewer, true ) );
 
   
-  WPushButton *clearPeaksButton = new WPushButton( WString::tr("pid-clear-peaks-btn"), buttonDiv );
-  HelpSystem::attachToolTipOn( clearPeaksButton, WString::tr("pid-tt-clear-peaks-btn"),
+  m_clearPeaksButton = new WPushButton( WString::tr("pid-clear-peaks-btn"), buttonDiv );
+  HelpSystem::attachToolTipOn( m_clearPeaksButton, WString::tr("pid-tt-clear-peaks-btn"),
                               showToolTips, HelpSystem::ToolTipPosition::Top  );
   
-  //clearPeaksButton->setMargin(WLength(2),Wt::Left);
-  clearPeaksButton->clicked().connect( this, &PeakInfoDisplay::confirmRemoveAllPeaks );
-  clearPeaksButton->disable();
+  //m_clearPeaksButton->setMargin(WLength(2),Wt::Left);
+  m_clearPeaksButton->clicked().connect( this, &PeakInfoDisplay::confirmRemoveAllPeaks );
+  m_clearPeaksButton->disable();
 
   //"Nuc. from Ref."
-  WPushButton *nucFromRefButton = new WPushButton( WString::tr("pid-nuc-from-ref-btn"), buttonDiv );
-  nucFromRefButton->setIcon( "InterSpec_resources/images/assign_white.png" );
+  m_nucFromRefButton = new WPushButton( WString::tr("pid-nuc-from-ref-btn"), buttonDiv );
+  m_nucFromRefButton->setIcon( "InterSpec_resources/images/assign_white.png" );
   
   //button->setMargin(WLength(2),Wt::Left|Wt::Right);
-  HelpSystem::attachToolTipOn( nucFromRefButton, WString::tr("pid-tt-nuc-from-ref-btn"),
+  HelpSystem::attachToolTipOn( m_nucFromRefButton, WString::tr("pid-tt-nuc-from-ref-btn"),
                               showToolTips , HelpSystem::ToolTipPosition::Top );
-  nucFromRefButton->clicked().connect( boost::bind( &PeakInfoDisplay::assignNuclidesFromRefLines, this ) );
-  nucFromRefButton->disable();
+  m_nucFromRefButton->clicked().connect( boost::bind( &PeakInfoDisplay::assignNuclidesFromRefLines, this ) );
+  m_nucFromRefButton->disable();
   
-  auto enableDisableNucRef = [this,nucFromRefButton,clearPeaksButton](){
+  auto enableDisableNucRef = [this](){
     const bool enable = (m_model->rowCount() > 0);
-    clearPeaksButton->setEnabled( enable );
-    nucFromRefButton->setEnabled( enable );
-    //Should check if any reference lines are showing for nucFromRefButton as well...
+    m_clearPeaksButton->setEnabled( enable );
+    m_nucFromRefButton->setEnabled( enable );
+    //Should check if any reference lines are showing for m_nucFromRefButton as well...
   };
   
   m_model->dataChanged().connect( std::bind(enableDisableNucRef) );
@@ -842,9 +860,9 @@ void PeakInfoDisplay::init()
 //                                           wApp->sessionId(), guessIsotopeWorker,
 //                                           boost::function<void ()>() ) );
   
-  WLabel *label = new WLabel( WString("{1}: ").arg( WString::tr("Peak") ), buttonDiv);
-  label->addStyleClass("buttonSeparator");
-  label->setMargin(WLength(10),Wt::Left);
+  m_peakAddRemoveLabel = new WLabel( WString("{1}: ").arg( WString::tr("Peak") ), buttonDiv);
+  m_peakAddRemoveLabel->addStyleClass("buttonSeparator");
+  m_peakAddRemoveLabel->setMargin(WLength(10),Wt::Left);
   
   if( m_viewer->isMobile() )
   {
@@ -854,14 +872,12 @@ void PeakInfoDisplay::init()
     addPeak->addStyleClass( "WhiteIcon" );
     addPeak->setMargin( 2, Wt::Left );
     addPeak->setMargin( 8, Wt::Right );
-    addPeak->setMargin( 5, Wt::Top );
     addPeak->clicked().connect( this, &PeakInfoDisplay::createNewPeak );
     
     WImage *delPeak = new WImage( WLink("InterSpec_resources/images/minus_min_black.svg"), buttonDiv );
     delPeak->setAttributeValue( "width", "16" );
     delPeak->setAttributeValue( "height", "16" );
     delPeak->addStyleClass( "WhiteIcon" );
-    delPeak->setMargin( 5, Wt::Top );
     delPeak->clicked().connect( this, &PeakInfoDisplay::deleteSelectedPeak );
     m_deletePeak = delPeak;
     m_deletePeak->hide();
@@ -898,14 +914,15 @@ void PeakInfoDisplay::init()
   }//for( int col = 0; col < m_model->columnCount(); ++col )
 
 #if( !ANDROID && !IOS )
-  WText *txt = new WText( WString::tr("pid-better-editor-hint"), buttonDiv );
-  txt->addStyleClass( "PeakEditHint" );
-  txt->hide();
-//  mouseWentOver().connect( txt, &WText::show );
-//  mouseWentOut().connect( txt, &WText::hide );
-//  doJavaScript( "try{$('#" + txt->id() + "').show();}catch(e){}" );
-  mouseWentOver().connect( "function(object, event){try{$('#" + txt->id() + "').show();}catch(e){}}" );
-  mouseWentOut().connect( "function(object, event){try{$('#" + txt->id() + "').hide();}catch(e){}}" );
+  if( !m_viewer->isPhone() )
+  {
+    const char *key = m_viewer->isMobile() ? "pid-better-editor-hint-mobile" : "pid-better-editor-hint";
+    WText *txt = new WText( WString::tr(key), buttonDiv );
+    txt->addStyleClass( "PeakEditHint" );
+    txt->hide();
+    mouseWentOver().connect( "function(object, event){try{$('#" + txt->id() + "').show();}catch(e){}}" );
+    mouseWentOut().connect( "function(object, event){try{$('#" + txt->id() + "').hide();}catch(e){}}" );
+  }
 #endif
   
   WResource *csv = m_model->peakCsvResource();

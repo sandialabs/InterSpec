@@ -2667,8 +2667,12 @@ pair<ShieldingSourceDisplay *,AuxWindow *> ShieldingSourceDisplay::createWindow(
     window = new AuxWindow( WString::tr("window-title-act-shield-fit") );
     // We have to set minimum size before calling setResizable, or else Wt's Resizable.js functions
     //  will be called first, which will then default to using the initial size as minimum allowable
-    window->setMinimumSize( 800, 480 );
-    window->setResizable( true );
+    if( !viewer->isPhone() )
+    {
+      window->setMinimumSize( 800, 480 );
+      window->setResizable( true );
+    }
+    
     window->contents()->setOffsets(WLength(0,WLength::Pixel));
     window->stretcher()->addWidget( disp, 0, 0 );
     window->stretcher()->setContentsMargins(0,0,0,0);
@@ -3258,7 +3262,6 @@ ShieldingSourceDisplay::ShieldingSourceDisplay( PeakModel *peakModel,
       
   
   WContainerWidget *detectorDiv = new WContainerWidget();
-  detectorDiv->setOverflow(WContainerWidget::OverflowHidden);
   WGridLayout *detectorLayout = new WGridLayout();
   detectorDiv->setLayout( detectorLayout );
   
@@ -3275,9 +3278,7 @@ ShieldingSourceDisplay::ShieldingSourceDisplay( PeakModel *peakModel,
   smallLayout->addWidget( addShieldingLabel,       3, 0, AlignRight | AlignMiddle );
   smallLayout->addWidget( m_addMaterialShielding,  3, 1);
   smallLayout->addWidget( m_addGenericShielding,   3, 2);
-  smallLayout->setColumnStretch( 0, 0 );
-
-  smallLayout->setContentsMargins(0,5,0,5);
+  smallLayout->setContentsMargins( 0, 5, 0, 5 );
   smallerContainer->setPadding(0);
   
   //m_geometryLabel->setText( "Shield Geometry" );
@@ -3294,6 +3295,8 @@ ShieldingSourceDisplay::ShieldingSourceDisplay( PeakModel *peakModel,
   peakGrid->addWidget(m_peakView,0,0);
   
   m_layout = new WGridLayout();
+  m_layout->setContentsMargins( 0, 0, 0, 0 );
+  setLayout( m_layout );
   
   WContainerWidget *bottomLeftDiv = new WContainerWidget();
   WGridLayout *bottomLeftLayout = new WGridLayout();
@@ -3324,10 +3327,11 @@ ShieldingSourceDisplay::ShieldingSourceDisplay( PeakModel *peakModel,
     detectorLayout->setVerticalSpacing( 0 );
     detectorLayout->setContentsMargins( 1, 1, 1, 1 );
     
-    WTabWidget* tab = new WTabWidget();
-    tab->setOffsets(0);
-    tab->setMargin(0);
-    m_layout->addWidget(tab, 0,0);
+    WTabWidget *tab = new WTabWidget();
+    tab->setMargin( 0 );
+    m_layout->addWidget( tab, 0, 0 );
+    m_layout->setColumnStretch( 0, 1 );
+    m_layout->setRowStretch( 0, 1 );
     
     tab->addTab(bottomLeftDiv, WString::tr("ssd-phone-tab-source-peaks"), Wt::WTabWidget::PreLoading);
     tab->addTab(sourceDiv, WString::tr("ssd-phone-tab-source-isotopes"), Wt::WTabWidget::PreLoading);
@@ -3342,12 +3346,13 @@ ShieldingSourceDisplay::ShieldingSourceDisplay( PeakModel *peakModel,
     chartLayout->setContentsMargins(0, 0, 0, 0);
     
     chartLayout->addWidget( m_detectorDisplay,      0, 0, AlignLeft );
-    chartLayout->addWidget( m_showChiOnChart,       0, 1 );
-    chartLayout->addWidget( addItemMenubutton,      0, 2, AlignRight);
-    chartLayout->addWidget( m_chi2Graphic,          1, 0, 1, 3 );
-    chartLayout->addWidget( m_fitModelButton,       2, 0, 1, 3, AlignCenter );
-    chartLayout->addWidget( m_fitProgressTxt,       3, 0, 1 ,3, AlignCenter );
-    chartLayout->addWidget( m_cancelfitModelButton, 4, 0, 1, 3, AlignCenter );
+    chartLayout->addWidget( addItemMenubutton,      0, 1, AlignRight);
+    chartLayout->addWidget( m_chi2Graphic,          1, 0, 1, 2 );
+    m_showChiOnChart->setWidth( 130 );
+    chartLayout->addWidget( m_showChiOnChart,       2, 1, AlignRight );
+    chartLayout->addWidget( m_fitModelButton,       3, 0, 1, 2, AlignCenter );
+    chartLayout->addWidget( m_fitProgressTxt,       4, 0, 1, 2, AlignCenter );
+    chartLayout->addWidget( m_cancelfitModelButton, 5, 0, 1, 2, AlignCenter );
     
     chartLayout->setRowStretch(1, 1);
     tab->addTab(chartDiv,"Fit", Wt::WTabWidget::PreLoading);
@@ -3420,6 +3425,7 @@ ShieldingSourceDisplay::ShieldingSourceDisplay( PeakModel *peakModel,
     leftDiv->setLayout(leftLayout);
     leftDiv->setOverflow(WContainerWidget::OverflowHidden);
     
+    detectorDiv->setOverflow( WContainerWidget::OverflowHidden );
     detectorDiv->setWidth( 290 );
     
     m_layout->addWidget( leftDiv, 0, 0);
@@ -3427,13 +3433,10 @@ ShieldingSourceDisplay::ShieldingSourceDisplay( PeakModel *peakModel,
     m_layout->setColumnStretch( 0, 1 );
     m_layout->setHorizontalSpacing( 0 );
     m_layout->setVerticalSpacing( 0 );
-    m_layout->setContentsMargins( 0, 0, 0, 0 );
+    
+    setOverflow( WContainerWidget::OverflowVisible );
+    setOffsets( WLength(0,WLength::Pixel) );
   } //regular layout
-  
-  m_layout->setContentsMargins(0, 0, 0, 0);
-  setLayout( m_layout );
-  setOverflow( WContainerWidget::OverflowVisible);
-  setOffsets(WLength(0,WLength::Pixel));
   
   handleDetectorChanged( m_detectorDisplay->detector() ); // Will also call updateChi2Chart()
 }//ShieldingSourceDisplay constructor

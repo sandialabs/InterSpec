@@ -19,7 +19,7 @@ I *think* this CSS file could be safely loaded for all browsers, but currently o
   padding-right: 0;
 }
 
-.Wt-domRoot .LandscapeLeft, .Wt-domRoot .LandscapeRight
+.Wt-domRoot .LandscapeLeft, .Wt-domRoot .LandscapeRight, .Wt-domRoot .Portrait
 {
   top: 0;
   left: 0;
@@ -28,7 +28,7 @@ I *think* this CSS file could be safely loaded for all browsers, but currently o
   height: 100%;
 }
 
-.LandscapeLeft .InterSpec, .LandscapeRight .InterSpec {
+.LandscapeLeft .InterSpec, .LandscapeRight .InterSpec, .Portrait .InterSpec {
   /* the ".InterSpec" is first one where height is 100%, so the outermost one
    we can put a margin or padding on.
    */
@@ -41,6 +41,25 @@ I *think* this CSS file could be safely loaded for all browsers, but currently o
   /* Accounts for rounded screen corners. - 12px seems to work ok */
   top: max( calc(0.5*env(safe-area-inset-left)), 5px );
   left: max( calc(0.5*env(safe-area-inset-left)), 5px );
+}
+
+
+.Portrait .InterSpec {
+  margin-top: max( calc(env(safe-area-inset-top) - 8px), 0px);
+}
+
+.Portrait .MobileMenuButton, .Portrait .MobileMenuButton:hover {
+  top: max( calc(0.5*env(safe-area-inset-top)), 5px );
+  left: max( calc(0.5*env(safe-area-inset-left)), 5px );
+}
+
+.Portrait .PhoneFullScreenDialog {
+  padding-top: max( calc(env(safe-area-inset-top) - 8px), 0px);
+  margin-bottom: max( calc(env(safe-area-inset-bottom) - 8px), 0px);
+}
+
+.Portrait .Wt-tabs li {
+  font-size: x-small;
 }
 
 .LandscapeLeft .PopupDivMenuPhone {

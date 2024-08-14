@@ -206,6 +206,12 @@ public:
    */
   std::shared_ptr<void> getDisableUndoRedoSentry();
   
+#if( InterSpec_PHONE_ROTATE_FOR_TABS )
+  void setResultTableColumnWidths( const bool narrow );
+  
+  /** Currently just repositions the results table, and adjusts its row sizes and visible columns. */
+  void setNarrowPhoneLayout( const bool narrow );
+#endif
 protected:
   virtual void render( Wt::WFlags<Wt::RenderFlag> flags );
 
@@ -218,7 +224,9 @@ protected:
   
   InterSpec *m_viewer;
   D3SpectrumDisplayDiv *m_chart;
+  Wt::WContainerWidget *m_searchConditionsColumn;
   Wt::WContainerWidget *m_searchEnergies;
+  Wt::WContainerWidget *m_assignBtnRow;
   Wt::WPushButton *m_clearRefLines;
   Wt::Signals::connection m_refLineUpdateConnection;
   Wt::Signals::connection m_refLineClearConnection;
@@ -236,6 +244,7 @@ protected:
   
   size_t m_nextSearchEnergy;
   double m_minBr, m_minHl;
+  
   
   /** A struct that represents the GUI state, using basic types.
    

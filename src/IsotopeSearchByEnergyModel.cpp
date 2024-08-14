@@ -1519,7 +1519,11 @@ boost::any IsotopeSearchByEnergyModel::headerData( int section,
       case IsotopeSearchByEnergyModel::Column::Distance:
         return WString::tr("isbem-diff");
       case IsotopeSearchByEnergyModel::Column::Energy:
+      {
+        if( InterSpec::instance()->isPhone() )
+          return WString::tr("Energy");
         return WString::tr("Energy (keV)");
+      }
       case IsotopeSearchByEnergyModel::Column::BranchRatio:
         return WString::tr("isbem-rel-br");
       case IsotopeSearchByEnergyModel::Column::ProfileDistance:

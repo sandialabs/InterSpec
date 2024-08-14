@@ -86,7 +86,7 @@ public:
   };//enum EditableFields
 
 public:
-  SpecFileSummary( InterSpec *specViewer );
+  SpecFileSummary( const SpecUtils::SpectrumType spec_type, InterSpec *specViewer );
   virtual ~SpecFileSummary();
 
 protected:

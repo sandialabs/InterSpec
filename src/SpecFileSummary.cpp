@@ -167,7 +167,7 @@ namespace
 }//namespace
 
 
-SpecFileSummary::SpecFileSummary( InterSpec *specViewer )
+SpecFileSummary::SpecFileSummary( const SpecUtils::SpectrumType type, InterSpec *specViewer )
   : AuxWindow( WString::tr("window-title-file-parameters"), AuxWindowProperties::IsModal ),
     m_specViewer( specViewer ),
     m_allowEditGroup( NULL ),
@@ -215,6 +215,12 @@ SpecFileSummary::SpecFileSummary( InterSpec *specViewer )
     m_reloadSpectrum( NULL )
 {
   init();
+  
+  if( m_spectraGroup->selectedButtonIndex() != static_cast<int>(type) )
+  {
+    m_spectraGroup->setSelectedButtonIndex( static_cast<int>(type) );
+    handleSpectrumTypeChanged();
+  }
 }//SpecFileSummary constructor
 
 
@@ -879,7 +885,25 @@ void SpecFileSummary::updateDisplayFromMemory()
   if( nspec )
   {
     m_displaySampleNumValidator->setRange( 1, static_cast<int>(nspec) );
-    m_displaySampleNumEdit->setText( "1" );
+    
+    // Lets set the displayed measurement to be the first one that is actually displayed in the
+    //  spectrum
+    size_t sample = 0;
+    const vector<shared_ptr<const SpecUtils::Measurement>> &measurements = meas->measurements();
+    const set<int> &samples = m_specViewer->displayedSamples(type);
+    if( samples.size() )
+    {
+      for( size_t i = 0; i < measurements.size(); ++i )
+      {
+        if( samples.count(measurements[i]->sample_number()) )
+        {
+          sample = i;
+          break;
+        }
+      }//for( loop over measurements )
+    }//if( samples.size() )
+    
+    m_displaySampleNumEdit->setText( std::to_string(sample + 1) );
   }else
   {
     m_displaySampleNumValidator->setRange( 0, 0 );
@@ -1281,7 +1305,7 @@ void SpecFileSummary::handleSpectrumTypeChanged()
   }else
   {
     const vector<std::shared_ptr<const SpecUtils::Measurement>> &measurements = meas->measurements();
-
+    
     if( measurements.size() )
     {
       m_displaySampleNumValidator->setRange( 1, static_cast<int>(measurements.size()) );

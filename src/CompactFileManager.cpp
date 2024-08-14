@@ -111,6 +111,7 @@ CompactFileManager::CompactFileManager( SpecMeasManager *fileManager,
   const bool showToolTips = InterSpecUser::preferenceValue<bool>( "ShowTooltips", hostViewer );
   
   WTabWidget *tabWidget = nullptr;
+  WGridLayout *tabbedLayout = nullptr;
   switch( m_displayMode )
   {
     case LeftToRight:
@@ -119,9 +120,15 @@ CompactFileManager::CompactFileManager( SpecMeasManager *fileManager,
     break;
       
     case Tabbed:
-      // We will use a tabbed widget to hold Foreground/Background/Secondary seperately
+    {
+      // We will use a tabbed widget to hold Foreground/Background/Secondary separately
+      tabbedLayout = new WGridLayout( this );
       addStyleClass( "Tabbed" );
-      tabWidget = new WTabWidget( this );
+      tabWidget = new WTabWidget();
+      tabbedLayout->addWidget( tabWidget, 0, 0 );
+      tabbedLayout->setContentsMargins( 0, 0, 0, 0 );
+      tabbedLayout->setRowStretch( 0, 1 );
+    }
     break;
   }//switch( m_displayMode )
   
@@ -339,9 +346,10 @@ CompactFileManager::CompactFileManager( SpecMeasManager *fileManager,
     {
       //Add in a link to open files in the database, as
 #if( USE_DB_TO_STORE_SPECTRA )
-      WContainerWidget *buttons = new WContainerWidget( this );
+      WContainerWidget *buttons = new WContainerWidget();
       WPushButton *button = new WPushButton( WString::tr("cfm-db-spec"), buttons );
       button->clicked().connect( fileManager, &SpecMeasManager::browsePrevSpectraAndStatesDb );
+      tabbedLayout->addWidget( buttons, 1, 0 );
 #endif
       break;
     }//case Tabbed:
