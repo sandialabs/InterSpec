@@ -1531,8 +1531,91 @@ void InterSpec::layoutSizeChanged( int w, int h )
     if( (w > 20) && (h > 20) )
     {
       const bool isVertical = (h > w);
+      
+      // If we are changing orientation - close all the open windows
+      //  TODO: close are restore all the windows, instead of just closing them
+#if( USE_CSS_FLEX_LAYOUT )
+      if( m_toolsTabs->isVisible() != isVertical )
+#else
+      if( static_cast<bool>(m_toolsTabs) != isVertical )
+#endif
+      {
+        //m_energyCalWindow and m_nuclideSearchWindow will get closed by `setToolTabsVisible(...)`
+        if( m_gammaCountDialog )
+          deleteGammaCountDialog();
+        
+        if( m_shieldingSourceFitWindow )
+          closeShieldingSourceFit();
+        
+#if( USE_REL_ACT_TOOL )
+        if( m_relActAutoWindow )
+          m_relActAutoWindow->hide(); //rejects if, calling `handleRelActAutoClose()`
+        if( m_relActManualWindow )
+          m_relActManualWindow->hide(); //rejects if, calling `handleRelActManualClose()`
+#endif
+        
+        if( m_multimedia )
+          programmaticallyCloseMultimediaWindow();
+        
+#if( USE_REMOTE_RID )
+        if( m_autoRemoteRidResultDialog )
+          programaticallyCloseAutoRemoteRidResultDialog();
+#endif
+        if( m_gammaXsToolWindow )
+          m_gammaXsToolWindow->hide(); //calls deleteGammaXsTool
+        if( m_doseCalcWindow )
+          deleteDoseCalcTool();
+        if( m_1overR2Calc )
+          deleteOneOverR2Calc();
+        if( m_unitsConverter )
+          deleteUnitsConverterTool();
+        if( m_fluxTool )
+          deleteFluxTool();
+        if( m_makeDrfTool )
+          handleCloseMakeDrfWindow( m_makeDrfTool );
+#if( USE_LEAFLET_MAP )
+        if( m_leafletWindow )
+          programmaticallyCloseLeafletMap();
+#endif
+        if( m_enterUri )
+          m_enterUri->accept();
+        assert( !m_enterUri );
+        if( m_terminalWindow )
+          m_terminalWindow->hide();
+#if( USE_REMOTE_RID )
+        if( m_remoteRidWindow )
+          deleteRemoteRidWindow();
+#endif
+#if( USE_DETECTION_LIMIT_TOOL )
+        if( m_simpleMdaWindow )
+          handleSimpleMdaWindowClose();
+        if( m_detectionLimitWindow )
+          handleDetectionLimitWindowClose();
+#endif
+        if( m_helpWindow )
+          closeHelpWindow();
+        if( m_licenseWindow )
+          deleteLicenseAndDisclaimersWindow();
+        if( m_useInfoWindow )
+          deleteWelcomeDialog( true );
+        if( m_decayInfoWindow )
+          deleteDecayInfoWindow();
+        if( m_addFwhmTool )
+          deleteFwhmFromForegroundWindow();
+        if( m_preserveCalibWindow )
+          deleteEnergyCalPreserveWindow();
+#if( USE_SEARCH_MODE_3D_CHART )
+        if( m_3dViewWindow )
+          handle3DSearchModeChartClose( m_3dViewWindow );
+#endif
+        if( m_riidDisplay )
+          programmaticallyCloseRiidResults();
+        if( m_drfSelectWindow )
+          closeDrfSelectWindow();
+      }//if( we are changing orientation )
+      
       setToolTabsVisible( isVertical );
-    }
+    }//if( (w > 20) && (h > 20) )
   }//if( isPhone() )
 #endif
   

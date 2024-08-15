@@ -47,6 +47,8 @@
 #include <Wt/WGridLayout>
 #include <Wt/Json/Parser>
 #include <Wt/Json/Object>
+#include <Wt/WApplication>
+#include <Wt/WEnvironment>
 #include <Wt/WMediaPlayer>
 #include <Wt/WRadioButton>
 #include <Wt/WStandardItem>
@@ -676,9 +678,10 @@ UseInfoWindow::UseInfoWindow( std::function<void(bool)> showAgainCallback,
      "icon for detailed information about <code>InterSpec</code>s tools and features."
      "</p>";
   
+  WGridLayout *rightLayout = nullptr;
   if( m_viewer->isPhone() )
   {
-    WGridLayout *rightLayout = new WGridLayout();
+    rightLayout = new WGridLayout();
     rightLayout->setContentsMargins( 0, 0, 0, 0 );
     rightLayout->setVerticalSpacing( 0 );
     rightLayout->setHorizontalSpacing( 0 );
@@ -707,7 +710,7 @@ UseInfoWindow::UseInfoWindow( std::function<void(bool)> showAgainCallback,
      */
   }else
   {
-    WGridLayout* rightLayout = new WGridLayout();
+    rightLayout = new WGridLayout();
     welcomeContainer->setLayout(rightLayout);
     
     rightLayout->addWidget( text, 0, 0 );
@@ -747,7 +750,7 @@ UseInfoWindow::UseInfoWindow( std::function<void(bool)> showAgainCallback,
     
     auto showLicenceAndTerms = [](){
       // We'll keep from capturing closing the window and opening the new window as two
-      //  seperate undo/redo events.
+      //  separate undo/redo events.
       {
         UndoRedoManager::BlockUndoRedoInserts blocker;
         InterSpec *viewer = InterSpec::instance();
@@ -817,30 +820,55 @@ UseInfoWindow::UseInfoWindow( std::function<void(bool)> showAgainCallback,
     
   if( showAgainCallback )
   {
-    WCheckBox *cb = new WCheckBox( "show at start when no spectra", bottom );
-    cb->setFloatSide( Left );
+    //WGridLayout *rightLayout = nullptr;
+    bool isVertical = false;
+    if( m_viewer->isPhone() )
+    {
+      int w = m_viewer->renderedWidth();
+      int h = m_viewer->renderedHeight();
+      if( w < 100 )
+      {
+        w = wApp->environment().screenWidth();
+        h = wApp->environment().screenHeight();
+      }
+      isVertical = ((w > 100) && (w < h));
+    }//if( isPhone )
+    
+    
+    WCheckBox *showAgainCb = nullptr;
+    assert( rightLayout );
+    if( isVertical && rightLayout )
+    {
+      showAgainCb = new WCheckBox( "show at start when no spectra" );
+      rightLayout->addWidget( showAgainCb, rightLayout->rowCount(), 0 );
+    }else
+    {
+      // Put CB into header
+      showAgainCb = new WCheckBox( "show at start when no spectra", bottom );
+    }
+    showAgainCb->setFloatSide( Left );
     
     try
     {
       const bool showAtStartup = viewer->m_user->preferenceValue<bool>( "ShowSplashScreen" );
-      cb->setChecked( showAtStartup );
+      showAgainCb->setChecked( showAtStartup );
     }catch(...)
     {
       // probably wont ever get here, but JIC
     }
     
 
-    cb->checked().connect( boost::bind( showAgainCallback, true ) );
-    cb->unChecked().connect( boost::bind( showAgainCallback, false ) );
+    showAgainCb->checked().connect( boost::bind( showAgainCallback, true ) );
+    showAgainCb->unChecked().connect( boost::bind( showAgainCallback, false ) );
     if( m_viewer->isMobile() )
     {
-      cb->setFloatSide(Right);
-      cb->setMargin(10,Right);
-      cb->setMargin(3,Top);
+      showAgainCb->setFloatSide(Right);
+      showAgainCb->setMargin(10,Right);
+      showAgainCb->setMargin(3,Top);
     }//isPhone
   }//if( !force )
   
-  WPushButton *ok = addCloseButtonToFooter( "Close" );
+  WPushButton *ok = addCloseButtonToFooter( WString::tr("Close") );
   ok->clicked().connect( boost::bind( &AuxWindow::hide, this ) );
   
   if( viewer
