@@ -52,30 +52,49 @@
   display: inline;
 }
 
-
-.DbSpecFileItem
-{
+.DbSpecFileItem {
   padding-left: 5px;
   padding-right: 3px;
   padding-top: 3px;
   margin-bottom: 7px;
   width: 95%;
-  height: 1.8em;
   border:1px solid #e1e1e1;
 }
 
+/* Styles for screens with a width of 480px or less */
+@media (max-width: 480px) {
+  .DbSpecFileItem
+  {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 4px;
+    border-radius: 5px;
+  }
 
-.DbSpecFileItemTxt
-{
-  font-size:100%;
-  font-family:"Times New Roman", Times, serif;
-  position:absolute;
+  .DbSpecFileItemTxt
+  {
+  }
+
+  .DbSpecFileItemButton
+  {
+  }
 }
 
+/* Styles for screens with a width greater than 480px */
+@media (min-width: 481px) {
+  .DbSpecFileItemTxt
+  {
+    position:absolute;
+  }
+  
+  .DbSpecFileItemButton
+  {
+    float: right;
+  }
+}
 
-.DbSpecFileItemButton
-{
-  float: right;
+@media screen and (max-device-width: 480px) {
 }
 
 .ResumeWorkTxt

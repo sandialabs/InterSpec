@@ -92,7 +92,7 @@ public:
     
     addStyleClass( "DbSpecFileItem" );
     
-    string msg = "Uploaded: " + dbentry->uploadTime.toString( DATE_TIME_FORMAT_STR ).toUTF8();
+    string msg = "Loaded: " + dbentry->uploadTime.toString( DATE_TIME_FORMAT_STR ).toUTF8();
     if( dbentry->userHasModified )
       msg += ", was modified";
     

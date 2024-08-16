@@ -53,10 +53,6 @@ I *think* this CSS file could be safely loaded for all browsers, but currently o
   left: max( calc(0.5*env(safe-area-inset-left)), 5px );
 }
 
-.Portrait .PhoneFullScreenDialog {
-  padding-top: max( calc(env(safe-area-inset-top) - 8px), 0px);
-  margin-bottom: max( calc(env(safe-area-inset-bottom) - 8px), 0px);
-}
 
 .Portrait .Wt-tabs li {
   font-size: x-small;
@@ -92,8 +88,35 @@ ul.PopupDivMenuPhone > li:last-of-type
   padding-bottom: max( calc(env(safe-area-inset-bottom) - 8px), 0px);
 }
 
+.Portrait .PhoneFullScreenDialog {
+  /* Correct for the potential notch at top of screen. */
+  padding-top: max( calc(env(safe-area-inset-top) - 8px), 0px);
+  
+  /* Padding of the outer dialog div doesnt seem to be taken into account by
+   wt-3.7.1/src/js/WDialog.js:layoutResize(...)/wtResize(...), so setting bottom
+   padding doesnt seem to produce the desired effect - and in fact, the dialog
+   contents will be taller than it should be, by the amount of top padding we
+   add here.  We'll make-up for this, in a questionable way, by setting the
+   bottom-padding of the dialog contents, to be the sum of top and bottom insets.
+   */
+  /* padding-bottom: max( calc(env(safe-area-inset-bottom) - 8px), 0px); */
+}
+
+
+.Portrait .PhoneFullScreenDialog .AuxWindow-content.MobileFullScreen {
+  /* Make up for apparent padding not accounted for in WDialog out div, and make sure full
+   contents of dialog can be seen.  (note: dialog body is is inset top+bottom too long, so this
+   margin-area will not actually be seen on the screen; not the best, but it works)
+   */
+  margin-bottom: calc( max(env(safe-area-inset-bottom) - 8px, 0px) + max(env(safe-area-inset-bottom) - 8px, 0px) );
+}
+
 .LandscapeLeft .PeakInfoDisplayButtonDiv, .LandscapeRight .PeakInfoDisplayButtonDiv {
   margin-bottom: 2px;
+}
+
+.Portrait #qtip-growl-container.qtipDiv:not(.belowMenu) {
+  top: max( calc(env(safe-area-inset-top) - 8px), 0px);
 }
 
 /* End styling for iPhoneX* phones with a notch */

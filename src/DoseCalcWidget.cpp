@@ -254,7 +254,7 @@ DoseCalcWindow::DoseCalcWindow( MaterialDB *materialDB,
   show();
   
   // If we are loading this widget, as we  are creating the InterSpec session,
-  //  the screen width and height wont be avaiable, so we'll just assume its
+  //  the screen width and height wont be available, so we'll just assume its
   //  big enough, which it should be.
   const int screenW = viewer->renderedWidth();
   const int screenH = viewer->renderedHeight();
