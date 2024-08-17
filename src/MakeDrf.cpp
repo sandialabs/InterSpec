@@ -3511,7 +3511,8 @@ void MakeDrf::writeCsvSummary( std::ostream &out,
   {
     SpecUtils::ireplace_all( d.source_information, ",", " ");
     
-    const double deteff = d.peak_area / d.source_count_rate;
+    const double peakCps = d.peak_area / d.livetime;
+    const double deteff = peakCps / d.source_count_rate;
     const double deteffUncert = deteff * sqrt( pow(d.peak_area_uncertainty/d.peak_area,2)
                                                + pow(d.source_count_rate_uncertainty/d.source_count_rate,2) );
     const double geomFactor = (d.distance < 0.0) ? 1.0 : DetectorPeakResponse::fractionalSolidAngle(diam, d.distance);
