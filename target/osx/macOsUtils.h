@@ -23,6 +23,8 @@
  Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
  */
 
+#include <string>
+
 namespace macOsUtils
 {
   /** When the macOS app starts, it checks the preference "DoNotResume" to see if
@@ -31,6 +33,9 @@ namespace macOsUtils
    which is what this function does.
    */
   void sessionSuccessfullyLoaded();
+  
+  std::string static_data_base_dir();
+  std::string user_data_dir();
 }
 
 #endif

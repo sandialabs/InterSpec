@@ -110,10 +110,10 @@ option(
 option(USE_REMOTE_RID "Enables using remote RID tool" ON)
 option(USE_REL_ACT_TOOL "Enables Relative Activity tool - experimental" ON)
 
-if( IOS OR ANDROID OR BUILD_AS_OSX_APP )
+if( IOS OR ANDROID )
   set( USE_BATCH_TOOLS OFF CACHE INTERNAL "")
 else()
-  option(USE_BATCH_TOOLS "Enables (command line for now) batch processing." ON )
+  option( USE_BATCH_TOOLS "Enables (command line for now) batch processing." ON )
 endif()
 
 if(MSVC)
@@ -135,8 +135,11 @@ set(MAX_SPECTRUM_MEMMORY_SIZE_MB 256
     "Amount of memory to allow spectra to take up before trying to offload them onto disk when not in use"
 )
 
-set( INTERSPEC_LIB_TYPE "STATIC" )
-#set( INTERSPEC_LIB_TYPE "SHARED" )
+if( USE_BATCH_TOOLS AND NOT BUILD_AS_ELECTRON_APP )
+  set( INTERSPEC_LIB_TYPE "SHARED" )
+else()
+  set( INTERSPEC_LIB_TYPE "STATIC" )
+endif()
 
 
 if(WIN32)
@@ -551,6 +554,11 @@ if( USE_BATCH_TOOLS )
   )
 endif( USE_BATCH_TOOLS )
 
+if( BUILD_AS_OSX_APP )
+  list( APPEND sources target/osx/macOsUtils.mm target/osx/NativeMenu.mm )
+  list( APPEND headers target/osx/macOsUtils.h target/osx/NativeMenu.h )
+endif( BUILD_AS_OSX_APP )
+
 
 #Copy D3 resources into InterSpec_resources directory at compile time
 include(cmake/DeployJsAndCss.cmake)
@@ -721,6 +729,42 @@ endif(WIN32)
 if( USE_REL_ACT_TOOL )
   target_link_libraries(InterSpecLib PUBLIC Eigen3::Eigen Ceres::ceres )
 endif( USE_REL_ACT_TOOL )
+
+
+if( BUILD_AS_OSX_APP )
+  FIND_LIBRARY(COCOA_LIBRARY Cocoa)
+  FIND_LIBRARY(COREDATA_LIBRARY CoreData)
+  FIND_LIBRARY(APPKIT_LIBRARY AppKit)
+  FIND_LIBRARY(FOUNDATION_LIBRARY Foundation)
+
+  MARK_AS_ADVANCED( COCOA_LIBRARY COREDATA_LIBRARY APPKIT_LIBRARY FOUNDATION_LIBRARY )
+
+  target_link_libraries( InterSpecLib PUBLIC
+    ${COCOA_LIBRARY}
+    ${APPKIT_LIBRARY}
+    ${COREDATA_LIBRARY}
+    ${FOUNDATION_LIBRARY}
+  )
+  
+  if( USE_BATCH_TOOLS )
+    set_target_properties( InterSpecLib PROPERTIES
+      FRAMEWORK TRUE
+      FRAMEWORK_VERSION A
+      MACOSX_FRAMEWORK_IDENTIFIER gov.sandia.InterSpecFramework
+      MACOSX_FRAMEWORK_SHORT_VERSION_STRING 1.0
+      MACOSX_FRAMEWORK_BUNDLE_VERSION 1.0.0
+      MACOSX_FRAMEWORK_COPYRIGHT "© 2024 Sandia National Laboratories"
+    )
+    
+    set_target_properties( InterSpecLib PROPERTIES
+      XCODE_ATTRIBUTE_PRODUCT_BUNDLE_IDENTIFIER gov.sandia.InterSpecFramework
+    )
+    
+    set_target_properties( InterSpecLib PROPERTIES
+      PUBLIC_HEADER "InterSpec_config.h"
+    )
+  endif( USE_BATCH_TOOLS )
+endif( BUILD_AS_OSX_APP )
 
 
 if( BUILD_AS_LOCAL_SERVER AND (CMAKE_GENERATOR STREQUAL "Xcode") )

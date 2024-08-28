@@ -26,6 +26,8 @@
 #import <dispatch/dispatch.h>
 #import <Foundation/NSUserDefaults.h>
 
+#import <Foundation/Foundation.h> //NSFileManager, NSBundle, NSURL
+
 #include "target/osx/macOsUtils.h"
 
 namespace macOsUtils
@@ -39,4 +41,18 @@ void sessionSuccessfullyLoaded()
   });
 }//void macOsUtils_sessionSuccessfullyLoaded()
   
+
+std::string static_data_base_dir()
+{
+  return [[[NSBundle mainBundle] resourcePath] UTF8String];
+}
+  
+  
+std::string user_data_dir()
+{
+  NSFileManager *fileManager = [NSFileManager defaultManager];
+  NSURL *appSupportURL = [[fileManager URLsForDirectory:NSApplicationSupportDirectory inDomains:NSUserDomainMask] lastObject];
+  NSURL *appUrl = [appSupportURL URLByAppendingPathComponent:@"sandia.InterSpec"];
+  return [[appUrl path] UTF8String];
+}
 }//namespace macOsUtils
