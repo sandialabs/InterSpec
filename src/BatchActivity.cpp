@@ -36,6 +36,7 @@
 #include "SpecUtils/Filesystem.h"
 #include "SpecUtils/StringAlgo.h"
 #include "SpecUtils/RapidXmlUtils.hpp"
+#include "SpecUtils/D3SpectrumExport.h"
 
 #include "InterSpec/PeakDef.h"
 #include "InterSpec/SpecMeas.h"
@@ -45,6 +46,7 @@
 #include "InterSpec/PeakModel.h"
 #include "InterSpec/MaterialDB.h"
 #include "InterSpec/BatchActivity.h"
+#include "InterSpec/PhysicalUnits.h"
 #include "InterSpec/DecayDataBaseServer.h"
 #include "InterSpec/DetectorPeakResponse.h"
 #include "InterSpec/GammaInteractionCalc.h"
@@ -52,8 +54,7 @@
 
 // I'm just starting to toy around with using inja to template the output of the batch results.
 //  Preliminarily, it looks like we can do most of what we might want with this.
-//  Lets not compile stuff in by default quite yet.
-#define USE_TMPLT_RESULT_OUTPUT 0
+#define USE_TMPLT_RESULT_OUTPUT 1
 #if( USE_TMPLT_RESULT_OUTPUT )
 #include "external_libs/SpecUtils/3rdparty/inja/inja.hpp"
 #endif
@@ -221,6 +222,139 @@ shared_ptr<DetectorPeakResponse> init_drf_from_name( std::string drf_file, std::
   return nullptr;
 }//shared_ptr<DetectorPeakResponse> init_drf_from_name( std::string drf_file, std::string drf-name )
   
+#if( USE_TMPLT_RESULT_OUTPUT )
+void shield_src_fit_results_to_json( const ShieldingSourceFitCalc::ModelFitResults &results,
+                                    const std::shared_ptr<const DetectorPeakResponse> &drf,
+                                    nlohmann::json &data )
+{
+  const bool useBq = InterSpecUser::preferenceValue<bool>( "DisplayBecquerel", InterSpec::instance() );
+  
+  auto &fit_setup = data["ActShieldFitSetup"];
+  fit_setup["Distance"] = results.distance / PhysicalUnits::cm;
+  fit_setup["DistanceStr"] = PhysicalUnits::printToBestLengthUnits( results.distance, 3 );
+  fit_setup["Geometry"] = GammaInteractionCalc::to_str( results.geometry );
+  
+  
+  auto &fit_options = fit_setup["FitOptions"];
+  fit_options["InterferenceCorrection"] = results.options.multiple_nucs_contribute_to_peaks;
+  fit_options["AttenuateForAir"] = (results.options.attenuate_for_air && (!drf || !drf->isFixedGeometry()));
+  fit_options["DecayDuringMeasurement"] = results.options.account_for_decay_during_meas;
+  fit_options["MultithreadSelfAttenCalc"] = results.options.multithread_self_atten;
+  fit_options["PhotopeakClusterSigma"] = results.options.photopeak_cluster_sigma;
+  fit_options["BackgroundPeakSubtract"] = results.options.background_peak_subtract;
+  fit_options["ElementNuclidesSameAge"] = results.options.same_age_isotopes;
+  
+  
+  data["FitChi2"] = results.chi2;
+  data["EstimatedDistanceToMinimum"] = results.edm;
+  data["NumberFcnCalls"] = results.num_fcn_calls;
+  
+  auto &fit_pars = data["RawFitParameter"];
+  fit_pars["Values"] = results.paramValues;
+  fit_pars["Errors"] = results.paramErrors;
+  
+  if( !results.errormsgs.empty() )
+    data["ErrorMessages"] = results.errormsgs;
+
+  for( const ShieldingSourceFitCalc::IsoFitStruct &nuc : results.fit_src_info )
+  {
+    
+    data["Sources"].push_back( {
+      {"Nuclide", nuc.nuclide->symbol},
+      {"FitActivity", nuc.fitActivity},
+      {"Activity", PhysicalUnits::printToBestActivityUnits(nuc.activity,3,!useBq) }
+    });
+    auto &nuc_json_obj = data["Sources"].back();
+    
+    if( nuc.fitActivity )
+      nuc_json_obj["ActivityUncertainty"] = PhysicalUnits::printToBestActivityUnits(nuc.activityUncertainty,3,!useBq);
+    
+    if( nuc.ageIsFittable )
+    {
+      if( nuc.fitAge )
+      {
+        nuc_json_obj["FitAge"] = PhysicalUnits::printToBestTimeUnits(nuc.age,3);
+        nuc_json_obj["FitAgeUncertainty"] = PhysicalUnits::printToBestTimeUnits(nuc.ageUncertainty,3);
+        if( nuc.ageDefiningNuc )
+          nuc_json_obj["AgeTiedTo"] = nuc.ageDefiningNuc->symbol;
+      }else
+      {
+        nuc_json_obj["Age"] = PhysicalUnits::printToBestTimeUnits(nuc.age,3);
+      }
+    }//if( nuc.ageIsFittable )
+    
+    switch( nuc.sourceType )
+    {
+      case ShieldingSourceFitCalc::ModelSourceType::Point:
+        nuc_json_obj["SourceType"] = "Point";
+        break;
+        
+      case ShieldingSourceFitCalc::ModelSourceType::Intrinsic:
+        nuc_json_obj["SourceType"] = "Intrinsic Radiation";
+        break;
+        
+      case ShieldingSourceFitCalc::ModelSourceType::Trace:
+        nuc_json_obj["SourceType"] = "Trace Source";
+        break;
+    }//switch( nuc.sourceType )
+  }//for( const ShieldingSourceFitCalc::IsoFitStruct &nuc : m_fit_results.fit_src_info )
+  
+  
+  for( const ShieldingSourceFitCalc::FitShieldingInfo &shield : results.final_shieldings )
+  {
+    data["Shieldings"].push_back({
+      { "Geometry", GammaInteractionCalc::to_str(shield.m_geometry) }
+    });
+    
+    auto &shield_json_obj = data["Shieldings"].back();
+    // blah blah blah
+    
+    //const char *shield.m_geometry );
+    
+    /** Dimensions of this shielding; the meaning of the entries differs depending on the geometry,
+     or if a generic material.
+     
+     Spherical: ['Thickness', n/a, n/a]
+     Cylinder:  ['Radius','Length',n/a]
+     Rectangle: ['Width','Height','Depth']
+     Generic:   ['AtomicNumber','ArealDensity',n/a]
+     */
+    /*
+    double m_dimensions[3];
+    double m_dimensionUncerts[3];
+    bool m_fitDimensions[3];
+    std::map<const SandiaDecay::Nuclide *,double> m_nuclideFractionUncerts;
+    std::map<const SandiaDecay::Nuclide *,double> m_traceSourceActivityUncerts;
+    
+    bool m_isGenericMaterial;
+    bool m_forFitting;
+    std::shared_ptr<const Material> m_material;
+    bool m_fitMassFrac;
+    std::map<const SandiaDecay::Nuclide *,double> m_nuclideFractions;
+    std::vector<TraceSourceInfo> m_traceSources;
+    */
+  }//for( loop results.fit_src_info )
+  
+                                    
+  auto add_detector_to_json = []( nlohmann::json &data, const shared_ptr<const DetectorPeakResponse> &drf ){
+    if( !drf || !drf->isValid() )
+      return;
+                                      
+    auto &drf_obj = data["Detector"];
+    drf_obj["Name"] = drf->name();
+    drf_obj["Description"] = drf->description();
+    drf_obj["Diameter"] = static_cast<double>( drf->detectorDiameter() );
+    drf_obj["Radius"] = 0.5*drf->detectorDiameter();
+    drf_obj["DiameterStr"] = PhysicalUnits::printToBestLengthUnits( drf->detectorDiameter(), 3 );
+    drf_obj["RadiusStr"] = PhysicalUnits::printToBestLengthUnits( 0.5*drf->detectorDiameter(), 3 );
+    drf_obj["FixedGeometry"] = drf->isFixedGeometry();
+  };
+           
+    if( drf )
+      add_detector_to_json( data, drf );
+                                    
+}//void shield_src_fit_results_to_json()
+#endif //USE_TMPLT_RESULT_OUTPUT
   
 void fit_activities_in_files( const std::string &exemplar_filename,
                           const std::set<int> &exemplar_sample_nums,
@@ -249,7 +383,6 @@ void fit_activities_in_files( const std::string &exemplar_filename,
   }//if( !db )
   
   
-  
   std::shared_ptr<const SpecMeas> cached_exemplar_n42;
   for( const string filename : files )
   {
@@ -274,13 +407,8 @@ void fit_activities_in_files( const std::string &exemplar_filename,
       cout << "Success analyzing '" << filename << "'!" << endl;
       assert( fit_results.m_fit_results );
       
-#if( USE_TMPLT_RESULT_OUTPUT )
-      nlohmann::json data;
-#endif
       for( const ShieldingSourceFitCalc::IsoFitStruct &nuc : fit_results.m_fit_results->fit_src_info )
       {
-        
-          
         cout << (nuc.fitActivity ? "\t" : "[act not fit]") << nuc.nuclide->symbol << ": "
              << PhysicalUnits::printToBestActivityUnits(nuc.activity,3,!useBq)
              << " +- " << PhysicalUnits::printToBestActivityUnits(nuc.activityUncertainty,3,!useBq);
@@ -298,63 +426,10 @@ void fit_activities_in_files( const std::string &exemplar_filename,
         }//if( nuc.ageIsFittable )
         
         cout << endl;
-        
-#if( USE_TMPLT_RESULT_OUTPUT )
-        data["Sources"].push_back( {
-          {"Nuclide", nuc.nuclide->symbol},
-          {"FitActivity", nuc.fitActivity},
-          {"Activity", PhysicalUnits::printToBestActivityUnits(nuc.activity,3,!useBq) }
-        });
-        auto &nuc_json_obj = data["Sources"].back();
-        
-        if( nuc.fitActivity )
-          nuc_json_obj["ActivityUncertainty"] = PhysicalUnits::printToBestActivityUnits(nuc.activityUncertainty,3,!useBq);
-        
-        if( nuc.ageIsFittable )
-        {
-          if( nuc.fitAge )
-          {
-            nuc_json_obj["FitAge"] = PhysicalUnits::printToBestTimeUnits(nuc.age,3);
-            nuc_json_obj["FitAgeUncertainty"] = PhysicalUnits::printToBestTimeUnits(nuc.ageUncertainty,3);
-            if( nuc.ageDefiningNuc )
-              nuc_json_obj["AgeTiedTo"] = nuc.ageDefiningNuc->symbol;
-          }else
-          {
-            nuc_json_obj["Age"] = PhysicalUnits::printToBestTimeUnits(nuc.age,3);
-          }
-        }//if( nuc.ageIsFittable )
-        
-        switch( nuc.sourceType )
-        {
-          case ShieldingSourceFitCalc::ModelSourceType::Point:
-            nuc_json_obj["SourceType"] = "Point";
-            break;
-            
-          case ShieldingSourceFitCalc::ModelSourceType::Intrinsic:
-            nuc_json_obj["SourceType"] = "Intrinsic Radiation";
-            break;
-            
-          case ShieldingSourceFitCalc::ModelSourceType::Trace:
-            nuc_json_obj["SourceType"] = "Trace Source";
-            break;
-        }//switch( nuc.sourceType )
-#endif
       }//for( const ShieldingSourceFitCalc::IsoFitStruct &nuc : m_fit_results.fit_src_info )
-      
-#if( USE_TMPLT_RESULT_OUTPUT )
-      data["Geometry"] = GammaInteractionCalc::to_str( fit_results.m_fit_results->geometry );
-#endif
-      
+            
       for( const ShieldingSourceFitCalc::FitShieldingInfo &shield : fit_results.m_fit_results->final_shieldings )
       {
-#if( USE_TMPLT_RESULT_OUTPUT )
-        data["Shieldings"].push_back({
-          { "Geometry", GammaInteractionCalc::to_str(shield.m_geometry) }
-        });
-        
-        auto &shield_json_obj = data["Shieldings"].back();
-        // blah blah blah
-#endif
         //const char *shield.m_geometry );
         
         /** Dimensions of this shielding; the meaning of the entries differs depending on the geometry,
@@ -382,12 +457,179 @@ void fit_activities_in_files( const std::string &exemplar_filename,
       }//for( loop fit_results.m_fit_results->fit_src_info )
       
 #if( USE_TMPLT_RESULT_OUTPUT )
-      const string rpt = inja::render(R"(Sources:
-## for src in Sources
-  {{ loop.index1 }}: {{ src.Nuclide }} {% if src.FitActivity %} +- {{ src.ActivityUncertainty }} {% endif %} {% if src.FitActivity %}
-## endfor )", data);
+      // The goal is to create a template that prints out the exact same info as as the current GUI
+      //  log file, and then upgrade from this to hit HTML with the charts and peak fits and stuff.
+      nlohmann::json data;
       
-      cout << "Json: " << rpt << endl;
+      auto add_hist_to_json = []( nlohmann::json &data,
+                         const bool is_background,
+                         const shared_ptr<const SpecUtils::Measurement> &spec_ptr,
+                         const std::set<int> &sample_numbers,
+                         const string &filename,
+                         const shared_ptr<const BatchPeak::BatchPeakFitResult> &peak_fit ){
+        if( !spec_ptr )
+          return;
+        
+        const SpecUtils::Measurement &spec = *spec_ptr;
+        
+        const double lt = spec.live_time();
+        const double rt = spec.real_time();
+        const string lt_str = PhysicalUnits::printToBestTimeUnits(lt,3);
+        const string rt_str = PhysicalUnits::printToBestTimeUnits(rt,3);
+        const vector<int> sample_nums( begin(sample_numbers), end(sample_numbers) );
+        
+        D3SpectrumExport::D3SpectrumOptions spec_json_options;
+        if( peak_fit )
+        {
+          const BatchPeak::BatchPeakFitResult &fit_res = *peak_fit;
+          const deque<std::shared_ptr<const PeakDef>> &fore_peaks = fit_res.fit_peaks;
+          const vector<shared_ptr<const PeakDef> > inpeaks( begin(fore_peaks), end(fore_peaks) );
+          spec_json_options.peaks_json = PeakDef::peak_json( inpeaks, spec_ptr );
+        }//if( fit_results.m_peak_fit_results )
+        
+        //spec_json_options.line_color = "rgb(0,0,0)"; //black
+        spec_json_options.peak_color = "rgba(0,51,255,0.6)";
+        spec_json_options.title = "";
+        spec_json_options.display_scale_factor = 1.0;
+        spec_json_options.spectrum_type = SpecUtils::SpectrumType::Foreground;
+        
+        //We will only have foreground or background on this spectrum, so even if we say
+        //  background ID is 2, instead of a negative number, things should be fine
+        const size_t specID = is_background ? 2 : 1;
+        const int backID = is_background ? -1 : 2;
+        
+        stringstream spec_strm;
+        D3SpectrumExport::write_spectrum_data_js( spec_strm, spec, spec_json_options, specID, backID );
+        const string spectrum_json_str = spec_strm.str();
+        
+        nlohmann::json spectrum_json;
+        try
+        {
+          if( !spectrum_json_str.empty() )
+            spectrum_json = nlohmann::json::parse( spectrum_json_str );
+        }catch( std::exception &e )
+        {
+          cerr << "Failed to parse spectrum JSON: " << e.what()
+          << "\n\nJSON: " << spectrum_json_str << endl << endl;
+          assert( 0 );
+        }
+        
+        const char * const label = is_background ? "background" : "foreground";
+        data[label] = {
+          { "LiveTimeSeconds", lt },
+          { "LiveTimeStr", lt_str },
+          { "RealTimeSeconds", rt },
+          { "RealTimeStr", rt_str },
+          { "LowerSpectrumEnergy", spec.gamma_channel_lower(0) },
+          { "UpperSpectrumEnergy", spec.gamma_channel_upper(spec.num_gamma_channels() - 1) },
+          { "NumberChannels", (int)spec.num_gamma_channels() },
+          { "GammaSum", spec.gamma_count_sum() },
+          { "ContainedNeutrons", spec.contained_neutron() },
+          { "NeutronSum", spec.neutron_counts_sum() },
+          { "SampleNumbers", sample_nums },
+          //detector names?
+          { "Filename", filename },
+          { "spectrum", spectrum_json }
+        };
+      };//add_hist_to_json(...)
+      
+      auto add_peak_fit_options_to_json = []( nlohmann::json &data, const BatchPeak::BatchPeakFitOptions &options ){
+        auto &options_obj = data["PeakFitOptions"];
+        options_obj["RefitEnergyCal"] = options.refit_energy_cal;
+        options_obj["UseExemplarEnergyCal"] = options.use_exemplar_energy_cal;
+        options_obj["WriteN42WithPeaks"] = options.write_n42_with_peaks;
+        options_obj["ShowNonFitPeaks"] = options.show_nonfit_peaks;
+        options_obj["OutputDir"] = options.output_dir;
+        if( !options.background_subtract_file.empty() )
+          options_obj["BackgroundSubFile"] = options.background_subtract_file;
+        if( !options.background_subtract_samples.empty() )
+        {
+          options_obj["BackgroundSubSamples"] = vector<int>{ begin(options.background_subtract_samples),
+            end(options.background_subtract_samples)
+          };
+        }
+      };
+      
+      
+      
+      
+      if( fit_results.m_foreground )
+      {
+        add_hist_to_json( data, false, fit_results.m_foreground,
+                         fit_results.m_foreground_sample_numbers, fit_results.m_filename,
+                         fit_results.m_peak_fit_results );
+      }//if( fit_results.m_foreground )
+      
+      if( fit_results.m_background )
+      {
+        string filename = fit_results.m_background_file ? fit_results.m_background_file->filename() 
+                          : string();
+        add_hist_to_json( data, true, fit_results.m_background,
+                         fit_results.m_background_sample_numbers, filename,
+                         fit_results.m_background_peak_fit_results );
+      }
+      
+      
+      add_peak_fit_options_to_json( data, fit_results.m_options );
+    
+      shared_ptr<const DetectorPeakResponse> drf = fit_results.m_options.drf_override;
+      if( !drf && fit_results.m_exemplar_file )
+        drf = fit_results.m_exemplar_file->detector();
+      
+      shield_src_fit_results_to_json( *fit_results.m_fit_results, drf, data );
+      
+      
+      
+      
+      
+      
+      //InterSpec::setStaticDataDirectory( SpecUtils::append_path(datadir,"data") );
+      string tmplt_dir = InterSpec::staticDataDirectory();
+      assert( !tmplt_dir.empty() );
+      if( tmplt_dir.empty() )
+        tmplt_dir = "./data";
+      tmplt_dir = SpecUtils::append_path( tmplt_dir, ".." ); //Also see: `WServer::instance()->appRoot()`, which isnt valid right now
+      tmplt_dir = SpecUtils::append_path( tmplt_dir, "InterSpec_resources" );
+      tmplt_dir = SpecUtils::append_path( tmplt_dir, "static_text" );
+      tmplt_dir = SpecUtils::append_path( tmplt_dir, "ShieldSourceFitLog" );
+      
+      // inja assumes trailing path separator, for its template path
+#if( defined(_WIN32) )
+      tmplt_dir += '\\';
+#else
+      tmplt_dir += '/';
+#endif
+      
+      try
+      {
+        inja::Environment env{ tmplt_dir };
+        inja::Template tmplt = env.parse_template( "std_fit_log.tmplt.txt" );
+        
+        // TODO: allow users to have their own directory of templates (because templates can include other templates)
+       
+        
+        
+          /*
+           ActShieldCalcLogInfo -->
+          Peaks: [{energy: 99, fwhm: 2.1, counts: 1220, countsUncert: 120, cps: 123,
+           ExpectedCounts: 1250, NSigmaOff: -0.23,
+           EmittedInto4Pi: 161942,
+           EmittedInto4PiCps: 1619
+           srcs: [{name: "I131", energy: 98.6, br: 0.34, counts: 1220, cps, 123}, {name: "OtherNuc", ...}],
+           SolidAngle: 0.00005,
+           IntrinsicEff: 0.62
+           }
+          ]
+          */
+          
+        
+        
+        const string rpt = env.render(tmplt, data);
+        cout << "\n\nJson:\n" << rpt << endl;
+      }catch( std::exception &e )
+      {
+        cerr << "Error tempalting results: " << e.what() << endl;
+      }
 #endif
     }else
     {
@@ -499,7 +741,6 @@ BatchActivityFitResult fit_activities_in_file( const std::string &exemplar_filen
   result.m_result_code = BatchActivityFitResult::ResultCode::UnknownStatus;
   result.m_filename = filename;
   result.m_exemplar_sample_numbers = exemplar_sample_nums;
-  
   
   
   if( !cached_exemplar_n42 )

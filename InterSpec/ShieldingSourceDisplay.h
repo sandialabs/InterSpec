@@ -111,6 +111,7 @@ namespace GammaInteractionCalc
   enum class ModelSourceType : int;
   class ShieldingSourceChi2Fcn;
   struct SourceFitDef;
+  struct PeakDetail;
 }//namespace GammaInteractionCalc
 
 class InterSpec;
@@ -617,7 +618,10 @@ protected:
   /** Undoes the changes from #setWidgetStateForFitStarting */
   void setWidgetStateForFitBeingDone();
   
-  void updateChi2ChartActual();
+  /** If results are passed in, and they are final, will use those to set the peak chart information and such, 
+   or else will call `shieldingFitnessFcn()`.
+   */
+  void updateChi2ChartActual( std::shared_ptr<const ShieldingSourceFitCalc::ModelFitResults> results );
   virtual void layoutSizeChanged( int width, int height ) override;
   
 protected:
@@ -691,6 +695,7 @@ protected:
   
   AuxWindow *m_logDiv;
   std::vector<std::string> m_calcLog;
+  std::unique_ptr<const std::vector<GammaInteractionCalc::PeakDetail>> m_peakCalcLogInfo;
   
   AuxWindow *m_modelUploadWindow;
 #if( USE_DB_TO_STORE_SPECTRA )

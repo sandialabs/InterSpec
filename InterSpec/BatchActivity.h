@@ -121,7 +121,6 @@ namespace BatchActivity
     
     BatchActivityFitOptions m_options;
     
-    // Blah blah blah
     std::shared_ptr<const BatchPeak::BatchPeakFitResult> m_peak_fit_results;
     std::shared_ptr<const BatchPeak::BatchPeakFitResult> m_background_peak_fit_results;
     

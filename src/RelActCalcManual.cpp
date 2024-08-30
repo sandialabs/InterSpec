@@ -647,7 +647,7 @@ void fit_rel_eff_eqn_lls( const RelActCalc::RelEffEqnForm fcn_form,
     throw runtime_error( "fit_rel_eff_eqn_lls: no isotopes specified." );
   
   const int poly_terms = static_cast<int>(order) + 1;
-  const int num_peaks = peak_infos.size();
+  const int num_peaks = static_cast<int>( peak_infos.size() );
   
   vector<double> energies(num_peaks,0.0), meas_rel_eff(num_peaks,0.0), meas_rel_eff_uncert(num_peaks,0.0);
   
@@ -798,7 +798,7 @@ vector<GenericPeakInfo> add_nuclides_to_peaks( const std::vector<GenericPeakInfo
     
     GammaInteractionCalc::ShieldingSourceChi2Fcn::cluster_peak_activities( energy_gammas_map,
                             energy_widths, mixture, activity, n.age, cluster_sigma, -1,
-                            decay_correct, real_time, nullptr );
+                            decay_correct, real_time, nullptr, nullptr );
     
     // Convert energy_gammas_map to a vector for convenience
     vector<pair<double,double>> energy_gammas;
@@ -910,7 +910,7 @@ void fit_rel_eff_eqn_lls( const RelActCalc::RelEffEqnForm fcn_form,
     GammaInteractionCalc::ShieldingSourceChi2Fcn::cluster_peak_activities( energy_gammas_map,
                                             energy_widths, mixture, n.rel_activity, n.age,
                                             photopeakClusterSigma, energyToCluster,
-                                            accountForDecayDuringMeas, realTime, nullptr );
+                                            accountForDecayDuringMeas, realTime, nullptr, nullptr );
   }//for( const auto &n : nuclides )
   
   // Convert energy_gammas_map to a vector for convenience

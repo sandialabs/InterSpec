@@ -135,7 +135,7 @@ set(MAX_SPECTRUM_MEMMORY_SIZE_MB 256
     "Amount of memory to allow spectra to take up before trying to offload them onto disk when not in use"
 )
 
-if( USE_BATCH_TOOLS AND NOT BUILD_AS_ELECTRON_APP )
+if( (USE_BATCH_TOOLS AND NOT BUILD_AS_ELECTRON_APP) OR BUILD_AS_OSX_APP )
   set( INTERSPEC_LIB_TYPE "SHARED" )
 else()
   set( INTERSPEC_LIB_TYPE "STATIC" )

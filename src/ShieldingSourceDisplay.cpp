@@ -2838,6 +2838,7 @@ ShieldingSourceDisplay::ShieldingSourceDisplay( PeakModel *peakModel,
     m_showLog( nullptr ),
     m_logDiv( nullptr ),
     m_calcLog{},
+    m_peakCalcLogInfo{},
     m_modelUploadWindow( nullptr ),
 #if( USE_DB_TO_STORE_SPECTRA )
     m_modelDbBrowseWindow( nullptr ),
@@ -3507,7 +3508,7 @@ void ShieldingSourceDisplay::render( Wt::WFlags<Wt::RenderFlag> flags )
   
   if( m_chi2ChartNeedsUpdating )
   {
-    updateChi2ChartActual();
+    updateChi2ChartActual( nullptr );
     m_chi2ChartNeedsUpdating = false;
   }
   
@@ -5620,7 +5621,7 @@ void ShieldingSourceDisplay::updateChi2Chart()
 }//void updateChi2Chart()
 
 
-void ShieldingSourceDisplay::updateChi2ChartActual()
+void ShieldingSourceDisplay::updateChi2ChartActual( std::shared_ptr<const ShieldingSourceFitCalc::ModelFitResults> results )
 {
   try
   {
@@ -5632,44 +5633,59 @@ void ShieldingSourceDisplay::updateChi2ChartActual()
   
   try
   {
-    auto fcnAndPars = shieldingFitnessFcn();
-    
-    std::shared_ptr<GammaInteractionCalc::ShieldingSourceChi2Fcn> &chi2Fcn = fcnAndPars.first;
-    ROOT::Minuit2::MnUserParameters &inputPrams = fcnAndPars.second;
-    
-    const unsigned int ndof = inputPrams.VariableParameters();
-    
-    const vector<double> params = inputPrams.Params();
-    const vector<double> errors = inputPrams.Errors();
-    GammaInteractionCalc::ShieldingSourceChi2Fcn::NucMixtureCache mixcache;
-    
-    
-    m_calcLog.clear();
     if( m_logDiv )
     {
       m_logDiv->contents()->clear();
       m_logDiv->hide();
     }//if( m_logDiv )
     
-    const vector< tuple<double,double,double,Wt::WColor,double> > chis
-                               = chi2Fcn->energy_chi_contributions( params, mixcache, &m_calcLog );
+    unsigned int ndof = 1;
+    vector<GammaInteractionCalc::PeakResultPlotInfo> chis;
+    
+    if( results && results->peak_comparisons && results->peak_calc_details
+       && (results->successful == ShieldingSourceFitCalc::ModelFitResults::FitStatus::Final) )
+    {
+      ndof = results->numDOF;
+      chis = *results->peak_comparisons;
+      m_calcLog = results->peak_calc_log;
+      m_peakCalcLogInfo.reset( new vector<GammaInteractionCalc::PeakDetail>( *results->peak_calc_details ) );
+    }else
+    {
+      m_calcLog.clear();
+      m_peakCalcLogInfo.reset();
+     
+      auto fcnAndPars = shieldingFitnessFcn();
+      
+      std::shared_ptr<GammaInteractionCalc::ShieldingSourceChi2Fcn> &chi2Fcn = fcnAndPars.first;
+      ROOT::Minuit2::MnUserParameters &inputPrams = fcnAndPars.second;
+      
+      ndof = inputPrams.VariableParameters();
+      
+      const vector<double> params = inputPrams.Params();
+      const vector<double> errors = inputPrams.Errors();
+      GammaInteractionCalc::ShieldingSourceChi2Fcn::NucMixtureCache mixcache;
+      
+      vector<GammaInteractionCalc::PeakDetail> calcLog;
+      chis = chi2Fcn->energy_chi_contributions( params, mixcache, &m_calcLog, &calcLog );
+      
+      m_peakCalcLogInfo.reset( new vector<GammaInteractionCalc::PeakDetail>( calcLog ) );
+    }
     
     m_showLog->setDisabled( m_calcLog.empty() );
 
-    typedef tuple<double,double,double,Wt::WColor,double> DDPair;
-    vector< DDPair > keeper_points;
+    vector<GammaInteractionCalc::PeakResultPlotInfo> keeper_points;
 
     for( size_t row = 0; row < chis.size(); ++row )
     {
-      const double energy = std::get<0>(chis[row]);
-      const double chi = std::get<1>(chis[row]);
-      const double scale = std::get<2>(chis[row]);
-      const WColor &color = std::get<3>(chis[row]);
-      const double scale_uncert = std::get<4>(chis[row]);
+      const double energy = chis[row].energy;
+      const double chi = chis[row].numSigmaOff;
+      const double scale = chis[row].observedOverExpected;
+      const WColor &color = chis[row].peakColor;
+      const double scale_uncert = chis[row].observedOverExpectedUncert;
 
       if( fabs(chi) < 1.0E5 && !IsInf(chi) && !IsNan(chi)
           && !IsInf(energy) && !IsNan(energy) )
-        keeper_points.push_back( DDPair(energy,chi,scale,color,scale_uncert) );
+        keeper_points.push_back( chis[row] );
     }//for( size_t row = 0; row < chis.size(); ++row )
 
     m_chi2Graphic->setNumFitForParams( ndof );
@@ -5694,13 +5710,13 @@ void ShieldingSourceDisplay::updateChi2ChartActual()
     
     for( int row = 0; row < nrow; ++row  )
     {
-      const DDPair &p = keeper_points[row];
+      const GammaInteractionCalc::PeakResultPlotInfo &p = keeper_points[row];
       
-      const double &energy = std::get<0>(p);
-      const double &chi = std::get<1>(p);
-      const double &scale = std::get<2>(p);
-      WColor color = std::get<3>(p);
-      const double &scale_uncert = std::get<4>(p);
+      const double &energy = p.energy;
+      const double &chi = p.numSigmaOff;
+      const double &scale = p.observedOverExpected;
+      WColor color = p.peakColor;
+      const double &scale_uncert = p.observedOverExpectedUncert;
       
       if( IsNan(energy) || IsInf(chi) )
       {
@@ -7183,7 +7199,7 @@ void ShieldingSourceDisplay::deSerialize( const rapidxml::xml_node<char> *base_n
     const vector<double> params = inputPrams.Params();
     const vector<double> errors = inputPrams.Errors();
     GammaInteractionCalc::ShieldingSourceChi2Fcn::NucMixtureCache mixcache;
-    const vector< tuple<double,double,double,WColor,double> > chis
+    const vector<GammaInteractionCalc::PeakResultPlotInfo> chis
                                    = chi2Fcn->energy_chi_contributions( params, mixcache, nullptr );
     
     if( chis.size() )
@@ -7200,16 +7216,16 @@ void ShieldingSourceDisplay::deSerialize( const rapidxml::xml_node<char> *base_n
       rapidxml::xml_node<> *node = nullptr;
       rapidxml::xml_node<> *eval_node = doc->allocate_node( rapidxml::node_element, "EvaluatedEnergies" );
       
-      for( const auto &p : chis )
+      for( const GammaInteractionCalc::PeakResultPlotInfo &p : chis )
       {
         rapidxml::xml_node<> *point_node = doc->allocate_node( rapidxml::node_element, "EvalPoint" );
         eval_node->append_node( point_node );
         
-        const double energy = get<0>(p);
-        const double chi = get<1>(p);
-        const double scale = get<2>(p);
-        const WColor &color = get<3>(p);
-        const double scale_uncert = get<4>(p);
+        const double energy = p.energy;
+        const double chi = p.numSigmaOff;
+        const double scale = p.observedOverExpected;
+        const WColor &color = p.peakColor;
+        const double scale_uncert = p.observedOverExpectedUncert;
         
         if( !IsInf(chi) && !IsNan(chi) )
           chi2 += chi*chi;
@@ -8464,7 +8480,8 @@ void ShieldingSourceDisplay::updateGuiWithModelFitResults( std::shared_ptr<Shiel
     }//for( int ison = 0; ison < niso; ++ison )
     */
     
-    updateChi2ChartActual();
+    
+    updateChi2ChartActual( results );
     m_chi2ChartNeedsUpdating = false;
     updateCalcLogWithFitResults( m_currentFitFcn, results );
   }catch( std::exception &e )

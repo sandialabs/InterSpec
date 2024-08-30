@@ -2134,11 +2134,36 @@ void fit_model( const std::string wtsession,
       results->errormsgs.push_back( msg );
     }//if( !minimum.IsValid() )
     
+    const vector<double> params = fitParams.Params();
+    const vector<double> errors = fitParams.Errors();
+    const unsigned int ndof = inputPrams->VariableParameters();
+    
+    GammaInteractionCalc::ShieldingSourceChi2Fcn::NucMixtureCache mixcache;
+
+    vector<GammaInteractionCalc::PeakDetail> peak_calc_details;
+    
+    const auto peak_comparisons = chi2Fcn->energy_chi_contributions( params, mixcache,
+                                                  &(results->peak_calc_log),
+                                                  &(peak_calc_details) );
+    
+    results->peak_calc_details.reset( new vector<GammaInteractionCalc::PeakDetail>(peak_calc_details) );
+    results->peak_comparisons.reset( new vector<GammaInteractionCalc::PeakResultPlotInfo>(peak_comparisons) );
+    
+    if( !results->peak_calc_log.empty() )
+    {
+      char buffer[64];
+      snprintf( buffer, sizeof(buffer), "There %s %i parameter%s fit for",
+                (ndof>1 ? "were" : "was"), int(ndof), (ndof>1 ? "s" : "") );
+      results->peak_calc_log.push_back( "&nbsp;" );
+      results->peak_calc_log.push_back( buffer );
+    }//if( !m_calcLog.empty() )
+    
     results->successful = ShieldingSourceFitCalc::ModelFitResults::FitStatus::Final;
-    results->paramValues = fitParams.Params();
-    results->paramErrors = fitParams.Errors();
+    results->paramValues = params;
+    results->paramErrors = errors;
     results->edm = minimum.Edm();
     results->num_fcn_calls = minimum.NFcn();
+    results->numDOF = ndof;
     results->chi2 = minimum.Fval();  //chi2Fcn->DoEval( results->paramValues );
     results->distance = chi2Fcn->distance();
     results->geometry = chi2Fcn->geometry();
@@ -2146,10 +2171,6 @@ void fit_model( const std::string wtsession,
     results->background_peaks = chi2Fcn->backgroundPeaks();
     results->options = chi2Fcn->options();
     results->initial_shieldings = chi2Fcn->initialShieldings();
-    
-    
-    const vector<double> &params = results->paramValues;
-    const vector<double> &errors = results->paramErrors;
     
     
     {// Begin set fit source info
@@ -2479,7 +2500,7 @@ void fit_model( const std::string wtsession,
   }// try / catch
   
   chi2Fcn->fittingIsFinished();
-  
+ 
   if( finished_fcn && update_gui )
   {
     Wt::WApplication *app = Wt::WApplication::instance();

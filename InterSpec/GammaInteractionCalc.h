@@ -394,6 +394,82 @@ struct DistributedSrcCalc
 };//struct DistributedSrcCalc
   
 
+/** A struct to hold enough information for each point on the pulls chart that shows comparison of
+ detected vs model, for each peak
+ */
+struct PeakResultPlotInfo
+{
+  /** Energy of the gamma associated with the peak. */
+  double energy;
+  
+  /** `(observed_counts - expected_counts) / observed_uncertainty` */
+  double numSigmaOff;
+  
+  /** `observed_counts / expected_counts` */
+  double observedOverExpected;
+  double observedOverExpectedUncert;
+  
+  /** `peak.lineColor()` */
+  Wt::WColor peakColor;
+};//struct PeakResultPlotInfo
+  
+/** A struct to capture the details of each peak detected vs what parts of the model contributed.  */
+struct PeakDetail
+{
+  double energy, decayParticleEnergy, fwhm, counts, countsUncert, cps, cpsUncert;
+  double expectedCounts, observedCounts, observedUncert, numSigmaOff;
+  double observedOverExpected, observedOverExpectedUncert;
+  //float modelInto4Pi, modelInto4PiCps;
+  double detSolidAngle, detIntrinsicEff, detEff;
+  
+  float backgroundCounts, backgroundCountsUncert;
+  
+  struct PeakSrc
+  {
+    float energy, br, cps, decayCorrection;
+    PeakSrc()
+    : energy(0.0f), br(0.0f), cps(0.0f), decayCorrection( 1.0f )
+    {
+    }
+  };//struct PeakSrc
+  
+  std::map<std::string,PeakSrc> m_sources;
+  
+  /** The fractional attenuation by this material (e.g., no attenuation is 1.0. Not valid for volumetric sources.
+   The index of this vector is the same index as shieldings in the model
+   */
+  std::vector<double> m_attenuations;
+  
+  
+  struct VolumeSrc
+  {
+    bool trace; // Trace or intrinsic
+    double integral;
+    double srcVolumetricActivity;
+    
+    bool inSituExponential;
+    double inSituRelaxationLength;
+    
+    double detIntrinsicEff;
+    
+    std::string sourceName;
+  };//struct VolumeSrc
+  
+  std::vector<VolumeSrc> m_volumetric_srcs;
+  
+  PeakDetail()
+  : energy( 0.0 ), decayParticleEnergy( 0.0 ), fwhm( 0.0 ), counts( 0.0 ),
+  countsUncert( 0.0 ), cps( 0.0 ), cpsUncert( 0.0 ),
+  expectedCounts( 0.0 ), observedCounts( 0.0 ), observedUncert( 0.0 ),
+  numSigmaOff( 0.0 ), observedOverExpected( 0.0 ),
+  //modelInto4Pi( 0.0f ), modelInto4PiCps( 0.0f ),
+  detSolidAngle( 0.0 ), detIntrinsicEff( 0.0 ), detEff( 0.0 ),
+  backgroundCounts( 0.0f ), backgroundCountsUncert( 0.0f )
+  {
+  }
+};//struct PeakDetail
+  
+  
 class ShieldingSourceChi2Fcn
     : public ROOT::Minuit2::FCNBase
 {
@@ -683,11 +759,11 @@ public:
   //If 'info' is non-null then it will be filled with information about how much
   //  each nuclide/peak was attributed to each detected peak (currently not
   //  implemented)
-  //Each retured enry is {energy,chi,scale,PeakColor,scale_uncert}.  Scale is obs/expected
-  std::vector< std::tuple<double,double,double,Wt::WColor,double> > energy_chi_contributions(
+  std::vector<PeakResultPlotInfo> energy_chi_contributions(
                                   const std::vector<double> &x,
                                   NucMixtureCache &mixturecache,
-                                  std::vector<std::string> *info = 0 ) const;
+                                  std::vector<std::string> *info = nullptr,
+                                  std::vector<PeakDetail> *log_info = nullptr ) const;
 
   ShieldingSourceChi2Fcn&	operator=( const ShieldingSourceChi2Fcn & );
   virtual double Up() const;
@@ -846,18 +922,20 @@ public:
                   const double energyToCluster,
                   const bool accountForDecayDuringMeas,
                   const double measDuration,
-                  std::vector<std::string> *info
+                  std::vector<std::string> *info,
+                  std::vector<GammaInteractionCalc::PeakDetail> *log_info
               );
 
 
   //returns the chi computed from the expected verses observed counts; one
   //  chi2 for each peak energy.  Each returned entry is {energy,chi,scale,PeakColor,ScaleUncert},
   //  where scale is observed/expected
-  static std::vector< std::tuple<double,double,double,Wt::WColor,double> > expected_observed_chis(
+  static std::vector<PeakResultPlotInfo> expected_observed_chis(
                               const std::vector<PeakDef> &peaks,
                               const std::vector<PeakDef> &backgroundPeaks,
                               const std::map<double,double> &energy_count_map,
-                              std::vector<std::string> *info = 0 );
+                              std::vector<std::string> *info = 0,
+                              std::vector<GammaInteractionCalc::PeakDetail> *log_info = nullptr );
 protected:
   
   void zombieCallback( const boost::system::error_code &ec );
