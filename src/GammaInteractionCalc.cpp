@@ -4888,6 +4888,11 @@ double ShieldingSourceChi2Fcn::distance() const
   return m_distance;
 }
   
+
+const std::shared_ptr<const DetectorPeakResponse> &ShieldingSourceChi2Fcn::detector() const
+{
+  return m_detector;
+}
   
 const ShieldingSourceFitCalc::ShieldingSourceFitOptions &ShieldingSourceChi2Fcn::options() const
 {
@@ -4939,7 +4944,7 @@ double ShieldingSourceChi2Fcn::DoEval( const std::vector<double> &x ) const
       m_mixtureCache.clear();
     
     const vector<PeakResultPlotInfo> chi2s
-                                = energy_chi_contributions( x, m_mixtureCache, nullptr, nullptr );
+                          = energy_chi_contributions( x, {}, m_mixtureCache, nullptr, nullptr );
     double chi2 = 0.0;
     
     const size_t npoints = chi2s.size();
@@ -5188,20 +5193,25 @@ void ShieldingSourceChi2Fcn::cluster_peak_activities( std::map<double,double> &e
     if( log_info )
     {
       assert( mixture.numInitialNuclides() == 1 );
+      const SandiaDecay::Nuclide * const nuc = mixture.initialNuclide(0);
+      assert( nuc );
       
       auto pos = std::find_if( begin(*log_info), end(*log_info), [energy]( const PeakDetail &p ) {
-        return p.decayParticleEnergy == energy;
+        return (p.decayParticleEnergy == energy);
       });
       
       assert( pos != end(*log_info) );
       if( pos != end(*log_info) )
       {
         PeakDetail::PeakSrc src;
+        src.nuclide = nuc;
         src.energy = aep.energy;
         src.br = age_sf * aep.numPerSecond / sm_activityUnits;
         src.cps = contribution*PhysicalUnits::second;
+        src.age = age;
+        src.calcActivity = act;
         src.decayCorrection = 0.0;
-        
+          
         if( !non_decay_cor_gammas.empty() )
         {
           //Find same-energy gamma, and get correction factor
@@ -5215,7 +5225,7 @@ void ShieldingSourceChi2Fcn::cluster_peak_activities( std::map<double,double> &e
             src.decayCorrection = aep.numPerSecond / non_corr_pos->numPerSecond;
         }//if( we are correcting for decays during measurement )
         
-        pos->m_sources[mixture.initialNuclide(0)->symbol] = src;
+        pos->m_sources.push_back( src );
       }//if( pos != end(*log_info) )
     }//if( log_info )
     
@@ -5587,6 +5597,7 @@ void ShieldingSourceChi2Fcn::setBackgroundPeaks(
   
 vector<PeakResultPlotInfo>
        ShieldingSourceChi2Fcn::energy_chi_contributions( const std::vector<double> &x,
+                                                        const std::vector<double> &error_params,
                                          ShieldingSourceChi2Fcn::NucMixtureCache &mixturecache,
                                          std::vector<std::string> *info,
                                          std::vector<GammaInteractionCalc::PeakDetail> *log_info ) const
@@ -5597,6 +5608,8 @@ vector<PeakResultPlotInfo>
 
   // Make sure attenuate_for_air isnt set for fixed geometry DRFs
   assert( !m_options.attenuate_for_air || !m_detector || !m_detector->isFixedGeometry() );
+
+  assert( !log_info || (x.size() == error_params.size()) );
   
 //  cerr << "energy_chi_contributions: vals={ ";
 //  for( size_t i = 0; i < x.size(); ++i )
@@ -5729,13 +5742,7 @@ vector<PeakResultPlotInfo>
   //Propagate the gammas through each material - note we are using the fit peak
   //  mean here, and not the (pre-cluster) photopeak energy
   double shield_outer_rad = 0.0;
-  double outer_dims[3] = { 0.0, 0.0, 0.0 };  //Only filled out `if( log_info != nullptr )`
   const size_t nMaterials = m_materials.size();
-  
-  /*
-  if( log_info )
-    log_info->m_shields.resize( nMaterials );
-  */
   
   for( size_t materialN = 0; materialN < nMaterials; ++materialN )
   {
@@ -5766,93 +5773,31 @@ vector<PeakResultPlotInfo>
   
       att_coef_fcn = boost::bind( &transmition_coefficient_generic, atomic_number, areal_density,
                                  boost::placeholders::_1 );
-      
-      /*
-      if( log_info )
-      {
-        ActShieldCalcLogInfo::ShieldInfo &sinfo = log_info->m_shields[materialN];
-        sinfo.is_generic = true;
-        sinfo.name = "Generic (an=" + SpecUtils::printCompact(atomic_number,3)
-                      + ", ad=" + SpecUtils::printCompact(ad_in_gcm2,4) + ")";
-        sinfo.ad = areal_density;
-        sinfo.an = atomic_number;
-        sinfo.thickness = 0.0;
-        sinfo.inner_rad = shield_outer_rad;
-        for( size_t i = 0; i < 3; ++i )
-        {
-          sinfo.inner_dimensions[i] = outer_dims[i];
-          sinfo.outer_dimensions[i] = outer_dims[i];
-        }
-      }//if( log_info )
-       */
     }else
     {
       double thickness = 0.0;
-      double dim_thickness[3] = { 0.0, 0.0, 0.0 }; //Only filled out `if( log_info != nullptr )`
       switch( m_geometry )
       {
         case GeometryType::Spherical:
           thickness = sphericalThickness(materialN,x);
-          if( log_info )
-            dim_thickness[0] = thickness;
           break;
           
         case GeometryType::CylinderEndOn:
           thickness = cylindricalLengthThickness(materialN,x);
-          if( log_info )
-          {
-            dim_thickness[0] = cylindricalRadiusThickness(materialN,x);
-            dim_thickness[1] = thickness;
-          }
           break;
           
         case GeometryType::CylinderSideOn:
           thickness = cylindricalRadiusThickness(materialN,x);
-          if( log_info )
-          {
-            dim_thickness[0] = thickness;
-            dim_thickness[1] = cylindricalLengthThickness(materialN,x);;
-          }
           break;
           
         case GeometryType::Rectangular:
           thickness = rectangularDepthThickness(materialN,x);
-          
-          if( log_info )
-          {
-            dim_thickness[0] = rectangularWidthThickness(materialN, x);
-            dim_thickness[1] = rectangularHeightThickness(materialN, x);
-            dim_thickness[2] = thickness;
-          }
           break;
           
         case GeometryType::NumGeometryType:
           assert( 0 );
           break;
       }//switch( m_geometry )
-      
-      /*
-      if( log_info )
-      {
-        ActShieldCalcLogInfo::ShieldInfo &sinfo = log_info->m_shields[materialN];
-        sinfo.is_generic = false;
-        sinfo.name = material->name;
-        sinfo.geometry = m_geometry;
-        sinfo.chemicalFormula = material->chemicalFormula();
-        sinfo.density = material->density;
-        sinfo.ad = (material->density * thickness);
-        sinfo.an = material->massWeightedAtomicNumber();
-        sinfo.inner_rad = shield_outer_rad;
-        sinfo.thickness = thickness;
-        
-        for( size_t i = 0; i < 3; ++i )
-        {
-          sinfo.inner_dimensions[i] = outer_dims[i];
-          outer_dims[i] += dim_thickness[i];
-          sinfo.outer_dimensions[i] = outer_dims[i];
-        }
-      }//if( log_info )
-      */
       
       shield_outer_rad += thickness;
       
@@ -6631,10 +6576,381 @@ vector<PeakResultPlotInfo>
   for( EnergyCountMap::value_type &energy_count : energy_count_map )
     energy_count.second *= m_liveTime;
 
+  if( log_info )
+  {
+    const size_t nnucs = numNuclides();
+    for( size_t i = 0; i < nnucs; ++i )
+    {
+      const SandiaDecay::Nuclide * const nuc = nuclide(i);
+      assert( nuc );
+      if( !nuc )
+        continue;
+      
+      const double activityVal = activity(nuc, x);
+      double activityUncertVal = 0.0, massFractionVal = 0.0, massFractionUncertVal = 0.0;
+      double ageUncert = 0.0;
+      
+      if( !error_params.empty() )
+      {
+        ageUncert = age(nuc, error_params);
+        activityUncertVal = activityUncertainty(nuc, x, error_params);
+      }
+      
+      if( isSelfAttenSource(nuc) )
+      {
+        for( size_t shielding_index = 0; shielding_index < numMaterials(); ++shielding_index )
+        {
+          const Material * const mat = material(shielding_index);
+          if( !mat )
+            continue;
+          
+          const vector<const SandiaDecay::Nuclide *> nucs = selfAttenuatingNuclides(shielding_index);
+          const auto pos = std::find( begin(nucs), end(nucs), nuc );
+          if( pos != end(nucs) )
+          {
+            massFractionVal = massFraction(shielding_index, nuc, x);
+            if( !error_params.empty() )
+              massFractionUncertVal = massFractionUncert(shielding_index, nuc, x, error_params);
+          }
+        }//for( loop over shielding_index )
+      }//if( isSelfAtten )
+        
+      
+      bool foundNuc = false;
+      for( GammaInteractionCalc::PeakDetail &p : *log_info )
+      {
+        for( PeakDetail::PeakSrc &psrc : p.m_sources )
+        {
+          if( psrc.nuclide == nuc )
+          {
+            foundNuc = true;
+            
+            psrc.isTraceSource = isTraceSource(nuc);
+            if( psrc.isTraceSource )
+              psrc.traceSourceType = traceSourceActivityType(nuc);
+            psrc.isSelfAttenSource = isSelfAttenSource(nuc);
+            //double ShieldingSourceChi2Fcn::relaxationLength(nuc);
+            for( size_t i = 0; i < numMaterials(); ++i )
+              psrc.isFittingMassFraction |= isVariableMassFraction( i, nuc );
+            
+            psrc.counts = psrc.cps * m_liveTime;
+            //psrc.countsUncert = countsUncert
+            psrc.ageUncert = ageUncert;
+            //psrc.ageIsFit = ageIsFit
+            //psrc.canFitAge = canFitAge
+            psrc.activity = activityVal;
+            psrc.activityUncert = activityUncertVal;
+            psrc.displayActivity = psrc.isTraceSource ? totalActivity(nuc,x) : activityVal;
+            psrc.displayActivityUncert = (psrc.isTraceSource && !error_params.empty())
+                                          ? totalActivityUncertainty(nuc,x,error_params)
+                                          : activityUncertVal;
+            psrc.massFraction = massFractionVal;
+            psrc.massFractionUncert = massFractionUncertVal;
+          }//if( psrc.nuclide == nuc )
+        }//for( PeakDetail::PeakSrc &psrc : p.m_sources )
+      }//for( GammaInteractionCalc::PeakDetail &p : *log_info )
+      
+      assert( foundNuc );
+    }//for( size_t i = 0; i < nnucs; ++i )
+  }//if( log_info )
+  
+  
   return expected_observed_chis( m_peaks, m_backgroundPeaks, energy_count_map, info, log_info );
 }//vector<PeakResultPlotInfo> energy_chi_contributions(...) const
 
-
+  
+void ShieldingSourceChi2Fcn::log_shield_info( const vector<double> &params,
+                                              const vector<double> &errors,
+                              const vector<ShieldingSourceFitCalc::IsoFitStruct> &fit_src_info,
+                              vector<ShieldingDetails> &shielding_details ) const
+{
+  const ShieldingSourceChi2Fcn * const chi2Fcn = this;
+  
+  const shared_ptr<const DetectorPeakResponse> &det = chi2Fcn->detector();
+  
+  const DetectorPeakResponse::EffGeometryType detType = (det && det->isValid())
+                                                  ? det->geometryType()
+                                                  : DetectorPeakResponse::EffGeometryType::FarField;
+  try
+  {
+    double shield_outer_rad = 0.0;
+    double outer_dims[3] = { 0.0, 0.0, 0.0 };  //Only filled out `if( log_info != nullptr )`
+    
+    const GammaInteractionCalc::GeometryType geometry = chi2Fcn->geometry();
+    const size_t nMaterials = chi2Fcn->numMaterials();
+    
+    for( size_t shielding_index = 0; shielding_index < chi2Fcn->numMaterials(); ++shielding_index )
+    {
+      ShieldingDetails shieldInfo;
+      shieldInfo.m_geometry = geometry;
+      shieldInfo.m_inner_rad = shield_outer_rad;
+      shieldInfo.m_is_generic = chi2Fcn->isGenericMaterial(shielding_index);
+      
+      if( shieldInfo.m_is_generic )
+      {
+        const float atomic_number = static_cast<float>(chi2Fcn->atomicNumber( shielding_index, params ));
+        const float areal_density = static_cast<float>(chi2Fcn->arealDensity( shielding_index, params ));
+        const double ad_in_gcm2 = areal_density * PhysicalUnits::cm2 / PhysicalUnits::g;
+        //auto att_coef_fcn = boost::bind( &transmition_coefficient_generic, atomic_number, areal_density, boost::placeholders::_1 );
+        
+        shieldInfo.m_name = "Generic (an=" + SpecUtils::printCompact(atomic_number,3)
+                      + ", ad=" + SpecUtils::printCompact(ad_in_gcm2,4) + ")";
+        shieldInfo.m_ad = areal_density;
+        shieldInfo.m_an = atomic_number;
+        
+        shieldInfo.m_thickness = 0.0;
+        shieldInfo.m_volume = 0.0;
+        shieldInfo.m_volume_uncert = 0.0;
+        shieldInfo.m_num_dimensions = 0;
+        for( size_t i = 0; i < 3; ++i )
+        {
+          shieldInfo.m_inner_dimensions[i] = outer_dims[i];
+          shieldInfo.m_outer_dimensions[i] = outer_dims[i];
+        }
+      }else
+      {
+        const Material * const material = chi2Fcn->material( shielding_index );
+        assert( material );
+        if( !material )
+          throw std::logic_error( "Unexpected null material" );
+        
+        double thickness = 0.0;
+        double dim_thickness[3] = { 0.0, 0.0, 0.0 }; //Only filled out `if( log_info != nullptr )`
+        switch( geometry )
+        {
+          case GammaInteractionCalc::GeometryType::Spherical:
+            thickness = chi2Fcn->sphericalThickness(shielding_index, params);
+            dim_thickness[0] = thickness;
+            shieldInfo.m_num_dimensions = 1;
+            break;
+            
+          case GammaInteractionCalc::GeometryType::CylinderEndOn:
+            thickness = chi2Fcn->cylindricalLengthThickness(shielding_index, params);
+            dim_thickness[0] = chi2Fcn->cylindricalRadiusThickness(shielding_index, params);
+            dim_thickness[1] = thickness;
+            shieldInfo.m_num_dimensions = 2;
+            break;
+            
+          case GammaInteractionCalc::GeometryType::CylinderSideOn:
+            thickness = chi2Fcn->cylindricalRadiusThickness(shielding_index, params);
+            dim_thickness[0] = thickness;
+            dim_thickness[1] = chi2Fcn->cylindricalLengthThickness(shielding_index, params);
+            shieldInfo.m_num_dimensions = 2;
+            break;
+            
+          case GammaInteractionCalc::GeometryType::Rectangular:
+            thickness = chi2Fcn->rectangularDepthThickness(shielding_index, params);
+            dim_thickness[0] = chi2Fcn->rectangularWidthThickness(shielding_index, params);
+            dim_thickness[1] = chi2Fcn->rectangularHeightThickness(shielding_index, params);
+            dim_thickness[2] = thickness;
+            shieldInfo.m_num_dimensions = 3;
+            break;
+            
+          case GammaInteractionCalc::GeometryType::NumGeometryType:
+            assert( 0 );
+            break;
+        }//switch( m_geometry )
+        
+        
+        shieldInfo.m_name = material ? material->name : string("null");
+        shieldInfo.m_chemical_formula = material ? material->chemicalFormula() : string("null");
+        shieldInfo.m_density = material ? material->density : 0.0f;
+        
+        shieldInfo.m_ad = (shieldInfo.m_density * thickness);
+        shieldInfo.m_an = material ? material->massWeightedAtomicNumber() : 0.0f;
+        shieldInfo.m_thickness = thickness;
+        
+        for( size_t i = 0; i < 3; ++i )
+        {
+          shieldInfo.m_inner_dimensions[i] = outer_dims[i];
+          outer_dims[i] += dim_thickness[i];
+          shieldInfo.m_outer_dimensions[i] = outer_dims[i];
+        }
+        
+        shield_outer_rad += thickness;
+        shieldInfo.m_volume = chi2Fcn->volumeOfMaterial( shielding_index, params );
+        shieldInfo.m_volume_uncert = chi2Fcn->volumeUncertaintyOfMaterial( static_cast<int>(shielding_index), params, errors );
+        
+        const vector<const SandiaDecay::Nuclide *> self_atten_nucs = chi2Fcn->selfAttenuatingNuclides( shielding_index );
+        const vector<const SandiaDecay::Nuclide *> fit_frac_nucs = chi2Fcn->nuclideFittingMassFracFor( shielding_index );
+        
+        for( const auto nuc : fit_frac_nucs )
+        {
+          assert( std::find(begin(self_atten_nucs), end(self_atten_nucs), nuc) != end(self_atten_nucs) );
+        }
+        
+        for( const SandiaDecay::Nuclide *nuc : self_atten_nucs )
+        {
+          assert( chi2Fcn->isVolumetricSource(nuc) );
+          assert( chi2Fcn->isSelfAttenSource(nuc) );
+          assert( !chi2Fcn->isTraceSource(nuc) );
+          
+          ShieldingDetails::SelfAttenComponent comp;
+          comp.m_name = nuc->symbol;
+          comp.m_age = chi2Fcn->age( nuc, params );
+          
+          const auto src_pos = find_if( begin(fit_src_info), end(fit_src_info),
+                  [nuc]( const ShieldingSourceFitCalc::IsoFitStruct &info ){
+            return info.nuclide == nuc;
+          });
+          assert( src_pos != end(fit_src_info) );
+          
+          if( src_pos != end(fit_src_info) )
+          {
+            comp.m_age_is_fitable = src_pos->ageIsFittable;
+            comp.m_age_fit = src_pos->fitAge;
+          }
+          comp.m_age_uncert = comp.m_age_fit ? chi2Fcn->age(nuc, errors) : 0.0;
+          
+          const auto fit_pos = std::find(begin(fit_frac_nucs), end(fit_frac_nucs), nuc);
+          comp.m_is_fit = (fit_pos != end(fit_frac_nucs));
+          
+          comp.m_total_act = chi2Fcn->totalActivity( nuc, params );
+          comp.m_total_act_uncert = chi2Fcn->totalActivityUncertainty( nuc, params, errors );
+          
+          comp.m_mass_frac = chi2Fcn->massFraction(shielding_index, nuc, params);
+          comp.m_mass_frac_uncert = chi2Fcn->massFractionUncert(shielding_index, nuc, params, errors );
+          
+          //chi2Fcn->activityOfSelfAttenSource( nuc, params );
+          
+          shieldInfo.m_mass_fractions.push_back( comp );
+        }//for( const SandiaDecay::Nuclide *nuc : self_atten_nucs )
+        
+        const vector<const SandiaDecay::Nuclide *> trace_srcs = chi2Fcn->traceNuclidesForMaterial( shielding_index );
+        
+        for( const SandiaDecay::Nuclide *nuc : trace_srcs )
+        {
+          assert( chi2Fcn->isVolumetricSource(nuc) );
+          assert( chi2Fcn->isTraceSource(nuc) );
+          assert( !chi2Fcn->isSelfAttenSource(nuc) );
+        
+          ShieldingDetails::TraceSrcDetail src;
+          src.m_name = nuc->symbol;
+          src.m_age = chi2Fcn->age( nuc, params );
+          src.m_trace_type = chi2Fcn->traceSourceActivityType( nuc );
+          src.m_is_exp_dist = (src.m_trace_type == GammaInteractionCalc::TraceActivityType::ExponentialDistribution);
+          const auto src_pos = find_if( begin(fit_src_info), end(fit_src_info),
+                  [nuc]( const ShieldingSourceFitCalc::IsoFitStruct &info ){
+            return info.nuclide == nuc;
+          });
+          assert( src_pos != end(fit_src_info) );
+          
+          if( src_pos != end(fit_src_info) )
+          {
+            src.m_age_is_fitable = src_pos->ageIsFittable;
+            src.m_age_fit = src_pos->fitAge;
+            src.m_fit_activity = src_pos->fitActivity;
+          }
+          src.m_age_uncert = src.m_age_fit ? chi2Fcn->age(nuc, errors) : 0.0;
+          
+          src.m_activity = chi2Fcn->totalActivity( nuc, params ); //Note: for trace sources, the #activity function returns the display activity (so either total, per cc, or per g) for the trace sources.
+          src.m_activity_uncert = chi2Fcn->totalActivityUncertainty( nuc, params, errors );
+          
+          src.m_total_activity = chi2Fcn->activity( nuc, params );
+          src.m_total_activity_uncert = chi2Fcn->activityUncertainty( nuc, params, errors );
+          
+          if( src.m_is_exp_dist )
+            src.m_relaxation_length = chi2Fcn->relaxationLength( nuc );
+          
+          shieldInfo.m_trace_sources.push_back( src );
+        }//for( const SandiaDecay::Nuclide *nuc : trace_srcs )
+      }//if( shieldInfo.m_is_generic ) / else
+    }//for( size_t shielding_index = 0; shielding_index < chi2Fcn->numMaterials(); ++shielding_index )
+  
+  }catch( std::exception &e )
+  {
+    throw std::runtime_error( "There was an error and log info about shielding is not be complete: "
+                         + string(e.what()) );
+  }
+}//log_shield_info(...)
+  
+  
+void ShieldingSourceChi2Fcn::log_source_info( const std::vector<double> &params,
+                        const std::vector<double> &errors,
+                        const vector<ShieldingSourceFitCalc::IsoFitStruct> &fit_src_info,
+                        std::vector<SourceDetails> &info ) const
+{
+  const ShieldingSourceChi2Fcn * const chi2Fcn = this;
+  
+  try
+  {
+    info.clear();
+    
+    const size_t nnuc = chi2Fcn->numNuclides();
+    for( size_t nucn = 0; nucn < nnuc; ++nucn )
+    {
+      const SandiaDecay::Nuclide *nuc = chi2Fcn->nuclide( nucn );
+      assert( nuc );
+      if( !nuc )
+        continue;
+      
+      const auto pos = std::find_if( begin(fit_src_info), end(fit_src_info), [nuc]( const ShieldingSourceFitCalc::IsoFitStruct &iso ) {
+        return iso.nuclide == nuc;
+      });
+      
+      assert( pos != end(fit_src_info) );
+      if( pos == end(fit_src_info) )
+        throw runtime_error( "Missing ShieldingSourceFitCalc::IsoFitStruct for " + nuc->symbol );
+      
+      const ShieldingSourceFitCalc::IsoFitStruct &fit_info = *pos;
+      
+      
+      SourceDetails src;
+      src.nuclide = nuc;
+      src.activity = chi2Fcn->activity( nuc, params );
+      src.activityUncertainty = chi2Fcn->activityUncertainty( nuc, params, errors );
+      src.activityIsFit = fit_info.fitActivity;
+      src.nuclideMass = (src.activity / nuc->activityPerGram()) * PhysicalUnits::gram;
+      src.age = chi2Fcn->age( nuc, params );
+      src.ageUncertainty = chi2Fcn->age( nuc, errors );;
+      src.ageIsFittable = fit_info.ageIsFittable;
+      src.ageIsFit = fit_info.fitAge;
+      src.ageDefiningNuc = fit_info.ageDefiningNuc;
+      src.isTraceSource = chi2Fcn->isTraceSource(nuc);
+      if( src.isTraceSource )
+      {
+        src.traceActivityType = chi2Fcn->traceSourceActivityType(nuc);
+        src.traceSrcDisplayAct = chi2Fcn->totalActivity(nuc,params);
+        src.traceSrcDisplayActUncertainty = chi2Fcn->totalActivityUncertainty(nuc, params, errors );
+        src.traceRelaxationLength = chi2Fcn->relaxationLength(nuc);
+      }//
+      
+      src.isSelfAttenSource = chi2Fcn->isSelfAttenSource( nuc );
+      if( src.isSelfAttenSource )
+      {
+        bool found_shield = false;
+        for( size_t shielding_index = 0; shielding_index < chi2Fcn->numMaterials(); ++shielding_index )
+        {
+          const Material * const mat = chi2Fcn->material(shielding_index);
+          if( !mat )
+            continue;
+          
+          const vector<const SandiaDecay::Nuclide *> nucs = chi2Fcn->selfAttenuatingNuclides(shielding_index);
+          const auto pos = std::find( begin(nucs), end(nucs), nuc );
+          if( pos != end(nucs) )
+          {
+            found_shield = true;
+            
+            src.selfAttenShieldIndex = shielding_index;
+            src.selfAttenShieldName = mat->name;
+            
+            src.isSelfAttenVariableMassFrac = chi2Fcn->isVariableMassFraction(shielding_index, nuc);
+            src.selfAttenMassFrac = chi2Fcn->massFraction(shielding_index, nuc, params);
+            src.selfAttenMassFracUncertainty = chi2Fcn->massFractionUncert(shielding_index, nuc, params, errors);
+          }
+        }//for( loop over shielding_index )
+        
+        assert( found_shield );
+      }//if( src.isSelfAttenSource )
+    }//for( size_t nucn = 0; nucn < nnuc; ++nucn )
+  }catch( std::exception &e )
+  {
+    throw runtime_error( "There was an error and source information log is not complete: "
+                                  + string(e.what()) );
+  }//try / catch
+}//void log_source_info(...)
+  
+  
 ShieldingSourceChi2Fcn::GuiProgressUpdateInfo::GuiProgressUpdateInfo( const size_t updateFreqMs,
                         std::function<void(size_t, double, double, std::vector<double>)> updater )
   : m_gui_updater( updater ),

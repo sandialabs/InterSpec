@@ -5666,7 +5666,7 @@ void ShieldingSourceDisplay::updateChi2ChartActual( std::shared_ptr<const Shield
       GammaInteractionCalc::ShieldingSourceChi2Fcn::NucMixtureCache mixcache;
       
       vector<GammaInteractionCalc::PeakDetail> calcLog;
-      chis = chi2Fcn->energy_chi_contributions( params, mixcache, &m_calcLog, &calcLog );
+      chis = chi2Fcn->energy_chi_contributions( params, errors, mixcache, &m_calcLog, &calcLog );
       
       m_peakCalcLogInfo.reset( new vector<GammaInteractionCalc::PeakDetail>( calcLog ) );
     }
@@ -7200,7 +7200,7 @@ void ShieldingSourceDisplay::deSerialize( const rapidxml::xml_node<char> *base_n
     const vector<double> errors = inputPrams.Errors();
     GammaInteractionCalc::ShieldingSourceChi2Fcn::NucMixtureCache mixcache;
     const vector<GammaInteractionCalc::PeakResultPlotInfo> chis
-                                   = chi2Fcn->energy_chi_contributions( params, mixcache, nullptr );
+                  = chi2Fcn->energy_chi_contributions( params, errors, mixcache, nullptr, nullptr );
     
     if( chis.size() )
     {
@@ -8073,6 +8073,13 @@ void ShieldingSourceDisplay::updateGuiWithModelFitResults( std::shared_ptr<Shiel
   ShieldSourceChange state_undo_creator( this, "Fit activity/shielding" );
   
   assert( results );
+  
+  setWidgetStateForFitBeingDone();
+  
+  std::lock( results->m_mutex, m_currentFitFcnMutex );
+  std::lock_guard<std::mutex> result_lock( results->m_mutex, std::adopt_lock );
+  std::lock_guard<std::mutex> lock( m_currentFitFcnMutex, std::adopt_lock );
+  
   const ShieldingSourceFitCalc::ModelFitResults::FitStatus status = results->successful;
   const vector<ShieldingSourceFitCalc::ShieldingInfo> &initial_shieldings = results->initial_shieldings;
   const vector<ShieldingSourceFitCalc::FitShieldingInfo> &final_shieldings = results->final_shieldings;
@@ -8083,9 +8090,6 @@ void ShieldingSourceDisplay::updateGuiWithModelFitResults( std::shared_ptr<Shiel
   assert( (status != ShieldingSourceFitCalc::ModelFitResults::FitStatus::Final)
          || (initial_shieldings.size() == final_shieldings.size()) );
   
-  setWidgetStateForFitBeingDone();
-  
-  std::lock_guard<std::mutex> lock( m_currentFitFcnMutex );
   if( !m_currentFitFcn )
   {
     passMessage( "Programming Logic Error - received model fit results at an invalid time.", WarningWidget::WarningMsgHigh );
@@ -8483,7 +8487,7 @@ void ShieldingSourceDisplay::updateGuiWithModelFitResults( std::shared_ptr<Shiel
     
     updateChi2ChartActual( results );
     m_chi2ChartNeedsUpdating = false;
-    updateCalcLogWithFitResults( m_currentFitFcn, results );
+    updateCalcLogWithFitResults( m_currentFitFcn, results, m_calcLog );
   }catch( std::exception &e )
   {
     passMessage( "Programming issue - caught exception: " + string(e.what())
@@ -8592,19 +8596,29 @@ std::shared_ptr<ShieldingSourceFitCalc::ModelFitResults> ShieldingSourceDisplay:
 
 
 
+
+
 void ShieldingSourceDisplay::updateCalcLogWithFitResults(
                                   shared_ptr<GammaInteractionCalc::ShieldingSourceChi2Fcn> chi2Fcn,
-                                    std::shared_ptr<ShieldingSourceFitCalc::ModelFitResults> results )
+                                    std::shared_ptr<ShieldingSourceFitCalc::ModelFitResults> results,
+                                                         vector<string> &calcLog )
 {
   // This function is not internationalized - the plan is to eventually totally overhaul this
   //  how results are logged, so it isnt worth internationalizing this function now (and also,
   //  probably only the primary developer uses this calc log).
+  assert( chi2Fcn );
   assert( results );
   const std::vector<double> &params = results->paramValues;
   const std::vector<double> &errors = results->paramErrors;
   
-  if( m_calcLog.size() && m_calcLog.back() == ns_no_uncert_info_txt )
-    m_calcLog.erase( m_calcLog.end()-1, m_calcLog.end() );
+  if( calcLog.size() && calcLog.back() == ns_no_uncert_info_txt )
+    calcLog.erase( calcLog.end()-1, calcLog.end() );
+  
+  const shared_ptr<const DetectorPeakResponse> &det = chi2Fcn->detector();
+  
+  const DetectorPeakResponse::EffGeometryType detType = (det && det->isValid())
+                                                  ? det->geometryType()
+                                                  : DetectorPeakResponse::EffGeometryType::FarField;
   
   try
   {
@@ -8629,7 +8643,7 @@ void ShieldingSourceDisplay::updateCalcLogWithFitResults(
         msg << " " << n->symbol << "(massfrac=" << frac << "+-" << df << "),";
       }//for( size_t shielding_index = 0; shielding_index < chi2Fcn->numMaterials(); ++shielding_index )
         
-      m_calcLog.push_back( msg.str() );
+      calcLog.push_back( msg.str() );
     }//for( const Material *mat : chi2Fcn->materialsFittingMassFracsFor() )
     
   {//begin add chi2 line
@@ -8637,7 +8651,7 @@ void ShieldingSourceDisplay::updateCalcLogWithFitResults(
     msg << "It took " << results->num_fcn_calls
         << " solution trials to reach chi2=" << results->chi2
         << " with an estimated distance to minumum of " << results->edm;
-    m_calcLog.push_back( msg.str() );
+    calcLog.push_back( msg.str() );
   }//end add chi2 line
     
   //Need to list fit parameters and uncertainties here
@@ -8647,14 +8661,14 @@ void ShieldingSourceDisplay::updateCalcLogWithFitResults(
     const SandiaDecay::Nuclide *nuc = chi2Fcn->nuclide( nucn );
     if( nuc )
     {
-      const bool useCi = !InterSpecUser::preferenceValue<bool>( "DisplayBecquerel", m_specViewer );
+      const bool useCi = !InterSpecUser::preferenceValue<bool>( "DisplayBecquerel", InterSpec::instance() );
       const double act = chi2Fcn->activity( nuc, params );
       const string actStr = PhysicalUnits::printToBestActivityUnits( act, 2, useCi );
       
       const double actUncert = chi2Fcn->activityUncertainty( nuc, params, errors );
       const string actUncertStr = PhysicalUnits::printToBestActivityUnits( actUncert, 2, useCi );
       
-      const double mass = act / nuc->activityPerGram();
+      const double mass = (act / nuc->activityPerGram()) * PhysicalUnits::gram;
       const std::string massStr = PhysicalUnits::printToBestMassUnits( mass, 2, 1.0 );
       
       const double age = chi2Fcn->age( nuc, params );
@@ -8662,13 +8676,13 @@ void ShieldingSourceDisplay::updateCalcLogWithFitResults(
       const string ageStr = PhysicalUnitsLocalized::printToBestTimeUnits( age, 2 );
       const string ageUncertStr = PhysicalUnitsLocalized::printToBestTimeUnits( ageUncert, 2 );
   
-      string act_postfix = DetectorPeakResponse::det_eff_geom_type_postfix(m_sourceModel->detType()), trace_total = "";
+      string act_postfix = DetectorPeakResponse::det_eff_geom_type_postfix(detType), trace_total = "";
       if( chi2Fcn->isTraceSource(nuc) )
       {
         const double total_act = chi2Fcn->totalActivity(nuc,params);
         trace_total = "Total activity "
                       + PhysicalUnits::printToBestActivityUnits( total_act, 2, useCi )
-                      + DetectorPeakResponse::det_eff_geom_type_postfix(m_sourceModel->detType()) + ", ";
+                      + DetectorPeakResponse::det_eff_geom_type_postfix(detType) + ", ";
         
         switch( chi2Fcn->traceSourceActivityType(nuc) )
         {
@@ -8713,11 +8727,11 @@ void ShieldingSourceDisplay::updateCalcLogWithFitResults(
   
       msg << ".";
       
-      m_calcLog.push_back( msg.str() );
+      calcLog.push_back( msg.str() );
     }//if( nuc )
   }//for( size_t nucn = 0; nucn < nnuc; ++nucn )
   
-  m_calcLog.push_back( "Geometry: " + string(GammaInteractionCalc::to_str(chi2Fcn->geometry())) );
+    calcLog.push_back( "Geometry: " + string(GammaInteractionCalc::to_str(chi2Fcn->geometry())) );
     
   const int nmat = static_cast<int>( chi2Fcn->numMaterials() );
   for( int matn = 0; matn < nmat; ++matn )
@@ -8744,7 +8758,7 @@ void ShieldingSourceDisplay::updateCalcLogWithFitResults(
       
     }else //if( !mat )
     {
-      assert( geometry() == chi2Fcn->geometry() );
+      //assert( geometry() == chi2Fcn->geometry() );
       
       const double density = mat->density * PhysicalUnits::cm3 / PhysicalUnits::gram;
       msg << mat->name << " has density " << std::setprecision(3) << density << "g/cm3 ";
@@ -8836,11 +8850,11 @@ void ShieldingSourceDisplay::updateCalcLogWithFitResults(
       }//switch( geometry() )
     }//if( !mat ) / else
     
-    m_calcLog.push_back( msg.str() );
+    calcLog.push_back( msg.str() );
   }//for( size_t matn = 0; matn < nmat; ++matn )
   }catch( std::exception & )
   {
-    m_calcLog.push_back( "There was an error and log may not be complete." );
+    calcLog.push_back( "There was an error and log may not be complete." );
   }
 }//updateCalcLogWithFitResults(...)
 

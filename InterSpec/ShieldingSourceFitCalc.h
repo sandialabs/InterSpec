@@ -64,6 +64,9 @@ namespace GammaInteractionCalc
   enum class TraceActivityType : int;
   
   struct PeakDetail;
+  struct ShieldingDetails;
+  struct SourceDetails;
+  
   struct PeakResultPlotInfo;
   class ShieldingSourceChi2Fcn;
 }//namespace GammaInteractionCalc
@@ -359,6 +362,9 @@ namespace ShieldingSourceFitCalc
     
     std::vector<std::string> peak_calc_log;
     std::unique_ptr<const std::vector<GammaInteractionCalc::PeakDetail>> peak_calc_details;
+    std::unique_ptr<const std::vector<GammaInteractionCalc::ShieldingDetails>> shield_calc_details;
+    std::unique_ptr<const std::vector<GammaInteractionCalc::SourceDetails>> shield_source_details;
+    
     
     ShieldingSourceFitOptions options;
   };//struct ModelFitResults

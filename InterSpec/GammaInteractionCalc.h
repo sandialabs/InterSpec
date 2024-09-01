@@ -413,7 +413,10 @@ struct PeakResultPlotInfo
   Wt::WColor peakColor;
 };//struct PeakResultPlotInfo
   
-/** A struct to capture the details of each peak detected vs what parts of the model contributed.  */
+/** A struct to capture the details of each peak detected vs what parts of the model contributed.
+ 
+ This is primarily to later turn to JSON, and allow customizing log files, through inja templating.
+ */
 struct PeakDetail
 {
   double energy, decayParticleEnergy, fwhm, counts, countsUncert, cps, cpsUncert;
@@ -426,20 +429,55 @@ struct PeakDetail
   
   struct PeakSrc
   {
-    float energy, br, cps, decayCorrection;
-    PeakSrc()
-    : energy(0.0f), br(0.0f), cps(0.0f), decayCorrection( 1.0f )
-    {
-    }
+    const SandiaDecay::Nuclide *nuclide = nullptr;
+    
+    /** Energy of the nuclides gamma, in keV */
+    double energy = 0.0;
+    /** The number of this energy gamma, per second, for each Bq of parent nuclide. */
+    double br = 0.0;
+    double cps = 0.0;
+    double age = 0.0;
+    
+    /** For point sources, the activity of the point source.
+     For self-atten sources, the activity per volume.
+     For trace sources, the activity used for calculations - activity per volume, except for exponential distributions, then its activity per m2.
+     */
+    double calcActivity = 0.0;
+    
+    /** If decay during measurement is being accounted for, then this is the rate of this gamma
+     after decay correction, divided by the rate before decay correction.
+     */
+    double decayCorrection = 0.0;
+    
+    bool isTraceSource = false;
+    TraceActivityType traceSourceType = TraceActivityType::NumTraceActivityType;
+    
+    bool isSelfAttenSource = false;
+    
+    double counts = 0.0;
+    //double countsUncert = 0.0;
+    double ageUncert = 0.0;
+    //bool ageIsFit = false;
+    //bool canFitAge = false;
+    
+    double activity = 0.0;
+    double activityUncert = 0.0;
+    double displayActivity = 0.0;
+    double displayActivityUncert = 0.0;
+    
+    double massFraction = 0.0;
+    double massFractionUncert = 0.0;
+    bool isFittingMassFraction = false;
   };//struct PeakSrc
   
-  std::map<std::string,PeakSrc> m_sources;
+  std::vector<PeakSrc> m_sources;
   
   /** The fractional attenuation by this material (e.g., no attenuation is 1.0. Not valid for volumetric sources.
-   The index of this vector is the same index as shieldings in the model
+   The index of this vector is the same index as shielding in the model
    */
   std::vector<double> m_attenuations;
   
+  // TODO: for self-attenuating sources, could repeat the computation, put with only the source shell, then shell+1-other, then shell+different-1-other, and so on, to get the effect of each shell.
   
   struct VolumeSrc
   {
@@ -470,6 +508,96 @@ struct PeakDetail
 };//struct PeakDetail
   
   
+/** A struct to capture the details of each shielding.
+   
+   This is primarily to later turn to JSON, and allow customizing log files, through inja templating.
+*/
+struct ShieldingDetails
+{
+  struct SelfAttenComponent
+  {
+    std::string m_name;
+    bool m_is_fit = false;
+    double m_age = 0.0, m_age_uncert = 0.0;
+    bool m_age_is_fitable = false;
+    bool m_age_fit = false;
+    
+    double m_mass_frac = 0.0, m_mass_frac_uncert = 0.0;
+    double m_total_act = 0.0, m_total_act_uncert = 0.0;
+  };
+  
+  struct TraceSrcDetail
+  {
+    std::string m_name;
+    double m_age = 0.0, m_age_uncert = 0.0;
+    bool m_age_is_fitable = false;
+    bool m_age_fit = false;
+    
+    bool m_fit_activity = false;
+    GammaInteractionCalc::TraceActivityType m_trace_type = GammaInteractionCalc::TraceActivityType::NumTraceActivityType;
+    
+    double m_activity = 0.0; //Note: for trace sources, the #activity function returns the display activity (so either total, per cc, or per g) for the trace sources.
+    double m_activity_uncert = 0.0;
+    
+    double m_total_activity = 0.0, m_total_activity_uncert = 0.0;
+    
+    bool m_is_exp_dist = false;
+    double m_relaxation_length = -1.0;
+  };//struct TraceSrcDetail
+  
+  
+  std::string m_name;
+  std::string m_chemical_formula;
+  
+  bool m_is_generic = false;
+  double m_an = 0.0, m_ad = 0.0;
+  double m_density = 0.0;
+  
+  unsigned int m_num_dimensions = 0;
+  GammaInteractionCalc::GeometryType m_geometry = GammaInteractionCalc::GeometryType::NumGeometryType;
+  double m_thickness = 0.0;
+  double m_volume = 0.0;
+  double m_volume_uncert = 0.0;
+  double m_inner_rad = 0.0;
+  double m_inner_dimensions[3] = {0.0, 0.0, 0.0};
+  double m_outer_dimensions[3] = {0.0, 0.0, 0.0};
+  
+  std::vector<SelfAttenComponent> m_mass_fractions;
+  std::vector<TraceSrcDetail> m_trace_sources;
+};//struct ShieldingDetails
+  
+  
+struct SourceDetails
+{
+  const SandiaDecay::Nuclide *nuclide = nullptr;
+  double activity = 0.0;
+  double activityUncertainty = 0.0;
+  bool activityIsFit = false;
+  double nuclideMass = 0.0;
+  double age = 0.0;
+  double ageUncertainty = 0.0;
+  bool ageIsFittable = false;
+  bool ageIsFit = false;
+  const SandiaDecay::Nuclide *ageDefiningNuc = nullptr;
+  
+  bool isTraceSource;
+  TraceActivityType traceActivityType = TraceActivityType::NumTraceActivityType;
+  double traceSrcDisplayAct;
+  double traceSrcDisplayActUncertainty;
+  double traceRelaxationLength;
+  
+  bool isSelfAttenSource;
+  size_t selfAttenShieldIndex;
+  std::string selfAttenShieldName;
+  bool isSelfAttenVariableMassFrac;
+  double selfAttenMassFrac;
+  double selfAttenMassFracUncertainty;
+  
+  // We wont put peaks into this struct, but instead when we make the JSON, we'll
+  //  insert peaks from `PeakDetail` as `PeakDetail::PeakSrc::nuclide` match this nuclide.
+};//struct SourceDetails
+  
+  
 class ShieldingSourceChi2Fcn
     : public ROOT::Minuit2::FCNBase
 {
@@ -480,7 +608,7 @@ class ShieldingSourceChi2Fcn
 //  atomic number and areal density which is indicated by a NULL pointer.
 //
 //parameters:
-//-Activity (in MBq) nuclide 0, (nuclides are sorted alphebaetically by name)
+//-Activity (in MBq) nuclide 0, (nuclides are sorted alphabetically by name)
 //-Age of nuclide 0
 //-Activity (in MBq) nuclide 1
 //-Age of nuclide 1 (if negative, must be negative value of one plus index of
@@ -749,22 +877,33 @@ public:
   virtual double operator()( const std::vector<double> &x ) const;
   
   
-  //energy_chi_contributions(...): gives the chi2 contributions for each energy
-  //  of peak, for the parameter values of x.
-  //Does not take into account self attenuation.
-  //'mixturecache' is to speed up multiple computations, and may be empty at
-  //  first.
+  /** Gives the chi2 contributions for each peak
+   
+   @param params The parameters currently defining the model.
+   @param error_params The errors on the parameters - only used if `log_info` is non-null
+   @param mixturecache Used to speed up multiple calls to this function, and may be empty at first.
+   @param info If non-null, will be filled with computation notes.
+   @param log_info If non-null, filled out with details about the computation.
+   */
   typedef std::map< const SandiaDecay::Nuclide *, SandiaDecay::NuclideMixture> NucMixtureCache;
-  
-  //If 'info' is non-null then it will be filled with information about how much
-  //  each nuclide/peak was attributed to each detected peak (currently not
-  //  implemented)
   std::vector<PeakResultPlotInfo> energy_chi_contributions(
-                                  const std::vector<double> &x,
+                                  const std::vector<double> &params,
+                                  const std::vector<double> &error_params,
                                   NucMixtureCache &mixturecache,
                                   std::vector<std::string> *info = nullptr,
                                   std::vector<PeakDetail> *log_info = nullptr ) const;
 
+  void log_shield_info( const std::vector<double> &params,
+                        const std::vector<double> &error_params,
+                        const std::vector<ShieldingSourceFitCalc::IsoFitStruct> &fit_src_info,
+                        std::vector<ShieldingDetails> &info ) const;
+  
+  void log_source_info( const std::vector<double> &params,
+                        const std::vector<double> &error_params,
+                        const std::vector<ShieldingSourceFitCalc::IsoFitStruct> &fit_src_info,
+                        std::vector<SourceDetails> &info ) const;
+  
+  
   ShieldingSourceChi2Fcn&	operator=( const ShieldingSourceChi2Fcn & );
   virtual double Up() const;
 
@@ -877,6 +1016,8 @@ public:
   const std::vector<PeakDef> &backgroundPeaks() const;
 
   double distance() const;
+  
+  const std::shared_ptr<const DetectorPeakResponse> &detector() const;
   
   const ShieldingSourceFitCalc::ShieldingSourceFitOptions &options() const;
   

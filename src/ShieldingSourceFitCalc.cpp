@@ -2138,26 +2138,6 @@ void fit_model( const std::string wtsession,
     const vector<double> errors = fitParams.Errors();
     const unsigned int ndof = inputPrams->VariableParameters();
     
-    GammaInteractionCalc::ShieldingSourceChi2Fcn::NucMixtureCache mixcache;
-
-    vector<GammaInteractionCalc::PeakDetail> peak_calc_details;
-    
-    const auto peak_comparisons = chi2Fcn->energy_chi_contributions( params, mixcache,
-                                                  &(results->peak_calc_log),
-                                                  &(peak_calc_details) );
-    
-    results->peak_calc_details.reset( new vector<GammaInteractionCalc::PeakDetail>(peak_calc_details) );
-    results->peak_comparisons.reset( new vector<GammaInteractionCalc::PeakResultPlotInfo>(peak_comparisons) );
-    
-    if( !results->peak_calc_log.empty() )
-    {
-      char buffer[64];
-      snprintf( buffer, sizeof(buffer), "There %s %i parameter%s fit for",
-                (ndof>1 ? "were" : "was"), int(ndof), (ndof>1 ? "s" : "") );
-      results->peak_calc_log.push_back( "&nbsp;" );
-      results->peak_calc_log.push_back( buffer );
-    }//if( !m_calcLog.empty() )
-    
     results->successful = ShieldingSourceFitCalc::ModelFitResults::FitStatus::Final;
     results->paramValues = params;
     results->paramErrors = errors;
@@ -2453,6 +2433,48 @@ void fit_model( const std::string wtsession,
       results->final_shieldings.push_back( shield );
     }//for( int i = 0; i < nshieldings; ++i )
     
+    
+    
+    {// Begin logging detailed info, we'll later use to template reports
+      GammaInteractionCalc::ShieldingSourceChi2Fcn::NucMixtureCache mixcache;
+      auto peak_calc_details = make_unique<vector<GammaInteractionCalc::PeakDetail>>();
+      const auto peak_comparisons = chi2Fcn->energy_chi_contributions( params, errors, mixcache,
+                                                                      &(results->peak_calc_log),
+                                                                      peak_calc_details.get() );
+      
+      results->peak_calc_details = std::move(peak_calc_details);
+      results->peak_comparisons.reset( new vector<GammaInteractionCalc::PeakResultPlotInfo>(peak_comparisons) );
+      
+      
+      if( !results->peak_calc_log.empty() )
+      {
+        char buffer[64];
+        snprintf( buffer, sizeof(buffer), "There %s %i parameter%s fit for",
+                 (ndof>1 ? "were" : "was"), int(ndof), (ndof>1 ? "s" : "") );
+        results->peak_calc_log.push_back( "&nbsp;" );
+        results->peak_calc_log.push_back( buffer );
+      }//if( !m_calcLog.empty() )
+      
+      try
+      {
+        auto shielding_details = make_unique<vector<GammaInteractionCalc::ShieldingDetails>>();
+        chi2Fcn->log_shield_info( params, errors, results->fit_src_info, *shielding_details );
+        results->shield_calc_details = std::move(shielding_details);
+      }catch( std::exception &e )
+      {
+        results->errormsgs.push_back( e.what() );
+      }
+      
+      try
+      {
+        auto shielding_details = make_unique<vector<GammaInteractionCalc::SourceDetails>>();
+        chi2Fcn->log_source_info( params, errors, results->fit_src_info, *shielding_details );
+        results->shield_source_details = std::move(shielding_details);
+      }catch( std::exception &e )
+      {
+        results->errormsgs.push_back( e.what() );
+      }
+    }// end logging detailed info, we'll later use to template reports
   }catch( GammaInteractionCalc::ShieldingSourceChi2Fcn::CancelException &e )
   {
     const size_t nFunctionCallsSoFar = gui_progress_info->numFunctionCallsSoFar();

@@ -446,8 +446,9 @@ public:
   
   //updateCalcLogWithFitResults(): adds in fit for values and their
   //  uncertainties in the calculation log.
-  void updateCalcLogWithFitResults( std::shared_ptr<GammaInteractionCalc::ShieldingSourceChi2Fcn> chi2,
-                                    std::shared_ptr<ShieldingSourceFitCalc::ModelFitResults> results );
+  static void updateCalcLogWithFitResults( std::shared_ptr<GammaInteractionCalc::ShieldingSourceChi2Fcn> chi2,
+                                    std::shared_ptr<ShieldingSourceFitCalc::ModelFitResults> results,
+                                    std::vector<std::string> &calcLog );
   
   //initialSizeHint(...) gives the initial hint about the size so which widgets
   //  should be shown can be decided on.  Furthermore, calling this function
@@ -620,6 +621,9 @@ protected:
   
   /** If results are passed in, and they are final, will use those to set the peak chart information and such, 
    or else will call `shieldingFitnessFcn()`.
+   
+   Does not take a lock on `results->m_mutex`, so if there is a chance anywhere else is using the results,
+   take a lock on it before calling this function
    */
   void updateChi2ChartActual( std::shared_ptr<const ShieldingSourceFitCalc::ModelFitResults> results );
   virtual void layoutSizeChanged( int width, int height ) override;
