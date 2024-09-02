@@ -60,6 +60,7 @@ namespace BatchActivity
   struct BatchActivityFitOptions
     : public BatchPeak::BatchPeakFitOptions
   {
+    bool use_bq = false;
     std::shared_ptr<DetectorPeakResponse> drf_override;
   };//struct BatchActivityFitOptions
   

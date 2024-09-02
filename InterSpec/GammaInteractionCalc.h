@@ -427,6 +427,8 @@ struct PeakDetail
   
   float backgroundCounts, backgroundCountsUncert;
   
+  std::string assignedNuclide;
+  
   struct PeakSrc
   {
     const SandiaDecay::Nuclide *nuclide = nullptr;
@@ -442,32 +444,32 @@ struct PeakDetail
      For self-atten sources, the activity per volume.
      For trace sources, the activity used for calculations - activity per volume, except for exponential distributions, then its activity per m2.
      */
-    double calcActivity = 0.0;
+    double calcActivity = 0.0; //Not used - can be removed
     
     /** If decay during measurement is being accounted for, then this is the rate of this gamma
      after decay correction, divided by the rate before decay correction.
      */
     double decayCorrection = 0.0;
     
-    bool isTraceSource = false;
-    TraceActivityType traceSourceType = TraceActivityType::NumTraceActivityType;
+    bool isTraceSource = false;//Not used - can be removed
+    TraceActivityType traceSourceType = TraceActivityType::NumTraceActivityType;//Not used
     
-    bool isSelfAttenSource = false;
+    bool isSelfAttenSource = false;//Not used - can be removed
     
     double counts = 0.0;
     //double countsUncert = 0.0;
-    double ageUncert = 0.0;
+    double ageUncert = 0.0;//Not used - can be removed
     //bool ageIsFit = false;
     //bool canFitAge = false;
     
-    double activity = 0.0;
-    double activityUncert = 0.0;
-    double displayActivity = 0.0;
-    double displayActivityUncert = 0.0;
+    double activity = 0.0;//Not used - can be removed
+    double activityUncert = 0.0;//Not used - can be removed
+    double displayActivity = 0.0;//Not used - can be removed
+    double displayActivityUncert = 0.0;//Not used - can be removed
     
-    double massFraction = 0.0;
-    double massFractionUncert = 0.0;
-    bool isFittingMassFraction = false;
+    double massFraction = 0.0;//Not used - can be removed
+    double massFractionUncert = 0.0;//Not used - can be removed
+    bool isFittingMassFraction = false;//Not used - can be removed
   };//struct PeakSrc
   
   std::vector<PeakSrc> m_sources;
@@ -485,8 +487,8 @@ struct PeakDetail
     double integral;
     double srcVolumetricActivity;
     
-    bool inSituExponential;
-    double inSituRelaxationLength;
+    bool inSituExponential;        //Not used - can be removed
+    double inSituRelaxationLength; //Not used - can be removed
     
     double detIntrinsicEff;
     
@@ -516,35 +518,28 @@ struct ShieldingDetails
 {
   struct SelfAttenComponent
   {
-    std::string m_name;
+    const SandiaDecay::Nuclide *m_nuclide;
     bool m_is_fit = false;
-    double m_age = 0.0, m_age_uncert = 0.0;
-    bool m_age_is_fitable = false;
-    bool m_age_fit = false;
-    
     double m_mass_frac = 0.0, m_mass_frac_uncert = 0.0;
-    double m_total_act = 0.0, m_total_act_uncert = 0.0;
   };
   
   struct TraceSrcDetail
   {
-    std::string m_name;
-    double m_age = 0.0, m_age_uncert = 0.0;
-    bool m_age_is_fitable = false;
-    bool m_age_fit = false;
-    
-    bool m_fit_activity = false;
+    const SandiaDecay::Nuclide *m_nuclide;
     GammaInteractionCalc::TraceActivityType m_trace_type = GammaInteractionCalc::TraceActivityType::NumTraceActivityType;
-    
-    double m_activity = 0.0; //Note: for trace sources, the #activity function returns the display activity (so either total, per cc, or per g) for the trace sources.
-    double m_activity_uncert = 0.0;
-    
-    double m_total_activity = 0.0, m_total_activity_uncert = 0.0;
-    
     bool m_is_exp_dist = false;
     double m_relaxation_length = -1.0;
   };//struct TraceSrcDetail
   
+  /*
+  struct PeakAttenuation
+  {
+    double energy;
+    double attenuation;
+    double incomingModelCps;
+    double outgoingModelCps;
+  };//struct PeakAttenuation
+  */
   
   std::string m_name;
   std::string m_chemical_formula;
@@ -561,9 +556,12 @@ struct ShieldingDetails
   double m_inner_rad = 0.0;
   double m_inner_dimensions[3] = {0.0, 0.0, 0.0};
   double m_outer_dimensions[3] = {0.0, 0.0, 0.0};
+  bool m_fit_dimension[3] = { false, false, false };
+  double m_dimension_uncert[3] = { 0.0, 0.0, 0.0 };
   
   std::vector<SelfAttenComponent> m_mass_fractions;
   std::vector<TraceSrcDetail> m_trace_sources;
+  //std::vector<PeakAttenuation> m_peak_attens;
 };//struct ShieldingDetails
   
   

@@ -223,11 +223,193 @@ shared_ptr<DetectorPeakResponse> init_drf_from_name( std::string drf_file, std::
 }//shared_ptr<DetectorPeakResponse> init_drf_from_name( std::string drf_file, std::string drf-name )
   
 #if( USE_TMPLT_RESULT_OUTPUT )
+  
+  // Adds the basic direct info on a source (nuclide name, activity, age, etc), but does not
+  //  Add which peaks it contributes to, or any information on gammas
+void add_basic_src_details( const GammaInteractionCalc::SourceDetails &src, const bool useBq, nlohmann::basic_json<> &src_json )
+{
+  src_json["Nuclide"] = src.nuclide->symbol;
+  src_json["Activity"] = PhysicalUnits::printToBestActivityUnits(src.activity,4,!useBq);
+  src_json["ActivityBq"] = src.activity / PhysicalUnits::bq;
+  src_json["ActivityCi"] = src.activity / PhysicalUnits::ci;
+  src_json["ActivityIsFit"] = src.activityIsFit;
+  if( src.activityIsFit )
+  {
+    src_json["ActivityUncert"] = PhysicalUnits::printToBestActivityUnits(src.activityUncertainty,4,!useBq);
+    src_json["ActivityUncertBq"] = src.activityUncertainty / PhysicalUnits::bq;
+    src_json["ActivityUncertCi"] = src.activityUncertainty / PhysicalUnits::ci;
+    const double act_uncert_percent = 100.0 * src.activity / src.activityUncertainty;
+    src_json["ActivityUncertPercent"] = SpecUtils::printCompact( act_uncert_percent, 4 );
+  }else
+  {
+    assert( src.activityUncertainty <= 0.0 );
+  }
+  
+  src_json["NuclideMass"] = PhysicalUnits::printToBestMassUnits(src.nuclideMass, 4);
+  src_json["Age"] = PhysicalUnits::printToBestTimeUnits(src.age, 4);
+  src_json["AgeSeconds"] = src.age / PhysicalUnits::second;
+  src_json["AgeDays"] = src.age / PhysicalUnits::day;
+  src_json["AgeYears"] = src.age / PhysicalUnits::year;
+  src_json["AgeIsFittable"] = src.ageIsFittable;
+  src_json["AgeIsFit"] = src.ageIsFit;
+  
+  if( src.ageIsFit )
+  {
+    src_json["AgeUncert"] = PhysicalUnits::printToBestTimeUnits(src.ageUncertainty, 4);
+    src_json["AgeUncertSeconds"] = src.ageUncertainty / PhysicalUnits::second;
+    src_json["AgeUncertDays"] = src.ageUncertainty / PhysicalUnits::day;
+    src_json["AgeUncertYears"] = src.ageUncertainty / PhysicalUnits::year;
+  }else
+  {
+    assert( src.ageUncertainty <= 0.0 );
+  }
+  
+  if( src.ageDefiningNuc )
+    src_json["AgeDefiningNuclide"] = src.ageDefiningNuc->symbol;
+  
+  src_json["IsTraceSource"] = src.isTraceSource;
+  
+  if( src.isTraceSource )
+  {
+    src_json["TraceActivityType"] = GammaInteractionCalc::to_str(src.traceActivityType);
+    src_json["TraceDisplayActivity"] = PhysicalUnits::printToBestActivityUnits(src.traceSrcDisplayAct,4,!useBq);
+    src_json["TraceDisplayActivityBq"] = src.traceSrcDisplayAct / PhysicalUnits::bq;
+    src_json["TraceDisplayActivityCi"] = src.traceSrcDisplayAct / PhysicalUnits::ci;
+    
+    if( src.ageIsFit )
+    {
+      src_json["TraceDisplayActivityUncert"] = PhysicalUnits::printToBestActivityUnits(src.traceSrcDisplayActUncertainty,4,!useBq);
+      src_json["TraceDisplayActivityUncertBq"] = src.traceSrcDisplayActUncertainty / PhysicalUnits::bq;
+      src_json["TraceDisplayActivityUncertCi"] = src.traceSrcDisplayActUncertainty / PhysicalUnits::ci;
+    }else
+    {
+      assert( src.traceSrcDisplayActUncertainty <= 0.0 );
+    }
+    
+    if( src.traceActivityType == GammaInteractionCalc::TraceActivityType::ExponentialDistribution )
+    {
+      src_json["TraceRelaxationLength"] = PhysicalUnits::printToBestLengthUnits(src.traceRelaxationLength, 4);
+      src_json["TraceRelaxationLengthCm"] = src.traceRelaxationLength / PhysicalUnits::cm;
+    }
+  }//if( src.isTraceSource )
+  
+  src_json["IsSelfAttenSource"] = src.isSelfAttenSource;
+  if( src.isSelfAttenSource )
+  {
+    src_json["SelfAttenShieldIndex"] = static_cast<int>( src.selfAttenShieldIndex );
+    src_json["SelfAttenShieldName"] = src.selfAttenShieldName;
+    src_json["SelfAttenIsVariableMassFrac"] = src.isSelfAttenVariableMassFrac;
+    src_json["SelfAttenMassFrac"] = src.selfAttenMassFrac;
+    if( src.isSelfAttenVariableMassFrac )
+      src_json["SelfAttenMassFracUncert"] = src.selfAttenMassFracUncertainty;
+  }
+}//add_basic_src_details( SourceDetails &src, src_json )
+  
+  
+/** Adds basic information about a peak (energy, fwhm, counts, etc), but not any information
+   about gammas that contribute to it, etc
+ */
+void add_basic_peak_info( const GammaInteractionCalc::PeakDetail &peak, nlohmann::basic_json<> &peak_json )
+{
+  char buffer[64] = { '\0' };
+  snprintf( buffer, sizeof(buffer), "%.2f", peak.energy );
+  peak_json["Energy"] = string(buffer);
+  peak_json["EnergyKeV"] = peak.energy;
+  
+  snprintf( buffer, sizeof(buffer), "%.3f", peak.decayParticleEnergy );
+  peak_json["DecayParticleEnergy"] = string(buffer);
+  peak_json["AssignedNuclide"] = peak.assignedNuclide;
+  peak_json["FWHM"] = SpecUtils::printCompact(peak.fwhm, 4);
+  
+  snprintf( buffer, sizeof(buffer), "%.2f", peak.counts );
+  peak_json["Counts"] = string(buffer);
+  peak_json["CountsStr"] = SpecUtils::printCompact(peak.counts, 4);
+  snprintf( buffer, sizeof(buffer), "%.2f", peak.countsUncert );
+  peak_json["CountsUncert"] = string(buffer);
+  peak_json["CountsUncertStr"] = SpecUtils::printCompact(peak.countsUncert, 4);
+  peak_json["Cps"] = SpecUtils::printCompact(peak.cps, 4);
+  peak_json["CpsUncert"] = SpecUtils::printCompact(peak.cpsUncert, 4);
+  peak_json["ShieldAttenuations"] = peak.m_attenuations;
+  
+  if( peak.backgroundCounts > 0.0 )
+  {
+    snprintf( buffer, sizeof(buffer), "%.2f", peak.backgroundCounts );
+    peak_json["BackgroundCounts"] = string(buffer);
+    peak_json["BackgroundCountsStr"] = SpecUtils::printCompact(peak.backgroundCounts, 4);
+    
+    if( peak.backgroundCountsUncert > 0.0 )
+    {
+      snprintf( buffer, sizeof(buffer), "%.2f", peak.backgroundCountsUncert );
+      peak_json["BackgroundCountsUncert"] = string(buffer);
+      peak_json["BackgroundCountsUncertStr"] = SpecUtils::printCompact(peak.backgroundCountsUncert, 4);
+    }
+  }//if( peak.backgroundCounts > 0.0 )
+  
+  snprintf( buffer, sizeof(buffer), "%.2f", peak.observedCounts );
+  peak_json["SignalCounts"] = string(buffer);
+  peak_json["SignalCountsStr"] = SpecUtils::printCompact(peak.observedCounts, 4);
+  snprintf( buffer, sizeof(buffer), "%.2f", peak.observedUncert );
+  peak_json["SignalCountsUncert"] = string(buffer);
+  peak_json["SignalCountsUncertStr"] = SpecUtils::printCompact(peak.observedUncert, 4);
+  
+  snprintf( buffer, sizeof(buffer), "%.2f", peak.expectedCounts );
+  peak_json["PredictedCounts"] = string(buffer);
+  peak_json["PredictedNumSigmaOff"] = SpecUtils::printCompact(peak.numSigmaOff, 4);
+  
+  peak_json["ObservedOverPredicted"] = SpecUtils::printCompact(peak.observedOverExpected, 5);
+  peak_json["ObservedOverPredictedUncert"] = SpecUtils::printCompact(peak.observedOverExpectedUncert, 5);
+  
+  peak_json["DetectorSolidAngleFraction"] = SpecUtils::printCompact(peak.detSolidAngle, 5);
+  peak_json["DetectorIntrinsicEff"] = SpecUtils::printCompact(peak.detIntrinsicEff, 5);
+  peak_json["DetectorEff"] = SpecUtils::printCompact(peak.detEff, 5);
+}//add_basic_peak_info( const PeakDetail &peak, nlohmann::basic_json<> &peak_json )
+  
+  
+void add_gamma_info_for_peak( const GammaInteractionCalc::PeakDetail::PeakSrc &ps, 
+                             const GammaInteractionCalc::SourceDetails * const src,
+                             const bool useBq,
+                             nlohmann::basic_json<> &gamma_json )
+{
+  assert( ps.nuclide );
+  
+  char buffer[64] = { '\0' };
+  snprintf( buffer, sizeof(buffer), "%.3f", ps.energy );
+  
+  gamma_json["Nuclide"] = ps.nuclide ? ps.nuclide->symbol : string("null");
+  gamma_json["Energy"] = string(buffer);
+  gamma_json["EnergyKeV"] = ps.energy;
+  
+  gamma_json["BranchingRatio"] = SpecUtils::printCompact( ps.br, 5 );
+  gamma_json["BranchingRatioFloat"] = ps.br;
+  
+  gamma_json["CpsContributedToPeak"] = SpecUtils::printCompact( ps.cps, 5 );
+  gamma_json["CpsContributedToPeakFloat"] = ps.cps;
+  
+  gamma_json["CountsContributedToPeak"] = SpecUtils::printCompact( ps.counts, 5 );
+  gamma_json["CountsContributedToPeakFloat"] = ps.counts;
+  
+  gamma_json["HasDecayCorrection"] = (ps.decayCorrection > 0.0);
+  if( ps.decayCorrection > 0.0 )
+  {
+    gamma_json["DecayCorrection"] = SpecUtils::printCompact(ps.decayCorrection, 4);
+    gamma_json["DecayCorrectionFloat"] = ps.decayCorrection;
+  }
+  
+  // The other information in `PeakDetail::PeakSrc` should be repeat of
+  //  `GammaInteractionCalc::SourceDetails`.  We _could_ access all this information
+  //  from the templating code, since we are in a loop over `SourceDetails`, but
+  //  to make things easier on people, we'll just re-include it here.
+  if( src )
+    add_basic_src_details( *src, useBq,  gamma_json );
+};//add_gamma_info_for_peak(...)
+  
+
 void shield_src_fit_results_to_json( const ShieldingSourceFitCalc::ModelFitResults &results,
                                     const std::shared_ptr<const DetectorPeakResponse> &drf,
+                                    const bool useBq,
                                     nlohmann::json &data )
 {
-  const bool useBq = InterSpecUser::preferenceValue<bool>( "DisplayBecquerel", InterSpec::instance() );
+  // Need to put peak info here
   
   auto &fit_setup = data["ActShieldFitSetup"];
   fit_setup["Distance"] = results.distance / PhysicalUnits::cm;
@@ -248,6 +430,7 @@ void shield_src_fit_results_to_json( const ShieldingSourceFitCalc::ModelFitResul
   data["FitChi2"] = results.chi2;
   data["EstimatedDistanceToMinimum"] = results.edm;
   data["NumberFcnCalls"] = results.num_fcn_calls;
+  data["NumDof"] = results.numDOF;
   
   auto &fit_pars = data["RawFitParameter"];
   fit_pars["Values"] = results.paramValues;
@@ -255,86 +438,300 @@ void shield_src_fit_results_to_json( const ShieldingSourceFitCalc::ModelFitResul
   
   if( !results.errormsgs.empty() )
     data["ErrorMessages"] = results.errormsgs;
-
-  for( const ShieldingSourceFitCalc::IsoFitStruct &nuc : results.fit_src_info )
+  
+  
+  if( results.source_calc_details )
   {
-    
-    data["Sources"].push_back( {
-      {"Nuclide", nuc.nuclide->symbol},
-      {"FitActivity", nuc.fitActivity},
-      {"Activity", PhysicalUnits::printToBestActivityUnits(nuc.activity,3,!useBq) }
-    });
-    auto &nuc_json_obj = data["Sources"].back();
-    
-    if( nuc.fitActivity )
-      nuc_json_obj["ActivityUncertainty"] = PhysicalUnits::printToBestActivityUnits(nuc.activityUncertainty,3,!useBq);
-    
-    if( nuc.ageIsFittable )
+    for( const GammaInteractionCalc::SourceDetails &src : *results.source_calc_details )
     {
-      if( nuc.fitAge )
+      data["Sources"].push_back( {} );
+      auto &src_json = data["Sources"].back();
+      
+      add_basic_src_details( src, useBq, src_json );
+      
+      // We wont put peaks into this struct, but instead when we make the JSON, we'll
+      //  insert peaks from `PeakDetail` as `PeakDetail::PeakSrc::nuclide` match this nuclide.
+      if( results.peak_calc_details )
       {
-        nuc_json_obj["FitAge"] = PhysicalUnits::printToBestTimeUnits(nuc.age,3);
-        nuc_json_obj["FitAgeUncertainty"] = PhysicalUnits::printToBestTimeUnits(nuc.ageUncertainty,3);
-        if( nuc.ageDefiningNuc )
-          nuc_json_obj["AgeTiedTo"] = nuc.ageDefiningNuc->symbol;
-      }else
+        for( const GammaInteractionCalc::PeakDetail &peak : *results.peak_calc_details )
+        {
+          bool src_contribs_to_peak = false;
+          for( const GammaInteractionCalc::PeakDetail::PeakSrc &ps :  peak.m_sources )
+          {
+            src_contribs_to_peak = (ps.nuclide == src.nuclide);
+            if( src_contribs_to_peak )
+              break;
+          }
+          if( !src_contribs_to_peak )
+            continue;
+          
+          src_json["PeaksThisNucContributesTo"].push_back( {} );
+          nlohmann::basic_json<> &peak_json = src_json["PeaksThisNucContributesTo"].back();
+          
+          add_basic_peak_info( peak, peak_json );
+          
+          for( const GammaInteractionCalc::PeakDetail::PeakSrc &ps :  peak.m_sources )
+          {
+            if( ps.nuclide != src.nuclide )
+              continue;
+            
+            peak_json["ThisNucsGammasForPeak"].push_back( {} );
+            nlohmann::basic_json<> &gamma_json = peak_json["ThisNucsGammasForPeak"].back();
+            
+            add_gamma_info_for_peak( ps, &src, useBq, gamma_json );
+          }
+        }//for( loop over results.peak_calc_details )
+      }//if( results.peak_calc_details )
+    }//for( loop over results.source_calc_details )
+  }//if( results.source_calc_details )
+  
+  
+  if( results.shield_calc_details )
+  {
+    const vector<GammaInteractionCalc::ShieldingDetails> &shield_details
+                                                          = *results.shield_calc_details;
+    auto &shieldings_json = data["Shieldings"];
+    
+    shieldings_json["Geometry"] = GammaInteractionCalc::to_str(results.geometry);
+    shieldings_json["NumberShieldings"] = static_cast<int>( shield_details.size() );
+    switch( results.geometry )
+    {
+      case GammaInteractionCalc::GeometryType::Spherical:
+        shieldings_json["DimensionMeanings"] = vector<string>{"Radius"};
+        shieldings_json["NumDimensions"] = 1;
+        break;
+        
+      case GammaInteractionCalc::GeometryType::CylinderEndOn:
+      case GammaInteractionCalc::GeometryType::CylinderSideOn:
+        shieldings_json["DimensionMeanings"] = vector<string>{"Radius", "Length"};
+        shieldings_json["NumDimensions"] = 2;
+        break;
+        
+      case GammaInteractionCalc::GeometryType::Rectangular:
+        shieldings_json["DimensionMeanings"] = vector<string>{"Width", "Height", "Depth"};
+        shieldings_json["NumDimensions"] = 3;
+        break;
+        
+      case GammaInteractionCalc::GeometryType::NumGeometryType:
+        assert( 0 );
+        break;
+    }//switch( m_geometry )
+    
+    for( size_t shield_num = 0; shield_num < shield_details.size(); ++shield_num )
+    {
+      const GammaInteractionCalc::ShieldingDetails &shield = shield_details[shield_num];
+      
+      shieldings_json["Shields"].push_back({});
+      auto &shield_json = shieldings_json["Shields"].back();
+      
+      shield_json["Name"] = shield.m_name;
+      shield_json["ShieldingNumber"] = static_cast<int>( shield_num );
+      shield_json["IsGeneric"] = shield.m_is_generic;
+      if( !shield.m_is_generic )
       {
-        nuc_json_obj["Age"] = PhysicalUnits::printToBestTimeUnits(nuc.age,3);
+        shield_json["Formula"] = shield.m_chemical_formula;
+        const double density = shield.m_density * PhysicalUnits::cm3 / PhysicalUnits::g;
+        shield_json["Density"] = SpecUtils::printCompact(density, 5);
+        shield_json["DensityFloat"] = density;
       }
-    }//if( nuc.ageIsFittable )
-    
-    switch( nuc.sourceType )
-    {
-      case ShieldingSourceFitCalc::ModelSourceType::Point:
-        nuc_json_obj["SourceType"] = "Point";
-        break;
+      
+      if( shield.m_an > 0 )
+        shield_json["AN"] = SpecUtils::printCompact(shield.m_an, 4);
+      if( shield.m_ad > 0 )
+        shield_json["AD"] = SpecUtils::printCompact(shield.m_ad*PhysicalUnits::cm2/PhysicalUnits::g, 4);
+      
+      if( shield.m_is_generic )
+      {
+        const bool fitAn = shield.m_fit_dimension[0];
+        const bool fitAD = shield.m_fit_dimension[1];
+        shield_json["FitAN"] = fitAn;
+        shield_json["FitAD"] = fitAD;
+      }
+      
+      const vector<bool> fit_dim( shield.m_fit_dimension, shield.m_fit_dimension + shield.m_num_dimensions );
+      shield_json["DimensionIsFit"] = fit_dim;
+      
+      shield_json["NumDimensions"] = static_cast<int>( shield.m_num_dimensions );
+      shield_json["Geometry"] = GammaInteractionCalc::to_str(shield.m_geometry);
+      
+      shield_json["Thickness"] = PhysicalUnits::printToBestLengthUnits(shield.m_thickness,3);
+      shield_json["ThicknessCm"] = shield.m_thickness / PhysicalUnits::cm;
+      shield_json["VolumeCm3"] = shield.m_volume / PhysicalUnits::cm3;
+      shield_json["VolumeUncertCm3"] = shield.m_volume_uncert / PhysicalUnits::cm3;
+      
+      shield_json["InnerRadius"] = PhysicalUnits::printToBestLengthUnits(shield.m_inner_rad, 3);
+      shield_json["OuterRadius"] = PhysicalUnits::printToBestLengthUnits(shield.m_inner_rad + shield.m_thickness, 3);
+      
+      vector<double> inner_dims{ shield.m_inner_dimensions, shield.m_inner_dimensions + shield.m_num_dimensions };
+      vector<double> outer_dims{ shield.m_outer_dimensions, shield.m_outer_dimensions + shield.m_num_dimensions };
+      vector<double> thicknesses( shield.m_num_dimensions );
+      vector<double> dim_uncerts( shield.m_dimension_uncert, shield.m_dimension_uncert + shield.m_num_dimensions );
+      
+      vector<string> inner_dims_strs( shield.m_num_dimensions );
+      vector<string> outer_dims_strs( shield.m_num_dimensions );
+      vector<string> thicknesses_strs( shield.m_num_dimensions );
+      vector<string> dim_uncerts_strs( shield.m_num_dimensions );
+      
+      for( unsigned int dim = 0; dim < shield.m_num_dimensions; ++dim )
+      {
+        thicknesses[dim] = outer_dims[dim] - inner_dims[dim];
+        thicknesses_strs[dim] = PhysicalUnits::printToBestLengthUnits( thicknesses[dim], 5 );
+        inner_dims_strs[dim] = PhysicalUnits::printToBestLengthUnits( inner_dims[dim], 5 );
+        outer_dims_strs[dim] = PhysicalUnits::printToBestLengthUnits( outer_dims[dim], 5 );
+        if( fit_dim[dim] )
+          dim_uncerts_strs[dim] = PhysicalUnits::printToBestLengthUnits( dim_uncerts[dim], 5 );
         
-      case ShieldingSourceFitCalc::ModelSourceType::Intrinsic:
-        nuc_json_obj["SourceType"] = "Intrinsic Radiation";
-        break;
+        inner_dims[dim] /= PhysicalUnits::cm;
+        outer_dims[dim] /= PhysicalUnits::cm;
+        thicknesses[dim] /= PhysicalUnits::cm;
+        dim_uncerts[dim] /= PhysicalUnits::cm;
+      }//for( unsigned int dim = 0; dim < shield.m_num_dimensions; ++dim )
+      
+      shield_json["InnerDimsCm"] = inner_dims;
+      shield_json["OuterDimsCm"] = outer_dims;
+      shield_json["ThicknessesCm"] = thicknesses;
+      shield_json["ThicknessesUncerts"] = dim_uncerts_strs;
+      shield_json["ThicknessesUncertsCm"] = dim_uncerts;
+      shield_json["InnerDims"]   = inner_dims_strs;
+      shield_json["OuterDims"]   = outer_dims_strs;
+      shield_json["Thicknesses"] = thicknesses_strs;
+      
+      
+      for( const GammaInteractionCalc::ShieldingDetails::SelfAttenComponent &comp : shield.m_mass_fractions )
+      {
+        shield_json["SelfAttenSources"].push_back( {} );
+        auto &self_atten_json = shield_json["SelfAttenSources"].back();
+      
+        assert( comp.m_nuclide );
+        self_atten_json["Nuclide"] = comp.m_nuclide ? comp.m_nuclide->symbol : string("null");
+        self_atten_json["IsFittingMassFraction"] = comp.m_is_fit;
+        self_atten_json["MassFraction"] = SpecUtils::printCompact(comp.m_mass_frac, 5);
+        self_atten_json["MassFractionFloat"] = comp.m_mass_frac;
+        if( comp.m_is_fit )
+        {
+          self_atten_json["MassFractionUncert"] = SpecUtils::printCompact(comp.m_mass_frac_uncert, 5);
+          self_atten_json["MassFractionUncertFloat"] = comp.m_mass_frac_uncert;
+        }
         
-      case ShieldingSourceFitCalc::ModelSourceType::Trace:
-        nuc_json_obj["SourceType"] = "Trace Source";
-        break;
-    }//switch( nuc.sourceType )
-  }//for( const ShieldingSourceFitCalc::IsoFitStruct &nuc : m_fit_results.fit_src_info )
+        assert( results.source_calc_details );
+        if( results.source_calc_details )
+        {
+          const vector<GammaInteractionCalc::SourceDetails> &srcs = *results.source_calc_details;
+          auto pos = std::find_if( begin(srcs), end(srcs),
+            [&comp]( const GammaInteractionCalc::SourceDetails &src ){
+              return (src.nuclide == comp.m_nuclide);
+          } );
+          assert( pos != end(srcs) );
+          if( pos != end(srcs) )
+            add_basic_src_details( *pos, useBq, self_atten_json );
+        }//if( results.source_calc_details )
+      }//for( SelfAttenComponent & comp: shield.m_mass_fractions )
+      
+      for( const GammaInteractionCalc::ShieldingDetails::TraceSrcDetail &trace : shield.m_trace_sources )
+      {
+        shield_json["TraceSources"].push_back( {} );
+        auto &trace_src_json = shield_json["TraceSources"].back();
+        
+        assert( trace.m_nuclide );
+        trace_src_json["Nuclide"] = trace.m_nuclide ? trace.m_nuclide->symbol : string("null");
+        trace_src_json["TraceSourceType"] = GammaInteractionCalc::to_str( trace.m_trace_type );
+        if( trace.m_is_exp_dist )
+        {
+          trace_src_json["RelaxationLength"] = PhysicalUnits::printToBestLengthUnits( trace.m_relaxation_length, 4 );
+          trace_src_json["RelaxationLengthCm"] = trace.m_relaxation_length / PhysicalUnits::cm;
+        }
+        
+        assert( results.source_calc_details );
+        if( results.source_calc_details )
+        {
+          const vector<GammaInteractionCalc::SourceDetails> &srcs = *results.source_calc_details;
+          auto pos = std::find_if( begin(srcs), end(srcs),
+            [&trace]( const GammaInteractionCalc::SourceDetails &src ){
+              return (src.nuclide == trace.m_nuclide);
+          } );
+          assert( pos != end(srcs) );
+          if( pos != end(srcs) )
+            add_basic_src_details( *pos, useBq, trace_src_json );
+        }//if( results.source_calc_details )
+      }//for( const TraceSrcDetail &src : shield.m_trace_sources )
+      
+    }//for( const GammaInteractionCalc::ShieldingDetails &shield : *results.shield_calc_details )
+  }//if( results.shield_calc_details )
   
   
-  for( const ShieldingSourceFitCalc::FitShieldingInfo &shield : results.final_shieldings )
+  // Add Peak Details to JSON
+  if( results.peak_calc_details )
   {
-    data["Shieldings"].push_back({
-      { "Geometry", GammaInteractionCalc::to_str(shield.m_geometry) }
-    });
+    auto &peaks_json = data["PeaksUsedForActivityFitting"];
     
-    auto &shield_json_obj = data["Shieldings"].back();
-    // blah blah blah
-    
-    //const char *shield.m_geometry );
-    
-    /** Dimensions of this shielding; the meaning of the entries differs depending on the geometry,
-     or if a generic material.
-     
-     Spherical: ['Thickness', n/a, n/a]
-     Cylinder:  ['Radius','Length',n/a]
-     Rectangle: ['Width','Height','Depth']
-     Generic:   ['AtomicNumber','ArealDensity',n/a]
-     */
-    /*
-    double m_dimensions[3];
-    double m_dimensionUncerts[3];
-    bool m_fitDimensions[3];
-    std::map<const SandiaDecay::Nuclide *,double> m_nuclideFractionUncerts;
-    std::map<const SandiaDecay::Nuclide *,double> m_traceSourceActivityUncerts;
-    
-    bool m_isGenericMaterial;
-    bool m_forFitting;
-    std::shared_ptr<const Material> m_material;
-    bool m_fitMassFrac;
-    std::map<const SandiaDecay::Nuclide *,double> m_nuclideFractions;
-    std::vector<TraceSourceInfo> m_traceSources;
-    */
-  }//for( loop results.fit_src_info )
-  
+    for( const GammaInteractionCalc::PeakDetail &peak : *results.peak_calc_details )
+    {
+      peaks_json["Peaks"].push_back( {} );
+      nlohmann::basic_json<> &peak_json = peaks_json["Peaks"].back();
+      add_basic_peak_info( peak, peak_json );
+      
+      for( const GammaInteractionCalc::PeakDetail::PeakSrc &pksrc : peak.m_sources )
+      {
+        assert( pksrc.nuclide && results.source_calc_details );
+        if( !pksrc.nuclide || !results.source_calc_details )
+          continue;
+        
+        const vector<GammaInteractionCalc::SourceDetails> &srcs = *results.source_calc_details;
+        auto pos = std::find_if( begin(srcs), end(srcs),
+          [&peak]( const GammaInteractionCalc::SourceDetails &src ){
+            return src.nuclide && (src.nuclide->symbol == peak.assignedNuclide);
+        } );
+        assert( pos != end(srcs) );
+        if( pos == end(srcs) )
+          continue;
+        
+        
+        peak_json["Sources"].push_back( {} );
+        nlohmann::basic_json<> &src_json = peak_json["Sources"].back();
+        
+        add_basic_src_details( *pos, useBq, src_json );
+        
+        peak_json["HasDecayCorrection"] = (pksrc.decayCorrection > 0.0);
+        if( pksrc.decayCorrection > 0.0 )
+        {
+          peak_json["DecayCorrection"] = SpecUtils::printCompact(pksrc.decayCorrection, 4);
+          peak_json["DecayCorrectionFloat"] = pksrc.decayCorrection;
+        }
+        
+        char buffer[64] = { '\0' };
+        snprintf( buffer, sizeof(buffer), "%.2f", pksrc.energy );
+        
+        peak_json["Energy"] = string(buffer);
+        peak_json["EnergyKeV"] = pksrc.energy;
+        
+        peak_json["Cps"] = SpecUtils::printCompact(pksrc.cps, 4);
+        peak_json["CpsFloat"] = pksrc.cps;
+        
+        peak_json["BranchingRatio"] = SpecUtils::printCompact( pksrc.br, 5 );
+        peak_json["BranchingRatioFloat"] = pksrc.br;
+        
+        snprintf( buffer, sizeof(buffer), "%.2f", pksrc.counts );
+        peak_json["Counts"] = string(buffer);
+        peak_json["CountsFloat"] = pksrc.counts;
+      }//for( const GammaInteractionCalc::PeakDetail::PeakSrc &pksrc : peak.m_sources )
+      
+      // We could loop over the volumetric sources, and add info, but...
+      /*
+      struct VolumeSrc
+      {
+        bool trace;
+        double integral;
+        double srcVolumetricActivity;
+        bool inSituExponential;
+        double inSituRelaxationLength;
+        double detIntrinsicEff;
+        std::string sourceName;
+      };//struct VolumeSrc
+      
+      std::vector<VolumeSrc> m_volumetric_srcs;
+       */
+    }//for( loop over results.peak_calc_details )
+  }//if( results.peak_calc_details )
                                     
   auto add_detector_to_json = []( nlohmann::json &data, const shared_ptr<const DetectorPeakResponse> &drf ){
     if( !drf || !drf->isValid() )
@@ -352,7 +749,26 @@ void shield_src_fit_results_to_json( const ShieldingSourceFitCalc::ModelFitResul
            
     if( drf )
       add_detector_to_json( data, drf );
-                                    
+  
+  if( results.peak_comparisons )
+  {
+    // This info is already in the Peaks info, but we'll put in anyways
+    auto &energy_obj = data["PeakToModelComparison"];
+    
+    for( const GammaInteractionCalc::PeakResultPlotInfo &p : *results.peak_comparisons )
+    {
+      energy_obj["UsedPeaks"].push_back( {} );
+      nlohmann::basic_json<> &p_json = energy_obj["UsedPeaks"].back();
+      
+      char buffer[64] = { '\0' };
+      snprintf( buffer, sizeof(buffer), "%.2f", p.energy );
+      p_json["Energy"] = string(buffer);
+      p_json["NumSigmaOff"] = SpecUtils::printCompact( p.numSigmaOff, 6 ); //`(observed_counts - expected_counts) / observed_uncertainty`
+      p_json["ObservedOverExpected"] = SpecUtils::printCompact( p.observedOverExpected, 6 );
+      p_json["ObservedOverExpectedUncert"] = SpecUtils::printCompact( p.observedOverExpectedUncert, 6 );
+    }
+  }//if( results.peak_comparisons )
+  
 }//void shield_src_fit_results_to_json()
 #endif //USE_TMPLT_RESULT_OUTPUT
   
@@ -551,8 +967,6 @@ void fit_activities_in_files( const std::string &exemplar_filename,
       };
       
       
-      
-      
       if( fit_results.m_foreground )
       {
         add_hist_to_json( data, false, fit_results.m_foreground,
@@ -575,13 +989,11 @@ void fit_activities_in_files( const std::string &exemplar_filename,
       shared_ptr<const DetectorPeakResponse> drf = fit_results.m_options.drf_override;
       if( !drf && fit_results.m_exemplar_file )
         drf = fit_results.m_exemplar_file->detector();
+      const bool use_bq = fit_results.m_options.use_bq;
       
-      shield_src_fit_results_to_json( *fit_results.m_fit_results, drf, data );
+      shield_src_fit_results_to_json( *fit_results.m_fit_results, drf, use_bq, data );
       
-      
-      
-      
-      
+      //std::cout << std::setw(4) << data << std::endl;
       
       //InterSpec::setStaticDataDirectory( SpecUtils::append_path(datadir,"data") );
       string tmplt_dir = InterSpec::staticDataDirectory();
@@ -603,26 +1015,12 @@ void fit_activities_in_files( const std::string &exemplar_filename,
       try
       {
         inja::Environment env{ tmplt_dir };
+        env.set_trim_blocks( true ); // remove the first newline after a block
+        //env.set_lstrip_blocks( true ); //strip the spaces and tabs from the start of a line to a block
+        env.set_search_included_templates_in_files( false );
         inja::Template tmplt = env.parse_template( "std_fit_log.tmplt.txt" );
         
         // TODO: allow users to have their own directory of templates (because templates can include other templates)
-       
-        
-        
-          /*
-           ActShieldCalcLogInfo -->
-          Peaks: [{energy: 99, fwhm: 2.1, counts: 1220, countsUncert: 120, cps: 123,
-           ExpectedCounts: 1250, NSigmaOff: -0.23,
-           EmittedInto4Pi: 161942,
-           EmittedInto4PiCps: 1619
-           srcs: [{name: "I131", energy: 98.6, br: 0.34, counts: 1220, cps, 123}, {name: "OtherNuc", ...}],
-           SolidAngle: 0.00005,
-           IntrinsicEff: 0.62
-           }
-          ]
-          */
-          
-        
         
         const string rpt = env.render(tmplt, data);
         cout << "\n\nJson:\n" << rpt << endl;

@@ -5336,50 +5336,48 @@ vector<PeakResultPlotInfo> ShieldingSourceChi2Fcn::expected_observed_chis(
     
     if( log_info )
     {
-      for( const PeakDef &peak : peaks )
+      try
       {
-        try
+        const double energy = peak.gammaParticleEnergy();
+        
+        auto pos = std::find_if( begin(*log_info), end(*log_info),
+                                [energy]( const GammaInteractionCalc::PeakDetail &val ) {
+          return energy == val.decayParticleEnergy;
+        });
+        
+        assert( pos != end(*log_info) );
+        
+        if( pos != end(*log_info) )
         {
-          const double energy = peak.gammaParticleEnergy();
+          GammaInteractionCalc::PeakDetail &log_peak = *pos;
           
-          auto pos = std::find_if( begin(*log_info), end(*log_info), 
-                                  [energy]( const GammaInteractionCalc::PeakDetail &val ) {
-            return energy == val.decayParticleEnergy;
-          });
+          assert( log_peak.energy == peak.mean() );
+          assert( log_peak.decayParticleEnergy == peak.gammaParticleEnergy() );
+          assert( (peak.type() != PeakDef::GaussianDefined) || (log_peak.fwhm == peak.fwhm()) );
+          assert( log_peak.counts == peak.peakArea() );
+          assert( log_peak.countsUncert == peak.peakAreaUncert() );
           
-          assert( pos != end(*log_info) );
+          log_peak.expectedCounts = expected_counts;
+          log_peak.observedCounts = observed_counts;
+          log_peak.observedUncert = observed_uncertainty;
           
-          if( pos != end(*log_info) )
+          log_peak.numSigmaOff = chi;
+          log_peak.observedOverExpected = scale;
+          log_peak.observedOverExpectedUncert = scale_uncert;
+          
+          //log_peak.modelInto4Pi = ;
+          //log_peak.modelInto4PiCps = ;
+          
+          if( backCounts > 0 )
           {
-            GammaInteractionCalc::PeakDetail &log_peak = *pos;
-            
-            assert( log_peak.energy == peak.mean() );
-            assert( log_peak.decayParticleEnergy == peak.gammaParticleEnergy() );
-            assert( (peak.type() != PeakDef::GaussianDefined) || (log_peak.fwhm == peak.fwhm()) );
-            assert( log_peak.counts == peak.peakArea() );
-            assert( log_peak.countsUncert == peak.peakAreaUncert() );
-            
-            log_peak.expectedCounts = expected_counts;
-            log_peak.observedCounts = observed_counts;
-            log_peak.observedUncert = observed_uncertainty;
-            log_peak.numSigmaOff = chi;
-            log_peak.observedOverExpected = scale;
-            log_peak.observedOverExpectedUncert = scale_uncert;
-            
-            //log_peak.modelInto4Pi = ;
-            //log_peak.modelInto4PiCps = ;
-            
-            if( backCounts > 0 )
-            {
-              log_peak.backgroundCounts = backCounts;
-              log_peak.backgroundCountsUncert = sqrt( backUncert2 );
-            }
-          }//if( pos != end(*log_info) )
-        }catch( std::exception & )
-        {
-          assert( 0 );
-        }
-      }//for( const PeakDef &peak : m_peaks )
+            log_peak.backgroundCounts = backCounts;
+            log_peak.backgroundCountsUncert = sqrt( backUncert2 );
+          }
+        }//if( pos != end(*log_info) )
+      }catch( std::exception & )
+      {
+        assert( 0 );
+      }
     }//if( log_info )
   }//for( const PeakDef &peak : m_peaks )
 
@@ -5672,6 +5670,18 @@ vector<PeakResultPlotInfo>
         
         log_peak.cps = log_peak.counts / m_liveTime;
         log_peak.cpsUncert = log_peak.countsUncert / m_liveTime;
+        
+        if( peak.parentNuclide() )
+          log_peak.assignedNuclide = peak.m_parentNuclide->symbol;
+        else if( peak.xrayElement() )
+          log_peak.assignedNuclide = peak.xrayElement()->name;
+        else if( peak.reaction() )
+          log_peak.assignedNuclide = peak.reaction()->name();
+        else
+        {
+          assert( 0 );
+          log_peak.assignedNuclide = "null";
+        }
       }catch( std::exception & )
       {
         assert( 0 );
@@ -6786,27 +6796,18 @@ void ShieldingSourceChi2Fcn::log_shield_info( const vector<double> &params,
           assert( !chi2Fcn->isTraceSource(nuc) );
           
           ShieldingDetails::SelfAttenComponent comp;
-          comp.m_name = nuc->symbol;
-          comp.m_age = chi2Fcn->age( nuc, params );
-          
+          comp.m_nuclide = nuc;
+
+#ifndef NDEBUG
           const auto src_pos = find_if( begin(fit_src_info), end(fit_src_info),
                   [nuc]( const ShieldingSourceFitCalc::IsoFitStruct &info ){
             return info.nuclide == nuc;
           });
           assert( src_pos != end(fit_src_info) );
-          
-          if( src_pos != end(fit_src_info) )
-          {
-            comp.m_age_is_fitable = src_pos->ageIsFittable;
-            comp.m_age_fit = src_pos->fitAge;
-          }
-          comp.m_age_uncert = comp.m_age_fit ? chi2Fcn->age(nuc, errors) : 0.0;
+#endif
           
           const auto fit_pos = std::find(begin(fit_frac_nucs), end(fit_frac_nucs), nuc);
           comp.m_is_fit = (fit_pos != end(fit_frac_nucs));
-          
-          comp.m_total_act = chi2Fcn->totalActivity( nuc, params );
-          comp.m_total_act_uncert = chi2Fcn->totalActivityUncertainty( nuc, params, errors );
           
           comp.m_mass_frac = chi2Fcn->massFraction(shielding_index, nuc, params);
           comp.m_mass_frac_uncert = chi2Fcn->massFractionUncert(shielding_index, nuc, params, errors );
@@ -6825,29 +6826,18 @@ void ShieldingSourceChi2Fcn::log_shield_info( const vector<double> &params,
           assert( !chi2Fcn->isSelfAttenSource(nuc) );
         
           ShieldingDetails::TraceSrcDetail src;
-          src.m_name = nuc->symbol;
-          src.m_age = chi2Fcn->age( nuc, params );
+          src.m_nuclide = nuc;
+          //src.m_age = chi2Fcn->age( nuc, params );
           src.m_trace_type = chi2Fcn->traceSourceActivityType( nuc );
           src.m_is_exp_dist = (src.m_trace_type == GammaInteractionCalc::TraceActivityType::ExponentialDistribution);
+          
+#ifndef NDEBUG
           const auto src_pos = find_if( begin(fit_src_info), end(fit_src_info),
                   [nuc]( const ShieldingSourceFitCalc::IsoFitStruct &info ){
             return info.nuclide == nuc;
           });
           assert( src_pos != end(fit_src_info) );
-          
-          if( src_pos != end(fit_src_info) )
-          {
-            src.m_age_is_fitable = src_pos->ageIsFittable;
-            src.m_age_fit = src_pos->fitAge;
-            src.m_fit_activity = src_pos->fitActivity;
-          }
-          src.m_age_uncert = src.m_age_fit ? chi2Fcn->age(nuc, errors) : 0.0;
-          
-          src.m_activity = chi2Fcn->totalActivity( nuc, params ); //Note: for trace sources, the #activity function returns the display activity (so either total, per cc, or per g) for the trace sources.
-          src.m_activity_uncert = chi2Fcn->totalActivityUncertainty( nuc, params, errors );
-          
-          src.m_total_activity = chi2Fcn->activity( nuc, params );
-          src.m_total_activity_uncert = chi2Fcn->activityUncertainty( nuc, params, errors );
+#endif
           
           if( src.m_is_exp_dist )
             src.m_relaxation_length = chi2Fcn->relaxationLength( nuc );
@@ -6855,6 +6845,8 @@ void ShieldingSourceChi2Fcn::log_shield_info( const vector<double> &params,
           shieldInfo.m_trace_sources.push_back( src );
         }//for( const SandiaDecay::Nuclide *nuc : trace_srcs )
       }//if( shieldInfo.m_is_generic ) / else
+      
+      shielding_details.push_back( std::move(shieldInfo) );
     }//for( size_t shielding_index = 0; shielding_index < chi2Fcn->numMaterials(); ++shielding_index )
   
   }catch( std::exception &e )
@@ -6893,7 +6885,6 @@ void ShieldingSourceChi2Fcn::log_source_info( const std::vector<double> &params,
         throw runtime_error( "Missing ShieldingSourceFitCalc::IsoFitStruct for " + nuc->symbol );
       
       const ShieldingSourceFitCalc::IsoFitStruct &fit_info = *pos;
-      
       
       SourceDetails src;
       src.nuclide = nuc;
@@ -6942,6 +6933,8 @@ void ShieldingSourceChi2Fcn::log_source_info( const std::vector<double> &params,
         
         assert( found_shield );
       }//if( src.isSelfAttenSource )
+      
+      info.push_back( std::move(src) );
     }//for( size_t nucn = 0; nucn < nnuc; ++nucn )
   }catch( std::exception &e )
   {

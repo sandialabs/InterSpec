@@ -2459,6 +2459,29 @@ void fit_model( const std::string wtsession,
       {
         auto shielding_details = make_unique<vector<GammaInteractionCalc::ShieldingDetails>>();
         chi2Fcn->log_shield_info( params, errors, results->fit_src_info, *shielding_details );
+        
+        // Now fill in a little info we need the results for
+        assert( results->initial_shieldings.size() == shielding_details->size() );
+        for( size_t i = 0; i < results->initial_shieldings.size(); ++i )
+        {
+          const ShieldingSourceFitCalc::ShieldingInfo &initial_shield = results->initial_shieldings[i];
+          if( i >= shielding_details->size() )
+            continue; //wont happen, but jic
+          if( i >= results->final_shieldings.size() )
+            continue; //wont happen, but jic
+          
+          const ShieldingSourceFitCalc::FitShieldingInfo &final_shield = results->final_shieldings[i];
+          
+          GammaInteractionCalc::ShieldingDetails &calc_detail = shielding_details->at( i );
+          for( size_t j = 0; j < 3; ++j )
+          {
+            calc_detail.m_fit_dimension[j] = initial_shield.m_fitDimensions[j];
+            if( calc_detail.m_fit_dimension[j] )
+              calc_detail.m_dimension_uncert[j] = final_shield.m_dimensionUncerts[j];
+          }//
+        }//for( size_t i = 0; i < results->initial_shieldings.size(); ++i )
+        
+        
         results->shield_calc_details = std::move(shielding_details);
       }catch( std::exception &e )
       {
@@ -2469,7 +2492,7 @@ void fit_model( const std::string wtsession,
       {
         auto shielding_details = make_unique<vector<GammaInteractionCalc::SourceDetails>>();
         chi2Fcn->log_source_info( params, errors, results->fit_src_info, *shielding_details );
-        results->shield_source_details = std::move(shielding_details);
+        results->source_calc_details = std::move(shielding_details);
       }catch( std::exception &e )
       {
         results->errormsgs.push_back( e.what() );

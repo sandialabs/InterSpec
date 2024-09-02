@@ -33,6 +33,7 @@
 #include "InterSpec/AppUtils.h"
 #include "InterSpec/BatchPeak.h"
 #include "InterSpec/BatchActivity.h"
+#include "InterSpec/InterSpecUser.h"
 #include "InterSpec/BatchCommandLine.h"
 #include "InterSpec/DetectorPeakResponse.h"
 
@@ -195,6 +196,15 @@ int run_batch_command( int argc, char **argv )
       ;
       
       
+      bool use_bq = false;
+      try
+      {
+        use_bq = InterSpecUser::preferenceValue<bool>( "DisplayBecquerel", nullptr );
+      }catch( std::exception &)
+      {
+        assert( 0 );
+      }
+      
       string drf_file, drf_name;
       po::options_description activity_cl_desc("Activity-fit options", term_width, min_description_length);
       activity_cl_desc.add_options()
@@ -209,6 +219,8 @@ int run_batch_command( int argc, char **argv )
        "The sample numbers from the background file to use; if left empty will try to determine, and fail if not unique.\n\t"
        "Only applicable if the background subtraction file is specified."
        )
+      ("use-bq", po::value<bool>(&use_bq)->default_value(use_bq)->implicit_value(true),
+       "Whether to use Curies or Becquerels for displaying activity.")
       ;
       
       po::variables_map cl_vm;
@@ -288,6 +300,7 @@ int run_batch_command( int argc, char **argv )
       options.output_dir = output_path;
       options.background_subtract_file = background_sub_file;
       options.background_subtract_samples = background_sample_nums;
+      options.use_bq = use_bq;
       
       if( batch_peak_fit )
       {
