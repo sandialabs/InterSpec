@@ -33,31 +33,29 @@
 
 #include "Minuit2/MnUserParameters.h"
 
+#include "external_libs/SpecUtils/3rdparty/inja/inja.hpp"
+
+#include "SpecUtils/DateTime.h"
 #include "SpecUtils/Filesystem.h"
 #include "SpecUtils/StringAlgo.h"
 #include "SpecUtils/RapidXmlUtils.hpp"
 #include "SpecUtils/D3SpectrumExport.h"
 
 #include "InterSpec/PeakDef.h"
+#include "InterSpec/AppUtils.h"
 #include "InterSpec/SpecMeas.h"
 #include "InterSpec/BatchPeak.h"
 #include "InterSpec/DrfSelect.h"
 #include "InterSpec/InterSpec.h"
 #include "InterSpec/PeakModel.h"
 #include "InterSpec/MaterialDB.h"
+#include "InterSpec/InterSpecApp.h"
 #include "InterSpec/BatchActivity.h"
 #include "InterSpec/PhysicalUnits.h"
 #include "InterSpec/DecayDataBaseServer.h"
 #include "InterSpec/DetectorPeakResponse.h"
 #include "InterSpec/GammaInteractionCalc.h"
 
-
-// I'm just starting to toy around with using inja to template the output of the batch results.
-//  Preliminarily, it looks like we can do most of what we might want with this.
-#define USE_TMPLT_RESULT_OUTPUT 1
-#if( USE_TMPLT_RESULT_OUTPUT )
-#include "external_libs/SpecUtils/3rdparty/inja/inja.hpp"
-#endif
 
 using namespace std;
 
@@ -222,23 +220,32 @@ shared_ptr<DetectorPeakResponse> init_drf_from_name( std::string drf_file, std::
   return nullptr;
 }//shared_ptr<DetectorPeakResponse> init_drf_from_name( std::string drf_file, std::string drf-name )
   
-#if( USE_TMPLT_RESULT_OUTPUT )
+
   
   // Adds the basic direct info on a source (nuclide name, activity, age, etc), but does not
   //  Add which peaks it contributes to, or any information on gammas
-void add_basic_src_details( const GammaInteractionCalc::SourceDetails &src, const bool useBq, nlohmann::basic_json<> &src_json )
+void add_basic_src_details( const GammaInteractionCalc::SourceDetails &src,
+                           const std::shared_ptr<const DetectorPeakResponse> &drf,
+                           const bool useBq, 
+                           nlohmann::basic_json<> &src_json )
 {
+  const DetectorPeakResponse::EffGeometryType eff_type = drf ? drf->geometryType()
+                                              : DetectorPeakResponse::EffGeometryType::FarField;
+  
+  const string act_postfix = DetectorPeakResponse::det_eff_geom_type_postfix(eff_type);
+  
+  
   src_json["Nuclide"] = src.nuclide->symbol;
-  src_json["Activity"] = PhysicalUnits::printToBestActivityUnits(src.activity,4,!useBq);
+  src_json["Activity"] = PhysicalUnits::printToBestActivityUnits(src.activity,4,!useBq); //I dont think we need `act_postfix` here since I *think* this is total activity.
   src_json["ActivityBq"] = src.activity / PhysicalUnits::bq;
   src_json["ActivityCi"] = src.activity / PhysicalUnits::ci;
   src_json["ActivityIsFit"] = src.activityIsFit;
   if( src.activityIsFit )
   {
-    src_json["ActivityUncert"] = PhysicalUnits::printToBestActivityUnits(src.activityUncertainty,4,!useBq);
+    src_json["ActivityUncert"] = PhysicalUnits::printToBestActivityUnits(src.activityUncertainty,4,!useBq);//ditto on `act_postfix` not here
     src_json["ActivityUncertBq"] = src.activityUncertainty / PhysicalUnits::bq;
     src_json["ActivityUncertCi"] = src.activityUncertainty / PhysicalUnits::ci;
-    const double act_uncert_percent = 100.0 * src.activity / src.activityUncertainty;
+    const double act_uncert_percent = 100.0 * src.activityUncertainty / src.activity;
     src_json["ActivityUncertPercent"] = SpecUtils::printCompact( act_uncert_percent, 4 );
   }else
   {
@@ -272,13 +279,13 @@ void add_basic_src_details( const GammaInteractionCalc::SourceDetails &src, cons
   if( src.isTraceSource )
   {
     src_json["TraceActivityType"] = GammaInteractionCalc::to_str(src.traceActivityType);
-    src_json["TraceDisplayActivity"] = PhysicalUnits::printToBestActivityUnits(src.traceSrcDisplayAct,4,!useBq);
+    src_json["TraceDisplayActivity"] = PhysicalUnits::printToBestActivityUnits(src.traceSrcDisplayAct,4,!useBq) + act_postfix;
     src_json["TraceDisplayActivityBq"] = src.traceSrcDisplayAct / PhysicalUnits::bq;
     src_json["TraceDisplayActivityCi"] = src.traceSrcDisplayAct / PhysicalUnits::ci;
     
     if( src.ageIsFit )
     {
-      src_json["TraceDisplayActivityUncert"] = PhysicalUnits::printToBestActivityUnits(src.traceSrcDisplayActUncertainty,4,!useBq);
+      src_json["TraceDisplayActivityUncert"] = PhysicalUnits::printToBestActivityUnits(src.traceSrcDisplayActUncertainty,4,!useBq) + act_postfix;
       src_json["TraceDisplayActivityUncertBq"] = src.traceSrcDisplayActUncertainty / PhysicalUnits::bq;
       src_json["TraceDisplayActivityUncertCi"] = src.traceSrcDisplayActUncertainty / PhysicalUnits::ci;
     }else
@@ -367,6 +374,7 @@ void add_basic_peak_info( const GammaInteractionCalc::PeakDetail &peak, nlohmann
   
 void add_gamma_info_for_peak( const GammaInteractionCalc::PeakDetail::PeakSrc &ps, 
                              const GammaInteractionCalc::SourceDetails * const src,
+                             const std::shared_ptr<const DetectorPeakResponse> &drf,
                              const bool useBq,
                              nlohmann::basic_json<> &gamma_json )
 {
@@ -400,33 +408,105 @@ void add_gamma_info_for_peak( const GammaInteractionCalc::PeakDetail::PeakSrc &p
   //  from the templating code, since we are in a loop over `SourceDetails`, but
   //  to make things easier on people, we'll just re-include it here.
   if( src )
-    add_basic_src_details( *src, useBq,  gamma_json );
+    add_basic_src_details( *src, drf, useBq,  gamma_json );
 };//add_gamma_info_for_peak(...)
   
+  
+void add_fit_options_to_json( const ShieldingSourceFitCalc::ShieldingSourceFitOptions &options,
+                             const double distance,
+                             const GammaInteractionCalc::GeometryType geometry,
+                             const std::shared_ptr<const DetectorPeakResponse> &drf,
+                             nlohmann::json &data )
+{
+  const bool fixedGeom = (drf && drf->isFixedGeometry());
+  
+  data["FixedGeometryDetector"] = fixedGeom;
+  
+  auto &fit_setup = data["ActShieldFitSetup"];
+  if( !fixedGeom )
+  {
+    fit_setup["Distance"] = distance / PhysicalUnits::cm;
+    fit_setup["DistanceStr"] = PhysicalUnits::printToBestLengthUnits( distance, 3 );
+    fit_setup["Geometry"] = GammaInteractionCalc::to_str( geometry );
+  }else
+  {
+    string gem_desc;
+    switch( drf->geometryType() )
+    {
+      case DetectorPeakResponse::EffGeometryType::FarField:
+        assert( drf->geometryType() != DetectorPeakResponse::EffGeometryType::FarField );
+        break;
+        
+      case DetectorPeakResponse::EffGeometryType::FixedGeomTotalAct:
+        gem_desc = "total activity";
+        break;
+        
+      case DetectorPeakResponse::EffGeometryType::FixedGeomActPerCm2:
+        gem_desc = "activity per square centimeter";
+        break;
+        
+      case DetectorPeakResponse::EffGeometryType::FixedGeomActPerM2:
+        gem_desc = "activity per square meter";
+        break;
+        
+      case DetectorPeakResponse::EffGeometryType::FixedGeomActPerGram:
+        gem_desc = "activity per gram";
+        break;
+    }//switch( drf->geometryType() )
+    
+    fit_setup["FixedGeometryType"] = gem_desc;
+  }//if( !fixedGeom ) / else
+  
+  auto &fit_options = fit_setup["FitOptions"];
+  fit_options["InterferenceCorrection"]   = options.multiple_nucs_contribute_to_peaks;
+  fit_options["AttenuateForAir"]          = (options.attenuate_for_air && (!drf || !drf->isFixedGeometry()));
+  fit_options["DecayDuringMeasurement"]   = options.account_for_decay_during_meas;
+  fit_options["MultithreadSelfAttenCalc"] = options.multithread_self_atten;
+  fit_options["PhotopeakClusterSigma"]    = options.photopeak_cluster_sigma;
+  fit_options["BackgroundPeakSubtract"]   = options.background_peak_subtract;
+  fit_options["ElementNuclidesSameAge"]   = options.same_age_isotopes;
+}//void add_fit_options_to_json(...)
+  
+  
+void add_exe_info_to_json( nlohmann::json &data )
+{
+  data["InterSpecCompileDate"] = string(__DATE__);
+  data["InterSpecCompileDateIso"] = to_string( AppUtils::compile_date_as_int() );
+  const auto now = chrono::time_point_cast<chrono::microseconds>( chrono::system_clock::now() );
+  data["AnalysisTime"] = SpecUtils::to_iso_string( now );
+  data["CurrentWorkingDirectory"] = SpecUtils::get_working_path();
+#if( !ANDROID && !IOS && !BUILD_FOR_WEB_DEPLOYMENT )
+  try
+  {
+    const string exe_path = AppUtils::current_exe_path();
+    data["InterSpecExecutablePath"] = exe_path;
+  }catch( std::exception & )
+  {
+    assert( 0 );
+  }
+#endif //if( not web or mobile )
+}//void add_exe_info_to_json( nlohmann::json &data )
 
+  
 void shield_src_fit_results_to_json( const ShieldingSourceFitCalc::ModelFitResults &results,
                                     const std::shared_ptr<const DetectorPeakResponse> &drf,
                                     const bool useBq,
                                     nlohmann::json &data )
 {
-  // Need to put peak info here
+  // Some info about the compiled application
+  add_exe_info_to_json( data );
   
-  auto &fit_setup = data["ActShieldFitSetup"];
-  fit_setup["Distance"] = results.distance / PhysicalUnits::cm;
-  fit_setup["DistanceStr"] = PhysicalUnits::printToBestLengthUnits( results.distance, 3 );
-  fit_setup["Geometry"] = GammaInteractionCalc::to_str( results.geometry );
-  
-  
-  auto &fit_options = fit_setup["FitOptions"];
-  fit_options["InterferenceCorrection"] = results.options.multiple_nucs_contribute_to_peaks;
-  fit_options["AttenuateForAir"] = (results.options.attenuate_for_air && (!drf || !drf->isFixedGeometry()));
-  fit_options["DecayDuringMeasurement"] = results.options.account_for_decay_during_meas;
-  fit_options["MultithreadSelfAttenCalc"] = results.options.multithread_self_atten;
-  fit_options["PhotopeakClusterSigma"] = results.options.photopeak_cluster_sigma;
-  fit_options["BackgroundPeakSubtract"] = results.options.background_peak_subtract;
-  fit_options["ElementNuclidesSameAge"] = results.options.same_age_isotopes;
+  //Now add info about the analysis setup
+  add_fit_options_to_json( results.options, results.distance, results.geometry, drf, data );
   
   
+  const DetectorPeakResponse::EffGeometryType eff_type = drf ? drf->geometryType()
+                                              : DetectorPeakResponse::EffGeometryType::FarField;
+  
+  const string act_postfix = DetectorPeakResponse::det_eff_geom_type_postfix(eff_type);
+  
+  
+  // Now put in results
   data["FitChi2"] = results.chi2;
   data["EstimatedDistanceToMinimum"] = results.edm;
   data["NumberFcnCalls"] = results.num_fcn_calls;
@@ -447,7 +527,7 @@ void shield_src_fit_results_to_json( const ShieldingSourceFitCalc::ModelFitResul
       data["Sources"].push_back( {} );
       auto &src_json = data["Sources"].back();
       
-      add_basic_src_details( src, useBq, src_json );
+      add_basic_src_details( src, drf, useBq, src_json );
       
       // We wont put peaks into this struct, but instead when we make the JSON, we'll
       //  insert peaks from `PeakDetail` as `PeakDetail::PeakSrc::nuclide` match this nuclide.
@@ -478,7 +558,7 @@ void shield_src_fit_results_to_json( const ShieldingSourceFitCalc::ModelFitResul
             peak_json["ThisNucsGammasForPeak"].push_back( {} );
             nlohmann::basic_json<> &gamma_json = peak_json["ThisNucsGammasForPeak"].back();
             
-            add_gamma_info_for_peak( ps, &src, useBq, gamma_json );
+            add_gamma_info_for_peak( ps, &src, drf, useBq, gamma_json );
           }
         }//for( loop over results.peak_calc_details )
       }//if( results.peak_calc_details )
@@ -623,7 +703,7 @@ void shield_src_fit_results_to_json( const ShieldingSourceFitCalc::ModelFitResul
           } );
           assert( pos != end(srcs) );
           if( pos != end(srcs) )
-            add_basic_src_details( *pos, useBq, self_atten_json );
+            add_basic_src_details( *pos, drf, useBq, self_atten_json );
         }//if( results.source_calc_details )
       }//for( SelfAttenComponent & comp: shield.m_mass_fractions )
       
@@ -651,7 +731,7 @@ void shield_src_fit_results_to_json( const ShieldingSourceFitCalc::ModelFitResul
           } );
           assert( pos != end(srcs) );
           if( pos != end(srcs) )
-            add_basic_src_details( *pos, useBq, trace_src_json );
+            add_basic_src_details( *pos, drf, useBq, trace_src_json );
         }//if( results.source_calc_details )
       }//for( const TraceSrcDetail &src : shield.m_trace_sources )
       
@@ -689,7 +769,7 @@ void shield_src_fit_results_to_json( const ShieldingSourceFitCalc::ModelFitResul
         peak_json["Sources"].push_back( {} );
         nlohmann::basic_json<> &src_json = peak_json["Sources"].back();
         
-        add_basic_src_details( *pos, useBq, src_json );
+        add_basic_src_details( *pos, drf, useBq, src_json );
         
         peak_json["HasDecayCorrection"] = (pksrc.decayCorrection > 0.0);
         if( pksrc.decayCorrection > 0.0 )
@@ -770,7 +850,7 @@ void shield_src_fit_results_to_json( const ShieldingSourceFitCalc::ModelFitResul
   }//if( results.peak_comparisons )
   
 }//void shield_src_fit_results_to_json()
-#endif //USE_TMPLT_RESULT_OUTPUT
+
   
 void fit_activities_in_files( const std::string &exemplar_filename,
                           const std::set<int> &exemplar_sample_nums,
@@ -785,7 +865,7 @@ void fit_activities_in_files( const std::string &exemplar_filename,
   if( !options.output_dir.empty() && !SpecUtils::is_directory(options.output_dir) )
     throw runtime_error( "Output directory ('" + options.output_dir + "'), is not a directory." );
     
-  if( options.write_n42_with_peaks && options.output_dir.empty() )
+  if( options.write_n42_with_results && options.output_dir.empty() )
     throw runtime_error( "If you specify to write N42 files with the fit peaks, you must specify an output directory." );
   
   const SandiaDecay::SandiaDecayDataBase *db = DecayDataBaseServer::database();
@@ -799,6 +879,115 @@ void fit_activities_in_files( const std::string &exemplar_filename,
   }//if( !db )
   
   
+  // Load report templates, and setup inja::environment
+  //InterSpec::setStaticDataDirectory( SpecUtils::append_path(datadir,"data") );
+  string default_tmplt_dir = InterSpec::staticDataDirectory();
+  assert( !default_tmplt_dir.empty() );
+  if( default_tmplt_dir.empty() )
+    default_tmplt_dir = "./data";
+  default_tmplt_dir = SpecUtils::append_path( default_tmplt_dir, ".." ); //Also see: `WServer::instance()->appRoot()`, which isnt valid right now
+  default_tmplt_dir = SpecUtils::append_path( default_tmplt_dir, "InterSpec_resources" );
+  default_tmplt_dir = SpecUtils::append_path( default_tmplt_dir, "static_text" );
+  default_tmplt_dir = SpecUtils::append_path( default_tmplt_dir, "ShieldSourceFitLog" );
+  
+  // inja assumes trailing path separator, for its template path
+#if( defined(_WIN32) )
+  const char path_sep = '\\';
+#else
+  const char path_sep = '/';
+#endif
+  
+  if( !default_tmplt_dir.empty() && (default_tmplt_dir.back() != path_sep) )
+    default_tmplt_dir += path_sep;
+
+  
+  string tmplt_dir;
+  
+  if( SpecUtils::iequals_ascii( options.template_include_dir, "default" ) )
+  {
+    tmplt_dir = default_tmplt_dir;
+  }else if( !SpecUtils::iequals_ascii( options.template_include_dir, "none" ) )
+  {
+    tmplt_dir = options.template_include_dir;
+    if( !tmplt_dir.empty() && (tmplt_dir.back() != path_sep) )
+      tmplt_dir += path_sep;
+  }
+  
+  if( !tmplt_dir.empty() && !SpecUtils::is_directory(tmplt_dir) )
+    throw runtime_error( string("Template include directory, '") + tmplt_dir
+                        + "', doesnt look to be a valid directory - not performing analysis." );
+  
+  
+  inja::Environment env{ tmplt_dir };
+  env.set_trim_blocks( true ); // remove the first newline after a block
+  //env.set_lstrip_blocks( true ); //strip the spaces and tabs from the start of a line to a block
+  
+#if( BUILD_FOR_WEB_DEPLOYMENT )
+    env.set_search_included_templates_in_files( false );
+#else
+  //To think about more: is there any security issues with allowing.
+  //  It doesnt *look* like inja prevents using things like "../../../SomeSensitveFile.txt" as templates.
+  env.set_search_included_templates_in_files( !tmplt_dir.empty() );
+#endif
+  
+  try
+  {
+    // If we're using a custom include path, opening templates from the default template location
+    //  is problematic, so we'll just create a new `inja::Environment` to open the default
+    //  templates, and then add them to `env` - not really tested yet.
+    const string def_tmplt = SpecUtils::append_path( default_tmplt_dir, "std_fit_log.tmplt.txt" );
+    inja::Environment sub_env;
+    inja::Template tmplt = sub_env.parse_template( def_tmplt );
+    env.include_template( "default-act-fit-results", tmplt );
+     
+    //TODO: Work on other templates we can include
+  }catch( std::exception &e )
+  {
+    cerr << "Error loading default template: " << e.what() << endl;
+    warnings.push_back( "Error loading default template: " + string(e.what()) );
+  }
+  
+  
+  auto output_filename = [&options]( const string &filename, const string tmplt ) -> string {
+    string outname = SpecUtils::filename( filename );
+    const string file_ext = SpecUtils::file_extension(outname);
+    if( !file_ext.empty() )
+      outname = outname.substr(0, outname.size() - file_ext.size());
+    
+    string tmplt_name = tmplt;
+    string tmplt_ext = SpecUtils::file_extension(tmplt_name);
+    size_t pos = SpecUtils::ifind_substr_ascii(tmplt_name, "tmplt");
+    if( pos == string::npos )
+      pos = SpecUtils::ifind_substr_ascii(tmplt_name, "template");
+    if( pos != string::npos )
+      tmplt_name = tmplt_name.substr(0, pos);
+    if( SpecUtils::iends_with(tmplt_name, "_") || SpecUtils::iends_with(tmplt_name, ".") || SpecUtils::iends_with(tmplt_name, "-") )
+      tmplt_name = tmplt_name.substr(0, tmplt_name.size() - 1);
+    
+    if( tmplt_ext.empty()
+       || SpecUtils::iequals_ascii(tmplt_ext, "tmplt" )
+       || SpecUtils::iequals_ascii(tmplt_ext, "template" ) )
+      tmplt_ext = SpecUtils::file_extension(tmplt_name);
+    
+    if( tmplt_ext.empty() )
+      tmplt_ext = ".txt";
+    
+    outname += (outname.empty() ? "" : "_") + tmplt_name + tmplt_ext;
+    return SpecUtils::append_path(options.output_dir, outname );
+  };//output_filename(...)
+  
+  
+  
+  bool set_setup_info_to_summary_json = false;
+  nlohmann::json summary_json;
+  
+  add_exe_info_to_json( summary_json );
+  
+  summary_json["ExemplarFile"] = exemplar_filename;
+  if( !exemplar_sample_nums.empty() )
+    summary_json["ExemplarSampleNumbers"] = vector<int>{begin(exemplar_sample_nums), end(exemplar_sample_nums)};
+  summary_json["InputFiles"] = files;
+  
   std::shared_ptr<const SpecMeas> cached_exemplar_n42;
   for( const string filename : files )
   {
@@ -809,6 +998,19 @@ void fit_activities_in_files( const std::string &exemplar_filename,
     if( !cached_exemplar_n42 )
       cached_exemplar_n42 = fit_results.m_exemplar_file;
     warnings.insert(end(warnings), begin(fit_results.m_warnings), end(fit_results.m_warnings) );
+    
+    if( !set_setup_info_to_summary_json && fit_results.m_fit_results )
+    {
+      std::shared_ptr<const DetectorPeakResponse> drf = options.drf_override;
+      if( !drf && cached_exemplar_n42 )
+        drf = cached_exemplar_n42->detector();
+      
+      const double distance = fit_results.m_fit_results->distance;
+      const GammaInteractionCalc::GeometryType geometry = fit_results.m_fit_results->geometry;
+      const ShieldingSourceFitCalc::ShieldingSourceFitOptions &fit_opts = fit_results.m_fit_results->options;
+      add_fit_options_to_json( fit_opts, distance, geometry, drf, summary_json );
+      set_setup_info_to_summary_json = true;
+    }//if( !set_setup_info_to_summary_json )
     
     
     assert( (fit_results.m_result_code != BatchActivity::BatchActivityFitResult::ResultCode::Success)
@@ -823,56 +1025,6 @@ void fit_activities_in_files( const std::string &exemplar_filename,
       cout << "Success analyzing '" << filename << "'!" << endl;
       assert( fit_results.m_fit_results );
       
-      for( const ShieldingSourceFitCalc::IsoFitStruct &nuc : fit_results.m_fit_results->fit_src_info )
-      {
-        cout << (nuc.fitActivity ? "\t" : "[act not fit]") << nuc.nuclide->symbol << ": "
-             << PhysicalUnits::printToBestActivityUnits(nuc.activity,3,!useBq)
-             << " +- " << PhysicalUnits::printToBestActivityUnits(nuc.activityUncertainty,3,!useBq);
-        
-        if( nuc.ageIsFittable )
-        {
-          if( nuc.fitAge )
-          {
-            cout << " - fit age " << PhysicalUnits::printToBestTimeUnits(nuc.age) << " +- "
-                 << PhysicalUnits::printToBestActivityUnits(nuc.ageUncertainty);
-          }else
-          {
-            cout << " [used age=" << PhysicalUnits::printToBestTimeUnits(nuc.age) << "]";
-          }
-        }//if( nuc.ageIsFittable )
-        
-        cout << endl;
-      }//for( const ShieldingSourceFitCalc::IsoFitStruct &nuc : m_fit_results.fit_src_info )
-            
-      for( const ShieldingSourceFitCalc::FitShieldingInfo &shield : fit_results.m_fit_results->final_shieldings )
-      {
-        //const char *shield.m_geometry );
-        
-        /** Dimensions of this shielding; the meaning of the entries differs depending on the geometry,
-         or if a generic material.
-         
-         Spherical: ['Thickness', n/a, n/a]
-         Cylinder:  ['Radius','Length',n/a]
-         Rectangle: ['Width','Height','Depth']
-         Generic:   ['AtomicNumber','ArealDensity',n/a]
-         */
-        /*
-        double m_dimensions[3];
-        double m_dimensionUncerts[3];
-        bool m_fitDimensions[3];
-        std::map<const SandiaDecay::Nuclide *,double> m_nuclideFractionUncerts;
-        std::map<const SandiaDecay::Nuclide *,double> m_traceSourceActivityUncerts;
-        
-        bool m_isGenericMaterial;
-        bool m_forFitting;
-        std::shared_ptr<const Material> m_material;
-        bool m_fitMassFrac;
-        std::map<const SandiaDecay::Nuclide *,double> m_nuclideFractions;
-        std::vector<TraceSourceInfo> m_traceSources;
-        */
-      }//for( loop fit_results.m_fit_results->fit_src_info )
-      
-#if( USE_TMPLT_RESULT_OUTPUT )
       // The goal is to create a template that prints out the exact same info as as the current GUI
       //  log file, and then upgrade from this to hit HTML with the charts and peak fits and stuff.
       nlohmann::json data;
@@ -953,9 +1105,12 @@ void fit_activities_in_files( const std::string &exemplar_filename,
         auto &options_obj = data["PeakFitOptions"];
         options_obj["RefitEnergyCal"] = options.refit_energy_cal;
         options_obj["UseExemplarEnergyCal"] = options.use_exemplar_energy_cal;
-        options_obj["WriteN42WithPeaks"] = options.write_n42_with_peaks;
+        options_obj["WriteN42WithResults"] = options.write_n42_with_results;
         options_obj["ShowNonFitPeaks"] = options.show_nonfit_peaks;
         options_obj["OutputDir"] = options.output_dir;
+        options_obj["CreateCsvOutput"] = options.create_csv_output;
+        options_obj["OverwriteOutputFiles"] = options.overwrite_output_files;
+        
         if( !options.background_subtract_file.empty() )
           options_obj["BackgroundSubFile"] = options.background_subtract_file;
         if( !options.background_subtract_samples.empty() )
@@ -964,6 +1119,10 @@ void fit_activities_in_files( const std::string &exemplar_filename,
             end(options.background_subtract_samples)
           };
         }
+        
+        options_obj["ReportTemplateIncludeDir"] = options.template_include_dir;
+        options_obj["ReportTemplates"] = options.report_templates;
+        options_obj["ReportSummaryTemplate"] = options.summary_report_template;
       };
       
       
@@ -993,132 +1152,279 @@ void fit_activities_in_files( const std::string &exemplar_filename,
       
       shield_src_fit_results_to_json( *fit_results.m_fit_results, drf, use_bq, data );
       
+      data["Filepath"] = filename;
+      data["Filename"] = SpecUtils::filename( filename );
+      data["ParentDir"] = SpecUtils::parent_path( filename );
+      
+      
+      summary_json["Files"].push_back( data );
+      
       //std::cout << std::setw(4) << data << std::endl;
       
-      //InterSpec::setStaticDataDirectory( SpecUtils::append_path(datadir,"data") );
-      string tmplt_dir = InterSpec::staticDataDirectory();
-      assert( !tmplt_dir.empty() );
-      if( tmplt_dir.empty() )
-        tmplt_dir = "./data";
-      tmplt_dir = SpecUtils::append_path( tmplt_dir, ".." ); //Also see: `WServer::instance()->appRoot()`, which isnt valid right now
-      tmplt_dir = SpecUtils::append_path( tmplt_dir, "InterSpec_resources" );
-      tmplt_dir = SpecUtils::append_path( tmplt_dir, "static_text" );
-      tmplt_dir = SpecUtils::append_path( tmplt_dir, "ShieldSourceFitLog" );
-      
-      // inja assumes trailing path separator, for its template path
-#if( defined(_WIN32) )
-      tmplt_dir += '\\';
+      for( string tmplt : options.report_templates )
+      {
+        try
+        {
+          string rpt;
+          
+          if( SpecUtils::iequals_ascii(tmplt, "default" ) )
+          {
+            rpt = env.render("{% include \"default-act-fit-results\" %}", data);
+          }else
+          {
+            const bool is_in_inc = SpecUtils::is_file( SpecUtils::append_path(tmplt_dir, tmplt) );
+            
+            inja::Template injatmplt;
+            if( is_in_inc )
+            {
+              injatmplt = env.parse_template( tmplt );
+            }else
+            {
+              bool is_file = SpecUtils::is_file( tmplt );
+              if( !is_file )
+              {
+                const string tmplt_in_def_path = SpecUtils::append_path(default_tmplt_dir, tmplt);
+                
+                is_file = SpecUtils::is_file( tmplt_in_def_path );
+                
+#if( !ANDROID && !IOS && !BUILD_FOR_WEB_DEPLOYMENT )
+                // TODO: consider using `AppUtils::locate_file(...)` to find the file
+#endif
+                
+                if( !is_file )
+                  throw runtime_error( "Could not find template file '" + tmplt + "'."
+                                      " Please specify full path to file, or use the"
+                                      " 'report-template-include-dir' option to specify"
+                                      " directory where reports are located." );
+                tmplt = tmplt_in_def_path;
+              }
+                
+              inja::Environment sub_env;
+              injatmplt = sub_env.parse_template( tmplt );
+            }//
+            
+            rpt = env.render( injatmplt, data );
+          }//if( default report format ) / else
+          
+          if( options.to_stdout )
+            cout << "\n\n" << rpt << endl << endl;
+          
+          if( !options.output_dir.empty() )
+          {
+            const string out_file = output_filename( filename, tmplt );
+            
+            if( SpecUtils::is_file(out_file) && !options.overwrite_output_files )
+            {
+              warnings.push_back( "Not writing '" + out_file + "', as it would overwrite a file."
+                                 " See the '--overwrite-output-files' option to force writing." );
+            }else
+            {
+#ifdef _WIN32
+              const std::wstring woutcsv = SpecUtils::convert_from_utf8_to_utf16(out_file);
+              std::ofstream output( woutcsv.c_str(), ios::binary | ios::out );
 #else
-      tmplt_dir += '/';
+              std::ofstream output( out_file.c_str(), ios::binary | ios::out);
 #endif
+              if( !output )
+                warnings.push_back( "Failed to open report output '" + out_file + "', for writing.");
+              else
+                output.write( rpt.c_str(), rpt.size() );
+            }//if( is file ) / else write file
+          }//if( !options.output_dir.empty() )
+        }catch( inja::InjaError &e )
+        {
+          const string msg = "Error templating results (" + e.type + ": line "
+          + std::to_string(e.location.line) + ", column " + std::to_string(e.location.column)
+          + " of '" + tmplt + "'): " + e.message + ". While processing '" + filename + "'.";
+          
+          cerr << msg << endl;
+          warnings.push_back( msg );
+        }catch( std::exception &e )
+        {
+          cerr << "Error templating results: " << e.what() << endl;
+          warnings.push_back( "Error templating results: " + string(e.what()) );
+        }
+      }//for( const string &tmplt : options.report_templates )
       
-      try
+      
+      
+      /*
+       TODO: need to have `fit_activities_in_file` add peaks and shielding model to a file,
+             perhaps in `fit_results.m_peak_fit_results->measurement`, or maybe better yet,
+             create whole new std::shared_ptr<SpecMeas> in BatchActivityFitResult
+      assert( fit_results.measurement );
+      
+      if( options.write_n42_with_results && fit_results.measurement )
       {
-        inja::Environment env{ tmplt_dir };
-        env.set_trim_blocks( true ); // remove the first newline after a block
-        //env.set_lstrip_blocks( true ); //strip the spaces and tabs from the start of a line to a block
-        env.set_search_included_templates_in_files( false );
-        inja::Template tmplt = env.parse_template( "std_fit_log.tmplt.txt" );
+        string outn42 = SpecUtils::append_path(options.output_dir, SpecUtils::filename(filename) );
+        if( !SpecUtils::iequals_ascii(SpecUtils::file_extension(filename), ".n42") )
+          outn42 += ".n42";
         
-        // TODO: allow users to have their own directory of templates (because templates can include other templates)
-        
-        const string rpt = env.render(tmplt, data);
-        cout << "\n\nJson:\n" << rpt << endl;
-      }catch( std::exception &e )
+        if( SpecUtils::is_file(outn42) && !options.overwrite_output_files )
+        {
+          warnings.push_back( "Not writing '" + outn42 + "', as it would overwrite a file."
+                             " See the '--overwrite-output-files' option to force writing." );
+        }else
+        {
+          if( !fit_results.measurement->save2012N42File( outn42 ) )
+            warnings.push_back( "Failed to write '" + outn42 + "'.");
+          else
+            cout << "Have written '" << outn42 << "' with peaks" << endl;
+        }
+      }//if( options.write_n42_with_results )
+       */
+      
+      if( fit_results.m_peak_fit_results )
       {
-        cerr << "Error tempalting results: " << e.what() << endl;
-      }
+        const BatchPeak::BatchPeakFitResult &peak_fit_res = *fit_results.m_peak_fit_results;
+        deque<shared_ptr<const PeakDef>> fit_peaks = peak_fit_res.fit_peaks;
+        if( options.show_nonfit_peaks )
+        {
+          for( const auto p : peak_fit_res.unfit_exemplar_peaks )
+          {
+            auto np = make_shared<PeakDef>(*p);
+            np->setAmplitude( 0.0 );
+            np->setAmplitudeUncert( 0.0 );
+            np->setSigmaUncert( 0.0 );
+            auto cont = make_shared<PeakContinuum>( *np->continuum() );
+            const size_t num_cont_pars = PeakContinuum::num_parameters(cont->type());
+            for( size_t i = 0; i < num_cont_pars; ++i )
+            {
+              cont->setPolynomialCoef( i, 0.0 );
+              cont->setPolynomialUncert( i, -1.0 );
+            }
+            np->setContinuum( cont );
+            np->set_coefficient( -1.0, PeakDef::Chi2DOF );
+            fit_peaks.push_back(np);
+          }
+          std::sort( begin(fit_peaks), end(fit_peaks), &PeakDef::lessThanByMeanShrdPtr );
+        }//if( make_nonfit_peaks_zero )
+        
+        
+        if( !options.output_dir.empty() && options.create_csv_output )
+        {
+          const string leaf_name = SpecUtils::filename(filename);
+          string outcsv = SpecUtils::append_path(options.output_dir, leaf_name) + "_peaks.CSV";
+          
+          if( SpecUtils::is_file(outcsv) && !options.overwrite_output_files )
+          {
+            warnings.push_back( "Not writing '" + outcsv + "', as it would overwrite a file."
+                               " See the '--overwrite-output-files' option to force writing." );
+          }else
+          {
+#ifdef _WIN32
+            const std::wstring woutcsv = SpecUtils::convert_from_utf8_to_utf16(outcsv);
+            std::ofstream output_csv( woutcsv.c_str(), ios::binary | ios::out );
+#else
+            std::ofstream output_csv( outcsv.c_str(), ios::binary | ios::out );
 #endif
+            
+            if( !output_csv )
+            {
+              warnings.push_back( "Failed to open '" + outcsv + "', for writing.");
+            }else
+            {
+              PeakModel::write_peak_csv( output_csv, leaf_name, fit_peaks, peak_fit_res.spectrum );
+              cout << "Have written '" << outcsv << "'" << endl;
+            }
+          }//if( SpecUtils::is_file( outcsv ) ) / else
+        }//if( !options.output_dir.empty() )
+        
+        if( options.to_stdout )
+        {
+          const string leaf_name = SpecUtils::filename(filename);
+          cout << "peaks for '" << leaf_name << "':" << endl;
+          PeakModel::write_peak_csv( cout, leaf_name, fit_peaks, peak_fit_res.spectrum );
+          cout << endl;
+        }
+      }//if( fit_results.m_peak_fit_results )
     }else
     {
       cout << "Failure: " << fit_results.m_error_msg << endl;
+      warnings.push_back( "Failed in analyzing '" + filename + "': " + fit_results.m_error_msg );
     }
-    
-    /*
-    blah blah blah
-    
-    assert( fit_results.measurement );
-    
-    if( options.write_n42_with_peaks && fit_results.measurement )
-    {
-      string outn42 = SpecUtils::append_path(options.output_dir, SpecUtils::filename(filename) );
-      if( !SpecUtils::iequals_ascii(SpecUtils::file_extension(filename), ".n42") )
-        outn42 += ".n42";
-      
-      if( SpecUtils::is_file( outn42 ) )
-      {
-        warnings.push_back( "Not writing '" + outn42 + "', as it would overwrite a file.");
-      }else
-      {
-        if( !fit_results.measurement->save2012N42File( outn42 ) )
-          warnings.push_back( "Failed to write '" + outn42 + "'.");
-        else
-          cout << "Have written '" << outn42 << "' with peaks" << endl;
-      }
-    }//if( options.write_n42_with_peaks )
-    
-    deque<shared_ptr<const PeakDef>> fit_peaks = fit_results.fit_peaks;
-    if( options.show_nonfit_peaks )
-    {
-      for( const auto p : fit_results.unfit_exemplar_peaks )
-      {
-        auto np = make_shared<PeakDef>(*p);
-        np->setAmplitude( 0.0 );
-        np->setAmplitudeUncert( 0.0 );
-        np->setSigmaUncert( 0.0 );
-        auto cont = make_shared<PeakContinuum>( *np->continuum() );
-        const size_t num_cont_pars = PeakContinuum::num_parameters(cont->type());
-        for( size_t i = 0; i < num_cont_pars; ++i )
-        {
-          cont->setPolynomialCoef( i, 0.0 );
-          cont->setPolynomialUncert( i, -1.0 );
-        }
-        np->setContinuum( cont );
-        np->set_coefficient( -1.0, PeakDef::Chi2DOF );
-        fit_peaks.push_back(np);
-      }
-      std::sort( begin(fit_peaks), end(fit_peaks), &PeakDef::lessThanByMeanShrdPtr );
-    }//if( make_nonfit_peaks_zero )
-    
-    
-    if( !options.output_dir.empty() )
-    {
-      const string leaf_name = SpecUtils::filename(filename);
-      string outcsv = SpecUtils::append_path(options.output_dir, leaf_name) + ".CSV";
-      
-      if( SpecUtils::is_file( outcsv ) )
-      {
-        warnings.push_back( "Not writing '" + outcsv + "', as it would overwrite a file.");
-      }else
-      {
-#ifdef _WIN32
-        const std::wstring woutcsv = SpecUtils::convert_from_utf8_to_utf16(outcsv);
-        std::ofstream output_csv( woutcsv.c_str() );
-#else
-        std::ofstream output_csv( outcsv.c_str() );
-#endif
-        
-        if( !output_csv )
-        {
-          warnings.push_back( "Failed to open '" + outcsv + "', for writing.");
-        }else
-        {
-          PeakModel::write_peak_csv( output_csv, leaf_name, fit_peaks, fit_results.spectrum );
-          cout << "Have written '" << outcsv << "'" << endl;
-        }
-      }//if( SpecUtils::is_file( outcsv ) ) / else
-    }//if( !options.output_dir.empty() )
-    
-    if( options.to_stdout )
-    {
-      const string leaf_name = SpecUtils::filename(filename);
-      cout << "peaks for '" << leaf_name << "':" << endl;
-      PeakModel::write_peak_csv( cout, leaf_name, fit_peaks, fit_results.spectrum );
-      cout << endl;
-    }
-     */
   }//for( const string filename : files )
     
+  if( !options.summary_report_template.empty() 
+     && !SpecUtils::iequals_ascii( options.summary_report_template, "none" ) )
+  {
+    try
+    {
+      string summary_tmplt = options.summary_report_template;
+      
+      if( SpecUtils::iequals_ascii( summary_tmplt, "default" ) )
+        summary_tmplt = "std_summary.tmplt.txt";
+      
+      inja::Template injatmplt;
+      
+      const string inc_dir_summary_tmplt = SpecUtils::append_path(tmplt_dir, summary_tmplt);
+      bool is_file = SpecUtils::is_file( inc_dir_summary_tmplt );
+      if( is_file )
+      {
+        injatmplt = env.parse_template( summary_tmplt );
+      }else
+      {
+        string found_path = summary_tmplt;
+        is_file = SpecUtils::is_file( found_path );
+        if( !is_file )
+        {
+          found_path = SpecUtils::append_path(default_tmplt_dir, summary_tmplt);
+          is_file = SpecUtils::is_file( found_path );
+        }
+        
+        if( !is_file )
+          throw runtime_error( "Failed to find file '" + summary_tmplt + "'."
+                              " Please specify full path to file, or use the"
+                              " 'report-template-include-dir' option to specify"
+                              " directory where the report is located." );
+        
+        inja::Environment sub_env;
+        injatmplt = sub_env.parse_template( found_path );
+      }
+      
+      const string rpt = env.render( injatmplt, summary_json );
+      
+      
+      if( options.to_stdout )
+        cout << "\n\n" << rpt << endl << endl;
+      
+      if( !options.output_dir.empty() )
+      {
+        const string out_file = output_filename( "", summary_tmplt );
+        
+        if( SpecUtils::is_file(out_file) && !options.overwrite_output_files )
+        {
+          warnings.push_back( "Not writing '" + out_file + "', as it would overwrite a file."
+                             " See the '--overwrite-output-files' option to force writing." );
+        }else
+        {
+#ifdef _WIN32
+          const std::wstring woutcsv = SpecUtils::convert_from_utf8_to_utf16(out_file);
+          std::ofstream output( woutcsv.c_str(), ios::binary | ios::out );
+#else
+          std::ofstream output( out_file.c_str(), ios::binary | ios::out );
+#endif
+          if( !output )
+            throw runtime_error( "Failed to open summary report output, '" + out_file + "'" );
+          
+          output.write( rpt.c_str(), rpt.size() );
+        }//if( file exists and dont overwrite ) / else
+      }
+    }catch( inja::InjaError &e )
+    {
+      const string msg = "Error templating summary output (" + e.type + ": line "
+      + std::to_string(e.location.line) + ", column " + std::to_string(e.location.column)
+      + " of '" + options.summary_report_template + "'): " + e.message + ".";
+      
+      cerr << msg << endl;
+      warnings.push_back( msg );
+    }catch( std::exception &e )
+    {
+      warnings.push_back( "Error making summary output: " + string(e.what()) );
+    }
+  }//if( !options.summary_report_template.empty() )
+  
+  
   if( !warnings.empty() )
     cerr << endl << endl;
   for( const auto warn : warnings )
@@ -1662,10 +1968,12 @@ BatchActivityFitResult fit_activities_in_file( const std::string &exemplar_filen
     }//if( !found_in_output )
   }//for( const ShieldingSourceFitCalc::SourceFitDef insrc : src_definitions )
   
+  // TODO: create an output file that has peaks, drf, and the fit model.  This will mean creating the XML that represents the fit model then turning it into a string
+  
   cout << "Finished fitting for '" << filename << "'" << endl;
   
   return result;
-}//fit_peaks_in_file(...)
+}//fit_activities_in_file(...)
   
 }//namespace BatchPeak
 

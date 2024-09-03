@@ -64,11 +64,24 @@ namespace BatchPeak
     bool to_stdout;
     bool refit_energy_cal;
     bool use_exemplar_energy_cal;
-    bool write_n42_with_peaks;
+    bool write_n42_with_results;
     bool show_nonfit_peaks;
+    bool overwrite_output_files;
+    bool create_csv_output;
     std::string output_dir;
     std::string background_subtract_file;
     std::set<int> background_subtract_samples;
+    
+    /** The directory to allow report template to look in to include other templates.
+     If specified, then the standard report directory cant be used.
+     */
+    std::string template_include_dir;
+    
+    /** File paths to report templates, that will be saved for each input files. */
+    std::vector<std::string> report_templates;
+    
+    /** File path to report templates that summarizes all input files. */
+    std::string summary_report_template;
   };//struct BatchPeakFitOptions
   
   

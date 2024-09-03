@@ -73,7 +73,22 @@ namespace AppUtils
   unsigned terminal_width();
 #endif
   
+  /** Returns a int, representing compile date of AppUtils.cpp.
+   
+   For example, will return value 20120122 if you compile on Jan 22nd, 2012.
+   
+   Note that this may differ from actual compile time of executable, if AppUtils.cpp
+   didnt need to get built for the current compile.
+   */
+  uint32_t compile_date_as_int();
+  
 #if( !ANDROID && !IOS && !BUILD_FOR_WEB_DEPLOYMENT )
+  /** Returns the path of the currently running executable.
+   
+   Will throw exception on failure
+   */
+  std::string current_exe_path();
+  
   /** Looks at the file path passed and searches around to try and find that file, if it is a relative path.
    
    If an absolute path is passed in, will return true only if it is a valid file.

@@ -145,9 +145,10 @@ int run_batch_command( int argc, char **argv )
       if( batch_peak_fit && batch_act_fit )
         throw std::runtime_error( "You may not specify both 'batch-peak-fit' and 'batch-act-fit'." );
       
-      bool output_stdout, refit_energy_cal, use_exemplar_energy_cal, write_n42_with_peaks, show_nonfit_peaks;
-      vector<std::string> input_files;
-      string exemplar_path, output_path, exemplar_samples, background_sub_file, background_samples;
+      bool output_stdout, refit_energy_cal, use_exemplar_energy_cal, write_n42_with_results;
+      bool show_nonfit_peaks, overwrite_output_files, create_csv_output;
+      vector<std::string> input_files, report_templates;
+      string exemplar_path, output_path, exemplar_samples, background_sub_file, background_samples, summary_report_template, template_include_dir;
       
       po::options_description peak_cl_desc("Allowed batch peak-fit, and activity-fit options", term_width, min_description_length);
       peak_cl_desc.add_options()
@@ -168,23 +169,29 @@ int run_batch_command( int argc, char **argv )
        "One or more spectrum files to fit peaks for.  If a directory, all files in it, recursively,"
        " will attempt to be used."
        )
-      ("refit-energy-cal", po::value<bool>(&refit_energy_cal)->default_value(false),
+      ("refit-energy-cal", po::value<bool>(&refit_energy_cal)->implicit_value(true)->default_value(false),
        "After initial peak fit, uses the those peaks (and their assigned nuclides) to adjust energy"
        " gain, then refits the peaks with the updated energy calibration."
        )
-      ("use-exemplar-energy-cal", po::value<bool>(&use_exemplar_energy_cal)->default_value(false),
+      ("use-exemplar-energy-cal", po::value<bool>(&use_exemplar_energy_cal)->implicit_value(true)->default_value(false),
        "Use the exemplar N42 energy calibration with the input files."
        " If refit-energy-cal is specified true, then the exemplar energy cal will be used for"
        " initial fit, and then refined and peaks refit.\n"
        "Only applicable if N42 file is used for exemplar."
        )
-      ("write-n42-with-peaks", po::value<bool>(&write_n42_with_peaks)->default_value(false),
+      ("write-n42-with-results", po::value<bool>(&write_n42_with_results)->implicit_value(true)->default_value(false),
        "Adds the fit peaks to the input spectrum file , and then saves as a N42."
        " You must specify 'output_path' if you specify this option; also, will refuse to overwrite"
        " existing files."
        )
+      ("overwrite-output-files", po::value<bool>(&overwrite_output_files)->implicit_value(true)->default_value(false),
+       "Allows overwriting output N42, CSV, or report files.  By default will not overwrite files."
+       )
+      ("peak-csv-output", po::value<bool>(&create_csv_output)->implicit_value(true)->default_value(true),
+       "Output peak fit CSV."
+       )
       ("print", po::value<bool>(&output_stdout)->default_value(true),
-       "Print peak-fits to stdout."
+       "Print results to stdout."
        )
       ("out-dir", po::value<string>(&output_path)->default_value(""),
        "The directory to write peak CSV files (and optionally) N42 files to; if empty, CSV files will not be written.")
@@ -192,6 +199,18 @@ int run_batch_command( int argc, char **argv )
        "File to use as the background, to perform a live-time-normalized, hard-background-subtraction with (currently must be single record).")
       ("include-nonfit-peaks", po::value<bool>(&show_nonfit_peaks)->default_value(false),
        "Include peaks that are not fit into the output CSV peak results."
+       )
+      ("file-report-template", po::value<vector<string>>(&report_templates)->multitoken(),
+       "One or more spectrum report template files - for each input file, a report will be produced with each template specified."
+       " You can also specify \"default\", or \"none\"."
+       )
+      ("summary-report-template", po::value<string>(&summary_report_template)->default_value("default"),
+       "The template file used to provide a summary of all input files."
+       " You can also specify \"default\", or \"none\"."
+       )
+      ("report-template-include-dir", po::value<string>(&template_include_dir)->default_value("default"),
+       "A directory containing report templates; specifying this allows templates to include other templates."
+       " You can also specify \"default\", or \"none\"; specifying anything removes standard report template directory."
        )
       ;
       
@@ -291,16 +310,38 @@ int run_batch_command( int argc, char **argv )
         throw runtime_error( "You can not specify background sample numbers without specifying a background file" );
       }
       
+      bool templates_contain_none = false, contain_not_none = false;
+      for( const string &tmplt : report_templates )
+      {
+        templates_contain_none |= SpecUtils::iequals_ascii(tmplt, "none");
+        contain_not_none |= !SpecUtils::iequals_ascii(tmplt, "none");
+      }
+      
+      if( report_templates.empty() && (output_stdout || !output_path.empty()) )
+        report_templates.push_back( "default" );
+      
+      if( contain_not_none && templates_contain_none )
+        throw runtime_error( "You can not specify to use no report templates, and also specify to use other templates." );
+      
+      if( output_path.empty() && !output_stdout
+         && (contain_not_none || !SpecUtils::iequals_ascii(summary_report_template, "none")) )
+        throw runtime_error( "You must provide an output directory if specifying to use any templates for results." );
+      
       BatchActivity::BatchActivityFitOptions options;  //derived from BatchPeak::BatchPeakFitOptions
       options.to_stdout = output_stdout;
       options.refit_energy_cal = refit_energy_cal;
       options.use_exemplar_energy_cal = use_exemplar_energy_cal;
-      options.write_n42_with_peaks = write_n42_with_peaks;
+      options.write_n42_with_results = write_n42_with_results;
       options.show_nonfit_peaks = show_nonfit_peaks;
+      options.overwrite_output_files = overwrite_output_files;
+      options.create_csv_output = create_csv_output;
       options.output_dir = output_path;
       options.background_subtract_file = background_sub_file;
       options.background_subtract_samples = background_sample_nums;
       options.use_bq = use_bq;
+      options.report_templates = report_templates;
+      options.summary_report_template = summary_report_template;
+      options.template_include_dir = template_include_dir;
       
       if( batch_peak_fit )
       {
@@ -310,11 +351,7 @@ int run_batch_command( int argc, char **argv )
       
       if( batch_act_fit )
       {
-        options.drf_override = BatchActivity::init_drf_from_name( drf_file, drf_name ); 
-        
-        //cerr << "batch-act-fit no implemented yet" << endl;
-        //throw runtime_error( "Not implemented yet" );
-        
+        options.drf_override = BatchActivity::init_drf_from_name( drf_file, drf_name );
         BatchActivity::fit_activities_in_files( exemplar_path, exemplar_sample_nums,
                                                expanded_input_files, options );
       }//if( batch_act_fit )

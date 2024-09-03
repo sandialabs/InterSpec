@@ -1,0 +1,16 @@
+Setup
+    Analysis time  : {{ AnalysisTime }}
+    Working dir    : {{ CurrentWorkingDirectory }}
+    Exe build date : InterSpec build date: {{ InterSpecCompileDate }}
+    Exe build date : InterSpec build date: {{ InterSpecCompileDateIso }}
+    {% if exists("InterSpecExecutablePath") %}Exe path       : {{ InterSpecExecutablePath }} {% endif %}
+    Exemplar File  :  {{ ExemplarFile }}
+    {% if exists("ExemplarSampleNumbers") %}Exemplar samples: {{ ExemplarSampleNumbers }}{% endif %}
+    
+
+Filename, Nuclide, Activity, ActivityUncertainty, ActivityUncertainty (%), NuclideAge, NuclideAgeUncertainty
+## for file in Files
+## for src in file.Sources
+{{ file.Filename }},{{ src.Nuclide }}, {{ src.Activity }}, {% if src.ActivityIsFit %}{{ src.ActivityUncert }}{% endif %}, {% if src.ActivityIsFit %}{{ src.ActivityUncertPercent }}%{% endif %}, {{ src.Age }}, {% if src.AgeIsFit %}{{ src.AgeUncert }}{% endif %}
+## endfor
+## endfor

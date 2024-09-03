@@ -49,6 +49,7 @@
 #include "SpecUtils/Filesystem.h"
 #include "SpecUtils/StringAlgo.h"
 
+#include "InterSpec/AppUtils.h"
 #include "InterSpec/InterSpec.h"
 #include "InterSpec/AuxWindow.h"
 #include "InterSpec/InterSpecApp.h"
@@ -177,7 +178,7 @@ LicenseAndDisclaimersWindow::LicenseAndDisclaimersWindow( InterSpec *interspec )
   WTemplate *title = new WTemplate( topDiv );
   title->setTemplateText( apptitle );
   title->bindString("build-version", InterSpec_VERSION);
-  title->bindString("build-date", std::to_string(InterSpecApp::compileDateAsInt()) );
+  title->bindString("build-date", std::to_string(AppUtils::compile_date_as_int()) );
   title->bindString("copyright", copyright );
   
   //Add items to the left menu; the contents wont be loaded until shown.

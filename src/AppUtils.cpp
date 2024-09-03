@@ -216,35 +216,38 @@ static_assert( 0, "Not unix and not win32?  Unsupported getting terminal width" 
 #endif //#if( USE_BATCH_TOOLS || BUILD_AS_LOCAL_SERVER )
   
   
-#if( !ANDROID && !IOS && !BUILD_FOR_WEB_DEPLOYMENT )
-bool locate_file( string &filename, const bool is_dir,
-                 size_t max_levels_up, const bool include_path )
+uint32_t compile_date_as_int()
 {
-  auto check_exists = [is_dir]( const string &name ) -> bool {
-    return is_dir ? SpecUtils::is_directory(name) : SpecUtils::is_file(name);
-  };//auto check_exists
+  //The below YEAR MONTH DAY macros are taken from
+  //http://bytes.com/topic/c/answers/215378-convert-__date__-unsigned-int
+  //  and I believe to be public domain code
+#define YEAR ((((__DATE__ [7] - '0') * 10 + (__DATE__ [8] - '0')) * 10 \
++ (__DATE__ [9] - '0')) * 10 + (__DATE__ [10] - '0'))
+#define MONTH (__DATE__ [2] == 'n' && __DATE__ [1] == 'a' ? 0 \
+: __DATE__ [2] == 'b' ? 1 \
+: __DATE__ [2] == 'r' ? (__DATE__ [0] == 'M' ? 2 : 3) \
+: __DATE__ [2] == 'y' ? 4 \
+: __DATE__ [2] == 'n' ? 5 \
+: __DATE__ [2] == 'l' ? 6 \
+: __DATE__ [2] == 'g' ? 7 \
+: __DATE__ [2] == 'p' ? 8 \
+: __DATE__ [2] == 't' ? 9 \
+: __DATE__ [2] == 'v' ? 10 : 11)
+#define DAY ((__DATE__ [4] == ' ' ? 0 : __DATE__ [4] - '0') * 10 + (__DATE__ [5] - '0'))
   
-  if( SpecUtils::is_absolute_path(filename) )
-    return check_exists(filename);
+  return YEAR*10000 + (MONTH+1)*100 + DAY;
+}//uint32_t compile_date_as_int()
   
-  // Check if path is there, relative to CWD
-  if( check_exists(filename) )
-    return true;
+#if( !ANDROID && !IOS && !BUILD_FOR_WEB_DEPLOYMENT )
   
-  if( SpecUtils::icontains(filename,"http://") || SpecUtils::icontains(filename,"https://") )
-    return false;
-  
-  // We'll look relative to the executables path, but note that if we started from a symlink, I
-  //  think it will resolve relative to actual executable
-  try
-  {
+std::string current_exe_path()
+{
 #ifdef __APPLE__
     char path_buffer[PATH_MAX + 1] = { '\0' };
     uint32_t size = PATH_MAX + 1;
     
-    if (_NSGetExecutablePath(path_buffer, &size) != 0) {
-      return false;
-    }
+    if (_NSGetExecutablePath(path_buffer, &size) != 0)
+      throw runtime_error( "_NSGetExecutablePath failed" );
     
     path_buffer[PATH_MAX] = '\0'; // JIC
     const string exe_path = path_buffer;
@@ -269,6 +272,33 @@ bool locate_file( string &filename, const bool is_dir,
     path_buffer[PATH_MAX] = '\0'; // JIC
     const string exe_path = path_buffer;
 #endif // else not __APPLE__
+  
+  return exe_path;
+}//std::string current_exe_path()
+  
+  
+bool locate_file( string &filename, const bool is_dir,
+                 size_t max_levels_up, const bool include_path )
+{
+  auto check_exists = [is_dir]( const string &name ) -> bool {
+    return is_dir ? SpecUtils::is_directory(name) : SpecUtils::is_file(name);
+  };//auto check_exists
+  
+  if( SpecUtils::is_absolute_path(filename) )
+    return check_exists(filename);
+  
+  // Check if path is there, relative to CWD
+  if( check_exists(filename) )
+    return true;
+  
+  if( SpecUtils::icontains(filename,"http://") || SpecUtils::icontains(filename,"https://") )
+    return false;
+  
+  // We'll look relative to the executables path, but note that if we started from a symlink, I
+  //  think it will resolve relative to actual executable
+  try
+  {
+    const string exe_path = current_exe_path();
     
     string canonical_exe_path = exe_path;
     if( !SpecUtils::make_canonical_path(canonical_exe_path) )

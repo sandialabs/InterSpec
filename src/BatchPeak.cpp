@@ -144,7 +144,7 @@ void fit_peaks_in_files( const std::string &exemplar_filename,
   if( !options.output_dir.empty() && !SpecUtils::is_directory(options.output_dir) )
     throw runtime_error( "Output directory ('" + options.output_dir + "'), is not a directory." );
     
-  if( options.write_n42_with_peaks && options.output_dir.empty() )
+  if( options.write_n42_with_results && options.output_dir.empty() )
     throw runtime_error( "If you specify to write N42 files with the fit peaks, you must specify an output directory." );
   
   const SandiaDecay::SandiaDecayDataBase *db = DecayDataBaseServer::database();
@@ -173,15 +173,16 @@ void fit_peaks_in_files( const std::string &exemplar_filename,
     
     assert( fit_results.measurement );
     
-    if( options.write_n42_with_peaks && fit_results.measurement )
+    if( options.write_n42_with_results && fit_results.measurement )
     {
       string outn42 = SpecUtils::append_path(options.output_dir, SpecUtils::filename(filename) );
       if( !SpecUtils::iequals_ascii(SpecUtils::file_extension(filename), ".n42") )
         outn42 += ".n42";
       
-      if( SpecUtils::is_file( outn42 ) )
+      if( SpecUtils::is_file( outn42 ) && !options.overwrite_output_files )
       {
-        warnings.push_back( "Not writing '" + outn42 + "', as it would overwrite a file.");
+        warnings.push_back( "Not writing '" + outn42 + "', as it would overwrite a file."
+                           " See the '--overwrite-output-files' option to force writing." );
       }else
       {
         if( !fit_results.measurement->save2012N42File( outn42 ) )
@@ -215,14 +216,15 @@ void fit_peaks_in_files( const std::string &exemplar_filename,
     }//if( make_nonfit_peaks_zero )
     
     
-    if( !options.output_dir.empty() )
+    if( !options.output_dir.empty() && options.create_csv_output )
     {
       const string leaf_name = SpecUtils::filename(filename);
       string outcsv = SpecUtils::append_path(options.output_dir, leaf_name) + ".CSV";
       
-      if( SpecUtils::is_file( outcsv ) )
+      if( SpecUtils::is_file(outcsv) && !options.overwrite_output_files )
       {
-        warnings.push_back( "Not writing '" + outcsv + "', as it would overwrite a file.");
+        warnings.push_back( "Not writing '" + outcsv + "', as it would overwrite a file."
+                           " See the '--overwrite-output-files' option to force writing." );
       }else
       {
 #ifdef _WIN32

@@ -128,11 +128,6 @@ public:
   static std::string tempDirectory();
 
   
-  /** Returns a int, representing compile date.
-   For example, will return value 20120122 if you compile on Jan 22nd, 2012.
-   */
-  static uint32_t compileDateAsInt();
-  
 #if( !BUILD_FOR_WEB_DEPLOYMENT )
   /** Returns the token passed as part of url using parameter 'externalid' or 'apptoken'.
    e.g., if url looked like "localhost:8080?externalid=blah", then this function would return "blah"
