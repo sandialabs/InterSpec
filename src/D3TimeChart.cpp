@@ -1068,6 +1068,16 @@ D3TimeChart::~D3TimeChart()
 }
 
 #if( OPTIMIZE_D3TimeChart_HIDDEN_LOAD )
+void D3TimeChart::refreshJs()
+{
+  m_renderFlags |= TimeRenderActions::RefreshJs;
+  m_renderFlags |= TimeRenderActions::UpdateData;
+  m_renderFlags |= TimeRenderActions::UpdateHighlightRegions;
+  
+  scheduleRender();
+}
+#endif
+
 void D3TimeChart::setHidden( bool hidden, const Wt::WAnimation &animation )
 {
   cout << "D3TimeChart::setHidden( " << hidden << " );" << endl;
@@ -1077,13 +1087,12 @@ void D3TimeChart::setHidden( bool hidden, const Wt::WAnimation &animation )
   
   WContainerWidget::setHidden( hidden, animation );
 }//void D3TimeChart::setHidden(...)
-#endif //OPTIMIZE_D3TimeChart_HIDDEN_LOAD
 
 
 void D3TimeChart::defineJavaScript()
 {
 #if( OPTIMIZE_D3TimeChart_HIDDEN_LOAD )
-  assert( !m_inited );
+  assert( !m_inited || m_renderFlags.testFlag(TimeRenderActions::RefreshJs) );
 #endif
   //WWebWidget::doJavaScript( "$(" + m_chart->jsRef() + ").append('<svg width=\"400\" height=\"75\" style=\"box-sizing: border-box; \"><rect width=\"300\" height=\"75\" style=\"fill:rgb(0,0,255);stroke-width:3;stroke:rgb(0,0,0)\" /></svg>' ); console.log( 'Added rect' );" );
   
@@ -2529,6 +2538,9 @@ void D3TimeChart::render( Wt::WFlags<Wt::RenderFlag> flags )
 #if( OPTIMIZE_D3TimeChart_HIDDEN_LOAD )
   if( isVisible() )
   {
+    if( m_renderFlags.testFlag(TimeRenderActions::RefreshJs) )
+      defineJavaScript();
+    
     if( m_renderFlags.testFlag(TimeRenderActions::UpdateData) )
       setDataToClient();
     

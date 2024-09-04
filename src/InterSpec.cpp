@@ -6618,6 +6618,13 @@ void InterSpec::setToolTabsVisible( bool showToolTabs )
     if( m_menuDiv && !m_menuDiv->isHidden() )  //get rid of a small amount of space between the menu bar and the chart
       m_charts->setMargin( -layoutVertSpacing, Wt::Top );
     
+#if( OPTIMIZE_D3TimeChart_HIDDEN_LOAD )
+    // With out this next line the time chart wont show if we hide tool tabs, and then show
+    //  them again.  I think it has something to do with the timechart div getting taken out
+    //  of the DOM, and references lost.  Maybe.
+    m_timeSeries->refreshJs();
+#endif
+    
     //Without using the wrapper below, the tabs widget will change height, even
     //  if it is explicitly set, when different tabs are clicked (unless a
     //  manual resize is performed by the user first)
