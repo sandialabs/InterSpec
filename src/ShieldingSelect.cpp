@@ -90,13 +90,13 @@ double distance_of_input_text( const WLineEdit *edit )
     return PhysicalUnits::stringToDistance( text );
   }catch( std::exception & )
   {
+    
   }
   
   throw runtime_error( "Error converting '" + text + "' to a distance" );
   
   return 0.0;
 }//distance_of_input_text(...)
-
 }//namespace
 
 
@@ -1699,6 +1699,39 @@ const Wt::WLineEdit *ShieldingSelect::thicknessEdit() const
 {
   return m_thicknessEdit;
 }
+
+
+vector<WLineEdit *> ShieldingSelect::distanceEdits()
+{
+  vector<WLineEdit *> answer;
+  
+  switch( m_geometry )
+  {
+    case GeometryType::Spherical:
+      answer.push_back( m_thicknessEdit );
+      break;
+      
+    case GeometryType::CylinderEndOn:
+    case GeometryType::CylinderSideOn:
+      answer.push_back( m_cylRadiusEdit );
+      answer.push_back( m_cylLengthEdit );
+      break;
+      
+    case GeometryType::Rectangular:
+      answer.push_back( m_rectWidthEdit );
+      answer.push_back( m_rectHeightEdit );
+      answer.push_back( m_rectDepthEdit );
+      break;
+      
+    case GeometryType::NumGeometryType:
+      assert(0);
+      throw runtime_error("shieldingVolume(): invalid geometry");
+      break;
+  }//switch( m_geometry )
+  
+  return answer;
+}//vector<WLineEdit *> distanceEdits()
+
 
 void ShieldingSelect::setSphericalThickness( const double thickness )
 {

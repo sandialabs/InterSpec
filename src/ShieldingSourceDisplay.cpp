@@ -142,7 +142,26 @@ using GammaInteractionCalc::TraceActivityType;
 namespace
 {
   const std::string ns_no_uncert_info_txt = "Perform model fit to update and get uncertainties.";
-}
+  
+  /** If a distance WLineEdit has a number, but no distance units, will add a " cm" to the text value. */
+  void make_sure_distance_units_present( Wt::WLineEdit *edit )
+  {
+    if( !edit )
+      return;
+      
+    string diststr = edit->text().toUTF8();
+    SpecUtils::trim( diststr );
+    
+    if( diststr.empty() )
+      return;
+    
+    if( diststr.find_first_not_of( " \t0123456789.eE+-\n" ) == string::npos )
+    {
+      diststr += " cm";
+      edit->setText( diststr );
+    }
+  }//void make_sure_distance_units_present( Wt::WLineEdit *edit )
+}//namespace
 
 
 WT_DECLARE_WT_MEMBER
@@ -5226,6 +5245,9 @@ void ShieldingSourceDisplay::checkDistanceAndThicknessConsistent()
     assert( type == select->geometry() );
     if( type != select->geometry() )
       throw runtime_error( "A shieldings geometry didnt match expected." );
+    
+    for( WLineEdit *edit : select->distanceEdits() )
+      make_sure_distance_units_present( edit );
     
     // Check to make sure this shielding is larger than all shielding it contains
     switch( type )

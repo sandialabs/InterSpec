@@ -701,6 +701,7 @@ void DoseCalcWidget::init()
         HelpSystem::attachToolTipOn( m_distanceEnter, WString::tr("dcw-tt-distance"), showToolTips );
         
         m_distanceEnter->changed().connect( boost::bind( &DoseCalcWidget::updateResult, this ) );
+        m_distanceEnter->blurred().connect( boost::bind( &DoseCalcWidget::updateResult, this ) );
         m_distanceEnter->enterPressed().connect( boost::bind( &DoseCalcWidget::updateResult, this ) );
         
         m_enterWidgets[i]->addWidget( m_distanceEnter );
