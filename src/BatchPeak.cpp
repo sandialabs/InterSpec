@@ -509,9 +509,11 @@ BatchPeak::BatchPeakFitResult fit_peaks_in_file( const std::string &exemplar_fil
       shared_ptr<const SpecUtils::EnergyCalibration> energy_cal = exemplar_spectrum->energy_calibration();
       
       const size_t num_spec_chan = spec->num_gamma_channels();
+      shared_ptr<const SpecUtils::EnergyCalibration> updated_cal;
       if( energy_cal->num_channels() == num_spec_chan )
       {
         spec->set_energy_calibration( energy_cal );
+        updated_cal = energy_cal;
       }else
       {
         auto new_cal = make_shared<SpecUtils::EnergyCalibration>();
@@ -547,9 +549,26 @@ BatchPeak::BatchPeakFitResult fit_peaks_in_file( const std::string &exemplar_fil
             break;
         }//switch( energy_cal->type() )
         
+        updated_cal = new_cal;
         if( new_cal )
           spec->set_energy_calibration( new_cal );
       }//if( num channels match exemplar ) / else
+      
+      
+      // Update `specfile` as well, as we may write it back out as a N42
+      if( updated_cal )
+      {
+        for( const string &det : det_names )
+        {
+          for( const int sample : used_sample_nums )
+          {
+            auto m = specfile->measurement( sample, det );
+            if( m && (m->num_gamma_channels() == updated_cal->num_channels()) )
+              specfile->set_energy_calibration( updated_cal, m );
+          }//for( const int sample : used_sample_nums )
+        }//for( const string &det : det_names )
+      }//if( updated_cal )
+      
     }//if( options.use_exemplar_energy_cal )
     
     
@@ -774,6 +793,29 @@ BatchPeak::BatchPeakFitResult fit_peaks_in_file( const std::string &exemplar_fil
       //peak.setFitFor( PeakDef::Mean, true );
       //peak.setFitFor( PeakDef::Sigma, false );
       peak.setFitFor( PeakDef::GaussAmplitude, true );
+      
+      
+      // Lets also make sure starting amplitude is something halfway reasonable,
+      //  and continuum coefficients are reasonable starting values
+      if( peak.gausPeak() )
+      {
+        const double mean = peak.mean(), fwhm = peak.fwhm();
+        const double data_area = spec->gamma_integral( mean - fwhm, mean + fwhm );
+        if( (data_area > 1) && (peak.amplitude() > data_area) )
+        {
+          peak.setAmplitude( 0.5*data_area );
+          
+          std::shared_ptr<PeakContinuum> continuum = peak.continuum();
+          assert( continuum );
+          if( continuum )
+          {
+            const PeakContinuum::OffsetType origType = continuum->type();
+            continuum->calc_linear_continuum_eqn( spec, peak.mean(), peak.lowerX(), peak.upperX(), 2, 2 );
+            continuum->setType( origType );
+          }//if( continuum )
+        }//if( exemplar peak is clearly much larger than data )
+      }//if( peak.gausPeak() )
+      
       candidate_peaks.push_back( peak );
     }//for( const auto &p : exemplar_peaks )
     
