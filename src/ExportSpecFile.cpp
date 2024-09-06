@@ -730,6 +730,13 @@ void ExportSpecFileTool::init()
   
   addStyleClass( "ExportSpecFileTool" );
   
+  // Store Act/Shield fit and Rel Eff fit into file - if these tools are open, so the
+  //   tools current states will be available in the foreground N42 files.
+  m_interspec->saveShieldingSourceModelToForegroundSpecMeas();
+#if( USE_REL_ACT_TOOL )
+  m_interspec->saveRelActManualStateToForegroundSpecMeas();
+#endif
+  
   const bool showToolTips = InterSpecUser::preferenceValue<bool>( "ShowTooltips", m_interspec );
   const bool isMobile = m_interspec && m_interspec->isMobile();
   
