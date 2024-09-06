@@ -4379,15 +4379,15 @@ void InterSpec::loadStateFromDb( Wt::Dbo::ptr<UserState> entry )
           const string name = name_wstr.toUTF8();
           
           // Users probably wont expect loading a state to mess up preferences for how they
-          //  currently like things, so we wont set all preferences back to what they were
-          //  when the state was saved - we'll only set the ones that notably impact presentation
+          //  currently like things, so we we'll only set the ones that notably impact presentation
           //  of the data, and are hopefully obvious
-          static const std::string prefs_to_keep[] = {
-            "ShowVerticalGridlines", "ShowHorizontalGridlines", "LogY", "ColorThemeIndex",
-            "ShowXAxisSlider", "CompactXAxis", "ShowYAxisScalers", "DisplayBecquerel"
-          };//
+          static const std::string prefs_to_load[] = {
+            "LogY", "ShowVerticalGridlines", "ShowHorizontalGridlines",
+            "ColorThemeIndex", "ShowXAxisSlider", "CompactXAxis",
+            "ShowYAxisScalers", "DisplayBecquerel"
+          };
           
-          if( std::find(begin(prefs_to_keep), end(prefs_to_keep), name) == end(prefs_to_keep) )
+          if( std::find(begin(prefs_to_load), end(prefs_to_load), name) == end(prefs_to_load) )
             continue;
           
           const int type = obj.get("type");
@@ -11536,7 +11536,7 @@ void InterSpec::setSpectrum( std::shared_ptr<SpecMeas> meas,
     if( pref != ExternalRidAuotCallPref::DoNotCall )
     {
       Wt::WApplication *app = wApp;
-      auto callExternalRid = [app,this,sameSpecFile](){
+      auto callExternalRid = [app,this,sameSpecFile,pref](){
         WApplication::UpdateLock lock(app);
         if( lock )
         {
@@ -11554,7 +11554,13 @@ void InterSpec::setSpectrum( std::shared_ptr<SpecMeas> meas,
         }
       };//callExternalRid lamda
       
-      furtherworkers.push_back( callExternalRid );
+      const string appid = wApp->sessionId();
+      
+      auto postExternalRid = [appid, callExternalRid](){
+        WServer::instance()->post( appid, callExternalRid );
+      };
+      
+      furtherworkers.push_back( postExternalRid );
     }//if( user selected to call either external REST API, or external EXE )
   }//if( meas )
 #endif //#if( USE_REMOTE_RID )
