@@ -236,13 +236,15 @@ void add_basic_src_details( const GammaInteractionCalc::SourceDetails &src,
   
   
   src_json["Nuclide"] = src.nuclide->symbol;
-  src_json["Activity"] = PhysicalUnits::printToBestActivityUnits(src.activity,4,!useBq); //I dont think we need `act_postfix` here since I *think* this is total activity.
+  src_json["Activity"] = PhysicalUnits::printToBestActivityUnits(src.activity,4,!useBq) + act_postfix;
   src_json["ActivityBq"] = src.activity / PhysicalUnits::bq;
   src_json["ActivityCi"] = src.activity / PhysicalUnits::ci;
+  src_json["ActivityPostFix"] = act_postfix;
   src_json["ActivityIsFit"] = src.activityIsFit;
+  
   if( src.activityIsFit )
   {
-    src_json["ActivityUncert"] = PhysicalUnits::printToBestActivityUnits(src.activityUncertainty,4,!useBq);//ditto on `act_postfix` not here
+    src_json["ActivityUncert"] = PhysicalUnits::printToBestActivityUnits(src.activityUncertainty,4,!useBq) + act_postfix;
     src_json["ActivityUncertBq"] = src.activityUncertainty / PhysicalUnits::bq;
     src_json["ActivityUncertCi"] = src.activityUncertainty / PhysicalUnits::ci;
     const double act_uncert_percent = 100.0 * src.activityUncertainty / src.activity;
@@ -278,14 +280,39 @@ void add_basic_src_details( const GammaInteractionCalc::SourceDetails &src,
   
   if( src.isTraceSource )
   {
+    string trace_src_postfix = "";
+    
+    switch( src.traceActivityType )
+    {
+      case GammaInteractionCalc::TraceActivityType::TotalActivity:
+        trace_src_postfix = "";
+        break;
+        
+      case GammaInteractionCalc::TraceActivityType::ActivityPerCm3:
+        trace_src_postfix = "/cm^3";
+        break;
+      
+      case GammaInteractionCalc::TraceActivityType::ExponentialDistribution:
+        trace_src_postfix = "/m2 exp";
+        break;
+        
+      case GammaInteractionCalc::TraceActivityType::ActivityPerGram:
+        trace_src_postfix = "/g";
+        break;
+        
+      case GammaInteractionCalc::TraceActivityType::NumTraceActivityType:
+        break;
+    }//switch( type )
+    
     src_json["TraceActivityType"] = GammaInteractionCalc::to_str(src.traceActivityType);
-    src_json["TraceDisplayActivity"] = PhysicalUnits::printToBestActivityUnits(src.traceSrcDisplayAct,4,!useBq) + act_postfix;
+    src_json["TraceDisplayActivity"] = PhysicalUnits::printToBestActivityUnits(src.traceSrcDisplayAct,4,!useBq) + trace_src_postfix;
     src_json["TraceDisplayActivityBq"] = src.traceSrcDisplayAct / PhysicalUnits::bq;
     src_json["TraceDisplayActivityCi"] = src.traceSrcDisplayAct / PhysicalUnits::ci;
+    src_json["TraceActivityPostFix"] = trace_src_postfix;
     
     if( src.ageIsFit )
     {
-      src_json["TraceDisplayActivityUncert"] = PhysicalUnits::printToBestActivityUnits(src.traceSrcDisplayActUncertainty,4,!useBq) + act_postfix;
+      src_json["TraceDisplayActivityUncert"] = PhysicalUnits::printToBestActivityUnits(src.traceSrcDisplayActUncertainty,4,!useBq) + trace_src_postfix;
       src_json["TraceDisplayActivityUncertBq"] = src.traceSrcDisplayActUncertainty / PhysicalUnits::bq;
       src_json["TraceDisplayActivityUncertCi"] = src.traceSrcDisplayActUncertainty / PhysicalUnits::ci;
     }else
@@ -1248,14 +1275,25 @@ void fit_activities_in_files( const std::string &exemplar_filename,
       
       
       
-      /*
-       TODO: need to have `fit_activities_in_file` add peaks and shielding model to a file,
-             perhaps in `fit_results.m_peak_fit_results->measurement`, or maybe better yet,
-             create whole new std::shared_ptr<SpecMeas> in BatchActivityFitResult
-      assert( fit_results.measurement );
       
-      if( options.write_n42_with_results && fit_results.measurement )
+      
+      assert( fit_results.m_peak_fit_results && fit_results.m_peak_fit_results->measurement );
+      
+      if( options.write_n42_with_results && fit_results.m_peak_fit_results
+         && fit_results.m_peak_fit_results->measurement )
       {
+        // TODO: need to have `fit_activities_in_file` add peaks and shielding model to a file,
+        //       perhaps in `fit_results.m_peak_fit_results->measurement`, or maybe better yet,
+        //       create whole new std::shared_ptr<SpecMeas> in BatchActivityFitResult
+        const string message = "Written N42 file does not currently have Act/Shielding model"
+        " written to it, only fit peaks, sorry - will.";
+        cerr << message << endl;
+        if( std::find(begin(warnings), end(warnings), message) == end(warnings) )
+          warnings.push_back( message );
+        
+        const BatchPeak::BatchPeakFitResult &peak_fit_results = *fit_results.m_peak_fit_results;
+        assert( peak_fit_results.measurement );
+        
         string outn42 = SpecUtils::append_path(options.output_dir, SpecUtils::filename(filename) );
         if( !SpecUtils::iequals_ascii(SpecUtils::file_extension(filename), ".n42") )
           outn42 += ".n42";
@@ -1266,13 +1304,13 @@ void fit_activities_in_files( const std::string &exemplar_filename,
                              " See the '--overwrite-output-files' option to force writing." );
         }else
         {
-          if( !fit_results.measurement->save2012N42File( outn42 ) )
+          if( !peak_fit_results.measurement->save2012N42File( outn42 ) )
             warnings.push_back( "Failed to write '" + outn42 + "'.");
           else
             cout << "Have written '" << outn42 << "' with peaks" << endl;
         }
       }//if( options.write_n42_with_results )
-       */
+       
       
       if( fit_results.m_peak_fit_results )
       {
