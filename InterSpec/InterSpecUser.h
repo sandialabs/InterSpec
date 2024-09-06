@@ -1140,6 +1140,15 @@ void InterSpecUser::setPreferenceValueWorker( Wt::Dbo::ptr<InterSpecUser> user,
     throw std::runtime_error( "InterSpecUser::setPreferenceValue() must be called"
                              " with same db session as user" );
   
+  std::string strval;
+  {// Begin put value into strval
+    std::stringstream valuestrm;
+    valuestrm << value;
+    strval = valuestrm.str();
+    if( strval.size() > UserOption::sm_max_value_str_len )
+      strval = strval.substr( 0, UserOption::sm_max_value_str_len );
+  }// End put value into strval
+  
   std::vector< Wt::Dbo::ptr<UserOption> > options;
   {//begin interacting with the database
     DataBaseUtils::DbTransaction transaction( *sql );
@@ -1151,12 +1160,44 @@ void InterSpecUser::setPreferenceValueWorker( Wt::Dbo::ptr<InterSpecUser> user,
   }//end interacting with the database
   
   Wt::Dbo::ptr<UserOption> option;
-  const size_t noptions = options.size();
+  size_t noptions = options.size();
+  
+  if( noptions > 1 )
+  {
+    //Hmmm, not sure how this happened, but I have made it here for "ColorThemeIndex".
+    //  We just delete all options and start over.
+#if( PERFORM_DEVELOPER_CHECKS )
+    char buffer[1024];
+    snprintf( buffer, sizeof(buffer), "Invalid number of preferences (%i) for %s for user %s; will"
+                                      " remove all of them after the first from the database.",
+              static_cast<int>(noptions), name.c_str(), user->userName().c_str() );
+    log_developer_error( __func__, buffer );
+#endif
+    
+    try
+    {
+      DataBaseUtils::DbTransaction transaction( *sql );
+      
+      for( size_t i = 0; i < noptions; ++i )
+        options[i].remove();
+      
+      transaction.commit();
+    }catch(...)
+    {
+      assert( 0 );
+      std::cerr << "Caught exception removing duplicate preference from database" << std::endl;
+    }
+    
+    options.clear();
+    noptions = 0;
+  }//if( noptions > 1 )
+  
   if( noptions == 0 )
   {
     UserOption *newoption = new UserOption();
     newoption->m_name = name;
     newoption->m_user = user;
+    newoption->m_value = strval;
     
     if( typeid(value) == typeid(std::string) )
       newoption->m_type = UserOption::String;
@@ -1177,55 +1218,20 @@ void InterSpecUser::setPreferenceValueWorker( Wt::Dbo::ptr<InterSpecUser> user,
     
     DataBaseUtils::DbTransaction transaction( *sql );
     option = sql->session()->add( newoption );
+    //user.modify()->m_dbPreferences.insert( newoption ); // I think this is equivalent of `newoption->m_user = user;`
     transaction.commit();
-  }else if( noptions == 1 )
+    
+    user->m_preferences[newoption->m_name] = newoption->value();
+  }else //if( noptions == 1 )
   {
     option = options.front();
-  }else
-  {
-    //Hmmm, not sure how this happened, but I have made it here for "ColorThemeIndex".
-    //  We will take the first option and
-#if( PERFORM_DEVELOPER_CHECKS )
-    char buffer[1024];
-    snprintf( buffer, sizeof(buffer), "Invalid number of preferences (%i) for %s for user %s; will"
-                                      " remove all of them after the first from the database.",
-              static_cast<int>(noptions), name.c_str(), user->userName().c_str() );
-    log_developer_error( __func__, buffer );
-#endif
     
-    option = options.front();
-    for( size_t i = 1; i < noptions; ++i )
-    {
-      try
-      {
-        DataBaseUtils::DbTransaction transaction( *sql );
-        options[i].remove();
-      }catch(...)
-      {
-        std::cerr << "Caught exception removing duplicate preference from database" << std::endl;
-      }
-    }//for( size_t i = 1; i < noptions; ++i )
-    
-    //throw runtime_error( "Invalid number of preferences for " + name + " for user " + user->userName() );
-  }//if( noptions == 0 ) / else / else
-  
-  std::stringstream valuestrm;
-  valuestrm << value;
-  std::string strval = valuestrm.str();
-  if( strval.size() > UserOption::sm_max_value_str_len )
-    strval = strval.substr( 0, UserOption::sm_max_value_str_len );
-  
-  {//begin interacting with the database
     DataBaseUtils::DbTransaction transaction( *sql );
     option.modify()->m_value = strval;
     transaction.commit();
-//    std::cerr << "Commited " << option->m_name << " value of "
-//              << option->m_value << " to user " << option->m_user.id()
-//              << " with ID=" << option.id() << std::endl;
-  }//end interacting with the database
-  
-  user->m_preferences[name] = option->value();
-
+    
+    user->m_preferences[name] = option->value();
+  }//if( noptions == 0 ) / else / else
 }//setPreferenceValueWorker(...)
 
 
