@@ -2184,6 +2184,11 @@ shared_ptr<const RelActCalcManual::RelEffSolution> RelActManualGui::currentSolut
   node = doc->allocate_node( ::rapidxml::node_element, "ResultTabShowing", value );
   base_node->append_node( node );
   
+  const bool background_sub = (!m_backgroundSubtractHolder->isHidden()
+                               && m_backgroundSubtract->isChecked());
+  value = background_sub ? "1" : "0";
+  node = doc->allocate_node( ::rapidxml::node_element, "BackgroundSubtract", value );
+  base_node->append_node( node );
   
   map<string,double> nuc_age_cache = m_nucAge;
   map<string,bool> nuc_decay_correct = m_nucDecayCorrect;
@@ -2254,6 +2259,7 @@ void RelActManualGui::deSerialize( const ::rapidxml::xml_node<char> *base_node )
   const ::rapidxml::xml_node<char> *MatchTolerance_node = XML_FIRST_NODE(base_node, "MatchTolerance");
   const ::rapidxml::xml_node<char> *AddUncertainty_node = XML_FIRST_NODE(base_node, "AddUncertainty");
   const ::rapidxml::xml_node<char> *ResultTabShowing_node = XML_FIRST_NODE(base_node, "ResultTabShowing");
+  const ::rapidxml::xml_node<char> *BackgroundSubtract_node = XML_FIRST_NODE(base_node, "BackgroundSubtract");
   const ::rapidxml::xml_node<char> *NuclideAges_node = XML_FIRST_NODE(base_node, "NuclideAges");
   
   
@@ -2348,6 +2354,14 @@ void RelActManualGui::deSerialize( const ::rapidxml::xml_node<char> *base_node )
   if( (tab_showing != 0) && (tab_showing != 1) )
     tab_showing = 0;
   
+  bool backSub = false;
+  if( BackgroundSubtract_node )
+  {
+    const string back_sub_str = SpecUtils::xml_value_str(BackgroundSubtract_node);
+    backSub = ((back_sub_str == "1") || SpecUtils::iequals_ascii(back_sub_str, "true"));
+  }
+  
+  
   XML_FOREACH_CHILD( nuc_node, NuclideAges_node, "Nuclide" )
   {
     ::rapidxml::xml_node<char> *name_node = XML_FIRST_NODE(nuc_node, "Name");
@@ -2387,6 +2401,7 @@ void RelActManualGui::deSerialize( const ::rapidxml::xml_node<char> *base_node )
   m_matchTolerance->setValue( match_tolerance );
   m_addUncertainty->setCurrentIndex( static_cast<int>(add_uncert) );
   m_resultMenu->select( tab_showing );
+  m_backgroundSubtract->setChecked( backSub );
   
   // Schedule calc/render
   m_renderFlags |= RenderActions::UpdateCalc;
