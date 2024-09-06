@@ -1469,7 +1469,7 @@ std::string SpecFileQueryDbCache::construct_persisted_db_filename( std::string p
   SpecUtils::make_canonical_path(persisted_path);
   
   const auto path_hash = std::hash<std::string>()( persisted_path );
-  return SpecUtils::append_path( persisted_path, "InterSpec_file_query_cache_" + std::to_string(path_hash) + "_v1.sqlite3" );
+  return SpecUtils::append_path( persisted_path, "InterSpec_file_query_cache_" + std::to_string(path_hash) + "_v2.sqlite3" );
 }//std::string construct_persisted_db_filename( std::string basepath )
 
 
