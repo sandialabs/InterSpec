@@ -611,6 +611,7 @@ set(SpecUtils_ENABLE_D3_CHART ON CACHE BOOL "")
 set(SpecUtils_D3_SUPPORT_FILE_STATIC OFF CACHE BOOL "")
 set(SpecUtils_D3_SCRIPTS_RUNTIME_DIR "InterSpec_resources" CACHE STRING "")
 set(SpecUtils_ENABLE_URI_SPECTRA ${USE_QR_CODES} CACHE BOOL "")
+set(SpecUtils_FLT_PARSE_METHOD "boost" CACHE STRING "")
 
 #add in all the subdirectories the project will always use
 add_subdirectory(external_libs/Minuit2)

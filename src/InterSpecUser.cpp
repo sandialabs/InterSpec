@@ -444,10 +444,11 @@ boost::any InterSpecUser::preferenceValueAny( const std::string &name, InterSpec
   {
     sql->session()->add( option );
     value = option->value();
+    //user.modify()->m_dbPreferences.insert( option );
     user->m_preferences[name] = value;
   }catch( std::exception &e )
   {
-    //
+    assert( 0 );
     transaction.rollback();
     throw e;
   }//try / catch
@@ -1165,7 +1166,7 @@ void InterSpecUser::initFromDbValues( Wt::Dbo::ptr<InterSpecUser> user,
                         " no valid session associated with user ptr" );
   if( !user->m_preferences.empty() )
     throw runtime_error( "InterSpecUser::initFromDbValues(...):"
-                        " you cant call this function if prefernces have"
+                        " you cant call this function if preferences have"
                         " already been initialized" );
 
   DataBaseUtils::DbTransaction transaction( *session );  
@@ -1176,10 +1177,17 @@ void InterSpecUser::initFromDbValues( Wt::Dbo::ptr<InterSpecUser> user,
   
   InterSpecUser *usr = user.modify();
   
-  for( vector< Dbo::ptr<UserOption> >::const_iterator iter = options.begin();
-      iter != options.end(); ++iter )
+  for( auto iter = options.rbegin(); iter != options.rend(); ++iter )
   {
     Dbo::ptr<UserOption> option = *iter;
+    
+    if( usr->m_preferences.count(option->m_name) )
+    {
+      cerr << "Found multiple copies of user preference '" << option->m_name << "' - will delete old ones" << endl;
+      option.remove();
+      continue;
+    }
+    
     switch( option->m_type )
     {
       case UserOption::String:

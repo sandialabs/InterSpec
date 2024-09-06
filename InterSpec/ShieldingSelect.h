@@ -387,6 +387,9 @@ public:
   
   const Wt::WLineEdit *materialEdit() const;
   const Wt::WLineEdit *thicknessEdit() const;
+  
+  /** Returns all thickness edits, for the current geometry. */
+  std::vector<Wt::WLineEdit *> distanceEdits();
 
   /** Sets the spherical thickness value.
    

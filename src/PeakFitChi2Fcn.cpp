@@ -1242,10 +1242,13 @@ void MultiPeakFitChi2Fcn::parametersToPeaks( vector<PeakDef> &peaks,
       
       centroidbins[i] = bin;
       const double lowx = m_energies[bin];
-      const double highx = m_energies[bin + 1];
+      const double highx = ((bin+1) < m_energies.size())
+                                    ? m_energies[bin + 1]
+                                    : ((bin > 0) ? (2*m_energies[bin] - m_energies[bin-1])
+                                                 : m_energies[bin]);
       const double contarea = peaks[i].offset_integral( lowx, highx, m_data );
       
-      b(i) = std::max( 0.0, m_dataCounts[bin] - contarea );
+      b(i) = std::max( 0.0, (bin < m_dataCounts.size()) ? (m_dataCounts[bin] - contarea) : 0.0 );
     }//for( int i = 0; i < m_npeak; ++i )
     
     for( int row = 0; row < m_npeak; ++row )
@@ -1254,7 +1257,8 @@ void MultiPeakFitChi2Fcn::parametersToPeaks( vector<PeakDef> &peaks,
       {
         const size_t bin = centroidbins[row];
         const double lowx = m_energies[bin];
-        const double highx = m_energies[bin + 1];
+        const double highx = ((bin+1) < m_energies.size()) ? m_energies[bin + 1]
+                              : ((bin > 0) ? (2*m_energies[bin] - m_energies[bin-1]) : m_energies[bin]) ;
         f(row,col) = peaks[col].gauss_integral( lowx, highx );
       }//for( int j = 0; j < peaks.size(); ++j )
     }//for( int i = 0; i < peaks.size(); ++i )
@@ -1396,7 +1400,7 @@ double MultiPeakFitChi2Fcn::evalMultiPeakInsentive(
                                       m_energies.end(), static_cast<float>(upper_energy) )
                                        - m_energies.begin();
     double dataarea = 0.0;
-    for( size_t bin = binstart; bin < binend; ++bin )
+    for( size_t bin = binstart; (bin < binend) && (bin < m_dataCounts.size()); ++bin )
       dataarea += m_dataCounts[bin];
     
     if( peaks[i].amplitude() < 2.0*sqrt(dataarea) )

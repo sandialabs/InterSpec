@@ -5820,7 +5820,7 @@ void SpecMeasManager::showPreviousSpecFileUsesDialog( std::shared_ptr<SpectraFil
 }//void showPreviousSpecFileUsesDialog(..)
 
 
-void postErrorMessage( const string msg, const WarningWidget::WarningMsgLevel level )
+void postErrorMessage( const WString msg, const WarningWidget::WarningMsgLevel level )
 {
   passMessage( msg, level );
   wApp->triggerUpdate();
@@ -5919,10 +5919,9 @@ void SpecMeasManager::checkIfPreviouslyOpened( const std::string sessionID,
       }catch( FileToLargeForDbException &e )
       {
         WString msg = WString::tr("smm-cant-save").arg(e.what());
-        cerr << msg.toUTF8() << endl;
         
         WServer::instance()->post( sessionID,
-                  boost::bind( &postErrorMessage, msg.toUTF8(), WarningWidget::WarningMsgHigh ) );
+                  boost::bind( &postErrorMessage, msg, WarningWidget::WarningMsgHigh ) );
       }
       return;
     }//if( this is a new-to-us file )
@@ -5954,7 +5953,7 @@ void SpecMeasManager::checkIfPreviouslyOpened( const std::string sessionID,
     cerr << "Error checking if this file had been opened previously: " << e.what() << endl;
     WServer::instance()->post( sessionID,
                               boost::bind( &postErrorMessage,
-              string("Error checking if this file had been opened previously"),
+              WString("Error checking if this file had been opened previously"),
               WarningWidget::WarningMsgHigh ) );
   }//try / catch
 }//void checkIfPreviouslyOpened(...)

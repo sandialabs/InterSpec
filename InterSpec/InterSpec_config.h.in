@@ -77,14 +77,6 @@
 
 #cmakedefine LEAFLET_MAPS_KEY "@LEAFLET_MAPS_KEY@"
 
-#if ( defined(WIN32) || defined(UNDER_CE) || defined(_WIN32) || defined(WIN64) )
-#include <stdio.h>
-#include <stdlib.h>
-#include <math.h>
-#include <float.h>
-#define isnan(x) _isnan(x)
-#define isinf(x) (!_finite(x))
-#endif
 
 #ifndef IsInf
 #define IsInf(x) (std::isinf)(x)

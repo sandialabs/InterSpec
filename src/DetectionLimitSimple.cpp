@@ -957,7 +957,7 @@ void DetectionLimitSimple::handleNuclideChanged()
   if( !nuc )
     return;
   
-  const bool dummy_activity = 0.001*SandiaDecay::curie;
+  const double dummy_activity = 0.001*SandiaDecay::curie;
   SandiaDecay::NuclideMixture mixture;
   mixture.addAgedNuclideByActivity( nuc, dummy_activity, age );
   

@@ -1243,12 +1243,18 @@ double RelEffSolution::activity_ratio_uncert( const size_t iso1, const size_t is
          + (cov_2_2 / fit_act_2 / fit_act_2)
          - (2.0 * cov_1_2 / fit_act_1 / fit_act_2) );
   
-  cout
-  << "Ratio " << m_rel_activities[iso1].m_isotope << "/" << m_rel_activities[iso2].m_isotope
-  << " = " << ratio << " +- " << uncert << " (would be +- "
-  << fabs(ratio) * sqrt( m_rel_activities[iso1].m_rel_activity_uncert*m_rel_activities[iso1].m_rel_activity_uncert
-                        + m_rel_activities[iso2].m_rel_activity_uncert*m_rel_activities[iso2].m_rel_activity_uncert )
-  << " w/ No correlation)" << endl;
+#ifndef NDEBUG
+  {// Begin print out comparison between this result, and if we hadnt taken into account correlation
+    const double iso1_uncert_frac = m_rel_activities[iso1].m_rel_activity_uncert / m_rel_activities[iso1].m_rel_activity;
+    const double iso2_uncert_frac = m_rel_activities[iso2].m_rel_activity_uncert / m_rel_activities[iso2].m_rel_activity;
+    const double niave_uncert = ratio * sqrt( iso1_uncert_frac*iso1_uncert_frac + iso2_uncert_frac*iso2_uncert_frac );
+    
+    cout
+    << "Ratio " << m_rel_activities[iso1].m_isotope << "/" << m_rel_activities[iso2].m_isotope
+    << " = " << ratio << " +- " << uncert << " (would be +- "
+    << niave_uncert << " w/ no correlation)" << endl;
+  }// End print out comparison between this result, and if we hadnt taken into account correlation
+#endif
   
   return uncert;
 }
@@ -1291,6 +1297,88 @@ double RelEffSolution::mass_fraction( const std::string &nuclide ) const
   return nuc_rel_mas / sum_rel_mass;
 }//double mass_fraction( const std::string &nuclide ) const
 
+  
+double RelEffSolution::mass_fraction( const std::string &nuclide, const double num_sigma ) const
+{
+  const SandiaDecay::SandiaDecayDataBase *db = DecayDataBaseServer::database();
+  const SandiaDecay::Nuclide *wanted_nuc = db->nuclide( nuclide );
+  assert( wanted_nuc );
+  if( !wanted_nuc )
+    throw runtime_error( "RelEffSolution::mass_fraction('" + nuclide + "', num_sigma): invalid nuclide" );
+  
+  assert( !m_rel_act_covariance.empty() );
+  if( m_rel_act_covariance.empty() )
+    throw runtime_error( "RelEffSolution::mass_fraction('" + nuclide + "', num_sigma): no valid covariance." );
+  
+  assert( m_rel_act_covariance.size() == m_rel_activities.size() );
+  
+  const size_t nuc_index = std::find_if( begin(m_rel_activities), end(m_rel_activities),
+                          [&nuclide]( const IsotopeRelativeActivity &val ) {
+    return val.m_isotope == nuclide;
+  }) - begin(m_rel_activities);
+  
+  assert( nuc_index < m_rel_act_covariance.size() );
+  assert( nuc_index < m_rel_activities.size() );
+  
+  if( nuc_index >= m_rel_act_covariance.size() )
+    throw runtime_error( "RelEffSolution::mass_fraction('" + nuclide + "', "
+                        + std::to_string(num_sigma) + "): nuclide not in solution set" );
+  
+  // The Covariance matrix is in terms of fit activities - however, we had divided out
+  //  a normalization to bring them all near-ish 1.0 (before actually fitting for things
+  //  though).
+  const double norm_for_nuc = m_activity_norms[nuc_index];
+  const double cov_nuc_nuc = m_rel_act_covariance[nuc_index][nuc_index];
+  const double sqrt_cov_nuc_nuc = sqrt(cov_nuc_nuc);
+  const double fit_act_for_nuc = m_rel_activities[nuc_index].m_rel_activity / norm_for_nuc;
+  
+  // Check that relative activity uncertainties have been computed compatible with what we are
+  //  assuming here (and no funny business has happened).
+  assert( (norm_for_nuc * sqrt_cov_nuc_nuc) == m_rel_activities[nuc_index].m_rel_activity_uncert );
+  
+  double sum_rel_mass = 0.0, nuc_rel_mas = -1.0;
+  for( size_t index = 0; index < m_rel_activities.size(); ++index )
+  {
+    assert( m_rel_act_covariance[index].size() == m_rel_activities.size() );
+    
+    const IsotopeRelativeActivity &act = m_rel_activities[index];
+    const SandiaDecay::Nuclide * const nuc = db->nuclide( act.m_isotope );
+    assert( nuc );
+    if( !nuc )
+      continue;
+    
+    const double norm_for_index = m_activity_norms[index];
+    const double fit_act_for_index = m_rel_activities[index].m_rel_activity / norm_for_index;
+    
+    const double cov_nuc_index = m_rel_act_covariance[nuc_index][index];
+    const double varied_fit_act_for_index = fit_act_for_index
+                                  + (cov_nuc_index / cov_nuc_nuc) * num_sigma * sqrt_cov_nuc_nuc;
+    
+    const double rel_act = varied_fit_act_for_index * norm_for_index;
+    const double rel_mass = rel_act / nuc->activityPerGram();
+    
+    sum_rel_mass += (std::max)( rel_mass, 0.0 );
+    
+    if( index == nuc_index )
+    {
+      assert( nuc == wanted_nuc );
+      
+      nuc_rel_mas = rel_mass;
+    }//if( index == nuc_index )
+  }//for( size_t index = 0; index < m_rel_activities.size(); ++index )
+  
+  assert( nuc_rel_mas >= 0.0 );
+  if( nuc_rel_mas < 0.0 )
+  {
+    // This can happen when we go down a couple sigma
+    return 0.0;
+    //throw runtime_error( "mass_fraction: invalid nuclide: " + nuclide );
+  }
+  
+  return nuc_rel_mas / sum_rel_mass;
+}//double mass_fraction( const std::string &iso, const double num_sigma ) const
+    
+  
 
 std::ostream &RelEffSolution::print_summary( std::ostream &strm ) const
 {
@@ -1461,33 +1549,47 @@ void RelEffSolution::get_mass_fraction_table( std::ostream &results_html ) const
       results_html << "<td>N.A.</td>";
     }
     
+    // We need to do a better job of calculating mass fraction uncertainties.
+    //  Maybe an okay way to go is increase activity by 1-sigma, then recalculate
+    //  mass fraction, then re-normalize by new total mass
+    
     string error_tt;
     try
     {
       const double frac_mass = mass_fraction(act.m_isotope);
       
-      error_tt = "The 1-sigma mass fraction uncertainty is "
-      + SpecUtils::printCompact(uncert_percent*frac_mass, nsigfig+1)
-      + "%, which gives a 1-sigma mass fraction range of "
-      + SpecUtils::printCompact((100.0 - uncert_percent)*frac_mass, nsigfig+1)
+      const double frac_mass_plus1 = mass_fraction(act.m_isotope, 1.0);
+      const double frac_mass_minus1 = mass_fraction(act.m_isotope, -1.0);
+       
+      const double delta_plus1 = frac_mass_plus1 - frac_mass;
+      const double delta_minus1 = frac_mass_minus1 - frac_mass;
+      const double max_delta = (std::max)( fabs(delta_plus1), fabs(delta_minus1) );
+      const double uncert_percent = 100.0 * max_delta / frac_mass;
+      
+      error_tt = "The 1-sigma mass fraction range is ["
+      + SpecUtils::printCompact(100.0*frac_mass_minus1, nsigfig+1)
       + "% to "
-      + SpecUtils::printCompact((100.0 + uncert_percent)*frac_mass, nsigfig+1)
-      + "%. \nThe 1-sigma percentage uncertainty (i.e., the percent of the percent value) is "
+      + SpecUtils::printCompact(100.0*frac_mass_plus1, nsigfig+1)
+      + "%]. \nThe 1-sigma percentage uncertainty (i.e., the percent of the percent value) is "
       + SpecUtils::printCompact(uncert_percent, nsigfig+1)
       + "%";
     }catch( std::exception & )
     {
-      
+      // If we dont have covariance matrix, we will end up here
+      error_tt = "No covariance available.";
     }
     
     results_html << "<td title=\"" << error_tt << "\">" ;
     //<< SpecUtils::printCompact(uncert_percent, nsigfig-1)
     try
     {
+      const double frac_mass_plus2 = mass_fraction(act.m_isotope, 2.0);
+      const double frac_mass_minus2 = mass_fraction(act.m_isotope, -2.0);
+      
       const double frac_mass = mass_fraction(act.m_isotope);
-      results_html << SpecUtils::printCompact((100.0 - 2*uncert_percent)*frac_mass, nsigfig-1)
+      results_html << SpecUtils::printCompact(100.0*frac_mass_minus2, nsigfig-1)
       << "%, "
-      << SpecUtils::printCompact((100.0 + 2*uncert_percent)*frac_mass, nsigfig-1)
+      << SpecUtils::printCompact( 100.0*frac_mass_plus2, nsigfig-1)
       << "%";
     }catch( std::exception & )
     {

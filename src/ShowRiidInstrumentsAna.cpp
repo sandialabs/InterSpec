@@ -376,7 +376,10 @@ std::string riidAnaSummary( const std::shared_ptr<const SpecMeas> &spec )
     summary = summary.substr(0,61) + "...";
   
   if( summary.empty() && ana->results_.empty() )
+  {
+    InterSpec::instance()->useMessageResourceBundle( "ShowRiidInstrumentsAna" );
     summary = WString::tr("srria-no-nucs").toUTF8();
+  }
   
   return Wt::Utils::htmlEncode( WString::fromUTF8(summary),0).toUTF8();
 }//riidAnaSummary(...)
