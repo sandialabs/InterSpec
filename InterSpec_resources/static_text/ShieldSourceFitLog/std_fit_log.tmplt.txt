@@ -1,5 +1,5 @@
 Foreground LiveTime: {% if foreground.LiveTimeSeconds %}{{ foreground.LiveTimeSeconds }}{% endif %} {% if foreground.LiveTimeStr %}({{ foreground.LiveTimeStr }}){% endif %}
-{% if FixedGeometryDetector %}Results given as {{ FixedGeometryType }}.{% else %}Distance to source center from detector: {{ ActShieldFitSetup.DistanceStr }}{% endif %}
+{% if FixedGeometryDetector %}Results given as {{ ActShieldFitSetup.FixedGeometryType }}.{% else %}Distance to source center from detector: {{ ActShieldFitSetup.DistanceStr }}{% endif %}
 {% if Detector %}Detector: {{ Detector.Name }} radius {{ Detector.RadiusStr }}{% endif %}
 {% if ActShieldFitSetup.FitOptions.InterferenceCorrection %}Allowing multiple nuclides being fit for to potentially contribute to the same photopeak{% else %}Not allowing multiple nuclides being fit for to contribute to the same photopeak{% endif %}
 {% if ActShieldFitSetup.FitOptions.DecayDuringMeasurement %}Branching ratios are being corrected for nuclide decay during measurement{% endif %}
@@ -15,7 +15,7 @@ Sources:
 ##endfor
 ## endfor
 
-{% if exists("Shieldings") %}
+{% if exists("Shieldings") and existsIn(Shieldings,"Shields") %}
 Shieldings:
 ## for shield in Shieldings.Shields
 {% if shield.IsGeneric %}
@@ -54,9 +54,10 @@ It took {{ NumberFcnCalls }} solution trials to reach chi2={{ FitChi2 }} with an
 ## for src in Sources
 {{ src.Nuclide }} fit activity {{ src.Activity }}{% if src.ActivityIsFit %} with uncertainty {{ src.ActivityUncert }} ({{ src.ActivityUncertPercent }}) {% endif %} at {% if src.AgeIsFit %}assumed {% else %}fit {% endif %} age {{ src.Age }}
 ## endfor
-Geometry: {{ ActShieldFitSetup.Geometry }}
+Geometry: {% if FixedGeometryDetector %}Fixed geometry, {{ ActShieldFitSetup.FixedGeometryType }}.{% else %}{{ ActShieldFitSetup.Geometry }}{% endif %}
 {% if exists("Shieldings") %}
 Shieldings:
+{% if exists("Shieldings") and existsIn(Shieldings,"Shields") %}
 ## for shield in Shieldings.Shields
 {% if shield.IsGeneric %}
     Generic shielding AN={{ shield.AN }}, AD={{ shield.AD }} g/cm3
@@ -64,4 +65,7 @@ Shieldings:
     {{ shield.Name }} has density {{ shield.Density }} g/cm3 and dimensions {% for i in range(shield.NumDimensions) %} {{ at(Shieldings.DimensionMeanings,i) }}: {{ at(shield.Thicknesses, i) }}{% if at(shield.DimensionIsFit, i) %} (+-{{ at(shield.ThicknessesUncerts,i) }}) {% endif %} {% endfor %}
 {% endif %}
 ##endfor
+{% else %}
+    None
+{% endif %}
 {% endif %}
