@@ -1,6 +1,6 @@
-Foreground LiveTime: {% if foreground.LiveTimeSeconds %}{{ foreground.LiveTimeSeconds }}{% endif %} {% if foreground.LiveTimeStr %}({{ foreground.LiveTimeStr }}){% endif %}
-{% if FixedGeometryDetector %}Results given as {{ ActShieldFitSetup.FixedGeometryType }}.{% else %}Distance to source center from detector: {{ ActShieldFitSetup.DistanceStr }}{% endif %}
-{% if Detector %}Detector: {{ Detector.Name }} radius {{ Detector.RadiusStr }}{% endif %}
+Foreground LiveTime: {% if foreground.LiveTime_s %}{{ foreground.LiveTime_s }} seconds{% endif %} {% if foreground.LiveTime %}({{ foreground.LiveTime }}){% endif %}
+{% if FixedGeometryDetector %}Results given as {{ ActShieldFitSetup.FixedGeometryType }}.{% else %}Distance to source center from detector: {{ ActShieldFitSetup.Distance }}{% endif %}
+{% if Detector %}Detector: {{ Detector.Name }} radius {{ printFixed(Detector.Radius_cm,1) }}{% endif %}
 {% if ActShieldFitSetup.FitOptions.InterferenceCorrection %}Allowing multiple nuclides being fit for to potentially contribute to the same photopeak{% else %}Not allowing multiple nuclides being fit for to contribute to the same photopeak{% endif %}
 {% if ActShieldFitSetup.FitOptions.DecayDuringMeasurement %}Branching ratios are being corrected for nuclide decay during measurement{% endif %}
 

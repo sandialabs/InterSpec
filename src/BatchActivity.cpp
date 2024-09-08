@@ -237,16 +237,31 @@ void add_basic_src_details( const GammaInteractionCalc::SourceDetails &src,
   
   src_json["Nuclide"] = src.nuclide->symbol;
   src_json["Activity"] = PhysicalUnits::printToBestActivityUnits(src.activity,4,!useBq) + act_postfix;
-  src_json["ActivityBq"] = src.activity / PhysicalUnits::bq;
-  src_json["ActivityCi"] = src.activity / PhysicalUnits::ci;
+  src_json["Activity_bq"] = src.activity / PhysicalUnits::bq;
+  src_json["Activity_kBq"] = src.activity / PhysicalUnits::kBq;
+  src_json["Activity_MBq"] = src.activity / PhysicalUnits::MBq;
+  src_json["Activity_GBq"] = src.activity / PhysicalUnits::GBq;
+  src_json["Activity_ci"] = src.activity / PhysicalUnits::ci;
+  src_json["Activity_mCi"] = src.activity / PhysicalUnits::mCi;
+  src_json["Activity_uCi"] = src.activity / PhysicalUnits::microCi;
+  src_json["Activity_pCi"] = src.activity / PhysicalUnits::pCi;
   src_json["ActivityPostFix"] = act_postfix;
   src_json["ActivityIsFit"] = src.activityIsFit;
+  
   
   if( src.activityIsFit )
   {
     src_json["ActivityUncert"] = PhysicalUnits::printToBestActivityUnits(src.activityUncertainty,4,!useBq) + act_postfix;
-    src_json["ActivityUncertBq"] = src.activityUncertainty / PhysicalUnits::bq;
-    src_json["ActivityUncertCi"] = src.activityUncertainty / PhysicalUnits::ci;
+    
+    src_json["ActivityUncert_bq"]  = src.activityUncertainty / PhysicalUnits::bq;
+    src_json["ActivityUncert_kBq"] = src.activityUncertainty / PhysicalUnits::kBq;
+    src_json["ActivityUncert_MBq"] = src.activityUncertainty / PhysicalUnits::MBq;
+    src_json["ActivityUncert_GBq"] = src.activityUncertainty / PhysicalUnits::GBq;
+    src_json["ActivityUncert_ci"]  = src.activityUncertainty / PhysicalUnits::ci;
+    src_json["ActivityUncert_mCi"] = src.activityUncertainty / PhysicalUnits::mCi;
+    src_json["ActivityUncert_uCi"] = src.activityUncertainty / PhysicalUnits::microCi;
+    src_json["ActivityUncert_pCi"] = src.activityUncertainty / PhysicalUnits::pCi;
+    
     const double act_uncert_percent = 100.0 * src.activityUncertainty / src.activity;
     src_json["ActivityUncertPercent"] = SpecUtils::printCompact( act_uncert_percent, 4 );
   }else
@@ -306,15 +321,29 @@ void add_basic_src_details( const GammaInteractionCalc::SourceDetails &src,
     
     src_json["TraceActivityType"] = GammaInteractionCalc::to_str(src.traceActivityType);
     src_json["TraceDisplayActivity"] = PhysicalUnits::printToBestActivityUnits(src.traceSrcDisplayAct,4,!useBq) + trace_src_postfix;
-    src_json["TraceDisplayActivityBq"] = src.traceSrcDisplayAct / PhysicalUnits::bq;
-    src_json["TraceDisplayActivityCi"] = src.traceSrcDisplayAct / PhysicalUnits::ci;
+    src_json["TraceDisplayActivity_bq"] = src.traceSrcDisplayAct / PhysicalUnits::bq;
+    src_json["TraceDisplayActivity_kBq"] = src.traceSrcDisplayAct / PhysicalUnits::kBq;
+    src_json["TraceDisplayActivity_MBq"] = src.traceSrcDisplayAct / PhysicalUnits::MBq;
+    src_json["TraceDisplayActivity_GBq"] = src.traceSrcDisplayAct / PhysicalUnits::GBq;
+    src_json["TraceDisplayActivity_ci"]  = src.traceSrcDisplayAct / PhysicalUnits::ci;
+    src_json["TraceDisplayActivity_mCi"] = src.traceSrcDisplayAct / PhysicalUnits::mCi;
+    src_json["TraceDisplayActivity_uCi"] = src.traceSrcDisplayAct / PhysicalUnits::microCi;
+    src_json["TraceDisplayActivity_pCi"] = src.traceSrcDisplayAct / PhysicalUnits::pCi;
+    
     src_json["TraceActivityPostFix"] = trace_src_postfix;
     
     if( src.ageIsFit )
     {
       src_json["TraceDisplayActivityUncert"] = PhysicalUnits::printToBestActivityUnits(src.traceSrcDisplayActUncertainty,4,!useBq) + trace_src_postfix;
-      src_json["TraceDisplayActivityUncertBq"] = src.traceSrcDisplayActUncertainty / PhysicalUnits::bq;
-      src_json["TraceDisplayActivityUncertCi"] = src.traceSrcDisplayActUncertainty / PhysicalUnits::ci;
+      src_json["TraceDisplayActivityUncert_bq"] = src.traceSrcDisplayActUncertainty / PhysicalUnits::bq;
+      src_json["TraceDisplayActivityUncert_kBq"] = src.traceSrcDisplayActUncertainty / PhysicalUnits::kBq;
+      src_json["TraceDisplayActivityUncert_MBq"] = src.traceSrcDisplayActUncertainty / PhysicalUnits::MBq;
+      src_json["TraceDisplayActivityUncert_GBq"] = src.traceSrcDisplayActUncertainty / PhysicalUnits::GBq;
+      src_json["TraceDisplayActivityUncert_ci"]  = src.traceSrcDisplayActUncertainty / PhysicalUnits::ci;
+      src_json["TraceDisplayActivityUncert_mCi"] = src.traceSrcDisplayActUncertainty / PhysicalUnits::mCi;
+      src_json["TraceDisplayActivityUncert_uCi"] = src.traceSrcDisplayActUncertainty / PhysicalUnits::microCi;
+      src_json["TraceDisplayActivityUncert_pCi"] = src.traceSrcDisplayActUncertainty / PhysicalUnits::pCi;
+      
     }else
     {
       assert( src.traceSrcDisplayActUncertainty <= 0.0 );
@@ -323,7 +352,10 @@ void add_basic_src_details( const GammaInteractionCalc::SourceDetails &src,
     if( src.traceActivityType == GammaInteractionCalc::TraceActivityType::ExponentialDistribution )
     {
       src_json["TraceRelaxationLength"] = PhysicalUnits::printToBestLengthUnits(src.traceRelaxationLength, 4);
-      src_json["TraceRelaxationLengthCm"] = src.traceRelaxationLength / PhysicalUnits::cm;
+      src_json["TraceRelaxationLength_mm"] = src.traceRelaxationLength / PhysicalUnits::mm;
+      src_json["TraceRelaxationLength_cm"] = src.traceRelaxationLength / PhysicalUnits::cm;
+      src_json["TraceRelaxationLength_m"] = src.traceRelaxationLength / PhysicalUnits::m;
+      src_json["TraceRelaxationLength_inch"] = src.traceRelaxationLength / (2.54*PhysicalUnits::cm);
     }
   }//if( src.isTraceSource )
   
@@ -452,8 +484,13 @@ void add_fit_options_to_json( const ShieldingSourceFitCalc::ShieldingSourceFitOp
   auto &fit_setup = data["ActShieldFitSetup"];
   if( !fixedGeom )
   {
-    fit_setup["Distance"] = distance / PhysicalUnits::cm;
-    fit_setup["DistanceStr"] = PhysicalUnits::printToBestLengthUnits( distance, 3 );
+    fit_setup["Distance"] = PhysicalUnits::printToBestLengthUnits( distance, 3 );
+    fit_setup["Distance_mm"] = distance / PhysicalUnits::mm;
+    fit_setup["Distance_cm"] = distance / PhysicalUnits::cm;
+    fit_setup["Distance_m"] = distance / PhysicalUnits::meter;
+    fit_setup["Distance_km"] = distance / (1000.0*PhysicalUnits::meter);
+    fit_setup["Distance_inch"] = distance / (2.54*PhysicalUnits::cm);
+    fit_setup["Distance_feet"] = distance / (12.0*2.54*PhysicalUnits::cm);
     fit_setup["Geometry"] = GammaInteractionCalc::to_str( geometry );
   }else
   {
@@ -662,17 +699,36 @@ void shield_src_fit_results_to_json( const ShieldingSourceFitCalc::ModelFitResul
       shield_json["Geometry"] = GammaInteractionCalc::to_str(shield.m_geometry);
       
       shield_json["Thickness"] = PhysicalUnits::printToBestLengthUnits(shield.m_thickness,3);
-      shield_json["ThicknessCm"] = shield.m_thickness / PhysicalUnits::cm;
+      shield_json["Thickness_mm"] = shield.m_thickness / PhysicalUnits::mm;
+      shield_json["Thickness_cm"] = shield.m_thickness / PhysicalUnits::cm;
+      shield_json["Thickness_m"] = shield.m_thickness / PhysicalUnits::meter;
+      shield_json["Thickness_inch"] = shield.m_thickness / (2.54*PhysicalUnits::cm);
+      shield_json["Thickness_feet"] = shield.m_thickness / (12.0*2.54*PhysicalUnits::cm);
       shield_json["VolumeCm3"] = shield.m_volume / PhysicalUnits::cm3;
       shield_json["VolumeUncertCm3"] = shield.m_volume_uncert / PhysicalUnits::cm3;
       
       shield_json["InnerRadius"] = PhysicalUnits::printToBestLengthUnits(shield.m_inner_rad, 3);
       shield_json["OuterRadius"] = PhysicalUnits::printToBestLengthUnits(shield.m_inner_rad + shield.m_thickness, 3);
       
-      vector<double> inner_dims{ shield.m_inner_dimensions, shield.m_inner_dimensions + shield.m_num_dimensions };
-      vector<double> outer_dims{ shield.m_outer_dimensions, shield.m_outer_dimensions + shield.m_num_dimensions };
+      const vector<double> inner_dims{ shield.m_inner_dimensions, shield.m_inner_dimensions + shield.m_num_dimensions };
+      const vector<double> outer_dims{ shield.m_outer_dimensions, shield.m_outer_dimensions + shield.m_num_dimensions };
       vector<double> thicknesses( shield.m_num_dimensions );
-      vector<double> dim_uncerts( shield.m_dimension_uncert, shield.m_dimension_uncert + shield.m_num_dimensions );
+      const vector<double> dim_uncerts( shield.m_dimension_uncert, shield.m_dimension_uncert + shield.m_num_dimensions );
+      
+      vector<double> inner_dims_mm = inner_dims;
+      vector<double> outer_dims_mm = outer_dims;
+      vector<double> thicknesses_mm = thicknesses;
+      vector<double> dim_uncerts_mm = dim_uncerts;
+      
+      vector<double> inner_dims_cm = inner_dims, outer_dims_cm = outer_dims;
+      vector<double> thicknesses_cm = thicknesses, dim_uncerts_cm = dim_uncerts;
+      
+      vector<double> inner_dims_m = inner_dims, outer_dims_m = outer_dims;
+      vector<double> thicknesses_m = thicknesses, dim_uncerts_m = dim_uncerts;
+      
+      vector<double> inner_dims_inch = inner_dims, outer_dims_inch = outer_dims;
+      vector<double> thicknesses_inch = thicknesses, dim_uncerts_inch = dim_uncerts;
+      
       
       vector<string> inner_dims_strs( shield.m_num_dimensions );
       vector<string> outer_dims_strs( shield.m_num_dimensions );
@@ -688,20 +744,51 @@ void shield_src_fit_results_to_json( const ShieldingSourceFitCalc::ModelFitResul
         if( fit_dim[dim] )
           dim_uncerts_strs[dim] = PhysicalUnits::printToBestLengthUnits( dim_uncerts[dim], 5 );
         
-        inner_dims[dim] /= PhysicalUnits::cm;
-        outer_dims[dim] /= PhysicalUnits::cm;
-        thicknesses[dim] /= PhysicalUnits::cm;
-        dim_uncerts[dim] /= PhysicalUnits::cm;
+        inner_dims_mm[dim] /= PhysicalUnits::mm;
+        outer_dims_mm[dim] /= PhysicalUnits::mm;
+        thicknesses_mm[dim] /= PhysicalUnits::mm;
+        dim_uncerts_mm[dim] /= PhysicalUnits::mm;
+        
+        inner_dims_cm[dim] /= PhysicalUnits::cm;
+        outer_dims_cm[dim] /= PhysicalUnits::cm;
+        thicknesses_cm[dim] /= PhysicalUnits::cm;
+        dim_uncerts_cm[dim] /= PhysicalUnits::cm;
+        
+        inner_dims_m[dim] /= PhysicalUnits::m;
+        outer_dims_m[dim] /= PhysicalUnits::m;
+        thicknesses_m[dim] /= PhysicalUnits::m;
+        dim_uncerts_m[dim] /= PhysicalUnits::m;
+        
+        inner_dims_inch[dim] /= (2.54*PhysicalUnits::cm);
+        outer_dims_inch[dim] /= (2.54*PhysicalUnits::cm);
+        thicknesses_inch[dim] /= (2.54*PhysicalUnits::cm);
+        dim_uncerts_inch[dim] /= (2.54*PhysicalUnits::cm);
       }//for( unsigned int dim = 0; dim < shield.m_num_dimensions; ++dim )
       
-      shield_json["InnerDimsCm"] = inner_dims;
-      shield_json["OuterDimsCm"] = outer_dims;
-      shield_json["ThicknessesCm"] = thicknesses;
       shield_json["ThicknessesUncerts"] = dim_uncerts_strs;
-      shield_json["ThicknessesUncertsCm"] = dim_uncerts;
-      shield_json["InnerDims"]   = inner_dims_strs;
-      shield_json["OuterDims"]   = outer_dims_strs;
-      shield_json["Thicknesses"] = thicknesses_strs;
+      shield_json["InnerDims"]          = inner_dims_strs;
+      shield_json["OuterDims"]          = outer_dims_strs;
+      shield_json["Thicknesses"]        = thicknesses_strs;
+      
+      shield_json["InnerDims_mm"] = inner_dims_mm;
+      shield_json["OuterDims_mm"] = outer_dims_mm;
+      shield_json["Thicknesses_mm"] = thicknesses_mm;
+      shield_json["ThicknessesUncerts_mm"] = dim_uncerts_mm;
+      
+      shield_json["InnerDims_cm"] = inner_dims_cm;
+      shield_json["OuterDims_cm"] = outer_dims_cm;
+      shield_json["Thicknesses_cm"] = thicknesses_cm;
+      shield_json["ThicknessesUncerts_cm"] = dim_uncerts_cm;
+      
+      shield_json["InnerDims_m"] = inner_dims_m;
+      shield_json["OuterDims_m"] = outer_dims_m;
+      shield_json["Thicknesses_m"] = thicknesses_m;
+      shield_json["ThicknessesUncerts_m"] = dim_uncerts_m;
+      
+      shield_json["InnerDims_inch"] = inner_dims_inch;
+      shield_json["OuterDims_inch"] = outer_dims_inch;
+      shield_json["Thicknesses_inch"] = thicknesses_inch;
+      shield_json["ThicknessesUncerts_inch"] = dim_uncerts_inch;
       
       
       for( const GammaInteractionCalc::ShieldingDetails::SelfAttenComponent &comp : shield.m_mass_fractions )
@@ -745,7 +832,10 @@ void shield_src_fit_results_to_json( const ShieldingSourceFitCalc::ModelFitResul
         if( trace.m_is_exp_dist )
         {
           trace_src_json["RelaxationLength"] = PhysicalUnits::printToBestLengthUnits( trace.m_relaxation_length, 4 );
-          trace_src_json["RelaxationLengthCm"] = trace.m_relaxation_length / PhysicalUnits::cm;
+          trace_src_json["RelaxationLength_mm"] = trace.m_relaxation_length / PhysicalUnits::mm;
+          trace_src_json["RelaxationLength_cm"] = trace.m_relaxation_length / PhysicalUnits::cm;
+          trace_src_json["RelaxationLength_m"] = trace.m_relaxation_length / PhysicalUnits::m;
+          trace_src_json["RelaxationLength_inch"] = trace.m_relaxation_length / (2.54*PhysicalUnits::cm);
         }
         
         assert( results.source_calc_details );
@@ -847,10 +937,16 @@ void shield_src_fit_results_to_json( const ShieldingSourceFitCalc::ModelFitResul
     auto &drf_obj = data["Detector"];
     drf_obj["Name"] = drf->name();
     drf_obj["Description"] = drf->description();
-    drf_obj["Diameter"] = static_cast<double>( drf->detectorDiameter() );
-    drf_obj["Radius"] = 0.5*drf->detectorDiameter();
-    drf_obj["DiameterStr"] = PhysicalUnits::printToBestLengthUnits( drf->detectorDiameter(), 3 );
-    drf_obj["RadiusStr"] = PhysicalUnits::printToBestLengthUnits( 0.5*drf->detectorDiameter(), 3 );
+    drf_obj["Diameter_mm"] = drf->detectorDiameter() / PhysicalUnits::mm;
+    drf_obj["Diameter_cm"] = drf->detectorDiameter() / PhysicalUnits::cm;
+    drf_obj["Diameter_m"] = drf->detectorDiameter() / PhysicalUnits::m;
+    drf_obj["Diameter_inch"] = drf->detectorDiameter() / (2.54*PhysicalUnits::cm);
+    drf_obj["Radius_mm"] = 0.5*drf->detectorDiameter() / PhysicalUnits::mm;
+    drf_obj["Radius_cm"] = 0.5*drf->detectorDiameter() / PhysicalUnits::cm;
+    drf_obj["Radius_m"] = 0.5*drf->detectorDiameter() / PhysicalUnits::m;
+    drf_obj["Radius_inch"] = 0.5*drf->detectorDiameter() / (2.54*PhysicalUnits::cm);
+    drf_obj["Diameter"] = PhysicalUnits::printToBestLengthUnits( drf->detectorDiameter(), 3 );
+    drf_obj["Radius"] = PhysicalUnits::printToBestLengthUnits( 0.5*drf->detectorDiameter(), 3 );
     drf_obj["FixedGeometry"] = drf->isFixedGeometry();
   };
            
@@ -956,6 +1052,27 @@ void fit_activities_in_files( const std::string &exemplar_filename,
   //  It doesnt *look* like inja prevents using things like "../../../SomeSensitveFile.txt" as templates.
   env.set_search_included_templates_in_files( !tmplt_dir.empty() );
 #endif
+  
+  // Add some callbacks incase people want more control over the precision of their printouts
+  env.add_callback( "printFixed", 2, []( inja::Arguments& args ) -> std::string {
+    const double val = args.at(0)->get<double>();
+    const int numDecimal = std::max( 0, args.at(1)->get<int>() );
+    
+    char buffer[64] = { '\0' };
+    snprintf( buffer, sizeof(buffer), "%.*f", numDecimal, val );
+    
+    return std::string(buffer);
+  } );
+  
+  
+  env.add_callback( "printCompact", 2, []( inja::Arguments& args ) -> std::string {
+    const double val = args.at(0)->get<double>();
+    const int numSigFig = args.at(1)->get<int>();
+    if( numSigFig <= 1 )
+      throw runtime_error( "printCompact: you must print at least one significant figures" );
+    
+    return SpecUtils::printCompact( val, static_cast<size_t>(numSigFig) );
+  } );
   
   try
   {
@@ -1111,10 +1228,10 @@ void fit_activities_in_files( const std::string &exemplar_filename,
         
         const char * const label = is_background ? "background" : "foreground";
         data[label] = {
-          { "LiveTimeSeconds", lt },
-          { "LiveTimeStr", lt_str },
-          { "RealTimeSeconds", rt },
-          { "RealTimeStr", rt_str },
+          { "LiveTime_s", lt },
+          { "LiveTime", lt_str },
+          { "RealTime_s", rt },
+          { "RealTime", rt_str },
           { "LowerSpectrumEnergy", spec.gamma_channel_lower(0) },
           { "UpperSpectrumEnergy", spec.gamma_channel_upper(spec.num_gamma_channels() - 1) },
           { "NumberChannels", (int)spec.num_gamma_channels() },
