@@ -46,7 +46,7 @@ namespace AppUtils
    You should url-decode the uri, before passing it in, because, for example the '?' character
    is not in the allowed QR code ascii set
    */
-  void split_uri( std::string uri, std::string &host, std::string &path,
+  InterSpec_API void split_uri( std::string uri, std::string &host, std::string &path,
                  std::string &query, std::string &fragment );
   
   
@@ -62,7 +62,7 @@ namespace AppUtils
    If a key value is empty (i.e., either '=' or ':' is first character in field), or the same key is specified multiple times
    an exception will be thrown (this isnt standard - but specific to how we use URIs in InterSpec).
    */
-  std::map<std::string,std::string> query_str_key_values( const std::string &query );
+  InterSpec_API std::map<std::string,std::string> query_str_key_values( const std::string &query );
   
   /** Similar to #query_str_key_values, but keeps key-value pairs in original order, allows duplicates, and empty values. */
   // std::vector<std::pair<std::string,std::string>> query_key_values( const std::string &query );
@@ -70,7 +70,7 @@ namespace AppUtils
   
 #if( USE_BATCH_TOOLS || BUILD_AS_LOCAL_SERVER )
   /** Returns the terminal character width */
-  unsigned terminal_width();
+  InterSpec_API unsigned terminal_width();
 #endif
   
   /** Returns a int, representing compile date of AppUtils.cpp.
@@ -80,14 +80,14 @@ namespace AppUtils
    Note that this may differ from actual compile time of executable, if AppUtils.cpp
    didnt need to get built for the current compile.
    */
-  uint32_t compile_date_as_int();
+  InterSpec_API uint32_t compile_date_as_int();
   
 #if( !ANDROID && !IOS && !BUILD_FOR_WEB_DEPLOYMENT )
   /** Returns the path of the currently running executable.
    
    Will throw exception on failure
    */
-  std::string current_exe_path();
+  InterSpec_API std::string current_exe_path();
   
   /** Looks at the file path passed and searches around to try and find that file, if it is a relative path.
    
@@ -103,7 +103,7 @@ namespace AppUtils
           A value of zero means to only search in the same directory as the executable.
    @param include_path [in] If the "PATH" environment variable should be searched.
    */
-  bool locate_file( std::string &filename,
+  InterSpec_API bool locate_file( std::string &filename,
                    const bool is_dir,
                    size_t max_levels_up,
                    const bool include_path );
@@ -119,11 +119,17 @@ namespace AppUtils
  wchar_t *wenvstrings = GetEnvironmentStringsW();
  ...
  */
-void getUtf8Args( int &argc, char **&argv );
+InterSpec_API void getUtf8Args( int &argc, char **&argv );
 
+InterSpec_API void getUtf8Args( int &argc, wchar_t **argvw, char **&argv );
 
 /** Frees the memory allopcated by #getUtf8Args */
-void cleanupUtf8Args( int &argc, char **&argv );
+InterSpec_API void cleanupUtf8Args( int &argc, char **&argv );
+
+/** Returns the standard user data directory from the OS
+C:\Users\username\AppData\Roaming\InterSpec
+*/
+InterSpec_API std::string user_data_dir();
 #endif
 }//namespace AppUtils
 

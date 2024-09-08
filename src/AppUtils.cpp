@@ -44,7 +44,8 @@
 #ifdef __APPLE__
 #include <mach-o/dyld.h>  //for _NSGetExecutablePath
 #elif( defined(_WIN32) )
-#include <libloaderapi.h>  //for GetModuleFileNameW
+#include <libloaderapi.h> //for GetModuleFileNameW
+#include <Shlobj.h>       //for CSIDL_APPDATA and SHGetKnownFolderPath
 #else
 #include <limits.h>  //for PATH_MAX
 #endif
@@ -407,6 +408,21 @@ void getUtf8Args( int &argc, char ** &argv )
   LocalFree(argvw);
 }//void getUtf8Args()
 
+
+void getUtf8Args( int &argc, wchar_t **argvw, char **&argv )
+{
+  argv = (char **)malloc( sizeof( char * ) * argc );
+
+  for( int i = 0; i < argc; ++i )
+  {
+    //printf("Argument: %d: %ws\n", i, argvw[i]);
+    const std::string asutf8 = SpecUtils::convert_from_utf16_to_utf8( argvw[i] );
+    argv[i] = (char *)malloc( sizeof( char ) * (asutf8.size() + 1) );
+    strcpy( argv[i], asutf8.c_str() );
+  }//for( int i = 0; i < argc; ++i)
+}//void processCustomArgs()
+
+
 void cleanupUtf8Args( int &argc, char **&argv )
 {
   for( int i = 0; i < argc; ++i )
@@ -415,5 +431,29 @@ void cleanupUtf8Args( int &argc, char **&argv )
   argc = 0;
   argv = nullptr;
 }//void cleanupUtf8Args( int &argc, char **&argv )
+
+
+std::string user_data_dir()
+{ 
+  //  Should we use SHGetKnownFolderPath with FOLDERID_RoamingAppData instead?
+  TCHAR ppszPath[MAX_PATH];
+  HRESULT hr = ::SHGetFolderPath( nullptr, CSIDL_APPDATA, nullptr, SHGFP_TYPE_CURRENT, ppszPath );
+  if( hr == E_FAIL ) // Folder doesnt exist, get default value?  
+    hr = ::SHGetFolderPath( nullptr, CSIDL_APPDATA, nullptr, SHGFP_TYPE_DEFAULT, ppszPath );
+ 
+  if( hr != S_OK )
+    throw runtime_error( "Couldnt get APP data directory" );
+
+  int len = MultiByteToWideChar( CP_ACP, 0, ppszPath, -1, NULL, 0 );
+  std::wstring wstr( len, 0 );
+  MultiByteToWideChar( CP_ACP, 0, ppszPath, -1, &wstr[0], len );
+
+
+  int utf8Len = WideCharToMultiByte( CP_UTF8, 0, &wstr[0], -1, NULL, 0, NULL, NULL );
+  std::string utf8Str( utf8Len, 0 );
+  WideCharToMultiByte( CP_UTF8, 0, &wstr[0], -1, &utf8Str[0], utf8Len, NULL, NULL );
+  
+  return utf8Str;
+}//std::string AppUtils::user_data_dir()
 #endif
 }//namespace AppUtils

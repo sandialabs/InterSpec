@@ -76,10 +76,6 @@
 #include "target/osx/macOsUtils.h"
 #endif
 
-#if( BUILD_AS_WX_WIDGETS_APP )
-#include "target/wxWidgets/InterSpecWxUtils.h"
-#endif
-
 #if( !BUILD_FOR_WEB_DEPLOYMENT )
 #include "InterSpec/InterSpecServer.h"
 #endif
@@ -114,6 +110,11 @@ namespace
   std::set<InterSpecApp *> AppInstances;
   //note: could potentially use Wt::WServer::instance()->sessions() to retrieve
   //      sessionIds.
+#endif
+
+#if(  BUILD_AS_WX_WIDGETS_APP )
+  std::mutex ns_js_err_handler_mutex;
+  std::function<void(std::string, std::string)> ns_js_err_handler;
 #endif
 }//namespace
 
@@ -1003,6 +1004,15 @@ std::string InterSpecApp::tempDirectory()
 }//void tempDirectory()
 
 
+#if(  BUILD_AS_WX_WIDGETS_APP )
+void InterSpecApp::setJavascriptErrorHandler( std::function<void(std::string, std::string)> fctn )
+{
+  std::lock_guard<std::mutex> lock( ns_js_err_handler_mutex );
+  ns_js_err_handler = fctn;
+}
+#endif //#if(  BUILD_AS_WX_WIDGETS_APP )
+
+
 std::string InterSpecApp::userNameFromOS()
 {
   const char *sysusername = getenv( "USER" );  //*NIX
@@ -1412,8 +1422,18 @@ void InterSpecApp::handleJavaScriptError( const std::string &errorText )
   doJavaScript( "console.log('Here I am after error');", false );
   
   if( isPrimaryWindowInstance() )
-    InterSpecWxUtils::handle_javascript_error( errorText, m_externalToken );
-  
+  {
+    std::function<void(std::string, std::string)> handler;
+    
+    {//begin lock on ns_js_err_handler_mutex
+      std::lock_guard<std::mutex> lock( ns_js_err_handler_mutex );
+      handler = ns_js_err_handler;
+    }//end lock on ns_js_err_handler_mutex
+
+    if( handler )
+      handler( errorText, m_externalToken );
+  }
+
   // Default WApplication implementation just logs error, and then calls WApplication:quit()
   WApplication::handleJavaScriptError( errorText );
 }//void handleJavaScriptError( const std::string &errorText )

@@ -53,9 +53,13 @@
 #include "SpecUtils/StringAlgo.h"
 #include "SpecUtils/Filesystem.h"
 
+#include "InterSpec/AppUtils.h"
 #include "InterSpec/InterSpecApp.h"
 #include "InterSpec/InterSpecServer.h"
 #include "InterSpec/UndoRedoManager.h"
+
+#include "InterSpecWxUtils.h"
+
 
 /*
 // Running batch commands not finished being implemented 
@@ -440,7 +444,7 @@ InterSpecWxApp::InterSpecWxApp() :
 
   void InterSpecWxApp::close_all_windows_and_exit()
   {
-    auto frames_copy = m_frames;
+    std::vector<InterSpecWebFrame *> frames_copy = m_frames;
     for( auto frame : frames_copy )
       frame->Close();
 
@@ -597,7 +601,7 @@ InterSpecWxApp::InterSpecWxApp() :
     //  little by appending build date, so this way if you want, you can have two different
     //  builds of InterSpec running
     const wxString app_name = GetAppName() + '-' + wxGetUserId() 
-                              + "-" + std::to_string(InterSpecApp::compileDateAsInt());
+                              + "-" + std::to_string(AppUtils::compile_date_as_int());
     const bool did_create = m_checker->Create( app_name );
 
     // `did_create` will be true, even if another instance of the program is running; it only indicated
@@ -681,6 +685,12 @@ InterSpecWxApp::InterSpecWxApp() :
       throw std::runtime_error( "InterSpecWxApp::OnInit(): command line was already parsed before this function????" );
 
     set_data_dirs();
+
+    
+    InterSpecApp::setJavascriptErrorHandler( []( std::string errormsg, std::string app_token ){
+      InterSpecWxUtils::handle_javascript_error( errormsg, app_token );
+    } );
+
 
     try
     {

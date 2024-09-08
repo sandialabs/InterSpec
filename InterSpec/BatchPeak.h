@@ -59,7 +59,7 @@ namespace BatchPeak
    - When peaks are not fit for, print out their Currie detection limit
    */
   
-  struct BatchPeakFitOptions
+  struct InterSpec_API BatchPeakFitOptions
   {
     bool to_stdout;
     bool refit_energy_cal;
@@ -85,12 +85,12 @@ namespace BatchPeak
   };//struct BatchPeakFitOptions
   
   
-  void fit_peaks_in_files( const std::string &exemplar_filename,
+  InterSpec_API void fit_peaks_in_files( const std::string &exemplar_filename,
                           const std::set<int> &exemplar_sample_nums,
                           const std::vector<std::string> &files,
                           const BatchPeakFitOptions &options );
   
-  struct BatchPeakFitResult
+  struct InterSpec_API BatchPeakFitResult
   {
     std::string file_path;
     BatchPeakFitOptions options;
@@ -129,7 +129,7 @@ namespace BatchPeak
    @param options The options to use for fitting peaks; note, not all options are used, as some of them are only applicable to
           #fit_peaks_in_files
    */
-  BatchPeakFitResult fit_peaks_in_file( const std::string &exemplar_filename,
+  InterSpec_API BatchPeakFitResult fit_peaks_in_file( const std::string &exemplar_filename,
                           std::set<int> exemplar_sample_nums,
                           std::shared_ptr<const SpecMeas> cached_exemplar_n42,
                           const std::string &filename,

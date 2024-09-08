@@ -136,15 +136,15 @@ set(MAX_SPECTRUM_MEMMORY_SIZE_MB 256
 )
 
 if( (USE_BATCH_TOOLS AND NOT BUILD_AS_ELECTRON_APP) OR BUILD_AS_OSX_APP )
-  set( INTERSPEC_LIB_TYPE "SHARED" )
+  set( INTERSPEC_LIB_TYPE SHARED )
 else()
-  set( INTERSPEC_LIB_TYPE "STATIC" )
+  set( INTERSPEC_LIB_TYPE STATIC )
 endif()
 
 
 if(WIN32)
   #0x0601==Win7, 0x0501=WinXP (Wt CMakeLists.txt uses 0x0501x)
-  add_definitions(-D _WIN32_WINNT=0x0601 -D WINVER=0x0601 -D _SCL_SECURE_NO_WARNINGS /bigobj /MP )
+  #target_compile_definitions( InterSpecLib PUBLIC -D _WIN32_WINNT=0x0601 -D WINVER=0x0601 -D _SCL_SECURE_NO_WARNINGS /bigobj /MP )
 
 #    set(EXECUTABLE_OUTPUT_PATH . CACHE PATH "Path to executables" FORCE)
 #    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /bigobj /MP /wd4996 /wd4267" )
@@ -640,7 +640,18 @@ target_compile_options(InterSpecLib PRIVATE
           -Wno-inconsistent-missing-override>  # Turn off a bunch of warnings like: WTreeView:399:20: warning: 'headerWidget' overrides a member function but is not marked 'override' [-Winconsistent-missing-override]
      $<$<CXX_COMPILER_ID:MSVC>:
           >)
+if(WIN32)
+  #0x0601==Win7, 0x0501=WinXP (Wt CMakeLists.txt uses 0x0501x)
+  target_compile_definitions( InterSpecLib PUBLIC -D _WIN32_WINNT=0x0601 -D WINVER=0x0601 -D _SCL_SECURE_NO_WARNINGS )
+  target_compile_definitions( InterSpecLib PRIVATE InterSpec_EXPORTS )
 
+  if( USE_BATCH_TOOLS )
+    target_compile_options( InterSpecLib PUBLIC /bigobj )
+    target_compile_options( InterSpecLib PUBLIC $<$<CONFIG:Release>:/MP> )
+  else( USE_BATCH_TOOLS )
+    add_definitions( /MP )
+  endif( USE_BATCH_TOOLS )
+endif(WIN32)
 
 target_link_libraries(
     InterSpecLib
@@ -875,7 +886,7 @@ configure_file(
 
 if( WIN32 )
   # The following are only needed for Wt 3.7.1, not 3.3.4
-  target_link_libraries( InterSpecLib PRIVATE opengl32.lib d2d1.lib windowscodecs.lib Dwrite.lib )
+  target_link_libraries( InterSpecLib PUBLIC opengl32.lib d2d1.lib windowscodecs.lib Dwrite.lib )
 endif( WIN32 )
 
 #if( ${PERFORM_DEVELOPER_CHECKS} EQUAL ${SpecUtils_ENABLE_EQUALITY_CHECKS} )

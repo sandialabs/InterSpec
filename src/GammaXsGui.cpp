@@ -550,8 +550,12 @@ void GammaXsGui::handleAppUrl( std::string query_str )
         switch( type )
         {
           case 0: break;
-          case 1: std::stod(value); break;
-          case 2: PhysicalUnits::stringToDistance(value); break;
+          case 1:
+            std::stod(value); 
+            break;
+          case 2: 
+            PhysicalUnits::stringToDistance(value); 
+            break;
         }
       }catch( std::exception & )
       {

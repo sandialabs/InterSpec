@@ -45,12 +45,16 @@
 
 static_assert( USE_BATCH_TOOLS, "You must have USE_BATCH_TOOLS enabled to build this code" );
 
-int main( int argc, char **argv )
-{
+
 #ifdef _WIN32
-  AppUtils::getUtf8Args( argc, argv );
+int wmain( int argc, wchar_t *wargv[] )
+{
+  char **argv;
+  AppUtils::getUtf8Args( argc, wargv, argv );
+#else
+int main( int argc, char *argv[] )
+{
 #endif
-  
   std::string user_data_dir, docroot;
   bool batch_peak_fit = false, batch_act_fit = false;
   
@@ -160,7 +164,7 @@ int main( int argc, char **argv )
   
   try
   {
-    InterSpec::setStaticDataDirectory( SpecUtils::append_path(datadir,"data") );
+    InterSpec::setStaticDataDirectory( datadir );
   }catch( std::exception &e )
   {
     std::cerr << "Failed to set static data directory: " << e.what() << std::endl;
@@ -172,8 +176,10 @@ int main( int argc, char **argv )
   {
 #if( BUILD_AS_OSX_APP )
     user_data_dir = macOsUtils::user_data_dir();
+#elif defined(_WIN32)
+    user_data_dir = AppUtils::user_data_dir();
 #else
-    for windows/linux we should check in standard OS location, and otherwise for 'user_data' in CWD, otherwise
+should fix this for linux
 #endif
   }//if( user_data_dir.empty() )
   

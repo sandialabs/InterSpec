@@ -55,9 +55,9 @@ namespace BatchActivity
    Throws exception if DRF file is invalid, or specified detector could not be loaded.
    If both input strings are empty, returns nullptr.
    */
-  std::shared_ptr<DetectorPeakResponse> init_drf_from_name( std::string drf_file, std::string drf_name );
+  InterSpec_API std::shared_ptr<DetectorPeakResponse> init_drf_from_name( std::string drf_file, std::string drf_name );
   
-  struct BatchActivityFitOptions
+  struct InterSpec_API BatchActivityFitOptions
     : public BatchPeak::BatchPeakFitOptions
   {
     bool use_bq = false;
@@ -65,14 +65,14 @@ namespace BatchActivity
   };//struct BatchActivityFitOptions
   
   
-  void fit_activities_in_files( const std::string &exemplar_filename,
+  InterSpec_API void fit_activities_in_files( const std::string &exemplar_filename,
                           const std::set<int> &exemplar_sample_nums,
                           const std::vector<std::string> &files,
                           const BatchActivityFitOptions &options );
   
-  struct BatchActivityFitResult
+  struct InterSpec_API BatchActivityFitResult
   {
-    enum class ResultCode
+    enum class InterSpec_API ResultCode
     {
       CouldntInitializeStaticResources,
       NoExemplar,
@@ -144,7 +144,7 @@ namespace BatchActivity
    @param options The options to use for fitting peaks; note, not all options are used, as some of them are only applicable to
           #fit_peaks_in_files
    */
-  BatchActivityFitResult fit_activities_in_file( const std::string &exemplar_filename,
+  InterSpec_API BatchActivityFitResult fit_activities_in_file( const std::string &exemplar_filename,
                           std::set<int> exemplar_sample_nums,
                           std::shared_ptr<const SpecMeas> cached_exemplar_n42,
                           const std::string &filename,

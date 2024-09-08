@@ -33,6 +33,9 @@
 #include <Wt/WApplication>
 #include <Wt/WContainerWidget>
 
+#if(  BUILD_AS_WX_WIDGETS_APP )
+#include <functional>
+#endif
 
 class InterSpec;
 namespace Wt
@@ -59,7 +62,7 @@ class SpectrumViewerTester;
 #define PROMPT_USER_BEFORE_LOADING_PREVIOUS_STATE 0
 #endif
 
-class InterSpecApp : public Wt::WApplication
+class InterSpec_API InterSpecApp : public Wt::WApplication
 {
 public:
   InterSpecApp( const Wt::WEnvironment& env );
@@ -127,6 +130,9 @@ public:
   //  other not-super-fast actions.
   static std::string tempDirectory();
 
+#if(  BUILD_AS_WX_WIDGETS_APP )
+  static void setJavascriptErrorHandler( std::function<void(std::string, std::string)> fctn );
+#endif
   
 #if( !BUILD_FOR_WEB_DEPLOYMENT )
   /** Returns the token passed as part of url using parameter 'externalid' or 'apptoken'.

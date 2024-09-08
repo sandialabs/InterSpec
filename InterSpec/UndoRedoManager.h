@@ -76,13 +76,13 @@ public:
    A value of zero indicates unlimited, a negative value indicates disabled.
    Default value is 250, but may be set be the `DesktopAppConfig` mechanism
    */
-  static int maxUndoRedoSteps();
+  static InterSpec_API int maxUndoRedoSteps();
   
   /** Sets the approximate maximum number of undo/redo steps to be kept in memory.
    
    Set to `0` for unlimited, or a negative value to disable.
    */
-  static void setMaxUndoRedoSteps( const int steps );
+  static InterSpec_API void setMaxUndoRedoSteps( const int steps );
   
   /** Adds an undo/redo step.
    
