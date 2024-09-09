@@ -1,0 +1,260 @@
+
+<html>
+
+<head>
+    <meta charset="UTF-8" />
+    <title>Summary Results</title>
+
+    
+    <!-- <script src="https://d3js.org/d3.v3.min.js"></script> -->
+    <script>
+    {{ D3_JS }}
+    </script>
+    
+    <script>
+    {{ SpectrumChart_JS }}
+    </script>
+
+    <!-- Some styles for our page here -->
+    <style>
+      table.ResultTable {
+        border-collapse: collapse; /* Ensures that the borders are not doubled */
+      }
+
+      .ResultTable th, .ResultTable td {
+        border: 1px solid black; /* Adds a border to each cell */
+        padding-left: 8px;
+        padding-right: 8px;
+        padding-top: 4px;
+        padding-bottom: 4px;
+        text-align: left; /* Aligns text to the left */
+      }
+
+      .ResultTable th {
+        background-color: #f2f2f2; /* adds a background color to the header cells */
+      }
+
+      .ResultTable tbody tr:nth-child(even) {
+        background-color: #eaf4f7; /* a slight background for odd rows */
+      }
+
+      .ResultTable tbody tr:nth-child(odd) {
+        background-color: #ffffff; /* White background for even rows */
+      }
+
+      table.InfoTable {
+
+      }
+      .InfoTable th, .InfoTable td {
+        text-align: left; /* Aligns text to the left */
+      }
+
+      .InfoTable td {
+        padding-right: 10px;
+      }
+    </style>
+
+    <!-- D3-based spectrum chart styling -->
+    <style>
+    {{ SpectrumChart_CSS }}
+    </style>
+
+    <!-- Some CSS to override SpectrumChartD3 defaults -->
+    <style>
+      
+    </style>
+</head>
+
+<body>
+
+<table>
+  <tr>
+    <th>Analysis time:</th> <td>{{ AnalysisTime }}</td>
+  </tr>
+  <tr>
+    <th>Working dir:</th> <td>{{ CurrentWorkingDirectory }}</td>
+  </tr>
+  <tr>
+    <th>Exe build date:</th> <td>{{ InterSpecCompileDateIso }}</td>
+  </tr>
+  {% if exists("InterSpecExecutablePath") %}
+  <tr>
+    <th>Exe path:</th> <td>{{ InterSpecExecutablePath }}</td>
+  </tr>
+  {% endif %}
+  <tr>
+    <th>Exemplar File:</th> 
+    <td>
+      {{ ExemplarFile }} {% if exists("ExemplarSampleNumbers") %}, exemplar samples: {{ ExemplarSampleNumbers }}{% endif %}
+    </td>
+  </tr>
+</table>
+
+
+## for file in Files
+<div class="FileInfo">
+  <h1 class="title">
+    Results for {{ file.Filename }}
+  </h1>
+
+  <div id="specchart_{{loop.index1}}" style="height: 20vw; width: 75vw; margin-left: auto; margin-right: auto;">
+  </div>
+
+  <script>
+    let spec_chart_{{loop.index1}} = new SpectrumChartD3( 'specchart_{{loop.index1}}',  {
+    'title': '', 'xlabel' : 'Energy (keV)', 'ylabel': 'Counts'
+     } );
+
+    let spec_observer_{{loop.index1}} = new ResizeObserver(entries => {
+        for (let entry of entries) {
+          if (entry.target && (entry.target.id === "specchart_{{loop.index1}}")) {
+            spec_chart_{{loop.index1}}.handleResize(false);
+          }
+        }
+      });
+      spec_observer_{{loop.index1}}.observe( document.getElementById("specchart_{{loop.index1}}") );
+
+      const spectrum_json_{{loop.index1}} = { "spectra": [{{ file.foreground.spectrum }} {% if existsIn(file,"background") %}, {{ file.background.spectrum }} {% endif %}] };
+
+      spec_chart_{{loop.index1}}.setData( spectrum_json_{{loop.index1}} );
+      spec_chart_{{loop.index1}}.setLogY( true );
+  </script>
+
+  <div id="GeneralInfo">
+    <ul style="list-style-type: none; padding: 0; margin: 0;">
+    <li>
+      <table class="InfoTable">
+        <tr>
+          <th>Live Time:</th>
+          <td>
+            {{ printFixed(file.foreground.LiveTime_s,3) }} seconds ({{ file.foreground.LiveTime }})
+          </td>
+          <th>Real Time:</th>
+          <td>
+            {{ printFixed(file.foreground.RealTime_s,3) }} seconds ({{ file.foreground.RealTime }})
+          </td>
+          <th>Dead Time:</th>
+          <td>
+            {{ printFixed(file.foreground.DeadTime_percent,2) }}%
+          </td>
+        </tr>
+
+        <tr>
+          <th>Meas. Time:</th>
+          <td>
+            {% if file.foreground.StartTimeIsValid %}
+              {{ file.foreground.StartTime }}
+            {% else %}
+              Not Available
+            {% endif %}
+          </td>
+          <th>Gamma Sum:</th>
+          <td> {{ printCompact(file.foreground.GammaSum,6) }} counts</td>
+          <th>Gamma CPS:</th>
+          <td> {{ printCompact(file.foreground.GammaCps,5) }}</td>
+        </tr>
+            
+
+        {% if file.foreground.HasNeutrons %}
+        <tr>
+          <th>Neutron Count:</th>
+          <td> file.foreground.NeutronSum </td>
+
+          <th>Neut. Live Time:</th>
+          <td> file.foreground.NeutronLiveTime </td>
+
+          <th>Neutron CPS:</th>
+          <td> {{ printFixed(file.foreground.NeutronCps,4) }} </td>
+        </tr>
+        {% endif %}
+
+        {% if existsIn(file.foreground,"SpectrumTitle") %}
+        <tr>
+          <th>Title:</th>
+          <td colspan="3"> {{ file.foreground.SpectrumTitle }} </td>
+        </tr>
+        {% endif %}
+
+        <tr>
+          <th>Manufacturer:</th>
+          <td> {% if existsIn(file.foreground,"Manufacturer") %} {{ file.foreground.Manufacturer }} {% else %} -- {% endif %} </td>
+
+          <th>Det. Type:</th>
+          <td> {% if existsIn(file.foreground,"DetectorType") %} {{ file.foreground.DetectorType }} {% else %} -- {% endif %} </td>
+
+          <th>Inst. Model:</th>
+          <td> {% if existsIn(file.foreground,"InstrumentModel") %} {{ file.foreground.InstrumentModel }} {% else %} -- {% endif %} </td>
+        </tr>
+            
+        <tr>
+          <th>Serial Number:</th>
+          <td> {% if existsIn(file.foreground,"SerialNumber") %} {{ file.foreground.SerialNumber }} {% else %} -- {% endif %} </td>
+                {% if file.foreground.HasGps %}
+          <th>lat/lon:</th>
+          <td colspan="2"> <a target="_blank" rel="noopener noreferrer" href="https://maps.google.com/?q={{ printFixed(file.foreground.Latitude,7) }},{{ printFixed(file.foreground.Longitude,7) }}">{{ printFixed(file.foreground.Latitude,7) }}{{ printFixed(file.foreground.Longitude,7) }}</a> </td>
+                {% endif %}
+        </tr>
+        {% if file.foreground.HasInstrumentRid %}
+        <tr> 
+          <th>Inst. RID:</th>
+          <td colspan="3"> {{ file.foreground.InstrumentRidSummary }} </td>
+        </tr>
+        {% endif %}
+      </table>
+    </li>
+  </ul>
+</div> <!-- <div id="GeneralInfo"> -->
+
+<div id="sources" style="margin-top: 25px">
+  Sources:
+  <table class="ActivitySummary ResultTable">
+    <thead><tr>
+      <th>Nuclide</th>
+      <th>Age</th>
+      {% if file.AnySourceAgeFit %}
+      <th>Age Uncert</th>
+      <th>Age Fit?</th>
+      {% endif %}
+      <th>Activity</th>
+      <th>Activity Uncert</th>
+      <th>Activity Fit?</th>
+      {% if file.HasTraceSource %}
+      <th>Trace Src Act.</th>
+      <th>Trace Src Act. Uncert</th>
+      <th>Is Trace Src</th>
+      {% endif %}
+    </tr></thead>
+    <tbody>
+## for src in file.Sources
+      <tr>
+      <td> {{ src.Nuclide }} </td>
+      <td> {{ src.Age }} </td>
+      {% if file.AnySourceAgeFit %}
+        <td> {% if src.AgeIsFit %} {{ src.AgeUncert }} {% endif %}  </td>
+        <td> {{ src.AgeIsFit }} </td>
+      {% endif %}
+      <td> {{ src.Activity }} </td>
+      <td> {% if src.ActivityIsFit %} {{ src.ActivityUncert }} {% endif %} </td>
+      <td> {{ src.ActivityIsFit }} </td>
+      {% if file.HasTraceSource %}
+        <td> {% if src.IsTraceSource %} {{src.TraceDisplayActivity}} {% endif %} </td>
+        <td> {% if src.IsTraceSource and src.ActivityIsFit %} {{ src.TraceDisplayActivityUncert }} {% endif %} </td>
+        <td> {{ src.IsTraceSource }} </td>
+      {% endif %}
+      </tr>
+## endfor
+    </tbody>
+  </table>   
+</div> <!-- <div id="sources" style="margin-top: 25px"> -->
+
+<div style="margin-top: 20px">
+<ul style="list-style-type: none; padding: 0; margin: 0;">
+  <li>There were {{ file.NumDof }} parameters fit for</li>
+  <li>It took {{ file.NumberFcnCalls }} solution trials to reach chi2={{ printCompact(file.FitChi2,5) }} with an estimated distance to minumum of {{ printCompact(file.EstimatedDistanceToMinimum,5) }}</li>
+</ul>
+</div>
+## endfor
+
+</body>
+<html>
+
