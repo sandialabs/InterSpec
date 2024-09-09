@@ -120,7 +120,10 @@ void log_developer_error( const char *location, const char *error );
 
 #define InterSpec_PHONE_ROTATE_FOR_TABS 1
 
-#if ( defined(WIN32) || defined(UNDER_CE) || defined(_WIN32) || defined(WIN64) )
+// On Windows, we will compile LibInterSpec as a shared DLL only when
+//  `USE_BATCH_TOOLS` is enabled - so in this case we need to export the functions
+//  we will want to use from the DLL.
+#if( USE_BATCH_TOOLS && (defined(WIN32) || defined(UNDER_CE) || defined(_WIN32) || defined(WIN64)) )
   #ifdef InterSpec_EXPORTS
     #define InterSpec_API __declspec(dllexport)
   #else

@@ -633,6 +633,11 @@ target_compile_options(InterSpecLib PRIVATE
           -Wno-inconsistent-missing-override>  # Turn off a bunch of warnings like: WTreeView:399:20: warning: 'headerWidget' overrides a member function but is not marked 'override' [-Winconsistent-missing-override]
      $<$<CXX_COMPILER_ID:MSVC>:
           >)
+
+# Turn off "note: The practice of declaring the Bind placeholders (_1, _2, ...) in the global namespace is deprecated...."
+# warnings (these come from Wt I think, not our code)
+target_compile_definitions(InterSpecLib PUBLIC -D BOOST_BIND_GLOBAL_PLACEHOLDERS)
+          
 if(WIN32)
   #0x0601==Win7, 0x0501=WinXP (Wt CMakeLists.txt uses 0x0501x)
   target_compile_definitions( InterSpecLib PUBLIC /bigobj -D _WIN32_WINNT=0x0601 -D WINVER=0x0601 -D _SCL_SECURE_NO_WARNINGS )
