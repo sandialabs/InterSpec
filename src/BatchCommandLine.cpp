@@ -147,8 +147,8 @@ int run_batch_command( int argc, char **argv )
       
       bool output_stdout, refit_energy_cal, use_exemplar_energy_cal, write_n42_with_results;
       bool show_nonfit_peaks, overwrite_output_files, create_csv_output;
-      vector<std::string> input_files, report_templates;
-      string exemplar_path, output_path, exemplar_samples, background_sub_file, background_samples, summary_report_template, template_include_dir;
+      vector<std::string> input_files, report_templates, summary_report_templates;
+      string exemplar_path, output_path, exemplar_samples, background_sub_file, background_samples, template_include_dir;
       
       po::options_description peak_cl_desc("Allowed batch peak-fit, and activity-fit options", term_width, min_description_length);
       peak_cl_desc.add_options()
@@ -202,11 +202,11 @@ int run_batch_command( int argc, char **argv )
        )
       ("file-report-template", po::value<vector<string>>(&report_templates)->multitoken(),
        "One or more spectrum report template files - for each input file, a report will be produced with each template specified."
-       " You can also specify \"default\", or \"none\"."
+       " You can also specify \"default\" (=txt+html), \"txt\", \"html\", or \"none\"."
        )
-      ("summary-report-template", po::value<string>(&summary_report_template)->default_value("default"),
-       "The template file used to provide a summary of all input files."
-       " You can also specify \"default\", or \"none\"."
+      ("summary-report-template", po::value<vector<string>>(&summary_report_templates)->multitoken(),
+       "One or more template files used to provide a summary of all input files."
+       " You can also specify \"default\" (=csv+html), \"csv\", \"html\", or \"none\"."
        )
       ("report-template-include-dir", po::value<string>(&template_include_dir)->default_value("default"),
        "A directory containing report templates; specifying this allows templates to include other templates."
@@ -320,11 +320,28 @@ int run_batch_command( int argc, char **argv )
       if( report_templates.empty() && (output_stdout || !output_path.empty()) )
         report_templates.push_back( "default" );
       
+      if( summary_report_templates.empty() && (output_stdout || !output_path.empty()) )
+        summary_report_templates.push_back( "default" );
+      
+      auto set_def = []( vector<string> &args, const vector<string> def_args ){
+        const auto eq = []( const string &v ){ return SpecUtils::iequals_ascii(v, "default" ); };
+        const size_t num_defaults = std::count_if( begin(args), end(args), eq);
+        args.erase( std::remove_if( begin(args), end(args), eq), end(args) );
+        if( num_defaults )
+          args.insert( end(args), begin(def_args), end(def_args) );
+        
+        const auto want_none =  [](const string &v){ return SpecUtils::iequals_ascii(v, "none"); };
+        if( std::count_if( begin(args), end(args), want_none) )
+          args.clear();
+      };
+      
+      set_def( report_templates, {"txt", "html"} );
+      set_def( summary_report_templates, {"csv", "html"} );
+      
       if( contain_not_none && templates_contain_none )
         throw runtime_error( "You can not specify to use no report templates, and also specify to use other templates." );
       
-      if( output_path.empty() && !output_stdout
-         && (contain_not_none || !SpecUtils::iequals_ascii(summary_report_template, "none")) )
+      if( output_path.empty() && !summary_report_templates.empty() )
         throw runtime_error( "You must provide an output directory if specifying to use any templates for results." );
       
       BatchActivity::BatchActivityFitOptions options;  //derived from BatchPeak::BatchPeakFitOptions
@@ -340,7 +357,7 @@ int run_batch_command( int argc, char **argv )
       options.background_subtract_samples = background_sample_nums;
       options.use_bq = use_bq;
       options.report_templates = report_templates;
-      options.summary_report_template = summary_report_template;
+      options.summary_report_templates = summary_report_templates;
       options.template_include_dir = template_include_dir;
       
       if( batch_peak_fit )

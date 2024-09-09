@@ -13,6 +13,5 @@ Filename, Nuclide, Activity, ActivityUncertainty, ActivityUncertainty (%), Nucli
 ## for file in Files
 ## for src in file.Sources
 {{ file.Filename }},{{ src.Nuclide }}, {{ src.Activity }}, {% if src.ActivityIsFit %}{{ src.ActivityUncert }}{% endif %}, {% if src.ActivityIsFit %}{{ src.ActivityUncertPercent }}%{% endif %}, {{ src.Age }}, {% if src.AgeIsFit %}{{ src.AgeUncert }}{% endif %}
-
 ## endfor
 ## endfor

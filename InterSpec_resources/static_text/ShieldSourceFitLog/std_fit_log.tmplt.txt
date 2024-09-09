@@ -13,15 +13,15 @@ Sources:
     Peak attributed to {{ peak.DecayParticleEnergy }} keV received {{ gamma.CpsContributedToPeak }} from {{ gamma.Energy }} keV line{% if existsIn(gamma,"DecayCorrection") %} (decay correction {{ gamma.DecayCorrection }}){% endif %}, which has I={{ gamma.BranchingRatio }}
 ##endfor
 ##endfor
-## endfor
+##endfor
 
 {% if exists("Shieldings") and existsIn(Shieldings,"Shields") %}
 Shieldings:
 ## for shield in Shieldings.Shields
 {% if shield.IsGeneric %}
-    Generic AN={{ shield.AN }}, AD={{ shield.AD }} g/cm3:
+    Generic AN={{ shield.AN }}, AD={{ shield.AD }} g/cm2:
 {% else %}
-    {{ shield.Name }}{% if existsIn(shield,"Formula") %}, {{ shield.Formula }},{% endif %} density={{ shield.Density }} g/cm3, {{ Shieldings.Geometry }}: [{% for dimNum in range(Shieldings.NumDimensions) %}{% if dimNum > 1 %}, {% endif %}{{ at(Shieldings.DimensionMeanings,dimNum) }}_thickness={{at(shield.Thicknesses,dimNum)}}{% endfor %}]
+    {{ shield.Name }}{% if existsIn(shield,"Formula") %}, {{ shield.Formula }},{% endif %} density={{ shield.Density_gPerCm3 }} g/cm3, {{ Shieldings.Geometry }}: [{% for dimNum in range(Shieldings.NumDimensions) %}{% if dimNum > 1 %}, {% endif %}{{ at(Shieldings.DimensionMeanings,dimNum) }}_thickness={{at(shield.Thicknesses,dimNum)}}{% endfor %}]
 {% endif %}
 {% if exists("PeaksUsedForActivityFitting") %}
 ## for peak in PeaksUsedForActivityFitting.Peaks

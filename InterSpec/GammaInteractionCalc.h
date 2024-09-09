@@ -419,7 +419,9 @@ struct PeakResultPlotInfo
  */
 struct PeakDetail
 {
-  double energy, decayParticleEnergy, fwhm, counts, countsUncert, cps, cpsUncert;
+  double energy, decayParticleEnergy, fwhm;
+  /** counts=peak.peakArea(); countsUncert=peak.peakAreaUncert();  cps=peak.peakArea()/LiveTime*/
+  double counts, countsUncert, cps, cpsUncert;
   double expectedCounts, observedCounts, observedUncert, numSigmaOff;
   double observedOverExpected, observedOverExpectedUncert;
   //float modelInto4Pi, modelInto4PiCps;

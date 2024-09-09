@@ -377,8 +377,15 @@ std::string riidAnaSummary( const std::shared_ptr<const SpecMeas> &spec )
   
   if( summary.empty() && ana->results_.empty() )
   {
-    InterSpec::instance()->useMessageResourceBundle( "ShowRiidInstrumentsAna" );
-    summary = WString::tr("srria-no-nucs").toUTF8();
+    InterSpec *viewer = InterSpec::instance();
+    if( viewer )
+    {
+      viewer->useMessageResourceBundle( "ShowRiidInstrumentsAna" );
+      summary = WString::tr("srria-no-nucs").toUTF8();
+    }else
+    {
+      summary = "No nuclides identified.";
+    }
   }
   
   return Wt::Utils::htmlEncode( WString::fromUTF8(summary),0).toUTF8();

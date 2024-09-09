@@ -375,6 +375,34 @@ bool locate_file( string &filename, const bool is_dir,
 }//bool locate_file( ... )
 #endif //#if( !ANDROID && !IOS && !BUILD_FOR_WEB_DEPLOYMENT )
   
+  
+std::string file_contents( const std::string &filename )
+{
+  //Copied from SpecUtils::load_file_data( const char * const filename, std::vector<char> &data );
+#ifdef _WIN32
+  const std::wstring wfilename = SpecUtils::convert_from_utf8_to_utf16(filename);
+  basic_ifstream<char> stream(wfilename.c_str(), ios::binary);
+#else
+  basic_ifstream<char> stream(filename.c_str(), ios::binary);
+#endif
+
+  if (!stream)
+    throw runtime_error(string("cannot open file ") + filename);
+  stream.unsetf(ios::skipws);
+
+  // Determine stream size
+  stream.seekg(0, ios::end);
+  size_t size = static_cast<size_t>( stream.tellg() );
+  stream.seekg(0);
+
+  string data;
+  data.resize( size );
+  stream.read(&data.front(), static_cast<streamsize>(size));
+  
+  return data;
+}//std::string file_contents( const std::string &filename )
+  
+  
 #ifdef _WIN32
 /** Get command line arguments encoded as UTF-8.
     This function just leaks the memory

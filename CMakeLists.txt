@@ -135,22 +135,15 @@ set(MAX_SPECTRUM_MEMMORY_SIZE_MB 256
     "Amount of memory to allow spectra to take up before trying to offload them onto disk when not in use"
 )
 
+# If we are creating the normal InterSpec executable, and the InterSpec_batch executable,
+#  we will compile LibInterSpec as a shared library, so both exes can use it; otherwise
+#  we will create a static library, and statically link it into our final executable.
+#  (Electron doesnt need a separate exe for batch)
 if( (USE_BATCH_TOOLS AND NOT BUILD_AS_ELECTRON_APP) OR BUILD_AS_OSX_APP )
   set( INTERSPEC_LIB_TYPE SHARED )
 else()
   set( INTERSPEC_LIB_TYPE STATIC )
 endif()
-
-
-if(WIN32)
-  #0x0601==Win7, 0x0501=WinXP (Wt CMakeLists.txt uses 0x0501x)
-  #target_compile_definitions( InterSpecLib PUBLIC -D _WIN32_WINNT=0x0601 -D WINVER=0x0601 -D _SCL_SECURE_NO_WARNINGS /bigobj /MP )
-
-#    set(EXECUTABLE_OUTPUT_PATH . CACHE PATH "Path to executables" FORCE)
-#    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /bigobj /MP /wd4996 /wd4267" )
-else(WIN32)
-#    set(EXECUTABLE_OUTPUT_PATH bin CACHE PATH "Path to executables" FORCE)
-endif(WIN32)
 
 
 SET(MYSQL_DATABASE_TO_USE "dev" CACHE STRING "Which mysql database to use (if applicable): dev/qc/prod")
@@ -642,11 +635,12 @@ target_compile_options(InterSpecLib PRIVATE
           >)
 if(WIN32)
   #0x0601==Win7, 0x0501=WinXP (Wt CMakeLists.txt uses 0x0501x)
-  target_compile_definitions( InterSpecLib PUBLIC -D _WIN32_WINNT=0x0601 -D WINVER=0x0601 -D _SCL_SECURE_NO_WARNINGS )
+  target_compile_definitions( InterSpecLib PUBLIC -D _WIN32_WINNT=0x0601 -D WINVER=0x0601 -D _SCL_SECURE_NO_WARNINGS /bigobj )
   target_compile_definitions( InterSpecLib PRIVATE InterSpec_EXPORTS )
 
   if( USE_BATCH_TOOLS )
-    target_compile_options( InterSpecLib PUBLIC /bigobj )
+    # We get error compiling multi-processor debug build of shared LibInterSpec, presumably due to some 
+    #  file locking issues, so only enable parallel builds for release, if we are building shared LibInterSpec
     target_compile_options( InterSpecLib PUBLIC $<$<CONFIG:Release>:/MP> )
   else( USE_BATCH_TOOLS )
     add_definitions( /MP )

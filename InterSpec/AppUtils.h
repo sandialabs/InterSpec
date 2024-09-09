@@ -109,6 +109,7 @@ namespace AppUtils
                    const bool include_path );
 #endif //#if( !ANDROID && !IOS && !BUILD_FOR_WEB_DEPLOYMENT )
   
+  InterSpec_API std::string file_contents( const std::string &filename );
   
 #ifdef _WIN32
 /** Get command line arguments encoded as UTF-8.

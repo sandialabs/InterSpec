@@ -81,7 +81,7 @@ namespace BatchPeak
     std::vector<std::string> report_templates;
     
     /** File path to report templates that summarizes all input files. */
-    std::string summary_report_template;
+    std::vector<std::string> summary_report_templates;
   };//struct BatchPeakFitOptions
   
   

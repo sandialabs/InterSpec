@@ -55,6 +55,7 @@
 #include "InterSpec/DecayDataBaseServer.h"
 #include "InterSpec/DetectorPeakResponse.h"
 #include "InterSpec/GammaInteractionCalc.h"
+#include "InterSpec/ShowRiidInstrumentsAna.h"
 
 
 using namespace std;
@@ -380,58 +381,54 @@ void add_basic_peak_info( const GammaInteractionCalc::PeakDetail &peak, nlohmann
   char buffer[64] = { '\0' };
   snprintf( buffer, sizeof(buffer), "%.2f", peak.energy );
   peak_json["Energy"] = string(buffer);
-  peak_json["EnergyKeV"] = peak.energy;
+  peak_json["Energy_keV"] = peak.energy;
   
   snprintf( buffer, sizeof(buffer), "%.3f", peak.decayParticleEnergy );
   peak_json["DecayParticleEnergy"] = string(buffer);
+  peak_json["DecayParticleEnergy_keV"] = peak.decayParticleEnergy;
   peak_json["AssignedNuclide"] = peak.assignedNuclide;
-  peak_json["FWHM"] = SpecUtils::printCompact(peak.fwhm, 4);
+  peak_json["FWHM"] = peak.fwhm;
   
-  snprintf( buffer, sizeof(buffer), "%.2f", peak.counts );
-  peak_json["Counts"] = string(buffer);
+  
+  peak_json["Counts"] = peak.counts;
   peak_json["CountsStr"] = SpecUtils::printCompact(peak.counts, 4);
-  snprintf( buffer, sizeof(buffer), "%.2f", peak.countsUncert );
-  peak_json["CountsUncert"] = string(buffer);
+  peak_json["CountsUncert"] = peak.countsUncert;
   peak_json["CountsUncertStr"] = SpecUtils::printCompact(peak.countsUncert, 4);
-  peak_json["Cps"] = SpecUtils::printCompact(peak.cps, 4);
-  peak_json["CpsUncert"] = SpecUtils::printCompact(peak.cpsUncert, 4);
+  peak_json["Cps"] = peak.cps;
+  peak_json["CpsStr"] = SpecUtils::printCompact(peak.cps,4);
+  peak_json["CpsUncert"] = peak.cpsUncert;
   peak_json["ShieldAttenuations"] = peak.m_attenuations;
   
   if( peak.backgroundCounts > 0.0 )
   {
-    snprintf( buffer, sizeof(buffer), "%.2f", peak.backgroundCounts );
-    peak_json["BackgroundCounts"] = string(buffer);
+    peak_json["BackgroundCounts"] = peak.backgroundCounts;
     peak_json["BackgroundCountsStr"] = SpecUtils::printCompact(peak.backgroundCounts, 4);
     
     if( peak.backgroundCountsUncert > 0.0 )
     {
-      snprintf( buffer, sizeof(buffer), "%.2f", peak.backgroundCountsUncert );
-      peak_json["BackgroundCountsUncert"] = string(buffer);
+      peak_json["BackgroundCountsUncert"] = peak.backgroundCountsUncert;
       peak_json["BackgroundCountsUncertStr"] = SpecUtils::printCompact(peak.backgroundCountsUncert, 4);
     }
   }//if( peak.backgroundCounts > 0.0 )
   
-  snprintf( buffer, sizeof(buffer), "%.2f", peak.observedCounts );
-  peak_json["SignalCounts"] = string(buffer);
+  peak_json["SignalCounts"] = peak.observedCounts;
   peak_json["SignalCountsStr"] = SpecUtils::printCompact(peak.observedCounts, 4);
-  snprintf( buffer, sizeof(buffer), "%.2f", peak.observedUncert );
-  peak_json["SignalCountsUncert"] = string(buffer);
+  peak_json["SignalCountsUncert"] = peak.observedUncert;
   peak_json["SignalCountsUncertStr"] = SpecUtils::printCompact(peak.observedUncert, 4);
   
-  snprintf( buffer, sizeof(buffer), "%.2f", peak.expectedCounts );
-  peak_json["PredictedCounts"] = string(buffer);
-  peak_json["PredictedNumSigmaOff"] = SpecUtils::printCompact(peak.numSigmaOff, 4);
+  peak_json["PredictedCounts"] = peak.expectedCounts;
+  peak_json["PredictedNumSigmaOff"] = peak.numSigmaOff;
   
-  peak_json["ObservedOverPredicted"] = SpecUtils::printCompact(peak.observedOverExpected, 5);
-  peak_json["ObservedOverPredictedUncert"] = SpecUtils::printCompact(peak.observedOverExpectedUncert, 5);
+  peak_json["ObservedOverPredicted"] = peak.observedOverExpected;
+  peak_json["ObservedOverPredictedUncert"] = peak.observedOverExpectedUncert;
   
-  peak_json["DetectorSolidAngleFraction"] = SpecUtils::printCompact(peak.detSolidAngle, 5);
-  peak_json["DetectorIntrinsicEff"] = SpecUtils::printCompact(peak.detIntrinsicEff, 5);
-  peak_json["DetectorEff"] = SpecUtils::printCompact(peak.detEff, 5);
+  peak_json["DetectorSolidAngleFraction"] = peak.detSolidAngle;
+  peak_json["DetectorIntrinsicEff"] = peak.detIntrinsicEff;
+  peak_json["DetectorEff"] = peak.detEff;
 }//add_basic_peak_info( const PeakDetail &peak, nlohmann::basic_json<> &peak_json )
   
   
-void add_gamma_info_for_peak( const GammaInteractionCalc::PeakDetail::PeakSrc &ps, 
+void add_gamma_info_for_peak( const GammaInteractionCalc::PeakDetail::PeakSrc &ps,
                              const GammaInteractionCalc::SourceDetails * const src,
                              const std::shared_ptr<const DetectorPeakResponse> &drf,
                              const bool useBq,
@@ -444,22 +441,22 @@ void add_gamma_info_for_peak( const GammaInteractionCalc::PeakDetail::PeakSrc &p
   
   gamma_json["Nuclide"] = ps.nuclide ? ps.nuclide->symbol : string("null");
   gamma_json["Energy"] = string(buffer);
-  gamma_json["EnergyKeV"] = ps.energy;
+  gamma_json["Energy_keV"] = ps.energy;
   
-  gamma_json["BranchingRatio"] = SpecUtils::printCompact( ps.br, 5 );
-  gamma_json["BranchingRatioFloat"] = ps.br;
+  gamma_json["BranchingRatio"] = ps.br;
+  gamma_json["BranchingRatioStr"] = SpecUtils::printCompact( ps.br, 5 );
   
-  gamma_json["CpsContributedToPeak"] = SpecUtils::printCompact( ps.cps, 5 );
-  gamma_json["CpsContributedToPeakFloat"] = ps.cps;
+  gamma_json["CpsContributedToPeak"] = ps.cps;
+  gamma_json["CpsContributedToPeakStr"] = SpecUtils::printCompact( ps.cps, 5 );
   
-  gamma_json["CountsContributedToPeak"] = SpecUtils::printCompact( ps.counts, 5 );
-  gamma_json["CountsContributedToPeakFloat"] = ps.counts;
+  gamma_json["CountsContributedToPeak"] = ps.counts;
+  gamma_json["CountsContributedToPeakStr"] = SpecUtils::printCompact( ps.counts, 5 );
   
   gamma_json["HasDecayCorrection"] = (ps.decayCorrection > 0.0);
   if( ps.decayCorrection > 0.0 )
   {
-    gamma_json["DecayCorrection"] = SpecUtils::printCompact(ps.decayCorrection, 4);
-    gamma_json["DecayCorrectionFloat"] = ps.decayCorrection;
+    gamma_json["DecayCorrection"] = ps.decayCorrection;
+    gamma_json["DecayCorrectionStr"] = SpecUtils::printCompact(ps.decayCorrection, 4);
   }
   
   // The other information in `PeakDetail::PeakSrc` should be repeat of
@@ -583,13 +580,19 @@ void shield_src_fit_results_to_json( const ShieldingSourceFitCalc::ModelFitResul
   if( !results.errormsgs.empty() )
     data["ErrorMessages"] = results.errormsgs;
   
-  
+  int num_sources = 0;
+  bool hasAnyTraceSrc = false, hasAnyVolumetricSrc = false, hasFitAnyAge = false;
   if( results.source_calc_details )
   {
     for( const GammaInteractionCalc::SourceDetails &src : *results.source_calc_details )
     {
       data["Sources"].push_back( {} );
       auto &src_json = data["Sources"].back();
+     
+      ++num_sources;
+      hasAnyTraceSrc |= src.isTraceSource;
+      hasAnyVolumetricSrc |= src.isSelfAttenSource;
+      hasFitAnyAge |= src.ageIsFit;
       
       add_basic_src_details( src, drf, useBq, src_json );
       
@@ -629,14 +632,24 @@ void shield_src_fit_results_to_json( const ShieldingSourceFitCalc::ModelFitResul
     }//for( loop over results.source_calc_details )
   }//if( results.source_calc_details )
   
+  data["NumSources"] = num_sources;
   
-  if( results.shield_calc_details )
+  data["HasTraceSource"] = hasAnyTraceSrc;
+  data["HasSelfAttenSource"] = hasAnyVolumetricSrc;
+  data["HasVolumetricSource"] = (hasAnyTraceSrc || hasAnyVolumetricSrc);
+  data["AnySourceAgeFit"] = hasFitAnyAge;
+  
+  auto &shieldings_json = data["Shieldings"];
+  shieldings_json["Geometry"] = GammaInteractionCalc::to_str(results.geometry);
+  
+  bool fitAnyShielding = false;
+  if( !results.shield_calc_details )
+  {
+    shieldings_json["NumberShieldings"] = 0;
+  }else
   {
     const vector<GammaInteractionCalc::ShieldingDetails> &shield_details
                                                           = *results.shield_calc_details;
-    auto &shieldings_json = data["Shieldings"];
-    
-    shieldings_json["Geometry"] = GammaInteractionCalc::to_str(results.geometry);
     shieldings_json["NumberShieldings"] = static_cast<int>( shield_details.size() );
     switch( results.geometry )
     {
@@ -675,8 +688,8 @@ void shield_src_fit_results_to_json( const ShieldingSourceFitCalc::ModelFitResul
       {
         shield_json["Formula"] = shield.m_chemical_formula;
         const double density = shield.m_density * PhysicalUnits::cm3 / PhysicalUnits::g;
-        shield_json["Density"] = SpecUtils::printCompact(density, 5);
-        shield_json["DensityFloat"] = density;
+        shield_json["Density_gPerCm3"] = density;
+        shield_json["DensityStr"] = SpecUtils::printCompact(density, 5) + " g/cm3";
       }
       
       if( shield.m_an > 0 )
@@ -690,6 +703,8 @@ void shield_src_fit_results_to_json( const ShieldingSourceFitCalc::ModelFitResul
         const bool fitAD = shield.m_fit_dimension[1];
         shield_json["FitAN"] = fitAn;
         shield_json["FitAD"] = fitAD;
+        fitAnyShielding |= fitAn;
+        fitAnyShielding |= fitAD;
       }
       
       const vector<bool> fit_dim( shield.m_fit_dimension, shield.m_fit_dimension + shield.m_num_dimensions );
@@ -737,6 +752,7 @@ void shield_src_fit_results_to_json( const ShieldingSourceFitCalc::ModelFitResul
       
       for( unsigned int dim = 0; dim < shield.m_num_dimensions; ++dim )
       {
+        fitAnyShielding |= fit_dim[dim];
         thicknesses[dim] = outer_dims[dim] - inner_dims[dim];
         thicknesses_strs[dim] = PhysicalUnits::printToBestLengthUnits( thicknesses[dim], 5 );
         inner_dims_strs[dim] = PhysicalUnits::printToBestLengthUnits( inner_dims[dim], 5 );
@@ -799,12 +815,12 @@ void shield_src_fit_results_to_json( const ShieldingSourceFitCalc::ModelFitResul
         assert( comp.m_nuclide );
         self_atten_json["Nuclide"] = comp.m_nuclide ? comp.m_nuclide->symbol : string("null");
         self_atten_json["IsFittingMassFraction"] = comp.m_is_fit;
-        self_atten_json["MassFraction"] = SpecUtils::printCompact(comp.m_mass_frac, 5);
-        self_atten_json["MassFractionFloat"] = comp.m_mass_frac;
+        self_atten_json["MassFraction"] = comp.m_mass_frac;
+        self_atten_json["MassFractionStr"] = SpecUtils::printCompact(comp.m_mass_frac, 5);
         if( comp.m_is_fit )
         {
-          self_atten_json["MassFractionUncert"] = SpecUtils::printCompact(comp.m_mass_frac_uncert, 5);
-          self_atten_json["MassFractionUncertFloat"] = comp.m_mass_frac_uncert;
+          self_atten_json["MassFractionUncert"] = comp.m_mass_frac_uncert;
+          self_atten_json["MassFractionUncertStr"] = SpecUtils::printCompact(comp.m_mass_frac_uncert, 5);
         }
         
         assert( results.source_calc_details );
@@ -855,6 +871,8 @@ void shield_src_fit_results_to_json( const ShieldingSourceFitCalc::ModelFitResul
     }//for( const GammaInteractionCalc::ShieldingDetails &shield : *results.shield_calc_details )
   }//if( results.shield_calc_details )
   
+  data["AnyShieldingFit"] = fitAnyShielding;
+  
   
   // Add Peak Details to JSON
   if( results.peak_calc_details )
@@ -888,28 +906,28 @@ void shield_src_fit_results_to_json( const ShieldingSourceFitCalc::ModelFitResul
         
         add_basic_src_details( *pos, drf, useBq, src_json );
         
-        peak_json["HasDecayCorrection"] = (pksrc.decayCorrection > 0.0);
+        src_json["HasDecayCorrection"] = (pksrc.decayCorrection > 0.0);
         if( pksrc.decayCorrection > 0.0 )
         {
-          peak_json["DecayCorrection"] = SpecUtils::printCompact(pksrc.decayCorrection, 4);
-          peak_json["DecayCorrectionFloat"] = pksrc.decayCorrection;
+          peak_json["DecayCorrection"] = pksrc.decayCorrection;
+          peak_json["DecayCorrectionStr"] = SpecUtils::printCompact(pksrc.decayCorrection, 4);
         }
         
         char buffer[64] = { '\0' };
         snprintf( buffer, sizeof(buffer), "%.2f", pksrc.energy );
         
-        peak_json["Energy"] = string(buffer);
-        peak_json["EnergyKeV"] = pksrc.energy;
+        src_json["Energy"] = string(buffer);
+        src_json["Energy_keV"] = pksrc.energy;
         
-        peak_json["Cps"] = SpecUtils::printCompact(pksrc.cps, 4);
-        peak_json["CpsFloat"] = pksrc.cps;
+        src_json["Cps"] = pksrc.cps;
+        src_json["CpsStr"] = SpecUtils::printCompact(pksrc.cps, 4);
         
-        peak_json["BranchingRatio"] = SpecUtils::printCompact( pksrc.br, 5 );
-        peak_json["BranchingRatioFloat"] = pksrc.br;
+        src_json["BranchingRatio"] = pksrc.br;
+        src_json["BranchingRatioStr"] = SpecUtils::printCompact( pksrc.br, 5 );
         
         snprintf( buffer, sizeof(buffer), "%.2f", pksrc.counts );
-        peak_json["Counts"] = string(buffer);
-        peak_json["CountsFloat"] = pksrc.counts;
+        src_json["Counts"] = pksrc.counts;
+        src_json["CountsStr"] = string(buffer);
       }//for( const GammaInteractionCalc::PeakDetail::PeakSrc &pksrc : peak.m_sources )
       
       // We could loop over the volumetric sources, and add info, but...
@@ -1004,14 +1022,13 @@ void fit_activities_in_files( const std::string &exemplar_filename,
   
   // Load report templates, and setup inja::environment
   //InterSpec::setStaticDataDirectory( SpecUtils::append_path(datadir,"data") );
-  string default_tmplt_dir = InterSpec::staticDataDirectory();
-  assert( !default_tmplt_dir.empty() );
-  if( default_tmplt_dir.empty() )
-    default_tmplt_dir = "./data";
-  default_tmplt_dir = SpecUtils::append_path( default_tmplt_dir, ".." ); //Also see: `WServer::instance()->appRoot()`, which isnt valid right now
-  default_tmplt_dir = SpecUtils::append_path( default_tmplt_dir, "InterSpec_resources" );
-  default_tmplt_dir = SpecUtils::append_path( default_tmplt_dir, "static_text" );
-  default_tmplt_dir = SpecUtils::append_path( default_tmplt_dir, "ShieldSourceFitLog" );
+  assert( !InterSpec::staticDataDirectory().empty() );
+  const string static_data_dir = InterSpec::staticDataDirectory().empty() ? string("./data") 
+                                                                : InterSpec::staticDataDirectory();
+  //Also see: `WServer::instance()->appRoot()`, which isnt valid right now
+  const string app_root = SpecUtils::append_path( static_data_dir, ".." );
+  const string docroot  = SpecUtils::append_path( app_root, "InterSpec_resources" );
+  const string static_txt = SpecUtils::append_path( docroot, "static_text" );
   
   // inja assumes trailing path separator, for its template path
 #if( defined(_WIN32) )
@@ -1019,10 +1036,7 @@ void fit_activities_in_files( const std::string &exemplar_filename,
 #else
   const char path_sep = '/';
 #endif
-  
-  if( !default_tmplt_dir.empty() && (default_tmplt_dir.back() != path_sep) )
-    default_tmplt_dir += path_sep;
-
+  const string default_tmplt_dir = SpecUtils::append_path( static_txt, "ShieldSourceFitLog" ) + path_sep;
   
   string tmplt_dir;
   
@@ -1040,6 +1054,17 @@ void fit_activities_in_files( const std::string &exemplar_filename,
     throw runtime_error( string("Template include directory, '") + tmplt_dir
                         + "', doesnt look to be a valid directory - not performing analysis." );
   
+#if( SpecUtils_ENABLE_D3_CHART )
+  const string d3_js  = AppUtils::file_contents( SpecUtils::append_path( docroot, "d3.v3.min.js") );
+  
+  const string sc_js_fn = SpecUtils::is_file( SpecUtils::append_path( docroot, "SpectrumChartD3.min.js") )
+                              ? "SpectrumChartD3.min.js" : "SpectrumChartD3.js";
+  const string sc_css_fn = SpecUtils::is_file( SpecUtils::append_path( docroot, "SpectrumChartD3.min.css") )
+                              ? "SpectrumChartD3.min.css" : "SpectrumChartD3.css";
+  
+  const string sc_js  = AppUtils::file_contents( SpecUtils::append_path( docroot, sc_js_fn ) );
+  const string sc_css = AppUtils::file_contents( SpecUtils::append_path( docroot, sc_css_fn ) );
+#endif // SpecUtils_ENABLE_D3_CHART
   
   inja::Environment env{ tmplt_dir };
   env.set_trim_blocks( true ); // remove the first newline after a block
@@ -1054,37 +1079,76 @@ void fit_activities_in_files( const std::string &exemplar_filename,
 #endif
   
   // Add some callbacks incase people want more control over the precision of their printouts
-  env.add_callback( "printFixed", 2, []( inja::Arguments& args ) -> std::string {
-    const double val = args.at(0)->get<double>();
-    const int numDecimal = std::max( 0, args.at(1)->get<int>() );
-    
-    char buffer[64] = { '\0' };
-    snprintf( buffer, sizeof(buffer), "%.*f", numDecimal, val );
-    
-    return std::string(buffer);
-  } );
+  const auto printFixed = []( inja::Arguments& args ) -> std::string {
+    try
+    {
+      const double val = args.at(0)->get<double>();
+      const int numDecimal = std::max( 0, args.at(1)->get<int>() );
+      
+      char buffer[64] = { '\0' };
+      snprintf( buffer, sizeof(buffer), "%.*f", numDecimal, val );
+      
+      return std::string(buffer);
+    }catch( inja::InjaError &e )
+    {
+      const string msg = "Error converting 'printFixed' argument to number.\n"
+      "line " + std::to_string(e.location.line) + ", column " + std::to_string(e.location.column)
+      + "): " + e.message + ".";
+      
+      cerr << msg << endl;
+      throw;
+    }
+  };
   
+  env.add_callback( "printFixed", 2, printFixed );
   
-  env.add_callback( "printCompact", 2, []( inja::Arguments& args ) -> std::string {
-    const double val = args.at(0)->get<double>();
-    const int numSigFig = args.at(1)->get<int>();
-    if( numSigFig <= 1 )
-      throw runtime_error( "printCompact: you must print at least one significant figures" );
-    
-    return SpecUtils::printCompact( val, static_cast<size_t>(numSigFig) );
-  } );
+  const auto printCompact = []( inja::Arguments& args ) -> std::string {
+    try
+    {
+      const double val = args.at(0)->get<double>();
+      const int numSigFig = args.at(1)->get<int>();
+      if( numSigFig <= 1 )
+        throw runtime_error( "printCompact: you must print at least one significant figures" );
+      
+      return SpecUtils::printCompact( val, static_cast<size_t>(numSigFig) );
+    }catch( inja::InjaError &e )
+    {
+      const string msg = "Error converting 'printCompact' argument to number.\n"
+      "line " + std::to_string(e.location.line) + ", column " + std::to_string(e.location.column)
+      + "): " + e.message + ".";
+      
+      cerr << msg << endl;
+      throw;
+    }
+    return "";
+  };
+  
+  env.add_callback( "printCompact", 2, printCompact );
   
   try
   {
     // If we're using a custom include path, opening templates from the default template location
     //  is problematic, so we'll just create a new `inja::Environment` to open the default
     //  templates, and then add them to `env` - not really tested yet.
-    const string def_tmplt = SpecUtils::append_path( default_tmplt_dir, "std_fit_log.tmplt.txt" );
     inja::Environment sub_env;
-    inja::Template tmplt = sub_env.parse_template( def_tmplt );
-    env.include_template( "default-act-fit-results", tmplt );
-     
-    //TODO: Work on other templates we can include
+    sub_env.add_callback( "printFixed", 2, printFixed );
+    sub_env.add_callback( "printCompact", 2, printCompact );
+    
+    const string def_txt_tmplt = SpecUtils::append_path( default_tmplt_dir, "std_fit_log.tmplt.txt" );
+    inja::Template txt_tmplt = sub_env.parse_template( def_txt_tmplt );
+    env.include_template( "default-act-fit-txt-results", txt_tmplt );
+    
+    const string def_html_tmplt = SpecUtils::append_path( default_tmplt_dir, "act_fit.tmplt.html" );
+    inja::Template html_tmplt = sub_env.parse_template( def_html_tmplt );
+    env.include_template( "default-act-fit-html-results", html_tmplt );
+    
+    const string def_csv_summary_tmplt = SpecUtils::append_path( default_tmplt_dir, "std_summary.tmplt.csv" );
+    inja::Template csv_sum_tmplt = sub_env.parse_template( def_csv_summary_tmplt );
+    env.include_template( "default-act-fit-csv-summary", csv_sum_tmplt );
+    
+    const string def_html_summary_tmplt = SpecUtils::append_path( default_tmplt_dir, "std_summary.tmplt.html" );
+    inja::Template html_sum_tmplt = sub_env.parse_template( def_html_summary_tmplt );
+    env.include_template( "default-act-fit-html-summary", html_sum_tmplt );
   }catch( std::exception &e )
   {
     cerr << "Error loading default template: " << e.what() << endl;
@@ -1098,8 +1162,23 @@ void fit_activities_in_files( const std::string &exemplar_filename,
     if( !file_ext.empty() )
       outname = outname.substr(0, outname.size() - file_ext.size());
     
-    string tmplt_name = tmplt;
+    string tmplt_name = SpecUtils::filename( tmplt );
     string tmplt_ext = SpecUtils::file_extension(tmplt_name);
+    if( SpecUtils::iequals_ascii(tmplt_name, "csv") )
+    {
+      tmplt_name = "act_fit";
+      tmplt_ext = ".csv";
+    }else if( SpecUtils::iequals_ascii(tmplt_name, "txt")
+            || SpecUtils::iequals_ascii(tmplt_name, "text") )
+    {
+      tmplt_name = "act_fit";
+      tmplt_ext = ".txt";
+    }else if( SpecUtils::iequals_ascii(tmplt_name, "html") )
+    {
+      tmplt_name = "act_fit";
+      tmplt_ext = ".html";
+    }
+    
     size_t pos = SpecUtils::ifind_substr_ascii(tmplt_name, "tmplt");
     if( pos == string::npos )
       pos = SpecUtils::ifind_substr_ascii(tmplt_name, "template");
@@ -1124,6 +1203,12 @@ void fit_activities_in_files( const std::string &exemplar_filename,
   
   bool set_setup_info_to_summary_json = false;
   nlohmann::json summary_json;
+  
+#if( SpecUtils_ENABLE_D3_CHART )
+  summary_json["D3_JS"] = d3_js;
+  summary_json["SpectrumChart_JS"] = sc_js;
+  summary_json["SpectrumChart_CSS"] = sc_css;
+#endif // SpecUtils_ENABLE_D3_CHART
   
   add_exe_info_to_json( summary_json );
   
@@ -1173,9 +1258,14 @@ void fit_activities_in_files( const std::string &exemplar_filename,
       //  log file, and then upgrade from this to hit HTML with the charts and peak fits and stuff.
       nlohmann::json data;
       
+      data["ExemplarFile"] = exemplar_filename;
+      if( !exemplar_sample_nums.empty() )
+        data["ExemplarSampleNumbers"] = vector<int>{begin(exemplar_sample_nums), end(exemplar_sample_nums)};
+      
       auto add_hist_to_json = []( nlohmann::json &data,
                          const bool is_background,
                          const shared_ptr<const SpecUtils::Measurement> &spec_ptr,
+                         const shared_ptr<const SpecMeas> &spec_file,
                          const std::set<int> &sample_numbers,
                          const string &filename,
                          const shared_ptr<const BatchPeak::BatchPeakFitResult> &peak_fit ){
@@ -1227,22 +1317,128 @@ void fit_activities_in_files( const std::string &exemplar_filename,
         }
         
         const char * const label = is_background ? "background" : "foreground";
-        data[label] = {
-          { "LiveTime_s", lt },
-          { "LiveTime", lt_str },
-          { "RealTime_s", rt },
-          { "RealTime", rt_str },
-          { "LowerSpectrumEnergy", spec.gamma_channel_lower(0) },
-          { "UpperSpectrumEnergy", spec.gamma_channel_upper(spec.num_gamma_channels() - 1) },
-          { "NumberChannels", (int)spec.num_gamma_channels() },
-          { "GammaSum", spec.gamma_count_sum() },
-          { "ContainedNeutrons", spec.contained_neutron() },
-          { "NeutronSum", spec.neutron_counts_sum() },
-          { "SampleNumbers", sample_nums },
-          //detector names?
-          { "Filename", filename },
-          { "spectrum", spectrum_json }
-        };
+        auto &spec_obj = data[label];
+        
+        spec_obj["LiveTime"] = lt_str;
+        spec_obj["RealTime"] = rt_str;
+        spec_obj["LiveTime_s"] = lt;
+        spec_obj["RealTime_s"] = rt;
+        spec_obj["DeadTime"] = PhysicalUnits::printToBestTimeUnits(rt - lt);
+        spec_obj["DeadTime_s"] = (rt - lt)/PhysicalUnits::second;
+        spec_obj["DeadTime_percent"] = 100.0*(rt - lt) / rt;
+        spec_obj["StartTime"] = SpecUtils::to_extended_iso_string( spec.start_time() );
+        spec_obj["StartTime_iso"] = SpecUtils::to_iso_string( spec.start_time() );
+        spec_obj["StartTime_vax"] = SpecUtils::to_vax_string( spec.start_time() );
+        spec_obj["StartTimeIsValid"] = !SpecUtils::is_special( spec.start_time() );
+        spec_obj["LowerSpectrumEnergy"] = spec.gamma_channel_lower(0);
+        spec_obj["UpperSpectrumEnergy"] = spec.gamma_channel_upper(spec.num_gamma_channels() - 1);
+        spec_obj["NumberChannels"] = (int)spec.num_gamma_channels();
+        spec_obj["GammaSum"] = spec.gamma_count_sum();
+        spec_obj["GammaCps"] = (spec.live_time() > 0.0) ? (spec.gamma_count_sum() / spec.live_time()) : -1.0;
+        spec_obj["SampleNumbers"] = sample_nums;
+        //detector names?
+        spec_obj["Filename"] = filename;
+        spec_obj["spectrum"] = spectrum_json;
+        spec_obj["HasGps"] = spec.has_gps_info();
+        if( spec.has_gps_info() )
+        {
+          spec_obj["Longitude"] = spec.longitude();
+          spec_obj["Latitude"] = spec.latitude();
+        }
+        spec_obj["HasNeutrons"] = spec.contained_neutron();
+        if( spec.contained_neutron() )
+        {
+          spec_obj["NeutronCounts"] = spec.neutron_counts_sum();
+          spec_obj["NeutronLiveTime"] = spec.neutron_live_time();
+          spec_obj["NeutronCps"] = spec.neutron_counts_sum() / spec.neutron_live_time();
+        }
+        
+        if( !spec.title().empty() )
+          spec_obj["SpectrumTitle"] = spec.title();
+        
+        //The measured ambient radiation dose equivalent rate value, in microsieverts per hour (μSv/h).
+        if( spec.dose_rate() >= 0.0 )
+          spec_obj["DoseRate_uSvPerHour"] = spec.dose_rate();
+        
+        //The measured radiation exposure rate value, in milliroentgen per hour (mR/h).
+        if( spec.exposure_rate() >= 0.0 )
+          spec_obj["ExposureRate_mRPerHour"] = spec.exposure_rate();
+        
+        if( !spec.detector_type().empty() )
+          spec_obj["DetectorTypeDesc"] = spec.detector_type();
+        
+        if( !spec.detector_name().empty() )
+          spec_obj["DetectorName"] = spec.detector_name();
+        
+        //SourceType source_type() const;
+        
+        if( !spec.remarks().empty() )
+          spec_obj["SpectrumRemarks"] = spec.remarks();
+        
+        if( !spec.parse_warnings().empty() )
+          spec_obj["SpectrumParseWarnings"] = spec.parse_warnings();
+        
+        spec_obj["IsDerivedData"] = (spec.derived_data_properties() != 0);
+        
+        spec_obj["DerivedIoiSum"] = static_cast<bool>(spec.derived_data_properties() 
+                              & static_cast<uint32_t>(SpecUtils::Measurement::DerivedDataProperties::ItemOfInterestSum));
+        spec_obj["DerivedUsedForRidAnalysis"] = static_cast<bool>(spec.derived_data_properties()
+                              & static_cast<uint32_t>(SpecUtils::Measurement::DerivedDataProperties::UsedForAnalysis));
+        spec_obj["DerivedProcessedFurther"] = static_cast<bool>(spec.derived_data_properties()
+                              & static_cast<uint32_t>(SpecUtils::Measurement::DerivedDataProperties::ProcessedFurther));
+        spec_obj["DerivedBackgroundSub"] = static_cast<bool>(spec.derived_data_properties()
+                              & static_cast<uint32_t>(SpecUtils::Measurement::DerivedDataProperties::BackgroundSubtracted));
+        spec_obj["DerivedIsBackground"] = static_cast<bool>(spec.derived_data_properties()
+                              & static_cast<uint32_t>(SpecUtils::Measurement::DerivedDataProperties::IsBackground));
+          
+        auto cal = spec.energy_calibration();
+        auto &cal_obj = spec_obj["EnergyCal"];
+        
+        cal_obj["NumChannels"] = cal ? static_cast<int>(cal->num_channels()) : 0;
+        const SpecUtils::EnergyCalType cal_type = cal ? cal->type() : SpecUtils::EnergyCalType::InvalidEquationType;
+        switch( cal_type )
+        {
+          case SpecUtils::EnergyCalType::Polynomial:
+          case SpecUtils::EnergyCalType::UnspecifiedUsingDefaultPolynomial:
+            cal_obj["Type"] = "Polynomial";
+            cal_obj["Coefficients"] = vector<double>{ begin(cal->coefficients()), end(cal->coefficients()) };
+            break;
+            
+          case SpecUtils::EnergyCalType::FullRangeFraction:
+            cal_obj["Type"] = "FullRangeFraction";
+            cal_obj["Coefficients"] = vector<double>{ begin(cal->coefficients()), end(cal->coefficients()) };
+            break;
+          case SpecUtils::EnergyCalType::LowerChannelEdge:
+            cal_obj["Type"] = "LowerChannelEdge";
+            break;
+          case SpecUtils::EnergyCalType::InvalidEquationType:
+            cal_obj["Type"] = "Invalid";
+            break;
+        }//switch( cal->type() )
+        
+        if( cal && !cal->deviation_pairs().empty() )
+        {
+          vector<vector<double>> pairs;
+          for( const pair<float,float> &p : cal->deviation_pairs() )
+            pairs.push_back( { static_cast<double>(p.first), static_cast<double>(p.second) } );
+          cal_obj["DeviationPairs"] = pairs;
+        }//if( dev pairs )
+        
+        if( spec_file )
+        {
+          spec_obj["InstrumentModel"] = spec_file->instrument_model();
+          spec_obj["SerialNumber"] = spec_file->instrument_id();
+          spec_obj["Manufacturer"] = spec_file->manufacturer();
+          spec_obj["InstrumentType"] = spec_file->instrument_type();
+          spec_obj["DetectorType"] = SpecUtils::detectorTypeToString( spec_file->detector_type() );
+          spec_obj["NumberRecordsInFile"] = static_cast<int>( spec_file->num_measurements() );
+          spec_obj["RemarksInFile"] = spec_file->remarks();
+          spec_obj["ParseWarningsForFile"] = spec_file->parse_warnings();
+          
+          spec_obj["HasInstrumentRid"] = !!spec_file->detectors_analysis();
+          if( spec_file->detectors_analysis() )
+            spec_obj["InstrumentRidSummary"] = riidAnaSummary( spec_file );
+        }//if( spec_file )
       };//add_hist_to_json(...)
       
       auto add_peak_fit_options_to_json = []( nlohmann::json &data, const BatchPeak::BatchPeakFitOptions &options ){
@@ -1266,13 +1462,14 @@ void fit_activities_in_files( const std::string &exemplar_filename,
         
         options_obj["ReportTemplateIncludeDir"] = options.template_include_dir;
         options_obj["ReportTemplates"] = options.report_templates;
-        options_obj["ReportSummaryTemplate"] = options.summary_report_template;
+        options_obj["ReportSummaryTemplates"] = options.summary_report_templates;
       };
       
       
       if( fit_results.m_foreground )
       {
         add_hist_to_json( data, false, fit_results.m_foreground,
+                         fit_results.m_foreground_file,
                          fit_results.m_foreground_sample_numbers, fit_results.m_filename,
                          fit_results.m_peak_fit_results );
       }//if( fit_results.m_foreground )
@@ -1281,10 +1478,18 @@ void fit_activities_in_files( const std::string &exemplar_filename,
       {
         string filename = fit_results.m_background_file ? fit_results.m_background_file->filename() 
                           : string();
+        
+        // We'll only add background file info, if different than foreground file
+        shared_ptr<const SpecMeas> back_file = (fit_results.m_background_file != fit_results.m_foreground_file)
+                                                        ? fit_results.m_background_file : nullptr;
+        
         add_hist_to_json( data, true, fit_results.m_background,
+                         back_file,
                          fit_results.m_background_sample_numbers, filename,
                          fit_results.m_background_peak_fit_results );
-      }
+        
+        data["background"]["Normalization"] = fit_results.m_foreground->live_time() / fit_results.m_background->live_time();
+      }//if( fit_results.m_background )
       
       
       add_peak_fit_options_to_json( data, fit_results.m_options );
@@ -1305,15 +1510,25 @@ void fit_activities_in_files( const std::string &exemplar_filename,
       
       //std::cout << std::setw(4) << data << std::endl;
       
+#if( SpecUtils_ENABLE_D3_CHART )
+      data["D3_JS"] = d3_js;
+      data["SpectrumChart_JS"] = sc_js;
+      data["SpectrumChart_CSS"] = sc_css;
+#endif // SpecUtils_ENABLE_D3_CHART
+      
+      
       for( string tmplt : options.report_templates )
       {
         try
         {
           string rpt;
           
-          if( SpecUtils::iequals_ascii(tmplt, "default" ) )
+          if( SpecUtils::iequals_ascii(tmplt, "txt" ) )
           {
-            rpt = env.render("{% include \"default-act-fit-results\" %}", data);
+            rpt = env.render("{% include \"default-act-fit-txt-results\" %}", data);
+          }else if( SpecUtils::iequals_ascii(tmplt, "html" ) )
+          {
+            rpt = env.render("{% include \"default-act-fit-html-results\" %}", data);
           }else
           {
             const bool is_in_inc = SpecUtils::is_file( SpecUtils::append_path(tmplt_dir, tmplt) );
@@ -1344,13 +1559,15 @@ void fit_activities_in_files( const std::string &exemplar_filename,
               }
                 
               inja::Environment sub_env;
+              sub_env.add_callback( "printFixed", 2, printFixed );
+              sub_env.add_callback( "printCompact", 2, printCompact );
               injatmplt = sub_env.parse_template( tmplt );
             }//
             
             rpt = env.render( injatmplt, data );
           }//if( default report format ) / else
           
-          if( options.to_stdout )
+          if( options.to_stdout && !SpecUtils::iequals_ascii(tmplt, "html" ) )
             cout << "\n\n" << rpt << endl << endl;
           
           if( !options.output_dir.empty() )
@@ -1389,9 +1606,6 @@ void fit_activities_in_files( const std::string &exemplar_filename,
           warnings.push_back( "Error templating results: " + string(e.what()) );
         }
       }//for( const string &tmplt : options.report_templates )
-      
-      
-      
       
       
       assert( fit_results.m_peak_fit_results && fit_results.m_peak_fit_results->measurement );
@@ -1500,52 +1714,67 @@ void fit_activities_in_files( const std::string &exemplar_filename,
     }
   }//for( const string filename : files )
     
-  if( !options.summary_report_template.empty() 
-     && !SpecUtils::iequals_ascii( options.summary_report_template, "none" ) )
+  for( const string &summary_tmplt : options.summary_report_templates )
   {
     try
     {
-      string summary_tmplt = options.summary_report_template;
-      
-      if( SpecUtils::iequals_ascii( summary_tmplt, "default" ) )
-        summary_tmplt = "std_summary.tmplt.txt";
-      
-      inja::Template injatmplt;
-      
-      const string inc_dir_summary_tmplt = SpecUtils::append_path(tmplt_dir, summary_tmplt);
-      bool is_file = SpecUtils::is_file( inc_dir_summary_tmplt );
-      if( is_file )
+      string rpt;
+      if( SpecUtils::iequals_ascii(summary_tmplt, "csv" ) )
       {
-        injatmplt = env.parse_template( summary_tmplt );
+        rpt = env.render( "{% include \"default-act-fit-csv-summary\" %}", summary_json );
+      }else if( SpecUtils::iequals_ascii(summary_tmplt, "html" ) )
+      {
+        rpt = env.render( "{% include \"default-act-fit-html-summary\" %}", summary_json );
       }else
       {
-        string found_path = summary_tmplt;
-        is_file = SpecUtils::is_file( found_path );
-        if( !is_file )
+        inja::Template injatmplt;
+        
+        const string inc_dir_summary_tmplt = SpecUtils::append_path(tmplt_dir, summary_tmplt);
+        bool is_file = SpecUtils::is_file( inc_dir_summary_tmplt );
+        if( is_file )
         {
-          found_path = SpecUtils::append_path(default_tmplt_dir, summary_tmplt);
+          injatmplt = env.parse_template( summary_tmplt );
+        }else
+        {
+          string found_path = summary_tmplt;
           is_file = SpecUtils::is_file( found_path );
-        }
+          if( !is_file )
+          {
+            found_path = SpecUtils::append_path(default_tmplt_dir, summary_tmplt);
+            is_file = SpecUtils::is_file( found_path );
+          }
+          
+          if( !is_file )
+            throw runtime_error( "Failed to find file '" + summary_tmplt + "'."
+                                " Please specify full path to file, or use the"
+                                " 'report-template-include-dir' option to specify"
+                                " directory where the report is located." );
+          
+          inja::Environment sub_env;
+          sub_env.add_callback( "printFixed", 2, printFixed );
+          sub_env.add_callback( "printCompact", 2, printCompact );
+          injatmplt = sub_env.parse_template( found_path );
+        }//if( is_file ) / else
         
-        if( !is_file )
-          throw runtime_error( "Failed to find file '" + summary_tmplt + "'."
-                              " Please specify full path to file, or use the"
-                              " 'report-template-include-dir' option to specify"
-                              " directory where the report is located." );
-        
-        inja::Environment sub_env;
-        injatmplt = sub_env.parse_template( found_path );
-      }
-      
-      const string rpt = env.render( injatmplt, summary_json );
+        rpt = env.render( injatmplt, summary_json );
+      }//if( CSV ) else if ( HTML ) else
       
       
-      if( options.to_stdout )
+      if( options.to_stdout && !SpecUtils::iequals_ascii(summary_tmplt, "html" ) )
         cout << "\n\n" << rpt << endl << endl;
       
       if( !options.output_dir.empty() )
       {
-        const string out_file = output_filename( "", summary_tmplt );
+        string outbase = "";
+        if( SpecUtils::iequals_ascii(summary_tmplt, "txt")
+           || SpecUtils::iequals_ascii(summary_tmplt, "text")
+           || SpecUtils::iequals_ascii(summary_tmplt, "csv")
+           || SpecUtils::iequals_ascii(summary_tmplt, "html") )
+        {
+          outbase = "summary";
+        }
+        
+        const string out_file = output_filename( outbase, summary_tmplt );
         
         if( SpecUtils::is_file(out_file) && !options.overwrite_output_files )
         {
@@ -1569,7 +1798,7 @@ void fit_activities_in_files( const std::string &exemplar_filename,
     {
       const string msg = "Error templating summary output (" + e.type + ": line "
       + std::to_string(e.location.line) + ", column " + std::to_string(e.location.column)
-      + " of '" + options.summary_report_template + "'): " + e.message + ".";
+      + " of '" + summary_tmplt + "'): " + e.message + ".";
       
       cerr << msg << endl;
       warnings.push_back( msg );
