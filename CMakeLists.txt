@@ -635,9 +635,10 @@ target_compile_options(InterSpecLib PRIVATE
           >)
 if(WIN32)
   #0x0601==Win7, 0x0501=WinXP (Wt CMakeLists.txt uses 0x0501x)
-  target_compile_definitions( InterSpecLib PUBLIC -D _WIN32_WINNT=0x0601 -D WINVER=0x0601 -D _SCL_SECURE_NO_WARNINGS /bigobj )
+  target_compile_definitions( InterSpecLib PUBLIC /bigobj -D _WIN32_WINNT=0x0601 -D WINVER=0x0601 -D _SCL_SECURE_NO_WARNINGS )
   target_compile_definitions( InterSpecLib PRIVATE InterSpec_EXPORTS )
-
+  add_definitions( /bigobj )
+        
   if( USE_BATCH_TOOLS )
     # We get error compiling multi-processor debug build of shared LibInterSpec, presumably due to some 
     #  file locking issues, so only enable parallel builds for release, if we are building shared LibInterSpec
