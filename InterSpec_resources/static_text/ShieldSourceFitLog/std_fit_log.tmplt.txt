@@ -25,7 +25,10 @@ Shieldings:
 {% endif %}
 {% if exists("PeaksUsedForActivityFitting") %}
 ## for peak in PeaksUsedForActivityFitting.Peaks
-        {% if (shield.ShieldingNumber < length(peak.ShieldAttenuations)) and (at(peak.ShieldAttenuations,shield.ShieldingNumber) > 0.0) %}For peak at {{ peak.Energy}} keV, attenuation multiple of {{ at(peak.ShieldAttenuations,shield.ShieldingNumber) }}{% endif %}
+        {% if (shield.ShieldingNumber < length(peak.ShieldAttenuations)) %}{%
+            if (at(peak.ShieldAttenuations,shield.ShieldingNumber) > 0.0) 
+            %}For peak at {{ peak.Energy}} keV, attenuation multiple of {{ at(peak.ShieldAttenuations,shield.ShieldingNumber) }}{% 
+        endif %}{% endif %}
 
 ##endfor
 {% endif %}
@@ -62,7 +65,7 @@ Shieldings:
 {% if shield.IsGeneric %}
     Generic shielding AN={{ shield.AN }}, AD={{ shield.AD }} g/cm3
 {% else %}
-    {{ shield.Name }} has density {{ shield.Density }} g/cm3 and dimensions {% for i in range(shield.NumDimensions) %} {{ at(Shieldings.DimensionMeanings,i) }}: {{ at(shield.Thicknesses, i) }}{% if at(shield.DimensionIsFit, i) %} (+-{{ at(shield.ThicknessesUncerts,i) }}) {% endif %} {% endfor %}
+    {{ shield.Name }} has density {{ shield.Density_gPerCm3 }} g/cm3 and dimensions {% for i in range(shield.NumDimensions) %} {{ at(Shieldings.DimensionMeanings,i) }}: {{ at(shield.Thicknesses, i) }}{% if at(shield.DimensionIsFit, i) %} (+-{{ at(shield.ThicknessesUncerts,i) }}) {% endif %} {% endfor %}
 {% endif %}
 ##endfor
 {% else %}

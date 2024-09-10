@@ -333,7 +333,7 @@ void add_basic_src_details( const GammaInteractionCalc::SourceDetails &src,
     
     src_json["TraceActivityPostFix"] = trace_src_postfix;
     
-    if( src.ageIsFit )
+    if( src.activityIsFit )
     {
       src_json["TraceDisplayActivityUncert"] = PhysicalUnits::printToBestActivityUnits(src.traceSrcDisplayActUncertainty,4,!useBq) + trace_src_postfix;
       src_json["TraceDisplayActivityUncert_bq"] = src.traceSrcDisplayActUncertainty / PhysicalUnits::bq;
@@ -1097,6 +1097,10 @@ void fit_activities_in_files( const std::string &exemplar_filename,
       
       cerr << msg << endl;
       throw;
+    }catch( std::exception &e )
+    {
+      cerr << "Error in 'printFixed': " << e.what() << endl;
+      throw;
     }
   };
   
@@ -1118,6 +1122,10 @@ void fit_activities_in_files( const std::string &exemplar_filename,
       + "): " + e.message + ".";
       
       cerr << msg << endl;
+      throw;
+    }catch( std::exception &e )
+    {
+      cerr << "Error in 'printCompact': " << e.what() << endl;
       throw;
     }
     return "";

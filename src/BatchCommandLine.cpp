@@ -330,7 +330,7 @@ int run_batch_command( int argc, char **argv )
         if( num_defaults )
           args.insert( end(args), begin(def_args), end(def_args) );
         
-        const auto want_none =  [](const string &v){ return SpecUtils::iequals_ascii(v, "none"); };
+        const auto want_none = [](const string &v){ return SpecUtils::iequals_ascii(v, "none"); };
         if( std::count_if( begin(args), end(args), want_none) )
           args.clear();
       };
