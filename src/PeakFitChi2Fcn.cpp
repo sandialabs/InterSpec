@@ -552,10 +552,17 @@ double PeakFitChi2Fcn::chi2( const double *params ) const
         const double nfitpeak = peak_counts[i];
         const double ncontinuum = continuum->offset_integral(energies[i], energies[i+1], m_data);
         
-        if( ndata > 0.000001 )
-          chi2 += pow( (ndata - ncontinuum - nfitpeak), 2.0 ) / ndata;
-        else
-          chi2 += fabs(nfitpeak + ncontinuum);  //This is a bit ad-hoc - is there a better solution? //XXX untested
+        const double uncert2 = ndata > 1.0 ? ndata : 1.0;
+        
+        // 20240911: Changed to prevent edge-case of background subtracted spectra having bin
+        //           contents like 0.0007, which then one channel of would ruin whole peak fit
+        chi2 += pow( (ndata - ncontinuum - nfitpeak), 2.0 ) / uncert2;
+        // Previous to 20240911, we used
+        // if( ndata > 0.000001 )
+        //   chi2 += pow( (ndata - ncontinuum - nfitpeak), 2.0 ) / ndata;
+        // else
+        //   chi2 += fabs(nfitpeak + ncontinuum);  //This is a bit ad-hoc - is there a better solution? //XXX untested
+        
       }
     }else
     {
