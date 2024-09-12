@@ -1,5 +1,12 @@
 # Tutorials
 
+## Newer features (Sep 2024)
+This presentation briefly covers some of the more useful features added to InterSpec over the last couple years.
+* [https://github.com/sandialabs/InterSpec/releases/download/20240911/20240912_InterSpec_newer_features.pptx](20240912_InterSpec_newer_features.pptx) (110 MB)
+* [https://github.com/sandialabs/InterSpec/releases/download/20240911/spectra.zip](spectra.zip)
+A notable omission from this presentation is the Relative Efficiency Analysis tool, which you can find a presentation on below.
+
+
 ## Relative Efficiency Analysis 
 Relative efficiency analysis allows you to determine enrichments and relative activities of nuclides in a spectrum, without knowing the detector response function, shielding, geometry, or distances.  This presentation provides an overview of one of InterSpecs relative efficiency tools.
 * [20240728_Isotopics_from_peaks-Rel-Eff-ana_SAND2024-10138O.pdf](isotopics_from_peaks/20240728_Isotopics_from_peaks-Rel-Eff-ana_SAND2024-10138O.pdf).
