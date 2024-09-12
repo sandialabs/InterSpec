@@ -572,6 +572,11 @@ struct SourceDetails
   const SandiaDecay::Nuclide *nuclide = nullptr;
   double activity = 0.0;
   double activityUncertainty = 0.0;
+  /** If the activity is fit for.
+   
+   Note: if source type is `ShieldingSourceFitCalc::ModelSourceType::Intrinsic`, then this value will be false,
+   even if a shielding dimension is being fit for.
+   */
   bool activityIsFit = false;
   double nuclideMass = 0.0;
   double age = 0.0;

@@ -3900,7 +3900,7 @@ void ShieldingSelect::updateSelfAttenOtherNucFractionTxt()
         const bool fit = (m_fitMassFrac && m_fitMassFrac->isVisible() && m_fitMassFrac->isChecked());
         const double percent_other = 100.0*(1.0-frac_accounted_for);
         otherfractxt->setText( WString::tr("ss-fixed-non-src-frac")
-                              .arg( (fit ? WString::tr("fixed") : WString()) )
+                              .arg( (fit ? WString::tr("ss-fixed") : WString()) )
                               .arg( SpecUtils::printCompact(percent_other, 4) )
                               .arg( vt.first->symbol ) );
       }

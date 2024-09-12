@@ -148,7 +148,7 @@
                 <td> {% if existsIn(foreground,"SerialNumber") %} {{ foreground.SerialNumber }} {% else %} -- {% endif %} </td>
                 {% if foreground.HasGps %}
                 <th>lat/lon:</th>
-                <td colspan="2"> <a target="_blank" rel="noopener noreferrer" href="https://maps.google.com/?q={{ printFixed(foreground.Latitude,7) }},{{ printFixed(foreground.Longitude,7) }}">{{ printFixed(foreground.Latitude,7) }}{{ printFixed(foreground.Longitude,7) }}</a> </td>
+                <td colspan="2"> <a target="_blank" rel="noopener noreferrer" href="https://maps.google.com/?q={{ printFixed(foreground.Latitude,7) }},{{ printFixed(foreground.Longitude,7) }}">{{ printFixed(foreground.Latitude,7) }},{{ printFixed(foreground.Longitude,7) }}</a> </td>
                 {% endif %}
             </tr>
             {% if foreground.HasInstrumentRid %}
@@ -449,8 +449,30 @@ Sources:
   </script>
 
 
-
-
+{% if existsIn(Shieldings,"Shields") %}
+##for shield in Shieldings.Shields
+{% if shield.FitAnyMassFraction %}
+<div class="mass_frac_{{ shield.Name }}" style="margin-top: 15px">
+Mass fractions for {{ shield.Name }}:
+<table class="InfoTable">
+  <thead><tr><th>Nuclide</th><th>Mass Fraction</th><th>Fit Mass Frac?</th><th>Mass Fraction Uncert</th><th>Activity</th><th>ActivityUncert</th></tr></thead>
+  <tbody>
+##for shieldSrc in shield.SelfAttenSources
+    <tr>
+      <td>{{ shieldSrc.Nuclide }}</td>
+      <td>{{ printFixed(shieldSrc.MassFraction,6) }}</td>
+      <td>{{ shieldSrc.IsFittingMassFraction }}</td>
+      <td>{% if existsIn(shieldSrc,"MassFractionUncert") %}  {{ printFixed(shieldSrc.MassFractionUncert,6) }} {% endif %}</td>
+      <td>{% if existsIn(shieldSrc,"Activity") %}  {{ shieldSrc.Activity }} {{ shieldSrc.ActivityPostFix }} {% endif %}</td>
+      <td>{% if existsIn(shieldSrc,"ActivityUncert") %}  {{ shieldSrc.ActivityUncert }} {{ shieldSrc.ActivityPostFix }} {% endif %}</td>
+    </tr>
+##endfor
+  </tbody>
+</table>
+</div>
+{% endif %}
+##endfor
+{% endif %}
 
 
 
@@ -475,7 +497,6 @@ Shieldings:
 
 ##endfor
 {% endif %}
-
 
 ## for src in Sources
 {{ src.Nuclide }} fit activity {{ src.Activity }}{% if src.ActivityIsFit %} with uncertainty {{ src.ActivityUncert }} ({{ src.ActivityUncertPercent }}) {% endif %} at {% if src.AgeIsFit %}assumed {% else %}fit {% endif %} age {{ src.Age }}

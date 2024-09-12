@@ -9,9 +9,14 @@ Setup
     {% if exists("ExemplarSampleNumbers") %}Exemplar samples: {{ ExemplarSampleNumbers }}{% endif %}
     
 
-Filename, Nuclide, Activity, ActivityUncertainty, ActivityUncertainty (%), NuclideAge, NuclideAgeUncertainty
+Filename, Nuclide, Activity, ActivityUncertainty, ActivityUncertainty (%), Activity (uCi), ActivityUncertainty (uCi), Activity (pCi), ActivityUncertainty (pCi), Activity (bq), ActivityUncertainty (bq), Activity (mega-bq), ActivityUncertainty (mega-bq), NuclideAge, NuclideAgeUncertainty
 ## for file in Files
 ## for src in file.Sources
-{{ file.Filename }},{{ src.Nuclide }}, {{ src.Activity }}, {% if src.ActivityIsFit %}{{ src.ActivityUncert }}{% endif %}, {% if src.ActivityIsFit %}{{ src.ActivityUncertPercent }}%{% endif %}, {{ src.Age }}, {% if src.AgeIsFit %}{{ src.AgeUncert }}{% endif %}
+{{ file.Filename }}, {{ src.Nuclide }}, {{ src.Activity }}, {% if src.ActivityIsFit %}{{ src.ActivityUncert }}{% endif %}, {% if src.ActivityIsFit %}{{ src.ActivityUncertPercent }}%{% endif 
+%}, {{ src.Activity_uCi }}, {% if src.ActivityIsFit %}{{ src.ActivityUncert_uCi }}{% endif 
+%}, {{ src.Activity_pCi }}, {% if src.ActivityIsFit %}{{ src.ActivityUncert_pCi }}{% endif 
+%}, {{ src.Activity_bq }}, {% if src.ActivityIsFit %}{{ src.ActivityUncert_bq }}{% endif 
+%}, {{ src.Activity_MBq }}, {% if src.ActivityIsFit %}{{ src.ActivityUncert_MBq }}{% endif 
+%}, {{ src.Age }}, {% if src.AgeIsFit %}{{ src.AgeUncert }}{% endif %}
 ## endfor
 ## endfor

@@ -43,9 +43,115 @@
 
 using namespace std;
 
+
 namespace BatchPeak
 {
 
+void propagate_energy_cal( const shared_ptr<const SpecUtils::EnergyCalibration> &energy_cal,
+                           shared_ptr<SpecUtils::Measurement> &to_spectrum,
+                           shared_ptr<SpecMeas> &to_specfile,
+                           const set<int> &used_sample_nums )
+{
+  assert( to_spectrum );
+  assert( energy_cal );
+  assert( to_specfile );
+  
+  shared_ptr<const SpecUtils::EnergyCalibration> original_cal = to_spectrum->energy_calibration();
+  assert( original_cal );
+  if( !energy_cal )
+    throw runtime_error( "Missing energy in from spectrum." );
+  
+  const size_t num_spec_chan = to_spectrum->num_gamma_channels();
+  shared_ptr<const SpecUtils::EnergyCalibration> updated_cal;
+  if( energy_cal->num_channels() == num_spec_chan )
+  {
+    to_spectrum->set_energy_calibration( energy_cal );
+    updated_cal = energy_cal;
+  }else
+  {
+    auto new_cal = make_shared<SpecUtils::EnergyCalibration>();
+    
+    switch( energy_cal->type() )
+    {
+      case SpecUtils::EnergyCalType::Polynomial:
+      case SpecUtils::EnergyCalType::UnspecifiedUsingDefaultPolynomial:
+        new_cal->set_polynomial( num_spec_chan, energy_cal->coefficients(), energy_cal->deviation_pairs() );
+        break;
+        
+      case SpecUtils::EnergyCalType::FullRangeFraction:
+        new_cal->set_full_range_fraction( num_spec_chan, energy_cal->coefficients(), energy_cal->deviation_pairs() );
+        break;
+        
+      case SpecUtils::EnergyCalType::LowerChannelEdge:
+        if( num_spec_chan > energy_cal->num_channels() )
+        {
+          throw std::runtime_error( " its lower energy channel calibration, and exemplar has"
+                                   " fewer channels." );
+          new_cal.reset();
+        }else
+        {
+          vector<float> channel_energies = *new_cal->channel_energies();
+          channel_energies.resize( num_spec_chan + 1 );
+          new_cal->set_lower_channel_energy( num_spec_chan, channel_energies );
+        }
+        break;
+        
+      case SpecUtils::EnergyCalType::InvalidEquationType:
+        assert( 0 );
+        break;
+    }//switch( energy_cal->type() )
+    
+    updated_cal = new_cal;
+    if( new_cal )
+      to_spectrum->set_energy_calibration( new_cal );
+  }//if( num channels match exemplar ) / else
+  
+  
+  // Update `to_specfile` as well, as we may write it back out as a N42
+  if( updated_cal && to_specfile )
+  {
+    const vector<string> &det_names = to_specfile->detector_names();
+    
+    if( used_sample_nums.size() > 1 )
+    {
+      // Translate peaks from old energy, to new energy
+      auto peaks = to_specfile->peaks( used_sample_nums );
+      if( peaks && peaks->size() )
+      {
+        const deque<shared_ptr<const PeakDef>> new_peaks
+        = EnergyCal::translatePeaksForCalibrationChange( *peaks, original_cal, updated_cal );
+        to_specfile->setPeaks( new_peaks, used_sample_nums );
+      }
+    }//if( used_sample_nums.size() > 1 )
+    
+    for( const int sample : used_sample_nums )
+    {
+      shared_ptr<const SpecUtils::EnergyCalibration> prev_cal;
+      for( const string &det : det_names )
+      {
+        auto m = to_specfile->measurement( sample, det );
+        if( m && (m->num_gamma_channels() == updated_cal->num_channels()) )
+        {
+          prev_cal = m->energy_calibration();
+          to_specfile->set_energy_calibration( updated_cal, m );
+        }
+      }//for( const string &det : det_names )
+      
+      if( prev_cal && (used_sample_nums.size() > 1) )
+      {
+        // Translate peaks from old energy, to new energy, only if we havent already done it
+        auto peaks = to_specfile->peaks( {sample} );
+        if( peaks && peaks->size() )
+        {
+          const deque<shared_ptr<const PeakDef>> new_peaks
+          = EnergyCal::translatePeaksForCalibrationChange( *peaks, prev_cal, updated_cal );
+          to_specfile->setPeaks( new_peaks, {sample} );
+        }//if( peaks && peaks->size() )
+      }//if( prev_cal && (used_sample_nums.size() > 1) )
+    }//for( const int sample : used_sample_nums )
+  }//if( updated_cal )
+}//propagate_energy_cal lambda
+  
 void fit_energy_cal_from_fit_peaks( shared_ptr<SpecUtils::Measurement> &raw, vector<PeakDef> peaks, const size_t num_coefs )
 {
   if( !raw || raw->num_gamma_channels() < 16 )
@@ -134,7 +240,7 @@ void fit_energy_cal_from_fit_peaks( shared_ptr<SpecUtils::Measurement> &raw, vec
 void fit_peaks_in_files( const std::string &exemplar_filename,
                           const std::set<int> &exemplar_sample_nums,
                           const std::vector<std::string> &files,
-                          const BatchPeakFitOptions &options )
+                        const ::BatchPeak::BatchPeakFitOptions &options )
 {
   vector<string> warnings;
   
@@ -160,7 +266,7 @@ void fit_peaks_in_files( const std::string &exemplar_filename,
   std::shared_ptr<const SpecMeas> cached_exemplar_n42;
   for( const string filename : files )
   {
-    const BatchPeakFitResult fit_results
+    const ::BatchPeak::BatchPeakFitResult fit_results
                  = fit_peaks_in_file( exemplar_filename, exemplar_sample_nums,
                                      cached_exemplar_n42, filename, nullptr, {}, options );
     
@@ -261,6 +367,96 @@ void fit_peaks_in_files( const std::string &exemplar_filename,
 }//fit_peaks_in_files(...)
   
   
+void get_exemplar_spectrum_and_peaks(
+            std::shared_ptr<const SpecUtils::Measurement> &exemplar_spectrum,
+            std::shared_ptr<const std::deque<std::shared_ptr<const PeakDef>>> &exemplar_peaks,
+            std::set<int> &exemplar_sample_nums,
+            const std::shared_ptr<const SpecMeas> &exemplar_n42 )
+{
+  const vector<string> det_names = exemplar_n42->detector_names();
+  const set<set<int>> withPeakSampleNums = exemplar_n42->sampleNumsWithPeaks();
+    
+  if( exemplar_n42->measurements().empty() )
+  {
+    throw logic_error( "Exemplar spectrum file did not have any measurements." );
+  }else if( !exemplar_sample_nums.empty() )
+  {
+    const set<set<int>> withPeakSampleNums = exemplar_n42->sampleNumsWithPeaks();
+    if( withPeakSampleNums.count(exemplar_sample_nums) )
+      throw runtime_error( "The specified exemplar sample numbers did not have peaks associated with them." );
+      
+    exemplar_peaks = exemplar_n42->peaks( exemplar_sample_nums );
+    exemplar_spectrum = exemplar_n42->sum_measurements( exemplar_sample_nums, det_names, nullptr );
+      
+    if( !exemplar_peaks || exemplar_peaks->empty() || !exemplar_spectrum )
+      throw runtime_error( "The specified exemplar sample numbers did not have peaks, or spectra couldnt be summed." );
+  }else if( exemplar_n42->measurements().size() == 1 )
+  {
+    exemplar_spectrum = exemplar_n42->measurements().front();
+    if( !exemplar_spectrum )
+      throw logic_error( "Unexpected invalid exemplar spectrum." );
+      
+    exemplar_sample_nums.insert( exemplar_spectrum->sample_number() );
+    exemplar_peaks = exemplar_n42->peaks( exemplar_sample_nums );
+    if( !exemplar_peaks || exemplar_peaks->empty() )
+      throw logic_error( "Exemplar spectrum did not contain any peaks." );
+  }else
+  {
+    set<set<int>> foregroundPeaks, backgroundPeaks, otherPeaks;
+    for( const set<int> &samples : withPeakSampleNums )
+    {
+      auto peaks = exemplar_n42->peaks( samples );
+      if( !peaks || peaks->empty() )
+        continue;
+        
+      auto m = exemplar_n42->sum_measurements( samples, det_names, nullptr );
+      if( !m )
+        continue;
+      
+      switch( m->source_type() )
+      {
+        case SpecUtils::SourceType::IntrinsicActivity:
+        case SpecUtils::SourceType::Calibration:
+          otherPeaks.insert( samples );
+          break;
+          
+        case SpecUtils::SourceType::Background:
+          backgroundPeaks.insert( samples );
+          break;
+          
+        case SpecUtils::SourceType::Foreground:
+        case SpecUtils::SourceType::Unknown:
+          foregroundPeaks.insert( samples );
+          break;
+      }//switch( m->source_type() )
+    }//for( const set<int> &samples : withPeakSampleNums )
+    
+    if( foregroundPeaks.size() > 1 )
+      throw runtime_error( "Ambiguous which peaks to use from exemplar file" );
+    
+    if( foregroundPeaks.empty() && backgroundPeaks.empty() )
+      throw runtime_error( "No valid peaks exemplar file"
+                          + string(otherPeaks.empty() ? "." : " (intrinsic and calibration spectra in files are ignored).") );
+    
+    if( foregroundPeaks.empty() && (backgroundPeaks.size() != 1) )
+      throw runtime_error( "Ambiguous which peaks to use from exemplar file; multiple background spectra with peaks." );
+    
+    if( foregroundPeaks.size() == 1 )
+    {
+      exemplar_sample_nums = *begin(foregroundPeaks);
+    }else if( backgroundPeaks.size() == 1 )
+    {
+      exemplar_sample_nums = *begin(backgroundPeaks);
+    }else
+    {
+      throw logic_error( "Error getting peaks from exemplar." );
+    }
+    
+    exemplar_peaks = exemplar_n42->peaks( exemplar_sample_nums );
+    exemplar_spectrum = exemplar_n42->sum_measurements( exemplar_sample_nums, det_names, nullptr );
+  }//if( sample nums specified ) / else ( single meas ) / else ( search for peaks )
+}//void get_exemplar_spectrum_and_peaks(...)
+  
 
 BatchPeak::BatchPeakFitResult fit_peaks_in_file( const std::string &exemplar_filename,
                           std::set<int> exemplar_sample_nums,
@@ -280,7 +476,7 @@ BatchPeak::BatchPeakFitResult fit_peaks_in_file( const std::string &exemplar_fil
     auto exemplar = make_shared<SpecMeas>();
     const bool exemplar_is_n42 = exemplar->load_N42_file( exemplar_filename );
         
-    if( !exemplar_is_n42 && options.use_exemplar_energy_cal )
+    if( !exemplar_is_n42 && (options.use_exemplar_energy_cal || options.use_exemplar_energy_cal_for_background) )
       throw runtime_error( "Exemplar file wasnt an N42 file, but using its energy cal was specified - not allowed." );
     
     if( exemplar_is_n42 )
@@ -291,97 +487,18 @@ BatchPeak::BatchPeakFitResult fit_peaks_in_file( const std::string &exemplar_fil
   std::shared_ptr<const std::deque<std::shared_ptr<const PeakDef>>> exemplar_peaks;
   if( exemplar_n42 )
   {
-    const vector<string> det_names = exemplar_n42->detector_names();
-    const set<set<int>> withPeakSampleNums = exemplar_n42->sampleNumsWithPeaks();
-    
-    if( exemplar_n42->measurements().empty() )
-    {
-      throw logic_error( "Exemplar spectrum file did not have any measurements." );
-    }else if( !exemplar_sample_nums.empty() )
-    {
-      const set<set<int>> withPeakSampleNums = exemplar_n42->sampleNumsWithPeaks();
-      if( withPeakSampleNums.count(exemplar_sample_nums) )
-        throw runtime_error( "The specified exemplar sample numbers did not have peaks associated with them." );
-      
-      exemplar_peaks = exemplar_n42->peaks( exemplar_sample_nums );
-      exemplar_spectrum = exemplar_n42->sum_measurements( exemplar_sample_nums, det_names, nullptr );
-      
-      if( !exemplar_peaks || exemplar_peaks->empty() || !exemplar_spectrum )
-        throw runtime_error( "The specified exemplar sample numbers did not have peaks, or spectra couldnt be summed." );
-    }else if( exemplar_n42->measurements().size() == 1 )
-    {
-      exemplar_spectrum = exemplar_n42->measurements().front();
-      if( !exemplar_spectrum )
-        throw logic_error( "Unexpected invalid exemplar spectrum." );
-        
-      exemplar_sample_nums.insert( exemplar_spectrum->sample_number() );
-      exemplar_peaks = exemplar_n42->peaks( exemplar_sample_nums );
-      if( !exemplar_peaks || exemplar_peaks->empty() )
-        throw logic_error( "Exemplar spectrum did not contain any peaks." );
-    }else
-    {
-      set<set<int>> foregroundPeaks, backgroundPeaks, otherPeaks;
-      for( const set<int> &samples : withPeakSampleNums )
-      {
-        auto peaks = exemplar_n42->peaks( samples );
-        if( !peaks || peaks->empty() )
-          continue;
-        
-        auto m = exemplar_n42->sum_measurements( samples, det_names, nullptr );
-        if( !m )
-          continue;
-        
-        switch( m->source_type() )
-        {
-          case SpecUtils::SourceType::IntrinsicActivity:
-          case SpecUtils::SourceType::Calibration:
-            otherPeaks.insert( samples );
-            break;
-            
-          case SpecUtils::SourceType::Background:
-            backgroundPeaks.insert( samples );
-            break;
-            
-          case SpecUtils::SourceType::Foreground:
-          case SpecUtils::SourceType::Unknown:
-            foregroundPeaks.insert( samples );
-            break;
-        }//switch( m->source_type() )
-      }//for( const set<int> &samples : withPeakSampleNums )
-      
-      if( foregroundPeaks.size() > 1 )
-        throw runtime_error( "Ambiguous which peaks to use from exemplar file" );
-      
-      if( foregroundPeaks.empty() && backgroundPeaks.empty() )
-        throw runtime_error( "No valid peaks exemplar file"
-                            + string(otherPeaks.empty() ? "." : " (intrinsic and calibration spectra in files are ignored).") );
-      
-      if( foregroundPeaks.empty() && (backgroundPeaks.size() != 1) )
-        throw runtime_error( "Ambiguous which peaks to use from exemplar file; multiple background spectra with peaks." );
-      
-      if( foregroundPeaks.size() == 1 )
-      {
-        exemplar_sample_nums = *begin(foregroundPeaks);
-      }else if( backgroundPeaks.size() == 1 )
-      {
-        exemplar_sample_nums = *begin(backgroundPeaks);
-      }else
-      {
-        throw logic_error( "Error getting peaks from exemplar." );
-      }
-      
-      exemplar_peaks = exemplar_n42->peaks( exemplar_sample_nums );
-      exemplar_spectrum = exemplar_n42->sum_measurements( exemplar_sample_nums, det_names, nullptr );
-    }//if( sample nums specified ) / else ( single meas ) / else ( search for peaks )
+    get_exemplar_spectrum_and_peaks( exemplar_spectrum, exemplar_peaks,
+                                    exemplar_sample_nums, exemplar_n42 );
     
     assert( exemplar_peaks );
     assert( exemplar_spectrum );
     if( !exemplar_peaks || !exemplar_spectrum )
-      throw logic_error( "Logic error retrieving spectrum or peaks from exemplar." );
+      throw logic_error( "Logic error retrieving spectrum from exemplar." );
     
+    if( !exemplar_peaks || !exemplar_spectrum )
+      throw logic_error( "Logic error retrieving peaks from exemplar." );
     
-    
-    if( options.use_exemplar_energy_cal
+    if( (options.use_exemplar_energy_cal || options.use_exemplar_energy_cal_for_background)
        && (exemplar_spectrum->energy_calibration_model() == SpecUtils::EnergyCalType::InvalidEquationType) )
       throw runtime_error( "Exemplar spectrum doesnt have a valid energy calibration." );
     
@@ -503,72 +620,17 @@ BatchPeak::BatchPeakFitResult fit_peaks_in_file( const std::string &exemplar_fil
       return results;
     }
     
+    
     if( options.use_exemplar_energy_cal )
     {
-      assert( exemplar_spectrum );
-      shared_ptr<const SpecUtils::EnergyCalibration> energy_cal = exemplar_spectrum->energy_calibration();
-      
-      const size_t num_spec_chan = spec->num_gamma_channels();
-      shared_ptr<const SpecUtils::EnergyCalibration> updated_cal;
-      if( energy_cal->num_channels() == num_spec_chan )
+      try
       {
-        spec->set_energy_calibration( energy_cal );
-        updated_cal = energy_cal;
-      }else
+        propagate_energy_cal( exemplar_spectrum->energy_calibration(), spec, specfile, used_sample_nums );
+      }catch( std::exception &e )
       {
-        auto new_cal = make_shared<SpecUtils::EnergyCalibration>();
-        
-        switch( energy_cal->type() )
-        {
-          case SpecUtils::EnergyCalType::Polynomial:
-          case SpecUtils::EnergyCalType::UnspecifiedUsingDefaultPolynomial:
-            new_cal->set_polynomial( num_spec_chan, energy_cal->coefficients(), energy_cal->deviation_pairs() );
-            break;
-            
-          case SpecUtils::EnergyCalType::FullRangeFraction:
-            new_cal->set_full_range_fraction( num_spec_chan, energy_cal->coefficients(), energy_cal->deviation_pairs() );
-            break;
-            
-          case SpecUtils::EnergyCalType::LowerChannelEdge:
-            if( num_spec_chan > energy_cal->num_channels() )
-            {
-              new_cal.reset();
-              results.warnings.push_back( "Not using exemplar energy calibration for '" + filename + "'"
-                                         " - its lower energy channel calibration, and exemplar has"
-                                         " fewer channels." );
-            }else
-            {
-              vector<float> channel_energies = *new_cal->channel_energies();
-              channel_energies.resize( num_spec_chan + 1 );
-              new_cal->set_lower_channel_energy( num_spec_chan, channel_energies );
-            }
-            break;
-            
-          case SpecUtils::EnergyCalType::InvalidEquationType:
-            assert( 0 );
-            break;
-        }//switch( energy_cal->type() )
-        
-        updated_cal = new_cal;
-        if( new_cal )
-          spec->set_energy_calibration( new_cal );
-      }//if( num channels match exemplar ) / else
-      
-      
-      // Update `specfile` as well, as we may write it back out as a N42
-      if( updated_cal )
-      {
-        for( const string &det : det_names )
-        {
-          for( const int sample : used_sample_nums )
-          {
-            auto m = specfile->measurement( sample, det );
-            if( m && (m->num_gamma_channels() == updated_cal->num_channels()) )
-              specfile->set_energy_calibration( updated_cal, m );
-          }//for( const int sample : used_sample_nums )
-        }//for( const string &det : det_names )
-      }//if( updated_cal )
-      
+        results.warnings.push_back( "Not using exemplar energy calibration for '" + filename + "': "
+                                   + std::string(e.what()) );
+      }
     }//if( options.use_exemplar_energy_cal )
     
     
@@ -580,18 +642,16 @@ BatchPeak::BatchPeakFitResult fit_peaks_in_file( const std::string &exemplar_fil
     }
     
     set<int> back_sample_nums;
-    shared_ptr<const SpecMeas> background_n42;
+    shared_ptr<SpecMeas> background_n42;
     if( !options.background_subtract_file.empty() )
     {
-      auto background = make_shared<SpecMeas>();
-      if( !background->load_file( options.background_subtract_file, SpecUtils::ParserType::Auto ) )
+      background_n42 = make_shared<SpecMeas>();
+      if( !background_n42->load_file( options.background_subtract_file, SpecUtils::ParserType::Auto ) )
         throw runtime_error( "Couldnt open background file '" + options.background_subtract_file + "'" );
-      
-      background_n42 = background;
       
       if( options.background_subtract_samples.empty() )
       {
-        back_sample_nums = background->sample_numbers();
+        back_sample_nums = background_n42->sample_numbers();
         if( back_sample_nums.size() != 1 )
           throw runtime_error( "There should only be a single sample in background subtract file." );
       }else
@@ -599,22 +659,23 @@ BatchPeak::BatchPeakFitResult fit_peaks_in_file( const std::string &exemplar_fil
         back_sample_nums = options.background_subtract_samples;
       }
       
-      if( background->num_measurements() == 1 )
+      if( background_n42->num_measurements() == 1 )
       {
         assert( !back_sample_nums.empty() );
         if( !back_sample_nums.empty()
-           && ((*begin(back_sample_nums)) != background->measurements()[0]->sample_number() ) )
+           && ((*begin(back_sample_nums)) != background_n42->measurements()[0]->sample_number() ) )
         {
           results.warnings.push_back( "Specified background sample number invalid." );
           return results;
         }
         
-        results.background = background->measurements()[0];
+        results.background = make_shared<SpecUtils::Measurement>( *(background_n42->measurements()[0]) );
       }else
       {
         try
         {
-          results.background = background->sum_measurements( back_sample_nums, background->detector_names(), nullptr );
+          const vector<string> &dets = background_n42->detector_names();
+          results.background = background_n42->sum_measurements( back_sample_nums, dets, nullptr );
         }catch( std::exception &e )
         {
           results.warnings.push_back( "Failed to sum spectrum from background '"
@@ -635,11 +696,17 @@ BatchPeak::BatchPeakFitResult fit_peaks_in_file( const std::string &exemplar_fil
           return results;
         }//
         
-        if( options.use_exemplar_energy_cal )
+        if( options.use_exemplar_energy_cal_for_background )
         {
-          cerr << "Warning: applying exemplar energy cal to background file not implemented!" << endl;
-          results.warnings.push_back( "applying exemplar energy cal to background file not implemented!" );
-        }
+          try
+          {
+            propagate_energy_cal( exemplar_spectrum->energy_calibration(), results.background, background_n42, back_sample_nums );
+          }catch( std::exception &e )
+          {
+            results.warnings.push_back( "Not using exemplar energy calibration for background of '" + filename + "': "
+                                       + std::string(e.what()) );
+          }
+        }//if( options.use_exemplar_energy_cal_for_background )
       }//if( background->num_measurements() == 1 ) / else
       
       

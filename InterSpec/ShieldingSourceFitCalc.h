@@ -97,6 +97,11 @@ namespace ShieldingSourceFitCalc
     
     //activity: in units of PhysicalUnits
     double activity;
+    /** If the activity is fit for.
+     
+     Note: if source type is `ShieldingSourceFitCalc::ModelSourceType::Intrinsic`, then this value will be false,
+     even if a shielding dimension is being fit for.
+     */
     bool fitActivity;
     
     //age: in units of PhysicalUnits::second

@@ -247,6 +247,31 @@
   </table>   
 </div> <!-- <div id="sources" style="margin-top: 25px"> -->
 
+{% if existsIn(file.Shieldings, "Shields") %}
+##for shield in file.Shieldings.Shields
+{% if shield.FitAnyMassFraction %}
+<div class="mass_frac_{{ shield.Name }}" style="margin-top: 15px">
+Mass fractions for {{ shield.Name }}:
+  <table class="InfoTable">
+    <thead><tr><th>Nuclide</th><th>Mass Fraction</th><th>Fit Mass Frac?</th><th>Mass Fraction Uncert</th><th>Activity</th><th>ActivityUncert</th></tr></thead>
+    <tbody>
+##for shieldSrc in shield.SelfAttenSources
+      <tr>
+        <td>{{ shieldSrc.Nuclide }}</td>
+        <td>{{ printFixed(shieldSrc.MassFraction,6) }}</td>
+        <td>{{ shieldSrc.IsFittingMassFraction }}</td>
+        <td>{% if existsIn(shieldSrc,"MassFractionUncert") %}  {{ printFixed(shieldSrc.MassFractionUncert,6) }} {% endif %}</td>
+        <td>{% if existsIn(shieldSrc,"Activity") %}  {{ shieldSrc.Activity }} {{ shieldSrc.ActivityPostFix }} {% endif %}</td>
+        <td>{% if existsIn(shieldSrc,"ActivityUncert") %}  {{ shieldSrc.ActivityUncert }} {{ shieldSrc.ActivityPostFix }} {% endif %}</td>
+      </tr>
+##endfor
+    </tbody>
+  </table>
+  </div>
+{% endif %}
+##endfor
+{% endif %}
+
 <div style="margin-top: 20px">
 <ul style="list-style-type: none; padding: 0; margin: 0;">
   <li>There were {{ file.NumDof }} parameters fit for</li>

@@ -226,9 +226,10 @@ shared_ptr<DetectorPeakResponse> init_drf_from_name( std::string drf_file, std::
   // Adds the basic direct info on a source (nuclide name, activity, age, etc), but does not
   //  Add which peaks it contributes to, or any information on gammas
 void add_basic_src_details( const GammaInteractionCalc::SourceDetails &src,
-                           const std::shared_ptr<const DetectorPeakResponse> &drf,
-                           const bool useBq, 
-                           nlohmann::basic_json<> &src_json )
+                          const std::shared_ptr<const DetectorPeakResponse> &drf,
+                          const bool useBq,
+                          const std::vector<GammaInteractionCalc::ShieldingDetails> *shield_details,
+                          nlohmann::basic_json<> &src_json )
 {
   const DetectorPeakResponse::EffGeometryType eff_type = drf ? drf->geometryType()
                                               : DetectorPeakResponse::EffGeometryType::FarField;
@@ -247,10 +248,28 @@ void add_basic_src_details( const GammaInteractionCalc::SourceDetails &src,
   src_json["Activity_uCi"] = src.activity / PhysicalUnits::microCi;
   src_json["Activity_pCi"] = src.activity / PhysicalUnits::pCi;
   src_json["ActivityPostFix"] = act_postfix;
-  src_json["ActivityIsFit"] = src.activityIsFit;
+  
+  bool activityIsFit = src.activityIsFit;
+  if( src.isSelfAttenSource )
+  {
+    activityIsFit |= src.isSelfAttenVariableMassFrac;
+   
+    assert( shield_details );
+    if( shield_details )
+    {
+      // TODO: check if mass fraction is being fit, or if a shielding dimension is being fit
+      assert( src.selfAttenShieldIndex < shield_details->size() );
+      const GammaInteractionCalc::ShieldingDetails &shield = shield_details->at(src.selfAttenShieldIndex);
+      assert( shield.m_name == src.selfAttenShieldName );
+      for( unsigned int i = 0; i < shield.m_num_dimensions; ++i )
+        activityIsFit |= shield.m_fit_dimension[i];
+    }//if( shield_details )
+  }//if( src.isSelfAttenSource )
+  
+  src_json["ActivityIsFit"] = activityIsFit;
   
   
-  if( src.activityIsFit )
+  if( activityIsFit )
   {
     src_json["ActivityUncert"] = PhysicalUnits::printToBestActivityUnits(src.activityUncertainty,4,!useBq) + act_postfix;
     
@@ -429,10 +448,11 @@ void add_basic_peak_info( const GammaInteractionCalc::PeakDetail &peak, nlohmann
   
   
 void add_gamma_info_for_peak( const GammaInteractionCalc::PeakDetail::PeakSrc &ps,
-                             const GammaInteractionCalc::SourceDetails * const src,
-                             const std::shared_ptr<const DetectorPeakResponse> &drf,
-                             const bool useBq,
-                             nlohmann::basic_json<> &gamma_json )
+                  const GammaInteractionCalc::SourceDetails * const src,
+                  const std::shared_ptr<const DetectorPeakResponse> &drf,
+                  const bool useBq,
+                  const std::vector<GammaInteractionCalc::ShieldingDetails> * const shield_details,
+                  nlohmann::basic_json<> &gamma_json )
 {
   assert( ps.nuclide );
   
@@ -464,7 +484,7 @@ void add_gamma_info_for_peak( const GammaInteractionCalc::PeakDetail::PeakSrc &p
   //  from the templating code, since we are in a loop over `SourceDetails`, but
   //  to make things easier on people, we'll just re-include it here.
   if( src )
-    add_basic_src_details( *src, drf, useBq,  gamma_json );
+    add_basic_src_details( *src, drf, useBq, shield_details, gamma_json );
 };//add_gamma_info_for_peak(...)
   
   
@@ -594,7 +614,7 @@ void shield_src_fit_results_to_json( const ShieldingSourceFitCalc::ModelFitResul
       hasAnyVolumetricSrc |= src.isSelfAttenSource;
       hasFitAnyAge |= src.ageIsFit;
       
-      add_basic_src_details( src, drf, useBq, src_json );
+      add_basic_src_details( src, drf, useBq, results.shield_calc_details.get(), src_json );
       
       // We wont put peaks into this struct, but instead when we make the JSON, we'll
       //  insert peaks from `PeakDetail` as `PeakDetail::PeakSrc::nuclide` match this nuclide.
@@ -625,7 +645,7 @@ void shield_src_fit_results_to_json( const ShieldingSourceFitCalc::ModelFitResul
             peak_json["ThisNucsGammasForPeak"].push_back( {} );
             nlohmann::basic_json<> &gamma_json = peak_json["ThisNucsGammasForPeak"].back();
             
-            add_gamma_info_for_peak( ps, &src, drf, useBq, gamma_json );
+            add_gamma_info_for_peak( ps, &src, drf, useBq, results.shield_calc_details.get(), gamma_json );
           }
         }//for( loop over results.peak_calc_details )
       }//if( results.peak_calc_details )
@@ -806,9 +826,11 @@ void shield_src_fit_results_to_json( const ShieldingSourceFitCalc::ModelFitResul
       shield_json["Thicknesses_inch"] = thicknesses_inch;
       shield_json["ThicknessesUncerts_inch"] = dim_uncerts_inch;
       
-      
+      bool fittingAnyMassFrac = false;
       for( const GammaInteractionCalc::ShieldingDetails::SelfAttenComponent &comp : shield.m_mass_fractions )
       {
+        fittingAnyMassFrac |= comp.m_is_fit;
+        
         shield_json["SelfAttenSources"].push_back( {} );
         auto &self_atten_json = shield_json["SelfAttenSources"].back();
       
@@ -833,9 +855,12 @@ void shield_src_fit_results_to_json( const ShieldingSourceFitCalc::ModelFitResul
           } );
           assert( pos != end(srcs) );
           if( pos != end(srcs) )
-            add_basic_src_details( *pos, drf, useBq, self_atten_json );
+            add_basic_src_details( *pos, drf, useBq, results.shield_calc_details.get(), self_atten_json );
         }//if( results.source_calc_details )
       }//for( SelfAttenComponent & comp: shield.m_mass_fractions )
+      
+      shield_json["FitAnyMassFraction"] = fittingAnyMassFrac;
+      
       
       for( const GammaInteractionCalc::ShieldingDetails::TraceSrcDetail &trace : shield.m_trace_sources )
       {
@@ -864,7 +889,7 @@ void shield_src_fit_results_to_json( const ShieldingSourceFitCalc::ModelFitResul
           } );
           assert( pos != end(srcs) );
           if( pos != end(srcs) )
-            add_basic_src_details( *pos, drf, useBq, trace_src_json );
+            add_basic_src_details( *pos, drf, useBq, results.shield_calc_details.get(), trace_src_json );
         }//if( results.source_calc_details )
       }//for( const TraceSrcDetail &src : shield.m_trace_sources )
       
@@ -904,7 +929,7 @@ void shield_src_fit_results_to_json( const ShieldingSourceFitCalc::ModelFitResul
         peak_json["Sources"].push_back( {} );
         nlohmann::basic_json<> &src_json = peak_json["Sources"].back();
         
-        add_basic_src_details( *pos, drf, useBq, src_json );
+        add_basic_src_details( *pos, drf, useBq, results.shield_calc_details.get(), src_json );
         
         src_json["HasDecayCorrection"] = (pksrc.decayCorrection > 0.0);
         if( pksrc.decayCorrection > 0.0 )
@@ -1449,7 +1474,7 @@ void fit_activities_in_files( const std::string &exemplar_filename,
         }//if( spec_file )
       };//add_hist_to_json(...)
       
-      auto add_peak_fit_options_to_json = []( nlohmann::json &data, const BatchPeak::BatchPeakFitOptions &options ){
+      const auto add_peak_fit_options_to_json = []( nlohmann::json &data, const BatchPeak::BatchPeakFitOptions &options ){
         auto &options_obj = data["PeakFitOptions"];
         options_obj["RefitEnergyCal"] = options.refit_energy_cal;
         options_obj["UseExemplarEnergyCal"] = options.use_exemplar_energy_cal;
@@ -1460,18 +1485,48 @@ void fit_activities_in_files( const std::string &exemplar_filename,
         options_obj["OverwriteOutputFiles"] = options.overwrite_output_files;
         
         if( !options.background_subtract_file.empty() )
-          options_obj["BackgroundSubFile"] = options.background_subtract_file;
-        if( !options.background_subtract_samples.empty() )
         {
-          options_obj["BackgroundSubSamples"] = vector<int>{ begin(options.background_subtract_samples),
-            end(options.background_subtract_samples)
-          };
-        }
+          options_obj["BackgroundSubFile"] = options.background_subtract_file;
+          if( !options.background_subtract_samples.empty() )
+          {
+            options_obj["BackgroundSubSamples"] = vector<int>{ begin(options.background_subtract_samples),
+              end(options.background_subtract_samples)
+            };
+          }
+          options_obj["UsedExistingBackgroundPeak"] = options.use_existing_background_peaks;
+          options_obj["UseExemplarEnergyCalForBackground"] = options.use_exemplar_energy_cal_for_background;
+        }//if( !options.background_subtract_file.empty() )
         
         options_obj["ReportTemplateIncludeDir"] = options.template_include_dir;
         options_obj["ReportTemplates"] = options.report_templates;
         options_obj["ReportSummaryTemplates"] = options.summary_report_templates;
-      };
+      };//add_peak_fit_options_to_json( lambda )
+      
+      
+      auto add_activity_fit_options_to_json = [&add_peak_fit_options_to_json]( nlohmann::json &data,
+                                        const BatchActivity::BatchActivityFitOptions &options ) {
+        
+        add_peak_fit_options_to_json( data, options );
+        
+        auto &options_obj = data["PeakFitOptions"];
+        
+        const bool overiding_dist = options.distance_override.has_value();
+        options_obj["IsSpecifyingDistance"] = overiding_dist;
+        if( overiding_dist )
+        {
+          const double dist = options.distance_override.value();
+          options_obj["SpecifiedDistance_m"] = dist / PhysicalUnits::m;
+          options_obj["SpecifiedDistance_cm"] = dist / PhysicalUnits::cm;
+          options_obj["SpecifiedDistance"] = PhysicalUnits::printToBestLengthUnits( dist, 6 );
+        }
+        
+        options_obj["UseBq"] = options.use_bq;
+        options_obj["IsSpecifyingDetector"] = !!options.drf_override;
+        if( options.drf_override )
+          options_obj["SpecifiedDetectorName"] = options.drf_override->name();
+        
+        options_obj["HardBackgroundSubtracted"] = !!options.hard_background_sub;
+      };//add_activity_fit_options_to_json( lambda )
       
       
       if( fit_results.m_foreground )
@@ -1482,7 +1537,7 @@ void fit_activities_in_files( const std::string &exemplar_filename,
                          fit_results.m_peak_fit_results );
       }//if( fit_results.m_foreground )
       
-      if( fit_results.m_background )
+      if( fit_results.m_background && !fit_results.m_options.hard_background_sub )
       {
         string filename = fit_results.m_background_file ? fit_results.m_background_file->filename() 
                           : string();
@@ -1500,8 +1555,8 @@ void fit_activities_in_files( const std::string &exemplar_filename,
       }//if( fit_results.m_background )
       
       
-      add_peak_fit_options_to_json( data, fit_results.m_options );
-    
+      add_activity_fit_options_to_json( data, fit_results.m_options );
+      
       shared_ptr<const DetectorPeakResponse> drf = fit_results.m_options.drf_override;
       if( !drf && fit_results.m_exemplar_file )
         drf = fit_results.m_exemplar_file->detector();
@@ -1898,7 +1953,7 @@ BatchActivityFitResult fit_activities_in_file( const std::string &exemplar_filen
     return result;
   }//if( !meas->load_file( filename, ParserType::Auto ) )
   result.m_foreground_file = specfile;
-  
+  set<int> foreground_sample_numbers = result.m_foreground_sample_numbers;
   
   shared_ptr<SpecMeas> backfile;
   if( !options.background_subtract_file.empty() )
@@ -2037,7 +2092,7 @@ BatchActivityFitResult fit_activities_in_file( const std::string &exemplar_filen
       
       try
       {
-        background = specfile->sum_measurements( background_sample_nums, cached_exemplar_n42->detector_names(), nullptr );
+        background = cached_exemplar_n42->sum_measurements( background_sample_nums, cached_exemplar_n42->detector_names(), nullptr );
       }catch( std::exception &e )
       {
         result.m_error_msg = "Error summing background measurements from exemplar: " + string(e.what());
@@ -2099,17 +2154,197 @@ BatchActivityFitResult fit_activities_in_file( const std::string &exemplar_filen
     result.m_result_code = BatchActivityFitResult::ResultCode::BackgroundSampleNumberUnderSpecified;
     return result;
   }// try / catch (find foreground)
+    
+  
+  // Apply exemplar energy cal - if wanted
+  if( options.use_exemplar_energy_cal || options.use_exemplar_energy_cal_for_background )
+  {
+    
+    set<int> exemplar_sample_nums;
+    shared_ptr<const SpecUtils::Measurement> exemplar_spectrum;
+    shared_ptr<const deque<std::shared_ptr<const PeakDef>>> exemplar_peaks;
+    
+    try
+    {
+      BatchPeak::get_exemplar_spectrum_and_peaks( exemplar_spectrum, exemplar_peaks,
+                                                 exemplar_sample_nums, cached_exemplar_n42 );
+      if( !exemplar_spectrum )
+        throw runtime_error( "Couldnt determine exemplar spectrum" );
+      
+      auto cal = exemplar_spectrum->energy_calibration();
+      if( !cal || !cal->valid() )
+        throw runtime_error( "Exemplar energy calibration invalid" );
+    }catch( std::exception &e )
+    {
+      result.m_error_msg = "Error determining exemplar: " + string(e.what());
+      result.m_result_code = BatchActivityFitResult::ResultCode::ErrorPickingSpectrumFromExemplar;
+      return result;
+    }
+    
+    const shared_ptr<const SpecUtils::EnergyCalibration> exemplar_cal
+                                                  = exemplar_spectrum->energy_calibration();
+    if( options.use_exemplar_energy_cal )
+    {
+      try
+      {
+        assert( foreground );
+        auto fore = make_shared<SpecUtils::Measurement>( *foreground );
+        
+        BatchPeak::propagate_energy_cal( exemplar_cal, fore, specfile,
+                                        result.m_foreground_sample_numbers );
+        
+        foreground = fore;
+        result.m_foreground = fore;
+      }catch( std::exception &e )
+      {
+        result.m_error_msg = "Error changing foreground energy calibration: " + string(e.what());
+        result.m_result_code = BatchActivityFitResult::ResultCode::ErrorApplyingExemplarEneCalToFore;
+        return result;
+      }
+    }//if( options.use_exemplar_energy_cal )
+    
+    if( background && options.use_exemplar_energy_cal_for_background )
+    {
+      try
+      {
+        assert( background );
+        assert( options.background_subtract_file != exemplar_filename );
+        auto back = make_shared<SpecUtils::Measurement>( *background );
+        
+        BatchPeak::propagate_energy_cal( exemplar_cal, back, backfile,
+                                        result.m_background_sample_numbers );
+        
+        background = back;
+        result.m_background = back;
+      }catch( std::exception &e )
+      {
+        result.m_error_msg = "Error changing background energy calibration: " + string(e.what());
+        result.m_result_code = BatchActivityFitResult::ResultCode::ErrorApplyingExemplarEneCalToFore;
+        return result;
+      }
+    }
+  }//if( options.use_exemplar_energy_cal || options.use_exemplar_energy_cal_for_background )
+  
+  
+  if( options.hard_background_sub )
+  {
+    assert( background && result.m_foreground );
+    try
+    {
+      if( !background )
+        throw std::runtime_error( "no background spectrum" );
+      if( !result.m_foreground )
+        throw std::runtime_error( "no foreground spectrum" );
+      
+      // We _can_ subtract spectra with different number of channels, but its probably
+      //  a mistake on the users part, so we'll throw an error
+      if( background->num_gamma_channels() != result.m_foreground->num_gamma_channels() )
+      {
+        throw std::runtime_error( "Mis-match of channels between background ("
+                                 + std::to_string(background->num_gamma_channels())
+                                 + ") and foreground ("
+                                 + std::to_string(result.m_foreground->num_gamma_channels())
+                                 + ")" );
+      }//if( background and foreground number of channels dont match )
+  
+      auto back_cal = background->energy_calibration();
+      auto fore_cal = result.m_foreground->energy_calibration();
+      
+      if( !back_cal || !back_cal->valid() || !back_cal->channel_energies() )
+        throw runtime_error( "Invalid background energy calibration" );
+      
+      if( !fore_cal || !fore_cal->valid() || !fore_cal->channel_energies() )
+        throw runtime_error( "Invalid foreground energy calibration" );
+      
+  
+      shared_ptr<const vector<float>> fore_counts = result.m_foreground->gamma_counts();
+      shared_ptr<const vector<float>> back_counts = background->gamma_counts();
+      
+      // Make sure back_counts has the same energy calibration and fore_counts, so we can subtract
+      //  on a bin-by-bin basis
+      if( (back_cal != fore_cal) && (*back_cal) != (*fore_cal) )
+      {
+        auto new_backchan = make_shared<vector<float>>( fore_counts->size(), 0.0f );
+        SpecUtils::rebin_by_lower_edge( *back_cal->channel_energies(), *back_counts,
+                                       *fore_cal->channel_energies(), *new_backchan );
+        back_counts = new_backchan;
+      }
+      
+      // Create what will be the background subtracted foreground
+      auto back_sub_counts = make_shared<vector<float>>( *fore_counts );
+      
+      //back_counts and fore_counts should always be the same size, but we'll be a bit verbose anyway
+      assert( back_counts->size() == fore_counts->size() );
+      const size_t nchann = std::min( back_counts->size(), fore_counts->size() );
+      
+      // Do the actual background subtraction
+      const bool no_neg = true;
+      const bool do_round = false;
+      
+      const float sf = result.m_foreground->live_time() / background->live_time();
+      if( (sf <= 0.0) || IsNan(sf) || IsInf(sf) )
+      {
+        result.m_error_msg = "Could not determine live-times to perform hard background subtraction.";
+        result.m_result_code = BatchActivityFitResult::ResultCode::InvalidLiveTimeForHardBackSub;
+        return result;
+      }
+      
+      for( size_t i = 0; i < nchann; ++i )
+      {
+        float &val = (*back_sub_counts)[i];
+        val -= sf*(*back_counts)[i];
+        
+        if( no_neg )
+          val = std::max( 0.0f, val );
+        
+        if( do_round )
+          val = std::round( val );
+      }//for( size_t i = 0; i < nchann; ++i )
+      
+      // Create a new Measurement object, based on the old foreground
+      auto newspec = make_shared<SpecUtils::Measurement>( *result.m_foreground );
+      newspec->set_gamma_counts( back_sub_counts, foreground->live_time(), foreground->real_time() );
+      vector<string> remarks = foreground->remarks();
+      remarks.push_back( "This spectrum has been background subtracted in InterSpec" );
+      newspec->set_remarks( remarks );
+      newspec->set_sample_number( 1 );
+      
+      // Create a new spectrum file object, and set new background subtracted Measurement as its only
+      //  record
+      auto newmeas = make_shared<SpecMeas>();
+      
+      // Copy just the SpecUtils::SpecFile stuff over to 'newmeas' so we dont copy things like
+      //  displayed sample numbers, and uneeded peaks and stuff
+      static_cast<SpecUtils::SpecFile &>(*newmeas) = static_cast<const SpecUtils::SpecFile &>(*result.m_foreground_file);
+      newmeas->remove_measurements( newmeas->measurements() );
+      newmeas->set_uuid( "" ); // Need to make sure UUID will get updated.
+      newmeas->set_filename( "bkgsub_" + newmeas->filename() ); // Update filename
+      newmeas->add_measurement( newspec, true ); // Actually add the measurement
+      
+      specfile = newmeas;
+      foreground = newspec;
+      result.m_foreground = newspec;
+      foreground_sample_numbers.clear();
+      foreground_sample_numbers.insert( newspec->sample_number() );
+    }catch( std::exception &e )
+    {
+      result.m_error_msg = "Error performing hard background subtract: " + string(e.what());
+      result.m_result_code = BatchActivityFitResult::ResultCode::ErrorWithHardBackgroundSubtract;
+      return result;
+    }//try / catch
+  }//if( options.hard_background_sub )
   
   
   // Now need to figure out the foreground and possibly background sample numbers in the exemplar
   BatchPeak::BatchPeakFitOptions peak_fit_options = options;
   peak_fit_options.background_subtract_file = "";
-  
+  peak_fit_options.use_exemplar_energy_cal = false;  //We've already applied this.
+  peak_fit_options.use_exemplar_energy_cal_for_background = false;
 
   const BatchPeak::BatchPeakFitResult foreground_peak_fit_result
               = BatchPeak::fit_peaks_in_file( exemplar_filename, exemplar_sample_nums,
                                             cached_exemplar_n42, filename, specfile,
-                                            result.m_foreground_sample_numbers, peak_fit_options );
+                                             foreground_sample_numbers, peak_fit_options );
   
   result.m_peak_fit_results = make_shared<BatchPeak::BatchPeakFitResult>( foreground_peak_fit_result );
   
@@ -2117,28 +2352,83 @@ BatchActivityFitResult fit_activities_in_file( const std::string &exemplar_filen
   {
     result.m_error_msg = "Fitting of foreground peaks failed.";
     result.m_result_code = BatchActivityFitResult::ResultCode::ForegroundPeakFitFailed;
+    
+    return result;
   }//if( !foreground_peaks.success )
   
   
-  if( !options.background_subtract_file.empty() )
+  if( !options.background_subtract_file.empty() && !options.hard_background_sub )
   {
-    //if( options.background_subtract_file == exemplar_filename )
-    //First see if peaks are already fit - if so, use them, otherwise try to fit them
-    
-    // TODO: we are fitting the foreground peaks to the background - we should allow specifying exemplar background peaks - either to refit, or to just use
-    cerr << "TODO: we are fitting the foreground peaks to the background - we should allow specifying exemplar background peaks - either to refit, or to just use" << endl;
-    const BatchPeak::BatchPeakFitResult background_peaks
-                = BatchPeak::fit_peaks_in_file( exemplar_filename, 
-                                               exemplar_sample_nums,
-                                              cached_exemplar_n42, 
-                                               options.background_subtract_file,
-                                               backfile, 
-                                               result.m_background_sample_numbers,
-                                               peak_fit_options );
-    
-    
-    
-    result.m_background_peak_fit_results = make_shared<BatchPeak::BatchPeakFitResult>( background_peaks );
+    if( options.use_existing_background_peaks )
+    {
+      const set<int> &sample_nums = result.m_background_sample_numbers;
+      const shared_ptr<const SpecMeas> &background = result.m_background_file;
+      
+      assert( background );
+      assert( !options.hard_background_sub );
+      
+      shared_ptr<const deque<shared_ptr<const PeakDef>>> peaks
+                                              = background->peaks( sample_nums );
+      
+      if( !peaks || !peaks->size() )
+      {
+        result.m_error_msg = "It was requested to use existing background peaks, but there"
+                            " were none for the background spectrum (please fit in InterSpec,"
+                            " then export N42-2012 file).";
+        result.m_result_code = BatchActivityFitResult::ResultCode::NoExistingBackgroundPeaks;
+        
+        return result;
+      }//if( !peaks || !peaks->size() )
+      
+      auto background_peaks = make_shared<BatchPeak::BatchPeakFitResult>();
+      background_peaks->file_path = exemplar_filename;
+      background_peaks->options = options;
+      background_peaks->exemplar = background;
+      background_peaks->exemplar_sample_nums = result.m_background_sample_numbers;
+      background_peaks->exemplar_peaks = *peaks;
+      //background_peaks->unfit_exemplar_peaks;  //Exemplar peaks not found in the spectrum
+      const vector<string> &det_names = background->detector_names();
+      background_peaks->measurement = std::make_shared<SpecMeas>();
+      static_cast<SpecUtils::SpecFile &>((*background_peaks->measurement)) = static_cast<const SpecUtils::SpecFile &>(*background);
+      background_peaks->spectrum = background->sum_measurements( sample_nums, det_names, nullptr );
+      assert( background_peaks->spectrum );
+      if( !background_peaks->spectrum )
+      {
+        result.m_error_msg = "Failed to get background spectrum from file.";
+        result.m_result_code = BatchActivityFitResult::ResultCode::NoExistingBackgroundPeaks;
+        
+        return result;
+      }
+      background_peaks->exemplar_spectrum = make_shared<SpecUtils::Measurement>( *background_peaks->spectrum );
+      background_peaks->sample_numbers = sample_nums;
+      background_peaks->fit_peaks = *peaks;
+      
+      background_peaks->background = nullptr;
+      background_peaks->success = true;
+      background_peaks->warnings = {};
+      
+      result.m_background_peak_fit_results = background_peaks;
+    }else
+    {
+      const BatchPeak::BatchPeakFitResult background_peaks
+      = BatchPeak::fit_peaks_in_file( exemplar_filename,
+                                     exemplar_sample_nums,
+                                     cached_exemplar_n42,
+                                     options.background_subtract_file,
+                                     backfile,
+                                     result.m_background_sample_numbers,
+                                     peak_fit_options );
+      
+      result.m_background_peak_fit_results = make_shared<BatchPeak::BatchPeakFitResult>( background_peaks );
+      
+      if( !background_peaks.success )
+      {
+        result.m_error_msg = "Fitting of background peaks failed.";
+        result.m_result_code = BatchActivityFitResult::ResultCode::BackgroundPeakFitFailed;
+        
+        return result;
+      }//if( !foreground_peaks.success )
+    }//if( options.use_existing_background_peaks )
   }//if( backfile )
   
   
@@ -2171,9 +2461,20 @@ BatchActivityFitResult fit_activities_in_file( const std::string &exemplar_filen
     return result;
   }
   
+  const bool specified_dist = options.distance_override.has_value();
+  if( specified_dist && detector && detector->isFixedGeometry() )
+  {
+    result.m_error_msg = "You can not specify a distance and use a fixed geometry detector.";
+    result.m_result_code = BatchActivityFitResult::ResultCode::SpecifiedDistanceWithFixedGeomDet;
+    return result;
+  }
+  
   
   double distance = 1*PhysicalUnits::meter;
-  if( !detector->isFixedGeometry() )
+  if( specified_dist )
+  {
+    distance = options.distance_override.value();
+  }else if( detector && !detector->isFixedGeometry() )
   {
     try
     {
@@ -2230,7 +2531,10 @@ BatchActivityFitResult fit_activities_in_file( const std::string &exemplar_filen
   //  or just create a warning???
   //  For now - lets just warn.
   shared_ptr<const deque<std::shared_ptr<const PeakDef>>> background_peaks;
-  if( background && result.m_background_peak_fit_results && result.m_background_peak_fit_results->success )
+  if( background 
+     && result.m_background_peak_fit_results 
+     && !options.hard_background_sub
+     && result.m_background_peak_fit_results->success )
   {
     background_peaks = make_shared<deque<shared_ptr<const PeakDef>>>(result.m_background_peak_fit_results->fit_peaks);
   }

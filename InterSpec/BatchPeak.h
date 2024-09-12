@@ -38,6 +38,7 @@ class SpecMeas;
 namespace SpecUtils
 {
   class Measurement;
+  class EnergyCalibration;
 }//namespace SpecUtils
 
 
@@ -71,6 +72,8 @@ namespace BatchPeak
     std::string output_dir;
     std::string background_subtract_file;
     std::set<int> background_subtract_samples;
+    bool use_existing_background_peaks;
+    bool use_exemplar_energy_cal_for_background;
     
     /** The directory to allow report template to look in to include other templates.
      If specified, then the standard report directory cant be used.
@@ -106,8 +109,12 @@ namespace BatchPeak
     std::set<int> sample_numbers;
     std::deque<std::shared_ptr<const PeakDef>> fit_peaks;
     
-    /** Background spectrum that was subtracted from the foreground, to make `spectrum`, if any. */
-    std::shared_ptr<const SpecUtils::Measurement> background;
+    /** Background spectrum that was subtracted from the foreground, to make `spectrum`, if any. 
+     
+     The background subtraction can either be on a peak-by-peak basis, or a hard
+     background subtraction, see `BatchPeakFitOptions::use_exemplar_energy_cal_for_background`.
+     */
+    std::shared_ptr<SpecUtils::Measurement> background;
     
     bool success;
     std::vector<std::string> warnings;
@@ -137,6 +144,33 @@ namespace BatchPeak
                           std::set<int> foreground_sample_numbers,
                           const BatchPeakFitOptions &options );
   
+  /** Function that applies the energy calibration from the exemplar spectrum, to a spectrum from a different file.
+   
+   @param energy_cal The energy calibration to apply to `to_spectrum`, and optionally `to_specfile`
+   @param to_spectrum The spectrum, which may or may not be in `to_specfile`, to apply the energy calibration from `from_spectrum`
+   @param to_specfile The (optional) spectrum file to apply the energy calibration to; this will also take care of shifting peak energies
+   @param used_sample_nums The sample numbers used to create the `to_spectrum` from the `to_specfile` - used to keep peaks from
+          being moved twice.
+   */
+  void propagate_energy_cal( const std::shared_ptr<const SpecUtils::EnergyCalibration> &energy_cal,
+                                          std::shared_ptr<SpecUtils::Measurement> &to_spectrum,
+                                          std::shared_ptr<SpecMeas> &to_specfile,
+                                          const std::set<int> &used_sample_nums );
+  
+  /** Finds the spectrum, peaks, and sample numbers to use from the exemplar file.
+   
+   @param [out] exemplar_spectrum Will be set to the spectrum to use as the exemplar spectrum (may be a sum of
+          multiple Measurements)
+   @param [out] exemplar_peaks Will be set to the peaks to use from the exemplar file.
+   @param [in|out] exemplar_sample_nums Sample numbers to use in the exemplar file.  If non-empty, these sample
+          number will be used to retrieve the spectrum to use.  Contents will be set to the used sample numbers.
+   @param [in] exemplar_n42 The spectrum file to retrieve the spectrum/peaks for
+   */
+  void get_exemplar_spectrum_and_peaks(
+                                       std::shared_ptr<const SpecUtils::Measurement> &exemplar_spectrum,
+                                       std::shared_ptr<const std::deque<std::shared_ptr<const PeakDef>>> &exemplar_peaks,
+                                       std::set<int> &exemplar_sample_nums,
+                                       const std::shared_ptr<const SpecMeas> &exemplar_n42 );
 }//namespace BatchPeak
 
 #endif //BatchPeak_h

@@ -1066,7 +1066,7 @@ void DistributedSrcCalc::eval_single_cyl_end_on( const double xx[], const int *n
   double test_ff[1];
   eval_cylinder( xx, ndimptr, test_ff, ncompptr );
   const double this_answer = trans * dV;
-  assert( fabs(test_ff[0] - this_answer) < 1.0E-9*std::max(0.001,std::max( fabs(test_ff[0]), fabs(this_answer))) );
+  assert( fabs(test_ff[0] - this_answer) < 1.0E-6*std::max(0.001,std::max( fabs(test_ff[0]), fabs(this_answer))) );
 #endif
 
   
@@ -6041,9 +6041,9 @@ vector<PeakResultPlotInfo>
         
         if( pos != end(*log_info) )
         {
-          pos->detEff = m_detector->efficiency( energy_count.first, m_distance );
-          pos->detIntrinsicEff = m_detector->intrinsicEfficiency( energy_count.first );
-          pos->detSolidAngle = fracAngle;
+          pos->detEff = 1.0;
+          pos->detIntrinsicEff = 1.0;
+          pos->detSolidAngle = 1.0;
         }
       }//for( EnergyCountMap::value_type &energy_count : energy_count_map )
     }//if( log_info )

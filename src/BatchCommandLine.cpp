@@ -145,8 +145,10 @@ int run_batch_command( int argc, char **argv )
       if( batch_peak_fit && batch_act_fit )
         throw std::runtime_error( "You may not specify both 'batch-peak-fit' and 'batch-act-fit'." );
       
-      bool output_stdout, refit_energy_cal, use_exemplar_energy_cal, write_n42_with_results;
+      bool output_stdout, refit_energy_cal, write_n42_with_results;
+      bool use_exemplar_energy_cal, use_exemplar_energy_cal_for_background;
       bool show_nonfit_peaks, overwrite_output_files, create_csv_output;
+      bool use_existing_background_peaks;
       vector<std::string> input_files, report_templates, summary_report_templates;
       string exemplar_path, output_path, exemplar_samples, background_sub_file, background_samples, template_include_dir;
       
@@ -174,9 +176,14 @@ int run_batch_command( int argc, char **argv )
        " gain, then refits the peaks with the updated energy calibration."
        )
       ("use-exemplar-energy-cal", po::value<bool>(&use_exemplar_energy_cal)->implicit_value(true)->default_value(false),
-       "Use the exemplar N42 energy calibration with the input files."
+       "Use the exemplar N42 energy calibration with the input foreground files.\n"
        " If refit-energy-cal is specified true, then the exemplar energy cal will be used for"
        " initial fit, and then refined and peaks refit.\n"
+       "Only applicable if N42 file is used for exemplar."
+       )
+      ("use-exemplar-energy-cal-for-background",
+       po::value<bool>(&use_exemplar_energy_cal_for_background)->implicit_value(true)->default_value(false),
+       "Use the exemplar N42 energy calibration for the background file.\n"
        "Only applicable if N42 file is used for exemplar."
        )
       ("write-n42-with-results", po::value<bool>(&write_n42_with_results)->implicit_value(true)->default_value(false),
@@ -197,6 +204,15 @@ int run_batch_command( int argc, char **argv )
        "The directory to write peak CSV files (and optionally) N42 files to; if empty, CSV files will not be written.")
       ("back-sub-file", po::value<string>(&background_sub_file)->default_value(""),
        "File to use as the background, to perform a live-time-normalized, hard-background-subtraction with (currently must be single record).")
+      ("background-sample-nums", po::value<std::string>(&background_samples),
+       "The sample numbers from the background file to use; if left empty will try to determine, and fail if not unique.\n\t"
+       "Only applicable if the background subtraction file is specified."
+       )
+      ("use-existing-background-peaks", po::value<bool>(&use_existing_background_peaks)->default_value(false)->implicit_value(true),
+       "Uses the fit peaks of the specified background, rather than re-fitting peaks.\n\t"
+       "Peaks from InterSpec must exist in the spectrum file, and this option can not be"
+       " used with hard background subtract."
+       )
       ("include-nonfit-peaks", po::value<bool>(&show_nonfit_peaks)->default_value(false),
        "Include peaks that are not fit into the output CSV peak results."
        )
@@ -215,7 +231,7 @@ int run_batch_command( int argc, char **argv )
       ;
       
       
-      bool use_bq = false;
+      bool use_bq = false, hard_background_sub = false;
       try
       {
         use_bq = InterSpecUser::preferenceValue<bool>( "DisplayBecquerel", nullptr );
@@ -224,7 +240,7 @@ int run_batch_command( int argc, char **argv )
         assert( 0 );
       }
       
-      string drf_file, drf_name;
+      string drf_file, drf_name, distance_override;
       po::options_description activity_cl_desc("Activity-fit options", term_width, min_description_length);
       activity_cl_desc.add_options()
       ("drf-file",  po::value<string>(&drf_file)->default_value(""),
@@ -234,12 +250,15 @@ int run_batch_command( int argc, char **argv )
                     " (which may have multiple DRFs)"
                     ", or built-in, or previously used in InterSpec "
                     "(overrides DRF contained in exemplar N42 file).")
-      ("background-sample-nums", po::value<std::string>(&background_samples),
-       "The sample numbers from the background file to use; if left empty will try to determine, and fail if not unique.\n\t"
-       "Only applicable if the background subtraction file is specified."
-       )
+      ("distance", po::value<string>(&distance_override)->default_value(""),
+                  "Optional distance to override default distance in exemplar.\n\t"
+                  "Can not be specified with fixed geometry detector responses.\n\t"
+                  "Ex: 100cm, 3ft, 10meters, 3.1inches, '1.1 cm + 1in', etc.")
       ("use-bq", po::value<bool>(&use_bq)->default_value(use_bq)->implicit_value(true),
        "Whether to use Curies or Becquerels for displaying activity.")
+      ("hard-background-subtract", po::value<bool>(&hard_background_sub)->default_value(false)->implicit_value(true),
+       "When true, the live-time normalized background is subtracted, channel-by-channel, "
+       "from the foreground, before fitting for peaks.")
       ;
       
       po::variables_map cl_vm;
@@ -344,6 +363,50 @@ int run_batch_command( int argc, char **argv )
       if( output_path.empty() && !summary_report_templates.empty() )
         throw runtime_error( "You must provide an output directory if specifying to use any templates for results." );
       
+      if( hard_background_sub && background_sub_file.empty() )
+        throw runtime_error( "You must specify a background spectrum when requesting a hard background subtract." );
+      
+      if( hard_background_sub && use_existing_background_peaks )
+        throw runtime_error( "You can no use existing background peaks, and perform a hard background subtract." );
+      
+      if( use_existing_background_peaks && background_sub_file.empty() )
+        throw runtime_error( "You must specify a background spectrum when requesting to use existing background peaks." );
+      
+      if( use_exemplar_energy_cal_for_background && background_sub_file.empty() )
+        throw runtime_error( "You must specify a background spectrum when requesting to use exemplar energy calibration with background." );
+      
+      const string norm_background_path = SpecUtils::lexically_normalize_path(background_sub_file);
+      const string norm_exemplar_path = SpecUtils::lexically_normalize_path(exemplar_path);
+      if( (norm_background_path == norm_exemplar_path) && use_exemplar_energy_cal_for_background )
+      {
+        throw runtime_error( "You can not apply exemplar energy calibration to the background file,"
+                            "when background file is the same as the exemplar (this could be a no-op,"
+                            " but assuming an error in configuration)." );
+      }
+      
+      boost::optional<double> distance_override_val;
+      if( !distance_override.empty() )
+      {
+        double distance = -1.0;
+        try
+        {
+          // If no units specified, default to cm
+          if( distance_override.find_first_not_of( " \t0123456789.eE+-\n" ) == string::npos )
+            distance_override += " cm";
+          
+          distance = PhysicalUnits::stringToDistance( distance_override );
+        }catch( std::exception & )
+        {
+          throw runtime_error( "The distance string ('" + distance_override
+                              + "') is not a valid distance" );
+        }
+        
+        if( distance <= 0.0 )
+          throw runtime_error( "Distance can not be negative or zero." );
+        
+        distance_override_val = distance;
+      }//if( !distance_override.empty() )
+      
       BatchActivity::BatchActivityFitOptions options;  //derived from BatchPeak::BatchPeakFitOptions
       options.to_stdout = output_stdout;
       options.refit_energy_cal = refit_energy_cal;
@@ -355,10 +418,14 @@ int run_batch_command( int argc, char **argv )
       options.output_dir = output_path;
       options.background_subtract_file = background_sub_file;
       options.background_subtract_samples = background_sample_nums;
+      options.use_existing_background_peaks = use_existing_background_peaks;
+      options.use_exemplar_energy_cal_for_background = use_exemplar_energy_cal_for_background;
       options.use_bq = use_bq;
       options.report_templates = report_templates;
       options.summary_report_templates = summary_report_templates;
       options.template_include_dir = template_include_dir;
+      options.distance_override = distance_override_val;
+      options.hard_background_sub = hard_background_sub;
       
       if( batch_peak_fit )
       {

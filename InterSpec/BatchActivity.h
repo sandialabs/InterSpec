@@ -31,6 +31,8 @@
 #include <string>
 #include <vector>
 
+#include <boost/optional.hpp>
+
 #include "InterSpec/BatchPeak.h"
 
 // Forward declarations
@@ -62,6 +64,8 @@ namespace BatchActivity
   {
     bool use_bq = false;
     std::shared_ptr<DetectorPeakResponse> drf_override;
+    boost::optional<double> distance_override;
+    bool hard_background_sub;
   };//struct BatchActivityFitOptions
   
   
@@ -77,13 +81,20 @@ namespace BatchActivity
       CouldntInitializeStaticResources,
       NoExemplar,
       CouldntOpenExemplar,
+      ErrorPickingSpectrumFromExemplar,
       CouldntOpenInputFile,
       CouldntOpenBackgroundFile,
       NoInputSrcShieldModel,
       ForegroundSampleNumberUnderSpecified,
       BackgroundSampleNumberUnderSpecified,
+      InvalidLiveTimeForHardBackSub,
+      SpecifiedDistanceWithFixedGeomDet,
+      ErrorWithHardBackgroundSubtract,
+      ErrorApplyingExemplarEneCalToFore,
       
       ForegroundPeakFitFailed,
+      BackgroundPeakFitFailed,
+      NoExistingBackgroundPeaks,
       NoFitForegroundPeaks,
       NoDetEffFnct,
       InvalidDistance,
