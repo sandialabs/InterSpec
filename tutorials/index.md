@@ -4,7 +4,10 @@
 This presentation briefly covers some of the more useful features added to InterSpec over the last couple years.
 * [20240912_InterSpec_newer_features.pptx](https://github.com/sandialabs/InterSpec/releases/download/20240911/20240912_InterSpec_newer_features.pptx) (110 MB)
 * [spectra.zip](https://github.com/sandialabs/InterSpec/releases/download/20240911/spectra.zip)
+
 A notable omission from this presentation is the Relative Efficiency Analysis tool, which you can find a presentation on below.
+
+Some other features and notes are also available in the release notes [https://sandialabs.github.io/InterSpec/releases/](here).
 
 
 ## Relative Efficiency Analysis 
