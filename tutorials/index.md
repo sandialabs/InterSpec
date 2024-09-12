@@ -7,7 +7,7 @@ This presentation briefly covers some of the more useful features added to Inter
 
 A notable omission from this presentation is the Relative Efficiency Analysis tool, which you can find a presentation on below.
 
-Some other features and notes are also available in the release notes [https://sandialabs.github.io/InterSpec/releases/](here).
+Some other features and notes are also available in the release notes [here](https://sandialabs.github.io/InterSpec/releases/).
 
 
 ## Relative Efficiency Analysis 
