@@ -1562,6 +1562,27 @@ void InterSpecApp::miscSignalHandler( const std::string &signal )
   }//if( SpecUtils::istarts_with( signal, "showMultimedia" ) )
 
 
+  if( SpecUtils::istarts_with( signal, "peakCsvCopy-" ) )
+  {
+    string msg = signal.substr(12);
+    WarningWidget::WarningMsgLevel level = WarningWidget::WarningMsgLevel::WarningMsgInfo;
+  
+    if( SpecUtils::istarts_with( msg, "success-" ) )
+    {
+      msg = msg.substr(8);
+      level = WarningWidget::WarningMsgLevel::WarningMsgInfo;
+    }else if( SpecUtils::istarts_with( msg, "error-" ) )
+    {
+      msg = msg.substr(6);
+      level = WarningWidget::WarningMsgLevel::WarningMsgHigh;
+    }
+    
+    passMessage( msg, level );
+    return;
+  }//if( SpecUtils::istarts_with( signal, "showMultimedia" ) )
+  
+  
+  
   // shouldnt ever make it here..
   const string errmsg = "InterSpecApp::miscSignalHandler: unhandled signal '" + signal + "'";
   passMessage( errmsg, WarningWidget::WarningMsgHigh );

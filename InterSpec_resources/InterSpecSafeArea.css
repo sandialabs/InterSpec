@@ -111,7 +111,7 @@ ul.PopupDivMenuPhone > li:last-of-type
   margin-bottom: calc( max(env(safe-area-inset-bottom) - 8px, 0px) + max(env(safe-area-inset-bottom) - 8px, 0px) );
 }
 
-.LandscapeLeft .PeakInfoDisplayButtonDiv, .LandscapeRight .PeakInfoDisplayButtonDiv {
+.LandscapeLeft .PeakInfoDisplayBottomDiv, .LandscapeRight .PeakInfoDisplayBottomDiv {
   margin-bottom: 2px;
 }
 

@@ -216,20 +216,6 @@ width:100%;
 }
 
 
-
-.Wt-btn .with-label {
-  font-size: 0.9em;
-  font-weight: bold;
-  vertical-align: middle;
-  border: 1px solid #e1e1e1;
-  color: #FFFFFF;
-  background-color: #888888;
-  border-radius: 5px;
-  height: 23px;
-  white-space: nowrap;
-}
-
-
 /* A lighter-appearing button, with no background color, and text matching border. 
  We will also allow applying this style to WSplitButton
  */
@@ -645,16 +631,29 @@ ul.Wt-popupmenu > li > a > span > span:hover
 }
 
 
-.PeakInfoDisplayButtonDiv {
+.PeakInfoDisplayBottomDiv {
   padding-left: 3px;
   display: flex;
   align-items: center;
 }
 
-.PeakInfoDisplayButtonDiv > .LinkBtn.DownloadBtn.Wt-btn.with-label
-{
-  margin-left: auto;
+.PeakInfoDisplayBottomDiv button, .PeakInfoDisplayBottomDiv button:hover {
+  display: flex;
+  align-items: center;
 }
+
+/* Shrink the button sizes a little bit for narrower display */
+@media (max-width: 800px) {
+  .PeakInfoDisplayBottomDiv button, .PeakInfoDisplayBottomDiv button:hover {
+    font-size: 0.8em;
+    font-weight: normal;
+  }
+  
+  .PeakInfoDisplayBottomDiv  .Wt-btn.with-label img{
+    padding-right: 3px;
+  }
+}
+
 
 .PeakInfoHlpBtn {
   margin-right: 5px;
@@ -663,19 +662,25 @@ ul.Wt-popupmenu > li > a > span > span:hover
   bottom: 0px;
 }
 
-.PeakSearchBtn {
+.PeakInfoDisplayButtonsDiv, .PeakInfoDisplayCsvBtns {
   margin-left: 25px;
-}
-
-.PeakInfoDisplayButtonDiv > button {
-  margin-right: 5px;
+  display: flex;
+  flex-wrap: nowrap;
+  flex-direction: row;
+  align-items: center;
+  justify-content: flex-start;
+  column-gap: 5px
 }
 
 .PeakInfoDisplay .PeakEditHint
 {
-color: gray;
-margin-left: 2em;
-font-size:66%
+  color: gray;
+  margin-left: 2em;
+  font-size: 66%;
+  white-space: nowrap;
+  overflow: hidden;
+  flex-grow: 1;
+  flex-shrink: 1;
 }
 
 
@@ -853,8 +858,6 @@ button, button:hover,
   border:1px solid #e1e1e1;
   color: #FFFFFF;
   background-color: #888888;
-  -moz-border-radius: 5px;
-  -webkit-border-radius: 5px;
   border-radius: 5px;
   height: 23px;
 }
@@ -877,6 +880,10 @@ button[disabled]
   filter: grayscale(100%);
 }
 
+button, button:hover {
+  padding-top: 2px;
+  padding-bottom: 2px;
+}
 
 li{ padding-top: 0; }
 table { margin-bottom:0; }

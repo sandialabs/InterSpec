@@ -22,4 +22,5 @@
   <message id="pid-better-editor-hint">Right click on peaks for better editor</message>
   <message id="pid-better-editor-hint-mobile">Tap and hold on peaks for better editor</message>
   <message id="pid-tt-csv-export">Export information about the identified peaks to a comma separated format.</message>
+  <message id="pid-tt-csv-copy">Copy peak CSV information to your pasteboard, in a CSV format.</message>
 </messages>

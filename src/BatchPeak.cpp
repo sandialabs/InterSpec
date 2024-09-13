@@ -345,7 +345,8 @@ void fit_peaks_in_files( const std::string &exemplar_filename,
           warnings.push_back( "Failed to open '" + outcsv + "', for writing.");
         }else
         {
-          PeakModel::write_peak_csv( output_csv, leaf_name, fit_peaks, fit_results.spectrum );
+          PeakModel::write_peak_csv( output_csv, leaf_name, 
+                                    PeakModel::PeakCsvType::Full, fit_peaks, fit_results.spectrum );
           cout << "Have written '" << outcsv << "'" << endl;
         }
       }//if( SpecUtils::is_file( outcsv ) ) / else
@@ -355,7 +356,8 @@ void fit_peaks_in_files( const std::string &exemplar_filename,
     {
       const string leaf_name = SpecUtils::filename(filename);
       cout << "peaks for '" << leaf_name << "':" << endl;
-      PeakModel::write_peak_csv( cout, leaf_name, fit_peaks, fit_results.spectrum );
+      PeakModel::write_peak_csv( cout, leaf_name, PeakModel::PeakCsvType::Full,
+                                fit_peaks, fit_results.spectrum );
       cout << endl;
     }
   }//for( const string filename : files )

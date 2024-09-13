@@ -1273,7 +1273,7 @@ bool SpecMeas::write_iaea_spe( std::ostream &output,
     if( summed )
     {
       stringstream peak_csv;
-      PeakModel::write_peak_csv( peak_csv, filename(), peaks, summed );
+      PeakModel::write_peak_csv( peak_csv, filename(), PeakModel::PeakCsvType::Full, peaks, summed );
       
       // Just in case, remove all $ and : characters (should only come from peak labels),
       //  to not confuse parsers
