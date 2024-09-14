@@ -142,6 +142,8 @@ int main( int argc, char *argv[] )
     }
     
     docroot = SpecUtils::parent_path( SpecUtils::parent_path( targetfile ) );
+    if( docroot.empty() && !targetfile.empty() ) //running from same dir as exe.
+      docroot = ".";
 #endif
   }//if( docroot.empty() )
 
