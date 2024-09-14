@@ -113,11 +113,6 @@ void log_developer_error( const char *location, const char *error );
 #define DATE_TIME_FORMAT_STR "d-MMM-yyyy hh:mm:ss"
 
 
-// Prevent some compile warnings from using like _1 instead of
-//  boost::placeholders::_1 (I think this must be in the Wt
-//  headers, since our code uses the namespace prefixes)
-#define BOOST_BIND_GLOBAL_PLACEHOLDERS
-
 #define InterSpec_PHONE_ROTATE_FOR_TABS 1
 
 // On Windows, we will compile LibInterSpec as a shared DLL only when

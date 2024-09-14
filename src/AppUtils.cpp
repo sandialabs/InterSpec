@@ -24,6 +24,7 @@
 #include "InterSpec_config.h"
 
 #include <string>
+#include <fstream>
 #include <iostream>
 #include <stdexcept>
 
@@ -381,9 +382,9 @@ std::string file_contents( const std::string &filename )
   //Copied from SpecUtils::load_file_data( const char * const filename, std::vector<char> &data );
 #ifdef _WIN32
   const std::wstring wfilename = SpecUtils::convert_from_utf8_to_utf16(filename);
-  basic_ifstream<char> stream(wfilename.c_str(), ios::binary);
+  std::ifstream stream(wfilename.c_str(), ios::binary);
 #else
-  basic_ifstream<char> stream(filename.c_str(), ios::binary);
+  std::ifstream stream(filename.c_str(), ios::binary);
 #endif
 
   if (!stream)

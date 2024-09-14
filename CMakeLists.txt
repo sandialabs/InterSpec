@@ -636,7 +636,7 @@ target_compile_options(InterSpecLib PRIVATE
 
 # Turn off "note: The practice of declaring the Bind placeholders (_1, _2, ...) in the global namespace is deprecated...."
 # warnings (these come from Wt I think, not our code)
-target_compile_definitions(InterSpecLib PUBLIC -D BOOST_BIND_GLOBAL_PLACEHOLDERS)
+SET(CMAKE_CXX_FLAGS  "${CMAKE_CXX_FLAGS} -D BOOST_BIND_GLOBAL_PLACEHOLDERS")
           
 if(WIN32)
   #0x0601==Win7, 0x0501=WinXP (Wt CMakeLists.txt uses 0x0501x)

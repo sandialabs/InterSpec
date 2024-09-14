@@ -30,6 +30,10 @@
 
 #include <Wt/WApplication>
 
+namespace Wt
+{
+  class WServer;
+}
 
 namespace InterSpecServer
 {
@@ -108,6 +112,14 @@ namespace InterSpecServer
   //  Example value returned: "http://127.0.0.1:7234"
   InterSpec_API std::string urlBeingServedOn();
   
+  /** Returns the Wt::WServer created by `startServer(...)`. 
+   
+   If we are linking against LibInterSpec dynamically, and using the static
+   runtime on Windows (default build option), we cant call 
+   `Wt::WServer::instance()`, since its in a different runtime, and we'll 
+   get nullptr back, so instead we need to call this function 
+   */
+  InterSpec_API Wt::WServer *get_wt_server();
   
   InterSpec_API bool changeToBaseDir( int argc, char *argv[] );
   

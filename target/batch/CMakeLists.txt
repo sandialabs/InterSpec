@@ -44,6 +44,9 @@ target_link_libraries( InterSpec_batch PUBLIC InterSpecLib )
 set_target_properties( InterSpec_batch PROPERTIES CXX_STANDARD 14 CXX_STANDARD_REQUIRED YES CXX_EXTENSIONS NO )
 set_target_properties( InterSpec_batch PROPERTIES OUTPUT_NAME "InterSpec_batch" )
 
+# Turn off "note: The practice of declaring the Bind placeholders (_1, _2, ...) in the global namespace is deprecated...."
+# warnings (these come from Wt I think, not our code)
+SET(CMAKE_CXX_FLAGS  "${CMAKE_CXX_FLAGS} -D BOOST_BIND_GLOBAL_PLACEHOLDERS")
 
 if(WIN32)
   # Allow using wildcards from the command-line on Windows.
