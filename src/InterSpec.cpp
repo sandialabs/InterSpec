@@ -536,7 +536,7 @@ InterSpec::InterSpec( WContainerWidget *parent )
   m_notificationDiv->setStyleClass("qtipDiv");
   m_notificationDiv->setId("qtip-growl-container");
   
-#if( BUILD_AS_ELECTRON_APP )
+#if( BUILD_AS_ELECTRON_APP || BUILD_AS_WX_WIDGETS_APP )
   m_notificationDiv->addStyleClass( "belowMenu" );
 #endif
   

@@ -399,6 +399,10 @@ protected:
 
   
 // See also CopyUrlToClipboard in QrCode.cpp, and CopyFluxDataTextToClipboard in FluxTool.cpp
+//  Note that modern browsers ONLY allow copying 'text/plain' and 'text/html' mime types
+//  to the pasteboard (for security reasons); e.g., using 'text/csv' silently fails.
+//  We copy the data to the pasteboard, in both plain text format, and HTML table format
+//  (which pastes into Excel correctly).
 WT_DECLARE_WT_MEMBER
 (CopyPeakCsvDataToClipboard, Wt::JavaScriptFunction, "CopyPeakCsvDataToClipboard",
 function( sender, event, dataOwner, dataName )
@@ -407,16 +411,11 @@ function( sender, event, dataOwner, dataName )
   const htmlData = $(dataOwner).data(dataName + "Html");
   if( !csvData || !htmlData )
   {
-    console.log( "csvData:", csvData );
-    console.log( "htmlData:", htmlData );
     Wt.emit( $('.specviewer').attr('id'), {name:'miscSignal'},
             'peakCsvCopy-error-No CSV data is available - if this is an error, please report to InterSpec@sandia.gov' );
     return;
   }
-    
-    
-  console.log( 'Will try to copy CSV to copyboard' );
-    
+  
   // Use ClipboardItem if supported
   if( typeof ClipboardItem !== 'undefined' ) {
     const plainBlob = new Blob([csvData], { type: 'text/plain' });
@@ -464,8 +463,9 @@ function( sender, event, dataOwner, dataName )
   }
   
   if( window.clipboardData && window.clipboardData.setData ) {
-    const didCopy = window.clipboardData.setData("text/plain", csvData);  // IE
-    if( didCopy ){
+    const didCopyTxt = window.clipboardData.setData("text/plain", csvData);  // IE
+    const didCopyHtml = window.clipboardData.setData("text/html", htmlData);  // IE
+    if( didCopyTxt && didCopyHtml ){
       console.log( 'Copied peak CSV using window.clipboardData.setData.' );
       Wt.emit( $('.specviewer').attr('id'), {name:'miscSignal'},
                 'peakCsvCopy-success-Copied CSV data to pasteboard as csv data.' );
@@ -1112,9 +1112,9 @@ void PeakInfoDisplay::init()
   
   
   LOAD_JAVASCRIPT(wApp, "PeakInfoDisplay.cpp", "PeakInfoDisplay", wtjsCopyPeakCsvDataToClipboard);
-  WMenuItem *fullCopyMenuItem = copyMenu->addItem( "Copy full peak CSV" );
-  WMenuItem *noHeaderCopyMenuItem = copyMenu->addItem( "Copy without headers" );
-  WMenuItem *compactCopyMenuItem = copyMenu->addItem( "Copy fit peak info" );
+  WMenuItem *fullCopyMenuItem = copyMenu->addItem( WString::tr("pid-csv-copy-full") );
+  WMenuItem *noHeaderCopyMenuItem = copyMenu->addItem( WString::tr("pid-csv-copy-no-hdr") );
+  WMenuItem *compactCopyMenuItem = copyMenu->addItem( WString::tr("pid-csv-copy-compact") );
   
   fullCopyMenuItem->clicked().connect( "function(s,e){ "
     "Wt.WT.CopyPeakCsvDataToClipboard(s,e," + jsRef() + ", 'CsvFullData');"
@@ -1125,6 +1125,11 @@ void PeakInfoDisplay::init()
   compactCopyMenuItem->clicked().connect( "function(s,e){ "
     "Wt.WT.CopyPeakCsvDataToClipboard(s,e," + jsRef() + ", 'CsvCompactData');"
   "}" );
+  
+  // TODO: Maybe add tool tips to each menu item?
+  //HelpSystem::attachToolTipOn( fullCopyMenuItem, WString::tr("pid-tt-csv-export"), showToolTips );
+  //HelpSystem::attachToolTipOn( noHeaderCopyMenuItem, WString::tr("pid-tt-csv-export"), showToolTips );
+  //HelpSystem::attachToolTipOn( compactCopyMenuItem, WString::tr("pid-tt-csv-export"), showToolTips );
   
   
   WResource *csv = m_model->peakCsvResource();
