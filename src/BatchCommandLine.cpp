@@ -149,6 +149,7 @@ int run_batch_command( int argc, char **argv )
       bool use_exemplar_energy_cal, use_exemplar_energy_cal_for_background;
       bool show_nonfit_peaks, overwrite_output_files, create_csv_output;
       bool use_existing_background_peaks;
+      double peak_stat_threshold = 0.0, peak_hypothesis_threshold = 0.0;
       vector<std::string> input_files, report_templates, summary_report_templates;
       string exemplar_path, output_path, exemplar_samples, background_sub_file, background_samples, template_include_dir;
       
@@ -185,6 +186,22 @@ int run_batch_command( int argc, char **argv )
        po::value<bool>(&use_exemplar_energy_cal_for_background)->implicit_value(true)->default_value(false),
        "Use the exemplar N42 energy calibration for the background file.\n"
        "Only applicable if N42 file is used for exemplar."
+       )
+      ("peak-stat-threshold",
+       po::value<double>(&peak_stat_threshold)->default_value(0.0),
+       "The improvement to the Chi2 of a peak fit required, over just fitting the continuum, to the ROI.\n"
+       "A negative or zero value indicates no requirement (and default, since we are asserting peak"
+       " is likely in the spectrum for batch analysis), and for general peak searching, reasonable"
+       " values are between ~1 (a weak peak) and ~5 (a significant peak)."
+       )
+      ("peak-shape-threshold",
+       po::value<double>(&peak_hypothesis_threshold)->default_value(0.0),
+       "Requirement for how compatible the ROI must be to Gaussian peaks + continuum.\n"
+       "It is the ratio of the null hypothesis chi2 (continuum only, no Gaussian),"
+       "to the test hypothesis (continuum + Gaussian) chi2.\n"
+       "A reasonable value for this seems to be ~4.\n"
+       "A zero or negative value will mean no requirement, and also no"
+       "'peak-stat-threshold' requirement."
        )
       ("write-n42-with-results", po::value<bool>(&write_n42_with_results)->implicit_value(true)->default_value(false),
        "Adds the fit peaks to the input spectrum file , and then saves as a N42."
@@ -420,6 +437,8 @@ int run_batch_command( int argc, char **argv )
       options.background_subtract_samples = background_sample_nums;
       options.use_existing_background_peaks = use_existing_background_peaks;
       options.use_exemplar_energy_cal_for_background = use_exemplar_energy_cal_for_background;
+      options.peak_stat_threshold = peak_stat_threshold;
+      options.peak_hypothesis_threshold = peak_hypothesis_threshold;
       options.use_bq = use_bq;
       options.report_templates = report_templates;
       options.summary_report_templates = summary_report_templates;

@@ -63,49 +63,55 @@ void propagate_energy_cal( const shared_ptr<const SpecUtils::EnergyCalibration> 
   
   const size_t num_spec_chan = to_spectrum->num_gamma_channels();
   shared_ptr<const SpecUtils::EnergyCalibration> updated_cal;
-  if( energy_cal->num_channels() == num_spec_chan )
+  if( energy_cal == original_cal )
   {
-    to_spectrum->set_energy_calibration( energy_cal );
+    // We already have this energy cal, nothing to do here
     updated_cal = energy_cal;
   }else
   {
-    auto new_cal = make_shared<SpecUtils::EnergyCalibration>();
-    
-    switch( energy_cal->type() )
+    if( energy_cal->num_channels() == num_spec_chan )
     {
-      case SpecUtils::EnergyCalType::Polynomial:
-      case SpecUtils::EnergyCalType::UnspecifiedUsingDefaultPolynomial:
-        new_cal->set_polynomial( num_spec_chan, energy_cal->coefficients(), energy_cal->deviation_pairs() );
-        break;
-        
-      case SpecUtils::EnergyCalType::FullRangeFraction:
-        new_cal->set_full_range_fraction( num_spec_chan, energy_cal->coefficients(), energy_cal->deviation_pairs() );
-        break;
-        
-      case SpecUtils::EnergyCalType::LowerChannelEdge:
-        if( num_spec_chan > energy_cal->num_channels() )
-        {
-          throw std::runtime_error( " its lower energy channel calibration, and exemplar has"
-                                   " fewer channels." );
-          new_cal.reset();
-        }else
-        {
-          vector<float> channel_energies = *new_cal->channel_energies();
-          channel_energies.resize( num_spec_chan + 1 );
-          new_cal->set_lower_channel_energy( num_spec_chan, channel_energies );
-        }
-        break;
-        
-      case SpecUtils::EnergyCalType::InvalidEquationType:
-        assert( 0 );
-        break;
-    }//switch( energy_cal->type() )
-    
-    updated_cal = new_cal;
-    if( new_cal )
-      to_spectrum->set_energy_calibration( new_cal );
-  }//if( num channels match exemplar ) / else
-  
+      to_spectrum->set_energy_calibration( energy_cal );
+      updated_cal = energy_cal;
+    }else
+    {
+      auto new_cal = make_shared<SpecUtils::EnergyCalibration>();
+      
+      switch( energy_cal->type() )
+      {
+        case SpecUtils::EnergyCalType::Polynomial:
+        case SpecUtils::EnergyCalType::UnspecifiedUsingDefaultPolynomial:
+          new_cal->set_polynomial( num_spec_chan, energy_cal->coefficients(), energy_cal->deviation_pairs() );
+          break;
+          
+        case SpecUtils::EnergyCalType::FullRangeFraction:
+          new_cal->set_full_range_fraction( num_spec_chan, energy_cal->coefficients(), energy_cal->deviation_pairs() );
+          break;
+          
+        case SpecUtils::EnergyCalType::LowerChannelEdge:
+          if( num_spec_chan > energy_cal->num_channels() )
+          {
+            throw std::runtime_error( " its lower energy channel calibration, and exemplar has"
+                                     " fewer channels." );
+            new_cal.reset();
+          }else
+          {
+            vector<float> channel_energies = *new_cal->channel_energies();
+            channel_energies.resize( num_spec_chan + 1 );
+            new_cal->set_lower_channel_energy( num_spec_chan, channel_energies );
+          }
+          break;
+          
+        case SpecUtils::EnergyCalType::InvalidEquationType:
+          assert( 0 );
+          break;
+      }//switch( energy_cal->type() )
+      
+      updated_cal = new_cal;
+      if( new_cal )
+        to_spectrum->set_energy_calibration( new_cal );
+    }//if( num channels match exemplar ) / else
+  }//if( energy_cal == original_cal )
   
   // Update `to_specfile` as well, as we may write it back out as a N42
   if( updated_cal && to_specfile )
@@ -116,10 +122,10 @@ void propagate_energy_cal( const shared_ptr<const SpecUtils::EnergyCalibration> 
     {
       // Translate peaks from old energy, to new energy
       auto peaks = to_specfile->peaks( used_sample_nums );
-      if( peaks && peaks->size() )
+      if( peaks && peaks->size() && (original_cal != updated_cal) )
       {
         const deque<shared_ptr<const PeakDef>> new_peaks
-        = EnergyCal::translatePeaksForCalibrationChange( *peaks, original_cal, updated_cal );
+               = EnergyCal::translatePeaksForCalibrationChange( *peaks, original_cal, updated_cal );
         to_specfile->setPeaks( new_peaks, used_sample_nums );
       }
     }//if( used_sample_nums.size() > 1 )
@@ -133,11 +139,12 @@ void propagate_energy_cal( const shared_ptr<const SpecUtils::EnergyCalibration> 
         if( m && (m->num_gamma_channels() == updated_cal->num_channels()) )
         {
           prev_cal = m->energy_calibration();
-          to_specfile->set_energy_calibration( updated_cal, m );
+          if( prev_cal != updated_cal )
+            to_specfile->set_energy_calibration( updated_cal, m );
         }
       }//for( const string &det : det_names )
       
-      if( prev_cal && (used_sample_nums.size() > 1) )
+      if( prev_cal && (used_sample_nums.size() > 1) && (prev_cal != updated_cal) )
       {
         // Translate peaks from old energy, to new energy, only if we havent already done it
         auto peaks = to_specfile->peaks( {sample} );
@@ -150,7 +157,7 @@ void propagate_energy_cal( const shared_ptr<const SpecUtils::EnergyCalibration> 
       }//if( prev_cal && (used_sample_nums.size() > 1) )
     }//for( const int sample : used_sample_nums )
   }//if( updated_cal )
-}//propagate_energy_cal lambda
+}//propagate_energy_cal(...)
   
 void fit_energy_cal_from_fit_peaks( shared_ptr<SpecUtils::Measurement> &raw, vector<PeakDef> peaks, const size_t num_coefs )
 {
@@ -846,8 +853,9 @@ BatchPeak::BatchPeakFitResult fit_peaks_in_file( const std::string &exemplar_fil
     // We are not refitting peaks, because the areas may be wildly different.
     const bool isRefit = false;
     
-    //Use default for peak fit filters
-    const double ncausalitysigma = 0.0, stat_threshold  = 0.0, hypothesis_threshold = 0.0;
+    const double ncausalitysigma = 0.0;
+    const double stat_threshold = options.peak_stat_threshold;
+    const double hypothesis_threshold = options.peak_hypothesis_threshold;
     
     vector<PeakDef> candidate_peaks;
     for( const auto &p : starting_peaks )
@@ -906,6 +914,23 @@ BatchPeak::BatchPeakFitResult fit_peaks_in_file( const std::string &exemplar_fil
                                                 energy_cal_peaks, spec, {}, isRefit );
         fit_energy_cal_from_fit_peaks( spec, peaks, 4 );
       }//for( size_t i = 0; i < 1; ++i )
+      
+      // Propagate the updated energy cal to the result file
+      assert( spec && spec->energy_calibration() && spec->energy_calibration()->valid() );
+      shared_ptr<const SpecUtils::EnergyCalibration> new_cal = spec ? spec->energy_calibration() : nullptr;
+      if( new_cal && new_cal->valid() )
+      {
+        try
+        {
+          propagate_energy_cal( new_cal, spec, results.measurement, {} );
+        }catch( std::exception &e )
+        {
+          results.warnings.push_back( "Failed to propagate fit energy calibration in '" + filename + "'." );
+        }
+      }else
+      {
+        results.warnings.push_back( "Failed to fit an appropriate energy calibration in '" + filename + "'." );
+      }
     }//if( options.refit_energy_cal )
     
     vector<PeakDef> fit_peaks = fitPeaksInRange( lower_energy, uppper_energy, ncausalitysigma,

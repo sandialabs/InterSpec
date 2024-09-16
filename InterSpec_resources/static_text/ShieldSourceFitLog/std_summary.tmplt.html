@@ -97,6 +97,26 @@
     Results for {{ file.Filename }}
   </h1>
 
+{% if file.HasErrorMessage %}
+<h2 style="color: red;">Error Message</h2>
+<div id="error" style="width: 90vw; margin-left: auto; margin-right: auto; margin-bottom: 20px; color: red; border: solid 1px red; padding: 5px;">
+  {{ file.ErrorMessage }}
+</div>
+{% endif %}
+
+
+{% if file.HasWarnings %}
+<h2 style="color: orange;">Warnings</h2>
+<div id="warnings" style="width: 90vw; margin-left: auto; margin-right: auto; margin-bottom: 20px; color: orange; border: solid 1px orange;">
+## for warning in file.Warnings
+  <div style="width: 95%; margin-left: auto; margin-right: auto; margin-top: 5px; margin-bottom: 5px; border: solid 1px grey; padding: 3px;">
+    {{ warning }}
+  </div>
+## endfor
+</div>
+{% endif %}
+
+
   <div id="specchart_{{loop.index1}}" style="height: 20vw; width: 75vw; margin-left: auto; margin-right: auto;">
   </div>
 
@@ -205,6 +225,7 @@
   </ul>
 </div> <!-- <div id="GeneralInfo"> -->
 
+{% if existsIn(file,"Sources") %}
 <div id="sources" style="margin-top: 25px">
   Sources:
   <table class="ActivitySummary ResultTable">
@@ -246,7 +267,9 @@
     </tbody>
   </table>   
 </div> <!-- <div id="sources" style="margin-top: 25px"> -->
+{% endif %}
 
+{% if existsIn(file, "Shieldings") %}
 {% if existsIn(file.Shieldings, "Shields") %}
 ##for shield in file.Shieldings.Shields
 {% if shield.FitAnyMassFraction %}
@@ -268,14 +291,19 @@ Mass fractions for {{ shield.Name }}:
     </tbody>
   </table>
   </div>
-{% endif %}
+{% endif %} <!-- if shield.FitAnyMassFraction -->
 ##endfor
-{% endif %}
+{% endif %} <!-- existsIn(file.Shieldings, "Shields") -->
+{% endif %} <!-- if existsIn(file, "Shieldings") -->
 
 <div style="margin-top: 20px">
 <ul style="list-style-type: none; padding: 0; margin: 0;">
+{% if existsIn(file, "NumDof") %}
   <li>There were {{ file.NumDof }} parameters fit for</li>
-  <li>It took {{ file.NumberFcnCalls }} solution trials to reach chi2={{ printCompact(file.FitChi2,5) }} with an estimated distance to minumum of {{ printCompact(file.EstimatedDistanceToMinimum,5) }}</li>
+{% endif %}
+{% if existsIn(file, "NumberFcnCalls") and existsIn(file, "FitChi2") and existsIn(file,"EstimatedDistanceToMinimum") %}
+  <li>It took {{ file.NumberFcnCalls }} solution trials to reach chi2={{ printCompact(file.FitChi2,5) }} with an estimated distance to minimum of {{ printCompact(file.EstimatedDistanceToMinimum,5) }}</li>
+{% endif %}
 </ul>
 </div>
 ## endfor

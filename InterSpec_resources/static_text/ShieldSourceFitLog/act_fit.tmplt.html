@@ -70,6 +70,26 @@
   Results for {{ Filename }}
   </h1>
 
+
+  {% if HasErrorMessage %}
+  <h2 style="color: red;">Error Message</h2>
+  <div id="error" style="width: 90vw; margin-left: auto; margin-right: auto; margin-bottom: 20px; color: red; border: solid 1px red; padding: 5px;">
+    {{ ErrorMessage }}
+  </div>
+  {% endif %}
+
+
+  {% if HasWarnings %}
+  <h2 style="color: orange;">Warnings</h2>
+  <div id="warnings" style="width: 90vw; margin-left: auto; margin-right: auto; margin-bottom: 20px; color: orange; border: solid 1px orange;">
+## for warning in Warnings
+    <div style="width: 90%; margin-left: auto; margin-right: auto; margin-bottom: 5px; margin-bottom: 5px; border: solid 1px grey; padding: 3px;">
+      {{ warning }}
+    </div>
+## endfor
+  </div>
+  {% endif %}
+
   <div id="specchart" style="height: 30vw; width: 80vw; margin-left: auto; margin-right: auto;">
   </div>
 
@@ -220,7 +240,7 @@
     </li>
     {% endif %}
     
-    {% if Detector %}
+    {% if exists("Detector") %}
     <li>
         Detector:
         <table class="InfoTable">
@@ -244,8 +264,9 @@
             </tr>
         </table>
     </li>
-    {% endif %}
+    {% endif %} <!-- if exists("Detector") -->
     
+    {% if HasFitResults %}
     {% if NumSources > 0 %}
     <li>
         {% if ActShieldFitSetup.FitOptions.InterferenceCorrection %}Allowing multiple nuclides being fit for to potentially contribute to the same photopeak{% else %}Not allowing multiple nuclides being fit for to contribute to the same photopeak{% endif %}
@@ -256,7 +277,8 @@
     <li>
         Branching ratios are being corrected for nuclide decay during measurement.
     </li>    
-    {% endif %}
+    {% endif %} <!-- if ActShieldFitSetup.FitOptions.DecayDuringMeasurement -->
+    {% endif %} <!-- if HasFitResults -->
 
     {% if exists("background") %}
       <li>
@@ -271,6 +293,7 @@
     </ul>
     </div> <!-- <div id="GeneralInfo"> -->
 
+{% if exists("Sources") %}
 <div id="sources" style="margin-top: 25px">
 Sources:
 <table class="ActivitySummary ResultTable">
@@ -312,7 +335,7 @@ Sources:
   </tbody>
 </table>   
 </div> <!-- <div id="sources" style="margin-top: 25px"> -->
-
+{% endif %}
 
 <div id="peaks" style="margin-top: 25px">
   Peaks:
@@ -359,10 +382,9 @@ Sources:
 </tbody>
 </table>
 
-
 </div> <!-- <div id="peaks" style="margin-top: 25px"> -->
 
-
+{% if exists("Sources") %}
 <div id="PeakContributions" style="margin-top: 25px">
 <span style="color: red; font-weight: bold;">(Gamma contribution counts currently not correct!)</span>
 <ul style="list-style-type: none; padding: 0; margin: 0;">
@@ -423,7 +445,7 @@ Sources:
         
 
 </div> <!-- <div id="peaks" style="margin-top: 25px"> -->
-        
+{% endif %}        
 
 
   </div>  <!-- <div id="results" style="margin-top: 15px"> -->
@@ -448,7 +470,7 @@ Sources:
       spec_chart_specchart.setLogY( true );
   </script>
 
-
+{% if exists("Shieldings") %}
 {% if existsIn(Shieldings,"Shields") %}
 ##for shield in Shieldings.Shields
 {% if shield.FitAnyMassFraction %}
@@ -470,14 +492,15 @@ Mass fractions for {{ shield.Name }}:
   </tbody>
 </table>
 </div>
-{% endif %}
+{% endif %} <!-- if shield.FitAnyMassFraction -->
 ##endfor
-{% endif %}
-
+{% endif %} <!-- if existsIn(Shieldings,"Shields") -->
+{% endif %} <!-- if exists("Shieldings") -->
 
 
 <pre>
-{% if exists("Shieldings") and existsIn(Shieldings,"Shields") %}
+{% if exists("Shieldings") %}
+{% if existsIn(Shieldings,"Shields") %}
 Shieldings:
 ## for shield in Shieldings.Shields
 {% if shield.IsGeneric %}
@@ -497,11 +520,16 @@ Shieldings:
 
 ##endfor
 {% endif %}
+{% endif %}
 
+{% if exists("Sources") %}
 ## for src in Sources
 {{ src.Nuclide }} fit activity {{ src.Activity }}{% if src.ActivityIsFit %} with uncertainty {{ src.ActivityUncert }} ({{ src.ActivityUncertPercent }}) {% endif %} at {% if src.AgeIsFit %}assumed {% else %}fit {% endif %} age {{ src.Age }}
 ## endfor
+{% endif %}
+{% if HasFitResults %}
 Geometry: {% if FixedGeometryDetector %}Fixed geometry, {{ ActShieldFitSetup.FixedGeometryType }}.{% else %}{{ ActShieldFitSetup.Geometry }}{% endif %}
+{% endif %}
 {% if exists("Shieldings") %}
 Shieldings:
 {% if exists("Shieldings") and existsIn(Shieldings,"Shields") %}
@@ -520,8 +548,10 @@ Shieldings:
 
 <div style="margin-top: 20px">
 <ul style="list-style-type: none; padding: 0; margin: 0;">
+  {% if HasFitResults %}
   <li>There were {{ NumDof }} parameters fit for</li>
   <li>It took {{ NumberFcnCalls }} solution trials to reach chi2={{ printCompact(FitChi2,5) }} with an estimated distance to minumum of {{ printCompact(EstimatedDistanceToMinimum,5) }}</li>
+  {% endif %}
   <li>Exemplar File: {{ ExemplarFile }}{% if exists("ExemplarSampleNumbers") %}, exemplar samples: {{ ExemplarSampleNumbers }}{% endif %}</li>
   <li>Analysis Performed at: {{ AnalysisTime }}, 
     from CWD=<code>{{CurrentWorkingDirectory}}</code>, 

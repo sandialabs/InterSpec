@@ -3250,7 +3250,10 @@ size_t ShieldingSourceChi2Fcn::setInitialSourceDefinitions(
   
   
   if( src_definitions.size() != numNuclides() )
-    throw runtime_error( "There are not the same number of source definitions as nuclides in peaks being used." );
+    throw runtime_error( "In setting initial source definitions, there are not the same number"
+                        " of source definitions (" + std::to_string(src_definitions.size())
+                        + ") as nuclides (" + std::to_string(numNuclides())
+                        + ") in peaks being used." );
   
   
   size_t num_fit_params = 0;

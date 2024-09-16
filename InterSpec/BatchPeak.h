@@ -75,6 +75,25 @@ namespace BatchPeak
     bool use_existing_background_peaks;
     bool use_exemplar_energy_cal_for_background;
     
+    /** The improvement to the Chi2 of a peak fit required, over just fitting the continuum, to the ROI.
+     
+     A negative or zero value indicates no requirement (and default, since we are asserting peak
+     is likely in the spectrum for batch analysis), and for general peak searching, reasonable
+     values are between ~1 (a weak peak) and ~5 (a significant peak).
+     */
+    double peak_stat_threshold;
+    
+    /** Specifies how well the peak must match in shape to a gaussian in order to keep the peak.
+     
+     The higher this number, the more like a gaussian the fit peak is.
+     It is the ratio of the null hypothesis chi2 (continuum only, no Gaussian),
+     to the test hypothesis (continuum + Gaussian) chi2.
+     A reasonable value for this seems to be ~4.
+     A zero or negative value will mean no requirement, and also no
+     `peak_stat_threshold` requirement.
+     */
+    double peak_hypothesis_threshold;
+    
     /** The directory to allow report template to look in to include other templates.
      If specified, then the standard report directory cant be used.
      */

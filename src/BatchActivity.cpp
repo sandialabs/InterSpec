@@ -63,6 +63,46 @@ using namespace std;
 namespace BatchActivity
 {
 
+const char *BatchActivityFitResult::to_str( const BatchActivityFitResult::ResultCode code )
+{
+  switch( code )
+  {
+    case ResultCode::CouldntInitializeStaticResources:     return "CouldntInitializeStaticResources";
+    case ResultCode::NoExemplar:                           return "NoExemplar";
+    case ResultCode::CouldntOpenExemplar:                  return "CouldntOpenExemplar";
+    case ResultCode::ErrorPickingSpectrumFromExemplar:     return "ErrorPickingSpectrumFromExemplar";
+    case ResultCode::CouldntOpenInputFile:                 return "CouldntOpenInputFile";
+    case ResultCode::CouldntOpenBackgroundFile:            return "CouldntOpenBackgroundFile";
+    case ResultCode::NoInputSrcShieldModel:                return "NoInputSrcShieldModel";
+    case ResultCode::ForegroundSampleNumberUnderSpecified: return "ForegroundSampleNumberUnderSpecified";
+    case ResultCode::BackgroundSampleNumberUnderSpecified: return "BackgroundSampleNumberUnderSpecified";
+    case ResultCode::InvalidLiveTimeForHardBackSub:        return "InvalidLiveTimeForHardBackSub";
+    case ResultCode::SpecifiedDistanceWithFixedGeomDet:    return "SpecifiedDistanceWithFixedGeomDet";
+    case ResultCode::ErrorWithHardBackgroundSubtract:      return "ErrorWithHardBackgroundSubtract";
+    case ResultCode::ErrorApplyingExemplarEneCalToFore:    return "ErrorApplyingExemplarEneCalToFore";
+    case ResultCode::ForegroundPeakFitFailed:              return "ForegroundPeakFitFailed";
+    case ResultCode::BackgroundPeakFitFailed:              return "BackgroundPeakFitFailed";
+    case ResultCode::NoExistingBackgroundPeaks:            return "NoExistingBackgroundPeaks";
+    case ResultCode::NoFitForegroundPeaks:                 return "NoFitForegroundPeaks";
+    case ResultCode::NoDetEffFnct:                         return "NoDetEffFnct";
+    case ResultCode::InvalidDistance:                      return "InvalidDistance";
+    case ResultCode::InvalidGeometry:                      return "InvalidGeometry";
+    case ResultCode::InvalidFitOptions:                    return "InvalidFitOptions";
+    case ResultCode::ExemplarUsedBackSubButNoBackground:   return "ExemplarUsedBackSubButNoBackground";
+    case ResultCode::NoShieldingsNode:                     return "NoShieldingsNode";
+    case ResultCode::ErrorParsingShielding:                return "ErrorParsingShielding";
+    case ResultCode::MissingNuclidesNode:                  return "MissingNuclidesNode";
+    case ResultCode::InvalidNuclideNode:                   return "InvalidNuclideNode";
+    case ResultCode::NoSourceNuclides:                     return "NoSourceNuclides";
+    case ResultCode::FitNotSuccessful:                     return "FitNotSuccessful";
+    case ResultCode::DidNotFitAllSources:                  return "DidNotFitAllSources";
+    case ResultCode::UnknownStatus:                        return "UnknownStatus";
+    case ResultCode::Success:                              return "Success";
+  }//switch( code )
+  
+  return "InvalidResultCode";
+}//const char *BatchActivityFitResult::to_str( const ResultCode code )
+  
 shared_ptr<DetectorPeakResponse> init_drf_from_name( std::string drf_file, std::string drf_name )
 {
   if( drf_file.empty() && drf_name.empty() )
@@ -222,6 +262,244 @@ shared_ptr<DetectorPeakResponse> init_drf_from_name( std::string drf_file, std::
 }//shared_ptr<DetectorPeakResponse> init_drf_from_name( std::string drf_file, std::string drf-name )
   
 
+void add_hist_to_json( nlohmann::json &data,
+                     const bool is_background,
+                     const shared_ptr<const SpecUtils::Measurement> &spec_ptr,
+                     const shared_ptr<const SpecMeas> &spec_file,
+                     const std::set<int> &sample_numbers,
+                     const string &filename,
+                     const shared_ptr<const BatchPeak::BatchPeakFitResult> &peak_fit )
+{
+  if( !spec_ptr )
+    return;
+  
+  const SpecUtils::Measurement &spec = *spec_ptr;
+  
+  const double lt = spec.live_time();
+  const double rt = spec.real_time();
+  const string lt_str = PhysicalUnits::printToBestTimeUnits(lt,3);
+  const string rt_str = PhysicalUnits::printToBestTimeUnits(rt,3);
+  const vector<int> sample_nums( begin(sample_numbers), end(sample_numbers) );
+  
+  D3SpectrumExport::D3SpectrumOptions spec_json_options;
+  if( peak_fit )
+  {
+    const BatchPeak::BatchPeakFitResult &fit_res = *peak_fit;
+    const deque<std::shared_ptr<const PeakDef>> &fore_peaks = fit_res.fit_peaks;
+    const vector<shared_ptr<const PeakDef> > inpeaks( begin(fore_peaks), end(fore_peaks) );
+    spec_json_options.peaks_json = PeakDef::peak_json( inpeaks, spec_ptr );
+  }//if( fit_results.m_peak_fit_results )
+  
+  //spec_json_options.line_color = "rgb(0,0,0)"; //black
+  spec_json_options.peak_color = "rgba(0,51,255,0.6)";
+  spec_json_options.title = "";
+  spec_json_options.display_scale_factor = 1.0;
+  spec_json_options.spectrum_type = SpecUtils::SpectrumType::Foreground;
+  
+  //We will only have foreground or background on this spectrum, so even if we say
+  //  background ID is 2, instead of a negative number, things should be fine
+  const size_t specID = is_background ? 2 : 1;
+  const int backID = is_background ? -1 : 2;
+  
+  stringstream spec_strm;
+  D3SpectrumExport::write_spectrum_data_js( spec_strm, spec, spec_json_options, specID, backID );
+  const string spectrum_json_str = spec_strm.str();
+  
+  nlohmann::json spectrum_json;
+  try
+  {
+    if( !spectrum_json_str.empty() )
+      spectrum_json = nlohmann::json::parse( spectrum_json_str );
+  }catch( std::exception &e )
+  {
+    cerr << "Failed to parse spectrum JSON: " << e.what()
+    << "\n\nJSON: " << spectrum_json_str << endl << endl;
+    assert( 0 );
+  }
+  
+  const char * const label = is_background ? "background" : "foreground";
+  auto &spec_obj = data[label];
+  
+  spec_obj["LiveTime"] = lt_str;
+  spec_obj["RealTime"] = rt_str;
+  spec_obj["LiveTime_s"] = lt;
+  spec_obj["RealTime_s"] = rt;
+  spec_obj["DeadTime"] = PhysicalUnits::printToBestTimeUnits(rt - lt);
+  spec_obj["DeadTime_s"] = (rt - lt)/PhysicalUnits::second;
+  spec_obj["DeadTime_percent"] = 100.0*(rt - lt) / rt;
+  spec_obj["StartTime"] = SpecUtils::to_extended_iso_string( spec.start_time() );
+  spec_obj["StartTime_iso"] = SpecUtils::to_iso_string( spec.start_time() );
+  spec_obj["StartTime_vax"] = SpecUtils::to_vax_string( spec.start_time() );
+  spec_obj["StartTimeIsValid"] = !SpecUtils::is_special( spec.start_time() );
+  spec_obj["LowerSpectrumEnergy"] = spec.gamma_channel_lower(0);
+  spec_obj["UpperSpectrumEnergy"] = spec.gamma_channel_upper(spec.num_gamma_channels() - 1);
+  spec_obj["NumberChannels"] = (int)spec.num_gamma_channels();
+  spec_obj["GammaSum"] = spec.gamma_count_sum();
+  spec_obj["GammaCps"] = (spec.live_time() > 0.0) ? (spec.gamma_count_sum() / spec.live_time()) : -1.0;
+  spec_obj["SampleNumbers"] = sample_nums;
+  //detector names?
+  spec_obj["Filename"] = filename;
+  spec_obj["spectrum"] = spectrum_json;
+  spec_obj["HasGps"] = spec.has_gps_info();
+  if( spec.has_gps_info() )
+  {
+    spec_obj["Longitude"] = spec.longitude();
+    spec_obj["Latitude"] = spec.latitude();
+  }
+  spec_obj["HasNeutrons"] = spec.contained_neutron();
+  if( spec.contained_neutron() )
+  {
+    spec_obj["NeutronCounts"] = spec.neutron_counts_sum();
+    spec_obj["NeutronLiveTime"] = spec.neutron_live_time();
+    spec_obj["NeutronCps"] = spec.neutron_counts_sum() / spec.neutron_live_time();
+  }
+  
+  if( !spec.title().empty() )
+    spec_obj["SpectrumTitle"] = spec.title();
+  
+  //The measured ambient radiation dose equivalent rate value, in microsieverts per hour (μSv/h).
+  if( spec.dose_rate() >= 0.0 )
+    spec_obj["DoseRate_uSvPerHour"] = spec.dose_rate();
+  
+  //The measured radiation exposure rate value, in milliroentgen per hour (mR/h).
+  if( spec.exposure_rate() >= 0.0 )
+    spec_obj["ExposureRate_mRPerHour"] = spec.exposure_rate();
+  
+  if( !spec.detector_type().empty() )
+    spec_obj["DetectorTypeDesc"] = spec.detector_type();
+  
+  if( !spec.detector_name().empty() )
+    spec_obj["DetectorName"] = spec.detector_name();
+  
+  //SourceType source_type() const;
+  
+  if( !spec.remarks().empty() )
+    spec_obj["SpectrumRemarks"] = spec.remarks();
+  
+  if( !spec.parse_warnings().empty() )
+    spec_obj["SpectrumParseWarnings"] = spec.parse_warnings();
+  
+  spec_obj["IsDerivedData"] = (spec.derived_data_properties() != 0);
+  
+  spec_obj["DerivedIoiSum"] = static_cast<bool>(spec.derived_data_properties()
+                                                & static_cast<uint32_t>(SpecUtils::Measurement::DerivedDataProperties::ItemOfInterestSum));
+  spec_obj["DerivedUsedForRidAnalysis"] = static_cast<bool>(spec.derived_data_properties()
+                                                            & static_cast<uint32_t>(SpecUtils::Measurement::DerivedDataProperties::UsedForAnalysis));
+  spec_obj["DerivedProcessedFurther"] = static_cast<bool>(spec.derived_data_properties()
+                                                          & static_cast<uint32_t>(SpecUtils::Measurement::DerivedDataProperties::ProcessedFurther));
+  spec_obj["DerivedBackgroundSub"] = static_cast<bool>(spec.derived_data_properties()
+                                                       & static_cast<uint32_t>(SpecUtils::Measurement::DerivedDataProperties::BackgroundSubtracted));
+  spec_obj["DerivedIsBackground"] = static_cast<bool>(spec.derived_data_properties()
+                                                      & static_cast<uint32_t>(SpecUtils::Measurement::DerivedDataProperties::IsBackground));
+  
+  auto cal = spec.energy_calibration();
+  auto &cal_obj = spec_obj["EnergyCal"];
+  
+  cal_obj["NumChannels"] = cal ? static_cast<int>(cal->num_channels()) : 0;
+  const SpecUtils::EnergyCalType cal_type = cal ? cal->type() : SpecUtils::EnergyCalType::InvalidEquationType;
+  switch( cal_type )
+  {
+    case SpecUtils::EnergyCalType::Polynomial:
+    case SpecUtils::EnergyCalType::UnspecifiedUsingDefaultPolynomial:
+      cal_obj["Type"] = "Polynomial";
+      cal_obj["Coefficients"] = vector<double>{ begin(cal->coefficients()), end(cal->coefficients()) };
+      break;
+      
+    case SpecUtils::EnergyCalType::FullRangeFraction:
+      cal_obj["Type"] = "FullRangeFraction";
+      cal_obj["Coefficients"] = vector<double>{ begin(cal->coefficients()), end(cal->coefficients()) };
+      break;
+    case SpecUtils::EnergyCalType::LowerChannelEdge:
+      cal_obj["Type"] = "LowerChannelEdge";
+      break;
+    case SpecUtils::EnergyCalType::InvalidEquationType:
+      cal_obj["Type"] = "Invalid";
+      break;
+  }//switch( cal->type() )
+  
+  if( cal && !cal->deviation_pairs().empty() )
+  {
+    vector<vector<double>> pairs;
+    for( const pair<float,float> &p : cal->deviation_pairs() )
+      pairs.push_back( { static_cast<double>(p.first), static_cast<double>(p.second) } );
+    cal_obj["DeviationPairs"] = pairs;
+  }//if( dev pairs )
+  
+  if( spec_file )
+  {
+    spec_obj["InstrumentModel"] = spec_file->instrument_model();
+    spec_obj["SerialNumber"] = spec_file->instrument_id();
+    spec_obj["Manufacturer"] = spec_file->manufacturer();
+    spec_obj["InstrumentType"] = spec_file->instrument_type();
+    spec_obj["DetectorType"] = SpecUtils::detectorTypeToString( spec_file->detector_type() );
+    spec_obj["NumberRecordsInFile"] = static_cast<int>( spec_file->num_measurements() );
+    spec_obj["RemarksInFile"] = spec_file->remarks();
+    spec_obj["ParseWarningsForFile"] = spec_file->parse_warnings();
+    
+    spec_obj["HasInstrumentRid"] = !!spec_file->detectors_analysis();
+    if( spec_file->detectors_analysis() )
+      spec_obj["InstrumentRidSummary"] = riidAnaSummary( spec_file );
+  }//if( spec_file )
+}//add_hist_to_json(...)
+  
+  
+void add_peak_fit_options_to_json( nlohmann::json &data, const BatchPeak::BatchPeakFitOptions &options )
+{
+  auto &options_obj = data["PeakFitOptions"];
+  options_obj["RefitEnergyCal"] = options.refit_energy_cal;
+  options_obj["UseExemplarEnergyCal"] = options.use_exemplar_energy_cal;
+  options_obj["WriteN42WithResults"] = options.write_n42_with_results;
+  options_obj["ShowNonFitPeaks"] = options.show_nonfit_peaks;
+  options_obj["OutputDir"] = options.output_dir;
+  options_obj["CreateCsvOutput"] = options.create_csv_output;
+  options_obj["OverwriteOutputFiles"] = options.overwrite_output_files;
+  
+  if( !options.background_subtract_file.empty() )
+  {
+    options_obj["BackgroundSubFile"] = options.background_subtract_file;
+    if( !options.background_subtract_samples.empty() )
+    {
+      options_obj["BackgroundSubSamples"] = vector<int>{ begin(options.background_subtract_samples),
+        end(options.background_subtract_samples)
+      };
+    }
+    options_obj["UsedExistingBackgroundPeak"] = options.use_existing_background_peaks;
+    options_obj["UseExemplarEnergyCalForBackground"] = options.use_exemplar_energy_cal_for_background;
+  }//if( !options.background_subtract_file.empty() )
+  
+  options_obj["ReportTemplateIncludeDir"] = options.template_include_dir;
+  options_obj["ReportTemplates"] = options.report_templates;
+  options_obj["ReportSummaryTemplates"] = options.summary_report_templates;
+  options_obj["PeakStatThreshold"] = options.peak_stat_threshold;
+  options_obj["PeakShapeThreshold"] = options.peak_hypothesis_threshold;
+}//add_peak_fit_options_to_json(...)
+  
+  
+void add_activity_fit_options_to_json( nlohmann::json &data,
+                                    const BatchActivity::BatchActivityFitOptions &options )
+{
+  add_peak_fit_options_to_json( data, options );
+  
+  auto &options_obj = data["PeakFitOptions"];
+  
+  const bool overiding_dist = options.distance_override.has_value();
+  options_obj["IsSpecifyingDistance"] = overiding_dist;
+  if( overiding_dist )
+  {
+    const double dist = options.distance_override.value();
+    options_obj["SpecifiedDistance_m"] = dist / PhysicalUnits::m;
+    options_obj["SpecifiedDistance_cm"] = dist / PhysicalUnits::cm;
+    options_obj["SpecifiedDistance"] = PhysicalUnits::printToBestLengthUnits( dist, 6 );
+  }
+  
+  options_obj["UseBq"] = options.use_bq;
+  options_obj["IsSpecifyingDetector"] = !!options.drf_override;
+  if( options.drf_override )
+    options_obj["SpecifiedDetectorName"] = options.drf_override->name();
+  
+  options_obj["HardBackgroundSubtracted"] = !!options.hard_background_sub;
+}//add_activity_fit_options_to_json(...)
+  
   
   // Adds the basic direct info on a source (nuclide name, activity, age, etc), but does not
   //  Add which peaks it contributes to, or any information on gammas
@@ -574,18 +852,12 @@ void shield_src_fit_results_to_json( const ShieldingSourceFitCalc::ModelFitResul
                                     const bool useBq,
                                     nlohmann::json &data )
 {
-  // Some info about the compiled application
-  add_exe_info_to_json( data );
-  
-  //Now add info about the analysis setup
-  add_fit_options_to_json( results.options, results.distance, results.geometry, drf, data );
-  
-  
   const DetectorPeakResponse::EffGeometryType eff_type = drf ? drf->geometryType()
                                               : DetectorPeakResponse::EffGeometryType::FarField;
   
   const string act_postfix = DetectorPeakResponse::det_eff_geom_type_postfix(eff_type);
   
+  add_fit_options_to_json( results.options, results.distance, results.geometry, drf, data );
   
   // Now put in results
   data["FitChi2"] = results.chi2;
@@ -1275,508 +1547,296 @@ void fit_activities_in_files( const std::string &exemplar_filename,
     }//if( !set_setup_info_to_summary_json )
     
     
-    assert( (fit_results.m_result_code != BatchActivity::BatchActivityFitResult::ResultCode::Success)
-             || fit_results.m_fit_results );
+    // The goal is to create a template that prints out the exact same info as as the current GUI
+    //  log file, and then upgrade from this to hit HTML with the charts and peak fits and stuff.
+    nlohmann::json data;
     
-    if( (fit_results.m_result_code == BatchActivity::BatchActivityFitResult::ResultCode::Success)
-       && fit_results.m_fit_results )
+    data["ExemplarFile"] = exemplar_filename;
+    if( !exemplar_sample_nums.empty() )
+      data["ExemplarSampleNumbers"] = vector<int>{begin(exemplar_sample_nums), end(exemplar_sample_nums)};
+    data["Filepath"] = filename;
+    data["Filename"] = SpecUtils::filename( filename );
+    data["ParentDir"] = SpecUtils::parent_path( filename );
+    data["HasWarnings"] = !fit_results.m_warnings.empty();
+    data["Warnings"] = fit_results.m_warnings;
+    
+    data["HasErrorMessage"] = !fit_results.m_error_msg.empty();
+    if( !fit_results.m_error_msg.empty() )
+      data["ErrorMessage"] = fit_results.m_error_msg;
+    data["ResultCodeInt"] = static_cast<int>( fit_results.m_result_code );
+    data["ResultCode"] = BatchActivityFitResult::to_str( fit_results.m_result_code );
+    //m_background_file, m_background_sample_numbers
+    
+    
+    if( fit_results.m_foreground )
     {
+      add_hist_to_json( data, false, fit_results.m_foreground,
+                       fit_results.m_foreground_file,
+                       fit_results.m_foreground_sample_numbers, fit_results.m_filename,
+                       fit_results.m_peak_fit_results );
+    }//if( fit_results.m_foreground )
+    
+    if( fit_results.m_background && !fit_results.m_options.hard_background_sub )
+    {
+      string filename = fit_results.m_background_file ? fit_results.m_background_file->filename()
+                        : string();
       
-      const bool useBq = InterSpecUser::preferenceValue<bool>( "DisplayBecquerel", InterSpec::instance() );
+      // We'll only add background file info, if different than foreground file
+      shared_ptr<const SpecMeas> back_file = (fit_results.m_background_file != fit_results.m_foreground_file)
+                                                      ? fit_results.m_background_file : nullptr;
       
-      cout << "Success analyzing '" << filename << "'!" << endl;
-      assert( fit_results.m_fit_results );
+      add_hist_to_json( data, true, fit_results.m_background,
+                       back_file,
+                       fit_results.m_background_sample_numbers, filename,
+                       fit_results.m_background_peak_fit_results );
       
-      // The goal is to create a template that prints out the exact same info as as the current GUI
-      //  log file, and then upgrade from this to hit HTML with the charts and peak fits and stuff.
-      nlohmann::json data;
-      
-      data["ExemplarFile"] = exemplar_filename;
-      if( !exemplar_sample_nums.empty() )
-        data["ExemplarSampleNumbers"] = vector<int>{begin(exemplar_sample_nums), end(exemplar_sample_nums)};
-      
-      auto add_hist_to_json = []( nlohmann::json &data,
-                         const bool is_background,
-                         const shared_ptr<const SpecUtils::Measurement> &spec_ptr,
-                         const shared_ptr<const SpecMeas> &spec_file,
-                         const std::set<int> &sample_numbers,
-                         const string &filename,
-                         const shared_ptr<const BatchPeak::BatchPeakFitResult> &peak_fit ){
-        if( !spec_ptr )
-          return;
-        
-        const SpecUtils::Measurement &spec = *spec_ptr;
-        
-        const double lt = spec.live_time();
-        const double rt = spec.real_time();
-        const string lt_str = PhysicalUnits::printToBestTimeUnits(lt,3);
-        const string rt_str = PhysicalUnits::printToBestTimeUnits(rt,3);
-        const vector<int> sample_nums( begin(sample_numbers), end(sample_numbers) );
-        
-        D3SpectrumExport::D3SpectrumOptions spec_json_options;
-        if( peak_fit )
-        {
-          const BatchPeak::BatchPeakFitResult &fit_res = *peak_fit;
-          const deque<std::shared_ptr<const PeakDef>> &fore_peaks = fit_res.fit_peaks;
-          const vector<shared_ptr<const PeakDef> > inpeaks( begin(fore_peaks), end(fore_peaks) );
-          spec_json_options.peaks_json = PeakDef::peak_json( inpeaks, spec_ptr );
-        }//if( fit_results.m_peak_fit_results )
-        
-        //spec_json_options.line_color = "rgb(0,0,0)"; //black
-        spec_json_options.peak_color = "rgba(0,51,255,0.6)";
-        spec_json_options.title = "";
-        spec_json_options.display_scale_factor = 1.0;
-        spec_json_options.spectrum_type = SpecUtils::SpectrumType::Foreground;
-        
-        //We will only have foreground or background on this spectrum, so even if we say
-        //  background ID is 2, instead of a negative number, things should be fine
-        const size_t specID = is_background ? 2 : 1;
-        const int backID = is_background ? -1 : 2;
-        
-        stringstream spec_strm;
-        D3SpectrumExport::write_spectrum_data_js( spec_strm, spec, spec_json_options, specID, backID );
-        const string spectrum_json_str = spec_strm.str();
-        
-        nlohmann::json spectrum_json;
-        try
-        {
-          if( !spectrum_json_str.empty() )
-            spectrum_json = nlohmann::json::parse( spectrum_json_str );
-        }catch( std::exception &e )
-        {
-          cerr << "Failed to parse spectrum JSON: " << e.what()
-          << "\n\nJSON: " << spectrum_json_str << endl << endl;
-          assert( 0 );
-        }
-        
-        const char * const label = is_background ? "background" : "foreground";
-        auto &spec_obj = data[label];
-        
-        spec_obj["LiveTime"] = lt_str;
-        spec_obj["RealTime"] = rt_str;
-        spec_obj["LiveTime_s"] = lt;
-        spec_obj["RealTime_s"] = rt;
-        spec_obj["DeadTime"] = PhysicalUnits::printToBestTimeUnits(rt - lt);
-        spec_obj["DeadTime_s"] = (rt - lt)/PhysicalUnits::second;
-        spec_obj["DeadTime_percent"] = 100.0*(rt - lt) / rt;
-        spec_obj["StartTime"] = SpecUtils::to_extended_iso_string( spec.start_time() );
-        spec_obj["StartTime_iso"] = SpecUtils::to_iso_string( spec.start_time() );
-        spec_obj["StartTime_vax"] = SpecUtils::to_vax_string( spec.start_time() );
-        spec_obj["StartTimeIsValid"] = !SpecUtils::is_special( spec.start_time() );
-        spec_obj["LowerSpectrumEnergy"] = spec.gamma_channel_lower(0);
-        spec_obj["UpperSpectrumEnergy"] = spec.gamma_channel_upper(spec.num_gamma_channels() - 1);
-        spec_obj["NumberChannels"] = (int)spec.num_gamma_channels();
-        spec_obj["GammaSum"] = spec.gamma_count_sum();
-        spec_obj["GammaCps"] = (spec.live_time() > 0.0) ? (spec.gamma_count_sum() / spec.live_time()) : -1.0;
-        spec_obj["SampleNumbers"] = sample_nums;
-        //detector names?
-        spec_obj["Filename"] = filename;
-        spec_obj["spectrum"] = spectrum_json;
-        spec_obj["HasGps"] = spec.has_gps_info();
-        if( spec.has_gps_info() )
-        {
-          spec_obj["Longitude"] = spec.longitude();
-          spec_obj["Latitude"] = spec.latitude();
-        }
-        spec_obj["HasNeutrons"] = spec.contained_neutron();
-        if( spec.contained_neutron() )
-        {
-          spec_obj["NeutronCounts"] = spec.neutron_counts_sum();
-          spec_obj["NeutronLiveTime"] = spec.neutron_live_time();
-          spec_obj["NeutronCps"] = spec.neutron_counts_sum() / spec.neutron_live_time();
-        }
-        
-        if( !spec.title().empty() )
-          spec_obj["SpectrumTitle"] = spec.title();
-        
-        //The measured ambient radiation dose equivalent rate value, in microsieverts per hour (μSv/h).
-        if( spec.dose_rate() >= 0.0 )
-          spec_obj["DoseRate_uSvPerHour"] = spec.dose_rate();
-        
-        //The measured radiation exposure rate value, in milliroentgen per hour (mR/h).
-        if( spec.exposure_rate() >= 0.0 )
-          spec_obj["ExposureRate_mRPerHour"] = spec.exposure_rate();
-        
-        if( !spec.detector_type().empty() )
-          spec_obj["DetectorTypeDesc"] = spec.detector_type();
-        
-        if( !spec.detector_name().empty() )
-          spec_obj["DetectorName"] = spec.detector_name();
-        
-        //SourceType source_type() const;
-        
-        if( !spec.remarks().empty() )
-          spec_obj["SpectrumRemarks"] = spec.remarks();
-        
-        if( !spec.parse_warnings().empty() )
-          spec_obj["SpectrumParseWarnings"] = spec.parse_warnings();
-        
-        spec_obj["IsDerivedData"] = (spec.derived_data_properties() != 0);
-        
-        spec_obj["DerivedIoiSum"] = static_cast<bool>(spec.derived_data_properties() 
-                              & static_cast<uint32_t>(SpecUtils::Measurement::DerivedDataProperties::ItemOfInterestSum));
-        spec_obj["DerivedUsedForRidAnalysis"] = static_cast<bool>(spec.derived_data_properties()
-                              & static_cast<uint32_t>(SpecUtils::Measurement::DerivedDataProperties::UsedForAnalysis));
-        spec_obj["DerivedProcessedFurther"] = static_cast<bool>(spec.derived_data_properties()
-                              & static_cast<uint32_t>(SpecUtils::Measurement::DerivedDataProperties::ProcessedFurther));
-        spec_obj["DerivedBackgroundSub"] = static_cast<bool>(spec.derived_data_properties()
-                              & static_cast<uint32_t>(SpecUtils::Measurement::DerivedDataProperties::BackgroundSubtracted));
-        spec_obj["DerivedIsBackground"] = static_cast<bool>(spec.derived_data_properties()
-                              & static_cast<uint32_t>(SpecUtils::Measurement::DerivedDataProperties::IsBackground));
-          
-        auto cal = spec.energy_calibration();
-        auto &cal_obj = spec_obj["EnergyCal"];
-        
-        cal_obj["NumChannels"] = cal ? static_cast<int>(cal->num_channels()) : 0;
-        const SpecUtils::EnergyCalType cal_type = cal ? cal->type() : SpecUtils::EnergyCalType::InvalidEquationType;
-        switch( cal_type )
-        {
-          case SpecUtils::EnergyCalType::Polynomial:
-          case SpecUtils::EnergyCalType::UnspecifiedUsingDefaultPolynomial:
-            cal_obj["Type"] = "Polynomial";
-            cal_obj["Coefficients"] = vector<double>{ begin(cal->coefficients()), end(cal->coefficients()) };
-            break;
-            
-          case SpecUtils::EnergyCalType::FullRangeFraction:
-            cal_obj["Type"] = "FullRangeFraction";
-            cal_obj["Coefficients"] = vector<double>{ begin(cal->coefficients()), end(cal->coefficients()) };
-            break;
-          case SpecUtils::EnergyCalType::LowerChannelEdge:
-            cal_obj["Type"] = "LowerChannelEdge";
-            break;
-          case SpecUtils::EnergyCalType::InvalidEquationType:
-            cal_obj["Type"] = "Invalid";
-            break;
-        }//switch( cal->type() )
-        
-        if( cal && !cal->deviation_pairs().empty() )
-        {
-          vector<vector<double>> pairs;
-          for( const pair<float,float> &p : cal->deviation_pairs() )
-            pairs.push_back( { static_cast<double>(p.first), static_cast<double>(p.second) } );
-          cal_obj["DeviationPairs"] = pairs;
-        }//if( dev pairs )
-        
-        if( spec_file )
-        {
-          spec_obj["InstrumentModel"] = spec_file->instrument_model();
-          spec_obj["SerialNumber"] = spec_file->instrument_id();
-          spec_obj["Manufacturer"] = spec_file->manufacturer();
-          spec_obj["InstrumentType"] = spec_file->instrument_type();
-          spec_obj["DetectorType"] = SpecUtils::detectorTypeToString( spec_file->detector_type() );
-          spec_obj["NumberRecordsInFile"] = static_cast<int>( spec_file->num_measurements() );
-          spec_obj["RemarksInFile"] = spec_file->remarks();
-          spec_obj["ParseWarningsForFile"] = spec_file->parse_warnings();
-          
-          spec_obj["HasInstrumentRid"] = !!spec_file->detectors_analysis();
-          if( spec_file->detectors_analysis() )
-            spec_obj["InstrumentRidSummary"] = riidAnaSummary( spec_file );
-        }//if( spec_file )
-      };//add_hist_to_json(...)
-      
-      const auto add_peak_fit_options_to_json = []( nlohmann::json &data, const BatchPeak::BatchPeakFitOptions &options ){
-        auto &options_obj = data["PeakFitOptions"];
-        options_obj["RefitEnergyCal"] = options.refit_energy_cal;
-        options_obj["UseExemplarEnergyCal"] = options.use_exemplar_energy_cal;
-        options_obj["WriteN42WithResults"] = options.write_n42_with_results;
-        options_obj["ShowNonFitPeaks"] = options.show_nonfit_peaks;
-        options_obj["OutputDir"] = options.output_dir;
-        options_obj["CreateCsvOutput"] = options.create_csv_output;
-        options_obj["OverwriteOutputFiles"] = options.overwrite_output_files;
-        
-        if( !options.background_subtract_file.empty() )
-        {
-          options_obj["BackgroundSubFile"] = options.background_subtract_file;
-          if( !options.background_subtract_samples.empty() )
-          {
-            options_obj["BackgroundSubSamples"] = vector<int>{ begin(options.background_subtract_samples),
-              end(options.background_subtract_samples)
-            };
-          }
-          options_obj["UsedExistingBackgroundPeak"] = options.use_existing_background_peaks;
-          options_obj["UseExemplarEnergyCalForBackground"] = options.use_exemplar_energy_cal_for_background;
-        }//if( !options.background_subtract_file.empty() )
-        
-        options_obj["ReportTemplateIncludeDir"] = options.template_include_dir;
-        options_obj["ReportTemplates"] = options.report_templates;
-        options_obj["ReportSummaryTemplates"] = options.summary_report_templates;
-      };//add_peak_fit_options_to_json( lambda )
-      
-      
-      auto add_activity_fit_options_to_json = [&add_peak_fit_options_to_json]( nlohmann::json &data,
-                                        const BatchActivity::BatchActivityFitOptions &options ) {
-        
-        add_peak_fit_options_to_json( data, options );
-        
-        auto &options_obj = data["PeakFitOptions"];
-        
-        const bool overiding_dist = options.distance_override.has_value();
-        options_obj["IsSpecifyingDistance"] = overiding_dist;
-        if( overiding_dist )
-        {
-          const double dist = options.distance_override.value();
-          options_obj["SpecifiedDistance_m"] = dist / PhysicalUnits::m;
-          options_obj["SpecifiedDistance_cm"] = dist / PhysicalUnits::cm;
-          options_obj["SpecifiedDistance"] = PhysicalUnits::printToBestLengthUnits( dist, 6 );
-        }
-        
-        options_obj["UseBq"] = options.use_bq;
-        options_obj["IsSpecifyingDetector"] = !!options.drf_override;
-        if( options.drf_override )
-          options_obj["SpecifiedDetectorName"] = options.drf_override->name();
-        
-        options_obj["HardBackgroundSubtracted"] = !!options.hard_background_sub;
-      };//add_activity_fit_options_to_json( lambda )
-      
-      
-      if( fit_results.m_foreground )
-      {
-        add_hist_to_json( data, false, fit_results.m_foreground,
-                         fit_results.m_foreground_file,
-                         fit_results.m_foreground_sample_numbers, fit_results.m_filename,
-                         fit_results.m_peak_fit_results );
-      }//if( fit_results.m_foreground )
-      
-      if( fit_results.m_background && !fit_results.m_options.hard_background_sub )
-      {
-        string filename = fit_results.m_background_file ? fit_results.m_background_file->filename() 
-                          : string();
-        
-        // We'll only add background file info, if different than foreground file
-        shared_ptr<const SpecMeas> back_file = (fit_results.m_background_file != fit_results.m_foreground_file)
-                                                        ? fit_results.m_background_file : nullptr;
-        
-        add_hist_to_json( data, true, fit_results.m_background,
-                         back_file,
-                         fit_results.m_background_sample_numbers, filename,
-                         fit_results.m_background_peak_fit_results );
-        
-        data["background"]["Normalization"] = fit_results.m_foreground->live_time() / fit_results.m_background->live_time();
-      }//if( fit_results.m_background )
-      
-      
-      add_activity_fit_options_to_json( data, fit_results.m_options );
-      
-      shared_ptr<const DetectorPeakResponse> drf = fit_results.m_options.drf_override;
-      if( !drf && fit_results.m_exemplar_file )
-        drf = fit_results.m_exemplar_file->detector();
-      const bool use_bq = fit_results.m_options.use_bq;
-      
-      shield_src_fit_results_to_json( *fit_results.m_fit_results, drf, use_bq, data );
-      
-      data["Filepath"] = filename;
-      data["Filename"] = SpecUtils::filename( filename );
-      data["ParentDir"] = SpecUtils::parent_path( filename );
-      
-      
-      summary_json["Files"].push_back( data );
-      
-      //std::cout << std::setw(4) << data << std::endl;
-      
+      data["background"]["Normalization"] = fit_results.m_foreground->live_time() / fit_results.m_background->live_time();
+    }//if( fit_results.m_background )
+  
+    
+    add_activity_fit_options_to_json( data, fit_results.m_options );
+    
+    
 #if( SpecUtils_ENABLE_D3_CHART )
       data["D3_JS"] = d3_js;
       data["SpectrumChart_JS"] = sc_js;
       data["SpectrumChart_CSS"] = sc_css;
 #endif // SpecUtils_ENABLE_D3_CHART
-      
-      
-      for( string tmplt : options.report_templates )
-      {
-        try
-        {
-          string rpt;
-          
-          if( SpecUtils::iequals_ascii(tmplt, "txt" ) )
-          {
-            rpt = env.render("{% include \"default-act-fit-txt-results\" %}", data);
-          }else if( SpecUtils::iequals_ascii(tmplt, "html" ) )
-          {
-            rpt = env.render("{% include \"default-act-fit-html-results\" %}", data);
-          }else
-          {
-            const bool is_in_inc = SpecUtils::is_file( SpecUtils::append_path(tmplt_dir, tmplt) );
-            
-            inja::Template injatmplt;
-            if( is_in_inc )
-            {
-              injatmplt = env.parse_template( tmplt );
-            }else
-            {
-              bool is_file = SpecUtils::is_file( tmplt );
-              if( !is_file )
-              {
-                const string tmplt_in_def_path = SpecUtils::append_path(default_tmplt_dir, tmplt);
-                
-                is_file = SpecUtils::is_file( tmplt_in_def_path );
-                
-#if( !ANDROID && !IOS && !BUILD_FOR_WEB_DEPLOYMENT )
-                // TODO: consider using `AppUtils::locate_file(...)` to find the file
-#endif
-                
-                if( !is_file )
-                  throw runtime_error( "Could not find template file '" + tmplt + "'."
-                                      " Please specify full path to file, or use the"
-                                      " 'report-template-include-dir' option to specify"
-                                      " directory where reports are located." );
-                tmplt = tmplt_in_def_path;
-              }
-                
-              inja::Environment sub_env;
-              sub_env.add_callback( "printFixed", 2, printFixed );
-              sub_env.add_callback( "printCompact", 2, printCompact );
-              injatmplt = sub_env.parse_template( tmplt );
-            }//
-            
-            rpt = env.render( injatmplt, data );
-          }//if( default report format ) / else
-          
-          if( options.to_stdout && !SpecUtils::iequals_ascii(tmplt, "html" ) )
-            cout << "\n\n" << rpt << endl << endl;
-          
-          if( !options.output_dir.empty() )
-          {
-            const string out_file = output_filename( filename, tmplt );
-            
-            if( SpecUtils::is_file(out_file) && !options.overwrite_output_files )
-            {
-              warnings.push_back( "Not writing '" + out_file + "', as it would overwrite a file."
-                                 " See the '--overwrite-output-files' option to force writing." );
-            }else
-            {
-#ifdef _WIN32
-              const std::wstring woutcsv = SpecUtils::convert_from_utf8_to_utf16(out_file);
-              std::ofstream output( woutcsv.c_str(), ios::binary | ios::out );
-#else
-              std::ofstream output( out_file.c_str(), ios::binary | ios::out);
-#endif
-              if( !output )
-                warnings.push_back( "Failed to open report output '" + out_file + "', for writing.");
-              else
-                output.write( rpt.c_str(), rpt.size() );
-            }//if( is file ) / else write file
-          }//if( !options.output_dir.empty() )
-        }catch( inja::InjaError &e )
-        {
-          const string msg = "Error templating results (" + e.type + ": line "
-          + std::to_string(e.location.line) + ", column " + std::to_string(e.location.column)
-          + " of '" + tmplt + "'): " + e.message + ". While processing '" + filename + "'.";
-          
-          cerr << msg << endl;
-          warnings.push_back( msg );
-        }catch( std::exception &e )
-        {
-          cerr << "Error templating results: " << e.what() << endl;
-          warnings.push_back( "Error templating results: " + string(e.what()) );
-        }
-      }//for( const string &tmplt : options.report_templates )
-      
-      
+    
+    const bool success = ((fit_results.m_result_code == BatchActivity::BatchActivityFitResult::ResultCode::Success)
+                          && fit_results.m_fit_results);
+    if( success )
+    {
+      cout << "Success analyzing '" << filename << "'!" << endl;
+      assert( fit_results.m_fit_results );
       assert( fit_results.m_peak_fit_results && fit_results.m_peak_fit_results->measurement );
+    }else
+    {
+      cout << "Failure analyzing '" << filename << "': " << fit_results.m_error_msg << endl;
+      warnings.push_back( "Failed in analyzing '" + filename + "': " + fit_results.m_error_msg );
+    }
+    
+    data["Success"] = success;
+    
+    assert( (fit_results.m_result_code != BatchActivity::BatchActivityFitResult::ResultCode::Success)
+             || fit_results.m_fit_results );
+    
+    const bool useBq = InterSpecUser::preferenceValue<bool>( "DisplayBecquerel", InterSpec::instance() );
+    
+    
+    shared_ptr<const DetectorPeakResponse> drf = fit_results.m_options.drf_override;
+    if( !drf && fit_results.m_exemplar_file )
+      drf = fit_results.m_exemplar_file->detector();
+    const bool use_bq = fit_results.m_options.use_bq;
       
-      if( options.write_n42_with_results && fit_results.m_peak_fit_results
-         && fit_results.m_peak_fit_results->measurement )
+    // Some info about the compiled application
+    add_exe_info_to_json( data );
+    
+    //Now add info about the analysis setup
+    data["HasFitResults"] = !!fit_results.m_fit_results;
+    if( fit_results.m_fit_results )
+      shield_src_fit_results_to_json( *fit_results.m_fit_results, drf, use_bq, data );
+      
+    for( string tmplt : options.report_templates )
+    {
+      try
       {
-        // TODO: need to have `fit_activities_in_file` add peaks and shielding model to a file,
-        //       perhaps in `fit_results.m_peak_fit_results->measurement`, or maybe better yet,
-        //       create whole new std::shared_ptr<SpecMeas> in BatchActivityFitResult
-        const string message = "Written N42 file does not currently have Act/Shielding model"
-        " written to it, only fit peaks, sorry - will.";
-        cerr << message << endl;
-        if( std::find(begin(warnings), end(warnings), message) == end(warnings) )
-          warnings.push_back( message );
+        string rpt;
         
-        const BatchPeak::BatchPeakFitResult &peak_fit_results = *fit_results.m_peak_fit_results;
-        assert( peak_fit_results.measurement );
-        
-        string outn42 = SpecUtils::append_path(options.output_dir, SpecUtils::filename(filename) );
-        if( !SpecUtils::iequals_ascii(SpecUtils::file_extension(filename), ".n42") )
-          outn42 += ".n42";
-        
-        if( SpecUtils::is_file(outn42) && !options.overwrite_output_files )
+        if( SpecUtils::iequals_ascii(tmplt, "txt" ) )
         {
-          warnings.push_back( "Not writing '" + outn42 + "', as it would overwrite a file."
-                             " See the '--overwrite-output-files' option to force writing." );
+          rpt = env.render("{% include \"default-act-fit-txt-results\" %}", data);
+        }else if( SpecUtils::iequals_ascii(tmplt, "html" ) )
+        {
+          rpt = env.render("{% include \"default-act-fit-html-results\" %}", data);
         }else
         {
-          if( !peak_fit_results.measurement->save2012N42File( outn42 ) )
-            warnings.push_back( "Failed to write '" + outn42 + "'.");
-          else
-            cout << "Have written '" << outn42 << "' with peaks" << endl;
-        }
-      }//if( options.write_n42_with_results )
-       
-      
-      if( fit_results.m_peak_fit_results )
-      {
-        const BatchPeak::BatchPeakFitResult &peak_fit_res = *fit_results.m_peak_fit_results;
-        deque<shared_ptr<const PeakDef>> fit_peaks = peak_fit_res.fit_peaks;
-        if( options.show_nonfit_peaks )
-        {
-          for( const auto p : peak_fit_res.unfit_exemplar_peaks )
-          {
-            auto np = make_shared<PeakDef>(*p);
-            np->setAmplitude( 0.0 );
-            np->setAmplitudeUncert( 0.0 );
-            np->setSigmaUncert( 0.0 );
-            auto cont = make_shared<PeakContinuum>( *np->continuum() );
-            const size_t num_cont_pars = PeakContinuum::num_parameters(cont->type());
-            for( size_t i = 0; i < num_cont_pars; ++i )
-            {
-              cont->setPolynomialCoef( i, 0.0 );
-              cont->setPolynomialUncert( i, -1.0 );
-            }
-            np->setContinuum( cont );
-            np->set_coefficient( -1.0, PeakDef::Chi2DOF );
-            fit_peaks.push_back(np);
-          }
-          std::sort( begin(fit_peaks), end(fit_peaks), &PeakDef::lessThanByMeanShrdPtr );
-        }//if( make_nonfit_peaks_zero )
-        
-        
-        if( !options.output_dir.empty() && options.create_csv_output )
-        {
-          const string leaf_name = SpecUtils::filename(filename);
-          string outcsv = SpecUtils::append_path(options.output_dir, leaf_name) + "_peaks.CSV";
+          const bool is_in_inc = SpecUtils::is_file( SpecUtils::append_path(tmplt_dir, tmplt) );
           
-          if( SpecUtils::is_file(outcsv) && !options.overwrite_output_files )
+          inja::Template injatmplt;
+          if( is_in_inc )
           {
-            warnings.push_back( "Not writing '" + outcsv + "', as it would overwrite a file."
+            injatmplt = env.parse_template( tmplt );
+          }else
+          {
+            bool is_file = SpecUtils::is_file( tmplt );
+            if( !is_file )
+            {
+              const string tmplt_in_def_path = SpecUtils::append_path(default_tmplt_dir, tmplt);
+              
+              is_file = SpecUtils::is_file( tmplt_in_def_path );
+              
+#if( !ANDROID && !IOS && !BUILD_FOR_WEB_DEPLOYMENT )
+              // TODO: consider using `AppUtils::locate_file(...)` to find the file
+#endif
+              
+              if( !is_file )
+                throw runtime_error( "Could not find template file '" + tmplt + "'."
+                                    " Please specify full path to file, or use the"
+                                    " 'report-template-include-dir' option to specify"
+                                    " directory where reports are located." );
+              tmplt = tmplt_in_def_path;
+            }
+            
+            inja::Environment sub_env;
+            sub_env.add_callback( "printFixed", 2, printFixed );
+            sub_env.add_callback( "printCompact", 2, printCompact );
+            injatmplt = sub_env.parse_template( tmplt );
+          }//
+          
+          rpt = env.render( injatmplt, data );
+        }//if( default report format ) / else
+        
+        if( options.to_stdout && !SpecUtils::iequals_ascii(tmplt, "html" ) )
+          cout << "\n\n" << rpt << endl << endl;
+        
+        if( !options.output_dir.empty() )
+        {
+          const string out_file = output_filename( filename, tmplt );
+          
+          if( SpecUtils::is_file(out_file) && !options.overwrite_output_files )
+          {
+            warnings.push_back( "Not writing '" + out_file + "', as it would overwrite a file."
                                " See the '--overwrite-output-files' option to force writing." );
           }else
           {
 #ifdef _WIN32
-            const std::wstring woutcsv = SpecUtils::convert_from_utf8_to_utf16(outcsv);
-            std::ofstream output_csv( woutcsv.c_str(), ios::binary | ios::out );
+            const std::wstring woutcsv = SpecUtils::convert_from_utf8_to_utf16(out_file);
+            std::ofstream output( woutcsv.c_str(), ios::binary | ios::out );
 #else
-            std::ofstream output_csv( outcsv.c_str(), ios::binary | ios::out );
+            std::ofstream output( out_file.c_str(), ios::binary | ios::out);
 #endif
-            
-            if( !output_csv )
-            {
-              warnings.push_back( "Failed to open '" + outcsv + "', for writing.");
-            }else
-            {
-              PeakModel::write_peak_csv( output_csv, leaf_name, PeakModel::PeakCsvType::Full,
-                                        fit_peaks, peak_fit_res.spectrum );
-              cout << "Have written '" << outcsv << "'" << endl;
-            }
-          }//if( SpecUtils::is_file( outcsv ) ) / else
+            if( !output )
+              warnings.push_back( "Failed to open report output '" + out_file + "', for writing.");
+            else
+              output.write( rpt.c_str(), rpt.size() );
+          }//if( is file ) / else write file
         }//if( !options.output_dir.empty() )
+      }catch( inja::InjaError &e )
+      {
+        const string msg = "Error templating results (" + e.type + ": line "
+        + std::to_string(e.location.line) + ", column " + std::to_string(e.location.column)
+        + " of '" + tmplt + "'): " + e.message + ". While processing '" + filename + "'.";
         
-        if( options.to_stdout )
-        {
-          const string leaf_name = SpecUtils::filename(filename);
-          cout << "peaks for '" << leaf_name << "':" << endl;
-          PeakModel::write_peak_csv( cout, leaf_name, PeakModel::PeakCsvType::Full,
-                                    fit_peaks, peak_fit_res.spectrum );
-          cout << endl;
-        }
-      }//if( fit_results.m_peak_fit_results )
-    }else
+        cerr << msg << endl;
+        warnings.push_back( msg );
+      }catch( std::exception &e )
+      {
+        cerr << "Error templating results: " << e.what() << endl;
+        warnings.push_back( "Error templating results: " + string(e.what()) );
+      }
+    }//for( const string &tmplt : options.report_templates )
+    
+    
+    if( options.write_n42_with_results && fit_results.m_peak_fit_results
+       && fit_results.m_peak_fit_results->measurement )
     {
-      cout << "Failure: " << fit_results.m_error_msg << endl;
-      warnings.push_back( "Failed in analyzing '" + filename + "': " + fit_results.m_error_msg );
-    }
+      // TODO: need to have `fit_activities_in_file` add peaks and shielding model to a file,
+      //       perhaps in `fit_results.m_peak_fit_results->measurement`, or maybe better yet,
+      //       create whole new std::shared_ptr<SpecMeas> in BatchActivityFitResult
+      const string message = "Written N42 file does not currently have Act/Shielding model"
+      " written to it, only fit peaks, sorry - will.";
+      cerr << message << endl;
+      if( std::find(begin(warnings), end(warnings), message) == end(warnings) )
+        warnings.push_back( message );
+      
+      const BatchPeak::BatchPeakFitResult &peak_fit_results = *fit_results.m_peak_fit_results;
+      assert( peak_fit_results.measurement );
+      
+      string outn42 = SpecUtils::append_path(options.output_dir, SpecUtils::filename(filename) );
+      if( !SpecUtils::iequals_ascii(SpecUtils::file_extension(filename), ".n42") )
+        outn42 += ".n42";
+      
+      if( SpecUtils::is_file(outn42) && !options.overwrite_output_files )
+      {
+        warnings.push_back( "Not writing '" + outn42 + "', as it would overwrite a file."
+                           " See the '--overwrite-output-files' option to force writing." );
+      }else
+      {
+        if( !peak_fit_results.measurement->save2012N42File( outn42 ) )
+          warnings.push_back( "Failed to write '" + outn42 + "'.");
+        else
+          cout << "Have written '" << outn42 << "' with peaks" << endl;
+      }
+    }//if( options.write_n42_with_results )
+    
+    
+    if( fit_results.m_peak_fit_results )
+    {
+      const BatchPeak::BatchPeakFitResult &peak_fit_res = *fit_results.m_peak_fit_results;
+      deque<shared_ptr<const PeakDef>> fit_peaks = peak_fit_res.fit_peaks;
+      if( options.show_nonfit_peaks )
+      {
+        for( const auto p : peak_fit_res.unfit_exemplar_peaks )
+        {
+          auto np = make_shared<PeakDef>(*p);
+          np->setAmplitude( 0.0 );
+          np->setAmplitudeUncert( 0.0 );
+          np->setSigmaUncert( 0.0 );
+          auto cont = make_shared<PeakContinuum>( *np->continuum() );
+          const size_t num_cont_pars = PeakContinuum::num_parameters(cont->type());
+          for( size_t i = 0; i < num_cont_pars; ++i )
+          {
+            cont->setPolynomialCoef( i, 0.0 );
+            cont->setPolynomialUncert( i, -1.0 );
+          }
+          np->setContinuum( cont );
+          np->set_coefficient( -1.0, PeakDef::Chi2DOF );
+          fit_peaks.push_back(np);
+        }
+        std::sort( begin(fit_peaks), end(fit_peaks), &PeakDef::lessThanByMeanShrdPtr );
+      }//if( make_nonfit_peaks_zero )
+      
+      
+      if( !options.output_dir.empty() && options.create_csv_output )
+      {
+        const string leaf_name = SpecUtils::filename(filename);
+        string outcsv = SpecUtils::append_path(options.output_dir, leaf_name) + "_peaks.CSV";
+        
+        if( SpecUtils::is_file(outcsv) && !options.overwrite_output_files )
+        {
+          warnings.push_back( "Not writing '" + outcsv + "', as it would overwrite a file."
+                             " See the '--overwrite-output-files' option to force writing." );
+        }else
+        {
+#ifdef _WIN32
+          const std::wstring woutcsv = SpecUtils::convert_from_utf8_to_utf16(outcsv);
+          std::ofstream output_csv( woutcsv.c_str(), ios::binary | ios::out );
+#else
+          std::ofstream output_csv( outcsv.c_str(), ios::binary | ios::out );
+#endif
+          
+          if( !output_csv )
+          {
+            warnings.push_back( "Failed to open '" + outcsv + "', for writing.");
+          }else
+          {
+            PeakModel::write_peak_csv( output_csv, leaf_name, PeakModel::PeakCsvType::Full,
+                                      fit_peaks, peak_fit_res.spectrum );
+            cout << "Have written '" << outcsv << "'" << endl;
+          }
+        }//if( SpecUtils::is_file( outcsv ) ) / else
+      }//if( !options.output_dir.empty() )
+      
+      if( options.to_stdout )
+      {
+        const string leaf_name = SpecUtils::filename(filename);
+        cout << "peaks for '" << leaf_name << "':" << endl;
+        PeakModel::write_peak_csv( cout, leaf_name, PeakModel::PeakCsvType::Full,
+                                  fit_peaks, peak_fit_res.spectrum );
+        cout << endl;
+      }
+    }//if( fit_results.m_peak_fit_results )
+    
+    
+    //std::cout << std::setw(4) << data << std::endl;
+#if( SpecUtils_ENABLE_D3_CHART )
+    data.erase( "D3_JS" );
+    data.erase( "SpectrumChart_JS" );
+    data.erase( "SpectrumChart_CSS" );
+#endif // SpecUtils_ENABLE_D3_CHART
+    
+    summary_json["Files"].push_back( data );
   }//for( const string filename : files )
     
   for( const string &summary_tmplt : options.summary_report_templates )
@@ -2609,8 +2669,31 @@ BatchActivityFitResult fit_activities_in_file( const std::string &exemplar_filen
     return result;
   }//if( src_definitions.empty() )
   
-  // TODO: We may not have fit peaks for all `src_definitions`.  We should remove these sources, and add warnings about it
-
+  // We may not have fit peaks for all `src_definitions`.  Lets remove these sources,
+  //  and add warnings about it
+  {// Begin remove sources without peaks
+    vector<ShieldingSourceFitCalc::SourceFitDef> srcs_with_peaks;
+    for( const ShieldingSourceFitCalc::SourceFitDef &src : src_definitions )
+    {
+      const SandiaDecay::Nuclide * const nuclide = src.nuclide;
+      assert( nuclide );
+      if( !nuclide )
+        continue;
+      
+      bool have_nuc_in_peak = false;
+      for( const auto &p : foreground_peaks )
+        have_nuc_in_peak |= (p->parentNuclide() == nuclide);
+      
+      if( have_nuc_in_peak )
+        srcs_with_peaks.push_back( src );
+      else
+        result.m_warnings.push_back( "No peak assigned to nuclide " + nuclide->symbol
+                                    + ", not using this nuclide." );
+    }//for( const ShieldingSourceFitCalc::SourceFitDef &src : src_definitions )
+    
+    srcs_with_peaks.swap( src_definitions );
+  }// End remove sources without peaks
+  
   // We have all the parts, lets do the computation:
   pair<shared_ptr<GammaInteractionCalc::ShieldingSourceChi2Fcn>, ROOT::Minuit2::MnUserParameters> fcn_pars =
   GammaInteractionCalc::ShieldingSourceChi2Fcn::create( distance, geometry,

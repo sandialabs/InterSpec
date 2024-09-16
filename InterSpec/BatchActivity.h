@@ -114,6 +114,8 @@ namespace BatchActivity
       Success
     };//enum class ResultCode
     
+    static const char *to_str( const ResultCode code );
+    
     ResultCode m_result_code;
     std::string m_error_msg;
     std::vector<std::string> m_warnings;

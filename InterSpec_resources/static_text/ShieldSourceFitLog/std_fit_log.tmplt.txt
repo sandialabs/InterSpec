@@ -1,10 +1,22 @@
 Foreground LiveTime: {% if foreground.LiveTime_s %}{{ foreground.LiveTime_s }} seconds{% endif %} {% if foreground.LiveTime %}({{ foreground.LiveTime }}){% endif %}
-{% if FixedGeometryDetector %}Results given as {{ ActShieldFitSetup.FixedGeometryType }}.{% else %}Distance to source center from detector: {{ ActShieldFitSetup.Distance }}{% endif %}
-{% if Detector %}Detector: {{ Detector.Name }} radius {{ printFixed(Detector.Radius_cm,1) }}{% endif %}
+{% if HasFitResults %}{% if FixedGeometryDetector %}Results given as {{ ActShieldFitSetup.FixedGeometryType }}.{% else %}Distance to source center from detector: {{ ActShieldFitSetup.Distance }}{% endif %}{% endif %}
+{% if exists("Detector") %}{% if Detector %}Detector: {{ Detector.Name }} radius {{ printFixed(Detector.Radius_cm,1) }}{% endif %}{% endif %}
+{% if HasFitResults %}
 {% if ActShieldFitSetup.FitOptions.InterferenceCorrection %}Allowing multiple nuclides being fit for to potentially contribute to the same photopeak{% else %}Not allowing multiple nuclides being fit for to contribute to the same photopeak{% endif %}
 {% if ActShieldFitSetup.FitOptions.DecayDuringMeasurement %}Branching ratios are being corrected for nuclide decay during measurement{% endif %}
+{% endif %}
+{% if HasErrorMessage %}
 
 
+Error Message: {{ ErrorMessage }}
+{% endif %}
+{% if HasWarnings %}
+Warnings:
+## for warning in Warnings
+  {{ warning }}
+## endfor
+{% endif %}
+{% if exists("Sources") %}
 Sources:
 ## for src in Sources
   For {{ src.Nuclide }} at age {{ src.Age }}{% if src.AgeIsFit %} +- {{ src.AgeUncert }} {% endif %} with activity {{ src.Activity }}{% if src.ActivityIsFit %} +- {{ src.ActivityUncert }} {% endif %}{% if src.IsTraceSource %}(src.TraceDisplayActivity{% if src.ActivityIsFit %} +- {{ src.TraceDisplayActivityUncert }} {% endif %}){% endif %}:
@@ -14,8 +26,10 @@ Sources:
 ##endfor
 ##endfor
 ##endfor
+{% endif %}
 
-{% if exists("Shieldings") and existsIn(Shieldings,"Shields") %}
+{% if exists("Shieldings") %}
+{% if existsIn(Shieldings,"Shields") %}
 Shieldings:
 ## for shield in Shieldings.Shields
 {% if shield.IsGeneric %}
@@ -35,6 +49,7 @@ Shieldings:
 
 ##endfor
 {% endif %}
+{% endif %}
 
 
 Detector Efficiency Effects:
@@ -52,12 +67,15 @@ Chi2 Contributions Of Peaks:
 ##endfor
 {% endif %}
 &nbsp;
+{% if HasFitResults %}
 There were {{ NumDof }} parameters fit for
 It took {{ NumberFcnCalls }} solution trials to reach chi2={{ FitChi2 }} with an estimated distance to minumum of {{ EstimatedDistanceToMinimum }}
 ## for src in Sources
 {{ src.Nuclide }} fit activity {{ src.Activity }}{% if src.ActivityIsFit %} with uncertainty {{ src.ActivityUncert }} ({{ src.ActivityUncertPercent }}) {% endif %} at {% if src.AgeIsFit %}assumed {% else %}fit {% endif %} age {{ src.Age }}
 ## endfor
+{% if HasFitResults %}
 Geometry: {% if FixedGeometryDetector %}Fixed geometry, {{ ActShieldFitSetup.FixedGeometryType }}.{% else %}{{ ActShieldFitSetup.Geometry }}{% endif %}
+{% endif %}
 {% if exists("Shieldings") %}
 Shieldings:
 {% if exists("Shieldings") and existsIn(Shieldings,"Shields") %}
@@ -70,5 +88,6 @@ Shieldings:
 ##endfor
 {% else %}
     None
+{% endif %}
 {% endif %}
 {% endif %}
