@@ -110,6 +110,8 @@ namespace BatchActivity
       FitNotSuccessful,
       DidNotFitAllSources,
       
+      FitThrewException,
+      
       UnknownStatus,
       Success
     };//enum class ResultCode

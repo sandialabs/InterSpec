@@ -147,7 +147,7 @@ int run_batch_command( int argc, char **argv )
       
       bool output_stdout, refit_energy_cal, write_n42_with_results;
       bool use_exemplar_energy_cal, use_exemplar_energy_cal_for_background;
-      bool show_nonfit_peaks, overwrite_output_files, create_csv_output;
+      bool show_nonfit_peaks, overwrite_output_files, create_csv_output, create_json_output;
       bool use_existing_background_peaks;
       double peak_stat_threshold = 0.0, peak_hypothesis_threshold = 0.0;
       vector<std::string> input_files, report_templates, summary_report_templates;
@@ -214,7 +214,10 @@ int run_batch_command( int argc, char **argv )
       ("peak-csv-output", po::value<bool>(&create_csv_output)->implicit_value(true)->default_value(true),
        "Output peak fit CSV."
        )
-      ("print", po::value<bool>(&output_stdout)->default_value(true),
+      ("result-json-output", po::value<bool>(&create_json_output)->implicit_value(true)->default_value(false),
+       "Writes the JSON used to create the report templates, out to file."
+       )
+      ("print", po::value<bool>(&output_stdout)->implicit_value(true)->default_value(false),
        "Print results to stdout."
        )
       ("out-dir", po::value<string>(&output_path)->default_value(""),
@@ -432,6 +435,7 @@ int run_batch_command( int argc, char **argv )
       options.show_nonfit_peaks = show_nonfit_peaks;
       options.overwrite_output_files = overwrite_output_files;
       options.create_csv_output = create_csv_output;
+      options.create_json_output = create_json_output;
       options.output_dir = output_path;
       options.background_subtract_file = background_sub_file;
       options.background_subtract_samples = background_sample_nums;

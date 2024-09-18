@@ -69,6 +69,7 @@ namespace BatchPeak
     bool show_nonfit_peaks;
     bool overwrite_output_files;
     bool create_csv_output;
+    bool create_json_output;
     std::string output_dir;
     std::string background_subtract_file;
     std::set<int> background_subtract_samples;

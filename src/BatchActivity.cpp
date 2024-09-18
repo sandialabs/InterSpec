@@ -96,6 +96,7 @@ const char *BatchActivityFitResult::to_str( const BatchActivityFitResult::Result
     case ResultCode::NoSourceNuclides:                     return "NoSourceNuclides";
     case ResultCode::FitNotSuccessful:                     return "FitNotSuccessful";
     case ResultCode::DidNotFitAllSources:                  return "DidNotFitAllSources";
+    case ResultCode::FitThrewException:                    return "FitThrewException";
     case ResultCode::UnknownStatus:                        return "UnknownStatus";
     case ResultCode::Success:                              return "Success";
   }//switch( code )
@@ -262,6 +263,57 @@ shared_ptr<DetectorPeakResponse> init_drf_from_name( std::string drf_file, std::
 }//shared_ptr<DetectorPeakResponse> init_drf_from_name( std::string drf_file, std::string drf-name )
   
 
+void write_json( const BatchActivityFitOptions &options, vector<string> &warnings,
+                 const string &filename, nlohmann::json json_copy )
+{
+  string leaf_name = SpecUtils::filename(filename);
+  if( leaf_name.empty() )
+  {
+    leaf_name = "summary.json";
+  }else
+  {
+    const string file_ext = SpecUtils::file_extension(leaf_name);
+    if( !file_ext.empty() )
+      leaf_name = leaf_name.substr(0, leaf_name.size() - file_ext.size());
+    leaf_name += "_results.json";
+  }
+  
+  string out_json = SpecUtils::append_path(options.output_dir, leaf_name);
+  
+  if( SpecUtils::is_file(out_json) && !options.overwrite_output_files )
+  {
+    warnings.push_back( "Not writing '" + out_json + "', as it would overwrite a file."
+                       " See the '--overwrite-output-files' option to force writing." );
+  }else
+  {
+#ifdef _WIN32
+    const std::wstring wout_json = SpecUtils::convert_from_utf8_to_utf16(out_json);
+    std::ofstream output_json( wout_json.c_str(), ios::binary | ios::out );
+#else
+    std::ofstream output_json( out_json.c_str(), ios::binary | ios::out );
+#endif
+    
+    if( !output_json )
+    {
+      warnings.push_back( "Failed to open '" + out_json + "', for writing.");
+    }else
+    {
+#if( SpecUtils_ENABLE_D3_CHART )
+      if( json_copy.count("D3_JS") )
+        json_copy["D3_JS"] = "/* Removed for brevity - this string will have a value of the contents of the file InterSpec_resource/d3.v3.min.js during analysis in InterSpec_batch. */";
+      if( json_copy.count("SpectrumChart_JS") )
+        json_copy["SpectrumChart_JS"] = "/* Removed for brevity - this string will have a value of the contents of the file InterSpec_resource/SpectrumChartD3.js during analysis in InterSpec_batch.  */";
+      if( json_copy.count("SpectrumChart_CSS") )
+        json_copy["SpectrumChart_CSS"] = "/* Removed for brevity - this string will have a value of the contents of the file InterSpec_resource/SpectrumChartD3.css during analysis in InterSpec_batch. */";
+#endif // SpecUtils_ENABLE_D3_CHART
+      
+      output_json << std::setw(4) << json_copy << std::endl;
+      cout << "Have written '" << out_json << "'" << endl;
+    }
+  }//if( SpecUtils::is_file( outcsv ) ) / else
+}//void write_json(...)
+  
+  
 void add_hist_to_json( nlohmann::json &data,
                      const bool is_background,
                      const shared_ptr<const SpecUtils::Measurement> &spec_ptr,
@@ -452,6 +504,7 @@ void add_peak_fit_options_to_json( nlohmann::json &data, const BatchPeak::BatchP
   options_obj["ShowNonFitPeaks"] = options.show_nonfit_peaks;
   options_obj["OutputDir"] = options.output_dir;
   options_obj["CreateCsvOutput"] = options.create_csv_output;
+  options_obj["CreateJsonOutput"] = options.create_json_output;
   options_obj["OverwriteOutputFiles"] = options.overwrite_output_files;
   
   if( !options.background_subtract_file.empty() )
@@ -1760,6 +1813,8 @@ void fit_activities_in_files( const std::string &exemplar_filename,
       }
     }//if( options.write_n42_with_results )
     
+    if( !options.output_dir.empty() && options.create_json_output )
+      write_json( options, warnings, filename, data );
     
     if( fit_results.m_peak_fit_results )
     {
@@ -1790,7 +1845,11 @@ void fit_activities_in_files( const std::string &exemplar_filename,
       
       if( !options.output_dir.empty() && options.create_csv_output )
       {
-        const string leaf_name = SpecUtils::filename(filename);
+        string leaf_name = SpecUtils::filename(filename);
+        const string file_ext = SpecUtils::file_extension(leaf_name);
+        if( !file_ext.empty() )
+          leaf_name = leaf_name.substr(0, leaf_name.size() - file_ext.size());
+        
         string outcsv = SpecUtils::append_path(options.output_dir, leaf_name) + "_peaks.CSV";
         
         if( SpecUtils::is_file(outcsv) && !options.overwrite_output_files )
@@ -1816,7 +1875,7 @@ void fit_activities_in_files( const std::string &exemplar_filename,
             cout << "Have written '" << outcsv << "'" << endl;
           }
         }//if( SpecUtils::is_file( outcsv ) ) / else
-      }//if( !options.output_dir.empty() )
+      }//if( !options.output_dir.empty() && options.create_csv_output )
       
       if( options.to_stdout )
       {
@@ -1838,7 +1897,12 @@ void fit_activities_in_files( const std::string &exemplar_filename,
     
     summary_json["Files"].push_back( data );
   }//for( const string filename : files )
-    
+  
+  // Add any encountered errors to output summary JSON
+  for( const string &warn : warnings )
+    summary_json["Warnings"].push_back( warn );
+  
+  // Now write summary report(s)
   for( const string &summary_tmplt : options.summary_report_templates )
   {
     try
@@ -1932,6 +1996,11 @@ void fit_activities_in_files( const std::string &exemplar_filename,
       warnings.push_back( "Error making summary output: " + string(e.what()) );
     }
   }//if( !options.summary_report_template.empty() )
+  
+  
+  
+  if( !options.output_dir.empty() && options.create_json_output )
+    write_json( options, warnings, "", summary_json );
   
   
   if( !warnings.empty() )
@@ -2163,7 +2232,7 @@ BatchActivityFitResult fit_activities_in_file( const std::string &exemplar_filen
       }//Try / catch get
     }else if( backfile )
     {
-      if( !options.background_subtract_samples.empty() )
+      if( options.background_subtract_samples.empty() )
       {
         const SpecUtils::SourceType t = (backfile == specfile)
         ? SpecUtils::SourceType::Background
@@ -2694,62 +2763,69 @@ BatchActivityFitResult fit_activities_in_file( const std::string &exemplar_filen
     srcs_with_peaks.swap( src_definitions );
   }// End remove sources without peaks
   
-  // We have all the parts, lets do the computation:
-  pair<shared_ptr<GammaInteractionCalc::ShieldingSourceChi2Fcn>, ROOT::Minuit2::MnUserParameters> fcn_pars =
-  GammaInteractionCalc::ShieldingSourceChi2Fcn::create( distance, geometry,
-                                                           shield_definitions, src_definitions, detector,
-                                                           foreground, background, foreground_peaks, background_peaks, fit_options );
-      
-  auto inputPrams = make_shared<ROOT::Minuit2::MnUserParameters>();
-  *inputPrams = fcn_pars.second;
-      
-  auto progress = make_shared<ShieldingSourceFitCalc::ModelFitProgress>();
-  auto fit_results = make_shared<ShieldingSourceFitCalc::ModelFitResults>();
-  result.m_fit_results = fit_results;
-  
-  auto progress_fcn = [progress](){
-    // We dont really care too much probably right now
-  };
-      
-  bool finished_fit_called = false;
-  auto finished_fcn = [fit_results, &finished_fit_called](){
-    finished_fit_called = true;
-  };
-      
-  ShieldingSourceFitCalc::fit_model( "", fcn_pars.first, inputPrams, progress, progress_fcn, fit_results, finished_fcn );
-      
-  assert( finished_fit_called );
-  
-  result.m_result_code = BatchActivityFitResult::ResultCode::Success;
-  
-  if( fit_results->successful != ShieldingSourceFitCalc::ModelFitResults::FitStatus::Final )
+  try
   {
-    result.m_error_msg = "Fit not successful.";
-    result.m_result_code = BatchActivityFitResult::ResultCode::FitNotSuccessful;
-    return result;
-  }
-  
-      
-  for( const ShieldingSourceFitCalc::SourceFitDef insrc : src_definitions )
-  {
-    assert( insrc.nuclide );
-    bool found_in_output = false;
-    for( const ShieldingSourceFitCalc::IsoFitStruct &fitsrc : fit_results->fit_src_info )
-    {
-      assert( fitsrc.nuclide );
-      found_in_output = (fitsrc.nuclide == insrc.nuclide);
-      if( found_in_output )
-        break;
-    }//for( const ShieldingSourceFitCalc::IsoFitStruct &fitsrc : fit_results->fit_src_info )
+    // We have all the parts, lets do the computation:
+    pair<shared_ptr<GammaInteractionCalc::ShieldingSourceChi2Fcn>, ROOT::Minuit2::MnUserParameters> fcn_pars =
+    GammaInteractionCalc::ShieldingSourceChi2Fcn::create( distance, geometry,
+                                                         shield_definitions, src_definitions, detector,
+                                                         foreground, background, foreground_peaks, background_peaks, fit_options );
     
-    if( !found_in_output )
+    auto inputPrams = make_shared<ROOT::Minuit2::MnUserParameters>();
+    *inputPrams = fcn_pars.second;
+    
+    auto progress = make_shared<ShieldingSourceFitCalc::ModelFitProgress>();
+    auto fit_results = make_shared<ShieldingSourceFitCalc::ModelFitResults>();
+    result.m_fit_results = fit_results;
+    
+    auto progress_fcn = [progress](){
+      // We dont really care too much probably right now
+    };
+    
+    bool finished_fit_called = false;
+    auto finished_fcn = [fit_results, &finished_fit_called](){
+      finished_fit_called = true;
+    };
+    
+    ShieldingSourceFitCalc::fit_model( "", fcn_pars.first, inputPrams, progress, progress_fcn, fit_results, finished_fcn );
+    
+    assert( finished_fit_called );
+    
+    result.m_result_code = BatchActivityFitResult::ResultCode::Success;
+    
+    if( fit_results->successful != ShieldingSourceFitCalc::ModelFitResults::FitStatus::Final )
     {
-      result.m_warnings.push_back( "Fit results does not include " + insrc.nuclide->symbol );
-      result.m_result_code = BatchActivityFitResult::ResultCode::DidNotFitAllSources;
-    }//if( !found_in_output )
-  }//for( const ShieldingSourceFitCalc::SourceFitDef insrc : src_definitions )
-  
-  // TODO: create an output file that has peaks, drf, and the fit model.  This will mean creating the XML that represents the fit model then turning it into a string
+      result.m_error_msg = "Fit not successful.";
+      result.m_result_code = BatchActivityFitResult::ResultCode::FitNotSuccessful;
+      return result;
+    }
+    
+    
+    for( const ShieldingSourceFitCalc::SourceFitDef insrc : src_definitions )
+    {
+      assert( insrc.nuclide );
+      bool found_in_output = false;
+      for( const ShieldingSourceFitCalc::IsoFitStruct &fitsrc : fit_results->fit_src_info )
+      {
+        assert( fitsrc.nuclide );
+        found_in_output = (fitsrc.nuclide == insrc.nuclide);
+        if( found_in_output )
+          break;
+      }//for( const ShieldingSourceFitCalc::IsoFitStruct &fitsrc : fit_results->fit_src_info )
+      
+      if( !found_in_output )
+      {
+        result.m_warnings.push_back( "Fit results does not include " + insrc.nuclide->symbol );
+        result.m_result_code = BatchActivityFitResult::ResultCode::DidNotFitAllSources;
+      }//if( !found_in_output )
+    }//for( const ShieldingSourceFitCalc::SourceFitDef insrc : src_definitions )
+    
+    // TODO: create an output file that has peaks, drf, and the fit model.  This will mean creating the XML that represents the fit model then turning it into a string
+  }catch( std::exception &e )
+  {
+    result.m_error_msg = e.what();
+    result.m_result_code = BatchActivityFitResult::ResultCode::FitThrewException;
+  }//try / catch to do the fit
   
   cout << "Finished fitting for '" << filename << "'" << endl;
   
