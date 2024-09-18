@@ -2855,11 +2855,20 @@ std::pair<std::shared_ptr<ShieldingSourceChi2Fcn>, ROOT::Minuit2::MnUserParamete
   
   if( background && background_peaks && !background_peaks->empty() )
   {
-    vector<PeakDef> backgroundpeaks;
-    for( const auto &p : *background_peaks )
-      backgroundpeaks.push_back( *p );
-    answer->setBackgroundPeaks( backgroundpeaks, background->live_time() );
-  }
+    if( options.background_peak_subtract )
+    {
+      vector<PeakDef> backgroundpeaks;
+      for( const auto &p : *background_peaks )
+        backgroundpeaks.push_back( *p );
+      answer->setBackgroundPeaks( backgroundpeaks, background->live_time() );
+    }else
+    {
+      cerr << __FUNCTION__ << ": background peaks were passed in, but options said background peak subtraction was not wanted!" << endl;
+      // In principle, this is fine - I just want to make sure things were being treated consistently before
+      //  the check for `options.background_peak_subtract` was added 20240917
+      assert( 0 );
+    }
+  }//if( background && background_peaks && !background_peaks->empty() )
   
   
   for( size_t shielding_index = 0; shielding_index < shieldings.size(); ++shielding_index )
@@ -5308,6 +5317,8 @@ vector<PeakResultPlotInfo> ShieldingSourceChi2Fcn::expected_observed_chis(
 
     if( backCounts > 0.0 )
     {
+      // Background peak area and uncertainty have already been live-time normalized to foreground
+      //  when set in `setBackgroundPeaks(...)`.
       observed_counts -= backCounts;
       observed_uncertainty = sqrt( observed_uncertainty*observed_uncertainty + backUncert2 );
     }

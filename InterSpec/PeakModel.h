@@ -400,6 +400,15 @@ public:
                              const std::shared_ptr<const SpecUtils::Measurement> &data );
   
   
+  static void write_for_and_back_peak_csv( std::ostream &outstrm,
+                             std::string specfilename,
+                             const PeakCsvType type,
+                             const std::deque<std::shared_ptr<const PeakDef>> &peaks,
+                             const std::shared_ptr<const SpecUtils::Measurement> &data,
+                             std::string background_specfilename,
+                             const std::deque<std::shared_ptr<const PeakDef>> *background_peaks,
+                             const std::shared_ptr<const SpecUtils::Measurement> &background );
+  
 protected:
   
   /** Adds a new peak to the model, returning the inserted peak and its index.

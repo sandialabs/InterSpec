@@ -56,6 +56,7 @@
 #include "InterSpec/PeakDef.h"
 #include "InterSpec/PeakFit.h"
 #include "InterSpec/SpecMeas.h"
+#include "InterSpec/InterSpec.h"
 #include "InterSpec/PeakModel.h"
 #include "InterSpec/InterSpecApp.h"
 #include "InterSpec/PhysicalUnits.h"
@@ -573,6 +574,10 @@ std::vector<PeakDef> PeakModel::csv_to_candidate_fit_peaks(
   while( SpecUtils::safe_get_line(csv, line, 2048) )
   {
     SpecUtils::trim(line);
+    
+    if( SpecUtils::istarts_with(line, "#END ") || SpecUtils::istarts_with(line, "# END ") )
+      break;
+    
     if( line.empty() || line[0]=='#' || (!isdigit(line[0]) && line[0]!='+' && line[0]!='-') )
       continue;
     
@@ -1007,8 +1012,34 @@ void PeakModel::PeakCsvResource::handleRequest( const Wt::Http::Request &/*reque
 
   const shared_ptr<const SpecUtils::Measurement> &data = m_model->m_foreground;
   
-  PeakModel::write_peak_csv( response.out(), specfilename, PeakModel::PeakCsvType::Full,
-                            m_model->m_sortedPeaks, data );
+  string backfilename;
+  shared_ptr<const SpecUtils::Measurement> background;
+  shared_ptr<const deque<shared_ptr<const PeakDef>>> background_peaks;
+  InterSpec *interspec = InterSpec::instance();
+  assert( interspec );
+  if( interspec )
+  {
+    shared_ptr<const SpecMeas> bmeas = interspec->measurment(SpecUtils::SpectrumType::Background);
+    background = interspec->displayedHistogram( SpecUtils::SpectrumType::Background );
+    if( background && bmeas )
+    {
+      backfilename = bmeas->filename();
+      const set<int> &samples = interspec->displayedSamples(SpecUtils::SpectrumType::Background);
+      background_peaks = bmeas->peaks( samples );
+    }//if( bmeas )
+  }//if( interspec )
+  
+  
+  if( background && background_peaks && !background_peaks->empty() )
+  {
+    PeakModel::write_for_and_back_peak_csv( response.out(), specfilename,
+                                        PeakModel::PeakCsvType::Full, m_model->m_sortedPeaks, data,
+                                        backfilename, background_peaks.get(), background );
+  }else
+  {
+    PeakModel::write_peak_csv( response.out(), specfilename, PeakModel::PeakCsvType::Full,
+                              m_model->m_sortedPeaks, data );
+  }
 }//void handleRequest(...)
 
 
@@ -3909,3 +3940,139 @@ void PeakModel::write_peak_csv( std::ostream &outstrm,
     outstrm << " </tbody>" << eol_char << "</table>" << eol_char;
 }//void PeakModel::write_peak_csv(...)
 
+
+void PeakModel::write_for_and_back_peak_csv( std::ostream &outstrm,
+                           std::string specfilename,
+                           const PeakCsvType type,
+                           const std::deque<std::shared_ptr<const PeakDef>> &peaks,
+                           const std::shared_ptr<const SpecUtils::Measurement> &data,
+                           std::string background_specfilename,
+                           const std::deque<std::shared_ptr<const PeakDef>> *background_peaks,
+                           const std::shared_ptr<const SpecUtils::Measurement> &background )
+{
+  write_peak_csv( outstrm, specfilename, type, peaks, data );
+  if( !background_peaks || background_peaks->empty() || !background || (background->live_time() <= 0.0f) )
+    return;
+  
+  const string eol_char = "\r\n"; //for windows - could potentially customize this for the users operating system
+  
+  const double scale = data->live_time() / background->live_time();
+  
+  switch( type )
+  {
+    case PeakCsvType::Full:
+    case PeakCsvType::NoHeader:
+    case PeakCsvType::Compact:
+      outstrm << eol_char
+      << "#END FOREGROUND PEAKS"
+      << eol_char
+      << eol_char
+      << "#Background Spectrum Peaks (LiveTime " << background->live_time() << " s - scale by "
+      << scale << " to make comparable):" << eol_char;
+      break;
+      
+    case PeakCsvType::FullHtml:
+    case PeakCsvType::NoHeaderHtml:
+    case PeakCsvType::CompactHtml:
+      outstrm << eol_char
+      << "<!-- END FOREGROUND PEAKS -->" << eol_char
+      << "<br />" << eol_char << "<br />" << eol_char << "<div>Background Spectrum Peaks (LiveTime "
+      << background->live_time() << " s - scale by "
+      << scale << " to make comparable):</div>" << eol_char;
+      break;
+  }//switch( type )
+  
+  write_peak_csv( outstrm, background_specfilename, type, *background_peaks, background );
+  
+  
+  // Now we need to perform background subtraction
+  const double nsigmaNear = 1.0;
+  size_t num_affected_peaks = 0;
+  deque<shared_ptr<const PeakDef>> back_sub_peaks;
+  
+  for( const shared_ptr<const PeakDef> &orig_peak : peaks )
+  {
+    assert( orig_peak );
+    // TODO: we should maybe handle data-defined peaks...
+    if( !orig_peak || !orig_peak->gausPeak() )
+      continue;
+    
+    double backCounts = 0.0, backUncert2 = 0.0;
+    for( const shared_ptr<const PeakDef> &backPeak : *background_peaks )
+    {
+      assert( backPeak );
+      if( !backPeak || !backPeak->gausPeak() )
+        continue;
+      
+      const double sigma = orig_peak->gausPeak() ? orig_peak->sigma() : 0.25*orig_peak->roiWidth();
+      if( fabs(backPeak->mean() - orig_peak->mean()) < (nsigmaNear*sigma) )
+      {
+        backCounts += scale * backPeak->peakArea();
+        const double uncert = scale * std::max( 0.0, backPeak->peakAreaUncert() );
+        backUncert2 += uncert * uncert;
+      }//if( fabs(backPeak.mean()-peak.mean()) < sigma )
+    }//for( const PeakDef &peak : backPeaks )
+
+    auto updated_peak = make_shared<PeakDef>( *orig_peak );
+    
+    if( backCounts > 0.0 )
+    {
+      num_affected_peaks += 1;
+      const double counts = orig_peak->peakArea() - backCounts;
+      const double orig_uncert = std::max( orig_peak->peakAreaUncert(), 0.0 );
+      const double uncert = sqrt( orig_uncert*orig_uncert + backUncert2 );
+      
+      updated_peak->setPeakArea( counts );
+      updated_peak->setPeakAreaUncert( uncert );
+    }//if( backCounts > 0.0 )
+    
+    back_sub_peaks.push_back( updated_peak );
+  }//for( const shared_ptr<const PeakDef> &peak : peaks )
+  
+  
+  
+  switch( type )
+  {
+    case PeakCsvType::Full:
+    case PeakCsvType::NoHeader:
+    case PeakCsvType::Compact:
+      outstrm << eol_char
+      << "#END BACKGROUND PEAKS"
+      << eol_char
+      << eol_char
+      << "#Background Subtracted"
+      << " (after live time normalization and whose means are within " << nsigmaNear
+      << " sigma) foreground peaks (" << num_affected_peaks << " peaks adjusted):" << eol_char;
+      break;
+      
+    case PeakCsvType::FullHtml:
+    case PeakCsvType::NoHeaderHtml:
+    case PeakCsvType::CompactHtml:
+      outstrm << eol_char << "<!-- END BACKGROUND PEAKS -->" 
+      << eol_char << "<br />" << eol_char << "<br />"
+      << eol_char << "<div>Background Subtracted"
+      << " (after live time normalization and whose means are within " << nsigmaNear
+      << " sigma) foreground peaks (" << num_affected_peaks << " peaks adjusted):</div>" 
+      << eol_char;
+      break;
+  }//switch( type )
+  
+  
+  write_peak_csv( outstrm, specfilename, type, back_sub_peaks, data );
+  
+  
+  switch( type )
+  {
+    case PeakCsvType::Full:
+    case PeakCsvType::NoHeader:
+    case PeakCsvType::Compact:
+      outstrm << eol_char << "#END BACKGROUND-SUBTRACTED PEAKS" << eol_char;
+      break;
+      
+    case PeakCsvType::FullHtml:
+    case PeakCsvType::NoHeaderHtml:
+    case PeakCsvType::CompactHtml:
+      outstrm << eol_char << "<!-- END BACKGROUND-SUBTRACTED PEAKS -->" << eol_char;
+      break;
+  }//switch( type )
+}//PeakModel::write_for_and_back_peak_csv(...)
