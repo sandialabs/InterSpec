@@ -538,12 +538,14 @@ if( USE_BATCH_TOOLS )
         src/BatchCommandLine.cpp
         src/BatchPeak.cpp
         src/BatchActivity.cpp
+        src/BatchInfoLog.cpp
   )
   
   list( APPEND headers
         InterSpec/BatchCommandLine.h
         InterSpec/BatchPeak.h
         InterSpec/BatchActivity.h
+        InterSpec/BatchInfoLog.h
   )
 endif( USE_BATCH_TOOLS )
 

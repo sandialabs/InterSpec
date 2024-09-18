@@ -413,6 +413,55 @@ struct PeakResultPlotInfo
   Wt::WColor peakColor;
 };//struct PeakResultPlotInfo
   
+  
+/** A struct to capture the details of each source that contributed to a peak peak.
+   
+   This is primarily to later turn to JSON, and allow customizing log files, through inja templating.
+*/
+struct PeakDetailSrc
+{
+  const SandiaDecay::Nuclide *nuclide = nullptr;
+  
+  /** Energy of the nuclides gamma, in keV */
+  double energy = 0.0;
+  /** The number of this energy gamma, per second, for each Bq of parent nuclide. */
+  double br = 0.0;
+  double cps = 0.0;
+  double age = 0.0;
+  
+  /** For point sources, the activity of the point source.
+   For self-atten sources, the activity per volume.
+   For trace sources, the activity used for calculations - activity per volume, except for exponential distributions, then its activity per m2.
+   */
+  double calcActivity = 0.0; //Not used - can be removed
+  
+  /** If decay during measurement is being accounted for, then this is the rate of this gamma
+   after decay correction, divided by the rate before decay correction.
+   */
+  double decayCorrection = 0.0;
+  
+  bool isTraceSource = false;//Not used - can be removed
+  TraceActivityType traceSourceType = TraceActivityType::NumTraceActivityType;//Not used
+  
+  bool isSelfAttenSource = false;//Not used - can be removed
+  
+  double counts = 0.0;
+  //double countsUncert = 0.0;
+  double ageUncert = 0.0;//Not used - can be removed
+  //bool ageIsFit = false;
+  //bool canFitAge = false;
+  
+  double activity = 0.0;//Not used - can be removed
+  double activityUncert = 0.0;//Not used - can be removed
+  double displayActivity = 0.0;//Not used - can be removed
+  double displayActivityUncert = 0.0;//Not used - can be removed
+  
+  double massFraction = 0.0;//Not used - can be removed
+  double massFractionUncert = 0.0;//Not used - can be removed
+  bool isFittingMassFraction = false;//Not used - can be removed
+};//struct PeakDetailSrc
+  
+  
 /** A struct to capture the details of each peak detected vs what parts of the model contributed.
  
  This is primarily to later turn to JSON, and allow customizing log files, through inja templating.
@@ -431,50 +480,7 @@ struct PeakDetail
   
   std::string assignedNuclide;
   
-  struct PeakSrc
-  {
-    const SandiaDecay::Nuclide *nuclide = nullptr;
-    
-    /** Energy of the nuclides gamma, in keV */
-    double energy = 0.0;
-    /** The number of this energy gamma, per second, for each Bq of parent nuclide. */
-    double br = 0.0;
-    double cps = 0.0;
-    double age = 0.0;
-    
-    /** For point sources, the activity of the point source.
-     For self-atten sources, the activity per volume.
-     For trace sources, the activity used for calculations - activity per volume, except for exponential distributions, then its activity per m2.
-     */
-    double calcActivity = 0.0; //Not used - can be removed
-    
-    /** If decay during measurement is being accounted for, then this is the rate of this gamma
-     after decay correction, divided by the rate before decay correction.
-     */
-    double decayCorrection = 0.0;
-    
-    bool isTraceSource = false;//Not used - can be removed
-    TraceActivityType traceSourceType = TraceActivityType::NumTraceActivityType;//Not used
-    
-    bool isSelfAttenSource = false;//Not used - can be removed
-    
-    double counts = 0.0;
-    //double countsUncert = 0.0;
-    double ageUncert = 0.0;//Not used - can be removed
-    //bool ageIsFit = false;
-    //bool canFitAge = false;
-    
-    double activity = 0.0;//Not used - can be removed
-    double activityUncert = 0.0;//Not used - can be removed
-    double displayActivity = 0.0;//Not used - can be removed
-    double displayActivityUncert = 0.0;//Not used - can be removed
-    
-    double massFraction = 0.0;//Not used - can be removed
-    double massFractionUncert = 0.0;//Not used - can be removed
-    bool isFittingMassFraction = false;//Not used - can be removed
-  };//struct PeakSrc
-  
-  std::vector<PeakSrc> m_sources;
+  std::vector<PeakDetailSrc> m_sources;
   
   /** The fractional attenuation by this material (e.g., no attenuation is 1.0. Not valid for volumetric sources.
    The index of this vector is the same index as shielding in the model
@@ -599,7 +605,7 @@ struct SourceDetails
   double selfAttenMassFracUncertainty;
   
   // We wont put peaks into this struct, but instead when we make the JSON, we'll
-  //  insert peaks from `PeakDetail` as `PeakDetail::PeakSrc::nuclide` match this nuclide.
+  //  insert peaks from `PeakDetail` as `PeakDetailSrc::nuclide` match this nuclide.
 };//struct SourceDetails
   
   

@@ -5215,7 +5215,7 @@ void ShieldingSourceChi2Fcn::cluster_peak_activities( std::map<double,double> &e
       assert( pos != end(*log_info) );
       if( pos != end(*log_info) )
       {
-        PeakDetail::PeakSrc src;
+        PeakDetailSrc src;
         src.nuclide = nuc;
         src.energy = aep.energy;
         src.br = age_sf * aep.numPerSecond / sm_activityUnits;
@@ -6643,7 +6643,7 @@ vector<PeakResultPlotInfo>
       bool foundNuc = false;
       for( GammaInteractionCalc::PeakDetail &p : *log_info )
       {
-        for( PeakDetail::PeakSrc &psrc : p.m_sources )
+        for( PeakDetailSrc &psrc : p.m_sources )
         {
           if( psrc.nuclide == nuc )
           {
@@ -6671,7 +6671,7 @@ vector<PeakResultPlotInfo>
             psrc.massFraction = massFractionVal;
             psrc.massFractionUncert = massFractionUncertVal;
           }//if( psrc.nuclide == nuc )
-        }//for( PeakDetail::PeakSrc &psrc : p.m_sources )
+        }//for( PeakDetailSrc &psrc : p.m_sources )
       }//for( GammaInteractionCalc::PeakDetail &p : *log_info )
       
       assert( foundNuc );
