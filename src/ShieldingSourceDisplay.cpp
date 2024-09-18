@@ -8691,7 +8691,7 @@ void ShieldingSourceDisplay::updateCalcLogWithFitResults(
       const string actUncertStr = PhysicalUnits::printToBestActivityUnits( actUncert, 2, useCi );
       
       const double mass = (act / nuc->activityPerGram()) * PhysicalUnits::gram;
-      const std::string massStr = PhysicalUnits::printToBestMassUnits( mass, 2, 1.0 );
+      const std::string massStr = PhysicalUnits::printToBestMassUnits( mass, 2, PhysicalUnits::gram );
       
       const double age = chi2Fcn->age( nuc, params );
       const double ageUncert = chi2Fcn->age( nuc, errors );
