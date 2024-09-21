@@ -188,7 +188,7 @@ public:
         bool use_peak = false;
         for( const auto &r : solution->m_input_peak )
         {
-          if( fabs(p->mean() - r.m_energy) < 1.0 )
+          if( fabs(p->mean() - r.m_mean) < 1.0 )
             use_peak = true;
         }
         
@@ -1195,7 +1195,7 @@ void RelActManualGui::calculateSolution()
       if( p && (p->parentNuclide() || p->reaction()) && p->useForManualRelEff() )
       {
         GenericPeakInfo peak;
-        peak.m_energy = p->mean();
+        peak.m_mean = peak.m_energy = p->mean();
         peak.m_fwhm = p->gausPeak() ? p->fwhm() : (2.35482 * 0.25 * p->roiWidth());
         peak.m_counts = p->amplitude();
         peak.m_counts_uncert = p->amplitudeUncert();
@@ -1233,7 +1233,7 @@ void RelActManualGui::calculateSolution()
           if( peak.m_counts <= 0.0 )
           {
             char buffer[32];
-            snprintf( buffer, sizeof(buffer), "%.2f", peak.m_energy );
+            snprintf( buffer, sizeof(buffer), "%.2f", peak.m_mean );
             
             prep_warnings.push_back( WString::tr("ramg-back-sub-neg").arg( buffer ).toUTF8() );
             continue;
@@ -1639,6 +1639,7 @@ void RelActManualGui::updateGuiWithResults( shared_ptr<RelActCalcManual::RelEffS
     
     relActsColors[act.m_isotope] = make_pair( act.m_rel_activity, color );
   }//for( const auto &act : solution.m_rel_activities )
+  
   
   m_chart->setData( solution.m_input_peak, relActsColors, relEffEqn );
   

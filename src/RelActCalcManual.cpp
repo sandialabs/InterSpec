@@ -160,7 +160,7 @@ struct ManualGenericRelActFunctor  /* : ROOT::Minuit2::FCNBase() */
       const RelActCalcManual::GenericPeakInfo &peak = peak_infos[peak_index];
       
       if( peak.m_source_gammas.empty() )
-        throw std::runtime_error( "ManualGenericRelActFunctor: Peak at " + std::to_string(peak.m_energy)
+        throw std::runtime_error( "ManualGenericRelActFunctor: Peak at " + std::to_string(peak.m_mean)
                                  + " keV has no source gammas defined." );
       
       if( peak.m_counts <= 0.0 )
@@ -461,6 +461,7 @@ GenericLineInfo::GenericLineInfo( const double yield, const std::string &isotope
 
 GenericPeakInfo::GenericPeakInfo()
  : m_energy( 0.0 ),
+   m_mean( 0.0 ),
    m_fwhm( 0.0 ),
    m_counts( 0.0 ),
    m_counts_uncert( 0.0 ),
@@ -941,6 +942,7 @@ void fit_rel_eff_eqn_lls( const RelActCalc::RelEffEqnForm fcn_form,
   for( size_t peak_index = 0; peak_index < energy_gammas.size(); ++peak_index )
   {
     GenericPeakInfo peak;
+    peak.m_mean = peak_infos[peak_index]->mean();
     peak.m_energy = energy_gammas[peak_index].first;
     peak.m_fwhm = 2.35482*energy_widths[peak_index].second;
     peak.m_counts = energy_obs_counts[peak_index].second;
@@ -1062,8 +1064,8 @@ void fit_act_to_rel_eff( const RelActCalc::RelEffEqnForm eqn_form,
     // We could blissfully ignore peaks with no source gammas (and assign them an activity of zero),
     //  but we'll be strict to maybe prevent some input mistakes, or something.
     if( info.m_source_gammas.empty() )
-      throw runtime_error( "fit_act_to_rel_eff: peaks at "
-                          + to_string(info.m_energy) + " keV has no source gammas." );
+      throw runtime_error( "fit_act_to_rel_eff: peak at "
+                          + to_string(info.m_mean) + " keV has no source gammas." );
     
     for( const GenericLineInfo &line : info.m_source_gammas )
     {
@@ -1367,14 +1369,9 @@ double RelEffSolution::mass_fraction( const std::string &nuclide, const double n
     }//if( index == nuc_index )
   }//for( size_t index = 0; index < m_rel_activities.size(); ++index )
   
-  assert( nuc_rel_mas >= 0.0 );
-  if( nuc_rel_mas < 0.0 )
-  {
-    // This can happen when we go down a couple sigma
+  if( nuc_rel_mas < 0.0 ) // This can happen when we go down a couple sigma
     return 0.0;
-    //throw runtime_error( "mass_fraction: invalid nuclide: " + nuclide );
-  }
-  
+    
   return nuc_rel_mas / sum_rel_mass;
 }//double mass_fraction( const std::string &iso, const double num_sigma ) const
     
@@ -1739,7 +1736,7 @@ void RelEffSolution::print_html_report( ostream &output_html_file,
   
   for( const GenericPeakInfo &info : m_input_peak )
   {
-    snprintf(buffer, sizeof(buffer), "%.2f", info.m_energy );
+    snprintf(buffer, sizeof(buffer), "%.2f", info.m_mean );
     results_html << "  <tr><td>" << buffer << "</td>";
     for( size_t i = 0; i < info.m_source_gammas.size(); ++i )
     {
@@ -1862,8 +1859,8 @@ void RelEffSolution::print_html_report( ostream &output_html_file,
              " \"counts_uncert\": %1.7g, \"eff\": %1.6g,"
              " \"eff_uncert\": %1.6g",
              (index ? ", " : ""), 
-             peak.m_energy, peak.m_counts, 
-             peak.m_counts_uncert, eff, 
+             peak.m_mean, peak.m_counts,
+             peak.m_counts_uncert, eff,
              eff_uncert );
     
     rel_eff_plot_values << buffer;
@@ -3008,7 +3005,7 @@ vector<RelActCalcManual::GenericPeakInfo> peak_csv_to_peaks( istream &csv )
     try
     {
       RelActCalcManual::GenericPeakInfo info;
-      info.m_energy = std::stod( fields[energy_index] );
+      info.m_mean = info.m_energy = std::stod( fields[energy_index] );
       info.m_fwhm = stod( fields[fwhm_kev_index] );
       info.m_counts = std::stod( fields[amplitude_index] );
       info.m_counts_uncert = std::stod( fields[amplitude_sigma_index] );
@@ -3032,6 +3029,7 @@ vector<RelActCalcManual::GenericPeakInfo> peak_csv_to_peaks( istream &csv )
           throw runtime_error( "Invalid Nuclide ID: " + fields[nuclide_index] );
         
         const double nuc_energy = stod( fields[nuclide_energy_index] );
+        info.m_energy = nuc_energy;
         
         const double age = PeakDef::defaultDecayTime( nuc, nullptr );
         

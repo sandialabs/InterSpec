@@ -115,8 +115,17 @@ struct GenericPeakInfo
   /** Energy of peak, in keV
    
    All source gammas in \c m_source_gammas are assumed at this energy.
+   
+   This value will be set to the energy of the assigned gamma, and is the energy used for clustering
+   and calculations.
    */
   double m_energy;
+  
+  /** This is the fit peak mean.
+   
+   Only used for plotting.
+   */
+  double m_mean;
   
   /** The FWHM of the peak; not use for relative activity or efficiency calculations, but useful
    for assigning source gamma terms.

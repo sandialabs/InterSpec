@@ -151,6 +151,7 @@ void RelEffChart::setData( const double live_time,
     
     RelActCalcManual::GenericPeakInfo peak;
     peak.m_energy = p.mean();
+    peak.m_mean = peak.m_energy;
     peak.m_fwhm = p.fwhm();
     peak.m_counts = p.amplitude();
     
@@ -268,9 +269,9 @@ void RelEffChart::setData( const std::vector<RelActCalcManual::GenericPeakInfo> 
     }
     
     snprintf( buffer, sizeof(buffer),
-             "%s{\"energy\": %.2f, \"counts\": %1.7g, \"counts_uncert\": %1.7g,"
+             "%s{\"energy\": %.2f, \"mean\": %.2f, \"counts\": %1.7g, \"counts_uncert\": %1.7g,"
              " \"eff\": %1.6g, \"eff_uncert\": %1.6g, \"nuc_info\": ",
-             (njson_entries ? ", " : ""), peak.m_energy, peak.m_counts, peak.m_counts_uncert,
+             (njson_entries ? ", " : ""), peak.m_energy, peak.m_mean, peak.m_counts, peak.m_counts_uncert,
              eff, eff_uncert );
     
     rel_eff_plot_values << buffer;

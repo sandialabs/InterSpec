@@ -886,7 +886,7 @@ public:
       {
         const double peakMean = p->gausPeak() ? p->mean() : 0.5*(p->upperX() + p->lowerX());
         RelActCalcManual::GenericPeakInfo peak;
-        peak.m_energy = peakMean;
+        peak.m_mean = peak.m_energy = peakMean;
         peak.m_fwhm = 2.35482 * peakSigma;
         peak.m_counts = p->peakArea();
         peak.m_counts_uncert = (p->peakAreaUncert() > 0.0) ? p->peakAreaUncert() : 0.0;

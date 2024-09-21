@@ -1711,6 +1711,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
         {
           RelActCalcManual::GenericPeakInfo peak;
           peak.m_energy = p->mean();
+          peak.m_mean = peak.m_energy;
           peak.m_fwhm = p->gausPeak() ? p->fwhm() : (2.35482 * 0.25 * p->roiWidth());
           peak.m_counts = p->amplitude();
           peak.m_counts_uncert = p->amplitudeUncert();

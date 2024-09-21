@@ -366,7 +366,7 @@ RelEffPlot.prototype.setRelEffData = function (data_vals, fit_eqn) {
         .attr('opacity', '.85')
         .attr("r", 6);
 
-      let txt = "<div>Energy: " + d.energy.toFixed(2) + " keV</div>"
+      let txt = "<div>Energy: " + (d.mean ? d.mean.toFixed(2) : d.energy.toFixed(2)) + " keV</div>"
         + "<div>Peak Area: " + d.counts.toFixed(1) + " &pm; " + d.counts_uncert.toFixed(1) + "</div>"
         + "<div>Measured RelEff: " + d.eff.toPrecision(5) + "</div>"
         + (fit_eqn ? "<div>RelEff Curve: " + fit_eqn(d.energy).toPrecision(5) + "</div>" : "");
