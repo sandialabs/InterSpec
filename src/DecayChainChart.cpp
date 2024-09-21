@@ -59,6 +59,7 @@
 
 #include "SandiaDecay/SandiaDecay.h"
 
+#include "InterSpec/AppUtils.h"
 #include "InterSpec/AuxWindow.h"
 #include "InterSpec/InterSpec.h"
 #include "InterSpec/ColorTheme.h"
@@ -136,32 +137,6 @@ namespace
   }//decay_particle_info(...)
 
 
-  std::string file_contents( const string &filename )
-  {
-    //Copied from SpecUtils::load_file_data( const char * const filename, std::vector<char> &data );
-#ifdef _WIN32
-    const std::wstring wfilename = SpecUtils::convert_from_utf8_to_utf16(filename);
-    basic_ifstream<char> stream(wfilename.c_str(), ios::binary);
-#else
-    basic_ifstream<char> stream(filename.c_str(), ios::binary);
-#endif
-  
-    if (!stream)
-      throw runtime_error(string("cannot open file ") + filename);
-    stream.unsetf(ios::skipws);
-  
-    // Determine stream size
-    stream.seekg(0, ios::end);
-    size_t size = static_cast<size_t>( stream.tellg() );
-    stream.seekg(0);
-  
-    string data;
-    data.resize( size );
-    stream.read(&data.front(), static_cast<streamsize>(size));
-    
-    return data;
-  }//std::string file_contents( const std::string &filename, std::vector<char> &data )
-
 
 class DecayChainHtmlResource : public Wt::WResource
 {
@@ -238,17 +213,17 @@ private:
       
       const string docroot = SpecUtils::append_path( m_app->docRoot(), "InterSpec_resources" );
       
-      string htmls = file_contents( SpecUtils::append_path( docroot, "DecayChartStandalone.tmplt.html") );
+      string htmls = AppUtils::file_contents( SpecUtils::append_path( docroot, "DecayChartStandalone.tmplt.html") );
       
       //#if( SpecUtils_D3_SUPPORT_FILE_STATIC )
       //      const string d3_js = (const char *)D3SpectrumExport::d3_js();
       //#else
-      //      const string d3_js = file_contents( D3SpectrumExport::d3_js_filename() );
+      //      const string d3_js = AppUtils::file_contents( D3SpectrumExport::d3_js_filename() );
       //#endif
       
-      const string d3_js = file_contents( SpecUtils::append_path( docroot, "d3.v3.min.js") );
-      const string dcc_js = file_contents( SpecUtils::append_path( docroot, "DecayChainChart.js") );
-      const string dcc_css = file_contents( SpecUtils::append_path( docroot, "DecayChainChart.css") );
+      const string d3_js = AppUtils::file_contents( SpecUtils::append_path( docroot, "d3.v3.min.js") );
+      const string dcc_js = AppUtils::file_contents( SpecUtils::append_path( docroot, "DecayChainChart.js") );
+      const string dcc_css = AppUtils::file_contents( SpecUtils::append_path( docroot, "DecayChainChart.css") );
       
       js
       << "/* ------ Begin d3.v3.js ------ */\n"

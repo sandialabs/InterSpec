@@ -40,6 +40,7 @@
 #include <Wt/WSvgImage>
 #include <Wt/WComboBox>
 #include <Wt/WLineEdit>
+#include <Wt/WPopupMenu>
 #include <Wt/WTableCell>
 #include <Wt/WTabWidget>
 #include <Wt/WPushButton>
@@ -52,6 +53,7 @@
 
 #include "InterSpec/PeakDef.h"
 #include "InterSpec/PeakFit.h"
+#include "InterSpec/PopupDiv.h"
 #include "InterSpec/SpecMeas.h"
 #include "InterSpec/PeakModel.h"
 #include "InterSpec/AuxWindow.h"
@@ -72,6 +74,7 @@
 #include "InterSpec/DetectorPeakResponse.h"
 #include "InterSpec/IsotopeSelectionAids.h"
 #include "InterSpec/ShieldingSourceDisplay.h"
+
 
 
 using namespace Wt;
@@ -394,6 +397,118 @@ protected:
   }//createEditor(...)
 };//class ItemDelegate
 
+  
+// See also CopyUrlToClipboard in QrCode.cpp, and CopyFluxDataTextToClipboard in FluxTool.cpp
+//  Note that modern browsers ONLY allow copying 'text/plain' and 'text/html' mime types
+//  to the pasteboard (for security reasons); e.g., using 'text/csv' silently fails.
+//  We copy the data to the pasteboard, in both plain text format, and HTML table format
+//  (which pastes into Excel correctly).
+WT_DECLARE_WT_MEMBER
+(CopyPeakCsvDataToClipboard, Wt::JavaScriptFunction, "CopyPeakCsvDataToClipboard",
+function( sender, event, dataOwner, dataName )
+{
+  const csvData = $(dataOwner).data(dataName);
+  const htmlData = $(dataOwner).data(dataName + "Html");
+  if( !csvData || !htmlData )
+  {
+    Wt.emit( $('.specviewer').attr('id'), {name:'miscSignal'},
+            'peakCsvCopy-error-No CSV data is available - if this is an error, please report to InterSpec@sandia.gov' );
+    return;
+  }
+  
+  // Use ClipboardItem if supported
+  if( typeof ClipboardItem !== 'undefined' ) {
+    const plainBlob = new Blob([csvData], { type: 'text/plain' });
+    const htmlBlob = new Blob([htmlData], { type: 'text/html' });
+    const clipboardItem = new ClipboardItem({ 'text/plain': plainBlob, 'text/html': htmlBlob });
+
+    navigator.clipboard.write([clipboardItem]).then(function() {
+      console.log( 'Copied peak CSV using ClipboardItem method.' );
+      Wt.emit( $('.specviewer').attr('id'), {name:'miscSignal'},
+              'peakCsvCopy-success-Copied peaks CSV data to the pasteboard.' );
+    }).catch(function(err) {
+      console.warn( 'Failed to copy peak CSV using ClipboardItem method: ', err );
+      
+      Wt.emit( $('.specviewer').attr('id'), {name:'miscSignal'},
+                  'peakCsvCopy-error-Unable to copy peak CSV info to the pasteboard - sorry.' );
+    });
+    
+    return;
+  }//if( typeof ClipboardItem !== 'undefined' )
+  
+      
+  try
+  {
+    //This bit of code seems to work on Chrome, but not safari
+    let didcopy = 0;
+    function listener(e) {
+      e.clipboardData.setData("text/html", htmlData);
+      e.clipboardData.setData("text/plain", csvData);
+      didcopy = 1;
+      e.preventDefault();
+    }
+    document.addEventListener("copy", listener);
+    document.execCommand("copy");
+    document.removeEventListener("copy", listener);
+        
+    if( didcopy ){
+      console.log( 'Copied peak CSV using exec method.' );
+      Wt.emit( $('.specviewer').attr('id'), {name:'miscSignal'}, 'peakCsvCopy-success-Copied CSV data to pasteboard.' );
+      return;
+    }else{
+      console.warn( 'Failed copy as csv to e.clipboardData.setData' );
+    }
+  }catch(error){
+    console.warn( 'Failed to copy rich text to copyboard (e.clipboardData.setData)' );
+  }
+  
+  if( window.clipboardData && window.clipboardData.setData ) {
+    const didCopyTxt = window.clipboardData.setData("text/plain", csvData);  // IE
+    const didCopyHtml = window.clipboardData.setData("text/html", htmlData);  // IE
+    if( didCopyTxt && didCopyHtml ){
+      console.log( 'Copied peak CSV using window.clipboardData.setData.' );
+      Wt.emit( $('.specviewer').attr('id'), {name:'miscSignal'},
+                'peakCsvCopy-success-Copied CSV data to pasteboard as csv data.' );
+      return;
+    }else{
+      console.warn( 'Failed to copy peak CSV using window.clipboardData.setData.' );
+    }
+  }
+  
+  if( document.queryCommandSupported && document.queryCommandSupported("copy") ) {
+    let temparea = document.createElement("textarea");
+    temparea.textContent = csvData;
+    temparea.style.position = "fixed";
+    document.body.appendChild(temparea);
+    temparea.select();
+    try {
+      const copysuccess = document.execCommand("copy");
+      if( copysuccess )
+      {
+        console.log( 'Copied peak CSV using document.execCommand("copy").' );
+        Wt.emit( $('.specviewer').attr('id'), {name:'miscSignal'},
+                'peakCsvCopy-success-Copied CSV data to pasteboard as text.' );
+        return;
+      }else
+      {
+        console.warn( 'Failed to copy peak CSV using document.execCommand("copy").' );
+        Wt.emit( $('.specviewer').attr('id'), {name:'miscSignal'},
+                'peakCsvCopy-error-Failed to copy CSV data to pasteboard as text.' );
+      }
+    } catch( ex ) {
+      console.warn( 'Caught exception copying peak CSV using document.execCommand("copy").' );
+      Wt.emit( $('.specviewer').attr('id'), {name:'miscSignal'},
+              'peakCsvCopy-error-Failed to copy peak CSV info to the pasteboard - sorry.' );
+    } finally {
+      document.body.removeChild( temparea );
+    }
+  }//if( document.queryCommandSupported && document.queryCommandSupported("copy") ) {
+  
+  console.log( 'Failed all methods to copy peak CSV.' );
+  Wt.emit( $('.specviewer').attr('id'), {name:'miscSignal'},
+              'peakCsvCopy-error-Unable to copy peak CSV info to the pasteboard - sorry.' );
+}
+);
 }//namespace
 
 
@@ -507,6 +622,55 @@ void PeakInfoDisplay::assignNuclidesFromRefLines()
 {
   PeakSearchGuiUtils::assign_peak_nuclides_from_reference_lines( m_viewer, true, false );
 }//void assignNuclidesFromRefLines()
+
+
+void PeakInfoDisplay::copyCsvPeakDataToClient()
+{
+  const auto meas = m_viewer->measurment(SpecUtils::SpectrumType::Foreground);
+  const auto data = m_viewer->displayedHistogram(SpecUtils::SpectrumType::Foreground);
+  
+  const string filename = meas ? meas->filename() : string();
+  const deque<shared_ptr<const PeakDef>> &peaks = m_model->sortedPeaks();
+  
+  stringstream full_csv, no_hdr_csv, compact_csv;
+  PeakModel::write_peak_csv( full_csv, filename, PeakModel::PeakCsvType::Full, peaks, data );
+  PeakModel::write_peak_csv( no_hdr_csv, filename, PeakModel::PeakCsvType::NoHeader, peaks, data );
+  PeakModel::write_peak_csv( compact_csv, filename, PeakModel::PeakCsvType::Compact, peaks, data );
+  
+  stringstream full_html, no_hdr_html, compact_html;
+  PeakModel::write_peak_csv( full_html, filename, PeakModel::PeakCsvType::FullHtml, peaks, data );
+  PeakModel::write_peak_csv( no_hdr_html, filename, PeakModel::PeakCsvType::NoHeaderHtml, peaks, data );
+  PeakModel::write_peak_csv( compact_html, filename, PeakModel::PeakCsvType::CompactHtml, peaks, data );
+  
+  
+  const string full_csv_str = Wt::WWebWidget::jsStringLiteral(full_csv.str(),'\'');
+  const string no_hdr_csv_str = Wt::WWebWidget::jsStringLiteral(no_hdr_csv.str(),'\'');
+  const string compact_csv_str = Wt::WWebWidget::jsStringLiteral(compact_csv.str(),'\'');
+  
+  const string full_html_str = Wt::WWebWidget::jsStringLiteral(full_html.str(),'\'');
+  const string no_hdr_html_str = Wt::WWebWidget::jsStringLiteral(no_hdr_html.str(),'\'');
+  const string compact_html_str = Wt::WWebWidget::jsStringLiteral(compact_html.str(),'\'');
+  
+  doJavaScript( "$(" + jsRef() + ")"
+  ".data('CsvFullData'," + full_csv_str + ")"
+  ".data('CsvFullDataHtml'," + full_html_str + ")"
+  ".data('CsvNoHeaderData'," + no_hdr_csv_str + ")"
+  ".data('CsvNoHeaderDataHtml'," + no_hdr_html_str + ")"
+  ".data('CsvCompactData'," + compact_csv_str + ")"
+  ".data('CsvCompactDataHtml'," + compact_html_str + ");");
+}//void copyCsvPeakDataToClient()
+
+
+void PeakInfoDisplay::removeCsvPeakDatafromClient()
+{
+  // We'll add a 1-second delay, to make sure everything is copied.
+  doJavaScript( "setTimeout( function(){ $(" + jsRef() + ").data('CsvFullData',null)"
+    ".data('CsvFullDataHtml',null)"
+    ".data('CsvNoHeaderData',null)"
+    ".data('CsvNoHeaderDataHtml',null)"
+    ".data('CsvCompactData',null)"
+    ".data('CsvCompactDataHtml',null); }, 1000 );" );
+}//void removeCsvPeakDatafromClient()
 
 
 void PeakInfoDisplay::enablePeakSearchButton( bool enable )
@@ -793,18 +957,20 @@ void PeakInfoDisplay::init()
   
 
   //Now add buttons to search/clear peaks
-  WContainerWidget *buttonDiv = new WContainerWidget();
-  buttonDiv->addStyleClass( "PeakInfoDisplayButtonDiv" );
-  m_infoLayout->addWidget( buttonDiv, 1, 0 );
+  WContainerWidget *bottomDiv = new WContainerWidget();
+  bottomDiv->addStyleClass( "PeakInfoDisplayBottomDiv" );
+  m_infoLayout->addWidget( bottomDiv, 1, 0 );
 
   
-  auto helpBtn = new WContainerWidget( buttonDiv );
+  auto helpBtn = new WContainerWidget( bottomDiv );
   helpBtn->addStyleClass( "Wt-icon ContentHelpBtn PeakInfoHlpBtn" );
   helpBtn->clicked().connect( boost::bind( &HelpSystem::createHelpWindow, "peak-manager" ) );
   
   
-  m_searchForPeaks = new WPushButton( WString::tr("pid-search-peaks-btn"), buttonDiv );
-  m_searchForPeaks->addStyleClass("PeakSearchBtn");
+  WContainerWidget *buttonsDiv = new WContainerWidget( bottomDiv );
+  buttonsDiv->addStyleClass( "PeakInfoDisplayButtonsDiv" );
+  
+  m_searchForPeaks = new WPushButton( WString::tr("pid-search-peaks-btn"), buttonsDiv );
   m_searchForPeaks->setIcon( "InterSpec_resources/images/magnifier.png" );
   
   HelpSystem::attachToolTipOn( m_searchForPeaks, WString::tr("pid-tt-search-peaks-btn"),
@@ -812,7 +978,7 @@ void PeakInfoDisplay::init()
   m_searchForPeaks->clicked().connect( boost::bind( &PeakSearchGuiUtils::automated_search_for_peaks, m_viewer, true ) );
 
   
-  m_clearPeaksButton = new WPushButton( WString::tr("pid-clear-peaks-btn"), buttonDiv );
+  m_clearPeaksButton = new WPushButton( WString::tr("pid-clear-peaks-btn"), buttonsDiv );
   HelpSystem::attachToolTipOn( m_clearPeaksButton, WString::tr("pid-tt-clear-peaks-btn"),
                               showToolTips, HelpSystem::ToolTipPosition::Top  );
   
@@ -821,7 +987,7 @@ void PeakInfoDisplay::init()
   m_clearPeaksButton->disable();
 
   //"Nuc. from Ref."
-  m_nucFromRefButton = new WPushButton( WString::tr("pid-nuc-from-ref-btn"), buttonDiv );
+  m_nucFromRefButton = new WPushButton( WString::tr("pid-nuc-from-ref-btn"), buttonsDiv );
   m_nucFromRefButton->setIcon( "InterSpec_resources/images/assign_white.png" );
   
   //button->setMargin(WLength(2),Wt::Left|Wt::Right);
@@ -843,7 +1009,7 @@ void PeakInfoDisplay::init()
   m_model->layoutChanged().connect( std::bind(enableDisableNucRef) );
   
 /*
-  WPushButton *button = new WPushButton( "ID Nuclides", buttonDiv );
+  WPushButton *button = new WPushButton( "ID Nuclides", buttonsDiv );
   button->setIcon( "InterSpec_resources/images/assign_white.png" );
   button->setMargin(WLength(2),Wt::Left|Wt::Right);
   HelpSystem::attachToolTipOn( button,
@@ -860,13 +1026,13 @@ void PeakInfoDisplay::init()
 //                                           wApp->sessionId(), guessIsotopeWorker,
 //                                           boost::function<void ()>() ) );
   
-  m_peakAddRemoveLabel = new WLabel( WString("{1}: ").arg( WString::tr("Peak") ), buttonDiv);
+  m_peakAddRemoveLabel = new WLabel( WString("{1}: ").arg( WString::tr("Peak") ), buttonsDiv);
   m_peakAddRemoveLabel->addStyleClass("buttonSeparator");
   m_peakAddRemoveLabel->setMargin(WLength(10),Wt::Left);
   
   if( m_viewer->isMobile() )
   {
-    WImage *addPeak = new WImage( WLink("InterSpec_resources/images/plus_min_black.svg"), buttonDiv );
+    WImage *addPeak = new WImage( WLink("InterSpec_resources/images/plus_min_black.svg"), buttonsDiv );
     addPeak->setAttributeValue( "width", "16" );
     addPeak->setAttributeValue( "height", "16" );
     addPeak->addStyleClass( "WhiteIcon" );
@@ -874,7 +1040,7 @@ void PeakInfoDisplay::init()
     addPeak->setMargin( 8, Wt::Right );
     addPeak->clicked().connect( this, &PeakInfoDisplay::createNewPeak );
     
-    WImage *delPeak = new WImage( WLink("InterSpec_resources/images/minus_min_black.svg"), buttonDiv );
+    WImage *delPeak = new WImage( WLink("InterSpec_resources/images/minus_min_black.svg"), buttonsDiv );
     delPeak->setAttributeValue( "width", "16" );
     delPeak->setAttributeValue( "height", "16" );
     delPeak->addStyleClass( "WhiteIcon" );
@@ -883,13 +1049,13 @@ void PeakInfoDisplay::init()
     m_deletePeak->hide();
   }else
   {
-    WPushButton *addPeak = new WPushButton( WString::tr("pid-add-peak-btn"), buttonDiv );
+    WPushButton *addPeak = new WPushButton( WString::tr("pid-add-peak-btn"), buttonsDiv );
     HelpSystem::attachToolTipOn( addPeak, WString::tr("pid-tt-add-peak-btn"),
                                 showToolTips, HelpSystem::ToolTipPosition::Top );
     addPeak->clicked().connect( this, &PeakInfoDisplay::createNewPeak );
     addPeak->setIcon( "InterSpec_resources/images/plus_min_white.svg" );
     
-    WPushButton *delPeak = new WPushButton( WString::tr("Delete"), buttonDiv );
+    WPushButton *delPeak = new WPushButton( WString::tr("Delete"), buttonsDiv );
     HelpSystem::attachToolTipOn( delPeak, WString::tr("pid-tt-del-peaks"),
                                 showToolTips, HelpSystem::ToolTipPosition::Top  );
     delPeak->setHiddenKeepsGeometry( true );
@@ -917,21 +1083,62 @@ void PeakInfoDisplay::init()
   if( !m_viewer->isPhone() )
   {
     const char *key = m_viewer->isMobile() ? "pid-better-editor-hint-mobile" : "pid-better-editor-hint";
-    WText *txt = new WText( WString::tr(key), buttonDiv );
+    WText *txt = new WText( WString::tr(key), bottomDiv );
     txt->addStyleClass( "PeakEditHint" );
-    txt->hide();
-    mouseWentOver().connect( "function(object, event){try{$('#" + txt->id() + "').show();}catch(e){}}" );
-    mouseWentOut().connect( "function(object, event){try{$('#" + txt->id() + "').hide();}catch(e){}}" );
+    const string show_js( "function(object, event){try{$('#" + txt->id() + "').css('visibility','visible');}catch(e){}}" );
+    const string hide_js( "function(object, event){try{$('#" + txt->id() + "').css('visibility','hidden');}catch(e){}}" );
+    mouseWentOver().connect( show_js );
+    mouseWentOut().connect( hide_js );
+    txt->doJavaScript( "(" + hide_js + ")();" );
   }
 #endif
   
+  WContainerWidget *csvDiv = new WContainerWidget( bottomDiv );
+  csvDiv->addStyleClass( "PeakInfoDisplayCsvBtns" );
+  
+  WPushButton *copyButton = new WPushButton( csvDiv );
+  copyButton->setIcon( "InterSpec_resources/images/copy_small.svg" );
+  copyButton->setStyleClass( "LinkBtn" );
+  copyButton->disable();
+  HelpSystem::attachToolTipOn( copyButton, WString::tr("pid-tt-csv-copy"), showToolTips );
+  WPopupMenu *copyMenu = nullptr;
+  if( m_viewer->isMobile() )
+    copyMenu = new WPopupMenu();
+  else
+    copyMenu = new PopupDivMenu( nullptr, PopupDivMenu::MenuType::TransientMenu);
+  copyButton->setMenu( copyMenu );
+  copyButton->clicked().connect( this, &PeakInfoDisplay::copyCsvPeakDataToClient );
+  copyMenu->aboutToHide().connect( this, &PeakInfoDisplay::removeCsvPeakDatafromClient );
+  
+  
+  LOAD_JAVASCRIPT(wApp, "PeakInfoDisplay.cpp", "PeakInfoDisplay", wtjsCopyPeakCsvDataToClipboard);
+  WMenuItem *fullCopyMenuItem = copyMenu->addItem( WString::tr("pid-csv-copy-full") );
+  WMenuItem *noHeaderCopyMenuItem = copyMenu->addItem( WString::tr("pid-csv-copy-no-hdr") );
+  WMenuItem *compactCopyMenuItem = copyMenu->addItem( WString::tr("pid-csv-copy-compact") );
+  
+  fullCopyMenuItem->clicked().connect( "function(s,e){ "
+    "Wt.WT.CopyPeakCsvDataToClipboard(s,e," + jsRef() + ", 'CsvFullData');"
+  "}" );
+  noHeaderCopyMenuItem->clicked().connect( "function(s,e){ "
+    "Wt.WT.CopyPeakCsvDataToClipboard(s,e," + jsRef() + ", 'CsvNoHeaderData');"
+  "}" );
+  compactCopyMenuItem->clicked().connect( "function(s,e){ "
+    "Wt.WT.CopyPeakCsvDataToClipboard(s,e," + jsRef() + ", 'CsvCompactData');"
+  "}" );
+  
+  // TODO: Maybe add tool tips to each menu item?
+  //HelpSystem::attachToolTipOn( fullCopyMenuItem, WString::tr("pid-tt-csv-export"), showToolTips );
+  //HelpSystem::attachToolTipOn( noHeaderCopyMenuItem, WString::tr("pid-tt-csv-export"), showToolTips );
+  //HelpSystem::attachToolTipOn( compactCopyMenuItem, WString::tr("pid-tt-csv-export"), showToolTips );
+  
+  
   WResource *csv = m_model->peakCsvResource();
 #if( BUILD_AS_OSX_APP || IOS )
-  WAnchor *csvButton = new WAnchor( WLink(csv), buttonDiv );
+  WAnchor *csvButton = new WAnchor( WLink(csv), csvDiv );
   csvButton->setTarget( AnchorTarget::TargetNewWindow );
   csvButton->setStyleClass( "LinkBtn DownloadLink" );
 #else
-  WPushButton *csvButton = new WPushButton( buttonDiv );
+  WPushButton *csvButton = new WPushButton( csvDiv );
   csvButton->setIcon( "InterSpec_resources/images/download_small.svg" );
   csvButton->setLink( WLink(csv) );
   csvButton->setLinkTarget( Wt::TargetNewWindow );
@@ -948,12 +1155,10 @@ void PeakInfoDisplay::init()
   csvButton->setText( WString::tr("CSV") );
   csvButton->disable();
 
-  auto enableDisableCsv = [this,csvButton](){
-    //csvButton->setEnabled( m_model->rowCount() > 0 );
-    if( m_model->rowCount() > 0 )
-      csvButton->enable();
-    else
-      csvButton->disable();
+  auto enableDisableCsv = [this,csvButton,copyButton](){
+    const bool enable = (m_model->rowCount() > 0);
+    csvButton->setEnabled( enable );
+    copyButton->setEnabled( enable );
   };
   
   m_model->dataChanged().connect( std::bind(enableDisableCsv) );

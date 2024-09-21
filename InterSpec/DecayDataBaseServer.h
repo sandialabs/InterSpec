@@ -35,7 +35,7 @@
 //Since all operations on the database are const, with the exception of
 //  initialization, there is no reason to not share a single copy between all
 //  sessions/threads/users, so we'll do this through the following class.
-class DecayDataBaseServer
+class InterSpec_API DecayDataBaseServer
 {
 public:
   //database() will throw if it is unable to initialse the database

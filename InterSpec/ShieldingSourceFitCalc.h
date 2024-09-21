@@ -62,8 +62,14 @@ namespace GammaInteractionCalc
 {
   enum class GeometryType : int;
   enum class TraceActivityType : int;
+  
+  struct PeakDetail;
+  struct ShieldingDetails;
+  struct SourceDetails;
+  
+  struct PeakResultPlotInfo;
   class ShieldingSourceChi2Fcn;
-};
+}//namespace GammaInteractionCalc
 
 
 /** This namespace is structs that represent the data users input in the `ShieldingSelect` class, and the inputs of
@@ -91,6 +97,11 @@ namespace ShieldingSourceFitCalc
     
     //activity: in units of PhysicalUnits
     double activity;
+    /** If the activity is fit for.
+     
+     Note: if source type is `ShieldingSourceFitCalc::ModelSourceType::Intrinsic`, then this value will be false,
+     even if a shielding dimension is being fit for.
+     */
     bool fitActivity;
     
     //age: in units of PhysicalUnits::second
@@ -150,7 +161,7 @@ namespace ShieldingSourceFitCalc
     
   
   
-  /** Struct holding information cooresponding to the `TraceSrcDisplay` class defined in ShieldingSelect.cpp;
+  /** Struct holding information corresponding to the `TraceSrcDisplay` class defined in ShieldingSelect.cpp;
    represents information about a trace-source in a shielding (e.g., a volumetric source distributed unifrmly in a shielding
    material, but does not effect the attenuation or density of that material.
    */
@@ -336,6 +347,7 @@ namespace ShieldingSourceFitCalc
     double edm;  //estimated distance to minimum.
     double chi2;
     int num_fcn_calls;
+    unsigned int numDOF;
     std::vector<double> paramValues;
     std::vector<double> paramErrors;
     std::vector<std::string> errormsgs;
@@ -350,6 +362,14 @@ namespace ShieldingSourceFitCalc
     // Need to add: foreground spectrum, background spectrum,
     
     std::vector<ShieldingSourceFitCalc::IsoFitStruct> fit_src_info;
+    
+    std::unique_ptr<const std::vector<GammaInteractionCalc::PeakResultPlotInfo>> peak_comparisons;
+    
+    std::vector<std::string> peak_calc_log;
+    std::unique_ptr<const std::vector<GammaInteractionCalc::PeakDetail>> peak_calc_details;
+    std::unique_ptr<const std::vector<GammaInteractionCalc::ShieldingDetails>> shield_calc_details;
+    std::unique_ptr<const std::vector<GammaInteractionCalc::SourceDetails>> source_calc_details;
+    
     
     ShieldingSourceFitOptions options;
   };//struct ModelFitResults

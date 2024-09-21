@@ -932,7 +932,11 @@ void InterSpecWebFrame::OnNewWindow(wxWebViewEvent& evt)
       //CSV, spectrum file, JSON file, etc
       wxLogMessage("%s", "File to save; url='" + evt.GetURL() + "', target='" + evt.GetTarget() + "'");
       
-      auto server = Wt::WServer::instance();
+      // If we are linking against LibInterSpec dynamically, and using the static runtime on Windows
+      //  (default build option), we cant call `Wt::WServer::instance()`, since its in a different
+      //  runtime, and we'll get nullptr back.
+      Wt::WServer *server = InterSpecServer::get_wt_server();
+      
       assert(server);
       Wt::Http::Client* client = new Wt::Http::Client( server->ioService() );
       client->setTimeout(10);

@@ -61,7 +61,7 @@ namespace rapidxml
 //  initialization, there is no reason to not share a single copy between all
 //  sessions/threads/users, so we'll do this through the following class.
 //Note
-class ReactionGammaServer
+class InterSpec_API ReactionGammaServer
 {
 public:
   static const ReactionGamma *database();

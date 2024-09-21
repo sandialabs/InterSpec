@@ -86,6 +86,8 @@ extern void android_download_workaround( Wt::WResource *resource, std::string de
 
 
 #if( FLUX_USE_COPY_TO_CLIPBOARD )
+
+// See also CopyUrlToClipboard in QrCode.cpp
 WT_DECLARE_WT_MEMBER
 (CopyFluxDataTextToClipboard, Wt::JavaScriptFunction, "CopyFluxDataTextToClipboard",
  function( sender, event, id )
@@ -118,11 +120,11 @@ WT_DECLARE_WT_MEMBER
   console.log( 'Will try to copy HTML to copyboard' );
   
   //We failed to copy richtext, lets just copy the HTML as text.
-  //  ToDo: We could probably try the clipboard API to copy formated text
+  //  ToDo: We could probably try the clipboard API to copy formatted text
   //        See https://developer.mozilla.org/en-US/docs/Web/API/Clipboard
   
   if( window.clipboardData && window.clipboardData.setData ) {
-    return clipboardData.setData("Text", text);  // IE
+    return window.clipboardData.setData("Text", text);  // IE
   }else if( document.queryCommandSupported && document.queryCommandSupported("copy") ) {
     var temparea = document.createElement("textarea");
     temparea.textContent = text;

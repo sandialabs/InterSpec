@@ -80,6 +80,12 @@ protected:
   void removeAllPeaks();
   void assignNuclidesFromRefLines();
   
+  /** Copies the current peak CSV data to `$(this).data({'CsvFullData', 'CsvNoHeaderData', 'CsvCompactData'})`
+   Called menu copy button is clicked, and copy options menu shown.
+   */
+  void copyCsvPeakDataToClient();
+  /** Removes the data from the JS; called when copy menu is hidden. */
+  void removeCsvPeakDatafromClient();
   
 protected:
   PeakModel *m_model;

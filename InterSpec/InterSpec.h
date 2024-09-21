@@ -184,15 +184,15 @@ public:
       ReactionGammaServer, and MassAttenuation.  Other tools call
       InterSpec::dataDirectory() to find the appropriate directory.
    */
-  static void setStaticDataDirectory( const std::string &dir );
+  static InterSpec_API void setStaticDataDirectory( const std::string &dir );
  
   /** Directory where files like cross sections, materials, detector response
       function, nuclear decay information, and similar are stored.
    */
-  static std::string staticDataDirectory();
+  static InterSpec_API std::string staticDataDirectory();
  
   /** Returns if the staticDataDirectory has been explicitly set. */
-  static bool haveSetStaticDataDirectory();
+  static InterSpec_API bool haveSetStaticDataDirectory();
   
 #if( BUILD_AS_ELECTRON_APP || IOS || ANDROID || BUILD_AS_OSX_APP || BUILD_AS_LOCAL_SERVER || BUILD_AS_WX_WIDGETS_APP || BUILD_AS_UNIT_TEST_SUITE )
   /** Sets the directory were we can write write the user preference database
@@ -201,7 +201,7 @@ public:
    
    Will throw exception if not empty string and its an invalid directory.
    */
-  static void setWritableDataDirectory( const std::string &dir );
+  static InterSpec_API void setWritableDataDirectory( const std::string &dir );
   
   /** Returns the location you can write files to, such as user preferences.
       
@@ -212,7 +212,7 @@ public:
    
    Will throw exception if hasnt been set (or set with empty string)
    */
-  static std::string writableDataDirectory();
+  static InterSpec_API std::string writableDataDirectory();
 #endif  //if( not a webapp )
   
   /** Function called by Wt when the client reports a change in widget size. */

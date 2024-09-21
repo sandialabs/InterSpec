@@ -24,6 +24,7 @@
 #include "InterSpec_config.h"
 
 #include <string>
+#include <fstream>
 #include <iostream>
 #include <stdexcept>
 
@@ -44,7 +45,8 @@
 #ifdef __APPLE__
 #include <mach-o/dyld.h>  //for _NSGetExecutablePath
 #elif( defined(_WIN32) )
-#include <libloaderapi.h>  //for GetModuleFileNameW
+#include <libloaderapi.h> //for GetModuleFileNameW
+#include <Shlobj.h>       //for CSIDL_APPDATA and SHGetKnownFolderPath
 #else
 #include <limits.h>  //for PATH_MAX
 #endif
@@ -216,35 +218,38 @@ static_assert( 0, "Not unix and not win32?  Unsupported getting terminal width" 
 #endif //#if( USE_BATCH_TOOLS || BUILD_AS_LOCAL_SERVER )
   
   
-#if( !ANDROID && !IOS && !BUILD_FOR_WEB_DEPLOYMENT )
-bool locate_file( string &filename, const bool is_dir,
-                 size_t max_levels_up, const bool include_path )
+uint32_t compile_date_as_int()
 {
-  auto check_exists = [is_dir]( const string &name ) -> bool {
-    return is_dir ? SpecUtils::is_directory(name) : SpecUtils::is_file(name);
-  };//auto check_exists
+  //The below YEAR MONTH DAY macros are taken from
+  //http://bytes.com/topic/c/answers/215378-convert-__date__-unsigned-int
+  //  and I believe to be public domain code
+#define YEAR ((((__DATE__ [7] - '0') * 10 + (__DATE__ [8] - '0')) * 10 \
++ (__DATE__ [9] - '0')) * 10 + (__DATE__ [10] - '0'))
+#define MONTH (__DATE__ [2] == 'n' && __DATE__ [1] == 'a' ? 0 \
+: __DATE__ [2] == 'b' ? 1 \
+: __DATE__ [2] == 'r' ? (__DATE__ [0] == 'M' ? 2 : 3) \
+: __DATE__ [2] == 'y' ? 4 \
+: __DATE__ [2] == 'n' ? 5 \
+: __DATE__ [2] == 'l' ? 6 \
+: __DATE__ [2] == 'g' ? 7 \
+: __DATE__ [2] == 'p' ? 8 \
+: __DATE__ [2] == 't' ? 9 \
+: __DATE__ [2] == 'v' ? 10 : 11)
+#define DAY ((__DATE__ [4] == ' ' ? 0 : __DATE__ [4] - '0') * 10 + (__DATE__ [5] - '0'))
   
-  if( SpecUtils::is_absolute_path(filename) )
-    return check_exists(filename);
+  return YEAR*10000 + (MONTH+1)*100 + DAY;
+}//uint32_t compile_date_as_int()
   
-  // Check if path is there, relative to CWD
-  if( check_exists(filename) )
-    return true;
+#if( !ANDROID && !IOS && !BUILD_FOR_WEB_DEPLOYMENT )
   
-  if( SpecUtils::icontains(filename,"http://") || SpecUtils::icontains(filename,"https://") )
-    return false;
-  
-  // We'll look relative to the executables path, but note that if we started from a symlink, I
-  //  think it will resolve relative to actual executable
-  try
-  {
+std::string current_exe_path()
+{
 #ifdef __APPLE__
     char path_buffer[PATH_MAX + 1] = { '\0' };
     uint32_t size = PATH_MAX + 1;
     
-    if (_NSGetExecutablePath(path_buffer, &size) != 0) {
-      return false;
-    }
+    if (_NSGetExecutablePath(path_buffer, &size) != 0)
+      throw runtime_error( "_NSGetExecutablePath failed" );
     
     path_buffer[PATH_MAX] = '\0'; // JIC
     const string exe_path = path_buffer;
@@ -269,6 +274,33 @@ bool locate_file( string &filename, const bool is_dir,
     path_buffer[PATH_MAX] = '\0'; // JIC
     const string exe_path = path_buffer;
 #endif // else not __APPLE__
+  
+  return exe_path;
+}//std::string current_exe_path()
+  
+  
+bool locate_file( string &filename, const bool is_dir,
+                 size_t max_levels_up, const bool include_path )
+{
+  auto check_exists = [is_dir]( const string &name ) -> bool {
+    return is_dir ? SpecUtils::is_directory(name) : SpecUtils::is_file(name);
+  };//auto check_exists
+  
+  if( SpecUtils::is_absolute_path(filename) )
+    return check_exists(filename);
+  
+  // Check if path is there, relative to CWD
+  if( check_exists(filename) )
+    return true;
+  
+  if( SpecUtils::icontains(filename,"http://") || SpecUtils::icontains(filename,"https://") )
+    return false;
+  
+  // We'll look relative to the executables path, but note that if we started from a symlink, I
+  //  think it will resolve relative to actual executable
+  try
+  {
+    const string exe_path = current_exe_path();
     
     string canonical_exe_path = exe_path;
     if( !SpecUtils::make_canonical_path(canonical_exe_path) )
@@ -344,6 +376,34 @@ bool locate_file( string &filename, const bool is_dir,
 }//bool locate_file( ... )
 #endif //#if( !ANDROID && !IOS && !BUILD_FOR_WEB_DEPLOYMENT )
   
+  
+std::string file_contents( const std::string &filename )
+{
+  //Copied from SpecUtils::load_file_data( const char * const filename, std::vector<char> &data );
+#ifdef _WIN32
+  const std::wstring wfilename = SpecUtils::convert_from_utf8_to_utf16(filename);
+  std::ifstream stream(wfilename.c_str(), ios::binary);
+#else
+  std::ifstream stream(filename.c_str(), ios::binary);
+#endif
+
+  if (!stream)
+    throw runtime_error(string("cannot open file ") + filename);
+  stream.unsetf(ios::skipws);
+
+  // Determine stream size
+  stream.seekg(0, ios::end);
+  size_t size = static_cast<size_t>( stream.tellg() );
+  stream.seekg(0);
+
+  string data;
+  data.resize( size );
+  stream.read(&data.front(), static_cast<streamsize>(size));
+  
+  return data;
+}//std::string file_contents( const std::string &filename )
+  
+  
 #ifdef _WIN32
 /** Get command line arguments encoded as UTF-8.
     This function just leaks the memory
@@ -377,6 +437,21 @@ void getUtf8Args( int &argc, char ** &argv )
   LocalFree(argvw);
 }//void getUtf8Args()
 
+
+void getUtf8Args( int &argc, wchar_t **argvw, char **&argv )
+{
+  argv = (char **)malloc( sizeof( char * ) * argc );
+
+  for( int i = 0; i < argc; ++i )
+  {
+    //printf("Argument: %d: %ws\n", i, argvw[i]);
+    const std::string asutf8 = SpecUtils::convert_from_utf16_to_utf8( argvw[i] );
+    argv[i] = (char *)malloc( sizeof( char ) * (asutf8.size() + 1) );
+    strcpy( argv[i], asutf8.c_str() );
+  }//for( int i = 0; i < argc; ++i)
+}//void processCustomArgs()
+
+
 void cleanupUtf8Args( int &argc, char **&argv )
 {
   for( int i = 0; i < argc; ++i )
@@ -385,5 +460,29 @@ void cleanupUtf8Args( int &argc, char **&argv )
   argc = 0;
   argv = nullptr;
 }//void cleanupUtf8Args( int &argc, char **&argv )
+
+
+std::string user_data_dir()
+{ 
+  //  Should we use SHGetKnownFolderPath with FOLDERID_RoamingAppData instead?
+  TCHAR ppszPath[MAX_PATH];
+  HRESULT hr = ::SHGetFolderPath( nullptr, CSIDL_APPDATA, nullptr, SHGFP_TYPE_CURRENT, ppszPath );
+  if( hr == E_FAIL ) // Folder doesnt exist, get default value?  
+    hr = ::SHGetFolderPath( nullptr, CSIDL_APPDATA, nullptr, SHGFP_TYPE_DEFAULT, ppszPath );
+ 
+  if( hr != S_OK )
+    throw runtime_error( "Couldnt get APP data directory" );
+
+  int len = MultiByteToWideChar( CP_ACP, 0, ppszPath, -1, NULL, 0 );
+  std::wstring wstr( len, 0 );
+  MultiByteToWideChar( CP_ACP, 0, ppszPath, -1, &wstr[0], len );
+
+
+  int utf8Len = WideCharToMultiByte( CP_UTF8, 0, &wstr[0], -1, NULL, 0, NULL, NULL );
+  std::string utf8Str( utf8Len, 0 );
+  WideCharToMultiByte( CP_UTF8, 0, &wstr[0], -1, &utf8Str[0], utf8Len, NULL, NULL );
+  
+  return utf8Str;
+}//std::string AppUtils::user_data_dir()
 #endif
 }//namespace AppUtils

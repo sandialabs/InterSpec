@@ -139,6 +139,13 @@ namespace InterSpecServer
     std::lock_guard<std::mutex> lock( sm_servedOnMutex );
     return sm_urlServedOn;
   }
+
+  
+  Wt::WServer *get_wt_server()
+  {
+    std::lock_guard<std::mutex> serverlock( ns_servermutex );
+    return ns_server;
+  }
   
   
   std::string getWtConfigXml( int argc, char *argv[] )

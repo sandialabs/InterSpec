@@ -1,0 +1,93 @@
+Foreground LiveTime: {% if foreground.LiveTime_s %}{{ foreground.LiveTime_s }} seconds{% endif %} {% if foreground.LiveTime %}({{ foreground.LiveTime }}){% endif %}
+{% if HasFitResults %}{% if FixedGeometryDetector %}Results given as {{ ActShieldFitSetup.FixedGeometryType }}.{% else %}Distance to source center from detector: {{ ActShieldFitSetup.Distance }}{% endif %}{% endif %}
+{% if exists("Detector") %}{% if Detector %}Detector: {{ Detector.Name }} radius {{ printFixed(Detector.Radius_cm,1) }}{% endif %}{% endif %}
+{% if HasFitResults %}
+{% if ActShieldFitSetup.FitOptions.InterferenceCorrection %}Allowing multiple nuclides being fit for to potentially contribute to the same photopeak{% else %}Not allowing multiple nuclides being fit for to contribute to the same photopeak{% endif %}
+{% if ActShieldFitSetup.FitOptions.DecayDuringMeasurement %}Branching ratios are being corrected for nuclide decay during measurement{% endif %}
+{% endif %}
+{% if HasErrorMessage %}
+
+
+Error Message: {{ ErrorMessage }}
+{% endif %}
+{% if HasWarnings %}
+Warnings:
+## for warning in Warnings
+  {{ warning }}
+## endfor
+{% endif %}
+{% if exists("Sources") %}
+Sources:
+## for src in Sources
+  For {{ src.Nuclide }} at age {{ src.Age }}{% if src.AgeIsFit %} +- {{ src.AgeUncert }} {% endif %} with activity {{ src.Activity }}{% if src.ActivityIsFit %} +- {{ src.ActivityUncert }} {% endif %}{% if src.IsTraceSource %}(src.TraceDisplayActivity{% if src.ActivityIsFit %} +- {{ src.TraceDisplayActivityUncert }} {% endif %}){% endif %}:
+## for peak in src.PeaksThisNucContributesTo
+## for gamma in peak.ThisNucsGammasForPeak
+    Peak attributed to {{ peak.DecayParticleEnergy }} keV received {{ gamma.CpsContributedToPeak }} from {{ gamma.Energy }} keV line{% if existsIn(gamma,"DecayCorrection") %} (decay correction {{ gamma.DecayCorrection }}){% endif %}, which has I={{ gamma.BranchingRatio }}
+##endfor
+##endfor
+##endfor
+{% endif %}
+
+{% if exists("Shieldings") %}
+{% if existsIn(Shieldings,"Shields") %}
+Shieldings:
+## for shield in Shieldings.Shields
+{% if shield.IsGeneric %}
+    Generic AN={{ shield.AN }}, AD={{ shield.AD }} g/cm2:
+{% else %}
+    {{ shield.Name }}{% if existsIn(shield,"Formula") %}, {{ shield.Formula }},{% endif %} density={{ shield.Density_gPerCm3 }} g/cm3, {{ Shieldings.Geometry }}: [{% for dimNum in range(Shieldings.NumDimensions) %}{% if dimNum %}, {% endif %}{{ at(Shieldings.DimensionMeanings,dimNum) }}_thickness={{at(shield.Thicknesses,dimNum)}}{% endfor %}]
+{% endif %}
+{% if exists("PeaksUsedForActivityFitting") %}
+## for peak in PeaksUsedForActivityFitting.Peaks
+        {% if (shield.ShieldingNumber < length(peak.ShieldAttenuations)) %}{%
+            if (at(peak.ShieldAttenuations,shield.ShieldingNumber) > 0.0) 
+            %}For peak at {{ peak.Energy}} keV, attenuation multiple of {{ at(peak.ShieldAttenuations,shield.ShieldingNumber) }}{% 
+        endif %}{% endif %}
+
+##endfor
+{% endif %}
+
+##endfor
+{% endif %}
+{% endif %}
+
+
+Detector Efficiency Effects:
+{% if exists("PeaksUsedForActivityFitting") %}
+## for peak in PeaksUsedForActivityFitting.Peaks
+    {{ peak.Energy }} keV photopeak reduced by {{ peak.DetectorSolidAngleFraction }} * {{ peak.DetectorIntrinsicEff }} = {{ peak.DetectorEff}} ((solid angle)*(det intrinsic eff)=eff)
+##endfor
+{% endif %}
+
+
+Chi2 Contributions Of Peaks:
+{% if exists("PeaksUsedForActivityFitting") %}
+## for peak in PeaksUsedForActivityFitting.Peaks
+    At {{ peak.Energy }} keV expected {{ peak.PredictedCounts }} counts, recieved {{ peak.SignalCounts }} +- {{ peak.SignalCountsUncert }}. giving (observed-expected)/uncert={{ peak.PredictedNumSigmaOff }}
+##endfor
+{% endif %}
+&nbsp;
+{% if HasFitResults %}
+There were {{ NumDof }} parameters fit for
+It took {{ NumberFcnCalls }} solution trials to reach chi2={{ FitChi2 }} with an estimated distance to minumum of {{ EstimatedDistanceToMinimum }}
+## for src in Sources
+{{ src.Nuclide }} fit activity {{ src.Activity }}{% if src.ActivityIsFit %} with uncertainty {{ src.ActivityUncert }} ({{ src.ActivityUncertPercent }}) {% endif %} at {% if src.AgeIsFit %}assumed {% else %}fit {% endif %} age {{ src.Age }}
+## endfor
+{% if HasFitResults %}
+Geometry: {% if FixedGeometryDetector %}Fixed geometry, {{ ActShieldFitSetup.FixedGeometryType }}.{% else %}{{ ActShieldFitSetup.Geometry }}{% endif %}
+{% endif %}
+{% if exists("Shieldings") %}
+Shieldings:
+{% if exists("Shieldings") and existsIn(Shieldings,"Shields") %}
+## for shield in Shieldings.Shields
+{% if shield.IsGeneric %}
+    Generic shielding AN={{ shield.AN }}, AD={{ shield.AD }} g/cm3
+{% else %}
+    {{ shield.Name }} has density {{ shield.Density_gPerCm3 }} g/cm3 and dimensions {% for i in range(shield.NumDimensions) %} {{ at(Shieldings.DimensionMeanings,i) }}: {{ at(shield.Thicknesses, i) }}{% if at(shield.DimensionIsFit, i) %} (+-{{ at(shield.ThicknessesUncerts,i) }}) {% endif %} {% endfor %}
+{% endif %}
+##endfor
+{% else %}
+    None
+{% endif %}
+{% endif %}
+{% endif %}

@@ -76,10 +76,6 @@
 #include "target/osx/macOsUtils.h"
 #endif
 
-#if( BUILD_AS_WX_WIDGETS_APP )
-#include "target/wxWidgets/InterSpecWxUtils.h"
-#endif
-
 #if( !BUILD_FOR_WEB_DEPLOYMENT )
 #include "InterSpec/InterSpecServer.h"
 #endif
@@ -114,6 +110,11 @@ namespace
   std::set<InterSpecApp *> AppInstances;
   //note: could potentially use Wt::WServer::instance()->sessions() to retrieve
   //      sessionIds.
+#endif
+
+#if(  BUILD_AS_WX_WIDGETS_APP )
+  std::mutex ns_js_err_handler_mutex;
+  std::function<void(std::string, std::string)> ns_js_err_handler;
 #endif
 }//namespace
 
@@ -1004,27 +1005,13 @@ std::string InterSpecApp::tempDirectory()
 }//void tempDirectory()
 
 
-uint32_t InterSpecApp::compileDateAsInt()
+#if(  BUILD_AS_WX_WIDGETS_APP )
+void InterSpecApp::setJavascriptErrorHandler( std::function<void(std::string, std::string)> fctn )
 {
-  //The below YEAR MONTH DAY macros are taken from
-  //http://bytes.com/topic/c/answers/215378-convert-__date__-unsigned-int
-  //  and I believe to be public domain code
-  #define YEAR ((((__DATE__ [7] - '0') * 10 + (__DATE__ [8] - '0')) * 10 \
-  + (__DATE__ [9] - '0')) * 10 + (__DATE__ [10] - '0'))
-  #define MONTH (__DATE__ [2] == 'n' && __DATE__ [1] == 'a' ? 0 \
-  : __DATE__ [2] == 'b' ? 1 \
-  : __DATE__ [2] == 'r' ? (__DATE__ [0] == 'M' ? 2 : 3) \
-  : __DATE__ [2] == 'y' ? 4 \
-  : __DATE__ [2] == 'n' ? 5 \
-  : __DATE__ [2] == 'l' ? 6 \
-  : __DATE__ [2] == 'g' ? 7 \
-  : __DATE__ [2] == 'p' ? 8 \
-  : __DATE__ [2] == 't' ? 9 \
-  : __DATE__ [2] == 'v' ? 10 : 11)
-  #define DAY ((__DATE__ [4] == ' ' ? 0 : __DATE__ [4] - '0') * 10 + (__DATE__ [5] - '0'))
-
-  return YEAR*10000 + (MONTH+1)*100 + DAY;
-}//uint32_t InterSpec::compileDateAsInt()
+  std::lock_guard<std::mutex> lock( ns_js_err_handler_mutex );
+  ns_js_err_handler = fctn;
+}
+#endif //#if(  BUILD_AS_WX_WIDGETS_APP )
 
 
 std::string InterSpecApp::userNameFromOS()
@@ -1436,8 +1423,18 @@ void InterSpecApp::handleJavaScriptError( const std::string &errorText )
   doJavaScript( "console.log('Here I am after error');", false );
   
   if( isPrimaryWindowInstance() )
-    InterSpecWxUtils::handle_javascript_error( errorText, m_externalToken );
-  
+  {
+    std::function<void(std::string, std::string)> handler;
+    
+    {//begin lock on ns_js_err_handler_mutex
+      std::lock_guard<std::mutex> lock( ns_js_err_handler_mutex );
+      handler = ns_js_err_handler;
+    }//end lock on ns_js_err_handler_mutex
+
+    if( handler )
+      handler( errorText, m_externalToken );
+  }
+
   // Default WApplication implementation just logs error, and then calls WApplication:quit()
   WApplication::handleJavaScriptError( errorText );
 }//void handleJavaScriptError( const std::string &errorText )
@@ -1566,6 +1563,27 @@ void InterSpecApp::miscSignalHandler( const std::string &signal )
   }//if( SpecUtils::istarts_with( signal, "showMultimedia" ) )
 
 
+  if( SpecUtils::istarts_with( signal, "peakCsvCopy-" ) )
+  {
+    string msg = signal.substr(12);
+    WarningWidget::WarningMsgLevel level = WarningWidget::WarningMsgLevel::WarningMsgInfo;
+  
+    if( SpecUtils::istarts_with( msg, "success-" ) )
+    {
+      msg = msg.substr(8);
+      level = WarningWidget::WarningMsgLevel::WarningMsgInfo;
+    }else if( SpecUtils::istarts_with( msg, "error-" ) )
+    {
+      msg = msg.substr(6);
+      level = WarningWidget::WarningMsgLevel::WarningMsgHigh;
+    }
+    
+    passMessage( msg, level );
+    return;
+  }//if( SpecUtils::istarts_with( signal, "showMultimedia" ) )
+  
+  
+  
   // shouldnt ever make it here..
   const string errmsg = "InterSpecApp::miscSignalHandler: unhandled signal '" + signal + "'";
   passMessage( errmsg, WarningWidget::WarningMsgHigh );

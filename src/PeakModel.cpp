@@ -56,6 +56,7 @@
 #include "InterSpec/PeakDef.h"
 #include "InterSpec/PeakFit.h"
 #include "InterSpec/SpecMeas.h"
+#include "InterSpec/InterSpec.h"
 #include "InterSpec/PeakModel.h"
 #include "InterSpec/InterSpecApp.h"
 #include "InterSpec/PhysicalUnits.h"
@@ -573,6 +574,10 @@ std::vector<PeakDef> PeakModel::csv_to_candidate_fit_peaks(
   while( SpecUtils::safe_get_line(csv, line, 2048) )
   {
     SpecUtils::trim(line);
+    
+    if( SpecUtils::istarts_with(line, "#END ") || SpecUtils::istarts_with(line, "# END ") )
+      break;
+    
     if( line.empty() || line[0]=='#' || (!isdigit(line[0]) && line[0]!='+' && line[0]!='-') )
       continue;
     
@@ -1007,7 +1012,34 @@ void PeakModel::PeakCsvResource::handleRequest( const Wt::Http::Request &/*reque
 
   const shared_ptr<const SpecUtils::Measurement> &data = m_model->m_foreground;
   
-  PeakModel::write_peak_csv( response.out(), specfilename, *m_model->m_peaks, data );
+  string backfilename;
+  shared_ptr<const SpecUtils::Measurement> background;
+  shared_ptr<const deque<shared_ptr<const PeakDef>>> background_peaks;
+  InterSpec *interspec = InterSpec::instance();
+  assert( interspec );
+  if( interspec )
+  {
+    shared_ptr<const SpecMeas> bmeas = interspec->measurment(SpecUtils::SpectrumType::Background);
+    background = interspec->displayedHistogram( SpecUtils::SpectrumType::Background );
+    if( background && bmeas )
+    {
+      backfilename = bmeas->filename();
+      const set<int> &samples = interspec->displayedSamples(SpecUtils::SpectrumType::Background);
+      background_peaks = bmeas->peaks( samples );
+    }//if( bmeas )
+  }//if( interspec )
+  
+  
+  if( background && background_peaks && !background_peaks->empty() )
+  {
+    PeakModel::write_for_and_back_peak_csv( response.out(), specfilename,
+                                        PeakModel::PeakCsvType::Full, m_model->m_sortedPeaks, data,
+                                        backfilename, background_peaks.get(), background );
+  }else
+  {
+    PeakModel::write_peak_csv( response.out(), specfilename, PeakModel::PeakCsvType::Full,
+                              m_model->m_sortedPeaks, data );
+  }
 }//void handleRequest(...)
 
 
@@ -1227,6 +1259,12 @@ std::vector<PeakDef> PeakModel::peakVec() const
   
   return answer;
 }//std::vector<PeakDef> peakVec() const
+
+
+const std::deque<std::shared_ptr<const PeakDef>> &PeakModel::sortedPeaks() const
+{
+  return m_sortedPeaks;
+}
 
 
 bool PeakModel::isWithinRange( const PeakDef &peak ) const
@@ -3476,23 +3514,121 @@ bool PeakModel::compare( const PeakShrdPtr &lhs, const PeakShrdPtr &rhs,
 
 void PeakModel::write_peak_csv( std::ostream &outstrm,
                                std::string specfilename,
+                               const PeakModel::PeakCsvType type,
                                const std::deque<std::shared_ptr<const PeakDef>> &peaks,
                                const std::shared_ptr<const SpecUtils::Measurement> &data )
 {
+  bool write_html = false, write_compact = false, write_header = false;
+  switch( type )
+  {
+    case PeakCsvType::Full:
+      write_html = false;
+      write_compact = false;
+      write_header = true;
+      break;
+      
+    case PeakCsvType::NoHeader:
+      write_html = false;
+      write_compact = false;
+      write_header = false;
+      break;
+      
+    case PeakCsvType::Compact:
+      write_html = false;
+      write_compact = true;
+      write_header = false;
+      break;
+      
+    case PeakCsvType::FullHtml:
+      write_html = true;
+      write_compact = false;
+      write_header = true;
+      break;
+      
+    case PeakCsvType::NoHeaderHtml:
+      write_html = true;
+      write_compact = false;
+      write_header = false;
+      break;
+      
+    case PeakCsvType::CompactHtml:
+      write_html = true;
+      write_compact = true;
+      write_header = false;
+      break;
+  }//switch( type )
+  
   const size_t npeaks = peaks.size();
   const string eol_char = "\r\n"; //for windows - could potentially customize this for the users operating system
   
-  outstrm <<
-  "Centroid,  Net_Area,   Net_Area,      Peak, FWHM,   FWHM,Reduced, ROI_Total,ROI, "
-  "File,         ,     ,     , Nuclide, Photopeak_Energy, ROI_Lower_Energy, ROI_Upper_Energy, Color, User_Label, Continuum_Type, "
-  "Skew_Type, Continuum_Coefficients, Skew_Coefficients,         "
-  << eol_char
-  <<
-  "     keV,    Counts,Uncertainty,       CPS,  keV,Percent,Chi_Sqr,    Counts,ID#, "
-  "Name, LiveTime, Date, Time,        ,              keV,              keV,              keV, (css),           ,               , "
-  "         ,                       ,                  , LiveTime"
-  << eol_char;
+  if( write_html )
+  {
+    outstrm << "<table>" << eol_char;
+  }
   
+  if( write_header )
+  {
+    if( write_html )
+    {
+      outstrm << "  <thead>" << eol_char
+      << "    <tr>" << eol_char
+      << "      <th>Centroid (keV)</th>"
+      "<th>Net Area Counts</th>"
+      "<th>Net Area Uncertainty</th>"
+      "<th>Peak CPS</th>"
+      "<th>FWHM (keV)</th>"
+      "<th>FWHM (%)</th>"
+      "<th>Reduced Chi2</th>"
+      "<th>ROI_Total Counts</th>"
+      "<th>ROI ID#</th>"
+      "<th>File Name</th>";
+      if( !write_compact )
+      {
+        outstrm << "<th>LiveTime (s)</th>"
+        "<th>Date</th>"
+        "<th>Time</th>"
+        "<th>Nuclide</th>"
+        "<th>Photopeak Energy (keV)</th>"
+        "<th>ROI Lower Energy</th>"
+        "<th>ROI_Upper_Energy</th>"
+        "<th>Color</th>"
+        "<th>User_Label</th>"
+        "<th>Continuum_Type</th>"
+        "<th>Skew_Type</th>"
+        "<th>Continuum_Coefficients</th>"
+        "<th>Skew_Coefficients</th>"
+        "<th>RealTime (s)</th>";
+      }
+      outstrm << eol_char << "    </tr>" << eol_char
+      << "  </thead>" << eol_char;
+    }else
+    {
+      outstrm <<
+      "Centroid,  Net_Area,   Net_Area,      Peak, FWHM,   FWHM,Reduced, ROI_Total,ROI, "
+      "File";
+      if( !write_compact )
+      {
+        outstrm <<
+        ",         ,     ,     , Nuclide, Photopeak_Energy, ROI_Lower_Energy, ROI_Upper_Energy, Color, User_Label, Continuum_Type, "
+        "Skew_Type, Continuum_Coefficients, Skew_Coefficients,         ";
+      }
+      outstrm << eol_char
+      <<
+      "     keV,    Counts,Uncertainty,       CPS,  keV,Percent,Chi_Sqr,    Counts,ID#, "
+      "Name";
+      
+      if( !write_compact )
+      {
+        outstrm <<
+        ", LiveTime, Date, Time,        ,              keV,              keV,              keV, (css),           ,               , "
+        "         ,                       ,                  , RealTime";
+      }
+      outstrm << eol_char;
+    }//if( write_html ) / else
+  }//if( write_header )
+  
+  if( write_html )
+    outstrm << " <tbody>" << eol_char;
   
   for( size_t peakn = 0; peakn < npeaks; ++peakn )
   {
@@ -3578,9 +3714,9 @@ void PeakModel::write_peak_csv( std::ostream &outstrm,
       areauncertstr = areauncertstr + " ";
     
     string cpststr;
-    if( live_time > 0.0f )
+    if( (live_time > 0.0f) && data )
     {
-      snprintf( buffer, sizeof(buffer), "%1.4e", (peak.peakArea()/data->live_time()) );
+      snprintf( buffer, sizeof(buffer), "%1.4e", (peak.peakArea()/live_time) );
       cpststr = buffer;
       size_t epos = cpststr.find( "e" );
       if( epos != string::npos )
@@ -3731,32 +3867,212 @@ void PeakModel::write_peak_csv( std::ostream &outstrm,
                     + SpecUtils::printCompact(val,7);
     }//for( loop over skew parameters )
     
-    
-    outstrm << meanstr
-    << ',' << areastr
-    << ',' << areauncertstr
-    << ',' << cpststr
-    << ',' << widthstr
-    << ',' << widthprecentstr
-    << ',' << chi2str
-    << ',' << roiareastr
-    << ',' << numstr
-    << ',' << specfilename
-    << ',' << live_time_str
-    << ',' << datestr
-    << ',' << timestr
-    << ',' << nuclide
-    << ',' << energy
-    << ',' << xlow
-    << ',' << xhigh
-    << ',' << color_str
-    << ',' << user_label
-    << ',' << continuum_type
-    << ',' << skew_type
-    << ',' << cont_coefs
-    << ',' << skew_coefs
-    << ',' << real_time_str
-    << eol_char;
+    if( write_html )
+    {
+      const string field_sep = "</td><td>";
+      
+      outstrm << "    <tr><td>"
+      << meanstr
+      << field_sep << areastr
+      << field_sep << areauncertstr
+      << field_sep << cpststr
+      << field_sep << widthstr
+      << field_sep << widthprecentstr
+      << field_sep << chi2str
+      << field_sep << roiareastr
+      << field_sep << numstr
+      << field_sep << specfilename;
+      
+      if( !write_compact )
+      {
+        outstrm << field_sep << live_time_str
+        << field_sep << datestr
+        << field_sep << timestr
+        << field_sep << nuclide
+        << field_sep << energy
+        << field_sep << xlow
+        << field_sep << xhigh
+        << field_sep << color_str
+        << field_sep << user_label
+        << field_sep << continuum_type
+        << field_sep << skew_type
+        << field_sep << cont_coefs
+        << field_sep << skew_coefs
+        << field_sep << real_time_str;
+      }
+      outstrm << "</td></tr>" << eol_char;
+    }else
+    {
+      outstrm << meanstr
+      << ',' << areastr
+      << ',' << areauncertstr
+      << ',' << cpststr
+      << ',' << widthstr
+      << ',' << widthprecentstr
+      << ',' << chi2str
+      << ',' << roiareastr
+      << ',' << numstr
+      << ',' << specfilename;
+      
+      if( !write_compact )
+      {
+        outstrm << ',' << live_time_str
+        << ',' << datestr
+        << ',' << timestr
+        << ',' << nuclide
+        << ',' << energy
+        << ',' << xlow
+        << ',' << xhigh
+        << ',' << color_str
+        << ',' << user_label
+        << ',' << continuum_type
+        << ',' << skew_type
+        << ',' << cont_coefs
+        << ',' << skew_coefs
+        << ',' << real_time_str;
+      }
+      
+      outstrm << eol_char;
+    }//if( write_html ) / else
   }//for( loop over peaks, peakn )
+  
+  if( write_html )
+    outstrm << " </tbody>" << eol_char << "</table>" << eol_char;
 }//void PeakModel::write_peak_csv(...)
 
+
+void PeakModel::write_for_and_back_peak_csv( std::ostream &outstrm,
+                           std::string specfilename,
+                           const PeakCsvType type,
+                           const std::deque<std::shared_ptr<const PeakDef>> &peaks,
+                           const std::shared_ptr<const SpecUtils::Measurement> &data,
+                           std::string background_specfilename,
+                           const std::deque<std::shared_ptr<const PeakDef>> *background_peaks,
+                           const std::shared_ptr<const SpecUtils::Measurement> &background )
+{
+  write_peak_csv( outstrm, specfilename, type, peaks, data );
+  if( !background_peaks || background_peaks->empty() || !background || (background->live_time() <= 0.0f) )
+    return;
+  
+  const string eol_char = "\r\n"; //for windows - could potentially customize this for the users operating system
+  
+  const double scale = data->live_time() / background->live_time();
+  
+  switch( type )
+  {
+    case PeakCsvType::Full:
+    case PeakCsvType::NoHeader:
+    case PeakCsvType::Compact:
+      outstrm << eol_char
+      << "#END FOREGROUND PEAKS"
+      << eol_char
+      << eol_char
+      << "#Background Spectrum Peaks (LiveTime " << background->live_time() << " s - scale by "
+      << scale << " to make comparable):" << eol_char;
+      break;
+      
+    case PeakCsvType::FullHtml:
+    case PeakCsvType::NoHeaderHtml:
+    case PeakCsvType::CompactHtml:
+      outstrm << eol_char
+      << "<!-- END FOREGROUND PEAKS -->" << eol_char
+      << "<br />" << eol_char << "<br />" << eol_char << "<div>Background Spectrum Peaks (LiveTime "
+      << background->live_time() << " s - scale by "
+      << scale << " to make comparable):</div>" << eol_char;
+      break;
+  }//switch( type )
+  
+  write_peak_csv( outstrm, background_specfilename, type, *background_peaks, background );
+  
+  
+  // Now we need to perform background subtraction
+  const double nsigmaNear = 1.0;
+  size_t num_affected_peaks = 0;
+  deque<shared_ptr<const PeakDef>> back_sub_peaks;
+  
+  for( const shared_ptr<const PeakDef> &orig_peak : peaks )
+  {
+    assert( orig_peak );
+    // TODO: we should maybe handle data-defined peaks...
+    if( !orig_peak || !orig_peak->gausPeak() )
+      continue;
+    
+    double backCounts = 0.0, backUncert2 = 0.0;
+    for( const shared_ptr<const PeakDef> &backPeak : *background_peaks )
+    {
+      assert( backPeak );
+      if( !backPeak || !backPeak->gausPeak() )
+        continue;
+      
+      const double sigma = orig_peak->gausPeak() ? orig_peak->sigma() : 0.25*orig_peak->roiWidth();
+      if( fabs(backPeak->mean() - orig_peak->mean()) < (nsigmaNear*sigma) )
+      {
+        backCounts += scale * backPeak->peakArea();
+        const double uncert = scale * std::max( 0.0, backPeak->peakAreaUncert() );
+        backUncert2 += uncert * uncert;
+      }//if( fabs(backPeak.mean()-peak.mean()) < sigma )
+    }//for( const PeakDef &peak : backPeaks )
+
+    auto updated_peak = make_shared<PeakDef>( *orig_peak );
+    
+    if( backCounts > 0.0 )
+    {
+      num_affected_peaks += 1;
+      const double counts = orig_peak->peakArea() - backCounts;
+      const double orig_uncert = std::max( orig_peak->peakAreaUncert(), 0.0 );
+      const double uncert = sqrt( orig_uncert*orig_uncert + backUncert2 );
+      
+      updated_peak->setPeakArea( counts );
+      updated_peak->setPeakAreaUncert( uncert );
+    }//if( backCounts > 0.0 )
+    
+    back_sub_peaks.push_back( updated_peak );
+  }//for( const shared_ptr<const PeakDef> &peak : peaks )
+  
+  
+  
+  switch( type )
+  {
+    case PeakCsvType::Full:
+    case PeakCsvType::NoHeader:
+    case PeakCsvType::Compact:
+      outstrm << eol_char
+      << "#END BACKGROUND PEAKS"
+      << eol_char
+      << eol_char
+      << "#Background Subtracted"
+      << " (after live time normalization and whose means are within " << nsigmaNear
+      << " sigma) foreground peaks (" << num_affected_peaks << " peaks adjusted):" << eol_char;
+      break;
+      
+    case PeakCsvType::FullHtml:
+    case PeakCsvType::NoHeaderHtml:
+    case PeakCsvType::CompactHtml:
+      outstrm << eol_char << "<!-- END BACKGROUND PEAKS -->" 
+      << eol_char << "<br />" << eol_char << "<br />"
+      << eol_char << "<div>Background Subtracted"
+      << " (after live time normalization and whose means are within " << nsigmaNear
+      << " sigma) foreground peaks (" << num_affected_peaks << " peaks adjusted):</div>" 
+      << eol_char;
+      break;
+  }//switch( type )
+  
+  
+  write_peak_csv( outstrm, specfilename, type, back_sub_peaks, data );
+  
+  
+  switch( type )
+  {
+    case PeakCsvType::Full:
+    case PeakCsvType::NoHeader:
+    case PeakCsvType::Compact:
+      outstrm << eol_char << "#END BACKGROUND-SUBTRACTED PEAKS" << eol_char;
+      break;
+      
+    case PeakCsvType::FullHtml:
+    case PeakCsvType::NoHeaderHtml:
+    case PeakCsvType::CompactHtml:
+      outstrm << eol_char << "<!-- END BACKGROUND-SUBTRACTED PEAKS -->" << eol_char;
+      break;
+  }//switch( type )
+}//PeakModel::write_for_and_back_peak_csv(...)

@@ -2857,6 +2857,7 @@ ShieldingSourceDisplay::ShieldingSourceDisplay( PeakModel *peakModel,
     m_showLog( nullptr ),
     m_logDiv( nullptr ),
     m_calcLog{},
+    m_peakCalcLogInfo{},
     m_modelUploadWindow( nullptr ),
 #if( USE_DB_TO_STORE_SPECTRA )
     m_modelDbBrowseWindow( nullptr ),
@@ -3526,7 +3527,7 @@ void ShieldingSourceDisplay::render( Wt::WFlags<Wt::RenderFlag> flags )
   
   if( m_chi2ChartNeedsUpdating )
   {
-    updateChi2ChartActual();
+    updateChi2ChartActual( nullptr );
     m_chi2ChartNeedsUpdating = false;
   }
   
@@ -5642,7 +5643,7 @@ void ShieldingSourceDisplay::updateChi2Chart()
 }//void updateChi2Chart()
 
 
-void ShieldingSourceDisplay::updateChi2ChartActual()
+void ShieldingSourceDisplay::updateChi2ChartActual( std::shared_ptr<const ShieldingSourceFitCalc::ModelFitResults> results )
 {
   try
   {
@@ -5654,44 +5655,59 @@ void ShieldingSourceDisplay::updateChi2ChartActual()
   
   try
   {
-    auto fcnAndPars = shieldingFitnessFcn();
-    
-    std::shared_ptr<GammaInteractionCalc::ShieldingSourceChi2Fcn> &chi2Fcn = fcnAndPars.first;
-    ROOT::Minuit2::MnUserParameters &inputPrams = fcnAndPars.second;
-    
-    const unsigned int ndof = inputPrams.VariableParameters();
-    
-    const vector<double> params = inputPrams.Params();
-    const vector<double> errors = inputPrams.Errors();
-    GammaInteractionCalc::ShieldingSourceChi2Fcn::NucMixtureCache mixcache;
-    
-    
-    m_calcLog.clear();
     if( m_logDiv )
     {
       m_logDiv->contents()->clear();
       m_logDiv->hide();
     }//if( m_logDiv )
     
-    const vector< tuple<double,double,double,Wt::WColor,double> > chis
-                               = chi2Fcn->energy_chi_contributions( params, mixcache, &m_calcLog );
+    unsigned int ndof = 1;
+    vector<GammaInteractionCalc::PeakResultPlotInfo> chis;
+    
+    if( results && results->peak_comparisons && results->peak_calc_details
+       && (results->successful == ShieldingSourceFitCalc::ModelFitResults::FitStatus::Final) )
+    {
+      ndof = results->numDOF;
+      chis = *results->peak_comparisons;
+      m_calcLog = results->peak_calc_log;
+      m_peakCalcLogInfo.reset( new vector<GammaInteractionCalc::PeakDetail>( *results->peak_calc_details ) );
+    }else
+    {
+      m_calcLog.clear();
+      m_peakCalcLogInfo.reset();
+     
+      auto fcnAndPars = shieldingFitnessFcn();
+      
+      std::shared_ptr<GammaInteractionCalc::ShieldingSourceChi2Fcn> &chi2Fcn = fcnAndPars.first;
+      ROOT::Minuit2::MnUserParameters &inputPrams = fcnAndPars.second;
+      
+      ndof = inputPrams.VariableParameters();
+      
+      const vector<double> params = inputPrams.Params();
+      const vector<double> errors = inputPrams.Errors();
+      GammaInteractionCalc::ShieldingSourceChi2Fcn::NucMixtureCache mixcache;
+      
+      vector<GammaInteractionCalc::PeakDetail> calcLog;
+      chis = chi2Fcn->energy_chi_contributions( params, errors, mixcache, &m_calcLog, &calcLog );
+      
+      m_peakCalcLogInfo.reset( new vector<GammaInteractionCalc::PeakDetail>( calcLog ) );
+    }
     
     m_showLog->setDisabled( m_calcLog.empty() );
 
-    typedef tuple<double,double,double,Wt::WColor,double> DDPair;
-    vector< DDPair > keeper_points;
+    vector<GammaInteractionCalc::PeakResultPlotInfo> keeper_points;
 
     for( size_t row = 0; row < chis.size(); ++row )
     {
-      const double energy = std::get<0>(chis[row]);
-      const double chi = std::get<1>(chis[row]);
-      const double scale = std::get<2>(chis[row]);
-      const WColor &color = std::get<3>(chis[row]);
-      const double scale_uncert = std::get<4>(chis[row]);
+      const double energy = chis[row].energy;
+      const double chi = chis[row].numSigmaOff;
+      const double scale = chis[row].observedOverExpected;
+      const WColor &color = chis[row].peakColor;
+      const double scale_uncert = chis[row].observedOverExpectedUncert;
 
       if( fabs(chi) < 1.0E5 && !IsInf(chi) && !IsNan(chi)
           && !IsInf(energy) && !IsNan(energy) )
-        keeper_points.push_back( DDPair(energy,chi,scale,color,scale_uncert) );
+        keeper_points.push_back( chis[row] );
     }//for( size_t row = 0; row < chis.size(); ++row )
 
     m_chi2Graphic->setNumFitForParams( ndof );
@@ -5716,13 +5732,13 @@ void ShieldingSourceDisplay::updateChi2ChartActual()
     
     for( int row = 0; row < nrow; ++row  )
     {
-      const DDPair &p = keeper_points[row];
+      const GammaInteractionCalc::PeakResultPlotInfo &p = keeper_points[row];
       
-      const double &energy = std::get<0>(p);
-      const double &chi = std::get<1>(p);
-      const double &scale = std::get<2>(p);
-      WColor color = std::get<3>(p);
-      const double &scale_uncert = std::get<4>(p);
+      const double &energy = p.energy;
+      const double &chi = p.numSigmaOff;
+      const double &scale = p.observedOverExpected;
+      WColor color = p.peakColor;
+      const double &scale_uncert = p.observedOverExpectedUncert;
       
       if( IsNan(energy) || IsInf(chi) )
       {
@@ -7205,8 +7221,8 @@ void ShieldingSourceDisplay::deSerialize( const rapidxml::xml_node<char> *base_n
     const vector<double> params = inputPrams.Params();
     const vector<double> errors = inputPrams.Errors();
     GammaInteractionCalc::ShieldingSourceChi2Fcn::NucMixtureCache mixcache;
-    const vector< tuple<double,double,double,WColor,double> > chis
-                                   = chi2Fcn->energy_chi_contributions( params, mixcache, nullptr );
+    const vector<GammaInteractionCalc::PeakResultPlotInfo> chis
+                  = chi2Fcn->energy_chi_contributions( params, errors, mixcache, nullptr, nullptr );
     
     if( chis.size() )
     {
@@ -7222,16 +7238,16 @@ void ShieldingSourceDisplay::deSerialize( const rapidxml::xml_node<char> *base_n
       rapidxml::xml_node<> *node = nullptr;
       rapidxml::xml_node<> *eval_node = doc->allocate_node( rapidxml::node_element, "EvaluatedEnergies" );
       
-      for( const auto &p : chis )
+      for( const GammaInteractionCalc::PeakResultPlotInfo &p : chis )
       {
         rapidxml::xml_node<> *point_node = doc->allocate_node( rapidxml::node_element, "EvalPoint" );
         eval_node->append_node( point_node );
         
-        const double energy = get<0>(p);
-        const double chi = get<1>(p);
-        const double scale = get<2>(p);
-        const WColor &color = get<3>(p);
-        const double scale_uncert = get<4>(p);
+        const double energy = p.energy;
+        const double chi = p.numSigmaOff;
+        const double scale = p.observedOverExpected;
+        const WColor &color = p.peakColor;
+        const double scale_uncert = p.observedOverExpectedUncert;
         
         if( !IsInf(chi) && !IsNan(chi) )
           chi2 += chi*chi;
@@ -8079,6 +8095,13 @@ void ShieldingSourceDisplay::updateGuiWithModelFitResults( std::shared_ptr<Shiel
   ShieldSourceChange state_undo_creator( this, "Fit activity/shielding" );
   
   assert( results );
+  
+  setWidgetStateForFitBeingDone();
+  
+  std::lock( results->m_mutex, m_currentFitFcnMutex );
+  std::lock_guard<std::mutex> result_lock( results->m_mutex, std::adopt_lock );
+  std::lock_guard<std::mutex> lock( m_currentFitFcnMutex, std::adopt_lock );
+  
   const ShieldingSourceFitCalc::ModelFitResults::FitStatus status = results->successful;
   const vector<ShieldingSourceFitCalc::ShieldingInfo> &initial_shieldings = results->initial_shieldings;
   const vector<ShieldingSourceFitCalc::FitShieldingInfo> &final_shieldings = results->final_shieldings;
@@ -8089,9 +8112,6 @@ void ShieldingSourceDisplay::updateGuiWithModelFitResults( std::shared_ptr<Shiel
   assert( (status != ShieldingSourceFitCalc::ModelFitResults::FitStatus::Final)
          || (initial_shieldings.size() == final_shieldings.size()) );
   
-  setWidgetStateForFitBeingDone();
-  
-  std::lock_guard<std::mutex> lock( m_currentFitFcnMutex );
   if( !m_currentFitFcn )
   {
     passMessage( "Programming Logic Error - received model fit results at an invalid time.", WarningWidget::WarningMsgHigh );
@@ -8486,9 +8506,10 @@ void ShieldingSourceDisplay::updateGuiWithModelFitResults( std::shared_ptr<Shiel
     }//for( int ison = 0; ison < niso; ++ison )
     */
     
-    updateChi2ChartActual();
+    
+    updateChi2ChartActual( results );
     m_chi2ChartNeedsUpdating = false;
-    updateCalcLogWithFitResults( m_currentFitFcn, results );
+    updateCalcLogWithFitResults( m_currentFitFcn, results, m_calcLog );
   }catch( std::exception &e )
   {
     passMessage( "Programming issue - caught exception: " + string(e.what())
@@ -8597,19 +8618,29 @@ std::shared_ptr<ShieldingSourceFitCalc::ModelFitResults> ShieldingSourceDisplay:
 
 
 
+
+
 void ShieldingSourceDisplay::updateCalcLogWithFitResults(
                                   shared_ptr<GammaInteractionCalc::ShieldingSourceChi2Fcn> chi2Fcn,
-                                    std::shared_ptr<ShieldingSourceFitCalc::ModelFitResults> results )
+                                    std::shared_ptr<ShieldingSourceFitCalc::ModelFitResults> results,
+                                                         vector<string> &calcLog )
 {
   // This function is not internationalized - the plan is to eventually totally overhaul this
   //  how results are logged, so it isnt worth internationalizing this function now (and also,
   //  probably only the primary developer uses this calc log).
+  assert( chi2Fcn );
   assert( results );
   const std::vector<double> &params = results->paramValues;
   const std::vector<double> &errors = results->paramErrors;
   
-  if( m_calcLog.size() && m_calcLog.back() == ns_no_uncert_info_txt )
-    m_calcLog.erase( m_calcLog.end()-1, m_calcLog.end() );
+  if( calcLog.size() && calcLog.back() == ns_no_uncert_info_txt )
+    calcLog.erase( calcLog.end()-1, calcLog.end() );
+  
+  const shared_ptr<const DetectorPeakResponse> &det = chi2Fcn->detector();
+  
+  const DetectorPeakResponse::EffGeometryType detType = (det && det->isValid())
+                                                  ? det->geometryType()
+                                                  : DetectorPeakResponse::EffGeometryType::FarField;
   
   try
   {
@@ -8634,7 +8665,7 @@ void ShieldingSourceDisplay::updateCalcLogWithFitResults(
         msg << " " << n->symbol << "(massfrac=" << frac << "+-" << df << "),";
       }//for( size_t shielding_index = 0; shielding_index < chi2Fcn->numMaterials(); ++shielding_index )
         
-      m_calcLog.push_back( msg.str() );
+      calcLog.push_back( msg.str() );
     }//for( const Material *mat : chi2Fcn->materialsFittingMassFracsFor() )
     
   {//begin add chi2 line
@@ -8642,7 +8673,7 @@ void ShieldingSourceDisplay::updateCalcLogWithFitResults(
     msg << "It took " << results->num_fcn_calls
         << " solution trials to reach chi2=" << results->chi2
         << " with an estimated distance to minumum of " << results->edm;
-    m_calcLog.push_back( msg.str() );
+    calcLog.push_back( msg.str() );
   }//end add chi2 line
     
   //Need to list fit parameters and uncertainties here
@@ -8652,28 +8683,28 @@ void ShieldingSourceDisplay::updateCalcLogWithFitResults(
     const SandiaDecay::Nuclide *nuc = chi2Fcn->nuclide( nucn );
     if( nuc )
     {
-      const bool useCi = !InterSpecUser::preferenceValue<bool>( "DisplayBecquerel", m_specViewer );
+      const bool useCi = !InterSpecUser::preferenceValue<bool>( "DisplayBecquerel", InterSpec::instance() );
       const double act = chi2Fcn->activity( nuc, params );
       const string actStr = PhysicalUnits::printToBestActivityUnits( act, 2, useCi );
       
       const double actUncert = chi2Fcn->activityUncertainty( nuc, params, errors );
       const string actUncertStr = PhysicalUnits::printToBestActivityUnits( actUncert, 2, useCi );
       
-      const double mass = act / nuc->activityPerGram();
-      const std::string massStr = PhysicalUnits::printToBestMassUnits( mass, 2, 1.0 );
+      const double mass = (act / nuc->activityPerGram()) * PhysicalUnits::gram;
+      const std::string massStr = PhysicalUnits::printToBestMassUnits( mass, 2, PhysicalUnits::gram );
       
       const double age = chi2Fcn->age( nuc, params );
       const double ageUncert = chi2Fcn->age( nuc, errors );
       const string ageStr = PhysicalUnitsLocalized::printToBestTimeUnits( age, 2 );
       const string ageUncertStr = PhysicalUnitsLocalized::printToBestTimeUnits( ageUncert, 2 );
   
-      string act_postfix = DetectorPeakResponse::det_eff_geom_type_postfix(m_sourceModel->detType()), trace_total = "";
+      string act_postfix = DetectorPeakResponse::det_eff_geom_type_postfix(detType), trace_total = "";
       if( chi2Fcn->isTraceSource(nuc) )
       {
         const double total_act = chi2Fcn->totalActivity(nuc,params);
         trace_total = "Total activity "
                       + PhysicalUnits::printToBestActivityUnits( total_act, 2, useCi )
-                      + DetectorPeakResponse::det_eff_geom_type_postfix(m_sourceModel->detType()) + ", ";
+                      + DetectorPeakResponse::det_eff_geom_type_postfix(detType) + ", ";
         
         switch( chi2Fcn->traceSourceActivityType(nuc) )
         {
@@ -8718,11 +8749,11 @@ void ShieldingSourceDisplay::updateCalcLogWithFitResults(
   
       msg << ".";
       
-      m_calcLog.push_back( msg.str() );
+      calcLog.push_back( msg.str() );
     }//if( nuc )
   }//for( size_t nucn = 0; nucn < nnuc; ++nucn )
   
-  m_calcLog.push_back( "Geometry: " + string(GammaInteractionCalc::to_str(chi2Fcn->geometry())) );
+    calcLog.push_back( "Geometry: " + string(GammaInteractionCalc::to_str(chi2Fcn->geometry())) );
     
   const int nmat = static_cast<int>( chi2Fcn->numMaterials() );
   for( int matn = 0; matn < nmat; ++matn )
@@ -8749,7 +8780,7 @@ void ShieldingSourceDisplay::updateCalcLogWithFitResults(
       
     }else //if( !mat )
     {
-      assert( geometry() == chi2Fcn->geometry() );
+      //assert( geometry() == chi2Fcn->geometry() );
       
       const double density = mat->density * PhysicalUnits::cm3 / PhysicalUnits::gram;
       msg << mat->name << " has density " << std::setprecision(3) << density << "g/cm3 ";
@@ -8841,11 +8872,11 @@ void ShieldingSourceDisplay::updateCalcLogWithFitResults(
       }//switch( geometry() )
     }//if( !mat ) / else
     
-    m_calcLog.push_back( msg.str() );
+    calcLog.push_back( msg.str() );
   }//for( size_t matn = 0; matn < nmat; ++matn )
   }catch( std::exception & )
   {
-    m_calcLog.push_back( "There was an error and log may not be complete." );
+    calcLog.push_back( "There was an error and log may not be complete." );
   }
 }//updateCalcLogWithFitResults(...)
 
