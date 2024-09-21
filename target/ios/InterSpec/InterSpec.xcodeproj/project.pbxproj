@@ -21,6 +21,7 @@
 		9B6A620B28B1361300443442 /* WtsRsrcs in Resources */ = {isa = PBXBuildFile; fileRef = 9B6A620A28B1361300443442 /* WtsRsrcs */; };
 		9BB621D02C6FD6ED004E7388 /* Launch Screen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 9BB621CF2C6FD6ED004E7388 /* Launch Screen.storyboard */; };
 		9BB621D42C6FE3BD004E7388 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 9BB621D32C6FE3BD004E7388 /* Assets.xcassets */; };
+		9BB621D62C6FFD99004E7388 /* LoadScreenImages.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 9BB621D52C6FFD99004E7388 /* LoadScreenImages.xcassets */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -45,6 +46,7 @@
 		9B6A620E28B139BC00443442 /* InterSpec.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; name = InterSpec.a; path = "build-iphoneos/LibInterSpec/InterSpec.a"; sourceTree = "<group>"; };
 		9BB621CF2C6FD6ED004E7388 /* Launch Screen.storyboard */ = {isa = PBXFileReference; lastKnownFileType = file.storyboard; name = "Launch Screen.storyboard"; path = "InterSpec/Launch Screen.storyboard"; sourceTree = "<group>"; };
 		9BB621D32C6FE3BD004E7388 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		9BB621D52C6FFD99004E7388 /* LoadScreenImages.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; name = LoadScreenImages.xcassets; path = InterSpec/LoadScreenImages.xcassets; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -65,6 +67,7 @@
 		9B026CD318075B1D00314635 = {
 			isa = PBXGroup;
 			children = (
+				9BB621D52C6FFD99004E7388 /* LoadScreenImages.xcassets */,
 				9BB621D32C6FE3BD004E7388 /* Assets.xcassets */,
 				9BB621CF2C6FD6ED004E7388 /* Launch Screen.storyboard */,
 				9B6A620A28B1361300443442 /* WtsRsrcs */,
@@ -187,6 +190,7 @@
 				3D4D11B918F85F610043773C /* example_spectra in Resources */,
 				9B026CEA18075B1D00314635 /* InfoPlist.strings in Resources */,
 				3D4D11B718F85F550043773C /* data in Resources */,
+				9BB621D62C6FFD99004E7388 /* LoadScreenImages.xcassets in Resources */,
 				3D4D11BB18F85F720043773C /* InterSpec_resources in Resources */,
 				9B6A620B28B1361300443442 /* WtsRsrcs in Resources */,
 				9BB621D42C6FE3BD004E7388 /* Assets.xcassets in Resources */,
@@ -349,7 +353,7 @@
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				"CODE_SIGN_IDENTITY[sdk=iphoneos*]" = "iPhone Developer";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 21;
+				CURRENT_PROJECT_VERSION = 22;
 				DEVELOPMENT_TEAM = G2VV85LMR5;
 				GCC_PRECOMPILE_PREFIX_HEADER = YES;
 				GCC_PREFIX_HEADER = "InterSpec/InterSpec-Prefix.pch";
@@ -453,7 +457,7 @@
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				"CODE_SIGN_IDENTITY[sdk=iphoneos*]" = "iPhone Developer";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 21;
+				CURRENT_PROJECT_VERSION = 22;
 				DEVELOPMENT_TEAM = G2VV85LMR5;
 				GCC_PRECOMPILE_PREFIX_HEADER = YES;
 				GCC_PREFIX_HEADER = "InterSpec/InterSpec-Prefix.pch";

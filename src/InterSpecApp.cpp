@@ -449,11 +449,12 @@ void InterSpecApp::setupDomEnvironment()
   //  widgets, especially if they are in a AuxWindow.
   //  (The CSS wont be re-loaded later, so maybe we dont hurt anything doing it here too - maybe)
   WServer::instance()->schedule( 500, sessionId(), [](){
-    wApp->useStyleSheet( "InterSpec_resources/SimpleDialog.css" );
     wApp->useStyleSheet( "InterSpec_resources/DrfSelect.css" );
+    wApp->useStyleSheet( "InterSpec_resources/SimpleDialog.css" );
+    wApp->useStyleSheet( "InterSpec_resources/DbFileBrowser.css" );
+    wApp->useStyleSheet( "InterSpec_resources/ExportSpecFile.css" );
     wApp->useStyleSheet( "InterSpec_resources/GammaCountDialog.css" );
     wApp->useStyleSheet( "InterSpec_resources/GridLayoutHelpers.css" );
-    wApp->useStyleSheet( "InterSpec_resources/ExportSpecFile.css" );
     wApp->useStyleSheet( "InterSpec_resources/MoreNuclideInfoDisplay.css" );
     // anything else relevant?
     wApp->triggerUpdate();
