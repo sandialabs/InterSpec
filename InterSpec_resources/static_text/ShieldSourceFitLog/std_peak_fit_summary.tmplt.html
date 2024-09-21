@@ -3,7 +3,7 @@
 
 <head>
     <meta charset="UTF-8" />
-    <title>Summary Results</title>
+    <title>Peak Fit Summary Results</title>
 
     
     <!-- <script src="https://d3js.org/d3.v3.min.js"></script> -->
@@ -94,16 +94,8 @@
 ## for file in Files
 <div class="FileInfo">
   <h1 class="title">
-    Results for {{ file.Filename }}
+    Peak Fit Results for {{ file.Filename }}
   </h1>
-
-{% if file.HasErrorMessage %}
-<h2 style="color: red;">Error Message</h2>
-<div id="error" style="width: 90vw; margin-left: auto; margin-right: auto; margin-bottom: 20px; color: red; border: solid 1px red; padding: 5px;">
-  {{ file.ErrorMessage }}
-</div>
-{% endif %}
-
 
 {% if file.HasWarnings %}
 <h2 style="color: orange;">Warnings</h2>
@@ -116,7 +108,7 @@
 </div>
 {% endif %}
 
-
+{% if file.HasSpectrum %}
   <div id="specchart_{{loop.index1}}" style="height: 20vw; width: 75vw; margin-left: auto; margin-right: auto;">
   </div>
 
@@ -139,6 +131,7 @@
       spec_chart_{{loop.index1}}.setData( spectrum_json_{{loop.index1}} );
       spec_chart_{{loop.index1}}.setLogY( true );
   </script>
+{% endif %}
 
   <div id="GeneralInfo">
     <ul style="list-style-type: none; padding: 0; margin: 0;">
@@ -225,87 +218,88 @@
   </ul>
 </div> <!-- <div id="GeneralInfo"> -->
 
-{% if existsIn(file,"Sources") %}
+{% if existsIn(file,"FitPeaks") %}
+<h2>Fit Peaks:</h2>
 <div id="sources" style="margin-top: 25px">
-  Sources:
+  Fit Peaks:
   <table class="ActivitySummary ResultTable">
     <thead><tr>
-      <th>Nuclide</th>
-      <th>Age</th>
-      {% if file.AnySourceAgeFit %}
-      <th>Age Uncert</th>
-      <th>Age Fit?</th>
-      {% endif %}
-      <th>Activity</th>
-      <th>Activity Uncert</th>
-      <th>Activity Fit?</th>
-      {% if file.HasTraceSource %}
-      <th>Trace Src Act.</th>
-      <th>Trace Src Act. Uncert</th>
-      <th>Is Trace Src</th>
-      {% endif %}
+      <th>Peak Mean</th>
+      <th>Amplitude</th>
+      <th>FWHM</th>
+      <th>Lower Energy</th>
+      <th>Upper Energy</th>
+      <th>Lower Channel</th>
+      <th>Upper Channel</th>
+      <th>ROI Number</th>
+      <th>Continuum Type</th>
+      <th>Assigned Source</th>
+      <th>Source Type</th>
+      <th>Source Energy</th>
+      <th>Color</th>
+      <th>User Label</th>
+      <th>Mean Uncert.</th>
+      <th>Amp Uncert.</th>
+      <th>FWHM Uncert.</th>
+      <th>&chi;<sup>2</sup></th>
     </tr></thead>
     <tbody>
-## for src in file.Sources
+## for peak in file.FitPeaks.Peaks
       <tr>
-      <td> {{ src.Nuclide }} </td>
-      <td> {{ src.Age }} </td>
-      {% if file.AnySourceAgeFit %}
-        <td> {% if src.AgeIsFit %} {{ src.AgeUncert }} {% endif %}  </td>
-        <td> {{ src.AgeIsFit }} </td>
-      {% endif %}
-      <td> {{ src.Activity }} </td>
-      <td> {% if src.ActivityIsFit %} {{ src.ActivityUncert }} {% endif %} </td>
-      <td> {{ src.ActivityIsFit }} </td>
-      {% if file.HasTraceSource %}
-        <td> {% if src.IsTraceSource %} {{src.TraceDisplayActivity}} {% endif %} </td>
-        <td> {% if src.IsTraceSource and src.ActivityIsFit %} {{ src.TraceDisplayActivityUncert }} {% endif %} </td>
-        <td> {{ src.IsTraceSource }} </td>
-      {% endif %}
+        <td>{{ printFixed(peak.PeakMean,2) }}</td>
+        <td>{{ printCompact(peak.PeakAmplitude,6) }}</td>
+        <td>{{ printFixed(peak.PeakFwhm,2) }}</td>
+        <td>{{ printFixed(peak.LowerEnergy,2) }}</td>
+        <td>{{ printFixed(peak.UpperEnergy,2) }}</td>
+        <td>{% if peak.HasChannelRange %}{{ peak.LowerChannelInt }}{% endif %}</td>
+        <td>{% if peak.HasChannelRange %}{{ peak.UpperChannelInt }}{% endif %}</td>
+        <td>{{ peak.ContinuumIndex }}</td>
+        <td> {{ at(file.FitPeaks.Continua,peak.ContinuumIndex).ContinuumType }} </td>
+        <td>{{ peak.SourceName }}</td>
+        <td>{{ peak.SourceType }}</td>
+        <td>{{ printFixed(peak.SourceEnergy,3) }}</td>
+        <td style="background: {{ peak.PeakColor }};"></td>
+        <td>{{ peak.PeakUserLabel }}</td>
+        <td>{{ printFixed(peak.PeakMeanUncert,3) }}</td>
+        <td>{{ printFixed(peak.PeakAmplitudeUncert,1) }}</td>
+        <td>{{ printFixed(peak.PeakFwhmUncert,3) }}</td>
+        <td>{% if peak.HasChi2Dof %}{{ printFixed(peak.Chi2Dof, 4) }}{% endif %} </td>
       </tr>
 ## endfor
     </tbody>
   </table>   
 </div> <!-- <div id="sources" style="margin-top: 25px"> -->
-{% endif %}
+{% endif %} <!-- if existsIn(file,"FitPeaks") -->
 
-{% if existsIn(file, "Shieldings") %}
-{% if existsIn(file.Shieldings, "Shields") %}
-##for shield in file.Shieldings.Shields
-{% if shield.FitAnyMassFraction %}
-<div class="mass_frac_{{ shield.Name }}" style="margin-top: 15px">
-Mass fractions for {{ shield.Name }}:
-  <table class="InfoTable">
-    <thead><tr><th>Nuclide</th><th>Mass Fraction</th><th>Fit Mass Frac?</th><th>Mass Fraction Uncert</th><th>Activity</th><th>ActivityUncert</th></tr></thead>
+{% if existsIn(file,"NotFitPeaks") %}
+<h2>Peaks Not Fit:</h2>
+<div id="sources" style="margin-top: 25px">
+  Peaks Not Fit:
+  <table class="ActivitySummary ResultTable">
+    <thead><tr>
+      <th>Peak Mean</th>
+      <th>FWHM</th>
+      <th>Lower Energy</th>
+      <th>Upper Energy</th>
+      <th>Lower Channel</th>
+      <th>Upper Channel</th>
+    </tr></thead>
     <tbody>
-##for shieldSrc in shield.SelfAttenSources
+## for peak in file.NotFitPeaks.Peaks
       <tr>
-        <td>{{ shieldSrc.Nuclide }}</td>
-        <td>{{ printFixed(shieldSrc.MassFraction,6) }}</td>
-        <td>{{ shieldSrc.IsFittingMassFraction }}</td>
-        <td>{% if existsIn(shieldSrc,"MassFractionUncert") %}  {{ printFixed(shieldSrc.MassFractionUncert,6) }} {% endif %}</td>
-        <td>{% if existsIn(shieldSrc,"Activity") %}  {{ shieldSrc.Activity }} {{ shieldSrc.ActivityPostFix }} {% endif %}</td>
-        <td>{% if existsIn(shieldSrc,"ActivityUncert") %}  {{ shieldSrc.ActivityUncert }} {{ shieldSrc.ActivityPostFix }} {% endif %}</td>
+        <td>{{ printFixed(peak.PeakMean,2) }}</td>
+        <td>{{ printFixed(peak.PeakFwhm,2) }}</td>
+        <td>{{ printFixed(peak.LowerEnergy,2) }}</td>
+        <td>{{ printFixed(peak.UpperEnergy,2) }}</td>
+        <td>{% if peak.HasChannelRange %}{{ peak.LowerChannelInt }}{% endif %}</td>
+        <td>{% if peak.HasChannelRange %}{{ peak.UpperChannelInt }}{% endif %}</td>
       </tr>
-##endfor
+## endfor
     </tbody>
-  </table>
-  </div>
-{% endif %} <!-- if shield.FitAnyMassFraction -->
-##endfor
-{% endif %} <!-- existsIn(file.Shieldings, "Shields") -->
-{% endif %} <!-- if existsIn(file, "Shieldings") -->
+  </table>   
+</div> <!-- <div id="sources" style="margin-top: 25px"> -->
+{% endif %} <!-- if existsIn(file,"FitPeaks") -->
 
-<div style="margin-top: 20px">
-<ul style="list-style-type: none; padding: 0; margin: 0;">
-{% if existsIn(file, "NumDof") %}
-  <li>There were {{ file.NumDof }} parameters fit for</li>
-{% endif %}
-{% if existsIn(file, "NumberFcnCalls") and existsIn(file, "FitChi2") and existsIn(file,"EstimatedDistanceToMinimum") %}
-  <li>It took {{ file.NumberFcnCalls }} solution trials to reach chi2={{ printCompact(file.FitChi2,5) }} with an estimated distance to minimum of {{ printCompact(file.EstimatedDistanceToMinimum,5) }}</li>
-{% endif %}
-</ul>
-</div>
 ## endfor
 
 </body>

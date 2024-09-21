@@ -145,7 +145,7 @@ namespace BatchActivity
   
   
   
-  /** Fits the peaks, activities, and shieldins
+  /** Fits the peaks, activities, and shieldings
    
    exemplar peaks for a given file.
    

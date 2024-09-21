@@ -1,0 +1,17 @@
+{% if exists("foreground") %}
+Foreground LiveTime: {% if foreground.LiveTime_s %}{{ foreground.LiveTime_s }} seconds{% endif %} {% if foreground.LiveTime %}({{ foreground.LiveTime }}){% endif %}
+{% endif %}
+
+{% if HasWarnings %}
+Warnings:
+## for warning in Warnings
+  {{ warning }}
+## endfor
+{% endif %}
+
+Mean, Amplitude, FWHM, LowerEnergy, UpperEnergy, LowerChannel, UpperChannel, ContinuumIndex, SourceName, SourceType, SourceEnergy, PeakColor, UserLabel, Mean Uncert, Amplitude Uncert, FWHM Uncert, Chi2Dof
+## if exists("FitPeaks")
+## for peak in FitPeaks.Peaks
+{{ printFixed(peak.PeakMean,2) }}, {{ printCompact(peak.PeakAmplitude,6) }}, {{ printFixed(peak.PeakFwhm,2) }}, {{ printFixed(peak.LowerEnergy,2) }}, {{ printFixed(peak.UpperEnergy,2) }}, {% if peak.HasChannelRange %}{{ peak.LowerChannelInt }}{% endif %}, {% if peak.HasChannelRange %}{{ peak.UpperChannelInt }}{% endif %}, {{ peak.ContinuumIndex }}, {{ at(FitPeaks.Continua,peak.ContinuumIndex).ContinuumType }}, {{ peak.SourceName }}, {{ peak.SourceType }}, {{ peak.SourceEnergy }}, {{ peak.PeakColor }}, {{ peak.PeakUserLabel }}, {{ printFixed(peak.PeakMeanUncert,3) }}, {{ printFixed(peak.PeakAmplitudeUncert,1) }}, {{ printFixed(peak.PeakFwhmUncert,3) }}, {% if peak.HasChi2Dof %}{{ printFixed(peak.Chi2Dof, 4) }}{% endif %}
+## endif
+## endfor

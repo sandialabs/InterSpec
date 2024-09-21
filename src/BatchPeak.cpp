@@ -29,6 +29,8 @@
 #include <iostream>
 #include <exception>
 
+#include "external_libs/SpecUtils/3rdparty/inja/inja.hpp"
+
 #include "SpecUtils/Filesystem.h"
 #include "SpecUtils/StringAlgo.h"
 
@@ -38,6 +40,7 @@
 #include "InterSpec/BatchPeak.h"
 #include "InterSpec/EnergyCal.h"
 #include "InterSpec/PeakModel.h"
+#include "InterSpec/BatchInfoLog.h"
 #include "InterSpec/DecayDataBaseServer.h"
 
 
@@ -270,16 +273,103 @@ void fit_peaks_in_files( const std::string &exemplar_filename,
     throw runtime_error( message );
   }//if( !db )
   
+  const vector<pair<string,string>> spec_chart_js_and_css = BatchInfoLog::load_spectrum_chart_js_and_css();
+  
+  // Load report templates, and setup inja::environment
+  inja::Environment env = BatchInfoLog::get_default_inja_env( options );
+  
+  
+  nlohmann::json summary_json;
+  
+  BatchInfoLog::add_exe_info_to_json( summary_json );
+  BatchInfoLog::add_peak_fit_options_to_json( summary_json, options );
+  
+  summary_json["ExemplarFile"] = exemplar_filename;
+  if( !exemplar_sample_nums.empty() )
+    summary_json["ExemplarSampleNumbers"] = vector<int>{begin(exemplar_sample_nums), end(exemplar_sample_nums)};
+  summary_json["InputFiles"] = files;
+  for( const pair<string,string> &key_val : spec_chart_js_and_css )
+    summary_json[key_val.first] = key_val.second;
+  
   std::shared_ptr<const SpecMeas> cached_exemplar_n42;
   for( const string filename : files )
   {
-    const ::BatchPeak::BatchPeakFitResult fit_results
+    const BatchPeak::BatchPeakFitResult fit_results
                  = fit_peaks_in_file( exemplar_filename, exemplar_sample_nums,
                                      cached_exemplar_n42, filename, nullptr, {}, options );
     
     if( !cached_exemplar_n42 )
       cached_exemplar_n42 = fit_results.exemplar;
     warnings.insert(end(warnings), begin(fit_results.warnings), end(fit_results.warnings) );
+    
+    nlohmann::json data;
+    BatchInfoLog::add_exe_info_to_json( data );
+    BatchInfoLog::add_peak_fit_options_to_json( data, options );
+    data["ExemplarFile"] = exemplar_filename;
+    if( !exemplar_sample_nums.empty() )
+      data["ExemplarSampleNumbers"] = vector<int>{begin(exemplar_sample_nums), end(exemplar_sample_nums)};
+    data["Filepath"] = filename;
+    data["Filename"] = SpecUtils::filename( filename );
+    data["ParentDir"] = SpecUtils::parent_path( filename );
+    
+    BatchInfoLog::add_peak_fit_results_to_json( data, fit_results );
+    
+    summary_json["Files"].push_back( data );
+    
+    for( const pair<string,string> &key_val : spec_chart_js_and_css )
+      data[key_val.first] = key_val.second;
+    
+    for( string tmplt : options.report_templates )
+    {
+      try
+      {
+        const string rpt = BatchInfoLog::render_template( tmplt, env,
+                            BatchInfoLog::TemplateRenderType::PeakFitIndividual, options, data );
+        
+        if( options.to_stdout && !SpecUtils::iequals_ascii(tmplt, "html" ) )
+          cout << "\n\n" << rpt << endl << endl;
+        
+        if( !options.output_dir.empty() )
+        {
+          const string out_file
+                    = BatchInfoLog::suggested_output_report_filename( filename, tmplt,
+                                  BatchInfoLog::TemplateRenderType::PeakFitIndividual, options );
+          
+          if( SpecUtils::is_file(out_file) && !options.overwrite_output_files )
+          {
+            warnings.push_back( "Not writing '" + out_file + "', as it would overwrite a file."
+                               " See the '--overwrite-output-files' option to force writing." );
+          }else
+          {
+#ifdef _WIN32
+            const std::wstring woutcsv = SpecUtils::convert_from_utf8_to_utf16(out_file);
+            std::ofstream output( woutcsv.c_str(), ios::binary | ios::out );
+#else
+            std::ofstream output( out_file.c_str(), ios::binary | ios::out);
+#endif
+            if( !output )
+              warnings.push_back( "Failed to open report output '" + out_file + "', for writing.");
+            else
+              output.write( rpt.c_str(), rpt.size() );
+          }//if( is file ) / else write file
+        }//if( !options.output_dir.empty() )
+      }catch( inja::InjaError &e )
+      {
+        const string msg = "Error templating results (" + e.type + ": line "
+        + std::to_string(e.location.line) + ", column " + std::to_string(e.location.column)
+        + " of '" + tmplt + "'): " + e.message + ". While processing '" + filename + "'.";
+        
+        cerr << msg << endl;
+        warnings.push_back( msg );
+      }catch( std::exception &e )
+      {
+        cerr << "Error templating results: " << e.what() << endl;
+        warnings.push_back( "Error templating results: " + string(e.what()) );
+      }
+    }//for( const string &tmplt : options.report_templates )
+    
+    if( !options.output_dir.empty() && options.create_json_output )
+      BatchInfoLog::write_json( options, warnings, filename, data );
     
     if( !fit_results.success )
       continue;
@@ -369,6 +459,63 @@ void fit_peaks_in_files( const std::string &exemplar_filename,
     }
   }//for( const string filename : files )
     
+  // Add any encountered errors to output summary JSON
+  for( const string &warn : warnings )
+    summary_json["Warnings"].push_back( warn );
+  
+  // Now write summary report(s)
+  for( const string &summary_tmplt : options.summary_report_templates )
+  {
+    try
+    {
+      const string rpt = BatchInfoLog::render_template( summary_tmplt, env,
+                       BatchInfoLog::TemplateRenderType::PeakFitSummary, options, summary_json );
+      
+      if( options.to_stdout && !SpecUtils::iequals_ascii(summary_tmplt, "html" ) )
+        cout << "\n\n" << rpt << endl << endl;
+      
+      if( !options.output_dir.empty() )
+      {
+        const string out_file
+                    = BatchInfoLog::suggested_output_report_filename( "", summary_tmplt,
+                                    BatchInfoLog::TemplateRenderType::PeakFitSummary, options );
+        
+        if( SpecUtils::is_file(out_file) && !options.overwrite_output_files )
+        {
+          warnings.push_back( "Not writing '" + out_file + "', as it would overwrite a file."
+                             " See the '--overwrite-output-files' option to force writing." );
+        }else
+        {
+#ifdef _WIN32
+          const std::wstring woutcsv = SpecUtils::convert_from_utf8_to_utf16(out_file);
+          std::ofstream output( woutcsv.c_str(), ios::binary | ios::out );
+#else
+          std::ofstream output( out_file.c_str(), ios::binary | ios::out );
+#endif
+          if( !output )
+            throw runtime_error( "Failed to open summary peak fit report output, '" + out_file + "'" );
+          
+          output.write( rpt.c_str(), rpt.size() );
+        }//if( file exists and dont overwrite ) / else
+      }
+    }catch( inja::InjaError &e )
+    {
+      const string msg = "Error templating summary peak fit output (" + e.type + ": line "
+      + std::to_string(e.location.line) + ", column " + std::to_string(e.location.column)
+      + " of '" + summary_tmplt + "'): " + e.message + ".";
+      
+      cerr << msg << endl;
+      warnings.push_back( msg );
+    }catch( std::exception &e )
+    {
+      warnings.push_back( "Error making summary peak fit output: " + string(e.what()) );
+    }
+  }//if( !options.summary_report_template.empty() )
+  
+  
+  if( !options.output_dir.empty() && options.create_json_output )
+    BatchInfoLog::write_json( options, warnings, "", summary_json );
+  
   if( !warnings.empty() )
     cerr << endl << endl;
   for( const auto warn : warnings )
@@ -957,10 +1104,10 @@ BatchPeak::BatchPeakFitResult fit_peaks_in_file( const std::string &exemplar_fil
         const double exemplar_mean = exemplar->mean();
         
         const double energy_diff = fabs( fit_mean - exemplar_mean );
-        // We will require the fit peak to be within 0.25 FWHM (arbitrarily chosen distance)
+        // We will require the fit peak to be within 0.5 FWHM (arbitrarily chosen distance)
         //  of the exemplar peak, and we will use the exemplar peak closest in energy to the
         //  fit peak
-        if( (energy_diff < 0.5*p.fwhm())
+        if( ((energy_diff < 0.5*p.fwhm()) || (energy_diff < 0.5*exemplar->fwhm()))
            && (!exemplar_parent || (energy_diff < fabs(exemplar_parent->mean() - fit_mean))) )
         {
           exemplar_parent = exemplar;

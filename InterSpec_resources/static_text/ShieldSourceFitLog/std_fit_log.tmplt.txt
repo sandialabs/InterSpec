@@ -35,7 +35,7 @@ Shieldings:
 {% if shield.IsGeneric %}
     Generic AN={{ shield.AN }}, AD={{ shield.AD }} g/cm2:
 {% else %}
-    {{ shield.Name }}{% if existsIn(shield,"Formula") %}, {{ shield.Formula }},{% endif %} density={{ shield.Density_gPerCm3 }} g/cm3, {{ Shieldings.Geometry }}: [{% for dimNum in range(Shieldings.NumDimensions) %}{% if dimNum > 1 %}, {% endif %}{{ at(Shieldings.DimensionMeanings,dimNum) }}_thickness={{at(shield.Thicknesses,dimNum)}}{% endfor %}]
+    {{ shield.Name }}{% if existsIn(shield,"Formula") %}, {{ shield.Formula }},{% endif %} density={{ shield.Density_gPerCm3 }} g/cm3, {{ Shieldings.Geometry }}: [{% for dimNum in range(Shieldings.NumDimensions) %}{% if dimNum %}, {% endif %}{{ at(Shieldings.DimensionMeanings,dimNum) }}_thickness={{at(shield.Thicknesses,dimNum)}}{% endfor %}]
 {% endif %}
 {% if exists("PeaksUsedForActivityFitting") %}
 ## for peak in PeaksUsedForActivityFitting.Peaks

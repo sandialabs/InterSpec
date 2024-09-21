@@ -223,7 +223,10 @@ int run_batch_command( int argc, char **argv )
       ("out-dir", po::value<string>(&output_path)->default_value(""),
        "The directory to write peak CSV files (and optionally) N42 files to; if empty, CSV files will not be written.")
       ("back-sub-file", po::value<string>(&background_sub_file)->default_value(""),
-       "File to use as the background, to perform a live-time-normalized, hard-background-subtraction with (currently must be single record).")
+       "File to use as the background.\n"
+       "For activity/shielding fits, you can use the 'hard-background-subtract' option to specify if background"
+       " subtraction should be on a peak-by-peak basis, or if a live-time-normalized, hard-background-subtraction (e.g., channel-by-channel).\n"
+       "For peak search, a live-time-normalized, hard-background-subtraction (currently must be single record), will always be performed.")
       ("background-sample-nums", po::value<std::string>(&background_samples),
        "The sample numbers from the background file to use; if left empty will try to determine, and fail if not unique.\n\t"
        "Only applicable if the background subtraction file is specified."
@@ -234,7 +237,7 @@ int run_batch_command( int argc, char **argv )
        " used with hard background subtract."
        )
       ("include-nonfit-peaks", po::value<bool>(&show_nonfit_peaks)->default_value(false),
-       "Include peaks that are not fit into the output CSV peak results."
+       "Include peaks that are not fit into the output CSV peak results; these peaks will have a zero amplitude set."
        )
       ("file-report-template", po::value<vector<string>>(&report_templates)->multitoken(),
        "One or more spectrum report template files - for each input file, a report will be produced with each template specified."

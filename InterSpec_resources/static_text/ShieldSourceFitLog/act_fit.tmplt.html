@@ -135,10 +135,10 @@
             {% if foreground.HasNeutrons %}
             <tr>
                 <th>Neutron Count:</th>
-                <td> foreground.NeutronSum </td>
+                <td>{{ foreground.NeutronCounts }}</td>
 
                 <th>Neut. Live Time:</th>
-                <td> foreground.NeutronLiveTime </td>
+                <td>{{ printCompact(foreground.NeutronLiveTime,6) }} s</td>
 
                 <th>Neutron CPS:</th>
                 <td> {{ printFixed(foreground.NeutronCps,4) }} </td>

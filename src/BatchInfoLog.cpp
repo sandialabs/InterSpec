@@ -42,6 +42,7 @@
 #include "InterSpec/SpecMeas.h"
 #include "InterSpec/BatchPeak.h"
 #include "InterSpec/EnergyCal.h"
+#include "InterSpec/InterSpec.h"
 #include "InterSpec/BatchInfoLog.h"
 #include "InterSpec/BatchActivity.h"
 #include "InterSpec/PhysicalUnits.h"
@@ -51,8 +52,384 @@
 
 using namespace std;
 
+namespace
+{
+#if( defined(_WIN32) )
+  const char ns_path_sep = '\\';
+#else
+  const char ns_path_sep = '/';
+#endif
+}//namespace
+
+
 namespace BatchInfoLog
 {
+  std::string default_template_dir()
+  {
+    const string static_data_dir = InterSpec::staticDataDirectory().empty() ? string("./data")
+                                                                  : InterSpec::staticDataDirectory();
+    //Also see: `WServer::instance()->appRoot()`, which isnt valid right now
+    const string app_root = SpecUtils::append_path( static_data_dir, ".." );
+    const string docroot  = SpecUtils::append_path( app_root, "InterSpec_resources" );
+    const string static_txt = SpecUtils::append_path( docroot, "static_text" );
+    
+    // inja assumes trailing path separator, for its template path
+    
+    return SpecUtils::append_path( static_txt, "ShieldSourceFitLog" ) + ns_path_sep;
+  }//std::string default_template_dir()
+  
+  
+  std::string template_include_dir( const BatchPeak::BatchPeakFitOptions &options )
+  {
+    if( SpecUtils::iequals_ascii( options.template_include_dir, "none" ) )
+      return "";
+    
+    if( SpecUtils::iequals_ascii( options.template_include_dir, "default" ) )
+      return default_template_dir();
+    
+    string tmplt_dir = options.template_include_dir;
+    if( !tmplt_dir.empty() && (tmplt_dir.back() != ns_path_sep) )
+      tmplt_dir += ns_path_sep;
+    
+    return tmplt_dir;
+  }//std::string template_include_dir( const BatchPeak::BatchPeakFitOptions &options )
+  
+  
+  inja::Environment get_default_inja_env( const BatchPeak::BatchPeakFitOptions &options )
+  {
+    const string tmplt_dir = BatchInfoLog::template_include_dir( options );
+    
+    if( !tmplt_dir.empty() && !SpecUtils::is_directory(tmplt_dir) )
+      throw runtime_error( string("Template include directory, '") + tmplt_dir
+                          + "', doesnt look to be a valid directory - not performing analysis." );
+    
+    
+    inja::Environment env{ tmplt_dir };
+    env.set_trim_blocks( true ); // remove the first newline after a block
+    //env.set_lstrip_blocks( true ); //strip the spaces and tabs from the start of a line to a block
+    
+    
+  #if( BUILD_FOR_WEB_DEPLOYMENT )
+      env.set_search_included_templates_in_files( false );
+  #else
+    //To think about more: is there any security issues with allowing.
+    //  It doesnt *look* like inja prevents using things like "../../../SomeSensitveFile.txt" as templates.
+    env.set_search_included_templates_in_files( !tmplt_dir.empty() );
+  #endif
+    
+    // Add some callbacks incase people want more control over the precision of their printouts
+    env.add_callback( "printFixed", 2, &BatchInfoLog::printFixed );
+    env.add_callback( "printCompact", 2, &BatchInfoLog::printCompact );
+    
+    try
+    {
+      // If we're using a custom include path, opening templates from the default template location
+      //  is problematic, so we'll just create a new `inja::Environment` to open the default
+      //  templates, and then add them to `env` - not really tested yet.
+      inja::Environment sub_env;
+      sub_env.add_callback( "printFixed", 2, &BatchInfoLog::printFixed );
+      sub_env.add_callback( "printCompact", 2, &BatchInfoLog::printCompact );
+      
+      const string default_tmplt_dir = BatchInfoLog::default_template_dir();
+      
+      {
+        const string def_txt_tmplt = SpecUtils::append_path( default_tmplt_dir, "std_fit_log.tmplt.txt" );
+        inja::Template txt_tmplt = sub_env.parse_template( def_txt_tmplt );
+        env.include_template( "default-act-fit-txt-results", txt_tmplt );
+      }
+      
+      {
+        const string def_html_tmplt = SpecUtils::append_path( default_tmplt_dir, "act_fit.tmplt.html" );
+        inja::Template html_tmplt = sub_env.parse_template( def_html_tmplt );
+        env.include_template( "default-act-fit-html-results", html_tmplt );
+      }
+      
+      {
+        const string def_csv_summary_tmplt = SpecUtils::append_path( default_tmplt_dir, "std_summary.tmplt.csv" );
+        inja::Template csv_sum_tmplt = sub_env.parse_template( def_csv_summary_tmplt );
+        env.include_template( "default-act-fit-csv-summary", csv_sum_tmplt );
+      }
+      
+      {
+        const string def_html_summary_tmplt = SpecUtils::append_path( default_tmplt_dir, "std_summary.tmplt.html" );
+        inja::Template html_sum_tmplt = sub_env.parse_template( def_html_summary_tmplt );
+        env.include_template( "default-act-fit-html-summary", html_sum_tmplt );
+      }
+      
+      {
+        const string tmplt_path = SpecUtils::append_path( default_tmplt_dir, "std_peak_fit_log.tmplt.txt" );
+        inja::Template tmplt = sub_env.parse_template( tmplt_path );
+        env.include_template( "default-peak-fit-txt-results", tmplt );
+      }
+      
+      {
+        const string tmplt_path = SpecUtils::append_path( default_tmplt_dir, "peak_fit.tmplt.html" );
+        inja::Template tmplt = sub_env.parse_template( tmplt_path );
+        env.include_template( "default-peak-fit-html-results", tmplt );
+      }
+      
+      {
+        const string tmplt_path = SpecUtils::append_path( default_tmplt_dir, "std_peak_fit_summary.tmplt.csv" );
+        inja::Template tmplt = sub_env.parse_template( tmplt_path );
+        env.include_template( "default-peak-fit-csv-summary", tmplt );
+      }
+      
+      {
+        const string tmplt_path = SpecUtils::append_path( default_tmplt_dir, "std_peak_fit_summary.tmplt.html" );
+        inja::Template tmplt = sub_env.parse_template( tmplt_path );
+        env.include_template( "default-peak-fit-html-summary", tmplt );
+      }
+    }catch( std::exception &e )
+    {
+      throw runtime_error( "Error loading default analysis report template: " + string(e.what()) );
+    }
+    
+    return env;
+  }//inja::Environment get_default_inja_env( const BatchPeak::BatchPeakFitOptions &options )
+  
+  
+  vector<pair<string,string>> load_spectrum_chart_js_and_css()
+  {
+    vector<pair<string,string>> answer;
+    
+#if( SpecUtils_ENABLE_D3_CHART )
+    //InterSpec::setStaticDataDirectory( SpecUtils::append_path(datadir,"data") );
+    assert( !InterSpec::staticDataDirectory().empty() );
+    const string static_data_dir = InterSpec::staticDataDirectory().empty() ? string("./data")
+    : InterSpec::staticDataDirectory();
+    //Also see: `WServer::instance()->appRoot()`, which isnt valid right now
+    const string app_root = SpecUtils::append_path( static_data_dir, ".." );
+    const string docroot  = SpecUtils::append_path( app_root, "InterSpec_resources" );
+    
+    const string sc_js_fn = SpecUtils::is_file( SpecUtils::append_path( docroot, "SpectrumChartD3.min.js") )
+                            ? "SpectrumChartD3.min.js" : "SpectrumChartD3.js";
+    const string sc_css_fn = SpecUtils::is_file( SpecUtils::append_path( docroot, "SpectrumChartD3.min.css") )
+                            ? "SpectrumChartD3.min.css" : "SpectrumChartD3.css";
+    
+    string d3_js  = AppUtils::file_contents( SpecUtils::append_path( docroot, "d3.v3.min.js") );
+    
+    string sc_js  = AppUtils::file_contents( SpecUtils::append_path( docroot, sc_js_fn ) );
+    string sc_css = AppUtils::file_contents( SpecUtils::append_path( docroot, sc_css_fn ) );
+    
+    answer.emplace_back( "D3_JS", std::move(d3_js) );
+    answer.emplace_back( "SpectrumChart_JS", std::move(sc_js) );
+    answer.emplace_back( "SpectrumChart_CSS", std::move(sc_css) );
+#endif // SpecUtils_ENABLE_D3_CHART
+    
+    return answer;
+  }//load_spectrum_chart_js_and_css()
+  
+  string render_template( string tmplt, 
+                         inja::Environment &env,
+                         const TemplateRenderType type,
+                         const BatchPeak::BatchPeakFitOptions &options,
+                         const nlohmann::json &data )
+  {
+    string rpt;
+    
+    switch( type )
+    {
+      case TemplateRenderType::ActShieldIndividual:
+      {
+        if( SpecUtils::iequals_ascii(tmplt, "txt" ) )
+          rpt = env.render("{% include \"default-act-fit-txt-results\" %}", data);
+        else if( SpecUtils::iequals_ascii(tmplt, "html" ) )
+          rpt = env.render("{% include \"default-act-fit-html-results\" %}", data);
+        break;
+      }//case TemplateRenderType::ActShieldIndividual:
+        
+      case TemplateRenderType::ActShieldSummary:
+      {
+        if( SpecUtils::iequals_ascii(tmplt, "csv" ) )
+          rpt = env.render( "{% include \"default-act-fit-csv-summary\" %}", data );
+        else if( SpecUtils::iequals_ascii(tmplt, "html" ) )
+          rpt = env.render( "{% include \"default-act-fit-html-summary\" %}", data );
+        break;
+      }//case TemplateRenderType::ActShieldSummary:
+        
+      case TemplateRenderType::PeakFitIndividual:
+      {
+        if( SpecUtils::iequals_ascii(tmplt, "txt" ) )
+          rpt = env.render("{% include \"default-peak-fit-txt-results\" %}", data);
+        else if( SpecUtils::iequals_ascii(tmplt, "html" ) )
+          rpt = env.render("{% include \"default-peak-fit-html-results\" %}", data);
+        break;
+      }//case TemplateRenderType::PeakFitIndividual:
+      
+      case TemplateRenderType::PeakFitSummary:
+      {
+        if( SpecUtils::iequals_ascii(tmplt, "csv" ) )
+          rpt = env.render( "{% include \"default-peak-fit-csv-summary\" %}", data );
+        else if( SpecUtils::iequals_ascii(tmplt, "html" ) )
+          rpt = env.render( "{% include \"default-peak-fit-html-summary\" %}", data );
+        break;
+      }//case TemplateRenderType::PeakFitSummary:
+    }//switch( type )
+    
+    
+    if( rpt.empty() )
+    {
+      const string tmplt_dir = BatchInfoLog::template_include_dir( options );
+      const bool is_in_inc = SpecUtils::is_file( SpecUtils::append_path(tmplt_dir, tmplt) );
+      
+      inja::Template injatmplt;
+      if( is_in_inc )
+      {
+        injatmplt = env.parse_template( tmplt );
+      }else
+      {
+        bool is_file = SpecUtils::is_file( tmplt );
+        if( !is_file )
+        {
+          const string default_tmplt_dir = BatchInfoLog::default_template_dir();
+          const string tmplt_in_def_path = SpecUtils::append_path(default_tmplt_dir, tmplt);
+          
+          is_file = SpecUtils::is_file( tmplt_in_def_path );
+          
+#if( !ANDROID && !IOS && !BUILD_FOR_WEB_DEPLOYMENT )
+          // TODO: consider using `AppUtils::locate_file(...)` to find the file
+#endif
+          
+          if( !is_file )
+            throw runtime_error( "Could not find template file '" + tmplt + "'."
+                                " Please specify full path to file, or use the"
+                                " 'report-template-include-dir' option to specify"
+                                " directory where reports are located." );
+          tmplt = tmplt_in_def_path;
+        }
+        
+        inja::Environment sub_env;
+        sub_env.add_callback( "printFixed", 2, &BatchInfoLog::printFixed );
+        sub_env.add_callback( "printCompact", 2, &BatchInfoLog::printCompact );
+        injatmplt = sub_env.parse_template( tmplt );
+      }//
+      
+      rpt = env.render( injatmplt, data );
+    }//if( default report format ) / else
+    
+    return rpt;
+  };//render_template(...)
+  
+  
+  std::string suggested_output_report_filename( const std::string &filename, 
+                                               const std::string tmplt,
+                                               const TemplateRenderType type,
+                                               const BatchPeak::BatchPeakFitOptions &options )
+  {
+    string outname = SpecUtils::filename( filename );
+    const string file_ext = SpecUtils::file_extension(outname);
+    if( !file_ext.empty() )
+      outname = outname.substr(0, outname.size() - file_ext.size());
+    
+    string tmplt_name = SpecUtils::filename( tmplt );
+    string tmplt_ext = SpecUtils::file_extension(tmplt_name);
+    
+    if( SpecUtils::iequals_ascii(tmplt, "txt")
+       || SpecUtils::iequals_ascii(tmplt, "text")
+       || SpecUtils::iequals_ascii(tmplt, "csv")
+       || SpecUtils::iequals_ascii(tmplt, "html") )
+    {
+      switch( type )
+      {
+        case TemplateRenderType::ActShieldIndividual:
+          tmplt_name = "act_fit";
+          break;
+          
+        case TemplateRenderType::ActShieldSummary:
+          tmplt_name = "summary";
+          break;
+          
+        case TemplateRenderType::PeakFitIndividual:
+          tmplt_name = "peak_fit";
+          break;
+          
+        case TemplateRenderType::PeakFitSummary:
+          tmplt_name = "summary";
+          break;
+      }//switch( type )
+      
+      tmplt_ext = "." + tmplt;
+      SpecUtils::to_lower_ascii( tmplt_ext );
+    }//if( template is "txt", "text", "csv", or "html" )
+    
+    
+    size_t pos = SpecUtils::ifind_substr_ascii(tmplt_name, "tmplt");
+    if( pos == string::npos )
+      pos = SpecUtils::ifind_substr_ascii(tmplt_name, "template");
+    if( pos != string::npos )
+      tmplt_name = tmplt_name.substr(0, pos);
+    if( SpecUtils::iends_with(tmplt_name, "_") 
+       || SpecUtils::iends_with(tmplt_name, ".")
+       || SpecUtils::iends_with(tmplt_name, "-") )
+    {
+      tmplt_name = tmplt_name.substr(0, tmplt_name.size() - 1);
+    }
+    
+    if( tmplt_ext.empty()
+       || SpecUtils::iequals_ascii(tmplt_ext, "tmplt" )
+       || SpecUtils::iequals_ascii(tmplt_ext, "template" ) )
+      tmplt_ext = SpecUtils::file_extension(tmplt_name);
+    
+    if( tmplt_ext.empty() )
+      tmplt_ext = ".txt";
+    
+    outname += (outname.empty() ? "" : "_") + tmplt_name + tmplt_ext;
+    return SpecUtils::append_path(options.output_dir, outname );
+  }//std::string suggested_output_report_filename(...)
+  
+  
+  std::string printFixed( std::vector<const nlohmann::json *> &args )
+  {
+    try
+    {
+      const double val = args.at(0)->get<double>();
+      const int numDecimal = std::max( 0, args.at(1)->get<int>() );
+      
+      char buffer[64] = { '\0' };
+      snprintf( buffer, sizeof(buffer), "%.*f", numDecimal, val );
+      
+      return std::string(buffer);
+    }catch( inja::InjaError &e )
+    {
+      const string msg = "Error converting 'printFixed' argument to number.\n"
+      "line " + std::to_string(e.location.line) + ", column " + std::to_string(e.location.column)
+      + "): " + e.message + ".";
+      
+      cerr << msg << endl;
+      throw;
+    }catch( std::exception &e )
+    {
+      cerr << "Error in 'printFixed': " << e.what() << endl;
+      throw;
+    }
+  };
+  
+  std::string printCompact( std::vector<const nlohmann::json *> &args )
+  {
+    try
+    {
+      const double val = args.at(0)->get<double>();
+      const int numSigFig = args.at(1)->get<int>();
+      if( numSigFig <= 1 )
+        throw runtime_error( "printCompact: you must print at least one significant figures" );
+      
+      return SpecUtils::printCompact( val, static_cast<size_t>(numSigFig) );
+    }catch( inja::InjaError &e )
+    {
+      const string msg = "Error converting 'printCompact' argument to number.\n"
+      "line " + std::to_string(e.location.line) + ", column " + std::to_string(e.location.column)
+      + "): " + e.message + ".";
+      
+      cerr << msg << endl;
+      throw;
+    }catch( std::exception &e )
+    {
+      cerr << "Error in 'printCompact': " << e.what() << endl;
+      throw;
+    }
+    return "";
+  };
+  
   
   // Adds the basic direct info on a source (nuclide name, activity, age, etc), but does not
   //  Add which peaks it contributes to, or any information on gammas
@@ -830,7 +1207,7 @@ void add_basic_src_details( const GammaInteractionCalc::SourceDetails &src,
                        const shared_ptr<const SpecMeas> &spec_file,
                        const std::set<int> &sample_numbers,
                        const string &filename,
-                       const shared_ptr<const BatchPeak::BatchPeakFitResult> &peak_fit )
+                       const BatchPeak::BatchPeakFitResult * const peak_fit )
   {
     if( !spec_ptr )
       return;
@@ -1082,4 +1459,411 @@ void add_basic_src_details( const GammaInteractionCalc::SourceDetails &src,
     options_obj["PeakStatThreshold"] = options.peak_stat_threshold;
     options_obj["PeakShapeThreshold"] = options.peak_hypothesis_threshold;
   }//add_peak_fit_options_to_json(...)
+  
+  
+  void add_peak_fit_results_to_json( nlohmann::basic_json<> &data,
+                                    const BatchPeak::BatchPeakFitResult &fit_results )
+  {
+    data["Success"] = fit_results.success;
+    data["Warnings"] = fit_results.warnings;
+    data["HasWarnings"] = !fit_results.warnings.empty();
+    
+    data["HasSpectrum"] = !!fit_results.spectrum;
+    if( fit_results.spectrum )
+    {
+      fit_results.spectrum->set_title( SpecUtils::filename(fit_results.file_path) );
+      add_hist_to_json( data, false, fit_results.spectrum,
+                       fit_results.measurement,
+                       fit_results.sample_numbers,
+                       SpecUtils::filename(fit_results.file_path),
+                       &fit_results );
+    }//if( fit_results.spectrum )
+    
+    
+    
+    auto add_peaks = []( nlohmann::json &json, deque<shared_ptr<const PeakDef>> peaks, const shared_ptr<const SpecUtils::Measurement> &spectrum ) {
+      
+      // We will write down the peaks and continua in separate arrays, and give an index to link
+      //  them.  By default the peaks and continua are sorted by energy, but we'll also through
+      //  in some arrays of indexes so we can sort them in other orders when templating
+      
+      std::sort( begin(peaks), end(peaks), &PeakDef::lessThanByMeanShrdPtr );
+      
+      vector<shared_ptr<const PeakContinuum>> continua;
+      for( const auto &p : peaks )
+      {
+        if( std::find(begin(continua), end(continua), p->continuum()) == end(continua) )
+          continua.push_back( p->continuum() );
+      }
+      
+      auto sorted_indices = [&peaks, spectrum]( Wt::SortOrder order, PeakModel::Columns column )
+       -> vector<int> {
+        deque<shared_ptr<const PeakDef>> peaks_copy = peaks;
+        
+        boost::function<bool(const shared_ptr<const PeakDef> &, const shared_ptr<const PeakDef> &)> sortfcn;
+        sortfcn = boost::bind( &PeakModel::compare, boost::placeholders::_1, boost::placeholders::_2,
+                              column, order, spectrum );
+        stable_sort( begin(peaks_copy), end(peaks_copy), sortfcn );
+        
+        vector<int> indices;
+        for( const shared_ptr<const PeakDef> &p : peaks )
+        {
+          const auto pos = std::find( begin(peaks_copy), end(peaks_copy), p );
+          assert( pos != end(peaks_copy) );
+          indices.push_back( static_cast<int>(pos - begin(peaks_copy)) );
+        }
+        return indices;
+       };//sorted_indices lamda
+      
+      using So = Wt::SortOrder;
+      using Col = PeakModel::Columns;
+      json["PeakSortIndex_Energy_Ascend"] = sorted_indices( So::AscendingOrder, Col::kMean );
+      json["PeakSortIndex_Energy_Descend"] = sorted_indices( Wt::SortOrder::DescendingOrder, PeakModel::Columns::kMean );
+      
+      json["PeakSortIndex_Isotope_Ascend"] = sorted_indices( So::AscendingOrder, Col::kIsotope );
+      json["PeakSortIndex_Isotope_Descend"] = sorted_indices( Wt::SortOrder::DescendingOrder, PeakModel::Columns::kIsotope );
+      
+      json["PeakSortIndex_Mean_Ascend"] = sorted_indices( Wt::SortOrder::AscendingOrder, PeakModel::Columns::kMean );
+      json["PeakSortIndex_Mean_Descend"] = sorted_indices( Wt::SortOrder::DescendingOrder, PeakModel::Columns::kMean );
+      
+      json["PeakSortIndex_Amp_Ascend"] = sorted_indices( Wt::SortOrder::AscendingOrder, PeakModel::Columns::kAmplitude );
+      json["PeakSortIndex_Amp_Descend"] = sorted_indices( Wt::SortOrder::DescendingOrder, PeakModel::Columns::kAmplitude );
+      
+      json["PeakSortIndex_Fwhm_Ascend"] = sorted_indices( Wt::SortOrder::AscendingOrder, PeakModel::Columns::kFwhm );
+      json["PeakSortIndex_Fwhm_Descend"] = sorted_indices( Wt::SortOrder::DescendingOrder, PeakModel::Columns::kFwhm );
+      
+      json["PeakSortIndex_SrcEnergy_Ascend"] = sorted_indices( Wt::SortOrder::AscendingOrder, PeakModel::Columns::kPhotoPeakEnergy );
+      json["PeakSortIndex_SrcEnergy_Descend"] = sorted_indices( Wt::SortOrder::DescendingOrder, PeakModel::Columns::kPhotoPeakEnergy );
+      
+      json["PeakSortIndex_RoiCounts_Ascend"] = sorted_indices( Wt::SortOrder::AscendingOrder, PeakModel::Columns::kRoiCounts );
+      json["PeakSortIndex_RoiCounts_Descend"] = sorted_indices( Wt::SortOrder::DescendingOrder, PeakModel::Columns::kRoiCounts );
+      
+      json["PeakSortIndex_DistSrcEnergyToMean_Ascend"] = sorted_indices( Wt::SortOrder::AscendingOrder, PeakModel::Columns::kDifference );
+      json["PeakSortIndex_DistSrcEnergyToMean_Descend"] = sorted_indices( Wt::SortOrder::DescendingOrder, PeakModel::Columns::kDifference );
+      
+      json["PeakSortIndex_UseForActivity_Ascend"] = sorted_indices( Wt::SortOrder::AscendingOrder, PeakModel::Columns::kUseForShieldingSourceFit );
+      json["PeakSortIndex_UseForActivity_Descend"] = sorted_indices( Wt::SortOrder::DescendingOrder, PeakModel::Columns::kUseForShieldingSourceFit );
+      
+      json["PeakSortIndex_UseForEnergyCal_Ascend"] = sorted_indices( Wt::SortOrder::AscendingOrder, PeakModel::Columns::kUseForCalibration );
+      json["PeakSortIndex_UseForEnergyCal_Descend"] = sorted_indices( Wt::SortOrder::DescendingOrder, PeakModel::Columns::kUseForCalibration );
+      
+      
+      for( int cont_index = 0; cont_index < static_cast<int>(continua.size()); ++cont_index )
+      {
+        const shared_ptr<const PeakContinuum> &cont = continua[cont_index];
+        assert( cont );
+        vector<int> peaks_with_cont;
+        for( int peak_index = 0; peak_index < peaks.size(); ++peak_index )
+        {
+          if( peaks[peak_index]->continuum() == cont )
+            peaks_with_cont.push_back( static_cast<int>(peak_index) );
+        }
+       
+        json["Continua"].push_back( {} );
+        auto &cont_json = json["Continua"].back();
+        cont_json["PeakIndexes"] = peaks_with_cont;
+        cont_json["ContinuumIndex"] = static_cast<int>( cont_index );
+         
+        const PeakContinuum::OffsetType type = cont->type();
+        cont_json["ContinuumType"] = PeakContinuum::offset_type_str( type );
+        const size_t npar = PeakContinuum::num_parameters( type );
+        cont_json["NumberParameters"] = static_cast<int>( npar );
+        cont_json["IsStepContinuum"] = PeakContinuum::is_step_continuum( type );
+        cont_json["IsPolynomial"] = cont->isPolynomial();
+        
+        cont_json["IsEnergyRangeDefined"] = cont->energyRangeDefined();
+        
+        cont_json["LowerEnergy"] = cont->lowerEnergy();
+        cont_json["UpperEnergy"] = cont->upperEnergy();
+        
+        assert( spectrum );
+        if( spectrum && spectrum->energy_calibration() && spectrum->energy_calibration()->valid() )
+        {
+          const auto cal = spectrum->energy_calibration();
+          const double lower_channel = cal->channel_for_energy( cont->lowerEnergy() );
+          const double upper_channel = cal->channel_for_energy( cont->upperEnergy() );
+          const int lower_channel_int = static_cast<int>( std::round(lower_channel) );
+          const int upper_channel_int = static_cast<int>( std::round(upper_channel - 0.5) );
+          const int num_channel = std::max( 0, 1 + upper_channel_int - lower_channel_int );
+          
+          cont_json["HasChannelRange"] = true;
+          cont_json["LowerChannel"] = lower_channel;
+          cont_json["UpperChannel"] = upper_channel;
+          cont_json["LowerChannelInt"] = lower_channel_int;
+          cont_json["UpperChannelInt"] = upper_channel_int;
+          cont_json["NumberChannels"] = upper_channel - lower_channel;
+          cont_json["NumberChannelsInt"] = num_channel;
+          
+          vector<int> channel_numbers( num_channel );
+          vector<double> cont_area( num_channel, 0.0 ), channel_energies( num_channel + 1 );
+          for( int i = lower_channel_int; i <= upper_channel_int; ++i )
+          {
+            const int index = i - lower_channel_int;
+            const double channel_lower = cal->energy_for_channel( i );
+            const double channel_upper = cal->energy_for_channel( i + 1 );
+            
+            channel_numbers[index] = i;
+            channel_energies[index] = channel_lower;
+            channel_energies[index + 1] = channel_upper;
+            
+            try
+            {
+              cont_area[index] = cont->offset_integral( channel_lower, channel_upper, spectrum );
+            }catch( std::exception & )
+            {
+              assert( 0 );
+            }
+          }//for( int i = lower_channel_int; i <= upper_channel_int; ++i )
+          
+          cont_json["ChannelNumbers"] = channel_numbers;
+          cont_json["ChannelEnergies"] = channel_energies;
+          cont_json["ChannelContinuumArea"] = cont_area;
+        }else
+        {
+          cont_json["HasChannelRange"] = false;
+          cont_json["LowerChannel"] = 0.0;
+          cont_json["UpperChannel"] = 0.0;
+          cont_json["NumberChannel"] = 0.0;
+          cont_json["NumberChannelInt"] = 0;
+          cont_json["LowerChannelInt"] = 0;
+          cont_json["UpperChannelInt"] = 0;
+        }
+        
+        try
+        {
+          cont_json["ContinuumArea"] = cont->offset_integral( cont->lowerEnergy(), cont->upperEnergy(), spectrum );
+        }catch( std::exception &e )
+        {
+          cont_json["ContinuumArea"] = 0.0;
+          cont_json["Warnings"].push_back( "Error computing total integral area: " + string(e.what()) );
+        }
+        
+        cont_json["ParameterReferenceEnergy"] = cont->referenceEnergy();
+        cont_json["Parameters"] = cont->parameters();
+        cont_json["ParameterUncertainties"] = cont->uncertainties();
+        cont_json["ParameterIsForFitting"] = cont->fitForParameter();
+      }//for( const shared_ptr<const PeakContinuum> &cont : continua )
+      
+      
+      for( int peak_index = 0; peak_index < static_cast<int>(peaks.size()); ++peak_index )
+      {
+        const shared_ptr<const PeakDef> &p = peaks[peak_index];
+        const auto cont_pos = std::find( begin(continua), end(continua), p->continuum() );
+        assert( cont_pos != end(continua) );
+        const auto continuum_index = cont_pos - begin(continua);
+        assert( (continuum_index >= 0) && (continuum_index < continua.size()) );
+        
+        json["Peaks"].push_back( {} );
+        auto &peak_json = json["Peaks"].back();
+        
+        peak_json["ContinuumIndex"] = static_cast<int>( continuum_index );
+        
+        peak_json["SkewType"] = PeakDef::to_string( p->skewType() );
+        peak_json["NumSkewParameters"] = PeakDef::num_skew_parameters( p->skewType() );
+        
+        peak_json["PeakMean"] = p->mean();
+        peak_json["PeakMeanUncert"] = p->meanUncert();
+        
+        peak_json["PeakAmplitude"] = p->amplitude();
+        peak_json["PeakAmplitudeUncert"] = p->amplitudeUncert();
+        
+        peak_json["DataDefined"] = !p->gausPeak();
+        peak_json["GaussianDefined"] = p->gausPeak();
+        
+        peak_json["Chi2Dof"] = p->chi2dof();
+        peak_json["HasChi2Dof"] = p->chi2Defined();
+        
+        // Put peak info
+        switch( p->type() )
+        {
+          case PeakDef::DefintionType::GaussianDefined:
+          {
+            peak_json["PeakSigma"] = p->sigma();
+            peak_json["PeakSigmaUncert"] = p->sigmaUncert();
+            peak_json["PeakFwhm"] = p->fwhm();
+            peak_json["PeakFwhmUncert"] = 2.35482*p->sigmaUncert();
+            
+            break;
+          }//case DefintionType::GaussianDefined:
+            
+          case PeakDef::DefintionType::DataDefined:
+          {
+            // We'll add in placeholders for sigma and FWHM, so templates that expect these values wont be messed up
+            peak_json["PeakSigma"] = 0.0;
+            peak_json["PeakSigmaUncert"] = 0.0;
+            peak_json["PeakFwhm"] = 0.0;
+            peak_json["PeakFwhmUncert"] = 0.0;
+            break;
+          }//case DefintionType::DataDefined:
+        }//switch( p->type() )
+        
+        
+        peak_json["LowerEnergy"] = p->lowerX();
+        peak_json["UpperEnergy"] = p->upperX();
+        peak_json["RoiWidth"] = p->roiWidth();
+
+        
+        if( spectrum && spectrum->energy_calibration() && spectrum->energy_calibration()->valid() )
+        {
+          peak_json["HasChannelRange"] = true;
+          const auto cal = spectrum->energy_calibration();
+          const double lower_channel = cal->channel_for_energy( p->lowerX() );
+          const double upper_channel = cal->channel_for_energy( p->upperX() );
+          const int lower_channel_int = static_cast<int>( std::round(lower_channel) );
+          const int upper_channel_int = static_cast<int>( std::round(upper_channel - 0.5) );
+          const int num_channel = std::max( 0, 1 + upper_channel_int - lower_channel_int );
+          
+          peak_json["LowerChannel"] = lower_channel;
+          peak_json["UpperChannel"] = upper_channel;
+          peak_json["LowerChannelInt"] = lower_channel_int;
+          peak_json["UpperChannelInt"] = upper_channel_int;
+          peak_json["NumberChannels"] = upper_channel - lower_channel;
+          peak_json["NumberChannelsInt"] = num_channel;
+          
+          // TODO: put in arrays of gaussian integrals, data counts, and continuum integral
+          //double gauss_integral( const double x0, const double x1 ) const;
+          //void gauss_integral( const float *energies, double *channels, const size_t nchannel ) const;
+        }else
+        {
+          peak_json["HasChannelRange"] = false;
+        }
+        
+      
+        peak_json["AreaBetweenContinuumAndData"] = p->areaFromData( spectrum );
+        peak_json["UseForEnergyCal"] = p->useForEnergyCalibration();
+        peak_json["UseForActivityFit"] = p->useForShieldingSourceFit();
+        peak_json["UseForIsotopicsFromPeaks"] = p->useForManualRelEff();
+        peak_json["UseForDetEffFit"] = p->useForDrfIntrinsicEffFit();
+        peak_json["UseForDetFwhmFit"] = p->useForDrfFwhmFit();
+        peak_json["HasPeakUserLabel"] = !p->userLabel().empty();
+        peak_json["PeakUserLabel"] = p->userLabel();
+        peak_json["HasSourceAssigned"] = p->hasSourceGammaAssigned();
+
+        peak_json["SourceEnergy"] = p->hasSourceGammaAssigned() ? p->gammaParticleEnergy() : 0.0f;
+        if( p->parentNuclide() )
+        {
+          peak_json["SourceType"] = "Nuclide";
+          peak_json["SourceName"] = p->parentNuclide()->symbol;
+          
+          const SandiaDecay::Transition *trans = p->nuclearTransition();
+          if( trans->parent )
+            peak_json["SourceGammaParent"] = trans->parent->symbol;
+          if( trans->child )
+            peak_json["SourceGammaChild"] = trans->child->symbol;
+        }else if( p->xrayElement() )
+        {
+          peak_json["SourceType"] = "X-Ray";
+          peak_json["SourceName"] = p->xrayElement()->name + " x-ray";
+        }else if( p->reaction() )
+        {
+          peak_json["SourceType"] = "Reaction";
+          peak_json["SourceName"] = p->reaction()->name();
+        }else
+        {
+          peak_json["SourceType"] = "";
+          peak_json["SourceName"] = "";
+        }
+      
+        
+        vector<string> coef_names;
+        for( PeakDef::CoefficientType c = PeakDef::CoefficientType(0);
+            c < PeakDef::CoefficientType::NumCoefficientTypes;
+            c = PeakDef::CoefficientType( c + 1 ) )
+        {
+          coef_names.push_back( PeakDef::to_string(c) );
+        }
+        
+        peak_json["CoefficientValues"] = vector<double>( p->coefficients(), p->coefficients() + PeakDef::CoefficientType::NumCoefficientTypes );
+        peak_json["CoefficientUncerts"] = vector<double>( p->uncertainties(), p->uncertainties() + PeakDef::CoefficientType::NumCoefficientTypes );
+        peak_json["CoefficientFit"] = vector<bool>( p->fitFors(), p->fitFors() + PeakDef::CoefficientType::NumCoefficientTypes );
+        peak_json["CoefficientNames"] = coef_names;
+        
+        const Wt::WColor &color = p->lineColor();
+        peak_json["PeakColor"] = color.cssText();
+      }//for( const shared_ptr<const PeakDef> &p : peaks )
+    };//add_peaks( lambda )
+    
+    data["FitAnyPeak"] = !fit_results.fit_peaks.empty();
+    if( !fit_results.fit_peaks.empty() )
+      add_peaks( data["FitPeaks"], fit_results.fit_peaks, fit_results.spectrum );
+    
+    data["FitAllPeaks"] = fit_results.unfit_exemplar_peaks.empty();
+    if( !fit_results.unfit_exemplar_peaks.empty() )
+    {
+      deque<shared_ptr<const PeakDef>> peaks( begin(fit_results.unfit_exemplar_peaks),
+                                                   end(fit_results.unfit_exemplar_peaks) );
+      add_peaks( data["NotFitPeaks"], peaks, fit_results.spectrum );
+    }//
+    
+    data["ExemplarHasPeaks"] = !fit_results.exemplar_peaks.empty();
+    if( !fit_results.exemplar_peaks.empty() )
+      add_peaks( data["ExemplarPeaks"], fit_results.exemplar_peaks, fit_results.exemplar_spectrum );
+    
+    
+    // For peak searches, background subtraction are always a hard channel-by-channel subtraction,
+    //  and `fit_results.spectrum` is after the subtraction
+    //if( fit_results.background )
+    //  add_hist_to_json( data, true, fit_results.background, ... );
+    //options.background_subtract_file;
+    
+     //std::shared_ptr<const SpecMeas> exemplar;
+     //std::set<int> exemplar_sample_nums;
+     
+     //std::deque<std::shared_ptr<const PeakDef>> exemplar_peaks;
+     //std::shared_ptr<const SpecUtils::Measurement> exemplar_spectrum;
+     //std::vector<std::shared_ptr<const PeakDef>> unfit_exemplar_peaks;  //Exemplar peaks not found in the spectrum
+  }//void add_peak_fit_results_to_json(...)
+  
+  
+  void write_json( const BatchPeak::BatchPeakFitOptions &options,
+                  vector<string> &warnings,
+                  const string &filename,
+                  nlohmann::json json_copy )
+  {
+    string leaf_name = SpecUtils::filename(filename);
+    if( leaf_name.empty() )
+    {
+      leaf_name = "summary.json";
+    }else
+    {
+      const string file_ext = SpecUtils::file_extension(leaf_name);
+      if( !file_ext.empty() )
+        leaf_name = leaf_name.substr(0, leaf_name.size() - file_ext.size());
+      leaf_name += "_results.json";
+    }
+    
+    string out_json = SpecUtils::append_path(options.output_dir, leaf_name);
+    
+    if( SpecUtils::is_file(out_json) && !options.overwrite_output_files )
+    {
+      warnings.push_back( "Not writing '" + out_json + "', as it would overwrite a file."
+                         " See the '--overwrite-output-files' option to force writing." );
+    }else
+    {
+  #ifdef _WIN32
+      const std::wstring wout_json = SpecUtils::convert_from_utf8_to_utf16(out_json);
+      std::ofstream output_json( wout_json.c_str(), ios::binary | ios::out );
+  #else
+      std::ofstream output_json( out_json.c_str(), ios::binary | ios::out );
+  #endif
+      
+      if( !output_json )
+      {
+        warnings.push_back( "Failed to open '" + out_json + "', for writing.");
+      }else
+      {
+  #if( SpecUtils_ENABLE_D3_CHART )
+        if( json_copy.count("D3_JS") )
+          json_copy["D3_JS"] = "/* Removed for brevity - this string will have a value of the contents of the file InterSpec_resource/d3.v3.min.js during analysis in InterSpec_batch. */";
+        if( json_copy.count("SpectrumChart_JS") )
+          json_copy["SpectrumChart_JS"] = "/* Removed for brevity - this string will have a value of the contents of the file InterSpec_resource/SpectrumChartD3.js during analysis in InterSpec_batch.  */";
+        if( json_copy.count("SpectrumChart_CSS") )
+          json_copy["SpectrumChart_CSS"] = "/* Removed for brevity - this string will have a value of the contents of the file InterSpec_resource/SpectrumChartD3.css during analysis in InterSpec_batch. */";
+  #endif // SpecUtils_ENABLE_D3_CHART
+        
+        output_json << std::setw(4) << json_copy << std::endl;
+        cout << "Have written '" << out_json << "'" << endl;
+      }
+    }//if( SpecUtils::is_file( outcsv ) ) / else
+  }//void write_json(...)
 }//namespace BatchInfoLog

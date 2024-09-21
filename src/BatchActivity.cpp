@@ -260,57 +260,6 @@ shared_ptr<DetectorPeakResponse> init_drf_from_name( std::string drf_file, std::
   
   return nullptr;
 }//shared_ptr<DetectorPeakResponse> init_drf_from_name( std::string drf_file, std::string drf-name )
-  
-
-void write_json( const BatchActivityFitOptions &options, vector<string> &warnings,
-                 const string &filename, nlohmann::json json_copy )
-{
-  string leaf_name = SpecUtils::filename(filename);
-  if( leaf_name.empty() )
-  {
-    leaf_name = "summary.json";
-  }else
-  {
-    const string file_ext = SpecUtils::file_extension(leaf_name);
-    if( !file_ext.empty() )
-      leaf_name = leaf_name.substr(0, leaf_name.size() - file_ext.size());
-    leaf_name += "_results.json";
-  }
-  
-  string out_json = SpecUtils::append_path(options.output_dir, leaf_name);
-  
-  if( SpecUtils::is_file(out_json) && !options.overwrite_output_files )
-  {
-    warnings.push_back( "Not writing '" + out_json + "', as it would overwrite a file."
-                       " See the '--overwrite-output-files' option to force writing." );
-  }else
-  {
-#ifdef _WIN32
-    const std::wstring wout_json = SpecUtils::convert_from_utf8_to_utf16(out_json);
-    std::ofstream output_json( wout_json.c_str(), ios::binary | ios::out );
-#else
-    std::ofstream output_json( out_json.c_str(), ios::binary | ios::out );
-#endif
-    
-    if( !output_json )
-    {
-      warnings.push_back( "Failed to open '" + out_json + "', for writing.");
-    }else
-    {
-#if( SpecUtils_ENABLE_D3_CHART )
-      if( json_copy.count("D3_JS") )
-        json_copy["D3_JS"] = "/* Removed for brevity - this string will have a value of the contents of the file InterSpec_resource/d3.v3.min.js during analysis in InterSpec_batch. */";
-      if( json_copy.count("SpectrumChart_JS") )
-        json_copy["SpectrumChart_JS"] = "/* Removed for brevity - this string will have a value of the contents of the file InterSpec_resource/SpectrumChartD3.js during analysis in InterSpec_batch.  */";
-      if( json_copy.count("SpectrumChart_CSS") )
-        json_copy["SpectrumChart_CSS"] = "/* Removed for brevity - this string will have a value of the contents of the file InterSpec_resource/SpectrumChartD3.css during analysis in InterSpec_batch. */";
-#endif // SpecUtils_ENABLE_D3_CHART
-      
-      output_json << std::setw(4) << json_copy << std::endl;
-      cout << "Have written '" << out_json << "'" << endl;
-    }
-  }//if( SpecUtils::is_file( outcsv ) ) / else
-}//void write_json(...)
 
   
 void fit_activities_in_files( const std::string &exemplar_filename,
@@ -340,210 +289,25 @@ void fit_activities_in_files( const std::string &exemplar_filename,
   }//if( !db )
   
   
+  const vector<pair<string,string>> spec_chart_js_and_css = BatchInfoLog::load_spectrum_chart_js_and_css();
+  
   // Load report templates, and setup inja::environment
-  //InterSpec::setStaticDataDirectory( SpecUtils::append_path(datadir,"data") );
-  assert( !InterSpec::staticDataDirectory().empty() );
-  const string static_data_dir = InterSpec::staticDataDirectory().empty() ? string("./data") 
-                                                                : InterSpec::staticDataDirectory();
-  //Also see: `WServer::instance()->appRoot()`, which isnt valid right now
-  const string app_root = SpecUtils::append_path( static_data_dir, ".." );
-  const string docroot  = SpecUtils::append_path( app_root, "InterSpec_resources" );
-  const string static_txt = SpecUtils::append_path( docroot, "static_text" );
-  
-  // inja assumes trailing path separator, for its template path
-#if( defined(_WIN32) )
-  const char path_sep = '\\';
-#else
-  const char path_sep = '/';
-#endif
-  const string default_tmplt_dir = SpecUtils::append_path( static_txt, "ShieldSourceFitLog" ) + path_sep;
-  
-  string tmplt_dir;
-  
-  if( SpecUtils::iequals_ascii( options.template_include_dir, "default" ) )
-  {
-    tmplt_dir = default_tmplt_dir;
-  }else if( !SpecUtils::iequals_ascii( options.template_include_dir, "none" ) )
-  {
-    tmplt_dir = options.template_include_dir;
-    if( !tmplt_dir.empty() && (tmplt_dir.back() != path_sep) )
-      tmplt_dir += path_sep;
-  }
-  
-  if( !tmplt_dir.empty() && !SpecUtils::is_directory(tmplt_dir) )
-    throw runtime_error( string("Template include directory, '") + tmplt_dir
-                        + "', doesnt look to be a valid directory - not performing analysis." );
-  
-#if( SpecUtils_ENABLE_D3_CHART )
-  const string d3_js  = AppUtils::file_contents( SpecUtils::append_path( docroot, "d3.v3.min.js") );
-  
-  const string sc_js_fn = SpecUtils::is_file( SpecUtils::append_path( docroot, "SpectrumChartD3.min.js") )
-                              ? "SpectrumChartD3.min.js" : "SpectrumChartD3.js";
-  const string sc_css_fn = SpecUtils::is_file( SpecUtils::append_path( docroot, "SpectrumChartD3.min.css") )
-                              ? "SpectrumChartD3.min.css" : "SpectrumChartD3.css";
-  
-  const string sc_js  = AppUtils::file_contents( SpecUtils::append_path( docroot, sc_js_fn ) );
-  const string sc_css = AppUtils::file_contents( SpecUtils::append_path( docroot, sc_css_fn ) );
-#endif // SpecUtils_ENABLE_D3_CHART
-  
-  inja::Environment env{ tmplt_dir };
-  env.set_trim_blocks( true ); // remove the first newline after a block
-  //env.set_lstrip_blocks( true ); //strip the spaces and tabs from the start of a line to a block
-  
-#if( BUILD_FOR_WEB_DEPLOYMENT )
-    env.set_search_included_templates_in_files( false );
-#else
-  //To think about more: is there any security issues with allowing.
-  //  It doesnt *look* like inja prevents using things like "../../../SomeSensitveFile.txt" as templates.
-  env.set_search_included_templates_in_files( !tmplt_dir.empty() );
-#endif
-  
-  // Add some callbacks incase people want more control over the precision of their printouts
-  const auto printFixed = []( inja::Arguments& args ) -> std::string {
-    try
-    {
-      const double val = args.at(0)->get<double>();
-      const int numDecimal = std::max( 0, args.at(1)->get<int>() );
-      
-      char buffer[64] = { '\0' };
-      snprintf( buffer, sizeof(buffer), "%.*f", numDecimal, val );
-      
-      return std::string(buffer);
-    }catch( inja::InjaError &e )
-    {
-      const string msg = "Error converting 'printFixed' argument to number.\n"
-      "line " + std::to_string(e.location.line) + ", column " + std::to_string(e.location.column)
-      + "): " + e.message + ".";
-      
-      cerr << msg << endl;
-      throw;
-    }catch( std::exception &e )
-    {
-      cerr << "Error in 'printFixed': " << e.what() << endl;
-      throw;
-    }
-  };
-  
-  env.add_callback( "printFixed", 2, printFixed );
-  
-  const auto printCompact = []( inja::Arguments& args ) -> std::string {
-    try
-    {
-      const double val = args.at(0)->get<double>();
-      const int numSigFig = args.at(1)->get<int>();
-      if( numSigFig <= 1 )
-        throw runtime_error( "printCompact: you must print at least one significant figures" );
-      
-      return SpecUtils::printCompact( val, static_cast<size_t>(numSigFig) );
-    }catch( inja::InjaError &e )
-    {
-      const string msg = "Error converting 'printCompact' argument to number.\n"
-      "line " + std::to_string(e.location.line) + ", column " + std::to_string(e.location.column)
-      + "): " + e.message + ".";
-      
-      cerr << msg << endl;
-      throw;
-    }catch( std::exception &e )
-    {
-      cerr << "Error in 'printCompact': " << e.what() << endl;
-      throw;
-    }
-    return "";
-  };
-  
-  env.add_callback( "printCompact", 2, printCompact );
-  
-  try
-  {
-    // If we're using a custom include path, opening templates from the default template location
-    //  is problematic, so we'll just create a new `inja::Environment` to open the default
-    //  templates, and then add them to `env` - not really tested yet.
-    inja::Environment sub_env;
-    sub_env.add_callback( "printFixed", 2, printFixed );
-    sub_env.add_callback( "printCompact", 2, printCompact );
-    
-    const string def_txt_tmplt = SpecUtils::append_path( default_tmplt_dir, "std_fit_log.tmplt.txt" );
-    inja::Template txt_tmplt = sub_env.parse_template( def_txt_tmplt );
-    env.include_template( "default-act-fit-txt-results", txt_tmplt );
-    
-    const string def_html_tmplt = SpecUtils::append_path( default_tmplt_dir, "act_fit.tmplt.html" );
-    inja::Template html_tmplt = sub_env.parse_template( def_html_tmplt );
-    env.include_template( "default-act-fit-html-results", html_tmplt );
-    
-    const string def_csv_summary_tmplt = SpecUtils::append_path( default_tmplt_dir, "std_summary.tmplt.csv" );
-    inja::Template csv_sum_tmplt = sub_env.parse_template( def_csv_summary_tmplt );
-    env.include_template( "default-act-fit-csv-summary", csv_sum_tmplt );
-    
-    const string def_html_summary_tmplt = SpecUtils::append_path( default_tmplt_dir, "std_summary.tmplt.html" );
-    inja::Template html_sum_tmplt = sub_env.parse_template( def_html_summary_tmplt );
-    env.include_template( "default-act-fit-html-summary", html_sum_tmplt );
-  }catch( std::exception &e )
-  {
-    cerr << "Error loading default template: " << e.what() << endl;
-    warnings.push_back( "Error loading default template: " + string(e.what()) );
-  }
-  
-  
-  auto output_filename = [&options]( const string &filename, const string tmplt ) -> string {
-    string outname = SpecUtils::filename( filename );
-    const string file_ext = SpecUtils::file_extension(outname);
-    if( !file_ext.empty() )
-      outname = outname.substr(0, outname.size() - file_ext.size());
-    
-    string tmplt_name = SpecUtils::filename( tmplt );
-    string tmplt_ext = SpecUtils::file_extension(tmplt_name);
-    if( SpecUtils::iequals_ascii(tmplt_name, "csv") )
-    {
-      tmplt_name = "act_fit";
-      tmplt_ext = ".csv";
-    }else if( SpecUtils::iequals_ascii(tmplt_name, "txt")
-            || SpecUtils::iequals_ascii(tmplt_name, "text") )
-    {
-      tmplt_name = "act_fit";
-      tmplt_ext = ".txt";
-    }else if( SpecUtils::iequals_ascii(tmplt_name, "html") )
-    {
-      tmplt_name = "act_fit";
-      tmplt_ext = ".html";
-    }
-    
-    size_t pos = SpecUtils::ifind_substr_ascii(tmplt_name, "tmplt");
-    if( pos == string::npos )
-      pos = SpecUtils::ifind_substr_ascii(tmplt_name, "template");
-    if( pos != string::npos )
-      tmplt_name = tmplt_name.substr(0, pos);
-    if( SpecUtils::iends_with(tmplt_name, "_") || SpecUtils::iends_with(tmplt_name, ".") || SpecUtils::iends_with(tmplt_name, "-") )
-      tmplt_name = tmplt_name.substr(0, tmplt_name.size() - 1);
-    
-    if( tmplt_ext.empty()
-       || SpecUtils::iequals_ascii(tmplt_ext, "tmplt" )
-       || SpecUtils::iequals_ascii(tmplt_ext, "template" ) )
-      tmplt_ext = SpecUtils::file_extension(tmplt_name);
-    
-    if( tmplt_ext.empty() )
-      tmplt_ext = ".txt";
-    
-    outname += (outname.empty() ? "" : "_") + tmplt_name + tmplt_ext;
-    return SpecUtils::append_path(options.output_dir, outname );
-  };//output_filename(...)
-  
-  
+  inja::Environment env = BatchInfoLog::get_default_inja_env( options );
   
   bool set_setup_info_to_summary_json = false;
   nlohmann::json summary_json;
   
-#if( SpecUtils_ENABLE_D3_CHART )
-  summary_json["D3_JS"] = d3_js;
-  summary_json["SpectrumChart_JS"] = sc_js;
-  summary_json["SpectrumChart_CSS"] = sc_css;
-#endif // SpecUtils_ENABLE_D3_CHART
-  
   BatchInfoLog::add_exe_info_to_json( summary_json );
+  BatchInfoLog::add_activity_fit_options_to_json( summary_json, options );
+  
+  for( const pair<string,string> &key_val : spec_chart_js_and_css )
+    summary_json[key_val.first] = key_val.second;
   
   summary_json["ExemplarFile"] = exemplar_filename;
   if( !exemplar_sample_nums.empty() )
     summary_json["ExemplarSampleNumbers"] = vector<int>{begin(exemplar_sample_nums), end(exemplar_sample_nums)};
   summary_json["InputFiles"] = files;
+  
   
   std::shared_ptr<const SpecMeas> cached_exemplar_n42;
   for( const string filename : files )
@@ -596,7 +360,7 @@ void fit_activities_in_files( const std::string &exemplar_filename,
       BatchInfoLog::add_hist_to_json( data, false, fit_results.m_foreground,
                        fit_results.m_foreground_file,
                        fit_results.m_foreground_sample_numbers, fit_results.m_filename,
-                       fit_results.m_peak_fit_results );
+                       fit_results.m_peak_fit_results.get() );
     }//if( fit_results.m_foreground )
     
     if( fit_results.m_background && !fit_results.m_options.hard_background_sub )
@@ -611,7 +375,7 @@ void fit_activities_in_files( const std::string &exemplar_filename,
       BatchInfoLog::add_hist_to_json( data, true, fit_results.m_background,
                        back_file,
                        fit_results.m_background_sample_numbers, filename,
-                       fit_results.m_background_peak_fit_results );
+                       fit_results.m_background_peak_fit_results.get() );
       
       data["background"]["Normalization"] = fit_results.m_foreground->live_time() / fit_results.m_background->live_time();
     }//if( fit_results.m_background )
@@ -619,12 +383,8 @@ void fit_activities_in_files( const std::string &exemplar_filename,
     
     BatchInfoLog::add_activity_fit_options_to_json( data, fit_results.m_options );
     
-    
-#if( SpecUtils_ENABLE_D3_CHART )
-      data["D3_JS"] = d3_js;
-      data["SpectrumChart_JS"] = sc_js;
-      data["SpectrumChart_CSS"] = sc_css;
-#endif // SpecUtils_ENABLE_D3_CHART
+    for( const pair<string,string> &key_val : spec_chart_js_and_css )
+      data[key_val.first] = key_val.second;
     
     const bool success = ((fit_results.m_result_code == BatchActivity::BatchActivityFitResult::ResultCode::Success)
                           && fit_results.m_fit_results);
@@ -664,58 +424,17 @@ void fit_activities_in_files( const std::string &exemplar_filename,
     {
       try
       {
-        string rpt;
-        
-        if( SpecUtils::iequals_ascii(tmplt, "txt" ) )
-        {
-          rpt = env.render("{% include \"default-act-fit-txt-results\" %}", data);
-        }else if( SpecUtils::iequals_ascii(tmplt, "html" ) )
-        {
-          rpt = env.render("{% include \"default-act-fit-html-results\" %}", data);
-        }else
-        {
-          const bool is_in_inc = SpecUtils::is_file( SpecUtils::append_path(tmplt_dir, tmplt) );
-          
-          inja::Template injatmplt;
-          if( is_in_inc )
-          {
-            injatmplt = env.parse_template( tmplt );
-          }else
-          {
-            bool is_file = SpecUtils::is_file( tmplt );
-            if( !is_file )
-            {
-              const string tmplt_in_def_path = SpecUtils::append_path(default_tmplt_dir, tmplt);
-              
-              is_file = SpecUtils::is_file( tmplt_in_def_path );
-              
-#if( !ANDROID && !IOS && !BUILD_FOR_WEB_DEPLOYMENT )
-              // TODO: consider using `AppUtils::locate_file(...)` to find the file
-#endif
-              
-              if( !is_file )
-                throw runtime_error( "Could not find template file '" + tmplt + "'."
-                                    " Please specify full path to file, or use the"
-                                    " 'report-template-include-dir' option to specify"
-                                    " directory where reports are located." );
-              tmplt = tmplt_in_def_path;
-            }
-            
-            inja::Environment sub_env;
-            sub_env.add_callback( "printFixed", 2, printFixed );
-            sub_env.add_callback( "printCompact", 2, printCompact );
-            injatmplt = sub_env.parse_template( tmplt );
-          }//
-          
-          rpt = env.render( injatmplt, data );
-        }//if( default report format ) / else
+        const string rpt = BatchInfoLog::render_template( tmplt, env,
+                            BatchInfoLog::TemplateRenderType::ActShieldIndividual, options, data );
         
         if( options.to_stdout && !SpecUtils::iequals_ascii(tmplt, "html" ) )
           cout << "\n\n" << rpt << endl << endl;
         
         if( !options.output_dir.empty() )
         {
-          const string out_file = output_filename( filename, tmplt );
+          const string out_file
+                    = BatchInfoLog::suggested_output_report_filename( filename, tmplt, 
+                                  BatchInfoLog::TemplateRenderType::ActShieldIndividual, options );
           
           if( SpecUtils::is_file(out_file) && !options.overwrite_output_files )
           {
@@ -784,7 +503,7 @@ void fit_activities_in_files( const std::string &exemplar_filename,
     }//if( options.write_n42_with_results )
     
     if( !options.output_dir.empty() && options.create_json_output )
-      write_json( options, warnings, filename, data );
+      BatchInfoLog::write_json( options, warnings, filename, data );
     
     if( fit_results.m_peak_fit_results )
     {
@@ -857,13 +576,8 @@ void fit_activities_in_files( const std::string &exemplar_filename,
       }
     }//if( fit_results.m_peak_fit_results )
     
-    
-    //std::cout << std::setw(4) << data << std::endl;
-#if( SpecUtils_ENABLE_D3_CHART )
-    data.erase( "D3_JS" );
-    data.erase( "SpectrumChart_JS" );
-    data.erase( "SpectrumChart_CSS" );
-#endif // SpecUtils_ENABLE_D3_CHART
+    for( const pair<string,string> &key_val : spec_chart_js_and_css )
+      data.erase(key_val.first);
     
     summary_json["Files"].push_back( data );
   }//for( const string filename : files )
@@ -877,63 +591,17 @@ void fit_activities_in_files( const std::string &exemplar_filename,
   {
     try
     {
-      string rpt;
-      if( SpecUtils::iequals_ascii(summary_tmplt, "csv" ) )
-      {
-        rpt = env.render( "{% include \"default-act-fit-csv-summary\" %}", summary_json );
-      }else if( SpecUtils::iequals_ascii(summary_tmplt, "html" ) )
-      {
-        rpt = env.render( "{% include \"default-act-fit-html-summary\" %}", summary_json );
-      }else
-      {
-        inja::Template injatmplt;
-        
-        const string inc_dir_summary_tmplt = SpecUtils::append_path(tmplt_dir, summary_tmplt);
-        bool is_file = SpecUtils::is_file( inc_dir_summary_tmplt );
-        if( is_file )
-        {
-          injatmplt = env.parse_template( summary_tmplt );
-        }else
-        {
-          string found_path = summary_tmplt;
-          is_file = SpecUtils::is_file( found_path );
-          if( !is_file )
-          {
-            found_path = SpecUtils::append_path(default_tmplt_dir, summary_tmplt);
-            is_file = SpecUtils::is_file( found_path );
-          }
-          
-          if( !is_file )
-            throw runtime_error( "Failed to find file '" + summary_tmplt + "'."
-                                " Please specify full path to file, or use the"
-                                " 'report-template-include-dir' option to specify"
-                                " directory where the report is located." );
-          
-          inja::Environment sub_env;
-          sub_env.add_callback( "printFixed", 2, printFixed );
-          sub_env.add_callback( "printCompact", 2, printCompact );
-          injatmplt = sub_env.parse_template( found_path );
-        }//if( is_file ) / else
-        
-        rpt = env.render( injatmplt, summary_json );
-      }//if( CSV ) else if ( HTML ) else
-      
+      const string rpt = BatchInfoLog::render_template( summary_tmplt, env,
+                       BatchInfoLog::TemplateRenderType::ActShieldSummary, options, summary_json );
       
       if( options.to_stdout && !SpecUtils::iequals_ascii(summary_tmplt, "html" ) )
         cout << "\n\n" << rpt << endl << endl;
       
       if( !options.output_dir.empty() )
       {
-        string outbase = "";
-        if( SpecUtils::iequals_ascii(summary_tmplt, "txt")
-           || SpecUtils::iequals_ascii(summary_tmplt, "text")
-           || SpecUtils::iequals_ascii(summary_tmplt, "csv")
-           || SpecUtils::iequals_ascii(summary_tmplt, "html") )
-        {
-          outbase = "summary";
-        }
-        
-        const string out_file = output_filename( outbase, summary_tmplt );
+        const string out_file
+                    = BatchInfoLog::suggested_output_report_filename( "", summary_tmplt,
+                                    BatchInfoLog::TemplateRenderType::ActShieldSummary, options );
         
         if( SpecUtils::is_file(out_file) && !options.overwrite_output_files )
         {
@@ -968,17 +636,14 @@ void fit_activities_in_files( const std::string &exemplar_filename,
   }//if( !options.summary_report_template.empty() )
   
   
-  
   if( !options.output_dir.empty() && options.create_json_output )
-    write_json( options, warnings, "", summary_json );
-  
+    BatchInfoLog::write_json( options, warnings, "", summary_json );
   
   if( !warnings.empty() )
     cerr << endl << endl;
   for( const auto warn : warnings )
     cerr << warn << endl;
 }//fit_activities_in_files(...)
-  
   
 
 BatchActivityFitResult fit_activities_in_file( const std::string &exemplar_filename,
