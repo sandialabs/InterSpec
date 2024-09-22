@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.25 FATAL_ERROR)
 
-project( InterSpecApp VERSION 1.0.12 )
+project( InterSpecApp VERSION 1.0.13 )
 
 if(POLICY CMP0114)
   # Add @rpath to the install_name of shared libraries and frameworks that are part of a macOS application bundle.

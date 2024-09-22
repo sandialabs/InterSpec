@@ -1157,7 +1157,7 @@ void PeakInfoDisplay::init()
 
   auto enableDisableCsv = [this,csvButton,copyButton](){
     const bool enable = (m_model->rowCount() > 0);
-    csvButton->setEnabled( enable );
+    csvButton->setDisabled( !enable );
     copyButton->setEnabled( enable );
   };
   

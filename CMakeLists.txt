@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.1...3.20 FATAL_ERROR)
 
-project(InterSpec VERSION 1.0.12)
+project(InterSpec VERSION 1.0.13)
 
 set(CMAKE_CXX_STANDARD 14)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)

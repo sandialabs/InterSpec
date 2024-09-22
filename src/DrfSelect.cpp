@@ -477,6 +477,8 @@ namespace
    
    string trialpath = InterSpec::staticDataDirectory();
    trial_paths.push_back( trialpath );
+   trialpath = SpecUtils::lexically_normalize_path( SpecUtils::append_path( trialpath, "..") );
+   trial_paths.push_back( trialpath );
    
    trialpath = SpecUtils::append_path( SpecUtils::append_path( trialpath, ".."), "data_ouo" );
    trialpath = SpecUtils::lexically_normalize_path( trialpath );
