@@ -178,6 +178,13 @@ int main( int argc, char *argv[] )
   {
 #if( BUILD_AS_OSX_APP )
     user_data_dir = macOsUtils::user_data_dir();
+    if( !SpecUtils::is_directory(user_data_dir) )
+    {
+      user_data_dir = "";
+      std::cerr << "Warning: not setting user data directory, to what the GUI version of InterSpec"
+      " uses - use the '--userdatadir' option to set this if you would like to share detectors,"
+      " or other files." << std::endl;
+    }
 #elif defined(_WIN32)
     user_data_dir = AppUtils::user_data_dir();
 #else
@@ -194,8 +201,10 @@ should fix this for linux
       InterSpec::setWritableDataDirectory( user_data_dir );
     }catch( std::exception &e )
     {
-      std::cerr << "Failed to set user data directory: " << e.what() << std::endl;
-      return -8;
+      std::cerr << "Warning: Failed to set user data directory: " << e.what() << std::endl
+      << "Use the '--userdatadir' option to set this to the same one the InterSpec GUI app"
+      << " uses, if you would like to share detectors, or other files." << std::endl;
+      //return -8;
     }
     
     try

@@ -28,7 +28,7 @@ SET(MACOSX_BUNDLE_BUNDLE_VERSION "0" )
 SET(MACOSX_BUNDLE_COPYRIGHT "Sandia National Labs, Will Johnson" )
 SET(MACOSX_BUNDLE_GUI_IDENTIFIER "gov.sandia.macOS.InterSpec" )
 #set MACOS_BUNDLE_VERSION_NUMBER for Info.plist.template to populate corresponding value in Xcode
-set(MACOS_BUNDLE_VERSION_NUMBER 44)
+set(MACOS_BUNDLE_VERSION_NUMBER 45)
 
 
 SET( ${PRODUCT_NAME} "InterSpec" )
@@ -126,34 +126,26 @@ add_dependencies(InterSpecApp SpecFilePreview)
 if( USE_BATCH_TOOLS )
   add_subdirectory( ${CMAKE_CURRENT_SOURCE_DIR}/../batch InterSpec_batch )
   add_dependencies( InterSpecApp InterSpec_batch )
-endif( USE_BATCH_TOOLS )
+  
+  # It seems like $<TARGET_BUNDLE_DIR:InterSpecLib> is a symlink to the actual build location, so we
+  #  need to copy the symlinks path, but also, preserve symlinks inside the bundle.  So we'll use
+  #  Unix cp to do this, after getting where the symlink points to
+  add_custom_command(TARGET InterSpecApp POST_BUILD
+    COMMAND mkdir -p $<TARGET_BUNDLE_DIR:InterSpecApp>/Contents/Frameworks && cp -a `readlink -f $<TARGET_BUNDLE_DIR:InterSpecLib>` $<TARGET_BUNDLE_DIR:InterSpecApp>/Contents/Frameworks/InterSpec.framework
+  )
 
+  # We want to look in InterSpec.app/Contents/Frameworks for InterSpecLib to link to
+  set_target_properties( InterSpecApp PROPERTIES INSTALL_RPATH "@executable_path/../Frameworks" )
+  set_target_properties( InterSpecApp PROPERTIES BUILD_WITH_INSTALL_RPATH 1 INSTALL_NAME_DIR "@rpath" )
 
-# Make sure the Frameworks directory exists
-add_custom_command(TARGET InterSpecApp POST_BUILD
-    COMMAND ${CMAKE_COMMAND} -E make_directory
-    $<TARGET_BUNDLE_DIR:InterSpecApp>/Contents/Frameworks
-)
-
-add_custom_command(TARGET InterSpecApp POST_BUILD
-    COMMAND ${CMAKE_COMMAND} -E copy_directory
-    $<TARGET_BUNDLE_DIR:InterSpecLib>
-    $<TARGET_BUNDLE_DIR:InterSpecApp>/Contents/Frameworks/InterSpec.framework
-)
-
-# We want to look in InterSpec.app/Contents/Frameworks for InterSpecLib to link to
-set_target_properties( InterSpecApp PROPERTIES INSTALL_RPATH "@executable_path/../Frameworks" )
-set_target_properties( InterSpecApp PROPERTIES BUILD_WITH_INSTALL_RPATH 1 INSTALL_NAME_DIR "@rpath" )
-
-if( USE_BATCH_TOOLS )
   set_target_properties( InterSpec_batch PROPERTIES INSTALL_RPATH "@executable_path/../Frameworks" )
   set_target_properties( InterSpec_batch PROPERTIES BUILD_WITH_INSTALL_RPATH 1 INSTALL_NAME_DIR "@rpath" )
 
-  # Copy the batch executable into the bundle
+  # Copy the batch executable into the bundle - not really sure where is best, so we'll put it in Resources right now
   add_custom_command(TARGET InterSpecApp POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy
     $<TARGET_FILE:InterSpec_batch>
-    $<TARGET_FILE_DIR:InterSpecApp>
+    $<TARGET_FILE_DIR:InterSpecApp>/
   )
 endif( USE_BATCH_TOOLS )
 

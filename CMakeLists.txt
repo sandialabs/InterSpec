@@ -768,6 +768,8 @@ if( BUILD_AS_OSX_APP )
       MACOSX_FRAMEWORK_SHORT_VERSION_STRING 1.0
       MACOSX_FRAMEWORK_BUNDLE_VERSION 1.0.0
       MACOSX_FRAMEWORK_COPYRIGHT "© 2024 Sandia National Laboratories"
+      # XCODE_ATTRIBUTE_INSTALL_PATH @executable_path/../Frameworks/
+      XCODE_ATTRIBUTE_SKIP_INSTALL "Yes"
     )
     
     set_target_properties( InterSpecLib PROPERTIES
@@ -837,10 +839,10 @@ if(TRY_TO_STATIC_LINK)
         target_link_libraries(InterSpecLib PUBLIC ${FCGI_LIBRARIES})
     endif(Wt_FCGI_LIBRARY)
 
-    include(cmake/WtFindSsl.txt)
-    if(SSL_FOUND)
-        target_link_libraries(InterSpecLib PUBLIC ${SSL_LIBRARIES})
-    endif(SSL_FOUND)
+    #include(cmake/WtFindSsl.txt)
+    #if(SSL_FOUND)
+    #    target_link_libraries(InterSpecLib PUBLIC ${SSL_LIBRARIES})
+    #endif(SSL_FOUND)
 
     if(("${CMAKE_SYSTEM}" MATCHES "Linux") AND (NOT ANDROID))
         find_library( RT_LIB rt REQUIRES )
