@@ -424,14 +424,9 @@ bool PeakModel::recommendUseForFit( const SandiaDecay::Nuclide *nuc,
 
 bool PeakModel::recommendUseForManualRelEff( const SandiaDecay::Nuclide *n, const float energy )
 {
-  if( !n || (n->atomicNumber != 92) )
+  // We currently only have customized recommendations for U, Pu, and Am
+  if( !n || ((n->atomicNumber != 92) && (n->atomicNumber != 94) && (n->atomicNumber != 95)) )
     return (energy > 90.0f);
-  
-  // Recommended values for uranium taken from chapter 14 of FRMAC Gamma Spectroscopist Knowledge Guide
-  const float u232_energies[] = { 238.625f, 583.187f, 727.3f, 860.56f };
-  const float u234_energies[] = { 120.905f };
-  const float u235_energies[] = { 143.76f, 163.36f, 185.715f, 202.11f, 205.311f, 221.38f, 246.84f, 345.9f };
-  const float u238_energies[] = { 258.26f, 569.3173913f, 742.83f, 766.4f, 880.47f, 883.24f, 945.95f, 1001.03f };
   
   const auto use_gamma = [energy]( const float * const start, const float * const end ) -> bool {
     for( auto iter = start; iter != end; ++iter )
@@ -443,16 +438,62 @@ bool PeakModel::recommendUseForManualRelEff( const SandiaDecay::Nuclide *n, cons
   };// use_gamma lamda
   
   
-  switch( n->massNumber )
+  if( n->atomicNumber == 92 )
   {
-    case 232: return use_gamma( begin(u232_energies), end(u232_energies) );
-    case 234: return use_gamma( begin(u234_energies), end(u234_energies) );
-    case 235: return use_gamma( begin(u235_energies), end(u235_energies) );
-    case 238: return use_gamma( begin(u238_energies), end(u238_energies) );
-    default:
-      break;
-  }//switch( n->massNumber )
+    // Recommended values for uranium taken from chapter 14 of FRMAC Gamma Spectroscopist Knowledge Guide
+    const float u232_energies[] = { 238.625f, 583.187f, 727.3f, 860.56f };
+    const float u234_energies[] = { 120.905f };
+    const float u235_energies[] = { 143.76f, 163.36f, 185.715f, 202.11f, 205.311f, 221.38f, 246.84f, 345.9f };
+    const float u238_energies[] = { 258.26f, 569.3173913f, 742.83f, 766.4f, 880.47f, 883.24f, 945.95f, 1001.03f };
+    
+    switch( n->massNumber )
+    {
+      case 232: return use_gamma( begin(u232_energies), end(u232_energies) );
+      case 234: return use_gamma( begin(u234_energies), end(u234_energies) );
+      case 235: return use_gamma( begin(u235_energies), end(u235_energies) );
+      case 238: return use_gamma( begin(u238_energies), end(u238_energies) );
+      default:
+        break;
+    }//switch( n->massNumber )
+  }//if( Uranium )
   
+  
+  if( n->atomicNumber == 94 )
+  {
+    // Recommended value taken from FRAM - see LA-UR-20-21287 Duc T. Vo, and Thomas E. Sampson.
+    //  https://www.osti.gov/servlets/purl/1599022
+    const float pu238_energies[] = { 152.72 };
+    const float pu239_energies[] = { 129.3, 144.2, 161.45, 203.55, 255.38, 345.01, 375.05, 413.71, 451.48, 645.9, 658.86 };
+    const float pu240_energies[] = { 160.31 };
+    const float pu241_energies[] = { 146.55, 164.61, 208, 267.54, 619.01, 722.01 };
+    
+    switch( n->massNumber )
+    {
+      case 238: return use_gamma( begin(pu238_energies), end(pu238_energies) );
+      case 239: return use_gamma( begin(pu239_energies), end(pu239_energies) );
+      case 240: return use_gamma( begin(pu240_energies), end(pu240_energies) );
+      case 241: return use_gamma( begin(pu241_energies), end(pu241_energies) );
+      default:
+        break;
+    }//switch( n->massNumber )
+  }//if( Plutonium )
+  
+  
+  if( n->atomicNumber == 95 )
+  {
+    // Recommended value taken from FRAM - see LA-UR-20-21287 Duc T. Vo, and Thomas E. Sampson.
+    //  https://www.osti.gov/servlets/purl/1599022
+    const float am241_energies[] = { 125.3, 335.37, 368.65 };
+    
+    switch( n->massNumber )
+    {
+      case 241: return use_gamma( begin(am241_energies), end(am241_energies) );
+      default:
+        break;
+    }//switch( n->massNumber )
+  }//if( Americium )
+  
+  // Some other U/Pu/Am isotope - use it if its above the x-ray absorption edge.
   return (energy > 122.0f);
 }//bool recommendUseForManualRelEff( const SandiaDecay::Nuclide *n, const float energy )
 

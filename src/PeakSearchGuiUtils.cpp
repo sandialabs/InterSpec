@@ -1806,10 +1806,10 @@ std::unique_ptr<std::pair<PeakModel::PeakShrdPtr,std::string>>
         case ReferenceLineInfo::SourceType::Reaction:
         case ReferenceLineInfo::SourceType::Background:
         case ReferenceLineInfo::SourceType::NuclideMixture:
+        case ReferenceLineInfo::SourceType::OneOffSrcLines:
           break;
           
         case ReferenceLineInfo::SourceType::CustomEnergy:
-        case ReferenceLineInfo::SourceType::OneOffSrcLines:
         case ReferenceLineInfo::SourceType::None:
           continue;
           break;
@@ -1936,7 +1936,7 @@ std::unique_ptr<std::pair<PeakModel::PeakShrdPtr,std::string>>
           {
             prevpeak.reset();
             mindist = dist;
-            color = nuc.m_input.m_color;
+            color = line.m_color.isDefault() ? nuc.m_input.m_color : line.m_color;
             nuclide = line.m_parent_nuclide;
             element = line.m_element;
             reaction = line.m_reaction;

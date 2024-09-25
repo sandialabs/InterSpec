@@ -292,6 +292,14 @@ struct ReferenceLineInfo
      */
     std::string m_decaystr;
     
+    /** If not default, the color for this line.
+     
+     Ordinarily, the line color will be given by `ReferenceLineInfo::m_input.m_color`, but
+     if this variable is not default, then the line color will be overridden.  
+     So far, this is only used for `CustomLine` sources in the `add_ref_line.xml` file.
+     */
+    Wt::WColor m_color;
+    
     /** Returns one of: "cascade-sum", "sum-gamma", "S.E.", "D.E.", "alpha", "beta", "gamma", "xray"
      */
     const std::string &particlestr() const;
@@ -341,7 +349,12 @@ struct ReferenceLineInfo
     */
     RefGammaType m_source_type;
 
-    /** Element giving rise to this fluorescent x-ray.  
+    /** If detector efficiency and/or shielding attenuation should be applied to this lines amplitude.
+     This is only used for `CustomLine` sources in the `add_ref_line.xml` file.
+     */
+    bool m_attenuation_applies;
+    
+    /** Element giving rise to this fluorescent x-ray.
     Will be element peak is assigned to, if non-null. 
     */
     const SandiaDecay::Element *m_element;

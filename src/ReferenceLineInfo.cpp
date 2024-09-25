@@ -93,6 +93,9 @@ namespace
     
     /** The nuclide - must not be nullptr. */
     const SandiaDecay::Nuclide *m_nuclide;
+    
+    /** Optional color specified in `add_ref_line.xml` for this nuclide; will override user selection if specified. */
+    Wt::WColor m_color;
   };//struct NucMixComp
   
   struct NucMix
@@ -125,8 +128,28 @@ namespace
     float m_energy;
     float m_branch_ratio;
     std::string m_info;
-    CustomLine( float ener, float br, std::string &&inf )
-    : m_energy(ener), m_branch_ratio(br), m_info( std::move(inf) )
+    Wt::WColor m_color;
+    
+    /** The nuclide the user may have specified.  
+     If user specifies the nuclide, than the transition will be picked out, assuming a weighting window of 0.25 keV (i.e., if nuclide
+     is valid, so will transition), and that gamma was intended.
+     */
+    const SandiaDecay::Nuclide *m_nuclide;
+    const SandiaDecay::Transition *m_transition;
+    
+    /** If detector efficiency and/or shielding apply to this line, for line height display purposes only. */
+    bool m_atten_applies;
+    
+    CustomLine( float ener, float br, std::string &&inf,
+               const SandiaDecay::Nuclide *nuc, const SandiaDecay::Transition *trans,
+               const bool atten, Wt::WColor &&color )
+    : m_energy(ener), 
+    m_branch_ratio(br),
+    m_info( std::move(inf) ), 
+    m_color( std::move(color) ),
+    m_nuclide( nuc ),
+    m_transition( trans ),
+    m_atten_applies( atten )
     {
     }
   };//struct CustomLine
@@ -214,6 +237,7 @@ namespace
             const XmlAttribute *nuc_name = XML_FIRST_ATTRIB( nuc, "name" );
             const XmlAttribute *nuc_act_frac = XML_FIRST_ATTRIB( nuc, "act-frac" );
             const XmlAttribute *age_offset = XML_FIRST_ATTRIB( nuc, "age-offset" );
+            const XmlAttribute *color = XML_FIRST_ATTRIB( nuc, "color" );
             
             if( !nuc_name || !nuc_name->value_size() )
               throw runtime_error( "No nuclide name" );
@@ -241,6 +265,19 @@ namespace
               comp.m_age_offset = PhysicalUnits::stringToTimeDuration( age_offset_str );
             }//if( age_offset && age_offset->value_size() )
             
+            if( color && color->value_size() )
+            {
+              const string color_str = SpecUtils::xml_value_str(color);
+              comp.m_color = Wt::WColor( color_str );
+              if( comp.m_color.isDefault() )
+              {
+                const string msg = "NucMixture named '" + mix_name_str + "'"
+                    " has invalid color value for '" + nuc_name_str + "': "
+                    "'" + color_str + "' - not CSS color string.";
+                cerr << msg << endl;
+                //throw runtime_error( msg ); // we wont disregard the whole file over a single color
+              }//if( parsing of color failed )
+            }//if( user specified color )
             
             mix.m_components.push_back( std::move(comp) );
           }//XML_FOREACH_CHILD( nuc, nuc_mix, "Nuc" )
@@ -321,7 +358,64 @@ namespace
             
             src_lines.m_max_branch_ratio = std::max( src_lines.m_max_branch_ratio, br );
             
-            src_lines.m_lines.emplace_back( energy, br, std::move(info_str) );
+            const SandiaDecay::Nuclide *nuc = nullptr;
+            const SandiaDecay::Transition *trans = nullptr;
+            const XmlAttribute *nuclide = XML_FIRST_ATTRIB( line, "nuc" );
+            if( nuclide && nuclide->value_size() )
+            {
+              const string nuc_name = SpecUtils::xml_value_str(nuclide);
+              nuc = db->nuclide( nuc_name );
+              if( !nuc )
+                throw runtime_error( "SourceLines named '" + src_name_str + "' has an invalid nuclide ('" + nuc_name + "')." );
+              
+              size_t transition_index = 0;
+              PeakDef::SourceGammaType nearestGammaType;
+              PeakDef::findNearestPhotopeak( nuc, energy, 0.25, false,
+                                            trans, transition_index, nearestGammaType );
+              if( !trans )
+                throw runtime_error( "SourceLines named '" + src_name_str + "' with nuclide '"
+                                    + nuc_name + "', couldnt be matched to source data for energy "
+                                    + std::to_string(energy) + " keV." );
+            }//if( nuclide && nuclide->value_size() )
+            
+            bool atten_applies = true;
+            const XmlAttribute *atten = XML_FIRST_ATTRIB( line, "atten" );
+            if( atten && atten->value_size() )
+            {
+              const string atten_str = SpecUtils::xml_value_str(atten);
+              if( SpecUtils::iequals_ascii(atten_str, "0")
+                 || SpecUtils::iequals_ascii(atten_str, "false")
+                 || SpecUtils::iequals_ascii(atten_str, "no") )
+              {
+                atten_applies = false;
+              }else if( !SpecUtils::iequals_ascii(atten_str, "1")
+                       && !SpecUtils::iequals_ascii(atten_str, "true")
+                       && !SpecUtils::iequals_ascii(atten_str, "yes") )
+              {
+                throw runtime_error( "SourceLines named '" + src_name_str + "' has invalid value "
+                                     " for the 'atten' attribute ('" + atten_str + "')" );
+              }
+            }//if( atten && atten->value_size() )
+            
+            Wt::WColor color;
+            const XmlAttribute *color_attrib = XML_FIRST_ATTRIB( line, "color" );
+            if( color_attrib && color_attrib->value_size() )
+            {
+              const string color_str = SpecUtils::xml_value_str(color_attrib);
+              color = Wt::WColor( color_str );
+              if( color.isDefault() )
+              {
+                // Parsing of color failed
+                const string msg =  "SourceLines named '" + src_name_str + "' has invalid value "
+                                     " for color attribute ('" + color_str
+                                    + "') - could not parse as CSS color.";
+                cerr << msg << endl;
+                //throw runtime_error( msg ); //We wont disregard the whole file over an invalid file
+              }
+            }//if( color_attrib && color_attrib->value_size() )
+            
+            src_lines.m_lines.emplace_back( energy, br, std::move(info_str), nuc, 
+                                           trans, atten_applies, std::move(color) );
           }//XML_FOREACH_CHILD( line, source, "Line" )
           
           if( src_lines.m_lines.empty() )
@@ -981,11 +1075,13 @@ ReferenceLineInfo::RefLine::RefLine()
   m_shield_atten( 1.0f ),
   m_particle_sf_applied( 1.0f ),
   m_decaystr(),
+  m_color(),
   m_decay_intensity( 0.0 ),
   m_particle_type( ReferenceLineInfo::RefLine::Particle::Gamma ),
   m_parent_nuclide( nullptr ),
   m_transition( nullptr ),
   m_source_type( ReferenceLineInfo::RefLine::RefGammaType::Normal ),
+  m_attenuation_applies( true ),
   m_element( nullptr ),
   m_reaction( nullptr )
 {
@@ -1319,6 +1415,9 @@ void ReferenceLineInfo::toJson( string &json ) const
       if( (m_source_type == ReferenceLineInfo::SourceType::NuclideMixture) && line.m_parent_nuclide )
         jsons << ",\"src_label\":\"" << line.m_parent_nuclide->symbol << "\"";
     }//if( next gamma line is close ) / else
+    
+    if( !line.m_color.isDefault() )
+      jsons << ",\"color\":\"" << line.m_color.cssText(false) << "\"";
     
     jsons << "}";
     
@@ -2361,6 +2460,12 @@ std::shared_ptr<ReferenceLineInfo> ReferenceLineInfo::generateRefLineInfo( RefLi
         get<5>(this_coinc) *= correction_factor; // second gamma BR (just for debug)
       }
       
+      if( !comp.m_color.isDefault() )
+      {
+        for( ReferenceLineInfo::RefLine &this_line : these_lines )
+          this_line.m_color = comp.m_color;
+      }
+      
       lines.insert( end(lines), begin(these_lines), end(these_lines) );
       gamma_coincidences.insert( end(gamma_coincidences), begin(these_coinc), end(these_coinc) );
       
@@ -2404,12 +2509,12 @@ std::shared_ptr<ReferenceLineInfo> ReferenceLineInfo::generateRefLineInfo( RefLi
       refline.m_particle_sf_applied = 1.0f / src_lines->m_max_branch_ratio;
       refline.m_decaystr = line.m_info;
       refline.m_decay_intensity = line.m_branch_ratio;
-      
-      // TODO: refline.m_drf_factor and refline.m_shield_atten will be set below, assuming a
-      //       gamma.  Should consider putting in an option to make it so these factors are
-      //       not applied (would have to be as part of CustomLine)
+      refline.m_parent_nuclide = line.m_nuclide;
+      refline.m_transition = line.m_transition;
+      refline.m_color = line.m_color;
       refline.m_particle_type = ReferenceLineInfo::RefLine::Particle::Gamma;
       refline.m_source_type = ReferenceLineInfo::RefLine::RefGammaType::Normal;
+      refline.m_attenuation_applies = line.m_atten_applies;
       
       lines.push_back( std::move(refline) );
     }//for( const CustomLine &line : src_lines->m_lines )
@@ -2493,26 +2598,31 @@ std::shared_ptr<ReferenceLineInfo> ReferenceLineInfo::generateRefLineInfo( RefLi
         case OtherRefLineType::U238Series:
           line.m_parent_nuclide = u238;
           line.m_decaystr += "U238 series";
+          // TODO: set a color here
           break;
           
         case OtherRefLineType::U235Series:
           line.m_parent_nuclide = u235;
           line.m_decaystr += "U235 series";
+          // TODO: set a color here
           break;
           
         case OtherRefLineType::Th232Series:
           line.m_parent_nuclide = th232;
           line.m_decaystr += "Th232 series";
+          // TODO: set a color here
           break;
           
         case OtherRefLineType::Ra226Series:
           line.m_parent_nuclide = ra226;
           line.m_decaystr += "U238 (Ra226) series";
+          // TODO: set a color here
           break;
           
         case OtherRefLineType::K40Background:
           line.m_parent_nuclide = k40;
           line.m_decaystr += "Primordial";
+          // TODO: set a color here
           break;
           
         case OtherRefLineType::BackgroundXRay:
@@ -2526,6 +2636,7 @@ std::shared_ptr<ReferenceLineInfo> ReferenceLineInfo::generateRefLineInfo( RefLi
           SpecUtils::split( parts, std::get<2>( bl ), " " );
           if( !parts.empty() )
             line.m_element = db->element( parts[0] );
+          // TODO: set a color here
           break;
         }//case OtherRefLineType::BackgroundXRay:
           
@@ -2570,6 +2681,7 @@ std::shared_ptr<ReferenceLineInfo> ReferenceLineInfo::generateRefLineInfo( RefLi
             line.m_source_type = ReferenceLineInfo::RefLine::RefGammaType::DoubleEscape;
           }
           
+          // TODO: set a color here
           break;
         }
       }//switch( get<3>(*bl) )
@@ -2625,10 +2737,10 @@ std::shared_ptr<ReferenceLineInfo> ReferenceLineInfo::generateRefLineInfo( RefLi
             break;
         }//switch( line.m_source_type )
         
-        if( input.m_det_intrinsic_eff )
+        if( input.m_det_intrinsic_eff && line.m_attenuation_applies )
           line.m_drf_factor = input.m_det_intrinsic_eff( energy );
         
-        if( input.m_shielding_att )
+        if( input.m_shielding_att && line.m_attenuation_applies )
           line.m_shield_atten = input.m_shielding_att( energy );
         
         max_photon_br = std::max( max_photon_br,
