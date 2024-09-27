@@ -3077,7 +3077,7 @@ bool SpecMeasManager::handleEccFile( std::istream &input, SimpleDialog *dialog )
   far_field_opt->hide();
   
   auto fore = InterSpec::instance()->measurment( SpecUtils::SpectrumType::Foreground );
-  shared_ptr<DetectorPeakResponse> prev = fore ? prev = fore->detector() : nullptr;
+  shared_ptr<DetectorPeakResponse> prev = fore ? fore->detector() : nullptr;
   
   // TODO: make option to make DRF default for detector model, or serial number
   
