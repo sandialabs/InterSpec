@@ -151,11 +151,15 @@ int run_batch_command( int argc, char **argv )
       bool use_existing_background_peaks;
       double peak_stat_threshold = 0.0, peak_hypothesis_threshold = 0.0;
       vector<std::string> input_files, report_templates, summary_report_templates;
-      string exemplar_path, output_path, exemplar_samples, background_sub_file, background_samples, template_include_dir;
+      string ini_file_path, exemplar_path, output_path, exemplar_samples, background_sub_file, background_samples, template_include_dir;
       
       po::options_description peak_cl_desc("Allowed batch peak-fit, and activity-fit options", term_width, min_description_length);
       peak_cl_desc.add_options()
       ("help,h",  "Produce help message")
+      ("ini-file,i", po::value<std::string>(&ini_file_path)->default_value(""),
+       "Path to INI file that can specify command line option defaults.\n"
+       "(so you dont have to re-type things all the time)\n"
+       "If not specified, will look for \"InterSpec_batch.ini\" in the current directory.")
       ("exemplar", po::value<std::string>(&exemplar_path),
        "File containing exemplar peaks, that will try to be fitted in the input spectra."
        " Can be a N42-2012 file save from InterSpec that contains peaks, or a peaks CSV file"
@@ -304,6 +308,35 @@ int run_batch_command( int argc, char **argv )
             .run();
           po::store( parsed_act_opts, cl_vm );
         }//if( batch_act_fit )
+        
+        if( ini_file_path.empty() && SpecUtils::is_file("InterSpec_batch.ini") )
+          ini_file_path = "InterSpec_batch.ini";
+        
+        if( !ini_file_path.empty() )
+        {
+          try 
+          {
+            ifstream input( ini_file_path.c_str() );
+            if( !input )
+              throw runtime_error( "Could not open config file '" + ini_file_path + "'" );
+           
+            // It *looks* like the INI file will NOT overwrite the values from the command line
+            po::store( po::parse_config_file( input, peak_cl_desc, true), cl_vm );
+            input.seekg( 0 );
+            po::store( po::parse_config_file( input, activity_cl_desc, true), cl_vm );
+            input.seekg( 0 );
+            if( batch_act_fit )
+            {
+              input.seekg( 0 );
+              po::store( po::parse_config_file(input, activity_cl_desc, true), cl_vm );
+            }
+            
+            std::cout << "Using settings from '" << ini_file_path << "'" << endl;
+          }catch( const std::exception & e )
+          {
+            std::cerr << "Error reading INI file: " << e.what() << " - skipping." << std::endl;
+          }
+        }//if( ini_file_path.empty() )
         
         po::notify( cl_vm );
       }catch( std::exception &e )
