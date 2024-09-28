@@ -1023,20 +1023,29 @@ BatchPeak::BatchPeakFitResult fit_peaks_in_file( const std::string &exemplar_fil
       //  and continuum coefficients are reasonable starting values
       if( peak.gausPeak() )
       {
+        std::shared_ptr<PeakContinuum> continuum = peak.continuum();
+        assert( continuum );
+        if( continuum && continuum->isPolynomial() )
+        {
+          const PeakContinuum::OffsetType origType = continuum->type();
+          continuum->calc_linear_continuum_eqn( spec, peak.mean(), peak.lowerX(), peak.upperX(), 2, 2 );
+          continuum->setType( origType );
+        }//if( continuum )
+        
         const double mean = peak.mean(), fwhm = peak.fwhm();
         const double data_area = spec->gamma_integral( mean - fwhm, mean + fwhm );
+        
         if( (data_area > 1) && (peak.amplitude() > data_area) )
         {
-          peak.setAmplitude( 0.5*data_area );
-          
-          std::shared_ptr<PeakContinuum> continuum = peak.continuum();
-          assert( continuum );
-          if( continuum )
+          double cont_area = continuum->offset_integral(  mean - fwhm, mean + fwhm, spec );
+          if( (cont_area > 0.0) && (cont_area < data_area) )
           {
-            const PeakContinuum::OffsetType origType = continuum->type();
-            continuum->calc_linear_continuum_eqn( spec, peak.mean(), peak.lowerX(), peak.upperX(), 2, 2 );
-            continuum->setType( origType );
-          }//if( continuum )
+            peak.setAmplitude( data_area - cont_area );
+          }else
+          {
+            peak.setAmplitude( 0.25*data_area );
+          }
+          
         }//if( exemplar peak is clearly much larger than data )
       }//if( peak.gausPeak() )
       
@@ -1085,9 +1094,12 @@ BatchPeak::BatchPeakFitResult fit_peaks_in_file( const std::string &exemplar_fil
                                                 candidate_peaks, spec, {}, isRefit );
     
     // Could re-fit the peaks again...
-    fit_peaks = fitPeaksInRange( lower_energy, uppper_energy, ncausalitysigma,
-                                stat_threshold, hypothesis_threshold,
-                                fit_peaks, spec, {}, true );
+    for( size_t i = 0; i < 3; ++i )
+    {
+      fit_peaks = fitPeaksInRange( lower_energy, uppper_energy, ncausalitysigma,
+                                  stat_threshold, hypothesis_threshold,
+                                  fit_peaks, spec, {}, true );
+    }
     
     //cout << "Fit for the following " << fit_peaks.size() << " peaks (the exemplar file had "
     //<< starting_peaks.size() <<  ") from the raw spectrum:"
