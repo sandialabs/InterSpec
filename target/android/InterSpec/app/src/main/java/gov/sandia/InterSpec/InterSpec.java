@@ -23,66 +23,51 @@
 
 package gov.sandia.InterSpec;
 
-import android.Manifest;
 import android.app.Activity;
-import android.app.DownloadManager;
-import android.content.pm.PackageManager;
-import android.content.DialogInterface;
 import android.content.res.AssetManager;
+import android.content.res.Configuration;
 import android.os.Bundle;
-import androidx.appcompat.app.AlertDialog;
-import androidx.appcompat.app.AppCompatActivity;
-import androidx.core.app.ActivityCompat;
 
-import android.provider.DocumentsContract;
-import android.provider.MediaStore;
+import androidx.appcompat.app.AppCompatActivity;
+
 import android.webkit.*;
 import android.net.*;
 import android.content.*;
 import android.util.*;
-import android.os.Handler;
-import android.os.Message;
 import android.view.View;
-import android.os.Build;
-import android.view.GestureDetector;
-import android.view.MotionEvent;
+import android.graphics.Rect;
+import android.view.ViewTreeObserver;
+import android.view.Window;
+import android.graphics.Point;
+import android.view.Display;
+import android.view.WindowManager;
+import android.widget.RelativeLayout;
+import android.widget.LinearLayout;
 import android.os.ParcelFileDescriptor;
 
 import java.io.BufferedInputStream;
-import java.io.BufferedReader;
-import java.io.FileDescriptor;
-import java.io.InputStreamReader;
 import java.io.OutputStream;
-import java.net.HttpURLConnection;
-import java.net.URL;
-import java.nio.channels.FileChannel;
-import java.nio.file.Files;
-import java.nio.file.Paths;
-import java.nio.file.StandardCopyOption;
-import java.util.List;
+import java.util.ArrayList;
 import java.util.Scanner;
 import java.io.FileInputStream;
 import java.io.File;
 import java.io.FileWriter;
 import java.io.IOException;
 import java.io.FileOutputStream;
-import android.os.Environment;
+
 import android.database.Cursor;
 import android.provider.OpenableColumns;
 import android.widget.Toast;
 
 import java.io.InputStream;
 import java.util.Random;
-import java.util.concurrent.ExecutorService;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
-import java.util.concurrent.Executors;
 
 //import gov.sandia.InterSpecMainActivity.InterSpecMainActivity;
 //import gov.sandia.InterSpecMainActivity.InterSpecMainActivity.R;
 //import android.R;
 
-import gov.sandia.InterSpec.R;
 
 interface CallbackFromNativeInterface {
   public void callback();
@@ -111,6 +96,10 @@ public class InterSpec extends AppCompatActivity
   //   copy over to where the user selects.
   private String mTempFileToSave;
   private String mTempFileDisplayName;
+
+  private boolean mOrientationJustChanged = false;
+  private ViewTreeObserver.OnGlobalLayoutListener mLayoutListener;
+
 
   /** Define a class whose member functions we can call from JavaScript. */
   class CallbackFromJavaScriptInterface {
@@ -508,6 +497,13 @@ public class InterSpec extends AppCompatActivity
   }//protected void onActivityResult(...)
 
   @Override
+  public void onConfigurationChanged(Configuration newConfig) {
+    super.onConfigurationChanged(newConfig);
+
+    mOrientationJustChanged = true; // Set a flag
+  }
+
+  @Override
   public void onCreate( Bundle savedInstanceState )
   {
     Log.d("onCreate", "Starting");
@@ -579,7 +575,9 @@ public class InterSpec extends AppCompatActivity
       Log.i("onCreate", "Starting server");
       super.onCreate(savedInstanceState);
     
-      this.requestWindowFeature( android.view.Window.FEATURE_NO_TITLE );
+      this.requestWindowFeature( android.view.Window.FEATURE_NO_TITLE ); //Android API <33
+      this.supportRequestWindowFeature( android.view.Window.FEATURE_NO_TITLE ); //API >= 33
+
       httpPort = startWt(this);
     
       setContentView(R.layout.main);
@@ -589,12 +587,13 @@ public class InterSpec extends AppCompatActivity
       settings.setCacheMode(WebSettings.LOAD_NO_CACHE);
       settings.setSupportMultipleWindows(false);
       settings.setJavaScriptEnabled(true);
-      settings.setLoadWithOverviewMode(true);
-      settings.setUseWideViewPort(true);
-      settings.setSupportZoom(true);
-      settings.setGeolocationEnabled(false);
-      settings.setBuiltInZoomControls(false);
-      settings.setLayoutAlgorithm(WebSettings.LayoutAlgorithm.SINGLE_COLUMN);
+      //settings.setLoadWithOverviewMode(true);
+      //settings.setUseWideViewPort(true);
+      //settings.setSupportZoom(true);
+      //settings.setGeolocationEnabled(false);
+      //settings.setBuiltInZoomControls(false);
+      //settings.setLayoutAlgorithm(WebSettings.LayoutAlgorithm.SINGLE_COLUMN);
+      //settings.setAllowFileAccess(true);  // TODO: explore being able to save files directly from the WebView - maybe this is only accesing existing files?
       settings.setDomStorageEnabled(true);
       webview.setScrollBarStyle(WebView.SCROLLBARS_OUTSIDE_OVERLAY);
       webview.setScrollbarFadingEnabled(true);
@@ -602,11 +601,6 @@ public class InterSpec extends AppCompatActivity
 
       CallbackFromJavaScriptInterface jsInterface = new CallbackFromJavaScriptInterface(this);
       webview.addJavascriptInterface(jsInterface, "interspecJava");
-
-      /*
-      webview.getSettings().setUseWideViewPort(true);
-      webview.getSettings().setAllowFileAccess(true);
-      */
 
       webview.setWebChromeClient( new WtWebChromeClient() );
 /*
@@ -621,7 +615,26 @@ public class InterSpec extends AppCompatActivity
 
       webview.setDownloadListener( ourDownloadListner );
 */
+      webview.setFocusable(true);
+      webview.setFocusableInTouchMode(true);
+      webview.requestFocus(View.FOCUS_DOWN);
 
+      /*
+      webview.setOnTouchListener( new View.OnTouchListener() {
+        @Override
+        public boolean onTouch( View v, MotionEvent event ) {
+          switch( event.getAction()) {
+            case MotionEvent.ACTION_DOWN:
+            case MotionEvent.ACTION_UP:
+              if( !v.hasFocus() ){
+                v.requestFocus();
+              }
+              break;
+          }
+          return false;
+        }
+      });
+*/
 
       // TODO: I think see https://stackoverflow.com/questions/3926629/downloadlistener-not-working to get download listner working
       WebViewClient ourWebClient = new WebViewClient(){
@@ -741,6 +754,84 @@ public class InterSpec extends AppCompatActivity
     Log.d("onCreate", "done starting server ish");
 
     mDecorView = getWindow().getDecorView();
+
+    mLayoutListener = new ViewTreeObserver.OnGlobalLayoutListener() {
+      private final Rect visibleBounds = new Rect();
+      private int lastVisibleHeight;
+
+      private boolean mShowingKeyboard = false;
+      // For Android 11 (API level 30), and newer, there is a WindowInsets API that would be better
+      // to use, but this would leave out too many users
+      @Override
+      public void onGlobalLayout() {
+        mDecorView.getWindowVisibleDisplayFrame(visibleBounds);
+        int visibleHeight = visibleBounds.height();
+
+        Window window = getWindow();
+        Rect rect = new Rect();
+        window.getDecorView().getWindowVisibleDisplayFrame(rect);
+
+        int windowWidth = rect.width();
+        int windowHeight = rect.height();
+
+        WindowManager windowManager = (WindowManager) getSystemService(Context.WINDOW_SERVICE);
+
+        Display display = windowManager.getDefaultDisplay();
+        Point size = new Point();
+        display.getRealSize(size);
+        int screenWidth = size.x;
+        int screenHeight = size.y;
+
+        if (lastVisibleHeight != 0) {
+          // I think if we are here:
+          // - If windowWidth has changed - reset layout to be `layoutParams.topMargin = 0`
+          // -
+
+          Context context = getApplicationContext();
+
+          /* Some other force is overiding our setting of margins - need to figure out - maybe same force now panning the whatever anyway?
+          * Or maybe we can ditch one of our layouts?
+          * */
+          RelativeLayout myRelativeLayout = findViewById(R.id.rel_layout);
+          LinearLayout.LayoutParams layoutParams = (LinearLayout.LayoutParams) myRelativeLayout.getLayoutParams();
+          //android.view.ViewGroup.LayoutParams layoutParams = myRelativeLayout.getLayoutParams();
+          //if (layoutParams != null) {
+          //  Toast.makeText(context, "Valid Layout params", Toast.LENGTH_SHORT ).show();
+          //}else {
+          //  Toast.makeText(context, "Not Valid Layout params", Toast.LENGTH_SHORT ).show();
+          //}
+          //try
+          //{
+          //} catch (Exception e)
+          //{
+          //  Toast.makeText(context, String.format("Caught exception: %s", e.getMessage()), Toast.LENGTH_LONG).show();
+          //}
+
+          //Toast.makeText(context, String.format( "Initial margins: %d, %d", layoutParams.topMargin, layoutParams.bottomMargin), Toast.LENGTH_SHORT ).show();
+
+          if (visibleHeight > lastVisibleHeight && mShowingKeyboard ) {
+            // Keyboard hidden, or orientation change
+            Toast.makeText(context, String.format("Keyboard hidden: wind=%dx%d, screen=%dx%d, bottom=%d", windowWidth, windowHeight, screenWidth, screenHeight, rect.bottom), Toast.LENGTH_LONG).show();
+            layoutParams.topMargin = 0;
+            mShowingKeyboard = false;
+            myRelativeLayout.setLayoutParams(layoutParams);
+          } else if (visibleHeight < lastVisibleHeight && !mOrientationJustChanged && !mShowingKeyboard ) {
+            // Keyboard shown (only if orientation didn't just change)
+            Toast.makeText(context, String.format("Keyboard shown: wind=%dx%d, screen=%dx%d, bottom=%d", windowWidth, windowHeight, screenWidth, screenHeight, rect.bottom), Toast.LENGTH_LONG).show();
+            layoutParams.topMargin = -200;
+            mShowingKeyboard = true;
+            myRelativeLayout.setLayoutParams(layoutParams);
+          }
+
+
+        }
+
+        lastVisibleHeight = visibleHeight;
+        mOrientationJustChanged = false;
+      }
+    };
+
+    /*
     mDecorView.setOnSystemUiVisibilityChangeListener( new View.OnSystemUiVisibilityChangeListener()
     {
         @Override
@@ -762,9 +853,13 @@ public class InterSpec extends AppCompatActivity
         }
       }//public void onSystemUiVisibilityChange(int flags)
     });
-	 
+	 */
+
+
     final View contentView = findViewById( R.id.webview );
     contentView.setClickable( true );
+
+    /*
     final GestureDetector clickDetector = new GestureDetector( this,
             new GestureDetector.SimpleOnGestureListener()
     {
@@ -780,7 +875,10 @@ public class InterSpec extends AppCompatActivity
             return false;
           }
     });
-	   
+
+     */
+
+    /*
     contentView.setOnTouchListener(
         new View.OnTouchListener() 
         {
@@ -790,7 +888,21 @@ public class InterSpec extends AppCompatActivity
             return clickDetector.onTouchEvent(motionEvent);
           }
     });
+
+     */
   }//public void onCreate(Bundle savedInstanceState)
+
+  @Override
+  protected void onStart() {
+    super.onStart();
+    mDecorView.getViewTreeObserver().addOnGlobalLayoutListener(mLayoutListener);
+  }
+
+  @Override
+  protected void onStop() {
+    super.onStop();
+    mDecorView.getViewTreeObserver().removeOnGlobalLayoutListener(mLayoutListener);
+  }
 
   @Override
   protected void onPause()
@@ -831,9 +943,18 @@ public class InterSpec extends AppCompatActivity
       Uri fileUri = (Uri) intent.getData();
 
       openFileInInterSpec( fileUri );
-    } else if( Intent.ACTION_SEND_MULTIPLE.equals(action) && type != null )
+    }else if( Intent.ACTION_SEND.equals(action) )
     {
-        // Need to handle multiple files here
+      Uri fileUri = (Uri) intent.getParcelableExtra(Intent.EXTRA_STREAM);
+      if( fileUri != null )
+        openFileInInterSpec( fileUri );
+    }else if( Intent.ACTION_SEND_MULTIPLE.equals(action) && type != null )
+    {
+      ArrayList<Uri> fileUris = intent.getParcelableArrayListExtra(Intent.EXTRA_STREAM);
+      if( fileUris != null )
+      {
+        // TODO: Need to handle multiple files here
+      }
     } else
     //Intent.ACTION_QUICK_VIEW.equals(action)
     //Intent.ACTION_QUICK_VIEW.equals(action)
@@ -849,7 +970,7 @@ public class InterSpec extends AppCompatActivity
     super.onDestroy();
   }
   
-  
+  /*
   @Override
   public void onWindowFocusChanged( boolean hasFocus )
   {
@@ -861,8 +982,9 @@ public class InterSpec extends AppCompatActivity
       mHideHandler.sendEmptyMessageDelayed(0, 300);
     }
   }//public void onWindowFocusChanged(boolean hasFocus) 
-  
-  
+  */
+
+  /*
   private void hideSystemUI() 
   {
     mDecorView.setSystemUiVisibility(
@@ -872,10 +994,13 @@ public class InterSpec extends AppCompatActivity
                   | View.SYSTEM_UI_FLAG_FULLSCREEN
                   | View.SYSTEM_UI_FLAG_LOW_PROFILE
                   | View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY);
+
 	//View.SYSTEM_UI_FLAG_IMMERSIVE View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
   }//private void hideSystemUI() 
-  
-  private final Handler mHideHandler = new Handler() 
+*/
+
+  /*
+  private final Handler mHideHandler = new Handler()
   {
     @Override
     public void handleMessage(Message msg) 
@@ -883,7 +1008,7 @@ public class InterSpec extends AppCompatActivity
       hideSystemUI();
     }
   };
-  
+  */
 
 	  
   

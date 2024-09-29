@@ -8,7 +8,7 @@
     <!-- <uses-sdk android:minSdkVersion="12" android:targetSdkVersion="19"/> -->
     <supports-screens android:largeScreens="true" android:normalScreens="true" android:anyDensity="true" android:smallScreens="true"/>
     <application android:label="InterSpec"
-        android:theme="@style/Theme.AppCompat.NoActionBar"
+        android:theme="@style/AppTheme"
         android:usesCleartextTraffic="true"
         android:networkSecurityConfig="@xml/network_security_config">
         <!-- I added InterSpec/target/android/InterSpec/app/src/main/xml/network_security_config.xml,
@@ -37,13 +37,14 @@ ExecutorService myExecutor = Executors.newCachedThreadPool();
          -->
         <activity android:name="InterSpec"
             android:label="InterSpec"
+            android:theme="@style/AppTheme"
             android:icon="@mipmap/ic_launcher"
             android:roundIcon="@mipmap/ic_launcher_round"
             android:hardwareAccelerated="true"
             android:exported="true"
-            android:windowSoftInputMode="adjustResize|stateHidden"
-            android:configChanges="orientation|uiMode|screenLayout|screenSize|smallestScreenSize|locale|fontScale|keyboard|keyboardHidden|navigation"
-            android:screenOrientation="sensorLandscape"
+            android:windowSoftInputMode="adjustPan"
+            android:configChanges="keyboard|keyboardHidden|screenLayout|screenSize|orientation"
+            android:screenOrientation="unspecified"
             android:launchMode="singleTask">
 
             <intent-filter
@@ -154,6 +155,12 @@ ExecutorService myExecutor = Executors.newCachedThreadPool();
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+
+            <intent-filter>
+                <action android:name="android.intent.action.SEND" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="*/*" />
             </intent-filter>
 
             <!-- Splash screen -->
