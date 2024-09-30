@@ -1308,7 +1308,7 @@ double RelEffSolution::mass_fraction( const std::string &nuclide, const double n
   if( !wanted_nuc )
     throw runtime_error( "RelEffSolution::mass_fraction('" + nuclide + "', num_sigma): invalid nuclide" );
   
-  assert( !m_rel_act_covariance.empty() );
+  //assert( !m_rel_act_covariance.empty() ); // Failing to compute the activity covarances can happen sometimes
   if( m_rel_act_covariance.empty() )
     throw runtime_error( "RelEffSolution::mass_fraction('" + nuclide + "', num_sigma): no valid covariance." );
   

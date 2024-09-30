@@ -192,18 +192,18 @@ int run_batch_command( int argc, char **argv )
        "Only applicable if N42 file is used for exemplar."
        )
       ("peak-stat-threshold",
-       po::value<double>(&peak_stat_threshold)->default_value(0.0),
+       po::value<double>(&peak_stat_threshold)->default_value(2.0),
        "The improvement to the Chi2 of a peak fit required, over just fitting the continuum, to the ROI.\n"
        "A negative or zero value indicates no requirement (and default, since we are asserting peak"
        " is likely in the spectrum for batch analysis), and for general peak searching, reasonable"
        " values are between ~1 (a weak peak) and ~5 (a significant peak)."
        )
       ("peak-shape-threshold",
-       po::value<double>(&peak_hypothesis_threshold)->default_value(0.0),
+       po::value<double>(&peak_hypothesis_threshold)->default_value(1.0),
        "Requirement for how compatible the ROI must be to Gaussian peaks + continuum.\n"
        "It is the ratio of the null hypothesis chi2 (continuum only, no Gaussian),"
        "to the test hypothesis (continuum + Gaussian) chi2.\n"
-       "A reasonable value for this seems to be ~4.\n"
+       "A reasonable values for this seems to be in the 1 to 5 range.\n"
        "A zero or negative value will mean no requirement, and also no"
        "'peak-stat-threshold' requirement."
        )
