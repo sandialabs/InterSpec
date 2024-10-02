@@ -30,6 +30,7 @@ import android.os.Bundle;
 
 import androidx.appcompat.app.AppCompatActivity;
 
+import android.view.ViewGroup;
 import android.webkit.*;
 import android.net.*;
 import android.content.*;
@@ -41,6 +42,7 @@ import android.view.Window;
 import android.graphics.Point;
 import android.view.Display;
 import android.view.WindowManager;
+import android.widget.FrameLayout;
 import android.widget.RelativeLayout;
 import android.widget.LinearLayout;
 import android.os.ParcelFileDescriptor;
@@ -57,7 +59,11 @@ import java.io.FileOutputStream;
 
 import android.database.Cursor;
 import android.provider.OpenableColumns;
+import android.widget.ScrollView;
 import android.widget.Toast;
+
+import org.json.JSONException;
+import org.json.JSONObject;
 
 import java.io.InputStream;
 import java.util.Random;
@@ -99,7 +105,8 @@ public class InterSpec extends AppCompatActivity
 
   private boolean mOrientationJustChanged = false;
   private ViewTreeObserver.OnGlobalLayoutListener mLayoutListener;
-
+  private FrameLayout.LayoutParams originalLayoutParams; // Store original layout params
+  private WebView webview;
 
   /** Define a class whose member functions we can call from JavaScript. */
   class CallbackFromJavaScriptInterface {
@@ -582,7 +589,7 @@ public class InterSpec extends AppCompatActivity
     
       setContentView(R.layout.main);
         
-      WebView webview = (WebView)findViewById(R.id.webview);
+      webview = (WebView)findViewById(R.id.webview);
       WebSettings settings = webview.getSettings();
       settings.setCacheMode(WebSettings.LOAD_NO_CACHE);
       settings.setSupportMultipleWindows(false);
@@ -598,6 +605,9 @@ public class InterSpec extends AppCompatActivity
       webview.setScrollBarStyle(WebView.SCROLLBARS_OUTSIDE_OVERLAY);
       webview.setScrollbarFadingEnabled(true);
       webview.setLayerType(View.LAYER_TYPE_HARDWARE, null);
+      webview.setVerticalScrollBarEnabled(false);
+      webview.setHorizontalScrollBarEnabled(false);
+      webview.setScrollContainer(false);
 
       CallbackFromJavaScriptInterface jsInterface = new CallbackFromJavaScriptInterface(this);
       webview.addJavascriptInterface(jsInterface, "interspecJava");
@@ -755,15 +765,119 @@ public class InterSpec extends AppCompatActivity
 
     mDecorView = getWindow().getDecorView();
 
+    originalLayoutParams = (FrameLayout.LayoutParams) webview.getLayoutParams(); // Store original params
+
+    final View activityRootView = findViewById(android.R.id.content);
+
     mLayoutListener = new ViewTreeObserver.OnGlobalLayoutListener() {
+
+
+
       private final Rect visibleBounds = new Rect();
       private int lastVisibleHeight;
+      private int maxVisibleHeight = 0;
+      private double inputLocation = 0.0;
 
       private boolean mShowingKeyboard = false;
       // For Android 11 (API level 30), and newer, there is a WindowInsets API that would be better
       // to use, but this would leave out too many users
       @Override
       public void onGlobalLayout() {
+        Rect r = new Rect();
+
+        activityRootView.getWindowVisibleDisplayFrame(r);
+
+        Context context = getApplicationContext();
+
+        int h = (r.bottom - r.top);
+        if( h > maxVisibleHeight )
+          maxVisibleHeight = h;
+
+
+        int screenHeight = activityRootView.getRootView().getHeight(); // Includes the OS top and bottom bars
+        int activityH = activityRootView.getHeight(); // This is app area, minus top and bottom OS bars.  Not affected if keyboard is shown.
+        int visibleH = (r.bottom - r.top); // This is app area, accounting for keyboard being shown (so height doesnt include keyboard height, just the visible part of the app)
+        //Toast.makeText(context, String.format("screenHeight: %d, activityHeight: %d, visibleHeight: %d", screenHeight, activityH, visibleH), Toast.LENGTH_SHORT ).show();
+
+        int heightDiff = activityH - visibleH;
+        //Toast.makeText(context, String.format("Have inputLocation=%f", inputLocation), Toast.LENGTH_SHORT).show();
+
+        if (heightDiff > 100) {
+
+          if( inputLocation > 0.0 ) {
+            //Toast.makeText(context, String.format("Got callback with inputLocation=%f", inputLocation), Toast.LENGTH_SHORT).show();
+            //webview.setTranslationY(-250);
+
+            //ActivityHeight 1092, visibleHeight 603, inputLocation 520
+            // We'll assume element is 20px high, and add another 20px padding
+            double posToMakeVisibleDbl = r.top + inputLocation + 20.0 + 20.0;
+            int posToMakeVisible = (int) Math.round(posToMakeVisibleDbl);
+
+            //Toast.makeText(context, String.format("posToMakeVisible=%d, visibleH=%d", posToMakeVisible, visibleH), Toast.LENGTH_SHORT).show();
+
+            if( posToMakeVisible > visibleH )
+            {
+              int delta = visibleH - posToMakeVisible;
+              //Toast.makeText(context, String.format("Setting translation =%d", delta), Toast.LENGTH_SHORT).show();
+              webview.setTranslationY( delta );
+            }else
+            {
+              //Toast.makeText(context, String.format("Setting translation to zero, posToMakeVisible=%d, visibleH=%d", posToMakeVisible, visibleH), Toast.LENGTH_SHORT).show();
+              webview.setTranslationY( 0 );
+            }
+          } else {
+            webview.evaluateJavascript(
+                    "(function() { " +
+                            "  var activeElement = document.activeElement; " +
+                            "  var rect = activeElement.getBoundingClientRect(); " +
+                            "  return '' + rect.top;" +
+                            "})()",
+                    value -> {
+                      //Toast.makeText(context, "WebView returned: " + value, Toast.LENGTH_SHORT).show();
+                      try {
+                        double top = Double.parseDouble(value.replaceAll("[\"']", "")); //value is something like "\"519.667\"", so we need to get rid of leading/trailing quote
+
+                        // The JavaScript returns density-independent pixels, but we need to deal in actual displayed pixels,
+                        //  so we need to convert.
+                        float pxValue = TypedValue.applyDimension(
+                                TypedValue.COMPLEX_UNIT_DIP,
+                                (float)top,
+                                getResources().getDisplayMetrics()
+                        );
+
+                        inputLocation = pxValue;
+                        webview.requestLayout();
+                      } catch (NumberFormatException e) {
+                        Log.e("WebView", "Error parsing position", e);
+                        Toast.makeText(context, "Error parsing result from webview, returned: '" + value + "', errmsg=" + e.toString(), Toast.LENGTH_SHORT).show();
+                      }
+                    });
+            webview.setTranslationY( 0 );
+            inputLocation = 0.0;
+          }
+          //Toast.makeText(context, String.format("height diff >120, setting bottom margin: %d, r.bottom=%d, r.top=%d, h=%d", heightDiff, r.bottom, r.top, activityRootView.getRootView().getHeight()), Toast.LENGTH_SHORT ).show();
+        } else {
+          // Reset bottom margin when keyboard is hidden
+          FrameLayout.LayoutParams layoutParams = (FrameLayout.LayoutParams) webview.getLayoutParams();
+          layoutParams.bottomMargin = originalLayoutParams.bottomMargin;
+          //layoutParams.height = maxVisibleHeight;
+          webview.setTranslationY( 0 );
+          inputLocation = 0.0;
+          //webview.setLayoutParams(layoutParams);
+          //scrollView.smoothScrollBy(0, 200);
+          //Toast.makeText(context, String.format("height diff <120 (e.g., no kb), setting bottom margin: %d, r.bottom=%d, r.top=%d, h=%d", heightDiff, r.bottom, r.top, activityRootView.getRootView().getHeight()), Toast.LENGTH_SHORT ).show();
+        }
+
+        //ViewGroup.LayoutParams params = webview.getLayoutParams();
+        //params.height = maxVisibleHeight;
+        //webview.setLayoutParams(params);
+
+        //ScrollView scrollView = findViewById(R.id.scrollView);
+        //ViewGroup.LayoutParams svparams = scrollView.getLayoutParams();
+        //svparams.height = maxVisibleHeight;
+        //scrollView.setLayoutParams( svparams );
+
+        /*
         mDecorView.getWindowVisibleDisplayFrame(visibleBounds);
         int visibleHeight = visibleBounds.height();
 
@@ -789,9 +903,9 @@ public class InterSpec extends AppCompatActivity
 
           Context context = getApplicationContext();
 
-          /* Some other force is overiding our setting of margins - need to figure out - maybe same force now panning the whatever anyway?
-          * Or maybe we can ditch one of our layouts?
-          * */
+          // Some other force is overiding our setting of margins - need to figure out - maybe same force now panning the whatever anyway?
+          // Or maybe we can ditch one of our layouts?
+
           RelativeLayout myRelativeLayout = findViewById(R.id.rel_layout);
           LinearLayout.LayoutParams layoutParams = (LinearLayout.LayoutParams) myRelativeLayout.getLayoutParams();
           //android.view.ViewGroup.LayoutParams layoutParams = myRelativeLayout.getLayoutParams();
@@ -828,6 +942,7 @@ public class InterSpec extends AppCompatActivity
 
         lastVisibleHeight = visibleHeight;
         mOrientationJustChanged = false;
+         */
       }
     };
 
@@ -856,8 +971,8 @@ public class InterSpec extends AppCompatActivity
 	 */
 
 
-    final View contentView = findViewById( R.id.webview );
-    contentView.setClickable( true );
+    //final View contentView = findViewById( R.id.webview );
+    //contentView.setClickable( true );
 
     /*
     final GestureDetector clickDetector = new GestureDetector( this,
