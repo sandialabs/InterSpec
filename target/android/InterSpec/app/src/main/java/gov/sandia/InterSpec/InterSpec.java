@@ -30,7 +30,6 @@ import android.os.Bundle;
 
 import androidx.appcompat.app.AppCompatActivity;
 
-import android.view.ViewGroup;
 import android.webkit.*;
 import android.net.*;
 import android.content.*;
@@ -38,13 +37,6 @@ import android.util.*;
 import android.view.View;
 import android.graphics.Rect;
 import android.view.ViewTreeObserver;
-import android.view.Window;
-import android.graphics.Point;
-import android.view.Display;
-import android.view.WindowManager;
-import android.widget.FrameLayout;
-import android.widget.RelativeLayout;
-import android.widget.LinearLayout;
 import android.os.ParcelFileDescriptor;
 
 import java.io.BufferedInputStream;
@@ -59,20 +51,12 @@ import java.io.FileOutputStream;
 
 import android.database.Cursor;
 import android.provider.OpenableColumns;
-import android.widget.ScrollView;
 import android.widget.Toast;
-
-import org.json.JSONException;
-import org.json.JSONObject;
 
 import java.io.InputStream;
 import java.util.Random;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
-
-//import gov.sandia.InterSpecMainActivity.InterSpecMainActivity;
-//import gov.sandia.InterSpecMainActivity.InterSpecMainActivity.R;
-//import android.R;
 
 
 interface CallbackFromNativeInterface {
@@ -105,7 +89,6 @@ public class InterSpec extends AppCompatActivity
 
   private boolean mOrientationJustChanged = false;
   private ViewTreeObserver.OnGlobalLayoutListener mLayoutListener;
-  private FrameLayout.LayoutParams originalLayoutParams; // Store original layout params
   private WebView webview;
 
   /** Define a class whose member functions we can call from JavaScript. */
@@ -629,23 +612,6 @@ public class InterSpec extends AppCompatActivity
       webview.setFocusableInTouchMode(true);
       webview.requestFocus(View.FOCUS_DOWN);
 
-      /*
-      webview.setOnTouchListener( new View.OnTouchListener() {
-        @Override
-        public boolean onTouch( View v, MotionEvent event ) {
-          switch( event.getAction()) {
-            case MotionEvent.ACTION_DOWN:
-            case MotionEvent.ACTION_UP:
-              if( !v.hasFocus() ){
-                v.requestFocus();
-              }
-              break;
-          }
-          return false;
-        }
-      });
-*/
-
       // TODO: I think see https://stackoverflow.com/questions/3926629/downloadlistener-not-working to get download listner working
       WebViewClient ourWebClient = new WebViewClient(){
 
@@ -765,60 +731,57 @@ public class InterSpec extends AppCompatActivity
 
     mDecorView = getWindow().getDecorView();
 
-    originalLayoutParams = (FrameLayout.LayoutParams) webview.getLayoutParams(); // Store original params
-
-    final View activityRootView = findViewById(android.R.id.content);
+    final View mActivityRootView = findViewById(android.R.id.content);
 
     mLayoutListener = new ViewTreeObserver.OnGlobalLayoutListener() {
 
+      /// When the soft-keyboard shows, we'll query the position of the input element
+      /// asynchronously using JavaScript, so when we get a result, we will store it
+      /// in this next variable, then request a layout, and then move things when
+      /// that translate the WebView when that happens (it looks like we can only translate
+      /// the WebView after a layout cycle completes).
+      private double mInputYFromJS = 0.0;
 
-
-      private final Rect visibleBounds = new Rect();
-      private int lastVisibleHeight;
-      private int maxVisibleHeight = 0;
-      private double inputLocation = 0.0;
-
+      // We'll track the keyboard showing, but we dont actually use this right now
       private boolean mShowingKeyboard = false;
-      // For Android 11 (API level 30), and newer, there is a WindowInsets API that would be better
-      // to use, but this would leave out too many users
+      /// I cant get Android to move the WebView so that the input is visible, and we dont want to
+      /// resize the WebView when the soft keyboard shows, so we will watch for layout changes, and
+      /// detect the keyboard there.
+      /// For Android 11 (API level 30), and newer, there is a WindowInsets API that would be better
+      /// to use, but this would leave out too many users right now.
       @Override
       public void onGlobalLayout() {
         Rect r = new Rect();
+        mActivityRootView.getWindowVisibleDisplayFrame(r);
 
-        activityRootView.getWindowVisibleDisplayFrame(r);
-
-        Context context = getApplicationContext();
-
-        int h = (r.bottom - r.top);
-        if( h > maxVisibleHeight )
-          maxVisibleHeight = h;
-
-
-        int screenHeight = activityRootView.getRootView().getHeight(); // Includes the OS top and bottom bars
-        int activityH = activityRootView.getHeight(); // This is app area, minus top and bottom OS bars.  Not affected if keyboard is shown.
+        int activityH = mActivityRootView.getHeight(); // This is app area, minus top and bottom OS bars.  Not affected if keyboard is shown.
         int visibleH = (r.bottom - r.top); // This is app area, accounting for keyboard being shown (so height doesnt include keyboard height, just the visible part of the app)
-        //Toast.makeText(context, String.format("screenHeight: %d, activityHeight: %d, visibleHeight: %d", screenHeight, activityH, visibleH), Toast.LENGTH_SHORT ).show();
-
         int heightDiff = activityH - visibleH;
-        //Toast.makeText(context, String.format("Have inputLocation=%f", inputLocation), Toast.LENGTH_SHORT).show();
 
+        int screenHeight = mActivityRootView.getRootView().getHeight(); // Includes the OS top and bottom bars
+        Context context = getApplicationContext();
+        //Toast.makeText(context, String.format("screenHeight: %d, activityHeight: %d, visibleHeight: %d, heightDiff: %d", screenHeight, activityH, visibleH, heightDiff), Toast.LENGTH_SHORT ).show();
+
+        // heightDiff is zero, if the keyboard is not showing, but at least a few hundred px if it is showing
         if (heightDiff > 100) {
+          mShowingKeyboard = true;
 
-          if( inputLocation > 0.0 ) {
-            //Toast.makeText(context, String.format("Got callback with inputLocation=%f", inputLocation), Toast.LENGTH_SHORT).show();
-            //webview.setTranslationY(-250);
+          // We may be here either when the keyboard is first showing, OR as a result of us
+          // requesting a layout below when we get the input element position from the WebView via JS
+          if( mInputYFromJS > 0.0 ) {
+            // If mInputYFromJS is greater than zero, then we are here as a result of getting the
+            // element position from the JS, and we can now slide the WebView up the right amount
 
-            //ActivityHeight 1092, visibleHeight 603, inputLocation 520
             // We'll assume element is 20px high, and add another 20px padding
-            double posToMakeVisibleDbl = r.top + inputLocation + 20.0 + 20.0;
+            double posToMakeVisibleDbl = r.top + mInputYFromJS + 20.0 + 20.0;
             int posToMakeVisible = (int) Math.round(posToMakeVisibleDbl);
 
-            //Toast.makeText(context, String.format("posToMakeVisible=%d, visibleH=%d", posToMakeVisible, visibleH), Toast.LENGTH_SHORT).show();
+            //On phone when keyboard shows: screenHeight: 1280, activityH: 1136, visibleH: 634, posToMakeVisible: 743
+            //Toast.makeText(context, String.format("screenHeight: %d, activityH: %d, visibleH: %d, posToMakeVisible: %d", screenHeight, activityH, visibleH, posToMakeVisible), Toast.LENGTH_SHORT ).show();
 
             if( posToMakeVisible > visibleH )
             {
               int delta = visibleH - posToMakeVisible;
-              //Toast.makeText(context, String.format("Setting translation =%d", delta), Toast.LENGTH_SHORT).show();
               webview.setTranslationY( delta );
             }else
             {
@@ -826,10 +789,14 @@ public class InterSpec extends AppCompatActivity
               webview.setTranslationY( 0 );
             }
           } else {
+            // If mInputYFromJS is zero, then the keyboard just appeared, and we dont have the input
+            // element position, and we need to get it.
+
             webview.evaluateJavascript(
                     "(function() { " +
-                            "  var activeElement = document.activeElement; " +
-                            "  var rect = activeElement.getBoundingClientRect(); " +
+                            "  const el = document.activeElement; " +
+                            "  if( !el || (el.tagName != 'INPUT') ) return '-1';" +
+                            "  const rect = el.getBoundingClientRect(); " +
                             "  return '' + rect.top;" +
                             "})()",
                     value -> {
@@ -837,174 +804,42 @@ public class InterSpec extends AppCompatActivity
                       try {
                         double top = Double.parseDouble(value.replaceAll("[\"']", "")); //value is something like "\"519.667\"", so we need to get rid of leading/trailing quote
 
-                        // The JavaScript returns density-independent pixels, but we need to deal in actual displayed pixels,
-                        //  so we need to convert.
-                        float pxValue = TypedValue.applyDimension(
-                                TypedValue.COMPLEX_UNIT_DIP,
-                                (float)top,
-                                getResources().getDisplayMetrics()
-                        );
+                        if( top < 0.0 ) {
+                          mInputYFromJS = (float)top; // There was an error.
+                        }else{
+                          // The JavaScript returns density-independent pixels, but we need to deal
+                          // in actual displayed pixels, so we need to convert.
+                          float pxValue = TypedValue.applyDimension(
+                                  TypedValue.COMPLEX_UNIT_DIP,
+                                  (float) top,
+                                  getResources().getDisplayMetrics()
+                          );
 
-                        inputLocation = pxValue;
+                          mInputYFromJS = pxValue;
+                        }
+
+                        // We cant access the WebView from here, and even if we evaluate on the GUI
+                        //  thread, thats not good enough to alter the layout, instead we have to
+                        //  request the layout to be computed, which will call the onGlobalLayout()
+                        //  where we can then set the Y translation
                         webview.requestLayout();
                       } catch (NumberFormatException e) {
                         Log.e("WebView", "Error parsing position", e);
                         Toast.makeText(context, "Error parsing result from webview, returned: '" + value + "', errmsg=" + e.toString(), Toast.LENGTH_SHORT).show();
                       }
-                    });
-            webview.setTranslationY( 0 );
-            inputLocation = 0.0;
-          }
-          //Toast.makeText(context, String.format("height diff >120, setting bottom margin: %d, r.bottom=%d, r.top=%d, h=%d", heightDiff, r.bottom, r.top, activityRootView.getRootView().getHeight()), Toast.LENGTH_SHORT ).show();
+                    }); //webview.evaluateJavascript(...)
+            webview.setTranslationY( 0 ); // JIC
+            mInputYFromJS = 0.0; //JIC
+          }//if( mInputYFromJS > 0.0 ) / else
         } else {
-          // Reset bottom margin when keyboard is hidden
-          FrameLayout.LayoutParams layoutParams = (FrameLayout.LayoutParams) webview.getLayoutParams();
-          layoutParams.bottomMargin = originalLayoutParams.bottomMargin;
-          //layoutParams.height = maxVisibleHeight;
+          // Reset translation back to zero when keyboard is hidden
           webview.setTranslationY( 0 );
-          inputLocation = 0.0;
-          //webview.setLayoutParams(layoutParams);
-          //scrollView.smoothScrollBy(0, 200);
-          //Toast.makeText(context, String.format("height diff <120 (e.g., no kb), setting bottom margin: %d, r.bottom=%d, r.top=%d, h=%d", heightDiff, r.bottom, r.top, activityRootView.getRootView().getHeight()), Toast.LENGTH_SHORT ).show();
+          mInputYFromJS = 0.0;
+          mShowingKeyboard = false;
         }
-
-        //ViewGroup.LayoutParams params = webview.getLayoutParams();
-        //params.height = maxVisibleHeight;
-        //webview.setLayoutParams(params);
-
-        //ScrollView scrollView = findViewById(R.id.scrollView);
-        //ViewGroup.LayoutParams svparams = scrollView.getLayoutParams();
-        //svparams.height = maxVisibleHeight;
-        //scrollView.setLayoutParams( svparams );
-
-        /*
-        mDecorView.getWindowVisibleDisplayFrame(visibleBounds);
-        int visibleHeight = visibleBounds.height();
-
-        Window window = getWindow();
-        Rect rect = new Rect();
-        window.getDecorView().getWindowVisibleDisplayFrame(rect);
-
-        int windowWidth = rect.width();
-        int windowHeight = rect.height();
-
-        WindowManager windowManager = (WindowManager) getSystemService(Context.WINDOW_SERVICE);
-
-        Display display = windowManager.getDefaultDisplay();
-        Point size = new Point();
-        display.getRealSize(size);
-        int screenWidth = size.x;
-        int screenHeight = size.y;
-
-        if (lastVisibleHeight != 0) {
-          // I think if we are here:
-          // - If windowWidth has changed - reset layout to be `layoutParams.topMargin = 0`
-          // -
-
-          Context context = getApplicationContext();
-
-          // Some other force is overiding our setting of margins - need to figure out - maybe same force now panning the whatever anyway?
-          // Or maybe we can ditch one of our layouts?
-
-          RelativeLayout myRelativeLayout = findViewById(R.id.rel_layout);
-          LinearLayout.LayoutParams layoutParams = (LinearLayout.LayoutParams) myRelativeLayout.getLayoutParams();
-          //android.view.ViewGroup.LayoutParams layoutParams = myRelativeLayout.getLayoutParams();
-          //if (layoutParams != null) {
-          //  Toast.makeText(context, "Valid Layout params", Toast.LENGTH_SHORT ).show();
-          //}else {
-          //  Toast.makeText(context, "Not Valid Layout params", Toast.LENGTH_SHORT ).show();
-          //}
-          //try
-          //{
-          //} catch (Exception e)
-          //{
-          //  Toast.makeText(context, String.format("Caught exception: %s", e.getMessage()), Toast.LENGTH_LONG).show();
-          //}
-
-          //Toast.makeText(context, String.format( "Initial margins: %d, %d", layoutParams.topMargin, layoutParams.bottomMargin), Toast.LENGTH_SHORT ).show();
-
-          if (visibleHeight > lastVisibleHeight && mShowingKeyboard ) {
-            // Keyboard hidden, or orientation change
-            Toast.makeText(context, String.format("Keyboard hidden: wind=%dx%d, screen=%dx%d, bottom=%d", windowWidth, windowHeight, screenWidth, screenHeight, rect.bottom), Toast.LENGTH_LONG).show();
-            layoutParams.topMargin = 0;
-            mShowingKeyboard = false;
-            myRelativeLayout.setLayoutParams(layoutParams);
-          } else if (visibleHeight < lastVisibleHeight && !mOrientationJustChanged && !mShowingKeyboard ) {
-            // Keyboard shown (only if orientation didn't just change)
-            Toast.makeText(context, String.format("Keyboard shown: wind=%dx%d, screen=%dx%d, bottom=%d", windowWidth, windowHeight, screenWidth, screenHeight, rect.bottom), Toast.LENGTH_LONG).show();
-            layoutParams.topMargin = -200;
-            mShowingKeyboard = true;
-            myRelativeLayout.setLayoutParams(layoutParams);
-          }
-
-
-        }
-
-        lastVisibleHeight = visibleHeight;
-        mOrientationJustChanged = false;
-         */
       }
     };
 
-    /*
-    mDecorView.setOnSystemUiVisibilityChangeListener( new View.OnSystemUiVisibilityChangeListener()
-    {
-        @Override
-        public void onSystemUiVisibilityChange(int flags)
-        {
-        boolean visible = (flags & View.SYSTEM_UI_FLAG_HIDE_NAVIGATION) == 0;
-//			WebView webview = (WebView)findViewById(R.id.webview);
-        if( visible )
-        {
-          //make it so we are no longer in emmersive mode, so this way
-          //  Android will resize the WebView so that the active form
-          //  (assuming keyboard is visible) will be visible.  There
-          //  is an issue that when you hide the keyboard, the system
-          //  navigation UI will still be visible until you tap somewhere
-          //  else (whach calls hideSystemUI()).
-          //  Non-optimal, but I cant figure out how to detect if the
-          //  keyboard is visible.
-          mDecorView.setSystemUiVisibility(0);
-        }
-      }//public void onSystemUiVisibilityChange(int flags)
-    });
-	 */
-
-
-    //final View contentView = findViewById( R.id.webview );
-    //contentView.setClickable( true );
-
-    /*
-    final GestureDetector clickDetector = new GestureDetector( this,
-            new GestureDetector.SimpleOnGestureListener()
-    {
-          @Override
-          public boolean onSingleTapUp(MotionEvent e) 
-          {
-            boolean visible = (mDecorView.getSystemUiVisibility()
-	                          & View.SYSTEM_UI_FLAG_HIDE_NAVIGATION) == 0;
-            if (visible) 
-            {
-              hideSystemUI();
-            } 
-            return false;
-          }
-    });
-
-     */
-
-    /*
-    contentView.setOnTouchListener(
-        new View.OnTouchListener() 
-        {
-          @Override
-          public boolean onTouch(View view, MotionEvent motionEvent) 
-          {
-            return clickDetector.onTouchEvent(motionEvent);
-          }
-    });
-
-     */
   }//public void onCreate(Bundle savedInstanceState)
 
   @Override
