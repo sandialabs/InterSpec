@@ -604,19 +604,29 @@ ul.Wt-popupmenu > li > a > span > span:hover
   margin-left: 5px;
 }
 
-.SampleSpecLoadBtn
-{
-  display: none;
+.SampleSpecRow {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
 }
 
-.Wt-selected > .SampleSpecRow > .SampleSpecLoadBtn
-{
-  /* display: inline-block;
-  margin: 0px auto; */
-  display: inline;
-  float: right;
+.SampleSpecLoadBtn {
+  display: none;
   margin-right: 5px;
-  margin-top: 4px;  /* centers vertically; not a great solution since only works for 30px height rows, but works for now */
+}
+
+.Wt-selected > .SampleSpecRow > .SampleSpecLoadBtn {
+  display: block;
+}
+
+@media (max-width: 350px) {
+  .SampleSpecRow {
+    font-size: small;
+  }
+  
+  .SampleSpecLoadBtn {
+    font-size: small;
+  }
 }
 
 

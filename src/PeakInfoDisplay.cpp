@@ -1079,19 +1079,22 @@ void PeakInfoDisplay::init()
     }
   }//for( int col = 0; col < m_model->columnCount(); ++col )
 
-#if( !ANDROID && !IOS )
+//#if( !ANDROID && !IOS )
+  WString hintTxt = "&nbsp;";
   if( !m_viewer->isPhone() )
   {
     const char *key = m_viewer->isMobile() ? "pid-better-editor-hint-mobile" : "pid-better-editor-hint";
-    WText *txt = new WText( WString::tr(key), bottomDiv );
-    txt->addStyleClass( "PeakEditHint" );
-    const string show_js( "function(object, event){try{$('#" + txt->id() + "').css('visibility','visible');}catch(e){}}" );
-    const string hide_js( "function(object, event){try{$('#" + txt->id() + "').css('visibility','hidden');}catch(e){}}" );
-    mouseWentOver().connect( show_js );
-    mouseWentOut().connect( hide_js );
-    txt->doJavaScript( "(" + hide_js + ")();" );
+    hintTxt = WString::tr(key);
   }
-#endif
+  
+  WText *txt = new WText( hintTxt, bottomDiv );
+  txt->addStyleClass( "PeakEditHint" );
+  const string show_js( "function(object, event){try{$('#" + txt->id() + "').css('visibility','visible');}catch(e){}}" );
+  const string hide_js( "function(object, event){try{$('#" + txt->id() + "').css('visibility','hidden');}catch(e){}}" );
+  mouseWentOver().connect( show_js );
+  mouseWentOut().connect( hide_js );
+  txt->doJavaScript( "(" + hide_js + ")();" );
+//#endif
   
   WContainerWidget *csvDiv = new WContainerWidget( bottomDiv );
   csvDiv->addStyleClass( "PeakInfoDisplayCsvBtns" );

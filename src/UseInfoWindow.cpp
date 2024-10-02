@@ -324,7 +324,11 @@ UseInfoWindow::UseInfoWindow( std::function<void(bool)> showAgainCallback,
     m_tableSample->setRowHeight( WLength(30,WLength::Pixel) );
     m_tableSample->setColumnAlignment(0, Wt::AlignLeft);
     //m_tableSample->setHeaderAlignment(0, Wt::AlignCenter);
-    m_tableSample->setColumnWidth(0,340);
+    if( m_viewer->isPhone() )
+      m_tableSample->setColumnWidth(0,240);
+    else
+      m_tableSample->setColumnWidth(0,340);
+    
     m_tableSample->hideColumn(1);
     m_tableSample->hideColumn(2);
     
