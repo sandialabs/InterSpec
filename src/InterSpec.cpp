@@ -11039,23 +11039,43 @@ void InterSpec::setSpectrum( std::shared_ptr<SpecMeas> meas,
 
   if( (spec_type == SpecUtils::SpectrumType::Foreground) && previous && (previous != meas) )
   {
-    closeShieldingSourceFit();
+    saveShieldingSourceModelToForegroundSpecMeas();
+#if( USE_REL_ACT_TOOL )
+    saveRelActManualStateToForegroundSpecMeas();
+    saveRelActAutoStateToForegroundSpecMeas();
+#endif
     
 #if( USE_DB_TO_STORE_SPECTRA )
-    //if( m_user->preferenceValue<bool>( "AutoSaveSpectraToDb" ) )
-    //{
-    //  //We also need to do this in the InterSpec destructor as well.
-    //  //   Also maybe change size limitations to only apply to auto saving
-    //  if( current_state_index >= 0 )
-    //  {
-    //    //Save to (HEAD) of current state
-    //  }else
-    //  {
-    //    //Create a state
-    //    //Handle case where file is to large to be saved
-    //  }
-    //}
+    /*
+    if( previous && m_user->preferenceValue<bool>( "AutoSaveSpectraToDb" ) )
+    {
+      //We also need to do this in the InterSpec destructor as well.
+      //   Also maybe change size limitations to only apply to auto saving
+      const long long int current_state_index = currentAppStateDbId();
+      if( current_state_index >= 0 )
+      {
+        startStoreStateInDb( false, false, false, false ); //save snapshot
+      }else
+      {
+        m_fileManager->saveToDatabase( previous );
+      }
+    }//if(
+     */
 #endif //#if( USE_DB_TO_STORE_SPECTRA )
+    
+    // Close Shielding/Source fit Window
+    if( m_shieldingSourceFitWindow )
+    {
+      delete m_shieldingSourceFitWindow;
+      m_shieldingSourceFitWindow = nullptr;
+      m_shieldingSourceFit = nullptr;
+    }
+    
+    
+    if( m_relActAutoGui )
+    {
+      // TODO: Should we close this?
+    }
     
     if( m_riidDisplay )
       programmaticallyCloseRiidResults();

@@ -125,6 +125,8 @@ const std::vector<std::pair<SpecUtils::SaveSpectrumAsType,std::string>> sm_file_
 #if( USE_QR_CODES )
 namespace
 {
+  const int ns_min_screen_width_for_wide_layout = 750;
+  
 std::string clean_uuid( string uuid )
 {
   SpecUtils::trim(uuid);
@@ -741,11 +743,11 @@ void ExportSpecFileTool::init()
   const bool showToolTips = InterSpecUser::preferenceValue<bool>( "ShowTooltips", m_interspec );
   const bool isMobile = m_interspec && m_interspec->isMobile();
 
-  const int screenWidth = m_interspec->renderedWidth();
-  const bool isPhone = (screenWidth > 100) ? (screenWidth < 640) : m_interspec->isPhone();
-  
   if( isMobile )
     addStyleClass( "ExportSpecFileToolMobile" );
+  
+  const int screenWidth = m_interspec->renderedWidth();
+  const bool isPhone = (screenWidth > 100) ? (screenWidth < ns_min_screen_width_for_wide_layout) : m_interspec->isPhone();
   
   WTabWidget *mobileTabs = nullptr;
   WContainerWidget *body = nullptr;
@@ -753,6 +755,7 @@ void ExportSpecFileTool::init()
   if( isPhone )
   {
     addStyleClass( "ExportSpecFileToolPhone" );
+
     mobileTabs = new WTabWidget( this );
     mobileTabs->addStyleClass( "ExportSpecFileTabs" );
   }else
@@ -3619,7 +3622,7 @@ ExportSpecFileWindow::ExportSpecFileWindow( InterSpec *viewer )
   addStyleClass( "export-spec-file" );
   
   const int w = viewer->renderedWidth();
-  const bool isPhone = (w > 100) ? (w < 640) : (viewer && viewer->isPhone());
+  const bool isPhone = (w > 100) ? (w < ns_min_screen_width_for_wide_layout) : (viewer && viewer->isPhone());
 
   if( isPhone )
   {
@@ -3627,7 +3630,7 @@ ExportSpecFileWindow::ExportSpecFileWindow( InterSpec *viewer )
   }else 
   {
     //setMinimumSize( WLength(w > 100 ? std::min(0.95*w, 800.0) : 800.0 ,WLength::Pixel), WLength::Auto );
-    setMinimumSize( WLength(w > 100 ? std::min(0.95*w, 600.0) : 600.0 ,WLength::Pixel), WLength::Auto );
+    setMinimumSize( WLength(w > 100 ? std::min(0.95*w, 650.0) : 650.0, WLength::Pixel), WLength::Auto );
   }
   m_tool = new ExportSpecFileTool( viewer, contents() );
   m_tool->done().connect( boost::bind(&ExportSpecFileWindow::accept, this) );

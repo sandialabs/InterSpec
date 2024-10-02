@@ -594,7 +594,7 @@
 	       by setting this property, or for an individual application
 	       entry point by passing a location to WServer::addEntryPoint().
 	      -->
-	    <!-- <property name="favicon">images/favicon.ico</property> -->
+	    <property name="favicon">InterSpec_resources/favicon.ico</property>
 	</properties>
 
     </application-settings>

@@ -343,7 +343,7 @@ std::shared_ptr<SpecMeas> SpectraFileHeader::resetFromDatabase(
   std::shared_ptr<SpecMeas> memobj = dbdata->decodeSpectrum();
   setMeasurmentInfo( memobj );
   
-  m_displayName = info->filename;
+  m_displayName = SpecUtils::filename( info->filename );
   m_uploadTime = info->uploadTime;
   m_modifiedSinceDecode = info->userHasModified;
   
