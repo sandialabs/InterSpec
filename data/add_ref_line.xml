@@ -118,9 +118,16 @@
         <Line nuc="Pu241" color="#f74758" atten="false">619.01 1.0</Line>
         <Line nuc="Pu241" color="#f74758" atten="false">722.01 1.0</Line>
 
+        <!-- InterSpec includes Am241 in the decay of Pu241, whereas other
+        programs keep them separate.  Because of this the age of Pu241 is
+        important in InterSpec.
         <Line nuc="Am241" color="#003f5c" atten="false">125.3 1.0</Line>
         <Line nuc="Am241" color="#003f5c" atten="false">335.37 1.0</Line>
         <Line nuc="Am241" color="#003f5c" atten="false">368.65 1.0</Line>
+        -->
+        <Line nuc="Pu241" color="#f74758" atten="false">125.3 1.0</Line>
+        <Line nuc="Pu241" color="#f74758" atten="false">335.37 1.0</Line>
+        <Line nuc="Pu241" color="#f74758" atten="false">368.65 1.0</Line>
     </SourceLines>
 
 
