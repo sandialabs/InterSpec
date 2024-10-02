@@ -59,6 +59,12 @@
   padding-right: 10px;
 }
 
+.ExportSpecFileTool.ExportSpecFileToolPhone .ExportSpecFileTabs
+{
+  flex-grow: 2;
+  margin-top: 5px;
+}
+
 .ExportSpecFileTool .ExportSpecFileBody .ExportColTitle
 {
   display: block;
@@ -125,6 +131,13 @@
   font-size: 14px;
 }
 
+.ExportSpecFileTool.ExportSpecFileToolPhone .ExportSpecSelect
+{
+  margin-left: auto;
+  margin-right: auto;
+  margin-top: 10px;
+}
+
 .ExportSpecInfo .ExportSpecInfoTable
 {
 }
@@ -162,6 +175,12 @@
   height: 100%;
 }
 
+.ExportSpecFileTool.ExportSpecFileToolPhone .ExportSpecFormat
+{
+  height: 300px;
+  overflow-y: auto;
+}
+
 
 .ExportSpecFileTool .ExportSpecFormat .ExportSpecFormatMenu.SideMenu
 {
@@ -174,6 +193,12 @@
 {
   /* On mobile, there is no info/help icon on the menu item, so we can make it narrower. */
   width: 8.5em;
+}
+
+.ExportSpecFileTool.ExportSpecFileToolPhone .ExportSpecFormatMenu.SideMenu
+{
+  margin-left: auto;
+  margin-right: auto;
 }
 
 .ExportSpecFileTool .ExportSpecFormat .ExportSpecFormatMenu.SideMenu li

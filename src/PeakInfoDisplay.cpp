@@ -1079,7 +1079,8 @@ void PeakInfoDisplay::init()
     }
   }//for( int col = 0; col < m_model->columnCount(); ++col )
 
-//#if( !ANDROID && !IOS )
+  // For desktop, we'll put a little hint text that users can right-click on peaks for peak editor,
+  //  But on mobile we'll just treat it as a spacer (which we need so peak CSV link goes to right).
   WString hintTxt = "&nbsp;";
   if( !m_viewer->isPhone() )
   {
@@ -1094,7 +1095,7 @@ void PeakInfoDisplay::init()
   mouseWentOver().connect( show_js );
   mouseWentOut().connect( hide_js );
   txt->doJavaScript( "(" + hide_js + ")();" );
-//#endif
+
   
   WContainerWidget *csvDiv = new WContainerWidget( bottomDiv );
   csvDiv->addStyleClass( "PeakInfoDisplayCsvBtns" );

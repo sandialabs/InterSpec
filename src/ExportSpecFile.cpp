@@ -41,6 +41,7 @@
 #include <Wt/WLineEdit>
 #include <Wt/WMenuItem>
 #include <Wt/WResource>
+#include <Wt/WTabWidget>
 #include <Wt/WPushButton>
 #include <Wt/Http/Request>
 #include <Wt/WApplication>
@@ -739,16 +740,32 @@ void ExportSpecFileTool::init()
   
   const bool showToolTips = InterSpecUser::preferenceValue<bool>( "ShowTooltips", m_interspec );
   const bool isMobile = m_interspec && m_interspec->isMobile();
+
+  const int screenWidth = m_interspec->renderedWidth();
+  const bool isPhone = (screenWidth > 100) ? (screenWidth < 640) : m_interspec->isPhone();
   
   if( isMobile )
     addStyleClass( "ExportSpecFileToolMobile" );
   
-  WContainerWidget *body = new WContainerWidget( this );
-  body->addStyleClass( "ExportSpecFileBody" );
+  WTabWidget *mobileTabs = nullptr;
+  WContainerWidget *body = nullptr;
+
+  if( isPhone )
+  {
+    addStyleClass( "ExportSpecFileToolPhone" );
+    mobileTabs = new WTabWidget( this );
+    mobileTabs->addStyleClass( "ExportSpecFileTabs" );
+  }else
+  {
+    body = new WContainerWidget( this );
+    body->addStyleClass( "ExportSpecFileBody" );
+  }
   
   
   WContainerWidget *fileSelectDiv = new WContainerWidget( body );
   fileSelectDiv->addStyleClass( "ExportSpecSelect" );
+  if( isPhone )
+    mobileTabs->addTab( fileSelectDiv, "File", Wt::WTabWidget::LoadPolicy::PreLoading );
   
   if( !m_specific_spectrum )
   {
@@ -795,6 +812,8 @@ void ExportSpecFileTool::init()
   // Spectrum format
   WContainerWidget *menuHolder = new WContainerWidget( body );
   menuHolder->addStyleClass( "ExportSpecFormat" );
+  if( isPhone )
+    mobileTabs->addTab( menuHolder, "Format", Wt::WTabWidget::LoadPolicy::PreLoading );
   
   WText *title = new WText( "File Format", menuHolder );
   title->addStyleClass( "ExportColTitle" );
@@ -864,6 +883,10 @@ void ExportSpecFileTool::init()
   // Meas/samples to include
   m_samplesHolder = new WContainerWidget( body );
   m_samplesHolder->addStyleClass( "ExportSpecSamples" );
+
+  if( isPhone )
+    mobileTabs->addTab( m_samplesHolder, "Options", Wt::WTabWidget::LoadPolicy::PreLoading );
+
   title = new WText( "Samples to Include", m_samplesHolder );
   title->addStyleClass( "ExportColTitle" );
   
@@ -3596,9 +3619,16 @@ ExportSpecFileWindow::ExportSpecFileWindow( InterSpec *viewer )
   addStyleClass( "export-spec-file" );
   
   const int w = viewer->renderedWidth();
-  //setMinimumSize( WLength(w > 100 ? std::min(0.95*w, 800.0) : 800.0 ,WLength::Pixel), WLength::Auto );
-  setMinimumSize( WLength(w > 100 ? std::min(0.95*w, 600.0) : 600.0 ,WLength::Pixel), WLength::Auto );
-  
+  const bool isPhone = (w > 100) ? (w < 640) : (viewer && viewer->isPhone());
+
+  if( isPhone )
+  {
+    resize( 320, Wt::WLength::Auto ); //320 px is about the smallest width Android phone to expect
+  }else 
+  {
+    //setMinimumSize( WLength(w > 100 ? std::min(0.95*w, 800.0) : 800.0 ,WLength::Pixel), WLength::Auto );
+    setMinimumSize( WLength(w > 100 ? std::min(0.95*w, 600.0) : 600.0 ,WLength::Pixel), WLength::Auto );
+  }
   m_tool = new ExportSpecFileTool( viewer, contents() );
   m_tool->done().connect( boost::bind(&ExportSpecFileWindow::accept, this) );
   
