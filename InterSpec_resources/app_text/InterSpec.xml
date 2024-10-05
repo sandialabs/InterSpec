@@ -450,6 +450,9 @@
   <message id="pct-bilinear-step">Bi-linear Step</message>
   <message id="pct-global">Global Cont.</message>
 
+  <!-- populateNuclideSelects() in PeakSearchGuiUtils.cpp -->
+  <message id="psd-no-source">No Source</message>
+
 
   <message id="window-content-hard-back-sub">
     <div style="text-align: left;">

@@ -67,38 +67,38 @@
          The Description element is not currently used within InterSpec, but may be in the future.
         -->
         <Description>Recommended default uranium peaks to try and fit, when you are doing an isotopic analysis using the "Isotopics from peaks" tool.</Description>
-        <Line nuc="U232" color="rgb(14,196,69)" atten="false">238.625 1.0</Line>
-        <Line nuc="U232" color="rgb(14,196,69)" atten="false">583.187 1.0</Line>
-        <Line nuc="U232" color="rgb(14,196,69)" atten="false">727.3 1.0</Line>
-        <Line nuc="U232" color="rgb(14,196,69)" atten="false">860.56 1.0</Line>
+        <Line nuc="U232" color="rgb(14,196,69)" atten="false">238.632 1.0</Line>
+        <Line nuc="U232" color="rgb(14,196,69)" atten="false">583.191 1.0</Line>
+        <Line nuc="U232" color="rgb(14,196,69)" atten="false">727.33 1.0</Line>
+        <Line nuc="U232" color="rgb(14,196,69)" atten="false">860.564 1.0</Line>
 
-        <Line nuc="U234" color="rgb(176,7,170)" atten="false">120.905 1.0</Line>
+        <Line nuc="U234" color="rgb(176,7,170)" atten="false">120.9 1.0</Line>
         
         <Line nuc="U235" color="rgb(224,63,13)" atten="false">143.76 1.0</Line>
-        <Line nuc="U235" color="rgb(224,63,13)" atten="false">163.36 1.0</Line>
-        <Line nuc="U235" color="rgb(224,63,13)" atten="false">185.715 1.0</Line>
+        <Line nuc="U235" color="rgb(224,63,13)" atten="false">163.38 1.0</Line>
+        <Line nuc="U235" color="rgb(224,63,13)" atten="false">185.71 1.0</Line>
         <Line nuc="U235" color="rgb(224,63,13)" atten="false">202.11 1.0</Line>
-        <Line nuc="U235" color="rgb(224,63,13)" atten="false">205.311 1.0</Line>
-        <Line nuc="U235" color="rgb(224,63,13)" atten="false">221.38 1.0</Line>
+        <Line nuc="U235" color="rgb(224,63,13)" atten="false">205.309 1.0</Line>
+        <Line nuc="U235" color="rgb(224,63,13)" atten="false">221.4 1.0</Line>
         <Line nuc="U235" color="rgb(224,63,13)" atten="false">246.84 1.0</Line>
         <Line nuc="U235" color="rgb(224,63,13)" atten="false">345.9 1.0</Line>
         
         <Line nuc="U238" color="rgb(5,22,99)" atten="false">258.26 1.0</Line>
-        <Line nuc="U238" color="rgb(5,22,99)" atten="false">569.317 1.0</Line>
-        <Line nuc="U238" color="rgb(5,22,99)" atten="false">742.83 1.0</Line>
-        <Line nuc="U238" color="rgb(5,22,99)" atten="false">766.4 1.0</Line>
-        <Line nuc="U238" color="rgb(5,22,99)" atten="false">880.47 1.0</Line>
+        <Line nuc="U238" color="rgb(5,22,99)" atten="false">569.5 1.0</Line>
+        <Line nuc="U238" color="rgb(5,22,99)" atten="false">742.77 1.0</Line>
+        <Line nuc="U238" color="rgb(5,22,99)" atten="false">766.37 1.0</Line>
+        <Line nuc="U238" color="rgb(5,22,99)" atten="false">880.5 1.0</Line>
         <Line nuc="U238" color="rgb(5,22,99)" atten="false">883.24 1.0</Line>
-        <Line nuc="U238" color="rgb(5,22,99)" atten="false">945.95 1.0</Line>
-        <Line nuc="U238" color="rgb(5,22,99)" atten="false">1001.03 1.0</Line>
+        <Line nuc="U238" color="rgb(5,22,99)" atten="false">945.9 1.0</Line>
+        <Line nuc="U238" color="rgb(5,22,99)" atten="false">1000.99 1.0</Line>
     </SourceLines>
 
     <SourceLines name="Pu-iso">
         <Description>Recommended default plutonium peaks to try and fit, when you are doing an isotopic analysis using the "Isotopics from peaks" tool.</Description>
         <Line nuc="Pu238" color="#384b83" atten="false">152.72 1.0</Line>
 
-        <Line nuc="Pu239" color="#ff7605" atten="false">129.3 1.0</Line>
-        <Line nuc="Pu239" color="#ff7605" atten="false">144.2 1.0</Line>
+        <Line nuc="Pu239" color="#ff7605" atten="false">129.296 1.0</Line>
+        <Line nuc="Pu239" color="#ff7605" atten="false">144.201 1.0</Line>
         <Line nuc="Pu239" color="#ff7605" atten="false">161.45 1.0</Line>
         <Line nuc="Pu239" color="#ff7605" atten="false">203.55 1.0</Line>
         <Line nuc="Pu239" color="#ff7605" atten="false">255.38 1.0</Line>
@@ -106,10 +106,10 @@
         <Line nuc="Pu239" color="#ff7605" atten="false">375.05 1.0</Line>
         <Line nuc="Pu239" color="#ff7605" atten="false">413.71 1.0</Line>
         <Line nuc="Pu239" color="#ff7605" atten="false">451.48 1.0</Line>
-        <Line nuc="Pu239" color="#ff7605" atten="false">645.9 1.0</Line>
+        <Line nuc="Pu239" color="#ff7605" atten="false">645.896 1.0</Line>
         <Line nuc="Pu239" color="#ff7605" atten="false">658.86 1.0</Line>
 
-        <Line nuc="Pu240" color="#384b83" atten="false">160.31 1.0</Line>
+        <Line nuc="Pu240" color="#384b83" atten="false">160.308 1.0</Line>
 
         <Line nuc="Pu241" color="#f74758" atten="false">146.55 1.0</Line>
         <Line nuc="Pu241" color="#f74758" atten="false">164.61 1.0</Line>

@@ -1474,7 +1474,7 @@ public:
         continue;
       
       m_nuc_select_combos[i]->clear();
-      m_nuc_select_combos[i]->addItem( "No Source" );
+      m_nuc_select_combos[i]->addItem( WString::tr("psd-no-source") );
       
       shared_ptr<PeakDef> &p = m_old_to_new_peaks[i].second;
       if( !p )
@@ -1536,10 +1536,10 @@ public:
           case ReferenceLineInfo::SourceType::Reaction:
           case ReferenceLineInfo::SourceType::Background:
           case ReferenceLineInfo::SourceType::NuclideMixture:
+          case ReferenceLineInfo::SourceType::OneOffSrcLines:
             break;
           
           case ReferenceLineInfo::SourceType::CustomEnergy:
-          case ReferenceLineInfo::SourceType::OneOffSrcLines:
           case ReferenceLineInfo::SourceType::None:
             continue;
             break;
@@ -1576,7 +1576,11 @@ public:
           const double diff_from_mean = fabs( refenergy - peakmean );
           const double diff_from_assigned = fabs( refenergy - energy );
           
-          if( (diff_from_assigned < 0.001)
+          // If we are assigning from a nuclide, we should be pretty close, but if OneOffSrcLines,
+          //  we might be off by even a
+          const double allowed_diff = (ref->m_source_type == ReferenceLineInfo::SourceType::OneOffSrcLines) ? 0.05 : 0.001;
+          
+          if( (diff_from_assigned < allowed_diff) //May need to decrease
              && ((p->parentNuclide() && (line.m_parent_nuclide==p->parentNuclide()))
                  || (p->xrayElement() && (line.m_element==p->xrayElement()))
                  || (p->reaction() && (line.m_reaction ==p->reaction()))
@@ -2494,7 +2498,7 @@ void automated_search_for_peaks( InterSpec *viewer,
   if( refLineDisp )
   {
     const ReferenceLineInfo &currentNuclide = refLineDisp->currentlyShowingNuclide();
-    displayed = refLineDisp->persistedNuclides();
+    displayed = refLineDisp->persistedNuclides(); //refLineDisp->showingNuclides()
   
     if( currentNuclide.m_validity == ReferenceLineInfo::InputValidity::Valid )
       displayed.insert( displayed.begin(), currentNuclide );
@@ -2818,9 +2822,12 @@ void assign_srcs_from_ref_lines( const std::shared_ptr<const SpecUtils::Measurem
     }//if( addswap )
     
     
-    //ToDo: use std::lower_bound to insert
-    answerpeaks->push_back( peak );
-    std::sort( begin(*answerpeaks), end(*answerpeaks), peak_less_than_by_energy );
+    auto sorted_pos = std::lower_bound( begin(*answerpeaks), end(*answerpeaks), peak, peak_less_than_by_energy );
+    answerpeaks->insert( sorted_pos, peak );
+
+    assert( std::is_sorted( begin(*answerpeaks), end(*answerpeaks), peak_less_than_by_energy ) );
+    //answerpeaks->push_back( peak );
+    //std::sort( begin(*answerpeaks), end(*answerpeaks), peak_less_than_by_energy );
   }//for( PeakDef peak : unassignedpeaks )
   
   resultpeaks->clear();
