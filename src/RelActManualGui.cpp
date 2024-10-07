@@ -25,6 +25,8 @@
 
 #include "rapidxml/rapidxml.hpp"
 
+#include <boost/math/distributions/chi_squared.hpp>
+
 #include <Wt/WMenu>
 #include <Wt/WLabel>
 #include <Wt/WPanel>
@@ -1098,7 +1100,7 @@ void RelActManualGui::render( Wt::WFlags<Wt::RenderFlag> flags )
 void RelActManualGui::calculateSolution()
 {
   m_currentSolution.reset();
-  m_chart->setData( vector<RelActCalcManual::GenericPeakInfo>{}, {}, "" );
+  m_chart->setData( vector<RelActCalcManual::GenericPeakInfo>{}, {}, "", {} );
   m_results->clear();
   
   // TODO: should do the actual computation not on the GUI thread!
@@ -1584,7 +1586,7 @@ void RelActManualGui::updateGuiWithResults( shared_ptr<RelActCalcManual::RelEffS
     case RelActCalcManual::ManualSolutionStatus::ErrorFindingSolution:
     case RelActCalcManual::ManualSolutionStatus::ErrorGettingSolution:
     {
-      m_chart->setData( vector<RelActCalcManual::GenericPeakInfo>{}, {}, "" );
+      m_chart->setData( vector<RelActCalcManual::GenericPeakInfo>{}, {}, "", {} );
       break;
     }
       
@@ -1640,8 +1642,79 @@ void RelActManualGui::updateGuiWithResults( shared_ptr<RelActCalcManual::RelEffS
     relActsColors[act.m_isotope] = make_pair( act.m_rel_activity, color );
   }//for( const auto &act : solution.m_rel_activities )
   
+  WString pval_str;
+  try
+  {
+    boost::math::chi_squared chi_squared_dist( solution.m_dof );
+    const double prob = boost::math::cdf( chi_squared_dist, solution.m_chi2 );
+    if( prob > 0.99 )
+      pval_str = WString::tr("ramg-1-pval").arg( SpecUtils::printCompact(1.0 - prob, 3) );
+    else
+      pval_str = WString::tr("ramg-pval").arg( SpecUtils::printCompact(prob, 3) );
+  }catch( std::exception &e )
+  {
+    pval_str = "";
+  }
   
-  m_chart->setData( solution.m_input_peak, relActsColors, relEffEqn );
+  WString chi2_title = WString::tr("ramg-chart-info-title");
+  chi2_title.arg( SpecUtils::printCompact(solution.m_chi2, 3) )
+            .arg( static_cast<int>(solution.m_dof) )
+            .arg( pval_str );
+  
+  // If we have U or Pu, we'll give the enrichment, or if we have two nuclides we'll
+  //  give their ratio.  If we have U and Pu, we wont give enrichment.
+  set<string> isotopes;
+  for( const auto &relact : solution.m_rel_activities )
+    isotopes.insert( relact.m_isotope );
+  if( (isotopes.count("U235") && isotopes.count("U238") && !isotopes.count("Pu239"))
+     || (isotopes.count("Pu239") && isotopes.count("Pu240") && !isotopes.count("U235")) )
+  {
+    string enrich;
+    const string iso = isotopes.count("U235") ? "U235" : "Pu239";
+    
+    try
+    {
+      const double nominal = solution.mass_fraction(iso);
+      const double plus = solution.mass_fraction( iso, 1.0 );
+      const double minus = solution.mass_fraction( iso, -1.0 );
+      const double error = 0.5*( fabs(plus - nominal) + fabs(nominal - minus) );
+      enrich = ", " + PhysicalUnits::printValueWithUncertainty(100.0*nominal, 100.0*error, 4)
+               + "% "+ iso;
+    }catch( std::exception & )
+    {
+      // We dont have the covariance matrix required to get mass fraction errors
+      //  We'll try leaving out the errors
+      try 
+      {
+        const double nominal = solution.mass_fraction(iso);
+        enrich = ", " + SpecUtils::printCompact(100.0*nominal, 4) + "% "+ iso;
+      }catch( std::exception & )
+      {
+        // I really dont think we should ever get here
+        assert( 0 );
+      }
+    }//try / catch
+    
+    chi2_title.arg( enrich );
+  }else if( isotopes.size() == 2 )
+  {
+    const vector<RelActCalcManual::IsotopeRelativeActivity> &rel_acts = solution.m_rel_activities;
+    const int num_index = (rel_acts[0].m_rel_activity > rel_acts[1].m_rel_activity) ? 1 : 0;
+    const int denom_index = (num_index ? 0 : 1);
+    const string num_nuc = rel_acts[num_index].m_isotope;
+    const string den_nuc = rel_acts[denom_index].m_isotope;
+    const double ratio = solution.activity_ratio(num_nuc, den_nuc);
+    const double uncert = solution.activity_ratio_uncert(num_nuc, den_nuc);
+    
+    string ratio_txt = ", act(" + num_nuc + "/" + den_nuc + ")="
+                   + PhysicalUnits::printValueWithUncertainty(ratio, uncert, 4);
+    chi2_title.arg( ratio_txt );
+  }else
+  {
+    chi2_title.arg( "" );
+  }
+  
+  m_chart->setData( solution.m_input_peak, relActsColors, relEffEqn, chi2_title );
   
   
   // Now update the text

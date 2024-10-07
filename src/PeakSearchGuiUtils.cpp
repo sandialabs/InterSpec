@@ -927,7 +927,8 @@ public:
     m_chartPanel->setHidden( (max_num_peaks < 2) );
     
     string relEffEqn = "";
-    m_rel_eff_chart->setData( peaks, relActsColors, relEffEqn );
+    WString title_chi2_info;
+    m_rel_eff_chart->setData( peaks, relActsColors, relEffEqn, title_chi2_info );
   }//void refreshRelEffChart()
 #endif // USE_REL_ACT_TOOL
   

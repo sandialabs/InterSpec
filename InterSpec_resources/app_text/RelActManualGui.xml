@@ -95,4 +95,7 @@
   <message id="ramg-consider-add-uncert-u">You may want to consider adding "Add. Uncert" for Uranium problems.</message>
   <message id="ramg-you-using-add-uncert-u">You are adding "Add. Uncert" - interpret computed uncertainties with care.</message>
   <message id="ramg-you-using-add-uncert-non-u">You are currently adding "Add. Uncert", which will cause computed uncertainties to not be correct.</message>
+  <message id="ramg-chart-info-title">χ²/dof = {1}/{2}{3}{4}</message>
+  <message id="ramg-pval"> (pval={1})</message>
+  <message id="ramg-1-pval"> (1-pval={1})</message>
 </messages>

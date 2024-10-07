@@ -4664,8 +4664,66 @@ void RelActAutoGui::updateFromCalc( std::shared_ptr<RelActCalcAuto::RelActAutoSo
                                                                   answer->m_rel_eff_coefficients );
   
   const double live_time = answer->m_foreground ? answer->m_foreground->live_time() : 1.0f;
+
   
-  m_rel_eff_chart->setData( live_time, answer->m_fit_peaks, answer->m_rel_activities, rel_eff_eqn_js );
+  WString chi2_title("χ²/dof = {1}/{2}{3}");
+  chi2_title.arg( SpecUtils::printCompact(answer->m_chi2, 3) )
+            .arg( static_cast<int>(answer->m_dof) );
+  
+  // If we have U or Pu, we'll give the enrichment, or if we have two nuclides we'll
+  //  give their ratio
+  set<const SandiaDecay::Nuclide *> isotopes;
+  for( const auto &relact : answer->m_rel_activities )
+  {
+    if( relact.nuclide )
+      isotopes.insert( relact.nuclide );
+  }
+  
+  const SandiaDecay::SandiaDecayDataBase *db = DecayDataBaseServer::database();
+  assert( db );
+  const SandiaDecay::Nuclide * const u235 = db->nuclide( "U235" );
+  const SandiaDecay::Nuclide * const u238 = db->nuclide( "U238" );
+  const SandiaDecay::Nuclide * const pu239 = db->nuclide( "Pu239" );
+  const SandiaDecay::Nuclide * const pu240 = db->nuclide( "Pu240" );
+  assert( u235 && u238 && pu239 && pu240 );
+  
+  if( (isotopes.count(u235) && isotopes.count(u238) && !isotopes.count(pu239))
+     || (isotopes.count(pu239) && isotopes.count(pu240) && !isotopes.count(u235)) )
+  {
+    const SandiaDecay::Nuclide * const iso = isotopes.count(u235) ? u235 : pu239;
+    const double nominal = answer->mass_enrichment_fraction( iso );
+    // TODO: add errors
+    string enrich = ", " + SpecUtils::printCompact(100.0*nominal, 4)
+                        // + "±" + SpecUtils::printCompact(100.0*error, 4)
+                         + "% " + iso->symbol;
+    chi2_title.arg( enrich );
+  }else if( isotopes.size() == 2 )
+  {
+    const vector<RelActCalcAuto::NuclideRelAct> &rel_acts = answer->m_rel_activities;
+    const int num_index = (rel_acts[0].rel_activity > rel_acts[1].rel_activity) ? 1 : 0;
+    const int denom_index = (num_index ? 0 : 1);
+    const SandiaDecay::Nuclide * const num_nuc = rel_acts[num_index].nuclide;
+    const SandiaDecay::Nuclide * const den_nuc = rel_acts[denom_index].nuclide;
+    assert( num_nuc && den_nuc );
+    if( num_nuc && den_nuc )
+    {
+      const double ratio = answer->activity_ratio( num_nuc, den_nuc );
+      // TODO: add errors
+      string ratio_txt = ", act(" + num_nuc->symbol + "/" + den_nuc->symbol + ")="
+      + SpecUtils::printCompact(ratio, 4);
+      
+      chi2_title.arg( ratio_txt );
+    }else
+    {
+      chi2_title.arg( "" );
+    }
+  }else
+  {
+    chi2_title.arg( "" );
+  }
+  
+  m_rel_eff_chart->setData( live_time, answer->m_fit_peaks, answer->m_rel_activities,
+                           rel_eff_eqn_js, chi2_title );
   
   
   bool any_nucs_updated = false;
