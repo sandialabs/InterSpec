@@ -1,5 +1,7 @@
 # Building dependencies for InterSpec
-When building InterSpec, you can either have CMake download and build all dependencies through the `InterSpec_FETCH_DEPENDENCIES` CMake option (e.g., `cmake -DInterSpec_FETCH_DEPENDENCIES=ON ..`), or you can manually build all dependencies.  Using package managers like `brew`, `pacman`, or `nuget` is very unlikely to work.  Having CMake download and build the dependencies is the easiest option, but for building on non-networked computers, or if you are having proxy or other issues, these instructions let you manually build the dependancies, and place them all in a common prefix.  The other scnerious where you might consider manually building the dependencies is if you plan to do heavy development on the InterSpec code; compiling is slightly faster with the pre-built dependancies as the build system has much less files to track and check if they have been changed. 
+When building InterSpec, you can either have CMake download and build all dependencies through the `InterSpec_FETCH_DEPENDENCIES` CMake option (e.g., `cmake -DInterSpec_FETCH_DEPENDENCIES=ON ..`), or you can build all dependencies and place them into a prefix location.  Having CMake fetch and build the dependencies is required for iOS and Android, while creating a prefix location with the dependencies pre-built is highly recommended for desktop OSes, especially when doing heavy development, as it is slightly faster to re-compile the InterSpec code against since the build system has much less files to track and check if they have been changed.  
+
+Using package managers like `brew`, `pacman`, or `nuget` is very unlikely to work - and not suggested.  
 
 
 Jump to:
@@ -32,7 +34,7 @@ cd boost_1_78_0
 # build and stage boost for arm64
 ./b2 toolset=clang-darwin target-os=darwin architecture=arm abi=aapcs cxxflags="-stdlib=libc++ -arch arm64 -std=c++14 -mmacosx-version-min=10.13" cflags="-arch arm64  -mmacosx-version-min=10.13" linkflags="-stdlib=libc++ -arch arm64 -std=c++14 -mmacosx-version-min=10.13" link=static variant=release threading=multi --build-dir=macOS_arm64_build --prefix=${MY_WT_PREFIX} -a stage
 
-# copy arm libraries to a seperate directory
+# copy arm libraries to a separate directory
 mkdir -p arm64 && cp stage/lib/libboost_* arm64/
 
 # build boost for x86_64 and install it (we'll copy over the libraries later)
@@ -202,11 +204,87 @@ open InterSpecApp.xcodeproj
 
 
 # Building dependencies on Windows 10 
-The Windows release build of InterSpec uses Electron (https://electronjs.org/) to render the application; the InterSpec build scripts require using Node.js and NPM to build things; these can downloaded from https://nodejs.org/en/download/.
+For Windows, it is recommended to use the [dep_build_msvc2022.bat](dep_build_msvc2022.bat) script to build the prerequisites. However, instructions for manually building the prerequisites are also provided below, which are also compatible with Visual Studio 2019, or just the command compiler installed.
+
+## Building dependencies using dep_build_msvc2022.bat
+You will need to install Visual Studio 2022.
+
+If you plan on building debug builds of InterSpec, edit the `builddebug` variable at the top of [dep_build_msvc2022.bat](dep_build_msvc2022.bat) to be equal to something - this will cause both Release and Debug builds of the prerequisite libraries to be built and installed.
+
+The [dep_build_msvc2022.bat](dep_build_msvc2022.bat) script takes two argument, the first is the directory to use to compile the libraries, and the second is the path to install the libraries to.  This script is meant to be run from the "x64 Native Tools Command Prompt for VS 2022" terminal, that is in the "Visual Studio 2022" folder in the Start menu.
+
+
+
+From the "x64 Native Tools Command Prompt for VS 2022" terminal, run:
+```batch
+# Checkout the InterSpec code
+cd C:\Path\To\Put\InterSpec\Code
+git clone --recursive https://github.com/sandialabs/interspec/
+
+# Change CWD to one with compile script
+cd interspec\target\patches
+
+# Optionally set environment variables for the proxy (only if you are behind one)
+set http_proxy=http://your-proxy:port
+set https_proxy=http://your-proxy:port
+
+# Set where we want all the libraries installed to
+set MY_PREFIX=C:\install\msvc2022\x64\wt_3.7.1_prefix
+
+# Run script to compile all the libraries
+dep_build_msvc2022.bat C:\temp\interspec_prereq_build %MY_PREFIX%
+```
+
+You can now compile InterSpec, either by using CMake to explicitly create a VS project, or by opening the InteSpec directory in Visual Studio.  In either case, placing a file, `CMakeSettings.json`, with contents similar to the following, into the interspec code directory will help configure CMake.
+
+
+Example `CMakeSettings.json` contents:
+```
+{
+  "configurations": [
+    {
+      "name": "x64-Debug",
+      "generator": "Ninja",
+      "configurationType": "Debug",
+      "inheritEnvironments": [ "msvc_x64_x64" ],
+      "buildRoot": "${projectDir}\\out\\build\\${name}",
+      "installRoot": "${projectDir}\\out\\install\\${name}",
+      "cmakeCommandArgs": "-DCMAKE_PREFIX_PATH=\"C:\\install\\msvc2022\\x64\\wt_3.7.1_prefix\"",
+      "buildCommandArgs": "",
+      "ctestCommandArgs": "",
+      "variables": [
+        {
+          "name": "BUILD_PARALLEL",
+          "value": "/MP",
+          "type": "STRING"
+        }
+      ]
+    },
+    {
+      "name": "x64-Release",
+      "configurationType": "Release",
+      ...
+    }
+  ]
+}
+```
+You will need to adjust the `prefix` path to suite where you chose to install the libraries to.
+
+In MSVC, you should be able to then compile and run the code.  If you opened from the base directory of the InterSpec code, you can access the GUI at http://localhost:8080, by default.  You could instead open the `target\wxWidgets` directory, in which case lets you build the app form of the application.
+
+
+## Manually building dependencies for Windows
+
+The Windows release build of InterSpec uses either [wxWidgets](https://www.wxwidgets.org) (default) or [Electron](https://electronjs.org/) to render the app contents.
+
+
+For Electron (https://electronjs.org/) to render the application; the InterSpec build scripts require using Node.js and NPM to build things; these can downloaded from https://nodejs.org/en/download/.
 During the installation of Node.js, you can choose to install the [Chocolatey](https://chocolatey.org/) package manager; this will install the necessary Visual Studio command line compiler tools to install things (i.e., you dont need a full install of MSVC).
 You also need to install CMake, most easily from https://cmake.org/download/.
 
 The InterSpec build files are setup to use the MSVC static runtime - it is highly suggested to compile boost, Wt, zlib and optionally Ceres Solver and Eigen, from from source, following these instructions.
+
+If you wish to only build the `wxWidgets` version of the app, you can choose to not use or install NPM or Electron in the below instructions.  Similarly, if you are only targeting `Electron`, you dont need wxWidgets.
 
 
 From the Visual Studio 2022 "x64 Native Tools Command Prompt":
@@ -221,7 +299,7 @@ cd boost_1_78_0
 bootstrap.bat
 ```
 
-It shouldnt be necassary, but if you have trouble building boost, you may need to edit project-config.jam to change
+It shouldnt be necessary, but if you have trouble building boost, you may need to edit project-config.jam to change
 ```bash
 using msvc ;
 ```
@@ -333,8 +411,11 @@ copy packages\Microsoft.Web.WebView2.1.0.705.50\build\native\include\WebView2.h 
 copy packages\Microsoft.Web.WebView2.1.0.705.50\build\native\include\WebView2EnvironmentOptions.h "%MY_PREFIX%\include"
 ```
 
+
+
+
 # Building dependencies on Linux 
-The commands to build both the prerequists and InterSpec on Ubuntu 18.04 are below.
+The commands to build both the prerequisites and InterSpec on Ubuntu 18.04 are below.
 
 These commands build boost, Wt, and zlib and install them to a non-system directory prefix so they wont interfere with any other builds, or use the system package managers packages that may not be the exact version of Wt needed.
 
