@@ -230,7 +230,7 @@ void batch_test()
     if( age > 10*SandiaDecay::year )
       age = 10*SandiaDecay::year;
     
-    const bool parent_act = 1.0E-3*SandiaDecay::curie; //Will get divided out, doesnt matter, as long as not too small.
+    const double parent_act = 1.0E-3*SandiaDecay::curie; //Will get divided out, doesnt matter, as long as not too small.
     
     SandiaDecay::NuclideMixture mix;
     mix.addAgedNuclideByActivity( nuc, parent_act, age );
