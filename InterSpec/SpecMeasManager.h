@@ -196,7 +196,16 @@ public:
   bool handleMultipleDrfCsv( std::istream &input,
                              const std::string &displayName,
                              const std::string &fileLocation );
-  
+ 
+  /** Reads in GammaQuant CSV of detector efficiencies.
+   
+   The first cell must be "Detector ID", then rows through "Coefficient h".
+   Each column is a different detector, with the first column being the labels ("Detector ID", "Calibration Geometry",
+   "Comments", ..., "Coefficient h").
+   */
+  bool handleGammaQuantDrfCsv( std::istream &input,
+                             const std::string &displayName,
+                             const std::string &fileLocation );
   
   /** Reads a CALp file from input stream and then either applies the CALp to current spectra, or prompts the user how to apply it.
    Function may return asynchronously to the CALp being applied, as the application may prompt user for options/input.

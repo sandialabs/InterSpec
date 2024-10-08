@@ -2326,6 +2326,13 @@ bool SpecMeasManager::handleNonSpectrumFile( const std::string &displayName,
     return true;
   }
   
+  // Check if this is TSV/CSV file containing multiple DRFs
+  if( header_contains( "Detector ID" )
+     && handleGammaQuantDrfCsv(infile, displayName, fileLocation) )
+  {
+    delete dialog;
+    return true;
+  }
   
   // Check if this is a PeakEasy CALp file
   if( currdata
@@ -2508,6 +2515,34 @@ bool SpecMeasManager::handleMultipleDrfCsv( std::istream &input,
   
   return true;
 }//bool handleMultipleDrfCsv( std::istream &input, SimpleDialog *dialog )
+
+
+bool SpecMeasManager::handleGammaQuantDrfCsv( std::istream &input,
+                           const std::string &displayName,
+                           const std::string &fileLocation )
+{
+  vector<string> warnings;
+  vector<shared_ptr<DetectorPeakResponse>> drfs;
+  
+  try
+  {
+    DetectorPeakResponse::parseGammaQuantRelEffDrfCsv( input, drfs, warnings );
+  }catch( std::exception &e )
+  {
+    return false;
+  }
+  
+  if( drfs.empty() )
+    return false;
+  
+  std::function<void()> saveDrfFile;
+  WString dialogmsg = WString::tr( (drfs.size()==1) ? "smm-file-is-drf" : "smm-file-is-multi-drf");
+
+  string creditsHtml;
+  DrfSelect::createChooseDrfDialog( drfs, dialogmsg, creditsHtml, saveDrfFile );
+  
+  return true;
+}//handleGammaQuantDrfCsv(...)
 
 
 bool SpecMeasManager::handleCALpFile( std::istream &infile, SimpleDialog *dialog, bool autoApply )

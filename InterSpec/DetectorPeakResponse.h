@@ -324,7 +324,7 @@ public:
                                       const float upperEnergy,
                                       const EffGeometryType geometry_type );
   
-  /** Makes a callable funtion from the provided mathematical formula
+  /** Makes a callable function from the provided mathematical formula
    
    @param fcn Mathematical formula to evaluate.  Example: "exp( 1.2 + 3.2*ln(x) + -2.1*ln(x)^2 )"
    @param isMeV Whether units are in MeV, or keV
@@ -416,6 +416,16 @@ public:
   static void parseMultipleRelEffDrfCsv( std::istream &input,
                                         std::vector<std::string> &credits,
                                         std::vector<std::shared_ptr<DetectorPeakResponse>> &drfs );
+  
+  /** Parses detector efficiency function originating from GammaQuant.
+   These detector efficiency functions are defined in a column format.
+   A major limitation is that no CSV cell may have a new-line in it.
+   
+   Throws std::exception on format error, or now det eff functions found
+   */
+  static void parseGammaQuantRelEffDrfCsv( std::istream &input,
+                                        std::vector<std::shared_ptr<DetectorPeakResponse>> &drfs,
+                                          std::vector<std::string> &warnings );
   
   
   /** Creates a DetectorPeakResponse from "App URL" data.

@@ -1272,6 +1272,293 @@ void DetectorPeakResponse::parseMultipleRelEffDrfCsv( std::istream &input,
 }//parseMultipleRelEffDrfCsv(...)
 
 
+
+void DetectorPeakResponse::parseGammaQuantRelEffDrfCsv( std::istream &input,
+                                      std::vector<std::shared_ptr<DetectorPeakResponse>> &drfs,
+                                      std::vector<std::string> &warnings )
+{
+  drfs.clear();
+  warnings.clear();
+  
+  const std::streampos start_pos = input.tellg();
+  
+  try
+  {
+    string line;
+    
+    // Allow for some empty lines at the top
+    while( SpecUtils::safe_get_line( input, line, 128*1024 ) )
+    {
+      SpecUtils::trim( line );
+      if( line.empty() || (line[0] == '#') )
+        continue;
+      break;
+    }
+    
+    if( line.empty() )
+      throw runtime_error( "No content" );
+    
+    size_t row_num = 0;
+    vector<string> detector_id;
+    split_escaped_csv( detector_id, line );
+    const size_t num_col = detector_id.size();
+    if( (num_col < 2) || !SpecUtils::icontains(detector_id[0], "Detector ID") )
+      throw runtime_error( "First column must be row headers, and start with \"Detector ID\"" );
+    
+    // Define a utility lambda to help get each line
+    auto get_row = [num_col, &line, &row_num, &input, &warnings]( const bool is_empty, const string &expected_title )
+      -> vector<string> {
+      row_num += 1;
+      if( !SpecUtils::safe_get_line( input, line, 128*1024 ) )
+        throw runtime_error( "Not enough rows - only " + std::to_string(row_num) + " rows." );
+      
+      // TODO: check if last cell has newline in it, and if so, get the next line, and append to current.
+        
+      SpecUtils::trim( line );
+      vector<string> cols;
+      split_escaped_csv( cols, line );
+        
+      if( !is_empty && (cols.size() != num_col) )
+        throw runtime_error( "Inconsistent number of columns on line " + std::to_string(row_num)
+                            + " - expected " + std::to_string(num_col) + " and received "
+                            + std::to_string(cols.size()) );
+        
+      SpecUtils::ireplace_all(cols[0], "\n", " ");
+      SpecUtils::ireplace_all(cols[0], "\r", " ");
+      SpecUtils::ireplace_all(cols[0], "\t", " ");
+      while( SpecUtils::icontains(cols[0], "  ") )
+        SpecUtils::ireplace_all(cols[0], "  ", " ");
+      
+      if( !SpecUtils::icontains(cols[0], expected_title) )
+        warnings.push_back( "Warning: row " + std::to_string(row_num)
+                           + " doesnt have expected header '" + expected_title + "'" );
+        
+      return cols;
+    };//get_row lambda
+    
+    
+    const vector<string> calibration_geometry = get_row(false, "Calibration Geometry");
+    const vector<string> comments = get_row(false, "Comments");
+    const vector<string> is_far_field = get_row(false, "Far-Field Point Source Eff Cal?");
+    get_row(true, "");
+    const vector<string> det_radius = get_row(false, "Detector Radius - a (cm)");
+    const vector<string> distance = get_row(false, "Source to Detector Face - d (cm)");
+    get_row(false, "Source Radius - r (cm)"); //We dont use this info, yet
+    const vector<string> detector_setbacks = get_row(false, "Detector Setback (cm)");  //We dont use this info, yet
+    get_row(false, "Detector Area - (cm2)");
+    get_row(false, "Source to Crystal Face - d (cm)");
+    get_row(false, "Relative Efficiency (%)");
+    get_row(true, "");
+    get_row(true, "EFFICIENCY CALIBRATION AND CURVE FIT INFORMATION");
+    const vector<string> lower_energy = get_row(false, "Lower Energy Cutoff (keV)");
+    const vector<string> upper_energy = get_row(false, "Upper Energy Cutoff (keV)");
+    get_row(true, "");
+    get_row(true, "y = exp (a  + b(lnx) + c(lnx)2 + d(lnx)3 + e(lnx)4 + f(lnx)5 + g(lnx)6 + h(lnx)7)");
+    const vector<string> keV_or_MeV = get_row(false, "keV or MeV");
+    const vector<string> coef_a = get_row(false, "Coefficient a");
+    const vector<string> coef_b = get_row(false, "Coefficient b");
+    const vector<string> coef_c = get_row(false, "Coefficient c");
+    const vector<string> coef_d = get_row(false, "Coefficient d");
+    const vector<string> coef_e = get_row(false, "Coefficient e");
+    const vector<string> coef_f = get_row(false, "Coefficient f");
+    vector<string> coef_g, coef_h;
+    try
+    {
+      coef_g = get_row(false, "Coefficient g");
+      coef_h = get_row(false, "Coefficient h");
+    }catch( std::exception & )
+    {
+      //G and H arent used that much anyway
+    }
+    
+    for( size_t col = 1; col < num_col; ++col )
+    {
+      const string &name = detector_id[col];
+      if( name.empty() )
+        continue;
+      
+      const string &comment = comments[col];
+      
+      const string &far_field = is_far_field[col];
+      if( far_field.empty() )
+        continue;
+      
+      const bool is_fixed_geom = SpecUtils::iequals_ascii( far_field, "No" );
+      const bool is_far_field_val = SpecUtils::iequals_ascii( far_field, "Yes" );
+      
+      if( !is_fixed_geom && !is_far_field_val )
+      {
+        warnings.push_back( "Far-Field row of column " + std::to_string(col) 
+                           + " should be either Yes or No, was '" + far_field + "'" );
+        continue;
+      }
+      
+      double det_rad = 0, src_to_det_face = 0, det_setback = 0, low_energy = 0, up_energy = 0;
+      
+      const string &det_rad_str = det_radius[col];
+      if( !SpecUtils::parse_double(det_rad_str.c_str(), det_rad_str.size(), det_rad) )
+      {
+        warnings.push_back( "Failed to parse detector radius, '" + det_rad_str
+                           + "', to a number, skipping detector '" + name + "'" );
+        continue;
+      }
+      det_rad *= PhysicalUnits::cm;
+      if( det_rad < 0.0 )
+      {
+        warnings.push_back( "Detector radius negative ('" + det_rad_str
+                           + "') - skipping detector '" + name + "'" );
+        continue;
+      }
+      
+      const string &dist = distance[col];
+      if( !SpecUtils::parse_double(dist.c_str(), dist.size(), src_to_det_face) )
+      {
+        warnings.push_back( "Failed to parse distance to detector, '" + dist
+                           + "', to a number, skipping detector '" + name + "'" );
+        continue;
+      }
+      src_to_det_face *= PhysicalUnits::cm;
+      
+      if( src_to_det_face < 0.0 )
+      {
+        warnings.push_back( "Src to face distance, '" + dist
+                           + "', is negative - skipping detector '" + name + "'" );
+        continue;
+      }
+        
+      const string &setback = detector_setbacks[col];
+      if( !SpecUtils::parse_double(setback.c_str(), setback.size(), det_setback) )
+      {
+        warnings.push_back( "Failed to parse detector setback, '" + setback
+                           + "', to a number, skipping detector '" + name + "'" );
+        continue;
+      }
+        
+      
+      const string &low_energy_str = lower_energy[col];
+      if( !SpecUtils::parse_double(low_energy_str.c_str(), low_energy_str.size(), low_energy) )
+      {
+        low_energy = 0;
+        warnings.push_back( "Failed to parse lower energy, '" + low_energy_str
+                           + "', to a number, for detector '" + name + "'" );
+        //continue;
+      }
+      
+      const string &up_energy_str = upper_energy[col];
+      if( !SpecUtils::parse_double(up_energy_str.c_str(), up_energy_str.size(), up_energy) )
+      {
+        up_energy = 0;
+        low_energy = 0;
+        warnings.push_back( "Failed to parse upper energy, '" + up_energy_str
+                           + "', to a number, for detector '" + name + "'" );
+        //continue;
+      }
+        
+      const string &keV_or_MeV_str = keV_or_MeV[col];
+      const bool is_keV = SpecUtils::iequals_ascii(keV_or_MeV_str, "keV");
+      const bool is_MeV = SpecUtils::iequals_ascii(keV_or_MeV_str, "MeV");
+      if( !is_keV && !is_MeV )
+      {
+        warnings.push_back( "The keV/MeV field for detector '" + name + "', is invalid, '" 
+                           + keV_or_MeV_str+ "' (must be either keV or MeV_ - skipping detector" );
+        continue;
+      }
+      const double energy_units = is_keV ? PhysicalUnits::keV : PhysicalUnits::MeV;
+      
+      vector<string> coef_strs;
+      coef_strs.push_back( coef_a[col] );
+      coef_strs.push_back( coef_b[col] );
+      coef_strs.push_back( coef_c[col] );
+      coef_strs.push_back( coef_d[col] );
+      coef_strs.push_back( coef_e[col] );
+      coef_strs.push_back( coef_f[col] );
+      if( (coef_g.size() > col) && (!coef_g[col].empty()) )
+      {
+        coef_strs.push_back( coef_g[col] );
+        if( (coef_h.size() > col) && (!coef_h[col].empty()) )
+          coef_strs.push_back( coef_h[col] );
+      }//if( we have coef g or h )
+      
+      bool success_parse_all_coef = true;
+      size_t last_non_zero_coef = 0;
+      vector<float> coef_values;
+      for( size_t coef_index = 0; coef_index < coef_strs.size(); ++coef_index )
+      {
+        const string &str = coef_strs[coef_index];
+        float coef;
+        if( !SpecUtils::parse_float(str.c_str(), str.size(), coef) )
+        {
+          success_parse_all_coef = false;
+          break;
+        }
+        
+        coef_values.push_back( coef );
+        
+        if( coef != 0.0f )
+          last_non_zero_coef = coef_index;
+      }//for( loop over coefficients )
+        
+      if( !success_parse_all_coef )
+      {
+        warnings.push_back( "Failed to parse all eqn coefficients for detector '" + name + "' - skipping detector" );
+        continue;
+      }
+      
+      if( last_non_zero_coef < 1 )
+      {
+        warnings.push_back( "No non-zero eqn coefficients for detector '" + name + "' - skipping detector" );
+        continue;
+      }
+      
+      coef_values.resize( last_non_zero_coef + 1 );
+      
+      EffGeometryType geometry_type = EffGeometryType::FarField;
+      if( is_fixed_geom )
+      {
+        if( SpecUtils::icontains(name, "Bq-cm2") )
+        {
+          geometry_type = EffGeometryType::FixedGeomActPerCm2;
+        }else if( SpecUtils::icontains(name, "OnContact") || SpecUtils::icontains(comment, "OnContact") )
+        {
+          geometry_type = EffGeometryType::FixedGeomTotalAct;
+        }else
+        {
+          warnings.push_back( "Couldnt determine fixed-geometry type for detector '" + name + "' - skipping detector" );
+          continue;
+        }
+      }//if( is_fixed_geom )
+      
+      try
+      {
+        auto det = make_shared<DetectorPeakResponse>();
+        det->fromExpOfLogPowerSeriesAbsEff( coef_values, {}, src_to_det_face, 2*det_rad,
+                                           energy_units, low_energy, up_energy, geometry_type );
+        if( !det->isValid() )
+          throw runtime_error( "Not valid" );
+        
+        det->setName( name );
+        det->setDescription( comment );
+        
+        drfs.push_back( det );
+      }catch( std::exception &e )
+      {
+        warnings.push_back( "Detector '" + name + "' was invalid ('" + string(e.what())
+                           + "') - skipping detector" );
+      }
+    }//for( size_t col = 1; col < num_col; ++col )
+    
+    if( drfs.empty() )
+      throw runtime_error( "No valid detector efficiencies found." );
+  }catch( std::exception &e )
+  {
+    cerr << "Failed to parse GammaQuant Det Effs: " << e.what() << endl;
+    input.seekg( start_pos, ios::beg );
+    input.clear( ios::failbit );
+    throw;
+  }
+}//void DetectorPeakResponse::parseGammaQuantRelEffDrfCsv(...)
+
+
 std::shared_ptr<DetectorPeakResponse> DetectorPeakResponse::parseFromAppUrl( const std::string &url_query )
 {
   auto drf = make_shared<DetectorPeakResponse>();
