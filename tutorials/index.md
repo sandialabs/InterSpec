@@ -1,5 +1,14 @@
 # Tutorials
 
+## Batch Analysis (Oct 2024)
+When you have many similar spectra to fit peaks and/or activities/shielding with, 
+there is now a batch analysis tool starting with [InterSpec v1.0.13_rc2](https://github.com/sandialabs/InterSpec/releases/tag/v1.0.13_rc2), or if you are on Windows, the [Bleeding Edge build](https://github.com/sandialabs/InterSpec/releases/tag/bleeding-edge) is recommended.  
+
+This presentation and example spectra will get you started using this capability.
+* [20240930_InterSpec_batch_processing_instructions_UUR.pptx](batch_analysis/20240930_InterSpec_batch_processing_instructions_UUR.pptx) (8 MB)
+* [in-situ_example.zip](batch_analysis/in-situ_example.zip)
+
+
 ## Newer features (Sep 2024)
 This presentation briefly covers some of the more useful features added to InterSpec over the last couple years.
 * [20240912_InterSpec_newer_features.pptx](https://github.com/sandialabs/InterSpec/releases/download/20240911/20240912_InterSpec_newer_features.pptx) (110 MB)
