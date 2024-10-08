@@ -1538,6 +1538,7 @@ void DetectorPeakResponse::parseGammaQuantRelEffDrfCsv( std::istream &input,
         
         det->setName( name );
         det->setDescription( comment );
+        det->setDrfSource( DetectorPeakResponse::DrfSource::UserImportedIntrisicEfficiencyDrf );
         
         drfs.push_back( det );
       }catch( std::exception &e )

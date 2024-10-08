@@ -2497,6 +2497,18 @@ void fit_model( const std::string wtsession,
       {
         results->errormsgs.push_back( e.what() );
       }
+      
+      // Check if background subtraction is enabled, but no peaks actually background subtracted
+      assert( results->peak_calc_details );
+      if( results->peak_calc_details && chi2Fcn->options().background_peak_subtract )
+      {
+        size_t num_back_sub_peaks = 0;
+        for( const GammaInteractionCalc::PeakDetail &p : *results->peak_calc_details )
+          num_back_sub_peaks += (p.backgroundCounts > 0.0f);
+        if( num_back_sub_peaks == 0 )
+          results->errormsgs.push_back( "Background peak subtraction requested, but no background"
+                                       " peak overlapped a foreground peak.");
+      }//if( background peak subtraction selected )
     }// end logging detailed info, we'll later use to template reports
   }catch( GammaInteractionCalc::ShieldingSourceChi2Fcn::CancelException &e )
   {

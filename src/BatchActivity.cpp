@@ -805,6 +805,17 @@ BatchActivityFitResult fit_activities_in_file( const std::string &exemplar_filen
     
     const set<int> &samples = (wanted == SpecUtils::SourceType::Foreground) ? foreground_samples 
                                                                             : background_samples;
+    
+    // If a file only has a single sample in it, and its marked background, but we are requesting
+    //  foreground, use the single sample.  This happens, for example, when fitting peaks in a
+    //  background file, where the sole spectrum has been marked as background.
+    if( samples.empty()
+       && (wanted == SpecUtils::SourceType::Foreground)
+       && (background_samples.size() == 1) )
+    {
+      return *begin(background_samples);
+    }
+    
     if( samples.size() != 1 )
       throw runtime_error( "Sample number to use could not be uniquely identified." );
     
@@ -1295,19 +1306,27 @@ BatchActivityFitResult fit_activities_in_file( const std::string &exemplar_filen
     return result;
   }
 
-  // Check that if options said to use background-subtraction, that we actually can.
-  //  I'm a little mixed here - perhaps if no background is specified, we should just ignore this,
-  //  or just create a warning???
-  //  For now - lets just warn.
   shared_ptr<const deque<std::shared_ptr<const PeakDef>>> background_peaks;
   if( background 
      && result.m_background_peak_fit_results 
      && !options.hard_background_sub
      && result.m_background_peak_fit_results->success )
   {
+    fit_options.background_peak_subtract = true; //Original exemplar may not have used background subtraction
     background_peaks = make_shared<deque<shared_ptr<const PeakDef>>>(result.m_background_peak_fit_results->fit_peaks);
   }
   
+  
+  // Check that if options said to use background-subtraction, that we actually can.
+  //  I'm a little mixed here - perhaps if no background is specified, we should just ignore this,
+  //  or just create a warning???
+  //  For now - lets just warn if background subtraction isnt effective
+  if( result.m_background_peak_fit_results 
+     && !options.hard_background_sub
+     && (!background_peaks || background_peaks->empty()) )
+  {
+    result.m_warnings.push_back( "No background peaks fit, although background subtraction requested" );
+  }//if( result.m_background_peak_fit_results )
   
   
   if( fit_options.background_peak_subtract && (!background_peaks || background_peaks->empty()) )
