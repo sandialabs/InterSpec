@@ -47,6 +47,7 @@
 #include "InterSpec/BatchCommandLine.h"
 #endif
 
+#include "InterSpec/CoincidenceDev.h"
 
 int main( int argc, char **argv )
 {
@@ -296,7 +297,10 @@ int main( int argc, char **argv )
     return BatchCommandLine::run_batch_command( argc, argv );
 #endif
   
+  // Just run the coincidence dev code
+  return CoincidenceDev::run_coinc_dev_code();
   
+  /*
   // Start the InterSpec server
   const int rval = InterSpecServer::start_server( argv[0], user_data_dir.c_str(),
                                                  docroot.c_str(),
@@ -312,6 +316,7 @@ int main( int argc, char **argv )
             << std::endl;
   
   return InterSpecServer::wait_for_shutdown();
+   */
 }//int main( int argc, const char * argv[] )
 
 

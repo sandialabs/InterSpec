@@ -511,11 +511,9 @@ std::vector<PeakDef> PeakModel::csv_to_candidate_fit_peaks(
   typedef boost::tokenizer<boost::escaped_list_separator<char> > Tokeniser;
   boost::escaped_list_separator<char> separator("\\",",\t", "\"");
   
-  if( !meas || !meas->gamma_counts() || meas->gamma_counts()->size() < 7 )
-    throw runtime_error( "input data invalid" );
-  
-  const float minenergy = meas->gamma_energy_min();
-  const float maxenergy = meas->gamma_energy_max();
+  const bool valid_meas = (meas && meas->gamma_counts() && (meas->gamma_counts()->size() >= 7));
+  const float minenergy = valid_meas ? meas->gamma_energy_min() : -1000.0f;
+  const float maxenergy = valid_meas ? meas->gamma_energy_max() : 12000.0f;
   
   
   string line;
@@ -666,8 +664,9 @@ std::vector<PeakDef> PeakModel::csv_to_candidate_fit_peaks(
           throw runtime_error( "ROI range invalid." );
         
         peak.continuum()->setRange( roi_lower, roi_upper );
-        peak.continuum()->calc_linear_continuum_eqn( meas, centroid, roi_lower, roi_upper, 3, 3 );
-      }else
+        if( valid_meas )
+          peak.continuum()->calc_linear_continuum_eqn( meas, centroid, roi_lower, roi_upper, 3, 3 );
+      }else if( valid_meas )
       {
         double lowerEnengy, upperEnergy;
         findROIEnergyLimits( lowerEnengy, upperEnergy, peak, meas );
