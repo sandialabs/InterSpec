@@ -316,7 +316,8 @@ void fit_activities_in_files( const std::string &exemplar_filename,
                  = fit_activities_in_file( exemplar_filename, exemplar_sample_nums,
                                      cached_exemplar_n42, filename, options );
     
-    if( fit_results.m_result_code == BatchActivityFitResult::ResultCode::CouldntOpenExemplar )
+    if( (fit_results.m_result_code == BatchActivityFitResult::ResultCode::CouldntOpenExemplar)
+       || (fit_results.m_result_code == BatchActivityFitResult::ResultCode::CouldntOpenBackgroundFile) )
       throw runtime_error( fit_results.m_error_msg );
     
     if( !cached_exemplar_n42 )

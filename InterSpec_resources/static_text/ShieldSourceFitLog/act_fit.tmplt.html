@@ -98,6 +98,7 @@
 
     <div id="GeneralInfo">
     <ul style="list-style-type: none; padding: 0; margin: 0;">
+{% if exists("foreground") %}
     <li>
         {% if exists("background") %} Foreground: {% endif %}
         <table class="InfoTable">
@@ -179,7 +180,9 @@
             {% endif %}
         </table>
     </li>
-    {% if exists("background") %} 
+  {% endif %} <!-- if exists("foreground") -->
+
+  {% if exists("background") %} 
     <li>
         Background:
         <table class="InfoTable">
@@ -278,7 +281,6 @@
         Branching ratios are being corrected for nuclide decay during measurement.
     </li>    
     {% endif %} <!-- if ActShieldFitSetup.FitOptions.DecayDuringMeasurement -->
-    {% endif %} <!-- if HasFitResults -->
 
     {% if exists("background") %}
       <li>
@@ -288,7 +290,8 @@
       Background peaks are not being subtracted.
       {% endif %}
       </li>
-    {% endif %}
+    {% endif %} <!--if exists("background") -->
+    {% endif %} <!-- if HasFitResults -->
 
     </ul>
     </div> <!-- <div id="GeneralInfo"> -->
@@ -450,6 +453,7 @@ Sources:
 
   </div>  <!-- <div id="results" style="margin-top: 15px"> -->
 
+{% if exists("foreground") %}
   <script>
     let spec_chart_specchart = new SpectrumChartD3( 'specchart',  {
     'title': '', 'xlabel' : 'Energy (keV)', 'ylabel': 'Counts'
@@ -469,6 +473,7 @@ Sources:
       spec_chart_specchart.setData( spectrum_json );
       spec_chart_specchart.setLogY( true );
   </script>
+{% endif %} <!-- if exists("foreground") --> 
 
 {% if exists("Shieldings") %}
 {% if existsIn(Shieldings,"Shields") %}

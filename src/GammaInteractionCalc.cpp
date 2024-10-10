@@ -2693,7 +2693,7 @@ std::pair<std::shared_ptr<ShieldingSourceChi2Fcn>, ROOT::Minuit2::MnUserParamete
   }//for(...)
   
   if( peaks.empty() )
-    throw runtime_error( "There are not peaks selected for the fit" );
+    throw runtime_error( "There are no peaks selected for the fit" );
   
   double liveTime = foreground ? foreground->live_time() : 1.0f;
   double realTime = foreground ? foreground->real_time() : 0.0f;

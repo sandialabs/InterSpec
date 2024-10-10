@@ -2729,14 +2729,14 @@ std::string PeakDef::gaus_peaks_to_json(const std::vector<std::shared_ptr<const 
         //  And somewhat surprisingly, rounding causes visual artifacts of the continuum when
         //  the 'continuumEnergies' and 'continuumCounts' arrays are used, which are only accurate
         //  to float levels.  So we will increase accuracy of the 'answer' stream here, which appears
-        //  to be enough to avoid these artifcats, but also commented out is how we could compute
+        //  to be enough to avoid these artifacts, but also commented out is how we could compute
         //  to double precision to match what happens in the JS.
         const auto oldprecision = answer.precision();  //probably 6 always
         answer << std::setprecision(std::numeric_limits<float>::digits10 + 1);
         
         answer << "," << q << "continuumEnergies" << q << ":[";
         for (size_t i = firstbin; i <= lastbin; ++i)
-          answer << (i ? "," : "") << foreground->gamma_channel_lower(i);
+          answer << ((i!=firstbin) ? "," : "") << foreground->gamma_channel_lower(i);
         answer << "]," << q << "continuumCounts" << q << ":[";
         
         /*
@@ -2759,14 +2759,14 @@ std::string PeakDef::gaus_peaks_to_json(const std::vector<std::shared_ptr<const 
               energy = SpecUtils::fullrangefraction_energy( i, coefs, nchannel, dev_pairs );
             else
               energy = SpecUtils::polynomial_energy( i, coefs, dev_pairs );
-            answer << (i ? "," : "") << energy;
+            answer << ((i!=firstbin) ? "," : "") << energy;
           }
           answer << "]," << q << "continuumCounts" << q << ":[";
         }else
         {
           answer << "," << q << "continuumEnergies" << q << ":[";
           for (size_t i = firstbin; i <= lastbin; ++i)
-            answer << (i ? "," : "") << foreground->gamma_channel_lower(i);
+            answer << ((i!=firstbin) ? "," : "") << foreground->gamma_channel_lower(i);
           answer << "]," << q << "continuumCounts" << q << ":[";
         }
          */
@@ -2778,7 +2778,7 @@ std::string PeakDef::gaus_peaks_to_json(const std::vector<std::shared_ptr<const 
           const float lower_x = foreground->gamma_channel_lower( i );
           const float upper_x = foreground->gamma_channel_upper( i );
           const float cont_counts = continuum->offset_integral( lower_x, upper_x, foreground );
-          answer << (i ? "," : "") << cont_counts;
+          answer << ((i!=firstbin) ? "," : "") << cont_counts;
         }
         answer << "]";
         
@@ -2809,10 +2809,10 @@ std::string PeakDef::gaus_peaks_to_json(const std::vector<std::shared_ptr<const 
 
         answer << "," << q << "continuumEnergies" << q << ":[";
         for (size_t i = firstbin; i <= lastbin; ++i)
-          answer << (i ? "," : "") << hist->gamma_channel_lower(i);
+          answer << ((i!=firstbin) ? "," : "") << hist->gamma_channel_lower(i);
         answer << "]," << q << "continuumCounts" << q << ":[";
         for (size_t i = firstbin; i <= lastbin; ++i)
-          answer << (i ? "," : "") << hist->gamma_channel_content(i);
+          answer << ((i!=firstbin) ? "," : "") << hist->gamma_channel_content(i);
         answer << "]";
         
         answer << std::setprecision(9);
