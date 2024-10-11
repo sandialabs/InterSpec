@@ -2506,8 +2506,8 @@ bool SpecMeasManager::handleMultipleDrfCsv( std::istream &input,
   string creditsHtml;
   if( credits.size() )
   {
-    for( string &s : credits )
-      creditsHtml += "<div>" + s + "</div>";
+    for( const string &s : credits )
+      creditsHtml += "<div>" + Wt::Utils::htmlEncode(s) + "</div>";
   }//if( credits.size() )
   
   
@@ -2521,12 +2521,12 @@ bool SpecMeasManager::handleGammaQuantDrfCsv( std::istream &input,
                            const std::string &displayName,
                            const std::string &fileLocation )
 {
-  vector<string> warnings;
+  vector<string> credits, warnings;
   vector<shared_ptr<DetectorPeakResponse>> drfs;
   
   try
   {
-    DetectorPeakResponse::parseGammaQuantRelEffDrfCsv( input, drfs, warnings );
+    DetectorPeakResponse::parseGammaQuantRelEffDrfCsv( input, drfs, credits, warnings );
   }catch( std::exception &e )
   {
     return false;
@@ -2535,10 +2535,37 @@ bool SpecMeasManager::handleGammaQuantDrfCsv( std::istream &input,
   if( drfs.empty() )
     return false;
   
+  // Print out as URL - for version of InterSpec pre 20241010
+  //cout << "\n\n\n";
+  //for( const auto &drf : drfs )
+  //  cout << drf->name() << "    UrlEncoded  " << drf->toAppUrl() << endl;
+  //cout << "-------- done ---------" << endl;
+  
+  
   std::function<void()> saveDrfFile;
   WString dialogmsg = WString::tr( (drfs.size()==1) ? "smm-file-is-drf" : "smm-file-is-multi-drf");
 
   string creditsHtml;
+  if( credits.size() )
+  {
+    for( const string &s : credits )
+    {
+      if( !s.empty() )
+        creditsHtml += "<div>" + Wt::Utils::htmlEncode(s) + "</div>";
+    }
+  }//if( credits.size() )
+  
+  if( !warnings.empty() )
+  {
+    if( !creditsHtml.empty() )
+      creditsHtml += "<br />";
+    for( const string &s : warnings )
+    {
+      if( !s.empty() )
+        creditsHtml += "<div style=\"color: red\"><b>Warning</b>: " + Wt::Utils::htmlEncode(s) + "</div>";
+    }
+  }//if( !warnings.empty() )
+  
   DrfSelect::createChooseDrfDialog( drfs, dialogmsg, creditsHtml, saveDrfFile );
   
   return true;
