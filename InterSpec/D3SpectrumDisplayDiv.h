@@ -189,6 +189,9 @@ public:
    */
   void setLogYAxisMin( const double ymin );
   
+  /** Returns the `m_logYAxisMin` value */
+  double logYAxisMin() const;
+  
   // These 3 functions retrieve the corresponding info from the model.
   std::shared_ptr<const SpecUtils::Measurement> data()       const;
   std::shared_ptr<const SpecUtils::Measurement> secondData() const;

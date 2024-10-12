@@ -1801,8 +1801,13 @@ void D3SpectrumDisplayDiv::setLogYAxisMin( const double ymin )
     doJavaScript( m_jsgraph + ".setLogYAxisMin(" + std::to_string(ymin) + ");" );
   
   scheduleUpdateForeground(); //JIC, the JS setPeakLabelRotation(...) wont cause a re-draw
-}//void setPeakLabelRotation( const double rotation )
+}//void setLogYAxisMin( const double ymin )
 
+
+double D3SpectrumDisplayDiv::logYAxisMin() const
+{
+  return m_logYAxisMin;
+}
 
 void D3SpectrumDisplayDiv::saveChartToImg( const std::string &filename, const bool asPng )
 {

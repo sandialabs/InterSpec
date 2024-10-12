@@ -155,6 +155,7 @@ protected:  /* Command methods (complete actions on Spectrum, cannot be used wit
       ClearVarCommand,
       SetEnergyRangeCommand,
       SetYaxisRangeCommand,
+      SetLogYAxisMinCommand,
       SearchPeakCommand,
       DeletePeakCommand,
       RefitPeakCommand,
@@ -175,6 +176,7 @@ protected:  /* Command methods (complete actions on Spectrum, cannot be used wit
     std::string lighten       ( const std::string& arguments );
     std::string setEnergyRange( const std::string& arguments );
     std::string setYRange     ( const std::string& arguments );
+    std::string setLogYAxisMin( const std::string& arguments );
     std::string searchforPeak ( const std::string& arguments );
     std::string deletePeak    ( const std::string& arguments );
     std::string refitPeak     ( const std::string& arguments );

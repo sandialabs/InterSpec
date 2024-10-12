@@ -594,6 +594,9 @@ public:
    (e.g., a negative lower counts was specified, but its currently log-scale)
    */
   bool setYAxisRange( float lower_counts, float upper_counts );
+
+  /** When displaying the spectrum in log-y, sets the lower y-axis value to show, if there are channels with zero counts. */
+  bool setLogYAxisMin( const double lower_value );
   
   //displayedSpectrumRange(): Grab the ranges in y and y that are currently
   //  displayed to the user.
