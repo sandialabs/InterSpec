@@ -38,6 +38,10 @@
 
 #include "target/electron/ElectronUtils.h"
 
+#if( USE_BATCH_TOOLS )
+#include "InterSpec/BatchCommandLine.h"
+#endif
+
 //A good, simple, N-API tutorial is at:
 //  https://blog.atulr.com/node-addon-guide/
 
@@ -517,6 +521,43 @@ namespace InterSpecAddOn
     return Napi::Boolean::New( env, success );
   }//void sendMessageToRenderer( const Napi::CallbackInfo &info )
 
+#if( USE_BATCH_TOOLS )
+  Napi::Number runBatchAnalysis( const Napi::CallbackInfo &info )
+  {
+    Napi::Env env = info.Env();
+
+
+    if( info.Length() != 1 || !info[0].IsArray() )
+    {
+      Napi::TypeError::New(env, "runBatchAnalysis: Expected one array of strings").ThrowAsJavaScriptException();
+      return Napi::Number();
+    }
+
+    Napi::Array jsArray = info[0].As<Napi::Array>();
+    const uint32_t numargs = jsArray.Length(); 
+    std::vector<std::string> str_args( numargs );
+    std::vector<char *> str_args_ptrs( numargs, nullptr );
+    for( uint32_t i = 0; i < numargs; i++ ) 
+    {
+      Napi::Value element = jsArray.Get(i);
+
+      // Check if the element is a string
+      if (!element.IsString()) {
+        Napi::TypeError::New(env, "Array elements must be strings").ThrowAsJavaScriptException();
+        return Napi::Number();
+      }
+
+      str_args[i] = element.ToString();
+      if( str_args[i].empty() )
+        str_args[i] = " ";
+      str_args_ptrs[i] = &(str_args[i][0]);
+    }
+
+    const int rcode = BatchCommandLine::run_batch_command( static_cast<int>(numargs), &(str_args_ptrs[0]) );
+
+    return Napi::Number::New( env, rcode );
+  }//Napi::Number runBatchAnalysis( const Napi::CallbackInfo &info )
+#endif
 
 bool browse_for_directory( const std::string &session_token,
                            const std::string &window_title,
@@ -601,6 +642,10 @@ Napi::Object InitAll(Napi::Env env, Napi::Object exports) {
   
   exports.Set( "sendMessageToRenderer", Napi::Function::New(env, InterSpecAddOn::sendMessageToRenderer));
   
+#if( USE_BATCH_TOOLS )
+  exports.Set( "runBatchAnalysis", Napi::Function::New(env, InterSpecAddOn::runBatchAnalysis));
+#endif
+
   return exports;
 }
 

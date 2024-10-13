@@ -58,6 +58,20 @@ let interspec_url = null;
 
 global.__basedir = __dirname;
 
+// Check if we only want to run 
+for( let path_string of process.argv ) {
+  if( path_string.startsWith("--batch") || path_string.startsWith("/batch") ) {
+    console.log( "Will run batch");
+
+    //TODO: redirect stderr/stdout to console.log
+    const rdcode = interspec.runBatchAnalysis( process.argv );
+
+    console.log( "Batch analysis returned code " + rcode );
+
+    app.quit();
+    return;
+  }
+}
 
 // Keep a global reference of the window objects, if you don't, the window will
 // be closed automatically when the JavaScript object is garbage collected.
