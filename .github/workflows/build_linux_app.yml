@@ -45,12 +45,8 @@ jobs:
         with:
           image: quay.io/pypa/manylinux2014_x86_64
           shell: bash
-          options: --name manylinux-container -v ${{ github.workspace }}/InterSpec_code:/interspec -v ${{runner.temp}}/build_linux_electron/:/build_app -v ${{runner.temp}}/build_working_dir:/build_linux_working_dir -e LEAFLET_KEY="${LEAFLET_KEY}"
+          options: --name manylinux-container -v ${{ github.workspace }}/InterSpec_code:/interspec -v ${{runner.temp}}/build_linux_electron/:/build_app -v ${{runner.temp}}/build_working_dir:/build_linux_working_dir -e LEAFLET_KEY=${{ secrets.LEAFLET_KEY }}
           run: |
-            echo "root file system"
-            ls
-            echo "ls interspec"
-            ls /interspec
             echo "Running Script from within docker"
             /interspec/target/electron/build_linux_app_from_docker.sh /interspec /build_app /build_working_dir
 

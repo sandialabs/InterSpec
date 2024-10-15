@@ -45,17 +45,28 @@ npm install electron --arch=x64
 npm install electron-packager
 
 echo "Will build InterSpec code"
-CMAKE_BUILD_PARALLEL_LEVEL=`nproc` cmake-js --directory ${InterSpecCodePath}/target/electron  --architecture x64 --arch=x64 --CDCMAKE_BUILD_TYPE="Release" --CDInterSpec_FETCH_DEPENDENCIES=ON --CDBUILD_AS_LOCAL_SERVER=OFF --CDCMAKE_SHARED_LINKER_FLAGS="-static-libgcc -static-libstdc++" --CDUSE_LEAFLET_MAP=ON --CDLEAFLET_MAPS_KEY="$LEAFLET_KEY" --CDUSE_REL_ACT_TOOL=ON --out=${CmakeBuildDir} --target install
+CMAKE_BUILD_PARALLEL_LEVEL=`nproc` cmake-js --directory ${InterSpecCodePath}/target/electron  --architecture x64 --arch=x64 --CDCMAKE_BUILD_TYPE="Release" --CDInterSpec_FETCH_DEPENDENCIES=ON --CDBUILD_AS_LOCAL_SERVER=OFF --CDCMAKE_SHARED_LINKER_FLAGS="-static-libgcc -static-libstdc++" --CDUSE_LEAFLET_MAP=ON --CDLEAFLET_MAPS_KEY="${LEAFLET_KEY}" --CDUSE_REL_ACT_TOOL=ON --out=${CmakeBuildDir} --target install
 
 echo "Will package InterSpec code"
 if [ -d "${WorkingDir}}/InterSpec-linux-x64" ]; then
   rm -rf "${WorkingDir}}/InterSpec-linux-x64"
 fi
 
-npm exec electron-packager ${CmakeBuildDir}/app InterSpec --overwrite=true --platform=linux --arch=x64 --protocol=interspec --protocol-name="InterSpec" --icon="${InterSpecCodePath}/target/electron/linux/InterSpec_desktop_icon_256x256.png" --prune=true --out="${WorkingDir}}/"  --ignore=LICENSE.md --ignore=README.md
+echo "ls"
+ls
 
-cp "${InterSpecCodePath}/NOTICE.html" "${WorkingDir}/InterSpec-linux-x64/"
-echo "This is a build of InterSpec for Linux, using InterSpec code git hash ${GIT_HASH}." > "${WorkingDir}/InterSpec-linux-x64/build_information.txt"
-echo "This build is untested - please contact InterSpec@sandia.gov for support." >> "${WorkingDir}/InterSpec-linux-x64/build_information.txt"
+echo "ls ${CmakeBuildDir}"
+ls ${CmakeBuildDir}
 
-zip -r InterSpec_app_Linux_Electron_latest_$(date +%Y-%m-%d).zip InterSpec-linux-x64
+echo "ls ${WorkingDir}"
+ls ${WorkingDir}
+
+
+echo "Not packaging - trying to make sucecssfule cache"
+# npm exec electron-packager ${CmakeBuildDir}/app InterSpec --overwrite=true --platform=linux --arch=x64 --protocol=interspec --protocol-name="InterSpec" --icon="${InterSpecCodePath}/target/electron/linux/InterSpec_desktop_icon_256x256.png" --prune=true --out="${WorkingDir}"  --ignore=LICENSE.md --ignore=README.md
+
+# cp "${InterSpecCodePath}/NOTICE.html" "${WorkingDir}/InterSpec-linux-x64/"
+# echo "This is a build of InterSpec for Linux, using InterSpec code git hash ${GIT_HASH}." > "${WorkingDir}/InterSpec-linux-x64/build_information.txt"
+#echo "This build is untested - please contact InterSpec@sandia.gov for support." >> "${WorkingDir}/InterSpec-linux-x64/build_information.txt"
+
+# zip -r InterSpec_app_Linux_Electron_latest_$(date +%Y-%m-%d).zip InterSpec-linux-x64
