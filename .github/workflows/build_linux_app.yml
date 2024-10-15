@@ -35,8 +35,8 @@ jobs:
         shell: bash
         working-directory: ${{runner.temp}}
         run: |
-        mkdir -p build_linux_electron
-        mkdir -p build_linux_working_dir
+          mkdir -p build_linux_electron
+          mkdir -p build_linux_working_dir
 
       - name: Configure and build in Docker
         uses: docker/run@v1
