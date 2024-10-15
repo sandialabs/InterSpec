@@ -40,7 +40,6 @@ jobs:
 
       - name: Configure and build in Docker
         uses: docker/run@v1
-        working-directory: ${{runner.temp}}
         env:
           LEAFLET_KEY: ${{ secrets.LEAFLET_KEY }}
         with:
