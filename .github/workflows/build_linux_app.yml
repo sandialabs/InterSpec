@@ -44,6 +44,6 @@ jobs:
           LEAFLET_KEY: ${{ secrets.LEAFLET_KEY }}
         with:
           image: quay.io/pypa/manylinux2014_x86_64
-          options: --name manylinux-container -v "${{runner.temp}}/InterSpec_code":/interspec -v "${{runner.temp}}/build_linux_electron"/:/build_app -v "${{runner.temp}}/build_working_dir":/build_linux_working_dir -e LEAFLET_KEY="${LEAFLET_KEY}"
+          options: --name manylinux-container -v ${{runner.temp}}/InterSpec_code:/interspec -v ${{runner.temp}}/build_linux_electron/:/build_app -v ${{runner.temp}}/build_working_dir:/build_linux_working_dir -e LEAFLET_KEY="${LEAFLET_KEY}"
           run: /interspec/target/electron/Docker/build_linux_app_from_docker.sh /interspec /build_app /build_working_dir
 
