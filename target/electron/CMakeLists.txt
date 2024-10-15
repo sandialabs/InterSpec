@@ -67,7 +67,6 @@ install( DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/../../InterSpec_resources DESTINA
 install( FILES ${CMAKE_CURRENT_BINARY_DIR}/LibInterSpec/InterSpec_resources/d3.v3.min.js
         ${CMAKE_CURRENT_BINARY_DIR}/LibInterSpec/InterSpec_resources/SpectrumChartD3.css
         ${CMAKE_CURRENT_BINARY_DIR}/LibInterSpec/InterSpec_resources/SpectrumChartD3.js
-        ${CMAKE_CURRENT_BINARY_DIR}/LibInterSpec/InterSpec_resources/SpectrumChartD3StandAlone.css
          DESTINATION ${PROJECT_BINARY_DIR}/app/InterSpec_resources/ )
 install( DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/../../example_spectra DESTINATION ${PROJECT_BINARY_DIR}/app/ )
 install( FILES ${CMAKE_CURRENT_SOURCE_DIR}/app/loading.html
@@ -79,7 +78,7 @@ install( FILES ${CMAKE_CURRENT_SOURCE_DIR}/app/loading.html
 #  SHould be workin, but on Windows it doesnt look like it at the moment.
 
 install( FILES ${CMAKE_CURRENT_SOURCE_DIR}/../../external_libs/SandiaDecay/sandia.decay.min.xml
-        PERMISSIONS OWNER_READ GROUP_READ WORLD_READ
+        # PERMISSIONS OWNER_READ GROUP_READ WORLD_READ
         DESTINATION ${PROJECT_BINARY_DIR}/app/data/
         RENAME sandia.decay.xml )
 install( FILES ${CMAKE_CURRENT_SOURCE_DIR}/package_for_running.json
