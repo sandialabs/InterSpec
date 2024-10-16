@@ -29,6 +29,7 @@ WorkingDir=$3
 echo "cd'ing into /build_working_dir"
 cd ${WorkingDir}
 
+git config --global --add safe.directory ${InterSpecCodePath}
 export GIT_HASH=$(git -C ${InterSpecCodePath} rev-parse HEAD)
 echo "GIT_HASH = ${GIT_HASH}"
 
@@ -44,12 +45,21 @@ npm install --save-dev node-addon-api --arch=x64
 npm install electron --arch=x64
 npm install electron-packager
 
+echo "CWD"
+pwd
+echo "ls node_modules"
+ls node_modules
+
+# We need to help find where node_modules directory is located in the Docker container
+export NODE_MODULES_PARENT_DIR=$PWD
+
+
 echo "Will build InterSpec code"
-CMAKE_BUILD_PARALLEL_LEVEL=`nproc` cmake-js --directory ${InterSpecCodePath}/target/electron  --architecture x64 --arch=x64 --CDCMAKE_BUILD_TYPE="Release" --CDInterSpec_FETCH_DEPENDENCIES=ON --CDBUILD_AS_LOCAL_SERVER=OFF --CDCMAKE_SHARED_LINKER_FLAGS="-static-libgcc -static-libstdc++" --CDUSE_LEAFLET_MAP=ON --CDLEAFLET_MAPS_KEY="${LEAFLET_KEY}" --CDUSE_REL_ACT_TOOL=ON --out=${CmakeBuildDir} --target install
+CMAKE_BUILD_PARALLEL_LEVEL=`nproc` cmake-js --directory ${InterSpecCodePath}/target/electron  --architecture x64 --arch=x64 --CDCMAKE_BUILD_TYPE="Release" --CDInterSpec_NODE_MODULE_DIR="${WorkingDir}/node_modules" --CDInterSpec_FETCH_DEPENDENCIES=ON --CDBUILD_AS_LOCAL_SERVER=OFF --CDCMAKE_SHARED_LINKER_FLAGS="-static-libgcc -static-libstdc++" --CDUSE_LEAFLET_MAP=ON --CDLEAFLET_MAPS_KEY="${LEAFLET_KEY}" --CDUSE_REL_ACT_TOOL=ON --out="${CmakeBuildDir}" --target install
 
 echo "Will package InterSpec code"
-if [ -d "${WorkingDir}}/InterSpec-linux-x64" ]; then
-  rm -rf "${WorkingDir}}/InterSpec-linux-x64"
+if [ -d "${WorkingDir}/InterSpec-linux-x64" ]; then
+  rm -rf "${WorkingDir}/InterSpec-linux-x64"
 fi
 
 echo "ls"
