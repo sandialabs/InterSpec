@@ -5,7 +5,7 @@ on:
     branches: [ feature/LinuxCiBuild ] # Trigger the workflow on push to the 'main' branch
 
 jobs:
-  build:
+  build-linux:
     runs-on: ubuntu-latest # Use the latest Ubuntu environment
 
     steps:
@@ -49,4 +49,9 @@ jobs:
           run: |
             echo "Running Script from within docker"
             /interspec/target/electron/build_linux_app_from_docker.sh /interspec /build_app /build_working_dir
-
+      
+      - name: Upload Linux artifact
+        uses: actions/upload-artifact@v3
+        with:
+          name: linux-build
+          path: ${{runner.temp}}/build_linux_working_dir/InterSpec_app_Linux_Electron_latest_*.zip

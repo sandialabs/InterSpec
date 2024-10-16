@@ -43,7 +43,7 @@ npm install cmake-js -g
 echo "Will install local npm packages"
 npm install --save-dev node-addon-api --arch=x64
 npm install electron --arch=x64
-npm install electron-packager
+npm install --save-dev electron-packager
 
 echo "CWD"
 pwd
@@ -70,13 +70,18 @@ ls ${CmakeBuildDir}
 
 echo "ls ${WorkingDir}"
 ls ${WorkingDir}
+cd ${WorkingDir}
 
+if [ -d "${WorkingDir}/app" ]; then
+  rm -rf "${WorkingDir}/app"
+fi
 
-echo "Not packaging - trying to make sucecssfule cache"
-# npm exec electron-packager ${CmakeBuildDir}/app InterSpec --overwrite=true --platform=linux --arch=x64 --protocol=interspec --protocol-name="InterSpec" --icon="${InterSpecCodePath}/target/electron/linux/InterSpec_desktop_icon_256x256.png" --prune=true --out="${WorkingDir}"  --ignore=LICENSE.md --ignore=README.md
+cp -r "${CmakeBuildDir}/app" .
 
-# cp "${InterSpecCodePath}/NOTICE.html" "${WorkingDir}/InterSpec-linux-x64/"
-# echo "This is a build of InterSpec for Linux, using InterSpec code git hash ${GIT_HASH}." > "${WorkingDir}/InterSpec-linux-x64/build_information.txt"
-#echo "This build is untested - please contact InterSpec@sandia.gov for support." >> "${WorkingDir}/InterSpec-linux-x64/build_information.txt"
+npm exec electron-packager app InterSpec --overwrite=true --platform=linux --arch=x64 --protocol=interspec --protocol-name="InterSpec" --icon="${InterSpecCodePath}/target/electron/linux/InterSpec_desktop_icon_256x256.png" --prune=true --out="${WorkingDir}"  --ignore=LICENSE.md --ignore=README.md
 
-# zip -r InterSpec_app_Linux_Electron_latest_$(date +%Y-%m-%d).zip InterSpec-linux-x64
+cp "${InterSpecCodePath}/NOTICE.html" "${WorkingDir}/InterSpec-linux-x64/"
+echo "This is a build of InterSpec for Linux, using InterSpec code git hash ${GIT_HASH}." > "${WorkingDir}/InterSpec-linux-x64/build_information.txt"
+echo "This build is untested - please contact InterSpec@sandia.gov for support." >> "${WorkingDir}/InterSpec-linux-x64/build_information.txt"
+
+zip -r InterSpec_app_Linux_Electron_latest_$(date +%Y-%m-%d).zip InterSpec-linux-x64
