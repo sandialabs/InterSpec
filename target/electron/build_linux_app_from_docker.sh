@@ -29,6 +29,8 @@ WorkingDir=$3
 echo "cd'ing into /build_working_dir"
 cd ${WorkingDir}
 
+cp "${InterSpecCodePath}/target/electron/package.json" .
+
 git config --global --add safe.directory ${InterSpecCodePath}
 export GIT_HASH=$(git -C ${InterSpecCodePath} rev-parse HEAD)
 echo "GIT_HASH = ${GIT_HASH}"
@@ -36,6 +38,7 @@ echo "GIT_HASH = ${GIT_HASH}"
 echo "Will install npm and global packages"
 yum update
 yum install -y npm zip
+npm install -g npm@10.9.0
 npm install uglify-js -g
 npm install uglifycss -g
 npm install cmake-js -g
@@ -87,6 +90,7 @@ echo "This is a build of InterSpec for Linux, using InterSpec code git hash ${GI
 echo "This build is untested - please contact InterSpec@sandia.gov for support." >> "${WorkingDir}/InterSpec-linux-x64/build_information.txt"
 
 echo "About to zip"
+
 zip -r InterSpec_app_Linux_Electron_latest_$(date +%Y-%m-%d).zip InterSpec-linux-x64
 
 echo "Done"
