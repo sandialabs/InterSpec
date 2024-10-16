@@ -12213,7 +12213,7 @@ void InterSpec::setDisplayedEnergyRange( float lowerEnergy, float upperEnergy )
 }//void setDisplayedEnergyRange()
 
 
-bool InterSpec::setYAxisRange( float lower_counts, float upper_counts )
+bool InterSpec::setYAxisRange( double lower_counts, double upper_counts )
 {
   bool success = true;
   if( upper_counts < lower_counts )
@@ -12223,20 +12223,14 @@ bool InterSpec::setYAxisRange( float lower_counts, float upper_counts )
     return false;
   
   const bool isLogY = m_spectrum->yAxisIsLog();
-  
-  // If user is setting suspiciously small values, lets do some sanity checks.
-  //  If log-y, there is a minimum lower y-value on the client side - we may need
-  //  to adjust this.
-  if( (isLogY &&
-       ((lower_counts < m_spectrum->logYAxisMin())
-        || (lower_counts < std::numeric_limits<float>::min())))
-     || (!isLogY && (lower_counts <= 1.0E-6) && (upper_counts <= 1.0E-6)) )
+  if( isLogY )
   {
     const auto hist = displayedHistogram(SpecUtils::SpectrumType::Foreground);
     if( !hist || !hist->gamma_counts() || (hist->gamma_counts()->size() < 2) )
       return false;
     
     const shared_ptr<const vector<float>> &channels = hist->gamma_counts();
+    assert( channels );
     
     // Lets check the y-range - ignoring we may be showing multiple channels per display-bin,
     // to see if the requested range is reasonable
@@ -12259,38 +12253,39 @@ bool InterSpec::setYAxisRange( float lower_counts, float upper_counts )
       }//if( channel < channels->size() )
     }//for( loop over visible channels )
     
-    if( upper_counts <= min_nonzero_value )
-      return false;
+    if( (max_value <= 0.0f) || IsInf(max_value) || IsNan(max_value) )
+      max_value = 1.0f;
     
-    if( isLogY )
+    if( (min_nonzero_value == std::numeric_limits<float>::max())
+       || IsInf(min_nonzero_value)
+       || IsNan(min_nonzero_value) )
     {
-      if( lower_counts <= 0.0f )
-      {
-        success = false;
-        lower_counts = 0.9 * min_nonzero_value;
-      }
-      if( upper_counts <= lower_counts )
-      {
-        success = false;
-        upper_counts = 10.0*lower_counts;
-      }
-      
-      const double prevMinLogY = m_spectrum->logYAxisMin();
-      if( lower_counts < prevMinLogY )
-        m_spectrum->setLogYAxisMin( lower_counts );
-    }//if( isLogY )
+      min_nonzero_value = 0.1f*max_value;
+    }
+    
+    if( upper_counts <= 0.0f )
+    {
+      success = false;
+      upper_counts = (max_value > 0.0f) ? 2.0f*max_value : 1.0f;
+    }
+    
+    if( upper_counts <= min_nonzero_value )
+    {
+      success = false;
+      upper_counts = 2.0f*min_nonzero_value;
+    }
+    
+    if( (lower_counts <= 0.0) || (lower_counts > max_value) )
+      lower_counts = min_nonzero_value;
+  }//if( isLogY && (lower_counts <= 0.0f) )
   
-    m_spectrum->setYAxisRange( lower_counts, upper_counts );
-    return success;
-  }//
   
-  if( (lower_counts < 9.9E-7) && isLogY )
+  if( isLogY )
   {
-    success = false;
-    lower_counts = 1.0E-6;
-    if( upper_counts <= lower_counts )
-      upper_counts = 10*lower_counts;
-  }//if( log y-axis, and specifying approx less than zero counts )
+    const double prevMinLogY = m_spectrum->logYAxisMin();
+    if( lower_counts < prevMinLogY )
+      m_spectrum->setLogYAxisMin( lower_counts );
+  }//if( isLogY )
   
   m_spectrum->setYAxisRange( lower_counts, upper_counts );
   

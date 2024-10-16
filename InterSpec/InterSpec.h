@@ -593,7 +593,7 @@ public:
    Returns true if successful, or false if the request couldnt be fully honored
    (e.g., a negative lower counts was specified, but its currently log-scale)
    */
-  bool setYAxisRange( float lower_counts, float upper_counts );
+  bool setYAxisRange( double lower_counts, double upper_counts );
 
   /** When displaying the spectrum in log-y, sets the lower y-axis value to show, if there are channels with zero counts. */
   bool setLogYAxisMin( const double lower_value );
