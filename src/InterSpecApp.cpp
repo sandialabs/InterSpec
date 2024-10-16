@@ -145,9 +145,6 @@ InterSpecApp::InterSpecApp( const WEnvironment &env )
   setupDomEnvironment();
   setupWidgets( true );
 
-  WServer::instance()->schedule( 60*1000, sessionId(),
-                                boost::bind(&InterSpecApp::updateUsageTimeToDb, this, true) );
-  
   Wt::log("debug") << "Done in InterSpecApp constructor.";
 }//InterSpecApp constructor
 
@@ -1217,6 +1214,18 @@ void InterSpecApp::notify( const Wt::WEvent& event )
         m_activeTimeSinceDbUpdate += duration;
       }
       m_lastAccessTime = thistime;
+      
+      // We will update the use-stats of the database occasionally, so we dont have to rely
+      // on the destructor to do it, which may not get called if the OS or user kills the app
+      // In debug-build, looks to only take 30 to 100 micro-seconds to make the post
+      if( m_activeTimeSinceDbUpdate > std::chrono::seconds(30) )
+      {
+        WServer::instance()->schedule( 100, sessionId(), [this](){
+          WApplication::UpdateLock lock( this );
+          if( lock )
+            updateUsageTimeToDb();
+        } );
+      }//if( m_activeTimeSinceDbUpdate > std::chrono::seconds(60) )
     }//if( userEvent )
 
      WApplication::notify( event );
@@ -1245,7 +1254,7 @@ void InterSpecApp::unload()
 }//void unload()
 
 
-void InterSpecApp::updateUsageTimeToDb( const bool schedule_more )
+void InterSpecApp::updateUsageTimeToDb()
 {
   if( m_activeTimeSinceDbUpdate > std::chrono::seconds(0) )
   {
@@ -1269,13 +1278,6 @@ void InterSpecApp::updateUsageTimeToDb( const bool schedule_more )
       Wt::log("error") << "InterSpecApp::updateUsageTimeToDb() caught: " << e.what();
     }//try / catch
   }//if( m_activeTimeSinceDbUpdate > std::chrono::seconds(0) )
-  
-  if( schedule_more )
-  {
-    // Update again in 1 minute (arbitrarily chosen).
-    WServer::instance()->schedule( 60*1000, sessionId(),
-                                  boost::bind(&InterSpecApp::updateUsageTimeToDb, this, true) );
-  }//if( schedule_more )
 }//void updateUsageTimeToDb()
 
 
@@ -1284,7 +1286,7 @@ void InterSpecApp::prepareForEndOfSession()
   if( !m_viewer || !m_viewer->m_user )
     return;
 
-  updateUsageTimeToDb( false );
+  updateUsageTimeToDb();
   
   try
   {

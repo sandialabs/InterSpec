@@ -579,19 +579,26 @@ int start_server( const char *process_name,
   return InterSpecServer::portBeingServedOn();
 }//int start_server( ... )
   
-  void killServer()
-  {
-    std::lock_guard<std::mutex> serverlock( ns_servermutex );
+void killServer()
+{
+  std::lock_guard<std::mutex> serverlock( ns_servermutex );
     
-    if( ns_server )
+  if( ns_server )
+  {
+    try
     {
-      std::cerr << "About to stop server" << std::endl;
+      const auto stop_starting_time = std::chrono::system_clock::now();
       ns_server->stop();
+      const auto stop_stop_time = std::chrono::system_clock::now();
       delete ns_server;
       ns_server = nullptr;
-      std::cerr << "Stopped and killed server" << std::endl;
+      std::cout << "Stopped and killed server" << std::endl;
+    }catch( std::exception &e )
+    {
+      std::cerr << "Got exception stopping server: " << e.what() << std::endl;
     }
-  }//void killServer()
+  }//if( ns_server )
+}//void killServer()
   
 
   int wait_for_shutdown()
