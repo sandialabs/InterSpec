@@ -51,7 +51,9 @@ jobs:
             /interspec/target/electron/build_linux_app_from_docker.sh /interspec /build_app /build_working_dir
       
       - name: Upload Linux artifact
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
+        id: artifact-linux-upload-step
         with:
           name: linux-build
+          overwrite: true
           path: ${{runner.temp}}/build_linux_working_dir/InterSpec_app_Linux_Electron_latest_*.zip
