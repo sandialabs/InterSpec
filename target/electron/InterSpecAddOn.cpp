@@ -39,6 +39,10 @@
 #include "target/electron/ElectronUtils.h"
 
 #if( USE_BATCH_TOOLS )
+#include "SpecUtils/StringAlgo.h"
+#include "SpecUtils/Filesystem.h"
+
+#include "InterSpec/InterSpec.h"
 #include "InterSpec/BatchCommandLine.h"
 #endif
 
@@ -542,16 +546,69 @@ namespace InterSpecAddOn
       Napi::Value element = jsArray.Get(i);
 
       // Check if the element is a string
-      if (!element.IsString()) {
+      if( !element.IsString() ) 
+      {
         Napi::TypeError::New(env, "Array elements must be strings").ThrowAsJavaScriptException();
         return Napi::Number();
-      }
+      }//if( !element.IsString() )
 
       str_args[i] = element.ToString();
       if( str_args[i].empty() )
         str_args[i] = " ";
       str_args_ptrs[i] = &(str_args[i][0]);
-    }
+
+
+      auto checkarg = [&str_args,i,numargs]( const std::string &teststr ) -> std::string {
+
+        if( !SpecUtils::istarts_with(str_args[i], teststr) )
+          return "";
+        std::string docroot;
+        if( (str_args[i].length() > (teststr.size()+1)) && (str_args[i][teststr.size()] == '=') )
+          docroot = str_args[i].substr(teststr.size() + 1);
+        else if( (i+1) < numargs )
+          docroot = str_args[i+1];
+        else 
+          return "";
+
+        if( docroot.length() && ((docroot.front()=='\"') || (docroot.front()=='\'')) )
+          docroot = docroot.substr(1);
+        if( docroot.length() && ((docroot.back()=='\"') || (docroot.back()=='\'')) )
+          docroot = docroot.substr(0, docroot.size() - 1);
+        return docroot;
+      };//checkarg lambda
+
+      // TODO: this setting directories should either be brought out to node.js stuff, or integrated into BatchCommandLine::run_batch_command(...)
+      const std::string docroot = checkarg( "--docroot" );
+      const std::string userdatadir = checkarg( "--userdatadir" );
+
+      if( !docroot.empty() )
+      {
+        const std::string datadir = SpecUtils::append_path( docroot, "data" );
+
+        try
+        {
+          InterSpec::setStaticDataDirectory( datadir );
+        }catch( std::exception &e )
+        {
+          std::cerr << "Failed to set static data directory: " << e.what() << std::endl;
+          Napi::Number::New( env, -7 );
+        }
+      }//if( !docroot.empty() )
+
+      if( !userdatadir.empty() )
+      {
+        try
+        {
+          InterSpec::setWritableDataDirectory( userdatadir );
+        }catch( std::exception &e )
+        {
+          std::cerr << "Warning: Failed to set user data directory: " << e.what() << std::endl
+          << "Use the '--userdatadir' option to set this to the same one the InterSpec GUI app"
+          << " uses, if you would like to share detectors, or other files." << std::endl;
+        //return -8;
+        }
+      }//if( !userdatadir.empty() )
+    }//for( uint32_t i = 0; i < numargs; i++ ) 
 
     const int rcode = BatchCommandLine::run_batch_command( static_cast<int>(numargs), &(str_args_ptrs[0]) );
 

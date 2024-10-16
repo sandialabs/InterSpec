@@ -58,20 +58,6 @@ let interspec_url = null;
 
 global.__basedir = __dirname;
 
-// Check if we only want to run 
-for( let path_string of process.argv ) {
-  if( path_string.startsWith("--batch") || path_string.startsWith("/batch") ) {
-    console.log( "Will run batch");
-
-    //TODO: redirect stderr/stdout to console.log
-    const rdcode = interspec.runBatchAnalysis( process.argv );
-
-    console.log( "Batch analysis returned code " + rcode );
-
-    app.quit();
-    return;
-  }
-}
 
 // Keep a global reference of the window objects, if you don't, the window will
 // be closed automatically when the JavaScript object is garbage collected.
@@ -999,7 +985,30 @@ function browseForDirectory( token, title, msg ){
   return (dirs.length<1) ? '' : dirs[0];
 };//function browseForDirectory
 
+// Check if we only want to run 
+for( let path_string of process.argv ) {
+  if( path_string.startsWith("--batch") || path_string.startsWith("/batch") ) {
+    console.log( "Will run batch");
 
+    let has_docroot = false, has_userdata = false;
+    for( let str of process.argv ) {
+      has_docroot = (has_docroot || str.startsWith('--docroot'));
+      has_userdata = (has_userdata || str.startsWith('--userdatadir'));
+    }
+
+    if( !has_docroot )
+      process.argv.push( "--docroot=\'" + path.dirname(require.main.filename) + "'");
+    if( !has_userdata )
+      process.argv.push( "--userdatadir=\'" + userdata + "'")
+
+    const rcode = interspec.runBatchAnalysis( process.argv );
+
+    console.log( "Batch analysis returned code " + rcode );
+
+    app.quit();
+    return;
+  }
+}
 
 
 // This method will be called when Electron has finished
@@ -1008,7 +1017,7 @@ function browseForDirectory( token, title, msg ){
 app.on('ready', function(){  
   const process_name = require.main.filename;
   //actually process.cwd()==path.dirname(require.main.filename) when running using node from command line
-  
+
   //It looks like we dont need to change the CWD anymore (I think everywhere in
   // InterSpec no longer assumes a specific CWD), but lets do it anyway.
   process.chdir( path.dirname(require.main.filename) );
