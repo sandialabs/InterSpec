@@ -6468,6 +6468,14 @@ void InterSpec::setToolTabsVisible( bool showToolTabs )
   m_toolsResizer->setHidden( !showToolTabs );
 #else
   
+  string refNucXmlState;
+  if( m_referencePhotopeakLines
+      && ((m_referencePhotopeakLines->currentlyShowingNuclide().m_validity == ReferenceLineInfo::InputValidity::Valid)
+           || m_referencePhotopeakLines->persistedNuclides().size()) )
+  {
+    m_referencePhotopeakLines->serialize( refNucXmlState );
+  }
+  
   const int layoutVertSpacing = isMobile() ? 10 : 5;
 
 #if( InterSpec_PHONE_ROTATE_FOR_TABS )
@@ -6497,14 +6505,6 @@ void InterSpec::setToolTabsVisible( bool showToolTabs )
       delete m_peakInfoWindow;
       m_peakInfoWindow = NULL;
     }//if( m_peakInfoWindow )
-    
-    string refNucXmlState;
-    if( m_referencePhotopeakLines
-        && ((m_referencePhotopeakLines->currentlyShowingNuclide().m_validity == ReferenceLineInfo::InputValidity::Valid)
-             || m_referencePhotopeakLines->persistedNuclides().size()) )
-    {
-      m_referencePhotopeakLines->serialize( refNucXmlState );
-    }
     
     closeGammaLinesWindow();
     
@@ -6751,13 +6751,29 @@ void InterSpec::setToolTabsVisible( bool showToolTabs )
     delete m_nuclideSearchContainer;
     m_nuclideSearchContainer = nullptr;
     
-    if( m_referencePhotopeakLines )
-      m_referencePhotopeakLines->clearAllLines();
     
     m_toolsTabs = nullptr;
     
-    if( !m_referencePhotopeakLinesWindow )
+    if( m_referencePhotopeakLines )
+    {
+      m_referencePhotopeakLines->clearAllLines();
+      delete m_referencePhotopeakLines;
       m_referencePhotopeakLines = nullptr;
+    }
+    
+    if( m_referencePhotopeakLinesWindow )
+      delete m_referencePhotopeakLinesWindow;
+    m_referencePhotopeakLinesWindow = nullptr;
+    
+    if( !refNucXmlState.empty() )
+    {
+      showGammaLinesWindow();
+      if( m_referencePhotopeakLines )
+        m_referencePhotopeakLines->deSerialize( refNucXmlState );
+      if( phone && m_referencePhotopeakLinesWindow )
+        m_referencePhotopeakLinesWindow->hide();
+    }//if( !refNucXmlState.empty() )
+    
     m_toolsLayout = nullptr;
     
     m_layout->clear();
