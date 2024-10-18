@@ -7813,67 +7813,64 @@ void InterSpec::addAboutMenu( Wt::WWidget *parent )
     
   const bool showToolTips = InterSpecUser::preferenceValue<bool>( "ShowTooltips", this );
   
-  const bool autoStore = InterSpecUser::preferenceValue<bool>( "AutoSaveSpectraToDb", this );
+  // Note: we will associate the WCheckBox's with a option, to set their checked state,
+  //       BEFORE adding to the menu - so this way macOS native menus will pickup the
+  //       correct values.
   WCheckBox *cb = new WCheckBox( WString::tr("app-mi-help-pref-auto-store") );
-  cb->setChecked( autoStore );
+  InterSpecUser::associateWidget( m_user, "AutoSaveSpectraToDb", cb, this );
   item = subPopup->addWidget( cb );
   HelpSystem::attachToolTipOn( item, WString::tr("app-mi-tt-help-pref-auto-store"), showToolTips );
-  InterSpecUser::associateWidget( m_user, "AutoSaveSpectraToDb", cb, this );
   
-    
-  const bool autoCheckOnLoad = InterSpecUser::preferenceValue<bool>( "CheckForPrevOnSpecLoad", this );
+  
   cb = new WCheckBox( WString::tr("app-mi-help-pref-check-prev") );
-  cb->setChecked( autoStore );
+  InterSpecUser::associateWidget( m_user, "CheckForPrevOnSpecLoad", cb, this );
   item = subPopup->addWidget( cb );
   HelpSystem::attachToolTipOn( item, WString::tr("app-mi-tt-help-pref-check-prev"), showToolTips );
-  InterSpecUser::associateWidget( m_user, "CheckForPrevOnSpecLoad", cb, this );
   
   
   if( !isMobile() )
   {
     WCheckBox *checkbox = new WCheckBox( WString::tr("app-mi-help-pref-show-tt") );
+    InterSpecUser::associateWidget( m_user, "ShowTooltips", checkbox, this );
     item = subPopup->addWidget( checkbox );
-    checkbox->setChecked( showToolTips );
     HelpSystem::attachToolTipOn( item, WString::tr("app-mi-tt-help-pref-show-tt"),
                                 true, HelpSystem::ToolTipPosition::Right );
     checkbox->checked().connect( boost::bind( &InterSpec::toggleToolTip, this, true ) );
     checkbox->unChecked().connect( boost::bind( &InterSpec::toggleToolTip, this, false ) );
-    InterSpecUser::associateWidget( m_user, "ShowTooltips", checkbox, this );
   }//if( !isMobile() )
   
   {//begin add "AskPropagatePeaks" to menu
-    const bool doPropogate = InterSpecUser::preferenceValue<bool>( "AskPropagatePeaks", this );
     WCheckBox *checkbox = new WCheckBox( WString::tr("app-mi-help-pref-prop-peak") );
-    checkbox->setChecked( doPropogate );
+    InterSpecUser::associateWidget( m_user, "AskPropagatePeaks", checkbox, this );
     item = subPopup->addWidget( checkbox );
     HelpSystem::attachToolTipOn( item, WString::tr("app-mi-tt-help-pref-prop-peak"),
                                  true, HelpSystem::ToolTipPosition::Right );
     checkbox->checked().connect( boost::bind( &InterSpec::toggleToolTip, this, true ) );
     checkbox->unChecked().connect( boost::bind( &InterSpec::toggleToolTip, this, false ) );
-    InterSpecUser::associateWidget( m_user, "AskPropagatePeaks", checkbox, this );
   }//end add "AskPropagatePeaks" to menu
   
   
   {//begin add "DisplayBecquerel"
     WCheckBox *checkbox = new WCheckBox( WString::tr("app-mi-help-pref-disp-bq") );
+    InterSpecUser::associateWidget( m_user, "DisplayBecquerel", checkbox, this );
     item = subPopup->addWidget( checkbox );
     HelpSystem::attachToolTipOn( item, WString::tr("app-mi-tt-help-pref-disp-bq"),
                                  true, HelpSystem::ToolTipPosition::Right );
-    InterSpecUser::associateWidget( m_user, "DisplayBecquerel", checkbox, this );
   }//end add "DisplayBecquerel"
     
   {//begin add "LoadDefaultDrf"
     WCheckBox *checkbox = new WCheckBox( WString::tr("app-mi-help-pref-def-drfs") );
+    InterSpecUser::associateWidget( m_user, "LoadDefaultDrf", checkbox, this );
     item = subPopup->addWidget( checkbox );
     HelpSystem::attachToolTipOn( item, WString::tr("app-mi-tt-help-def-drfs"),
                                 true, HelpSystem::ToolTipPosition::Right );
-    InterSpecUser::associateWidget( m_user, "LoadDefaultDrf", checkbox, this );
   }//end add "LoadDefaultDrf"
   
   InterSpecApp *app = dynamic_cast<InterSpecApp *>(wApp);
   if( app && app->isTablet() )
   {
     WCheckBox *checkbox = new WCheckBox( WString::tr("app-mi-help-pref-desktop") );
+    InterSpecUser::associateWidget( m_user, "TabletUseDesktopMenus", checkbox, this );
     item = subPopup->addWidget( checkbox );
     HelpSystem::attachToolTipOn( item, WString::tr("app-mi-tt-help-desktop"),
                                 true, HelpSystem::ToolTipPosition::Right );
@@ -7889,15 +7886,13 @@ void InterSpec::addAboutMenu( Wt::WWidget *parent )
       m_warnings, msg, WarningWidget::WarningMsgShowOnBoardRiid, 5000 ) );
     checkbox->unChecked().connect( boost::bind( &WarningWidget::addMessageUnsafe,
       m_warnings, msg, WarningWidget::WarningMsgShowOnBoardRiid, 5000 ) );
-    
-    InterSpecUser::associateWidget( m_user, "TabletUseDesktopMenus", checkbox, this );
   }//if( is tablet )
   
   WCheckBox *autoDarkCb = new WCheckBox( WString::tr("app-mi-help-pref-auto-dark") );
+  InterSpecUser::associateWidget( m_user, "AutoDarkFromOs", autoDarkCb, this );
   item = subPopup->addWidget( autoDarkCb );
   HelpSystem::attachToolTipOn( item, WString::tr("app-mi-tt-help-auto-dark"),
                               true, HelpSystem::ToolTipPosition::Right );
-  InterSpecUser::associateWidget( m_user, "AutoDarkFromOs", autoDarkCb, this );
   
   InterSpecUser::addCallbackWhenChanged( m_user, this, "AutoDarkFromOs", std::bind([](){
     InterSpec *viewer = InterSpec::instance();
@@ -7912,14 +7907,14 @@ void InterSpec::addAboutMenu( Wt::WWidget *parent )
 #if( PROMPT_USER_BEFORE_LOADING_PREVIOUS_STATE )
   subPopup->addSeparator();
   WCheckBox *promptOnLoad = new WCheckBox( WString::tr("app-mi-help-pref-prompt-prev") );
+  InterSpecUser::associateWidget( m_user, "PromptStateLoadOnStart", promptOnLoad, this );
   item = subPopup->addWidget( promptOnLoad );
   HelpSystem::attachToolTipOn( item, WString::tr("app-mi-tt-help-pref-prompt-prev"), showToolTips );
-  InterSpecUser::associateWidget( m_user, "PromptStateLoadOnStart", promptOnLoad, this );
   
   WCheckBox *doLoad = new WCheckBox( WString::tr("app-mi-help-pref-load-prev") );
+  InterSpecUser::associateWidget( m_user, "LoadPrevStateOnStart", doLoad, this );
   item = subPopup->addWidget( doLoad );
   HelpSystem::attachToolTipOn( item, WString::tr("app-mi-tt-help-pref-load-prev"), showToolTips );
-  InterSpecUser::associateWidget( m_user, "LoadPrevStateOnStart", doLoad, this );
 #endif
   
   
