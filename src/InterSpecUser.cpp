@@ -23,6 +23,7 @@
 
 #include "InterSpec_config.h"
 
+#include <mutex>
 #include <memory>
 #include <string>
 #include <vector>
@@ -161,6 +162,13 @@ namespace
       std::size_t typestrlen = type_att->value_size();
       
       option->m_name = name_att->value();
+      
+      // Get rid of "_tablet" or "_phone"
+      auto pos = option->m_name.find( "_tablet" );
+      if( pos == string::npos )
+        pos = option->m_name.find( "_phone" );
+      if( pos != string::npos )
+        option->m_name = option->m_name.substr(0, pos);
       
       const char *valuestr = pref->value();
       
@@ -397,6 +405,9 @@ boost::any InterSpecUser::preferenceValueAny( const std::string &name, InterSpec
 {
   using namespace Wt;
   
+  bool from_default = false;
+  const auto start_time = chrono::time_point_cast<chrono::microseconds>( chrono::system_clock::now() );
+  
   if( !viewer )
   {
     UserOption *option = getDefaultUserPreference( name, DeviceType::Desktop );
@@ -413,39 +424,31 @@ boost::any InterSpecUser::preferenceValueAny( const std::string &name, InterSpec
   if( !user || !sql )
     throw std::runtime_error( "preferenceValueAny(...): invalid usr or sql ptr" );
   
-  PreferenceMap::const_iterator pos;
-  const PreferenceMap &prefs = user->m_preferences;
-  
-  if( user->m_deviceType & PhoneDevice )
-  {
-    pos = prefs.find( name + "_phone" );
-    if( pos != prefs.end() )
-      return pos->second;
-  }//if( user->m_deviceType & PhoneDevice )
-  
-  if( user->m_deviceType & TabletDevice )
-  {
-    pos = prefs.find( name + "_tablet" );
-    if( pos != prefs.end() )
-      return pos->second;
-  }//if( user->m_deviceType & TabletDevice )
-  
-  pos = prefs.find( name );
-  if( pos != prefs.end() )
-    return pos->second;
-  
-  UserOption *option_raw = getDefaultUserPreference( name, user->m_deviceType );
-  Wt::Dbo::ptr<UserOption> option( option_raw );
-  option.modify()->m_user = user;
-  
-  DataBaseUtils::DbTransaction transaction( *sql );
   boost::any value;
+  DataBaseUtils::DbTransaction transaction( *sql );
+  
   try
   {
-    sql->session()->add( option );
+    Wt::Dbo::ptr<UserOption> option = user->m_dbPreferences
+        .find()
+        .where( "name = ?" )
+        .bind( name )
+        .limit(1)
+        .resultValue();
+  
+    if( !option )
+    {
+      from_default = true;
+      UserOption *option_raw = getDefaultUserPreference( name, user->m_deviceType );
+      option.reset( option_raw );
+      option.modify()->m_user = user;
+      sql->session()->add( option );
+      //user.modify()->m_dbPreferences.insert( option );
+    }//if( dboption )
+  
     value = option->value();
-    //user.modify()->m_dbPreferences.insert( option );
-    user->m_preferences[name] = value;
+    
+    transaction.commit();
   }catch( std::exception &e )
   {
     assert( 0 );
@@ -453,36 +456,15 @@ boost::any InterSpecUser::preferenceValueAny( const std::string &name, InterSpec
     throw e;
   }//try / catch
   
-  transaction.commit();
+  const auto end_time = chrono::time_point_cast<chrono::microseconds>( chrono::system_clock::now() );
   
+  cout << "Took " << (end_time - start_time).count() << " microseconds to get '" << name
+  << "' preference from " << (from_default ? "default-xml" : "data-base") << "." << endl;
+  
+  assert( !value.empty() );
   return value;
 }//boost::any preferenceValue( const std::string &name, InterSpec *viewer );
 
-
-boost::any InterSpecUser::preferenceValueAny( const std::string &name ) const
-{
-  PreferenceMap::const_iterator pos;
-  
-  if( m_deviceType & PhoneDevice )
-  {
-    pos = m_preferences.find( name  + "_phone" );
-    if( pos != m_preferences.end() )
-      return pos->second;
-  }//if( user->m_deviceType & PhoneDevice )
-  
-  if( m_deviceType & TabletDevice )
-  {
-    pos = m_preferences.find( name  + "_tablet" );
-    if( pos != m_preferences.end() )
-      return pos->second;
-  }//if( user->m_deviceType & TabletDevice )
-  
-  pos = m_preferences.find( name );
-  if( pos == m_preferences.end() )
-    throw std::runtime_error( "No preference value for " + name + ", try"
-                             " calling other InterSpecUser::preferenceValue(...) function" );
-  return pos->second;
-}//boost::any preferenceValueAny( const std::string &name ) const;
 
 
 void InterSpecUser::associateWidget( Wt::Dbo::ptr<InterSpecUser> user,
@@ -1079,235 +1061,83 @@ InterSpecUser::InterSpecUser( const std::string &username,
 }//InterSpecUser::InterSpecUser(...)
 
 
-void InterSpecUser::initFromDefaultValues( Wt::Dbo::ptr<InterSpecUser> user,
-                          std::shared_ptr<DataBaseUtils::DbSession> session )
-{
-  using rapidxml::internal::compare;
-  typedef rapidxml::xml_node<char>      XmlNode;
-  typedef rapidxml::xml_attribute<char> XmlAttribute;
-
-  if( !session )
-    throw runtime_error( "InterSpecUser::initFromDefaultValues(...):"
-                         " no valid session associated with user ptr" );
-  if( !user->m_preferences.empty() )
-    throw runtime_error( "InterSpecUser::initFromDefaultValues(...):"
-                         " you cant call this function if preferences have"
-                         " already been initialized" );
-  try
-  {
-    user.modify();
-  }catch(...)
-  {
-    throw runtime_error( "InterSpecUser::initFromDefaultValues(...):"
-                         " there is no active transaction." );
-  }
-  
-  const string filename = SpecUtils::append_path( InterSpec::staticDataDirectory(), sm_defaultPreferenceFile );
-  
-  std::vector<char> data;
-  SpecUtils::load_file_data( filename.c_str(), data );
-    
-  rapidxml::xml_document<char> doc;
-  const int flags = rapidxml::parse_normalize_whitespace
-                    | rapidxml::parse_trim_whitespace;
-    
-  doc.parse<flags>( &data.front() );
-  XmlNode *node = doc.first_node();
-  if( !node || !node->name()
-      || !compare( node->name(), node->name_size(), "preferences", 11, true) )
-    throw runtime_error( "InterSpecUser: invlaid first node" );
-
-  DataBaseUtils::DbTransaction transaction( *session );
-  
-  //we actually need to go through here and eliminate options where a "phone"
-  //  or "tablet" option is available, and also rename ish...
-  try
-  {
-    for( const XmlNode *pref = node->first_node( "pref", 4 );
-         pref;
-         pref = pref->next_sibling( "pref", 4 ) )
-    {
-      UserOption *option = parseUserOption( pref );
-      try
-      {
-        user.modify()->m_preferences[option->m_name] = option->value();
-        option->m_user = user;
-        session->session()->add( option );
-      }catch( std::exception &e )
-      {
-        const string value = pref->value() ? pref->value() : "";
-        const string msg = "Value \"" + value + "\" is not convertible to the"
-                           " intended type in " + filename
-                           + " for pref "
-                           + option->m_name + "\n" + string(e.what());
-        delete option;
-        throw runtime_error( msg );
-      }//try / catch
-    }//for( loop over preferences )
-
-    transaction.commit();
-  }catch( std::exception &e )
-  {
-    cerr << "\n\nInterSpecUser::initFromDefaultValues(...)\t" << e.what() << endl;
-    user.modify()->m_preferences.clear();
-    transaction.rollback();
-    throw e;
-  }//try / catch
-  
-}//void initFromDefaultValues()
-
-
-void InterSpecUser::initFromDbValues( Wt::Dbo::ptr<InterSpecUser> user,
-                          std::shared_ptr<DataBaseUtils::DbSession> session )
-{
-  
-  if( !session )
-    throw runtime_error( "InterSpecUser::initFromDbValues(...):"
-                        " no valid session associated with user ptr" );
-  if( !user->m_preferences.empty() )
-    throw runtime_error( "InterSpecUser::initFromDbValues(...):"
-                        " you cant call this function if preferences have"
-                        " already been initialized" );
-
-  DataBaseUtils::DbTransaction transaction( *session );  
-  const Wt::Dbo::collection< Wt::Dbo::ptr<UserOption> > &prefs = user->m_dbPreferences;
-  
-  vector< Dbo::ptr<UserOption> > options;
-  std::copy( prefs.begin(), prefs.end(), std::back_inserter(options) );
-  
-  InterSpecUser *usr = user.modify();
-  
-  for( auto iter = options.rbegin(); iter != options.rend(); ++iter )
-  {
-    Dbo::ptr<UserOption> option = *iter;
-    
-    if( usr->m_preferences.count(option->m_name) )
-    {
-      cerr << "Found multiple copies of user preference '" << option->m_name << "' - will delete old ones" << endl;
-      option.remove();
-      continue;
-    }
-    
-    switch( option->m_type )
-    {
-      case UserOption::String:
-        usr->m_preferences[option->m_name] = boost::any( option->m_value );
-      break;
-        
-      case UserOption::Decimal:
-      {
-        double val;
-        if( !(stringstream(option->m_value) >> val) )
-          throw runtime_error( "InterSpecUser::initFromDbValues(): invalid"
-                               " double value '" + option->m_value
-                               + "' for user '" + user->m_userName + "'" );
-        usr->m_preferences[option->m_name] = val;
-        break;
-      }//case UserOption::Decimal:
-      
-      case UserOption::Integer:
-      {
-        int val;
-        if( !(stringstream(option->m_value) >> val) )
-          throw runtime_error( "InterSpecUser::initFromDbValues(): invalid"
-                              " int value '" + option->m_value
-                              + "' for user '" + user->m_userName + "'" );
-        usr->m_preferences[option->m_name] = val;
-        break;
-      }//case UserOption::Integer:
-        
-      case UserOption::Boolean:
-      {
-        bool val;
-        if( !(stringstream(option->m_value) >> val) )
-          throw runtime_error( "InterSpecUser::initFromDbValues(): invalid"
-                              " int value '" + option->m_value
-                              + "' for user '" + user->m_userName + "'" );
-        usr->m_preferences[option->m_name] = val;
-        break;
-      }//case UserOption::Boolean:
-    }//switch( option->m_type )
-  }//for( loop over DB entries )
-  
-  //The call to usr->modify() was just to get access to to the UserOption ptr,
-  // no changes have been made, so theres no reason to write to the database.
-  transaction.rollback();
-}//void initFromDbValues( Wt::Dbo::ptr<InterSpecUser> user )
-
-
 
 UserOption *InterSpecUser::getDefaultUserPreference( const std::string &name,
                                                      const int type )
 {
-  using rapidxml::internal::compare;
-  typedef rapidxml::xml_attribute<char> XmlAttribute;
-  
   const bool isphone = ((type & InterSpecUser::PhoneDevice) != 0);
   const bool istablet = ((type & InterSpecUser::TabletDevice) != 0);
-  const char *nameptr = name.c_str();
-  const size_t namelen = name.length();
   
-  const string filename = SpecUtils::append_path( InterSpec::staticDataDirectory(), sm_defaultPreferenceFile );
   
-  std::vector<char> data;
-  SpecUtils::load_file_data( filename.c_str(), data );
+  static std::mutex sm_def_prefs_mutex;
+  static std::map<std::string,std::unique_ptr<const UserOption>> sm_def_prefs;
   
-  rapidxml::xml_document<char> doc;
-  const int flags = rapidxml::parse_normalize_whitespace
-                    | rapidxml::parse_trim_whitespace;
+  std::lock_guard<mutex> lock( sm_def_prefs_mutex );
   
-  doc.parse<flags>( &data.front() );
-  rapidxml::xml_node<char> *node = doc.first_node();
-  if( !node || !node->name()
-     || !compare( node->name(), node->name_size(), "preferences", 11, true) )
-    throw runtime_error( "InterSpecUser: invalid first node" );
-  
-  const rapidxml::xml_node<char> *defnode = 0, *tabnode = 0, *phonenode = 0;
-  
-  for( const rapidxml::xml_node<char> *pref = node->first_node( "pref", 4 );
-      pref;
-      pref = pref->next_sibling( "pref", 4 ) )
+  if( sm_def_prefs.empty() )
   {
-    const XmlAttribute *name_att = pref->first_attribute( "name", 4 );
-    const char *prefname = name_att ? name_att->value() : "";
-    const size_t prefnamelen = name_att ? name_att->value_size() : 0;
-    const size_t substrlen = std::min(prefnamelen,name.size());
+    const string filename = SpecUtils::append_path( InterSpec::staticDataDirectory(), sm_defaultPreferenceFile );
     
-    //Check if the substring up to the '_' in "PreferenceName_phone" matches
-    if( !compare(prefname, substrlen, nameptr, namelen, true) )
-      continue;
-  
-    if( prefnamelen == namelen )
+    std::vector<char> data;
+    SpecUtils::load_file_data( filename.c_str(), data );
+    
+    rapidxml::xml_document<char> doc;
+    const int flags = rapidxml::parse_normalize_whitespace
+                      | rapidxml::parse_trim_whitespace;
+    
+    doc.parse<flags>( &data.front() );
+    rapidxml::xml_node<char> *node = doc.first_node();
+    if( !node || !node->name()
+       || !rapidxml::internal::compare( node->name(), node->name_size(), "preferences", 11, true) )
+      throw runtime_error( "InterSpecUser: invalid first node" );
+    
+    for( const rapidxml::xml_node<char> *pref = node->first_node( "pref", 4 );
+        pref;
+        pref = pref->next_sibling( "pref", 4 ) )
     {
-      //If the preference name length matches the wanted name length, we have
-      //  default value
-      defnode = pref;
+      const rapidxml::xml_attribute<char> *name_att = pref->first_attribute( "name", 4 );
+      assert( name_att && name_att->value() && name_att->value_size() );
+      if( !name_att || !name_att->value() || !name_att->value_size() )
+        continue;
       
-      //break out of the loop if this is all we need
-      if( type == InterSpecUser::Desktop )
-        break;
-    }else if( isphone && compare(prefname+substrlen, prefnamelen-substrlen, "_phone", 6, true) )
-    {
-      //The preference name ends in "_phone", and the device is a phone, we
-      //  dont need to keep looping.
-      phonenode = pref;
-      break;
-    }else if( istablet && compare(prefname+substrlen, prefnamelen-substrlen, "_tablet", 7, true) )
-    {
-      //The preference name ends in "_tablet", and the device is a tablet, we
-      //  can break as long as the device isnt also a phone.
-      tabnode = pref;
-      if( !isphone )
-        break;
-    }
-  }//for( loop over preferneces )
-    
-  if( phonenode )
-    return parseUserOption( phonenode );
-  if( tabnode )
-    return parseUserOption( tabnode );
-  if( defnode )
-    return parseUserOption( defnode );
+      const char *prefname = name_att->value();
+      const size_t prefnamelen = name_att->value_size();
+      std::string prefnamestr(prefname, prefname + prefnamelen);
+      
+      UserOption *option = parseUserOption( pref );
+      
+      // option->m_name will have had "_phone" and "_tablet" removed, even though `prefnamestr`
+      //  will have these in them
+      assert( option );
+      assert( !SpecUtils::icontains( option->m_name, "_phone") );
+      assert( !SpecUtils::icontains( option->m_name, "_tablet") );
+      
+      sm_def_prefs[std::move(prefnamestr)] = std::make_unique<const UserOption>( *option );
+    }//for( loop over preferneces )
+  }//if( sm_def_prefs.empty() )
+  
+
+  if( isphone )
+  {
+    const auto pos = sm_def_prefs.find( name + "_phone" );
+    assert( (pos == end(sm_def_prefs)) || pos->second );
+    if( pos != end(sm_def_prefs) )
+      return new UserOption( *pos->second );
+  }//
+  
+  if( istablet )
+  {
+    const auto pos = sm_def_prefs.find( name + "_tablet" );
+    assert( (pos == end(sm_def_prefs)) || pos->second );
+    if( pos != end(sm_def_prefs) )
+      return new UserOption( *pos->second );
+  }//if( istablet )
+  
+  
+  const auto pos = sm_def_prefs.find( name );
+  assert( (pos == end(sm_def_prefs)) || pos->second );
+  if( pos != end(sm_def_prefs) )
+    return new UserOption( *pos->second );
   
   //Note: the string "couldn't find preference by name" is currently used in
   //      restoreUserPrefsFromXml(...) to check if a preference with this name is no longer used.

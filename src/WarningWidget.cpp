@@ -187,7 +187,7 @@ WarningWidget::WarningWidget( InterSpec *hostViewer,
   
   // Find which messages should be active.
   for( WarningMsgLevel i = WarningMsgLevel(0); i <= WarningMsgHigh; i = WarningMsgLevel(i+1) )
-    m_active[i] = !m_hostViewer->m_user->preferenceValue<bool>( tostr(i) );
+    m_active[i] = !m_hostViewer->m_user->preferenceValue<bool>( tostr(i), m_hostViewer );
   
   for( WarningMsgLevel i = WarningMsgLevel(0); i <= WarningMsgHigh; i = WarningMsgLevel(i+1) )
     m_popupActive[i] = !InterSpecUser::preferenceValue<bool>( WarningWidget::popupToStr(i), m_hostViewer );

@@ -854,7 +854,7 @@ UseInfoWindow::UseInfoWindow( std::function<void(bool)> showAgainCallback,
     
     try
     {
-      const bool showAtStartup = viewer->m_user->preferenceValue<bool>( "ShowSplashScreen" );
+      const bool showAtStartup = viewer->m_user->preferenceValue<bool>( "ShowSplashScreen", viewer );
       showAgainCb->setChecked( showAtStartup );
     }catch(...)
     {

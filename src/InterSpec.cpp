@@ -587,7 +587,7 @@ InterSpec::InterSpec( WContainerWidget *parent )
     
     if( m_user )
     {
-      InterSpecUser::initFromDbValues( m_user, m_sql );
+      
     }else
     {
       InterSpecUser::DeviceType type = InterSpecUser::Desktop;
@@ -598,8 +598,6 @@ InterSpec::InterSpec( WContainerWidget *parent )
     
       InterSpecUser *newuser = new InterSpecUser( username, type );
       m_user = m_sql->session()->add( newuser );
-    
-      InterSpecUser::initFromDefaultValues( m_user, m_sql );
     }//if( m_user ) / else
   
     m_user.modify()->startingNewSession();
@@ -3442,20 +3440,15 @@ void InterSpec::saveStateToDb( Wt::Dbo::ptr<UserState> entry )
     
     try
     {
-      if( m_user->preferenceValue<bool>( "ShowVerticalGridlines" ) )
+      if( m_user->preferenceValue<bool>( "ShowVerticalGridlines", this ) )
         entry.modify()->shownDisplayFeatures |= UserState::kVerticalGridLines;
-    }catch(...)
-    {
-      // We can get here if we loaded from a state that didnt have this preference
-    }
-    
-    try
-    {
-      if( m_user->preferenceValue<bool>( "ShowHorizontalGridlines" ) )
+      
+      if( m_user->preferenceValue<bool>( "ShowHorizontalGridlines", this ) )
         entry.modify()->shownDisplayFeatures |= UserState::kHorizontalGridLines;
     }catch(...)
     {
-      // We can get here if we loaded from a state that didnt have this preference
+      // We shouldnt get here
+      assert( 0 );
     }
     
     if( m_spectrum->legendIsEnabled() )
@@ -4799,7 +4792,7 @@ void InterSpec::showWelcomeDialog( const bool force )
   
   try
   {
-    if( !force && !m_user->preferenceValue<bool>("ShowSplashScreen") )
+    if( !force && !m_user->preferenceValue<bool>("ShowSplashScreen", this) )
       return;
   }catch(...)
   {
@@ -6909,7 +6902,7 @@ void InterSpec::addViewMenu( WWidget *parent )
                                               "InterSpec_resources/images/spec_settings_small.png");
   
   bool logypref = true;
-  try{ logypref = m_user->preferenceValue<bool>( "LogY" ); }catch(...){}
+  try{ logypref = m_user->preferenceValue<bool>( "LogY", this ); }catch(...){}
   
   m_logYItems[0] = chartmenu->addMenuItem( WString::tr("app-mi-view-logy") );
   m_logYItems[1] = chartmenu->addMenuItem( WString::tr("app-mi-view-liny") );
