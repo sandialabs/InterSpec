@@ -3,7 +3,7 @@ name: Build App
 on:
   push:
     branches:
-      - "feature/LinuxCiBuild"
+      - master
 
 concurrency: ci-${{ github.ref }}
 
@@ -242,7 +242,7 @@ jobs:
           fail_on_unmatched_files: true
           tag_name: "bleeding-edge"
           release_name: "Development Build"
-          body: "An automated, and untested build of the latest code pushed to the repository.  Requires Windows 10, or may work on Windows 7 with the Edge browser runtime installed."
+          body: "An automated, and untested build of the latest code pushed to the repository.<br />Windows version requires Windows 10 or 11, but may work on Windows 7 with the Edge browser runtime installed.<br />Linux version requires `glibc >=2.28` based distro (e.g., Ubuntu 21.04+, RHEL 9+, Debian 11+, Fedora 34+)."
           draft: false
           generate_release_notes: false
           prerelease: true
