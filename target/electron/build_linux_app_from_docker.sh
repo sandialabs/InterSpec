@@ -49,6 +49,11 @@ yum install -y npm zip
 # Use the 'n' package to install a fairly modern version of npm, by default we are on like version 6 or 8, which is too old to run some of the packages we need
 npm install -g n
 n 20.18.0
+# Just in case, make sure to pick up latest node version
+hash -r
+# The default version of npm in manylinux_2_28_x86_64 is 6.14.11, which doesnt support the `exec` command, so we'll locally install a newer version of npm
+npm install -g npm@10.9.0
+hash -r
 npm install -g uglify-js
 npm install -g uglifycss
 npm install -g cmake-js
@@ -99,9 +104,7 @@ echo "Have copied app dir from ${CmakeBuildDir} to ${WorkingDir}/."
 
 echo "About to package"
 
-# The default version of npm in manylinux_2_28_x86_64 is 6.14.11, which doesnt support the `exec` command, so we'll locally install a newer version of npm
-npm install npm@10.9.0
-node_modules/.bin/npm exec electron-packager app InterSpec --overwrite=true --platform=linux --arch=x64 --protocol=interspec --protocol-name="InterSpec" --icon="${InterSpecCodePath}/target/electron/linux/InterSpec_desktop_icon_256x256.png" --prune=true --ignore=LICENSE.md --ignore=README.md
+npm exec electron-packager app InterSpec --overwrite=true --platform=linux --arch=x64 --protocol=interspec --protocol-name="InterSpec" --icon="${InterSpecCodePath}/target/electron/linux/InterSpec_desktop_icon_256x256.png" --prune=true --ignore=LICENSE.md --ignore=README.md
 
 cp "${InterSpecCodePath}/NOTICE.html" "${WorkingDir}/InterSpec-linux-x64/"
 echo "This is a build of InterSpec for Linux, using InterSpec code git hash ${GIT_HASH}." > "${WorkingDir}/InterSpec-linux-x64/build_information.txt"
