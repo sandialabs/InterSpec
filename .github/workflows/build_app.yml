@@ -244,7 +244,6 @@ jobs:
           release_name: "Development Build"
           body: "An automated, and untested build of the latest code pushed to the repository.  Requires Windows 10, or may work on Windows 7 with the Edge browser runtime installed."
           draft: false
-          prerelease: true
           generate_release_notes: false
           prerelease: true
           make_latest: true
