@@ -11984,10 +11984,10 @@ void InterSpec::handleAppUrl( const std::string &url_encoded_url )
     if( m_simpleMdaWindow )
       prev_state = m_simpleMdaWindow->tool()->encodeStateToUrl();
     
-    auto create_window = [this, query_str](){
+    auto create_window = [this, url](){
       DetectionLimitSimpleWindow *tool = showSimpleMdaWindow();
       if( tool )
-        tool->tool()->handleAppUrl( query_str );
+        tool->tool()->handleAppUrl( url );
     };//create_window lambda
     
     if( m_undo && m_undo->canAddUndoRedoNow() )

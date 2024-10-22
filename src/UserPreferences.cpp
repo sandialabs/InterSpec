@@ -371,14 +371,22 @@ void UserPreferences::setPreferenceValueInternal( const std::string &name,
                                    InterSpec *viewer )
 {
   const string value_as_str = value ? "1" : "0";
-  UserPreferences::setPreferenceValueWorker( name, value_as_str, viewer );
+  const bool updated = UserPreferences::setPreferenceValueWorker( name, value_as_str, viewer );
+  
+  // If preference value was not updated, we wont call the callbacks - if we do, we may get stuck
+  //  in an infinite recursion loop.
+  if( !updated )
+    return;
   
   UserPreferences * const self = viewer->preferences();
   assert( self );
   
   const auto callback_pos = self->m_onBoolChangeSignals.find(name);
   if( (callback_pos != end(self->m_onBoolChangeSignals)) && callback_pos->second )
-    (*callback_pos->second)(value);
+  {
+    Wt::Signals::signal<void(bool)> &signal = *callback_pos->second;
+    signal(value);
+  }
 }//setPreferenceValueInternal(...)
 
 
@@ -410,7 +418,7 @@ void UserPreferences::setPreferenceValueInternal( const std::string &name,
 
 
 
-void UserPreferences::setPreferenceValueWorker( const std::string &name,
+bool UserPreferences::setPreferenceValueWorker( const std::string &name,
                                                std::string value_as_string,
                                                InterSpec *viewer )
 {
@@ -426,7 +434,7 @@ void UserPreferences::setPreferenceValueWorker( const std::string &name,
   assert( self );
   auto old_pos = self->m_options.find(name);
   if( (old_pos != end(self->m_options)) && (old_pos->second->m_value == value_as_string) )
-    return;
+    return false;
   
   std::shared_ptr<DataBaseUtils::DbSession> sql = viewer->sql();
   const Wt::Dbo::ptr<InterSpecUser> &user = viewer->user();
@@ -461,12 +469,12 @@ void UserPreferences::setPreferenceValueWorker( const std::string &name,
       std::cerr << "Caught exception setting preference value to database" << std::endl;
     }
     
-    return;
+    return true;
   }//if( old_pos != end(self->m_options) )
   
   
   // If we are here, we dont have a value in memory so we'll check if its been added
-  //  to the database since we initialized this session, and if not, we'll start with'
+  //  to the database since we initialized this session, and if not, we'll start with
   //  default value
   DataBaseUtils::DbTransaction transaction( *sql );
   
@@ -511,6 +519,8 @@ void UserPreferences::setPreferenceValueWorker( const std::string &name,
   }//if( optioncol.size() >= 1 ) / else
     
   transaction.commit();
+  
+  return true;
 }//setPreferenceValueWorker(...)
 
 
