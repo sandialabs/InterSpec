@@ -38,15 +38,15 @@ echo "GIT_HASH = ${GIT_HASH}"
 echo "Will install npm and global packages"
 yum update
 yum install -y npm zip
-npm install -g --unsafe-perm=true --allow-root npm@10.9.0
-npm install -g --unsafe-perm=true --allow-root uglify-js
-npm install -g --unsafe-perm=true --allow-root uglifycss
-npm install -g --unsafe-perm=true --allow-root cmake-js
+npm install -g npm@10.9.0
+npm install -g uglify-js
+npm install -g uglifycss
+npm install -g cmake-js
 
 echo "Will install local npm packages"
 npm install --save-dev node-addon-api --arch=x64
 npm install electron --arch=x64
-npm install --save-dev --unsafe-perm=true --allow-root electron-packager
+npm install --save-dev electron-packager
 
 echo "CWD"
 pwd
@@ -83,7 +83,7 @@ else
   echo "There was no app directory in cwd"
 fi
 
-echo "Will try to copy app dir from ${CmakeBuildDir} to $(cwd)."
+echo "Will try to copy app dir from ${CmakeBuildDir} to $(pwd)."
 cp -r "${CmakeBuildDir}/app" "${WorkingDir}/"
 echo "Have copied app dir from ${CmakeBuildDir} to ${WorkingDir}/."
 
