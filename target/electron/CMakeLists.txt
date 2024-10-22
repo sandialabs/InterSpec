@@ -5,7 +5,7 @@ cmake_policy(SET CMP0042 NEW)
 
 project( InterSpecAddOn )
 
-add_definitions(-DNAPI_VERSION=3) #node.js v6.14.2*, 8.11.2+, v9.11.0+*, 10.0.0 and all later versions
+add_definitions(-DNAPI_VERSION=4)
 
 include_directories(${CMAKE_JS_INC})
 
