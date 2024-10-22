@@ -78,7 +78,7 @@ namespace Wt
     //  to avoid "Stale object" exceptions when the same user has multiple
     //  sessions of the app open.  A related issue not dealt with is that
     //  one session will overwrite whats saved in another one, and stuff wont be
-    //  propogated between them
+    //  propagated between them
     template<>
     struct dbo_traits<UserOption> : public dbo_default_traits
     {

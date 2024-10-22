@@ -4,6 +4,7 @@
 #include "InterSpec_config.h"
 
 #include <map>
+#include <tuple>
 #include <chrono>
 #include <memory>
 #include <vector>
@@ -324,7 +325,13 @@ public:
   
   void setYAxisMinimum( const double minimum );
   void setYAxisMaximum( const double maximum );
-  void setYAxisRange( const double minimum, const double maximum );
+  
+  /** Set the y-axis range.
+   
+   Returns the actual set y-range, and if this is different than the requested range, a message as to why it couldnt be set
+   (e.x., a value less than or equal to 0 was requested for a log axis).
+   */
+  std::tuple<double,double,Wt::WString> setYAxisRange( double minimum, double maximum );
     
   //peakLabel should be of type SpectrumChart::PeakLabels, but I didnt want
   //  to include the SpectrumChart header for just this
