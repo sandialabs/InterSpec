@@ -2,7 +2,7 @@ name: Linux Build
 
 on:
   push:
-    branches: [ feature/LinuxCiBuild ] # Trigger the workflow on push to the 'main' branch
+    branches: [ feature/dummy ]
 
 jobs:
   build-linux:
