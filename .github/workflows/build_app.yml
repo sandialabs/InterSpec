@@ -228,8 +228,8 @@ jobs:
       - name: Download Build Artifacts
         uses: actions/download-artifact@v4
         with:
-          pattern: *-build
-          path: ./artifacts
+          pattern: '*-build'
+          path: './artifacts'
           merge-multiple: true
 
       - name: Display structure of downloaded files
@@ -240,13 +240,13 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           fail_on_unmatched_files: true
-          tag_name: bleeding-edge
+          tag_name: "bleeding-edge"
           release_name: "Development Build"
           body: "An automated, and untested build of the latest code pushed to the repository.  Requires Windows 10, or may work on Windows 7 with the Edge browser runtime installed."
           draft: false
           generate_release_notes: false
           prerelease: true
           make_latest: true
-          files: ./artifacts/**
+          files: "./artifacts/**"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
