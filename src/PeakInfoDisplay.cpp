@@ -66,6 +66,7 @@
 #include "InterSpec/WarningWidget.h"
 #include "InterSpec/PeakInfoDisplay.h"
 #include "InterSpec/UndoRedoManager.h"
+#include "InterSpec/UserPreferences.h"
 #include "InterSpec/AddNewPeakDialog.h"
 #include "InterSpec/RowStretchTreeView.h"
 #include "InterSpec/PeakSearchGuiUtils.h"
@@ -851,7 +852,7 @@ void PeakInfoDisplay::init()
   assert( !m_infoView );
   assert( !m_infoLayout );
 
-  const bool showToolTips = InterSpecUser::preferenceValue<bool>( "ShowTooltips", m_viewer );
+  const bool showToolTips = UserPreferences::preferenceValue<bool>( "ShowTooltips", m_viewer );
   
   m_infoLayout = new WGridLayout();
   setLayout( m_infoLayout );

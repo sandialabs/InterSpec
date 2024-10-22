@@ -90,6 +90,7 @@
 #include "InterSpec/MakeFwhmForDrf.h"
 #include "InterSpec/SwitchCheckbox.h"
 #include "InterSpec/ShieldingSelect.h"
+#include "InterSpec/UserPreferences.h"
 #include "InterSpec/SpectraFileModel.h"
 #include "InterSpec/ReferenceLineInfo.h"
 #include "InterSpec/DetectionLimitTool.h"
@@ -119,7 +120,7 @@ bool use_curie_units()
   if( !interspec )
     return true;
   
-  return !InterSpecUser::preferenceValue<bool>( "DisplayBecquerel", interspec );
+  return !UserPreferences::preferenceValue<bool>( "DisplayBecquerel", interspec );
 }//bool use_curie_units()
 
 }//namespace
@@ -707,7 +708,7 @@ public:
     m_decon_cont_norm_method->addItem( "Fixed full ROI" );
     m_decon_cont_norm_method->setCurrentIndex( static_cast<int>(m_input.decon_cont_norm_method) );
     
-    const bool showToolTips = InterSpecUser::preferenceValue<bool>( "ShowTooltips", InterSpec::instance() );
+    const bool showToolTips = UserPreferences::preferenceValue<bool>( "ShowTooltips", InterSpec::instance() );
     const char *tooltip = "How the continuum normalization should be determined:"
     "<ul><li><b>Floating</b>: The polynomial continuum is fit for, at each given activity -"
     " the activity affects the continuum.</li>"
@@ -814,7 +815,7 @@ public:
     //Right now we are just having DetectionLimitTool completely refresh on activity units change,
     //  but we could be a little more fine-grained about this.
     //InterSpec *viewer = InterSpec::instance();
-    //InterSpecUser::addCallbackWhenChanged( viewer->m_user, viewer, "DisplayBecquerel",
+    //viewer->preferences()->addCallbackWhenChanged( "DisplayBecquerel",
     //                                      boost::bind(&MdaPeakRow::setSimplePoisonTxt, this) );
   }//MdaPeakRow constructor
   
@@ -1143,7 +1144,7 @@ DetectionLimitTool::DetectionLimitTool( InterSpec *viewer,
   m_ageEdit->setAutoComplete( false );
   label->setBuddy( m_ageEdit );
   
-  const bool showToolTips = InterSpecUser::preferenceValue<bool>( "ShowTooltips", InterSpec::instance() );
+  const bool showToolTips = UserPreferences::preferenceValue<bool>( "ShowTooltips", InterSpec::instance() );
   const char *tooltip =
   "<div>The age of the nuclide.</div>"
   "<br />"
@@ -1398,7 +1399,7 @@ DetectionLimitTool::DetectionLimitTool( InterSpec *viewer,
   handleUserNuclideChange();
   
   // Update the displayed activity units, when the user changes this preference.
-  InterSpecUser::addCallbackWhenChanged( viewer->m_user, viewer, "DisplayBecquerel",
+  viewer->preferences()->addCallbackWhenChanged( "DisplayBecquerel",
                                         boost::bind(&DetectionLimitTool::handleInputChange, this) );
   
   

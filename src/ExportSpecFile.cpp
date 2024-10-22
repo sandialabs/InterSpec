@@ -74,6 +74,7 @@
 #include "InterSpec/ExportSpecFile.h"
 #include "InterSpec/SpecMeasManager.h"
 #include "InterSpec/UndoRedoManager.h"
+#include "InterSpec/UserPreferences.h"
 #include "InterSpec/SpectraFileModel.h"
 #include "InterSpec/PhysicalUnitsLocalized.h"
 
@@ -740,7 +741,7 @@ void ExportSpecFileTool::init()
   m_interspec->saveRelActManualStateToForegroundSpecMeas();
 #endif
   
-  const bool showToolTips = InterSpecUser::preferenceValue<bool>( "ShowTooltips", m_interspec );
+  const bool showToolTips = UserPreferences::preferenceValue<bool>( "ShowTooltips", m_interspec );
   const bool isMobile = m_interspec && m_interspec->isMobile();
 
   if( isMobile )

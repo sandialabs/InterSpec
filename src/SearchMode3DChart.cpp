@@ -51,6 +51,7 @@
 #include "InterSpec/InterSpec.h"
 #include "InterSpec/HelpSystem.h"
 #include "InterSpec/InterSpecUser.h"
+#include "InterSpec/UserPreferences.h"
 #include "InterSpec/SearchMode3DChart.h"
 #include "InterSpec/NativeFloatSpinBox.h"
 #include "InterSpec/SearchMode3DDataModel.h"
@@ -102,7 +103,7 @@ void SearchMode3DChart::init()
   if( m_viewer )
     m_viewer->useMessageResourceBundle( "SearchMode3DChart" );
   
-  const bool showToolTips = InterSpecUser::preferenceValue<bool>("ShowTooltips", InterSpec::instance());
+  const bool showToolTips = UserPreferences::preferenceValue<bool>("ShowTooltips", InterSpec::instance());
   
   m_layout = new WGridLayout();
   m_layout->setContentsMargins( 9, 9, 9, 0 ); //left, top, right, bottom (default is 9 pixels on each side)

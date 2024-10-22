@@ -50,6 +50,7 @@
 #include "InterSpec/InterSpecApp.h"
 #include "InterSpec/SpectrumChart.h"
 #include "InterSpec/UndoRedoManager.h"
+#include "InterSpec/UserPreferences.h"
 #include "InterSpec/GammaCountDialog.h"
 #include "InterSpec/NativeFloatSpinBox.h"
 
@@ -141,7 +142,7 @@ void GammaCountDialog::init()
   
   wApp->useStyleSheet( "InterSpec_resources/GammaCountDialog.css" );
   wApp->useStyleSheet( "InterSpec_resources/GridLayoutHelpers.css" );
-  const bool showToolTips = InterSpecUser::preferenceValue<bool>( "ShowTooltips", m_specViewer );
+  const bool showToolTips = UserPreferences::preferenceValue<bool>( "ShowTooltips", m_specViewer );
   
   if( !m_specViewer )
     throw runtime_error( "GammaCountDialog: you must pass in valid InterSpec pointer" );

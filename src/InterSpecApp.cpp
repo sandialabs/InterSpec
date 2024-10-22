@@ -67,6 +67,7 @@
 #include "InterSpec/InterSpecUser.h"
 #include "InterSpec/DataBaseUtils.h"
 #include "InterSpec/WarningWidget.h"
+#include "InterSpec/UserPreferences.h"
 
 #if( BUILD_AS_ELECTRON_APP )
 #include "target/electron/ElectronUtils.h"
@@ -651,15 +652,15 @@ void InterSpecApp::setupWidgets( const bool attemptStateLoad  )
   //Check to see if we should load the apps last saved state
   try
   {
-    bool saveState = InterSpecUser::preferenceValue<bool>( "AutoSaveSpectraToDb", m_viewer );
+    bool saveState = UserPreferences::preferenceValue<bool>( "AutoSaveSpectraToDb", m_viewer );
     saveState = (saveState && attemptStateLoad);
     
 #if( PROMPT_USER_BEFORE_LOADING_PREVIOUS_STATE )
     //Make it so the app will prompt user to load the state
     //  - Experimental!
     //  - maybe should make it so it always does this, except on iOS and Android
-    const bool loadPrev = InterSpecUser::preferenceValue<bool>("LoadPrevStateOnStart", m_viewer );
-    const bool promptLoad = InterSpecUser::preferenceValue<bool>("PromptStateLoadOnStart", m_viewer );
+    const bool loadPrev = UserPreferences::preferenceValue<bool>("LoadPrevStateOnStart", m_viewer );
+    const bool promptLoad = UserPreferences::preferenceValue<bool>("PromptStateLoadOnStart", m_viewer );
     if( !loadPrev && !promptLoad )
       saveState = false;
 #endif
@@ -680,7 +681,7 @@ void InterSpecApp::setupWidgets( const bool attemptStateLoad  )
       DataBaseUtils::DbTransaction transaction( *sql );
       
       const string query = "InterSpecUser_id = "
-      + std::to_string( m_viewer->m_user.id() )
+      + std::to_string( m_viewer->user().id() )
       + " AND (StateType = "
       + std::to_string( int(UserState::kEndOfSessionTemp) )
       + " OR StateType = "
@@ -723,8 +724,7 @@ void InterSpecApp::setupWidgets( const bool attemptStateLoad  )
           dialogDiv->addWidget( cb );
           auto changePromptPref = [this](bool dont_ask ){
             try {
-              InterSpecUser::setPreferenceValue<bool>( m_viewer->m_user,
-                              "PromptStateLoadOnStart", dont_ask, m_viewer );
+              UserPreferences::setPreferenceValue<bool>( "PromptStateLoadOnStart", dont_ask, m_viewer );
             }catch( std::exception &e ) {
               Wt::log("error") << "Failed setting 'PromptStateLoadOnStart' user prefrence/";
             }
@@ -732,8 +732,7 @@ void InterSpecApp::setupWidgets( const bool attemptStateLoad  )
         
           auto changeDoLoadPref = [this](bool load ){
             try {
-              InterSpecUser::setPreferenceValue<bool>( m_viewer->m_user,
-                                    "LoadPrevStateOnStart", load, m_viewer );
+              UserPreferences::setPreferenceValue<bool>( "LoadPrevStateOnStart", load, m_viewer );
             }catch( std::exception &e ) {
               Wt::log("error") << "Failed setting 'LoadPrevStateOnStart' user prefrence.";
             }
@@ -913,9 +912,9 @@ void InterSpecApp::setupWidgets( const bool attemptStateLoad  )
   }
 #endif
   
-  if( m_viewer->m_user )
+  if( m_viewer->user() )
     Wt::log("debug") << "Have started session " << sessionId() << " for user "
-    << m_viewer->m_user->userName() << ".";
+    << m_viewer->user()->userName() << ".";
   
 #if( BUILD_AS_ELECTRON_APP || BUILD_AS_OSX_APP || ANDROID || BUILD_AS_WX_WIDGETS_APP  )
   // TODO 20220405: in macOS app I see the error "Wt: decodeSignal(): signal 'of7g69f.SucessfullyLoadedConf' not exposed"
@@ -1266,8 +1265,8 @@ void InterSpecApp::updateUsageTimeToDb()
         DataBaseUtils::DbTransaction transaction( *sql );
         
         // Other sessions may have added to the session - we'll reread from the DB
-        m_viewer->m_user.reread();
-        m_viewer->m_user.modify()->addUsageTimeDuration( m_activeTimeSinceDbUpdate );
+        m_viewer->reReadUserInfoFromDb();
+        m_viewer->user().modify()->addUsageTimeDuration( m_activeTimeSinceDbUpdate );
         
         transaction.commit();
       }//End db transaction
@@ -1283,7 +1282,7 @@ void InterSpecApp::updateUsageTimeToDb()
 
 void InterSpecApp::prepareForEndOfSession()
 {
-  if( !m_viewer || !m_viewer->m_user )
+  if( !m_viewer || !m_viewer->user() )
     return;
 
   updateUsageTimeToDb();
@@ -1294,12 +1293,12 @@ void InterSpecApp::prepareForEndOfSession()
     
     const chrono::milliseconds nmilli = chrono::duration_cast<chrono::milliseconds>(m_activeTimeInSession);
     Wt::log("info") << "At session end, actively used for " << nmilli.count() << " ms for user "
-    << m_viewer->m_user->userName();
+    << m_viewer->user()->userName();
     
     
 #if( USE_DB_TO_STORE_SPECTRA )
       //Check to see if we should save the apps state
-      const bool saveState = InterSpecUser::preferenceValue<bool>( "AutoSaveSpectraToDb", m_viewer );
+      const bool saveState = UserPreferences::preferenceValue<bool>( "AutoSaveSpectraToDb", m_viewer );
         
         //Clean up the kEndOfSessions from before
         bool cleanupStates = true;
@@ -1307,7 +1306,7 @@ void InterSpecApp::prepareForEndOfSession()
         {
             DataBaseUtils::DbTransaction transaction( *sql );
             const string query = "InterSpecUser_id = "
-            + std::to_string( m_viewer->m_user.id() )
+            + std::to_string( m_viewer->user().id() )
             + " AND (StateType = "
             + std::to_string( int(UserState::kEndOfSessionTemp))
             + " OR StateType = "
@@ -1350,7 +1349,7 @@ void InterSpecApp::prepareForEndOfSession()
         DataBaseUtils::DbTransaction transaction( *sql );
           
         UserState *state = new UserState();
-        state->user = m_viewer->m_user;
+        state->user = m_viewer->user();
         state->stateType = UserState::kEndOfSessionTemp;
         state->creationTime = WDateTime::currentDateTime();
         state->name = name;
@@ -1700,9 +1699,9 @@ void InterSpecApp::finalize()
 {
   prepareForEndOfSession();
   
-  if( m_viewer && m_viewer->m_user )
+  if( m_viewer && m_viewer->user() )
     Wt::log("info") << "Have finalized session " << sessionId() << " for user "
-         << m_viewer->m_user->userName();
+         << m_viewer->user()->userName();
 }//void InterSpecApp::finalize()
 
 

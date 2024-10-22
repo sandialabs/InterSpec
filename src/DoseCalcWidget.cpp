@@ -82,6 +82,7 @@
 #include "InterSpec/GadrasSpecFunc.h"
 #include "InterSpec/ShieldingSelect.h"
 #include "InterSpec/UndoRedoManager.h"
+#include "InterSpec/UserPreferences.h"
 #include "InterSpec/NativeFloatSpinBox.h"
 #include "InterSpec/NuclideSourceEnter.h"
 #include "InterSpec/MassAttenuationTool.h"
@@ -359,8 +360,8 @@ void DoseCalcWidget::init()
   }
   
   const bool narrowLayout = ((w > 100) && (w < 450));
-  const bool showToolTips = InterSpecUser::preferenceValue<bool>( "ShowTooltips", m_viewer );
-  const bool useBq = InterSpecUser::preferenceValue<bool>( "DisplayBecquerel", InterSpec::instance() );
+  const bool showToolTips = UserPreferences::preferenceValue<bool>( "ShowTooltips", m_viewer );
+  const bool useBq = UserPreferences::preferenceValue<bool>( "DisplayBecquerel", InterSpec::instance() );
   
   WContainerWidget *enterDiv = new WContainerWidget();
   WContainerWidget *answerDiv = new WContainerWidget();

@@ -103,6 +103,7 @@
 #include "InterSpec/ShieldingSelect.h"
 #include "InterSpec/SpecMeasManager.h"
 #include "InterSpec/UndoRedoManager.h"
+#include "InterSpec/UserPreferences.h"
 #include "InterSpec/RowStretchTreeView.h"
 #include "InterSpec/NativeFloatSpinBox.h"
 #include "InterSpec/MassAttenuationTool.h"
@@ -375,8 +376,8 @@ SourceFitModel::SourceFitModel( PeakModel *peakModel,
   }else
   {
     interspec->useMessageResourceBundle( "ShieldingSourceDisplay" ); //jic
-    m_displayCuries = !InterSpecUser::preferenceValue<bool>( "DisplayBecquerel", interspec );
-    InterSpecUser::addCallbackWhenChanged( interspec->m_user, interspec, "DisplayBecquerel",
+    m_displayCuries = !UserPreferences::preferenceValue<bool>( "DisplayBecquerel", interspec );
+    interspec->preferences()->addCallbackWhenChanged( "DisplayBecquerel",
                                           this, &SourceFitModel::displayUnitsChanged );
   }//if( !interspec ) / else
   
@@ -2875,7 +2876,7 @@ ShieldingSourceDisplay::ShieldingSourceDisplay( PeakModel *peakModel,
   assert( m_specViewer );
   m_specViewer->useMessageResourceBundle( "ShieldingSourceDisplay" );
       
-  const bool showToolTips = InterSpecUser::preferenceValue<bool>( "ShowTooltips", m_specViewer );
+  const bool showToolTips = UserPreferences::preferenceValue<bool>( "ShowTooltips", m_specViewer );
   
   setLayoutSizeAware( true );
   const bool isotopesHaveSameAge = true;
@@ -4339,7 +4340,7 @@ void ShieldingSourceDisplay::setFitQuantitiesToDefaultValues()
     if( m_sourceModel->fitActivity(i) )
     {
       WModelIndex index = m_sourceModel->index( i, SourceFitModel::kActivity );
-      const bool useCi = !InterSpecUser::preferenceValue<bool>( "DisplayBecquerel", m_specViewer );
+      const bool useCi = !UserPreferences::preferenceValue<bool>( "DisplayBecquerel", m_specViewer );
       if( useCi )
         m_sourceModel->setData( index, "1 mCi" );
       else
@@ -6266,7 +6267,7 @@ void ShieldingSourceDisplay::closeBrowseDatabaseModelsWindow()
 
 void ShieldingSourceDisplay::startBrowseDatabaseModels()
 {
-  if( !m_specViewer || !m_specViewer->m_user )
+  if( !m_specViewer || !m_specViewer->user() )
     throw runtime_error( "startBrowseDatabaseModels(): invalid user" );
   
   if( m_modelDbBrowseWindow )
@@ -6306,7 +6307,7 @@ void ShieldingSourceDisplay::startBrowseDatabaseModels()
       std::shared_ptr<DataBaseUtils::DbSession> sql = m_specViewer->sql();
       DataBaseUtils::DbTransaction transaction( *sql );
       nfileprev[0] = dbmeas ? dbmeas->modelsUsedWith.size() : 0;
-      nfileprev[1] = m_specViewer->m_user->shieldSrcModels().size();
+      nfileprev[1] = m_specViewer->user()->shieldSrcModels().size();
       transaction.commit();
     }//end codeblock for database interaction
     
@@ -6322,7 +6323,7 @@ void ShieldingSourceDisplay::startBrowseDatabaseModels()
       if( i == 0 )
         model->setQuery( dbmeas->modelsUsedWith.find() );
       else
-        model->setQuery( m_specViewer->m_user->shieldSrcModels().find() );
+        model->setQuery( m_specViewer->user()->shieldSrcModels().find() );
       model->addColumn( "Name" );
       selection->setModel( model );
       selection->setModelColumn( 0 );
@@ -6683,7 +6684,7 @@ bool ShieldingSourceDisplay::finishSaveModelToDatabase( const Wt::WString &name,
     if( !m_modelInDb )
     {
       model = new ShieldingSourceModel();
-      model->user = m_specViewer->m_user;
+      model->user = m_specViewer->user();
       model->serializeTime = WDateTime::currentDateTime();
       m_modelInDb.reset( new ShieldingSourceModel() );
       m_modelInDb = sql->session()->add( model );
@@ -6746,7 +6747,7 @@ void ShieldingSourceDisplay::saveCloneModelToDatabase()
     ShieldingSourceModel *model = new ShieldingSourceModel();
     model->shallowEquals( *m_modelInDb );
     
-    model->user = m_specViewer->m_user;
+    model->user = m_specViewer->user();
     model->serializeTime = WDateTime::currentDateTime();
     model->name = model->name + " Clone";
     
@@ -8683,7 +8684,7 @@ void ShieldingSourceDisplay::updateCalcLogWithFitResults(
     const SandiaDecay::Nuclide *nuc = chi2Fcn->nuclide( nucn );
     if( nuc )
     {
-      const bool useCi = !InterSpecUser::preferenceValue<bool>( "DisplayBecquerel", InterSpec::instance() );
+      const bool useCi = !UserPreferences::preferenceValue<bool>( "DisplayBecquerel", InterSpec::instance() );
       const double act = chi2Fcn->activity( nuc, params );
       const string actStr = PhysicalUnits::printToBestActivityUnits( act, 2, useCi );
       

@@ -25,27 +25,19 @@
 
 #include "InterSpec_config.h"
 
-#include <map>
 #include <chrono>
 #include <string>
 #include <vector>
-#include <fstream>
-#include <iterator>
-#include <algorithm>
-#include <stdexcept>
 
 #include <boost/any.hpp>
-#include <boost/function.hpp>
 #include <boost/date_time.hpp>
 
-#include <Wt/WSignal>
 #include <Wt/Dbo/Dbo>
 //#include <Wt/Dbo/weak_ptr>  //usable with Wt 3.3.1, but not currently using
 #include <Wt/Dbo/SqlTraits>
 #include <Wt/Dbo/collection>
 #include <Wt/Dbo/WtSqlTraits>
 
-#include "InterSpec/DataBaseUtils.h"
 
 class SpecMeas;
 class InterSpec;
@@ -56,6 +48,7 @@ class ColorThemeInfo;
 class UserFileInDbData;
 struct ShieldingSourceModel;
 
+namespace DataBaseUtils{ class DbSession; }
 
 class DataStr : public std::vector<unsigned char>{ public: };
 typedef DataStr FileData_t;
@@ -63,10 +56,6 @@ typedef DataStr FileData_t;
 class UserOption;
 class InterSpecUser;
 
-namespace rapidxml
-{
-  template<class Ch> class xml_node;
-}//namespace rapidxml
 
 
 //The database this InterSpec is using; if higher than database registry, will
@@ -157,23 +146,10 @@ class UserOption
 public:
   enum DataType{ String, Decimal, Integer, Boolean };
 
-  //Right now MySQL is only used for web deployments, and there are no string
-  //  option values that should be very long, since none of them should
-  //  coorespond to file paths.
-  //  Non-web deployments have a few options (like File Query Tool path,
-  //  detector response folder location), that include file paths, so we should
-  //  allow longer preference values.  Note, SQLite does not impose any
-  //  length restrictions on string fields, even if they are declared with
-  //  something like VARCHAR(255).
-#if( USE_MYSQL_DB )
-  static const size_t sm_max_name_str_len = 30;
-  static const size_t sm_max_value_str_len = 35;
-#elif( USE_SQLITE3_DB )
+  //Note, SQLite does not impose any length restrictions on string fields,
+  // even if they are declared with something like VARCHAR(255).
   static const size_t sm_max_name_str_len = 30;
   static const size_t sm_max_value_str_len = 4096;
-#else
-  static_assert( 0, "Compile-time database type not recognized" );
-#endif
   
   Wt::Dbo::ptr<InterSpecUser> m_user;
   
@@ -195,6 +171,14 @@ public:
 };//class UserOption
 
 
+/** The user information in the database.
+ 
+ This stores preferences, saved states, previously opened spectra, and use statistics.
+ This struct should be treated as a view into the database, not a persistent object in memory; that is,
+ the `InterSpec::m_user` Wt::Dbo::ptr may change where it points in memory when things are
+ refreshed from the database.  Because of this, we cant store any information in this class, that isnt
+ backed by the database.
+ */
 class InterSpecUser
 {
   //Right now access to the InterSpecUser class should only be done from the
@@ -208,6 +192,12 @@ public:
     TabletDevice = 0x2
   };
 
+  /** The file name of the default preferences XML file.  File name is relative
+      to InterSpec::dataDirectory(), and has a default value of
+      "default_preferences.xml".
+   */
+  static const std::string sm_defaultPreferenceFile;
+  
 public:
   //InterSpecUser(): default constructor necessary for Wt::Dbo to be able to
   //  construct InterSpecUser objects to later call persist(...) on to read
@@ -220,6 +210,8 @@ public:
   InterSpecUser( const std::string &username, DeviceType type );
   
   const std::string &userName() const;
+  
+  int deviceType() const;
   
   /** The number of new InterSpec sessions that has been created for this user. */
   int accessCount() const;
@@ -244,122 +236,6 @@ public:
   /** The UTC time when this user was first created in the database. */
   std::chrono::system_clock::time_point firstAccessUTC() const;
   
-  //userFromViewer: a simple helper function to return the user from a
-  //  spectrum viewer pointer; necessary to break a "Member access into
-  //  incomplete type 'InterSpec'" issue.
-  static Wt::Dbo::ptr<InterSpecUser> &userFromViewer( InterSpec *viewer );
-  
-  //sqlFromViewer: same story as userFromViewer()
-  static std::shared_ptr<DataBaseUtils::DbSession> sqlFromViewer( InterSpec *viewer );
-  
-  
-  //preferenceValueAny(...): Retrieves preference value.  If value has not
-  //  been previously set, will return default value as well as adding this
-  //  value to to the users preferences.  If no preference by the passed in name
-  //  is found, nor one with a default value, a runtime_error will be thrown.
-  //  There must be a Dbo::Session associated with usr or else and exception
-  //  will be thrown.
-  //  The InterSpec is necessary in order to add the default value to the
-  //  database in the case the user doesnt already have a preference by the 
-  //  given name, but that preference does exist in the default values.
-  static boost::any preferenceValueAny( const std::string &name, InterSpec *viewer );
-  
-  /** Convienince function to call for #preferenceValueAny */
-  template<typename T>
-  static T preferenceValue( const std::string &name,
-                            InterSpec *viewer );
-  
-  //setPreferenceValue(): Sets preference value for named preference to both
-  //  the InterSpecUser in memory and the database.
-  //  If the preference isnt already in memory, and its not in
-  //  data/default_preferences.xml then will throw an exception
-  //  Note the reason for passing InterSpecUser and viewer pointers is so
-  //  we dont have to #include InterSpec.h in this file.
-  template<typename T>
-  static void setPreferenceValue( Wt::Dbo::ptr<InterSpecUser> user,
-                                  const std::string &name, const T &value,
-                                  InterSpec *viewer );
-  
-  /** Specialization of #setPreferenceValue for boolean preference; does same as other variant
-   of the function, but also calls functions in m_onBoolChangeSignals.
-   */
-  static void setPreferenceValue( Wt::Dbo::ptr<InterSpecUser> user,
-                                 const std::string &name,
-                                 const bool &value,
-                                 InterSpec *viewer );
-  
-  /** Just a convenience function to call above variant, for binding to signals. */
-  static void setBoolPreferenceValue( Wt::Dbo::ptr<InterSpecUser> user,
-                                 const std::string &name,
-                                 const bool &value,
-                                 InterSpec *viewer );
-  
-protected:
-  template<typename T>
-  static void setPreferenceValueWorker( Wt::Dbo::ptr<InterSpecUser> user,
-                                 const std::string &name, const T &value,
-                                 InterSpec *viewer );
-
-public:
-  
-  /** Add a function to callback when the preference changes, either through loading  a new state,
-   or toggling the preference checkbox or whatever.
-   
-   This variant of #addCallbackWhenChanged is useful to book a slot (member function) of a
-   Wt::WObject up to, so the callback lifetime will be limited to the lifetime of the WObject.
-   
-   This function must be called from the application thread such that InterSpec::instance() will be
-   non-void.
-   */
-  template<class T, class V>
-  static void addCallbackWhenChanged( Wt::Dbo::ptr<InterSpecUser> &user,
-                                      InterSpec *viewer,
-                                      const std::string &name, T *target,
-                                      void (V::*method)(bool) );
-  
-  /** Adds a function to callback when the preference changes, either through loading
-   a new state, or toggling the preference checkbox or whatever.
-   
-   This function must be called from the application thread such that InterSpec::instance() will be
-   non-void
-   
-   Note, the function passed in must be sure that it will be safe to call until the end of the users
-   session.  If you need limit lifetime of callbacks, either make sure your caller connects to
-   a slot of a Wt::WObject, or is otherwise somehow safe for the entirety of the InterSpec class
-   lifetime.
-   */
-  template<class T>
-  static void addCallbackWhenChanged( Wt::Dbo::ptr<InterSpecUser> &user,
-                                     InterSpec *viewer,
-                                     const std::string &name,
-                                     const T &fcn );
-  
-  /** Makes it so if the user changes the value via this GUI element, the value of the preference
-   stored in memory and in the database will be correspondingly updated.  Also makes it so if
-   a different GUI element updates this preference value, or #setPreferenceValue is called for
-   this preference, this widgets state will be correspondingly updated as well.
-   
-   However, the signals you have hooked up to this widget wont be called when the value changes by
-   another widget or #setPreferenceValue, to handle this case, use the #addCallbackWhenChanged
-   function to add a callback for whenever the value of the preference changes.
-   */
-  static void associateWidget( Wt::Dbo::ptr<InterSpecUser> user,
-                               const std::string &name,
-                               Wt::WCheckBox *cb,
-                               InterSpec *viewer );
-  
-  /*
-  static void associateWidget( Wt::Dbo::ptr<InterSpecUser> user,
-                               const std::string &name,
-                               Wt::WSpinBox *spinner,
-                               InterSpec *viewer );
-  static void associateWidget( Wt::Dbo::ptr<InterSpecUser> user,
-                               const std::string &name,
-                               Wt::WDoubleSpinBox *spinner,
-                               InterSpec *viewer );
-   */
-  
-  
   
   //startingNewSession(): increments access counts, and updates previous and
   //  current timestamps.  Should be called at the begining of a new InterSpec.
@@ -379,25 +255,6 @@ public:
   
   //userFiles(): useful to a users previously saved files
   const Wt::Dbo::collection< Wt::Dbo::ptr<UserFileInDb> > &userFiles() const;
-  
-  //userOptionsToXml(): serializes the current user options to a node called
-  //  <preferences> under parent passed in, with each preferences being placed
-  //  in a <pref> node under it.  Uses same schema as 'default_preferences.xml'.
-  //Returns the <preferences> node.
-  ::rapidxml::xml_node<char> *userOptionsToXml(
-                                            ::rapidxml::xml_node<char> *parent,
-                                            InterSpec *viewer ) const;
-  
-  //restoreUserPrefsFromXml(): sets the currently active user preferences from
-  //  passed in XML node.  'preferences' must be a node named <preferences>
-  //  and should be in same format that userOptionsToXml() creates.
-  //  If there is a current user option that is not in the passd in XML, its
-  //  value will not be altered.  Any new options in the XML not currently in
-  //  memory will be set.
-  //Throws exception upon error.
-  static void restoreUserPrefsFromXml( Wt::Dbo::ptr<InterSpecUser> user,
-                                  const ::rapidxml::xml_node<char> *preferences,
-                                InterSpec *viewer );
   
   template<class Action>
   void persist( Action &a )
@@ -420,6 +277,7 @@ public:
   
   std::chrono::system_clock::time_point currentAccessStartUTC() const;
   
+  const Wt::Dbo::collection< Wt::Dbo::ptr<UserOption> > &preferences() const;
   const Wt::Dbo::collection< Wt::Dbo::ptr<ShieldingSourceModel> > &shieldSrcModels() const;
   const Wt::Dbo::collection< Wt::Dbo::ptr<UserState> > &userStates() const;
   const Wt::Dbo::collection< Wt::Dbo::ptr<ColorThemeInfo> >   &colorThemes() const;
@@ -430,13 +288,7 @@ protected:
   void setCurrentAccessTime( const std::chrono::system_clock::time_point &utcTime );
   void setPreviousAccessTime( const std::chrono::system_clock::time_point &utcTime );
   
-  //getDefaultUserPreference(...): will throw exception upon error, otherwise
-  //  results will always be valid.
-  //Will search for user option specialized for DeviceType (represented by the
-  //  int 'type') before returning the general option
-  static UserOption *getDefaultUserPreference( const std::string &name,
-                                               const int type );
-  
+    
   std::string m_userName;
   int m_deviceType;
   int m_accessCount;
@@ -445,23 +297,6 @@ protected:
   boost::posix_time::ptime m_previousAccessUTC;
   boost::posix_time::ptime m_currentAccessStartUTC;
   boost::posix_time::time_duration m_totalTimeInApp;
-  
-  /** Holds callbacks set from #addCallbackWhenChanged, for boolean preferences.
-   
-   I believe using a Wt::Signals::signal allows makes it so we can connect widget slots (function
-   calls), and then the connection will automatically get deleted when the widget is deleted, making
-   things safe.
-   
-   Note that these function may be "safe" for widgets getting deleted (e.g., signals automatically
-   disconnected), if the signal is connected to an object deriving from Wt::WObject.
-   
-   Currently only boolean preferences require callbacks in InterSpec; in the future, if other
-   preference types (string, int, doubles) need callbacks, we will have to re-factor things, or
-   add in analogous member variables.
-   
-   Mutable so Dbo::ptr<t>.modify() doesnt need to be called
-   */
-  mutable std::map<std::string,std::shared_ptr<Wt::Signals::signal<void(bool)>>> m_onBoolChangeSignals;
   
   
   Wt::Dbo::collection< Wt::Dbo::ptr<UserFileInDb> >         m_userFiles;
@@ -475,11 +310,7 @@ protected:
   
 //  Wt::Dbo::collection< Wt::Dbo::ptr<DbUserState::Spectrum> > m_spectrums;
   
-  /** The file name of the default preferences XML file.  File name is relative
-      to InterSpec::dataDirectory(), and has a default value of
-      "default_preferences.xml".
-   */
-  static const std::string sm_defaultPreferenceFile;
+  
   
   friend class InterSpec;
 };//struct UserOption
@@ -1069,189 +900,6 @@ struct UseDrfPref
     Wt::Dbo::field( a, m_criteria, "Criteria" );
   }
 };//struct UseDrfPref
-
-
-//Implementation of inline and templated functions
-#include <sstream>
-#include <stdexcept>
-#include <Wt/Dbo/Session>
-#include <Wt/Dbo/Transaction>
-
-
-template<typename T>
-T InterSpecUser::preferenceValue( const std::string &name,
-                                  InterSpec *viewer )
-{
-  boost::any value = InterSpecUser::preferenceValueAny( name, viewer );
-  return boost::any_cast<T>( value );
-}//preferenceValue(...)
-
-
-
-template<typename T>
-void InterSpecUser::setPreferenceValueWorker( Wt::Dbo::ptr<InterSpecUser> user,
-                                       const std::string &name, const T &value,
-                                       InterSpec *viewer )
-{
-  if( name.size() > UserOption::sm_max_name_str_len )
-    throw std::runtime_error( "Invalid name for preference: " + name );
-  
-  std::shared_ptr<DataBaseUtils::DbSession> sql = sqlFromViewer( viewer );
-  
-  const T oldVal = preferenceValue<T>( name, viewer );
-  if( value == oldVal )
-    return;
-  
-  if( sql->session() != user.session() )
-    throw std::runtime_error( "InterSpecUser::setPreferenceValue() must be called"
-                             " with same db session as user" );
-  
-  std::string strval;
-  {// Begin put value into strval
-    std::stringstream valuestrm;
-    valuestrm << value;
-    strval = valuestrm.str();
-    if( strval.size() > UserOption::sm_max_value_str_len )
-      strval = strval.substr( 0, UserOption::sm_max_value_str_len );
-  }// End put value into strval
-  
-  std::vector< Wt::Dbo::ptr<UserOption> > options;
-  {//begin interacting with the database
-    DataBaseUtils::DbTransaction transaction( *sql );
-    Wt::Dbo::collection< Wt::Dbo::ptr<UserOption> > optioncol
-                                    = user->m_dbPreferences.find()
-                                         .where( "name=?" ).bind( name );
-    std::copy( optioncol.begin(), optioncol.end(), std::back_inserter(options) );
-    transaction.commit();
-  }//end interacting with the database
-  
-  const size_t noptions = options.size();
-  
-  if( noptions > 1 )
-  {
-    //Hmmm, not sure how this happened, but I have made it here for "ColorThemeIndex".
-    //  We just delete all options and start over.
-#if( PERFORM_DEVELOPER_CHECKS )
-    char buffer[1024];
-    snprintf( buffer, sizeof(buffer), "Invalid number of preferences (%i) for %s for user %s; will"
-                                      " remove all of them after the first from the database.",
-              static_cast<int>(noptions), name.c_str(), user->userName().c_str() );
-    log_developer_error( __func__, buffer );
-#endif
-    
-    try
-    {
-      DataBaseUtils::DbTransaction transaction( *sql );
-      
-      for( size_t i = 0; i < (noptions - 1); ++i )
-        options[i].remove();
-      
-      // Delete all but the last one in the DB
-      Wt::Dbo::ptr<UserOption> option = options.back();
-      option.modify()->m_value = strval;
-      
-      transaction.commit();
-    }catch(...)
-    {
-      assert( 0 );
-      std::cerr << "Caught exception removing duplicate preference from database" << std::endl;
-    }
-    
-    DataBaseUtils::DbTransaction transaction( *sql );
-    
-    Wt::Dbo::ptr<UserOption> option = options.back();
-    option.modify()->m_value = strval;
-    
-    transaction.commit();
-  }else if( noptions == 0 )
-  {
-    UserOption *newoption = new UserOption();
-    newoption->m_name = name;
-    newoption->m_user = user;
-    newoption->m_value = strval;
-    
-    if( typeid(value) == typeid(std::string) )
-      newoption->m_type = UserOption::String;
-    else if( typeid(value) == typeid(double) || typeid(value) == typeid(float) )
-      newoption->m_type = UserOption::Decimal;
-    else if( typeid(value) == typeid(int)
-            || typeid(value) == typeid(unsigned int)
-            || typeid(value) == typeid(long long) )
-      newoption->m_type = UserOption::Integer;
-    else if( typeid(value) == typeid(bool) )
-      newoption->m_type = UserOption::Boolean;
-    else
-    {
-      delete newoption;
-      throw std::runtime_error( "setPreferenceValue(...): invalid type: "
-                               + std::string(typeid(value).name()) );
-    }
-    
-    DataBaseUtils::DbTransaction transaction( *sql );
-    Wt::Dbo::ptr<UserOption> option = sql->session()->add( newoption );
-    //user.modify()->m_dbPreferences.insert( newoption ); // I think this is equivalent of `newoption->m_user = user;`
-    transaction.commit();
-  }else //if( noptions == 1 )
-  {
-    Wt::Dbo::ptr<UserOption> option = options.front();
-    
-    DataBaseUtils::DbTransaction transaction( *sql );
-    option.modify()->m_value = strval;
-    transaction.commit();
-  }//if( noptions == 0 ) / else / else
-}//setPreferenceValueWorker(...)
-
-
-
-
-template<typename T>
-void InterSpecUser::setPreferenceValue( Wt::Dbo::ptr<InterSpecUser> user,
-                                       const std::string &name, const T &value,
-                                       InterSpec *viewer )
-{
-  setPreferenceValueWorker( user, name, value, viewer );
-}
-
-
-template<class T>
-void InterSpecUser::addCallbackWhenChanged( Wt::Dbo::ptr<InterSpecUser> &user,
-                                           InterSpec *viewer,
-                                           const std::string &name, const T &fcn )
-{
-  assert( user );
-  if( !user ) //shouldnt ever happen
-    return;
-
-  //Make sure a valid bool preference
-  user->preferenceValue<bool>( name, viewer );
-  
-  std::shared_ptr<Wt::Signals::signal<void(bool)>> &signal = user->m_onBoolChangeSignals[name];
-  if( !signal )
-    signal = std::make_shared<Wt::Signals::signal<void(bool)>>();
-  signal->connect( fcn );
-}//addCallbackWhenChanged(...)
-
-
-template<class T, class V>
-void InterSpecUser::addCallbackWhenChanged( Wt::Dbo::ptr<InterSpecUser> &user,
-                                            InterSpec *viewer,
-                                            const std::string &name,
-                                            T *target, void (V::*method)(bool) )
-{
-  assert( user );
-  if( !user ) //shouldnt ever happen
-    return;
-  
-  //Make sure a valid bool preference
-  user->preferenceValue<bool>( name, viewer );
-  
-  // Retrieve (or create) the signal, and connect things up
-  std::shared_ptr<Wt::Signals::signal<void(bool)>> &signal = user->m_onBoolChangeSignals[name];
-  if( !signal )
-    signal = std::make_shared<Wt::Signals::signal<void(bool)>>();
-  
-  signal->connect( boost::bind(method, target, boost::placeholders::_1) );
-}//addCallbackWhenChanged(...)
 
 #endif //InterSpecUser_h
 

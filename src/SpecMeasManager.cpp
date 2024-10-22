@@ -129,6 +129,7 @@
 #include "InterSpec/ExportSpecFile.h"
 #include "InterSpec/SpecMeasManager.h"
 #include "InterSpec/UndoRedoManager.h"
+#include "InterSpec/UserPreferences.h"
 #include "InterSpec/SpectraFileModel.h"
 #include "InterSpec/LocalTimeDelegate.h"
 #include "InterSpec/PeakSearchGuiUtils.h"
@@ -916,7 +917,7 @@ protected:
             SpecMeasManager *fileManager = m_viewer->fileManager();
             SpectraFileModel *fileModel = fileManager->model();
             
-            auto header = make_shared<SpectraFileHeader>( m_viewer->m_user, true, m_viewer );
+            auto header = make_shared<SpectraFileHeader>( true, m_viewer );
             header->setFile( display_name, specmeas );
             fileManager->addToTempSpectrumInfoCache( specmeas );
             const int row = fileModel->addRow( header );
@@ -1409,7 +1410,7 @@ SpecMeasManager::SpecMeasManager( InterSpec *viewer )
 //Moved what use to be SpecMeasManager, out to a startSpectrumManager() to correct modal issues
 void  SpecMeasManager::startSpectrumManager()
 {
-  const bool showToolTips = InterSpecUser::preferenceValue<bool>( "ShowTooltips", m_viewer );
+  const bool showToolTips = UserPreferences::preferenceValue<bool>( "ShowTooltips", m_viewer );
 
   if( m_spectrumManagerWindow )
   {
@@ -3249,8 +3250,8 @@ bool SpecMeasManager::handleEccFile( std::istream &input, SimpleDialog *dialog )
     if( !new_drf || !interspec )
       return;
       
-    auto sql = interspec->sql();
-    auto user = interspec->m_user;
+    shared_ptr<DataBaseUtils::DbSession> sql = interspec->sql();
+    const Wt::Dbo::ptr<InterSpecUser> &user = interspec->user();
     DrfSelect::updateLastUsedTimeOrAddToDb( new_drf, user.id(), sql );
     interspec->detectorChanged().emit( new_drf ); //This loads it to the foreground spectrum file
     
@@ -4492,7 +4493,7 @@ void SpecMeasManager::displayFile( int row,
 
 #if( USE_DB_TO_STORE_SPECTRA )
   const bool storeInDb
-      = InterSpecUser::preferenceValue<bool>( "AutoSaveSpectraToDb", m_viewer );
+      = UserPreferences::preferenceValue<bool>( "AutoSaveSpectraToDb", m_viewer );
 #endif
   
   
@@ -5709,14 +5710,13 @@ int SpecMeasManager::setDbEntry( Wt::Dbo::ptr<UserFileInDb> dbfile,
   if( !dbfile )
     throw runtime_error( "SpecMeasManager::setDbEntry(...): invalid dbentry" );
   
-  if( enforceUser && (dbfile->user != m_viewer->m_user) )
+  if( enforceUser && (dbfile->user != m_viewer->user()) )
     throw runtime_error( "SpecMeasManager::setDbEntry(...): invalid user" );
   
   int row = -1;
   header.reset();
   measurement.reset();
-  header.reset( new SpectraFileHeader( m_viewer->m_user,
-                                       false, m_viewer ) );
+  header.reset( new SpectraFileHeader( false, m_viewer ) );
   measurement = header->resetFromDatabase( dbfile );
   addToTempSpectrumInfoCache( measurement );
   row = m_fileModel->addRow( header );
@@ -5796,7 +5796,7 @@ void SpecMeasManager::showPreviousSpecFileUsesDialog( std::shared_ptr<SpectraFil
   
   try
   {
-    //auto_save_states = InterSpecUser::preferenceValue<bool>( "AutoSaveSpectraToDb", m_viewer );
+    //auto_save_states = UserPreferences::preferenceValue<bool>( "AutoSaveSpectraToDb", m_viewer );
     
     if( userStatesWithFile.size() )
     {
@@ -5865,7 +5865,7 @@ void SpecMeasManager::showPreviousSpecFileUsesDialog( std::shared_ptr<SpectraFil
   layout->addWidget( cb, 1, 0 );
   layout->setRowStretch( 0, 1 );
   
-  InterSpecUser::associateWidget( m_viewer->m_user, "CheckForPrevOnSpecLoad", cb, m_viewer );
+  UserPreferences::associateWidget( "CheckForPrevOnSpecLoad", cb, m_viewer );
   
   
   const int width = std::min( 500, static_cast<int>(0.95*m_viewer->renderedWidth()) );
@@ -5906,7 +5906,7 @@ void SpecMeasManager::checkIfPreviouslyOpened( const std::string sessionID,
   try
   {
     const bool storeInDb
-      = InterSpecUser::preferenceValue<bool>( "CheckForPrevOnSpecLoad", m_viewer );
+      = UserPreferences::preferenceValue<bool>( "CheckForPrevOnSpecLoad", m_viewer );
 
     if( !storeInDb )
       return;
@@ -5914,7 +5914,7 @@ void SpecMeasManager::checkIfPreviouslyOpened( const std::string sessionID,
     if( !header )
       throw runtime_error( "Invalid SpectraFileHeader passed in" );
 
-    if( !m_viewer || !m_viewer->m_user )
+    if( !m_viewer || !m_viewer->user() )
       throw runtime_error( "Invalid InterSpec or user pointer" );
     
     vector<Dbo::ptr<UserState>> userStatesWithFile;
@@ -5922,11 +5922,8 @@ void SpecMeasManager::checkIfPreviouslyOpened( const std::string sessionID,
     
     {//begin interaction with database
       std::shared_ptr<DataBaseUtils::DbSession> sql = m_viewer->sql();
+      const Wt::Dbo::ptr<InterSpecUser> &user = m_viewer->user();
       DataBaseUtils::DbTransaction transaction( *sql );
-      
-      // Update our in-memory values, since another session may have updated
-      //  things on us.
-      m_viewer->m_user.reread();
       
       typedef Dbo::collection< Dbo::ptr<UserFileInDb> > UserFileInDbColl;
 
@@ -5935,7 +5932,7 @@ void SpecMeasManager::checkIfPreviouslyOpened( const std::string sessionID,
 //                                                  "AND IsPartOfSaveState = 0" )
 //                                          .bind( header->m_uuid )
 //                                          .bind( header->m_displayName );
-      UserFileInDbColl files = m_viewer->m_user->userFiles().find()
+      UserFileInDbColl files = user->userFiles().find()
                                  .where( "UUID = ? AND IsPartOfSaveState = 0" )
                                  .bind( header->m_uuid );
 
@@ -5950,12 +5947,12 @@ void SpecMeasManager::checkIfPreviouslyOpened( const std::string sessionID,
       
       // Now get user-saved states with this spectrum file in them
       Dbo::collection< Dbo::ptr<UserState> > states_query
-                    = SnapshotBrowser::get_user_states_collection( m_viewer->m_user, sql, header );
+                    = SnapshotBrowser::get_user_states_collection( user, sql, header );
       
       for( auto iter = states_query.begin(); iter != states_query.end(); ++iter )
         userStatesWithFile.push_back( *iter );
       
-      m_viewer->m_user.modify()->incrementSpectraFileOpened();
+      user.modify()->incrementSpectraFileOpened();
       
       transaction.commit();
     }//end interaction with database
@@ -6029,7 +6026,7 @@ std::shared_ptr<SpectraFileHeader> SpecMeasManager::addFile( const std::string &
     throw runtime_error( "SpecMeasManager::addFile(): invalid input" );
   
   std::shared_ptr<SpectraFileHeader> header
-   = std::make_shared<SpectraFileHeader>( m_viewer->m_user, false, m_viewer );
+        = std::make_shared<SpectraFileHeader>( false, m_viewer );
   header->setMeasurmentInfo( measurement );
   
   addToTempSpectrumInfoCache( measurement );
@@ -6053,7 +6050,7 @@ int SpecMeasManager::setFile( const std::string &displayName,
   measurement.reset();
   
   std::shared_ptr<SpectraFileHeader> new_header
-     = std::make_shared<SpectraFileHeader>( m_viewer->m_user, false, m_viewer );
+     = std::make_shared<SpectraFileHeader>( false, m_viewer );
   
   std::shared_ptr<SpecMeas> new_measurement
                    = new_header->setFile( displayName, filename, parser_type );
@@ -6171,7 +6168,7 @@ void SpecMeasManager::clearTempSpectrumInfoCache()
 
 #if( USE_DB_TO_STORE_SPECTRA )
   const bool storeInDb
-  = InterSpecUser::preferenceValue<bool>( "AutoSaveSpectraToDb", m_viewer );
+  = UserPreferences::preferenceValue<bool>( "AutoSaveSpectraToDb", m_viewer );
 #endif
 
   for( queue_type::iterator iter = m_tempSpectrumInfoCache.begin();
@@ -6243,7 +6240,7 @@ void SpecMeasManager::removeFromSpectrumInfoCache( std::shared_ptr<const SpecMea
   
 #if( USE_DB_TO_STORE_SPECTRA )
   const bool storeInDb
-     = InterSpecUser::preferenceValue<bool>( "AutoSaveSpectraToDb", m_viewer );
+     = UserPreferences::preferenceValue<bool>( "AutoSaveSpectraToDb", m_viewer );
   if( saveToDisk && storeInDb )
     saveToDatabase( meas );
 #endif
@@ -6277,7 +6274,7 @@ void SpecMeasManager::addToTempSpectrumInfoCache( std::shared_ptr<const SpecMeas
   
 #if( USE_DB_TO_STORE_SPECTRA )
   const bool storeInDb
-      = InterSpecUser::preferenceValue<bool>( "AutoSaveSpectraToDb", m_viewer );
+      = UserPreferences::preferenceValue<bool>( "AutoSaveSpectraToDb", m_viewer );
 #endif
 
   size_t curr_size = 0;

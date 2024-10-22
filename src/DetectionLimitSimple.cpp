@@ -66,6 +66,7 @@
 #include "InterSpec/ShieldingSelect.h"
 #include "InterSpec/SpecMeasManager.h"
 #include "InterSpec/UndoRedoManager.h"
+#include "InterSpec/UserPreferences.h"
 #include "InterSpec/DetectionLimitCalc.h"
 #include "InterSpec/DetectionLimitTool.h"
 #include "InterSpec/NativeFloatSpinBox.h"
@@ -94,7 +95,7 @@ namespace
     if( !interspec )
       return true;
     
-    return !InterSpecUser::preferenceValue<bool>( "DisplayBecquerel", interspec );
+    return !UserPreferences::preferenceValue<bool>( "DisplayBecquerel", interspec );
   }//bool use_curie_units()
   
 }//namespace
@@ -244,7 +245,7 @@ void DetectionLimitSimple::init()
       
   addStyleClass( "DetectionLimitSimple" );
  
-  const bool showToolTips = InterSpecUser::preferenceValue<bool>( "ShowTooltips", m_viewer );
+  const bool showToolTips = UserPreferences::preferenceValue<bool>( "ShowTooltips", m_viewer );
   
   WContainerWidget *resultsDiv = new WContainerWidget( this );
   resultsDiv->addStyleClass( "ResultsArea" );

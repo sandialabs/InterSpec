@@ -69,6 +69,7 @@
 #include "InterSpec/ShieldingSelect.h"
 #include "InterSpec/SpecMeasManager.h"
 #include "InterSpec/UndoRedoManager.h"
+#include "InterSpec/UserPreferences.h"
 #include "InterSpec/ReferenceLineInfo.h"
 #include "InterSpec/NativeFloatSpinBox.h"
 #include "InterSpec/RowStretchTreeView.h"
@@ -873,7 +874,7 @@ ReferencePhotopeakDisplay::ReferencePhotopeakDisplay(
   if( !chart )
     throw runtime_error( "ReferencePhotopeakDisplay: a valid chart must be passed in" );
 
-  const bool showToolTips = InterSpecUser::preferenceValue<bool>( "ShowTooltips", specViewer );
+  const bool showToolTips = UserPreferences::preferenceValue<bool>( "ShowTooltips", specViewer );
   
   //The inputDiv/Layout is the left side of the widget that holds all the
   //  nuclide input,age, color picker, DRF, etc
@@ -1152,11 +1153,11 @@ ReferencePhotopeakDisplay::ReferencePhotopeakDisplay(
   m_showFeatureMarkers->unChecked().connect( this, &ReferencePhotopeakDisplay::featureMarkerCbToggled );
       
 
-  //const bool showToolTips = InterSpecUser::preferenceValue<bool>("ShowTooltips", this);
+  //const bool showToolTips = UserPreferences::preferenceValue<bool>("ShowTooltips", this);
   //HelpSystem::attachToolTipOn(m_showPrevNucs, "Show ", showToolTips);
-  InterSpecUser::associateWidget( specViewer->m_user, "RefLineShowPrev", m_showPrevNucs, specViewer );
-  InterSpecUser::associateWidget( specViewer->m_user, "RefLineShowRiid", m_showRiidNucs, specViewer );
-  InterSpecUser::associateWidget( specViewer->m_user, "RefLineShowAssoc", m_showAssocNucs, specViewer );
+  UserPreferences::associateWidget( "RefLineShowPrev", m_showPrevNucs, specViewer );
+  UserPreferences::associateWidget( "RefLineShowRiid", m_showRiidNucs, specViewer );
+  UserPreferences::associateWidget( "RefLineShowAssoc", m_showAssocNucs, specViewer );
 
 
   //HelpSystem::attachToolTipOn(m_options, "If checked, selection will be shown.",

@@ -66,20 +66,21 @@
 #include <Wt/WStandardItemModel>
 
 #include "SpecUtils/DateTime.h"
+#include "SpecUtils/StringAlgo.h"
+#include "SpecUtils/Filesystem.h"
+#include "SpecUtils/SpecUtilsAsync.h"
+#include "SpecUtils/EnergyCalibration.h"
+
 #include "InterSpec/SpecMeas.h"
 #include "InterSpec/PopupDiv.h"
 #include "InterSpec/InterSpec.h"
-#include "SpecUtils/StringAlgo.h"
-#include "SpecUtils/Filesystem.h"
 #include "InterSpec/HelpSystem.h"
 #include "InterSpec/InterSpecApp.h"
 #include "InterSpec/WarningWidget.h"
 #include "InterSpec/SpecFileQuery.h"
 #include "InterSpec/PhysicalUnits.h"
-#include "SpecUtils/SpecUtilsAsync.h"
 #include "InterSpec/SpecMeasManager.h"
-
-#include "SpecUtils/EnergyCalibration.h"
+#include "InterSpec/UserPreferences.h"
 #include "InterSpec/RowStretchTreeView.h"
 #include "InterSpec/SpecFileQueryWidget.h"
 #include "InterSpec/DecayDataBaseServer.h"
@@ -1507,12 +1508,12 @@ void SpecFileQueryWidget::init()
   {
     try
     {
-      dofilter = InterSpecUser::preferenceValue<bool>( "SpecFileQueryFilter", m_viewer );
-      docache = InterSpecUser::preferenceValue<bool>( "SpecFileQueryCacheParse", m_viewer );
-      dorecursive = InterSpecUser::preferenceValue<bool>( "SpecFileQueryRecursive", m_viewer );
-      maxsize = InterSpecUser::preferenceValue<int>( "SpecFileQueryMaxSize", m_viewer );
-      defpath = InterSpecUser::preferenceValue<string>( "SpecFileQueryPath", m_viewer );
-      instantToolTip = InterSpecUser::preferenceValue<bool>( "ShowTooltips", m_viewer );
+      dofilter = UserPreferences::preferenceValue<bool>( "SpecFileQueryFilter", m_viewer );
+      docache = UserPreferences::preferenceValue<bool>( "SpecFileQueryCacheParse", m_viewer );
+      dorecursive = UserPreferences::preferenceValue<bool>( "SpecFileQueryRecursive", m_viewer );
+      maxsize = UserPreferences::preferenceValue<int>( "SpecFileQueryMaxSize", m_viewer );
+      defpath = UserPreferences::preferenceValue<string>( "SpecFileQueryPath", m_viewer );
+      instantToolTip = UserPreferences::preferenceValue<bool>( "ShowTooltips", m_viewer );
 
       
       if( defpath == "None" )
@@ -2181,15 +2182,15 @@ void SpecFileQueryWidget::basePathChanged()
   bool prevrecursive = true, prevfilter = true, prevFilterUnique = true, prevcache = true;
   try
   {
-    prevmaxsize = InterSpecUser::preferenceValue<int>( "SpecFileQueryMaxSize", m_viewer );
-    prevcache = InterSpecUser::preferenceValue<bool>( "SpecFileQueryCacheParse", m_viewer );
-    prevfilter = InterSpecUser::preferenceValue<bool>( "SpecFileQueryFilter", m_viewer );
-    prevrecursive = InterSpecUser::preferenceValue<bool>( "SpecFileQueryRecursive", m_viewer );
-    prevFilterUnique = InterSpecUser::preferenceValue<bool>( "SpecFileQueryUnique", m_viewer );
+    prevmaxsize = UserPreferences::preferenceValue<int>( "SpecFileQueryMaxSize", m_viewer );
+    prevcache = UserPreferences::preferenceValue<bool>( "SpecFileQueryCacheParse", m_viewer );
+    prevfilter = UserPreferences::preferenceValue<bool>( "SpecFileQueryFilter", m_viewer );
+    prevrecursive = UserPreferences::preferenceValue<bool>( "SpecFileQueryRecursive", m_viewer );
+    prevFilterUnique = UserPreferences::preferenceValue<bool>( "SpecFileQueryUnique", m_viewer );
 #if( BUILD_AS_OSX_APP || BUILD_AS_ELECTRON_APP )
     prefpath = "";
 #else
-    prefpath = InterSpecUser::preferenceValue<string>( "SpecFileQueryPath", m_viewer );
+    prefpath = UserPreferences::preferenceValue<string>( "SpecFileQueryPath", m_viewer );
     if( prefpath == "None" )
       prefpath = "";
 #endif
@@ -2203,18 +2204,18 @@ void SpecFileQueryWidget::basePathChanged()
   try
   {
     if( prevrecursive != recursive )
-      InterSpecUser::setPreferenceValue<bool>( m_viewer->m_user, "SpecFileQueryRecursive", recursive, m_viewer );
+      UserPreferences::setPreferenceValue( "SpecFileQueryRecursive", recursive, m_viewer );
     if( prevcache != docache )
-      InterSpecUser::setPreferenceValue<bool>( m_viewer->m_user, "SpecFileQueryCacheParse", docache, m_viewer );
+      UserPreferences::setPreferenceValue( "SpecFileQueryCacheParse", docache, m_viewer );
     if( prevfilter != filter )
-      InterSpecUser::setPreferenceValue<bool>( m_viewer->m_user, "SpecFileQueryFilter", filter, m_viewer );
+      UserPreferences::setPreferenceValue( "SpecFileQueryFilter", filter, m_viewer );
     if( maxsize != prevmaxsize )
-      InterSpecUser::setPreferenceValue<int>( m_viewer->m_user, "SpecFileQueryFilter", maxsize, m_viewer );
+      UserPreferences::setPreferenceValue( "SpecFileQueryFilter", maxsize, m_viewer );
     if( filterUnique != prevFilterUnique )
-      InterSpecUser::setPreferenceValue<bool>( m_viewer->m_user, "SpecFileQueryUnique", filterUnique, m_viewer );
+      UserPreferences::setPreferenceValue( "SpecFileQueryUnique", filterUnique, m_viewer );
 #if( !BUILD_AS_OSX_APP && !BUILD_AS_ELECTRON_APP )
     if( prefpath != basepath )
-      InterSpecUser::setPreferenceValue<string>( m_viewer->m_user, "SpecFileQueryPath", basepath, m_viewer );
+      UserPreferences::setPreferenceValue( "SpecFileQueryPath", basepath, m_viewer );
 #endif
   }catch( ... )
   {

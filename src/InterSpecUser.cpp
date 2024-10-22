@@ -23,11 +23,13 @@
 
 #include "InterSpec_config.h"
 
+
 #include <mutex>
 #include <memory>
 #include <string>
 #include <vector>
 #include <fstream>
+#include <assert.h>
 #include <iostream>
 
 #include <boost/iostreams/stream.hpp>
@@ -61,9 +63,6 @@
 #endif
 
 #include "3rdparty/date/include/date/date.h"
-
-#include "rapidxml/rapidxml.hpp"
-#include "rapidxml/rapidxml_utils.hpp"
 
 #include "InterSpec/SpecMeas.h"
 #include "InterSpec/PopupDiv.h"
@@ -145,73 +144,6 @@ const std::string InterSpecUser::sm_defaultPreferenceFile = "default_preferences
 
 namespace
 {
-  UserOption *parseUserOption( const rapidxml::xml_node<char> *pref )
-  {
-    using rapidxml::internal::compare;
-    typedef rapidxml::xml_attribute<char> XmlAttribute;
-    
-    UserOption *option = new UserOption;
-    try
-    {
-      const XmlAttribute *name_att = pref->first_attribute( "name", 4 );
-      const XmlAttribute *type_att = pref->first_attribute( "type", 4 );
-      if( !name_att || !name_att->value() || !type_att || !type_att->value()  )
-        throw runtime_error( "Ill formatted default preferences file" );
-      
-      const char *typestr = type_att->value();
-      std::size_t typestrlen = type_att->value_size();
-      
-      option->m_name = name_att->value();
-      
-      // Get rid of "_tablet" or "_phone"
-      auto pos = option->m_name.find( "_tablet" );
-      if( pos == string::npos )
-        pos = option->m_name.find( "_phone" );
-      if( pos != string::npos )
-        option->m_name = option->m_name.substr(0, pos);
-      
-      const char *valuestr = pref->value();
-      
-      // We'll let "String" type values be empty, but no other types.
-      if( !valuestr )
-      {
-        if( !compare(typestr, typestrlen, "String", 6, true) )
-          throw runtime_error( "Missing value for \"" + option->m_name + "\" in default preferences file" );
-        
-        valuestr = "";
-      }//if( value is empty in XML )
-      
-      option->m_value = valuestr;
-      
-      if( option->m_name.length() > UserOption::sm_max_name_str_len )
-        throw runtime_error( "Pref \"" + option->m_name + "\" name to long" );
-      if( option->m_value.length() > UserOption::sm_max_value_str_len )
-        throw runtime_error( "Pref \"" + option->m_name + "\" value to long" );
-      
-      if( compare( typestr, typestrlen, "String", 6, true) )
-        option->m_type = UserOption::String;
-      else if( compare( typestr, typestrlen, "Decimal", 7, true) )
-        option->m_type = UserOption::Decimal;
-      else if( compare( typestr, typestrlen, "Integer", 7, true) )
-        option->m_type = UserOption::Integer;
-      else if( compare( typestr, typestrlen, "Boolean", 7, true) )
-      {
-        option->m_type = UserOption::Boolean;
-        if( option->m_value == "true" )
-          option->m_value = "1";
-        else if( option->m_value == "false" )
-          option->m_value = "0";
-      }else
-        throw runtime_error( "Invalid \"type\" (\"" + string(typestr) + "\") "
-                            " for pref " + string(typestr) );
-    }catch( std::exception &e )
-    {
-      delete option;
-      throw runtime_error( e.what() );
-    }
-    return option;
-  }//UserOption *parseUserOption( rapidxml::xml_node<char> *node )
-  
   
   /** Compares two boost::any objects to check if their underlying type is
    the same, and if so, if their values are equal.
@@ -378,221 +310,6 @@ UserState::UserState()
     writeprotected( false )
 {
 }
-
-void InterSpecUser::setBoolPreferenceValue( Wt::Dbo::ptr<InterSpecUser> user,
-                                       const std::string &name,
-                                       const bool &value,
-                                       InterSpec *viewer )
-{
-  setPreferenceValue( user, name, value, viewer );
-}
-
-
-void InterSpecUser::setPreferenceValue( Wt::Dbo::ptr<InterSpecUser> user,
-                                   const std::string &name,
-                                   const bool &value,
-                                   InterSpec *viewer )
-{
-  setPreferenceValueWorker( user, name, value, viewer );
-  
-  const auto callback_pos = user->m_onBoolChangeSignals.find(name);
-  if( (callback_pos != end(user->m_onBoolChangeSignals)) && callback_pos->second )
-    (*callback_pos->second)(value);
-}//setPreferenceValue(...)
-
-
-boost::any InterSpecUser::preferenceValueAny( const std::string &name, InterSpec *viewer )
-{
-  using namespace Wt;
-  
-  bool from_default = false;
-  const auto start_time = chrono::time_point_cast<chrono::microseconds>( chrono::system_clock::now() );
-  
-  if( !viewer )
-  {
-    UserOption *option = getDefaultUserPreference( name, DeviceType::Desktop );
-    boost::any value = option->value();
-    delete option;
-    return value;
-  }
-
-  //This next line is the only reason InterSpec.h needs to be included
-  //  above
-  Dbo::ptr<InterSpecUser> &user = userFromViewer(viewer);
-  std::shared_ptr<DataBaseUtils::DbSession> sql = sqlFromViewer(viewer);
-  
-  if( !user || !sql )
-    throw std::runtime_error( "preferenceValueAny(...): invalid usr or sql ptr" );
-  
-  boost::any value;
-  DataBaseUtils::DbTransaction transaction( *sql );
-  
-  try
-  {
-    Wt::Dbo::ptr<UserOption> option = user->m_dbPreferences
-        .find()
-        .where( "name = ?" )
-        .bind( name )
-        .limit(1)
-        .resultValue();
-  
-    if( !option )
-    {
-      from_default = true;
-      UserOption *option_raw = getDefaultUserPreference( name, user->m_deviceType );
-      option.reset( option_raw );
-      option.modify()->m_user = user;
-      sql->session()->add( option );
-      //user.modify()->m_dbPreferences.insert( option );
-    }//if( dboption )
-  
-    value = option->value();
-    
-    transaction.commit();
-  }catch( std::exception &e )
-  {
-    assert( 0 );
-    transaction.rollback();
-    throw e;
-  }//try / catch
-  
-  const auto end_time = chrono::time_point_cast<chrono::microseconds>( chrono::system_clock::now() );
-  
-  cout << "Took " << (end_time - start_time).count() << " microseconds to get '" << name
-  << "' preference from " << (from_default ? "default-xml" : "data-base") << "." << endl;
-  
-  assert( !value.empty() );
-  return value;
-}//boost::any preferenceValue( const std::string &name, InterSpec *viewer );
-
-
-
-void InterSpecUser::associateWidget( Wt::Dbo::ptr<InterSpecUser> user,
-                                     const std::string &name,
-                                     Wt::WCheckBox *cb,
-                                     InterSpec *viewer )
-{
-  const bool value = preferenceValue<bool>( name, viewer );
-  cb->setChecked( value );
-  
-  InterSpecUser::addCallbackWhenChanged( user, viewer, name, cb, &WCheckBox::setChecked );
-
-  cb->checked().connect( boost::bind( &InterSpecUser::setBoolPreferenceValue, user, name, true, viewer ) );
-  cb->unChecked().connect( boost::bind( &InterSpecUser::setBoolPreferenceValue, user, name, false, viewer ) );
-  
-  /*
-   //We need to emit the checked() and unChecked() signals so that any side-effect
-   //  can happen from the change.  For actually changing the state of the widget
-   //  we can safely do this (incase 'cb' gets deleted at some point) using
-   //  WApplication::bind, but to call the emit functions I couldnt think of a
-   //  safe way to do this, other than searching the widget tree and making sure
-   //  that we can find the widget (hence, know it hasnt been deleted) before
-   //  de-referening the 'cb' passed into this function; this is a bit of a hack
-   //  but it works for now.
-   const string cbid = cb->id();
-   
-  std::function<void(boost::any)> fcn = [=]( boost::any valueAny ){
-    const bool value = boost::any_cast<bool>(valueAny);
-    const bool setCbChecked = reverseValue ? !value : value;
-    
-    // The below doesnt seem to find widgets in AuxWindows (and maybe pop-ups)
-    auto w = wApp->domRoot()->findById(cbid);
-    if( !w && wApp->domRoot2() )
-      w = wApp->domRoot2()->findById(cbid);
-    if( !w && wApp->root() )
-      w = wApp->root()->findById(cbid);
-    
-    if( w )
-    {
-      cb->changed().emit();
-      if( value )
-        cb->checked().emit();
-      else
-        cb->unChecked().emit();
-    }else
-    {
-      cerr << "Couldnt find widget with cbid='" << cbid << "', so wont call any side-effect functions for pref '"
-           << name << "'" << endl;
-    }
-  };//fcn
-  
-  InterSpecUser::associateFunction( user, name, fcn, viewer );
-   */
-}//void associateWidget( )
-
-
-/*
-void InterSpecUser::associateWidget( Wt::Dbo::ptr<InterSpecUser> user,
-                                          const std::string &name,
-                                          Wt::WDoubleSpinBox *sb,
-                                         InterSpec *viewer )
-{
-  const double value = preferenceValue<double>( name, viewer );
-  
-  sb->setValue( value );
-  sb->valueChanged().connect(
-                      boost::bind( &InterSpecUser::setPreferenceValue<double>,
-                                   user, name, boost::placeholders::_1, viewer ) );
-  
-  const string sbid = sb->id();
-  
-  std::function<void(boost::any)> fcn = [=]( boost::any valueAny ){
-    const double value = boost::any_cast<double>(valueAny);
-  
-    auto w = wApp->domRoot()->findById(sbid);
-    if( !w && wApp->domRoot2() )
-      w = wApp->domRoot2()->findById(sbid);
-    
-    if( w )
-    {
-      sb->setValue( value );
-      sb->valueChanged().emit( value );
-    }else
-    {
-      cerr << "Couldnt find WDoubleSpinBox with id='" << sbid << "', so wont call any side-effect functions" << endl;
-    }
-  };//fcn
-  
-  InterSpecUser::associateFunction( user, name, fcn, viewer );
-}//void associateWidget(...)
-
-
-void InterSpecUser::associateWidget( Wt::Dbo::ptr<InterSpecUser> user,
-                                     const std::string &name,
-                                     Wt::WSpinBox *sb,
-                                    InterSpec *viewer )
-{
-  const int value = preferenceValue<int>( name, viewer );
-  
-  sb->setValue( value );
-  
-  sb->valueChanged().connect(
-                             boost::bind( &InterSpecUser::setPreferenceValue<int>,
-                                         user, name, boost::placeholders::_1, viewer ) );
-  
-  const string sbid = sb->id();
-  
-  std::function<void(boost::any)> fcn = [=]( boost::any valueAny ){
-    const int value = boost::any_cast<int>(valueAny);
-    
-    auto w = wApp->domRoot()->findById(sbid);
-    if( !w && wApp->domRoot2() )
-      w = wApp->domRoot2()->findById(sbid);
-    
-    if( w )
-    {
-      sb->setValue( value );
-      sb->valueChanged().emit( value );
-    }else
-    {
-      cerr << "Couldnt find WSpinBox with id='" << sbid << "', so wont call any side-effect functions" << endl;
-    }
-  };//fcn
-  
-  InterSpecUser::associateFunction( user, name, fcn, viewer );
-}//void InterSpecUser::associateWidget(...)
-*/
-
 
 void UserFileInDbData::setFileData( const std::string &path,
                                     const SerializedFileFormat format )
@@ -1032,12 +749,36 @@ boost::any UserOption::value() const
   {
     case String:
       return m_value;
+      
     case Decimal:
-      return std::stod( m_value );
+    {
+      double val = 0.0;
+      const bool parsed = SpecUtils::parse_double( m_value.c_str(), m_value.size(), val );
+      assert( parsed );
+      //if( !parsed )
+      //  throw std::logic_error( "Invalid Decimal str: '" + m_value + "'" );
+      
+      return val;
+      //return std::stod( m_value );
+    }//case Decimal:
+    
     case Integer:
-      return std::stoi( m_value );
+    {
+      int val = 0;
+      const bool parsed = SpecUtils::parse_int( m_value.c_str(), m_value.size(), val );
+      assert( parsed );
+      //if( !parsed )
+      //  throw std::logic_error( "Invalid Integer str: '" + m_value + "'" );
+      
+      return val;
+      //return std::stoi( m_value );
+    }//case Integer:
+    
     case Boolean:
+    {
+      assert( (m_value == "0") || (m_value == "1") );
       return (m_value=="true" || m_value=="1");
+    }
   }//switch( m_type )
   
   throw runtime_error( "UserOption::value(): invalid m_type" );
@@ -1061,96 +802,14 @@ InterSpecUser::InterSpecUser( const std::string &username,
 }//InterSpecUser::InterSpecUser(...)
 
 
-
-UserOption *InterSpecUser::getDefaultUserPreference( const std::string &name,
-                                                     const int type )
-{
-  const bool isphone = ((type & InterSpecUser::PhoneDevice) != 0);
-  const bool istablet = ((type & InterSpecUser::TabletDevice) != 0);
-  
-  
-  static std::mutex sm_def_prefs_mutex;
-  static std::map<std::string,std::unique_ptr<const UserOption>> sm_def_prefs;
-  
-  std::lock_guard<mutex> lock( sm_def_prefs_mutex );
-  
-  if( sm_def_prefs.empty() )
-  {
-    const string filename = SpecUtils::append_path( InterSpec::staticDataDirectory(), sm_defaultPreferenceFile );
-    
-    std::vector<char> data;
-    SpecUtils::load_file_data( filename.c_str(), data );
-    
-    rapidxml::xml_document<char> doc;
-    const int flags = rapidxml::parse_normalize_whitespace
-                      | rapidxml::parse_trim_whitespace;
-    
-    doc.parse<flags>( &data.front() );
-    rapidxml::xml_node<char> *node = doc.first_node();
-    if( !node || !node->name()
-       || !rapidxml::internal::compare( node->name(), node->name_size(), "preferences", 11, true) )
-      throw runtime_error( "InterSpecUser: invalid first node" );
-    
-    for( const rapidxml::xml_node<char> *pref = node->first_node( "pref", 4 );
-        pref;
-        pref = pref->next_sibling( "pref", 4 ) )
-    {
-      const rapidxml::xml_attribute<char> *name_att = pref->first_attribute( "name", 4 );
-      assert( name_att && name_att->value() && name_att->value_size() );
-      if( !name_att || !name_att->value() || !name_att->value_size() )
-        continue;
-      
-      const char *prefname = name_att->value();
-      const size_t prefnamelen = name_att->value_size();
-      std::string prefnamestr(prefname, prefname + prefnamelen);
-      
-      UserOption *option = parseUserOption( pref );
-      
-      // option->m_name will have had "_phone" and "_tablet" removed, even though `prefnamestr`
-      //  will have these in them
-      assert( option );
-      assert( !SpecUtils::icontains( option->m_name, "_phone") );
-      assert( !SpecUtils::icontains( option->m_name, "_tablet") );
-      
-      sm_def_prefs[std::move(prefnamestr)] = std::make_unique<const UserOption>( *option );
-    }//for( loop over preferneces )
-  }//if( sm_def_prefs.empty() )
-  
-
-  if( isphone )
-  {
-    const auto pos = sm_def_prefs.find( name + "_phone" );
-    assert( (pos == end(sm_def_prefs)) || pos->second );
-    if( pos != end(sm_def_prefs) )
-      return new UserOption( *pos->second );
-  }//
-  
-  if( istablet )
-  {
-    const auto pos = sm_def_prefs.find( name + "_tablet" );
-    assert( (pos == end(sm_def_prefs)) || pos->second );
-    if( pos != end(sm_def_prefs) )
-      return new UserOption( *pos->second );
-  }//if( istablet )
-  
-  
-  const auto pos = sm_def_prefs.find( name );
-  assert( (pos == end(sm_def_prefs)) || pos->second );
-  if( pos != end(sm_def_prefs) )
-    return new UserOption( *pos->second );
-  
-  //Note: the string "couldn't find preference by name" is currently used in
-  //      restoreUserPrefsFromXml(...) to check if a preference with this name is no longer used.
-  //      So dont change next string without also changing there - or really, a more robust
-  //      indication should be used.
-  throw runtime_error( "InterSpecUser::getDefaultUserPreference(...):"
-                       " couldn't find preference by name " + name );
-}//UserOption *getDefaultUserPreference( const std::string &name )
-
-
 const std::string &InterSpecUser::userName() const
 {
   return m_userName;
+}
+
+int InterSpecUser::deviceType() const
+{
+  return m_deviceType;
 }
 
 
@@ -1183,21 +842,6 @@ std::chrono::system_clock::time_point InterSpecUser::firstAccessUTC() const
 }
 
 
-Wt::Dbo::ptr<InterSpecUser> &InterSpecUser::userFromViewer( InterSpec *viewer )
-{
-  static Dbo::ptr<InterSpecUser> dummy;
-  if( !viewer )
-    return dummy;
-  return viewer->m_user;
-}
-
-std::shared_ptr<DataBaseUtils::DbSession> InterSpecUser::sqlFromViewer( InterSpec *viewer )
-{
-  if( !viewer )
-    return std::shared_ptr<DataBaseUtils::DbSession>();
-  return viewer->sql();
-}
-
 void InterSpecUser::startingNewSession()
 {
   incrementAccessCount();
@@ -1218,146 +862,14 @@ void InterSpecUser::incrementSpectraFileOpened()
 }//void incrementSpectraFileOpened()
 
 
-void InterSpecUser::restoreUserPrefsFromXml(
-                                Wt::Dbo::ptr<InterSpecUser> user,
-                                const ::rapidxml::xml_node<char> *prefs_node,
-                                InterSpec *viewer )
-{
-  using namespace rapidxml;
-  using rapidxml::internal::compare;
-  
-  if( !user || !prefs_node
-      || !compare( prefs_node->name(), prefs_node->name_size(), "preferences", 11, true) )
-    throw runtime_error( "restoreUserPrefsFromXml: invalid input" );
-  
- 
-  for( const xml_node<char> *pref = prefs_node->first_node( "pref", 4 ); pref;
-       pref = pref->next_sibling( "pref", 4 ) )
-  {
-    std::unique_ptr<UserOption> option;
-    try
-    {
-      option.reset( parseUserOption(pref) );
-      
-      switch( option->m_type )
-      {
-        case UserOption::String:
-        {
-          const string value = boost::any_cast<string>( option->value() );
-          setPreferenceValue( user, option->m_name, value, viewer );
-          break;
-        }//case String
-          
-        case UserOption::Decimal:
-        {
-          const double value = boost::any_cast<double>( option->value() );
-          setPreferenceValue( user, option->m_name, value, viewer );
-          break;
-        }//case Decimal
-          
-        case UserOption::Integer:
-        {
-          const int value = boost::any_cast<int>( option->value() );
-          setPreferenceValue( user, option->m_name, value, viewer );
-          break;
-        }//case Integer
-          
-        case UserOption::Boolean:
-        {
-          const bool value = boost::any_cast<bool>( option->value() );
-          setPreferenceValue( user, option->m_name, value, viewer );
-          break;
-        }//case Boolean
-      }//switch( datatype )
-    }catch( std::exception &e )
-    {
-      const string errmsg = e.what();
-      if( SpecUtils::icontains( errmsg, "couldn't find preference by name" ) )
-      {
-        cerr << "Warning: couldnt find a preference named '"
-             << (option ? option->m_name : string("N/A")) << "' that is in the"
-             << " file being loaded, but apears to no longer be used." << endl;
-      }else
-      {
-        throw runtime_error( "Failed to deserialize user prefernces from XML: " + errmsg );
-      }
-    }//try / catch
-  }//for( loop over prefs )
-}//void restoreUserPrefsFromXml(...)
-
-
-::rapidxml::xml_node<char> *InterSpecUser::userOptionsToXml(
-                                    ::rapidxml::xml_node<char> *parent_node,
-                                              InterSpec *viewer ) const
-{
-  using namespace ::rapidxml;
-  
-  if( !parent_node )
-    throw runtime_error( "userOptionsToXml: invalid input" );
-  
-  xml_document<char> *doc = parent_node->document();
-  
-  xml_node<char> *prefs_node = doc->allocate_node( node_element, "preferences" );
-  parent_node->append_node( prefs_node );
-  
-  vector< Dbo::ptr<UserOption> > options;
-  
-  {//begin codeblock to retrieve prefernces from database
-    std::shared_ptr<DataBaseUtils::DbSession> sql = viewer->sql();
-    DataBaseUtils::DbTransaction transaction( *sql );
-
-    std::copy( m_dbPreferences.begin(), m_dbPreferences.end(),
-               std::back_inserter(options) );
-    transaction.commit();
-  }//end codeblock to retrieve prefernces from database
-  
-  for( vector< Dbo::ptr<UserOption> >::const_iterator iter = options.begin();
-      iter != options.end(); ++iter )
-  {
-    Dbo::ptr<UserOption> option = *iter;
-    
-    const string &name  = option->m_name;
-    const string &value = option->m_value;
-    const char *namestr = doc->allocate_string( name.c_str(), name.size()+1 );
-    
-    const char *valstr  = 0;
-    switch( option->m_type )
-    {
-      case UserOption::String: case UserOption::Decimal: case UserOption::Integer:
-        valstr = doc->allocate_string( value.c_str(), value.size()+1 );
-      break;
-        
-      case UserOption::Boolean:
-        valstr = (boost::any_cast<bool>(option->value()) ? "true" : "false");
-      break;
-    }//switch( m_type )
-    
-    const char *typestr = 0;
-    switch( option->m_type )
-    {
-      case UserOption::String:  typestr = "String";  break;
-      case UserOption::Decimal: typestr = "Decimal"; break;
-      case UserOption::Integer: typestr = "Integer"; break;
-      case UserOption::Boolean: typestr = "Boolean"; break;
-    }//switch( m_type )
-    
-    xml_node<char> *node = doc->allocate_node( node_element, "pref", valstr );
-    xml_attribute<char> *name_att = doc->allocate_attribute( "name", namestr );
-    xml_attribute<char> *type_att = doc->allocate_attribute( "type", typestr );
-    node->append_attribute( name_att );
-    node->append_attribute( type_att );
-    prefs_node->append_node( node );
-  }//for( loop over DB entries )
-  
-  return prefs_node;
-}//xml_node<char> *userOptionsToXml( xml_node<char> * ) const
-
-
-
-
 const Wt::Dbo::collection< Wt::Dbo::ptr<UserFileInDb> > &InterSpecUser::userFiles() const
 {
   return m_userFiles;
+}
+
+const Wt::Dbo::collection< Wt::Dbo::ptr<UserOption> > &InterSpecUser::preferences() const
+{
+  return m_dbPreferences;
 }
 
 const Wt::Dbo::collection< Wt::Dbo::ptr<ShieldingSourceModel> > &InterSpecUser::shieldSrcModels() const

@@ -64,7 +64,7 @@ DbStateBrowser::DbStateBrowser( InterSpec *viewer, bool testStatesOnly )
     try
     {
       WGridLayout *layout = stretcher();
-      Dbo::ptr<InterSpecUser> user = m_viewer->m_user;
+      const Dbo::ptr<InterSpecUser> &user = m_viewer->user();
       
       m_table = new RowStretchTreeView();
       m_table->setRootIsDecorated( false ); //makes the tree look like a table! :)

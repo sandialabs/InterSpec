@@ -65,6 +65,7 @@
 #include "InterSpec/WarningWidget.h"
 #include "InterSpec/SpecMeasManager.h"
 #include "InterSpec/UndoRedoManager.h"
+#include "InterSpec/UserPreferences.h"
 #include "InterSpec/SpectraFileModel.h"
 #include "InterSpec/NativeFloatSpinBox.h"
 #include "InterSpec/EnergyCalGraphical.h"
@@ -1494,7 +1495,7 @@ void EnergyCalTool::initWidgets( EnergyCalTool::LayoutType layoutType )
   m_uploadCALp = nullptr;
 #endif
   
-  const bool showToolTips = InterSpecUser::preferenceValue<bool>( "ShowTooltips", m_interspec );
+  const bool showToolTips = UserPreferences::preferenceValue<bool>( "ShowTooltips", m_interspec );
   
   m_layout->setContentsMargins( 0, 0, 0, 0 );
   m_layout->setVerticalSpacing( 0 );
@@ -4381,7 +4382,7 @@ void EnergyCalTool::deleteGraphicalRecalConfirmWindow()
     m_graphicalRecal = nullptr;
   }//if( m_graphicalRecal )
   
-  const bool showToolTips = InterSpecUser::preferenceValue<bool>( "ShowTooltips", m_interspec );
+  const bool showToolTips = UserPreferences::preferenceValue<bool>( "ShowTooltips", m_interspec );
   if( showToolTips )
   {
     m_interspec->logMessage( WString::tr("ect-del-graphical-msg"), 1 );

@@ -65,6 +65,7 @@ class DrfSelectWindow;
 class PeakInfoDisplay;
 class SpecMeasManager;
 class UndoRedoManager;
+class UserPreferences;
 class GammaCountDialog;
 class PopupDivMenuItem;
 class SpectraFileHeader;
@@ -902,10 +903,17 @@ public:
   /** Brings up a dialog asking the user to confirm starting a new session, and if they select so, will start new session. */
   void startClearSession();
   
-  // The user itself gets to be public--no need to protect access to it.
-  //Note 20130116: m_user should be made protected, but really the whole
-  //  preference thing should be re-done, see README
-  Wt::Dbo::ptr<InterSpecUser> m_user;
+  /** Pointer to class to access user preferences. */
+  UserPreferences *preferences();
+  
+  /** The user information in the database. */
+  const Wt::Dbo::ptr<InterSpecUser> &user();
+  
+  /** Calls the `reread()` function on `m_user`, which refreshes the information pointed to by
+   `m_user` to match what is currently in the database.  Please note, this may (and maybe always)
+   cause the `m_user` pointer to point to a different location in memory.
+   */
+  void reReadUserInfoFromDb();
   
   //sql returns the DbSession (which holds the Wt::Dbo::Session) associated
   //  with m_user.  The reason for using an indirection via
@@ -1303,6 +1311,9 @@ protected:
   void changeLocale( std::string languageCode );
   
 protected:
+  Wt::Dbo::ptr<InterSpecUser> m_user;
+  UserPreferences *m_preferences;
+  
   PeakModel *m_peakModel;
   D3SpectrumDisplayDiv *m_spectrum;
   D3TimeChart *m_timeSeries;
@@ -1314,9 +1325,6 @@ protected:
   Wt::WContainerWidget *m_notificationDiv; //has id="qtip-growl-container"
   
   void handleUserIncrementSampleNum( SpecUtils::SpectrumType type, bool increment);
-
-  
- /* Start widgets this class keeps track of */
 
   Wt::Signal< Wt::WString, int > m_messageLogged;
   
