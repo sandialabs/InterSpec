@@ -38,15 +38,15 @@ echo "GIT_HASH = ${GIT_HASH}"
 echo "Will install npm and global packages"
 yum update
 yum install -y npm zip
-npm install -g npm@10.9.0
-npm install uglify-js -g
-npm install uglifycss -g
-npm install cmake-js -g
+npm install -g --unsafe-perm=true --allow-root npm@10.9.0
+npm install -g --unsafe-perm=true --allow-root uglify-js
+npm install -g --unsafe-perm=true --allow-root uglifycss
+npm install -g --unsafe-perm=true --allow-root cmake-js
 
 echo "Will install local npm packages"
 npm install --save-dev node-addon-api --arch=x64
 npm install electron --arch=x64
-npm install --save-dev electron-packager
+npm install --save-dev --unsafe-perm=true --allow-root electron-packager
 
 echo "CWD"
 pwd
@@ -68,18 +68,24 @@ fi
 echo "ls"
 ls
 
-echo "ls ${CmakeBuildDir}"
+echo "ls ${CmakeBuildDir} (CmakeBuildDir)"
 ls ${CmakeBuildDir}
 
-echo "ls ${WorkingDir}"
+echo "ls ${WorkingDir} (WorkingDir)"
 ls ${WorkingDir}
 cd ${WorkingDir}
+echo "Changed to: $(pwd)"
 
 if [ -d "${WorkingDir}/app" ]; then
+  echo "app was a valid working directory"
   rm -rf "${WorkingDir}/app"
+else
+  echo "There was no app directory in cwd"
 fi
 
-cp -r "${CmakeBuildDir}/app" .
+echo "Will try to copy app dir from ${CmakeBuildDir} to $(cwd)."
+cp -r "${CmakeBuildDir}/app" "${WorkingDir}/"
+echo "Have copied app dir from ${CmakeBuildDir} to ${WorkingDir}/."
 
 echo "About to package"
 
