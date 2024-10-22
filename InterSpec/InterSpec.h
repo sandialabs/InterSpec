@@ -27,19 +27,20 @@
 
 #include <set>
 #include <deque>
+#include <tuple>
 #include <memory>
 #include <vector>
 
 #include <Wt/Dbo/Dbo>
 #include <Wt/WContainerWidget>
 
-//#include "SpecUtils/SpecFile.h"
-//Without including InterSpecUser.h here, we get some wierd issues with the
-//  DB optomistic versioning...
+//Without including InterSpecUser.h here, we get some weird issues with the
+//  DB optimistic versioning...
 #include "InterSpec/InterSpecUser.h"
 
 class PeakDef;
 class PopupDiv;
+class SpecMeas;
 class AuxWindow;
 class GoogleMap;
 class PeakModel;
@@ -591,10 +592,10 @@ public:
   
   /** Sets the Y-axis range.
    
-   Returns true if successful, or false if the request couldnt be fully honored
+   Returns set range, and empty string if successful, or otherwise a message explaining why the request couldnt be fully honored
    (e.g., a negative lower counts was specified, but its currently log-scale)
    */
-  bool setYAxisRange( double lower_counts, double upper_counts );
+  std::tuple<double,double,Wt::WString> setYAxisRange( double lower_counts, double upper_counts );
 
   /** When displaying the spectrum in log-y, sets the lower y-axis value to show, if there are channels with zero counts. */
   bool setLogYAxisMin( const double lower_value );

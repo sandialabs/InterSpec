@@ -197,7 +197,10 @@ protected:
                                  const double &value,
                                  InterSpec *viewer );
   
-  static void setPreferenceValueWorker( const std::string &name,
+  /** Does the work of setting the preference value.
+   @returns if the value was updated or not (e.g. same value as before).
+   */
+  static bool setPreferenceValueWorker( const std::string &name,
                                        std::string value_as_string,
                                        InterSpec *viewer );
   

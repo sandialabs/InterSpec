@@ -34,6 +34,7 @@
 #include "InterSpec_config.h"
 
 #include <regex>
+#include <tuple>
 #include <vector>
 #include <memory>
 #include <stdio.h>
@@ -1914,12 +1915,14 @@ std::string TerminalModel::setYRange( const std::string& arguments )
     //  throw mup::ParserError( "Invalid arguments for function (setYRange). Lower and upper bound"
     //                           " must not have difference less than or equal to 0.01." );
     
-    const bool success = m_viewer->setYAxisRange(lower, upper);
+    const std::tuple<double,double,Wt::WString> result = m_viewer->setYAxisRange(lower, upper);
     
-    if( success )
-      os << "Now setting count range to [" << lower << ", " << upper << "] counts.";
+    if( std::get<2>(result).empty() )
+      os << "Setting y-range to [" << lower << ", " << upper << "].";
     else
-      os << "Setting to count range [" << lower << ", " << upper << "] not fully be fulfilled.";
+      os << "Setting y-range to [" << lower << ", " << upper << "] not fully be fulfilled; set to ["
+         << std::get<0>(result) << ", " << std::get<1>(result) << "]: "
+         << std::get<2>(result).toUTF8();
   } catch ( const mup::ParserError& e ) {
     os << "Error code " << e.GetCode() << ": " << e.GetMsg();
     

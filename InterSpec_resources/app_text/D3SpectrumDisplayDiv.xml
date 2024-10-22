@@ -41,4 +41,10 @@
   <message id="d3sdd-recalFromTo">Recalibrate data from {1} to {2} keV</message>
   <message id="d3sdd-sumFromTo">{1} to {2} keV</message>
   <message id="d3sdd-comptonPeakAngle">{1}° Compton Peak</message>
+
+<message id="d3sdd-yaxis-lower-upper-equal">Lower and upper counts equal.</message>
+<message id="d3sdd-yaxis-no-spectrum">No spectrum displayed.</message>
+<message id="d3sdd-yaxis-upper-counts-below-zero">Upper range equal or below zero.</message>
+<message id="d3sdd-yaxis-lower-counts-below-zero">Lower range equal or below zero.</message>
+<message id="d3sdd-yaxis-below-min-non-zero">Upper range less than minimum displayed, non-zero value.</message>
 </messages>
