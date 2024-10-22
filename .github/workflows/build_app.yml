@@ -3,7 +3,7 @@ name: Build App
 on:
   push:
     branches:
-      - [master, feature/LinuxCiBuild]
+      - "feature/LinuxCiBuild"
 
 concurrency: ci-${{ github.ref }}
 
