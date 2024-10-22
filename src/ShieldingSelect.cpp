@@ -64,6 +64,7 @@
 #include "InterSpec/PhysicalUnits.h"
 #include "InterSpec/ShieldingSelect.h"
 #include "InterSpec/UndoRedoManager.h"
+#include "InterSpec/UserPreferences.h"
 #include "InterSpec/NativeFloatSpinBox.h"
 #include "InterSpec/MassAttenuationTool.h"
 #include "InterSpec/DecayDataBaseServer.h"
@@ -148,7 +149,7 @@ public:
   {
     wApp->useStyleSheet( "InterSpec_resources/GridLayoutHelpers.css" );
     
-    const bool useBq = InterSpecUser::preferenceValue<bool>( "DisplayBecquerel", InterSpec::instance() );
+    const bool useBq = UserPreferences::preferenceValue<bool>( "DisplayBecquerel", InterSpec::instance() );
     
     assert( !parent->isGenericMaterial() );
     addStyleClass( "TraceSrcDisplay" );
@@ -328,7 +329,7 @@ public:
     
     handleUserNuclideChange();
     
-    const bool useCi = !InterSpecUser::preferenceValue<bool>( "DisplayBecquerel", InterSpec::instance() );
+    const bool useCi = !UserPreferences::preferenceValue<bool>( "DisplayBecquerel", InterSpec::instance() );
     const string acttxt = PhysicalUnits::printToBestActivityUnits( trace.m_activity, 6, useCi );
     m_activityInput->setText( WString::fromUTF8(acttxt) );
     
@@ -400,7 +401,7 @@ public:
     
     if( nuc == m_currentNuclide )
     {
-      const bool useCi = !InterSpecUser::preferenceValue<bool>( "DisplayBecquerel", InterSpec::instance() );
+      const bool useCi = !UserPreferences::preferenceValue<bool>( "DisplayBecquerel", InterSpec::instance() );
       
       m_isoSelect->removeItem( m_isoSelect->currentIndex() );
       m_isoSelect->setCurrentIndex( 0 );
@@ -426,7 +427,7 @@ public:
   
   void handleUserActivityChange()
   {
-    const bool useCi = !InterSpecUser::preferenceValue<bool>( "DisplayBecquerel", InterSpec::instance() );
+    const bool useCi = !UserPreferences::preferenceValue<bool>( "DisplayBecquerel", InterSpec::instance() );
     
     if( m_parent->isGenericMaterial() )
     {
@@ -622,7 +623,7 @@ public:
   
   void updateAvailableActivityTypes()
   {
-    const bool useCi = !InterSpecUser::preferenceValue<bool>( "DisplayBecquerel", InterSpec::instance() );
+    const bool useCi = !UserPreferences::preferenceValue<bool>( "DisplayBecquerel", InterSpec::instance() );
     
     const int previous = m_activityType->currentIndex();
     assert( previous < static_cast<int>(TraceActivityType::NumTraceActivityType) );
@@ -699,7 +700,7 @@ public:
   /** We will keep total activity the same, but update the display activity based on current value of m_activityType. */
   void updateDispActivityFromTotalActivity()
   {
-    const bool useCi = !InterSpecUser::preferenceValue<bool>( "DisplayBecquerel", InterSpec::instance() );
+    const bool useCi = !UserPreferences::preferenceValue<bool>( "DisplayBecquerel", InterSpec::instance() );
     const int currentIndex = m_activityType->currentIndex();
     
     const double shieldVolume = m_parent->shieldingVolume();
@@ -753,7 +754,7 @@ public:
   
   void updateTotalActivityFromDisplayActivity()
   {
-    const bool useCi = !InterSpecUser::preferenceValue<bool>( "DisplayBecquerel", InterSpec::instance() );
+    const bool useCi = !UserPreferences::preferenceValue<bool>( "DisplayBecquerel", InterSpec::instance() );
     
     
     if( !m_currentNuclide )
@@ -823,7 +824,7 @@ public:
     if( m_currentNuclide )
     {
       m_currentTotalActivity = m_currentDisplayActivity = 0.0;
-      const bool useCi = !InterSpecUser::preferenceValue<bool>( "DisplayBecquerel", InterSpec::instance() );
+      const bool useCi = !UserPreferences::preferenceValue<bool>( "DisplayBecquerel", InterSpec::instance() );
       m_activityInput->setText( (useCi ? "0 uCi" : "0 bq") );
       
       //const SandiaDecay::Nuclide * const oldNuc = m_currentNuclide;
@@ -838,7 +839,7 @@ public:
     shared_ptr<const Material> mat = m_parent->material();
     if( !mat )
     {
-      const bool useBq = InterSpecUser::preferenceValue<bool>( "DisplayBecquerel", InterSpec::instance() );
+      const bool useBq = UserPreferences::preferenceValue<bool>( "DisplayBecquerel", InterSpec::instance() );
       
       m_currentDisplayActivity = m_currentTotalActivity = 0.0;
       m_activityInput->setText( (useBq ? "0 Bq" : "0 uCi") );
@@ -965,7 +966,7 @@ public:
       
       m_currentDisplayActivity = act;
       
-      const bool useCi = !InterSpecUser::preferenceValue<bool>( "DisplayBecquerel", InterSpec::instance() );
+      const bool useCi = !UserPreferences::preferenceValue<bool>( "DisplayBecquerel", InterSpec::instance() );
       const string actstr = PhysicalUnits::printToBestActivityUnits(act,4,useCi);
       m_activityInput->setValueText( WString::fromUTF8(actstr) );
       
@@ -2030,7 +2031,7 @@ void ShieldingSelect::init()
   //TODO/NOTE: had to hard code this as false because there is no way
   //to easily get the preference via InterSpec because
   //is still initializing when calling at this moment.
-  const bool showToolTips = interspec ? InterSpecUser::preferenceValue<bool>( "ShowTooltips", interspec ) : false;
+  const bool showToolTips = interspec ? UserPreferences::preferenceValue<bool>( "ShowTooltips", interspec ) : false;
   if( interspec )
     interspec->useMessageResourceBundle( "ShieldingSelect" );
   
@@ -4327,7 +4328,7 @@ void ShieldingSelect::handleMaterialChange()
 
 //NOTE: can't add tooltip to this, causes WT error when toggling.  Can't fix.
 //    InterSpecApp *app = dynamic_cast<InterSpecApp *>( wApp );
-//    const bool showToolTips = true;//InterSpecUser::preferenceValue<bool>( "ShowTooltips", app->viewer() );
+//    const bool showToolTips = true;//UserPreferences::preferenceValue<bool>( "ShowTooltips", app->viewer() );
 //    HelpSystem::attachToolTipOn( this,tooltip, showToolTips );
     
     m_materialSummary->setText( summary );

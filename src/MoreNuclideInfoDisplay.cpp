@@ -48,8 +48,9 @@
 #include "InterSpec/InterSpec.h"
 #include "InterSpec/PhysicalUnits.h"
 #include "InterSpec/DecayChainChart.h"
-#include "InterSpec/UndoRedoManager.h"
 #include "InterSpec/MoreNuclideInfo.h"
+#include "InterSpec/UndoRedoManager.h"
+#include "InterSpec/UserPreferences.h"
 #include "InterSpec/DecayDataBaseServer.h"
 #include "InterSpec/MoreNuclideInfoDisplay.h"
 #include "InterSpec/ReferencePhotopeakDisplay.h"
@@ -368,7 +369,7 @@ void MoreNuclideInfoDisplay::setNuclide( const SandiaDecay::Nuclide *const nuc,
     if( !db )
       throw runtime_error( "Error getting DecayDataBaseServer" );
     
-    const bool useBq = InterSpecUser::preferenceValue<bool>( "DisplayBecquerel", InterSpec::instance() );
+    const bool useBq = UserPreferences::preferenceValue<bool>( "DisplayBecquerel", InterSpec::instance() );
     
     tmplt.setCondition( "display-title", m_displayTitle );
     tmplt.setCondition( "if-have-prev", !history.empty() );

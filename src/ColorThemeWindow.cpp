@@ -46,7 +46,9 @@
 #include "InterSpec/ColorTheme.h"
 #include "InterSpec/ColorSelect.h"
 #include "InterSpec/SimpleDialog.h"
+#include "InterSpec/DataBaseUtils.h"
 #include "InterSpec/InterSpecUser.h"
+#include "InterSpec/UserPreferences.h"
 #include "InterSpec/ColorThemeWidget.h"
 #include "InterSpec/ColorThemeWindow.h"
 
@@ -265,7 +267,7 @@ m_apply( nullptr )
   if( !phone )
     foot->addWidget( autoDarkCb );
   
-  InterSpecUser::associateWidget(m_interspec->m_user, "AutoDarkFromOs", autoDarkCb, m_interspec);
+  UserPreferences::associateWidget( "AutoDarkFromOs", autoDarkCb, m_interspec );
   
   m_save = new WPushButton( "Save", foot );
   m_apply = new WPushButton( "Apply", foot );
@@ -293,7 +295,7 @@ m_apply( nullptr )
   //if( currentColorTheme )
   //  colorThemeIndex = currentColorTheme->dbIndex;
   //else
-  //  colorThemeIndex = InterSpecUser::preferenceValue<int>("ColorThemeIndex", m_interspec);
+  //  colorThemeIndex = UserPreferences::preferenceValue<int>("ColorThemeIndex", m_interspec);
   
   for( unique_ptr<ColorTheme> &p : defaultThemes )
   {
@@ -415,7 +417,7 @@ void ColorThemeWindow::removeThemeCallback()
         std::shared_ptr<DataBaseUtils::DbSession> sql = m_interspec->sql();
         
         DataBaseUtils::DbTransaction transaction( *sql );
-        Dbo::ptr<ColorThemeInfo> dbentry = m_interspec->m_user->colorThemes().find().where( "id = ?" ).bind( dbIndex );
+        Dbo::ptr<ColorThemeInfo> dbentry = m_interspec->user()->colorThemes().find().where( "id = ?" ).bind( dbIndex );
         dbentry.remove();
         transaction.commit();
       }catch( Wt::Dbo::Exception & )
@@ -615,7 +617,7 @@ unique_ptr<ColorTheme> ColorThemeWindow::saveThemeToDb( const ColorTheme *theme 
   unique_ptr<ColorTheme> newTheme;
   
   string errormsg;
-  Dbo::ptr<InterSpecUser> &user = m_interspec->m_user;
+  const Dbo::ptr<InterSpecUser> &user = m_interspec->user();
   std::shared_ptr<DataBaseUtils::DbSession> sql = m_interspec->sql();
   
   if( !theme || !user || !sql )
@@ -769,8 +771,7 @@ void ColorThemeWindow::applyCallback()
   const ColorTheme *theme = item->theme();
   assert( theme ); //def shouldnt ever happen
   
-  Dbo::ptr<InterSpecUser> &user = m_interspec->m_user;
-  InterSpecUser::setPreferenceValue<int>( user, "ColorThemeIndex", static_cast<int>(theme->dbIndex), m_interspec );
+  UserPreferences::setPreferenceValue( "ColorThemeIndex", static_cast<int>(theme->dbIndex), m_interspec );
   
   m_interspec->applyColorTheme( make_shared<ColorTheme>(*theme) );
   
@@ -796,14 +797,14 @@ std::vector<std::unique_ptr<ColorTheme>>  ColorThemeWindow::userDbThemes()
   
   try
   {
-    Dbo::ptr<InterSpecUser> &user = m_interspec->m_user;
+    const Dbo::ptr<InterSpecUser> &user = m_interspec->user();
     std::shared_ptr<DataBaseUtils::DbSession> sql = m_interspec->sql();
     
     if (!user || !sql)
       throw runtime_error("Invalid database ish");
     
     DataBaseUtils::DbTransaction transaction(*sql);
-    user.reread();
+    m_interspec->reReadUserInfoFromDb();
     
     const Wt::Dbo::collection< Wt::Dbo::ptr<ColorThemeInfo> > &userthemes = user->colorThemes();
     

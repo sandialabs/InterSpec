@@ -81,6 +81,7 @@
 #include "InterSpec/PhysicalUnits.h"
 #include "InterSpec/ShieldingSelect.h"
 #include "InterSpec/SpecMeasManager.h"
+#include "InterSpec/UserPreferences.h"
 #include "InterSpec/SpectraFileModel.h"
 #include "InterSpec/NativeFloatSpinBox.h"
 #include "InterSpec/PeakSearchGuiUtils.h"
@@ -1530,7 +1531,7 @@ MakeDrf::MakeDrf( InterSpec *viewer, MaterialDB *materialDB,
   
   addStyleClass( "MakeDrf" );
   
-  const bool showToolTips = InterSpecUser::preferenceValue<bool>("ShowTooltips", m_interspec );
+  const bool showToolTips = UserPreferences::preferenceValue<bool>("ShowTooltips", m_interspec );
   
   WGridLayout *upperLayout = new WGridLayout();
   upperLayout->setContentsMargins( 0, 0, 0, 0 );
@@ -2042,7 +2043,7 @@ void MakeDrf::startSaveAs()
       DataBaseUtils::DbTransaction transaction( *sql );
       //Create a separate DetectorPeakResponse because shared_ptr and dbo::ptr don't work well together
       DetectorPeakResponse *tempDetector = new DetectorPeakResponse( *drf );
-      tempDetector->m_user = m_interspec->m_user.id();
+      tempDetector->m_user = m_interspec->user().id();
       auto newDbDet = sql->session()->add( tempDetector );
       
       transaction.commit();
@@ -2055,7 +2056,7 @@ void MakeDrf::startSaveAs()
     m_interspec->detectorChanged().emit( drf );
     
     std::shared_ptr<DataBaseUtils::DbSession> sql = m_interspec->sql();
-    Wt::Dbo::ptr<InterSpecUser> user = m_interspec->m_user;
+    const Wt::Dbo::ptr<InterSpecUser> &user = m_interspec->user();
     
     if( def_for_serial_cb && def_for_serial_cb->isChecked() && representative_meas )
     {

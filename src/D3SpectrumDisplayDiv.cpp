@@ -999,8 +999,8 @@ void D3SpectrumDisplayDiv::setXAxisRange( const double minimum, const double max
 void D3SpectrumDisplayDiv::setYAxisRange( const double minimum,
                                        const double maximum )
 {
-  const string minimumStr = to_string( minimum );
-  const string maximumStr = to_string( maximum );
+  const string minimumStr = SpecUtils::printCompact(minimum, 8);
+  const string maximumStr = SpecUtils::printCompact(maximum, 8);
   m_yAxisMinimum = minimum;
   m_yAxisMaximum = maximum;
   
@@ -1798,9 +1798,8 @@ void D3SpectrumDisplayDiv::setLogYAxisMin( const double ymin )
   m_logYAxisMin = ymin;
   
   if( isRendered() )
-    doJavaScript( m_jsgraph + ".setLogYAxisMin(" + std::to_string(ymin) + ");" );
-  
-  scheduleUpdateForeground(); //JIC, the JS setPeakLabelRotation(...) wont cause a re-draw
+    doJavaScript( m_jsgraph + ".setLogYAxisMin(" + std::to_string(ymin) + "); "
+                 + m_jsgraph + ".redraw()();" );
 }//void setLogYAxisMin( const double ymin )
 
 

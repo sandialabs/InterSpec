@@ -231,7 +231,7 @@ std::map<std::string, std::shared_ptr<const ZipFileHeader> >
 {
   //Assumes the header is at the end of the file
   instrm.seekg( 0, ios_base::end );
-  const ios::streampos end_position = instrm.tellg();
+  const ios::pos_type end_position = instrm.tellg();
   const size_t max_comment_size = 0xffff; // max size of header, 65535
   const size_t read_size_before_comment = 22;
   std::streamoff read_start = max_comment_size + read_size_before_comment;

@@ -70,6 +70,7 @@
 #include "InterSpec/InterSpecUser.h"
 #include "InterSpec/DbFileBrowser.h"
 #include "InterSpec/UndoRedoManager.h"
+#include "InterSpec/UserPreferences.h"
 #include "InterSpec/RowStretchTreeView.h"
 
 
@@ -239,7 +240,7 @@ UseInfoWindow::UseInfoWindow( std::function<void(bool)> showAgainCallback,
   try
   {
 #if( USE_DB_TO_STORE_SPECTRA )
-    Dbo::ptr<InterSpecUser> user = m_viewer->m_user;
+    const Dbo::ptr<InterSpecUser> &user = m_viewer->user();
     SpecMeasManager *manager = m_viewer->fileManager();
     
     m_snapshotModel = new SnapshotBrowser( manager, m_viewer, nullptr );
@@ -854,7 +855,7 @@ UseInfoWindow::UseInfoWindow( std::function<void(bool)> showAgainCallback,
     
     try
     {
-      const bool showAtStartup = viewer->m_user->preferenceValue<bool>( "ShowSplashScreen" );
+      const bool showAtStartup = UserPreferences::preferenceValue<bool>( "ShowSplashScreen", viewer );
       showAgainCb->setChecked( showAtStartup );
     }catch(...)
     {

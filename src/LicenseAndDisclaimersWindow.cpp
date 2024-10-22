@@ -55,6 +55,7 @@
 #include "InterSpec/InterSpecApp.h"
 #include "InterSpec/PhysicalUnits.h"
 #include "InterSpec/UseInfoWindow.h"
+#include "InterSpec/UserPreferences.h"
 #include "InterSpec/PhysicalUnitsLocalized.h"
 #include "InterSpec/LicenseAndDisclaimersWindow.h"
 
@@ -390,7 +391,7 @@ void LicenseAndDisclaimersWindow::dataStorageCreator( Wt::WContainerWidget *pare
     string totalUserTime, totalFilesOpened, totalSessions, firstAccess;
     
     InterSpec *viewer = InterSpec::instance();
-    Dbo::ptr<InterSpecUser> user = ((app && viewer) ? viewer->m_user : Dbo::ptr<InterSpecUser>());
+    Dbo::ptr<InterSpecUser> user = ((app && viewer) ? viewer->user() : Dbo::ptr<InterSpecUser>());
     if( user )
     {
       try
@@ -478,8 +479,8 @@ void LicenseAndDisclaimersWindow::dataStorageCreator( Wt::WContainerWidget *pare
 #endif
     
 #if( USE_REMOTE_RID )
-    const string urls = InterSpecUser::preferenceValue<string>( "ExternalRidUrl", viewer );
-    const string exes = InterSpecUser::preferenceValue<string>( "ExternalRidExe", viewer );
+    const string urls = UserPreferences::preferenceValue<string>( "ExternalRidUrl", viewer );
+    const string exes = UserPreferences::preferenceValue<string>( "ExternalRidExe", viewer );
     if( urls.empty() && exes.empty() )
       content.arg( WString::tr("ladw-remote-rid-none") );
     

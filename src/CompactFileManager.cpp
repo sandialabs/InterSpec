@@ -65,6 +65,7 @@
 #include "InterSpec/PhysicalUnits.h"
 #include "InterSpec/WarningWidget.h"
 #include "InterSpec/SpecMeasManager.h"
+#include "InterSpec/UserPreferences.h"
 #include "InterSpec/SpectraFileModel.h"
 #include "InterSpec/NativeFloatSpinBox.h"
 #include "InterSpec/CompactFileManager.h"
@@ -112,7 +113,7 @@ CompactFileManager::CompactFileManager( SpecMeasManager *fileManager,
   std::shared_ptr<DataBaseUtils::DbSession> sql = hostViewer->sql();
 #endif
   
-  const bool showToolTips = InterSpecUser::preferenceValue<bool>( "ShowTooltips", hostViewer );
+  const bool showToolTips = UserPreferences::preferenceValue<bool>( "ShowTooltips", hostViewer );
   
   WTabWidget *tabWidget = nullptr;
   WGridLayout *tabbedLayout = nullptr;
@@ -1093,7 +1094,7 @@ void CompactFileManager::updateSummaryTable( SpecUtils::SpectrumType type,
     
     label->setToolTip( WString::tr("cfm-tt-meas-type") );
     val->setToolTip( WString::tr("cfm-tt-meas-type") );
-    //const bool showToolTips = InterSpecUser::preferenceValue<bool>( "ShowTooltips", hostViewer );
+    //const bool showToolTips = UserPreferences::preferenceValue<bool>( "ShowTooltips", hostViewer );
     //HelpSystem::attachToolTipOn( {label, val}, WString::tr("cfm-tt-meas-type"),
     //                            showToolTips, HelpSystem::ToolTipPosition::Right );
   }//if( a single sample, and spectrum type is marked )

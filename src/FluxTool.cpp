@@ -66,6 +66,7 @@
 #include "InterSpec/PhysicalUnits.h"
 #include "InterSpec/SpecMeasManager.h"
 #include "InterSpec/UndoRedoManager.h"
+#include "InterSpec/UserPreferences.h"
 #include "InterSpec/SpectraFileModel.h"
 #include "InterSpec/RowStretchTreeView.h"
 
@@ -1082,7 +1083,7 @@ void FluxToolWidget::init()
   
   wApp->useStyleSheet( "InterSpec_resources/FluxTool.css" );
   
-  const bool showToolTips = m_interspec ? InterSpecUser::preferenceValue<bool>( "ShowTooltips", m_interspec ) : false;
+  const bool showToolTips = m_interspec ? UserPreferences::preferenceValue<bool>( "ShowTooltips", m_interspec ) : false;
   
   addStyleClass( "FluxToolWidget" );
   

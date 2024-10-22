@@ -85,6 +85,7 @@
 #include "InterSpec/WarningWidget.h"
 #include "SpecUtils/SpecUtilsAsync.h"
 #include "InterSpec/SpecMeasManager.h"
+#include "InterSpec/UserPreferences.h"
 #include "InterSpec/SpectraFileModel.h"
 #include "InterSpec/RowStretchTreeView.h"
 
@@ -224,10 +225,10 @@ SpectraHeader::~SpectraHeader()
 }
 
 
-SpectraFileHeader::SpectraFileHeader( Wt::Dbo::ptr<InterSpecUser> user,
-                                      bool keepInMemmory,
+SpectraFileHeader::SpectraFileHeader( bool keepInMemmory,
                                       InterSpec *viewer )
 {
+  assert( viewer );
   m_viewer = viewer;
   m_sql = viewer->sql();
   m_fileSystemLocation = "";
@@ -236,7 +237,7 @@ SpectraFileHeader::SpectraFileHeader( Wt::Dbo::ptr<InterSpecUser> user,
   m_numDetectors = -1;
   m_hasNeutronDetector = false;
   m_keepCache = keepInMemmory;
-  m_user = user;
+  m_user = viewer->user();
   m_modifiedSinceDecode = false;
   m_candidateForSavingToDb = true;
   m_app = wApp;
@@ -250,7 +251,7 @@ SpectraFileHeader::~SpectraFileHeader() noexcept(true)
   try
   {
 #if( USE_DB_TO_STORE_SPECTRA )
-    const bool autosave = InterSpecUser::preferenceValue<bool>( "AutoSaveSpectraToDb", m_viewer );
+    const bool autosave = UserPreferences::preferenceValue<bool>( "AutoSaveSpectraToDb", m_viewer );
 #endif
 
     string fileSystemLocation;

@@ -43,6 +43,7 @@
 #include "InterSpec/InterSpec.h"
 #include "InterSpec/DecayWindow.h"
 #include "InterSpec/PhysicalUnits.h"
+#include "InterSpec/UserPreferences.h"
 #include "InterSpec/DecayActivityDiv.h"
 #include "InterSpec/DecayDataBaseServer.h"
 
@@ -74,7 +75,7 @@ DecayWindow::DecayWindow( InterSpec *viewer )
   layout->setHorizontalSpacing( 0 );
   layout->setRowStretch( 0, 1 );
 
-  const bool useBq = InterSpecUser::preferenceValue<bool>( "DisplayBecquerel", InterSpec::instance() );
+  const bool useBq = UserPreferences::preferenceValue<bool>( "DisplayBecquerel", InterSpec::instance() );
   const double actUnits = useBq ? PhysicalUnits::MBq : PhysicalUnits::microCi;
   const string actStr = useBq ? "1 MBq" : "1 uCi";
   m_activityDiv->addNuclide( 53, 135, 0, 1.0*actUnits, !useBq, 0.0, actStr);

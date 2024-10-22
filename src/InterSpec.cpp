@@ -123,6 +123,7 @@
 #include "InterSpec/SpecMeasManager.h"
 #include "InterSpec/SpecFileSummary.h"
 #include "InterSpec/UndoRedoManager.h"
+#include "InterSpec/UserPreferences.h"
 #include "InterSpec/AddNewPeakDialog.h"
 #include "InterSpec/ColorThemeWindow.h"
 #include "InterSpec/GammaCountDialog.h"
@@ -378,6 +379,8 @@ namespace
 
 InterSpec::InterSpec( WContainerWidget *parent )
   : WContainerWidget( parent ),
+    m_user{},
+    m_preferences( nullptr ),
     m_peakModel( 0 ),
     m_spectrum( 0 ),
     m_timeSeries( 0 ),
@@ -522,7 +525,7 @@ InterSpec::InterSpec( WContainerWidget *parent )
   addStyleClass( "InterSpec" );
   
   //Setting setLayoutSizeAware doesnt seem to add any appreciable network
-  //  overhead, at least according to the chrome inspectrion panel when running
+  //  overhead, at least according to the chrome inspection panel when running
   //  locally
   setLayoutSizeAware( true );
 
@@ -587,7 +590,7 @@ InterSpec::InterSpec( WContainerWidget *parent )
     
     if( m_user )
     {
-      InterSpecUser::initFromDbValues( m_user, m_sql );
+      
     }else
     {
       InterSpecUser::DeviceType type = InterSpecUser::Desktop;
@@ -598,10 +601,10 @@ InterSpec::InterSpec( WContainerWidget *parent )
     
       InterSpecUser *newuser = new InterSpecUser( username, type );
       m_user = m_sql->session()->add( newuser );
-    
-      InterSpecUser::initFromDefaultValues( m_user, m_sql );
     }//if( m_user ) / else
   
+    m_preferences = new UserPreferences( this );
+    
     m_user.modify()->startingNewSession();
     
     transaction.commit();
@@ -609,7 +612,7 @@ InterSpec::InterSpec( WContainerWidget *parent )
   
   detectClientDeviceType();
 
-  const string langPref = InterSpecUser::preferenceValue<string>("Language", this);
+  const string langPref = UserPreferences::preferenceValue<string>("Language", this);
   if( !langPref.empty() )
     wApp->setLocale( WLocale(langPref) );
       
@@ -623,7 +626,7 @@ InterSpec::InterSpec( WContainerWidget *parent )
   std::unique_ptr<UndoRedoManager::BlockUndoRedoInserts> undo_blocker;
   if( (UndoRedoManager::maxUndoRedoSteps() >= 0)
       /* && !app->isPhone()
-      && (!app->isTablet() || InterSpecUser::preferenceValue<bool>("TabletUseDesktopMenus", this)) */ )
+      && (!app->isTablet() || UserPreferences::preferenceValue<bool>("TabletUseDesktopMenus", this)) */ )
   {
     m_undo = new UndoRedoManager( this );
     undo_blocker = std::unique_ptr<UndoRedoManager::BlockUndoRedoInserts>();
@@ -1627,7 +1630,7 @@ void InterSpec::layoutSizeChanged( int w, int h )
     //        makes screen large, currently wont un-compactify axis, even if
     //        user wants this; should evaluate if its worth checking the user
     //        preference about this.
-    //const bool makeCompact = InterSpecUser::preferenceValue<bool>( "CompactXAxis", this );
+    //const bool makeCompact = UserPreferences::preferenceValue<bool>( "CompactXAxis", this );
     
     if( comactX && !m_spectrum->isAxisCompacted() )
       m_spectrum->setCompactAxis( comactX );
@@ -1680,7 +1683,7 @@ void InterSpec::detectClientDeviceType()
   bool tablet = app->isTablet();
   bool mobile = app->isMobile();
   if( mobile && !phone && tablet )
-    tablet = mobile = !InterSpecUser::preferenceValue<bool>("TabletUseDesktopMenus", this);
+    tablet = mobile = !UserPreferences::preferenceValue<bool>("TabletUseDesktopMenus", this);
 
   for( ClientDeviceType type= ClientDeviceType( 0x1 );
        type < NumClientDeviceType; type= ClientDeviceType( type << 1 ) )
@@ -1727,7 +1730,7 @@ void InterSpec::detectClientDeviceType()
 
 void InterSpec::changeLocale( std::string languageCode )
 {
-  const string prevLangPref = InterSpecUser::preferenceValue<string>("Language", this);
+  const string prevLangPref = UserPreferences::preferenceValue<string>("Language", this);
   //if( prevLangPref == local )
   //  return;
   
@@ -1739,7 +1742,7 @@ void InterSpec::changeLocale( std::string languageCode )
     return;
   }//if( !languages.count(languageCode) )
   
-  InterSpecUser::setPreferenceValue( m_user, "Language", languageCode, this );
+  UserPreferences::setPreferenceValue( "Language", languageCode, this );
   
   // Add the style class to the item selected
   if( m_languagesSubMenu )
@@ -3442,20 +3445,15 @@ void InterSpec::saveStateToDb( Wt::Dbo::ptr<UserState> entry )
     
     try
     {
-      if( m_user->preferenceValue<bool>( "ShowVerticalGridlines" ) )
+      if( UserPreferences::preferenceValue<bool>( "ShowVerticalGridlines", this ) )
         entry.modify()->shownDisplayFeatures |= UserState::kVerticalGridLines;
-    }catch(...)
-    {
-      // We can get here if we loaded from a state that didnt have this preference
-    }
-    
-    try
-    {
-      if( m_user->preferenceValue<bool>( "ShowHorizontalGridlines" ) )
+      
+      if( UserPreferences::preferenceValue<bool>( "ShowHorizontalGridlines", this ) )
         entry.modify()->shownDisplayFeatures |= UserState::kHorizontalGridLines;
     }catch(...)
     {
-      // We can get here if we loaded from a state that didnt have this preference
+      // We shouldnt get here
+      assert( 0 );
     }
     
     if( m_spectrum->legendIsEnabled() )
@@ -3665,7 +3663,7 @@ void InterSpec::saveStateToDb( Wt::Dbo::ptr<UserState> entry )
     try
     {
       Wt::Dbo::ptr<ColorThemeInfo> theme;
-      const int colorThemIndex = m_user->preferenceValue<int>("ColorThemeIndex", this);
+      const int colorThemIndex = UserPreferences::preferenceValue<int>("ColorThemeIndex", this);
       if( colorThemIndex > 0 )
         theme = m_user->m_colorThemes.find().where( "id = ?" ).bind( colorThemIndex ).resultValue();
       if( theme )
@@ -3849,7 +3847,7 @@ void InterSpec::loadStateFromDb( Wt::Dbo::ptr<UserState> entry )
       //All of this is really ugly and horrible, and should be improved!
       
 //      const bool autosave
-//        = InterSpecUser::preferenceValue<bool>( "CheckForPrevOnSpecLoad", this );
+//        = UserPreferences::preferenceValue<bool>( "CheckForPrevOnSpecLoad", this );
 //      if( autosave )
 //      {
 //      Its actually to late, HEAD will be set to the tag version even if the
@@ -4398,28 +4396,28 @@ void InterSpec::loadStateFromDb( Wt::Dbo::ptr<UserState> entry )
             case UserOption::String:
             {
               const std::string value = obj.get("value");
-              InterSpecUser::setPreferenceValue( m_user, name, value, this );
+              UserPreferences::setPreferenceValue( name, value, this );
               break;
             }//case UserOption::Boolean:
               
             case UserOption::Decimal:
             {
               const double value = obj.get("value");
-              InterSpecUser::setPreferenceValue( m_user, name, value, this );
+              UserPreferences::setPreferenceValue( name, value, this );
               break;
             }//case UserOption::Boolean:
               
             case UserOption::Integer:
             {
               const int value = obj.get("value");
-              InterSpecUser::setPreferenceValue( m_user, name, value, this );
+              UserPreferences::setPreferenceValue( name, value, this );
               break;
             }//case UserOption::Boolean:
               
             case UserOption::Boolean:
             {
               const bool value = obj.get("value");
-              InterSpecUser::setPreferenceValue( m_user, name, value, this );
+              UserPreferences::setPreferenceValue( name, value, this );
             }//case UserOption::Boolean:
           }//switch( datatype )
         }//for( size_t i = 0; i < userOptions.size(); ++i )
@@ -4541,7 +4539,7 @@ std::shared_ptr<const ColorTheme> InterSpec::getColorTheme()
   
   try
   {
-    const int colorThemIndex = m_user->preferenceValue<int>("ColorThemeIndex", this);
+    const int colorThemIndex = UserPreferences::preferenceValue<int>("ColorThemeIndex", this);
     if( colorThemIndex < 0 )
     {
       auto deftheme = ColorTheme::predefinedTheme( ColorTheme::PredefinedColorTheme(-colorThemIndex) );
@@ -4650,7 +4648,7 @@ void InterSpec::osThemeChange( std::string name )
   
   try
   {
-    const bool autoDark = InterSpecUser::preferenceValue<bool>( "AutoDarkFromOs", this );
+    const bool autoDark = UserPreferences::preferenceValue<bool>( "AutoDarkFromOs", this );
     
     if( autoDark && (name == "dark") )
     {
@@ -4741,6 +4739,22 @@ void InterSpec::startClearSession()
 }//void startClearSession()
 
 
+UserPreferences *InterSpec::preferences()
+{
+  return m_preferences;
+}
+
+
+const Wt::Dbo::ptr<InterSpecUser> &InterSpec::user()
+{
+  return m_user;
+}
+
+void InterSpec::reReadUserInfoFromDb()
+{
+  m_user.reread();
+}
+
 void InterSpec::deleteLicenseAndDisclaimersWindow()
 { 
   if( !m_licenseWindow )
@@ -4768,7 +4782,7 @@ void InterSpec::showWelcomeDialogWorker( const bool force )
   if( !force )
   {
     dontShowAgainCallback = [this](bool value){
-      InterSpecUser::setPreferenceValue<bool>( m_user, "ShowSplashScreen", value, this );
+      UserPreferences::setPreferenceValue( "ShowSplashScreen", value, this );
     };
   }//if( !force )
   
@@ -4799,7 +4813,7 @@ void InterSpec::showWelcomeDialog( const bool force )
   
   try
   {
-    if( !force && !m_user->preferenceValue<bool>("ShowSplashScreen") )
+    if( !force && !UserPreferences::preferenceValue<bool>("ShowSplashScreen", this) )
       return;
   }catch(...)
   {
@@ -5346,7 +5360,7 @@ void InterSpec::storeTestStateToN42( std::ostream &output,
     InterSpecNode->append_attribute( attr );
     
     //Add user options into the XML
-    m_user->userOptionsToXml( InterSpecNode, this );
+    preferences()->userOptionsToXml( InterSpecNode, this );
     
     if( newbacksamples.size() )
     {
@@ -5471,7 +5485,7 @@ void InterSpec::loadTestStateFromN42( const std::string filename )
     
     const xml_node<char> *preferences = InterSpecNode->first_node( "preferences" );
     if( preferences )
-      InterSpecUser::restoreUserPrefsFromXml( m_user, preferences, this );
+      UserPreferences::restoreUserPrefsFromXml( preferences, this );
     else
       cerr << "Warning, couldnt find preferences in the XML"
               " when restoring state from XML" << endl;
@@ -6015,7 +6029,7 @@ void InterSpec::addFileMenu( WWidget *parent, const bool isAppTitlebar )
     return;
 
   const bool mobile = isMobile();
-  const bool showToolTips = InterSpecUser::preferenceValue<bool>( "ShowTooltips", this );
+  const bool showToolTips = UserPreferences::preferenceValue<bool>( "ShowTooltips", this );
   
   PopupDivMenu *parentMenu = dynamic_cast<PopupDivMenu *>( parent );
   WContainerWidget *menuDiv = dynamic_cast<WContainerWidget *>( parent );
@@ -6356,7 +6370,7 @@ void InterSpec::addToolsTabToMenuItems()
   
   try
   {
-    showToolTips = InterSpecUser::preferenceValue<bool>( "ShowTooltips", this );
+    showToolTips = UserPreferences::preferenceValue<bool>( "ShowTooltips", this );
   }catch(...)
   {
   }
@@ -6468,6 +6482,14 @@ void InterSpec::setToolTabsVisible( bool showToolTabs )
   m_toolsResizer->setHidden( !showToolTabs );
 #else
   
+  string refNucXmlState;
+  if( m_referencePhotopeakLines
+      && ((m_referencePhotopeakLines->currentlyShowingNuclide().m_validity == ReferenceLineInfo::InputValidity::Valid)
+           || m_referencePhotopeakLines->persistedNuclides().size()) )
+  {
+    m_referencePhotopeakLines->serialize( refNucXmlState );
+  }
+  
   const int layoutVertSpacing = isMobile() ? 10 : 5;
 
 #if( InterSpec_PHONE_ROTATE_FOR_TABS )
@@ -6497,14 +6519,6 @@ void InterSpec::setToolTabsVisible( bool showToolTabs )
       delete m_peakInfoWindow;
       m_peakInfoWindow = NULL;
     }//if( m_peakInfoWindow )
-    
-    string refNucXmlState;
-    if( m_referencePhotopeakLines
-        && ((m_referencePhotopeakLines->currentlyShowingNuclide().m_validity == ReferenceLineInfo::InputValidity::Valid)
-             || m_referencePhotopeakLines->persistedNuclides().size()) )
-    {
-      m_referencePhotopeakLines->serialize( refNucXmlState );
-    }
     
     closeGammaLinesWindow();
     
@@ -6751,13 +6765,29 @@ void InterSpec::setToolTabsVisible( bool showToolTabs )
     delete m_nuclideSearchContainer;
     m_nuclideSearchContainer = nullptr;
     
-    if( m_referencePhotopeakLines )
-      m_referencePhotopeakLines->clearAllLines();
     
     m_toolsTabs = nullptr;
     
-    if( !m_referencePhotopeakLinesWindow )
+    if( m_referencePhotopeakLines )
+    {
+      m_referencePhotopeakLines->clearAllLines();
+      delete m_referencePhotopeakLines;
       m_referencePhotopeakLines = nullptr;
+    }
+    
+    if( m_referencePhotopeakLinesWindow )
+      delete m_referencePhotopeakLinesWindow;
+    m_referencePhotopeakLinesWindow = nullptr;
+    
+    if( !refNucXmlState.empty() )
+    {
+      showGammaLinesWindow();
+      if( m_referencePhotopeakLines )
+        m_referencePhotopeakLines->deSerialize( refNucXmlState );
+      if( phone && m_referencePhotopeakLinesWindow )
+        m_referencePhotopeakLinesWindow->hide();
+    }//if( !refNucXmlState.empty() )
+    
     m_toolsLayout = nullptr;
     
     m_layout->clear();
@@ -6810,7 +6840,7 @@ void InterSpec::setToolTabsVisible( bool showToolTabs )
       }else
       {
         // The phone is landscape, restore showing scaler to user preference
-        const bool showScalers = InterSpecUser::preferenceValue<bool>( "ShowYAxisScalers", this );
+        const bool showScalers = UserPreferences::preferenceValue<bool>( "ShowYAxisScalers", this );
         m_showYAxisScalerItems[0]->setHidden( showScalers );
         m_showYAxisScalerItems[1]->setHidden( !showScalers );
         m_spectrum->showYAxisScalers( showScalers );
@@ -6856,7 +6886,7 @@ void InterSpec::addViewMenu( WWidget *parent )
     throw runtime_error( "InterSpec::addViewMenu(): parent passed in"
                         " must be a PopupDivMenu  or WContainerWidget" );
  
-  const bool showToolTips = InterSpecUser::preferenceValue<bool>( "ShowTooltips", this );
+  const bool showToolTips = UserPreferences::preferenceValue<bool>( "ShowTooltips", this );
   
   if( menuDiv )
   {
@@ -6893,7 +6923,7 @@ void InterSpec::addViewMenu( WWidget *parent )
                                               "InterSpec_resources/images/spec_settings_small.png");
   
   bool logypref = true;
-  try{ logypref = m_user->preferenceValue<bool>( "LogY" ); }catch(...){}
+  try{ logypref = UserPreferences::preferenceValue<bool>( "LogY", this ); }catch(...){}
   
   m_logYItems[0] = chartmenu->addMenuItem( WString::tr("app-mi-view-logy") );
   m_logYItems[1] = chartmenu->addMenuItem( WString::tr("app-mi-view-liny") );
@@ -6902,10 +6932,9 @@ void InterSpec::addViewMenu( WWidget *parent )
   m_logYItems[0]->triggered().connect( boost::bind( &InterSpec::setLogY, this, true  ) );
   m_logYItems[1]->triggered().connect( boost::bind( &InterSpec::setLogY, this, false ) );
   m_spectrum->setYAxisLog( logypref );
-  InterSpecUser::addCallbackWhenChanged( m_user, this, "LogY", this, &InterSpec::setLogY );
+  m_preferences->addCallbackWhenChanged( "LogY", this, &InterSpec::setLogY );
   
-  
-  const bool verticleLines = InterSpecUser::preferenceValue<bool>( "ShowVerticalGridlines", this );
+  const bool verticleLines = UserPreferences::preferenceValue<bool>( "ShowVerticalGridlines", this );
   m_verticalLinesItems[0] = chartmenu->addMenuItem( WString::tr("app-mi-view-show-vert"),
                                           "InterSpec_resources/images/sc_togglegridvertical.png");
   m_verticalLinesItems[1] = chartmenu->addMenuItem( WString::tr("app-mi-view-hide-vert"),
@@ -6916,9 +6945,9 @@ void InterSpec::addViewMenu( WWidget *parent )
   m_verticalLinesItems[1]->setHidden( !verticleLines );
   m_spectrum->showVerticalLines( verticleLines );
   m_timeSeries->showVerticalLines( verticleLines );
-  InterSpecUser::addCallbackWhenChanged( m_user, this, "ShowVerticalGridlines", this, &InterSpec::setVerticalLines );
+  m_preferences->addCallbackWhenChanged( "ShowVerticalGridlines", this, &InterSpec::setVerticalLines );
   
-  const bool horizontalLines = InterSpecUser::preferenceValue<bool>( "ShowHorizontalGridlines", this );
+  const bool horizontalLines = UserPreferences::preferenceValue<bool>( "ShowHorizontalGridlines", this );
   m_horizantalLinesItems[0] = chartmenu->addMenuItem( WString::tr("app-mi-view-show-horz"),
                                           "InterSpec_resources/images/sc_togglegridhorizontal.png");
   m_horizantalLinesItems[1] = chartmenu->addMenuItem( WString::tr("app-mi-view-hide-horz"),
@@ -6929,7 +6958,7 @@ void InterSpec::addViewMenu( WWidget *parent )
   m_horizantalLinesItems[1]->setHidden( !horizontalLines );
   m_spectrum->showHorizontalLines( horizontalLines );
   m_timeSeries->showHorizontalLines( horizontalLines );
-  InterSpecUser::addCallbackWhenChanged( m_user, this, "ShowHorizontalGridlines", this, &InterSpec::setHorizantalLines );
+  m_preferences->addCallbackWhenChanged( "ShowHorizontalGridlines", this, &InterSpec::setHorizantalLines );
   
   
   if( isPhone() )
@@ -6937,7 +6966,7 @@ void InterSpec::addViewMenu( WWidget *parent )
     m_compactXAxisItems[0] = m_compactXAxisItems[1] = nullptr;
   }else
   {
-    const bool makeCompact = InterSpecUser::preferenceValue<bool>( "CompactXAxis", this );
+    const bool makeCompact = UserPreferences::preferenceValue<bool>( "CompactXAxis", this );
     m_spectrum->setCompactAxis( makeCompact );
     m_compactXAxisItems[0] = chartmenu->addMenuItem( WString::tr("app-mi-view-compact-x"), "");
     m_compactXAxisItems[1] = chartmenu->addMenuItem( WString::tr("app-mi-view-normal-x"), "");
@@ -6945,7 +6974,7 @@ void InterSpec::addViewMenu( WWidget *parent )
     m_compactXAxisItems[1]->triggered().connect( boost::bind( &InterSpec::setXAxisCompact, this, false ) );
     m_compactXAxisItems[0]->setHidden( makeCompact );
     m_compactXAxisItems[1]->setHidden( !makeCompact );
-    InterSpecUser::addCallbackWhenChanged( m_user, this, "CompactXAxis", this, &InterSpec::setXAxisCompact );
+    m_preferences->addCallbackWhenChanged( "CompactXAxis", this, &InterSpec::setXAxisCompact );
   }
   
   //What we should do here is have a dialog that pops up that lets users  select
@@ -6975,7 +7004,7 @@ void InterSpec::addViewMenu( WWidget *parent )
   
   addPeakLabelSubMenu( m_displayOptionsPopupDiv ); //add Peak menu
   
-  const bool showSlider = InterSpecUser::preferenceValue<bool>( "ShowXAxisSlider", this );
+  const bool showSlider = UserPreferences::preferenceValue<bool>( "ShowXAxisSlider", this );
   m_spectrum->showXAxisSliderChart( showSlider );
   m_showXAxisSliderItems[0] = m_displayOptionsPopupDiv->addMenuItem( WString::tr("app-mi-view-show-slider"), "");
   m_showXAxisSliderItems[1] = m_displayOptionsPopupDiv->addMenuItem( WString::tr("app-mi-view-hide-slider"), "");
@@ -6983,10 +7012,10 @@ void InterSpec::addViewMenu( WWidget *parent )
   m_showXAxisSliderItems[1]->triggered().connect( boost::bind( &InterSpec::setXAxisSlider, this, false ) );
   m_showXAxisSliderItems[0]->setHidden( showSlider );
   m_showXAxisSliderItems[1]->setHidden( !showSlider );
-  InterSpecUser::addCallbackWhenChanged( m_user, this, "ShowXAxisSlider", this, &InterSpec::setXAxisSlider );
+  m_preferences->addCallbackWhenChanged( "ShowXAxisSlider", this, &InterSpec::setXAxisSlider );
   
   
-  const bool showScalers = InterSpecUser::preferenceValue<bool>( "ShowYAxisScalers", this );
+  const bool showScalers = UserPreferences::preferenceValue<bool>( "ShowYAxisScalers", this );
   m_spectrum->showYAxisScalers( showScalers );
   
   m_showYAxisScalerItems[0] = m_displayOptionsPopupDiv->addMenuItem( WString::tr("app-mi-view-show-scaler"), "");
@@ -6995,7 +7024,7 @@ void InterSpec::addViewMenu( WWidget *parent )
   m_showYAxisScalerItems[1]->triggered().connect( boost::bind( &InterSpec::setShowYAxisScalers, this, false ) );
   m_showYAxisScalerItems[0]->setHidden( showScalers );
   m_showYAxisScalerItems[1]->setHidden( !showScalers );
-  InterSpecUser::addCallbackWhenChanged( m_user, this, "ShowYAxisScalers", this, &InterSpec::setShowYAxisScalers );
+  m_preferences->addCallbackWhenChanged( "ShowYAxisScalers", this, &InterSpec::setShowYAxisScalers );
   
   m_displayOptionsPopupDiv->addSeparator();
   
@@ -7299,7 +7328,7 @@ void InterSpec::setLogY( bool logy )
 {
   const bool wasLogY = m_spectrum->yAxisIsLog();
   
-  InterSpecUser::setPreferenceValue<bool>( m_user, "LogY", logy, this );
+  UserPreferences::setPreferenceValue( "LogY", logy, this );
   m_logYItems[0]->setHidden( logy );
   m_logYItems[1]->setHidden( !logy );
   m_spectrum->setYAxisLog( logy );
@@ -7334,7 +7363,7 @@ void InterSpec::setVerticalLines( bool show )
 {
   const bool wasShow = m_spectrum->verticalLinesShowing();
   
-  InterSpecUser::setPreferenceValue<bool>( m_user, "ShowVerticalGridlines", show, this );
+  UserPreferences::setPreferenceValue( "ShowVerticalGridlines", show, this );
   m_verticalLinesItems[0]->setHidden( show );
   m_verticalLinesItems[1]->setHidden( !show );
   m_spectrum->showVerticalLines( show );
@@ -7353,7 +7382,7 @@ void InterSpec::setHorizantalLines( bool show )
 {
   const bool wasShow = m_spectrum->horizontalLinesShowing();
   
-  InterSpecUser::setPreferenceValue<bool>( m_user, "ShowHorizontalGridlines", show, this );
+  UserPreferences::setPreferenceValue( "ShowHorizontalGridlines", show, this );
   m_horizantalLinesItems[0]->setHidden( show );
   m_horizantalLinesItems[1]->setHidden( !show );
   m_spectrum->showHorizontalLines( show );
@@ -7553,7 +7582,7 @@ void InterSpec::setXAxisSlider( bool show )
 {
   const bool wasShowing = m_spectrum->xAxisSliderChartIsVisible();
   
-  InterSpecUser::setPreferenceValue<bool>( m_user, "ShowXAxisSlider", show, this );
+  UserPreferences::setPreferenceValue( "ShowXAxisSlider", show, this );
   m_showXAxisSliderItems[0]->setHidden( show );
   m_showXAxisSliderItems[1]->setHidden( !show );
   
@@ -7569,7 +7598,7 @@ void InterSpec::setXAxisSlider( bool show )
   }else
   {
     //Go back to whatever the user wants/selects
-    const bool makeCompact = InterSpecUser::preferenceValue<bool>( "CompactXAxis", this );
+    const bool makeCompact = UserPreferences::preferenceValue<bool>( "CompactXAxis", this );
     
     if( m_compactXAxisItems[0] )
       m_compactXAxisItems[0]->setHidden( makeCompact );
@@ -7596,7 +7625,7 @@ void InterSpec::setXAxisCompact( bool compact )
 {
   const bool wasCompact = m_spectrum->isAxisCompacted();
   
-  InterSpecUser::setPreferenceValue<bool>( m_user, "CompactXAxis", compact, this );
+  UserPreferences::setPreferenceValue( "CompactXAxis", compact, this );
   
   if( m_compactXAxisItems[0] )
     m_compactXAxisItems[0]->setHidden( compact );
@@ -7630,7 +7659,7 @@ void InterSpec::setShowYAxisScalers( bool show )
   
   try
   {
-    InterSpecUser::setPreferenceValue<bool>( m_user, "ShowYAxisScalers", show, this );
+    UserPreferences::setPreferenceValue( "ShowYAxisScalers", show, this );
   }catch( std::exception &e )
   {
     cerr << "InterSpec::setShowYAxisScalers: Got exception setting pref: " << e.what() << endl;
@@ -7795,69 +7824,66 @@ void InterSpec::addAboutMenu( Wt::WWidget *parent )
   PopupDivMenu *subPopup = m_helpMenuPopup->addPopupMenuItem( WString::tr("app-mi-help-opts"),
                                                       "InterSpec_resources/images/cog_small.png" );
     
-  const bool showToolTips = InterSpecUser::preferenceValue<bool>( "ShowTooltips", this );
+  const bool showToolTips = UserPreferences::preferenceValue<bool>( "ShowTooltips", this );
   
-  const bool autoStore = InterSpecUser::preferenceValue<bool>( "AutoSaveSpectraToDb", this );
+  // Note: we will associate the WCheckBox's with a option, to set their checked state,
+  //       BEFORE adding to the menu - so this way macOS native menus will pickup the
+  //       correct values.
   WCheckBox *cb = new WCheckBox( WString::tr("app-mi-help-pref-auto-store") );
-  cb->setChecked( autoStore );
+  UserPreferences::associateWidget( "AutoSaveSpectraToDb", cb, this );
   item = subPopup->addWidget( cb );
   HelpSystem::attachToolTipOn( item, WString::tr("app-mi-tt-help-pref-auto-store"), showToolTips );
-  InterSpecUser::associateWidget( m_user, "AutoSaveSpectraToDb", cb, this );
   
-    
-  const bool autoCheckOnLoad = InterSpecUser::preferenceValue<bool>( "CheckForPrevOnSpecLoad", this );
+  
   cb = new WCheckBox( WString::tr("app-mi-help-pref-check-prev") );
-  cb->setChecked( autoStore );
+  UserPreferences::associateWidget( "CheckForPrevOnSpecLoad", cb, this );
   item = subPopup->addWidget( cb );
   HelpSystem::attachToolTipOn( item, WString::tr("app-mi-tt-help-pref-check-prev"), showToolTips );
-  InterSpecUser::associateWidget( m_user, "CheckForPrevOnSpecLoad", cb, this );
   
   
   if( !isMobile() )
   {
     WCheckBox *checkbox = new WCheckBox( WString::tr("app-mi-help-pref-show-tt") );
+    UserPreferences::associateWidget( "ShowTooltips", checkbox, this );
     item = subPopup->addWidget( checkbox );
-    checkbox->setChecked( showToolTips );
     HelpSystem::attachToolTipOn( item, WString::tr("app-mi-tt-help-pref-show-tt"),
                                 true, HelpSystem::ToolTipPosition::Right );
     checkbox->checked().connect( boost::bind( &InterSpec::toggleToolTip, this, true ) );
     checkbox->unChecked().connect( boost::bind( &InterSpec::toggleToolTip, this, false ) );
-    InterSpecUser::associateWidget( m_user, "ShowTooltips", checkbox, this );
   }//if( !isMobile() )
   
   {//begin add "AskPropagatePeaks" to menu
-    const bool doPropogate = InterSpecUser::preferenceValue<bool>( "AskPropagatePeaks", this );
     WCheckBox *checkbox = new WCheckBox( WString::tr("app-mi-help-pref-prop-peak") );
-    checkbox->setChecked( doPropogate );
+    UserPreferences::associateWidget( "AskPropagatePeaks", checkbox, this );
     item = subPopup->addWidget( checkbox );
     HelpSystem::attachToolTipOn( item, WString::tr("app-mi-tt-help-pref-prop-peak"),
                                  true, HelpSystem::ToolTipPosition::Right );
     checkbox->checked().connect( boost::bind( &InterSpec::toggleToolTip, this, true ) );
     checkbox->unChecked().connect( boost::bind( &InterSpec::toggleToolTip, this, false ) );
-    InterSpecUser::associateWidget( m_user, "AskPropagatePeaks", checkbox, this );
   }//end add "AskPropagatePeaks" to menu
   
   
   {//begin add "DisplayBecquerel"
     WCheckBox *checkbox = new WCheckBox( WString::tr("app-mi-help-pref-disp-bq") );
+    UserPreferences::associateWidget( "DisplayBecquerel", checkbox, this );
     item = subPopup->addWidget( checkbox );
     HelpSystem::attachToolTipOn( item, WString::tr("app-mi-tt-help-pref-disp-bq"),
                                  true, HelpSystem::ToolTipPosition::Right );
-    InterSpecUser::associateWidget( m_user, "DisplayBecquerel", checkbox, this );
   }//end add "DisplayBecquerel"
     
   {//begin add "LoadDefaultDrf"
     WCheckBox *checkbox = new WCheckBox( WString::tr("app-mi-help-pref-def-drfs") );
+    UserPreferences::associateWidget( "LoadDefaultDrf", checkbox, this );
     item = subPopup->addWidget( checkbox );
     HelpSystem::attachToolTipOn( item, WString::tr("app-mi-tt-help-def-drfs"),
                                 true, HelpSystem::ToolTipPosition::Right );
-    InterSpecUser::associateWidget( m_user, "LoadDefaultDrf", checkbox, this );
   }//end add "LoadDefaultDrf"
   
   InterSpecApp *app = dynamic_cast<InterSpecApp *>(wApp);
   if( app && app->isTablet() )
   {
     WCheckBox *checkbox = new WCheckBox( WString::tr("app-mi-help-pref-desktop") );
+    UserPreferences::associateWidget( "TabletUseDesktopMenus", checkbox, this );
     item = subPopup->addWidget( checkbox );
     HelpSystem::attachToolTipOn( item, WString::tr("app-mi-tt-help-desktop"),
                                 true, HelpSystem::ToolTipPosition::Right );
@@ -7873,17 +7899,15 @@ void InterSpec::addAboutMenu( Wt::WWidget *parent )
       m_warnings, msg, WarningWidget::WarningMsgShowOnBoardRiid, 5000 ) );
     checkbox->unChecked().connect( boost::bind( &WarningWidget::addMessageUnsafe,
       m_warnings, msg, WarningWidget::WarningMsgShowOnBoardRiid, 5000 ) );
-    
-    InterSpecUser::associateWidget( m_user, "TabletUseDesktopMenus", checkbox, this );
   }//if( is tablet )
   
   WCheckBox *autoDarkCb = new WCheckBox( WString::tr("app-mi-help-pref-auto-dark") );
+  UserPreferences::associateWidget( "AutoDarkFromOs", autoDarkCb, this );
   item = subPopup->addWidget( autoDarkCb );
   HelpSystem::attachToolTipOn( item, WString::tr("app-mi-tt-help-auto-dark"),
                               true, HelpSystem::ToolTipPosition::Right );
-  InterSpecUser::associateWidget( m_user, "AutoDarkFromOs", autoDarkCb, this );
   
-  InterSpecUser::addCallbackWhenChanged( m_user, this, "AutoDarkFromOs", std::bind([](){
+  m_preferences->addCallbackWhenChanged( "AutoDarkFromOs", std::bind([](){
     InterSpec *viewer = InterSpec::instance();
     if( viewer )
       viewer->doJavaScript( "try{ Wt.WT.DetectOsColorThemeJs('" + viewer->id() + "'); }"
@@ -7896,14 +7920,14 @@ void InterSpec::addAboutMenu( Wt::WWidget *parent )
 #if( PROMPT_USER_BEFORE_LOADING_PREVIOUS_STATE )
   subPopup->addSeparator();
   WCheckBox *promptOnLoad = new WCheckBox( WString::tr("app-mi-help-pref-prompt-prev") );
+  UserPreferences::associateWidget( "PromptStateLoadOnStart", promptOnLoad, this );
   item = subPopup->addWidget( promptOnLoad );
   HelpSystem::attachToolTipOn( item, WString::tr("app-mi-tt-help-pref-prompt-prev"), showToolTips );
-  InterSpecUser::associateWidget( m_user, "PromptStateLoadOnStart", promptOnLoad, this );
   
   WCheckBox *doLoad = new WCheckBox( WString::tr("app-mi-help-pref-load-prev") );
+  UserPreferences::associateWidget( "LoadPrevStateOnStart", doLoad, this );
   item = subPopup->addWidget( doLoad );
   HelpSystem::attachToolTipOn( item, WString::tr("app-mi-tt-help-pref-load-prev"), showToolTips );
-  InterSpecUser::associateWidget( m_user, "LoadPrevStateOnStart", doLoad, this );
 #endif
   
   
@@ -7911,7 +7935,7 @@ void InterSpec::addAboutMenu( Wt::WWidget *parent )
   const set<string> &languages = InterSpecApp::languagesAvailable();
   if( languages.size() > 1 )
   {
-    const string langPref = InterSpecUser::preferenceValue<string>("Language", this);
+    const string langPref = UserPreferences::preferenceValue<string>("Language", this);
       
     m_languagesSubMenu = m_helpMenuPopup->addPopupMenuItem( WString::tr("app-mi-help-language")  );
     
@@ -8413,7 +8437,7 @@ DecayWindow *InterSpec::createDecayInfoWindow()
       
       // TODO: We could do a little better and check the Shielding/Source Fit widget and grab those activities (and ages) if they match
       
-      const bool useBq = InterSpecUser::preferenceValue<bool>("DisplayBecquerel", InterSpec::instance());
+      const bool useBq = UserPreferences::preferenceValue<bool>("DisplayBecquerel", InterSpec::instance());
       const double act = useBq ? PhysicalUnits::MBq : (1.0E-6 * PhysicalUnits::curie);
       const string actStr = useBq ? "1 MBq" : "1 uCi";
       const double hl = nuc.m_nuclide->halfLife;
@@ -9691,7 +9715,7 @@ void InterSpec::handleToolTabClosed( const int tabnum )
 void InterSpec::addToolsMenu( Wt::WWidget *parent )
 {
   
-  const bool showToolTips = InterSpecUser::preferenceValue<bool>( "ShowTooltips", this );
+  const bool showToolTips = UserPreferences::preferenceValue<bool>( "ShowTooltips", this );
   
   PopupDivMenu *parentMenu = dynamic_cast<PopupDivMenu *>( parent );
   WContainerWidget *menuDiv = dynamic_cast<WContainerWidget *>( parent );
@@ -10512,7 +10536,7 @@ void InterSpec::handleToolTabChanged( int tab )
     if( focus && (current_tab == calibtab) )
     {
       if( !m_infoNotificationsMade.count("recal-tab")
-         && InterSpecUser::preferenceValue<bool>( "ShowTooltips", this )
+         && UserPreferences::preferenceValue<bool>( "ShowTooltips", this )
          && !isMobile() )
       {
         m_infoNotificationsMade.insert( "recal-tab" );
@@ -11047,7 +11071,7 @@ void InterSpec::setSpectrum( std::shared_ptr<SpecMeas> meas,
     
 #if( USE_DB_TO_STORE_SPECTRA )
     /*
-    if( previous && m_user->preferenceValue<bool>( "AutoSaveSpectraToDb" ) )
+    if( previous && UserPreferences::preferenceValue<bool>( "AutoSaveSpectraToDb" ) )
     {
       //We also need to do this in the InterSpec destructor as well.
       //   Also maybe change size limitations to only apply to auto saving
@@ -11153,7 +11177,7 @@ void InterSpec::setSpectrum( std::shared_ptr<SpecMeas> meas,
       
         if( !meas->detector() /* && (detType != SpecUtils::DetectorType::Unknown) */ )
         {
-          const bool doLoadDefault = InterSpecUser::preferenceValue<bool>( "LoadDefaultDrf", this );
+          const bool doLoadDefault = UserPreferences::preferenceValue<bool>( "LoadDefaultDrf", this );
           
           const string &manufacturer = meas->manufacturer();
           const string &model = meas->instrument_model();
@@ -11285,7 +11309,7 @@ void InterSpec::setSpectrum( std::shared_ptr<SpecMeas> meas,
   std::function<void(std::shared_ptr<const SpecUtils::Measurement>)> propigate_peaks_fcns;
   
   const bool askToPropigatePeaks
-          = InterSpecUser::preferenceValue<bool>( "AskPropagatePeaks", this );
+          = UserPreferences::preferenceValue<bool>( "AskPropagatePeaks", this );
   if( askToPropigatePeaks
      && options.testFlag(InterSpec::SetSpectrumOptions::CheckToPreservePreviousEnergyCal)
      && !sameSpecFile && meas && m_dataMeasurement && previous && m_spectrum->data()
@@ -11653,7 +11677,7 @@ void InterSpec::setSpectrum( std::shared_ptr<SpecMeas> meas,
     
     if( show_notification )
     {
-      const bool show = InterSpecUser::preferenceValue<bool>( "AutoShowSpecMultimedia", this );
+      const bool show = UserPreferences::preferenceValue<bool>( "AutoShowSpecMultimedia", this );
       if( show )
       {
         showMultimedia( SpecUtils::SpectrumType::Foreground );
@@ -11682,7 +11706,7 @@ void InterSpec::setSpectrum( std::shared_ptr<SpecMeas> meas,
   if( spec_type==SpecUtils::SpectrumType::Foreground && !!m_dataMeasurement
       && m_dataMeasurement->passthrough() )
   {
-    const bool showToolTips = InterSpecUser::preferenceValue<bool>( "ShowTooltips", this );
+    const bool showToolTips = UserPreferences::preferenceValue<bool>( "ShowTooltips", this );
   
     if( showToolTips )
     {
@@ -11788,7 +11812,7 @@ void InterSpec::userOpenFile( std::shared_ptr<SpecMeas> meas, std::string displa
   if( !m_fileManager )  //shouldnt ever happen.
     throw runtime_error( "Internal logic error, no valid m_fileManager" );
    
-  auto header = std::make_shared<SpectraFileHeader>( m_user, true, this );
+  auto header = std::make_shared<SpectraFileHeader>( true, this );
   header->setFile( displayFileName, meas );
   
   bool couldBeBackground = true;
@@ -12213,7 +12237,7 @@ void InterSpec::setDisplayedEnergyRange( float lowerEnergy, float upperEnergy )
 }//void setDisplayedEnergyRange()
 
 
-bool InterSpec::setYAxisRange( float lower_counts, float upper_counts )
+bool InterSpec::setYAxisRange( double lower_counts, double upper_counts )
 {
   bool success = true;
   if( upper_counts < lower_counts )
@@ -12223,20 +12247,14 @@ bool InterSpec::setYAxisRange( float lower_counts, float upper_counts )
     return false;
   
   const bool isLogY = m_spectrum->yAxisIsLog();
-  
-  // If user is setting suspiciously small values, lets do some sanity checks.
-  //  If log-y, there is a minimum lower y-value on the client side - we may need
-  //  to adjust this.
-  if( (isLogY &&
-       ((lower_counts < m_spectrum->logYAxisMin())
-        || (lower_counts < std::numeric_limits<float>::min())))
-     || (!isLogY && (lower_counts <= 1.0E-6) && (upper_counts <= 1.0E-6)) )
+  if( isLogY )
   {
     const auto hist = displayedHistogram(SpecUtils::SpectrumType::Foreground);
     if( !hist || !hist->gamma_counts() || (hist->gamma_counts()->size() < 2) )
       return false;
     
     const shared_ptr<const vector<float>> &channels = hist->gamma_counts();
+    assert( channels );
     
     // Lets check the y-range - ignoring we may be showing multiple channels per display-bin,
     // to see if the requested range is reasonable
@@ -12259,38 +12277,39 @@ bool InterSpec::setYAxisRange( float lower_counts, float upper_counts )
       }//if( channel < channels->size() )
     }//for( loop over visible channels )
     
-    if( upper_counts <= min_nonzero_value )
-      return false;
+    if( (max_value <= 0.0f) || IsInf(max_value) || IsNan(max_value) )
+      max_value = 1.0f;
     
-    if( isLogY )
+    if( (min_nonzero_value == std::numeric_limits<float>::max())
+       || IsInf(min_nonzero_value)
+       || IsNan(min_nonzero_value) )
     {
-      if( lower_counts <= 0.0f )
-      {
-        success = false;
-        lower_counts = 0.9 * min_nonzero_value;
-      }
-      if( upper_counts <= lower_counts )
-      {
-        success = false;
-        upper_counts = 10.0*lower_counts;
-      }
-      
-      const double prevMinLogY = m_spectrum->logYAxisMin();
-      if( lower_counts < prevMinLogY )
-        m_spectrum->setLogYAxisMin( lower_counts );
-    }//if( isLogY )
+      min_nonzero_value = 0.1f*max_value;
+    }
+    
+    if( upper_counts <= 0.0f )
+    {
+      success = false;
+      upper_counts = (max_value > 0.0f) ? 2.0f*max_value : 1.0f;
+    }
+    
+    if( upper_counts <= min_nonzero_value )
+    {
+      success = false;
+      upper_counts = 2.0f*min_nonzero_value;
+    }
+    
+    if( (lower_counts <= 0.0) || (lower_counts > max_value) )
+      lower_counts = min_nonzero_value;
+  }//if( isLogY && (lower_counts <= 0.0f) )
   
-    m_spectrum->setYAxisRange( lower_counts, upper_counts );
-    return success;
-  }//
   
-  if( (lower_counts < 9.9E-7) && isLogY )
+  if( isLogY )
   {
-    success = false;
-    lower_counts = 1.0E-6;
-    if( upper_counts <= lower_counts )
-      upper_counts = 10*lower_counts;
-  }//if( log y-axis, and specifying approx less than zero counts )
+    const double prevMinLogY = m_spectrum->logYAxisMin();
+    if( lower_counts < prevMinLogY )
+      m_spectrum->setLogYAxisMin( lower_counts );
+  }//if( isLogY )
   
   m_spectrum->setYAxisRange( lower_counts, upper_counts );
   

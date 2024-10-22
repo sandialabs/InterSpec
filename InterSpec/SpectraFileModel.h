@@ -130,9 +130,7 @@ class SpectraFileHeader
   //      all caching mechanisms implicitly rely on SpecUtils::SpecFile not being
   //      changed out of this class
 public:
-  SpectraFileHeader( Wt::Dbo::ptr<InterSpecUser> user,
-                     bool keepInMemmory,
-                     InterSpec *viewer );
+  SpectraFileHeader( bool keepInMemmory, InterSpec *viewer );
 
   virtual ~SpectraFileHeader() noexcept(true);
 

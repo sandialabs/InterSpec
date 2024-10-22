@@ -74,6 +74,7 @@
 #include "InterSpec/RelActCalcAuto.h"
 #include "InterSpec/RelActManualGui.h"
 #include "InterSpec/UndoRedoManager.h"
+#include "InterSpec/UserPreferences.h"
 #include "InterSpec/RelActCalcManual.h"
 #include "InterSpec/RowStretchTreeView.h"
 #include "InterSpec/NativeFloatSpinBox.h"
@@ -329,7 +330,7 @@ public:
       label = new WLabel( WString::tr("mrend-spec-act"), cell );
       
       cell = m_nucContentTable->elementAt(2, 1);
-      const bool useCurie = !InterSpecUser::preferenceValue<bool>( "DisplayBecquerel", InterSpec::instance() );
+      const bool useCurie = !UserPreferences::preferenceValue<bool>( "DisplayBecquerel", InterSpec::instance() );
       const double specificActivity = nuc->activityPerGram() / PhysicalUnits::gram;
       const string sa = PhysicalUnits::printToBestSpecificActivityUnits( specificActivity, 3, useCurie );
       txt = new WText( sa, cell );
@@ -391,7 +392,7 @@ public:
     m_decay_during_meas->checked().connect( this, &ManRelEffNucDisp::handleDecayDuringMeasurementChanged );
     m_decay_during_meas->unChecked().connect( this, &ManRelEffNucDisp::handleDecayDuringMeasurementChanged );
     
-    const bool showToolTips = InterSpecUser::preferenceValue<bool>( "ShowTooltips", InterSpec::instance() );
+    const bool showToolTips = UserPreferences::preferenceValue<bool>( "ShowTooltips", InterSpec::instance() );
     
     HelpSystem::attachToolTipOn( m_decay_during_meas, WString::tr("mrend-tt-decay-during-meas"), 
                                 showToolTips );
@@ -536,7 +537,7 @@ void RelActManualGui::init()
     delete m_layout;
   
   m_layout = new WGridLayout( this );
-  const bool showToolTips = InterSpecUser::preferenceValue<bool>( "ShowTooltips", m_interspec );
+  const bool showToolTips = UserPreferences::preferenceValue<bool>( "ShowTooltips", m_interspec );
   
   m_layout->setContentsMargins( 0, 0, 0, 0 );
   m_layout->setVerticalSpacing( 0 );

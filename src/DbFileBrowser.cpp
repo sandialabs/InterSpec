@@ -289,7 +289,7 @@ size_t SnapshotBrowser::num_saved_states( InterSpec *viewer,
   {
     DataBaseUtils::DbTransaction transaction( *session );
     
-    Dbo::collection< Dbo::ptr<UserState> > query = SnapshotBrowser::get_user_states_collection( viewer->m_user, session, header );
+    Dbo::collection< Dbo::ptr<UserState> > query = SnapshotBrowser::get_user_states_collection( viewer->user(), session, header );
     
     num_states = query.size();
     
@@ -361,7 +361,7 @@ SnapshotBrowser::SnapshotBrowser( SpecMeasManager *manager,
   
   try
   {
-    Dbo::ptr<InterSpecUser> user = m_viewer->m_user;
+    Dbo::ptr<InterSpecUser> user = m_viewer->user();
     WContainerWidget* tablecontainer = new WContainerWidget();
     
     m_snapshotTable = new WTree();
@@ -387,7 +387,7 @@ SnapshotBrowser::SnapshotBrowser( SpecMeasManager *manager,
     
     DataBaseUtils::DbTransaction transaction( *m_session );
     
-    Dbo::collection< Dbo::ptr<UserState> > query = SnapshotBrowser::get_user_states_collection( m_viewer->m_user, m_session, m_header );
+    Dbo::collection< Dbo::ptr<UserState> > query = SnapshotBrowser::get_user_states_collection( user, m_session, m_header );
     
     m_nrows = static_cast<int>( query.size() ); //save for future query
     

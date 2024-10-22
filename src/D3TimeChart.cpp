@@ -52,6 +52,7 @@
 #include "InterSpec/ColorTheme.h"
 #include "InterSpec/D3TimeChart.h"
 #include "InterSpec/UndoRedoManager.h"
+#include "InterSpec/UserPreferences.h"
 
 using namespace Wt;
 using namespace std;
@@ -297,7 +298,7 @@ public:
     m_normalizeCb->addStyleClass("DoNormCb");
     m_normalizeCb->hide();
 
-    const bool showToolTips = InterSpecUser::preferenceValue<bool>("ShowTooltips", InterSpec::instance());
+    const bool showToolTips = UserPreferences::preferenceValue<bool>("ShowTooltips", InterSpec::instance());
     const char* tooltip = "Allows you to select an energy to normalize the filtered energy range of interest to. <br />"
       "i.e., for each time slice, the sum of gammas in the filtered energy range becomes the numerator, and the sum of gammas in"
       " the normalize range becomes the denominator.</br />"

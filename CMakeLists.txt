@@ -329,6 +329,7 @@ set(sources
     src/EnterAppUrlWindow.cpp
     src/NuclideSourceEnter.cpp
     src/AddNewPeakDialog.cpp
+    src/UserPreferences.cpp
     js/SpectrumChart.js
     js/InterSpec.js
 )
@@ -432,6 +433,7 @@ set(headers
     InterSpec/EnterAppUrlWindow.h
     InterSpec/NuclideSourceEnter.h
     InterSpec/AddNewPeakDialog.h
+    InterSpec/UserPreferences.h
 )
 
 

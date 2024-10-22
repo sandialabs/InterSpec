@@ -264,7 +264,7 @@ protected:
   virtual void prepareForEndOfSession();
   
   /** Adds `m_activeTimeSinceDbUpdate` to the database, saving the updated result. */
-  void updateUsageTimeToDb( const bool schedule_more );
+  void updateUsageTimeToDb();
   
 #if(  BUILD_AS_WX_WIDGETS_APP )
   virtual void handleJavaScriptError( const std::string &errorText );

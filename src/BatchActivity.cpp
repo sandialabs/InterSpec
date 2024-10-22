@@ -52,6 +52,7 @@
 #include "InterSpec/InterSpecApp.h"
 #include "InterSpec/BatchActivity.h"
 #include "InterSpec/PhysicalUnits.h"
+#include "InterSpec/UserPreferences.h"
 #include "InterSpec/DecayDataBaseServer.h"
 #include "InterSpec/DetectorPeakResponse.h"
 #include "InterSpec/GammaInteractionCalc.h"
@@ -408,7 +409,7 @@ void fit_activities_in_files( const std::string &exemplar_filename,
     assert( (fit_results.m_result_code != BatchActivity::BatchActivityFitResult::ResultCode::Success)
              || fit_results.m_fit_results );
     
-    const bool useBq = InterSpecUser::preferenceValue<bool>( "DisplayBecquerel", InterSpec::instance() );
+    const bool useBq = UserPreferences::preferenceValue<bool>( "DisplayBecquerel", InterSpec::instance() );
     
     
     shared_ptr<const DetectorPeakResponse> drf = fit_results.m_options.drf_override;

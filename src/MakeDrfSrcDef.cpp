@@ -60,6 +60,7 @@
 #include "InterSpec/MakeDrfSrcDef.h"
 #include "InterSpec/PhysicalUnits.h"
 #include "InterSpec/ShieldingSelect.h"
+#include "InterSpec/UserPreferences.h"
 #include "InterSpec/NativeFloatSpinBox.h"
 #include "InterSpec/DecayDataBaseServer.h"
 #include "InterSpec/DetectorPeakResponse.h"
@@ -479,7 +480,7 @@ void MakeDrfSrcDef::setNuclide( const SandiaDecay::Nuclide *nuc )
     m_useAgeInfo->setUnChecked();
     m_distanceEdit->setValueText( "25 cm" );
     
-    const bool useCi = !InterSpecUser::preferenceValue<bool>( "DisplayBecquerel", InterSpec::instance() );
+    const bool useCi = !UserPreferences::preferenceValue<bool>( "DisplayBecquerel", InterSpec::instance() );
     m_activityEdit->setValueText( useCi ? "1 uCi" : "37 kBq" );
     m_useAgeInfo->hide();
   }
@@ -566,7 +567,7 @@ void MakeDrfSrcDef::create()
   WRegExpValidator *val = new WRegExpValidator( PhysicalUnits::sm_activityRegex, this );
   val->setFlags( Wt::MatchCaseInsensitive );
   m_activityEdit->setValidator( val );
-  const bool useCi = !InterSpecUser::preferenceValue<bool>( "DisplayBecquerel", InterSpec::instance() );
+  const bool useCi = !UserPreferences::preferenceValue<bool>( "DisplayBecquerel", InterSpec::instance() );
   m_activityEdit->setText( useCi ? "100 uCi" : "3.7 MBq" );
   m_activityEdit->changed().connect( this, &MakeDrfSrcDef::handleUserChangedActivity );
   m_activityEdit->enterPressed().connect( this, &MakeDrfSrcDef::handleUserChangedActivity );
@@ -668,7 +669,7 @@ void MakeDrfSrcDef::create()
   
   m_lib_src_menu->setAutoHide( true, 2500 );
   
-  const bool showToolTips = InterSpecUser::preferenceValue<bool>( "ShowTooltips", InterSpec::instance() );
+  const bool showToolTips = UserPreferences::preferenceValue<bool>( "ShowTooltips", InterSpec::instance() );
   const char *tooltip = "Sources defined in Source.lib file in your users data directory.<br/>"
   "When clicked, this button will display a menu with all sources for this nuclide - and when"
   " on of the items is selected, its information will be populated.";
@@ -826,7 +827,7 @@ void MakeDrfSrcDef::handleUserChangedAgeAtAssay()
 
   if( agestr.empty() || (agestr.find_first_not_of("+-0.")==string::npos) )
   {
-    const bool useCi = !InterSpecUser::preferenceValue<bool>( "DisplayBecquerel", InterSpec::instance() );
+    const bool useCi = !UserPreferences::preferenceValue<bool>( "DisplayBecquerel", InterSpec::instance() );
     m_sourceAgeAtAssay->setText( useCi ? "0 uCi" : "0 bq" );
   }else
   {
@@ -1039,7 +1040,7 @@ void MakeDrfSrcDef::setDistance( const double dist )
 
 void MakeDrfSrcDef::setActivity( const double act )
 {
-  const bool useCi = !InterSpecUser::preferenceValue<bool>( "DisplayBecquerel", InterSpec::instance() );
+  const bool useCi = !UserPreferences::preferenceValue<bool>( "DisplayBecquerel", InterSpec::instance() );
   const int ndecimals = 4;
   m_activityEdit->setText( PhysicalUnits::printToBestActivityUnits(act, ndecimals, useCi) );
   updateAgedText();
@@ -1062,7 +1063,7 @@ void MakeDrfSrcDef::setAssayInfo( const double activity,
   if( activity > 0.0 )
   {
     const int ndecimals = 4;
-    const bool useCi = !InterSpecUser::preferenceValue<bool>( "DisplayBecquerel", InterSpec::instance() );
+    const bool useCi = !UserPreferences::preferenceValue<bool>( "DisplayBecquerel", InterSpec::instance() );
     m_activityEdit->setText( PhysicalUnits::printToBestActivityUnits(activity, ndecimals, useCi) );
   }
   
@@ -1217,7 +1218,7 @@ std::string MakeDrfSrcDef::toGadrasLikeSourceString() const
     answer += ",";
   
   const double activity = activityAtSpectrumTime();
-  const bool useCi = !InterSpecUser::preferenceValue<bool>( "DisplayBecquerel", InterSpec::instance() );
+  const bool useCi = !UserPreferences::preferenceValue<bool>( "DisplayBecquerel", InterSpec::instance() );
   answer += PhysicalUnits::printToBestActivityUnits(activity,5,useCi);
   
   if( m_shieldingSelect && m_useShielding->isChecked() )
