@@ -48,45 +48,45 @@ set_target_properties(${PROJECT_NAME} PROPERTIES CXX_STANDARD 14 CXX_STANDARD_RE
 #   we should search aroung a bit.
 #  We'll allow user to specify `InterSpec_NODE_MODULE_DIR` or set the environment variable 
 #  `NODE_MODULES_PARENT_DIR` to help with this
-#IF(WIN32)
-#  execute_process( COMMAND cmd /C cd OUTPUT_VARIABLE CWD OUTPUT_STRIP_TRAILING_WHITESPACE )
-#ELSE(WIN32)
-#  execute_process( COMMAND pwd OUTPUT_VARIABLE CWD OUTPUT_STRIP_TRAILING_WHITESPACE )
-#ENDIF(WIN32)
+IF(WIN32)
+  execute_process( COMMAND cmd /C cd OUTPUT_VARIABLE CWD OUTPUT_STRIP_TRAILING_WHITESPACE )
+ELSE(WIN32)
+  execute_process( COMMAND pwd OUTPUT_VARIABLE CWD OUTPUT_STRIP_TRAILING_WHITESPACE )
+ENDIF(WIN32)
 
-#find_file( NODE_ADDON_API_DIR napi.h 
-#  PATHS 
-#    node_modules/node-addon-api
-#    ${CMAKE_CURRENT_SOURCE_DIR}/node_modules/node-addon-api
-#    ${InterSpec_NODE_MODULE_DIR}/node_modules/node-addon-api
-#    ${InterSpec_NODE_MODULE_DIR}/node-addon-api
-#    ${InterSpec_NODE_MODULE_DIR}/..
-#    ./node_modules/node-addon-api
-#    ../node_modules/node-addon-api
-#    ${CWD}
-#    ${CWD}/node_modules/node-addon-api
-#    $ENV{NODE_MODULES_PARENT_DIR}/node_modules/node-addon-api
-#    /build_working_dir/node_modules/node-addon-api
-#  PATH_SUFFIXES include
-#)
+find_file( NODE_ADDON_API_DIR napi.h 
+  PATHS 
+    node_modules/node-addon-api
+    ${CMAKE_CURRENT_SOURCE_DIR}/node_modules/node-addon-api
+    ${InterSpec_NODE_MODULE_DIR}/node_modules/node-addon-api
+    ${InterSpec_NODE_MODULE_DIR}/node-addon-api
+    ${InterSpec_NODE_MODULE_DIR}/..
+    ./node_modules/node-addon-api
+    ../node_modules/node-addon-api
+    ${CWD}
+    ${CWD}/node_modules/node-addon-api
+    $ENV{NODE_MODULES_PARENT_DIR}/node_modules/node-addon-api
+    /build_working_dir/node_modules/node-addon-api
+  PATH_SUFFIXES include
+)
 
-#message( "Using node_modules directory at ${NODE_ADDON_API_DIR}")
+message( "Using node_modules directory at ${NODE_ADDON_API_DIR}")
 
-#if(NOT NODE_ADDON_API_DIR)
-#  message(FATAL_ERROR "Failed to find node_modules directory.")
-#endif()
+if(NOT NODE_ADDON_API_DIR)
+  message(FATAL_ERROR "Failed to find node_modules directory.")
+endif()
 
-#get_filename_component(NODE_ADDON_API_DIR "${NODE_ADDON_API_DIR}" DIRECTORY)
-#get_filename_component(NODE_MODULES_DIR "${NODE_ADDON_API_DIR}" DIRECTORY)
+get_filename_component(NODE_ADDON_API_DIR "${NODE_ADDON_API_DIR}" DIRECTORY)
+get_filename_component(NODE_MODULES_DIR "${NODE_ADDON_API_DIR}" DIRECTORY)
 
-#message( "Using node_modules directory at NODE_ADDON_API_DIR=${NODE_ADDON_API_DIR} and NODE_MODULES_DIR=${NODE_MODULES_DIR}" )
+message( "Using node_modules directory at NODE_ADDON_API_DIR=${NODE_ADDON_API_DIR} and NODE_MODULES_DIR=${NODE_MODULES_DIR}" )
 
-#target_include_directories( ${PROJECT_NAME} PUBLIC 
-#                            ${NODE_ADDON_API_DIR}
-#                            ${NODE_MODULES_DIR}/node-api-headers/
-#                            ${NODE_MODULES_DIR}/node-api-headers/include
-#                            ${CMAKE_CURRENT_SOURCE_DIR}/../.. 
-#)
+target_include_directories( ${PROJECT_NAME} PUBLIC 
+                            ${NODE_ADDON_API_DIR}
+                            ${NODE_MODULES_DIR}/node-api-headers/
+                            ${NODE_MODULES_DIR}/node-api-headers/include
+                            ${CMAKE_CURRENT_SOURCE_DIR}/../.. 
+)
 
 if(MSVC AND CMAKE_JS_NODELIB_DEF AND CMAKE_JS_NODELIB_TARGET)
   # Generate node.lib

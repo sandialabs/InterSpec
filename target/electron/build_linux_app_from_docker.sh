@@ -1,5 +1,13 @@
 #!/bin/bash
 
+#handle_error() {
+#    echo "An error occurred on line $1"
+#    exit 1
+#}
+#trap 'handle_error $LINENO' ERR
+
+# set -e # Cause script to exit as soon as there is an error
+
 # takes three argument: [path to InterSpec code] [Path to CMake build Directory] [Working directory path] 
 #  - InterSpec code is mapped to `/interspec` 
 #  - build directory mapped to `/build_app`
@@ -38,10 +46,9 @@ echo "GIT_HASH = ${GIT_HASH}"
 echo "Will install npm and global packages"
 yum update
 yum install -y npm zip
-# Use the 'n' package to install a fairly modern version of npm
+# Use the 'n' package to install a fairly modern version of npm, by default we are on like version 6 or 8, which is too old to run some of the packages we need
 npm install -g n
 n 20.18.0
-#npm install -g npm@10.9.0
 npm install -g uglify-js
 npm install -g uglifycss
 npm install -g cmake-js
