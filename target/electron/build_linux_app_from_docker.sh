@@ -1,10 +1,10 @@
 #!/bin/bash
 
-#handle_error() {
-#    echo "An error occurred on line $1"
-#    exit 1
-#}
-#trap 'handle_error $LINENO' ERR
+handle_error() {
+    echo "An error occurred building InterSpec, on line $1"
+    exit 1
+}
+trap 'handle_error $LINENO' ERR
 
 # set -e # Cause script to exit as soon as there is an error
 
