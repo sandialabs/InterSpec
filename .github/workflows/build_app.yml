@@ -235,6 +235,39 @@ jobs:
       - name: Display structure of downloaded files
         run: ls -R
 
+      - name: Get Release ID
+        id: get_release
+        run: |
+          RELEASE_NAME="Development Build"
+          GITHUB_TOKEN=${{ secrets.GITHUB_TOKEN }}
+          RELEASE_ID=$(curl -s -H "Authorization: token $GITHUB_TOKEN" \
+            "https://api.github.com/repos/${{ github.repository }}/releases" | \
+            jq -r ".[] | select(.name == \"$RELEASE_NAME\") | .id")
+          echo "release_id=$RELEASE_ID" >> $GITHUB_ENV
+
+      - name: Delete Previous Assets
+        run: |
+          GITHUB_TOKEN=${{ secrets.GITHUB_TOKEN }}
+          RELEASE_ID=${{ env.release_id }}
+          PATTERN="InterSpec_app*"
+
+          # Get all assets for the release
+          ASSETS=$(curl -s -H "Authorization: token $GITHUB_TOKEN" \
+            "https://api.github.com/repos/${{ github.repository }}/releases/$RELEASE_ID/assets")
+
+          # Loop through assets and delete those matching the pattern
+          echo "$ASSETS" | jq -c '.[]' | while read -r asset; do
+            ASSET_NAME=$(echo "$asset" | jq -r '.name')
+            ASSET_ID=$(echo "$asset" | jq -r '.id')
+
+            # Check if the asset name matches the pattern
+            if [[ "$ASSET_NAME" == $PATTERN ]]; then
+              echo "Deleting asset: $ASSET_NAME"
+              curl -X DELETE -H "Authorization: token $GITHUB_TOKEN" \
+                "https://api.github.com/repos/${{ github.repository }}/releases/assets/$ASSET_ID"
+            fi
+          done
+
       - name: Create Release
         id: create_release
         uses: softprops/action-gh-release@v2
