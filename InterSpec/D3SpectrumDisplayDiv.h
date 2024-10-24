@@ -110,8 +110,17 @@ public:
              double /*window_xpx*/,
              double /*window_ypx*/> &dragCreateRoiUpdate();
   
+  /** Signal emitted when the background or secondary scale-factor is changed. */
   Wt::Signal<double/*new SF*/, double/*old SF*/, SpecUtils::SpectrumType> &yAxisScaled();
   
+  /** Signal for when the energy range slider chart is shown. */
+  Wt::Signal<bool> &xAxisSliderShown();
+  
+  /** Signal for when the y-axis type (log vs linear) gets changed.  A value of true indicates log, a value of false is linear. */
+  Wt::Signal<bool> &yAxisLogLinChanged();
+  
+  /** Signal for when the x-axis label is made compact (true) or not (false). */
+  Wt::Signal<bool> &xAxisCompactnessChanged();
   
   /** Performs the work for the primary spectrum display in InterSpec that causes the peaks
    in an existing ROI to get re-fit as the user drags the edge.  To get this behavior, you
@@ -517,6 +526,11 @@ protected:
              double /*window_ypx*/> m_dragCreateRoi;
   
   Wt::Signal<double /*new SF*/, double /*prev SF*/,SpecUtils::SpectrumType> m_yAxisScaled;
+  
+  Wt::Signal<bool> m_xAxisSliderShown;
+  Wt::Signal<bool> m_yAxisLogLinChanged;
+  Wt::Signal<bool> m_xAxisCompactnessChanged;
+  
   
   // Signal Callbacks
   void chartShiftKeyDragCallback( double x0, double x1 );

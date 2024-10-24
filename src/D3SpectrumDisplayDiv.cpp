@@ -227,7 +227,38 @@ D3SpectrumDisplayDiv::D3SpectrumDisplayDiv( WContainerWidget *parent )
   m_yAxisTitle( WString::tr("d3sdd-yAxisTitle") ),
   m_yAxisTitleMulti( WString::tr("d3sdd-yAxisTitleMulti") ),
   m_chartTitle(),
-  // A bunch of signals m_shiftKeyDraggJS ... m_yAxisScaled
+  // These next member vairables are all `std::unique_ptr` to `Wt::JSignal`s
+  m_shiftKeyDraggJS{ nullptr },
+  m_shiftAltKeyDraggJS{ nullptr },
+  m_rightMouseDraggJS{ nullptr },
+  m_doubleLeftClickJS{ nullptr },
+  m_leftClickJS{ nullptr },
+  m_rightClickJS{ nullptr },
+  m_xRangeChangedJS{ nullptr },
+  m_existingRoiEdgeDragJS{ nullptr },
+  m_dragCreateRoiJS{ nullptr },
+  m_yAxisDraggedJS{ nullptr },
+  m_legendClosedJS{ nullptr },
+  m_sliderDisplayed{ nullptr },
+  m_yAxisTypeChanged{ nullptr },
+  //These next member variables are all the C++ signals for when events happen
+  m_legendEnabledSignal( this ),
+  m_legendDisabledSignal( this ),
+  m_xRangeChanged( this ),
+  m_controlKeyDragg( this ),
+  m_shiftKeyDragg( this ),
+  m_shiftAltKeyDragg( this ),
+  m_rightMouseDragg( this ),
+  m_leftClick( this ),
+  m_doubleLeftClick( this ),
+  m_rightClick( this ),
+  m_existingRoiEdgeDrag( this ),
+  m_dragCreateRoi( this ),
+  m_yAxisScaled( this ),
+  m_xAxisSliderShown( this ),
+  m_yAxisLogLinChanged( this ),
+  m_xAxisCompactnessChanged( this ),
+  // These next member variables roughly track state in the JS
   m_jsgraph( jsRef() + ".chart" ),
   m_xAxisMinimum(0.0),
   m_xAxisMaximum(0.0),
@@ -467,9 +498,14 @@ void D3SpectrumDisplayDiv::setTextInMiddleOfChart( const Wt::WString &s )
 
 void D3SpectrumDisplayDiv::setCompactAxis( const bool compact )
 {
+  if( compact == m_compactAxis )
+    return;
+  
   m_compactAxis = compact;
   if( isRendered() )
     doJavaScript( m_jsgraph + ".setCompactXAxis(" + jsbool(compact) + ");" );
+  
+  m_xAxisCompactnessChanged.emit( compact );
 }
 
 bool D3SpectrumDisplayDiv::isAxisCompacted() const
@@ -619,6 +655,23 @@ Wt::Signal<double,double> &D3SpectrumDisplayDiv::rightMouseDragg()
   return m_rightMouseDragg;
 }//Signal<double,double> &rightMouseDragg()
 
+
+Wt::Signal<bool> &D3SpectrumDisplayDiv::xAxisSliderShown()
+{
+  return m_xAxisSliderShown;
+}
+
+
+Wt::Signal<bool> &D3SpectrumDisplayDiv::yAxisLogLinChanged()
+{
+  return m_yAxisLogLinChanged;
+}
+
+
+Wt::Signal<bool> &D3SpectrumDisplayDiv::xAxisCompactnessChanged()
+{
+  return m_xAxisCompactnessChanged;
+}
 
 
 void D3SpectrumDisplayDiv::setReferncePhotoPeakLines( const ReferenceLineInfo &nuc )
@@ -875,6 +928,8 @@ void D3SpectrumDisplayDiv::setYAxisLog( bool log )
   m_yAxisIsLog = log;
   if( isRendered() )
     doJavaScript( m_jsgraph + (log ? ".setLogY();" : ".setLinearY();") );
+  
+  m_yAxisLogLinChanged.emit( log );
 }//void setYAxisLog( bool log )
 
 void D3SpectrumDisplayDiv::showGridLines( bool show )
@@ -1958,6 +2013,8 @@ void D3SpectrumDisplayDiv::showXAxisSliderChart( const bool show )
   m_showXAxisSliderChart = show;
   if( isRendered() )
     doJavaScript( m_jsgraph + ".setShowXAxisSliderChart(" + jsbool(show) + ");" );
+  
+  m_xAxisSliderShown.emit( show );
 }//void showXAxisSliderChart( const bool show )
 
 
@@ -2684,11 +2741,8 @@ void D3SpectrumDisplayDiv::chartXRangeChangedCallback( double x0, double x1,
 
 void D3SpectrumDisplayDiv::sliderChartDisplayedCallback( const bool madeVisisble )
 {
-  // The call into InterSpec will call back to showXAxisSliderChart(...), which which
-  //  will set `m_showXAxisSliderChart`
-  //  (as well as make another call to the javascript to show or hide the strip chart,
-  //  but this should be harmless)
-  InterSpec::instance()->setXAxisSlider( madeVisisble );
+  m_showXAxisSliderChart = madeVisisble;
+  m_xAxisSliderShown.emit( madeVisisble );
 }//void sliderChartDisplayedCallback( const bool madeVisisble );
 
 
@@ -2699,16 +2753,7 @@ void D3SpectrumDisplayDiv::yAxisTypeChangedCallback( const std::string &type )
     return;
   
   m_yAxisIsLog = isLogY;
-  InterSpec *interspec = InterSpec::instance();
-  interspec->setLogY( m_yAxisIsLog ); //toggles menu items, but wont put in undo/redo step
-  
-  UndoRedoManager *undoRedo = UndoRedoManager::instance();
-  if( undoRedo && undoRedo->canAddUndoRedoNow() )
-  {
-    undoRedo->addUndoRedoStep( [isLogY](){ InterSpec::instance()->setLogY(!isLogY); },
-                            [isLogY](){ InterSpec::instance()->setLogY(isLogY); },
-                            "Toggle log-y axis" );
-  }
+  m_yAxisLogLinChanged.emit( isLogY );
 }//void yAxisTypeChanged( const std::string &type )
 
 

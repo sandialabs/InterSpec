@@ -1196,7 +1196,7 @@ public:
   void startHardBackgroundSub();
   void finishHardBackgroundSub( std::shared_ptr<bool> truncate_neg, std::shared_ptr<bool> round_counts );
   
-  void setXAxisSlider( bool show );
+  void setXAxisSlider( const bool show, const bool addUndoRedo );
   void setXAxisCompact( bool compact );
   void setShowYAxisScalers( bool show );
   

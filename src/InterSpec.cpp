@@ -657,7 +657,7 @@ InterSpec::InterSpec( WContainerWidget *parent )
   m_spectrum->setPeakModel( m_peakModel );
   m_spectrum->existingRoiEdgeDragUpdate().connect( m_spectrum, &D3SpectrumDisplayDiv::performExistingRoiEdgeDragWork );
   m_spectrum->dragCreateRoiUpdate().connect( m_spectrum, &D3SpectrumDisplayDiv::performDragCreateRoiWork );
-      
+  
   m_nuclideSearch = new IsotopeSearchByEnergy( this, m_spectrum );
   m_nuclideSearch->setLoadLaterWhenInvisible(true);
 
@@ -667,7 +667,6 @@ InterSpec::InterSpec( WContainerWidget *parent )
   m_energyCalTool = new EnergyCalTool( this, m_peakModel );
   m_spectrum->rightMouseDragg().connect( m_energyCalTool, &EnergyCalTool::handleGraphicalRecalRequest );
   displayedSpectrumChanged().connect( m_energyCalTool, &EnergyCalTool::displayedSpecChangedCallback );
-
   m_fileManager = new SpecMeasManager( this );
   
   m_peakInfoDisplay = new PeakInfoDisplay( this, m_spectrum, m_peakModel );
@@ -6932,6 +6931,7 @@ void InterSpec::addViewMenu( WWidget *parent )
   m_logYItems[0]->triggered().connect( boost::bind( &InterSpec::setLogY, this, true  ) );
   m_logYItems[1]->triggered().connect( boost::bind( &InterSpec::setLogY, this, false ) );
   m_spectrum->setYAxisLog( logypref );
+  m_spectrum->yAxisLogLinChanged().connect( boost::bind(&InterSpec::setLogY, this, boost::placeholders::_1) );
   m_preferences->addCallbackWhenChanged( "LogY", this, &InterSpec::setLogY );
   
   const bool verticleLines = UserPreferences::preferenceValue<bool>( "ShowVerticalGridlines", this );
@@ -7005,15 +7005,16 @@ void InterSpec::addViewMenu( WWidget *parent )
   addPeakLabelSubMenu( m_displayOptionsPopupDiv ); //add Peak menu
   
   const bool showSlider = UserPreferences::preferenceValue<bool>( "ShowXAxisSlider", this );
-  m_spectrum->showXAxisSliderChart( showSlider );
   m_showXAxisSliderItems[0] = m_displayOptionsPopupDiv->addMenuItem( WString::tr("app-mi-view-show-slider"), "");
   m_showXAxisSliderItems[1] = m_displayOptionsPopupDiv->addMenuItem( WString::tr("app-mi-view-hide-slider"), "");
-  m_showXAxisSliderItems[0]->triggered().connect( boost::bind( &InterSpec::setXAxisSlider, this, true ) );
-  m_showXAxisSliderItems[1]->triggered().connect( boost::bind( &InterSpec::setXAxisSlider, this, false ) );
+  m_showXAxisSliderItems[0]->triggered().connect( boost::bind( &InterSpec::setXAxisSlider, this, true, true ) );
+  m_showXAxisSliderItems[1]->triggered().connect( boost::bind( &InterSpec::setXAxisSlider, this, false, true ) );
   m_showXAxisSliderItems[0]->setHidden( showSlider );
   m_showXAxisSliderItems[1]->setHidden( !showSlider );
-  m_preferences->addCallbackWhenChanged( "ShowXAxisSlider", this, &InterSpec::setXAxisSlider );
   
+  m_spectrum->showXAxisSliderChart( showSlider );
+  m_spectrum->xAxisSliderShown().connect( boost::bind(&InterSpec::setXAxisSlider, this, boost::placeholders::_1, true) );
+  m_preferences->addCallbackWhenChanged( "ShowXAxisSlider", boost::bind( &InterSpec::setXAxisSlider, this, boost::placeholders::_1, false) );
   
   const bool showScalers = UserPreferences::preferenceValue<bool>( "ShowYAxisScalers", this );
   m_spectrum->showYAxisScalers( showScalers );
@@ -7326,7 +7327,7 @@ void InterSpec::showEnergyCalWindow()
 
 void InterSpec::setLogY( bool logy )
 {
-  const bool wasLogY = m_spectrum->yAxisIsLog();
+  const bool wasLogY = UserPreferences::preferenceValue<bool>( "LogY", this );
   
   UserPreferences::setPreferenceValue( "LogY", logy, this );
   m_logYItems[0]->setHidden( logy );
@@ -7578,10 +7579,8 @@ void InterSpec::finishHardBackgroundSub( std::shared_ptr<bool> truncate_neg, std
 
 
 
-void InterSpec::setXAxisSlider( bool show )
+void InterSpec::setXAxisSlider( const bool show, const bool addUndoRedo )
 {
-  const bool wasShowing = m_spectrum->xAxisSliderChartIsVisible();
-  
   UserPreferences::setPreferenceValue( "ShowXAxisSlider", show, this );
   m_showXAxisSliderItems[0]->setHidden( show );
   m_showXAxisSliderItems[1]->setHidden( !show );
@@ -7605,17 +7604,17 @@ void InterSpec::setXAxisSlider( bool show )
     if( m_compactXAxisItems[1] )
       m_compactXAxisItems[1]->setHidden( !makeCompact );
     
-    m_spectrum->setCompactAxis( makeCompact ); // This shouldnt be necassary, but JIC
+    m_spectrum->setCompactAxis( makeCompact ); // This shouldn't be necessary, but JIC
     m_timeSeries->setCompactAxis( makeCompact );
   }//show /hide
   
   m_spectrum->showXAxisSliderChart( show );
   
   
-  if( m_undo && (wasShowing != show) )
+  if( addUndoRedo && m_undo )
   {
-    m_undo->addUndoRedoStep( [this,show](){ setXAxisSlider(!show); },
-                            [this,show](){ setXAxisSlider(show); },
+    m_undo->addUndoRedoStep( [this,show](){ setXAxisSlider(!show, false); },
+                            [this,show](){ setXAxisSlider(show, false); },
                             "Show x-axis slider" );
   }//if( m_undo && (wasLogY != logy) )
 }//void setXAxisSlider( bool show )
@@ -8571,17 +8570,32 @@ void InterSpec::handleDetectionLimitWindowClose()
   assert( caller );
   assert( !m_detectionLimitWindow || (caller == m_detectionLimitWindow) );
   
-  if( !m_detectionLimitWindow )
+  if( !m_detectionLimitWindow && !caller )
+    return;
+  
+  if( m_detectionLimitWindow && caller && (m_detectionLimitWindow != caller) )
     return;
     
-  auto dialog = m_detectionLimitWindow;
+  auto dialog = m_detectionLimitWindow ? m_detectionLimitWindow : caller;
+  assert( caller );
+  
+  if( !m_detectionLimitWindow )
+  {
+    AuxWindow::deleteAuxWindow( dialog );
+    return;
+  }
+  
   m_detectionLimitWindow = nullptr;
   
-  const string state_uri = dialog->tool()->encodeStateToUrl();
+  const bool canUndo = (m_undo && m_undo->canAddUndoRedoNow());
+  
+  string state_uri;
+  if( canUndo )
+    state_uri = dialog->tool()->encodeStateToUrl();
   
   AuxWindow::deleteAuxWindow( dialog );
   
-  if( m_undo && m_undo->canAddUndoRedoNow() )
+  if( canUndo )
   {
     // We'll just assume results for the foreground was showing, so we dont have to pass this around
     auto undo = [this,state_uri](){
@@ -8591,7 +8605,7 @@ void InterSpec::handleDetectionLimitWindowClose()
         tool->tool()->handleAppUrl(state_uri);
     };
     auto redo = [this](){ programmaticallyCloseSimpleMda(); };
-    m_undo->addUndoRedoStep( std::move(undo), std::move(redo), "Close Simple MDA" );
+    m_undo->addUndoRedoStep( std::move(undo), std::move(redo), "Close Detection Limit Tool" );
   }//if( dialog && m_undo && m_undo->canAddUndoRedoNow() )
 }//void handleDetectionLimitWindowClose()
 
@@ -8603,7 +8617,7 @@ void InterSpec::programmaticallyCloseDetectionLimit()
   
   DetectionLimitWindow *dialog = m_detectionLimitWindow;
   m_detectionLimitWindow = nullptr; //Prevents undo/redo
-  dialog->done( WDialog::DialogCode::Accepted );
+  dialog->hide();
 }//void programmaticallyCloseDetectionLimit()
 
 
