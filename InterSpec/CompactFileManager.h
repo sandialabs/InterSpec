@@ -140,6 +140,16 @@ private:
   /** Table giving a summary of current measurement. */
   Wt::WTable *m_summaryTables[3];
   
+  /** Buttons, that look like links in lower right-hand corner, that will show the detectors RID results,
+   when they are present.
+   */
+  Wt::WPushButton *m_showRidIdResult[3];
+  
+  /** Buttons, that look like links in lower right-hand corner, that will show the images embedded in
+   the spectrum file, if present.
+   */
+  Wt::WPushButton *m_showImage[3];
+  
   /** Buttons, that look like links in lower right-hand corner that when clicked bring up the
    "File Parameters" dialog for this file
    */

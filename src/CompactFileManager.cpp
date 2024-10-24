@@ -96,6 +96,8 @@ CompactFileManager::CompactFileManager( SpecMeasManager *fileManager,
     m_previousSampleTxt{ WString() },
     m_titles{ nullptr },
     m_summaryTables{ nullptr },
+    m_showRidIdResult{ nullptr },
+    m_showImage{ nullptr },
     m_moreInfoBtn{ nullptr },
     m_files( fileManager->model() ),
     m_interspec( hostViewer ),
@@ -317,7 +319,22 @@ CompactFileManager::CompactFileManager( SpecMeasManager *fileManager,
       m_scaleValueTxt[typeindex]->disable();
     }//if( type == SpecUtils::SpectrumType::Foreground ) / else
     
-    m_moreInfoBtn[typeindex] = new WPushButton( WString::tr("cfm-more-info-btn"), bottomrow );
+    WContainerWidget *btndiv = new WContainerWidget( bottomrow );
+    btndiv->addStyleClass( "InfoBtns" );
+    
+    m_showRidIdResult[typeindex] = new WPushButton( WString::tr("cfm-show-rid-result-btn"), btndiv );
+    m_showRidIdResult[typeindex]->addStyleClass( "LinkBtn MoreInfoBtn" );
+    m_showRidIdResult[typeindex]->clicked().connect( boost::bind( &InterSpec::showRiidResults, m_interspec, type ) );
+    //HelpSystem::attachToolTipOn( m_showRidIdResult[typeindex], WString::tr("app-mi-tt-view-rid"), showToolTips );
+    m_showRidIdResult[typeindex]->hide();
+    
+    m_showImage[typeindex] = new WPushButton( WString::tr("cfm-show-image-btn"), btndiv );
+    m_showImage[typeindex]->addStyleClass( "LinkBtn MoreInfoBtn" );
+    m_showImage[typeindex]->clicked().connect( boost::bind( &InterSpec::showMultimedia, m_interspec, type ) );
+    //HelpSystem::attachToolTipOn( m_showImage[typeindex], WString::tr("app-mi-tt-view-img"), showToolTips );
+    m_showImage[typeindex]->hide();
+    
+    m_moreInfoBtn[typeindex] = new WPushButton( WString::tr("cfm-more-info-btn"), btndiv );
     m_moreInfoBtn[typeindex]->addStyleClass( "LinkBtn MoreInfoBtn" );
     m_moreInfoBtn[typeindex]->clicked().connect( boost::bind(&InterSpec::createFileParameterWindow, m_interspec, type) );
     m_moreInfoBtn[typeindex]->hide();
@@ -395,6 +412,8 @@ void CompactFileManager::handleFileChangeRequest( int row, SpecUtils::SpectrumTy
     m_summaryTables[typeindex]->clear();
     m_summaryTables[typeindex]->hide();
     m_spectrumLineLegend[typeindex]->hide();
+    m_showRidIdResult[typeindex]->hide();
+    m_showImage[typeindex]->hide();
     m_moreInfoBtn[typeindex]->hide();
     
     return;
@@ -736,11 +755,20 @@ void CompactFileManager::handleDisplayChange( SpecUtils::SpectrumType spectrum_t
     if( m_rescaleByLiveTime[typeindex] )
       m_rescaleByLiveTime[typeindex]->hide();
     m_spectrumLineLegend[typeindex]->hide();
+    m_showRidIdResult[typeindex]->hide();
+    m_showImage[typeindex]->hide();
     m_moreInfoBtn[typeindex]->hide();
     return;
   }//if( !meas )
 
   m_spectrumLineLegend[typeindex]->show();
+  
+  const bool showRiid = !!meas->detectors_analysis();
+  m_showRidIdResult[typeindex]->setHidden( !showRiid );
+  
+  const bool showPics = (meas->multimedia_data().size() > 0);
+  m_showImage[typeindex]->setHidden( !showPics );
+  
   m_moreInfoBtn[typeindex]->show();
   
   if( m_scaleValueRow[typeindex] )
