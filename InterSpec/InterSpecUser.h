@@ -650,7 +650,7 @@ struct UserState
     kForTest,
     // should add a kPeriodicAutoSaveState
     kUndefinedStateType,
-    kEndOfSessionHEAD  //Special case where the end of session should not be deleted on cleanup (ie if it is assocated with a snapshot, rather than a temporary kEndOfSession which gets cleaned up)
+    kEndOfSessionHEAD  //Special case where the end of session should not be deleted on cleanup (ie if it is associated with a snapshot, rather than a temporary kEndOfSession which gets cleaned up)
   };//enum UserStateType
   
   enum CurrentTab

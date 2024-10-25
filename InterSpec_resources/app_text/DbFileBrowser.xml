@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- anpd is short for SnapshotBrowser -->
+  <message id="sb-resume-from-prev">It looks like you have saved this spectrum file as part of a save-state; would you like to resume your previous work?</message>
+  <message id="sb-no-saved-states">No saved application states</message>
+  <message id="sb-tt-del-state">Delete state</message>
+  <message id="sb-tt-edit-state">Edit state name or description</message>
+  <message id="sb-state-HEAD-label">Explicitly-Saved</message>
+  <message id="sb-state-auto-saved-label">Auto-Saved</message>
+  <message id="sb-unsaved-spectra-parent-node-label">Spectra opened, but not explicitly stored</message>
+  <message id="sb-tt-unsaved-spectra-node">Spectra you have opened in InterSpec, but did not explicitly save.</message>
+  <message id="sb-unsaved-spectrum-node">{1} (opened {2})</message>
+  <message id="sb-tt-unsaved-spectrum-node">Filename: {1}
+Measurement Time: {2}
+Time Loaded: {3}
+Number Samples: {4}
+Total Real Time: {5}</message>
+  <message id="sb-open-spectrum-as">Open selected spectrum as:</message>
+  <message id="sb-load-spectrum-only">Load Spectrum Only</message>
+  <message id="sb-load-app-state">Load App State</message>
+  <message id="sb-err-making-browser-txt">Unexpected error creating database spectrum file browser</message>
+  <message id="sb-err-making-browser-msg">Error creating database spectrum file browser: {1}</message>
+  <message id="sb-"></message>
+  <message id="sb-"></message>
+  <message id="sb-"></message>
+  <message id="sb-"></message>
+  <message id="sb-"></message>
+  <message id="sb-"></message>
+  <message id="sb-"></message>
+  <message id="sb-"></message>
+  <message id="sb-"></message>
+  <message id="sb-"></message>
+  <message id="sb-"></message>
+  <message id="sb-"></message>
+  <message id="sb-"></message>
+  <message id="sb-"></message>
+</messages>
