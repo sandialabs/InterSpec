@@ -413,9 +413,6 @@ void SpectraFileHeader::setBasicFileInDbInfo( UserFileInDb *info ) const
 {
   RecursiveLock lock( m_mutex );
   
-  if( info->isWriteProtected() )
-    throw runtime_error( "Can not alter a write protected UserFileInDb" );
-  
   info->user = m_user;
   info->uuid = m_uuid;
   if( static_cast<int>(info->uuid.length()) > UserFileInDb::sm_maxUuidLength )
@@ -671,6 +668,8 @@ void SpectraFileHeader::saveToDatabase( std::shared_ptr<const SpecMeas> input ) 
   if( !input )
     throw runtime_error( "\n\n\nSpectraFileHeader::saveToDatabase(): !input" );
   
+  cout << "Saving '" << input->filename() << " to DB." << endl;
+  
   std::shared_ptr<const SpecMeas> meas;
  
   {
@@ -731,7 +730,7 @@ void SpectraFileHeader::saveToDatabase( std::shared_ptr<const SpecMeas> input ) 
         }catch( std::exception &e )
         {
           log_developer_error( __func__,
-                               ("Failed check comapring re-serialized SpecMeas object: " + string(e.what())).c_str() );
+                               ("Failed check comparing re-serialized SpecMeas object: " + string(e.what())).c_str() );
         }
       }
     }//if( written )
@@ -779,6 +778,7 @@ void SpectraFileHeader::saveToDatabase( std::shared_ptr<const SpecMeas> input ) 
     }
   }else
   {
+    //TODO: couldnt the below query just be accomplished by `fileDbEntry.reread()`?
     try
     {
       DataBaseUtils::DbTransaction transaction( *m_sql );
@@ -822,13 +822,16 @@ void SpectraFileHeader::saveToDatabase( std::shared_ptr<const SpecMeas> input ) 
 
       if( !modified )
       {
-        cerr << "Spectrum has not been modified, not re-writing to database" << endl;
+        cerr << "Spectrum '" << input->filename() << "' has not been modified, not re-writing to database" << endl;
         return;
       }//if( !meas->modified() )
       
+      cout << "Updating spectrum in database for '" << input->filename() << "'." << endl;
+      
+      // Make a copy of the `UserFileInDbData`, so we can do the work of serializing things, while
+      //  not holding a DB transaction
       UserFileInDbData newdata = *data;
-      newdata.setFileData( meas,
-                           UserFileInDbData::sm_defaultSerializationFormat );
+      newdata.setFileData( meas, UserFileInDbData::sm_defaultSerializationFormat );
       
       try
       {
@@ -852,17 +855,13 @@ void SpectraFileHeader::saveToDatabase( std::shared_ptr<const SpecMeas> input ) 
         
         throw runtime_error( e.what() );
       }//try / catch
-      
-      
-      cerr << "Will update spectrum in database" << endl;
     }else
     {
       UserFileInDbData *dataptr = new UserFileInDbData();
       dataptr->fileInfo = fileDbEntry;
       try
       {
-        dataptr->setFileData( meas,
-                             UserFileInDbData::sm_defaultSerializationFormat );
+        dataptr->setFileData( meas, UserFileInDbData::sm_defaultSerializationFormat );
       }catch( std::exception &e )
       {
         delete dataptr;
@@ -879,13 +878,12 @@ void SpectraFileHeader::saveToDatabase( std::shared_ptr<const SpecMeas> input ) 
           m_fileDbEntry.reset();
         }
 
-        
         throw runtime_error( e.what() );
       }//try / catch
       
       DataBaseUtils::DbTransaction transaction( *m_sql );
       data = m_sql->session()->add( dataptr );
-      cerr << "Adding spectrum to the database as id " << data.id() << " to parent " << m_fileDbEntry.id() << endl;
+      cerr << "Adding '" << meas->filename() << "'spectrum to the database as id " << data.id() << " to parent " << m_fileDbEntry.id() << endl;
       transaction.commit();
     }//if( !data )
     

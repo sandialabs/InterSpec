@@ -438,8 +438,8 @@ set(headers
 
 
 if(USE_DB_TO_STORE_SPECTRA)
-    list(APPEND sources src/DbStateBrowser.cpp src/DbFileBrowser.cpp)
-    list(APPEND headers InterSpec/DbStateBrowser.h InterSpec/DbFileBrowser.h)
+    list(APPEND sources src/DbFileBrowser.cpp)
+    list(APPEND headers InterSpec/DbFileBrowser.h)
 endif(USE_DB_TO_STORE_SPECTRA)
 
 

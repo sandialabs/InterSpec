@@ -894,7 +894,7 @@ void PeakDef::equalEnough( const PeakDef &lhs, const PeakDef &rhs )
     if( diff > 1.0E-6*max(fabs(a),fabs(b)) )
     {
       snprintf(buffer, sizeof(buffer),
-               "PeakDef coeficient %s of LHS (%1.8E) vs RHS (%1.8E) is out of tolerance.",
+               "PeakDef coefficient %s of LHS (%1.8E) vs RHS (%1.8E) is out of tolerance.",
                to_string(t), lhs.m_coefficients[t], rhs.m_coefficients[t] );
       throw runtime_error( buffer );
     }
@@ -909,7 +909,7 @@ void PeakDef::equalEnough( const PeakDef &lhs, const PeakDef &rhs )
     if( ((a > 0.0) || (b > 0.0)) && (diff > 1.0E-6*max(fabs(a),fabs(b))) )
     {
       snprintf(buffer, sizeof(buffer),
-               "PeakDef uncertanity %s of LHS (%1.8E) vs RHS (%1.8E) is out of tolerance.",
+               "PeakDef uncertainty %s of LHS (%1.8E) vs RHS (%1.8E) is out of tolerance.",
                to_string(t), lhs.m_uncertainties[t], rhs.m_uncertainties[t] );
       throw runtime_error( buffer );
     }
@@ -917,14 +917,33 @@ void PeakDef::equalEnough( const PeakDef &lhs, const PeakDef &rhs )
   
   for( CoefficientType t = CoefficientType(0); t < NumCoefficientTypes; t = CoefficientType(t+1) )
   {
-    if( lhs.m_fitFor[t] != rhs.m_fitFor[t] )
+    // The "Fit For" values are not recorded for skew parameters that arent applicable, so we
+    //  will get an erroneous fail, if we dont skip them, because we dont reset them when we change
+    //  types
+    bool skipSkew = false;
+    switch( t )
+    {
+      case PeakDef::SkewPar0: case PeakDef::SkewPar1:
+      case PeakDef::SkewPar2: case PeakDef::SkewPar3:
+      {
+        const int skew_par_num = static_cast<int>(t) - static_cast<int>(PeakDef::SkewPar0);
+        const int nskew = static_cast<int>( PeakDef::num_skew_parameters( lhs.m_skewType ));
+        skipSkew = (skew_par_num >= nskew);
+        break;
+      }
+        
+      default:
+        break;
+    }//switch( t )
+    
+    if( !skipSkew && (lhs.m_fitFor[t] != rhs.m_fitFor[t]) )
     {
       snprintf(buffer, sizeof(buffer),
                "PeakDef fit for %s of LHS (%i) vs RHS (%i) doesnt match.",
                to_string(t), int(lhs.m_fitFor[t]), int(rhs.m_fitFor[t]) );
       throw runtime_error( buffer );
     }
-  }
+  }//for( check "Fit For" bools of all the parameters )
   
   
   if( !!lhs.m_continuum != !!rhs.m_continuum )
@@ -947,7 +966,7 @@ void PeakDef::equalEnough( const PeakDef &lhs, const PeakDef &rhs )
     throw runtime_error( buffer );
   }
   
-  if( lhs.m_transition != rhs.m_transition )
+  if( lhs.m_parentNuclide && (lhs.m_transition != rhs.m_transition) )
   {
     snprintf(buffer, sizeof(buffer),
              "PeakDef nuclide transition of LHS (%s -> %s) vs RHS (%s -> %s) doesnt match.",
@@ -958,7 +977,7 @@ void PeakDef::equalEnough( const PeakDef &lhs, const PeakDef &rhs )
     throw runtime_error( buffer );
   }
   
-  if( lhs.m_radparticleIndex != rhs.m_radparticleIndex )
+  if( lhs.m_parentNuclide && (lhs.m_radparticleIndex != rhs.m_radparticleIndex) )
   {
     snprintf(buffer, sizeof(buffer),
              "PeakDef particle index of LHS (%i) vs RHS (%i) doesnt match.",

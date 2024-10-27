@@ -394,82 +394,77 @@ public:
   
   
 #if( USE_DB_TO_STORE_SPECTRA )
-  //measurmentFromDb(...): returns the measurment that has been, or will be
+  //measurementFromDb(...): returns the measurement that has been, or will be
   //  serialized to the database.  If 'update' is false, then just the last
   //  serialization will be returned and in fact may be null.  If 'update'
-  //  is true, then the measurment will be saved to the database first (unless
+  //  is true, then the measurement will be saved to the database first (unless
   //  it hasnt been modified since last saving) and then returned; if the user
   //  preference is to not save spectra to the database, then it will not be
   //  be saved.  In the case the user preference is to not save to the database,
-  //  but the file is already in there, but has been modified in memmorry, then
+  //  but the file is already in there, but has been modified in memory, then
   //  the file will not be re-saved to the database.
   //  Function wont throw, but may return a null pointer
-  Wt::Dbo::ptr<UserFileInDb> measurmentFromDb( SpecUtils::SpectrumType type, bool update );
+  Wt::Dbo::ptr<UserFileInDb> measurementFromDb( SpecUtils::SpectrumType type, bool update );
   
   //saveStateToDb( entry ): saves the application state to the pointer passed
   //  in.  Note that pointer passed in must be a valid pointer associated with
-  //  this m_user.  If entry->stateType is specified for testing, then every
-  //  thing will be copied and write protected so it cant be changed in the
-  //  future. May throw exception.  std::runtime_error exceptions will contain
+  //  this m_user.  If `entry->stateType` is specified for as end of session,
+  //  or `entry->snapshotTagParent` is non-null, then things will be copied
+  //  to unique entries in the database.
+  //  May throw exception.  std::runtime_error exceptions will contain
   //  messages that are reasonably okay to send to users.
   void saveStateToDb( Wt::Dbo::ptr<UserState> entry );
-  
-  //serializeStateToDb(...): a convience function for saveStateToDb(...).
-  Wt::Dbo::ptr<UserState> serializeStateToDb( const Wt::WString &name,
-                                              const Wt::WString &desc,
-                                              const bool forTesting,
-                                              Wt::Dbo::ptr<UserState> parent);
   
   //loadStateFromDb( entry ): sets the applications state to that in 'entry'
   void loadStateFromDb( Wt::Dbo::ptr<UserState> entry );
 
-  //testLoadSaveState(): a temporary function to help develop the loading and
-  //  saving of the applications state
-//  void testLoadSaveState();
   
-    void stateSave();
-    void stateSaveAs();
-    void stateSaveTag();
-    void stateSaveAsAction( Wt::WLineEdit *nameedit,
-                         Wt::WTextArea *descriptionarea,
-                    AuxWindow *window,
-                         const bool forTesting);
-    void stateSaveTagAction(Wt::WLineEdit *nameedit,
-                          AuxWindow *window);
+  /** Called from the "Store As..." menu item.
+   If state is already saved in the DB, updates it.
+   This function should only be called when we are already connected to a state in the DB,
+   but if not, will then call `stateSaveAs()` (but again, this shouldn't happen).
+   */
+  void stateSave();
+  /** Called from the "Store As..." menu item - creates a dialog to store current state under new name/desc. */
+  void stateSaveAs();
+  /** Called from the "Store As..." dialog to save things to DB. */
+  void stateSaveAsFinish( Wt::WLineEdit *name, Wt::WTextArea *desc, AuxWindow *window );
+  /** Called from the "Tag..." menu item, to create a tag of the current state. */
+  void stateSaveTag();
+  /** Called from the "Tag..." dialog to actually create the tag in the DB. */
+  void stateSaveTagFinish( Wt::WLineEdit *name, AuxWindow *window );
   
-  //startStoreStateInDb(...): If state hasn't been saved yet,
-  //  e.g. `m_dataMeasurement->dbStateId(m_displayedSamples) < 0`,
-  //  then a dialog will be popped up allowing user to enter a title and
-  //  description.
-  //  If the state is already in the database, and either the state is not
-  //  readonly, or 'allowOverWrite' is specified true, then the database will be
-  //  updated.
-  //  If 'asNewState' is specified, then even if the current state is already in
-  //  the database, the process (e.g. user dialog) for saving a new state in the
-  //  database will be started.
-  //  Specifying 'forTesting' will cause the for testing flag to be set, as well
-  //  as for the state to be marked as read only.
-  void startStoreStateInDb( const bool forTesting,
-                            const bool asNewState,
-                            const bool allowOverWrite,
-                            const bool endOfSessionNoDelete );
+  /** Saves the Act/Shield and Rel Eff tool states to the in-memory `SpecMeas` objects, then updates
+   the database with either the current app state, or the current SpecMeas object, depending if we are
+   connected to a app-state or not.
+   If connected to an app state, will create, or replace the states `kEndOfSessionHEAD` state in DB.
+   */
+  void saveStateAtForegroundChange();
   
-  void finishStoreStateInDb( Wt::WLineEdit *name, Wt::WTextArea *description,
-                            AuxWindow *window, const bool forTesting , Wt::Dbo::ptr<UserState> parent);
-  void browseDatabaseStates( bool testStates );
+  /** Removes all previous `kEndOfSessionTemp` sessions for the user from the database, and then
+   if the "AutoSaveSpectraToDb" preference is true, will create the new `kEndOfSessionTemp` state
+   that will be loaded next time the app is started.
+   */
+  void saveStateForEndOfSession();
+  
+  /** Called by #InterSpec::stateSaveTagFinish and #InterSpec::stateSaveAsFinish, to actually create
+   the db user state, and then call `saveStateToDb(...)` and update menu items.
+   */
+  void finishStoreStateInDb( const Wt::WString &name,
+                            const Wt::WString &description,
+                            Wt::Dbo::ptr<UserState> parent );
   
 #if( INCLUDE_ANALYSIS_TEST_SUITE )
   void startStateTester();
   
-  //startStoreTestStateInDb(): a convience function that makes a dialog to give
-  //  the user an option to overwrite their current state or create a new one.
-  void startStoreTestStateInDb();
+  //Creates a dialog that allows user to name and describe the state; when
+  // user then clicks save, will pass off to `storeTestStateToN42(...)`.
+  void startStoreTestState();
   
   //storeTestStateToN42(): stores foreground, background, and shielding/source
   //  model into a since 2012 N42 file.  Does not throw, but will notify the
   //  user via the GUI upon error.
-  void storeTestStateToN42( std::ostream &output,
-                            const std::string &name, const std::string &descr );
+  void storeTestStateToN42( const Wt::WString name, const Wt::WString descr );
   
   //loadTestStateFromN42(): Attempts to load a state previously saved to an
   //  XML file via storeTestStateToN42

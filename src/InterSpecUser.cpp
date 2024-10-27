@@ -306,8 +306,7 @@ UserState::UserState()
     countsAxisMinimum( -1.0 ), countsAxisMaximum( -1.0 ), displayBinFactor( 1 ),
     shownDisplayFeatures( 0 ), backgroundSubMode( kNoSpectrumSubtract ),
     currentTab( kNoTabs ), showingMarkers( 0 ), disabledNotifications( 0 ),
-    showingPeakLabels( 0 ), showingWindows( 0 ),
-    writeprotected( false )
+    showingPeakLabels( 0 ), showingWindows( 0 )
 {
 }
 
@@ -380,34 +379,11 @@ void UserFileInDbData::setFileData( const std::string &path,
 
 UserFileInDb::UserFileInDb()
 {
-  writeprotected = false;
   isPartOfSaveState = false;
 }
 
 
-bool UserFileInDb::isWriteProtected() const
-{
-  return writeprotected;
-}
-
-
-void UserFileInDb::makeWriteProtected( Wt::Dbo::ptr<UserFileInDb> ptr )
-{
-  if( !ptr || ptr->writeprotected )
-    return;
-  ptr.modify()->writeprotected = true;
-}//void UserFileInDb::makeWriteProtected( Wt::Dbo::ptr<UserFileInDb> ptr )
-
-
-void UserFileInDb::removeWriteProtection( Wt::Dbo::ptr<UserFileInDb> ptr )
-{
-  if( !ptr || !ptr->writeprotected )
-    return;
-  ptr.modify()->writeprotected = false;
-}//void removeWriteProtection( Wt::Dbo::ptr<UserFileInDb> ptr )
-
-
-Dbo::ptr<UserFileInDb> UserFileInDb::makeDeepWriteProtectedCopyInDatabase(
+Dbo::ptr<UserFileInDb> UserFileInDb::makeDeepCopyOfFileInDatabase(
                                                   Dbo::ptr<UserFileInDb> orig,
                                                   DataBaseUtils::DbSession &sqldb,
                                                   bool isSaveState )
@@ -417,7 +393,7 @@ Dbo::ptr<UserFileInDb> UserFileInDb::makeDeepWriteProtectedCopyInDatabase(
   
   auto session = sqldb.session();
   if( !session )
-    throw runtime_error( "UserFileInDb::makeDeepWriteProtectedCopyInDatabase():"
+    throw runtime_error( "UserFileInDb::makeDeepCopyOfFileInDatabase():"
                           " invalid input.");
   
   UserFileInDb *newfile = new UserFileInDb();
@@ -440,7 +416,6 @@ Dbo::ptr<UserFileInDb> UserFileInDb::makeDeepWriteProtectedCopyInDatabase(
   newfile->hasNeutronDetector = orig->hasNeutronDetector;
   newfile->measurementsStartTime = orig->measurementsStartTime;
   
-  newfile->writeprotected = true;
   newfile->isPartOfSaveState = isSaveState;
 
   newfile->snapshotParent = orig->snapshotParent;
@@ -465,17 +440,10 @@ Dbo::ptr<UserFileInDb> UserFileInDb::makeDeepWriteProtectedCopyInDatabase(
         iter != orig->modelsUsedWith.end();
         ++iter )
     {
-      if( (*iter)->isWriteProtected() )
-      {
-        answer.modify()->modelsUsedWith.insert( *iter );
-      }else
-      {
-        ShieldingSourceModel *newmodel = new ShieldingSourceModel();
-        newmodel->shallowEquals( **iter );
-        Dbo::ptr<ShieldingSourceModel> modelptr = session->add( newmodel );
-        modelptr.modify()->filesUsedWith.insert( answer );
-        ShieldingSourceModel::makeWriteProtected( modelptr );
-      }//if( (*iter)->isWriteProtected() ) / else
+      ShieldingSourceModel *newmodel = new ShieldingSourceModel();
+      newmodel->shallowEquals( **iter );
+      Dbo::ptr<ShieldingSourceModel> modelptr = session->add( newmodel );
+      modelptr.modify()->filesUsedWith.insert( answer );
     }//for( loop over ShieldingSourceModel )
     
     transaction.commit();
@@ -487,13 +455,7 @@ Dbo::ptr<UserFileInDb> UserFileInDb::makeDeepWriteProtectedCopyInDatabase(
   }//try catch
   
   return Dbo::ptr<UserFileInDb>();
-}//makeDeepWriteProtectedCopyInDatabase(...)
-
-
-bool UserState::isWriteProtected() const
-{
-  return writeprotected;
-}//bool isWriteProtected() const
+}//makeDeepCopyOfFileInDatabase(...)
 
 
 void ShieldingSourceModel::shallowEquals( const ShieldingSourceModel &rhs )
@@ -505,91 +467,8 @@ void ShieldingSourceModel::shallowEquals( const ShieldingSourceModel &rhs )
   serializeTime = rhs.serializeTime;
   //filesUsedWith = rhs.filesUsedWith;
   xmlData = rhs.xmlData;
-  writeprotected = rhs.writeprotected;
 }
 
-
-void UserState::setWriteProtection( Wt::Dbo::ptr<UserState> ptr,
-                                    Wt::Dbo::Session *session,
-                                    bool protect )
-{
-  if( !ptr || (ptr->writeprotected==protect) )
-    return;
-  
-  ptr.modify()->writeprotected = protect;
-  
-  Dbo::ptr<ShieldingSourceModel> fitmodel;
-  Dbo::ptr<UserFileInDb> dbforeground, dbsecond, dbbackground;
-  
-  if( ptr->foregroundId >= 0 )
-    dbforeground = session->find<UserFileInDb>().where( "id = ?" )
-    .bind( ptr->foregroundId );
-  if( ptr->backgroundId >= 0 )
-    dbbackground = session->find<UserFileInDb>().where( "id = ?" )
-    .bind( ptr->backgroundId );
-  if( ptr->secondForegroundId >= 0 )
-    dbsecond = session->find<UserFileInDb>().where( "id = ?" )
-    .bind( ptr->secondForegroundId );
-  if( ptr->shieldSourceModelId >= 0 )
-    fitmodel = session->find<ShieldingSourceModel>()
-    .where( "id = ?" ).bind( ptr->shieldSourceModelId );
-  
-  if( dbforeground && protect )
-    UserFileInDb::makeWriteProtected( dbforeground );
-  else if( dbforeground )
-    UserFileInDb::removeWriteProtection( dbforeground );
-  
-  if( dbsecond && protect )
-    UserFileInDb::makeWriteProtected( dbsecond );
-  else if( dbsecond )
-    UserFileInDb::removeWriteProtection( dbsecond );
-  
-  if( dbbackground && protect )
-    UserFileInDb::makeWriteProtected( dbbackground );
-  else if( dbbackground )
-    UserFileInDb::removeWriteProtection( dbbackground );
-  
-  if( fitmodel && protect )
-    ShieldingSourceModel::makeWriteProtected( fitmodel );
-  else if( fitmodel )
-    ShieldingSourceModel::removeWriteProtection( fitmodel );
-}//void setWriteProtection(...)
-
-
-void UserState::makeWriteProtected( Wt::Dbo::ptr<UserState> ptr,
-                                    Wt::Dbo::Session *session )
-{
-  setWriteProtection( ptr, session, true );
-}//void makeWriteProtected( Wt::Dbo::ptr<UserFileInDb> ptr )
-
-
-void UserState::removeWriteProtection( Wt::Dbo::ptr<UserState> ptr,
-                                       Wt::Dbo::Session *session )
-{
-  setWriteProtection( ptr, session, false );
-}//void removeWriteProtection( Wt::Dbo::ptr<UserFileInDb> ptr )
-
-
-bool ShieldingSourceModel::isWriteProtected() const
-{
-  return writeprotected;
-}
-
-void ShieldingSourceModel::makeWriteProtected(
-                                        Wt::Dbo::ptr<ShieldingSourceModel> ptr )
-{
-  if( !ptr || ptr->writeprotected )
-    return;
-  ptr.modify()->writeprotected = true;  
-}
-
-
-void ShieldingSourceModel::removeWriteProtection( Wt::Dbo::ptr<ShieldingSourceModel> ptr )
-{
-  if( !ptr || !ptr->writeprotected )
-    return;
-  ptr.modify()->writeprotected = false;
-}
 
 void UserFileInDbData::setFileData( std::shared_ptr<const SpecMeas> spectrumFile,
                           const UserFileInDbData::SerializedFileFormat format )

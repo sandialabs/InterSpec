@@ -6298,7 +6298,7 @@ void ShieldingSourceDisplay::startBrowseDatabaseModels()
     del->disable();
 
     Dbo::ptr<UserFileInDb> dbmeas;
-    dbmeas = m_specViewer->measurmentFromDb( SpecUtils::SpectrumType::Foreground, false );
+    dbmeas = m_specViewer->measurementFromDb( SpecUtils::SpectrumType::Foreground, false );
     
     size_t nfileprev[2];
     WSelectionBox *selections[2] = { (WSelectionBox *)0, (WSelectionBox *)0 };
@@ -6711,7 +6711,7 @@ bool ShieldingSourceDisplay::finishSaveModelToDatabase( const Wt::WString &name,
     rapidxml::print(std::back_inserter(model->xmlData), doc, 0);
 
     Dbo::ptr<UserFileInDb> dbmeas;
-    dbmeas = m_specViewer->measurmentFromDb( SpecUtils::SpectrumType::Foreground, true );
+    dbmeas = m_specViewer->measurementFromDb( SpecUtils::SpectrumType::Foreground, true );
     
     if( dbmeas )
       model->filesUsedWith.insert( dbmeas );
@@ -6758,7 +6758,7 @@ void ShieldingSourceDisplay::saveCloneModelToDatabase()
     m_modelInDb = sql->session()->add( model );
     
     Dbo::ptr<UserFileInDb> dbmeas;
-    dbmeas = m_specViewer->measurmentFromDb( SpecUtils::SpectrumType::Foreground, false );
+    dbmeas = m_specViewer->measurementFromDb( SpecUtils::SpectrumType::Foreground, false );
     if( dbmeas )
       m_modelInDb.modify()->filesUsedWith.insert( dbmeas );
     transaction.commit();

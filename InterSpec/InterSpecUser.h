@@ -361,24 +361,10 @@ public:
   
   Wt::Dbo::collection<Wt::Dbo::ptr<ShieldingSourceModel> > modelsUsedWith;
   
-  //isWriteProtected(): returns if this UserFileInDb has been made write
-  //  protected
-  bool isWriteProtected() const;
-  
-  //makeWriteProtected(...): sets the writeprotected flag so object wont
-  //  be re-saved to the database in an altered state.  Should only be called
-  //  from within an active transaction
-  static void makeWriteProtected( Wt::Dbo::ptr<UserFileInDb> ptr );
-  
-  //removeWriteProtection(...): sets the writeprotected flag so object can
-  //  be re-saved to the database.  Should only be called from within an active
-  //  transaction
-  static void removeWriteProtection( Wt::Dbo::ptr<UserFileInDb> ptr );
-  
-  //makeDeepWriteProtectedCopyInDatabase(...): creates a new UserFileInDb object
+  //makeDeepCopyOfFileInDatabase(...): creates a new UserFileInDb object
   //  in the database, including a new UserFileInDbData entry, as well as a any
-  //  ShieldingSourceModels which arent write proteced.
-  static Wt::Dbo::ptr<UserFileInDb> makeDeepWriteProtectedCopyInDatabase(
+  //  ShieldingSourceModels.
+  static Wt::Dbo::ptr<UserFileInDb> makeDeepCopyOfFileInDatabase(
                                             Wt::Dbo::ptr<UserFileInDb> orig,
                                             DataBaseUtils::DbSession &session,
                                             bool isSaveState );
@@ -401,7 +387,8 @@ public:
     Wt::Dbo::field( a, uuid,            "UUID", sm_maxUuidLength );
     Wt::Dbo::field( a, filename,        "Filename" );
     Wt::Dbo::field( a, description,     "Description" );
-    Wt::Dbo::field( a, writeprotected,  "WriteProtected" );
+    bool vestigual = false;
+    Wt::Dbo::field( a, vestigual,  "WriteProtected" );
     Wt::Dbo::field( a, userHasModified, "UserHasModified" );
     Wt::Dbo::field( a, sessionID,       "SessionID", sm_maxSessionIdLength );
     
@@ -430,12 +417,6 @@ public:
   }//void persist( Action &a )
   
 private:
-  //writeprotected: not yet fully implemented, but intended to allow a way to
-  //  ensure database entry doesnt get changed in the future.  This is mostly
-  //  relevant for saving the applications state, you dont want the user to
-  //  change the individual components, thus corrupting the state
-  bool writeprotected;
-  
   bool isPartOfSaveState;
 };//class UserFileInDb
 
@@ -584,7 +565,6 @@ public:
 struct ShieldingSourceModel
 {
   ShieldingSourceModel()
-    : writeprotected(false)
   {}
   
   Wt::Dbo::ptr<InterSpecUser> user;
@@ -598,17 +578,6 @@ struct ShieldingSourceModel
   
   std::string xmlData;
   
-  bool isWriteProtected() const;
-
-  //makeWriteProtected(...): an active transaction must exist when calling this
-  //  function
-  static void makeWriteProtected( Wt::Dbo::ptr<ShieldingSourceModel> ptr );
-  
-  //removeWriteProtection(): an active transaction must exist when calling this
-  //  function
-  static void removeWriteProtection( Wt::Dbo::ptr<ShieldingSourceModel> ptr );
-
-  
   void shallowEquals( const ShieldingSourceModel &rhs );
   
   template<class Action>
@@ -620,37 +589,48 @@ struct ShieldingSourceModel
   
     Wt::Dbo::field( a, name, "Name", 255 );
     Wt::Dbo::field( a, description, "Description", 511 );
-    Wt::Dbo::field( a, writeprotected, "WriteProtected" );
+    
+    bool vestigual = false;
+    Wt::Dbo::field( a, vestigual, "WriteProtected" );
     
     Wt::Dbo::field( a, creationTime, "CreationTime" );
     Wt::Dbo::field( a, serializeTime, "SerializeTime" );
     Wt::Dbo::field( a, xmlData, "XmlData" );
   }//void persist( Action &a )
-  
-private:
-  //writeprotected: not yet implemented, but intended to allow a way to ensure
-  //  database entry doesnt get changed in the future.  This is mostly relevant
-  //  for saving the applications state, you dont want the user to change the
-  //  individual components, thus corrupting the state
-  bool writeprotected;
 };//struct ShieldingSourceModel
 
 
 //UserState - struct to roughly handle saving the users state to the database,
 //  and allow restoring the state.
-//  Design desision: all variables, besides writeprotected are left to be public
-//  variables since nothing significant would be gained by making them private,
-//  and doing so would add a lot of boilerplate code.
+//  Design decision: all variables are left to be public variables since nothing
+//  significant would be gained by making them private, and doing so would add a
+//  lot of boilerplate code.
 struct UserState
 {
   enum UserStateType
   {
-    kEndOfSessionTemp,  //May be overwritten upon next end of session save
-    kUserSaved, //the default state when this snapshot is saved
+    /** A session automatically saved at the end of a session, or by the "Store EoS" menu item in development builds.
+     This state will be deleted at the next end-of-session (i.e., when user quits app, or cleanup when tab is closed happens).
+     
+     Note that the states `UserState::snapshotTagParent` field may point to a user-saved state, or if the current
+     foreground isnt part of a user-saved-state, then it will be nullptr.
+     */
+    kEndOfSessionTemp,
+    
+    /** The user saved this state, through the "Store", or "Store As..." menu items. */
+    kUserSaved,
+    
+    /** No longer used - but needs be kept around to keep values the same as before. */
     kForTest,
-    // should add a kPeriodicAutoSaveState
+    
     kUndefinedStateType,
-    kEndOfSessionHEAD  //Special case where the end of session should not be deleted on cleanup (ie if it is associated with a snapshot, rather than a temporary kEndOfSession which gets cleaned up)
+    
+    /** State automatically saved when the user loads a different foreground file, or exits.
+     It is treated kinda as a tag - e.g., `UserState::snapshotTagParent` will point back to
+     the original user-saved state - but will be overridden next time user opens the state, and then
+     changes state.
+     */
+    kEndOfSessionHEAD
   };//enum UserStateType
   
   enum CurrentTab
@@ -730,21 +710,6 @@ struct UserState
   Wt::Dbo::ptr<UserState> snapshotTagParent;
   Wt::Dbo::collection< Wt::Dbo::ptr<UserState> > snapshotTags;
     
-  //isWriteProtected(): returns if this UserState has been marked read only
-  bool isWriteProtected() const;
-  
-  //makeWriteProtected(...): sets the writeprotected flag so object wont
-  //  be re-saved to the database in an altered state.  Should only be called
-  //  from within an active transaction.
-  //  Also makes the foreground/background/second spectrum write protected, as
-  //  well as the source/shielding model.
-  static void makeWriteProtected( Wt::Dbo::ptr<UserState> ptr,
-                                  Wt::Dbo::Session *session );
-
-  //removeWriteProtection(...): removes write protection flag.
-  static void removeWriteProtection( Wt::Dbo::ptr<UserState> ptr,
-                                     Wt::Dbo::Session *session );
-  
   UserStateType stateType;
   
   Wt::WDateTime creationTime;
@@ -754,7 +719,7 @@ struct UserState
   Wt::WString description;
   
   //The following indices should probably be converted over to being proper
-  //  pointers/collections (or maybye Dbo::weak_ptr), so as to not run into
+  //  pointers/collections (or maybe Dbo::weak_ptr), so as to not run into
   //  issues with Wt::Dbo optimizations (e.g. indices not normally assigned
   //  until last recursive Transaction is committed).
   int foregroundId;
@@ -815,7 +780,8 @@ struct UserState
     Wt::Dbo::field( a, stateType, "StateType" );
     Wt::Dbo::field( a, name, "Name", 127 );
     Wt::Dbo::field( a, description, "Description", 255 );
-    Wt::Dbo::field( a, writeprotected, "WriteProtected" );
+    bool vestigual = false;
+    Wt::Dbo::field( a, vestigual, "WriteProtected" );
     Wt::Dbo::field( a, creationTime, "CreationTime" );
     Wt::Dbo::field( a, serializeTime, "SerializeTime" );
     Wt::Dbo::field( a, foregroundId, "ForegroundId" );
@@ -861,17 +827,6 @@ struct UserState
     Wt::Dbo::field( a, detectionSensitivityToolUri, "DetectionSensitivityToolUri" );
     Wt::Dbo::field( a, simpleMdaUri, "SimpleMdaUri" );
   }//void persist( Action &a )
-
-private:
-  //writeprotected: not yet implemented, but intended to allow a way to ensure
-  //  database entry doesnt get changed in the future.  This is mostly relevant
-  //  for saving the applications state, you dont want the user to change the
-  //  individual components, thus corrupting the state
-  bool writeprotected;
-  
-  static void setWriteProtection( Wt::Dbo::ptr<UserState> ptr,
-                                  Wt::Dbo::Session *session,
-                                  bool protect );
 };//struct UserState
 
 

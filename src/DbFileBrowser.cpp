@@ -1159,7 +1159,7 @@ void SnapshotBrowser::loadSnapshotSelected()
   }catch( std::exception &e )
   {
     passMessage( "Failed to load state", WarningWidget::WarningMsgHigh );
-    cerr << "DbStateBrowser::loadSelected() caught: " << e.what() << endl;
+    cerr << "SnapshotBrowser::loadSelected() caught: " << e.what() << endl;
   }//try / catch
   
   m_finished.emit();

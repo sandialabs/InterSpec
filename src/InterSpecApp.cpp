@@ -1297,118 +1297,23 @@ void InterSpecApp::prepareForEndOfSession()
     
     
 #if( USE_DB_TO_STORE_SPECTRA )
-      //Check to see if we should save the apps state
-      const bool saveState = UserPreferences::preferenceValue<bool>( "AutoSaveSpectraToDb", m_viewer );
-        
-        //Clean up the kEndOfSessions from before
-        bool cleanupStates = true;
-        if( cleanupStates )
-        {
-            DataBaseUtils::DbTransaction transaction( *sql );
-            const string query = "InterSpecUser_id = "
-            + std::to_string( m_viewer->user().id() )
-            + " AND (StateType = "
-            + std::to_string( int(UserState::kEndOfSessionTemp))
-            + " OR StateType = "
-            + std::to_string( int(UserState::kEndOfSessionHEAD) )
-            + ")";
-            Dbo::collection<Dbo::ptr<UserState> > states
-            = sql->session()->find<UserState>().where( query );
-            for( Dbo::collection<Dbo::ptr<UserState> >::iterator iter = states.begin();
-                iter != states.end(); ++iter )
-            {
-                if ((*iter)->stateType==UserState::kEndOfSessionTemp)
-                { 
-                  //delete temporary kEndOfSession
-                  iter->remove();
-                } else
-                {   
-                  //do not delete, but just change this HEAD to kUserSaved state (no longer kEndOfSession
-                   iter->modify()->stateType = UserState::kUserSaved;
-                }
-            }
-            
-            transaction.commit();
-        }//if( cleanupStates )
-
-        
-      //Make sure there is at least a spectra valid in order to save this state
-      std::shared_ptr<const SpecMeas> foreground = m_viewer->measurment( SpecUtils::SpectrumType::Foreground );
-        
-      if( saveState && foreground )
-      {
-        Wt::log( "info" ) << "Will auto-save state for session-id:" << sessionId() << " at end of session.";
-
-        const int offset = environment().timeZoneOffset();
-        WString desc = "End of Session";
-        const auto now = chrono::system_clock::now() + chrono::seconds( 60*offset );
-        WString name = SpecUtils::to_common_string( chrono::time_point_cast<chrono::microseconds>(now), true ); //"9-Sep-2014 15:02:15"
-        
-        Wt::Dbo::ptr<UserState> dbstate;
-        std::shared_ptr<DataBaseUtils::DbSession> sql = m_viewer->sql();
-        DataBaseUtils::DbTransaction transaction( *sql );
-          
-        UserState *state = new UserState();
-        state->user = m_viewer->user();
-        state->stateType = UserState::kEndOfSessionTemp;
-        state->creationTime = WDateTime::currentDateTime();
-        state->name = name;
-        state->description = desc;
-          
-          //check if Save menu needs to be updated
-          if( m_viewer->currentAppStateDbId() >= 0 )
-          {
-              try
-              {
-                  std::shared_ptr<DataBaseUtils::DbSession> sql = m_viewer->sql();
-                  DataBaseUtils::DbTransaction transaction( *sql );
-                  Dbo::ptr<UserState> currentState = sql->session()->find<UserState>( "where id = ?" ).bind( m_viewer->currentAppStateDbId() );
-                  transaction.commit();
-                  
-                  if (currentState)
-                  {
-                      //Saves to the HEAD first
-                      m_viewer->startStoreStateInDb( false, false, false, true ); //save snapshot
-                      transaction.commit();
-
-                      return;
-                  } //UserState exists
-                  else
-                  { //no UserState
-                      //do nothing, a temporary kEndOfState HEAD snapshot will be created.
-                  } //no UserState
-              }catch( std::exception &e )
-              {
-                Wt::log("error") << "Could not access current Snapshot State ID while EndOfSession " << e.what();
-              }//try / catch
-          }
-          
-        dbstate = sql->session()->add( state );
-        
-        try
-        {
-          m_viewer->saveStateToDb( dbstate );
-          Wt::log("debug") << "Saved end of session app state to database";
-        }catch( std::exception &e )
-        {
-          Wt::log("error") << "InterSpecApp::prepareForEndOfSession() error: " << e.what();
-        }
-        transaction.commit();
-      }//if( saveState )
-#endif //#if( USE_DB_TO_STORE_SPECTRA )
-    
-    /*
-     // TODO: Look into if syncing the database helps us any - maybe in development builds we should just do this for every commit (or turn off WAL (Write Ahead Logging)), or check if this is even enabled (e.g., "PRAGMA journal_mode=WAL;" for the connection).
-    try
-    {
+    {// Begin lean up the kEndOfSessions from before
       DataBaseUtils::DbTransaction transaction( *sql );
-      sql->session()->execute( "PRAGMA wal_checkpoint(FULL);" );
+      
+      Dbo::collection<Dbo::ptr<UserState> > states = sql->session()->find<UserState>()
+        .where( "InterSpecUser_id = ? AND StateType = ?" )
+        .bind( m_viewer->user().id() )
+        .bind( int(UserState::kEndOfSessionTemp) );
+    
+      for( auto iter = states.begin(); iter != states.end(); ++iter )
+        iter->remove();
+      
       transaction.commit();
-    }catch( std::exception &e )
-    {
-      Wt::log("error") << "Got exception running 'PRAGMA wal_checkpoint(FULL);': " << e.what();
-    }
-     */
+    }// End lean up the kEndOfSessions from before
+
+    m_viewer->saveStateAtForegroundChange();
+    m_viewer->saveStateForEndOfSession();
+#endif //#if( USE_DB_TO_STORE_SPECTRA )
   }catch( std::exception &e )
   {
     Wt::log("error") << "InterSpecApp::prepareForEndOfSession() caught: " << e.what();

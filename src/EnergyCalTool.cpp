@@ -3926,17 +3926,17 @@ void EnergyCalTool::displayedSpectrumChanged( const SpecUtils::SpectrumType type
   if( meas != m_currentSpecMeas[index] )
   {
     //whole new file
-    cout << "EnergyCalTool::displayedSpectrumChanged: new file" << endl;
+    //cout << "EnergyCalTool::displayedSpectrumChanged: new file" << endl;
     
     //We want to cache original energy calibration, if we havent already
   }else if( samples != m_currentSampleNumbers[index] )
   {
     // Just changed what was displayed
-    cout << "EnergyCalTool::displayedSpectrumChanged: changed sample numbers" << endl;
+    //cout << "EnergyCalTool::displayedSpectrumChanged: changed sample numbers" << endl;
   }else
   {
     //no change...
-    cout << "EnergyCalTool::displayedSpectrumChanged: same file and sample numbers" << endl;
+    //cout << "EnergyCalTool::displayedSpectrumChanged: same file and sample numbers" << endl;
   }
 
   m_lastGraphicalRecal = 0;

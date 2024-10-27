@@ -150,10 +150,6 @@
 #include "InterSpec/D3TimeChart.h"
 #include "InterSpec/D3SpectrumDisplayDiv.h"
 
-#if( USE_DB_TO_STORE_SPECTRA )
-#include "InterSpec/DbStateBrowser.h"
-#endif
-
 #if( IOS )
 #include "target/ios/InterSpec/FileHandling.h"
 #endif 
@@ -3291,12 +3287,8 @@ WModelIndex InterSpec::addPeak( PeakDef peak,
 #if( USE_DB_TO_STORE_SPECTRA )
 void InterSpec::saveStateToDb( Wt::Dbo::ptr<UserState> entry )
 {
-  if( !entry || entry->user != m_user || !m_user.session() )
+  if( !entry || (entry->user != m_user) || !m_user.session() )
     throw runtime_error( "Invalid input to saveStateToDb()" );
-  
-  if( entry->isWriteProtected() )
-    throw runtime_error( "UserState is write protected; "
-                         "please clone state to re-save" );
 
   try
   {
@@ -3308,56 +3300,62 @@ void InterSpec::saveStateToDb( Wt::Dbo::ptr<UserState> entry )
     
     DataBaseUtils::DbTransaction transaction( *m_sql );
     entry.modify()->serializeTime = WDateTime::currentDateTime();
-  
+    
     if( !entry->creationTime.isValid() )
       entry.modify()->creationTime = entry->serializeTime;
     
-    const bool forTesting = (entry->stateType == UserState::kForTest);
+    const bool deepCopy = ((entry->stateType != UserState::kUserSaved) || !!entry->snapshotTagParent);
     
     std::shared_ptr<const SpecMeas> foreground = measurment( SpecUtils::SpectrumType::Foreground );
     std::shared_ptr<const SpecMeas> second = measurment( SpecUtils::SpectrumType::SecondForeground );
     std::shared_ptr<const SpecMeas> background = measurment( SpecUtils::SpectrumType::Background );
     
-    Dbo::ptr<UserFileInDb> dbforeground = measurmentFromDb( SpecUtils::SpectrumType::Foreground, true );
-    Dbo::ptr<UserFileInDb> dbsecond     = measurmentFromDb( SpecUtils::SpectrumType::SecondForeground, true );
-    Dbo::ptr<UserFileInDb> dbbackground = measurmentFromDb( SpecUtils::SpectrumType::Background, true );
+    Dbo::ptr<UserFileInDb> dbforeground, dbsecond, dbbackground;
+    dbforeground = measurementFromDb( SpecUtils::SpectrumType::Foreground, true );
+    if( foreground != second )
+      dbsecond = measurementFromDb( SpecUtils::SpectrumType::SecondForeground, true );
+    if( (background != foreground) && (background != second) )
+      dbbackground = measurementFromDb( SpecUtils::SpectrumType::Background, true );
   
     //JIC, make sure indices have all been assigned to everything.
     m_sql->session()->flush();
     
-    if( (entry->snapshotTagParent || forTesting)
-        || (dbforeground && dbforeground->isWriteProtected()) )
-    {
-      dbforeground = UserFileInDb::makeDeepWriteProtectedCopyInDatabase( dbforeground, *m_sql, true );
-      if( dbforeground && !(entry->snapshotTagParent || forTesting) )
-        UserFileInDb::removeWriteProtection( dbforeground );
-    }
+    auto create_copy_or_update_in_db = [this, deepCopy]( Dbo::ptr<UserFileInDb> &dbfile, shared_ptr<const SpecMeas> &file ){
+      if( !dbfile || !file )
+        return;
     
-    if( (entry->snapshotTagParent || forTesting)
-         && dbsecond
-         && !dbsecond->isWriteProtected()
-         && (foreground != second) )
-    {
-      dbsecond = UserFileInDb::makeDeepWriteProtectedCopyInDatabase( dbsecond, *m_sql, true );
-      if( dbsecond && !(entry->snapshotTagParent || forTesting) )
-        UserFileInDb::removeWriteProtection( dbsecond );
-    }else if( foreground == second )
-      dbsecond = dbforeground;
+      if( deepCopy )
+        dbfile = UserFileInDb::makeDeepCopyOfFileInDatabase( dbfile, *m_sql, true );
+      
+      Dbo::ptr<UserFileInDbData> filedata;
+      for( auto iter = dbfile->filedata.begin(); iter != dbfile->filedata.end(); ++iter )
+      {
+        assert( !filedata );
+        if( filedata )
+          (*iter).remove();
+        else
+          filedata = *iter;
+      }
+      
+      assert( filedata );
+      if( !filedata )
+      {
+        UserFileInDbData *newdata = new UserFileInDbData();
+        filedata.reset( newdata );
+        newdata->fileInfo = dbfile;
+        m_sql->session()->add( filedata );
+      }
+      
+      // This next line will throw an exception if the file is too large to store in database
+      filedata.modify()->setFileData( file, UserFileInDbData::SerializedFileFormat::k2012N42 );
+    };//create_copy_or_update_in_db lambda
     
-    if( (entry->snapshotTagParent || forTesting)
-        && dbbackground
-        && !dbbackground->isWriteProtected()
-        && (background != foreground)
-        && (background != second))
-    {
-      dbbackground = UserFileInDb::makeDeepWriteProtectedCopyInDatabase( dbbackground, *m_sql, true );
-      if( dbbackground && !(entry->snapshotTagParent || forTesting) )
-        UserFileInDb::removeWriteProtection( dbbackground );
-    }else if( background == foreground )
-      dbbackground = dbforeground;
-    else if( background == second )
-      dbbackground = dbsecond;
     
+    create_copy_or_update_in_db( dbforeground, foreground );
+    create_copy_or_update_in_db( dbsecond, second );
+    create_copy_or_update_in_db( dbbackground, background );
+    
+
     if( !dbforeground && foreground )
       throw runtime_error( "Error saving foreground to the database" );  //not displayed to user, so not internationalized
     if( !dbsecond && second )
@@ -3376,21 +3374,6 @@ void InterSpec::saveStateToDb( Wt::Dbo::ptr<UserState> entry )
     entry.modify()->backgroundId = static_cast<int>( dbbackground.id() );
     entry.modify()->secondForegroundId = static_cast<int>( dbsecond.id() );
     
-    /*
-    entry.modify()->shieldSourceModelId = -1;
-    if( m_shieldingSourceFit )
-    {
-      Wt::Dbo::ptr<ShieldingSourceModel> model = m_shieldingSourceFit->modelInDb();
-      
-      //make sure model has actually been written to the DB, so index wont be 0
-      if( model )
-        m_sql->session()->flush();
-        
-      entry.modify()->shieldSourceModelId = model.id();
-    }
-     */
-    
-//    entry.modify()->otherSpectraCsvIds;
     {
       string &str = (entry.modify()->foregroundSampleNumsCsvIds);
       str.clear();
@@ -3673,9 +3656,6 @@ void InterSpec::saveStateToDb( Wt::Dbo::ptr<UserState> entry )
       cerr << "saveStateToDb(): Caught exception retrieving color theme from database" << endl;
     }//try / catch
     
-    if( forTesting || entry->snapshotTagParent )
-      UserState::makeWriteProtected( entry, m_sql->session() );
-    
     transaction.commit();
   }catch( std::exception &e )
   {
@@ -3684,58 +3664,6 @@ void InterSpec::saveStateToDb( Wt::Dbo::ptr<UserState> entry )
     //to do: handle errors
   }//try / catch
 }//void saveStateToDb( Wt::Dbo::ptr<UserState> entry )
-
-
-Dbo::ptr<UserState> InterSpec::serializeStateToDb( const Wt::WString &name,
-                                                        const Wt::WString &desc,
-                                                        const bool forTesting,
-                                                        Dbo::ptr<UserState> parent)
-{
-  Dbo::ptr<UserState> answer;
-  
-  UserState *state = new UserState();
-  state->user = m_user;
-  state->stateType = forTesting ? UserState::kForTest : UserState::kUserSaved;
-  state->creationTime = WDateTime::currentDateTime();
-  state->name = name;
-  state->description = desc;
-
-  
-  {//Begin interaction with database
-    DataBaseUtils::DbTransaction transaction( *m_sql );
-    if( parent )
-    {
-      //Making sure we get the main parent
-      while( parent->snapshotTagParent )
-        parent = parent->snapshotTagParent;
-      state->snapshotTagParent = parent;
-    }//parent
-    
-    answer = m_user.session()->add( state );
-    transaction.commit();
-  }//End interaction with database
-  
-  try
-  {
-    saveStateToDb( answer );
-  }catch( std::exception &e )
-  {
-    passMessage( e.what(), WarningWidget::WarningMsgHigh );
-  }
-      
-  if( parent )
-  {
-    WString msg = WString::tr("db-new-tag");
-    passMessage( msg.arg(name).arg(parent.get()->name), WarningWidget::WarningMsgInfo );
-  }else
-  {
-    WString msg = WString::tr("db-new-snapshot");
-    passMessage( msg.arg(name), WarningWidget::WarningMsgSave );
-  }
-    
-  return answer;
-}//Dbo::ptr<UserState> serializeStateToDb(...)
-
 
 
 void InterSpec::loadStateFromDb( Wt::Dbo::ptr<UserState> entry )
@@ -3955,9 +3883,7 @@ void InterSpec::loadStateFromDb( Wt::Dbo::ptr<UserState> entry )
           background = snapbackground;
         }else if( snapbackground && dbbackground )
         {
-          dbbackground = UserFileInDb::makeDeepWriteProtectedCopyInDatabase( dbbackground, *m_sql, true );
-          if( dbbackground )
-            UserFileInDb::removeWriteProtection( dbbackground );
+          dbbackground = UserFileInDb::makeDeepCopyOfFileInDatabase( dbbackground, *m_sql, true );
           m_fileManager->setDbEntry( dbbackground, backgroundheader, background, 0);
         }
       }//if( snapbackground != snapforeground )
@@ -3971,9 +3897,7 @@ void InterSpec::loadStateFromDb( Wt::Dbo::ptr<UserState> entry )
           second = snapsecond;
         }else if( snapsecond && dbsecond )
         {
-          dbsecond = UserFileInDb::makeDeepWriteProtectedCopyInDatabase( dbsecond, *m_sql, true );
-          if( dbsecond )
-            UserFileInDb::removeWriteProtection( dbsecond );
+          dbsecond = UserFileInDb::makeDeepCopyOfFileInDatabase( dbsecond, *m_sql, true );
           m_fileManager->setDbEntry( dbsecond, secondheader, second, 0);
         }
       }
@@ -5212,73 +5136,106 @@ void InterSpec::handlePeakInfoClose()
 
 
 #if( USE_DB_TO_STORE_SPECTRA )
-void InterSpec::finishStoreStateInDb( WLineEdit *nameedit,
-                                           WTextArea *descriptionarea,
-                                           AuxWindow *window,
-                                           const bool forTesting,
-                                           Dbo::ptr<UserState> parent )
+void InterSpec::finishStoreStateInDb( const WString &name,
+                                      const WString &desc,
+                                      Dbo::ptr<UserState> parent )
 {
-  const WString &name = nameedit->text();
   if( name.empty() )
   {
     passMessage( WString::tr("db-error-no-name"), WarningWidget::WarningMsgHigh );
     return;
   }//if( name.empty() )
   
-  const WString &desc = (!descriptionarea ? "" : descriptionarea->text());
   
-  Dbo::ptr<UserState> state = serializeStateToDb( name, desc, forTesting, parent );
+  Dbo::ptr<UserState> answer;
   
-  const long long int db_index = parent ? parent.id() : state.id();
+  UserState *state = new UserState();
+  state->user = m_user;
+  state->stateType = UserState::kUserSaved;
+  state->creationTime = WDateTime::currentDateTime();
+  state->name = name;
+  state->description = desc;
+  
+  {//Begin interaction with database
+    DataBaseUtils::DbTransaction transaction( *m_sql );
+    if( parent )
+    {
+      //Making sure we get the main parent
+      while( parent->snapshotTagParent )
+        parent = parent->snapshotTagParent;
+      state->snapshotTagParent = parent;
+    }//parent
+    
+    answer = m_user.session()->add( state );
+    transaction.commit();
+  }//End interaction with database
+  
+  try
+  {
+    saveStateToDb( answer );
+  }catch( std::exception &e )
+  {
+    passMessage( e.what(), WarningWidget::WarningMsgHigh );
+  }
+      
+  if( parent )
+  {
+    WString msg = WString::tr("db-new-tag");
+    passMessage( msg.arg(name).arg(parent.get()->name), WarningWidget::WarningMsgInfo );
+  }else
+  {
+    WString msg = WString::tr("db-new-snapshot");
+    passMessage( msg.arg(name), WarningWidget::WarningMsgSave );
+  }
+  
+  const long long int db_index = parent ? parent.id() : answer.id();
   if( m_dataMeasurement )
     m_dataMeasurement->setDbStateId( db_index, m_displayedSamples );
   updateSaveWorkspaceMenu();
-  
+}//void finishStoreStateInDb()
+
+
 #if( INCLUDE_ANALYSIS_TEST_SUITE )
-  if( forTesting )
+void InterSpec::storeTestStateToN42( const Wt::WString name, const Wt::WString descr  )
+{
+  try
   {
-    string filepath = SpecUtils::append_path(TEST_SUITE_BASE_DIR, "analysis_tests");
+    if( !m_dataMeasurement )
+      throw runtime_error( "No valid foreground file" );
     
+    // Open the output stream
+    string filepath = SpecUtils::append_path(TEST_SUITE_BASE_DIR, "analysis_tests");
+      
     if( !SpecUtils::is_directory( filepath ) )
       throw runtime_error( "CWD didnt contain a 'analysis_tests' folder as expected" );
-    
+      
     const int offset = wApp->environment().timeZoneOffset();
     auto localtime = chrono::time_point_cast<chrono::microseconds>(chrono::system_clock::now());
     localtime += std::chrono::seconds(60*offset);
     
     string timestr = SpecUtils::to_iso_string( localtime );
     string::size_type period_pos = timestr.find_last_of( '.' );
-    timestr.substr( 0, period_pos );
+    timestr = timestr.substr( 0, period_pos );
     
-    filepath = SpecUtils::append_path( filepath, (name.toUTF8() + "_" + timestr + ".n42") );
+    string filename = name.toUTF8() + "_" + timestr + ".n42";
+    SpecUtils::erase_any_character( filename, "\\/:?\"<>|" );
     
-#ifdef _WIN32
+    if( name.empty() )
+      throw runtime_error( "Name must NOT be empty." );
+    
+    filename += "_" + timestr + ".n42";
+    
+    filepath = SpecUtils::append_path( filepath, filename );
+      
+  #ifdef _WIN32
     const std::wstring wfilepath = SpecUtils::convert_from_utf8_to_utf16(filepath);
     ofstream output( wfilepath.c_str(), ios::binary|ios::out );
-#else
+  #else
     ofstream output( filepath.c_str(), ios::binary|ios::out );
-#endif
+  #endif
     if( !output.is_open() )
-      throw runtime_error( "Couldnt open test file ouput '"
-                           + filepath + "'" );
+      throw runtime_error( "Couldnt open test file output '" + filepath + "'" );
     
-    storeTestStateToN42( output, name.toUTF8(), desc.toUTF8() );
-  }//if( forTesting )
-#endif
-  if (window)
-      delete window;
-}//void finishStoreStateInDb()
-
-
-#if( INCLUDE_ANALYSIS_TEST_SUITE )
-void InterSpec::storeTestStateToN42( std::ostream &output,
-                                          const std::string &name,
-                                          const std::string &descr )
-{
-  try
-  {
-    if( !m_dataMeasurement )
-      throw runtime_error( "No valid foreground file" );
     
     SpecMeas meas;
     meas.uniqueCopyContents( *m_dataMeasurement );
@@ -5384,26 +5341,23 @@ void InterSpec::storeTestStateToN42( std::ostream &output,
       cerr << "\n\nThe shielding/source fit model was NOT changed for current foreground" << endl;
     }
     
-    const int offset = wApp->environment().timeZoneOffset();
-    auto localtime = chrono::time_point_cast<chrono::microseconds>(chrono::system_clock::now());
-    localtime += std::chrono::seconds(60*offset);
-    
-    const string timestr = SpecUtils::to_iso_string( localtime );
     
     const char *val = n42doc->allocate_string( timestr.c_str(), timestr.size()+1 );
     xml_node<char> *node = n42doc->allocate_node( node_element, "TestSaveDateTime", val );
     InterSpecNode->append_node( node );
     
-    if( name.size() )
+    if( !name.empty() )
     {
-      val = n42doc->allocate_string( name.c_str(), name.size()+1 );
+      const string txt = name.toUTF8();
+      val = n42doc->allocate_string( txt.c_str(), txt.size()+1 );
       node = n42doc->allocate_node( node_element, "TestName", val );
       InterSpecNode->append_node( node );
     }//if( name.size() )
     
-    if( descr.size() )
+    if( !descr.empty() )
     {
-      val = n42doc->allocate_string( descr.c_str(), descr.size()+1 );
+      const string txt = descr.toUTF8();
+      val = n42doc->allocate_string( txt.c_str(), txt.size()+1 );
       node = n42doc->allocate_node( node_element, "TestDescription", val );
       InterSpecNode->append_node( node );
     }//if( name.size() )
@@ -5412,7 +5366,7 @@ void InterSpec::storeTestStateToN42( std::ostream &output,
     rapidxml::print( std::back_inserter(xml_data), *n42doc, 0 );
     
     if( !output.write( xml_data.c_str(), xml_data.size() ) )
-      throw runtime_error( "" );
+      throw runtime_error( "writing to file failed." );
   }catch( std::exception &e )
   {
     string msg = "Failed to save test state to N42 file: ";
@@ -5624,71 +5578,97 @@ void InterSpec::startN42TestStates()
 
 
 
-void InterSpec::startStoreTestStateInDb()
+void InterSpec::startStoreTestState()
 {
-  const long long int db_index = m_dataMeasurement ? m_dataMeasurement->dbStateId(m_displayedSamples)
-                                                   : static_cast<long long int>(-1);
+  AuxWindow *window = new AuxWindow( "Store app test state to N42",
+                                    (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::IsModal)
+                                     | AuxWindowProperties::TabletNotFullScreen
+                                     | AuxWindowProperties::DisableCollapse) );
+  window->rejectWhenEscapePressed();
+  window->finished().connect( boost::bind( &AuxWindow::deleteAuxWindow, window ) );
+  window->setClosable( false );
+  WGridLayout *layout = window->stretcher();
+  WLineEdit *edit = new WLineEdit();
+  edit->setEmptyText( WString::tr("db-name-empty-txt") );
   
-  if( db_index >= 0 )
-  {
-    AuxWindow *window = new AuxWindow( "Warning",
-                                      (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::PhoneNotFullScreen)
-                                       | AuxWindowProperties::DisableCollapse) );
-    WText *t = new WText( "Overwrite current test state?", window->contents() );
-    t->setInline( false );
-    
-    window->setClosable( false );
-
-    WPushButton *button = new WPushButton( "Overwrite", window->footer() );
-    button->clicked().connect( boost::bind( &AuxWindow::deleteAuxWindow, window ) );
-    button->clicked().connect( boost::bind( &InterSpec::startStoreStateInDb, this, true, false, true, false ) );
-    
-    button = new WPushButton( "Create New", window->footer() );
-    button->clicked().connect( boost::bind( &AuxWindow::deleteAuxWindow, window ) );
-    button->clicked().connect( boost::bind( &InterSpec::startStoreStateInDb, this, true, true, false, false ) );
-    
-    button = new WPushButton( "Cancel", window->footer() );
-    button->clicked().connect( boost::bind( &AuxWindow::deleteAuxWindow, window ) );
-    window->centerWindow();
-    window->show();
-    
-    window->rejectWhenEscapePressed();
-    window->finished().connect( boost::bind( &AuxWindow::deleteAuxWindow, window ) );
-  }else
-  {
-    startStoreStateInDb( true, true, true, false );
-  }//if( db_index >= 0 ) / else
-}//void startStoreTestStateInDb()
+  edit->setAttributeValue( "ondragstart", "return false" );
+#if( BUILD_AS_OSX_APP || IOS )
+  edit->setAttributeValue( "autocorrect", "off" );
+  edit->setAttributeValue( "spellcheck", "off" );
+#endif
+  
+  WText *label = new WText( WString::tr("Name") );
+  layout->addWidget( label, 0, 0 );
+  layout->addWidget( edit,  0, 1 );
+  
+  if( !!m_dataMeasurement && m_dataMeasurement->filename().size() )
+    edit->setText( m_dataMeasurement->filename() );
+  
+  WTextArea *summary = new WTextArea();
+  label = new WText( WString::tr("Desc.") );
+  summary->setEmptyText( WString::tr("db-dec-empty-txt") );
+  layout->addWidget( label, 1, 0 );
+  layout->addWidget( summary, 1, 1 );
+  layout->setColumnStretch( 1, 1 );
+  layout->setRowStretch( 1, 1 );
+  
+  
+  WPushButton *closeButton = window->addCloseButtonToFooter( WString::tr("Cancel"), false);
+  closeButton->clicked().connect( boost::bind( &AuxWindow::deleteAuxWindow, window ) );
+  
+  WPushButton *save = new WPushButton( WString::tr("Create"), window->footer() );
+  save->setIcon( "InterSpec_resources/images/disk2.png" );
+  
+  save->clicked().connect( std::bind( [this, edit, summary, window](){
+    const WString name = edit ? edit->text() : WString();
+    const WString sumtxt = summary ? summary->text() : WString();
+    storeTestStateToN42( name, sumtxt );
+  } ) );
+  
+  window->setMinimumSize(WLength(450), WLength(250));
+  
+  window->centerWindow();
+  window->show();
+}//void startStoreTestState()
 #endif //#if( INCLUDE_ANALYSIS_TEST_SUITE )
 
 
 //Save the snapshot and ALSO the spectra.
 void InterSpec::stateSave()
 {
+  Dbo::ptr<UserState> state;
   const long long int current_state_index = currentAppStateDbId();
   if( current_state_index >= 0 )
   {
-    //TODO: Should check if can save?
-    saveShieldingSourceModelToForegroundSpecMeas();
-#if( USE_REL_ACT_TOOL )
-    saveRelActManualStateToForegroundSpecMeas();
-    saveRelActAutoStateToForegroundSpecMeas();
-#endif
-    startStoreStateInDb( false, false, false, false ); //save snapshot
-  }else
-  {
-    //No currentStateID, so just save as new snapshot
+    try
+    {
+      DataBaseUtils::DbTransaction transaction( *m_sql );
+      state = m_sql->session()->find<UserState>( "where id = ?" )
+        .bind( current_state_index );
+      
+      // find ultimate parent state
+      while( state && state->snapshotTagParent )
+        state = state->snapshotTagParent;
+  
+      if( state && (state->stateType != UserState::kUserSaved) )
+        state.modify()->stateType = UserState::kUserSaved;
+      
+      transaction.commit();
+    }catch( std::exception &e )
+    {
+      assert( 0 );
+    }//try / catch
+  }//if( current_state_index >= 0 )
+    
+  if( state )
+    saveStateToDb( state );
+  else //No currentStateID, so just save as new state
     stateSaveAs();
-  }//if( current_state_index >= 0 ) / else
-} //void stateSave()
+}//void stateSave()
 
 
-//Copied from startStoreStateInDb()
-//This is the new combined Save As method (snapshot/spectra)
 void InterSpec::stateSaveAs()
 {
-  const bool forTesting = false;
-    
   AuxWindow *window = new AuxWindow( WString::tr("window-title-store-state-as"),
     (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::IsModal)
       | AuxWindowProperties::TabletNotFullScreen
@@ -5736,8 +5716,8 @@ void InterSpec::stateSaveAs()
   WPushButton *save = new WPushButton( WString::tr("Save") , window->footer() );
   save->setIcon( "InterSpec_resources/images/disk2.png" );
   
-  save->clicked().connect( boost::bind( &InterSpec::stateSaveAsAction,
-                                        this, edit, summary, window, forTesting ) );
+  save->clicked().connect( boost::bind( &InterSpec::stateSaveAsFinish,
+                                        this, edit, summary, window ) );
     
   window->setMinimumSize(WLength(450), WLength(250));
     
@@ -5787,7 +5767,7 @@ void InterSpec::stateSaveTag()
   WPushButton *save = new WPushButton( WString::tr("db-Tag"), window->footer() );
   //save->setIcon( "InterSpec_resources/images/disk2.png" );
     
-  save->clicked().connect( boost::bind( &InterSpec::stateSaveTagAction,
+  save->clicked().connect( boost::bind( &InterSpec::stateSaveTagFinish,
                                          this, edit, window ) );
     
   window->setMinimumSize(WLength(450), WLength::Auto);
@@ -5803,7 +5783,7 @@ void InterSpec::stateSaveTag()
 }//void stateSaveTag()
 
 
-void InterSpec::stateSaveTagAction( WLineEdit *nameedit, AuxWindow *window )
+void InterSpec::stateSaveTagFinish( WLineEdit *nameedit, AuxWindow *window )
 {
   Dbo::ptr<UserState> state;
     
@@ -5827,7 +5807,8 @@ void InterSpec::stateSaveTagAction( WLineEdit *nameedit, AuxWindow *window )
   assert( state ); // Should always be able to get the state
   if( state )
   {
-    finishStoreStateInDb( nameedit, 0, 0, false, state );
+    WString name = nameedit ? nameedit->text() : WString();
+    finishStoreStateInDb( name, "", state );
   }else
   {
     // Shouldnt ever get here
@@ -5837,16 +5818,14 @@ void InterSpec::stateSaveTagAction( WLineEdit *nameedit, AuxWindow *window )
       
   //close window
   AuxWindow::deleteAuxWindow( window );
-}//stateSaveTagAction()
+}//stateSaveTagFinish()
 
 
-//Action to Save As Snapshot
-void InterSpec::stateSaveAsAction( WLineEdit *nameedit,
+void InterSpec::stateSaveAsFinish( WLineEdit *nameedit,
                                       WTextArea *descriptionarea,
-                                      AuxWindow *window,
-                                      const bool forTesting )
+                                      AuxWindow *window )
 {
-  //Need to remove the current foregorund/background/second from the file
+  //Need to remove the current foreground/background/second from the file
   //  manager, and then re-add back in the SpecMeas so they will be saved to
   //  new database entries.  Otherwise saving the current state as, will create
   //  a new UserState that points to the current database entries for the
@@ -5862,153 +5841,183 @@ void InterSpec::stateSaveAsAction( WLineEdit *nameedit,
     }
   }//for( int i = 0; i < 3; i++ )
   
-  //Save Snapshot/enviornment
-  finishStoreStateInDb( nameedit, descriptionarea, NULL, forTesting, Dbo::ptr<UserState>() );
+  //Save Snapshot
+  const WString name = nameedit->text();
+  const WString description = descriptionarea ? descriptionarea->text() : WString();
+  
+  finishStoreStateInDb( name, description, Dbo::ptr<UserState>() );
     
   //close window
   AuxWindow::deleteAuxWindow(window);
-}//stateSaveAsAction()
+}//stateSaveAsFinish()
 
 
-
-//Note: Used indirectly by new combined snapshot method stateSave()
-void InterSpec::startStoreStateInDb( const bool forTesting,
-                                          const bool asNewState,
-                                          const bool allowOverWrite,
-                                          const bool endOfSessionNoDelete )
+void InterSpec::saveStateAtForegroundChange()
 {
-  Dbo::ptr<UserState> state;
-  
-  const long long int current_state_index = currentAppStateDbId();
-  
-  if( current_state_index >= 0 && !asNewState )
+  const bool saveState = UserPreferences::preferenceValue<bool>( "AutoSaveSpectraToDb", this );
+  if( !saveState || !m_dataMeasurement )
   {
-      //If saving a tag, make sure to save to the parent.  We never overwrite TAGS
-      try
-      {
-          DataBaseUtils::DbTransaction transaction( *m_sql );
-          Dbo::ptr<UserState> childState  = m_sql->session()->find<UserState>( "where id = ? AND SnapshotTagParent_id >= 0" )
-          .bind( current_state_index );
-          
-          if (childState)
-          {
-              state = m_sql->session()->find<UserState>( "where id = ?" )
-              .bind( childState.get()->snapshotTagParent.id() );
-          }
-          
-          transaction.commit();
-      }catch( std::exception &e )
-      {
-          cerr << "\nstartStoreStateInDb() caught: " << e.what() << endl;
-      }//try / catch
-
-    if (!state)
-    {
-        try
-        {
-            DataBaseUtils::DbTransaction transaction( *m_sql );
-            state = m_sql->session()->find<UserState>( "where id = ?" )
-                           .bind( current_state_index );
-            transaction.commit();
-        }catch( std::exception &e )
-        {
-            cerr << "\nstartStoreStateInDb() caught: " << e.what() << endl;
-        }//try / catch
-    } //!state
-  }//if( current_state_index >= 0 )
-  
-  if( state )
-  { //Save without dialog
-      
-    const bool writeProtected = state->isWriteProtected();
+    saveShieldingSourceModelToForegroundSpecMeas();
+  #if( USE_REL_ACT_TOOL )
+    saveRelActManualStateToForegroundSpecMeas();
+    saveRelActAutoStateToForegroundSpecMeas();
+  #endif
     
-    if( allowOverWrite && writeProtected )
-    {
-      DataBaseUtils::DbTransaction transaction( *m_sql );
-      UserState::removeWriteProtection( state, m_sql->session() );
-      transaction.commit();
-    }//if( allowOverWrite && writeProtected )
-    
-      if (endOfSessionNoDelete)
-      {
-          DataBaseUtils::DbTransaction transaction( *m_sql );
-          state.modify()->stateType = UserState::kEndOfSessionHEAD;
-          transaction.commit();
-      }
-      
-    try
-    {
-      saveStateToDb( state );
-    }catch( std::exception &e )
-    {
-      passMessage( e.what(), WarningWidget::WarningMsgHigh );
-    }//try / catch
-    
-    if( writeProtected )
-    {
-      DataBaseUtils::DbTransaction transaction( *m_sql );
-      UserState::makeWriteProtected( state, m_sql->session() );
-      transaction.commit();
-    }//if( writeProtected )
-    
-    passMessage( WString::tr("db-saved-state-msg").arg(state->name), WarningWidget::WarningMsgSave );
     return;
-  }//if( state )
+  }//if( !saveState || !m_dataMeasurement )
   
-  AuxWindow *window = new AuxWindow( WString::tr("window-title-create-snapshot"),
-                                    (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::IsModal)
-                                      | AuxWindowProperties::TabletNotFullScreen
-                                      | AuxWindowProperties::DisableCollapse) );
-  window->rejectWhenEscapePressed();
-  window->finished().connect( boost::bind( &AuxWindow::deleteAuxWindow, window ) );
-  window->setClosable( false );
-  WGridLayout *layout = window->stretcher();
-  WLineEdit *edit = new WLineEdit();
-  edit->setEmptyText( WString::tr("db-name-empty-txt") );
+  Wt::log( "info" ) << "Auto-saving state for foreground change for file: '" << m_dataMeasurement->filename() << "'.";
+
+  const int offset = wApp->environment().timeZoneOffset();
+  WString desc = "Working Point";
+  const auto now = chrono::system_clock::now() + chrono::seconds( 60*offset );
+  WString name = SpecUtils::to_common_string( chrono::time_point_cast<chrono::microseconds>(now), true ); //"9-Sep-2014 15:02:15"
   
-  edit->setAttributeValue( "ondragstart", "return false" );
-#if( BUILD_AS_OSX_APP || IOS )
-  edit->setAttributeValue( "autocorrect", "off" );
-  edit->setAttributeValue( "spellcheck", "off" );
+  try
+  {
+    DataBaseUtils::DbTransaction transaction( *m_sql );
+    
+    const long long int current_state_index = currentAppStateDbId();
+    Wt::Dbo::ptr<UserState> parentState;
+    if( current_state_index >= 0 )
+    {
+      parentState = m_sql->session()->find<UserState>( "where id = ?" )
+            .bind( current_state_index );
+    }
+    
+    // If we are connected to a state in the database, we'll save a `kEndOfSessionHEAD` state,
+    //  otherwise, we'll save just the files to the database
+    if( parentState )
+    {
+      // Remove previous `kEndOfSessionHEAD` states for this user-saved state - we will make a new one
+      Dbo::collection<Dbo::ptr<UserState>> prevEosStates = m_user->m_userStates.find().where( "StateType = ?" )
+        .bind(int(UserState::UserStateType::kEndOfSessionHEAD));
+      
+      for( auto iter = prevEosStates.begin(); iter != prevEosStates.end(); ++iter )
+        iter->remove();
+      
+      
+      UserState *state = new UserState();
+      state->user = m_user;
+      state->stateType = UserState::kEndOfSessionHEAD;
+      state->creationTime = WDateTime::currentDateTime();
+      state->name = name;
+      state->description = desc;
+      state->snapshotTagParent = parentState;
+      
+      Wt::Dbo::ptr<UserState> dbstate = m_sql->session()->add( state );
+      
+      saveStateToDb( dbstate );
+    }else
+    {
+      saveShieldingSourceModelToForegroundSpecMeas();
+#if( USE_REL_ACT_TOOL )
+      saveRelActManualStateToForegroundSpecMeas();
+      saveRelActAutoStateToForegroundSpecMeas();
 #endif
-  
-  WText *label = new WText( WString::tr("Name") );
-  layout->addWidget( label, 0, 0 );
-  layout->addWidget( edit,  0, 1 );
-  
-  if( !!m_dataMeasurement && m_dataMeasurement->filename().size() )
-    edit->setText( m_dataMeasurement->filename() );
-  
-  WTextArea *summary = new WTextArea();
-  label = new WText( WString::tr("Desc.") );
-  summary->setEmptyText( WString::tr("db-dec-empty-txt") );
-  layout->addWidget( label, 1, 0 );
-  layout->addWidget( summary, 1, 1 );
-  layout->setColumnStretch( 1, 1 );
-  layout->setRowStretch( 1, 1 );
-  
-  
-  WPushButton *closeButton = window->addCloseButtonToFooter( WString::tr("Cancel"), false);
-  closeButton->clicked().connect( boost::bind( &AuxWindow::deleteAuxWindow, window ) );
+      
+      // Get foreground/background/secondary files, and update them to the database..
+      SpectraFileModel *filemodel = m_fileManager->model();
+      shared_ptr<SpectraFileHeader> forehdr, backhdr, secohdr;
+      
+      forehdr = filemodel->fileHeader( m_dataMeasurement );
+      if( m_backgroundMeasurement != m_dataMeasurement )
+        backhdr = filemodel->fileHeader( m_backgroundMeasurement );
+      if( (m_secondDataMeasurement != m_backgroundMeasurement)
+         && (m_secondDataMeasurement != m_dataMeasurement) )
+        secohdr = filemodel->fileHeader( m_secondDataMeasurement );
+      
+      // If we load a spectrum file, and get the dialog that lets us pick back up from a
+      //  previous working of the file, and we do, `forehdr` may be nullptr, because
+      //  #SpectraFileHeader::setDbEntry has not been called for the original file yet
+      if( forehdr )
+        forehdr->saveToDatabase( m_dataMeasurement );
+      else
+        cerr << "Didnt have foreground header" << endl;
+      
+      if( backhdr )
+        backhdr->saveToDatabase( m_backgroundMeasurement );
+      
+      if( secohdr )
+        secohdr->saveToDatabase( m_secondDataMeasurement );
+    }//if( current_state_index >= 0 ) / else
+    
+    transaction.commit();
+    
+    Wt::log("debug") << "Saved kEndOfSessionHEAD state to database";
+  }catch( std::exception &e )
+  {
+    Wt::log("error") << "InterSpec::saveStateAtForegroundChange() error: " << e.what();
+  }
+}//void saveStateAtForegroundChange()
 
-  WPushButton *save = new WPushButton( WString::tr("Create"), window->footer() );
-  save->setIcon( "InterSpec_resources/images/disk2.png" );
-  
-  save->clicked().connect( boost::bind( &InterSpec::finishStoreStateInDb,
-                                       this, edit, summary, window, forTesting, Wt::Dbo::ptr<UserState>() ) );
 
-  window->setMinimumSize(WLength(450), WLength(250));
-  
-  window->centerWindow();
-  window->show();
-}//void InterSpec::startStoreStateInDb()
-
-
-//Deprecated - no longer used
-void InterSpec::browseDatabaseStates( bool allowTests )
+void InterSpec::saveStateForEndOfSession()
 {
-  new DbStateBrowser( this, allowTests );
-}//void InterSpec::browseDatabaseStates()
+  // Remove existing end-of-session state
+  try
+  {
+    DataBaseUtils::DbTransaction transaction( *m_sql );
+    
+    Dbo::collection<Dbo::ptr<UserState>> prevEosStates = m_user->userStates().find()
+      .where("StateType = ?")
+      .bind( int(UserState::UserStateType::kEndOfSessionTemp) );
+    
+    assert( prevEosStates.size() <= 1 );
+    for( auto iter = prevEosStates.begin(); iter != prevEosStates.end(); ++iter )
+      iter->remove();
+    
+    transaction.commit();
+  }catch( std::exception &e )
+  {
+    Wt::log("error") << "InterSpec::saveStateForEndOfSession() error removing last state: " << e.what();
+  }
+  
+  // I we dont want to save states, or there is no foreground - nothing more to do here
+  const bool saveState = UserPreferences::preferenceValue<bool>( "AutoSaveSpectraToDb", this );
+  if( !saveState || !m_dataMeasurement )
+    return;
+  
+  Wt::log( "info" ) << "Will auto-save state for session-id:" << wApp->sessionId() << " at end of session.";
+
+  const int offset = wApp->environment().timeZoneOffset();
+  WString desc = "End of Session";
+  const auto now = chrono::system_clock::now() + chrono::seconds( 60*offset );
+  WString name = SpecUtils::to_common_string( chrono::time_point_cast<chrono::microseconds>(now), true ); //"9-Sep-2014 15:02:15"
+  
+  try
+  {
+    DataBaseUtils::DbTransaction transaction( *m_sql );
+    
+    // Check if we are connected with a database state
+    const long long int current_state_index = currentAppStateDbId();
+    Wt::Dbo::ptr<UserState> parentState;
+    if( current_state_index >= 0 )
+    {
+      parentState = m_sql->session()->find<UserState>( "where id = ?" )
+            .bind( current_state_index );
+    }
+    
+    UserState *state = new UserState();
+    state->user = m_user;
+    state->stateType = UserState::kEndOfSessionTemp;
+    state->creationTime = WDateTime::currentDateTime();
+    state->name = name;
+    state->description = desc;
+    state->snapshotTagParent = parentState;
+    
+    Wt::Dbo::ptr<UserState> dbstate = m_sql->session()->add( state );
+    
+    saveStateToDb( dbstate );
+    
+    transaction.commit();
+    
+    Wt::log("debug") << "Saved end of session app state to database";
+  }catch( std::exception &e )
+  {
+    Wt::log("error") << "InterSpec::saveStateForEndOfSession() error: " << e.what();
+  }
+}//void saveStateForEndOfSession()
 #endif //#if( USE_DB_TO_STORE_SPECTRA )
 
 
@@ -6203,12 +6212,8 @@ void InterSpec::addFileMenu( WWidget *parent, const bool isAppTitlebar )
   m_fileMenuPopup->addSeparator();
   PopupDivMenu* testing = m_fileMenuPopup->addPopupMenuItem( "Testing" , "InterSpec_resources/images/testing.png");
   item = testing->addMenuItem( "Store App Test State..." );
-  item->triggered().connect( boost::bind( &InterSpec::startStoreTestStateInDb, this ) );
+  item->triggered().connect( boost::bind( &InterSpec::startStoreTestState, this ) );
   HelpSystem::attachToolTipOn(item,"Stores app state as part of the automated test suite", showToolTips );
-  
-  item = testing->addMenuItem( "Restore App Test State..." );
-  item->triggered().connect( boost::bind(&InterSpec::browseDatabaseStates, this, true) );
-  HelpSystem::attachToolTipOn(item, "Restores InterSpec to a previously stored state.", showToolTips );
   
   item = testing->addMenuItem( "Load N42 Test State..." );
   item->triggered().connect( boost::bind(&InterSpec::startN42TestStates, this) );
@@ -8069,7 +8074,7 @@ std::shared_ptr<SpecMeas> InterSpec::measurment( SpecUtils::SpectrumType type )
 
 
 #if( USE_DB_TO_STORE_SPECTRA )
-Wt::Dbo::ptr<UserFileInDb> InterSpec::measurmentFromDb( SpecUtils::SpectrumType type,
+Wt::Dbo::ptr<UserFileInDb> InterSpec::measurementFromDb( SpecUtils::SpectrumType type,
                                                              bool update )
 {
   try
@@ -8098,13 +8103,8 @@ Wt::Dbo::ptr<UserFileInDb> InterSpec::measurmentFromDb( SpecUtils::SpectrumType 
     
     if( type == SpecUtils::SpectrumType::Foreground )
     {
-      WModelIndex bindex;
-      std::shared_ptr<SpectraFileHeader> bheader;
       std::shared_ptr<SpecMeas> background = measurment( SpecUtils::SpectrumType::Background );
-      if( background )
-         bindex = fileModel->index( background );
-      if( bindex.isValid() )
-        bheader = fileModel->fileHeader( bindex.row() );
+      std::shared_ptr<SpectraFileHeader> bheader = fileModel->fileHeader( background );
       if( bheader )
       {
         dbback = bheader->dbEntry();
@@ -8125,12 +8125,12 @@ Wt::Dbo::ptr<UserFileInDb> InterSpec::measurmentFromDb( SpecUtils::SpectrumType 
     return header->dbEntry();
   }catch( std::exception &e )
   {
-    cerr << "\n\nSpectrumViewer::measurmentFromDb(...) caught: " << e.what()
+    cerr << "\n\nSpectrumViewer::measurementFromDb(...) caught: " << e.what()
          << endl;
   }//try / catch
   
   return Wt::Dbo::ptr<UserFileInDb>();
-}//Wt::Dbo::ptr<UserFileInDb> measurmentFromDb( SpecUtils::SpectrumType type, bool update );
+}//Wt::Dbo::ptr<UserFileInDb> measurementFromDb( SpecUtils::SpectrumType type, bool update );
 #endif //#if( USE_DB_TO_STORE_SPECTRA )
 
 std::shared_ptr<const SpecUtils::Measurement> InterSpec::displayedHistogram( SpecUtils::SpectrumType spectrum_type ) const
@@ -11077,28 +11077,8 @@ void InterSpec::setSpectrum( std::shared_ptr<SpecMeas> meas,
 
   if( (spec_type == SpecUtils::SpectrumType::Foreground) && previous && (previous != meas) )
   {
-    saveShieldingSourceModelToForegroundSpecMeas();
-#if( USE_REL_ACT_TOOL )
-    saveRelActManualStateToForegroundSpecMeas();
-    saveRelActAutoStateToForegroundSpecMeas();
-#endif
-    
 #if( USE_DB_TO_STORE_SPECTRA )
-    /*
-    if( previous && UserPreferences::preferenceValue<bool>( "AutoSaveSpectraToDb" ) )
-    {
-      //We also need to do this in the InterSpec destructor as well.
-      //   Also maybe change size limitations to only apply to auto saving
-      const long long int current_state_index = currentAppStateDbId();
-      if( current_state_index >= 0 )
-      {
-        startStoreStateInDb( false, false, false, false ); //save snapshot
-      }else
-      {
-        m_fileManager->saveToDatabase( previous );
-      }
-    }//if(
-     */
+    saveStateAtForegroundChange(); //This function will check "AutoSaveSpectraToDb" pref
 #endif //#if( USE_DB_TO_STORE_SPECTRA )
     
     // Close Shielding/Source fit Window
