@@ -324,7 +324,9 @@ namespace
     FileUploadDialog( InterSpec *viewer,
                       SpecMeasManager *manager )
     : AuxWindow( "", (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::IsModal)
-                       | AuxWindowProperties::PhoneNotFullScreen | AuxWindowProperties::DisableCollapse) ),
+                      | AuxWindowProperties::PhoneNotFullScreen
+                      | AuxWindowProperties::DisableCollapse
+                      | AuxWindowProperties::SetCloseable) ),
       m_fileUpload( 0 ),
       m_manager( manager ),
       m_type( SpectrumType::Foreground )
@@ -1376,6 +1378,7 @@ SpecMeasManager::SpecMeasManager( InterSpec *viewer )
   m_treeView->setModel( m_fileModel );
   m_treeView->selectionChanged().connect( boost::bind( &SpecMeasManager::selectionChanged, this ) );
 
+  // TODO: (20241028) it doesn't appear necessary to show and then delete the spectrum manager window - but leaving until after v1.0.13 release
   startSpectrumManager(); //initializes
   deleteSpectrumManager(); //deletes instance
     
@@ -1408,7 +1411,7 @@ SpecMeasManager::SpecMeasManager( InterSpec *viewer )
 }// SpecMeasManager
 
 //Moved what use to be SpecMeasManager, out to a startSpectrumManager() to correct modal issues
-void  SpecMeasManager::startSpectrumManager()
+void SpecMeasManager::startSpectrumManager()
 {
   const bool showToolTips = UserPreferences::preferenceValue<bool>( "ShowTooltips", m_viewer );
 
@@ -1425,6 +1428,7 @@ void  SpecMeasManager::startSpectrumManager()
                     (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::IsModal)
                      | AuxWindowProperties::TabletNotFullScreen
                      | AuxWindowProperties::DisableCollapse
+                     | AuxWindowProperties::SetCloseable
                      ) );
     m_spectrumManagerWindow->addStyleClass( "SpecMeasManager" );
     
@@ -5671,8 +5675,7 @@ void SpecMeasManager::displayIsBeingHidden()
 } // void SpecMeasManager::displayIsBeingHidden()
 
 #if( USE_DB_TO_STORE_SPECTRA )
-void SpecMeasManager::saveToDatabase(
-                                std::shared_ptr<const SpecMeas> input ) const
+void SpecMeasManager::saveToDatabase( std::shared_ptr<const SpecMeas> input ) const
 {
   //Make sure we are in the event loop - for thread safety.
   if( !wApp )
@@ -5688,10 +5691,15 @@ void SpecMeasManager::saveToDatabase(
     std::shared_ptr<SpecMeas> meas = header->parseFile();
     boost::function<void(void)> worker
                       = wApp->bind( boost::bind( &SpectraFileHeader::saveToDatabaseWorker, meas, header ) );
-    WServer::instance()->post( wApp->sessionId(), worker );
     
-//    boost::function<void(void)> worker = boost::bind( &SpectraFileHeader::saveToDatabaseWorker, meas, header );
-//    WServer::instance()->ioService().boost::asio::io_service::post( worker );
+    // Instead of posting immediately, we'll
+    //WServer::instance()->post( wApp->sessionId(), worker );
+    
+    boost::function<void ()> fallback = [](){
+      cerr << "Failed to save file to database." << endl;
+    };
+    
+    WServer::instance()->schedule( 50, wApp->sessionId(), worker, fallback );
   }//if( headermeas && (headermeas==meas) )
 }//void saveToDatabase( std::shared_ptr<const SpecMeas> meas ) const
 
@@ -5757,12 +5765,14 @@ void SpecMeasManager::showPreviousSpecFileUsesDialog( std::shared_ptr<SpectraFil
     try
     {
       Dbo::ptr<UserFileInDb> f = unModifiedFiles.front();
-      cerr << "Setting file with UUID=" << header->m_uuid << ", and filename "
-      << header->m_displayName << " to be connected to DB entry from "
+      
+      Wt::log("info") << "Setting file with UUID=" << header->m_uuid << ", and filename '"
+      << header->m_displayName << "' to be connected to DB entry from "
       << "upload at "
       << f->uploadTime.toString(DATE_TIME_FORMAT_STR).toUTF8()
       << " until user determines if they want to resume from a modified"
-      << " session" << endl;
+      << " session.";
+      
       header->setDbEntry( f );
     }catch( std::exception &e )
     {
@@ -5778,7 +5788,8 @@ void SpecMeasManager::showPreviousSpecFileUsesDialog( std::shared_ptr<SpectraFil
   AuxWindow *window = new AuxWindow( WString::tr("smm-prev-states-window-title"),
                                     (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::DisableCollapse)
                                      | AuxWindowProperties::EnableResize
-                                     | AuxWindowProperties::TabletNotFullScreen) );
+                                     | AuxWindowProperties::TabletNotFullScreen
+                                     | AuxWindowProperties::SetCloseable) );
   window->rejectWhenEscapePressed();
   window->addStyleClass( "ShowPrevSpecFileUses" );
   WPushButton *cancel = window->addCloseButtonToFooter();
@@ -6160,20 +6171,10 @@ void SpecMeasManager::clearTempSpectrumInfoCache()
 {
   typedef std::deque< std::shared_ptr<const SpecMeas> > queue_type;
 
-#if( USE_DB_TO_STORE_SPECTRA )
-  const bool storeInDb
-  = UserPreferences::preferenceValue<bool>( "AutoSaveSpectraToDb", m_viewer );
-#endif
-
   for( queue_type::iterator iter = m_tempSpectrumInfoCache.begin();
       iter != m_tempSpectrumInfoCache.end(); ++iter )
   {
     serializeToTempFile( *iter );
-    
-#if( USE_DB_TO_STORE_SPECTRA )
-    if( storeInDb )
-      saveToDatabase( *iter );
-#endif
   }//for( loop over m_tempSpectrumInfoCache to save them to disk )
     
   m_tempSpectrumInfoCache.clear();
@@ -6189,24 +6190,6 @@ void SpecMeasManager::serializeToTempFile( std::shared_ptr<const SpecMeas> meas 
     if( headermeas && (headermeas==meas) )
     {
       header->saveToFileSystem( headermeas );
-      
-/*
-#if( USE_DB_TO_STORE_SPECTRA )
-    if( header->m_app && header->shouldSaveToDb() )
-    {
-//      boost::function<void(void)> worker
-//                        = header->m_app->bind( boost::bind(
-//                                      &SpectraFileHeader::saveToDatabaseWorker,
-//                                      headermeas, header ) );
-//      WServer::instance()->post( header->m_app->sessionId(), worker );
-      boost::function<void(void)> worker
-                      = boost::bind( &SpectraFileHeader::saveToDatabaseWorker,
-                                     headermeas, header );
-      WServer::instance()->ioService().boost::asio::io_service::post( worker );
-    }//if( header->m_app && header->shouldSaveToDb() )
-#endif
-*/
-      
       return;
     }//if( headermeas && (headermeas==meas) )
   }//for( int row = 0; row < m_fileModel->rowCount(); ++row )

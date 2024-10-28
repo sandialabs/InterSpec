@@ -5,7 +5,7 @@
   <message id="sb-no-saved-states">No saved application states</message>
   <message id="sb-tt-del-state">Delete state</message>
   <message id="sb-tt-edit-state">Edit state name or description</message>
-  <message id="sb-state-HEAD-label">Explicitly-Saved</message>
+  <message id="sb-state-HEAD-label">Saved-State</message>
   <message id="sb-state-auto-saved-label">Auto-Saved</message>
   <message id="sb-unsaved-spectra-parent-node-label">Spectra opened, but not explicitly stored</message>
   <message id="sb-tt-unsaved-spectra-node">Spectra you have opened in InterSpec, but did not explicitly save.</message>

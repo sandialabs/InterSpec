@@ -908,14 +908,10 @@ AuxWindow::AuxWindow(const Wt::WString& windowTitle, Wt::WFlags<AuxWindowPropert
   title->mouseWentDown().connect(bringToFront); //XXX - doesnt seem to work
   doJavaScript("$('#" + title->id() + "').mousedown(" + bringToFront + ");");
 
-  if (!m_isPhone)
+  if( !m_isPhone )
   {
-    // TODO: actually respect/use the AuxWindowProperties::SetCloseable option!
-    if (!properties.testFlag(AuxWindowProperties::SetCloseable))
-      cout << "Warning: !AuxWindowProperties::SetCloseable not currently being respected for '"
-      << windowTitle.toUTF8() << "' window." << endl;
-
-    AuxWindow::setClosable(true);
+    const bool setCloseable = properties.testFlag(AuxWindowProperties::SetCloseable);
+    AuxWindow::setClosable( setCloseable );
     title->touchStarted().connect("function(s,e){ Wt.WT.AuxWindowTitlebarTouchStart(s,e,'" + id() + "'); }");
     title->touchMoved().connect("function(s,e){ Wt.WT.AuxWindowTitlebarHandleMove(s,e,'" + id() + "'); }");
     title->touchEnded().connect("function(s,e){ Wt.WT.AuxWindowTitlebarTouchEnd(s,e,'" + id() + "'); }");
@@ -928,11 +924,7 @@ AuxWindow::AuxWindow(const Wt::WString& windowTitle, Wt::WFlags<AuxWindowPropert
   {
     impl->setLoadLaterWhenInvisible(false);
     content->setLoadLaterWhenInvisible(false);
-    //    impl->setHiddenKeepsGeometry( true );
   }
-
-  //footer()->setStyleClass("");
-  //footer()->setHeight( 0 );
 
   setOffsets(WLength(0, WLength::Pixel), Wt::Left | Wt::Top);
 

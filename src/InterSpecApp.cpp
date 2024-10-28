@@ -685,7 +685,7 @@ void InterSpecApp::setupWidgets( const bool attemptStateLoad  )
       + " AND (StateType = "
       + std::to_string( int(UserState::kEndOfSessionTemp) )
       + " OR StateType = "
-      + std::to_string( int(UserState::kEndOfSessionHEAD) ) + ")";
+      + std::to_string( int(UserState::kUserStateAutoSavedWork) ) + ")";
       Dbo::ptr<UserState> state = sql->session()->find<UserState>()
       .where( query ).orderBy( "id desc" ).limit( 1 );
       
@@ -850,7 +850,7 @@ void InterSpecApp::setupWidgets( const bool attemptStateLoad  )
     //Using WTimer as a workaround for iOS so screen size and safe-area and
     //  such can all get setup before creating a AuxWindow; otherwise size of
     //  window will be all messed up.
-    WTimer::singleShot( 10, boost::bind( &InterSpec::showWelcomeDialog, m_viewer, false) );
+    WTimer::singleShot( 25, boost::bind( &InterSpec::showWelcomeDialog, m_viewer, false) );
     
 #if( IOS || ANDROID )
     //For iPhoneX* devices we should trigger a resize once

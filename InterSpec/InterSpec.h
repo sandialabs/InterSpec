@@ -394,6 +394,8 @@ public:
   
   
 #if( USE_DB_TO_STORE_SPECTRA )
+  /** Note: see comments in the top of InterSpecUser.h for an explanation of the use-model for saving to the database. */
+  
   //measurementFromDb(...): returns the measurement that has been, or will be
   //  serialized to the database.  If 'update' is false, then just the last
   //  serialization will be returned and in fact may be null.  If 'update'
@@ -437,7 +439,7 @@ public:
   /** Saves the Act/Shield and Rel Eff tool states to the in-memory `SpecMeas` objects, then updates
    the database with either the current app state, or the current SpecMeas object, depending if we are
    connected to a app-state or not.
-   If connected to an app state, will create, or replace the states `kEndOfSessionHEAD` state in DB.
+   If connected to an app state, will create, or replace the states `kUserStateAutoSavedWork` state in DB.
    */
   void saveStateAtForegroundChange();
   

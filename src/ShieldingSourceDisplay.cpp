@@ -2685,7 +2685,9 @@ pair<ShieldingSourceDisplay *,AuxWindow *> ShieldingSourceDisplay::createWindow(
     WSuggestionPopup *shieldSuggest = viewer->shieldingSuggester();
     
     disp = new ShieldingSourceDisplay( peakModel, viewer, shieldSuggest, matdb );
-    window = new AuxWindow( WString::tr("window-title-act-shield-fit") );
+    window = new AuxWindow( WString::tr("window-title-act-shield-fit"),
+                           Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::SetCloseable)
+                           | AuxWindowProperties::EnableResize);
     // We have to set minimum size before calling setResizable, or else Wt's Resizable.js functions
     //  will be called first, which will then default to using the initial size as minimum allowable
     if( !viewer->isPhone() )

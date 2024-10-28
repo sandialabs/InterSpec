@@ -196,7 +196,8 @@ DbFileBrowser::DbFileBrowser( SpecMeasManager *manager,
                               std::shared_ptr<SpectraFileHeader> header)
 : AuxWindow( WString::tr("smm-prev-states-window-title"),
             (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::DisableCollapse)
-                                             | AuxWindowProperties::EnableResize) ),
+                                             | AuxWindowProperties::EnableResize
+                                             | AuxWindowProperties::SetCloseable) ),
   m_factory( nullptr )
 {
   wApp->useStyleSheet( "InterSpec_resources/DbFileBrowser.css" );
@@ -431,6 +432,65 @@ SnapshotBrowser::SnapshotBrowser( SpecMeasManager *manager,
     //  wApp->styleSheet().addRule( "ul.Wt-root > li.SnapshotRow:nth-child(odd)", "background: rgb(30,32,34) !important;" );
     //}
     
+    auto spectrumLoaderCallback = wApp->bind( boost::bind( &SnapshotBrowser::loadSpectraSelected, this ) );
+    
+    // First we will add a node to show auto-saved spectra not associated with a save-state
+    if( num_autosaved_spectra )
+    {
+      size_t num_unsaved = 0;
+      Wt::WTreeNode *unsavedNode = new Wt::WTreeNode( WString::tr("sb-unsaved-spectra-parent-node-label"), 0, root );
+      unsavedNode->setChildCountPolicy( Wt::WTreeNode::Enabled );
+      unsavedNode->setToolTip( WString::tr("sb-tt-unsaved-spectra-node") );
+      
+      for( Dbo::collection<Dbo::ptr<UserFileInDb>>::const_iterator file_iter = autosaved_files_query.begin();
+          file_iter != autosaved_files_query.end(); ++file_iter )
+      {
+        ++num_unsaved;
+        Dbo::ptr<UserFileInDb> file = *file_iter;
+        
+        Wt::WDateTime uploadTime = file->uploadTime.addSecs(secondsOffset);
+        
+        WString txt = WString::tr("sb-unsaved-spectrum-node")
+          .arg(file->filename)
+          .arg( uploadTime.toString(DATE_TIME_FORMAT_STR) );
+        
+        Wt::WTreeNode *spectraNode = new Wt::WTreeNode( txt, nullptr, unsavedNode );
+        
+        WString tt = WString::tr("sb-tt-unsaved-spectrum-node")
+          .arg( file->filename )
+          .arg( file->measurementsStartTime.toString(DATE_TIME_FORMAT_STR) )
+          .arg( uploadTime.toString(DATE_TIME_FORMAT_STR) )
+          .arg( file->numSamples )
+          .arg( file->totalRealTime );
+        spectraNode->setToolTip( tt );
+        
+        spectraNode->setChildCountPolicy( Wt::WTreeNode::Disabled );
+        
+        WText *label = spectraNode->label();
+        WContainerWidget *row = label ? dynamic_cast<WContainerWidget *>(label->parent()) : nullptr;
+        assert( row );
+        if( row )
+        {
+          row->doubleClicked().connect( std::bind([this, spectrumLoaderCallback, spectraNode](){
+            const set<WTreeNode *> sets = m_snapshotTable->selectedNodes();
+            if( !sets.empty() && ((*begin(sets)) == spectraNode) )
+              spectrumLoaderCallback();
+          }) );
+        }//if( rowDiv )
+        
+        m_UserFileInDbLookup[spectraNode] = file;
+      }//for( loop over unsaved spectra )
+      
+      // Only expand the node these spectra are under, if we dont have any explicitly saved states
+      if( m_nrows <= 1 )
+        unsavedNode->expand();
+      else
+        unsavedNode->collapse();
+    }//if( we also want to show auto-saved spectra not associated with a save-state )
+    
+    auto stateLoaderCallback = wApp->bind( boost::bind( &SnapshotBrowser::loadSnapshotSelected, this ) );
+    
+    // Now list the explicitly saved states
     for( Dbo::collection< Dbo::ptr<UserState> >::const_iterator snapshot_iter = query.begin();
         snapshot_iter != query.end(); ++snapshot_iter )
     {
@@ -461,11 +521,10 @@ SnapshotBrowser::SnapshotBrowser( SpecMeasManager *manager,
       // Add ability to double click on a row to load this state
       if( rowDiv )
       {
-        auto loader = wApp->bind( boost::bind( &SnapshotBrowser::loadSnapshotSelected, this ) );
-        rowDiv->doubleClicked().connect( std::bind([this,loader,snapshotNode](){
+        rowDiv->doubleClicked().connect( std::bind([this,stateLoaderCallback,snapshotNode](){
           const set<WTreeNode *> sets = m_snapshotTable->selectedNodes();
           if( !sets.empty() && ((*begin(sets)) == snapshotNode) )
-            loader();
+            stateLoaderCallback();
 #if( PERFORM_DEVELOPER_CHECKS )
           else
             log_developer_error( __func__, "Got double click on SnapshotBrowser state but that wasnt what was selected." );
@@ -509,7 +568,8 @@ SnapshotBrowser::SnapshotBrowser( SpecMeasManager *manager,
       Snapshots snapshots;
       
       //Create HEAD
-      auto headIcons = new Wt::WIconPair("InterSpec_resources/images/time.svg","InterSpec_resources/images/time.svg");
+      const char *explicitSaveIcon = "InterSpec_resources/images/time.svg";
+      auto headIcons = new Wt::WIconPair( explicitSaveIcon, explicitSaveIcon );
       headIcons->icon1()->addStyleClass( "Wt-icon SnapshotIcon" );
       headIcons->icon2()->addStyleClass( "Wt-icon SnapshotIcon" );
       
@@ -533,7 +593,7 @@ SnapshotBrowser::SnapshotBrowser( SpecMeasManager *manager,
         .where( "SnapshotTagParent_id = ? AND (StateType = ? OR StateType = ?)" )
         .bind( snapshot.id() )
         .bind(int(UserState::kUserSaved))
-        .bind(int(UserState::kEndOfSessionHEAD))
+        .bind(int(UserState::kUserStateAutoSavedWork))
         .orderBy( "id desc" );
       
       for( Dbo::collection<Dbo::ptr<UserState>>::const_iterator version_iter = snapshots.begin();
@@ -541,15 +601,17 @@ SnapshotBrowser::SnapshotBrowser( SpecMeasManager *manager,
       {
         const Dbo::ptr<UserState> &version = *version_iter;
         
+        const char *icon = "InterSpec_resources/images/tag.svg";
         Wt::WString name = version->name;
-        if( version->stateType == UserState::kEndOfSessionHEAD )
+        if( version->stateType == UserState::kUserStateAutoSavedWork )
         {
-          const WString explanation = WString::tr("sb-state-auto-saved-label");;
+          icon = "InterSpec_resources/images/continue_arrow.svg";
+          const WString explanation = WString::tr("sb-state-auto-saved-label");
           name = name.empty() ? WString(explanation)
-                              : WString("{1} - {2}").arg(version->name).arg( explanation );
+                              : WString("{1} - {2}").arg(explanation).arg(version->name);
         }//
         
-        auto tagIcon = new Wt::WIconPair("InterSpec_resources/images/time.svg","InterSpec_resources/images/time.svg");
+        auto tagIcon = new Wt::WIconPair( icon, icon );
         tagIcon->icon1()->addStyleClass( "Wt-icon SnapshotIcon" );
         tagIcon->icon2()->addStyleClass( "Wt-icon SnapshotIcon" );
         
@@ -575,45 +637,6 @@ SnapshotBrowser::SnapshotBrowser( SpecMeasManager *manager,
         head_node->expand();
       }
     }//for( loop over query )
-    
-    // we also want to show auto-saved spectra not associated with a save-state
-    if( num_autosaved_spectra )
-    {
-      Wt::WTreeNode *unsavedNode = new Wt::WTreeNode( WString::tr("sb-unsaved-spectra-parent-node-label"), 0, root );
-      unsavedNode->setChildCountPolicy( Wt::WTreeNode::Enabled );
-      unsavedNode->setToolTip( WString::tr("sb-tt-unsaved-spectra-node") );
-      
-      for( Dbo::collection<Dbo::ptr<UserFileInDb>>::const_iterator file_iter = autosaved_files_query.begin();
-          file_iter != autosaved_files_query.end(); ++file_iter )
-      {
-        Dbo::ptr<UserFileInDb> file = *file_iter;
-        
-        Wt::WDateTime uploadTime = file->uploadTime.addSecs(secondsOffset);
-        
-        WString txt = WString::tr("sb-unsaved-spectrum-node")
-          .arg(file->filename)
-          .arg( uploadTime.toString(DATE_TIME_FORMAT_STR) );
-        
-        Wt::WTreeNode *spectraNode = new Wt::WTreeNode( txt, nullptr, unsavedNode );
-        
-        WString tt = WString::tr("sb-tt-unsaved-spectrum-node")
-          .arg( file->filename )
-          .arg( file->measurementsStartTime.toString(DATE_TIME_FORMAT_STR) )
-          .arg( uploadTime.toString(DATE_TIME_FORMAT_STR) )
-          .arg( file->numSamples )
-          .arg( file->totalRealTime );
-        spectraNode->setToolTip( tt );
-        
-        spectraNode->setChildCountPolicy( Wt::WTreeNode::Disabled );
-        
-        m_UserFileInDbLookup[spectraNode] = file;
-      }//for( loop over unsaved spectra )
-      
-      if( m_nrows > 1 )
-        unsavedNode->expand();
-      else
-        unsavedNode->collapse();
-    }//if( we also want to show auto-saved spectra not associated with a save-state )
     
     transaction.commit();
     layout->addWidget( tablecontainer, ++row, 0 );

@@ -3320,12 +3320,16 @@ void InterSpec::saveStateToDb( Wt::Dbo::ptr<UserState> entry )
     //JIC, make sure indices have all been assigned to everything.
     m_sql->session()->flush();
     
-    auto create_copy_or_update_in_db = [this, deepCopy]( Dbo::ptr<UserFileInDb> &dbfile, shared_ptr<const SpecMeas> &file ){
+    auto create_copy_or_update_in_db = [this, deepCopy, &entry]( Dbo::ptr<UserFileInDb> &dbfile, shared_ptr<const SpecMeas> &file ){
       if( !dbfile || !file )
         return;
     
-      if( deepCopy )
+      // We dont need to make a copy of the file if it was not part of a save state, but now its
+      //  becoming part of one
+      if( deepCopy && (dbfile->isPartOfSaveState || dbfile->snapshotParent) )
         dbfile = UserFileInDb::makeDeepCopyOfFileInDatabase( dbfile, *m_sql, true );
+      
+      dbfile.modify()->isPartOfSaveState = true;
       
       Dbo::ptr<UserFileInDbData> filedata;
       for( auto iter = dbfile->filedata.begin(); iter != dbfile->filedata.end(); ++iter )
@@ -3350,11 +3354,9 @@ void InterSpec::saveStateToDb( Wt::Dbo::ptr<UserState> entry )
       filedata.modify()->setFileData( file, UserFileInDbData::SerializedFileFormat::k2012N42 );
     };//create_copy_or_update_in_db lambda
     
-    
     create_copy_or_update_in_db( dbforeground, foreground );
     create_copy_or_update_in_db( dbsecond, second );
     create_copy_or_update_in_db( dbbackground, background );
-    
 
     if( !dbforeground && foreground )
       throw runtime_error( "Error saving foreground to the database" );  //not displayed to user, so not internationalized
@@ -3363,9 +3365,6 @@ void InterSpec::saveStateToDb( Wt::Dbo::ptr<UserState> entry )
     if( !dbbackground && background )
       throw runtime_error( "Error saving background to the database" );
     
-    entry.modify()->snapshotTagParent = entry->snapshotTagParent;
-    entry.modify()->snapshotTags = entry->snapshotTags;
-    
     //We need to make sure dbforeground, dbbackground, dbsecond will have been
     //  written to the database, so there id()'s will be not -1.
     m_sql->session()->flush();
@@ -3373,6 +3372,18 @@ void InterSpec::saveStateToDb( Wt::Dbo::ptr<UserState> entry )
     entry.modify()->foregroundId = static_cast<int>( dbforeground.id() );
     entry.modify()->backgroundId = static_cast<int>( dbbackground.id() );
     entry.modify()->secondForegroundId = static_cast<int>( dbsecond.id() );
+    
+    // If using is clicking save - remove any `kUserStateAutoSavedWork` states, as
+    //  they would now be behind the state the user is saving
+    if( entry->stateType == UserState::kUserSaved )
+    {
+      Dbo::collection<Dbo::ptr<UserState>> eosEntries = entry->snapshotTags.find()
+        .where( "StateType = ?" )
+        .bind(int(UserState::UserStateType::kUserStateAutoSavedWork));
+      for( auto iter = eosEntries.begin(); iter != eosEntries.end(); ++iter )
+        iter->remove();
+    }//if( remove `kUserStateAutoSavedWork` states )
+    
     
     {
       string &str = (entry.modify()->foregroundSampleNumsCsvIds);
@@ -3675,8 +3686,6 @@ void InterSpec::loadStateFromDb( Wt::Dbo::ptr<UserState> entry )
 
   UndoRedoManager::BlockUndoRedoInserts undo_blocker;
   
-  Wt::Dbo::ptr<UserState> parent = entry->snapshotTagParent;
-  
   try
   {
     closeShieldingSourceFit();
@@ -3687,18 +3696,15 @@ void InterSpec::loadStateFromDb( Wt::Dbo::ptr<UserState> entry )
       case UserState::kUserSaved:
       case UserState::kForTest:
       case UserState::kUndefinedStateType:
-      case UserState::kEndOfSessionHEAD:
+      case UserState::kUserStateAutoSavedWork:
       break;
     }//switch( entry->stateType )
 
     DataBaseUtils::DbTransaction transaction( *m_sql );
     
-    if( parent )
-    {
-      while( parent->snapshotTagParent )
-        parent = parent->snapshotTagParent;
-    }
-
+    Wt::Dbo::ptr<UserState> parent = entry->snapshotTagParent;
+    while( parent && parent->snapshotTagParent )
+      parent = parent->snapshotTagParent;
     
     Dbo::ptr<UserFileInDb> dbforeground, dbsecond, dbbackground;
     if( entry->foregroundId >= 0 )
@@ -3767,25 +3773,11 @@ void InterSpec::loadStateFromDb( Wt::Dbo::ptr<UserState> entry )
     if( parent )
     {
       //If we are loading a snapshot, we actually want to associate the
-      //  foreground/second/backgorund entries in the database with the parent
+      //  foreground/second/background entries in the database with the parent
       //  entries, but actually load the snapshots.  This is so when the user
-      //  saves changes, the parents saved state recieves the changes, and the
+      //  saves changes, the parents saved state receives the changes, and the
       //  snapshot doesnt get changed.
       //All of this is really ugly and horrible, and should be improved!
-      
-//      const bool autosave
-//        = UserPreferences::preferenceValue<bool>( "CheckForPrevOnSpecLoad", this );
-//      if( autosave )
-//      {
-//      Its actually to late, HEAD will be set to the tag version even if the
-//      user immediate selects save as.
-//        const char *txt = "Auto saving is currently enabled, meaning the most"
-//                          " recent version of this snapshot will get"
-//                          " over-written with the current state (plus any"
-//                          " changes you make) unless you disable auto saving,"
-//                          " or do a &quot;Save As&quot; asap.";
-//        passMessage( txt, WarningWidget::WarningMsgMedium );
-//      }
       
       if( dbforeground && dbforeground->filedata.size() )
         snapforeground = (*dbforeground->filedata.begin())->decodeSpectrum();
@@ -4412,7 +4404,7 @@ void InterSpec::updateSaveWorkspaceMenu()
                                        .bind( db_index );
       transaction.commit();
       
-      if( state && (state->stateType==UserState::kEndOfSessionHEAD
+      if( state && (state->stateType==UserState::kUserStateAutoSavedWork
                     || state->stateType==UserState::kUserSaved) )
       {
         m_saveState->setDisabled(false);
@@ -4756,8 +4748,6 @@ void InterSpec::showWelcomeDialog( const bool force )
      in the JavaScript whenever the loading indicator is shown.  I'm pretty
      confused by it.
      I tried setting a new loading indicator in deleteWelcomeDialog(), but it didnt work
-     
-     Havent checked if creating this window via "posting" helps
      */
     WServer::instance()->post( wApp->sessionId(), std::bind(&InterSpec::showWelcomeDialogWorker, this, force ) );
   }
@@ -4897,7 +4887,9 @@ void InterSpec::showFileQueryDialog()
     return;
   
   
-  m_specFileQueryDialog = new AuxWindow( WString::tr("window-title-spec-file-query"), AuxWindowProperties::TabletNotFullScreen );
+  m_specFileQueryDialog = new AuxWindow( WString::tr("window-title-spec-file-query"), 
+                                        Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::TabletNotFullScreen)
+                                        | AuxWindowProperties::SetCloseable );
   //set min size so setResizable call before setResizable so Wt/Resizable.js wont cause the initial
   //  size to be the min-size
   m_specFileQueryDialog->setMinimumSize( 640, 480 );
@@ -5002,7 +4994,8 @@ void InterSpec::showWarningsWindow()
     m_warningsWindow = new AuxWindow( WString::tr("window-title-notification-log"),
                   (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::TabletNotFullScreen)
                    | AuxWindowProperties::DisableCollapse
-                   | AuxWindowProperties::EnableResize) );
+                   | AuxWindowProperties::EnableResize
+                   | AuxWindowProperties::SetCloseable) );
     m_warningsWindow->contents()->setOffsets( WLength(0, WLength::Pixel), Wt::Left | Wt::Top );
     m_warningsWindow->rejectWhenEscapePressed();
     m_warningsWindow->stretcher()->addWidget( m_warnings, 0, 0, 1, 1 );
@@ -5075,7 +5068,8 @@ void InterSpec::showPeakInfoWindow()
   
   if( !m_peakInfoWindow )
   {
-    m_peakInfoWindow = new AuxWindow( WString::tr("window-title-peak-manager") );
+    m_peakInfoWindow = new AuxWindow( WString::tr("window-title-peak-manager"),
+                              Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::SetCloseable) );
     m_peakInfoWindow->rejectWhenEscapePressed();
     WBorderLayout *layout = new WBorderLayout();
     layout->setContentsMargins(0, 0, 15, 0);
@@ -5177,7 +5171,40 @@ void InterSpec::finishStoreStateInDb( const WString &name,
   {
     passMessage( e.what(), WarningWidget::WarningMsgHigh );
   }
+   
+#if( PERFORM_DEVELOPER_CHECKS )
+  {// Begin check if we are leaving any orphaned spectra that were part of a user state
+    DataBaseUtils::DbTransaction transaction( *m_sql );
+    
+    Dbo::collection< Dbo::ptr<UserFileInDb> > query;
+    const char *stateQueryTxt = "A.InterSpecUser_id = ? AND A.StateType = ? AND A.SnapshotTagParent_id IS NULL";
+    query = m_sql->session()->query<Dbo::ptr<UserFileInDb>>(
+              "SELECT ufd FROM UserFileInDb ufd"
+              " LEFT JOIN UserState us ON ufd.id IN (us.ForegroundId, us.BackgroundId, us.SecondForegroundId)"
+              " WHERE us.id IS NULL AND ufd.IsPartOfSaveState = 1 AND ufd.InterSpecUser_id = ?" ).bind( m_user.id() );
+    
+    const size_t num_dangling = query.size();
+    if( num_dangling )
+    {
+      cerr << "There are " << query.size() << "Dangling files" << endl;
+      for( auto iter = query.begin(); iter != query.end(); ++iter )
+        cerr << (*iter)->filename << endl;
       
+      assert( 0 );
+      
+      //The following query is untested - but I think it would cleanup the database of dangling files.
+      //m_sql->session()->execute(
+      //  "DELETE FROM UserFileInDb WHERE id IN ("
+      //    " SELECT ufd.id FROM UserFileInDb ufd LEFT JOIN UserState us"
+      //    " ON ufd.id IN (us.ForegroundId, us.BackgroundId, us.SecondForegroundId)"
+      //    " WHERE us.id IS NULL AND ufd.IsPartOfSaveState = 1 AND ufd.InterSpecUser_id = ?"
+      //  ")"
+      //).bind( m_user.id() );
+    }//if( num_dangling )
+    transaction.commit();
+  }// End check if we are leaving any orphaned spectra that were part of a user state
+#endif //#if( PERFORM_DEVELOPER_CHECKS )
+  
   if( parent )
   {
     WString msg = WString::tr("db-new-tag");
@@ -5542,7 +5569,9 @@ void InterSpec::startN42TestStates()
     return;
   }//if( files.empty() )
   
-  AuxWindow *window = new AuxWindow( "Test State N42 Files" );
+  AuxWindow *window = new AuxWindow( "Test State N42 Files", 
+                                    (WFlags<AuxWindowProperties>(AuxWindowProperties::SetCloseable)
+                                      | AuxWindowProperties::DisableCollapse) );
   window->resizeWindow( 450, 400 );
   
   WGridLayout *layout = window->stretcher();
@@ -5799,7 +5828,7 @@ void InterSpec::stateSaveTagFinish( WLineEdit *nameedit, AuxWindow *window )
       transaction.commit();
     }catch( std::exception &e )
     {
-        cerr << "\nstartStoreStateInDb() caught: " << e.what() << endl;
+      Wt::log("error") << "startStoreStateInDb() caught: " << e.what();
     }//try / catch
   }//if( current_state_index >= 0 )
     
@@ -5825,20 +5854,28 @@ void InterSpec::stateSaveAsFinish( WLineEdit *nameedit,
                                       WTextArea *descriptionarea,
                                       AuxWindow *window )
 {
-  //Need to remove the current foreground/background/second from the file
-  //  manager, and then re-add back in the SpecMeas so they will be saved to
-  //  new database entries.  Otherwise saving the current state as, will create
-  //  a new UserState that points to the current database entries for the
-  //  SpecMeas
+  // If the files in the DB are currently part of a saved-state, we need to duplicate
+  //  them, otherwise `finishStoreStateInDb` will just assume they are part of the measurement
+  //  and overwrite them - so in this case we'll just disconnect
+  //  Note that in this case `finishStoreStateInDb(...)` --> `saveStateToDb(...)` will
+  //  create a new entry in the database.
+  SpectraFileModel *filemodel = m_fileManager->model();
   for( int i = 0; i < 3; i++ )
   {
-    std::shared_ptr<SpecMeas> m = measurment( SpecUtils::SpectrumType(i) );
-    if( m )
-    {
-      m_fileManager->removeSpecMeas( m, false );
-      m_fileManager->addFile( m->filename(), m );
-      m->setModified();
-    }
+    const SpecUtils::SpectrumType type = SpecUtils::SpectrumType(i);
+    auto m = measurment( type );
+    if( !m )
+      continue;
+    
+    shared_ptr<SpectraFileHeader> hdr = filemodel->fileHeader( m );
+    assert( hdr );
+    if( !hdr )
+      continue;
+    
+    Wt::Dbo::ptr<UserFileInDb> dbmeas = hdr->dbEntry();
+    
+    if( dbmeas && (dbmeas->isPartOfSaveState || dbmeas->snapshotParent) )
+      hdr->clearDbEntry();
   }//for( int i = 0; i < 3; i++ )
   
   //Save Snapshot
@@ -5885,29 +5922,39 @@ void InterSpec::saveStateAtForegroundChange()
             .bind( current_state_index );
     }
     
-    // If we are connected to a state in the database, we'll save a `kEndOfSessionHEAD` state,
+    // If we are connected to a state in the database, we'll save a `kUserStateAutoSavedWork` state,
     //  otherwise, we'll save just the files to the database
     if( parentState )
     {
-      // Remove previous `kEndOfSessionHEAD` states for this user-saved state - we will make a new one
+      // Remove previous `kUserStateAutoSavedWork` states for this user-saved state - we will make a new one
       Dbo::collection<Dbo::ptr<UserState>> prevEosStates = m_user->m_userStates.find().where( "StateType = ?" )
-        .bind(int(UserState::UserStateType::kEndOfSessionHEAD));
+        .bind(int(UserState::UserStateType::kUserStateAutoSavedWork));
       
       for( auto iter = prevEosStates.begin(); iter != prevEosStates.end(); ++iter )
         iter->remove();
       
-      
-      UserState *state = new UserState();
-      state->user = m_user;
-      state->stateType = UserState::kEndOfSessionHEAD;
-      state->creationTime = WDateTime::currentDateTime();
-      state->name = name;
-      state->description = desc;
-      state->snapshotTagParent = parentState;
-      
-      Wt::Dbo::ptr<UserState> dbstate = m_sql->session()->add( state );
-      
-      saveStateToDb( dbstate );
+      // We will only save a state if the foreground file has been modified
+      if( m_dataMeasurement && m_dataMeasurement->modified() )
+      {
+        UserState *state = new UserState();
+        state->user = m_user;
+        state->stateType = UserState::kUserStateAutoSavedWork;
+        state->creationTime = WDateTime::currentDateTime();
+        state->name = name;
+        state->description = desc;
+        state->snapshotTagParent = parentState;
+        
+        Wt::Dbo::ptr<UserState> dbstate = m_sql->session()->add( state );
+        
+        saveStateToDb( dbstate );
+        
+        Wt::log("debug") << "saveStateAtForegroundChange(): Saved kUserStateAutoSavedWork"
+        " state to database";
+      }else
+      {
+        Wt::log("debug") << "saveStateAtForegroundChange(): not saving kUserStateAutoSavedWork"
+        " state to database, since there are no changes since last user save.";
+      }//if( we have done work we might want to save )
     }else
     {
       saveShieldingSourceModelToForegroundSpecMeas();
@@ -5932,19 +5979,18 @@ void InterSpec::saveStateAtForegroundChange()
       //  #SpectraFileHeader::setDbEntry has not been called for the original file yet
       if( forehdr )
         forehdr->saveToDatabase( m_dataMeasurement );
-      else
-        cerr << "Didnt have foreground header" << endl;
       
       if( backhdr )
         backhdr->saveToDatabase( m_backgroundMeasurement );
       
       if( secohdr )
         secohdr->saveToDatabase( m_secondDataMeasurement );
+      
+      Wt::log("debug") << "saveStateAtForegroundChange(): Instead kUserStateAutoSavedWork state,"
+      " saved spectrum files to database since not in a user save-state.";
     }//if( current_state_index >= 0 ) / else
     
     transaction.commit();
-    
-    Wt::log("debug") << "Saved kEndOfSessionHEAD state to database";
   }catch( std::exception &e )
   {
     Wt::log("error") << "InterSpec::saveStateAtForegroundChange() error: " << e.what();
@@ -5978,7 +6024,7 @@ void InterSpec::saveStateForEndOfSession()
   if( !saveState || !m_dataMeasurement )
     return;
   
-  Wt::log( "info" ) << "Will auto-save state for session-id:" << wApp->sessionId() << " at end of session.";
+  Wt::log( "info" ) << "Will auto-save state for session-id: '" << wApp->sessionId() << "' at end of session.";
 
   const int offset = wApp->environment().timeZoneOffset();
   WString desc = "End of Session";
@@ -9129,7 +9175,10 @@ void InterSpec::create3DSearchModeChart()
   if( m_3dViewWindow )
     programmaticallyClose3DSearchModeChart();
   
-  m_3dViewWindow = new AuxWindow( WString::tr("window-title-3d") );
+  m_3dViewWindow = new AuxWindow( WString::tr("window-title-3d"),
+                                 (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::SetCloseable)
+                                  | AuxWindowProperties::EnableResize
+                                  | AuxWindowProperties::TabletNotFullScreen) );
   //set min size so setResizable call before setResizable so Wt/Resizable.js wont cause the initial
   //  size to be the min-size
   m_3dViewWindow->setMinimumSize( 512, 420 );
@@ -10178,7 +10227,8 @@ void InterSpec::showCompactFileManagerWindow()
                                                  boost::placeholders::_3 ) );
   
   AuxWindow *window = new AuxWindow( WString::tr("window-title-compact-file"),
-                                    (AuxWindowProperties::TabletNotFullScreen) );
+                                    (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::SetCloseable)
+                                     |AuxWindowProperties::TabletNotFullScreen) );
   window->disableCollapse();
   window->finished().connect( boost::bind( &AuxWindow::deleteAuxWindow, window ) );
   
@@ -10242,7 +10292,8 @@ void InterSpec::showNuclideSearchWindow()
   
   m_nuclideSearchWindow = new AuxWindow( WString::tr(NuclideSearchTabTitleKey),
                                         (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::TabletNotFullScreen)
-                                         | AuxWindowProperties::EnableResize) );
+                                         | AuxWindowProperties::EnableResize
+                                         | AuxWindowProperties::SetCloseable) );
   m_nuclideSearchWindow->contents()->setOverflow(Wt::WContainerWidget::OverflowHidden);
   m_nuclideSearchWindow->finished().connect( boost::bind( &InterSpec::closeNuclideSearchWindow, this ) );
   m_nuclideSearchWindow->rejectWhenEscapePressed();
@@ -10419,7 +10470,8 @@ void InterSpec::showGammaLinesWindow()
 
   m_referencePhotopeakLinesWindow = new AuxWindow( WString::tr(GammaLinesTabTitleKey),
                                                   (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::TabletNotFullScreen)
-                                                   | AuxWindowProperties::EnableResize)
+                                                   | AuxWindowProperties::EnableResize
+                                                   | AuxWindowProperties::SetCloseable)
                                                   );
   m_referencePhotopeakLinesWindow->contents()->setOverflow(WContainerWidget::OverflowHidden);
   m_referencePhotopeakLinesWindow->rejectWhenEscapePressed();

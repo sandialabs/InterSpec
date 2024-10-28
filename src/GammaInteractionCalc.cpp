@@ -246,7 +246,8 @@ vector<SandiaDecay::EnergyRatePair> decay_during_meas_corrected_gammas(
                                                       const double age,
                                                       const double measDuration )
 {
-  
+  // TODO: SandiaDecay had `SandiaDecay::NuclideMixture::decayPhotonsInInterval(...)` added 20241124
+  //       so we could use that code, however, not doing that now because it is single threaded.
   // This section of code takes up a good amount of CPU time, and is really begging for optimizations
   //
   // TODO: if nuclide decays to stable children, then just use standard formula to correct for decay (see below developer check for this)
@@ -347,6 +348,22 @@ vector<SandiaDecay::EnergyRatePair> decay_during_meas_corrected_gammas(
   //       << gammas[i].numPerSecond << ")" << endl;
   
 #if( PERFORM_DEVELOPER_CHECKS )
+  {// begin check against SandiaDecay calc
+    const vector<SandiaDecay::EnergyCountPair> sdanswer
+            = mixture.decayPhotonsInInterval( age, measDuration,
+                                             SandiaDecay::NuclideMixture::OrderByEnergy,
+                                            characteristic_time_slices );
+    assert( corrected_gammas.size() == sdanswer.size() );
+    for( size_t i = 0; i < corrected_gammas.size(); ++i )
+    {
+      const double sdRate = sdanswer[i].count / measDuration;
+      const double localRate = corrected_gammas[i].numPerSecond;
+      assert( sdanswer[i].energy == corrected_gammas[i].energy );
+      assert( (fabs(sdRate - localRate) < 1.0E-10*std::max(sdRate, localRate))
+             || (fabs(sdRate - localRate) < 1.0E-14) );
+    }
+  }// end check against SandiaDecay calc
+  
   if( nuclide->decaysToStableChildren() )
   {
     const double lambda = nuclide->decayConstant();

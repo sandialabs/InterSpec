@@ -5300,11 +5300,12 @@ Wt::Signal<> &DrfSelect::done()
 
 
 DrfSelectWindow::DrfSelectWindow( InterSpec *viewer )
-  : AuxWindow("Detector Response Function Select",
+  : AuxWindow( WString::tr("window-title-select-det-eff-fcn"),
               Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::IsModal)
                    | AuxWindowProperties::TabletNotFullScreen
                    | AuxWindowProperties::DisableCollapse
-                   | AuxWindowProperties::EnableResize ),
+                   | AuxWindowProperties::EnableResize
+                   | AuxWindowProperties::SetCloseable ),
     m_edit( NULL ),
     m_interspec( viewer )
 {

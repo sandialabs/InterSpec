@@ -250,64 +250,16 @@ SpectraFileHeader::~SpectraFileHeader() noexcept(true)
 {
   try
   {
-#if( USE_DB_TO_STORE_SPECTRA )
-    const bool autosave = UserPreferences::preferenceValue<bool>( "AutoSaveSpectraToDb", m_viewer );
-#endif
-
     string fileSystemLocation;
-    bool save, candidateForSavingToDb;
     std::shared_ptr<SpecMeas> memObj;
     
     {
       RecursiveLock lock( m_mutex );
       m_aboutToBeDeletedConnection.disconnect();
-#if( USE_DB_TO_STORE_SPECTRA )
-      save = (!!m_user && autosave);
-      candidateForSavingToDb = m_candidateForSavingToDb;
-#endif
       memObj = m_weakMeasurmentPtr.lock();
       fileSystemLocation = m_fileSystemLocation;
     }
-    
-    
-#if( USE_DB_TO_STORE_SPECTRA )
-    if( candidateForSavingToDb && save )
-    {
-      try
-      {
-        if( memObj )
-        {
-          saveToDatabase( memObj );
-        }else if( fileSystemLocation.size() )
-        {
-          saveToDatabaseFromTempFile();
-        }else //probably shouldnt happen unless a valid measurement was never set
-        {
-          throw runtime_error( "There is absolutely no reference to the spectra"
-                              " anymore");
-        }
-      
-      }catch( std::exception &e )
-      {
-        if( ((m_totalLiveTime > 0.0) || (m_totalRealTime > 0.0))
-            && ((m_numDetectors > 0) || m_modifiedSinceDecode) )
-        {
-          cerr << "SpectraFileHeader::~SpectraFileHeader(): Failed to save file to DB with error: "
-          << e.what() << endl;
-        }
-      }//try / catch
-    }else if( m_user && m_fileDbEntry && m_fileDbEntry.session() && !save )
-    {
-//      if( wApp && wApp->sessionId() == m_fileDbEntry->sessionID )
-//      {
-//        DbTransaction transaction( m_viewer );
-//        m_fileDbEntry.remove();
-//        m_fileDbEntry.reset();
-//        transaction.commit();
-//      }//if( sessionstart < m_fileDbEntry->uploadTime.toPosixTime() )
-    } //if( we should save the file to the database ) / else we should delete it
-#endif //#if( USE_DB_TO_STORE_SPECTRA )
-    
+  
     if( fileSystemLocation.size() )
     {
       const bool status = SpecUtils::remove_file( fileSystemLocation );;
@@ -366,8 +318,7 @@ bool SpectraFileHeader::candidateForSavingToDb() const
 
 bool SpectraFileHeader::shouldSaveToDb() const
 {
-  return (m_candidateForSavingToDb
-          && m_user /*&& m_user->preferenceValue<bool>( "SaveSpectraToDb" )*/ );
+  return (m_candidateForSavingToDb && m_user );
 }
 
 void SpectraFileHeader::setDbEntry( Wt::Dbo::ptr<UserFileInDb> entry )
@@ -401,6 +352,13 @@ void SpectraFileHeader::setDbEntry( Wt::Dbo::ptr<UserFileInDb> entry )
     m_fileDbEntry = entry;
   }
 }//void setDbEntry( Wt::Dbo::ptr<UserFileInDb> entry )
+
+
+void SpectraFileHeader::clearDbEntry()
+{
+  RecursiveLock lock( m_mutex );
+  m_fileDbEntry.reset();
+}
 
 
 Wt::Dbo::ptr<UserFileInDb> SpectraFileHeader::dbEntry()
@@ -668,7 +626,7 @@ void SpectraFileHeader::saveToDatabase( std::shared_ptr<const SpecMeas> input ) 
   if( !input )
     throw runtime_error( "\n\n\nSpectraFileHeader::saveToDatabase(): !input" );
   
-  cout << "Saving '" << input->filename() << " to DB." << endl;
+  Wt::log("info") << "Saving '" << input->filename() << " to DB.";
   
   std::shared_ptr<const SpecMeas> meas;
  
@@ -826,7 +784,7 @@ void SpectraFileHeader::saveToDatabase( std::shared_ptr<const SpecMeas> input ) 
         return;
       }//if( !meas->modified() )
       
-      cout << "Updating spectrum in database for '" << input->filename() << "'." << endl;
+      Wt::log("info") << "Updating spectrum in database for '" << input->filename() << "'.";
       
       // Make a copy of the `UserFileInDbData`, so we can do the work of serializing things, while
       //  not holding a DB transaction
@@ -883,7 +841,8 @@ void SpectraFileHeader::saveToDatabase( std::shared_ptr<const SpecMeas> input ) 
       
       DataBaseUtils::DbTransaction transaction( *m_sql );
       data = m_sql->session()->add( dataptr );
-      cerr << "Adding '" << meas->filename() << "'spectrum to the database as id " << data.id() << " to parent " << m_fileDbEntry.id() << endl;
+      Wt::log("info") << "Adding '" << meas->filename() << "' spectrum to the database as id "
+                      << data.id() << " to parent " << m_fileDbEntry.id();
       transaction.commit();
     }//if( !data )
     
@@ -896,8 +855,6 @@ void SpectraFileHeader::saveToDatabase( std::shared_ptr<const SpecMeas> input ) 
       //      to happen, so we wont worry about it
       transaction.commit();
     }
-    
-    cerr << "Added modified UserFileInDb and UserFileInDbData to database" << endl;
   }//if( m_fileDbEntry )
   
   {
@@ -927,7 +884,7 @@ void SpectraFileHeader::saveToDatabase( std::shared_ptr<const SpecMeas> input ) 
 
 std::shared_ptr<SpecMeas> SpectraFileHeader::readFromDataBase() const
 {
-  int fileDbEntryID;
+  long long int fileDbEntryID;
   
   {
     RecursiveLock lock( m_mutex );
@@ -1386,15 +1343,15 @@ std::shared_ptr<SpecMeas> SpectraFileHeader::setFile(
                                    const std::string &filename,
                                    SpecUtils::ParserType parseType )
 {
-  cerr << "SpectraFileHeader::setFile('" << displayFileName << "', '" << filename << "')" << endl;
+  Wt::log("debug") << "SpectraFileHeader::setFile('" << displayFileName << "', '" << filename << "')";
   try
   {
     if( !SpecUtils::is_file(filename) )
       throw runtime_error( "" );
   }catch(...)
   {
-    cerr << "Could not access the file '"
-         << displayFileName << "', located at '" << filename << "'" << endl;
+    Wt::log("error") << "Could not access the file '"
+         << displayFileName << "', located at '" << filename << "'";
     
     throw runtime_error( "Could not access file '" + displayFileName + "'" );
   }//try / catch

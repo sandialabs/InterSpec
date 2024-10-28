@@ -169,7 +169,8 @@ namespace HelpSystem
    : AuxWindow( WString::tr("window-title-help"),
                (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::IsModal)
                  | AuxWindowProperties::IsHelpWindow
-                 | AuxWindowProperties::EnableResize) ),
+                 | AuxWindowProperties::EnableResize
+                 | AuxWindowProperties::SetCloseable) ),
      m_tree ( new Wt::WTree() ),
      m_searchText( new Wt::WLineEdit() )
   {

@@ -57,6 +57,45 @@ class UserOption;
 class InterSpecUser;
 
 
+/** This database tracks user preferences, use statistics, files opened, and explicitly saved states.
+ 
+ Even though InterSpec is primarily a single user "native" (e.g., local only - no internet) application on
+ Windows/Linux/macOS/iOS/Android, it can still be a web-application, that could have multiple users,
+ so this database design accommodates that.  The database uses the `Wt::Dbo` ORM framework
+ to interact with the database.
+ 
+ Tracking user stats and preferences is pretty straight-forward via the `InterSpecUser` and
+ `UserOption` structs.
+ 
+ Tracking user-saved states, and files users opened, but didn't explicitly save, purports to use the
+ following model (although testing of details is still ongoing, as of 20241028).
+ - The user can explicitly save state  (via "Store As..." menu item).  This saves the opened foreground,
+ background, and secondary spectrum, as well as any of their fit peaks, the Activity/Shielding source
+ model, energy calibration, and Rel. Eff. tool states.  It also store current user options, spectrum energy \
+ range and some other things.  The user gets to name the state, and add a description.
+ - Once a state is saved, the user can save over it (via the "Store" menu item), and the stored state in
+ the database will just be updated to current values.
+ - If in a saved state, users can also create a "tag" state, which creates a immutable tag in the database,
+ that wont be modified.  If the user loads a tag state, makes changes, and saves them, it will save the
+ overall state, and the tag will not be modified.  When user looks to open previous stored states, the tagged
+ states will be listed under the parent state.
+ - If in a saved state, the user can also create a whole new saved state (via "Store As..." menu item) that
+ will be totally independent of the original then.
+ - If in a saved state, where additional changes have been made, and the user changes foreground file, or
+ ends their session, then a `UserState::UserStateType::kUserStateAutoSavedWork` state
+ will be saved, that the user can pick back up from, if they choose.
+ - If not in a saved state, and the user changes foreground, or ends a session, the spectrum files will
+ be updated in the database, to include their current changes (if the "AutoSaveSpectraToDb" user preference
+ is true).
+ - If user loads a spectrum file, the database is checked to see if it is part of a user-saved state, or a spectrum
+ file that was loaded previously, but not explicitly saved.  If found, it will be presented to user to pick up from
+ where they left off.
+ - When a users session is over, and if the "AutoSaveSpectraToDb" user preference is true, a
+ `UserState::UserStateType::kEndOfSessionTemp` state is saved - which will either not a have a
+ parent if not in a user-saved state, or may have a user saved state as a parent.  This state will be auto-loaded
+ next-time the user starts the app.
+ */
+
 
 //The database this InterSpec is using; if higher than database registry, will
 //  automatically update tables at next execution
@@ -307,16 +346,13 @@ protected:
 
   Wt::Dbo::collection< Wt::Dbo::ptr<UseDrfPref> >           m_drfPref;
   
-  
 //  Wt::Dbo::collection< Wt::Dbo::ptr<DbUserState::Spectrum> > m_spectrums;
   
-  
-  
   friend class InterSpec;
-};//struct UserOption
+};//struct InterSpecUser
 
 
-//We will seperate UserFileInDb and UserFileInDbData classes to maybye speed
+//We will separate UserFileInDb and UserFileInDbData classes to maybye speed
 //  up the queries so the spectrum data wont be loaded during searches
 class UserFileInDb
 {
@@ -332,6 +368,9 @@ public:
   UserFileInDb();
   
   Wt::Dbo::ptr<InterSpecUser> user;
+  
+  /** TODO: (20241028) After v1.0.13 release, add a link to UserState, so lifetime can be more-better managed. */
+  //Wt::Dbo::ptr<UserState> state;
   
   std::string uuid;
   std::string filename;
@@ -351,6 +390,8 @@ public:
   int numDetectors;
   bool hasNeutronDetector;
   Wt::WDateTime measurementsStartTime;
+  
+  bool isPartOfSaveState;
   
   Wt::Dbo::ptr<UserFileInDb> snapshotParent;
   Wt::Dbo::collection< Wt::Dbo::ptr<UserFileInDb> > snapshots;
@@ -415,9 +456,6 @@ public:
       Wt::Dbo::field( a, serializeTime, "SerializeTime" );
     }//if( reading from DB )
   }//void persist( Action &a )
-  
-private:
-  bool isPartOfSaveState;
 };//class UserFileInDb
 
 
@@ -557,8 +595,6 @@ public:
     
     Wt::Dbo::field( a, json_data, "JsonData" );
   }//void persist( Action &a )
-
-  
 };//class ColorThemeInfo
 
 
@@ -600,11 +636,12 @@ struct ShieldingSourceModel
 };//struct ShieldingSourceModel
 
 
-//UserState - struct to roughly handle saving the users state to the database,
-//  and allow restoring the state.
-//  Design decision: all variables are left to be public variables since nothing
-//  significant would be gained by making them private, and doing so would add a
-//  lot of boilerplate code.
+/**
+ A struct to roughly handle saving the users state to the database, and allow restoring the state.
+
+ Design decision: all variables are left to be public variables since nothing significant would be
+ gained by making them private, and doing so would add a  lot of boilerplate code.
+ */
 struct UserState
 {
   enum UserStateType
@@ -630,7 +667,7 @@ struct UserState
      the original user-saved state - but will be overridden next time user opens the state, and then
      changes state.
      */
-    kEndOfSessionHEAD
+    kUserStateAutoSavedWork
   };//enum UserStateType
   
   enum CurrentTab

@@ -263,11 +263,14 @@ public:
   
   //setDbEntry(...): deletes database entry represented by m_fileDbEntry (if it
   //  exists and doesnt equal entry) and then associate the spectrum represented
-  //  by this object to 'entry' via setting m_fileDbEntry ot 'entry'.  Does not
+  //  by this object to 'entry' via setting m_fileDbEntry to `entry`.  Does not
   //  check that 'entry' is a correct UserFileInDb object, and does not
   //  serialize the SpecMeas object, nor mark it as modified.  May throw
   //  exception if 'entry' is invalid, or there are errors righting to database.
   void setDbEntry( Wt::Dbo::ptr<UserFileInDb> entry );
+  
+  /** Disconnects the file from its database entry - without deleting the current `m_fileDbEntry` entry. */
+  void clearDbEntry();
   
   //dbEntry(): returns m_fileDbEntry, which may be empty
   Wt::Dbo::ptr<UserFileInDb> dbEntry();
@@ -285,8 +288,7 @@ public:
   //  preference says if it should be saved
   bool shouldSaveToDb() const;
   
-  std::shared_ptr<SpecMeas> resetFromDatabase(
-                                          Wt::Dbo::ptr<UserFileInDb> dbfile );
+  std::shared_ptr<SpecMeas> resetFromDatabase( Wt::Dbo::ptr<UserFileInDb> dbfile );
 #endif
   
   

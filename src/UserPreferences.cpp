@@ -296,7 +296,7 @@ UserPreferences::UserPreferences( InterSpec *parent )
     if( m_options.count(name) )
     {
       cerr << "Found a duplicate preference for '" << name << "', will delete the former one" << endl;
-      assert( 0 );
+      //assert( 0 );
       m_options[name].remove();
     }
     

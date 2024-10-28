@@ -66,13 +66,12 @@
 using namespace Wt;
 using namespace std;
 
-//Or could just use: __DATE__
-
-
 LicenseAndDisclaimersWindow::LicenseAndDisclaimersWindow( InterSpec *interspec )
 : AuxWindow( WString::tr("window-title-license-credit"),
             (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::IsModal)
-               | AuxWindowProperties::DisableCollapse | AuxWindowProperties::EnableResize) ),
+             | AuxWindowProperties::DisableCollapse
+             | AuxWindowProperties::EnableResize
+             | AuxWindowProperties::SetCloseable) ),
   m_menu( nullptr )
 {
   setClosable( true );

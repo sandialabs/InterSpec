@@ -151,7 +151,8 @@ UseInfoWindow::UseInfoWindow( std::function<void(bool)> showAgainCallback,
                               InterSpec* viewer )
 : AuxWindow( "", (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::IsModal)
                          | AuxWindowProperties::EnableResize
-                         | AuxWindowProperties::DisableCollapse) ),
+                         | AuxWindowProperties::DisableCollapse
+                         | AuxWindowProperties::SetCloseable) ),
   m_session(),
 #if( USE_DB_TO_STORE_SPECTRA )
   m_snapshotModel( nullptr ),

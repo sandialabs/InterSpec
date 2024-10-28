@@ -650,7 +650,9 @@ const char *SpectrumViewerTester::tostr( TestType type )
 
 
 SpectrumViewerTesterWindow::SpectrumViewerTesterWindow( InterSpec *viewer )
-  : AuxWindow( "InterSpec Tester" ),
+  : AuxWindow( "InterSpec Tester", 
+              (WFlags<AuxWindowProperties>(AuxWindowProperties::SetCloseable)
+              | AuxWindowProperties::DisableCollapse) ),
     m_tester( 0 )
 {
   addStyleClass( "SpectrumViewerTesterWindow" );

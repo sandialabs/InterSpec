@@ -1103,7 +1103,9 @@ std::pair<RelActAutoGui *,AuxWindow *> RelActAutoGui::createWindow( InterSpec *v
   {
     disp = new RelActAutoGui( viewer );
     
-    window = new AuxWindow( "Relative Act. Isotopics" );
+    window = new AuxWindow( "Relative Act. Isotopics", 
+                           Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::SetCloseable)
+                           | AuxWindowProperties::EnableResize );
     // We have to set minimum size before calling setResizable, or else Wt's Resizable.js functions
     //  will be called first, which will then default to using the initial size as minimum allowable
     window->setMinimumSize( 800, 480 );
@@ -1119,12 +1121,12 @@ std::pair<RelActAutoGui *,AuxWindow *> RelActAutoGui::createWindow( InterSpec *v
     //window->stretcher()->setContentsMargins(0,0,0,0);
     //    window->footer()->resize(WLength::Auto, WLength(50.0));
     
-    WPushButton *closeButton = window->addCloseButtonToFooter();
-    closeButton->clicked().connect(window, &AuxWindow::hide);
-    
     AuxWindow::addHelpInFooter( window->footer(), "rel-act-dialog" );
     
     disp->addDownloadAndUploadLinks( window->footer() );
+    
+    WPushButton *closeButton = window->addCloseButtonToFooter();
+    closeButton->clicked().connect(window, &AuxWindow::hide);
     
     //window->rejectWhenEscapePressed();
     
