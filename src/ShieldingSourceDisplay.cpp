@@ -3203,7 +3203,7 @@ ShieldingSourceDisplay::ShieldingSourceDisplay( PeakModel *peakModel,
   WContainerWidget *allpeaksDiv = new WContainerWidget();
   WCheckBox *allpeaks = new WCheckBox( WString::tr("ssd-cb-all-peaks"), allpeaksDiv );
   allpeaks->setAttributeValue( "style", "white-space:nowrap;margin-right:5px;float:right;" + allpeaks->attributeValue("style") );
-  optionsLayout->addWidget( allpeaksDiv, 0, 0 );
+  optionsLayout->addWidget( allpeaksDiv, optionsLayout->rowCount(), 0 );
   allpeaks->setTristate( true );
   allpeaks->changed().connect( boost::bind( &ShieldingSourceDisplay::toggleUseAll, this, allpeaks ) );
   m_peakModel->dataChanged().connect(
@@ -3215,7 +3215,7 @@ ShieldingSourceDisplay::ShieldingSourceDisplay( PeakModel *peakModel,
   //The ToolTip of WCheckBoxes is a bit finicky, and only works over the
   //  checkbox itself, so lets make it work over the label to, via lineDiv
   WContainerWidget *lineDiv = new WContainerWidget();
-  optionsLayout->addWidget( lineDiv, 1, 0 );
+  optionsLayout->addWidget( lineDiv, optionsLayout->rowCount(), 0 );
   m_multiIsoPerPeak = new WCheckBox( WString::tr("ssd-multi-iso-per-peak"), lineDiv );
   //lineDiv->setToolTip( WString::tr("ssd-tt-multi-iso-per-peak") );
   HelpSystem::attachToolTipOn( lineDiv, WString::tr("ssd-tt-multi-iso-per-peak"),
@@ -3225,7 +3225,7 @@ ShieldingSourceDisplay::ShieldingSourceDisplay( PeakModel *peakModel,
   m_multiIsoPerPeak->unChecked().connect( this, &ShieldingSourceDisplay::multiNucsPerPeakChanged );
   
   lineDiv = new WContainerWidget();
-  optionsLayout->addWidget( lineDiv, 2, 0 );
+  optionsLayout->addWidget( lineDiv, optionsLayout->rowCount(), 0 );
   m_attenForAir = new WCheckBox( WString::tr("ssd-cb-atten-for-air"), lineDiv );
   //lineDiv->setToolTip( WString::tr("ssd-tt-atten-for-air") );
   HelpSystem::attachToolTipOn( lineDiv, WString::tr("ssd-tt-atten-for-air"),
@@ -3236,7 +3236,7 @@ ShieldingSourceDisplay::ShieldingSourceDisplay( PeakModel *peakModel,
   
   
   lineDiv = new WContainerWidget();
-  optionsLayout->addWidget( lineDiv, 3, 0 );
+  optionsLayout->addWidget( lineDiv, optionsLayout->rowCount(), 0 );
   m_backgroundPeakSub = new WCheckBox( WString::tr("ssd-cb-sub-back-peaks"), lineDiv );
   lineDiv->setToolTip( WString::tr("ssd-tt-sub-back-peaks") );
   HelpSystem::attachToolTipOn( lineDiv, WString::tr("ssd-tt-sub-back-peaks"),
@@ -3246,7 +3246,7 @@ ShieldingSourceDisplay::ShieldingSourceDisplay( PeakModel *peakModel,
   
   
   lineDiv = new WContainerWidget();
-  optionsLayout->addWidget( lineDiv, 4, 0 );
+  optionsLayout->addWidget( lineDiv, optionsLayout->rowCount(), 0 );
   m_sameIsotopesAge = new WCheckBox( WString::tr("ssd-cb-same-el-same-age"), lineDiv );
   //lineDiv->setToolTip( WString::tr("ssd-tt-same-el-same-age") );
   HelpSystem::attachToolTipOn( lineDiv, WString::tr("ssd-tt-same-el-same-age"),
@@ -3258,7 +3258,7 @@ ShieldingSourceDisplay::ShieldingSourceDisplay( PeakModel *peakModel,
 
       
   lineDiv = new WContainerWidget();
-  optionsLayout->addWidget( lineDiv, 4, 0 );
+  optionsLayout->addWidget( lineDiv, optionsLayout->rowCount(), 0 );
   m_decayCorrect = new WCheckBox( WString::tr("ssd-cb-corr-for-decay"), lineDiv );
   //lineDiv->setToolTip( WString::tr("ssd-tt-corr-for-decay") );
   HelpSystem::attachToolTipOn( lineDiv, WString::tr("ssd-tt-corr-for-decay"),
@@ -6300,7 +6300,12 @@ void ShieldingSourceDisplay::startBrowseDatabaseModels()
     del->disable();
 
     Dbo::ptr<UserFileInDb> dbmeas;
-    dbmeas = m_specViewer->measurementFromDb( SpecUtils::SpectrumType::Foreground, false );
+    try
+    {
+      dbmeas = m_specViewer->measurementFromDb( SpecUtils::SpectrumType::Foreground, false );
+    }catch( std::exception & )
+    {
+    }
     
     size_t nfileprev[2];
     WSelectionBox *selections[2] = { (WSelectionBox *)0, (WSelectionBox *)0 };
@@ -6713,7 +6718,12 @@ bool ShieldingSourceDisplay::finishSaveModelToDatabase( const Wt::WString &name,
     rapidxml::print(std::back_inserter(model->xmlData), doc, 0);
 
     Dbo::ptr<UserFileInDb> dbmeas;
-    dbmeas = m_specViewer->measurementFromDb( SpecUtils::SpectrumType::Foreground, true );
+    try
+    {
+      dbmeas = m_specViewer->measurementFromDb( SpecUtils::SpectrumType::Foreground, true );
+    }catch( std::exception & )
+    {
+    }
     
     if( dbmeas )
       model->filesUsedWith.insert( dbmeas );
@@ -6722,11 +6732,8 @@ bool ShieldingSourceDisplay::finishSaveModelToDatabase( const Wt::WString &name,
     m_saveAsNewModelInDb->enable();
   }catch( std::exception & )
   {
-//    if( m_modelInDb.id() < 0 )
-//    {
-      m_modelInDb.reset();
-      m_saveAsNewModelInDb->disable();
-//    }//if( m_modelInDb.id() < 0 )
+    m_modelInDb.reset();
+    m_saveAsNewModelInDb->disable();
     transaction.rollback();
     return false;
   }//try / catch
@@ -6760,7 +6767,13 @@ void ShieldingSourceDisplay::saveCloneModelToDatabase()
     m_modelInDb = sql->session()->add( model );
     
     Dbo::ptr<UserFileInDb> dbmeas;
-    dbmeas = m_specViewer->measurementFromDb( SpecUtils::SpectrumType::Foreground, false );
+    try
+    {
+      dbmeas = m_specViewer->measurementFromDb( SpecUtils::SpectrumType::Foreground, false );
+    }catch( std::exception & )
+    {
+    }
+    
     if( dbmeas )
       m_modelInDb.modify()->filesUsedWith.insert( dbmeas );
     transaction.commit();
