@@ -6934,7 +6934,11 @@ void ShieldingSourceChi2Fcn::log_source_info( const std::vector<double> &params,
         src.traceActivityType = chi2Fcn->traceSourceActivityType(nuc);
         src.traceSrcDisplayAct = chi2Fcn->totalActivity(nuc,params);
         src.traceSrcDisplayActUncertainty = chi2Fcn->totalActivityUncertainty(nuc, params, errors );
-        src.traceRelaxationLength = chi2Fcn->relaxationLength(nuc);
+        src.traceRelaxationLength = 0.0;
+        
+        TraceActivityType traceType = chi2Fcn->traceSourceActivityType(nuc);
+        if( traceType == TraceActivityType::ExponentialDistribution )
+          src.traceRelaxationLength = chi2Fcn->relaxationLength(nuc);
       }//
       
       src.isSelfAttenSource = chi2Fcn->isSelfAttenSource( nuc );
