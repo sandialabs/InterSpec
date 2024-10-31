@@ -2345,7 +2345,7 @@ void D3SpectrumDisplayDiv::performDragCreateRoiWork( double lower_energy, double
       //const auto start_wall_time = SpecUtils::get_wall_time();
       
       float min_sigma_width_kev, max_sigma_width_kev;
-      expected_peak_width_limits( midenergy, isHpge, min_sigma_width_kev, max_sigma_width_kev );
+      expected_peak_width_limits( midenergy, isHpge, foreground, min_sigma_width_kev, max_sigma_width_kev );
       
       if( erange < min_sigma_width_kev )
         throw runtime_error( "to small range" );

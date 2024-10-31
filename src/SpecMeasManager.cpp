@@ -5982,7 +5982,7 @@ void SpecMeasManager::checkIfPreviouslyOpened( const std::string sessionID,
         }//if( header->shouldSaveToDb() )
       }catch( FileToLargeForDbException &e )
       {
-        WString msg = WString::tr("smm-cant-save").arg(e.what());
+        WString msg = WString::tr("smm-cant-save").arg( e.message() );
         
         WServer::instance()->post( sessionID,
                   boost::bind( &postErrorMessage, msg, WarningWidget::WarningMsgHigh ) );

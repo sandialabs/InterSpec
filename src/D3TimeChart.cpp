@@ -1081,8 +1081,6 @@ void D3TimeChart::refreshJs()
 
 void D3TimeChart::setHidden( bool hidden, const Wt::WAnimation &animation )
 {
-  cout << "D3TimeChart::setHidden( " << hidden << " );" << endl;
-  
   if( !hidden && !m_inited )
     init();
   
