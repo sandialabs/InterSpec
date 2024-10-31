@@ -808,13 +808,14 @@ public:
   
   const std::vector<ShieldingSourceFitCalc::SourceFitDef> &initialSourceDefinitions() const;
   
-/*
-   Need to add method to extract mass fraction for isotopes fitting for the mass
-   fraction
-   still need to modify:
-     --energy_chi_contributions(...)
-     --Anywhere that references m_materials
-*/
+  /* Returns the mass-fraction of the specified nuclide, in the specified shielding.
+ 
+   `errors` must either be empty (in which case uncert will be set to zero), or the
+   same size as `pars`.
+ 
+   Note: the returned mass fraction is mass fraction of the entire shielding, and
+        not just the fraction of that nuclides element.
+   */
   void massFraction( double &massFrac, double &uncert,
                      const size_t material_index,
                      const SandiaDecay::Nuclide *nuc,

@@ -7597,6 +7597,7 @@ void ShieldingSourceDisplay::materialModifiedCallback( ShieldingSelect *select )
   cerr << "In ShieldingSourceDisplay::materialModifiedCallback(...)" << endl;
   //I meant to do some more work here...
 
+  
 }//void materialModifiedCallback( ShieldingSelect *select )
 
 

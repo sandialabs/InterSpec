@@ -3557,9 +3557,6 @@ std::shared_ptr<Material> ShieldingSourceChi2Fcn::variedMassFracMaterial(
     
   std::shared_ptr<Material> answer = std::make_shared<Material>( *shield.material );
   
-  //if( !SpecUtils::icontains( answer->name, " - varied") )
-  //  answer->name += " - varied";
-  
   const SandiaDecay::SandiaDecayDataBase *db = DecayDataBaseServer::database();
   
   vector<pair<const SandiaDecay::Nuclide *,float>> &nuclides = answer->nuclides;
@@ -3589,9 +3586,11 @@ std::shared_ptr<Material> ShieldingSourceChi2Fcn::variedMassFracMaterial(
     if( !el )
       continue;
     
-    if( !new_elements.count(el) )
-      new_elements[el] = 0.0;
-    new_elements[el] += nuc_frac.second;
+    auto pos = new_elements.find(el);
+    if( pos == end(new_elements) )
+      new_elements.insert( std::make_pair(el, static_cast<double>(nuc_frac.second)) );
+    else
+      pos->second += nuc_frac.second;
   }//for( const auto &nuc_frac : nuclides )
   
   // Get mass fractions of elements being used as self-attenuating sources.
@@ -3650,7 +3649,7 @@ std::shared_ptr<Material> ShieldingSourceChi2Fcn::variedMassFracMaterial(
   for( auto &i : new_elements )
   {
     if( !self_atten_elements.count(i.first) )
-      i.second /= (self_atten_sum);
+      i.second /= self_atten_sum;
   }//for( const auto &i : new_elements )
   
   // Now alter mass-fractions for the varied nuclides
@@ -3674,7 +3673,7 @@ std::shared_ptr<Material> ShieldingSourceChi2Fcn::variedMassFracMaterial(
     if( initial_frac < 0.0 )
       throw runtime_error( "variedMassFracMaterial(): Nuc fitting mass-fraction for doesnt appear in self-atten. sources?" );
     
-    const double fit_frac = massFraction( material_index, nuc, x );
+    const double fit_frac = massFraction( material_index, nuc, x ); //This is mass fraction of entire material (not of nuclides element)
     
     prefrac += initial_frac;
     postfrac += fit_frac;

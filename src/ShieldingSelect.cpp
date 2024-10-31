@@ -1171,9 +1171,10 @@ SourceCheckbox::SourceCheckbox( const SandiaDecay::Nuclide *nuclide,
 {
   wApp->useStyleSheet( "InterSpec_resources/ShieldingSelect.css" );
   
-  new WText( "&nbsp;&nbsp;&nbsp;", Wt::XHTMLText, this );
+  addStyleClass( "SourceCheckbox" );
 
-  m_useAsSourceCb = new WCheckBox( nuclide ? nuclide->symbol : string("Non Source Frac"), this );
+  WString txt = nuclide ? WString::fromUTF8(nuclide->symbol) : WString::tr("ss-non-src-frac");
+  m_useAsSourceCb = new WCheckBox( txt, this );
   m_label = new WLabel( "--", this );
   
   m_massFraction = new NativeFloatSpinBox( this );
@@ -1185,7 +1186,6 @@ SourceCheckbox::SourceCheckbox( const SandiaDecay::Nuclide *nuclide,
 #endif
   m_massFraction->setRange( 0.0, 1.0 );
   m_massFraction->setWidth( 80 );
-  m_massFraction->setMargin( 3, Wt::Left );
   m_massFraction->setSpinnerHidden( true );
   m_massFraction->setValue( massFrac );
 
@@ -1215,17 +1215,21 @@ void SourceCheckbox::handleUseCbChange()
   {
     m_massFraction->show();
     
-    string labeltxt = " - ";
-    if( m_nuclide )
-      labeltxt += db->element(m_nuclide->atomicNumber)->symbol;
-    labeltxt += " Mass Frac:";
+    WString labeltxt = WString::tr("ss-src-mass-frac-label");
     
-    m_label->setText( WString::fromUTF8(labeltxt) );
+    // The mass-fraction is of the total material, not just the element, but previous
+    //  to 20241131, we would prefix the mass fraction with the element name, which
+    //  created a false impression
+    //if( m_nuclide )
+    //  labeltxt.arg(db->element(m_nuclide->atomicNumber)->symbol);
+    
+    m_label->setText( labeltxt );
   }else
   {
     m_massFraction->hide();
     m_label->setText( "" );
   }
+  
 }//void handleUseCbChange()
 
 double SourceCheckbox::massFraction() const
@@ -2081,9 +2085,19 @@ void ShieldingSelect::init()
     materialDivLayout->addWidget( m_materialEdit, 0, 1 );
   }
   
-  HelpSystem::attachToolTipOn( m_materialEdit, WString::tr("ss-tt-material-name"),
+  WString material_name_tt;
+  if( m_forFitting )
+  {
+    material_name_tt = WString("<p>{1}</p><p>{2}</p>")
+      .arg( WString::tr("ss-tt-material-name") )
+      .arg( WString::tr("ss-tt-material-name-fit") );
+  }else
+  {
+    material_name_tt = WString::tr("ss-tt-material-name");
+  }
+  
+  HelpSystem::attachToolTipOn( m_materialEdit, material_name_tt,
                               showToolTips, HelpSystem::ToolTipPosition::Top );
-
   
   if( m_materialSuggest )
     m_materialSuggest->forEdit( m_materialEdit,
@@ -2187,6 +2201,11 @@ void ShieldingSelect::init()
     m_fitMassFrac = new WCheckBox( WString::tr("ss-fit-mass-fractions-cb"), m_asSourceCBs );
     m_fitMassFrac->hide();
     m_fitMassFrac->setInline( false );
+    
+    // "Assuming 1.2% other Pu isos" --> "Assuming fixed 1.2% other Pu isos"
+    m_fitMassFrac->checked().connect( this, &ShieldingSelect::updateSelfAttenOtherNucFractionTxt );
+    m_fitMassFrac->unChecked().connect( this, &ShieldingSelect::updateSelfAttenOtherNucFractionTxt );
+    
     m_fitMassFrac->checked().connect( this, &ShieldingSelect::handleUserChangeForUndoRedo );
     m_fitMassFrac->unChecked().connect( this, &ShieldingSelect::handleUserChangeForUndoRedo );
   }//if( m_forFitting )
@@ -3351,43 +3370,54 @@ void ShieldingSelect::isotopeCheckedCallback( const SandiaDecay::Nuclide *nuc )
   if( nuc )
   {
     SourceCheckbox *this_src_cb = nullptr;
-    double other_nuc_of_el_sum = 0.0;
+    double other_nuc_sum = 0.0;
     
     const SandiaDecay::SandiaDecayDataBase *db = DecayDataBaseServer::database();
-    const SandiaDecay::Element * const el = db->element( nuc->atomicNumber );
-    const auto pos = m_sourceIsotopes.find( el );
-    assert( pos != end(m_sourceIsotopes) );
     
-    if( pos != end(m_sourceIsotopes) )
+    for( const ElementToNuclideMap::value_type &elDiv : m_sourceIsotopes )
     {
-      for( WWidget *child : pos->second->children() )
+      for( WWidget *child : elDiv.second->children() )
       {
         SourceCheckbox *cb = dynamic_cast<SourceCheckbox *>( child );
-        if( cb && (cb->isotope() == nuc) )
-          this_src_cb = cb;
-        else if( cb && cb->useAsSource() )
-          other_nuc_of_el_sum += cb->massFraction();
-      }//for( WWidget *child : pos->second->children() )
-    }//if( pos != end(m_sourceIsotopes) )
+        if( cb && cb->isotope() && cb->useAsSource() )
+        {
+          if( cb->isotope() == nuc )
+            this_src_cb = cb;
+          else
+            other_nuc_sum += cb->massFraction();
+        }
+      }//for( loop over mass fraction widgets for this element )
+    }//for( loop over mapping of element to their mass fractions )
     
     assert( this_src_cb );
     if( this_src_cb )
     {
-      if( other_nuc_of_el_sum > 1.0 )
+      const double initialMassFrac = this_src_cb->massFraction();
+      if( IsInf(initialMassFrac) || IsNan(initialMassFrac) || (initialMassFrac < 0.0) )
+        this_src_cb->setMassFraction( 0.0 );
+      else if( initialMassFrac > 1.0 )
+        this_src_cb->setMassFraction( 1.0 );
+        
+      if( other_nuc_sum > 1.0 )
       {
         this_src_cb->setMassFraction( 0.0 );
-        const vector<WWidget *> kids = pos->second->children();
-        for( WWidget *child : kids )
+        
+        for( const ElementToNuclideMap::value_type &elDiv : m_sourceIsotopes )
         {
-          SourceCheckbox *cb = dynamic_cast<SourceCheckbox *>( child );
-          if( cb && cb->useAsSource() && (cb->isotope() != nuc) )
-            cb->setMassFraction( cb->massFraction() / other_nuc_of_el_sum );
-        }//for( loop over SourceCheckBox )
-      }else if( (other_nuc_of_el_sum + this_src_cb->massFraction()) > 1.0 )
+          for( WWidget *child : elDiv.second->children() )
+          {
+            SourceCheckbox *cb = dynamic_cast<SourceCheckbox *>( child );
+            if( cb && cb->useAsSource() && (cb->isotope() != nuc) )
+              cb->setMassFraction( cb->massFraction() / other_nuc_sum );
+          }//for( loop over mass fraction widgets for this element )
+        }//for( loop over mapping of element to their mass fractions )
+      }else if( (other_nuc_sum + this_src_cb->massFraction()) > 1.0 )
       {
-        this_src_cb->setMassFraction( 1.0 - other_nuc_of_el_sum );
+        this_src_cb->setMassFraction( 1.0 - other_nuc_sum );
       }
     }//if( this_src_cb )
+    
+    updateSelfAttenOtherNucFractionTxt();
   }//if( nuc )
   
   m_addingIsotopeAsSource.emit( nuc, ShieldingSourceFitCalc::ModelSourceType::Intrinsic );
@@ -3537,14 +3567,13 @@ vector< ShieldingSelect::NucMasFrac > ShieldingSelect::sourceNuclideMassFraction
   if( !mat )
     return answer;
   
+  double frac_sum = 0.0;
   for( const ElementToNuclideMap::value_type &elDiv : m_sourceIsotopes )
   {
     const SandiaDecay::Element * const element = elDiv.first;
     assert( element );
     if( !element )
       continue;
-    
-    const double elementFraction = mat->massFractionOfElementInMaterial( element );
     
     const vector<WWidget *> &children = elDiv.second->children();
     for( WWidget *child : children )
@@ -3555,9 +3584,20 @@ vector< ShieldingSelect::NucMasFrac > ShieldingSelect::sourceNuclideMassFraction
 
       const SandiaDecay::Nuclide *iso = cb->isotope();
       if( iso )
-        answer.emplace_back( iso, cb->massFraction() );
+      {
+        const double frac = cb->massFraction();
+        frac_sum += frac;
+        answer.emplace_back( iso, frac );
+      }
     }//for( WWidget *child : children )
   }//for( const ElementToNuclideMap::value_type &elDiv : m_sourceIsotopes )
+  
+  assert( frac_sum < (1.0 + 1.0E-6) );
+  if( frac_sum > 1.0 )
+  {
+    for( auto &v : answer )
+      v.second /= frac_sum;
+  }
   
   return answer;
 }//std::vector< NucMasFrac > sourceNuclideMassFractions()
@@ -3610,14 +3650,16 @@ vector<const SandiaDecay::Nuclide *> ShieldingSelect::selfAttenNuclides() const
 }//std::vector<const SandiaDecay::Nuclide *> selfAttenNuclides() const
 
 
-double ShieldingSelect::nuclidesFractionOfElementInMaterial( const SandiaDecay::Nuclide * const iso,
+double ShieldingSelect::nuclidesMassFractionInMaterial( const SandiaDecay::Nuclide * const iso,
                                                         const std::shared_ptr<const Material> &mat )
 {
+  assert( mat );
+  assert( iso );
   if( !mat || !iso )
-    return 0.0;
+    throw std::runtime_error( "nuclidesMassFractionInMaterial: Invalid material or isotope." );
 
-  const SandiaDecay::SandiaDecayDataBase *db = DecayDataBaseServer::database();
-  const SandiaDecay::Element *element = db->element( iso->atomicNumber );
+  const SandiaDecay::SandiaDecayDataBase * const db = DecayDataBaseServer::database();
+  const SandiaDecay::Element * const element = db->element( iso->atomicNumber );
   
   //Make sure the material has the isotope requested to add
   const vector< Material::NuclideFractionPair > &nuclides = mat->nuclides;
@@ -3649,14 +3691,14 @@ double ShieldingSelect::nuclidesFractionOfElementInMaterial( const SandiaDecay::
   }//for( const Material::NuclideFractionPair &efp : nuclides )
 
   if( !hasNuclide && !hasElement )
-    throw runtime_error( "Material doesnt Contain Isotope" );
+    throw runtime_error( "Material doesnt contain nuclide" );
 
   if( hasElement && !hasNuclide )
   {
     bool hasNaturalAbundance = false;
-    const vector<SandiaDecay::NuclideAbundancePair> &isos = element->isotopes;
+    const vector<SandiaDecay::NuclideAbundancePair> &natural_isos = element->isotopes;
 
-    for( const SandiaDecay::NuclideAbundancePair &i : isos )
+    for( const SandiaDecay::NuclideAbundancePair &i : natural_isos )
     {
       hasNaturalAbundance |= (i.abundance != 0.0);
       if( i.nuclide == iso )
@@ -3665,14 +3707,60 @@ double ShieldingSelect::nuclidesFractionOfElementInMaterial( const SandiaDecay::
 
     // If no natural abundance, then assign to 
     if( !hasNaturalAbundance )
-      nuclidesMassFraction = 1.0 / isos.size();
+    {
+      vector<const SandiaDecay::Nuclide *> nucs_of_el = db->nuclides(element);
+      nuclidesMassFraction = elementsMassFraction / nucs_of_el.size();
+    }
   }//if( hasElement )
 
   if( elementsMassFraction == 0.0 )
     return 0.0;
 
-  return nuclidesMassFraction / elementsMassFraction;
-}//double nuclidesFractionOfElementInMaterial( const SandiaDecay::Nuclide *iso )
+  return nuclidesMassFraction;
+}//double nuclidesMassFractionInMaterial( const SandiaDecay::Nuclide *iso )
+
+
+double ShieldingSelect::elementsMassFractionInMaterial( const SandiaDecay::Element * const element,
+                                             const std::shared_ptr<const Material> &mat )
+{
+  const SandiaDecay::SandiaDecayDataBase *db = DecayDataBaseServer::database();
+  assert( db );
+  assert( mat );
+  assert( element );
+  
+  if( !mat || !element || !db )
+    throw std::runtime_error( "elementsMassFractionInMaterial: Invalid material or isotope." );
+  
+  //Make sure the material has the isotope requested to add
+  const vector<Material::NuclideFractionPair> &nuclides = mat->nuclides;
+  const vector<Material::ElementFractionPair> &elements = mat->elements;
+
+  double elementsMassFraction = 0.0;
+  bool hasNuclide = false, hasElement = false;
+  
+  for( const Material::ElementFractionPair &efp : elements )
+  {
+    if( efp.first == element )
+    {
+      hasElement = true;
+      elementsMassFraction += efp.second;
+    }
+  }//for( const Material::ElementFractionPair &efp : elements )
+
+  for( const Material::NuclideFractionPair &efp : nuclides )
+  {
+    if( efp.first->atomicNumber == element->atomicNumber )
+    {
+      hasNuclide = true;
+      elementsMassFraction += efp.second;
+    }
+  }//for( const Material::NuclideFractionPair &efp : nuclides )
+
+  if( !hasNuclide && !hasElement )
+    throw runtime_error( "Material doesnt contain element" );
+
+  return elementsMassFraction;
+}//double elementsMassFractionInMaterial( el, mat )
 
 
 void ShieldingSelect::modelNuclideAdded( const SandiaDecay::Nuclide *iso )
@@ -3722,7 +3810,7 @@ void ShieldingSelect::modelNuclideAdded( const SandiaDecay::Nuclide *iso )
   double massFrac = 0.0;
   try
   {
-    massFrac = nuclidesFractionOfElementInMaterial( iso, mat );
+    massFrac = nuclidesMassFractionInMaterial( iso, mat );
   }catch(...)
   {
     return;
@@ -3786,7 +3874,7 @@ void ShieldingSelect::handleIsotopicChange( const float input_fraction,
   // Clamp the fraction to be between 0, and 1
   const float fraction = std::min( std::max( input_fraction, 0.0f ), 1.0f );
   
-  std::shared_ptr<const Material> mat = m_currentMaterial;
+  const shared_ptr<const Material> &mat = m_currentMaterial;
   const SandiaDecay::SandiaDecayDataBase *db = DecayDataBaseServer::database();
 
   if( !mat || !nuc || !db )
@@ -3798,6 +3886,43 @@ void ShieldingSelect::handleIsotopicChange( const float input_fraction,
   if( isos == m_sourceIsotopes.end() )
     throw runtime_error( "Nuclide '" + nuc->symbol + "' is not in material '" + mat->name + "'" );
 
+  double total_other_src_in_mat = 0.0;
+  for( const auto &el_widgets : m_sourceIsotopes )
+  {
+    for( WWidget *child : el_widgets.second->children() )
+    {
+      SourceCheckbox *cb = dynamic_cast<SourceCheckbox *>( child );
+      if( cb && cb->useAsSource() )
+      {
+        if( cb->isotope() != nuc )
+          total_other_src_in_mat += cb->massFraction();
+      }
+    }//for( loop over all self-atten source inputs for this element )
+  }//for( loop over all elements that have a self-atten source )
+  
+  if( (total_other_src_in_mat + input_fraction) > 1.0 )
+  {
+    const double other_src_amount = std::max(0.0, 1.0 - fraction);
+    
+    for( const auto &el_widgets : m_sourceIsotopes )
+    {
+      for( WWidget *child : el_widgets.second->children() )
+      {
+        SourceCheckbox *cb = dynamic_cast<SourceCheckbox *>( child );
+        if( cb && cb->useAsSource() && (cb->isotope() != nuc) )
+        {
+          const double prev_frac = cb->massFraction();
+          const double new_frac = ((other_src_amount == 0.0) || (total_other_src_in_mat == 0.0))
+                        ? 0.0 : (other_src_amount * prev_frac / total_other_src_in_mat);
+          cb->setMassFraction( new_frac );
+        }
+      }//
+    }//for( const auto &el_widgets = m_sourceIsotopes )
+    
+    total_other_src_in_mat = other_src_amount;
+  }//if( total_src_in_mat > 1.0 )
+  
+  
   bool setNucFraction = false, useNuclideAsSrc = false;
   double total_other_in_el = 0.0;
   const vector<WWidget *> children = isos->second->children();
@@ -3852,8 +3977,9 @@ void ShieldingSelect::updateSelfAttenOtherNucFractionTxt()
 {
   for( ElementToNuclideMap::value_type &vt : m_sourceIsotopes )
   {
+    assert( vt.first );
     int nisos = 0;
-    double frac_accounted_for = 0.0;
+    double el_mass_frac = 0.0;
     
     WText *otherfractxt = 0;
     const vector<WWidget *> children = vt.second->children();
@@ -3865,7 +3991,7 @@ void ShieldingSelect::updateSelfAttenOtherNucFractionTxt()
         if( cb->useAsSource() )
         {
           ++nisos;
-          frac_accounted_for += cb->massFraction();
+          el_mass_frac += cb->massFraction();
         }
       }else
       {
@@ -3874,14 +4000,18 @@ void ShieldingSelect::updateSelfAttenOtherNucFractionTxt()
       }//if( !cb ) / else
     }//for( WWidget *child : children )
     
-    if( !nisos || (otherfractxt != children.back()) )
+    double el_frac_in_material = 0.0;
+    if( vt.first && m_currentMaterial )
+      el_frac_in_material = elementsMassFractionInMaterial( vt.first, m_currentMaterial );
+    
+    if( !nisos || (otherfractxt != children.back()) || (el_mass_frac >= el_frac_in_material) )
     {
       if( otherfractxt )
         delete otherfractxt;
       otherfractxt = nullptr;
     }//if( not using any source isotopes OR text isnt at bottom of div )
     
-    if( nisos && !otherfractxt )
+    if( nisos && !otherfractxt && (el_mass_frac < el_frac_in_material) )
     {
       otherfractxt = new WText( vt.second );
       otherfractxt->addStyleClass( "MassFracNoFit" );
@@ -3890,7 +4020,7 @@ void ShieldingSelect::updateSelfAttenOtherNucFractionTxt()
     
     if( otherfractxt )
     {
-      if( fabs(1.0-frac_accounted_for) < 1.0E-6 )
+      if( (el_frac_in_material - el_mass_frac) < (el_frac_in_material*1.0E-5) )
       {
         //Pretty much all the mass of this element is accounted for, so dont
         //  display this text
@@ -3898,8 +4028,9 @@ void ShieldingSelect::updateSelfAttenOtherNucFractionTxt()
         otherfractxt = nullptr;
       }else
       {
+        // This is not correct - the user could have specified mass-fractions higher than the amount of element in original material - this isnt accounted for ehre
         const bool fit = (m_fitMassFrac && m_fitMassFrac->isVisible() && m_fitMassFrac->isChecked());
-        const double percent_other = 100.0*(1.0-frac_accounted_for);
+        const double percent_other = 100.0*(el_frac_in_material - el_mass_frac);
         otherfractxt->setText( WString::tr("ss-fixed-non-src-frac")
                               .arg( (fit ? WString::tr("ss-fixed") : WString()) )
                               .arg( SpecUtils::printCompact(percent_other, 4) )
@@ -3919,6 +4050,9 @@ void ShieldingSelect::setMassFractionDisplaysToMaterial( std::shared_ptr<const M
   if( m_fixedGeometry )
     throw logic_error( "Cant set mass fraction when fixed geometry" );
   
+  const SandiaDecay::SandiaDecayDataBase *db = DecayDataBaseServer::database();
+  assert( db );
+  
   //Lets go through and update the values displayed to the user of the
   //  isotopics
   for( ElementToNuclideMap::value_type &vt : m_sourceIsotopes )
@@ -3932,10 +4066,15 @@ void ShieldingSelect::setMassFractionDisplaysToMaterial( std::shared_ptr<const M
       if( !cb )
         continue;
 
+      const SandiaDecay::Nuclide * const nuc = cb->isotope();
+      assert( nuc );
+      if( !nuc )
+        continue;
+      
       double massFrac = 0.0;
       try
       {
-        massFrac = nuclidesFractionOfElementInMaterial( cb->isotope(), mat ); //
+        massFrac = nuclidesMassFractionInMaterial( nuc, mat ); //
       }catch(...)  //hopefully this never happens
       {
         passMessage( "There has been an unexpected internal error in"
@@ -3943,14 +4082,45 @@ void ShieldingSelect::setMassFractionDisplaysToMaterial( std::shared_ptr<const M
                      " try re-selecting the material, as well as checking the"
                      " calculation log before trusting the results.",
                      WarningWidget::WarningMsgHigh );
-        cerr << endl << "ShieldingSelect::setMassFractionDisplaysToMaterial(...)\n\tSerious programming error here"
-             << endl << endl;
+        cerr << "\nShieldingSelect::setMassFractionDisplaysToMaterial(...)\n"
+        "\tSerious programming error here.\n" << endl;
       }//try/catch
 
       frac_accounted_for += massFrac;
       
       if( fabs(cb->massFraction() - massFrac) > 0.000001 )
         cb->setMassFraction( massFrac );
+      
+      // Lets set a tool tip with a little more information
+      string tt = nuc->symbol + " is " + SpecUtils::printCompact(100.0*massFrac, 4) + "%";
+      if( massFrac < 0.01 )
+      {
+        char buffer[64] = { '\0' };
+        snprintf( buffer, sizeof(buffer), " (%.0f PPM)", 1.0E6*massFrac );
+        tt += buffer;
+      }
+      tt += " of the shielding material by mass.";
+      
+      double el_mass_frac = 0.0;
+      const SandiaDecay::Element * const el = db->element( nuc->atomicNumber );
+      if( el )
+      {
+        el_mass_frac = elementsMassFractionInMaterial( el, mat );
+        const double nuc_frac_of_el = massFrac / el_mass_frac;
+        const string percent_of_el_by_mass_str = SpecUtils::printCompact(100.0*nuc_frac_of_el, 4);
+        tt += "\t" + nuc->symbol + " is " + percent_of_el_by_mass_str + "%";
+        if( nuc_frac_of_el < 0.01 )
+        {
+          char buffer[64] = { '\0' };
+          snprintf( buffer, sizeof(buffer), " (%.0f PPM)", 1.0E6*nuc_frac_of_el );
+          tt += buffer;
+        }
+        tt += " of the " + el->name + " by mass.";
+      }//if( el )
+      
+      // TODO: add PPM by number of atoms, if less than
+      
+      cb->setToolTip( tt );
     }//for( WWidget *child : children )
   }//for( ElementToNuclideMap::value_type &vt : m_sourceIsotopes )
   
@@ -4442,11 +4612,11 @@ void ShieldingSelect::handleMaterialChange()
       double massFrac = 0.0;
       try
       {
-        massFrac = nuclidesFractionOfElementInMaterial( cb->isotope(), newMaterial );
+        massFrac = nuclidesMassFractionInMaterial( cb->isotope(), newMaterial );
       }catch(...)  //hopefully this never happens
       {
         stringstream msg;
-        msg << "Failed to get nuclidesFractionOfElementInMaterial " << cb->isotope()->symbol
+        msg << "Failed to get nuclidesMassFractionInMaterial " << cb->isotope()->symbol
             << " from " << newMaterial->name;
         log_developer_error( __func__, msg.str().c_str() );
       }//try/catch
