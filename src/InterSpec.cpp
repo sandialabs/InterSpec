@@ -3341,9 +3341,11 @@ void InterSpec::saveStateToDb( Wt::Dbo::ptr<UserState> entry )
           filedata = *iter;
       }
       
-      assert( filedata );
+      //assert( filedata );
       if( !filedata )
       {
+        // We may get here if we've removed a state (i.e., a `UserState::kEndOfSessionTemp`) from
+        //  the database, but the pointer is still in memory.
         UserFileInDbData *newdata = new UserFileInDbData();
         filedata.reset( newdata );
         newdata->fileInfo = dbfile;
@@ -3668,11 +3670,14 @@ void InterSpec::saveStateToDb( Wt::Dbo::ptr<UserState> entry )
     }//try / catch
     
     transaction.commit();
+  }catch( FileToLargeForDbException &e )
+  {
+    cerr << "Caught: " << e.what() << endl;
+    throw;
   }catch( std::exception &e )
   {
     cerr << "saveStateToDb(...) caught: " << e.what() << endl;
     throw runtime_error( WString::tr("err-save-sate-to-db").toUTF8() );
-    //to do: handle errors
   }//try / catch
 }//void saveStateToDb( Wt::Dbo::ptr<UserState> entry )
 
@@ -5167,6 +5172,9 @@ void InterSpec::finishStoreStateInDb( const WString &name,
   try
   {
     saveStateToDb( answer );
+  }catch( FileToLargeForDbException &e )
+  {
+    passMessage( e.message(), WarningWidget::WarningMsgHigh );
   }catch( std::exception &e )
   {
     passMessage( e.what(), WarningWidget::WarningMsgHigh );
@@ -5186,11 +5194,12 @@ void InterSpec::finishStoreStateInDb( const WString &name,
     const size_t num_dangling = query.size();
     if( num_dangling )
     {
-      cerr << "There are " << query.size() << "Dangling files" << endl;
+      // I think this can happen for end-of-session states - but not really sure
+      cerr << "There are " << query.size() << " dangling files" << endl;
       for( auto iter = query.begin(); iter != query.end(); ++iter )
         cerr << (*iter)->filename << endl;
       
-      assert( 0 );
+      cerr << endl;
       
       //The following query is untested - but I think it would cleanup the database of dangling files.
       //m_sql->session()->execute(
@@ -5662,7 +5671,6 @@ void InterSpec::startStoreTestState()
 #endif //#if( INCLUDE_ANALYSIS_TEST_SUITE )
 
 
-//Save the snapshot and ALSO the spectra.
 void InterSpec::stateSave()
 {
   Dbo::ptr<UserState> state;
@@ -5689,10 +5697,23 @@ void InterSpec::stateSave()
     }//try / catch
   }//if( current_state_index >= 0 )
     
+  
   if( state )
-    saveStateToDb( state );
-  else //No currentStateID, so just save as new state
+  {
+    try
+    {
+      saveStateToDb( state );
+    }catch( FileToLargeForDbException &e )
+    {
+      passMessage( e.message(), WarningWidget::WarningMsgHigh );
+    }catch( std::exception &e )
+    {
+      passMessage( e.what(), WarningWidget::WarningMsgHigh );
+    }
+  }else //No currentStateID, so just save as new state
+  {
     stateSaveAs();
+  }
 }//void stateSave()
 
 
@@ -5889,7 +5910,7 @@ void InterSpec::stateSaveAsFinish( WLineEdit *nameedit,
 }//stateSaveAsFinish()
 
 
-void InterSpec::saveStateAtForegroundChange()
+void InterSpec::saveStateAtForegroundChange( const bool doAsync )
 {
   const bool saveState = UserPreferences::preferenceValue<bool>( "AutoSaveSpectraToDb", this );
   if( !saveState || !m_dataMeasurement )
@@ -5905,15 +5926,19 @@ void InterSpec::saveStateAtForegroundChange()
   
   Wt::log( "info" ) << "Auto-saving state for foreground change for file: '" << m_dataMeasurement->filename() << "'.";
 
+  // TODO: possibly check file size, and if we dont have a hope of saving to DB, i.e.,
+  //        if( m_dataMeasurement->memmorysize() > UserFileInDb::sm_maxFileSizeBytes )
+  //          return;
+  
   const int offset = wApp->environment().timeZoneOffset();
   WString desc = "Working Point";
   const auto now = chrono::system_clock::now() + chrono::seconds( 60*offset );
   WString name = SpecUtils::to_common_string( chrono::time_point_cast<chrono::microseconds>(now), true ); //"9-Sep-2014 15:02:15"
   
+  DataBaseUtils::DbTransaction transaction( *m_sql );
+  
   try
   {
-    DataBaseUtils::DbTransaction transaction( *m_sql );
-    
     const long long int current_state_index = currentAppStateDbId();
     Wt::Dbo::ptr<UserState> parentState;
     if( current_state_index >= 0 )
@@ -5927,11 +5952,13 @@ void InterSpec::saveStateAtForegroundChange()
     if( parentState )
     {
       // Remove previous `kUserStateAutoSavedWork` states for this user-saved state - we will make a new one
-      Dbo::collection<Dbo::ptr<UserState>> prevEosStates = m_user->m_userStates.find().where( "StateType = ?" )
-        .bind(int(UserState::UserStateType::kUserStateAutoSavedWork));
+      Dbo::collection<Dbo::ptr<UserState>> prevEosStates
+        = parentState->snapshotTags.find()
+        .where( "StateType = ?" )
+        .bind( int(UserState::UserStateType::kUserStateAutoSavedWork) );
       
       for( auto iter = prevEosStates.begin(); iter != prevEosStates.end(); ++iter )
-        iter->remove();
+        UserState::removeFromDatabase( *iter, *m_sql );
       
       // We will only save a state if the foreground file has been modified
       if( m_dataMeasurement && m_dataMeasurement->modified() )
@@ -5974,56 +6001,74 @@ void InterSpec::saveStateAtForegroundChange()
          && (m_secondDataMeasurement != m_dataMeasurement) )
         secohdr = filemodel->fileHeader( m_secondDataMeasurement );
       
+      auto save_to_db = [doAsync]( std::weak_ptr<SpectraFileHeader> wk_ptr, std::shared_ptr<SpecMeas> meas ){
+        auto call_save = [wk_ptr, meas](){
+          shared_ptr<SpectraFileHeader> hdr = wk_ptr.lock();
+          
+          if( !hdr )
+          {
+            cerr << "SpectraFileHeader no longer in memory - not writing to DB." << endl;
+            return;
+          }
+          
+          try
+          {
+            hdr->saveToDatabase( meas );
+          }catch( FileToLargeForDbException &e )
+          {
+            // Expected problem - dont give an error message
+          }catch( std::exception &e )
+          {
+            Wt::log("error") << "InterSpec::saveStateAtForegroundChange() async error: " << e.what();
+          }
+        };//call_save lambda
+        
+        assert( wk_ptr.lock() );
+        if( doAsync )
+        {
+          WServer::instance()->schedule( 25, wApp->sessionId(), call_save, [](){
+            cerr << "Failed to save spectrum to DB in worker (session dead?)." << endl;
+            assert( 0 );
+          } );
+        }else
+        {
+          call_save();
+        }
+      };//save_to_db lambda
+      
       // If we load a spectrum file, and get the dialog that lets us pick back up from a
       //  previous working of the file, and we do, `forehdr` may be nullptr, because
       //  #SpectraFileHeader::setDbEntry has not been called for the original file yet
       if( forehdr )
-        forehdr->saveToDatabase( m_dataMeasurement );
+        save_to_db( forehdr, m_dataMeasurement );
       
       if( backhdr )
-        backhdr->saveToDatabase( m_backgroundMeasurement );
+        save_to_db( backhdr, m_backgroundMeasurement );
       
       if( secohdr )
-        secohdr->saveToDatabase( m_secondDataMeasurement );
+        save_to_db( secohdr, m_secondDataMeasurement );
       
       Wt::log("debug") << "saveStateAtForegroundChange(): Instead kUserStateAutoSavedWork state,"
       " saved spectrum files to database since not in a user save-state.";
     }//if( current_state_index >= 0 ) / else
     
     transaction.commit();
+  }catch( FileToLargeForDbException &e )
+  {
+    // Expected problem - dont give an error message - but I dont think we ever end up here
+    Wt::log("info") << "InterSpec::saveStateAtForegroundChange() Not saving state: " << e.what();
+    transaction.rollback();
   }catch( std::exception &e )
   {
     Wt::log("error") << "InterSpec::saveStateAtForegroundChange() error: " << e.what();
+    transaction.rollback();
   }
 }//void saveStateAtForegroundChange()
 
 
 void InterSpec::saveStateForEndOfSession()
 {
-  // Remove existing end-of-session state
-  try
-  {
-    DataBaseUtils::DbTransaction transaction( *m_sql );
-    
-    Dbo::collection<Dbo::ptr<UserState>> prevEosStates = m_user->userStates().find()
-      .where("StateType = ?")
-      .bind( int(UserState::UserStateType::kEndOfSessionTemp) );
-    
-    assert( prevEosStates.size() <= 1 );
-    for( auto iter = prevEosStates.begin(); iter != prevEosStates.end(); ++iter )
-      iter->remove();
-    
-    transaction.commit();
-  }catch( std::exception &e )
-  {
-    Wt::log("error") << "InterSpec::saveStateForEndOfSession() error removing last state: " << e.what();
-  }
-  
-  // I we dont want to save states, or there is no foreground - nothing more to do here
   const bool saveState = UserPreferences::preferenceValue<bool>( "AutoSaveSpectraToDb", this );
-  if( !saveState || !m_dataMeasurement )
-    return;
-  
   Wt::log( "info" ) << "Will auto-save state for session-id: '" << wApp->sessionId() << "' at end of session.";
 
   const int offset = wApp->environment().timeZoneOffset();
@@ -6031,10 +6076,35 @@ void InterSpec::saveStateForEndOfSession()
   const auto now = chrono::system_clock::now() + chrono::seconds( 60*offset );
   WString name = SpecUtils::to_common_string( chrono::time_point_cast<chrono::microseconds>(now), true ); //"9-Sep-2014 15:02:15"
   
+  
+  // Remove existing end-of-session state
+  DataBaseUtils::DbTransaction transaction( *m_sql );
   try
   {
-    DataBaseUtils::DbTransaction transaction( *m_sql );
+    Dbo::collection<Dbo::ptr<UserState>> prevEosStates = m_sql->session()->find<UserState>()
+      .where( "InterSpecUser_id = ? AND StateType = ?" )
+      .bind( m_user.id() )
+      .bind( int(UserState::kEndOfSessionTemp) );
     
+    //assert( prevEosStates.size() <= 1 );
+    for( auto iter = prevEosStates.begin(); iter != prevEosStates.end(); ++iter )
+      UserState::removeFromDatabase( *iter, *m_sql );
+  }catch( std::exception &e )
+  {
+    Wt::log("error") << "InterSpec::saveStateForEndOfSession() error removing last state: " << e.what();
+    transaction.rollback();
+    return;
+  }
+  
+  // I we dont want to save states, or there is no foreground - nothing more to do here
+  if( !saveState || !m_dataMeasurement )
+  {
+    transaction.commit();
+    return;
+  }
+  
+  try
+  {
     // Check if we are connected with a database state
     const long long int current_state_index = currentAppStateDbId();
     Wt::Dbo::ptr<UserState> parentState;
@@ -6062,6 +6132,7 @@ void InterSpec::saveStateForEndOfSession()
   }catch( std::exception &e )
   {
     Wt::log("error") << "InterSpec::saveStateForEndOfSession() error: " << e.what();
+    transaction.rollback();
   }
 }//void saveStateForEndOfSession()
 #endif //#if( USE_DB_TO_STORE_SPECTRA )
@@ -6166,7 +6237,7 @@ void InterSpec::addFileMenu( WWidget *parent, const bool isAppTitlebar )
     HelpSystem::attachToolTipOn(item,
       "For development purposes - Stores current state as your end of session state, "
       "for loading on next launch.", showToolTips );
-    item->triggered().connect( dynamic_cast<InterSpecApp *>(wApp), &InterSpecApp::prepareForEndOfSession );
+    item->triggered().connect( this, &InterSpec::saveStateForEndOfSession );
 #endif
     
     m_fileMenuPopup->addSeparator();
@@ -8120,62 +8191,32 @@ std::shared_ptr<SpecMeas> InterSpec::measurment( SpecUtils::SpectrumType type )
 
 
 #if( USE_DB_TO_STORE_SPECTRA )
-Wt::Dbo::ptr<UserFileInDb> InterSpec::measurementFromDb( SpecUtils::SpectrumType type,
-                                                             bool update )
+Wt::Dbo::ptr<UserFileInDb> InterSpec::measurementFromDb( const SpecUtils::SpectrumType type,
+                                                          const bool update )
 {
-  try
-  {
-    Wt::Dbo::ptr<UserFileInDb> answer;
-    std::shared_ptr<SpectraFileHeader> header;
+  Wt::Dbo::ptr<UserFileInDb> answer;
   
-    SpectraFileModel *fileModel = m_fileManager->model();
-    std::shared_ptr<SpecMeas> meas = measurment( type );
-    if( !meas )
-      return answer;
+  SpectraFileModel *fileModel = m_fileManager->model();
+  std::shared_ptr<SpecMeas> meas = measurment( type );
+  if( !meas )
+    return answer;
   
-    WModelIndex index = fileModel->index( meas );
-    if( !index.isValid() )
-      return answer;
+  WModelIndex index = fileModel->index( meas );
+  if( !index.isValid() )
+    return answer;
     
-    header = fileModel->fileHeader( index.row() );
-    if( !header )
-      return answer;
+  shared_ptr<SpectraFileHeader> header = fileModel->fileHeader( index.row() );
+  if( !header )
+    return answer;
   
-    answer = header->dbEntry();
-    if( answer && !meas->modified() )
-      return answer;
+  answer = header->dbEntry();
+  if( answer && !meas->modified() )
+    return answer;
     
-    Dbo::ptr<UserFileInDb> dbback;
+  if( update )
+    header->saveToDatabase( meas );
     
-    if( type == SpecUtils::SpectrumType::Foreground )
-    {
-      std::shared_ptr<SpecMeas> background = measurment( SpecUtils::SpectrumType::Background );
-      std::shared_ptr<SpectraFileHeader> bheader = fileModel->fileHeader( background );
-      if( bheader )
-      {
-        dbback = bheader->dbEntry();
-        if( !dbback )
-        {
-          try
-          {
-            bheader->saveToDatabase( background );
-            dbback = bheader->dbEntry();
-          }catch(...){}
-        }
-      }//if( bheader )
-    }//if( type == SpecUtils::SpectrumType::Foreground )
-    
-    if( update )
-      header->saveToDatabase( meas );
-    
-    return header->dbEntry();
-  }catch( std::exception &e )
-  {
-    cerr << "\n\nSpectrumViewer::measurementFromDb(...) caught: " << e.what()
-         << endl;
-  }//try / catch
-  
-  return Wt::Dbo::ptr<UserFileInDb>();
+  return header->dbEntry();
 }//Wt::Dbo::ptr<UserFileInDb> measurementFromDb( SpecUtils::SpectrumType type, bool update );
 #endif //#if( USE_DB_TO_STORE_SPECTRA )
 
@@ -11130,7 +11171,7 @@ void InterSpec::setSpectrum( std::shared_ptr<SpecMeas> meas,
   if( (spec_type == SpecUtils::SpectrumType::Foreground) && previous && (previous != meas) )
   {
 #if( USE_DB_TO_STORE_SPECTRA )
-    saveStateAtForegroundChange(); //This function will check "AutoSaveSpectraToDb" pref
+    saveStateAtForegroundChange( true ); //This function will check "AutoSaveSpectraToDb" pref
 #endif //#if( USE_DB_TO_STORE_SPECTRA )
     
     // Close Shielding/Source fit Window

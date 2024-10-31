@@ -318,7 +318,8 @@ public:
   
   const Wt::Dbo::collection< Wt::Dbo::ptr<UserOption> > &preferences() const;
   const Wt::Dbo::collection< Wt::Dbo::ptr<ShieldingSourceModel> > &shieldSrcModels() const;
-  const Wt::Dbo::collection< Wt::Dbo::ptr<UserState> > &userStates() const;
+  //
+  //const Wt::Dbo::collection< Wt::Dbo::ptr<UserState> > &userStates() const;
   const Wt::Dbo::collection< Wt::Dbo::ptr<ColorThemeInfo> >   &colorThemes() const;
   const Wt::Dbo::collection< Wt::Dbo::ptr<UseDrfPref> > &drfPrefs() const;
   
@@ -342,7 +343,9 @@ protected:
   Wt::Dbo::collection< Wt::Dbo::ptr<UserOption> >           m_dbPreferences;
   Wt::Dbo::collection< Wt::Dbo::ptr<ShieldingSourceModel> > m_shieldSrcModels;
   Wt::Dbo::collection< Wt::Dbo::ptr<ColorThemeInfo> >       m_colorThemes;
-  Wt::Dbo::collection< Wt::Dbo::ptr<UserState> >            m_userStates;
+  
+  /** TODO: (20241029) `m_userStates` doesnt appear to actually contain anything - I think a Wt::Dbo::hasMany(...) line needs to be added into the persist function*/
+  //Wt::Dbo::collection< Wt::Dbo::ptr<UserState> >            m_userStates;
 
   Wt::Dbo::collection< Wt::Dbo::ptr<UseDrfPref> >           m_drfPref;
   
@@ -481,22 +484,17 @@ public:
 class FileToLargeForDbException : public std::exception
 {
   std::string m_msg;
+  const size_t m_saveSize, m_limit;
 public:
-  FileToLargeForDbException( const size_t saveSize, const size_t limit )
-    : std::exception()
-  {
-    char msg[100];
-    snprintf( msg, sizeof(msg),
-              "Spectrum file save size is %i kb; the limit is %i kb.",
-              static_cast<int>(saveSize/1024), static_cast<int>(limit/1024) );
-    m_msg = msg;
-  }
-
+  FileToLargeForDbException( const size_t saveSize, const size_t limit );
   
   virtual const char* what() const noexcept
   {
     return m_msg.c_str();
   }
+  
+  /** Performs localization of the error message, at this point, not when it was thrown. */
+  Wt::WString message() const;
 };//class FileToLargeForDbException
 
 class UserFileInDbData
@@ -741,6 +739,13 @@ struct UserState
   
   //UserState(): default constructor, initializes values to reasonable defaults
   UserState();
+  
+  /** Removes a state, and all of its tags and associated files, from the database.
+   
+   Throws exception on error.
+   */
+  static void removeFromDatabase( Wt::Dbo::ptr<UserState> state,
+                                 DataBaseUtils::DbSession &session );
   
   Wt::Dbo::ptr<InterSpecUser> user;
     

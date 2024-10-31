@@ -40,6 +40,7 @@
 
 
 #include <Wt/Dbo/Dbo>
+#include <Wt/WString>
 #include <Wt/WSpinBox>
 #include <Wt/WCheckBox>
 #include <Wt/WApplication>
@@ -296,6 +297,23 @@ void mapDbClasses( Wt::Dbo::Session *session )
 }//void mapDbClasses( Wt::Dbo::Session *session )
 
 
+FileToLargeForDbException::FileToLargeForDbException( const size_t saveSize, const size_t limit )
+  : std::exception(),
+    m_msg{},
+    m_saveSize( saveSize ), 
+    m_limit( limit )
+{
+  m_msg = message().toUTF8();
+}
+
+Wt::WString FileToLargeForDbException::message() const
+{
+  return WString::tr( "err-save-to-large-for-db" )
+    .arg( static_cast<int>(m_saveSize/1024) )
+    .arg( static_cast<int>(m_limit/1024) );
+}
+
+
 UserState::UserState()
   : stateType( kUndefinedStateType ),
     creationTime( Wt::WDateTime::currentDateTime() ),
@@ -309,6 +327,99 @@ UserState::UserState()
     showingPeakLabels( 0 ), showingWindows( 0 )
 {
 }
+
+
+void UserState::removeFromDatabase( Wt::Dbo::ptr<UserState> state,
+                                          DataBaseUtils::DbSession &session )
+{
+  if( !state || (state.id() < 0) || !state->user )
+    throw runtime_error( "UserFileInDbData::removeFromDatabase: invalid input." );
+  
+  DataBaseUtils::DbTransaction transaction( session );
+  
+  state.reread();  // probably not necessary?
+  
+  vector<Dbo::ptr<UserState>> children;
+  for( auto iter = state->snapshotTags.begin(); iter != state->snapshotTags.end(); ++iter )
+    children.push_back( *iter );
+    
+  // Delete all the tags of this state
+  for( const auto &kid : children )
+  {
+    assert( kid != state );
+    if( kid == state )
+      continue;
+    
+    try
+    {
+      UserState::removeFromDatabase( kid, session );
+    }catch( std::exception & )
+    {
+      transaction.rollback();
+      throw;
+    }
+  }//for( const auto &kid : children )
+  
+  try
+  {
+    std::set<long long int> file_indices;
+    if( state->foregroundId >= 0 )
+      file_indices.insert( state->foregroundId );
+    if( state->backgroundId >= 0 )
+      file_indices.insert( state->backgroundId );
+    if( state->secondForegroundId >= 0 )
+      file_indices.insert( state->secondForegroundId );
+    
+    for( const long long int dbid : file_indices )
+    {
+      assert( dbid >= 0 );
+      
+      // In principal, each referenced UserFileInDb should belong to exactly one
+      //  UserState (the one we are deleting) - however, due to historical bugs,
+      //  this may not be exactly the case, so we'll check for this, and only
+      //  delete the UserFileInDb, if it uniquely belongs to us.
+      Dbo::collection<Dbo::ptr<UserState>> states_with_file
+      = session.session()->find<UserState>()
+        .where( "ForegroundId = ? OR BackgroundId = ? OR SecondForegroundId = ?" )
+        .bind(dbid).bind(dbid).bind(dbid);
+      
+      const size_t nstates_with_file = states_with_file.size();
+      
+      Dbo::ptr<UserFileInDb> dbfile = session.session()->find<UserFileInDb>()
+        .where( "id = ?" )
+        .bind( dbid );
+      
+      assert( dbfile );
+      if( !dbfile )
+        continue;
+      
+#if( PERFORM_DEVELOPER_CHECKS )
+      if( nstates_with_file != 1 )
+      {
+        const string errmsg = "File '" + dbfile->filename + "', part of state "
+                + std::to_string(state.id()) + ", is shared by "
+                + std::to_string(nstates_with_file) + " states.";
+        log_developer_error( __func__, errmsg.c_str() );
+      }
+#endif
+      
+      if( nstates_with_file == 1 )
+      {
+        assert( (*states_with_file.begin()) == state );
+        if( dbfile )
+          dbfile.remove();
+      }//if( nstates_with_file == 1 )
+    }//for( const long long int dbid : file_indices )
+    
+    state.remove();
+  }catch( std::exception &e )
+  {
+    cerr << "removeFromDatabase(...) caught error: " << e.what() << endl;
+    transaction.rollback();
+    throw;
+  }//try / catch
+}//removeFromDatabase( Dbo::ptr<UserState> state );
+
 
 void UserFileInDbData::setFileData( const std::string &path,
                                     const SerializedFileFormat format )
@@ -426,25 +537,29 @@ Dbo::ptr<UserFileInDb> UserFileInDb::makeDeepCopyOfFileInDatabase(
   {
     Dbo::ptr<UserFileInDb> answer = session->add( newfile );
   
-    
-    for( Dbo::collection< Dbo::ptr<UserFileInDbData> >::const_iterator iter = orig->filedata.begin();
-        iter != orig->filedata.end(); ++iter )
+    // The passed in `UserFileInDb` may not actually be in the database, so we have to check
+    //  for this.
+    if( orig.id() >= 0 )
     {
-      UserFileInDbData *newdata = new UserFileInDbData( **iter );
-      newdata->fileInfo = answer;
-      session->add( newdata );
-    }
+      for( Dbo::collection< Dbo::ptr<UserFileInDbData> >::const_iterator iter = orig->filedata.begin();
+          iter != orig->filedata.end(); ++iter )
+      {
+        UserFileInDbData *newdata = new UserFileInDbData( **iter );
+        newdata->fileInfo = answer;
+        session->add( newdata );
+      }
       
-    for( Dbo::collection< Dbo::ptr<ShieldingSourceModel> >::const_iterator iter
-                                                = orig->modelsUsedWith.begin();
-        iter != orig->modelsUsedWith.end();
-        ++iter )
-    {
-      ShieldingSourceModel *newmodel = new ShieldingSourceModel();
-      newmodel->shallowEquals( **iter );
-      Dbo::ptr<ShieldingSourceModel> modelptr = session->add( newmodel );
-      modelptr.modify()->filesUsedWith.insert( answer );
-    }//for( loop over ShieldingSourceModel )
+      for( Dbo::collection< Dbo::ptr<ShieldingSourceModel> >::const_iterator iter
+          = orig->modelsUsedWith.begin();
+          iter != orig->modelsUsedWith.end();
+          ++iter )
+      {
+        ShieldingSourceModel *newmodel = new ShieldingSourceModel();
+        newmodel->shallowEquals( **iter );
+        Dbo::ptr<ShieldingSourceModel> modelptr = session->add( newmodel );
+        modelptr.modify()->filesUsedWith.insert( answer );
+      }//for( loop over ShieldingSourceModel )
+    }//if( orig.id() >= 0 )
     
     transaction.commit();
     return answer;
@@ -756,10 +871,10 @@ const Wt::Dbo::collection< Wt::Dbo::ptr<ShieldingSourceModel> > &InterSpecUser::
   return m_shieldSrcModels;
 }
 
-const Wt::Dbo::collection< Wt::Dbo::ptr<UserState> > &InterSpecUser::userStates() const
-{
-  return m_userStates;
-}
+//const Wt::Dbo::collection< Wt::Dbo::ptr<UserState> > &InterSpecUser::userStates() const
+//{
+//  return m_userStates;
+//}
 
 const Wt::Dbo::collection< Wt::Dbo::ptr<ColorThemeInfo> > &InterSpecUser::colorThemes() const
 {

@@ -1103,13 +1103,9 @@ void SnapshotBrowser::deleteSelected()
   {
     if( m_viewer->currentAppStateDbId() == state.id() )
       m_viewer->resetCurrentAppStateDbId();
-    
-    {
-      DataBaseUtils::DbTransaction transaction( *m_session );
-      state.reread();  //is this actually necassary?
-      state.remove();
-      transaction.commit();
-    }
+      
+    UserState::removeFromDatabase( state, *m_session );
+      
     string name;
     if( node->label() )
       name = node->label()->text().toUTF8();

@@ -680,14 +680,12 @@ void InterSpecApp::setupWidgets( const bool attemptStateLoad  )
       std::shared_ptr<DataBaseUtils::DbSession> sql = m_viewer->sql();
       DataBaseUtils::DbTransaction transaction( *sql );
       
-      const string query = "InterSpecUser_id = "
-      + std::to_string( m_viewer->user().id() )
-      + " AND (StateType = "
-      + std::to_string( int(UserState::kEndOfSessionTemp) )
-      + " OR StateType = "
-      + std::to_string( int(UserState::kUserStateAutoSavedWork) ) + ")";
       Dbo::ptr<UserState> state = sql->session()->find<UserState>()
-      .where( query ).orderBy( "id desc" ).limit( 1 );
+        .where( "InterSpecUser_id = ? AND StateType = ?" )
+        .bind( m_viewer->user().id() )
+        .bind( int(UserState::kEndOfSessionTemp) )
+        .orderBy( "id desc" )
+        .limit( 1 );
       
       //Since we only read from the database, its probably fine if the commit
       //  fails (with SQLite3 this will happen if the database is locked because
@@ -1287,37 +1285,21 @@ void InterSpecApp::prepareForEndOfSession()
 
   updateUsageTimeToDb();
   
+  const chrono::milliseconds nmilli = chrono::duration_cast<chrono::milliseconds>(m_activeTimeInSession);
+  Wt::log("info") << "At session end, actively used for " << nmilli.count() << " ms for user "
+  << m_viewer->user()->userName();
+  
+#if( USE_DB_TO_STORE_SPECTRA )
   try
   {
-    std::shared_ptr<DataBaseUtils::DbSession> sql = m_viewer->sql();
-    
-    const chrono::milliseconds nmilli = chrono::duration_cast<chrono::milliseconds>(m_activeTimeInSession);
-    Wt::log("info") << "At session end, actively used for " << nmilli.count() << " ms for user "
-    << m_viewer->user()->userName();
-    
-    
-#if( USE_DB_TO_STORE_SPECTRA )
-    {// Begin lean up the kEndOfSessions from before
-      DataBaseUtils::DbTransaction transaction( *sql );
-      
-      Dbo::collection<Dbo::ptr<UserState> > states = sql->session()->find<UserState>()
-        .where( "InterSpecUser_id = ? AND StateType = ?" )
-        .bind( m_viewer->user().id() )
-        .bind( int(UserState::kEndOfSessionTemp) );
-    
-      for( auto iter = states.begin(); iter != states.end(); ++iter )
-        iter->remove();
-      
-      transaction.commit();
-    }// End lean up the kEndOfSessions from before
-
-    m_viewer->saveStateAtForegroundChange();
+    // Neither of these functions should throw, but jic
+    m_viewer->saveStateAtForegroundChange( false );
     m_viewer->saveStateForEndOfSession();
-#endif //#if( USE_DB_TO_STORE_SPECTRA )
   }catch( std::exception &e )
   {
     Wt::log("error") << "InterSpecApp::prepareForEndOfSession() caught: " << e.what();
   }//try / catch
+#endif //#if( USE_DB_TO_STORE_SPECTRA )
   
   Wt::log("debug") << "Have prepared for end of session " << sessionId() << ".";
 }//void InterSpecApp::prepareForEndOfSession()
@@ -1350,6 +1332,16 @@ void InterSpecApp::clearSession()
 {
   // Just in case there are any modal dialogs showing - the cover thing can be a little sticky
   doJavaScript( "$('.Wt-dialogcover').hide();" );
+  
+#if( USE_DB_TO_STORE_SPECTRA )
+  try
+  {
+    m_viewer->saveStateAtForegroundChange( false ); // shouldnt throw, but jic
+  }catch( std::exception &e )
+  {
+    Wt::log("error") << "InterSpecApp::clearSession() caught: " << e.what();
+  }//try / catch
+#endif //#if( USE_DB_TO_STORE_SPECTRA )
   
 #if( BUILD_AS_ELECTRON_APP )
   // As a workaround setup a function ElectronUtils::requestNewCleanSession() that

@@ -396,17 +396,17 @@ public:
 #if( USE_DB_TO_STORE_SPECTRA )
   /** Note: see comments in the top of InterSpecUser.h for an explanation of the use-model for saving to the database. */
   
-  //measurementFromDb(...): returns the measurement that has been, or will be
-  //  serialized to the database.  If 'update' is false, then just the last
-  //  serialization will be returned and in fact may be null.  If 'update'
-  //  is true, then the measurement will be saved to the database first (unless
-  //  it hasnt been modified since last saving) and then returned; if the user
-  //  preference is to not save spectra to the database, then it will not be
-  //  be saved.  In the case the user preference is to not save to the database,
-  //  but the file is already in there, but has been modified in memory, then
-  //  the file will not be re-saved to the database.
-  //  Function wont throw, but may return a null pointer
-  Wt::Dbo::ptr<UserFileInDb> measurementFromDb( SpecUtils::SpectrumType type, bool update );
+  /**  Returns the measurement that has been, or will be serialized to the database.
+   
+   @param update If false, then just the last serialization will be returned and in fact may be null.  If true
+          then the measurement will be saved to the database first (unless it hasnt been modified since
+          last saving) and then returned
+  
+   Function may throw exception (e.g. FileToLargeForDbException, Wt::Dbo::Exception, std::exception) if it runs into an
+   error (file too large to be in DB, or DB issue), or may return a null pointer (the measurement type isnt loaded.
+   */
+  Wt::Dbo::ptr<UserFileInDb> measurementFromDb( const SpecUtils::SpectrumType type,
+                                               const bool update );
   
   //saveStateToDb( entry ): saves the application state to the pointer passed
   //  in.  Note that pointer passed in must be a valid pointer associated with
@@ -440,8 +440,11 @@ public:
    the database with either the current app state, or the current SpecMeas object, depending if we are
    connected to a app-state or not.
    If connected to an app state, will create, or replace the states `kUserStateAutoSavedWork` state in DB.
+   
+   @param doAsync If true, saving to the database will be performed asynchronously. If false, will do all work
+   during the call.
    */
-  void saveStateAtForegroundChange();
+  void saveStateAtForegroundChange( const bool doAsync );
   
   /** Removes all previous `kEndOfSessionTemp` sessions for the user from the database, and then
    if the "AutoSaveSpectraToDb" preference is true, will create the new `kEndOfSessionTemp` state
