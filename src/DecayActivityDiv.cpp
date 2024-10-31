@@ -2165,7 +2165,7 @@ Wt::WContainerWidget *DecayActivityDiv::initDisplayOptionWidgets()
   if( m_viewer )
     HelpSystem::attachToolTipOn( m_displayTimeLength, WString::tr("dad-tt-age"), showToolTips );
   
-  WLabel *yaxisTypeLabel = new WLabel( isPhone ? "dad-yaxis-label-phone" : "dad-yaxis-label", displOptUpper );
+  WLabel *yaxisTypeLabel = new WLabel( WString::tr(isPhone ? "dad-yaxis-label-phone" : "dad-yaxis-label"), displOptUpper );
   yaxisTypeLabel->addStyleClass( "DecayChartYaxisTypeLabel" );
   
   displOptUpper->addWidget( m_yAxisType );

@@ -3409,7 +3409,7 @@ ShieldingSourceDisplay::ShieldingSourceDisplay( PeakModel *peakModel,
     
     bottomMiddleLayout->addWidget( bottomLeftDiv,   0, 0 );
     bottomMiddleLayout->addWidget( sourceDiv, 0, 1 );
-    bottomMiddleLayout->setColumnResizable( 0, true, WLength(38.25,WLength::FontEx) );
+    bottomMiddleLayout->setColumnResizable( 0, true, WLength(340,WLength::Pixel) ); //335px seems to be the limit where the peak table will get horizontal scroll-bars
     bottomMiddleLayout->setHorizontalSpacing( 5 );
     bottomMiddleLayout->setVerticalSpacing( 5 );
     bottomMiddleLayout->setContentsMargins( 0, 0, 0, 0 );
