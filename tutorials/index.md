@@ -1,5 +1,12 @@
 # Tutorials
 
+## Detection Limits (Oct 2024)
+InterSpec provides two tools for calculating detection limits: an easy to use tool to quickly place limits 
+on activities using a single Region of Interest (ROI), as well as a more advanced tool that can use multiple ROIs, place limits
+on activity or detection distance, including with shielding, and uses a more sophisticated deconvolution methodology that takes 
+into account peak and data shape.   
+* [20241023_detection_limit_calc_overview_UUR.pdf](detection_limit/20241023_detection_limit_calc_overview_UUR.pdf) (6 MB)
+
 ## Batch Analysis (Oct 2024)
 When you have many similar spectra to fit peaks and/or activities/shielding with, 
 there is now a batch analysis tool starting with [InterSpec v1.0.13_rc2](https://github.com/sandialabs/InterSpec/releases/tag/v1.0.13_rc2), or if you are on Windows, the [Bleeding Edge build](https://github.com/sandialabs/InterSpec/releases/tag/bleeding-edge) is recommended.  
