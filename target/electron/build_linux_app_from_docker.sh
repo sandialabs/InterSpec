@@ -44,7 +44,7 @@ export GIT_HASH=$(git -C ${InterSpecCodePath} rev-parse HEAD)
 echo "GIT_HASH = ${GIT_HASH}"
 
 echo "Will install npm and global packages"
-yum update
+yum update -y
 yum install -y npm zip
 # Use the 'n' package to install a fairly modern version of npm, by default we are on like version 6 or 8, which is too old to run some of the packages we need
 npm install -g n
