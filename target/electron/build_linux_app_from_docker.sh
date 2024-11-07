@@ -21,7 +21,7 @@ trap 'handle_error $LINENO' ERR
 #  git clone --recursive git@github.com:sandialabs/InterSpec.git ./InterSpec_code
 #  mkdir build_electron
 #  mkdir build_working_dir
-#  docker run --rm -it -v `pwd`/InterSpec_code:/interspec -v `pwd`/build_electron/:/build_app -v `pwd`/build_working_dir:/build_working_dir quay.io/pypa/manylinux_2_28_x86_64:latest /interspec/target/electron/Docker/build_linux_app_from_docker.sh /interspec /build_app /build_working_dir
+#  docker run --rm -it -v `pwd`/InterSpec_code:/interspec -v `pwd`/build_electron/:/build_app -v `pwd`/build_working_dir:/build_working_dir quay.io/pypa/manylinux_2_28_x86_64:latest /interspec/target/electron/build_linux_app_from_docker.sh /interspec /build_app /build_working_dir
 #  #Then results will then be in build_working_dir/InterSpec-linux-x64
 
 if [ $# -ne 3 ]; then
