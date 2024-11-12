@@ -296,6 +296,7 @@ void fit_energy_cal_from_fit_peaks( shared_ptr<SpecUtils::Measurement> &raw, vec
   
   raw->set_energy_calibration( updated_cal );
   
+#if( PERFORM_DEVELOPER_CHECKS )
   cout << "Updated energy calibration using ROIs from exemplar.\n\tCoefficients:\n";
   assert( fit_coefs.size() == orig_cal->coefficients().size() );
   for( size_t i = 0; i < fit_coefs.size(); ++i )
@@ -314,6 +315,7 @@ void fit_energy_cal_from_fit_peaks( shared_ptr<SpecUtils::Measurement> &raw, vec
   }
   
   cout << endl << endl;
+#endif
 }//void fit_energy_cal_from_fit_peaks(...)
 
   
@@ -1122,6 +1124,8 @@ BatchPeak::BatchPeakFitResult fit_peaks_in_file( const std::string &exemplar_fil
       candidate_peaks.push_back( peak );
     }//for( const auto &p : exemplar_peaks )
     
+    results.original_energy_cal = spec ? spec->energy_calibration() : nullptr;
+    
     if( options.refit_energy_cal )
     {
       // We will refit the energy calibration - maybe a few times - to really hone in on things
@@ -1166,6 +1170,8 @@ BatchPeak::BatchPeakFitResult fit_peaks_in_file( const std::string &exemplar_fil
       {
         results.warnings.push_back( "Failed to fit an appropriate energy calibration in '" + filename + "'." );
       }
+      
+      results.refit_energy_cal = spec ? spec->energy_calibration() : nullptr;
     }//if( options.refit_energy_cal )
     
     vector<PeakDef> fit_peaks = fitPeaksInRange( lower_energy, uppper_energy, ncausalitysigma,
