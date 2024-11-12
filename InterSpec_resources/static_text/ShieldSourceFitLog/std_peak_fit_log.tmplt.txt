@@ -1,5 +1,7 @@
 {% if exists("foreground") %}
+Foreground StartTime: {{ foreground.StartTime }}
 Foreground LiveTime: {% if foreground.LiveTime_s %}{{ foreground.LiveTime_s }} seconds{% endif %} {% if foreground.LiveTime %}({{ foreground.LiveTime }}){% endif %}
+Foreground RealTime: {% if foreground.RealTime_s %}{{ foreground.RealTime_s }} seconds{% endif %} {% if foreground.RealTime %}({{ foreground.RealTime }}){% endif %}
 {% endif %}
 
 {% if HasWarnings %}
