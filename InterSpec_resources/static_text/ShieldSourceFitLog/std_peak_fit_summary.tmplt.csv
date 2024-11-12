@@ -9,7 +9,7 @@ Setup
     {% if exists("ExemplarSampleNumbers") %}Exemplar samples: {{ ExemplarSampleNumbers }}{% endif %}
     
 
-Filename, Mean, Amplitude, FWHM, LowerEnergy, UpperEnergy, LowerChannel, UpperChannel, ContinuumIndex, SourceName, SourceType, SourceEnergy, PeakColor, UserLabel, Mean Uncert, Amplitude Uncert, FWHM Uncert, Chi2Dof, StartTime, LiveTime (s), RealTime(s),
+Filename, Mean, Amplitude, FWHM, LowerEnergy, UpperEnergy, LowerChannel, UpperChannel, ContinuumIndex, ContinuumType, SourceName, SourceType, SourceEnergy, PeakColor, UserLabel, Mean Uncert, Amplitude Uncert, FWHM Uncert, Chi2Dof, StartTime, LiveTime (s), RealTime(s),
 ## for file in Files
 ## if existsIn(file,"FitPeaks")
 ## for peak in file.FitPeaks.Peaks
