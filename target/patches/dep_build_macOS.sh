@@ -10,8 +10,8 @@ if [ "$#" -lt 2 ] || [ "$#" -gt 3 ]; then
 fi
 
 # Set proxy, if you need it
-export http_proxy=http://proxy.sandia.gov:80
-export https_proxy=http://proxy.sandia.gov:80
+#export http_proxy=http://proxy.sandia.gov:80
+#export https_proxy=http://proxy.sandia.gov:80
 
 working_directory=$2
 install_directory=$3
@@ -108,27 +108,62 @@ if [ -f "${working_directory}/boost.installed" ]; then
     echo "Boost already installed (as indicated by existance of boost.installed file) - skipping."
 else
   # Download the file using curl
-  file_url="https://sourceforge.net/projects/boost/files/boost/1.78.0/boost_1_78_0.zip/download"
-  file_name="boost_1_78_0.zip"
-  expected_sha256="f22143b5528e081123c3c5ed437e92f648fe69748e95fa6e2bd41484e2986cc3"
+  # Boost 1.78 seems to fail compile with Xcode 16.1 
+  #file_url="https://sourceforge.net/projects/boost/files/boost/1.78.0/boost_1_78_0.zip/download"
+  #file_name="boost_1_78_0.zip"
+  #expected_sha256="f22143b5528e081123c3c5ed437e92f648fe69748e95fa6e2bd41484e2986cc3"
+  #
+  # Boost 1.80 seems to fail compile with Xcode 16.1
+  #file_url="https://sourceforge.net/projects/boost/files/boost/1.80.0/boost_1_80_0.zip/download"
+  #file_name="boost_1_80_0.zip"
+  #expected_sha256="e34756f63abe8ac34b35352743f17d061fcc825969a2dd8458264edb38781782"
+  #
+  # Boost 1.81 gives "duplicate symbol 'boost::phoenix::placeholders::uarg1" error when compiling InterSpec code
+  #file_url="https://sourceforge.net/projects/boost/files/boost/1.81.0/boost_1_81_0.zip/download"
+  #file_name="boost_1_81_0.zip"
+  #expected_sha256="6e689b266b27d4db57f648b1e5c905c8acd6716b46716a12f6fc73fc80af842e"
+  #
+  # Boost 1.82 gives "duplicate symbol 'boost::phoenix::placeholders::uarg1" error when compiling InterSpec code
+  #file_url="https://sourceforge.net/projects/boost/files/boost/1.82.0/boost_1_82_0.zip/download"
+  #file_name="boost_1_82_0.zip"
+  #expected_sha256="f7c9e28d242abcd7a2c1b962039fcdd463ca149d1883c3a950bbcc0ce6f7c6d9"
+  #
+  # The linking issue seems to be fixed in boost 1.84: https://lists.boost.org/Archives/boost/2023/11/255233.php
+  file_url="https://sourceforge.net/projects/boost/files/boost/1.84.0/boost_1_84_0.zip/download"
+  file_name="boost_1_84_0.zip"
+  expected_sha256="cc77eb8ed25da4d596b25e77e4dbb6c5afaac9cddd00dc9ca947b6b268cc76a4"
+  #
+  # Wt fails to compile against boost 1.85, but you just need to modify:
+  #  - wt-3.7.1/src/web/FileUtils.C to include boost/filesystem.hpp
+  #  - wt-3.7.1/src/http/Configuration.h to change `bool hasSslPasswordCallback()` to be { return !sslPasswordCallback_.empty(); } 
+  #file_url="https://sourceforge.net/projects/boost/files/boost/1.85.0/boost_1_85_0.zip/download"
+  #file_name="boost_1_85_0.zip"
+  #expected_sha256="e712fe7eb1b9ec37ac25102525412fb4d74e638996443944025791f48f29408a"
+  
 
+
+  src_dir="${file_name%.*}"
+  
   download_file "${file_url}" "${file_name}" "${expected_sha256}"
 
   # unzip and change into resulting directory
-  if [ -e "${working_directory}/boost.unzipped" ]; then
-    echo "Boost already unzipped."
+  if [ -d "${src_dir}" ]; then
+    echo "Boost already unzipped, not doing again."
   else
     unzip "${file_name}"
-    touch "${working_directory}/boost.unzipped"
   fi
 
-  cd "${file_name%.*}"
+  cd "${src_dir}"
 
   if [ -e "${working_directory}/boost.built" ]; then
     echo "Boost already built - not rebuilding."
   else
-    # build the b2 executable
-    ./bootstrap.sh cxxflags="-arch x86_64 -arch arm64 -mmacosx-version-min=${MACOSX_DEPLOYMENT_TARGET}" cflags="-arch x86_64 -arch arm64 -mmacosx-version-min=${MACOSX_DEPLOYMENT_TARGET}" linkflags="-arch x86_64 -arch arm64 -mmacosx-version-min=${MACOSX_DEPLOYMENT_TARGET}" --prefix=${MY_WT_PREFIX}
+    if [ -e "b2" ]; then
+      echo "Boost bootstrap looks to be done - not doing again"
+    else
+      # build the b2 executable
+      ./bootstrap.sh cxxflags="-arch x86_64 -arch arm64 -mmacosx-version-min=${MACOSX_DEPLOYMENT_TARGET}" cflags="-arch x86_64 -arch arm64 -mmacosx-version-min=${MACOSX_DEPLOYMENT_TARGET}" linkflags="-arch x86_64 -arch arm64 -mmacosx-version-min=${MACOSX_DEPLOYMENT_TARGET}" --prefix=${MY_WT_PREFIX}
+    fi # if b2 already built / else
 
     # build and stage boost for arm64
     ./b2 toolset=clang-darwin target-os=darwin architecture=arm abi=aapcs cxxflags="-stdlib=libc++ -arch arm64 -std=c++14 -mmacosx-version-min=${MACOSX_DEPLOYMENT_TARGET}" cflags="-arch arm64  -mmacosx-version-min=${MACOSX_DEPLOYMENT_TARGET}" linkflags="-stdlib=libc++ -arch arm64 -std=c++14 -mmacosx-version-min=${MACOSX_DEPLOYMENT_TARGET}" link=static variant=release threading=multi --build-dir=macOS_arm64_build --prefix=${MY_WT_PREFIX} -a stage
