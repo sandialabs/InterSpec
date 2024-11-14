@@ -24,6 +24,7 @@
 #include "InterSpec_config.h"
 
 #include <mutex>
+#include <tuple>
 #include <vector>
 #include <string>
 #include <stdexcept>
@@ -38,6 +39,7 @@
 
 #include "SpecUtils/DateTime.h" //only for debug timing
 #include "SpecUtils/Filesystem.h"
+#include "SpecUtils/ParseUtils.h"
 #include "SpecUtils/StringAlgo.h"
 #include "SpecUtils/SpecUtilsAsync.h"
 #include "SpecUtils/RapidXmlUtils.hpp"
@@ -404,6 +406,299 @@ namespace
   }//const NucMix *get_custom_nuc_mix( std::string label )
   
 }//namespace
+
+
+void dev_fission_lines()
+{
+  const SandiaDecay::SandiaDecayDataBase *db = DecayDataBaseServer::database();
+  if( !db )
+  {
+    cerr << "Couldnt open decay database" << endl;
+    return;
+  }
+  
+  string filename = "data/fission_yields/u235_independent_fy.csv";
+  if( filename.empty() )
+    return nullptr;
+  
+#ifdef _WIN32
+  const std::wstring wfilename = SpecUtils::convert_from_utf8_to_utf16(filename);
+  ifstream input( filename.c_str() );
+#else
+  ifstream input( filename.c_str() );
+#endif
+  
+  if( !input.is_open() )
+  {
+    cerr << "Error: Unable to open fission yield file '" << filename << "'" << endl;
+    return;
+  }//if( !input.is_open() )
+  
+  struct NuclideYield
+  {
+    const SandiaDecay::Nuclide *nuclide = nullptr;
+    double thermal_yield = 0.0;
+    double fast_yield = 0.0;
+    double fourteen_MeV_yield = 0.0;
+  };
+  
+  double num_atoms_mult = std::numeric_limits<double>::max();
+  vector<NuclideYield> fission_yields;
+  
+  try
+  {
+    string line;
+    int line_num = 0;
+    int progeny_el_index = -1, progeny_A_index = -1, progeny_level_index = -1;
+    int fy_thermal_index = -1, fy_fast_index = -1, fy_14MeV_index = -1;
+    
+    
+    const double min_halflife = 60*SandiaDecay::second;
+    
+    while( SpecUtils::safe_get_line(input, line, 16384) )
+    {
+      if( line.size() > 16380 )
+      {
+        std::cerr << "Error: line " << line_num << " is longer than max allowed length of 16380 characters; not reading in file" << std::endl;
+        return;
+      }
+      
+      ++line_num;
+      
+      SpecUtils::trim( line );
+      if( line.empty() || line[0]=='#' )
+        continue;
+      
+      //cout << "Line: " << line << endl;
+      
+      vector<string> fields;
+      SpecUtils::split_no_delim_compress( fields, line, "," );
+      
+      if( fields.size() < 2 )
+        continue;
+      
+      for( string &field : fields )
+        SpecUtils::trim( field );
+      
+      if( progeny_el_index < 0 )
+      {
+        auto index_of_field = [&fields,&line]( const string &val ) -> int {
+          auto pos = std::find( begin(fields), end(fields), val );
+          if( pos == end(fields) )
+            throw runtime_error( "Failed to find header value '" + val + "', in line '" + line + "'" );
+          return static_cast<int>( pos - begin(fields) );
+        };//index_of_field(...)
+        
+        progeny_el_index = index_of_field( "element_daughter" );
+        progeny_A_index = index_of_field( "a_daughter" );
+        progeny_level_index = index_of_field( "daughter_level_idx" );
+        fy_thermal_index = index_of_field( "independent_thermal_fy" );
+        fy_fast_index = index_of_field( "independent_fast_fy" );
+        fy_14MeV_index = index_of_field( "independent_14mev_fy" );
+        
+        continue;
+      }//if( progeny_el_index < 0 )
+      
+      
+      if( (fields.size() < progeny_el_index) || (fields.size() < progeny_A_index)
+         || (fields.size() < progeny_level_index) || (fields.size() < fy_thermal_index)
+        || (fields.size() < fy_fast_index) || (fields.size() < fy_14MeV_index) )
+      {
+        throw runtime_error( "Fewer fields (" + std::to_string(fields.size()) + ")"
+                            " than expected on line " + std::to_string(line_num) );
+      }
+      
+      string label = fields[progeny_el_index] + fields[progeny_A_index];
+      int level = 0;
+      if( !(stringstream(fields[progeny_level_index]) >> level) )
+      {
+        cout << "Failed to convert level '" << fields[progeny_level_index] << "' to int." << endl;
+      }
+      
+      // TODO: figure out exactly what level corresponded to, in terms of meta-stable state.
+      if( level > 0 )
+      {
+        label += "m";
+        if( level > 1 )
+          cout << label << " has level=" << level << endl;
+      }//if( level > 0 )
+      
+      const SandiaDecay::Nuclide * const nuc = db->nuclide(label);
+      if( !nuc )
+      {
+        cerr << "Failed to get nuc '" << label << "' from decay database - skipping." << endl;
+        continue;
+      }
+      
+      if( nuc->isStable() )
+        continue;
+      
+      const vector<const SandiaDecay::Nuclide *> kids = nuc->descendants();
+      double max_hl = nuc->halfLife;
+      for( const SandiaDecay::Nuclide *kid : kids )
+      {
+        if( !kid->isStable() )
+          max_hl = std::max( max_hl, kid->halfLife );
+      }
+      
+      if( max_hl < min_halflife )
+        continue;
+      
+      double fy_thermal = 0.0, fy_fast = 0.0, fy_14MeV = 0.0;
+      if( !fields[fy_thermal_index].empty() )
+      {
+        if( !(stringstream(fields[fy_thermal_index]) >> fy_thermal) )
+          throw runtime_error( "Failed to convert '" + fields[fy_thermal_index]
+                              + "' to fission yield; line " + std::to_string(line_num) );
+      }
+      
+      if( !fields[fy_fast].empty() )
+      {
+        if( !(stringstream(fields[fy_fast]) >> fy_fast) )
+          throw runtime_error( "Failed to convert '" + fields[fy_fast]
+                              + "' to fission yield; line " + std::to_string(line_num) );
+      }
+      
+      if( !fields[fy_14MeV_index].empty() )
+      {
+        if( !(stringstream(fields[fy_14MeV_index]) >> fy_14MeV) )
+          throw runtime_error( "Failed to convert '" + fields[fy_14MeV_index]
+                              + "' to fission yield; line " + std::to_string(line_num) );
+      }
+      
+      NuclideYield yield;
+      yield.nuclide = nuc;
+      yield.thermal_yield = fy_thermal;
+      yield.fast_yield = fy_fast;
+      yield.fourteen_MeV_yield = fy_14MeV;
+      
+      const double max_yield = std::max( std::max(fy_thermal, fy_fast), fy_14MeV );
+      if( max_yield <= 0.0 )
+        continue;
+      
+      // We will have the max-buildup nuclide, buildup by ~1 uCi per second (about 86mCi per day,
+      //  or 31 Ci per year)
+      if( nuc->halfLife > 60*SandiaDecay::second )
+      {
+        const double num_atoms_in_uCi = nuc->activityToNumAtoms( 1.0E-6*SandiaDecay::Ci );
+        num_atoms_mult = std::min( num_atoms_mult, num_atoms_in_uCi / max_yield );
+      }
+
+      
+      fission_yields.emplace_back( std::move(yield) );
+    }//while( SpecUtils::safe_get_line(input, line) )
+    
+    cout << "Read in " << fission_yields.size() << " products" << endl;
+  }catch( std::exception &e )
+  {
+    cerr << "Failed to parse fission file '" << filename << "': " << e.what() << endl;
+  }//try / catch to parse file
+  
+  std::sort( begin(fission_yields), end(fission_yields),
+    []( const NuclideYield &lhs, const NuclideYield &rhs ) -> bool {
+    return lhs.thermal_yield > rhs.thermal_yield;
+  } );
+  
+  cout << "\n\nTop thermal yields:" << endl;
+  for( size_t i = 0, num_printed = 0; i < fission_yields.size() && num_printed < 10; ++i )
+  {
+    //if( fission_yields[i].nuclide->halfLife > 0.1*SandiaDecay::year )
+    {
+      num_printed += 1;
+      cout << fission_yields[i].nuclide->symbol << ": " << fission_yields[i].thermal_yield << endl;
+    }
+  }
+  
+  SandiaDecay::NuclideMixture ager;
+  for( const auto &n : fission_yields )
+    ager.addAgedNuclideByNumAtoms(n.nuclide, n.thermal_yield*num_atoms_mult, 0.0 );
+  
+  // Now we will crate a mixture that will represent, for its t=0, the end of
+  //  build up, and after the looping over all the time steps, it will have
+  //  all the information we want.
+  SandiaDecay::NuclideMixture mixture;
+  
+  // Define how many seconds each time-step should be.
+  //  A smaller time step should be more accurate, but you should take into account the
+  //  half-lives of the nuclides you care about are.
+  const double time_delta = 30.0*3600*SandiaDecay::second;
+  
+  // This integration is very niave, and could be greatly improved.
+  //  However, informal checks show for irradiation time of months, and common
+  //  neutron activation products in metals, accuracy and numeric error didn't
+  //  become notable issues (checked smaller time deltas, as well as using 128 bit,
+  //  instead of 64 bit internal precisions in SandiaDecay, as well as exact
+  //  expectations).
+  const double irradiation_time_seconds = 7*24*3600*SandiaDecay::second;
+  for( double start_time = 0.0; start_time < irradiation_time_seconds; start_time += time_delta )
+  {
+    const double end_time = std::min( start_time + time_delta, irradiation_time_seconds );
+    const double this_dt = end_time - start_time;
+    const double mid_time = 0.5*(start_time + end_time);
+    const double time_until_irad_end = irradiation_time_seconds - mid_time;
+    
+    // Get the number of atoms, for all activation products, and their progeny, we expect
+    //  at the end of buildup time.
+    const vector<SandiaDecay::NuclideNumAtomsPair> num_atoms = ager.numAtoms( time_until_irad_end );
+    for( size_t index = 0; index < num_atoms.size(); ++index )
+    {
+      const SandiaDecay::NuclideNumAtomsPair &nuc_num = num_atoms[index];
+      mixture.addNuclideByAbundance( nuc_num.nuclide, (this_dt / time_delta)*nuc_num.numAtoms );
+    }
+  }//for( loop over buildup time )
+ 
+  // Define how long after irradiation it will be before a measurement is started
+  const double cool_off_time = 2*24*3600; //i.e., 2 days
+  
+  
+  vector<SandiaDecay::NuclideActivityPair> irrad_end_activities = mixture.activity( 0.0 );
+  std::sort( begin(irrad_end_activities), end(irrad_end_activities),
+    []( const SandiaDecay::NuclideActivityPair &lhs, const SandiaDecay::NuclideActivityPair &rhs ) -> bool {
+    return lhs.activity > rhs.activity;
+  });
+  cout << "At the end of irradiation, the activities are:\n";
+  for( size_t index = 0; index < irrad_end_activities.size() && (index < 100); ++index )
+    cout << "\t" << irrad_end_activities[index].nuclide->symbol
+          << ": " << irrad_end_activities[index].activity << " bq" << endl;
+  
+  vector<SandiaDecay::NuclideActivityPair> after_cool_off_activities = mixture.activity( cool_off_time );
+  std::sort( begin(after_cool_off_activities), end(after_cool_off_activities),
+    []( const SandiaDecay::NuclideActivityPair &lhs, const SandiaDecay::NuclideActivityPair &rhs ) -> bool {
+    return lhs.activity > rhs.activity;
+  });
+  cout << "\n\nAfter cooling off for " << cool_off_time << " seconds the activities are:\n";
+  for( size_t index = 0; index < after_cool_off_activities.size() && (index < 100); ++index )
+    cout << "\t" << after_cool_off_activities[index].nuclide->symbol
+    << ": " << after_cool_off_activities[index].activity << " bq" << endl;
+  
+  
+  // We expect A = A_0 * (1 - exp(-lamda * t_activation), so lets check things, but
+  //  please note that this is only a valid check if no other activation products
+  //  decay through the activation nuclide of interest.
+  /*
+  cout << endl << endl;
+  for( size_t index = 0; index < irrad_end_activities.size() && (index < 100); ++index )
+  {
+    const SandiaDecay::Nuclide * const output_nuc = irrad_end_activities[index].nuclide;
+    const double out_act = irrad_end_activities[index].activity;
+    for( size_t input_index = 0; input_index < nuclides_rates.size(); ++input_index )
+    {
+      const SandiaDecay::Nuclide * const input_nuc = nuclides_rates[input_index].first;
+      const double input_rate = nuclides_rates[input_index].second;
+      if( input_nuc != output_nuc )
+        continue;
+      
+      const double lambda = input_nuc->decayConstant();
+      const double expected_act = input_rate * (1.0 - exp( -lambda * irradiation_time_seconds) );
+      cout << "For " << input_nuc->symbol << " analytically expected " << expected_act
+            << " bq; our calculation is " << out_act << " bq" << endl;
+    }//for( loop over input nuclides )
+  }//for( loop over output nuclides )
+  */
+  
+  cout << "Done in dev_fission_lines()" << endl;
+}//void dev_fission_lines()
+
 
 
 /** Computes background lines by aging K40, Th232, U235, U238, and Ra226, and then transporting,

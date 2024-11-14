@@ -52,9 +52,12 @@
 #endif
 
 // #include "InterSpec/QRSpectrum.h"
+#include "InterSpec/ReferenceLineInfo.h"
 
 int main( int argc, char **argv )
 {
+  dev_fission_lines();
+  return 1;
 #ifdef _WIN32
   AppUtils::getUtf8Args( argc, argv );
 #endif
