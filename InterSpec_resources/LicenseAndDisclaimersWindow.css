@@ -38,6 +38,12 @@
 .LicenseAndDisclaimersWindow .ShowDataLocationBtn
 {
   display: block;
-  float: right;
   margin-right: 10px;
+  align-self: flex-end;
+}
+
+.UseInfoItem.DataContent
+{
+  display: flex;
+  flex-direction: column;
 }

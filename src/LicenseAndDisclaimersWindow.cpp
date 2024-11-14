@@ -363,6 +363,9 @@ void LicenseAndDisclaimersWindow::dataStorageCreator( Wt::WContainerWidget *pare
   
   if( viewer )
   {
+    if( !parent->hasStyleClass("DataContent") )
+      parent->addStyleClass( "DataContent" );
+      
     string datadir, userDataDir;
     try
     {
@@ -438,7 +441,7 @@ void LicenseAndDisclaimersWindow::dataStorageCreator( Wt::WContainerWidget *pare
 #if( !ANDROID && !IOS && !BUILD_FOR_WEB_DEPLOYMENT )
     if( !userDataDir.empty() )
     {
-      WPushButton *showBtn = new WPushButton( displOptLower );
+      WPushButton *showBtn = new WPushButton( parent );
 #ifdef _WIN32
       const char *txt_key = "ladw-show-data-location-win";
 #elif __APPLE__
@@ -460,7 +463,7 @@ void LicenseAndDisclaimersWindow::dataStorageCreator( Wt::WContainerWidget *pare
 #if( !ANDROID && !IOS && !BUILD_FOR_WEB_DEPLOYMENT )
     if( !userDataDir.empty() )
     {
-      WPushButton *showBtn = new WPushButton( displOptLower );
+      WPushButton *showBtn = new WPushButton( parent );
 #ifdef _WIN32
       const char *txt_key = "ladw-show-data-location-win";
 #elif __APPLE__
