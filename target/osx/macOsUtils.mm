@@ -26,6 +26,7 @@
 #import <dispatch/dispatch.h>
 #import <Foundation/NSUserDefaults.h>
 
+#import <AppKit/NSWorkspace.h>    //NSWorkspace
 #import <Foundation/Foundation.h> //NSFileManager, NSBundle, NSURL
 
 #include "target/osx/macOsUtils.h"
@@ -54,5 +55,26 @@ std::string user_data_dir()
   NSURL *appSupportURL = [[fileManager URLsForDirectory:NSApplicationSupportDirectory inDomains:NSUserDomainMask] lastObject];
   NSURL *appUrl = [appSupportURL URLByAppendingPathComponent:@"sandia.InterSpec"];
   return [[appUrl path] UTF8String];
+}
+  
+bool openFinderToPath( const std::string &filepath )
+{
+  NSString *nsstr_filepath = [[NSString alloc] initWithCString:filepath.c_str() encoding:NSUTF8StringEncoding];
+  
+  return [[NSWorkspace sharedWorkspace] selectFile: nil inFileViewerRootedAtPath: nsstr_filepath];
+}
+  
+bool showFileInFinder( const std::string &filepath )
+{
+  //  See https://chromium.googlesource.com/chromium/src/+/refs/heads/main/chrome/browser/platform_util_mac.mm for how this could/should be implemented, at least for BUILD_AS_OSX_APP
+  NSFileManager *fileManager = [NSFileManager defaultManager];
+  
+  NSString *nsstr_filepath = [[NSString alloc] initWithCString:filepath.c_str() encoding:NSUTF8StringEncoding];
+  BOOL valid = [fileManager fileExistsAtPath:nsstr_filepath];
+  
+  NSURL *nsurl_filepath = [NSURL fileURLWithPath:nsstr_filepath];
+  [[NSWorkspace sharedWorkspace] activateFileViewerSelectingURLs:@[ nsurl_filepath ]];
+  
+  return valid;
 }
 }//namespace macOsUtils

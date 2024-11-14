@@ -60,6 +60,17 @@
 
 #include "InterSpec/AppUtils.h"
 
+#if( BUILD_AS_OSX_APP )
+#include "target/osx/macOsUtils.h" // for macOsUtils::showFileInFinder(filepath)
+#endif
+
+
+#if( defined(WIN32) )
+#include <shellapi.h>    //for ShellExecute
+#include <shlobj_core.h> //for ILCreateFromPath and SHOpenFolderAndSelectItems
+#endif
+
+
 using namespace std;
 
 namespace AppUtils
@@ -374,6 +385,92 @@ bool locate_file( string &filename, const bool is_dir,
   
   return false;
 }//bool locate_file( ... )
+  
+  
+bool showFileInOsFileBrowser( const std::string &filepath )
+{
+  const bool isdir = SpecUtils::is_directory(filepath);
+  
+  const string parentdir = isdir ? filepath : SpecUtils::parent_path(filepath);
+  if( !SpecUtils::is_directory(parentdir) )
+    return false;
+  
+//#if( BUILD_AS_ELECTRON_APP )
+  //  TODO: we could (should?) implement this as an electron specific function in InterSpecAddOn.cpp/.h or ElectronUtils.h/.cpp; either as dedicated function, or via InterSpecAddOn::send_nodejs_message - probably dedicated function would be best
+  // In node.js, we can do this via:
+  // const {shell} = require('electron'); shell.showItemInFolder('" + filename + "');" );
+//#endif
+  
+#if( defined(WIN32) )
+  int rval = 1;
+  //For windows need to escape '\'.
+  //SpecUtils::ireplace_all( filename, "\\", "\\\\" );
+  
+  if( isdir )
+  {
+    //Do we need to call: CoInitializeEx ?
+    const wstring dirw = SpecUtils::convert_from_utf8_to_utf16(parentdir);
+    ShellExecuteW(NULL, L"open", dirw.c_str(), NULL, NULL, SW_SHOW);
+  }else
+  {
+    // For similar implementation, see: https://chromium.googlesource.com/chromium/src/+/refs/heads/main/chrome/browser/platform_util_win.cc
+    const wstring filepathw = SpecUtils::convert_from_utf8_to_utf16(filepath);
+    PIDLIST_ABSOLUTE item_list = ILCreateFromPathW(filepathw.c_str());
+    if( item_list )
+    {
+      //Do we need to call: CoInitializeEx ?
+      
+      HRESULT hr = SHOpenFolderAndSelectItems( item_list,0 , 0, 0 );
+      if( hr == ERROR_FILE_NOT_FOUND )
+      {
+        const wstring dirw = SpecUtils::convert_from_utf8_to_utf16(parentdir);
+        ShellExecuteW(NULL, L"open", dirw.c_str(), NULL, NULL, SW_SHOW);
+      }else
+      {
+        rval = 0;
+      }
+      
+      ILFree( item_list );
+    }//if( item_list )
+  }
+#elif( BUILD_AS_OSX_APP )
+  bool success = false;
+  if( isdir )
+    success = macOsUtils::openFinderToPath( filepath );
+  else
+    success = macOsUtils::showFileInFinder( filepath );
+  int rval = rval ? 0 : 1;
+  if( !success )
+  {
+    const string command = "open -R '" + filepath + "'"; //The "-R" option reveals file in Finder, with it highlighted
+    rval = system( command.c_str() );
+  }
+#elif( __APPLE__ )
+  //  See https://chromium.googlesource.com/chromium/src/+/refs/heads/main/chrome/browser/platform_util_mac.mm for how this could/should be implemented, at least for BUILD_AS_OSX_APP
+  // But the gist of it is:
+  // NSString *nsstr_filepath = @(filepath.c_str());
+  // NSURL *nsurl_filepath = [NSURL fileURLWithPath:nsstr_filepath];
+  // [[NSWorkspace sharedWorkspace] activateFileViewerSelectingURLs:@[ nsurl_filepath ]];
+  // Should probably add to target/osx/macOsUtils.h/.mm
+  int rval = 0;
+  if( isdir )
+  {
+    const string command = "open -R '" + filepath + "'"; //The "-R" option reveals file in Finder, with it highlighted
+    rval = system( command.c_str() );
+  }else
+  {
+    const string command = "open -R '" + filepath + "'"; //The "-R" option reveals file in Finder, with it highlighted
+    rval = system( command.c_str() );
+  }
+#else
+  // See https://chromium.googlesource.com/chromium/src/+/refs/heads/main/chrome/browser/platform_util_linux.cc
+  #warning "xdg-open for parentdir has not been tested!"
+  const string command = "xdg-open '" + parentdir + "'";
+  const int rval = system( command.c_str() );
+#endif
+  
+  return (rval == 0);
+}//bool showFileInOsFileBrowser( const std::string &filepath )
 #endif //#if( !ANDROID && !IOS && !BUILD_FOR_WEB_DEPLOYMENT )
   
   
