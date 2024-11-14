@@ -1331,38 +1331,7 @@ void add_basic_src_details( const GammaInteractionCalc::SourceDetails &src,
     spec_obj["DerivedIsBackground"] = static_cast<bool>(spec.derived_data_properties()
                                                         & static_cast<uint32_t>(SpecUtils::Measurement::DerivedDataProperties::IsBackground));
     
-    auto cal = spec.energy_calibration();
-    auto &cal_obj = spec_obj["EnergyCal"];
-    
-    cal_obj["NumChannels"] = cal ? static_cast<int>(cal->num_channels()) : 0;
-    const SpecUtils::EnergyCalType cal_type = cal ? cal->type() : SpecUtils::EnergyCalType::InvalidEquationType;
-    switch( cal_type )
-    {
-      case SpecUtils::EnergyCalType::Polynomial:
-      case SpecUtils::EnergyCalType::UnspecifiedUsingDefaultPolynomial:
-        cal_obj["Type"] = "Polynomial";
-        cal_obj["Coefficients"] = vector<double>{ begin(cal->coefficients()), end(cal->coefficients()) };
-        break;
-        
-      case SpecUtils::EnergyCalType::FullRangeFraction:
-        cal_obj["Type"] = "FullRangeFraction";
-        cal_obj["Coefficients"] = vector<double>{ begin(cal->coefficients()), end(cal->coefficients()) };
-        break;
-      case SpecUtils::EnergyCalType::LowerChannelEdge:
-        cal_obj["Type"] = "LowerChannelEdge";
-        break;
-      case SpecUtils::EnergyCalType::InvalidEquationType:
-        cal_obj["Type"] = "Invalid";
-        break;
-    }//switch( cal->type() )
-    
-    if( cal && !cal->deviation_pairs().empty() )
-    {
-      vector<vector<double>> pairs;
-      for( const pair<float,float> &p : cal->deviation_pairs() )
-        pairs.push_back( { static_cast<double>(p.first), static_cast<double>(p.second) } );
-      cal_obj["DeviationPairs"] = pairs;
-    }//if( dev pairs )
+    add_energy_cal_json( spec_obj["EnergyCal"], spec.energy_calibration() );
     
     if( spec_file )
     {
@@ -1380,6 +1349,52 @@ void add_basic_src_details( const GammaInteractionCalc::SourceDetails &src,
         spec_obj["InstrumentRidSummary"] = riidAnaSummary( spec_file );
     }//if( spec_file )
   }//add_hist_to_json(...)
+  
+  
+  void add_energy_cal_json( nlohmann::basic_json<> &cal_obj,
+                           const std::shared_ptr<const SpecUtils::EnergyCalibration> &cal )
+  {
+    cal_obj["NumChannels"] = cal ? static_cast<int>(cal->num_channels()) : 0;
+    const SpecUtils::EnergyCalType cal_type = cal ? cal->type() : SpecUtils::EnergyCalType::InvalidEquationType;
+    switch( cal_type )
+    {
+      case SpecUtils::EnergyCalType::Polynomial:
+      case SpecUtils::EnergyCalType::UnspecifiedUsingDefaultPolynomial:
+        cal_obj["Type"] = "Polynomial";
+        break;
+        
+      case SpecUtils::EnergyCalType::FullRangeFraction:
+        cal_obj["Type"] = "FullRangeFraction";
+        break;
+        
+      case SpecUtils::EnergyCalType::LowerChannelEdge:
+        cal_obj["Type"] = "LowerChannelEdge";
+        break;
+        
+      case SpecUtils::EnergyCalType::InvalidEquationType:
+        cal_obj["Type"] = "Invalid";
+        break;
+    }//switch( cal->type() )
+    
+    if( cal_type == SpecUtils::EnergyCalType::InvalidEquationType )
+      return;
+    
+    cal_obj["LowerEnergy"] = cal->lower_energy();
+    cal_obj["UpperEnergy"] = cal->upper_energy();
+    
+    if( cal->type() != SpecUtils::EnergyCalType::LowerChannelEdge )
+    {
+      cal_obj["Coefficients"] = vector<double>{ begin(cal->coefficients()), end(cal->coefficients()) };
+      
+      if( !cal->deviation_pairs().empty() )
+      {
+        vector<vector<double>> pairs;
+        for( const pair<float,float> &p : cal->deviation_pairs() )
+          pairs.push_back( { static_cast<double>(p.first), static_cast<double>(p.second) } );
+        cal_obj["DeviationPairs"] = pairs;
+      }//if( dev pairs )
+    }//if( polynomial or FRF )
+  }//void add_energy_cal_json(...)
   
   
   void add_activity_fit_options_to_json( nlohmann::json &data,
@@ -1479,6 +1494,20 @@ void add_basic_src_details( const GammaInteractionCalc::SourceDetails &src,
                        &fit_results );
     }//if( fit_results.spectrum )
     
+    
+    const bool successful_ene_refit = (fit_results.original_energy_cal && fit_results.refit_energy_cal);
+    data["EnergyCalIsRefit"] = successful_ene_refit;
+    
+    if( successful_ene_refit )
+    {
+      auto &ene_cal_json = data["EnergyCalRefitResult"];
+      
+      if( fit_results.original_energy_cal )
+        add_energy_cal_json( ene_cal_json["Original"], fit_results.original_energy_cal );
+      
+      if( fit_results.refit_energy_cal )
+        add_energy_cal_json( ene_cal_json["Refit"], fit_results.refit_energy_cal );
+    }//if( successful_ene_refit )
     
     
     auto add_peaks = []( nlohmann::json &json, deque<shared_ptr<const PeakDef>> peaks, const shared_ptr<const SpecUtils::Measurement> &spectrum ) {

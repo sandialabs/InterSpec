@@ -162,7 +162,7 @@ void propagate_energy_cal( const shared_ptr<const SpecUtils::EnergyCalibration> 
   }//if( updated_cal )
 }//propagate_energy_cal(...)
   
-void fit_energy_cal_from_fit_peaks( shared_ptr<SpecUtils::Measurement> &raw, vector<PeakDef> peaks, const size_t num_coefs )
+void fit_energy_cal_from_fit_peaks( shared_ptr<SpecUtils::Measurement> &raw, vector<PeakDef> peaks )
 {
   if( !raw || raw->num_gamma_channels() < 16 )
     throw runtime_error( "update_gain_from_peak: invalid input spectrum" );
@@ -172,14 +172,38 @@ void fit_energy_cal_from_fit_peaks( shared_ptr<SpecUtils::Measurement> &raw, vec
   shared_ptr<const SpecUtils::EnergyCalibration> orig_cal = raw->energy_calibration();
   assert( orig_cal && orig_cal->valid() && (orig_cal->coefficients().size() > 1) );
   
+  const SpecUtils::EnergyCalType energy_cal_type = (orig_cal && orig_cal->valid()) 
+                                                    ? orig_cal->type()
+                                                    : SpecUtils::EnergyCalType::InvalidEquationType;
+  switch( energy_cal_type )
+  {
+    case SpecUtils::EnergyCalType::Polynomial:
+    case SpecUtils::EnergyCalType::UnspecifiedUsingDefaultPolynomial:
+    case SpecUtils::EnergyCalType::FullRangeFraction:
+      if( orig_cal->coefficients().size() < 2 )
+        throw std::logic_error( "Somehow the energy calibration has less than two coefficients." );
+      break;
+      
+    case SpecUtils::EnergyCalType::LowerChannelEdge:
+    case SpecUtils::EnergyCalType::InvalidEquationType:
+      assert( 0 );
+      throw std::logic_error( "The original calibration must be either polynomial or full-range-fraction." );
+      break;
+  }//switch( exemplar_cal->type() )
+  
+  
   for( const PeakDef &peak : peaks )
   {
     if( !peak.hasSourceGammaAssigned() )
     {
       cerr << "Warning: peak at " << peak.mean() << " keV doesnt have a source assigned, so will"
       << " not be used for energy calibration" << endl;
-      continue;;
+      continue;
     }
+    
+    
+    if( !peak.useForEnergyCalibration() )  //This defaults to true, so if this is false, then user selected it
+      continue;
     
     EnergyCal::RecalPeakInfo recalpeak;
     recalpeak.peakMean = peak.mean();
@@ -190,22 +214,68 @@ void fit_energy_cal_from_fit_peaks( shared_ptr<SpecUtils::Measurement> &raw, vec
     peakinfos.push_back( recalpeak );
   }//for( const double peak_energy : peak_energies )
   
+  std::sort( begin(peakinfos), end(peakinfos), 
+    []( const EnergyCal::RecalPeakInfo &lhs, const EnergyCal::RecalPeakInfo &rhs ) -> bool {
+    return lhs.peakMean < rhs.peakMean;
+  } );
+  
+  if( peakinfos.empty() )
+    throw runtime_error( "No peaks selected for use in energy calibration." );
+  
   const size_t nchannels = raw->num_gamma_channels();
   
+  const vector<float> &orig_coefs = orig_cal->coefficients();
   const vector<pair<float,float>> &dev_pairs = orig_cal->deviation_pairs();
+  const size_t num_coefs = orig_coefs.size();
+  assert( num_coefs >= 2 );
   
   vector<float> fit_coefs_uncert;
-  vector<float> fit_coefs = orig_cal->coefficients();
+  vector<float> fit_coefs = orig_coefs;
+  vector<bool> fitfor( num_coefs, false );
   
-  vector<bool> fitfor( orig_cal->coefficients().size(), false );
-  if( fitfor.size() < num_coefs )
-    fitfor.resize( num_coefs );
-  for( size_t i = 0; i < num_coefs; ++i )
-    fitfor[i] = true;
+  // If we only have a couple peaks, then we cant fit for like 4 coefficients; we'll
+  //  just hardcode a rough heuristic for what coefficients to fit for, because I think
+  //  bothering the user with this level of detail is probably a bit too much.
+  //
+  //  But also note that we have already fit peaks, so we must be reasonably close
+  //  right now anyway, so we can be a bit more liberal in terms of fitting more
+  //  coefficients than a user might normally do during an interactive session.
+  //
+  //  We dont want to update both gain and offset from like the two Co60 peaks, so
+  //  we'll count the effective number of peaks, requiring them to be separated a bit.
+  //  We will require the separation to be max( 100, min(0.1*total-energy-range, 200)) keV,
+  //  with the 0.1, 100 and 200, all being entirely arbitrary, but hopefully reasonable.
+  size_t num_effective_peaks = 1;
+  const double energy_range = (orig_cal->upper_energy() - orig_cal->lower_energy());
+  const double sep_dist = std::max( 100.0, std::min(0.1*energy_range, 200.0) );
+  size_t last_peak = 0;
+  for( size_t peak_index = 1; peak_index < peakinfos.size(); ++peak_index )
+  {
+    const double delta_energy = peakinfos[peak_index].peakMean - peakinfos[last_peak].peakMean;
+    assert( delta_energy >= 0.0 );
+    if( delta_energy >= sep_dist )
+    {
+      num_effective_peaks += 1;
+      last_peak = peak_index;
+    }
+  }//for( loop over peaks to count how many are separated by at least `sep_dist` )
+  
+  if( num_effective_peaks == 1 )
+  {
+    fitfor[1] = true; // Only fit gain
+  }else
+  {
+    for( size_t index = 0; (index < num_effective_peaks) && (index < fitfor.size()); ++index )
+      fitfor[index] = true;
+    // TODO: we could consider not fitting for offset if `peakinfos[0].peakMean` is less than 
+    //       ~200 keV or something, but for the moment we wont, because we know we are close
+    //       in energy calibration, and we know the peaks the user is interested in, so overfitting
+    //       isnt as large of a concern as not lining up the ROI edges as much
+  }
   
   shared_ptr<SpecUtils::EnergyCalibration> updated_cal = make_shared<SpecUtils::EnergyCalibration>();
   
-  switch( orig_cal->type() )
+  switch( energy_cal_type )
   {
     case SpecUtils::EnergyCalType::Polynomial:
     case SpecUtils::EnergyCalType::UnspecifiedUsingDefaultPolynomial:
@@ -226,6 +296,7 @@ void fit_energy_cal_from_fit_peaks( shared_ptr<SpecUtils::Measurement> &raw, vec
   
   raw->set_energy_calibration( updated_cal );
   
+#if( PERFORM_DEVELOPER_CHECKS )
   cout << "Updated energy calibration using ROIs from exemplar.\n\tCoefficients:\n";
   assert( fit_coefs.size() == orig_cal->coefficients().size() );
   for( size_t i = 0; i < fit_coefs.size(); ++i )
@@ -244,6 +315,7 @@ void fit_energy_cal_from_fit_peaks( shared_ptr<SpecUtils::Measurement> &raw, vec
   }
   
   cout << endl << endl;
+#endif
 }//void fit_energy_cal_from_fit_peaks(...)
 
   
@@ -1052,6 +1124,8 @@ BatchPeak::BatchPeakFitResult fit_peaks_in_file( const std::string &exemplar_fil
       candidate_peaks.push_back( peak );
     }//for( const auto &p : exemplar_peaks )
     
+    results.original_energy_cal = spec ? spec->energy_calibration() : nullptr;
+    
     if( options.refit_energy_cal )
     {
       // We will refit the energy calibration - maybe a few times - to really hone in on things
@@ -1068,7 +1142,16 @@ BatchPeak::BatchPeakFitResult fit_peaks_in_file( const std::string &exemplar_fil
         vector<PeakDef> peaks = fitPeaksInRange( lower_energy, uppper_energy, ncausalitysigma,
                                                 stat_threshold, hypothesis_threshold,
                                                 energy_cal_peaks, spec, {}, isRefit );
-        fit_energy_cal_from_fit_peaks( spec, peaks, 4 );
+        try
+        {
+          fit_energy_cal_from_fit_peaks( spec, peaks );
+        }catch( std::exception &e )
+        {
+          const string msg = "Energy calibration not performed: " + string(e.what());
+          auto pos = std::find( begin(results.warnings), end(results.warnings), msg );
+          if( pos == end(results.warnings) )
+            results.warnings.push_back( msg );
+        }
       }//for( size_t i = 0; i < 1; ++i )
       
       // Propagate the updated energy cal to the result file
@@ -1087,6 +1170,8 @@ BatchPeak::BatchPeakFitResult fit_peaks_in_file( const std::string &exemplar_fil
       {
         results.warnings.push_back( "Failed to fit an appropriate energy calibration in '" + filename + "'." );
       }
+      
+      results.refit_energy_cal = spec ? spec->energy_calibration() : nullptr;
     }//if( options.refit_energy_cal )
     
     vector<PeakDef> fit_peaks = fitPeaksInRange( lower_energy, uppper_energy, ncausalitysigma,

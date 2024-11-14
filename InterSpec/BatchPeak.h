@@ -138,6 +138,12 @@ namespace BatchPeak
     
     bool success;
     std::vector<std::string> warnings;
+    
+    /** The original energy calibration of the spectrum, before re-fitting it (if done). */
+    std::shared_ptr<const SpecUtils::EnergyCalibration> original_energy_cal;
+    
+    /** The energy calibration after fitting for it - will only be non-null if energy calibration was performed */
+    std::shared_ptr<const SpecUtils::EnergyCalibration> refit_energy_cal;
   };//struct BatchPeakFitResult
   
   
