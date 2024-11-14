@@ -34,3 +34,10 @@
   overflow-x: auto;
   user-select: all;
 }
+
+.LicenseAndDisclaimersWindow .ShowDataLocationBtn
+{
+  display: block;
+  float: right;
+  margin-right: 10px;
+}

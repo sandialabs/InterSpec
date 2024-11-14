@@ -363,9 +363,18 @@ void LicenseAndDisclaimersWindow::dataStorageCreator( Wt::WContainerWidget *pare
   
   if( viewer )
   {
-    string datadir;
-    try{ datadir = Wt::Utils::htmlEncode( viewer->writableDataDirectory() ); }catch(...){}
-    string staticdir = Wt::Utils::htmlEncode( viewer->staticDataDirectory() );
+    string datadir, userDataDir;
+    try
+    {
+      userDataDir = viewer->writableDataDirectory();
+      datadir = Wt::Utils::htmlEncode( userDataDir );
+    }catch(...)
+    {
+      
+    }
+    
+    const string staticDataDir = viewer->staticDataDirectory();
+    string staticdir = Wt::Utils::htmlEncode( staticDataDir );
     
     //SpecUtils::is_absolute_path( staticdir )
     try
@@ -425,9 +434,47 @@ void LicenseAndDisclaimersWindow::dataStorageCreator( Wt::WContainerWidget *pare
     
     WText *text = new WText( WString::tr("ladw-data-location-user").arg(datadir), parent );
     text->addStyleClass( "DataLocationSection" );
+
+#if( !ANDROID && !IOS && !BUILD_FOR_WEB_DEPLOYMENT )
+    if( !userDataDir.empty() )
+    {
+      WPushButton *showBtn = new WPushButton( displOptLower );
+#ifdef _WIN32
+      const char *txt_key = "ladw-show-data-location-win";
+#elif __APPLE__
+      const char *txt_key = "ladw-show-data-location-macOS";
+#else
+      const char *txt_key = "ladw-show-data-location";
+#endif
+      showBtn->setText( WString::tr(txt_key) );
+      showBtn->setStyleClass( "LinkBtn ShowDataLocationBtn" );
+      showBtn->clicked().connect( std::bind([userDataDir](){
+        AppUtils::showFileInOsFileBrowser(userDataDir);
+      }) );
+    }
+#endif
     
     text = new WText( WString::tr("ladw-data-location-static").arg(staticdir), parent );
     text->addStyleClass( "DataLocationSection" );
+    
+#if( !ANDROID && !IOS && !BUILD_FOR_WEB_DEPLOYMENT )
+    if( !userDataDir.empty() )
+    {
+      WPushButton *showBtn = new WPushButton( displOptLower );
+#ifdef _WIN32
+      const char *txt_key = "ladw-show-data-location-win";
+#elif __APPLE__
+      const char *txt_key = "ladw-show-data-location-macOS";
+#else
+      const char *txt_key = "ladw-show-data-location";
+#endif
+      showBtn->setText( WString::tr(txt_key) );
+      showBtn->setStyleClass( "LinkBtn ShowDataLocationBtn" );
+      showBtn->clicked().connect( std::bind([staticDataDir](){
+        AppUtils::showFileInOsFileBrowser(staticDataDir);
+      }) );
+    }
+#endif
     
     text = new WText( WString::tr("ladw-data-location-network").arg(httpPort), parent );
     text->addStyleClass( "DataLocationSection" );
