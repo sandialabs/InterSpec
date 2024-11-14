@@ -816,13 +816,13 @@ public:
    Note: the returned mass fraction is mass fraction of the entire shielding, and
         not just the fraction of that nuclides element.
    */
-  void massFraction( double &massFrac, double &uncert,
+  void massFractionOfElement( double &massFrac, double &uncert,
                      const size_t material_index,
                      const SandiaDecay::Nuclide *nuc,
                      const std::vector<double> &pars,
                      const std::vector<double> &errors ) const;
   
-  double massFraction( const size_t material_index,
+  double massFractionOfElement( const size_t material_index,
                           const SandiaDecay::Nuclide *nuc,
                           const std::vector<double> &pars ) const;
   double massFractionUncert( const size_t material_index,

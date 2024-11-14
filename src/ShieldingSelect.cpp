@@ -2085,18 +2085,7 @@ void ShieldingSelect::init()
     materialDivLayout->addWidget( m_materialEdit, 0, 1 );
   }
   
-  WString material_name_tt;
-  if( m_forFitting )
-  {
-    material_name_tt = WString("<p>{1}</p><p>{2}</p>")
-      .arg( WString::tr("ss-tt-material-name") )
-      .arg( WString::tr("ss-tt-material-name-fit") );
-  }else
-  {
-    material_name_tt = WString::tr("ss-tt-material-name");
-  }
-  
-  HelpSystem::attachToolTipOn( m_materialEdit, material_name_tt,
+  HelpSystem::attachToolTipOn( m_materialEdit, WString::tr("ss-tt-material-name"),
                               showToolTips, HelpSystem::ToolTipPosition::Top );
   
   if( m_materialSuggest )

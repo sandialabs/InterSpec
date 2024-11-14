@@ -3533,6 +3533,9 @@ bool ShieldingSourceChi2Fcn::isVariableMassFraction( const size_t material_index
   
 bool ShieldingSourceChi2Fcn::hasVariableMassFraction( const size_t material_index ) const
 {
+  
+  blah blah blah - need to fix up here to account for mass fraction being of element
+    
   if( material_index >= m_materials.size() )
     throw std::logic_error( "ShieldingSourceChi2Fcn::hasVariableMassFraction: invalid material index" );
   
@@ -3673,7 +3676,7 @@ std::shared_ptr<Material> ShieldingSourceChi2Fcn::variedMassFracMaterial(
     if( initial_frac < 0.0 )
       throw runtime_error( "variedMassFracMaterial(): Nuc fitting mass-fraction for doesnt appear in self-atten. sources?" );
     
-    const double fit_frac = massFraction( material_index, nuc, x ); //This is mass fraction of entire material (not of nuclides element)
+    const double fit_frac = massFractionOfElement( material_index, nuc, x ); //This is mass fraction of element, not mass fraction of material
     
     prefrac += initial_frac;
     postfrac += fit_frac;
@@ -3841,20 +3844,21 @@ const std::vector<const SandiaDecay::Nuclide *> &
 }//nuclideFittingMassFracFor(...)
 
   
-double ShieldingSourceChi2Fcn::massFraction( const size_t material_index,
+double ShieldingSourceChi2Fcn::massFractionOfElement( const size_t material_index,
                       const SandiaDecay::Nuclide *nuc,
                       const std::vector<double> &pars ) const
 {
   double massfrac = 0.0, uncert = 0.0;
-  massFraction( massfrac, uncert, material_index, nuc, pars, vector<double>() );
+  massFractionOfElement( massfrac, uncert, material_index, nuc, pars, vector<double>() );
   return massfrac;
 }
   
   
-void ShieldingSourceChi2Fcn::massFraction( double &massFrac, double &uncert,
+void ShieldingSourceChi2Fcn::massFractionOfElement( double &massFrac, double &uncert,
                                   const size_t material_index, const SandiaDecay::Nuclide *nuc,
                                   const vector<double> &pars, const vector<double> &errors ) const
 {
+  blah blah blah - need to fix up here to account for mass fraction being of element
   massFrac = uncert = 0.0;
   
   if( material_index >= m_materials.size() )
@@ -3911,7 +3915,7 @@ void ShieldingSourceChi2Fcn::massFraction( double &massFrac, double &uncert,
   }
   
   matmassfracstart += 2 * m_nuclides.size();
-  matmassfracstart += 3 * m_materials.size();
+  matmassfracstart += 3 * m_materials.size(); 
   
   const size_t numfraccoefs = size_t(nucs.size() - 1);
   const size_t massfracnum = (pos - nucs.begin());
@@ -3962,7 +3966,7 @@ double ShieldingSourceChi2Fcn::massFractionUncert( const size_t material_index,
                             const std::vector<double> &error ) const
 {
   double massfrac = 0.0, uncert = 0.0;
-  massFraction( massfrac, uncert, material_index, nuc, pars, error );
+  massFractionOfElement( massfrac, uncert, material_index, nuc, pars, error );
   return uncert;
 }//massFractionUncert(...)
   
@@ -4605,7 +4609,8 @@ double ShieldingSourceChi2Fcn::activityUncertainty( const SandiaDecay::Nuclide *
       
       if( hasVariableMassFraction(material_index) )
       {
-        massFraction( massFrac, massFracUncert, material_index, src, params, errors );
+        blah blah blah - need to fix up here to account for mass fraction being of element
+        massFractionOfElement( massFrac, massFracUncert, material_index, src, params, errors );
       }else
       {
         massFrac = src_frac.second;
@@ -6292,7 +6297,8 @@ vector<PeakResultPlotInfo>
         if( std::count(begin(mass_frac_nucs), end(mass_frac_nucs), src) )
         {
           assert( shielding.material );
-          massFract = massFraction( material_index, src, x );
+          blah blah blah - need to fix up here to account for mass fraction being of element
+          massFract = massFractionOfElement( material_index, src, x );
         }else
         {
           for( const auto &src_frac : self_atten_srcs )
@@ -6648,7 +6654,8 @@ vector<PeakResultPlotInfo>
           const auto pos = std::find( begin(nucs), end(nucs), nuc );
           if( pos != end(nucs) )
           {
-            massFractionVal = massFraction(shielding_index, nuc, x);
+            blah blah blah - need to fix up here to account for mass fraction being of element
+            massFractionVal = massFractionOfElement(shielding_index, nuc, x);
             if( !error_params.empty() )
               massFractionUncertVal = massFractionUncert(shielding_index, nuc, x, error_params);
           }
