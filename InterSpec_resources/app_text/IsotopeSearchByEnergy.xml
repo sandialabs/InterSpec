@@ -61,4 +61,22 @@
   </message>
   <message id="isbem-tt-parent-hl">Parent half life</message>
   <message id="isbem-tt-assumed-age">Assumed age of nuclide</message>
+  
+  <!-- Catagories int the drop-down-->
+  <message id="isbe-catagory-nuc-xray">Nuclides + X-rays</message>
+  <message id="isbe-catagory-nuc-xray-desc">Nuclides + X-rays</message>
+  <message id="isbe-catagory-nuc-xray-rctn">Nuclides, X-rays, Reactions</message>
+  <message id="isbe-catagory-nuc-xray-rctn-desc">All nuclides, x-rays (decay and flourescense), and reactions</message>
+  <message id="isbe-catagory-medical">Medical Nuclides</message>
+  <message id="isbe-catagory-medical-desc">Common medical nuclides</message>
+  <message id="isbe-catagory-industrial">Industrial Nuclides</message>
+  <message id="isbe-catagory-industrial-desc">Common industrial nuclides</message>
+  <message id="isbe-catagory-snm">SNM</message>
+  <message id="isbe-catagory-snm-desc">SNM nuclides</message>
+  <message id="isbe-catagory-reactions">Nuclear Reactions</message>
+  <message id="isbe-catagory-reactions-desc">Nuclear Reactions</message>
+  <message id="isbe-catagory-alphas">Alphas</message>
+  <message id="isbe-catagory-alphas-desc">Search on Alpha particle energy.</message>
+  <message id="isbe-catagory-betas">Beta Endpoint</message>
+  <message id="isbe-catagory-betas-desc">Search on beta particle end-point energy.</message>
 </messages>

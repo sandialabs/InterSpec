@@ -33,16 +33,31 @@
 #include <Wt/WString>
 #include <Wt/WContainerWidget>
 
+#include "InterSpec/ReactionGamma.h" //Because we cant forward declare ReactionGamma::Reaction
+
 class D3SpectrumDisplayDiv;
 
 namespace Wt
 {
   class WText;
   class WCheckBox;
+  class WComboBox;
   class WLineEdit;
   class WPushButton;
   class WSplitButton;
 }//namespace Wt
+
+namespace SandiaDecay
+{
+  struct Element;
+  struct Nuclide;
+}//namespace SandiaDecay
+
+
+namespace rapidxml
+{
+  template<class Ch> class xml_node;
+}//namespace rapidxml
 
 class InterSpec;
 class RowStretchTreeView;
@@ -149,6 +164,9 @@ public:
   //  EnergyToNuclideServer to new min BR and HL
   void minBrOrHlChanged();
 
+  /** `m_search_catagory_select` is changed. */
+  void catagoryChanged( const bool update_results );
+  
   //resultSelectionChanged(): called when user selects a row of the results
   void resultSelectionChanged();
   
@@ -213,6 +231,9 @@ public:
   void setNarrowPhoneLayout( const bool narrow );
 #endif
 protected:
+  /** Populates `m_filters` and  `m_typeFilter`.  */
+  void initFilterTypes();
+  
   virtual void render( Wt::WFlags<Wt::RenderFlag> flags );
 
   
@@ -238,9 +259,72 @@ protected:
   Wt::WLineEdit *m_minHalfLife;
   IsotopeSearchByEnergyModel *m_model;
   
-  Wt::WCheckBox *m_gammas;
-  Wt::WCheckBox *m_xrays;
-  Wt::WCheckBox *m_reactions;
+  struct NucSearchCatagory
+  {
+    /** Name to display to user in the WComboBox */
+    Wt::WString m_name;
+    /** A description for the filter type - currently set as tool-top on the WComboBox. */
+    Wt::WString m_description;
+    
+    /** Values of min BR and min HL.  Users can still change these afterwards. */
+    double m_minBr, m_minHl;
+    
+    /** If should search on nuclide gammas and decay x-rays. */
+    bool m_nuclides;
+    /** If should search on element flourescense x-rays. */
+    bool m_fluorescence_xrays;
+    /** If should include reactions.  */
+    bool m_reactions;
+    /** If should search for alpha energy of nuclides. If true, then betas, x-rays, reactions, and nulcides must be false.  */
+    bool m_alphas;
+    /** If should search for beta end-point energy of nuclides. If true, then alphas, x-rays, reactions, and nulcides must be false. */
+    bool m_beta_endpoint;
+    
+    /** Specfic elements to search for fluorescence x-rays.  If empty, and fluorescence x-rays are allowed, will use all elements. */
+    std::vector<const SandiaDecay::Element *> m_specific_elements;
+    /** Specific nuclides to search.  If empty and decay x-rays, nuc gammas, alphas, or betas are allowed, will use all nuclides. */
+    std::vector<const SandiaDecay::Nuclide *> m_specific_nuclides;
+    /** Specific reactions to search.  If empty and reactions are allowed, then all reacitions will be used. */
+    std::vector<const ReactionGamma::Reaction *> m_specific_reactions;
+    
+    /** Sets the information from an XML element.
+     
+     The passed-in xml node must have name "NucSearchCatagory".
+     Throws exception on error.
+     
+     <NucSearchCatagory>
+       <Name>My Fav Nucs</Name>
+       <Description>A really good description</Description>
+       <MinBr>0.0</MinBr>                    <!-- Defaults to zero if not specified -->
+       <MinHl>60 s</MinHl>                   <!-- Defaults to zero if not specified -->
+       <AllowNucGammas>1</AllowNucGammas>    <!-- If should search on nuclide gammas and decay x-rays. -->
+       <AllowFluorXrays>1</AllowFluorXrays>  <!-- If should search on element flourescense x-rays. -->
+       <AllowReactions>1</AllowReactions>    <!-- If should include reactions. -->
+       <AllowAlphas>0</AllowAlphas>          <!-- If should search for alpha energy of nuclides. If true, then betas, x-rays, reactions, and nulcides must be false. -->
+       <AllowBetas>0</AllowBetas>            <!-- If should search for beta end-point energy of nuclides. If true, then alphas, x-rays, reactions, and nulcides must be false. -->
+     
+       <Elements>                            <!-- If empty or not specified, will allow all elements. -->
+         <Element>U</Element>                 <!-- Use same values you would type into Ref. Photopeak -->
+         <Element>Pu</Element>                <!-- Invalid values will be silently discarded -->
+       </Elements>
+     
+       <Nuclides>                            <!-- If empty or not specified, will allow all nuclides. -->
+         <Nuclide>Co60</Nuclide>             <!-- Use same values you would type into Ref. Photopeak -->
+         <Nuclide>Am241</Nuclide>            <!-- Invalid values will be silently discarded -->
+       </Nuclides>
+    
+       <Reactions>                           <!-- If empty or not specified, will allow all nuclides. -->
+         <Reaction>Fe(n,g)</Reaction>        <!-- Use same values you would type into Ref. Photopeak -->
+         <Reaction>U(n,n)</Reaction>         <!-- Invalid values will be silently discarded -->
+       </Reactions>
+     </NucSearchCatagory>
+     */
+    void deSerialize( const rapidxml::xml_node<char> * const xml_data );
+  };//struct NucSearchCatagory
+  
+  std::vector<NucSearchCatagory> m_search_catagories;
+  
+  Wt::WComboBox *m_search_catagory_select;
   
   size_t m_nextSearchEnergy;
   double m_minBr, m_minHl;
@@ -256,15 +340,13 @@ protected:
     Wt::WString MinHalfLife;
     
     size_t NextSearchEnergy;
-    bool IncludeGammas;
-    bool IncludeXRays;
-    bool IncludeReactions;
+    size_t CatagoryIndex;
     std::vector<std::pair<double,double>> SearchEnergies;
     
     void serialize( std::string &xml_data ) const;
     
     /** Throws exception on error. */
-    void deSerialize( std::string &xml_data );
+    void deSerialize( std::string &xml_data, const std::vector<NucSearchCatagory> &catagories );
     
     bool operator==(const WidgetState &rhs) const;
   };//struct WidgetState

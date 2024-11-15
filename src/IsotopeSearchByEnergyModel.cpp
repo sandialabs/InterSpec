@@ -622,6 +622,239 @@ namespace
     return weighted_in_peak_frac - weighted_out_of_peak_frac;
   }//double profile_weight(...)
 
+
+  void alphaOrBetasWithAllEnergies( const bool isAlpha,
+                                 const vector<double> &energies,
+                                 const vector<double> &windows,
+                                 const shared_ptr<const SpecUtils::Measurement> displayed_measurement,
+                                 const vector<std::shared_ptr<const PeakDef>> &user_peaks,
+                                 const vector<std::shared_ptr<const PeakDef>> &automated_search_peaks,
+                                 const vector<const SandiaDecay::Nuclide *> &nuclides,
+                                   IsotopeSearchByEnergyModel::SearchResults &answer )
+  {
+    if( energies.empty() )
+      return;
+    
+    assert( energies.size() == windows.size() );
+    
+    char buffer[32];
+    
+    const SandiaDecay::ProductType wantedType = isAlpha ? SandiaDecay::ProductType::AlphaParticle
+    : SandiaDecay::ProductType::BetaParticle;
+    const SandiaDecay::SandiaDecayDataBase *db = DecayDataBaseServer::database();
+    
+    const vector<const SandiaDecay::Nuclide *> &all_nuclides = db->nuclides();
+    for( const SandiaDecay::Nuclide * nuc : all_nuclides )
+    {
+      if( !nuclides.empty() )
+      {
+        const auto pos = std::find( begin(nuclides), end(nuclides), nuc );
+        if( pos == end(nuclides) )
+          continue;
+      }
+      
+      // We'll require the parent nuclide to match at least one energy Window, so we dont have
+      //  to decay everything - I'm not really sure if this is valid, or what, so it might get
+      //  deleted later.
+      bool parent_matches_one = false;
+      for( const SandiaDecay::Transition *trans : nuc->decaysToChildren )
+      {
+        for( const SandiaDecay::RadParticle &part : trans->products )
+        {
+          if( part.type != wantedType )
+            continue;
+          
+          for( size_t windex = 0; !parent_matches_one && (windex < energies.size()); windex += 1 )
+          {
+            const double min_energy = energies[windex] - windows[windex];
+            const double max_energy = energies[windex] - windows[windex];
+            parent_matches_one = ((part.energy >= min_energy) && (part.energy <= max_energy));
+          }
+          
+          if( parent_matches_one )
+            break;
+        }//for( const RadParticle &part : trans->products )
+        
+        if( parent_matches_one )
+          break;
+      }//for( const SandiaDecay::Transition *trans : nuc->decaysToChildren )
+      
+      if( !parent_matches_one )
+        continue;
+      
+      bool matches_all_windows = true;
+      
+      //We will track the Transition, and particle index that best each of the windows;
+      //  upon sucess there will be the same number of elements in this vector as search
+      //  windows, with them ordered the same.
+      vector<tuple<const SandiaDecay::Transition *,size_t,double>> matching_trans_part;
+      
+      
+      const double age = PeakDef::defaultDecayTime( nuc );
+      
+      SandiaDecay::NuclideMixture mixture;
+      mixture.addNuclide( SandiaDecay::NuclideActivityPair(nuc,1.0) );
+      const vector<SandiaDecay::NuclideActivityPair> activities = mixture.activity(age);
+      
+      for( size_t windex = 0; matches_all_windows && (windex < energies.size()); windex += 1 )
+      {
+        const double min_energy = energies[windex] - windows[windex];
+        const double max_energy = energies[windex] - windows[windex];
+        
+        bool match_this_window = false;
+        for( const SandiaDecay::NuclideActivityPair &nap : activities )
+        {
+          if( !nap.nuclide || (nap.activity <= 0.0) )
+            continue;
+          
+          for( const SandiaDecay::Transition *trans : nap.nuclide->decaysToChildren )
+          {
+            for( size_t trans_index = 0; trans_index < trans->products.size(); ++trans_index )
+            {
+              const SandiaDecay::RadParticle &part = trans->products[trans_index];
+              
+              const bool matches = ((part.type == wantedType)
+                                    && (part.energy >= min_energy)
+                                    && (part.energy <= max_energy)
+                                    && (part.intensity > 0.0) );
+              if( matches )
+              {
+                match_this_window = true;
+                
+                if( matching_trans_part.size() <= windex )
+                {
+                  matching_trans_part.emplace_back(trans, trans_index, nap.activity);
+                }else
+                {
+                  assert( (windex + 1) == matching_trans_part.size() );
+                  
+                  // We already found another match - let see if this is a better one
+                  // TODO: we are keeping the one closest - but we should consider amplitude
+                  const SandiaDecay::Transition *prev_trans = std::get<0>(matching_trans_part[windex]);
+                  const size_t prev_part_index = std::get<1>(matching_trans_part[windex]);
+                  assert( prev_trans );
+                  assert( prev_part_index < prev_trans->products.size() );
+                  const double prev_de = fabs( energies[windex] - prev_trans->products[prev_part_index].energy );
+                  const double this_de = fabs( energies[windex] - part.energy );
+                  if( this_de < prev_de )
+                  {
+                    std::get<0>(matching_trans_part[windex]) = trans;
+                    std::get<1>(matching_trans_part[windex]) = trans_index;
+                    std::get<2>(matching_trans_part[windex]) = nap.activity;
+                  }
+                }//if( this is first particle matching this search energy ) / else (see if this is better match)
+              }//if( matches )
+            }//for( const RadParticle &part : trans->products )
+          }//for( const SandiaDecay::Transition *trans : nap.nuclide->decaysToChildren )
+        }//for( const SandiaDecay::NuclideActivityPair &nap : activities )
+        
+        if( !match_this_window )
+          matches_all_windows = false;
+      }//for( size_t windex = 0; !matches_all_windows && (windex < energies.size()); windex += 1 )
+      
+      if( !matches_all_windows )
+        continue;
+      
+      const vector<SandiaDecay::EnergyRatePair> particle_rates
+      = isAlpha ? mixture.alphas(age) : mixture.betas(age);
+      
+      double max_rate = 0;
+      for( const SandiaDecay::EnergyRatePair &erp : particle_rates )
+        max_rate = std::max( max_rate, erp.numPerSecond );
+      
+      assert( matching_trans_part.size() == energies.size() );
+      
+      double total_dist = 0.0;
+      for( size_t i = 0; i < matching_trans_part.size(); ++i )
+      {
+        const double energy = energies[i];
+        
+        const SandiaDecay::Transition *const trans = std::get<0>(matching_trans_part[i]);
+        const size_t trans_index = std::get<1>(matching_trans_part[i]);
+        assert( trans );
+        assert( trans_index < trans->products.size() );
+        const SandiaDecay::RadParticle &part = trans->products[trans_index];
+        total_dist += fabs( energy - part.energy );
+      }
+      
+      // Use `matching_trans_part` to generate results
+      vector<IsotopeSearchByEnergyModel::IsotopeMatch> nucmatches;
+      for( size_t i = 0; i < matching_trans_part.size(); ++i )
+      {
+        const double energy = energies[i];
+        
+        const SandiaDecay::Transition *const trans = std::get<0>(matching_trans_part[i]);
+        const size_t trans_index = std::get<1>(matching_trans_part[i]);
+        const double activity = std::get<2>(matching_trans_part[i]);
+        assert( trans );
+        assert( trans_index < trans->products.size() );
+        
+        const SandiaDecay::RadParticle &part = trans->products[trans_index];
+        
+        
+        IsotopeSearchByEnergyModel::IsotopeMatch match;
+        match.m_distance = total_dist;
+        match.m_age = age;
+        match.m_branchRatio = activity * trans->branchRatio * part.intensity / max_rate;
+        match.m_profileDistance = 0.0; //We'll calc this a little later, if i==0
+        match.m_nuclide = nuc;
+        match.m_transition = trans;
+        match.m_particle = &part;
+        match.m_element = nullptr;
+        match.m_xray = nullptr;
+        match.m_reaction = nullptr;
+        
+        match.m_displayData[IsotopeSearchByEnergyModel::ParentIsotope] = nuc->symbol;
+        snprintf( buffer, sizeof(buffer), "%.2f", part.energy );
+        match.m_displayData[IsotopeSearchByEnergyModel::Energy] = buffer;
+        
+        snprintf( buffer, sizeof(buffer), "%.2f", total_dist );
+        match.m_displayData[IsotopeSearchByEnergyModel::Distance] = buffer;
+        
+        snprintf( buffer, sizeof(buffer), "%.2g", match.m_branchRatio );
+        match.m_displayData[IsotopeSearchByEnergyModel::BranchRatio] = buffer;
+        
+        if( trans->parent && trans->child )
+          match.m_displayData[IsotopeSearchByEnergyModel::SpecificIsotope] = trans->parent->symbol + "&rarr;" + trans->child->symbol;
+        else if( trans->parent )
+          match.m_displayData[IsotopeSearchByEnergyModel::SpecificIsotope] = SandiaDecay::to_str(trans->mode)
+          + string(" of ") + trans->parent->symbol;
+        
+        if( !i )
+        {
+          match.m_displayData[IsotopeSearchByEnergyModel::ParentHalfLife]
+                        = PhysicalUnitsLocalized::printToBestTimeUnits(match.m_nuclide->halfLife);
+          match.m_displayData[IsotopeSearchByEnergyModel::AssumedAge]
+                                      = PhysicalUnitsLocalized::printToBestTimeUnits(match.m_age);
+          
+          if( isAlpha )
+          {
+            const double weight = profile_weight( nullptr, displayed_measurement,
+                                                 user_peaks, automated_search_peaks,
+                                                 particle_rates, energies, windows,
+                                                 nucmatches[0], 26, 0.0 );
+            
+            match.m_profileDistance = weight;
+            snprintf( buffer, sizeof(buffer), "%.2f", weight );
+            match.m_displayData[IsotopeSearchByEnergyModel::ProfileDistance] = buffer;
+          }else
+          {
+            // Since betas are endpoint energies, it makes no sense to use profile_weight
+            match.m_profileDistance = -total_dist;
+            snprintf( buffer, sizeof(buffer), "%.2f", -total_dist );
+            match.m_displayData[IsotopeSearchByEnergyModel::ProfileDistance] = buffer;
+          }//if( isAlpha ) / else
+        }//if( !i )
+        
+        
+        nucmatches.push_back( match );
+      }//for( size_t i = 0; i < matching_trans_part.size(); ++i )
+      
+      assert( nucmatches.size() == energies.size() );
+      answer.push_back( nucmatches );
+    }//for( const SandiaDecay::Nuclide * nuc : all_nuclides )
+  }//void alphaOrBetasWithAllEnergies(...)
+
 }//namespace
 
 
@@ -988,6 +1221,7 @@ void IsotopeSearchByEnergyModel::xraysWithAllEnergies(
                                                       const std::shared_ptr<const SpecUtils::Measurement> displayed_measurement,
                                                       const std::vector<std::shared_ptr<const PeakDef>> &user_peaks,
                                                       const std::vector<std::shared_ptr<const PeakDef>> &automated_search_peaks,
+                                                      const std::vector<const SandiaDecay::Element *> &limited_elements,
                                                       SearchResults &answer )
 {
   if( energies.empty() )
@@ -1004,6 +1238,13 @@ void IsotopeSearchByEnergyModel::xraysWithAllEnergies(
   
   for( const SandiaDecay::Element *el : elements )
   {
+    if( !limited_elements.empty() )
+    {
+      auto pos = std::find( begin(limited_elements), end(limited_elements), el );
+      if( pos == end(limited_elements) )
+        continue;
+    }//if( !limited_elements.empty() )
+    
     vector<IsotopeMatch> nucmatches;
     vector<const SandiaDecay::EnergyIntensityPair *> xray_matches;
     const vector<SandiaDecay::EnergyIntensityPair> &xrays = el->xrays;
@@ -1103,6 +1344,7 @@ void IsotopeSearchByEnergyModel::reactionsWithAllEnergies(
                                                           const std::shared_ptr<const SpecUtils::Measurement> displayed_measurement,
                                                           const std::vector<std::shared_ptr<const PeakDef>> &user_peaks,
                                                           const std::vector<std::shared_ptr<const PeakDef>> &automated_search_peaks,
+                                                          const std::vector<const ReactionGamma::Reaction *> &limited_reactions,
                                                           SearchResults &answer )
 {
   if( energies.empty() )
@@ -1139,6 +1381,19 @@ void IsotopeSearchByEnergyModel::reactionsWithAllEnergies(
         return;
     }//if( i == 0 ) / else
   }//for( size_t i = 0; i < energies.size(); ++i )
+  
+  
+  if( !limited_reactions.empty() )
+  {
+    set<const ReactionGamma::Reaction *> surviving_reactions;
+    for( const ReactionGamma::Reaction *rctn : reactions )
+    {
+      auto pos = std::find(begin(limited_reactions), end(limited_reactions), rctn);
+      if( pos != end(limited_reactions) )
+        surviving_reactions.insert(rctn);
+    }
+    reactions.swap( surviving_reactions );
+  }//if( !limited_reactions.empty() )
   
   
   for( const ReactionGamma::Reaction *rctn : reactions )
@@ -1212,6 +1467,27 @@ void IsotopeSearchByEnergyModel::reactionsWithAllEnergies(
 }//void reactionsWithAllEnergies(...)
 
 
+void IsotopeSearchByEnergyModel::alphasWithAllEnergies( const vector<double> &energies,
+                              const vector<double> &windows,
+                              const shared_ptr<const SpecUtils::Measurement> displayed_measurement,
+                              const vector<std::shared_ptr<const PeakDef>> &user_peaks,
+                              const vector<std::shared_ptr<const PeakDef>> &automated_search_peaks,
+                              const vector<const SandiaDecay::Nuclide *> &nuclides,
+                              SearchResults &answer )
+{
+  alphaOrBetasWithAllEnergies( true, energies, windows, displayed_measurement,
+                              user_peaks, automated_search_peaks, nuclides, answer );
+}
+
+
+void IsotopeSearchByEnergyModel::betaEndpointWithAllEnergies( const std::vector<double> &energies,
+                                  const std::vector<double> &windows,
+                                  const std::vector<const SandiaDecay::Nuclide *> &nuclides,
+                                  SearchResults &answer )
+{
+  alphaOrBetasWithAllEnergies( false, energies, windows, nullptr, {}, {}, nuclides, answer );
+}//void betaEndpointWithAllEnergies(...)
+
 
 void IsotopeSearchByEnergyModel::clearResults()
 {
@@ -1281,6 +1557,9 @@ void IsotopeSearchByEnergyModel::setSearchEnergies(
                                                    const double minbr,
                                                    const double minHalfLife,
                                                    Wt::WFlags<IsotopeSearchByEnergyModel::RadSource> srcs,
+                                                   const std::vector<const SandiaDecay::Element *> &elements,
+                                                   const std::vector<const SandiaDecay::Nuclide *> &nuclides,
+                                                   const std::vector<const ReactionGamma::Reaction *> &specific_reactions,
                                                    const std::string appid,
                                                    boost::function< void(void) > updatefcn )
 {
@@ -1356,21 +1635,43 @@ void IsotopeSearchByEnergyModel::setSearchEnergies(
     //       threads and then combine results
     
     //Nuclides that match all energies
-    if( srcs & kGamma )
+    if( srcs & RadSource::NuclideGammaOrXray )
     {
       // nuclidesWithAllEnergies probably wont throw - it will discard any sub-results that cause
       //  unexpected (and there really are none expected) exceptions.
-      const auto filteredNuclides = filter_nuclides( minbr, minHalfLife, energies, windows );
-      nuclidesWithAllEnergies( filteredNuclides, energies, windows, minbr, drf, meas, user_peaks, auto_peaks, matches );
-    }//if( srcs & kGamma )
+      NuclideMatches filteredNuclides = filter_nuclides( minbr, minHalfLife, energies, windows );
+      
+      if( !nuclides.empty() )
+      {
+        NuclideMatches valid_matches;
+        for( const auto &match : filteredNuclides )
+        {
+          const SandiaDecay::Nuclide * const nuc = match.first;
+          const set<double> &energies = match.second;
+          const auto wanted_pos = std::find( begin(nuclides), end(nuclides), nuc );
+          if( wanted_pos != end(nuclides) )
+            valid_matches[nuc] = energies;
+        }
+        valid_matches.swap( filteredNuclides );
+      }//if( !nuclides.empty() )
+      
+      nuclidesWithAllEnergies( filteredNuclides, energies, windows, minbr,
+                              drf, meas, user_peaks, auto_peaks, matches );
+    }//if( srcs & RadSource::NuclideGammaOrXray )
     
     //Get elements with x-rays which match all energies
-    if( srcs & kXRay )
-      xraysWithAllEnergies( energies, windows, drf, meas, user_peaks, auto_peaks, matches );
+    if( srcs & RadSource::kFluorescenceXRay )
+      xraysWithAllEnergies( energies, windows, drf, meas, user_peaks, auto_peaks, elements, matches );
     
     //Get elements with reactions which match all energies
-    if( srcs & kReaction )
-      reactionsWithAllEnergies( energies, windows, drf, meas, user_peaks, auto_peaks, matches );
+    if( srcs & RadSource::kReaction )
+      reactionsWithAllEnergies( energies, windows, drf, meas, user_peaks, auto_peaks, specific_reactions, matches );
+    
+    if( srcs & RadSource::kAlpha )
+      alphasWithAllEnergies( energies, windows, meas, user_peaks, auto_peaks, nuclides, matches );
+    
+    if( srcs & RadSource::kBetaEndpoint )
+      betaEndpointWithAllEnergies( energies, windows, nuclides, matches );
     
     //Get elements with gamma+xrays which match all energies
     

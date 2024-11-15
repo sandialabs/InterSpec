@@ -65,9 +65,11 @@ public:
   
   enum RadSource
   {
-    kGamma    = 0x1,
-    kXRay     = 0x2,
-    kReaction = 0x4
+    NuclideGammaOrXray = 0x01,
+    kFluorescenceXRay  = 0x02,
+    kReaction          = 0x04,
+    kAlpha             = 0x08,
+    kBetaEndpoint      = 0x10
   };//enum RadSource
   
   struct IsotopeMatch
@@ -133,6 +135,9 @@ public:
                                 const double minbr,
                                 const double minHalfLife,
                                 Wt::WFlags<RadSource> radiation,
+                                const std::vector<const SandiaDecay::Element *> &elements,
+                                const std::vector<const SandiaDecay::Nuclide *> &nuclides,
+                                const std::vector<const ReactionGamma::Reaction *> &reactions,
                                 const std::string appid,
                                 boost::function< void(void) > updatefcn );
   
@@ -197,6 +202,7 @@ public:
                                    const std::shared_ptr<const SpecUtils::Measurement> displayed_measurement,
                                    const std::vector<std::shared_ptr<const PeakDef>> &user_peaks,
                                    const std::vector<std::shared_ptr<const PeakDef>> &automated_search_peaks,
+                                   const std::vector<const SandiaDecay::Element *> &limited_elements,
                                    SearchResults &answer );
   
   //reactionsWithAllEnergies(...): not very well yet.  Does not take into
@@ -207,7 +213,21 @@ public:
                                        const std::shared_ptr<const SpecUtils::Measurement> displayed_measurement,
                                        const std::vector<std::shared_ptr<const PeakDef>> &user_peaks,
                                        const std::vector<std::shared_ptr<const PeakDef>> &automated_search_peaks,
+                                       const std::vector<const ReactionGamma::Reaction *> &reactions,
                                        SearchResults &answer );
+  
+  static void alphasWithAllEnergies( const std::vector<double> &energies,
+                                    const std::vector<double> &windows,
+                                    const std::shared_ptr<const SpecUtils::Measurement> displayed_measurement,
+                                    const std::vector<std::shared_ptr<const PeakDef>> &user_peaks,
+                                    const std::vector<std::shared_ptr<const PeakDef>> &automated_search_peaks,
+                                    const std::vector<const SandiaDecay::Nuclide *> &nuclides,
+                                    SearchResults &answer );
+  
+  static void betaEndpointWithAllEnergies( const std::vector<double> &energies,
+                                    const std::vector<double> &windows,
+                                    const std::vector<const SandiaDecay::Nuclide *> &nuclides,
+                                    SearchResults &answer );
   
   Column sortColumn() const;
   Wt::SortOrder sortOrder() const;

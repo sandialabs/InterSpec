@@ -1,0 +1,113 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<!-- The entries in this file define the default catagories the "Nuclide Search" tab will allow you to select.
+
+You create your own version of this file, and place in the InterSpec user data directory (see
+Help -> "About InterSpec" -> "Data" for this path; on Windows this might be 
+"C:\Users\<user>\AppData\Roaming\InterSpec"), and your entries will be appended after the default ones (after
+you restart InterSpec).
+-->
+
+<NucSearchCatagories>
+  <!-- There is the "Nuclides + X-rays" catagory that is hard-coded into the InterSpec executable, that is not defined in this file. -->
+
+  <NucSearchCatagory>
+    <Name internationalize="1">isbe-catagory-nuc-xray-rctn</Name>  <!-- internationalize only applies to default catagories to allow translation to other languages (e.g. entry in InterSpec_resources/app_text/IsotopeSearchByEnergy.xml), you will instead use spelled out names (e.g., "My Fav Nucs"), and either leave out the attribute, or give it a value of "0" -->
+    <Description internationalize="1">isbe-catagory-nuc-xray-rctn-desc</Description>
+    <MinBr>0.0</MinBr>                    <!-- Defaults to zero if not specified -->
+    <MinHl>6000 s</MinHl>                 <!-- Defaults to zero if not specified -->
+    <AllowNucGammas>1</AllowNucGammas>    <!-- If should search on nuclide gammas and decay x-rays. These options default to false if not specified. -->
+    <AllowFluorXrays>1</AllowFluorXrays>  <!-- If should search on element flourescense x-rays. -->
+    <AllowReactions>1</AllowReactions>    <!-- If should include reactions. -->
+    <AllowAlphas>0</AllowAlphas>          <!-- If should search for alpha energy of nuclides. If true, then betas, x-rays, reactions, and nulcides must be false. -->
+    <AllowBetas>0</AllowBetas>            <!-- If should search for beta end-point energy of nuclides. If true, then alphas, x-rays, reactions, and nulcides must be false. -->
+     
+    <!-- You can specify specific element, that will be the only elements flourescense x-rays can come from.
+    If empty or not specified, will allow all elements.
+    Use same values you would type into Ref. Photopeak tool - Invalid values will be silently discarded.
+    Also, if you specify any values, AllowFluorXrays must have value "1"
+    <Elements>
+      <Element>U<Element>
+      <Element>Pu<Element>
+    </Elements>
+    --> 
+
+    <!-- Specific nuclides to search from; if not specified, or empty, will allow all nuclides.
+    Also, if you specify any values, AllowNucGammas, AllowAlphas, or AllowBetas must have value "1"
+    <Nuclides>
+      <Nuclide>Co60</Nuclide>
+      <Nuclide>Am241</Nuclide>
+    </Nuclides>
+    -->
+  
+    <!-- Specific reactions to search from; if not specified, or empty, will allow all nuclides.
+    Also, if you specify any values, AllowReactions must have value "1"
+    <Reactions>                           
+      <Reaction>Fe(n,g)</Reaction>        
+      <Reaction>U(n,n)</Reaction>
+    </Reactions>
+    -->
+  </NucSearchCatagory>
+
+
+  <NucSearchCatagory>
+    <Name internationalize="1">isbe-catagory-medical</Name>
+    <Description internationalize="1">isbe-catagory-medical-desc</Description>
+    <AllowNucGammas>1</AllowNucGammas>
+    <Nuclides>
+      <Nuclide>I131</Nuclide>
+      <Nuclide>Tc99m</Nuclide>
+    </Nuclides>
+  </NucSearchCatagory>
+  
+
+  <NucSearchCatagory>
+    <Name internationalize="1">isbe-catagory-industrial</Name>
+    <Description internationalize="1">isbe-catagory-industrial-desc</Description>
+    <AllowNucGammas>1</AllowNucGammas>
+    <AllowFluorXrays>1</AllowFluorXrays>
+    <Nuclides>
+      <Nuclide>Ir192</Nuclide>
+      <Nuclide>Co60</Nuclide>
+      <Nuclide>Cs137</Nuclide>
+    </Nuclides>
+    <Elements>
+      <Element>U</Element>
+      <Element>Pb</Element>
+      <Element>W</Element>
+    </Elements>
+  </NucSearchCatagory>
+
+  <NucSearchCatagory>
+    <Name internationalize="1">isbe-catagory-snm</Name>
+    <Description internationalize="1">isbe-catagory-snm-desc</Description>
+    <AllowNucGammas>1</AllowNucGammas>
+    <AllowFluorXrays>1</AllowFluorXrays>
+    <Nuclides>
+      <Nuclide>U232</Nuclide>
+      <Nuclide>U233</Nuclide>
+      <Nuclide>U234</Nuclide>
+      <Nuclide>U235</Nuclide>
+      <Nuclide>U236</Nuclide>
+      <Nuclide>U238</Nuclide>
+      <Nuclide>Pu239</Nuclide>
+    </Nuclides>
+    <Elements>
+      <Element>U</Element>
+      <Element>Pu</Element>
+      <Element>Np</Element>
+    </Elements>
+  </NucSearchCatagory>
+
+  <NucSearchCatagory>
+    <Name internationalize="1">isbe-catagory-alphas</Name>
+    <Description internationalize="1">isbe-catagory-alphas-desc</Description>
+    <AllowAlphas>1</AllowAlphas>
+  </NucSearchCatagory>
+
+  <NucSearchCatagory>
+    <Name internationalize="1">isbe-catagory-betas</Name>
+    <Description internationalize="1">isbe-catagory-betas-desc</Description>
+    <AllowBetas>1</AllowBetas>
+  </NucSearchCatagory>
+</NucSearchCatagories>
