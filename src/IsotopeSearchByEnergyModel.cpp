@@ -637,7 +637,7 @@ namespace
     
     assert( energies.size() == windows.size() );
     
-    char buffer[32];
+    char buffer[32] = { '\0' };
     
     const SandiaDecay::ProductType wantedType = isAlpha ? SandiaDecay::ProductType::AlphaParticle
     : SandiaDecay::ProductType::BetaParticle;
@@ -667,7 +667,7 @@ namespace
           for( size_t windex = 0; !parent_matches_one && (windex < energies.size()); windex += 1 )
           {
             const double min_energy = energies[windex] - windows[windex];
-            const double max_energy = energies[windex] - windows[windex];
+            const double max_energy = energies[windex] + windows[windex];
             parent_matches_one = ((part.energy >= min_energy) && (part.energy <= max_energy));
           }
           
@@ -699,7 +699,7 @@ namespace
       for( size_t windex = 0; matches_all_windows && (windex < energies.size()); windex += 1 )
       {
         const double min_energy = energies[windex] - windows[windex];
-        const double max_energy = energies[windex] - windows[windex];
+        const double max_energy = energies[windex] + windows[windex];
         
         bool match_this_window = false;
         for( const SandiaDecay::NuclideActivityPair &nap : activities )
@@ -815,10 +815,14 @@ namespace
         match.m_displayData[IsotopeSearchByEnergyModel::BranchRatio] = buffer;
         
         if( trans->parent && trans->child )
-          match.m_displayData[IsotopeSearchByEnergyModel::SpecificIsotope] = trans->parent->symbol + "&rarr;" + trans->child->symbol;
-        else if( trans->parent )
-          match.m_displayData[IsotopeSearchByEnergyModel::SpecificIsotope] = SandiaDecay::to_str(trans->mode)
-          + string(" of ") + trans->parent->symbol;
+        {
+          match.m_displayData[IsotopeSearchByEnergyModel::SpecificIsotope]
+                    = trans->parent->symbol + "&rarr;" + trans->child->symbol;
+        }else if( trans->parent )
+        {
+          match.m_displayData[IsotopeSearchByEnergyModel::SpecificIsotope]
+                    = SandiaDecay::to_str(trans->mode) + string(" of ") + trans->parent->symbol;
+        }
         
         if( !i )
         {
@@ -832,7 +836,7 @@ namespace
             const double weight = profile_weight( nullptr, displayed_measurement,
                                                  user_peaks, automated_search_peaks,
                                                  particle_rates, energies, windows,
-                                                 nucmatches[0], 26, 0.0 );
+                                                 match, 26, 0.0 );
             
             match.m_profileDistance = weight;
             snprintf( buffer, sizeof(buffer), "%.2f", weight );
@@ -1027,8 +1031,8 @@ void IsotopeSearchByEnergyModel::nuclidesWithAllEnergies(
           
           PeakDef::SourceGammaType sourceGammaType = PeakDef::NormalGamma;
           
-          PeakDef::findNearestPhotopeak( nm.first, energies[i],
-                                        windows[i], false, transition, trans_index, sourceGammaType );
+          PeakDef::findNearestPhotopeak( nm.first, energies[i], windows[i],
+                                        false, transition, trans_index, sourceGammaType );
           if( !transition && (sourceGammaType!=PeakDef::AnnihilationGamma) )
             continue;
           
@@ -1873,7 +1877,14 @@ WModelIndex IsotopeSearchByEnergyModel::index( int row, int column,
   if( (column>=NumColumns) || (row>=rowCount()) )
     return WModelIndex();
   
-  void *ptr = (void *)&(m_matches[row]);  //ah, whatever
+  //const size_t num_energies = m_energies.size();
+  //const size_t match_num = row / num_energies;
+  //const size_t sub_val = row % num_energies;
+  //assert( match_num < m_matches.size() );
+  //assert( sub_val < m_matches[match_num].size() );
+  //void *ptr = (void *)&(m_matches[match_num][sub_val]);
+  
+  void *ptr = nullptr;  // I dont think we ever use this
   return createIndex( row, column, ptr );
 }//WModelIndex index( int row, int column, const WModelIndex &parent ) const
 

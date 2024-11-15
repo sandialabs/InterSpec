@@ -539,7 +539,7 @@ bool DecayParticleModel::less_than( const DecayParticleModel::RowData &lhs,
       if( !lhs.responsibleNuc || !rhs.responsibleNuc )
         less = false;
       else
-        less = SandiaDecay::Nuclide::lessThan( lhs.responsibleNuc, rhs.responsibleNuc );
+        less = SandiaDecay::Nuclide::lessThanByDecay( lhs.responsibleNuc, rhs.responsibleNuc ); //not strickly unique, but good enough
     break;
     case kDecayMode:      less = (lhs.decayMode < rhs.decayMode);     break;
     case kParticleType:   less = (lhs.particle < rhs.particle);       break;
@@ -1690,6 +1690,66 @@ void ReferencePhotopeakDisplay::setNarrowPhoneLayout( const bool narrow )
 }//void setNarrowPhoneLayout( const bool narrow )
 #endif //InterSpec_PHONE_ROTATE_FOR_TABS
 
+
+bool ReferencePhotopeakDisplay::showingGammaLines() const
+{
+  return (m_showGammas && m_showGammas->isChecked());
+}
+
+void ReferencePhotopeakDisplay::setShowGammaLines( const bool show )
+{
+  const bool showing = (m_showGammas && m_showGammas->isChecked()); // !m_showGammas->isHidden()
+  if( showing == show )
+    return;
+  
+  m_showGammas->setChecked( show );
+  updateDisplayChange();
+}
+
+bool ReferencePhotopeakDisplay::showingXrayLines() const
+{
+  return (m_showXrays && m_showXrays->isChecked());
+}
+
+void ReferencePhotopeakDisplay::setShowXrayLines( const bool show )
+{
+  const bool showing = (m_showXrays && m_showXrays->isChecked()); // !m_showXrays->isHidden()
+  if( showing == show )
+    return;
+  
+  m_showXrays->setChecked( show );
+  updateDisplayChange();
+}
+
+bool ReferencePhotopeakDisplay::showingAlphaLines() const
+{
+  return (m_showAlphas && m_showAlphas->isChecked());
+}
+
+void ReferencePhotopeakDisplay::setShowAlphaLines( const bool show )
+{
+  const bool showing = (m_showAlphas && m_showAlphas->isChecked()); // !m_showAlphas->isHidden()
+  if( showing == show )
+    return;
+  
+  m_showAlphas->setChecked( show );
+  updateDisplayChange();
+}
+
+bool ReferencePhotopeakDisplay::showingBetaLines() const
+{
+  return (m_showBetas && m_showBetas->isChecked());
+}
+
+void ReferencePhotopeakDisplay::setShowBetaLines( const bool show )
+{
+  const bool showing = (m_showBetas && m_showBetas->isChecked()); // !m_showBetas->isHidden()
+  if( showing == show )
+    return;
+  
+  m_showBetas->setChecked( show );
+  updateDisplayChange();
+}
 
 FeatureMarkerWidget *ReferencePhotopeakDisplay::featureMarkerTool()
 {

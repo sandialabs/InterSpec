@@ -306,6 +306,18 @@ public:
   void setNarrowPhoneLayout( const bool narrow );
 #endif
   
+  bool showingGammaLines() const;
+  void setShowGammaLines( const bool show );
+  
+  bool showingXrayLines() const;
+  void setShowXrayLines( const bool show );
+  
+  bool showingAlphaLines() const;
+  void setShowAlphaLines( const bool show );
+  
+  bool showingBetaLines() const;
+  void setShowBetaLines( const bool show );
+  
 protected:
   virtual void render( Wt::WFlags<Wt::RenderFlag> flags );
   

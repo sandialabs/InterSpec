@@ -70,7 +70,9 @@
 
 .IsotopeSourceTypes
 {
-
+  margin-bottom: 5px;
+  margin-top: 5px;
+  align-self: center;
 }
 
 .IsotopeSearchMinimums
@@ -231,11 +233,6 @@ div.AddSearchEnergy.Wt-disabled, div.DeleteSearchEnergy.Wt-disabled
   }
   
   .SearchEnergy {
-    padding-top: 2px;
-    padding-bottom: 2px;
-  }
-  
-  .IsotopeSourceTypes {
     padding-top: 2px;
     padding-bottom: 2px;
   }

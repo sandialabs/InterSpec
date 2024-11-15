@@ -14,8 +14,8 @@ you restart InterSpec).
   <NucSearchCatagory>
     <Name internationalize="1">isbe-catagory-nuc-xray-rctn</Name>  <!-- internationalize only applies to default catagories to allow translation to other languages (e.g. entry in InterSpec_resources/app_text/IsotopeSearchByEnergy.xml), you will instead use spelled out names (e.g., "My Fav Nucs"), and either leave out the attribute, or give it a value of "0" -->
     <Description internationalize="1">isbe-catagory-nuc-xray-rctn-desc</Description>
-    <MinBr>0.0</MinBr>                    <!-- Defaults to zero if not specified -->
-    <MinHl>6000 s</MinHl>                 <!-- Defaults to zero if not specified -->
+    <MinBr>0.0</MinBr>                    <!-- Defaults to zero if not specified.  Only applicable to AllowNucGammas. -->
+    <MinHl>6000 s</MinHl>                 <!-- Defaults to zero if not specified.  Only applicable to AllowNucGammas. -->
     <AllowNucGammas>1</AllowNucGammas>    <!-- If should search on nuclide gammas and decay x-rays. These options default to false if not specified. -->
     <AllowFluorXrays>1</AllowFluorXrays>  <!-- If should search on element flourescense x-rays. -->
     <AllowReactions>1</AllowReactions>    <!-- If should include reactions. -->
@@ -49,6 +49,17 @@ you restart InterSpec).
     -->
   </NucSearchCatagory>
 
+  <NucSearchCatagory>
+    <Name internationalize="1">isbe-catagory-xray</Name>
+    <Description internationalize="1">isbe-catagory-xray-desc</Description>
+    <AllowFluorXrays>1</AllowFluorXrays>
+  </NucSearchCatagory>
+
+  <NucSearchCatagory>
+    <Name internationalize="1">isbe-catagory-reactions</Name>
+    <Description internationalize="1">isbe-catagory-reactions-desc</Description>
+    <AllowReactions>1</AllowReactions>
+  </NucSearchCatagory>
 
   <NucSearchCatagory>
     <Name internationalize="1">isbe-catagory-medical</Name>

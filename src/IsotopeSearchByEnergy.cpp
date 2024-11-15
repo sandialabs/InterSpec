@@ -291,7 +291,9 @@ IsotopeSearchByEnergy::IsotopeSearchByEnergy( InterSpec *viewer,
   m_currentSearch( 0 ),
   m_searching( NULL ),
   m_results( NULL ),
+  m_minBranchRatioDiv( nullptr ),
   m_minBranchRatio( NULL ),
+  m_minHalfLiveDiv( nullptr ),
   m_minHalfLife( NULL ),
   m_model( NULL ),
   m_search_catagories{},
@@ -354,11 +356,12 @@ IsotopeSearchByEnergy::IsotopeSearchByEnergy( InterSpec *viewer,
   
   const bool showToolTips = UserPreferences::preferenceValue<bool>( "ShowTooltips", m_viewer );
   
-  WContainerWidget *optionDiv = new WContainerWidget( searchOptions );
-  WLabel *label = new WLabel( WString::tr("isbe-min-br"), optionDiv );
+  m_minBranchRatioDiv = new WContainerWidget( searchOptions );
+  m_minBranchRatioDiv->setHiddenKeepsGeometry( true );
+  WLabel *label = new WLabel( WString::tr("isbe-min-br"), m_minBranchRatioDiv );
 //  HelpSystem::attachToolTipOn( label,"Toggle or type minimum branching ratio.", showToolTips , HelpSystem::ToolTipPosition::Top);
 
-  m_minBranchRatio = new NativeFloatSpinBox( optionDiv );
+  m_minBranchRatio = new NativeFloatSpinBox( m_minBranchRatioDiv );
   HelpSystem::attachToolTipOn( m_minBranchRatio, WString::tr("isbe-tt-min-br"),
                               showToolTips , HelpSystem::ToolTipPosition::Top);
   
@@ -367,10 +370,11 @@ IsotopeSearchByEnergy::IsotopeSearchByEnergy( InterSpec *viewer,
   m_minBranchRatio->setSingleStep( 0.1f );
   label->setBuddy( m_minBranchRatio );
   
-  optionDiv = new WContainerWidget( searchOptions );
-  label = new WLabel( WString::tr("isbe-min-hl"), optionDiv ); //"Min. T\xc2\xbd"
+  m_minHalfLiveDiv = new WContainerWidget( searchOptions );
+  m_minHalfLiveDiv->setHiddenKeepsGeometry( true );
+  label = new WLabel( WString::tr("isbe-min-hl"), m_minHalfLiveDiv ); //"Min. T\xc2\xbd"
  
-  m_minHalfLife = new WLineEdit( "6000 s", optionDiv );
+  m_minHalfLife = new WLineEdit( "6000 s", m_minHalfLiveDiv );
   m_minHl = 6000.0 * PhysicalUnits::second;
   
   m_minHalfLife->setAttributeValue( "ondragstart", "return false" );
@@ -1041,7 +1045,6 @@ void IsotopeSearchByEnergy::initFilterTypes()
       }//if( position )
       
       cerr << msg << endl;
-      cerr << endl;
     }catch( std::exception &e )
     {
       cerr << "Failed parsing '" << xml_file_name << "': " << e.what() << endl;
@@ -1124,14 +1127,33 @@ void IsotopeSearchByEnergy::catagoryChanged( const bool update_results )
   const NucSearchCatagory &cat = m_search_catagories[current_index];
   m_search_catagory_select->setToolTip( cat.m_description );
   m_minHl = cat.m_minHl;
-  m_minHalfLife->setValueText( PhysicalUnitsLocalized::printToBestTimeUnits(m_minHl, 3) );
+  m_minHalfLife->setValueText( PhysicalUnitsLocalized::printToBestTimeUnits(m_minHl, 1) );
   
   const bool refreshBr = (m_minBr != cat.m_minBr);
   m_minBr = cat.m_minBr;
   m_minBranchRatio->setValue( m_minBr );
   
+  m_minBranchRatioDiv->setHidden( !cat.m_nuclides );
+  m_minHalfLiveDiv->setHidden( !cat.m_nuclides );
+  
   if( update_results )
+  {
+    // User changed things here, so if applicable, get rid of showing alpha/beta
+    //  ref. lines.  Its possible the user explicitly
+    ReferencePhotopeakDisplay *display = m_viewer->referenceLinesWidget();
+    if( display )
+    {
+      UndoRedoManager::BlockUndoRedoInserts undo_blocker;
+      if( !display->showingGammaLines() )
+        display->setShowGammaLines( cat.m_nuclides || cat.m_reactions );
+      if( !display->showingXrayLines() )
+        display->setShowXrayLines( cat.m_nuclides || cat.m_fluorescence_xrays );
+      display->setShowAlphaLines( cat.m_alphas );
+      display->setShowBetaLines( cat.m_beta_endpoint );
+    }//if( display )
+    
     startSearch( refreshBr );
+  }
 }//void catagoryChanged()
 
 
@@ -1157,6 +1179,25 @@ void IsotopeSearchByEnergy::resultSelectionChanged()
   string orig_state_xml;
   if( display )
     display->serialize( orig_state_xml );
+  
+  if( display )
+  {
+    int current_index = m_search_catagory_select->currentIndex();
+    assert( (current_index >= 0) && (current_index < static_cast<int>(m_search_catagories.size())) );
+    
+    if( (current_index < 0) || (current_index > static_cast<int>(m_search_catagories.size())) )
+      current_index = 0;
+    assert( current_index < static_cast<int>(m_search_catagories.size()) );
+    const NucSearchCatagory &cat = m_search_catagories[current_index];
+    
+    UndoRedoManager::BlockUndoRedoInserts undo_blocker;
+    if( !display->showingGammaLines() )
+      display->setShowGammaLines( cat.m_nuclides || cat.m_reactions );
+    if( !display->showingXrayLines() )
+      display->setShowXrayLines( cat.m_nuclides || cat.m_fluorescence_xrays );
+    display->setShowAlphaLines( cat.m_alphas );
+    display->setShowBetaLines( cat.m_beta_endpoint );
+  }//if( display )
   
   const int orig_selected_row = m_selected_row;
   
@@ -1990,9 +2031,7 @@ void IsotopeSearchByEnergy::NucSearchCatagory::deSerialize( const rapidxml::xml_
   m_beta_endpoint = get_bool_val( XML_FIRST_NODE(xml_data, "AllowBetas") );
   
   if( (m_alphas || m_beta_endpoint)
-      && ((m_alphas == m_beta_endpoint)
-          || m_beta_endpoint || m_reactions
-          || m_fluorescence_xrays || m_nuclides) )
+      && ((m_alphas == m_beta_endpoint) || m_reactions || m_fluorescence_xrays || m_nuclides) )
   {
     throw runtime_error( "IsotopeSearchByEnergy::NucSearchCatagory: If alpha or betas are"
                         " specified, then no other source may be specified." );

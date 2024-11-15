@@ -255,7 +255,10 @@ protected:
   int m_currentSearch;
   Wt::WText *m_searching;
   RowStretchTreeView *m_results;
+  
+  Wt::WContainerWidget *m_minBranchRatioDiv;
   NativeFloatSpinBox *m_minBranchRatio;
+  Wt::WContainerWidget *m_minHalfLiveDiv;
   Wt::WLineEdit *m_minHalfLife;
   IsotopeSearchByEnergyModel *m_model;
   
