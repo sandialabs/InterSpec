@@ -28,6 +28,7 @@
 #include <tuple>
 #include <vector>
 
+#include <Wt/Json/Object>
 #include <Wt/WContainerWidget>
 
 #include "InterSpec/AuxWindow.h"
@@ -96,7 +97,10 @@ class DetectorPeakResponse;
 
 namespace DetectionLimitCalc
 {
+  struct CurrieMdaInput;
+  struct CurrieMdaResult;
   struct DeconComputeInput;
+  struct DeconActivityOrDistanceLimitResult;
   enum class DeconContinuumNorm : int;
 }
 
@@ -134,6 +138,7 @@ public:
                              Wt::WSuggestionPopup *materialSuggest );
   virtual ~DetectionLimitWindow();
   
+  DetectionLimitTool *tool();
 protected:
   DetectionLimitTool *m_tool;
 };//class DetectionLimitWindow
@@ -164,6 +169,77 @@ public:
   void scheduleCalcUpdate();
   
   
+  /** Handles receiving a "deep-link" url starting with "interspec://detection-limit/...".
+   
+   TODO: NOT CURRENTLY IMPLEMENTED
+   
+   Example URIs:
+   - "interspec://detection-limit?V=1&..."
+   
+   @param query_str The query portion of the URI.  So for example, if the URI has a value of
+   "interspec://detection-limit?V=1...", then this string would be "V=1...".
+   Assumes the string passed in has alaready been url-decoded.
+   If not a valid query_str, throws exception.
+   */
+  void handleAppUrl( std::string query_str );
+  
+  /** Encodes current tool state to app-url format.  Returned string does not include the
+   "interspec://" protocol, or "detection-limit" path; so will look something like "V=1&...",
+   and it will not be url-encoded.
+   
+   TODO: NOT CURRENTLY IMPLEMENTED - returns empty string
+   */
+  std::string encodeStateToUrl() const;
+  
+  struct CurrieResultPeak
+  {
+    double energy = 0.0;
+    double fwhm = 0.0;
+    double counts_4pi = 0.0;
+  };
+  
+  /** Updates the decorative region, visible region, and text for a Currie limit result.
+   
+   @param chart Chart to update; must not be nullptr.
+   @param PeakModel Peak model to add resulting peak to; may be nullptr if you dont want a peak on chart.
+   @param input The Currie MDA input; must be filled out.
+   @param result The Currie limit results.  May be nullptr if it hasnt/couldnt be computed (in which case no peak/text will be drawn)
+   @param drf Only use for peak FWHM; if nullptr or no FWHM info, will use 0.25 ROI for peak sigma width.
+   @param limitType The limit type - currently only activity limit is supported
+   @param gammas_per_bq The expected detected gammas per Bq.  If zero or negative, will put text in terms of counts
+   @param peaks Peaks to place on the plot; if empty, will create a peak using `gammas_per_bq`, and FWHM from drf
+   */
+  static void update_spectrum_for_currie_result( D3SpectrumDisplayDiv *chart,
+                                         PeakModel *pmodel,
+                                         const DetectionLimitCalc::CurrieMdaInput &input,
+                                         const DetectionLimitCalc::CurrieMdaResult * const result,
+                                         std::shared_ptr<const DetectorPeakResponse> drf,
+                                         DetectionLimitTool::LimitType limitType,
+                                         const double gammas_per_bq,
+                                        const std::vector<CurrieResultPeak> &peaks );
+  
+  /** Creates a dialog window with lots of info about the Currie-style limit.
+   
+   @param nuclide Nuclide this limit is for - may be nullptr (only used for window title)
+   @param result The limit result to display info for
+   @param drf The detector efficiency function to use for computing efficiencies.  If nullptr, limit will be given in terms of counts, not activity.
+   @param limitType Wether this is for activity limit, or distance limit.  Distance limit not currently supported.
+   @param distance The distance this limit is for - used to compute detector efficiency.  If negative, limit will be given in terms of counts, not activity.
+   @param do_air_attenuation Wether to include air attenuation, if limit is given in terms of activity.
+   @param branch_ratio The number of gammas per decay of the parent nuclide.  If negative, limit will be given in terms of counts, not activity.
+   @param shield_transmission This is the fraction of gammas that will make it through the shielding without interacting.
+        e.g., with no shielding will have value of 1.0, with heavy shielding will go towards zero.
+   */
+  static SimpleDialog *createCurrieRoiMoreInfoWindow( const SandiaDecay::Nuclide *const nuclide,
+                                  const DetectionLimitCalc::CurrieMdaResult &result,
+                                  std::shared_ptr<const DetectorPeakResponse> drf,
+                                  DetectionLimitTool::LimitType limitType,
+                                            const double distance,
+                                            const bool do_air_attenuation,
+                                            const double branch_ratio,
+                                            double shield_transmission );
+  
+  static Wt::Json::Object generateChartJson( const DetectionLimitCalc::DeconActivityOrDistanceLimitResult &result, const bool is_dist_limit );
 protected:
   virtual void render( Wt::WFlags<Wt::RenderFlag> flags );
   
@@ -226,7 +302,7 @@ protected:
   /** Gets DRF from GUI widget, and if that isnt valid, gets it from the spectrum. */
   std::shared_ptr<const DetectorPeakResponse> detector();
   
-  float currentConfidenceLevel();
+  double currentConfidenceLevel();
   
   /** Returns either the current user entered distance (if determining activity limit), or the current display distance (if determining
    distance limit).
@@ -322,7 +398,16 @@ protected:
   Wt::WLineEdit *m_displayActivity; //!< Used for peak plotting when activity limit is being determined
   Wt::WLineEdit *m_displayDistance; //!< Used for peak plotting when distance limit is being determined
   
-  enum ConfidenceLevel { OneSigma, TwoSigma, ThreeSigma, FourSigma, FiveSigma, NumConfidenceLevel };
+  enum ConfidenceLevel{
+    NinetyFivePercent,
+    NinetyNinePercent,
+    OneSigma,
+    TwoSigma,
+    ThreeSigma,
+    FourSigma,
+    FiveSigma,
+    NumConfidenceLevel
+  };
   Wt::WComboBox *m_confidenceLevel;
   
   /** Holds m_chi2Chart, m_bestChi2Act, and m_upperLimit. */
@@ -357,16 +442,17 @@ public:
     
     float energy;
     double branch_ratio; //!< Decay branching ratio of nuclide
-    double counts_per_bq_into_4pi; //!< This includes spectrum live time, shielding, and gamma BR.  This will need to be turned into some vector to cover multiple gamma lines
+    double shield_transmission;
+    double counts_per_bq_into_4pi__; //!< This includes spectrum live time, shielding, and gamma BR.  This will need to be turned into some vector to cover multiple gamma lines
     double counts_per_bq_into_4pi_with_air;
-    double trans_through_air;
-    double trans_through_shielding;
+    //double trans_through_air;
+    //double trans_through_shielding;
     double distance;
     double activity;
     float roi_start;
     float roi_end;
     size_t num_side_channels;
-    float confidence_level;
+    double confidence_level;
     
     /** How we should normalize the continuum.
      E.g., allowed to float as normal, fixed using the edges of the continuum, or fixed using the whole ROI, assuming no signal

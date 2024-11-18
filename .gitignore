@@ -19,6 +19,9 @@ target/electron/node_modules*/
 target/electron/release-builds
 InterSpec_resources/SpectrumChartD3StandAlone.css
 infer-out/
+InterSpec_resources/app_text/convert_xml_to_csv.py
+InterSpec_resources/app_text/convert_csv_to_xml.py
+InterSpec_resources/app_text/InterSpec_string*.csv
 
 *OUO*
 *ouo*

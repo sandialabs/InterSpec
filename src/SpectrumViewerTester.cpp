@@ -650,7 +650,9 @@ const char *SpectrumViewerTester::tostr( TestType type )
 
 
 SpectrumViewerTesterWindow::SpectrumViewerTesterWindow( InterSpec *viewer )
-  : AuxWindow( "InterSpec Tester" ),
+  : AuxWindow( "InterSpec Tester", 
+              (WFlags<AuxWindowProperties>(AuxWindowProperties::SetCloseable)
+              | AuxWindowProperties::DisableCollapse) ),
     m_tester( 0 )
 {
   addStyleClass( "SpectrumViewerTesterWindow" );
@@ -938,9 +940,11 @@ SpectrumViewerTester::Score SpectrumViewerTester::doTest( SpectrumViewerTester::
       throw runtime_error( "SpectrumViewerTester::doTest: invalid TestType" );
       break;
   }//switch( type )
-  #if( USE_DB_TO_STORE_SPECTRA )
-  score.m_dbid = m_viewer->m_currentStateID;
-  #endif
+#if( USE_DB_TO_STORE_SPECTRA )
+  score.m_dbid = -1;
+  if( m_viewer->m_dataMeasurement )
+    score.m_dbid = m_viewer->m_dataMeasurement->dbStateId( m_viewer->m_displayedSamples );
+#endif
   return score;
 }//Score doTest( TestType type )
 
@@ -1985,7 +1989,7 @@ SpectrumViewerTester::Score SpectrumViewerTester::testShieldSourceFit()
     note.m_text = "";
     note.m_title = "Fit Chi2 Graphic";
     note.m_originalImage = make_shared<Wt::WSvgImage>(m_picWidth, m_picHeight);
-    disp->updateChi2ChartActual();
+    disp->updateChi2ChartActual( nullptr );
     disp->renderChi2Chart( *note.m_originalImage );
     
     // Set all the quantities being fit for to some default values, so we wont be starting off in
@@ -2308,8 +2312,7 @@ SpectrumViewerTester::Score SpectrumViewerTester::testMultiplePeakFitRangeVaried
         }//if( !found )
       }//for( size_t i = 0; i < preFitPeaks.size(); ++i )
       
-      SpectrumDataModel *model = m_viewer->m_spectrum->m_model;
-      auto axisH = model->histUsedForXAxis();
+      auto axisH = m_viewer->m_spectrum->histUsedForXAxis();
 
       minx -= 20.0;
       maxx += 20.0;

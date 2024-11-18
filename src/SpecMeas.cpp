@@ -1273,7 +1273,7 @@ bool SpecMeas::write_iaea_spe( std::ostream &output,
     if( summed )
     {
       stringstream peak_csv;
-      PeakModel::write_peak_csv( peak_csv, filename(), peaks, summed );
+      PeakModel::write_peak_csv( peak_csv, filename(), PeakModel::PeakCsvType::Full, peaks, summed );
       
       // Just in case, remove all $ and : characters (should only come from peak labels),
       //  to not confuse parsers
@@ -1953,7 +1953,10 @@ std::set<std::set<int> > SpecMeas::sampleNumsWithPeaks() const
   if( !m_peaks )
     return answer;
   for( const SampleNumsToPeakMap::value_type &t : *m_peaks )
-    answer.insert( t.first );
+  {
+    if( t.second && !t.second->empty() )
+      answer.insert( t.first );
+  }
   return answer;
 }//sampleNumsWithPeaks() const
 
@@ -2035,6 +2038,18 @@ void SpecMeas::setAutomatedSearchPeaks( const std::set<int> &samplenums,
 // "previous work" popup even on spectra that we just opened up, and didnt do anything with.
 //  setModified();
 }//setAutomatedSearchPeaks(...)
+
+
+std::set<std::set<int>> SpecMeas::sampleNumsWithAutomatedSearchPeaks() const
+{
+  std::set<std::set<int>> answer;
+  for( const SampleNumsToPeakMap::value_type &t : m_autoSearchPeaks )
+  {
+    if( t.second && !t.second->empty() )
+      answer.insert( t.first );
+  }
+  return answer;
+}//std::set<std::set<int> > sampleNumsWithAutomatedSearchPeaks() const
 
 
 std::shared_ptr< std::deque< std::shared_ptr<const PeakDef> > >
@@ -2253,6 +2268,59 @@ void SpecMeas::cleanup_orphaned_info()
   setModified();
 }//void cleanup_orphaned_info()
 
+
+void SpecMeas::change_sample_numbers( const vector<pair<int,int>> &from_to_sample_nums )
+{
+  SpecFile::change_sample_numbers( from_to_sample_nums );
+  
+  // I *think*, m_peaks, m_autoSearchPeaks, and m_dbUserStateIndexes are the only
+  //  SpecMeas specific things that use the sample numbers
+  
+  auto update_peak_map = [&from_to_sample_nums]( SampleNumsToPeakMap &peaks ){
+    SampleNumsToPeakMap new_peak_map;
+    
+    for( const SampleNumsToPeakMap::value_type &t : peaks )
+    {
+      set<int> new_samples;
+      for( const int orig_sample : t.first )
+      {
+        const auto pos = std::find_if( begin(from_to_sample_nums), end(from_to_sample_nums),
+                    [orig_sample]( const pair<int,int> &val ){ return val.first == orig_sample;} );
+        new_samples.insert( (pos == end(from_to_sample_nums)) ? orig_sample : pos->second );
+      }//for( loop over original sample numbers )
+      
+      new_peak_map[new_samples] = t.second;
+    }//for( const SampleNumsToPeakMap::value_type &t : peaks )
+    
+    peaks = new_peak_map;
+  };//update_peak_map
+  
+  if( m_peaks )
+    update_peak_map( *m_peaks );
+  
+  update_peak_map( m_autoSearchPeaks );
+
+  
+  // Need to update m_dbUserStateIndexes
+  map<set<int>,long long int> newDbUserStateIndexes;
+  for( const auto &samplenums_dbindex : m_dbUserStateIndexes )
+  {
+    set<int> new_sample_nums;
+    for( const int sample : samplenums_dbindex.first )
+    {
+      // Put original sample number in `new_sample_nums`, unless it is one of the sample numbers
+      //  to change, in which case put in the new sample number
+      const auto pos = std::find_if( begin(from_to_sample_nums), end(from_to_sample_nums),
+                      [sample](const pair<int,int> &lhs) -> bool { return lhs.first == sample; } );
+      
+      new_sample_nums.insert( (pos == end(from_to_sample_nums)) ? sample : pos->second );
+    }//for( const int sample : samplenums_dbindex.first )
+    
+    newDbUserStateIndexes[new_sample_nums] = samplenums_dbindex.second;
+  }//for( const auto &samplenums_dbindex : m_dbUserStateIndexes )
+  
+  m_dbUserStateIndexes = newDbUserStateIndexes;
+}//void change_sample_numbers( const std::vector<std::pair<int,int>> &from_to_sample_nums );
 
 
 Wt::Signal<> &SpecMeas::aboutToBeDeleted()

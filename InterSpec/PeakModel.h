@@ -39,7 +39,6 @@
 #include "InterSpec/PeakDef.h"
 
 class SpecMeas;
-class SpectrumDataModel;
 
 namespace SpecUtils{ class Measurement; }
 
@@ -91,10 +90,8 @@ public:
   PeakModel( Wt::WObject *parent = 0 );
   virtual ~PeakModel();
 
-  //Inorder to display continuum area of peaks, you need to set the data model
-  // XXX - note that with PeakDef refactorization that happened in Dec 2013,
-  //       this requirement/paradyn could be eliminated probably
-  void setDataModel( SpectrumDataModel *dataModel );
+  /** Sets the foreground spectrum - necessary for stepped continua. */
+  void setForeground( std::shared_ptr<const SpecUtils::Measurement> spec );
 
   //setPeakFromSpecMeas(...): when the primary spectrum is changed (either file,
   //  or the displayed sample numbers), then this function should be called to
@@ -140,6 +137,8 @@ public:
   
   std::shared_ptr<const std::deque< PeakModel::PeakShrdPtr > > peaks() const;
   std::vector<PeakDef> peakVec() const;
+  
+  const std::deque<std::shared_ptr<const PeakDef>> &sortedPeaks() const;
 
   //definePeakXRangeAndChi2(...): Inorder to save cpu (and mostly memorry access
   //  time) later on, this function will define the lower and upper energy range
@@ -382,13 +381,33 @@ public:
   static std::vector<PeakDef> gadras_peak_csv_to_peaks( std::shared_ptr<const SpecUtils::Measurement> meas,
                                                          std::istream &csv );
   
+  enum class PeakCsvType
+  {
+    Full,
+    NoHeader,
+    Compact,
+    FullHtml,
+    NoHeaderHtml,
+    CompactHtml
+  };
+  
   /** Writes the peaks to a CSV file output - e.g., what the user gets when they click on the CSV download on the "Peak Manager" tab.
    */
   static void write_peak_csv( std::ostream &outstrm,
                              std::string specfilename,
+                             const PeakCsvType type,
                              const std::deque<std::shared_ptr<const PeakDef>> &peaks,
                              const std::shared_ptr<const SpecUtils::Measurement> &data );
   
+  
+  static void write_for_and_back_peak_csv( std::ostream &outstrm,
+                             std::string specfilename,
+                             const PeakCsvType type,
+                             const std::deque<std::shared_ptr<const PeakDef>> &peaks,
+                             const std::shared_ptr<const SpecUtils::Measurement> &data,
+                             std::string background_specfilename,
+                             const std::deque<std::shared_ptr<const PeakDef>> *background_peaks,
+                             const std::shared_ptr<const SpecUtils::Measurement> &background );
   
 protected:
   
@@ -411,7 +430,7 @@ protected:
   void removePeakInternal( std::shared_ptr<const PeakDef> peak );
   
   
-  SpectrumDataModel *m_dataModel;
+  std::shared_ptr<const SpecUtils::Measurement> m_foreground;
 
   //m_peaks and m_sortedPeaks contain the same peaks, they just differ in how
   //  they are sorted.

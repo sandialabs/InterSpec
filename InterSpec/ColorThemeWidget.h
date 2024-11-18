@@ -41,6 +41,7 @@ namespace Wt
 
 struct ColorTheme;
 class ColorSelect;
+class NativeFloatSpinBox;
 
 /** Widget to display, and allow editing a ColorTheme.
     Does not handle saving or loading ColorThemes to/from database; see
@@ -86,6 +87,9 @@ public:
   void descriptionChangedCallback();
   void nonChartAreaThemeChanged();
   void peaksTakeRefLineColorChangedCallback();
+  void peakLabelFontSizeChanged();
+  void peakLabelRotationChanged();
+  void logYAxisMinValueChanged();
 
   void genericRefLineColorChangedCallback( const int num );
   void specificRefLineSourceChangedCallback( const int num );
@@ -115,6 +119,10 @@ public:
 
 	Wt::WCheckBox *m_peaksTakeRefLineColor;
 
+  Wt::WComboBox *m_peakLabelFontSize;
+  NativeFloatSpinBox *m_peakLabelAngle;
+  NativeFloatSpinBox *m_logYAxisMin;
+  
   static const int sm_numRefLineColors = 12;
   ColorSelect *m_referenceLineColor[sm_numRefLineColors];
   

@@ -145,10 +145,11 @@ namespace PhysicalUnits
   extern const char * const sm_timeDurationHalfLiveOptionalRegex;
   extern const char * const sm_timeDurationHalfLiveOptionalPosOrNegRegex;
   
+  extern const char * const sm_decimalRegex;
   extern const char * const sm_positiveDecimalRegex;
 
   //printToBest____Units(...): makes an attempt to turn the input into a user
-  //  readable string.  The optional defineitions of units are convience
+  //  readable string.  The optional definitions of units are convenience
   //  variables for when you're working in units that are not from this
   //  namespace.
   //  TODO: instead of specifying number of digits past the decimal, should convert to using number of significant figures.
@@ -160,7 +161,7 @@ namespace PhysicalUnits
                                       const double cm_definition = cm );
   std::string printToBestActivityUnits( double activity,
                                         int maxNpostDecimal = 2,
-                                        bool useCurries = true, //or else use becquerel
+                                        bool useCuries = true, //or else use becquerel
                                         double bq_definition = becquerel );
   std::string printToBestTimeUnits( double time,
                                     int maxNpostDecimal = 2,
@@ -314,11 +315,11 @@ namespace PhysicalUnits
 
   //Returns a reference to an element in sm_activityUnitNameValues.
   const UnitNameValuePair &bestActivityUnit( const double activity,
-                                             bool useCurries = true );
+                                             bool useCuries = true );
   
   //Returns a reference to an element in sm_activityUnitHtmlNameValues
   const UnitNameValuePair &bestActivityUnitHtml( const double activity,
-                                                 bool useCurries = true );
+                                                 bool useCuries = true );
   
   const UnitNameValuePair &bestDoseUnitHtml( const double dose,
                                                 bool useRem = true );

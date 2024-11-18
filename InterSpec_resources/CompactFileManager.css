@@ -25,7 +25,14 @@
   
   display: flex;
   flex-direction: column;
-  justify-content: space-around
+  justify-content: space-around;
+  
+  overflow: hidden;
+}
+
+.CompactFileManager.Tabbed div.DispType {
+  margin-top: 0px;
+  border-top: none;
 }
 
 .CompactFileManager.LeftToRight div.DispType.Foreground {
@@ -108,8 +115,81 @@ div.DispType .SpecTitle {
   overflow: hidden;
 }
 
+div.DispType .StretcherRow {
+  flex-grow: 10;
+  flex-shrink: 10;
+}
+
+div.DispType .SummaryTable {
+  align-self: center;
+  font-size: xx-small;
+  margin-top: 5px;
+  white-space: nowrap;
+  border-collapse: collapse;
+  border: 1px solid #e1e1e1;
+}
+
+div.DispType .SummaryTable td {
+  padding-top: 1px;
+  padding-bottom: 1px;
+  padding-left: 2px;
+  border-bottom: 1px solid #e1e1e1;
+}
+
+div.DispType .SummaryTable td:nth-child(odd) {
+  font-weight: bold;
+  text-align: center;
+}
+
+div.DispType .SummaryTable td:nth-child(even) {
+  text-align: left;
+  border-right: 1px solid #e1e1e1;
+  
+  max-width: 60px;
+  text-overflow: ellipsis;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+button.LinkBtn.GpsBtn, button.LinkBtn.GpsBtn:hover {
+  float: none;
+  height: 10px;
+  padding: 0px;
+  font-size: 6px;
+}
+
+.CompactFileManager .BottomRow .InfoBtns {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: nowrap;
+  align-items: center;
+  margin-left: auto; /* makes float to right */
+}
+
+.CompactFileManager button.LinkBtn.MoreInfoBtn, .CompactFileManager button.LinkBtn.MoreInfoBtn:hover {
+  margin-right: 5px;
+  margin-left: 0px;
+  font-size: 6px;
+  height: 12px;
+  padding-left: 0px;
+  padding-right: 5px;
+}
+
+/* For background and secondary sections, add some margin below summary table, so they will be
+ at the same height as the foreground table (which has some additional buttons below the section)
+ */
+.CompactFileManager.LeftToRight .DispType.Background .SummaryTable, .CompactFileManager.LeftToRight .DispType.Secondary .SummaryTable {
+  margin-bottom: 23px;
+}
+
+/* The "Scale Factor:" input for background and secondary - add a little space*/
+.CompactFileManager .DispType .ScaleFactorRow > input {
+  margin-left: 5px;
+}
+
 div.DispType .BottomRow {
-  flex-grow: 1;
+  width: 100%;
+  overflow-x: hidden;
   
   display: flex;
   flex-wrap: nowrap;
@@ -129,10 +209,41 @@ div.DispType .BottomRow > div > button{
 }
 
 div.DispType div.ScaleFactorRow{
-  /* Make it so when the "Normalize" button disappears and reapears its doesnt cause this rows contents to move around a little. */
+  /* Make it so when the "Normalize" button disappears and reappears its doesnt cause this rows contents to move around a little. */
   height: 23px;
 }
 
 .SpecNormTxt {
   width: 5em;
+}
+
+.CompactFileManager .TitleRow {
+  display: flex;
+  flex-direction: row;
+  /* justify-content: space-between; */
+  column-gap: 8px;
+}
+
+.CompactFileManager .SpecLeg {
+  
+}
+
+.CompactFileManager .CompactFMLegBackground{
+  fill: var(--d3spec-chart-area-color, rgba(0,0,0,0));
+}
+
+.CompactFileManager .CompactFMLegLine {
+  stroke-width: 1px;
+}
+
+.CompactFileManager .CompactFMSpecLineForeground {
+  stroke: var(--d3spec-fore-line-color, black);
+}
+
+.CompactFileManager .CompactFMSpecLineBackground {
+  stroke: var(--d3spec-back-line-color, rgb(0,255,255) ); /* default cyan */
+}
+
+.CompactFileManager .CompactFMSpecLineSecondary {
+  stroke: var(--d3spec-second-line-color, rgb(0,128,128) ); /* default dark green */
 }

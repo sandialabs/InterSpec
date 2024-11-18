@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- Strings from PeakModel - e.g., tables that display peak info.
+  pm- is short for PeakModel
+  -->
+  <message id="pm-tt-use-for-cal">Si ce pic doit être utilisé pour aider à calibrer l'énergie.
+    Vous devez avoir un nucléide, une réaction, ou un rayon X assigné au pic, et vous ne devez pas avoir fixé la valeur moyenne de l'énergie en utilisant l'Éditeur de Pics.</message>
+<message id="pm-gaussian">Gaussien</message>
+<message id="pm-region">Région</message>
+<message id="pm-err-use-fit-no-nuc">Vous devez associer un nucléide au pic avant de l'utiliser pour l'ajustement du blindage/source.</message>
+<message id="pm-err-use-cal-no-nuc">Vous devez associer un nucléide, un rayon X, ou une réaction au pic avant de l'utiliser pour la calibration.</message>
+<message id="pm-err-use-rel-act-no-nuc">Seuls les pics associés à un gamma de nucléide peuvent être utilisés pour l'analyse de l'activité relative.</message>
+<message id="pm-warn-use-xray-fit">Avertissement : utiliser des rayons X pour ajuster les nucléides sources n'est généralement pas une très bonne idée, donc veuillez faire preuve de prudence.</message>
+
+<message id="pm-hdr-diff">Différence</message>
+<message id="pm-hdr-cal-peak">Pic de Calib.</message>
+<message id="pm-hdr-rel-act">Act Rel</message>
+<message id="pm-hdr-label">Étiquette</message>
+<message id="pm-hdr-color">Couleur</message>
+<message id="pm-hdr-skew-amp">Amp de Biais</message>
+<message id="pm-hdr-peak-type">Type de Pic</message>
+<message id="pm-hdr-low-energy">Énergie Inférieure</message>
+<message id="pm-hdr-up-energy">Énergie Supérieure</message>
+<message id="pm-hdr-roi-counts">Comptes ROI</message>
+
+<message id="pm-hdr-tt-mean">Énergie Moyenne</message>
+<message id="pm-hdr-tt-fwhm">Largeur à Mi-Hauteur</message>
+<message id="pm-hdr-tt-amp">Aire du Pic</message>
+<message id="pm-hdr-tt-cps">Comptes par seconde du pic</message>
+<message id="pm-hdr-tt-photopeak-energy">Énergie du Pic Photoélectrique</message>
+<message id="pm-hdr-tt-diff">Différence entre l'énergie du pic photoélectrique et l'énergie moyenne</message>
+<message id="pm-hdr-tt-man-rel-eff">Utiliser pour l'analyse "Isotopiques à partir des pics".</message>
+<message id="pm-hdr-tt-color">Couleur du pic</message>
+<message id="pm-hdr-tt-label">Étiquette spécifiée par l'utilisateur</message>
+<message id="pm-hdr-tt-roi-counts">Intégrale des comptes gamma sur la région d'intérêt</message>
+
+</messages>

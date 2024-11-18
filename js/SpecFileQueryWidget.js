@@ -370,13 +370,27 @@ function( divid, parentid, additional_filters )
     validation: timeValObj,
     operators: ['greater','less','equal','not_equal']
   },{
+    // We could do:
+    //    type: 'datetime',
+    //    validation: {format:'YYYY/MM/DD HH:mm'},
+    // But this would require using moment.js, but since this is the only
+    //  place that uses that library, we'll just to the validation with
+    //  the regex, or server-side.
+    // Note: If we dont use client-side validation, and then the server will
+    //  do validation and display an appropriate error message, its just the
+    //  input field wont be red on invalid input (which is pretty minor, and
+    //  maybe the explicit error message is better).  Doing only server-side
+    //  validation also allow inputting a lot more flexible date formats.
     id: 'Start Time',
     label: 'Start Time',
-    type: 'datetime',
-    validation: {format:'YYYY/MM/DD HH:mm'},
+    type: 'string',
     placeholder: 'YYYY/MM/DD HH:mm:ss',
     size: 65,
-    validation: timeValObj,
+    //validation: { format: /^([2][0]\\d{2}\\/([0]\\d|[1][0-2])\\/([0-2]\\d|[3][0-1]))$|^([2][0]\\d{2}\\/([0]\\d|[1][0-2])\\/([0-2]\\d|[3][0-1])(\\s([0-1]\\d|[2][0-3])\\:[0-5]\\d(\\:[0-5]\\d)?))?$/,
+    //  messages: {
+    //    format: 'Date/time durations can be specified like "2022/01/28", "2022/01/28 12:43:12", etc'
+    //  }
+    //},
     operators: ['equal','not_equal','less','greater']
   },{
     id: 'Num. Time Samples',

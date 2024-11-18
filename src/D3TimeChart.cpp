@@ -52,6 +52,7 @@
 #include "InterSpec/ColorTheme.h"
 #include "InterSpec/D3TimeChart.h"
 #include "InterSpec/UndoRedoManager.h"
+#include "InterSpec/UserPreferences.h"
 
 using namespace Wt;
 using namespace std;
@@ -297,7 +298,7 @@ public:
     m_normalizeCb->addStyleClass("DoNormCb");
     m_normalizeCb->hide();
 
-    const bool showToolTips = InterSpecUser::preferenceValue<bool>("ShowTooltips", InterSpec::instance());
+    const bool showToolTips = UserPreferences::preferenceValue<bool>("ShowTooltips", InterSpec::instance());
     const char* tooltip = "Allows you to select an energy to normalize the filtered energy range of interest to. <br />"
       "i.e., for each time slice, the sum of gammas in the filtered energy range becomes the numerator, and the sum of gammas in"
       " the normalize range becomes the denominator.</br />"
@@ -981,6 +982,9 @@ public:
 
 D3TimeChart::D3TimeChart( Wt::WContainerWidget *parent )
  : WContainerWidget( parent ),
+#if( OPTIMIZE_D3TimeChart_HIDDEN_LOAD )
+  m_inited( false ),
+#endif //OPTIMIZE_D3TimeChart_HIDDEN_LOAD
   m_renderFlags( 0 ),
   m_layoutWidth( 0 ),
   m_layoutHeight( 0 ),
@@ -1024,12 +1028,16 @@ D3TimeChart::D3TimeChart( Wt::WContainerWidget *parent )
   m_displayedSampleNumbers{-1,-1},
   m_displayedTimes{ 0.0, 0.0 }
 {
+#if( !OPTIMIZE_D3TimeChart_HIDDEN_LOAD )
+  init();
+#endif
+}//D3TimeChart(...)
+
+
+void D3TimeChart::init()
+{
   addStyleClass( "D3TimeChartParent" );
     
-  // TODO: wait until the chart is visible before defining any of this JS
-  //       (niavely trying this for RenderFull didnt seem to work, but also 
-  //        RenderFull was being called before D3TimeChart was visible, so 
-  //        there is a little more to investigate)
   wApp->require( "InterSpec_resources/d3.v3.min.js", "d3.v3.js" );
   wApp->require( "InterSpec_resources/D3TimeChart.js" );
   wApp->useStyleSheet( "InterSpec_resources/D3TimeChart.css" );
@@ -1046,19 +1054,45 @@ D3TimeChart::D3TimeChart( Wt::WContainerWidget *parent )
   m_options->hide();
   
   m_showOptionsIcon = new WContainerWidget( this );
-  m_showOptionsIcon->setStyleClass( "RoundMenuIcon ShowD3TimeChartFilters InvertInDark" ); //SHould have 'Wt-icon' style class too?
+  m_showOptionsIcon->setStyleClass( "RoundMenuIcon ShowD3TimeChartFilters InvertInDark" ); //Should have 'Wt-icon' style class too?
   m_showOptionsIcon->clicked().connect( boost::bind( &D3TimeChart::showFilters, this, true) );
-}//D3TimeChart(...)
-
+  
+#if( OPTIMIZE_D3TimeChart_HIDDEN_LOAD )
+  defineJavaScript();
+  m_inited = true;
+#endif
+}//void init()
 
 D3TimeChart::~D3TimeChart()
 {
   // Do we need to cleanup any JS objects here?
 }
 
+#if( OPTIMIZE_D3TimeChart_HIDDEN_LOAD )
+void D3TimeChart::refreshJs()
+{
+  m_renderFlags |= TimeRenderActions::RefreshJs;
+  m_renderFlags |= TimeRenderActions::UpdateData;
+  m_renderFlags |= TimeRenderActions::UpdateHighlightRegions;
+  
+  scheduleRender();
+}
+#endif
+
+void D3TimeChart::setHidden( bool hidden, const Wt::WAnimation &animation )
+{
+  if( !hidden && !m_inited )
+    init();
+  
+  WContainerWidget::setHidden( hidden, animation );
+}//void D3TimeChart::setHidden(...)
+
 
 void D3TimeChart::defineJavaScript()
 {
+#if( OPTIMIZE_D3TimeChart_HIDDEN_LOAD )
+  assert( !m_inited || m_renderFlags.testFlag(TimeRenderActions::RefreshJs) );
+#endif
   //WWebWidget::doJavaScript( "$(" + m_chart->jsRef() + ").append('<svg width=\"400\" height=\"75\" style=\"box-sizing: border-box; \"><rect width=\"300\" height=\"75\" style=\"fill:rgb(0,0,255);stroke-width:3;stroke:rgb(0,0,0)\" /></svg>' ); console.log( 'Added rect' );" );
   
   //WWebWidget::doJavaScript( "$(" + m_chart->jsRef() + ").append('<div style=\"box-sizing: border-box; position: absolute; border: 1px solid blue; width: 100px; height: 75px;\" />' );" );
@@ -1118,13 +1152,17 @@ void D3TimeChart::defineJavaScript()
 
 void D3TimeChart::doJavaScript( const std::string& js )
 {
-  //cerr << "\n\nFor debugging - skipping D3TimeChart::doJavaScript(...) - you need to fix this\n\n";
-  //return;
-  
+#if( OPTIMIZE_D3TimeChart_HIDDEN_LOAD )
+  if( m_inited )
+    WContainerWidget::doJavaScript( js );
+  else
+    m_pendingJs.push_back( std::move(js) );
+#else
   if( isRendered() )
     WContainerWidget::doJavaScript( js );
   else
     m_pendingJs.push_back( std::move(js) );
+#endif
 }//doJavaScript(...)
 
 
@@ -2073,7 +2111,12 @@ void D3TimeChart::scheduleRenderAll()
   m_renderFlags |= TimeRenderActions::UpdateData;
   m_renderFlags |= TimeRenderActions::UpdateHighlightRegions;
   
+#if( OPTIMIZE_D3TimeChart_HIDDEN_LOAD )
+  if( m_spec || isVisible() )
+    scheduleRender();
+#else
   scheduleRender();
+#endif
 }//scheduleRenderAll()
 
 
@@ -2081,7 +2124,12 @@ void D3TimeChart::scheduleHighlightRegionRender()
 {
   m_renderFlags |= TimeRenderActions::UpdateHighlightRegions;
   
+#if( OPTIMIZE_D3TimeChart_HIDDEN_LOAD )
+  if( m_spec || isVisible() )
+    scheduleRender();
+#else
   scheduleRender();
+#endif
 }//void scheduleHighlightRegionRender();
 
 
@@ -2205,9 +2253,15 @@ void D3TimeChart::setXAxisTitle( const std::string &title, const std::string &co
   m_compactXAxisTitle = compactTitle;
   SpecUtils::ireplace_all( m_compactXAxisTitle, "'", "&#39;" );
   
+#if( OPTIMIZE_D3TimeChart_HIDDEN_LOAD )
+  if( m_inited )
+    doJavaScript( m_jsgraph + ".setXAxisTitle('"
+                  + (m_compactXAxis ? m_compactXAxisTitle : m_xAxisTitle) + "');" );
+#else
   if( isRendered() )
     doJavaScript( m_jsgraph + ".setXAxisTitle('"
                   + (m_compactXAxis ? m_compactXAxisTitle : m_xAxisTitle) + "');" );
+#endif  // OPTIMIZE_D3TimeChart_HIDDEN_LOAD / else
 }//void setXAxisTitle( const std::string &title )
 
 
@@ -2216,8 +2270,13 @@ void D3TimeChart::setY1AxisTitle( const std::string &title )
   m_y1AxisTitle = title;
   SpecUtils::ireplace_all( m_y1AxisTitle, "'", "&#39;" );
   
+#if( OPTIMIZE_D3TimeChart_HIDDEN_LOAD )
+  if( m_inited )
+    doJavaScript( m_jsgraph + ".setY1AxisTitle('" + m_y1AxisTitle + "');" );
+#else
   if( isRendered() )
     doJavaScript( m_jsgraph + ".setY1AxisTitle('" + m_y1AxisTitle + "');" );
+#endif
 }//void setY1AxisTitle( const std::string &title )
 
 
@@ -2226,8 +2285,13 @@ void D3TimeChart::setY2AxisTitle( const std::string &title )
   m_y2AxisTitle = title;
   SpecUtils::ireplace_all( m_y2AxisTitle, "'", "&#39;" );
   
+#if( OPTIMIZE_D3TimeChart_HIDDEN_LOAD )
+  if( m_inited )
+    doJavaScript( m_jsgraph + ".setY2AxisTitle('" + m_y2AxisTitle + "');" );
+#else
   if( isRendered() )
     doJavaScript( m_jsgraph + ".setY2AxisTitle('" + m_y2AxisTitle + "');" );
+#endif
 }//void setY2AxisTitle( const std::string &title )
 
 
@@ -2309,6 +2373,16 @@ void D3TimeChart::userChangedEnergyRangeFilterCallback()
 
 void D3TimeChart::setCompactAxis( const bool compact )
 {
+#if( OPTIMIZE_D3TimeChart_HIDDEN_LOAD )
+  if( m_inited )
+  {
+    if( m_compactXAxis != compact )
+      doJavaScript( m_jsgraph + ".setXAxisTitle('"
+                   + (compact ? m_compactXAxisTitle : m_xAxisTitle) + "');" );
+    
+    doJavaScript( m_jsgraph + ".setCompactXAxis(" + jsbool(compact) + ");" );
+  }//if( isRendered() )
+#else
   if( isRendered() )
   {
     if( m_compactXAxis != compact )
@@ -2317,6 +2391,7 @@ void D3TimeChart::setCompactAxis( const bool compact )
     
     doJavaScript( m_jsgraph + ".setCompactXAxis(" + jsbool(compact) + ");" );
   }//if( isRendered() )
+#endif // OPTIMIZE_D3TimeChart_HIDDEN_LOAD / else
   
   m_compactXAxis = compact;
 }//void setCompactAxis( compact )
@@ -2331,23 +2406,39 @@ void D3TimeChart::showGridLines( bool show )
 {
   m_showVerticalLines = show;
   m_showHorizontalLines = show;
+#if( OPTIMIZE_D3TimeChart_HIDDEN_LOAD )
+  if( m_inited )
+    doJavaScript( m_jsgraph + ".setGridX(" + jsbool(show) + ");"
+                  + m_jsgraph + ".setGridY(" + jsbool(show) + ");" );
+#else
   if( isRendered() )
     doJavaScript( m_jsgraph + ".setGridX(" + jsbool(show) + ");"
                   + m_jsgraph + ".setGridY(" + jsbool(show) + ");" );
+#endif
 }
 
 void D3TimeChart::showVerticalLines( const bool draw )
 {
   m_showVerticalLines = draw;
+#if( OPTIMIZE_D3TimeChart_HIDDEN_LOAD )
+  if( m_inited )
+    doJavaScript( m_jsgraph + ".setGridX(" + jsbool(draw) + ");" );
+#else
   if( isRendered() )
     doJavaScript( m_jsgraph + ".setGridX(" + jsbool(draw) + ");" );
+#endif
 }
 
 void D3TimeChart::showHorizontalLines( const bool draw )
 {
   m_showHorizontalLines = draw;
+#if( OPTIMIZE_D3TimeChart_HIDDEN_LOAD )
+  if( m_inited )
+    doJavaScript( m_jsgraph + ".setGridY(" + jsbool(draw) + ");" );
+#else
   if( isRendered() )
     doJavaScript( m_jsgraph + ".setGridY(" + jsbool(draw) + ");" );
+#endif
 }
 
 bool D3TimeChart::verticalLinesShowing() const
@@ -2367,8 +2458,13 @@ void D3TimeChart::setDontRebin( const bool dontRebin )
   if( m_options )
     m_options->setDontRebin( dontRebin );
   
+#if( OPTIMIZE_D3TimeChart_HIDDEN_LOAD )
+  if( m_inited )
+    doJavaScript( m_jsgraph + ".setDontRebin(" + jsbool(dontRebin) +  ");" );
+#else
   if( isRendered() )
     doJavaScript( m_jsgraph + ".setDontRebin(" + jsbool(dontRebin) +  ");" );
+#endif
 }
 
 
@@ -2399,8 +2495,13 @@ void D3TimeChart::setGammaLogY( const bool logy )
   if( m_options )
     m_options->setGammaLogY( logy );
   
+#if( OPTIMIZE_D3TimeChart_HIDDEN_LOAD )
+  if( m_inited )
+    doJavaScript( m_jsgraph + ".setGammaLogY(" + jsbool(logy) +  ");" );
+#else
   if( isRendered() )
     doJavaScript( m_jsgraph + ".setGammaLogY(" + jsbool(logy) +  ");" );
+#endif
 }//void setGammaLogY( const bool logy )
 
 
@@ -2433,6 +2534,21 @@ void D3TimeChart::render( Wt::WFlags<Wt::RenderFlag> flags )
   
   WContainerWidget::render( flags );
   
+#if( OPTIMIZE_D3TimeChart_HIDDEN_LOAD )
+  if( isVisible() )
+  {
+    if( m_renderFlags.testFlag(TimeRenderActions::RefreshJs) )
+      defineJavaScript();
+    
+    if( m_renderFlags.testFlag(TimeRenderActions::UpdateData) )
+      setDataToClient();
+    
+    if( m_renderFlags.testFlag(TimeRenderActions::UpdateHighlightRegions) )
+      setHighlightRegionsToClient();
+    
+    m_renderFlags = 0;
+  }//if( isVisible() )
+#else
   if( renderFull )
     defineJavaScript();
   
@@ -2443,6 +2559,7 @@ void D3TimeChart::render( Wt::WFlags<Wt::RenderFlag> flags )
     setHighlightRegionsToClient();
   
   m_renderFlags = 0;
+#endif  // OPTIMIZE_D3TimeChart_HIDDEN_LOAD / else
 }//void render( Wt::WFlags<Wt::RenderFlag> flags )
 
 

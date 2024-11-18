@@ -1,0 +1,90 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- dw- short for DecayWindow.cpp, 
+       dad- short for DecayActivityDiv
+       dcc- short for DecayChainChart
+       dcn- DecaySelectNuclide
+  -->
+  <message id="dw-qr-window-title">Decay Tool State</message>
+  <message id="dw-qr-window-text">Current State of decay tool state.</message>
+  <message id="dad-units-label">Display Units:</message>
+  <message id="dad-units-label-phone">Units:</message>
+  <message id="dad-logy-cb">Log-Y Scale</message>
+  <message id="dad-grid-cb">Grid Lines</message>
+  <message id="dad-add-nucs">Add Nuclide...</message>
+  <message id="dad-remove-all">Remove All</message>
+  <message id="dad-sel-nuc-window-title">Select Nuclide To Add</message>
+  <message id="dad-mi-act-chart">Activity Chart</message>
+  <message id="dad-mi-decay-chain">Decay Chain</message>
+  <message id="dad-mi-calc">Calculator</message>
+  <message id="dad-arbitrary">Arbitrary</message>
+  <message id="dad-time-span-label">Time Span:</message>
+  <message id="dad-tt-age">
+    <div>
+      Age can be specified using a combination of time units, similar to '<b>5.3y 8d 22m</b>' or in half lives like '<b>2.5 HL</b>'.
+    </div>
+    <div>
+      Acceptable time units: <b>year</b>, <b>yr</b>, <b>y</b>, <b>day</b>, <b>d</b>, <b>hrs</b>, <b>hour</b>, <b>h</b>, <b>minute</b>,
+      <b>min</b>, <b>m</b>, <b>second</b>, <b>s</b>, <b>ms</b>, <b>microseconds</b>, <b>us</b>, <b>nanoseconds</b>, <b>ns</b>, or
+      you can specify time period by <b>hh:mm:ss</b>. Half life units can be
+      specified using <b>hl</b>, <b>halflife</b>, <b>halflives</b>, <b>half-life</b>, <b>half-lives</b>,
+      <b>half lives</b>, or <b>half life</b>.
+    </div>
+    <div>
+      Half life units or time periods can not be mixed with
+      other units, and if multiple nuclides are specified the first one is assumed. When multiple time periods are
+      specified, they are summed, e.x. '1y6months 3m' is interpreted as
+      18 months and 3 minutes
+    </div>
+  </message>
+  <message id="dad-yaxis-label-phone">Y-Axis:</message>
+  <message id="dad-yaxis-label">Y-Axis Type:</message>
+  <message id="dad-gamma-rate">Gamma Rate</message>
+  <message id="dad-beta-rate">Beta Rate</message>
+  <message id="dad-alpha-rate">Alpha Rate</message>
+  <message id="dad-click-for-more-info">Click for more information</message>
+  <message id="dad-tt-double-click">Double click to edit this source nuclide. Single click to make the decay chain to display this nuclide</message>
+  <message id="dad-summary-at-time">Summary at t={1}</message>
+  <message id="dad-hdr-date">Date ({1})</message>
+  <message id="dad-hdr-total-act">Total Activity</message>
+  <message id="dad-hdr-total-gammas">Total Gammas</message>
+  <message id="dad-yaxis-title-total-gammas">Gammas/Second</message>
+  <message id="dad-hdr-total-betas">Total Betas</message>
+  <message id="dad-yaxis-title-total-betas">Betas/Second</message>
+  <message id="dad-hdr-total-alphas">Total Alphas</message>
+  <message id="dad-yaxis-title-total-alphas">Alphas/Second</message>
+  <message id="dad-chart-click-more-info">Click for more information - {1} {2} after T0 we have:</message>
+
+  <message id="dcc-window-title-decay-chain">{1} Decay Chain</message>
+  <message id="dcc-window-title-decay-through">Decays through {1}</message>
+  <message id="dcc-nuc-info-protons">Protons: {1}</message>
+  <message id="dcc-nuc-info-mass">Mass: {1} Da</message>
+  <message id="dcc-nuc-info-hl-stable">Half Life: stable</message>
+  <message id="dcc-nuc-info-hl">Half Life: {1}</message>
+  <message id="dcc-nuc-info-br-from">BR from {1}: {2}</message>
+  <message id="dcc-nuc-info-br-through">BR through {1}: {2}</message>
+  <message id="dcc-nuc-info-specific-act">Specific Act: {1}</message>
+  <message id="dcc-nuc-info-decay-mode">{1} decays to {2}, BR {3}</message>
+  <message id="dcc-particle-window-title">Decay Particle Energies</message>
+  <message id="dcc-particles-from">Particles from {1}</message>
+  <message id="dcc-nuc-has-no-particles">This nuclide has no particles from decay</message>
+  <message id="dcc-particle">Particle</message>
+  <message id="dcc-intensity">Intensity</message>
+  <message id="dcc-decay-through-window-title">Decays Through {1}</message>
+
+  <!-- The following variables are for the decay chain chart, and will be passed to the JavScript as part of a string, so cant have any single quote (') characters! -->
+  <message id="dcc-xAxisTitle">Decreasing Atomic Mass</message>
+  <message id="dcc-yAxisTitle">Increasing Atomic Number</message>
+  <message id="dcc-clickNucTxt">Click nuclide for more information.</message>
+  <message id="dcc-clickNucMoreInfoTxt1">Double-click nuclide for particles it gives off.</message>
+  <message id="dcc-clickNucMoreInfoTxt2">Click a different source nuclide above to</message>
+  <message id="dcc-clickNucMoreInfoTxt3">change displayed decay chain.</message>
+  <message id="dcc-clickNucMblTxt">Tap nuclide for more information.</message>
+  <message id="dcc-clickNucMblMoreInfoTxt1">Touch nuclide for 1 second for particles it gives off.</message>
+  <message id="dcc-clickNucMblMoreInfoTxt2">Click a different source nuclide above to</message>
+  <message id="dcc-clickNucMblMoreInfoTxt3">change displayed decay chain.</message>
+
+
+  <message id="dcn-initial-age">Initial Age: </message>
+
+</messages>

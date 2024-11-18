@@ -74,6 +74,11 @@
   margin-left: 20px;
 }
 
+.SaveSpecTagLabel
+{
+  font-weight: bold;
+}
+
 .NonSpecDialogBody
 {
   max-height: calc(95vh - 120px);
@@ -109,11 +114,20 @@
   display: block;
 }
 
+.NonSpecDialogBody .ImgFileBtnBar
+{
+  display: flex;
+  justify-content: space-between;
+}
+
 button.LinkBtn.NonSpecEmbedBtn.Wt-btn.with-label
 {
- display: block;
- align-self: right;
- text-align: right;
+  display: block;
+}
+
+button.LinkBtn.NonSpecQrCodeBtn.Wt-btn.with-label
+{
+  display: block;
 }
 
 .simple-dialog.EccDrfDialog

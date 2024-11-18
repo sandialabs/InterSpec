@@ -40,6 +40,8 @@
 class MaterialDB;
 class SpectrumChart;
 class ShieldingSelect;
+class FeatureMarkerWidget;
+class MoreNuclideInfoWindow;
 
 namespace SandiaDecay
 {
@@ -280,6 +282,30 @@ public:
    */
   std::shared_ptr<void> getDisableUndoRedoSentry();
   
+  /** Will return the showing FeatureMarkerWidget, or null if not currently showing. */
+  FeatureMarkerWidget *featureMarkerTool();
+  
+  /** Returns valid FeatureMarkerWidget ptr. Creates a FeatureMarkerWidget, if not currently showing. */
+  FeatureMarkerWidget *showFeatureMarkerTool();
+  
+  /** Removes FeatureMarkerWidget, if currently showing. */
+  void removeFeatureMarkerTool();
+  
+  /** Called when user checks or unchecks to show feature markers. */
+  void featureMarkerCbToggled();
+  
+  /** Blinks the feature marker widget a bit. */
+  void emphasizeFeatureMarker();
+  
+  void programmaticallyCloseMoreInfoWindow();
+  
+  MoreNuclideInfoWindow *moreInfoWindow();
+  
+#if( InterSpec_PHONE_ROTATE_FOR_TABS )
+  /** Currently just hides or shows the table with gamma info. */
+  void setNarrowPhoneLayout( const bool narrow );
+#endif
+  
 protected:
   virtual void render( Wt::WFlags<Wt::RenderFlag> flags );
   
@@ -320,6 +346,7 @@ protected:
   void updateOtherNucsDisplay();
   void updateAssociatedNuclides();
   void showMoreInfoWindow();
+  void handleMoreInfoWindowClose( MoreNuclideInfoWindow *window );
 
   /** Function that will be called whenever any displayed spectrum
   gets changed (different file, or sample numbers).
@@ -340,7 +367,7 @@ protected:
    */
   bool m_currently_updating;
   
-  /** if `m_undo_redo_sentry.lock()` yeilds a valid pointer, than an undo/redo step wont be inserted.
+  /** if `m_undo_redo_sentry.lock()` yields a valid pointer, than an undo/redo step wont be inserted.
    \sa getDisableUndoRedoSentry();
    */
   std::weak_ptr<void> m_undo_redo_sentry;
@@ -368,11 +395,13 @@ protected:
   Wt::WCheckBox *m_showXrays;
   Wt::WCheckBox *m_showAlphas;
   Wt::WCheckBox *m_showBetas;
-  Wt::WCheckBox* m_showCascadeSums;
+  Wt::WCheckBox *m_showCascadeSums;
   Wt::WText* m_cascadeWarn;
+  Wt::WCheckBox *m_showEscapes;
   Wt::WCheckBox *m_showRiidNucs;
   Wt::WCheckBox *m_showPrevNucs;
   Wt::WCheckBox *m_showAssocNucs;
+  Wt::WCheckBox *m_showFeatureMarkers;
 
   Wt::WContainerWidget *m_otherNucsColumn;
   Wt::WContainerWidget *m_otherNucs;
@@ -385,6 +414,8 @@ protected:
   std::string m_external_algo_name;
   /** "External" RID results, as set by #setExternalRidResults. */
   std::vector<std::pair<std::string,std::string>> m_external_ids;
+  
+  Wt::WContainerWidget *m_featureMarkerColumn;
   
   DetectorDisplay *m_detectorDisplay;
   MaterialDB *m_materialDB;                 //not owned by this object
@@ -425,6 +456,10 @@ protected:
   Wt::Signal<> m_displayingNuclide;
   
   Wt::Signal<> m_nuclidesCleared;
+  
+  MoreNuclideInfoWindow *m_nucInfoWindow;
+  
+  FeatureMarkerWidget *m_featureMarkers;
   
   static const int sm_xmlSerializationVersion;
 };//class ReferencePhotopeakDisplay

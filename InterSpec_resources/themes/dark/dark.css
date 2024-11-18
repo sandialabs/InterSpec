@@ -34,7 +34,9 @@ button[disabled] {
   filter: grayscale(0%);
 }
 
-button.Wt-btn.with-label.LightButton
+button.Wt-btn.with-label.LightButton,
+  button.Wt-btn.dropdown-toggle,
+  .btn-group.LightButton
 {
   border-color: rgb(106,107,109);
   color: rgb(18,101,200);

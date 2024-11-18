@@ -3,7 +3,7 @@ To build for iOS we will take advantage of the CMake `FetchContent` style build 
 What we'll do is build the InterSpec library, and then the InterSpec/InterSpec.xcodeproj Xcode project will build the app and link to the InterSpec library.  
 
 ```bash
-cd InterSpec
+cd InterSpec/target/ios/InterSpec
 
 # First we'll build for actual devices
 mkdir build-iphoneos; cd build-iphoneos

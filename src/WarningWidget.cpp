@@ -48,6 +48,7 @@
 #include "InterSpec/InterSpecUser.h"
 #include "InterSpec/WarningWidget.h"
 #include "InterSpec/UndoRedoManager.h"
+#include "InterSpec/UserPreferences.h"
 #include "InterSpec/RowStretchTreeView.h"
 
 using namespace Wt;
@@ -187,10 +188,10 @@ WarningWidget::WarningWidget( InterSpec *hostViewer,
   
   // Find which messages should be active.
   for( WarningMsgLevel i = WarningMsgLevel(0); i <= WarningMsgHigh; i = WarningMsgLevel(i+1) )
-    m_active[i] = !m_hostViewer->m_user->preferenceValue<bool>( tostr(i) );
+    m_active[i] = !UserPreferences::preferenceValue<bool>(tostr(i), m_hostViewer);
   
   for( WarningMsgLevel i = WarningMsgLevel(0); i <= WarningMsgHigh; i = WarningMsgLevel(i+1) )
-    m_popupActive[i] = !InterSpecUser::preferenceValue<bool>( WarningWidget::popupToStr(i), m_hostViewer );
+    m_popupActive[i] = !UserPreferences::preferenceValue<bool>(popupToStr(i), m_hostViewer);
   
   //Force WarningMsgSave to always be true
   m_active[WarningMsgSave] = true;
@@ -263,8 +264,6 @@ void WarningWidget::createContent()
     m_layout->setRowStretch(0,1);
     m_layout->setColumnStretch(0,1);
     
-    Wt::Dbo::ptr<InterSpecUser> m_user = m_hostViewer->m_user;
-    
     
     WImage* image = new Wt::WImage(Wt::WLink( iconUrl(WarningMsgLevel::WarningMsgInfo) ));
     image->setMaximumSize(WLength(16,WLength::Pixel), WLength(16,WLength::Pixel));
@@ -308,7 +307,7 @@ void WarningWidget::createContent()
       m_layout->addWidget( warnToggle, 3, i++, AlignCenter);
       
       const char *str = tostr( level );
-      InterSpecUser::associateWidget( m_user, str, warnToggle, m_hostViewer );
+      UserPreferences::associateWidget( str, warnToggle,  m_hostViewer );
       
       warnToggle->checked().connect( boost::bind( &WarningWidget::setActivity, this,  level, false ) );
       warnToggle->unChecked().connect( boost::bind( &WarningWidget::setActivity, this,  level, true ) );
@@ -327,7 +326,7 @@ void WarningWidget::createContent()
       m_layout->addWidget( warnToggle, 4, i++, AlignCenter );
       
       const char *str  = popupToStr( level );
-      InterSpecUser::associateWidget( m_user, str, warnToggle, m_hostViewer );
+      UserPreferences::associateWidget( str, warnToggle,  m_hostViewer );
       
       warnToggle->checked().connect( boost::bind( &WarningWidget::setPopupActivity, this,  level, false ) );
       warnToggle->unChecked().connect( boost::bind( &WarningWidget::setPopupActivity, this,  level, true ) );
@@ -528,10 +527,30 @@ void WarningWidget::addMessageUnsafe( const Wt::WString &msg,
     
     
     // Remove any script so we wont store that
-    WString sanitized = msg;
+    WString sanitized;
+    
     // Wt::Utils::removeScript() will print out a message like
     //  "[secure] "XSS: discarding invalid attribute: onclick:..."
-    // when it removes stuff.
+    // when it removes stuff - this is annoying, so lets manually remove
+    // this attribute so I dont have to see this warning so much
+    string msg_utf8 = msg.toUTF8();
+    const auto onclick_pos = msg_utf8.find( "onclick=\"");
+    if( onclick_pos != string::npos )
+    {
+      const auto end_pos = msg_utf8.find( "return false;\"", onclick_pos );
+      if( end_pos != string::npos )
+      {
+        msg_utf8 = msg_utf8.substr(0,onclick_pos) + msg_utf8.substr(end_pos + 14);
+        sanitized = WString::fromUTF8( msg_utf8 );
+      }else
+      {
+        sanitized = msg;
+      }
+    }else
+    {
+      sanitized = msg;
+    }//if( onclick_pos != string::npos ) / else
+    
     if( !Wt::Utils::removeScript(sanitized) )
       sanitized = Wt::Utils::htmlEncode( sanitized, Wt::Utils::HtmlEncodingFlag::EncodeNewLines );
     
@@ -578,7 +597,7 @@ void WarningWidget::setActivity( WarningWidget::WarningMsgLevel priority, bool a
       try
       {
         const bool value = isUndo ? active : !active;
-        InterSpecUser::setBoolPreferenceValue( viewer->m_user, tostr(priority), value, viewer );
+        UserPreferences::setBoolPreferenceValue( tostr(priority), value, viewer );
         warn->m_active[priority] = isUndo ? !active : active;
       }catch( std::exception &e )
       {
@@ -609,7 +628,7 @@ void WarningWidget::setPopupActivity( WarningWidget::WarningMsgLevel priority, b
       try
       {
         const bool value = isUndo ? showPopup : !showPopup;
-        InterSpecUser::setBoolPreferenceValue( viewer->m_user, popupToStr(priority), value, viewer );
+        UserPreferences::setBoolPreferenceValue( popupToStr(priority), value, viewer );
         warn->m_popupActive[priority] = isUndo ? !showPopup : showPopup;
       }catch( std::exception &e )
       {

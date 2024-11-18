@@ -43,10 +43,9 @@
 #include <Wt/WPushButton>
 #include <Wt/WApplication>
 #include <Wt/Chart/WDataSeries>
-#include <Wt/WStandardItemModel>
-#include <Wt/Chart/WCartesianChart>
 
 #include "SpecUtils/SpecFile.h"
+#include "SpecUtils/Filesystem.h"
 #include "SpecUtils/StringAlgo.h"
 
 #include "InterSpec/PeakDef.h"
@@ -67,7 +66,12 @@
 #include "InterSpec/PeakSearchGuiUtils.h"
 #include "InterSpec/DecayDataBaseServer.h"
 #include "InterSpec/DetectorPeakResponse.h"
+#include "InterSpec/PhysicalUnitsLocalized.h"
 #include "InterSpec/ReferencePhotopeakDisplay.h"
+
+#if( USE_REL_ACT_TOOL )
+#include "InterSpec/RelEffChart.h"
+#endif
 
 using namespace Wt;
 using namespace std;
@@ -106,7 +110,7 @@ namespace
  Currently this window can be triggered from four different user actions,
  leading to a base of four different ways to display things (there are also some
  dynamic display changes based on data and results), which adds some complexity,
- but maybe at the moment this is more manageable than breakign this class up...
+ but maybe at the moment this is more manageable than breaking this class up...
  */
 class PeakSelectorWindow : public AuxWindow
 {
@@ -116,9 +120,10 @@ class PeakSelectorWindow : public AuxWindow
   Wt::WCheckBox *m_keepRefLinePeaksOnly;
   Wt::WCheckBox *m_showAllPeaks;
   
+#if( USE_REL_ACT_TOOL )
   Wt::WPanel *m_chartPanel;
-  Wt::Chart::WCartesianChart *m_chart;
-  Wt::WStandardItemModel* m_relEffModel;
+  RelEffChart *m_rel_eff_chart;
+#endif
   
   const PeakSelectorWindowReason m_reason;
   const vector<PeakDef> m_orig_peaks;
@@ -127,6 +132,7 @@ class PeakSelectorWindow : public AuxWindow
   vector< shared_ptr<const ReferenceLineInfo>> m_displayed;
   vector<WCheckBox *> m_keep_peak_cbs;
   vector<WComboBox *> m_nuc_select_combos;
+  vector<WCheckBox *> m_dont_change_nuc_cbs;
   vector<bool> m_peak_updated;
   
   /** For each entry the first peak is a previously existing peak (before either
@@ -171,9 +177,10 @@ public:
     m_previewChartColumn( -1 ),
     m_keepRefLinePeaksOnly( nullptr ),
     m_showAllPeaks( nullptr ),
+#if( USE_REL_ACT_TOOL )
     m_chartPanel( nullptr ),
-    m_chart( nullptr ),
-    m_relEffModel( nullptr ),
+    m_rel_eff_chart( nullptr ),
+#endif
     m_reason( reason ),
     m_orig_peaks( orig_peaks ),
     m_data( data ),
@@ -342,8 +349,10 @@ public:
     }//if( m_showAllPeaks )
     
     
-    // The rel eff chart is close, but not fully debugged, so leaving disabled for now
-    //setupRelEffChart();
+#if( USE_REL_ACT_TOOL )
+    // Potentially create a rel eff chart to help the user decide about interferences and such
+    setupRelEffChart();
+#endif
     contents()->setOverflow( WContainerWidget::Overflow::OverflowAuto, Orientation::Vertical );
     m_table = new WTable( contents() );
     m_table->addStyleClass( "PeakSelectorTable" );
@@ -351,6 +360,7 @@ public:
     
     m_keep_peak_cbs.resize( m_old_to_new_peaks.size(), nullptr );
     m_nuc_select_combos.resize( m_old_to_new_peaks.size(), nullptr );
+    m_dont_change_nuc_cbs.resize( m_old_to_new_peaks.size(), nullptr );
     m_peak_updated.resize( m_old_to_new_peaks.size(), false );
     
     auto nucs_changed = [this]( size_t index ){
@@ -524,7 +534,7 @@ public:
             && !m_old_to_new_peaks[i].second )
         {
           new WText( "Not Found", cbcell );
-        }else
+        }else if( has_changed )
         {
           WCheckBox *cb = new WCheckBox( "Keep Peak", cbcell );
           cb->setWordWrap(false);
@@ -553,7 +563,18 @@ public:
             && m_reason!=PeakSelectorWindowReason::PeaksFromCsvFile )
         {
           m_nuc_select_combos[i] = new WComboBox(newNucCell);
+          m_nuc_select_combos[i]->setInline( false );
           m_nuc_select_combos[i]->changed().connect( boost::bind( &PeakSelectorWindow::nucSelectChanged, this, i ) );
+          
+          // Only show the "Don't change" checkbox if this is a previously existing peak
+          if( m_old_to_new_peaks[i].first )
+          {
+            m_dont_change_nuc_cbs[i] = new WCheckBox( "Don't change", newNucCell );
+            m_dont_change_nuc_cbs[i]->addStyleClass( "DontAssignCb" );
+            m_dont_change_nuc_cbs[i]->setInline( false );
+            m_dont_change_nuc_cbs[i]->checked().connect( boost::bind( &PeakSelectorWindow::dontChangeNucCbChanged, this, i ) );
+            m_dont_change_nuc_cbs[i]->unChecked().connect( boost::bind( &PeakSelectorWindow::dontChangeNucCbChanged, this, i ) );
+          }//if( m_old_to_new_peaks[i].first )
         }else
         {
           const string origstr = makeSourceDesciption( m_old_to_new_peaks[i].second );
@@ -608,7 +629,9 @@ public:
 
     
     keepPeakChanged();
+#if( USE_REL_ACT_TOOL )
     refreshRelEffChart();
+#endif
     
     WPushButton *acceptButton = addCloseButtonToFooter( "Accept", true );
     acceptButton->clicked().connect( boost::bind( &AuxWindow::hide, this ) );
@@ -673,131 +696,126 @@ public:
     }// End handle undo when the dialog is showing, and the user hasnt accepted it
   }//PeakSelector constructor
   
+  //Only consider normal nuclides, and normal gammas (n xrays, or escape peaks)
+  static bool eligible_for_rel_eff_chart( const shared_ptr<PeakDef> &p )
+  {
+    return (p
+            && p->parentNuclide()
+            && ((p->sourceGammaType() == PeakDef::NormalGamma)
+                || (p->sourceGammaType() == PeakDef::XrayGamma)));
+  };//eligible_for_rel_eff_chart(...)
+  
+#if( USE_REL_ACT_TOOL )
   /** The rel eff chart is close, but not fully debugged */
   void setupRelEffChart()
   {
+    //First check to see if there is at least two peaks for a nuclide
+    //  This next loop only looks at new peaks, or peaks that may have changed nuclide assignment.
+    size_t max_peaks = 0;
+    set<const SandiaDecay::Nuclide *> new_peak_nucs;
+    for( const auto &old_new : m_old_to_new_peaks )
+    {
+      // The new peak should be eligible to be in the Rel. Eff. chart, and the nuclide, or at least
+      //   the specifically attributed gamma/x-ray, should have changed.
+      if( eligible_for_rel_eff_chart(old_new.second)
+         && (!old_new.first
+             || (old_new.first->decayParticle() != old_new.second->decayParticle()) ) )
+      {
+        new_peak_nucs.insert( old_new.second->parentNuclide() );
+      }
+    }//for( const auto &old_new : m_old_to_new_peaks )
+    
+    map<const SandiaDecay::Nuclide *, size_t> num_peaks;
+    for( size_t i = 0; i < m_old_to_new_peaks.size(); ++i )
+    {
+      auto p = m_old_to_new_peaks[i].second;
+
+      //Only consider normal nuclides, and normal gammas (n xrays, or escape peaks)
+      if( eligible_for_rel_eff_chart(p) && new_peak_nucs.count(p->parentNuclide()) )
+      {
+        assert( (num_peaks.find(p->parentNuclide()) != end(num_peaks)) || (num_peaks[p->parentNuclide()] == 0) );
+        size_t &npeaks = num_peaks[p->parentNuclide()]; //will be initialized to zero at first call of num_peaks[]
+        max_peaks = std::max( max_peaks, ++npeaks );
+      }
+    }//for( size_t i = 0; i < m_old_to_new_peaks.size(); ++i )
+    
+    // We will only create a Relative Efficiency chart only if we have exactly one nuclide
+    //  in the newly found peaks with two or more peaks (.
+    if( (max_peaks < 2) || (num_peaks.size() != 1) )
+      return;
+    
     m_chartPanel = new WPanel( contents() );
+    m_chartPanel->addStyleClass( "PeakSelectRelEffPanel" );
     m_chartPanel->setCollapsible( true );
     m_chartPanel->setCollapsed( true );
     m_chartPanel->setTitle( "Relative Efficiency Plot" );
     m_chartPanel->setAnimation( WAnimation(WAnimation::SlideInFromTop, WAnimation::EaseOut, 100) );
     
-    
-    m_chart = new Wt::Chart::WCartesianChart();
-    m_chart->setBackground(Wt::WColor(220, 220, 220));
-    m_chart->setAutoLayoutEnabled();
-    m_chart->setType(Wt::Chart::ScatterPlot);
-    m_relEffModel = new WStandardItemModel( m_chart );
-    m_chart->setModel( m_relEffModel );
-    m_chart->setType( Chart::ScatterPlot );
-    m_chart->setXSeriesColumn(0);
-    
-    
-    //We should check the color theme for colors
-    auto theme = m_viewer->getColorTheme();
-    if( theme )
-    {
-      if( !theme->spectrumChartText.isDefault() )
-      {
-        WPen txtpen(theme->spectrumChartText);
-        m_chart->setTextPen( txtpen );
-        m_chart->axis(Chart::XAxis).setTextPen( txtpen );
-        m_chart->axis(Chart::YAxis).setTextPen( txtpen );
-        m_chart->axis(Chart::Y2Axis).setTextPen( txtpen );
-      }
-      
-      if( theme->spectrumChartBackground.isDefault() )
-        m_chart->setBackground( Wt::NoBrush );
-      else
-        m_chart->setBackground( WBrush(theme->spectrumChartBackground) );
-      
-      //From what I can tell, we cant change the legend text color easily, so
-      //  we'll just cheat and back the legend background different enough from
-      //  black so we can always read the text.  Lame, but whatever.
-      m_chart->setLegendStyle( m_chart->legendFont(), m_chart->legendBorder(), WBrush(Wt::WColor(220, 220, 220, 120)) );
-      
-      if( (theme->spectrumChartMargins.isDefault() && !theme->spectrumChartBackground.isDefault()) )
-      {
-        //theme->spectrumChartBackground
-      }else if( !theme->spectrumChartMargins.isDefault() )
-      {
-        //theme->spectrumChartMargins
-      }
-      
-      if( !theme->spectrumAxisLines.isDefault() )
-      {
-        WPen defpen = m_chart->axis(Chart::XAxis).pen();
-        defpen.setColor( theme->spectrumAxisLines );
-        m_chart->axis(Chart::XAxis).setPen( defpen );
-        m_chart->axis(Chart::Y1Axis).setPen( defpen );
-        m_chart->axis(Chart::Y2Axis).setPen( defpen );
-      }
-    }//if( theme )
-    
-    m_chart->setPlotAreaPadding(5, Wt::Top);
-    m_chart->setPlotAreaPadding(55, Wt::Bottom);
-    m_chart->setPlotAreaPadding(55, Wt::Left);
-    m_chart->setPlotAreaPadding(10, Wt::Right);
-    
-    m_chart->axis(Wt::Chart::XAxis).setTitle("Energy (keV)");
-    m_chart->axis(Wt::Chart::Y1Axis).setTitle("Peak Area / BR");
-    
-#if( WT_VERSION >= 0x3030400 )
-    m_chart->axis(Wt::Chart::Y1Axis).setTitleOrientation( Wt::Vertical );
-#endif
-    
-    m_chart->setLegendEnabled( true );
-    m_chart->setLegendLocation(Wt::Chart::LegendInside, Wt::Top, Wt::AlignRight);
-    
     WContainerWidget *holder = new WContainerWidget();
     m_chartPanel->setCentralWidget( holder );
     WGridLayout *layout = new WGridLayout();
     holder->setLayout( layout );
-    layout->addWidget( m_chart, 0, 0 );
     layout->setContentsMargins( 0, 0, 0, 0 );
     
-    m_chart->setHeight( 250 );
+    m_rel_eff_chart = new RelEffChart();
+    m_rel_eff_chart->setHeight( 250 );
+    m_rel_eff_chart->setYAxisTitle( "Rel. Peak Area / BR" );
+    layout->addWidget( m_rel_eff_chart, 0, 0 );
   }//void setupRelEffChart()
-  
+ 
   
   void refreshRelEffChart()
   {
-    if( !m_chart )
+    if( !m_chartPanel || !m_rel_eff_chart )
       return;
     
-    m_relEffModel->clear();
+    set<const SandiaDecay::Nuclide *> new_peak_nucs;
+    for( const auto &old_new : m_old_to_new_peaks )
+    {
+      if( eligible_for_rel_eff_chart(old_new.second) 
+         && (!old_new.first || (old_new.first->decayParticle() != old_new.second->decayParticle()) ))
+      {
+        new_peak_nucs.insert( old_new.second->parentNuclide() );
+      }
+    }//for( const auto &old_new : m_old_to_new_peaks )
     
-    set<double> energiesset;
-    map<string,WColor> src_to_color;
-    map<string, vector<pair<double,double>>> src_to_energy_eff;
+    vector<RelActCalcManual::GenericPeakInfo> peaks;
+    map<string,pair<double,std::string>> relActsColors;  //maps source --> {rel-act,color}
     for( size_t i = 0; i < m_old_to_new_peaks.size(); ++i )
     {
       auto p = m_old_to_new_peaks[i].second;
       if( !p )
         p = m_old_to_new_peaks[i].first;
       
-      //Only consider normal nuclides, and normal gammas (n xrays, or escape peaks)
-      if( !p || !p->parentNuclide() || (p->sourceGammaType()!=PeakDef::NormalGamma) )
+      
+      if( !eligible_for_rel_eff_chart(p) || !new_peak_nucs.count(p->parentNuclide()) )
         continue;
       
       if( m_keep_peak_cbs[i] && !m_keep_peak_cbs[i]->isChecked() )
         continue;
       
-      const double peakSigma = p->sigma();
+      const double peakSigma = p->gausPeak() ? p->sigma() : 0.25*p->roiWidth();
+      
       const SandiaDecay::Nuclide * const nuc = p->parentNuclide();
       const double photopeakEnergy = p->decayParticle()->energy;
       
       const string label = p->parentNuclide()->symbol;
       
-      
       double intensity = 0.0;
       bool gotInfoFromRefLines = false;
       
-      for( const auto &refline : m_displayed )
+      for( const shared_ptr<const ReferenceLineInfo> &refline : m_displayed )
       {
         if( refline->m_nuclide == p->parentNuclide() )
         {
-          double intensity = 0.0;
+          if( !refline->m_input.m_color.isDefault()
+             && !relActsColors.count(label) )
+          {
+            relActsColors[label].first = 1.0; //relative-activity, we'll modify later.
+            relActsColors[label].second = refline->m_input.m_color.cssText();
+          }
+          
+          
           for( const ReferenceLineInfo::RefLine &line : refline->m_ref_lines )
           {
             // We only want x-rays and gammas to make rel-eff chart from
@@ -846,13 +864,13 @@ public:
       
       if( !gotInfoFromRefLines )
       {
-        src_to_color[label] = p->lineColor();
+        const double dummy_activity = 0.01*SandiaDecay::curie;
         
         const double age = PeakDef::defaultDecayTime( nuc );
         SandiaDecay::NuclideMixture mix;
-        mix.addAgedNuclideByActivity( nuc, 0.01*SandiaDecay::curie, age );
+        mix.addAgedNuclideByActivity( nuc, dummy_activity, age );
       
-        for( const auto gamma : mix.gammas(0, SandiaDecay::NuclideMixture::OrderByEnergy, true ) )
+        for( const auto gamma : mix.photons(0, SandiaDecay::NuclideMixture::OrderByEnergy ) )
         {
           if( fabs(gamma.energy-photopeakEnergy) < 1.25*peakSigma )
             intensity += gamma.numPerSecond;
@@ -860,68 +878,59 @@ public:
       
         if( intensity <= 0.0 )
           continue;
+         
+        intensity /= dummy_activity;
       }//if( !gotInfoFromRefLines )
       
-      energiesset.insert( photopeakEnergy );
-      
       if( intensity > 0.0 )
-        src_to_energy_eff[label].emplace_back( photopeakEnergy, (p->peakArea()/intensity) );
+      {
+        const double peakMean = p->gausPeak() ? p->mean() : 0.5*(p->upperX() + p->lowerX());
+        RelActCalcManual::GenericPeakInfo peak;
+        peak.m_mean = peak.m_energy = peakMean;
+        peak.m_fwhm = 2.35482 * peakSigma;
+        peak.m_counts = p->peakArea();
+        peak.m_counts_uncert = (p->peakAreaUncert() > 0.0) ? p->peakAreaUncert() : 0.0;
+        peak.m_base_rel_eff_uncert = 0.0;
+        peak.m_source_gammas.emplace_back( intensity, label );
+        peaks.push_back( peak );
+      }//if( intensity > 0.0 )
     }//for( loop over peaks )
     
-    vector<double> energies( begin(energiesset), end(energiesset) );
     
-    m_relEffModel->insertColumn( 0 );
-    m_relEffModel->insertRows(0, static_cast<int>(energies.size()) );
-    
-    for( size_t i = 0; i < energies.size(); ++i )
-      m_relEffModel->setData( static_cast<int>(i), 0, energies[i] );
-    
-    m_chart->setXSeriesColumn(0);
-    m_relEffModel->setHeaderData(0, WString("Energy (keV)") );
-    
-    const vector<Wt::Chart::MarkerType> markers{ Chart::SquareMarker,
-      Chart::CircleMarker, Chart::CrossMarker, Chart::XCrossMarker,
-      Chart::TriangleMarker,
-    };
-    
-    for( auto &lp : src_to_energy_eff )
+    // We want to make the maximum relative efficiency point 1.0, for each source
+    size_t max_num_peaks = 0;
+    for( auto &src_act_color : relActsColors )
     {
-      if( lp.second.size() < 2 )
-        continue;
+      const string &src = src_act_color.first;
       
-      double maxintensity = 0.0;
-      for( const auto &p : lp.second )
-        maxintensity = std::max( maxintensity, p.second );
-      
-      if( maxintensity <= 0.0 )
+      double max_eff = 0.0;
+      size_t num_src_peaks = 0.0;
+      for( const RelActCalcManual::GenericPeakInfo &peak : peaks )
       {
-        lp.second.clear();
-        continue;
-      }
-      
-      const int col = m_relEffModel->columnCount();
-      m_relEffModel->insertColumn( col );
-      m_relEffModel->setHeaderData( col, WString(lp.first) );
-      
-      for( auto &p : lp.second )
-      {
-        p.second /= maxintensity;
-        auto pos = std::find( begin(energies), end(energies), p.first );
-        if( pos != end(energies) )
+        for( const auto &line : peak.m_source_gammas )
         {
-          const int row = static_cast<int>( pos - begin(energies) );
-          m_relEffModel->setData( row, col, p.second );
+          if( line.m_isotope == src )
+          {
+            num_src_peaks += 1;
+            max_eff = std::max( max_eff, peak.m_counts / line.m_yield );
+          }
         }
-      }
+      }//for( const RelActCalcManual::GenericPeakInfo &peak : peaks )
       
-      Wt::Chart::WDataSeries series( col, Chart::PointSeries, Chart::Y1Axis );
-      series.setMarkerBrush( WBrush(src_to_color[lp.first]) );
-      series.setMarkerPen( WPen(src_to_color[lp.first]) );
-      series.setMarker( markers[col%markers.size()] );
-      m_chart->addSeries( series );
-    }//for( auto &lp : src_to_energy_eff )
+      max_num_peaks = std::max( max_num_peaks, num_src_peaks );
+      assert( max_eff > 0.0 );
+      
+      double &rel_act = src_act_color.second.first;
+      rel_act = (max_eff > 0.0) ? max_eff : 1.0;
+    }//for( const auto &src_act_color : relActsColors )
+    
+    m_chartPanel->setHidden( (max_num_peaks < 2) );
+    
+    string relEffEqn = "";
+    WString title_chi2_info;
+    m_rel_eff_chart->setData( peaks, relActsColors, relEffEqn, title_chi2_info );
   }//void refreshRelEffChart()
-  
+#endif // USE_REL_ACT_TOOL
   
   
   void showAllPeaksCbChanged()
@@ -944,9 +953,9 @@ public:
   
   void updatePreviewPlot( size_t i )
   {
+    assert( i < m_old_to_new_peaks.size() );
     if( i >= m_old_to_new_peaks.size() || m_previewChartColumn < 0 )
       return;
-    
     
     auto finalpeak = m_old_to_new_peaks[i].second;
     auto originalpeak = m_old_to_new_peaks[i].first;
@@ -988,6 +997,9 @@ public:
     //  peak colors, and maybe the displayed width.
     
     
+    /*
+     // The SVG renderer for Wt 3.7.1 appears to glitch-up sometimes, so instead of using SVG,
+     //  we'll display a full SpectrumChart.
     std::shared_ptr<WSvgImage> svg = PeakSearchGuiUtils::renderChartToSvg( m_data, peaks_for_plotting, m_displayed, lowerx, upperx, 225, 125, theme, true );
     if( svg )
     {
@@ -999,6 +1011,39 @@ public:
         preview->addStyleClass( "PeakPreviewCell" );
       new WText( strm.str(), Wt::XHTMLUnsafeText, preview );
     }
+     */
+    
+    
+    SpectrumChart *chart = PeakSearchGuiUtils::createFixedSpectrumDisplay( m_data,
+                                                    peaks_for_plotting, m_displayed,
+                                                    lowerx, upperx,
+                                                    225, 125, theme );
+    if( chart )
+    {
+#if( !DYNAMICALLY_ADJUST_LEFT_CHART_PADDING )
+      chart->setPlotAreaPadding( 14, Wt::Left );
+#endif
+      chart->setPlotAreaPadding( 22, Wt::Bottom );
+      chart->setPlotAreaPadding( 0, Wt::Right );
+      chart->setPlotAreaPadding( 0, Wt::Top );
+      
+      WFont labelFont( WFont::Default );
+      labelFont.setSize(WFont::Size::XXSmall);
+      chart->axis(Chart::XAxis).setLabelFont( labelFont );
+      
+      // The y-axis label font doesnt seem to be respected (and instead a 10pt font is always used)
+      //  Rendering the axis is done in SpectrumChart.cpp, and it isnt clear what the problem is,
+      //  so we'll just leave off the y-axis labels for now.  Not a great solution, but its time
+      //  to move on to more effective ways to spend time.
+      chart->axis(Chart::YAxis).setLabelFont( labelFont ); //doesnt seem to be obeyed
+      chart->axis(Chart::YAxis).setLabelFormat( " " );
+      
+      WTableCell *preview = m_table->elementAt( static_cast<int>(i+1), m_previewChartColumn );
+      preview->clear();
+      if( !preview->hasStyleClass("PeakPreviewCell") )
+        preview->addStyleClass( "PeakPreviewCell" );
+      preview->addWidget( chart );
+    }//if( previewChart )
   }//void updatePreviewPlot( size_t i )
   
   
@@ -1015,10 +1060,26 @@ public:
       
       if( m_old_to_new_peaks[i].second && m_keep_peak_cbs[i] && m_keep_peak_cbs[i]->isChecked() )
         anyNonAssignedPeaks = !m_old_to_new_peaks[i].second->hasSourceGammaAssigned();
-    }
+    }//for( size_t i = 0; !anyNonAssignedPeaks && i < m_old_to_new_peaks.size(); ++i )
+    
+    for( size_t i = 0; i < m_old_to_new_peaks.size(); ++i )
+    {
+      if( m_keep_peak_cbs[i] )
+      {
+        const bool enable = m_keep_peak_cbs[i]->isChecked();
+        
+        if( m_nuc_select_combos[i] )
+          m_nuc_select_combos[i]->setDisabled( !enable );
+        
+        if( m_dont_change_nuc_cbs[i] )
+          m_dont_change_nuc_cbs[i]->setDisabled( !enable );
+      }//if( m_keep_peak_cbs[i] )
+    }//for( size_t i = 0; i < m_old_to_new_peaks.size(); ++i )
     
     m_keepRefLinePeaksOnly->setChecked( !anyNonAssignedPeaks );
+#if( USE_REL_ACT_TOOL )
     refreshRelEffChart();
+#endif
   }//void keepPeakChanged()
   
   
@@ -1044,7 +1105,10 @@ public:
       }
     }//for( size_t i = 0; i < m_old_to_new_peaks.size(); ++i )
     
+    keepPeakChanged();
+#if( USE_REL_ACT_TOOL )
     refreshRelEffChart();
+#endif
   }//void keepOnlyRefLinesCbChanged()
   
   
@@ -1235,7 +1299,10 @@ public:
   
   void nucSelectChanged( const size_t i )
   {
-    if( i >= m_nuc_select_combos.size() )  //shouldnt ever happen, but JIC
+    assert( i < m_dont_change_nuc_cbs.size() );
+    assert( m_nuc_select_combos.size() == m_dont_change_nuc_cbs.size() );
+    
+    if( (i >= m_nuc_select_combos.size()) || (i >= m_dont_change_nuc_cbs.size()) )  //shouldnt ever happen, but JIC
       return;
     
     //shared_ptr<PeakDef> &oldpeak = m_old_to_new_peaks[i].first;
@@ -1248,6 +1315,40 @@ public:
     assert( combo );
     if( !combo ) //shouldnt ever happen!
       return;
+    
+    WCheckBox *cb = m_dont_change_nuc_cbs[i];
+    const bool keepOriginal = (cb && cb->isChecked());
+    
+    if( keepOriginal )
+    {
+      
+      
+      switch( m_reason )
+      {
+        case PeakSelectorWindowReason::PeakSearch:
+        case PeakSelectorWindowReason::PeaksFromPreviousSpectum:
+        case PeakSelectorWindowReason::PeaksFromCsvFile:
+          newpeak->clearSources();
+          break;
+          
+        case PeakSelectorWindowReason::NuclideId:
+        {
+          shared_ptr<PeakDef> &oldpeak = m_old_to_new_peaks[i].first;
+          if( oldpeak )
+            newpeak->inheritUserSelectedOptions( *oldpeak, false );
+          break;
+        }
+      }//switch( m_reason )
+      
+      
+      updatePreviewPlot(i);
+      keepPeakChanged();
+#if( USE_REL_ACT_TOOL )
+      refreshRelEffChart();
+#endif
+      return;
+    }//if( keepOriginal )
+    
     
     const int index = combo->currentIndex();
     
@@ -1266,7 +1367,9 @@ public:
       
       updatePreviewPlot(i);
       keepPeakChanged();
+#if( USE_REL_ACT_TOOL )
       refreshRelEffChart();
+#endif
       return;
     }//if( no source )
     
@@ -1327,8 +1430,39 @@ public:
     
     updatePreviewPlot(i);
     keepPeakChanged();
+#if( USE_REL_ACT_TOOL )
     refreshRelEffChart();
+#endif
   }//void nucSelectChanged( const size_t i )
+  
+  
+  void dontChangeNucCbChanged( const size_t i )
+  {
+    assert( i < m_dont_change_nuc_cbs.size() );
+    assert( m_nuc_select_combos.size() == m_dont_change_nuc_cbs.size() );
+    if( (i >= m_nuc_select_combos.size()) || (i >= m_dont_change_nuc_cbs.size()) )  //shouldnt ever happen, but JIC
+      return;
+    
+    WComboBox *select = m_nuc_select_combos[i];
+    WCheckBox *cb = m_dont_change_nuc_cbs[i];
+    assert( select && cb );
+    
+    //We should only get here if select and cb are valid
+    if( select && cb )
+    {
+      select->setEnabled( !cb->isChecked() );
+      
+      if( cb->isChecked() 
+         && (i < m_old_to_new_peaks.size())
+         && m_old_to_new_peaks[i].first 
+         && !m_old_to_new_peaks[i].first->hasSourceGammaAssigned() )
+      {
+        select->setCurrentIndex( 0 );
+      }//
+    }//if( select && cb )
+    
+    nucSelectChanged( i );
+  }//void dontChangeNucCbChanged( const size_t i )
   
   
   void populateNuclideSelects()
@@ -1341,7 +1475,7 @@ public:
         continue;
       
       m_nuc_select_combos[i]->clear();
-      m_nuc_select_combos[i]->addItem( "No Source" );
+      m_nuc_select_combos[i]->addItem( WString::tr("psd-no-source") );
       
       shared_ptr<PeakDef> &p = m_old_to_new_peaks[i].second;
       if( !p )
@@ -1403,10 +1537,10 @@ public:
           case ReferenceLineInfo::SourceType::Reaction:
           case ReferenceLineInfo::SourceType::Background:
           case ReferenceLineInfo::SourceType::NuclideMixture:
+          case ReferenceLineInfo::SourceType::OneOffSrcLines:
             break;
           
           case ReferenceLineInfo::SourceType::CustomEnergy:
-          case ReferenceLineInfo::SourceType::OneOffSrcLines:
           case ReferenceLineInfo::SourceType::None:
             continue;
             break;
@@ -1443,7 +1577,11 @@ public:
           const double diff_from_mean = fabs( refenergy - peakmean );
           const double diff_from_assigned = fabs( refenergy - energy );
           
-          if( (diff_from_assigned < 0.001)
+          // If we are assigning from a nuclide, we should be pretty close, but if OneOffSrcLines,
+          //  we might be off by even a
+          const double allowed_diff = (ref->m_source_type == ReferenceLineInfo::SourceType::OneOffSrcLines) ? 0.05 : 0.001;
+          
+          if( (diff_from_assigned < allowed_diff) //May need to decrease
              && ((p->parentNuclide() && (line.m_parent_nuclide==p->parentNuclide()))
                  || (p->xrayElement() && (line.m_element==p->xrayElement()))
                  || (p->reaction() && (line.m_reaction ==p->reaction()))
@@ -1510,10 +1648,32 @@ public:
     
     for( size_t i = 0; i < m_old_to_new_peaks.size(); ++i )
     {
-      if( m_nuc_select_combos[i] && (m_nuc_select_combos[i]->currentIndex()<=0)
+      if( m_dont_change_nuc_cbs[i] && m_dont_change_nuc_cbs[i]->isChecked() )
+      {
+        if( m_old_to_new_peaks[i].first )
+        {
+          switch( m_reason )
+          {
+            case PeakSelectorWindowReason::NuclideId:
+            case PeakSelectorWindowReason::PeakSearch:
+              *m_old_to_new_peaks[i].second = *m_old_to_new_peaks[i].first;
+            break;
+            
+            case PeakSelectorWindowReason::PeaksFromPreviousSpectum:
+            case PeakSelectorWindowReason::PeaksFromCsvFile:
+              m_old_to_new_peaks[i].second->inheritUserSelectedOptions( *m_old_to_new_peaks[i].first, false );
+            break;
+          }//switch( m_reason )
+        }else
+        {
+          m_old_to_new_peaks[i].second->clearSources();
+          m_old_to_new_peaks[i].second->setLineColor( WColor() );
+        }
+      }else if( m_nuc_select_combos[i] && (m_nuc_select_combos[i]->currentIndex()<=0)
           && m_old_to_new_peaks[i].second && !m_table->rowAt(static_cast<int>(i+1))->isHidden() )
       {
         m_old_to_new_peaks[i].second->clearSources();
+        m_old_to_new_peaks[i].second->setLineColor( WColor() );
       }
       
       if( m_keep_peak_cbs[i] && !m_keep_peak_cbs[i]->isChecked() )
@@ -1651,10 +1811,10 @@ std::unique_ptr<std::pair<PeakModel::PeakShrdPtr,std::string>>
         case ReferenceLineInfo::SourceType::Reaction:
         case ReferenceLineInfo::SourceType::Background:
         case ReferenceLineInfo::SourceType::NuclideMixture:
+        case ReferenceLineInfo::SourceType::OneOffSrcLines:
           break;
           
         case ReferenceLineInfo::SourceType::CustomEnergy:
-        case ReferenceLineInfo::SourceType::OneOffSrcLines:
         case ReferenceLineInfo::SourceType::None:
           continue;
           break;
@@ -1781,7 +1941,7 @@ std::unique_ptr<std::pair<PeakModel::PeakShrdPtr,std::string>>
           {
             prevpeak.reset();
             mindist = dist;
-            color = nuc.m_input.m_color;
+            color = line.m_color.isDefault() ? nuc.m_input.m_color : line.m_color;
             nuclide = line.m_parent_nuclide;
             element = line.m_element;
             reaction = line.m_reaction;
@@ -1894,7 +2054,7 @@ std::unique_ptr<std::pair<PeakModel::PeakShrdPtr,std::string>>
       // TODO: do we really need to use #PeakModel::setNuclideXrayReaction ?  We should be able to just directly set information
       PeakModel::setNuclideXrayReaction( peak, nuclide_label, -1.0 );
       
-      if( colorPeaksBasedOnReferenceLines && peak.lineColor().isDefault() )
+      if( colorPeaksBasedOnReferenceLines /* && peak.lineColor().isDefault() */ )
         peak.setLineColor( color );
     }//if( nuclide || reaction || element )
   }catch( std::exception &e )
@@ -2003,52 +2163,53 @@ void set_peaks_from_search( InterSpec *viewer,
 
 namespace PeakSearchGuiUtils
 {
-  
-  std::shared_ptr<WSvgImage> renderChartToSvg( std::shared_ptr<const SpecUtils::Measurement> inmeas,
-                                              std::shared_ptr<const std::deque<std::shared_ptr<const PeakDef> > > peaks,
-                                              const std::vector<std::shared_ptr<const ReferenceLineInfo>> &displayed,
-                                              double lowx, double upperx,
-                                              const int width, const int height,
-                                              std::shared_ptr<const ColorTheme> theme,
-                                              const bool compact )
+  /* Setups a static, fixed chart for display.
+   
+   You must either put the result into the widget hierarchy, or delete it.
+   */
+  SpectrumChart *createFixedSpectrumDisplay( std::shared_ptr<const SpecUtils::Measurement> inmeas,
+                            std::shared_ptr<const std::deque<std::shared_ptr<const PeakDef> > > peaks,
+                            const std::vector<std::shared_ptr<const ReferenceLineInfo>> &displayed,
+                            double lowx, double upperx,
+                            const int width, const int height,
+                            std::shared_ptr<const ColorTheme> theme )
   {
     if( !inmeas )
       return nullptr;
     
     auto meas = std::make_shared<SpecUtils::Measurement>( *inmeas );
-    
-    std::shared_ptr<Wt::WSvgImage> img
-    = std::make_shared<WSvgImage>( width, height );
     std::shared_ptr<SpecMeas> specmeas = std::make_shared<SpecMeas>();
     specmeas->add_measurement( meas, true );
     if( peaks )
       specmeas->setPeaks( *peaks, specmeas->sample_numbers() );
     
-    PeakModel peakmodel;
-    SpectrumDataModel dataModel;
-    SpectrumChart chart;
+    std::unique_ptr<SpectrumChart> chart( new SpectrumChart() );
+    chart->setWidth( width );
+    chart->setHeight( height );
+    PeakModel *peakmodel = new PeakModel( chart.get() );
+    SpectrumDataModel *dataModel = new SpectrumDataModel( chart.get() );
     
-    chart.setModel( &dataModel );
-    chart.setPeakModel( &peakmodel );
-    peakmodel.setDataModel( &dataModel );
-    peakmodel.setPeakFromSpecMeas( specmeas, specmeas->sample_numbers() );
+    chart->setModel( dataModel );
+    chart->setPeakModel( peakmodel );
+    peakmodel->setForeground( meas );
+    peakmodel->setPeakFromSpecMeas( specmeas, specmeas->sample_numbers() );
     
-    dataModel.setDataHistogram( meas );
+    dataModel->setDataHistogram( meas );
     
-    const vector<Chart::WDataSeries> series = dataModel.suggestDataSeries();
-    chart.setSeries( series );
+    const vector<Chart::WDataSeries> series = dataModel->suggestDataSeries();
+    chart->setSeries( series );
     
     //chart.enableLegend( true );
     
-    chart.axis(Chart::YAxis).setScale( Chart::LogScale );
+    chart->axis(Chart::YAxis).setScale( Chart::LogScale );
     
     for( size_t i = displayed.size(); i > 1; --i )
     {
-      chart.setReferncePhotoPeakLines( *displayed[i-1] );
-      chart.persistCurrentReferncePhotoPeakLines();
+      chart->setReferncePhotoPeakLines( *displayed[i-1] );
+      chart->persistCurrentReferncePhotoPeakLines();
     }
     if( !displayed.empty() )
-      chart.setReferncePhotoPeakLines( *displayed[0] );
+      chart->setReferncePhotoPeakLines( *displayed[0] );
     
     
     if( meas && (fabs(upperx-lowx) < 0.000001) )
@@ -2058,54 +2219,75 @@ namespace PeakSearchGuiUtils
       upperx = meas->gamma_channel_upper( nchannel - 1 );
     }//if( lowx == upperx )
     
-    chart.setXAxisRange( lowx, upperx );
-    
-    if( compact )
-    {
-      chart.axis(Chart::XAxis).setTitle("");
-      chart.axis(Chart::YAxis).setTitle("");
-      //chart.setLeftYAxisPadding(double width, <#double height#>)
-      chart.setPlotAreaPadding( 35, Wt::Left );
-      chart.setPlotAreaPadding( 16, Wt::Bottom );
-      chart.setPlotAreaPadding( 0, Wt::Right );
-      chart.setPlotAreaPadding( 0, Wt::Top );
-      
-      WFont labelFont( WFont::Default );
-      labelFont.setSize(8);
-      chart.axis(Chart::XAxis).setLabelFont( labelFont );
-      chart.axis(Chart::YAxis).setLabelFont( labelFont );
-    }//if( compact )
+    chart->setXAxisRange( lowx, upperx );
     
     const size_t displayednbin = meas->find_gamma_channel( upperx )
-    - meas->find_gamma_channel( lowx );
-    const int plotAreaWidth = static_cast<int>( img->width().toPixels() )
-    - chart.plotAreaPadding(Left)
-    - chart.plotAreaPadding(Right);
+                              - meas->find_gamma_channel( lowx );
+    const int plotAreaWidth = width 
+                              - chart->plotAreaPadding(Left)
+                              - chart->plotAreaPadding(Right);
     const float bins_per_pixel = float(displayednbin) / float(plotAreaWidth);
     const int factor = max( static_cast<int>(ceil(bins_per_pixel)), 1 );
     
-    dataModel.setRebinFactor( factor );
+    dataModel->setRebinFactor( factor );
     
-    chart.setAutoYAxisRange();
+    chart->setAutoYAxisRange();
     
     if( theme )
     {
-      dataModel.setForegroundSpectrumColor( theme->foregroundLine );
-      dataModel.setBackgroundSpectrumColor( theme->backgroundLine );
-      dataModel.setSecondarySpectrumColor( theme->secondaryLine );
-      chart.setSeries( dataModel.suggestDataSeries() );
+      dataModel->setForegroundSpectrumColor( theme->foregroundLine );
+      dataModel->setBackgroundSpectrumColor( theme->backgroundLine );
+      dataModel->setSecondarySpectrumColor( theme->secondaryLine );
+      chart->setSeries( dataModel->suggestDataSeries() );
       
-      chart.setDefaultPeakColor( theme->defaultPeakLine );
+      chart->setDefaultPeakColor( theme->defaultPeakLine );
       
-      chart.setAxisLineColor( theme->spectrumAxisLines );
-      chart.setChartMarginColor( theme->spectrumChartMargins );
-      chart.setChartBackgroundColor( theme->spectrumChartBackground );
-      chart.setTextColor( theme->spectrumChartText );
+      chart->setAxisLineColor( theme->spectrumAxisLines );
+      chart->setChartMarginColor( theme->spectrumChartMargins );
+      chart->setChartBackgroundColor( theme->spectrumChartBackground );
+      chart->setTextColor( theme->spectrumChartText );
     }//if( theme )
     
+  
+    return chart.release();
+  }//createFixedSpectrumDisplay(...)
+  
+  
+  std::shared_ptr<WSvgImage> renderChartToSvg( std::shared_ptr<const SpecUtils::Measurement> inmeas,
+                                              std::shared_ptr<const std::deque<std::shared_ptr<const PeakDef> > > peaks,
+                                              const std::vector<std::shared_ptr<const ReferenceLineInfo>> &displayed,
+                                              double lowx, double upperx,
+                                              const int width, const int height,
+                                              std::shared_ptr<const ColorTheme> theme,
+                                              const bool compact )
+  {
+    SpectrumChart *chart = createFixedSpectrumDisplay( inmeas, peaks, displayed, lowx, upperx,
+                              width, height, theme );
+    if( !chart )
+      return nullptr;
+    
+    unique_ptr<SpectrumChart> chart_holder(chart);
+    
+    if( compact )
+    {
+      chart->axis(Chart::XAxis).setTitle("");
+      chart->axis(Chart::YAxis).setTitle("");
+      //chart->setLeftYAxisPadding(double width, <#double height#>)
+      chart->setPlotAreaPadding( 35, Wt::Left );
+      chart->setPlotAreaPadding( 16, Wt::Bottom );
+      chart->setPlotAreaPadding( 0, Wt::Right );
+      chart->setPlotAreaPadding( 0, Wt::Top );
+      
+      WFont labelFont( WFont::Default );
+      labelFont.setSize(8);
+      chart->axis(Chart::XAxis).setLabelFont( labelFont );
+      chart->axis(Chart::YAxis).setLabelFont( labelFont );
+    }//if( compact )
+    
+    shared_ptr<Wt::WSvgImage> img = make_shared<WSvgImage>( width, height );
     
     WPainter p( img.get() );
-    chart.paint( p );
+    chart->paint( p );
     p.end();
     
     return img;
@@ -2317,7 +2499,7 @@ void automated_search_for_peaks( InterSpec *viewer,
   if( refLineDisp )
   {
     const ReferenceLineInfo &currentNuclide = refLineDisp->currentlyShowingNuclide();
-    displayed = refLineDisp->persistedNuclides();
+    displayed = refLineDisp->persistedNuclides(); //refLineDisp->showingNuclides()
   
     if( currentNuclide.m_validity == ReferenceLineInfo::InputValidity::Valid )
       displayed.insert( displayed.begin(), currentNuclide );
@@ -2384,7 +2566,9 @@ void automated_search_for_peaks( InterSpec *viewer,
   
   
   
-void assign_peak_nuclides_from_reference_lines( InterSpec *viewer )
+void assign_peak_nuclides_from_reference_lines( InterSpec *viewer,
+                                               const bool only_peaks_with_no_src,
+                                               const bool only_current_ref_lines )
 {
   if( !viewer )
     return;
@@ -2410,9 +2594,10 @@ void assign_peak_nuclides_from_reference_lines( InterSpec *viewer )
   vector<ReferenceLineInfo> displayed;
   
   {
-    const ReferenceLineInfo &currentNuclide = refLineDisp->currentlyShowingNuclide();
-    displayed = refLineDisp->persistedNuclides();
+    if( !only_current_ref_lines )
+      displayed = refLineDisp->persistedNuclides();
     
+    const ReferenceLineInfo &currentNuclide = refLineDisp->currentlyShowingNuclide();
     if( currentNuclide.m_validity == ReferenceLineInfo::InputValidity::Valid )
       displayed.insert( displayed.begin(), currentNuclide );
   }
@@ -2421,7 +2606,8 @@ void assign_peak_nuclides_from_reference_lines( InterSpec *viewer )
   for( const PeakDef &p : peaks )
     resultpeaks->push_back( make_shared<PeakDef>(p) );
   
-  assign_srcs_from_ref_lines( foreground, resultpeaks, displayed, assignColor, showingEscapePeakFeature );
+  assign_srcs_from_ref_lines( foreground, resultpeaks, displayed, assignColor, 
+                             showingEscapePeakFeature, only_peaks_with_no_src );
   
   for( const auto &foundpeak : *resultpeaks )
   {
@@ -2498,7 +2684,7 @@ void assign_nuclide_from_reference_lines( PeakDef &peak,
     return;
   
   std::shared_ptr<const deque< PeakModel::PeakShrdPtr > > previouspeaks = peakModel->peaks();
-  if( !previouspeaks )  //probably never necassary, but JIC
+  if( !previouspeaks )  //probably never necessary, but JIC
     previouspeaks = std::make_shared<deque< PeakModel::PeakShrdPtr > >();
   
   unique_ptr<pair<PeakModel::PeakShrdPtr,std::string>> addswap
@@ -2554,7 +2740,7 @@ void search_for_peaks_worker( std::weak_ptr<const SpecUtils::Measurement> weak_d
   {
     *resultpeaks = ExperimentalAutomatedPeakSearch::search_for_peaks( data, drf, existingPeaks, singleThread );
     
-    assign_srcs_from_ref_lines( data, resultpeaks, displayed, setColor, false );
+    assign_srcs_from_ref_lines( data, resultpeaks, displayed, setColor, false, true );
   }catch( std::exception &e )
   {
     string msg = "InterSpec::search_for_peaks_worker(): caught exception: '";
@@ -2579,7 +2765,8 @@ void assign_srcs_from_ref_lines( const std::shared_ptr<const SpecUtils::Measurem
                                   std::shared_ptr<std::vector<std::shared_ptr<const PeakDef> > > resultpeaks,
                                   const vector<ReferenceLineInfo> &displayed,
                                   const bool setColor,
-                                  const bool showingEscapePeakFeature )
+                                  const bool showingEscapePeakFeature,
+                                  const bool only_peaks_with_no_src )
 {
   if( !resultpeaks || !data )
     return;
@@ -2589,7 +2776,7 @@ void assign_srcs_from_ref_lines( const std::shared_ptr<const SpecUtils::Measurem
   
   for( const auto &p : *resultpeaks )
   {
-    if( p->parentNuclide() || p->xrayElement() || p->reaction() )
+    if( only_peaks_with_no_src && p->hasSourceGammaAssigned() )
       answerpeaks->push_back( p );
     else
       unassignedpeaks.push_back( make_shared<PeakDef>( *p ) );
@@ -2608,7 +2795,8 @@ void assign_srcs_from_ref_lines( const std::shared_ptr<const SpecUtils::Measurem
   
   for( shared_ptr<PeakDef> peak : unassignedpeaks )
   {
-    auto addswap = assign_nuc_from_ref_lines( *peak, answerpeaks, data, displayed, setColor, showingEscapePeakFeature );
+    unique_ptr<pair<PeakModel::PeakShrdPtr,string>> addswap
+           = assign_nuc_from_ref_lines( *peak, answerpeaks, data, displayed, setColor, showingEscapePeakFeature );
     
     if( addswap )  //The assignment caused a better assignment to be made for a previously existing peak.
     {
@@ -2635,9 +2823,12 @@ void assign_srcs_from_ref_lines( const std::shared_ptr<const SpecUtils::Measurem
     }//if( addswap )
     
     
-    //ToDo: use std::lower_bound to insert
-    answerpeaks->push_back( peak );
-    std::sort( begin(*answerpeaks), end(*answerpeaks), peak_less_than_by_energy );
+    auto sorted_pos = std::lower_bound( begin(*answerpeaks), end(*answerpeaks), peak, peak_less_than_by_energy );
+    answerpeaks->insert( sorted_pos, peak );
+
+    assert( std::is_sorted( begin(*answerpeaks), end(*answerpeaks), peak_less_than_by_energy ) );
+    //answerpeaks->push_back( peak );
+    //std::sort( begin(*answerpeaks), end(*answerpeaks), peak_less_than_by_energy );
   }//for( PeakDef peak : unassignedpeaks )
   
   resultpeaks->clear();
@@ -2932,6 +3123,65 @@ void refit_peaks_with_drf_fwhm( InterSpec * const interspec, const double rightC
   }
 }//void refit_peaks_with_drf_fwhm( InterSpec * const interspec, const double rightClickEnergy )
 
+  
+std::pair<std::unique_ptr<ReferenceLineInfo>,int> reference_line_near_peak( InterSpec * const interspec,
+                                          const PeakDef &peak,
+                                          const bool only_nuclide )
+{
+  auto refLineTool = interspec->referenceLinesWidget();
+  if( !refLineTool )
+    return pair<unique_ptr<ReferenceLineInfo>,int>( nullptr, -1 );
+  
+  const double mean = peak.mean(), sigma = peak.sigma();
+  const double lx = peak.lowerX(), ux = peak.upperX();
+    
+  double largest_w = -9999, best_energy = -1.0f;
+  
+  const vector<ReferenceLineInfo> showingNucs = refLineTool->showingNuclides();
+  size_t best_info_index = showingNucs.size();
+  size_t best_line_index = 0;
+  
+  for( size_t info_index = 0; info_index < showingNucs.size(); ++info_index )
+  {
+    const ReferenceLineInfo &info = showingNucs[info_index];
+    for( size_t line_index = 0; line_index < info.m_ref_lines.size(); ++line_index )
+    {
+      const ReferenceLineInfo::RefLine &l = info.m_ref_lines[line_index];
+      
+      if( only_nuclide
+         && (!l.m_parent_nuclide
+             || ((l.m_particle_type != ReferenceLineInfo::RefLine::Particle::Gamma)
+                 && (l.m_particle_type != ReferenceLineInfo::RefLine::Particle::Xray) )) )
+      {
+        // Only consider lines who have a nuclide parent, and are a Gamma or Xray
+        continue;
+      }
+      
+      const double dist = fabs( l.m_energy - mean );
+      const double w = l.m_normalized_intensity / (0.25*sigma + dist);
+      
+      if( (w > largest_w) && (l.m_energy < ux) && (l.m_energy > lx) && (dist < 5*sigma) )
+      {
+        largest_w = w;
+        best_energy = l.m_energy;
+        
+        best_info_index = info_index;
+        best_line_index = line_index;
+      }//if( best candidate so far )
+    }//for( const ReferenceLineInfo::RefLine &line : info.m_ref_lines )
+  }//for( const ReferenceLineInfo &info : m_referencePhotopeakLines->showingNuclides() )
+    
+  if( (largest_w > 0) && (best_energy > 0) && (best_info_index < showingNucs.size()) )
+  {
+    const ReferenceLineInfo &best_info = showingNucs[best_info_index];
+    assert( best_line_index < best_info.m_ref_lines.size() );
+    return pair<unique_ptr<ReferenceLineInfo>,int>( make_unique<ReferenceLineInfo>(best_info),
+                                                   static_cast<int>(best_line_index) );
+  }
+  
+  return pair<unique_ptr<ReferenceLineInfo>,int>( nullptr, -1 );
+}//reference_line_near_peak(...)
+  
 
 float reference_line_energy_near_peak( InterSpec * const interspec, const PeakDef &peak )
 {
@@ -2945,35 +3195,172 @@ float reference_line_energy_near_peak( InterSpec * const interspec, const PeakDe
   {
   }
   
-  auto refLineTool = interspec->referenceLinesWidget();
-  if( !refLineTool )
+  const bool only_nucs = false;
+  pair<unique_ptr<ReferenceLineInfo>,int> refline
+                              = reference_line_near_peak( interspec, peak, only_nucs );
+  
+  if( !refline.first || refline.second < 0 )
     return -999.9f;
   
-  const double mean = peak.mean(), sigma = peak.sigma();
-  const double lx = peak.lowerX(), ux = peak.upperX();
-    
-  double largest_w = -9999, best_energy = -1.0f;
-  for( const ReferenceLineInfo &info : refLineTool->showingNuclides() )
-  {
-    for( const ReferenceLineInfo::RefLine &l : info.m_ref_lines )
-    {
-      const double dist = fabs( l.m_energy - mean );
-      const double w = l.m_normalized_intensity / (0.25*sigma + dist);
-      
-      if( (w > largest_w) && (l.m_energy < ux) && (l.m_energy > lx) && (dist < 4*sigma) )
-      {
-        largest_w = w;
-        best_energy = l.m_energy;
-      }//if( best candidate so far )
-    }//for( const ReferenceLineInfo::RefLine &line : info.m_ref_lines )
-  }//for( const ReferenceLineInfo &info : m_referencePhotopeakLines->showingNuclides() )
-    
-  if( (largest_w > 0) && (best_energy > 0) )
-    return static_cast<float>(best_energy);
+  const ReferenceLineInfo::RefLine &line = refline.first->m_ref_lines[refline.second];
   
-  return -999.9f;
+  return static_cast<float>( line.m_energy );
 }//float reference_line_energy_near_peak( InterSpec * const interspec, const PeakDef &peak )
 
+  
+  
+tuple<const SandiaDecay::Nuclide *, double, float>
+    nuclide_reference_line_near( InterSpec *viewer, const float energy )
+{
+  double sigma = estimate_FWHM_of_foreground( energy );
+  
+  // For HPGe zoomed out, its really hard to be within the 5-peak-sigmas of the reference
+  //  line that `reference_line_near_peak(...)` requires, so we'll also take into account
+  //  the number of pixels a peak would show up as.
+  //  Note: `SpectrumChartD3.prototype.updateMouseCoordText(...)` basically requires within 10px
+  const shared_ptr<const SpecUtils::Measurement> hist
+                = viewer->displayedHistogram(SpecUtils::SpectrumType::Foreground);
+  if( PeakFitUtils::is_high_res(hist) )
+  {
+    double xmin, xmax, ymin, ymax;
+    viewer->displayedSpectrumRange( xmin, xmax, ymin, ymax );
+    
+    const int ww = viewer->renderedWidth();
+    
+    if( (xmin < xmax) && ((xmax - xmin) > 50.0) && (ww > 200) )
+    {
+      // Will assume chart plot-area is 100px narrower than total window (unchecked).
+      const double keV_per_pixel = (xmax - xmin) / (ww - 100);
+      // set peak-sigma to be 2 pixels, giving us to require 10 pixels of accuracy from the user
+      sigma = std::max( sigma, 2.0*keV_per_pixel );
+    }//if( x-range and render size seem reasonable )
+  }//if( PeakFitUtils::is_high_res(hist) )
+      
+  PeakDef tmppeak( energy, std::max(sigma,0.1), 100.0 );
+  
+  const pair<unique_ptr<ReferenceLineInfo>,int> refline
+        = reference_line_near_peak( viewer, tmppeak, true );
+  
+  if( !refline.first || (refline.second < 0) )
+    return tuple<const SandiaDecay::Nuclide *, double, float>( nullptr, 0.0, 0.0f );
+  
+  assert( refline.second < static_cast<int>(refline.first->m_ref_lines.size()) );
+  ReferenceLineInfo::RefLine &line = refline.first->m_ref_lines[refline.second];
+  
+  const SandiaDecay::Nuclide *nuc = line.m_parent_nuclide;
+  if( !nuc )
+    return tuple<const SandiaDecay::Nuclide *, double, float>( nullptr, 0.0, 0.0f );
+  
+  
+  double age = -1.0;
+  const string &age_str = refline.first->m_input.m_age;
+  if( !age_str.empty() )
+  {
+    try
+    {
+      age = PhysicalUnitsLocalized::stringToTimeDurationPossibleHalfLife( age_str, nuc ? nuc->halfLife : -1.0 );
+    }catch( std::exception )
+    {
+      assert( 0 );
+    }
+  }//if( !age_str.empty() )
+  
+  return tuple<const SandiaDecay::Nuclide *, double, float>(line.m_parent_nuclide, age, line.m_energy);
+}//nuclide_reference_line_near(...)
+  
+  
+float estimate_FWHM_of_foreground( const float energy )
+{
+  InterSpec *viewer = InterSpec::instance();
+  assert( viewer );
+  if( !viewer )
+    return 0.0f;
+  
+  PeakModel *peakmodel = viewer->peakModel();
+  assert( peakmodel );
+  if( !peakmodel )
+    return 0.0f;
+  
+  const auto peaks = peakmodel->peakVec();
+  const auto user_lb = std::lower_bound( begin(peaks), end(peaks), PeakDef(energy,1.0,1.0), &PeakDef::lessThanByMean );
+  const auto user_ub = (user_lb == end(peaks)) ? end(peaks) : user_lb + 1;
+  if( (user_lb != end(peaks)) && (user_ub != end(peaks)) && user_lb->gausPeak() && user_ub->gausPeak() )
+  {
+    //Linearly interpolate between peaks ... should probably upgrade to interpolating based on sqrt(energy) between them.
+    const double lower_fwhm = user_lb->fwhm();
+    const double upper_fwhm = user_ub->fwhm();
+    const double lower_energy = user_lb->mean();
+    const double upper_energy = user_ub->mean();
+    const double fraction = (energy - lower_energy) / (upper_energy - lower_energy);
+      
+    return static_cast<float>( lower_fwhm + fraction*(upper_fwhm - lower_fwhm) );
+  }
+    
+  std::shared_ptr<SpecMeas> specmeas = viewer->measurment(SpecUtils::SpectrumType::Foreground);
+    
+  std::shared_ptr<DetectorPeakResponse> drf = specmeas ? specmeas->detector() : nullptr;
+  if( drf && drf->hasResolutionInfo() )
+    return drf->peakResolutionFWHM(energy);
+    
+    
+  // Check auto-fit peaks
+  const set<int> &dispSamples = viewer->displayedSamples(SpecUtils::SpectrumType::Foreground);
+  auto hintPeaks = specmeas->automatedSearchPeaks( dispSamples );
+  if( hintPeaks && !hintPeaks->empty() )
+  {
+    SpecMeas::PeakDeque autopeaks( begin(*hintPeaks), end(*hintPeaks) );
+    std::sort( begin(autopeaks), end(autopeaks), &PeakDef::lessThanByMeanShrdPtr ); //just to make sure
+    
+    auto dummy_peak = make_shared<const PeakDef>(energy,1.0,1.0);
+    const auto hint_lb = std::lower_bound( begin(autopeaks), end(autopeaks), dummy_peak, &PeakDef::lessThanByMeanShrdPtr );
+    const auto hint_ub = hint_lb==end(autopeaks) ? end(autopeaks) : hint_lb + 1;
+    if( (hint_lb != end(autopeaks)) && (hint_ub != end(autopeaks)) && (*hint_lb)->gausPeak() && (*hint_ub)->gausPeak() )
+    {
+      //Linearly interpolate between peaks ... should probably upgrade to interpolating based on sqrt(energy) between them.
+      const double lower_fwhm = (*hint_lb)->fwhm();
+      const double upper_fwhm = (*hint_ub)->fwhm();
+      const double lower_energy = (*hint_lb)->mean();
+      const double upper_energy = (*hint_ub)->mean();
+      const double fraction = (energy - lower_energy) / (upper_energy - lower_energy);
+      
+      return static_cast<float>( lower_fwhm + fraction*(upper_fwhm - lower_fwhm) );
+    }
+  }//if( hintPeaks && !hintPeaks->empty() )
+    
+    
+  if( !peaks.empty() )
+  {
+    const PeakDef &refpeak = (user_lb!=end(peaks) ? *user_lb : (peaks.front().mean() > energy) ? peaks.front() : peaks.back());
+    const double ref_width = refpeak.gausPeak() ? refpeak.fwhm() : 0.25f*refpeak.roiWidth();
+    const double ref_energy = refpeak.gausPeak() ? refpeak.mean() : 0.5*(refpeak.upperX() + refpeak.lowerX());
+    
+    return static_cast<float>( ref_width*sqrt(energy/ref_energy) );
+  }//if( !peaks.empty() )
+  
+  const shared_ptr<const SpecUtils::Measurement> meas
+                              = viewer->displayedHistogram(SpecUtils::SpectrumType::Foreground);
+  
+  try
+  {
+    const string datadir = InterSpec::staticDataDirectory();
+    string drf_dir = SpecUtils::append_path(datadir, "GenericGadrasDetectors/HPGe 40%" );
+    
+    if( !PeakFitUtils::is_high_res(meas) )
+      drf_dir = SpecUtils::append_path(datadir, "GenericGadrasDetectors/NaI 1x1" );
+    
+    drf = make_shared<DetectorPeakResponse>();
+    drf->fromGadrasDirectory( drf_dir );
+    
+    return drf->peakResolutionFWHM(energy);
+  }catch(...)
+  {
+  }
+  
+  if( !PeakFitUtils::is_high_res(meas) )
+    return 2.35482f*17.5f*sqrt(energy/661.0f);
+  return 2.35482f*0.67f*sqrt(energy/661.0f);
+}//float estimate_FWHM_of_foreground( const float energy )
+  
   
 void refit_peak_with_photopeak_mean( InterSpec * const interspec, const double rightClickEnergy )
 {
@@ -3156,7 +3543,8 @@ void change_continuum_type_from_right_click( InterSpec * const interspec,
     assert( oldContinuum );
     if( oldContinuum->type() == type )
     {
-      passMessage( "Continuum is already of type " + string(PeakContinuum::offset_type_label(type)),
+      
+      passMessage( "Continuum is already of type " + WString::tr(PeakContinuum::offset_type_label_tr(type)).toUTF8(),
                   WarningWidget::WarningMsgInfo)
       return;
     }
@@ -3213,7 +3601,7 @@ void change_continuum_type_from_right_click( InterSpec * const interspec,
       }else
       {
         passMessage( "Changing the continuum type to "
-                    + string(PeakContinuum::offset_type_label(type))
+                    + WString::tr(PeakContinuum::offset_type_label_tr(type)).toUTF8()
                     + " caused " + string( newCandidatePeaks.size() > 1 ? "at least one" : "the" )
                     + " peak to become insignificant.<br />"
                     "Please use the <b>Peak Editor</b> to make this change.",
@@ -3249,7 +3637,7 @@ void change_continuum_type_from_right_click( InterSpec * const interspec,
       {
         WStringStream msg;
         msg << "Naively changing the continuum type to "
-        << string(PeakContinuum::offset_type_label(type))
+        << Wt::WString::tr(PeakContinuum::offset_type_label_tr(type)).toUTF8()
         << " caused the peak to become insignificant.<br />"
         "Please use the <b>Peak Editor</b> to make this change.";
         

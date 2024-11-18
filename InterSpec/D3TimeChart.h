@@ -39,38 +39,22 @@ class D3TimeChartFilters; //defined in D3TimeChart.cpp
 
 /**
  Things to handle:
- - Display time series of gamma + neutron gross-count data.
- - Neutron and gamma use diff y-axis (neutron axis should disapear if no neutron info avalable).
  - Handle case where background is like ~5 minutes long, but item of interest is only a few seconds.
- - Option to have x-axis either be real time (fixing up issue with previous point), or have each
-   sample take up the same number of pixels.
- - Handle case where there are more time-segments than pixels.
- - Indicate time segments being used for foreground, background, secondary spectrum (e.g., yellow,
-   blue, etc fill).  Segments may not be continuos.
- - Indicate where vehicle occupancy begins and ends, and area designated as background or intrinsic.
- - Handle allowing user to select time regions to show spectrum for foreground, background,
-   secondary (currently in InterSpec if user holds option when sleecting region, it will be used for
-   background).  Regions may be discontinuous, and user may want to add/remove from currently used
-   time regions (currently shift key while selecting will add to region, or remove if already
-   selected).
- - Use d3.v3.min.js as used by SpecUtils.
- - Touch device compatible (details to be tested/worked out later).
- - Chart may be dynamically resized (e.g., user changes screen size).
- - X and Y axis units should be human-friendly numbers (e.g., time is at {1, 1.5, 2.0,...} and not
-   {1.05, 1.55, 2.05, ..}, and similarly for y-axis counts.
- - X-axis should indicate start/end of time interval, not middle of time interval.
- - Should be histogram, not smooth graph.
- - Support displaying counts/time based on mouse position.
- - Make x-axis label compact and/or disapear.
  - Display multiple gamma lines corresponding to detectors in the system (stacked or overlaid); this
    can be ignored at first maybe.
- - Line, axis, background, time highlight region colors settable.
- - Adjust x-axis and y-axis ranges automatatically.  Default to have y-axis always go down to zero,
-   and maybe have an option to adjust to minimum data height.
- - Show horizantal and vertical grid lines.
- - Adjustable padding around chart
  - Optional: be able to save as a PNG/JPEG/static-SVG.
  */
+
+
+/** Wait until the chart is visible before loading JavaScript or CSS files, or defining the JS for this class.
+ 
+ This relies on overloading `virtual void setHidden(bool,WAnimation&)` so that it loads
+ and defines things only the first time it is set to not hidden.
+
+ This saves about 200 KB (e.g., requires 1.5 MB, instead of 1.7 MB for full first-load, with a HPGe foreground+background state)
+ loading because most common case is the time chart is initially hidden.
+*/
+#define OPTIMIZE_D3TimeChart_HIDDEN_LOAD 1
 
 
 class D3TimeChart : public Wt::WContainerWidget
@@ -79,6 +63,10 @@ public:
   D3TimeChart( Wt::WContainerWidget *parent = nullptr );
   virtual ~D3TimeChart();
   
+#if( OPTIMIZE_D3TimeChart_HIDDEN_LOAD )
+  virtual void setHidden( bool hidden, const Wt::WAnimation& animation = Wt::WAnimation() );
+#endif
+
   /** Set the spectrum file to display the time history for.
    @param data The data to be displayed.  May be nullptr to not display any data.
    @param det_to_display Detectors to use for displaying.  If empty, will display all detectors.  If any detectors specified are not
@@ -167,6 +155,16 @@ public:
    */
   virtual void doJavaScript( const std::string &js );
   
+#if( OPTIMIZE_D3TimeChart_HIDDEN_LOAD )
+  /** Causes `defineJavaScript()` to be called next time the `render(flags)` function is called.
+   
+   This is fixes an issuer where if, while time-chart is showing, we hide tool tabs, and then show
+   them again, then the time chart wont show.  I *think* it has something to do with the timechart
+   div getting taken out of the DOM, and then reinserted, causing whatever references to be lost.
+   Maybe, not really sure.
+   */
+  void refreshJs();
+#endif
 protected:
   
   void defineJavaScript();
@@ -229,6 +227,13 @@ protected:
   
   virtual void render( Wt::WFlags<Wt::RenderFlag> flags );
   
+  /** Constructs and initializes everything. */
+  void init();
+  
+#if( OPTIMIZE_D3TimeChart_HIDDEN_LOAD )
+  bool m_inited;
+#endif
+  
   /** Flags */
   enum TimeRenderActions
   {
@@ -238,6 +243,7 @@ protected:
     
     //ResetXDomain = 0x10
     
+    RefreshJs = 0x04
     //ToDo: maybe add a few other things to this mechanism.
   };//enum D3RenderActions
   

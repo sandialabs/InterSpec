@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <title>Leaflet.Measure</title>
+    <meta charset="utf-8" />
+    <style type="text/css">
+        body {
+            padding: 0;
+            margin: 0;
+        }
+
+        html,
+        body,
+        #map {
+            height: 100%;
+        }
+
+    </style>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.7.1/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.7.1/dist/leaflet.js"></script>
+    <link rel="stylesheet" type="text/css" href="../src/leaflet.measure.css" />
+    <script type="text/javascript" src="../src/leaflet.measure.js"></script>
+</head>
+
+<body>
+    <div id="map"></div>
+</body>
+<script type="text/javascript">
+    var map = L.map("map", {
+        center: [29.797751134173065, 120.7012939453125],
+        zoom: 8
+    });
+	L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+		attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+    }).addTo(map);
+
+    L.Measure = {
+    linearMeasurement: "Distance measurement",
+    areaMeasurement: "Area measurement",
+    start: "开始",
+    meter: "m",
+    kilometer: "km",
+    squareMeter: "m²",
+    squareKilometers: "km²",
+    };
+
+    var measure = L.control.measure({}).addTo(map);
+
+</script>
+
+</html>

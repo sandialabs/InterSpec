@@ -38,22 +38,22 @@
 #include <Wt/WString>
 #include <Wt/WLineEdit>
 #include <Wt/WTextArea>
+#include <Wt/WPopupMenu>
 #include <Wt/WPushButton>
 #include <Wt/WGridLayout>
 #include <Wt/WEnvironment>
 #include <Wt/WApplication>
 #include <Wt/WContainerWidget>
-#include <Wt/WPopupMenu>
 #include <Wt/WStackedWidget>
 
 #include "InterSpec/SpecMeas.h"
 #include "InterSpec/AuxWindow.h"
-#include "InterSpec/PeakModel.h"
-#include "InterSpec/InterSpecUser.h"
-#include "InterSpec/TerminalWidget.h"
 #include "InterSpec/InterSpec.h"
-#include "InterSpec/InterSpecApp.h"
+#include "InterSpec/PeakModel.h"
 #include "InterSpec/HelpSystem.h"
+#include "InterSpec/InterSpecApp.h"
+#include "InterSpec/TerminalWidget.h"
+#include "InterSpec/UserPreferences.h"
 
 #include "js/TerminalWidget.js"
 
@@ -138,7 +138,7 @@ TerminalWidget::TerminalWidget( InterSpec *viewer, Wt::WContainerWidget *parent 
     
   m_commandmenu->addWidget( m_commandsearch );
     
-  const bool showToolTips = InterSpecUser::preferenceValue<bool>( "ShowTooltips", m_viewer );
+  const bool showToolTips = UserPreferences::preferenceValue<bool>( "ShowTooltips", m_viewer );
     
   for ( const TerminalModel::CommandHelperTuple s : m_model->commandsFunctionsList() ) {            // initialize the command menu with commands
       const std::string& name = std::get<0>(s),
@@ -346,7 +346,7 @@ void TerminalWidget::commandMenuSearchInput()
                            toolTip = std::get<2>( m_commandMenuItems.at(index) ),
                            searchRegex = searchToRegexLiteral( search );
         
-        const bool showToolTips = InterSpecUser::preferenceValue<bool>( "ShowTooltips", m_viewer );
+        const bool showToolTips = UserPreferences::preferenceValue<bool>( "ShowTooltips", m_viewer );
         
         if ( !toolTip.empty() )
             HelpSystem::attachToolTipOn( menuItem, toolTip, showToolTips );

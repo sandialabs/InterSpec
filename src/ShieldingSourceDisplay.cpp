@@ -60,7 +60,6 @@
 #include <Wt/WPushButton>
 #include <Wt/WJavaScript>
 #include <Wt/WFileUpload>
-#include <Wt/WSplitButton>
 #include <Wt/WEnvironment>
 #include <Wt/Http/Response>
 #include <Wt/WSelectionBox>
@@ -104,6 +103,7 @@
 #include "InterSpec/ShieldingSelect.h"
 #include "InterSpec/SpecMeasManager.h"
 #include "InterSpec/UndoRedoManager.h"
+#include "InterSpec/UserPreferences.h"
 #include "InterSpec/RowStretchTreeView.h"
 #include "InterSpec/NativeFloatSpinBox.h"
 #include "InterSpec/MassAttenuationTool.h"
@@ -112,6 +112,7 @@
 #include "InterSpec/GammaInteractionCalc.h"
 #include "InterSpec/IsotopeSelectionAids.h"
 #include "InterSpec/GammaInteractionCalc.h"
+#include "InterSpec/PhysicalUnitsLocalized.h"
 #include "InterSpec/ShieldingSourceDisplay.h"
 
 using namespace Wt;
@@ -142,7 +143,26 @@ using GammaInteractionCalc::TraceActivityType;
 namespace
 {
   const std::string ns_no_uncert_info_txt = "Perform model fit to update and get uncertainties.";
-}
+  
+  /** If a distance WLineEdit has a number, but no distance units, will add a " cm" to the text value. */
+  void make_sure_distance_units_present( Wt::WLineEdit *edit )
+  {
+    if( !edit )
+      return;
+      
+    string diststr = edit->text().toUTF8();
+    SpecUtils::trim( diststr );
+    
+    if( diststr.empty() )
+      return;
+    
+    if( diststr.find_first_not_of( " \t0123456789.eE+-\n" ) == string::npos )
+    {
+      diststr += " cm";
+      edit->setText( diststr );
+    }
+  }//void make_sure_distance_units_present( Wt::WLineEdit *edit )
+}//namespace
 
 
 WT_DECLARE_WT_MEMBER
@@ -156,24 +176,6 @@ function(id,info)
 
 namespace
 {
-  string det_eff_geom_type_postfix( DetectorPeakResponse::EffGeometryType type )
-  {
-    switch( type )
-    {
-      case DetectorPeakResponse::EffGeometryType::FarField:
-      case DetectorPeakResponse::EffGeometryType::FixedGeomTotalAct:
-        return "";
-      case DetectorPeakResponse::EffGeometryType::FixedGeomActPerCm2:
-        return "/cm2";
-      case DetectorPeakResponse::EffGeometryType::FixedGeomActPerM2:
-        return "/m2";
-      case DetectorPeakResponse::EffGeometryType::FixedGeomActPerGram:
-        return "/g";
-    }//switch( m_det_type )
-    assert( 0 );
-    return "";
-  }//string det_eff_geom_type_postfix( DetectorPeakResponse::EffGeometryType )
-  
   class StringDownloadResource : public Wt::WResource
   {
     ShieldingSourceDisplay *m_display;
@@ -370,11 +372,13 @@ SourceFitModel::SourceFitModel( PeakModel *peakModel,
   auto interspec = InterSpec::instance();
   if( !interspec )
   {
-    m_displayCurries = true;
+    m_displayCuries = true;
   }else
   {
-    m_displayCurries = !InterSpecUser::preferenceValue<bool>( "DisplayBecquerel", interspec );
-    InterSpecUser::addCallbackWhenChanged( interspec->m_user, "DisplayBecquerel", this, &SourceFitModel::displayUnitsChanged );
+    interspec->useMessageResourceBundle( "ShieldingSourceDisplay" ); //jic
+    m_displayCuries = !UserPreferences::preferenceValue<bool>( "DisplayBecquerel", interspec );
+    interspec->preferences()->addCallbackWhenChanged( "DisplayBecquerel",
+                                          this, &SourceFitModel::displayUnitsChanged );
   }//if( !interspec ) / else
   
   peakModel->rowsAboutToBeRemoved().connect( this, &SourceFitModel::peakModelRowsRemovedCallback );
@@ -396,9 +400,9 @@ void SourceFitModel::displayUnitsChanged( bool useBq )
   //cout << "in SourceFitModel::displayUnitsChanged" << endl;
   try
   {
-    if( useBq == m_displayCurries )
+    if( useBq == m_displayCuries )
     {
-      m_displayCurries = !useBq;
+      m_displayCuries = !useBq;
       const int nrow = rowCount();
       if( nrow > 0 )
         dataChanged().emit( createIndex(0,0,nullptr), createIndex(nrow-1,kNumColumns-1,nullptr) );
@@ -409,7 +413,7 @@ void SourceFitModel::displayUnitsChanged( bool useBq )
     cerr << "SourceFitModel::displayUnitsChanged: Failed to convert boost any: " << e.what() << endl;
   }
   
-  //cout << "m_displayCurries is now: " << m_displayCurries << endl;
+  //cout << "m_displayCuries is now: " << m_displayCuries << endl;
 }//void SourceFitModel::displayUnitsChanged( boost::any value )
 
 
@@ -531,6 +535,34 @@ void SourceFitModel::setDetectorType( const DetectorPeakResponse::EffGeometryTyp
     const WModelIndex uncert_first = index( 0, col );
     const WModelIndex uncert_second = index( static_cast<int>(m_nuclides.size()-1), col );
     dataChanged().emit(uncert_first, uncert_second);
+    
+    switch( det_type )
+    {
+      case DetectorPeakResponse::EffGeometryType::FarField:
+        break;
+        
+      case DetectorPeakResponse::EffGeometryType::FixedGeomTotalAct:
+      case DetectorPeakResponse::EffGeometryType::FixedGeomActPerCm2:
+      case DetectorPeakResponse::EffGeometryType::FixedGeomActPerM2:
+      case DetectorPeakResponse::EffGeometryType::FixedGeomActPerGram:
+      {
+        for( const ShieldingSourceFitCalc::IsoFitStruct &iso : m_nuclides )
+        {
+          switch( iso.sourceType )
+          {
+            case ShieldingSourceFitCalc::ModelSourceType::Point:
+              break;
+              
+            case ShieldingSourceFitCalc::ModelSourceType::Intrinsic:
+            case ShieldingSourceFitCalc::ModelSourceType::Trace:
+              setSourceType( iso.nuclide, ShieldingSourceFitCalc::ModelSourceType::Point );
+              break;
+          }//switch( iso.sourceType )
+        }//for( loop over m_nuclides )
+        
+        break;
+      }//case Fixed Geometry
+    }//switch( det_type )
   }//if( !m_nuclides.empty() )
 }//void setDetectorType( const int detector_EffGeometryType )
 
@@ -712,7 +744,7 @@ bool SourceFitModel::isVolumetricSource( int nuc ) const
 }//bool isVolumetricSource(...)
 
 
-void SourceFitModel::setSharredAgeNuclide( const SandiaDecay::Nuclide *dependantNuc,
+void SourceFitModel::setSharedAgeNuclide( const SandiaDecay::Nuclide *dependantNuc,
                                            const SandiaDecay::Nuclide *definingNuc )
 {
   const int row = nuclideIndex( dependantNuc );
@@ -726,7 +758,7 @@ void SourceFitModel::setSharredAgeNuclide( const SandiaDecay::Nuclide *dependant
   {
     const int definingRow = nuclideIndex( definingNuc );
     if( definingRow < 0 )
-      throw runtime_error( "SourceFitModel::setSharredAgeNuclide: defining"
+      throw runtime_error( "SourceFitModel::setSharedAgeNuclide: defining"
                            " nuclide must also be in the model" );
   }//if( definingNuc )
  
@@ -738,7 +770,7 @@ void SourceFitModel::setSharredAgeNuclide( const SandiaDecay::Nuclide *dependant
     return;
   
   if( definingNuc && dependantNuc && (definingNuc->atomicNumber != dependantNuc->atomicNumber) )
-    throw runtime_error( "SourceFitModel::setSharredAgeNuclide: dependant and"
+    throw runtime_error( "SourceFitModel::setSharedAgeNuclide: dependant and"
                          " defining nuclides must have same atomic number" );
   
   iso.ageDefiningNuc = definingNuc;
@@ -778,7 +810,7 @@ void SourceFitModel::setUseSameAgeForIsotopes( bool useSame )
   if( !m_sameAgeForIsotopes )
   {
     for( size_t i = 0; i < m_nuclides.size(); ++i )
-      setSharredAgeNuclide( m_nuclides[i].nuclide, nullptr );
+      setSharedAgeNuclide( m_nuclides[i].nuclide, nullptr );
     return;
   }//if( !m_sameAgeForIsotopes )
   
@@ -800,7 +832,7 @@ void SourceFitModel::setUseSameAgeForIsotopes( bool useSame )
     if( nucs.size() < 2 )
     {
       if( !nucs.empty() )
-        setSharredAgeNuclide( nucs[0], nullptr );
+        setSharedAgeNuclide( nucs[0], nullptr );
       continue;
     }
     
@@ -812,7 +844,7 @@ void SourceFitModel::setUseSameAgeForIsotopes( bool useSame )
       const SandiaDecay::Nuclide *nuc = nucs[i];
       if( PeakDef::ageFitNotAllowed( nuc ) )
       {
-        setSharredAgeNuclide( nuc, nullptr ); // jic, I guess, but not really needed, probably
+        setSharedAgeNuclide( nuc, nullptr ); // jic, I guess, but not really needed, probably
         continue;
       }
         
@@ -836,17 +868,17 @@ void SourceFitModel::setUseSameAgeForIsotopes( bool useSame )
         
       if( numSharingAge < 2 )
       {
-        setSharredAgeNuclide( nuc, nullptr );
+        setSharedAgeNuclide( nuc, nullptr );
       }else if( i == minIndex )
       {
         WModelIndex ind = index( nuc, SourceFitModel::kAge );
         setData( ind, fitAgeWanted );
         ind = index( nuc, SourceFitModel::kAgeUncertainty );
         setData( ind, boost::any() );
-        setSharredAgeNuclide( nuc, NULL );
+        setSharedAgeNuclide( nuc, NULL );
       }else
       {
-        setSharredAgeNuclide( nuc, nucs[minIndex] );
+        setSharedAgeNuclide( nuc, nucs[minIndex] );
       }//if( i == 0 )
     }//for( const SandiaDecay::Nuclide *nuc : nucs )
   }//for( const ElToNucMap_t::value_type &vt : elToNucMap )
@@ -919,7 +951,7 @@ void SourceFitModel::insertPeak( const PeakShrdPtr peak )
       //There is a slight hickup with emitting a datachanged and then inserting
       //  a row; if there wasnt this hickup, it would be nice to use the below
 //      if( newIso.age < previso.age )
-//        setSharredAgeNuclide( previso.nuclide, newIso.nuclide );
+//        setSharedAgeNuclide( previso.nuclide, newIso.nuclide );
 //      else
 //        newIso.ageDefiningNuc = previso.nuclide;
     }//if( !newIso.ageDefiningNuc && !thisElementIndexs.empty() )
@@ -1080,7 +1112,7 @@ void SourceFitModel::peakModelRowsRemovedCallback( Wt::WModelIndex /*index*/,
     }//for( ShieldingSourceFitCalc::IsoFitStruct &ifs : m_nuclides )
     
     for( const SandiaDecay::Nuclide *nuc : nucstochange )
-      setSharredAgeNuclide( nuc, newDefining );
+      setSharedAgeNuclide( nuc, newDefining );
   }//for( const SandiaDecay::Nuclide *nuc : removed )
   
 //  for( const int iindex : removedRows )
@@ -1198,7 +1230,7 @@ void SourceFitModel::peakModelDataChangedCallback( Wt::WModelIndex topLeft,
         for( ShieldingSourceFitCalc::IsoFitStruct &ifs : m_nuclides )
         {
           if( ifs.ageIsFittable && (ifs.nuclide->atomicNumber == nuc->atomicNumber) )
-            setSharredAgeNuclide( ifs.nuclide, defining );
+            setSharedAgeNuclide( ifs.nuclide, defining );
         }//for( ShieldingSourceFitCalc::IsoFitStruct &ifs : m_nuclides )
       }//if( removedADefining )
     }//for( const SandiaDecay::Nuclide *nuc : removednucs )
@@ -1228,7 +1260,7 @@ void SourceFitModel::peakModelDataChangedCallback( Wt::WModelIndex topLeft,
       for( ShieldingSourceFitCalc::IsoFitStruct &ifs : m_nuclides )
       {
         if( ifs.ageIsFittable && (ifs.nuclide->atomicNumber == nuc->atomicNumber) )
-          setSharredAgeNuclide( ifs.nuclide, defining );
+          setSharedAgeNuclide( ifs.nuclide, defining );
       }
     }//for( const SandiaDecay::Nuclide *nuc : addednucs )
   }//if( m_sameAgeForIsotopes && (preisotopes != postisotopes) )
@@ -1448,45 +1480,17 @@ boost::any SourceFitModel::headerData( int section, Orientation orientation, int
 
   if( role == Wt::ToolTipRole )
   {
-    const char *tooltip = nullptr;
+    const char *tooltip_key = nullptr;
     switch( section )
     {
-      case kIsotope:
-        tooltip = "Nuclides are added or removed according to the photopeaks "
-                  "used for this fit, thus may not be edited in this table";
-        break;
-      case kActivity:
-        tooltip = "Activity of the nuclide.  Entering a reasonable starting"
-            " value may help the fit, or the activity does not have to be"
-            " fit for."
-            "  Values may be entered in formats similar to '12.4 kBq',"
-            " '1.0mCi', '55.3uCi', '15.82Mbq'";
-        break;
-      case kAge:
-        tooltip = "Age of the nuclide.  Values may be entered in format"
-            " similar to: '23.3s' '2 hl' - (hf stands for half lives), '5.23y',"
-            " '23:14:21.343', '19min', etc.  Note that nuclides that decay to"
-            " stable children can not be aged.";
-        break;
-      case kFitActivity:
-        tooltip = "Should the fit try to find the nuclide activity as well, or"
-                  " assume the entered value is correct?";
-        break;
-      case kFitAge:
-        tooltip = "Should the fit try to find the nuclide age as well, or just"
-                  " assume the entered value is correct?  This option is not "
-                  "available for nuclides which decay to only stable chlidren.";
-        break;
-      case kIsotopeMass:
-        tooltip = "This is the mass of the bare nuclide assuming the activity"
-                  " listed.";
-        break;
-      case kActivityUncertainty:
-        tooltip = "This is the uncertainty in activity from the fit.";
-        break;
-      case kAgeUncertainty:
-        tooltip = "This is the uncertainty in age from the fit.";
-        break;
+      case kIsotope:             tooltip_key = "sfm-tt-header-isotope";    break;
+      case kActivity:            tooltip_key = "sfm-tt-header-activity";   break;
+      case kAge:                 tooltip_key = "sfm-tt-header-age";        break;
+      case kFitActivity:         tooltip_key = "sfm-tt-header-fit-act";    break;
+      case kFitAge:              tooltip_key = "sfm-tt-header-fit-age";    break;
+      case kIsotopeMass:         tooltip_key = "sfm-tt-header-iso-mass";   break;
+      case kActivityUncertainty: tooltip_key = "sfm-tt-header-act-uncert"; break;
+      case kAgeUncertainty:      tooltip_key = "sfm-tt-header-age-uncert"; break;
 
 #if( INCLUDE_ANALYSIS_TEST_SUITE )
       case kTruthActivity:
@@ -1499,37 +1503,39 @@ boost::any SourceFitModel::headerData( int section, Orientation orientation, int
       case kNumColumns:
         break;
     }//switch( section )
-    if( !tooltip )
+    if( !tooltip_key )
       return boost::any();
     
-    return boost::any( WString::fromUTF8(tooltip) );
+    return boost::any( WString::tr(tooltip_key) );
   }//if( role == Wt::ToolTipRole )
 
   //If we're here, role==DisplayRole
   switch( section )
   {
-    case kIsotope:     return boost::any( WString("Nuclide") );
+    case kIsotope:     return boost::any( WString::tr("Nuclide") );
     case kActivity:
       switch( m_det_type )
       {
         case DetectorPeakResponse::EffGeometryType::FarField:
         case DetectorPeakResponse::EffGeometryType::FixedGeomTotalAct:
-          return boost::any( WString("Activity") );
+          return boost::any( WString::tr("Activity") );
           
         case DetectorPeakResponse::EffGeometryType::FixedGeomActPerCm2:
         case DetectorPeakResponse::EffGeometryType::FixedGeomActPerM2:
         case DetectorPeakResponse::EffGeometryType::FixedGeomActPerGram:
-          return boost::any( WString("Activity" + det_eff_geom_type_postfix(m_det_type)) );
+          return boost::any( WString("{1}{2}")
+                            .arg( WString::tr("Activity"))
+                            .arg( DetectorPeakResponse::det_eff_geom_type_postfix(m_det_type) ) );
       }//switch( m_det_type )
       assert( 0 );
       break;
       
-    case kAge:         return boost::any( WString("Age") );
-    case kFitActivity: return boost::any( WString("Fit Act.") );
-    case kFitAge:      return boost::any( WString("Fit Age") );
-    case kIsotopeMass: return boost::any( WString("Mass") );
-    case kActivityUncertainty: return boost::any( WString("Act. Uncert.") );
-    case kAgeUncertainty:      return boost::any( WString("Age Uncert.") );
+    case kAge:         return boost::any( WString::tr("Age") );
+    case kFitActivity: return boost::any( WString::tr("sfm-header-fit-act") );
+    case kFitAge:      return boost::any( WString::tr("sfm-header-fit-age") );
+    case kIsotopeMass: return boost::any( WString::tr("Mass") );
+    case kActivityUncertainty: return boost::any( WString::tr("sfm-header-act-uncert") );
+    case kAgeUncertainty:      return boost::any( WString::tr("sfm-header-age-uncert") );
 #if( INCLUDE_ANALYSIS_TEST_SUITE )
     case kTruthActivity:          return boost::any( WString("Truth Act.") );
     case kTruthActivityTolerance: return boost::any( WString("Truth Act. Tol.") );
@@ -1574,15 +1580,16 @@ boost::any SourceFitModel::data( const Wt::WModelIndex &index, int role ) const
   {
     if( column == kIsotope )
     {
-      string msg = "HalfLife="
-                 + PhysicalUnits::printToBestTimeUnits( isof.nuclide->halfLife, 2, PhysicalUnits::second );
-      //XXX - should put in dominant photopeaks or other information here
-      return boost::any( WString(msg) );
+      WString msg = WString("{1}={2}")
+                      .arg( WString::tr("T1/2") )
+                      .arg( PhysicalUnitsLocalized::printToBestTimeUnits( isof.nuclide->halfLife, 2, PhysicalUnits::second ) );
+      // TODO: should put in dominant photopeaks or other information here
+      return boost::any( msg );
     }else if( column == kAge )
     {
       if( !isof.ageIsFittable )
-        return boost::any( WString("Nuclides children are stable so aging is not allowed because it doesnt effect gamma spectrum.") );
-    }//if / else to detrmine column
+        return boost::any( WString::tr("sfm-tt-aging-not-allowed") );
+    }//if / else to determine column
 
     return boost::any();
   }//if( role == Wt::ToolTipRole )
@@ -1595,8 +1602,8 @@ boost::any SourceFitModel::data( const Wt::WModelIndex &index, int role ) const
     case kActivity:
     {
       const double act = isof.activity;
-      string ans = PhysicalUnits::printToBestActivityUnits( act, (extra_precision ? 8 : 3), m_displayCurries );
-      ans += det_eff_geom_type_postfix(m_det_type);
+      string ans = PhysicalUnits::printToBestActivityUnits( act, (extra_precision ? 8 : 3), m_displayCuries );
+      ans += DetectorPeakResponse::det_eff_geom_type_postfix(m_det_type);
       
       // We'll require the uncertainty to be non-zero to show it - 1 micro-bq is an arbitrary cutoff to
       //  consider anything below it zero.
@@ -1621,8 +1628,8 @@ boost::any SourceFitModel::data( const Wt::WModelIndex &index, int role ) const
       
       if( shouldHaveUncert )
       {
-        ans += " \xC2\xB1 " + PhysicalUnits::printToBestActivityUnits( uncert, (extra_precision ? 5 : 2), m_displayCurries );
-        ans += det_eff_geom_type_postfix(m_det_type);
+        ans += " \xC2\xB1 " + PhysicalUnits::printToBestActivityUnits( uncert, (extra_precision ? 5 : 2), m_displayCuries );
+        ans += DetectorPeakResponse::det_eff_geom_type_postfix(m_det_type);
       }//if( shouldHaveUncert )
       
       return boost::any( WString(ans) );
@@ -1675,11 +1682,11 @@ boost::any SourceFitModel::data( const Wt::WModelIndex &index, int role ) const
       }//if( isof.ageDefiningNuc && (isof.ageDefiningNuc!=isof.nuclide) )
       
       if( !isof.ageIsFittable )
-        return boost::any( WString("NA") );
+        return boost::any( WString::tr("NA") );
       
-      string ans = PhysicalUnits::printToBestTimeUnits( age, (extra_precision ? 8 : 2) );
+      string ans = PhysicalUnitsLocalized::printToBestTimeUnits( age, (extra_precision ? 8 : 2) );
       if( uncert > 0.0 )
-        ans += " \xC2\xB1 " + PhysicalUnits::printToBestTimeUnits( uncert, (extra_precision ? 8 : 1) );
+        ans += " \xC2\xB1 " + PhysicalUnitsLocalized::printToBestTimeUnits( uncert, (extra_precision ? 8 : 1) );
       
       return boost::any( WString(ans) );
     }//case kAge:
@@ -1721,8 +1728,8 @@ boost::any SourceFitModel::data( const Wt::WModelIndex &index, int role ) const
         return boost::any();
       
       double act = isof.activityUncertainty;
-      string ans = PhysicalUnits::printToBestActivityUnits( act, (extra_precision ? 8 : 2), m_displayCurries );
-      ans += det_eff_geom_type_postfix(m_det_type);
+      string ans = PhysicalUnits::printToBestActivityUnits( act, (extra_precision ? 8 : 2), m_displayCuries );
+      ans += DetectorPeakResponse::det_eff_geom_type_postfix(m_det_type);
       
       return boost::any( WString(ans) );
     }//case kActivityUncertainty:
@@ -1731,7 +1738,7 @@ boost::any SourceFitModel::data( const Wt::WModelIndex &index, int role ) const
     {
       if( (!isof.ageIsFittable) || isof.ageUncertainty < 0.0 )
         return boost::any();
-      const string ans = PhysicalUnits::printToBestTimeUnits( isof.ageUncertainty, (extra_precision ? 8 : 2) );
+      const string ans = PhysicalUnitsLocalized::printToBestTimeUnits( isof.ageUncertainty, (extra_precision ? 8 : 2) );
       return boost::any( WString(ans) );
     }//case kAgeUncertainty:
 
@@ -1741,8 +1748,8 @@ boost::any SourceFitModel::data( const Wt::WModelIndex &index, int role ) const
       if( !isof.truthActivity )
         return boost::any();
       
-      string ans = PhysicalUnits::printToBestActivityUnits( *isof.truthActivity, (extra_precision ? 8 : 4), m_displayCurries );
-      ans += det_eff_geom_type_postfix(m_det_type);
+      string ans = PhysicalUnits::printToBestActivityUnits( *isof.truthActivity, (extra_precision ? 8 : 4), m_displayCuries );
+      ans += DetectorPeakResponse::det_eff_geom_type_postfix(m_det_type);
       
       return boost::any( WString(ans) );
     }
@@ -1751,8 +1758,8 @@ boost::any SourceFitModel::data( const Wt::WModelIndex &index, int role ) const
     {
       if( !isof.truthActivityTolerance )
         return boost::any();
-      string ans = PhysicalUnits::printToBestActivityUnits( *isof.truthActivityTolerance, (extra_precision ? 8 : 4), m_displayCurries );
-      ans += det_eff_geom_type_postfix(m_det_type);
+      string ans = PhysicalUnits::printToBestActivityUnits( *isof.truthActivityTolerance, (extra_precision ? 8 : 4), m_displayCuries );
+      ans += DetectorPeakResponse::det_eff_geom_type_postfix(m_det_type);
       
       return boost::any( WString(ans) );
     }
@@ -1761,7 +1768,7 @@ boost::any SourceFitModel::data( const Wt::WModelIndex &index, int role ) const
     {
       if( !isof.truthAge )
         return boost::any();
-      const string ans = PhysicalUnits::printToBestTimeUnits( *isof.truthAge, (extra_precision ? 8 : 4) );
+      const string ans = PhysicalUnitsLocalized::printToBestTimeUnits( *isof.truthAge, (extra_precision ? 8 : 4) );
       return boost::any( WString(ans) );
     }
       
@@ -1769,7 +1776,7 @@ boost::any SourceFitModel::data( const Wt::WModelIndex &index, int role ) const
     {
       if( !isof.truthAgeTolerance )
         return boost::any();
-      const string ans = PhysicalUnits::printToBestTimeUnits( *isof.truthAgeTolerance, (extra_precision ? 8 : 4) );
+      const string ans = PhysicalUnitsLocalized::printToBestTimeUnits( *isof.truthAgeTolerance, (extra_precision ? 8 : 4) );
       return boost::any( WString(ans) );
     }
 #endif  //#if( INCLUDE_ANALYSIS_TEST_SUITE )
@@ -1923,7 +1930,7 @@ bool SourceFitModel::setData( const Wt::WModelIndex &index, const boost::any &va
         }else
         {
           const double hl = (iso.nuclide ? iso.nuclide->halfLife : -1.0);
-          iso.age = PhysicalUnits::stringToTimeDurationPossibleHalfLife( utf_str, hl );
+          iso.age = PhysicalUnitsLocalized::stringToTimeDurationPossibleHalfLife( utf_str, hl );
 
           if( iso.ageUncertainty >= 0.0 )
           {
@@ -1995,7 +2002,7 @@ bool SourceFitModel::setData( const Wt::WModelIndex &index, const boost::any &va
         if( iso.ageIsFittable && !value.empty() )
         {
           const double hl = (iso.nuclide ? iso.nuclide->halfLife : -1.0);
-          iso.ageUncertainty = PhysicalUnits::stringToTimeDurationPossibleHalfLife( utf_str, hl );
+          iso.ageUncertainty = PhysicalUnitsLocalized::stringToTimeDurationPossibleHalfLife( utf_str, hl );
         }//if( decays to stable children / else )
         
         if( m_sameAgeForIsotopes )
@@ -2034,7 +2041,7 @@ bool SourceFitModel::setData( const Wt::WModelIndex &index, const boost::any &va
         if( value.empty() )
           iso.truthAge.reset();
         else
-          iso.truthAge = PhysicalUnits::stringToTimeDurationPossibleHalfLife( utf_str, hl );
+          iso.truthAge = PhysicalUnitsLocalized::stringToTimeDurationPossibleHalfLife( utf_str, hl );
         break;
       }
          
@@ -2044,7 +2051,7 @@ bool SourceFitModel::setData( const Wt::WModelIndex &index, const boost::any &va
         if( value.empty() )
           iso.truthAgeTolerance.reset();
         else
-          iso.truthAgeTolerance = PhysicalUnits::stringToTimeDurationPossibleHalfLife( utf_str, hl );
+          iso.truthAgeTolerance = PhysicalUnitsLocalized::stringToTimeDurationPossibleHalfLife( utf_str, hl );
         break;
       }
 #endif
@@ -2205,6 +2212,10 @@ ShieldingSourceDisplay::Chi2Graphic::Chi2Graphic( Wt::WContainerWidget *parent )
 {
   setPreferredMethod( WPaintedWidget::HtmlCanvas );
   LOAD_JAVASCRIPT( wApp, "shieldingSourceDisplay.cpp", "Chi2Graphic", wtjsShowChi2Info);
+  
+  auto interpsec = InterSpec::instance();
+  if( interpsec )
+    interpsec->useMessageResourceBundle( "ShieldingSourceDisplay" ); //JIC
   
   // We will use calcAndSetAxisRanges() to set the axis ranges, so turn off auto range.
   axis(Chart::YAxis).setAutoLimits( 0 );
@@ -2635,27 +2646,22 @@ void ShieldingSourceDisplay::Chi2Graphic::paint( Wt::WPainter &painter,
   painter.setPen( WPen() );
   painter.setBrush( WBrush() );
   
-  const char *yaxistitle = m_showChi ? "(observed-model)/uncert" : "Mult. of Model";
   
-  const char *chi2tooltip  = "The Y-axis is the peak area counts, minus the expected number of counts from the currently displayed"
-                             " source and shielding values, all divided by the statistical uncertainty.  The square of this"
-                             " is what is used to optimize the shielding and sources.";
-  const char *scaletooltip = "The Y-axis is the multiple of observed peak counts, relative to what would be expected from the"
-                             " current source and shielding values.";
   
-  const char * const yaxistooltip = m_showChi ? chi2tooltip : scaletooltip;
+  const char *yaxistitle_key = m_showChi ? "x2g-yaxis-title-chi" : "x2g-yaxis-title-mult";
+  const char * const yaxistooltip_key = m_showChi ? "x2g-tt-chi-axis" : "x2g-tt-scale-axis";
   
   WPen oldPen = painter.pen();
   painter.setPen( WPen(m_textPenColor) );
   painter.drawText( -0.45*painter.viewPort().height(), 0.0, 0.2, 0.1,
-                     AlignCenter, yaxistitle );
+                     AlignCenter, WString::tr(yaxistitle_key) );
   painter.setPen( oldPen );
   
   const double yAxisWiddth = plotAreaPadding(Wt::Left);
   const double chartHeight = painter.viewPort().height();
   
   WRectArea *yAxisArea = new WRectArea( 0.0, 0.0, yAxisWiddth, chartHeight );
-  yAxisArea->setToolTip( yaxistooltip );
+  yAxisArea->setToolTip( WString::tr(yaxistooltip_key) );
   const_cast<Chi2Graphic*>(this)->addArea( yAxisArea );
   
   painter.restore();
@@ -2665,6 +2671,9 @@ void ShieldingSourceDisplay::Chi2Graphic::paint( Wt::WPainter &painter,
 pair<ShieldingSourceDisplay *,AuxWindow *> ShieldingSourceDisplay::createWindow( InterSpec *viewer )
 {
   assert( viewer );
+  
+  // Its fine to not call `viewer->useMessageResourceBundle( "ShieldingSourceDisplay" );` yet
+  //  - just needs to be done by render time
   
   AuxWindow *window = nullptr;
   ShieldingSourceDisplay *disp = nullptr;
@@ -2676,11 +2685,17 @@ pair<ShieldingSourceDisplay *,AuxWindow *> ShieldingSourceDisplay::createWindow(
     WSuggestionPopup *shieldSuggest = viewer->shieldingSuggester();
     
     disp = new ShieldingSourceDisplay( peakModel, viewer, shieldSuggest, matdb );
-    window = new AuxWindow( "Activity/Shielding Fit" );
+    window = new AuxWindow( WString::tr("window-title-act-shield-fit"),
+                           Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::SetCloseable)
+                           | AuxWindowProperties::EnableResize);
     // We have to set minimum size before calling setResizable, or else Wt's Resizable.js functions
     //  will be called first, which will then default to using the initial size as minimum allowable
-    window->setMinimumSize( 800, 480 );
-    window->setResizable( true );
+    if( !viewer->isPhone() )
+    {
+      window->setMinimumSize( 800, 480 );
+      window->setResizable( true );
+    }
+    
     window->contents()->setOffsets(WLength(0,WLength::Pixel));
     window->stretcher()->addWidget( disp, 0, 0 );
     window->stretcher()->setContentsMargins(0,0,0,0);
@@ -2780,8 +2795,7 @@ pair<ShieldingSourceDisplay *,AuxWindow *> ShieldingSourceDisplay::createWindow(
     window->centerWindow();
   }catch( std::exception &e )
   {
-    passMessage( "Error creating Activity/Shielding fit display: " + string(e.what()),
-                 WarningWidget::WarningMsgHigh );
+    passMessage( WString::tr("ssd-error-create-tool").tr(e.what()), WarningWidget::WarningMsgHigh );
     
     if( disp )
       delete disp;
@@ -2846,6 +2860,7 @@ ShieldingSourceDisplay::ShieldingSourceDisplay( PeakModel *peakModel,
     m_showLog( nullptr ),
     m_logDiv( nullptr ),
     m_calcLog{},
+    m_peakCalcLogInfo{},
     m_modelUploadWindow( nullptr ),
 #if( USE_DB_TO_STORE_SPECTRA )
     m_modelDbBrowseWindow( nullptr ),
@@ -2860,8 +2875,10 @@ ShieldingSourceDisplay::ShieldingSourceDisplay( PeakModel *peakModel,
   
   addStyleClass( "ShieldingSourceDisplay" );
   
-  
-  const bool showToolTips = InterSpecUser::preferenceValue<bool>( "ShowTooltips", m_specViewer );
+  assert( m_specViewer );
+  m_specViewer->useMessageResourceBundle( "ShieldingSourceDisplay" );
+      
+  const bool showToolTips = UserPreferences::preferenceValue<bool>( "ShowTooltips", m_specViewer );
   
   setLayoutSizeAware( true );
   const bool isotopesHaveSameAge = true;
@@ -2974,7 +2991,7 @@ ShieldingSourceDisplay::ShieldingSourceDisplay( PeakModel *peakModel,
   //this validates floating point numbers followed by a distance unit
   WRegExpValidator *distValidator = new WRegExpValidator( PhysicalUnits::sm_distanceUnitOptionalRegex, this );
   distValidator->setFlags( Wt::MatchCaseInsensitive );
-  m_distanceLabel = new WLabel( "Distance:" );
+  m_distanceLabel = new WLabel( WString("{1}:").arg(WString::tr("Distance")) );
   
   m_distanceEdit = new WLineEdit( "100 cm" );
   
@@ -2987,15 +3004,9 @@ ShieldingSourceDisplay::ShieldingSourceDisplay( PeakModel *peakModel,
 
   m_distanceLabel->setBuddy( m_distanceEdit );
   m_distanceEdit->setValidator( distValidator );
-  string tooltip = "Distance from center of source to face of detector. Number must be"
-            " followed by units; valid units are: meters, m, cm, mm, km, feet,"
-            " ft, ', in, inches, or \".  You may also add multiple distances,"
-            " such as '3ft 4in', or '3.6E-2 m 12 cm' which are equivalent to "
-            " 40inches and 15.6cm respectively.";
+  HelpSystem::attachToolTipOn( m_distanceEdit, WString::tr("ssd-tt-distance"), showToolTips );
 
-  HelpSystem::attachToolTipOn( m_distanceEdit,tooltip, showToolTips );
-
-  m_geometryLabel = new WLabel( "Geometry:" );
+  m_geometryLabel = new WLabel( WString("{1}:").arg(WString::tr("Geometry")) );
   m_geometrySelect = new WComboBox();
   
   // We want the current index of m_geometrySelect to correspond to the GeometryType enum value
@@ -3003,66 +3014,59 @@ ShieldingSourceDisplay::ShieldingSourceDisplay( PeakModel *peakModel,
       type != GeometryType::NumGeometryType;
       type = GeometryType( static_cast<int>(type) + 1) )
   {
-    const char *lbl = "";
+    const char *lbl_key = "";
     switch( GeometryType(type) )
     {
-      case GeometryType::Spherical:      lbl = "Point/Spherical";      break;
-      case GeometryType::CylinderEndOn:  lbl = "Cylindrical: end-on";  break;
-      case GeometryType::CylinderSideOn: lbl = "Cylindrical: side-on"; break;
-      case GeometryType::Rectangular:    lbl = "Rectangular";          break;
+      case GeometryType::Spherical:      lbl_key = "ssd-geom-point";    break;
+      case GeometryType::CylinderEndOn:  lbl_key = "ssd-geom-cyl-end";  break;
+      case GeometryType::CylinderSideOn: lbl_key = "ssd-geom-cyl-side"; break;
+      case GeometryType::Rectangular:    lbl_key = "ssd-rectangular";   break;
       case GeometryType::NumGeometryType: assert( 0 ); break;
       default: assert( 0 ); throw runtime_error(""); break;
     }//switch( GeometryType(type) )
     
-    m_geometrySelect->addItem( lbl );
+    m_geometrySelect->addItem( WString::tr(lbl_key) );
   }//for( int type = 0; type < 10; ++type )
   
   m_prevGeometry = GeometryType::Spherical;
   m_geometrySelect->setCurrentIndex( static_cast<int>(GeometryType::Spherical) );
   m_geometrySelect->changed().connect( this, &ShieldingSourceDisplay::handleGeometryTypeChange );
 
-  m_fixedGeometryTxt = new WText( "Using fixed geometry DRF" );
+  m_fixedGeometryTxt = new WText( WString::tr("ssd-fixed-geom-notification") );
   m_fixedGeometryTxt->hide();
 
   m_shieldingSelects = new WContainerWidget();
   m_shieldingSelects->setStyleClass( "ShieldingSelectContainer" );
 
-  tooltip = "Shieldings are treated as shells with the innermost"
-            " shell being the first one you add (the top one in this box), and"
-            " the subsequent shieldings layered around that one.  Any sources"
-            " not attributed as components of shieldings are treated as point"
-            " sources in the center.";
-  HelpSystem::attachToolTipOn( m_shieldingSelects,tooltip, showToolTips );
+  HelpSystem::attachToolTipOn( m_shieldingSelects, WString::tr("ssd-tt-shieldings"), showToolTips );
 
-  WLabel *addShieldingLabel = new WLabel( "Add Shielding:" );
+  WLabel *addShieldingLabel = new WLabel( WString::tr("ssd-add-shield-label") );
   m_addMaterialShielding = new WPushButton( "Material" );
-  HelpSystem::attachToolTipOn( m_addMaterialShielding,
-              "Choose from a library of predefined common shielding materials.",
+  HelpSystem::attachToolTipOn( m_addMaterialShielding, WString::tr("ssd-tt-add-shield"),
                               showToolTips, HelpSystem::ToolTipPosition::Top  );
   m_addMaterialShielding->setIcon( "InterSpec_resources/images/shield_white.png" );
   m_addMaterialShielding->clicked().connect( this,
                                       &ShieldingSourceDisplay::doAddShielding );
   
-  m_addGenericShielding = new WPushButton( "Generic" );
-  HelpSystem::attachToolTipOn( m_addGenericShielding,
-              "Allows you to define and fit for atomic number and areal density.",
+  m_addGenericShielding = new WPushButton( WString::tr("ssd-generic-btn") );
+  HelpSystem::attachToolTipOn( m_addGenericShielding, WString::tr("ssd-tt-generic"),
                               showToolTips , HelpSystem::ToolTipPosition::Top );
   m_addGenericShielding->setIcon( "InterSpec_resources/images/atom_white.png" );
   m_addGenericShielding->clicked().connect( this,
                                      &ShieldingSourceDisplay::addGenericShielding );
   
   
-  m_fitModelButton = new WPushButton( "Perform Model Fit" );
+  m_fitModelButton = new WPushButton( WString::tr("ssd-perform-fit-btn") );
   m_fitModelButton->clicked().connect( boost::bind(&ShieldingSourceDisplay::doModelFit, this, true) );
 
   m_fitProgressTxt = new WText();
   m_fitProgressTxt->hide();
   
-  m_cancelfitModelButton = new WPushButton( "Cancel Model Fit" );
+  m_cancelfitModelButton = new WPushButton( WString::tr("ssd-cancel-fit") );
   m_cancelfitModelButton->clicked().connect( boost::bind( &ShieldingSourceDisplay::cancelModelFit, this ) );
   m_cancelfitModelButton->hide();
   
-  m_showLog = m_addItemMenu->addMenuItem( "Calculation Log" );
+  m_showLog = m_addItemMenu->addMenuItem( WString::tr("ssd-mi-calc-log") );
   m_showLog->triggered().connect( this, &ShieldingSourceDisplay::showCalcLog );
   m_showLog->disable();
 
@@ -3070,11 +3074,11 @@ ShieldingSourceDisplay::ShieldingSourceDisplay( PeakModel *peakModel,
 //  PopupDivMenuItem *item = m_addItemMenu->addMenuItem( "Test Serialization" );
 //  item->triggered().connect( this, &ShieldingSourceDisplay::testSerialization );
 
-  item = m_addItemMenu->addMenuItem( "Import Model..." );
+  item = m_addItemMenu->addMenuItem( WString::tr("ssd-mi-import-model") );
   item->triggered().connect( this, &ShieldingSourceDisplay::startModelUpload );
   
   StringDownloadResource *xmlResource = new StringDownloadResource( this );
-  item = m_addItemMenu->addMenuItem( "Export Model" );
+  item = m_addItemMenu->addMenuItem( WString::tr("ssd-mi-export-model") );
   item->setLink( WLink( xmlResource ) );
   item->setLinkTarget(Wt::TargetNewWindow);
   
@@ -3087,23 +3091,22 @@ ShieldingSourceDisplay::ShieldingSourceDisplay( PeakModel *peakModel,
   
   
 #if( USE_DB_TO_STORE_SPECTRA )
-  item = m_addItemMenu->addMenuItem( "Open From Database..." );
+  item = m_addItemMenu->addMenuItem( WString::tr("ssd-mi-from-db") );
   item->triggered().connect( this,
                           &ShieldingSourceDisplay::startBrowseDatabaseModels );
   
-  item = m_addItemMenu->addMenuItem( "Save To Database..." );
+  item = m_addItemMenu->addMenuItem( WString::tr("ssd-mi-save-to-db") );
   item->triggered().connect(
                 boost::bind( &ShieldingSourceDisplay::startSaveModelToDatabase,
                              this, false) );
   
-  m_saveAsNewModelInDb = m_addItemMenu->addMenuItem( "Clone In Database..." );
+  m_saveAsNewModelInDb = m_addItemMenu->addMenuItem( WString::tr("ssd-mi-clone-db-entry") );
   m_saveAsNewModelInDb->triggered().connect( this,
                             &ShieldingSourceDisplay::saveCloneModelToDatabase );
   m_saveAsNewModelInDb->disable();
 #endif //#if( USE_DB_TO_STORE_SPECTRA )
   
-  m_showChi2Text = new WText( "(make window taller to show &chi;<sup>2</sup>)",
-                              XHTMLUnsafeText );
+  m_showChi2Text = new WText( WString::tr("ssd-to-small-for-chart"), XHTMLText );
   m_showChi2Text->setInline( false );
   m_showChi2Text->hide();
 
@@ -3128,7 +3131,7 @@ ShieldingSourceDisplay::ShieldingSourceDisplay( PeakModel *peakModel,
   
   m_chi2Graphic->addSeries( Chart::WDataSeries(1, Chart::PointSeries) );
   m_chi2Graphic->setXSeriesColumn( 0 );
-  m_chi2Graphic->axis(Chart::XAxis).setTitle( "Energy (keV)" );
+  m_chi2Graphic->axis(Chart::XAxis).setTitle( WString::tr("Energy (keV)") );
   
   WFont font( WFont::Default );
   font.setSize( WFont::Small );
@@ -3185,9 +3188,9 @@ ShieldingSourceDisplay::ShieldingSourceDisplay( PeakModel *peakModel,
   
   m_showChiOnChart = new SwitchCheckbox( "Mult.", "&chi;" );
   m_showChiOnChart->setChecked();
-  tooltip = "Show the Chi of each peak for the current model on the chart, or"
-  " the relative peak area multiple between current model and observed peak.";
-  m_showChiOnChart->setToolTip( tooltip );
+  HelpSystem::attachToolTipOn( m_showChiOnChart, WString::tr("ssd-tt-chi2-switch"),
+                                  showToolTips, HelpSystem::ToolTipPosition::Right );
+  //m_showChiOnChart->setToolTip( WString::tr("ssd-tt-chi2-switch") );
   m_showChiOnChart->checked().connect( this, &ShieldingSourceDisplay::showGraphicTypeChanged );
   m_showChiOnChart->unChecked().connect( this, &ShieldingSourceDisplay::showGraphicTypeChanged );
   
@@ -3198,9 +3201,9 @@ ShieldingSourceDisplay::ShieldingSourceDisplay( PeakModel *peakModel,
   optionsLayout->setContentsMargins(0, 0, 0, 0);
   
   WContainerWidget *allpeaksDiv = new WContainerWidget();
-  WCheckBox *allpeaks = new WCheckBox( "All Peaks", allpeaksDiv );
+  WCheckBox *allpeaks = new WCheckBox( WString::tr("ssd-cb-all-peaks"), allpeaksDiv );
   allpeaks->setAttributeValue( "style", "white-space:nowrap;margin-right:5px;float:right;" + allpeaks->attributeValue("style") );
-  optionsLayout->addWidget( allpeaksDiv, 0, 0 );
+  optionsLayout->addWidget( allpeaksDiv, optionsLayout->rowCount(), 0 );
   allpeaks->setTristate( true );
   allpeaks->changed().connect( boost::bind( &ShieldingSourceDisplay::toggleUseAll, this, allpeaks ) );
   m_peakModel->dataChanged().connect(
@@ -3212,64 +3215,77 @@ ShieldingSourceDisplay::ShieldingSourceDisplay( PeakModel *peakModel,
   //The ToolTip of WCheckBoxes is a bit finicky, and only works over the
   //  checkbox itself, so lets make it work over the label to, via lineDiv
   WContainerWidget *lineDiv = new WContainerWidget();
-  optionsLayout->addWidget( lineDiv, 1, 0 );
-  m_multiIsoPerPeak = new WCheckBox( "Multiple nuclides contribute to peak", lineDiv );
-  tooltip = "Checking this option will allow other nuclides being fit for,"
-  " other that the one assigned to a peak, to contribute to the"
-  " expected counts in a observed peak.  This could for instance be"
-  " useful when fitting for both Ho166m and U235 that both have a"
-  " peak near 185 keV." ;
-  lineDiv->setToolTip( tooltip );
+  optionsLayout->addWidget( lineDiv, optionsLayout->rowCount(), 0 );
+  m_multiIsoPerPeak = new WCheckBox( WString::tr("ssd-multi-iso-per-peak"), lineDiv );
+  //lineDiv->setToolTip( WString::tr("ssd-tt-multi-iso-per-peak") );
+  HelpSystem::attachToolTipOn( lineDiv, WString::tr("ssd-tt-multi-iso-per-peak"),
+                                      showToolTips, HelpSystem::ToolTipPosition::Right );
   m_multiIsoPerPeak->setChecked();
   m_multiIsoPerPeak->checked().connect( this, &ShieldingSourceDisplay::multiNucsPerPeakChanged );
   m_multiIsoPerPeak->unChecked().connect( this, &ShieldingSourceDisplay::multiNucsPerPeakChanged );
   
   lineDiv = new WContainerWidget();
-  optionsLayout->addWidget( lineDiv, 2, 0 );
-  m_attenForAir = new WCheckBox( "Attenuate for air", lineDiv );
-  tooltip = "When checked attenuation due to air between the source, or outer shielding, and"
-            " detector will be accounted for in the calculations.";
-  lineDiv->setToolTip( tooltip );
+  optionsLayout->addWidget( lineDiv, optionsLayout->rowCount(), 0 );
+  m_attenForAir = new WCheckBox( WString::tr("ssd-cb-atten-for-air"), lineDiv );
+  //lineDiv->setToolTip( WString::tr("ssd-tt-atten-for-air") );
+  HelpSystem::attachToolTipOn( lineDiv, WString::tr("ssd-tt-atten-for-air"),
+                              showToolTips, HelpSystem::ToolTipPosition::Right );
   m_attenForAir->setChecked();
   m_attenForAir->checked().connect( this, &ShieldingSourceDisplay::attenuateForAirChanged );
   m_attenForAir->unChecked().connect( this, &ShieldingSourceDisplay::attenuateForAirChanged );
   
   
   lineDiv = new WContainerWidget();
-  optionsLayout->addWidget( lineDiv, 3, 0 );
-  m_backgroundPeakSub = new WCheckBox( "Subtract Background Peaks", lineDiv );
-  tooltip = "This forces the isotopes of a element to all be the same age in"
-            " the fit.";
-  lineDiv->setToolTip( tooltip );
+  optionsLayout->addWidget( lineDiv, optionsLayout->rowCount(), 0 );
+  m_backgroundPeakSub = new WCheckBox( WString::tr("ssd-cb-sub-back-peaks"), lineDiv );
+  lineDiv->setToolTip( WString::tr("ssd-tt-sub-back-peaks") );
+  HelpSystem::attachToolTipOn( lineDiv, WString::tr("ssd-tt-sub-back-peaks"),
+                                  showToolTips, HelpSystem::ToolTipPosition::Right );
   m_backgroundPeakSub->checked().connect( this, &ShieldingSourceDisplay::backgroundPeakSubChanged );
   m_backgroundPeakSub->unChecked().connect( this, &ShieldingSourceDisplay::backgroundPeakSubChanged );
   
   
   lineDiv = new WContainerWidget();
-  optionsLayout->addWidget( lineDiv, 4, 0 );
-  m_sameIsotopesAge = new WCheckBox( "Isotopes of same element same age", lineDiv );
-  tooltip = "Enforce isotopes for the same element should all have the same "
-            "age.";
-  lineDiv->setToolTip( tooltip );
-  m_sameIsotopesAge->setChecked( isotopesHaveSameAge );
+  optionsLayout->addWidget( lineDiv, optionsLayout->rowCount(), 0 );
+  m_sameIsotopesAge = new WCheckBox( WString::tr("ssd-cb-same-el-same-age"), lineDiv );
+  //lineDiv->setToolTip( WString::tr("ssd-tt-same-el-same-age") );
+  HelpSystem::attachToolTipOn( lineDiv, WString::tr("ssd-tt-same-el-same-age"),
+                                showToolTips, HelpSystem::ToolTipPosition::Right );
+  bool account_for_decay_during_meas = false;
+  m_sameIsotopesAge->setChecked( account_for_decay_during_meas );
   m_sameIsotopesAge->checked().connect( this, &ShieldingSourceDisplay::sameIsotopesAgeChanged );
   m_sameIsotopesAge->unChecked().connect( this, &ShieldingSourceDisplay::sameIsotopesAgeChanged );
 
       
   lineDiv = new WContainerWidget();
-  optionsLayout->addWidget( lineDiv, 4, 0 );
-  m_decayCorrect = new WCheckBox( "Correct for decay during meas.", lineDiv );
-  tooltip = "Corrects for decay and in-growth effects that happen during the time the measurement"
-            " is being taken.  Resulting activities correspond to the start time of the"
-            " measurement. May take take additional computation time to find solution.";
-  lineDiv->setToolTip( tooltip );
-  m_decayCorrect->setChecked( isotopesHaveSameAge );
+  optionsLayout->addWidget( lineDiv, optionsLayout->rowCount(), 0 );
+  m_decayCorrect = new WCheckBox( WString::tr("ssd-cb-corr-for-decay"), lineDiv );
+  //lineDiv->setToolTip( WString::tr("ssd-tt-corr-for-decay") );
+  HelpSystem::attachToolTipOn( lineDiv, WString::tr("ssd-tt-corr-for-decay"),
+                                showToolTips, HelpSystem::ToolTipPosition::Right );
+  
+  // We'll set decay correction on by default, only if the measurement time is at least
+  //  0.5% (arbitrary) of any of the nuclide half-lives.
+  //  This isnt actually super great, because it wont catch if nuclides are added later,
+  //  or something.
+  bool decayCorrectActivity = false;
+  const auto foreground = m_specViewer->displayedHistogram(SpecUtils::SpectrumType::Foreground);
+  const float real_time = foreground ? foreground->real_time() : 0.0f;
+  if( real_time > 0.0f )
+  {
+    for( int nuc_index = 0; nuc_index < m_sourceModel->numNuclides(); ++nuc_index )
+    {
+      const SandiaDecay::Nuclide * const nuc = m_sourceModel->nuclide(nuc_index);
+      decayCorrectActivity |= (nuc && (real_time > 0.005*nuc->halfLife));
+    }//for( loop over nuclides )
+  }//if( we have a foreground with non-zero real time )
+      
+  m_decayCorrect->setChecked( decayCorrectActivity );
   m_decayCorrect->checked().connect( this, &ShieldingSourceDisplay::decayCorrectChanged );
   m_decayCorrect->unChecked().connect( this, &ShieldingSourceDisplay::decayCorrectChanged );
       
   
   WContainerWidget *detectorDiv = new WContainerWidget();
-  detectorDiv->setOverflow(WContainerWidget::OverflowHidden);
   WGridLayout *detectorLayout = new WGridLayout();
   detectorDiv->setLayout( detectorLayout );
   
@@ -3286,26 +3302,11 @@ ShieldingSourceDisplay::ShieldingSourceDisplay( PeakModel *peakModel,
   smallLayout->addWidget( addShieldingLabel,       3, 0, AlignRight | AlignMiddle );
   smallLayout->addWidget( m_addMaterialShielding,  3, 1);
   smallLayout->addWidget( m_addGenericShielding,   3, 2);
-  smallLayout->setColumnStretch( 0, 0 );
-
-  smallLayout->setContentsMargins(0,5,0,5);
+  smallLayout->setContentsMargins( 0, 5, 0, 5 );
   smallerContainer->setPadding(0);
   
   //m_geometryLabel->setText( "Shield Geometry" );
-  HelpSystem::attachToolTipOn( m_geometrySelect,
-    "Geometry to use for modeling \"trace\" sources, or self-attenuating sources.<br />"
-    "<br />"
-    "By default, all sources are point sources at the specified distance from the detector, for all geometries.<br />"
-    "However, if you make a nuclide a \"trace\" source (by clicking on a shielding's &CirclePlus; button"
-    " and selecting \"<em>Add Trace Source</em>\"), or a self-attenuating source (by selecting the"
-    " \"<em>Source for:</em>\" checkbox when a shielding has the same element as a nuclide you are"
-    " fitting), then the source isotope will be modeled as distributed throughout the shielding,"
-    " and ray-tracing will be used to account for different attenuations at each location within"
-    " the shielding.<br />"
-    "<br />"
-    "To keep things simple, choose \"Point/Spherical\" geometry unless you will perform a fit to a"
-    " \"trace\" or self-attenuating source",
-    showToolTips );
+  HelpSystem::attachToolTipOn( m_geometrySelect, WString::tr("ssd-tt-geometry"), showToolTips );
   
   //---------------
   
@@ -3318,6 +3319,8 @@ ShieldingSourceDisplay::ShieldingSourceDisplay( PeakModel *peakModel,
   peakGrid->addWidget(m_peakView,0,0);
   
   m_layout = new WGridLayout();
+  m_layout->setContentsMargins( 0, 0, 0, 0 );
+  setLayout( m_layout );
   
   WContainerWidget *bottomLeftDiv = new WContainerWidget();
   WGridLayout *bottomLeftLayout = new WGridLayout();
@@ -3348,14 +3351,15 @@ ShieldingSourceDisplay::ShieldingSourceDisplay( PeakModel *peakModel,
     detectorLayout->setVerticalSpacing( 0 );
     detectorLayout->setContentsMargins( 1, 1, 1, 1 );
     
-    WTabWidget* tab = new WTabWidget();
-    tab->setOffsets(0);
-    tab->setMargin(0);
-    m_layout->addWidget(tab, 0,0);
+    WTabWidget *tab = new WTabWidget();
+    tab->setMargin( 0 );
+    m_layout->addWidget( tab, 0, 0 );
+    m_layout->setColumnStretch( 0, 1 );
+    m_layout->setRowStretch( 0, 1 );
     
-    tab->addTab(bottomLeftDiv,"Source Peaks", Wt::WTabWidget::PreLoading);
-    tab->addTab(sourceDiv,"Source Isotopes", Wt::WTabWidget::PreLoading);
-    tab->addTab(detectorDiv,"Shielding", Wt::WTabWidget::PreLoading);
+    tab->addTab(bottomLeftDiv, WString::tr("ssd-phone-tab-source-peaks"), Wt::WTabWidget::PreLoading);
+    tab->addTab(sourceDiv, WString::tr("ssd-phone-tab-source-isotopes"), Wt::WTabWidget::PreLoading);
+    tab->addTab(detectorDiv, WString::tr("ssd-phone-tab-shielding"), Wt::WTabWidget::PreLoading);
     
     WContainerWidget *chartDiv = new WContainerWidget();
     chartDiv->setOffsets(0);
@@ -3366,12 +3370,13 @@ ShieldingSourceDisplay::ShieldingSourceDisplay( PeakModel *peakModel,
     chartLayout->setContentsMargins(0, 0, 0, 0);
     
     chartLayout->addWidget( m_detectorDisplay,      0, 0, AlignLeft );
-    chartLayout->addWidget( m_showChiOnChart,       0, 1 );
-    chartLayout->addWidget( addItemMenubutton,      0, 2, AlignRight);
-    chartLayout->addWidget( m_chi2Graphic,          1, 0, 1, 3 );
-    chartLayout->addWidget( m_fitModelButton,       2, 0, 1, 3, AlignCenter );
-    chartLayout->addWidget( m_fitProgressTxt,       3, 0, 1 ,3, AlignCenter );
-    chartLayout->addWidget( m_cancelfitModelButton, 4, 0, 1, 3, AlignCenter );
+    chartLayout->addWidget( addItemMenubutton,      0, 1, AlignRight);
+    chartLayout->addWidget( m_chi2Graphic,          1, 0, 1, 2 );
+    m_showChiOnChart->setWidth( 130 );
+    chartLayout->addWidget( m_showChiOnChart,       2, 1, AlignRight );
+    chartLayout->addWidget( m_fitModelButton,       3, 0, 1, 2, AlignCenter );
+    chartLayout->addWidget( m_fitProgressTxt,       4, 0, 1, 2, AlignCenter );
+    chartLayout->addWidget( m_cancelfitModelButton, 5, 0, 1, 2, AlignCenter );
     
     chartLayout->setRowStretch(1, 1);
     tab->addTab(chartDiv,"Fit", Wt::WTabWidget::PreLoading);
@@ -3404,7 +3409,7 @@ ShieldingSourceDisplay::ShieldingSourceDisplay( PeakModel *peakModel,
     
     bottomMiddleLayout->addWidget( bottomLeftDiv,   0, 0 );
     bottomMiddleLayout->addWidget( sourceDiv, 0, 1 );
-    bottomMiddleLayout->setColumnResizable( 0, true, WLength(38.25,WLength::FontEx) );
+    bottomMiddleLayout->setColumnResizable( 0, true, WLength(340,WLength::Pixel) ); //335px seems to be the limit where the peak table will get horizontal scroll-bars
     bottomMiddleLayout->setHorizontalSpacing( 5 );
     bottomMiddleLayout->setVerticalSpacing( 5 );
     bottomMiddleLayout->setContentsMargins( 0, 0, 0, 0 );
@@ -3444,6 +3449,7 @@ ShieldingSourceDisplay::ShieldingSourceDisplay( PeakModel *peakModel,
     leftDiv->setLayout(leftLayout);
     leftDiv->setOverflow(WContainerWidget::OverflowHidden);
     
+    detectorDiv->setOverflow( WContainerWidget::OverflowHidden );
     detectorDiv->setWidth( 290 );
     
     m_layout->addWidget( leftDiv, 0, 0);
@@ -3451,13 +3457,10 @@ ShieldingSourceDisplay::ShieldingSourceDisplay( PeakModel *peakModel,
     m_layout->setColumnStretch( 0, 1 );
     m_layout->setHorizontalSpacing( 0 );
     m_layout->setVerticalSpacing( 0 );
-    m_layout->setContentsMargins( 0, 0, 0, 0 );
+    
+    setOverflow( WContainerWidget::OverflowVisible );
+    setOffsets( WLength(0,WLength::Pixel) );
   } //regular layout
-  
-  m_layout->setContentsMargins(0, 0, 0, 0);
-  setLayout( m_layout );
-  setOverflow( WContainerWidget::OverflowVisible);
-  setOffsets(WLength(0,WLength::Pixel));
   
   handleDetectorChanged( m_detectorDisplay->detector() ); // Will also call updateChi2Chart()
 }//ShieldingSourceDisplay constructor
@@ -3527,7 +3530,7 @@ void ShieldingSourceDisplay::render( Wt::WFlags<Wt::RenderFlag> flags )
   
   if( m_chi2ChartNeedsUpdating )
   {
-    updateChi2ChartActual();
+    updateChi2ChartActual( nullptr );
     m_chi2ChartNeedsUpdating = false;
   }
   
@@ -3636,8 +3639,7 @@ pair<shared_ptr<GammaInteractionCalc::ShieldingSourceChi2Fcn>, ROOT::Minuit2::Mn
     if( !background_peaks || background_peaks->empty() )
     {
       m_backgroundPeakSub->setUnChecked();
-      passMessage( "There are no background peaks defined, not subtracting them",
-                     WarningWidget::WarningMsgInfo );
+      passMessage( WString::tr("ssd-warn-no-back-peaks"), WarningWidget::WarningMsgInfo );
     }//if( !peaks || peaks->empty() )
   }//if( m_backgroundPeakSub->isChecked() )
     
@@ -3718,6 +3720,15 @@ pair<shared_ptr<GammaInteractionCalc::ShieldingSourceChi2Fcn>, ROOT::Minuit2::Mn
       }//case ShieldingSourceFitCalc::ModelSourceType::Trace:
     }//switch( m_sourceModel->sourceType(ison) )
       
+    // If we are fitting activity or age, we can possibly get into a situation where the
+    //  values have become NaN - if this is the case, lets put in a number, to hopefully
+    //  help get out of this badness
+    if( srcdef.fitAge && (IsInf(srcdef.age) || IsNan(srcdef.age)) )
+      srcdef.age = PeakDef::defaultDecayTime( nuclide, nullptr );
+    
+    if( srcdef.fitActivity && (IsInf(srcdef.activity) || IsNan(srcdef.activity)) )
+      srcdef.activity = 1.0E-6 * PhysicalUnits::curie;
+    
     src_definitions.push_back( srcdef );
   }//for( const SandiaDecay::Nuclide *nuc : nuclides )
     
@@ -4331,7 +4342,7 @@ void ShieldingSourceDisplay::setFitQuantitiesToDefaultValues()
     if( m_sourceModel->fitActivity(i) )
     {
       WModelIndex index = m_sourceModel->index( i, SourceFitModel::kActivity );
-      const bool useCi = !InterSpecUser::preferenceValue<bool>( "DisplayBecquerel", m_specViewer );
+      const bool useCi = !UserPreferences::preferenceValue<bool>( "DisplayBecquerel", m_specViewer );
       if( useCi )
         m_sourceModel->setData( index, "1 mCi" );
       else
@@ -4621,13 +4632,13 @@ tuple<bool,int,int,vector<string>> ShieldingSourceDisplay::testCurrentFitAgainst
         
         textInfoLines.push_back( "For " + nuc->symbol + " fit activity "
                                 + PhysicalUnits::printToBestActivityUnits(fitAct)
-                                + det_eff_geom_type_postfix(m_sourceModel->detType()) + " with the"
+                                + DetectorPeakResponse::det_eff_geom_type_postfix(m_sourceModel->detType()) + " with the"
                                 " truth value of "
                                 + PhysicalUnits::printToBestActivityUnits(*truthAct)
-                                + det_eff_geom_type_postfix(m_sourceModel->detType())
+                                + DetectorPeakResponse::det_eff_geom_type_postfix(m_sourceModel->detType())
                                 + " and tolerance "
                                 + PhysicalUnits::printToBestActivityUnits(*tolerance)
-                                + det_eff_geom_type_postfix(m_sourceModel->detType())
+                                + DetectorPeakResponse::det_eff_geom_type_postfix(m_sourceModel->detType())
                                 + (closeEnough ? " - within tolerance." : " - out of tolerance." )
                                 );
       }//if( fit activity )
@@ -4976,9 +4987,7 @@ void ShieldingSourceDisplay::backgroundPeakSubChanged()
     if( !back )
     {
       m_backgroundPeakSub->setUnChecked();
-      passMessage( "There is no background spectrum loaded, so can not"
-                   " subtract background peak areas from foreground",
-                   WarningWidget::WarningMsgHigh );
+      passMessage( WString::tr("ssd-warn-no-back-spec"), WarningWidget::WarningMsgHigh );
       return;
     }//if( !back )
     
@@ -4990,12 +4999,7 @@ void ShieldingSourceDisplay::backgroundPeakSubChanged()
     if( !peaks || peaks->empty() )
     {
       m_backgroundPeakSub->setUnChecked();
-      passMessage( "The background spectrum does not have any peaks"
-                   " identified. You should load the background spectrum as"
-                   " the foreground, identify the peaks to potentially be"
-                   " subtracted, and then switch back to your current"
-                   " foreground/background combination.",
-                   WarningWidget::WarningMsgHigh );
+      passMessage( WString::tr("ssd-warn-no-back-peaks-toggle"), WarningWidget::WarningMsgHigh );
       return;
     }//if( !peaks || peaks->empty() )
   }//if( m_backgroundPeakSub->isChecked() )
@@ -5041,7 +5045,7 @@ void ShieldingSourceDisplay::decayCorrectChanged()
       }
     };
     
-    undoRedo->addUndoRedoStep( undo_redo, undo_redo, "Decay coorect activity changed." );
+    undoRedo->addUndoRedoStep( undo_redo, undo_redo, "Decay correct activity changed." );
   }//if( undoRedo )
   
   updateChi2Chart();
@@ -5171,9 +5175,8 @@ void ShieldingSourceDisplay::handleGeometryTypeChange()
 
 void ShieldingSourceDisplay::checkDistanceAndThicknessConsistent()
 {
-  const char * const contained_err_msg = "Updated shielding dimension to be a minimum thickness.";
-  const char * const scaled_err_msg = "Shielding thicknesses have been scaled to be less"
-                                      " then detector distance.";
+  const char * const contained_err_msg_key = "ssd-update-dim-to-be-min";
+  const char * const scaled_err_msg_key = "ssd-scaled-shield-to-be-less-dist";
  
   
   // TODO: We should probably check that we arent trying to fit multiple AN of generic shieldings,
@@ -5246,6 +5249,9 @@ void ShieldingSourceDisplay::checkDistanceAndThicknessConsistent()
     assert( type == select->geometry() );
     if( type != select->geometry() )
       throw runtime_error( "A shieldings geometry didnt match expected." );
+    
+    for( WLineEdit *edit : select->distanceEdits() )
+      make_sure_distance_units_present( edit );
     
     // Check to make sure this shielding is larger than all shielding it contains
     switch( type )
@@ -5390,7 +5396,7 @@ void ShieldingSourceDisplay::checkDistanceAndThicknessConsistent()
     {
       handleShieldingChange();
       
-      throw runtime_error( contained_err_msg );
+      throw runtime_error( WString::tr(contained_err_msg_key).toUTF8() );
     }
   }else
   {
@@ -5421,15 +5427,20 @@ void ShieldingSourceDisplay::checkDistanceAndThicknessConsistent()
       }//switch( type )
     }//for( WWidget *widget : m_shieldingSelects->children() )
     
-    string msg;
+    WString msg;
     if( updated_a_dim )
-      msg = string(contained_err_msg) + "<br />" + string(scaled_err_msg);
-    else
-      msg = scaled_err_msg;
+    {
+      msg = WString("{1}<br />{2}")
+        .arg(WString::tr(contained_err_msg_key))
+        .arg( WString::tr(scaled_err_msg_key) );
+    }else
+    {
+      msg = WString::tr(scaled_err_msg_key);
+    }
     
     handleShieldingChange();
     
-    throw runtime_error( msg );
+    throw runtime_error( msg.toUTF8() );
   }//if( shieldrad < distance )
 }//void checkDistanceAndThicknessConsistent()
 
@@ -5448,7 +5459,7 @@ void ShieldingSourceDisplay::checkForMultipleGenericMaterials()
   }//for( WWidget *widget : m_shieldingSelects->children() )
   
   if( num_fit_for_ad > 1 )
-    throw runtime_error( "You can only fit for the atomic number of one generic shielding at a time." );
+    throw runtime_error( WString::tr("ssd-err-fit-only-one-an").toUTF8() );
 }//void checkForMultipleGenericMaterials()
 
 
@@ -5521,8 +5532,8 @@ void ShieldingSourceDisplay::handleDetectorChanged( std::shared_ptr<DetectorPeak
       any_volume_src |= m_sourceModel->isVolumetricSource( nuc_num );
     
     UndoRedoManager *undoRedo = UndoRedoManager::instance();
-    if( any_volume_src && (geometry() != GeometryType::Spherical)
-       && undoRedo && !undoRedo->isInUndoOrRedo() )
+    if( undoRedo && undoRedo->canAddUndoRedoNow()
+       && (any_volume_src || (geometry() != GeometryType::Spherical)) )
     {
       state_undo_creator = make_unique<ShieldSourceChange>( this, "Change to fixed-geometry DRF" );
     }
@@ -5585,6 +5596,7 @@ void ShieldingSourceDisplay::handleDetectorChanged( std::shared_ptr<DetectorPeak
         }//if( fitting_dims )
       }//if( !select->isGenericMaterial() )
       
+      // This next call removed all intrinsic and trace sources
       select->setFixedGeometry( true );
       
       assert( select->traceSourceNuclides().empty() );
@@ -5596,6 +5608,15 @@ void ShieldingSourceDisplay::handleDetectorChanged( std::shared_ptr<DetectorPeak
         m_sourceModel->setData( index, boost::any(true), Wt::CheckStateRole );
       }
     }//for( WWidget *widget : m_shieldingSelects->children() )
+    
+    
+    const int nnuc = m_sourceModel->numNuclides();
+    for( int nucn = 0; nucn < nnuc; ++nucn )
+    {
+      const SandiaDecay::Nuclide *nuc = m_sourceModel->nuclide(nucn);
+      if( nuc )
+        m_sourceModel->setSourceType( nuc, ShieldingSourceFitCalc::ModelSourceType::Point );
+    }
   }//if( DRF is fixed geometry, but layout is for non-fixed geometry )
   
   if( !fixed_geom /* && m_distanceLabel->isHidden() */ )
@@ -5625,7 +5646,7 @@ void ShieldingSourceDisplay::updateChi2Chart()
 }//void updateChi2Chart()
 
 
-void ShieldingSourceDisplay::updateChi2ChartActual()
+void ShieldingSourceDisplay::updateChi2ChartActual( std::shared_ptr<const ShieldingSourceFitCalc::ModelFitResults> results )
 {
   try
   {
@@ -5637,44 +5658,59 @@ void ShieldingSourceDisplay::updateChi2ChartActual()
   
   try
   {
-    auto fcnAndPars = shieldingFitnessFcn();
-    
-    std::shared_ptr<GammaInteractionCalc::ShieldingSourceChi2Fcn> &chi2Fcn = fcnAndPars.first;
-    ROOT::Minuit2::MnUserParameters &inputPrams = fcnAndPars.second;
-    
-    const unsigned int ndof = inputPrams.VariableParameters();
-    
-    const vector<double> params = inputPrams.Params();
-    const vector<double> errors = inputPrams.Errors();
-    GammaInteractionCalc::ShieldingSourceChi2Fcn::NucMixtureCache mixcache;
-    
-    
-    m_calcLog.clear();
     if( m_logDiv )
     {
       m_logDiv->contents()->clear();
       m_logDiv->hide();
     }//if( m_logDiv )
     
-    const vector< tuple<double,double,double,Wt::WColor,double> > chis
-                               = chi2Fcn->energy_chi_contributions( params, mixcache, &m_calcLog );
+    unsigned int ndof = 1;
+    vector<GammaInteractionCalc::PeakResultPlotInfo> chis;
+    
+    if( results && results->peak_comparisons && results->peak_calc_details
+       && (results->successful == ShieldingSourceFitCalc::ModelFitResults::FitStatus::Final) )
+    {
+      ndof = results->numDOF;
+      chis = *results->peak_comparisons;
+      m_calcLog = results->peak_calc_log;
+      m_peakCalcLogInfo.reset( new vector<GammaInteractionCalc::PeakDetail>( *results->peak_calc_details ) );
+    }else
+    {
+      m_calcLog.clear();
+      m_peakCalcLogInfo.reset();
+     
+      auto fcnAndPars = shieldingFitnessFcn();
+      
+      std::shared_ptr<GammaInteractionCalc::ShieldingSourceChi2Fcn> &chi2Fcn = fcnAndPars.first;
+      ROOT::Minuit2::MnUserParameters &inputPrams = fcnAndPars.second;
+      
+      ndof = inputPrams.VariableParameters();
+      
+      const vector<double> params = inputPrams.Params();
+      const vector<double> errors = inputPrams.Errors();
+      GammaInteractionCalc::ShieldingSourceChi2Fcn::NucMixtureCache mixcache;
+      
+      vector<GammaInteractionCalc::PeakDetail> calcLog;
+      chis = chi2Fcn->energy_chi_contributions( params, errors, mixcache, &m_calcLog, &calcLog );
+      
+      m_peakCalcLogInfo.reset( new vector<GammaInteractionCalc::PeakDetail>( calcLog ) );
+    }
     
     m_showLog->setDisabled( m_calcLog.empty() );
 
-    typedef tuple<double,double,double,Wt::WColor,double> DDPair;
-    vector< DDPair > keeper_points;
+    vector<GammaInteractionCalc::PeakResultPlotInfo> keeper_points;
 
     for( size_t row = 0; row < chis.size(); ++row )
     {
-      const double energy = std::get<0>(chis[row]);
-      const double chi = std::get<1>(chis[row]);
-      const double scale = std::get<2>(chis[row]);
-      const WColor &color = std::get<3>(chis[row]);
-      const double scale_uncert = std::get<4>(chis[row]);
+      const double energy = chis[row].energy;
+      const double chi = chis[row].numSigmaOff;
+      const double scale = chis[row].observedOverExpected;
+      const WColor &color = chis[row].peakColor;
+      const double scale_uncert = chis[row].observedOverExpectedUncert;
 
       if( fabs(chi) < 1.0E5 && !IsInf(chi) && !IsNan(chi)
           && !IsInf(energy) && !IsNan(energy) )
-        keeper_points.push_back( DDPair(energy,chi,scale,color,scale_uncert) );
+        keeper_points.push_back( chis[row] );
     }//for( size_t row = 0; row < chis.size(); ++row )
 
     m_chi2Graphic->setNumFitForParams( ndof );
@@ -5699,20 +5735,18 @@ void ShieldingSourceDisplay::updateChi2ChartActual()
     
     for( int row = 0; row < nrow; ++row  )
     {
-      const DDPair &p = keeper_points[row];
+      const GammaInteractionCalc::PeakResultPlotInfo &p = keeper_points[row];
       
-      const double &energy = std::get<0>(p);
-      const double &chi = std::get<1>(p);
-      const double &scale = std::get<2>(p);
-      WColor color = std::get<3>(p);
-      const double &scale_uncert = std::get<4>(p);
+      const double &energy = p.energy;
+      const double &chi = p.numSigmaOff;
+      const double &scale = p.observedOverExpected;
+      WColor color = p.peakColor;
+      const double &scale_uncert = p.observedOverExpectedUncert;
       
       if( IsNan(energy) || IsInf(chi) )
       {
-        stringstream msg;
-        msg << "An invalid chi2 was calculated for " << energy
-            << " keV, other results may be invalid";
-        passMessage( msg.str(), WarningWidget::WarningMsgHigh );
+        passMessage( WString::tr("ssd-warn-invalid-chi2-for-energy").arg( round(100*energy)/100 ),
+                    WarningWidget::WarningMsgHigh );
         continue;
       }//if( IsNan(p.second) || IsInf(p.second) )
       
@@ -5781,7 +5815,7 @@ void ShieldingSourceDisplay::showCalcLog()
 {
   if( !m_logDiv )
   {
-    m_logDiv = new AuxWindow( "Calculation Log" );
+    m_logDiv = new AuxWindow( WString::tr("ssd-calc-log-window-title") );
     m_logDiv->contents()->addStyleClass( "CalculationLog" );
     m_logDiv->disableCollapse();
     m_logDiv->rejectWhenEscapePressed();
@@ -5826,7 +5860,7 @@ void ShieldingSourceDisplay::showCalcLog()
   logDownload->setStyleClass( "LinkBtn DownloadBtn" );
 #endif
   
-  logDownload->setText( "TXT file" );
+  logDownload->setText( WString::tr("ssd-calc-log-export-txt") );
   logDownload->setFloatSide( Wt::Side::Left );
     
 #if( ANDROID )
@@ -5955,8 +5989,8 @@ void ShieldingSourceDisplay::finishModelUpload( WFileUpload *upload )
     m_modifiedThisForeground = true;
   }catch( std::exception &e )
   {
-    const string msg = "Error opening uploaded Source Shielding Fit Model: " + string(e.what());
-    passMessage( msg, WarningWidget::WarningMsgHigh );
+    passMessage( WString::tr("ssd-err-opening-import-model").arg(e.what()), 
+                WarningWidget::WarningMsgHigh );
     
     try
     {
@@ -5995,7 +6029,7 @@ void ShieldingSourceDisplay::startModelUpload()
   if( m_modelUploadWindow )
     return;
   
-  m_modelUploadWindow = new AuxWindow( "Import Source Shielding XML Model",
+  m_modelUploadWindow = new AuxWindow( WString::tr("ssd-import-model-window-title"),
                       (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::IsModal)
                         | AuxWindowProperties::TabletNotFullScreen) );
   
@@ -6009,7 +6043,7 @@ void ShieldingSourceDisplay::startModelUpload()
   upload->changed().connect( upload, &WFileUpload::upload );
   
   
-  WPushButton *button = m_modelUploadWindow->addCloseButtonToFooter("Cancel");
+  WPushButton *button = m_modelUploadWindow->addCloseButtonToFooter( WString::tr("Cancel") );
   button->clicked().connect( m_modelUploadWindow, &AuxWindow::hide );
   
   m_modelUploadWindow->centerWindow();
@@ -6171,9 +6205,8 @@ bool ShieldingSourceDisplay::loadModelFromDb( Dbo::ptr<ShieldingSourceModel> shi
     deSerialize( new_doc.first_node() );
   }catch( std::exception &e )
   {
-    stringstream msg;
-    msg << "Error opening Source Shielding Fit Model from database: " << e.what();
-    passMessage( msg.str(), WarningWidget::WarningMsgHigh );
+    passMessage( WString::tr("ssd-err-opening-db-model").arg(e.what()), 
+                WarningWidget::WarningMsgHigh );
     
     try
     {
@@ -6216,7 +6249,7 @@ void ShieldingSourceDisplay::finishLoadModelFromDatabase( WSelectionBox *first_s
   Dbo::ptr<ShieldingSourceModel> shieldmodel = querymodel->resultRow( row );
   if( !shieldmodel )
   {
-    passMessage( "Unable to load selected model - sorry :(", WarningWidget::WarningMsgHigh );
+    passMessage( WString::tr("ssd-err-loading-model"), WarningWidget::WarningMsgHigh );
     return;
   }//if( !shieldmodel )
   
@@ -6236,7 +6269,7 @@ void ShieldingSourceDisplay::closeBrowseDatabaseModelsWindow()
 
 void ShieldingSourceDisplay::startBrowseDatabaseModels()
 {
-  if( !m_specViewer || !m_specViewer->m_user )
+  if( !m_specViewer || !m_specViewer->user() )
     throw runtime_error( "startBrowseDatabaseModels(): invalid user" );
   
   if( m_modelDbBrowseWindow )
@@ -6244,7 +6277,7 @@ void ShieldingSourceDisplay::startBrowseDatabaseModels()
   
   WTextArea *summary = NULL;
   WPushButton *accept = NULL, *cancel = NULL, *del = NULL;
-  m_modelDbBrowseWindow = new AuxWindow( "Previously Saved Models",
+  m_modelDbBrowseWindow = new AuxWindow( WString::tr("ssd-prev-saved-window-title"),
               (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::IsModal) | AuxWindowProperties::TabletNotFullScreen) );
   m_modelDbBrowseWindow->finished().connect( this, &ShieldingSourceDisplay::closeBrowseDatabaseModelsWindow );
   
@@ -6256,18 +6289,23 @@ void ShieldingSourceDisplay::startBrowseDatabaseModels()
     summary->setWidth( 316 );
     summary->setHeight( 50 );
     summary->disable();
-    accept = new WPushButton( "Load" );
+    accept = new WPushButton( WString::tr("Load") );
     accept->disable();
   
-    cancel = new WPushButton( "Cancel" );
+    cancel = new WPushButton( WString::tr("Cancel") );
     cancel->clicked().connect( m_modelDbBrowseWindow, &AuxWindow::hide );
   
-    del = new WPushButton( "Delete" );
+    del = new WPushButton( WString::tr("Delete") );
     del->setIcon( "InterSpec_resources/images/minus_min_white.png" );
     del->disable();
 
     Dbo::ptr<UserFileInDb> dbmeas;
-    dbmeas = m_specViewer->measurmentFromDb( SpecUtils::SpectrumType::Foreground, false );
+    try
+    {
+      dbmeas = m_specViewer->measurementFromDb( SpecUtils::SpectrumType::Foreground, false );
+    }catch( std::exception & )
+    {
+    }
     
     size_t nfileprev[2];
     WSelectionBox *selections[2] = { (WSelectionBox *)0, (WSelectionBox *)0 };
@@ -6276,7 +6314,7 @@ void ShieldingSourceDisplay::startBrowseDatabaseModels()
       std::shared_ptr<DataBaseUtils::DbSession> sql = m_specViewer->sql();
       DataBaseUtils::DbTransaction transaction( *sql );
       nfileprev[0] = dbmeas ? dbmeas->modelsUsedWith.size() : 0;
-      nfileprev[1] = m_specViewer->m_user->shieldSrcModels().size();
+      nfileprev[1] = m_specViewer->user()->shieldSrcModels().size();
       transaction.commit();
     }//end codeblock for database interaction
     
@@ -6292,7 +6330,7 @@ void ShieldingSourceDisplay::startBrowseDatabaseModels()
       if( i == 0 )
         model->setQuery( dbmeas->modelsUsedWith.find() );
       else
-        model->setQuery( m_specViewer->m_user->shieldSrcModels().find() );
+        model->setQuery( m_specViewer->user()->shieldSrcModels().find() );
       model->addColumn( "Name" );
       selection->setModel( model );
       selection->setModelColumn( 0 );
@@ -6301,9 +6339,9 @@ void ShieldingSourceDisplay::startBrowseDatabaseModels()
       selection->setMaximumSize( 320, 100 );
       selection->setSelectionMode( Wt::SingleSelection );
       
-      const char *msg = ((i==0) ? "Models Previously used with this foreground:"
-                                : "Models you've previously saved:");
-      WText *title = new WText( msg, contents );
+      const char *msg_key = ((i==0) ? "ssd-models-prev-for-fore"
+                                : "ssd-models-prev-saved");
+      WText *title = new WText( WString::tr(msg_key), contents );
       title->setAttributeValue( "style", "font-weight:bold;" );
       title->setMargin( (i?8:12), Wt::Top );
       title->setInline( false );
@@ -6343,10 +6381,10 @@ void ShieldingSourceDisplay::startBrowseDatabaseModels()
     
     if( nfileprev[0] || nfileprev[1] )
     {
-      WText *title = new WText( "Model Description:" );
+      WText *title = new WText( WString::tr("ssd-model-desc") );
       title->setAttributeValue( "style", "font-weight:bold;margin-top:12px;" );
 
-      WCheckBox *cb = new WCheckBox( "Allow delete" );
+      WCheckBox *cb = new WCheckBox( WString::tr("ssd-cb-allow-del") );
       
       m_modelDbBrowseWindow->footer()->addWidget( cb );
       
@@ -6373,7 +6411,7 @@ void ShieldingSourceDisplay::startBrowseDatabaseModels()
       contents->addWidget( summary );
     }else
     {
-      WText *info = new WText( "There are no models in the database for you" );
+      WText *info = new WText( WString::tr("ssd-no-model-in-db") );
       info->setInline( false );
       contents->addWidget( info );
       contents->addWidget( cancel );
@@ -6428,7 +6466,7 @@ void ShieldingSourceDisplay::startBrowseDatabaseModels()
     AuxWindow::deleteAuxWindow( m_modelDbBrowseWindow );
     m_modelDbBrowseWindow = nullptr;
     
-    passMessage( "Error creating database model browser", WarningWidget::WarningMsgHigh );
+    passMessage( WString::tr("ssd-err-creating-db-browser"), WarningWidget::WarningMsgHigh );
     cerr << "\n\nShieldingSourceDisplay::startBrowseDatabaseModels() caught: "
          << e.what() << endl << endl;
   }//try / catch
@@ -6516,7 +6554,7 @@ void ShieldingSourceDisplay::startSaveModelToDatabase( bool prompt )
   if( m_modelDbSaveWindow )
     return;
   
-  m_modelDbSaveWindow = new AuxWindow( "Save Activity/Shielding model to database",
+  m_modelDbSaveWindow = new AuxWindow( WString::tr("ssd-save-model-to-db-window-title"),
                   (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::IsModal)
                    | AuxWindowProperties::TabletNotFullScreen
                    | AuxWindowProperties::DisableCollapse) );
@@ -6527,7 +6565,7 @@ void ShieldingSourceDisplay::startSaveModelToDatabase( bool prompt )
   m_modelDbSaveWindow->finished().connect( this, &ShieldingSourceDisplay::closeSaveModelToDatabaseWindow );
   m_modelDbSaveWindow->show();
  
-  WLabel *label = new WLabel( "Enter model name:", contents );
+  WLabel *label = new WLabel( WString::tr("ssd-save-to-db-name"), contents );
   label->setInline( false );
 
   WLineEdit *nameEdit = new WLineEdit( contents );
@@ -6539,7 +6577,7 @@ void ShieldingSourceDisplay::startSaveModelToDatabase( bool prompt )
   if( nameEdit->valueText().empty() )
     nameEdit->setValueText( defaultModelName() );
   
-  label = new WLabel( "Enter model description (optional):", contents );
+  label = new WLabel( WString::tr("ssd-save-to-db-desc"), contents );
   label->setInline( false );
   
   WLineEdit *descEdit = new WLineEdit( contents );
@@ -6558,7 +6596,7 @@ void ShieldingSourceDisplay::startSaveModelToDatabase( bool prompt )
 
  
 
-  WPushButton *button = new WPushButton( "Save", m_modelDbSaveWindow->footer() );
+  WPushButton *button = new WPushButton( WString::tr("Save"), m_modelDbSaveWindow->footer() );
   button->setIcon( "InterSpec_resources/images/disk2.png" );
   
   button->clicked().connect(
@@ -6596,7 +6634,7 @@ void ShieldingSourceDisplay::finishGuiSaveModelToDatabase( WLineEdit *name_edit,
   
   if( name_edit && name_edit->valueText().empty() )
   {
-    WText *txt = new WText( "You must enter a name", m_modelDbSaveWindow->contents() );
+    WText *txt = new WText( WString::tr("ssd-must-enter-name"), m_modelDbSaveWindow->contents() );
     txt->setInline( false );
     txt->setAttributeValue( "style", "color:red;" );
     return;
@@ -6653,7 +6691,7 @@ bool ShieldingSourceDisplay::finishSaveModelToDatabase( const Wt::WString &name,
     if( !m_modelInDb )
     {
       model = new ShieldingSourceModel();
-      model->user = m_specViewer->m_user;
+      model->user = m_specViewer->user();
       model->serializeTime = WDateTime::currentDateTime();
       m_modelInDb.reset( new ShieldingSourceModel() );
       m_modelInDb = sql->session()->add( model );
@@ -6680,7 +6718,12 @@ bool ShieldingSourceDisplay::finishSaveModelToDatabase( const Wt::WString &name,
     rapidxml::print(std::back_inserter(model->xmlData), doc, 0);
 
     Dbo::ptr<UserFileInDb> dbmeas;
-    dbmeas = m_specViewer->measurmentFromDb( SpecUtils::SpectrumType::Foreground, true );
+    try
+    {
+      dbmeas = m_specViewer->measurementFromDb( SpecUtils::SpectrumType::Foreground, true );
+    }catch( std::exception & )
+    {
+    }
     
     if( dbmeas )
       model->filesUsedWith.insert( dbmeas );
@@ -6689,11 +6732,8 @@ bool ShieldingSourceDisplay::finishSaveModelToDatabase( const Wt::WString &name,
     m_saveAsNewModelInDb->enable();
   }catch( std::exception & )
   {
-//    if( m_modelInDb.id() < 0 )
-//    {
-      m_modelInDb.reset();
-      m_saveAsNewModelInDb->disable();
-//    }//if( m_modelInDb.id() < 0 )
+    m_modelInDb.reset();
+    m_saveAsNewModelInDb->disable();
     transaction.rollback();
     return false;
   }//try / catch
@@ -6716,7 +6756,7 @@ void ShieldingSourceDisplay::saveCloneModelToDatabase()
     ShieldingSourceModel *model = new ShieldingSourceModel();
     model->shallowEquals( *m_modelInDb );
     
-    model->user = m_specViewer->m_user;
+    model->user = m_specViewer->user();
     model->serializeTime = WDateTime::currentDateTime();
     model->name = model->name + " Clone";
     
@@ -6727,7 +6767,13 @@ void ShieldingSourceDisplay::saveCloneModelToDatabase()
     m_modelInDb = sql->session()->add( model );
     
     Dbo::ptr<UserFileInDb> dbmeas;
-    dbmeas = m_specViewer->measurmentFromDb( SpecUtils::SpectrumType::Foreground, false );
+    try
+    {
+      dbmeas = m_specViewer->measurementFromDb( SpecUtils::SpectrumType::Foreground, false );
+    }catch( std::exception & )
+    {
+    }
+    
     if( dbmeas )
       m_modelInDb.modify()->filesUsedWith.insert( dbmeas );
     transaction.commit();
@@ -6738,7 +6784,7 @@ void ShieldingSourceDisplay::saveCloneModelToDatabase()
     cerr << "\n\nException caught in ShieldingSourceDisplay::saveCloneModelToDatabase(): "
          << e.what() << endl;
     transaction.rollback();
-    passMessage( "Error saving to the database", WarningWidget::WarningMsgHigh );
+    passMessage( WString::tr("ssd-err-saving-to-db"), WarningWidget::WarningMsgHigh );
     return;
   }//try / catch
   
@@ -6779,12 +6825,12 @@ void ShieldingSourceDisplay::testSerialization()
 {
   rapidxml::xml_document<char> doc;
   
-  cerr << "Staring serializtion" << endl;
+  cerr << "Staring serialization" << endl;
   serialize( &doc );
   std::string s;
   rapidxml::print(std::back_inserter(s), doc, 0);
   cerr << "Serialized:\n" << doc << endl;
-  cerr << "\n\nStarting de-serializtion" << endl;
+  cerr << "\n\nStarting de-serialization" << endl;
   deSerialize( &doc );
   cerr << "Done deserializing\n\n" << endl;
 }//testSerialization()
@@ -6903,11 +6949,15 @@ void ShieldingSourceDisplay::deSerializeShieldings( const rapidxml::xml_node<cha
   
   const shared_ptr<const DetectorPeakResponse> det = m_detectorDisplay->detector();
   
+  // If our Detector Peak Efficiency is for fixed-geometry, we wont allow intrinsic
+  //  or trace sources
+  const bool is_fixed_geom = det && det->isFixedGeometry();
+  
   for( shield_node = shiledings->first_node( "Shielding", 9 );
       shield_node; shield_node = shield_node->next_sibling( "Shielding", 9 ) )
   {
     ShieldingSelect *select = addShielding( nullptr, false );
-    select->deSerialize( shield_node );
+    select->deSerialize( shield_node, is_fixed_geom );
     
 #if( PERFORM_DEVELOPER_CHECKS )
     for( const SandiaDecay::Nuclide *nuc : select->traceSourceNuclides() )
@@ -7187,8 +7237,8 @@ void ShieldingSourceDisplay::deSerialize( const rapidxml::xml_node<char> *base_n
     const vector<double> params = inputPrams.Params();
     const vector<double> errors = inputPrams.Errors();
     GammaInteractionCalc::ShieldingSourceChi2Fcn::NucMixtureCache mixcache;
-    const vector< tuple<double,double,double,WColor,double> > chis
-                                   = chi2Fcn->energy_chi_contributions( params, mixcache, nullptr );
+    const vector<GammaInteractionCalc::PeakResultPlotInfo> chis
+                  = chi2Fcn->energy_chi_contributions( params, errors, mixcache, nullptr, nullptr );
     
     if( chis.size() )
     {
@@ -7204,16 +7254,16 @@ void ShieldingSourceDisplay::deSerialize( const rapidxml::xml_node<char> *base_n
       rapidxml::xml_node<> *node = nullptr;
       rapidxml::xml_node<> *eval_node = doc->allocate_node( rapidxml::node_element, "EvaluatedEnergies" );
       
-      for( const auto &p : chis )
+      for( const GammaInteractionCalc::PeakResultPlotInfo &p : chis )
       {
         rapidxml::xml_node<> *point_node = doc->allocate_node( rapidxml::node_element, "EvalPoint" );
         eval_node->append_node( point_node );
         
-        const double energy = get<0>(p);
-        const double chi = get<1>(p);
-        const double scale = get<2>(p);
-        const WColor &color = get<3>(p);
-        const double scale_uncert = get<4>(p);
+        const double energy = p.energy;
+        const double chi = p.numSigmaOff;
+        const double scale = p.observedOverExpected;
+        const WColor &color = p.peakColor;
+        const double scale_uncert = p.observedOverExpectedUncert;
         
         if( !IsInf(chi) && !IsNan(chi) )
           chi2 += chi*chi;
@@ -7547,6 +7597,7 @@ void ShieldingSourceDisplay::materialModifiedCallback( ShieldingSelect *select )
   cerr << "In ShieldingSourceDisplay::materialModifiedCallback(...)" << endl;
   //I meant to do some more work here...
 
+  
 }//void materialModifiedCallback( ShieldingSelect *select )
 
 
@@ -7808,7 +7859,10 @@ void ShieldingSourceDisplay::handleShieldingUndoRedoPoint( const ShieldingSelect
     return;
   }
   
-  auto undo_redo = [prev_state, current_state, index]( const bool is_undo ){
+  const shared_ptr<const DetectorPeakResponse> det = m_detectorDisplay->detector();
+  const bool is_fixed_geom = det && det->isFixedGeometry();
+  
+  auto undo_redo = [prev_state, current_state, index, is_fixed_geom]( const bool is_undo ){
     
     // TODO: We arent totally getting things right for trace and self-attenuating sources.
     // TODO: I think we are getting multiple undo/redo steps for a single user action for some things related to trace and self-attenuating sources.
@@ -7843,10 +7897,13 @@ void ShieldingSourceDisplay::handleShieldingUndoRedoPoint( const ShieldingSelect
       rapidxml::xml_document<char> doc;
       const int flags = rapidxml::parse_normalize_whitespace | rapidxml::parse_trim_whitespace;
       doc.parse<flags>( &(xml_state_cpy[0]) );
-      select->deSerialize( doc.first_node() );
+      select->deSerialize( doc.first_node(), is_fixed_geom );
       
       const vector<const SandiaDecay::Nuclide *> post_trace_nucs = select->traceSourceNuclides();
       const vector<const SandiaDecay::Nuclide *> post_self_att_nucs = select->selfAttenNuclides();
+      
+      assert( !is_fixed_geom || post_trace_nucs.empty() );
+      assert( !is_fixed_geom || post_self_att_nucs.empty() );
       
       for( auto *pre_nuc : pre_trace_nucs )
       {
@@ -8024,7 +8081,8 @@ void ShieldingSourceDisplay::updateGuiWithModelFitProgress( std::shared_ptr<Shie
   
   char buffer[128];
   snprintf( buffer, sizeof(buffer),
-            "Best &chi;&sup2;: %.1f, %i fcn calls in %.1fs",
+            "%s &chi;&sup2;: %.1f, %i fcn calls in %.1fs",
+            WString::tr("ssd-Best").toUTF8().c_str(),
             status.chi2, static_cast<int>(status.numFcnCalls), status.elapsedTime );
   
   m_fitProgressTxt->setText( buffer );
@@ -8054,6 +8112,13 @@ void ShieldingSourceDisplay::updateGuiWithModelFitResults( std::shared_ptr<Shiel
   ShieldSourceChange state_undo_creator( this, "Fit activity/shielding" );
   
   assert( results );
+  
+  setWidgetStateForFitBeingDone();
+  
+  std::lock( results->m_mutex, m_currentFitFcnMutex );
+  std::lock_guard<std::mutex> result_lock( results->m_mutex, std::adopt_lock );
+  std::lock_guard<std::mutex> lock( m_currentFitFcnMutex, std::adopt_lock );
+  
   const ShieldingSourceFitCalc::ModelFitResults::FitStatus status = results->successful;
   const vector<ShieldingSourceFitCalc::ShieldingInfo> &initial_shieldings = results->initial_shieldings;
   const vector<ShieldingSourceFitCalc::FitShieldingInfo> &final_shieldings = results->final_shieldings;
@@ -8064,9 +8129,6 @@ void ShieldingSourceDisplay::updateGuiWithModelFitResults( std::shared_ptr<Shiel
   assert( (status != ShieldingSourceFitCalc::ModelFitResults::FitStatus::Final)
          || (initial_shieldings.size() == final_shieldings.size()) );
   
-  setWidgetStateForFitBeingDone();
-  
-  std::lock_guard<std::mutex> lock( m_currentFitFcnMutex );
   if( !m_currentFitFcn )
   {
     passMessage( "Programming Logic Error - received model fit results at an invalid time.", WarningWidget::WarningMsgHigh );
@@ -8125,7 +8187,7 @@ void ShieldingSourceDisplay::updateGuiWithModelFitResults( std::shared_ptr<Shiel
     case ShieldingSourceFitCalc::ModelFitResults::FitStatus::UserCancelled:
     case ShieldingSourceFitCalc::ModelFitResults::FitStatus::InvalidOther:
     {
-      string msg = "<b>Fit to model failed</b>.";
+      string msg = "<b>" + WString::tr("ssd-fit-failed").toUTF8() + "</b>.";
       for( auto &s : errormsgs )
         msg += "<div>&nbsp;&nbsp;" + s + "</div>";
       
@@ -8147,7 +8209,7 @@ void ShieldingSourceDisplay::updateGuiWithModelFitResults( std::shared_ptr<Shiel
   
   
   for( auto &s : errormsgs )
-    passMessage( s + "<br />Using fit solution anyway.", WarningWidget::WarningMsgHigh );
+    passMessage( s + "<br />" + WString::tr("ssd-using-fit-anyway").toUTF8(), WarningWidget::WarningMsgHigh );
   
   try
   {
@@ -8461,9 +8523,10 @@ void ShieldingSourceDisplay::updateGuiWithModelFitResults( std::shared_ptr<Shiel
     }//for( int ison = 0; ison < niso; ++ison )
     */
     
-    updateChi2ChartActual();
+    
+    updateChi2ChartActual( results );
     m_chi2ChartNeedsUpdating = false;
-    updateCalcLogWithFitResults( m_currentFitFcn, results );
+    updateCalcLogWithFitResults( m_currentFitFcn, results, m_calcLog );
   }catch( std::exception &e )
   {
     passMessage( "Programming issue - caught exception: " + string(e.what())
@@ -8484,7 +8547,7 @@ std::shared_ptr<ShieldingSourceFitCalc::ModelFitResults> ShieldingSourceDisplay:
     checkAndWarnZeroMassFraction();
   }catch( std::exception &e )
   {
-    passMessage( e.what() + string("<br />Fit not performed."), WarningWidget::WarningMsgHigh );
+    passMessage( WString::tr("ssd-err-fit-not-performed").arg(e.what()), WarningWidget::WarningMsgHigh );
     return nullptr;
   }
     
@@ -8493,7 +8556,7 @@ std::shared_ptr<ShieldingSourceFitCalc::ModelFitResults> ShieldingSourceDisplay:
     checkForMultipleGenericMaterials();
   }catch( exception &e )
   {
-    passMessage( e.what() + string("<br />Fit not performed."), WarningWidget::WarningMsgHigh );
+    passMessage( WString::tr("ssd-err-fit-not-performed").arg(e.what()), WarningWidget::WarningMsgHigh );
     return nullptr;
   }//try / catch
   
@@ -8504,7 +8567,7 @@ std::shared_ptr<ShieldingSourceFitCalc::ModelFitResults> ShieldingSourceDisplay:
     checkDistanceAndThicknessConsistent();
   }catch( exception &e )
   {
-    passMessage( e.what() + string("<br />Before the fit."), WarningWidget::WarningMsgHigh );
+    passMessage( WString::tr("ssd-err-before-fit").arg(e.what()), WarningWidget::WarningMsgHigh );
   }//try / catch
   
   shared_ptr<GammaInteractionCalc::ShieldingSourceChi2Fcn> chi2Fcn;
@@ -8531,7 +8594,8 @@ std::shared_ptr<ShieldingSourceFitCalc::ModelFitResults> ShieldingSourceDisplay:
     *inputPrams = fcnAndPars.second;
   }catch( std::exception &e )
   {
-    passMessage( e.what() + string("<br />Fit not performed (couldnt make Chi2Fcn)."),
+    
+    passMessage( WString::tr("ssd-err-couldnt-make-chi2-fcn").arg(e.what()),
                 WarningWidget::WarningMsgHigh );
     return nullptr;
   }//try / catch
@@ -8551,7 +8615,7 @@ std::shared_ptr<ShieldingSourceFitCalc::ModelFitResults> ShieldingSourceDisplay:
   auto progress = std::make_shared<ShieldingSourceFitCalc::ModelFitProgress>();
   boost::function<void()> progress_updater = wApp->bind( boost::bind( &ShieldingSourceDisplay::updateGuiWithModelFitProgress, this, progress ) );
   
-  //Wrap the GUI update with WAPplication::bind in case this
+  //Wrap the GUI update with WApplication::bind in case this
   //  ShieldingSourceDisplay widget gets deleted before the computation is over
   boost::function<void()> gui_updater = wApp->bind( boost::bind( &ShieldingSourceDisplay::updateGuiWithModelFitResults, this, results ) );
   
@@ -8571,16 +8635,29 @@ std::shared_ptr<ShieldingSourceFitCalc::ModelFitResults> ShieldingSourceDisplay:
 
 
 
+
+
 void ShieldingSourceDisplay::updateCalcLogWithFitResults(
                                   shared_ptr<GammaInteractionCalc::ShieldingSourceChi2Fcn> chi2Fcn,
-                                    std::shared_ptr<ShieldingSourceFitCalc::ModelFitResults> results )
+                                    std::shared_ptr<ShieldingSourceFitCalc::ModelFitResults> results,
+                                                         vector<string> &calcLog )
 {
+  // This function is not internationalized - the plan is to eventually totally overhaul this
+  //  how results are logged, so it isnt worth internationalizing this function now (and also,
+  //  probably only the primary developer uses this calc log).
+  assert( chi2Fcn );
   assert( results );
   const std::vector<double> &params = results->paramValues;
   const std::vector<double> &errors = results->paramErrors;
   
-  if( m_calcLog.size() && m_calcLog.back() == ns_no_uncert_info_txt )
-    m_calcLog.erase( m_calcLog.end()-1, m_calcLog.end() );
+  if( calcLog.size() && calcLog.back() == ns_no_uncert_info_txt )
+    calcLog.erase( calcLog.end()-1, calcLog.end() );
+  
+  const shared_ptr<const DetectorPeakResponse> &det = chi2Fcn->detector();
+  
+  const DetectorPeakResponse::EffGeometryType detType = (det && det->isValid())
+                                                  ? det->geometryType()
+                                                  : DetectorPeakResponse::EffGeometryType::FarField;
   
   try
   {
@@ -8605,7 +8682,7 @@ void ShieldingSourceDisplay::updateCalcLogWithFitResults(
         msg << " " << n->symbol << "(massfrac=" << frac << "+-" << df << "),";
       }//for( size_t shielding_index = 0; shielding_index < chi2Fcn->numMaterials(); ++shielding_index )
         
-      m_calcLog.push_back( msg.str() );
+      calcLog.push_back( msg.str() );
     }//for( const Material *mat : chi2Fcn->materialsFittingMassFracsFor() )
     
   {//begin add chi2 line
@@ -8613,7 +8690,7 @@ void ShieldingSourceDisplay::updateCalcLogWithFitResults(
     msg << "It took " << results->num_fcn_calls
         << " solution trials to reach chi2=" << results->chi2
         << " with an estimated distance to minumum of " << results->edm;
-    m_calcLog.push_back( msg.str() );
+    calcLog.push_back( msg.str() );
   }//end add chi2 line
     
   //Need to list fit parameters and uncertainties here
@@ -8623,28 +8700,28 @@ void ShieldingSourceDisplay::updateCalcLogWithFitResults(
     const SandiaDecay::Nuclide *nuc = chi2Fcn->nuclide( nucn );
     if( nuc )
     {
-      const bool useCi = !InterSpecUser::preferenceValue<bool>( "DisplayBecquerel", m_specViewer );
+      const bool useCi = !UserPreferences::preferenceValue<bool>( "DisplayBecquerel", InterSpec::instance() );
       const double act = chi2Fcn->activity( nuc, params );
       const string actStr = PhysicalUnits::printToBestActivityUnits( act, 2, useCi );
       
       const double actUncert = chi2Fcn->activityUncertainty( nuc, params, errors );
       const string actUncertStr = PhysicalUnits::printToBestActivityUnits( actUncert, 2, useCi );
       
-      const double mass = act / nuc->activityPerGram();
-      const std::string massStr = PhysicalUnits::printToBestMassUnits( mass, 2, 1.0 );
+      const double mass = (act / nuc->activityPerGram()) * PhysicalUnits::gram;
+      const std::string massStr = PhysicalUnits::printToBestMassUnits( mass, 2, PhysicalUnits::gram );
       
       const double age = chi2Fcn->age( nuc, params );
       const double ageUncert = chi2Fcn->age( nuc, errors );
-      const string ageStr = PhysicalUnits::printToBestTimeUnits( age, 2 );
-      const string ageUncertStr = PhysicalUnits::printToBestTimeUnits( ageUncert, 2 );
+      const string ageStr = PhysicalUnitsLocalized::printToBestTimeUnits( age, 2 );
+      const string ageUncertStr = PhysicalUnitsLocalized::printToBestTimeUnits( ageUncert, 2 );
   
-      string act_postfix = det_eff_geom_type_postfix(m_sourceModel->detType()), trace_total = "";
+      string act_postfix = DetectorPeakResponse::det_eff_geom_type_postfix(detType), trace_total = "";
       if( chi2Fcn->isTraceSource(nuc) )
       {
         const double total_act = chi2Fcn->totalActivity(nuc,params);
         trace_total = "Total activity "
                       + PhysicalUnits::printToBestActivityUnits( total_act, 2, useCi )
-                      + det_eff_geom_type_postfix(m_sourceModel->detType()) + ", ";
+                      + DetectorPeakResponse::det_eff_geom_type_postfix(detType) + ", ";
         
         switch( chi2Fcn->traceSourceActivityType(nuc) )
         {
@@ -8689,11 +8766,11 @@ void ShieldingSourceDisplay::updateCalcLogWithFitResults(
   
       msg << ".";
       
-      m_calcLog.push_back( msg.str() );
+      calcLog.push_back( msg.str() );
     }//if( nuc )
   }//for( size_t nucn = 0; nucn < nnuc; ++nucn )
   
-  m_calcLog.push_back( "Geometry: " + string(GammaInteractionCalc::to_str(chi2Fcn->geometry())) );
+    calcLog.push_back( "Geometry: " + string(GammaInteractionCalc::to_str(chi2Fcn->geometry())) );
     
   const int nmat = static_cast<int>( chi2Fcn->numMaterials() );
   for( int matn = 0; matn < nmat; ++matn )
@@ -8720,7 +8797,7 @@ void ShieldingSourceDisplay::updateCalcLogWithFitResults(
       
     }else //if( !mat )
     {
-      assert( geometry() == chi2Fcn->geometry() );
+      //assert( geometry() == chi2Fcn->geometry() );
       
       const double density = mat->density * PhysicalUnits::cm3 / PhysicalUnits::gram;
       msg << mat->name << " has density " << std::setprecision(3) << density << "g/cm3 ";
@@ -8812,11 +8889,11 @@ void ShieldingSourceDisplay::updateCalcLogWithFitResults(
       }//switch( geometry() )
     }//if( !mat ) / else
     
-    m_calcLog.push_back( msg.str() );
+    calcLog.push_back( msg.str() );
   }//for( size_t matn = 0; matn < nmat; ++matn )
   }catch( std::exception & )
   {
-    m_calcLog.push_back( "There was an error and log may not be complete." );
+    calcLog.push_back( "There was an error and log may not be complete." );
   }
 }//updateCalcLogWithFitResults(...)
 

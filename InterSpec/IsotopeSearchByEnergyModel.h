@@ -91,7 +91,7 @@ public:
     const SandiaDecay::EnergyIntensityPair *m_xray;
     
     const ReactionGamma::Reaction *m_reaction;
-    ReactionGamma::EnergyAbundance m_reactionEnergy;
+    ReactionGamma::Reaction::EnergyYield m_reactionEnergy;
     
     Wt::WString m_displayData[NumColumns];
   };//struct IsotopeMatch

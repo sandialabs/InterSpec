@@ -1,6 +1,11 @@
-cmake_minimum_required(VERSION 3.15 FATAL_ERROR)
+cmake_minimum_required(VERSION 3.25 FATAL_ERROR)
 
-project( InterSpecApp VERSION 1.0.12 )
+project( InterSpecApp VERSION 1.0.13 )
+
+if(POLICY CMP0114)
+  # Add @rpath to the install_name of shared libraries and frameworks that are part of a macOS application bundle.
+  cmake_policy(SET CMP0114 NEW)
+endif()
 
 set(BUILD_AS_OSX_APP ON CACHE INTERNAL "Build a OSX native app" )
 set(USE_OSX_NATIVE_MENU ON CACHE INTERNAL "Use macOS native menu-system" )
@@ -8,6 +13,8 @@ set(USE_SPECRUM_FILE_QUERY_WIDGET ON CACHE INTERNAL "Enable spectrum file query 
 set(TRY_TO_STATIC_LINK ON CACHE INTERNAL "Try to statically link" )
 set(CMAKE_OSX_DEPLOYMENT_TARGET "10.13" CACHE INTERNAL "Set OSX deployment target to 10.13" )
 set(USE_REL_ACT_TOOL ON CACHE INTERNAL "Enable Rel. Act. Tools" )
+set(USE_LEAFLET_MAP ON CACHE INTERNAL "Use leaflet map tool" )
+option( USE_BATCH_TOOLS "Enables (command line for now) batch processing." ON )
 
 add_subdirectory( ${CMAKE_CURRENT_SOURCE_DIR}/../../ InterSpecLib )
 
@@ -21,38 +28,20 @@ SET(MACOSX_BUNDLE_BUNDLE_VERSION "0" )
 SET(MACOSX_BUNDLE_COPYRIGHT "Sandia National Labs, Will Johnson" )
 SET(MACOSX_BUNDLE_GUI_IDENTIFIER "gov.sandia.macOS.InterSpec" )
 #set MACOS_BUNDLE_VERSION_NUMBER for Info.plist.template to populate corresponding value in Xcode
-set(MACOS_BUNDLE_VERSION_NUMBER 41)
+set(MACOS_BUNDLE_VERSION_NUMBER 46)
 
 
 SET( ${PRODUCT_NAME} "InterSpec" )
 SET( MACOSX_BUNDLE_BUNDLE_NAME "InterSpec" )
 
 FIND_LIBRARY(WEBKIT_LIBRARY WebKit)
-FIND_LIBRARY(COCOA_LIBRARY Cocoa)
-FIND_LIBRARY(COREDATA_LIBRARY CoreData)
-FIND_LIBRARY(APPKIT_LIBRARY AppKit)
-FIND_LIBRARY(FOUNDATION_LIBRARY Foundation)
-
-MARK_AS_ADVANCED(WEBKIT_LIBRARY COCOA_LIBRARY COREDATA_LIBRARY APPKIT_LIBRARY FOUNDATION_LIBRARY)
-
-
-list(APPEND sources macOsUtils.mm NativeMenu.mm )
-list(APPEND headers macOsUtils.h NativeMenu.h )
-
-add_library(InterSpecAppLib STATIC ${sources} ${headers})
-
-target_link_libraries( InterSpecAppLib
-    PUBLIC
-        InterSpecLib
-        ${WEBKIT_LIBRARY}
-        ${COCOA_LIBRARY}
-        ${APPKIT_LIBRARY}
-        ${COREDATA_LIBRARY}
-        ${FOUNDATION_LIBRARY}
-)
+MARK_AS_ADVANCED( WEBKIT_LIBRARY )
 
 set(app_sources main.m AppDelegate.mm AppDelegate.h InterSpec.icns en.lproj/MainMenu.xib )
 
+
+set( CMAKE_INSTALL_RPATH "@executable_path/../Frameworks" )
+set( CMAKE_BUILD_RPATH "@executable_path/../Frameworks" )
 
 # Xcode doesnt like having two bundles for some reason, so we will add the
 # QuickLook project as an external project and add it to the final application
@@ -125,13 +114,40 @@ SET_TARGET_PROPERTIES( InterSpecApp PROPERTIES MACOSX_BUNDLE TRUE )
 #set_target_properties( InterSpecApp PROPERTIES SUFFIX "")
 set_target_properties(InterSpecApp PROPERTIES OUTPUT_NAME "InterSpec")
 
-target_link_libraries(InterSpecApp PUBLIC InterSpecAppLib)
+target_link_libraries(InterSpecApp PUBLIC InterSpecLib ${WEBKIT_LIBRARY} )
 
 SET_SOURCE_FILES_PROPERTIES( ${CMAKE_CURRENT_SOURCE_DIR}/InterSpec.icns 
     PROPERTIES MACOSX_PACKAGE_LOCATION Resources
 )
 
 add_dependencies(InterSpecApp SpecFilePreview)
+
+
+if( USE_BATCH_TOOLS )
+  add_subdirectory( ${CMAKE_CURRENT_SOURCE_DIR}/../batch InterSpec_batch )
+  add_dependencies( InterSpecApp InterSpec_batch )
+  
+  # It seems like $<TARGET_BUNDLE_DIR:InterSpecLib> is a symlink to the actual build location, so we
+  #  need to copy the symlinks path, but also, preserve symlinks inside the bundle.  So we'll use
+  #  Unix cp to do this, after getting where the symlink points to
+  add_custom_command(TARGET InterSpecApp POST_BUILD
+    COMMAND mkdir -p $<TARGET_BUNDLE_DIR:InterSpecApp>/Contents/Frameworks && cp -a `readlink -f $<TARGET_BUNDLE_DIR:InterSpecLib>` $<TARGET_BUNDLE_DIR:InterSpecApp>/Contents/Frameworks/InterSpec.framework
+  )
+
+  # We want to look in InterSpec.app/Contents/Frameworks for InterSpecLib to link to
+  set_target_properties( InterSpecApp PROPERTIES INSTALL_RPATH "@executable_path/../Frameworks" )
+  set_target_properties( InterSpecApp PROPERTIES BUILD_WITH_INSTALL_RPATH 1 INSTALL_NAME_DIR "@rpath" )
+
+  set_target_properties( InterSpec_batch PROPERTIES INSTALL_RPATH "@executable_path/../Frameworks" )
+  set_target_properties( InterSpec_batch PROPERTIES BUILD_WITH_INSTALL_RPATH 1 INSTALL_NAME_DIR "@rpath" )
+
+  # Copy the batch executable into the bundle - not really sure where is best, so we'll put it in Resources right now
+  add_custom_command(TARGET InterSpecApp POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy
+    $<TARGET_FILE:InterSpec_batch>
+    $<TARGET_FILE_DIR:InterSpecApp>/
+  )
+endif( USE_BATCH_TOOLS )
 
 #Set resources MACOSX_PACKAGE_LOCATION property so it is where we want in the app bundle
 #ToDo: combine 5 loops below into a single loop...
@@ -240,14 +256,17 @@ STRING(REGEX MATCH "\\(.+\\)" mac_team_id ${dev_team_ids} )
 STRING(REGEX REPLACE "\\(|\\)" "" mac_team_id "${mac_team_id}")
 message("Using Mac Developer Team ID='${mac_team_id}'")
 
-set_target_properties( InterSpecApp
-    PROPERTIES XCODE_ATTRIBUTE_CODE_SIGN_IDENTITY "Mac Developer"
-)
-    
-set_target_properties( InterSpecApp
-    PROPERTIES XCODE_ATTRIBUTE_DEVELOPMENT_TEAM "${mac_team_id}"
-)
+set_target_properties( InterSpecApp PROPERTIES XCODE_ATTRIBUTE_CODE_SIGN_IDENTITY "Mac Developer" )
+set_target_properties( InterSpecApp PROPERTIES XCODE_ATTRIBUTE_DEVELOPMENT_TEAM "${mac_team_id}" )
+set_target_properties( InterSpecApp PROPERTIES XCODE_ATTRIBUTE_ENABLE_HARDENED_RUNTIME "YES" )
 
-set_target_properties( InterSpecApp
-    PROPERTIES XCODE_ATTRIBUTE_ENABLE_HARDENED_RUNTIME "YES"
-)
+set_target_properties( InterSpecLib PROPERTIES XCODE_ATTRIBUTE_CODE_SIGN_IDENTITY "Mac Developer" )
+set_target_properties( InterSpecLib PROPERTIES XCODE_ATTRIBUTE_DEVELOPMENT_TEAM "${mac_team_id}" )
+set_target_properties( InterSpecLib PROPERTIES XCODE_ATTRIBUTE_ENABLE_HARDENED_RUNTIME "YES" )
+
+if( USE_BATCH_TOOLS )
+  set_target_properties( InterSpec_batch PROPERTIES XCODE_ATTRIBUTE_CODE_SIGN_IDENTITY "Mac Developer" )
+  set_target_properties( InterSpec_batch PROPERTIES XCODE_ATTRIBUTE_DEVELOPMENT_TEAM "${mac_team_id}" )
+  set_target_properties( InterSpec_batch PROPERTIES XCODE_ATTRIBUTE_ENABLE_HARDENED_RUNTIME "YES" )
+endif( USE_BATCH_TOOLS )
+

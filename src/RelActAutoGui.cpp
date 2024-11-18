@@ -76,17 +76,24 @@
 #include "InterSpec/RelActCalcAuto.h"
 #include "InterSpec/SwitchCheckbox.h"
 #include "InterSpec/UndoRedoManager.h"
+#include "InterSpec/UserPreferences.h"
 #include "InterSpec/RelActTxtResults.h"
 #include "InterSpec/NativeFloatSpinBox.h"
 #include "InterSpec/DecayDataBaseServer.h"
 #include "InterSpec/D3SpectrumDisplayDiv.h"
 #include "InterSpec/DetectorPeakResponse.h"
 #include "InterSpec/IsotopeNameFilterModel.h"
+#include "InterSpec/PhysicalUnitsLocalized.h"
 #include "InterSpec/ReferencePhotopeakDisplay.h"
 
 
 using namespace Wt;
 using namespace std;
+
+#if( ANDROID )
+// Defined in target/android/android.cpp
+extern void android_download_workaround( Wt::WResource *resource, std::string description );
+#endif
 
 namespace
 {
@@ -289,7 +296,7 @@ namespace
       
       wApp->useStyleSheet( "InterSpec_resources/GridLayoutHelpers.css" );
       
-      const bool showToolTips = InterSpecUser::preferenceValue<bool>( "ShowTooltips", InterSpec::instance() );
+      const bool showToolTips = UserPreferences::preferenceValue<bool>( "ShowTooltips", InterSpec::instance() );
       
       WLabel *label = new WLabel( "Lower Energy", this );
       label->addStyleClass( "GridFirstCol GridFirstRow" );
@@ -323,8 +330,8 @@ namespace
       // We wont allow "External" here
       for( int i = 0; i < static_cast<int>(PeakContinuum::OffsetType::External); ++i )
       {
-        const char *label = PeakContinuum::offset_type_label( PeakContinuum::OffsetType(i) );
-        m_continuum_type->addItem( label );
+        const char *key = PeakContinuum::offset_type_label_tr( PeakContinuum::OffsetType(i) );
+        m_continuum_type->addItem( WString::tr(key) );
       }//for( loop over PeakContinuum::OffsetType )
       
       m_continuum_type->setCurrentIndex( static_cast<int>(PeakContinuum::OffsetType::Linear) );
@@ -543,7 +550,7 @@ namespace
     {
       addStyleClass( "RelActAutoNuclide" );
       
-      const bool showToolTips = InterSpecUser::preferenceValue<bool>( "ShowTooltips", InterSpec::instance() );
+      const bool showToolTips = UserPreferences::preferenceValue<bool>( "ShowTooltips", InterSpec::instance() );
       
       WLabel *label = new WLabel( "Nuclide:", this );
       m_nuclide_edit = new WLineEdit( "", this );
@@ -599,7 +606,7 @@ namespace
       m_age_edit = new WLineEdit( "", this );
       m_age_label->setBuddy( m_age_edit );
       
-      WRegExpValidator *validator = new WRegExpValidator( PhysicalUnits::sm_timeDurationHalfLiveOptionalRegex, this );
+      WRegExpValidator *validator = new WRegExpValidator( PhysicalUnitsLocalized::timeDurationHalfLiveOptionalRegex(), this );
       validator->setFlags(Wt::MatchCaseInsensitive);
       m_age_edit->setValidator(validator);
       m_age_edit->setAutoComplete( false );
@@ -823,7 +830,7 @@ namespace
       try
       {
         const string agestr = m_age_edit->text().toUTF8();
-        age = PhysicalUnits::stringToTimeDurationPossibleHalfLife( agestr, nuc->halfLife );
+        age = PhysicalUnitsLocalized::stringToTimeDurationPossibleHalfLife( agestr, nuc->halfLife );
       }catch( std::exception & )
       {
         age = PeakDef::defaultDecayTime( nuc );
@@ -895,7 +902,7 @@ namespace
         m_age_edit->setText( WString::fromUTF8(agestr) );
       }else
       {
-        const string agestr = PhysicalUnits::printToBestTimeUnits(info.age);
+        const string agestr = PhysicalUnitsLocalized::printToBestTimeUnits(info.age);
         m_age_edit->setText( WString::fromUTF8(agestr) );
       }
       // Not currently supported: info.gammas_to_exclude -> vector<double>;
@@ -946,7 +953,7 @@ namespace
     {
       addStyleClass( "RelActFreePeak" );
       
-      const bool showToolTips = InterSpecUser::preferenceValue<bool>( "ShowTooltips", InterSpec::instance() );
+      const bool showToolTips = UserPreferences::preferenceValue<bool>( "ShowTooltips", InterSpec::instance() );
       
       WLabel *label = new WLabel( "Energy", this );
       label->addStyleClass( "GridFirstCol GridFirstRow" );
@@ -1096,7 +1103,9 @@ std::pair<RelActAutoGui *,AuxWindow *> RelActAutoGui::createWindow( InterSpec *v
   {
     disp = new RelActAutoGui( viewer );
     
-    window = new AuxWindow( "Relative Act. Isotopics" );
+    window = new AuxWindow( "Relative Act. Isotopics", 
+                           Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::SetCloseable)
+                           | AuxWindowProperties::EnableResize );
     // We have to set minimum size before calling setResizable, or else Wt's Resizable.js functions
     //  will be called first, which will then default to using the initial size as minimum allowable
     window->setMinimumSize( 800, 480 );
@@ -1112,12 +1121,12 @@ std::pair<RelActAutoGui *,AuxWindow *> RelActAutoGui::createWindow( InterSpec *v
     //window->stretcher()->setContentsMargins(0,0,0,0);
     //    window->footer()->resize(WLength::Auto, WLength(50.0));
     
-    WPushButton *closeButton = window->addCloseButtonToFooter();
-    closeButton->clicked().connect(window, &AuxWindow::hide);
-    
     AuxWindow::addHelpInFooter( window->footer(), "rel-act-dialog" );
     
     disp->addDownloadAndUploadLinks( window->footer() );
+    
+    WPushButton *closeButton = window->addCloseButtonToFooter();
+    closeButton->clicked().connect(window, &AuxWindow::hide);
     
     //window->rejectWhenEscapePressed();
     
@@ -1239,8 +1248,11 @@ RelActAutoGui::RelActAutoGui( InterSpec *viewer, Wt::WContainerWidget *parent )
   
   addStyleClass( "RelActAutoGui" );
   
-  const bool showToolTips = InterSpecUser::preferenceValue<bool>( "ShowTooltips", m_interspec );
+  const bool showToolTips = UserPreferences::preferenceValue<bool>( "ShowTooltips", m_interspec );
   
+  WText *alpha_warning = new WText( "This tool is under active development - this is an early preview", this );
+  alpha_warning->addStyleClass( "RelActCalcAutoAlphaBuildWarning" );
+    
   WContainerWidget *upper_div = new WContainerWidget( this );
   upper_div->addStyleClass( "RelActAutoUpperArea" );
   
@@ -1257,12 +1269,10 @@ RelActAutoGui::RelActAutoGui( InterSpec *viewer, Wt::WContainerWidget *parent )
   m_spectrum = new D3SpectrumDisplayDiv();
   m_spectrum->setCompactAxis( true );
   m_spectrum->disableLegend();
-  m_spectrum->setXAxisTitle( "Energy (keV)" );
-  m_spectrum->setYAxisTitle( "Counts" );
   m_interspec->colorThemeChanged().connect( boost::bind( &D3SpectrumDisplayDiv::applyColorTheme, m_spectrum, boost::placeholders::_1 ) );
   m_spectrum->applyColorTheme( m_interspec->getColorTheme() );
   
-  const bool logypref = InterSpecUser::preferenceValue<bool>( "LogY", m_interspec );
+  const bool logypref = UserPreferences::preferenceValue<bool>( "LogY", m_interspec );
   m_spectrum->setYAxisLog( logypref );
   
   auto set_log_y = wApp->bind( boost::bind( &D3SpectrumDisplayDiv::setYAxisLog, m_spectrum, true ) );
@@ -1274,7 +1284,8 @@ RelActAutoGui::RelActAutoGui( InterSpec *viewer, Wt::WContainerWidget *parent )
       set_lin_y();
   };
   
-  InterSpecUser::addCallbackWhenChanged( m_interspec->m_user, "LogY", m_spectrum, &D3SpectrumDisplayDiv::setYAxisLog );
+  m_interspec->preferences()->addCallbackWhenChanged( "LogY", m_spectrum, 
+                                                     &D3SpectrumDisplayDiv::setYAxisLog );
   
   m_peak_model = new PeakModel( m_spectrum );
   m_peak_model->setNoSpecMeasBacking();
@@ -1476,6 +1487,7 @@ RelActAutoGui::RelActAutoGui( InterSpec *viewer, Wt::WContainerWidget *parent )
     {
       case RelActCalcAuto::FwhmForm::Gadras:       name = "Gadras"; break;
       case RelActCalcAuto::FwhmForm::SqrtEnergyPlusInverse:  name = "sqrt(A0 + A1*E + A2/E)"; break;
+      case RelActCalcAuto::FwhmForm::ConstantPlusSqrtEnergy: name = "A0 + A1*sqrt(E)"; break;
       case RelActCalcAuto::FwhmForm::Polynomial_2: name = "sqrt(A0 + A1*E)"; break;
       case RelActCalcAuto::FwhmForm::Polynomial_3: name = "sqrt(A0 + A1*E + A2*E*E)"; break;
       case RelActCalcAuto::FwhmForm::Polynomial_4: name = "sqrt(A0 + A1*E^1...A3*E^3)"; break;
@@ -2347,7 +2359,7 @@ void RelActAutoGui::handleRightClick( const double energy, const double counts,
   for( auto type = PeakContinuum::OffsetType(0);
       type < PeakContinuum::External; type = PeakContinuum::OffsetType(type+1) )
   {
-    WMenuItem *item = continuum_menu->addItem( PeakContinuum::offset_type_label(type) );
+    WMenuItem *item = continuum_menu->addItem( WString::tr(PeakContinuum::offset_type_label_tr(type)) );
     item->triggered().connect( boost::bind( &RelActAutoEnergyRange::setContinuumType, range, type ) );
     if( type == roi.continuum_type )
       item->setDisabled( true );
@@ -3811,7 +3823,7 @@ void RelActAutoGui::setPeaksToForeground()
   refit_holder->addStyleClass( "AddOrReplaceRefitRow" );
   WCheckBox *refit_peaks = new WCheckBox( "Refit Peaks", refit_holder );
   
-  const bool showToolTips = InterSpecUser::preferenceValue<bool>( "ShowTooltips", InterSpec::instance() );
+  const bool showToolTips = UserPreferences::preferenceValue<bool>( "ShowTooltips", InterSpec::instance() );
   const char *tooltip = 
   "When checked, peaks will be refit without the constraints of the relative efficiency curve,"
   " expected branching ratios, or FWHM constraints from other ROIs - allowing statistical"
@@ -4028,8 +4040,8 @@ void RelActAutoGui::addDownloadAndUploadLinks( Wt::WContainerWidget *parent )
 
 #if( ANDROID )
   // Using hacked saving to temporary file in Android, instead of via network download of file.
-  m_downloadHtmlReport->clicked().connect( std::bind([this](){
-    android_download_workaround( m_calpResource, "isotopics_by_nuclide.html");
+  btn->clicked().connect( std::bind([this](){
+    android_download_workaround( m_html_download_rsc, "isotopics_by_nuclide.html");
   }) );
 #endif //ANDROID
 #endif
@@ -4054,8 +4066,8 @@ void RelActAutoGui::addDownloadAndUploadLinks( Wt::WContainerWidget *parent )
   
 #if( ANDROID )
   // Using hacked saving to temporary file in Android, instead of via network download of file.
-  m_downloadHtmlReport->clicked().connect( std::bind([this](){
-    android_download_workaround( m_calpResource, "isotopics_by_nuclide_config.html");
+  btn->clicked().connect( std::bind([this](){
+    android_download_workaround( m_xml_download_rsc, "isotopics_by_nuclide_config.html");
   }) );
 #endif //ANDROID
   
@@ -4655,8 +4667,66 @@ void RelActAutoGui::updateFromCalc( std::shared_ptr<RelActCalcAuto::RelActAutoSo
                                                                   answer->m_rel_eff_coefficients );
   
   const double live_time = answer->m_foreground ? answer->m_foreground->live_time() : 1.0f;
+
   
-  m_rel_eff_chart->setData( live_time, answer->m_fit_peaks, answer->m_rel_activities, rel_eff_eqn_js );
+  WString chi2_title("χ²/dof = {1}/{2}{3}");
+  chi2_title.arg( SpecUtils::printCompact(answer->m_chi2, 3) )
+            .arg( static_cast<int>(answer->m_dof) );
+  
+  // If we have U or Pu, we'll give the enrichment, or if we have two nuclides we'll
+  //  give their ratio
+  set<const SandiaDecay::Nuclide *> isotopes;
+  for( const auto &relact : answer->m_rel_activities )
+  {
+    if( relact.nuclide )
+      isotopes.insert( relact.nuclide );
+  }
+  
+  const SandiaDecay::SandiaDecayDataBase *db = DecayDataBaseServer::database();
+  assert( db );
+  const SandiaDecay::Nuclide * const u235 = db->nuclide( "U235" );
+  const SandiaDecay::Nuclide * const u238 = db->nuclide( "U238" );
+  const SandiaDecay::Nuclide * const pu239 = db->nuclide( "Pu239" );
+  const SandiaDecay::Nuclide * const pu240 = db->nuclide( "Pu240" );
+  assert( u235 && u238 && pu239 && pu240 );
+  
+  if( (isotopes.count(u235) && isotopes.count(u238) && !isotopes.count(pu239))
+     || (isotopes.count(pu239) && isotopes.count(pu240) && !isotopes.count(u235)) )
+  {
+    const SandiaDecay::Nuclide * const iso = isotopes.count(u235) ? u235 : pu239;
+    const double nominal = answer->mass_enrichment_fraction( iso );
+    // TODO: add errors
+    string enrich = ", " + SpecUtils::printCompact(100.0*nominal, 4)
+                        // + "±" + SpecUtils::printCompact(100.0*error, 4)
+                         + "% " + iso->symbol;
+    chi2_title.arg( enrich );
+  }else if( isotopes.size() == 2 )
+  {
+    const vector<RelActCalcAuto::NuclideRelAct> &rel_acts = answer->m_rel_activities;
+    const int num_index = (rel_acts[0].rel_activity > rel_acts[1].rel_activity) ? 1 : 0;
+    const int denom_index = (num_index ? 0 : 1);
+    const SandiaDecay::Nuclide * const num_nuc = rel_acts[num_index].nuclide;
+    const SandiaDecay::Nuclide * const den_nuc = rel_acts[denom_index].nuclide;
+    assert( num_nuc && den_nuc );
+    if( num_nuc && den_nuc )
+    {
+      const double ratio = answer->activity_ratio( num_nuc, den_nuc );
+      // TODO: add errors
+      string ratio_txt = ", act(" + num_nuc->symbol + "/" + den_nuc->symbol + ")="
+      + SpecUtils::printCompact(ratio, 4);
+      
+      chi2_title.arg( ratio_txt );
+    }else
+    {
+      chi2_title.arg( "" );
+    }
+  }else
+  {
+    chi2_title.arg( "" );
+  }
+  
+  m_rel_eff_chart->setData( live_time, answer->m_fit_peaks, answer->m_rel_activities,
+                           rel_eff_eqn_js, chi2_title );
   
   
   bool any_nucs_updated = false;
@@ -4675,7 +4745,7 @@ void RelActAutoGui::updateFromCalc( std::shared_ptr<RelActCalcAuto::RelActAutoSo
       
       if( fit_nuc.nuclide == nuc->nuclide() )
       {
-        const string agestr = PhysicalUnits::printToBestTimeUnits( fit_nuc.age, 3 );
+        const string agestr = PhysicalUnitsLocalized::printToBestTimeUnits( fit_nuc.age, 3 );
         nuc->setAge( agestr );
         break;
       }//if( this is the widget for this nuclide )

@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- smmd- is short for ShowMultiMediaDisplay -->
+  <message id="smmd-prev-btn">Prev</message>
+  <message id="smmd-next-btn">Next</message>
+  <message id="smmd-auto-show-images-cb">Auto show images</message>
+  <message id="smmd-tt-auto-show-images">Automatically show images when spectrum files that have them are loaded.</message>
+  <message id="smmd-tt-export-image-file">Export the currently showing image to a file.</message>
+  <message id="smmd-err-no-content">No multimedia content to display</message>
+  <message id="smmd-err-file-is-uri">Data encoded as a file at URI='{1}'</message>
+  <message id="smmd-err-no-multimedia-src">Multimedia source did not contain any data.</message>
+  <message id="smmd-err-encoding-not-supported">Multimedia content encoding of data is not supported.</message>
+  <message id="smmd-err-not-image">Multimedia content type was either not of an image type, or could not be determined.</message>
+  <message id="smmd-image-index">Image {1} of {2}</message>
+  <message id="smmd-Time">Time</message>
+  <message id="smmd-window-title-single">Image in Spectrum File</message>
+  <message id="smmd-window-title-multiple">Images in Spectrum File</message>
+</messages>

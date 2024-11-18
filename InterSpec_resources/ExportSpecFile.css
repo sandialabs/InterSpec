@@ -59,7 +59,21 @@
   padding-right: 10px;
 }
 
-.ExportSpecFileTool .ExportSpecFileBody .ExportColTitle
+.ExportSpecFileTool.ExportSpecFileToolPhone .ExportSpecFileTabs
+{
+  flex-grow: 2;
+  margin-top: 5px;
+  height: 330px;
+}
+
+.ExportSpecFileTool.ExportSpecFileToolPhone .ExportSpecFileTabs > .Wt-stack
+{
+  height: 300px;
+  display: flex;
+  flex-direction: column;
+}
+
+.ExportSpecFileTool .ExportColTitle
 {
   display: block;
   white-space: nowrap;
@@ -86,10 +100,28 @@
   row-gap: 5px;
 }
 
+.ExportSpecFileTool.ExportSpecFileToolPhone .ExportSpecSelect,
+.ExportSpecFileTool.ExportSpecFileToolPhone .ExportSpecFormat,
+.ExportSpecFileTool.ExportSpecFileToolPhone .ExportSpecSamples,
+.ExportSpecFileTool.ExportSpecFileToolPhone .ExportSpecOptions
+{
+  border: none;
+  
+  margin-left: auto;
+  margin-right: auto;
+  margin-top: 10px;
+}
+
+.ExportSpecFileTool.ExportSpecFileToolPhone .ExportSpecSelect,
+.ExportSpecFileTool.ExportSpecFileToolPhone .ExportSpecFormat,
+.ExportSpecFileTool.ExportSpecFileToolPhone .ExportSpecSamples
+{
+  overflow-y: auto;
+}
 
 .ExportSpecFileTool .ExportSpecSamples
 {
-  min-width: 200px;
+  min-width: 235px; /* 220 px would be enough, unless there are so many options scroll bars are needed */
   overflow-y: auto;
 }
 
@@ -104,7 +136,7 @@
   margin-right: 5px;
 }
 
-.ExportSpecFileTool .ExportSpecFileBody .ExportSpecSelect .ExportSpecInfo
+.ExportSpecFileTool .ExportSpecSelect .ExportSpecInfo
 {
   display: inline-block;
   overflow-y: auto;
@@ -123,6 +155,11 @@
   margin-left: 5px;
   margin-right: 5px;
   font-size: 14px;
+}
+
+.ExportSpecFileTool.ExportSpecFileToolPhone .ExportSpecSelect
+{
+  
 }
 
 .ExportSpecInfo .ExportSpecInfoTable
@@ -162,7 +199,6 @@
   height: 100%;
 }
 
-
 .ExportSpecFileTool .ExportSpecFormat .ExportSpecFormatMenu.SideMenu
 {
   overflow-y: auto;
@@ -174,6 +210,12 @@
 {
   /* On mobile, there is no info/help icon on the menu item, so we can make it narrower. */
   width: 8.5em;
+}
+
+.ExportSpecFileTool.ExportSpecFileToolPhone .ExportSpecFormatMenu.SideMenu
+{
+  margin-left: auto;
+  margin-right: auto;
 }
 
 .ExportSpecFileTool .ExportSpecFormat .ExportSpecFormatMenu.SideMenu li
@@ -203,6 +245,11 @@
   border-left: none;
   border-right: none;
   border-bottom: none;
+}
+
+.ExportSpecFileTool.ExportSpecFileToolPhone .ExportSpecOptions
+{
+  width: 100%;
 }
 
 .ExportSpecFileTool .ExportSpecFileBody .ExportSpecOptions .ExportColTitle

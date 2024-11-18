@@ -24,6 +24,7 @@
 #include "InterSpec_config.h"
 
 #include <mutex>
+#include <random>
 #include <string>
 #include <sstream>
 #include <iostream>
@@ -67,6 +68,7 @@
 #include <Wt/WStackedWidget>
 #include <Wt/WRegExpValidator>
 
+#include "SpecUtils/DateTime.h"
 #include "SpecUtils/SpecFile.h"
 #include "SpecUtils/Filesystem.h"
 #include "SpecUtils/StringAlgo.h"
@@ -81,6 +83,7 @@
 #include "InterSpec/PhysicalUnits.h"
 #include "InterSpec/WarningWidget.h"
 #include "InterSpec/UndoRedoManager.h"
+#include "InterSpec/UserPreferences.h"
 #include "InterSpec/DecayDataBaseServer.h"
 #include "InterSpec/ReferencePhotopeakDisplay.h"
 
@@ -426,7 +429,7 @@ protected:
           break;
       }//switch( m_type )
       
-      const string prev_urls = InterSpecUser::preferenceValue<string>( prefname, m_interspec );
+      const string prev_urls = UserPreferences::preferenceValue<string>( prefname, m_interspec );
       vector<string> prev;
       SpecUtils::split( prev, prev_urls, ";" );
       
@@ -444,7 +447,7 @@ protected:
         new_url += (i ? ";" : "") + prev[i];
       }
       
-      InterSpecUser::setPreferenceValue( m_interspec->m_user, prefname, new_url, m_interspec );
+      UserPreferences::setPreferenceValue( prefname, new_url, m_interspec );
     }catch( std::exception &e )
     {
       cerr << "Error in setMostRecentUrl( '" << url << "' ): " << e.what() << endl;
@@ -494,7 +497,7 @@ public:
     
     try
     {
-      const string prev_urls = InterSpecUser::preferenceValue<string>( prefname, interspec );
+      const string prev_urls = UserPreferences::preferenceValue<string>( prefname, interspec );
       vector<string> prev;
       SpecUtils::split( prev, prev_urls, ";" );
 #if( !ANDROID && !IOS && !BUILD_FOR_WEB_DEPLOYMENT )
@@ -547,15 +550,15 @@ public:
     layout->setVerticalSpacing( 0 );
     layout->setHorizontalSpacing( 0 );
     
-    const char *url_label = "";
+    WString url_label;
     switch( m_type )
     {
       case ServiceType::Rest:
-        url_label = "URL";
+        url_label = WString::tr("rr-mi-url");
         break;
         
       case ServiceType::Exe:
-        url_label = "Exe Path";
+        url_label = WString::tr("rr-mi-executable-path");
         break;
     }//switch( m_type )
     
@@ -573,14 +576,14 @@ public:
         const char *url_regex = "^(http(s)?:\\/\\/)[\\w.-]+(?:\\.[\\w\\.-]+)*[\\w\\-\\._~:/?#[\\]@!\\$&'\\(\\)\\*\\+,;=.]+$";
         WRegExpValidator *validator = new WRegExpValidator( url_regex, m_url );
         m_url->setValidator( validator );
-        m_url->setPlaceholderText( "URL of FullSpectrum Service" );
+        m_url->setPlaceholderText( WString::tr("rr-url-empty-text") );
         break;
       }//case ServiceType::Rest:
         
       case ServiceType::Exe:
       {
         // TODO: need to implement path validator, and actually for macOS and Electron builds implement allowing to select executable!
-        m_url->setPlaceholderText( "Path to FullSpectrum executable" );
+        m_url->setPlaceholderText( WString::tr("rr-exe-path-empty-text") );
         break;
       }//case ServiceType::Exe:
     }//switch( m_type )
@@ -598,7 +601,7 @@ public:
     
     WContainerWidget *container = new WContainerWidget();
     WGridLayout *sub_layout = new WGridLayout( container );
-    m_retrieve_drfs_btn = new WPushButton( "Retrieve DRFs" );
+    m_retrieve_drfs_btn = new WPushButton( WString::tr("rr-get-detectors") );
     sub_layout->addWidget( m_retrieve_drfs_btn, 0, 0, AlignCenter | AlignMiddle );
     m_retrieve_drfs_btn->clicked().connect( this, &ExternalRidWidget::requestServiceInfo );
     
@@ -606,7 +609,7 @@ public:
     
     container = new WContainerWidget();
     sub_layout = new WGridLayout( container );
-    label = new WLabel( "DRF:" );
+    label = new WLabel( WString::tr("rr-detectors-label") );
     sub_layout->addWidget( label, 0, 0 );
     m_drf_select = new WComboBox();
     sub_layout->addWidget( m_drf_select, 0, 1 );
@@ -631,7 +634,7 @@ public:
     m_status->setInline( false );
     m_status_stack->addWidget( m_status );
     
-    m_result = new WText( "After entering URL of web service, please (optionally) retrieve DRFs, and then press &quot;<em>Submit</em>&quot;" );
+    m_result = new WText( WString::tr("rr-url-instructions") );
     m_result->addStyleClass( "RestRidResult" );
     m_result->setInline( false );
     m_status_stack->addWidget( m_result );
@@ -639,17 +642,15 @@ public:
     m_status_stack->setCurrentIndex( m_status_stack->indexOf(m_result) );
     
     
-    m_onlyDisplayedSamples = new WCheckBox( "Only Displayed Samples" );
-    m_onlyDisplayedSamples->setToolTip( "Normally search-mode and portal data are analyzed in their"
-                                        " entirety, but selecting this option will cause only the"
-                                        " displayed foreground/background to be analyzed." );
+    m_onlyDisplayedSamples = new WCheckBox( WString::tr("rr-only-disp-samples-cb") );
+    m_onlyDisplayedSamples->setToolTip( WString::tr("rr-tt-only-disp-samples") );
     m_onlyDisplayedSamples->addStyleClass( "AlwaysSubmitAna" );
     layout->addWidget( m_onlyDisplayedSamples, 3, 0, 1, 2 );
     auto meas = m_interspec->measurment(SpecUtils::SpectrumType::Foreground);
     m_onlyDisplayedSamples->setHidden( !meas || !meas->passthrough() );
     
     
-    m_submit = new WPushButton( "Submit Analysis" );
+    m_submit = new WPushButton( WString::tr("rr-submit-ana-btn") );
     layout->addWidget( m_submit, 4, 0, 1, 2, AlignCenter );
     m_submit->clicked().connect( this, &ExternalRidWidget::submitForAnalysis );
     m_submit->disable();
@@ -658,15 +659,12 @@ public:
     cb_row->addStyleClass( "RidOptionCbRow" );
     layout->addWidget( cb_row, 5, 0, 1, 2 );
     
-    m_alwaysDoAnalysisCb = new WCheckBox( "Always call on spectrum load", cb_row );
+    m_alwaysDoAnalysisCb = new WCheckBox( WString::tr("rr-always-call-cb"), cb_row );
     m_alwaysDoAnalysisCb->addStyleClass( "AlwaysSubmitAna" );
     
-    m_autoAnaInDialog = new WCheckBox( "Show dialog", cb_row );
+    m_autoAnaInDialog = new WCheckBox( WString::tr("rr-show-dialog-cb"), cb_row );
     m_autoAnaInDialog->addStyleClass( "ShowDialogOpt" );
-    m_autoAnaInDialog->setToolTip( "If checked, a dialog that must be dismissed by the user will be"
-                                  " shown with RID results. If not checked, only a"
-                                  " notification that will disappear after a short time, will be"
-                                  " shown with RID results." );
+    m_autoAnaInDialog->setToolTip( WString::tr("rr-tt-show-dialog") );
     m_autoAnaInDialog->hide();
     
     const ExternalRidAuotCallPref pref = RemoteRid::external_rid_call_pref( m_interspec );
@@ -787,7 +785,7 @@ public:
     
     try
     {
-      InterSpecUser::setPreferenceValue( m_interspec->m_user, "AlwaysCallExternalRid",
+      UserPreferences::setPreferenceValue( "AlwaysCallExternalRid",
                                         static_cast<int>(pref_value), m_interspec );
     }catch( std::exception & )
     {
@@ -932,6 +930,8 @@ public:
     if( !app || !interspec )
       return;
     
+    interspec->useMessageResourceBundle( "RemoteRid" );
+    
     const ExternalRidAuotCallPref pref = RemoteRid::external_rid_call_pref( InterSpec::instance() );
     
     bool make_dialog = false;
@@ -956,7 +956,7 @@ public:
     
     std::lock_guard<mutex> lock( *m );
     
-    string message;
+    WString message;
     const int code = *rcode;
     const string &res = *result;
         
@@ -979,18 +979,18 @@ public:
           if( result.errorMessage.size() )
           {
             result_ptr.reset();
-            message = "GADRAS RID Error: " + result.errorMessage;
+            message = WString::tr("rr-gadras-rid-error").arg( result.errorMessage );
           }else if( result.code )
           {
             result_ptr.reset();
-            message = "GADRAS RID Error code " + to_string(result.code);
+            message = WString::tr("rr-gadras-rid-error-code").arg(result.code);
           }else
           {
-            message = "GADRAS RID: nothing identified";
+            message = "rr-gadras-rid-no-id";
           }
         }else
         {
-          message = "GADRAS RID: " + iso_str;
+          message = WString::tr("rr-gadras-result").arg(iso_str);
         }
         
         const SandiaDecay::SandiaDecayDataBase * const db = DecayDataBaseServer::database();
@@ -1021,7 +1021,7 @@ public:
           reflines->setExternalRidResults( "GADRAS", iso_descrips );
       }catch( std::exception &e )
       {
-        message = "Failed to parse GADRAS RID results.";
+        message = WString::tr("rr-gadras-fail-parse");
         
         cerr << "displayAutoRidAnaResult: Failed to parse results from GADRAS: "
         << e.what() << endl;
@@ -1035,13 +1035,13 @@ public:
         const string msg_html = msg_html_strm.str();
           
         wApp->useStyleSheet( "InterSpec_resources/RemoteRid.css" );
-        SimpleDialog *dialog = new SimpleDialog( "External RID Results" );
+        SimpleDialog *dialog = new SimpleDialog( WString::tr("rr-rid-results-window-title") );
         
         WText *contents = new WText( msg_html, dialog->contents() );
         contents->addStyleClass( "content RestRidResult" );
         contents->setInline( false );
         
-        WPushButton *btn = dialog->addButton( "Close" );
+        WPushButton *btn = dialog->addButton( WString::tr("Close") );
         btn->clicked().connect( std::bind( [rcode,result,m](){
           UndoRedoManager *undoRedo = UndoRedoManager::instance();
           if( undoRedo && undoRedo->canAddUndoRedoNow() )
@@ -1056,7 +1056,7 @@ public:
           }
         } ) );//Close button clicked
           
-        btn = dialog->addButton( "RID Tool" );
+        btn = dialog->addButton( WString::tr("rr-rid-tool-btn") );
         btn->clicked().connect( std::bind([=](){
           InterSpec *interspec = InterSpec::instance();
           assert( interspec );
@@ -1105,7 +1105,7 @@ public:
       }else
       {
         WStringStream js;
-        js << message;
+        js << message.toUTF8();
         
         js << "<div class=\"RemoteRidToastButtons\">";
         if( !nuclides.empty() )
@@ -1140,7 +1140,7 @@ public:
          || SpecUtils::icontains(msg , "Load failed")   //Safari
          || SpecUtils::icontains(msg , "NetworkError when attempting") ) //Firefox
       {
-        msg = "Error calling analysis: incorrect URL or no internet.";
+        msg = WString::tr("rr-err-incorrect-url").toUTF8();
       }
       
       WStringStream js;
@@ -1182,7 +1182,7 @@ public:
       if( parent )
       {
         parent->m_status_stack->setCurrentIndex( parent->m_status_stack->indexOf(parent->m_error) );
-        parent->m_error->setText( "Error locating executable: '" + exe_path + "'" );
+        parent->m_error->setText(  WString::tr("rr-err-locating-exe").arg(exe_path) );
       }else
       {
         cerr << __func__ << ": Error locating executable: '" + exe_path + "'" << endl;
@@ -1201,7 +1201,7 @@ public:
       if( parent )
       {
         parent->m_status_stack->setCurrentIndex( parent->m_status_stack->indexOf(parent->m_error) );
-        parent->m_error->setText( "Error creating temp file name." );
+        parent->m_error->setText( WString::tr("rr-err-creating-tmp-file") );
       }else
       {
         cerr << __func__ << ": Error creating temp file name." << endl;
@@ -1217,7 +1217,7 @@ public:
         if( parent )
         {
           parent->m_status_stack->setCurrentIndex( parent->m_status_stack->indexOf(parent->m_error) );
-          parent->m_error->setText( "Error opening temp file." );
+          parent->m_error->setText( WString::tr("rr-err-opening-tmp-file") );
         }else
         {
           cerr << __func__ << ": Error opening temp file." << endl;
@@ -1280,7 +1280,7 @@ public:
   void submitForAnalysis()
   {
     m_status_stack->setCurrentIndex( m_status_stack->indexOf(m_status) );
-    m_status->setText( "Requesting analysis" );
+    m_status->setText( WString::tr("rr-requesting-ana") );
 
 #if( ANDROID || IOS || BUILD_FOR_WEB_DEPLOYMENT )
     startRestAnalysis();
@@ -1301,7 +1301,7 @@ public:
         if( !spec_file )
         {
           m_status_stack->setCurrentIndex( m_status_stack->indexOf(m_error) );
-          m_error->setText( "No displayed spectrum" );
+          m_error->setText( WString::tr("rr-err-no-spec") );
           
           return;
         }//if( !spec_file )
@@ -1383,7 +1383,7 @@ public:
     m_status_stack->setCurrentIndex( m_status_stack->indexOf(m_status) );
     m_result->setText( "" );
     m_error->setText( "" );
-    m_status->setText( "Requesting service information." );
+    m_status->setText( WString::tr("rr-requesting-service-info") );
     m_current_drf_index = -1;
     m_drf_select->clear();
 
@@ -1519,13 +1519,14 @@ public:
       m_status_stack->setCurrentIndex( m_status_stack->indexOf(m_error) );
       m_result->setText( "" );
       m_status->setText( "" );
-      m_error->setText( "Error parsing service information results: <code>" + string(e.what()) + "</code>" );
+      m_error->setText( WString::tr("rr-error-parsing-service-info").arg(e.what()) );
     }//try / catch
   }//void handleInfoResponse()
   
   
   void handleInfoResponseError( std::string msg )
   {
+    WString errtxt = WString::fromUTF8( msg );
     m_current_drf_index = -1;
     m_drf_select->clear();
     m_drf_stack->setCurrentIndex( 0 );
@@ -1537,17 +1538,17 @@ public:
        || SpecUtils::icontains( msg , "Load failed")   //Safari
        || SpecUtils::icontains( msg , "NetworkError when attempting") ) //Firefox
     {
-      msg = "incorrect URL or no internet.";
+      errtxt = WString::tr("rr-incorrect-url");
     }
     
-    m_error->setText( "Error retrieving service information: <code>" + msg + "</code>" );
+    m_error->setText( WString::tr("rr-err-requesting-service-info").arg(errtxt) );
     m_status_stack->setCurrentIndex( m_status_stack->indexOf(m_error) );
   }//void handleInfoResponseError()
 
   
   static void generateResultHtml( WStringStream &rslttxt, const FullSpecResults &results )
   {
-    const bool useBq = InterSpecUser::preferenceValue<bool>( "DisplayBecquerel", InterSpec::instance() );
+    const bool useBq = UserPreferences::preferenceValue<bool>( "DisplayBecquerel", InterSpec::instance() );
     
     rslttxt << "<table class=\"ResultTable\"><tbody>\n"
     << "\t<tr>"
@@ -2233,7 +2234,7 @@ ExternalRidAuotCallPref RemoteRid::external_rid_call_pref( InterSpec *viewer )
     if( !viewer )
       throw runtime_error( "Invalid InterSpec instance" );
     
-    const int pref_value = InterSpecUser::preferenceValue<int>( "AlwaysCallExternalRid", viewer );
+    const int pref_value = UserPreferences::preferenceValue<int>( "AlwaysCallExternalRid", viewer );
     const auto pref = static_cast<ExternalRidAuotCallPref>( pref_value );
     
     bool valid = false;
@@ -2269,7 +2270,7 @@ SimpleDialog *RemoteRid::startRemoteRidDialog( InterSpec *viewer,
   if( !viewer )
     return nullptr;
   
-  const bool showWarning = InterSpecUser::preferenceValue<bool>( "ExternalRidWarn", viewer );
+  const bool showWarning = UserPreferences::preferenceValue<bool>( "ExternalRidWarn", viewer );
   
   if( !showWarning )
   {
@@ -2310,7 +2311,7 @@ SimpleDialog *RemoteRid::startRemoteRidDialog( InterSpec *viewer,
   btn = dialog->addButton( "Continue" );
   btn->clicked().connect( std::bind([viewer,callback,cb](){
     if( cb->isChecked() )
-      InterSpecUser::setPreferenceValue(viewer->m_user, "ExternalRidWarn", false, viewer );
+      UserPreferences::setPreferenceValue("ExternalRidWarn", false, viewer );
       
     auto res = RemoteRid::createDialog( viewer );
     if( callback )
@@ -2323,7 +2324,7 @@ SimpleDialog *RemoteRid::startRemoteRidDialog( InterSpec *viewer,
 
 pair<AuxWindow *, RemoteRid *> RemoteRid::createDialog( InterSpec *viewer )
 {
-  AuxWindow *window = new AuxWindow( WString::fromUTF8("External RID"),
+  AuxWindow *window = new AuxWindow( WString::tr("window-title-external-rid"),
                                     (Wt::WFlags<AuxWindowProperties> (AuxWindowProperties::DisableCollapse)
                                      | AuxWindowProperties::SetCloseable
                                      | AuxWindowProperties::TabletNotFullScreen)
@@ -2352,7 +2353,7 @@ pair<AuxWindow *, RemoteRid *> RemoteRid::createDialog( InterSpec *viewer )
       QrCode::displayTxtAsQrCode( url, "Remote-RID State", "Current Remote-RID state." );
     }catch( std::exception &e )
     {
-      passMessage( "Error creating QR code: " + std::string(e.what()), WarningWidget::WarningMsgHigh );
+      passMessage(WString::tr("app-qr-err").arg(e.what()), WarningWidget::WarningMsgHigh );
     }
   }) );
 #endif //USE_QR_CODES
@@ -2375,6 +2376,7 @@ RemoteRid::RemoteRid( InterSpec *viewer, Wt::WContainerWidget *parent )
     return;
  
   wApp->useStyleSheet( "InterSpec_resources/RemoteRid.css" );
+  viewer->useMessageResourceBundle( "RemoteRid" );
   
   addStyleClass( "RemoteRid" );
   
@@ -2487,10 +2489,51 @@ std::shared_ptr<SpecUtils::SpecFile> RemoteRid::fileForAnalysis( InterSpec *inte
     if( !foreground_file )
       return nullptr;
     
+    
     auto answer = make_shared<SpecUtils::SpecFile>( *foreground_file );
     
+    
+    // Get rid of some information the external service doesnt need
+    auto clear_meta_info = []( shared_ptr<SpecUtils::SpecFile> &spec ){
+    
+      const int64_t us_in_yr = static_cast<int64_t>( PhysicalUnits::year * 1.0E6 );
+      std::random_device generator;
+      std::uniform_int_distribution<int64_t> distribution( -us_in_yr, us_in_yr );
+      
+      const int64_t random_offset_us = distribution( generator );
+      const SpecUtils::time_point_t::duration random_offset = std::chrono::microseconds(random_offset_us);
+      assert( chrono::duration_cast<chrono::microseconds>(random_offset).count() >= -us_in_yr );
+      assert( chrono::duration_cast<chrono::microseconds>(random_offset).count() <= us_in_yr );
+      
+      spec->set_instrument_id( "" );
+      spec->set_uuid( "" );
+      spec->set_measurement_location_name( "" );
+      spec->set_parse_warnings( {} );
+      spec->set_filename( "" );
+      spec->set_remarks( {} );
+      spec->set_detectors_analysis( {} );
+      spec->clear_multimedia_data();
+      
+      for( const auto &m : spec->measurements() )
+      {
+        spec->set_title( "", m );
+        spec->set_remarks( {}, m );
+        
+        const SpecUtils::time_point_t start_time = m->start_time();
+        if( !SpecUtils::is_special(start_time) )
+          spec->set_start_time( start_time + random_offset, m );
+        
+        if( m->has_gps_info() )
+          spec->set_position( -999.9, -999.9, SpecUtils::time_point_t{}, m );
+      }//for( const auto &m : spec->measurements() )
+    };//clear_meta_info lambda
+    
+    
     if( foreground_file->passthrough() && !flags.testFlag(OnlyDisplayedSearchSamples) )
+    {
+      clear_meta_info( answer );
       return answer;
+    }
     
     answer->remove_measurements( answer->measurements() );
     
@@ -2507,9 +2550,12 @@ std::shared_ptr<SpecUtils::SpecFile> RemoteRid::fileForAnalysis( InterSpec *inte
     if( disp_back )
     {
       auto back = make_shared<SpecUtils::Measurement>( *disp_back );
-      back->set_source_type(SpecUtils::SourceType::Background);
+      back->set_source_type( SpecUtils::SourceType::Background );
+      
       answer->add_measurement( back, true );
-    }
+    }//if( disp_back )
+    
+    clear_meta_info( answer );
     
     return answer;
   }catch( std::exception &e )
@@ -2626,7 +2672,7 @@ void RemoteRid::disableAutoRemoteRid( InterSpec *interspec )
   
   try
   {
-    InterSpecUser::setPreferenceValue(interspec->m_user, "AlwaysCallExternalRid", 0, interspec);
+    UserPreferences::setPreferenceValue( "AlwaysCallExternalRid", 0, interspec);
   }catch(...)
   {
     assert( 0 );
@@ -2743,10 +2789,10 @@ void RemoteRid::handleAppUrl( std::string query_str )
       assert( interspec );
       if( !interspec )
         return;
-      InterSpecUser::setPreferenceValue( interspec->m_user, "AlwaysCallExternalRid", static_cast<int>(0), interspec );
-      InterSpecUser::setPreferenceValue( interspec->m_user, "ExternalRidWarn", true, interspec );
-      InterSpecUser::setPreferenceValue( interspec->m_user, "ExternalRidUrl", string(), interspec );
-      InterSpecUser::setPreferenceValue( interspec->m_user, "ExternalRidExe", string(), interspec );
+      UserPreferences::setPreferenceValue( "AlwaysCallExternalRid", static_cast<int>(0), interspec );
+      UserPreferences::setPreferenceValue( "ExternalRidWarn", true, interspec );
+      UserPreferences::setPreferenceValue( "ExternalRidUrl", string(), interspec );
+      UserPreferences::setPreferenceValue( "ExternalRidExe", string(), interspec );
       passMessage( "External-RID preferences have been reset.", WarningWidget::WarningMsgInfo );
     }) );
     dialog->addButton( "Cancel" );
@@ -2808,12 +2854,12 @@ void RemoteRid::handleAppUrl( std::string query_str )
       }//if( !url_path.empty() ) / else
     }//if( always_call )
     
-    InterSpecUser::setPreferenceValue( interspec->m_user, "AlwaysCallExternalRid", static_cast<int>(pref_value), interspec );
-    //InterSpecUser::setPreferenceValue( interspec->m_user, "ExternalRidWarn", false, interspec );
+    UserPreferences::setPreferenceValue( "AlwaysCallExternalRid", static_cast<int>(pref_value), interspec );
+    //UserPreferences::setPreferenceValue( "ExternalRidWarn", false, interspec );
     if( !url_path.empty() )
-      InterSpecUser::setPreferenceValue( interspec->m_user, "ExternalRidUrl", url_path, interspec );
+      UserPreferences::setPreferenceValue( "ExternalRidUrl", url_path, interspec );
     if( !exe_path.empty() )
-      InterSpecUser::setPreferenceValue( interspec->m_user, "ExternalRidExe", exe_path, interspec );
+      UserPreferences::setPreferenceValue( "ExternalRidExe", exe_path, interspec );
     passMessage( "External-RID preferences have been updated.", WarningWidget::WarningMsgInfo );
   };//set_to_new_prefs
   
@@ -2825,27 +2871,27 @@ void RemoteRid::handleAppUrl( std::string query_str )
   
   try
   {
-    prev_always_call = InterSpecUser::preferenceValue<int>( "AlwaysCallExternalRid", interspec );
+    prev_always_call = UserPreferences::preferenceValue<int>( "AlwaysCallExternalRid", interspec );
   }catch( std::exception & ){ cerr << "Exception getting AlwaysCallExternalRid." << endl; }
   
   try
   {
-    prev_url_path = InterSpecUser::preferenceValue<string>( "ExternalRidUrl", interspec );
+    prev_url_path = UserPreferences::preferenceValue<string>( "ExternalRidUrl", interspec );
   }catch( std::exception & ){ cerr << "Exception getting ExternalRidUrl" << endl; }
   
   try
   {
-    prev_exe_path = InterSpecUser::preferenceValue<string>( "ExternalRidExe", interspec );
+    prev_exe_path = UserPreferences::preferenceValue<string>( "ExternalRidExe", interspec );
   }catch( std::exception & ){ cerr << "Exception getting ExternalRidExe." << endl; }
   
   const auto set_to_old_prefs = [prev_always_call, prev_url_path, prev_exe_path](){
     InterSpec *interspec = InterSpec::instance();
     assert( interspec );
     
-    InterSpecUser::setPreferenceValue( interspec->m_user, "AlwaysCallExternalRid", prev_always_call, interspec );
-    //InterSpecUser::setPreferenceValue( interspec->m_user, "ExternalRidWarn", false, interspec );
-    InterSpecUser::setPreferenceValue( interspec->m_user, "ExternalRidUrl", prev_url_path, interspec );
-    InterSpecUser::setPreferenceValue( interspec->m_user, "ExternalRidExe", prev_exe_path, interspec );
+    UserPreferences::setPreferenceValue( "AlwaysCallExternalRid", prev_always_call, interspec );
+    //UserPreferences::setPreferenceValue( "ExternalRidWarn", false, interspec );
+    UserPreferences::setPreferenceValue( "ExternalRidUrl", prev_url_path, interspec );
+    UserPreferences::setPreferenceValue( "ExternalRidExe", prev_exe_path, interspec );
     passMessage( "External-RID preferences have been reverted back to original.", WarningWidget::WarningMsgInfo );
   };//set_to_old_prefs
   

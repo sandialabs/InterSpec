@@ -45,7 +45,7 @@ using namespace std;
 
 
 FeatureMarkerWindow::FeatureMarkerWindow( InterSpec *viewer )
-  : AuxWindow( "Feature Markers",
+  : AuxWindow( WString::tr("window-title-feature-markers"),
     (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::PhoneNotFullScreen)
      | AuxWindowProperties::SetCloseable
      | AuxWindowProperties::DisableCollapse) ),
@@ -84,6 +84,12 @@ FeatureMarkerWindow::~FeatureMarkerWindow()
 }
 
 
+FeatureMarkerWidget *FeatureMarkerWindow::tool()
+{
+  return m_feature;
+}
+
+
 void FeatureMarkerWindow::setFeatureMarkerChecked( const FeatureMarkerType option, const bool checked )
 {
   if( m_feature )
@@ -107,6 +113,8 @@ FeatureMarkerWidget::FeatureMarkerWidget( InterSpec* viewer, Wt::WContainerWidge
     m_comptonEdge( nullptr ),
     m_sumPeaks( nullptr )
 {
+  assert( m_viewer );
+  
   init();
 }
 
@@ -151,23 +159,27 @@ void FeatureMarkerWidget::init()
   wApp->useStyleSheet( "InterSpec_resources/FeatureMarkerWidget.css" );
   addStyleClass( "FeatureMarkerWidget" );
   
-  m_escapePeaks = new WCheckBox( "Escape Peaks", this );
+  m_viewer->useMessageResourceBundle( "FeatureMarkerWidget" );
+  
+  m_escapePeaks = new WCheckBox( WString::tr("fmw-escape-peaks"), this );
   m_escapePeaks->setInline( false );
-  m_escapePeaks->checked().connect( boost::bind( &InterSpec::setFeatureMarkerOption, m_viewer,
+  m_escapePeaks->setWordWrap( false );
+  m_escapePeaks->checked().connect( boost::bind( &FeatureMarkerWidget::handleFeatureMarkerOptionChanged, this,
                                        FeatureMarkerType::EscapePeakMarker, true ) );
-  m_escapePeaks->unChecked().connect( boost::bind( &InterSpec::setFeatureMarkerOption, m_viewer,
+  m_escapePeaks->unChecked().connect( boost::bind( &FeatureMarkerWidget::handleFeatureMarkerOptionChanged, this,
                                                 FeatureMarkerType::EscapePeakMarker, false ) );
   
-  m_comptonPeak = new WCheckBox( "Compton Peak", this );
+  m_comptonPeak = new WCheckBox( WString::tr("fmw-compton-peak"), this );
   m_comptonPeak->setInline( false );
-  m_comptonPeak->checked().connect( boost::bind( &InterSpec::setFeatureMarkerOption, m_viewer,
+  m_comptonPeak->setWordWrap( false );
+  m_comptonPeak->checked().connect( boost::bind( &FeatureMarkerWidget::handleFeatureMarkerOptionChanged, this,
                                                 FeatureMarkerType::ComptonPeakMarker, true ) );
-  m_comptonPeak->unChecked().connect( boost::bind( &InterSpec::setFeatureMarkerOption, m_viewer,
+  m_comptonPeak->unChecked().connect( boost::bind( &FeatureMarkerWidget::handleFeatureMarkerOptionChanged, this,
                                                   FeatureMarkerType::ComptonPeakMarker, false ) );
   
   WContainerWidget *angleDiv = new WContainerWidget( this );
   angleDiv->addStyleClass( "AngleRow" );
-  WLabel *label = new WLabel( "Angle", angleDiv );
+  WLabel *label = new WLabel( WString::tr("fmw-angle"), angleDiv );
   label->setMargin( WLength(1.8,WLength::FontEm), Wt::Left );
   label->setMargin( WLength(0.2,WLength::FontEm), Wt::Right );
   m_comptonAngle = new WSpinBox( angleDiv );
@@ -182,19 +194,21 @@ void FeatureMarkerWidget::init()
   m_comptonAngle->changed().connect( this, &FeatureMarkerWidget::handleComptonAngleChanged );
   m_comptonAngle->textInput().connect( this, &FeatureMarkerWidget::handleComptonAngleChanged );
   
-  m_comptonEdge = new WCheckBox( "Compton Edge", this );
+  m_comptonEdge = new WCheckBox( WString::tr("fmw-compton-edge"), this );
   m_comptonEdge->setInline( false );
-  m_comptonEdge->checked().connect( boost::bind( &InterSpec::setFeatureMarkerOption, m_viewer,
+  m_comptonEdge->setWordWrap( false );
+  m_comptonEdge->checked().connect( boost::bind( &FeatureMarkerWidget::handleFeatureMarkerOptionChanged, this,
                                                 FeatureMarkerType::ComptonEdgeMarker, true ) );
-  m_comptonEdge->unChecked().connect( boost::bind( &InterSpec::setFeatureMarkerOption, m_viewer,
+  m_comptonEdge->unChecked().connect( boost::bind( &FeatureMarkerWidget::handleFeatureMarkerOptionChanged, this,
                                                   FeatureMarkerType::ComptonEdgeMarker, false ) );
   
   
-  m_sumPeaks = new WCheckBox( "Sum Peak", this );
+  m_sumPeaks = new WCheckBox( WString::tr("fmw-sum-peak"), this );
   m_sumPeaks->setInline( false );
-  m_sumPeaks->checked().connect( boost::bind( &InterSpec::setFeatureMarkerOption, m_viewer,
+  m_sumPeaks->setWordWrap( false );
+  m_sumPeaks->checked().connect( boost::bind( &FeatureMarkerWidget::handleFeatureMarkerOptionChanged, this,
                                                 FeatureMarkerType::SumPeakMarker, true ) );
-  m_sumPeaks->unChecked().connect( boost::bind( &InterSpec::setFeatureMarkerOption, m_viewer,
+  m_sumPeaks->unChecked().connect( boost::bind( &FeatureMarkerWidget::handleFeatureMarkerOptionChanged, this,
                                                   FeatureMarkerType::SumPeakMarker, false ) );
 }//init()
 
@@ -205,3 +219,8 @@ void FeatureMarkerWidget::handleComptonAngleChanged()
   m_viewer->setComptonPeakAngle( angle );
 }//void handleComptonAngleChanged();
 
+
+void FeatureMarkerWidget::handleFeatureMarkerOptionChanged( const FeatureMarkerType option, const bool checked )
+{
+  m_viewer->setFeatureMarkerOption( option, checked );
+}//void handleFeatureMarkerOptionChanged( const FeatureMarkerType option, const bool checked );

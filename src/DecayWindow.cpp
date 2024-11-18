@@ -43,6 +43,7 @@
 #include "InterSpec/InterSpec.h"
 #include "InterSpec/DecayWindow.h"
 #include "InterSpec/PhysicalUnits.h"
+#include "InterSpec/UserPreferences.h"
 #include "InterSpec/DecayActivityDiv.h"
 #include "InterSpec/DecayDataBaseServer.h"
 
@@ -57,11 +58,16 @@ using namespace std;
 
 
 DecayWindow::DecayWindow( InterSpec *viewer )
-: AuxWindow( "Nuclide Decay Information",
+: AuxWindow( WString::tr("window-title-nuc-decay"),
              //(Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::IsModal) | AuxWindowProperties::DisableCollapse) ),
-            (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::DisableCollapse) | AuxWindowProperties::EnableResize) ),
+            (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::DisableCollapse) 
+             | AuxWindowProperties::EnableResize
+             | AuxWindowProperties::SetCloseable) ),
   m_activityDiv( 0 )
 {
+  if( viewer )
+    viewer->useMessageResourceBundle( "DecayActivity" );
+  
   m_activityDiv = new DecayActivityDiv( viewer );
   
   WGridLayout *layout = stretcher();
@@ -71,7 +77,7 @@ DecayWindow::DecayWindow( InterSpec *viewer )
   layout->setHorizontalSpacing( 0 );
   layout->setRowStretch( 0, 1 );
 
-  const bool useBq = InterSpecUser::preferenceValue<bool>( "DisplayBecquerel", InterSpec::instance() );
+  const bool useBq = UserPreferences::preferenceValue<bool>( "DisplayBecquerel", InterSpec::instance() );
   const double actUnits = useBq ? PhysicalUnits::MBq : PhysicalUnits::microCi;
   const string actStr = useBq ? "1 MBq" : "1 uCi";
   m_activityDiv->addNuclide( 53, 135, 0, 1.0*actUnits, !useBq, 0.0, actStr);
@@ -83,7 +89,7 @@ DecayWindow::DecayWindow( InterSpec *viewer )
   
 #if( USE_QR_CODES )
   WPushButton *qr_btn = new WPushButton( footer() );
-  qr_btn->setText( "QR Code" );
+  qr_btn->setText( WString::tr("QR Code") );
   qr_btn->setIcon( "InterSpec_resources/images/qr-code.svg" );
   qr_btn->setStyleClass( "LinkBtn DownloadBtn DialogFooterQrBtn" );
   qr_btn->clicked().preventPropagation();
@@ -92,10 +98,10 @@ DecayWindow::DecayWindow( InterSpec *viewer )
     {
       const string url = "interspec://decay/"
                                      + Wt::Utils::urlEncode(m_activityDiv->encodeStateToUrl());
-      QrCode::displayTxtAsQrCode( url, "Decay Tool State", "Current State of decay tool state." );
+      QrCode::displayTxtAsQrCode( url, WString::tr("dw-qr-window-title"), WString::tr("dw-qr-window-text") );
     }catch( std::exception &e )
     {
-      passMessage( "Error creating QR code: " + std::string(e.what()), WarningWidget::WarningMsgHigh );
+      passMessage( WString::tr("app-qr-err").arg(e.what()), WarningWidget::WarningMsgHigh );
     }
   }) );
 #endif //USE_QR_CODES
@@ -156,21 +162,21 @@ void DecayWindow::clearAllNuclides()
 
 
 void DecayWindow::addNuclide( const int z, const int a, const int iso,
-                        const double activity, const bool useCurries,
+                        const double activity, const bool useCuries,
                         const double age, std::string activityStr, const double maxtime )
 {
   if( m_activityDiv )
   {
     if (activityStr.empty())
     {
-      activityStr = PhysicalUnits::printToBestActivityUnits(activity, 3, useCurries);
+      activityStr = PhysicalUnits::printToBestActivityUnits(activity, 3, useCuries);
     }else
     {
       assert((activity < 1.0E-6)
         || (fabs(activity - PhysicalUnits::stringToActivity(activityStr)) < 0.001 * activity));
     }
 
-    m_activityDiv->addNuclide( z, a, iso, activity, useCurries, age, activityStr);
+    m_activityDiv->addNuclide( z, a, iso, activity, useCuries, age, activityStr);
     if( maxtime > 0.0 )
       m_activityDiv->setDecayChartTimeRange( maxtime );
   }//if( m_activityDiv )

@@ -63,7 +63,7 @@ enum AuxWindowProperties
   IsModal = 0x04,
   
   /** Styles the window to be an InterSpec help window. */
-  IsHelpWIndow = 0x08,
+  IsHelpWindow = 0x08,
   
   /** Dont allow the window to be collapsed.  TODO: invert this to default to not allowing collapse. */
   DisableCollapse = 0x10,
@@ -261,7 +261,9 @@ public:
   //  "DialogClose"
   //The button is not connected to any slots (e.g. it does not actually close
   //  this dialog).
-  Wt::WPushButton *addCloseButtonToFooter(std::string overide="Close", bool floatright=false, Wt::WContainerWidget * footerOverride=NULL);
+  Wt::WPushButton *addCloseButtonToFooter( Wt::WString override_txt = "Close",
+                                           const bool float_right = false,
+                                           Wt::WContainerWidget *footerOverride = nullptr );
   
   //Help button add to footer
   static void addHelpInFooter(Wt::WContainerWidget *footer, std::string page );

@@ -29,6 +29,7 @@
 #include <string>
 #include <stdexcept>
 
+#include <Wt/WLocale>
 #include <Wt/WWebWidget>  //For quoting strings only
 
 #include "rapidxml/rapidxml.hpp"
@@ -54,6 +55,7 @@
 #include "InterSpec/DecayDataBaseServer.h"
 #include "InterSpec/MassAttenuationTool.h"
 #include "InterSpec/GammaInteractionCalc.h"
+#include "InterSpec/PhysicalUnitsLocalized.h"
 
 
 using namespace std;
@@ -93,6 +95,9 @@ namespace
     
     /** The nuclide - must not be nullptr. */
     const SandiaDecay::Nuclide *m_nuclide;
+    
+    /** Optional color specified in `add_ref_line.xml` for this nuclide; will override user selection if specified. */
+    Wt::WColor m_color;
   };//struct NucMixComp
   
   struct NucMix
@@ -125,8 +130,28 @@ namespace
     float m_energy;
     float m_branch_ratio;
     std::string m_info;
-    CustomLine( float ener, float br, std::string &&inf )
-    : m_energy(ener), m_branch_ratio(br), m_info( std::move(inf) )
+    Wt::WColor m_color;
+    
+    /** The nuclide the user may have specified.  
+     If user specifies the nuclide, than the transition will be picked out, assuming a weighting window of 0.25 keV (i.e., if nuclide
+     is valid, so will transition), and that gamma was intended.
+     */
+    const SandiaDecay::Nuclide *m_nuclide;
+    const SandiaDecay::Transition *m_transition;
+    
+    /** If detector efficiency and/or shielding apply to this line, for line height display purposes only. */
+    bool m_atten_applies;
+    
+    CustomLine( float ener, float br, std::string &&inf,
+               const SandiaDecay::Nuclide *nuc, const SandiaDecay::Transition *trans,
+               const bool atten, Wt::WColor &&color )
+    : m_energy(ener), 
+    m_branch_ratio(br),
+    m_info( std::move(inf) ), 
+    m_color( std::move(color) ),
+    m_nuclide( nuc ),
+    m_transition( trans ),
+    m_atten_applies( atten )
     {
     }
   };//struct CustomLine
@@ -214,6 +239,7 @@ namespace
             const XmlAttribute *nuc_name = XML_FIRST_ATTRIB( nuc, "name" );
             const XmlAttribute *nuc_act_frac = XML_FIRST_ATTRIB( nuc, "act-frac" );
             const XmlAttribute *age_offset = XML_FIRST_ATTRIB( nuc, "age-offset" );
+            const XmlAttribute *color = XML_FIRST_ATTRIB( nuc, "color" );
             
             if( !nuc_name || !nuc_name->value_size() )
               throw runtime_error( "No nuclide name" );
@@ -241,6 +267,19 @@ namespace
               comp.m_age_offset = PhysicalUnits::stringToTimeDuration( age_offset_str );
             }//if( age_offset && age_offset->value_size() )
             
+            if( color && color->value_size() )
+            {
+              const string color_str = SpecUtils::xml_value_str(color);
+              comp.m_color = Wt::WColor( color_str );
+              if( comp.m_color.isDefault() )
+              {
+                const string msg = "NucMixture named '" + mix_name_str + "'"
+                    " has invalid color value for '" + nuc_name_str + "': "
+                    "'" + color_str + "' - not CSS color string.";
+                cerr << msg << endl;
+                //throw runtime_error( msg ); // we wont disregard the whole file over a single color
+              }//if( parsing of color failed )
+            }//if( user specified color )
             
             mix.m_components.push_back( std::move(comp) );
           }//XML_FOREACH_CHILD( nuc, nuc_mix, "Nuc" )
@@ -321,7 +360,64 @@ namespace
             
             src_lines.m_max_branch_ratio = std::max( src_lines.m_max_branch_ratio, br );
             
-            src_lines.m_lines.emplace_back( energy, br, std::move(info_str) );
+            const SandiaDecay::Nuclide *nuc = nullptr;
+            const SandiaDecay::Transition *trans = nullptr;
+            const XmlAttribute *nuclide = XML_FIRST_ATTRIB( line, "nuc" );
+            if( nuclide && nuclide->value_size() )
+            {
+              const string nuc_name = SpecUtils::xml_value_str(nuclide);
+              nuc = db->nuclide( nuc_name );
+              if( !nuc )
+                throw runtime_error( "SourceLines named '" + src_name_str + "' has an invalid nuclide ('" + nuc_name + "')." );
+              
+              size_t transition_index = 0;
+              PeakDef::SourceGammaType nearestGammaType;
+              PeakDef::findNearestPhotopeak( nuc, energy, 0.25, false,
+                                            trans, transition_index, nearestGammaType );
+              if( !trans )
+                throw runtime_error( "SourceLines named '" + src_name_str + "' with nuclide '"
+                                    + nuc_name + "', couldnt be matched to source data for energy "
+                                    + std::to_string(energy) + " keV." );
+            }//if( nuclide && nuclide->value_size() )
+            
+            bool atten_applies = true;
+            const XmlAttribute *atten = XML_FIRST_ATTRIB( line, "atten" );
+            if( atten && atten->value_size() )
+            {
+              const string atten_str = SpecUtils::xml_value_str(atten);
+              if( SpecUtils::iequals_ascii(atten_str, "0")
+                 || SpecUtils::iequals_ascii(atten_str, "false")
+                 || SpecUtils::iequals_ascii(atten_str, "no") )
+              {
+                atten_applies = false;
+              }else if( !SpecUtils::iequals_ascii(atten_str, "1")
+                       && !SpecUtils::iequals_ascii(atten_str, "true")
+                       && !SpecUtils::iequals_ascii(atten_str, "yes") )
+              {
+                throw runtime_error( "SourceLines named '" + src_name_str + "' has invalid value "
+                                     " for the 'atten' attribute ('" + atten_str + "')" );
+              }
+            }//if( atten && atten->value_size() )
+            
+            Wt::WColor color;
+            const XmlAttribute *color_attrib = XML_FIRST_ATTRIB( line, "color" );
+            if( color_attrib && color_attrib->value_size() )
+            {
+              const string color_str = SpecUtils::xml_value_str(color_attrib);
+              color = Wt::WColor( color_str );
+              if( color.isDefault() )
+              {
+                // Parsing of color failed
+                const string msg =  "SourceLines named '" + src_name_str + "' has invalid value "
+                                     " for color attribute ('" + color_str
+                                    + "') - could not parse as CSS color.";
+                cerr << msg << endl;
+                //throw runtime_error( msg ); //We wont disregard the whole file over an invalid file
+              }
+            }//if( color_attrib && color_attrib->value_size() )
+            
+            src_lines.m_lines.emplace_back( energy, br, std::move(info_str), nuc, 
+                                           trans, atten_applies, std::move(color) );
           }//XML_FOREACH_CHILD( line, source, "Line" )
           
           if( src_lines.m_lines.empty() )
@@ -350,12 +446,26 @@ namespace
     load_ref_line_file( add_lines_path, *nuc_mixes, *custom_lines );
     
 #if( BUILD_AS_ELECTRON_APP || IOS || ANDROID || BUILD_AS_OSX_APP || BUILD_AS_LOCAL_SERVER || BUILD_AS_WX_WIDGETS_APP || BUILD_AS_UNIT_TEST_SUITE )
-    const string user_data_dir = InterSpec::writableDataDirectory();
-    const string custom_lines_path = SpecUtils::append_path( user_data_dir, "add_ref_line.xml" );
     
-    // Any duplicate names, will overwrite what comes with InterSpec
-    if( SpecUtils::is_file( custom_lines_path ) )
-      load_ref_line_file( custom_lines_path, *nuc_mixes, *custom_lines );
+    string user_data_dir;
+    
+    // `InterSpec::writableDataDirectory()` will throw if it hasnt been set.
+    //  - e.g., in testing or batch mode
+    try
+    {
+      user_data_dir = InterSpec::writableDataDirectory();
+    }catch( std::exception & )
+    {
+    }//try / catch
+    
+    if( !user_data_dir.empty() )
+    {
+      const string custom_lines_path = SpecUtils::append_path( user_data_dir, "add_ref_line.xml" );
+        
+      // Any duplicate names, will overwrite what comes with InterSpec
+      if( SpecUtils::is_file( custom_lines_path ) )
+        load_ref_line_file( custom_lines_path, *nuc_mixes, *custom_lines );
+    }//if( !user_data_dir.empty() )
 #endif
     
     sm_nuc_mixes = nuc_mixes;
@@ -405,6 +515,18 @@ namespace
     return &(pos->second);
   }//const NucMix *get_custom_nuc_mix( std::string label )
   
+  
+  //The efficiency of S.E. and D.E. peaks, relative to F.E. peak, for the 20% Generic GADRAS DRF
+  //  included in InterSpec, is given pretty well by the following (energy in keV):
+  double ns_single_escape_sf( const double x ) 
+  {
+    return std::max( 0.0, (1.8768E-11 *x*x*x) - (9.1467E-08 *x*x) + (2.1565E-04 *x) - 0.16367 );
+  };
+  
+  double ns_double_escape_sf( const double x )
+  {
+    return std::max( 0.0, (1.8575E-11 *x*x*x) - (9.0329E-08 *x*x) + (2.1302E-04 *x) - 0.16176 );
+  };
 }//namespace
 
 
@@ -1200,6 +1322,7 @@ RefLineInput::RefLineInput()
   m_showAlphas( false ),
   m_showBetas( false ),
   m_showCascades( false ),
+  m_showEscapes( false ),
   m_detector_name(),
   m_det_intrinsic_eff(),
   m_shielding_name(),
@@ -1228,6 +1351,7 @@ bool RefLineInput::operator==(const RefLineInput &rhs) const
   && (m_showAlphas == rhs.m_showAlphas)
   && (m_showBetas == rhs.m_showBetas)
   && (m_showCascades == rhs.m_showCascades)
+  && (m_showEscapes == rhs.m_showEscapes)
   && (m_detector_name == rhs.m_detector_name)
   //&& (m_det_intrinsic_eff == rhs.)
   && (m_shielding_name == rhs.m_shielding_name)
@@ -1246,11 +1370,13 @@ ReferenceLineInfo::RefLine::RefLine()
   m_shield_atten( 1.0f ),
   m_particle_sf_applied( 1.0f ),
   m_decaystr(),
+  m_color(),
   m_decay_intensity( 0.0 ),
   m_particle_type( ReferenceLineInfo::RefLine::Particle::Gamma ),
   m_parent_nuclide( nullptr ),
   m_transition( nullptr ),
   m_source_type( ReferenceLineInfo::RefLine::RefGammaType::Normal ),
+  m_attenuation_applies( true ),
   m_element( nullptr ),
   m_reaction( nullptr )
 {
@@ -1585,6 +1711,9 @@ void ReferenceLineInfo::toJson( string &json ) const
         jsons << ",\"src_label\":\"" << line.m_parent_nuclide->symbol << "\"";
     }//if( next gamma line is close ) / else
     
+    if( !line.m_color.isDefault() )
+      jsons << ",\"color\":\"" << line.m_color.cssText(false) << "\"";
+    
     jsons << "}";
     
     printed = true;
@@ -1670,8 +1799,11 @@ void RefLineInput::deSerialize( const rapidxml::xml_node<char> *base_node )
     input.m_showBetas = (node->value()[0] == '1');
   
   node = base_node->first_node("ShowCascades", 12);
-  if (node && node->value_size())
+  if( node && node->value_size() )
     input.m_showCascades = (node->value()[0] == '1');
+  
+  node = base_node->first_node("ShowEscapes", 11);
+  input.m_showEscapes = node && node->value_size() && (node->value()[0] == '1');
   
   //node = base_node->first_node( "ShowLines", 9 );
   //if( node && node->value_size() )
@@ -1847,7 +1979,37 @@ void RefLineInput::serialize( rapidxml::xml_node<char> *parent_node ) const
   if( !m_age.empty() )
   {
     name = "Age";
-    value = doc->allocate_string( m_age.c_str() );
+
+    string age_str = m_age;
+    
+    {// begin scope to convert age into English
+      const SandiaDecay::SandiaDecayDataBase *db = DecayDataBaseServer::database();
+      const SandiaDecay::Nuclide *nuc = db->nuclide( m_input_txt );
+      const double hl = nuc ? nuc->halfLife : -1.0;
+      
+      try
+      {
+        // If we can convert from text to duration, using non-localized function, we probably
+        //  dont need to convert things
+        PhysicalUnits::stringToTimeDurationPossibleHalfLife( age_str, hl );
+      }catch( std::exception &e )
+      {
+        const Wt::WLocale &locale = Wt::WLocale::currentLocale();
+        if( !locale.name().empty() && !SpecUtils::istarts_with(locale.name(), "en" ) )
+        {
+          try
+          {
+            const double duration = PhysicalUnitsLocalized::stringToTimeDurationPossibleHalfLife( age_str, hl );
+            age_str = PhysicalUnits::printToBestTimeUnits( duration );
+          }catch( std::exception &e )
+          {
+            cerr << "Error converting age ('" << age_str << "') to English time-span: " << e.what() << endl;
+          }
+        }//if( we are in a non-English locale )
+      }//try / catch - see if we can read it in
+    }// End scope to convert age into English
+    
+    value = doc->allocate_string( age_str.c_str() );
     node = doc->allocate_node( rapidxml::node_element, name, value );
     base_node->append_node( node );
   }//if( age >= 0.0 )
@@ -1888,6 +2050,11 @@ void RefLineInput::serialize( rapidxml::xml_node<char> *parent_node ) const
   node = doc->allocate_node(rapidxml::node_element, name, value);
   base_node->append_node(node);
 
+  name = "ShowEscapes";
+  value = (m_showEscapes ? "1" : "0");
+  node = doc->allocate_node(rapidxml::node_element, name, value);
+  base_node->append_node(node);
+  
   name = "PromptLinesOnly";
   value = (m_promptLinesOnly ? "1" : "0");
   node = doc->allocate_node( rapidxml::node_element, name, value );
@@ -2080,7 +2247,7 @@ std::shared_ptr<ReferenceLineInfo> ReferenceLineInfo::generateRefLineInfo( RefLi
     if( input.m_promptLinesOnly )
     {
       age = 5.0*nuc->promptEquilibriumHalfLife();
-      input.m_age = PhysicalUnits::printToBestTimeUnits(age, 2);
+      input.m_age = PhysicalUnitsLocalized::printToBestTimeUnits(age, 2);
     }else if( input.m_age == "" )
     {
       age = PeakDef::defaultDecayTime( nuc, &input.m_age );
@@ -2097,7 +2264,7 @@ std::shared_ptr<ReferenceLineInfo> ReferenceLineInfo::generateRefLineInfo( RefLi
     {
       try
       {
-        age = PhysicalUnits::stringToTimeDurationPossibleHalfLife( input.m_age, nuc->halfLife );
+        age = PhysicalUnitsLocalized::stringToTimeDurationPossibleHalfLife( input.m_age, nuc->halfLife );
       }catch( std::exception & )
       {
         answer.m_input_warnings.push_back( "Invalid nuclide age input." );
@@ -2192,11 +2359,27 @@ std::shared_ptr<ReferenceLineInfo> ReferenceLineInfo::generateRefLineInfo( RefLi
   {
     try
     {
+      const auto lineType = OtherRefLineType::OtherBackground;
       const float energy = static_cast<float>(PhysicalUnits::stringToEnergy( input.m_input_txt ));
       
       //BackgroundLine<Energy, RelBranchRatio, "Symbol", OtherRefLineType, "Description">
-      OtherRefLine line{energy, 1.0f, "", OtherRefLineType::OtherBackground, input.m_input_txt};
+      OtherRefLine line{energy, 1.0f, "", lineType, input.m_input_txt};
       otherRefLinesToShow.push_back( line );
+      
+      if( input.m_showEscapes && (energy > 1022.0) )
+      {
+        const float se_energy = static_cast<float>( energy - 510.9989 );
+        const float de_energy = static_cast<float>( energy - 2.0*510.9989 );
+        const float se_rel_amp = static_cast<float>( ns_single_escape_sf(energy) );
+        const float de_rel_amp = static_cast<float>( ns_double_escape_sf(energy) );
+        
+        OtherRefLine se_line{ se_energy, se_rel_amp, "", lineType, "Generic HPGe S.E. fraction" };
+        OtherRefLine de_line{ de_energy, de_rel_amp, "", lineType, "Generic HPGe D.E. fraction" };
+        
+        otherRefLinesToShow.push_back( se_line );
+        otherRefLinesToShow.push_back( de_line );
+      }//if( input.m_showEscapes && (energy > 1022.0) )
+      
       is_custom_energy = true;
       input.m_age = "";
     }catch( std::exception & )
@@ -2219,7 +2402,7 @@ std::shared_ptr<ReferenceLineInfo> ReferenceLineInfo::generateRefLineInfo( RefLi
       {
         try
         {
-          age = PhysicalUnits::stringToTimeDuration( input.m_age );
+          age = PhysicalUnitsLocalized::stringToTimeDuration( input.m_age );
         }catch( std::exception & )
         {
           answer.m_input_warnings.push_back( "Invalid age input." );
@@ -2252,15 +2435,7 @@ std::shared_ptr<ReferenceLineInfo> ReferenceLineInfo::generateRefLineInfo( RefLi
     return answer_ptr;
   }//if( we couldnt match input text to a source )
   
-  answer.m_validity = ReferenceLineInfo::InputValidity::Valid;
-  
-  input.m_showGammas = input.m_showGammas;
-  input.m_showXrays = input.m_showXrays;
-  input.m_showAlphas = input.m_showAlphas;
-  input.m_showBetas  = input.m_showBetas;
-  // We will also update showing cascades later based on answer.m_has_coincidences
-  input.m_showCascades = input.m_showCascades;
-  
+  answer_ptr->m_validity = ReferenceLineInfo::InputValidity::Valid;
   answer_ptr->m_input = input;
   
   
@@ -2296,7 +2471,7 @@ std::shared_ptr<ReferenceLineInfo> ReferenceLineInfo::generateRefLineInfo( RefLi
         break;
         
       case SandiaDecay::ProductType::GammaParticle:
-        use_particle[type] = (input.m_showGammas || input.m_showCascades);
+        use_particle[type] = (input.m_showGammas || input.m_showCascades || input.m_showEscapes);
         break;
         
       case SandiaDecay::ProductType::AlphaParticle:
@@ -2461,13 +2636,6 @@ std::shared_ptr<ReferenceLineInfo> ReferenceLineInfo::generateRefLineInfo( RefLi
             }//for( loop over coincidences )
           }//if( show cascade gammas )
           
-          
-          // If type is GammaParticle, we could be here if user selected to show cascade, but
-          //  not actual gammas, so we need to check for this, and if so not add this gamma
-          //  in to be shown
-          if( (particle.type == SandiaDecay::GammaParticle) && !input.m_showGammas )
-            continue;
-          
           line.m_decay_intensity = br;
           line.m_source_type = ReferenceLineInfo::RefLine::RefGammaType::Normal;
           
@@ -2492,6 +2660,38 @@ std::shared_ptr<ReferenceLineInfo> ReferenceLineInfo::generateRefLineInfo( RefLi
               continue;
               break;
           }//switch( particle.type )
+          
+          if( input.m_showEscapes
+             && (particle.type == SandiaDecay::GammaParticle)
+             && (line.m_energy > 1022.0) && (br > 0.0) )
+          {
+            ReferenceLineInfo::RefLine se_line = line;
+            ReferenceLineInfo::RefLine de_line = line;
+            
+            se_line.m_energy -= (510.9989 * PhysicalUnits::keV);
+            de_line.m_energy -= (2.0 * 510.9989 * PhysicalUnits::keV);
+            se_line.m_decay_intensity = br * ns_single_escape_sf( line.m_energy );
+            de_line.m_decay_intensity = br * ns_double_escape_sf( line.m_energy );
+            se_line.m_source_type = ReferenceLineInfo::RefLine::RefGammaType::SingleEscape;
+            de_line.m_source_type = ReferenceLineInfo::RefLine::RefGammaType::DoubleEscape;
+            
+            char descTxt[128] = { '\0' };
+            snprintf( descTxt, sizeof(descTxt), "S.E. of %.1f keV (generic HPGe eff.)", line.m_energy );
+            se_line.m_decaystr = descTxt + ((se_line.m_decaystr.empty() ? "" : " ") + se_line.m_decaystr );
+            
+            snprintf( descTxt, sizeof(descTxt), "D.E. of %.1f keV (generic HPGe eff.)", line.m_energy );
+            de_line.m_decaystr = descTxt + ((de_line.m_decaystr.empty() ? "" : " ") + de_line.m_decaystr );
+            
+            nuc_lines.push_back( se_line );
+            nuc_lines.push_back( de_line );
+          }//if( input.m_showEscapes && (particle.type == SandiaDecay::GammaParticle) )
+          
+          
+          // If type is GammaParticle, we could be here if user selected to show cascade, but
+          //  not actual gammas, so we need to check for this, and if so not add this gamma
+          //  in to be shown
+          if( (particle.type == SandiaDecay::GammaParticle) && !input.m_showGammas )
+            continue;
           
           nuc_lines.push_back( line );
         }//for( const SandiaDecay::RadParticle &particle : transition->products )
@@ -2555,6 +2755,12 @@ std::shared_ptr<ReferenceLineInfo> ReferenceLineInfo::generateRefLineInfo( RefLi
         get<5>(this_coinc) *= correction_factor; // second gamma BR (just for debug)
       }
       
+      if( !comp.m_color.isDefault() )
+      {
+        for( ReferenceLineInfo::RefLine &this_line : these_lines )
+          this_line.m_color = comp.m_color;
+      }
+      
       lines.insert( end(lines), begin(these_lines), end(these_lines) );
       gamma_coincidences.insert( end(gamma_coincidences), begin(these_coinc), end(these_coinc) );
       
@@ -2598,12 +2804,12 @@ std::shared_ptr<ReferenceLineInfo> ReferenceLineInfo::generateRefLineInfo( RefLi
       refline.m_particle_sf_applied = 1.0f / src_lines->m_max_branch_ratio;
       refline.m_decaystr = line.m_info;
       refline.m_decay_intensity = line.m_branch_ratio;
-      
-      // TODO: refline.m_drf_factor and refline.m_shield_atten will be set below, assuming a
-      //       gamma.  Should consider putting in an option to make it so these factors are
-      //       not applied (would have to be as part of CustomLine)
+      refline.m_parent_nuclide = line.m_nuclide;
+      refline.m_transition = line.m_transition;
+      refline.m_color = line.m_color;
       refline.m_particle_type = ReferenceLineInfo::RefLine::Particle::Gamma;
       refline.m_source_type = ReferenceLineInfo::RefLine::RefGammaType::Normal;
+      refline.m_attenuation_applies = line.m_atten_applies;
       
       lines.push_back( std::move(refline) );
     }//for( const CustomLine &line : src_lines->m_lines )
@@ -2650,6 +2856,7 @@ std::shared_ptr<ReferenceLineInfo> ReferenceLineInfo::generateRefLineInfo( RefLi
       line.m_decay_intensity = eip.abundance;
       line.m_particle_type = ReferenceLineInfo::RefLine::Particle::Gamma;
       line.m_source_type = ReferenceLineInfo::RefLine::RefGammaType::Normal;
+      line.m_decaystr = eip.remark;
       
       lines.push_back( line );
     }//for( const SandiaDecay::EnergyIntensityPair &eip : element->xrays )
@@ -2686,26 +2893,31 @@ std::shared_ptr<ReferenceLineInfo> ReferenceLineInfo::generateRefLineInfo( RefLi
         case OtherRefLineType::U238Series:
           line.m_parent_nuclide = u238;
           line.m_decaystr += "U238 series";
+          // TODO: set a color here
           break;
           
         case OtherRefLineType::U235Series:
           line.m_parent_nuclide = u235;
           line.m_decaystr += "U235 series";
+          // TODO: set a color here
           break;
           
         case OtherRefLineType::Th232Series:
           line.m_parent_nuclide = th232;
           line.m_decaystr += "Th232 series";
+          // TODO: set a color here
           break;
           
         case OtherRefLineType::Ra226Series:
           line.m_parent_nuclide = ra226;
           line.m_decaystr += "U238 (Ra226) series";
+          // TODO: set a color here
           break;
           
         case OtherRefLineType::K40Background:
           line.m_parent_nuclide = k40;
           line.m_decaystr += "Primordial";
+          // TODO: set a color here
           break;
           
         case OtherRefLineType::BackgroundXRay:
@@ -2719,6 +2931,7 @@ std::shared_ptr<ReferenceLineInfo> ReferenceLineInfo::generateRefLineInfo( RefLi
           SpecUtils::split( parts, std::get<2>( bl ), " " );
           if( !parts.empty() )
             line.m_element = db->element( parts[0] );
+          // TODO: set a color here
           break;
         }//case OtherRefLineType::BackgroundXRay:
           
@@ -2763,6 +2976,7 @@ std::shared_ptr<ReferenceLineInfo> ReferenceLineInfo::generateRefLineInfo( RefLi
             line.m_source_type = ReferenceLineInfo::RefLine::RefGammaType::DoubleEscape;
           }
           
+          // TODO: set a color here
           break;
         }
       }//switch( get<3>(*bl) )
@@ -2818,10 +3032,10 @@ std::shared_ptr<ReferenceLineInfo> ReferenceLineInfo::generateRefLineInfo( RefLi
             break;
         }//switch( line.m_source_type )
         
-        if( input.m_det_intrinsic_eff )
+        if( input.m_det_intrinsic_eff && line.m_attenuation_applies )
           line.m_drf_factor = input.m_det_intrinsic_eff( energy );
         
-        if( input.m_shielding_att )
+        if( input.m_shielding_att && line.m_attenuation_applies )
           line.m_shield_atten = input.m_shielding_att( energy );
         
         max_photon_br = std::max( max_photon_br,
@@ -2868,7 +3082,33 @@ std::shared_ptr<ReferenceLineInfo> ReferenceLineInfo::generateRefLineInfo( RefLi
     
     
     // Now lets fill out line.m_decaystr
-    if( line.m_decaystr.empty() )
+    if( line.m_reaction )
+    {
+      // TODO: we can probably come up with a better way to describe reactions
+      if( line.m_reaction->targetNuclide && line.m_reaction->targetElement )
+      {
+        const string orig_deacystr = line.m_decaystr;
+        switch( line.m_reaction->type )
+        {
+          case AlphaNeutron:   line.m_decaystr = "Alphas on "; break;
+          case NeutronAlpha:   line.m_decaystr = "Neutrons on "; break;
+          case AlphaProton:    line.m_decaystr = "Alphas on "; break;
+          case NeutronCapture: line.m_decaystr = "Neutron capture by "; break;
+          case NeutronInelasticScatter: line.m_decaystr = "Neutron inelastic scatter on "; break;
+          case AlphaInelasticScatter:   line.m_decaystr = "Alpha inelastic scatter on "; break;
+          case AnnihilationReaction:    line.m_decaystr = ""; break;
+          case NumReactionType:         line.m_decaystr = ""; break;
+        }//switch( line.m_reaction->type )
+        
+        line.m_decaystr += line.m_reaction->targetNuclide->symbol;
+        
+        if( !orig_deacystr.empty() )
+          line.m_decaystr += ". " + orig_deacystr;
+        
+        //if( line.m_reaction->productNuclide )
+        //  line.m_decaystr += " to give " + line.m_reaction->productNuclide->symbol;
+      }//
+    }else if( line.m_decaystr.empty() )
     {
       if( line.m_transition )
       {
@@ -2896,26 +3136,6 @@ std::shared_ptr<ReferenceLineInfo> ReferenceLineInfo::generateRefLineInfo( RefLi
           default:
             break;
         }//switch( line.m_transition->mode )
-      }else if( line.m_reaction )
-      {
-        // TODO: we can probably come up with a better way to describe reactions
-        if( line.m_reaction->targetNuclide && line.m_reaction->targetElement )
-        {
-          switch( line.m_reaction->type )
-          {
-            case AlphaNeutron:   line.m_decaystr = "Alphas on "; break;
-            case NeutronAlpha:   line.m_decaystr = "Neutrons on "; break;
-            case AlphaProton:    line.m_decaystr = "Alphas on "; break;
-            case NeutronCapture: line.m_decaystr = "Neutron capture by "; break;
-            case NeutronInelasticScatter: line.m_decaystr = "Neutron inelastic scatter on "; break;
-            case AnnihilationReaction: break;
-            case NumReactionType:      break;
-          }//switch( line.m_reaction->type )
-          
-          line.m_decaystr += line.m_reaction->targetNuclide->symbol;
-          //if( line.m_reaction->productNuclide )
-          //  line.m_decaystr += " to give " + line.m_reaction->productNuclide->symbol;
-        }
       }else if( line.m_element )
       {
         line.m_decaystr = line.m_element->name + " fluorescence";

@@ -63,6 +63,8 @@
 {
   /* this is m_bestChi2Act text, and m_upperLimit text */
   display: block;
+  font-size: x-small;
+  margin-left: 5px;
 }
 
 
@@ -189,6 +191,12 @@
   margin: 5px;
   border: 1px solid #d1d1d1;
   row-gap: 2.5px;
+  font-size: smaller;
+}
+
+.MdaRowCurrieLimitContent .CurrieNSideChanRow input
+{
+  font-size: smaller;
 }
 
 .MdaPeakRow .MdaRowSettings
@@ -209,7 +217,7 @@
 .MdaPeakRow .MdaRowCurrieMda .MdaCurrieLimitTitle
 {
   text-align: center;
-  font-size: small;
+  font-size: x-small;
   font-weight: bold;
 }
 
@@ -225,7 +233,7 @@
 .MdaPeakRow .MdaRowCurrieMda .CurrieMoreInfoBtn
 {
   text-align: right;
-  font-size: small;
+  font-size: x-small;
 }
 
 /*
@@ -262,4 +270,12 @@
   white-space: nowrap;
   border-collapse: separate;
   border-spacing: 5px 5px;
+}
+
+
+.MdaCurrieChart
+{
+  width: 100%;
+  height: 200px;
+  margin-bottom: 15px;
 }

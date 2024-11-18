@@ -16,23 +16,23 @@ android {
         }
     }
 
-    compileSdkVersion 33
+    compileSdkVersion 34
     ndkVersion '23.1.7779620'
 
     defaultConfig {
         applicationId "gov.sandia.interspec"
         // Android 4 (Kit Kat) is level 19.  Android 6 (Marshmallow - e.x., Nexus 7) is level 23.
         minSdkVersion 19
-        targetSdkVersion 33
-        versionCode 15
-        versionName "1.0.11"
+        targetSdkVersion 34
+        versionCode 17
+        versionName "1.0.12"
  //       testInstrumentationRunner "android.support.test.runner.AndroidJUnitRunner"
 
         signingConfig signingConfigs.config
 
         externalNativeBuild {
             cmake {
-                arguments "-DUSE_LEAFLET_MAP=ON", "-DUSE_REMOTE_RID=OFF", "-DUSE_REL_ACT_TOOL=OFF"
+                arguments "-DUSE_LEAFLET_MAP=ON"
             }
         }
     }

@@ -412,9 +412,9 @@ void SourceFitDef::deSerialize( const ::rapidxml::xml_node<char> *src_node )
     if( !value )
       return;
     string strval;
-    const bool useCurries = true;
+    const bool useCuries = true;
     if( isActivity )
-      strval = PhysicalUnits::printToBestActivityUnits( *value, 6, useCurries );
+      strval = PhysicalUnits::printToBestActivityUnits( *value, 6, useCuries );
     else
       strval = PhysicalUnits::printToBestTimeUnits( *value, 6 );
     
@@ -2134,11 +2134,16 @@ void fit_model( const std::string wtsession,
       results->errormsgs.push_back( msg );
     }//if( !minimum.IsValid() )
     
+    const vector<double> params = fitParams.Params();
+    const vector<double> errors = fitParams.Errors();
+    const unsigned int ndof = inputPrams->VariableParameters();
+    
     results->successful = ShieldingSourceFitCalc::ModelFitResults::FitStatus::Final;
-    results->paramValues = fitParams.Params();
-    results->paramErrors = fitParams.Errors();
+    results->paramValues = params;
+    results->paramErrors = errors;
     results->edm = minimum.Edm();
     results->num_fcn_calls = minimum.NFcn();
+    results->numDOF = ndof;
     results->chi2 = minimum.Fval();  //chi2Fcn->DoEval( results->paramValues );
     results->distance = chi2Fcn->distance();
     results->geometry = chi2Fcn->geometry();
@@ -2146,10 +2151,6 @@ void fit_model( const std::string wtsession,
     results->background_peaks = chi2Fcn->backgroundPeaks();
     results->options = chi2Fcn->options();
     results->initial_shieldings = chi2Fcn->initialShieldings();
-    
-    
-    const vector<double> &params = results->paramValues;
-    const vector<double> &errors = results->paramErrors;
     
     
     {// Begin set fit source info
@@ -2432,6 +2433,83 @@ void fit_model( const std::string wtsession,
       results->final_shieldings.push_back( shield );
     }//for( int i = 0; i < nshieldings; ++i )
     
+    
+    
+    {// Begin logging detailed info, we'll later use to template reports
+      GammaInteractionCalc::ShieldingSourceChi2Fcn::NucMixtureCache mixcache;
+      auto peak_calc_details = make_unique<vector<GammaInteractionCalc::PeakDetail>>();
+      const auto peak_comparisons = chi2Fcn->energy_chi_contributions( params, errors, mixcache,
+                                                                      &(results->peak_calc_log),
+                                                                      peak_calc_details.get() );
+      
+      results->peak_calc_details = std::move(peak_calc_details);
+      results->peak_comparisons.reset( new vector<GammaInteractionCalc::PeakResultPlotInfo>(peak_comparisons) );
+      
+      
+      if( !results->peak_calc_log.empty() )
+      {
+        char buffer[64];
+        snprintf( buffer, sizeof(buffer), "There %s %i parameter%s fit for",
+                 (ndof>1 ? "were" : "was"), int(ndof), (ndof>1 ? "s" : "") );
+        results->peak_calc_log.push_back( "&nbsp;" );
+        results->peak_calc_log.push_back( buffer );
+      }//if( !m_calcLog.empty() )
+      
+      try
+      {
+        auto shielding_details = make_unique<vector<GammaInteractionCalc::ShieldingDetails>>();
+        chi2Fcn->log_shield_info( params, errors, results->fit_src_info, *shielding_details );
+        
+        // Now fill in a little info we need the results for
+        assert( results->initial_shieldings.size() == shielding_details->size() );
+        for( size_t i = 0; i < results->initial_shieldings.size(); ++i )
+        {
+          const ShieldingSourceFitCalc::ShieldingInfo &initial_shield = results->initial_shieldings[i];
+          if( i >= shielding_details->size() )
+            continue; //wont happen, but jic
+          if( i >= results->final_shieldings.size() )
+            continue; //wont happen, but jic
+          
+          const ShieldingSourceFitCalc::FitShieldingInfo &final_shield = results->final_shieldings[i];
+          
+          GammaInteractionCalc::ShieldingDetails &calc_detail = shielding_details->at( i );
+          for( size_t j = 0; j < 3; ++j )
+          {
+            calc_detail.m_fit_dimension[j] = initial_shield.m_fitDimensions[j];
+            if( calc_detail.m_fit_dimension[j] )
+              calc_detail.m_dimension_uncert[j] = final_shield.m_dimensionUncerts[j];
+          }//
+        }//for( size_t i = 0; i < results->initial_shieldings.size(); ++i )
+        
+        
+        results->shield_calc_details = std::move(shielding_details);
+      }catch( std::exception &e )
+      {
+        results->errormsgs.push_back( e.what() );
+      }
+      
+      try
+      {
+        auto shielding_details = make_unique<vector<GammaInteractionCalc::SourceDetails>>();
+        chi2Fcn->log_source_info( params, errors, results->fit_src_info, *shielding_details );
+        results->source_calc_details = std::move(shielding_details);
+      }catch( std::exception &e )
+      {
+        results->errormsgs.push_back( e.what() );
+      }
+      
+      // Check if background subtraction is enabled, but no peaks actually background subtracted
+      assert( results->peak_calc_details );
+      if( results->peak_calc_details && chi2Fcn->options().background_peak_subtract )
+      {
+        size_t num_back_sub_peaks = 0;
+        for( const GammaInteractionCalc::PeakDetail &p : *results->peak_calc_details )
+          num_back_sub_peaks += (p.backgroundCounts > 0.0f);
+        if( num_back_sub_peaks == 0 )
+          results->errormsgs.push_back( "Background peak subtraction requested, but no background"
+                                       " peak overlapped a foreground peak.");
+      }//if( background peak subtraction selected )
+    }// end logging detailed info, we'll later use to template reports
   }catch( GammaInteractionCalc::ShieldingSourceChi2Fcn::CancelException &e )
   {
     const size_t nFunctionCallsSoFar = gui_progress_info->numFunctionCallsSoFar();
@@ -2479,7 +2557,7 @@ void fit_model( const std::string wtsession,
   }// try / catch
   
   chi2Fcn->fittingIsFinished();
-  
+ 
   if( finished_fcn && update_gui )
   {
     Wt::WApplication *app = Wt::WApplication::instance();

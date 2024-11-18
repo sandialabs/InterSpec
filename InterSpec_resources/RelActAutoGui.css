@@ -462,3 +462,17 @@ a.DownloadLink.RelActDownload > span
   display: flex;
   justify-content: center;
 }
+
+.RelActAutoGui .RelActCalcAutoAlphaBuildWarning
+{
+  display: block;
+  
+  color: navy;
+  font-weight: bold;
+  text-align: center;
+
+  padding: 2px;
+  margin: 1px;
+  border: 1px solid grey;
+  background: yellow;
+}

@@ -44,40 +44,30 @@
 
 #include <Wt/WText>
 #include <Wt/WTimer>
-#include <Wt/WLabel>
 #include <Wt/WServer>
-#include <Wt/WCheckBox>
-#include <Wt/WIOService>
-#include <Wt/WFitLayout>
-#include <Wt/WFileUpload>
 #include <Wt/WGridLayout>
-#include <Wt/WPushButton>
 #include <Wt/WApplication>
 #include <Wt/WEnvironment>
-#include <Wt/WProgressBar>
-#include <Wt/WBorderLayout>
-#include <Wt/WBootstrapTheme>
 #include <Wt/WContainerWidget>
-#include <Wt/WContainerWidget>
-#include <Wt/WStandardItemModel>
-#include <Wt/Chart/WCartesianChart>
-#include <Wt/WMessageResourceBundle>
+
+#if( PROMPT_USER_BEFORE_LOADING_PREVIOUS_STATE )
+#include <Wt/WLabel>
+#include <Wt/WCheckBox>
+#include <Wt/WPushButton>
+#endif
 
 #include "SpecUtils/DateTime.h"
+#include "SpecUtils/SpecFile.h"
 #include "SpecUtils/Filesystem.h"
 #include "SpecUtils/StringAlgo.h"
 
-#include "InterSpec/PopupDiv.h"
+#include "InterSpec/AuxWindow.h"
 #include "InterSpec/InterSpec.h"
 #include "InterSpec/InterSpecApp.h"
 #include "InterSpec/InterSpecUser.h"
 #include "InterSpec/DataBaseUtils.h"
 #include "InterSpec/WarningWidget.h"
-#include "InterSpec/SpectrumChart.h"
-#include "InterSpec/ReactionGamma.h"
-#include "InterSpec/SpecMeasManager.h"
-#include "InterSpec/DecayDataBaseServer.h"
-#include "InterSpec/ShowRiidInstrumentsAna.h"
+#include "InterSpec/UserPreferences.h"
 
 #if( BUILD_AS_ELECTRON_APP )
 #include "target/electron/ElectronUtils.h"
@@ -85,10 +75,6 @@
 
 #if( BUILD_AS_OSX_APP )
 #include "target/osx/macOsUtils.h"
-#endif
-
-#if( BUILD_AS_WX_WIDGETS_APP )
-#include "target/wxWidgets/InterSpecWxUtils.h"
 #endif
 
 #if( !BUILD_FOR_WEB_DEPLOYMENT )
@@ -104,6 +90,10 @@ using namespace std;
 using namespace Wt;
 
 #define INLINE_JAVASCRIPT(...) #__VA_ARGS__
+
+#if(IOS || ANDROID)
+static_assert( !PERFORM_DEVELOPER_CHECKS, "PERFORM_DEVELOPER_CHECKS should not be on for iOS or Android builds" );
+#endif//IOS || ANDROID
 
 #if( BUILD_AS_ELECTRON_APP )
 WT_DECLARE_WT_MEMBER
@@ -122,16 +112,22 @@ namespace
   //note: could potentially use Wt::WServer::instance()->sessions() to retrieve
   //      sessionIds.
 #endif
+
+#if(  BUILD_AS_WX_WIDGETS_APP )
+  std::mutex ns_js_err_handler_mutex;
+  std::function<void(std::string, std::string)> ns_js_err_handler;
+#endif
 }//namespace
 
 
 InterSpecApp::InterSpecApp( const WEnvironment &env )
   :  WApplication( env ),
-     m_viewer( 0 ),
-     m_layout( nullptr ),
-     m_lastAccessTime( std::chrono::steady_clock::now() ),
-     m_activeTimeInSession{ std::chrono::seconds(0) },
-     m_hotkeySignal( domRoot(), "hotkey", false )
+    m_viewer( 0 ),
+    m_layout( nullptr ),
+    m_lastAccessTime( std::chrono::steady_clock::now() ),
+    m_activeTimeInSession{ std::chrono::seconds(0) },
+    m_activeTimeSinceDbUpdate{ std::chrono::seconds(0) },
+    m_hotkeySignal( domRoot(), "hotkey", false )
 #if( IOS )
     , m_orientation( InterSpecApp::DeviceOrientation::Unknown )
     , m_safeAreas{ 0.0f }
@@ -234,7 +230,9 @@ void InterSpecApp::setupDomEnvironment()
   
   enableUpdates( true );
   
-  setTitle( "InterSpec" );
+  useMessageResourceBundle( "InterSpecApp" );
+  
+  setTitle( WString::tr("interspec") );
   
   //Call tempDirectory() to set global variable holding path to the temp file
   //  directory, to ensure this will be available at all points in the future;
@@ -450,11 +448,12 @@ void InterSpecApp::setupDomEnvironment()
   //  widgets, especially if they are in a AuxWindow.
   //  (The CSS wont be re-loaded later, so maybe we dont hurt anything doing it here too - maybe)
   WServer::instance()->schedule( 500, sessionId(), [](){
-    wApp->useStyleSheet( "InterSpec_resources/SimpleDialog.css" );
     wApp->useStyleSheet( "InterSpec_resources/DrfSelect.css" );
+    wApp->useStyleSheet( "InterSpec_resources/SimpleDialog.css" );
+    wApp->useStyleSheet( "InterSpec_resources/DbFileBrowser.css" );
+    wApp->useStyleSheet( "InterSpec_resources/ExportSpecFile.css" );
     wApp->useStyleSheet( "InterSpec_resources/GammaCountDialog.css" );
     wApp->useStyleSheet( "InterSpec_resources/GridLayoutHelpers.css" );
-    wApp->useStyleSheet( "InterSpec_resources/ExportSpecFile.css" );
     wApp->useStyleSheet( "InterSpec_resources/MoreNuclideInfoDisplay.css" );
     // anything else relevant?
     wApp->triggerUpdate();
@@ -555,12 +554,12 @@ void InterSpecApp::setupWidgets( const bool attemptStateLoad  )
   
   // TODO: we could add an explicit CSS class 
   // @media screen and (max-device-width: 640px) { ... }
-  //if( isPhone() )
-  //  root()->addStyleClass( "is-phone" );  //see also LandscapeRight and LandscapeLeft CSS classes
-  //else if( isTablet() )
-  //  root()->addStyleClass( "is-tablet" );
-  //if( isMobile() )
-  //  root()->addStyleClass( "is-mobile" );
+  if( isPhone() )
+    domRoot()->addStyleClass( "IsPhone" );  //see also LandscapeRight, LandscapeLeft, and Portrait CSS classes
+  else if( isTablet() )
+    domRoot()->addStyleClass( "IsTablet" );
+  if( isMobile() )
+    domRoot()->addStyleClass( "IsMobile" );
   
   if( !m_miscSignal )
   {
@@ -601,7 +600,7 @@ void InterSpecApp::setupWidgets( const bool attemptStateLoad  )
           loadedSpecFile = handleAppUrl( initial_file );
         }catch( std::exception &e )
         {
-          passMessage( "Error handling deep-link (1): " + string(e.what()),
+          passMessage( WString::tr("app-deep-link-error").arg( string("(1)+ ") + e.what()), 
                       WarningWidget::WarningMsgHigh );
           wApp->log( "error" ) << "InterSpecApp::setupWidgets: invalid URL: " << e.what();
         }
@@ -627,7 +626,7 @@ void InterSpecApp::setupWidgets( const bool attemptStateLoad  )
 #if( USE_QR_CODES  && (BUILD_FOR_WEB_DEPLOYMENT || BUILD_AS_LOCAL_SERVER) )
   // Allow having an "internal" path where URI data is represented as part of the URL, for
   //   example https://interspec.example.com/?_=/G0/3000/eNrV...
-  //  It probably doesnt make sense to support "drf", "specsum", "flux", and "specexport" here.
+  //  It probably doesnt make sense to support "drf", "specsum", "flux", "specexport", "detection-limit", and "simple-mda" here.
   const string &internal_path = environment().internalPath();
   if( !loadedSpecFile
      && (SpecUtils::istarts_with(internal_path, "/G0/")
@@ -653,15 +652,15 @@ void InterSpecApp::setupWidgets( const bool attemptStateLoad  )
   //Check to see if we should load the apps last saved state
   try
   {
-    bool saveState = InterSpecUser::preferenceValue<bool>( "AutoSaveSpectraToDb", m_viewer );
+    bool saveState = UserPreferences::preferenceValue<bool>( "AutoSaveSpectraToDb", m_viewer );
     saveState = (saveState && attemptStateLoad);
     
 #if( PROMPT_USER_BEFORE_LOADING_PREVIOUS_STATE )
     //Make it so the app will prompt user to load the state
     //  - Experimental!
     //  - maybe should make it so it always does this, except on iOS and Android
-    const bool loadPrev = InterSpecUser::preferenceValue<bool>("LoadPrevStateOnStart", m_viewer );
-    const bool promptLoad = InterSpecUser::preferenceValue<bool>("PromptStateLoadOnStart", m_viewer );
+    const bool loadPrev = UserPreferences::preferenceValue<bool>("LoadPrevStateOnStart", m_viewer );
+    const bool promptLoad = UserPreferences::preferenceValue<bool>("PromptStateLoadOnStart", m_viewer );
     if( !loadPrev && !promptLoad )
       saveState = false;
 #endif
@@ -681,14 +680,12 @@ void InterSpecApp::setupWidgets( const bool attemptStateLoad  )
       std::shared_ptr<DataBaseUtils::DbSession> sql = m_viewer->sql();
       DataBaseUtils::DbTransaction transaction( *sql );
       
-      const string query = "InterSpecUser_id = "
-      + std::to_string( m_viewer->m_user.id() )
-      + " AND (StateType = "
-      + std::to_string( int(UserState::kEndOfSessionTemp) )
-      + " OR StateType = "
-      + std::to_string( int(UserState::kEndOfSessionHEAD) ) + ")";
       Dbo::ptr<UserState> state = sql->session()->find<UserState>()
-      .where( query ).orderBy( "id desc" ).limit( 1 );
+        .where( "InterSpecUser_id = ? AND StateType = ?" )
+        .bind( m_viewer->user().id() )
+        .bind( int(UserState::kEndOfSessionTemp) )
+        .orderBy( "id desc" )
+        .limit( 1 );
       
       //Since we only read from the database, its probably fine if the commit
       //  fails (with SQLite3 this will happen if the database is locked because
@@ -725,8 +722,7 @@ void InterSpecApp::setupWidgets( const bool attemptStateLoad  )
           dialogDiv->addWidget( cb );
           auto changePromptPref = [this](bool dont_ask ){
             try {
-              InterSpecUser::setPreferenceValue<bool>( m_viewer->m_user,
-                              "PromptStateLoadOnStart", dont_ask, m_viewer );
+              UserPreferences::setPreferenceValue<bool>( "PromptStateLoadOnStart", dont_ask, m_viewer );
             }catch( std::exception &e ) {
               Wt::log("error") << "Failed setting 'PromptStateLoadOnStart' user prefrence/";
             }
@@ -734,8 +730,7 @@ void InterSpecApp::setupWidgets( const bool attemptStateLoad  )
         
           auto changeDoLoadPref = [this](bool load ){
             try {
-              InterSpecUser::setPreferenceValue<bool>( m_viewer->m_user,
-                                    "LoadPrevStateOnStart", load, m_viewer );
+              UserPreferences::setPreferenceValue<bool>( "LoadPrevStateOnStart", load, m_viewer );
             }catch( std::exception &e ) {
               Wt::log("error") << "Failed setting 'LoadPrevStateOnStart' user prefrence.";
             }
@@ -845,32 +840,20 @@ void InterSpecApp::setupWidgets( const bool attemptStateLoad  )
   auto showWelcomeCallback = [this,loadedSpecFile](){
     //If we already loaded a spectrum, then dont show welcome dialog (or IE
     //  warning dialog)
-    if (loadedSpecFile)
+    if( loadedSpecFile )
     {
       return;
     }
 
-    //If client is internet explorer, show a warning before the welcome dialog
-    if( !environment().agentIsIE() )
-    {
-      //Using WTimer as a workaround for iOS so screen size and safe-area and
-      //  such can all get setup before creating a AuxWindow; otherwise size of
-      //  window will be all messed up.
-      WTimer::singleShot( 10, boost::bind( &InterSpec::showWelcomeDialog, m_viewer, false) );
-      
+    //Using WTimer as a workaround for iOS so screen size and safe-area and
+    //  such can all get setup before creating a AuxWindow; otherwise size of
+    //  window will be all messed up.
+    WTimer::singleShot( 25, boost::bind( &InterSpec::showWelcomeDialog, m_viewer, false) );
+    
 #if( IOS || ANDROID )
-      //For iPhoneX* devices we should trigger a resize once
-      doJavaScript( javaScriptClass() + ".TriggerResizeEvent();" );
+    //For iPhoneX* devices we should trigger a resize once
+    doJavaScript( javaScriptClass() + ".TriggerResizeEvent();" );
 #endif
-      
-    }else
-    {
-      AuxWindow *dialog = m_viewer->showIEWarningDialog();
-      if( dialog )
-        dialog->finished().connect( boost::bind( &InterSpec::showWelcomeDialog, m_viewer, false ) );
-      else
-        m_viewer->showWelcomeDialog( false );
-    }// if( not in IE ) / else
   };//auto showWelcomeCallback
   
   if( !loadedSpecFile )
@@ -927,9 +910,9 @@ void InterSpecApp::setupWidgets( const bool attemptStateLoad  )
   }
 #endif
   
-  if( m_viewer->m_user )
+  if( m_viewer->user() )
     Wt::log("debug") << "Have started session " << sessionId() << " for user "
-    << m_viewer->m_user->userName() << ".";
+    << m_viewer->user()->userName() << ".";
   
 #if( BUILD_AS_ELECTRON_APP || BUILD_AS_OSX_APP || ANDROID || BUILD_AS_WX_WIDGETS_APP  )
   // TODO 20220405: in macOS app I see the error "Wt: decodeSignal(): signal 'of7g69f.SucessfullyLoadedConf' not exposed"
@@ -1016,27 +999,13 @@ std::string InterSpecApp::tempDirectory()
 }//void tempDirectory()
 
 
-uint32_t InterSpecApp::compileDateAsInt()
+#if(  BUILD_AS_WX_WIDGETS_APP )
+void InterSpecApp::setJavascriptErrorHandler( std::function<void(std::string, std::string)> fctn )
 {
-  //The below YEAR MONTH DAY macros are taken from
-  //http://bytes.com/topic/c/answers/215378-convert-__date__-unsigned-int
-  //  and I believe to be public domain code
-  #define YEAR ((((__DATE__ [7] - '0') * 10 + (__DATE__ [8] - '0')) * 10 \
-  + (__DATE__ [9] - '0')) * 10 + (__DATE__ [10] - '0'))
-  #define MONTH (__DATE__ [2] == 'n' && __DATE__ [1] == 'a' ? 0 \
-  : __DATE__ [2] == 'b' ? 1 \
-  : __DATE__ [2] == 'r' ? (__DATE__ [0] == 'M' ? 2 : 3) \
-  : __DATE__ [2] == 'y' ? 4 \
-  : __DATE__ [2] == 'n' ? 5 \
-  : __DATE__ [2] == 'l' ? 6 \
-  : __DATE__ [2] == 'g' ? 7 \
-  : __DATE__ [2] == 'p' ? 8 \
-  : __DATE__ [2] == 't' ? 9 \
-  : __DATE__ [2] == 'v' ? 10 : 11)
-  #define DAY ((__DATE__ [4] == ' ' ? 0 : __DATE__ [4] - '0') * 10 + (__DATE__ [5] - '0'))
-
-  return YEAR*10000 + (MONTH+1)*100 + DAY;
-}//uint32_t InterSpec::compileDateAsInt()
+  std::lock_guard<std::mutex> lock( ns_js_err_handler_mutex );
+  ns_js_err_handler = fctn;
+}
+#endif //#if(  BUILD_AS_WX_WIDGETS_APP )
 
 
 std::string InterSpecApp::userNameFromOS()
@@ -1076,6 +1045,11 @@ InterSpec *InterSpecApp::viewer()
 std::chrono::steady_clock::time_point::duration InterSpecApp::activeTimeInCurrentSession() const
 {
   return m_activeTimeInSession;
+}
+
+std::chrono::steady_clock::time_point::duration InterSpecApp::timeSinceTotalUseTimeUpdated() const
+{
+  return m_activeTimeSinceDbUpdate;
 }
 
 #if( !BUILD_FOR_WEB_DEPLOYMENT )
@@ -1201,8 +1175,8 @@ void InterSpecApp::setSafeAreaInsets( const int orientation, const float top,
   //ToDo: see if triggering a resize event is ever necessary
   //  doJavaScript( javaScriptClass() + ".TriggerResizeEvent();" );
   
-  // Note that CSS takes care of insets, mostly by detecting the LandscapeLeft and LandscapeRight
-  //  CSS classes, which are set by the `DoOrientationChange` javascript function
+  // Note that CSS takes care of insets, mostly by detecting the LandscapeLeft, LandscapeRight,
+  //  and Portrait CSS classes, which are set by the `DoOrientationChange` javascript function
   
   Wt::log("debug") << "Set safe area insets: orientation=" << orientation
        << ", safeAreas={" << top << ", " << right << ", "
@@ -1231,9 +1205,24 @@ void InterSpecApp::notify( const Wt::WEvent& event )
     {
       const auto thistime = std::chrono::steady_clock::now();
       const auto duration = thistime - m_lastAccessTime;
-      if( duration < std::chrono::seconds(300) )
+      if( duration < std::chrono::seconds(60) )
+      {
         m_activeTimeInSession += duration;
+        m_activeTimeSinceDbUpdate += duration;
+      }
       m_lastAccessTime = thistime;
+      
+      // We will update the use-stats of the database occasionally, so we dont have to rely
+      // on the destructor to do it, which may not get called if the OS or user kills the app
+      // In debug-build, looks to only take 30 to 100 micro-seconds to make the post
+      if( m_activeTimeSinceDbUpdate > std::chrono::seconds(30) )
+      {
+        WServer::instance()->schedule( 100, sessionId(), [this](){
+          WApplication::UpdateLock lock( this );
+          if( lock )
+            updateUsageTimeToDb();
+        } );
+      }//if( m_activeTimeSinceDbUpdate > std::chrono::seconds(60) )
     }//if( userEvent )
 
      WApplication::notify( event );
@@ -1262,149 +1251,55 @@ void InterSpecApp::unload()
 }//void unload()
 
 
-void InterSpecApp::prepareForEndOfSession()
+void InterSpecApp::updateUsageTimeToDb()
 {
-  if( !m_viewer || !m_viewer->m_user )
-    return;
-
-  try
+  if( m_activeTimeSinceDbUpdate > std::chrono::seconds(0) )
   {
-      std::shared_ptr<DataBaseUtils::DbSession> sql = m_viewer->sql();
-      
-      {
-        DataBaseUtils::DbTransaction transaction( *sql );
-        
-        //If the user has multiple sessions going on, the below will quash
-        //  each other out.  Could probably be fixed by
-        //  m_viewer->m_user.reread();
-        
-        m_viewer->m_user.modify()->addUsageTimeDuration( m_activeTimeInSession );
-        
-        const chrono::milliseconds nmilli = chrono::duration_cast<chrono::milliseconds>(m_activeTimeInSession);
-        Wt::log("info") << "At session end, added " << nmilli.count() << " ms usage time for user "
-             << m_viewer->m_user->userName();
-        
-        m_activeTimeInSession = std::chrono::seconds(0);
-        transaction.commit();
-      }
-      
-#if( USE_DB_TO_STORE_SPECTRA )
-      //Check to see if we should save the apps state
-      const bool saveState = InterSpecUser::preferenceValue<bool>( "AutoSaveSpectraToDb", m_viewer );
-        
-        //Clean up the kEndOfSessions from before
-        bool cleanupStates = true;
-        if( cleanupStates )
-        {
-            DataBaseUtils::DbTransaction transaction( *sql );
-            const string query = "InterSpecUser_id = "
-            + std::to_string( m_viewer->m_user.id() )
-            + " AND (StateType = "
-            + std::to_string( int(UserState::kEndOfSessionTemp))
-            + " OR StateType = "
-            + std::to_string( int(UserState::kEndOfSessionHEAD) )
-            + ")";
-            Dbo::collection<Dbo::ptr<UserState> > states
-            = sql->session()->find<UserState>().where( query );
-            for( Dbo::collection<Dbo::ptr<UserState> >::iterator iter = states.begin();
-                iter != states.end(); ++iter )
-            {
-                if ((*iter)->stateType==UserState::kEndOfSessionTemp)
-                { 
-                  //delete temporary kEndOfSession
-                  iter->remove();
-                } else
-                {   
-                  //do not delete, but just change this HEAD to kUserSaved state (no longer kEndOfSession
-                   iter->modify()->stateType = UserState::kUserSaved;
-                }
-            }
-            
-            transaction.commit();
-        }//if( cleanupStates )
-
-        
-      //Make sure there is at least a spectra valid in order to save this state
-      std::shared_ptr<const SpecMeas> foreground = m_viewer->measurment( SpecUtils::SpectrumType::Foreground );
-        
-      if( saveState && foreground )
-      {
-        Wt::log( "info" ) << "Will auto-save state for session-id:" << sessionId() << " at end of session.";
-
-        const int offset = environment().timeZoneOffset();
-        WString desc = "End of Session";
-        const auto now = chrono::system_clock::now() + chrono::seconds( 60*offset );
-        WString name = SpecUtils::to_common_string( chrono::time_point_cast<chrono::microseconds>(now), true ); //"9-Sep-2014 15:02:15"
-        
-        Wt::Dbo::ptr<UserState> dbstate;
-        std::shared_ptr<DataBaseUtils::DbSession> sql = m_viewer->sql();
-        DataBaseUtils::DbTransaction transaction( *sql );
-          
-        UserState *state = new UserState();
-        state->user = m_viewer->m_user;
-        state->stateType = UserState::kEndOfSessionTemp;
-        state->creationTime = WDateTime::currentDateTime();
-        state->name = name;
-        state->description = desc;
-          
-          //check if Save menu needs to be updated
-          if( m_viewer->currentAppStateDbId() >= 0 )
-          {
-              try
-              {
-                  std::shared_ptr<DataBaseUtils::DbSession> sql = m_viewer->sql();
-                  DataBaseUtils::DbTransaction transaction( *sql );
-                  Dbo::ptr<UserState> currentState = sql->session()->find<UserState>( "where id = ?" ).bind( m_viewer->currentAppStateDbId() );
-                  transaction.commit();
-                  
-                  if (currentState)
-                  {
-                      //Saves to the HEAD first
-                      m_viewer->startStoreStateInDb( false, false, false, true ); //save snapshot
-                      transaction.commit();
-
-                      return;
-                  } //UserState exists
-                  else
-                  { //no UserState
-                      //do nothing, a temporary kEndOfState HEAD snapshot will be created.
-                  } //no UserState
-              }catch( std::exception &e )
-              {
-                Wt::log("error") << "Could not access current Snapshot State ID while EndOfSession " << e.what();
-              }//try / catch
-          }
-          
-        dbstate = sql->session()->add( state );
-        
-        try
-        {
-          m_viewer->saveStateToDb( dbstate );
-          Wt::log("debug") << "Saved end of session app state to database";
-        }catch( std::exception &e )
-        {
-          Wt::log("error") << "InterSpecApp::prepareForEndOfSession() error: " << e.what();
-        }
-        transaction.commit();
-      }//if( saveState )
-#endif //#if( USE_DB_TO_STORE_SPECTRA )
-    
-    /*
-     // TODO: Look into if syncing the database helps us any - maybe in development builds we should just do this for every commit (or turn off WAL (Write Ahead Logging)), or check if this is even enabled (e.g., "PRAGMA journal_mode=WAL;" for the connection).
     try
     {
-      DataBaseUtils::DbTransaction transaction( *sql );
-      sql->session()->execute( "PRAGMA wal_checkpoint(FULL);" );
-      transaction.commit();
+      std::shared_ptr<DataBaseUtils::DbSession> sql = m_viewer->sql();
+      
+      {//Begin db transaction
+        DataBaseUtils::DbTransaction transaction( *sql );
+        
+        // Other sessions may have added to the session - we'll reread from the DB
+        m_viewer->reReadUserInfoFromDb();
+        m_viewer->user().modify()->addUsageTimeDuration( m_activeTimeSinceDbUpdate );
+        
+        transaction.commit();
+      }//End db transaction
+      
+      m_activeTimeSinceDbUpdate = std::chrono::seconds(0);
     }catch( std::exception &e )
     {
-      Wt::log("error") << "Got exception running 'PRAGMA wal_checkpoint(FULL);': " << e.what();
-    }
-     */
+      Wt::log("error") << "InterSpecApp::updateUsageTimeToDb() caught: " << e.what();
+    }//try / catch
+  }//if( m_activeTimeSinceDbUpdate > std::chrono::seconds(0) )
+}//void updateUsageTimeToDb()
+
+
+void InterSpecApp::prepareForEndOfSession()
+{
+  if( !m_viewer || !m_viewer->user() )
+    return;
+
+  updateUsageTimeToDb();
+  
+  const chrono::milliseconds nmilli = chrono::duration_cast<chrono::milliseconds>(m_activeTimeInSession);
+  Wt::log("info") << "At session end, actively used for " << nmilli.count() << " ms for user "
+  << m_viewer->user()->userName();
+  
+#if( USE_DB_TO_STORE_SPECTRA )
+  try
+  {
+    // Neither of these functions should throw, but jic
+    m_viewer->saveStateAtForegroundChange( false );
+    m_viewer->saveStateForEndOfSession();
   }catch( std::exception &e )
   {
     Wt::log("error") << "InterSpecApp::prepareForEndOfSession() caught: " << e.what();
   }//try / catch
+#endif //#if( USE_DB_TO_STORE_SPECTRA )
   
   Wt::log("debug") << "Have prepared for end of session " << sessionId() << ".";
 }//void InterSpecApp::prepareForEndOfSession()
@@ -1416,8 +1311,18 @@ void InterSpecApp::handleJavaScriptError( const std::string &errorText )
   doJavaScript( "console.log('Here I am after error');", false );
   
   if( isPrimaryWindowInstance() )
-    InterSpecWxUtils::handle_javascript_error( errorText, m_externalToken );
-  
+  {
+    std::function<void(std::string, std::string)> handler;
+    
+    {//begin lock on ns_js_err_handler_mutex
+      std::lock_guard<std::mutex> lock( ns_js_err_handler_mutex );
+      handler = ns_js_err_handler;
+    }//end lock on ns_js_err_handler_mutex
+
+    if( handler )
+      handler( errorText, m_externalToken );
+  }
+
   // Default WApplication implementation just logs error, and then calls WApplication:quit()
   WApplication::handleJavaScriptError( errorText );
 }//void handleJavaScriptError( const std::string &errorText )
@@ -1427,6 +1332,16 @@ void InterSpecApp::clearSession()
 {
   // Just in case there are any modal dialogs showing - the cover thing can be a little sticky
   doJavaScript( "$('.Wt-dialogcover').hide();" );
+  
+#if( USE_DB_TO_STORE_SPECTRA )
+  try
+  {
+    m_viewer->saveStateAtForegroundChange( false ); // shouldnt throw, but jic
+  }catch( std::exception &e )
+  {
+    Wt::log("error") << "InterSpecApp::clearSession() caught: " << e.what();
+  }//try / catch
+#endif //#if( USE_DB_TO_STORE_SPECTRA )
   
 #if( BUILD_AS_ELECTRON_APP )
   // As a workaround setup a function ElectronUtils::requestNewCleanSession() that
@@ -1546,6 +1461,27 @@ void InterSpecApp::miscSignalHandler( const std::string &signal )
   }//if( SpecUtils::istarts_with( signal, "showMultimedia" ) )
 
 
+  if( SpecUtils::istarts_with( signal, "peakCsvCopy-" ) )
+  {
+    string msg = signal.substr(12);
+    WarningWidget::WarningMsgLevel level = WarningWidget::WarningMsgLevel::WarningMsgInfo;
+  
+    if( SpecUtils::istarts_with( msg, "success-" ) )
+    {
+      msg = msg.substr(8);
+      level = WarningWidget::WarningMsgLevel::WarningMsgInfo;
+    }else if( SpecUtils::istarts_with( msg, "error-" ) )
+    {
+      msg = msg.substr(6);
+      level = WarningWidget::WarningMsgLevel::WarningMsgHigh;
+    }
+    
+    passMessage( msg, level );
+    return;
+  }//if( SpecUtils::istarts_with( signal, "showMultimedia" ) )
+  
+  
+  
   // shouldnt ever make it here..
   const string errmsg = "InterSpecApp::miscSignalHandler: unhandled signal '" + signal + "'";
   passMessage( errmsg, WarningWidget::WarningMsgHigh );
@@ -1563,25 +1499,106 @@ bool InterSpecApp::handleAppUrl( const std::string &url )
     m_viewer->handleAppUrl( url );
   }catch( std::exception &e )
   {
-    passMessage( "Error handling deep-link: " + string(e.what()), WarningWidget::WarningMsgHigh );
+    passMessage( WString::tr("app-deep-link-error").arg(e.what()), WarningWidget::WarningMsgHigh );
     cerr << "InterSpecApp::handleAppUrl: invalid URL: " << e.what() << endl;
     wApp->log( "error" ) << "InterSpecApp::handleAppUrl: invalid URL: " << e.what();
     
     return false;
-  }// try / catch to process th URL
+  }// try / catch to process the URL
   
   return true;
 }//bool handleAppUrl( std::string url )
 
+
+void InterSpecApp::useMessageResourceBundle( const std::string &name )
+{
+  // Get filesystem path to the 'InterSpec_resources' directory.
+  //  Properly, WApplication::docRoot() points to the directory that contains 'InterSpec_resources',
+  //  but we currently have WServer::appRoot() to point to the same directory, so we will
+  //  use appRoot(), so we can access it outside of a user session.
+  const string root = WServer::instance()->appRoot();
+  string resource_dir = SpecUtils::append_path( root, "InterSpec_resources" );
+  resource_dir = SpecUtils::append_path( resource_dir, "app_text" );
+  const string resource_base = SpecUtils::append_path( resource_dir, name );
+  
+  WMessageResourceBundle &bundle = WApplication::messageResourceBundle();
+  
+  // WMessageResourceBundle checks if this resource base path has been loaded, and
+  //  if it has, it wont be loaded a second time
+  const bool loadInMemory = true;
+  bundle.use( resource_base, loadInMemory );
+}//bool useMessageResourceBundle( const std::string &name )
+
+
+const set<string> &InterSpecApp::languagesAvailable()
+{
+  WServer *server = WServer::instance();
+  
+  static bool s_have_inited = false;
+  static set<string> s_languages;
+  std::mutex s_languages_mutex;
+  
+  std::lock_guard<std::mutex> lock( s_languages_mutex );
+  
+  if( s_have_inited )
+    return s_languages;
+  
+  assert( server );
+  if( !server )
+    return s_languages;
+  
+  s_have_inited = true;
+  
+  // Get filesystem path to the 'InterSpec_resources' directory.
+  //  Properly, WApplication::docRoot() points to the directory that contains 'InterSpec_resources',
+  //  but we currently have WServer::appRoot() to point to the same directory, so we will
+  //  use appRoot(), so we can access it outside of a user session.
+  const string root = server->appRoot();
+  string resource_dir = SpecUtils::append_path( root, "InterSpec_resources" );
+  resource_dir = SpecUtils::append_path( resource_dir, "app_text" );
+  
+  //  We will look for the languages available, by using the group from:
+  //      "InterSpec_resources/app_text/InterSpec_(.+).xml"
+  
+  auto matcher = []( const std::string &filename, void *userdata ) -> bool {
+    const string name = SpecUtils::filename(filename);
+    return SpecUtils::starts_with(name, "InterSpec_") && SpecUtils::iends_with(name, ".xml");
+  };
+
+  const vector<string> files = SpecUtils::ls_files_in_directory( resource_dir, matcher, nullptr );
+
+  s_languages.insert( "en" );
+  
+  for( const string &filename : files )
+  {
+    string name = SpecUtils::filename(filename);
+    
+    assert( SpecUtils::starts_with(name, "InterSpec_") );
+    assert( SpecUtils::iends_with(name, ".xml") );
+    
+    if( SpecUtils::starts_with(name, "InterSpec_")
+       && SpecUtils::iends_with(name, ".xml") )
+    {
+      name = name.substr( 10 );
+      assert( name.size() >= 4 );
+      if( name.size() >= 4 )
+        name = name.substr( 0, name.size() - 4 );
+      if( !name.empty() )
+        s_languages.insert( name );
+    }//
+  }//for( string name : files )
+  
+  return s_languages;
+}//vector<string> languagesAvailable();
 
 
 void InterSpecApp::finalize()
 {
   prepareForEndOfSession();
   
-  if( m_viewer && m_viewer->m_user )
+  if( m_viewer && m_viewer->user() )
     Wt::log("info") << "Have finalized session " << sessionId() << " for user "
-         << m_viewer->m_user->userName();
+         << m_viewer->user()->userName();
 }//void InterSpecApp::finalize()
 
 

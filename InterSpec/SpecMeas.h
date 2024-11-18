@@ -188,6 +188,8 @@ public:
    */
   void cleanup_orphaned_info();
   
+  virtual void change_sample_numbers( const std::vector<std::pair<int,int>> &from_to_sample_nums );
+  
   std::shared_ptr< std::deque< std::shared_ptr<const PeakDef> > >
                                  peaks( const std::set<int> &samplenums );
   /** CAUTION: the returned deque may be modified elsewhere in the app, if for
@@ -227,6 +229,8 @@ public:
   void setAutomatedSearchPeaks( const std::set<int> &samplenums,
                                 std::shared_ptr< PeakDeque > foundPeaks
                                 /*, std::shared_ptr< PeakDeque > intitalPeaks*/ );
+  
+  std::set<std::set<int> > sampleNumsWithAutomatedSearchPeaks() const;
   
   //peaksHaveBeenAdded(): marks this SpecUtils::SpecFile object as
   void setModified();

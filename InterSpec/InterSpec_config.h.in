@@ -47,7 +47,6 @@
 #cmakedefine01 BUILD_AS_UNIT_TEST_SUITE
 #cmakedefine01 INCLUDE_ANALYSIS_TEST_SUITE
 #cmakedefine TEST_SUITE_BASE_DIR "@TEST_SUITE_BASE_DIR@"
-#cmakedefine01 BUILD_AS_COMMAND_LINE_CODE_DEVELOPMENT
 
 #cmakedefine01 DRAW_GAMMA_LINES_LOG_AND_LIN
 #cmakedefine01 USE_DB_TO_STORE_SPECTRA
@@ -78,14 +77,6 @@
 
 #cmakedefine LEAFLET_MAPS_KEY "@LEAFLET_MAPS_KEY@"
 
-#if ( defined(WIN32) || defined(UNDER_CE) || defined(_WIN32) || defined(WIN64) )
-#include <stdio.h>
-#include <stdlib.h>
-#include <math.h>
-#include <float.h>
-#define isnan(x) _isnan(x)
-#define isinf(x) (!_finite(x))
-#endif
 
 #ifndef IsInf
 #define IsInf(x) (std::isinf)(x)
@@ -121,17 +112,20 @@ void log_developer_error( const char *location, const char *error );
 //  Ex, "9-Sep-2014 15:02:15"
 #define DATE_TIME_FORMAT_STR "d-MMM-yyyy hh:mm:ss"
 
-/** Define a number of channels where if the spectrum has more than this, we'll assume this is high-resolution.
- 
- TODO: should instead define an average keV per channel for this purpose.  Some limited energy
- range HPGe detectors may only have 4096 channels.
- */
-#define HIGH_RES_NUM_CHANNELS 5000
 
+#define InterSpec_PHONE_ROTATE_FOR_TABS 1
 
-// Prevent some compile warnings from using like _1 instead of
-//  boost::placeholders::_1 (I think this must be in the Wt
-//  headers, since our code uses the namespace prefixes)
-#define BOOST_BIND_GLOBAL_PLACEHOLDERS
+// On Windows, we will compile LibInterSpec as a shared DLL only when
+//  `USE_BATCH_TOOLS` is enabled - so in this case we need to export the functions
+//  we will want to use from the DLL.
+#if( USE_BATCH_TOOLS && (defined(WIN32) || defined(UNDER_CE) || defined(_WIN32) || defined(WIN64)) )
+  #ifdef InterSpec_EXPORTS
+    #define InterSpec_API __declspec(dllexport)
+  #else
+    #define InterSpec_API __declspec(dllimport)
+  #endif
+#else
+  #define InterSpec_API
+#endif
 
 #endif // InterSpec_config_h

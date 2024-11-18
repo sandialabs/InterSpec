@@ -120,8 +120,8 @@ namespace DataBaseUtils
     //Note, in the case USE_GLOBAL_DATABASE_CONNECTION_POOL is true, then this
     //  constructor functions identically to the default constructor.
     //This constructor is to avoid the overhead of creating a new connection
-    //  to the database whenever a DetectorDisplay, DbStateBrowser,
-    //  DbFileBrowser, or a UseInfoWindow instance is created, by allowing the
+    //  to the database whenever a DetectorDisplay, DbFileBrowser,
+    //  or a UseInfoWindow instance is created, by allowing the
     //  use of the connection of the DbSession object the InterSpec owns;
     //  for the case of USE_GLOBAL_DATABASE_CONNECTION_POOL==0.
     DbSession( DbSession &rhs );

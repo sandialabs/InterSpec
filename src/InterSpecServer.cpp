@@ -139,6 +139,13 @@ namespace InterSpecServer
     std::lock_guard<std::mutex> lock( sm_servedOnMutex );
     return sm_urlServedOn;
   }
+
+  
+  Wt::WServer *get_wt_server()
+  {
+    std::lock_guard<std::mutex> serverlock( ns_servermutex );
+    return ns_server;
+  }
   
   
   std::string getWtConfigXml( int argc, char *argv[] )
@@ -256,14 +263,17 @@ namespace InterSpecServer
     char httpaddr_param_value[] = "127.0.0.1";
     char httpport_param_name[]  = "--http-port";
     char httpport_param_value[] = "0";           //Assign port automatically
-    char docroot_param_name[]   = "--docroot";
+    char docroot_param_name[]   = "--docroot";   // docroot is the base-path to files that can be served over html; this is the directory containing "resources" (from Wt) and "InterSpec_resources"; e.g., CSS, JS, etc
     char docroot_param_value[]  = ".";
+    char approot_param_name[]   = "--approot";   // approot is base-path to resources the application needs, like data, databases, etc.  Currently for InterSpec, this is same as docroot.
+    char approot_param_value[]  = ".";
     char accesslog_param_value[]  = "--accesslog=-";  //quite down printing all the GET and POST and such
     
     char *argv_wthttp[] = { argv[0],
       httpaddr_param_name, httpaddr_param_value,
       httpport_param_name, httpport_param_value,
       docroot_param_name, docroot_param_value,
+      approot_param_name, approot_param_value,
       accesslog_param_value
     };
     const int argc_wthttp = sizeof(argv_wthttp)/sizeof(argv_wthttp[0]);
@@ -287,6 +297,11 @@ namespace InterSpecServer
       //  Using the minimized coincidence version of sandia.decay.xml increases parse time
       //  by about 170 ms.
       ns_server->ioService().boost::asio::io_service::post( &DecayDataBaseServer::initialize );
+      
+      // Checking for available languages probably doesnt take too long, but lets do it now anyway.
+      ns_server->ioService().boost::asio::io_service::post( [](){
+        InterSpecApp::languagesAvailable();
+      } );
       
       const int port = ns_server->httpPort();
       std::string this_url = "http://127.0.0.1:" + boost::lexical_cast<string>(port);
@@ -345,11 +360,11 @@ namespace InterSpecServer
     if( port_str.empty() )
       port_str = "0";
     char *httpport_param_value = &(port_str[0]);
-    //char httpport_param_value[] = "0";           //Assign port automatically
-    char docroot_param_name[]   = "--docroot";
+    //char httpport_param_value[] = "0";         //Assign port automatically
+    char docroot_param_name[]   = "--docroot";   // docroot is the base-path to files that can be served over html; e.g., CSS, JS, etc
     char *docroot_param_value  = &(basedir[0]);
-    //char approot_param_name[]   = "--approot";
-    //char *approot_param_value  = &(basedir[0]);
+    char approot_param_name[]   = "--approot";   // approot is base-path to resources the application needs, like data, databases, etc.  Currently for InterSpec, this is same as docroot.
+    char *approot_param_value  = &(basedir[0]);
     char accesslog_param_value[]  = "--accesslog=-";  //quite down printing all the GET and POST and such
 
     
@@ -357,6 +372,7 @@ namespace InterSpecServer
       httpaddr_param_name, httpaddr_param_value,
       httpport_param_name, httpport_param_value,
       docroot_param_name, docroot_param_value,
+      approot_param_name, approot_param_value,
       accesslog_param_value
     };
     const int argc_wthttp = sizeof(argv_wthttp)/sizeof(argv_wthttp[0]);
@@ -371,6 +387,11 @@ namespace InterSpecServer
       ns_server->ioService().boost::asio::io_service::post( [](){
         DecayDataBaseServer::initialize();
         ReferenceLineInfo::load_nuclide_mixtures();
+      } );
+      
+      // Checking for available languages probably doesnt take too long, but lets do it now anyway.
+      ns_server->ioService().boost::asio::io_service::post( [](){
+        InterSpecApp::languagesAvailable();
       } );
       
       const int port = ns_server->httpPort();
@@ -558,19 +579,26 @@ int start_server( const char *process_name,
   return InterSpecServer::portBeingServedOn();
 }//int start_server( ... )
   
-  void killServer()
-  {
-    std::lock_guard<std::mutex> serverlock( ns_servermutex );
+void killServer()
+{
+  std::lock_guard<std::mutex> serverlock( ns_servermutex );
     
-    if( ns_server )
+  if( ns_server )
+  {
+    try
     {
-      std::cerr << "About to stop server" << std::endl;
+      const auto stop_starting_time = std::chrono::system_clock::now();
       ns_server->stop();
+      const auto stop_stop_time = std::chrono::system_clock::now();
       delete ns_server;
       ns_server = nullptr;
-      std::cerr << "Stopped and killed server" << std::endl;
+      std::cout << "Stopped and killed server" << std::endl;
+    }catch( std::exception &e )
+    {
+      std::cerr << "Got exception stopping server: " << e.what() << std::endl;
     }
-  }//void killServer()
+  }//if( ns_server )
+}//void killServer()
   
 
   int wait_for_shutdown()

@@ -1,0 +1,49 @@
+.LicenseAndDisclaimersWindow
+{
+
+}
+
+.PhoneCopywriteContent
+{
+  font-size: 8px;
+}
+
+
+.LicenseContent
+{
+  display: block; 
+  font-family: monospace; 
+  white-space: pre; 
+  margin: 1em 0; 
+  font-size: x-small;
+}
+
+.LicenseAndDisclaimersWindow .DataLocationSection
+{
+  display: block; 
+  margin-top: 10px;
+}
+
+.DataLocationSection .DataLocation
+{
+  font-family: monospace;
+  background: white;
+  color: black;
+  white-space: nowrap;
+  padding: 4px 5px 4px 10px;
+  overflow-x: auto;
+  user-select: all;
+}
+
+.LicenseAndDisclaimersWindow .ShowDataLocationBtn
+{
+  display: block;
+  margin-right: 10px;
+  align-self: flex-end;
+}
+
+.UseInfoItem.DataContent
+{
+  display: flex;
+  flex-direction: column;
+}

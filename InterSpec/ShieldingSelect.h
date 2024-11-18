@@ -387,6 +387,9 @@ public:
   
   const Wt::WLineEdit *materialEdit() const;
   const Wt::WLineEdit *thicknessEdit() const;
+  
+  /** Returns all thickness edits, for the current geometry. */
+  std::vector<Wt::WLineEdit *> distanceEdits();
 
   /** Sets the spherical thickness value.
    
@@ -472,11 +475,19 @@ public:
   //serialize(...): saves state as a <Shielding />  node.
   void serialize( rapidxml::xml_node<char> *parent_node ) const;
   
-  //deSerialize(...): returns to the state that serialize(...) saved.
-  //  However, m_forFitting must be the same in the XML as object this function
-  //  is being called on (or else an exception is thrown).
-  //  Throws exception on invalid XML or m_forFitting mismatch
-  void deSerialize( const rapidxml::xml_node<char> *shielding_node );
+  /** Returns the widget to the state specified by the XML node
+   
+   However,  `m_forFitting` must be the same in the XML as object this function
+   is being called on (or else an exception is thrown).
+    
+   @param shielding_node The XML node saved by `serialize(...)`
+   @param is_fixed_geom_det If the current DetectorPeakResponse is for fixed geometry or not.
+          If false, then intrinsic and trace sources will not be allowed, which prevents some callback that will hit asserts.
+   
+   Throws exception on invalid XML or `m_forFitting` mismatch
+   */
+  void deSerialize( const rapidxml::xml_node<char> *shielding_node,
+                   const bool is_fixed_geom_det );
   
   /** Encodes current tool state to app-url format.  Returned string is just the query portion of URL;
    so will look something like "V=1&G=S&D1=1.2cm", and it will not be url-encoded.
@@ -598,16 +609,23 @@ protected:
   //  appropriate signals, and updates trace sources
   void modelNuclideAdded( const SandiaDecay::Nuclide *iso );
   
-  /** Returns the fraction of the element, a nuclide is in a material.
+  /** Returns the mass-fraction of the nuclide, of the entire material.
  
-   If the material specifies the isotopic fractions, that value will be returned.
-   If the material specifies just the element, and the nuclide is a naturally present nuclide, then returns its natural abundance.
-   If the material is specified, but not a naturally present nuclide, returns 1 over the total number of nuclides in element (this
-   is a fairly arbitrary behaviour).
+   If the material specifies the isotopic fractions, that value (the mass fraction relative to the entire material) will be returned.
+   If the material specifies just the element of the nuclide, and the nuclide is a naturally present nuclide, then
+   the function returns the elements mass fraction, times the nuclides natural abundance.
+   If the element is specified, but the nuclide is not a naturally present nuclide, returns the element mass fraction time
+   1 over the total number of nuclides in element (this is a fairly arbitrary behavior).
+   
+   Throws exception if material does not contain the nuclide, or the element of the nuclide.
+   Also throws exception if nuclide or material are nullptr.
    */
-  static double nuclidesFractionOfElementInMaterial( const SandiaDecay::Nuclide * const iso,
+  static double nuclidesMassFractionInMaterial( const SandiaDecay::Nuclide * const iso,
                                        const std::shared_ptr<const Material> &mat );
 
+  static double elementsMassFractionInMaterial( const SandiaDecay::Element * const el,
+                                               const std::shared_ptr<const Material> &mat );
+  
   //isotopeCheckedCallback(...): emits the addingIsotopeAsSource() signal
   void isotopeCheckedCallback( const SandiaDecay::Nuclide *iso );
 

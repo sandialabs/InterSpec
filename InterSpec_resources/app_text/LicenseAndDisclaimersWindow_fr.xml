@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- ladw- is short for LicenseAndDisclaimersWindow
+  -->
+  <message id="ladw-mi-disclaimer">Avertissement</message>
+  <message id="ladw-mi-credits">Crédits</message>
+  <message id="ladw-mi-contact">Contact</message>
+  <message id="ladw-mi-license">Licence</message>
+  <message id="ladw-data-location-user">
+      Les données utilisateur sont stockées dans
+      <div class="DataLocation">{1}</div>
+  </message>
+  <message id="ladw-data-location-static">
+      Les données fournies avec InterSpec, telles que les informations sur la décroissance nucléaire, la section efficace, et similaires sont stockées dans
+      <div class="DataLocation">{1}</div>
+  </message>
+  <message id="ladw-data-location-network">
+      Vous pouvez également utiliser InterSpec depuis votre navigateur à (le numéro de port changera lorsque vous redémarrerez InterSpec) :
+      <div class="DataLocation">http://127.0.0.1:{1}</div>
+  </message>
+  <message id="ladw-user-stats">
+        Vous avez utilisé activement InterSpec pendant environ {1}, pour ouvrir {2} fichiers, sur {3} sessions depuis {4}.
+  </message>
+  <message id="ladw-external-none">InterSpec n'envoie ni ne reçoit de données externes à votre appareil.</message>
+  <message id="ladw-external-only-remote-rid">InterSpec n'envoie ni ne reçoit de données externes à votre appareil, sauf lorsque la fonctionnalité RID Externe est utilisée.</message>
+  <message id="ladw-external-only-map">InterSpec n'envoie ni ne reçoit de données externes à votre appareil, sauf lorsque la fonctionnalité Carte est utilisée.</message>
+  <message id="ladw-external-remote-rid-and-map">InterSpec n'envoie ni ne reçoit de données externes à votre appareil, sauf lorsque les fonctionnalités Cartes ou RID Externe sont utilisées.</message>
+  <message id="ladw-local-store-info">
+      <br />
+      InterSpec stocke localement les préférences, les spectres que vous chargez, les états d'application sauvegardés, et les statistiques d'utilisation.
+      Ces informations ne quittent pas votre appareil et peuvent être supprimées en supprimant le répertoire de données utilisateur indiqué ci-dessus.
+  </message>
+  <message id="ladw-google-map">
+      <br />
+      Lorsque la fonctionnalité Google Maps est utilisée, les informations de localisation du fichier de spectre sont envoyées à Google afin de recevoir des cartes de l'emplacement pertinent.
+  </message>
+  <message id="ladw-leaflet-map">
+      <br />
+      Lorsque l'outil Cartes est utilisé, des tuiles de carte sont demandées à <a href="https://arcgis.com">https://arcgis.com</a>
+      pour la zone englobant les coordonnées GPS des mesures de radiation, mais le marquage/l'affichage des données de radiation sur les cartes est effectué sur votre appareil.
+  </message>
+  <message id="ladw-remote-rid">
+      <br />
+      Pour l'outil RID Externe, veuillez consulter la politique de confidentialité de
+      <div class="DataLocation">{1}</div>
+  </message>
+  <message id="ladw-remote-rid-none">
+      Pour l'outil RID Externe, veuillez consulter la politique de confidentialité pour l'URL que vous saisissez.
+  </message>
+</messages>

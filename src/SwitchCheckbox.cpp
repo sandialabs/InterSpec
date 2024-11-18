@@ -97,6 +97,11 @@ void SwitchCheckbox::setChecked( bool checked )
   m_cb->setChecked( checked );
 }
 
+void SwitchCheckbox::setUnChecked( bool unChecked )
+{
+  m_cb->setChecked( !unChecked );
+}
+
 void SwitchCheckbox::setUnChecked()
 {
   m_cb->setUnChecked();

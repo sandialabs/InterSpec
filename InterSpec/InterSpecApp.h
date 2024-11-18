@@ -33,6 +33,9 @@
 #include <Wt/WApplication>
 #include <Wt/WContainerWidget>
 
+#if(  BUILD_AS_WX_WIDGETS_APP )
+#include <functional>
+#endif
 
 class InterSpec;
 namespace Wt
@@ -51,7 +54,7 @@ class SpectrumViewerTester;
 //Feature under development (20171203) to prompt user if they want to load their
 //  previous state, before actually doing it.
 // Could make this always true for anything but mobile devices...
-// Still deciding if I like this or not... laoding the state doesnt seem to be
+// Still deciding if I like this or not... loading the state doesnt seem to be
 //   a huge slowdown in the startup.
 #if( BUILD_AS_ELECTRON_APP || BUILD_AS_OSX_APP || BUILD_AS_WX_WIDGETS_APP )
 #define PROMPT_USER_BEFORE_LOADING_PREVIOUS_STATE 0
@@ -59,7 +62,7 @@ class SpectrumViewerTester;
 #define PROMPT_USER_BEFORE_LOADING_PREVIOUS_STATE 0
 #endif
 
-class InterSpecApp : public Wt::WApplication
+class InterSpec_API InterSpecApp : public Wt::WApplication
 {
 public:
   InterSpecApp( const Wt::WEnvironment& env );
@@ -98,6 +101,9 @@ public:
 
   std::chrono::steady_clock::time_point::duration activeTimeInCurrentSession() const;
   
+  /** Returns the amount of use-time since `InterSpecUser::totalTimInApp()` has been updated. */
+  std::chrono::steady_clock::time_point::duration timeSinceTotalUseTimeUpdated() const;
+  
   
   //userNameFromOS(): Caution, will return 'apache' if being served, from
   //  an apache server, 'mobile' if on a iOS device, or blank upon failure.
@@ -124,11 +130,9 @@ public:
   //  other not-super-fast actions.
   static std::string tempDirectory();
 
-  
-  /** Returns a int, representing compile date.
-   For example, will return value 20120122 if you compile on Jan 22nd, 2012.
-   */
-  static uint32_t compileDateAsInt();
+#if(  BUILD_AS_WX_WIDGETS_APP )
+  static void setJavascriptErrorHandler( std::function<void(std::string, std::string)> fctn );
+#endif
   
 #if( !BUILD_FOR_WEB_DEPLOYMENT )
   /** Returns the token passed as part of url using parameter 'externalid' or 'apptoken'.
@@ -225,10 +229,25 @@ public:
    */
   bool handleAppUrl( const std::string &url );
   
-protected: 
+  /** Loads the XML file for current locale, to use for localizing strings
+   
+   \param name The base-name of the XML file to load.  For this, you will usually call with an argument
+          like "InterSpec", or "PeakEdit".  You do not need to give the path to the XML file, or the
+          extension; this function will take care of adding those.
+   
+   If the XML file has already been loaded, no action will be taken.
+   */
+  void useMessageResourceBundle( const std::string &name );
+  
+  /** Looks in `InterSpec_resources/app_text/` for files like `InterSpec_(.+).xml`, and returns
+   the list of the capture group.
+   */
+  static const std::set<std::string> &languagesAvailable();
+  
+protected:
 
-  //notify(): over-riding WApplication::notify inorder to catch any exceptions
-  //  that may happen during event handinling
+  //notify(): over-riding WApplication::notify in order to catch any exceptions
+  //  that may happen during event handling
   virtual void notify( const Wt::WEvent &event );
 
   //finalize(): called before destruction to take care of things that might
@@ -243,6 +262,9 @@ protected:
   //prepareForEndOfSession(): increments users total time in app and saves the
   //  state if their preferences ask for it
   virtual void prepareForEndOfSession();
+  
+  /** Adds `m_activeTimeSinceDbUpdate` to the database, saving the updated result. */
+  void updateUsageTimeToDb();
   
 #if(  BUILD_AS_WX_WIDGETS_APP )
   virtual void handleJavaScriptError( const std::string &errorText );
@@ -277,6 +299,10 @@ protected:
   
   std::chrono::steady_clock::time_point m_lastAccessTime;
   std::chrono::steady_clock::time_point::duration m_activeTimeInSession;
+  /** We will occasionally update the use duration in the database - this field tracks how long of
+   active use since the database was last updated.
+   */
+  std::chrono::steady_clock::time_point::duration m_activeTimeSinceDbUpdate;
   
 #define OPTIMISTICALLY_SAVE_USER_STATE 0
   //If OPTIMISTICALLY_SAVE_USER_STATE is enabled, then the users state will

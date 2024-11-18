@@ -1,0 +1,64 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages nplurals="2" plural="n==1 ? 0 : 1">
+  <!-- 
+    This file contains the localizations for both IsotopeSearchByEnergy.cpp and IsotopeSearchByEnergyModel.cpp - e.g., the "Nuclide Search" tab.
+    (there wasnt enough content in IsotopeSearchByEnergyModel to justify the performance hit of adding in an extra localization file)
+
+    isbe- is short for IsotopeSearchByEnergy
+    isbem- is short for IsotopeSearchByEnergyModel
+  -->
+  <message id="isbe-clear-ref">Effacer les Pics Photo de Réf.</message>
+<message id="isbe-cb-gammas">Gammas</message>
+
+<message id="isbe-cb-rxnts">Réactions</message>
+<message id="isbe-min-br">BR Min.</message>
+<message id="isbe-tt-min-br">Taux de ramification minimum.</message>
+<message id="isbe-min-hl">T&frac12; Min.</message>
+<message id="isbe-tt-min-hl">
+    Durée de vie minimale des nucléides recherchés.
+    <br />
+    <div>
+      L'âge peut être spécifié en utilisant une combinaison d'unités de temps, semblable à '<b>5.3a 8j 22m</b>'.
+    </div>
+    <div>
+      Unités de temps acceptables : <b>year</b>, <b>yr</b>, <b>y</b>, <b>day</b>, <b>d</b>, <b>hrs</b>, <b>hour</b>, <b>h</b>, <b>minute</b>,
+      <b>min</b>, <b>m</b>, <b>second</b>, <b>s</b>, <b>ms</b>, <b>microseconds</b>, <b>us</b>, <b>nanoseconds</b>, <b>ns</b>, ou
+      vous pouvez spécifier la période de temps par <b>hh:mm:ss</b>.
+    </div>
+    <div>
+      Lorsque plusieurs périodes de temps sont spécifiées, elles sont additionnées, par ex. '1a6mois 3m' est interprété comme 18 mois et 3 minutes
+    </div>
+</message>
+<message id="isbe-searching">Recherche</message>
+<message id="isbe-assign-to-btn">
+    <plural case="0">Attribuer le pic à {1}</plural>
+    <plural case="1">Attribuer les pics à {1}</plural>  <!-- Deux pics ou plus -->
+</message>
+<message id="isbe-assign-searched-energies">
+    <plural case="0">Attribuer l'énergie recherchée à {1}</plural>
+    <plural case="1">Attribuer les énergies recherchées à {1}</plural>  <!-- Deux pics ou plus -->
+</message>
+<message id="isbe-assign-matching-peaks-no-id">Attribuer les pics correspondants sans ID à {1}...</message>
+<message id="isbe-assign-all-matching-peaks">Attribuer tous les pics correspondants à {1}...</message>
+
+<!-- Messages pour IsotopeSearchByEnergyModel sont ci-dessous ; c'est-à-dire les en-têtes de table -->
+<message id="isbem-parent-nuc">Parent</message>
+<message id="isbem-diff">Diff.</message>
+<message id="isbem-rel-br">Taux de Ramif. Rel.</message>
+<message id="isbem-profile">Profil</message>
+<message id="isbem-decay">Décroissance</message>
+<message id="isbem-part-hl">T&frac12; du Parent</message>
+<message id="isbem-assumed-age">Âge Supposé</message>
+<message id="isbem-tt-parent-nuc">Nucléide parent de la chaîne de décroissance.</message>
+<message id="isbem-tt-diff">Différence entre le niveau d'énergie du nucléide sélectionné et le niveau d'énergie recherché</message>
+<message id="isbem-tt-energy">Énergie vraie des rayons gamma/X</message>
+<message id="isbem-tt-rel-bre">Taux de ramification, relatif au gamma de rendement le plus élevé du nucléide
+    (c'est-à-dire, 1.0 indique le gamma le plus abondant, pas un gamma par désintégration)
+</message>
+<message id="isbem-tt-profile">Une métrique approximative de la proximité du spectre observé à avoir les pics attendus pour la source sélectionnée.
+    Un nombre plus élevé est meilleur, avec une valeur de 1.0 étant la plus élevée - il est recommandé de trier par cette colonne pour l'identification du nucléide.  
+    Voir l'aide pour cet outil pour une description plus complète de cette quantité.
+</message>
+<message id="isbem-tt-parent-hl">Demi-vie du parent</message>
+<message id="isbem-tt-assumed-age">Âge supposé du nucléide</message>
+</messages>

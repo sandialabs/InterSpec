@@ -174,6 +174,7 @@ protected:
   void handleSumTypeToSingleRecordChanged();
   void handleBackSubForeChanged();
   void handleSumDetPerSampleChanged();
+  void handleSumSamplesPerDetChanged();
   void handleIncludeInterSpecInfoChanged();
   
 #if( USE_QR_CODES )
@@ -222,6 +223,7 @@ protected:
   Wt::WCheckBox *m_sumSecoToSingleRecord;
   Wt::WCheckBox *m_backSubFore;
   Wt::WCheckBox *m_sumDetsPerSample;
+  Wt::WCheckBox *m_sumSamplesPerDets;
   Wt::WCheckBox *m_excludeInterSpecInfo;
   Wt::WCheckBox *m_excludeGpsInfo;
   

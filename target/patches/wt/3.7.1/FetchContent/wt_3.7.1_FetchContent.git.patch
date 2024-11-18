@@ -338,7 +338,7 @@ index 15aab351..1e618bf1 100644
  IF(WIN32)
    IF(BOOST_DYNAMIC)
 diff --git a/src/CMakeLists.txt b/src/CMakeLists.txt
-index c65812e1..baf5f9aa 100644
+index c65812e1..b47aa317 100644
 --- a/src/CMakeLists.txt
 +++ b/src/CMakeLists.txt
 @@ -4,11 +4,11 @@ INCLUDE_DIRECTORIES(
@@ -355,17 +355,17 @@ index c65812e1..baf5f9aa 100644
  
  MACRO (FILE_TO_STRING infile outfile var)
  ADD_CUSTOM_COMMAND(OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/${outfile}
-@@ -457,24 +457,44 @@ ENDIF(WIN32)
+@@ -457,24 +457,46 @@ ENDIF(WIN32)
  ADD_LIBRARY(wt ${libsources})
  TARGET_LINK_LIBRARIES(wt
    PUBLIC
 -    ${BOOST_WT_LIBRARIES}
 +#    ${BOOST_WT_LIBRARIES}
-+    Boost::filesystem Boost::program_options Boost::regex Boost::date_time Boost::system Boost::thread Boost::asio Boost::signals2 Boost::random Boost::any Boost::interprocess Boost::foreach Boost::multi_index Boost::iostreams
++    Boost::filesystem Boost::program_options Boost::regex Boost::date_time Boost::system Boost::thread Boost::asio Boost::signals2 Boost::random Boost::any Boost::interprocess Boost::foreach Boost::multi_index Boost::iostreams Boost::serialization Boost::spirit
      ${WT_SOCKET_LIBRARY}
    PRIVATE
      ${WT_MATH_LIBRARY}
-     ${RT_LIBRARY}
+-    ${RT_LIBRARY}
      )
  
 +IF(UNIX AND NOT APPLE)
@@ -380,9 +380,12 @@ index c65812e1..baf5f9aa 100644
 +    ${CMAKE_CURRENT_SOURCE_DIR}/web
 +    ${CMAKE_CURRENT_BINARY_DIR} # for WConfig.h
 +    Wt/Dbo/backend/amalgamation # for sqlite3.h
-+    ${boost_SOURCE_DIR}/libs/numeric/ublas/include
++    ${boost_SOURCE_DIR}/libs/numeric/ublas/include ${boost_SOURCE_DIR}/libs/spirit/include 
 +)
 +
++if( ANDROID )
++  TARGET_LINK_LIBRARIES( wt PUBLIC log )
++endif( ANDROID )
 +
  IF(ENABLE_LIBWTTEST)
    ADD_LIBRARY(wttest
@@ -404,7 +407,7 @@ index c65812e1..baf5f9aa 100644
    INSTALL(TARGETS wttest
  	  RUNTIME DESTINATION bin
 diff --git a/src/Wt/Dbo/CMakeLists.txt b/src/Wt/Dbo/CMakeLists.txt
-index 70b56636..5480cf76 100644
+index 70b56636..d07081a3 100644
 --- a/src/Wt/Dbo/CMakeLists.txt
 +++ b/src/Wt/Dbo/CMakeLists.txt
 @@ -31,10 +31,22 @@ IF(ENABLE_LIBWTDBO)
@@ -436,7 +439,7 @@ index 70b56636..5480cf76 100644
      IF(MULTI_THREADED_BUILD)
 -      TARGET_LINK_LIBRARIES(wtdbo PUBLIC ${BOOST_THREAD_LIB} ${BOOST_SYSTEM_LIB} ${CMAKE_THREAD_LIBS_INIT} ${BOOST_DT_LIB})
 +#      TARGET_LINK_LIBRARIES(wtdbo PUBLIC ${BOOST_THREAD_LIB} ${BOOST_SYSTEM_LIB} ${CMAKE_THREAD_LIBS_INIT} ${BOOST_DT_LIB})
-+      TARGET_LINK_LIBRARIES(wtdbo PUBLIC  Boost::thread Boost::system Boost::date_time )
++      TARGET_LINK_LIBRARIES(wtdbo PUBLIC  Boost::thread Boost::system Boost::date_time Boost::spirit )
      ELSE(MULTI_THREADED_BUILD)
        TARGET_LINK_LIBRARIES(wtdbo PUBLIC ${BOOST_DT_LIB})
      ENDIF(MULTI_THREADED_BUILD)
@@ -452,7 +455,7 @@ index 70b56636..5480cf76 100644
    INSTALL(TARGETS wtdbo
        RUNTIME DESTINATION bin
 diff --git a/src/Wt/Dbo/backend/CMakeLists.txt b/src/Wt/Dbo/backend/CMakeLists.txt
-index 1809226d..86386655 100644
+index 1809226d..9e554501 100644
 --- a/src/Wt/Dbo/backend/CMakeLists.txt
 +++ b/src/Wt/Dbo/backend/CMakeLists.txt
 @@ -45,6 +45,9 @@ IF(ENABLE_SQLITE)
@@ -471,7 +474,7 @@ index 1809226d..86386655 100644
        ${SQLITE3_LIBRARIES}
 -      ${BOOST_DT_LIB}
 +#      ${BOOST_DT_LIB}
-+      Boost::date_time
++      Boost::date_time Boost::spirit
        ${WT_THREAD_LIB}
        ${WT_MATH_LIBRARY}
        )
@@ -481,7 +484,7 @@ index 1809226d..86386655 100644
        ${POSTGRES_LIBRARIES}
 -      ${BOOST_DT_LIB}
 +#      ${BOOST_DT_LIB}
-+      Boost::date_time
++      Boost::date_time Boost::spirit
    )
  
    INCLUDE_DIRECTORIES(${POSTGRES_INCLUDE})
@@ -528,9 +531,18 @@ index 56726cd2..767f2f92 100644
  		<< "WtAndroid::startwt putenv() failed on: " 
  		<< env
 diff --git a/src/http/CMakeLists.txt b/src/http/CMakeLists.txt
-index cefbf2a7..53ae4ece 100644
+index cefbf2a7..a4ebb5f4 100644
 --- a/src/http/CMakeLists.txt
 +++ b/src/http/CMakeLists.txt
+@@ -15,7 +15,7 @@ IF(CONNECTOR_HTTP)
+   ENDIF (HAVE_STRCASECMP)
+ 
+   SET(libhttpsources
+-    Android.C
++    # Android.C
+     Configuration.C
+     Connection.C
+     ConnectionManager.C
 @@ -62,11 +62,11 @@ IF(CONNECTOR_HTTP)
      SET(MY_SSL_LIBS "")
   ENDIF (HAVE_SSL)
@@ -555,7 +567,7 @@ index cefbf2a7..53ae4ece 100644
      ${CMAKE_CURRENT_SOURCE_DIR}/../web
      ${CMAKE_CURRENT_SOURCE_DIR}/../wt
      ${CMAKE_CURRENT_BINARY_DIR}/
-@@ -85,16 +85,26 @@ IF(CONNECTOR_HTTP)
+@@ -85,16 +85,29 @@ IF(CONNECTOR_HTTP)
    ADD_DEFINITIONS(${ZLIB_DEFINITIONS})
    ADD_LIBRARY(wthttp ${libhttpsources})
  
@@ -574,6 +586,9 @@ index cefbf2a7..53ae4ece 100644
        ${WIN32_STRSTRI_LIB}
    )
 +  
++  if( ANDROID )
++    TARGET_LINK_LIBRARIES( wthttp PUBLIC log )
++  endif( ANDROID )
 +  
 +#target_include_directories( wthttp
 +#  PUBLIC
@@ -583,6 +598,61 @@ index cefbf2a7..53ae4ece 100644
  
    IF(BOOST_WT_MT_FOUND)
      TARGET_LINK_LIBRARIES(wthttp PRIVATE ${CMAKE_THREAD_LIBS_INIT})
+diff --git a/src/http/Configuration.h b/src/http/Configuration.h
+index 0fe20e9f..4a23938d 100644
+--- a/src/http/Configuration.h
++++ b/src/http/Configuration.h
+@@ -89,7 +89,7 @@ public:
+   boost::function<std::string (std::size_t max_length, int purpose)> sslPasswordCallback()
+   { return sslPasswordCallback_; }
+   bool hasSslPasswordCallback()
+-  { return sslPasswordCallback_; }
++  { return !!sslPasswordCallback_; }
+ 
+ private:
+   std::vector<std::string> options_;
+diff --git a/src/http/WServer.C b/src/http/WServer.C
+index 9eb05058..04a683d7 100644
+--- a/src/http/WServer.C
++++ b/src/http/WServer.C
+@@ -26,9 +26,9 @@
+ #include <process.h>
+ #endif
+ 
+-#ifdef ANDROID
+-#include "Android.h"
+-#endif
++//#ifdef ANDROID
++//#include "Android.h"
++//#endif
+ 
+ namespace {
+   static void parseArgsPartially(int argc, char *argv[],
+@@ -59,9 +59,9 @@ struct WServer::Impl
+     : serverConfiguration_(0),
+       server_(0)
+   {
+-#ifdef ANDROID
+-    preventRemoveOfSymbolsDuringLinking();
+-#endif
++//#ifdef ANDROID
++//    preventRemoveOfSymbolsDuringLinking();
++//#endif
+   }
+ 
+   ~Impl()
+diff --git a/src/web/FileUtils.C b/src/web/FileUtils.C
+index 5a15b09f..1b8774af 100644
+--- a/src/web/FileUtils.C
++++ b/src/web/FileUtils.C
+@@ -7,6 +7,7 @@
+ #include "web/FileUtils.h"
+ 
+ #ifndef WT_HAVE_POSIX_FILEIO
++#include <boost/filesystem/directory.hpp>
+ #include <boost/filesystem/operations.hpp>
+ #else //WT_HAVE_POSIX_FILEIO
+ #include <sys/types.h>
 diff --git a/test/CMakeLists.txt b/test/CMakeLists.txt
 index 23117e87..76237466 100644
 --- a/test/CMakeLists.txt

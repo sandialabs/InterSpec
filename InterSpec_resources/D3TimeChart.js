@@ -544,13 +544,10 @@ D3TimeChart.prototype.reinitializeChart = function (options) {
     throw new ValidationError("D3TimeChart data is not set.");
   }
   if (!this.state.height || !this.state.width) {
-    // We get here from resizeObserver --> handleResize --> here, when the time-chart disapears
-    //  because you load a non-time-hostory spectrum.
+    // We get here from resizeObserver --> handleResize --> here, when the time-chart disappears
+    //  because you load a non-time-history spectrum.
     //  TODO: We could clear the data, just to be explicit
-    console.log( "Dimensions of D3TimeChart div element are not set." );
-    //console.trace();
-    
-    //throw new ValidationError( "dimensions of D3TimeChart div element are not set." );
+  
     return;
   }
   // console.log("Re-initializing...");
@@ -1095,7 +1092,7 @@ D3TimeChart.prototype.emitTimeRangeChanged = function( xdomain, compressionIndex
   - options.noEmit: set to true during mouse-wheel event
  */
 D3TimeChart.prototype.updateChart = function( scales, compressionIndex, options ) {
-  
+  const self = this;
   const dontRebin = (this.options.dontRebin && (Number(compressionIndex) > 0));
   const xScale = scales.xScale;
   const chartDomain = xScale.domain();
@@ -1281,7 +1278,12 @@ D3TimeChart.prototype.updateChart = function( scales, compressionIndex, options 
       var rPixel = xScale(endTime);
 
       var highlightWidth = rPixel - lPixel > 2 ? rPixel - lPixel : 2;
-      d3.select(this).attr("x", lPixel).attr("width", highlightWidth);
+      
+      d3.select(this)
+        .attr("x", lPixel)
+        .attr("y", self.margin.top)
+        .attr("width", highlightWidth)
+        .attr("height", plotHeight );
       // }
     });
   }

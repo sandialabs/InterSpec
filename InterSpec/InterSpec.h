@@ -27,19 +27,20 @@
 
 #include <set>
 #include <deque>
+#include <tuple>
 #include <memory>
 #include <vector>
 
 #include <Wt/Dbo/Dbo>
 #include <Wt/WContainerWidget>
 
-//#include "SpecUtils/SpecFile.h"
-//Without including InterSpecUser.h here, we get some wierd issues with the
-//  DB optomistic versioning...
+//Without including InterSpecUser.h here, we get some weird issues with the
+//  DB optimistic versioning...
 #include "InterSpec/InterSpecUser.h"
 
 class PeakDef;
 class PopupDiv;
+class SpecMeas;
 class AuxWindow;
 class GoogleMap;
 class PeakModel;
@@ -52,6 +53,7 @@ class PopupDivMenu;
 class SimpleDialog;
 class EnergyCalTool;
 class GammaXsWindow;
+class MakeDrfWindow;
 class OneOverR2Calc;
 class SpectrumChart;
 class UseInfoWindow;
@@ -64,6 +66,7 @@ class DrfSelectWindow;
 class PeakInfoDisplay;
 class SpecMeasManager;
 class UndoRedoManager;
+class UserPreferences;
 class GammaCountDialog;
 class PopupDivMenuItem;
 class SpectraFileHeader;
@@ -71,6 +74,7 @@ class PopupWarningWidget;
 class UnitsConverterTool;
 class FeatureMarkerWindow;
 class D3SpectrumDisplayDiv;
+class DetectionLimitWindow;
 class DetectorPeakResponse;
 class ExportSpecFileWindow;
 class MakeFwhmForDrfWindow;
@@ -78,6 +82,7 @@ class IsotopeSearchByEnergy;
 class ShieldingSourceDisplay;
 class EnergyCalPreserveWindow;
 class ReferencePhotopeakDisplay;
+class DetectionLimitSimpleWindow;
 class LicenseAndDisclaimersWindow;
 namespace HelpSystem{ class HelpWindow; }
 namespace D3SpectrumExport{ struct D3SpectrumChartOptions; }
@@ -181,15 +186,15 @@ public:
       ReactionGammaServer, and MassAttenuation.  Other tools call
       InterSpec::dataDirectory() to find the appropriate directory.
    */
-  static void setStaticDataDirectory( const std::string &dir );
+  static InterSpec_API void setStaticDataDirectory( const std::string &dir );
  
   /** Directory where files like cross sections, materials, detector response
       function, nuclear decay information, and similar are stored.
    */
-  static std::string staticDataDirectory();
+  static InterSpec_API std::string staticDataDirectory();
  
   /** Returns if the staticDataDirectory has been explicitly set. */
-  static bool haveSetStaticDataDirectory();
+  static InterSpec_API bool haveSetStaticDataDirectory();
   
 #if( BUILD_AS_ELECTRON_APP || IOS || ANDROID || BUILD_AS_OSX_APP || BUILD_AS_LOCAL_SERVER || BUILD_AS_WX_WIDGETS_APP || BUILD_AS_UNIT_TEST_SUITE )
   /** Sets the directory were we can write write the user preference database
@@ -198,7 +203,7 @@ public:
    
    Will throw exception if not empty string and its an invalid directory.
    */
-  static void setWritableDataDirectory( const std::string &dir );
+  static InterSpec_API void setWritableDataDirectory( const std::string &dir );
   
   /** Returns the location you can write files to, such as user preferences.
       
@@ -209,7 +214,7 @@ public:
    
    Will throw exception if hasnt been set (or set with empty string)
    */
-  static std::string writableDataDirectory();
+  static InterSpec_API std::string writableDataDirectory();
 #endif  //if( not a webapp )
   
   /** Function called by Wt when the client reports a change in widget size. */
@@ -333,11 +338,18 @@ public:
   SimpleDialog *makeEnterAppUrlWindow();
   void handleAppUrlClosed();
   
+  /** Loads the XML file for current locale, to use for localizing strings.
+   
+   Simply passes through to the `InterSpecApp` function of the same name
+  \sa InterSpecApp::useMessageResourceBundle
+   */
+  void useMessageResourceBundle( const std::string &name );
+  
   //For the 'add*Menu(...)' functions, the menuDiv passed in *must* be a
   //  WContainerWidget or a PopupDivMenu
   void addFileMenu( Wt::WWidget *menuDiv, const bool isAppTitlebar );
   void addEditMenu( Wt::WWidget *menuDiv );
-  void addDisplayMenu( Wt::WWidget *menuDiv );
+  void addViewMenu( Wt::WWidget *menuDiv );
   void addDetectorMenu( Wt::WWidget *menuDiv );
   void addToolsMenu( Wt::WWidget *menuDiv );
   void addPeakLabelSubMenu( PopupDivMenu *parentWidget );
@@ -382,82 +394,82 @@ public:
   
   
 #if( USE_DB_TO_STORE_SPECTRA )
-  //measurmentFromDb(...): returns the measurment that has been, or will be
-  //  serialized to the database.  If 'update' is false, then just the last
-  //  serialization will be returned and in fact may be null.  If 'update'
-  //  is true, then the measurment will be saved to the database first (unless
-  //  it hasnt been modified since last saving) and then returned; if the user
-  //  preference is to not save spectra to the database, then it will not be
-  //  be saved.  In the case the user preference is to not save to the database,
-  //  but the file is already in there, but has been modified in memmorry, then
-  //  the file will not be re-saved to the database.
-  //  Function wont throw, but may return a null pointer
-  Wt::Dbo::ptr<UserFileInDb> measurmentFromDb( SpecUtils::SpectrumType type, bool update );
+  /** Note: see comments in the top of InterSpecUser.h for an explanation of the use-model for saving to the database. */
+  
+  /**  Returns the measurement that has been, or will be serialized to the database.
+   
+   @param update If false, then just the last serialization will be returned and in fact may be null.  If true
+          then the measurement will be saved to the database first (unless it hasnt been modified since
+          last saving) and then returned
+  
+   Function may throw exception (e.g. FileToLargeForDbException, Wt::Dbo::Exception, std::exception) if it runs into an
+   error (file too large to be in DB, or DB issue), or may return a null pointer (the measurement type isnt loaded.
+   */
+  Wt::Dbo::ptr<UserFileInDb> measurementFromDb( const SpecUtils::SpectrumType type,
+                                               const bool update );
   
   //saveStateToDb( entry ): saves the application state to the pointer passed
   //  in.  Note that pointer passed in must be a valid pointer associated with
-  //  this m_user.  If entry->stateType is specified for testing, then every
-  //  thing will be copied and write protected so it cant be changed in the
-  //  future. May throw exception.  std::runtime_error exceptions will contain
+  //  this m_user.  If `entry->stateType` is specified for as end of session,
+  //  or `entry->snapshotTagParent` is non-null, then things will be copied
+  //  to unique entries in the database.
+  //  May throw exception.  std::runtime_error exceptions will contain
   //  messages that are reasonably okay to send to users.
   void saveStateToDb( Wt::Dbo::ptr<UserState> entry );
-  
-  //serializeStateToDb(...): a convience function for saveStateToDb(...).
-  Wt::Dbo::ptr<UserState> serializeStateToDb( const Wt::WString &name,
-                                              const Wt::WString &desc,
-                                              const bool forTesting,
-                                              Wt::Dbo::ptr<UserState> parent);
   
   //loadStateFromDb( entry ): sets the applications state to that in 'entry'
   void loadStateFromDb( Wt::Dbo::ptr<UserState> entry );
 
-  //testLoadSaveState(): a temporary function to help develop the loading and
-  //  saving of the applications state
-//  void testLoadSaveState();
   
-    void stateSave();
-    void stateSaveAs();
-    void stateSaveTag();
-    void stateSaveAsAction( Wt::WLineEdit *nameedit,
-                         Wt::WTextArea *descriptionarea,
-                    AuxWindow *window,
-                         const bool forTesting);
-    void stateSaveTagAction(Wt::WLineEdit *nameedit,
-                          AuxWindow *window);
+  /** Called from the "Store As..." menu item.
+   If state is already saved in the DB, updates it.
+   This function should only be called when we are already connected to a state in the DB,
+   but if not, will then call `stateSaveAs()` (but again, this shouldn't happen).
+   */
+  void stateSave();
+  /** Called from the "Store As..." menu item - creates a dialog to store current state under new name/desc. */
+  void stateSaveAs();
+  /** Called from the "Store As..." dialog to save things to DB. */
+  void stateSaveAsFinish( Wt::WLineEdit *name, Wt::WTextArea *desc, AuxWindow *window );
+  /** Called from the "Tag..." menu item, to create a tag of the current state. */
+  void stateSaveTag();
+  /** Called from the "Tag..." dialog to actually create the tag in the DB. */
+  void stateSaveTagFinish( Wt::WLineEdit *name, AuxWindow *window );
   
-  //startStoreStateInDb(...): If state hasn't been saved yet,
-  //  e.g. `m_dataMeasurement->dbStateId(m_displayedSamples) < 0`,
-  //  then a dialog will be popped up allowing user to enter a title and
-  //  description.
-  //  If the state is already in the database, and either the state is not
-  //  readonly, or 'allowOverWrite' is specified true, then the database will be
-  //  updated.
-  //  If 'asNewState' is specified, then even if the current state is already in
-  //  the database, the process (e.g. user dialog) for saving a new state in the
-  //  database will be started.
-  //  Specifying 'forTesting' will cause the for testing flag to be set, as well
-  //  as for the state to be marked as read only.
-  void startStoreStateInDb( const bool forTesting,
-                            const bool asNewState,
-                            const bool allowOverWrite,
-                            const bool endOfSessionNoDelete );
+  /** Saves the Act/Shield and Rel Eff tool states to the in-memory `SpecMeas` objects, then updates
+   the database with either the current app state, or the current SpecMeas object, depending if we are
+   connected to a app-state or not.
+   If connected to an app state, will create, or replace the states `kUserStateAutoSavedWork` state in DB.
+   
+   @param doAsync If true, saving to the database will be performed asynchronously. If false, will do all work
+   during the call.
+   */
+  void saveStateAtForegroundChange( const bool doAsync );
   
-  void finishStoreStateInDb( Wt::WLineEdit *name, Wt::WTextArea *description,
-                            AuxWindow *window, const bool forTesting , Wt::Dbo::ptr<UserState> parent);
-  void browseDatabaseStates( bool testStates );
+  /** Removes all previous `kEndOfSessionTemp` sessions for the user from the database, and then
+   if the "AutoSaveSpectraToDb" preference is true, will create the new `kEndOfSessionTemp` state
+   that will be loaded next time the app is started.
+   */
+  void saveStateForEndOfSession();
+  
+  /** Called by #InterSpec::stateSaveTagFinish and #InterSpec::stateSaveAsFinish, to actually create
+   the db user state, and then call `saveStateToDb(...)` and update menu items.
+   */
+  void finishStoreStateInDb( const Wt::WString &name,
+                            const Wt::WString &description,
+                            Wt::Dbo::ptr<UserState> parent );
   
 #if( INCLUDE_ANALYSIS_TEST_SUITE )
   void startStateTester();
   
-  //startStoreTestStateInDb(): a convience function that makes a dialog to give
-  //  the user an option to overwrite their current state or create a new one.
-  void startStoreTestStateInDb();
+  //Creates a dialog that allows user to name and describe the state; when
+  // user then clicks save, will pass off to `storeTestStateToN42(...)`.
+  void startStoreTestState();
   
   //storeTestStateToN42(): stores foreground, background, and shielding/source
   //  model into a since 2012 N42 file.  Does not throw, but will notify the
   //  user via the GUI upon error.
-  void storeTestStateToN42( std::ostream &output,
-                            const std::string &name, const std::string &descr );
+  void storeTestStateToN42( const Wt::WString name, const Wt::WString descr );
   
   //loadTestStateFromN42(): Attempts to load a state previously saved to an
   //  XML file via storeTestStateToN42
@@ -580,10 +592,13 @@ public:
   
   /** Sets the Y-axis range.
    
-   Returns true if successful, or false if the request couldnt be fully honored
+   Returns set range, and empty string if successful, or otherwise a message explaining why the request couldnt be fully honored
    (e.g., a negative lower counts was specified, but its currently log-scale)
    */
-  bool setYAxisRange( float lower_counts, float upper_counts );
+  std::tuple<double,double,Wt::WString> setYAxisRange( double lower_counts, double upper_counts );
+
+  /** When displaying the spectrum in log-y, sets the lower y-axis value to show, if there are channels with zero counts. */
+  bool setLogYAxisMin( const double lower_value );
   
   //displayedSpectrumRange(): Grab the ranges in y and y that are currently
   //  displayed to the user.
@@ -594,7 +609,19 @@ public:
   void setToolTabsVisible( bool show );
   bool toolTabsVisible() const;
   
-  void showMakeDrfWindow();
+#if( InterSpec_PHONE_ROTATE_FOR_TABS )
+  /** Function called when user changes the tool tab height.
+   We will remember this, so we can set it back
+   */
+  void toolTabContentHeightChanged( int height );
+#endif
+  
+  /** Makes a MakeDrf Window and returns it, or if one was already present, returns it. */
+  MakeDrfWindow *showMakeDrfWindow();
+  /** Returns the pointer to current MakeDrf Window.  Will by nullptr if not currently showing */
+  MakeDrfWindow *makeDrfWindow();
+  void handleCloseMakeDrfWindow( MakeDrfWindow *window );
+  
   DrfSelectWindow *showDrfSelectWindow();
   void closeDrfSelectWindow();
   
@@ -744,7 +771,7 @@ public:
 #if( USE_SEARCH_MODE_3D_CHART )
   void create3DSearchModeChart();
   void programmaticallyClose3DSearchModeChart();
-  void handle3DSearchModeChartClose();
+  void handle3DSearchModeChartClose( AuxWindow *window );
 #endif
 
   /** Show the RIID results included in the spectrum file; and sets `m_riidDisplay` to window pointer */
@@ -862,19 +889,32 @@ public:
    */
   void handleExportSpectrumFileDialogClose();
   
+#if( USE_DETECTION_LIMIT_TOOL )
+  /** If `query_str` is not empty, the handle app URI function will be called. */
+  void showDetectionLimitTool( const std::string &query_str );
+  DetectionLimitWindow *createDetectionLimitTool();
+  void handleDetectionLimitWindowClose();
+  void programmaticallyCloseDetectionLimit();
+  
+  DetectionLimitSimpleWindow *showSimpleMdaWindow();
+  void handleSimpleMdaWindowClose();
+  void programmaticallyCloseSimpleMda();
+#endif //USE_DETECTION_LIMIT_TOOL
+  
   /** Brings up a dialog asking the user to confirm starting a new session, and if they select so, will start new session. */
   void startClearSession();
   
+  /** Pointer to class to access user preferences. */
+  UserPreferences *preferences();
   
-  //showIEWarningDialog(): returns NULL if user previously specified to not show
-  //  again, otherwise it returns the AuxWIndow it is displaying.  The dialog
-  //  is by default shown visible, and will deleted when user is done with it.
-  AuxWindow *showIEWarningDialog();
+  /** The user information in the database. */
+  const Wt::Dbo::ptr<InterSpecUser> &user();
   
-  // The user itself gets to be public--no need to protect access to it.
-  //Note 20130116: m_user should be made protected, but really the whole
-  //  preference thing should be re-done, see README
-  Wt::Dbo::ptr<InterSpecUser> m_user;
+  /** Calls the `reread()` function on `m_user`, which refreshes the information pointed to by
+   `m_user` to match what is currently in the database.  Please note, this may (and maybe always)
+   cause the `m_user` pointer to point to a different location in memory.
+   */
+  void reReadUserInfoFromDb();
   
   //sql returns the DbSession (which holds the Wt::Dbo::Session) associated
   //  with m_user.  The reason for using an indirection via
@@ -893,6 +933,13 @@ public:
    */
   void refreshDisplayedCharts();
   
+  
+  /** Enables the "View" -> "Show Images" menu item, based on if the foreground
+   spectrum file contains any images.
+   */
+  void checkEnableViewImageMenuItem();
+  
+  void createFileParameterWindow( const SpecUtils::SpectrumType type );
 protected:
 
   //doFinishupSetSpectrumWork(...): intended to do things like calculate the
@@ -907,11 +954,12 @@ protected:
   void doFinishupSetSpectrumWork( std::shared_ptr<SpecMeas> meas,
                             std::vector<boost::function<void(void)> > workers );
   
-  void createFileParameterWindow();
-  
 #if( USE_DETECTION_LIMIT_TOOL )
-  void createDetectionLimitTool();
-#endif
+  void fitNewPeakNotInRoiFromRightClick();
+  void startAddPeakFromRightClick();
+  void searchOnEnergyFromRightClick();
+  void startSimpleMdaFromRightClick();
+#endif //USE_DETECTION_LIMIT_TOOL
   
   void updateGuiForPrimarySpecChange( std::set<int> display_sample_nums );
   
@@ -974,9 +1022,6 @@ protected:
   //showNewWelcomeDialog(): see notes for showWelcomeDialog().  This function
   //  will eventually replace showWelcomeDialog().
   void showNewWelcomeDialog( bool force = false );
-
-  // Cookie management~  /*should be placed into user options*.
-  void setShowIEWarningDialogCookie( bool show );
 
   /** Adds menu items to "Tools" menu for the tools that are ordinarily shown
       as tabs.  This function is called when the "Hide Tool Tabs" menu option
@@ -1050,7 +1095,7 @@ public:
   bool showingFeatureMarker( const FeatureMarkerType option );
   void setComptonPeakAngle( const int angle );
   void toggleFeatureMarkerWindow();
-  void deleteFeatureMarkerWindow();
+  void displayFeatureMarkerWindow( const bool show );
   
 public:
 
@@ -1151,7 +1196,7 @@ public:
   void startHardBackgroundSub();
   void finishHardBackgroundSub( std::shared_ptr<bool> truncate_neg, std::shared_ptr<bool> round_counts );
   
-  void setXAxisSlider( bool show );
+  void setXAxisSlider( const bool show, const bool addUndoRedo );
   void setXAxisCompact( bool compact );
   void setShowYAxisScalers( bool show );
   
@@ -1260,8 +1305,16 @@ protected:
   //  as of 20140110, but still pretty reasonable.
   void detectClientDeviceType();
   
+  /** Changes the local, to the language specified. 
+   
+   @param languageCode The code for the language, ex. "nl" for Dutch, "fr" for French, "en" for English, or "en_GB" for Great Britain.
+   */
+  void changeLocale( std::string languageCode );
   
 protected:
+  Wt::Dbo::ptr<InterSpecUser> m_user;
+  UserPreferences *m_preferences;
+  
   PeakModel *m_peakModel;
   D3SpectrumDisplayDiv *m_spectrum;
   D3TimeChart *m_timeSeries;
@@ -1273,9 +1326,6 @@ protected:
   Wt::WContainerWidget *m_notificationDiv; //has id="qtip-growl-container"
   
   void handleUserIncrementSampleNum( SpecUtils::SpectrumType type, bool increment);
-
-  
- /* Start widgets this class keeps track of */
 
   Wt::Signal< Wt::WString, int > m_messageLogged;
   
@@ -1312,13 +1362,16 @@ protected:
   //m_currentToolsTab: used to track which tab is currently showing when the
   //  tools tab is shown.  This variable is necessary so that handleToolTabChanged(...)
   //  can know what tab is being changed from, and not just what tab is being
-  //  changed to.  In everyother function this variable will always be up to
+  //  changed to.  In every other function this variable will always be up to
   //  date when in tool tabs are shown.
   int m_currentToolsTab;
   
   //m_toolsTabs: will be null when not tool tabs are hidden, and non-null in
   //  when they are visible
   Wt::WTabWidget *m_toolsTabs;
+#if( InterSpec_PHONE_ROTATE_FOR_TABS )
+  int m_toolsTabsContentHeight;
+#endif
 
   EnergyCalTool          *m_energyCalTool;
   AuxWindow              *m_energyCalWindow;
@@ -1376,6 +1429,8 @@ protected:
   PopupDivMenuItem *m_createTag;
 #endif
   
+  PopupDivMenu *m_languagesSubMenu;
+  
   enum RightClickItems
   {
     kPeakEdit,
@@ -1387,10 +1442,18 @@ protected:
     kChangeContinuum,
     kChangeSkew,
     kDeletePeak,
-    kAddPeak,
+    kAddPeakToRoi,
     kShareContinuumWithLeftPeak,
     kShareContinuumWithRightPeak,
     kMakeOwnContinuum,
+
+#if( USE_DETECTION_LIMIT_TOOL )
+    kFitNewPeakNotInRoi,
+    kAddPeakNotInRoi,
+    kSearchEnergy,
+    kSimpleMda,
+#endif
+    
     kNumRightClickItems
   };//enum RightClickItems
   
@@ -1439,14 +1502,14 @@ protected:
   Wt::WMenuItem *m_tabToolsMenuItems[static_cast<int>(ToolTabMenuItems::NumItems)];
   
   /** Tracks which features are being used
-   TODO: remove this member variable and, and use m_featureMarkers to track things
+   TODO: remove this member variable and, and use m_featureMarkersWindow to track things
    */
   bool m_featureMarkersShown[static_cast<int>(FeatureMarkerType::NumFeatureMarkers)];
   
   /** A window that controls if S.E., D.E., Compton Peak, Compton Edge, or Sum
    Peaks are shown.  Is null when window is not showing.
    */
-  FeatureMarkerWindow *m_featureMarkers;
+  FeatureMarkerWindow *m_featureMarkersWindow;
   
   PopupDivMenuItem *m_featureMarkerMenuItem;
 
@@ -1467,6 +1530,7 @@ protected:
   OneOverR2Calc *m_1overR2Calc;
   UnitsConverterTool *m_unitsConverter;
   FluxToolWindow *m_fluxTool;
+  MakeDrfWindow *m_makeDrfTool;
   
   
 #if( USE_GOOGLE_MAP || USE_LEAFLET_MAP )
@@ -1499,7 +1563,10 @@ protected:
   AuxWindow        *m_remoteRidWindow;
 #endif
 
-  
+#if( USE_DETECTION_LIMIT_TOOL )
+  DetectionLimitSimpleWindow *m_simpleMdaWindow;
+  DetectionLimitWindow *m_detectionLimitWindow;
+#endif
   
   std::set<int> m_excludedSamples;//these are samples that should not be displayed for the primary spectrum
   std::set<int> m_displayedSamples;
@@ -1635,6 +1702,10 @@ protected:
   bool m_findingHintPeaks;
   std::deque<boost::function<void()> > m_hintQueue;
   
+  /** Some informational messages should only be shown once, like when you click on the
+   energy tab, so we'll keep track of if we have shown a message.
+   */
+  std::set<std::string> m_infoNotificationsMade;
   
 #if( INCLUDE_ANALYSIS_TEST_SUITE )
   friend class SpectrumViewerTester;

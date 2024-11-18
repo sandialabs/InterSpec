@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- ftw- is short for FluxToolWidget or FluxToolWindow
+  -->
+  <message id="ftw-qr-tool-state-title">Flux Tool State</message>
+  <message id="ftw-qr-tool-state-text">Current state of flux tool.</message>
+  <message id="ftw-hdr-intrinsic-eff">Intr. Eff.</message>
+  <message id="ftw-hdr-geom-eff">Geom. Eff.</message>
+  <message id="ftw-hdr-flux-on-det">Flux on Det. (ɣ/s)</message>
+  <message id="ftw-hdr-flux-cm">Flux (ɣ/cm²/s)</message>
+  <message id="ftw-hdr-flux-4pi">ɣ/4π/s</message>
+  <message id="ftw-tt-distance">
+    Distance from center of source to face of detector. Number must be
+    followed by units; valid units are: meters, m, cm, mm, km, feet,
+    ft, ', in, inches, or ".  You may also add multiple distances,
+    such as '3ft 4in', or '3.6E-2 m 12 cm' which are equivalent to 
+    40inches and 15.6cm respectively.
+  </message>
+  <message id="ftw-simple">Simple</message>
+  <message id="ftw-standard">Standard</message>
+  <message id="ftw-more">More</message>
+  <message id="ftw-copy-btn">Copy To Clipboard</message>
+  <message id="ftw-copy-btn-narrow">Copy</message>
+  <message id="ftw-invalid-dist">Invalid Distance</message>
+  <message id="ftw-no-drf">No Detector Response Function Chosen</message>
+  <message id="ftw-no-foreground">No foreground spectrum loaded</message>
+  <message id="ftw-invalid-livetime">Invalid foreground live-time</message>
+  <message id="ftw-err-copy-clipboard">Failed to copy to clipboard - maybe a permissions issue - sorry.</message>
+  <message id="ftw-copied-to-clipboard">Copied table to clipboard.</message>
+  <message id="ftw-copied-as-html">Copied table to clipboard as HTML text.</message>
+  <message id="ftw-copy-unknown-status">Unknown result of copy command - sorry.</message>
+</messages>

@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- oor2c- short for OneOverR2Calc
+  -->
+  <message id="oor2c-instructions">Utilisez deux mesures à différents emplacements pour trouver la distance à une source non visible. Par exemple, lorsque la source est derrière un mur.</message>
+  <message id="oor2c-near-meas-label">Intensité de la Mesure Proche :</message>
+  <message id="oor2c-far-meas-label">Intensité de la Mesure Éloignée :</message>
+  <message id="oor2c-background-intensity">Intensité de Fond (optionnel) :</message>
+  <message id="oor2c-dist-label">Distance entre les mesures :</message>
+  <message id="oor2c-power-law-label">Loi de Puissance</message>
+  <message id="oor2c-low-scatter">Faible Dispersion ou en utilisant l'Aire du Pic, 1/r^2</message>
+  <message id="oor2c-mid-scatter">Dispersion Moyenne du Débit de Dose, 1/r^1.85</message>
+  <message id="oor2c-high-scatter">Forte Dispersion du Débit de Dose, 1/r^1.65</message>
+  <message id="oor2c-dist-to-near-label">Dist. de la mesure proche à la source :</message>
+  <message id="oor2c-bottom-message">Utilisez les mêmes unités pour les mesures proches, de fond et éloignées. Les résultats sont dans les mêmes unités utilisées pour la distance entre les mesures.</message>
+  <message id="oor2c-qr-state-title">État du Calculateur 1/r2</message>
+  <message id="oor2c-qr-state-txt">État actuel de l'outil calculateur 1/r<sup>2</sup>.</message>
+  <message id="oor2c-invalid-near">Mesure proche invalide</message>
+  <message id="oor2c-invalid-far">Mesure éloignée invalide</message>
+  <message id="oor2c-invalid-dist">Distance invalide</message>
+  <message id="oor2c-far-larger-than-near">La mesure éloignée doit être inférieure à la mesure proche</message>
+  <message id="oor2c-back-larger-than-far">Le fond doit être inférieur à l'éloigné</message>
+  <message id="oor2c-near-is-zero">La mesure proche doit être non nulle</message>
+  <message id="oor2c-far-is-zero">La mesure éloignée doit être non nulle</message>
+  <message id="oor2c-dist-is-zero">La distance entre les mesures doit être non nulle</message>
+</messages>

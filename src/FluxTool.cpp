@@ -42,8 +42,9 @@
 #include <Wt/WGridLayout>
 #include <Wt/WPushButton>
 #include <Wt/WButtonGroup>
-#include <Wt/WRadioButton>
 #include <Wt/WApplication>
+#include <Wt/WEnvironment>
+#include <Wt/WRadioButton>
 #include <Wt/Http/Request>
 #include <Wt/Http/Response>
 #include <Wt/WRegExpValidator>
@@ -65,6 +66,7 @@
 #include "InterSpec/PhysicalUnits.h"
 #include "InterSpec/SpecMeasManager.h"
 #include "InterSpec/UndoRedoManager.h"
+#include "InterSpec/UserPreferences.h"
 #include "InterSpec/SpectraFileModel.h"
 #include "InterSpec/RowStretchTreeView.h"
 
@@ -85,6 +87,8 @@ extern void android_download_workaround( Wt::WResource *resource, std::string de
 
 
 #if( FLUX_USE_COPY_TO_CLIPBOARD )
+
+// See also CopyUrlToClipboard in QrCode.cpp
 WT_DECLARE_WT_MEMBER
 (CopyFluxDataTextToClipboard, Wt::JavaScriptFunction, "CopyFluxDataTextToClipboard",
  function( sender, event, id )
@@ -117,11 +121,11 @@ WT_DECLARE_WT_MEMBER
   console.log( 'Will try to copy HTML to copyboard' );
   
   //We failed to copy richtext, lets just copy the HTML as text.
-  //  ToDo: We could probably try the clipboard API to copy formated text
+  //  ToDo: We could probably try the clipboard API to copy formatted text
   //        See https://developer.mozilla.org/en-US/docs/Web/API/Clipboard
   
   if( window.clipboardData && window.clipboardData.setData ) {
-    return clipboardData.setData("Text", text);  // IE
+    return window.clipboardData.setData("Text", text);  // IE
   }else if( document.queryCommandSupported && document.queryCommandSupported("copy") ) {
     var temparea = document.createElement("textarea");
     temparea.textContent = text;
@@ -790,7 +794,7 @@ namespace FluxToolImp
 
 
 FluxToolWindow::FluxToolWindow( InterSpec *viewer )
-: AuxWindow( "Flux Tool",
+: AuxWindow( WString::tr("window-title-flux-tool"),
   (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::TabletNotFullScreen)
    | AuxWindowProperties::SetCloseable
    | AuxWindowProperties::DisableCollapse) ),
@@ -806,9 +810,13 @@ FluxToolWindow::FluxToolWindow( InterSpec *viewer )
   
   AuxWindow::addHelpInFooter( footer(), "flux-tool" );
   
+  WPushButton *closeButton = nullptr;
+  if( viewer && viewer->isPhone() )
+    closeButton = addCloseButtonToFooter();
+  
 #if( USE_QR_CODES )
   WPushButton *qr_btn = new WPushButton( footer() );
-  qr_btn->setText( "QR Code" );
+  qr_btn->setText( WString::tr("QR Code") );
   qr_btn->setIcon( "InterSpec_resources/images/qr-code.svg" );
   qr_btn->setStyleClass( "LinkBtn DownloadBtn DialogFooterQrBtn" );
   qr_btn->clicked().preventPropagation();
@@ -816,17 +824,21 @@ FluxToolWindow::FluxToolWindow( InterSpec *viewer )
     try
     {
       const string url = "interspec://flux/?" + Wt::Utils::urlEncode(m_fluxTool->encodeStateToUrl());
-      QrCode::displayTxtAsQrCode( url, "Flux Tool State", "Current state of flux tool." );
+      QrCode::displayTxtAsQrCode( url, WString::tr("ftw-qr-tool-state-title"),
+                                 WString::tr("ftw-qr-tool-state-text") );
     }catch( std::exception &e )
     {
-      passMessage( "Error creating QR code: " + std::string(e.what()), WarningWidget::WarningMsgHigh );
+      passMessage( WString::tr("app-qr-err").arg(e.what()), WarningWidget::WarningMsgHigh );
     }
   }) );
 #endif //USE_QR_CODES
   
   WContainerWidget *buttonDiv = footer();
   
-  WPushButton *closeButton = addCloseButtonToFooter();
+  if( !viewer || !viewer->isPhone() )
+    closeButton = addCloseButtonToFooter();
+  
+  assert( closeButton );
   closeButton->clicked().connect( this, &AuxWindow::hide );
   
   WResource *csv = new FluxToolImp::FluxCsvResource( m_fluxTool );
@@ -850,7 +862,7 @@ FluxToolWindow::FluxToolWindow( InterSpec *viewer )
   
 #endif
   
-  csvButton->setText( "CSV" );
+  csvButton->setText( WString::tr("CSV") );
   //csvButton->setAttributeValue( "style", "float: none;" );  //Keep the CSV download to the left side of the close button.  .LinkBtn style class has the button float right..
   csvButton->setFloatSide( Wt::Side::Left );
   
@@ -871,7 +883,7 @@ FluxToolWindow::FluxToolWindow( InterSpec *viewer )
   
   resizeToFitOnScreen();
   centerWindowHeavyHanded();
-}//FluxToolWindow(...) constrctor
+}//FluxToolWindow(...) constructor
 
 
 FluxToolWindow::~FluxToolWindow()
@@ -895,6 +907,7 @@ FluxToolWidget::FluxToolWidget( InterSpec *viewer, Wt::WContainerWidget *parent 
   : WContainerWidget( parent ),
     m_interspec( viewer ),
     m_detector( nullptr ),
+    m_narrowLayout( false ),
     m_msg( nullptr ),
     m_distance( nullptr ),
     m_prevDistance(),
@@ -1012,40 +1025,55 @@ void FluxToolWidget::init()
   assert( m_interspec );
   assert( !m_detector );
   
+  if( m_interspec )
+    m_interspec->useMessageResourceBundle( "FluxTool" );
+    
+  if( m_interspec && m_interspec->isPhone() )
+  {
+    int w = m_interspec->renderedWidth();
+    int h = m_interspec->renderedHeight();
+    if( w < 100 )
+    {
+      w = wApp->environment().screenWidth();
+      h = wApp->environment().screenHeight();
+    }
+    m_narrowLayout = ((w > 100) && (w < 500));
+  }//if( phone )
+  
   for( FluxColumns col = FluxColumns(0); col < FluxColumns::FluxNumColumns; col = FluxColumns(col + 1) )
   {
     switch( col )
     {
       case FluxEnergyCol:
-        m_colnames[col] = WString::fromUTF8("Energy (keV)");
+        m_colnames[col] = WString::tr( m_narrowLayout ? "Energy" : "Energy (keV)" );
         m_colnamesCsv[col] = WString::fromUTF8("Energy (keV)");
         break;
       case FluxNuclideCol:
-        m_colnames[col] = WString::fromUTF8("Nuclide");
+        m_colnames[col] = WString::tr( m_narrowLayout ? "Nuc." : "Nuclide");
         m_colnamesCsv[col] = WString::fromUTF8("Nuclide");
         break;
       case FluxPeakCpsCol:
-        m_colnames[col] = WString::fromUTF8("Peak CPS");
+        m_colnames[col] = WString("{1} {2}").arg(WString::tr("Peak")).arg(WString::tr("CPS"));
         m_colnamesCsv[col] = WString::fromUTF8("Peak CPS");
         break;
       case FluxIntrinsicEffCol:
-        m_colnames[col] = WString::fromUTF8("Intr. Eff.");
+        m_colnames[col] = WString::tr("ftw-hdr-intrinsic-eff");
         m_colnamesCsv[col] = WString::fromUTF8("Intrinsic Efficiency");
         break;
       case FluxGeometricEffCol:
-        m_colnames[col] = WString::fromUTF8("Geom. Eff.");
+        m_colnames[col] = WString::tr("ftw-hdr-geom-eff");
         m_colnamesCsv[col] = WString::fromUTF8("Geometric Efficiency");
         break;
       case FluxFluxOnDetCol:
-        m_colnames[col] = WString::fromUTF8("Flux on Det. (&gamma;/s)");
+        m_colnames[col] = WString::tr("ftw-hdr-flux-on-det");
         m_colnamesCsv[col] = WString::fromUTF8("Flux on Detector (gammas/s)");
         break;
       case FluxFluxPerCm2PerSCol:
-        m_colnames[col] = WString::fromUTF8("Flux (&gamma;/cm&sup2;/s)");
+        m_colnames[col] = WString::tr("ftw-hdr-flux-cm");
         m_colnamesCsv[col] = WString::fromUTF8("Flux (gammas/cm2/s)");
         break;
       case FluxGammasInto4PiCol:
-        m_colnames[col] = WString::fromUTF8("&gamma;/4&pi;/s");
+        m_colnames[col] = WString::tr("ftw-hdr-flux-4pi");
         m_colnamesCsv[col] = WString::fromUTF8("gammas/4pi/s");
         break;
       case FluxNumColumns:        break;
@@ -1055,7 +1083,7 @@ void FluxToolWidget::init()
   
   wApp->useStyleSheet( "InterSpec_resources/FluxTool.css" );
   
-  const bool showToolTips = m_interspec ? InterSpecUser::preferenceValue<bool>( "ShowTooltips", m_interspec ) : false;
+  const bool showToolTips = m_interspec ? UserPreferences::preferenceValue<bool>( "ShowTooltips", m_interspec ) : false;
   
   addStyleClass( "FluxToolWidget" );
   
@@ -1071,16 +1099,10 @@ void FluxToolWidget::init()
   layout->addWidget( distDetRow, 0, 0 );
 #endif
   
-  SpectraFileModel *specFileModel = m_interspec->fileManager()->model();
-  m_detector = new DetectorDisplay( m_interspec, specFileModel );
-  m_detector->addStyleClass( "FluxDet" );
-  m_interspec->detectorChanged().connect( boost::bind( &FluxToolWidget::handleDrfChange, this, boost::placeholders::_1 ) );
-  m_interspec->detectorModified().connect( boost::bind( &FluxToolWidget::handleDrfChange, this, boost::placeholders::_1 ) );
-  distDetRow->elementAt(0,1)->addWidget( m_detector );
   
-  auto distCell = distDetRow->elementAt(0,0);
+  auto distCell = distDetRow->elementAt( m_narrowLayout ? 1 : 0, 0 );
   distCell->addStyleClass( "FluxDistCell" );
-  WLabel *label = new WLabel( "Distance:", distCell );
+  WLabel *label = new WLabel( WString("{1}:").arg(WString::tr("Distance")), distCell );
   label->addStyleClass( "FluxDistLabel" );
   
   m_prevDistance = "100 cm";
@@ -1097,14 +1119,25 @@ void FluxToolWidget::init()
   WRegExpValidator *validator = new WRegExpValidator( PhysicalUnits::sm_distanceUnitOptionalRegex, this );
   validator->setFlags( Wt::MatchCaseInsensitive );
   m_distance->setValidator( validator );
-  HelpSystem::attachToolTipOn( m_distance,
-                              "Distance from center of source to face of detector. Number must be"
-                              " followed by units; valid units are: meters, m, cm, mm, km, feet,"
-                              " ft, ', in, inches, or \".  You may also add multiple distances,"
-                              " such as '3ft 4in', or '3.6E-2 m 12 cm' which are equivalent to "
-                              " 40inches and 15.6cm respectively.", showToolTips );
+  HelpSystem::attachToolTipOn( m_distance, WString::tr("ftw-tt-distance"), showToolTips );
   m_distance->changed().connect( this, &FluxToolWidget::distanceUpdated );
   m_distance->enterPressed().connect( this, &FluxToolWidget::distanceUpdated );
+  
+  SpectraFileModel *specFileModel = m_interspec->fileManager()->model();
+  m_detector = new DetectorDisplay( m_interspec, specFileModel );
+  m_detector->addStyleClass( "FluxDet" );
+  m_interspec->detectorChanged().connect( boost::bind( &FluxToolWidget::handleDrfChange, this, boost::placeholders::_1 ) );
+  m_interspec->detectorModified().connect( boost::bind( &FluxToolWidget::handleDrfChange, this, boost::placeholders::_1 ) );
+  
+  if( m_narrowLayout )
+  {
+    auto detCell = distDetRow->elementAt(0,0);
+    detCell->setColumnSpan( 2 );
+    detCell->addWidget( m_detector );
+  }else
+  {
+    distDetRow->elementAt(0,1)->addWidget( m_detector );
+  }
   
   
   PeakModel *peakmodel = m_interspec->peakModel();
@@ -1114,7 +1147,7 @@ void FluxToolWidget::init()
   peakmodel->rowsInserted().connect( this, &FluxToolWidget::setTableNeedsUpdating );
   peakmodel->layoutChanged().connect( this, &FluxToolWidget::setTableNeedsUpdating );
 
-  auto msgCell = distDetRow->elementAt(1,0);
+  auto msgCell = distDetRow->elementAt( m_narrowLayout ? 2 : 1,0);
   msgCell->setColumnSpan( 2 );
   msgCell->addStyleClass( "FluxMsgCell" );
   m_msg = new WText( "", Wt::XHTMLText, msgCell );
@@ -1150,15 +1183,15 @@ void FluxToolWidget::init()
   WContainerWidget *buttonBox = new WContainerWidget();
   buttonBox->addStyleClass( "FluxInfoAmount" );
   
-  WRadioButton *simpleInfo = new WRadioButton( "Simple", buttonBox );
-  WRadioButton *standardInfo = new WRadioButton( "Standard", buttonBox );
-  WRadioButton *moreInfo = new WRadioButton( "More", buttonBox );
+  WRadioButton *simpleInfo = new WRadioButton( WString::tr("ftw-simple"), buttonBox );
+  WRadioButton *standardInfo = new WRadioButton( WString::tr("ftw-standard"), buttonBox );
+  WRadioButton *moreInfo = new WRadioButton( WString::tr("ftw-more"), buttonBox );
   
   m_displayLevelButtons = new WButtonGroup( buttonBox );
   m_displayLevelButtons->addButton( simpleInfo, static_cast<int>(DisplayInfoLevel::Simple) );
   m_displayLevelButtons->addButton( standardInfo, static_cast<int>(DisplayInfoLevel::Normal) );
   m_displayLevelButtons->addButton( moreInfo, static_cast<int>(DisplayInfoLevel::Extended) );
-  m_displayLevelButtons->setCheckedButton( standardInfo );
+  m_displayLevelButtons->setCheckedButton( m_narrowLayout ? simpleInfo : standardInfo );
 
   m_displayLevelButtons->checkedChanged().connect( std::bind( [this](){
     const auto level = static_cast<DisplayInfoLevel>( m_displayLevelButtons->checkedId() );
@@ -1180,7 +1213,7 @@ void FluxToolWidget::init()
 #if( FLUX_USE_COPY_TO_CLIPBOARD )
   LOAD_JAVASCRIPT(wApp, "FluxTool.cpp", "FluxTool", wtjsCopyFluxDataTextToClipboard );
   
-  m_copyBtn = new WPushButton( "Copy To Clipboard" );
+  m_copyBtn = new WPushButton( WString::tr( m_narrowLayout ? "ftw-copy-btn-narrow" : "ftw-copy-btn") );
 
   // TODO: "upgrade" to using the InterSpecApp 'miscSignal' directly in CopyFluxDataTextToClipboard, and get rid of m_infoCopied signal handler
   //"Wt.emit( $('.specviewer').attr('id'), {name:'miscSignal'}, 'showMsg-info-' );"
@@ -1195,7 +1228,7 @@ void FluxToolWidget::init()
                                     boost::placeholders::_1 ) );
 #endif
   
-  setDisplayInfoLevel( DisplayInfoLevel::Normal, true );
+  setDisplayInfoLevel( m_narrowLayout ? DisplayInfoLevel::Simple : DisplayInfoLevel::Normal, true );
 }//void init()
 
 
@@ -1267,7 +1300,7 @@ void FluxToolWidget::refreshPeakTable()
     distance = PhysicalUnits::stringToDistance( m_distance->text().toUTF8() );
   }catch(...)
   {
-    m_msg->setText( "Invalid Distance" );
+    m_msg->setText( WString::tr("ftw-invalid-dist") );
     m_tableUpdated.emit();
     return;
   }
@@ -1275,7 +1308,7 @@ void FluxToolWidget::refreshPeakTable()
   auto det = m_detector->detector();
   if( !det || !det->isValid() )
   {
-    m_msg->setText( "No Detector Response Function Chosen" );
+    m_msg->setText( WString::tr("ftw-no-drf") );
     m_tableUpdated.emit();
     return;
   }
@@ -1283,7 +1316,7 @@ void FluxToolWidget::refreshPeakTable()
   auto spec = m_interspec->measurment(SpecUtils::SpectrumType::Foreground);
   if( !spec )
   {
-    m_msg->setText( "No foreground spectrum loaded" );
+    m_msg->setText( WString::tr("ftw-no-foreground") );
     m_tableUpdated.emit();
     return;
   }
@@ -1291,7 +1324,7 @@ void FluxToolWidget::refreshPeakTable()
   const float live_time = spec->gamma_live_time();
   if( live_time <= 0.0f )
   {
-    m_msg->setText( "Invalid foregorund livetime" );
+    m_msg->setText( WString::tr("ftw-invalid-livetime") );
     m_tableUpdated.emit();
     return;
   }
@@ -1438,15 +1471,40 @@ void FluxToolWidget::setDisplayInfoLevel( const DisplayInfoLevel disptype, const
     WLength length;
     switch( col )
     {
-      case FluxEnergyCol:         length = WLength(7.5, WLength::FontEm); break;
-      case FluxNuclideCol:        length = WLength(5.0, WLength::FontEm); break;
-      case FluxPeakCpsCol:        length = WLength(7.5, WLength::FontEm); break;
-      case FluxIntrinsicEffCol:   length = WLength(6.5, WLength::FontEm); break;
-      case FluxGeometricEffCol:   length = WLength(6.5, WLength::FontEm); break;
-      case FluxFluxOnDetCol:      length = WLength(7.5, WLength::FontEm); break;
-      case FluxFluxPerCm2PerSCol: length = WLength(9.0, WLength::FontEm); break;
-      case FluxGammasInto4PiCol:  length = WLength(9.0, WLength::FontEm); break;
-      case FluxNumColumns:        break;
+      case FluxEnergyCol:         
+        length = WLength( m_narrowLayout ? 4.25 : 7.5, WLength::FontEm);
+        break;
+        
+      case FluxNuclideCol:        
+        length = WLength( m_narrowLayout ? 3.25 : 5.0, WLength::FontEm);
+        break;
+        
+      case FluxPeakCpsCol:        
+        length = WLength(7.5, WLength::FontEm);
+        break;
+        
+      case FluxIntrinsicEffCol:   
+        length = WLength(6.5, WLength::FontEm);
+        break;
+        
+      case FluxGeometricEffCol:   
+        length = WLength(6.5, WLength::FontEm);
+        break;
+        
+      case FluxFluxOnDetCol:      
+        length = WLength(7.5, WLength::FontEm);
+        break;
+        
+      case FluxFluxPerCm2PerSCol:
+        length = WLength(9.0, WLength::FontEm);
+        break;
+        
+      case FluxGammasInto4PiCol:  
+        length = WLength( m_narrowLayout ? 7.0 : 9.0, WLength::FontEm);
+        break;
+        
+      case FluxNumColumns:
+        break;
     }//switch( col )
       
     m_table->setColumnWidth( col, length);
@@ -1462,19 +1520,19 @@ void FluxToolWidget::tableCopiedToCliboardCallback( const int copied )
   switch( copied )
   {
     case 0:
-      passMessage( "Failed to copy to clipboard - maybe a permissions issue - sorry.", 3 );
+      passMessage( WString::tr("ftw-err-copy-clipboard"), 3 );
       break;
     
     case 1:
-      passMessage( "Copied table to clipboard.", 0 );
+      passMessage( WString::tr("ftw-copied-to-clipboard"), 0 );
       break;
     
     case 2:
-      passMessage( "Copied table to clipboard as HTML text.", 0 );
+      passMessage( WString::tr("ftw-copied-as-html"), 0 );
       break;
       
     default:
-      passMessage( "Unknown result of copy command - sorry.", 3 );
+      passMessage( WString::tr("ftw-copy-unknown-status"), 3 );
       break;
   }//switch( copied )
 }//void tableCopiedToCliboardCallback( const int copied )

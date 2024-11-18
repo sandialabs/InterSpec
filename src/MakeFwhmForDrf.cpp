@@ -149,11 +149,11 @@ public:
     
     switch( Column(section) )
     {
-      case Column::Energy:     return WString("Energy (keV)");
-      case Column::Fwhm:       return WString("FWHM");
-      case Column::FWhmUncert: return WString("FWHM Uncert");
-      case Column::UserOrAuto: return WString("Peak Source");
-      case Column::UseForFit:  return WString("Use");
+      case Column::Energy:     return WString::tr("Energy (keV)");
+      case Column::Fwhm:       return WString::tr("FWHM");
+      case Column::FWhmUncert: return WString::tr("fpm-fwhm-uncert");
+      case Column::UserOrAuto: return WString::tr("fpm-peak-source");
+      case Column::UseForFit:  return WString::tr("Use");
       case Column::NumColumn: break;
     }
     assert( 0 );
@@ -196,7 +196,7 @@ public:
         break;
         
       case Column::UserOrAuto:
-        snprintf( buffer, sizeof(buffer), "%s", (row.m_is_user_peak ? "User" : "Auto-fit") );
+        return WString::tr( row.m_is_user_peak ? "fpm-user" : "fpm-auto-fit" );
         break;
         
       case Column::UseForFit:
@@ -376,7 +376,7 @@ public:
  
 
 MakeFwhmForDrfWindow::MakeFwhmForDrfWindow( const bool use_auto_fit_peaks_too )
- : AuxWindow( "Add FWHM to Detector Response Function",
+ : AuxWindow( WString::tr("window-title-add-fwhm"),
              (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::TabletNotFullScreen)
               | AuxWindowProperties::SetCloseable
               | AuxWindowProperties::DisableCollapse
@@ -388,6 +388,8 @@ MakeFwhmForDrfWindow::MakeFwhmForDrfWindow( const bool use_auto_fit_peaks_too )
   assert( viewer );
   if( !viewer )
     return;
+  
+  viewer->useMessageResourceBundle( "MakeFwhmForDrf" );
   
   AuxWindow *window = this;
   
@@ -412,10 +414,10 @@ MakeFwhmForDrfWindow::MakeFwhmForDrfWindow( const bool use_auto_fit_peaks_too )
   
   AuxWindow::addHelpInFooter( window->footer(), "add-fwhm-to-drf" );
     
-  WPushButton *closeButton = window->addCloseButtonToFooter( "Cancel" );
+  WPushButton *closeButton = window->addCloseButtonToFooter( WString::tr("Cancel") );
   closeButton->clicked().connect( window, &AuxWindow::hide );
     
-  WPushButton *saveAs = new WPushButton( "Use FWHM", window->footer() );
+  WPushButton *saveAs = new WPushButton( WString::tr("mffdw-use-fwhm-btn"), window->footer() );
   saveAs->clicked().connect( m_tool, &MakeFwhmForDrf::setToDrf );
   m_tool->validationChanged().connect( boost::bind( &WPushButton::setEnabled, saveAs,
                                                                    boost::placeholders::_1 ) );
@@ -464,6 +466,8 @@ MakeFwhmForDrf::MakeFwhmForDrf( const bool auto_fit_peaks,
   wApp->useStyleSheet( "InterSpec_resources/MakeFwhmForDrf.css" );
   
   addStyleClass( "MakeFwhmForDrf" );
+  
+  m_interspec->useMessageResourceBundle( "MakeFwhmForDrf" );
     
   // Using a Wt layout since the chart requires this
   WGridLayout *layout = new WGridLayout( this );
@@ -503,7 +507,7 @@ MakeFwhmForDrf::MakeFwhmForDrf( const bool auto_fit_peaks,
   lowerLayout->addWidget( optionsDiv, 0, 0 );
   optionsDiv->addStyleClass( "Options" );
     
-  WGroupBox *box = new WGroupBox( "Equation Type:", optionsDiv );
+  WGroupBox *box = new WGroupBox( WString::tr("mffd-eqn-type-label"), optionsDiv );
   box->addStyleClass( "OptDiv" );
   m_fwhmEqnType = new WComboBox( box );
   
@@ -524,6 +528,10 @@ MakeFwhmForDrf::MakeFwhmForDrf( const bool auto_fit_peaks,
       case DetectorPeakResponse::kSqrtEnergyPlusInverse:
         m_fwhmEqnType->addItem( "sqrt(A0 + A1*E + A2/E)" );
         break;
+        
+      case DetectorPeakResponse::kConstantPlusSqrtEnergy:
+        m_fwhmEqnType->addItem( "A0 + A1*sqrt(E)" );
+        break;
           
       case DetectorPeakResponse::kNumResolutionFnctForm:
         break;
@@ -533,7 +541,7 @@ MakeFwhmForDrf::MakeFwhmForDrf( const bool auto_fit_peaks,
   m_fwhmEqnType->setCurrentIndex( DetectorPeakResponse::kSqrtPolynomial );
   m_fwhmEqnType->activated().connect( this, &MakeFwhmForDrf::handleFwhmEqnTypeChange );
   
-  box = new WGroupBox( "Number Terms:", optionsDiv );
+  box = new WGroupBox( WString::tr("mffd-num-terms-label"), optionsDiv );
   box->addStyleClass( "OptDiv" );
   m_sqrtEqnOrder = new WComboBox( box );
   m_sqrtEqnOrder->addItem( "1" );
@@ -544,7 +552,7 @@ MakeFwhmForDrf::MakeFwhmForDrf( const bool auto_fit_peaks,
   m_sqrtEqnOrder->setCurrentIndex( 1 );
   m_sqrtEqnOrder->activated().connect( this, &MakeFwhmForDrf::handleSqrtEqnOrderChange );
   
-  WGroupBox *parametersDiv = new WGroupBox( "Parameter Values:" );
+  WGroupBox *parametersDiv = new WGroupBox( WString::tr("mffd-par-vals-label") );
   //WContainerWidget *parametersDiv = new WContainerWidget();
   lowerLayout->addWidget( parametersDiv, 1, 0, Wt::AlignmentFlag::AlignTop );
   lowerLayout->setRowStretch( 1, 1 );
@@ -649,7 +657,7 @@ void MakeFwhmForDrf::startAutomatedPeakSearch()
   assert( dataPtr );
   if( !dataPtr )
   {
-    passMessage( "There is no data to search for peaks on.", 1 );
+    passMessage( WString::tr("mffd-err-no-foreground"), 1 );
     return;
   }//if( !dataPtr )
     
@@ -718,6 +726,7 @@ void MakeFwhmForDrf::doRefitWork()
     switch( fwhm_type )
     {
       case DetectorPeakResponse::kGadrasResolutionFcn:
+      case DetectorPeakResponse::kConstantPlusSqrtEnergy:
         eqn = "FWHM(x): ";
         break;
         
@@ -754,7 +763,7 @@ void MakeFwhmForDrf::doRefitWork()
       assert( !m_parEdits[i]->isHidden() );
       m_parEdits[i]->setHidden(false);
       if( i < uncerts.size() )
-        m_parEdits[i]->setToolTip( "With uncertainty: " + SpecUtils::printCompact(uncerts[i], 5) );
+        m_parEdits[i]->setToolTip( WString::tr("mffd-tt-par").arg(SpecUtils::printCompact(uncerts[i], 5)) );
       else
         m_parEdits[i]->setToolTip( "" );
       
@@ -774,6 +783,14 @@ void MakeFwhmForDrf::doRefitWork()
             eqn += " + " + val_str + "*x";
           else if( i == 2 )
             eqn += " + " + val_str + "/x";
+          break;
+          
+        case DetectorPeakResponse::kConstantPlusSqrtEnergy:
+          //pars[0] + pars[1]*sqrt(energy);
+          if( i == 0 )
+            eqn += val_str;
+          else if( i == 1 )
+            eqn += " + " + val_str + "*sqrt(x)";
           break;
           
         case DetectorPeakResponse::kSqrtPolynomial:
@@ -813,8 +830,7 @@ void MakeFwhmForDrf::doRefitWork()
       sb->setText( "" );
     }
     
-    string msg = "Failed to fit FWHM equation: " + string( e.what() );
-    m_error->setText( msg );
+    m_error->setText( WString::tr("mffd-err-fail-fit").arg(e.what()) );
     m_validationChanged.emit(false);
   }//try / catch
   
@@ -846,6 +862,9 @@ void MakeFwhmForDrf::setEquationToChart()
       break;
     case DetectorPeakResponse::kSqrtEnergyPlusInverse:
       chart_fwhm_type = MakeDrfChart::FwhmCoefType::SqrtEnergyPlusInverse;
+      break;
+    case DetectorPeakResponse::kConstantPlusSqrtEnergy:
+      chart_fwhm_type = MakeDrfChart::FwhmCoefType::ConstantPlusSqrtEnergy;
       break;
       
     case DetectorPeakResponse::kNumResolutionFnctForm:
@@ -998,6 +1017,10 @@ void MakeFwhmForDrf::handleFwhmEqnTypeChange()
       
     case DetectorPeakResponse::kSqrtEnergyPlusInverse:
       num_pars = 3;
+      break;
+      
+    case DetectorPeakResponse::kConstantPlusSqrtEnergy:
+      num_pars = 2;
       break;
       
     case DetectorPeakResponse::kNumResolutionFnctForm:

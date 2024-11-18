@@ -535,6 +535,10 @@ Wt::WApplication *createApplication(const Wt::WEnvironment& env)
   //[_webView setAllowsMagnification: NO]; //default is not
   [_webView setAllowsBackForwardNavigationGestures: NO];
   
+  if (@available(iOS 16.4, *)) {
+    [_webView setInspectable: YES];
+  }
+  
   if( UI_USER_INTERFACE_IDIOM() == UIUserInterfaceIdiomPad )
   {
     //[_webView evaluateJavaScript:@"navigator.userAgent" completionHandler:^(id __nullable userAgent, NSError * __nullable error) {

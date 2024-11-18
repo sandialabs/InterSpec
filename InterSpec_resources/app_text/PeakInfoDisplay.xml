@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- pid is short for PeakInfoDisplay -->
+
+  <message id="pid-dialog-peak-erase">Erase All Peaks?</message>
+
+  <message id="pid-err-no-foreground">A foreground spectrum must be loaded to add a peak.</message>
+
+  <message id="pid-search-peaks-btn">Search for Peaks</message>
+  <message id="pid-tt-search-peaks-btn">Search for peaks using the automated peak finding algorithm.</message>
+  <message id="pid-clear-peaks-btn">Clear all Peaks</message>
+  <message id="pid-tt-clear-peaks-btn">Removes <b>all</b> existing peaks.</message>
+  <message id="pid-nuc-from-ref-btn">Nuc. from Ref.</message>
+  <message id="pid-tt-nuc-from-ref-btn">
+    Assign peak nuclides from reference lines showing. Only applies to
+    peaks which do not already have a nuclide associated with them.
+  </message>
+
+  <message id="pid-add-peak-btn">Add...</message>
+  <message id="pid-tt-add-peak-btn">Manually add a new peak.</message>
+  <message id="pid-tt-del-peaks">Deletes peak currently being edited.</message>
+  <message id="pid-better-editor-hint">Right click on peaks for better editor</message>
+  <message id="pid-better-editor-hint-mobile">Tap and hold on peaks for better editor</message>
+  <message id="pid-tt-csv-export">Export information about the identified peaks to a comma separated format.</message>
+  <message id="pid-tt-csv-copy">Copy peak CSV information to your pasteboard.
+    <p>The peak data will be copied onto your pasteboard in both formatted, and plain-text variants,
+      so the format of the data will depend on the application you are pasting to.
+    </p>
+  </message>
+
+  <message id="pid-csv-copy-full">Copy full peak CSV</message>
+  <message id="pid-csv-copy-no-hdr">Copy without headers</message>
+  <message id="pid-csv-copy-compact">Copy fit peak info</message>
+</messages>

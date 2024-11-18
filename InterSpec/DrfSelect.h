@@ -238,7 +238,7 @@ public:
           checked when the user accepts dialog, will call this callback.
    */
   static void createChooseDrfDialog( std::vector<std::shared_ptr<DetectorPeakResponse>> drfs,
-                                    std::string mainMsgHtml,
+                                    Wt::WString mainMsgHtml,
                                     std::string creditsHtml,
                                     std::function<void()> saveDrfsCallBack = nullptr );
   

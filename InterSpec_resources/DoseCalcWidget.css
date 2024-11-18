@@ -14,6 +14,10 @@
   min-height: 255px;
 }
 
+.NarrowDose .DoseEnterDiv{
+  min-height: 175px;
+}
+
 .DoseEnterEl {
   width: 250px;
 }
@@ -33,16 +37,19 @@
   margin-right: 10px; /* to be about symetric with white-space on left side of dose tool*/
 }
 
+.NarrowDose .DoseAnswerDiv{
+  margin-right: 0px;
+  margin-top: 5px;
+}
+
 .DoseEnterTxt {
   margin-top: 3px;
   margin-left: 10px;
 }
 
-.GammaSourceEnter {
-  margin-top: 3px;
-}
 
-.DoseFieldLabel {
+.DoseCalcWidget .NuclideSourceEnter {
+  margin-top: 3px;
   margin-left: 10px;
 }
 
@@ -87,13 +94,6 @@
   text-align: center;
 }
 
-.DoseHLTxt {
-  font-size: 75%;
-  width: 6em;
-  overflow: hidden;
-  margin-left: 2px;
-  white-space: nowrap;
-}
 
 .DoseColLabel {
   text-align: center;

@@ -179,14 +179,17 @@ protected:
   
   Wt::WModelIndex m_peakIndex;
   PeakDef m_originalPeak;
+  std::vector<std::shared_ptr<const PeakDef>> m_originalPeaks;
+  
   PeakDef m_currentPeak;
+  
   bool m_blockInfoRefresh;
   
   Wt::WTable *m_valueTable;
   bool m_valIsDirty[NumPeakPars];
   bool m_uncertIsDirty[NumPeakPars];
   
-  //m_valTxts, and m_uncertTxts could be illiminated if the changed() signal is
+  //m_valTxts, and m_uncertTxts could be eliminated if the changed() signal is
   //  used instead of the blurred() and enterPressed() signals
   Wt::WString m_valTxts[NumPeakPars];
   Wt::WString m_uncertTxts[NumPeakPars];

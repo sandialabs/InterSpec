@@ -1,0 +1,93 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- ramrr- short for RelActManualReportResource
+       mrend- short for ManRelEffNucDisp
+       ramg-  short for RelActManualGui
+  -->
+
+  <message id="ramrr-no-solution-title">Aucune Solution d'Activité Relative Disponible</message>
+<message id="ramrr-no-solution-text"></message>
+<message id="ramrr-err-report">Erreur lors de l'obtention du fichier de spectre actuellement affiché : {1}</message>
+
+<message id="mrend-spec-act">Act. Spéc.</message>
+<message id="mrend-X(a,n)">Alphas sur {1} créant des neutrons</message>
+<message id="mrend-X(n,a)">Neutrons sur {1} créant des alphas</message>
+<message id="mrend-X(a,p)">Alphas sur {1} créant des protons</message>
+<message id="mrend-X(n,g)">Neutrons lents sur {1} capturés</message>
+<message id="mrend-X(n,n)">Neutrons rapides diffusant inélastiquement sur {1}</message>
+<message id="mrend-annih">Gammas d'annihilation</message>
+<message id="mrend-unknown-rxctn">Réaction inconnue</message>
+<message id="mrend-X(,)"></message>
+<message id="mrend-cb-decay-during-meas">Décroissance pendant la mesure.</message>
+<message id="mrend-tt-decay-during-meas">Lorsqu'il est coché, la décroissance des nucléides pendant la mesure sera prise en compte, avec l'activité relative citée étant l'activité au début de la mesure.</message>
+
+<message id="ramg-eqn-form-label">Forme Eqn</message>
+<message id="ramg-options-label">Options</message>
+<message id="ramg-tt-eqn-form">
+    La forme fonctionnelle à utiliser pour la courbe d'efficacité relative.
+    <br />
+    Les options sont :
+    <table style="margin-left: 10px;">
+      <tr><th>Log(énergie) :</th>               <th>y = a + b*ln(x) + c*(ln(x))^2 + d*(ln(x))^3 + ...</th></tr>
+      <tr><th>Log(eff. rel.) :</th>            <th>y = exp( a + b*x + c/x + d/x^2 + e/x^3 + ... )</th></tr>
+      <tr><th>Log(énergie)Log(eff. rel.) :</th> <th>y = exp( a  + b*(lnx) + c*(lnx)^2 + d*(lnx)^3 + ... )</th></tr>
+      <tr><th>FRAM Empirique :</th>            <th>y = exp( a + b/x^2 + c*(lnx) + d*(lnx)^2 + e*(lnx)^3 )</th></tr>
+    </table>
+</message>
+<message id="ramg-eqn-order-label">Ordre Eqn</message>
+<message id="ramg-tt-eqn-order">L'ordre (combien de termes dépendants de l'énergie) de l'équation d'efficacité relative à utiliser.</message>
+<message id="ramg-yield-info-label">Info Rendement</message>
+<message id="ramg-tt-data-src">La source de données nucléaires pour les rapports de branchement gamma.</message>
+<message id="ramg-match-tol-label">Tol. de Correspondance.</message>
+<message id="ramg-tt-match-tol">
+    Le nombre de FWHM, à partir de la moyenne du pic, pour inclure les gammas de la source comme contribuant à la zone du pic.
+    <br />
+    Pour certains pics photoélectriques de certains nucléides, plusieurs gammas proches en énergie peuvent contribuer
+    à créer une zone de pic détectée. Cette tolérance de correspondance spécifie combien de FWHM à partir de la
+    moyenne du pic observé les gammas de la source doivent être sommés pour déterminer le rapport de branchement à utiliser.
+    <br />
+    Spécifier une valeur de zéro ne fera utiliser que l'énergie gamma assignée à un pic, même s'il y a d'autres gammas très proches.
+</message>
+<message id="ramg-add-uncert-label">Incert. Add.</message>
+<message id="ramg-tt-add-uncert">
+    Une incertitude supplémentaire à ajouter à la ligne d'efficacité relative, pour chaque pic photoélectrique ajusté.
+    <br />
+    De petites déviations dans l'efficacité de détection pour un ou quelques pics à haute statistique peuvent causer le
+    courbe d'efficacité à s'écarter notablement des autres points si seules les incertitudes statistiques sont
+    utilisées ; lorsqu'une incertitude supplémentaire est ajoutée, l'efficacité relative fera alors un meilleur travail
+    de passage visiblement à travers tous les points de données, et produira des résultats plus précis
+    à partir de tests limités. Vous pouvez considérer cela comme ajoutant une incertitude systématique à chaque pic détecté,
+    qui est non corrélée entre les pics. À partir de tests limités, la valeur utilisée n'est pas énormément
+    importante, tant qu'il y a quelque chose. Vous pouvez également choisir d'utiliser un ajustement non pondéré,
+    où chaque pic contribuera également à l'ajustement, quelle que soit son incertitude statistique.
+</message>
+<message id="ramg-unweighted-label">Non Pondéré</message>
+<message id="ramg-stat-only-label">Stat. Seulement</message>
+<message id="ramg-back-sub-cb">Soustraction de Fond</message>
+<message id="ramg-html-export-label">Rapport HTML</message>
+<message id="ramg-nucs-label">Nucléides</message>
+<message id="ramg-peaks-to-use-label">Pics à Utiliser</message>
+<message id="ramg-results-label">Résultats</message>
+<message id="ramg-mi-results">Résultats</message>
+<message id="ramg-mi-chart">Graphique</message>
+<message id="ramg-back-sub-neg">Après la soustraction de fond, le pic à {1} keV avait des comptes négatifs donc n'a pas été utilisé.</message>
+<message id="ramg-warn-reaction">Utiliser des pics photoélectriques de réaction n'est probablement pas valide, à moins que les gammas ne soient émis de manière homogène à partir d'un seul objet.</message>
+<message id="ramg-warn-no-bkg-sub-used">La soustraction des pics de fond a été sélectionnée, mais aucun pic de fond ne correspondait aux pics de premier plan sélectionnés.</message>
+<message id="ramg-warn-rel-eff-u/pu-xray">La courbe d'efficacité relative ne tient pas compte des bords d'absorption des rayons X - l'utilisation de pics sous 120 keV pour les problèmes U ou Pu n'est pas recommandée.</message>
+<message id="ramg-warn-rel-eff-other-xray">La courbe d'efficacité relative ne tient pas compte des bords d'absorption des rayons X de tout blindage potentiel - veuillez vous assurer que les pics utilisés ne chevauchent pas les bords d'absorption de tout blindage.</message>
+<message id="ramg-warn-match-outside-tol">Le gamma{1} assigné de {2} keV est en dehors de la tolérance de correspondance avec le pic{1} de {3} ; notez que l'énergie gamma assignée est utilisée pour compenser les gammas proches, et non la moyenne du pic ajusté.</message>
+<message id="ramg-warn-failed-match">Échec de l'association du nucléide{1} à des pics : {2}</message>
+<message id="ramg-err-setting-up-calc">Erreur lors de la configuration du calcul d'Efficacité Relative : {1}</message>
+<message id="ramg-err-performing-calc">Erreur lors de l'exécution du calcul d'Efficacité Relative : {1}</message>
+<message id="ramg-no-results-available">Aucun résultat disponible.</message>
+<message id="ramg-result-error-msg">Erreur : {1}</message>
+<message id="ramg-result-warn-msg">Avertissement : {1}</message>
+<message id="ramg-and-there-were">et il y avait</message>
+<message id="ramg-dof">DDL</message> <!-- Degrés de liberté -->
+<message id="ramg-fit-unweighted-txt">L'ajustement était non pondéré ; les incertitudes peuvent ne pas avoir de sens.</message>
+<message id="ramg-fit-stat-only">Les incertitudes sont uniquement statistiques.</message>
+<message id="ramg-fit-uncert-increased">Les incertitudes ont été artificiellement augmentées par "Incert. Add.".</message>
+<message id="ramg-consider-add-uncert-u">Vous voudrez peut-être envisager d'ajouter "Incert. Add." pour les problèmes d'Uranium.</message>
+<message id="ramg-you-using-add-uncert-u">Vous ajoutez "Incert. Add." - interprétez les incertitudes calculées avec prudence.</message>
+<message id="ramg-you-using-add-uncert-non-u">Vous ajoutez actuellement "Incert. Add.", ce qui rendra les incertitudes calculées incorrectes.</message>
+</messages>

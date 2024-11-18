@@ -93,10 +93,6 @@
   font-size: 13px;
 }
 
-.PhoneCopywriteContent
-{
-  font-size: 8px;
-}
 
 .CenterBtnInMblAuxWindowHeader
 {
@@ -139,9 +135,37 @@
   padding-bottom: 8px;
   margin-top: 2px;
   margin-bottom: 2px;
-  -webkit-border-radius: 5px;
-  -moz-border-radius: 5px;
   border-radius: 5px;
+}
+
+ul.HorizontalMenu {
+  font-size: 12px;
+  margin: 0px;
+  padding-top: 5px;
+  padding-left: 1px;
+  padding-right:1px;
+  padding-bottom: 2px;
+  height: 25px;
+  display: block;
+}
+
+ul.HorizontalMenu > li {
+  display: inline;
+  margin-right: 5px;
+  
+  font-weight: bold;
+  padding-top: 4px;
+  padding-left: 4px;
+  padding-right: 4px;
+  padding-bottom: 2px;
+  border-radius: 5px;
+}
+
+.SideMenuPhone > li.PhoneSideMenuTextItem
+{
+  /* This is for the "FAQs" tab on welcome screen, for phones.. */
+  padding-left: 8px;
+  font-size: x-small;
 }
 
 .HeavyNavMenuPhone > li
@@ -187,11 +211,29 @@
 }
 
 
-.ReferencePhotopeakDisplay .ReferencePhotopeakDisplayMobile
+.ReferencePhotopeakDisplay .RefDispMobile
 {
   padding-top: 0px;
   padding-left: 2px;
   padding-right: 2px;
+}
+
+.IsPhone.Portrait button {
+  font-size: x-small;
+}
+
+.IsPhone.Portrait .modal-footer button, .IsPhone.Portrait .PhoneAuxWindowHeader button {
+  font-size: 10pt;
+}
+
+@media (max-width: 350px) {
+  .IsPhone.Portrait button {
+    font-size: 6pt;
+  }
+  
+  .IsPhone.Portrait .modal-footer button, .IsPhone.Portrait .PhoneAuxWindowHeader button {
+    font-size: 10pt;
+  }
 }
 
 .mobilePopupMenuOverlay {

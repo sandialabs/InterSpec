@@ -60,8 +60,22 @@ function()
       function removeUploading(){
         //console.log( 'removeUploading' );
         $('#Uploading').remove();
+        
+        // Clear the time-out timer, if we have one
+        clearTimeout( $('.Wt-domRoot').data('UploadCoverTimer') );
+        $('.Wt-domRoot').data( 'UploadCoverTimer', null );
       };
       
+      
+      /* Lets set a 1-minute timeout so we will eventually remove the uploading cover if no traffic. */
+      function setUploadTimer(){
+        clearTimeout( $('.Wt-domRoot').data('UploadCoverTimer') );
+        const coverTimer = setTimeout( function(){
+          console.error("The request to upload file timed out.");
+          removeUploading();
+        }, 60000 );
+        $('.Wt-domRoot').data( 'UploadCoverTimer', coverTimer );
+      };
       
       function errfcn(){
         removeUploading();
@@ -185,6 +199,7 @@ function()
               $('#UploadingProgress').text( Math.trunc(100*pe.loaded/pe.total) + '%' );
             }
           }
+          setUploadTimer(); //reset the upload timer, since we have recieved some data
         });
         
         xhr.upload.addEventListener("load", removeUploading);
@@ -211,19 +226,6 @@ function()
           removeUploading();
         });
         
-        
-        /* Lets set a 1-minute timeout so we will eventually remove the uploading cover...
-         
-         TODO: What we should really do is setup a timeout that fires if 'progress' is never never
-         called with an appropriate status, and then once it does get called set another timer
-         as upload is finished, to get the response.  I.e., get rid of xhr.ontimeout.
-         */
-        xhr.timeout = 60000;
-        xhr.ontimeout = function () {
-          console.error("The request to upload file timed out.");
-          removeUploading();
-        };
-        
           
         xhr.send(file);
       };//uploadFileToUrl
@@ -238,6 +240,8 @@ function()
       + '<div id=\"UploadingProgress\">--%</div>'
       + '</div></div></div>'
       + '</div>').appendTo(target);
+      
+      setUploadTimer();
     }catch(error)
     {
       console.log( "Error in HandleDrop: " + error );
@@ -397,26 +401,42 @@ WT_DECLARE_WT_MEMBER
 (DoOrientationChange, Wt::JavaScriptFunction, "DoOrientationChange",
 function()
 {
-  if( (typeof window.orientation === "number")
-    && CSS
-    && (CSS.supports('padding-bottom: env(safe-area-inset-left)')
-        || CSS.supports('padding-bottom: constant(safe-area-inset-left)')) ) {
+  // TODO: `screen.orientation.type` can take on values of
+  //       'portrait-primary', 'portrait-secondary',
+  //       'landscape-primary' (LandscapeLeft), 'landscape-secondary' (LandscapeRight)
+  //       Should maybe use this instead - and also adjust to have this work for Android as well
+  console.log( "DoOrientationChange: ", screen.orientation );
+  
+  let angle = window.orientation; //Apple devices, not sure if Android has this, I dont think so
+  if( (typeof angle !== "number") && screen && screen.orientation )
+    angle = screen.orientation.angle;
+  
+  if( (typeof angle === "number")
+    //&& CSS
+    //&& (CSS.supports('padding-bottom: env(safe-area-inset-left)')
+    //    || CSS.supports('padding-bottom: constant(safe-area-inset-left)'))
+    ) {
     
-    switch( window.orientation ) {
+    switch( angle ) {
       case 0:
-        $(".Wt-domRoot").removeClass("LandscapeRight LandscapeLeft");
+        $(".Wt-domRoot").removeClass("LandscapeRight LandscapeLeft").addClass("Portrait");
       break;
       
       case 90:
-        $(".Wt-domRoot").removeClass("LandscapeRight").addClass("LandscapeLeft");
+        $(".Wt-domRoot").removeClass("LandscapeRight Portrait").addClass("LandscapeLeft");
       break;
       
       case -90:
-        $(".Wt-domRoot").removeClass("LandscapeLeft").addClass("LandscapeRight");
+        $(".Wt-domRoot").removeClass("LandscapeLeft Portrait").addClass("LandscapeRight");
+      break;
+      
+      default:
+        console.error( "Unknown orientation angle: ", angle );
       break;
     }
-    
     window.dispatchEvent(new Event('resize')); //see also Wt.TriggerResizeEvent()
+  } else {
+    console.warn( "Unknown way to read orientation; screen:", screen, ", window.orientation:", window.orientation );
   }
 }
 );

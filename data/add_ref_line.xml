@@ -10,9 +10,8 @@
     Currently you can define two source type:
     1) SourceLines: this is simple energy and branching ratio pairs.  
                     The "Reference Photopeaks" tab will then display
-                    the lines on the spectrum, but you can not associate
-                    a peak with one of these lines (although this may 
-                    change in the future).
+                    the lines on the spectrum; only nuclides are currently 
+                    supported to allow associating the source to a peak.
     2) NucMixture:  this is a mixture of nuclide, at a specified relative 
                     activities to each other.  When the name of the NucMixture
                     is entered into the "Reference Photopeaks" tab, the lines
@@ -32,16 +31,105 @@
             separated by a space.
             You can optionally add an attribute, "info", which will show up when you mouse-over the
             line in InterSpec.
+            If you specify the optional attribute "atten" as "0" or "false", then the line intensity 
+            will not be affected, for the purposes of line display on the spectrum only, by the detector 
+            efficiency function, or the shielding, for the  purposes of line display 
         -->
-        <Line info="...some info...">430 1.0</Line>
-        <Line>488 1.0</Line>
-        <Line>562 1.0</Line>
-        <Line>596 1.0</Line>
-        <Line>630 1.0</Line>
-        <Line>691 1.0</Line>
-        <Line>834 1.0</Line>
-        <Line>1039.6 1.0</Line>
+        <Line info="...some info..." atten="false">430 1.0</Line>
+        <Line atten="false">488 1.0</Line>
+        <Line atten="false">562 1.0</Line>
+        <Line atten="false">596 1.0</Line>
+        <Line atten="false">630 1.0</Line>
+        <Line atten="false">691 1.0</Line>
+        <Line atten="false">834 1.0</Line>
+        <Line atten="false">1039.6 1.0</Line>
     </SourceLines>
+
+    <SourceLines name="U-iso">
+        <!-- You can specify a nuclide to associate with the line, so a peak fit near the line
+         will be assigned that nuclide as its source.  However, for activity, relative efficiency 
+         analysis, etc, the BR you specify in this file wont be used - the BR in the decay chain, 
+         of the nuclide will be used - the BRs in this file are only for display of the reference 
+         lines on the spectrum.  A default age of the nuclide will be used to associate the exact 
+         transition responsible for producing the gamma, at the energy you specify (and there must 
+         be a gamma within 0.25 keV of what you specify), and if you dont specify the `info`  attribute, 
+         then information about that transition will be used for display text when you mouse over 
+         the line.
+
+         You can also optionally specify a color for each individual line, using a CSS color 
+         string (ex. "#0ec445", "rgb(0,255,132)", "rgba(0,255,132,0.5)"), however, currently 
+         this will _not_ disable the user ref-line color picker, just make it in-effective
+         (i.e., the color will always be what you specify in this file).  You may specify 
+         color of some, all, or none (default) of the lines.  If you do specify the color,
+         it should indicate lines are from different sources, and also, please make sure
+         the colors are acceptable if the user is using the "dark" color theme.
+
+         The Description element is not currently used within InterSpec, but may be in the future.
+        -->
+        <Description>Recommended default uranium peaks to try and fit, when you are doing an isotopic analysis using the "Isotopics from peaks" tool.</Description>
+        <Line nuc="U232" color="rgb(14,196,69)" atten="false">238.632 1.0</Line>
+        <Line nuc="U232" color="rgb(14,196,69)" atten="false">583.191 1.0</Line>
+        <Line nuc="U232" color="rgb(14,196,69)" atten="false">727.33 1.0</Line>
+        <Line nuc="U232" color="rgb(14,196,69)" atten="false">860.564 1.0</Line>
+
+        <Line nuc="U234" color="rgb(176,7,170)" atten="false">120.9 1.0</Line>
+        
+        <Line nuc="U235" color="rgb(224,63,13)" atten="false">143.76 1.0</Line>
+        <Line nuc="U235" color="rgb(224,63,13)" atten="false">163.38 1.0</Line>
+        <Line nuc="U235" color="rgb(224,63,13)" atten="false">185.71 1.0</Line>
+        <Line nuc="U235" color="rgb(224,63,13)" atten="false">202.11 1.0</Line>
+        <Line nuc="U235" color="rgb(224,63,13)" atten="false">205.309 1.0</Line>
+        <Line nuc="U235" color="rgb(224,63,13)" atten="false">221.4 1.0</Line>
+        <Line nuc="U235" color="rgb(224,63,13)" atten="false">246.84 1.0</Line>
+        <Line nuc="U235" color="rgb(224,63,13)" atten="false">345.9 1.0</Line>
+        
+        <Line nuc="U238" color="rgb(5,22,99)" atten="false">258.26 1.0</Line>
+        <Line nuc="U238" color="rgb(5,22,99)" atten="false">569.5 1.0</Line>
+        <Line nuc="U238" color="rgb(5,22,99)" atten="false">742.77 1.0</Line>
+        <Line nuc="U238" color="rgb(5,22,99)" atten="false">766.37 1.0</Line>
+        <Line nuc="U238" color="rgb(5,22,99)" atten="false">880.5 1.0</Line>
+        <Line nuc="U238" color="rgb(5,22,99)" atten="false">883.24 1.0</Line>
+        <Line nuc="U238" color="rgb(5,22,99)" atten="false">945.9 1.0</Line>
+        <Line nuc="U238" color="rgb(5,22,99)" atten="false">1000.99 1.0</Line>
+    </SourceLines>
+
+    <SourceLines name="Pu-iso">
+        <Description>Recommended default plutonium peaks to try and fit, when you are doing an isotopic analysis using the "Isotopics from peaks" tool.</Description>
+        <Line nuc="Pu238" color="#384b83" atten="false">152.72 1.0</Line>
+
+        <Line nuc="Pu239" color="#ff7605" atten="false">129.296 1.0</Line>
+        <Line nuc="Pu239" color="#ff7605" atten="false">144.201 1.0</Line>
+        <Line nuc="Pu239" color="#ff7605" atten="false">161.45 1.0</Line>
+        <Line nuc="Pu239" color="#ff7605" atten="false">203.55 1.0</Line>
+        <Line nuc="Pu239" color="#ff7605" atten="false">255.38 1.0</Line>
+        <Line nuc="Pu239" color="#ff7605" atten="false">345.01 1.0</Line>
+        <Line nuc="Pu239" color="#ff7605" atten="false">375.05 1.0</Line>
+        <Line nuc="Pu239" color="#ff7605" atten="false">413.71 1.0</Line>
+        <Line nuc="Pu239" color="#ff7605" atten="false">451.48 1.0</Line>
+        <Line nuc="Pu239" color="#ff7605" atten="false">645.896 1.0</Line>
+        <Line nuc="Pu239" color="#ff7605" atten="false">658.86 1.0</Line>
+
+        <Line nuc="Pu240" color="#384b83" atten="false">160.308 1.0</Line>
+
+        <Line nuc="Pu241" color="#f74758" atten="false">146.55 1.0</Line>
+        <Line nuc="Pu241" color="#f74758" atten="false">164.61 1.0</Line>
+        <Line nuc="Pu241" color="#f74758" atten="false">208 1.0</Line>
+        <Line nuc="Pu241" color="#f74758" atten="false">267.54 1.0</Line>
+        <Line nuc="Pu241" color="#f74758" atten="false">619.01 1.0</Line>
+        <Line nuc="Pu241" color="#f74758" atten="false">722.01 1.0</Line>
+
+        <!-- InterSpec includes Am241 in the decay of Pu241, whereas other
+        programs keep them separate.  Because of this the age of Pu241 is
+        important in InterSpec.
+        <Line nuc="Am241" color="#003f5c" atten="false">125.3 1.0</Line>
+        <Line nuc="Am241" color="#003f5c" atten="false">335.37 1.0</Line>
+        <Line nuc="Am241" color="#003f5c" atten="false">368.65 1.0</Line>
+        -->
+        <Line nuc="Pu241" color="#f74758" atten="false">125.3 1.0</Line>
+        <Line nuc="Pu241" color="#f74758" atten="false">335.37 1.0</Line>
+        <Line nuc="Pu241" color="#f74758" atten="false">368.65 1.0</Line>
+    </SourceLines>
+
 
     <!-- Nuclide mixtures must be made up of valid nuclides. 
 
@@ -64,59 +152,63 @@
         is specified, and it is larger than the mixture age entered
         in the "Reference Photopeaks" tool, then an age of zero will
         be used for the nuclide.
+
+        The "color" attribute is optional, but if specified, its value
+        must be a CSS color string, and if specified, will override user
+        selected color; currently user color selection is not disabled.
     -->
     <NucMixture name="Pu low burnup" default-age="20y" reference-age="0y">
         <!-- From FRMAC Gamma Spectroscopist Knowledge Guide 2019-08, Michael Enghauser, Table 13-1 -->
-        <Nuc name="Pu238" act-frac="0.010" age-offset="0s" />
-        <Nuc name="Pu239" act-frac="93.780" />
-        <Nuc name="Pu240" act-frac="6.000" />
-        <Nuc name="Pu241" act-frac="0.200" />
-        <Nuc name="Pu242" act-frac="0.020" />
+        <Nuc name="Pu238" act-frac="0.010" age-offset="0s" color="#003f5c" />
+        <Nuc name="Pu239" act-frac="93.780" color="#ffa600" />
+        <Nuc name="Pu240" act-frac="6.000" color="#bc5090" />
+        <Nuc name="Pu241" act-frac="0.200" color="#ff6361" />
+        <Nuc name="Pu242" act-frac="0.020" color="#58508d" />
     </NucMixture>
 
     <NucMixture name="Pu high burnup" default-age="20y" reference-age="0y">
         <!-- From FRMAC Gamma Spectroscopist Knowledge Guide 2019-08, Michael Enghauser, Table 13-1 -->
-        <Nuc name="Pu238" act-frac="1.500" />
-        <Nuc name="Pu239" act-frac="58.100" />
-        <Nuc name="Pu240" act-frac="24.100" />
-        <Nuc name="Pu241" act-frac="11.400" />
-        <Nuc name="Pu242" act-frac="4.900" />
+        <Nuc name="Pu238" act-frac="1.500" color="#003f5c" />
+        <Nuc name="Pu239" act-frac="58.100" color="#ffa600" />
+        <Nuc name="Pu240" act-frac="24.100" color="#bc5090" />
+        <Nuc name="Pu241" act-frac="11.400" color="#ff6361" />
+        <Nuc name="Pu242" act-frac="4.900" color="#58508d" />
     </NucMixture>
 
     <NucMixture name="Pu heat source" default-age="20y" reference-age="0y">
         <!-- From FRMAC Gamma Spectroscopist Knowledge Guide 2019-08, Michael Enghauser, Table 13-1 -->
-        <Nuc name="Pu238" act-frac="83.890" />
-        <Nuc name="Pu239" act-frac="13.800" />
-        <Nuc name="Pu240" act-frac="1.900" />
-        <Nuc name="Pu241" act-frac="0.320" />
-        <Nuc name="Pu242" act-frac="0.090" />
+        <Nuc name="Pu238" act-frac="83.890" color="#003f5c" />
+        <Nuc name="Pu239" act-frac="13.800" color="#ffa600" />
+        <Nuc name="Pu240" act-frac="1.900" color="#bc5090" />
+        <Nuc name="Pu241" act-frac="0.320" color="#ff6361" />
+        <Nuc name="Pu242" act-frac="0.090" color="#58508d" />
     </NucMixture>
 
     <NucMixture name="U depleted" default-age="20y" reference-age="0y">
         <!-- From FRMAC Gamma Spectroscopist Knowledge Guide 2019-08, Michael Enghauser, Table 12-4 -->
-        <Nuc name="U238" act-frac="84.039" />
-        <Nuc name="U235" act-frac="1.080" />
-        <Nuc name="U234" act-frac="14.900" />
+        <Nuc name="U238" act-frac="84.039" color="rgb(5,22,99)" />
+        <Nuc name="U235" act-frac="1.080" color="rgb(224,63,13)" />
+        <Nuc name="U234" act-frac="14.900" color="rgb(176,7,170)" />
     </NucMixture>
 
     <NucMixture name="U natural" default-age="20y" reference-age="0y">
         <!-- From FRMAC Gamma Spectroscopist Knowledge Guide 2019-08, Michael Enghauser, Table 12-4 -->
-        <Nuc name="U238" act-frac="48.260" />
-        <Nuc name="U235" act-frac="2.223" />
-        <Nuc name="U234" act-frac="49.510" />
+        <Nuc name="U238" act-frac="48.260" color="rgb(5,22,99)" />
+        <Nuc name="U235" act-frac="2.223" color="rgb(224,63,13)" />
+        <Nuc name="U234" act-frac="49.510" color="rgb(176,7,170)" />
     </NucMixture>
 
     <NucMixture name="U 3% enriched" default-age="20y" reference-age="0y">
         <!-- From FRMAC Gamma Spectroscopist Knowledge Guide 2019-08, Michael Enghauser, Table 12-4 -->
-        <Nuc name="U238" act-frac="15.858" />
-        <Nuc name="U235" act-frac="3.153" />
-        <Nuc name="U234" act-frac="80.989" />
+        <Nuc name="U238" act-frac="15.858" color="rgb(5,22,99)" />
+        <Nuc name="U235" act-frac="3.153" color="rgb(224,63,13)" />
+        <Nuc name="U234" act-frac="80.989" color="rgb(176,7,170)" />
     </NucMixture>
 
     <NucMixture name="U 93.3% enriched" default-age="20y" reference-age="0y">
         <!-- From FRMAC Gamma Spectroscopist Knowledge Guide 2019-08, Michael Enghauser, Table 12-4 -->
-        <Nuc name="U238" act-frac="0.035" />
-        <Nuc name="U235" act-frac="3.592" />
-        <Nuc name="U234" act-frac="96.373" />
+        <Nuc name="U238" act-frac="0.035" color="rgb(5,22,99)" />
+        <Nuc name="U235" act-frac="3.592" color="rgb(224,63,13)" />
+        <Nuc name="U234" act-frac="96.373" color="rgb(176,7,170)" />
     </NucMixture>
 </RefLineDefinitions>

@@ -94,13 +94,13 @@ DrfChart::DrfChart( WContainerWidget *parent )
   {
     setPlotAreaPadding(55, Wt::Right | Wt::Left);
     setPlotAreaPadding(60, Wt::Bottom);
-    axis(Wt::Chart::XAxis).setTitle("Energy (keV)");
+    axis(Wt::Chart::XAxis).setTitle( WString::tr("Energy (keV)") );
     
     setMinimumSize(WLength(350), WLength(200));
   }//if( is_phone ) / else
   
   axis(Wt::Chart::Y1Axis).setVisible(true);
-  axis(Wt::Chart::Y1Axis).setTitle("Efficiency");
+  axis(Wt::Chart::Y1Axis).setTitle( WString::tr("Efficiency") );
   
   axis(Wt::Chart::Y1Axis).setTitleOrientation( Wt::Vertical );
   axis(Wt::Chart::Y2Axis).setTitleOrientation( Wt::Vertical );

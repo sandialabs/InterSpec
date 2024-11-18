@@ -3,6 +3,67 @@
     <hr />
   </div>
 
-<div style="width: 100%">
-  No content avaiable yet.
+
+<div style="padding-top: 10px; display: flex">
+<img src="InterSpec_resources/static_text/images/FitFwhmFromCurrentSpectrumOverview.png"  class="imageBorder" style="display:block; margin-right:30px; max-height:250px;" />
+
+  <p>
+    This tool allows using the current foreground spectrum to fit a functional form for the FWHM
+    response of your detector.  This can be useful if you would like to fix the FWHM of a peak
+    to the predicted value at that energy, for instance for a low-statistic peak, or two peaks significantly
+    overlapping.  InterSpec also uses this functional form, if available, as the starting peak FWHM
+    when fitting new peaks.  And starting in InterSpec v1.0.13 (or the &quot;bleeding-edge&quot; build starting 20240208),
+    the FWHM response is also require to compute detection limits.
+  </p>
+</div>
+
+<div style="padding-top: 20px;">
+  <p>
+    You can access this tool in two ways:
+    <ol>
+      <li>
+        <div style="display: flex; flex-wrap: nowrap;">
+          <div style="width: 40%; column-gap 30px;">
+            <p>
+              From the &quot;<b>Detector Response Select</b>&quot; tool, use the &quot;<b>Fit FWHM...</b>&quot; button at the bottom of the dialog.
+            </p>
+            <p>
+              The &quot;<b>Detector Response Select</b>&quot; tool can be accessed from under the &quot;<b>Tools</b>&quot; menu, or by clicking on the detector icon,
+              <img src="InterSpec_resources/static_text/images/detector_widget.png" valign="middle" style="height:20px;" />,
+              located various places throughout the app.
+            <p>
+          </div>
+            <img src="InterSpec_resources/static_text/images/FitFwhmFromDrfSelect.png"
+                class="imageBorder" style="display:block; margin-right:30px; max-height:225px;" />
+        </div>
+
+      </li>
+      <li>
+        If you right-click on a peak, and select the &quot;Use Drf FWHM&quot;, and there is not currently
+        a FWHM functional form associated with the detector, you will be asked if you would like to
+        fit for one:
+        <div style="display: flex; flex-direction: row; justify-content: space-evenly;">
+          <img src="InterSpec_resources/static_text/images/UseFwhmFromDrf.png" 
+              class="imageBorder" style="max-width: 45%; height: 150px;" />
+          <img src="InterSpec_resources/static_text/images/FitFwhmFromDrfSelect_FitFwhm.png" 
+              class="imageBorder" style="max-width: 45%; height: 150px;" />
+        </div>
+      </li>
+    </ol>
+  </p>
+</div>
+
+<div style="padding-top: 10px">
+  This tool uses both peaks that you have fit, as well as any additional peaks that could be automatically
+  identified in the foreground spectrum.
+  It then de-selects peaks with outlier FWHM, from being used in the fit for FWHM.
+  You can manually select which peaks to use in the fit (in the right-most column of the table),
+  and see how the selected peaks compare with the other peaks in the spectrum, using the the displayed chart.
+  When you change which peaks are used, the equation type you would like to use, or number of terms
+  (only applicable to the <code>sqrt</code> of the power series equation), the fit functional form
+  is automatically re-computed.  If you would like, you can manually modify the coefficient values
+  that will be used, on the left side of the dialog.
+</div>
+<div style="padding-top: 10px">
+When you click the &quot;<b>Use FWHM</b>&quot; button, the functional form will be associated with your current detector efficiency.
 </div>

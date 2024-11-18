@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.1...3.20 FATAL_ERROR)
 
-project(InterSpec VERSION 1.0.12)
+project(InterSpec VERSION 1.0.13)
 
 set(CMAKE_CXX_STANDARD 14)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -39,11 +39,6 @@ endif( hasParent )
 
 
 option(
-    BUILD_AS_COMMAND_LINE_CODE_DEVELOPMENT
-    "Build executable for use while testing new code, not running InterSpec"
-    OFF
-)
-option(
     INCLUDE_ANALYSIS_TEST_SUITE
     "Allow whether user can save and load test spectra"
     OFF
@@ -51,12 +46,12 @@ option(
 option(
     PERFORM_DEVELOPER_CHECKS
     "Performs additional computationally expensive tests during execution"
-    off
+    OFF
 )
 option(
     USE_OSX_NATIVE_MENU
     "Mirrors WMenus with OSX native NSMenu (not fully implemented)"
-    off
+    OFF
 )
 
 
@@ -77,7 +72,7 @@ option(USE_DB_TO_STORE_SPECTRA "Use the database to store spectra" ON)
 option(
     USE_SPECRUM_FILE_QUERY_WIDGET
     "Enables compilation of the spectrum file query tool (not for web deployment)"
-    OFF
+    ON
 )
 option(
     USE_SEARCH_MODE_3D_CHART
@@ -86,7 +81,7 @@ option(
 )
 option(USE_TERMINAL_WIDGET "Enables use of terminal widget" ON)
 
-option(USE_DETECTION_LIMIT_TOOL "Enables under-development detection limit tool" OFF)
+option(USE_DETECTION_LIMIT_TOOL "Enables under-development detection limit tool" ON)
 
 option(USE_QR_CODES "Enables generating QR codes for like DRFs" ON)
 
@@ -115,10 +110,10 @@ option(
 option(USE_REMOTE_RID "Enables using remote RID tool" ON)
 option(USE_REL_ACT_TOOL "Enables Relative Activity tool - experimental" ON)
 
-if( IOS OR ANDROID OR BUILD_AS_OSX_APP )
+if( IOS OR ANDROID )
   set( USE_BATCH_TOOLS OFF CACHE INTERNAL "")
 else()
-  option(USE_BATCH_TOOLS "Enables (command line for now) batch processing." ON )
+  option( USE_BATCH_TOOLS "Enables (command line for now) batch processing." ON )
 endif()
 
 if(MSVC)
@@ -140,19 +135,15 @@ set(MAX_SPECTRUM_MEMMORY_SIZE_MB 256
     "Amount of memory to allow spectra to take up before trying to offload them onto disk when not in use"
 )
 
-set( INTERSPEC_LIB_TYPE "STATIC" )
-#set( INTERSPEC_LIB_TYPE "SHARED" )
-
-
-if(WIN32)
-  #0x0601==Win7, 0x0501=WinXP (Wt CMakeLists.txt uses 0x0501x)
-  add_definitions(-D _WIN32_WINNT=0x0601 -D WINVER=0x0601 -D _SCL_SECURE_NO_WARNINGS /bigobj /MP )
-
-#    set(EXECUTABLE_OUTPUT_PATH . CACHE PATH "Path to executables" FORCE)
-#    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /bigobj /MP /wd4996 /wd4267" )
-else(WIN32)
-#    set(EXECUTABLE_OUTPUT_PATH bin CACHE PATH "Path to executables" FORCE)
-endif(WIN32)
+# If we are creating the normal InterSpec executable, and the InterSpec_batch executable,
+#  we will compile LibInterSpec as a shared library, so both exes can use it; otherwise
+#  we will create a static library, and statically link it into our final executable.
+#  (Electron doesnt need a separate exe for batch)
+if( (USE_BATCH_TOOLS AND NOT BUILD_AS_ELECTRON_APP) OR BUILD_AS_OSX_APP )
+  set( INTERSPEC_LIB_TYPE SHARED )
+else()
+  set( INTERSPEC_LIB_TYPE STATIC )
+endif()
 
 
 SET(MYSQL_DATABASE_TO_USE "dev" CACHE STRING "Which mysql database to use (if applicable): dev/qc/prod")
@@ -179,14 +170,6 @@ if(NOT CMAKE_BUILD_TYPE)
         PROPERTY STRINGS "Debug" "Release" "MinSizeRel" "RelWithDebInfo"
     )
 endif(NOT CMAKE_BUILD_TYPE)
-
-
-if(BUILD_AS_COMMAND_LINE_CODE_DEVELOPMENT)
-    set(PERFORM_DEVELOPER_CHECKS ON CACHE INTERNAL "")
-    set(SpecUtils_ENABLE_EQUALITY_CHECKS ON CACHE INTERNAL "")
-endif(BUILD_AS_COMMAND_LINE_CODE_DEVELOPMENT)
-
-
 
 
 if(BUILD_FOR_WEB_DEPLOYMENT)
@@ -253,6 +236,7 @@ set(sources
     src/IsotopeId.cpp
     src/MaterialDB.cpp
     src/PhysicalUnits.cpp
+    src/PhysicalUnitsLocalized.cpp
     src/MassAttenuationTool.cpp
     src/DetectorPeakResponse.cpp
     src/GammaInteractionCalc.cpp
@@ -334,7 +318,6 @@ set(sources
     src/D3SpectrumDisplayDiv.cpp
     external_libs/SpecUtils/d3_resources/SpectrumChartD3.js
     external_libs/SpecUtils/d3_resources/SpectrumChartD3.css
-    external_libs/SpecUtils/d3_resources/SpectrumChartD3StandAlone.css
     src/D3TimeChart.cpp
     src/ZipArchive.cpp
     src/MultimediaDisplay.cpp
@@ -344,6 +327,9 @@ set(sources
     src/AppUtils.cpp
     src/ExportSpecFile.cpp
     src/EnterAppUrlWindow.cpp
+    src/NuclideSourceEnter.cpp
+    src/AddNewPeakDialog.cpp
+    src/UserPreferences.cpp
     js/SpectrumChart.js
     js/InterSpec.js
 )
@@ -356,6 +342,7 @@ set(headers
     InterSpec/IsotopeId.h
     InterSpec/MaterialDB.h
     InterSpec/PhysicalUnits.h
+    InterSpec/PhysicalUnitsLocalized.h
     InterSpec/MassAttenuationTool.h
     InterSpec/DetectorPeakResponse.h
     InterSpec/GammaInteractionCalc.h
@@ -444,12 +431,15 @@ set(headers
     InterSpec/AppUtils.h
     InterSpec/ExportSpecFile.h
     InterSpec/EnterAppUrlWindow.h
+    InterSpec/NuclideSourceEnter.h
+    InterSpec/AddNewPeakDialog.h
+    InterSpec/UserPreferences.h
 )
 
 
 if(USE_DB_TO_STORE_SPECTRA)
-    list(APPEND sources src/DbStateBrowser.cpp src/DbFileBrowser.cpp)
-    list(APPEND headers InterSpec/DbStateBrowser.h InterSpec/DbFileBrowser.h)
+    list(APPEND sources src/DbFileBrowser.cpp)
+    list(APPEND headers InterSpec/DbFileBrowser.h)
 endif(USE_DB_TO_STORE_SPECTRA)
 
 
@@ -458,12 +448,6 @@ if(INCLUDE_ANALYSIS_TEST_SUITE)
     list(APPEND sources src/SpectrumViewerTester.cpp)
     list(APPEND headers InterSpec/SpectrumViewerTester.h)
 endif(INCLUDE_ANALYSIS_TEST_SUITE)
-
-
-if(BUILD_AS_COMMAND_LINE_CODE_DEVELOPMENT)
-    list(APPEND sources testing/developcode.cpp )
-    list(APPEND headers testing/developcode.h )
-endif(BUILD_AS_COMMAND_LINE_CODE_DEVELOPMENT)
 
 
 #if(IOS)
@@ -493,8 +477,8 @@ if(USE_TERMINAL_WIDGET)
 endif(USE_TERMINAL_WIDGET)
 
 if(USE_DETECTION_LIMIT_TOOL)
-    list( APPEND sources src/DetectionLimitCalc.cpp src/DetectionLimitTool.cpp )
-    list( APPEND headers InterSpec/DetectionLimitCalc.h InterSpec/DetectionLimitTool.h  )
+    list( APPEND sources src/DetectionLimitCalc.cpp src/DetectionLimitTool.cpp src/DetectionLimitSimple.cpp )
+    list( APPEND headers InterSpec/DetectionLimitCalc.h InterSpec/DetectionLimitTool.h InterSpec/DetectionLimitSimple.h )
 endif(USE_DETECTION_LIMIT_TOOL)
 
 if(USE_QR_CODES)
@@ -556,14 +540,21 @@ if( USE_BATCH_TOOLS )
         src/BatchCommandLine.cpp
         src/BatchPeak.cpp
         src/BatchActivity.cpp
+        src/BatchInfoLog.cpp
   )
   
   list( APPEND headers
         InterSpec/BatchCommandLine.h
         InterSpec/BatchPeak.h
         InterSpec/BatchActivity.h
+        InterSpec/BatchInfoLog.h
   )
 endif( USE_BATCH_TOOLS )
+
+if( BUILD_AS_OSX_APP )
+  list( APPEND sources target/osx/macOsUtils.mm target/osx/NativeMenu.mm )
+  list( APPEND headers target/osx/macOsUtils.h target/osx/NativeMenu.h )
+endif( BUILD_AS_OSX_APP )
 
 
 #Copy D3 resources into InterSpec_resources directory at compile time
@@ -583,10 +574,7 @@ deploy_js_resource("${CMAKE_CURRENT_SOURCE_DIR}/external_libs/SpecUtils/d3_resou
          
 )
 
-set(CSS_RESOURCES_TO_COPY
-        "SpectrumChartD3.css"
-        "SpectrumChartD3StandAlone.css"
-)
+set( CSS_RESOURCES_TO_COPY "SpectrumChartD3.css" )
     
 foreach(_file ${CSS_RESOURCES_TO_COPY})
   deploy_css_resource("${CMAKE_CURRENT_SOURCE_DIR}/external_libs/SpecUtils/d3_resources/${_file}"
@@ -606,11 +594,11 @@ set(SpecUtils_NO_BOOST_LIB OFF
     CACHE BOOL "Use boost for threading primitives in SpecUtils"
 )
 
-if( APPLE )
+if( APPLE OR ANDROID )
   set(SpecUtils_USE_WT_THREADPOOL OFF CACHE BOOL "")
-else( APPLE )
+else( APPLE OR ANDROID  )
   set(SpecUtils_USE_WT_THREADPOOL ON CACHE BOOL "")
-endif( APPLE )
+endif( APPLE OR ANDROID  )
 set(SpecUtils_EXTERNALLY_DEFINED_LOG_MESSAGE ON CACHE BOOL "")
 set(SpecUtils_BUILD_UNIT_TESTS OFF CACHE BOOL "")
 set(SpecUtils_BUILD_REGRESSION_TEST OFF CACHE BOOL "")
@@ -619,7 +607,8 @@ set(SpecUtils_JAVA_SWIG OFF CACHE BOOL "")
 set(SpecUtils_ENABLE_D3_CHART ON CACHE BOOL "")
 set(SpecUtils_D3_SUPPORT_FILE_STATIC OFF CACHE BOOL "")
 set(SpecUtils_D3_SCRIPTS_RUNTIME_DIR "InterSpec_resources" CACHE STRING "")
-set(SpecUtils_ENABLE_URI_SPECTRA ON CACHE BOOL "")
+set(SpecUtils_ENABLE_URI_SPECTRA ${USE_QR_CODES} CACHE BOOL "")
+set(SpecUtils_FLT_PARSE_METHOD "boost" CACHE STRING "")
 
 #add in all the subdirectories the project will always use
 add_subdirectory(external_libs/Minuit2)
@@ -642,6 +631,32 @@ endif()
 set_target_properties(InterSpecLib PROPERTIES PREFIX "")
 set_target_properties(InterSpecLib PROPERTIES OUTPUT_NAME "InterSpec")
 
+# Turn off some compiler warnings
+target_compile_options(InterSpecLib PRIVATE
+     $<$<OR:$<CXX_COMPILER_ID:Clang>,$<CXX_COMPILER_ID:AppleClang>,$<CXX_COMPILER_ID:GNU>>:
+          -Wno-inconsistent-missing-override>  # Turn off a bunch of warnings like: WTreeView:399:20: warning: 'headerWidget' overrides a member function but is not marked 'override' [-Winconsistent-missing-override]
+     $<$<CXX_COMPILER_ID:MSVC>:
+          >)
+
+# Turn off "note: The practice of declaring the Bind placeholders (_1, _2, ...) in the global namespace is deprecated...."
+# warnings (these come from Wt I think, not our code)
+SET(CMAKE_CXX_FLAGS  "${CMAKE_CXX_FLAGS} -D BOOST_BIND_GLOBAL_PLACEHOLDERS")
+          
+if(WIN32)
+  #0x0601==Win7, 0x0501=WinXP (Wt CMakeLists.txt uses 0x0501x)
+  target_compile_definitions( InterSpecLib PUBLIC /bigobj -D _WIN32_WINNT=0x0601 -D WINVER=0x0601 -D _SCL_SECURE_NO_WARNINGS )
+  target_compile_definitions( InterSpecLib PRIVATE InterSpec_EXPORTS )
+  add_definitions( /bigobj )
+        
+  if( USE_BATCH_TOOLS )
+    # We get error compiling multi-processor debug build of shared LibInterSpec, presumably due to some 
+    #  file locking issues, so only enable parallel builds for release, if we are building shared LibInterSpec
+    target_compile_options( InterSpecLib PUBLIC $<$<CONFIG:Release>:/MP> )
+  else( USE_BATCH_TOOLS )
+    add_definitions( /MP )
+  endif( USE_BATCH_TOOLS )
+endif(WIN32)
+
 target_link_libraries(
     InterSpecLib
     PUBLIC
@@ -662,10 +677,10 @@ target_link_libraries(
     ${CMAKE_DL_LIBS}
 )
 
-if(USE_SPECRUM_FILE_QUERY_WIDGET OR BUILD_AS_COMMAND_LINE_CODE_DEVELOPMENT)
+if( USE_SPECRUM_FILE_QUERY_WIDGET )
     add_subdirectory(external_libs/pugixml-1.9)
     target_link_libraries(InterSpecLib PUBLIC pugixml)
-endif()
+endif( USE_SPECRUM_FILE_QUERY_WIDGET )
 
 
 if(USE_MYSQL_DB EQUAL USE_SQLITE3_DB)
@@ -688,7 +703,7 @@ target_include_directories( InterSpecLib
 if( InterSpec_FETCH_DEPENDENCIES )
   target_link_libraries( InterSpecLib
     PUBLIC
-      Boost::math Boost::scope_exit Boost::uuid Boost::iostreams Boost::assign Boost::multi_array Boost::crc
+      Boost::math Boost::scope_exit Boost::uuid Boost::iostreams Boost::assign Boost::multi_array Boost::crc Boost::process Boost::crc
       # Boost::signals2 Boost::asio Boost::multi_index
       wt
 #      wttest
@@ -730,6 +745,44 @@ endif(WIN32)
 if( USE_REL_ACT_TOOL )
   target_link_libraries(InterSpecLib PUBLIC Eigen3::Eigen Ceres::ceres )
 endif( USE_REL_ACT_TOOL )
+
+
+if( BUILD_AS_OSX_APP )
+  FIND_LIBRARY(COCOA_LIBRARY Cocoa)
+  FIND_LIBRARY(COREDATA_LIBRARY CoreData)
+  FIND_LIBRARY(APPKIT_LIBRARY AppKit)
+  FIND_LIBRARY(FOUNDATION_LIBRARY Foundation)
+
+  MARK_AS_ADVANCED( COCOA_LIBRARY COREDATA_LIBRARY APPKIT_LIBRARY FOUNDATION_LIBRARY )
+
+  target_link_libraries( InterSpecLib PUBLIC
+    ${COCOA_LIBRARY}
+    ${APPKIT_LIBRARY}
+    ${COREDATA_LIBRARY}
+    ${FOUNDATION_LIBRARY}
+  )
+  
+  if( USE_BATCH_TOOLS )
+    set_target_properties( InterSpecLib PROPERTIES
+      FRAMEWORK TRUE
+      FRAMEWORK_VERSION A
+      MACOSX_FRAMEWORK_IDENTIFIER gov.sandia.InterSpecFramework
+      MACOSX_FRAMEWORK_SHORT_VERSION_STRING 1.0
+      MACOSX_FRAMEWORK_BUNDLE_VERSION 1.0.0
+      MACOSX_FRAMEWORK_COPYRIGHT "© 2024 Sandia National Laboratories"
+      # XCODE_ATTRIBUTE_INSTALL_PATH @executable_path/../Frameworks/
+      XCODE_ATTRIBUTE_SKIP_INSTALL "Yes"
+    )
+    
+    set_target_properties( InterSpecLib PROPERTIES
+      XCODE_ATTRIBUTE_PRODUCT_BUNDLE_IDENTIFIER gov.sandia.InterSpecFramework
+    )
+    
+    set_target_properties( InterSpecLib PROPERTIES
+      PUBLIC_HEADER "InterSpec_config.h"
+    )
+  endif( USE_BATCH_TOOLS )
+endif( BUILD_AS_OSX_APP )
 
 
 if( BUILD_AS_LOCAL_SERVER AND (CMAKE_GENERATOR STREQUAL "Xcode") )
@@ -788,10 +841,10 @@ if(TRY_TO_STATIC_LINK)
         target_link_libraries(InterSpecLib PUBLIC ${FCGI_LIBRARIES})
     endif(Wt_FCGI_LIBRARY)
 
-    include(cmake/WtFindSsl.txt)
-    if(SSL_FOUND)
-        target_link_libraries(InterSpecLib PUBLIC ${SSL_LIBRARIES})
-    endif(SSL_FOUND)
+    #include(cmake/WtFindSsl.txt)
+    #if(SSL_FOUND)
+    #    target_link_libraries(InterSpecLib PUBLIC ${SSL_LIBRARIES})
+    #endif(SSL_FOUND)
 
     if(("${CMAKE_SYSTEM}" MATCHES "Linux") AND (NOT ANDROID))
         find_library( RT_LIB rt REQUIRES )
@@ -839,7 +892,7 @@ configure_file(
 
 if( WIN32 )
   # The following are only needed for Wt 3.7.1, not 3.3.4
-  target_link_libraries( InterSpecLib PRIVATE opengl32.lib d2d1.lib windowscodecs.lib Dwrite.lib )
+  target_link_libraries( InterSpecLib PUBLIC opengl32.lib d2d1.lib windowscodecs.lib Dwrite.lib )
 endif( WIN32 )
 
 #if( ${PERFORM_DEVELOPER_CHECKS} EQUAL ${SpecUtils_ENABLE_EQUALITY_CHECKS} )
@@ -849,8 +902,9 @@ endif( WIN32 )
 
 # I cant seems to get more complex regexs to work, so we'll use many simple ones.
 FILE(GLOB JS_BASE_FILES InterSpec_resources/*.js )
-FILE(GLOB CSS_BASE_FILES InterSpec_resources/*.css )
+FILE(GLOB_RECURSE CSS_BASE_FILES LIST_DIRECTORIES TRUE InterSpec_resources/*.css )
 list(FILTER CSS_BASE_FILES EXCLUDE REGEX ".*SpectrumChartD3.*css")
+list(FILTER CSS_BASE_FILES EXCLUDE REGEX ".min.css")
 FILE(GLOB STATIC_XML_FILES InterSpec_resources/static_text/*.xml )
 FILE(GLOB STATIC_HTML_TMPLTS_FILES InterSpec_resources/static_text/*.html )
 FILE(GLOB STATIC_ADD_XML_FILES InterSpec_resources/static_text/*/*.xml )
@@ -868,6 +922,11 @@ list( APPEND OTHER_InterSpec_SUPPORT_FILES
   )
 
 add_custom_target(interspec_resources SOURCES ${OTHER_InterSpec_SUPPORT_FILES})
+
+
+# Make a target for the XML files that hold the (internationalized) text for the app
+FILE(GLOB APP_TEXT_FILES InterSpec_resources/app_text/*.xml )
+add_custom_target( interspec_app_text SOURCES ${APP_TEXT_FILES} )
 
 
 #Copy files to the install directory
@@ -933,3 +992,10 @@ configure_file(
     ${PROJECT_BINARY_DIR}/data/sandia.decay.xml
     COPYONLY
 )
+
+# Only create an install target if this is a top-level project (e.g., not Electron, or iOS, etc)
+if( NOT hasParent )
+  INSTALL(TARGETS InterSpecExe DESTINATION bin)
+  INSTALL(TARGETS InterSpecLib DESTINATION lib)
+  INSTALL(DIRECTORY data example_spectra InterSpec_resources DESTINATION share/interspec)
+endif( NOT hasParent )

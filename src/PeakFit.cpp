@@ -76,6 +76,15 @@ using namespace std;
 
 using SpecUtils::Measurement;
 
+// 20240911: The minimum uncertainty allowed for a gamma spectrum channel.
+// Background subtracted spectra can end up with tiny bins, like 0.0007,
+// which if we take its uncertainty to be its sqrt, a single bin like this will
+// totally mess up the whole ROI.  So we'll impose a minimum uncertainty on
+// each channel.
+// However, if a spectrum is scaled, and not Poisson errored, this will totally
+// mess things up (even though it wouldnt be right in the first place).
+#define MIN_CHANNEL_UNCERT 1.0
+
 template<class T>
 bool matrix_invert( const boost::numeric::ublas::matrix<T>& input,
                    boost::numeric::ublas::matrix<T> &inverse )
@@ -869,7 +878,7 @@ void findPeaksInUserRange( double x0, double x1, int nPeaks,
                           double &chi2 )
 {
   //Current (main) problems with the results of this function
-  //  --Results can be catostropically wrong, depending on exact input range
+  //  --Results can be catastrophically wrong, depending on exact input range
   
   if( method != FromInputPeaks )
     answer.clear();
@@ -1162,7 +1171,7 @@ void findPeaksInUserRange( double x0, double x1, int nPeaks,
     if( !fixSigma )
     {
       float minw, maxw;
-      expected_peak_width_limits( inpeaks[i].mean(), isHpge, minw, maxw );
+      expected_peak_width_limits( inpeaks[i].mean(), isHpge, dataH, minw, maxw );
       
       maxsigma = std::max( maxsigma, double(maxw) );
       minsigma = std::min( minsigma, double(minw) );
@@ -1293,8 +1302,8 @@ void findPeaksInUserRange_linsubsolve( double x0, double x1, int nPeaks,
   const bool isHpge = PeakFitUtils::is_high_res( dataH );
   
   float minw_lower, maxw_lower, minw_upper, maxw_upper;
-  expected_peak_width_limits( x0, isHpge, minw_lower, maxw_lower );
-  expected_peak_width_limits( x1, isHpge, minw_upper, maxw_upper );
+  expected_peak_width_limits( x0, isHpge, dataH, minw_lower, maxw_lower );
+  expected_peak_width_limits( x1, isHpge, dataH, minw_upper, maxw_upper );
   
   float minsigma = std::min( minw_lower, minw_upper );
   float maxsigma = std::min( maxw_lower, maxw_upper );
@@ -1774,7 +1783,7 @@ double chi2_for_region( const PeakShrdVec &peaks,
         const double ncontinuum = continuum->offset_integral(xbinlow, xbinup, data);
         
         const double npeak = gauss_counts[i];
-        const double uncert = ndata > 0.0 ? sqrt(ndata) : 1.0;
+        const double uncert = ndata > MIN_CHANNEL_UNCERT ? sqrt(ndata) : 1.0;
         const double chi = (ndata-ncontinuum-npeak)/uncert;
         
         chi2 += chi*chi;
@@ -1803,7 +1812,7 @@ double chi2_for_region( const PeakShrdVec &peaks,
       {
         const double peakarea = i->second;
         const double ndata = data->gamma_channel_content( i->first );
-        const double uncert = ndata > 0.0 ? sqrt(ndata) : 1.0;
+        const double uncert = ndata > MIN_CHANNEL_UNCERT ? sqrt(ndata) : 1.0;
         const double chi = (ndata-peakarea)/uncert;
         chi2 += chi*chi;
       }//for( int bin = minbin; bin <= maxbin; ++bin )
@@ -2069,7 +2078,7 @@ double evaluate_chi2dof_for_range( const std::vector<PeakDef> &peaks,
     if( y_pred < 0.0 )
       y_pred = 0.0;
     
-    const double uncert = (y > 0.0f ? sqrt(y) : 1.0);
+    const double uncert = (y > MIN_CHANNEL_UNCERT ? sqrt(y) : 1.0);
     chi2 += std::pow( (y_pred - y) / uncert, 2.0 );
   }//for( int bin = 0; bin < nbin; ++bin )
   
@@ -2437,6 +2446,7 @@ void find_roi_for_2nd_deriv_candidate(
 
 void expected_peak_width_limits( const float energy,
                                  const bool highres,
+                                 const std::shared_ptr<const SpecUtils::Measurement> &meas,
                                  float &min_sigma_width_kev,
                                  float &max_sigma_width_kev )
 {
@@ -2507,6 +2517,29 @@ void expected_peak_width_limits( const float energy,
   
   min_sigma_width_kev = min_width_multiple * lowerres;
   max_sigma_width_kev = max_width_multple * largerres;
+  
+  // For really nice HPGe or micro-calorimeters, the resolution may be even better than
+  //  expected from the above, so we'll also check the spectrum an allow the FWHM
+  //  go down to ~6 channels (chosen arbitrarily - from one example file)
+  const double min_nchannel_sigma = 2.55;  //2.55*2.355=6.005
+  if( highres && meas && (meas->num_gamma_channels() > (4096+2)) )
+  {
+    shared_ptr<const SpecUtils::EnergyCalibration> cal = meas->energy_calibration();
+    if( cal && cal->valid() )
+    {
+      try
+      {
+        const double highchannel = cal->channel_for_energy( energy + 0.5*min_sigma_width_kev );
+        const double lowchannel = cal->channel_for_energy( energy - 0.5*min_sigma_width_kev );
+        const double nchannel_sigma = highchannel - lowchannel;
+        if( nchannel_sigma > min_nchannel_sigma )
+          min_sigma_width_kev = min_sigma_width_kev * min_nchannel_sigma / nchannel_sigma;
+      }catch( std::exception & )
+      {
+        // probably wont ever get here
+      }
+    }//if( valid energy cal )
+  }//if( highres )
 }//void expected_peak_width_limits(...)
 
 
@@ -2794,7 +2827,7 @@ void get_candidate_peak_estimates_for_user_click(
   size_t highchannel = ((midbin + upper_chan_sub) >= nchannels) ? nchannels-1 : static_cast<size_t>(midbin + upper_chan_sub);
   
   float min_sigma_width_kev, max_sigma_width_kev;
-  expected_peak_width_limits( x, highres, min_sigma_width_kev, max_sigma_width_kev );
+  expected_peak_width_limits( x, highres, dataH, min_sigma_width_kev, max_sigma_width_kev );
   
   
   
@@ -2815,7 +2848,7 @@ void get_candidate_peak_estimates_for_user_click(
   
 
   float min_sigma, max_sigma;
-  expected_peak_width_limits( x, highres, min_sigma, max_sigma );
+  expected_peak_width_limits( x, highres, dataH, min_sigma, max_sigma );
   
   sigma0 = 0.5*(min_sigma + max_sigma) * (highres ? 0.20 : 0.25);  //expected_peak_width_limits multiplies max width by  4 for highres, and 3 for lowres
   mean0 = x;
@@ -3026,7 +3059,7 @@ void fit_peak_for_user_click( PeakShrdVec &results,
         {
 //          cout << "Testing setting peak resolution limits based on expected_lowres_peak_width_limits" << endl;
           float lowersigma, uppersigma;
-          expected_peak_width_limits( mean, false, lowersigma, uppersigma );
+          expected_peak_width_limits( mean, false, dataH, lowersigma, uppersigma );
           if( !i )
             minsigma = lowersigma;
           if( i == (coFitPeaks.size()-1) )
@@ -3662,7 +3695,7 @@ bool check_lowres_single_peak_fit( const std::shared_ptr<const PeakDef> peak,
   if( lowres_enforce_peak_width_limits )
   {
     float min_sigma, max_sigma;
-    expected_peak_width_limits( mean, false, min_sigma, max_sigma );
+    expected_peak_width_limits( mean, false, dataH, min_sigma, max_sigma );
     
     if( sigma < min_sigma || sigma > max_sigma )
     {
@@ -3702,7 +3735,7 @@ bool check_lowres_single_peak_fit( const std::shared_ptr<const PeakDef> peak,
       const double x = dataH->gamma_channel_lower( channel );
       const double y = dataH->gamma_channel_content( channel );
       const double y_pred = poly_coeffs[0] + poly_coeffs[1]*x;
-      const double uncert = (y > 0.0f ? std::sqrt(y) : 1.0);
+      const double uncert = (y > MIN_CHANNEL_UNCERT ? std::sqrt(y) : 1.0);
       const double thichi2 = std::pow( (y_pred - y) / uncert, 2.0 );
       
       linechi2 += thichi2;
@@ -4101,7 +4134,7 @@ PeakRejectionStatus check_lowres_multi_peak_fit( const vector<std::shared_ptr<co
       const double x = dataH->gamma_channel_lower( channel );
       const double y = dataH->gamma_channel_content( channel );
       const double y_pred = poly_coeffs[0] + poly_coeffs[1]*x;
-      const double uncert = (y > 0.0f ? sqrt(y) : 1.0);
+      const double uncert = (y > MIN_CHANNEL_UNCERT ? sqrt(y) : 1.0);
       linechi2 += std::pow( (y_pred - y) / uncert, 2.0 );
     }//for( int bin = 0; bin < nbin; ++bin )
     
@@ -4278,7 +4311,7 @@ PeakRejectionStatus check_highres_multi_peak_fit( const vector<std::shared_ptr<c
     const float sigma = static_cast<float>( p->sigma() );
     
     float min_sigma, max_sigma;
-    expected_peak_width_limits( mean, true, min_sigma, max_sigma );
+    expected_peak_width_limits( mean, true, dataH, min_sigma, max_sigma );
     
     bool outsideExpectedFwhm = (sigma < min_sigma || sigma > max_sigma);
     
@@ -4503,7 +4536,7 @@ bool check_highres_single_peak_fit( const std::shared_ptr<const PeakDef> peak,
   
   
   float min_sigma, max_sigma;
-  expected_peak_width_limits( (float)mean, true, min_sigma, max_sigma );
+  expected_peak_width_limits( (float)mean, true, dataH, min_sigma, max_sigma );
   
   //An issue is that doppler broadened peaks (like 511 keV) will have a width
   //  outside of limits - so if the chi2dof is good enough, or the peak is
@@ -4624,7 +4657,7 @@ bool check_highres_single_peak_fit( const std::shared_ptr<const PeakDef> peak,
       const double x = dataH->gamma_channel_lower( channel );
       const double y = dataH->gamma_channel_content( channel );
       const double y_pred = poly_coeffs[0] + poly_coeffs[1]*x;
-      const double uncert = (y > 0.0f ? std::sqrt(y) : 1.0);
+      const double uncert = (y > MIN_CHANNEL_UNCERT ? std::sqrt(y) : 1.0);
       const double thichi2 = std::pow( (y_pred - y) / uncert, 2.0 );
       
       linechi2 += thichi2;
@@ -6262,7 +6295,7 @@ double fit_to_polynomial( const float *x, const float *data, const size_t nbin,
   
   for( size_t row = 0; row < nbin; ++row )
   {
-    const double uncert = (data[row] > 0.0 ? sqrt( data[row] ) : 1.0);
+    const double uncert = (data[row] > MIN_CHANNEL_UNCERT ? sqrt( data[row] ) : 1.0);
     b(row) = (data[row] > 0.0 ? sqrt( data[row] ) : 0.0);
     for( int col = 0; col < poly_terms; ++col )
       A(row,col) = std::pow( double(x[row]), double(col)) / uncert;
@@ -6292,7 +6325,7 @@ double fit_to_polynomial( const float *x, const float *data, const size_t nbin,
     double y_pred = 0.0;
     for( int i = 0; i < poly_terms; ++i )
       y_pred += a(i) * std::pow( double(x[bin]), double(i) );
-    const double uncert = (data[bin] > 0.0 ? sqrt( data[bin] ) : 1.0);
+    const double uncert = (data[bin] > MIN_CHANNEL_UNCERT ? sqrt( data[bin] ) : 1.0);
     chi2 += std::pow( (y_pred - data[bin]) / uncert, 2.0 );
   }//for( int bin = 0; bin < nbin; ++bin )
   
@@ -6375,16 +6408,15 @@ double fit_amp_and_offset( const float *x, const float *data, const size_t nbin,
   //    cerr << "{" << means[i] << ", " << sigmas[i] << "}, ";
   //  cerr << endl << endl;
   
-  double step_roi_data_sum = 0.0, step_cumulative_data = 0.0;
+  double roi_data_sum = 0.0, step_cumulative_data = 0.0;
   
   const double roi_lower = x[0];
   const double roi_upper = x[nbin];
-  if( step_continuum )
-  {
-    for( size_t row = 0; row < nbin; ++row )
-      step_roi_data_sum += data[row];
-  }
   
+  for( size_t row = 0; row < nbin; ++row )
+    roi_data_sum += std::max( data[row], 0.0f );
+  
+  const double avrg_data_val = roi_data_sum / nbin;
   
   // For the RelACtAuto calcs, there can easily be 100 peaks, so for this case we'll calculate
   //  their contribution multithreaded.
@@ -6408,6 +6440,10 @@ double fit_amp_and_offset( const float *x, const float *data, const size_t nbin,
     
     SpecUtilsAsync::ThreadPool pool;
     
+    // 20240325: for complicated problems, it kinda looks like multiple cores arent being used that
+    //           efficiently (perhaps because each thread is only getting <10 channels to work on).
+    //           Perhaps it would be better to put each peak into a thread, for all channels, then
+    //           sum results at the end (using vector operations).
     const size_t nbin_per_thread = 1 + (nbin / nthread);
     
     for( size_t start_channel = 0; start_channel < nbin; start_channel += nbin_per_thread )
@@ -6443,7 +6479,14 @@ double fit_amp_and_offset( const float *x, const float *data, const size_t nbin,
     const double x1_rel = x1 - ref_energy;
     
     //const double uncert = (dataval > 0.0 ? sqrt(dataval) : 1.0);
-    double uncert = (dataval > 0.0 ? sqrt(dataval) : 1.0);
+    // If we are background subtracting a spectrum, we can end up with bins with really
+    //  small values, like 0.0007, which, even one of would mess the whole fit up if
+    //  we take its uncertainty to be its square-root, so in this case we will, fairly arbitrarily
+    //  we want to use an uncert of 1.
+    //  However, there are also highly scaled spectra, whose all values are really small, so
+    //  in this case we want to do something more reasonable.
+    // TODO: evaluate these choices of thresholds and tradeoffs, more better
+    double uncert = (dataval > MIN_CHANNEL_UNCERT ? sqrt(dataval) : 1.0);
   
     if( step_continuum )
       step_cumulative_data += dataval;
@@ -6507,13 +6550,13 @@ double fit_amp_and_offset( const float *x, const float *data, const size_t nbin,
       {
         // This logic mirrors that of PeakContinuum::offset_integral(...), and code
         // If you change it in one place - change it in here, below, and in offset_integral.
-        const double frac_data = (step_cumulative_data - 0.5*data[row]) / step_roi_data_sum;
+        const double frac_data = (step_cumulative_data - 0.5*data[row]) / roi_data_sum;
         const double contribution = frac_data * (x1 - x0);
         
         A(row,col) = contribution / uncert;
       }else if( step_continuum && (num_polynomial_terms == 4) )
       {
-        const double frac_data = (step_cumulative_data - 0.5*data[row]) / step_roi_data_sum;
+        const double frac_data = (step_cumulative_data - 0.5*data[row]) / roi_data_sum;
 
         double contrib = 0.0;
         switch( col )
@@ -6573,7 +6616,7 @@ double fit_amp_and_offset( const float *x, const float *data, const size_t nbin,
     for( size_t channel = 0; channel < nbin; ++channel )
     {
       const double dataval = data[channel];
-      const double uncert = (dataval > 0.0 ? sqrt(dataval) : 1.0);
+      const double uncert = (dataval > MIN_CHANNEL_UNCERT ? sqrt(dataval) : 1.0);
       A(channel,npoly + i) = peak_areas[channel] / uncert;
     }//for( size_t channel = 0; channel < nbin; ++channel )
   }//for( size_t i = 0; i < npeaks; ++i )
@@ -6729,7 +6772,7 @@ double fit_amp_and_offset( const float *x, const float *data, const size_t nbin,
       {
         // This logic mirrors that of PeakContinuum::offset_integral(...) and above code in this
         //  function that defines the matrix, see above for comments
-        const double frac_data = (step_cumulative_data - 0.5*data[bin]) / step_roi_data_sum;
+        const double frac_data = (step_cumulative_data - 0.5*data[bin]) / roi_data_sum;
         const double contribution = frac_data * (x1 - x0);
         
         y_pred += a(col)*contribution;
@@ -6738,7 +6781,7 @@ double fit_amp_and_offset( const float *x, const float *data, const size_t nbin,
         // This logic mirrors that of PeakContinuum::offset_integral(...) and above code in this
         //  function that defines the matrix, see above for comments
         
-        const double frac_data = (step_cumulative_data - 0.5*data[bin]) / step_roi_data_sum;
+        const double frac_data = (step_cumulative_data - 0.5*data[bin]) / roi_data_sum;
         
         double contrib = 0.0;
         switch( col )
@@ -6770,7 +6813,7 @@ double fit_amp_and_offset( const float *x, const float *data, const size_t nbin,
       y_pred += fixedAmpPeaks[i].gauss_integral( x0, x1 );
     
     //    cerr << "bin " << bin << " predicted " << y_pred << " data=" << data[bin] << endl;
-    const double uncert = (data[bin] > 0.0 ? sqrt( data[bin] ) : 1.0);
+    const double uncert = (data[bin] > MIN_CHANNEL_UNCERT ? sqrt( data[bin] ) : 1.0);
     chi2 += std::pow( (y_pred - data[bin]) / uncert, 2.0 );
   }//for( int bin = 0; bin < nbin; ++bin )
   
@@ -8094,8 +8137,8 @@ bool find_spectroscopic_extent( std::shared_ptr<const Measurement> meas,
   
   if( lower_channel > (nbin/3) )
   {
-    cout << "The lower threshold bin (" << lower_channel << " of " << nbin
-    << ") is to high, skipping file for further analysis." << endl;
+    //cout << "The lower threshold bin (" << lower_channel << " of " << nbin
+    //<< ") is to high, skipping file for further analysis." << endl;
     lower_channel = upper_channel = 0;
     return false;
   }//
@@ -8408,7 +8451,7 @@ std::vector<PeakDef> search_for_peaks( const std::shared_ptr<const Measurement> 
             y_pred += continuum_coeffs[col] * (1.0/exp) * (pow(x1cont,exp) - pow(x0cont,exp));
           }//for( int order = 0; order < maxorder; ++order )
           
-          const double uncert = (data[bin] > 0.0 ? sqrt( data[bin] ) : 1.0);
+          const double uncert = (data[bin] > MIN_CHANNEL_UNCERT ? sqrt( data[bin] ) : 1.0);
           
           if( y_pred < 0.0 )
             y_pred = 0.0;

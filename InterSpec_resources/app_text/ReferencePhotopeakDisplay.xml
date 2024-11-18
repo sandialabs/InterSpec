@@ -1,0 +1,78 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- rpd- is short for ReferencePhotopeakDisplay -->
+  <message id="rpd-add-another-btn">Add Another</message>
+  <message id="rpd-add-another-btn-narrow">Add</message>
+  <message id="rpd-tt-add-another-btn">Keep the currently displayed lines and add a new nuclide/source to display.</message>
+  <message id="rpd-tt-nuc-edit">ex. <b>U235</b>, <b>235 Uranium</b>, <b>U</b> (x-rays only), <b>Uranium</b> (x-rays), <b>U-235m</b> (meta stable state), <b>Cs137</b>, <b>background</b>, <b>H(n,g)</b>, etc.</message>
+  <message id="rpd-tt-age">
+    <div>
+      Age can be specified using a combination of time units, similar to '<b>5.3y 8d 22m</b>' or in half lives like 
+      '<b>2.5 HL</b>'.
+    </div>
+    <div>
+      Acceptable time units: <b>year</b>, <b>yr</b>, <b>y</b>, <b>day</b>, <b>d</b>, <b>hrs</b>, <b>hour</b>, <b>h</b>, <b>minute</b>,
+      <b>min</b>, <b>m</b>, <b>second</b>, <b>s</b>, <b>ms</b>, <b>microseconds</b>, <b>us</b>, <b>nanoseconds</b>, <b>ns</b>, or
+      you can specify time period by <b>hh:mm:ss</b>. Half life units can be
+      specified using <b>hl</b>, <b>halflife</b>, <b>halflives</b>, <b>half-life</b>, <b>half-lives</b>,
+      <b>half lives</b>, or <b>half life</b>.
+    </div>
+    <div>
+      Half life units or time periods can not be mixed with other units. When multiple time periods are
+      specified, they are summed, e.x. '1y6months 3m' is interpreted as 18 months and 3 minutes.
+    </div>
+  </message>
+  <message id="rpd-tt-clear">Clears all persisted lines, as well as the current non-persisted lines.</message>
+  <message id="rpd-more-info">more info</message>
+  <message id="rpd-shield-mat">shielding material</message>
+  <message id="rpd-options">Options</message>
+  <message id="rpd-opt-prompt">Prompt Only</message>
+  <message id="rpd-opt-tt-prompt">
+    Gammas from only the original nuclide, and the descendants until one
+    of them has a longer half-life than the original nuclide; the
+    decay chain is in equilibrium till that point.
+  </message>
+  <message id="rpd-opt-gamma">Show Gammas</message>
+  <message id="rpd-opt-xray">Show X-rays</message>
+  <message id="rpd-opt-alphas">Show Alphas</message>
+  <message id="rpd-opt-betas">Show Betas</message>
+  <message id="rpd-opt-cascade">Cascade Sums</message>
+  <message id="rpd-opt-escapes">Escape Peaks</message>
+  <message id="rpd-prev-nucs">Prev Nucs</message>
+  <message id="rpd-det-nucs">Det RID Nucs</message>
+  <message id="rpd-assoc-nucs">Assoc. Nucs</message>
+  <message id="rpd-suggestions">Suggestions</message>
+  <message id="rpd-feature-markers">Feature Markers</message>
+
+
+  <message id="rpd-csv-export-msg">The 'Nuclide Decay Info' tool provides additional capabilities for exporting nuclide, decay products, and decay information to CSV files.</message>
+  <message id="rpd-changed-age">Changed age to a more reasonable value for {1} from '{2}' to '{3}'</message>
+  <message id="rpd-det-id">Detector ID</message>
+  <message id="rpd-ext-rid">External RID</message>
+  <message id="rpd-prev">Previous</message>
+  <message id="rpd-warn-cascade-xrays">x-rays are not included in cascades</message>
+
+  <!-- Values in the table on this tool -->
+  <message id="rpd-tbl-iso">Iso</message>  <!-- a.k.a meta-stable state of nuclide -->
+  <message id="rpd-tbl-el-cap">e.c.</message> <!-- a.k.a electron capture -->
+  <message id="rpd-tbl-proton">proton</message>
+  <message id="rpd-tbl-spont-fis">s.f.</message> <!-- Spontaneous Fission-->
+  <message id="rpd-tbl-xray">xray</message>
+  <message id="rpd-tbl-reaction">Reaction</message>
+  <message id="rpd-tbl-norm">NORM</message>
+  <message id="rpd-tbl-cascade-sum">Cascade Sum</message>
+
+  <message id="rpd-tbl-hdr-energy">Energy (keV)</message>
+  <message id="rpd-tbl-hdr-br">B.R.</message> <!-- branching ratio -->
+  <message id="rpd-tbl-hdr-parent">Parent</message>
+  <message id="rpd-tbl-hdr-mode">Mode</message>
+  <message id="rpd-tbl-hdr-particle">Particle</message>
+  <message id="rpd-tbl-hdr-tt-energy">Energy of the particle produced</message>
+  <message id="rpd-tbl-hdr-tt-br">The number of the particle per second, per Bq of the parent nuclide.</message>
+  <message id="rpd-tbl-hdr-tt-trans">Actual nuclide which decayed to give this particle.</message>
+  <message id="rpd-tbl-hdr-tt-trans-mode">Decay mode of the parent nuclide, which produced this particle.</message>
+  <message id="rpd-tbl-hdr-tt-type">The type of particle produced</message>
+  <message id="rpd-tbl-hdr-tt-"></message>
+
+
+</messages>

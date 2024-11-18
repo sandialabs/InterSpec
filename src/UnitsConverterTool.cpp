@@ -34,6 +34,8 @@
 #include <Wt/WValidator>
 #include <Wt/WPushButton>
 #include <Wt/WGridLayout>
+#include <Wt/WApplication>
+#include <Wt/WEnvironment>
 #include <Wt/WContainerWidget>
 #include <Wt/WRegExpValidator>
 
@@ -43,11 +45,12 @@
 
 #include "InterSpec/AppUtils.h"
 #include "InterSpec/AuxWindow.h"
-#include "InterSpec/InterSpec.h"      // Only for preferenceValue<bool>("DisplayBecquerel")
+#include "InterSpec/InterSpec.h"
 #include "InterSpec/InterSpecApp.h"
-#include "InterSpec/InterSpecUser.h"  // Only for preferenceValue<bool>("DisplayBecquerel")
+#include "InterSpec/InterSpecUser.h"
 #include "InterSpec/PhysicalUnits.h"
 #include "InterSpec/UndoRedoManager.h"
+#include "InterSpec/UserPreferences.h" // Only for preferenceValue<bool>("DisplayBecquerel")
 #include "InterSpec/UnitsConverterTool.h"
 #include "InterSpec/DecayDataBaseServer.h"
 
@@ -243,7 +246,7 @@ string convertMass( string val )
 
 /** Returns pointer for detected nuclide, as well as input string with nuclide portion of it removed.
  
- On failure to find a nuclide, retunrs nullptr, and original input string.
+ On failure to find a nuclide, returns nullptr, and original input string.
  
  Will throw exception if multiple nuclides input.
  */
@@ -264,7 +267,7 @@ pair<const SandiaDecay::Nuclide *, std::string> detect_nuclide( std::string val 
     {
       // Do a feeble check to make sure the user didnt input multiple nuclides
       if( nuc )
-        throw runtime_error( "Multiple nuclides (" + nuc->symbol + " + " + nucptr->symbol + ")" );
+        throw runtime_error( WString::tr("uct-mult-nucs").arg(nuc->symbol).arg(nucptr->symbol).toUTF8() );
       
       nuc = nucptr;
       
@@ -456,7 +459,7 @@ void run_tests()
 
 
 UnitsConverterTool::UnitsConverterTool()
-  : AuxWindow( "Units Converter",
+  : AuxWindow( WString::tr("window-title-units-convert"),
                (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::PhoneNotFullScreen)
                | AuxWindowProperties::DisableCollapse
                | AuxWindowProperties::SetCloseable) ),
@@ -468,17 +471,18 @@ UnitsConverterTool::UnitsConverterTool()
   run_tests();
 #endif
   
+  InterSpec *viewer = InterSpec::instance();
+  viewer->useMessageResourceBundle( "UnitsConverterTool" );
+  
   //addStyleClass( "UnitsConverterTool" );
   
   WGridLayout *layout = stretcher();
   setWidth(400);
-  const char *topMessage = "Convert between radiation related units.<br />"
-                           "Ex: 5 MBq, 2 nCi, 1.2rad, 15E-3gy, 0.2mrem, 8feet, 9milli-sievert";
-  WText *message = new WText( topMessage, Wt::XHTMLText );
+  WText *message = new WText( WString::tr("uct-instructions"), Wt::XHTMLText );
 
   layout->addWidget(message,0,0,1,3);
 
-  WLabel *label = new WLabel( "Input: ");
+  WLabel *label = new WLabel( WString::tr("uct-input-label") );
   layout->addWidget(label,1,0);
   //label->addStyleClass( "UnitsConverterToolLabel" );
   
@@ -537,7 +541,7 @@ UnitsConverterTool::UnitsConverterTool()
   //layout->addWidget(convertButton,1,2);
   //convertButton->clicked().connect( this, &UnitsConverterTool::convert );
     
-  label = new WLabel( "Output: " );
+  label = new WLabel( WString::tr("uct-output-label") );
   layout->addWidget(label,2,0);
   //label->addStyleClass( "UnitsConverterToolLabel" );
   
@@ -569,7 +573,7 @@ UnitsConverterTool::UnitsConverterTool()
   
 #if( USE_QR_CODES )
   WPushButton *qr_btn = new WPushButton( footer() );
-  qr_btn->setText( "QR Code" );
+  qr_btn->setText( WString::tr("QR Code") );
   qr_btn->setIcon( "InterSpec_resources/images/qr-code.svg" );
   qr_btn->setStyleClass( "LinkBtn DownloadBtn DialogFooterQrBtn" );
   qr_btn->clicked().preventPropagation();
@@ -577,10 +581,11 @@ UnitsConverterTool::UnitsConverterTool()
     try
     {
       const string url = "interspec://unit/?" + Wt::Utils::urlEncode(encodeStateToUrl());
-      QrCode::displayTxtAsQrCode( url, "Unit Converter State", "Current state of the unit converter tool." );
+      QrCode::displayTxtAsQrCode( url, WString::tr("uct-qr-window-title"),
+                                 WString::tr("uct-qr-window-txt") );
     }catch( std::exception &e )
     {
-      passMessage( "Error creating QR code: " + std::string(e.what()), WarningWidget::WarningMsgHigh );
+      passMessage( WString::tr("app-qr-err").arg(e.what()), WarningWidget::WarningMsgHigh );
     }
   }) );
 #endif //USE_QR_CODES
@@ -597,12 +602,24 @@ UnitsConverterTool::UnitsConverterTool()
   resizeToFitOnScreen();
 
   //Keep the keyboard form popping up
-  InterSpecApp *app = dynamic_cast<InterSpecApp *>(WApplication::instance());
-  if( app && app->isMobile() )
+  if( viewer->isMobile() )
   {
+    if( viewer->isPhone() )
+    {
+      int w = viewer->renderedWidth();
+      int h = viewer->renderedHeight();
+      if( w < 100 )
+      {
+        w = wApp->environment().screenWidth();
+        h = wApp->environment().screenHeight();
+      }
+      
+      if(  (w > 100) && (w > h) )
+        titleBar()->hide();
+    }//if( viewer->isPhone() )
+    
     closeButton->setFocus();
-    titleBar()->hide();
-  }
+  }//if( viewer->isMobile() )
   
 }//UnitsConverterTool constructor
 
@@ -618,7 +635,7 @@ std::string UnitsConverterTool::convert( std::string val )
   SpecUtils::trim( val );
   
   if( val.empty() )
-    throw runtime_error( "Empty input" );
+    throw runtime_error( WString::tr("uct-err-empty-input").toUTF8() );
   
   pair<const SandiaDecay::Nuclide *, std::string> nuc_res = detect_nuclide( val );
   const SandiaDecay::Nuclide *nuc = nuc_res.first;
@@ -649,12 +666,12 @@ std::string UnitsConverterTool::convert( std::string val )
       const double actPerGram = PhysicalUnits::bq * nuc->activityPerGram() / SandiaDecay::Bq;
       const double activity = actPerGram * grams;
       
-      bool useCurries = false;
+      bool useCuries = false;
       InterSpec *viewer = InterSpec::instance();
       if( viewer)
-        useCurries = !InterSpecUser::preferenceValue<bool>( "DisplayBecquerel", viewer );
+        useCuries = !UserPreferences::preferenceValue<bool>( "DisplayBecquerel", viewer );
       
-      return PhysicalUnits::printToBestActivityUnits( activity, num_sig_figs(val), useCurries );
+      return PhysicalUnits::printToBestActivityUnits( activity, num_sig_figs(val), useCuries );
     }catch(...)
     {
     }
@@ -664,7 +681,7 @@ std::string UnitsConverterTool::convert( std::string val )
       // Return some basic info, half life, specificActivity, anything else
     }
     
-    throw runtime_error( "Couldnt do anything with " + nuc->symbol + " '" + val + "'" );
+    throw runtime_error( WString::tr("uct-nuc-unknown").arg(nuc->symbol).arg(val).toUTF8() );
   }//if( nuc )
   
   
@@ -687,8 +704,8 @@ std::string UnitsConverterTool::convert( std::string val )
     boost::smatch mtch;
     boost::regex expr( PhysicalUnits::sm_positiveDecimalRegex );
     if( !boost::regex_match( val, mtch, expr ) )
-      throw runtime_error( "Couldnt determine units" );
-    throw runtime_error( "Couldnt convert number" );
+      throw runtime_error( WString::tr("uct-couldnt-find-units").toUTF8() );
+    throw runtime_error( WString::tr("uct-couldnt-find-units").toUTF8() );
   }//if( ans.empty() )
   
   return ans;
@@ -702,7 +719,7 @@ void UnitsConverterTool::convert()
     switch( m_input->validate() )
     {
       case Wt::WValidator::Invalid:
-        throw std::runtime_error( "Invalid input" );
+        throw std::runtime_error( WString::tr("uct-invalid-input").toUTF8() );
         
       case Wt::WValidator::InvalidEmpty:
         throw runtime_error( "" );
@@ -762,16 +779,8 @@ void UnitsConverterTool::convert()
     m_prevAnswer = std::move(ans);
   }catch( std::exception &e )
   {
-    string errmsg = e.what();
-    if( !errmsg.empty() )
-      errmsg = "Error: " + errmsg + ".<br />";
-    errmsg += "Allowed activity units: bq, becquerel, ci, curie, gray, Gy, rad, sievert, Sv, rem,"
-              " roentgen, m, meter, ft, inch, and in.<br />"
-              "Allowed (optional) prefixes: n, nano, u, \xc2\xb5, micro, m, milli,"
-              " k, killo, M, mega, G, Giga, T, and Tera";
- 
     m_output->setText( "" );
-    m_message->setText( WString::fromUTF8(errmsg) );
+    m_message->setText( WString::tr("uct-err-gen").arg(e.what()) );
     //m_message->addStyleClass("line-above");
     m_message->show();
   }//try / catch

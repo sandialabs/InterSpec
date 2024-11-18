@@ -41,6 +41,7 @@ namespace Wt
   class WCheckBox;
   class WLineEdit;
   class WPushButton;
+  class WSplitButton;
 }//namespace Wt
 
 class InterSpec;
@@ -154,8 +155,23 @@ public:
   /** Returns how many search energies are reasonably intended to be on peaks. */
   int numSearchEnergiesOnPeaks();
   
+  /** Returns how many peaks plausibly line up with a current reference line energy.
+   
+   @param require_peaks_with_no_id If true, only return count of peaks with no current nuclide ID
+   
+   Currently doesnt do anything fancy (like Rel Eff analysis, etc) to determine this, but just niavely
+   does stupid matching.
+   */
+  int numCurrentNuclideLinesOnPeaks( const bool require_peaks_with_no_id );
+  
   /** Assigns peaks that are reasonably near search energies, to the selected rows nuclide. */
-  void assignPeaksToSelectedNuclide();
+  void assignSearchedOnPeaksToSelectedNuclide();
+  
+  /** Assigns peaks near currently selected reference lines, to the current nuclide.
+   
+   @param require_no_peak_id If true, only consider peaks that dont currently have a nuclide/x-ray/reaction assigned.
+   */
+  void assignPeaksNearReferenceLinesToSelectedNuclide( const bool require_no_peak_id );
   
   /** Clears current reference lines, and selection in table. */
   void clearSelectionAndRefLines();
@@ -190,6 +206,12 @@ public:
    */
   std::shared_ptr<void> getDisableUndoRedoSentry();
   
+#if( InterSpec_PHONE_ROTATE_FOR_TABS )
+  void setResultTableColumnWidths( const bool narrow );
+  
+  /** Currently just repositions the results table, and adjusts its row sizes and visible columns. */
+  void setNarrowPhoneLayout( const bool narrow );
+#endif
 protected:
   virtual void render( Wt::WFlags<Wt::RenderFlag> flags );
 
@@ -202,11 +224,13 @@ protected:
   
   InterSpec *m_viewer;
   D3SpectrumDisplayDiv *m_chart;
+  Wt::WContainerWidget *m_searchConditionsColumn;
   Wt::WContainerWidget *m_searchEnergies;
+  Wt::WContainerWidget *m_assignBtnRow;
   Wt::WPushButton *m_clearRefLines;
   Wt::Signals::connection m_refLineUpdateConnection;
   Wt::Signals::connection m_refLineClearConnection;
-  Wt::WPushButton *m_assignPeakToSelected;
+  Wt::WSplitButton *m_assignPeakToSelected;
   int m_currentSearch;
   Wt::WText *m_searching;
   RowStretchTreeView *m_results;
@@ -220,6 +244,7 @@ protected:
   
   size_t m_nextSearchEnergy;
   double m_minBr, m_minHl;
+  
   
   /** A struct that represents the GUI state, using basic types.
    

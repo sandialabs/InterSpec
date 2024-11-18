@@ -66,20 +66,22 @@
 #include <Wt/WStandardItemModel>
 
 #include "SpecUtils/DateTime.h"
+#include "SpecUtils/StringAlgo.h"
+#include "SpecUtils/Filesystem.h"
+#include "SpecUtils/SpecUtilsAsync.h"
+#include "SpecUtils/EnergyCalibration.h"
+
+#include "InterSpec/AppUtils.h"
 #include "InterSpec/SpecMeas.h"
 #include "InterSpec/PopupDiv.h"
 #include "InterSpec/InterSpec.h"
-#include "SpecUtils/StringAlgo.h"
-#include "SpecUtils/Filesystem.h"
 #include "InterSpec/HelpSystem.h"
 #include "InterSpec/InterSpecApp.h"
 #include "InterSpec/WarningWidget.h"
 #include "InterSpec/SpecFileQuery.h"
 #include "InterSpec/PhysicalUnits.h"
-#include "SpecUtils/SpecUtilsAsync.h"
 #include "InterSpec/SpecMeasManager.h"
-
-#include "SpecUtils/EnergyCalibration.h"
+#include "InterSpec/UserPreferences.h"
 #include "InterSpec/RowStretchTreeView.h"
 #include "InterSpec/SpecFileQueryWidget.h"
 #include "InterSpec/DecayDataBaseServer.h"
@@ -93,11 +95,6 @@
 
 #if( BUILD_AS_ELECTRON_APP )
 #include "target/electron/ElectronUtils.h"
-#endif
-
-#if( defined(WIN32) )
-#include <shellapi.h>  //for ShellExecute
-#include <shlobj_core.h> //for ILCreateFromPath and SHOpenFolderAndSelectItems
 #endif
 
 #define INLINE_JAVASCRIPT(...) #__VA_ARGS__
@@ -1486,8 +1483,6 @@ void SpecFileQueryWidget::init()
   wApp->useStyleSheet( "InterSpec_resources/assets/js/QueryBuilder2.5.2/css/query-builder.default.min.css" );
   wApp->useStyleSheet( "InterSpec_resources/assets/js/QueryBuilder2.5.2/css/QueryBuilderFakeBootstrap.css" );
   
-  wApp->require( "InterSpec_resources/assets/js/moment-2.22.2/moment.min.js" );
-  
   wApp->require( "InterSpec_resources/assets/js/QueryBuilder2.5.2/js/query-builder.standalone.min.js" );
   wApp->require( "InterSpec_resources/assets/js/QueryBuilder2.5.2/i18n/query-builder.en.js" );
   
@@ -1509,12 +1504,12 @@ void SpecFileQueryWidget::init()
   {
     try
     {
-      dofilter = InterSpecUser::preferenceValue<bool>( "SpecFileQueryFilter", m_viewer );
-      docache = InterSpecUser::preferenceValue<bool>( "SpecFileQueryCacheParse", m_viewer );
-      dorecursive = InterSpecUser::preferenceValue<bool>( "SpecFileQueryRecursive", m_viewer );
-      maxsize = InterSpecUser::preferenceValue<int>( "SpecFileQueryMaxSize", m_viewer );
-      defpath = InterSpecUser::preferenceValue<string>( "SpecFileQueryPath", m_viewer );
-      instantToolTip = InterSpecUser::preferenceValue<bool>( "ShowTooltips", m_viewer );
+      dofilter = UserPreferences::preferenceValue<bool>( "SpecFileQueryFilter", m_viewer );
+      docache = UserPreferences::preferenceValue<bool>( "SpecFileQueryCacheParse", m_viewer );
+      dorecursive = UserPreferences::preferenceValue<bool>( "SpecFileQueryRecursive", m_viewer );
+      maxsize = UserPreferences::preferenceValue<int>( "SpecFileQueryMaxSize", m_viewer );
+      defpath = UserPreferences::preferenceValue<string>( "SpecFileQueryPath", m_viewer );
+      instantToolTip = UserPreferences::preferenceValue<bool>( "ShowTooltips", m_viewer );
 
       
       if( defpath == "None" )
@@ -1992,9 +1987,24 @@ std::string SpecFileQueryWidget::prepareEventXmlFilters()
     
         case EventXmlFilterInfo::InputType::Date:
         {
-          thisfilter += ",\n\ttype: 'date'";
-          thisfilter += ",\n\tvalidation: {format:'YYYY/MM/DD'}";
-          thisfilter += ",\n\tplaceholder: 'YYYY/MM/DD'";
+          // We could do:
+          //    thisfilter += ",\n\ttype: 'date'";
+          //    thisfilter += ",\n\tvalidation: {format:'YYYY/MM/DD'}";
+          // But this would require using moment.js, but since this is the only
+          //  place that uses that library, we'll just to the validation on the
+          //  server-side.  There is a client-side regex to validate below, that works,
+          //  but then this limits the formats the users can input, which maybe wouldnt
+          //  be a bad thing...
+          
+          thisfilter += ",\n\ttype: 'string'";
+          //thisfilter += ",\n\tvalidation:"
+          //"{format:/"
+          //  "^([2][0]\\d{2}\\/([0]\\d|[1][0-2])\\/([0-2]\\d|[3][0-1]))$|^"
+          //  "([2][0]\\d{2}\\/([0]\\d|[1][0-2])\\/([0-2]\\d|[3][0-1])(\\s([0-1]\\d|[2][0-3])\\:[0-5]\\d(\\:[0-5]\\d)?))?"
+          //"$/}";
+          thisfilter += ",\n\tplaceholder: 'YYYY/MM/DD HH:mm:ss'";
+          
+          break;
         }//
       }//switch( et.second.m_type )
     
@@ -2168,15 +2178,15 @@ void SpecFileQueryWidget::basePathChanged()
   bool prevrecursive = true, prevfilter = true, prevFilterUnique = true, prevcache = true;
   try
   {
-    prevmaxsize = InterSpecUser::preferenceValue<int>( "SpecFileQueryMaxSize", m_viewer );
-    prevcache = InterSpecUser::preferenceValue<bool>( "SpecFileQueryCacheParse", m_viewer );
-    prevfilter = InterSpecUser::preferenceValue<bool>( "SpecFileQueryFilter", m_viewer );
-    prevrecursive = InterSpecUser::preferenceValue<bool>( "SpecFileQueryRecursive", m_viewer );
-    prevFilterUnique = InterSpecUser::preferenceValue<bool>( "SpecFileQueryUnique", m_viewer );
+    prevmaxsize = UserPreferences::preferenceValue<int>( "SpecFileQueryMaxSize", m_viewer );
+    prevcache = UserPreferences::preferenceValue<bool>( "SpecFileQueryCacheParse", m_viewer );
+    prevfilter = UserPreferences::preferenceValue<bool>( "SpecFileQueryFilter", m_viewer );
+    prevrecursive = UserPreferences::preferenceValue<bool>( "SpecFileQueryRecursive", m_viewer );
+    prevFilterUnique = UserPreferences::preferenceValue<bool>( "SpecFileQueryUnique", m_viewer );
 #if( BUILD_AS_OSX_APP || BUILD_AS_ELECTRON_APP )
     prefpath = "";
 #else
-    prefpath = InterSpecUser::preferenceValue<string>( "SpecFileQueryPath", m_viewer );
+    prefpath = UserPreferences::preferenceValue<string>( "SpecFileQueryPath", m_viewer );
     if( prefpath == "None" )
       prefpath = "";
 #endif
@@ -2190,18 +2200,18 @@ void SpecFileQueryWidget::basePathChanged()
   try
   {
     if( prevrecursive != recursive )
-      InterSpecUser::setPreferenceValue<bool>( m_viewer->m_user, "SpecFileQueryRecursive", recursive, m_viewer );
+      UserPreferences::setPreferenceValue( "SpecFileQueryRecursive", recursive, m_viewer );
     if( prevcache != docache )
-      InterSpecUser::setPreferenceValue<bool>( m_viewer->m_user, "SpecFileQueryCacheParse", docache, m_viewer );
+      UserPreferences::setPreferenceValue( "SpecFileQueryCacheParse", docache, m_viewer );
     if( prevfilter != filter )
-      InterSpecUser::setPreferenceValue<bool>( m_viewer->m_user, "SpecFileQueryFilter", filter, m_viewer );
+      UserPreferences::setPreferenceValue( "SpecFileQueryFilter", filter, m_viewer );
     if( maxsize != prevmaxsize )
-      InterSpecUser::setPreferenceValue<int>( m_viewer->m_user, "SpecFileQueryFilter", maxsize, m_viewer );
+      UserPreferences::setPreferenceValue( "SpecFileQueryFilter", maxsize, m_viewer );
     if( filterUnique != prevFilterUnique )
-      InterSpecUser::setPreferenceValue<bool>( m_viewer->m_user, "SpecFileQueryUnique", filterUnique, m_viewer );
+      UserPreferences::setPreferenceValue( "SpecFileQueryUnique", filterUnique, m_viewer );
 #if( !BUILD_AS_OSX_APP && !BUILD_AS_ELECTRON_APP )
     if( prefpath != basepath )
-      InterSpecUser::setPreferenceValue<string>( m_viewer->m_user, "SpecFileQueryPath", basepath, m_viewer );
+      UserPreferences::setPreferenceValue( "SpecFileQueryPath", basepath, m_viewer );
 #endif
   }catch( ... )
   {
@@ -2281,7 +2291,11 @@ void SpecFileQueryWidget::updateNumberFiles( const string srcdir,
     const wstring wsrcdir = SpecUtils::convert_from_utf8_to_utf16( srcdir );
     boost::filesystem::recursive_directory_iterator diriter( wsrcdir, boost::filesystem::symlink_option::recurse );
 #else
+#if BOOST_VERSION >= 108400 && BOOST_FILESYSTEM_VERSION >= 3
+    boost::filesystem::recursive_directory_iterator diriter( srcdir, boost::filesystem::directory_options::follow_directory_symlink );
+#else
     boost::filesystem::recursive_directory_iterator diriter( srcdir, boost::filesystem::symlink_option::recurse );
+#endif
 #endif
     const boost::filesystem::recursive_directory_iterator dirend;
 
@@ -2303,7 +2317,11 @@ void SpecFileQueryWidget::updateNumberFiles( const string srcdir,
       if( !recursive && is_dir )
       {
         is_file = false; //JIC
+#if BOOST_VERSION >= 108400 && BOOST_FILESYSTEM_VERSION >= 3
+        diriter.disable_recursion_pending();
+#else
         diriter.no_push();  //Dont recurse down into directories if we arent doing a recursive search
+#endif
       }
 
       bool is_simlink_dir = false;
@@ -2324,7 +2342,13 @@ void SpecFileQueryWidget::updateNumberFiles( const string srcdir,
         resvedpath = boost::filesystem::canonical( resvedpath );
         auto pcanon = boost::filesystem::canonical( diriter->path().parent_path() );
         if( SpecUtils::starts_with( pcanon.string<string>(), resvedpath.string<string>().c_str() ) )
+        {
+#if BOOST_VERSION >= 108400 && BOOST_FILESYSTEM_VERSION >= 3
+          diriter.disable_recursion_pending();
+#else
           diriter.no_push();  //Dont recurse down into directories
+#endif
+        }
       }//if( is_simlink_dir && recursive )
 
 
@@ -2803,7 +2827,11 @@ void SpecFileQueryWidget::doSearch( const std::string basedir,
     const std::wstring wbasedir = SpecUtils::convert_from_utf8_to_utf16( basedir );
     boost::filesystem::recursive_directory_iterator diriter( wbasedir, boost::filesystem::symlink_option::recurse );
 #else
+#if BOOST_VERSION >= 108400 && BOOST_FILESYSTEM_VERSION >= 3
+    boost::filesystem::recursive_directory_iterator diriter( basedir, boost::filesystem::directory_options::follow_directory_symlink );
+#else
     boost::filesystem::recursive_directory_iterator diriter( basedir, boost::filesystem::symlink_option::recurse );
+#endif
 #endif
     const boost::filesystem::recursive_directory_iterator dirend;
     
@@ -2825,7 +2853,11 @@ void SpecFileQueryWidget::doSearch( const std::string basedir,
       if( !recursive && is_dir )
       {
         is_file = false; //JIC
+#if BOOST_VERSION >= 108400 && BOOST_FILESYSTEM_VERSION >= 3
+        diriter.disable_recursion_pending();
+#else
         diriter.no_push();  //Dont recurse down into directories if we arent doing a recursive search
+#endif
       }
       
       bool is_simlink_dir = false;
@@ -2846,7 +2878,13 @@ void SpecFileQueryWidget::doSearch( const std::string basedir,
         resvedpath = boost::filesystem::canonical( resvedpath );
         auto pcanon = boost::filesystem::canonical( diriter->path().parent_path() );
         if( SpecUtils::starts_with( pcanon.string<string>(), resvedpath.string<string>().c_str() ) )
+        {
+#if BOOST_VERSION >= 108400 && BOOST_FILESYSTEM_VERSION >= 3
+          diriter.disable_recursion_pending();
+#else
           diriter.no_push();  //Dont recurse down into directories
+#endif
+        }
       }//if( is_simlink_dir && recursive )
       
       
@@ -2981,47 +3019,8 @@ void SpecFileQueryWidget::openSelectedFilesParentDir()
   // SpecFileQuery::Filename, with role=UserRole, returns full-path (DisplayRole returns just the name)
   const boost::any fn_any = m_resultmodel->data( fn_index, Wt::UserRole );
   const std::string filepath = asString(fn_any).toUTF8();
-  const string parentdir = SpecUtils::parent_path(filepath);
-  if( !SpecUtils::is_directory(parentdir) )
-    return;
   
-//#if( BUILD_AS_ELECTRON_APP )
-  //  TODO: we could (should?) implement this as an electron specific function in InterSpecAddOn.cpp/.h or ElectronUtils.h/.cpp; either as dedicated function, or via InterSpecAddOn::send_nodejs_message - probably dedicated function would be best
-  // In node.js, we can do this via:
-  // const {shell} = require('electron'); shell.showItemInFolder('" + filename + "');" );
-//#endif
-  
-#if( defined(WIN32) )
-  //For windows need to escape '\'.
-  //SpecUtils::ireplace_all( filename, "\\", "\\\\" );
-  
-  // For similar implementation, see: https://chromium.googlesource.com/chromium/src/+/refs/heads/main/chrome/browser/platform_util_win.cc
-  const wstring filepathw = SpecUtils::convert_from_utf8_to_utf16(filepath);
-  PIDLIST_ABSOLUTE item_list = ILCreateFromPathW(filepathw.c_str());
-  if( item_list )
-  {
-    //Do we need to call: CoInitializeEx ?
-    
-    HRESULT hr = SHOpenFolderAndSelectItems( item_list,0 , 0, 0 );
-    if( hr == ERROR_FILE_NOT_FOUND )
-    {
-      const wstring dirw = SpecUtils::convert_from_utf8_to_utf16(parentdir);
-      ShellExecuteW(NULL, L"open", dirw.c_str(), NULL, NULL, SW_SHOW);
-    }
-    
-    ILFree( item_list );
-  }//if( item_list )
-#elif( __APPLE__ )
-  // Doesnt highlight the specific file
-  //  See https://chromium.googlesource.com/chromium/src/+/refs/heads/main/chrome/browser/platform_util_mac.mm for how this could/should be implemented, at least for BUILD_AS_OSX_APP
-  const string command = "open '" + parentdir + "'";
-  system( command.c_str() );
-#else
-  // See https://chromium.googlesource.com/chromium/src/+/refs/heads/main/chrome/browser/platform_util_linux.cc
-  #warning "xdg-open for parentdir has not been tested!"
-  const string command = "xdg-open '" + parentdir + "'";
-  system( command.c_str() );
-#endif
+  AppUtils::showFileInOsFileBrowser(filepath);
 }//void SpecFileQueryWidget::openSelectedFilesParentDir()
 #endif  //#if( BUILD_AS_ELECTRON_APP || BUILD_AS_OSX_APP || BUILD_AS_LOCAL_SERVER )
 

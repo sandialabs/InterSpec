@@ -178,7 +178,8 @@ public:
   //  the user.  If false, the file type is not known.
   //  Meant to be called from within the event loop.
   bool handleNonSpectrumFile( const std::string &displayName,
-                              const std::string &fileLocation );
+                              const std::string &fileLocation,
+                              SpecUtils::SpectrumType type );
   
   /** Handles parsing multiple DRF CSV/TSV files when dropped onto the app.
    
@@ -195,7 +196,16 @@ public:
   bool handleMultipleDrfCsv( std::istream &input,
                              const std::string &displayName,
                              const std::string &fileLocation );
-  
+ 
+  /** Reads in GammaQuant CSV of detector efficiencies.
+   
+   The first cell must be "Detector ID", then rows through "Coefficient h".
+   Each column is a different detector, with the first column being the labels ("Detector ID", "Calibration Geometry",
+   "Comments", ..., "Coefficient h").
+   */
+  bool handleGammaQuantDrfCsv( std::istream &input,
+                             const std::string &displayName,
+                             const std::string &fileLocation );
   
   /** Reads a CALp file from input stream and then either applies the CALp to current spectra, or prompts the user how to apply it.
    Function may return asynchronously to the CALp being applied, as the application may prompt user for options/input.
@@ -221,15 +231,37 @@ public:
   /** Handles the Shielding/Source fit XML file */
   bool handleShieldingSourceFile( std::istream &input, SimpleDialog *dialog );
   
+  /** Handles Source.lib files dropped onto the app. */
+  bool handleSourceLibFile( std::istream &input, SimpleDialog *dialog );
+  
   /** Handles the user dropping a .ECC file produced from ISOCS. */
   bool handleEccFile( std::istream &input, SimpleDialog *dialog );
   
+  /** Some input files contain duplicate data - we will ask the user how they want to handle
+   this, first handling "Derived Data", then "Multiple Energy Calibration Types", then
+   "Multiple Virtual Detectors"
+   */
   enum class VariantChecksToDo
   {
+    /** No checks for things like multiple energy cals, derived data, or virtual detectors. */
     None = 0,
-    MultipleEnergyCal = 1,
-    DerivedDataAndEnergy = 2
-  };
+    
+    /** RSI systems may have multiple Virtual Detectors (ex "VD1", "VD2", etc) defined, that may be sums of
+     multiple detection elements, or not, or be overlapping, or whatever - so lets alert the user, and let them
+     choose what to do.
+     */
+    MultiVirtualDets = 1,
+    
+    /** Some spectrum files will include both linear and compressed spectra, or multiple energy ranges of
+     the same data.  The user may want to only load one of these, so they arent seeing duplicate data.
+     */
+    MultiEnergyCalsAndMultiVirtualDets = 2,
+    
+    /** For some files, the user may just want to see the derived data.
+     Or perhaps just the raw data, without the essentially duplicate derived data.
+     */
+    DerivedDataAndMultiEnergyAndMultipleVirtualDets = 3
+  };//enum class VariantChecksToDo
   
   // displayFile(...) displays the file passed in as specified type, if it can.
   //  --if kForground is specified and the measurment contains a background
@@ -331,8 +363,6 @@ public:
                                 std::shared_ptr< std::mutex > mutex,
                                 std::shared_ptr<bool> destructed );
   
-  void showDatabaseStatesHavingSpectrumFile( std::shared_ptr<SpectraFileHeader> header );
-  
   
   void showPreviousSpecFileUsesDialog( std::shared_ptr<SpectraFileHeader> header,
                                    const SpecUtils::SpectrumType type,
@@ -342,27 +372,13 @@ public:
   
   
   
-  void userCanceledResumeFromPreviousOpened( AuxWindow *window,
-                                 std::shared_ptr<SpectraFileHeader> header );
+  void userCanceledResumeFromPreviousOpened( std::shared_ptr<SpectraFileHeader> header );
   
   //saveToDatabase(...): saves the SpecMeas to the database in another thread;
   //  must be called from a thread where WApplication::instance() is available
   //  to ensure thread safety.
   void saveToDatabase( std::shared_ptr<const SpecMeas> meas ) const;
-  
-  void storeSpectraInDb();
-  void finishStoreAsSpectrumInDb( Wt::WLineEdit *name,
-                                  Wt::WTextArea *description,
-                                  std::shared_ptr<SpecMeas> meas,
-                                  AuxWindow *window );
-  void storeSpectraSnapshotInDb( const std::string name = "" );
-  void finishSaveSnapshotInDb(
-                      const std::vector< std::shared_ptr<SpecMeas> > specs,
-                      const std::vector< Wt::Dbo::ptr<UserFileInDb> > dbs,
-                      const std::vector< Wt::WLineEdit * > edits,
-                      const std::vector< Wt::WCheckBox * > cbs,
-                               AuxWindow *window );
-  void startStoreSpectraAsInDb();
+
   
   void browsePrevSpectraAndStatesDb();
 #endif
@@ -437,7 +453,7 @@ protected:
                                               const SpecUtils::SpectrumType type,
                                               const bool checkIfPreviouslyOpened,
                                               const bool doPreviousEnergyRangeCheck,
-                                              const VariantChecksToDo viewingChecks );
+                                              VariantChecksToDo viewingChecks );
 
   void selectEnergyBinning( const std::string binning,
                             std::shared_ptr<SpectraFileHeader> header,
@@ -454,6 +470,16 @@ protected:
                            const bool checkIfPreviouslyOpened,
                            const bool doPreviousEnergyRangeCheck );
   
+  void selectVirtualDetectorChoice( const std::set<std::string> tokeep,
+                           std::shared_ptr<SpectraFileHeader> header,
+                           std::shared_ptr<SpecMeas> meas,
+                           const SpecUtils::SpectrumType type,
+                           const bool checkIfPreviouslyOpened,
+                           const bool doPreviousEnergyRangeCheck );
+  
+  void handleCancelPreviousStatesDialog( AuxWindow *dialog );
+  void handleClosePreviousStatesDialogAfterSelect( AuxWindow *dialog );
+  
   /** Deletes the dialog, but only if the passed in dialog is the same as `m_processingUploadDialog` */
   void checkCloseUploadDialog( SimpleDialog *dialog, Wt::WApplication *app );
   
@@ -461,7 +487,7 @@ private:
   Wt::WContainerWidget *createButtonBar();
   void deleteSpectrumManager();
   Wt::WContainerWidget *createTreeViewDiv();
-
+  void closeNonSpecFileDialog();
   
 protected:
   AuxWindow *m_spectrumManagerWindow;
@@ -499,6 +525,9 @@ protected:
   std::shared_ptr<std::mutex> m_destructMutex;
   std::shared_ptr<bool> m_destructed;
   
+  /** Dialog shown when user loads a file that has been previously either explicitly saved state, or automatically saved. */
+  AuxWindow *m_previousStatesDialog;
+  
   /** Dialog created when a file is uploading, from `handleDataRecievedStatus()`, letting the user know that something is going on.
    On the client-side there is an upload status that is shown, but for large files the upload status in JS can be significantly off from what
    the server is seeing, leading to a potentially long gap between the client-side status, and when the file actually finishes uploading and
@@ -515,6 +544,10 @@ protected:
    */
   std::unique_ptr<boost::asio::deadline_timer> m_processingUploadTimer;
 
+  /** Dialog created when a non-spectrum file is dropped on the app. */
+  SimpleDialog *m_nonSpecFileDialog;
+  
+  
 #if( !defined(MAX_SPECTRUM_MEMMORY_SIZE_MB) ||  MAX_SPECTRUM_MEMMORY_SIZE_MB < 0 )
   static const size_t sm_maxTempCacheSize = 0;
 #else

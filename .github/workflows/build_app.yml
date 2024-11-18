@@ -9,7 +9,7 @@ concurrency: ci-${{ github.ref }}
 
 jobs:
   
-  build-app:
+  build-win:
     name: ${{ matrix.config.name }}
     runs-on: ${{ matrix.config.os }}
     strategy:
@@ -133,21 +133,29 @@ jobs:
           ref: bleeding-edge
           description: Latest successful automated build
 
-      - name: Create Release
-        uses: ncipollo/release-action@v1.13.0
+      - name: Upload Windows artifact
+        uses: actions/upload-artifact@v4
+        id: artifact-windows-upload-step
         with:
-          artifacts: '${{runner.temp}}\build_${{ runner.os }}_wx_app\InterSpec_app_${{ runner.os }}_WebView_latest*.zip'
-          draft: false
-          prerelease: true
-          body: "An automated, and untested build of the latest code pushed to the repository.  Requires Windows 10, or may work on Windows 7 with the Edge browser runtime installed."
-          allowUpdates: true
-          generateReleaseNotes: false
-          name: "Development Build"
-          removeArtifacts: true
-          replacesArtifacts: true
-          tag: 'bleeding-edge'
-          commit: ${{ github.sha }}
-          makeLatest: true
+          name: windows-build
+          overwrite: true
+          path: '${{runner.temp}}\build_${{ runner.os }}_wx_app\InterSpec_app_${{ runner.os }}_WebView_latest*.zip'
+
+#      - name: Create Release
+#        uses: ncipollo/release-action@v1.13.0
+#        with:
+#          artifacts: '${{runner.temp}}\build_${{ runner.os }}_wx_app\InterSpec_app_${{ runner.os }}_WebView_latest*.zip'
+#          draft: false
+#          prerelease: true
+#          body: "An automated, and untested build of the latest code pushed to the repository.  Requires Windows 10, or may work on Windows 7 with the Edge browser runtime installed."
+#          allowUpdates: true
+#          generateReleaseNotes: false
+#          name: "Development Build"
+#          removeArtifacts: true
+#          replacesArtifacts: true
+#          tag: 'bleeding-edge'
+#          commit: ${{ github.sha }}
+#          makeLatest: true
 
 
       - name: "Cleanup and finish"
@@ -156,4 +164,122 @@ jobs:
           echo "Job status is ${{ job.status }}."
 
 
+  build-linux:
+    runs-on: ubuntu-latest # Use the latest Ubuntu environment
 
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+        with:
+          path: ${{ github.workspace }}/InterSpec_code
+          submodules: true # Recursively checkout submodules
+
+      - name: Cache npm dependencies
+        uses: actions/cache@v3
+        with:
+          path: ${{runner.temp}}/build_linux_working_dir
+          key: ${{ runner.os }}-build-npm-${{ hashFiles('target/electron/package.json') }}
+          restore-keys: |
+            ${{ runner.os }}-build-npm-
+
+      - name: Cache c++ dependencies
+        uses: actions/cache@v3
+        with:
+          path: ${{runner.temp}}/build_linux_electron
+          key: ${{ runner.os }}-build-cpp-${{ hashFiles('cmake/FetchInterSpecDeps.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-build-cpp-
+      
+      - name: Make build directories
+        shell: bash
+        working-directory: ${{runner.temp}}
+        run: |
+          mkdir -p build_linux_electron
+          mkdir -p build_linux_working_dir
+
+      - name: Configure and build in Docker
+        uses: addnab/docker-run-action@v3
+        env:
+          LEAFLET_KEY: ${{ secrets.LEAFLET_KEY }}
+        with:
+          image: quay.io/pypa/manylinux_2_28_x86_64
+          shell: bash
+          options: --name manylinux-container -v ${{ github.workspace }}/InterSpec_code:/interspec -v ${{runner.temp}}/build_linux_electron/:/build_app -v ${{runner.temp}}/build_linux_working_dir:/build_working_dir -e LEAFLET_KEY=${{ secrets.LEAFLET_KEY }}
+          run: |
+            echo "Running Script from within docker"
+            /interspec/target/electron/build_linux_app_from_docker.sh /interspec /build_app /build_working_dir
+      
+      - name: Upload Linux artifact
+        uses: actions/upload-artifact@v4
+        id: artifact-linux-upload-step
+        with:
+          name: linux-build
+          overwrite: true
+          path: ${{runner.temp}}/build_linux_working_dir/InterSpec_app_Linux_Electron_latest_*.zip
+
+  release:
+    runs-on: ubuntu-latest
+    needs: [build-linux, build-win]
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Download Build Artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: '*-build'
+          path: './artifacts'
+          merge-multiple: true
+
+      - name: Display structure of downloaded files
+        run: ls -R
+
+      - name: Get Release ID
+        id: get_release
+        run: |
+          RELEASE_NAME="Development Build"
+          GITHUB_TOKEN=${{ secrets.GITHUB_TOKEN }}
+          RELEASE_ID=$(curl -s -H "Authorization: token $GITHUB_TOKEN" \
+            "https://api.github.com/repos/${{ github.repository }}/releases" | \
+            jq -r ".[] | select(.name == \"$RELEASE_NAME\") | .id")
+          echo "release_id=$RELEASE_ID" >> $GITHUB_ENV
+
+      - name: Delete Previous Assets
+        run: |
+          GITHUB_TOKEN=${{ secrets.GITHUB_TOKEN }}
+          RELEASE_ID=${{ env.release_id }}
+          PATTERN="InterSpec_app*"
+
+          # Get all assets for the release
+          ASSETS=$(curl -s -H "Authorization: token $GITHUB_TOKEN" \
+            "https://api.github.com/repos/${{ github.repository }}/releases/$RELEASE_ID/assets")
+
+          # Loop through assets and delete those matching the pattern
+          echo "$ASSETS" | jq -c '.[]' | while read -r asset; do
+            ASSET_NAME=$(echo "$asset" | jq -r '.name')
+            ASSET_ID=$(echo "$asset" | jq -r '.id')
+
+            # Check if the asset name matches the pattern
+            if [[ "$ASSET_NAME" == $PATTERN ]]; then
+              echo "Deleting asset: $ASSET_NAME"
+              curl -X DELETE -H "Authorization: token $GITHUB_TOKEN" \
+                "https://api.github.com/repos/${{ github.repository }}/releases/assets/$ASSET_ID"
+            fi
+          done
+
+      - name: Create Release
+        id: create_release
+        uses: softprops/action-gh-release@v2
+        with:
+          fail_on_unmatched_files: true
+          tag_name: "bleeding-edge"
+          release_name: "Development Build"
+          body: "An automated, and untested build of the latest code pushed to the repository.<br />Windows version requires Windows 10 or 11, but may work on Windows 7 with the Edge browser runtime installed.<br />Linux version requires `glibc >=2.28` based distro (e.g., Ubuntu 21.04+, RHEL 9+, Debian 11+, Fedora 34+)."
+          draft: false
+          generate_release_notes: false
+          prerelease: true
+          make_latest: true
+          files: "./artifacts/**"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

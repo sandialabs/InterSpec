@@ -46,6 +46,28 @@ DecayChainChart = function(elem, options) {
   if( (typeof this.options.backgroundColor) !== 'string' ) this.options.backgroundColor = "rgba(0,0,0,0)";
   if( (typeof this.options.linkColor) !== 'string' ) this.options.linkColor = "blue";
   
+  if( (typeof this.options.xAxisTitle) !== 'string' ) 
+    this.options.xAxisTitle = "Decreasing Atomic Mass";
+  if( (typeof this.options.yAxisTitle) !== 'string' ) 
+    this.options.yAxisTitle = "Increasing Atomic Number";
+  
+  if( (typeof this.options.clickNucTxt) !== 'string' ) 
+    this.options.clickNucTxt = "Click nuclide for more information.";
+  if( (typeof this.options.clickNucMoreInfoTxt1) !== 'string' )
+    this.options.clickNucMoreInfoTxt1 = "Double-click nuclide for particles it gives off.";
+  if( (typeof this.options.clickNucMoreInfoTxt2) !== 'string' )
+    this.options.clickNucMoreInfoTxt2 = "Click a different source nuclide above to";
+  if( (typeof this.options.clickNucMoreInfoTxt3) !== 'string' )
+    this.options.clickNucMoreInfoTxt3 = "change displayed decay chain.";
+  
+  if( (typeof this.options.clickNucMblTxt) !== 'string' ) 
+    this.options.clickNucMblTxt = "Tap nuclide for more information.";
+  if( (typeof this.options.clickNucMblMoreInfoTxt1) !== 'string' ) 
+    this.options.clickNucMblMoreInfoTxt1 = "Touch nuclide for 1 second for particles it gives off.";
+  if( (typeof this.options.clickNucMblMoreInfoTxt2) !== 'string' ) 
+    this.options.clickNucMblMoreInfoTxt2 = "Click a different source nuclide above to";
+  if( (typeof this.options.clickNucMblMoreInfoTxt3) !== 'string' ) 
+    this.options.clickNucMblMoreInfoTxt3 = "change displayed decay chain.";
   
   this.svg = d3.select(this.area).append("svg");
   
@@ -68,8 +90,8 @@ DecayChainChart = function(elem, options) {
   .attr("x", 0)
   .attr("y", 0);
 
-  const xaxislabel = '<tspan dy="-0.45em">Decreasing Atomic Mass</tspan>';
-  const yaxislabel = '<tspan dy="1.0em">Increasing Atomic Number</tspan>';
+  const xaxislabel = '<tspan dy="-0.45em">' + this.options.xAxisTitle + '</tspan>';
+  const yaxislabel = '<tspan dy="1.0em">' + this.options.yAxisTitle + '</tspan>';
   self.xaxistxt = self.xaxis.append("text")
     .html(xaxislabel)
     .attr("fill",this.options.textColor);
@@ -239,18 +261,18 @@ DecayChainChart.prototype.setDecayData = function( data, decayFrom ){
   }else if( this.options.isMobile )
   {
     this.instructions.html(
-      '<tspan x="0">Tap nuclide for more information.</tspan>'
-      + (decayFrom ? '<tspan x="0" dy="1em">Touch nuclide for 1 second for particles it gives off.</tspan>'
-      + '<tspan x="0" dy="1em">Click a different source nuclide above to</tspan>'
-      + '<tspan x="0" dy="1em">change displayed decay chain.</tspan>': '')
+      '<tspan x="0">' + this.options.clickNucMblTxt + '</tspan>'
+      + (decayFrom ? '<tspan x="0" dy="1em">' + this.options.clickNucMblMoreInfoTxt1 + '</tspan>'
+      + '<tspan x="0" dy="1em">' + this.options.clickNucMblMoreInfoTxt2 + '</tspan>'
+      + '<tspan x="0" dy="1em">' + this.options.clickNucMblMoreInfoTxt3 + '</tspan>': '')
     );
   }else
   {
     this.instructions.html(
-      '<tspan x="0" dy="1em">Click nuclide for more information.</tspan>'
-      + (decayFrom ? '<tspan x="0" dy="1em">Double-click nuclide for particles it gives off.</tspan>'
-      + '<tspan x="0" dy="1em">Click a different source nuclide above to</tspan>'
-      + '<tspan x="0" dy="1em">change displayed decay chain.</tspan>': '')
+      '<tspan x="0" dy="1em">' + this.options.clickNucTxt + '</tspan>'
+      + (decayFrom ? '<tspan x="0" dy="1em">' + this.options.clickNucMoreInfoTxt1 + '</tspan>'
+      + '<tspan x="0" dy="1em">' + this.options.clickNucMoreInfoTxt2 + '</tspan>'
+      + '<tspan x="0" dy="1em">' + this.options.clickNucMoreInfoTxt3 + '</tspan>': '')
     );
   }//if( no data ) / else mobile / else
   

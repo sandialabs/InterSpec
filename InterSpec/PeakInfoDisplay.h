@@ -37,6 +37,7 @@ class D3SpectrumDisplayDiv;
 namespace Wt
 {
   class WImage;
+  class WLabel;
   class WWidget;
   class WMenuItem;
   class WTabWidget;
@@ -61,6 +62,11 @@ public:
   
   void handleChartLeftClick( const double energy );
   
+#if( InterSpec_PHONE_ROTATE_FOR_TABS )
+  /** Currently just makes the buttons at the bottom be minimal. */
+  void setNarrowPhoneLayout( const bool narrow );
+#endif
+  
 protected:
   //init() must be called exactly once
   void init();
@@ -74,6 +80,12 @@ protected:
   void removeAllPeaks();
   void assignNuclidesFromRefLines();
   
+  /** Copies the current peak CSV data to `$(this).data({'CsvFullData', 'CsvNoHeaderData', 'CsvCompactData'})`
+   Called menu copy button is clicked, and copy options menu shown.
+   */
+  void copyCsvPeakDataToClient();
+  /** Removes the data from the JS; called when copy menu is hidden. */
+  void removeCsvPeakDatafromClient();
   
 protected:
   PeakModel *m_model;
@@ -91,6 +103,10 @@ protected:
   Wt::WInteractWidget *m_deletePeak;
   
   Wt::WPushButton *m_searchForPeaks;
+  
+  Wt::WPushButton *m_clearPeaksButton;
+  Wt::WPushButton *m_nucFromRefButton;
+  Wt::WLabel *m_peakAddRemoveLabel;
 };//class PeakInfoDisplay
 
 #endif // #ifndef PeakInfoDisplay_h

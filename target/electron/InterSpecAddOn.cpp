@@ -38,6 +38,14 @@
 
 #include "target/electron/ElectronUtils.h"
 
+#if( USE_BATCH_TOOLS )
+#include "SpecUtils/StringAlgo.h"
+#include "SpecUtils/Filesystem.h"
+
+#include "InterSpec/InterSpec.h"
+#include "InterSpec/BatchCommandLine.h"
+#endif
+
 //A good, simple, N-API tutorial is at:
 //  https://blog.atulr.com/node-addon-guide/
 
@@ -517,6 +525,96 @@ namespace InterSpecAddOn
     return Napi::Boolean::New( env, success );
   }//void sendMessageToRenderer( const Napi::CallbackInfo &info )
 
+#if( USE_BATCH_TOOLS )
+  Napi::Number runBatchAnalysis( const Napi::CallbackInfo &info )
+  {
+    Napi::Env env = info.Env();
+
+
+    if( info.Length() != 1 || !info[0].IsArray() )
+    {
+      Napi::TypeError::New(env, "runBatchAnalysis: Expected one array of strings").ThrowAsJavaScriptException();
+      return Napi::Number();
+    }
+
+    Napi::Array jsArray = info[0].As<Napi::Array>();
+    const uint32_t numargs = jsArray.Length(); 
+    std::vector<std::string> str_args( numargs );
+    std::vector<char *> str_args_ptrs( numargs, nullptr );
+    for( uint32_t i = 0; i < numargs; i++ ) 
+    {
+      Napi::Value element = jsArray.Get(i);
+
+      // Check if the element is a string
+      if( !element.IsString() ) 
+      {
+        Napi::TypeError::New(env, "Array elements must be strings").ThrowAsJavaScriptException();
+        return Napi::Number();
+      }//if( !element.IsString() )
+
+      str_args[i] = element.ToString();
+      if( str_args[i].empty() )
+        str_args[i] = " ";
+      str_args_ptrs[i] = &(str_args[i][0]);
+
+
+      auto checkarg = [&str_args,i,numargs]( const std::string &teststr ) -> std::string {
+
+        if( !SpecUtils::istarts_with(str_args[i], teststr) )
+          return "";
+        std::string docroot;
+        if( (str_args[i].length() > (teststr.size()+1)) && (str_args[i][teststr.size()] == '=') )
+          docroot = str_args[i].substr(teststr.size() + 1);
+        else if( (i+1) < numargs )
+          docroot = str_args[i+1];
+        else 
+          return "";
+
+        if( docroot.length() && ((docroot.front()=='\"') || (docroot.front()=='\'')) )
+          docroot = docroot.substr(1);
+        if( docroot.length() && ((docroot.back()=='\"') || (docroot.back()=='\'')) )
+          docroot = docroot.substr(0, docroot.size() - 1);
+        return docroot;
+      };//checkarg lambda
+
+      // TODO: this setting directories should either be brought out to node.js stuff, or integrated into BatchCommandLine::run_batch_command(...)
+      const std::string docroot = checkarg( "--docroot" );
+      const std::string userdatadir = checkarg( "--userdatadir" );
+
+      if( !docroot.empty() )
+      {
+        const std::string datadir = SpecUtils::append_path( docroot, "data" );
+
+        try
+        {
+          InterSpec::setStaticDataDirectory( datadir );
+        }catch( std::exception &e )
+        {
+          std::cerr << "Failed to set static data directory: " << e.what() << std::endl;
+          Napi::Number::New( env, -7 );
+        }
+      }//if( !docroot.empty() )
+
+      if( !userdatadir.empty() )
+      {
+        try
+        {
+          InterSpec::setWritableDataDirectory( userdatadir );
+        }catch( std::exception &e )
+        {
+          std::cerr << "Warning: Failed to set user data directory: " << e.what() << std::endl
+          << "Use the '--userdatadir' option to set this to the same one the InterSpec GUI app"
+          << " uses, if you would like to share detectors, or other files." << std::endl;
+        //return -8;
+        }
+      }//if( !userdatadir.empty() )
+    }//for( uint32_t i = 0; i < numargs; i++ ) 
+
+    const int rcode = BatchCommandLine::run_batch_command( static_cast<int>(numargs), &(str_args_ptrs[0]) );
+
+    return Napi::Number::New( env, rcode );
+  }//Napi::Number runBatchAnalysis( const Napi::CallbackInfo &info )
+#endif
 
 bool browse_for_directory( const std::string &session_token,
                            const std::string &window_title,
@@ -601,6 +699,10 @@ Napi::Object InitAll(Napi::Env env, Napi::Object exports) {
   
   exports.Set( "sendMessageToRenderer", Napi::Function::New(env, InterSpecAddOn::sendMessageToRenderer));
   
+#if( USE_BATCH_TOOLS )
+  exports.Set( "runBatchAnalysis", Napi::Function::New(env, InterSpecAddOn::runBatchAnalysis));
+#endif
+
   return exports;
 }
 

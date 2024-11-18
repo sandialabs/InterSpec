@@ -56,6 +56,7 @@
 #include "InterSpec/PeakDef.h"
 #include "InterSpec/PeakFit.h"
 #include "InterSpec/SpecMeas.h"
+#include "InterSpec/InterSpec.h"
 #include "InterSpec/PeakModel.h"
 #include "InterSpec/InterSpecApp.h"
 #include "InterSpec/PhysicalUnits.h"
@@ -63,7 +64,6 @@
 #include "InterSpec/PeakFitChi2Fcn.h"
 #include "InterSpec/PeakInfoDisplay.h"  //Only for ALLOW_PEAK_COLOR_DELEGATE
 #include "InterSpec/UndoRedoManager.h"
-#include "InterSpec/SpectrumDataModel.h"
 #include "InterSpec/DecayDataBaseServer.h"
 
 
@@ -424,14 +424,9 @@ bool PeakModel::recommendUseForFit( const SandiaDecay::Nuclide *nuc,
 
 bool PeakModel::recommendUseForManualRelEff( const SandiaDecay::Nuclide *n, const float energy )
 {
-  if( !n || (n->atomicNumber != 92) )
+  // We currently only have customized recommendations for U, Pu, and Am
+  if( !n || ((n->atomicNumber != 92) && (n->atomicNumber != 94) && (n->atomicNumber != 95)) )
     return (energy > 90.0f);
-  
-  // Recommended values for uranium taken from chapter 14 of FRMAC Gamma Spectroscopist Knowledge Guide
-  const float u232_energies[] = { 238.625f, 583.187f, 727.3f, 860.56f };
-  const float u234_energies[] = { 120.905f };
-  const float u235_energies[] = { 143.76f, 163.36f, 185.715f, 202.11f, 205.311f, 221.38f, 246.84f, 345.9f };
-  const float u238_energies[] = { 258.26f, 569.3173913f, 742.83f, 766.4f, 880.47f, 883.24f, 945.95f, 1001.03f };
   
   const auto use_gamma = [energy]( const float * const start, const float * const end ) -> bool {
     for( auto iter = start; iter != end; ++iter )
@@ -443,16 +438,62 @@ bool PeakModel::recommendUseForManualRelEff( const SandiaDecay::Nuclide *n, cons
   };// use_gamma lamda
   
   
-  switch( n->massNumber )
+  if( n->atomicNumber == 92 )
   {
-    case 232: return use_gamma( begin(u232_energies), end(u232_energies) );
-    case 234: return use_gamma( begin(u234_energies), end(u234_energies) );
-    case 235: return use_gamma( begin(u235_energies), end(u235_energies) );
-    case 238: return use_gamma( begin(u238_energies), end(u238_energies) );
-    default:
-      break;
-  }//switch( n->massNumber )
+    // Recommended values for uranium taken from chapter 14 of FRMAC Gamma Spectroscopist Knowledge Guide
+    const float u232_energies[] = { 238.625f, 583.187f, 727.3f, 860.56f };
+    const float u234_energies[] = { 120.905f };
+    const float u235_energies[] = { 143.76f, 163.36f, 185.715f, 202.11f, 205.311f, 221.38f, 246.84f, 345.9f };
+    const float u238_energies[] = { 258.26f, 569.3173913f, 742.83f, 766.4f, 880.47f, 883.24f, 945.95f, 1001.03f };
+    
+    switch( n->massNumber )
+    {
+      case 232: return use_gamma( begin(u232_energies), end(u232_energies) );
+      case 234: return use_gamma( begin(u234_energies), end(u234_energies) );
+      case 235: return use_gamma( begin(u235_energies), end(u235_energies) );
+      case 238: return use_gamma( begin(u238_energies), end(u238_energies) );
+      default:
+        break;
+    }//switch( n->massNumber )
+  }//if( Uranium )
   
+  
+  if( n->atomicNumber == 94 )
+  {
+    // Recommended value taken from FRAM - see LA-UR-20-21287 Duc T. Vo, and Thomas E. Sampson.
+    //  https://www.osti.gov/servlets/purl/1599022
+    const float pu238_energies[] = { 152.72 };
+    const float pu239_energies[] = { 129.3, 144.2, 161.45, 203.55, 255.38, 345.01, 375.05, 413.71, 451.48, 645.9, 658.86 };
+    const float pu240_energies[] = { 160.31 };
+    const float pu241_energies[] = { 146.55, 164.61, 208, 267.54, 619.01, 722.01 };
+    
+    switch( n->massNumber )
+    {
+      case 238: return use_gamma( begin(pu238_energies), end(pu238_energies) );
+      case 239: return use_gamma( begin(pu239_energies), end(pu239_energies) );
+      case 240: return use_gamma( begin(pu240_energies), end(pu240_energies) );
+      case 241: return use_gamma( begin(pu241_energies), end(pu241_energies) );
+      default:
+        break;
+    }//switch( n->massNumber )
+  }//if( Plutonium )
+  
+  
+  if( n->atomicNumber == 95 )
+  {
+    // Recommended value taken from FRAM - see LA-UR-20-21287 Duc T. Vo, and Thomas E. Sampson.
+    //  https://www.osti.gov/servlets/purl/1599022
+    const float am241_energies[] = { 125.3, 335.37, 368.65 };
+    
+    switch( n->massNumber )
+    {
+      case 241: return use_gamma( begin(am241_energies), end(am241_energies) );
+      default:
+        break;
+    }//switch( n->massNumber )
+  }//if( Americium )
+  
+  // Some other U/Pu/Am isotope - use it if its above the x-ray absorption edge.
   return (energy > 122.0f);
 }//bool recommendUseForManualRelEff( const SandiaDecay::Nuclide *n, const float energy )
 
@@ -574,6 +615,10 @@ std::vector<PeakDef> PeakModel::csv_to_candidate_fit_peaks(
   while( SpecUtils::safe_get_line(csv, line, 2048) )
   {
     SpecUtils::trim(line);
+    
+    if( SpecUtils::istarts_with(line, "#END ") || SpecUtils::istarts_with(line, "# END ") )
+      break;
+    
     if( line.empty() || line[0]=='#' || (!isdigit(line[0]) && line[0]!='+' && line[0]!='-') )
       continue;
     
@@ -1006,9 +1051,36 @@ void PeakModel::PeakCsvResource::handleRequest( const Wt::Http::Request &/*reque
   if( !m_model || !m_model->m_peaks )
     return;
 
-  std::shared_ptr<const SpecUtils::Measurement> data = m_model->m_dataModel->getData();
+  const shared_ptr<const SpecUtils::Measurement> &data = m_model->m_foreground;
   
-  PeakModel::write_peak_csv( response.out(), specfilename, *m_model->m_peaks, data );
+  string backfilename;
+  shared_ptr<const SpecUtils::Measurement> background;
+  shared_ptr<const deque<shared_ptr<const PeakDef>>> background_peaks;
+  InterSpec *interspec = InterSpec::instance();
+  assert( interspec );
+  if( interspec )
+  {
+    shared_ptr<const SpecMeas> bmeas = interspec->measurment(SpecUtils::SpectrumType::Background);
+    background = interspec->displayedHistogram( SpecUtils::SpectrumType::Background );
+    if( background && bmeas )
+    {
+      backfilename = bmeas->filename();
+      const set<int> &samples = interspec->displayedSamples(SpecUtils::SpectrumType::Background);
+      background_peaks = bmeas->peaks( samples );
+    }//if( bmeas )
+  }//if( interspec )
+  
+  
+  if( background && background_peaks && !background_peaks->empty() )
+  {
+    PeakModel::write_for_and_back_peak_csv( response.out(), specfilename,
+                                        PeakModel::PeakCsvType::Full, m_model->m_sortedPeaks, data,
+                                        backfilename, background_peaks.get(), background );
+  }else
+  {
+    PeakModel::write_peak_csv( response.out(), specfilename, PeakModel::PeakCsvType::Full,
+                              m_model->m_sortedPeaks, data );
+  }
 }//void handleRequest(...)
 
 
@@ -1018,11 +1090,15 @@ void PeakModel::PeakCsvResource::handleRequest( const Wt::Http::Request &/*reque
 
 PeakModel::PeakModel( Wt::WObject *parent )
   : WAbstractItemModel( parent ),
-    m_dataModel( NULL ),
+    m_foreground( nullptr ),
     m_sortColumn( kMean ),
     m_sortOrder( Wt::AscendingOrder ),
     m_csvResource( NULL )
 {
+  auto app = dynamic_cast<InterSpecApp *>( WApplication::instance() );
+  if( app )
+    app->useMessageResourceBundle( "PeakModel" );
+  
   m_csvResource = new PeakCsvResource( this );
   
 #if( PERFORM_DEVELOPER_CHECKS )
@@ -1035,12 +1111,10 @@ PeakModel::~PeakModel()
 }//~PeakModel()
 
 
-
-void PeakModel::setDataModel( SpectrumDataModel *dataModel )
+void PeakModel::setForeground( shared_ptr<const SpecUtils::Measurement> spec )
 {
-  m_dataModel = dataModel;
-}//void setDataModel( SpectrumDataModel *dataModel );
-
+  m_foreground = std::move(spec);
+}//void setForeground( std::shared_ptr<const SpecUtils::Measurement> spec )
 
 
 void PeakModel::setPeakFromSpecMeas( std::shared_ptr<SpecMeas> meas,
@@ -1073,7 +1147,7 @@ void PeakModel::setPeakFromSpecMeas( std::shared_ptr<SpecMeas> meas,
   {
     boost::function<bool(const PeakShrdPtr &, const PeakShrdPtr &)> sortfcn, meansort;
     
-    shared_ptr<const SpecUtils::Measurement> data = m_dataModel ? m_dataModel->getData() : nullptr;
+    const shared_ptr<const SpecUtils::Measurement> &data = m_foreground;
     sortfcn = boost::bind( &PeakModel::compare, boost::placeholders::_1, boost::placeholders::_2,
                           m_sortColumn, m_sortOrder, data );
     meansort = boost::bind( &PeakModel::compare, boost::placeholders::_1, boost::placeholders::_2,
@@ -1154,7 +1228,7 @@ PeakModel::PeakShrdPtr PeakModel::nearestPeak( double energy ) const
     return nullptr;
   
   boost::function<bool( const PeakShrdPtr &, const PeakShrdPtr &)> meansort;
-  shared_ptr<const SpecUtils::Measurement> data = m_dataModel ? m_dataModel->getData() : nullptr;
+  const shared_ptr<const SpecUtils::Measurement> &data = m_foreground;
   meansort = boost::bind( &PeakModel::compare, boost::placeholders::_1, boost::placeholders::_2,
                          kMean, Wt::AscendingOrder, data );
   PeakDef *new_peak_ptr = new PeakDef();
@@ -1228,24 +1302,27 @@ std::vector<PeakDef> PeakModel::peakVec() const
 }//std::vector<PeakDef> peakVec() const
 
 
+const std::deque<std::shared_ptr<const PeakDef>> &PeakModel::sortedPeaks() const
+{
+  return m_sortedPeaks;
+}
+
+
 bool PeakModel::isWithinRange( const PeakDef &peak ) const
 {
-  if( !m_dataModel )
-    return false;
-
-  std::shared_ptr<const SpecUtils::Measurement> xaxis = m_dataModel->histUsedForXAxis();
-
-  if( !xaxis )
+  assert( m_foreground );
+  
+  if( !m_foreground )
   {
     cerr << "PeakModel::isWithinRange(...)\n\tThere is no xaxis!" << endl;
     return false;
   }
 
-  const auto energycal = xaxis->energy_calibration();
+  const auto energycal = m_foreground->energy_calibration();
   assert( energycal );
   
-  const double lowerx = xaxis->gamma_energy_min();
-  const double upperx = xaxis->gamma_energy_max();
+  const double lowerx = m_foreground->gamma_energy_min();
+  const double upperx = m_foreground->gamma_energy_max();
 
   switch( peak.type() )
   {
@@ -1307,7 +1384,7 @@ std::pair<std::shared_ptr<const PeakDef>,Wt::WModelIndex> PeakModel::addNewPeakI
   //Need to go through and estimate the Chi2Dof here.
   
   boost::function<bool(const PeakShrdPtr &, const PeakShrdPtr &)> sortfcn, meansort;
-  shared_ptr<const SpecUtils::Measurement> data = m_dataModel ? m_dataModel->getData() : nullptr;
+  const shared_ptr<const SpecUtils::Measurement> &data = m_foreground;
   sortfcn = boost::bind( &PeakModel::compare, boost::placeholders::_1, boost::placeholders::_2,
                         m_sortColumn, m_sortOrder, data );
   meansort = boost::bind( &PeakModel::compare, boost::placeholders::_1, boost::placeholders::_2,
@@ -1341,26 +1418,22 @@ void PeakModel::addPeaks( const vector<PeakDef> &peaks )
 
 void PeakModel::definePeakXRange( PeakDef &peak )
 {
-  std::shared_ptr<const SpecUtils::Measurement> data, continuum;
-  std::shared_ptr<PeakContinuum> peakcont = peak.continuum();
+  const shared_ptr<const SpecUtils::Measurement> &data = m_foreground;
+ 
+  shared_ptr<PeakContinuum> peakcont = peak.continuum();
+  assert( peakcont );
   
-  if( m_dataModel )
+  if( !peakcont->energyRangeDefined() )
   {
-    data = m_dataModel->getData();
+    // We'll set the peak limits to save cpu (or rather memory-time) later
     
-    if( peakcont->type() == PeakContinuum::External )
-      continuum = peakcont->externalContinuum();
-  }//if( m_dataModel )
-  
-  if( !peakcont->energyRangeDefined() && peakcont->isPolynomial() )
-  {
+    // TODO: We could do a better job setting the range if external continuum defined.
+    //       i.e. if( peakcont->type() == PeakContinuum::External ){}
+    
     double lowerEnengy, upperEnergy;
-    std::shared_ptr<const SpecUtils::Measurement> data;
-    if( m_dataModel )
-      data = m_dataModel->getData();
     findROIEnergyLimits( lowerEnengy, upperEnergy, peak, data );
     peakcont->setRange( lowerEnengy, upperEnergy );
-  }//if( we should set the peak limits to save cpu (or rather memmorry-time) later
+  }//if( !peakcont->energyRangeDefined() )
 }//void definePeakXRange( PeakDef &peak )
 
 
@@ -1433,7 +1506,7 @@ void PeakModel::setPeaks( vector<shared_ptr<const PeakDef>> peaks )
   
   if( npeaksadd )
   {
-    shared_ptr<const SpecUtils::Measurement> data = m_dataModel ? m_dataModel->getData() : nullptr;
+    const shared_ptr<const SpecUtils::Measurement> &data = m_foreground;
      
     auto sortfcn = [this, data]( const PeakShrdPtr &lhs, const PeakShrdPtr &rhs ) -> bool {
       return PeakModel::compare( lhs, rhs, m_sortColumn, m_sortOrder, data );
@@ -1499,7 +1572,7 @@ void PeakModel::setPeaks( vector<PeakDef> peaks )
 //    need to go through and estimate the chi2DOF here
     
     boost::function<bool(const PeakShrdPtr &, const PeakShrdPtr &)> sortfcn, meansort;
-    shared_ptr<const SpecUtils::Measurement> data = m_dataModel ? m_dataModel->getData() : nullptr;
+    const shared_ptr<const SpecUtils::Measurement> &data = m_foreground;
     sortfcn = boost::bind( &PeakModel::compare, boost::placeholders::_1, boost::placeholders::_2,
                           m_sortColumn, m_sortOrder, data );
     meansort = boost::bind( &PeakModel::compare, boost::placeholders::_1, boost::placeholders::_2,
@@ -1845,10 +1918,7 @@ boost::any PeakModel::data( const WModelIndex &index, int role ) const
   if( role == ToolTipRole )
   {
     if( index.column() == kUseForCalibration )
-      return WString( "If this peak should be used to help calibrate energy.\n"
-                      "You must have a nuclide, reaction, or x-ray assigned to the"
-                      " peak, and you must not have fixed the mean energy value"
-                      " using the Peak Editor." );
+      return WString::tr("pm-tt-use-for-cal");
     return any();
   }//if( role == ToolTipRole )
   
@@ -1886,30 +1956,22 @@ boost::any PeakModel::data( const WModelIndex &index, int role ) const
         
       case PeakDef::DataDefined:
       {
-        if( !m_dataModel )
+        if( !m_foreground )
           return boost::any();
         
         double contArea = 0.0;
-        std::shared_ptr<const SpecUtils::Measurement> dataH = m_dataModel->getData();
+        const std::shared_ptr<const SpecUtils::Measurement> &dataH = m_foreground;
         
         if( !dataH )
           return boost::any();
         
+        assert( peak->continuum()->parametersProbablySet() );
         if( peak->continuum()->parametersProbablySet() )
         {
           double lowx(0.0), upperx(0.0);
           findROIEnergyLimits( lowx, upperx, *peak, dataH );
           contArea = peak->offset_integral( lowx, upperx, dataH );
-        }else
-        {
-          std::shared_ptr<const SpecUtils::Measurement> continuum = m_dataModel->getBackground();
-          if( continuum )
-          {
-            size_t lower_channel, upper_channel;
-            estimatePeakFitRange( *peak, continuum, lower_channel, upper_channel );
-            contArea = continuum->gamma_channels_sum(lower_channel, upper_channel);
-          }
-        }//if( peak->continuumDefined() ) / else
+        }
         
         size_t lower_channel, upper_channel;
         estimatePeakFitRange( *peak, dataH, lower_channel, upper_channel );
@@ -1938,7 +2000,38 @@ boost::any PeakModel::data( const WModelIndex &index, int role ) const
       }//switch( peak->type() )
       
     case kAmplitude:
-      return getPeakArea();
+    {
+      boost::any areaAny = getPeakArea();
+      if( areaAny.empty() )
+        return areaAny;
+      
+      const double area = boost::any_cast<double>(areaAny);
+      double uncert = peak->amplitudeUncert();
+      
+      switch( peak->type() )
+      {
+        case PeakDef::GaussianDefined:
+          break;
+        case PeakDef::DataDefined:
+          uncert = -1.0; // JIC
+          break;
+      }//switch( peak->type() )
+      
+      if( uncert <= 0.0 )
+      {
+        char text[64];
+        snprintf( text, sizeof(text), "%.2f", area );
+        return WString::fromUTF8(text);
+      }
+      
+      // TODO: Figure out how many significant figures to show - this is kinda a guess for the moment
+      const int numValLeft = 1 + static_cast<int>( std::floor( std::log10(area) ) );  //1.2 will give 1, 10.1 will give 2
+      //const int numUncertLeft = 1 + static_cast<int>( std::floor( std::log10(uncert) ) ); //0.11 will give 0, 0.011 will give -1
+        
+      const int nsigfig = 1 + ((area > 1.0) ? std::min(std::max(3,numValLeft), 6) : 4); //we'll print out one place past decimal point
+      const string txt = PhysicalUnits::printValueWithUncertainty( area, uncert, nsigfig );
+      return WString::fromUTF8(txt);
+    }//case kAmplitude:
       
     case PeakModel::kCps:
     {
@@ -1948,7 +2041,7 @@ boost::any PeakModel::data( const WModelIndex &index, int role ) const
         return areaAny;
       
       const double area = boost::any_cast<double>(areaAny);
-      std::shared_ptr<const SpecUtils::Measurement> dataH = m_dataModel->getData();
+      const shared_ptr<const SpecUtils::Measurement> &dataH = m_foreground;
       const float liveTime = dataH ? dataH->live_time() : -1.0f;
       if( liveTime <= 0.0f )
         return boost::any();
@@ -2110,7 +2203,7 @@ boost::any PeakModel::data( const WModelIndex &index, int role ) const
       
     case kHasSkew:
     {
-      return WString( (peak->skewType() == PeakDef::NoSkew) ? "False" : "True" );
+      return WString::tr( (peak->skewType() == PeakDef::NoSkew) ? "False" : "True" );
     }//case kHasSkew:
       
     case kSkewAmount:
@@ -2150,41 +2243,36 @@ boost::any PeakModel::data( const WModelIndex &index, int role ) const
     case kType:
     {
       if( peak->gausPeak() )
-        return WString( "Gaussian" );
+        return WString::tr( "pm-gaussian" );
       else
-        return WString( "Region" );
+        return WString::tr( "pm-region" );
     }
       
     case kLowerX:
     case kUpperX:
     {
-      if( !m_dataModel )
-        return boost::any();
-      std::shared_ptr<const SpecUtils::Measurement> dataH = m_dataModel->getData();
+      shared_ptr<const PeakContinuum> continuum = peak->continuum();
+      if( continuum->energyRangeDefined() )
+        return (column == kLowerX) ? continuum->lowerEnergy() : continuum->upperEnergy();
+        
       double lowx(0.0), upperx(0.0);
-      findROIEnergyLimits( lowx, upperx, *peak, dataH );
-      if( column == kLowerX )
-        return lowx;
-      else
-        return upperx;
+      findROIEnergyLimits( lowx, upperx, *peak, m_foreground );
+      return (column == kLowerX) ? lowx : upperx;
     }//case kLowerX / case kUpperX:
     
       
     case kRoiCounts:
     {
-      if( !m_dataModel )
-        return boost::any();
-      std::shared_ptr<const SpecUtils::Measurement> dataH = m_dataModel->getData();
-      if( !dataH )
+      if( !m_foreground )
         return boost::any();
       
       double lowx(0.0), upperx(0.0);
-      findROIEnergyLimits( lowx, upperx, *peak, dataH );
-      return dataH->gamma_integral( lowx, upperx );
+      findROIEnergyLimits( lowx, upperx, *peak, m_foreground );
+      return m_foreground->gamma_integral( lowx, upperx );
     }//case kRoiCounts:
       
     case kContinuumType:
-      return WString( PeakContinuum::offset_type_label(peak->continuum()->type()) );
+      return WString::tr( PeakContinuum::offset_type_label_tr(peak->continuum()->type()) );
       
     case kNumColumns:
       return any();
@@ -2359,7 +2447,7 @@ PeakModel::SetGammaSource PeakModel::setReaction( PeakDef &peak,
   }
   
   double best_delta_e = std::numeric_limits<double>::max(), nearestE = 0.0;
-  for( const ReactionGamma::EnergyAbundance &eip : rctn->gammas )
+  for( const ReactionGamma::Reaction::EnergyYield &eip : rctn->gammas )
   {
     if( eip.abundance <= 0.0 )
       continue;
@@ -2574,7 +2662,7 @@ bool PeakModel::setData( const WModelIndex &index,
 
     switch( column )
     {
-      case kMean: case kFwhm: case kAmplitude:
+      case kMean:
       case kIsotope:
       case kPhotoPeakEnergy:
       case kCandidateIsotopes:
@@ -2584,6 +2672,21 @@ bool PeakModel::setData( const WModelIndex &index,
       case kUserLabel:
       case kPeakLineColor:
       break;
+        
+      case kFwhm:
+      case kAmplitude:
+      {
+        switch( m_sortedPeaks[row]->type() )
+        {
+          case PeakDef::GaussianDefined:
+            break;
+          case PeakDef::DataDefined:
+            cerr << "PeakModel::setData(...)\n\tCant set area or FWHM for non-Gaussian peak" << endl;
+            return false;
+        }//switch( m_sortedPeaks[row]->type() )
+        
+        break;
+      }//case kFwhm or kAmplitude
 
       case kCps: case kHasSkew: case kSkewAmount: case kType: case kLowerX: case kUpperX:
       case kRoiCounts: case kContinuumType: case kNumColumns: case kDifference:
@@ -2592,7 +2695,7 @@ bool PeakModel::setData( const WModelIndex &index,
         return false;
     }//switch( section )
 
-    double dbl_val = 0.0;
+    double dbl_val = 0.0, uncert_val = -1.0;
     WString txt_val;
 
     try
@@ -2606,7 +2709,67 @@ bool PeakModel::setData( const WModelIndex &index,
       case kMean: case kFwhm: case kAmplitude:
         try
         {
-          dbl_val = std::stod( txt_val.toUTF8() );
+          const string strval = txt_val.toUTF8();
+          
+          const auto parseValWithUncert = []( const string &input, string &value, string &uncert ){
+            string::size_type pos = input.find( "\xC2\xB1" );
+            if( pos == string::npos )
+              pos = input.find( "+-" );
+            if( pos == string::npos )
+              pos = input.find( "-+" );
+            if( pos == string::npos )
+            {
+              value = input;
+              SpecUtils::trim(value);
+              return;
+            }
+            
+            value = input.substr(0, pos);
+            uncert = input.substr(pos + 2); //All "+-" strings are two bytes long
+            SpecUtils::trim(value);
+            SpecUtils::trim(uncert);
+          };
+          
+          string valstr, uncertstr;
+          parseValWithUncert( strval, valstr, uncertstr );
+          
+          dbl_val = std::stod( valstr );
+          if( !uncertstr.empty() )
+            uncert_val = std::stod( uncertstr );
+          
+          // There could be some rounding in the string representation of the uncertainty, or the
+          //  area so lets avoid this if the user hasnt changed that part of it
+          const boost::any prevData = data( index, role );
+          if( !prevData.empty() )
+          {
+            WString prevDataWstr = boost::any_cast<WString>( prevData );
+            
+            assert( row < m_sortedPeaks.size() );
+            const PeakShrdPtr &peak = m_sortedPeaks[row];
+            
+            string prevValStr, prevUncertStr;
+            parseValWithUncert( prevDataWstr.toUTF8(), prevValStr, prevUncertStr );
+            
+            if( prevValStr == valstr )
+            {
+              if( column == kMean )
+                dbl_val = peak->mean();
+              else if( column == kFwhm )
+                dbl_val = peak->fwhm();
+              else if( column == kAmplitude && (peak->type() == PeakDef::GaussianDefined) )
+                dbl_val = peak->amplitude();
+            }//if( prevValStr == valstr )
+            
+            if( (uncert_val > 0.0) && (prevUncertStr == uncertstr) )
+            {
+              if( column == kMean )
+                uncert_val = peak->meanUncert();
+              else if( column == kFwhm )
+                uncert_val = 2.3548201 * peak->sigmaUncert();
+              else if( column == kAmplitude && (peak->type() == PeakDef::GaussianDefined) )
+                uncert_val = peak->amplitudeUncert();
+            }//if( prevValStr == valstr )
+          }//if( prevData, so we can potentially avoid rounding values )
         }catch(...)
         {
           cerr << "PeakModel::setData(...)\n\tUnable to convert '" << txt_val
@@ -2633,6 +2796,8 @@ bool PeakModel::setData( const WModelIndex &index,
         {
           case PeakDef::GaussianDefined:
             new_peak.setMean( dbl_val );
+            if( uncert_val > 0.0 )
+              new_peak.setMeanUncert( uncert_val );
           break;
             
           case PeakDef::DataDefined:
@@ -2646,6 +2811,8 @@ bool PeakModel::setData( const WModelIndex &index,
         {
           case PeakDef::GaussianDefined:
             new_peak.setSigma( dbl_val / 2.3548201 );
+            if( uncert_val > 0.0 )
+              new_peak.setSigmaUncert( uncert_val / 2.3548201 );
           break;
           
           case PeakDef::DataDefined:
@@ -2659,6 +2826,8 @@ bool PeakModel::setData( const WModelIndex &index,
         {
           case PeakDef::GaussianDefined:
             new_peak.setAmplitude( dbl_val );
+            if( uncert_val > 0.0 )
+              new_peak.setAmplitudeUncert( uncert_val );
           break;
           
           case PeakDef::DataDefined:
@@ -2743,10 +2912,9 @@ bool PeakModel::setData( const WModelIndex &index,
           unit = 0.001;
 
         SpecUtils::trim( text );
-        stringstream convertstr( text );
 
         double energy = -999.0;
-        if( !(convertstr >> energy) )
+        if( !(stringstream(text) >> energy) )
         {
           switch( srcType )
           {
@@ -2842,7 +3010,7 @@ bool PeakModel::setData( const WModelIndex &index,
         }else if( rctn )
         {
           double nearestE = -999.9;
-          for( const ReactionGamma::EnergyAbundance &eip : rctn->gammas )
+          for( const ReactionGamma::Reaction::EnergyYield &eip : rctn->gammas )
             if( fabs(eip.energy-energy) < fabs(nearestE-energy) )
               nearestE = eip.energy;
           if( nearestE > 0.0 )
@@ -2882,20 +3050,14 @@ bool PeakModel::setData( const WModelIndex &index,
 //               << " mytrueebool value=" << boost::any_cast<bool>( mytrueebool)
 //               << " and typename=" << myfalsebool.type().name() << endl;
           if( use && !new_peak.parentNuclide() )
-            passMessage( "You must associate a nuclide with the"
-                        " peak before using it for shielding/source-fitting.",
-                        WarningWidget::WarningMsgHigh );
+            passMessage( WString::tr("pm-err-use-fit-no-nuc"), WarningWidget::WarningMsgHigh );
           
           if( new_peak.useForShieldingSourceFit() == use )
             return false;
           
           const SandiaDecay::RadParticle *radpart = new_peak.decayParticle();
           if( use && radpart && (radpart->type == SandiaDecay::XrayParticle) )
-          {
-            passMessage( "Warning: using x-rays for fitting source nuclides "
-                         "is not usually a great idea, so please use caution",
-                         WarningWidget::WarningMsgLow );
-          }
+            passMessage( WString::tr("pm-warn-use-xray-fit"), WarningWidget::WarningMsgLow );
           
           new_peak.useForShieldingSourceFit( use );
         }catch(...)
@@ -2914,9 +3076,7 @@ bool PeakModel::setData( const WModelIndex &index,
           const bool use = boost::any_cast<bool>( value );
           if( use && !new_peak.xrayElement() && !new_peak.parentNuclide()
               && !new_peak.reaction() )
-            passMessage( "You must associate a nuclide, x-ray, or reaction with"
-                         " the peak before using it for calibration",
-                         WarningWidget::WarningMsgHigh );
+            passMessage( WString::tr("pm-err-use-cal-no-nuc"), WarningWidget::WarningMsgHigh );
           
           if( use == new_peak.useForEnergyCalibration() )
             return false;
@@ -2944,8 +3104,7 @@ bool PeakModel::setData( const WModelIndex &index,
                                    || (new_peak.sourceGammaType() == PeakDef::SourceGammaType::AnnihilationGamma) );
             
             if( !has_parent || !is_gamma )
-               passMessage( "Only peaks associated with a nuclides gamma can be used for relative"
-                            " activity analysis.", WarningWidget::WarningMsgHigh );
+               passMessage( WString::tr("pm-err-use-rel-act-no-nuc"), WarningWidget::WarningMsgHigh );
           }//if( use )
           
           if( use == new_peak.useForManualRelEff() )
@@ -2993,10 +3152,11 @@ bool PeakModel::setData( const WModelIndex &index,
 
     if( column != kIsotope
         && column != kPhotoPeakEnergy
-        && column != kMean )
+        && column != kMean 
+        && column != kAmplitude )
     {
       dataChanged().emit( index, index );
-    }else if( column == kPhotoPeakEnergy )
+    }else if( (column == kPhotoPeakEnergy) || (column == kAmplitude) )
     {
       if( changedFit )
         dataChanged().emit( PeakModel::index(row, kIsotope), PeakModel::index(row, kNumColumns-1) ); //just update whole row, jic
@@ -3030,13 +3190,30 @@ WFlags<ItemFlag> PeakModel::flags( const WModelIndex &index ) const
 {
   switch( index.column() )
   {
-    case kMean: case kFwhm: case kAmplitude: case kUserLabel:
+    case kMean: case kUserLabel:
     case kIsotope: case kPhotoPeakEnergy:
 #if( ALLOW_PEAK_COLOR_DELEGATE )
     case kPeakLineColor:
 #endif
       return ItemIsEditable | ItemIsSelectable; //ItemIsSelectabl
 
+    case kFwhm: case kAmplitude:
+    {
+      const int row = index.row();
+      if( row < static_cast<int>(m_sortedPeaks.size()) )
+      {
+        switch( m_sortedPeaks[row]->type() )
+        {
+          case PeakDef::GaussianDefined:
+            return ItemIsEditable | ItemIsSelectable;
+          case PeakDef::DataDefined:
+            return ItemIsSelectable;
+        }//switch( peak type )
+      }//if( a valid row of a peak )
+      
+      return ItemIsEditable | ItemIsSelectable;
+    }//case kFwhm: case kAmplitude:
+      
     case kUseForShieldingSourceFit:
     case kUseForCalibration:
     case kUseForManualRelEff:
@@ -3077,26 +3254,26 @@ boost::any PeakModel::headerData( int section, Orientation orientation, int role
     //If we are here, we want the column title
     switch( section )
     {
-      case kMean:           return boost::any( WString("Mean") );
-      case kFwhm:           return boost::any( WString("FWHM") ); //\x03C3
-      case kAmplitude:      return boost::any( WString("Area") );
-      case kCps:            return boost::any( WString("CPS") );
-      case kIsotope:        return boost::any( WString("Nuclide") );
-      case kPhotoPeakEnergy:return boost::any( WString("Photopeak") );
-      case kDifference:     return boost::any( WString("Difference") );
-      case kUseForShieldingSourceFit: return boost::any( WString("Use") );
+      case kMean:           return boost::any( WString::tr("Mean") );
+      case kFwhm:           return boost::any( WString::tr("FWHM") ); //\x03C3
+      case kAmplitude:      return boost::any( WString::tr("Area") );
+      case kCps:            return boost::any( WString::tr("CPS") );
+      case kIsotope:        return boost::any( WString::tr("Nuclide") );
+      case kPhotoPeakEnergy:return boost::any( WString::tr("Photopeak") );
+      case kDifference:     return boost::any( WString::tr("pm-hdr-diff") );
+      case kUseForShieldingSourceFit: return boost::any( WString::tr("Use") );
       case kCandidateIsotopes:  return boost::any();
-      case kUseForCalibration:  return boost::any( WString("Calib. Peak") );
-      case kUseForManualRelEff: return boost::any( WString("Rel Act") );
-      case kUserLabel:      return boost::any( WString("Label") );
-      case kPeakLineColor:  return boost::any( WString("Color") );
-      case kHasSkew:        return boost::any( WString("Skew") );
-      case kSkewAmount:     return boost::any( WString("Skew Amp") );
-      case kType:           return boost::any( WString("Peak Type") );
-      case kLowerX:         return boost::any( WString("Lower Energy") );
-      case kUpperX:         return boost::any( WString("Upper Energy") );
-      case kRoiCounts:      return boost::any( WString("ROI Counts") );
-      case kContinuumType:  return boost::any( WString("Cont. Type") );
+      case kUseForCalibration:  return boost::any( WString::tr("pm-hdr-cal-peak") );
+      case kUseForManualRelEff: return boost::any( WString::tr("pm-hdr-rel-act") );
+      case kUserLabel:      return boost::any( WString::tr("pm-hdr-label") );
+      case kPeakLineColor:  return boost::any( WString::tr("pm-hdr-color") );
+      case kHasSkew:        return boost::any( WString::tr("Skew") );
+      case kSkewAmount:     return boost::any( WString::tr("pm-hdr-skew-amp") );
+      case kType:           return boost::any( WString::tr("pm-hdr-peak-type") );
+      case kLowerX:         return boost::any( WString::tr("pm-hdr-low-energy") );
+      case kUpperX:         return boost::any( WString::tr("pm-hdr-up-energy") );
+      case kRoiCounts:      return boost::any( WString::tr("pm-hdr-roi-counts") );
+      case kContinuumType:  return boost::any( WString::tr("cont-type") );
       case kNumColumns:     return boost::any();
     }//switch( section )
   } //DisplayRole
@@ -3104,20 +3281,20 @@ boost::any PeakModel::headerData( int section, Orientation orientation, int role
   {
     switch( section )
     {
-      case kMean:           return boost::any( WString("Mean Energy") );
-      case kFwhm:           return boost::any( WString("Full Width at Half Maximum") ); //\x03C3
-      case kAmplitude:      return boost::any( WString("Peak Area") );
-      case kCps:            return boost::any( WString("Peak counts per second") );
+      case kMean:           return boost::any( WString::tr("pm-hdr-tt-mean") );
+      case kFwhm:           return boost::any( WString::tr("pm-hdr-tt-fwhm") ); //\x03C3
+      case kAmplitude:      return boost::any( WString::tr("pm-hdr-tt-amp") );
+      case kCps:            return boost::any( WString::tr("pm-hdr-tt-cps") );
       case kIsotope:        return boost::any();
-      case kPhotoPeakEnergy:return boost::any( WString("Photopeak Energy") );
-      case kDifference:     return boost::any( WString("Difference between photopeak and mean energy") );
+      case kPhotoPeakEnergy:return boost::any( WString::tr("pm-hdr-tt-photopeak-energy") );
+      case kDifference:     return boost::any( WString::tr("pm-hdr-tt-diff") );
       case kUseForShieldingSourceFit: return boost::any();
       case kCandidateIsotopes:  return boost::any();
       case kUseForCalibration:  return boost::any();
-      case kUseForManualRelEff: return boost::any( WString("Use for \"Isotopics from peaks\" analysis.") );
-      case kPeakLineColor:     return boost::any( WString("Peak color") );
-      case kUserLabel:         return boost::any( WString("User specified label") );
-      case kRoiCounts:         return boost::any( WString("Integral of gamma counts over the region of interest") );
+      case kUseForManualRelEff: return boost::any( WString::tr("pm-hdr-tt-man-rel-eff") );
+      case kPeakLineColor:     return boost::any( WString::tr("pm-hdr-tt-color") );
+      case kUserLabel:         return boost::any( WString::tr("pm-hdr-tt-label") );
+      case kRoiCounts:         return boost::any( WString::tr("pm-hdr-tt-roi-counts") );
       case kHasSkew:
       case kSkewAmount:
       case kType:
@@ -3195,7 +3372,7 @@ void PeakModel::sort( int col, Wt::SortOrder order )
     m_sortColumn = kMean;
 
   boost::function<bool(const PeakShrdPtr &, const PeakShrdPtr &)> sortfcn;
-  shared_ptr<const SpecUtils::Measurement> data = m_dataModel ? m_dataModel->getData() : nullptr;
+  const shared_ptr<const SpecUtils::Measurement> &data = m_foreground;
   sortfcn = boost::bind( &PeakModel::compare, boost::placeholders::_1, boost::placeholders::_2,
                         m_sortColumn, order, data );
 
@@ -3378,35 +3555,134 @@ bool PeakModel::compare( const PeakShrdPtr &lhs, const PeakShrdPtr &rhs,
 
 void PeakModel::write_peak_csv( std::ostream &outstrm,
                                std::string specfilename,
+                               const PeakModel::PeakCsvType type,
                                const std::deque<std::shared_ptr<const PeakDef>> &peaks,
                                const std::shared_ptr<const SpecUtils::Measurement> &data )
 {
+  bool write_html = false, write_compact = false, write_header = false;
+  switch( type )
+  {
+    case PeakCsvType::Full:
+      write_html = false;
+      write_compact = false;
+      write_header = true;
+      break;
+      
+    case PeakCsvType::NoHeader:
+      write_html = false;
+      write_compact = false;
+      write_header = false;
+      break;
+      
+    case PeakCsvType::Compact:
+      write_html = false;
+      write_compact = true;
+      write_header = false;
+      break;
+      
+    case PeakCsvType::FullHtml:
+      write_html = true;
+      write_compact = false;
+      write_header = true;
+      break;
+      
+    case PeakCsvType::NoHeaderHtml:
+      write_html = true;
+      write_compact = false;
+      write_header = false;
+      break;
+      
+    case PeakCsvType::CompactHtml:
+      write_html = true;
+      write_compact = true;
+      write_header = false;
+      break;
+  }//switch( type )
+  
   const size_t npeaks = peaks.size();
   const string eol_char = "\r\n"; //for windows - could potentially customize this for the users operating system
   
-  outstrm <<
-  "Centroid,  Net_Area,   Net_Area,      Peak, FWHM,   FWHM,Reduced, ROI_Total,ROI, "
-  "File,         ,     ,     , Nuclide, Photopeak_Energy, ROI_Lower_Energy, ROI_Upper_Energy, Color, User_Label, Continuum_Type, "
-  "Skew_Type, Continuum_Coefficients, Skew_Coefficients"
-  << eol_char
-  <<
-  "     keV,    Counts,Uncertainty,       CPS,  keV,Percent,Chi_Sqr,    Counts,ID#, "
-  "Name, LiveTime, Date, Time,        ,              keV,              keV,              keV, (css),           ,               , "
-  "         ,                       ,                  "
-  << eol_char;
+  if( write_html )
+  {
+    outstrm << "<table>" << eol_char;
+  }
   
+  if( write_header )
+  {
+    if( write_html )
+    {
+      outstrm << "  <thead>" << eol_char
+      << "    <tr>" << eol_char
+      << "      <th>Centroid (keV)</th>"
+      "<th>Net Area Counts</th>"
+      "<th>Net Area Uncertainty</th>"
+      "<th>Peak CPS</th>"
+      "<th>FWHM (keV)</th>"
+      "<th>FWHM (%)</th>"
+      "<th>Reduced Chi2</th>"
+      "<th>ROI_Total Counts</th>"
+      "<th>ROI ID#</th>"
+      "<th>File Name</th>";
+      if( !write_compact )
+      {
+        outstrm << "<th>LiveTime (s)</th>"
+        "<th>Date</th>"
+        "<th>Time</th>"
+        "<th>Nuclide</th>"
+        "<th>Photopeak Energy (keV)</th>"
+        "<th>ROI Lower Energy</th>"
+        "<th>ROI_Upper_Energy</th>"
+        "<th>Color</th>"
+        "<th>User_Label</th>"
+        "<th>Continuum_Type</th>"
+        "<th>Skew_Type</th>"
+        "<th>Continuum_Coefficients</th>"
+        "<th>Skew_Coefficients</th>"
+        "<th>RealTime (s)</th>";
+      }
+      outstrm << eol_char << "    </tr>" << eol_char
+      << "  </thead>" << eol_char;
+    }else
+    {
+      outstrm <<
+      "Centroid,  Net_Area,   Net_Area,      Peak, FWHM,   FWHM,Reduced, ROI_Total,ROI, "
+      "File";
+      if( !write_compact )
+      {
+        outstrm <<
+        ",         ,     ,     , Nuclide, Photopeak_Energy, ROI_Lower_Energy, ROI_Upper_Energy, Color, User_Label, Continuum_Type, "
+        "Skew_Type, Continuum_Coefficients, Skew_Coefficients,         ";
+      }
+      outstrm << eol_char
+      <<
+      "     keV,    Counts,Uncertainty,       CPS,  keV,Percent,Chi_Sqr,    Counts,ID#, "
+      "Name";
+      
+      if( !write_compact )
+      {
+        outstrm <<
+        ", LiveTime, Date, Time,        ,              keV,              keV,              keV, (css),           ,               , "
+        "         ,                       ,                  , RealTime";
+      }
+      outstrm << eol_char;
+    }//if( write_html ) / else
+  }//if( write_header )
+  
+  if( write_html )
+    outstrm << " <tbody>" << eol_char;
   
   for( size_t peakn = 0; peakn < npeaks; ++peakn )
   {
     const PeakDef &peak = *peaks[peakn];
     
-    float live_time = 1.0f;
+    float live_time = 1.0f, real_time = 0.0f;
     SpecUtils::time_point_t meastime{};
     double region_area = 0.0, xlow = 0.0, xhigh = 0.0;
     
     if( data )
     {
       live_time = data->live_time();
+      real_time = data->real_time();
       meastime = data->start_time();
       findROIEnergyLimits( xlow, xhigh, peak, data );
       region_area = gamma_integral( data, xlow, xhigh );
@@ -3479,9 +3755,9 @@ void PeakModel::write_peak_csv( std::ostream &outstrm,
       areauncertstr = areauncertstr + " ";
     
     string cpststr;
-    if( live_time > 0.0f )
+    if( (live_time > 0.0f) && data )
     {
-      snprintf( buffer, sizeof(buffer), "%1.4e", (peak.peakArea()/data->live_time()) );
+      snprintf( buffer, sizeof(buffer), "%1.4e", (peak.peakArea()/live_time) );
       cpststr = buffer;
       size_t epos = cpststr.find( "e" );
       if( epos != string::npos )
@@ -3529,6 +3805,13 @@ void PeakModel::write_peak_csv( std::ostream &outstrm,
     {
       snprintf( buffer, sizeof(buffer), "%.3f", live_time );
       live_time_str = buffer;
+    }
+    
+    string real_time_str;
+    if( real_time > 0.0f )
+    {
+      snprintf( buffer, sizeof(buffer), "%.3f", real_time );
+      real_time_str = buffer;
     }
     
     string datestr, timestr;
@@ -3625,31 +3908,212 @@ void PeakModel::write_peak_csv( std::ostream &outstrm,
                     + SpecUtils::printCompact(val,7);
     }//for( loop over skew parameters )
     
-    
-    outstrm << meanstr
-    << ',' << areastr
-    << ',' << areauncertstr
-    << ',' << cpststr
-    << ',' << widthstr
-    << ',' << widthprecentstr
-    << ',' << chi2str
-    << ',' << roiareastr
-    << ',' << numstr
-    << ',' << specfilename
-    << ',' << live_time_str
-    << ',' << datestr
-    << ',' << timestr
-    << ',' << nuclide
-    << ',' << energy
-    << ',' << xlow
-    << ',' << xhigh
-    << ',' << color_str
-    << ',' << user_label
-    << ',' << continuum_type
-    << ',' << skew_type
-    << ',' << cont_coefs
-    << ',' << skew_coefs
-    << eol_char;
+    if( write_html )
+    {
+      const string field_sep = "</td><td>";
+      
+      outstrm << "    <tr><td>"
+      << meanstr
+      << field_sep << areastr
+      << field_sep << areauncertstr
+      << field_sep << cpststr
+      << field_sep << widthstr
+      << field_sep << widthprecentstr
+      << field_sep << chi2str
+      << field_sep << roiareastr
+      << field_sep << numstr
+      << field_sep << specfilename;
+      
+      if( !write_compact )
+      {
+        outstrm << field_sep << live_time_str
+        << field_sep << datestr
+        << field_sep << timestr
+        << field_sep << nuclide
+        << field_sep << energy
+        << field_sep << xlow
+        << field_sep << xhigh
+        << field_sep << color_str
+        << field_sep << user_label
+        << field_sep << continuum_type
+        << field_sep << skew_type
+        << field_sep << cont_coefs
+        << field_sep << skew_coefs
+        << field_sep << real_time_str;
+      }
+      outstrm << "</td></tr>" << eol_char;
+    }else
+    {
+      outstrm << meanstr
+      << ',' << areastr
+      << ',' << areauncertstr
+      << ',' << cpststr
+      << ',' << widthstr
+      << ',' << widthprecentstr
+      << ',' << chi2str
+      << ',' << roiareastr
+      << ',' << numstr
+      << ',' << specfilename;
+      
+      if( !write_compact )
+      {
+        outstrm << ',' << live_time_str
+        << ',' << datestr
+        << ',' << timestr
+        << ',' << nuclide
+        << ',' << energy
+        << ',' << xlow
+        << ',' << xhigh
+        << ',' << color_str
+        << ',' << user_label
+        << ',' << continuum_type
+        << ',' << skew_type
+        << ',' << cont_coefs
+        << ',' << skew_coefs
+        << ',' << real_time_str;
+      }
+      
+      outstrm << eol_char;
+    }//if( write_html ) / else
   }//for( loop over peaks, peakn )
+  
+  if( write_html )
+    outstrm << " </tbody>" << eol_char << "</table>" << eol_char;
 }//void PeakModel::write_peak_csv(...)
 
+
+void PeakModel::write_for_and_back_peak_csv( std::ostream &outstrm,
+                           std::string specfilename,
+                           const PeakCsvType type,
+                           const std::deque<std::shared_ptr<const PeakDef>> &peaks,
+                           const std::shared_ptr<const SpecUtils::Measurement> &data,
+                           std::string background_specfilename,
+                           const std::deque<std::shared_ptr<const PeakDef>> *background_peaks,
+                           const std::shared_ptr<const SpecUtils::Measurement> &background )
+{
+  write_peak_csv( outstrm, specfilename, type, peaks, data );
+  if( !background_peaks || background_peaks->empty() || !background || (background->live_time() <= 0.0f) )
+    return;
+  
+  const string eol_char = "\r\n"; //for windows - could potentially customize this for the users operating system
+  
+  const double scale = data->live_time() / background->live_time();
+  
+  switch( type )
+  {
+    case PeakCsvType::Full:
+    case PeakCsvType::NoHeader:
+    case PeakCsvType::Compact:
+      outstrm << eol_char
+      << "#END FOREGROUND PEAKS"
+      << eol_char
+      << eol_char
+      << "#Background Spectrum Peaks (LiveTime " << background->live_time() << " s - scale by "
+      << scale << " to make comparable):" << eol_char;
+      break;
+      
+    case PeakCsvType::FullHtml:
+    case PeakCsvType::NoHeaderHtml:
+    case PeakCsvType::CompactHtml:
+      outstrm << eol_char
+      << "<!-- END FOREGROUND PEAKS -->" << eol_char
+      << "<br />" << eol_char << "<br />" << eol_char << "<div>Background Spectrum Peaks (LiveTime "
+      << background->live_time() << " s - scale by "
+      << scale << " to make comparable):</div>" << eol_char;
+      break;
+  }//switch( type )
+  
+  write_peak_csv( outstrm, background_specfilename, type, *background_peaks, background );
+  
+  
+  // Now we need to perform background subtraction
+  const double nsigmaNear = 1.0;
+  size_t num_affected_peaks = 0;
+  deque<shared_ptr<const PeakDef>> back_sub_peaks;
+  
+  for( const shared_ptr<const PeakDef> &orig_peak : peaks )
+  {
+    assert( orig_peak );
+    // TODO: we should maybe handle data-defined peaks...
+    if( !orig_peak || !orig_peak->gausPeak() )
+      continue;
+    
+    double backCounts = 0.0, backUncert2 = 0.0;
+    for( const shared_ptr<const PeakDef> &backPeak : *background_peaks )
+    {
+      assert( backPeak );
+      if( !backPeak || !backPeak->gausPeak() )
+        continue;
+      
+      const double sigma = orig_peak->gausPeak() ? orig_peak->sigma() : 0.25*orig_peak->roiWidth();
+      if( fabs(backPeak->mean() - orig_peak->mean()) < (nsigmaNear*sigma) )
+      {
+        backCounts += scale * backPeak->peakArea();
+        const double uncert = scale * std::max( 0.0, backPeak->peakAreaUncert() );
+        backUncert2 += uncert * uncert;
+      }//if( fabs(backPeak.mean()-peak.mean()) < sigma )
+    }//for( const PeakDef &peak : backPeaks )
+
+    auto updated_peak = make_shared<PeakDef>( *orig_peak );
+    
+    if( backCounts > 0.0 )
+    {
+      num_affected_peaks += 1;
+      const double counts = orig_peak->peakArea() - backCounts;
+      const double orig_uncert = std::max( orig_peak->peakAreaUncert(), 0.0 );
+      const double uncert = sqrt( orig_uncert*orig_uncert + backUncert2 );
+      
+      updated_peak->setPeakArea( counts );
+      updated_peak->setPeakAreaUncert( uncert );
+    }//if( backCounts > 0.0 )
+    
+    back_sub_peaks.push_back( updated_peak );
+  }//for( const shared_ptr<const PeakDef> &peak : peaks )
+  
+  
+  
+  switch( type )
+  {
+    case PeakCsvType::Full:
+    case PeakCsvType::NoHeader:
+    case PeakCsvType::Compact:
+      outstrm << eol_char
+      << "#END BACKGROUND PEAKS"
+      << eol_char
+      << eol_char
+      << "#Background Subtracted"
+      << " (after live time normalization and whose means are within " << nsigmaNear
+      << " sigma) foreground peaks (" << num_affected_peaks << " peaks adjusted):" << eol_char;
+      break;
+      
+    case PeakCsvType::FullHtml:
+    case PeakCsvType::NoHeaderHtml:
+    case PeakCsvType::CompactHtml:
+      outstrm << eol_char << "<!-- END BACKGROUND PEAKS -->" 
+      << eol_char << "<br />" << eol_char << "<br />"
+      << eol_char << "<div>Background Subtracted"
+      << " (after live time normalization and whose means are within " << nsigmaNear
+      << " sigma) foreground peaks (" << num_affected_peaks << " peaks adjusted):</div>" 
+      << eol_char;
+      break;
+  }//switch( type )
+  
+  
+  write_peak_csv( outstrm, specfilename, type, back_sub_peaks, data );
+  
+  
+  switch( type )
+  {
+    case PeakCsvType::Full:
+    case PeakCsvType::NoHeader:
+    case PeakCsvType::Compact:
+      outstrm << eol_char << "#END BACKGROUND-SUBTRACTED PEAKS" << eol_char;
+      break;
+      
+    case PeakCsvType::FullHtml:
+    case PeakCsvType::NoHeaderHtml:
+    case PeakCsvType::CompactHtml:
+      outstrm << eol_char << "<!-- END BACKGROUND-SUBTRACTED PEAKS -->" << eol_char;
+      break;
+  }//switch( type )
+}//PeakModel::write_for_and_back_peak_csv(...)

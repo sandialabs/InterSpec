@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- rr- is short for RemoteRid
+  -->
+  <message id="rr-mi-url">URL</message>
+  <message id="rr-mi-executable-path">Exe Path</message>
+  <message id="rr-url-empty-text">URL of FullSpectrum Service</message>
+  <message id="rr-exe-path-empty-text">Path to FullSpectrum executable</message>
+  <message id="rr-get-detectors">Retrieve DRFs</message>
+  <message id="rr-detectors-label">DRF:</message>
+  <message id="rr-url-instructions">After entering URL of web service, please (optionally) retrieve DRFs, and then press "<em>Submit</em>"</message>
+  <message id="rr-only-disp-samples-cb">Only Displayed Samples</message>
+  <message id="rr-tt-only-disp-samples">Normally search-mode and portal data are analyzed in their entirety, but selecting this option will cause only the displayed foreground/background to be analyzed.</message>
+  <message id="rr-submit-ana-btn">Submit Analysis</message>
+  <message id="rr-show-dialog-cb">Show dialog</message>
+  <message id="rr-always-call-cb">Always call on spectrum load</message>
+  <message id="rr-tt-show-dialog">If checked, a dialog that must be dismissed by the user will be shown with RID results. If not checked, only a notification that will disappear after a short time, will be shown with RID results.</message>
+  <message id="rr-gadras-rid-error">GADRAS RID Error: {1}</message>
+  <message id="rr-gadras-rid-error-code">GADRAS RID Error code {1}</message>
+  <message id="rr-gadras-rid-no-id">GADRAS RID: nothing identified</message>
+  <message id="rr-gadras-result">GADRAS RID: {1}</message>
+  <message id="rr-gadras-fail-parse">Failed to parse GADRAS RID results.</message>
+  <message id="rr-rid-results-window-title">External RID Results</message>
+  <message id="rr-rid-tool-btn">RID Tool</message>
+  <message id="rr-err-incorrect-url">Error calling analysis: incorrect URL or no internet.</message>
+  <message id="rr-err-locating-exe">Error locating executable: '{1}'</message>
+  <message id="rr-err-creating-tmp-file">Error creating temp file name.</message>
+  <message id="rr-err-opening-tmp-file">Error opening temp file.</message>
+  <message id="rr-requesting-ana">Requesting analysis</message>
+  <message id="rr-err-no-spec">No displayed spectrum</message>
+  <message id="rr-requesting-service-info">Requesting service information.</message>
+  <message id="rr-error-parsing-service-info">Error parsing service information results: <code></code></message>
+  <message id="rr-incorrect-url">incorrect URL or no internet.</message>
+  <message id="rr-err-requesting-service-info">Error retrieving service information: <code>{1}</code></message>
+</messages>

@@ -52,7 +52,11 @@ namespace SpecUtils
  - Have the SpecMeas hold the history for itself
  - Make it so this class collects all the undo/redo steps for a given event loop, and mark this object as needing update, so
    during render, all steps are collected up, and made into a single step - but this would require making this class inherit
-   from Wt::WWidget (or more likely Wt::WCompositeWidget), instead of just Wt::WObject.
+   from Wt::WWidget (or more likely Wt::WCompositeWidget), instead of just Wt::WObject - or hooking into this class from
+   `InterSpecApp::notify(...)` (but I am assuming all updating/rendering happens from within `notify`, which I'm 100% on)
+ - `canAddUndoRedoNow()` and similar could also instead reference a variable that is not reset until the end of
+   `InterSpecApp::notify(...)`, so objects that set undo/redo steps during `render(...)`, will properly be able
+   to detect if they should add a step or not (particularly from within `addUndoRedoStep(...)`)
  */
 class UndoRedoManager : public Wt::WObject
 {
@@ -72,13 +76,13 @@ public:
    A value of zero indicates unlimited, a negative value indicates disabled.
    Default value is 250, but may be set be the `DesktopAppConfig` mechanism
    */
-  static int maxUndoRedoSteps();
+  static InterSpec_API int maxUndoRedoSteps();
   
   /** Sets the approximate maximum number of undo/redo steps to be kept in memory.
    
    Set to `0` for unlimited, or a negative value to disable.
    */
-  static void setMaxUndoRedoSteps( const int steps );
+  static InterSpec_API void setMaxUndoRedoSteps( const int steps );
   
   /** Adds an undo/redo step.
    

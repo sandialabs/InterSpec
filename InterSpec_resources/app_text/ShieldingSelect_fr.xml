@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- ss- is short for ShieldingSelect
+  -->
+  <message id="ss-tt-shield-type-toggle">Basculer entre le blindage matériel et générique</message>
+<message id="ss-tt-material-name">
+    Vous pouvez soit entrer le nom d'un matériau ou élément prédéfini ici
+    (effacer le texte du formulaire et cliquer sur la flèche à droite du formulaire pour voir toutes les options prédéfinies),
+    soit vous pouvez spécifier la composition atomique du matériau, similaire
+    à C0.5H0.2Ni0.6, où les nombres représentent la densité en g/cm3 de l'
+    élément précédent dans le matériau, donc l'exemple aurait une densité totale
+    de 0.5+0.2+0.6=1.3 g/cm3.
+    Pour entrer des matériaux avec des composants isotopiques, vous devriez mettre
+    le nucléide entre guillemets simples ou doubles, ex : 'U238'0.2'U235'0.8
+</message>
+<message id="ss-tt-areal-density">Densité surfacique du blindage en g/cm2</message>
+<message id="ss-areal-density-empty-txt">Densité Surf.</message>
+<message id="ss-tt-atomic-number">Numéro atomique du blindage</message>
+<message id="ss-atomic-number-empty-txt">Numéro Atomique</message>
+<message id="ss-source-for-cb">
+    Lorsque ces nucléides sont utilisés comme sources, ils sont
+    traités comme uniformément distribués dans le matériau
+    (qui est supposé sphérique), donc l'auto-atténuation
+    et d'autres facteurs sont pris en compte.
+</message>
+<message id="ss-fit-mass-fractions-cb">Ajuster les Fractions Massiques</message>
+<message id="ss-thickness">Épaisseur</message>
+<message id="ss-radius">Rayon</message>
+<message id="ss-radial-thickness">Épaisseur Radiale</message>
+<message id="ss-half-length">Demi-Longueur</message>
+<message id="ss-length-thickness">Épaisseur de Longueur</message>
+<message id="ss-half-width">Demi-Largeur</message>
+<message id="ss-width-thickness">Épaisseur de Largeur</message>
+<message id="ss-half-height">Demi-Hauteur</message>
+<message id="ss-height-thickness">Épaisseur de Hauteur</message>
+<message id="ss-half-depth">Demi-Profondeur</message>
+<message id="ss-depth-thickness">Épaisseur de Profondeur</message>
+<message id="ss-tt-fit-mass-frac">Si les fractions massiques sont ajustées, leur somme fractionnaire restera constante dans l'ajustement.</message>
+<message id="ss-fixed-non-src-frac">Supposant {1}{2}% d'autres isos {3}</message>
+<message id="ss-fixed">fixé</message>
+<message id="ss-generic">Générique</message>
+<message id="ss-consists-of-mass-frac">consiste en (fraction massique, élément)</message>
+<message id="ss-err-invalid-material">{1} n'est pas un matériau valide</message>
+<message id="ss-invalid-mat">mat. invalide</message>
+</messages>

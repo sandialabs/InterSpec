@@ -187,3 +187,22 @@ uses to control its maximum width.
   list-style-type: none;
   padding-inline-start: 5px;
 }
+
+@media screen and (max-device-width: 480px) {
+  .MoreNuclideInfoDisplay {
+    font-size: x-small;
+  }
+  
+  .MoreNuclideInfoDisplay .MoreNucInfoTitle {
+    font-size: medium;
+  }
+  
+  .MoreNuclideInfoDisplay .MoreNucInfoSection .MoreNucInfoSubTitle {
+    font-size: small;
+  }
+  
+  .MoreNuclideInfoDisplay .HalfLife {
+    font-size: 6px;
+  }
+}
+

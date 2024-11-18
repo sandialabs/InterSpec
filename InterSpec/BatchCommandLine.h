@@ -27,7 +27,7 @@
 
 namespace BatchCommandLine
 {
-  int run_batch_command( int argc, char **argv );
+  InterSpec_API int run_batch_command( int argc, char **argv );
 }//namespace BatchCommandLine
 
 #endif //BatchCommandLine_h

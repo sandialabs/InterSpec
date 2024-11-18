@@ -111,6 +111,7 @@ namespace GammaInteractionCalc
   enum class ModelSourceType : int;
   class ShieldingSourceChi2Fcn;
   struct SourceFitDef;
+  struct PeakDetail;
 }//namespace GammaInteractionCalc
 
 class InterSpec;
@@ -210,7 +211,7 @@ public:
   
   int nuclideIndex( const SandiaDecay::Nuclide *nuc ) const;
  
-  //setSharredAgeNuclide(): in order to make it so all isotopes of an element
+  //setSharedAgeNuclide(): in order to make it so all isotopes of an element
   //  can be made to have the same age, we'll have it so one of the isotopes
   //  controls the age (and if it can be fit) for all of them in a nuclide.
   //The dependantNucs' age will be controlled by definingNuc.  Setting the definingNuc
@@ -218,7 +219,7 @@ public:
   //  control this age.
   //If dependantNuc->atomicNumber != definingNuc->atomicNumber, an exception will
   //  be thrown
-  void setSharredAgeNuclide( const SandiaDecay::Nuclide *dependantNuc,
+  void setSharedAgeNuclide( const SandiaDecay::Nuclide *dependantNuc,
                              const SandiaDecay::Nuclide *definingNuc );
   
   //ageDefiningNuclide(...): returns the nuclide that controlls the age for the
@@ -306,7 +307,7 @@ public:
 protected:
   Wt::SortOrder m_sortOrder;
   Columns m_sortColumn;
-  bool m_displayCurries;
+  bool m_displayCuries;
   PeakModel *m_peakModel;
   std::vector<ShieldingSourceFitCalc::IsoFitStruct> m_nuclides;
   bool m_sameAgeForIsotopes;
@@ -445,8 +446,9 @@ public:
   
   //updateCalcLogWithFitResults(): adds in fit for values and their
   //  uncertainties in the calculation log.
-  void updateCalcLogWithFitResults( std::shared_ptr<GammaInteractionCalc::ShieldingSourceChi2Fcn> chi2,
-                                    std::shared_ptr<ShieldingSourceFitCalc::ModelFitResults> results );
+  static void updateCalcLogWithFitResults( std::shared_ptr<GammaInteractionCalc::ShieldingSourceChi2Fcn> chi2,
+                                    std::shared_ptr<ShieldingSourceFitCalc::ModelFitResults> results,
+                                    std::vector<std::string> &calcLog );
   
   //initialSizeHint(...) gives the initial hint about the size so which widgets
   //  should be shown can be decided on.  Furthermore, calling this function
@@ -617,7 +619,13 @@ protected:
   /** Undoes the changes from #setWidgetStateForFitStarting */
   void setWidgetStateForFitBeingDone();
   
-  void updateChi2ChartActual();
+  /** If results are passed in, and they are final, will use those to set the peak chart information and such, 
+   or else will call `shieldingFitnessFcn()`.
+   
+   Does not take a lock on `results->m_mutex`, so if there is a chance anywhere else is using the results,
+   take a lock on it before calling this function
+   */
+  void updateChi2ChartActual( std::shared_ptr<const ShieldingSourceFitCalc::ModelFitResults> results );
   virtual void layoutSizeChanged( int width, int height ) override;
   
 protected:
@@ -691,6 +699,7 @@ protected:
   
   AuxWindow *m_logDiv;
   std::vector<std::string> m_calcLog;
+  std::unique_ptr<const std::vector<GammaInteractionCalc::PeakDetail>> m_peakCalcLogInfo;
   
   AuxWindow *m_modelUploadWindow;
 #if( USE_DB_TO_STORE_SPECTRA )

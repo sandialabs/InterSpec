@@ -1,0 +1,21 @@
+.NuclideSourceEnter {
+  display: grid;
+}
+
+.NuclideSourceEnter label {
+  
+}
+
+.NuclideSourceEnter input {
+  margin-top: 3px;
+  margin-left: 2px;
+}
+
+.NuclideSourceEnter .HLTxt {
+  font-size: 75%;
+  width: 6em;
+  overflow: hidden;
+  margin-left: 5px;
+  white-space: nowrap;
+}
+

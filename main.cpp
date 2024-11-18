@@ -43,16 +43,10 @@
 #include "InterSpec/InterSpec.h"
 #include "InterSpec/InterSpecServer.h"
 
-#if( BUILD_AS_COMMAND_LINE_CODE_DEVELOPMENT )
-#include "testing/developcode.h"
-#endif
-
 #if( USE_BATCH_TOOLS )
 #include "InterSpec/BatchCommandLine.h"
 #endif
 
-// #include "InterSpec/QRSpectrum.h"
-#include "InterSpec/ReferenceLineInfo.h"
 
 int main( int argc, char **argv )
 {
@@ -60,12 +54,6 @@ int main( int argc, char **argv )
   return 1;
 #ifdef _WIN32
   AppUtils::getUtf8Args( argc, argv );
-#endif
-  
-  //return QRSpectrum::dev_code();
-  
-#if( BUILD_AS_COMMAND_LINE_CODE_DEVELOPMENT )
-  return developcode::run_development_code();
 #endif
   
   std::cout << std::showbase << std::hex << "Running with Wt version "
@@ -80,6 +68,10 @@ int main( int argc, char **argv )
   
   int server_port_num;
   std::string docroot, wt_config, user_data_dir;
+  
+#if( USE_BATCH_TOOLS )
+  bool batch_peak_fit = false, batch_act_fit = false;
+#endif
   
 #if( BUILD_FOR_WEB_DEPLOYMENT )
   std::string http_address = "127.0.0.1";
@@ -109,17 +101,24 @@ int main( int argc, char **argv )
    )
   ("docroot", po::value<std::string>(&docroot),
    "The directory that contains the 'InterSpec_resources' and 'data' directories.\n"
-   "All files in the docroot directory, and its subdirectories are available via HTTP.\n"
+   "All files in the docroot directory, and its subdirectories are available via HTTP."
 #if( !BUILD_FOR_WEB_DEPLOYMENT )
-   "Defaults to current working directory."
+   "\nDefaults to current working directory."
 #endif
+   "\nThis value sets Wts 'docroot' and 'approot' variables."
    )
   ("static-data-dir", "The static data directory (e.g., 'data' dir that holds cross-sections, "
    "nuclear-data, etc) to use.  If not specified, uses 'data' in the `docroot` directory."
    )
 #if( USE_BATCH_TOOLS )
-  ("batch-peak-fit", "Batch-fit peaks.")
-  ("batch-act-fit", "Batch shielding/source fit.")
+  ("batch-peak-fit", po::value<bool>(&batch_peak_fit)->implicit_value(true)->default_value(false),
+     "Batch-fit peaks.\n"
+     "\tUse '--batch-peak-fit --help' to see available options."
+  )
+  ("batch-act-fit", po::value<bool>(&batch_act_fit)->implicit_value(true)->default_value(false),
+     "Batch shielding/source fit.\n"
+     "\tUse '--batch-act-fit --help' to see available options."
+  )
 #endif
   ;
   
@@ -145,7 +144,7 @@ int main( int argc, char **argv )
   
   
 #if( USE_BATCH_TOOLS )
-  const bool is_batch = (cl_vm.count("batch-peak-fit") || cl_vm.count("batch-act-fit"));
+  const bool is_batch = (batch_peak_fit || batch_act_fit);
 #else
   const bool is_batch = false;
 #endif
@@ -229,6 +228,19 @@ int main( int argc, char **argv )
                 << std::endl;
       return -25;
     }
+    
+    // We will make user data path absolute, so there wont be any ambiguity later on
+    //  (I dont think we ever change CWD, but JIC)
+    if( !SpecUtils::is_absolute_path(dev_user_data) )
+    {
+      const std::string cwd = SpecUtils::get_working_path();
+      const std::string trial_dir = SpecUtils::append_path( cwd, dev_user_data );
+      if( SpecUtils::is_directory(trial_dir) )
+      {
+        dev_user_data = trial_dir;
+        SpecUtils::make_canonical_path( dev_user_data );
+      }
+    }//if( !SpecUtils::is_absolute_path(userDir) )
     
     user_data_dir = dev_user_data;
 #else

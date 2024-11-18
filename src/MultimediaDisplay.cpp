@@ -41,6 +41,7 @@
 #include "InterSpec/InterSpec.h"
 #include "InterSpec/SimpleDialog.h"
 #include "InterSpec/InterSpecUser.h"
+#include "InterSpec/UserPreferences.h"
 #include "InterSpec/MultimediaDisplay.h"
 
 using namespace std;
@@ -97,6 +98,8 @@ public:
   {
     wApp->useStyleSheet( "InterSpec_resources/MultimediaDisplay.css" );
     
+    InterSpec::instance()->useMessageResourceBundle( "MultimediaDisplay" );
+    
     addStyleClass( "MultimediaDisplay" );
   
     m_resource = new WMemoryResource( this );
@@ -112,10 +115,10 @@ public:
     m_add_info->addStyleClass( "AddInfo" );
     
     m_remark = new WText( m_add_info );
-    m_remark->addStyleClass( "Remark" );
+    m_remark->addStyleClass( WString::tr("Remark") );
     
     m_description = new WText( m_add_info );
-    m_description->addStyleClass( "Description" );
+    m_description->addStyleClass( WString::tr("Description") );
     
     m_time = new WText( m_add_info );
     m_time->addStyleClass( "Time" );
@@ -123,14 +126,14 @@ public:
     m_nav = new WContainerWidget( this );
     m_nav->addStyleClass( "Nav" );
     
-    m_prev = new WPushButton( "Prev", m_nav );
+    m_prev = new WPushButton( WString::tr("smmd-prev-btn"), m_nav );
     m_prev->addStyleClass( "Prev" );
     m_prev->clicked().connect( this, &MultimediaDisplay::prevIndex );
     
     m_pos_txt = new WText( m_nav );
     m_pos_txt->addStyleClass( "NavPos" );
     
-    m_next = new WPushButton( "Next", m_nav );
+    m_next = new WPushButton( WString::tr("smmd-next-btn"), m_nav );
     m_next->addStyleClass( "Next" );
     m_next->clicked().connect( this, &MultimediaDisplay::nextIndex );
     
@@ -138,14 +141,14 @@ public:
     WContainerWidget *footer = new WContainerWidget( this );
     footer->addStyleClass( "PrefAndDownload" );
     
-    WCheckBox *cb = new WCheckBox( "Auto show images", footer );
-    cb->setToolTip( "Automatically show images " );
+    WCheckBox *cb = new WCheckBox( WString::tr("smmd-auto-show-images-cb"), footer );
+    cb->setToolTip( WString::tr("smmd-tt-auto-show-images") );
     m_next->setFocus();
     
     InterSpec *interspec = InterSpec::instance();
     assert( interspec );
     if( interspec )
-      InterSpecUser::associateWidget( interspec->m_user, "AutoShowSpecMultimedia", cb, interspec );
+      UserPreferences::associateWidget( "AutoShowSpecMultimedia", cb, interspec );
     
 #if( BUILD_AS_OSX_APP || IOS )
     m_download = new WAnchor( WLink(m_resource), footer );
@@ -168,7 +171,7 @@ public:
 #endif //ANDROID
 #endif
     
-    m_download->setToolTip( "Save the currently showing image.", Wt::PlainText );
+    m_download->setToolTip( WString::tr("smmd-tt-export-image-file"), Wt::PlainText );
     
     setIndex( 0 );
   }//constructor
@@ -207,7 +210,7 @@ public:
     if( m_meas )
       all_data = m_meas->multimedia_data();
     
-    auto showErrorMsg = [this]( const string &msg ){
+    auto showErrorMsg = [this]( const WString &msg ){
       m_image->hide();
       m_resource->setData( {} );
       m_add_info->hide();
@@ -220,7 +223,7 @@ public:
     
     if( all_data.empty() )
     {
-      showErrorMsg( "No multimedia content to display" );
+      showErrorMsg( WString::tr("smmd-err-no-content") );
       return;
     }//if( all_data.empty() )
   
@@ -233,9 +236,9 @@ public:
     if( !data || (data->data_.size() < 25) )
     {
       if( data && data->file_uri_.empty() )
-        showErrorMsg( "Data encoded as a file at URI='" + data->file_uri_ + "'" );
+        showErrorMsg(  WString::tr("smmd-err-file-is-uri").arg(data->file_uri_) );
       else
-        showErrorMsg( "Multimedia source did not contain any data." );
+        showErrorMsg( WString::tr("smmd-err-no-multimedia-src") );
       
       return;
     }//if( !data || (data->data_.size() < 25) )
@@ -264,13 +267,13 @@ public:
       
     if( data_str.empty() )
     {
-      showErrorMsg( "Multimedia content encoding of data is not supported." );
+      showErrorMsg( WString::tr("smmd-err-encoding-not-supported") );
       return;
     }
       
     if( mime.empty() )
     {
-      showErrorMsg( "Multimedia content type was either not of an image type, or could not be determined." );
+      showErrorMsg( WString::tr("smmd-err-not-image") );
       return;
     }
       
@@ -294,8 +297,9 @@ public:
     m_nav->setHidden( (all_data.size() < 2) );
     m_download->show();
     
-    const string postxt = "Image " + to_string(m_current_index + 1)
-                          + " of " + to_string(all_data.size());
+    WString postxt = WString::tr("smmd-image-index")
+                      .arg( static_cast<int>(m_current_index + 1) )
+                      .arg( static_cast<int>(all_data.size()) );
     m_pos_txt->setText( postxt );
     
     
@@ -307,7 +311,11 @@ public:
     }else
     {
       have_add_info = true;
-      m_time->setText( "Time: " + SpecUtils::to_common_string(data->capture_start_time_, true) );
+      
+      WString msg = WString("{1}: {2}")
+                     .arg( WString::tr("smmd-Time"))
+                     .arg( SpecUtils::to_common_string(data->capture_start_time_, true) );
+      m_time->setText( msg );
       m_time->show();
     }
     
@@ -319,7 +327,10 @@ public:
     {
       have_add_info = true;
       m_remark->show();
-      m_remark->setText( "Remark: " + data->remark_ );
+      WString msg = WString("{1}: {2}")
+                     .arg( WString::tr("Remark"))
+                     .arg( data->remark_ );
+      m_remark->setText( msg );
     }
     
     if( data->descriptions_.empty() )
@@ -330,7 +341,10 @@ public:
     {
       have_add_info = true;
       m_description->show();
-      m_description->setText( "Desc: " + data->descriptions_ );
+      WString msg = WString("{1}: {2}")
+                     .arg( WString::tr("Desc."))
+                     .arg( data->descriptions_ );
+      m_description->setText( msg );
     }
     
     m_add_info->setHidden( !have_add_info );
@@ -359,12 +373,13 @@ SimpleDialog *displayMultimedia( const std::shared_ptr<const SpecMeas> &spec )
   
   auto dialog = new SimpleDialog();
   //dialog->setModal( false ); //doesnt seem to have any effect
-  dialog->addButton( "Close" );
+  dialog->addButton( WString::tr("Close") );
   
   WContainerWidget *contents = dialog->contents();
   const bool multiple_images = (spec && (spec->multimedia_data().size() > 1));
-  const char *title = multiple_images ? "Images in Spectrum File" : "Image in Spectrum File";
-  WText *dialogTitle = new WText( title, contents );
+  const char *title_key = multiple_images ? "smmd-window-title-multiple" : "smmd-window-title-single";
+  // I think its find that we may not have read MultimediaDisplay.xml yet - I dont think WString resolves the keys immediately
+  WText *dialogTitle = new WText( WString::tr(title_key), contents );
   dialogTitle->addStyleClass( "title MultimediaDialogTitle" );
   dialogTitle->setInline( false );
   

@@ -31,6 +31,8 @@
 #include <utility>
 #include <cstdint>
 
+#include <Wt/WString>
+
 // Forward declarations
 class SimpleDialog;
 namespace qrcodegen
@@ -82,8 +84,8 @@ namespace QrCode
 
   /** Returns nullptr if an error is encountered. */
   SimpleDialog *displayTxtAsQrCode( const std::string &url,
-                                    const std::string &title,
-                                    const std::string &description );
+                                    const Wt::WString &title,
+                                    const Wt::WString &description );
 }//namespace QrCode
 
 #endif //QrCode_h

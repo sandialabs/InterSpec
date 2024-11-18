@@ -25,6 +25,8 @@
 
 #include "rapidxml/rapidxml.hpp"
 
+#include <boost/math/distributions/chi_squared.hpp>
+
 #include <Wt/WMenu>
 #include <Wt/WLabel>
 #include <Wt/WPanel>
@@ -72,14 +74,21 @@
 #include "InterSpec/RelActCalcAuto.h"
 #include "InterSpec/RelActManualGui.h"
 #include "InterSpec/UndoRedoManager.h"
+#include "InterSpec/UserPreferences.h"
 #include "InterSpec/RelActCalcManual.h"
 #include "InterSpec/RowStretchTreeView.h"
 #include "InterSpec/NativeFloatSpinBox.h"
 #include "InterSpec/DecayDataBaseServer.h"
 #include "InterSpec/IsotopeSelectionAids.h"
+#include "InterSpec/PhysicalUnitsLocalized.h"
 
 using namespace Wt;
 using namespace std;
+
+#if( ANDROID )
+// Defined in target/android/android.cpp
+extern void android_download_workaround( Wt::WResource *resource, std::string description );
+#endif
 
 const int RelActManualGui::sm_xmlSerializationMajorVersion = 0;
 const int RelActManualGui::sm_xmlSerializationMinorVersion = 1;
@@ -158,10 +167,12 @@ public:
       if( !solution )
       {
         response.out() << "<!DOCTYPE html>\n"
-        "\t<head><meta charset=\"utf-8\"><title>No Rel. Activity Solution Available</title></head>"
+        "\t<head><meta charset=\"utf-8\"><title>" 
+            << WString::tr("ramrr-no-solution-title").toUTF8()
+            << "</title></head>"
         "\t<body>"
-        "\t\tSorry - no solution currently available."
-        "\t</body>"
+        "\t\t" << WString::tr("ramrr-no-solution-text").toUTF8()
+        << "\t</body>"
         "</html>";
         
         return;
@@ -180,7 +191,7 @@ public:
         bool use_peak = false;
         for( const auto &r : solution->m_input_peak )
         {
-          if( fabs(p->mean() - r.m_energy) < 1.0 )
+          if( fabs(p->mean() - r.m_mean) < 1.0 )
             use_peak = true;
         }
         
@@ -195,7 +206,9 @@ public:
       else
         title = orig_file_name;
       
-      solution->print_html_report( response.out(), title, foreground, display_peaks );
+      auto background = m_interspec->displayedHistogram(SpecUtils::SpectrumType::Background);
+      const double back_sf = m_interspec->displayScaleFactor(SpecUtils::SpectrumType::Background);
+      solution->print_html_report( response.out(), title, foreground, display_peaks, background, back_sf );
     }catch( std::exception &e )
     {
       cerr << "Error handling request for RelActManualReportResource: " << e.what() << endl;
@@ -203,8 +216,7 @@ public:
       response.out() << "Error creating HTML file: " << e.what()
       << "\n\nPlease report to InterSpec@sandia.gov.";
       
-      passMessage( "Error getting spectrum file currently being shown: " + string(e.what()),
-                   WarningWidget::WarningMsgHigh );
+      passMessage( WString::tr("ramrr-err-report").arg(e.what()), WarningWidget::WarningMsgHigh );
       
       response.setStatus(500);
       assert( 0 );
@@ -264,7 +276,7 @@ public:
       setCentralWidget( m_nucContentTable );
       
       WTableCell *cell = m_nucContentTable->elementAt(0, 0);
-      WLabel *label = new WLabel( "Age", cell );
+      WLabel *label = new WLabel( WString::tr("Age"), cell );
       
       m_age_row = m_nucContentTable->rowAt(0);
       
@@ -284,7 +296,7 @@ public:
       {
         m_age_edit_tmp = new WLineEdit( agestr, cell );
         
-        WRegExpValidator *validator = new WRegExpValidator( PhysicalUnits::sm_timeDurationHalfLiveOptionalRegex, m_age_edit_tmp );
+        WRegExpValidator *validator = new WRegExpValidator( PhysicalUnitsLocalized::timeDurationHalfLiveOptionalRegex(), m_age_edit_tmp );
         validator->setFlags(Wt::MatchCaseInsensitive);
         m_age_edit_tmp->setValidator(validator);
         label->setBuddy( m_age_edit_tmp );
@@ -309,18 +321,18 @@ public:
       
       cell = m_nucContentTable->elementAt(1, 0);
       //label = new WLabel( "Half Life", cell );
-      label = new WLabel( "<span style=\"font-size: small;\">T&frac12;</span>", cell );
+      label = new WLabel( WString("<span style=\"font-size: small;\">{1}</span>").arg(WString::tr("T1/2")), cell );
       
       cell = m_nucContentTable->elementAt(1, 1);
-      WText *txt = new WText( PhysicalUnits::printToBestTimeUnits(nuc->halfLife), cell );
+      WText *txt = new WText( PhysicalUnitsLocalized::printToBestTimeUnits(nuc->halfLife), cell );
       
       cell = m_nucContentTable->elementAt(2, 0);
-      label = new WLabel( "Spec. Act.", cell );
+      label = new WLabel( WString::tr("mrend-spec-act"), cell );
       
       cell = m_nucContentTable->elementAt(2, 1);
-      const bool useCurrie = !InterSpecUser::preferenceValue<bool>( "DisplayBecquerel", InterSpec::instance() );
+      const bool useCurie = !UserPreferences::preferenceValue<bool>( "DisplayBecquerel", InterSpec::instance() );
       const double specificActivity = nuc->activityPerGram() / PhysicalUnits::gram;
-      const string sa = PhysicalUnits::printToBestSpecificActivityUnits( specificActivity, 3, useCurrie );
+      const string sa = PhysicalUnits::printToBestSpecificActivityUnits( specificActivity, 3, useCurie );
       txt = new WText( sa, cell );
       
       if( meas_time > 0.005*m_nuc->halfLife ) //0.005 times HL is arbitrary
@@ -338,16 +350,17 @@ public:
       else if( reaction->targetNuclide )
         target = reaction->targetNuclide->symbol;
       
-      string infostr;
+      WString infostr;
       switch( m_reaction->type )
       {
-        case AlphaNeutron:            infostr = "Alphas on " + target + " creating neutrons"; break;
-        case NeutronAlpha:            infostr = "Neutrons on " + target + " creating alphas"; break;
-        case AlphaProton:             infostr = "Alphas on " + target + " creating protons";  break;
-        case NeutronCapture:          infostr = "Slow neutrons on " + target + " being captured";  break;
-        case NeutronInelasticScatter: infostr = "Fast neutrons inelastically scattering off " + target; break;
-        case AnnihilationReaction:    infostr = "Annihilation gammas";                        break;
-        case NumReactionType:         infostr = "Unknown reaction";                           break;
+        case AlphaNeutron:            infostr = WString::tr("mrend-X(a,n)").arg(target); break;
+        case NeutronAlpha:            infostr = WString::tr("mrend-X(n,a)").arg(target); break;
+        case AlphaProton:             infostr = WString::tr("mrend-X(a,p)").arg(target); break;
+        case NeutronCapture:          infostr = WString::tr("mrend-X(n,g)").arg(target); break;
+        case NeutronInelasticScatter: infostr = WString::tr("mrend-X(n,n)").arg(target); break;
+        case AlphaInelasticScatter:   infostr = WString::tr("mrend-X(a,a)").arg(target); break;
+        case AnnihilationReaction:    infostr = WString::tr("mrend-annih");              break;
+        case NumReactionType:         infostr = WString::tr("mrend-unknown-rxctn");      break;
       }//switch( m_reaction->type )
       
       WText *content = new WText( infostr );
@@ -375,15 +388,14 @@ public:
     
     WTableCell *cell = m_nucContentTable->elementAt(3, 0);
     cell->setColumnSpan( 2 );
-    m_decay_during_meas = new WCheckBox( "Decay during meas.", cell );
+    m_decay_during_meas = new WCheckBox( WString::tr("mrend-cb-decay-during-meas"), cell );
     m_decay_during_meas->checked().connect( this, &ManRelEffNucDisp::handleDecayDuringMeasurementChanged );
     m_decay_during_meas->unChecked().connect( this, &ManRelEffNucDisp::handleDecayDuringMeasurementChanged );
     
-    const bool showToolTips = InterSpecUser::preferenceValue<bool>( "ShowTooltips", InterSpec::instance() );
+    const bool showToolTips = UserPreferences::preferenceValue<bool>( "ShowTooltips", InterSpec::instance() );
     
-    const char *tooltip = "When checked, the nuclides decay during the measurement will be accounted"
-    " for, with the quoted relative activity being the activity at the start of measurement.";
-    HelpSystem::attachToolTipOn( m_decay_during_meas, tooltip, showToolTips );
+    HelpSystem::attachToolTipOn( m_decay_during_meas, WString::tr("mrend-tt-decay-during-meas"), 
+                                showToolTips );
   }//void showDecayDuringMeasurementCb()
   
   
@@ -422,7 +434,7 @@ public:
     {
       double age = 0;
       const string agestr = m_age_edit_tmp->text().toUTF8();
-      age = PhysicalUnits::stringToTimeDurationPossibleHalfLife( agestr, m_nuc->halfLife );
+      age = PhysicalUnitsLocalized::stringToTimeDurationPossibleHalfLife( agestr, m_nuc->halfLife );
       if( age < 0 )
         throw runtime_error( "Negative age not allowed." );
       
@@ -431,7 +443,7 @@ public:
     {
       if( m_current_age >= 0.0 )
       {
-        string agestr = PhysicalUnits::printToBestTimeUnits( m_current_age, 5 );
+        string agestr = PhysicalUnitsLocalized::printToBestTimeUnits( m_current_age, 5 );
         m_age_edit_tmp->setText( WString::fromUTF8(agestr) );
       }else
       {
@@ -458,7 +470,7 @@ public:
     if( !m_nuc || !m_age_edit_tmp  || (age < 0) || IsInf(age) || IsNan(age) )
       return;
     
-    const string agestr = PhysicalUnits::printToBestTimeUnits( age );
+    const string agestr = PhysicalUnitsLocalized::printToBestTimeUnits( age );
     m_age_edit_tmp->setText( WString::fromUTF8(agestr) );
     m_current_age = age;
     setCollapsed( false );
@@ -515,6 +527,8 @@ RelActManualGui::RelActManualGui( InterSpec *viewer, Wt::WContainerWidget *paren
 
 void RelActManualGui::init()
 {
+  m_interspec->useMessageResourceBundle( "RelActManualGui" );
+  
   m_renderFlags |= RenderActions::UpdateCalc;
   m_renderFlags |= RenderActions::UpdateNuclides;
   scheduleRender();
@@ -523,7 +537,7 @@ void RelActManualGui::init()
     delete m_layout;
   
   m_layout = new WGridLayout( this );
-  const bool showToolTips = InterSpecUser::preferenceValue<bool>( "ShowTooltips", m_interspec );
+  const bool showToolTips = UserPreferences::preferenceValue<bool>( "ShowTooltips", m_interspec );
   
   m_layout->setContentsMargins( 0, 0, 0, 0 );
   m_layout->setVerticalSpacing( 0 );
@@ -540,7 +554,7 @@ void RelActManualGui::init()
   collayout->setHorizontalSpacing( 0 );
   collayout->setRowStretch( 1, 1 );
   
-  WText *header = new WText( "Options" );
+  WText *header = new WText( WString::tr("ramg-options-label") );
   header->addStyleClass( "ToolTabColumnTitle" );
   collayout->addWidget( header, 0, 0 );
   
@@ -553,20 +567,13 @@ void RelActManualGui::init()
   
   WTable *optionsList = new WTable( optionsDiv );
   optionsList->addStyleClass( "OptionsList" );
-  WLabel *label = new WLabel( "Eqn Form", optionsList->elementAt(0, 0) );
+  WLabel *label = new WLabel( WString::tr("ramg-eqn-form-label"), optionsList->elementAt(0, 0) );
   
   m_relEffEqnForm = new WComboBox( optionsList->elementAt(0, 1) );
   m_relEffEqnForm->activated().connect( this, &RelActManualGui::relEffEqnFormChanged );
   
-  const char *tooltip = "The functional form to use for the relative efficiciency curve.<br />"
-  "Options are:"
-  "<table style=\"margin-left: 10px;\">"
-  "<tr><th>Log(energy):</th>               <th>y = a + b*ln(x) + c*(ln(x))^2 + d*(ln(x))^3 + ...</th></tr>"
-  "<tr><th>Log(rel. eff.):</th>            <th>y = exp( a + b*x + c/x + d/x^2 + e/x^3 + ... )</th></tr>"
-  "<tr><th>Log(energy)Log(rel. eff.):</th> <th>y = exp( a  + b*(lnx) + c*(lnx)^2 + d*(lnx)^3 + ... )</th></tr>"
-  "<tr><th>FRAM Empirical:</th>            <th>y = exp( a + b/x^2 + c*(lnx) + d*(lnx)^2 + e*(lnx)^3 )</th></tr>"
-  "</table>";
-  HelpSystem::attachToolTipOn( {optionsList->elementAt(0,0), optionsList->elementAt(0,1)}, tooltip, showToolTips );
+  HelpSystem::attachToolTipOn( {optionsList->elementAt(0,0), optionsList->elementAt(0,1)},
+                              WString::tr("ramg-tt-eqn-form"), showToolTips );
   
   
   // Will assume FramEmpirical is the highest
@@ -602,14 +609,14 @@ void RelActManualGui::init()
         //y = exp( a + b/x^2 + c*(lnx) + d*(lnx)^2 + e*(lnx)^3 )
         txt = "Empirical";
         break;
-    }
+    }//switch( eqn_form )
     
     m_relEffEqnForm->addItem( txt );
   }//for( loop over RelEffEqnForm )
   
   m_relEffEqnForm->setCurrentIndex( static_cast<int>(RelActCalc::RelEffEqnForm::LnX) );
   
-  label = new WLabel( "Eqn Order", optionsList->elementAt(1, 0) );
+  label = new WLabel( WString::tr("ramg-eqn-order-label"), optionsList->elementAt(1, 0) );
   
   m_relEffEqnOrder = new WComboBox( optionsList->elementAt(1, 1) );
   m_relEffEqnOrder->activated().connect( this, &RelActManualGui::relEffEqnOrderChanged );
@@ -623,17 +630,16 @@ void RelActManualGui::init()
   m_relEffEqnOrder->addItem( "6" );
   m_relEffEqnOrder->setCurrentIndex( 3 );
   
+  HelpSystem::attachToolTipOn( {optionsList->elementAt(1, 0),optionsList->elementAt(1, 1)},
+                              WString::tr("ramg-tt-eqn-order"), showToolTips );
   
-  tooltip = "The order (how many energy-dependent terms) relative efficiency equation to use.";
-  HelpSystem::attachToolTipOn( {optionsList->elementAt(1, 0),optionsList->elementAt(1, 1)}, tooltip, showToolTips );
-  
-  label = new WLabel( "Yield Info", optionsList->elementAt(2, 0) );
+  label = new WLabel( WString::tr("ramg-yield-info-label"), optionsList->elementAt(2, 0) );
   m_nucDataSrc = new WComboBox( optionsList->elementAt(2, 1) );
   label->setBuddy( m_nucDataSrc );
   m_nucDataSrc->activated().connect( this, &RelActManualGui::nucDataSrcChanged );
   
-  tooltip = "The nuclear data source for gamma branching ratios.";
-  HelpSystem::attachToolTipOn( {optionsList->elementAt(2, 0),optionsList->elementAt(2, 1)}, tooltip, showToolTips );
+  HelpSystem::attachToolTipOn( {optionsList->elementAt(2, 0),optionsList->elementAt(2, 1)},
+                              WString::tr("ramg-tt-data-src"), showToolTips );
   
   
   using RelActCalcManual::PeakCsvInput::NucDataSrc;
@@ -656,70 +662,54 @@ void RelActManualGui::init()
   
   m_nucDataSrcHolder = optionsList->rowAt(2);
 
-  label = new WLabel( "Match tol.", optionsList->elementAt(3, 0) ); //(FWHM)
+  label = new WLabel( WString::tr("ramg-match-tol-label"), optionsList->elementAt(3, 0) ); //(FWHM)
   m_matchTolerance = new NativeFloatSpinBox( optionsList->elementAt(3, 1) );
   label->setBuddy( m_matchTolerance );
   m_matchTolerance->setSpinnerHidden();
   m_matchTolerance->setWidth( 35 );
   m_matchTolerance->setRange( 0, 5 );
   m_matchTolerance->setValue( 0.5 ); //Other places we use 1.25/2.355 = 0.530786
-  label = new WLabel( "&nbsp;FWHM", optionsList->elementAt(3, 1) );
+  label = new WLabel( WString("&nbsp;{1}").arg(WString::tr("FWHM")), optionsList->elementAt(3, 1) );
   label->setBuddy( m_matchTolerance );
   m_matchTolerance->valueChanged().connect( this, &RelActManualGui::matchToleranceChanged );
   
   
-  tooltip = "The number of FWHM, from the peak mean, to include source gammas from as contributing"
-  " to a peaks area.<br />"
-  "For some photopeaks of some nuclides multiple gammas that are close in energy may contribute"
-  " to creating a detected peak area.  This match tolerance specifies how many FWHM from the"
-  " observed peak mean source gammas should be summed to determine the branching ratio to use."
-  "<br />Specifying a value of zero will will cause only the gamma energy assigned to a peak to"
-  " be used, even if there are very nearby other gammas.";
-  HelpSystem::attachToolTipOn( {optionsList->elementAt(3, 0),optionsList->elementAt(3, 1)}, tooltip, showToolTips );
+  HelpSystem::attachToolTipOn( {optionsList->elementAt(3, 0),optionsList->elementAt(3, 1)},
+                              WString::tr("ramg-tt-match-tol"), showToolTips );
   
-  label = new WLabel( "Add. Uncert", optionsList->elementAt(4, 0) );
+  label = new WLabel( WString::tr("ramg-add-uncert-label"), optionsList->elementAt(4, 0) );
   m_addUncertainty = new WComboBox( optionsList->elementAt(4, 1) );
   label->setBuddy( m_addUncertainty );
   
-  tooltip = "An additional uncertainty to add to the relative efficiency line, for each fit"
-  " photopeak.<br />"
-  "Small deviations in efficiency of detection for one or a few high statistics peaks can cause the"
-  " efficiency curve to notably deviate from the other points if only statical uncertainties are"
-  " used; when an additional uncertainty is added the relative efficiency will then do a better job"
-  " of visibly going through all the data points, and from limited testing produce more accurate"
-  " results.  You can think of this as adding a systematic uncertainty to each detected photopeak,"
-  " that is uncorrelated between peaks.  From limited testing the value used is not hugely"
-  " important, just as long as there is something.  You can also choose to use an unweighted fit,"
-  " where each peak will contribute to the fit equally, no matter its statistical uncertainty.";
-  
-  HelpSystem::attachToolTipOn( {optionsList->elementAt(4, 0),optionsList->elementAt(4, 1)}, tooltip, showToolTips );
+  HelpSystem::attachToolTipOn( {optionsList->elementAt(4, 0),optionsList->elementAt(4, 1)},
+                              WString::tr("ramg-tt-add-uncert"), showToolTips );
   
   m_addUncertainty->activated().connect( this, &RelActManualGui::addUncertChanged );
   
   for( AddUncert i = AddUncert(0); i < AddUncert::NumAddUncert; i = AddUncert(static_cast<int>(i) + 1) )
   {
-    const char *uncert_txt = "";
+    WString uncert_txt;
     switch( i )
     {
-      case AddUncert::Unweighted:         uncert_txt = "Unweighted"; break;
-      case AddUncert::StatOnly:           uncert_txt = "Stat. Only"; break;
-      case AddUncert::OnePercent:         uncert_txt = "1%";         break;
-      case AddUncert::FivePercent:        uncert_txt = "5%";         break;
-      case AddUncert::TenPercent:         uncert_txt = "10%";        break;
-      case AddUncert::TwentyFivePercent:  uncert_txt = "25%";        break;
-      case AddUncert::FiftyPercent:       uncert_txt = "50%";        break;
-      case AddUncert::SeventyFivePercent: uncert_txt = "75%";        break;
-      case AddUncert::OneHundredPercent:  uncert_txt = "100%";       break;
+      case AddUncert::Unweighted:         uncert_txt = WString::tr("ramg-unweighted-label"); break;
+      case AddUncert::StatOnly:           uncert_txt = WString::tr("ramg-stat-only-label");  break;
+      case AddUncert::OnePercent:         uncert_txt = WString::fromUTF8("1%");              break;
+      case AddUncert::FivePercent:        uncert_txt = WString::fromUTF8("5%");              break;
+      case AddUncert::TenPercent:         uncert_txt = WString::fromUTF8("10%");             break;
+      case AddUncert::TwentyFivePercent:  uncert_txt = WString::fromUTF8("25%");             break;
+      case AddUncert::FiftyPercent:       uncert_txt = WString::fromUTF8("50%");             break;
+      case AddUncert::SeventyFivePercent: uncert_txt = WString::fromUTF8("75%");             break;
+      case AddUncert::OneHundredPercent:  uncert_txt = WString::fromUTF8("100%");            break;
       case AddUncert::NumAddUncert:       assert(0);                 break;
     }//switch( i )
     
-    m_addUncertainty->addItem( WString::fromUTF8(uncert_txt) );
+    m_addUncertainty->addItem( uncert_txt );
   }//for( loop over AddUncert )
   
   m_addUncertainty->setCurrentIndex( static_cast<int>(AddUncert::StatOnly) );
   
   
-  m_backgroundSubtract = new WCheckBox( "Background Subtract", optionsList->elementAt(5, 0) );
+  m_backgroundSubtract = new WCheckBox( WString::tr("ramg-back-sub-cb"), optionsList->elementAt(5, 0) );
   m_backgroundSubtract->addStyleClass( "BackSub" );
   optionsList->elementAt(5, 0)->setColumnSpan( 2 );
   m_backgroundSubtractHolder = optionsList->rowAt(5);
@@ -751,12 +741,12 @@ void RelActManualGui::init()
 #if( ANDROID )
   // Using hacked saving to temporary file in Android, instead of via network download of file.
   m_downloadHtmlReport->clicked().connect( std::bind([this](){
-    android_download_workaround( m_calpResource, "rel_eff.html");
+    android_download_workaround( m_htmlResource, "rel_eff.html");
   }) );
 #endif //ANDROID
 #endif
   
-  m_downloadHtmlReport->setText( "HTML Report" );
+  m_downloadHtmlReport->setText( WString::tr("ramg-html-export-label") );
 
   WContainerWidget *nucCol = new WContainerWidget();
   nucCol->addStyleClass( "ToolTabTitledColumn RelActNucCol" );
@@ -767,7 +757,7 @@ void RelActManualGui::init()
   collayout->setHorizontalSpacing( 0 );
   collayout->setRowStretch( 1, 1 );
 
-  header = new WText( "Nuclides" );
+  header = new WText( WString::tr("ramg-nucs-label") );
   header->addStyleClass( "ToolTabColumnTitle" );
   collayout->addWidget( header, 0, 0 );
   
@@ -790,7 +780,7 @@ void RelActManualGui::init()
   collayout->setHorizontalSpacing( 0 );
   collayout->setRowStretch( 1, 1 );
   
-  header = new WText( "Peaks to Use" );
+  header = new WText( WString::tr("ramg-peaks-to-use-label") );
   header->addStyleClass( "ToolTabColumnTitle" );
   collayout->addWidget( header, 0, 0 );
   
@@ -856,7 +846,7 @@ void RelActManualGui::init()
   collayout->setVerticalSpacing( 0 );
   collayout->setHorizontalSpacing( 0 );
   
-  header = new WText( "Results" );
+  header = new WText( WString::tr("ramg-results-label") );
   header->addStyleClass( "ToolTabColumnTitle" );
   collayout->addWidget( header, 0, 0 );
   
@@ -891,7 +881,7 @@ void RelActManualGui::init()
   
   m_results = new WContainerWidget();
   m_results->addStyleClass( "ResultsTxt" );
-  WMenuItem *item = new WMenuItem( "Results", m_results );
+  WMenuItem *item = new WMenuItem( WString::tr("ramg-mi-results"), m_results );
   m_resultMenu->addItem( item );
   
   // When outside the link area is clicked, the item doesnt get selected, so we'll work around this.
@@ -899,13 +889,13 @@ void RelActManualGui::init()
     m_resultMenu->select( item );
     item->triggered().emit( item );
   }) );
-  // We wont have an undo/redo for changing results tabs, because sometimes we programitcally
+  // We wont have an undo/redo for changing results tabs, because sometimes we programmatically
   //  set to a specific tab, like if there is an error, and this can create an infinite cycle
   //  that will block previous undo/redo's
   //item->triggered().connect( this, &RelActManualGui::resultTabChanged );
   
   m_chart = new RelEffChart();
-  item = new WMenuItem( "Chart", m_chart );
+  item = new WMenuItem( WString::tr("ramg-mi-chart"), m_chart );
   m_resultMenu->addItem( item );
   item->clicked().connect( std::bind([this,item](){
     m_resultMenu->select( item );
@@ -1021,6 +1011,8 @@ void RelActManualGui::setGuiState( const GuiState &state )
     m_renderFlags |= RenderActions::UpdateCalc;
     scheduleRender();
   }
+  
+  assert( !m_renderFlags.testFlag(RenderActions::AddUndoRedoStep) );
 }//void setGuiState( const GuiState &state )
 
 
@@ -1109,7 +1101,7 @@ void RelActManualGui::render( Wt::WFlags<Wt::RenderFlag> flags )
 void RelActManualGui::calculateSolution()
 {
   m_currentSolution.reset();
-  m_chart->setData( vector<RelActCalcManual::GenericPeakInfo>{}, {}, "" );
+  m_chart->setData( vector<RelActCalcManual::GenericPeakInfo>{}, {}, "", {} );
   m_results->clear();
   
   // TODO: should do the actual computation not on the GUI thread!
@@ -1206,7 +1198,7 @@ void RelActManualGui::calculateSolution()
       if( p && (p->parentNuclide() || p->reaction()) && p->useForManualRelEff() )
       {
         GenericPeakInfo peak;
-        peak.m_energy = p->mean();
+        peak.m_mean = peak.m_energy = p->mean();
         peak.m_fwhm = p->gausPeak() ? p->fwhm() : (2.35482 * 0.25 * p->roiWidth());
         peak.m_counts = p->amplitude();
         peak.m_counts_uncert = p->amplitudeUncert();
@@ -1243,11 +1235,10 @@ void RelActManualGui::calculateSolution()
           
           if( peak.m_counts <= 0.0 )
           {
-            stringstream msg;
-            msg << "After background subtraction, peak at "
-            << std::fixed << std::setprecision(2) << peak.m_energy << " keV had negative counts"
-            << " so was not used.";
-            prep_warnings.push_back( msg.str() );
+            char buffer[32];
+            snprintf( buffer, sizeof(buffer), "%.2f", peak.m_mean );
+            
+            prep_warnings.push_back( WString::tr("ramg-back-sub-neg").arg( buffer ).toUTF8() );
             continue;
           }
         }//if( background_sub )
@@ -1358,53 +1349,46 @@ void RelActManualGui::calculateSolution()
     
     if( has_reaction )
     {
-      prep_warnings.push_back( "Using reaction photopeaks is likely not valid, unless the gammas"
-                              " are emitted homogeneously from a single object." );
+      prep_warnings.push_back( WString::tr("ramg-warn-reaction").toUTF8() );
     }//if( user is using reactions )
     
     if( background_sub && !num_peaks_back_sub )
     {
-      prep_warnings.push_back( "Subtraction of background peaks was selected, but no background"
-                               " peaks matched to the selected foreground peaks." );
+      prep_warnings.push_back( WString::tr("ramg-warn-no-bkg-sub-used").toUTF8() );
     }//if( user wanted to background subtract peaks, but no peaks matched up )
     
     if( has_U_or_Pu && (lowest_energy_peak < 122) )
     {
-      prep_warnings.push_back( "The relative efficiency curve does not account for x-ray"
-                              " absorption edges - using peaks under 120 keV for U or Pu problems"
-                              " is not recommended.");
+      prep_warnings.push_back( WString::tr("ramg-warn-rel-eff-u/pu-xray").toUTF8() );
     }else if( lowest_energy_peak < 90 )
     {
-      prep_warnings.push_back( "The relative efficiency curve does not account for x-ray"
-                              " absorption edges of any potential shielding - please ensure the"
-                              " peaks used do not span across absorption edges of any shielding.");
+      prep_warnings.push_back( WString::tr("ramg-warn-rel-eff-other-xray").toUTF8() );
     }
     
     
     if( energy_cal_match_warning_energies.size() && (match_tol_sigma > 0.0) )
     {
-      stringstream msg;
       const bool multiple = (energy_cal_match_warning_energies.size() > 1);
-      msg << "The assigned gamma" << (multiple ? "s of {" : " of ");
-      bool first = true;
-      for( const auto &pp : energy_cal_match_warning_energies )
-      {
-        msg << (first ? "" : ", ") << SpecUtils::printCompact(pp.second, 4);
-        first = false;
-      }
-      msg << (multiple ? "}" : "") << " keV are outside of the match tolerance with the peak"
-      << (multiple ? "s of {" : " of ");
-      first = true;
-      for( const auto &pp : energy_cal_match_warning_energies )
-      {
-        msg << (first ? "" : ", ") << SpecUtils::printCompact(pp.first, 4);
-        first = false;
-      }
-      msg << (multiple ? "}" : "")
-          << "; note that the assigned gamma energy is used to compensate for nearby gammas,"
-          << " and not the fit peak mean.";
       
-      prep_warnings.push_back( msg.str() );
+      string nuc_energies, peak_energies;
+      for( const auto &pp : energy_cal_match_warning_energies )
+      {
+        nuc_energies += string(nuc_energies.empty() ? "" : ", ") + SpecUtils::printCompact(pp.second, 4);
+        peak_energies += string(peak_energies.empty() ? "" : ", ") + SpecUtils::printCompact(pp.first, 4);
+      }
+      
+      if( multiple )
+      {
+        nuc_energies = "{" + nuc_energies + "}";
+        peak_energies = "{" + peak_energies + "}";
+      }
+      
+      WString msg = WString::tr("ramg-warn-match-outside-tol")
+                      .arg( multiple ? "s" : "" )
+                      .arg( nuc_energies )
+                      .arg( peak_energies );
+
+      prep_warnings.push_back( msg.toUTF8() );
     }//if( energy_cal_match_warning_energies.size() )
     
     // Check that if we are using a specialized nuc data source, we actually have uranium in the
@@ -1475,13 +1459,15 @@ void RelActManualGui::calculateSolution()
       
       if( matched_res.unused_isotopes.size() )
       {
-        stringstream msg;
-        msg << "Failed to match nuclide" << ((matched_res.unused_isotopes.size() > 1) ? "s" : "")
-        << " to any peaks: ";
+        string unused_nucs;
         for( size_t i = 0; i < matched_res.unused_isotopes.size(); ++i )
-          msg << (i ? ", " : "") << matched_res.unused_isotopes[i];
+          unused_nucs += string(i ? ", " : "") + matched_res.unused_isotopes[i];
         
-        throw runtime_error( msg.str() );
+        WString msg = WString::tr("ramg-warn-failed-match")
+                        .arg( (matched_res.unused_isotopes.size() > 1) ? "s" : "" )
+                        .arg( unused_nucs );
+        
+        throw runtime_error( msg.toUTF8() );
       }//if( matched_res.unused_isotopes.size() )
       
       if( (srcData == RelActCalcManual::PeakCsvInput::NucDataSrc::SandiaDecay)
@@ -1514,8 +1500,8 @@ void RelActManualGui::calculateSolution()
     auto solution = make_shared<RelActCalcManual::RelEffSolution>();
     auto updater = wApp->bind( boost::bind( &RelActManualGui::updateGuiWithResults, this, solution ) );
     
-    auto errmsg = make_shared<string>();
-    auto err_updater = wApp->bind( boost::bind( &RelActManualGui::updateGuiWithError, this, boost::cref(*errmsg) ) );
+    auto errmsg = make_shared<WString>();
+    auto err_updater = wApp->bind( boost::bind( &RelActManualGui::updateGuiWithError, this, errmsg ) );
     
     WServer::instance()->ioService().boost::asio::io_service::post( std::bind(
       [peak_infos, pre_decay_correction_info, eqn_form, eqn_order, sessionId, solution, updater, prep_warnings, errmsg, err_updater](){
@@ -1527,26 +1513,38 @@ void RelActManualGui::calculateSolution()
           WServer::instance()->post( sessionId, updater );
         }catch( std::exception &e )
         {
-          *errmsg = "Error performing Relative Efficiency calculation: " + string(e.what());
-          WServer::instance()->post( sessionId, err_updater );
-        }
+          const string exception_msg = e.what();
+          
+          auto updater = [errmsg, exception_msg, err_updater](){
+            *errmsg = WString::tr("ramg-err-performing-calc").arg(exception_msg);
+            err_updater();
+          };
+          
+          WServer::instance()->post( sessionId, updater );
+        }//try / catch
     } ) );
   }catch( std::exception &e )
   {
     cout << "Error setting up RelActManualGui calc: " << e.what() << endl;
-    string errormsg = "Error setting up Relative Efficiency calculation: " + string(e.what());
-    updateGuiWithError( errormsg );
+    
+    auto msg = std::make_shared<Wt::WString>(WString::tr("ramg-err-setting-up-calc").arg( e.what() ));
+    
+    updateGuiWithError( msg );
   }//try / catch
 }//void calculateSolution()
 
 
-void RelActManualGui::updateGuiWithError( const std::string &error_msg )
+void RelActManualGui::updateGuiWithError( std::shared_ptr<Wt::WString> error_msg )
 {
   //Set error to results TXT and show results TXT tab.
   m_currentSolution = nullptr;
   m_results->clear();
   
-  WText *error = new WText( error_msg, m_results );
+  assert( error_msg );
+  if( !error_msg )
+    return;
+  
+  WText *error = new WText( *error_msg, m_results );
   error->setInline( false );
   error->addStyleClass( "CalcError" );
   m_resultMenu->select( 0 );
@@ -1574,7 +1572,7 @@ void RelActManualGui::updateGuiWithResults( shared_ptr<RelActCalcManual::RelEffS
   
   if( !m_currentSolution )
   {
-    WText *txt = new WText( "No results available." );
+    WText *txt = new WText( WString::tr("ramg-no-results-available") );
     txt->setInline( false );
     txt->addStyleClass( "NoCalcResults" );
     return;
@@ -1589,7 +1587,7 @@ void RelActManualGui::updateGuiWithResults( shared_ptr<RelActCalcManual::RelEffS
     case RelActCalcManual::ManualSolutionStatus::ErrorFindingSolution:
     case RelActCalcManual::ManualSolutionStatus::ErrorGettingSolution:
     {
-      m_chart->setData( vector<RelActCalcManual::GenericPeakInfo>{}, {}, "" );
+      m_chart->setData( vector<RelActCalcManual::GenericPeakInfo>{}, {}, "", {} );
       break;
     }
       
@@ -1600,7 +1598,7 @@ void RelActManualGui::updateGuiWithResults( shared_ptr<RelActCalcManual::RelEffS
   
   if( !solution.m_error_message.empty() )
   {
-    WText *errtxt = new WText( "Error: " + solution.m_error_message , m_results );
+    WText *errtxt = new WText( WString::tr("ramg-result-error-msg").arg(solution.m_error_message), m_results );
     errtxt->setInline( false );
     errtxt->addStyleClass( "CalcError" );
     m_resultMenu->select( 0 );
@@ -1609,7 +1607,7 @@ void RelActManualGui::updateGuiWithResults( shared_ptr<RelActCalcManual::RelEffS
   
   for( string warning : solution.m_warnings )
   {
-    WText *warntxt = new WText( "Warning: " + warning, m_results );
+    WText *warntxt = new WText( WString::tr("ramg-result-warn-msg").arg(warning), m_results );
     warntxt->setInline( false );
     warntxt->addStyleClass( "CalcWarning" );
   }
@@ -1645,7 +1643,79 @@ void RelActManualGui::updateGuiWithResults( shared_ptr<RelActCalcManual::RelEffS
     relActsColors[act.m_isotope] = make_pair( act.m_rel_activity, color );
   }//for( const auto &act : solution.m_rel_activities )
   
-  m_chart->setData( solution.m_input_peak, relActsColors, relEffEqn );
+  WString pval_str;
+  try
+  {
+    boost::math::chi_squared chi_squared_dist( solution.m_dof );
+    const double prob = boost::math::cdf( chi_squared_dist, solution.m_chi2 );
+    if( prob > 0.99 )
+      pval_str = WString::tr("ramg-1-pval").arg( SpecUtils::printCompact(1.0 - prob, 3) );
+    else
+      pval_str = WString::tr("ramg-pval").arg( SpecUtils::printCompact(prob, 3) );
+  }catch( std::exception &e )
+  {
+    pval_str = "";
+  }
+  
+  WString chi2_title = WString::tr("ramg-chart-info-title");
+  chi2_title.arg( SpecUtils::printCompact(solution.m_chi2, 3) )
+            .arg( static_cast<int>(solution.m_dof) )
+            .arg( pval_str );
+  
+  // If we have U or Pu, we'll give the enrichment, or if we have two nuclides we'll
+  //  give their ratio.  If we have U and Pu, we wont give enrichment.
+  set<string> isotopes;
+  for( const auto &relact : solution.m_rel_activities )
+    isotopes.insert( relact.m_isotope );
+  if( (isotopes.count("U235") && isotopes.count("U238") && !isotopes.count("Pu239"))
+     || (isotopes.count("Pu239") && isotopes.count("Pu240") && !isotopes.count("U235")) )
+  {
+    string enrich;
+    const string iso = isotopes.count("U235") ? "U235" : "Pu239";
+    
+    try
+    {
+      const double nominal = solution.mass_fraction(iso);
+      const double plus = solution.mass_fraction( iso, 1.0 );
+      const double minus = solution.mass_fraction( iso, -1.0 );
+      const double error = 0.5*( fabs(plus - nominal) + fabs(nominal - minus) );
+      enrich = ", " + PhysicalUnits::printValueWithUncertainty(100.0*nominal, 100.0*error, 4)
+               + "% "+ iso;
+    }catch( std::exception & )
+    {
+      // We dont have the covariance matrix required to get mass fraction errors
+      //  We'll try leaving out the errors
+      try 
+      {
+        const double nominal = solution.mass_fraction(iso);
+        enrich = ", " + SpecUtils::printCompact(100.0*nominal, 4) + "% "+ iso;
+      }catch( std::exception & )
+      {
+        // I really dont think we should ever get here
+        assert( 0 );
+      }
+    }//try / catch
+    
+    chi2_title.arg( enrich );
+  }else if( isotopes.size() == 2 )
+  {
+    const vector<RelActCalcManual::IsotopeRelativeActivity> &rel_acts = solution.m_rel_activities;
+    const int num_index = (rel_acts[0].m_rel_activity > rel_acts[1].m_rel_activity) ? 1 : 0;
+    const int denom_index = (num_index ? 0 : 1);
+    const string num_nuc = rel_acts[num_index].m_isotope;
+    const string den_nuc = rel_acts[denom_index].m_isotope;
+    const double ratio = solution.activity_ratio(num_nuc, den_nuc);
+    const double uncert = solution.activity_ratio_uncert(num_nuc, den_nuc);
+    
+    string ratio_txt = ", act(" + num_nuc + "/" + den_nuc + ")="
+                   + PhysicalUnits::printValueWithUncertainty(ratio, uncert, 4);
+    chi2_title.arg( ratio_txt );
+  }else
+  {
+    chi2_title.arg( "" );
+  }
+  
+  m_chart->setData( solution.m_input_peak, relActsColors, relEffEqn, chi2_title );
   
   
   // Now update the text
@@ -1664,7 +1734,8 @@ void RelActManualGui::updateGuiWithResults( shared_ptr<RelActCalcManual::RelEffS
   << "</div>\n";
   
   results_html << "<br /> <div>&chi;<sup>2</sup>=" << SpecUtils::printCompact( solution.m_chi2, 4)
-  << " and there were " << solution.m_dof << " DOF (&chi;<sup>2</sup>/<sub>DOF</sub>="
+  << " " << WString::tr("ramg-and-there-were").toUTF8() << " " << solution.m_dof
+  << " DOF (&chi;<sup>2</sup>/<sub>" << WString::tr("ramg-dof").toUTF8() << "</sub>="
   << SpecUtils::printCompact(solution.m_chi2/solution.m_dof, 4) << ")</div>\n";
   
   
@@ -1673,11 +1744,11 @@ void RelActManualGui::updateGuiWithResults( shared_ptr<RelActCalcManual::RelEffS
   switch( AddUncert(m_addUncertainty->currentIndex()) )
   {
     case AddUncert::Unweighted:
-      results_html << "Fit was unweighted; uncertainties may not make sense.";
+      results_html << WString::tr("ramg-fit-unweighted-txt").toUTF8();
       break;
       
     case AddUncert::StatOnly:
-      results_html << "Uncertainties are statistical only.";
+      results_html << WString::tr("ramg-fit-stat-only");
       break;
       
     case AddUncert::OnePercent:
@@ -1687,7 +1758,7 @@ void RelActManualGui::updateGuiWithResults( shared_ptr<RelActCalcManual::RelEffS
     case AddUncert::FiftyPercent:
     case AddUncert::SeventyFivePercent:
     case AddUncert::OneHundredPercent:
-      results_html << "Uncertainties artificially increased by &quot;Add. Uncert&quot;.";
+      results_html << WString::tr("ramg-fit-uncert-increased").toUTF8();
       break;
       
     case AddUncert::NumAddUncert:
@@ -1695,9 +1766,7 @@ void RelActManualGui::updateGuiWithResults( shared_ptr<RelActCalcManual::RelEffS
       break;
   }//switch( add_uncert_type )
   
-  results_html << "<br />"
-  "The tool is is in an alpha-preview state only."
-  "</div>\n";
+  results_html << "</div>\n";
   
   
   new WText( results_html.str(), m_results );
@@ -2032,20 +2101,19 @@ void RelActManualGui::displayedSpectrumChanged()
       for( size_t i = 0; !have_u && (i < peaks->size()); ++i )
         have_u = ((*peaks)[i]->parentNuclide() && ((*peaks)[i]->parentNuclide()->atomicNumber == 92) );
       
-      const char *msg = nullptr;
+      WString msg;
       if( have_u )
       {
         if( stat_only )
-          msg = "You may want to consider adding &quot;Add. Uncert&quot; for Uranium problems.";
+          msg = WString::tr("ramg-consider-add-uncert-u");
         else
-          msg = "You are adding &quot;Add. Uncert&quot; interpret computed uncertainties with care.";
+          msg = WString::tr("ramg-you-using-add-uncert-u");
       }else if( !have_u && !stat_only )
       {
-        msg = "You are currently adding &quot;Add. Uncert&quot;, which will"
-              " cause computed uncertainties to not be correct.";
+        msg = WString::tr("ramg-you-using-add-uncert-non-u");
       }
       
-      if( msg )
+      if( !msg.empty() )
         m_interspec->logMessage( msg, 2 );
     }//if( !peaks || peaks->empty() )
   }//if( spec )
@@ -2191,6 +2259,11 @@ shared_ptr<const RelActCalcManual::RelEffSolution> RelActManualGui::currentSolut
   node = doc->allocate_node( ::rapidxml::node_element, "ResultTabShowing", value );
   base_node->append_node( node );
   
+  const bool background_sub = (!m_backgroundSubtractHolder->isHidden()
+                               && m_backgroundSubtract->isChecked());
+  value = background_sub ? "1" : "0";
+  node = doc->allocate_node( ::rapidxml::node_element, "BackgroundSubtract", value );
+  base_node->append_node( node );
   
   map<string,double> nuc_age_cache = m_nucAge;
   map<string,bool> nuc_decay_correct = m_nucDecayCorrect;
@@ -2261,6 +2334,7 @@ void RelActManualGui::deSerialize( const ::rapidxml::xml_node<char> *base_node )
   const ::rapidxml::xml_node<char> *MatchTolerance_node = XML_FIRST_NODE(base_node, "MatchTolerance");
   const ::rapidxml::xml_node<char> *AddUncertainty_node = XML_FIRST_NODE(base_node, "AddUncertainty");
   const ::rapidxml::xml_node<char> *ResultTabShowing_node = XML_FIRST_NODE(base_node, "ResultTabShowing");
+  const ::rapidxml::xml_node<char> *BackgroundSubtract_node = XML_FIRST_NODE(base_node, "BackgroundSubtract");
   const ::rapidxml::xml_node<char> *NuclideAges_node = XML_FIRST_NODE(base_node, "NuclideAges");
   
   
@@ -2355,6 +2429,14 @@ void RelActManualGui::deSerialize( const ::rapidxml::xml_node<char> *base_node )
   if( (tab_showing != 0) && (tab_showing != 1) )
     tab_showing = 0;
   
+  bool backSub = false;
+  if( BackgroundSubtract_node )
+  {
+    const string back_sub_str = SpecUtils::xml_value_str(BackgroundSubtract_node);
+    backSub = ((back_sub_str == "1") || SpecUtils::iequals_ascii(back_sub_str, "true"));
+  }
+  
+  
   XML_FOREACH_CHILD( nuc_node, NuclideAges_node, "Nuclide" )
   {
     ::rapidxml::xml_node<char> *name_node = XML_FIRST_NODE(nuc_node, "Name");
@@ -2394,6 +2476,7 @@ void RelActManualGui::deSerialize( const ::rapidxml::xml_node<char> *base_node )
   m_matchTolerance->setValue( match_tolerance );
   m_addUncertainty->setCurrentIndex( static_cast<int>(add_uncert) );
   m_resultMenu->select( tab_showing );
+  m_backgroundSubtract->setChecked( backSub );
   
   // Schedule calc/render
   m_renderFlags |= RenderActions::UpdateCalc;

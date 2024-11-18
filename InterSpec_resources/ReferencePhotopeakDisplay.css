@@ -23,6 +23,7 @@
     margin-left: 10px;
     font-size: small;
     text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
 .RefLinColorPick
@@ -46,6 +47,9 @@
   flex-direction: column;
 }
 
+.IsPhone.Portrait .RefLinesOptions.ToolTabSection.ToolTabTitledColumn {
+  font-size: 0.5em;
+}
 
 .CascadeGammaWarn
 {
@@ -56,7 +60,7 @@
 }
 
 
-.RefLinesOptions .ToolTabColumnTitle .closeicon-wtdefault {
+.ToolTabColumnTitle .closeicon-wtdefault {
     float: right;
     /* margin-right: 5px; */
     /* margin-top: 5px; */
@@ -101,11 +105,11 @@
   flex-direction: column;
 }
 
-    .ReferencePhotopeakDisplay .OtherNucs .OtherNucTypeHeader {
-        margin-top: 5px;
-        background: #EEEEEE;
-        text-align: center;
-    }
+.ReferencePhotopeakDisplay .OtherNucs .OtherNucTypeHeader {
+  margin-top: 5px;
+  background: #EEEEEE;
+  text-align: center;
+}
 
 .OtherNucsContent.ToolTabTitledColumnContent > button.Wt-btn.with-label.LinkBtn {
     flex: 0 0 17px;
@@ -117,9 +121,56 @@
     text-overflow: ellipsis;
 }
 
+.ReferencePhotopeakDisplay .FeatureLines {
+    width: 140px;
+}
+
+.ReferencePhotopeakDisplay .FeatureMarkerWidget {
+  margin-left: auto;
+  margin-right: auto;
+}
+
+.IsPhone.Portrait .ReferencePhotopeakDisplay .FeatureMarkerWidget {
+  font-size: x-small;
+  margin-left: 0px;
+  margin-right: 0px;
+}
+
+.IsPhone.Portrait .ToolTabColumnTitle .closeicon-wtdefault {
+    margin-top: -3px; /* Make up for smaller font size in title */
+}
+
+.IsPhone.Portrait .ReferencePhotopeakDisplay .FeatureLines {
+    width: 100px;
+}
+
 .HlOptRow button.Wt-btn.with-label.LinkBtn.MoreInfoBtn {
     height: 100%;
     font-size: 12px;
+}
+
+@media (max-width: 350px) {
+  .IsPhone.Portrait .ReferencePhotopeakDisplay .FeatureMarkerWidget {
+    font-size: 6pt;
+    width: 100%;
+  }
+  
+  .FeatureLines.ToolTabSection.ToolTabTitledColumn .ToolTabColumnTitle > span {
+    font-size: 5pt;
+  }
+  
+  .IsPhone.Portrait .ReferencePhotopeakDisplay .FeatureLines {
+      width: 95px;
+  }
+  
+  .RefLinesOptions .ToolTabTitledColumnContent {
+    width: 82px; /* About same width as "Suggestions" and "Feature Markers" although ".ReferencePhotopeakDisplay .OtherNucs .OtherNucsContent" doesnt have an explicit width set*/
+  }
+  
+  .ReferencePhotopeakDisplay .Hl {
+    margin-left: 5px;
+    font-size: xx-small;
+  }
 }
 
 .RefGammaHelp {

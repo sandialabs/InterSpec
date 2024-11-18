@@ -495,7 +495,8 @@ WT_DECLARE_WT_MEMBER
       var ws = Wt.WT.windowSize();
       el.style.marginLeft = '0px';
       el.style.marginTop = '0px';
-      el.style.bottom = null; el.style.right=null;
+      el.style.bottom = null; 
+      el.style.right = null;
     }
   }
   
@@ -767,6 +768,9 @@ AuxWindow::AuxWindow(const Wt::WString& windowTitle, Wt::WFlags<AuxWindowPropert
     setResizable(false);
     resizeScaledWindow(1.0, 1.0);
     m_isPhone = true; //disables any of future AuxWindow calls to change behavior
+#if( InterSpec_PHONE_ROTATE_FOR_TABS )
+    addStyleClass( "PhoneFullScreenDialog" );
+#endif
   }
 
   setModal(m_modalOrig);
@@ -904,14 +908,10 @@ AuxWindow::AuxWindow(const Wt::WString& windowTitle, Wt::WFlags<AuxWindowPropert
   title->mouseWentDown().connect(bringToFront); //XXX - doesnt seem to work
   doJavaScript("$('#" + title->id() + "').mousedown(" + bringToFront + ");");
 
-  if (!m_isPhone)
+  if( !m_isPhone )
   {
-    // TODO: actually respect/use the AuxWindowProperties::SetCloseable option!
-    if (!properties.testFlag(AuxWindowProperties::SetCloseable))
-      cout << "Warning: !AuxWindowProperties::SetCloseable not currently being respected for '"
-      << windowTitle.toUTF8() << "' window." << endl;
-
-    AuxWindow::setClosable(true);
+    const bool setCloseable = properties.testFlag(AuxWindowProperties::SetCloseable);
+    AuxWindow::setClosable( setCloseable );
     title->touchStarted().connect("function(s,e){ Wt.WT.AuxWindowTitlebarTouchStart(s,e,'" + id() + "'); }");
     title->touchMoved().connect("function(s,e){ Wt.WT.AuxWindowTitlebarHandleMove(s,e,'" + id() + "'); }");
     title->touchEnded().connect("function(s,e){ Wt.WT.AuxWindowTitlebarTouchEnd(s,e,'" + id() + "'); }");
@@ -924,11 +924,7 @@ AuxWindow::AuxWindow(const Wt::WString& windowTitle, Wt::WFlags<AuxWindowPropert
   {
     impl->setLoadLaterWhenInvisible(false);
     content->setLoadLaterWhenInvisible(false);
-    //    impl->setHiddenKeepsGeometry( true );
   }
-
-  //footer()->setStyleClass("");
-  //footer()->setHeight( 0 );
 
   setOffsets(WLength(0, WLength::Pixel), Wt::Left | Wt::Top);
 
@@ -942,7 +938,7 @@ AuxWindow::AuxWindow(const Wt::WString& windowTitle, Wt::WFlags<AuxWindowPropert
     doJavaScript("$('#" + m_expandIcon->id() + "').hide();");
 
 
-  if (properties.testFlag(AuxWindowProperties::IsHelpWIndow))
+  if (properties.testFlag(AuxWindowProperties::IsHelpWindow))
   {
     if (!m_isPhone)
     {
@@ -1149,14 +1145,19 @@ bool AuxWindow::isPhone() const
   return m_isPhone;
 }
 
-Wt::WPushButton *AuxWindow::addCloseButtonToFooter(string override_txt, bool floatright,  Wt::WContainerWidget * footerOverride)
+Wt::WPushButton *AuxWindow::addCloseButtonToFooter( Wt::WString override_txt,
+                                                   const bool float_right,
+                                                   Wt::WContainerWidget *footerOverride )
 {
   WPushButton *close = new WPushButton();
+  
+  if( override_txt.key().empty() && (override_txt.toUTF8() == "Close") )
+    override_txt = WString::tr("Close");
   
   if( m_isPhone )
   {
     if( override_txt.empty() )
-      override_txt = "Back";
+      override_txt = WString::tr("Back");
     
     close->addStyleClass( "MobileBackBtn" );
     if( m_isAndroid )
@@ -1166,12 +1167,10 @@ Wt::WPushButton *AuxWindow::addCloseButtonToFooter(string override_txt, bool flo
   }else
   {
     if( override_txt.empty() )
-      override_txt = "Close";
-    
-    //If not fuule
+      override_txt = WString::tr("Close");
     
     close->setText( override_txt );
-    if( floatright )
+    if( float_right )
       close->addStyleClass( "DialogClose" );
   }//if( phone ) / else
  

@@ -156,6 +156,7 @@ PeakEdit::PeakEdit( const double energy,
     m_viewer( viewer ),
     m_peakIndex(),
     m_originalPeak(),
+    m_originalPeaks{},
     m_currentPeak(),
     m_blockInfoRefresh( false ),
     m_valueTable( NULL ),
@@ -217,6 +218,7 @@ const char *PeakEdit::rowLabel( const PeakPars t )
 
 void PeakEdit::init()
 {
+  wApp->useStyleSheet( "InterSpec_resources/PeakEdit.css" );
   addStyleClass( "PeakEdit" );
   
   m_valueTable = new WTable( this );
@@ -482,7 +484,7 @@ void PeakEdit::init()
   for( PeakContinuum::OffsetType t = PeakContinuum::OffsetType(0);
        t <= PeakContinuum::External; t = PeakContinuum::OffsetType(t+1) )
   {
-    m_continuumType->addItem( PeakContinuum::offset_type_label(t) );
+    m_continuumType->addItem( WString::tr(PeakContinuum::offset_type_label_tr(t)) );
   }//for( loop over PeakContinuum::OffsetType )
 
   row = m_valueTable->rowAt( PeakEdit::NumPeakPars+7 );
@@ -682,12 +684,22 @@ void PeakEdit::changePeak( const double energy )
 //    m_peakIndex = WModelIndex();
 //    m_currentPeak.reset();
 //    m_originalPeak.reset();
+//    m_originalPeaks.clear();
 //  }
   if( nearPeak )
   {
     m_energy = energy;
     m_peakIndex = nearestIndex;
     m_currentPeak = m_originalPeak = *nearPeak;
+    
+    m_originalPeaks.clear();
+    const auto orig_peaks = m_peakModel->peaks();
+    if( orig_peaks )
+    {
+      for( const auto &p : *orig_peaks )
+        m_originalPeaks.push_back( p );
+    }
+    
     for( PeakPars t = PeakPars(0); t < NumPeakPars; t = PeakPars(t+1) )
     {
       m_valIsDirty[t] = m_uncertIsDirty[t] = false;
@@ -916,6 +928,9 @@ void PeakEdit::refreshPeakInfo()
   
   for( PeakPars t = PeakPars(0); t < NumPeakPars; t = PeakPars(t+1) )
   {
+    m_valIsDirty[t] = false;
+    m_uncertIsDirty[t] = false;
+    
     WTableRow *row = m_valueTable->rowAt( t + 1 );
     
     const int rownum = static_cast<int>(t);
@@ -1458,7 +1473,7 @@ void PeakEdit::checkIfDirty( PeakPars t, bool uncert )
 {
   if( uncert )
   {
-    m_uncertIsDirty[t] = (m_uncertainties[t]->text()!=m_uncertTxts[t]);
+    m_uncertIsDirty[t] = (m_uncertainties[t]->text() != m_uncertTxts[t]);
     if( m_uncertIsDirty[t] )
     {
       m_apply->enable();
@@ -1511,7 +1526,7 @@ bool PeakEdit::checkNuclideForDiffColors()
                    && p->lineColor()!=c);
   }
   
-  if( m_originalPeak.lineColor()!=c )
+  if( m_originalPeak.lineColor() != c )
     nsamesrc -= 1;
   
   return nsamesrc>=1;
@@ -2239,21 +2254,40 @@ void PeakEdit::apply()
   if( !isDirty() )
     return;
   
-  UndoRedoManager::PeakModelChange peak_undo_creator;
+  // I dont think we need the `UndoRedoManager::PeakModelChange` since we will manage peaks
+  // UndoRedoManager::PeakModelChange peak_undo_creator;
   
-  const PeakDef revertPeak = *m_peakModel->peak( m_peakIndex ); //used to restore peak if catches an exception.
-  
-  // Grab a few things for undo/redo
-  const double starting_energy = m_energy;
-  const PeakDef starting_current_peak = m_currentPeak;
-  vector<PeakModel::PeakShrdPtr> starting_peaks;
-  const auto start_peaks_ptr = m_peakModel->peaks();
-  if( start_peaks_ptr )
-    starting_peaks.insert( end(starting_peaks), begin(*start_peaks_ptr), end(*start_peaks_ptr) );
+  PeakDef revertPeak; //used to restore peak if catches an exception.
+  shared_ptr<const PeakDef> orig_peak_ptr;
     
   try
   {
-    std::shared_ptr<PeakContinuum> continuum = m_currentPeak.continuum();
+    orig_peak_ptr = m_peakModel->peak( m_peakIndex );
+    revertPeak = *orig_peak_ptr;
+    
+    // Grab a few things for undo/redo
+    const double starting_energy = m_energy;
+    const PeakDef starting_current_peak = m_currentPeak;
+    vector< shared_ptr<const PeakDef> > starting_peaks;
+    const auto start_peaks_ptr = m_peakModel->peaks();
+    if( start_peaks_ptr )
+      starting_peaks.insert( end(starting_peaks), begin(*start_peaks_ptr), end(*start_peaks_ptr) );
+    
+    
+    // The PeakContinuum may be shared among multiple peaks, so if we change the continuum,
+    //  we actually will need to make a copy of it, and change all affected peaks to use new one.
+    //  If we dont make a copy of the continuum, then the copy of the original peaks that we
+    //  use for undo/redo, will have their continuums changed, so the undo/redo wont actually
+    //  appear to take place.
+    //  The other thing we could have done, is make a deep-copy of the starting peaks, and use them
+    //  for undo/redo, but doing it this way is possibly a little less error prone incase we
+    //  have shared the PeakContinuum with some other peak, not in the PeakModel.
+    //  Sharing the continuum between peaks to define a ROI is a bad design, but at this point
+    //  we just got to go with it, until we can afford to make a large change of the ROI owning
+    //  the peaks.
+    shared_ptr<const PeakContinuum> orig_continuum_ptr = m_currentPeak.continuum();
+    const PeakContinuum orig_continuum = *orig_continuum_ptr;
+    shared_ptr<PeakContinuum> continuum = make_shared<PeakContinuum>( orig_continuum );
     
     const PeakContinuum::OffsetType offset = PeakContinuum::OffsetType(m_continuumType->currentIndex());
     if( offset != continuum->type() )
@@ -2482,7 +2516,7 @@ void PeakEdit::apply()
         if( val < 0.0 )
         {
           val = -val;
-          //THis will be propogated to the GUI by refreshPeakInfo();
+          //This will be propagated to the GUI by refreshPeakInfo();
           //        char uncertTxt[16];
           //        snprintf( uncertTxt, sizeof(uncertTxt), "%.4f", val );
           //        m_uncertainties[t]->setText( uncertTxt );
@@ -2523,8 +2557,8 @@ void PeakEdit::apply()
       }//if( m_uncertIsDirty[t] )
     }//for( PeakPars t )
     
-    //We have to set peak type after setingin continuum parameters incase user
-    //  changes a continuum type/polynomial-coefficent AND peak type
+    //We have to set peak type after setting continuum parameters incase user
+    //  changes a continuum type/polynomial-coefficient AND peak type
     if( m_peakType->currentIndex() != m_currentPeak.type() )
     {
       m_currentPeak.m_type = PeakDef::DefintionType(m_peakType->currentIndex());
@@ -2590,7 +2624,7 @@ void PeakEdit::apply()
       if( !(dblstrm >> energy) )
       {
         //Shouldnt ever make it here
-        cerr << "Missread '" << currentTrans << "' as " << energy << endl;
+        cerr << "Misread '" << currentTrans << "' as " << energy << endl;
         energy = -1.0;
       }
       
@@ -2658,7 +2692,7 @@ void PeakEdit::apply()
             if( rctn )
             {
               double nearestE = -999.9;
-              for( const ReactionGamma::EnergyAbundance &eip : rctn->gammas )
+              for( const ReactionGamma::Reaction::EnergyYield &eip : rctn->gammas )
                 if( fabs(eip.energy-energy) < fabs(nearestE-energy) )
                   nearestE = eip.energy;
               m_currentPeak.setReaction( rctn, static_cast<float>(nearestE), srcType );
@@ -2670,9 +2704,41 @@ void PeakEdit::apply()
     }//if( nuclideInfoIsDirty() )
     
     m_blockInfoRefresh = true;
-    m_peakModel->removePeak( m_peakIndex );
-    m_peakIndex = m_viewer->addPeak( m_currentPeak, false );
-    m_currentPeak = *m_peakModel->peak( m_peakIndex );
+    
+    if( !(orig_continuum == *continuum) )
+    {
+      bool found_orig_peak = false;
+      vector<PeakDef> new_peaks;
+      for( const auto p : starting_peaks )
+      {
+        if( p->continuum() == orig_continuum_ptr )
+        {
+          PeakDef new_peak( *p );
+          
+          if( p == orig_peak_ptr )
+          {
+            found_orig_peak = true;
+            new_peak = m_currentPeak;
+          }
+          
+          new_peak.setContinuum( continuum );
+          
+          new_peaks.push_back( new_peak );
+          m_peakModel->removePeak( p );
+        }
+      }//for( const auto p : starting_peaks )
+      
+      assert( found_orig_peak );
+      assert( new_peaks.size() >= 1 );
+        
+      m_peakModel->addPeaks( new_peaks );
+    }else
+    {
+      m_peakModel->removePeak( m_peakIndex );
+      m_peakIndex = m_viewer->addPeak( m_currentPeak, false );
+      m_currentPeak = *m_peakModel->peak( m_peakIndex );
+    }//if( orig_continuum != *m_currentPeak.continuum() )
+    
     m_energy = m_currentPeak.mean();
     m_blockInfoRefresh = false;
     
@@ -2683,6 +2749,8 @@ void PeakEdit::apply()
     const auto ending_peaks_ptr = m_peakModel->peaks();
     if( ending_peaks_ptr )
       ending_peaks.insert( end(ending_peaks), begin(*ending_peaks_ptr), end(*ending_peaks_ptr) );
+    
+    m_originalPeaks = ending_peaks;
     
   
     auto redo = [this, ending_peaks, ending_energy](){
@@ -2704,15 +2772,19 @@ void PeakEdit::apply()
     };//undo
     
     UndoRedoManager *undo_manager = m_viewer->undoRedoManager();
-    if( undo_manager )
+    if( undo_manager && undo_manager->canAddUndoRedoNow() )
       undo_manager->addUndoRedoStep( undo, redo, "Peak edit." );
   }catch ( std::exception &e)
   {
     if( m_peakIndex.isValid() )
       m_peakModel->removePeak( m_peakIndex );
-    m_peakIndex = m_viewer->addPeak( revertPeak, false );
-    m_currentPeak = *m_peakModel->peak( m_peakIndex );
-    m_energy = m_currentPeak.mean();
+    
+    if( orig_peak_ptr )
+    {
+      m_peakIndex = m_viewer->addPeak( revertPeak, false );
+      m_currentPeak = *m_peakModel->peak( m_peakIndex );
+      m_energy = m_currentPeak.mean();
+    }//if( orig_peak_ptr )
     
     const string what = e.what();
     throw runtime_error( "Error applying changes to peak.<br/>Fix error(s) before retrying: " + what );
@@ -2740,9 +2812,43 @@ void PeakEdit::cancel()
 {
   if( m_peakIndex.isValid() )
   {
-    m_peakModel->removePeak( m_peakIndex );
-    m_peakIndex = m_viewer->addPeak( m_originalPeak, false );
-    m_currentPeak = *m_peakModel->peak( m_peakIndex );
+    shared_ptr<const deque<PeakModel::PeakShrdPtr>> current_peaks = m_peakModel->peaks();
+    
+    bool any_changes = false;
+    if( !current_peaks )
+    {
+      any_changes = true;
+    }else
+    {
+      const size_t num_orig_peaks = current_peaks ? current_peaks->size() : size_t(0);
+      
+      any_changes = (num_orig_peaks != m_originalPeaks.size());
+      assert( any_changes || (num_orig_peaks == m_originalPeaks.size()) );
+      for( size_t i = 0; !any_changes && i < std::min(num_orig_peaks, m_originalPeaks.size()); ++i )
+      {
+        auto orig = m_originalPeaks[i];
+        auto current = (*current_peaks)[i];
+        any_changes = !((*current) == (*orig));
+      }
+    }//if( !current_peaks ) / else
+    
+    if( any_changes )
+    {
+      m_peakModel->setPeaks( m_originalPeaks );
+      PeakModel::PeakShrdPtr nearest = m_peakModel->nearestPeak( m_originalPeak.mean() );
+      assert( nearest );
+      
+      if( nearest )
+      {
+        m_peakIndex = m_peakModel->indexOfPeak( nearest );
+        m_currentPeak = *nearest;
+      }else
+      {
+        m_peakIndex = WModelIndex();
+        m_originalPeak.reset();
+        m_currentPeak.reset();
+      }
+    }//if( any_changes )
   }//if( m_peakIndex.isValid() )
   
   m_doneSignal.emit();
@@ -2757,6 +2863,7 @@ void PeakEdit::deletePeak()
     m_peakModel->removePeak( m_peakIndex );
   m_peakIndex = WModelIndex();
   m_originalPeak.reset();
+  m_originalPeaks.clear();
   m_currentPeak.reset();
   refreshPeakInfo();
   

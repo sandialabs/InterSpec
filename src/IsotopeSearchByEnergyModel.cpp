@@ -43,6 +43,7 @@
 #include "InterSpec/MassAttenuationTool.h"
 #include "InterSpec/DecayDataBaseServer.h"
 #include "InterSpec/DetectorPeakResponse.h"
+#include "InterSpec/PhysicalUnitsLocalized.h"
 #include "InterSpec/IsotopeSearchByEnergyModel.h"
 
 
@@ -767,7 +768,7 @@ void IsotopeSearchByEnergyModel::nuclidesWithAllEnergies(
           //        match.m_reactionEnergy;
           
           //        match.m_displayData[ParentHalfLife] = "";
-          match.m_displayData[AssumedAge] = PhysicalUnits::printToBestTimeUnits( 0.0 );
+          match.m_displayData[AssumedAge] = PhysicalUnitsLocalized::printToBestTimeUnits( 0.0 );
           //        match.m_displayData[SpecificIsotope] = "";
           if( match.m_element )
             match.m_displayData[ParentIsotope] = match.m_element->symbol;
@@ -898,9 +899,9 @@ void IsotopeSearchByEnergyModel::nuclidesWithAllEnergies(
           if( !i )
           {
             match.m_displayData[ParentHalfLife]
-            = PhysicalUnits::printToBestTimeUnits(match.m_nuclide->halfLife);
+            = PhysicalUnitsLocalized::printToBestTimeUnits(match.m_nuclide->halfLife);
             match.m_displayData[AssumedAge]
-            = PhysicalUnits::printToBestTimeUnits(match.m_age);
+            = PhysicalUnitsLocalized::printToBestTimeUnits(match.m_age);
           }//if( !i )
           
           dist += match.m_distance;
@@ -1055,7 +1056,7 @@ void IsotopeSearchByEnergyModel::xraysWithAllEnergies(
       match.m_element = el;
       match.m_xray = xray;
       match.m_reaction = NULL;
-      match.m_displayData[AssumedAge] = PhysicalUnits::printToBestTimeUnits( 0.0 );
+      match.m_displayData[AssumedAge] = PhysicalUnitsLocalized::printToBestTimeUnits( 0.0 );
       match.m_displayData[ParentIsotope] = match.m_element->symbol;
       
       snprintf( buffer, sizeof(buffer), "%.2f", xray->energy );
@@ -1148,9 +1149,9 @@ void IsotopeSearchByEnergyModel::reactionsWithAllEnergies(
     {
       const double energy = energies[i];
       double smallestDelta = 999999999.9;
-      ReactionGamma::EnergyAbundance nearesteA;
+      ReactionGamma::Reaction::EnergyYield nearesteA;
       
-      for( const ReactionGamma::EnergyAbundance &ea : rctn->gammas )
+      for( const ReactionGamma::Reaction::EnergyYield &ea : rctn->gammas )
       {
         const double delta = fabs( ea.energy - energy );
         if( delta < smallestDelta  )
@@ -1168,7 +1169,7 @@ void IsotopeSearchByEnergyModel::reactionsWithAllEnergies(
       match.m_branchRatio = nearesteA.abundance;
       match.m_reactionEnergy = nearesteA;
       
-      match.m_displayData[AssumedAge] = PhysicalUnits::printToBestTimeUnits( 0.0 );
+      match.m_displayData[AssumedAge] = PhysicalUnitsLocalized::printToBestTimeUnits( 0.0 );
       match.m_displayData[ParentIsotope] = rctn->name();
       
       snprintf( buffer, sizeof(buffer), "%.2f", nearesteA.energy );
@@ -1190,7 +1191,7 @@ void IsotopeSearchByEnergyModel::reactionsWithAllEnergies(
     
     {//begin code to get profile distance
       vector<SandiaDecay::EnergyRatePair> srcgammas;
-      for( const ReactionGamma::EnergyAbundance &ea : rctn->gammas )
+      for( const ReactionGamma::Reaction::EnergyYield &ea : rctn->gammas )
         srcgammas.emplace_back( ea.abundance, ea.energy );
       
       matches[0].m_profileDistance
@@ -1514,21 +1515,25 @@ boost::any IsotopeSearchByEnergyModel::headerData( int section,
     switch( section )
     {
       case IsotopeSearchByEnergyModel::Column::ParentIsotope:
-        return WString("Parent");
+        return WString::tr("isbem-parent-nuc");
       case IsotopeSearchByEnergyModel::Column::Distance:
-        return WString("Diff.");
+        return WString::tr("isbem-diff");
       case IsotopeSearchByEnergyModel::Column::Energy:
-        return WString("Energy (keV)");
+      {
+        if( InterSpec::instance()->isPhone() )
+          return WString::tr("Energy");
+        return WString::tr("Energy (keV)");
+      }
       case IsotopeSearchByEnergyModel::Column::BranchRatio:
-        return WString("Rel. B.R.");
+        return WString::tr("isbem-rel-br");
       case IsotopeSearchByEnergyModel::Column::ProfileDistance:
-        return WString("Profile");
+        return WString::tr("isbem-profile");
       case IsotopeSearchByEnergyModel::Column::SpecificIsotope:
-        return WString("Decay");
+        return WString::tr("isbem-decay");
       case IsotopeSearchByEnergyModel::Column::ParentHalfLife:
-        return WString("Parent H.L.");
+        return WString::tr("isbem-part-hl");
       case IsotopeSearchByEnergyModel::Column::AssumedAge:
-        return WString("Assumed Age");
+        return WString::tr("isbem-assumed-age");
       case IsotopeSearchByEnergyModel::Column::NumColumns:
         break;
     }//switch( col )
@@ -1537,23 +1542,21 @@ boost::any IsotopeSearchByEnergyModel::headerData( int section,
     switch( section )
     {
       case IsotopeSearchByEnergyModel::Column::ParentIsotope:
-        return WString("Parent nuclide");
+        return WString::tr("isbem-tt-parent-nuc");
       case IsotopeSearchByEnergyModel::Column::Distance:
-        return WString("Difference between selected nuclide's energy level and searched energy level");
+        return WString::tr("isbem-tt-diff");
       case IsotopeSearchByEnergyModel::Column::Energy:
-        return WString("True gamma/x-ray energy");
+        return WString::tr("isbem-tt-energy");
       case IsotopeSearchByEnergyModel::Column::BranchRatio:
-        return WString("Branching ratio, relative to the nuclides largest yield gamma"
-                        " (i.e., 1.0 indicates the most abundant gamma, not one gamma per decay)");
+        return WString::tr("isbem-tt-rel-bre");
       case IsotopeSearchByEnergyModel::Column::ProfileDistance:
-        return WString("A rough metric for how close the observed spectrum comes to having the"
-                       " expected peaks for the selected source");
+        return WString::tr("isbem-tt-profile");
       case IsotopeSearchByEnergyModel::Column::SpecificIsotope:
         return boost::any();
       case IsotopeSearchByEnergyModel::Column::ParentHalfLife:
-        return WString("Parent half life");
+        return WString::tr("isbem-tt-parent-hl");
       case IsotopeSearchByEnergyModel::Column::AssumedAge:
-        return WString("Assumed age of nuclide");
+        return WString::tr("isbem-tt-assumed-age");
       case IsotopeSearchByEnergyModel::Column::NumColumns:
         break;
     }//switch( col )

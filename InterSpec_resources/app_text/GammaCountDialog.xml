@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- gcd- is short for GammaCountDialog
+  -->
+  <message id="gcd-summary">Count the number of gammas in the specified energy range.</message>
+  <message id="gcd-lower-energy-label">Lower Energy</message>
+  <message id="gcd-upper-energy-label">Upper Energy</message>
+  <message id="gcd-shift-alt-drag">Shift-Alt-Drag</message>
+  <message id="gcd-shift-option-drag">Shift-⌘-Drag</message>
+  <message id="gcd-select-shortcut">You can also <b>{1}</b> on the chart to select the energy range</message>
+  <message id="gcd-foreground-counts-label">Foreground Counts:</message>
+  <message id="gcd-secondary-counts-label">Secondary Counts:</message>
+  <message id="gcd-background-counts-label">Background Counts:</message>
+  <message id="gcd-tt-n-sigma">
+    The number of sigma difference is calculated by dividing the
+    difference between the foreground and the (scaled) background,
+    divided by the uncertainty. The uncertainty is calculated by
+    summing the statistical uncertainties of the foreground and background in
+    quadrature, then taking the square root
+  </message>
+  <message id="gcd-qr-window-title">Energy Range Sum State</message>
+  <message id="gcd-qr-window-text">Current state of energy range sum tool.</message>
+  <message id="gcd-background-scale-note">Background is being scaled by {1}</message>
+  <message id="gcd-and-secondary-scaled"> and secondary by </message>
+  <message id="gcd-secondary-scale-note">Secondary background is being scaled by </message>
+  <message id="gcd-foreground-above-background">Foreground is {1} σ above background.</message>
+  <message id="gcd-foreground-below-background">Foreground is {1} σ below background.</message>
+</messages>
