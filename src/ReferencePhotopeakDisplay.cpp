@@ -539,7 +539,7 @@ bool DecayParticleModel::less_than( const DecayParticleModel::RowData &lhs,
       if( !lhs.responsibleNuc || !rhs.responsibleNuc )
         less = false;
       else
-        less = SandiaDecay::Nuclide::lessThan( lhs.responsibleNuc, rhs.responsibleNuc );
+        less = SandiaDecay::Nuclide::lessThanForOrdering( lhs.responsibleNuc, rhs.responsibleNuc );
     break;
     case kDecayMode:      less = (lhs.decayMode < rhs.decayMode);     break;
     case kParticleType:   less = (lhs.particle < rhs.particle);       break;
