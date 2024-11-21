@@ -224,6 +224,10 @@ namespace
         case ReferenceLineInfo::SourceType::OneOffSrcLines:
           filename += "_one_off_src";
           break;
+        
+        case ReferenceLineInfo::SourceType::FissionRefLines:
+          filename += "_fision_lines";
+          break;
           
         case ReferenceLineInfo::SourceType::None:
           filename = "empty";
@@ -291,6 +295,12 @@ namespace
           out << "AgeDecayedTo," << refinfo.m_input.m_age << eol_char;
           break;
         }//
+          
+        case ReferenceLineInfo::SourceType::FissionRefLines:
+        {
+          out << "FissionProductLines," << refinfo.m_input.m_input_txt << eol_char;
+          out << "TimeAfterFission," << refinfo.m_input.m_age << eol_char;
+        }
           
         case ReferenceLineInfo::SourceType::None:
           assert( 0 );
@@ -388,6 +398,7 @@ namespace
         case ReferenceLineInfo::SourceType::CustomEnergy:
         case ReferenceLineInfo::SourceType::NuclideMixture:
         case ReferenceLineInfo::SourceType::OneOffSrcLines:
+        case ReferenceLineInfo::SourceType::FissionRefLines:
           out << eol_char << rel_amp_note << eol_char << eol_char;
           out << "Energy (keV),Rel. Yield";
           break;
@@ -539,7 +550,7 @@ bool DecayParticleModel::less_than( const DecayParticleModel::RowData &lhs,
       if( !lhs.responsibleNuc || !rhs.responsibleNuc )
         less = false;
       else
-        less = SandiaDecay::Nuclide::lessThan( lhs.responsibleNuc, rhs.responsibleNuc );
+        less = SandiaDecay::Nuclide::greaterThanForOrdering( lhs.responsibleNuc, rhs.responsibleNuc );
     break;
     case kDecayMode:      less = (lhs.decayMode < rhs.decayMode);     break;
     case kParticleType:   less = (lhs.particle < rhs.particle);       break;
@@ -2492,6 +2503,10 @@ void ReferencePhotopeakDisplay::updateDisplayFromInput( RefLineInput user_input 
       // We treat custom energy and one-off sources as a gammas, so only show it - but really we shouldnt show any of them
       showXrayCb = showAplhaCb = showBetaCb = false;
       break;
+    
+    case ReferenceLineInfo::SourceType::FissionRefLines:
+      showAplhaCb = showBetaCb = false;
+      break;
       
     case ReferenceLineInfo::SourceType::None:
       // Show all options, otherwise whole area will be blank
@@ -2625,6 +2640,7 @@ void ReferencePhotopeakDisplay::updateDisplayFromInput( RefLineInput user_input 
     switch( src_type )
     {
       case ReferenceLineInfo::SourceType::Nuclide:
+      case ReferenceLineInfo::SourceType::FissionRefLines:
         nonDefaultOpts |= ref_lines->m_input.m_promptLinesOnly;
         nonDefaultOpts |= !ref_lines->m_input.m_showXrays;
         nonDefaultOpts |= !ref_lines->m_input.m_showGammas;

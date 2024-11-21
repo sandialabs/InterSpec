@@ -47,6 +47,7 @@
 #include "InterSpec/BatchCommandLine.h"
 #endif
 
+#include "InterSpec/ReferenceLineInfo.h"
 
 int main( int argc, char **argv )
 {

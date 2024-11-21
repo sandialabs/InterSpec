@@ -390,6 +390,7 @@ struct ReferenceLineInfo
     CustomEnergy,
     NuclideMixture,
     OneOffSrcLines,
+    FissionRefLines,
     None
   };//enum class SourceType : int
 

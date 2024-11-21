@@ -1538,6 +1538,7 @@ public:
           case ReferenceLineInfo::SourceType::Background:
           case ReferenceLineInfo::SourceType::NuclideMixture:
           case ReferenceLineInfo::SourceType::OneOffSrcLines:
+          case ReferenceLineInfo::SourceType::FissionRefLines:
             break;
           
           case ReferenceLineInfo::SourceType::CustomEnergy:
@@ -1812,6 +1813,7 @@ std::unique_ptr<std::pair<PeakModel::PeakShrdPtr,std::string>>
         case ReferenceLineInfo::SourceType::Background:
         case ReferenceLineInfo::SourceType::NuclideMixture:
         case ReferenceLineInfo::SourceType::OneOffSrcLines:
+        case ReferenceLineInfo::SourceType::FissionRefLines:
           break;
           
         case ReferenceLineInfo::SourceType::CustomEnergy:
