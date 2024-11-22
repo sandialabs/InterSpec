@@ -2209,10 +2209,9 @@ void fit_model( const std::string wtsession,
 #endif
         
         row.activityUncertainty = -1.0;
-        if( row.fitActivity )
+        if( row.fitActivity || chi2Fcn->isTraceSource(nuc) || chi2Fcn->isSelfAttenSource(nuc) )
         {
           const double activityUncert = chi2Fcn->totalActivityUncertainty( nuc, params, errors );
-          
           if( activityUncert >= FLT_EPSILON )
             row.activityUncertainty = activityUncert;
         }

@@ -180,7 +180,8 @@ public:
   double activityUncert( int nuc ) const;
   
   /** Returns m_nuclides[nuc].fitActivity for point and trace sources, and always false for self-atten sources; note that
-   this is different than data( {row,kFitActivity} ) which only returns a non-empty value for point sources.
+   this is different than data( {row,kFitActivity} ) which only returns a non-empty value for point sources..
+   For trace sources if activity/volume is fixed (e.g., fit checkbox not checked), but volume is being fit, will return false.
    */
   bool fitActivity( int nuc ) const;
   

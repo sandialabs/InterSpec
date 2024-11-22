@@ -114,8 +114,16 @@ class TraceSrcDisplay : public WGroupBox
   /** The current total activity of the shielding. */
   double m_currentTotalActivity;
   
+  /** This uncertainty is only displayed as the tool-tip of `m_activityInput`, and is only set from
+   `setTraceSourceTotalActivity(...)`.  Everywhere else `m_currentTotalActivity`
+   gets set, the uncertainty will be set to a negative value.
+   A negative or zero value indicates no uncertainty.
+   */
+  double m_currentTotalActivityUncert;
+  
   ShieldingSelect *m_parent;
   Wt::WComboBox *m_isoSelect;
+  /** The tool tip on `m_activityInput` will convey the uncertatainty information. */
   Wt::WLineEdit *m_activityInput;
   Wt::WComboBox *m_activityType;
   Wt::WCheckBox *m_allowFitting;
@@ -135,6 +143,7 @@ public:
     m_currentNuclide( nullptr ),
     m_currentDisplayActivity( 0.0 ),
     m_currentTotalActivity( 0.0 ),
+    m_currentTotalActivityUncert( -1.0 ),
     m_parent( parent ),
     m_isoSelect( nullptr ),
     m_activityInput( nullptr ),
@@ -190,7 +199,9 @@ public:
     m_activityInput->changed().connect( this, &TraceSrcDisplay::handleUserActivityChange );
     m_activityInput->enterPressed().connect( this, &TraceSrcDisplay::handleUserActivityChange );
     m_activityInput->setText( (useBq ? "37 MBq" : "1 mCi") );
+    m_activityInput->setToolTip( WString() );
     m_currentTotalActivity = m_currentDisplayActivity = 0.001*PhysicalUnits::ci;
+    m_currentTotalActivityUncert = -1.0;
     label->setBuddy( m_activityInput );
     
     m_activityType = new WComboBox( this );
@@ -332,6 +343,7 @@ public:
     const bool useCi = !UserPreferences::preferenceValue<bool>( "DisplayBecquerel", InterSpec::instance() );
     const string acttxt = PhysicalUnits::printToBestActivityUnits( trace.m_activity, 6, useCi );
     m_activityInput->setText( WString::fromUTF8(acttxt) );
+    m_activityInput->setToolTip( WString() );
     
     m_activityType->setCurrentIndex( static_cast<int>(type) );
     
@@ -407,7 +419,9 @@ public:
       m_isoSelect->setCurrentIndex( 0 );
       m_currentNuclide = nullptr;
       m_currentTotalActivity = m_currentDisplayActivity = 0.0;
+      m_currentTotalActivityUncert = -1.0;
       m_activityInput->setText( (useCi ? "0 uCi" : "0 bq") );
+      m_activityInput->setToolTip( WString() );
       
       // TODO: do we need to emit that we are removing this trace source? If we're here, the model
       //       already knows about this
@@ -447,6 +461,8 @@ public:
     const string userActTxt = m_activityInput->text().toUTF8();
     const TraceActivityType type = TraceActivityType( m_activityType->currentIndex() );
     
+    m_currentTotalActivityUncert = -1.0; // TODO: we could parse out the +-...
+    
     try
     {
       m_currentDisplayActivity = PhysicalUnits::stringToActivity( userActTxt );
@@ -471,7 +487,8 @@ public:
           
         case TraceActivityType::NumTraceActivityType:
           assert( 0 );
-          m_activityInput->setText( useCi ? "0 uCi" : "0 bq");
+          m_activityInput->setText( useCi ? "0 uCi" : "0 bq" );
+          m_activityInput->setToolTip( WString() );
           m_currentTotalActivity = m_currentDisplayActivity = 0.0;
           break;
       }//switch( type )
@@ -530,6 +547,7 @@ public:
       }//switch( type )
       
       m_activityInput->setText( txt );
+      m_activityInput->setToolTip( WString() );
     }// try / catch
     
     if( m_currentNuclide )
@@ -709,36 +727,54 @@ public:
     const double shieldVolumeCm3 = shieldVolume / PhysicalUnits::cm3;
     const double shieldMassGram = shieldMass / PhysicalUnits::gram;
   
+    double displayUncert = 0.0;
     m_currentDisplayActivity = 0.0;
     
     switch( TraceActivityType(currentIndex) )
     {
       case TraceActivityType::TotalActivity:
         m_currentDisplayActivity = m_currentTotalActivity;
+        if( m_currentTotalActivityUncert > 0.0 )
+          displayUncert = m_currentTotalActivityUncert;
         break;
         
       case TraceActivityType::ActivityPerCm3:
         if( shieldVolumeCm3 <= FLT_EPSILON )
+        {
           m_currentDisplayActivity = m_currentTotalActivity = 0.0;
-        else
+        }else
+        {
           m_currentDisplayActivity = m_currentTotalActivity / shieldVolumeCm3;
+          if( m_currentTotalActivityUncert > 0.0 )
+            displayUncert = m_currentTotalActivityUncert / shieldVolumeCm3;
+        }
         break;
         
       case TraceActivityType::ExponentialDistribution:
       {
         const double surface_area_m2 = m_parent->inSituSurfaceArea() / PhysicalUnits::m2;
         if( surface_area_m2 <= FLT_EPSILON )
+        {
           m_currentDisplayActivity = m_currentTotalActivity = 0.0;
-        else
+        }else
+        {
           m_currentDisplayActivity = m_currentTotalActivity / surface_area_m2;
+          if( m_currentTotalActivityUncert > 0.0 )
+            displayUncert = m_currentTotalActivityUncert / surface_area_m2;
+        }
         break;
       }//case TraceActivityType::ActivityPerGram:
         
       case TraceActivityType::ActivityPerGram:
         if( shieldMassGram <= FLT_EPSILON )
+        {
           m_currentDisplayActivity = m_currentTotalActivity = 0.0;
-        else
+        }else
+        {
           m_currentDisplayActivity = m_currentTotalActivity / shieldMassGram;
+          if( m_currentTotalActivityUncert > 0.0 )
+            displayUncert = m_currentTotalActivityUncert / shieldMassGram;
+        }
         break;
       
       case TraceActivityType::NumTraceActivityType:
@@ -749,6 +785,19 @@ public:
     
     const string actTxt = PhysicalUnits::printToBestActivityUnits( m_currentDisplayActivity, 4, useCi );
     m_activityInput->setText( actTxt );
+    
+    WString tt;
+    if( displayUncert > 0.0 )
+    {
+      const PhysicalUnits::UnitNameValuePair &units
+                          = PhysicalUnits::bestActivityUnitHtml( m_currentDisplayActivity, useCi );
+      const double value = m_currentDisplayActivity / units.second;
+      const double uncert = displayUncert / units.second;
+      string txt = PhysicalUnits::printValueWithUncertainty(value, uncert, 6) + " " + units.first;
+      tt = WString::fromUTF8(txt);
+    }//if( displayUncert > 0.0 )
+    
+    m_activityInput->setToolTip( tt, TextFormat::XHTMLText );
   }//void updateDispActivityFromTotalActivity()
   
   
@@ -760,7 +809,9 @@ public:
     if( !m_currentNuclide )
     {
       m_currentTotalActivity = m_currentDisplayActivity = 0.0;
+      m_currentTotalActivityUncert = -1.0;
       m_activityInput->setText( (useCi ? "0 uCi" : "0 bq") );
+      m_activityInput->setToolTip( WString() );
       return;
     }//if( !m_currentNuclide )
     
@@ -773,7 +824,8 @@ public:
     const double shieldVolumeCm3 = shieldVolume / PhysicalUnits::cm3;
     const double shieldMassGram = shieldMass / PhysicalUnits::gram;
   
-    
+    const double origTotalAct = m_currentTotalActivity;
+    const double origActUncert = m_currentTotalActivityUncert;
     m_currentTotalActivity = 0.0;
     
     switch( TraceActivityType(currentIndex) )
@@ -812,6 +864,9 @@ public:
         m_currentDisplayActivity = m_currentTotalActivity = 0.0;
         break;
     }//switch( type )
+    
+    if( origActUncert )
+      m_currentTotalActivityUncert = origActUncert * (m_currentTotalActivity / origTotalAct);
   }//void updateTotalActivityFromDisplayActivity()
   
   
@@ -824,8 +879,10 @@ public:
     if( m_currentNuclide )
     {
       m_currentTotalActivity = m_currentDisplayActivity = 0.0;
+      m_currentTotalActivityUncert = -1.0;
       const bool useCi = !UserPreferences::preferenceValue<bool>( "DisplayBecquerel", InterSpec::instance() );
       m_activityInput->setText( (useCi ? "0 uCi" : "0 bq") );
+      m_activityInput->setToolTip( WString() );
       
       //const SandiaDecay::Nuclide * const oldNuc = m_currentNuclide;
       m_currentNuclide = nullptr;
@@ -842,7 +899,9 @@ public:
       const bool useBq = UserPreferences::preferenceValue<bool>( "DisplayBecquerel", InterSpec::instance() );
       
       m_currentDisplayActivity = m_currentTotalActivity = 0.0;
+      m_currentTotalActivityUncert = -1.0;
       m_activityInput->setText( (useBq ? "0 Bq" : "0 uCi") );
+      m_activityInput->setToolTip( WString() );
       m_isoSelect->setCurrentIndex( 0 );
       m_allowFitting->setChecked( false );
       
@@ -904,16 +963,21 @@ public:
     return m_currentDisplayActivity;
   }
   
-  void setTraceSourceTotalActivity( const double total_activity )
+  void setTraceSourceTotalActivity( const double total_activity,
+                                   const double total_activity_uncert,
+                                   const bool emit_change )
   {
     assert( m_currentNuclide );
     if( !m_currentNuclide )
       throw runtime_error( "setTraceSourceTotalActivity: no current nuclide" );
     
     m_currentTotalActivity = total_activity;
+    m_currentTotalActivityUncert = total_activity_uncert;
+    
     updateDispActivityFromTotalActivity();
     
-    m_activityUpdated.emit( m_currentNuclide, m_currentTotalActivity );
+    if( emit_change )
+      m_activityUpdated.emit( m_currentNuclide, m_currentTotalActivity );
   }//void setTraceSourceTotalActivity(...)
   
   
@@ -986,10 +1050,13 @@ public:
   {
     const bool show = (m_activityType->currentIndex()
                        == static_cast<int>(TraceActivityType::ExponentialDistribution));
+    const bool isChanging = (show == m_relaxationDiv->isHidden());
     
     m_relaxationDiv->setHidden( !show );
     if( show )
-      handleUserRelaxDistChange();
+      handleUserRelaxDistChange(); // This emits the material modified signal, which will wipe out uncertainties, which is appropriate.
+    else if( isChanging )
+      m_parent->materialModified().emit(m_parent); //Also emit that material changed when going from exp dist to other one
   }//void showOrHideRelaxation()
   
   
@@ -1889,13 +1956,15 @@ double ShieldingSelect::traceSourceTotalActivity( const SandiaDecay::Nuclide *nu
 }
 
 void ShieldingSelect::setTraceSourceTotalActivity( const SandiaDecay::Nuclide *nuc,
-                                                  const double activity )
+                                                  const double activity,
+                                                  const double uncertainty,
+                                                  const bool emit_change )
 {
   TraceSrcDisplay *w = traceSourceWidgetForNuclide( nuc );
   if( !w )
     throw runtime_error( "setTraceSourceTotalActivity: called with invalid nuclide" );
   
-  w->setTraceSourceTotalActivity( activity );
+  w->setTraceSourceTotalActivity( activity, uncertainty, emit_change );
 }//void setTraceSourceTotalActivity( nuclide, activity );
 
 

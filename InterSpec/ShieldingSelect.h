@@ -427,13 +427,22 @@ public:
    */
   double traceSourceTotalActivity( const SandiaDecay::Nuclide *nuc ) const;
   
-  /** Sets the specified nuclides activity, and causes correct signals to be emitted so SourceFitMode
+  /** Sets the specified nuclides activity, and causes correct signals to be emitted so SourceFitMode, if wanted
    
-   You always pass in total activity of trace source, which will then be converted to the appropriate display activity.
+   
+   @param nuc The nuclide to set the activity for.
+   @param activity The *total* activity of trace source, which will then be converted to the appropriate display activity.
+   @param uncertainty The activity uncertainty.  A 0 or negative value indicates none.
+   @param emit_change Whether singals indicating changes should be emitted.  You want this if setting the value when restoring
+          state, or undo/redo, or manual changes.  But if you are updating the value *from* the nuclide model, then you dont want
+          to emit the signals, because then it will set the value to the activity model, wiping out the uncertainty value
    
    Throws exception if not a trace source for the nuclide.
    */
-  void setTraceSourceTotalActivity( const SandiaDecay::Nuclide *nuc, const double activity );
+  void setTraceSourceTotalActivity( const SandiaDecay::Nuclide *nuc,
+                                   const double activity,
+                                   const double uncertainty,
+                                   const bool emit_change );
   
   
   /** Returns the current display activity for the specified trace source nuclide; e.g., might be total activity, or activity per cm^3, or

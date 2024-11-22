@@ -1615,11 +1615,14 @@ boost::any SourceFitModel::data( const Wt::WModelIndex &index, int role ) const
       switch( isof.sourceType )
       {
         case ShieldingSourceFitCalc::ModelSourceType::Intrinsic:
-          // TODO: check if dimensions are being fit
+          // TODO: check if dimensions are being fit - but I *think* uncert will only be >0 if this is the case - so we are good?
+          break;
+          
+        case ShieldingSourceFitCalc::ModelSourceType::Trace:
+          // TODO: check if activity is being fit, and if not, then if dimensions are being fit - but I *think* uncert will only be >0 if one of these is the case anyway - so we are good?
           break;
           
         case ShieldingSourceFitCalc::ModelSourceType::Point:
-        case ShieldingSourceFitCalc::ModelSourceType::Trace:
           // Dont show uncertainty unless we fit for it - although in principle it should be zero, right
           if( !fitActivity(row) )
             shouldHaveUncert = false;
@@ -1912,7 +1915,7 @@ bool SourceFitModel::setData( const Wt::WModelIndex &index, const boost::any &va
       {
         iso.activity = PhysicalUnits::stringToActivity( utf_str );
         
-        if( iso.activityUncertainty >= 0.0 ) //For activity we will emit the whole row changed below
+        if( iso.activityUncertainty >= 0.0 ) // For activity we will emit the whole row changed below
           iso.activityUncertainty = -1.0;
       
         break;
@@ -2154,33 +2157,19 @@ bool SourceFitModel::compare( const ShieldingSourceFitCalc::IsoFitStruct &lhs_in
     case kFitActivity: return (lhs.fitActivity < rhs.fitActivity);
     case kAge:         return (lhs.age < rhs.age);
     case kFitAge:      return (lhs.fitAge < rhs.fitAge);
-    case kIsotopeMass:
-      return ((lhs.activity/lhs.nuclide->activityPerGram())
-              < (rhs.activity/rhs.nuclide->activityPerGram()) );
-    
-    case kActivityUncertainty:
-      return (lhs.activityUncertainty < rhs.activityUncertainty);
-    
-    case kAgeUncertainty:
-      return (lhs.ageUncertainty < rhs.ageUncertainty);
-    break;
+    case kIsotopeMass: return ((lhs.activity/lhs.nuclide->activityPerGram())
+                                  < (rhs.activity/rhs.nuclide->activityPerGram()) );
+    case kActivityUncertainty: return (lhs.activityUncertainty < rhs.activityUncertainty);
+    case kAgeUncertainty:      return (lhs.ageUncertainty < rhs.ageUncertainty);
       
 #if( INCLUDE_ANALYSIS_TEST_SUITE )
-    case kTruthActivity:
-      return optionalLess( lhs.truthActivity, rhs.truthActivity );
-      
-    case kTruthActivityTolerance:
-      return optionalLess( lhs.truthActivityTolerance, rhs.truthActivityTolerance );
-      
-    case kTruthAge:
-      return optionalLess( lhs.truthAge, rhs.truthAge );
-      
-    case kTruthAgeTolerance:
-      return optionalLess( lhs.truthAgeTolerance, rhs.truthAgeTolerance );
+    case kTruthActivity:          return optionalLess( lhs.truthActivity, rhs.truthActivity );
+    case kTruthActivityTolerance: return optionalLess( lhs.truthActivityTolerance, rhs.truthActivityTolerance );
+    case kTruthAge:               return optionalLess( lhs.truthAge, rhs.truthAge );
+    case kTruthAgeTolerance:      return optionalLess( lhs.truthAgeTolerance, rhs.truthAgeTolerance );
 #endif
       
-    case kNumColumns:
-      return false;
+    case kNumColumns:  return false;
   }//switch( sortColumn )
 
   assert( 0 );
@@ -7662,6 +7651,9 @@ void ShieldingSourceDisplay::updateActivityOfShieldingIsotope( ShieldingSelect *
     // JIC there were any geometry changes, force the ShieldingSelect to update its total activity
     const double activity = select->updateTotalTraceSourceActivityForGeometryChange(nuc);
     
+    // Setting the activity to the model will clear the uncertatnty
+    //   If user is typing in activty to the widget, we probably want this.
+    //   But if this path is some autoamted update, then this would be bad (and hopefully we're avoiding)
     snprintf( buffer, sizeof(buffer), "%1.8E ci", activity/PhysicalUnits::curie );
     m_sourceModel->setData( index, string(buffer) );
     
@@ -8414,7 +8406,7 @@ void ShieldingSourceDisplay::updateGuiWithModelFitResults( std::shared_ptr<Shiel
         ShieldingSelect *select = dynamic_cast<ShieldingSelect *>(widget);
         if( select && select->isTraceSourceForNuclide(src.nuclide) )
         {
-          select->setTraceSourceTotalActivity( src.nuclide, src.activity );
+          select->setTraceSourceTotalActivity( src.nuclide, src.activity, src.activityUncertainty, false );
           break;
         }
       }//for( WWidget *widget : m_shieldingSelects->children() )
