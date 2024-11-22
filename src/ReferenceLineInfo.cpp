@@ -756,35 +756,21 @@ shared_ptr<const vector<NuclideYield>> fission_nuclide_info( const SandiaDecay::
       if( max_hl < min_halflife )
         continue;
       
-      double fy_thermal = 0.0, fy_fast = 0.0, fy_14MeV = 0.0;
-      if( !fields[fy_thermal_index].empty() )
-      {
-        if( !(stringstream(fields[fy_thermal_index]) >> fy_thermal) )
-          throw runtime_error( "Failed to convert '" + fields[fy_thermal_index]
-                              + "' to fission yield; line " + std::to_string(line_num) );
-      }
-      
-      if( !fields[fy_fast].empty() )
-      {
-        if( !(stringstream(fields[fy_fast]) >> fy_fast) )
-          throw runtime_error( "Failed to convert '" + fields[fy_fast]
-                              + "' to fission yield; line " + std::to_string(line_num) );
-      }
-      
-      if( !fields[fy_14MeV_index].empty() )
-      {
-        if( !(stringstream(fields[fy_14MeV_index]) >> fy_14MeV) )
-          throw runtime_error( "Failed to convert '" + fields[fy_14MeV_index]
-                              + "' to fission yield; line " + std::to_string(line_num) );
-      }
-      
       NuclideYield yield;
       yield.nuclide = nuc;
-      yield.thermal_yield = fy_thermal;
-      yield.fast_yield = fy_fast;
-      yield.fourteen_MeV_yield = fy_14MeV;
       
-      const double max_yield = std::max( std::max(fy_thermal, fy_fast), fy_14MeV );
+      auto get_yield = [&line_num]( const string &strval, double &val ){
+        if( !strval.empty() && !SpecUtils::parse_double(strval.c_str(), strval.size(), val ) )
+          throw runtime_error( "Failed to convert '" + strval
+                              + "' to fission yield; line " + std::to_string(line_num) );
+      };//get_yield lambda
+      
+      get_yield( fields[fy_thermal_index], yield.thermal_yield );
+      get_yield( fields[fy_fast_index], yield.fast_yield );
+      get_yield( fields[fy_14MeV_index], yield.fourteen_MeV_yield );
+      
+      const double max_yield = std::max( yield.fourteen_MeV_yield,
+                                        std::max(yield.thermal_yield, yield.fast_yield) );
       if( max_yield <= 0.0 )
         continue;
       
@@ -797,7 +783,7 @@ shared_ptr<const vector<NuclideYield>> fission_nuclide_info( const SandiaDecay::
   
   std::sort( begin(*fission_yields), end(*fission_yields),
             []( const NuclideYield &lhs, const NuclideYield &rhs ) -> bool {
-    return lhs.thermal_yield > rhs.thermal_yield;
+    return lhs.fast_yield > rhs.fast_yield;
   } );
   
   
@@ -859,27 +845,85 @@ std::shared_ptr<const vector<FissionLine>> fission_photons( const SandiaDecay::N
   
   // We will have the max-buildup nuclide, buildup by ~1 uCi per second (about 86mCi per day,
   //  or 31 Ci per year)
-  double num_atoms_mult = std::numeric_limits<double>::max();
+  double num_atoms_mult_cs137 = std::numeric_limits<double>::max();
+  double num_atoms_mult_all = std::numeric_limits<double>::max();
   
+  const SandiaDecay::SandiaDecayDataBase *db = DecayDataBaseServer::database();
+  const SandiaDecay::Nuclide *cs137 = db->nuclide( "Cs137" );
+  assert( cs137 );
+  
+  size_t num_nucs_with_yield = 0.0;
   for( const NuclideYield &n : *fission_yields )
   {
+    double yield = 0.0;
+    switch( type )
+    {
+      case FissionType::Thermal:     yield = n.thermal_yield;      break;
+      case FissionType::FourteenMeV: yield = n.fourteen_MeV_yield; break;
+      case FissionType::Fast:        yield = n.fast_yield;         break;
+    }
+    
+    assert( yield >= 0.0 );
+    assert( !IsInf(yield) && !IsNan(yield) );
+    
+    if( (yield <= 0) || IsInf(yield) || IsNan(yield) )
+      continue;
+    
+    if( n.nuclide && (n.nuclide == cs137) )
+    {
+      const double num_atoms_in_uCi = n.nuclide->activityToNumAtoms( 1.0E-6*SandiaDecay::Ci );
+      num_atoms_mult_cs137 = num_atoms_in_uCi / yield;
+    }
+    
     if( n.nuclide->halfLife > 60*SandiaDecay::second )
     {
-      double yield = 0.0;
-      switch( type )
-      {
-        case FissionType::Thermal:     yield = n.thermal_yield;      break;
-        case FissionType::FourteenMeV: yield = n.fourteen_MeV_yield; break;
-        case FissionType::Fast:        yield = n.fast_yield;         break;
-      }
       const double num_atoms_in_uCi = n.nuclide->activityToNumAtoms( 1.0E-6*SandiaDecay::Ci );
-      num_atoms_mult = std::min( num_atoms_mult, num_atoms_in_uCi / yield );
+      num_atoms_mult_all = std::min( num_atoms_mult_all, num_atoms_in_uCi / yield );
     }
+    
+    num_nucs_with_yield += 1;
   }//for( const NuclideYield &n : fission_yields )
+  
+  
+  if( !num_nucs_with_yield )
+  {
+    string error_msg = nuc->symbol + " does not have any ";
+    switch( type )
+    {
+      case FissionType::Thermal:     error_msg += "thermal"; break;
+      case FissionType::FourteenMeV: error_msg += "14 MeV";  break;
+      case FissionType::Fast:        error_msg += "fast";    break;
+    }
+    error_msg += " fission yields.";
+    throw runtime_error( error_msg );
+  }//if( !num_nucs_with_yield )
+  
+  
+  assert( num_atoms_mult_all != std::numeric_limits<double>::max() );
+  assert( num_atoms_mult_cs137 != std::numeric_limits<double>::max() );
+  assert( num_atoms_mult_all > 0.0 );
+  assert( num_atoms_mult_cs137 > 0.0 );
+  if( (num_atoms_mult_cs137 == std::numeric_limits<double>::max())
+     || (num_atoms_mult_cs137 <= 0.0)
+     || IsInf(num_atoms_mult_cs137)
+     || IsNan(num_atoms_mult_cs137) )
+  {
+    num_atoms_mult_cs137 = num_atoms_mult_all;
+  }
   
   SandiaDecay::NuclideMixture ager;
   for( const auto &n : *fission_yields )
-    ager.addAgedNuclideByNumAtoms(n.nuclide, n.thermal_yield*num_atoms_mult, 0.0 );
+  {
+    double yield = 0.0;
+    switch( type )
+    {
+      case FissionType::Thermal:     yield = n.thermal_yield;      break;
+      case FissionType::FourteenMeV: yield = n.fourteen_MeV_yield; break;
+      case FissionType::Fast:        yield = n.fast_yield;         break;
+    }
+    
+    ager.addAgedNuclideByNumAtoms(n.nuclide, yield*num_atoms_mult_cs137, 0.0 );
+  }//for( const auto &n : *fission_yields )
   
   // Now we will crate a mixture that will represent, for its t=0, the end of
   //  build up, and after the looping over all the time steps, it will have
@@ -3460,11 +3504,24 @@ std::shared_ptr<ReferenceLineInfo> ReferenceLineInfo::generateRefLineInfo( RefLi
       if( !fission_lines )
         throw logic_error( "Unexpected nullptr from fission_photons." );
       
+      double max_amp = 0.0;
+      for( const FissionLine &info : *fission_lines )
+        max_amp = std::max( max_amp, info.relative_amplitude );
+      assert( !IsNan(max_amp) && !IsInf(max_amp) && (max_amp > 0.0) );
+      if( IsNan(max_amp) || IsInf(max_amp) || (max_amp <= 0.0) )
+        max_amp = 1.0; //good luck
+      
       for( const FissionLine &info : *fission_lines )
       {
+        assert( !IsNan(info.energy) && !IsInf(info.energy) );
+        assert( !IsNan(info.relative_amplitude) && !IsInf(info.relative_amplitude) );
+        if( IsNan(info.relative_amplitude) || IsInf(info.relative_amplitude)
+           || (info.relative_amplitude <= 0.0) )
+          continue;
+        
         ReferenceLineInfo::RefLine line;
         line.m_energy = info.energy;
-        line.m_decay_intensity = info.relative_amplitude;
+        line.m_decay_intensity = info.relative_amplitude / max_amp;
         line.m_particle_type = ReferenceLineInfo::RefLine::Particle::Gamma;
         line.m_source_type = ReferenceLineInfo::RefLine::RefGammaType::Normal;
         line.m_parent_nuclide = info.parent;
@@ -3476,7 +3533,6 @@ std::shared_ptr<ReferenceLineInfo> ReferenceLineInfo::generateRefLineInfo( RefLi
     {
       answer.m_input_warnings.push_back( "Error computing fission products: " + std::string(e.what()) );
       answer.m_validity = ReferenceLineInfo::InputValidity::InvalidSource;
-      assert( 0 );
       return answer_ptr;
     }//try / catch to
     
@@ -3786,15 +3842,22 @@ vector<string> ReferenceLineInfo::additional_ref_line_sources()
     for( const FissionDataSrcFile &src : *sm_fission_products )
     {
       assert( src.nuclide );
-      answer.push_back( "Fission " + src.nuclide->symbol + " Thermal, 1d buildup" );
+      
+      // U238 doesnt have any thermal fission - so lets not suggest it (probably other nuclides too)
+      const bool has_thermal = (src.nuclide->symbol != "U238");
+      
+      if( has_thermal )
+        answer.push_back( "Fission " + src.nuclide->symbol + " Thermal, 1d buildup" );
       answer.push_back( "Fission " + src.nuclide->symbol + " Fast, 1d buildup" );
       answer.push_back( "Fission " + src.nuclide->symbol + " 14 MeV, 1d buildup" );
       
-      answer.push_back( "Fission " + src.nuclide->symbol + " Thermal, 30d buildup" );
+      if( has_thermal )
+        answer.push_back( "Fission " + src.nuclide->symbol + " Thermal, 30d buildup" );
       answer.push_back( "Fission " + src.nuclide->symbol + " Fast, 30d buildup" );
       answer.push_back( "Fission " + src.nuclide->symbol + " 14MeV, 30d buildup" );
       
-      answer.push_back( "Fission " + src.nuclide->symbol + " Thermal, 1y buildup" );
+      if( has_thermal )
+        answer.push_back( "Fission " + src.nuclide->symbol + " Thermal, 1y buildup" );
       answer.push_back( "Fission " + src.nuclide->symbol + " Fast, 1y buildup" );
       answer.push_back( "Fission " + src.nuclide->symbol + " 14 MeV, 1y buildup" );
     }//for( const FissionDataSrcFile &src : *sm_fission_products )
