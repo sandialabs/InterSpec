@@ -2127,12 +2127,10 @@ bool SourceFitModel::setData( const Wt::WModelIndex &index, const boost::any &va
 }//bool setData(...)
 
 
-bool SourceFitModel::compare( const ShieldingSourceFitCalc::IsoFitStruct &lhs,
-                                const ShieldingSourceFitCalc::IsoFitStruct &rhs,
+bool SourceFitModel::compare( const ShieldingSourceFitCalc::IsoFitStruct &lhs_input,
+                                const ShieldingSourceFitCalc::IsoFitStruct &rhs_input,
                                 Columns sortColumn, Wt::SortOrder order )
 {
-  bool isLess = false;
-  
 #if( INCLUDE_ANALYSIS_TEST_SUITE )
   auto optionalLess = []( const boost::optional<double> &olhs, const boost::optional<double> &orhs) -> bool{
     if( (!olhs) != (!orhs) )
@@ -2145,51 +2143,48 @@ bool SourceFitModel::compare( const ShieldingSourceFitCalc::IsoFitStruct &lhs,
   };
 #endif
   
+  const bool ascend = (order == Wt::AscendingOrder);
+  const ShieldingSourceFitCalc::IsoFitStruct &lhs = ascend ? lhs_input : rhs_input;
+  const ShieldingSourceFitCalc::IsoFitStruct &rhs = ascend ? rhs_input : lhs_input;
   
   switch( sortColumn )
   {
-    case kIsotope:    isLess = (lhs.nuclide->symbol<rhs.nuclide->symbol); break;
-    case kActivity:   isLess = (lhs.activity < rhs.activity);             break;
-    case kFitActivity:isLess = (lhs.fitActivity < rhs.fitActivity);       break;
-    case kAge:        isLess = (lhs.age < rhs.age);                       break;
-    case kFitAge:     isLess = (lhs.fitAge < rhs.fitAge);                 break;
+    case kIsotope:     return (lhs.nuclide->symbol < rhs.nuclide->symbol);
+    case kActivity:    return (lhs.activity < rhs.activity);
+    case kFitActivity: return (lhs.fitActivity < rhs.fitActivity);
+    case kAge:         return (lhs.age < rhs.age);
+    case kFitAge:      return (lhs.fitAge < rhs.fitAge);
     case kIsotopeMass:
-      isLess = ((lhs.activity/lhs.nuclide->activityPerGram())
+      return ((lhs.activity/lhs.nuclide->activityPerGram())
               < (rhs.activity/rhs.nuclide->activityPerGram()) );
-    break;
+    
     case kActivityUncertainty:
-      isLess = (lhs.activityUncertainty<rhs.activityUncertainty);
-    break;
+      return (lhs.activityUncertainty < rhs.activityUncertainty);
+    
     case kAgeUncertainty:
-      isLess = (lhs.ageUncertainty<rhs.ageUncertainty);
+      return (lhs.ageUncertainty < rhs.ageUncertainty);
     break;
       
 #if( INCLUDE_ANALYSIS_TEST_SUITE )
     case kTruthActivity:
-      isLess = optionalLess( lhs.truthActivity, rhs.truthActivity );
-      break;
+      return optionalLess( lhs.truthActivity, rhs.truthActivity );
       
     case kTruthActivityTolerance:
-      isLess = optionalLess( lhs.truthActivityTolerance, rhs.truthActivityTolerance );
-      break;
+      return optionalLess( lhs.truthActivityTolerance, rhs.truthActivityTolerance );
       
     case kTruthAge:
-      isLess = optionalLess( lhs.truthAge, rhs.truthAge );
-      break;
+      return optionalLess( lhs.truthAge, rhs.truthAge );
       
     case kTruthAgeTolerance:
-      isLess = optionalLess( lhs.truthAgeTolerance, rhs.truthAgeTolerance );
-      break;
+      return optionalLess( lhs.truthAgeTolerance, rhs.truthAgeTolerance );
 #endif
       
     case kNumColumns:
-      isLess = false;
-      break;
+      return false;
   }//switch( sortColumn )
 
-  if(order == Wt::AscendingOrder)
-      return !isLess;
-  return isLess;
+  assert( 0 );
+  return false;
 }//bool compare(...);
 
 void SourceFitModel::sort( int column, Wt::SortOrder order )
@@ -7501,7 +7496,7 @@ ShieldingSelect *ShieldingSourceDisplay::addShielding( ShieldingSelect *before,
   
   
   handleShieldingChange();
-  select->setTraceSourceMenuItemStatus();
+  select->setTraceSourceBtnStatus();
   
   if( updateChiChartAndAddUndoRedo )
     updateChi2Chart();
@@ -7797,7 +7792,7 @@ void ShieldingSourceDisplay::isotopeIsBecomingVolumetricSourceCallback(
   {
     ShieldingSelect *select = dynamic_cast<ShieldingSelect *>( widget );
     if( select )
-      select->setTraceSourceMenuItemStatus();
+      select->setTraceSourceBtnStatus();
   }//for( WWidget *widget : children )
   
   
@@ -7825,7 +7820,7 @@ void ShieldingSourceDisplay::isotopeRemovedAsVolumetricSourceCallback(
   {
     ShieldingSelect *select = dynamic_cast<ShieldingSelect *>( widget );
     if( select )
-      select->setTraceSourceMenuItemStatus();
+      select->setTraceSourceBtnStatus();
   }//for( WWidget *widget : children )
   
   //Update the Chi2
@@ -7983,7 +7978,7 @@ void ShieldingSourceDisplay::removeShielding( ShieldingSelect *select )
   {
     ShieldingSelect *shielding = dynamic_cast<ShieldingSelect *>( widget );
     if( shielding )
-      shielding->setTraceSourceMenuItemStatus();
+      shielding->setTraceSourceBtnStatus();
   }//for( WWidget *widget : children )
   
   assert( foundShielding );

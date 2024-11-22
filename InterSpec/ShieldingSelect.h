@@ -542,7 +542,7 @@ protected:
   
   void addTraceSource();
   void removeTraceSourceWidget( TraceSrcDisplay *src );
-  void setTraceSourceMenuItemStatus();
+  void setTraceSourceBtnStatus();
   void handleTraceSourceNuclideChange( TraceSrcDisplay *src, const SandiaDecay::Nuclide *oldNuc );
   void handleTraceSourceWidgetAboutToBeRemoved( TraceSrcDisplay *nuc );
   void handleTraceSourceActivityChange( const SandiaDecay::Nuclide *nuc, const double activity );
@@ -666,7 +666,7 @@ protected:
   Wt::WText *m_materialSummary;
   Wt::WPushButton *m_closeIcon;
   Wt::WPushButton *m_addIcon;
-  PopupDivMenuItem *m_addTraceSourceItem;
+  Wt::WPushButton *m_addTraceSrcBtn;
   
   /** If true, then `m_addTraceSourceItem` should be hidden, spherical geometry, and there should be no trace sources,
    and no self-attenuating sources.

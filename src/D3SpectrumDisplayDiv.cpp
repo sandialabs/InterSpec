@@ -2723,7 +2723,7 @@ void D3SpectrumDisplayDiv::chartXRangeChangedCallback( double x0, double x1,
      && (fabs(m_chartWidthPx - chart_width_px) < 0.001)
      && (fabs(m_chartHeightPx - chart_height_px) < 0.001) )
   {
-    cout << "No appreciable change in x-range or chart pixel, not emitting" << endl;
+    // cout << "No appreciable change in x-range or chart pixel, not emitting" << endl;
     return;
   }
   

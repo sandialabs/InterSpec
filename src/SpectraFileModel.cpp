@@ -1103,9 +1103,9 @@ void SpectraFileHeader::saveToFileSystem( std::shared_ptr<SpecMeas> measurment )
       m_modifiedSinceDecode = info->modified_since_decode();
     }
     
-    cerr << "In SpectraFileHeader::saveToFileSystem(...) for '"
-         << info->filename() << "' m_modifiedSinceDecode="
-         << m_modifiedSinceDecode << endl;
+    //cerr << "In SpectraFileHeader::saveToFileSystem(...) for '"
+    //     << info->filename() << "' m_modifiedSinceDecode="
+    //     << m_modifiedSinceDecode << endl;
 
     try
     {

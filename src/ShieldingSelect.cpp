@@ -1295,7 +1295,7 @@ ShieldingSelect::ShieldingSelect( MaterialDB *materialDB,
   m_materialSummary( nullptr ),
   m_closeIcon( nullptr ),
   m_addIcon( nullptr ),
-  m_addTraceSourceItem( nullptr ),
+  m_addTraceSrcBtn( nullptr ),
   m_fixedGeometry( false ),
   m_dimensionsStack( nullptr ),
   m_genericDiv( nullptr ),
@@ -1344,7 +1344,7 @@ ShieldingSelect::ShieldingSelect( MaterialDB *materialDB,
     m_materialSummary( nullptr ),
     m_closeIcon( nullptr ),
     m_addIcon( nullptr ),
-    m_addTraceSourceItem( nullptr ),
+    m_addTraceSrcBtn( nullptr ),
     m_fixedGeometry( false ),
     m_dimensionsStack( nullptr ),
     m_genericDiv( nullptr ),
@@ -1375,7 +1375,7 @@ ShieldingSelect::ShieldingSelect( MaterialDB *materialDB,
 }
 
 
-void ShieldingSelect::setClosableAndAddable( bool closeable , WGridLayout* layout )
+void ShieldingSelect::setClosableAndAddable( bool closeable, WGridLayout *layout )
 {
   if( closeable )
   {
@@ -1388,24 +1388,12 @@ void ShieldingSelect::setClosableAndAddable( bool closeable , WGridLayout* layou
     m_closeIcon->setIcon("InterSpec_resources/images/minus_min_black.svg");
     m_addIcon->setStyleClass( "ShieldingAdd Wt-icon" );
     m_addIcon->setIcon("InterSpec_resources/images/plus_min_black.svg");
-    
-
-//    m_closeIcon->setToolTip( "Remove this shielding" );
-//    m_addIcon->setToolTip( "Add a shielding" );
-//    WPopupMenuItem *item = popup->addItem( "Before this shielding" );
-//    item->triggered().connect( this, &ShieldingSelect::emitAddBeforeSignal )
-//    item = popup->addItem( "After this shielding" );
-//    item->triggered().connect( this, &ShieldingSelect::emitAddBeforeSignal )
-//    m_addIcon->setMenu( popup );
-    
+        
     PopupDivMenu *popup = new PopupDivMenu( m_addIcon, PopupDivMenu::TransientMenu );
-    PopupDivMenuItem *item = popup->addMenuItem( "Add shielding before" );
+    PopupDivMenuItem *item = popup->addMenuItem( WString::tr("ss-add-shield-before") );
     item->triggered().connect( this, &ShieldingSelect::emitAddBeforeSignal );
-    item = popup->addMenuItem( "Add Shielding after" );
+    item = popup->addMenuItem( WString::tr("ss-add-shield-after") );
     item->triggered().connect( this, &ShieldingSelect::emitAddAfterSignal );
-    m_addTraceSourceItem = popup->addMenuItem( "Add Trace Source" );
-    m_addTraceSourceItem->triggered().connect( this, &ShieldingSelect::addTraceSource );
-    m_addTraceSourceItem->triggered().connect( this, &ShieldingSelect::handleUserChangeForUndoRedo );
     
     layout->addWidget( m_closeIcon, 0, 2, AlignMiddle | AlignRight );
     layout->addWidget( m_addIcon, 1, 2, AlignTop | AlignRight );
@@ -2119,7 +2107,6 @@ void ShieldingSelect::init()
 
   m_dimensionsStack = new WStackedWidget( this );
   
-  
   // Begin setting up generic material widgets
   m_genericDiv = new WContainerWidget();
   m_dimensionsStack->addWidget( m_genericDiv );
@@ -2332,6 +2319,15 @@ void ShieldingSelect::init()
   setupDimEdit( WString::tr(lbltxt_key), m_rectHeightEdit, m_fitRectHeightCB, rectangularLayout );
   lbltxt_key = fistShield ? "ss-half-depth"  : "ss-depth-thickness";
   setupDimEdit( WString::tr(lbltxt_key), m_rectDepthEdit, m_fitRectDepthCB, rectangularLayout );
+  
+  // Finally we have to
+  if( m_forFitting )
+  {
+    m_addTraceSrcBtn = new WPushButton( WString::tr("ss-add-trace-src"), this );
+    m_addTraceSrcBtn->addStyleClass( "LinkBtn AddTrcSrcBtn" );
+    m_addTraceSrcBtn->clicked().connect( this, &ShieldingSelect::addTraceSource );
+    m_addTraceSrcBtn->clicked().connect( this, &ShieldingSelect::handleUserChangeForUndoRedo );
+  }//if( m_forFitting )
   
   // We're all done creating the widgets
   
@@ -2550,7 +2546,7 @@ void ShieldingSelect::removeTraceSourceWidget( TraceSrcDisplay *toRemove )
       
       delete src;
       
-      setTraceSourceMenuItemStatus();
+      setTraceSourceBtnStatus();
       
       handleUserChangeForUndoRedo();
       
@@ -2564,14 +2560,15 @@ void ShieldingSelect::removeTraceSourceWidget( TraceSrcDisplay *toRemove )
 
 
 
-void ShieldingSelect::setTraceSourceMenuItemStatus()
+void ShieldingSelect::setTraceSourceBtnStatus()
 {
-  if( !m_addTraceSourceItem )
+  if( !m_addTraceSrcBtn )
     return;
   
   if( m_isGenericMaterial || !m_sourceModel || m_fixedGeometry )
   {
-    m_addTraceSourceItem->setDisabled( true );
+    m_addTraceSrcBtn->setDisabled( true );
+    m_addTraceSrcBtn->setHidden( true );
     return;
   }//if( m_isGenericMaterial )
   
@@ -2585,8 +2582,9 @@ void ShieldingSelect::setTraceSourceMenuItemStatus()
       numAvailableNuclides += 1;
   }
   
-  m_addTraceSourceItem->setDisabled( !numAvailableNuclides );
-}//void setTraceSourceMenuItemStatus()
+  m_addTraceSrcBtn->setDisabled( !numAvailableNuclides );
+  m_addTraceSrcBtn->setHidden( !numAvailableNuclides );
+}//void setTraceSourceBtnStatus()
 
 
 void ShieldingSelect::handleTraceSourceNuclideChange( TraceSrcDisplay *changedSrc, const SandiaDecay::Nuclide *oldNuc )
@@ -2630,7 +2628,7 @@ void ShieldingSelect::handleTraceSourceNuclideChange( TraceSrcDisplay *changedSr
     }
   }//for( WWidget *w : traceSources )
   
-  setTraceSourceMenuItemStatus();
+  setTraceSourceBtnStatus();
 }//void handleTraceSourceNuclideChange( TraceSrcDisplay *src );
 
 
@@ -3020,7 +3018,7 @@ void ShieldingSelect::setFixedGeometry( const bool fixed_geom )
     }//if( m_asSourceCBs )
   }//if( m_fixedGeometry ) / else
   
-  setTraceSourceMenuItemStatus();
+  setTraceSourceBtnStatus();
 }//void setFixedGeometry( const bool fixed_geom );
 
 
@@ -3428,7 +3426,7 @@ void ShieldingSelect::isotopeCheckedCallback( const SandiaDecay::Nuclide *nuc )
 void ShieldingSelect::isotopeUnCheckedCallback( const SandiaDecay::Nuclide *iso )
 {
   updateIfMassFractionCanFit();
-  setTraceSourceMenuItemStatus();
+  setTraceSourceBtnStatus();
   m_removingIsotopeAsSource.emit( iso, ShieldingSourceFitCalc::ModelSourceType::Intrinsic );
 }//void isotopeUnCheckedCallback( const std::string symbol )
 
@@ -3477,7 +3475,7 @@ void ShieldingSelect::uncheckSourceIsotopeCheckBox( const SandiaDecay::Nuclide *
   }//for( WWidget *child : children )
   
   updateIfMassFractionCanFit();
-  setTraceSourceMenuItemStatus();
+  setTraceSourceBtnStatus();
 }//void uncheckSourceIsotopeCheckBox( const std::string &symol )
 
 
@@ -3553,7 +3551,7 @@ void ShieldingSelect::sourceRemovedFromModel( const SandiaDecay::Nuclide *nuc )
     m_asSourceCBs->hide();
   
   updateIfMassFractionCanFit();
-  setTraceSourceMenuItemStatus();
+  setTraceSourceBtnStatus();
   updateSelfAttenOtherNucFractionTxt();
 }//void sourceRemovedFromModel( const std::string &symbol )
 
@@ -3779,7 +3777,7 @@ void ShieldingSelect::modelNuclideAdded( const SandiaDecay::Nuclide *iso )
     }//for( WWidget *w : traceSources )
   }//if( m_traceSources )
   
-  setTraceSourceMenuItemStatus();
+  setTraceSourceBtnStatus();
   
   if( !m_asSourceCBs )
     return;
@@ -3815,9 +3813,9 @@ void ShieldingSelect::modelNuclideAdded( const SandiaDecay::Nuclide *iso )
   {
     return;
   }
-
+  
   if( m_sourceIsotopes.find(element) == m_sourceIsotopes.end() )
-    m_sourceIsotopes[element] = new WContainerWidget( this );
+    m_sourceIsotopes[element] = new WContainerWidget( m_asSourceCBs );
   WContainerWidget *isotopeDiv = m_sourceIsotopes[element];
   for( WWidget *widget : isotopeDiv->children() )
   {
@@ -4396,7 +4394,7 @@ void ShieldingSelect::handleMaterialChange()
   std::shared_ptr<const Material> previousMaterial = m_currentMaterial;
   
   displayInputsForCurrentGeometry();
-  setTraceSourceMenuItemStatus();
+  setTraceSourceBtnStatus();
   
   if( m_isGenericMaterial )
   {

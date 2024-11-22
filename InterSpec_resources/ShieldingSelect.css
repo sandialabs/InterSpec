@@ -26,6 +26,10 @@
 {
   border: 1px solid #e1e1e1;
   box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  column-gap: 5px;
 }
 
 
@@ -64,6 +68,14 @@
   border:2px solid #e1e1e1;
 }
 
+.ShieldingSelect .LinkBtn.AddTrcSrcBtn
+{
+  height: 12px;
+  font-size: 8px;
+  padding-top: 0px;
+  padding-bottom: 0px;
+  margin-left: auto;
+}
 
 .TraceSrcContainer
 {
