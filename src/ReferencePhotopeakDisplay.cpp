@@ -1361,10 +1361,11 @@ void ReferencePhotopeakDisplay::handleIsotopeChange( const bool useCurrentAge )
 {
   const SandiaDecay::SandiaDecayDataBase *db = DecayDataBaseServer::database();
   const string isotopeLabel = m_nuclideEdit->text().toUTF8();
-  const SandiaDecay::Nuclide *nuc = db->nuclide( isotopeLabel );
+  const bool fission = SpecUtils::icontains(isotopeLabel, "Fission");
+  const SandiaDecay::Nuclide *nuc = fission ? nullptr : db->nuclide( isotopeLabel );
   const string agestr = m_ageEdit->text().toUTF8();
   const SandiaDecay::Element *el = NULL;
-
+  
   if( nuc )
   {
     bool prompt = (nuc->canObtainPromptEquilibrium()
@@ -1421,11 +1422,37 @@ void ReferencePhotopeakDisplay::handleIsotopeChange( const bool useCurrentAge )
       passMessage( WString::tr("rpd-changed-age").arg(nuc->symbol).arg(agestr).arg(defagestr),
                    WarningWidget::WarningMsgLow );
       m_ageEdit->setText( defagestr );
-    }else
+    }else if( !fission )
     {
       m_ageEdit->setText( "0y" );
     }//if( nuc ) / else
   }//try / catch
+  
+  if( fission )
+  {
+    m_ageEdit->enable();
+    
+    
+    if( !useCurrentAge )
+    {
+      const string defagestr = PhysicalUnitsLocalized::printToBestTimeUnits( 1*PhysicalUnits::day, 1 );
+      m_ageEdit->setText( defagestr );
+    }else
+    {
+      try
+      {
+        const double age = PhysicalUnitsLocalized::stringToTimeDuration( agestr );
+        if( age < 0.0 )
+          throw exception();
+      }catch( std::exception &e )
+      {
+        const string defagestr = PhysicalUnitsLocalized::printToBestTimeUnits( 1*PhysicalUnits::day, 1 );
+        passMessage( WString::tr("rpd-changed-age-fission").arg(defagestr),
+                    WarningWidget::WarningMsgLow );
+        m_ageEdit->setText( defagestr );
+      }//try / catch
+    }//if( !useCurrentAge ) / else
+  }//if( fission )
   
   updateDisplayChange();
   
@@ -2428,7 +2455,8 @@ void ReferencePhotopeakDisplay::updateDisplayFromInput( RefLineInput user_input 
   //  are candidates for aging - but for now we'll just assume we can age them.
   const bool enable_aging = ((nuclide && !ref_lines->m_input.m_promptLinesOnly
                               && !nuclide->decaysToStableChildren())
-                             || (ref_lines->m_source_type == ReferenceLineInfo::SourceType::NuclideMixture) ) ;
+                             || (ref_lines->m_source_type == ReferenceLineInfo::SourceType::NuclideMixture)
+                             || (ref_lines->m_source_type == ReferenceLineInfo::SourceType::FissionRefLines) ) ;
   
   string agestr = (!enable_aging || !ref_lines) ? string() : ref_lines->m_input.m_age;
   

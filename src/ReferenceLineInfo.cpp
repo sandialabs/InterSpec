@@ -23,6 +23,7 @@
 
 #include "InterSpec_config.h"
 
+#include <deque>
 #include <mutex>
 #include <tuple>
 #include <vector>
@@ -165,6 +166,18 @@ struct CustomSrcLines
 
 /** Also protected by `sm_nuc_mix_mutex`; is only created once, and never freed or changed until program termination. */
 std::shared_ptr<const std::map<std::string,CustomSrcLines>> sm_custom_lines;
+
+/** RIght now we will only hold info about fission files in memory - we wont hold fission data in memory.
+ Maybe once things are working fully, and useful, could it be useful to do this.
+ */
+struct FissionDataSrcFile
+{
+  const SandiaDecay::Nuclide *nuclide;
+  std::string filepath;
+};//struct FissionDataSrcFile
+
+/** Also protected by `sm_nuc_mix_mutex`; is only created once, and never freed or changed until program termination. */
+std::shared_ptr<std::vector<FissionDataSrcFile>> sm_fission_products;
 
 void sanitize_label_str( string &label )
 {
@@ -468,8 +481,53 @@ void load_custom_nuc_mixes()
   }//if( !user_data_dir.empty() )
 #endif
   
+  // Look for fission data
+  auto fission_products = make_shared<vector<FissionDataSrcFile>>();
+  try
+  {
+    const SandiaDecay::SandiaDecayDataBase *db = DecayDataBaseServer::database();
+    assert( db );
+    if( !db )
+      throw runtime_error( "couldnt open DecayDataBaseServer" );
+    
+    const std::string fission_dir = SpecUtils::append_path( data_dir, "fission_yields" );
+    const vector<string> data_files = SpecUtils::recursive_ls( fission_dir, "_independent_fy.csv" );
+    for( const string &name_path : data_files )
+    {
+      string nuclide = SpecUtils::filename( name_path );
+      auto underscore_pos = nuclide.find("_");
+      
+      assert( underscore_pos != std::string::npos );
+      if( underscore_pos == std::string::npos )
+        continue;
+      nuclide = nuclide.substr( 0, underscore_pos );
+      
+      const SandiaDecay::Nuclide * const nuc = db->nuclide( nuclide );
+      assert( nuc ); //Not a coding problem necassarily, but perhaps an eroneously named file?
+      if( nuc )
+      {
+        FissionDataSrcFile d;
+        d.nuclide = nuc;
+        d.filepath = name_path;
+        fission_products->push_back( std::move(d) );
+      }else
+      {
+        cerr << "Fission file '" << name_path << "' doesnt appear to be for a nuclide." << endl;
+      }
+    }//for( const string &name_path : data_files )
+    
+    std::sort( begin(*fission_products), end(*fission_products),
+      []( const FissionDataSrcFile &lhs, const FissionDataSrcFile &rhs ) {
+        return SandiaDecay::Nuclide::lessThanForOrdering(lhs.nuclide, rhs.nuclide);
+    });
+  }catch( std::exception &e )
+  {
+    cerr << "Failed to interpret fission data file name: " << e.what() << endl;
+  }
+  
   sm_nuc_mixes = nuc_mixes;
   sm_custom_lines = custom_lines;
+  sm_fission_products = fission_products;
   
   //const double end_time = SpecUtils::get_wall_time();
   //cout << "load_custom_nuc_mixes(): took " << (end_time - start_time) << " s" << endl;
@@ -539,22 +597,49 @@ struct NuclideYield
   double fourteen_MeV_yield = 0.0;
 };//struct NuclideYield
 
-vector<NuclideYield> fission_nuclide_info( const string &name )
+shared_ptr<const vector<NuclideYield>> fission_nuclide_info( const SandiaDecay::Nuclide *nuclide )
 {
   const SandiaDecay::SandiaDecayDataBase *db = DecayDataBaseServer::database();
   if( !db )
-  {
-    cerr << "Couldnt open decay database" << endl;
-    return;
-  }
+    throw runtime_error( "Couldnt open decay database" );
   
-  if( name.empty() )
-    throw runtime_error( "You must specify a decay database" );
+  if( !nuclide )
+    throw runtime_error( "No nuclide specified to get fission product info for." );
   
-  std::string datadir = InterSpec::haveSetStaticDataDirectory() ? InterSpec::staticDataDirectory() : string("data");
-  std::string fisssion_datadir = SpecUtils::append_path( datadir, "fission_yields" );
+  static std::mutex s_cached_yields_mutex;
+  static std::map<const SandiaDecay::Nuclide *,shared_ptr<const vector<NuclideYield>>> s_cached_yields;
   
-  const string filename = SpecUtils::append_path( fisssion_datadir, name );
+  {// Begin lock on `s_cached_yields_mutex`
+    std::lock_guard<std::mutex> lock( s_cached_yields_mutex );
+    
+    auto pos = s_cached_yields.find( nuclide );
+    if( (pos != end(s_cached_yields)) && pos->second )
+      return pos->second;
+  }// End lock on `s_cached_yields_mutex`
+  
+  
+  // Now find the filename for the datafile, from where we had cached this in memory
+  string filename;
+  {// begin lock on sm_nuc_mix_mutex
+    std::lock_guard<std::mutex> lock( sm_nuc_mix_mutex );
+    
+    if( !sm_have_tried_init ) // If we havent cahced to memory yet, do it now
+      load_custom_nuc_mixes();
+    
+    assert( sm_fission_products );
+    
+    if( !sm_fission_products )
+      throw runtime_error( "Fission products not initialized" ); //shouldnt happen
+    
+    for( const FissionDataSrcFile &src : *sm_fission_products )
+    {
+      if( src.nuclide == nuclide )
+        filename = src.filepath;
+    }
+  }// end lock on sm_nuc_mix_mutex
+  
+  if( filename.empty() )
+    throw runtime_error( "Could not find fission product data for " + nuclide->symbol + "." );
   
 #ifdef _WIN32
   const std::wstring wfilename = SpecUtils::convert_from_utf8_to_utf16(filename);
@@ -566,7 +651,7 @@ vector<NuclideYield> fission_nuclide_info( const string &name )
   if( !input.is_open() )
     throw runtime_error( "Unable to open fission yield file '" + filename + "'" );
   
-  vector<NuclideYield> fission_yields;
+  auto fission_yields = make_shared<vector<NuclideYield>>();
   
   try
   {
@@ -703,27 +788,34 @@ vector<NuclideYield> fission_nuclide_info( const string &name )
       if( max_yield <= 0.0 )
         continue;
       
-      fission_yields.emplace_back( std::move(yield) );
+      fission_yields->emplace_back( std::move(yield) );
     }//while( SpecUtils::safe_get_line(input, line) )
   }catch( std::exception &e )
   {
     throw runtime_error( "Failed to parse fission file '" + filename + "': " + string(e.what()) );
   }//try / catch to parse file
   
-  std::sort( begin(fission_yields), end(fission_yields),
+  std::sort( begin(*fission_yields), end(*fission_yields),
             []( const NuclideYield &lhs, const NuclideYield &rhs ) -> bool {
     return lhs.thermal_yield > rhs.thermal_yield;
   } );
   
+  
+  // Update our cache with these results.
+  {
+    std::lock_guard<std::mutex> lock( s_cached_yields_mutex );
+    s_cached_yields[nuclide] = fission_yields;
+  }
+  
   return fission_yields;
-}//vector<NuclideYield> fission_nuclide_info( const string &name )
+}//vector<NuclideYield> fission_nuclide_info( const SandiaDecay::Nuclide *nuclide )
 
 
 /** Holds information for a sinlge gamma/x-ray line, resulting from the fission decay chain. */
 struct FissionLine
 {
   const SandiaDecay::Nuclide *parent = nullptr;
-  const SandiaDecay::Nuclide *child = nullptr;
+  const SandiaDecay::Transition * transition = nullptr;
   SandiaDecay::ProductType particle_type;
   double energy;
   double relative_amplitude;
@@ -737,16 +829,39 @@ enum class FissionType
   Fast
 };
 
-vector<FissionLine> fission_photons( const string &name, const FissionType type,
+std::shared_ptr<const vector<FissionLine>> fission_photons( const SandiaDecay::Nuclide *nuc, const FissionType type,
                                 const double irradiation_time_seconds, const double cool_off_time )
 {
-  const vector<NuclideYield> fission_yields = fission_nuclide_info( name );
+  const size_t max_cache_photons = 5; //arbitrary - lets speed things a little for the most recent uses, but not waste too much memory
+  static std::mutex s_cache_photons_mutex;
+  static std::deque<pair<tuple<const SandiaDecay::Nuclide *,int,double,double>,std::shared_ptr<const vector<FissionLine>>>> s_cache_photons;
+  
+  const std::tuple<const SandiaDecay::Nuclide *,int,double,double> index{nuc,
+    static_cast<int>(type), irradiation_time_seconds, cool_off_time
+  };
+  
+  
+  {// Begin lock on `s_cache_photons_mutex` to see if we've already computed this
+    std::lock_guard<std::mutex> lock( s_cache_photons_mutex );
+    
+    for( const auto &index_value : s_cache_photons )
+    {
+      if( index_value.first == index )
+        return index_value.second;
+    }
+  }// End lock on `s_cache_photons_mutex`
+  
+  
+  shared_ptr<const vector<NuclideYield>> fission_yields = fission_nuclide_info( nuc );
+  assert( fission_yields );
+  if( !fission_yields )
+    throw std::logic_error( "fission_nuclide_info returned nullptr." );
   
   // We will have the max-buildup nuclide, buildup by ~1 uCi per second (about 86mCi per day,
   //  or 31 Ci per year)
   double num_atoms_mult = std::numeric_limits<double>::max();
   
-  for( const NuclideYield &n : fission_yields )
+  for( const NuclideYield &n : *fission_yields )
   {
     if( n.nuclide->halfLife > 60*SandiaDecay::second )
     {
@@ -763,7 +878,7 @@ vector<FissionLine> fission_photons( const string &name, const FissionType type,
   }//for( const NuclideYield &n : fission_yields )
   
   SandiaDecay::NuclideMixture ager;
-  for( const auto &n : fission_yields )
+  for( const auto &n : *fission_yields )
     ager.addAgedNuclideByNumAtoms(n.nuclide, n.thermal_yield*num_atoms_mult, 0.0 );
   
   // Now we will crate a mixture that will represent, for its t=0, the end of
@@ -912,7 +1027,7 @@ vector<FissionLine> fission_photons( const string &name, const FissionType type,
           {
             FissionLine line;
             line.parent = nuc;
-            line.child = trans->child;
+            line.transition = trans;
             line.particle_type = part.type;
             line.energy = part.energy;
             line.relative_amplitude = part.intensity * trans->branchRatio * nap.activity;
@@ -960,51 +1075,34 @@ vector<FissionLine> fission_photons( const string &name, const FissionType type,
   
   
   const size_t max_lines = 2200; //arbitrary
-  vector<FissionLine> keeper_lines;
+  auto keeper_lines = make_shared<vector<FissionLine>>();
   for( size_t i = 0; i < amp_to_index.size() && i < max_lines; ++i )
   {
-    keeper_lines.push_back(all_lines[amp_to_index[i].second] );
+    keeper_lines->push_back(all_lines[amp_to_index[i].second] );
   }//for( size_t i = 0; i < answer.size(); ++i )
     
                       
   // Sort all lines by energy
-  std::sort( begin(keeper_lines), end(keeper_lines), []( const FissionLine &lhs, const FissionLine &rhs ) -> bool {
-    if( lhs.energy == rhs.energy ) // If same energy, put larger amplitude to left
-      return rhs.relative_amplitude < lhs.relative_amplitude;
-    return lhs.energy < rhs.energy;
+  std::sort( begin(*keeper_lines), end(*keeper_lines),
+    []( const FissionLine &lhs, const FissionLine &rhs ) -> bool {
+      if( lhs.energy == rhs.energy ) // If same energy, put larger amplitude to left
+        return rhs.relative_amplitude < lhs.relative_amplitude;
+      return lhs.energy < rhs.energy;
   } );
+
+  
+  {// Begin lock on `s_cache_photons_mutex` to see if we've already computed this
+    std::lock_guard<std::mutex> lock( s_cache_photons_mutex );
+    s_cache_photons.emplace_front( index, keeper_lines );
+    if( s_cache_photons.size() > max_cache_photons )
+      s_cache_photons.resize( max_cache_photons );
+  }// End lock on `s_cache_photons_mutex`
   
 
   return keeper_lines;
-}//vector<FissionLine> fission_photons(...)
+}//shared_ptr<vector<FissionLine>> fission_photons(...)
 }//namespace
 
-
-void dev_fission_lines()
-{
-  double irradiation_time_seconds = 1 * PhysicalUnits::year;
-  
-  // Define how long after irradiation it will be before a measurement is started
-  double cool_off_time = 8.5*24*3600; //i.e., 8.5 days
-  
-  //The following files dont download from https://www-nds.iaea.org/relnsd/vcharthtml/VChartHTML.html
-  //"u236_independent_fy.csv",
-  //"pu240_independent_fy.csv"
-  //"np238_independent_fy.csv"
-  //"u234_independent_fy.csv"
-  //"pu238_independent_fy.csv"
-  //"pu242_independent_fy.csv"
-  
-  string name = "u235_independent_fy.csv";
-  //string name = "pu239_independent_fy.csv";
-  //string name = "np237_independent_fy.csv";
-  //string name = "am241_independent_fy.csv";
-  //string name = "u233_independent_fy.csv";
-  //string name = "u238_independent_fy.csv";
-  //string name = "pu241_independent_fy.csv";
-  vector<FissionLine> gammas = fission_photons( name, irradiation_time_seconds, cool_off_time );
-  cout << "done" << endl;
-}//void dev_fission_lines()
 
 /** Computes background lines by aging K40, Th232, U235, U238, and Ra226, and then transporting,
  as a trace source, through a 1m radius soil sphere.
@@ -2417,8 +2515,15 @@ std::shared_ptr<ReferenceLineInfo> ReferenceLineInfo::generateRefLineInfo( RefLi
   
   const SandiaDecay::SandiaDecayDataBase *db = DecayDataBaseServer::database();
   
+  //Inputs like "Fission U233 Fast, 1d buildup" will result in a valid nuclide of U233,
+  //  so check for fission or reaction, and if so null-out nuclide
+  const bool maybe_fission_rct = (SpecUtils::icontains(input.m_input_txt, "Fission")
+                                  || SpecUtils::icontains(input.m_input_txt, "("));
+  
+  
   double age = 0.0;
-  const SandiaDecay::Nuclide * const nuc = db->nuclide( input.m_input_txt );
+  const SandiaDecay::Nuclide * const nuc = maybe_fission_rct ? nullptr
+                                                             : db->nuclide( input.m_input_txt );
   
   if( nuc )
   {
@@ -2607,46 +2712,180 @@ std::shared_ptr<ReferenceLineInfo> ReferenceLineInfo::generateRefLineInfo( RefLi
     }//if( !nuc_mix )
   }//if( not anything else so far )
   
+  
+  // Check if Fission product spectrum, and if so, parse out all the information.
+  //  Should probably move all this information parsing to a seperate function (its
+  //  length has grown quite a bit over initial imp).
   bool fission_src = false;
   FissionType fission_type = FissionType::Thermal;
   const SandiaDecay::Nuclide *fission_nuclide = nullptr;
-  vector<NuclideYield> fission_yields;
+  double fission_buildup_time = 0.0;
   if( !nuc && !el && rctn_gammas.empty() && !is_background && !is_custom_energy
-     && SpecUtils::istarts_with( input.m_input_txt, "Fission" ) )
+     && SpecUtils::icontains( input.m_input_txt, "Fission" ) )
   {
-    //Input is of the form "Fission U235 fast"
-    vector<string> fields;
-    SpecUtils::split( fields, input.m_input_txt, " " );
+    //Input is of the form "Fission U238 Thermal, 1d buildup"
+    //  But we should make it a little more robust to formatting,
+    //  so we'll kinda go through it searching for things
+    string input_txt = input.m_input_txt;
+    SpecUtils::ireplace_all( input_txt, "Fission", "" );
+    SpecUtils::ireplace_all( input_txt, "  ", " " );
+    SpecUtils::trim( input_txt );
     
-    assert( !fields.empty() );
-    assert( SpecUtils::iequals_ascii(fields[0], "Fission") ); //Stricly, this could be not true, if first filed was like "Fission-blah", but it should be correct by the time we are here
-    
-    if( fields.size() > 1 )
-      fission_nuclide = db->nuclide( fields[1] );
-    
-    if( fission_nuclide && (fields.size() > 2) )
+    bool found_neut_type = true;
+    if( SpecUtils::icontains(input_txt, "Thermal") )
     {
-      if( SpecUtils::iequals_ascii(fields[2], "Thermal") )
-        fission_type = FissionType::Thermal;
-      else if( SpecUtils::iequals_ascii(fields[2], "Fast") )
-        fission_type = FissionType::Fast;
-      else if( SpecUtils::icontains(fields[2], "14") )
-        fission_type = FissionType::FourteenMeV;
-      else
+      fission_type = FissionType::Thermal;
+      SpecUtils::ireplace_all( input_txt, "Thermal", "" );
+    }else if( SpecUtils::icontains(input_txt, "Fast") )
+    {
+      fission_type = FissionType::Fast;
+      SpecUtils::ireplace_all( input_txt, "Fast", "" );
+    }else if( SpecUtils::icontains(input_txt, "14 MeV")
+             || SpecUtils::icontains(input_txt, "14MeV")
+             || SpecUtils::icontains(input_txt, "14-MeV"))
+    {
+      fission_type = FissionType::FourteenMeV;
+      SpecUtils::ireplace_all( input_txt, "14MeV", "" );
+      SpecUtils::ireplace_all( input_txt, "14 MeV", "" );
+      SpecUtils::ireplace_all( input_txt, "14-MeV", "" );
+    }else
+    {
+      found_neut_type = false;
+      
+      // Maybe we should just assume thermal? E.g.:
+      //fission_type = FissionType::Thermal;
+      //answer.m_input_warnings.push_back( "Count not interpret a neutron energy type"
+      //                               " - assuming thermal (fast and 14MeV are other options)." );
+    }
+    
+    if( found_neut_type )
+    {
+      fission_nuclide = db->nuclide( input_txt );
+      if( !fission_nuclide )
+      {
+        vector<string> remaining_fields;
+        SpecUtils::split( remaining_fields, input_txt, ", " );
+        for( size_t i = 0; !fission_nuclide && (i < remaining_fields.size()); ++i )
+        {
+          fission_nuclide = db->nuclide( remaining_fields[i] );
+          if( !fission_nuclide && ((i + 1) < remaining_fields.size()) )
+            fission_nuclide = db->nuclide( remaining_fields[i] + remaining_fields[i+1] );
+        }
+      }//if( !fission_nuclide )
+      
+      //We want to remove the text that led to this nuclide from the string, but we dont know it
+      //  here, so we'll do a bit of a work around, and delete the numbers from the nuclide
+      //  and just assume a meta-stable state should be here
+      if( fission_nuclide && (fission_nuclide->isomerNumber > 0) )
         fission_nuclide = nullptr;
-    }//if( fission_nuclide && (fields.size() > 2) )
+      
+      if( fission_nuclide )
+      {
+        const string numstr = std::to_string(static_cast<int>(fission_nuclide->massNumber));
+        auto pos = input_txt.find( numstr );
+        assert( pos != string::npos );
+        if( pos != string::npos )
+          input_txt.erase(pos, pos + numstr.size());
+      }//if( fission_nuclide )
+    }//if( found_neut_type )
     
     if( fission_nuclide )
     {
-      fission_src = true;
-      fission_yields = ...;
+      bool found_buildup = false;
+      vector<string> remaining_fields;
+      SpecUtils::split( remaining_fields, input_txt, ", " );
+      for( size_t i = 0; !found_buildup && (i < remaining_fields.size()); ++i )
+      {
+        const string &field = remaining_fields[i];
+        const char c = field.empty() ? ' ' : field[0];
+        if( field.empty() || (((c < '0') || (c > '9')) && (c != '.')) )
+          continue;
+        
+        try
+        {
+          fission_buildup_time = PhysicalUnits::stringToTimeDuration( field );
+          if( fission_buildup_time < 1*PhysicalUnits::second )
+            throw runtime_error( "Buildup must be 1 second or greator" );
+          found_buildup = true;
+          break;
+        }catch( std::exception &e )
+        {
+          
+        }
+        
+        if( ((i + 1) < remaining_fields.size()) )
+        {
+          try
+          {
+            fission_buildup_time = PhysicalUnits::stringToTimeDuration( field + remaining_fields[i+1] );
+            if( fission_buildup_time < 1*PhysicalUnits::second )
+              throw runtime_error( "Buildup must be 1 second or greator" );
+            found_buildup = true;
+            break;
+          }catch( std::exception &e )
+          {
+            
+          }
+        }//if( !found_buildup )
+      }//for( size_t i = 0; i < remaining_fields.size(); ++i )
+      
+      if( !found_buildup )
+      {
+        cerr << "Failed to interpret buildup time in '" << input.m_input_txt
+        << "', - using 1 day." << endl;
+        
+        fission_buildup_time = 24*2600*PhysicalUnits::second;
+        input.m_input_txt = "Fission " + fission_nuclide->symbol + " ";
+        switch( fission_type )
+        {
+          case FissionType::Thermal:     input.m_input_txt += "Thermal"; break;
+          case FissionType::FourteenMeV: input.m_input_txt += "14 MeV";  break;
+          case FissionType::Fast:        input.m_input_txt += "Fast";    break;
+        }//switch( fission_type )
+        
+        input.m_input_txt += " 1d buildup";
+        answer.m_input_warnings.push_back( "Could not interpret buildup time; using 1 day." );
+      }//try / catch to
+    }//if( fission_nuclide && (fields.size() > 3) )
+    
+    if( fission_nuclide )
+    {
+      // We'll do a quick check that we have fission data file for this nuclide - we could still run
+      //  into problems later.
+      std::lock_guard<std::mutex> lock( sm_nuc_mix_mutex );
+        
+      if( sm_fission_products )
+      {
+        for( size_t i = 0; !fission_src && (i < sm_fission_products->size()); ++i )
+          fission_src = (fission_nuclide == (*sm_fission_products)[i].nuclide);
+      }//if( sm_fission_products )
+      
+      if( input.m_age == "" )
+      {
+        input.m_age = "1 day";
+        age = 24.0*3600.0*PhysicalUnits::second;
+      }else
+      {
+        try
+        {
+          age = PhysicalUnitsLocalized::stringToTimeDuration( input.m_age );
+        }catch( std::exception & )
+        {
+          answer.m_input_warnings.push_back( "Invalid age input." );
+          answer.m_validity = ReferenceLineInfo::InputValidity::InvalidAge;
+          answer_ptr->m_input = input;
+          return answer_ptr;
+        }//try /catch to get the age
+      }//if( input.m_age == "" ) / else
     }//if( fission_nuclide )
-  }//if( not anything else so far )
+  }//if( not anything else so far - so try fission products )
   
+  
+  // If we couldnt identify the source, set error and return
   if( !nuc && !el && rctn_gammas.empty() && !is_background && !is_custom_energy && !nuc_mix && !src_lines && !fission_src )
   {
     answer.m_validity = ReferenceLineInfo::InputValidity::InvalidSource;
-    answer.m_input_warnings.push_back( input.m_input_txt + " is not a valid isotope, element, reaction, or energy." );
+    answer.m_input_warnings.push_back( "'" + input.m_input_txt + "' is not a valid isotope, element, reaction, or energy." );
     
     answer_ptr->m_input = input;
     
@@ -3206,10 +3445,42 @@ std::shared_ptr<ReferenceLineInfo> ReferenceLineInfo::generateRefLineInfo( RefLi
   }//if( !otherRefLinesToShow.empty() )
   
   
-  if( fission_src )
+  assert( !fission_src || ((!fission_src) == (!fission_nuclide)) );
+  if( fission_src && fission_nuclide )
   {
-    blah blah blah
-  }
+    // At least for the moment, we'll avoid trying to deal with coincidences.
+    answer.m_has_coincidences = false;
+    
+    try
+    {
+      const shared_ptr<const vector<FissionLine>> fission_lines
+               = fission_photons( fission_nuclide, fission_type, fission_buildup_time, age );
+      
+      assert( fission_lines );
+      if( !fission_lines )
+        throw logic_error( "Unexpected nullptr from fission_photons." );
+      
+      for( const FissionLine &info : *fission_lines )
+      {
+        ReferenceLineInfo::RefLine line;
+        line.m_energy = info.energy;
+        line.m_decay_intensity = info.relative_amplitude;
+        line.m_particle_type = ReferenceLineInfo::RefLine::Particle::Gamma;
+        line.m_source_type = ReferenceLineInfo::RefLine::RefGammaType::Normal;
+        line.m_parent_nuclide = info.parent;
+        line.m_transition = info.transition;
+        
+        lines.push_back( std::move(line) );
+      }//for( const FissionLine &info : *fission_lines )
+    }catch( std::exception &e )
+    {
+      answer.m_input_warnings.push_back( "Error computing fission products: " + std::string(e.what()) );
+      answer.m_validity = ReferenceLineInfo::InputValidity::InvalidSource;
+      assert( 0 );
+      return answer_ptr;
+    }//try / catch to
+    
+  }//if( fission_src )
   
   // Now calc detector response and shielding
   //  Up to now, we shouldnt have any escape or sum gammas in answer.m_ref_lines
@@ -3509,6 +3780,25 @@ vector<string> ReferenceLineInfo::additional_ref_line_sources()
     for( const auto &n : *sm_custom_lines )
       answer.push_back( n.second.m_name );
   }//if( sm_custom_lines )
+  
+  if( sm_fission_products )
+  {
+    for( const FissionDataSrcFile &src : *sm_fission_products )
+    {
+      assert( src.nuclide );
+      answer.push_back( "Fission " + src.nuclide->symbol + " Thermal, 1d buildup" );
+      answer.push_back( "Fission " + src.nuclide->symbol + " Fast, 1d buildup" );
+      answer.push_back( "Fission " + src.nuclide->symbol + " 14 MeV, 1d buildup" );
+      
+      answer.push_back( "Fission " + src.nuclide->symbol + " Thermal, 30d buildup" );
+      answer.push_back( "Fission " + src.nuclide->symbol + " Fast, 30d buildup" );
+      answer.push_back( "Fission " + src.nuclide->symbol + " 14MeV, 30d buildup" );
+      
+      answer.push_back( "Fission " + src.nuclide->symbol + " Thermal, 1y buildup" );
+      answer.push_back( "Fission " + src.nuclide->symbol + " Fast, 1y buildup" );
+      answer.push_back( "Fission " + src.nuclide->symbol + " 14 MeV, 1y buildup" );
+    }//for( const FissionDataSrcFile &src : *sm_fission_products )
+  }//if( sm_fission_products )
   
   return answer;
 }//vector<string> additional_ref_line_sources()

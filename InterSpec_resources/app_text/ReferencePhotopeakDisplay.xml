@@ -47,6 +47,7 @@
 
   <message id="rpd-csv-export-msg">The 'Nuclide Decay Info' tool provides additional capabilities for exporting nuclide, decay products, and decay information to CSV files.</message>
   <message id="rpd-changed-age">Changed age to a more reasonable value for {1} from '{2}' to '{3}'</message>
+  <message id="rpd-changed-age-fission">Changed age to {1}, to be valid.</message>
   <message id="rpd-det-id">Detector ID</message>
   <message id="rpd-ext-rid">External RID</message>
   <message id="rpd-prev">Previous</message>

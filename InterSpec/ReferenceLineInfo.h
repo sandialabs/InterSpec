@@ -50,8 +50,6 @@ namespace rapidxml
 class MaterialDB;
 class DetectorPeakResponse;
 
-void dev_fission_lines();
-
 enum class OtherRefLineType
 {
   U238Series,    //"U238 series"
