@@ -1,0 +1,80 @@
+.Chi2Graphic {
+}
+
+
+svg.Chi2Graphic {
+  background: var(--d3spec-background-color, none);
+}
+
+.Chi2Graphic path {
+    /* What is this for? */
+    stroke: steelblue;
+    stroke-width: 2;
+    fill: none;
+}
+
+.Chi2Graphic .xAxis path,
+.Chi2Graphic .xAxis line,
+.Chi2Graphic .yAxis path,
+.Chi2Graphic .yAxis line {
+    fill: none;
+    stroke: var(--d3spec-axis-color, black);
+    stroke-width: 1;
+    shape-rendering: crispEdges;
+}
+
+
+.Chi2Graphic .xaxistitle,
+.Chi2Graphic .yaxistitle {
+    
+}
+
+.Chi2Graphic .xaxis, .Chi2Graphic .yaxis {
+  fill: var(--d3spec-text-color, black);
+}
+
+
+.Chi2Graphic .xaxistitle,
+.Chi2Graphic .yaxistitle,
+.Chi2Graphic .yaxislabel,
+.Chi2Graphic .tick text {
+  stroke: var(--d3spec-axis-color, black);
+} 
+
+
+.Chi2Graphic circle {
+    cursor: pointer;
+    fill: steelblue;
+}
+
+.Chi2Graphic div.RelEffPlotTooltip {
+  position: fixed;
+  padding: 6px;
+  font: 12px sans-serif;
+  background: #ffffcc;
+  border: 0px;
+  border-radius: 8px;
+  pointer-events: none;
+  color: #444422;
+}
+
+
+.Chi2Graphic circle, .Chi2Graphic circle.noiso, .Chi2Graphic circle.multiiso {
+  fill: blue; /* default color - we'll fill it in. */
+}
+
+.Chi2Graphic .errorbar {
+  fill: none;
+  stroke: grey;
+  stroke-width: 1;
+}
+
+div.Chi2GraphicTooltip {
+    position: fixed;
+    padding: 6px;
+    font: 12px sans-serif;
+    background: lightsteelblue;
+    border: 0px;
+    border-radius: 8px;
+    pointer-events: none;
+}

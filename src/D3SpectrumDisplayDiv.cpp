@@ -1381,7 +1381,7 @@ void D3SpectrumDisplayDiv::setXAxisTitle( const Wt::WString &title )
 {
   m_xAxisTitle = title;
   if( isRendered() )
-    doJavaScript( m_jsgraph + ".setXAxisTitle(" + m_xAxisTitle.jsStringLiteral('\'') + "');" );
+    doJavaScript( m_jsgraph + ".setXAxisTitle(" + m_xAxisTitle.jsStringLiteral('\'') + ");" );
 }//void setXAxisTitle( const std::string &title )
 
 

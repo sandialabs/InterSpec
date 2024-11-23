@@ -94,6 +94,7 @@
 #include "InterSpec/ColorTheme.h"
 #include "InterSpec/HelpSystem.h"
 #include "InterSpec/MaterialDB.h"
+#include "InterSpec/Chi2Graphic.h"
 #include "InterSpec/InterSpecApp.h"
 #include "InterSpec/InterSpecUser.h"
 #include "InterSpec/DataBaseUtils.h"
@@ -2188,469 +2189,6 @@ void SourceFitModel::sort( int column, Wt::SortOrder order )
 }//void sort(...)
 
 
-ShieldingSourceDisplay::Chi2Graphic::Chi2Graphic( Wt::WContainerWidget *parent )
-  : Wt::Chart::WCartesianChart( parent ),
-    m_nFitForPar( 0 ),
-    m_showChi( true ),
-    m_textPenColor( Wt::black )
-{
-  setPreferredMethod( WPaintedWidget::HtmlCanvas );
-  LOAD_JAVASCRIPT( wApp, "shieldingSourceDisplay.cpp", "Chi2Graphic", wtjsShowChi2Info);
-  
-  auto interpsec = InterSpec::instance();
-  if( interpsec )
-    interpsec->useMessageResourceBundle( "ShieldingSourceDisplay" ); //JIC
-  
-  // We will use calcAndSetAxisRanges() to set the axis ranges, so turn off auto range.
-  axis(Chart::YAxis).setAutoLimits( 0 );
-  axis(Chart::YAxis).setRange( -1.0, 1.0 );
-  
-  axis(Chart::XAxis).setAutoLimits( 0 );
-  axis(Chart::XAxis).setRange( 0, 3000.0 );
-}
-
-ShieldingSourceDisplay::Chi2Graphic::~Chi2Graphic()
-{
-}
-
-
-void ShieldingSourceDisplay::Chi2Graphic::setColorsFromTheme( std::shared_ptr<const ColorTheme> theme )
-{
-  if( !theme )
-    return;
-  
-  //if( !theme->foregroundLine.isDefault() )
-  //  m_chartEnergyLineColor = theme->foregroundLine;
-  
-  if( !theme->spectrumChartText.isDefault() )
-  {
-    WPen txtpen(theme->spectrumChartText);
-    this->setTextPen( txtpen );
-    this->axis(Chart::XAxis).setTextPen( txtpen );
-    this->axis(Chart::YAxis).setTextPen( txtpen );
-    this->setTextPenColor( theme->spectrumChartText );
-  }
-  
-  if( theme->spectrumChartBackground.isDefault() )
-    this->setBackground( Wt::NoBrush );
-  else
-    this->setBackground( WBrush(theme->spectrumChartBackground) );
-  
-  if( (theme->spectrumChartMargins.isDefault() && !theme->spectrumChartBackground.isDefault()) )
-  {
-    //theme->spectrumChartBackground
-  }else if( !theme->spectrumChartMargins.isDefault() )
-  {
-    //theme->spectrumChartMargins
-  }
-  
-  if( !theme->spectrumAxisLines.isDefault() )
-  {
-    WPen defpen = this->axis(Chart::XAxis).pen();
-    defpen.setColor( theme->spectrumAxisLines );
-    this->axis(Chart::XAxis).setPen( defpen );
-    this->axis(Chart::YAxis).setPen( defpen );
-  }
-}//ShieldingSourceDisplay::Chi2Graphic::setColorsFromTheme( theme )
-
-
-void ShieldingSourceDisplay::Chi2Graphic::setNumFitForParams( unsigned int npar )
-{
-  m_nFitForPar = static_cast<int>( npar );
-}
-
-void ShieldingSourceDisplay::Chi2Graphic::setTextPenColor( const Wt::WColor &color )
-{
-  m_textPenColor = color;
-}
-
-void ShieldingSourceDisplay::Chi2Graphic::setShowChiOnChart( const bool show_chi )
-{
-  m_showChi = show_chi;
-  removeSeries(1);
-  removeSeries(2);
-  setXSeriesColumn( 0 );
-  
-  Chart::WDataSeries series( (show_chi ? 1 : 2), Chart::PointSeries );
-  series.setMarkerSize( 10.0 );
-  
-  addSeries( series );
-}
-
-
-void ShieldingSourceDisplay::Chi2Graphic::calcAndSetAxisRanges()
-{
-#if( WT_VERSION < 0x3030600 )
-  WAbstractItemModel *theModel = model();
-#else
-  Wt::Chart::WAbstractChartModel *theModel = model();
-  assert( theModel );
-#endif
-
-  if( !theModel )
-    return;
-  
-  double ymin = DBL_MAX, ymax = -DBL_MAX, xmin = DBL_MAX, xmax = -DBL_MAX;
-  
-  const int nrow = theModel->rowCount();
-  const int ycol = m_showChi ? 1 : 2;
-  for( int row = 0; row < nrow; ++row )
-  {
-    try
-    {
-#if( WT_VERSION >= 0x3030600 )
-      const double thischi = theModel->data(row,ycol);
-      const double energy = theModel->data(row,0);
-#else
-      WModelIndex index = theModel->index(row,ycol);
-      const double thischi = boost::any_cast<double>( theModel->data(index) );
-      index = theModel->index(row,0);
-      const double energy = boost::any_cast<double>( theModel->data(index) );
-#endif
-      xmin = std::min( xmin, energy );
-      xmax = std::max( xmax, energy );
-      
-      ymin = std::min( ymin, thischi );
-      ymax = std::max( ymax, thischi );
-    }catch(...)
-    {
-    }
-  }//for( int row = 0; row < nrow; ++row )
-  
-  if( !nrow || (ymin == DBL_MAX) || (ymax == -DBL_MAX) || (xmin == DBL_MAX) || (xmax == -DBL_MAX) )
-  {
-    // There are no points to display.
-    xmin = 0.0;
-    xmax = 3000.0;
-    ymin = (m_showChi ? -1.0 : 0.0);
-    ymax = (m_showChi ?  1.0 : 2.0);
-  }else if( (nrow == 1) || (ymin == ymax) )
-  {
-    // There is one point to display.
-    xmin -= 10.0;
-    xmax += 10.0;
-    
-    //  For chi, we should be really close to 0.0, and for multiple should be close to 1.0
-    ymin -= 0.25*ymin;
-    ymax += 0.25*ymax;
-    
-    if( m_showChi )
-    {
-      ymin = std::min( ymin, -1.0 );
-      ymax = std::max( ymax, 1.0 );
-    }else
-    {
-      ymin = std::min( ymin, 0.5 );
-      ymax = std::max( ymax, 1.5 );
-    }
-  }else
-  {
-    // There are many points to display
-    const double xrange = std::max( xmax - xmin, 10.0 );
-    xmin = ((xmin > 0.1*xrange) ? (xmin - 0.1*xrange) : 0.0);
-    xmax += 0.1*xrange;
-    
-    
-    const double yrange = std::max( ymax - ymin, 0.1 );
-    ymin -= 0.25*yrange;
-    ymax += 0.25*yrange;
-    
-    if( m_showChi )
-    {
-      ymin = std::min( ymin, -1.0 );
-      ymax = std::max( ymax, 1.0 );
-    }else
-    {
-      ymin = std::min( ymin, 0.5 );
-      ymax = std::max( ymax, 1.5 );
-    }
-  }//if( no rows ) / else / else
-
-  // Round up/down to the nearest 10 keV
-  xmin = 10.0 * std::floor( 0.1*xmin );
-  xmax = 10.0 * std::ceil( 0.1*xmax );
-  
-  // Round up/down to the nearest 0.1
-  ymin = 0.1 * std::floor( 10.0*ymin );
-  ymax = 0.1 * std::ceil( 10.0*ymax );
-  
-  //cout << "Setting xrange=" << xmin << ", " << xmax << "], yrange=[" << ymin << ", " << ymax << "]" << endl;
-  
-  const auto xLocation = m_showChi ? Chart::AxisValue::ZeroValue : Chart::AxisValue::MinimumValue;
-  axis(Chart::XAxis).setLocation( xLocation );
-  
-  axis(Chart::XAxis).setRange( xmin, xmax );
-  axis(Chart::YAxis).setRange( ymin, ymax );
-}//void calcAndSetAxisRanges();
-
-
-
-void ShieldingSourceDisplay::Chi2Graphic::calcAndSetAxisPadding( double yHeightPx )
-{
-  double ymin = axis(Chart::YAxis).minimum();
-  double ymax = axis(Chart::YAxis).maximum();
-  
-  if( fabs(ymax - ymin) < 0.1 )
-  {
-    ymin = 0.0;
-    ymax = 100.0;
-  }//
-
-//Calculate number of pixels we need to pad, for x axis to be at 45 pixels from
-//  the bottom of the chart; if less than 10px, pad at least 10px, or at most
-//  45px.
-  const int topPadding = plotAreaPadding(Top);
-  const double fracY = -ymin / (ymax - ymin);
-  double pxToXAxis = (fracY >= 1.0) ? 0.0 : (45.0 - fracY*(yHeightPx - topPadding) ) / (1.0-fracY);
-  if( IsInf(pxToXAxis) || IsNan(pxToXAxis) ) //JIC, but shouldnt be needed
-    pxToXAxis = 10;
-  pxToXAxis = std::floor( pxToXAxis + 0.5 );
-  pxToXAxis = std::max( pxToXAxis, 10.0 );
-  pxToXAxis = std::min( pxToXAxis, 45.0 );
-  const int bottomPadding = static_cast<int>(pxToXAxis);
-  
-  if( bottomPadding != plotAreaPadding(Bottom) )
-    setPlotAreaPadding( bottomPadding, Bottom );
-  
-  yHeightPx -= (topPadding + bottomPadding);
-  
-  {//Begin codeblock to determin min/max label values, following logic
-   //  determined from round*125() and other places in WAxis.C
-    const int numLabels = yHeightPx / 25.0;
-    const double range = ymax - ymin;
-    const double rangePerLabel = range / numLabels;
-
-    double renderinterval = 1.0;
-    double n = std::pow(10, std::floor(std::log10(rangePerLabel)));
-    double msd = rangePerLabel / n;
-    
-    if (msd < 1.5)
-      renderinterval = n;
-    else if (msd < 3.3)
-      renderinterval = 2*n;
-    else if (msd < 7)
-      renderinterval = 5*n;
-    else
-      renderinterval = 10*n;
-    
-    ymin += std::numeric_limits<double>::epsilon();
-    ymax -= std::numeric_limits<double>::epsilon();
-    ymin = renderinterval * std::floor( ymin / renderinterval);
-    ymax = renderinterval * std::ceil( ymax / renderinterval);
-  }//End codeblock to determin min/max label values
-
-  
-  const int oldleft = plotAreaPadding(Wt::Left);
-  const WString minlabel = axis(Chart::Y1Axis).label(ymin);
-  const WString maxlabel = axis(Chart::Y1Axis).label(ymax);
-  const size_t maxnchars = minlabel.narrow().length();
-  const size_t minnchars = maxlabel.narrow().length();
-  const size_t nchars = std::max( minnchars, maxnchars );
-  const int left = 32 + 6*std::max(static_cast<int>(nchars),2);
-  
-  if( left != oldleft )
-    setPlotAreaPadding( left, Wt::Left );
-}//void calcAndSetAxisPadding()
-
-
-void ShieldingSourceDisplay::Chi2Graphic::paintEvent( WPaintDevice *device )
-{
-  calcAndSetAxisRanges();
-  if( device )
-    calcAndSetAxisPadding( device->height().toPixels() );
-  Wt::Chart::WCartesianChart::paintEvent( device );
-}//void paintEvent( Wt::WPaintDevice *paintDevice )
-
-
-void ShieldingSourceDisplay::Chi2Graphic::paint( Wt::WPainter &painter,
-                      const Wt::WRectF &rectangle ) const
-{
-  WCartesianChart::paint( painter, rectangle );
-
-  //cout << "plot padding: [" << plotAreaPadding(Top) << ", " << plotAreaPadding(Right) << ", " << plotAreaPadding(Bottom) << ", " << plotAreaPadding(Left) << "]" << endl;
-  
-  //I think removing of the areas() is already done by
-  //  WCartesianChart::paintEvent(...), but jic
-  while( !areas().empty() )
-    delete areas().front();
-  
-#if( WT_VERSION < 0x3030600 )
-  WStandardItemModel *chi2Model = dynamic_cast<WStandardItemModel *>( model() );
-#else
-  auto proxyChi2Model = dynamic_cast<Wt::Chart::WStandardChartProxyModel *>( model() );
-  assert( proxyChi2Model );
-  assert( proxyChi2Model->sourceModel() );
-  WStandardItemModel *chi2Model = dynamic_cast<WStandardItemModel *>( proxyChi2Model->sourceModel() );
-#endif
-    
-  if( !chi2Model )  //prob never happen, but JIC
-    return;
-  
-  const WPointF br = painter.window().bottomRight();
-  const int width = br.x();
-
-  const int nrow = chi2Model->rowCount();
-  double chi2 = 0.0;
-  
-  for( int row = 0; row < nrow; ++row )
-  {
-    try
-    {
-      WModelIndex index = chi2Model->index(row,1);
-      const double thischi = boost::any_cast<double>( chi2Model->data(index) );
-      chi2 += thischi*thischi;
-      
-
-      WColor color;
-      try
-      {
-        boost::any color_any = chi2Model->data(index, Wt::MarkerPenColorRole );
-        color = boost::any_cast<WColor>(color_any);
-        if( color.isDefault() )
-          throw runtime_error("");
-      }catch(...)
-      {
-        //I dont think we will ever get here, but JIC I guess.
-        Wt::Chart::WChartPalette *pal = palette();
-        if( pal )
-          color = pal->brush(0).color();
-        else
-          color = WColor( Wt::darkRed );
-      }//try / catch, get the color
-      
-      index = chi2Model->index(row,2);
-      const double thisscale = boost::any_cast<double>( chi2Model->data(index) );
-      
-      index = chi2Model->index(row,0);
-      double energy = boost::any_cast<double>( chi2Model->data(index) );
-      
-      
-      const double yval = m_showChi ? thischi : thisscale;
-      const WPointF pos = mapToDevice( energy, yval );
-      
-      index = chi2Model->index(row,3);
-      const string nucname = Wt::asString( chi2Model->data(index) ).toUTF8();
-      energy = ((100.0*energy+0.5)/100.0);
-      
-      char mouseoverjs[256];
-      if( nucname.empty() || nucname.size() > 8 )
-      {
-        snprintf( mouseoverjs, sizeof(mouseoverjs),
-                  "function(){Wt.WT.ShowChi2Info('%s','%.2f keV, &sigma;<sub>%i</sub>=%.2f, %.2fx model');}",
-                  id().c_str(), energy, row, thischi, thisscale );
-      }else
-      {
-        snprintf( mouseoverjs, sizeof(mouseoverjs),
-                 "function(){Wt.WT.ShowChi2Info('%s','%s, %.2f keV, &sigma;<sub>%i</sub>=%.2f, %.2fx model');}",
-                 id().c_str(), nucname.c_str(), energy, row, thischi, thisscale );
-      }
-      
-      //We could potentially include more info here, but it will be kinda hard,
-      //  so lets not worry about it now.
-      WRectArea *area = new WRectArea( pos.x()-10.0, pos.y()-10.0, 20.0, 20.0 );
-      const string mouseoutjs = "function(){$('#" + id() + "inf').remove();}";
-      area->mouseWentOver().connect( string(mouseoverjs) );
-      area->mouseWentOut().connect( mouseoutjs );
-      //area->clicked()
-      
-      //I hate doing const_casts, but the Wt source code itself does this
-      //  for adding image areas in Wt 3.3.2
-      const_cast<Chi2Graphic*>(this)->addArea( area );
-      
-      if( !m_showChi )
-      {
-        index = chi2Model->index(row,4);
-        const double scale_uncert = boost::any_cast<double>( chi2Model->data(index) );
-        
-        const WPointF upper_uncert = mapToDevice( energy, yval + scale_uncert );
-        const WPointF lower_uncert = mapToDevice( energy, yval - scale_uncert );
-        const WPen oldPen = painter.pen();
-        painter.setPen( WPen(color) );
-        painter.drawLine( upper_uncert, lower_uncert );
-        painter.setPen( oldPen );
-      }//if( !m_showChi )
-    }catch( std::exception &e )
-    {
-      cerr << "Caught exception drawing Chi2 chart: " << e.what() << endl;
-    }
-  }//for( int row = 0; row < nrow; ++row )
-  
-  if( nrow > 0 && !IsNan(sqrt(chi2)) )
-  {
-    char buffer[64];
-    //snprintf( buffer, sizeof(buffer), "&lt;dev&gt;=%.2g&sigma;", (sqrt(chi2)/nrow) );  //displays as literal tesxt, and not the symbols on android
-    //snprintf( buffer, sizeof(buffer), "\x3c\xCF\x87\x3E=%.2g\xCF\x83", (sqrt(chi2)/nrow) ); //<χ>=13.2σ
-    snprintf( buffer, sizeof(buffer), "\x3c\x64\x65\x76\x3E=%.2g\xCF\x83", (sqrt(chi2)/nrow) ); //<dev>=13.2σ
-  
-    WString text = WString::fromUTF8(buffer);
-    const size_t msglen = SpecUtils::utf8_str_len( buffer, strlen(buffer) );
-  
-    const double rightPadding = static_cast<double>( plotAreaPadding(Right) );
-    const double charwidth = 16;
-    const double charheight = 15;
-    const double x = width - charwidth*msglen - rightPadding - 5;
-    const double y = plotAreaPadding(Top) + 5;
-    const double twidth = charwidth*msglen;
-    const double theight = charheight + 2;
-    
-    WPen oldPen = painter.pen();
-    painter.setPen( WPen(m_textPenColor) );
-    painter.drawText( x, y, twidth, theight, AlignRight, TextSingleLine, text );
-    painter.setPen( oldPen );
-  }//if( nrow > 0 && !IsNan(sqrt(chi2)) )
-
-  const double yAxisMin = axis(Chart::YAxis).minimum();
-  const double yAxisMax = axis(Chart::YAxis).maximum();
-  
-  if( !m_showChi && (yAxisMin < 1.0) && (yAxisMax > 1.0) )
-  {
-    const double xAxisMin = axis(Chart::XAxis).minimum();
-    const double xAxisMax = axis(Chart::XAxis).maximum();
-    
-    WPointF left = mapToDevice( xAxisMin, 1.0 );
-    WPointF right = mapToDevice( xAxisMax, 1.0 );
-    
-    //cout << "xAxisMin=" << xAxisMin << ", xAxisMax=" << xAxisMax << ", yAxisMin=" << yAxisMin << ", yAxisMax=" << yAxisMax << endl;
-    //cout << "left={" << left.x() << "," << left.y() << "}, right={" << right.x() << "," << right.y() << "}" << endl;
-    
-    left.setY( left.y() + 0.5 );
-    right.setY( right.y() + 0.5 );
-    
-    WPen pen( GlobalColor::lightGray );
-    pen.setWidth( 1 );
-    pen.setStyle( Wt::PenStyle::DashLine );
-    const WPen oldPen = painter.pen();
-    painter.setPen( pen );
-    painter.drawLine( left, right );
-    painter.setPen( oldPen );
-  }//if( m_showChi )
-  
-  //Draw the y-axis label
-  painter.rotate( -90 );
-  painter.setPen( WPen() );
-  painter.setBrush( WBrush() );
-  
-  
-  
-  const char *yaxistitle_key = m_showChi ? "x2g-yaxis-title-chi" : "x2g-yaxis-title-mult";
-  const char * const yaxistooltip_key = m_showChi ? "x2g-tt-chi-axis" : "x2g-tt-scale-axis";
-  
-  WPen oldPen = painter.pen();
-  painter.setPen( WPen(m_textPenColor) );
-  painter.drawText( -0.45*painter.viewPort().height(), 0.0, 0.2, 0.1,
-                     AlignCenter, WString::tr(yaxistitle_key) );
-  painter.setPen( oldPen );
-  
-  const double yAxisWiddth = plotAreaPadding(Wt::Left);
-  const double chartHeight = painter.viewPort().height();
-  
-  WRectArea *yAxisArea = new WRectArea( 0.0, 0.0, yAxisWiddth, chartHeight );
-  yAxisArea->setToolTip( WString::tr(yaxistooltip_key) );
-  const_cast<Chi2Graphic*>(this)->addArea( yAxisArea );
-  
-  painter.restore();
-}//Chi2Graphic::paint(
-
 
 pair<ShieldingSourceDisplay *,AuxWindow *> ShieldingSourceDisplay::createWindow( InterSpec *viewer )
 {
@@ -2830,7 +2368,6 @@ ShieldingSourceDisplay::ShieldingSourceDisplay( PeakModel *peakModel,
     m_geometrySelect( nullptr ),
     m_fixedGeometryTxt( nullptr ),
     m_showChi2Text( nullptr ),
-    m_chi2Model( nullptr ),
     m_chi2Graphic( nullptr ),
     m_multiIsoPerPeak( nullptr ),
     m_attenForAir( nullptr ),
@@ -3095,52 +2632,8 @@ ShieldingSourceDisplay::ShieldingSourceDisplay( PeakModel *peakModel,
   m_showChi2Text->hide();
 
   m_chi2Graphic = new Chi2Graphic();
-    
-  m_chi2Model = new WStandardItemModel( 0, 6, parent );
-
-#if( WT_VERSION < 0x3030600 )
-  m_chi2Graphic->setModel( m_chi2Model );
-#else
-  auto proxyModel = new Wt::Chart::WStandardChartProxyModel( m_chi2Model, this );
-  m_chi2Graphic->setModel( m_chi2Model );
-#endif
-
-  m_chi2Graphic->setPlotAreaPadding( 12, Right );
-  m_chi2Graphic->setPlotAreaPadding(  2, Top );
-  
-  // Left and bottom paddings will be set by Chi2Graphic::calcAndSetAxisPadding(...)
-  //m_chi2Graphic->setPlotAreaPadding( 50, Left );
-  //m_chi2Graphic->setPlotAreaPadding( 40, Bottom );
-  //m_chi2Graphic->setAutoLayoutEnabled();
-  
-  m_chi2Graphic->addSeries( Chart::WDataSeries(1, Chart::PointSeries) );
-  m_chi2Graphic->setXSeriesColumn( 0 );
-  m_chi2Graphic->axis(Chart::XAxis).setTitle( WString::tr("Energy (keV)") );
-  
-  WFont font( WFont::Default );
-  font.setSize( WFont::Small );
-  m_chi2Graphic->axis(Chart::YAxis).setTitleFont(font);
-  m_chi2Graphic->axis(Chart::XAxis).setTitleFont(font);
-  
-  WFont labelFont( WFont::Default );
-  labelFont.setSize( WFont::Medium );
-  m_chi2Graphic->axis(Chart::YAxis).setLabelFont(font);
-  m_chi2Graphic->axis(Chart::XAxis).setLabelFont(font);
-  
-  m_chi2Graphic->axis(Chart::XAxis).setLocation( Chart::AxisValue::ZeroValue );
-  m_chi2Graphic->axis(Chart::YAxis).setLocation( Chart::AxisValue::MinimumValue );
-
-  m_chi2Graphic->axis(Chart::XAxis).setScale( Chart::LinearScale );
-  m_chi2Graphic->axis(Chart::YAxis).setScale( Chart::LinearScale );
-
-  m_chi2Graphic->setType( Chart::ScatterPlot );
-//  m_chi2Graphic->setMinimumSize( WLength(200), WLength(175) );
-  
-  
-  //We should check the color theme for colors
-  m_specViewer->colorThemeChanged().connect( m_chi2Graphic, &Chi2Graphic::setColorsFromTheme );
-  m_chi2Graphic->setColorsFromTheme( m_specViewer->getColorTheme() );
-  
+  m_chi2Graphic->setContentMargins( 5, 12, 0, 5 );
+  m_chi2Graphic->setXAxisTitle( WString::tr("Energy (keV)") );
   
   //The next line is kinda inefficient because if all that changed was
   //  fit activity or fit age, then we dont really need to update the chi2 chart
@@ -5055,7 +4548,8 @@ void ShieldingSourceDisplay::showGraphicTypeChanged()
   
   
   const bool chi = m_showChiOnChart->isChecked();
-  m_chi2Graphic->setShowChiOnChart( chi );
+  const auto type = chi ? Chi2Graphic::ChiDispType::Pull : Chi2Graphic::ChiDispType::Scale;
+  m_chi2Graphic->setChartType( type );
   updateChi2Chart();
 }
 
@@ -5688,16 +5182,12 @@ void ShieldingSourceDisplay::updateChi2ChartActual( std::shared_ptr<const Shield
     {
       const double energy = chis[row].energy;
       const double chi = chis[row].numSigmaOff;
-      const double scale = chis[row].observedOverExpected;
-      const WColor &color = chis[row].peakColor;
-      const double scale_uncert = chis[row].observedOverExpectedUncert;
 
-      if( fabs(chi) < 1.0E5 && !IsInf(chi) && !IsNan(chi)
-          && !IsInf(energy) && !IsNan(energy) )
+      if( fabs(chi) < 1.0E5 && !IsInf(chi) && !IsNan(chi) && !IsInf(energy) && !IsNan(energy) )
         keeper_points.push_back( chis[row] );
     }//for( size_t row = 0; row < chis.size(); ++row )
 
-    m_chi2Graphic->setNumFitForParams( ndof );
+      
     if( !m_calcLog.empty() )
     {
       char buffer[64];
@@ -5707,17 +5197,12 @@ void ShieldingSourceDisplay::updateChi2ChartActual( std::shared_ptr<const Shield
       m_calcLog.push_back( buffer );
     }//if( !m_calcLog.empty() )
     
-    const int nrow = static_cast<int>( keeper_points.size() );
-    const int nStartRows = m_chi2Model->rowCount();
-    if( nStartRows < nrow )
-      m_chi2Model->insertRows( nStartRows, nrow - nStartRows );
-
-    if( nStartRows > nrow )
-      m_chi2Model->removeRows( nrow, nStartRows - nrow );
-
+    
+    
     std::shared_ptr<const deque< PeakModel::PeakShrdPtr > > peaks = m_peakModel->peaks();
     
-    for( int row = 0; row < nrow; ++row  )
+    vector<Chi2Graphic::PeakFitInfo> points_to_plot;
+    for( size_t row = 0; row < keeper_points.size(); ++row  )
     {
       const GammaInteractionCalc::PeakResultPlotInfo &p = keeper_points[row];
       
@@ -5734,18 +5219,9 @@ void ShieldingSourceDisplay::updateChi2ChartActual( std::shared_ptr<const Shield
         continue;
       }//if( IsNan(p.second) || IsInf(p.second) )
       
-      m_chi2Model->setData( row, 0, boost::any(energy) );
-      m_chi2Model->setData( row, 1, boost::any(chi) );
-      m_chi2Model->setData( row, 2, boost::any(scale) );
-      
       if( color.isDefault() )
         color = m_specViewer->getColorTheme()->defaultPeakLine;
       color.setRgb( color.red(), color.green(), color.blue(), 255 );
-      
-      m_chi2Model->setData( row, 1, boost::any(color), Wt::MarkerPenColorRole );
-      m_chi2Model->setData( row, 1, boost::any(color), Wt::MarkerBrushColorRole );
-      m_chi2Model->setData( row, 2, boost::any(color), Wt::MarkerPenColorRole );
-      m_chi2Model->setData( row, 2, boost::any(color), Wt::MarkerBrushColorRole );
       
       //If we wanted to include the nuclide in the model, we would have to loop
       //  over photopeaks in m_peakModel to try and match things up
@@ -5764,32 +5240,30 @@ void ShieldingSourceDisplay::updateChi2ChartActual( std::shared_ptr<const Shield
             }
           }
         }//for( const PeakModel::PeakShrdPtr &p : *peaks )
-        
-        m_chi2Model->setData( row, 3, boost::any(nuclidename) );
-        m_chi2Model->setData( row, 4, boost::any(scale_uncert) );
       }//if( !!peaks )
+      
+      
+      Chi2Graphic::PeakFitInfo info;
+      info.energy = p.energy;
+      info.numSigmaOff = p.numSigmaOff;
+      info.observedOverExpected = p.observedOverExpected;
+      info.observedOverExpectedUncert = p.observedOverExpectedUncert;
+      info.peakColor = color;
+      info.nuclidename = nuclidename;
+      
+      points_to_plot.push_back( info );
     }//for( int row = 0; row < nrow; ++row  )
+    
+    m_chi2Graphic->setData( ndof, points_to_plot );
   }catch( std::exception &e )
   {
     //One reason we may have made it here is if there are no peaks selected
     //Another is if we have removed using a peak from the peak, and it was an
     //  age defining, and we havent updated the dependant ages yet (but will in this
     //  event loop).
-    if( m_chi2Model->rowCount() )
-      m_chi2Model->removeRows( 0, m_chi2Model->rowCount() );
+    m_chi2Graphic->setData( 0, {} );
     cerr << "ShieldingSourceDisplay::updateChi2ChartActual()\n\tCaught:" << e.what() << endl;
   }
-  
-  
-  const std::vector<WAbstractArea *> oldareas = m_chi2Graphic->areas();
-  for( WAbstractArea *a : oldareas )
-  {
-    m_chi2Graphic->removeArea( a );
-    delete a;
-  }
-
-//  cerr << "m_chi2Model->rowCount()=" << m_chi2Model->rowCount()
-//       << "m_chi2Model->columnCount()=" << m_chi2Model->columnCount() << endl;
 
   m_calcLog.push_back( ns_no_uncert_info_txt );
 }//void ShieldingSourceDisplay::updateChi2ChartActual()
@@ -7095,7 +6569,9 @@ void ShieldingSourceDisplay::deSerialize( const rapidxml::xml_node<char> *base_n
   m_sameIsotopesAge->setChecked( options.same_age_isotopes );
   m_decayCorrect->setChecked( options.account_for_decay_during_meas );
   m_showChiOnChart->setChecked( show_chi_on_chart );
-  m_chi2Graphic->setShowChiOnChart( show_chi_on_chart );
+  const auto chart_type = show_chi_on_chart ? Chi2Graphic::ChiDispType::Pull
+                                            : Chi2Graphic::ChiDispType::Scale;
+  m_chi2Graphic->setChartType( chart_type );
   m_distanceEdit->setValueText( WString::fromUTF8(dist_node->value()) );
   m_prevDistStr = dist_node->value();
   

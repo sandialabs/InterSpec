@@ -330,6 +330,7 @@ set(sources
     src/NuclideSourceEnter.cpp
     src/AddNewPeakDialog.cpp
     src/UserPreferences.cpp
+    src/Chi2Graphic.cpp
     js/SpectrumChart.js
     js/InterSpec.js
 )
@@ -434,6 +435,7 @@ set(headers
     InterSpec/NuclideSourceEnter.h
     InterSpec/AddNewPeakDialog.h
     InterSpec/UserPreferences.h
+    InterSpec/Chi2Graphic.h
 )
 
 
