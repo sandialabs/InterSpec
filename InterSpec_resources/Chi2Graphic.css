@@ -6,13 +6,6 @@ svg.Chi2Graphic {
   background: var(--d3spec-background-color, none);
 }
 
-.Chi2Graphic path {
-    /* What is this for? */
-    stroke: steelblue;
-    stroke-width: 2;
-    fill: none;
-}
-
 .Chi2Graphic .xAxis path,
 .Chi2Graphic .xAxis line,
 .Chi2Graphic .yAxis path,
@@ -23,10 +16,34 @@ svg.Chi2Graphic {
     shape-rendering: crispEdges;
 }
 
+.Chi2Graphic .xAxis.Pull path,
+.Chi2Graphic .xAxis.Pull line
+{
+  stroke-opacity: 0.4;
+}
+
+.Chi2Graphic .xAxis.Scale path,
+.Chi2Graphic .xAxis.Scale line
+{
+  stroke-opacity: 1.0;
+}
+
+.Chi2Graphic .ScaleUnityLine {
+  stroke: var(--d3spec-axis-color, black);
+  stroke-width: 1;
+  stroke-opacity: 0.4;
+  stroke-dasharray: 3,3
+}
 
 .Chi2Graphic .xaxistitle,
 .Chi2Graphic .yaxistitle {
     
+}
+
+.Chi2Graphic .ChiInfoTitle {
+  text-anchor: end;  /* Align text to the end (right) */
+  dominant-baseline: hanging; /* Align text to the top of the text box */
+  margin-right: 5px;
 }
 
 .Chi2Graphic .xaxis, .Chi2Graphic .yaxis {
@@ -38,9 +55,12 @@ svg.Chi2Graphic {
 .Chi2Graphic .yaxistitle,
 .Chi2Graphic .yaxislabel,
 .Chi2Graphic .tick text {
-  stroke: var(--d3spec-axis-color, black);
-} 
+  fill: var(--d3spec-axis-color, black);
+}
 
+.Chi2Graphic .xaxistitle {
+  dominant-baseline: hanging;
+}
 
 .Chi2Graphic circle {
     cursor: pointer;

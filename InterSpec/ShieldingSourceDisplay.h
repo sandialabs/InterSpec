@@ -356,9 +356,6 @@ public:
   
   /** Returns <num values specified, num fit values, is valid> */
   std::tuple<int,int,bool> numTruthValuesForFitValues();
-  
-  /** Renders the Chi2Chart to a SVG image */
-  void renderChi2Chart( Wt::WSvgImage &image );
 
   /** Tests the current values, for all quantities being fit for, against truth-level values.
    
@@ -553,7 +550,7 @@ public:
   //loadModelFromDb(...):  deserializes the model passed in.
   //  Will not throw, but may fail to load the passed in entry, in which
   //  case it will attempt to not make any changes (although not strictly
-  //  garunteed) to current model, and inform user of the error and return
+  //  guaranteed) to current model, and inform user of the error and return
   //  the state of loading the passed in entry.
   bool loadModelFromDb( Wt::Dbo::ptr<ShieldingSourceModel> entry );
   
@@ -614,6 +611,10 @@ public:
   SourceFitModel *sourceFitModel();
   
   ShieldingSourceFitCalc::ShieldingSourceFitOptions fitOptions() const;
+  
+  
+  
+  
 protected:
   /** Disables fit button and other elements, and hides some stuff, etc. */
   void setWidgetStateForFitStarting();

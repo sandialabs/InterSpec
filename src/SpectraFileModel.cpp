@@ -757,7 +757,9 @@ void SpectraFileHeader::saveToDatabase( std::shared_ptr<const SpecMeas> input ) 
     
     Dbo::ptr<UserFileInDbData> data;
     
-    {//begin interact with database
+    if( fileDbEntry )
+    {
+      //begin interact with database
       DataBaseUtils::DbTransaction transaction( *m_sql );
       for( Files::const_iterator i = fileDbEntry->filedata.begin();
           i != fileDbEntry->filedata.end(); ++i )
@@ -846,6 +848,7 @@ void SpectraFileHeader::saveToDatabase( std::shared_ptr<const SpecMeas> input ) 
       transaction.commit();
     }//if( !data )
     
+    if( fileDbEntry )
     {
       DataBaseUtils::DbTransaction transaction( *m_sql );
       fileDbEntry.modify()->serializeTime = WDateTime::currentDateTime();

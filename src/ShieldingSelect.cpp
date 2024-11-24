@@ -89,9 +89,9 @@ double distance_of_input_text( const WLineEdit *edit )
   try
   {
     return PhysicalUnits::stringToDistance( text );
-  }catch( std::exception & )
+  }catch( std::exception &e )
   {
-    
+    cerr << "Failed to convert '" << text << "' to a distance." << endl;
   }
   
   throw runtime_error( "Error converting '" + text + "' to a distance" );

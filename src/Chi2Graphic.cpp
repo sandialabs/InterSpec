@@ -45,7 +45,9 @@
 #include "SandiaDecay/SandiaDecay.h"
 
 #include "InterSpec/InterSpec.h"
+#include "InterSpec/ColorTheme.h"
 #include "InterSpec/Chi2Graphic.h"
+#include "InterSpec/GammaInteractionCalc.h"
 
 
 using namespace Wt;
@@ -55,14 +57,15 @@ using namespace std;
 Chi2Graphic::Chi2Graphic( WContainerWidget *parent )
 : WContainerWidget( parent ),
   m_jsgraph( jsRef() + ".chart" ),
-  m_xAxisTitle{},
-  m_yAxisTitle{},
+  m_xAxisTitle( WString::tr("Energy (keV)") ),
+  m_yAxisChiTitle( WString::tr("x2g-yaxis-title-chi") ),    //From ShieldingSourceDisplay.xml
+  m_yAxisScaleTitle( WString::tr("x2g-yaxis-title-mult") ), //From ShieldingSourceDisplay.xml
   m_displayType( Chi2Graphic::ChiDispType::Pull ),
   m_topMargin( 5 ),
   m_rightMargin( 5 ),
   m_bottomMargin( 0 ),
   m_leftMargin( 5 ),
-  m_titlePadding( -3 ),
+  m_titlePadding( 1 ),
   m_pendingJs{},
   m_renderFlags( 0 ),
   m_ndof( 0 ),
@@ -101,8 +104,10 @@ void Chi2Graphic::defineJavaScript()
 
   if( !m_xAxisTitle.empty() )
     options += ", xAxisTitle: " + m_xAxisTitle.jsStringLiteral('\"');
-  if( !m_yAxisTitle.empty() )
-    options += ", yAxisTitle: " + m_yAxisTitle.jsStringLiteral('\"');
+  if( !m_yAxisChiTitle.empty() )
+    options += ", yAxisChiTitle: " + m_yAxisChiTitle.jsStringLiteral('\"');
+  if( !m_yAxisScaleTitle.empty() )
+    options += ", yAxisScaleTitle: " + m_yAxisScaleTitle.jsStringLiteral('\"');
   options += ", displayType: " + jsDispType;
   options += " }";
   
@@ -147,7 +152,7 @@ void Chi2Graphic::render( Wt::WFlags<Wt::RenderFlag> flags )
 }//void render( flags )
 
 
-void Chi2Graphic::setData( const int ndof, const std::vector<Chi2Graphic::PeakFitInfo> &points )
+void Chi2Graphic::setData( const int ndof, const std::vector<GammaInteractionCalc::PeakResultPlotInfo> &points )
 {
   m_ndof = ndof;
   m_used_points = points;
@@ -156,27 +161,64 @@ void Chi2Graphic::setData( const int ndof, const std::vector<Chi2Graphic::PeakFi
 }//void setData(ndof, info)
 
 
-void Chi2Graphic::setDataToClient()
+string Chi2Graphic::to_json( const int ndof,
+                      const std::vector<GammaInteractionCalc::PeakResultPlotInfo> &used_points )
 {
   Wt::Json::Object json;
   
-  json["NDOF"] = m_ndof;
+  json["NDOF"] = ndof;
   Wt::Json::Array &points = json["Points"] = Wt::Json::Array{};
   
-  for( const Chi2Graphic::PeakFitInfo &point : m_used_points )
+  for( const GammaInteractionCalc::PeakResultPlotInfo &point : used_points )
   {
     Wt::Json::Object jpoint;
     jpoint["energy"] = point.energy;
     jpoint["numSigmaOff"] = point.numSigmaOff;
     jpoint["observedOverExpected"] = point.observedOverExpected;
     jpoint["observedOverExpectedUncert"] = point.observedOverExpectedUncert;
-    jpoint["color"] = WString::fromUTF8( point.peakColor.isDefault() ? string("blue") : point.peakColor.cssText() );
-    jpoint["nuclide"] = point.nuclidename;
+    const auto peak = point.m_user_info ? point.m_user_info->m_peak : nullptr;
+    WColor color;
+    if( peak )
+      color = peak->lineColor();
+    if( color.isDefault() )
+    {
+      InterSpec *viewer = InterSpec::instance();
+      if( viewer )
+        color = viewer->getColorTheme()->defaultPeakLine;
+      else
+        color = WColor("blue");
+    }//if( color.isDefault() )
+    color.setRgb( color.red(), color.green(), color.blue(), 255 );
     
-    points.push_back( jpoint );
-  }//for( loop over m_used_points )
+    jpoint["color"] = WString::fromUTF8(color.cssText());
+    string nuclide = "n/a";
+    if( peak && peak->parentNuclide() )
+      nuclide = peak->parentNuclide()->symbol;
+    jpoint["nuclide"] = WString::fromUTF8(nuclide);
+    
+    if( point.m_user_info )
+    {
+      jpoint["numObserved"] = point.m_user_info->m_observed;
+      jpoint["numObservedUncert"] = point.m_user_info->m_observed_uncert;
+      jpoint["numExpected"] = point.m_user_info->m_expected;
+      if( point.m_user_info->m_back_peak_area > 0 )
+      {
+        jpoint["numBackground"] = point.m_user_info->m_back_peak_area;
+        jpoint["numBackgroundUncert"] = point.m_user_info->m_back_peak_area_uncert;
+      }
+    }//if( point.m_user_info )
+    
+    points.push_back( std::move(jpoint) );
+  }//for( loop over used_points )
   
-  const string js = m_jsgraph + ".setData(" + Wt::Json::serialize(json) + ");";
+  return Wt::Json::serialize(json);
+}//to_json(...)
+
+
+void Chi2Graphic::setDataToClient()
+{
+  const string json = to_json(m_ndof, m_used_points);
+  const string js = m_jsgraph + ".setData(" + json + ");";
   
   if( isRendered() )
     doJavaScript( js );
@@ -193,11 +235,13 @@ void Chi2Graphic::setXAxisTitle( const Wt::WString &title )
 }//
 
 
-void Chi2Graphic::setYAxisTitle( const Wt::WString &title )
+void Chi2Graphic::setYAxisTitle( const Wt::WString &chi_title, const Wt::WString &scale_title )
 {
-  m_yAxisTitle = title;
+  m_yAxisChiTitle = chi_title;
+  m_yAxisScaleTitle = scale_title;
   if( isRendered() )
-    doJavaScript( m_jsgraph + ".setYAxisTitle(" + m_yAxisTitle.jsStringLiteral('\'') + ",true);" );
+    doJavaScript( m_jsgraph + ".setYAxisTitles(" + m_yAxisChiTitle.jsStringLiteral('\'') + ","
+                 + m_yAxisScaleTitle.jsStringLiteral('\'') + ",true);" );
 }
 
 

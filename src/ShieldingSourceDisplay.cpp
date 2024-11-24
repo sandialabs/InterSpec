@@ -2633,7 +2633,6 @@ ShieldingSourceDisplay::ShieldingSourceDisplay( PeakModel *peakModel,
 
   m_chi2Graphic = new Chi2Graphic();
   m_chi2Graphic->setContentMargins( 5, 12, 0, 5 );
-  m_chi2Graphic->setXAxisTitle( WString::tr("Energy (keV)") );
   
   //The next line is kinda inefficient because if all that changed was
   //  fit activity or fit age, then we dont really need to update the chi2 chart
@@ -4058,14 +4057,6 @@ std::tuple<int,int,bool> ShieldingSourceDisplay::numTruthValuesForFitValues()
 }//bool haveTruthValuesForAllFitValues()
 
 
-void ShieldingSourceDisplay::renderChi2Chart( Wt::WSvgImage &image )
-{
-  WPainter p( &image );
-  m_chi2Graphic->paint( p );
-  p.end();
-}//void renderChi2Chart( Wt::WSvgImage &image );
-
-
 tuple<bool,int,int,vector<string>> ShieldingSourceDisplay::testCurrentFitAgainstTruth()
 {
   bool successful = true;
@@ -5201,57 +5192,19 @@ void ShieldingSourceDisplay::updateChi2ChartActual( std::shared_ptr<const Shield
     
     std::shared_ptr<const deque< PeakModel::PeakShrdPtr > > peaks = m_peakModel->peaks();
     
-    vector<Chi2Graphic::PeakFitInfo> points_to_plot;
+    vector<GammaInteractionCalc::PeakResultPlotInfo> points_to_plot;
     for( size_t row = 0; row < keeper_points.size(); ++row  )
     {
       const GammaInteractionCalc::PeakResultPlotInfo &p = keeper_points[row];
       
-      const double &energy = p.energy;
-      const double &chi = p.numSigmaOff;
-      const double &scale = p.observedOverExpected;
-      WColor color = p.peakColor;
-      const double &scale_uncert = p.observedOverExpectedUncert;
-      
-      if( IsNan(energy) || IsInf(chi) )
+      if( IsNan(p.energy) || IsInf(p.numSigmaOff) )
       {
-        passMessage( WString::tr("ssd-warn-invalid-chi2-for-energy").arg( round(100*energy)/100 ),
+        passMessage( WString::tr("ssd-warn-invalid-chi2-for-energy").arg( round(100*p.energy)/100 ),
                     WarningWidget::WarningMsgHigh );
         continue;
       }//if( IsNan(p.second) || IsInf(p.second) )
       
-      if( color.isDefault() )
-        color = m_specViewer->getColorTheme()->defaultPeakLine;
-      color.setRgb( color.red(), color.green(), color.blue(), 255 );
-      
-      //If we wanted to include the nuclide in the model, we would have to loop
-      //  over photopeaks in m_peakModel to try and match things up
-      WString nuclidename;
-      if( !!peaks )
-      {
-        for( const PeakModel::PeakShrdPtr &peak : *peaks )
-        {
-          if( peak->useForShieldingSourceFit()
-              && peak->parentNuclide() && peak->decayParticle() )
-          {
-            if( fabs(energy - peak->decayParticle()->energy) < 0.001 )
-            {
-              nuclidename = peak->parentNuclide()->symbol;
-              break;
-            }
-          }
-        }//for( const PeakModel::PeakShrdPtr &p : *peaks )
-      }//if( !!peaks )
-      
-      
-      Chi2Graphic::PeakFitInfo info;
-      info.energy = p.energy;
-      info.numSigmaOff = p.numSigmaOff;
-      info.observedOverExpected = p.observedOverExpected;
-      info.observedOverExpectedUncert = p.observedOverExpectedUncert;
-      info.peakColor = color;
-      info.nuclidename = nuclidename;
-      
-      points_to_plot.push_back( info );
+      points_to_plot.push_back( p );
     }//for( int row = 0; row < nrow; ++row  )
     
     m_chi2Graphic->setData( ndof, points_to_plot );
@@ -6710,6 +6663,8 @@ void ShieldingSourceDisplay::deSerialize( const rapidxml::xml_node<char> *base_n
       rapidxml::xml_node<> *chi2_node = doc->allocate_node( rapidxml::node_element, "Chi2Elements" );
       base_node->append_node( chi2_node );
       
+      // We dont actually ever read the Chi values, but we'll record them anyway; maybe useful
+      //  when manually inspecting the xml
       double chi2 = 0.0;
       rapidxml::xml_node<> *node = nullptr;
       rapidxml::xml_node<> *eval_node = doc->allocate_node( rapidxml::node_element, "EvaluatedEnergies" );
@@ -6722,7 +6677,6 @@ void ShieldingSourceDisplay::deSerialize( const rapidxml::xml_node<char> *base_n
         const double energy = p.energy;
         const double chi = p.numSigmaOff;
         const double scale = p.observedOverExpected;
-        const WColor &color = p.peakColor;
         const double scale_uncert = p.observedOverExpectedUncert;
         
         if( !IsInf(chi) && !IsNan(chi) )
@@ -6742,12 +6696,6 @@ void ShieldingSourceDisplay::deSerialize( const rapidxml::xml_node<char> *base_n
         
         node = doc->allocate_node( rapidxml::node_element, "Scale" );
         snprintf( buffer, sizeof(buffer), "%f", scale );
-        value = doc->allocate_string( buffer );
-        node->value( value );
-        point_node->append_node( node );
-        
-        node = doc->allocate_node( rapidxml::node_element, "Color" );
-        snprintf( buffer, sizeof(buffer), "%s", (color.isDefault() ? "" : color.cssText().c_str()) );
         value = doc->allocate_string( buffer );
         node->value( value );
         point_node->append_node( node );

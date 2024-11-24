@@ -409,8 +409,27 @@ struct PeakResultPlotInfo
   double observedOverExpected;
   double observedOverExpectedUncert;
   
-  /** `peak.lineColor()` */
-  Wt::WColor peakColor;
+  
+  
+  /** Its convenient to have some extra information to display to the user, but we only want to compute/allocate
+   it on the final pass, at the same time we are making log information.
+   */
+  struct ExtraInfo
+  {
+    std::shared_ptr<const PeakDef> m_peak;
+    
+    /** Observed is same as `m_peak->peakArea()`, just explicitly included for clarity. */
+    double m_observed = 0.0;
+    /** Observed uncert is same as `m_peak->peakAreaUncert()`, just explicitly included for clarity. */
+    double m_observed_uncert = -1.0;
+    /** Background peak area and uncertainty has already been scaled for live time. */
+    double m_back_peak_area = -1.0;
+    double m_back_peak_area_uncert = -1.0;
+    double m_expected = 0.0;
+  };//struct ExtraInfo
+  
+  /** The extra information will only be computed if we are also creating the calculation log. */
+  std::shared_ptr<const ExtraInfo> m_user_info;
 };//struct PeakResultPlotInfo
   
   
@@ -1081,8 +1100,9 @@ public:
 
 
   //returns the chi computed from the expected verses observed counts; one
-  //  chi2 for each peak energy.  Each returned entry is {energy,chi,scale,PeakColor,ScaleUncert},
-  //  where scale is observed/expected
+  //  chi2 for each peak energy.  
+  //  Note: `backgroundPeaks` *must* have already been scaled for live time,
+  //    to match foreground.
   static std::vector<PeakResultPlotInfo> expected_observed_chis(
                               const std::vector<PeakDef> &peaks,
                               const std::vector<PeakDef> &backgroundPeaks,
@@ -1111,6 +1131,7 @@ protected:
   double m_liveTime;
 
   std::vector<PeakDef> m_peaks;
+  /** Background peaks are scaled for live time in `ShieldingSourceChi2Fcn::setBackgroundPeaks(...)`. */
   std::vector<PeakDef> m_backgroundPeaks;
   std::shared_ptr<const DetectorPeakResponse> m_detector;
   

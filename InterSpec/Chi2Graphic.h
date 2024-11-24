@@ -19,30 +19,14 @@ namespace Wt
   class WCssTextRule;
 }//namespace Wt
 
+namespace GammaInteractionCalc 
+{
+  struct PeakResultPlotInfo;
+}
 
 
 class Chi2Graphic : public Wt::WContainerWidget
-{
-public:
-  
-  struct PeakFitInfo
-  {
-    /** Energy of the gamma associated with the peak. */
-    double energy;
-    
-    /** `(observed_counts - expected_counts) / observed_uncertainty` */
-    double numSigmaOff;
-    
-    /** `observed_counts / expected_counts` */
-    double observedOverExpected;
-    double observedOverExpectedUncert;
-    
-    /** `peak.lineColor()` */
-    Wt::WColor peakColor;
-    
-    Wt::WString nuclidename;
-  };//struct PeakFitInfo
-  
+{  
 public:
   Chi2Graphic( Wt::WContainerWidget *parent = 0 );
   virtual ~Chi2Graphic();
@@ -60,14 +44,18 @@ public:
   /** Sets how the data should be displayed. */
   void setChartType( const ChiDispType type );
   
-  void setData( const int ndof, const std::vector<PeakFitInfo> &used_points );
+  void setData( const int ndof, const std::vector<GammaInteractionCalc::PeakResultPlotInfo> &used_points );
   
   void setXAxisTitle( const Wt::WString &title );
-  void setYAxisTitle( const Wt::WString &title );
+  void setYAxisTitle( const Wt::WString &chi_title, const Wt::WString &scale_title );
   
   /** Set the chart content margins (e.g. how many pixels inside the <svg /> element the titles or axises should be drawn).
    */
   void setContentMargins( int top, int right, int bottom, int left );
+  
+  /** Turns the Chi-chart information into JSON that can be sent to the client-side. */
+  static std::string to_json( const int ndof,
+                        const std::vector<GammaInteractionCalc::PeakResultPlotInfo> &used_points );
   
 protected:
   void defineJavaScript();
@@ -82,7 +70,8 @@ protected:
   const std::string m_jsgraph;
   
   Wt::WString m_xAxisTitle;
-  Wt::WString m_yAxisTitle;
+  Wt::WString m_yAxisChiTitle;
+  Wt::WString m_yAxisScaleTitle;
   
   ChiDispType m_displayType;
   
@@ -114,7 +103,7 @@ protected:
   Wt::WFlags<Chi2RenderActions> m_renderFlags;
   
   int m_ndof;
-  std::vector<PeakFitInfo> m_used_points;
+  std::vector<GammaInteractionCalc::PeakResultPlotInfo> m_used_points;
 };//class Chi2Graphic
 
 

@@ -5347,8 +5347,27 @@ vector<PeakResultPlotInfo> ShieldingSourceChi2Fcn::expected_observed_chis(
     peak_info.energy = energy;
     peak_info.numSigmaOff = chi;
     peak_info.observedOverExpected = scale;
-    peak_info.peakColor = peak.lineColor();
     peak_info.observedOverExpectedUncert = scale_uncert;
+    
+    if( log_info )
+    {
+      auto extra_info = make_shared<PeakResultPlotInfo::ExtraInfo>();
+      extra_info->m_peak = make_shared<PeakDef>(peak);
+      
+      extra_info->m_observed = peak.peakArea();
+      extra_info->m_observed_uncert = peak.peakAreaUncert();
+      if( backCounts > 0.0 )
+      {
+        extra_info->m_back_peak_area = backCounts;
+        extra_info->m_back_peak_area_uncert = sqrt(backUncert2);
+      }
+      
+      extra_info->m_expected = expected_counts;
+      
+      peak_info.m_user_info = extra_info;
+    }//if( log_info )
+    
+    
     answer.push_back( peak_info );
     
     if( info )
