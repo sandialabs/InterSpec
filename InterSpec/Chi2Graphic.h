@@ -27,6 +27,8 @@ namespace GammaInteractionCalc
 
 class Chi2Graphic : public Wt::WContainerWidget
 {  
+#define SHOW_Chi2Graphic_PEAK_PREVIEW 1
+  
 public:
   Chi2Graphic( Wt::WContainerWidget *parent = 0 );
   virtual ~Chi2Graphic();
@@ -61,6 +63,10 @@ protected:
   void defineJavaScript();
   
   void setDataToClient();
+  
+#if( SHOW_Chi2Graphic_PEAK_PREVIEW )
+  void dataPointMousedOver( const std::string &tooltip_id, const double energy );
+#endif
   
   virtual void render( Wt::WFlags<Wt::RenderFlag> flags );
   
@@ -101,6 +107,8 @@ protected:
   };
   
   Wt::WFlags<Chi2RenderActions> m_renderFlags;
+  
+  Wt::JSignal<std::string,double> m_dataPointMousedOver;
   
   int m_ndof;
   std::vector<GammaInteractionCalc::PeakResultPlotInfo> m_used_points;

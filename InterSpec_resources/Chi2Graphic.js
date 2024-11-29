@@ -1,4 +1,5 @@
 Chi2Graphic = function (elem,options) {
+  const self = this;
   this.chart = typeof elem === "string" ? document.getElementById(elem) : elem;
   
   this.options = options ? options : {};
@@ -20,6 +21,8 @@ Chi2Graphic = function (elem,options) {
     this.options.yAxisChiTitle = null;
   if( (typeof this.options.yAxisScaleTitle !== "string") || (this.options.yAxisScaleTitle.length === 0) )
     this.options.yAxisScaleTitle = null;
+  if( (typeof this.options.noEventsToServer !== "boolean") )
+    this.options.noEventsToServer = false;
     
   if( (this.options.displayType !== this.ChartType.Pull)
      && (this.options.displayType !== this.ChartType.Scale) )
@@ -34,8 +37,17 @@ Chi2Graphic = function (elem,options) {
   // Setup the tooltip
   this.tooltip = d3.select(this.chart).append("div")
     .attr("class", "Chi2GraphicTooltip")
-    .style("opacity", 0);
-
+    .attr("id",this.chart.id + "-tt")
+    .style("opacity", 0)
+    .on("mouseover", function(){
+      // TODO: mouseover and mouseout of this.tooltip doesnt work
+      clearTimeout( self.hideToolTipTimer );
+      self.hideToolTipTimer = null;
+    } )
+    .on("mouseout", function(){
+      self.startHideToolTip();
+    } );
+    
   // Set the ranges
   this.xScale = d3.scale.linear().range([0, chartAreaWidth]);
   this.yScale = d3.scale.linear().range([chartAreaHeight, 0]);
@@ -411,27 +423,6 @@ Chi2Graphic.prototype.setData = function( data ) {
   if( !valid_data )
     return;
       
-  let lines = this.chartArea.selectAll("line.errorbar")
-      .data(data.Points);
-    
-  if( !isPullChart )
-  {
-    lines.enter()
-      .append('line')
-      .attr("class", "errorbar")
-      .attr('x1', function(d) { return self.xScale(d.energy); })
-      .attr('x2', function(d) { return self.xScale(d.energy); })
-      .attr('y1', function(d) {
-        const val = self.yScale(d.eff + d.eff_uncert);
-        return isNaN(val) ? 0 : val;
-    })
-      .attr('y2', function(d) {
-        const val = self.yScale(d.eff - d.eff_uncert);
-        return isNaN(val) ? 0 : val;
-    });
-  }//if( !isPullChart )
-  
-  
   // Add the data points
   this.chartArea
     .selectAll("circle")
@@ -439,8 +430,8 @@ Chi2Graphic.prototype.setData = function( data ) {
     .enter()
     .append("circle")
     .attr("r", 5)
-    .attr("fill", function (d) {
-      return d.color ? d.color : "blue";
+    .attr("style", function (d) {
+      return "fill:" + (d.color ? d.color : "blue");
     })
     .attr("cx", function (d) {
       return self.xScale(d.energy)
@@ -453,6 +444,9 @@ Chi2Graphic.prototype.setData = function( data ) {
       return isPullChart ? "PullDataPoint" : "ScaleDataPoint";
     })
     .on("mouseover", function (d, i) {
+      clearTimeout( self.hideToolTipTimer );
+      self.hideToolTipTimer = null;
+      
       self.tooltip.transition()
         .duration(200)
         .style("opacity", .9);
@@ -469,6 +463,7 @@ Chi2Graphic.prototype.setData = function( data ) {
         + "<div>Num Sigma Off: " + d.numSigmaOff.toPrecision(5) + "</div>"
         + "<div>Obs/Exp: " + d.observedOverExpected.toPrecision(5) + " &pm; " + d.observedOverExpectedUncert.toPrecision(5) + "</div>"
         + "<div>Nuclide: " + d.nuclide + "</div>"
+        + "<div class='tt-chart' />"
         + "</div>";
             
       self.tooltip.html(txt);
@@ -488,19 +483,78 @@ Chi2Graphic.prototype.setData = function( data ) {
       self.tooltip
         .style("left", x_offset + "px")
         .style("top", y_offset + "px");
+        
+      // Make sure tool tip will be above everything else, if it hangs off the svg
+      try {
+        // I dont *think* any of this should throw, but dont actually know, so will be careful.
+        let maxz = 0;
+        const dialogs = document.querySelectorAll('.Wt-dialog,.MobileMenuButton');
+        for( let i = 0; i < dialogs.length; ++i )
+          maxz = Math.max( maxz, parseInt(getComputedStyle(dialogs[i])['z-index']) );
+        if( maxz > 0 )
+          self.tooltip.style("z-index", maxz);
+      }catch(err){
+      }
+      
+      self.WtEmit( {name: 'dataPointMousedOver'}, self.tooltip.attr("id"), d.energy );
     })
     .on("mouseout", function (d, i) {
-      d3.select(this).transition()
-        .duration('50')
-        .attr('opacity', '1')
-        .attr("r", 5);
-      self.tooltip.transition()
-        .duration(500)
-        .style("opacity", 0);
+      self.startHideToolTip();
     });
+    
+  // Put error bars on after the data markers, so the error bars will be on top of them
+  let lines = this.chartArea
+    .selectAll("line.errorbar")
+    .data(data.Points);
+      
+  if( isPullChart )
+  {
+    lines.remove();
+  }else{
+    lines.enter()
+      .append('line')
+      .attr("class", "errorbar")
+      .attr('x1', function(d) { return self.xScale(d.energy); })
+      .attr('x2', function(d) { return self.xScale(d.energy); })
+      .attr('y1', function(d) {
+        const val = self.yScale(d.observedOverExpected + d.observedOverExpectedUncert);
+        return isNaN(val) ? 0 : val;
+      })
+      .attr('y2', function(d) {
+        const val = self.yScale(d.observedOverExpected - d.observedOverExpectedUncert);
+        return isNaN(val) ? 0 : val;
+      });
+    }//if( !isPullChart )
 };//Chi2Graphic.prototype.setData
 
+
+Chi2Graphic.prototype.startHideToolTip = function(){
+  const self = this;
+  const hideTT = function(){
+    self.chartArea
+      .selectAll("circle")
+      .transition()
+      .duration('50')
+      .attr('opacity', '1')
+      .attr("r", 5);
+    self.tooltip.transition()
+      .duration(500)
+      .style("opacity", 0);
+  };
+  
+  if( this.hideToolTipTimer )
+    clearTimeout( this.hideToolTipTimer );
+  this.hideToolTipTimer = setTimeout( hideTT, 500 );
+}
 
 Chi2Graphic.prototype.handleResize = function () {
   this.setData( this.data );
 };//Chi2Graphic.prototype.handleResize
+
+
+Chi2Graphic.prototype.WtEmit = function(event) {
+  if( window.Wt && !this.options.noEventsToServer ) {
+    const args = Array.prototype.slice.call(arguments, Chi2Graphic.prototype.WtEmit.length);
+    Wt.emit.apply(Wt, [this.chart.id, event].concat(args));
+  }
+}

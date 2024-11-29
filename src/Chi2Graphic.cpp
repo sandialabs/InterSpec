@@ -50,6 +50,15 @@
 #include "InterSpec/GammaInteractionCalc.h"
 
 
+#if( SHOW_Chi2Graphic_PEAK_PREVIEW )
+#include <Wt/WSvgImage>
+
+#include "SpecUtils/SpecFile.h"
+
+#include "InterSpec/PeakModel.h"
+#include "InterSpec/PeakSearchGuiUtils.h"
+#endif //SHOW_Chi2Graphic_PEAK_PREVIEW
+
 using namespace Wt;
 using namespace std;
 
@@ -68,6 +77,7 @@ Chi2Graphic::Chi2Graphic( WContainerWidget *parent )
   m_titlePadding( 1 ),
   m_pendingJs{},
   m_renderFlags( 0 ),
+  m_dataPointMousedOver( this, "dataPointMousedOver", false ),
   m_ndof( 0 ),
   m_used_points{}
 {
@@ -80,6 +90,11 @@ Chi2Graphic::Chi2Graphic( WContainerWidget *parent )
   wApp->require( "InterSpec_resources/Chi2Graphic.js" );
   
   m_renderFlags |= Chi2RenderActions::SetData;
+  
+#if( SHOW_Chi2Graphic_PEAK_PREVIEW )
+  m_dataPointMousedOver.connect( boost::bind( &Chi2Graphic::dataPointMousedOver, this,
+                                             boost::placeholders::_1, boost::placeholders::_2 ) );
+#endif
 }//Chi2Graphic constructor
 
 
@@ -226,6 +241,62 @@ void Chi2Graphic::setDataToClient()
     m_pendingJs.push_back( js );
 }//void setData( std::shared_ptr<Measurement> data_hist )
 
+
+#if( SHOW_Chi2Graphic_PEAK_PREVIEW )
+void Chi2Graphic::dataPointMousedOver( const std::string &tooltip_id, const double energy )
+{
+  InterSpec *viewer = InterSpec::instance();
+  PeakModel *peakModel = viewer ? viewer->peakModel() : nullptr;
+  assert( peakModel );
+  
+  shared_ptr<const SpecUtils::Measurement> measurement = viewer ? viewer->displayedHistogram(SpecUtils::SpectrumType::Foreground) : nullptr;
+  shared_ptr<const deque<shared_ptr<const PeakDef>>> peaks = peakModel ? peakModel->peaks() : nullptr;
+  
+  if( !measurement || !peaks )
+    return;
+  
+  double lower_energy = -1.0, upper_energy = -1.0, delta = 99999.9;
+  
+  for( const shared_ptr<const PeakDef> &p : *peaks )
+  {
+    try
+    {
+      const double d = fabs(p->gammaParticleEnergy() - energy);
+      if( (d < 1.0) && (d < delta) )
+      {
+        delta = d;
+        const double roi_width = p->upperX() - p->lowerX();
+        lower_energy = p->lowerX() - roi_width;
+        upper_energy = p->upperX() + roi_width;
+      }
+    }catch( std::exception & )
+    {
+      // We get here if a peak doesnt have a nuclide/x-ray/reaction associated with it.
+    }
+  }//for( const shared_ptr<const PeakDef> &p : *peaks )
+  
+  if( delta > 2 )
+    return;
+  
+  const bool compact = true;
+  shared_ptr<const ColorTheme> theme = viewer->getColorTheme();
+  const vector<std::shared_ptr<const ReferenceLineInfo>> reflines;
+  const int width_px = 240, height_px = 160;
+  
+  shared_ptr<Wt::WSvgImage> svg = PeakSearchGuiUtils::renderChartToSvg( measurement, peaks,
+                                                 reflines, lower_energy, upper_energy,
+                                                width_px, height_px, theme, compact );
+  if( svg )
+  {
+    stringstream strm;
+    svg->write( strm );
+    
+    const string svgstr = Wt::WWebWidget::jsStringLiteral(strm.str(),'\'');
+    string js = "$('#" + tooltip_id + " > .tt-chart').html(" + svgstr + ");";
+    doJavaScript(js);
+  }
+}//void dataPointMousedOver( const std::string &tooltip_id, const double energy )
+#endif //SHOW_Chi2Graphic_PEAK_PREVIEW
 
 void Chi2Graphic::setXAxisTitle( const Wt::WString &title )
 {
