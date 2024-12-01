@@ -98,3 +98,17 @@ div.Chi2GraphicTooltip {
     border-radius: 8px;
     pointer-events: none;
 }
+
+div.Chi2GraphicTooltip .SourcesInfoArea {
+  margin-top: 5px;
+}
+
+div.Chi2GraphicTooltip .SourcesInfoList {
+  list-style-type: none;
+  margin-block-start: 0em;
+  margin-block-end: 0em;
+  margin-inline-start: 0px;
+  margin-inline-end: 0px;
+  padding-inline-start: 10px;
+  padding-inline-end: 0px;
+}

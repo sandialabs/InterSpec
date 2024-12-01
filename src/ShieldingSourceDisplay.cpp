@@ -5188,10 +5188,6 @@ void ShieldingSourceDisplay::updateChi2ChartActual( std::shared_ptr<const Shield
       m_calcLog.push_back( buffer );
     }//if( !m_calcLog.empty() )
     
-    
-    
-    std::shared_ptr<const deque< PeakModel::PeakShrdPtr > > peaks = m_peakModel->peaks();
-    
     vector<GammaInteractionCalc::PeakResultPlotInfo> points_to_plot;
     for( size_t row = 0; row < keeper_points.size(); ++row  )
     {

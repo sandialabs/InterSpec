@@ -394,43 +394,7 @@ struct DistributedSrcCalc
 };//struct DistributedSrcCalc
   
 
-/** A struct to hold enough information for each point on the pulls chart that shows comparison of
- detected vs model, for each peak
- */
-struct PeakResultPlotInfo
-{
-  /** Energy of the gamma associated with the peak. */
-  double energy;
-  
-  /** `(observed_counts - expected_counts) / observed_uncertainty` */
-  double numSigmaOff;
-  
-  /** `observed_counts / expected_counts` */
-  double observedOverExpected;
-  double observedOverExpectedUncert;
-  
-  
-  
-  /** Its convenient to have some extra information to display to the user, but we only want to compute/allocate
-   it on the final pass, at the same time we are making log information.
-   */
-  struct ExtraInfo
-  {
-    std::shared_ptr<const PeakDef> m_peak;
-    
-    /** Observed is same as `m_peak->peakArea()`, just explicitly included for clarity. */
-    double m_observed = 0.0;
-    /** Observed uncert is same as `m_peak->peakAreaUncert()`, just explicitly included for clarity. */
-    double m_observed_uncert = -1.0;
-    /** Background peak area and uncertainty has already been scaled for live time. */
-    double m_back_peak_area = -1.0;
-    double m_back_peak_area_uncert = -1.0;
-    double m_expected = 0.0;
-  };//struct ExtraInfo
-  
-  /** The extra information will only be computed if we are also creating the calculation log. */
-  std::shared_ptr<const ExtraInfo> m_user_info;
-};//struct PeakResultPlotInfo
+
   
   
 /** A struct to capture the details of each source that contributed to a peak peak.
@@ -464,6 +428,7 @@ struct PeakDetailSrc
   
   bool isSelfAttenSource = false;//Not used - can be removed
   
+  /** This is counts from the source - before transport, shielding, detector efficiency. */
   double counts = 0.0;
   //double countsUncert = 0.0;
   double ageUncert = 0.0;//Not used - can be removed
@@ -494,6 +459,7 @@ struct PeakDetail
   double observedOverExpected, observedOverExpectedUncert;
   //float modelInto4Pi, modelInto4PiCps;
   double detSolidAngle, detIntrinsicEff, detEff;
+  double airAtten;
   
   float backgroundCounts, backgroundCountsUncert;
   
@@ -530,7 +496,7 @@ struct PeakDetail
   expectedCounts( 0.0 ), observedCounts( 0.0 ), observedUncert( 0.0 ),
   numSigmaOff( 0.0 ), observedOverExpected( 0.0 ),
   //modelInto4Pi( 0.0f ), modelInto4PiCps( 0.0f ),
-  detSolidAngle( 0.0 ), detIntrinsicEff( 0.0 ), detEff( 0.0 ),
+  detSolidAngle( 0.0 ), detIntrinsicEff( 0.0 ), detEff( 0.0 ), airAtten( -1.0 ),
   backgroundCounts( 0.0f ), backgroundCountsUncert( 0.0f )
   {
   }
@@ -626,6 +592,51 @@ struct SourceDetails
   // We wont put peaks into this struct, but instead when we make the JSON, we'll
   //  insert peaks from `PeakDetail` as `PeakDetailSrc::nuclide` match this nuclide.
 };//struct SourceDetails
+ 
+  
+/** A struct to hold enough information for each point on the pulls chart that shows comparison of
+  detected vs model, for each peak
+*/
+struct PeakResultPlotInfo
+{
+  /** Energy of the gamma associated with the peak. */
+  double energy;
+  
+  /** `(observed_counts - expected_counts) / observed_uncertainty` */
+  double numSigmaOff;
+  
+  /** `observed_counts / expected_counts` */
+  double observedOverExpected;
+  double observedOverExpectedUncert;
+  
+  /** Its convenient to have some extra information to display to the user, but we only want to compute/allocate
+   it on the final pass, at the same time we are making log information.
+   */
+  struct ExtraInfo
+  {
+    std::shared_ptr<const PeakDef> m_peak;
+    
+    /** Observed is same as `m_peak->peakArea()`, just explicitly included for clarity. */
+    double m_observed = 0.0;
+    /** Observed uncert is same as `m_peak->peakAreaUncert()`, just explicitly included for clarity. */
+    double m_observed_uncert = -1.0;
+    /** Background peak area and uncertainty has already been scaled for live time. */
+    double m_back_peak_area = -1.0;
+    double m_back_peak_area_uncert = -1.0;
+    double m_expected = 0.0;
+    
+    std::vector<PeakDetailSrc> m_sources_info;
+    std::vector<PeakDetail::VolumeSrc> m_volumetric_srcs;
+    
+    double m_det_eff = 0.0;
+    double m_det_intrinsic_eff = 0.0;
+    double m_det_solid_angle = 0.0;
+  };//struct ExtraInfo
+  
+  /** The extra information will only be computed if we are also creating the calculation log. */
+  std::shared_ptr<const ExtraInfo> m_user_info;
+};//struct PeakResultPlotInf
+  
   
   
 class ShieldingSourceChi2Fcn

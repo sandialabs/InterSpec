@@ -221,6 +221,59 @@ string Chi2Graphic::to_json( const int ndof,
         jpoint["numBackground"] = point.m_user_info->m_back_peak_area;
         jpoint["numBackgroundUncert"] = point.m_user_info->m_back_peak_area_uncert;
       }
+      
+      if( point.m_user_info->m_det_eff > 0 )
+        jpoint["detEff"] = point.m_user_info->m_det_eff;
+      
+      if( point.m_user_info->m_det_intrinsic_eff > 0 )
+        jpoint["detIntrinsicEff"] = point.m_user_info->m_det_intrinsic_eff;
+      
+      if( point.m_user_info->m_det_solid_angle > 0 )
+        jpoint["detSolidAngle"] = point.m_user_info->m_det_solid_angle;
+      
+      
+      if( !point.m_user_info->m_sources_info.empty() )
+      {
+        Wt::Json::Array &srcs = jpoint["sourcesInfo"] = Wt::Json::Array{};
+        
+        for( const GammaInteractionCalc::PeakDetailSrc &src : point.m_user_info->m_sources_info )
+        {
+          Wt::Json::Object jsonsrc;
+          jsonsrc["name"] = WString::fromUTF8( src.nuclide ? src.nuclide->symbol : std::string{} );
+          jsonsrc["energy"] = src.energy;
+          jsonsrc["br"] = src.br;
+          jsonsrc["cps"] = src.cps;
+          jsonsrc["counts"] = src.counts;
+          
+          //src.age;
+          //src.calcActivity
+          //... there are other quantities we could put here, but its not clear we would use
+          if( src.decayCorrection > 0.0 )
+            jsonsrc["decayCorrection"] = src.decayCorrection;
+          
+          srcs.push_back( jsonsrc );
+        }//for( loop over point.m_user_info->m_sources_info )
+      }//if( !point.m_user_info->m_sources_info.empty() )
+      
+      if( !point.m_user_info->m_volumetric_srcs.empty() )
+      {
+        Wt::Json::Array &srcs = jpoint["volumetricSources"] = Wt::Json::Array{};
+        
+        for( const GammaInteractionCalc::PeakDetail::VolumeSrc &src : point.m_user_info->m_volumetric_srcs )
+        {
+          Wt::Json::Object jsonsrc;
+          jsonsrc["name"] = WString::fromUTF8( src.sourceName );
+          jsonsrc["type"] = WString::fromUTF8( src.trace ? "Trace" : "Self-Attenuating" );
+          jsonsrc["volumetricActivity"] = src.srcVolumetricActivity;
+          jsonsrc["detectorIntrinsicEff"] = src.detIntrinsicEff;
+          if( src.trace )
+          {
+            jsonsrc["inSituExponential"] = src.inSituExponential;
+            jsonsrc["relaxationLength_mm"] = src.inSituRelaxationLength; //TODO: should print to proper length, or divide by `PhysicalUnits::mm`
+          }
+          srcs.push_back( jsonsrc );
+        }//for( loop over point.m_user_info->m_volumetric_srcs )
+      }//if( !point.m_user_info->m_volumetric_srcs.empty() )
     }//if( point.m_user_info )
     
     points.push_back( std::move(jpoint) );
@@ -281,7 +334,7 @@ void Chi2Graphic::dataPointMousedOver( const std::string &tooltip_id, const doub
   const bool compact = true;
   shared_ptr<const ColorTheme> theme = viewer->getColorTheme();
   const vector<std::shared_ptr<const ReferenceLineInfo>> reflines;
-  const int width_px = 240, height_px = 160;
+  const int width_px = 300, height_px = 160;
   
   shared_ptr<Wt::WSvgImage> svg = PeakSearchGuiUtils::renderChartToSvg( measurement, peaks,
                                                  reflines, lower_energy, upper_energy,

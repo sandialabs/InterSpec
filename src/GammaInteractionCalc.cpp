@@ -5354,8 +5354,8 @@ vector<PeakResultPlotInfo> ShieldingSourceChi2Fcn::expected_observed_chis(
       auto extra_info = make_shared<PeakResultPlotInfo::ExtraInfo>();
       extra_info->m_peak = make_shared<PeakDef>(peak);
       
-      extra_info->m_observed = peak.peakArea();
-      extra_info->m_observed_uncert = peak.peakAreaUncert();
+      extra_info->m_observed = peak.peakArea();              //observed_counts
+      extra_info->m_observed_uncert = peak.peakAreaUncert(); //observed_uncertainty
       if( backCounts > 0.0 )
       {
         extra_info->m_back_peak_area = backCounts;
@@ -5363,6 +5363,26 @@ vector<PeakResultPlotInfo> ShieldingSourceChi2Fcn::expected_observed_chis(
       }
       
       extra_info->m_expected = expected_counts;
+      
+      auto pos = std::find_if( begin(*log_info), end(*log_info),
+                              [energy]( const GammaInteractionCalc::PeakDetail &val ) {
+        return energy == val.decayParticleEnergy;
+      });
+      
+      assert( pos != end(*log_info) );
+      
+      if( pos != end(*log_info) )
+      {
+        extra_info->m_sources_info = pos->m_sources;
+        extra_info->m_volumetric_srcs = pos->m_volumetric_srcs;
+        
+        extra_info->m_det_eff = pos->detEff;
+        extra_info->m_det_intrinsic_eff = pos->detIntrinsicEff;
+        extra_info->m_det_solid_angle = pos->detSolidAngle;
+        
+        //pos->decayParticleEnergy
+        //pos->m_attenuations
+      }//if( pos != end(*log_info) )
       
       peak_info.m_user_info = extra_info;
     }//if( log_info )
@@ -6000,7 +6020,19 @@ vector<PeakResultPlotInfo>
     for( EnergyCountMap::value_type &energy_count : energy_count_map )
     {
       const double coef = transmission_length_coefficient_air( energy_count.first );
-      energy_count.second *= exp( -1.0 * coef * air_dist );
+      const double atten = exp( -1.0 * coef * air_dist );
+      energy_count.second *= atten;
+      
+      if( log_info )
+      {
+        const double energy = energy_count.first;
+        auto pos = std::find_if( begin(*log_info), end(*log_info), [energy]( const GammaInteractionCalc::PeakDetail &val ) {
+          return energy == val.decayParticleEnergy;
+        });
+        
+        if( pos != end(*log_info) )
+          pos->airAtten = atten; 
+      }//if( log_info )
     }
   }//if( m_options.attenuate_for_air )
   

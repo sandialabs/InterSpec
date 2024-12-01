@@ -462,8 +462,26 @@ Chi2Graphic.prototype.setData = function( data ) {
         + (d.numBackground ? "<div>Num Background: " + d.numBackground.toFixed(1) + " &pm; " + d.numBackgroundUncert.toFixed(1) + "</div>" : "")
         + "<div>Num Sigma Off: " + d.numSigmaOff.toPrecision(5) + "</div>"
         + "<div>Obs/Exp: " + d.observedOverExpected.toPrecision(5) + " &pm; " + d.observedOverExpectedUncert.toPrecision(5) + "</div>"
-        + "<div>Nuclide: " + d.nuclide + "</div>"
-        + "<div class='tt-chart' />"
+        + "<div>Peaks Nuclide: " + d.nuclide + "</div>";
+      if( d.sourcesInfo && (d.sourcesInfo.length > 0) ){
+        txt += "<div class=\"SourcesInfoArea\">Sources contributing:"
+        txt += "<ul class=\"SourcesInfoList\">"
+        for( let i = 0; i < d.sourcesInfo.length; ++i ){
+          const a = d.sourcesInfo[i];
+          txt += "<li>" + a.name  + ", " + a.energy.toFixed(2) + " keV:";
+          
+          if( d.detEff ){
+            const b = a.counts * d.detEff;
+            txt += " cnts=" + (b > 1E5 ? b.toExponential(3) : b.toFixed(1)) + ","
+          }
+          txt += " br=" + a.br.toExponential(3)
+                 + "</li>";
+        }
+        txt += "</ul>"
+        txt += "</div>"
+      }
+        
+      txt += "<div class='tt-chart' />"
         + "</div>";
             
       self.tooltip.html(txt);
