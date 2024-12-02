@@ -211,39 +211,39 @@ string Chi2Graphic::to_json( const int ndof,
       nuclide = peak->parentNuclide()->symbol;
     jpoint["nuclide"] = WString::fromUTF8(nuclide);
     
-    if( point.m_user_info )
+    const shared_ptr<const GammaInteractionCalc::PeakResultPlotInfo::ExtraInfo> &user_info = point.m_user_info;
+    if( user_info )
     {
-      jpoint["numObserved"] = point.m_user_info->m_observed;
-      jpoint["numObservedUncert"] = point.m_user_info->m_observed_uncert;
-      jpoint["numExpected"] = point.m_user_info->m_expected;
-      if( point.m_user_info->m_back_peak_area > 0 )
+      jpoint["numObserved"] = user_info->m_observed;
+      jpoint["numObservedUncert"] = user_info->m_observed_uncert;
+      jpoint["numExpected"] = user_info->m_expected;
+      if( user_info->m_back_peak_area > 0 )
       {
-        jpoint["numBackground"] = point.m_user_info->m_back_peak_area;
-        jpoint["numBackgroundUncert"] = point.m_user_info->m_back_peak_area_uncert;
+        jpoint["numBackground"] = user_info->m_back_peak_area;
+        jpoint["numBackgroundUncert"] = user_info->m_back_peak_area_uncert;
       }
       
-      if( point.m_user_info->m_det_eff > 0 )
-        jpoint["detEff"] = point.m_user_info->m_det_eff;
+      if( user_info->m_det_eff > 0 )
+        jpoint["detEff"] = user_info->m_det_eff;
       
-      if( point.m_user_info->m_det_intrinsic_eff > 0 )
-        jpoint["detIntrinsicEff"] = point.m_user_info->m_det_intrinsic_eff;
+      if( user_info->m_det_intrinsic_eff > 0 )
+        jpoint["detIntrinsicEff"] = user_info->m_det_intrinsic_eff;
       
-      if( point.m_user_info->m_det_solid_angle > 0 )
-        jpoint["detSolidAngle"] = point.m_user_info->m_det_solid_angle;
+      if( user_info->m_det_solid_angle > 0 )
+        jpoint["detSolidAngle"] = user_info->m_det_solid_angle;
       
-      
-      if( !point.m_user_info->m_sources_info.empty() )
+      if( !user_info->m_calc_details.m_sources.empty() )
       {
         Wt::Json::Array &srcs = jpoint["sourcesInfo"] = Wt::Json::Array{};
         
-        for( const GammaInteractionCalc::PeakDetailSrc &src : point.m_user_info->m_sources_info )
+        for( const GammaInteractionCalc::PeakDetailSrc &src : user_info->m_calc_details.m_sources )
         {
           Wt::Json::Object jsonsrc;
           jsonsrc["name"] = WString::fromUTF8( src.nuclide ? src.nuclide->symbol : std::string{} );
           jsonsrc["energy"] = src.energy;
           jsonsrc["br"] = src.br;
-          jsonsrc["cps"] = src.cps;
-          jsonsrc["counts"] = src.counts;
+          jsonsrc["cps"] = src.modelContribToPeak / user_info->m_live_time;
+          jsonsrc["counts"] = src.modelContribToPeak;
           
           //src.age;
           //src.calcActivity
@@ -252,14 +252,14 @@ string Chi2Graphic::to_json( const int ndof,
             jsonsrc["decayCorrection"] = src.decayCorrection;
           
           srcs.push_back( jsonsrc );
-        }//for( loop over point.m_user_info->m_sources_info )
-      }//if( !point.m_user_info->m_sources_info.empty() )
+        }//for( loop over point.m_calc_details.m_sources )
+      }//if( !user_info->m_sources_info.empty() )
       
-      if( !point.m_user_info->m_volumetric_srcs.empty() )
+      if( !user_info->m_calc_details.m_volumetric_srcs.empty() )
       {
         Wt::Json::Array &srcs = jpoint["volumetricSources"] = Wt::Json::Array{};
         
-        for( const GammaInteractionCalc::PeakDetail::VolumeSrc &src : point.m_user_info->m_volumetric_srcs )
+        for( const GammaInteractionCalc::PeakDetail::VolumeSrc &src : user_info->m_calc_details.m_volumetric_srcs )
         {
           Wt::Json::Object jsonsrc;
           jsonsrc["name"] = WString::fromUTF8( src.sourceName );
@@ -272,8 +272,8 @@ string Chi2Graphic::to_json( const int ndof,
             jsonsrc["relaxationLength_mm"] = src.inSituRelaxationLength; //TODO: should print to proper length, or divide by `PhysicalUnits::mm`
           }
           srcs.push_back( jsonsrc );
-        }//for( loop over point.m_user_info->m_volumetric_srcs )
-      }//if( !point.m_user_info->m_volumetric_srcs.empty() )
+        }//for( loop over user_info->m_volumetric_srcs )
+      }//if( !user_info->m_volumetric_srcs.empty() )
     }//if( point.m_user_info )
     
     points.push_back( std::move(jpoint) );

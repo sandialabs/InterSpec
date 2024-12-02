@@ -5360,52 +5360,6 @@ vector<PeakResultPlotInfo> ShieldingSourceChi2Fcn::expected_observed_chis(
     const double scale = observed_counts / expected_counts;
     const double scale_uncert = observed_uncertainty / expected_counts;
     
-    PeakResultPlotInfo peak_info;
-    peak_info.energy = energy;
-    peak_info.numSigmaOff = chi;
-    peak_info.observedOverExpected = scale;
-    peak_info.observedOverExpectedUncert = scale_uncert;
-    
-    if( log_info )
-    {
-      auto extra_info = make_shared<PeakResultPlotInfo::ExtraInfo>();
-      extra_info->m_peak = make_shared<PeakDef>(peak);
-      
-      extra_info->m_observed = peak.peakArea();              //observed_counts
-      extra_info->m_observed_uncert = peak.peakAreaUncert(); //observed_uncertainty
-      if( backCounts > 0.0 )
-      {
-        extra_info->m_back_peak_area = backCounts;
-        extra_info->m_back_peak_area_uncert = sqrt(backUncert2);
-      }
-      
-      extra_info->m_expected = expected_counts;
-      
-      auto pos = std::find_if( begin(*log_info), end(*log_info),
-                              [energy]( const GammaInteractionCalc::PeakDetail &val ) {
-        return energy == val.decayParticleEnergy;
-      });
-      
-      assert( pos != end(*log_info) );
-      
-      if( pos != end(*log_info) )
-      {
-        extra_info->m_sources_info = pos->m_sources;
-        extra_info->m_volumetric_srcs = pos->m_volumetric_srcs;
-        
-        extra_info->m_det_eff = pos->detEff;
-        extra_info->m_det_intrinsic_eff = pos->detIntrinsicEff;
-        extra_info->m_det_solid_angle = pos->detSolidAngle;
-        
-        //pos->decayParticleEnergy
-        //pos->m_attenuations
-      }//if( pos != end(*log_info) )
-      
-      peak_info.m_user_info = extra_info;
-    }//if( log_info )
-    
-    
-    answer.push_back( peak_info );
     
     if( info )
     {
@@ -5475,6 +5429,54 @@ vector<PeakResultPlotInfo> ShieldingSourceChi2Fcn::expected_observed_chis(
         assert( 0 );
       }
     }//if( log_info )
+    
+    PeakResultPlotInfo peak_info;
+    peak_info.energy = energy;
+    peak_info.numSigmaOff = chi;
+    peak_info.observedOverExpected = scale;
+    peak_info.observedOverExpectedUncert = scale_uncert;
+    
+    if( log_info )
+    {
+      auto extra_info = make_shared<PeakResultPlotInfo::ExtraInfo>();
+      extra_info->m_peak = make_shared<PeakDef>(peak);
+      
+      extra_info->m_observed = peak.peakArea();              //observed_counts
+      extra_info->m_observed_uncert = peak.peakAreaUncert(); //observed_uncertainty
+      if( backCounts > 0.0 )
+      {
+        extra_info->m_back_peak_area = backCounts;
+        extra_info->m_back_peak_area_uncert = sqrt(backUncert2);
+      }
+      
+      extra_info->m_expected = expected_counts;
+      
+      auto pos = std::find_if( begin(*log_info), end(*log_info),
+                              [energy]( const GammaInteractionCalc::PeakDetail &val ) {
+        return energy == val.decayParticleEnergy;
+      });
+      
+      assert( pos != end(*log_info) );
+      
+      if( pos != end(*log_info) )
+      {
+        extra_info->m_calc_details = *pos;
+        
+        extra_info->m_live_time = pos->liveTime;
+        
+        extra_info->m_det_eff = pos->detEff;
+        extra_info->m_det_intrinsic_eff = pos->detIntrinsicEff;
+        extra_info->m_det_solid_angle = pos->detSolidAngle;
+        
+        //pos->decayParticleEnergy
+        //pos->m_attenuations
+      }//if( pos != end(*log_info) )
+      
+      peak_info.m_user_info = extra_info;
+    }//if( log_info )
+    
+    
+    answer.push_back( peak_info );
   }//for( const PeakDef &peak : m_peaks )
 
   return answer;
@@ -5766,6 +5768,8 @@ vector<PeakResultPlotInfo>
         
         log_peak.cps = log_peak.counts / m_liveTime;
         log_peak.cpsUncert = log_peak.countsUncert / m_liveTime;
+        
+        log_peak.liveTime = m_liveTime;
         
         if( peak.parentNuclide() )
           log_peak.assignedNuclide = peak.m_parentNuclide->symbol;

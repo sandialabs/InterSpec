@@ -459,7 +459,7 @@ struct PeakDetail
 {
   double energy, decayParticleEnergy, fwhm;
   /** counts=peak.peakArea(); countsUncert=peak.peakAreaUncert();  cps=peak.peakArea()/LiveTime*/
-  double counts, countsUncert, cps, cpsUncert;
+  double counts, countsUncert, cps, cpsUncert, liveTime;
   double expectedCounts, observedCounts, observedUncert, numSigmaOff;
   double observedOverExpected, observedOverExpectedUncert;
   //float modelInto4Pi, modelInto4PiCps;
@@ -530,7 +530,7 @@ struct PeakDetail
   
   PeakDetail()
   : energy( 0.0 ), decayParticleEnergy( 0.0 ), fwhm( 0.0 ), counts( 0.0 ),
-  countsUncert( 0.0 ), cps( 0.0 ), cpsUncert( 0.0 ),
+  countsUncert( 0.0 ), cps( 0.0 ), cpsUncert( 0.0 ), liveTime( 0.0 ),
   expectedCounts( 0.0 ), observedCounts( 0.0 ), observedUncert( 0.0 ),
   numSigmaOff( 0.0 ), observedOverExpected( 0.0 ),
   //modelInto4Pi( 0.0f ), modelInto4PiCps( 0.0f ),
@@ -665,9 +665,9 @@ struct PeakResultPlotInfo
     double m_back_peak_area = -1.0;
     double m_back_peak_area_uncert = -1.0;
     double m_expected = 0.0;
+    double m_live_time = 0.0;
     
-    std::vector<PeakDetailSrc> m_sources_info;
-    std::vector<PeakDetail::VolumeSrc> m_volumetric_srcs;
+    GammaInteractionCalc::PeakDetail m_calc_details;
     
     double m_det_eff = 0.0;
     double m_det_intrinsic_eff = 0.0;

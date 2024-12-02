@@ -324,7 +324,7 @@ Chi2Graphic.prototype.setData = function( data ) {
     
   if( valid_data ){
     min_x -= lower_padding;
-    max_x += 0.025 * initial_x_range;
+    max_x +=  (Math.abs(initial_x_range) < 1.0) ? 1.0 : 0.025 * initial_x_range;
   }
   
   //console.log( "Initial y :{", min_y, ",", max_y, "}" );
@@ -469,11 +469,7 @@ Chi2Graphic.prototype.setData = function( data ) {
         for( let i = 0; i < d.sourcesInfo.length; ++i ){
           const a = d.sourcesInfo[i];
           txt += "<li>" + a.name  + ", " + a.energy.toFixed(2) + " keV:";
-          
-          if( d.detEff ){
-            const b = a.counts * d.detEff;
-            txt += " cnts=" + (b > 1E5 ? b.toExponential(3) : b.toFixed(1)) + ","
-          }
+          txt += " cnts=" + (a.counts > 1E5 ? a.counts.toExponential(3) : a.counts.toFixed(1)) + ","
           txt += " br=" + a.br.toExponential(3)
                  + "</li>";
         }
