@@ -2127,12 +2127,10 @@ bool SourceFitModel::setData( const Wt::WModelIndex &index, const boost::any &va
 }//bool setData(...)
 
 
-bool SourceFitModel::compare( const ShieldingSourceFitCalc::IsoFitStruct &lhs,
-                                const ShieldingSourceFitCalc::IsoFitStruct &rhs,
-                                Columns sortColumn, Wt::SortOrder order )
+bool SourceFitModel::compare( const ShieldingSourceFitCalc::IsoFitStruct &lhs_input,
+                             const ShieldingSourceFitCalc::IsoFitStruct &rhs_input,
+                             Columns sortColumn, Wt::SortOrder order )
 {
-  bool isLess = false;
-  
 #if( INCLUDE_ANALYSIS_TEST_SUITE )
   auto optionalLess = []( const boost::optional<double> &olhs, const boost::optional<double> &orhs) -> bool{
     if( (!olhs) != (!orhs) )
@@ -2140,56 +2138,39 @@ bool SourceFitModel::compare( const ShieldingSourceFitCalc::IsoFitStruct &lhs,
     
     if( !olhs )
       return false;
-      
+    
     return ((*olhs) < (*orhs));
   };
 #endif
   
+  const bool ascend = (order == Wt::AscendingOrder);
+  const ShieldingSourceFitCalc::IsoFitStruct &lhs = ascend ? lhs_input : rhs_input;
+  const ShieldingSourceFitCalc::IsoFitStruct &rhs = ascend ? rhs_input : lhs_input;
   
   switch( sortColumn )
   {
-    case kIsotope:    isLess = (lhs.nuclide->symbol<rhs.nuclide->symbol); break;
-    case kActivity:   isLess = (lhs.activity < rhs.activity);             break;
-    case kFitActivity:isLess = (lhs.fitActivity < rhs.fitActivity);       break;
-    case kAge:        isLess = (lhs.age < rhs.age);                       break;
-    case kFitAge:     isLess = (lhs.fitAge < rhs.fitAge);                 break;
-    case kIsotopeMass:
-      isLess = ((lhs.activity/lhs.nuclide->activityPerGram())
-              < (rhs.activity/rhs.nuclide->activityPerGram()) );
-    break;
-    case kActivityUncertainty:
-      isLess = (lhs.activityUncertainty<rhs.activityUncertainty);
-    break;
-    case kAgeUncertainty:
-      isLess = (lhs.ageUncertainty<rhs.ageUncertainty);
-    break;
+    case kIsotope:     return (lhs.nuclide->symbol < rhs.nuclide->symbol);
+    case kActivity:    return (lhs.activity < rhs.activity);
+    case kFitActivity: return (lhs.fitActivity < rhs.fitActivity);
+    case kAge:         return (lhs.age < rhs.age);
+    case kFitAge:      return (lhs.fitAge < rhs.fitAge);
+    case kIsotopeMass: return ((lhs.activity/lhs.nuclide->activityPerGram())
+                               < (rhs.activity/rhs.nuclide->activityPerGram()) );
+    case kActivityUncertainty: return (lhs.activityUncertainty < rhs.activityUncertainty);
+    case kAgeUncertainty:      return (lhs.ageUncertainty < rhs.ageUncertainty);
       
 #if( INCLUDE_ANALYSIS_TEST_SUITE )
-    case kTruthActivity:
-      isLess = optionalLess( lhs.truthActivity, rhs.truthActivity );
-      break;
-      
-    case kTruthActivityTolerance:
-      isLess = optionalLess( lhs.truthActivityTolerance, rhs.truthActivityTolerance );
-      break;
-      
-    case kTruthAge:
-      isLess = optionalLess( lhs.truthAge, rhs.truthAge );
-      break;
-      
-    case kTruthAgeTolerance:
-      isLess = optionalLess( lhs.truthAgeTolerance, rhs.truthAgeTolerance );
-      break;
+    case kTruthActivity:          return optionalLess( lhs.truthActivity, rhs.truthActivity );
+    case kTruthActivityTolerance: return optionalLess( lhs.truthActivityTolerance, rhs.truthActivityTolerance );
+    case kTruthAge:               return optionalLess( lhs.truthAge, rhs.truthAge );
+    case kTruthAgeTolerance:      return optionalLess( lhs.truthAgeTolerance, rhs.truthAgeTolerance );
 #endif
       
-    case kNumColumns:
-      isLess = false;
-      break;
+    case kNumColumns:  return false;
   }//switch( sortColumn )
-
-  if(order == Wt::AscendingOrder)
-      return !isLess;
-  return isLess;
+  
+  assert( 0 );
+  return false;
 }//bool compare(...);
 
 void SourceFitModel::sort( int column, Wt::SortOrder order )

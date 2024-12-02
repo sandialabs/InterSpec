@@ -688,6 +688,10 @@ void add_basic_src_details( const GammaInteractionCalc::SourceDetails &src,
     peak_json["CpsUncert"] = peak.cpsUncert;
     peak_json["ShieldAttenuations"] = peak.m_attenuations;
     
+    peak_json["AttenuationByShieldingFactor"] = peak.m_totalShieldAttenFactor;
+    peak_json["AttenuationByAirFactor"] = peak.m_airAttenFactor;
+    peak_json["AttenuationTotalFactor"] = peak.m_totalAttenFactor;
+    
     if( peak.backgroundCounts > 0.0 )
     {
       peak_json["BackgroundCounts"] = peak.backgroundCounts;
@@ -736,11 +740,14 @@ void add_basic_src_details( const GammaInteractionCalc::SourceDetails &src,
     gamma_json["BranchingRatio"] = ps.br;
     gamma_json["BranchingRatioStr"] = SpecUtils::printCompact( ps.br, 5 );
     
-    gamma_json["CpsContributedToPeak"] = ps.cps;
-    gamma_json["CpsContributedToPeakStr"] = SpecUtils::printCompact( ps.cps, 5 );
+    gamma_json["PredictedCounts"] = ps.modelContribToPeak;
+    gamma_json["PredictedCountsStr"] = SpecUtils::printCompact(ps.modelContribToPeak, 4);
     
-    gamma_json["CountsContributedToPeak"] = ps.counts;
-    gamma_json["CountsContributedToPeakStr"] = SpecUtils::printCompact( ps.counts, 5 );
+    gamma_json["SourcePhotonsCps"] = ps.cpsAtSource;
+    gamma_json["SourcePhotonsCpsStr"] = SpecUtils::printCompact( ps.cpsAtSource, 5 );
+    
+    gamma_json["SourcePhotons"] = ps.countsAtSource;
+    gamma_json["SourcePhotonsStr"] = SpecUtils::printCompact( ps.countsAtSource, 5 );
     
     gamma_json["HasDecayCorrection"] = (ps.decayCorrection > 0.0);
     if( ps.decayCorrection > 0.0 )
@@ -1127,15 +1134,18 @@ void add_basic_src_details( const GammaInteractionCalc::SourceDetails &src,
           src_json["Energy"] = string(buffer);
           src_json["Energy_keV"] = pksrc.energy;
           
-          src_json["Cps"] = pksrc.cps;
-          src_json["CpsStr"] = SpecUtils::printCompact(pksrc.cps, 4);
+          src_json["SourcePhotonsCps"] = pksrc.cpsAtSource;
+          src_json["SourcePhotonsCpsStr"] = SpecUtils::printCompact(pksrc.cpsAtSource, 4);
           
           src_json["BranchingRatio"] = pksrc.br;
           src_json["BranchingRatioStr"] = SpecUtils::printCompact( pksrc.br, 5 );
           
-          snprintf( buffer, sizeof(buffer), "%.2f", pksrc.counts );
-          src_json["Counts"] = pksrc.counts;
-          src_json["CountsStr"] = string(buffer);
+          snprintf( buffer, sizeof(buffer), "%.2f", pksrc.countsAtSource );
+          src_json["SourcePhotons"] = pksrc.countsAtSource;
+          src_json["SourcePhotonsStr"] = string(buffer);
+          
+          src_json["PredictedCounts"] = pksrc.modelContribToPeak;
+          src_json["PredictedCountsStr"] = SpecUtils::printCompact(pksrc.modelContribToPeak, 4);
         }//for( const GammaInteractionCalc::PeakDetailSrc &pksrc : peak.m_sources )
         
         // We could loop over the volumetric sources, and add info, but...
@@ -1144,6 +1154,8 @@ void add_basic_src_details( const GammaInteractionCalc::SourceDetails &src,
         {
           bool trace;
           double integral;
+          double volume;
+          double averageEfficiencyPerSourceGamma;
           double srcVolumetricActivity;
           bool inSituExponential;
           double inSituRelaxationLength;
