@@ -330,7 +330,7 @@ struct DistributedSrcCalc
 
   GeometryType m_geometry;
   
-  size_t m_sourceIndex;
+  size_t m_materialIndex;
   double m_detectorRadius;
   double m_observationDist;
   
@@ -371,7 +371,7 @@ struct DistributedSrcCalc
    */
   std::vector<std::tuple<std::array<double,3>,double,ShellType> > m_dimensionsTransLenAndType;
 
-  /** The activity per volume of the shielding.
+  /** The photons (i.e., sum of activities times br) per volume of the shielding.
    Is not used during integration; used to multiple integral by to get number of expected peak counts.
    */
   double m_srcVolumetricActivity;
@@ -397,10 +397,11 @@ struct DistributedSrcCalc
 
   
   
-/** A struct to capture the details of each source that contributed to a peak peak.
+  /**
+   A struct to capture the details of each source that contributed to a peak peak.
    
    This is primarily to later turn to JSON, and allow customizing log files, through inja templating.
-*/
+   */
 struct PeakDetailSrc
 {
   const SandiaDecay::Nuclide *nuclide = nullptr;
@@ -409,7 +410,7 @@ struct PeakDetailSrc
   double energy = 0.0;
   /** The number of this energy gamma, per second, for each Bq of parent nuclide. */
   double br = 0.0;
-  double cps = 0.0;
+  double cpsAtSource = 0.0;
   double age = 0.0;
   
   /** For point sources, the activity of the point source.
@@ -429,8 +430,9 @@ struct PeakDetailSrc
   bool isSelfAttenSource = false;//Not used - can be removed
   
   /** This is counts from the source - before transport, shielding, detector efficiency. */
-  double counts = 0.0;
+  double countsAtSource = 0.0;
   //double countsUncert = 0.0;
+
   double ageUncert = 0.0;//Not used - can be removed
   //bool ageIsFit = false;
   //bool canFitAge = false;
@@ -443,6 +445,9 @@ struct PeakDetailSrc
   double massFraction = 0.0;//Not used - can be removed
   double massFractionUncert = 0.0;//Not used - can be removed
   bool isFittingMassFraction = false;//Not used - can be removed
+  
+  /** The expected number of counts contributed by this source, to the peak. */
+  double modelContribToPeak = 0.0;
 };//struct PeakDetailSrc
   
   
@@ -465,6 +470,10 @@ struct PeakDetail
   
   std::string assignedNuclide;
   
+  /** Further information about the sources that contribute to this peak.
+   Please note that the `PeakDetailSrc` are not entirely filled out at creation, so do not rely on the member variables
+   being accurate until the end of the calculations.
+   */
   std::vector<PeakDetailSrc> m_sources;
   
   /** The fractional attenuation by this material (e.g., no attenuation is 1.0. Not valid for volumetric sources.
@@ -472,12 +481,41 @@ struct PeakDetail
    */
   std::vector<double> m_attenuations;
   
+  /** The total attenuation factor (i.e., fraction no-interactions; 1.0 is no attenuation, 0.0 is total attentuation), that
+   all the shieldings cause.
+   Only valid for point sources.
+   */
+  double m_totalShieldAttenFactor;
+  /** The attenuation, due to air, between the last shielding and the detector.
+   For volumetric sources, this is only approximate
+   */
+  double m_airAttenFactor;
+  
+  /** The total attenuation of the source from all shielding and air.  For volumetric sources, this will only be approximate.
+   */
+  double m_totalAttenFactor;
+  
   // TODO: for self-attenuating sources, could repeat the computation, put with only the source shell, then shell+1-other, then shell+different-1-other, and so on, to get the effect of each shell.
   
   struct VolumeSrc
   {
     bool trace; // Trace or intrinsic
+    
+    /** The integral of the efficiency to make it to the detector, over the source area.
+     i.e., the shielding area times average efficiency to make it to the detector face.
+     Does not include detector intrinsic efficiency.
+     */
     double integral;
+    
+    /** The volume of the shielding. */
+    double volume;
+    
+    /** `integral / volume` */
+    double averageEfficiencyPerSourceGamma;
+    
+    /** The gammas per second, per unit-volume, for this source energy.
+     This value times `VolumeSrc::integral` gives the expected number of gammas, at this energy, to strike the detector face.
+     */
     double srcVolumetricActivity;
     
     bool inSituExponential;        //Not used - can be removed
@@ -496,8 +534,11 @@ struct PeakDetail
   expectedCounts( 0.0 ), observedCounts( 0.0 ), observedUncert( 0.0 ),
   numSigmaOff( 0.0 ), observedOverExpected( 0.0 ),
   //modelInto4Pi( 0.0f ), modelInto4PiCps( 0.0f ),
-  detSolidAngle( 0.0 ), detIntrinsicEff( 0.0 ), detEff( 0.0 ), airAtten( -1.0 ),
-  backgroundCounts( 0.0f ), backgroundCountsUncert( 0.0f )
+  detSolidAngle( 0.0 ), detIntrinsicEff( 0.0 ), detEff( 0.0 ),
+  backgroundCounts( 0.0f ), backgroundCountsUncert( 0.0f ),
+  assignedNuclide{}, m_sources{}, m_attenuations{},
+  m_totalShieldAttenFactor( 1.0 ), m_airAttenFactor( 1.0 ),
+  m_totalAttenFactor( 1.0 )
   {
   }
 };//struct PeakDetail

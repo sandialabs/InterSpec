@@ -2132,8 +2132,8 @@ bool SourceFitModel::setData( const Wt::WModelIndex &index, const boost::any &va
 
 
 bool SourceFitModel::compare( const ShieldingSourceFitCalc::IsoFitStruct &lhs_input,
-                                const ShieldingSourceFitCalc::IsoFitStruct &rhs_input,
-                                Columns sortColumn, Wt::SortOrder order )
+                             const ShieldingSourceFitCalc::IsoFitStruct &rhs_input,
+                             Columns sortColumn, Wt::SortOrder order )
 {
 #if( INCLUDE_ANALYSIS_TEST_SUITE )
   auto optionalLess = []( const boost::optional<double> &olhs, const boost::optional<double> &orhs) -> bool{
@@ -2142,7 +2142,7 @@ bool SourceFitModel::compare( const ShieldingSourceFitCalc::IsoFitStruct &lhs_in
     
     if( !olhs )
       return false;
-      
+    
     return ((*olhs) < (*orhs));
   };
 #endif
@@ -2159,7 +2159,7 @@ bool SourceFitModel::compare( const ShieldingSourceFitCalc::IsoFitStruct &lhs_in
     case kAge:         return (lhs.age < rhs.age);
     case kFitAge:      return (lhs.fitAge < rhs.fitAge);
     case kIsotopeMass: return ((lhs.activity/lhs.nuclide->activityPerGram())
-                                  < (rhs.activity/rhs.nuclide->activityPerGram()) );
+                               < (rhs.activity/rhs.nuclide->activityPerGram()) );
     case kActivityUncertainty: return (lhs.activityUncertainty < rhs.activityUncertainty);
     case kAgeUncertainty:      return (lhs.ageUncertainty < rhs.ageUncertainty);
       
@@ -2172,7 +2172,7 @@ bool SourceFitModel::compare( const ShieldingSourceFitCalc::IsoFitStruct &lhs_in
       
     case kNumColumns:  return false;
   }//switch( sortColumn )
-
+  
   assert( 0 );
   return false;
 }//bool compare(...);
