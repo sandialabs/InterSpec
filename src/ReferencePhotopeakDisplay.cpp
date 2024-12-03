@@ -523,32 +523,34 @@ namespace
   
 }//namespace
 
-bool DecayParticleModel::less_than( const DecayParticleModel::RowData &lhs,
-                                    const DecayParticleModel::RowData &rhs,
+bool DecayParticleModel::less_than( const DecayParticleModel::RowData &lhs_input,
+                                    const DecayParticleModel::RowData &rhs_input,
                                     const DecayParticleModel::Column c,
                                     const SortOrder order )
 {
-
-  bool less = false;
-
+  const bool less = (order == Wt::AscendingOrder);
+  
+  const DecayParticleModel::RowData &lhs = less ? lhs_input : rhs_input;
+  const DecayParticleModel::RowData &rhs = less ? rhs_input : lhs_input;
+  
   switch( c )
   {
-    case kEnergy:         less = (lhs.energy < rhs.energy);           break;
-    case kBranchingRatio: less = (lhs.branchRatio < rhs.branchRatio); break;
+    case kEnergy:         return (lhs.energy < rhs.energy);
+    case kBranchingRatio: return (lhs.branchRatio < rhs.branchRatio);
     case kResponsibleNuc:
       if( !lhs.responsibleNuc || !rhs.responsibleNuc )
-        less = false;
+        return lhs.responsibleNuc < rhs.responsibleNuc;
       else
-        less = SandiaDecay::Nuclide::lessThanForOrdering( lhs.responsibleNuc, rhs.responsibleNuc );
+        return SandiaDecay::Nuclide::lessThanForOrdering( lhs.responsibleNuc, rhs.responsibleNuc );
     break;
-    case kDecayMode:      less = (lhs.decayMode < rhs.decayMode);     break;
-    case kParticleType:   less = (lhs.particle < rhs.particle);       break;
+    case kDecayMode:      return (lhs.decayMode < rhs.decayMode);
+    case kParticleType:   return (lhs.particle < rhs.particle);
     case kNumColumn:      return false;
   }//switch( r )
 
-  if( order == Wt::AscendingOrder )
-    return less;
-  return !less;
+  assert( 0 );
+  
+  return false;
 }//less_than(...)
 
 
