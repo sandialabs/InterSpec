@@ -361,7 +361,12 @@ void fit_peaks_in_files( const std::string &exemplar_filename,
     summary_json["ExemplarSampleNumbers"] = vector<int>{begin(exemplar_sample_nums), end(exemplar_sample_nums)};
   summary_json["InputFiles"] = files;
   for( const pair<string,string> &key_val : spec_chart_js_and_css )
+  {
+    if( (key_val.first == "Chi2Graphic_JS") || (key_val.first == "Chi2Graphic_CSS") ) //we dont need these for just peak fits
+      continue;
+    
     summary_json[key_val.first] = key_val.second;
+  }
   
   std::shared_ptr<const SpecMeas> cached_exemplar_n42;
   for( const string filename : files )

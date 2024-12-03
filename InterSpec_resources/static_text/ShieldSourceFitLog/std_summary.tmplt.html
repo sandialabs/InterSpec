@@ -59,6 +59,16 @@
     {{ SpectrumChart_CSS }}
     </style>
 
+    <!-- D3-based Chi/Scale chart JS -->
+    <script>
+    {{ Chi2Graphic_JS }}
+    </script>
+
+    <!-- D3-based Chi/Scale chart CSS -->
+    <style>
+    {{ Chi2Graphic_CSS }}
+    </style>
+
     <!-- Some CSS to override SpectrumChartD3 defaults -->
     <style>
       
@@ -116,9 +126,55 @@
 </div>
 {% endif %}
 
+  {% if existsIn(file,"PeakToModelComparison") %}
+  {% if existsIn(file.PeakToModelComparison,"ChartData") %}
+    <div style="display: flex; flex-direction: row; justify-content: space-evenly; width: 100%; overflow-x: hidden;">
+      <div id="specchart_{{loop.index1}}" style="height: 20vw; width: 70vw;">
+      </div>
 
-  <div id="specchart_{{loop.index1}}" style="height: 20vw; width: 75vw; margin-left: auto; margin-right: auto;">
-  </div>
+      <div id="chichart_{{loop.index1}}" style="height: 15vw; width: 20vw; margin-top: 2.5vw;">
+      </div>
+    </div>
+
+    <script>
+      const chiChartOpts_{{loop.index1}} = {
+        displayType: 0, //displayType==0 is Pull chart, displayType==1 is Scale chart  
+        xAxisTitle: "Energy (keV)",
+        yAxisChiTitle: "(observed-model)/uncert",
+        yAxisScaleTitle: "Mult. of Model",
+        titleToAxisPadding: 1,
+        margins: {
+          top: 5, 
+          right: 5,
+          bottom: 0,
+          left: 5
+        }
+      };
+
+      const chi_chart_{{loop.index1}} = new Chi2Graphic( 'chichart_{{loop.index1}}',  chiChartOpts_{{loop.index1}} );
+
+      let chi_observer_{{loop.index1}} = new ResizeObserver(entries => {
+          for (let entry of entries) {
+            if (entry.target && (entry.target.id === "chichart_{{loop.index1}}")) {
+              chi_chart_{{loop.index1}}.handleResize();
+            }
+          }
+        });
+      chi_observer_{{loop.index1}}.observe( document.getElementById("chichart_{{loop.index1}}") );
+
+      const chi_json_{{loop.index1}} = {{ file.PeakToModelComparison.ChartData }};
+      chi_chart_{{loop.index1}}.setData( chi_json_{{loop.index1}} );
+    </script>
+  {% else %}
+    <div id="specchart_{{loop.index1}}" style="height: 20vw; width: 75vw; margin-left: auto; margin-right: auto;">
+    </div>
+  {% endif %}
+  {% else %}
+    <div id="specchart_{{loop.index1}}" style="height: 20vw; width: 75vw; margin-left: auto; margin-right: auto;">
+    </div>
+  {% endif %}
+
+  
 
   <script>
     let spec_chart_{{loop.index1}} = new SpectrumChartD3( 'specchart_{{loop.index1}}',  {

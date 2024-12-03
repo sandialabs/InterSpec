@@ -59,6 +59,17 @@
     {{ SpectrumChart_CSS }}
     </style>
 
+    <!-- D3-based Chi/Scale chart JS -->
+    <script>
+    {{ Chi2Graphic_JS }}
+    </script>
+
+    <!-- D3-based Chi/Scale chart CSS -->
+    <style>
+    {{ Chi2Graphic_CSS }}
+    </style>
+
+
     <!-- Some CSS to override SpectrumChartD3 defaults -->
     <style>
       
@@ -90,8 +101,25 @@
   </div>
   {% endif %}
 
-  <div id="specchart" style="height: 30vw; width: 80vw; margin-left: auto; margin-right: auto;">
-  </div>
+  
+
+  {% if exists("PeakToModelComparison") %}
+  {% if existsIn(PeakToModelComparison,"ChartData") %}
+    <div style="display: flex; flex-direction: row; justify-content: space-evenly; width: 100%; overflow-x: hidden;">
+      <div id="specchart" style="height: 30vw; width: 70vw;">
+      </div>
+
+      <div id="chichart" style="height: 20vw; width: 25vw; margin-top: 5vw;">
+      </div>
+    </div>
+  {% else %}
+    <div id="specchart" style="height: 30vw; width: 80vw; margin-left: auto; margin-right: auto;">
+    </div>
+  {% endif %}
+  {% else %}
+    <div id="specchart" style="height: 30vw; width: 80vw; margin-left: auto; margin-right: auto;">
+    </div>
+  {% endif %}
 
   <div id="results" style="margin-top: 15px">
 
@@ -492,6 +520,41 @@ Sources:
       spec_chart_specchart.setData( spectrum_json );
       spec_chart_specchart.setLogY( true );
   </script>
+
+{% if exists("PeakToModelComparison") %}
+{% if existsIn(PeakToModelComparison,"ChartData") %}
+  <script>
+    const chiChartOpts = {
+      displayType: 0, //displayType==0 is Pull chart, displayType==1 is Scale chart  
+      xAxisTitle: "Energy (keV)",
+      yAxisChiTitle: "(observed-model)/uncert",
+      yAxisScaleTitle: "Mult. of Model",
+      titleToAxisPadding: 1,
+      margins: {
+        top: 5, 
+        right: 5,
+        bottom: 0,
+        left: 5
+      }
+    };
+
+    const chi_chart = new Chi2Graphic( 'chichart',  chiChartOpts );
+
+    let chi_observer = new ResizeObserver(entries => {
+        for (let entry of entries) {
+          if (entry.target && (entry.target.id === "chichart")) {
+            chi_chart.handleResize();
+          }
+        }
+      });
+    chi_observer.observe( document.getElementById("chichart") );
+
+    const chi_json = {{ PeakToModelComparison.ChartData }};
+    chi_chart.setData( chi_json );
+  </script>
+{% endif %} <!-- if existsIn(PeakToModelComparison,"ChartData") -->
+{% endif %} <!-- if exists("PeakToModelComparison") -->
+
 {% endif %} <!-- if exists("foreground") --> 
 
 {% if exists("Shieldings") %}

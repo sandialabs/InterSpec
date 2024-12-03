@@ -43,6 +43,7 @@
 #include "InterSpec/BatchPeak.h"
 #include "InterSpec/EnergyCal.h"
 #include "InterSpec/InterSpec.h"
+#include "InterSpec/Chi2Graphic.h"
 #include "InterSpec/BatchInfoLog.h"
 #include "InterSpec/BatchActivity.h"
 #include "InterSpec/PhysicalUnits.h"
@@ -211,9 +212,19 @@ namespace BatchInfoLog
     string sc_js  = AppUtils::file_contents( SpecUtils::append_path( docroot, sc_js_fn ) );
     string sc_css = AppUtils::file_contents( SpecUtils::append_path( docroot, sc_css_fn ) );
     
+    
+    const string chi_js_fcn = SpecUtils::is_file( SpecUtils::append_path( docroot, "Chi2Graphic.min.js") )
+                            ? "Chi2Graphic.min.js" : "Chi2Graphic.js";
+    const string chi_css_fn = SpecUtils::is_file( SpecUtils::append_path( docroot, "Chi2Graphic.min.css") )
+                            ? "Chi2Graphic.min.css" : "Chi2Graphic.css";
+    string chi_js  = AppUtils::file_contents( SpecUtils::append_path( docroot, chi_js_fcn ) );
+    string chi_css = AppUtils::file_contents( SpecUtils::append_path( docroot, chi_css_fn ) );
+    
     answer.emplace_back( "D3_JS", std::move(d3_js) );
     answer.emplace_back( "SpectrumChart_JS", std::move(sc_js) );
     answer.emplace_back( "SpectrumChart_CSS", std::move(sc_css) );
+    answer.emplace_back( "Chi2Graphic_JS", std::move(chi_js) );
+    answer.emplace_back( "Chi2Graphic_CSS", std::move(chi_css) );
 #endif // SpecUtils_ENABLE_D3_CHART
     
     return answer;
@@ -1208,8 +1219,24 @@ void add_basic_src_details( const GammaInteractionCalc::SourceDetails &src,
         p_json["ObservedOverExpected"] = SpecUtils::printCompact( p.observedOverExpected, 6 );
         p_json["ObservedOverExpectedUncert"] = SpecUtils::printCompact( p.observedOverExpectedUncert, 6 );
       }
+      
+      string chi_plot_json_str = Chi2Graphic::to_json( results.numDOF, *results.peak_comparisons );
+      
+      if( !chi_plot_json_str.empty() )
+      {
+        try
+        {
+          nlohmann::json plot_json = nlohmann::json::parse( chi_plot_json_str );
+          energy_obj["ChartData"] = std::move(plot_json);
+        }catch( std::exception &e )
+        { 
+          cerr << "Failed to parse Chi JSON: " << e.what()
+          << "\n\nJSON: " << chi_plot_json_str << endl << endl;
+          assert( 0 );
+        }
+      }//if( !chi_plot_json_str.empty() )
     }//if( results.peak_comparisons )
-    
+   
   }//void shield_src_fit_results_to_json()
   
   
@@ -1900,6 +1927,10 @@ void add_basic_src_details( const GammaInteractionCalc::SourceDetails &src,
           json_copy["SpectrumChart_JS"] = "/* Removed for brevity - this string will have a value of the contents of the file InterSpec_resource/SpectrumChartD3.js during analysis in InterSpec_batch.  */";
         if( json_copy.count("SpectrumChart_CSS") )
           json_copy["SpectrumChart_CSS"] = "/* Removed for brevity - this string will have a value of the contents of the file InterSpec_resource/SpectrumChartD3.css during analysis in InterSpec_batch. */";
+        if( json_copy.count("Chi2Graphic_CSS") )
+          json_copy["Chi2Graphic_CSS"] = "/* Removed for brevity - this string will have a value of the contents of the file InterSpec_resource/Chi2Graphic.css during analysis in InterSpec_batch. */";
+        if( json_copy.count("Chi2Graphic_JS") )
+          json_copy["Chi2Graphic_JS"] = "/* Removed for brevity - this string will have a value of the contents of the file InterSpec_resource/Chi2Graphic.js during analysis in InterSpec_batch. */";
   #endif // SpecUtils_ENABLE_D3_CHART
         
         output_json << std::setw(4) << json_copy << std::endl;

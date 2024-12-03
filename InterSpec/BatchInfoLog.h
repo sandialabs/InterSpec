@@ -91,7 +91,8 @@ namespace BatchInfoLog
    "D3_JS":                        contents of `InterSpec_resources/d3.v3.min.js`
    "SpectrumChart_JS":    contents of `InterSpec_resources/SpectrumChartD3.js`
    "SpectrumChart_CSS": contents of `InterSpec_resources/SpectrumChartD3.css`
-   
+   "Chi2Graphic_JS":         contents of `InterSpec_resources/Chi2Graphic.js"
+   "Chi2Graphic_CSS":     contents of `InterSpec_resources/Chi2Graphic.css"
    */
   std::vector<std::pair<std::string,std::string>> load_spectrum_chart_js_and_css();
   
