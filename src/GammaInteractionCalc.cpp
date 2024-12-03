@@ -246,7 +246,8 @@ vector<SandiaDecay::EnergyRatePair> decay_during_meas_corrected_gammas(
                                                       const double age,
                                                       const double measDuration )
 {
-  
+  // TODO: SandiaDecay had `SandiaDecay::NuclideMixture::decayPhotonsInInterval(...)` added 20241124
+  //       so we could use that code, however, not doing that now because it is single threaded.
   // This section of code takes up a good amount of CPU time, and is really begging for optimizations
   //
   // TODO: if nuclide decays to stable children, then just use standard formula to correct for decay (see below developer check for this)
@@ -347,6 +348,22 @@ vector<SandiaDecay::EnergyRatePair> decay_during_meas_corrected_gammas(
   //       << gammas[i].numPerSecond << ")" << endl;
   
 #if( PERFORM_DEVELOPER_CHECKS )
+  {// begin check against SandiaDecay calc
+    const vector<SandiaDecay::EnergyCountPair> sdanswer
+            = mixture.decayPhotonsInInterval( age, measDuration,
+                                             SandiaDecay::NuclideMixture::OrderByEnergy,
+                                            characteristic_time_slices );
+    assert( corrected_gammas.size() == sdanswer.size() );
+    for( size_t i = 0; i < corrected_gammas.size(); ++i )
+    {
+      const double sdRate = sdanswer[i].count / measDuration;
+      const double localRate = corrected_gammas[i].numPerSecond;
+      assert( sdanswer[i].energy == corrected_gammas[i].energy );
+      assert( (fabs(sdRate - localRate) < 1.0E-10*std::max(sdRate, localRate))
+             || (fabs(sdRate - localRate) < 1.0E-14) );
+    }
+  }// end check against SandiaDecay calc
+  
   if( nuclide->decaysToStableChildren() )
   {
     const double lambda = nuclide->decayConstant();
@@ -539,7 +556,7 @@ void example_integration()
   
     const double energy = 185.0*PhysicalUnits::keV;
     ObjectToIntegrate.m_geometry = GeometryType::Spherical;
-    ObjectToIntegrate.m_sourceIndex = 0;
+    ObjectToIntegrate.m_materialIndex = 0;
     ObjectToIntegrate.m_attenuateForAir = false;
     ObjectToIntegrate.m_airTransLenCoef = 0.0;
     ObjectToIntegrate.m_isInSituExponential = false;
@@ -566,7 +583,7 @@ void example_integration()
 #else
     ObjectToIntegrate.m_dimensionsTransLenAndType.push_back( {{sphereRad,0.0,0.0},transLenCoef,DistributedSrcCalc::ShellType::Material} );
 #endif
-    ObjectToIntegrate.m_sourceIndex = ObjectToIntegrate.m_dimensionsTransLenAndType.size() - 1;
+    ObjectToIntegrate.m_materialIndex = ObjectToIntegrate.m_dimensionsTransLenAndType.size() - 1;
 
     material = materialdb.material( "Fe" );
     transLenCoef = GammaInteractionCalc::transmition_length_coefficient( material, energy );
@@ -698,7 +715,7 @@ int DistributedSrcCalc_integrand_rectangular( const int *ndim, const double xx[]
 DistributedSrcCalc::DistributedSrcCalc()
 {
   m_geometry = GeometryType::NumGeometryType;
-  m_sourceIndex = 0;
+  m_materialIndex = 0;
   m_detectorRadius = -1.0;
   m_observationDist = -1.0;
   m_attenuateForAir = false;
@@ -740,18 +757,18 @@ void DistributedSrcCalc::eval_spherical( const double xx[], const int *ndimptr,
                         double ff[], const int *ncompptr ) const
 {
   assert( m_geometry == GeometryType::Spherical );
-  assert( m_sourceIndex < m_dimensionsTransLenAndType.size() );
-  assert( std::get<2>(m_dimensionsTransLenAndType[m_sourceIndex]) == ShellType::Material );
+  assert( m_materialIndex < m_dimensionsTransLenAndType.size() );
+  assert( std::get<2>(m_dimensionsTransLenAndType[m_materialIndex]) == ShellType::Material );
   
   const double pi = PhysicalUnits::pi;
   
   const int ndim = (ndimptr ? (*ndimptr) : 3);
 
-  const double source_inner_rad = ((m_sourceIndex>0)
-                            ? std::get<0>(m_dimensionsTransLenAndType[m_sourceIndex-1])[0]
+  const double source_inner_rad = ((m_materialIndex>0)
+                            ? std::get<0>(m_dimensionsTransLenAndType[m_materialIndex-1])[0]
                             : 0.0);
   
-  const std::array<double,3> &dimensions = std::get<0>(m_dimensionsTransLenAndType[m_sourceIndex]);
+  const std::array<double,3> &dimensions = std::get<0>(m_dimensionsTransLenAndType[m_materialIndex]);
   const double source_outer_rad = dimensions[0];
 
   //cuba goes from 0 to one, so we have to scale the variables
@@ -788,8 +805,8 @@ void DistributedSrcCalc::eval_spherical( const double xx[], const int *ndimptr,
   {//begin code-block to compute distance through source
     // - this could probably be cleaned up and made more efficient
     double exit_point[3];
-    const double srcRad = std::get<0>(m_dimensionsTransLenAndType[m_sourceIndex])[0];
-    const double srcTransCoef = std::get<1>(m_dimensionsTransLenAndType[m_sourceIndex]);
+    const double srcRad = std::get<0>(m_dimensionsTransLenAndType[m_materialIndex])[0];
+    const double srcTransCoef = std::get<1>(m_dimensionsTransLenAndType[m_materialIndex]);
     double dist_in_src = exit_point_of_sphere_z( source_point, exit_point,
                                                  srcRad, m_observationDist );
     
@@ -797,7 +814,7 @@ void DistributedSrcCalc::eval_spherical( const double xx[], const int *ndimptr,
     bool needShellCompute = false;
     double inner_shell_point[3] = { 0.0 };
     
-    if( m_sourceIndex > 0 )
+    if( m_materialIndex > 0 )
     {
       exit_point_of_sphere_z( source_point, inner_shell_point, srcRad,
                                            m_observationDist, false );
@@ -817,12 +834,12 @@ void DistributedSrcCalc::eval_spherical( const double xx[], const int *ndimptr,
                       + inner_shell_point[1]*inner_shell_point[1]
                       + inner_shell_point[2]*inner_shell_point[2] );
       
-      const array<double,3> &sub_dims = std::get<0>(m_dimensionsTransLenAndType[m_sourceIndex-1]);
+      const array<double,3> &sub_dims = std::get<0>(m_dimensionsTransLenAndType[m_materialIndex-1]);
       const double subrad = sub_dims[0];
       needShellCompute = ( (min_rad < subrad) && (inner_shell_point[2] > source_point[2]) );
       // Note that if this shell is a generic shell, and the ray *just* touches it, then we wont
       //  include the generic attenuation.
-    }//if( m_sourceIndex > 0 )
+    }//if( m_materialIndex > 0 )
     
     if( needShellCompute )
     {
@@ -832,7 +849,7 @@ void DistributedSrcCalc::eval_spherical( const double xx[], const int *ndimptr,
       
       //Calc how far from the gammas original position it was, to the first
       //  inner shell it hit
-      const array<double,3> &sub_dims = std::get<0>(m_dimensionsTransLenAndType[m_sourceIndex-1]);
+      const array<double,3> &sub_dims = std::get<0>(m_dimensionsTransLenAndType[m_materialIndex-1]);
       const double innerRad = sub_dims[0];
       exit_point_of_sphere_z( source_point, exit_point,
                                         innerRad, m_observationDist, false );
@@ -851,19 +868,19 @@ void DistributedSrcCalc::eval_spherical( const double xx[], const int *ndimptr,
         ++start_index;
       
       //Some hopefully un-needed logic checks
-      assert( m_sourceIndex != 0 );
-      assert( start_index < m_sourceIndex );
+      assert( m_materialIndex != 0 );
+      assert( start_index < m_materialIndex );
       assert( start_index < m_dimensionsTransLenAndType.size() );
         
       if( start_index == m_dimensionsTransLenAndType.size() )
         throw runtime_error( "Logic error 1 in DistributedSrcCalc::eval(...)" );
-      if( start_index >= m_sourceIndex )
+      if( start_index >= m_materialIndex )
         throw runtime_error( "Logic error 2 in DistributedSrcCalc::eval(...)" );
-      if( m_sourceIndex == 0 )
+      if( m_materialIndex == 0 )
         throw runtime_error( "Logic error 3 in DistributedSrcCalc::eval(...)" );
       
       //calc distance it travels through the inner spheres
-      for( size_t index = start_index; index <= m_sourceIndex; ++index )
+      for( size_t index = start_index; index <= m_materialIndex; ++index )
       {
         const std::array<double,3> &dims = std::get<0>(m_dimensionsTransLenAndType[index]);
         const double transCoef = std::get<1>(m_dimensionsTransLenAndType[index]);
@@ -877,7 +894,7 @@ void DistributedSrcCalc::eval_spherical( const double xx[], const int *ndimptr,
             const double shellRad = dims[0];
             double dist = exit_point_of_sphere_z( source_point, source_point,
                                                  shellRad, m_observationDist );
-            if( index != m_sourceIndex )
+            if( index != m_materialIndex )
               dist = 2.0*dist;
             
             trans += (transCoef * dist);
@@ -895,7 +912,7 @@ void DistributedSrcCalc::eval_spherical( const double xx[], const int *ndimptr,
         }//switch( type )
         
         
-      }//for( ++sphere_index; sphere_index < m_sourceIndex; ++sphere_index )
+      }//for( ++sphere_index; sphere_index < m_materialIndex; ++sphere_index )
     }else
     {
       memcpy( source_point, exit_point, 3*sizeof(double) );
@@ -903,7 +920,7 @@ void DistributedSrcCalc::eval_spherical( const double xx[], const int *ndimptr,
     }//if( line actually goes into child sphere ) / else
   }//end codeblock to compute distance through source
   
-  for( size_t i = m_sourceIndex+1; i < m_dimensionsTransLenAndType.size(); ++i )
+  for( size_t i = m_materialIndex+1; i < m_dimensionsTransLenAndType.size(); ++i )
   {
     const std::array<double,3> &dims = std::get<0>(m_dimensionsTransLenAndType[i]);
     const double transLenCoef = std::get<1>(m_dimensionsTransLenAndType[i]);
@@ -973,7 +990,7 @@ void DistributedSrcCalc::eval_single_cyl_end_on( const double xx[], const int *n
   std::lock_guard<std::recursive_mutex> scoped_lock( s_stdout_raytrace_mutex );
 #endif
 
-  assert( m_sourceIndex == 0 );
+  assert( m_materialIndex == 0 );
   assert( m_geometry == GeometryType::CylinderEndOn );
   assert( m_dimensionsTransLenAndType.size() == 1 );
   assert( std::get<2>(m_dimensionsTransLenAndType[0]) == ShellType::Material );
@@ -987,11 +1004,11 @@ void DistributedSrcCalc::eval_single_cyl_end_on( const double xx[], const int *n
   assert( ndim == 2 ); // ndim==3 is also valid and this function will work for that as well
   
   
-  const std::array<double,3> &dimensions = std::get<0>(m_dimensionsTransLenAndType[m_sourceIndex]);
+  const std::array<double,3> &dimensions = std::get<0>(m_dimensionsTransLenAndType[m_materialIndex]);
   const double source_outer_rad = dimensions[0];
   const double source_half_z = dimensions[1];
   const double total_height = 2.0 * source_half_z;
-  const double trans_len_coef = std::get<1>(m_dimensionsTransLenAndType[m_sourceIndex]);
+  const double trans_len_coef = std::get<1>(m_dimensionsTransLenAndType[m_materialIndex]);
   
   
   // Right now we are only dealing with a single cylinder; however, when we move to nesting
@@ -1761,13 +1778,13 @@ double cylinder_line_intersection( const double radius, const double half_length
 void DistributedSrcCalc::eval_cylinder( const double xx[], const int *ndimptr,
                                            double ff[], const int *ncompptr ) const noexcept
 {
-  assert( m_sourceIndex < m_dimensionsTransLenAndType.size() );
+  assert( m_materialIndex < m_dimensionsTransLenAndType.size() );
   assert( (m_geometry == GeometryType::CylinderSideOn)
           || (m_geometry == GeometryType::CylinderEndOn) );
-  assert( std::get<2>(m_dimensionsTransLenAndType[m_sourceIndex]) == ShellType::Material );
+  assert( std::get<2>(m_dimensionsTransLenAndType[m_materialIndex]) == ShellType::Material );
   
-  //assert( m_sourceIndex == 0 );
-  //if( m_sourceIndex != 0 )
+  //assert( m_materialIndex == 0 );
+  //if( m_materialIndex != 0 )
   //  throw runtime_error( "eval_cylinder currently only supports trace source in inner most shielding shielding" );
   
   // This just integrates a right circular cylinder
@@ -1775,11 +1792,11 @@ void DistributedSrcCalc::eval_cylinder( const double xx[], const int *ndimptr,
   assert( ((m_geometry == GeometryType::CylinderEndOn) && ((ndim == 2) || (ndim == 3)))
          || ((m_geometry == GeometryType::CylinderSideOn) && (ndim == 3)) );
   
-  const std::array<double,3> &dimensions = std::get<0>(m_dimensionsTransLenAndType[m_sourceIndex]);
+  const std::array<double,3> &dimensions = std::get<0>(m_dimensionsTransLenAndType[m_materialIndex]);
   const double source_outer_rad = dimensions[0];
   const double source_half_z = dimensions[1];
   const double total_height = 2.0 * source_half_z;
-  const double trans_len_coef = std::get<1>(m_dimensionsTransLenAndType[m_sourceIndex]);
+  const double trans_len_coef = std::get<1>(m_dimensionsTransLenAndType[m_materialIndex]);
   
   
   //cuba goes from 0 to one for each dimension, so we have to scale the variables
@@ -1794,9 +1811,9 @@ void DistributedSrcCalc::eval_cylinder( const double xx[], const int *ndimptr,
   const double z = total_height * (xx[((ndim==3) ? 2 : 1)] - 0.5);
   
   // If point to evaluate is within inner-cylinder, set the source term to zero and return.
-  if( m_sourceIndex > 0 )
+  if( m_materialIndex > 0 )
   {
-    const array<double,3> &inner_dims = std::get<0>(m_dimensionsTransLenAndType[m_sourceIndex-1]);
+    const array<double,3> &inner_dims = std::get<0>(m_dimensionsTransLenAndType[m_materialIndex-1]);
     const double &inner_rad = inner_dims[0];
     const double &inner_half_height = inner_dims[1];
     
@@ -1805,7 +1822,7 @@ void DistributedSrcCalc::eval_cylinder( const double xx[], const int *ndimptr,
       ff[0] = 0.0;
       return;
     }
-  }//if( m_sourceIndex > 0 )
+  }//if( m_materialIndex > 0 )
   
   
   const double j = source_outer_rad * max_theta * total_height;
@@ -1831,7 +1848,7 @@ void DistributedSrcCalc::eval_cylinder( const double xx[], const int *ndimptr,
   // Do transport through inner cylinders, and also subtract off that distance through source
   //  cylinder
   double inner_distance = 0.0;
-  for( size_t i = 0; i < m_sourceIndex; ++i )
+  for( size_t i = 0; i < m_materialIndex; ++i )
   {
     const std::array<double,3> &local_dims = std::get<0>(m_dimensionsTransLenAndType[i]);
     const double local_rad = local_dims[0];
@@ -1901,12 +1918,12 @@ void DistributedSrcCalc::eval_cylinder( const double xx[], const int *ndimptr,
     }//switch( type )
 
     inner_distance = local_distance;
-  }//for( size_t i = 0; i < m_sourceIndex; ++i )
+  }//for( size_t i = 0; i < m_materialIndex; ++i )
   
   trans += (trans_len_coef * (dist_in_cyl - inner_distance));
   
   // Do transport through outer cylinders
-  for( size_t i = m_sourceIndex + 1; i < m_dimensionsTransLenAndType.size(); ++i )
+  for( size_t i = m_materialIndex + 1; i < m_dimensionsTransLenAndType.size(); ++i )
   {
     const std::array<double,3> &shield_dims = std::get<0>(m_dimensionsTransLenAndType[i]);
     const double shield_outer_rad = shield_dims[0];
@@ -2169,7 +2186,7 @@ void test_rectangular_intersections()
     
     DistributedSrcCalc calc;
     calc.m_geometry = GeometryType::Rectangular;
-    calc.m_sourceIndex = 1;
+    calc.m_materialIndex = 1;
     calc.m_detectorRadius = 1.0*PhysicalUnits::cm;
     calc.m_observationDist = 25*PhysicalUnits::cm;;
     calc.m_attenuateForAir = false;
@@ -2523,18 +2540,18 @@ void DistributedSrcCalc::eval_rect( const double xx[], const int *ndimptr,
                double ff[], const int *ncompptr ) const noexcept
 {
   assert( m_geometry == GeometryType::Rectangular );
-  assert( m_sourceIndex < m_dimensionsTransLenAndType.size() );
-  assert( std::get<2>(m_dimensionsTransLenAndType[m_sourceIndex]) == ShellType::Material );
+  assert( m_materialIndex < m_dimensionsTransLenAndType.size() );
+  assert( std::get<2>(m_dimensionsTransLenAndType[m_materialIndex]) == ShellType::Material );
   
   const int ndim = (ndimptr ? (*ndimptr) : 2);
   assert( ndim == 3 );
   
-  const std::array<double,3> &dimensions = std::get<0>(m_dimensionsTransLenAndType[m_sourceIndex]);
+  const std::array<double,3> &dimensions = std::get<0>(m_dimensionsTransLenAndType[m_materialIndex]);
   const double half_width  = dimensions[0];
   const double half_height = dimensions[1];
   const double half_depth  = dimensions[2];
   
-  const double trans_len_coef = std::get<1>(m_dimensionsTransLenAndType[m_sourceIndex]);
+  const double trans_len_coef = std::get<1>(m_dimensionsTransLenAndType[m_materialIndex]);
   
   // Translate the [0,1.0] coordinates from Cuba, to the world coordinates we are integrating over.
   //  (note: we would get the same answer if we integrated over just half the width/height, but it
@@ -2547,15 +2564,15 @@ void DistributedSrcCalc::eval_rect( const double xx[], const int *ndimptr,
   
   // Check to see if [eval_x,eval_y,eval_z] is inside an inner volume, and if so set value to zero
   //  and return
-  if( m_sourceIndex > 0 )
+  if( m_materialIndex > 0 )
   {
-    const array<double,3> &dims = std::get<0>(m_dimensionsTransLenAndType[m_sourceIndex-1]);
+    const array<double,3> &dims = std::get<0>(m_dimensionsTransLenAndType[m_materialIndex-1]);
     if( (fabs(eval_x) < dims[0]) && (fabs(eval_y) < dims[1]) && (fabs(eval_z) < dims[2]) )
     {
       ff[0] = 0.0;
       return;
     }
-  }//if( m_sourceIndex > 0 )
+  }//if( m_materialIndex > 0 )
   
   
   const double dV = 8.0 * half_width * half_height * half_depth;
@@ -2574,7 +2591,7 @@ void DistributedSrcCalc::eval_rect( const double xx[], const int *ndimptr,
   //        portion an inner void, and integrating over the outer cube (with outer dimensions still
   //        4x4x4cm, but just the inner 2x2x2cm removed) takes 11049 evaluations - 30 times longer!
   double inner_rect_dist = 0.0;
-  for( size_t i = 0; i < m_sourceIndex; ++i )
+  for( size_t i = 0; i < m_materialIndex; ++i )
   {
     const std::array<double,3> &dims = std::get<0>(m_dimensionsTransLenAndType[i]);
     const double trans_len_coef_shield = std::get<1>(m_dimensionsTransLenAndType[i]);
@@ -2606,14 +2623,14 @@ void DistributedSrcCalc::eval_rect( const double xx[], const int *ndimptr,
       
       inner_rect_dist = dist;
     }//if( intersects )
-  }//for( size_t i = 0; i < m_sourceIndex; ++i )
+  }//for( size_t i = 0; i < m_materialIndex; ++i )
   
   
   trans += (trans_len_coef * (dist_in_src - inner_rect_dist));
   
   
   // Account for additional external shielding's
-  for( size_t i = m_sourceIndex + 1; i < m_dimensionsTransLenAndType.size(); ++i )
+  for( size_t i = m_materialIndex + 1; i < m_dimensionsTransLenAndType.size(); ++i )
   {
     const std::array<double,3> &outer_dims = std::get<0>(m_dimensionsTransLenAndType[i]);
     const double trans_len_coef_shield = std::get<1>(m_dimensionsTransLenAndType[i]);
@@ -2693,7 +2710,7 @@ std::pair<std::shared_ptr<ShieldingSourceChi2Fcn>, ROOT::Minuit2::MnUserParamete
   }//for(...)
   
   if( peaks.empty() )
-    throw runtime_error( "There are not peaks selected for the fit" );
+    throw runtime_error( "There are no peaks selected for the fit" );
   
   double liveTime = foreground ? foreground->live_time() : 1.0f;
   double realTime = foreground ? foreground->real_time() : 0.0f;
@@ -3540,9 +3557,6 @@ std::shared_ptr<Material> ShieldingSourceChi2Fcn::variedMassFracMaterial(
     
   std::shared_ptr<Material> answer = std::make_shared<Material>( *shield.material );
   
-  //if( !SpecUtils::icontains( answer->name, " - varied") )
-  //  answer->name += " - varied";
-  
   const SandiaDecay::SandiaDecayDataBase *db = DecayDataBaseServer::database();
   
   vector<pair<const SandiaDecay::Nuclide *,float>> &nuclides = answer->nuclides;
@@ -3572,9 +3586,11 @@ std::shared_ptr<Material> ShieldingSourceChi2Fcn::variedMassFracMaterial(
     if( !el )
       continue;
     
-    if( !new_elements.count(el) )
-      new_elements[el] = 0.0;
-    new_elements[el] += nuc_frac.second;
+    auto pos = new_elements.find(el);
+    if( pos == end(new_elements) )
+      new_elements.insert( std::make_pair(el, static_cast<double>(nuc_frac.second)) );
+    else
+      pos->second += nuc_frac.second;
   }//for( const auto &nuc_frac : nuclides )
   
   // Get mass fractions of elements being used as self-attenuating sources.
@@ -3633,7 +3649,7 @@ std::shared_ptr<Material> ShieldingSourceChi2Fcn::variedMassFracMaterial(
   for( auto &i : new_elements )
   {
     if( !self_atten_elements.count(i.first) )
-      i.second /= (self_atten_sum);
+      i.second /= self_atten_sum;
   }//for( const auto &i : new_elements )
   
   // Now alter mass-fractions for the varied nuclides
@@ -3657,7 +3673,7 @@ std::shared_ptr<Material> ShieldingSourceChi2Fcn::variedMassFracMaterial(
     if( initial_frac < 0.0 )
       throw runtime_error( "variedMassFracMaterial(): Nuc fitting mass-fraction for doesnt appear in self-atten. sources?" );
     
-    const double fit_frac = massFraction( material_index, nuc, x );
+    const double fit_frac = massFraction( material_index, nuc, x ); //This is mass fraction of entire material (not of nuclides element)
     
     prefrac += initial_frac;
     postfrac += fit_frac;
@@ -5219,7 +5235,7 @@ void ShieldingSourceChi2Fcn::cluster_peak_activities( std::map<double,double> &e
         src.nuclide = nuc;
         src.energy = aep.energy;
         src.br = age_sf * aep.numPerSecond / sm_activityUnits;
-        src.cps = contribution*PhysicalUnits::second;
+        src.cpsAtSource = contribution*PhysicalUnits::second;
         src.age = age;
         src.calcActivity = act;
         src.decayCorrection = 0.0;
@@ -5236,6 +5252,23 @@ void ShieldingSourceChi2Fcn::cluster_peak_activities( std::map<double,double> &e
           if( non_corr_pos != end(non_decay_cor_gammas) )
             src.decayCorrection = aep.numPerSecond / non_corr_pos->numPerSecond;
         }//if( we are correcting for decays during measurement )
+        
+        // Note: we are only partually filling out the `PeakDetailSrc` object here; we will pick up the rest
+        //       later, but this means we have to be careful to not rely on any of the member variables, notably:
+        /*
+        src.isTraceSource = false;
+        src.traceSourceType = TraceActivityType::NumTraceActivityType;
+        src.isSelfAttenSource = false;
+        src.countsAtSource = 0.0;
+        src.ageUncert = 0.0;
+        src.activity = 0.0;
+        src.activityUncert = 0.0;
+        src.displayActivity = 0.0;
+        src.displayActivityUncert = 0.0;
+        src.massFraction = 0.0;
+        src.massFractionUncert = 0.0;
+        src.isFittingMassFraction = false;
+        */
         
         pos->m_sources.push_back( src );
       }//if( pos != end(*log_info) )
@@ -5387,6 +5420,16 @@ vector<PeakResultPlotInfo> ShieldingSourceChi2Fcn::expected_observed_chis(
             log_peak.backgroundCounts = backCounts;
             log_peak.backgroundCountsUncert = sqrt( backUncert2 );
           }
+          
+          double totalAtSourceCounts = 0.0;
+          for( const PeakDetailSrc &psrc : log_peak.m_sources )
+            totalAtSourceCounts += psrc.countsAtSource;
+          
+          for( PeakDetailSrc &psrc : log_peak.m_sources )
+          {
+            const double src_counts = expected_counts * psrc.countsAtSource / totalAtSourceCounts;
+            psrc.modelContribToPeak = src_counts;
+          }
         }//if( pos != end(*log_info) )
       }catch( std::exception & )
       {
@@ -5536,7 +5579,7 @@ void ShieldingSourceChi2Fcn::selfShieldingIntegration( DistributedSrcCalc &calcu
     << "\n\t calculator.energy: " << calculator.m_energy
     << "\n\t m_srcVolumetricActivity: " << calculator.m_srcVolumetricActivity
     << "\n\t m_geometry: " << to_str(calculator.m_geometry)
-    << "\n\t m_sourceIndex: " << calculator.m_sourceIndex
+    << "\n\t m_materialIndex: " << calculator.m_materialIndex
     << "\n\t m_detectorRadius: " << calculator.m_detectorRadius
     << "\n\t m_observationDist: " << calculator.m_observationDist
     << "\n\t m_attenuateForAir: " << calculator.m_attenuateForAir
@@ -5943,6 +5986,8 @@ vector<PeakResultPlotInfo>
           const double f = exp( -1.0 * att_coef_fcn( energy_count.first ) );
           pos->m_attenuations.resize( nMaterials, 0.0 );
           pos->m_attenuations[materialN] = f;
+          pos->m_totalAttenFactor *= f;
+          pos->m_totalShieldAttenFactor *= f;
         }
       }//for( EnergyCountMap::value_type &energy_count : energy_count_map )
     }//if( log_info )
@@ -5957,16 +6002,29 @@ vector<PeakResultPlotInfo>
     }
   }//for( int materialN = 0; materialN < nMaterials; ++materialN )
 
-  
+  const double air_dist = std::max( 0.0, m_distance - shield_outer_rad );
   if( m_options.attenuate_for_air && (!m_detector || !m_detector->isFixedGeometry()) )
   {
-    const double air_dist = std::max( 0.0, m_distance - shield_outer_rad );
-    
     for( EnergyCountMap::value_type &energy_count : energy_count_map )
     {
       const double coef = transmission_length_coefficient_air( energy_count.first );
-      energy_count.second *= exp( -1.0 * coef * air_dist );
-    }
+      const double atten = exp( -1.0 * coef * air_dist );
+      energy_count.second *= atten;
+      
+      if( log_info )
+      {
+        const double energy = energy_count.first;
+        auto pos = std::find_if( begin(*log_info), end(*log_info), [energy]( const GammaInteractionCalc::PeakDetail &val ) {
+          return energy == val.decayParticleEnergy;
+        });
+        assert( pos != end(*log_info) );
+        if( pos != end(*log_info) )
+        {
+          pos->m_airAttenFactor = atten;
+          pos->m_totalAttenFactor *= atten;
+        }
+      }//if( log_info )
+    }//for( EnergyCountMap::value_type &energy_count : energy_count_map )
   }//if( m_options.attenuate_for_air )
   
   
@@ -6141,7 +6199,7 @@ vector<PeakResultPlotInfo>
 
     baseCalculator.m_observationDist = m_distance;
     baseCalculator.m_attenuateForAir = m_options.attenuate_for_air;
-    baseCalculator.m_sourceIndex = material_index;
+    baseCalculator.m_materialIndex = material_index;
     
     baseCalculator.m_isInSituExponential = false;
     baseCalculator.m_inSituRelaxationLength = -1.0;
@@ -6509,15 +6567,15 @@ vector<PeakResultPlotInfo>
       }else
       {
 //        cerr << "Setting " << contrib*m_liveTime << " counts to energy " << calculator->energy
-//             << " for thickness=" << calculator->m_dimensionsTransLenAndType[calculator->m_sourceIndex].first[0] / PhysicalUnits::cm
+//             << " for thickness=" << calculator->m_dimensionsTransLenAndType[calculator->m_materialIndex].first[0] / PhysicalUnits::cm
 //             << " cm" << endl;
         energy_count_map[calculator->m_energy] = contrib;
       }
       
       if( info )
       {
-        const shared_ptr<const Material> &material = materials[calculator->m_sourceIndex].material;
-        const int index = static_cast<int>( calculator->m_sourceIndex );
+        const shared_ptr<const Material> &material = materials[calculator->m_materialIndex].material;
+        const int index = static_cast<int>( calculator->m_materialIndex );
         
         stringstream msg;
         msg << "\tAttributing " << contrib*PhysicalUnits::second << " cps to "
@@ -6578,9 +6636,99 @@ vector<PeakResultPlotInfo>
         
         if( pos != end(*log_info) )
         {
+          GammaInteractionCalc::PeakDetail &peak = *pos;
+         
+          // If a volumetric source, we need to update the CPS of the source, to be from per volume, to total
+          //  The trick is here we only want to correct each quantity once... which should be the case.
+          const double volume = volumeOfMaterial(calculator->m_materialIndex, x);
+          for( PeakDetailSrc &src : peak.m_sources )
+          {
+            const bool isTrace = isTraceSource(src.nuclide);         //note: `src.isTraceSource` is not filled out yet
+            const bool isSelfAtten = isSelfAttenSource(src.nuclide);// note: `src.isSelfAttenSource` is not filled out yet
+            
+            if( (isTrace || isSelfAtten) && (src.nuclide == calculator->m_nuclide) )
+            {
+              if( !calculator->m_isInSituExponential )
+              {
+                src.cpsAtSource *= volume;
+                src.countsAtSource *= volume;
+              }else
+              {
+                // For in-situ exponential, we are tracking per surface area
+                const size_t mat_index = calculator->m_materialIndex;
+                const double L = relaxationLength(src.nuclide);
+                
+                switch( m_geometry )
+                {
+                  case GeometryType::Spherical:
+                  {
+                    // TODO: The same approach as for GeometryType::CylinderEndOn, doesnt seem to work here; ran out
+                    //  of time to figure out proper answer, so just setting to zero for the moment
+                    src.cpsAtSource = 0;
+                    src.countsAtSource = 0;
+                    //const double R = sphericalThickness(mat_index, x);
+                    //const double norm = 4*PhysicalUnits::pi * L * (L*L*(2 - 2*exp(-R/L)) - 2*L*R + R*R);
+                    //const double sa = 4.0*PhysicalUnits::pi*R*R;
+                    //src.cpsAtSource *= (sa * norm);
+                    //src.countsAtSource *= (sa * norm);
+                    break;
+                  }//case GeometryType::Spherical:
+                    
+                  case GeometryType::CylinderSideOn:
+                  {
+                    // TODO: The same approach as for GeometryType::CylinderEndOn, doesnt seem to work here; ran out
+                    //  of time to figure out proper answer, so just setting to zero for the moment
+                    src.cpsAtSource = 0;
+                    src.countsAtSource = 0;
+                    //const double R = cylindricalRadiusThickness(mat_index, x);
+                    //const double norm = 2 * L * PhysicalUnits::pi * (L*(exp(-R/L) - 1) + R);
+                    //const double h = 2.0*cylindricalLengthThickness(mat_index, x);
+                    //const double sa = h * 2.0*R*PhysicalUnits::pi;
+                    //src.cpsAtSource *= (sa * norm);
+                    //src.countsAtSource *= (sa * norm);
+                    break;
+                  }//case GeometryType::CylinderSideOn:
+                  
+                  case GeometryType::CylinderEndOn:
+                  {
+                    const double R = 2.0 * cylindricalLengthThickness(mat_index, x);
+                    const double norm = L * (1.0 - exp(-R / L) );
+                    const double r = cylindricalRadiusThickness(mat_index, x);
+                    const double sa = PhysicalUnits::pi*r*r;
+                    src.cpsAtSource *= (sa * norm);
+                    src.countsAtSource *= (sa * norm);
+                    break;
+                  }//case GeometryType::CylinderEndOn:
+                  
+                  case GeometryType::Rectangular:
+                  {
+                    // TODO: The same approach as for GeometryType::CylinderEndOn, doesnt seem to work here; ran out
+                    //  of time to figure out proper answer, so just setting to zero for the moment
+                    src.cpsAtSource = 0;
+                    src.countsAtSource = 0;
+                    //const double R = 2.0 * rectangularDepthThickness(mat_index, x);
+                    //const double norm = L * (1.0 - exp(-R / L) );
+                    //const double w = rectangularWidthThickness(mat_index, x);
+                    //const double h = rectangularHeightThickness(mat_index, x);
+                    //const double sa = w*h;
+                    //src.cpsAtSource *= (sa * norm);
+                    //src.countsAtSource *= (sa * norm);
+                    break;
+                  }
+                    
+                  case GeometryType::NumGeometryType:
+                    assert( 0 );
+                    break;
+                }//switch( m_geometry )
+              }//if( !calculator->m_isInSituExponential ) / else
+            }//if( (src.isTraceSource || src.isSelfAttenSource) && (src.nuclide == calculator->m_nuclide) )
+          }//for( PeakDetailSrc &src : peak.m_sources )
+          
           PeakDetail::VolumeSrc src;
           src.trace = is_trace_src[calculator.get()];
           src.integral = calculator->integral;
+          src.volume = volume;
+          src.averageEfficiencyPerSourceGamma = src.integral / src.volume;
           src.srcVolumetricActivity = calculator->m_srcVolumetricActivity;
           src.inSituExponential = calculator->m_isInSituExponential;
           src.inSituRelaxationLength = calculator->m_inSituRelaxationLength;
@@ -6589,7 +6737,28 @@ vector<PeakResultPlotInfo>
             src.detIntrinsicEff = m_detector->intrinsicEfficiency( calculator->m_energy );
           src.sourceName = calculator->m_nuclide ? calculator->m_nuclide->symbol : string("null");
           
-          pos->m_volumetric_srcs.push_back( std::move(src) );
+          
+          peak.m_airAttenFactor = 1.0;
+          if( m_options.attenuate_for_air )
+          {
+            const double coef = transmission_length_coefficient_air( peak.energy );
+            peak.m_airAttenFactor = exp( -1.0 * coef * air_dist );
+          }
+              
+          double det_intrinsic = 1.0, det_total_eff = 1.0;
+          if( m_detector && m_detector->isValid() )
+          {
+            det_intrinsic = m_detector->intrinsicEfficiency( peak.energy );
+            det_total_eff = m_detector->isFixedGeometry() ? det_intrinsic : m_detector->efficiency(peak.energy, m_distance);
+          }
+          const double geom_factor = det_total_eff / det_intrinsic;
+          peak.detIntrinsicEff = det_intrinsic;
+          peak.detEff = det_total_eff;
+          peak.detSolidAngle = det_total_eff / det_intrinsic;
+          peak.m_totalAttenFactor = src.averageEfficiencyPerSourceGamma / geom_factor;
+          peak.m_totalShieldAttenFactor = peak.m_totalAttenFactor / peak.m_airAttenFactor;
+          
+          peak.m_volumetric_srcs.push_back( std::move(src) );
         }//if( pos != end(*log_info) )
       }//if( log_info )
     }//for( DistributedSrcCalc &calculator : calculators )
@@ -6657,7 +6826,7 @@ vector<PeakResultPlotInfo>
             for( size_t i = 0; i < numMaterials(); ++i )
               psrc.isFittingMassFraction |= isVariableMassFraction( i, nuc );
             
-            psrc.counts = psrc.cps * m_liveTime;
+            psrc.countsAtSource = psrc.cpsAtSource * m_liveTime;
             //psrc.countsUncert = countsUncert
             psrc.ageUncert = ageUncert;
             //psrc.ageIsFit = ageIsFit
@@ -6917,7 +7086,11 @@ void ShieldingSourceChi2Fcn::log_source_info( const std::vector<double> &params,
         src.traceActivityType = chi2Fcn->traceSourceActivityType(nuc);
         src.traceSrcDisplayAct = chi2Fcn->totalActivity(nuc,params);
         src.traceSrcDisplayActUncertainty = chi2Fcn->totalActivityUncertainty(nuc, params, errors );
-        src.traceRelaxationLength = chi2Fcn->relaxationLength(nuc);
+        src.traceRelaxationLength = 0.0;
+        
+        TraceActivityType traceType = chi2Fcn->traceSourceActivityType(nuc);
+        if( traceType == TraceActivityType::ExponentialDistribution )
+          src.traceRelaxationLength = chi2Fcn->relaxationLength(nuc);
       }//
       
       src.isSelfAttenSource = chi2Fcn->isSelfAttenSource( nuc );

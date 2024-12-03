@@ -227,7 +227,38 @@ D3SpectrumDisplayDiv::D3SpectrumDisplayDiv( WContainerWidget *parent )
   m_yAxisTitle( WString::tr("d3sdd-yAxisTitle") ),
   m_yAxisTitleMulti( WString::tr("d3sdd-yAxisTitleMulti") ),
   m_chartTitle(),
-  // A bunch of signals m_shiftKeyDraggJS ... m_yAxisScaled
+  // These next member vairables are all `std::unique_ptr` to `Wt::JSignal`s
+  m_shiftKeyDraggJS{ nullptr },
+  m_shiftAltKeyDraggJS{ nullptr },
+  m_rightMouseDraggJS{ nullptr },
+  m_doubleLeftClickJS{ nullptr },
+  m_leftClickJS{ nullptr },
+  m_rightClickJS{ nullptr },
+  m_xRangeChangedJS{ nullptr },
+  m_existingRoiEdgeDragJS{ nullptr },
+  m_dragCreateRoiJS{ nullptr },
+  m_yAxisDraggedJS{ nullptr },
+  m_legendClosedJS{ nullptr },
+  m_sliderDisplayed{ nullptr },
+  m_yAxisTypeChanged{ nullptr },
+  //These next member variables are all the C++ signals for when events happen
+  m_legendEnabledSignal( this ),
+  m_legendDisabledSignal( this ),
+  m_xRangeChanged( this ),
+  m_controlKeyDragg( this ),
+  m_shiftKeyDragg( this ),
+  m_shiftAltKeyDragg( this ),
+  m_rightMouseDragg( this ),
+  m_leftClick( this ),
+  m_doubleLeftClick( this ),
+  m_rightClick( this ),
+  m_existingRoiEdgeDrag( this ),
+  m_dragCreateRoi( this ),
+  m_yAxisScaled( this ),
+  m_xAxisSliderShown( this ),
+  m_yAxisLogLinChanged( this ),
+  m_xAxisCompactnessChanged( this ),
+  // These next member variables roughly track state in the JS
   m_jsgraph( jsRef() + ".chart" ),
   m_xAxisMinimum(0.0),
   m_xAxisMaximum(0.0),
@@ -467,9 +498,14 @@ void D3SpectrumDisplayDiv::setTextInMiddleOfChart( const Wt::WString &s )
 
 void D3SpectrumDisplayDiv::setCompactAxis( const bool compact )
 {
+  if( compact == m_compactAxis )
+    return;
+  
   m_compactAxis = compact;
   if( isRendered() )
     doJavaScript( m_jsgraph + ".setCompactXAxis(" + jsbool(compact) + ");" );
+  
+  m_xAxisCompactnessChanged.emit( compact );
 }
 
 bool D3SpectrumDisplayDiv::isAxisCompacted() const
@@ -619,6 +655,23 @@ Wt::Signal<double,double> &D3SpectrumDisplayDiv::rightMouseDragg()
   return m_rightMouseDragg;
 }//Signal<double,double> &rightMouseDragg()
 
+
+Wt::Signal<bool> &D3SpectrumDisplayDiv::xAxisSliderShown()
+{
+  return m_xAxisSliderShown;
+}
+
+
+Wt::Signal<bool> &D3SpectrumDisplayDiv::yAxisLogLinChanged()
+{
+  return m_yAxisLogLinChanged;
+}
+
+
+Wt::Signal<bool> &D3SpectrumDisplayDiv::xAxisCompactnessChanged()
+{
+  return m_xAxisCompactnessChanged;
+}
 
 
 void D3SpectrumDisplayDiv::setReferncePhotoPeakLines( const ReferenceLineInfo &nuc )
@@ -875,6 +928,8 @@ void D3SpectrumDisplayDiv::setYAxisLog( bool log )
   m_yAxisIsLog = log;
   if( isRendered() )
     doJavaScript( m_jsgraph + (log ? ".setLogY();" : ".setLinearY();") );
+  
+  m_yAxisLogLinChanged.emit( log );
 }//void setYAxisLog( bool log )
 
 void D3SpectrumDisplayDiv::showGridLines( bool show )
@@ -996,19 +1051,97 @@ void D3SpectrumDisplayDiv::setXAxisRange( const double minimum, const double max
 }//void setXAxisRange( const double minimum, const double maximum );
 
 
-void D3SpectrumDisplayDiv::setYAxisRange( const double minimum,
-                                       const double maximum )
+std::tuple<double,double,Wt::WString> D3SpectrumDisplayDiv::setYAxisRange( double lower_counts,
+                                       double upper_counts )
 {
-  const string minimumStr = to_string( minimum );
-  const string maximumStr = to_string( maximum );
-  m_yAxisMinimum = minimum;
-  m_yAxisMaximum = maximum;
+  if( upper_counts < lower_counts )
+    std::swap( lower_counts, upper_counts );
+  
+  if( upper_counts == lower_counts )
+    return {m_yAxisMinimum, m_yAxisMaximum, WString::tr("d3sdd-yaxis-lower-upper-equal")};
+  
+  WString errmsg;
+  const bool isLogY = yAxisIsLog();
+  if( isLogY )
+  {
+    const auto hist = m_foreground;
+    if( !hist || !hist->gamma_counts() || (hist->gamma_counts()->size() < 2) )
+      return {m_yAxisMinimum, m_yAxisMaximum, WString::tr("d3sdd-yaxis-no-spectrum")};
+    
+    const shared_ptr<const vector<float>> &channels = hist->gamma_counts();
+    assert( channels );
+    
+    // Lets check the y-range - ignoring we may be showing multiple channels per display-bin,
+    // to see if the requested range is reasonable
+    double xmin, xmax, ymin, ymax;
+    visibleRange( xmin, xmax, ymin, ymax );
+    
+    const size_t lower_channel = hist->find_gamma_channel(xmin);
+    const size_t upper_channel = hist->find_gamma_channel(xmax);
+    float min_nonzero_value = std::numeric_limits<float>::max();
+    float max_value = -std::numeric_limits<float>::max();
+    
+    for( size_t channel = lower_channel; channel <= upper_channel; ++channel )
+    {
+      if( channel < channels->size() )
+      {
+        const float val = (*channels)[channel];
+        max_value = std::max( max_value, val );
+        if( val > 0.0f )
+          min_nonzero_value = std::min( min_nonzero_value, val );
+      }//if( channel < channels->size() )
+    }//for( loop over visible channels )
+    
+    if( (max_value <= 0.0f) || IsInf(max_value) || IsNan(max_value) )
+      max_value = 1.0f;
+    
+    if( (min_nonzero_value == std::numeric_limits<float>::max())
+       || IsInf(min_nonzero_value)
+       || IsNan(min_nonzero_value) )
+    {
+      min_nonzero_value = 0.1f*max_value;
+    }
+    
+    if( upper_counts <= 0.0f )
+    {
+      errmsg = WString::tr("d3sdd-yaxis-upper-counts-below-zero");
+      upper_counts = (max_value > 0.0f) ? 2.0f*max_value : 1.0f;
+    }
+    
+    if( upper_counts <= min_nonzero_value )
+    {
+      errmsg = WString::tr("d3sdd-yaxis-below-min-non-zero");
+      upper_counts = 2.0f*min_nonzero_value;
+    }
+    
+    if( (lower_counts <= 0.0) || (lower_counts > max_value) )
+    {
+      errmsg = WString::tr("d3sdd-yaxis-lower-counts-below-zero");
+      lower_counts = min_nonzero_value;
+    }
+  }//if( isLogY && (lower_counts <= 0.0f) )
+  
+  
+  if( isLogY )
+  {
+    const double prevMinLogY = logYAxisMin();
+    if( lower_counts < prevMinLogY )
+      setLogYAxisMin( lower_counts );
+  }//if( isLogY )
+  
+  
+  const string minimumStr = SpecUtils::printCompact(lower_counts, 8);
+  const string maximumStr = SpecUtils::printCompact(upper_counts, 8);
+  m_yAxisMinimum = lower_counts;
+  m_yAxisMaximum = upper_counts;
   
   string js = m_jsgraph + ".setYAxisRange(" + minimumStr + "," + maximumStr + ");";
   if( isRendered() )
     doJavaScript( js );
   else
     m_pendingJs.push_back( js );
+  
+  return {m_yAxisMinimum, m_yAxisMaximum, errmsg};
 }//void setYAxisRange( const double minimum, const double maximum );
 
 
@@ -1798,11 +1931,15 @@ void D3SpectrumDisplayDiv::setLogYAxisMin( const double ymin )
   m_logYAxisMin = ymin;
   
   if( isRendered() )
-    doJavaScript( m_jsgraph + ".setLogYAxisMin(" + std::to_string(ymin) + ");" );
-  
-  scheduleUpdateForeground(); //JIC, the JS setPeakLabelRotation(...) wont cause a re-draw
-}//void setPeakLabelRotation( const double rotation )
+    doJavaScript( m_jsgraph + ".setLogYAxisMin(" + std::to_string(ymin) + "); "
+                 + m_jsgraph + ".redraw()();" );
+}//void setLogYAxisMin( const double ymin )
 
+
+double D3SpectrumDisplayDiv::logYAxisMin() const
+{
+  return m_logYAxisMin;
+}
 
 void D3SpectrumDisplayDiv::saveChartToImg( const std::string &filename, const bool asPng )
 {
@@ -1876,6 +2013,8 @@ void D3SpectrumDisplayDiv::showXAxisSliderChart( const bool show )
   m_showXAxisSliderChart = show;
   if( isRendered() )
     doJavaScript( m_jsgraph + ".setShowXAxisSliderChart(" + jsbool(show) + ");" );
+  
+  m_xAxisSliderShown.emit( show );
 }//void showXAxisSliderChart( const bool show )
 
 
@@ -2206,7 +2345,7 @@ void D3SpectrumDisplayDiv::performDragCreateRoiWork( double lower_energy, double
       //const auto start_wall_time = SpecUtils::get_wall_time();
       
       float min_sigma_width_kev, max_sigma_width_kev;
-      expected_peak_width_limits( midenergy, isHpge, min_sigma_width_kev, max_sigma_width_kev );
+      expected_peak_width_limits( midenergy, isHpge, foreground, min_sigma_width_kev, max_sigma_width_kev );
       
       if( erange < min_sigma_width_kev )
         throw runtime_error( "to small range" );
@@ -2602,11 +2741,8 @@ void D3SpectrumDisplayDiv::chartXRangeChangedCallback( double x0, double x1,
 
 void D3SpectrumDisplayDiv::sliderChartDisplayedCallback( const bool madeVisisble )
 {
-  // The call into InterSpec will call back to showXAxisSliderChart(...), which which
-  //  will set `m_showXAxisSliderChart`
-  //  (as well as make another call to the javascript to show or hide the strip chart,
-  //  but this should be harmless)
-  InterSpec::instance()->setXAxisSlider( madeVisisble );
+  m_showXAxisSliderChart = madeVisisble;
+  m_xAxisSliderShown.emit( madeVisisble );
 }//void sliderChartDisplayedCallback( const bool madeVisisble );
 
 
@@ -2617,16 +2753,7 @@ void D3SpectrumDisplayDiv::yAxisTypeChangedCallback( const std::string &type )
     return;
   
   m_yAxisIsLog = isLogY;
-  InterSpec *interspec = InterSpec::instance();
-  interspec->setLogY( m_yAxisIsLog ); //toggles menu items, but wont put in undo/redo step
-  
-  UndoRedoManager *undoRedo = UndoRedoManager::instance();
-  if( undoRedo && undoRedo->canAddUndoRedoNow() )
-  {
-    undoRedo->addUndoRedoStep( [isLogY](){ InterSpec::instance()->setLogY(!isLogY); },
-                            [isLogY](){ InterSpec::instance()->setLogY(isLogY); },
-                            "Toggle log-y axis" );
-  }
+  m_yAxisLogLinChanged.emit( isLogY );
 }//void yAxisTypeChanged( const std::string &type )
 
 

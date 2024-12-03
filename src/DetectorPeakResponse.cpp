@@ -1275,6 +1275,7 @@ void DetectorPeakResponse::parseMultipleRelEffDrfCsv( std::istream &input,
 
 void DetectorPeakResponse::parseGammaQuantRelEffDrfCsv( std::istream &input,
                                       std::vector<std::shared_ptr<DetectorPeakResponse>> &drfs,
+                                      std::vector<std::string> &credits,
                                       std::vector<std::string> &warnings )
 {
   drfs.clear();
@@ -1290,10 +1291,23 @@ void DetectorPeakResponse::parseGammaQuantRelEffDrfCsv( std::istream &input,
     while( SpecUtils::safe_get_line( input, line, 128*1024 ) )
     {
       SpecUtils::trim( line );
+      
+      // Remove any leading non-ascii characters - e.g., UTF-8 BOM
+      while( line.size() && (static_cast<unsigned char>(line.front()) > 127) )
+        line.erase( begin(line) );
+      
+      if( SpecUtils::istarts_with( line, "#credit:") )
+        credits.push_back( SpecUtils::trim_copy( line.substr(8) ) );
+      
       if( line.empty() || (line[0] == '#') )
         continue;
+      
+      const size_t pos = line.find_first_not_of(" \t,");
+      if( pos == string::npos )
+        continue;
+      
       break;
-    }
+    }//while( SpecUtils::safe_get_line( input, line, 128*1024 ) )
     
     if( line.empty() )
       throw runtime_error( "No content" );
@@ -1329,7 +1343,7 @@ void DetectorPeakResponse::parseGammaQuantRelEffDrfCsv( std::istream &input,
       while( SpecUtils::icontains(cols[0], "  ") )
         SpecUtils::ireplace_all(cols[0], "  ", " ");
       
-      if( !SpecUtils::icontains(cols[0], expected_title) )
+      if( !expected_title.empty() && !SpecUtils::icontains(cols[0], expected_title) )
         warnings.push_back( "Warning: row " + std::to_string(row_num)
                            + " doesnt have expected header '" + expected_title + "'" );
         
@@ -1353,7 +1367,7 @@ void DetectorPeakResponse::parseGammaQuantRelEffDrfCsv( std::istream &input,
     const vector<string> lower_energy = get_row(false, "Lower Energy Cutoff (keV)");
     const vector<string> upper_energy = get_row(false, "Upper Energy Cutoff (keV)");
     get_row(true, "");
-    get_row(true, "y = exp (a  + b(lnx) + c(lnx)2 + d(lnx)3 + e(lnx)4 + f(lnx)5 + g(lnx)6 + h(lnx)7)");
+    get_row(true, ""); //Actual header:  "y = exp (a  + b(lnx) + c(lnx)2 + d(lnx)3 + e(lnx)4 + f(lnx)5 + g(lnx)6 + h(lnx)7)"
     const vector<string> keV_or_MeV = get_row(false, "keV or MeV");
     const vector<string> coef_a = get_row(false, "Coefficient a");
     const vector<string> coef_b = get_row(false, "Coefficient b");
@@ -1378,6 +1392,7 @@ void DetectorPeakResponse::parseGammaQuantRelEffDrfCsv( std::istream &input,
         continue;
       
       const string &comment = comments[col];
+      const string &cal_geom = calibration_geometry[col];
       
       const string &far_field = is_far_field[col];
       if( far_field.empty() )
@@ -1521,6 +1536,9 @@ void DetectorPeakResponse::parseGammaQuantRelEffDrfCsv( std::istream &input,
         }else if( SpecUtils::icontains(name, "OnContact") || SpecUtils::icontains(comment, "OnContact") )
         {
           geometry_type = EffGeometryType::FixedGeomTotalAct;
+        }else if( SpecUtils::icontains(name, "Bq-g") )
+        {
+          geometry_type = EffGeometryType::FixedGeomActPerGram;
         }else
         {
           warnings.push_back( "Couldnt determine fixed-geometry type for detector '" + name + "' - skipping detector" );
@@ -1537,7 +1555,8 @@ void DetectorPeakResponse::parseGammaQuantRelEffDrfCsv( std::istream &input,
           throw runtime_error( "Not valid" );
         
         det->setName( name );
-        det->setDescription( comment );
+        string desc = comment + ((!comment.empty() && !cal_geom.empty()) ? ", " : "") + cal_geom;
+        det->setDescription( desc );
         det->setDrfSource( DetectorPeakResponse::DrfSource::UserImportedIntrisicEfficiencyDrf );
         
         drfs.push_back( det );

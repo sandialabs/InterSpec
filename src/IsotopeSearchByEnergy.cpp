@@ -57,6 +57,7 @@
 #include "InterSpec/ReactionGamma.h"
 #include "InterSpec/PhysicalUnits.h"
 #include "InterSpec/UndoRedoManager.h"
+#include "InterSpec/UserPreferences.h"
 #include "InterSpec/PeakSearchGuiUtils.h"
 #include "InterSpec/RowStretchTreeView.h"
 #include "InterSpec/NativeFloatSpinBox.h"
@@ -361,7 +362,7 @@ IsotopeSearchByEnergy::IsotopeSearchByEnergy( InterSpec *viewer,
   helpBtn->addStyleClass( "Wt-icon ContentHelpBtn" );
   helpBtn->clicked().connect( boost::bind( &HelpSystem::createHelpWindow, "nuclide-search-dialog" ) );
   
-  const bool showToolTips = InterSpecUser::preferenceValue<bool>( "ShowTooltips", m_viewer );
+  const bool showToolTips = UserPreferences::preferenceValue<bool>( "ShowTooltips", m_viewer );
   
   WContainerWidget *optionDiv = new WContainerWidget( searchOptions );
   WLabel *label = new WLabel( WString::tr("isbe-min-br"), optionDiv );

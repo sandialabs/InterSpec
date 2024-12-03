@@ -1,4 +1,4 @@
-Foreground LiveTime: {% if foreground.LiveTime_s %}{{ foreground.LiveTime_s }} seconds{% endif %} {% if foreground.LiveTime %}({{ foreground.LiveTime }}){% endif %}
+{% if exists("foreground") %}Foreground LiveTime: {% if foreground.LiveTime_s %}{{ foreground.LiveTime_s }} seconds{% endif %} {% if foreground.LiveTime %}({{ foreground.LiveTime }}){% endif %}{% else %}No foreground spectrum{% endif %}
 {% if HasFitResults %}{% if FixedGeometryDetector %}Results given as {{ ActShieldFitSetup.FixedGeometryType }}.{% else %}Distance to source center from detector: {{ ActShieldFitSetup.Distance }}{% endif %}{% endif %}
 {% if exists("Detector") %}{% if Detector %}Detector: {{ Detector.Name }} radius {{ printFixed(Detector.Radius_cm,1) }}{% endif %}{% endif %}
 {% if HasFitResults %}
@@ -22,7 +22,7 @@ Sources:
   For {{ src.Nuclide }} at age {{ src.Age }}{% if src.AgeIsFit %} +- {{ src.AgeUncert }} {% endif %} with activity {{ src.Activity }}{% if src.ActivityIsFit %} +- {{ src.ActivityUncert }} {% endif %}{% if src.IsTraceSource %}(src.TraceDisplayActivity{% if src.ActivityIsFit %} +- {{ src.TraceDisplayActivityUncert }} {% endif %}){% endif %}:
 ## for peak in src.PeaksThisNucContributesTo
 ## for gamma in peak.ThisNucsGammasForPeak
-    Peak attributed to {{ peak.DecayParticleEnergy }} keV received {{ gamma.CpsContributedToPeak }} from {{ gamma.Energy }} keV line{% if existsIn(gamma,"DecayCorrection") %} (decay correction {{ gamma.DecayCorrection }}){% endif %}, which has I={{ gamma.BranchingRatio }}
+    Peak attributed to {{ peak.DecayParticleEnergy }} keV received {{ gamma.PredictedCounts }} from {{ gamma.Energy }} keV line{% if existsIn(gamma,"DecayCorrection") %} (decay correction {{ gamma.DecayCorrection }}){% endif %}, which has I={{ gamma.BranchingRatio }}
 ##endfor
 ##endfor
 ##endfor

@@ -40,6 +40,7 @@
 #include "InterSpec/SimpleDialog.h"
 #include "InterSpec/PhysicalUnits.h"
 #include "InterSpec/InterSpecUser.h"
+#include "InterSpec/UserPreferences.h"
 #include "InterSpec/ShowRiidInstrumentsAna.h"
 
 using namespace std;
@@ -295,7 +296,7 @@ public:
                      + "</th><td>" + PhysicalUnits::printToBestLengthUnits(res.distance_ * PhysicalUnits::mm,4) + "</td></tr>";
       if( res.activity_ > 0.0 )
       {
-        const bool useBq = InterSpecUser::preferenceValue<bool>( "DisplayBecquerel", InterSpec::instance() );
+        const bool useBq = UserPreferences::preferenceValue<bool>( "DisplayBecquerel", InterSpec::instance() );
         result += "<tr><th>" + WString::tr("Activity").toUTF8() + "</th><td>"
                     + PhysicalUnits::printToBestActivityUnits( res.activity_, 2, !useBq, 1.0 ) + "</td></tr>";
       }

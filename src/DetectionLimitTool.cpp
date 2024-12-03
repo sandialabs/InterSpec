@@ -90,6 +90,7 @@
 #include "InterSpec/MakeFwhmForDrf.h"
 #include "InterSpec/SwitchCheckbox.h"
 #include "InterSpec/ShieldingSelect.h"
+#include "InterSpec/UserPreferences.h"
 #include "InterSpec/SpectraFileModel.h"
 #include "InterSpec/ReferenceLineInfo.h"
 #include "InterSpec/DetectionLimitTool.h"
@@ -119,7 +120,7 @@ bool use_curie_units()
   if( !interspec )
     return true;
   
-  return !InterSpecUser::preferenceValue<bool>( "DisplayBecquerel", interspec );
+  return !UserPreferences::preferenceValue<bool>( "DisplayBecquerel", interspec );
 }//bool use_curie_units()
 
 }//namespace
@@ -240,8 +241,8 @@ protected:
             //     << ", leading to nominal activity " << nomstr
             //     << endl;
             
-            m_poisonLimit->setText( "<div>Observed " + nomstr + "</div>"
-                                   "<div>Range [" + lowerstr + ", " + upperstr + "]</div>" );
+            m_poisonLimit->setText( "<table><tr><td style=\"padding-right:5px\">Nominal:</td><td>" + nomstr + "</td></tr>"
+                                   "<tr><td>Range:</td><td>[" + lowerstr + ", " + upperstr + "]</td></tr></table>" );
             m_poisonLimit->setToolTip( "Detected activity, using just this Region Of Interests,"
                                       " and the observed excess of counts, as well as the"
                                       " statistical confidence interval." );
@@ -250,7 +251,7 @@ protected:
             // This can happen when there are a lot fewer counts in the peak region than predicted
             //  from the sides - since this is non-sensical, we'll just say zero.
             const string unitstr = (useCuries ? "Ci" : "Bq") + DetectorPeakResponse::det_eff_geom_type_postfix( det_geom );
-            m_poisonLimit->setText( "<div>MDA: &lt; 0" + unitstr + "</div><div>(sig. fewer counts in ROI than predicted)</div>" );
+            m_poisonLimit->setText( "<div>Limit: &lt; 0" + unitstr + "</div><div>(sig. fewer counts in ROI than predicted)</div>" );
             m_poisonLimit->setToolTip( "Significantly fewer counts were observed in the"
                                       " Region Of Interest, than predicted by the neighboring channels." );
           }else
@@ -260,10 +261,19 @@ protected:
             const string mdastr = PhysicalUnits::printToBestActivityUnits( simple_mda, 2, useCuries )
             + DetectorPeakResponse::det_eff_geom_type_postfix( det_geom );
             
-            m_poisonLimit->setText( "MDA: " + mdastr );
-            m_poisonLimit->setToolTip( "Minimum Detectable Activity, using just this Region Of"
-                                      " Interests, assuming no signal is present.\n"
-                                      "Basically uses the Currie method of calculating." );
+            const double det_limit = result.detection_limit / gammas_per_bq;
+            const string det_limit_str = PhysicalUnits::printToBestActivityUnits( det_limit, 2, useCuries )
+            + DetectorPeakResponse::det_eff_geom_type_postfix( det_geom );
+           
+            string txt = "<table><tr><td style=\"padding-right: 5px\">Upper Limit:</td><td>" + mdastr + "</td></tr>"
+            "<tr><td style=\"padding-right: 5px\">Critical Limit:</td><td>" + det_limit_str + "</td></tr></table>";
+            
+            m_poisonLimit->setText( txt );
+            m_poisonLimit->setToolTip( "The upper limit is the maximum activity present, for the given CL,"
+                                      " given the observed number of counts in the ROI.\n"
+                                      "The critical limit is the activity where the signal would reliably be detected.\n"
+                                      "Both numbers calculated using the Currie method."
+                                      );
           }
           
           break;
@@ -411,24 +421,31 @@ protected:
             // TODO: double check that this double-sided limit is correct, and we dont need to
             //  convert to a single sided or something
             
-            char buffer[256];
+            //char buffer[256];
+            //snprintf( buffer, sizeof(buffer),
+            //         "<div>Nominal distance %s</div><div>%.1f%% CL range [%s, %s]</div>",
+            //         nomstr.c_str(), rnd_cl_percent, upperstr.c_str(), lowerstr.c_str() );
+            char buffer[384];
             snprintf( buffer, sizeof(buffer),
-                     "<div>Nominal distance %s</div><div>%.1f%% CL range [%s, %s]</div>",
-                     nomstr.c_str(), rnd_cl_percent, upperstr.c_str(), lowerstr.c_str() );
+                     "<table><tr><td style=\"padding-right:5px\">Nominal:</td><td>%s</td></tr><tr><td>Range:</td><td>[%s, %s]</td></tr></table>",
+                     nomstr.c_str(), upperstr.c_str(), lowerstr.c_str() );
             
             m_poisonLimit->setText( buffer );
           }else if( result.upper_limit < 0 )
           {
             // This can happen when there are a lot fewer counts in the peak region than predicted
             //  from the sides - since this is non-sensical ...
-            m_poisonLimit->setText( "TODO: handle case where observed deficit of counts is really large" );
+            m_poisonLimit->setText( "Large deficit of counts in ROI" );
           }else
           {
-            // We will provide a "At the 95% CL you would detect this source at X meters" answer
-#ifndef _WIN32
-#warning "go back through this logic when I am less tired to make sure result.upper_limit is really what we want to use here"
-#endif
-            // TODO: go back through this logic when I am less tired to make sure result.upper_limit is really what we want to use here
+            // We will provide a "Distance >=X meters at 95% CL" answer
+            //
+            // result.upper_limit, is the number of expected signal counts that we can be 95%
+            //  certain the true signal is less than.
+            // So we will find the distance where we would expect this many counts
+            //  (result.upper_limit), from the source at the given activity, and this is the
+            //  distance we can be 95% sure the detector is that distance, or farther from the
+            //  source
             
             if( result.upper_limit < 0.0 )
               throw runtime_error( "Upper limit of counts is less than zero, but counts observed is greater than L_d." );
@@ -461,9 +478,8 @@ protected:
             const string upperstr = PhysicalUnits::printToBestLengthUnits( upper_distance, 2 );
             
             char buffer[256];
-            snprintf( buffer, sizeof(buffer),
-                     "At %.1f%% CL you would detect source at %s",
-                     rnd_cl_percent, upperstr.c_str() );
+            //snprintf( buffer, sizeof(buffer), "Distance ≥%s @%.1f%% CL", upperstr.c_str(), rnd_cl_percent );
+            snprintf( buffer, sizeof(buffer), "Distance ≥%s", upperstr.c_str() );
             
             m_poisonLimit->setText( buffer );
           }
@@ -471,8 +487,6 @@ protected:
           break;
         }//case DetectionLimitTool::LimitType::Distance:
       }//switch( m_input.limit_type )
-      
-      
       
     }catch( std::exception &e )
     {
@@ -707,7 +721,7 @@ public:
     m_decon_cont_norm_method->addItem( "Fixed full ROI" );
     m_decon_cont_norm_method->setCurrentIndex( static_cast<int>(m_input.decon_cont_norm_method) );
     
-    const bool showToolTips = InterSpecUser::preferenceValue<bool>( "ShowTooltips", InterSpec::instance() );
+    const bool showToolTips = UserPreferences::preferenceValue<bool>( "ShowTooltips", InterSpec::instance() );
     const char *tooltip = "How the continuum normalization should be determined:"
     "<ul><li><b>Floating</b>: The polynomial continuum is fit for, at each given activity -"
     " the activity affects the continuum.</li>"
@@ -758,7 +772,7 @@ public:
     WContainerWidget *currieLimitContent = new WContainerWidget( rightColumn );
     currieLimitContent->addStyleClass( "MdaRowCurrieLimitContent" );
     
-    WText *currie_label = new WText( "Single peak Limit", currieLimitContent );
+    WText *currie_label = new WText( "Single peak Currie Limit", currieLimitContent );
     currie_label->addStyleClass( "MdaCurrieLimitTitle" );
     
     m_poisonLimit = new WText( "&nbsp;", currieLimitContent );
@@ -814,7 +828,7 @@ public:
     //Right now we are just having DetectionLimitTool completely refresh on activity units change,
     //  but we could be a little more fine-grained about this.
     //InterSpec *viewer = InterSpec::instance();
-    //InterSpecUser::addCallbackWhenChanged( viewer->m_user, viewer, "DisplayBecquerel",
+    //viewer->preferences()->addCallbackWhenChanged( "DisplayBecquerel",
     //                                      boost::bind(&MdaPeakRow::setSimplePoisonTxt, this) );
   }//MdaPeakRow constructor
   
@@ -1086,6 +1100,7 @@ DetectionLimitTool::DetectionLimitTool( InterSpec *viewer,
   m_chart->applyColorTheme( m_interspec->getColorTheme() );
   m_interspec->colorThemeChanged().connect( m_chart, &D3SpectrumDisplayDiv::applyColorTheme );
   
+  //m_chart->xAxisSliderShown().connect(...)
   
   m_peakModel = new PeakModel( this );
   m_chart->setPeakModel( m_peakModel );
@@ -1096,8 +1111,8 @@ DetectionLimitTool::DetectionLimitTool( InterSpec *viewer,
   
   
   // Create nuclide label and input
-  WLabel *label = new WLabel( "Nuclide:", inputTable );
-  label->addStyleClass( "GridFirstCol GridFirstRow" );
+  WLabel *label = new WLabel( "Nuclide:&nbsp;&nbsp;", inputTable ); //The space so this will be the longest label, and not "Distance:"
+  label->addStyleClass( "GridFirstCol GridFirstRow GridVertCenter" );
   
   
   m_nuclideEdit = new WLineEdit( "", inputTable );
@@ -1133,7 +1148,7 @@ DetectionLimitTool::DetectionLimitTool( InterSpec *viewer,
   
   // Create age input and time input validator
   label = new WLabel( "Age:", inputTable );
-  label->addStyleClass( "GridFirstCol GridSecondRow" );
+  label->addStyleClass( "GridFirstCol GridSecondRow GridVertCenter" );
   
   m_ageEdit = new WLineEdit( "", inputTable );
   m_ageEdit->addStyleClass( "GridSecondCol GridSecondRow" );
@@ -1143,7 +1158,7 @@ DetectionLimitTool::DetectionLimitTool( InterSpec *viewer,
   m_ageEdit->setAutoComplete( false );
   label->setBuddy( m_ageEdit );
   
-  const bool showToolTips = InterSpecUser::preferenceValue<bool>( "ShowTooltips", InterSpec::instance() );
+  const bool showToolTips = UserPreferences::preferenceValue<bool>( "ShowTooltips", InterSpec::instance() );
   const char *tooltip =
   "<div>The age of the nuclide.</div>"
   "<br />"
@@ -1162,7 +1177,7 @@ DetectionLimitTool::DetectionLimitTool( InterSpec *viewer,
   
   // Create distance input
   label = new WLabel( "Distance:", inputTable );
-  label->addStyleClass( "GridFirstCol GridThirdRow" );
+  label->addStyleClass( "GridFirstCol GridThirdRow GridVertCenter" );
   m_distanceLabel = label;
 
   m_distanceForActivityLimit = new WLineEdit( "100 cm", inputTable );
@@ -1179,7 +1194,7 @@ DetectionLimitTool::DetectionLimitTool( InterSpec *viewer,
   // We will but the activity label/input right next to the distance stuff, but since we default to
   //  calculating activity limit, we'll hide the activity stuff.
   label = new WLabel( "Activity:", inputTable );
-  label->addStyleClass( "GridFirstCol GridThirdRow" );
+  label->addStyleClass( "GridFirstCol GridThirdRow GridVertCenter" );
   m_activityLabel = label;
   label->hide();
   
@@ -1215,7 +1230,7 @@ DetectionLimitTool::DetectionLimitTool( InterSpec *viewer,
   loglin->addStyleClass( "MdaChartLogLin GridFourthCol GridFirstRow GridSpanTwoCol" );
   loglin->unChecked().connect( boost::bind( &D3SpectrumDisplayDiv::setYAxisLog, m_chart, true ) );
   loglin->checked().connect( boost::bind( &D3SpectrumDisplayDiv::setYAxisLog, m_chart, false ) );
-  
+  m_chart->yAxisLogLinChanged().connect( boost::bind( &SwitchCheckbox::setUnChecked, loglin, boost::placeholders::_1 ) );
   
   m_attenuateForAir = new WCheckBox( "Attenuate for air", inputTable );
   m_attenuateForAir->addStyleClass( "GridFourthCol GridSecondRow GridSpanTwoCol" );
@@ -1231,9 +1246,8 @@ DetectionLimitTool::DetectionLimitTool( InterSpec *viewer,
   m_distOrActivity->unChecked().connect( this, &DetectionLimitTool::handleUserChangedToComputeActOrDist );
   
   
-  
   label = new WLabel( "Peaks disp. act.:", inputTable );
-  label->addStyleClass( "GridSixthCol GridFirstRow" );
+  label->addStyleClass( "GridSixthCol GridFirstRow GridVertCenter" );
   m_displayActivityLabel = label;
   
   m_displayActivity = new WLineEdit( inputTable );
@@ -1250,7 +1264,7 @@ DetectionLimitTool::DetectionLimitTool( InterSpec *viewer,
   // Like with user input, we will put the put the display distance stuff right next to activity,
   //  and hide the display distance stuff
   label = new WLabel( "Peaks disp. dist.:", inputTable );
-  label->addStyleClass( "GridSixthCol GridFirstRow" );
+  label->addStyleClass( "GridSixthCol GridFirstRow GridVertCenter" );
   m_displayDistanceLabel = label;
   
   m_displayDistance = new WLineEdit( inputTable );
@@ -1268,9 +1282,9 @@ DetectionLimitTool::DetectionLimitTool( InterSpec *viewer,
   
   
   label = new WLabel( "Confidence Level:", inputTable );
-  label->addStyleClass( "GridSixthCol GridSecondRow" );
+  label->addStyleClass( "GridSixthCol GridSecondRow GridVertCenter" );
   m_confidenceLevel = new WComboBox( inputTable );
-  m_confidenceLevel->addStyleClass( "GridSeventhCol GridSecondRow" );
+  m_confidenceLevel->addStyleClass( "GridSeventhCol GridSecondRow GridVertCenter" );
   
   for( auto cl = ConfidenceLevel(0); cl < NumConfidenceLevel; cl = ConfidenceLevel(cl+1) )
   {
@@ -1278,18 +1292,20 @@ DetectionLimitTool::DetectionLimitTool( InterSpec *viewer,
     
     switch( cl )
     {
-      case ConfidenceLevel::OneSigma:   txt = "68%";     break;
-      case ConfidenceLevel::TwoSigma:   txt = "95%";     break;
-      case ConfidenceLevel::ThreeSigma: txt = "99%";     break;
-      case ConfidenceLevel::FourSigma:  txt = "4-sigma"; break;
-      case ConfidenceLevel::FiveSigma:  txt = "5-sigma"; break;
-      case ConfidenceLevel::NumConfidenceLevel:          break;
+      case ConfidenceLevel::NinetyFivePercent: txt = "95%";        break;
+      case ConfidenceLevel::NinetyNinePercent: txt = "99%";        break;
+      case ConfidenceLevel::OneSigma:          txt = "1σ (68.2%)"; break;
+      case ConfidenceLevel::TwoSigma:          txt = "2σ (95.4%)"; break;
+      case ConfidenceLevel::ThreeSigma:        txt = "3σ (99.7%)"; break;
+      case ConfidenceLevel::FourSigma:         txt = "4σ";         break;
+      case ConfidenceLevel::FiveSigma:         txt = "5σ";         break;
+      case ConfidenceLevel::NumConfidenceLevel: break;
     }//switch( cl )
     
     m_confidenceLevel->addItem( txt );
   }//for( loop over confidence levels )
   
-  m_confidenceLevel->setCurrentIndex( ConfidenceLevel::TwoSigma );
+  m_confidenceLevel->setCurrentIndex( ConfidenceLevel::NinetyFivePercent );
   
   m_confidenceLevel->activated().connect(this, &DetectionLimitTool::handleUserChangedConfidenceLevel );
   
@@ -1398,7 +1414,7 @@ DetectionLimitTool::DetectionLimitTool( InterSpec *viewer,
   handleUserNuclideChange();
   
   // Update the displayed activity units, when the user changes this preference.
-  InterSpecUser::addCallbackWhenChanged( viewer->m_user, viewer, "DisplayBecquerel",
+  viewer->preferences()->addCallbackWhenChanged( "DisplayBecquerel",
                                         boost::bind(&DetectionLimitTool::handleInputChange, this) );
   
   
@@ -3048,11 +3064,13 @@ double DetectionLimitTool::currentConfidenceLevel()
   const auto cl = ConfidenceLevel( m_confidenceLevel->currentIndex() );
   switch( cl )
   {
-    case OneSigma:   return 0.682689492137086;
-    case TwoSigma:   return 0.954499736103642;
-    case ThreeSigma: return 0.997300203936740;
-    case FourSigma:  return 0.999936657516334;
-    case FiveSigma:  return 0.999999426696856;
+    case NinetyFivePercent: return 0.95;
+    case NinetyNinePercent: return 0.99;
+    case OneSigma:          return 0.682689492137086;
+    case TwoSigma:          return 0.954499736103642;
+    case ThreeSigma:        return 0.997300203936740;
+    case FourSigma:         return 0.999936657516334;
+    case FiveSigma:         return 0.999999426696856;
     case NumConfidenceLevel: break;
   }//switch( cl )
   

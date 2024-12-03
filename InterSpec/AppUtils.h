@@ -107,6 +107,17 @@ namespace AppUtils
                    const bool is_dir,
                    size_t max_levels_up,
                    const bool include_path );
+  
+  /** Shows a file in the Windows Explorer, macOS Finder, or Linux File.
+   
+   If passed in path is a file, will open a OS file window and select the file (for Windows and macOS - selecting
+   file is not implemented for linux).
+   
+   If passed in path is a directory, will open OS file window for that directory.
+   
+   Returns if it looks like things where successful.
+   */
+  InterSpec_API bool showFileInOsFileBrowser( const std::string &filepath );
 #endif //#if( !ANDROID && !IOS && !BUILD_FOR_WEB_DEPLOYMENT )
   
   InterSpec_API std::string file_contents( const std::string &filename );

@@ -106,7 +106,6 @@ protected:
   InterSpec        *m_viewer;
   Wt::WPushButton  *m_loadSnapshotButton;
   Wt::WPushButton  *m_loadSpectraButton;
-  //Wt::WPushButton  *m_deleteButton;
   Wt::WPushButton  *m_renameButton;
   Wt::WButtonGroup *m_buttonGroup;
   Wt::WGroupBox    *m_buttonbox;

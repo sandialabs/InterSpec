@@ -98,6 +98,7 @@
 
     <div id="GeneralInfo">
     <ul style="list-style-type: none; padding: 0; margin: 0;">
+{% if exists("foreground") %}
     <li>
         {% if exists("background") %} Foreground: {% endif %}
         <table class="InfoTable">
@@ -179,7 +180,9 @@
             {% endif %}
         </table>
     </li>
-    {% if exists("background") %} 
+  {% endif %} <!-- if exists("foreground") -->
+
+  {% if exists("background") %} 
     <li>
         Background:
         <table class="InfoTable">
@@ -278,7 +281,6 @@
         Branching ratios are being corrected for nuclide decay during measurement.
     </li>    
     {% endif %} <!-- if ActShieldFitSetup.FitOptions.DecayDuringMeasurement -->
-    {% endif %} <!-- if HasFitResults -->
 
     {% if exists("background") %}
       <li>
@@ -288,7 +290,8 @@
       Background peaks are not being subtracted.
       {% endif %}
       </li>
-    {% endif %}
+    {% endif %} <!--if exists("background") -->
+    {% endif %} <!-- if HasFitResults -->
 
     </ul>
     </div> <!-- <div id="GeneralInfo"> -->
@@ -386,7 +389,6 @@ Sources:
 
 {% if exists("Sources") %}
 <div id="PeakContributions" style="margin-top: 25px">
-<span style="color: red; font-weight: bold;">(Gamma contribution counts currently not correct!)</span>
 <ul style="list-style-type: none; padding: 0; margin: 0;">
 ## for src in Sources
   <li style="margin-top: 10px;"> Peak contributions from {{ src.Nuclide }}:
@@ -395,12 +397,19 @@ Sources:
       <thead>
         <tr>
           <th>Energy (keV)</th>
-          <th>Signal Counts</th>
+          <th>Observed Counts</th>
           <th>&Delta;Counts</th>
-          <th>Model Sum</th>
+          <th>Pred. Model Sum</th>
+          <th>Det. Intrinsic Eff.</th>
+          <th>Det. Solid Angle.</th>
+          <th>Det. Eff.</th>
+          <th>Shield Atten. Factor</th>
+          <th>Air Atten. Factor</th>
+          <th>Total Atten. Factor</th>
           <th>Nuclide</th>
           <th>&gamma; Energy</th>
-          <th>&gamma; Counts</th>
+          <th>Pred. &gamma;</th>
+          <th>&gamma; into 4pi</th>
         </tr>
       </thead>
 
@@ -411,7 +420,12 @@ Sources:
           <td>{{ printCompact(peak.SignalCounts,5) }}</td>
           <td>{{ printCompact(peak.SignalCountsUncert,5) }}</td>
           <td>{{ printCompact(peak.PredictedCounts,5) }}</td>
-          
+          <td>{{ printCompact(peak.DetectorIntrinsicEff,5) }}</td>
+          <td>{{ printCompact(peak.DetectorSolidAngleFraction,5) }}</td>
+          <td>{{ printCompact(peak.DetectorEff,5) }}</td>
+          <td>{{ printCompact(peak.AttenuationByShieldingFactor,5) }}</td>
+          <td>{{ printCompact(peak.AttenuationByAirFactor,5) }}</td>
+          <td>{{ printCompact(peak.AttenuationTotalFactor,5) }}</td>
     {% if existsIn(peak,"ThisNucsGammasForPeak") %}
 ## for src in peak.ThisNucsGammasForPeak
         {% if loop.is_first %}
@@ -421,13 +435,21 @@ Sources:
           <td></td>
           <td></td>
           <td></td>
+          <td></td>
+          <td></td>
+          <td></td>
+          <td></td>
+          <td></td>
+          <td></td>
         {% endif %}
           <td>{{ src.Nuclide }}</td>
           <td>{{ printFixed(src.Energy_keV,3) }}</td>
-          <td>{{ printCompact(src.CountsContributedToPeak,6) }}</td>
+          <td>{{ printCompact(src.PredictedCounts,6) }}</td>
+          <td>{{ printCompact(src.SourcePhotons,6) }}</td>
         </tr>
 ##endfor
     {% else %}
+          <td></td>
           <td></td>
           <td></td>
           <td></td>
@@ -450,6 +472,7 @@ Sources:
 
   </div>  <!-- <div id="results" style="margin-top: 15px"> -->
 
+{% if exists("foreground") %}
   <script>
     let spec_chart_specchart = new SpectrumChartD3( 'specchart',  {
     'title': '', 'xlabel' : 'Energy (keV)', 'ylabel': 'Counts'
@@ -469,6 +492,7 @@ Sources:
       spec_chart_specchart.setData( spectrum_json );
       spec_chart_specchart.setLogY( true );
   </script>
+{% endif %} <!-- if exists("foreground") --> 
 
 {% if exists("Shieldings") %}
 {% if existsIn(Shieldings,"Shields") %}

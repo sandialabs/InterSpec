@@ -132,6 +132,7 @@
   <message id="window-title-units-convert">Units Converter</message>
   <message id="window-title-flux-tool">Flux Tool</message>
   <message id="window-title-nuc-decay">Nuclide Decay Information</message>
+  <message id="window-title-select-det-eff-fcn">Detector Response Function Select</message>
   <message id="window-title-add-fwhm">Add FWHM to Detector Response Function</message>
   <message id="window-title-create-drf">Create Detector Response Function</message>
   <message id="window-title-file-parameters">File Parameters</message>
@@ -415,6 +416,7 @@
 
   <!-- Error messages, the user probably wont see -->
   <message id="err-save-sate-to-db">I'm sorry there was a technical error saving your  user state to the database.</message>
+  <message id="err-save-to-large-for-db">File is larger than allowed to be saved to database (is {1} kb, allowed {2} kb).</message>
   <message id="err-no-roi-to-add-peak">There was no ROI to add peak to.</message>
   <message id="err-no-add-peak-to-data-roi">Sorry, cant add peaks to a ROI with a data defined peak.</message>
   <message id="err-add-peak-no-improve">Adding a peak did not improve overall ROI fit - not adding one.</message>

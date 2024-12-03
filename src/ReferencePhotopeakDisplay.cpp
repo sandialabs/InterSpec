@@ -69,6 +69,7 @@
 #include "InterSpec/ShieldingSelect.h"
 #include "InterSpec/SpecMeasManager.h"
 #include "InterSpec/UndoRedoManager.h"
+#include "InterSpec/UserPreferences.h"
 #include "InterSpec/ReferenceLineInfo.h"
 #include "InterSpec/NativeFloatSpinBox.h"
 #include "InterSpec/RowStretchTreeView.h"
@@ -522,32 +523,34 @@ namespace
   
 }//namespace
 
-bool DecayParticleModel::less_than( const DecayParticleModel::RowData &lhs,
-                                    const DecayParticleModel::RowData &rhs,
+bool DecayParticleModel::less_than( const DecayParticleModel::RowData &lhs_input,
+                                    const DecayParticleModel::RowData &rhs_input,
                                     const DecayParticleModel::Column c,
                                     const SortOrder order )
 {
-
-  bool less = false;
-
+  const bool less = (order == Wt::AscendingOrder);
+  
+  const DecayParticleModel::RowData &lhs = less ? lhs_input : rhs_input;
+  const DecayParticleModel::RowData &rhs = less ? rhs_input : lhs_input;
+  
   switch( c )
   {
-    case kEnergy:         less = (lhs.energy < rhs.energy);           break;
-    case kBranchingRatio: less = (lhs.branchRatio < rhs.branchRatio); break;
+    case kEnergy:         return (lhs.energy < rhs.energy);
+    case kBranchingRatio: return (lhs.branchRatio < rhs.branchRatio);
     case kResponsibleNuc:
       if( !lhs.responsibleNuc || !rhs.responsibleNuc )
-        less = false;
+        return lhs.responsibleNuc < rhs.responsibleNuc;
       else
-        less = SandiaDecay::Nuclide::lessThan( lhs.responsibleNuc, rhs.responsibleNuc );
+        return SandiaDecay::Nuclide::lessThanForOrdering( lhs.responsibleNuc, rhs.responsibleNuc );
     break;
-    case kDecayMode:      less = (lhs.decayMode < rhs.decayMode);     break;
-    case kParticleType:   less = (lhs.particle < rhs.particle);       break;
+    case kDecayMode:      return (lhs.decayMode < rhs.decayMode);
+    case kParticleType:   return (lhs.particle < rhs.particle);
     case kNumColumn:      return false;
   }//switch( r )
 
-  if( order == Wt::AscendingOrder )
-    return less;
-  return !less;
+  assert( 0 );
+  
+  return false;
 }//less_than(...)
 
 
@@ -873,7 +876,7 @@ ReferencePhotopeakDisplay::ReferencePhotopeakDisplay(
   if( !chart )
     throw runtime_error( "ReferencePhotopeakDisplay: a valid chart must be passed in" );
 
-  const bool showToolTips = InterSpecUser::preferenceValue<bool>( "ShowTooltips", specViewer );
+  const bool showToolTips = UserPreferences::preferenceValue<bool>( "ShowTooltips", specViewer );
   
   //The inputDiv/Layout is the left side of the widget that holds all the
   //  nuclide input,age, color picker, DRF, etc
@@ -1152,11 +1155,11 @@ ReferencePhotopeakDisplay::ReferencePhotopeakDisplay(
   m_showFeatureMarkers->unChecked().connect( this, &ReferencePhotopeakDisplay::featureMarkerCbToggled );
       
 
-  //const bool showToolTips = InterSpecUser::preferenceValue<bool>("ShowTooltips", this);
+  //const bool showToolTips = UserPreferences::preferenceValue<bool>("ShowTooltips", this);
   //HelpSystem::attachToolTipOn(m_showPrevNucs, "Show ", showToolTips);
-  InterSpecUser::associateWidget( specViewer->m_user, "RefLineShowPrev", m_showPrevNucs, specViewer );
-  InterSpecUser::associateWidget( specViewer->m_user, "RefLineShowRiid", m_showRiidNucs, specViewer );
-  InterSpecUser::associateWidget( specViewer->m_user, "RefLineShowAssoc", m_showAssocNucs, specViewer );
+  UserPreferences::associateWidget( "RefLineShowPrev", m_showPrevNucs, specViewer );
+  UserPreferences::associateWidget( "RefLineShowRiid", m_showRiidNucs, specViewer );
+  UserPreferences::associateWidget( "RefLineShowAssoc", m_showAssocNucs, specViewer );
 
 
   //HelpSystem::attachToolTipOn(m_options, "If checked, selection will be shown.",

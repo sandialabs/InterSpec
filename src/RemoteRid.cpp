@@ -83,6 +83,7 @@
 #include "InterSpec/PhysicalUnits.h"
 #include "InterSpec/WarningWidget.h"
 #include "InterSpec/UndoRedoManager.h"
+#include "InterSpec/UserPreferences.h"
 #include "InterSpec/DecayDataBaseServer.h"
 #include "InterSpec/ReferencePhotopeakDisplay.h"
 
@@ -428,7 +429,7 @@ protected:
           break;
       }//switch( m_type )
       
-      const string prev_urls = InterSpecUser::preferenceValue<string>( prefname, m_interspec );
+      const string prev_urls = UserPreferences::preferenceValue<string>( prefname, m_interspec );
       vector<string> prev;
       SpecUtils::split( prev, prev_urls, ";" );
       
@@ -446,7 +447,7 @@ protected:
         new_url += (i ? ";" : "") + prev[i];
       }
       
-      InterSpecUser::setPreferenceValue( m_interspec->m_user, prefname, new_url, m_interspec );
+      UserPreferences::setPreferenceValue( prefname, new_url, m_interspec );
     }catch( std::exception &e )
     {
       cerr << "Error in setMostRecentUrl( '" << url << "' ): " << e.what() << endl;
@@ -496,7 +497,7 @@ public:
     
     try
     {
-      const string prev_urls = InterSpecUser::preferenceValue<string>( prefname, interspec );
+      const string prev_urls = UserPreferences::preferenceValue<string>( prefname, interspec );
       vector<string> prev;
       SpecUtils::split( prev, prev_urls, ";" );
 #if( !ANDROID && !IOS && !BUILD_FOR_WEB_DEPLOYMENT )
@@ -784,7 +785,7 @@ public:
     
     try
     {
-      InterSpecUser::setPreferenceValue( m_interspec->m_user, "AlwaysCallExternalRid",
+      UserPreferences::setPreferenceValue( "AlwaysCallExternalRid",
                                         static_cast<int>(pref_value), m_interspec );
     }catch( std::exception & )
     {
@@ -1547,7 +1548,7 @@ public:
   
   static void generateResultHtml( WStringStream &rslttxt, const FullSpecResults &results )
   {
-    const bool useBq = InterSpecUser::preferenceValue<bool>( "DisplayBecquerel", InterSpec::instance() );
+    const bool useBq = UserPreferences::preferenceValue<bool>( "DisplayBecquerel", InterSpec::instance() );
     
     rslttxt << "<table class=\"ResultTable\"><tbody>\n"
     << "\t<tr>"
@@ -2233,7 +2234,7 @@ ExternalRidAuotCallPref RemoteRid::external_rid_call_pref( InterSpec *viewer )
     if( !viewer )
       throw runtime_error( "Invalid InterSpec instance" );
     
-    const int pref_value = InterSpecUser::preferenceValue<int>( "AlwaysCallExternalRid", viewer );
+    const int pref_value = UserPreferences::preferenceValue<int>( "AlwaysCallExternalRid", viewer );
     const auto pref = static_cast<ExternalRidAuotCallPref>( pref_value );
     
     bool valid = false;
@@ -2269,7 +2270,7 @@ SimpleDialog *RemoteRid::startRemoteRidDialog( InterSpec *viewer,
   if( !viewer )
     return nullptr;
   
-  const bool showWarning = InterSpecUser::preferenceValue<bool>( "ExternalRidWarn", viewer );
+  const bool showWarning = UserPreferences::preferenceValue<bool>( "ExternalRidWarn", viewer );
   
   if( !showWarning )
   {
@@ -2310,7 +2311,7 @@ SimpleDialog *RemoteRid::startRemoteRidDialog( InterSpec *viewer,
   btn = dialog->addButton( "Continue" );
   btn->clicked().connect( std::bind([viewer,callback,cb](){
     if( cb->isChecked() )
-      InterSpecUser::setPreferenceValue(viewer->m_user, "ExternalRidWarn", false, viewer );
+      UserPreferences::setPreferenceValue("ExternalRidWarn", false, viewer );
       
     auto res = RemoteRid::createDialog( viewer );
     if( callback )
@@ -2671,7 +2672,7 @@ void RemoteRid::disableAutoRemoteRid( InterSpec *interspec )
   
   try
   {
-    InterSpecUser::setPreferenceValue(interspec->m_user, "AlwaysCallExternalRid", 0, interspec);
+    UserPreferences::setPreferenceValue( "AlwaysCallExternalRid", 0, interspec);
   }catch(...)
   {
     assert( 0 );
@@ -2788,10 +2789,10 @@ void RemoteRid::handleAppUrl( std::string query_str )
       assert( interspec );
       if( !interspec )
         return;
-      InterSpecUser::setPreferenceValue( interspec->m_user, "AlwaysCallExternalRid", static_cast<int>(0), interspec );
-      InterSpecUser::setPreferenceValue( interspec->m_user, "ExternalRidWarn", true, interspec );
-      InterSpecUser::setPreferenceValue( interspec->m_user, "ExternalRidUrl", string(), interspec );
-      InterSpecUser::setPreferenceValue( interspec->m_user, "ExternalRidExe", string(), interspec );
+      UserPreferences::setPreferenceValue( "AlwaysCallExternalRid", static_cast<int>(0), interspec );
+      UserPreferences::setPreferenceValue( "ExternalRidWarn", true, interspec );
+      UserPreferences::setPreferenceValue( "ExternalRidUrl", string(), interspec );
+      UserPreferences::setPreferenceValue( "ExternalRidExe", string(), interspec );
       passMessage( "External-RID preferences have been reset.", WarningWidget::WarningMsgInfo );
     }) );
     dialog->addButton( "Cancel" );
@@ -2853,12 +2854,12 @@ void RemoteRid::handleAppUrl( std::string query_str )
       }//if( !url_path.empty() ) / else
     }//if( always_call )
     
-    InterSpecUser::setPreferenceValue( interspec->m_user, "AlwaysCallExternalRid", static_cast<int>(pref_value), interspec );
-    //InterSpecUser::setPreferenceValue( interspec->m_user, "ExternalRidWarn", false, interspec );
+    UserPreferences::setPreferenceValue( "AlwaysCallExternalRid", static_cast<int>(pref_value), interspec );
+    //UserPreferences::setPreferenceValue( "ExternalRidWarn", false, interspec );
     if( !url_path.empty() )
-      InterSpecUser::setPreferenceValue( interspec->m_user, "ExternalRidUrl", url_path, interspec );
+      UserPreferences::setPreferenceValue( "ExternalRidUrl", url_path, interspec );
     if( !exe_path.empty() )
-      InterSpecUser::setPreferenceValue( interspec->m_user, "ExternalRidExe", exe_path, interspec );
+      UserPreferences::setPreferenceValue( "ExternalRidExe", exe_path, interspec );
     passMessage( "External-RID preferences have been updated.", WarningWidget::WarningMsgInfo );
   };//set_to_new_prefs
   
@@ -2870,27 +2871,27 @@ void RemoteRid::handleAppUrl( std::string query_str )
   
   try
   {
-    prev_always_call = InterSpecUser::preferenceValue<int>( "AlwaysCallExternalRid", interspec );
+    prev_always_call = UserPreferences::preferenceValue<int>( "AlwaysCallExternalRid", interspec );
   }catch( std::exception & ){ cerr << "Exception getting AlwaysCallExternalRid." << endl; }
   
   try
   {
-    prev_url_path = InterSpecUser::preferenceValue<string>( "ExternalRidUrl", interspec );
+    prev_url_path = UserPreferences::preferenceValue<string>( "ExternalRidUrl", interspec );
   }catch( std::exception & ){ cerr << "Exception getting ExternalRidUrl" << endl; }
   
   try
   {
-    prev_exe_path = InterSpecUser::preferenceValue<string>( "ExternalRidExe", interspec );
+    prev_exe_path = UserPreferences::preferenceValue<string>( "ExternalRidExe", interspec );
   }catch( std::exception & ){ cerr << "Exception getting ExternalRidExe." << endl; }
   
   const auto set_to_old_prefs = [prev_always_call, prev_url_path, prev_exe_path](){
     InterSpec *interspec = InterSpec::instance();
     assert( interspec );
     
-    InterSpecUser::setPreferenceValue( interspec->m_user, "AlwaysCallExternalRid", prev_always_call, interspec );
-    //InterSpecUser::setPreferenceValue( interspec->m_user, "ExternalRidWarn", false, interspec );
-    InterSpecUser::setPreferenceValue( interspec->m_user, "ExternalRidUrl", prev_url_path, interspec );
-    InterSpecUser::setPreferenceValue( interspec->m_user, "ExternalRidExe", prev_exe_path, interspec );
+    UserPreferences::setPreferenceValue( "AlwaysCallExternalRid", prev_always_call, interspec );
+    //UserPreferences::setPreferenceValue( "ExternalRidWarn", false, interspec );
+    UserPreferences::setPreferenceValue( "ExternalRidUrl", prev_url_path, interspec );
+    UserPreferences::setPreferenceValue( "ExternalRidExe", prev_exe_path, interspec );
     passMessage( "External-RID preferences have been reverted back to original.", WarningWidget::WarningMsgInfo );
   };//set_to_old_prefs
   

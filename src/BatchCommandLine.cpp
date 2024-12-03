@@ -34,6 +34,7 @@
 #include "InterSpec/BatchPeak.h"
 #include "InterSpec/BatchActivity.h"
 #include "InterSpec/InterSpecUser.h"
+#include "InterSpec/UserPreferences.h"
 #include "InterSpec/BatchCommandLine.h"
 #include "InterSpec/DetectorPeakResponse.h"
 
@@ -261,7 +262,7 @@ int run_batch_command( int argc, char **argv )
       bool use_bq = false, hard_background_sub = false;
       try
       {
-        use_bq = InterSpecUser::preferenceValue<bool>( "DisplayBecquerel", nullptr );
+        use_bq = UserPreferences::preferenceValue<bool>( "DisplayBecquerel", nullptr );
       }catch( std::exception &)
       {
         assert( 0 );

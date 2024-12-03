@@ -36,6 +36,9 @@ namespace macOsUtils
   
   std::string static_data_base_dir();
   std::string user_data_dir();
+  
+  bool openFinderToPath( const std::string &filepath );
+  bool showFileInFinder( const std::string &filepath );
 }
 
 #endif

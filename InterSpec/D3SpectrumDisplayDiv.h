@@ -4,6 +4,7 @@
 #include "InterSpec_config.h"
 
 #include <map>
+#include <tuple>
 #include <chrono>
 #include <memory>
 #include <vector>
@@ -109,8 +110,17 @@ public:
              double /*window_xpx*/,
              double /*window_ypx*/> &dragCreateRoiUpdate();
   
+  /** Signal emitted when the background or secondary scale-factor is changed. */
   Wt::Signal<double/*new SF*/, double/*old SF*/, SpecUtils::SpectrumType> &yAxisScaled();
   
+  /** Signal for when the energy range slider chart is shown. */
+  Wt::Signal<bool> &xAxisSliderShown();
+  
+  /** Signal for when the y-axis type (log vs linear) gets changed.  A value of true indicates log, a value of false is linear. */
+  Wt::Signal<bool> &yAxisLogLinChanged();
+  
+  /** Signal for when the x-axis label is made compact (true) or not (false). */
+  Wt::Signal<bool> &xAxisCompactnessChanged();
   
   /** Performs the work for the primary spectrum display in InterSpec that causes the peaks
    in an existing ROI to get re-fit as the user drags the edge.  To get this behavior, you
@@ -188,6 +198,9 @@ public:
    If a value of 0.0 or is given, an exception will be thrown.
    */
   void setLogYAxisMin( const double ymin );
+  
+  /** Returns the `m_logYAxisMin` value */
+  double logYAxisMin() const;
   
   // These 3 functions retrieve the corresponding info from the model.
   std::shared_ptr<const SpecUtils::Measurement> data()       const;
@@ -321,7 +334,13 @@ public:
   
   void setYAxisMinimum( const double minimum );
   void setYAxisMaximum( const double maximum );
-  void setYAxisRange( const double minimum, const double maximum );
+  
+  /** Set the y-axis range.
+   
+   Returns the actual set y-range, and if this is different than the requested range, a message as to why it couldnt be set
+   (e.x., a value less than or equal to 0 was requested for a log axis).
+   */
+  std::tuple<double,double,Wt::WString> setYAxisRange( double minimum, double maximum );
     
   //peakLabel should be of type SpectrumChart::PeakLabels, but I didnt want
   //  to include the SpectrumChart header for just this
@@ -507,6 +526,11 @@ protected:
              double /*window_ypx*/> m_dragCreateRoi;
   
   Wt::Signal<double /*new SF*/, double /*prev SF*/,SpecUtils::SpectrumType> m_yAxisScaled;
+  
+  Wt::Signal<bool> m_xAxisSliderShown;
+  Wt::Signal<bool> m_yAxisLogLinChanged;
+  Wt::Signal<bool> m_xAxisCompactnessChanged;
+  
   
   // Signal Callbacks
   void chartShiftKeyDragCallback( double x0, double x1 );

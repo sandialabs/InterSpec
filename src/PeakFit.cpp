@@ -1171,7 +1171,7 @@ void findPeaksInUserRange( double x0, double x1, int nPeaks,
     if( !fixSigma )
     {
       float minw, maxw;
-      expected_peak_width_limits( inpeaks[i].mean(), isHpge, minw, maxw );
+      expected_peak_width_limits( inpeaks[i].mean(), isHpge, dataH, minw, maxw );
       
       maxsigma = std::max( maxsigma, double(maxw) );
       minsigma = std::min( minsigma, double(minw) );
@@ -1302,8 +1302,8 @@ void findPeaksInUserRange_linsubsolve( double x0, double x1, int nPeaks,
   const bool isHpge = PeakFitUtils::is_high_res( dataH );
   
   float minw_lower, maxw_lower, minw_upper, maxw_upper;
-  expected_peak_width_limits( x0, isHpge, minw_lower, maxw_lower );
-  expected_peak_width_limits( x1, isHpge, minw_upper, maxw_upper );
+  expected_peak_width_limits( x0, isHpge, dataH, minw_lower, maxw_lower );
+  expected_peak_width_limits( x1, isHpge, dataH, minw_upper, maxw_upper );
   
   float minsigma = std::min( minw_lower, minw_upper );
   float maxsigma = std::min( maxw_lower, maxw_upper );
@@ -2446,6 +2446,7 @@ void find_roi_for_2nd_deriv_candidate(
 
 void expected_peak_width_limits( const float energy,
                                  const bool highres,
+                                 const std::shared_ptr<const SpecUtils::Measurement> &meas,
                                  float &min_sigma_width_kev,
                                  float &max_sigma_width_kev )
 {
@@ -2516,6 +2517,29 @@ void expected_peak_width_limits( const float energy,
   
   min_sigma_width_kev = min_width_multiple * lowerres;
   max_sigma_width_kev = max_width_multple * largerres;
+  
+  // For really nice HPGe or micro-calorimeters, the resolution may be even better than
+  //  expected from the above, so we'll also check the spectrum an allow the FWHM
+  //  go down to ~6 channels (chosen arbitrarily - from one example file)
+  const double min_nchannel_sigma = 2.55;  //2.55*2.355=6.005
+  if( highres && meas && (meas->num_gamma_channels() > (4096+2)) )
+  {
+    shared_ptr<const SpecUtils::EnergyCalibration> cal = meas->energy_calibration();
+    if( cal && cal->valid() )
+    {
+      try
+      {
+        const double highchannel = cal->channel_for_energy( energy + 0.5*min_sigma_width_kev );
+        const double lowchannel = cal->channel_for_energy( energy - 0.5*min_sigma_width_kev );
+        const double nchannel_sigma = highchannel - lowchannel;
+        if( nchannel_sigma > min_nchannel_sigma )
+          min_sigma_width_kev = min_sigma_width_kev * min_nchannel_sigma / nchannel_sigma;
+      }catch( std::exception & )
+      {
+        // probably wont ever get here
+      }
+    }//if( valid energy cal )
+  }//if( highres )
 }//void expected_peak_width_limits(...)
 
 
@@ -2803,7 +2827,7 @@ void get_candidate_peak_estimates_for_user_click(
   size_t highchannel = ((midbin + upper_chan_sub) >= nchannels) ? nchannels-1 : static_cast<size_t>(midbin + upper_chan_sub);
   
   float min_sigma_width_kev, max_sigma_width_kev;
-  expected_peak_width_limits( x, highres, min_sigma_width_kev, max_sigma_width_kev );
+  expected_peak_width_limits( x, highres, dataH, min_sigma_width_kev, max_sigma_width_kev );
   
   
   
@@ -2824,7 +2848,7 @@ void get_candidate_peak_estimates_for_user_click(
   
 
   float min_sigma, max_sigma;
-  expected_peak_width_limits( x, highres, min_sigma, max_sigma );
+  expected_peak_width_limits( x, highres, dataH, min_sigma, max_sigma );
   
   sigma0 = 0.5*(min_sigma + max_sigma) * (highres ? 0.20 : 0.25);  //expected_peak_width_limits multiplies max width by  4 for highres, and 3 for lowres
   mean0 = x;
@@ -3035,7 +3059,7 @@ void fit_peak_for_user_click( PeakShrdVec &results,
         {
 //          cout << "Testing setting peak resolution limits based on expected_lowres_peak_width_limits" << endl;
           float lowersigma, uppersigma;
-          expected_peak_width_limits( mean, false, lowersigma, uppersigma );
+          expected_peak_width_limits( mean, false, dataH, lowersigma, uppersigma );
           if( !i )
             minsigma = lowersigma;
           if( i == (coFitPeaks.size()-1) )
@@ -3671,7 +3695,7 @@ bool check_lowres_single_peak_fit( const std::shared_ptr<const PeakDef> peak,
   if( lowres_enforce_peak_width_limits )
   {
     float min_sigma, max_sigma;
-    expected_peak_width_limits( mean, false, min_sigma, max_sigma );
+    expected_peak_width_limits( mean, false, dataH, min_sigma, max_sigma );
     
     if( sigma < min_sigma || sigma > max_sigma )
     {
@@ -4287,7 +4311,7 @@ PeakRejectionStatus check_highres_multi_peak_fit( const vector<std::shared_ptr<c
     const float sigma = static_cast<float>( p->sigma() );
     
     float min_sigma, max_sigma;
-    expected_peak_width_limits( mean, true, min_sigma, max_sigma );
+    expected_peak_width_limits( mean, true, dataH, min_sigma, max_sigma );
     
     bool outsideExpectedFwhm = (sigma < min_sigma || sigma > max_sigma);
     
@@ -4512,7 +4536,7 @@ bool check_highres_single_peak_fit( const std::shared_ptr<const PeakDef> peak,
   
   
   float min_sigma, max_sigma;
-  expected_peak_width_limits( (float)mean, true, min_sigma, max_sigma );
+  expected_peak_width_limits( (float)mean, true, dataH, min_sigma, max_sigma );
   
   //An issue is that doppler broadened peaks (like 511 keV) will have a width
   //  outside of limits - so if the chi2dof is good enough, or the peak is

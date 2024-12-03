@@ -74,6 +74,7 @@
 #include "InterSpec/ExportSpecFile.h"
 #include "InterSpec/SpecMeasManager.h"
 #include "InterSpec/UndoRedoManager.h"
+#include "InterSpec/UserPreferences.h"
 #include "InterSpec/SpectraFileModel.h"
 #include "InterSpec/PhysicalUnitsLocalized.h"
 
@@ -740,7 +741,7 @@ void ExportSpecFileTool::init()
   m_interspec->saveRelActManualStateToForegroundSpecMeas();
 #endif
   
-  const bool showToolTips = InterSpecUser::preferenceValue<bool>( "ShowTooltips", m_interspec );
+  const bool showToolTips = UserPreferences::preferenceValue<bool>( "ShowTooltips", m_interspec );
   const bool isMobile = m_interspec && m_interspec->isMobile();
 
   if( isMobile )
@@ -2986,12 +2987,14 @@ std::shared_ptr<const SpecMeas> ExportSpecFileTool::generateFileToSave()
       samples.erase( sample );
     
     // Now lets map sample numbers to 1 through N
+    samples.clear();
     int new_sample_number = 0;
     vector<pair<int,int>> old_to_new_samplenum;
     for( const int old_sample_number : answer->sample_numbers() )
     {
       ++new_sample_number;
       old_to_new_samplenum.emplace_back( old_sample_number, new_sample_number );
+      samples.insert( new_sample_number );
     }//for( loop over sample numbers )
     
     answer->change_sample_numbers( old_to_new_samplenum );

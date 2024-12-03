@@ -97,6 +97,7 @@
 #include "InterSpec/MakeFwhmForDrf.h"
 #include "InterSpec/SpecMeasManager.h"
 #include "InterSpec/UndoRedoManager.h"
+#include "InterSpec/UserPreferences.h"
 #include "InterSpec/SpectraFileModel.h"
 #include "InterSpec/NativeFloatSpinBox.h"
 #include "InterSpec/RowStretchTreeView.h"
@@ -1336,7 +1337,7 @@ void RelEffDetSelect::docreate()
   WContainerWidget *holder = new WContainerWidget( this );
   holder->addStyleClass( "DrfSelectAreaFooter" );
   //holder->setToolTip( WString::tr("reds-tt-add-drf-btn") );
-  const bool showToolTips = InterSpecUser::preferenceValue<bool>( "ShowTooltips", m_interspec );
+  const bool showToolTips = UserPreferences::preferenceValue<bool>( "ShowTooltips", m_interspec );
   HelpSystem::attachToolTipOn( holder, WString::tr("reds-tt-add-drf-btn"),
                               showToolTips, HelpSystem::ToolTipPosition::Left );
   
@@ -1455,14 +1456,14 @@ void GadrasDetSelect::docreate()
   m_directories->addStyleClass( "DrfSelectAreaFiles" );
   
   //Need to point the GUI to the appropriate directory, and implement to an `ls` to find detctors with both Detcotr.dat and Efficy.csv.
-  const string drfpaths = InterSpecUser::preferenceValue<string>( "GadrasDRFPath", m_interspec );
+  const string drfpaths = UserPreferences::preferenceValue<string>( "GadrasDRFPath", m_interspec );
   
   WContainerWidget *footer = new WContainerWidget( this );
   footer->addStyleClass( "DrfSelectAreaFooter" );
   
 #if( !BUILD_FOR_WEB_DEPLOYMENT && !defined(IOS) )
   //footer->setToolTip( WString::tr("reds-tt-add-dir") );
-  const bool showToolTips = InterSpecUser::preferenceValue<bool>( "ShowTooltips", m_interspec );
+  const bool showToolTips = UserPreferences::preferenceValue<bool>( "ShowTooltips", m_interspec );
   HelpSystem::attachToolTipOn( footer, WString::tr("reds-tt-add-dir"), showToolTips, HelpSystem::ToolTipPosition::Left );
   
   
@@ -1477,7 +1478,7 @@ void GadrasDetSelect::docreate()
   try
   {
     if( m_interspec )
-      pathstr = InterSpecUser::preferenceValue<string>( "GadrasDRFPath", m_interspec );
+      pathstr = UserPreferences::preferenceValue<string>( "GadrasDRFPath", m_interspec );
   }catch( std::exception & )
   {
     passMessage( "Error retrieving 'GadrasDRFPath' preference.", WarningWidget::WarningMsgHigh );
@@ -1688,7 +1689,7 @@ void GadrasDetSelect::saveFilePathToUserPreferences()
   
   try
   {
-    InterSpecUser::setPreferenceValue( m_interspec->m_user, "GadrasDRFPath", dirs, m_interspec );
+    UserPreferences::setPreferenceValue( "GadrasDRFPath", dirs, m_interspec );
   }catch( std::exception &e )
   {
     passMessage( WString::tr("reds-err-saving-gad-path").arg(e.what()), WarningWidget::WarningMsgHigh );
@@ -1735,7 +1736,7 @@ GadrasDirectory::GadrasDirectory( std::string directory, GadrasDetSelect *parent
   m_directoryEdit->setAttributeValue( "ondragstart", "return false" );
   
   auto interspec = InterSpec::instance();
-  const bool showToolTips = InterSpecUser::preferenceValue<bool>( "ShowTooltips", interspec );
+  const bool showToolTips = UserPreferences::preferenceValue<bool>( "ShowTooltips", interspec );
   
   
   WContainerWidget *topdiv = new WContainerWidget( this );
@@ -2192,7 +2193,7 @@ DetectorDisplay::DetectorDisplay( InterSpec *specViewer,
     m_interspec( specViewer ),
     m_fileModel( fileModel )
 {
-  const bool showToolTips = InterSpecUser::preferenceValue<bool>( "ShowTooltips", specViewer );
+  const bool showToolTips = UserPreferences::preferenceValue<bool>( "ShowTooltips", specViewer );
   
   HelpSystem::attachToolTipOn( this, WString::tr("app-tt-det-disp"), showToolTips ); //"app-tt-det-disp" defined in InterSpec.xml localisation, so we dont need to load DrfSelect.xml for this widget
   
@@ -2319,7 +2320,7 @@ DrfSelect::DrfSelect( std::shared_ptr<DetectorPeakResponse> currentDet,
   wApp->useStyleSheet( "InterSpec_resources/DrfSelect.css" );
   m_interspec->useMessageResourceBundle( "DrfSelect" );
   
-  const bool showToolTips = InterSpecUser::preferenceValue<bool>( "ShowTooltips", specViewer );
+  const bool showToolTips = UserPreferences::preferenceValue<bool>( "ShowTooltips", specViewer );
   
   WGridLayout *mainLayout = new WGridLayout();
   
@@ -2767,7 +2768,7 @@ DrfSelect::DrfSelect( std::shared_ptr<DetectorPeakResponse> currentDet,
   WGridLayout* recentDivLayout = new WGridLayout( recentDiv );
   recentDivLayout->setContentsMargins( 0, 0, 0, 0 );
 
-  Dbo::ptr<InterSpecUser> user = m_interspec->m_user;
+  const Dbo::ptr<InterSpecUser> &user = m_interspec->user();
   
   m_DBtable = new RowStretchTreeView();
   m_DBtable->setRootIsDecorated	(	false ); //makes the tree look like a table! :)
@@ -3279,7 +3280,7 @@ void DrfSelect::createChooseDrfDialog( vector<shared_ptr<DetectorPeakResponse>> 
       return;
       
     auto sql = interspec->sql();
-    auto user = interspec->m_user;
+    const Dbo::ptr<InterSpecUser> &user = interspec->user();
     DrfSelect::updateLastUsedTimeOrAddToDb( drf, user.id(), sql );
     interspec->detectorChanged().emit( drf ); //This loads it to the foreground spectrum file
       
@@ -3394,7 +3395,7 @@ void DrfSelect::handleFitFwhmRequested()
 void DrfSelect::handleFitFwhmFinished( std::shared_ptr<DetectorPeakResponse> drf )
 {
   if( drf )
-    updateLastUsedTimeOrAddToDb( drf, m_interspec->m_user.id(), m_sql );
+    updateLastUsedTimeOrAddToDb( drf, m_interspec->user().id(), m_sql );
   done().emit();
 }//void handleFitFwhmFinished( std::shared_ptr<DetectorPeakResponse> drf )
 
@@ -4571,14 +4572,14 @@ void DrfSelect::setUserPrefferedDetector( std::shared_ptr<DetectorPeakResponse> 
 
 void DrfSelect::acceptAndFinish()
 {
-  updateLastUsedTimeOrAddToDb( m_detector, m_interspec->m_user.id(), m_sql );
+  updateLastUsedTimeOrAddToDb( m_detector, m_interspec->user().id(), m_sql );
   
   emitChangedSignal();
   //emitModifiedSignal();
   
   auto meas = m_interspec->measurment(SpecUtils::SpectrumType::Foreground);
   auto sql = m_interspec->sql();
-  auto user = m_interspec->m_user;
+  const Dbo::ptr<InterSpecUser> &user = m_interspec->user();
   auto drf = m_detector;
   
   if( meas && drf && m_defaultForSerialNumber && m_defaultForSerialNumber->isChecked() )
@@ -4635,7 +4636,7 @@ vector<pair<string,string>> DrfSelect::avaliableGadrasDetectors() const
   const string drfpaths = SpecUtils::append_path( datadir, "GenericGadrasDetectors" )
                           + ";" + SpecUtils::append_path( datadir, "OUO_GadrasDetectors" );
 #else
-  const string drfpaths = InterSpecUser::preferenceValue<string>( "GadrasDRFPath", m_interspec );
+  const string drfpaths = UserPreferences::preferenceValue<string>( "GadrasDRFPath", m_interspec );
 #endif
   
   vector<string> paths;
@@ -5120,7 +5121,7 @@ std::shared_ptr<DetectorPeakResponse> DrfSelect::initAGadrasDetector( const std:
   const string drfpaths = SpecUtils::append_path( datadir, "GenericGadrasDetectors" )
                           + ";" + SpecUtils::append_path( datadir, "OUO_GadrasDetectors" );
 #else
-  const string drfpaths = InterSpecUser::preferenceValue<string>( "GadrasDRFPath", interspec );
+  const string drfpaths = UserPreferences::preferenceValue<string>( "GadrasDRFPath", interspec );
 #endif
   
   
@@ -5299,11 +5300,12 @@ Wt::Signal<> &DrfSelect::done()
 
 
 DrfSelectWindow::DrfSelectWindow( InterSpec *viewer )
-  : AuxWindow("Detector Response Function Select",
+  : AuxWindow( WString::tr("window-title-select-det-eff-fcn"),
               Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::IsModal)
                    | AuxWindowProperties::TabletNotFullScreen
                    | AuxWindowProperties::DisableCollapse
-                   | AuxWindowProperties::EnableResize ),
+                   | AuxWindowProperties::EnableResize
+                   | AuxWindowProperties::SetCloseable ),
     m_edit( NULL ),
     m_interspec( viewer )
 {

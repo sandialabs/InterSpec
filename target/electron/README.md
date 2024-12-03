@@ -135,7 +135,20 @@ cd release-builds/InterSpec-linux-x64/
 ## Using Docker to build Electron-based InterSpec package
 These are the instructions for building the Electron-based InterSpec package for Linux, using the Python Many Linux docker image, and the `FetchContent` option of the CMake build system to compile boost and Wt.
 
-### Building using a manylinux container
+### Building using script with manylinux container
+```bash
+cd /tmp
+mdkir build_interspec
+cd build_interspec
+
+git clone --recursive git@github.com:sandialabs/InterSpec.git ./InterSpec_linux_electron_build
+mkdir build_electron
+mkdir build_working_dir
+docker run --rm -it -v `pwd`/InterSpec_code:/interspec -v `pwd`/build_electron/:/build_app -v `pwd`/build_working_dir:/build_working_dir quay.io/pypa/manylinux2014_x86_64:latest /interspec/target/electron/Docker/build_linux_app_from_docker.sh /interspec /build_app /build_working_dir
+#Then results will then be in build_working_dir/InterSpec-linux-x64
+```
+
+### Building manually using a manylinux container
 ```bash
 # From your host OS terminal, run the following commands
 git clone --recursive git@github.com:sandialabs/InterSpec.git ./InterSpec_linux_electron_build
@@ -161,6 +174,7 @@ npm install uglify-js -g
 npm install uglifycss -g
 npm install cmake-js -g
 npm install --save-dev node-addon-api --arch=x64
+npm install node-api-headers
 npm install electron --arch=x64
 npm install electron-packager
 

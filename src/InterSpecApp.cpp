@@ -67,6 +67,7 @@
 #include "InterSpec/InterSpecUser.h"
 #include "InterSpec/DataBaseUtils.h"
 #include "InterSpec/WarningWidget.h"
+#include "InterSpec/UserPreferences.h"
 
 #if( BUILD_AS_ELECTRON_APP )
 #include "target/electron/ElectronUtils.h"
@@ -145,9 +146,6 @@ InterSpecApp::InterSpecApp( const WEnvironment &env )
   setupDomEnvironment();
   setupWidgets( true );
 
-  WServer::instance()->schedule( 60*1000, sessionId(),
-                                boost::bind(&InterSpecApp::updateUsageTimeToDb, this, true) );
-  
   Wt::log("debug") << "Done in InterSpecApp constructor.";
 }//InterSpecApp constructor
 
@@ -654,15 +652,15 @@ void InterSpecApp::setupWidgets( const bool attemptStateLoad  )
   //Check to see if we should load the apps last saved state
   try
   {
-    bool saveState = InterSpecUser::preferenceValue<bool>( "AutoSaveSpectraToDb", m_viewer );
+    bool saveState = UserPreferences::preferenceValue<bool>( "AutoSaveSpectraToDb", m_viewer );
     saveState = (saveState && attemptStateLoad);
     
 #if( PROMPT_USER_BEFORE_LOADING_PREVIOUS_STATE )
     //Make it so the app will prompt user to load the state
     //  - Experimental!
     //  - maybe should make it so it always does this, except on iOS and Android
-    const bool loadPrev = InterSpecUser::preferenceValue<bool>("LoadPrevStateOnStart", m_viewer );
-    const bool promptLoad = InterSpecUser::preferenceValue<bool>("PromptStateLoadOnStart", m_viewer );
+    const bool loadPrev = UserPreferences::preferenceValue<bool>("LoadPrevStateOnStart", m_viewer );
+    const bool promptLoad = UserPreferences::preferenceValue<bool>("PromptStateLoadOnStart", m_viewer );
     if( !loadPrev && !promptLoad )
       saveState = false;
 #endif
@@ -682,14 +680,12 @@ void InterSpecApp::setupWidgets( const bool attemptStateLoad  )
       std::shared_ptr<DataBaseUtils::DbSession> sql = m_viewer->sql();
       DataBaseUtils::DbTransaction transaction( *sql );
       
-      const string query = "InterSpecUser_id = "
-      + std::to_string( m_viewer->m_user.id() )
-      + " AND (StateType = "
-      + std::to_string( int(UserState::kEndOfSessionTemp) )
-      + " OR StateType = "
-      + std::to_string( int(UserState::kEndOfSessionHEAD) ) + ")";
       Dbo::ptr<UserState> state = sql->session()->find<UserState>()
-      .where( query ).orderBy( "id desc" ).limit( 1 );
+        .where( "InterSpecUser_id = ? AND StateType = ?" )
+        .bind( m_viewer->user().id() )
+        .bind( int(UserState::kEndOfSessionTemp) )
+        .orderBy( "id desc" )
+        .limit( 1 );
       
       //Since we only read from the database, its probably fine if the commit
       //  fails (with SQLite3 this will happen if the database is locked because
@@ -726,8 +722,7 @@ void InterSpecApp::setupWidgets( const bool attemptStateLoad  )
           dialogDiv->addWidget( cb );
           auto changePromptPref = [this](bool dont_ask ){
             try {
-              InterSpecUser::setPreferenceValue<bool>( m_viewer->m_user,
-                              "PromptStateLoadOnStart", dont_ask, m_viewer );
+              UserPreferences::setPreferenceValue<bool>( "PromptStateLoadOnStart", dont_ask, m_viewer );
             }catch( std::exception &e ) {
               Wt::log("error") << "Failed setting 'PromptStateLoadOnStart' user prefrence/";
             }
@@ -735,8 +730,7 @@ void InterSpecApp::setupWidgets( const bool attemptStateLoad  )
         
           auto changeDoLoadPref = [this](bool load ){
             try {
-              InterSpecUser::setPreferenceValue<bool>( m_viewer->m_user,
-                                    "LoadPrevStateOnStart", load, m_viewer );
+              UserPreferences::setPreferenceValue<bool>( "LoadPrevStateOnStart", load, m_viewer );
             }catch( std::exception &e ) {
               Wt::log("error") << "Failed setting 'LoadPrevStateOnStart' user prefrence.";
             }
@@ -854,7 +848,7 @@ void InterSpecApp::setupWidgets( const bool attemptStateLoad  )
     //Using WTimer as a workaround for iOS so screen size and safe-area and
     //  such can all get setup before creating a AuxWindow; otherwise size of
     //  window will be all messed up.
-    WTimer::singleShot( 10, boost::bind( &InterSpec::showWelcomeDialog, m_viewer, false) );
+    WTimer::singleShot( 25, boost::bind( &InterSpec::showWelcomeDialog, m_viewer, false) );
     
 #if( IOS || ANDROID )
     //For iPhoneX* devices we should trigger a resize once
@@ -916,9 +910,9 @@ void InterSpecApp::setupWidgets( const bool attemptStateLoad  )
   }
 #endif
   
-  if( m_viewer->m_user )
+  if( m_viewer->user() )
     Wt::log("debug") << "Have started session " << sessionId() << " for user "
-    << m_viewer->m_user->userName() << ".";
+    << m_viewer->user()->userName() << ".";
   
 #if( BUILD_AS_ELECTRON_APP || BUILD_AS_OSX_APP || ANDROID || BUILD_AS_WX_WIDGETS_APP  )
   // TODO 20220405: in macOS app I see the error "Wt: decodeSignal(): signal 'of7g69f.SucessfullyLoadedConf' not exposed"
@@ -1217,6 +1211,18 @@ void InterSpecApp::notify( const Wt::WEvent& event )
         m_activeTimeSinceDbUpdate += duration;
       }
       m_lastAccessTime = thistime;
+      
+      // We will update the use-stats of the database occasionally, so we dont have to rely
+      // on the destructor to do it, which may not get called if the OS or user kills the app
+      // In debug-build, looks to only take 30 to 100 micro-seconds to make the post
+      if( m_activeTimeSinceDbUpdate > std::chrono::seconds(30) )
+      {
+        WServer::instance()->schedule( 100, sessionId(), [this](){
+          WApplication::UpdateLock lock( this );
+          if( lock )
+            updateUsageTimeToDb();
+        } );
+      }//if( m_activeTimeSinceDbUpdate > std::chrono::seconds(60) )
     }//if( userEvent )
 
      WApplication::notify( event );
@@ -1245,7 +1251,7 @@ void InterSpecApp::unload()
 }//void unload()
 
 
-void InterSpecApp::updateUsageTimeToDb( const bool schedule_more )
+void InterSpecApp::updateUsageTimeToDb()
 {
   if( m_activeTimeSinceDbUpdate > std::chrono::seconds(0) )
   {
@@ -1257,8 +1263,8 @@ void InterSpecApp::updateUsageTimeToDb( const bool schedule_more )
         DataBaseUtils::DbTransaction transaction( *sql );
         
         // Other sessions may have added to the session - we'll reread from the DB
-        m_viewer->m_user.reread();
-        m_viewer->m_user.modify()->addUsageTimeDuration( m_activeTimeSinceDbUpdate );
+        m_viewer->reReadUserInfoFromDb();
+        m_viewer->user().modify()->addUsageTimeDuration( m_activeTimeSinceDbUpdate );
         
         transaction.commit();
       }//End db transaction
@@ -1269,149 +1275,31 @@ void InterSpecApp::updateUsageTimeToDb( const bool schedule_more )
       Wt::log("error") << "InterSpecApp::updateUsageTimeToDb() caught: " << e.what();
     }//try / catch
   }//if( m_activeTimeSinceDbUpdate > std::chrono::seconds(0) )
-  
-  if( schedule_more )
-  {
-    // Update again in 1 minute (arbitrarily chosen).
-    WServer::instance()->schedule( 60*1000, sessionId(),
-                                  boost::bind(&InterSpecApp::updateUsageTimeToDb, this, true) );
-  }//if( schedule_more )
 }//void updateUsageTimeToDb()
 
 
 void InterSpecApp::prepareForEndOfSession()
 {
-  if( !m_viewer || !m_viewer->m_user )
+  if( !m_viewer || !m_viewer->user() )
     return;
 
-  updateUsageTimeToDb( false );
+  updateUsageTimeToDb();
   
+  const chrono::milliseconds nmilli = chrono::duration_cast<chrono::milliseconds>(m_activeTimeInSession);
+  Wt::log("info") << "At session end, actively used for " << nmilli.count() << " ms for user "
+  << m_viewer->user()->userName();
+  
+#if( USE_DB_TO_STORE_SPECTRA )
   try
   {
-    std::shared_ptr<DataBaseUtils::DbSession> sql = m_viewer->sql();
-    
-    const chrono::milliseconds nmilli = chrono::duration_cast<chrono::milliseconds>(m_activeTimeInSession);
-    Wt::log("info") << "At session end, actively used for " << nmilli.count() << " ms for user "
-    << m_viewer->m_user->userName();
-    
-    
-#if( USE_DB_TO_STORE_SPECTRA )
-      //Check to see if we should save the apps state
-      const bool saveState = InterSpecUser::preferenceValue<bool>( "AutoSaveSpectraToDb", m_viewer );
-        
-        //Clean up the kEndOfSessions from before
-        bool cleanupStates = true;
-        if( cleanupStates )
-        {
-            DataBaseUtils::DbTransaction transaction( *sql );
-            const string query = "InterSpecUser_id = "
-            + std::to_string( m_viewer->m_user.id() )
-            + " AND (StateType = "
-            + std::to_string( int(UserState::kEndOfSessionTemp))
-            + " OR StateType = "
-            + std::to_string( int(UserState::kEndOfSessionHEAD) )
-            + ")";
-            Dbo::collection<Dbo::ptr<UserState> > states
-            = sql->session()->find<UserState>().where( query );
-            for( Dbo::collection<Dbo::ptr<UserState> >::iterator iter = states.begin();
-                iter != states.end(); ++iter )
-            {
-                if ((*iter)->stateType==UserState::kEndOfSessionTemp)
-                { 
-                  //delete temporary kEndOfSession
-                  iter->remove();
-                } else
-                {   
-                  //do not delete, but just change this HEAD to kUserSaved state (no longer kEndOfSession
-                   iter->modify()->stateType = UserState::kUserSaved;
-                }
-            }
-            
-            transaction.commit();
-        }//if( cleanupStates )
-
-        
-      //Make sure there is at least a spectra valid in order to save this state
-      std::shared_ptr<const SpecMeas> foreground = m_viewer->measurment( SpecUtils::SpectrumType::Foreground );
-        
-      if( saveState && foreground )
-      {
-        Wt::log( "info" ) << "Will auto-save state for session-id:" << sessionId() << " at end of session.";
-
-        const int offset = environment().timeZoneOffset();
-        WString desc = "End of Session";
-        const auto now = chrono::system_clock::now() + chrono::seconds( 60*offset );
-        WString name = SpecUtils::to_common_string( chrono::time_point_cast<chrono::microseconds>(now), true ); //"9-Sep-2014 15:02:15"
-        
-        Wt::Dbo::ptr<UserState> dbstate;
-        std::shared_ptr<DataBaseUtils::DbSession> sql = m_viewer->sql();
-        DataBaseUtils::DbTransaction transaction( *sql );
-          
-        UserState *state = new UserState();
-        state->user = m_viewer->m_user;
-        state->stateType = UserState::kEndOfSessionTemp;
-        state->creationTime = WDateTime::currentDateTime();
-        state->name = name;
-        state->description = desc;
-          
-          //check if Save menu needs to be updated
-          if( m_viewer->currentAppStateDbId() >= 0 )
-          {
-              try
-              {
-                  std::shared_ptr<DataBaseUtils::DbSession> sql = m_viewer->sql();
-                  DataBaseUtils::DbTransaction transaction( *sql );
-                  Dbo::ptr<UserState> currentState = sql->session()->find<UserState>( "where id = ?" ).bind( m_viewer->currentAppStateDbId() );
-                  transaction.commit();
-                  
-                  if (currentState)
-                  {
-                      //Saves to the HEAD first
-                      m_viewer->startStoreStateInDb( false, false, false, true ); //save snapshot
-                      transaction.commit();
-
-                      return;
-                  } //UserState exists
-                  else
-                  { //no UserState
-                      //do nothing, a temporary kEndOfState HEAD snapshot will be created.
-                  } //no UserState
-              }catch( std::exception &e )
-              {
-                Wt::log("error") << "Could not access current Snapshot State ID while EndOfSession " << e.what();
-              }//try / catch
-          }
-          
-        dbstate = sql->session()->add( state );
-        
-        try
-        {
-          m_viewer->saveStateToDb( dbstate );
-          Wt::log("debug") << "Saved end of session app state to database";
-        }catch( std::exception &e )
-        {
-          Wt::log("error") << "InterSpecApp::prepareForEndOfSession() error: " << e.what();
-        }
-        transaction.commit();
-      }//if( saveState )
-#endif //#if( USE_DB_TO_STORE_SPECTRA )
-    
-    /*
-     // TODO: Look into if syncing the database helps us any - maybe in development builds we should just do this for every commit (or turn off WAL (Write Ahead Logging)), or check if this is even enabled (e.g., "PRAGMA journal_mode=WAL;" for the connection).
-    try
-    {
-      DataBaseUtils::DbTransaction transaction( *sql );
-      sql->session()->execute( "PRAGMA wal_checkpoint(FULL);" );
-      transaction.commit();
-    }catch( std::exception &e )
-    {
-      Wt::log("error") << "Got exception running 'PRAGMA wal_checkpoint(FULL);': " << e.what();
-    }
-     */
+    // Neither of these functions should throw, but jic
+    m_viewer->saveStateAtForegroundChange( false );
+    m_viewer->saveStateForEndOfSession();
   }catch( std::exception &e )
   {
     Wt::log("error") << "InterSpecApp::prepareForEndOfSession() caught: " << e.what();
   }//try / catch
+#endif //#if( USE_DB_TO_STORE_SPECTRA )
   
   Wt::log("debug") << "Have prepared for end of session " << sessionId() << ".";
 }//void InterSpecApp::prepareForEndOfSession()
@@ -1444,6 +1332,16 @@ void InterSpecApp::clearSession()
 {
   // Just in case there are any modal dialogs showing - the cover thing can be a little sticky
   doJavaScript( "$('.Wt-dialogcover').hide();" );
+  
+#if( USE_DB_TO_STORE_SPECTRA )
+  try
+  {
+    m_viewer->saveStateAtForegroundChange( false ); // shouldnt throw, but jic
+  }catch( std::exception &e )
+  {
+    Wt::log("error") << "InterSpecApp::clearSession() caught: " << e.what();
+  }//try / catch
+#endif //#if( USE_DB_TO_STORE_SPECTRA )
   
 #if( BUILD_AS_ELECTRON_APP )
   // As a workaround setup a function ElectronUtils::requestNewCleanSession() that
@@ -1698,9 +1596,9 @@ void InterSpecApp::finalize()
 {
   prepareForEndOfSession();
   
-  if( m_viewer && m_viewer->m_user )
+  if( m_viewer && m_viewer->user() )
     Wt::log("info") << "Have finalized session " << sessionId() << " for user "
-         << m_viewer->m_user->userName();
+         << m_viewer->user()->userName();
 }//void InterSpecApp::finalize()
 
 

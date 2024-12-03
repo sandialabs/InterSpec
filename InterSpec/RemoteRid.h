@@ -40,7 +40,7 @@ namespace RestRidImp { class ExternalRidWidget; }
 /** An enum that represents the value of the integer "AlwaysCallExternalRid" preference.
  
  ```
- const int always_call = InterSpecUser::preferenceValue<int>( "AlwaysCallExternalRid", m_interspec );
+ const int always_call = UserPreferences::preferenceValue<int>( "AlwaysCallExternalRid", m_interspec );
  const auto pref = static_cast<ExternalRidAuotCallPref>( always_call );
  ```
  */

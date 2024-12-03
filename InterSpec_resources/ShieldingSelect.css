@@ -39,6 +39,16 @@
   margin-right: 3px;
 }
 
+.ShieldingSelect .SourceCheckbox 
+{
+  display: flex;
+  flex-direction: row;
+  justify-content: flex-start;
+  align-items: center;
+  column-gap: 5px;
+  padding-left: 10px;
+}
+
 .MassFracNoFit
 {
   background: Silver;

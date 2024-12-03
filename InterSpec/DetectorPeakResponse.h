@@ -424,7 +424,8 @@ public:
    Throws std::exception on format error, or now det eff functions found
    */
   static void parseGammaQuantRelEffDrfCsv( std::istream &input,
-                                        std::vector<std::shared_ptr<DetectorPeakResponse>> &drfs,
+                                          std::vector<std::shared_ptr<DetectorPeakResponse>> &drfs,
+                                          std::vector<std::string> &credits,
                                           std::vector<std::string> &warnings );
   
   

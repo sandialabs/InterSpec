@@ -894,7 +894,7 @@ void PeakDef::equalEnough( const PeakDef &lhs, const PeakDef &rhs )
     if( diff > 1.0E-6*max(fabs(a),fabs(b)) )
     {
       snprintf(buffer, sizeof(buffer),
-               "PeakDef coeficient %s of LHS (%1.8E) vs RHS (%1.8E) is out of tolerance.",
+               "PeakDef coefficient %s of LHS (%1.8E) vs RHS (%1.8E) is out of tolerance.",
                to_string(t), lhs.m_coefficients[t], rhs.m_coefficients[t] );
       throw runtime_error( buffer );
     }
@@ -909,7 +909,7 @@ void PeakDef::equalEnough( const PeakDef &lhs, const PeakDef &rhs )
     if( ((a > 0.0) || (b > 0.0)) && (diff > 1.0E-6*max(fabs(a),fabs(b))) )
     {
       snprintf(buffer, sizeof(buffer),
-               "PeakDef uncertanity %s of LHS (%1.8E) vs RHS (%1.8E) is out of tolerance.",
+               "PeakDef uncertainty %s of LHS (%1.8E) vs RHS (%1.8E) is out of tolerance.",
                to_string(t), lhs.m_uncertainties[t], rhs.m_uncertainties[t] );
       throw runtime_error( buffer );
     }
@@ -917,14 +917,33 @@ void PeakDef::equalEnough( const PeakDef &lhs, const PeakDef &rhs )
   
   for( CoefficientType t = CoefficientType(0); t < NumCoefficientTypes; t = CoefficientType(t+1) )
   {
-    if( lhs.m_fitFor[t] != rhs.m_fitFor[t] )
+    // The "Fit For" values are not recorded for skew parameters that arent applicable, so we
+    //  will get an erroneous fail, if we dont skip them, because we dont reset them when we change
+    //  types
+    bool skipSkew = false;
+    switch( t )
+    {
+      case PeakDef::SkewPar0: case PeakDef::SkewPar1:
+      case PeakDef::SkewPar2: case PeakDef::SkewPar3:
+      {
+        const int skew_par_num = static_cast<int>(t) - static_cast<int>(PeakDef::SkewPar0);
+        const int nskew = static_cast<int>( PeakDef::num_skew_parameters( lhs.m_skewType ));
+        skipSkew = (skew_par_num >= nskew);
+        break;
+      }
+        
+      default:
+        break;
+    }//switch( t )
+    
+    if( !skipSkew && (lhs.m_fitFor[t] != rhs.m_fitFor[t]) )
     {
       snprintf(buffer, sizeof(buffer),
                "PeakDef fit for %s of LHS (%i) vs RHS (%i) doesnt match.",
                to_string(t), int(lhs.m_fitFor[t]), int(rhs.m_fitFor[t]) );
       throw runtime_error( buffer );
     }
-  }
+  }//for( check "Fit For" bools of all the parameters )
   
   
   if( !!lhs.m_continuum != !!rhs.m_continuum )
@@ -947,7 +966,7 @@ void PeakDef::equalEnough( const PeakDef &lhs, const PeakDef &rhs )
     throw runtime_error( buffer );
   }
   
-  if( lhs.m_transition != rhs.m_transition )
+  if( lhs.m_parentNuclide && (lhs.m_transition != rhs.m_transition) )
   {
     snprintf(buffer, sizeof(buffer),
              "PeakDef nuclide transition of LHS (%s -> %s) vs RHS (%s -> %s) doesnt match.",
@@ -958,7 +977,7 @@ void PeakDef::equalEnough( const PeakDef &lhs, const PeakDef &rhs )
     throw runtime_error( buffer );
   }
   
-  if( lhs.m_radparticleIndex != rhs.m_radparticleIndex )
+  if( lhs.m_parentNuclide && (lhs.m_radparticleIndex != rhs.m_radparticleIndex) )
   {
     snprintf(buffer, sizeof(buffer),
              "PeakDef particle index of LHS (%i) vs RHS (%i) doesnt match.",
@@ -2729,14 +2748,14 @@ std::string PeakDef::gaus_peaks_to_json(const std::vector<std::shared_ptr<const 
         //  And somewhat surprisingly, rounding causes visual artifacts of the continuum when
         //  the 'continuumEnergies' and 'continuumCounts' arrays are used, which are only accurate
         //  to float levels.  So we will increase accuracy of the 'answer' stream here, which appears
-        //  to be enough to avoid these artifcats, but also commented out is how we could compute
+        //  to be enough to avoid these artifacts, but also commented out is how we could compute
         //  to double precision to match what happens in the JS.
         const auto oldprecision = answer.precision();  //probably 6 always
         answer << std::setprecision(std::numeric_limits<float>::digits10 + 1);
         
         answer << "," << q << "continuumEnergies" << q << ":[";
         for (size_t i = firstbin; i <= lastbin; ++i)
-          answer << (i ? "," : "") << foreground->gamma_channel_lower(i);
+          answer << ((i!=firstbin) ? "," : "") << foreground->gamma_channel_lower(i);
         answer << "]," << q << "continuumCounts" << q << ":[";
         
         /*
@@ -2759,14 +2778,14 @@ std::string PeakDef::gaus_peaks_to_json(const std::vector<std::shared_ptr<const 
               energy = SpecUtils::fullrangefraction_energy( i, coefs, nchannel, dev_pairs );
             else
               energy = SpecUtils::polynomial_energy( i, coefs, dev_pairs );
-            answer << (i ? "," : "") << energy;
+            answer << ((i!=firstbin) ? "," : "") << energy;
           }
           answer << "]," << q << "continuumCounts" << q << ":[";
         }else
         {
           answer << "," << q << "continuumEnergies" << q << ":[";
           for (size_t i = firstbin; i <= lastbin; ++i)
-            answer << (i ? "," : "") << foreground->gamma_channel_lower(i);
+            answer << ((i!=firstbin) ? "," : "") << foreground->gamma_channel_lower(i);
           answer << "]," << q << "continuumCounts" << q << ":[";
         }
          */
@@ -2778,7 +2797,7 @@ std::string PeakDef::gaus_peaks_to_json(const std::vector<std::shared_ptr<const 
           const float lower_x = foreground->gamma_channel_lower( i );
           const float upper_x = foreground->gamma_channel_upper( i );
           const float cont_counts = continuum->offset_integral( lower_x, upper_x, foreground );
-          answer << (i ? "," : "") << cont_counts;
+          answer << ((i!=firstbin) ? "," : "") << cont_counts;
         }
         answer << "]";
         
@@ -2809,10 +2828,10 @@ std::string PeakDef::gaus_peaks_to_json(const std::vector<std::shared_ptr<const 
 
         answer << "," << q << "continuumEnergies" << q << ":[";
         for (size_t i = firstbin; i <= lastbin; ++i)
-          answer << (i ? "," : "") << hist->gamma_channel_lower(i);
+          answer << ((i!=firstbin) ? "," : "") << hist->gamma_channel_lower(i);
         answer << "]," << q << "continuumCounts" << q << ":[";
         for (size_t i = firstbin; i <= lastbin; ++i)
-          answer << (i ? "," : "") << hist->gamma_channel_content(i);
+          answer << ((i!=firstbin) ? "," : "") << hist->gamma_channel_content(i);
         answer << "]";
         
         answer << std::setprecision(9);
@@ -2950,9 +2969,9 @@ std::string PeakDef::gaus_peaks_to_json(const std::vector<std::shared_ptr<const 
             }catch( std::exception & )
             {
               // CB dist can have really long tail, causing the coverage limits to fail, because
-              //  of unreasonable values - we'll limit it arbitrarily to 25 sigma
-              vis_limits.first = std::max( p.mean() - 25*p.sigma(), p.lowerX() );
-              vis_limits.second = std::min( p.mean() + 5*p.sigma(), p.upperX() );
+              //  of unreasonable values - in this case we'll use the entire ROI.
+              vis_limits.first = p.lowerX();
+              vis_limits.second = p.upperX();
             }
             break;
           case ExpGaussExp:
@@ -2962,24 +2981,30 @@ std::string PeakDef::gaus_peaks_to_json(const std::vector<std::shared_ptr<const 
                                                                   hidden_frac );
             break;
           case DoubleSidedCrystalBall:
-            if( p.coefficient(CoefficientType::SkewPar1) < 5.0
-               || p.coefficient(CoefficientType::SkewPar3) < 5.0)
-              hidden_frac = 1.0E-3; //DSCB doesnt behave well for power-law peaks...
+            // For largely skewed peaks, going out t 1E-6 is unreasonable, so we could limit
+            //  this to 1E-3, to improve chances of success.
+            //if( p.coefficient(CoefficientType::SkewPar1) < 5.0
+            //   || p.coefficient(CoefficientType::SkewPar3) < 5.0)
+            //  hidden_frac = 1.0E-3; //DSCB doesnt behave well for power-law peaks...
             
             try
             {
-              vis_limits = PeakDists::double_sided_crystal_ball_coverage_limits( p.mean(), p.sigma(),
-                                                                              p.coefficient(CoefficientType::SkewPar0),
-                                                                              p.coefficient(CoefficientType::SkewPar1),
-                                                                              p.coefficient(CoefficientType::SkewPar2),
-                                                                              p.coefficient(CoefficientType::SkewPar3),
-                                                                              hidden_frac );
+              const double mean = p.mean();
+              const double sigma = p.sigma();
+              const double left_skew = p.coefficient(CoefficientType::SkewPar0);
+              const double left_n = p.coefficient(CoefficientType::SkewPar1);
+              const double right_skew = p.coefficient(CoefficientType::SkewPar2);
+              const double right_n = p.coefficient(CoefficientType::SkewPar3);
+              const double p = hidden_frac;
+              
+              vis_limits = PeakDists::double_sided_crystal_ball_coverage_limits( mean, sigma,
+                                              left_skew, left_n, right_skew, right_n, hidden_frac );
             }catch( std::exception & )
             {
               // DSCB dist can have really long tail, causing the coverage limits to fail, because
-              //  of unreasonable values - we'll limit it arbitrarily to 25 sigma
-              vis_limits.first = std::max( p.mean() - 25*p.sigma(), p.lowerX() );
-              vis_limits.second = std::min( p.mean() + 25*p.sigma(), p.upperX() );
+              //  of unreasonable values - in this case we'll use the entire ROI.
+              vis_limits.first = p.lowerX();
+              vis_limits.second = p.upperX();
             }//try / catch
             
             break;

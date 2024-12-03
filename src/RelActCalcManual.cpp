@@ -53,6 +53,7 @@
 #include "InterSpec/RelActCalc.h"
 #include "InterSpec/PhysicalUnits.h"
 #include "InterSpec/ReactionGamma.h"
+#include "InterSpec/UserPreferences.h"
 #include "InterSpec/RelActCalcManual.h"
 #include "InterSpec/DecayDataBaseServer.h"
 #include "InterSpec/GammaInteractionCalc.h"
@@ -1222,6 +1223,14 @@ double RelEffSolution::activity_ratio_uncert( const size_t iso1, const size_t is
   assert( iso1 < m_rel_act_covariance.size() );
   assert( iso2 < m_rel_act_covariance.size() );
   assert( m_rel_act_covariance.size() == m_activity_norms.size() );
+  
+  if( (iso1 == iso2)
+     || (iso1 >= m_rel_act_covariance.size())
+     || (iso2 >= m_rel_act_covariance.size()) )
+  {
+    //throw runtime_error( "RelEffSolution::activity_ratio_uncert: invalid iso number" );
+    return -1;
+  }
   
   const double norm_1 = m_activity_norms[iso1];
   const double norm_2 = m_activity_norms[iso2];

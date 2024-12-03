@@ -27,19 +27,20 @@
 
 #include <set>
 #include <deque>
+#include <tuple>
 #include <memory>
 #include <vector>
 
 #include <Wt/Dbo/Dbo>
 #include <Wt/WContainerWidget>
 
-//#include "SpecUtils/SpecFile.h"
-//Without including InterSpecUser.h here, we get some wierd issues with the
-//  DB optomistic versioning...
+//Without including InterSpecUser.h here, we get some weird issues with the
+//  DB optimistic versioning...
 #include "InterSpec/InterSpecUser.h"
 
 class PeakDef;
 class PopupDiv;
+class SpecMeas;
 class AuxWindow;
 class GoogleMap;
 class PeakModel;
@@ -65,6 +66,7 @@ class DrfSelectWindow;
 class PeakInfoDisplay;
 class SpecMeasManager;
 class UndoRedoManager;
+class UserPreferences;
 class GammaCountDialog;
 class PopupDivMenuItem;
 class SpectraFileHeader;
@@ -392,82 +394,82 @@ public:
   
   
 #if( USE_DB_TO_STORE_SPECTRA )
-  //measurmentFromDb(...): returns the measurment that has been, or will be
-  //  serialized to the database.  If 'update' is false, then just the last
-  //  serialization will be returned and in fact may be null.  If 'update'
-  //  is true, then the measurment will be saved to the database first (unless
-  //  it hasnt been modified since last saving) and then returned; if the user
-  //  preference is to not save spectra to the database, then it will not be
-  //  be saved.  In the case the user preference is to not save to the database,
-  //  but the file is already in there, but has been modified in memmorry, then
-  //  the file will not be re-saved to the database.
-  //  Function wont throw, but may return a null pointer
-  Wt::Dbo::ptr<UserFileInDb> measurmentFromDb( SpecUtils::SpectrumType type, bool update );
+  /** Note: see comments in the top of InterSpecUser.h for an explanation of the use-model for saving to the database. */
+  
+  /**  Returns the measurement that has been, or will be serialized to the database.
+   
+   @param update If false, then just the last serialization will be returned and in fact may be null.  If true
+          then the measurement will be saved to the database first (unless it hasnt been modified since
+          last saving) and then returned
+  
+   Function may throw exception (e.g. FileToLargeForDbException, Wt::Dbo::Exception, std::exception) if it runs into an
+   error (file too large to be in DB, or DB issue), or may return a null pointer (the measurement type isnt loaded.
+   */
+  Wt::Dbo::ptr<UserFileInDb> measurementFromDb( const SpecUtils::SpectrumType type,
+                                               const bool update );
   
   //saveStateToDb( entry ): saves the application state to the pointer passed
   //  in.  Note that pointer passed in must be a valid pointer associated with
-  //  this m_user.  If entry->stateType is specified for testing, then every
-  //  thing will be copied and write protected so it cant be changed in the
-  //  future. May throw exception.  std::runtime_error exceptions will contain
+  //  this m_user.  If `entry->stateType` is specified for as end of session,
+  //  or `entry->snapshotTagParent` is non-null, then things will be copied
+  //  to unique entries in the database.
+  //  May throw exception.  std::runtime_error exceptions will contain
   //  messages that are reasonably okay to send to users.
   void saveStateToDb( Wt::Dbo::ptr<UserState> entry );
-  
-  //serializeStateToDb(...): a convience function for saveStateToDb(...).
-  Wt::Dbo::ptr<UserState> serializeStateToDb( const Wt::WString &name,
-                                              const Wt::WString &desc,
-                                              const bool forTesting,
-                                              Wt::Dbo::ptr<UserState> parent);
   
   //loadStateFromDb( entry ): sets the applications state to that in 'entry'
   void loadStateFromDb( Wt::Dbo::ptr<UserState> entry );
 
-  //testLoadSaveState(): a temporary function to help develop the loading and
-  //  saving of the applications state
-//  void testLoadSaveState();
   
-    void stateSave();
-    void stateSaveAs();
-    void stateSaveTag();
-    void stateSaveAsAction( Wt::WLineEdit *nameedit,
-                         Wt::WTextArea *descriptionarea,
-                    AuxWindow *window,
-                         const bool forTesting);
-    void stateSaveTagAction(Wt::WLineEdit *nameedit,
-                          AuxWindow *window);
+  /** Called from the "Store As..." menu item.
+   If state is already saved in the DB, updates it.
+   This function should only be called when we are already connected to a state in the DB,
+   but if not, will then call `stateSaveAs()` (but again, this shouldn't happen).
+   */
+  void stateSave();
+  /** Called from the "Store As..." menu item - creates a dialog to store current state under new name/desc. */
+  void stateSaveAs();
+  /** Called from the "Store As..." dialog to save things to DB. */
+  void stateSaveAsFinish( Wt::WLineEdit *name, Wt::WTextArea *desc, AuxWindow *window );
+  /** Called from the "Tag..." menu item, to create a tag of the current state. */
+  void stateSaveTag();
+  /** Called from the "Tag..." dialog to actually create the tag in the DB. */
+  void stateSaveTagFinish( Wt::WLineEdit *name, AuxWindow *window );
   
-  //startStoreStateInDb(...): If state hasn't been saved yet,
-  //  e.g. `m_dataMeasurement->dbStateId(m_displayedSamples) < 0`,
-  //  then a dialog will be popped up allowing user to enter a title and
-  //  description.
-  //  If the state is already in the database, and either the state is not
-  //  readonly, or 'allowOverWrite' is specified true, then the database will be
-  //  updated.
-  //  If 'asNewState' is specified, then even if the current state is already in
-  //  the database, the process (e.g. user dialog) for saving a new state in the
-  //  database will be started.
-  //  Specifying 'forTesting' will cause the for testing flag to be set, as well
-  //  as for the state to be marked as read only.
-  void startStoreStateInDb( const bool forTesting,
-                            const bool asNewState,
-                            const bool allowOverWrite,
-                            const bool endOfSessionNoDelete );
+  /** Saves the Act/Shield and Rel Eff tool states to the in-memory `SpecMeas` objects, then updates
+   the database with either the current app state, or the current SpecMeas object, depending if we are
+   connected to a app-state or not.
+   If connected to an app state, will create, or replace the states `kUserStateAutoSavedWork` state in DB.
+   
+   @param doAsync If true, saving to the database will be performed asynchronously. If false, will do all work
+   during the call.
+   */
+  void saveStateAtForegroundChange( const bool doAsync );
   
-  void finishStoreStateInDb( Wt::WLineEdit *name, Wt::WTextArea *description,
-                            AuxWindow *window, const bool forTesting , Wt::Dbo::ptr<UserState> parent);
-  void browseDatabaseStates( bool testStates );
+  /** Removes all previous `kEndOfSessionTemp` sessions for the user from the database, and then
+   if the "AutoSaveSpectraToDb" preference is true, will create the new `kEndOfSessionTemp` state
+   that will be loaded next time the app is started.
+   */
+  void saveStateForEndOfSession();
+  
+  /** Called by #InterSpec::stateSaveTagFinish and #InterSpec::stateSaveAsFinish, to actually create
+   the db user state, and then call `saveStateToDb(...)` and update menu items.
+   */
+  void finishStoreStateInDb( const Wt::WString &name,
+                            const Wt::WString &description,
+                            Wt::Dbo::ptr<UserState> parent );
   
 #if( INCLUDE_ANALYSIS_TEST_SUITE )
   void startStateTester();
   
-  //startStoreTestStateInDb(): a convience function that makes a dialog to give
-  //  the user an option to overwrite their current state or create a new one.
-  void startStoreTestStateInDb();
+  //Creates a dialog that allows user to name and describe the state; when
+  // user then clicks save, will pass off to `storeTestStateToN42(...)`.
+  void startStoreTestState();
   
   //storeTestStateToN42(): stores foreground, background, and shielding/source
   //  model into a since 2012 N42 file.  Does not throw, but will notify the
   //  user via the GUI upon error.
-  void storeTestStateToN42( std::ostream &output,
-                            const std::string &name, const std::string &descr );
+  void storeTestStateToN42( const Wt::WString name, const Wt::WString descr );
   
   //loadTestStateFromN42(): Attempts to load a state previously saved to an
   //  XML file via storeTestStateToN42
@@ -590,10 +592,13 @@ public:
   
   /** Sets the Y-axis range.
    
-   Returns true if successful, or false if the request couldnt be fully honored
+   Returns set range, and empty string if successful, or otherwise a message explaining why the request couldnt be fully honored
    (e.g., a negative lower counts was specified, but its currently log-scale)
    */
-  bool setYAxisRange( float lower_counts, float upper_counts );
+  std::tuple<double,double,Wt::WString> setYAxisRange( double lower_counts, double upper_counts );
+
+  /** When displaying the spectrum in log-y, sets the lower y-axis value to show, if there are channels with zero counts. */
+  bool setLogYAxisMin( const double lower_value );
   
   //displayedSpectrumRange(): Grab the ranges in y and y that are currently
   //  displayed to the user.
@@ -899,10 +904,17 @@ public:
   /** Brings up a dialog asking the user to confirm starting a new session, and if they select so, will start new session. */
   void startClearSession();
   
-  // The user itself gets to be public--no need to protect access to it.
-  //Note 20130116: m_user should be made protected, but really the whole
-  //  preference thing should be re-done, see README
-  Wt::Dbo::ptr<InterSpecUser> m_user;
+  /** Pointer to class to access user preferences. */
+  UserPreferences *preferences();
+  
+  /** The user information in the database. */
+  const Wt::Dbo::ptr<InterSpecUser> &user();
+  
+  /** Calls the `reread()` function on `m_user`, which refreshes the information pointed to by
+   `m_user` to match what is currently in the database.  Please note, this may (and maybe always)
+   cause the `m_user` pointer to point to a different location in memory.
+   */
+  void reReadUserInfoFromDb();
   
   //sql returns the DbSession (which holds the Wt::Dbo::Session) associated
   //  with m_user.  The reason for using an indirection via
@@ -1184,7 +1196,7 @@ public:
   void startHardBackgroundSub();
   void finishHardBackgroundSub( std::shared_ptr<bool> truncate_neg, std::shared_ptr<bool> round_counts );
   
-  void setXAxisSlider( bool show );
+  void setXAxisSlider( const bool show, const bool addUndoRedo );
   void setXAxisCompact( bool compact );
   void setShowYAxisScalers( bool show );
   
@@ -1300,6 +1312,9 @@ protected:
   void changeLocale( std::string languageCode );
   
 protected:
+  Wt::Dbo::ptr<InterSpecUser> m_user;
+  UserPreferences *m_preferences;
+  
   PeakModel *m_peakModel;
   D3SpectrumDisplayDiv *m_spectrum;
   D3TimeChart *m_timeSeries;
@@ -1311,9 +1326,6 @@ protected:
   Wt::WContainerWidget *m_notificationDiv; //has id="qtip-growl-container"
   
   void handleUserIncrementSampleNum( SpecUtils::SpectrumType type, bool increment);
-
-  
- /* Start widgets this class keeps track of */
 
   Wt::Signal< Wt::WString, int > m_messageLogged;
   

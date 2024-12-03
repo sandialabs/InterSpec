@@ -103,6 +103,7 @@
 #include "InterSpec/ShieldingSelect.h"
 #include "InterSpec/SpecMeasManager.h"
 #include "InterSpec/UndoRedoManager.h"
+#include "InterSpec/UserPreferences.h"
 #include "InterSpec/RowStretchTreeView.h"
 #include "InterSpec/NativeFloatSpinBox.h"
 #include "InterSpec/MassAttenuationTool.h"
@@ -375,8 +376,8 @@ SourceFitModel::SourceFitModel( PeakModel *peakModel,
   }else
   {
     interspec->useMessageResourceBundle( "ShieldingSourceDisplay" ); //jic
-    m_displayCuries = !InterSpecUser::preferenceValue<bool>( "DisplayBecquerel", interspec );
-    InterSpecUser::addCallbackWhenChanged( interspec->m_user, interspec, "DisplayBecquerel",
+    m_displayCuries = !UserPreferences::preferenceValue<bool>( "DisplayBecquerel", interspec );
+    interspec->preferences()->addCallbackWhenChanged( "DisplayBecquerel",
                                           this, &SourceFitModel::displayUnitsChanged );
   }//if( !interspec ) / else
   
@@ -2126,12 +2127,10 @@ bool SourceFitModel::setData( const Wt::WModelIndex &index, const boost::any &va
 }//bool setData(...)
 
 
-bool SourceFitModel::compare( const ShieldingSourceFitCalc::IsoFitStruct &lhs,
-                                const ShieldingSourceFitCalc::IsoFitStruct &rhs,
-                                Columns sortColumn, Wt::SortOrder order )
+bool SourceFitModel::compare( const ShieldingSourceFitCalc::IsoFitStruct &lhs_input,
+                             const ShieldingSourceFitCalc::IsoFitStruct &rhs_input,
+                             Columns sortColumn, Wt::SortOrder order )
 {
-  bool isLess = false;
-  
 #if( INCLUDE_ANALYSIS_TEST_SUITE )
   auto optionalLess = []( const boost::optional<double> &olhs, const boost::optional<double> &orhs) -> bool{
     if( (!olhs) != (!orhs) )
@@ -2139,56 +2138,39 @@ bool SourceFitModel::compare( const ShieldingSourceFitCalc::IsoFitStruct &lhs,
     
     if( !olhs )
       return false;
-      
+    
     return ((*olhs) < (*orhs));
   };
 #endif
   
+  const bool ascend = (order == Wt::AscendingOrder);
+  const ShieldingSourceFitCalc::IsoFitStruct &lhs = ascend ? lhs_input : rhs_input;
+  const ShieldingSourceFitCalc::IsoFitStruct &rhs = ascend ? rhs_input : lhs_input;
   
   switch( sortColumn )
   {
-    case kIsotope:    isLess = (lhs.nuclide->symbol<rhs.nuclide->symbol); break;
-    case kActivity:   isLess = (lhs.activity < rhs.activity);             break;
-    case kFitActivity:isLess = (lhs.fitActivity < rhs.fitActivity);       break;
-    case kAge:        isLess = (lhs.age < rhs.age);                       break;
-    case kFitAge:     isLess = (lhs.fitAge < rhs.fitAge);                 break;
-    case kIsotopeMass:
-      isLess = ((lhs.activity/lhs.nuclide->activityPerGram())
-              < (rhs.activity/rhs.nuclide->activityPerGram()) );
-    break;
-    case kActivityUncertainty:
-      isLess = (lhs.activityUncertainty<rhs.activityUncertainty);
-    break;
-    case kAgeUncertainty:
-      isLess = (lhs.ageUncertainty<rhs.ageUncertainty);
-    break;
+    case kIsotope:     return (lhs.nuclide->symbol < rhs.nuclide->symbol);
+    case kActivity:    return (lhs.activity < rhs.activity);
+    case kFitActivity: return (lhs.fitActivity < rhs.fitActivity);
+    case kAge:         return (lhs.age < rhs.age);
+    case kFitAge:      return (lhs.fitAge < rhs.fitAge);
+    case kIsotopeMass: return ((lhs.activity/lhs.nuclide->activityPerGram())
+                               < (rhs.activity/rhs.nuclide->activityPerGram()) );
+    case kActivityUncertainty: return (lhs.activityUncertainty < rhs.activityUncertainty);
+    case kAgeUncertainty:      return (lhs.ageUncertainty < rhs.ageUncertainty);
       
 #if( INCLUDE_ANALYSIS_TEST_SUITE )
-    case kTruthActivity:
-      isLess = optionalLess( lhs.truthActivity, rhs.truthActivity );
-      break;
-      
-    case kTruthActivityTolerance:
-      isLess = optionalLess( lhs.truthActivityTolerance, rhs.truthActivityTolerance );
-      break;
-      
-    case kTruthAge:
-      isLess = optionalLess( lhs.truthAge, rhs.truthAge );
-      break;
-      
-    case kTruthAgeTolerance:
-      isLess = optionalLess( lhs.truthAgeTolerance, rhs.truthAgeTolerance );
-      break;
+    case kTruthActivity:          return optionalLess( lhs.truthActivity, rhs.truthActivity );
+    case kTruthActivityTolerance: return optionalLess( lhs.truthActivityTolerance, rhs.truthActivityTolerance );
+    case kTruthAge:               return optionalLess( lhs.truthAge, rhs.truthAge );
+    case kTruthAgeTolerance:      return optionalLess( lhs.truthAgeTolerance, rhs.truthAgeTolerance );
 #endif
       
-    case kNumColumns:
-      isLess = false;
-      break;
+    case kNumColumns:  return false;
   }//switch( sortColumn )
-
-  if(order == Wt::AscendingOrder)
-      return !isLess;
-  return isLess;
+  
+  assert( 0 );
+  return false;
 }//bool compare(...);
 
 void SourceFitModel::sort( int column, Wt::SortOrder order )
@@ -2684,7 +2666,9 @@ pair<ShieldingSourceDisplay *,AuxWindow *> ShieldingSourceDisplay::createWindow(
     WSuggestionPopup *shieldSuggest = viewer->shieldingSuggester();
     
     disp = new ShieldingSourceDisplay( peakModel, viewer, shieldSuggest, matdb );
-    window = new AuxWindow( WString::tr("window-title-act-shield-fit") );
+    window = new AuxWindow( WString::tr("window-title-act-shield-fit"),
+                           Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::SetCloseable)
+                           | AuxWindowProperties::EnableResize);
     // We have to set minimum size before calling setResizable, or else Wt's Resizable.js functions
     //  will be called first, which will then default to using the initial size as minimum allowable
     if( !viewer->isPhone() )
@@ -2875,7 +2859,7 @@ ShieldingSourceDisplay::ShieldingSourceDisplay( PeakModel *peakModel,
   assert( m_specViewer );
   m_specViewer->useMessageResourceBundle( "ShieldingSourceDisplay" );
       
-  const bool showToolTips = InterSpecUser::preferenceValue<bool>( "ShowTooltips", m_specViewer );
+  const bool showToolTips = UserPreferences::preferenceValue<bool>( "ShowTooltips", m_specViewer );
   
   setLayoutSizeAware( true );
   const bool isotopesHaveSameAge = true;
@@ -3200,7 +3184,7 @@ ShieldingSourceDisplay::ShieldingSourceDisplay( PeakModel *peakModel,
   WContainerWidget *allpeaksDiv = new WContainerWidget();
   WCheckBox *allpeaks = new WCheckBox( WString::tr("ssd-cb-all-peaks"), allpeaksDiv );
   allpeaks->setAttributeValue( "style", "white-space:nowrap;margin-right:5px;float:right;" + allpeaks->attributeValue("style") );
-  optionsLayout->addWidget( allpeaksDiv, 0, 0 );
+  optionsLayout->addWidget( allpeaksDiv, optionsLayout->rowCount(), 0 );
   allpeaks->setTristate( true );
   allpeaks->changed().connect( boost::bind( &ShieldingSourceDisplay::toggleUseAll, this, allpeaks ) );
   m_peakModel->dataChanged().connect(
@@ -3212,7 +3196,7 @@ ShieldingSourceDisplay::ShieldingSourceDisplay( PeakModel *peakModel,
   //The ToolTip of WCheckBoxes is a bit finicky, and only works over the
   //  checkbox itself, so lets make it work over the label to, via lineDiv
   WContainerWidget *lineDiv = new WContainerWidget();
-  optionsLayout->addWidget( lineDiv, 1, 0 );
+  optionsLayout->addWidget( lineDiv, optionsLayout->rowCount(), 0 );
   m_multiIsoPerPeak = new WCheckBox( WString::tr("ssd-multi-iso-per-peak"), lineDiv );
   //lineDiv->setToolTip( WString::tr("ssd-tt-multi-iso-per-peak") );
   HelpSystem::attachToolTipOn( lineDiv, WString::tr("ssd-tt-multi-iso-per-peak"),
@@ -3222,7 +3206,7 @@ ShieldingSourceDisplay::ShieldingSourceDisplay( PeakModel *peakModel,
   m_multiIsoPerPeak->unChecked().connect( this, &ShieldingSourceDisplay::multiNucsPerPeakChanged );
   
   lineDiv = new WContainerWidget();
-  optionsLayout->addWidget( lineDiv, 2, 0 );
+  optionsLayout->addWidget( lineDiv, optionsLayout->rowCount(), 0 );
   m_attenForAir = new WCheckBox( WString::tr("ssd-cb-atten-for-air"), lineDiv );
   //lineDiv->setToolTip( WString::tr("ssd-tt-atten-for-air") );
   HelpSystem::attachToolTipOn( lineDiv, WString::tr("ssd-tt-atten-for-air"),
@@ -3233,7 +3217,7 @@ ShieldingSourceDisplay::ShieldingSourceDisplay( PeakModel *peakModel,
   
   
   lineDiv = new WContainerWidget();
-  optionsLayout->addWidget( lineDiv, 3, 0 );
+  optionsLayout->addWidget( lineDiv, optionsLayout->rowCount(), 0 );
   m_backgroundPeakSub = new WCheckBox( WString::tr("ssd-cb-sub-back-peaks"), lineDiv );
   lineDiv->setToolTip( WString::tr("ssd-tt-sub-back-peaks") );
   HelpSystem::attachToolTipOn( lineDiv, WString::tr("ssd-tt-sub-back-peaks"),
@@ -3243,7 +3227,7 @@ ShieldingSourceDisplay::ShieldingSourceDisplay( PeakModel *peakModel,
   
   
   lineDiv = new WContainerWidget();
-  optionsLayout->addWidget( lineDiv, 4, 0 );
+  optionsLayout->addWidget( lineDiv, optionsLayout->rowCount(), 0 );
   m_sameIsotopesAge = new WCheckBox( WString::tr("ssd-cb-same-el-same-age"), lineDiv );
   //lineDiv->setToolTip( WString::tr("ssd-tt-same-el-same-age") );
   HelpSystem::attachToolTipOn( lineDiv, WString::tr("ssd-tt-same-el-same-age"),
@@ -3255,7 +3239,7 @@ ShieldingSourceDisplay::ShieldingSourceDisplay( PeakModel *peakModel,
 
       
   lineDiv = new WContainerWidget();
-  optionsLayout->addWidget( lineDiv, 4, 0 );
+  optionsLayout->addWidget( lineDiv, optionsLayout->rowCount(), 0 );
   m_decayCorrect = new WCheckBox( WString::tr("ssd-cb-corr-for-decay"), lineDiv );
   //lineDiv->setToolTip( WString::tr("ssd-tt-corr-for-decay") );
   HelpSystem::attachToolTipOn( lineDiv, WString::tr("ssd-tt-corr-for-decay"),
@@ -3406,7 +3390,7 @@ ShieldingSourceDisplay::ShieldingSourceDisplay( PeakModel *peakModel,
     
     bottomMiddleLayout->addWidget( bottomLeftDiv,   0, 0 );
     bottomMiddleLayout->addWidget( sourceDiv, 0, 1 );
-    bottomMiddleLayout->setColumnResizable( 0, true, WLength(38.25,WLength::FontEx) );
+    bottomMiddleLayout->setColumnResizable( 0, true, WLength(340,WLength::Pixel) ); //335px seems to be the limit where the peak table will get horizontal scroll-bars
     bottomMiddleLayout->setHorizontalSpacing( 5 );
     bottomMiddleLayout->setVerticalSpacing( 5 );
     bottomMiddleLayout->setContentsMargins( 0, 0, 0, 0 );
@@ -4339,7 +4323,7 @@ void ShieldingSourceDisplay::setFitQuantitiesToDefaultValues()
     if( m_sourceModel->fitActivity(i) )
     {
       WModelIndex index = m_sourceModel->index( i, SourceFitModel::kActivity );
-      const bool useCi = !InterSpecUser::preferenceValue<bool>( "DisplayBecquerel", m_specViewer );
+      const bool useCi = !UserPreferences::preferenceValue<bool>( "DisplayBecquerel", m_specViewer );
       if( useCi )
         m_sourceModel->setData( index, "1 mCi" );
       else
@@ -6266,7 +6250,7 @@ void ShieldingSourceDisplay::closeBrowseDatabaseModelsWindow()
 
 void ShieldingSourceDisplay::startBrowseDatabaseModels()
 {
-  if( !m_specViewer || !m_specViewer->m_user )
+  if( !m_specViewer || !m_specViewer->user() )
     throw runtime_error( "startBrowseDatabaseModels(): invalid user" );
   
   if( m_modelDbBrowseWindow )
@@ -6297,7 +6281,12 @@ void ShieldingSourceDisplay::startBrowseDatabaseModels()
     del->disable();
 
     Dbo::ptr<UserFileInDb> dbmeas;
-    dbmeas = m_specViewer->measurmentFromDb( SpecUtils::SpectrumType::Foreground, false );
+    try
+    {
+      dbmeas = m_specViewer->measurementFromDb( SpecUtils::SpectrumType::Foreground, false );
+    }catch( std::exception & )
+    {
+    }
     
     size_t nfileprev[2];
     WSelectionBox *selections[2] = { (WSelectionBox *)0, (WSelectionBox *)0 };
@@ -6306,7 +6295,7 @@ void ShieldingSourceDisplay::startBrowseDatabaseModels()
       std::shared_ptr<DataBaseUtils::DbSession> sql = m_specViewer->sql();
       DataBaseUtils::DbTransaction transaction( *sql );
       nfileprev[0] = dbmeas ? dbmeas->modelsUsedWith.size() : 0;
-      nfileprev[1] = m_specViewer->m_user->shieldSrcModels().size();
+      nfileprev[1] = m_specViewer->user()->shieldSrcModels().size();
       transaction.commit();
     }//end codeblock for database interaction
     
@@ -6322,7 +6311,7 @@ void ShieldingSourceDisplay::startBrowseDatabaseModels()
       if( i == 0 )
         model->setQuery( dbmeas->modelsUsedWith.find() );
       else
-        model->setQuery( m_specViewer->m_user->shieldSrcModels().find() );
+        model->setQuery( m_specViewer->user()->shieldSrcModels().find() );
       model->addColumn( "Name" );
       selection->setModel( model );
       selection->setModelColumn( 0 );
@@ -6683,7 +6672,7 @@ bool ShieldingSourceDisplay::finishSaveModelToDatabase( const Wt::WString &name,
     if( !m_modelInDb )
     {
       model = new ShieldingSourceModel();
-      model->user = m_specViewer->m_user;
+      model->user = m_specViewer->user();
       model->serializeTime = WDateTime::currentDateTime();
       m_modelInDb.reset( new ShieldingSourceModel() );
       m_modelInDb = sql->session()->add( model );
@@ -6710,7 +6699,12 @@ bool ShieldingSourceDisplay::finishSaveModelToDatabase( const Wt::WString &name,
     rapidxml::print(std::back_inserter(model->xmlData), doc, 0);
 
     Dbo::ptr<UserFileInDb> dbmeas;
-    dbmeas = m_specViewer->measurmentFromDb( SpecUtils::SpectrumType::Foreground, true );
+    try
+    {
+      dbmeas = m_specViewer->measurementFromDb( SpecUtils::SpectrumType::Foreground, true );
+    }catch( std::exception & )
+    {
+    }
     
     if( dbmeas )
       model->filesUsedWith.insert( dbmeas );
@@ -6719,11 +6713,8 @@ bool ShieldingSourceDisplay::finishSaveModelToDatabase( const Wt::WString &name,
     m_saveAsNewModelInDb->enable();
   }catch( std::exception & )
   {
-//    if( m_modelInDb.id() < 0 )
-//    {
-      m_modelInDb.reset();
-      m_saveAsNewModelInDb->disable();
-//    }//if( m_modelInDb.id() < 0 )
+    m_modelInDb.reset();
+    m_saveAsNewModelInDb->disable();
     transaction.rollback();
     return false;
   }//try / catch
@@ -6746,7 +6737,7 @@ void ShieldingSourceDisplay::saveCloneModelToDatabase()
     ShieldingSourceModel *model = new ShieldingSourceModel();
     model->shallowEquals( *m_modelInDb );
     
-    model->user = m_specViewer->m_user;
+    model->user = m_specViewer->user();
     model->serializeTime = WDateTime::currentDateTime();
     model->name = model->name + " Clone";
     
@@ -6757,7 +6748,13 @@ void ShieldingSourceDisplay::saveCloneModelToDatabase()
     m_modelInDb = sql->session()->add( model );
     
     Dbo::ptr<UserFileInDb> dbmeas;
-    dbmeas = m_specViewer->measurmentFromDb( SpecUtils::SpectrumType::Foreground, false );
+    try
+    {
+      dbmeas = m_specViewer->measurementFromDb( SpecUtils::SpectrumType::Foreground, false );
+    }catch( std::exception & )
+    {
+    }
+    
     if( dbmeas )
       m_modelInDb.modify()->filesUsedWith.insert( dbmeas );
     transaction.commit();
@@ -7581,6 +7578,7 @@ void ShieldingSourceDisplay::materialModifiedCallback( ShieldingSelect *select )
   cerr << "In ShieldingSourceDisplay::materialModifiedCallback(...)" << endl;
   //I meant to do some more work here...
 
+  
 }//void materialModifiedCallback( ShieldingSelect *select )
 
 
@@ -8683,7 +8681,7 @@ void ShieldingSourceDisplay::updateCalcLogWithFitResults(
     const SandiaDecay::Nuclide *nuc = chi2Fcn->nuclide( nucn );
     if( nuc )
     {
-      const bool useCi = !InterSpecUser::preferenceValue<bool>( "DisplayBecquerel", InterSpec::instance() );
+      const bool useCi = !UserPreferences::preferenceValue<bool>( "DisplayBecquerel", InterSpec::instance() );
       const double act = chi2Fcn->activity( nuc, params );
       const string actStr = PhysicalUnits::printToBestActivityUnits( act, 2, useCi );
       

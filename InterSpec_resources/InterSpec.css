@@ -227,12 +227,18 @@ button.Wt-btn.LightButton, .btn-group.LightButton
 }
 
 /* .btn-group is for WSplitButton */
+.btn-group
+{
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+}
+
 .btn-group.LightButton > button.Wt-btn
 {
   border-top: none;
   border-bottom: none;
-  margin-top: -1px;
-  padding-top: 3px;
 }
 
 .btn-group.LightButton > button.Wt-btn.dropdown-toggle.LightButton

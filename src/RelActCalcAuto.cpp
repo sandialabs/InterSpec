@@ -942,10 +942,10 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
       vector<pair<double,double>> gammas_in_range;
       
       // Define a helper function to add a gamma at an energy into \c gammas_in_range
-      auto add_peak_to_range = [&gammas_in_range, this, highres, &roi_range, num_sigma_half_roi]( const double energy ){
+      auto add_peak_to_range = [&gammas_in_range, this, &spectrum, highres, &roi_range, num_sigma_half_roi]( const double energy ){
         double energy_sigma;
         float min_sigma, max_sigma;
-        expected_peak_width_limits( energy, highres, min_sigma, max_sigma );
+        expected_peak_width_limits( energy, highres, spectrum, min_sigma, max_sigma );
         
         if( m_drf && m_drf->hasResolutionInfo() )
         {

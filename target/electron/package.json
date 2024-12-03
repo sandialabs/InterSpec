@@ -1,6 +1,6 @@
 {
   "name": "InterSpecAddOn",
-  "version": "1.0.12",
+  "version": "1.0.13",
   "description": "Application for interactive gamma spectroscopy",
   "homepage": "https://github.com/sandialabs/InterSpec",
   "main": "main.js",
@@ -10,7 +10,7 @@
   },
   "scripts": {
     "install": "cmake-js compile",
-    "start": "electron ./build_osx/app/",
+    "start": "electron ./build_macOS/app/",
     "package-mac": "electron-packager ./build_macos/app --overwrite --platform=darwin --arch=x64 --protocol=interspec --protocol-name=\"InterSpec\" --icon=macOS/InterSpec.icns --prune=true --out=release-builds --binaries=InterSpec.exe --extendInfo=macOS/Info.plist --entitlements=macOS/entitlements.mac.plist --ignore=copy_resources.* --ignore=LICENSE.md --ignore=README.md",
     "package-win": "electron-packager ./build_win/app InterSpec --overwrite --platform=win32 --arch=x64 --protocol=interspec --protocol-name=\"InterSpec\" --icon=windows/icon.ico --prune=true --out=release-builds --version-string.CompanyName=\"Sandia National Laboratories\" --version-string.FileDescription=\"nuclear spectroscopy analysis program\" --version-string.ProductName=\"InterSpec\" --ignore=LICENSE.md --ignore=README.md",
     "package-win32": "electron-packager ./build_win_x86/app InterSpec --overwrite --platform=win32 --arch=ia32 --protocol=interspec --protocol-name=\"InterSpec\" --icon=windows/icon.ico --prune=true --out=release-builds --version-string.CompanyName=\"Sandia National Laboratories\" --version-string.FileDescription=\"nuclear spectroscopy analysis program\" --version-string.ProductName=\"InterSpec\" --ignore=LICENSE.md --ignore=README.md",
@@ -23,12 +23,15 @@
   },
   "license": "LGPL-2.1-only",
   "dependencies": {
-    "cmake-js": "^6.1.0",
-    "node-api-headers": "^1.1.0"
+    "cmake-js": "^7.0.0",
+    "node-api-headers": "^1.3.0"
   },
   "devDependencies": {
-    "electron": "^21.4.4",
+    "electron": "^13.6.9",
     "electron-packager": "^17.1.2",
     "node-addon-api": "^6.1.0"
+  },
+  "binary": {
+    "napi_versions": [4]
   }
 }

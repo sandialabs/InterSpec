@@ -49,6 +49,7 @@
 #include "InterSpec/PhysicalUnits.h"
 #include "InterSpec/SpecMeasManager.h"
 #include "InterSpec/UndoRedoManager.h"
+#include "InterSpec/UserPreferences.h"
 #include "InterSpec/MassAttenuationTool.h"
 #include "InterSpec/DecayDataBaseServer.h"
 
@@ -104,7 +105,7 @@ GammaXsGui::GammaXsGui( MaterialDB *materialDB,
   m_layout = new WGridLayout();
   setLayout( m_layout );
 
-  const bool showToolTips = InterSpecUser::preferenceValue<bool>( "ShowTooltips", m_specViewer );
+  const bool showToolTips = UserPreferences::preferenceValue<bool>( "ShowTooltips", m_specViewer );
 
   m_specViewer->useMessageResourceBundle( "GammaXsGui" );
   

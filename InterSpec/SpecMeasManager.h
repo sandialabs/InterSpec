@@ -378,20 +378,7 @@ public:
   //  must be called from a thread where WApplication::instance() is available
   //  to ensure thread safety.
   void saveToDatabase( std::shared_ptr<const SpecMeas> meas ) const;
-  
-  void storeSpectraInDb();
-  void finishStoreAsSpectrumInDb( Wt::WLineEdit *name,
-                                  Wt::WTextArea *description,
-                                  std::shared_ptr<SpecMeas> meas,
-                                  AuxWindow *window );
-  void storeSpectraSnapshotInDb( const std::string name = "" );
-  void finishSaveSnapshotInDb(
-                      const std::vector< std::shared_ptr<SpecMeas> > specs,
-                      const std::vector< Wt::Dbo::ptr<UserFileInDb> > dbs,
-                      const std::vector< Wt::WLineEdit * > edits,
-                      const std::vector< Wt::WCheckBox * > cbs,
-                               AuxWindow *window );
-  void startStoreSpectraAsInDb();
+
   
   void browsePrevSpectraAndStatesDb();
 #endif

@@ -178,6 +178,8 @@ namespace BatchInfoLog
                        const std::string &filename,
                        const BatchPeak::BatchPeakFitResult * const peak_fit );
   
+  void add_energy_cal_json( nlohmann::basic_json<> &data,
+                           const std::shared_ptr<const SpecUtils::EnergyCalibration> &cal );
   
   void add_activity_fit_options_to_json( nlohmann::basic_json<> &data,
                                         const BatchActivity::BatchActivityFitOptions &options );

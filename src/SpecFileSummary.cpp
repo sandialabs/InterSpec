@@ -168,7 +168,10 @@ namespace
 
 
 SpecFileSummary::SpecFileSummary( const SpecUtils::SpectrumType type, InterSpec *specViewer )
-  : AuxWindow( WString::tr("window-title-file-parameters"), AuxWindowProperties::IsModal ),
+  : AuxWindow( WString::tr("window-title-file-parameters"),
+              Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::IsModal)
+              | AuxWindowProperties::SetCloseable
+              | AuxWindowProperties::DisableCollapse ),
     m_specViewer( specViewer ),
     m_allowEditGroup( NULL ),
     m_displaySampleDiv( NULL ),

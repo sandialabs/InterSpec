@@ -158,18 +158,38 @@ button.LinkBtn.GpsBtn, button.LinkBtn.GpsBtn:hover {
   font-size: 6px;
 }
 
-button.LinkBtn.MoreInfoBtn, button.LinkBtn.MoreInfoBtn:hover {
-  float: right;
+.CompactFileManager .BottomRow .InfoBtns {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: nowrap;
+  align-items: center;
+  margin-left: auto; /* makes float to right */
+}
+
+.CompactFileManager button.LinkBtn.MoreInfoBtn, .CompactFileManager button.LinkBtn.MoreInfoBtn:hover {
   margin-right: 5px;
-  margin-left: auto; /* This is what makes the button float to the right side */
+  margin-left: 0px;
   font-size: 6px;
+  height: 12px;
+  padding-left: 0px;
+  padding-right: 5px;
+}
+
+/* For background and secondary sections, add some margin below summary table, so they will be
+ at the same height as the foreground table (which has some additional buttons below the section)
+ */
+.CompactFileManager.LeftToRight .DispType.Background .SummaryTable, .CompactFileManager.LeftToRight .DispType.Secondary .SummaryTable {
+  margin-bottom: 23px;
+}
+
+/* The "Scale Factor:" input for background and secondary - add a little space*/
+.CompactFileManager .DispType .ScaleFactorRow > input {
+  margin-left: 5px;
 }
 
 div.DispType .BottomRow {
   width: 100%;
   overflow-x: hidden;
-  
-  flex-grow: 1;
   
   display: flex;
   flex-wrap: nowrap;
@@ -189,7 +209,7 @@ div.DispType .BottomRow > div > button{
 }
 
 div.DispType div.ScaleFactorRow{
-  /* Make it so when the "Normalize" button disappears and reapears its doesnt cause this rows contents to move around a little. */
+  /* Make it so when the "Normalize" button disappears and reappears its doesnt cause this rows contents to move around a little. */
   height: 23px;
 }
 

@@ -170,7 +170,6 @@ if( USE_REL_ACT_TOOL )
     GIT_REPOSITORY https://gitlab.com/libeigen/eigen.git
     #GIT_TAG        3147391d946bb4b6c68edd901f2add6ac1f31f8c # release-3.4.0
     GIT_TAG        9df21dc8b4b576a7aa5c0094daa8d7e8b8be60f0 #Updated 3.4 release, to pickup some CMake fixes
-    GIT_SHALLOW TRUE
   )
 
   FetchContent_MakeAvailable( eigen )

@@ -78,6 +78,7 @@
 #include "InterSpec/WarningWidget.h"
 #include "InterSpec/PhysicalUnits.h"
 #include "InterSpec/DecayChainChart.h"
+#include "InterSpec/UserPreferences.h"
 #include "InterSpec/DecayActivityDiv.h"
 #include "InterSpec/DecayDataBaseServer.h"
 #include "InterSpec/MassAttenuationTool.h"
@@ -809,7 +810,7 @@ class DateLengthCalculator : public WContainerWidget
       
       double entered_activity = nucinfo.activity;
       const bool useCurie = nucinfo.useCurie;
-      //const bool useCurie = !InterSpecUser::preferenceValue<bool>( "DisplayBecquerel", InterSpec::instance() );
+      //const bool useCurie = !UserPreferences::preferenceValue<bool>( "DisplayBecquerel", InterSpec::instance() );
       
       if( timeSpan < 0.0 )
       {
@@ -1877,7 +1878,7 @@ void DecayActivityDiv::handleAppUrl( std::string path, std::string query_str )
   };
   
   const SandiaDecay::SandiaDecayDataBase *db = DecayDataBaseServer::database();
-  bool useBq = InterSpecUser::preferenceValue<bool>( "DisplayBecquerel", InterSpec::instance() );
+  bool useBq = UserPreferences::preferenceValue<bool>( "DisplayBecquerel", InterSpec::instance() );
   
   clearAllNuclides();
 
@@ -2144,7 +2145,7 @@ Wt::WContainerWidget *DecayActivityDiv::initDisplayOptionWidgets()
 
   m_displayActivityUnitsCombo->addItem( WString::tr("dad-arbitrary") );
 
-  const bool useBq = InterSpecUser::preferenceValue<bool>( "DisplayBecquerel", InterSpec::instance() );
+  const bool useBq = UserPreferences::preferenceValue<bool>( "DisplayBecquerel", InterSpec::instance() );
   m_displayActivityUnitsCombo->setCurrentIndex( (useBq ? 2 : 7) ); //MBq : mCi
 
 
@@ -2160,11 +2161,11 @@ Wt::WContainerWidget *DecayActivityDiv::initDisplayOptionWidgets()
   m_displayTimeLength->enterPressed().connect( boost::bind( &DecayActivityDiv::refreshDecayDisplay, this, true ) );
   
   
-  const bool showToolTips = m_viewer ? InterSpecUser::preferenceValue<bool>( "ShowTooltips", m_viewer ) : false;
+  const bool showToolTips = m_viewer ? UserPreferences::preferenceValue<bool>( "ShowTooltips", m_viewer ) : false;
   if( m_viewer )
     HelpSystem::attachToolTipOn( m_displayTimeLength, WString::tr("dad-tt-age"), showToolTips );
   
-  WLabel *yaxisTypeLabel = new WLabel( isPhone ? "dad-yaxis-label-phone" : "dad-yaxis-label", displOptUpper );
+  WLabel *yaxisTypeLabel = new WLabel( WString::tr(isPhone ? "dad-yaxis-label-phone" : "dad-yaxis-label"), displOptUpper );
   yaxisTypeLabel->addStyleClass( "DecayChartYaxisTypeLabel" );
   
   displOptUpper->addWidget( m_yAxisType );
@@ -2881,7 +2882,7 @@ WContainerWidget *DecayActivityDiv::isotopesSummary( const double time ) const
           return nuc.useCurie;
       }
       
-      return !InterSpecUser::preferenceValue<bool>( "DisplayBecquerel", InterSpec::instance() );
+      return !UserPreferences::preferenceValue<bool>( "DisplayBecquerel", InterSpec::instance() );
     };
     
       infostrm << "<div>Starting from:</div><div style=\"margin-left: 20px; max-width: 60ex;\">";

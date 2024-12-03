@@ -66,6 +66,7 @@
 #include "InterSpec/InterSpecUser.h"
 #include "InterSpec/PhysicalUnits.h"
 #include "InterSpec/DecayChainChart.h"
+#include "InterSpec/UserPreferences.h"
 #include "InterSpec/DecayActivityDiv.h"
 #include "InterSpec/DecayDataBaseServer.h"
 #include "InterSpec/PhysicalUnitsLocalized.h"
@@ -355,7 +356,7 @@ pair<AuxWindow *, DecayChainChart *>
 
   InterSpec *viewer = InterSpec::instance();
   assert( viewer );
-  const bool useBq = InterSpecUser::preferenceValue<bool>( "DisplayBecquerel", viewer );
+  const bool useBq = UserPreferences::preferenceValue<bool>( "DisplayBecquerel", viewer );
 
   viewer->colorThemeChanged();
   viewer->colorThemeChanged().connect( chart, &DecayChainChart::colorThemeChanged );

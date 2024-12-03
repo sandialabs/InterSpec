@@ -76,6 +76,7 @@
 #include "InterSpec/RelActCalcAuto.h"
 #include "InterSpec/SwitchCheckbox.h"
 #include "InterSpec/UndoRedoManager.h"
+#include "InterSpec/UserPreferences.h"
 #include "InterSpec/RelActTxtResults.h"
 #include "InterSpec/NativeFloatSpinBox.h"
 #include "InterSpec/DecayDataBaseServer.h"
@@ -295,7 +296,7 @@ namespace
       
       wApp->useStyleSheet( "InterSpec_resources/GridLayoutHelpers.css" );
       
-      const bool showToolTips = InterSpecUser::preferenceValue<bool>( "ShowTooltips", InterSpec::instance() );
+      const bool showToolTips = UserPreferences::preferenceValue<bool>( "ShowTooltips", InterSpec::instance() );
       
       WLabel *label = new WLabel( "Lower Energy", this );
       label->addStyleClass( "GridFirstCol GridFirstRow" );
@@ -549,7 +550,7 @@ namespace
     {
       addStyleClass( "RelActAutoNuclide" );
       
-      const bool showToolTips = InterSpecUser::preferenceValue<bool>( "ShowTooltips", InterSpec::instance() );
+      const bool showToolTips = UserPreferences::preferenceValue<bool>( "ShowTooltips", InterSpec::instance() );
       
       WLabel *label = new WLabel( "Nuclide:", this );
       m_nuclide_edit = new WLineEdit( "", this );
@@ -952,7 +953,7 @@ namespace
     {
       addStyleClass( "RelActFreePeak" );
       
-      const bool showToolTips = InterSpecUser::preferenceValue<bool>( "ShowTooltips", InterSpec::instance() );
+      const bool showToolTips = UserPreferences::preferenceValue<bool>( "ShowTooltips", InterSpec::instance() );
       
       WLabel *label = new WLabel( "Energy", this );
       label->addStyleClass( "GridFirstCol GridFirstRow" );
@@ -1102,7 +1103,9 @@ std::pair<RelActAutoGui *,AuxWindow *> RelActAutoGui::createWindow( InterSpec *v
   {
     disp = new RelActAutoGui( viewer );
     
-    window = new AuxWindow( "Relative Act. Isotopics" );
+    window = new AuxWindow( "Relative Act. Isotopics", 
+                           Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::SetCloseable)
+                           | AuxWindowProperties::EnableResize );
     // We have to set minimum size before calling setResizable, or else Wt's Resizable.js functions
     //  will be called first, which will then default to using the initial size as minimum allowable
     window->setMinimumSize( 800, 480 );
@@ -1118,12 +1121,12 @@ std::pair<RelActAutoGui *,AuxWindow *> RelActAutoGui::createWindow( InterSpec *v
     //window->stretcher()->setContentsMargins(0,0,0,0);
     //    window->footer()->resize(WLength::Auto, WLength(50.0));
     
-    WPushButton *closeButton = window->addCloseButtonToFooter();
-    closeButton->clicked().connect(window, &AuxWindow::hide);
-    
     AuxWindow::addHelpInFooter( window->footer(), "rel-act-dialog" );
     
     disp->addDownloadAndUploadLinks( window->footer() );
+    
+    WPushButton *closeButton = window->addCloseButtonToFooter();
+    closeButton->clicked().connect(window, &AuxWindow::hide);
     
     //window->rejectWhenEscapePressed();
     
@@ -1245,7 +1248,7 @@ RelActAutoGui::RelActAutoGui( InterSpec *viewer, Wt::WContainerWidget *parent )
   
   addStyleClass( "RelActAutoGui" );
   
-  const bool showToolTips = InterSpecUser::preferenceValue<bool>( "ShowTooltips", m_interspec );
+  const bool showToolTips = UserPreferences::preferenceValue<bool>( "ShowTooltips", m_interspec );
   
   WText *alpha_warning = new WText( "This tool is under active development - this is an early preview", this );
   alpha_warning->addStyleClass( "RelActCalcAutoAlphaBuildWarning" );
@@ -1269,7 +1272,7 @@ RelActAutoGui::RelActAutoGui( InterSpec *viewer, Wt::WContainerWidget *parent )
   m_interspec->colorThemeChanged().connect( boost::bind( &D3SpectrumDisplayDiv::applyColorTheme, m_spectrum, boost::placeholders::_1 ) );
   m_spectrum->applyColorTheme( m_interspec->getColorTheme() );
   
-  const bool logypref = InterSpecUser::preferenceValue<bool>( "LogY", m_interspec );
+  const bool logypref = UserPreferences::preferenceValue<bool>( "LogY", m_interspec );
   m_spectrum->setYAxisLog( logypref );
   
   auto set_log_y = wApp->bind( boost::bind( &D3SpectrumDisplayDiv::setYAxisLog, m_spectrum, true ) );
@@ -1281,8 +1284,8 @@ RelActAutoGui::RelActAutoGui( InterSpec *viewer, Wt::WContainerWidget *parent )
       set_lin_y();
   };
   
-  InterSpecUser::addCallbackWhenChanged( m_interspec->m_user, m_interspec,
-                                        "LogY", m_spectrum, &D3SpectrumDisplayDiv::setYAxisLog );
+  m_interspec->preferences()->addCallbackWhenChanged( "LogY", m_spectrum, 
+                                                     &D3SpectrumDisplayDiv::setYAxisLog );
   
   m_peak_model = new PeakModel( m_spectrum );
   m_peak_model->setNoSpecMeasBacking();
@@ -3820,7 +3823,7 @@ void RelActAutoGui::setPeaksToForeground()
   refit_holder->addStyleClass( "AddOrReplaceRefitRow" );
   WCheckBox *refit_peaks = new WCheckBox( "Refit Peaks", refit_holder );
   
-  const bool showToolTips = InterSpecUser::preferenceValue<bool>( "ShowTooltips", InterSpec::instance() );
+  const bool showToolTips = UserPreferences::preferenceValue<bool>( "ShowTooltips", InterSpec::instance() );
   const char *tooltip = 
   "When checked, peaks will be refit without the constraints of the relative efficiency curve,"
   " expected branching ratios, or FWHM constraints from other ROIs - allowing statistical"

@@ -330,6 +330,7 @@ set(sources
     src/NuclideSourceEnter.cpp
     src/AddNewPeakDialog.cpp
     src/CoincidenceDev.cpp
+    src/UserPreferences.cpp
     js/SpectrumChart.js
     js/InterSpec.js
 )
@@ -434,12 +435,13 @@ set(headers
     InterSpec/NuclideSourceEnter.h
     InterSpec/AddNewPeakDialog.h
     InterSpec/CoincidenceDev.h
+    InterSpec/UserPreferences.h
 )
 
 
 if(USE_DB_TO_STORE_SPECTRA)
-    list(APPEND sources src/DbStateBrowser.cpp src/DbFileBrowser.cpp)
-    list(APPEND headers InterSpec/DbStateBrowser.h InterSpec/DbFileBrowser.h)
+    list(APPEND sources src/DbFileBrowser.cpp)
+    list(APPEND headers InterSpec/DbFileBrowser.h)
 endif(USE_DB_TO_STORE_SPECTRA)
 
 

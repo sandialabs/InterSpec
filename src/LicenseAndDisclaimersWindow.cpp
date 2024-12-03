@@ -55,6 +55,7 @@
 #include "InterSpec/InterSpecApp.h"
 #include "InterSpec/PhysicalUnits.h"
 #include "InterSpec/UseInfoWindow.h"
+#include "InterSpec/UserPreferences.h"
 #include "InterSpec/PhysicalUnitsLocalized.h"
 #include "InterSpec/LicenseAndDisclaimersWindow.h"
 
@@ -65,13 +66,12 @@
 using namespace Wt;
 using namespace std;
 
-//Or could just use: __DATE__
-
-
 LicenseAndDisclaimersWindow::LicenseAndDisclaimersWindow( InterSpec *interspec )
 : AuxWindow( WString::tr("window-title-license-credit"),
             (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::IsModal)
-               | AuxWindowProperties::DisableCollapse | AuxWindowProperties::EnableResize) ),
+             | AuxWindowProperties::DisableCollapse
+             | AuxWindowProperties::EnableResize
+             | AuxWindowProperties::SetCloseable) ),
   m_menu( nullptr )
 {
   setClosable( true );
@@ -363,9 +363,21 @@ void LicenseAndDisclaimersWindow::dataStorageCreator( Wt::WContainerWidget *pare
   
   if( viewer )
   {
-    string datadir;
-    try{ datadir = Wt::Utils::htmlEncode( viewer->writableDataDirectory() ); }catch(...){}
-    string staticdir = Wt::Utils::htmlEncode( viewer->staticDataDirectory() );
+    if( !parent->hasStyleClass("DataContent") )
+      parent->addStyleClass( "DataContent" );
+      
+    string datadir, userDataDir;
+    try
+    {
+      userDataDir = viewer->writableDataDirectory();
+      datadir = Wt::Utils::htmlEncode( userDataDir );
+    }catch(...)
+    {
+      
+    }
+    
+    const string staticDataDir = viewer->staticDataDirectory();
+    string staticdir = Wt::Utils::htmlEncode( staticDataDir );
     
     //SpecUtils::is_absolute_path( staticdir )
     try
@@ -390,7 +402,7 @@ void LicenseAndDisclaimersWindow::dataStorageCreator( Wt::WContainerWidget *pare
     string totalUserTime, totalFilesOpened, totalSessions, firstAccess;
     
     InterSpec *viewer = InterSpec::instance();
-    Dbo::ptr<InterSpecUser> user = ((app && viewer) ? viewer->m_user : Dbo::ptr<InterSpecUser>());
+    Dbo::ptr<InterSpecUser> user = ((app && viewer) ? viewer->user() : Dbo::ptr<InterSpecUser>());
     if( user )
     {
       try
@@ -425,9 +437,47 @@ void LicenseAndDisclaimersWindow::dataStorageCreator( Wt::WContainerWidget *pare
     
     WText *text = new WText( WString::tr("ladw-data-location-user").arg(datadir), parent );
     text->addStyleClass( "DataLocationSection" );
+
+#if( !ANDROID && !IOS && !BUILD_FOR_WEB_DEPLOYMENT )
+    if( !userDataDir.empty() )
+    {
+      WPushButton *showBtn = new WPushButton( parent );
+#ifdef _WIN32
+      const char *txt_key = "ladw-show-data-location-win";
+#elif __APPLE__
+      const char *txt_key = "ladw-show-data-location-macOS";
+#else
+      const char *txt_key = "ladw-show-data-location";
+#endif
+      showBtn->setText( WString::tr(txt_key) );
+      showBtn->setStyleClass( "LinkBtn ShowDataLocationBtn" );
+      showBtn->clicked().connect( std::bind([userDataDir](){
+        AppUtils::showFileInOsFileBrowser(userDataDir);
+      }) );
+    }
+#endif
     
     text = new WText( WString::tr("ladw-data-location-static").arg(staticdir), parent );
     text->addStyleClass( "DataLocationSection" );
+    
+#if( !ANDROID && !IOS && !BUILD_FOR_WEB_DEPLOYMENT )
+    if( !userDataDir.empty() )
+    {
+      WPushButton *showBtn = new WPushButton( parent );
+#ifdef _WIN32
+      const char *txt_key = "ladw-show-data-location-win";
+#elif __APPLE__
+      const char *txt_key = "ladw-show-data-location-macOS";
+#else
+      const char *txt_key = "ladw-show-data-location";
+#endif
+      showBtn->setText( WString::tr(txt_key) );
+      showBtn->setStyleClass( "LinkBtn ShowDataLocationBtn" );
+      showBtn->clicked().connect( std::bind([staticDataDir](){
+        AppUtils::showFileInOsFileBrowser(staticDataDir);
+      }) );
+    }
+#endif
     
     text = new WText( WString::tr("ladw-data-location-network").arg(httpPort), parent );
     text->addStyleClass( "DataLocationSection" );
@@ -478,8 +528,8 @@ void LicenseAndDisclaimersWindow::dataStorageCreator( Wt::WContainerWidget *pare
 #endif
     
 #if( USE_REMOTE_RID )
-    const string urls = InterSpecUser::preferenceValue<string>( "ExternalRidUrl", viewer );
-    const string exes = InterSpecUser::preferenceValue<string>( "ExternalRidExe", viewer );
+    const string urls = UserPreferences::preferenceValue<string>( "ExternalRidUrl", viewer );
+    const string exes = UserPreferences::preferenceValue<string>( "ExternalRidExe", viewer );
     if( urls.empty() && exes.empty() )
       content.arg( WString::tr("ladw-remote-rid-none") );
     
