@@ -489,6 +489,7 @@ Chi2Graphic.prototype.setData = function( data ) {
       const render_right = ((svg_location[0] + tt_bb.width + 10 + 15) < svg_bb.width);
       const render_top = ((svg_location[1] + tt_bb.height + 4 + 15) > svg_bb.height);
       
+      // TODO: in a scrolling document the calculated `y_offset` does not well/correctly.
       const x_offset = render_right ? d3.event.pageX + 10 : d3.event.pageX - 10 - tt_bb.width;
       const y_offset = render_top
                         ? (((d3.event.pageY - 10 - tt_bb.height) < 0) ? 4 : (d3.event.pageY - 10 - tt_bb.height))

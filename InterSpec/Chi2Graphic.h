@@ -90,7 +90,7 @@ protected:
   int m_bottomMargin;
   int m_leftMargin;
   
-  /** The distance between the axis title (if present), and the axis numbers.  Defaults to -3 to make compact. */
+  /** The distance between the axis title (if present), and the axis numbers.  Defaults to 1 to make compact. */
   int m_titlePadding;
   
   /** JS calls requested before the widget has been rendered, so wouldnt have
