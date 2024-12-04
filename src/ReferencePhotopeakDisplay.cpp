@@ -2369,9 +2369,12 @@ void ReferencePhotopeakDisplay::updateDisplayFromInput( RefLineInput user_input 
   
   if( ref_lines )
   {
-    assert( (ref_lines->m_source_type == ReferenceLineInfo::SourceType::Nuclide) == (ref_lines->m_nuclide != nullptr) );
-    assert( (ref_lines->m_source_type == ReferenceLineInfo::SourceType::FluorescenceXray) == (ref_lines->m_element != nullptr) );
-    assert( (ref_lines->m_source_type == ReferenceLineInfo::SourceType::Reaction) == (!ref_lines->m_reactions.empty()) );
+    assert( (ref_lines->m_validity != ReferenceLineInfo::InputValidity::Valid)  //If invalid age, we can still get ref_lines->m_nuclide be non-nullptr
+            || ((ref_lines->m_source_type == ReferenceLineInfo::SourceType::Nuclide) == (ref_lines->m_nuclide != nullptr)) );
+    assert( (ref_lines->m_validity != ReferenceLineInfo::InputValidity::Valid)
+           || (ref_lines->m_source_type == ReferenceLineInfo::SourceType::FluorescenceXray) == (ref_lines->m_element != nullptr) );
+    assert( (ref_lines->m_validity != ReferenceLineInfo::InputValidity::Valid)
+           || (ref_lines->m_source_type == ReferenceLineInfo::SourceType::Reaction) == (!ref_lines->m_reactions.empty()) );
     //ReferenceLineInfo::SourceType::Background
     //ReferenceLineInfo::SourceType::CustomEnergy
     //ReferenceLineInfo::SourceType::NuclideMixture:
