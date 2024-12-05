@@ -105,12 +105,6 @@ class InterSpecUser;
 
 namespace Wt
 {
-  class WSpinBox;
-  class WCheckBox;
-  class WRadioButton;
-  class WApplication;
-  class WDoubleSpinBox;
-  
   namespace Dbo
   {
     //Remove optimistic concurrency for UserOption and InterSpecUser classes
@@ -130,17 +124,6 @@ namespace Wt
       static const char *versionField() { return 0; }
     };
     
-    //Specialize for OnoeToOne mapping between UserFileInDb and UserFileInDbData
-    //  Note we are not removing optimistic concurrency from these classes,
-    //  so you should be ready to catch the Wt::Dbo::StaleObjectException
-    //  when saving to the database
-    template<>
-    struct dbo_traits<UserFileInDbData> : public dbo_default_traits
-    {
-      typedef ptr<UserFileInDb> IdType;
-      static IdType invalidId() { return ptr<UserFileInDb>(); }
-      static const char *surrogateIdField() { return 0; }
-    };
     
     //We have to specialize sql_value_traits<FileData_t, void> so that for MySQL
     //  not just a BLOB will be used, but a MEDIUMBLOB (a pain!)
@@ -372,9 +355,6 @@ public:
   
   Wt::Dbo::ptr<InterSpecUser> user;
   
-  /** TODO: (20241028) After v1.0.13 release, add a link to UserState, so lifetime can be more-better managed. */
-  //Wt::Dbo::ptr<UserState> state;
-  
   std::string uuid;
   std::string filename;
   std::string description;
@@ -396,12 +376,15 @@ public:
   
   bool isPartOfSaveState;
   
+  /** May be null, if not associated with a state. */
+  Wt::Dbo::ptr<UserState> parentAsForeground;
+  Wt::Dbo::ptr<UserState> parentAsBackground;
+  Wt::Dbo::ptr<UserState> parentAsSecondary;
+  
   Wt::Dbo::ptr<UserFileInDb> snapshotParent;
   Wt::Dbo::collection< Wt::Dbo::ptr<UserFileInDb> > snapshots;
   
-  Wt::Dbo::collection< Wt::Dbo::ptr<UserFileInDbData> > filedata;
-//Could use below instead of collection with newer Wt
-//  Wt::Dbo::weak_ptr<UserFileInDbData> filedata;
+  Wt::Dbo::weak_ptr<UserFileInDbData> filedata;
   
   Wt::Dbo::collection<Wt::Dbo::ptr<ShieldingSourceModel> > modelsUsedWith;
   
@@ -422,17 +405,13 @@ public:
     Wt::Dbo::belongsTo( a, snapshotParent, "SnapshotParent", Wt::Dbo::OnDeleteCascade );
     Wt::Dbo::hasMany( a, snapshots, Wt::Dbo::ManyToOne, "SnapshotParent" );
     
-    Wt::Dbo::hasMany( a, filedata, Wt::Dbo::ManyToOne, "UserFileInDb" );
-//    Wt::Dbo::hasOne( a, filedata, "UserFileInDb" );
-    Wt::Dbo::hasMany( a, modelsUsedWith,
-                      Wt::Dbo::ManyToMany, "shielding_source_model" );
+    Wt::Dbo::hasOne( a, filedata, "UserFileInDb" );
+    Wt::Dbo::hasMany( a, modelsUsedWith, Wt::Dbo::ManyToMany, "shielding_source_model" );
     
     Wt::Dbo::field( a, uploadTime,      "UploadTime" );
     Wt::Dbo::field( a, uuid,            "UUID", sm_maxUuidLength );
     Wt::Dbo::field( a, filename,        "Filename" );
     Wt::Dbo::field( a, description,     "Description" );
-    bool vestigual = false;
-    Wt::Dbo::field( a, vestigual,  "WriteProtected" );
     Wt::Dbo::field( a, userHasModified, "UserHasModified" );
     Wt::Dbo::field( a, sessionID,       "SessionID", sm_maxSessionIdLength );
     
@@ -447,6 +426,9 @@ public:
     Wt::Dbo::field( a, measurementsStartTime, "MeasurementsStartTime" );
     Wt::Dbo::field( a, isPartOfSaveState,     "IsPartOfSaveState" );
     
+    Wt::Dbo::belongsTo( a, parentAsForeground, "ParentStateForeground", Wt::Dbo::OnDeleteCascade );
+    Wt::Dbo::belongsTo( a, parentAsBackground, "ParentStateBackground", Wt::Dbo::OnDeleteCascade );
+    Wt::Dbo::belongsTo( a, parentAsSecondary, "ParentStateSecondary", Wt::Dbo::OnDeleteCascade );
     
     if( a.getsValue() )
     {
@@ -545,7 +527,7 @@ public:
   template<class Action>
   void persist( Action &a )
   {
-    Wt::Dbo::id( a, fileInfo, "UserFileInDb", Wt::Dbo::OnDeleteCascade );
+    Wt::Dbo::belongsTo( a, fileInfo, "UserFileInDb", Wt::Dbo::OnDeleteCascade );
     Wt::Dbo::field( a, gzipCompressed, "gzipCompressed" );
     Wt::Dbo::field( a, fileFormat, "FileFormat" );
     Wt::Dbo::field( a, fileData, "FileData" );
@@ -760,14 +742,10 @@ struct UserState
   Wt::WString name;
   Wt::WString description;
   
-  //The following indices should probably be converted over to being proper
-  //  pointers/collections (or maybe Dbo::weak_ptr), so as to not run into
-  //  issues with Wt::Dbo optimizations (e.g. indices not normally assigned
-  //  until last recursive Transaction is committed).
-  int foregroundId;
-  int backgroundId;
-  int secondForegroundId;
-  int shieldSourceModelId;
+  Wt::Dbo::weak_ptr<UserFileInDb> foreground;
+  Wt::Dbo::weak_ptr<UserFileInDb> background;
+  Wt::Dbo::weak_ptr<UserFileInDb> secondForeground;
+  
   std::string otherSpectraCsvIds;
   std::string foregroundSampleNumsCsvIds;
   std::string secondForegroundSampleNumsCsvIds;
@@ -818,28 +796,22 @@ struct UserState
     Wt::Dbo::belongsTo( a, snapshotTagParent, "SnapshotTagParent", Wt::Dbo::OnDeleteCascade );
     Wt::Dbo::hasMany( a, snapshotTags, Wt::Dbo::ManyToOne, "SnapshotTagParent" );
       
-      
     Wt::Dbo::field( a, stateType, "StateType" );
     Wt::Dbo::field( a, name, "Name", 127 );
     Wt::Dbo::field( a, description, "Description", 255 );
-    bool vestigual = false;
-    Wt::Dbo::field( a, vestigual, "WriteProtected" );
     Wt::Dbo::field( a, creationTime, "CreationTime" );
     Wt::Dbo::field( a, serializeTime, "SerializeTime" );
-    Wt::Dbo::field( a, foregroundId, "ForegroundId" );
-    Wt::Dbo::field( a, backgroundId, "BackgroundId" );
-    Wt::Dbo::field( a, secondForegroundId, "SecondForegroundId" );
-    Wt::Dbo::field( a, shieldSourceModelId, "ShieldSourceModelId" );
+    
+    Wt::Dbo::hasOne( a, foreground, "ParentStateForeground" );
+    Wt::Dbo::hasOne( a, background, "ParentStateBackground" );
+    Wt::Dbo::hasOne( a, secondForeground, "ParentStateSecondary" );
+    
     Wt::Dbo::field( a, otherSpectraCsvIds, "OtherSpectraCsvIds", 255 );
     
-    Wt::Dbo::field( a, foregroundSampleNumsCsvIds,
-                                      "ForegroundSampleNumsCsvIds", 127 );
-    Wt::Dbo::field( a, secondForegroundSampleNumsCsvIds,
-                                      "SecondForegroundSampleNumsCsvIds", 127 );
-    Wt::Dbo::field( a, backgroundSampleNumsCsvIds,
-                                      "BackgroundSampleNumsCsvIds", 127 );
-    Wt::Dbo::field( a, showingDetectorNumbersCsv,
-                                      "ShowingDetectorNumbersCsv", 127 );
+    Wt::Dbo::field( a, foregroundSampleNumsCsvIds, "ForegroundSampleNumsCsvIds", 127 );
+    Wt::Dbo::field( a, secondForegroundSampleNumsCsvIds, "SecondForegroundSampleNumsCsvIds", 127 );
+    Wt::Dbo::field( a, backgroundSampleNumsCsvIds, "BackgroundSampleNumsCsvIds", 127 );
+    Wt::Dbo::field( a, showingDetectorNumbersCsv, "ShowingDetectorNumbersCsv", 127 );
     
     Wt::Dbo::field( a, energyAxisMinimum, "EnergyAxisMinimum" );
     Wt::Dbo::field( a, energyAxisMaximum, "EnergyAxisMaximum" );

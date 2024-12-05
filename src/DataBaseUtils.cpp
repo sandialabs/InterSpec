@@ -125,7 +125,7 @@ namespace
 #endif
 #endif
           Dbo::SqlConnection *connection = DataBaseUtils::getDatabaseConnection();
-          connection->setProperty( "show-queries", "false" );
+          connection->setProperty( "show-queries", "true" );
           
           Dbo::FixedSqlConnectionPool *pool
                     = new Wt::Dbo::FixedSqlConnectionPool( connection, nconn );
@@ -195,10 +195,10 @@ DbTransaction::~DbTransaction() noexcept(false)
   try
   {
     delete m_transaction;
-    m_transaction = 0;
-  }catch(...)
+    m_transaction = nullptr;
+  }catch( std::exception &e )
   {
-    cerr << "Exception deleting Wt::Dbo::Transaction" << endl;
+    cerr << "Exception deleting Wt::Dbo::Transaction: " << e.what() << endl;
   }
 }
 

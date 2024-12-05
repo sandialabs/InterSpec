@@ -274,11 +274,14 @@ void SpectrumViewerTester::writeStateStaticHtmlHeader( std::ostream &strm,
        << "\t\t\t<tr><th>User State ID</th><td>"
           << state_id << "</td></tr>\n"
        << "\t\t\t<tr><th>Foreground ID</th><td>"
-          << dbstate->foregroundId << "</td></tr>\n"
+          //<< dbstate->foregroundId //TODO: put this back in, maybe
+       << "</td></tr>\n"
        << "\t\t\t<tr><th>Background ID</th><td>"
-          << dbstate->backgroundId << "</td></tr>\n"
+          //<< dbstate->backgroundId //TODO: put this back in, maybe
+       << "</td></tr>\n"
        << "\t\t\t<tr><th>1D Model ID</th><td>"
-         << dbstate->shieldSourceModelId << "</td></tr>\n"
+       //  << dbstate->shieldSourceModelId //TODO: put this back in, maybe
+       << "</td></tr>\n"
        << "\t\t</table>\n"
        << "\t</center>\n";
 }//void writeStateStaticHtmlHeader( std::ostream &strm )

@@ -3325,21 +3325,13 @@ void InterSpec::saveStateToDb( Wt::Dbo::ptr<UserState> entry )
         return;
     
       // We dont need to make a copy of the file if it was not part of a save state, but now its
-      //  becoming part of one
-      if( deepCopy && (dbfile->isPartOfSaveState || dbfile->snapshotParent) )
+      //  becoming part of one (unless its a
+      if( deepCopy && (dbfile->isPartOfSaveState || dbfile->snapshotParent || (entry->stateType != UserState::kUserSaved)) )
         dbfile = UserFileInDb::makeDeepCopyOfFileInDatabase( dbfile, *m_sql, true );
       
       dbfile.modify()->isPartOfSaveState = true;
       
-      Dbo::ptr<UserFileInDbData> filedata;
-      for( auto iter = dbfile->filedata.begin(); iter != dbfile->filedata.end(); ++iter )
-      {
-        assert( !filedata );
-        if( filedata )
-          (*iter).remove();
-        else
-          filedata = *iter;
-      }
+      Dbo::ptr<UserFileInDbData> filedata = dbfile->filedata.lock();
       
       //assert( filedata );
       if( !filedata )
@@ -3357,23 +3349,51 @@ void InterSpec::saveStateToDb( Wt::Dbo::ptr<UserState> entry )
     };//create_copy_or_update_in_db lambda
     
     create_copy_or_update_in_db( dbforeground, foreground );
-    create_copy_or_update_in_db( dbsecond, second );
-    create_copy_or_update_in_db( dbbackground, background );
-
+    if( dbforeground )
+      entry.modify()->foreground = dbforeground;
+    
     if( !dbforeground && foreground )
       throw runtime_error( "Error saving foreground to the database" );  //not displayed to user, so not internationalized
-    if( !dbsecond && second )
-      throw runtime_error( "Error saving second foreground to the database" );
-    if( !dbbackground && background )
-      throw runtime_error( "Error saving background to the database" );
+
     
-    //We need to make sure dbforeground, dbbackground, dbsecond will have been
-    //  written to the database, so there id()'s will be not -1.
-    m_sql->session()->flush();
+    if( second )
+    {
+      if( second == foreground )
+      {
+        dbsecond = dbforeground;
+      }else
+      {
+        create_copy_or_update_in_db( dbsecond, second );
+        if( !dbsecond )
+          throw runtime_error( "Error saving second foreground to the database" );
+        entry.modify()->background = dbbackground;
+      }
+    }//if( second )
     
-    entry.modify()->foregroundId = static_cast<int>( dbforeground.id() );
-    entry.modify()->backgroundId = static_cast<int>( dbbackground.id() );
-    entry.modify()->secondForegroundId = static_cast<int>( dbsecond.id() );
+    
+    if( dbsecond )
+      entry.modify()->secondForeground = dbsecond;
+    
+    if( background )
+    {
+      if( background == foreground )
+      {
+        dbbackground = dbforeground;
+      }else if( background == second )
+      {
+        dbbackground = dbsecond;
+      }else
+      {
+        create_copy_or_update_in_db( dbbackground, background );
+        if( !dbbackground )
+          throw runtime_error( "Error saving background to the database" );
+        entry.modify()->background = dbbackground;
+      }
+    }//if( background )
+    
+    entry.modify()->foreground = dbforeground;
+    entry.modify()->background = dbbackground;
+    entry.modify()->secondForeground = dbsecond;
     
     // If using is clicking save - remove any `kUserStateAutoSavedWork` states, as
     //  they would now be behind the state the user is saving
@@ -3711,36 +3731,10 @@ void InterSpec::loadStateFromDb( Wt::Dbo::ptr<UserState> entry )
     while( parent && parent->snapshotTagParent )
       parent = parent->snapshotTagParent;
     
-    Dbo::ptr<UserFileInDb> dbforeground, dbsecond, dbbackground;
-    if( entry->foregroundId >= 0 )
-      dbforeground = m_sql->session()->find<UserFileInDb>().where( "id = ?" )
-                                      .bind( entry->foregroundId );
-    if( entry->backgroundId >= 0
-        && entry->backgroundId != entry->foregroundId )
-      dbbackground = m_sql->session()->find<UserFileInDb>().where( "id = ?" )
-                                      .bind( entry->backgroundId );
-    else if( entry->backgroundId == entry->foregroundId )
-      dbbackground = dbforeground;
-      
-    if( entry->secondForegroundId >= 0
-        && entry->secondForegroundId != entry->foregroundId
-        && entry->secondForegroundId != entry->backgroundId )
-      dbsecond = m_sql->session()->find<UserFileInDb>().where( "id = ?" )
-                                  .bind( entry->secondForegroundId );
-    else if( entry->secondForegroundId == entry->foregroundId )
-      dbsecond = dbforeground;
-    else if( entry->secondForegroundId == entry->backgroundId )
-      dbsecond = dbbackground;
-
-    if( entry->foregroundId >= 0
-        && (!dbforeground || !dbforeground->filedata.size()) )
-      throw runtime_error( "Unable to locate foreground in database" );
-    if( entry->backgroundId >= 0
-        && (!dbbackground || !dbbackground->filedata.size()) )
-      throw runtime_error( "Unable to locate background in database" );
-    if( entry->secondForegroundId >= 0
-        && (!dbsecond || !dbsecond->filedata.size()) )
-      throw runtime_error( "Unable to locate second foreground in database" );
+    Wt::Dbo::ptr<UserFileInDb> dbforeground = entry->foreground.lock();
+    Wt::Dbo::ptr<UserFileInDb> dbsecond = entry->secondForeground.lock();
+    Wt::Dbo::ptr<UserFileInDb> dbbackground = entry->background.lock();
+    
     
     //Essentially reset the state of the app
     m_fileManager->removeAllFiles();
@@ -3784,63 +3778,26 @@ void InterSpec::loadStateFromDb( Wt::Dbo::ptr<UserState> entry )
       //  snapshot doesnt get changed.
       //All of this is really ugly and horrible, and should be improved!
       
-      if( dbforeground && dbforeground->filedata.size() )
-        snapforeground = (*dbforeground->filedata.begin())->decodeSpectrum();
+      Dbo::ptr<UserFileInDbData> data;
+      data = dbforeground ? dbforeground->filedata.lock() : Dbo::ptr<UserFileInDbData>();
+      if( data )
+        snapforeground = data->decodeSpectrum();
     
-      if( dbsecond && dbsecond->filedata.size() && dbsecond != dbforeground )
-        snapsecond = (*dbsecond->filedata.begin())->decodeSpectrum();
+      data = dbsecond ? dbsecond->filedata.lock() : Dbo::ptr<UserFileInDbData>();
+      if( data && dbsecond != dbforeground )
+        snapsecond = data->decodeSpectrum();
       else if( dbsecond == dbforeground )
         snapsecond = snapforeground;
     
-      if( dbbackground && dbbackground->filedata.size()
+      data = dbbackground ? dbbackground->filedata.lock() : Dbo::ptr<UserFileInDbData>();
+      if( data
           && dbbackground != dbforeground
           && dbbackground != dbsecond  )
-        snapbackground = (*dbbackground->filedata.begin())->decodeSpectrum();
+        snapbackground = data->decodeSpectrum();
       else if( dbbackground == dbforeground )
         snapbackground = snapforeground;
       else if( dbbackground == dbsecond )
         snapbackground = snapsecond;
-      
-      
-      if( parent->foregroundId >= 0 )
-        dbforeground = m_sql->session()->find<UserFileInDb>().where( "id = ?" )
-                                        .bind( parent->foregroundId );
-      if( parent->backgroundId >= 0
-          && parent->backgroundId != parent->foregroundId )
-      {
-        dbbackground = m_sql->session()->find<UserFileInDb>().where( "id = ?" )
-                                        .bind( parent->backgroundId );
-      }else if( parent->backgroundId == parent->foregroundId )
-      {
-        dbbackground = dbforeground;
-      }else if( parent->backgroundId < 0 && entry->backgroundId >= 0 )
-      {
-        parent.modify()->backgroundId = entry->backgroundId;
-      }else
-      {
-        dbbackground.reset();
-      }
-      
-      if( parent->secondForegroundId >= 0
-         && parent->secondForegroundId != parent->foregroundId
-         && parent->secondForegroundId != parent->backgroundId )
-      {
-        dbsecond = m_sql->session()->find<UserFileInDb>().where( "id = ?" )
-                                    .bind( parent->secondForegroundId );
-      }else if( parent->secondForegroundId < 0
-                && entry->secondForegroundId >= 0 )
-      {
-        parent.modify()->secondForegroundId = entry->secondForegroundId;
-      }else if( parent->secondForegroundId == parent->foregroundId )
-      {
-        dbsecond = dbforeground;
-      }else if( parent->secondForegroundId == parent->backgroundId )
-      {
-        dbsecond = dbbackground;
-      }else
-      {
-        dbsecond.reset();
-      }
     }//if( parent )
     
     if( dbforeground )
@@ -3955,21 +3912,6 @@ void InterSpec::loadStateFromDb( Wt::Dbo::ptr<UserState> entry )
           m_fileManager->setDbEntry( dbfile, header, meas, 0 );
       }catch(...){}
     }//for( const int id : otherSamples )
-    
-    //Load the ShieldingSourceModel
-    Dbo::ptr<ShieldingSourceModel> fitmodel;
-    if( entry->shieldSourceModelId >= 0 )
-      fitmodel = m_sql->session()->find<ShieldingSourceModel>()
-                         .where( "id = ?" ).bind( entry->shieldSourceModelId );
-    if( fitmodel )
-    {
-      cerr << "When loading state from DB, not loading Shielding/Source Fit"
-      << " model, due to lame GUI ish" << endl;
-//      if( !m_shieldingSourceFit )
-//        shieldingSourceFit();
-      if( m_shieldingSourceFit )
-        m_shieldingSourceFit->loadModelFromDb( fitmodel );
-    }//if( fitmodel )
     
     if( m_shieldingSourceFitWindow )
       m_shieldingSourceFitWindow->hide();
@@ -5180,39 +5122,6 @@ void InterSpec::finishStoreStateInDb( const WString &name,
     passMessage( e.what(), WarningWidget::WarningMsgHigh );
   }
    
-#if( PERFORM_DEVELOPER_CHECKS )
-  {// Begin check if we are leaving any orphaned spectra that were part of a user state
-    DataBaseUtils::DbTransaction transaction( *m_sql );
-    
-    Dbo::collection< Dbo::ptr<UserFileInDb> > query;
-    const char *stateQueryTxt = "A.InterSpecUser_id = ? AND A.StateType = ? AND A.SnapshotTagParent_id IS NULL";
-    query = m_sql->session()->query<Dbo::ptr<UserFileInDb>>(
-              "SELECT ufd FROM UserFileInDb ufd"
-              " LEFT JOIN UserState us ON ufd.id IN (us.ForegroundId, us.BackgroundId, us.SecondForegroundId)"
-              " WHERE us.id IS NULL AND ufd.IsPartOfSaveState = 1 AND ufd.InterSpecUser_id = ?" ).bind( m_user.id() );
-    
-    const size_t num_dangling = query.size();
-    if( num_dangling )
-    {
-      // I think this can happen for end-of-session states - but not really sure
-      cerr << "There are " << query.size() << " dangling files" << endl;
-      for( auto iter = query.begin(); iter != query.end(); ++iter )
-        cerr << (*iter)->filename << endl;
-      
-      cerr << endl;
-      
-      //The following query is untested - but I think it would cleanup the database of dangling files.
-      //m_sql->session()->execute(
-      //  "DELETE FROM UserFileInDb WHERE id IN ("
-      //    " SELECT ufd.id FROM UserFileInDb ufd LEFT JOIN UserState us"
-      //    " ON ufd.id IN (us.ForegroundId, us.BackgroundId, us.SecondForegroundId)"
-      //    " WHERE us.id IS NULL AND ufd.IsPartOfSaveState = 1 AND ufd.InterSpecUser_id = ?"
-      //  ")"
-      //).bind( m_user.id() );
-    }//if( num_dangling )
-    transaction.commit();
-  }// End check if we are leaving any orphaned spectra that were part of a user state
-#endif //#if( PERFORM_DEVELOPER_CHECKS )
   
   if( parent )
   {
@@ -6076,11 +5985,17 @@ void InterSpec::saveStateForEndOfSession()
   const auto now = chrono::system_clock::now() + chrono::seconds( 60*offset );
   WString name = SpecUtils::to_common_string( chrono::time_point_cast<chrono::microseconds>(now), true ); //"9-Sep-2014 15:02:15"
   
+  // I we dont want to save states, or there is no foreground - nothing more to do here
+  if( !saveState || !m_dataMeasurement )
+    return;
   
-  // Remove existing end-of-session state
+  
   DataBaseUtils::DbTransaction transaction( *m_sql );
+  
   try
   {
+    vector<Dbo::ptr<UserState>> prev_eos_states;
+    
     Dbo::collection<Dbo::ptr<UserState>> prevEosStates = m_sql->session()->find<UserState>()
       .where( "InterSpecUser_id = ? AND StateType = ?" )
       .bind( m_user.id() )
@@ -6088,31 +6003,13 @@ void InterSpec::saveStateForEndOfSession()
     
     //assert( prevEosStates.size() <= 1 );
     for( auto iter = prevEosStates.begin(); iter != prevEosStates.end(); ++iter )
-      UserState::removeFromDatabase( *iter, *m_sql );
-  }catch( std::exception &e )
-  {
-    Wt::log("error") << "InterSpec::saveStateForEndOfSession() error removing last state: " << e.what();
-    transaction.rollback();
-    return;
-  }
-  
-  // I we dont want to save states, or there is no foreground - nothing more to do here
-  if( !saveState || !m_dataMeasurement )
-  {
-    transaction.commit();
-    return;
-  }
-  
-  try
-  {
+      prev_eos_states.push_back( *iter );
+    
     // Check if we are connected with a database state
     const long long int current_state_index = currentAppStateDbId();
     Wt::Dbo::ptr<UserState> parentState;
     if( current_state_index >= 0 )
-    {
-      parentState = m_sql->session()->find<UserState>( "where id = ?" )
-            .bind( current_state_index );
-    }
+      parentState = m_sql->session()->find<UserState>( "where id = ?" ).bind( current_state_index );
     
     UserState *state = new UserState();
     state->user = m_user;
@@ -6126,14 +6023,22 @@ void InterSpec::saveStateForEndOfSession()
     
     saveStateToDb( dbstate );
     
+    for( const Dbo::ptr<UserState> &prev_state : prev_eos_states )
+      UserState::removeFromDatabase( prev_state, *m_sql );
+    
     transaction.commit();
     
     Wt::log("debug") << "Saved end of session app state to database";
+  }catch( Wt::Dbo::Exception &e )
+  {
+    Wt::log("error") << "InterSpec::saveStateForEndOfSession() db error: " << e.what();
+    transaction.rollback();
   }catch( std::exception &e )
   {
     Wt::log("error") << "InterSpec::saveStateForEndOfSession() error: " << e.what();
     transaction.rollback();
   }
+  
 }//void saveStateForEndOfSession()
 #endif //#if( USE_DB_TO_STORE_SPECTRA )
 

@@ -282,13 +282,12 @@ std::shared_ptr<SpecMeas> SpectraFileHeader::resetFromDatabase(
   {//begin interaction with Database
     DataBaseUtils::DbTransaction transaction( *m_sql );
     
-    if( !info || info->filedata.size() < 1 )
+    dbdata = info ? info->filedata.lock() : Dbo::ptr<UserFileInDbData>();
+    
+    if( !dbdata )
       throw runtime_error( "SpectraFileHeader::resetFromDatabase(...):"
                            "No UserFileInDbData for this UserFileInDb" );
   
-    dbdata = m_sql->session()->find<UserFileInDbData>()
-                             .where( "UserFileInDb_id = ?" )
-                             .bind( info->filedata.front().id() );
     transaction.commit();
   }//end interaction with Database
  
@@ -515,7 +514,6 @@ void SpectraFileHeader::saveToDatabaseFromTempFile() const
   Dbo::ptr<UserFileInDbData> data;
 
   //There is a chance m_fileDbEntry has gone stale
-  vector< Dbo::ptr<UserFileInDbData> > files;
   if( fileDbEntry )
   {
     DataBaseUtils::DbTransaction transaction( *m_sql );
@@ -525,15 +523,13 @@ void SpectraFileHeader::saveToDatabaseFromTempFile() const
                                   .where( "id = ?" )
                                   .bind( fileDbEntry.id() );
     if( fileDbEntry )
-      std::copy( fileDbEntry->filedata.begin(), fileDbEntry->filedata.end(),
-                  std::back_inserter(files) );
+      data = fileDbEntry->filedata.lock();
     
     transaction.commit();
   }//if( m_fileDbEntry )
 
-  if( files.size() )
+  if( data )
   {
-    data = files[0];
     DataBaseUtils::DbTransaction transaction( *m_sql );
     fileDbEntry.modify()->serializeTime = WDateTime::currentDateTime();
     transaction.commit();
@@ -736,15 +732,17 @@ void SpectraFileHeader::saveToDatabase( std::shared_ptr<const SpecMeas> input ) 
     }
   }else
   {
-    //TODO: couldnt the below query just be accomplished by `fileDbEntry.reread()`?
+    /*
     try
     {
       DataBaseUtils::DbTransaction transaction( *m_sql );
-      fileDbEntry = m_sql->session()->find<UserFileInDb>().where("id = ?").bind(fileDbEntry.id()).resultValue();
+      //fileDbEntry = m_sql->session()->find<UserFileInDb>().where("id = ?").bind(fileDbEntry.id()).resultValue();
+      fileDbEntry.reread(); //This is a lazy operation
+      fileDbEntry.modify(); //This forces the operation
       transaction.commit();
       
       if( !fileDbEntry )
-        runtime_error("no entry");
+        throw runtime_error("no entry");
     }catch( Wt::Dbo::Exception &e )
     {
       throw runtime_error( "SpectraFileHeader::saveToDatabase(), database error: " + string(e.what()) );
@@ -752,22 +750,19 @@ void SpectraFileHeader::saveToDatabase( std::shared_ptr<const SpecMeas> input ) 
     {
       throw runtime_error( "SpectraFileHeader::saveToDatabase(): error re-reading UserFileInDb in DB" );
     }//try / catch
-    
-    typedef Dbo::collection<Dbo::ptr<UserFileInDbData> > Files;
+    */
     
     Dbo::ptr<UserFileInDbData> data;
     
-    {//begin interact with database
+    try
+    {
       DataBaseUtils::DbTransaction transaction( *m_sql );
-      for( Files::const_iterator i = fileDbEntry->filedata.begin();
-          i != fileDbEntry->filedata.end(); ++i )
-      {
-        data = *i;
-        break;
-      }
-      
+      data = fileDbEntry->filedata.lock();
       transaction.commit();
-    }//end interact with database
+    }catch( std::exception &e )
+    {
+      cerr << "No file data???: " << e.what() << endl; //seems unlikely to happen
+    }
     
     if( data )
     {
@@ -912,14 +907,13 @@ std::shared_ptr<SpecMeas> SpectraFileHeader::readFromDataBase() const
   {//begin interaction with db
     DataBaseUtils::DbTransaction transaction( *m_sql );
   
-    typedef Dbo::collection<Dbo::ptr<UserFileInDbData> > Files;
-    if( fileDbEntry && fileDbEntry->filedata.size() )
-      data = m_fileDbEntry->filedata.front();
+    if( fileDbEntry )
+      data = m_fileDbEntry->filedata.lock();
 
     transaction.commit();
   }//end interaction with db
   
-  std::shared_ptr<SpecMeas> meas = data->decodeSpectrum();
+  std::shared_ptr<SpecMeas> meas = data ? data->decodeSpectrum() : nullptr;
 
   if( meas )
     cerr << "Read spectrumFile from database" << endl;

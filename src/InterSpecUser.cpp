@@ -318,8 +318,7 @@ UserState::UserState()
   : stateType( kUndefinedStateType ),
     creationTime( Wt::WDateTime::currentDateTime() ),
     serializeTime( Wt::WDateTime::currentDateTime() ),
-    foregroundId( -1 ), backgroundId( -1 ), secondForegroundId( -1 ),
-    shieldSourceModelId( -1 ),
+    foreground(), background(), secondForeground(),
     energyAxisMinimum( 0.0 ), energyAxisMaximum( 3000.0 ),
     countsAxisMinimum( -1.0 ), countsAxisMaximum( -1.0 ), displayBinFactor( 1 ),
     shownDisplayFeatures( 0 ), backgroundSubMode( kNoSpectrumSubtract ),
@@ -337,15 +336,13 @@ void UserState::removeFromDatabase( Wt::Dbo::ptr<UserState> state,
   
   DataBaseUtils::DbTransaction transaction( session );
   
-  state.reread();  // probably not necessary?
+  session.session()->execute( "PRAGMA foreign_keys = ON;" );
   
-  vector<Dbo::ptr<UserState>> children;
+  // Delete all the tags of this state (I dont *think we need to do this....)
+  /*
   for( auto iter = state->snapshotTags.begin(); iter != state->snapshotTags.end(); ++iter )
-    children.push_back( *iter );
-    
-  // Delete all the tags of this state
-  for( const auto &kid : children )
   {
+    auto &kid = *iter;
     assert( kid != state );
     if( kid == state )
       continue;
@@ -359,59 +356,12 @@ void UserState::removeFromDatabase( Wt::Dbo::ptr<UserState> state,
       throw;
     }
   }//for( const auto &kid : children )
+   */
   
   try
   {
-    std::set<long long int> file_indices;
-    if( state->foregroundId >= 0 )
-      file_indices.insert( state->foregroundId );
-    if( state->backgroundId >= 0 )
-      file_indices.insert( state->backgroundId );
-    if( state->secondForegroundId >= 0 )
-      file_indices.insert( state->secondForegroundId );
-    
-    for( const long long int dbid : file_indices )
-    {
-      assert( dbid >= 0 );
-      
-      // In principal, each referenced UserFileInDb should belong to exactly one
-      //  UserState (the one we are deleting) - however, due to historical bugs,
-      //  this may not be exactly the case, so we'll check for this, and only
-      //  delete the UserFileInDb, if it uniquely belongs to us.
-      Dbo::collection<Dbo::ptr<UserState>> states_with_file
-      = session.session()->find<UserState>()
-        .where( "ForegroundId = ? OR BackgroundId = ? OR SecondForegroundId = ?" )
-        .bind(dbid).bind(dbid).bind(dbid);
-      
-      const size_t nstates_with_file = states_with_file.size();
-      
-      Dbo::ptr<UserFileInDb> dbfile = session.session()->find<UserFileInDb>()
-        .where( "id = ?" )
-        .bind( dbid );
-      
-      assert( dbfile );
-      if( !dbfile )
-        continue;
-      
-#if( PERFORM_DEVELOPER_CHECKS )
-      if( nstates_with_file != 1 )
-      {
-        const string errmsg = "File '" + dbfile->filename + "', part of state "
-                + std::to_string(state.id()) + ", is shared by "
-                + std::to_string(nstates_with_file) + " states.";
-        log_developer_error( __func__, errmsg.c_str() );
-      }
-#endif
-      
-      if( nstates_with_file == 1 )
-      {
-        assert( (*states_with_file.begin()) == state );
-        if( dbfile )
-          dbfile.remove();
-      }//if( nstates_with_file == 1 )
-    }//for( const long long int dbid : file_indices )
-    
     state.remove();
+    transaction.commit();
   }catch( std::exception &e )
   {
     cerr << "removeFromDatabase(...) caught error: " << e.what() << endl;
@@ -541,13 +491,13 @@ Dbo::ptr<UserFileInDb> UserFileInDb::makeDeepCopyOfFileInDatabase(
     //  for this.
     if( orig.id() >= 0 )
     {
-      for( Dbo::collection< Dbo::ptr<UserFileInDbData> >::const_iterator iter = orig->filedata.begin();
-          iter != orig->filedata.end(); ++iter )
-      {
-        UserFileInDbData *newdata = new UserFileInDbData( **iter );
-        newdata->fileInfo = answer;
-        session->add( newdata );
-      }
+      Wt::Dbo::ptr<UserFileInDbData> data = orig->filedata.lock();
+      if( !data )
+        throw runtime_error( "No filedata db entry" );
+      
+      UserFileInDbData *newdata = new UserFileInDbData( *data );
+      newdata->fileInfo = answer;
+      session->add( newdata );
       
       for( Dbo::collection< Dbo::ptr<ShieldingSourceModel> >::const_iterator iter
           = orig->modelsUsedWith.begin();

@@ -260,10 +260,10 @@ SnapshotBrowser::get_user_states_collection( Dbo::ptr<InterSpecUser> user,
     const char *stateQueryTxt = "A.InterSpecUser_id = ? AND A.StateType = ? AND A.SnapshotTagParent_id IS NULL";
     query = session->session()->query<Dbo::ptr<UserState> >(
               "SELECT DISTINCT A FROM UserState A JOIN UserFileInDb B "
-              "ON (A.ForegroundId = B.id OR A.BackgroundId = B.id OR A.SecondForegroundId = B.id) "
+              "ON (A.id = B.ParentStateForeground_id OR A.id = B.ParentStateBackground_id OR A.id = B.ParentStateSecondary_id) "
               "AND B.UUID = ? "
               "LEFT JOIN UserState C "
-              "ON (C.ForegroundId = B.id OR C.BackgroundId = B.id OR C.SecondForegroundId = B.id) "
+              "ON (C.id = B.ParentStateForeground_id OR C.id = B.ParentStateBackground_id OR C.id = B.ParentStateSecondary_id) "
               "AND C.SnapshotTagParent_id = A.id")
             .bind(header->m_uuid)
             .where(stateQueryTxt)
@@ -739,9 +739,9 @@ void SnapshotBrowser::addSpectraNodes(Dbo::collection< Dbo::ptr<UserState> >::co
     //loop through each SpecUtils::SpectrumType because sometimes there can be one spectra that is in multiple types
     Spectras spectras = m_session->session()->find< UserFileInDb >()
                                   .where( " id = ? OR id = ? OR id = ?")
-                                  .bind( (*versionIterator)->foregroundId )
-                                  .bind( (*versionIterator)->backgroundId )
-                                  .bind( (*versionIterator)->secondForegroundId );
+                                  .bind( (*versionIterator)->foreground.id() )
+                                  .bind( (*versionIterator)->background.id() )
+                                  .bind( (*versionIterator)->secondForeground.id() );
     
     string pre = "";
     string post = "";
@@ -751,13 +751,13 @@ void SnapshotBrowser::addSpectraNodes(Dbo::collection< Dbo::ptr<UserState> >::co
         spectraIterator != spectras.end(); ++spectraIterator )
     {
       Wt::WIconPair *icon = nullptr;
-      if ((*versionIterator)->foregroundId==spectraIterator->id() && spectratype==SpecUtils::SpectrumType::Foreground)
+      if ((*versionIterator)->foreground.id()==spectraIterator->id() && spectratype==SpecUtils::SpectrumType::Foreground)
       {
         //icon = new Wt::WIconPair("InterSpec_resources/images/shape_move_forwards.png","InterSpec_resources/images/shape_move_forwards.png");
-      }else if ((*versionIterator)->backgroundId==spectraIterator->id() && spectratype==SpecUtils::SpectrumType::Background)
+      }else if ((*versionIterator)->background.id()==spectraIterator->id() && spectratype==SpecUtils::SpectrumType::Background)
       {
         //icon = new Wt::WIconPair("InterSpec_resources/images/shape_move_backwards.png","InterSpec_resources/images/shape_move_backwards.png");
-      }else if ((*versionIterator)->secondForegroundId==spectraIterator->id() && spectratype==SpecUtils::SpectrumType::SecondForeground)
+      }else if ((*versionIterator)->secondForeground.id()==spectraIterator->id() && spectratype==SpecUtils::SpectrumType::SecondForeground)
       {
         //icon = new Wt::WIconPair("InterSpec_resources/images/shape_move_front.png","InterSpec_resources/images/shape_move_front.png");
       }else
@@ -1060,8 +1060,8 @@ std::shared_ptr<SpecMeas> SnapshotBrowser::retrieveMeas( const int dbid )
       .bind( dbid );
       
       Dbo::ptr<UserFileInDbData> data;
-      if( dbsnapshot && dbsnapshot->filedata.size() )
-        data = *(dbsnapshot->filedata.begin());
+      if( dbsnapshot )
+        data = dbsnapshot->filedata.lock();
       transaction.commit();
       if( data )
         snapshotmeas = data->decodeSpectrum();
@@ -1115,8 +1115,9 @@ void SnapshotBrowser::deleteSelected()
     m_nrows -= 1;
     
     passMessage( "Snapshot '" + name + "' removed from database.", WarningWidget::WarningMsgInfo );
-  }catch( ... )
+  }catch( std::exception &e )
   {
+    cerr << "Error removing snapshot from database: " << e.what() << endl;
     passMessage( "Error removing snapshot from database.", WarningWidget::WarningMsgHigh );
   }
   
