@@ -62,25 +62,33 @@
   <message id="isbem-tt-parent-hl">Parent half life</message>
   <message id="isbem-tt-assumed-age">Assumed age of nuclide</message>
   
-  <!-- Catagories int the drop-down-->
-  <message id="isbe-catagory-nuc-xray">Nuclides + X-rays</message>
-  <message id="isbe-catagory-nuc-xray-desc">Nuclides + X-rays</message>
-  <message id="isbe-catagory-nuc-xray-rctn">Nuclides, X-rays, Reactions</message>
-  <message id="isbe-catagory-nuc-xray-rctn-desc">All nuclides, x-rays (decay and flourescense), and reactions</message>
-  <message id="isbe-catagory-xray">Flourescense x-rays</message>
-  <message id="isbe-catagory-xray-desc">Only flourescense x-rays</message>
-  <message id="isbe-catagory-reactions">Reactions</message>
-  <message id="isbe-catagory-reactions-desc">Only Reactions</message>
-  <message id="isbe-catagory-medical">Medical Nuclides</message>
-  <message id="isbe-catagory-medical-desc">Common medical nuclides</message>
-  <message id="isbe-catagory-industrial">Industrial Nuclides</message>
-  <message id="isbe-catagory-industrial-desc">Common industrial nuclides</message>
-  <message id="isbe-catagory-snm">SNM</message>
-  <message id="isbe-catagory-snm-desc">SNM nuclides</message>
-  <message id="isbe-catagory-reactions">Nuclear Reactions</message>
-  <message id="isbe-catagory-reactions-desc">Nuclear Reactions</message>
-  <message id="isbe-catagory-alphas">Alphas</message>
-  <message id="isbe-catagory-alphas-desc">Search on Alpha particle energy.</message>
-  <message id="isbe-catagory-betas">Beta Endpoint</message>
-  <message id="isbe-catagory-betas-desc">Search on beta particle end-point energy.</message>
+  <!-- Categories int the drop-down-->
+  <message id="isbe-category-nuc-xray">Nuclides + X-rays</message>
+  <message id="isbe-category-nuc-xray-desc">Nuclides + X-rays</message>
+  <message id="isbe-category-nuc-xray-rctn">Nuclides, X-rays, Reactions</message>
+  <message id="isbe-category-nuc-xray-rctn-desc">All nuclides, x-rays (decay and fluorescence), and reactions</message>
+  <message id="isbe-category-xray">Fluorescence x-rays</message>
+  <message id="isbe-category-xray-desc">Only fluorescence x-rays</message>
+  <message id="isbe-category-reactions">Reactions</message>
+  <message id="isbe-category-reactions-desc">Only Reactions</message>
+  <message id="isbe-category-medical">Medical Nuclides</message>
+  <message id="isbe-category-medical-desc">Common medical nuclides</message>
+  <message id="isbe-category-industrial">Industrial Nuclides</message>
+  <message id="isbe-category-industrial-desc">Common industrial nuclides</message>
+  <message id="isbe-category-snm">SNM</message>
+  <message id="isbe-category-snm-desc">SNM nuclides</message>
+  <message id="isbe-category-norm">NORM</message>
+  <message id="isbe-category-norm-desc">Naturally occurring radio-nuclides</message>
+  <message id="isbe-category-common">Field Encountered Sources</message>
+  <message id="isbe-category-common-desc">Common nuclides and reactions encountered in field collected spectra</message>
+  <message id="isbe-category-common-nuc">Field Encountered Nuclides</message>
+  <message id="isbe-category-common-nuc-desc">Common nuclides encountered in field collected spectra (no neutrons or reactions)</message>
+  <message id="isbe-category-reactions">Nuclear Reactions</message>
+  <message id="isbe-category-reactions-desc">Nuclear Reactions</message>
+  <message id="isbe-category-fission">Fission Products</message>
+  <message id="isbe-category-fission-desc">Fission products you might see in a gamma spectrum (by no means complete list)</message>
+  <message id="isbe-category-alphas">Alphas</message>
+  <message id="isbe-category-alphas-desc">Search on Alpha particle energy.</message>
+  <message id="isbe-category-betas">Beta Endpoint</message>
+  <message id="isbe-category-betas-desc">Search on beta particle end-point energy.</message>
 </messages>

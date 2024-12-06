@@ -1975,7 +1975,7 @@ void ReferencePhotopeakDisplay::updateOtherNucsDisplay()
   }//if( riid_ana )
 
 
-  // TODO: Need to implement option to show or not show suggestion catagories, and if show none, then hide the column
+  // TODO: Need to implement option to show or not show suggestion categories, and if show none, then hide the column
   if( (m_currentlyShowingNuclide.m_validity == ReferenceLineInfo::InputValidity::Valid)
      && !currentInput.empty()
      && showAssoc )
