@@ -6701,7 +6701,7 @@ bool ShieldingSourceDisplay::finishSaveModelToDatabase( const Wt::WString &name,
     Dbo::ptr<UserFileInDb> dbmeas;
     try
     {
-      dbmeas = m_specViewer->measurementFromDb( SpecUtils::SpectrumType::Foreground, true );
+      dbmeas = m_specViewer->measurementFromDb( SpecUtils::SpectrumType::Foreground, false );
     }catch( std::exception & )
     {
     }
