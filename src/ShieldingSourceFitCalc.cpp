@@ -1072,7 +1072,27 @@ void TraceSourceInfo::equalEnough( const TraceSourceInfo &lhs, const TraceSource
       m_material.reset();
       if( !material_name.empty() )
       {
-        const Material *mat = materialDb->material( material_name );
+        const Material *mat = nullptr;
+        
+        try
+        {
+          mat = materialDb->material( material_name );
+        }catch( std::exception & )
+        {
+        }
+        
+        if( !mat )
+        {
+          // Maybe the user specified a chemical formula, like "U0.99Np0.01"
+          try
+          {
+            const SandiaDecay::SandiaDecayDataBase * const db = DecayDataBaseServer::database();
+            mat = materialDb->parseChemicalFormula( material_name, db );
+          }catch( std::exception & )
+          {
+          }
+        }//if( !mat )
+        
         if( !mat )
           throw runtime_error( "Invalid shielding material: '" + material_name + "'" );
         m_material = make_shared<Material>( *mat );
