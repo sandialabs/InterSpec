@@ -211,12 +211,25 @@ size_t read_file_from_zip( std::istream &instrm,
     
     inflateEnd( &strm );
     return total_uncompressed;
-  }else if( header->compression_type == UNCOMPRESSED )
+  }else if( (header->compression_type == UNCOMPRESSED)
+           && (header->compressed_size == header->uncompressed_size) )
   {
-    const size_t nread = std::min( buffer_size - 4,
-                                   header->uncompressed_size - total_read );
-    instrm.read( (char*)(out+4), nread );
-    return static_cast<size_t>( instrm.gcount() );
+    size_t num_written = 0;
+    size_t num_bytes = header->compressed_size;
+    while( num_bytes > 0 )
+    {
+      const size_t nread = std::min( buffer_size, static_cast<const unsigned int>(num_bytes) );
+      instrm.read( (char *)in, nread );
+      std::streamsize bytes_read = instrm.gcount();  // Get the number of bytes actually read
+      output.write( (const char *)in, bytes_read );
+      num_bytes -= std::min( bytes_read, static_cast<std::streamsize>(num_bytes) );
+      num_written += bytes_read;
+
+      if( bytes_read < static_cast<std::streamsize>(nread) )
+        break;
+    }//while( num_bytes > 0 )
+    
+    return num_written;
   }else
   {
     throw runtime_error( "ZipArchive: unrecognized compression" );
