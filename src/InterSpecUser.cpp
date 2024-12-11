@@ -539,7 +539,7 @@ Dbo::ptr<UserFileInDb> UserFileInDb::makeDeepCopyOfFileInDatabase(
   
     // The passed in `UserFileInDb` may not actually be in the database, so we have to check
     //  for this.
-    if( orig.id() >= 0 )
+    if( !orig.isTransient() )
     {
       for( Dbo::collection< Dbo::ptr<UserFileInDbData> >::const_iterator iter = orig->filedata.begin();
           iter != orig->filedata.end(); ++iter )
@@ -549,6 +549,7 @@ Dbo::ptr<UserFileInDb> UserFileInDb::makeDeepCopyOfFileInDatabase(
         session->add( newdata );
       }
       
+      /*
       for( Dbo::collection< Dbo::ptr<ShieldingSourceModel> >::const_iterator iter
           = orig->modelsUsedWith.begin();
           iter != orig->modelsUsedWith.end();
@@ -559,6 +560,7 @@ Dbo::ptr<UserFileInDb> UserFileInDb::makeDeepCopyOfFileInDatabase(
         Dbo::ptr<ShieldingSourceModel> modelptr = session->add( newmodel );
         modelptr.modify()->filesUsedWith.insert( answer );
       }//for( loop over ShieldingSourceModel )
+       */
     }//if( orig.id() >= 0 )
     
     transaction.commit();

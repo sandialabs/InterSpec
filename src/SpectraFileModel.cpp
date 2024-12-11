@@ -708,7 +708,7 @@ void SpectraFileHeader::saveToDatabase( std::shared_ptr<const SpecMeas> input ) 
   }
   
   
-  if( !fileDbEntry )
+  if( !fileDbEntry || fileDbEntry.isTransient() )
   {
     UserFileInDb *info = new UserFileInDb();
     Dbo::ptr<UserFileInDb> info_dbo_ptr( info );
@@ -741,10 +741,11 @@ void SpectraFileHeader::saveToDatabase( std::shared_ptr<const SpecMeas> input ) 
     {
       DataBaseUtils::DbTransaction transaction( *m_sql );
       fileDbEntry = m_sql->session()->find<UserFileInDb>().where("id = ?").bind(fileDbEntry.id()).resultValue();
+      //fileDbEntry.flush();
       transaction.commit();
       
       if( !fileDbEntry )
-        runtime_error("no entry");
+        throw runtime_error("no entry");
     }catch( Wt::Dbo::Exception &e )
     {
       throw runtime_error( "SpectraFileHeader::saveToDatabase(), database error: " + string(e.what()) );

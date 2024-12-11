@@ -848,7 +848,7 @@ BOOST_AUTO_TEST_CASE( DoubleSidedCrystalBall )
     
     double prob = 0.000000573303;
     pair<double,double> limits = double_sided_crystal_ball_coverage_limits( mean, sigma, alpha_low,
-                                                                n_low, alpha_high, n_high, prob );
+                                                                           n_low, alpha_high, n_high, prob );
     double fraction = 1.0 - double_sided_crystal_ball_integral( mean, sigma, alpha_low, n_low,
                                                                alpha_high, n_high,
                                                                limits.first, limits.second );
@@ -857,7 +857,7 @@ BOOST_AUTO_TEST_CASE( DoubleSidedCrystalBall )
     
     prob = 1.0E-3;
     limits = double_sided_crystal_ball_coverage_limits( mean, sigma, alpha_low,
-                                                                n_low, alpha_high, n_high, prob );
+                                                       n_low, alpha_high, n_high, prob );
     fraction = 1.0 - double_sided_crystal_ball_integral( mean, sigma, alpha_low, n_low,
                                                         alpha_high, n_high,
                                                         limits.first, limits.second );
@@ -865,7 +865,7 @@ BOOST_AUTO_TEST_CASE( DoubleSidedCrystalBall )
     
     prob = 1.0E-2;
     limits = double_sided_crystal_ball_coverage_limits( mean, sigma, alpha_low,
-                                                                n_low, alpha_high, n_high, prob );
+                                                       n_low, alpha_high, n_high, prob );
     fraction = 1.0 - double_sided_crystal_ball_integral( mean, sigma, alpha_low, n_low,
                                                         alpha_high, n_high,
                                                         limits.first, limits.second );
@@ -873,7 +873,7 @@ BOOST_AUTO_TEST_CASE( DoubleSidedCrystalBall )
     
     prob = 1.0E-1;
     limits = double_sided_crystal_ball_coverage_limits( mean, sigma, alpha_low,
-                                                                n_low, alpha_high, n_high, prob );
+                                                       n_low, alpha_high, n_high, prob );
     fraction = 1.0 - double_sided_crystal_ball_integral( mean, sigma, alpha_low, n_low,
                                                         alpha_high, n_high,
                                                         limits.first, limits.second );
@@ -881,11 +881,38 @@ BOOST_AUTO_TEST_CASE( DoubleSidedCrystalBall )
     
     prob = 0.317310507863;
     limits = double_sided_crystal_ball_coverage_limits( mean, sigma, alpha_low,
-                                                                n_low, alpha_high, n_high, prob );
+                                                       n_low, alpha_high, n_high, prob );
     fraction = 1.0 - double_sided_crystal_ball_integral( mean, sigma, alpha_low, n_low,
                                                         alpha_high, n_high,
                                                         limits.first, limits.second );
     BOOST_CHECK_CLOSE( fraction, prob, 0.1 );
+    
+    
+    mean = 200;
+    sigma = 1.25;
+    alpha_low = 1.0;
+    n_low = 2.3;
+    alpha_high = 2.0;
+    n_high = 1.5;
+    prob = 1.0E-3;
+    
+    limits = double_sided_crystal_ball_coverage_limits( mean, sigma, alpha_low,
+                                                       n_low, alpha_high, n_high, prob );
+    //cout << "Limits are {" << limits.first << ", " << limits.second << "}" << endl; //{-215.032, 14154.5}
+    
+    
+    /*
+     //This next case will fail.
+    mean = 5577.6396484375;
+    sigma = 1.2235283851623535;
+    alpha_low = 0.79716122150421142;
+    n_low = 5.5732345581054688;
+    alpha_high = 1.9554067850112915;
+    n_high = 1.0500000715255737;
+    prob = 1.0E-6;
+    limits = double_sided_crystal_ball_coverage_limits( mean, sigma, alpha_low,
+                                                       n_low, alpha_high, n_high, prob );
+     */
   }
   
   

@@ -600,7 +600,7 @@ const vector<OtherRefLine> &getBackgroundRefLines()
     
     DistributedSrcCalc soil_sphere;
     soil_sphere.m_geometry = GeometryType::Spherical;
-    soil_sphere.m_sourceIndex = 0;
+    soil_sphere.m_materialIndex = 0;
     soil_sphere.m_attenuateForAir = false;
     soil_sphere.m_airTransLenCoef = 0.0;
     soil_sphere.m_isInSituExponential = false;

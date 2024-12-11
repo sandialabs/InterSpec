@@ -685,7 +685,7 @@ namespace PeakDists
       return -0.5*p + (1.0 - indefinite_x( x ));
     };
     
-    if( (p <= 1.0E-11) || (p > 0.999)  ) // for gaussian, 7 sigma would be 1.279812544E-12
+    if( (p <= 1.0E-11) || (p > (1.0 - 1.0E-11))  ) // for gaussian, 7 sigma would be 1.279812544E-12
       throw runtime_error( "double_sided_crystal_ball_coverage_limits: invalid p" );
     
     auto x_from_eqn = [mean, sigma, norm, left_skew, left_n, right_skew, right_n,
@@ -726,27 +726,94 @@ namespace PeakDists
 
       // TODO: if value is in right tail, we will fail, in which case we will resort to an iterative solution
       double lower_x = -999, upper_x = -999;
-      try{ lower_x = x_from_eqn( 0.5*p ); }catch( std::exception & ){ cout << "Failed to find lower answer by eqn from p=" << p << endl; }
-      try{ upper_x = x_from_eqn( 1.0 - 0.5*p ); }catch( std::exception & ){ cout << "Failed to find upper answer by eqn from p=" << p << endl; }
+      try
+      {
+        lower_x = x_from_eqn( 0.5*p );
+      }catch( std::exception & )
+      {
+        cout << "Failed to find lower answer by eqn from p=" << p << endl;
+      }
+      
+      try
+      {
+        upper_x = x_from_eqn( 1.0 - 0.5*p );
+      }catch( std::exception & )
+      {
+        cout << "Failed to find upper answer by eqn from p=" << p << endl;
+      }
       
 
-      if( (lower_x < 989) || IsNan(lower_x) || IsInf(lower_x) )
+      if( (lower_x < -998) || IsNan(lower_x) || IsInf(lower_x) )
       {
-        boost::uintmax_t max_iter = 100;
-        const double low_low_limit = mean - 200*sigma;  //200 sigma is arbitrary
-        const double low_up_limit = mean;
+        // With huge skew and/or small probabilities, the energy-value we are looking for can be
+        //  really far away from mean, so we will search by doubling the search range.
+        double low_low_limit;
+        bool found_lower = false;
+        const size_t max_range_doublings = 40;
+        double current_dx = 20.0 * std::max(sigma, 0.1); //20 sigma starting is arbitrary
+        for( size_t i = 0; !found_lower && (i < max_range_doublings); ++i, current_dx *= 2 )
+        {
+          low_low_limit = mean - current_dx;
+          const double y = lower_fcn( low_low_limit );
+          found_lower = (y < 0.0);
+        }//for( look for x where pdf has gone below limit )
+        
+        // If we didnt find the lower limit, `boost::math::tools::bisect(...)` will throw exception
+        //assert( found_lower );
+        
+#if( PERFORM_DEVELOPER_CHECKS )
+        if( !found_lower )
+        {
+          const string msg = "Failed to find lower limit by " + std::to_string(mean - current_dx)
+          + " for double_sided_crystal_ball_coverage_limits( "
+          + std::to_string(mean) + ", " + std::to_string(sigma) + ", " + std::to_string(left_skew)
+          + ", " + std::to_string(left_n) + ", " + std::to_string(right_skew) + ", "
+          + std::to_string(right_n) + ", " + std::to_string(p) + " )";
+          
+          log_developer_error( __func__, msg.c_str() );
+        }//if( !found_upper )
+#endif
+        
+        boost::uintmax_t max_iter = 1000;
         const pair<double,double> lower_val = boost::math::tools::bisect( lower_fcn, low_low_limit,
-                                                                         low_up_limit, term_condition, max_iter );
+                                                                         mean, term_condition, max_iter );
         lower_x = 0.5*(lower_val.first + lower_val.second);
       }//if( lower_x < 989 || IsNan(lower_x) || IsInf(lower_x) )
       
        
-      if( (upper_x < 989) || IsNan(upper_x) || IsInf(upper_x) )
+      if( (upper_x < -998) || IsNan(upper_x) || IsInf(upper_x) )
       {
-        boost::uintmax_t max_iter = 100;
-        const double up_low_limit = mean;
-        const double up_up_limit = mean + 200*sigma;
-        const pair<double,double> upper_val = boost::math::tools::bisect( upper_fcn, up_low_limit,
+        // With huge skew and/or small probabilities, the energy-value we are looking for can be
+        //  really huge, so we will search by doubling the search range.
+        double up_up_limit;
+        bool found_upper = false;
+        const size_t max_range_doublings = 40;
+        double current_dx = 20.0 * std::max(sigma, 0.1);
+        for( size_t i = 0; !found_upper && (i < max_range_doublings); ++i, current_dx *= 2 )
+        {
+          up_up_limit = mean + current_dx;
+          const double y = upper_fcn( up_up_limit );
+          found_upper = (y < 0.0);
+        }//for( look for x where pdf has gone below limit )
+        
+        // If we didnt find the upper limit, `boost::math::tools::bisect(...)` will throw exception
+        //assert( found_upper );
+        
+#if( PERFORM_DEVELOPER_CHECKS )
+        if( !found_upper )
+        {
+          const string msg = "Failed to find upper limit by " + std::to_string(mean + current_dx)
+          + " for double_sided_crystal_ball_coverage_limits( "
+          + std::to_string(mean) + ", " + std::to_string(sigma) + ", " + std::to_string(left_skew)
+          + ", " + std::to_string(left_n) + ", " + std::to_string(right_skew) + ", "
+          + std::to_string(right_n) + ", " + std::to_string(p) + " )";
+          
+          log_developer_error( __func__, msg.c_str() );
+        }//if( !found_upper )
+#endif
+
+        boost::uintmax_t max_iter = 1000;
+        const pair<double,double> upper_val = boost::math::tools::bisect( upper_fcn, mean,
                                                                          up_up_limit, term_condition, max_iter );
         upper_x = 0.5*(upper_val.first + upper_val.second);
       }//if( upper_x < 989 || IsNan(upper_x) || IsInf(upper_x) )
@@ -759,7 +826,8 @@ namespace PeakDists
       return pair<double,double>( lower_x, upper_x );
     }catch( std::exception &e )
     {
-      throw runtime_error( "double_sided_crystal_ball_coverage_limits: failed to find limit: " + string(e.what()) );
+      const string excmsg = e.what();
+      throw runtime_error( "double_sided_crystal_ball_coverage_limits: failed to find limit: " + excmsg );
     }//try / catch
     
     assert( 0 );
