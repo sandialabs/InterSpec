@@ -1,11 +1,14 @@
 <?xml version="1.0" encoding="UTF-8"?>
 
-<!-- The entries in this file define the default catagories the "Nuclide Search" tab will allow you to select.
+<!-- UUR SAND2024-16468O
+
+The entries in this file define the default categories the "Nuclide Search" tab will allow you to select.
 
 You create your own version of this file, and place in the InterSpec user data directory (see
 Help -> "About InterSpec" -> "Data" for this path; on Windows this might be 
 "C:\Users\<user>\AppData\Roaming\InterSpec"), and your entries will be appended after the default ones (after
 you restart InterSpec).
+
 -->
 
 <NucSearchCategories>
@@ -230,12 +233,7 @@ you restart InterSpec).
     <AllowFluorXrays>1</AllowFluorXrays>
     <AllowReactions>1</AllowReactions>
     
-    <!--
-    We'll allow searching on all x-rays, so wont specify individually.
-    <Elements>
-      <Element>Au<Element><Element>Pb<Element><Element>Bi<Element><Element>W<Element>
-    </Elements>
-    -->
+    <!-- We'll allow searching on all x-rays, so wont specify individually. -->
     
     <Nuclides>
       <Nuclide>Ac-225</Nuclide><Nuclide>Ac-227</Nuclide><Nuclide>Ag-108m</Nuclide><Nuclide>Ag-110m</Nuclide>
