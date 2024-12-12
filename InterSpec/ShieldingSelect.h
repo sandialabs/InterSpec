@@ -113,22 +113,34 @@ public:
   virtual ~SourceCheckbox();
 
   double massFraction() const;
-  void setMassFraction( double frac );
+  
+  /** Sets the mass fraction and uncertainty.
+   If there is no uncertainty, pass in 0.0 or less.
+   Uncertainty is (currently) only displayed in the tool-tip of this widget.
+   */
+  void setMassFraction( double frac, double uncert );
   const SandiaDecay::Nuclide *isotope() const;
   bool useAsSource() const;
   void setUseAsSource( bool use );
 
-  //Wt::EventSignal<> &changed();
+  bool fitMassFraction() const;
+  void setFitMassFraction( const bool fit );
+  
   Wt::EventSignal<> &checked();
   Wt::EventSignal<> &unChecked();
   Wt::Signal<float> &massFractionChanged();
 
+  Wt::EventSignal<> &fitMassFractionChecked();
+  Wt::EventSignal<> &fitMassFractionUnChecked();
+  
 protected:
   void handleUseCbChange();
+  void handleFitMassFractionChanged();
   
   Wt::WCheckBox *m_useAsSourceCb;
   Wt::WLabel *m_label;
   NativeFloatSpinBox *m_massFraction;
+  Wt::WCheckBox *m_fitFraction;
   const SandiaDecay::Nuclide *m_nuclide;
 };//class SourceCheckbox
 
@@ -319,36 +331,58 @@ public:
    */
   void updateSelfAttenOtherNucFractionTxt();
   
-  /** Returns the isotopes currently checked for use as self-attenuating sources. */
+  /** Returns the isotopes currently checked for use as self-attenuating sources. 
+   
+   Note: this returns nuclides that are selected to fit mass fraction, as well as not.
+   */
   std::vector<const SandiaDecay::Nuclide *> selfAttenNuclides() const;
+  
+  /** Returns the elements who the "other" component is selected to be fit. */
+  std::vector<const SandiaDecay::Element *> elementsFittingNonSourceComponent() const;
   
   /** Gets the (self-attenuating) source nuclides (not trace nuclides), and their respective mass fractions.
    
-   Mass-fractions are for the entire material, not just the fraction of the element.
+   Mass-fractions are for the element, not the entire material.
    Note: mass-fractions are retrieved from the GUI state - they are not the values in `m_currentMaterial`.
+   Sources not being used as self-atten sources are not included.
    */
-  typedef std::pair<const SandiaDecay::Nuclide *,double> NucMasFrac;
-  std::vector< NucMasFrac > sourceNuclideMassFractions() const;
+  typedef std::tuple<const SandiaDecay::Nuclide *,double,bool> NucMasFrac;
+  std::map<const SandiaDecay::Element *,std::vector<NucMasFrac>> sourceNuclideMassFractions() const;
 
   //setClosableAndAddable(...): by default widget will have close icon and emit
   //  the remove() signal, but setClosable() lets you change this
   void setClosableAndAddable( bool closeable , Wt::WGridLayout* layout);
 
-  //fitForMassFractions(): returns if the user has asked to use this material
+  //fitForAnyMassFractions(): returns if the user has asked to use this material
   //  as at least two sources, and checked that they want to fit for mass fracs
-  bool fitForMassFractions() const;
+  bool fitForAnyMassFractions() const;
   
   //setMassFraction(...): set the mass fraction for a given nuclide.  If nuclide
   //  is not currently being used as a source, or fraction is not between
   //  0 and 1.0, an exception will be thrown.
   //  This function does not check if all mass fractions add up to 1.0, or
   //  anything else like that, so be careful
-  void setMassFraction( const SandiaDecay::Nuclide *nuc, double fraction );
+  void setMassFraction( const SandiaDecay::Nuclide * const nuc,
+                       const double fraction, const double uncert );
+  
+  /** How to hold information about each nuclide, of an element, for setting mass fraction information. */
+  struct MassFracInfo
+  {
+    /**  If nuclide is nullptr, than that indicates, it is the "other" (non-source) portion of the element. */
+    const SandiaDecay::Nuclide *m_nuclide = nullptr;
+    double m_fraction = 0.0;
+    /** Uncertainty on mass fraction; if not applicable set as zero or negative value. */
+    double m_frac_uncert = 0.0;
+    bool m_use_as_source = false;
+    bool m_fit_mass_frac = false;
+  };//struct MassFracInfo
+  
   
   /** Sets all the source mass fractions at once; will normalize total mass fractions for each element to 1.0.
    If mass fractions are less than zero, or if no current material, will through exception.
    */
-  void setMassFractions( std::map<const SandiaDecay::Nuclide *,double> fractions );
+  void setMassFractions( std::map<const SandiaDecay::Element *,std::vector<MassFracInfo>> fractions );
+  
   
   //setMaterialNameAndThickness(...): sets the current material name and
   //  thickness to the specified strings.  If necessary will make it so this is
@@ -514,7 +548,7 @@ public:
   boost::optional<double> truthThicknessD3;  //Rectangular depth
   boost::optional<double> truthThicknessD3Tolerance;
   
-  std::map<const SandiaDecay::Nuclide *,std::pair<double,double>> truthFitMassFractions;
+  std::map<const SandiaDecay::Element *,std::map<const SandiaDecay::Nuclide *,std::pair<double,double>>> truthFitMassFractions;
 #endif
 
   
@@ -605,6 +639,12 @@ protected:
    */
   void handleIsotopicChange( const float fraction, const SandiaDecay::Nuclide * const nuclide );
 
+  /** Called when fit mass fraction checkbox is changed for a nuclide.
+   If it is the "other nucs" checkbox, then nuclide will be nullptr, and element will say which element this is for.
+   */
+  void handleFitMassFractionChanged( const bool fit, const SandiaDecay::Nuclide * const nuclide,
+                                    const SandiaDecay::Element *el );
+  
   //modelNuclideAdded(...): adds a checkbox for Nuclide and connects
   //  appropriate signals, and updates trace sources
   void modelNuclideAdded( const SandiaDecay::Nuclide *iso );
@@ -706,7 +746,7 @@ protected:
   Wt::WCheckBox *m_fitRectDepthCB;
   
   
-  Wt::WCheckBox *m_fitMassFrac;  //is nullptr if !m_forFitting
+  //Wt::WCheckBox *m_fitMassFrac;  //is nullptr if !m_forFitting
 
   Wt::WContainerWidget *m_asSourceCBs;
   
