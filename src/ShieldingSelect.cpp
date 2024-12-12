@@ -1167,6 +1167,7 @@ SourceCheckbox::SourceCheckbox( const SandiaDecay::Nuclide *nuclide,
     m_useAsSourceCb( NULL ),
     m_label( nullptr ),
     m_massFraction( NULL ),
+    m_fitFraction( nullptr ),
     m_nuclide( nuclide )
 {
   wApp->useStyleSheet( "InterSpec_resources/ShieldingSelect.css" );
@@ -1189,15 +1190,21 @@ SourceCheckbox::SourceCheckbox( const SandiaDecay::Nuclide *nuclide,
   m_massFraction->setSpinnerHidden( true );
   m_massFraction->setValue( massFrac );
 
+  m_fitFraction = new WCheckBox( WString::tr("Fit"), this );
+  
   if( !nuclide )
   {
     m_useAsSourceCb->setUnChecked();
     m_useAsSourceCb->hide();
     m_useAsSourceCb->disable();
+    m_fitFraction->hide();
   }//if( !nuclide )
   
   m_useAsSourceCb->checked().connect( this, &SourceCheckbox::handleUseCbChange );
   m_useAsSourceCb->unChecked().connect( this, &SourceCheckbox::handleUseCbChange );
+  
+  m_fitFraction->checked().connect( this, &SourceCheckbox::handleFitMassFractionChanged );
+  m_fitFraction->unChecked().connect( this, &SourceCheckbox::handleFitMassFractionChanged );
   
   handleUseCbChange();
 }//SourceCheckbox constructor
@@ -1214,22 +1221,18 @@ void SourceCheckbox::handleUseCbChange()
   if( m_useAsSourceCb->isChecked() )
   {
     m_massFraction->show();
+    m_fitFraction->show();
     
     WString labeltxt = WString::tr("ss-src-mass-frac-label");
-    
-    // The mass-fraction is of the total material, not just the element, but previous
-    //  to 20241131, we would prefix the mass fraction with the element name, which
-    //  created a false impression
-    //if( m_nuclide )
-    //  labeltxt.arg(db->element(m_nuclide->atomicNumber)->symbol);
-    
+    if( m_nuclide )
+      labeltxt.arg(db->element(m_nuclide->atomicNumber)->symbol);
     m_label->setText( labeltxt );
   }else
   {
     m_massFraction->hide();
     m_label->setText( "" );
+    m_fitFraction->hide();
   }
-  
 }//void handleUseCbChange()
 
 double SourceCheckbox::massFraction() const
@@ -1237,9 +1240,14 @@ double SourceCheckbox::massFraction() const
   return m_massFraction->value();
 }
 
-void SourceCheckbox::setMassFraction( double frac )
+void SourceCheckbox::setMassFraction( double frac, double uncert )
 {
   m_massFraction->setValue( frac );
+  
+  if( uncert > 0.0 )
+    setToolTip( WString::tr("ss-tt-with-uncert").arg(frac).arg(uncert) );
+  else
+    setToolTip( WString::tr("ss-tt-without") );
 }
 
 bool SourceCheckbox::useAsSource() const
@@ -1276,6 +1284,33 @@ Wt::EventSignal<> &SourceCheckbox::unChecked()
 Wt::Signal<float> &SourceCheckbox::massFractionChanged()
 {
   return m_massFraction->valueChanged();
+}
+
+bool SourceCheckbox::fitMassFraction() const
+{
+  return m_fitFraction->isChecked();
+};
+
+void SourceCheckbox::setFitMassFraction( const bool fit )
+{
+  m_fitFraction->setChecked( fit );
+  handleFitMassFractionChanged();
+}
+
+
+Wt::EventSignal<> &SourceCheckbox::fitMassFractionChecked()
+{
+  return m_fitFraction->checked();
+}
+
+Wt::EventSignal<> &SourceCheckbox::fitMassFractionUnChecked()
+{
+  return m_fitFraction->unChecked();
+}
+
+void SourceCheckbox::handleFitMassFractionChanged()
+{
+  // Nothing to do here?
 }
 
 
@@ -1318,7 +1353,6 @@ ShieldingSelect::ShieldingSelect( MaterialDB *materialDB,
   m_fitRectHeightCB( nullptr ),
   m_rectDepthEdit( nullptr ),
   m_fitRectDepthCB( nullptr ),
-  m_fitMassFrac( nullptr ),
   m_asSourceCBs( nullptr ),
   m_traceSources( nullptr )
 {
@@ -1367,7 +1401,6 @@ ShieldingSelect::ShieldingSelect( MaterialDB *materialDB,
     m_fitRectHeightCB( nullptr ),
     m_rectDepthEdit( nullptr ),
     m_fitRectDepthCB( nullptr ),
-    m_fitMassFrac( nullptr ),
     m_asSourceCBs( nullptr ),
     m_traceSources( nullptr )
 {
@@ -1428,11 +1461,8 @@ void ShieldingSelect::setClosableAndAddable( bool closeable , WGridLayout* layou
 }//void ShieldingSelect::setClosableAndAddable( bool closeable )
 
 
-bool ShieldingSelect::fitForMassFractions() const
+bool ShieldingSelect::fitForAnyMassFractions() const
 {
-  if( !m_fitMassFrac || !m_fitMassFrac->isChecked() )
-    return false;
-  
   if( isGenericMaterial() )
     return false;
   
@@ -1442,15 +1472,15 @@ bool ShieldingSelect::fitForMassFractions() const
     for( WWidget *widget : etnm.second->children() )
     {
       SourceCheckbox *src = dynamic_cast<SourceCheckbox *>( widget );
-      nchecked += (src && (src->useAsSource()));
+      nchecked += (src && (src->fitMassFraction()));
     }//for( WWidget *widget : isotopeDiv->children() )
   }//for( const ElementToNuclideMap::value_type &etnm : m_sourceIsotopes )
 
   return (nchecked > 1);
-}//bool fitForMassFractions() const
+}//bool fitForAnyMassFractions() const
 
 
-void ShieldingSelect::setMassFractions( std::map<const SandiaDecay::Nuclide *,double> fractions )
+void ShieldingSelect::setMassFractions( map<const SandiaDecay::Element *,vector<ShieldingSelect::MassFracInfo>> fractions )
 {
   if( !m_currentMaterial )
   {
@@ -1459,36 +1489,63 @@ void ShieldingSelect::setMassFractions( std::map<const SandiaDecay::Nuclide *,do
     return;
   }//if( !m_currentMaterial )
     
-  set<const SandiaDecay::Nuclide *> used_input_nuclides;
-  map<short,double> frac_sums;
-  for( const auto &i : fractions )
+  // Make sure each input element has at least some nuclides, the nuclides are grouped with correct
+  //  element, and nuclides arent repeated.
+  for( const auto &el_nucs : fractions )
   {
-    if( !i.first )
-      throw runtime_error( "setMassFractions: null nuclide" );
+    const SandiaDecay::Element * const el = el_nucs.first;
+    if( !el )
+      throw runtime_error( "ShieldingSelect::setMassFractions(): nullptr Element" );
+  
+    if( el_nucs.second.empty() )
+      throw runtime_error( "ShieldingSelect::setMassFractions(): empty Element" );
+  
+    bool material_has_el = false;
+    for( const auto &el_frac : m_currentMaterial->elements )
+      material_has_el |= (el_frac.first == el);
+    for( const auto &nuc_frac : m_currentMaterial->nuclides )
+      material_has_el |= (nuc_frac.first->atomicNumber == el->atomicNumber);
     
-    used_input_nuclides.insert( i.first );
+    if( !material_has_el )
+      throw runtime_error( "ShieldingSelect::setMassFractions(): input has Element not in material" );
     
-    if( !frac_sums.count(i.first->atomicNumber) )
-      frac_sums[i.first->atomicNumber] = 0.0;
-    
-    frac_sums[i.first->atomicNumber] += i.second;
-  }//for( const auto &i : fractions )
+    set<const SandiaDecay::Nuclide *> seen_nucs;
+    for( const auto &nuc_info : el_nucs.second )
+    {
+      const SandiaDecay::Nuclide * const nuc = nuc_info.m_nuclide;
+      if( seen_nucs.count(nuc) )
+        throw runtime_error( "ShieldingSelect::setMassFractions(): repeated nuclide." );
+      seen_nucs.insert( nuc );
+      if( nuc && (nuc->atomicNumber != el->atomicNumber) )
+        throw runtime_error( "ShieldingSelect::setMassFractions(): nuclide grouped into wrong element." );
+    }//for( const auto &nuc_info : el_nucs.second )
+  }//for( const auto &el_nucs : fractions )
+  
+  //We'll do a bit of a sanity check, and make sure the input sets all the nuclides that the GUI
+  //  currently has listed; we'll ignore "other" non-source component.
+  set<const SandiaDecay::Nuclide *> used_input_nuclides;
   
   // If a sum of nuclides for an element is more than one, normalize it down to 1.
-  for( const auto &s : frac_sums )
+  for( auto &el_nucs : fractions )
   {
-    if( s.second < 0.0 )
-      throw runtime_error( "setMassFractions: negative fraction sum" );
-    
-    if( s.second > 1.0 )
+    double frac_sum = 0.0;
+    for( const MassFracInfo &nuc : el_nucs.second )
     {
-      for( auto &i : fractions )
+      frac_sum += nuc.m_fraction;
+      if( nuc.m_nuclide )
+        used_input_nuclides.insert( nuc.m_nuclide );
+    }
+    
+    if( frac_sum > 1.0 )
+    {
+      for( auto &nuc : el_nucs.second )
       {
-        if( i.first->atomicNumber == s.first )
-          i.second /= s.second;
+        nuc.m_fraction /= frac_sum;
+        if( nuc.m_frac_uncert > 0.0 )
+          nuc.m_frac_uncert /= frac_sum;
       }
     }//if( s.second > 1.0 )
-  }//for( const auto &s : frac_sums )
+  }//for( const auto &el_nucs : fractions )
   
   
   for( const ElementToNuclideMap::value_type &elDiv : m_sourceIsotopes )
@@ -1497,6 +1554,13 @@ void ShieldingSelect::setMassFractions( std::map<const SandiaDecay::Nuclide *,do
     assert( element );
     if( !element )
       continue;
+    
+    const vector<ShieldingSelect::MassFracInfo> *nuc_infos = nullptr;
+    
+    const auto frac_pos = fractions.find(element);
+    //assert( frac_pos != end(fractions) );
+    if( frac_pos != end(fractions) )
+       nuc_infos = &(frac_pos->second);
     
     const vector<WWidget *> &children = elDiv.second->children();
     for( WWidget *child : children )
@@ -1507,24 +1571,42 @@ void ShieldingSelect::setMassFractions( std::map<const SandiaDecay::Nuclide *,do
       
       const SandiaDecay::Nuclide * const nuc = cb->isotope();
       used_input_nuclides.erase( nuc );
-      const auto pos = fractions.find( nuc );
-      const bool source_nuc = (pos != end(fractions));
+      
+      const ShieldingSelect::MassFracInfo *nuc_info = nullptr;
+      if( nuc_infos )
+      {
+        for( const ShieldingSelect::MassFracInfo &i : *nuc_infos )
+        {
+          if( i.m_nuclide == nuc )
+          {
+            nuc_info = &i;
+            break;
+          }//if( get<0>(i) == nuc )
+        }//for( const auto &i : *nuc_infos )
+      }//if( nuc_infos )
+      
+      
+      const bool source_nuc = (nuc_info && nuc_info->m_use_as_source);
+      const bool fit_frac = (nuc_info && nuc_info->m_fit_mass_frac);
+      
       cb->setUseAsSource( source_nuc );
       if( source_nuc )
-        cb->setMassFraction( pos->second );
+        cb->setMassFraction( nuc_info->m_fraction, nuc_info->m_frac_uncert );
     }//for( WWidget *child : children )
   }//for( const ElementToNuclideMap::value_type &elDiv : m_sourceIsotopes )
   
   updateIfMassFractionCanFit();
   updateSelfAttenOtherNucFractionTxt();
   
+  assert( used_input_nuclides.empty() );
   if( !used_input_nuclides.empty() )
     throw runtime_error( "ShieldingSelect::setMassFractions: didnt set all the input mass-fractions." );
-}//void setMassFractions( std::map<const SandiaDecay::Nuclide *,double> fractions )
+}//void setMassFractions( map<Element,vector<tuple<Nuclide,double,double,bool>>> )
 
 
-void ShieldingSelect::setMassFraction( const SandiaDecay::Nuclide *nuc,
-                                       double fraction )
+void ShieldingSelect::setMassFraction( const SandiaDecay::Nuclide * const nuc,
+                                       const double fraction,
+                                      const double uncert )
 {
   for( const ElementToNuclideMap::value_type &etnm : m_sourceIsotopes )
   {
@@ -1535,7 +1617,7 @@ void ShieldingSelect::setMassFraction( const SandiaDecay::Nuclide *nuc,
       SourceCheckbox *src = dynamic_cast<SourceCheckbox *>( widget );
       if( src && (nuc == src->isotope()) )
       {
-        src->setMassFraction( fraction );
+        src->setMassFraction( fraction, uncert );
         updateSelfAttenOtherNucFractionTxt();
         return;
       }//if( nuc == src )
@@ -2198,6 +2280,9 @@ void ShieldingSelect::init()
     label->setInline( false );
     m_asSourceCBs->hide();
     HelpSystem::attachToolTipOn( m_asSourceCBs, WString::tr("ss-source-for-cb"), showToolTips );
+    
+    /*
+     blah blah blah blah blah
     m_fitMassFrac = new WCheckBox( WString::tr("ss-fit-mass-fractions-cb"), m_asSourceCBs );
     m_fitMassFrac->hide();
     m_fitMassFrac->setInline( false );
@@ -2208,6 +2293,7 @@ void ShieldingSelect::init()
     
     m_fitMassFrac->checked().connect( this, &ShieldingSelect::handleUserChangeForUndoRedo );
     m_fitMassFrac->unChecked().connect( this, &ShieldingSelect::handleUserChangeForUndoRedo );
+     */
   }//if( m_forFitting )
   
   
@@ -2964,11 +3050,14 @@ void ShieldingSelect::setFixedGeometry( const bool fixed_geom )
     vector<const SandiaDecay::Nuclide *> self_atten_nucs = selfAttenNuclides();
     vector<const SandiaDecay::Nuclide *> trace_srcs = traceSourceNuclides();
     
+    /*
+     blah blah blah blah blah
     if( m_fitMassFrac )
     {
       m_fitMassFrac->setUnChecked();
       m_fitMassFrac->hide();
     }//if( m_fitMassFrac )
+    */
     
     if( m_traceSources )
     {
@@ -3333,8 +3422,11 @@ std::shared_ptr<const Material> ShieldingSelect::currentMaterial() const
 
 void ShieldingSelect::updateIfMassFractionCanFit()
 {
+  /*
+   blah blah blah blah blah
   if( !m_fitMassFrac )
     return;
+  */
   
   int nchecked = 0;
   for( const ElementToNuclideMap::value_type &etnm : m_sourceIsotopes )
@@ -3348,6 +3440,8 @@ void ShieldingSelect::updateIfMassFractionCanFit()
   
   const bool shouldHide = (nchecked < 2);
   
+  /*
+   blah blah blah blah blah
   if( shouldHide == m_fitMassFrac->isHidden() )
     return;
   
@@ -3359,6 +3453,7 @@ void ShieldingSelect::updateIfMassFractionCanFit()
   {
     m_fitMassFrac->show();
   }
+   */
 }//void updateIfMassFractionCanFit()
 
 
@@ -3394,13 +3489,13 @@ void ShieldingSelect::isotopeCheckedCallback( const SandiaDecay::Nuclide *nuc )
     {
       const double initialMassFrac = this_src_cb->massFraction();
       if( IsInf(initialMassFrac) || IsNan(initialMassFrac) || (initialMassFrac < 0.0) )
-        this_src_cb->setMassFraction( 0.0 );
+        this_src_cb->setMassFraction( 0.0, -1.0 );
       else if( initialMassFrac > 1.0 )
-        this_src_cb->setMassFraction( 1.0 );
+        this_src_cb->setMassFraction( 1.0, -1.0 );
         
       if( other_nuc_sum > 1.0 )
       {
-        this_src_cb->setMassFraction( 0.0 );
+        this_src_cb->setMassFraction( 0.0, -1.0 );
         
         for( const ElementToNuclideMap::value_type &elDiv : m_sourceIsotopes )
         {
@@ -3408,12 +3503,12 @@ void ShieldingSelect::isotopeCheckedCallback( const SandiaDecay::Nuclide *nuc )
           {
             SourceCheckbox *cb = dynamic_cast<SourceCheckbox *>( child );
             if( cb && cb->useAsSource() && (cb->isotope() != nuc) )
-              cb->setMassFraction( cb->massFraction() / other_nuc_sum );
+              cb->setMassFraction( cb->massFraction() / other_nuc_sum, -1.0 );
           }//for( loop over mass fraction widgets for this element )
         }//for( loop over mapping of element to their mass fractions )
       }else if( (other_nuc_sum + this_src_cb->massFraction()) > 1.0 )
       {
-        this_src_cb->setMassFraction( 1.0 - other_nuc_sum );
+        this_src_cb->setMassFraction( 1.0 - other_nuc_sum, -1.0 );
       }
     }//if( this_src_cb )
     
@@ -3558,16 +3653,15 @@ void ShieldingSelect::sourceRemovedFromModel( const SandiaDecay::Nuclide *nuc )
 }//void sourceRemovedFromModel( const std::string &symbol )
 
 
-vector< ShieldingSelect::NucMasFrac > ShieldingSelect::sourceNuclideMassFractions() const
+map<const SandiaDecay::Element *,vector<ShieldingSelect::NucMasFrac>> ShieldingSelect::sourceNuclideMassFractions() const
 {
-  vector< ShieldingSelect::NucMasFrac > answer;
+  map<const SandiaDecay::Element *,vector<ShieldingSelect::NucMasFrac>> answer;
   
-  std::shared_ptr<const Material> mat = m_currentMaterial;
+  shared_ptr<const Material> mat = m_currentMaterial;
   
   if( !mat )
     return answer;
   
-  double frac_sum = 0.0;
   for( const ElementToNuclideMap::value_type &elDiv : m_sourceIsotopes )
   {
     const SandiaDecay::Element * const element = elDiv.first;
@@ -3575,6 +3669,8 @@ vector< ShieldingSelect::NucMasFrac > ShieldingSelect::sourceNuclideMassFraction
     if( !element )
       continue;
     
+    double frac_sum = 0.0;
+    vector< ShieldingSelect::NucMasFrac > el_answer;
     const vector<WWidget *> &children = elDiv.second->children();
     for( WWidget *child : children )
     {
@@ -3583,21 +3679,22 @@ vector< ShieldingSelect::NucMasFrac > ShieldingSelect::sourceNuclideMassFraction
         continue;
 
       const SandiaDecay::Nuclide *iso = cb->isotope();
-      if( iso )
-      {
-        const double frac = cb->massFraction();
-        frac_sum += frac;
-        answer.emplace_back( iso, frac );
-      }
+      const double frac = cb->massFraction();
+      const bool fit = cb->fitMassFraction();
+      frac_sum += frac;
+      el_answer.emplace_back( iso, frac, fit );
     }//for( WWidget *child : children )
+    
+    assert( frac_sum < (1.0 + 1.0E-6) );
+    if( frac_sum > 1.0 )
+    {
+      for( auto &v : el_answer )
+        get<1>(v) /= frac_sum;
+    }
+    
+    if( !el_answer.empty() )
+      answer[element] = el_answer;
   }//for( const ElementToNuclideMap::value_type &elDiv : m_sourceIsotopes )
-  
-  assert( frac_sum < (1.0 + 1.0E-6) );
-  if( frac_sum > 1.0 )
-  {
-    for( auto &v : answer )
-      v.second /= frac_sum;
-  }
   
   return answer;
 }//std::vector< NucMasFrac > sourceNuclideMassFractions()
@@ -3605,17 +3702,20 @@ vector< ShieldingSelect::NucMasFrac > ShieldingSelect::sourceNuclideMassFraction
 
 vector<const SandiaDecay::Nuclide *> ShieldingSelect::selfAttenNuclides() const
 {
+  // We'll use a set at first to make sure we dont return duplicates (not necessary, just
+  //  a sanity check).
   set<const SandiaDecay::Nuclide *> answer;
+  const shared_ptr<const Material> &mat = m_currentMaterial;
 
-  std::shared_ptr<const Material> mat = m_currentMaterial;
-  const SandiaDecay::SandiaDecayDataBase *db = DecayDataBaseServer::database();
-
-  if( !mat || !db )
+  if( !mat )
     return vector<const SandiaDecay::Nuclide *>();
 
   for( const ElementToNuclideMap::value_type &elDiv : m_sourceIsotopes )
   {
+    const SandiaDecay::Element * const el = elDiv.first;
     const vector<WWidget *> &children = elDiv.second->children();
+    assert( el );
+    
     for( WWidget *child : children )
     {
       SourceCheckbox *cb = dynamic_cast<SourceCheckbox *>( child );
@@ -3626,28 +3726,55 @@ vector<const SandiaDecay::Nuclide *> ShieldingSelect::selfAttenNuclides() const
       if( !iso )
         continue;
 
+      assert( !el || (el->atomicNumber == iso->atomicNumber) );
+      
+      //We'll check to make sure this nuclide might be in the material before adding, as a
+      //  sanity check, that should never fail...
+      bool material_has_nuc = false;
       for( const Material::NuclideFractionPair &nfp : mat->nuclides )
-      {
-        if( nfp.first && (nfp.first==iso) )
-          answer.insert( nfp.first );
-      }//for( const Material::NuclideFractionPair &nfp : mat->nuclides )
-
-      const SandiaDecay::Element *el = db->element( iso->atomicNumber );
-
+        material_has_nuc |= (nfp.first && (nfp.first==iso));
+      
       for( const Material::ElementFractionPair &nfp : mat->elements )
+        material_has_nuc |= (nfp.first && (nfp.first==el));
+      
+      assert( material_has_nuc );
+      
+      if( material_has_nuc )
       {
-        if( nfp.first && (nfp.first==el) )
-          answer.insert( iso );
-      }//for( const Material::NuclideFractionPair &nfp : mat->nuclides )
+        //We shouldnt be encountering the same nuclide multiple times I dont think, so we'll check
+        assert( !answer.count(iso) );
+        answer.insert( iso );
+      }
     }//for( WWidget *child : children )
   }//for( const ElementToNuclideMap::value_type &elDiv : m_sourceIsotopes )
 
-  vector<const SandiaDecay::Nuclide *> nucs;
-  for( const SandiaDecay::Nuclide *n : answer )
-    nucs.push_back( n );
-
-  return nucs;
+  return vector<const SandiaDecay::Nuclide *>( begin(answer), end(answer) );
 }//std::vector<const SandiaDecay::Nuclide *> selfAttenNuclides() const
+
+
+vector<const SandiaDecay::Element *> ShieldingSelect::elementsFittingNonSourceComponent() const
+{
+  vector<const SandiaDecay::Element *> answer;
+  
+  for( const ElementToNuclideMap::value_type &elDiv : m_sourceIsotopes )
+  {
+    const SandiaDecay::Element * const el = elDiv.first;
+    const vector<WWidget *> &children = elDiv.second->children();
+    assert( el );
+    
+    for( WWidget *child : children )
+    {
+      SourceCheckbox *cb = dynamic_cast<SourceCheckbox *>( child );
+      if( cb && cb->isotope() && cb->useAsSource() )
+      {
+        answer.push_back( el );
+        break;
+      }
+    }//for( WWidget *child : children )
+  }//for( const ElementToNuclideMap::value_type &elDiv : m_sourceIsotopes )
+  
+  return vector<const SandiaDecay::Element *>( begin(answer), end(answer) );
+}//vector<const SandiaDecay::Element *> ShieldingSelect::elementsFittingNonSourceComponent() const
 
 
 double ShieldingSelect::nuclidesMassFractionInMaterial( const SandiaDecay::Nuclide * const iso,
@@ -3834,7 +3961,12 @@ void ShieldingSelect::modelNuclideAdded( const SandiaDecay::Nuclide *iso )
   cb->massFractionChanged().connect( boost::bind( &ShieldingSelect::handleIsotopicChange, this,
                                                  boost::placeholders::_1, iso ) );
 
+  const SandiaDecay::Element *el = db->element( iso->atomicNumber );
+  cb->fitMassFractionChecked().connect( boost::bind( &ShieldingSelect::handleFitMassFractionChanged, this, true, iso, el ) );
+  cb->fitMassFractionUnChecked().connect( boost::bind( &ShieldingSelect::handleFitMassFractionChanged, this, false, iso, el ) );
+  
   handleIsotopicChange( static_cast<float>(massFrac), iso );
+  handleFitMassFractionChanged( cb->fitMassFraction(), iso, el );
   
   cb->checked().connect( this, &ShieldingSelect::handleUserChangeForUndoRedo );
   cb->unChecked().connect( this, &ShieldingSelect::handleUserChangeForUndoRedo );
@@ -3914,7 +4046,7 @@ void ShieldingSelect::handleIsotopicChange( const float input_fraction,
           const double prev_frac = cb->massFraction();
           const double new_frac = ((other_src_amount == 0.0) || (total_other_src_in_mat == 0.0))
                         ? 0.0 : (other_src_amount * prev_frac / total_other_src_in_mat);
-          cb->setMassFraction( new_frac );
+          cb->setMassFraction( new_frac, -1.0 );
         }
       }//
     }//for( const auto &el_widgets = m_sourceIsotopes )
@@ -3936,7 +4068,7 @@ void ShieldingSelect::handleIsotopicChange( const float input_fraction,
       {
         setNucFraction = true;
         useNuclideAsSrc = cb->useAsSource();
-        cb->setMassFraction( fraction );
+        cb->setMassFraction( fraction, -1.0 );
       }else if( cb->useAsSource() )
       {
         total_other_in_el += cb->massFraction();
@@ -3962,7 +4094,7 @@ void ShieldingSelect::handleIsotopicChange( const float input_fraction,
       {
         const SandiaDecay::Nuclide * const this_nuc = cb->isotope();
         if( this_nuc != nuc )
-          cb->setMassFraction( multiple * cb->massFraction() );
+          cb->setMassFraction( multiple * cb->massFraction(), -1.0 );
       }//if( cb && cb->useAsSource() )
     }//
   }//if( total_in_el >= 1.0 )
@@ -3971,6 +4103,17 @@ void ShieldingSelect::handleIsotopicChange( const float input_fraction,
 
   materialModified().emit( this );
 }//void handleIsotopicChange( double fraction, const SandiaDecay::Nuclide *nuc )
+
+
+void ShieldingSelect::handleFitMassFractionChanged( const bool fit,
+                                  const SandiaDecay::Nuclide * const nuclide,
+                                  const SandiaDecay::Element *el )
+{
+  //Here, we need to make sure:
+  //  - At least two sources are selected, or zero are selected
+  //  - The "other" non-source component is either showing or not showing
+  
+}//void handleFitMassFractionChanged(...)
 
 
 void ShieldingSelect::updateSelfAttenOtherNucFractionTxt()
@@ -4029,12 +4172,15 @@ void ShieldingSelect::updateSelfAttenOtherNucFractionTxt()
       }else
       {
         // This is not correct - the user could have specified mass-fractions higher than the amount of element in original material - this isnt accounted for ehre
+        /*
+         blah blah blah blah blah
         const bool fit = (m_fitMassFrac && m_fitMassFrac->isVisible() && m_fitMassFrac->isChecked());
         const double percent_other = 100.0*(el_frac_in_material - el_mass_frac);
         otherfractxt->setText( WString::tr("ss-fixed-non-src-frac")
                               .arg( (fit ? WString::tr("ss-fixed") : WString()) )
                               .arg( SpecUtils::printCompact(percent_other, 4) )
                               .arg( vt.first->symbol ) );
+         */
       }
     }//if( otherfractxt )
   }//for( ElementToNuclideMap::value_type &vt : m_sourceIsotopes )
@@ -4089,7 +4235,7 @@ void ShieldingSelect::setMassFractionDisplaysToMaterial( std::shared_ptr<const M
       frac_accounted_for += massFrac;
       
       if( fabs(cb->massFraction() - massFrac) > 0.000001 )
-        cb->setMassFraction( massFrac );
+        cb->setMassFraction( massFrac, -1.0 );
       
       // Lets set a tool tip with a little more information
       string tt = nuc->symbol + " is " + SpecUtils::printCompact(100.0*massFrac, 4) + "%";
@@ -4811,21 +4957,8 @@ ShieldingSourceFitCalc::ShieldingInfo ShieldingSelect::toShieldingInfo() const
   
   
   // Self-atten source stuff
-  answer.m_fitMassFrac = false;
-  
-  const vector<NucMasFrac> selfAttens = sourceNuclideMassFractions();
-  if( !selfAttens.empty() )
-  {
-    answer.m_fitMassFrac = fitForMassFractions();
-    
-    for( const NucMasFrac &nmf : selfAttens )
-    {
-      const SandiaDecay::Nuclide * const nuc = nmf.first;
-      const double fraction = nmf.second;
-      
-      answer.m_nuclideFractions[nuc] = fraction;
-    }
-  }//if( !selfAttens.empty() )
+  const map<const SandiaDecay::Element *,vector<NucMasFrac>> selfAttens = sourceNuclideMassFractions();
+  answer.m_nuclideFractions_ = selfAttens;
   
   // Trace source stuff
   if( m_traceSources )
@@ -4944,7 +5077,24 @@ void ShieldingSelect::fromShieldingInfo( const ShieldingSourceFitCalc::Shielding
     
     handleMaterialChange();
     
-    setMassFractions( info.m_nuclideFractions );
+    // We dont have uncertainties of mass fraction, so to use `setMassFractions(...)` we need to
+    //  slightly convert formats from `info.m_nuclideFractions` to the format with uncertainty
+    map<const SandiaDecay::Element *,vector<MassFracInfo>> fractions;
+    for( const auto &i : info.m_nuclideFractions_ )
+    {
+      for( const auto &vals : i.second )
+      {
+        MassFracInfo info;
+        info.m_nuclide = get<0>(vals);
+        info.m_fraction = get<1>(vals);
+        info.m_frac_uncert = 0.0;
+        info.m_fit_mass_frac = get<2>(vals);
+        info.m_use_as_source = true;  //We are only tracking nuclides being used as sources, so this will be true
+        
+        fractions[i.first].push_back( info );
+      }
+    }
+    setMassFractions( fractions );
     
     //Now set the check boxes to make all the source nuclides called out in the
     //  XML as actual src nuclides, since we only saved nuclides we actually
@@ -4953,36 +5103,37 @@ void ShieldingSelect::fromShieldingInfo( const ShieldingSourceFitCalc::Shielding
     {
       const SandiaDecay::SandiaDecayDataBase *db = DecayDataBaseServer::database();
       set<SourceCheckbox *> setSources, allSources;
-      for( const auto &nucfrac : info.m_nuclideFractions )
+      for( const auto &el_nucfrac : info.m_nuclideFractions_ )
       {
-        const SandiaDecay::Nuclide * const nuc = nucfrac.first;
-        assert( nuc );
-        if( !nuc )
-          continue;
+        const SandiaDecay::Element * const el = el_nucfrac.first;
+        assert( el );
+        assert( !el_nucfrac.second.empty() );
         
-        //const SandiaDecay::Element * const el = db->element( nuc->atomicNumber );
-        //const double fracOfEl = m_currentMaterial->massFractionOfElementInMaterial(el);
-        //assert( fracOfEl > 0.0 );
-        //const double massFrac = (fracOfEl > 0.0) ? (nucfrac.second) / fracOfEl : 0.0;
-        const double massFrac = nucfrac.second;
-        
-        for( const ElementToNuclideMap::value_type &etnm : m_sourceIsotopes )
+        for( const tuple<const SandiaDecay::Nuclide *,double,bool> &nuc_info : el_nucfrac.second )
         {
-          for( WWidget *widget : etnm.second->children() )
+          const SandiaDecay::Nuclide * const nuc = get<0>(nuc_info);
+          const double massFrac = get<1>(nuc_info);
+          const bool fit_mass_frac = get<2>(nuc_info);
+          
+          for( const ElementToNuclideMap::value_type &etnm : m_sourceIsotopes )
           {
-            SourceCheckbox *src = dynamic_cast<SourceCheckbox *>( widget );
-            if( src )
-              allSources.insert( src );
-            
-            if( src && (nuc == src->isotope()) )
+            for( WWidget *widget : etnm.second->children() )
             {
-              setSources.insert( src );
-              src->setUseAsSource( true );
-              src->setMassFraction( massFrac );
+              SourceCheckbox *src = dynamic_cast<SourceCheckbox *>( widget );
+              if( src )
+                allSources.insert( src );
+              
+              if( src && (nuc == src->isotope()) )
+              {
+                setSources.insert( src );
+                src->setUseAsSource( true );
+                src->setFitMassFraction( fit_mass_frac );
+                src->setMassFraction( massFrac, -1.0 );
+              }
             }
-          }
-        }//for( const ElementToNuclideMap::value_type &etnm : m_sourceIsotopes )
-      }//for( const SandiaDecay::Nuclide *nuc : srcnuclides )
+          }//for( const ElementToNuclideMap::value_type &etnm : m_sourceIsotopes )
+        }//for( const tuple<const SandiaDecay::Nuclide *,double,bool> &nuc_info : el_nucfrac.second )
+      }//for( const auto &el_nucfrac : info.m_nuclideFractions_ )
       
       // Make sure SourceCheckbox present, that havent been set, are all set to not-sources.
       for( SourceCheckbox *src : allSources )
@@ -5010,8 +5161,11 @@ void ShieldingSelect::fromShieldingInfo( const ShieldingSourceFitCalc::Shielding
       }//for( const TraceSourceInfo &trace : info.m_traceSources )
     }//if( m_currentMaterial )
     
+    /*
+     blah blah blah blah blah
     if( m_forFitting && m_fitMassFrac )
       m_fitMassFrac->setChecked( info.m_fitMassFrac );
+    */
     
 #if( INCLUDE_ANALYSIS_TEST_SUITE )
     truthThickness = info.m_truthDimensions[0];
@@ -5091,7 +5245,6 @@ void ShieldingSelect::serialize( rapidxml::xml_node<char> *parent_node ) const
   /** Function to test that a ShieldingSelect is same as *this* - at least the components that get encoded to a URL. */
   auto testShieldingSelectPartiallySameAsOrig = [this]( const ShieldingSelect &test ){
     // We dont currently encode trace or self-attenuating source info
-    //  Wt::WCheckBox *m_fitMassFrac;
     //  Wt::WContainerWidget *m_asSourceCBs;
     //  ElementToNuclideMap m_sourceIsotopes;
     //  Wt::WContainerWidget *m_traceSources;
@@ -5214,12 +5367,11 @@ void ShieldingSelect::deSerialize( const rapidxml::xml_node<char> *shield_node,
   
   // If not for fitting, we shouldnt have intrinsic or trace sources
   assert( info.m_forFitting || info.m_traceSources.empty() );
-  assert( info.m_forFitting || info.m_nuclideFractions.empty() );
+  assert( info.m_forFitting || info.m_nuclideFractions_.empty() );
   
   if( is_fixed_geom_det )
   {
-    info.m_fitMassFrac = false;
-    info.m_nuclideFractions.clear();
+    info.m_nuclideFractions_.clear();
     info.m_traceSources.clear();
     info.m_geometry = GammaInteractionCalc::GeometryType::Spherical;
   }//if( is_fixed_geom_det )
