@@ -2520,10 +2520,8 @@ void expected_peak_width_limits( const float energy,
   
   // For really nice HPGe or micro-calorimeters, the resolution may be even better than
   //  expected from the above, so we'll also check the spectrum an allow the FWHM
-  //  go down to 2.12 channels/sigma (5 channels/FWHM).
-  //  At lower energies (~100 keV), nice HPGe are easily ~1.5 channels/sigma
-  //  so if anything we could probably cut this value down to 1.5 safely...
-  const double min_nchannel_sigma = 2.12;  //2.12*2.355=4.99
+  //  go down to ~6 channels (chosen arbitrarily - from one example file)
+  const double min_nchannel_sigma = 2.55;  //2.55*2.355=6.005
   if( highres && meas && (meas->num_gamma_channels() > (4096+2)) )
   {
     shared_ptr<const SpecUtils::EnergyCalibration> cal = meas->energy_calibration();
@@ -2539,7 +2537,7 @@ void expected_peak_width_limits( const float energy,
       }catch( std::exception & )
       {
         // probably wont ever get here
-      }//try / catch
+      }
     }//if( valid energy cal )
   }//if( highres )
 }//void expected_peak_width_limits(...)
