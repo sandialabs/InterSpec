@@ -3310,12 +3310,13 @@ void InterSpec::saveStateToDb( Wt::Dbo::ptr<UserState> entry )
     std::shared_ptr<const SpecMeas> second = measurment( SpecUtils::SpectrumType::SecondForeground );
     std::shared_ptr<const SpecMeas> background = measurment( SpecUtils::SpectrumType::Background );
     
+    const bool updateInDb = false; //We will update the file, or make a copy ourselves
     Dbo::ptr<UserFileInDb> dbforeground, dbsecond, dbbackground;
-    dbforeground = measurementFromDb( SpecUtils::SpectrumType::Foreground, true );
+    dbforeground = measurementFromDb( SpecUtils::SpectrumType::Foreground, updateInDb );
     if( foreground != second )
-      dbsecond = measurementFromDb( SpecUtils::SpectrumType::SecondForeground, true );
+      dbsecond = measurementFromDb( SpecUtils::SpectrumType::SecondForeground, updateInDb );
     if( (background != foreground) && (background != second) )
-      dbbackground = measurementFromDb( SpecUtils::SpectrumType::Background, true );
+      dbbackground = measurementFromDb( SpecUtils::SpectrumType::Background, updateInDb );
   
     //JIC, make sure indices have all been assigned to everything.
     m_sql->session()->flush();
@@ -3327,7 +3328,10 @@ void InterSpec::saveStateToDb( Wt::Dbo::ptr<UserState> entry )
       // We dont need to make a copy of the file if it was not part of a save state, but now its
       //  becoming part of one
       if( deepCopy && (dbfile->isPartOfSaveState || dbfile->snapshotParent) )
+      {
         dbfile = UserFileInDb::makeDeepCopyOfFileInDatabase( dbfile, *m_sql, true );
+        m_sql->session()->flush();
+      }
       
       dbfile.modify()->isPartOfSaveState = true;
       
@@ -3357,15 +3361,37 @@ void InterSpec::saveStateToDb( Wt::Dbo::ptr<UserState> entry )
     };//create_copy_or_update_in_db lambda
     
     create_copy_or_update_in_db( dbforeground, foreground );
-    create_copy_or_update_in_db( dbsecond, second );
-    create_copy_or_update_in_db( dbbackground, background );
-
     if( !dbforeground && foreground )
       throw runtime_error( "Error saving foreground to the database" );  //not displayed to user, so not internationalized
-    if( !dbsecond && second )
-      throw runtime_error( "Error saving second foreground to the database" );
-    if( !dbbackground && background )
-      throw runtime_error( "Error saving background to the database" );
+  
+    if( second )
+    {
+      if( second == foreground )
+      {
+        dbsecond = dbforeground;
+      }else
+      {
+        create_copy_or_update_in_db( dbsecond, second );
+        if( !dbsecond )
+          throw runtime_error( "Error saving second foreground to the database" );
+      }
+    }//if( second )
+    
+    if( background )
+    {
+      if( background == foreground )
+      {
+        dbbackground = dbforeground;
+      }else if( background == second )
+      {
+        dbbackground = dbsecond;
+      }else
+      {
+        create_copy_or_update_in_db( dbbackground, background );
+        if( !dbbackground )
+          throw runtime_error( "Error saving background to the database" );
+      }
+    }//if( background )
     
     //We need to make sure dbforeground, dbbackground, dbsecond will have been
     //  written to the database, so there id()'s will be not -1.
@@ -6078,33 +6104,38 @@ void InterSpec::saveStateForEndOfSession()
   
   
   // Remove existing end-of-session state
-  DataBaseUtils::DbTransaction transaction( *m_sql );
   try
   {
+    DataBaseUtils::DbTransaction transaction( *m_sql );
     Dbo::collection<Dbo::ptr<UserState>> prevEosStates = m_sql->session()->find<UserState>()
       .where( "InterSpecUser_id = ? AND StateType = ?" )
       .bind( m_user.id() )
       .bind( int(UserState::kEndOfSessionTemp) );
     
-    //assert( prevEosStates.size() <= 1 );
-    for( auto iter = prevEosStates.begin(); iter != prevEosStates.end(); ++iter )
-      UserState::removeFromDatabase( *iter, *m_sql );
+    try
+    {
+      for( auto iter = prevEosStates.begin(); iter != prevEosStates.end(); ++iter )
+        UserState::removeFromDatabase( *iter, *m_sql );
+    }catch( std::exception &e )
+    {
+      Wt::log("error") << "InterSpec::saveStateForEndOfSession() error removing last state: " << e.what();
+    }
+    
+    transaction.commit();
   }catch( std::exception &e )
   {
-    Wt::log("error") << "InterSpec::saveStateForEndOfSession() error removing last state: " << e.what();
-    transaction.rollback();
+    Wt::log("error") << "InterSpec::saveStateForEndOfSession() error getting last state: " << e.what();
     return;
   }
   
   // I we dont want to save states, or there is no foreground - nothing more to do here
   if( !saveState || !m_dataMeasurement )
-  {
-    transaction.commit();
     return;
-  }
   
   try
   {
+    DataBaseUtils::DbTransaction transaction( *m_sql );
+    
     // Check if we are connected with a database state
     const long long int current_state_index = currentAppStateDbId();
     Wt::Dbo::ptr<UserState> parentState;
@@ -6132,7 +6163,6 @@ void InterSpec::saveStateForEndOfSession()
   }catch( std::exception &e )
   {
     Wt::log("error") << "InterSpec::saveStateForEndOfSession() error: " << e.what();
-    transaction.rollback();
   }
 }//void saveStateForEndOfSession()
 #endif //#if( USE_DB_TO_STORE_SPECTRA )

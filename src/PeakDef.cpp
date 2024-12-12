@@ -2969,9 +2969,9 @@ std::string PeakDef::gaus_peaks_to_json(const std::vector<std::shared_ptr<const 
             }catch( std::exception & )
             {
               // CB dist can have really long tail, causing the coverage limits to fail, because
-              //  of unreasonable values - we'll limit it arbitrarily to 25 sigma
-              vis_limits.first = std::max( p.mean() - 25*p.sigma(), p.lowerX() );
-              vis_limits.second = std::min( p.mean() + 5*p.sigma(), p.upperX() );
+              //  of unreasonable values - in this case we'll use the entire ROI.
+              vis_limits.first = p.lowerX();
+              vis_limits.second = p.upperX();
             }
             break;
           case ExpGaussExp:
@@ -2981,24 +2981,30 @@ std::string PeakDef::gaus_peaks_to_json(const std::vector<std::shared_ptr<const 
                                                                   hidden_frac );
             break;
           case DoubleSidedCrystalBall:
-            if( p.coefficient(CoefficientType::SkewPar1) < 5.0
-               || p.coefficient(CoefficientType::SkewPar3) < 5.0)
-              hidden_frac = 1.0E-3; //DSCB doesnt behave well for power-law peaks...
+            // For largely skewed peaks, going out t 1E-6 is unreasonable, so we could limit
+            //  this to 1E-3, to improve chances of success.
+            //if( p.coefficient(CoefficientType::SkewPar1) < 5.0
+            //   || p.coefficient(CoefficientType::SkewPar3) < 5.0)
+            //  hidden_frac = 1.0E-3; //DSCB doesnt behave well for power-law peaks...
             
             try
             {
-              vis_limits = PeakDists::double_sided_crystal_ball_coverage_limits( p.mean(), p.sigma(),
-                                                                              p.coefficient(CoefficientType::SkewPar0),
-                                                                              p.coefficient(CoefficientType::SkewPar1),
-                                                                              p.coefficient(CoefficientType::SkewPar2),
-                                                                              p.coefficient(CoefficientType::SkewPar3),
-                                                                              hidden_frac );
+              const double mean = p.mean();
+              const double sigma = p.sigma();
+              const double left_skew = p.coefficient(CoefficientType::SkewPar0);
+              const double left_n = p.coefficient(CoefficientType::SkewPar1);
+              const double right_skew = p.coefficient(CoefficientType::SkewPar2);
+              const double right_n = p.coefficient(CoefficientType::SkewPar3);
+              const double p = hidden_frac;
+              
+              vis_limits = PeakDists::double_sided_crystal_ball_coverage_limits( mean, sigma,
+                                              left_skew, left_n, right_skew, right_n, hidden_frac );
             }catch( std::exception & )
             {
               // DSCB dist can have really long tail, causing the coverage limits to fail, because
-              //  of unreasonable values - we'll limit it arbitrarily to 25 sigma
-              vis_limits.first = std::max( p.mean() - 25*p.sigma(), p.lowerX() );
-              vis_limits.second = std::min( p.mean() + 25*p.sigma(), p.upperX() );
+              //  of unreasonable values - in this case we'll use the entire ROI.
+              vis_limits.first = p.lowerX();
+              vis_limits.second = p.upperX();
             }//try / catch
             
             break;
