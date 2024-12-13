@@ -1176,7 +1176,9 @@ SourceCheckbox::SourceCheckbox( const SandiaDecay::Nuclide *nuclide,
 
   WString txt = nuclide ? WString::fromUTF8(nuclide->symbol) : WString();
   m_useAsSourceCb = new WCheckBox( txt, this );
+  m_useAsSourceCb->addStyleClass( "UseAsSrcCb" );
   m_label = new WLabel( "--", this );
+  m_label->addStyleClass( "SelfAttenSrcLabel" );
   
   m_massFraction = new NativeFloatSpinBox( this );
   m_label->setBuddy( m_massFraction );
@@ -1191,7 +1193,7 @@ SourceCheckbox::SourceCheckbox( const SandiaDecay::Nuclide *nuclide,
   m_massFraction->setValue( massFrac );
 
   m_fitFraction = new WCheckBox( WString::tr("Fit"), this );
-  
+  m_fitFraction->addStyleClass( "FitFractionCb" );
   if( !nuclide )
   {
     m_useAsSourceCb->setUnChecked();
@@ -1215,6 +1217,13 @@ SourceCheckbox::SourceCheckbox( const SandiaDecay::Nuclide *nuclide,
 SourceCheckbox::~SourceCheckbox()
 {
 }
+
+
+void SourceCheckbox::setLabelText( const Wt::WString &label )
+{
+  m_label->setText( label );
+}
+
 
 void SourceCheckbox::handleUseCbChange()
 {
@@ -1248,12 +1257,16 @@ double SourceCheckbox::massFraction() const
 
 void SourceCheckbox::setMassFraction( double frac, double uncert )
 {
-  m_massFraction->setValue( frac );
+  m_massFraction->setValue( std::max( 0.0, std::min( 1.0, frac ) ) );
   
   if( uncert > 0.0 )
-    setToolTip( WString::tr("ss-tt-with-uncert").arg(frac).arg(uncert) );
-  else
+  {
+    const string txt = PhysicalUnits::printValueWithUncertainty( frac, uncert, 6 );
+    setToolTip( WString::tr("ss-tt-with-uncert").arg(txt) );
+  }else
+  {
     setToolTip( WString::tr("ss-tt-without") );
+  }
 }
 
 bool SourceCheckbox::useAsSource() const
@@ -3646,10 +3659,23 @@ map<const SandiaDecay::Element *,vector<ShieldingSelect::NucMasFrac>> ShieldingS
     double frac_sum = 0.0;
     vector< ShieldingSelect::NucMasFrac > el_answer;
     const vector<WWidget *> &children = elDiv.second->children();
+
+    // We dont want to include the "other" non-source component into the results, if we 
+    //  have no actial sources selected - so lets check for that first.
+    int num_use_as_src = 0;
     for( WWidget *child : children )
     {
       SourceCheckbox *cb = dynamic_cast<SourceCheckbox *>( child );
-      if( !cb || !cb->useAsSource() )
+      num_use_as_src += (cb && cb->isotope() && cb->useAsSource());
+    }
+
+    if( !num_use_as_src )
+      continue;
+
+    for( WWidget *child : children )
+    {
+      SourceCheckbox *cb = dynamic_cast<SourceCheckbox *>( child );
+      if( !cb || (cb->isotope() && !cb->useAsSource()) || (!cb->isotope() && !cb->fitMassFraction()) )  
         continue;
 
       const SandiaDecay::Nuclide *iso = cb->isotope();
@@ -3944,7 +3970,8 @@ void ShieldingSelect::modelNuclideAdded( const SandiaDecay::Nuclide *iso )
   {
     const double other_frac = std::max( 1.0 - accounted_for_frac, 0.0 );
     other_src_cb = new SourceCheckbox( nullptr, other_frac, isotopeDiv );
-    
+    other_src_cb->setLabelText( Wt::WString::tr("ss-non-src-frac-el").arg(element->symbol) );
+
     // The user input into mass fraction of this "other" non-src nuclide is disabled, so we
     //  dont need to hook it up to other_src_cb->handleIsotopicChange()....
     other_src_cb->fitMassFractionChecked().connect( 
@@ -3983,6 +4010,8 @@ void ShieldingSelect::modelNuclideAdded( const SandiaDecay::Nuclide *iso )
 
   if( m_asSourceCBs->isHidden() )
     m_asSourceCBs->show();
+
+  updateSelfAttenOtherNucFraction();
 }//void modelNuclideAdded( const std::string &symol )
 
 
@@ -4087,7 +4116,8 @@ void ShieldingSelect::handleFitMassFractionChanged( const bool fit,
   //  - The "other" non-source component is either showing or not showing
   //  - Adjust "other" amount based on what is currently checked
   //  - Hide "other" non-src cb, if no sources for this element are being used.
-  //blah blah blah
+  
+  updateSelfAttenOtherNucFraction();
 }//void handleFitMassFractionChanged(...)
 
 
@@ -4095,70 +4125,87 @@ void ShieldingSelect::updateSelfAttenOtherNucFraction()
 {
   for( ElementToNuclideMap::value_type &vt : m_sourceIsotopes )
   {
-    assert( vt.first );
-    //blah blah blah do stuff here
-    int nisos = 0;
-    double el_mass_frac = 0.0;
+    const SandiaDecay::Element *el = vt.first;
+    assert( el );
+    if( !el )
+      continue;
+
+    Wt::WText *warning = nullptr;
+    SourceCheckbox *non_src_frac_cb = nullptr;
+
+    int num_as_src = 0, num_fit_frac = 0;
+    double nuc_frac_in_el = 0.0;
     
-    WText *otherfractxt = 0;
     const vector<WWidget *> children = vt.second->children();
     for( WWidget *child : children )
     {
       SourceCheckbox *cb = dynamic_cast<SourceCheckbox *>( child );
-      if( cb )
+      if( !cb )
       {
-        if( cb->useAsSource() )
-        {
-          ++nisos;
-          el_mass_frac += cb->massFraction();
-        }
-      }else
+        WText *w = dynamic_cast<Wt::WText *>( child );
+        if( w && w->hasStyleClass( "warning" ) )
+          warning = w;
+        continue;
+      }
+
+      num_fit_frac += cb->fitMassFraction();
+
+      if( cb->isotope() && cb->useAsSource() )
       {
-        if( child->hasStyleClass( "MassFracNoFit" ) )
-          otherfractxt = dynamic_cast<WText *>( child );
-      }//if( !cb ) / else
+        ++num_as_src;
+        nuc_frac_in_el += cb->massFraction();
+      }
+      
+      if( !cb->isotope() )
+      {
+        assert( !non_src_frac_cb ); // Make sure we only have one non-src cb
+        non_src_frac_cb = cb;
+      }
     }//for( WWidget *child : children )
     
-    double el_frac_in_material = 0.0;
-    if( vt.first && m_currentMaterial )
-      el_frac_in_material = elementsMassFractionInMaterial( vt.first, m_currentMaterial );
-    
-    if( !nisos || (otherfractxt != children.back()) || (el_mass_frac >= el_frac_in_material) )
+    assert( !num_as_src || non_src_frac_cb );
+
+    // Check if we have more source fraction than 1.0, and if so, normalize all the source fractions
+    //  and set the "other" non-src fraction to be zero
+    if( num_as_src && (nuc_frac_in_el > 1.0) )
     {
-      if( otherfractxt )
-        delete otherfractxt;
-      otherfractxt = nullptr;
-    }//if( not using any source isotopes OR text isnt at bottom of div )
-    
-    if( nisos && !otherfractxt && (el_mass_frac < el_frac_in_material) )
-    {
-      otherfractxt = new WText( vt.second );
-      otherfractxt->addStyleClass( "MassFracNoFit" );
-      otherfractxt->setToolTip( WString::tr("ss-tt-fit-mass-frac") );
-    }//if( we have source isotopes, but no text )
-    
-    if( otherfractxt )
-    {
-      if( (el_frac_in_material - el_mass_frac) < (el_frac_in_material*1.0E-5) )
+      nuc_frac_in_el = 1.0;
+      for( WWidget *child : children )
       {
-        //Pretty much all the mass of this element is accounted for, so dont
-        //  display this text
-        delete otherfractxt;
-        otherfractxt = nullptr;
-      }else
-      {
-        // This is not correct - the user could have specified mass-fractions higher than the amount of element in original material - this isnt accounted for ehre
-        /*
-         blah blah blah blah blah
-        const bool fit = (m_fitMassFrac && m_fitMassFrac->isVisible() && m_fitMassFrac->isChecked());
-        const double percent_other = 100.0*(el_frac_in_material - el_mass_frac);
-        otherfractxt->setText( WString::tr("ss-fixed-non-src-frac")
-                              .arg( (fit ? WString::tr("ss-fixed") : WString()) )
-                              .arg( SpecUtils::printCompact(percent_other, 4) )
-                              .arg( vt.first->symbol ) );
-         */
-      }
-    }//if( otherfractxt )
+        SourceCheckbox *cb = dynamic_cast<SourceCheckbox *>( child );
+        if( cb && cb->useAsSource() && cb->isotope() )
+        {
+          const double new_frac = cb->massFraction() / nuc_frac_in_el;
+          cb->setMassFraction( new_frac, 0.0 );
+        }
+      }//for( WWidget *child : children )
+    }//if( num_as_src && (nuc_frac_in_el > 1.0) )
+
+    if( !num_as_src && non_src_frac_cb )
+      non_src_frac_cb->setFitMassFraction(false);
+
+    assert( non_src_frac_cb || (num_as_src == 0) );
+    if( non_src_frac_cb )
+    {
+      const double other_frac = 1.0 - nuc_frac_in_el;
+      non_src_frac_cb->setMassFraction( other_frac, 0.0 );
+    }
+
+    if( (num_fit_frac == 1) && !warning )
+    {
+      warning = new Wt::WText( WString::tr("ss-warning-only-one-src-frac").arg(el->name), vt.second );
+      warning->setStyleClass( "warning" );
+      // Alternatively, if there is only one source fraction that is being fit, then we need to fit the "other" non-src fraction
+      //  to make sure the total source fraction is 1.0
+      //if( non_src_frac_cb )
+      //  non_src_frac_cb->setFitMassFraction( true );
+    }
+    
+    if( warning )
+      warning->setHidden( (num_fit_frac != 1) );
+
+    if( non_src_frac_cb )
+      non_src_frac_cb->setHidden( (num_as_src == 0) );
   }//for( ElementToNuclideMap::value_type &vt : m_sourceIsotopes )
 }//void updateSelfAttenOtherNucFraction();
 

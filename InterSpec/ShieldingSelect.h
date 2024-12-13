@@ -133,6 +133,7 @@ public:
   Wt::EventSignal<> &fitMassFractionChecked();
   Wt::EventSignal<> &fitMassFractionUnChecked();
   
+  void setLabelText( const Wt::WString &label );
 protected:
   void handleUseCbChange();
   void handleFitMassFractionChanged();

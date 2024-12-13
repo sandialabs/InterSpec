@@ -3113,14 +3113,14 @@ ShieldingSourceChi2Fcn::ShieldingSourceChi2Fcn(
         
         int hasElement = 0;
         for( const auto &p : material->elements )
-          hasElement += (p.first->atomicNumber == nuc->atomicNumber);
+          hasElement += (p.first->atomicNumber == el->atomicNumber);
         
         for( const auto &p : material->nuclides )
-          hasElement += (p.first == nuc);
+          hasElement += nuc ? (p.first == nuc) : 0;
         
         if( !hasElement )
           throw runtime_error( "ShieldingSourceChi2Fcn: self attenuating nuclide "
-                              + nuc->symbol + " not in shielding " + material->name );
+                              + (nuc ? nuc->symbol : "other nuclides") + " not in shielding " + material->name );
       }//for( const auto &nuc_frac_fit : nucs )
       
       if( num_fit == 1 )
@@ -7035,7 +7035,7 @@ void ShieldingSourceChi2Fcn::log_shield_info( const vector<double> &params,
         vector<const SandiaDecay::Nuclide *> fit_frac_nucs;
         for( const auto &el_nucs : fit_frac_el_to_nucs )
         {
-          for( const const SandiaDecay::Nuclide *nuc : el_nucs.second )
+          for( const SandiaDecay::Nuclide *nuc : el_nucs.second )
           {
             if( !nuc )
               continue;

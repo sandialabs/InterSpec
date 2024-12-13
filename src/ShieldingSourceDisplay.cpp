@@ -7672,7 +7672,9 @@ void ShieldingSourceDisplay::updateActivityOfShieldingIsotope( ShieldingSelect *
                                        const SandiaDecay::Nuclide *nuc )
 {
   // This function gets called when shielding changes for either self-attenuating or trace sources.
-
+  if( !nuc ) //This can happen if fitting for "other" non-source nuclides fraction.
+    return;
+  
   shared_ptr<const Material> material = select ? select->material() : nullptr;
   
   if( !select || select->isGenericMaterial() || !material || !nuc )
@@ -7851,7 +7853,7 @@ void ShieldingSourceDisplay::isotopeRemovedAsVolumetricSourceCallback(
 {
   //Set appropriate flags in the SourceFitModel so activity will be editiable
   
-  assert( m_sourceModel->sourceType(m_sourceModel->nuclideIndex(nuc)) == type );
+  assert( !nuc || (m_sourceModel->sourceType(m_sourceModel->nuclideIndex(nuc)) == type) );
 
   m_sourceModel->setSourceType( nuc, ShieldingSourceFitCalc::ModelSourceType::Point );
   
@@ -8435,7 +8437,7 @@ void ShieldingSourceDisplay::updateGuiWithModelFitResults( std::shared_ptr<Shiel
         m_currentFitFcn->massFraction( frac, uncert, shielding_index, nuc, el,
                                       paramValues, paramErrors );
       
-        postfitsums[nuc->atomicNumber] += frac;
+        postfitsums[el->atomicNumber] += frac;
         
         ShieldingSelect::MassFracInfo info;
         info.m_nuclide = nuc;
