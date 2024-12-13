@@ -327,9 +327,8 @@ public:
   //  the Material passed in.
   void setMassFractionDisplaysToMaterial( std::shared_ptr<const Material> mat );
 
-  /** Sets the "Assuming X% other Y isos" text for self-attenuating sources.
-   */
-  void updateSelfAttenOtherNucFractionTxt();
+  /** Adjusts the "other" non-src nuclide row entry, to reflect one mins checked source nuclides fraction */
+  void updateSelfAttenOtherNucFraction();
   
   /** Returns the isotopes currently checked for use as self-attenuating sources. 
    
@@ -637,7 +636,8 @@ protected:
    changes the isotopic composition of the element.  (i.e. the mass-fraction of the element
    will stay the same).
    */
-  void handleIsotopicChange( const float fraction, const SandiaDecay::Nuclide * const nuclide );
+  void handleIsotopicChange( const float fraction, 
+                            const SandiaDecay::Nuclide * const nuclide );
 
   /** Called when fit mass fraction checkbox is changed for a nuclide.
    If it is the "other nucs" checkbox, then nuclide will be nullptr, and element will say which element this is for.
@@ -651,16 +651,16 @@ protected:
   
   /** Returns the mass-fraction of the nuclide, of the entire material.
  
-   If the material specifies the isotopic fractions, that value (the mass fraction relative to the entire material) will be returned.
+   If the material specifies the isotopic fractions, that value (the mass fraction relative to the element) will be returned.
    If the material specifies just the element of the nuclide, and the nuclide is a naturally present nuclide, then
-   the function returns the elements mass fraction, times the nuclides natural abundance.
+   the function returns the elements mass fraction.
    If the element is specified, but the nuclide is not a naturally present nuclide, returns the element mass fraction time
    1 over the total number of nuclides in element (this is a fairly arbitrary behavior).
    
    Throws exception if material does not contain the nuclide, or the element of the nuclide.
    Also throws exception if nuclide or material are nullptr.
    */
-  static double nuclidesMassFractionInMaterial( const SandiaDecay::Nuclide * const iso,
+  static double nuclidesMassFractionInElementOfMaterial( const SandiaDecay::Nuclide * const iso,
                                        const std::shared_ptr<const Material> &mat );
 
   static double elementsMassFractionInMaterial( const SandiaDecay::Element * const el,
@@ -672,9 +672,10 @@ protected:
   //isotopeUnCheckedCallback(...): emits the removingIsotopeAsSource() signal
   void isotopeUnCheckedCallback( const SandiaDecay::Nuclide *iso );
 
-  //updateIfMassFractionCanFit(): makes sure there are at least two material
-  //  isotopes being used as sources, and if so, updates m_fitMassFrac
-  void updateIfMassFractionCanFit();
+  /** Checks if only a single isotope is fitting mass-fraction, then will also make sure "other" non-src fraction will be fit.
+   Will also hide/show "other" non-src fraction, depending if any nuclides are being used.
+   */
+  void checkAndUpdateMassFractionCanFit();
 
   /** Returns the trace source widget for the specfied nuclide, or nullptr if nuclide is not a trace source. */
   const TraceSrcDisplay *traceSourceWidgetForNuclide( const SandiaDecay::Nuclide *nuc ) const;
