@@ -1703,7 +1703,7 @@ void TraceSourceInfo::equalEnough( const TraceSourceInfo &lhs, const TraceSource
     
     // Self-atten source stuff
     if( lhs.m_nuclideFractions_.size() != rhs.m_nuclideFractions_.size() )
-      throw runtime_error( "ShieldingInfo LHS NumSourceElements != RHS NumSourceElements" );
+      throw runtime_error( "ShieldingInfo LHS NumSourceElements (" + std::to_string(lhs.m_nuclideFractions_.size()) + ") != RHS NumSourceElements (" + std::to_string(rhs.m_nuclideFractions_.size()) + ")" );
     
     for( const auto &elToNucFrac : lhs.m_nuclideFractions_ )
     {
@@ -1729,7 +1729,9 @@ void TraceSourceInfo::equalEnough( const TraceSourceInfo &lhs, const TraceSource
       const vector<tuple<const SandiaDecay::Nuclide *,double,bool>> &rhs_nucs = rhs_el_pos->second;
       
       if( lhs_nucs.size() != rhs_nucs.size() )
-        throw runtime_error( "ShieldingInfo LHS NumSourceElements != RHS NumSourceElements for " + el->symbol );
+        throw runtime_error( "ShieldingInfo LHS number of nucs (" + std::to_string(lhs_nucs.size()) 
+                            + ") != RHS number of nucs (" + std::to_string(rhs_nucs.size()) 
+                            + ") for " + el->symbol );
       
       for( const tuple<const SandiaDecay::Nuclide *,double,bool> &lhs_nuc : lhs_nucs )
       {

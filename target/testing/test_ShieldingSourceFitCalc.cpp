@@ -264,22 +264,24 @@ BOOST_AUTO_TEST_CASE( ShieldingInfoUri )
     
     
     // Self-atten source stuff
-    info.m_fitMassFrac = true;
-    
     {// Begin add self-atten source
-      map<const SandiaDecay::Nuclide *,double> &el_to_nuc_frac = info.m_nuclideFractions;
+      map<const SandiaDecay::Element *,vector<tuple<const SandiaDecay::Nuclide *,double,bool>>> 
+        &el_to_nuc_frac = info.m_nuclideFractions_;
       
       const SandiaDecay::Nuclide *nuc = db->nuclide( "U-238" );
-      BOOST_REQUIRE( nuc );
-      el_to_nuc_frac[nuc] = 0.8;
+      const SandiaDecay::Element *el = db->element( nuc->atomicNumber );
+      BOOST_REQUIRE( nuc && el );
+      el_to_nuc_frac[el].emplace_back( nuc, 0.8, true );
       
       nuc = db->nuclide( "U-235" );
-      BOOST_REQUIRE( nuc );
-      el_to_nuc_frac[nuc] = 0.15;
+      el = db->element( nuc->atomicNumber );
+      BOOST_REQUIRE( nuc && el );
+      el_to_nuc_frac[el].emplace_back( nuc, 0.15, true );
       
       nuc = db->nuclide( "U-232" );
-      BOOST_REQUIRE( nuc );
-      el_to_nuc_frac[nuc] = 2.5E-8;
+      el = db->element( nuc->atomicNumber );
+      BOOST_REQUIRE( nuc && el );
+      el_to_nuc_frac[el].emplace_back( nuc, 2.5E-8, false );
     }// End add self-atten source
     
     // Trace-source stuff
@@ -519,6 +521,7 @@ std::tuple<bool,int,int,vector<string>> test_fit_against_truth( const ShieldingS
   bool successful = true;
   int numCorrect = 0, numTested = 0;
   vector<string> textInfoLines;
+  const SandiaDecay::SandiaDecayDataBase * const db = DecayDataBaseServer::database();    
 
   try
   {
@@ -540,8 +543,16 @@ std::tuple<bool,int,int,vector<string>> test_fit_against_truth( const ShieldingS
       bool isSelfAtten = false;
       
       for( const auto &shield : results.initial_shieldings )
-        isSelfAtten = (isSelfAtten || (shield.m_nuclideFractions.count(nuc) != 0));
-      
+      {
+        const SandiaDecay::Element *el = db->element( nuc->atomicNumber );
+        auto el_nucs = shield.m_nuclideFractions_.find(el); 
+        if( el_nucs != end(shield.m_nuclideFractions_) )
+        {
+          for( const auto &nuc_frac : el_nucs->second )
+            isSelfAtten |= (std::get<0>(nuc_frac) == nuc);
+        }
+      }//for( const auto &shield : results.initial_shieldings )
+
       if( src.fitActivity && !isSelfAtten )
       {
         const boost::optional<double> &truthAct = src.truthActivity;
@@ -780,55 +791,68 @@ std::tuple<bool,int,int,vector<string>> test_fit_against_truth( const ShieldingS
             break;
         }//switch( geom )
         
-        
-        if( shield.m_fitMassFrac )
-        {
-          auto checkMassFrac = [shield, mat, &successful, &textInfoLines, &numTested, &numCorrect](
-                                    const SandiaDecay::Nuclide * const nuc, const double value ){
-            BOOST_REQUIRE( nuc );
-            const auto truth_pos = shield.m_truthFitMassFractions.find(nuc);
-            BOOST_CHECK_MESSAGE( truth_pos != end(shield.m_truthFitMassFractions),
-                                "Missing truth mass-fraction for " + nuc->symbol );
-                                      
-            if( truth_pos == end(shield.m_truthFitMassFractions) )
-            {
-              successful = false;
-              textInfoLines.push_back( "Missing truth mass-fraction for " + nuc->symbol );
-              return;
-            }
+        auto checkMassFrac = [shield, mat, &successful, &textInfoLines, &numTested, &numCorrect](
+                                    const SandiaDecay::Nuclide * const nuc, 
+                                    const SandiaDecay::Element * const el, 
+                                    double value ){
+          BOOST_REQUIRE( el );
+          const auto truth_nucs_pos = shield.m_truthFitMassFractions.find(el);
+          BOOST_CHECK_MESSAGE( truth_nucs_pos != end(shield.m_truthFitMassFractions),
+                              "Missing truth mass-fraction for " + el->symbol );
+
+          if( truth_nucs_pos == end(shield.m_truthFitMassFractions) )
+          {
+            successful = false;
+            textInfoLines.push_back( "Missing truth mass-fractions for element " + el->symbol );
+            return;
+          }
+
+          const map<const SandiaDecay::Nuclide *,pair<double,double>> &nucs = truth_nucs_pos->second;
+          auto truth_pos = nucs.find(nuc);
+          BOOST_CHECK_MESSAGE( truth_pos != end(nucs),
+                                "Missing truth mass-fraction for " + (nuc ? nuc->symbol : "other nuclides") );
+          if( truth_pos == end(nucs) )
+          {
+            successful = false;
+            textInfoLines.push_back( "Missing truth mass-fraction for " + (nuc ? nuc->symbol : "other nuclides") );
+            return;
+          }                           
+          
                                   
-            const double truthval = truth_pos->second.first;
-            const double truthtol = truth_pos->second.second;
-            BOOST_CHECK_MESSAGE( (truthval >= 0.0) && (truthval <= 1.0) && (truthtol >= 0.0) && (truthtol <= 1.0),
-                                "Invalid truth mass-fraction for " + nuc->symbol );
+          const double truthval = get<0>(truth_pos->second);
+          const double truthtol = get<1>(truth_pos->second);
+          BOOST_CHECK_MESSAGE( (truthval >= 0.0) && (truthval <= 1.0) && (truthtol >= 0.0) && (truthtol <= 1.0),
+                                "Invalid truth mass-fraction for " + (nuc ? nuc->symbol : "other nuclides") );
                                       
-            if( (truthval < 0.0) || (truthval > 1.0) || (truthtol < 0.0) || (truthtol > 1.0) )
-            {
-              successful = false;
-              textInfoLines.push_back( "Invalid truth mass-fraction for " + nuc->symbol );
-              return;
-            }
+          if( (truthval < 0.0) || (truthval > 1.0) || (truthtol < 0.0) || (truthtol > 1.0) )
+          {
+            successful = false;
+            textInfoLines.push_back( "Invalid truth mass-fraction for " + (nuc ? nuc->symbol : "other nuclides") );
+            return;
+          }
             
-            numTested += 1;
-            const bool closeEnough = ((value >= (truthval - truthtol)) && (value <= (truthval + truthtol)));
-            numCorrect += closeEnough;
+          numTested += 1;
+          const bool closeEnough = ((value >= (truthval - truthtol)) && (value <= (truthval + truthtol)));
+          numCorrect += closeEnough;
             
-            textInfoLines.push_back( "For shielding '" + mat->name + "' fit " + nuc->symbol
-                                     + " to have mass fraction " + PhysicalUnits::printCompact(value, 5)
-                                     + " with the truth value of " + PhysicalUnits::printCompact(truthval,5)
-                                     + " and tolerance " + PhysicalUnits::printCompact(truthtol,5)
+          textInfoLines.push_back( "For shielding '" + mat->name + "' fit " + (nuc ? nuc->symbol : "other nuclides")
+                                     + " to have mass fraction " + SpecUtils::printCompact(value, 5)
+                                     + " with the truth value of " + SpecUtils::printCompact(truthval,5)
+                                     + " and tolerance " + SpecUtils::printCompact(truthtol,5)
                                      + (closeEnough ? " - within tolerance." : " - out of tolerance." ) );
                                       
-            BOOST_CHECK_MESSAGE( (value >= (truthval - truthtol)) && (value <= (truthval + truthtol)),
+          BOOST_CHECK_MESSAGE( (value >= (truthval - truthtol)) && (value <= (truthval + truthtol)),
                                 textInfoLines.back() );
-          };//checkMassFrac( ... )
+        };//checkMassFrac( ... )
           
-          for( const auto &nuc_frac : shield.m_nuclideFractions )
+        for( const auto &el_nucs : shield.m_nuclideFractions_ )
+        {
+          const SandiaDecay::Element * const el = el_nucs.first;
+          for( const tuple<const SandiaDecay::Nuclide *,double,bool> &nuc_frac : el_nucs.second )
           {
-            checkMassFrac( nuc_frac.first, nuc_frac.second );
-          }//for( const auto &prev_nuc_frac : shield.m_nuclideFractionUncerts )
-        }//if( select->fitForMassFractions() )
-        
+            checkMassFrac( std::get<0>(nuc_frac), el, std::get<1>(nuc_frac) );
+          }
+        }//for( const auto &prev_nuc_frac : shield.m_nuclideFractionUncerts )
       }//if( generic material ) / else
     }//for( WWidget *widget : m_shieldingSelects->children() )
     
@@ -885,15 +909,25 @@ void set_fit_quantities_to_default_values( vector<ShieldingSourceFitCalc::Shield
         continue;
       
       // Set mass-fractions to all be even, if we are fitting for them
-      if( shield.m_nuclideFractions.size() && shield.m_fitMassFrac )
+      for( auto &el_nucs : shield.m_nuclideFractions_ )
       {
-        double frac_sum = 0.0;
-        for( const auto &nuc : shield.m_nuclideFractions )
-          frac_sum += nuc.second;
-        
-        for( auto &nuc : shield.m_nuclideFractions )
-          nuc.second = (frac_sum / shield.m_nuclideFractions.size());
-      }//if( shield.m_nuclideFractions.size() && shield.m_fitMassFrac )
+        int num_fit = 0;
+        double frac_fit_sum = 0.0;
+          
+        for( const tuple<const SandiaDecay::Nuclide *,double,bool> &nuc_frac : el_nucs.second )
+        {
+          num_fit += std::get<2>(nuc_frac);
+          if( std::get<2>(nuc_frac) )
+            frac_fit_sum += std::get<1>(nuc_frac);
+        }
+        assert( num_fit != 1 );
+        for( tuple<const SandiaDecay::Nuclide *,double,bool> &nuc_frac : el_nucs.second )
+        {
+          if( std::get<2>(nuc_frac) )
+            std::get<1>(nuc_frac) = (frac_fit_sum / num_fit);
+        }
+      }//for( auto &el_nucs : shield.m_nuclideFractions_ )
+      
       
       switch( shield.m_geometry )
       {
@@ -1094,7 +1128,9 @@ BOOST_AUTO_TEST_CASE( FitAnalystTraceSource )
 BOOST_AUTO_TEST_CASE( FitAnalystShieldingSourcecases )
 {
   set_data_dir();
-  
+
+  cout << "Starting FitAnalystShieldingSourcecases" << endl;
+
   const SandiaDecay::SandiaDecayDataBase * const db = DecayDataBaseServer::database();
   BOOST_REQUIRE_MESSAGE( db, "Error initing SandiaDecayDataBase" );
  
@@ -1364,6 +1400,18 @@ BOOST_AUTO_TEST_CASE( FitAnalystShieldingSourcecases )
     
     BOOST_CHECK_MESSAGE( src_definitions.size() >= 1,
                         "Analyst file '" << n42_filename << "' no sources defined." );
+    
+    // Check that the number of fit nuclides in `src_definitions` matches the sources in the peaks
+    set<const SandiaDecay::Nuclide *> peak_fit_nucs;
+    for( const auto &p : *foreground_peaks )
+    {
+      if( p->parentNuclide() && p->useForShieldingSourceFit())
+        peak_fit_nucs.insert( p->parentNuclide() );
+    }
+    
+    BOOST_CHECK_MESSAGE( peak_fit_nucs.size() == src_definitions.size(),
+                        "Analyst file '" << n42_filename << "' has mismatching number of sources in peaks ("
+                        << peak_fit_nucs.size() << "), vs src_definitions (" << src_definitions.size() << ")" );
     
     
     set_fit_quantities_to_default_values( shield_definitions, src_definitions );

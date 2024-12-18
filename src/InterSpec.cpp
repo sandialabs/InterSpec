@@ -5298,6 +5298,11 @@ void InterSpec::storeTestStateToN42( const Wt::WString name, const Wt::WString d
     if( !output.is_open() )
       throw runtime_error( "Couldnt open test file output '" + filepath + "'" );
     
+    saveShieldingSourceModelToForegroundSpecMeas();
+  #if( USE_REL_ACT_TOOL )
+    saveRelActManualStateToForegroundSpecMeas();
+    saveRelActAutoStateToForegroundSpecMeas();
+  #endif
     
     SpecMeas meas;
     meas.uniqueCopyContents( *m_dataMeasurement );
@@ -5392,17 +5397,6 @@ void InterSpec::storeTestStateToN42( const Wt::WString name, const Wt::WString d
                                       "DisplayedBackgroundSampleNumber", val );
       InterSpecNode->append_node( backgroundsamples_node );
     }//if( newbacksamples.size() )
-    
-    if( m_shieldingSourceFit
-        && m_shieldingSourceFit->userChangedDuringCurrentForeground() )
-    {
-      m_shieldingSourceFit->serialize( InterSpecNode );
-      cerr << "\n\nThe shielding/source fit model WAS changed for current foreground" << endl;
-    }else
-    {
-      cerr << "\n\nThe shielding/source fit model was NOT changed for current foreground" << endl;
-    }
-    
     
     const char *val = n42doc->allocate_string( timestr.c_str(), timestr.size()+1 );
     xml_node<char> *node = n42doc->allocate_node( node_element, "TestSaveDateTime", val );
@@ -5687,6 +5681,7 @@ void InterSpec::startStoreTestState()
     const WString name = edit ? edit->text() : WString();
     const WString sumtxt = summary ? summary->text() : WString();
     storeTestStateToN42( name, sumtxt );
+    window->hide();
   } ) );
   
   window->setMinimumSize(WLength(450), WLength(250));

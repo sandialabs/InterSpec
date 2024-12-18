@@ -43,7 +43,6 @@ release-builds*
 package-lock.json
 node_modules
 documentation
-testing
 README.txt
 *.tmp
 *.zip

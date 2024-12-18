@@ -1580,7 +1580,7 @@ void ShieldingSelect::setMassFractions( map<const SandiaDecay::Element *,vector<
     //assert( frac_pos != end(fractions) );
     if( frac_pos != end(fractions) )
        nuc_infos = &(frac_pos->second);
-    
+
     const vector<WWidget *> &children = elDiv.second->children();
     for( WWidget *child : children )
     {
@@ -1590,17 +1590,18 @@ void ShieldingSelect::setMassFractions( map<const SandiaDecay::Element *,vector<
       
       const SandiaDecay::Nuclide * const nuc = cb->isotope();
       used_input_nuclides.erase( nuc );
-      
+
+      double src_frac_sum = 0.0; 
       const ShieldingSelect::MassFracInfo *nuc_info = nullptr;
       if( nuc_infos )
       {
         for( const ShieldingSelect::MassFracInfo &i : *nuc_infos )
         {
           if( i.m_nuclide == nuc )
-          {
             nuc_info = &i;
-            break;
-          }//if( get<0>(i) == nuc )
+          
+          if( i.m_nuclide && i.m_use_as_source )
+            src_frac_sum += i.m_fraction;
         }//for( const auto &i : *nuc_infos )
       }//if( nuc_infos )
       
@@ -1610,7 +1611,15 @@ void ShieldingSelect::setMassFractions( map<const SandiaDecay::Element *,vector<
       
       cb->setUseAsSource( source_nuc );
       if( source_nuc )
+      {
         cb->setMassFraction( nuc_info->m_fraction, nuc_info->m_frac_uncert );
+      }else if( !nuc_info )
+      {
+        if( !nuc )
+          cb->setMassFraction( std::max(1.0 - src_frac_sum, 0.0), 0.0 );
+        cb->setFitMassFraction( false );
+        cb->setUseAsSource( false );
+      }
     }//for( WWidget *child : children )
   }//for( const ElementToNuclideMap::value_type &elDiv : m_sourceIsotopes )
   
@@ -3656,7 +3665,6 @@ map<const SandiaDecay::Element *,vector<ShieldingSelect::NucMasFrac>> ShieldingS
     if( !element )
       continue;
     
-    double frac_sum = 0.0;
     vector< ShieldingSelect::NucMasFrac > el_answer;
     const vector<WWidget *> &children = elDiv.second->children();
 
@@ -3672,25 +3680,47 @@ map<const SandiaDecay::Element *,vector<ShieldingSelect::NucMasFrac>> ShieldingS
     if( !num_use_as_src )
       continue;
 
+    double frac_sum = 0.0;
     for( WWidget *child : children )
     {
       SourceCheckbox *cb = dynamic_cast<SourceCheckbox *>( child );
+
+      const SandiaDecay::Nuclide *iso = cb ? cb->isotope() : nullptr;
+      assert( !iso || (iso->atomicNumber == element->atomicNumber));
+      
       if( !cb || (cb->isotope() && !cb->useAsSource()) || (!cb->isotope() && !cb->fitMassFraction()) )  
         continue;
 
-      const SandiaDecay::Nuclide *iso = cb->isotope();
-      const double frac = cb->massFraction();
-      const bool fit = cb->fitMassFraction();
-      frac_sum += frac;
-      el_answer.emplace_back( iso, frac, fit );
+      const double mass_frac = cb->massFraction();
+      const bool fit_mass_frac = cb->fitMassFraction();
+      frac_sum += mass_frac;
+
+      el_answer.emplace_back( iso, mass_frac, fit_mass_frac );
     }//for( WWidget *child : children )
     
     assert( frac_sum < (1.0 + 1.0E-6) );
+
     if( frac_sum > 1.0 )
     {
+      const double frac_over = frac_sum - 1.0;
       for( auto &v : el_answer )
-        get<1>(v) /= frac_sum;
-    }
+      {
+        if( !get<0>(v) )
+        {
+          double other_frac = get<1>(v);
+          const double to_sub = std::min( other_frac, frac_over );  
+          get<1>(v) -= to_sub;
+          frac_sum -= to_sub;
+          break;
+        }
+      }
+
+      for( auto &v : el_answer )
+      {
+        if( get<0>(v) )
+          get<1>(v) /= frac_sum;
+      }
+    }//if( frac_sum > 1.0 )
     
     if( !el_answer.empty() )
       answer[element] = el_answer;
@@ -3970,6 +4000,7 @@ void ShieldingSelect::modelNuclideAdded( const SandiaDecay::Nuclide *iso )
   {
     const double other_frac = std::max( 1.0 - accounted_for_frac, 0.0 );
     other_src_cb = new SourceCheckbox( nullptr, other_frac, isotopeDiv );
+    other_src_cb->setFitMassFraction( false );
     other_src_cb->setLabelText( Wt::WString::tr("ss-non-src-frac-el").arg(element->symbol) );
 
     // The user input into mass fraction of this "other" non-src nuclide is disabled, so we
@@ -5005,7 +5036,7 @@ void ShieldingSelect::fromShieldingInfo( const ShieldingSourceFitCalc::Shielding
   if( m_forFitting != info.m_forFitting )
     throw runtime_error( "ShieldingSelect m_forFitting must be same as XML being deserialized" );
   
-  
+
   if( info.m_isGenericMaterial )
   {
     m_geometry = GeometryType::Spherical;
@@ -5139,6 +5170,11 @@ void ShieldingSelect::fromShieldingInfo( const ShieldingSourceFitCalc::Shielding
           
           for( const ElementToNuclideMap::value_type &etnm : m_sourceIsotopes )
           {
+            // The "other" non-src fraction is nullptr for all elements, so lets
+            //  make sure to match element, as well as nuclide.
+            if( etnm.first != el )
+              continue;
+
             for( WWidget *widget : etnm.second->children() )
             {
               SourceCheckbox *src = dynamic_cast<SourceCheckbox *>( widget );
@@ -5148,9 +5184,10 @@ void ShieldingSelect::fromShieldingInfo( const ShieldingSourceFitCalc::Shielding
               if( src && (nuc == src->isotope()) )
               {
                 setSources.insert( src );
-                src->setUseAsSource( true );
+                if( nuc )
+                  src->setUseAsSource( true );
                 src->setFitMassFraction( fit_mass_frac );
-                src->setMassFraction( massFrac, -1.0 );
+                src->setMassFraction( massFrac, 0.0 );
               }
             }
           }//for( const ElementToNuclideMap::value_type &etnm : m_sourceIsotopes )
@@ -5161,8 +5198,13 @@ void ShieldingSelect::fromShieldingInfo( const ShieldingSourceFitCalc::Shielding
       for( SourceCheckbox *src : allSources )
       {
         if( !setSources.count(src) )
+        {
           src->setUseAsSource( false );
-      }
+          src->setFitMassFraction( false );
+          if( !src->isotope() )
+            src->setMassFraction( 0.0, 0.0 );
+        }//if( !setSources.count(src) )
+      }//for( SourceCheckbox *src : allSources )
       
       // Get rid of all the trace sources - I dont *think* we need to emit signals and all that
       if( m_traceSources )
