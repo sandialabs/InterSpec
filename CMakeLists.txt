@@ -520,6 +520,7 @@ if( USE_REL_ACT_TOOL )
         src/RelActManualGui.cpp
         src/RelActTxtResults.cpp
         src/RelEffChart.cpp
+        src/RelActAutoDev.cpp
   )
   
   list( APPEND headers
@@ -531,6 +532,7 @@ if( USE_REL_ACT_TOOL )
         InterSpec/RelActManualGui.h
         InterSpec/RelActTxtResults.h
         InterSpec/RelEffChart.h
+        InterSpec/RelActAutoDev.h
   )
 endif( USE_REL_ACT_TOOL )
 
