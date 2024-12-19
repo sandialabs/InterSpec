@@ -3743,7 +3743,7 @@ map<const SandiaDecay::Element *,vector<tuple<const SandiaDecay::Nuclide *,doubl
       double frac = get<1>(nuc_inf), uncert = 0.0;
       const bool fit_frac = get<2>(nuc_inf);
       if( fit_frac )
-        massFraction( frac, uncert, material_index, nuc, el, pars, error );
+        massFractionOfElement( frac, uncert, material_index, nuc, el, pars, error );
       answer[el].emplace_back( nuc, frac, uncert, fit_frac );
     }//for( const auto &nuc_inf : el_nucs.second )
   }//for( const auto &el_nucs : ms.m_nuclideFractions_ )
@@ -3752,7 +3752,7 @@ map<const SandiaDecay::Element *,vector<tuple<const SandiaDecay::Nuclide *,doubl
 }//selfAttenSrcInfo(...)
   
   
-double ShieldingSourceChi2Fcn::massFraction( const size_t material_index,
+double ShieldingSourceChi2Fcn::massFractionOfElement( const size_t material_index,
                       const SandiaDecay::Nuclide *nuc,
                       const std::vector<double> &pars ) const
 {
@@ -3760,12 +3760,12 @@ double ShieldingSourceChi2Fcn::massFraction( const size_t material_index,
   if( !nuc )
     throw runtime_error( "ShieldingSourceChi2Fcn::massFraction(): nullptr nuc" );
   double massfrac = 0.0, uncert = 0.0;
-  massFraction( massfrac, uncert, material_index, nuc, nullptr, pars, vector<double>() );
+  massFractionOfElement( massfrac, uncert, material_index, nuc, nullptr, pars, vector<double>() );
   return massfrac;
 }
   
   
-void ShieldingSourceChi2Fcn::massFraction( double &massFrac, double &uncert,
+void ShieldingSourceChi2Fcn::massFractionOfElement( double &massFrac, double &uncert,
                                           const size_t material_index, 
                                           const SandiaDecay::Nuclide *nuc,
                                           const SandiaDecay::Element *el,
@@ -4006,14 +4006,14 @@ void ShieldingSourceChi2Fcn::massFraction( double &massFrac, double &uncert,
 }//double massFraction(...) const
 
   
-double ShieldingSourceChi2Fcn::massFractionUncert( const size_t material_index,
+double ShieldingSourceChi2Fcn::massFractionOfElementUncertainty( const size_t material_index,
                             const SandiaDecay::Nuclide *nuc,
                             const std::vector<double> &pars,
                             const std::vector<double> &error ) const
 {
   const SandiaDecay::Element * const el = nullptr; //`massFraction(...)` should pick this up
   double massfrac = 0.0, uncert = 0.0;
-  massFraction( massfrac, uncert, material_index, nuc, el, pars, error );
+  massFractionOfElement( massfrac, uncert, material_index, nuc, el, pars, error );
   return uncert;
 }//massFractionUncert(...)
   
@@ -4420,7 +4420,7 @@ double ShieldingSourceChi2Fcn::activityOfSelfAttenSource(
     double massFrac = 0.0;
     
     if( fit )
-      massFrac = ShieldingSourceChi2Fcn::massFraction( material_index, nuclide, params );
+      massFrac = ShieldingSourceChi2Fcn::massFractionOfElement( material_index, nuclide, params );
     else
       massFrac = initial_frac;
     
@@ -4680,7 +4680,7 @@ double ShieldingSourceChi2Fcn::activityUncertainty( const SandiaDecay::Nuclide *
         
         double massFrac = 0.0, massFracUncert = 0.0;
         if( fit )
-          massFraction( massFrac, massFracUncert, material_index, src, el, params, errors );
+          massFractionOfElement( massFrac, massFracUncert, material_index, src, el, params, errors );
         else
           massFrac = initial_frac;
         
@@ -6406,7 +6406,7 @@ vector<PeakResultPlotInfo>
         has_self_atten = true;
         
         const double actPerMass = src->activityPerGram() / PhysicalUnits::gram;
-        const double massFract = massFraction( material_index, src, x );
+        const double massFract = massFractionOfElement( material_index, src, x );
         
         actPerVol = actPerMass * massFract * material->density;
       }//if( is_trace ) / else
@@ -6865,9 +6865,9 @@ vector<PeakResultPlotInfo>
           const auto pos = std::find( begin(nucs), end(nucs), nuc );
           if( pos != end(nucs) )
           {
-            massFractionVal = massFraction(shielding_index, nuc, x);
+            massFractionVal = massFractionOfElement(shielding_index, nuc, x);
             if( !error_params.empty() )
-              massFractionUncertVal = massFractionUncert(shielding_index, nuc, x, error_params);
+              massFractionUncertVal = massFractionOfElementUncertainty(shielding_index, nuc, x, error_params);
           }
         }//for( loop over shielding_index )
       }//if( isSelfAtten )
@@ -7066,8 +7066,8 @@ void ShieldingSourceChi2Fcn::log_shield_info( const vector<double> &params,
           const auto fit_pos = std::find(begin(fit_frac_nucs), end(fit_frac_nucs), nuc);
           comp.m_is_fit = (fit_pos != end(fit_frac_nucs));
           
-          comp.m_mass_frac = chi2Fcn->massFraction(shielding_index, nuc, params);
-          comp.m_mass_frac_uncert = chi2Fcn->massFractionUncert(shielding_index, nuc, params, errors );
+          comp.m_mass_frac = chi2Fcn->massFractionOfElement(shielding_index, nuc, params);
+          comp.m_mass_frac_uncert = chi2Fcn->massFractionOfElementUncertainty(shielding_index, nuc, params, errors );
           
           //chi2Fcn->activityOfSelfAttenSource( nuc, params );
           
@@ -7187,8 +7187,8 @@ void ShieldingSourceChi2Fcn::log_source_info( const std::vector<double> &params,
             src.selfAttenShieldName = mat->name;
             
             src.isSelfAttenVariableMassFrac = chi2Fcn->isVariableMassFraction(shielding_index, nuc);
-            src.selfAttenMassFrac = chi2Fcn->massFraction(shielding_index, nuc, params);
-            src.selfAttenMassFracUncertainty = chi2Fcn->massFractionUncert(shielding_index, nuc, params, errors);
+            src.selfAttenMassFrac = chi2Fcn->massFractionOfElement(shielding_index, nuc, params);
+            src.selfAttenMassFracUncertainty = chi2Fcn->massFractionOfElementUncertainty(shielding_index, nuc, params, errors);
           }
         }//for( loop over shielding_index )
         

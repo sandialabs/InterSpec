@@ -861,17 +861,17 @@ public:
    The element is required when nuc is nullptr, which indicates the mass fraction of the "other"
    non-source nuclides.
    */
-  void massFraction( double &massFrac, double &uncert,
+  void massFractionOfElement( double &massFrac, double &uncert,
                      const size_t material_index,
                      const SandiaDecay::Nuclide *nuc,
                      const SandiaDecay::Element *el,
                      const std::vector<double> &pars,
                      const std::vector<double> &errors ) const;
   
-  double massFraction( const size_t material_index,
+  double massFractionOfElement( const size_t material_index,
                           const SandiaDecay::Nuclide *nuc,
                           const std::vector<double> &pars ) const;
-  double massFractionUncert( const size_t material_index,
+  double massFractionOfElementUncertainty( const size_t material_index,
                              const SandiaDecay::Nuclide *nuc,
                              const std::vector<double> &pars,
                              const std::vector<double> &error ) const;

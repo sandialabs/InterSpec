@@ -8412,7 +8412,7 @@ void ShieldingSourceDisplay::updateGuiWithModelFitResults( std::shared_ptr<Shiel
         for( const SandiaDecay::Nuclide * nuc : el_nucs.second )
         {
           double frac, uncert;
-          m_currentFitFcn->massFraction( frac, uncert, shielding_index, nuc, el, paramValues, paramErrors );
+          m_currentFitFcn->massFractionOfElement( frac, uncert, shielding_index, nuc, el, paramValues, paramErrors );
           
           postfitsums[el->atomicNumber] += frac;
           const bool isFit = nuc ? m_currentFitFcn->isVariableMassFraction( shielding_index, nuc )
@@ -8434,7 +8434,7 @@ void ShieldingSourceDisplay::updateGuiWithModelFitResults( std::shared_ptr<Shiel
         double frac, uncert;
         const SandiaDecay::Nuclide * const nuc = nullptr;
         
-        m_currentFitFcn->massFraction( frac, uncert, shielding_index, nuc, el,
+        m_currentFitFcn->massFractionOfElement( frac, uncert, shielding_index, nuc, el,
                                       paramValues, paramErrors );
       
         postfitsums[el->atomicNumber] += frac;
@@ -8454,7 +8454,7 @@ void ShieldingSourceDisplay::updateGuiWithModelFitResults( std::shared_ptr<Shiel
         const SandiaDecay::Element * const el = db->element( nuc->atomicNumber );
         assert( el );
         
-        const double frac = m_currentFitFcn->massFraction( shielding_index, nuc, paramValues );
+        const double frac = m_currentFitFcn->massFractionOfElement( shielding_index, nuc, paramValues );
         
         ShieldingSelect::MassFracInfo info;
         info.m_nuclide = nuc;
@@ -8889,7 +8889,7 @@ void ShieldingSourceDisplay::updateCalcLogWithFitResults(
         for( const SandiaDecay::Nuclide *n : el_nuc.second )
         {
           double frac, uncert;
-          chi2Fcn->massFraction( frac, uncert, shielding_index, n, el, params, errors );
+          chi2Fcn->massFractionOfElement( frac, uncert, shielding_index, n, el, params, errors );
           
           msg << " " << n->symbol << "(massfrac=" << frac << "+-" << uncert << "),";
         }//for( size_t shielding_index = 0; shielding_index < chi2Fcn->numMaterials(); ++shielding_index )
