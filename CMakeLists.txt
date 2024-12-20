@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.1...3.20 FATAL_ERROR)
 
 project(InterSpec VERSION 1.0.13)
 
-set(CMAKE_CXX_STANDARD 14)
+set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set( CMAKE_POSITION_INDEPENDENT_CODE ON CACHE BOOL "Set PIC to make InterSpec static lib" )
 
@@ -147,12 +147,6 @@ endif()
 
 
 SET(MYSQL_DATABASE_TO_USE "dev" CACHE STRING "Which mysql database to use (if applicable): dev/qc/prod")
-
-
-# I think requiring c++14 will require GCC>=5, but we'll double check anyway
-if( CMAKE_COMPILER_IS_GNUCC AND CMAKE_CXX_COMPILER_VERSION VERSION_LESS 5.0 )
-  message( FATAL_ERROR, "GCC less than 5 not supported." )
-endif()
 
 # Make a cached variable available to parent cmake projects
 set( INTERSPEC_VERSION "${PROJECT_VERSION}" CACHE STRING "InterSpec version" )
