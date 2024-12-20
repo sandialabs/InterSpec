@@ -86,7 +86,7 @@ class DetectorPeakResponse
 {
   /*
    //An example of defining a detectors efficiency via functional form:
-   DetectorPeakResponse det( "DetectorName", "Detecotor Description" );
+   DetectorPeakResponse det( "DetectorName", "Detector Description" );
    
    const std::string fcn = "exp(-343.6330974237 + 269.1023287277*log(x)"
                            "+ -83.8077567526*log(x)^2  + 12.9980559362*log(x)^3"

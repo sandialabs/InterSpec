@@ -36,6 +36,7 @@
 
 // Forward declarations
 class DetectorPeakResponse;
+struct Material;
 
 namespace rapidxml
 {
@@ -262,6 +263,9 @@ struct Options
   
   /** The number of energy dependent terms to use for the relative efficiency equation.  I.e., the
    number of terms fit for will be one more than this value.
+   
+   Not used for `RelEffEqnForm::FramPhysicalModel`; see `phys_model_self_atten_an`
+   and `phys_model_ext_atten_an`
    */
   size_t rel_eff_eqn_order;
   
@@ -295,6 +299,12 @@ struct Options
    power law is not allowed to have an energy dependence (see `PeakDef::is_energy_dependent(...)`).
    */
   PeakDef::SkewType skew_type;
+  
+  /** Only used for `RelEffEqnForm::FramPhysicalModel` - shielding definitions for self-attenuating sources. */
+  //std::vector<PhysicalModelShieldInput> phys_model_self_atten_an;
+  
+  /** Only used for `RelEffEqnForm::FramPhysicalModel` - shielding definitions for external attenuators. */
+  //std::vector<PhysicalModelShieldInput> phys_model_ext_atten_an;
   
   static const int sm_xmlSerializationVersion = 0;
   rapidxml::xml_node<char> *toXml( ::rapidxml::xml_node<char> *parent ) const;

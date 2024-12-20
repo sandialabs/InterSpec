@@ -28,21 +28,80 @@
 #include <fstream>
 #include <iostream>
 
+#include "SpecUtils/SpecFile.h"
+#include "SpecUtils/Filesystem.h"
+
 #include "InterSpec/InterSpec.h"
+#include "InterSpec/MaterialDB.h"
 #include "InterSpec/RelActCalc.h"
 #include "InterSpec/PhysicalUnits.h"
 #include "InterSpec/RelActAutoDev.h"
 #include "InterSpec/RelActCalcAuto.h"
 #include "InterSpec/DecayDataBaseServer.h"
-
-#include "SpecUtils/SpecFile.h"
+#include "InterSpec/DetectorPeakResponse.h"
 
 using namespace std;
 
 namespace RelActAutoDev
 {
+  
+void check_physical_model_eff_function()
+{
+  const SandiaDecay::SandiaDecayDataBase * const db = DecayDataBaseServer::database();
+  
+  MaterialDB matdb;
+  
+  const string data_dir = InterSpec::staticDataDirectory();
+  const string materialfile = SpecUtils::append_path( data_dir, "MaterialDataBase.txt" );
+  matdb.parseGadrasMaterialFile( materialfile, db, false );
+  
+  DetectorPeakResponse det;
+  
+  try
+  {
+    const string drf_dir = SpecUtils::append_path( InterSpec::staticDataDirectory(), "GenericGadrasDetectors/HPGe 40%" );
+    det.fromGadrasDirectory( drf_dir );
+  }catch( std::exception &e )
+  {
+    cerr << "Failed to open directory." << endl;
+    return EXIT_FAILURE;
+  }
+  
+  const Material * const pu = matdb.material("Pu (plutonium)");
+  assert( pu );
+  
+  const vector<const Material *> external_attenuations{
+    matdb.material("stainless-steel NIST"),
+    nullptr //generic material
+  };
+  
+  
+  const vector<double> paramaters{
+    0.0,  //self-atten, atomic_number - must be zero since we are specifying a material
+    1.98, //self-atten, areal density, in units of g/cm2 (ie, 1 mm Pu)
+    0.0,  //stainless, AN - must be zero
+    0.8,  //stainless, AD - e.g., 1 mm
+    32.0, //generic AN - e.g., Germanium
+    0.532, //generic AD - e.g., 1 mm of Ge
+    1.0, // Modified Hoerl b: pow(0.001*energy,b)
+    1.0  // Modified Hoerl c: pow(c,1000/energy)
+  };
+  
+  function<double(double)> fcn = RelActCalc::physical_model_eff_function(
+                            pu, external_attenuations, det, paramaters.data(), paramaters.size() );
+  
+  cout << "Energy (keV), Counts" << endl;
+  for( double energy = 50.0; energy < 3000; energy += 2 )
+    cout << energy << "," << fcn(energy) << endl;
+  
+}//void check_physical_model_eff_function()
+  
+  
 int dev_code()
 {
+  check_physical_model_eff_function();
+  return 1;
+  
   // Using example spectra from https://nds.iaea.org/idb/
   cout << "dev_code()" << endl;
   
@@ -57,7 +116,7 @@ int dev_code()
   RelActCalcAuto::Options options;
   options.fit_energy_cal = true;
   options.nucs_of_el_same_age = true;
-  options.rel_eff_eqn_type = RelActCalc::RelEffEqnForm::FramEmpirical;
+  options.rel_eff_eqn_type = RelActCalc::RelEffEqnForm::FramPhysicalModel;
   options.rel_eff_eqn_order = 4;
   options.fwhm_form = RelActCalcAuto::FwhmForm::Polynomial_4;
   options.spectrum_title = "Dev Title";

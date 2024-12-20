@@ -1414,13 +1414,13 @@ RelActAutoGui::RelActAutoGui( InterSpec *viewer, Wt::WContainerWidget *parent )
   HelpSystem::attachToolTipOn( {label,m_rel_eff_eqn_form}, tooltip, showToolTips );
   
   // Will assume FramEmpirical is the highest
-  static_assert( static_cast<int>(RelActCalc::RelEffEqnForm::FramEmpirical)
+  static_assert( static_cast<int>(RelActCalc::RelEffEqnForm::FramPhysicalModel)
                 > static_cast<int>(RelActCalc::RelEffEqnForm::LnXLnY),
                 "RelEffEqnForm was changed!"
                 );
   
   
-  for( int i = 0; i <= static_cast<int>(RelActCalc::RelEffEqnForm::FramEmpirical); ++i )
+  for( int i = 0; i <= static_cast<int>(RelActCalc::RelEffEqnForm::FramPhysicalModel); ++i )
   {
     const auto eqn_form = RelActCalc::RelEffEqnForm( i );
     
@@ -1445,6 +1445,10 @@ RelActAutoGui::RelActAutoGui( InterSpec *viewer, Wt::WContainerWidget *parent )
       case RelActCalc::RelEffEqnForm::FramEmpirical:
         //y = exp( a + b/x^2 + c*(lnx) + d*(lnx)^2 + e*(lnx)^3 )
         txt = "Empirical";
+        break;
+        
+      case RelActCalc::RelEffEqnForm::FramPhysicalModel:
+        txt = "Physical";
         break;
     }
     

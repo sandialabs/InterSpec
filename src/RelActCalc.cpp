@@ -31,10 +31,14 @@
 #include <cstring>
 #include <stdexcept>
 
+#include "SpecUtils/Filesystem.h"
 #include "SpecUtils/StringAlgo.h"
 
+#include "InterSpec/MaterialDB.h"
 #include "InterSpec/RelActCalc.h"
 #include "InterSpec/PhysicalUnits.h"
+#include "InterSpec/DetectorPeakResponse.h"
+#include "InterSpec/GammaInteractionCalc.h"
 
 using namespace std;
 
@@ -50,6 +54,8 @@ const char *to_str( const RelEffEqnForm form )
     case RelEffEqnForm::LnY:    return "LnY";
     case RelEffEqnForm::LnXLnY: return "LnXLnY";
     case RelEffEqnForm::FramEmpirical: return "FRAM Empirical";
+    case RelEffEqnForm::FramPhysicalModel: return "FRAM Physical";
+      
   }
   
   assert( 0 );
@@ -65,7 +71,8 @@ RelEffEqnForm rel_eff_eqn_form_from_str( const char *str )
     RelEffEqnForm::LnX,
     RelEffEqnForm::LnY,
     RelEffEqnForm::LnXLnY,
-    RelEffEqnForm::FramEmpirical
+    RelEffEqnForm::FramEmpirical,
+    RelEffEqnForm::FramPhysicalModel
   };
   
   for( const RelEffEqnForm eqn : eqn_forms )
@@ -180,6 +187,9 @@ string rel_eff_eqn_text( const RelEffEqnForm eqn_form, const std::vector<double>
       
       break;
     }//case RelActCalc::RelEffEqnForm::FramEmpirical:
+      
+    case RelActCalc::RelEffEqnForm::FramPhysicalModel:
+      throw runtime_error( "rel_eff_eqn_text: can not be called for FramPhysicalModel" );
   }//switch( answer.m_eqn_form )
   
   return rel_eff_eqn_str;
@@ -254,6 +264,9 @@ std::string rel_eff_eqn_js_function( const RelEffEqnForm eqn_form, const std::ve
       
       rel_eff_fcn += " )";
       break;
+      
+    case RelActCalc::RelEffEqnForm::FramPhysicalModel:
+      throw runtime_error( "rel_eff_eqn_js_function: can not be called for FramPhysicalModel" );
     }//case RelActCalc::RelEffEqnForm::FramEmpirical:
   }//switch( answer.m_eqn_form )
   
@@ -748,4 +761,88 @@ void test_pu242_by_correlation()
 }//void test_pu242_by_correlation()
 
 
+  
+std::function<double(double)> physical_model_eff_function( const Material * const self_atten,
+                                  const vector<const Material *> &external_attens,
+                                  const DetectorPeakResponse &drf,
+                                  const double * const paramaters,
+                                  const size_t num_pars )
+{
+  const size_t num_expect_pars = 2 + 2*external_attens.size() + 2;
+  assert( num_expect_pars == num_pars );
+  if( num_expect_pars != num_pars )
+    throw runtime_error( "physical_model_eff_function: invalid number of parameters." );
+ 
+  const auto sanity_check_shield = [paramaters]( const Material * const material,
+                                                const size_t par_start ){
+    const double atomic_number = paramaters[par_start];
+    const double areal_density = paramaters[par_start + 1];
+    
+    assert( (areal_density >= 0.0) && !IsInf(areal_density) );
+    if( (areal_density < 0.0) || IsNan(areal_density) || IsInf(areal_density) )
+      throw runtime_error( "PhysicalModelShield areal density must be >= 0." );
+    
+    if( material )
+    {
+      assert( atomic_number == 0.0f );
+      if( atomic_number != 0.0f )
+        throw runtime_error( "PhysicalModelShield atomic number must be zero if material defined." );
+    }else
+    {
+      if( !((atomic_number >= 1.0) && (atomic_number <= 98.0)) ) //should catch Inf an NaN
+        throw runtime_error( "PhysicalModelShield atomic number must in in range [1,98]" );
+    }
+  };//sanity_check_shield lamda
+  
+  sanity_check_shield( self_atten, 0 );
+  for( size_t i = 0; i < external_attens.size(); ++i )
+    sanity_check_shield( external_attens[i], 2 + i*2 );
+  
+  if( paramaters[0] < 0.0 )
+    throw runtime_error( "PhysicalModelShield self atten areal-density may not be zero." );
+  
+  const function<float( float )> drffcn = drf.intrinsicEfficiencyFcn();
+  const vector<double> pars( paramaters, paramaters + num_pars );
+  
+  
+  return [drffcn, pars, self_atten, external_attens]( double energy ) -> double {
+    using GammaInteractionCalc::mass_attenuation_coef;
+    using GammaInteractionCalc::transmition_length_coefficient;
+    
+    
+    const float energyf = static_cast<float>( energy );
+    
+    const double self_atten_an = pars[0];
+    const double self_atten_ad = pars[1] * PhysicalUnits::g / PhysicalUnits::cm2;
+    
+    const double self_atten_mu = self_atten
+            ? transmition_length_coefficient( self_atten, energyf ) / self_atten->density
+            :  mass_attenuation_coef( self_atten_an, energyf );
+    
+    const double sa_part = (1 - exp(-self_atten_mu * self_atten_ad)) / (self_atten_mu * self_atten_ad);
+    
+    double ext_atten_part = 1.0;
+    for( size_t i = 0; i < external_attens.size(); ++i )
+    {
+      const double atten_an = pars[2 + 2*i];
+      const double atten_ad = pars[2 + 2*i + 1] * PhysicalUnits::g / PhysicalUnits::cm2;
+      
+      const Material * const mat = external_attens[i];
+      const double self_atten_mu = mat
+              ? transmition_length_coefficient( mat, energyf ) / mat->density
+              :  mass_attenuation_coef( atten_an, energyf );
+      
+      ext_atten_part *= exp( -self_atten_mu * atten_ad );
+    }//for( size_t i = 0; i < external_attens.size(); ++i )
+    
+    
+    const double det_part = drffcn( energyf );
+    
+    const double b = pars[2 + 2*external_attens.size() + 0];
+    const double c = pars[2 + 2*external_attens.size() + 1];
+    const double corr_factor = std::pow(0.001*energy, b) * std::pow( c, 1000.0/energy );
+    
+    return sa_part * ext_atten_part * det_part * corr_factor;
+  };
+}//physical_model_eff_function(...)
 }//namespace RelActCalc
