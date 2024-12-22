@@ -96,7 +96,10 @@ std::string rel_eff_eqn_text( const RelEffEqnForm eqn_form,
  */
 std::string rel_eff_eqn_js_function( const RelEffEqnForm eqn_form, const std::vector<double> &coefs );
 
-/** Evaluate the relative efficiency equation at a given energy, for a specific form of the equation, and coefficients. */
+/** Evaluate the relative efficiency equation at a given energy, for a specific form of the equation, and coefficients.
+ 
+ Can not be called for `RelEffEqnForm::FramPhysicalModel`, will throw exception - see `eval_physical_model_eqn()`.
+ */
 double eval_eqn( const double energy, const RelEffEqnForm eqn_form,
                 const double * const coefs, const size_t num_coefs );
 
@@ -105,6 +108,8 @@ double eval_eqn( const double energy, const RelEffEqnForm eqn_form, const std::v
 
 /** Evaluate the uncertainty in the relative efficiency equation - assuming all uncertainties are uncorrelated - this will tend to
  over-estimate the errors.
+ 
+ Can not be called for `RelEffEqnForm::FramPhysicalModel`, will throw exception - see `eval_physical_model_eqn_uncertainty()`.
  
  TODO: this function can return NaN values - when the square uncertainty is negative...
  */
@@ -222,66 +227,40 @@ const std::string &to_description( const PuCorrMethod method );
 Pu242ByCorrelationOutput correct_pu_mass_fractions_for_pu242( Pu242ByCorrelationInput input, PuCorrMethod method );
 
 void test_pu242_by_correlation();
+    
+    
+double eval_physical_model_eqn( const double energy,
+                               const std::shared_ptr<const Material> &self_atten,
+                               const std::vector<std::shared_ptr<const Material>> &external_attens,
+                               const DetectorPeakResponse &drf,
+                               const double * const paramaters,
+                               const size_t num_pars );
   
+double eval_physical_model_eqn_uncertainty( const double energy,
+                               const std::shared_ptr<const Material> &self_atten,
+                               const std::vector<std::shared_ptr<const Material>> &external_attens,
+                               const DetectorPeakResponse &drf,
+                               const std::vector<std::vector<double>> &covariance );
   
-  
-struct PhysicalModelShield
-{
-  /** The atomic number of the shielding.
-    Must be in range [1,98], unless you are defining a material, and then it must be 0.0.
-    If you wish to instead specify a material, this number must be 0.0f.
-     
-    If this is an input, and you are fitting atomic number, then this is the starting value for the fit.
-    */
-  double atomic_number = 0.0;
-    
-  /** The shielding material to to use - if non-null, then atomic number must be 0. */
-  std::shared_ptr<const Material> material = nullptr;
-    
-  /** The areal density (in units of PhysicalUnits, i.e., multiply by PhysicalUnits::cm2/PhysicalUnits::g to make human-readable. )
-    If this is an input, and you are fitting area density, then this is the starting value for the fit.
-    */
-  double areal_density = 0.0;
-};//struct PhysicalModelShield
-  
-  
-/** A structure to allow inputting self-attenuating, and external attenuating shielding. */
-struct PhysicalModelShieldInput : PhysicalModelShield
-{
-  /** If the atomic number of the shielding should be fit.
-    Fitting atomic number max of one self-attenuating shielding, and one external shielding is allowed.
-     
-    Normally false.  Must be false if material is specified.
-  */
-  bool fit_atomic_number = false;
-    
-  /** The lower atomic number you want to allow. */
-  double lower_fit_atomic_number = 1.0;
-  /** The upper atomic number you want to allow. */
-  double upper_fit_atomic_number = 98.0;
-    
-  /** If the shielding thickness should be fit.  Note this is areal density, and not thickness.
-    if false, set the AD value by setting BOTH lower and upper AD limit values to be greater than zero, and the same.
-    If true, and lower AD and upper AD limits are not equal, then the specified limits will be applied.
-    
-    Normally true.
-  */
-  bool fit_areal_density = true;
-    
-  /** The lower AD for the shielding.  */
-  double lower_fit_areal_density = 0.0;
-    
-  /** The upper AD for the shielding.  Must be greater or equal to lower AD. */
-  double upper_fit_areal_density = 0.0;
-};//struct PhysicalModelShieldInput
-  
-
-
-std::function<double(double)> physical_model_eff_function( const Material * const self_atten,
-                                const std::vector<const Material *> &external_attens,
+std::function<double(double)> physical_model_eff_function( const std::shared_ptr<const Material> &self_atten,
+                                const std::vector<std::shared_ptr<const Material>> &external_attens,
                                 const DetectorPeakResponse &drf,
                                 const double * const paramaters,
                                 const size_t num_pars );
+  
+  
+std::string physical_model_rel_eff_eqn_text( const std::shared_ptr<const Material> &self_atten,
+                                              const std::vector<std::shared_ptr<const Material>> &external_attens,
+                                              const DetectorPeakResponse &drf,
+                                              const double * const paramaters,
+                                              const size_t num_pars );
+
+std::string physical_model_rel_eff_eqn_js_function( const std::shared_ptr<const Material> &self_atten,
+                                                     const std::vector<std::shared_ptr<const Material>> &external_attens,
+                                                     const DetectorPeakResponse &drf,
+                                                     const double * const paramaters,
+                                                     const size_t num_pars );
+
 }//namespace RelActCalc
 
 

@@ -166,13 +166,13 @@ else
     fi # if b2 already built / else
 
     # build and stage boost for arm64
-    ./b2 toolset=clang-darwin target-os=darwin architecture=arm abi=aapcs cxxflags="-stdlib=libc++ -arch arm64 -std=c++14 -mmacosx-version-min=${MACOSX_DEPLOYMENT_TARGET}" cflags="-arch arm64  -mmacosx-version-min=${MACOSX_DEPLOYMENT_TARGET}" linkflags="-stdlib=libc++ -arch arm64 -std=c++14 -mmacosx-version-min=${MACOSX_DEPLOYMENT_TARGET}" link=static variant=release threading=multi --build-dir=macOS_arm64_build --prefix=${MY_WT_PREFIX} -a stage
+    ./b2 toolset=clang-darwin target-os=darwin architecture=arm abi=aapcs cxxflags="-stdlib=libc++ -arch arm64 -std=c++17 -mmacosx-version-min=${MACOSX_DEPLOYMENT_TARGET}" cflags="-arch arm64  -mmacosx-version-min=${MACOSX_DEPLOYMENT_TARGET}" linkflags="-stdlib=libc++ -arch arm64 -std=c++17 -mmacosx-version-min=${MACOSX_DEPLOYMENT_TARGET}" link=static variant=release threading=multi --build-dir=macOS_arm64_build --prefix=${MY_WT_PREFIX} -a stage
 
     # copy arm libraries to a separate directory
     mkdir -p arm64 && cp stage/lib/libboost_* arm64/
 
     # build boost for x86_64 and install it (we'll copy over the libraries later)
-    ./b2 toolset=clang-darwin target-os=darwin architecture=x86 cxxflags="-stdlib=libc++ -arch x86_64 -std=c++14 -mmacosx-version-min=${MACOSX_DEPLOYMENT_TARGET}" cflags="-arch x86_64 -mmacosx-version-min=${MACOSX_DEPLOYMENT_TARGET}" linkflags="-stdlib=libc++ -arch x86_64 -std=c++14 -mmacosx-version-min=${MACOSX_DEPLOYMENT_TARGET}" abi=sysv binary-format=mach-o link=static variant=release threading=multi --build-dir=macOS_x64_build --prefix=${MY_WT_PREFIX} -a install
+    ./b2 toolset=clang-darwin target-os=darwin architecture=x86 cxxflags="-stdlib=libc++ -arch x86_64 -std=c++17 -mmacosx-version-min=${MACOSX_DEPLOYMENT_TARGET}" cflags="-arch x86_64 -mmacosx-version-min=${MACOSX_DEPLOYMENT_TARGET}" linkflags="-stdlib=libc++ -arch x86_64 -std=c++17 -mmacosx-version-min=${MACOSX_DEPLOYMENT_TARGET}" abi=sysv binary-format=mach-o link=static variant=release threading=multi --build-dir=macOS_x64_build --prefix=${MY_WT_PREFIX} -a install
 
     # move x86 libraries to a seperate directory
     mkdir x86_64 && mv ${MY_WT_PREFIX}/lib/libboost_* x86_64/
@@ -322,7 +322,7 @@ else
   mkdir build
   cd build
 
-  cmake -DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_DEPLOYMENT_TARGET="${MACOSX_DEPLOYMENT_TARGET}" -DCMAKE_PREFIX_PATH="${MY_WT_PREFIX}" -DBoost_INCLUDE_DIR="${MY_WT_PREFIX}/include" -DBOOST_PREFIX="${MY_WT_PREFIX}" -DSHARED_LIBS=OFF -DCMAKE_INSTALL_PREFIX="${MY_WT_PREFIX}" -DHARU_PREFIX="${MY_WT_PREFIX}" -DHARU_LIB="${MY_WT_PREFIX}/lib/libhpdfs.a" -DENABLE_SSL=OFF -DCONNECTOR_FCGI=OFF -DBUILD_EXAMPLES=OFF -DBUILD_TESTS=OFF -DENABLE_MYSQL=OFF -DENABLE_POSTGRES=OFF -DENABLE_PANGO=OFF -DINSTALL_FINDWT_CMAKE_FILE=ON -DHTTP_WITH_ZLIB=OFF -DWT_CPP_11_MODE="-std=c++14" -DCONFIGURATION=data/config/wt_config_osx.xml -DWTHTTP_CONFIGURATION=data/config/wthttpd -DCONFIGDIR="${MY_WT_PREFIX}/etc/wt" -DCMAKE_OSX_ARCHITECTURES="x86_64;arm64" -S ..
+  cmake -DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_DEPLOYMENT_TARGET="${MACOSX_DEPLOYMENT_TARGET}" -DCMAKE_PREFIX_PATH="${MY_WT_PREFIX}" -DBoost_INCLUDE_DIR="${MY_WT_PREFIX}/include" -DBOOST_PREFIX="${MY_WT_PREFIX}" -DSHARED_LIBS=OFF -DCMAKE_INSTALL_PREFIX="${MY_WT_PREFIX}" -DHARU_PREFIX="${MY_WT_PREFIX}" -DHARU_LIB="${MY_WT_PREFIX}/lib/libhpdfs.a" -DENABLE_SSL=OFF -DCONNECTOR_FCGI=OFF -DBUILD_EXAMPLES=OFF -DBUILD_TESTS=OFF -DENABLE_MYSQL=OFF -DENABLE_POSTGRES=OFF -DENABLE_PANGO=OFF -DINSTALL_FINDWT_CMAKE_FILE=ON -DHTTP_WITH_ZLIB=OFF -DWT_CPP_11_MODE="-std=c++17" -DCONFIGURATION=data/config/wt_config_osx.xml -DWTHTTP_CONFIGURATION=data/config/wthttpd -DCONFIGDIR="${MY_WT_PREFIX}/etc/wt" -DCMAKE_OSX_ARCHITECTURES="x86_64;arm64" -S ..
   make -j10 install
   touch "${working_directory}/wt.installed"
 fi #if wt.installed exists / else
@@ -371,7 +371,7 @@ cd "${working_directory}"
 
 ## Build Ceres-Solver
 if [ -f "${working_directory}/Ceres.installed" ]; then
-    echo "Ceres-Solver already installed (as indicated by existance of Ceres.installed file) - skipping."
+    echo "Ceres-Solver already installed (as indicated by existence of Ceres.installed file) - skipping."
 else
   # Build ceres-solver; this is the optimizer used for the relative efficiency
   # tool, and a small amount of the peak fitting.

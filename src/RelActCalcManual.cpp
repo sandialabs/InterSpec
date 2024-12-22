@@ -587,6 +587,10 @@ void fit_rel_eff_eqn_lls( const RelActCalc::RelEffEqnForm fcn_form, const size_t
           else
             A(row,col) = std::pow(std::log(energy), col - 1.0) / uncertainty;
           break;
+          
+        case RelActCalc::RelEffEqnForm::FramPhysicalModel:
+          assert( 0 );
+          throw runtime_error( "fit_rel_eff_eqn_lls: FramPhysicalModel not supported." );
       }//switch( fcn_form )
     }//for( int col = 0; col < poly_terms; ++col )
   }//for( int col = 0; col < poly_terms; ++col )
@@ -2077,6 +2081,10 @@ RelEffSolution solve_relative_efficiency( const std::vector<GenericPeakInfo> &pe
     const auto end_time = std::chrono::high_resolution_clock::now();
     solution.m_num_microseconds_eval = std::chrono::duration<double, std::micro>(end_time - start_time).count();
   });
+  
+  //assert( eqn_form != RelActCalc::RelEffEqnForm::FramPhysicalModel );
+  if( eqn_form == RelActCalc::RelEffEqnForm::FramPhysicalModel )
+    throw runtime_error( "solve_relative_efficiency: FramPhysicalModel not supported yet." );
   
   solution.m_rel_eff_eqn_form = eqn_form;
   solution.m_rel_eff_eqn_order = eqn_order;

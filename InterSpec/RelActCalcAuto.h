@@ -30,6 +30,7 @@
 #include <memory>
 #include <vector>
 #include <ostream>
+#include <optional>
 
 #include "InterSpec/PeakDef.h" //for PeakContinuum::OffsetType and PeakDef::SkewType
 
@@ -300,11 +301,66 @@ struct Options
    */
   PeakDef::SkewType skew_type;
   
-  /** Only used for `RelEffEqnForm::FramPhysicalModel` - shielding definitions for self-attenuating sources. */
-  //std::vector<PhysicalModelShieldInput> phys_model_self_atten_an;
+  /** A structure to allow inputting self-attenuating, and external attenuating shielding. */
+  struct PhysicalModelShieldInput
+  {
+    /** The atomic number of the shielding.
+      Must be in range [1,98], unless you are defining a material, and then it must be 0.0.
+      If you wish to instead specify a material, this number must be 0.0f.
+       
+      If this is an input, and you are fitting atomic number, then this is the starting value for the fit.
+      */
+    double atomic_number = 0.0;
+      
+    /** The shielding material to to use - if non-null, then atomic number must be 0. */
+    std::shared_ptr<const Material> material = nullptr;
+    
+    
+    /** The areal density, in units of PhysicalUnits, e.g., `areal_density = 18*PhysicalUnits::g/PhysicalUnits::cm2` *.
+      If you are fitting the AD, this will be the starting value for the fit.
+      */
+    double areal_density = 0.0;
+    
+    /** If the atomic number of the shielding should be fit.
+      Fitting atomic number max of one self-attenuating shielding, and one external shielding is allowed.
+       
+      Normally false.  Must be false if material is specified.
+    */
+    bool fit_atomic_number = false;
+      
+    /** The lower atomic number you want to allow. */
+    double lower_fit_atomic_number = 1.0;
+    /** The upper atomic number you want to allow. */
+    double upper_fit_atomic_number = 98.0;
+      
+    /** If the shielding thickness should be fit.  Note this is areal density, and not thickness.
+      if false, set the AD value by setting BOTH lower and upper AD limit values to be greater than zero, and the same.
+      If true, and lower AD and upper AD limits are not equal, then the specified limits will be applied.
+      
+      Normally true.
+    */
+    bool fit_areal_density = true;
+      
+    /** The lower AD for the shielding.  Must be in range [0,500] g/cm2, if fitting AD. */
+    double lower_fit_areal_density = 0.0;
+      
+    /** The upper AD for the shielding.  Must be greater than to lower AD, if fitting, and must be in range [0,500] g/cm2. */
+    double upper_fit_areal_density = 0.0;
+    
+    /** Checks specified constraints are obeyed - throwing an exception if not. */
+    void check_valid() const;
+    
+    static const double sm_upper_allowed_areal_density_in_g_per_cm2; //Set to 500
+  };//struct PhysicalModelShieldInput
+  
+  /** Only used for `RelEffEqnForm::FramPhysicalModel` - shielding definitions for self-attenuating sources.
+   
+   May be nullptr if physical model.
+   */
+  std::optional<PhysicalModelShieldInput> phys_model_self_atten;
   
   /** Only used for `RelEffEqnForm::FramPhysicalModel` - shielding definitions for external attenuators. */
-  //std::vector<PhysicalModelShieldInput> phys_model_ext_atten_an;
+  std::vector<PhysicalModelShieldInput> phys_model_external_atten;
   
   static const int sm_xmlSerializationVersion = 0;
   rapidxml::xml_node<char> *toXml( ::rapidxml::xml_node<char> *parent ) const;
@@ -351,6 +407,9 @@ struct RelActAutoSolution
    Note: currently this code largely duplicates #RelEffChart::setData, so need to refactor.
    */
   void rel_eff_json_data( std::ostream &json, std::ostream &css ) const;
+  
+  /** Prints the txt version of relative eff eqn. */
+  std::string rel_eff_txt() const;
   
   /** Returns the fractional amount of an element (by mass), the nuclide composes.
    

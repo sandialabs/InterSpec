@@ -67,11 +67,12 @@ void check_physical_model_eff_function()
     return EXIT_FAILURE;
   }
   
-  const Material * const pu = matdb.material("Pu (plutonium)");
-  assert( pu );
+  const Material * const pu_db = matdb.material("Pu (plutonium)");
+  assert( pu_db );
+  const shared_ptr<const Material> pu = std::make_shared<Material>( *pu_db );
   
-  const vector<const Material *> external_attenuations{
-    matdb.material("stainless-steel NIST"),
+  const vector<shared_ptr<const Material>> external_attenuations{
+    std::make_shared<Material>( *matdb.material("stainless-steel NIST") ),
     nullptr //generic material
   };
   
@@ -99,11 +100,8 @@ void check_physical_model_eff_function()
   
 int dev_code()
 {
-  check_physical_model_eff_function();
-  return 1;
-  
-  // Using example spectra from https://nds.iaea.org/idb/
-  cout << "dev_code()" << endl;
+  //check_physical_model_eff_function();
+  //return 1;
   
   const SandiaDecay::SandiaDecayDataBase * const db = DecayDataBaseServer::database();
   assert( db );
@@ -113,16 +111,53 @@ int dev_code()
     return EXIT_FAILURE;
   }
   
+  MaterialDB matdb;
+  
+  const string data_dir = InterSpec::staticDataDirectory();
+  const string materialfile = SpecUtils::append_path( data_dir, "MaterialDataBase.txt" );
+  matdb.parseGadrasMaterialFile( materialfile, db, false );
+  
   RelActCalcAuto::Options options;
   options.fit_energy_cal = true;
   options.nucs_of_el_same_age = true;
   options.rel_eff_eqn_type = RelActCalc::RelEffEqnForm::FramPhysicalModel;
-  options.rel_eff_eqn_order = 4;
+  options.rel_eff_eqn_order = 0;
   options.fwhm_form = RelActCalcAuto::FwhmForm::Polynomial_4;
   options.spectrum_title = "Dev Title";
   options.pu242_correlation_method = RelActCalc::PuCorrMethod::ByPu239Only;
   options.skew_type = PeakDef::SkewType::NoSkew;
   
+  RelActCalcAuto::Options::PhysicalModelShieldInput self_atten_def;
+  self_atten_def.atomic_number = 0.0;
+  const Material * const pu = matdb.material("Pu (plutonium)");
+  assert( pu );
+  self_atten_def.material = std::make_shared<const Material>( *pu );
+  self_atten_def.areal_density = 19.8 * PhysicalUnits::g_per_cm2;
+  //self_atten_def.fit_atomic_number = false;
+  //self_atten_def.lower_fit_atomic_number = 1.0;
+  //self_atten_def.upper_fit_atomic_number = 98.0;
+  self_atten_def.fit_areal_density = true;
+  self_atten_def.lower_fit_areal_density = 0.0;
+  self_atten_def.upper_fit_areal_density = 500.0 * PhysicalUnits::g_per_cm2;
+  
+  options.phys_model_self_atten = self_atten_def;
+  
+  
+  RelActCalcAuto::Options::PhysicalModelShieldInput ext_shield;
+  ext_shield.atomic_number = 26;
+  ext_shield.material = nullptr;
+  ext_shield.areal_density = 1.0 * PhysicalUnits::g_per_cm2;
+  ext_shield.fit_atomic_number = false;
+  //ext_shield.lower_fit_atomic_number = 1.0;
+  //ext_shield.upper_fit_atomic_number = 98.0;
+  ext_shield.fit_areal_density = true;
+  ext_shield.lower_fit_areal_density = 0.0;
+  ext_shield.upper_fit_areal_density = 500.0 * PhysicalUnits::g_per_cm2;
+  options.phys_model_external_atten.push_back( ext_shield );
+  
+  
+  
+  // Using example spectra 522 from https://nds.iaea.org/idb/ - randomly selected.
   const string specfilename = "IDB-all-spectra/named_spectrum_files/spec522_239Pu_84.8097.spe";
   SpecUtils::SpecFile specfile;
   const bool loaded_spec = specfile.load_file(specfilename, SpecUtils::ParserType::Auto );
@@ -138,7 +173,7 @@ int dev_code()
     return EXIT_FAILURE;
   }
 
-  // "HPGe Pu 140 to 240 keV"
+  // Use "HPGe Pu 140 to 240 keV", adapted from FRAM
   const vector<RelActCalcAuto::RoiRange> energy_ranges{ {
       127.9,                                 //Lower energy
       131.8,                                 //Upper energy
