@@ -1507,7 +1507,13 @@ void RelActManualGui::calculateSolution()
       [peak_infos, pre_decay_correction_info, eqn_form, eqn_order, sessionId, solution, updater, prep_warnings, errmsg, err_updater](){
         try
         {
-          *solution = solve_relative_efficiency( peak_infos, eqn_form, eqn_order );
+          RelActCalcManual::RelEffInput input;
+          input.peaks = peak_infos;
+          input.eqn_form = eqn_form;
+          input.eqn_order = eqn_order;
+          
+          *solution = solve_relative_efficiency( input );
+
           solution->m_warnings.insert(begin(solution->m_warnings), begin(prep_warnings), end(prep_warnings));
           solution->m_input_peaks_before_decay_corr = pre_decay_correction_info;
           WServer::instance()->post( sessionId, updater );
@@ -1617,7 +1623,7 @@ void RelActManualGui::updateGuiWithResults( shared_ptr<RelActCalcManual::RelEffS
     return;
   
   // We'll first update the chart
-  const string relEffEqn = RelActCalc::rel_eff_eqn_js_function( solution.m_rel_eff_eqn_form, solution.m_rel_eff_eqn_coefficients );
+  const string relEffEqn = RelActCalc::rel_eff_eqn_js_function( solution.m_input.eqn_form, solution.m_rel_eff_eqn_coefficients );
   
   deque<PeakModel::PeakShrdPtr> displayed_peaks;
   if( m_peakModel && m_peakModel->peaks() )
@@ -1729,9 +1735,26 @@ void RelActManualGui::updateGuiWithResults( shared_ptr<RelActCalcManual::RelEffS
   solution.get_mass_ratio_table( results_html );
   results_html << "<br />";
   
-  results_html << "<div class=\"releffeqn\">Rel. Eff.: y = "
-  << RelActCalc::rel_eff_eqn_text( solution.m_rel_eff_eqn_form, solution.m_rel_eff_eqn_coefficients )
-  << "</div>\n";
+  results_html << "<div class=\"releffeqn\">Rel. Eff.: y = ";
+  if( solution.m_input.eqn_form != RelActCalc::RelEffEqnForm::FramPhysicalModel )
+  {
+    results_html  << RelActCalc::rel_eff_eqn_text( solution.m_input.eqn_form, solution.m_rel_eff_eqn_coefficients );
+  }else
+  {
+    const auto &input = solution.m_input;
+    shared_ptr<const Material> self_atten = input.phys_model_self_atten ? input.phys_model_self_atten->material : nullptr;
+    vector<shared_ptr<const Material>> external_attens;
+    for( const auto &att : input.phys_model_external_attens )
+      external_attens.push_back( att->material );
+
+    results_html << RelActCalc::physical_model_rel_eff_eqn_text( self_atten, external_attens,
+                                                *input.phys_model_detector,
+                                                solution.m_rel_eff_eqn_coefficients.data(),
+                                                solution.m_rel_eff_eqn_coefficients.size(),
+                                                true );
+  }//if( solution.m_input.eqn_form != RelActCalc::RelEffEqnForm::FramPhysicalModel ) / else 
+
+  results_html << "</div>\n";
   
   results_html << "<br /> <div>&chi;<sup>2</sup>=" << SpecUtils::printCompact( solution.m_chi2, 4)
   << " " << WString::tr("ramg-and-there-were").toUTF8() << " " << solution.m_dof

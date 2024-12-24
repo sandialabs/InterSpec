@@ -31,12 +31,15 @@
 #include "SpecUtils/SpecFile.h"
 #include "SpecUtils/Filesystem.h"
 
+#include "InterSpec/PeakDef.h"
+#include "InterSpec/SpecMeas.h"
 #include "InterSpec/InterSpec.h"
 #include "InterSpec/MaterialDB.h"
 #include "InterSpec/RelActCalc.h"
 #include "InterSpec/PhysicalUnits.h"
 #include "InterSpec/RelActAutoDev.h"
 #include "InterSpec/RelActCalcAuto.h"
+#include "InterSpec/RelActCalcManual.h"
 #include "InterSpec/DecayDataBaseServer.h"
 #include "InterSpec/DetectorPeakResponse.h"
 
@@ -64,7 +67,7 @@ void check_physical_model_eff_function()
   }catch( std::exception &e )
   {
     cerr << "Failed to open directory." << endl;
-    return EXIT_FAILURE;
+    return;
   }
   
   const Material * const pu_db = matdb.material("Pu (plutonium)");
@@ -97,12 +100,138 @@ void check_physical_model_eff_function()
   
 }//void check_physical_model_eff_function()
   
+void example_manual_phys_model()
+{
+  cout << "Running example_manual_phys_model" << endl;
+
+const SandiaDecay::SandiaDecayDataBase * const db = DecayDataBaseServer::database();
+  assert( db );
+
+  MaterialDB matdb;
+  
+  const string data_dir = InterSpec::staticDataDirectory();
+  const string materialfile = SpecUtils::append_path( data_dir, "MaterialDataBase.txt" );
+  matdb.parseGadrasMaterialFile( materialfile, db, false );
+  
+  const Material * const u_db = matdb.material("U (uranium)");
+  assert( u_db );
+  const shared_ptr<const Material> uranium = std::make_shared<Material>( *u_db );
+  
+
+  const string input_file = "uranium_40%_HPGe_15cm_peaks_fit.n42";
+  SpecMeas infile;
+  const bool loaded = infile.load_file( input_file, SpecUtils::ParserType::Auto );
+  if( !loaded )
+  {
+    cerr << "Failed to load '" << input_file << "', aborting." << endl;
+    return;
+  }
+  std::shared_ptr<const DetectorPeakResponse> det = infile.detector();
+  assert( det );
+  
+  shared_ptr<deque<shared_ptr<const PeakDef>>> orig_peaks = infile.peaks( {1} );
+  assert( orig_peaks && orig_peaks->size() );
+
+  assert( infile.detector_names().size() == 1 );
+  const shared_ptr<const SpecUtils::Measurement> meas = infile.measurement( 1, infile.detector_names()[0] );
+  assert( meas );
+  
+  const double base_rel_eff_uncert = 0.01;
+
+  std::vector<RelActCalcManual::GenericPeakInfo> peaks;
+  for( const auto &peak : *orig_peaks )
+  {
+    const SandiaDecay::Nuclide * const nuclide = peak->parentNuclide();
+    if( !nuclide || (nuclide->atomicNumber != 92) )
+      continue;
+    
+    RelActCalcManual::GenericPeakInfo info;
+    info.m_energy = peak->gammaParticleEnergy();
+    info.m_mean = peak->mean();
+    info.m_fwhm = peak->fwhm();
+    info.m_counts = peak->peakArea();
+    info.m_counts_uncert = peak->peakAreaUncert();
+    info.m_base_rel_eff_uncert = base_rel_eff_uncert;
+      
+    peaks.push_back( info );
+  }//for( const auto &peak : *orig_peaks )
+
+  vector<RelActCalcManual::PeakCsvInput::NucAndAge> isotopes;
+  isotopes.emplace_back( "U235", 20.0*PhysicalUnits::year, false );
+  isotopes.emplace_back( "U238", 20.0*PhysicalUnits::year, false );
+
+  
+  const vector<pair<float,float>> energy_ranges{ { 50.0, 2000.0 } };
+  const float energy_tolerance_sigma = 1.5;
+  const std::vector<float> excluded_peak_energies;
+  const float measurement_duration = meas->real_time();
+
+  RelActCalcManual::PeakCsvInput::NucMatchResults matched_res 
+              = RelActCalcManual::PeakCsvInput::fill_in_nuclide_info( peaks, RelActCalcManual::PeakCsvInput::NucDataSrc::SandiaDecay,
+                                     energy_ranges, isotopes,
+                                     energy_tolerance_sigma,
+                                     excluded_peak_energies,
+                                     measurement_duration );
+
+  RelActCalcManual::RelEffInput rel_eff_solve_input;
+  rel_eff_solve_input.peaks = matched_res.peaks_matched;
+  rel_eff_solve_input.eqn_form = RelActCalc::RelEffEqnForm::FramPhysicalModel;
+  rel_eff_solve_input.eqn_order = 0;
+  rel_eff_solve_input.phys_model_detector = det;
+
+  RelActCalc::PhysicalModelShieldInput self_atten_def;
+  self_atten_def.atomic_number = 0.0;
+  self_atten_def.material = uranium;
+  self_atten_def.areal_density = 10.0*PhysicalUnits::g_per_cm2;
+  self_atten_def.fit_atomic_number = false;
+  self_atten_def.lower_fit_atomic_number = 1.0;
+  self_atten_def.upper_fit_atomic_number = 98.0;
+  self_atten_def.fit_areal_density = true;
+  self_atten_def.lower_fit_areal_density = 0.0;
+  self_atten_def.upper_fit_areal_density = 500*PhysicalUnits::g_per_cm2;
+
+  rel_eff_solve_input.phys_model_self_atten = make_shared<RelActCalc::PhysicalModelShieldInput>( self_atten_def );
+
+  RelActCalc::PhysicalModelShieldInput external_atten_def;
+  external_atten_def.atomic_number = 26;
+  external_atten_def.material = nullptr;
+  external_atten_def.areal_density = 1.0*PhysicalUnits::g_per_cm2;
+  external_atten_def.fit_atomic_number = false;
+  external_atten_def.lower_fit_atomic_number = 1.0;
+  external_atten_def.upper_fit_atomic_number = 98.0;
+  external_atten_def.fit_areal_density = true;
+  external_atten_def.lower_fit_areal_density = 0.0;
+  external_atten_def.upper_fit_areal_density = 500*PhysicalUnits::g_per_cm2;
+  rel_eff_solve_input.phys_model_external_attens.push_back( make_shared<RelActCalc::PhysicalModelShieldInput>( external_atten_def ) );
+
+
+  RelActCalcManual::RelEffSolution sol = RelActCalcManual::solve_relative_efficiency( rel_eff_solve_input );
+
+  if( sol.m_status != RelActCalcManual::ManualSolutionStatus::Success )
+  {
+    cerr << "Failed to solve relative efficiency" << endl;
+    return;
+  }
+
+  ofstream out_html( "manual_phys_model_result.html" );
+  std::vector<std::shared_ptr<const PeakDef>> disp_peaks( orig_peaks->begin(), orig_peaks->end() );
+  sol.print_html_report( out_html, "Manual Phys Model", meas, disp_peaks, nullptr, 0.0 );
+
+
+  cout << "Solution: " << endl;
+  sol.print_summary( cout );
+  cout << endl;
+}//void example_manual_phys_model()
+
   
 int dev_code()
 {
   //check_physical_model_eff_function();
   //return 1;
   
+  //example_manual_phys_model();
+  //return 1;
+
   const SandiaDecay::SandiaDecayDataBase * const db = DecayDataBaseServer::database();
   assert( db );
   if( !db )
@@ -127,7 +256,7 @@ int dev_code()
   options.pu242_correlation_method = RelActCalc::PuCorrMethod::ByPu239Only;
   options.skew_type = PeakDef::SkewType::NoSkew;
   
-  RelActCalcAuto::Options::PhysicalModelShieldInput self_atten_def;
+  RelActCalc::PhysicalModelShieldInput self_atten_def;
   self_atten_def.atomic_number = 0.0;
   const Material * const pu = matdb.material("Pu (plutonium)");
   assert( pu );
@@ -140,10 +269,10 @@ int dev_code()
   self_atten_def.lower_fit_areal_density = 0.0;
   self_atten_def.upper_fit_areal_density = 500.0 * PhysicalUnits::g_per_cm2;
   
-  options.phys_model_self_atten = self_atten_def;
+  options.phys_model_self_atten = make_shared<RelActCalc::PhysicalModelShieldInput>( self_atten_def );
   
   
-  RelActCalcAuto::Options::PhysicalModelShieldInput ext_shield;
+  RelActCalc::PhysicalModelShieldInput ext_shield;
   ext_shield.atomic_number = 26;
   ext_shield.material = nullptr;
   ext_shield.areal_density = 1.0 * PhysicalUnits::g_per_cm2;
@@ -153,7 +282,7 @@ int dev_code()
   ext_shield.fit_areal_density = true;
   ext_shield.lower_fit_areal_density = 0.0;
   ext_shield.upper_fit_areal_density = 500.0 * PhysicalUnits::g_per_cm2;
-  options.phys_model_external_atten.push_back( ext_shield );
+  options.phys_model_external_atten.push_back( make_shared<RelActCalc::PhysicalModelShieldInput>( ext_shield ) );
   
   
   

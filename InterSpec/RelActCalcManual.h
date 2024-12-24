@@ -32,9 +32,12 @@
 // Forward declarations
 class PeakDef;
 
+class DetectorPeakResponse;
+
 namespace RelActCalc
 {
   enum class RelEffEqnForm : int;
+  struct PhysicalModelShieldInput;
 }
 
 namespace SandiaDecay
@@ -47,6 +50,10 @@ namespace SpecUtils
   class Measurement;
 }
 
+namespace ceres
+{
+  class Problem;
+}
 
 /** The structs/functions in this namespace facilitate performing a relative activity calculation
  on user-fit peaks (hence the term "Manual").
@@ -300,6 +307,45 @@ struct IsotopeRelativeActivity
 };//struct IsotopeRelativeActivity
 
 
+/** The input for the manual relative efficiency calculation. */
+struct RelEffInput
+{
+  /** The input peak information.
+ 
+  Each peak must have at least one source isotope, have counts above zero, have counts
+  uncertainty greater than zero (or equal to -1.0), and each isotope must have yields
+  at each energy greater than 0.
+   */
+  std::vector<GenericPeakInfo> peaks;
+  
+  /** The equation form to use; i.e., EqnForm::LnX, EqnForm::LnY, or EqnForm::LnXLn */
+  RelActCalc::RelEffEqnForm eqn_form;
+
+  /** The order of equation to be fit for.  i.e., the number of energy-dependent terms
+  to be fit for (e.g., the total number of terms will be this plus one). 
+  
+  If eqn_form is `RelActCalc::RelEffEqnForm::FramPhysicalModel`, then this value must
+  be 0, as it is not used.
+  */
+  size_t eqn_order;
+
+  /** The detector peak response to use as part of the relative efficiency equation for 
+   `RelActCalc::RelEffEqnForm::FramPhysicalModel`, and if so, the detector must be non-null 
+   and valid.
+   Not used for other equation forms.
+  */
+  std::shared_ptr<const DetectorPeakResponse> phys_model_detector;
+  
+  /** The self attenuation if the equation form is `RelActCalc::RelEffEqnForm::FramPhysicalModel`.
+    If specified for any other equation form, will throw an exception.
+  */
+  std::shared_ptr<const RelActCalc::PhysicalModelShieldInput> phys_model_self_atten;
+  
+  /** The external attenuations for equation form `RelActCalc::RelEffEqnForm::FramPhysicalModel`. 
+    If specified for any other equation form, will throw an exception.
+  */
+  std::vector<std::shared_ptr<const RelActCalc::PhysicalModelShieldInput>> phys_model_external_attens;
+};//struct RelEffInput
 
 /** The status of fitting for a solution. */
 enum class ManualSolutionStatus : int
@@ -316,8 +362,8 @@ enum class ManualSolutionStatus : int
  */
 struct RelEffSolution
 {
-  RelActCalc::RelEffEqnForm m_rel_eff_eqn_form;
-  size_t m_rel_eff_eqn_order = 0;
+  RelEffInput m_input;
+
   std::vector<double> m_rel_eff_eqn_coefficients;
   std::vector<std::vector<double>> m_rel_eff_eqn_covariance;
   
@@ -340,12 +386,14 @@ struct RelEffSolution
    */
   double m_chi2 = 0.0;
   
-  /** The number of degrees of freedom in the fit for equation parameters.
+  /** An estimate for the number of degrees of freedom in the fit for equation parameters.
    
    Note: right now just have as just the number of peaks used minus number of equation parameters fit for, minus one less than the
-   number of isotopes - probably off by one, or more - need to think on this and come back to it
+   number of isotopes - probably off by one, or more - need to think on this and come back to it.
+   
+   For Physical Model, this estimate is totally not valid, and can even be negative.
    */
-  size_t m_dof = 0;
+  int m_dof = 0;
   
   /** The number of evaluation calls it took L-M to reach a solution.
    Only useful for debugging and curiosity.
@@ -394,6 +442,7 @@ struct RelEffSolution
    */
   std::vector<GenericPeakInfo> m_input_peaks_before_decay_corr;
   
+
   /////////////////////////////////////////////////////////////////////////////////////////////////
   //            Below here are member functions for simplified access to information             //
   /////////////////////////////////////////////////////////////////////////////////////////////////
@@ -497,23 +546,30 @@ struct RelEffSolution
   void get_mass_ratio_table( std::ostream &strm ) const;
 };//struct RelEffSolution
 
+
 /** Solve for the relative efficiency equation and relative activities for all isotopes
  
- @param peak_infos The input peak information.
- Each peak must have at least one source isotope, have counts above zero, have counts
- uncertainty greater than zero (or equal to -1.0), and each isotope must have yields
- at each energy greater than 0.
- @param eqn_form The equation form to use; i.e., EqnForm::LnX, EqnForm::LnY, or EqnForm::LnXLn
- @param eqn_order The order of equation to be fit for.  i.e., the number of energy-dependent terms
- to be fit for (e.g., the total number of terms will be this plus one).
-
+ @param input The input peaks and options for the calculation.
  @returns The solution to the problem.  Make sure to check RelEffSolution::m_status,
           RelEffSolution::m_warnings, and RelEffSolution::m_error_message.
  */
-RelEffSolution solve_relative_efficiency( const std::vector<GenericPeakInfo> &peak_infos,
-                                         const RelActCalc::RelEffEqnForm eqn_form,
-                                         const size_t eqn_order );
+RelEffSolution solve_relative_efficiency( const RelEffInput &input );
 
+
+/** Setup the physical model shield parameters for the Ceres problem - used by both auto and manual.
+ * Assumes each parameter is its own parameter block.
+ * 
+ * @param problem The Ceres problem to setup.
+ * @param pars The array of parameters.
+ * @param start_ind The starting index, of `pars`, for this shielding.  This is the index
+ *                  Atomic Number of the shielding (if material isnt defined), and the next position
+ *                  in the paramaters is the Areal Density.
+ * @param opt The physical model shield input to use.
+ */
+void setup_physical_model_shield_par( ceres::Problem &problem, 
+                                      double * const pars, 
+                                      const size_t start_ind, 
+                                      const std::shared_ptr<const RelActCalc::PhysicalModelShieldInput> &opt );
 
 /** Functions in this namespace are for importing peak data from CSV files, and then matching
  up nuclide info, if it wasnt in the CSV files.
@@ -640,9 +696,8 @@ struct NucAndAge
         ages are assumed.
  @param energy_ranges The energy ranges of peaks to keep.  If empty, will not filter on this.
  @param isotopes The names of isotopes to potentially match up.
- @param energy_tolerance_fwhm The matching tolerance, in the peaks FWHM; all source gammas within
-        this energy range of the peak mean will be attributed to the peak.  A value of 0.57 will
-        include all gammas within 1.5 sigma of the mean.
+ @param energy_tolerance_sigma The matching tolerance, in the peaks sigma; all source gammas within
+        this energy range of the peak mean will be attributed to the peak.
  @param excluded_peak_energies Peaks to explicitly exclude from the analysis.
  @param measurement_duration The duration of the measurement; only used if correcting activities for decay during measurement.
         \sa `NucAndAge::decay_during_measurement`

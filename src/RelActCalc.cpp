@@ -42,9 +42,27 @@
 
 using namespace std;
 
+namespace 
+{
+  /** Make "Pu (plutonium)" into "Pu", for printing PhysicalModelShieldInput materials. */
+  string cleanup_mat_name( string text )
+  {
+    size_t first = text.find('(');
+    if( first != std::string::npos )
+    {
+      size_t second = text.find(')', first);
+      if( second != std::string::npos )
+        text.erase(first, second - first + 1);
+    }
+    
+    SpecUtils::trim( text );
+    return text;
+  };//cleanup_mat_name(...)
+}//namespace 
 
 namespace RelActCalc
 {
+const double PhysicalModelShieldInput::sm_upper_allowed_areal_density_in_g_per_cm2 = 500.0;
 
 const char *to_str( const RelEffEqnForm form )
 {
@@ -768,7 +786,70 @@ void test_pu242_by_correlation()
 }//void test_pu242_by_correlation()
 
 
+void PhysicalModelShieldInput::check_valid() const
+{
+  const PhysicalModelShieldInput &input = *this;
+    
+  double ad_gcm2 = input.areal_density / PhysicalUnits::g_per_cm2;
+  const double ad_ll_gcm2 = input.lower_fit_areal_density / PhysicalUnits::g_per_cm2;
+  double ad_ul_gcm2 = input.upper_fit_areal_density / PhysicalUnits::g_per_cm2;
+  if( ad_ul_gcm2 == 0.0 )
+    ad_ul_gcm2 = sm_upper_allowed_areal_density_in_g_per_cm2;
   
+  if( input.fit_areal_density )
+  {
+    if( ad_gcm2 == 0.0 )
+      ad_gcm2 = 0.5*(ad_ll_gcm2 + ad_ul_gcm2);
+    
+    if( ad_ul_gcm2 <= ad_ll_gcm2 )
+      throw runtime_error( "PhysicalModelShieldInput: upper AD must be greater than lower AD." );
+    
+    if( (ad_gcm2 < ad_ll_gcm2) || (ad_gcm2 > ad_ul_gcm2) )
+      throw runtime_error( "PhysicalModelShieldInput: starting AD must be within limits." );
+  }//if( input.fit_areal_density )
+  
+  if( (ad_gcm2 < 0.0) || (ad_gcm2 > sm_upper_allowed_areal_density_in_g_per_cm2) )
+    throw runtime_error( "PhysicalModelShieldInput: AD must be in range [0,500] g/cm2." );
+  
+  if( input.material )
+  {
+    if( input.atomic_number != 0.0 )
+      throw runtime_error( "PhysicalModelShieldInput: when material is specified"
+                          " the atomic number must be set to zero");
+    if( input.fit_atomic_number )
+      throw runtime_error( "PhysicalModelShieldInput: when material is specified, must set fit"
+                          " atomic number to false." );
+  }else
+  {
+    if( input.fit_atomic_number )
+    {
+      if( (input.atomic_number != 0.0)
+         && ((input.atomic_number < 1.0) || (input.atomic_number > 98)) )
+        throw runtime_error( "PhysicalModelShieldInput: atomic number must be in [1,98], or 0 when"
+                            " fitting it." );
+      
+      if( (input.lower_fit_atomic_number != 0.0)
+         && ((input.lower_fit_atomic_number < 1.0) || (input.lower_fit_atomic_number > 98)) )
+        throw runtime_error( "PhysicalModelShieldInput: lower atomic number must be in [1,98]." );
+      
+      if( (input.upper_fit_atomic_number != 0.0)
+         && ((input.upper_fit_atomic_number < 1.0) || (input.upper_fit_atomic_number > 98)) )
+        throw runtime_error( "PhysicalModelShieldInput: upper atomic number must be in [1,98]." );
+      
+      if( (input.upper_fit_atomic_number <= input.lower_fit_atomic_number)
+         && (input.upper_fit_atomic_number != 0.0) )
+        throw runtime_error( "PhysicalModelShieldInput: upper atomic number must be less than lower." );
+    }else
+    {
+      if( (input.atomic_number < 1.0) || (input.atomic_number > 98) )
+        throw runtime_error( "PhysicalModelShieldInput: invalid atomic number; must be in [1,98]" );
+    }
+  }//if( input.material ) / else.
+    
+};//PhysicalModelShieldInput::check_valid()
+  
+
+
 double eval_physical_model_eqn( const double energy,
                                  const shared_ptr<const Material> &self_atten,
                                  const vector<shared_ptr<const Material>> &external_attens,
@@ -784,12 +865,13 @@ double eval_physical_model_eqn( const double energy,
   const auto sanity_check_shield = [paramaters,num_pars]( const shared_ptr<const Material> &material,
                                                 const size_t par_start ){
     const double atomic_number = paramaters[par_start];
-    const double areal_density = paramaters[par_start + 1];
+    double areal_density = paramaters[par_start + 1];
     
-    assert( (areal_density >= 0.0) && !IsInf(areal_density) );
-    if( (areal_density < 0.0) || IsNan(areal_density) || IsInf(areal_density) )
+    assert( (areal_density >= -1.0E-6) && !IsInf(areal_density) );
+    if( (areal_density <= -1.0E-6) || IsNan(areal_density) || IsInf(areal_density) )
       throw runtime_error( "eval_physical_model_eqn: areal density must be >= 0." );
-    
+    areal_density = std::max( 0.0, areal_density );
+
     if( material )
     {
       assert( atomic_number == 0.0f );
@@ -813,10 +895,13 @@ double eval_physical_model_eqn( const double energy,
   const float energyf = static_cast<float>( energy );
     
   const double self_atten_an = paramaters[0];
-  const double self_atten_ad = paramaters[1] * PhysicalUnits::g / PhysicalUnits::cm2;
-  if( self_atten_ad < 0.0 )
-    throw runtime_error( "eval_physical_model_eqn: self atten areal-density may not be less than zero." );
+  double self_atten_ad = paramaters[1] * PhysicalUnits::g / PhysicalUnits::cm2;
   
+  assert( self_atten_ad >= -1.0E-3 );
+  if( self_atten_ad < -1.0E-3 )
+    throw runtime_error( "eval_physical_model_eqn: self atten areal-density may not be less than zero." );
+  self_atten_ad = std::max( 0.0, self_atten_ad );
+
   const double self_atten_mu = self_atten
             ? transmition_length_coefficient( self_atten.get(), energyf ) / self_atten->density
             :  mass_attenuation_coef( self_atten_an, energyf );
@@ -844,6 +929,11 @@ double eval_physical_model_eqn( const double energy,
     
   const double det_part = drf.intrinsicEfficiency( energyf );
     
+//#warning "Not including correction factor in Physical Model Eff"
+//static int ntimeshere = 0;
+//if( ntimeshere++ < 5 )
+//  cerr << "eval_physical_model_eqn: corr_factor not included in Physical Model Eff" << endl;
+//  double corr_factor = 1.0;
   const double b = paramaters[2 + 2*external_attens.size() + 0];
   const double c = paramaters[2 + 2*external_attens.size() + 1];
   const double corr_factor = std::pow(0.001*energy, b) * std::pow( c, 1000.0/energy );
@@ -858,7 +948,9 @@ double eval_physical_model_eqn_uncertainty( const double energy,
                                  const DetectorPeakResponse &drf,
                                  const std::vector<std::vector<double>> &covariance )
 {
-  throw runtime_error( "eval_physical_model_eqn_uncertainty not implemented." );
+#warning "eval_physical_model_eqn_uncertainty not implemented."
+  cerr << "eval_physical_model_eqn_uncertainty not implemented." << endl;
+  return 0.0;
 }
   
 std::function<double(double)> physical_model_eff_function( const shared_ptr<const Material> &self_atten,
@@ -939,35 +1031,24 @@ std::function<double(double)> physical_model_eff_function( const shared_ptr<cons
     
     const double b = pars[2 + 2*external_attens.size() + 0];
     const double c = pars[2 + 2*external_attens.size() + 1];
-    const double corr_factor = std::pow(0.001*energy, b) * std::pow( c, 1000.0/energy );
+    const double corr_factor = std::pow(0.001*energy, b) * std::pow( c, 0.001*energy );
     
     return sa_part * ext_atten_part * det_part * corr_factor;
   };
 }//physical_model_eff_function(...)
   
-  
+
+
 string physical_model_rel_eff_eqn_text( const std::shared_ptr<const Material> &self_atten,
                                                 const vector<shared_ptr<const Material>> &external_attens,
                                                 const DetectorPeakResponse &drf,
                                                 const double * const paramaters,
-                                                const size_t num_pars )
+                                                const size_t num_pars,
+                                                const bool html_format )
 {
-  const auto cleanup_mat_name = []( string text ) -> string {
-    // Make "Pu (plutonium)" into "Pu"
-    size_t first = text.find('(');
-    if( first != std::string::npos )
-    {
-      size_t second = text.find(')', first);
-      if( second != std::string::npos )
-        text.erase(first, second - first + 1);
-    }
-    
-    SpecUtils::trim( text );
-    return text;
-  };//cleanup_mat_name(...)
-  
-  
   string eqn;
+  if( !paramaters || (num_pars == 2) )
+    return eqn;
   
   const size_t sa_an_index = 0;
   const size_t sa_ad_index = 1;
@@ -977,15 +1058,21 @@ string physical_model_rel_eff_eqn_text( const std::shared_ptr<const Material> &s
     const double sa_ad = paramaters[sa_ad_index];
     const string sa_ad_str = SpecUtils::printCompact(sa_ad, 3);
     const string mu_name = self_atten ? cleanup_mat_name(self_atten->name) : SpecUtils::printCompact(sa_an, 3);
-    eqn +=
-    "<span style=\"display: inline-block; vertical-align: middle;\">\n"
-      "<span style=\"display: block; text-align: center;\">\n"
-        "(1 - exp(-μ<sub>" + mu_name + "</sub>*" + sa_ad_str + "))\n"
-      "</span>\n"
-      "<span style=\"display: block; border-top: 1px solid black; text-align: center;\">\n"
-        "(μ<sub>" + mu_name + "</sub>*" + sa_ad_str + ")\n"
-      "</span>\n"
-    "</span>\n";
+    if( html_format )
+    {
+      eqn +=
+      "<span style=\"display: inline-block; vertical-align: middle;\">\n"
+        "<span style=\"display: block; text-align: center;\">\n"
+          "(1 - exp(-" + sa_ad_str + "*μ<sub>" + mu_name + "</sub>))\n"
+        "</span>\n"
+        "<span style=\"display: block; border-top: 1px solid black; text-align: center;\">\n"
+          "(" + sa_ad_str + "*μ<sub>" + mu_name + "</sub>)\n"
+        "</span>\n"
+      "</span>\n";
+    }else
+    {
+      eqn += "(1 - exp(-" + sa_ad_str + "*μ_" + mu_name + "))/(" + sa_ad_str + "*μ_" + mu_name + ")";
+    }//if( html_format ) / else
   }//if( using self attenuation )
   
   if( !external_attens.empty() )
@@ -996,11 +1083,20 @@ string physical_model_rel_eff_eqn_text( const std::shared_ptr<const Material> &s
     {
       const size_t an_index = 2 + 2*i + 0;
       const size_t ad_index = 2 + 2*i + 1;
+      if( ad_index >= num_pars )
+        continue;
+
+      eqn += (i ? " * " : "");
       const shared_ptr<const Material> &mat = external_attens[i];
       const string mu_name = mat ? cleanup_mat_name(mat->name) : SpecUtils::printCompact(paramaters[an_index], 3);
       const string ad_str = SpecUtils::printCompact(paramaters[ad_index], 3);
-      
-      eqn += "* [exp(-μ<sub>" + mu_name + "</sub>*" + ad_str + ")";
+      if( html_format )
+      { 
+        eqn += "exp(-" + ad_str + "*μ<sub>" + mu_name + "</sub>)";
+      }else
+      {
+        eqn += "exp(-" + ad_str + "*μ_" + mu_name + ")";
+      }//if( html_format ) / else
     }//for( size_t i = 0; i < external_attens.size(); ++i )
     
     eqn += "]";
@@ -1008,11 +1104,22 @@ string physical_model_rel_eff_eqn_text( const std::shared_ptr<const Material> &s
        
   const size_t b_index = 2 + 2*external_attens.size() + 0;
   const size_t c_index = 2 + 2*external_attens.size() + 1;
-  eqn += " * [Detector Efficiency] * [E<sup>" + SpecUtils::printCompact(paramaters[b_index], 3) + "</sup> * "
-  + SpecUtils::printCompact(paramaters[c_index], 3) + "<sup>1/E</sup>]";
+  if( c_index < num_pars )
+  {
+    if( html_format )
+    {
+      eqn += " * [Detector Efficiency] * [E<sup>" + SpecUtils::printCompact(paramaters[b_index], 3) + "</sup> * "
+        + SpecUtils::printCompact(paramaters[c_index], 3) + "<sup>1/E</sup>]";
+    }else
+    {
+      eqn += " * [Detector Efficiency] * [E^" + SpecUtils::printCompact(paramaters[b_index], 3) + " * "
+         + SpecUtils::printCompact(paramaters[c_index], 3) + "^(1/E)]";
+    }//if( html_format ) / else
+  }//if( c_index < num_pars )
    
   return eqn;
 }//string physical_model_rel_eff_eqn_text(...)
+
 
 std::string physical_model_rel_eff_eqn_js_function( const std::shared_ptr<const Material> &self_atten,
                                                        const std::vector<std::shared_ptr<const Material>> &external_attens,
