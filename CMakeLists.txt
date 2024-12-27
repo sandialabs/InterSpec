@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.1...3.20 FATAL_ERROR)
+ cmake_minimum_required(VERSION 3.1...3.20 FATAL_ERROR)
 
 project(InterSpec VERSION 1.0.13)
 
@@ -514,6 +514,7 @@ if( USE_REL_ACT_TOOL )
         src/RelActManualGui.cpp
         src/RelActTxtResults.cpp
         src/RelEffChart.cpp
+        src/RelEffShieldWidget.cpp
         src/RelActAutoDev.cpp
   )
   
@@ -526,6 +527,7 @@ if( USE_REL_ACT_TOOL )
         InterSpec/RelActManualGui.h
         InterSpec/RelActTxtResults.h
         InterSpec/RelEffChart.h
+        InterSpec/RelEffShieldWidget.h
         InterSpec/RelActAutoDev.h
   )
 endif( USE_REL_ACT_TOOL )

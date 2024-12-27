@@ -2325,13 +2325,13 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     if( solution.m_rel_eff_form == RelActCalc::RelEffEqnForm::FramPhysicalModel )
     { 
       const auto &self_atten_opt = options.phys_model_self_atten;
-      RelActCalcManual::setup_physical_model_shield_par( problem, pars, rel_eff_start, self_atten_opt );
+      RelActCalcManual::setup_physical_model_shield_par( &problem, pars, rel_eff_start, self_atten_opt );
       
       for( size_t ext_ind = 0; ext_ind < options.phys_model_external_atten.size(); ++ext_ind )
       {
         const size_t start_index = rel_eff_start + 2 + 2*ext_ind;
         const auto &opt = options.phys_model_external_atten[ext_ind];
-        RelActCalcManual::setup_physical_model_shield_par( problem, pars, start_index, opt );
+        RelActCalcManual::setup_physical_model_shield_par( &problem, pars, start_index, opt );
       }//for( size_t ext_ind = 0; ext_ind < options.phys_model_external_atten.size(); ++ext_ind )
       
       // Not sure what to do with the b and c values of the Modified Hoerl function ( E^b * c^(1/E) ).

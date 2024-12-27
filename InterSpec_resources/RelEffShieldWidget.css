@@ -1,0 +1,41 @@
+.RelEffShieldWidget {
+  font-size: smaller;
+  
+  border: 1px solid #e1e1e1;
+  padding-block-start: 0px;
+  padding-inline-start: 5px;
+  padding-inline-end: 5px;
+  padding-block-end: 0px;
+}
+
+.RelEffShieldWidget legend {
+  font-size: smaller;
+}
+
+.RelEffShieldWidget .SwitchCheckbox {
+  transform: scale(0.5); /* Make switch smaller */
+  font-size: larger;
+
+  /* Looks like position is applied before the transform, so we'll 
+  make up for that manually.
+   */
+  position: relative;
+  right: calc(-25% - 5px);
+  margin-top: -8px;
+  margin-bottom: -2px;
+}
+  
+.RelEffShieldWidget .MaterialFrame, 
+.RelEffShieldWidget .GenericFrame {
+  display: grid;
+  row-gap: 2.5px;
+  column-gap: 2.5px;
+  padding-bottom: 2.5px;
+}
+
+.RelEffShieldWidget input[type="text"],
+.RelEffShieldWidget input[type="number"] {
+  font-size: smaller;
+  border: 1px solid #ccc; /* Add a border for visual feedback */
+  padding: 2px; /* Add some padding inside the input */
+}

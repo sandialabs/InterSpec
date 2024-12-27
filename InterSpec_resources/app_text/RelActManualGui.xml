@@ -71,6 +71,7 @@
   <message id="ramg-back-sub-cb">Background Subtract</message>
   <message id="ramg-html-export-label">HTML Report</message>
   <message id="ramg-nucs-label">Nuclides</message>
+  <message id="ramg-nucs-shield-label">Shields/Nucs</message>
   <message id="ramg-peaks-to-use-label">Peaks to Use</message>
   <message id="ramg-results-label">Results</message>
   <message id="ramg-mi-results">Results</message>

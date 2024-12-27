@@ -38,7 +38,10 @@ class AuxWindow;
 class InterSpec;
 class RelEffChart;
 class NativeFloatSpinBox;
+struct RelEffShieldState;
+class RelEffShieldWidget;
 class RowStretchTreeView;
+class DetectorPeakResponse;
 
 namespace Wt
 {
@@ -141,6 +144,8 @@ protected:
   size_t relEffEqnOrder() const;
   RelActCalcManual::PeakCsvInput::NucDataSrc nucDataSrc() const;
   
+  void handleSelfAttenShieldChanged();
+  
 protected:
   
   // Some items for adding undo/redo steps
@@ -169,6 +174,7 @@ protected:
   Wt::WContainerWidget *m_optionsColumn;
   
   Wt::WComboBox *m_relEffEqnForm;
+  Wt::WLabel *m_relEffEqnFormLabel;
   Wt::WComboBox *m_relEffEqnOrder;
   
   Wt::WTableRow *m_nucDataSrcHolder;
@@ -204,7 +210,13 @@ protected:
   
   /// All entries in this next <div> will be of class ManRelEffNucDisp
   Wt::WContainerWidget *m_nuclidesDisp;
-  
+  Wt::WText *m_nucColumnTitle;
+
+  Wt::WContainerWidget *m_physicalModelShields;
+  RelEffShieldWidget *m_selfAttenShield;
+  Wt::WContainerWidget *m_extAttenShields;
+
+
   /// Keep a cache of nuclide ages around incase the user removes a nuclide, but adds it in later.
   std::map<std::string,double> m_nucAge;
   /// Keep a cache of if we should decay-correct the nuclide incase the user removes a nuclide, but adds it in later.
@@ -214,6 +226,11 @@ protected:
   
   RelEffChart *m_chart;
   Wt::WContainerWidget *m_results;
+
+  /** A default detector to use, only if using `RelActCalc::RelEffEqnForm::FramPhysicalModel` 
+   * and foreground detector is not found. 
+  */
+  std::shared_ptr<const DetectorPeakResponse> m_defaultDetector;
   
   /** The GUI state that is updated inside each call to #render. Will be used to add an undo/redo step
    if the #RenderActions::AddUndoRedoStep flag is set.
@@ -233,6 +250,9 @@ protected:
     // TODO: could track nuclide WPanel collapse un-collapse
     int m_resultTab = 0; //Not currently having in for undo/redo steps, but will track
     
+    std::unique_ptr<RelEffShieldState> m_selfAttenShield;
+    std::vector<std::unique_ptr<RelEffShieldState>> m_externalShields;
+
     bool operator==( const GuiState &rhs ) const;
   };//struct GuiState
   

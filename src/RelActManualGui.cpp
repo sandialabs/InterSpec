@@ -34,6 +34,7 @@
 #include <Wt/WLabel>
 #include <Wt/WServer>
 #include <Wt/WComboBox>
+#include <Wt/WGroupBox>
 #include <Wt/WLineEdit>
 #include <Wt/WMenuItem>
 #include <Wt/WResource>
@@ -49,8 +50,9 @@
 #include <Wt/Http/Response>
 #include <Wt/WItemDelegate>
 #include <Wt/WStackedWidget>
-#include <Wt/WRegExpValidator>
 #include <Wt/WContainerWidget>
+#include <Wt/WRegExpValidator>
+#include <Wt/WSuggestionPopup>
 
 #include "SandiaDecay/SandiaDecay.h"
 
@@ -72,13 +74,16 @@
 #include "InterSpec/ReactionGamma.h"
 #include "InterSpec/WarningWidget.h"
 #include "InterSpec/RelActCalcAuto.h"
+#include "InterSpec/SwitchCheckbox.h"
 #include "InterSpec/RelActManualGui.h"
 #include "InterSpec/UndoRedoManager.h"
 #include "InterSpec/UserPreferences.h"
 #include "InterSpec/RelActCalcManual.h"
-#include "InterSpec/RowStretchTreeView.h"
 #include "InterSpec/NativeFloatSpinBox.h"
+#include "InterSpec/RelEffShieldWidget.h"
+#include "InterSpec/RowStretchTreeView.h"
 #include "InterSpec/DecayDataBaseServer.h"
+#include "InterSpec/DetectorPeakResponse.h"
 #include "InterSpec/IsotopeSelectionAids.h"
 #include "InterSpec/PhysicalUnitsLocalized.h"
 
@@ -488,6 +493,7 @@ RelActManualGui::RelActManualGui( InterSpec *viewer, Wt::WContainerWidget *paren
   m_layout( nullptr ),
   m_optionsColumn( nullptr ),
   m_relEffEqnForm( nullptr ),
+  m_relEffEqnFormLabel( nullptr ),
   m_relEffEqnOrder( nullptr ),
   m_nucDataSrcHolder( nullptr ),
   m_nucDataSrc( nullptr ),
@@ -499,11 +505,16 @@ RelActManualGui::RelActManualGui( InterSpec *viewer, Wt::WContainerWidget *paren
   m_peakTableColumn( nullptr ),
   m_peakModel( viewer ? viewer->peakModel() : nullptr ),
   m_nuclidesDisp( nullptr ),
+  m_nucColumnTitle( nullptr ),
+  m_physicalModelShields( nullptr ),
+  m_selfAttenShield( nullptr ),
+  m_extAttenShields( nullptr ),
   m_nucAge{},
   m_nucDecayCorrect{},
   m_resultMenu( nullptr ),
   m_chart( nullptr ),
-  m_results( nullptr )
+  m_results( nullptr ),
+  m_defaultDetector( nullptr )
 {
   assert( m_interspec && m_peakModel );
   if( !m_interspec || !m_peakModel )
@@ -576,14 +587,14 @@ void RelActManualGui::init()
                               WString::tr("ramg-tt-eqn-form"), showToolTips );
   
   
-  // Will assume FramEmpirical is the highest
-  static_assert( static_cast<int>(RelActCalc::RelEffEqnForm::FramEmpirical)
+  // Will assume FramPhysicalModel is the highest
+  static_assert( static_cast<int>(RelActCalc::RelEffEqnForm::FramPhysicalModel)
                  > static_cast<int>(RelActCalc::RelEffEqnForm::LnXLnY),
                 "RelEffEqnForm was changed!"
   );
   
   
-  for( int i = 0; i <= static_cast<int>(RelActCalc::RelEffEqnForm::FramEmpirical); ++i )
+  for( int i = 0; i <= static_cast<int>(RelActCalc::RelEffEqnForm::FramPhysicalModel); ++i )
   {
     const auto eqn_form = RelActCalc::RelEffEqnForm( i );
     
@@ -609,6 +620,11 @@ void RelActManualGui::init()
         //y = exp( a + b/x^2 + c*(lnx) + d*(lnx)^2 + e*(lnx)^3 )
         txt = "Empirical";
         break;
+
+      case RelActCalc::RelEffEqnForm::FramPhysicalModel:
+        //y = [(1 - exp(-mu_0 * x_0))/(mu_0 * x_0) * [exp(-mu_1 * x_1) * ...] * [Det Eff] * [(0.001*E)^b * c^(1000/E)]
+        txt = "Physical";
+        break;
     }//switch( eqn_form )
     
     m_relEffEqnForm->addItem( txt );
@@ -616,7 +632,7 @@ void RelActManualGui::init()
   
   m_relEffEqnForm->setCurrentIndex( static_cast<int>(RelActCalc::RelEffEqnForm::LnX) );
   
-  label = new WLabel( WString::tr("ramg-eqn-order-label"), optionsList->elementAt(1, 0) );
+  m_relEffEqnFormLabel = new WLabel( WString::tr("ramg-eqn-order-label"), optionsList->elementAt(1, 0) );
   
   m_relEffEqnOrder = new WComboBox( optionsList->elementAt(1, 1) );
   m_relEffEqnOrder->activated().connect( this, &RelActManualGui::relEffEqnOrderChanged );
@@ -760,14 +776,23 @@ void RelActManualGui::init()
   header = new WText( WString::tr("ramg-nucs-label") );
   header->addStyleClass( "ToolTabColumnTitle" );
   collayout->addWidget( header, 0, 0 );
+  m_nucColumnTitle = header;
   
   m_nuclidesDisp = new WContainerWidget();
   m_nuclidesDisp->addStyleClass( "ToolTabTitledColumnContent" );
   collayout->addWidget( m_nuclidesDisp, 1, 0 );
   collayout->setRowStretch( 1, 1 );
   m_layout->addWidget( nucCol, 0, 1 );
-  
-  // Create the "Cal Peaks" table
+
+
+  m_physicalModelShields = new WContainerWidget( m_nuclidesDisp );
+  m_physicalModelShields->addStyleClass( "PhysicalModelShields" );
+  m_selfAttenShield = nullptr; //We wont create it until we need it
+  m_extAttenShields = new WContainerWidget( m_physicalModelShields );
+  m_physicalModelShields->hide();
+
+
+  // Create the "Peaks to Use" table
   m_peakTableColumn = new WContainerWidget();
   m_peakTableColumn->addStyleClass( "ToolTabTitledColumn PeakTableCol" );
   m_layout->addWidget( m_peakTableColumn, 0, 2 );
@@ -927,6 +952,23 @@ shared_ptr<const RelActManualGui::GuiState> RelActManualGui::getGuiState() const
                                                     rr->decayDuringMeasurement() );
   }//for( auto w : m_nuclidesDisp->children() )
   
+  const auto eqn_form = RelActCalc::RelEffEqnForm( m_relEffEqnForm->currentIndex() );
+  if( eqn_form == RelActCalc::RelEffEqnForm::FramPhysicalModel )
+  {
+    if( m_selfAttenShield )
+      state->m_selfAttenShield = m_selfAttenShield->state();
+
+    if( m_extAttenShields )
+    {
+      for( auto w : m_extAttenShields->children() )
+      {
+        RelEffShieldWidget *rr = dynamic_cast<RelEffShieldWidget *>(w);
+        if( rr )
+          state->m_externalShields.push_back( rr->state() );
+      }//for( auto w : m_extAttenShields->children() )
+    }//if( m_extAttenShields )
+  }//if( eqn_form == RelActCalc::RelEffEqnForm::FramPhysicalModel )
+
   return state;
 }//std::shared_ptr<const GuiState> getGuiState() const
 
@@ -938,6 +980,7 @@ void RelActManualGui::setGuiState( const GuiState &state )
   {
     updateCalc = true;
     m_relEffEqnForm->setCurrentIndex( state.m_relEffEqnFormIndex );
+    relEffEqnFormChanged();
   }
   
   if( m_relEffEqnOrder->currentIndex() != state.m_relEffEqnOrderIndex )
@@ -1006,6 +1049,32 @@ void RelActManualGui::setGuiState( const GuiState &state )
     }//for( loop over previous ages )
   }//for( auto w : m_nuclidesDisp->children() )
   
+  const auto eqn_form = RelActCalc::RelEffEqnForm( state.m_relEffEqnFormIndex );
+  if( eqn_form == RelActCalc::RelEffEqnForm::FramPhysicalModel )
+  {
+    updateCalc = true;
+
+    if( state.m_selfAttenShield )
+    {
+      if( !m_selfAttenShield )
+      {
+        m_selfAttenShield = new RelEffShieldWidget( RelEffShieldWidget::ShieldType::SelfAtten );
+        m_selfAttenShield->changed().connect( this, &RelActManualGui::handleSelfAttenShieldChanged );
+        m_physicalModelShields->insertWidget( 0, m_selfAttenShield );
+      }
+      m_selfAttenShield->setState( *state.m_selfAttenShield );
+    }//if( state.m_selfAttenShield )
+
+    assert( m_extAttenShields );
+    
+    m_extAttenShields->clear();
+    for( const auto &s : state.m_externalShields )
+    {
+      RelEffShieldWidget *rr = new RelEffShieldWidget( RelEffShieldWidget::ShieldType::ExternalAtten, m_extAttenShields );
+      rr->setState( *s );
+    }//for( const auto &s : state.m_externalShields )
+  }//if( eqn_form == RelActCalc::RelEffEqnForm::FramPhysicalModel )
+
   if( updateCalc )
   {
     m_renderFlags |= RenderActions::UpdateCalc;
@@ -1496,6 +1565,50 @@ void RelActManualGui::calculateSolution()
     const RelActCalc::RelEffEqnForm eqn_form = relEffEqnForm();
     const size_t eqn_order = relEffEqnOrder();
     
+    RelActCalcManual::RelEffInput input;
+    input.peaks = peak_infos;
+    input.eqn_form = eqn_form;
+    input.eqn_order = eqn_order;
+
+    if( eqn_form == RelActCalc::RelEffEqnForm::FramPhysicalModel )
+    {
+      const auto fore = m_interspec->measurment(SpecUtils::SpectrumType::Foreground);
+      if( fore )
+        input.phys_model_detector = fore->detector();
+
+      if( !input.phys_model_detector )
+        input.phys_model_detector = m_defaultDetector;
+
+      if( !input.phys_model_detector )
+      {
+        const string datadir = InterSpec::staticDataDirectory();
+        const string basename = SpecUtils::append_path( datadir, "GenericGadrasDetectors" );
+        const string detdir = SpecUtils::append_path( basename, "HPGe 40%" );
+        
+        try
+        {
+          shared_ptr<DetectorPeakResponse> det = make_shared<DetectorPeakResponse>();
+          det->fromGadrasDirectory( detdir );
+          det->setFwhmCoefficients( {}, DetectorPeakResponse::ResolutionFnctForm::kNumResolutionFnctForm );
+          input.phys_model_detector = det;
+          m_defaultDetector = det;
+        }catch( std::exception &e )
+        {
+          cerr << "Failed to load default Gadras detector: " << e.what() << endl;
+        }
+      }//if( !phys_model_detector )
+
+      if( m_selfAttenShield )
+        input.phys_model_self_atten = m_selfAttenShield->fitInput();
+
+      for( auto w : m_extAttenShields->children() )
+      {
+        RelEffShieldWidget *rr = dynamic_cast<RelEffShieldWidget *>(w);
+        if( rr )
+          input.phys_model_external_attens.push_back( rr->fitInput() );
+      }//for( auto w : m_extAttenShields->children() )  
+    }//if( eqn_form == RelActCalc::RelEffEqnForm::FramPhysicalModel )
+
     const string sessionId = wApp->sessionId();
     auto solution = make_shared<RelActCalcManual::RelEffSolution>();
     auto updater = wApp->bind( boost::bind( &RelActManualGui::updateGuiWithResults, this, solution ) );
@@ -1503,15 +1616,13 @@ void RelActManualGui::calculateSolution()
     auto errmsg = make_shared<WString>();
     auto err_updater = wApp->bind( boost::bind( &RelActManualGui::updateGuiWithError, this, errmsg ) );
     
+
     WServer::instance()->ioService().boost::asio::io_service::post( std::bind(
-      [peak_infos, pre_decay_correction_info, eqn_form, eqn_order, sessionId, solution, updater, prep_warnings, errmsg, err_updater](){
+      [input, pre_decay_correction_info, sessionId, solution, updater, prep_warnings, errmsg, err_updater](){
         try
         {
-          RelActCalcManual::RelEffInput input;
-          input.peaks = peak_infos;
-          input.eqn_form = eqn_form;
-          input.eqn_order = eqn_order;
-          
+
+
           *solution = solve_relative_efficiency( input );
 
           solution->m_warnings.insert(begin(solution->m_warnings), begin(prep_warnings), end(prep_warnings));
@@ -1798,6 +1909,34 @@ void RelActManualGui::updateGuiWithResults( shared_ptr<RelActCalcManual::RelEffS
 
 void RelActManualGui::relEffEqnFormChanged()
 {
+  const auto eqn_form = RelActCalc::RelEffEqnForm( m_relEffEqnForm->currentIndex() );
+  switch( eqn_form )
+  {
+    case RelActCalc::RelEffEqnForm::LnX:
+    case RelActCalc::RelEffEqnForm::LnY:
+    case RelActCalc::RelEffEqnForm::LnXLnY:
+    case RelActCalc::RelEffEqnForm::FramEmpirical:
+      m_physicalModelShields->hide();
+      m_nucColumnTitle->setText( WString::tr("ramg-nucs-label") );
+      m_relEffEqnOrder->show();
+      m_relEffEqnFormLabel->show();
+      break;
+    
+    case RelActCalc::RelEffEqnForm::FramPhysicalModel:
+      m_physicalModelShields->show();
+      m_nucColumnTitle->setText( WString::tr("ramg-nucs-shield-label") );
+      m_relEffEqnOrder->hide();
+      m_relEffEqnFormLabel->hide();
+      if( !m_selfAttenShield )
+      {
+        m_selfAttenShield = new RelEffShieldWidget( RelEffShieldWidget::ShieldType::SelfAtten );
+        m_selfAttenShield->changed().connect( this, &RelActManualGui::handleSelfAttenShieldChanged );
+        m_physicalModelShields->insertWidget( 0, m_selfAttenShield );
+      }
+      break;
+  }//switch( eqn_form )
+
+  
   m_renderFlags |= RenderActions::UpdateCalc;
   m_renderFlags |= RenderActions::AddUndoRedoStep;
   scheduleRender();
@@ -1818,6 +1957,13 @@ void RelActManualGui::nucDataSrcChanged()
   m_renderFlags |= RenderActions::AddUndoRedoStep;
   scheduleRender();
 }
+
+void RelActManualGui::handleSelfAttenShieldChanged()
+{
+  m_renderFlags |= RenderActions::UpdateCalc;
+  m_renderFlags |= RenderActions::AddUndoRedoStep;
+  scheduleRender();
+}//void handleSelfAttenShieldChanged()
 
 
 void RelActManualGui::matchToleranceChanged()
@@ -1884,6 +2030,8 @@ void RelActManualGui::updateNuclides()
   for( auto w : m_nuclidesDisp->children() )
   {
     ManRelEffNucDisp *rr = dynamic_cast<ManRelEffNucDisp *>(w);
+    if( !rr )
+      continue; // Shielding inputs for Physical Model
     assert( rr && (rr->m_nuc || rr->m_reaction) && !current_nucs.count(rr->m_nuc) && !current_rctns.count(rr->m_reaction) );
     if( rr && rr->m_nuc )
       current_nucs[rr->m_nuc] = rr;
@@ -1930,7 +2078,7 @@ void RelActManualGui::updateNuclides()
     for( size_t index = 0; index < kids.size(); ++index )
     {
       ManRelEffNucDisp *prev = dynamic_cast<ManRelEffNucDisp *>( kids[index] );
-      assert( prev );
+      assert( prev || kids[index]->hasStyleClass("PhysicalModelShields") );
       if( !prev || !prev->m_nuc )
         continue;
       
@@ -2058,7 +2206,7 @@ void RelActManualGui::updateNuclides()
   for( auto w : m_nuclidesDisp->children() )
   {
     ManRelEffNucDisp *rr = dynamic_cast<ManRelEffNucDisp *>(w);
-    assert( rr );
+    assert( rr || w->hasStyleClass("PhysicalModelShields") );
     if( rr && rr->m_nuc )
     {
       const bool isU = (rr->m_nuc->atomicNumber == 92);
@@ -2159,6 +2307,7 @@ RelActCalc::RelEffEqnForm RelActManualGui::relEffEqnForm() const
     case RelActCalc::RelEffEqnForm::LnY:
     case RelActCalc::RelEffEqnForm::LnXLnY:
     case RelActCalc::RelEffEqnForm::FramEmpirical:
+    case RelActCalc::RelEffEqnForm::FramPhysicalModel:
       validSelect = true;
       break;
   }//switch( eqn_form )
@@ -2172,6 +2321,10 @@ RelActCalc::RelEffEqnForm RelActManualGui::relEffEqnForm() const
 
 size_t RelActManualGui::relEffEqnOrder() const
 {
+  RelActCalc::RelEffEqnForm eqgnForm = relEffEqnForm();
+  if( eqgnForm == RelActCalc::RelEffEqnForm::FramPhysicalModel )
+    return 0;
+
   const int orderIndex = m_relEffEqnOrder->currentIndex();
   if( (orderIndex < 0) || (orderIndex > 7) )
     throw runtime_error( "Invalid RelEffEqnOrder" );
@@ -2348,9 +2501,19 @@ void RelActManualGui::deSerialize( const ::rapidxml::xml_node<char> *base_node )
   if( version != sm_xmlSerializationMajorVersion )
     throw runtime_error( "Invalid version of RelActManualGui XML" );
   
-  m_nuclidesDisp->clear();
-  //m_nucAge.clear();
+  // Clear out any existing nuclides
+  const auto nuc_kids = m_nuclidesDisp->children();
+  for( auto w : nuc_kids )
+  {
+    ManRelEffNucDisp *rr = dynamic_cast<ManRelEffNucDisp *>(w);
+    if( rr  )
+      delete rr;
+  }//for( auto w : m_nuclidesDisp->children() )
   
+//Need to account for   
+//m_selfAttenShield
+//  m_extAttenShields
+
   const ::rapidxml::xml_node<char> *RelEffEqnForm_node = XML_FIRST_NODE(base_node, "RelEffEqnForm");
   const ::rapidxml::xml_node<char> *RelEffEqnOrder_node = XML_FIRST_NODE(base_node, "RelEffEqnOrder");
   const ::rapidxml::xml_node<char> *NucDataSrc_node = XML_FIRST_NODE(base_node, "NucDataSrc");
@@ -2369,7 +2532,7 @@ void RelActManualGui::deSerialize( const ::rapidxml::xml_node<char> *base_node )
   RelActCalc::RelEffEqnForm eqn_form = RelActCalc::RelEffEqnForm::LnX;
   const string rel_eff_eqn_form_str = SpecUtils::xml_value_str( RelEffEqnForm_node );
   for( RelActCalc::RelEffEqnForm form = RelActCalc::RelEffEqnForm(0);
-      form <= RelActCalc::RelEffEqnForm::FramEmpirical;
+      form <= RelActCalc::RelEffEqnForm::FramPhysicalModel;
       form = RelActCalc::RelEffEqnForm(static_cast<int>(form)+1) )
   {
     const char * const test_form = RelActCalc::to_str( form );

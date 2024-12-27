@@ -864,7 +864,7 @@ double eval_physical_model_eqn( const double energy,
  
   const auto sanity_check_shield = [paramaters,num_pars]( const shared_ptr<const Material> &material,
                                                 const size_t par_start ){
-    const double atomic_number = paramaters[par_start];
+    double atomic_number = paramaters[par_start];
     double areal_density = paramaters[par_start + 1];
     
     assert( (areal_density >= -1.0E-6) && !IsInf(areal_density) );
@@ -879,8 +879,13 @@ double eval_physical_model_eqn( const double energy,
         throw runtime_error( "eval_physical_model_eqn: atomic number must be zero if material defined." );
     }else
     {
-      if( !((atomic_number >= 1.0) && (atomic_number <= 98.0)) ) //should catch Inf an NaN
+      if( IsNan(atomic_number) || IsInf(atomic_number) )
+        throw runtime_error( "eval_physical_model_eqn: atomic number is inf or NaN." );
+
+      if( (atomic_number < 0.9) || (atomic_number > 98.1) )
         throw runtime_error( "eval_physical_model_eqn: atomic number must in in range [1,98]" );
+
+      atomic_number = std::max( 1.0, std::min( 98.0, atomic_number ) );
     }
   };//sanity_check_shield lamda
   
@@ -894,13 +899,19 @@ double eval_physical_model_eqn( const double energy,
     
   const float energyf = static_cast<float>( energy );
     
-  const double self_atten_an = paramaters[0];
+  double self_atten_an = paramaters[0];
   double self_atten_ad = paramaters[1] * PhysicalUnits::g / PhysicalUnits::cm2;
   
   assert( self_atten_ad >= -1.0E-3 );
   if( self_atten_ad < -1.0E-3 )
     throw runtime_error( "eval_physical_model_eqn: self atten areal-density may not be less than zero." );
   self_atten_ad = std::max( 0.0, self_atten_ad );
+
+  assert( !IsNan(self_atten_an) && !IsInf(self_atten_an) && (self_atten_an > 0.9) && (self_atten_an < 98.1) );
+
+  if( IsNan(self_atten_an) || IsInf(self_atten_an) || (self_atten_an < 0.9) && (self_atten_an > 98.1) )
+    throw runtime_error( "eval_physical_model_eqn: self atten atomic number must be in range [1,98]." );
+  self_atten_an = std::max( 1.0, std::min( 98.0, self_atten_an ) );
 
   const double self_atten_mu = self_atten
             ? transmition_length_coefficient( self_atten.get(), energyf ) / self_atten->density
@@ -966,13 +977,19 @@ std::function<double(double)> physical_model_eff_function( const shared_ptr<cons
  
   const auto sanity_check_shield = [paramaters]( const shared_ptr<const Material> &material,
                                                 const size_t par_start ){
-    const double atomic_number = paramaters[par_start];
-    const double areal_density = paramaters[par_start + 1];
+    double atomic_number = paramaters[par_start];
+    double areal_density = paramaters[par_start + 1];
     
-    assert( (areal_density >= 0.0) && !IsInf(areal_density) );
-    if( (areal_density < 0.0) || IsNan(areal_density) || IsInf(areal_density) )
+    assert( (areal_density >= -1.0E-6) && !IsInf(areal_density) );
+    if( (areal_density < -1.0E-6) || IsNan(areal_density) || IsInf(areal_density) )
       throw runtime_error( "physical_model_eff_function: areal density must be >= 0." );
+    areal_density = std::max( 0.0, areal_density );
     
+    assert( !IsNan(atomic_number) && !IsInf(atomic_number) && (atomic_number > 0.9) && (atomic_number < 98.1) );
+    if( IsNan(atomic_number) || IsInf(atomic_number) || (atomic_number < 0.9) || (atomic_number > 98.1) )
+      throw runtime_error( "physical_model_eff_function: atomic number must be in range [1,98]." );
+    atomic_number = std::max( 1.0, std::min( 98.0, atomic_number ) );
+
     if( material )
     {
       assert( atomic_number == 0.0f );
@@ -980,6 +997,8 @@ std::function<double(double)> physical_model_eff_function( const shared_ptr<cons
         throw runtime_error( "physical_model_eff_function: atomic number must be zero if material defined." );
     }else
     {
+      if( IsNan(atomic_number) || IsInf(atomic_number) )
+        throw runtime_error( "physical_model_eff_function: atomic number is inf or NaN." );
       if( !((atomic_number >= 1.0) && (atomic_number <= 98.0)) ) //should catch Inf an NaN
         throw runtime_error( "physical_model_eff_function: atomic number must in in range [1,98]" );
     }

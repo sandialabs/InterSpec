@@ -277,8 +277,30 @@ void fit_rel_eff_eqn_lls( const RelActCalc::RelEffEqnForm fcn_form,
  \param fit_rel_acts The relative activities of the isotopes. Corresponds to \p isotopes on an index-by-index basis.
  
  */
+void fit_act_to_rel_eff( const std::function<double(double)> &eff_fcn,
+                        const std::vector<std::string> &isotopes,
+                        const std::vector<GenericPeakInfo> &peak_infos,
+                        std::vector<double> &fit_rel_acts,
+                        std::vector<double> &fit_rel_act_uncerts );
+
+/** convenience method for calling above `fit_act_to_rel_eff(...)`. 
+ * @param eqn_form The form of the relative efficiency equation to use.
+ *                  May not be `RelActCalc::RelEffEqnForm::FramPhysicalModel`.
+ */
 void fit_act_to_rel_eff( const RelActCalc::RelEffEqnForm eqn_form,
                         const std::vector<double> &eqn_pars,
+                        const std::vector<std::string> &isotopes,
+                        const std::vector<GenericPeakInfo> &peak_infos,
+                        std::vector<double> &fit_rel_acts,
+                        std::vector<double> &fit_rel_act_uncerts );
+
+struct RelEffInput;  //Forward declaration
+/** Fits the activities, for a given PhysicalModel Relative Efficiency equation.
+ * 
+ * The input `RelEffInput` must have valid DRF and self attenuation set.  Parameter values
+ * are determined similar to the starting values used in the full Relative Activity fit.
+ */
+void fit_act_to_rel_eff( const RelEffInput &input,
                         const std::vector<std::string> &isotopes,
                         const std::vector<GenericPeakInfo> &peak_infos,
                         std::vector<double> &fit_rel_acts,
@@ -559,14 +581,14 @@ RelEffSolution solve_relative_efficiency( const RelEffInput &input );
 /** Setup the physical model shield parameters for the Ceres problem - used by both auto and manual.
  * Assumes each parameter is its own parameter block.
  * 
- * @param problem The Ceres problem to setup.
+ * @param problem The Ceres problem to setup.  May be nullptr, in which case the parameters will just be set to initial values.
  * @param pars The array of parameters.
  * @param start_ind The starting index, of `pars`, for this shielding.  This is the index
  *                  Atomic Number of the shielding (if material isnt defined), and the next position
  *                  in the paramaters is the Areal Density.
  * @param opt The physical model shield input to use.
  */
-void setup_physical_model_shield_par( ceres::Problem &problem, 
+void setup_physical_model_shield_par( ceres::Problem  * const problem, 
                                       double * const pars, 
                                       const size_t start_ind, 
                                       const std::shared_ptr<const RelActCalc::PhysicalModelShieldInput> &opt );
