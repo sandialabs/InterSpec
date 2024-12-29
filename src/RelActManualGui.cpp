@@ -24,6 +24,7 @@
 #include "InterSpec_config.h"
 
 #include "rapidxml/rapidxml.hpp"
+#include "rapidxml/rapidxml_print.hpp"
 
 #include <boost/math/distributions/chi_squared.hpp>
 
@@ -66,6 +67,7 @@
 #include "InterSpec/AuxWindow.h"
 #include "InterSpec/InterSpec.h"
 #include "InterSpec/HelpSystem.h"
+#include "InterSpec/MaterialDB.h"
 #include "InterSpec/RelActCalc.h"
 #include "InterSpec/RelEffChart.h"
 #include "InterSpec/InterSpecApp.h"
@@ -194,7 +196,7 @@ public:
       for( const shared_ptr<const PeakDef> &p : all_peaks )
       {
         bool use_peak = false;
-        for( const auto &r : solution->m_input_peak )
+        for( const auto &r : solution->m_input.peaks )
         {
           if( fabs(p->mean() - r.m_mean) < 1.0 )
             use_peak = true;
@@ -493,8 +495,9 @@ RelActManualGui::RelActManualGui( InterSpec *viewer, Wt::WContainerWidget *paren
   m_layout( nullptr ),
   m_optionsColumn( nullptr ),
   m_relEffEqnForm( nullptr ),
-  m_relEffEqnFormLabel( nullptr ),
   m_relEffEqnOrder( nullptr ),
+  m_physModelUseHoerl( nullptr ),
+  m_physModelUseHoerlHolder( nullptr ),
   m_nucDataSrcHolder( nullptr ),
   m_nucDataSrc( nullptr ),
   m_matchTolerance( nullptr ),
@@ -578,12 +581,13 @@ void RelActManualGui::init()
   
   WTable *optionsList = new WTable( optionsDiv );
   optionsList->addStyleClass( "OptionsList" );
-  WLabel *label = new WLabel( WString::tr("ramg-eqn-form-label"), optionsList->elementAt(0, 0) );
+  int row = optionsList->rowCount();
+  WLabel *label = new WLabel( WString::tr("ramg-eqn-form-label"), optionsList->elementAt(row, 0) );
   
-  m_relEffEqnForm = new WComboBox( optionsList->elementAt(0, 1) );
+  m_relEffEqnForm = new WComboBox( optionsList->elementAt(row, 1) );
   m_relEffEqnForm->activated().connect( this, &RelActManualGui::relEffEqnFormChanged );
   
-  HelpSystem::attachToolTipOn( {optionsList->elementAt(0,0), optionsList->elementAt(0,1)},
+  HelpSystem::attachToolTipOn( {optionsList->elementAt(row,0), optionsList->elementAt(row,1)},
                               WString::tr("ramg-tt-eqn-form"), showToolTips );
   
   
@@ -632,9 +636,10 @@ void RelActManualGui::init()
   
   m_relEffEqnForm->setCurrentIndex( static_cast<int>(RelActCalc::RelEffEqnForm::LnX) );
   
-  m_relEffEqnFormLabel = new WLabel( WString::tr("ramg-eqn-order-label"), optionsList->elementAt(1, 0) );
+  row = optionsList->rowCount();
+  label = new WLabel( WString::tr("ramg-eqn-order-label"), optionsList->elementAt(row, 0) );
   
-  m_relEffEqnOrder = new WComboBox( optionsList->elementAt(1, 1) );
+  m_relEffEqnOrder = new WComboBox( optionsList->elementAt(row, 1) );
   m_relEffEqnOrder->activated().connect( this, &RelActManualGui::relEffEqnOrderChanged );
   
   m_relEffEqnOrder->addItem( "0" );
@@ -646,15 +651,29 @@ void RelActManualGui::init()
   m_relEffEqnOrder->addItem( "6" );
   m_relEffEqnOrder->setCurrentIndex( 3 );
   
-  HelpSystem::attachToolTipOn( {optionsList->elementAt(1, 0),optionsList->elementAt(1, 1)},
+  HelpSystem::attachToolTipOn( {optionsList->elementAt(row, 0),optionsList->elementAt(row, 1)},
                               WString::tr("ramg-tt-eqn-order"), showToolTips );
   
-  label = new WLabel( WString::tr("ramg-yield-info-label"), optionsList->elementAt(2, 0) );
-  m_nucDataSrc = new WComboBox( optionsList->elementAt(2, 1) );
+  m_relEffEqnOrderHolder = optionsList->rowAt(row);
+
+  row = optionsList->rowCount();
+  m_physModelUseHoerl = new WCheckBox( WString::tr("ramg-phys-model-use-hoerl"), optionsList->elementAt(row, 0) );
+  m_physModelUseHoerl->setChecked( true );
+  m_physModelUseHoerl->checked().connect( this, &RelActManualGui::physModelUseHoerlChanged );
+  m_physModelUseHoerl->unChecked().connect( this, &RelActManualGui::physModelUseHoerlChanged );
+  optionsList->elementAt(row, 0)->setColumnSpan( 2 );
+  HelpSystem::attachToolTipOn( {optionsList->elementAt(row, 0)},
+                              WString::tr("ramg-tt-phys-model-use-hoerl"), showToolTips );
+  m_physModelUseHoerl->addStyleClass( "PhysModelUseHoerl" );
+  m_physModelUseHoerlHolder = optionsList->rowAt(row);
+
+  row = optionsList->rowCount();
+  label = new WLabel( WString::tr("ramg-yield-info-label"), optionsList->elementAt(row, 0) );
+  m_nucDataSrc = new WComboBox( optionsList->elementAt(row, 1) );
   label->setBuddy( m_nucDataSrc );
   m_nucDataSrc->activated().connect( this, &RelActManualGui::nucDataSrcChanged );
   
-  HelpSystem::attachToolTipOn( {optionsList->elementAt(2, 0),optionsList->elementAt(2, 1)},
+  HelpSystem::attachToolTipOn( {optionsList->elementAt(row, 0),optionsList->elementAt(row, 1)},
                               WString::tr("ramg-tt-data-src"), showToolTips );
   
   
@@ -676,28 +695,30 @@ void RelActManualGui::init()
   
   m_nucDataSrc->setCurrentIndex( static_cast<int>(NucDataSrc::SandiaDecay) );
   
-  m_nucDataSrcHolder = optionsList->rowAt(2);
+  m_nucDataSrcHolder = optionsList->rowAt(row);
 
-  label = new WLabel( WString::tr("ramg-match-tol-label"), optionsList->elementAt(3, 0) ); //(FWHM)
-  m_matchTolerance = new NativeFloatSpinBox( optionsList->elementAt(3, 1) );
+  row = optionsList->rowCount();
+  label = new WLabel( WString::tr("ramg-match-tol-label"), optionsList->elementAt(row, 0) ); //(FWHM)
+  m_matchTolerance = new NativeFloatSpinBox( optionsList->elementAt(row, 1) );
   label->setBuddy( m_matchTolerance );
   m_matchTolerance->setSpinnerHidden();
   m_matchTolerance->setWidth( 35 );
   m_matchTolerance->setRange( 0, 5 );
   m_matchTolerance->setValue( 0.5 ); //Other places we use 1.25/2.355 = 0.530786
-  label = new WLabel( WString("&nbsp;{1}").arg(WString::tr("FWHM")), optionsList->elementAt(3, 1) );
+  label = new WLabel( WString("&nbsp;{1}").arg(WString::tr("FWHM")), optionsList->elementAt(row, 1) );
   label->setBuddy( m_matchTolerance );
   m_matchTolerance->valueChanged().connect( this, &RelActManualGui::matchToleranceChanged );
   
   
-  HelpSystem::attachToolTipOn( {optionsList->elementAt(3, 0),optionsList->elementAt(3, 1)},
+  HelpSystem::attachToolTipOn( {optionsList->elementAt(row, 0),optionsList->elementAt(row, 1)},
                               WString::tr("ramg-tt-match-tol"), showToolTips );
   
-  label = new WLabel( WString::tr("ramg-add-uncert-label"), optionsList->elementAt(4, 0) );
-  m_addUncertainty = new WComboBox( optionsList->elementAt(4, 1) );
+  row = optionsList->rowCount();
+  label = new WLabel( WString::tr("ramg-add-uncert-label"), optionsList->elementAt(row, 0) );
+  m_addUncertainty = new WComboBox( optionsList->elementAt(row, 1) );
   label->setBuddy( m_addUncertainty );
   
-  HelpSystem::attachToolTipOn( {optionsList->elementAt(4, 0),optionsList->elementAt(4, 1)},
+  HelpSystem::attachToolTipOn( {optionsList->elementAt(row, 0),optionsList->elementAt(row, 1)},
                               WString::tr("ramg-tt-add-uncert"), showToolTips );
   
   m_addUncertainty->activated().connect( this, &RelActManualGui::addUncertChanged );
@@ -724,14 +745,14 @@ void RelActManualGui::init()
   
   m_addUncertainty->setCurrentIndex( static_cast<int>(AddUncert::StatOnly) );
   
-  
-  m_backgroundSubtract = new WCheckBox( WString::tr("ramg-back-sub-cb"), optionsList->elementAt(5, 0) );
+  row = optionsList->rowCount();
+  m_backgroundSubtract = new WCheckBox( WString::tr("ramg-back-sub-cb"), optionsList->elementAt(row, 0) );
   m_backgroundSubtract->addStyleClass( "BackSub" );
-  optionsList->elementAt(5, 0)->setColumnSpan( 2 );
-  m_backgroundSubtractHolder = optionsList->rowAt(5);
+  optionsList->elementAt(row, 0)->setColumnSpan( 2 );
   m_backgroundSubtract->checked().connect( this, &RelActManualGui::backgroundSubtractChanged );
   m_backgroundSubtract->unChecked().connect( this, &RelActManualGui::backgroundSubtractChanged );
-  
+  m_backgroundSubtractHolder = optionsList->rowAt(row);
+
   
   WContainerWidget *btndiv = new WContainerWidget();
   btndiv->addStyleClass( "BtmBtnDiv" );
@@ -938,6 +959,7 @@ shared_ptr<const RelActManualGui::GuiState> RelActManualGui::getGuiState() const
   
   state->m_relEffEqnFormIndex = m_relEffEqnForm->currentIndex();
   state->m_relEffEqnOrderIndex = m_relEffEqnOrder->currentIndex();
+  state->m_physModelUseHoerl = m_physModelUseHoerl->isChecked();
   state->m_nucDataSrcIndex = m_nucDataSrc->currentIndex();
   state->m_matchToleranceValue = m_matchTolerance->value();
   state->m_addUncertIndex = m_addUncertainty->currentIndex();
@@ -958,15 +980,14 @@ shared_ptr<const RelActManualGui::GuiState> RelActManualGui::getGuiState() const
     if( m_selfAttenShield )
       state->m_selfAttenShield = m_selfAttenShield->state();
 
-    if( m_extAttenShields )
+    assert( m_extAttenShields );
+    const vector<WWidget *> kids = m_extAttenShields ? m_extAttenShields->children() : vector<WWidget *>{};
+    for( auto w : kids )
     {
-      for( auto w : m_extAttenShields->children() )
-      {
-        RelEffShieldWidget *rr = dynamic_cast<RelEffShieldWidget *>(w);
-        if( rr )
-          state->m_externalShields.push_back( rr->state() );
-      }//for( auto w : m_extAttenShields->children() )
-    }//if( m_extAttenShields )
+      RelEffShieldWidget *rr = dynamic_cast<RelEffShieldWidget *>(w);
+      if( rr )
+        state->m_externalShields.push_back( rr->state() );
+    }//for( auto w : kids )
   }//if( eqn_form == RelActCalc::RelEffEqnForm::FramPhysicalModel )
 
   return state;
@@ -976,6 +997,8 @@ shared_ptr<const RelActManualGui::GuiState> RelActManualGui::getGuiState() const
 void RelActManualGui::setGuiState( const GuiState &state )
 {
   bool updateCalc = false;
+  const auto eqn_form = RelActCalc::RelEffEqnForm( state.m_relEffEqnFormIndex );
+
   if( m_relEffEqnForm->currentIndex() != state.m_relEffEqnFormIndex )
   {
     updateCalc = true;
@@ -989,6 +1012,12 @@ void RelActManualGui::setGuiState( const GuiState &state )
     m_relEffEqnOrder->setCurrentIndex( state.m_relEffEqnOrderIndex );
   }
   
+  if( m_physModelUseHoerl->isChecked() != state.m_physModelUseHoerl )
+  {
+    updateCalc |= (eqn_form == RelActCalc::RelEffEqnForm::FramPhysicalModel);
+    m_physModelUseHoerl->setChecked( state.m_physModelUseHoerl );
+  }
+
   if( m_nucDataSrc->currentIndex() != state.m_nucDataSrcIndex )
   {
     updateCalc = true;
@@ -1049,7 +1078,7 @@ void RelActManualGui::setGuiState( const GuiState &state )
     }//for( loop over previous ages )
   }//for( auto w : m_nuclidesDisp->children() )
   
-  const auto eqn_form = RelActCalc::RelEffEqnForm( state.m_relEffEqnFormIndex );
+  
   if( eqn_form == RelActCalc::RelEffEqnForm::FramPhysicalModel )
   {
     updateCalc = true;
@@ -1071,9 +1100,23 @@ void RelActManualGui::setGuiState( const GuiState &state )
     for( const auto &s : state.m_externalShields )
     {
       RelEffShieldWidget *rr = new RelEffShieldWidget( RelEffShieldWidget::ShieldType::ExternalAtten, m_extAttenShields );
-      rr->setState( *s );
+      if( s )
+        rr->setState( *s );
     }//for( const auto &s : state.m_externalShields )
-  }//if( eqn_form == RelActCalc::RelEffEqnForm::FramPhysicalModel )
+
+    if( m_extAttenShields->children().empty() )
+    {
+      auto shield = new RelEffShieldWidget( RelEffShieldWidget::ShieldType::ExternalAtten, m_extAttenShields );
+      shield->changed().connect( this, &RelActManualGui::handleSelfAttenShieldChanged );
+    }
+
+    m_physModelUseHoerlHolder->setHidden( false );
+    m_relEffEqnOrderHolder->setHidden( true );
+  }else
+  {
+    m_physModelUseHoerlHolder->setHidden( true );
+    m_relEffEqnOrderHolder->setHidden( false );
+  }//if( eqn_form == RelActCalc::RelEffEqnForm::FramPhysicalModel ) / else
 
   if( updateCalc )
   {
@@ -1089,6 +1132,7 @@ bool RelActManualGui::GuiState::operator==( const RelActManualGui::GuiState &rhs
 {
   return (m_relEffEqnFormIndex == rhs.m_relEffEqnFormIndex)
     && (m_relEffEqnOrderIndex == rhs.m_relEffEqnOrderIndex)
+    && (m_physModelUseHoerl == rhs.m_physModelUseHoerl)
     && (m_nucDataSrcIndex == rhs.m_nucDataSrcIndex)
     && (m_matchToleranceValue == rhs.m_matchToleranceValue)
     && (m_addUncertIndex == rhs.m_addUncertIndex)
@@ -1262,6 +1306,7 @@ void RelActManualGui::calculateSolution()
     double lowest_energy_peak = 3000;
     bool has_U_or_Pu = false;
     set<string> unique_isotopes;
+    set<int> src_atomic_numbers;
     for( const PeakModel::PeakShrdPtr &p : peaks )
     {
       if( p && (p->parentNuclide() || p->reaction()) && p->useForManualRelEff() )
@@ -1408,6 +1453,7 @@ void RelActManualGui::calculateSolution()
           has_U_or_Pu |= (p->parentNuclide()->atomicNumber == 94);
           
           unique_isotopes.insert( p->parentNuclide()->symbol );
+          src_atomic_numbers.insert( p->parentNuclide()->atomicNumber );
         }else
         {
           assert( p->reaction() );
@@ -1425,14 +1471,6 @@ void RelActManualGui::calculateSolution()
     {
       prep_warnings.push_back( WString::tr("ramg-warn-no-bkg-sub-used").toUTF8() );
     }//if( user wanted to background subtract peaks, but no peaks matched up )
-    
-    if( has_U_or_Pu && (lowest_energy_peak < 122) )
-    {
-      prep_warnings.push_back( WString::tr("ramg-warn-rel-eff-u/pu-xray").toUTF8() );
-    }else if( lowest_energy_peak < 90 )
-    {
-      prep_warnings.push_back( WString::tr("ramg-warn-rel-eff-other-xray").toUTF8() );
-    }
     
     
     if( energy_cal_match_warning_energies.size() && (match_tol_sigma > 0.0) )
@@ -1572,6 +1610,8 @@ void RelActManualGui::calculateSolution()
 
     if( eqn_form == RelActCalc::RelEffEqnForm::FramPhysicalModel )
     {
+      input.phys_model_use_hoerl = m_physModelUseHoerl->isChecked();
+
       const auto fore = m_interspec->measurment(SpecUtils::SpectrumType::Foreground);
       if( fore )
         input.phys_model_detector = fore->detector();
@@ -1598,16 +1638,76 @@ void RelActManualGui::calculateSolution()
         }
       }//if( !phys_model_detector )
 
-      if( m_selfAttenShield )
+      if( m_selfAttenShield && m_selfAttenShield->nonEmpty() )
         input.phys_model_self_atten = m_selfAttenShield->fitInput();
 
       for( auto w : m_extAttenShields->children() )
       {
         RelEffShieldWidget *rr = dynamic_cast<RelEffShieldWidget *>(w);
-        if( rr )
+        if( rr && rr->nonEmpty() )
           input.phys_model_external_attens.push_back( rr->fitInput() );
       }//for( auto w : m_extAttenShields->children() )  
     }//if( eqn_form == RelActCalc::RelEffEqnForm::FramPhysicalModel )
+
+
+    // We will warn about the x-ray absorption edges if the user is not using the Physical Model
+    //  and the lowest energy peak is below 122 keV for U or Pu, or below 90 keV for other nuclides.
+    //  And even if using the Physical Model, we will warn unless a shielding is same atomic number
+    //  as one of the nuclides (this doesnt catch all cases, but is maybe an okay tradef off of not
+    //  giving too many false-positives to the user).
+    bool warn_xray = has_U_or_Pu ? (lowest_energy_peak < 122) : (lowest_energy_peak < 90);
+
+    if( eqn_form == RelActCalc::RelEffEqnForm::FramPhysicalModel )
+    {
+      const auto shares_atomic_number = [&src_atomic_numbers]( const RelActCalc::PhysicalModelShieldInput &shield ){
+        const auto mat = shield.material;
+
+        if( mat )
+        {
+           for( const auto &nuc_frac : mat->nuclides )
+           {
+             if( src_atomic_numbers.count(nuc_frac.first->atomicNumber) )
+               return true;
+           }
+
+           for( const auto &elem_frac : mat->elements )
+           {
+             if( src_atomic_numbers.count(elem_frac.first->atomicNumber) )
+               return true;
+           }
+        }else
+        {
+          if( shield.fit_atomic_number )
+            return true;
+
+          const int lower_an = static_cast<int>(std::floor(shield.atomic_number));
+          const int upper_an = static_cast<int>(std::ceil(shield.atomic_number));
+          
+          if( src_atomic_numbers.count(lower_an) || src_atomic_numbers.count(upper_an) )
+            return true;
+        }//if( mat ) / else
+
+        return false;
+      };//shares_atomic_number
+      
+      if( warn_xray && input.phys_model_self_atten )
+        warn_xray = (warn_xray && !shares_atomic_number( *input.phys_model_self_atten ));
+
+      for( const auto &s : input.phys_model_external_attens )
+      {
+        if( !warn_xray )
+          break;
+        warn_xray = (warn_xray && !shares_atomic_number( *s ));
+      }
+    }//if( solution.m_input.eqn_form == RelActCalc::RelEffEqnForm::FramPhysicalModel )
+    
+    if( has_U_or_Pu && warn_xray )
+    {
+      prep_warnings.push_back( WString::tr("ramg-warn-rel-eff-u/pu-xray").toUTF8() );
+    }else if( warn_xray )
+    {
+      prep_warnings.push_back( WString::tr("ramg-warn-rel-eff-other-xray").toUTF8() );
+    }
 
     const string sessionId = wApp->sessionId();
     auto solution = make_shared<RelActCalcManual::RelEffSolution>();
@@ -1621,8 +1721,6 @@ void RelActManualGui::calculateSolution()
       [input, pre_decay_correction_info, sessionId, solution, updater, prep_warnings, errmsg, err_updater](){
         try
         {
-
-
           *solution = solve_relative_efficiency( input );
 
           solution->m_warnings.insert(begin(solution->m_warnings), begin(prep_warnings), end(prep_warnings));
@@ -1734,7 +1832,116 @@ void RelActManualGui::updateGuiWithResults( shared_ptr<RelActCalcManual::RelEffS
     return;
   
   // We'll first update the chart
-  const string relEffEqn = RelActCalc::rel_eff_eqn_js_function( solution.m_input.eqn_form, solution.m_rel_eff_eqn_coefficients );
+  string relEffEqn;
+  if( solution.m_input.eqn_form != RelActCalc::RelEffEqnForm::FramPhysicalModel )
+  {
+    relEffEqn = RelActCalc::rel_eff_eqn_js_function( solution.m_input.eqn_form, solution.m_rel_eff_eqn_coefficients );
+  }else
+  {
+    const auto &input = solution.m_input;
+    shared_ptr<const Material> self_atten = input.phys_model_self_atten ? input.phys_model_self_atten->material : nullptr;
+    vector<shared_ptr<const Material>> external_attens;
+    for( const auto &att : input.phys_model_external_attens )
+      external_attens.push_back( att->material );
+    
+    relEffEqn = RelActCalc::physical_model_rel_eff_eqn_js_function( self_atten, external_attens,
+                                                input.phys_model_detector.get(),
+                                                solution.m_rel_eff_eqn_coefficients.data(),
+                                                solution.m_rel_eff_eqn_coefficients.size()  );
+
+
+    // Also, update shield widgets
+    assert( input.phys_model_external_attens.size() == solution.m_phys_model_external_atten_shields.size() );
+
+    const auto update_shield = [&]( RelEffShieldWidget *w, const unique_ptr<RelActCalcManual::RelEffSolution::PhysModelShieldFit> &fit,
+                                      const shared_ptr<const RelActCalc::PhysicalModelShieldInput> &input ){
+      assert( w );
+      if( !w )
+        return;
+      if( !fit )
+      {
+        w->resetState();
+      }else if( fit->m_material )
+      {
+        w->setMaterialSelected( true );
+        if( w->materialNameTxt().toUTF8() != fit->m_material->name )
+          w->setMaterial( fit->m_material->name );
+        w->setThickness( fit->m_areal_density / fit->m_material->density );
+
+        if( input )
+          w->setFitThickness( input->fit_areal_density );
+      }else
+      {
+        w->setMaterialSelected( false );
+        w->setAtomicNumber( fit->m_atomic_number );
+        w->setArealDensity( fit->m_areal_density / PhysicalUnits::g_per_cm2 );
+        if( input )
+        {
+          w->setFitAtomicNumber( input->fit_atomic_number );
+          w->setFitArealDensity( input->fit_areal_density );
+        }
+      }//if( fit->m_material ) / else
+    };//update_shield lambda
+
+    if( !m_selfAttenShield )
+      initSelfAttenShieldWidgets();
+    
+    if( m_selfAttenShield )
+      update_shield( m_selfAttenShield, solution.m_phys_model_self_atten_shield, input.phys_model_self_atten );
+    
+    // We shouldnt need to update the number of external attenuation shield widgets,
+    //  but we'll go ahead and implement it anyway, incase something odd changed while 
+    //  computation was happening.
+    assert( m_extAttenShields );
+    vector<RelEffShieldWidget *> ext_shields;
+    vector<WWidget *> ext_kids = m_extAttenShields ? m_extAttenShields->children() : vector<WWidget *>{};
+    for( auto w : ext_kids )
+    {
+      const auto shield = dynamic_cast<RelEffShieldWidget *>(w);
+      if( shield && ((ext_shields.size() < solution.m_phys_model_external_atten_shields.size()) || shield->nonEmpty()) )
+      {
+        ext_shields.push_back( shield );
+      }else if( shield && !shield->nonEmpty() )
+      {
+        assert( !shield->nonEmpty() );
+        delete shield;
+      }
+    }//for( auto w : ext_kids )
+
+    assert( ext_shields.size() == solution.m_phys_model_external_atten_shields.size() ); //Again, should be the right size
+    // We shouldnt need to add any more shields, but we'll go ahead and implement doing this
+    while( ext_shields.size() < solution.m_phys_model_external_atten_shields.size() )
+    {
+      auto shield = new RelEffShieldWidget( RelEffShieldWidget::ShieldType::ExternalAtten, m_extAttenShields );
+      shield->changed().connect( this, &RelActManualGui::handleSelfAttenShieldChanged );
+      ext_shields.push_back( shield );
+    }
+
+    assert( ext_shields.size() == input.phys_model_external_attens.size() );
+    assert( ext_shields.size() == solution.m_phys_model_external_atten_shields.size() );
+    
+    for( size_t i = 0; i < std::max(ext_shields.size(), solution.m_phys_model_external_atten_shields.size()); ++i )
+    {
+      if( i >= solution.m_phys_model_external_atten_shields.size() )
+      {
+        ext_shields[i]->resetState();
+        continue;
+      }
+      const auto &fit_val = solution.m_phys_model_external_atten_shields[i];
+      const shared_ptr<const RelActCalc::PhysicalModelShieldInput> in_shield = input.phys_model_external_attens[i];
+
+      assert( fit_val );
+      if( i < ext_shields.size() )
+        update_shield( ext_shields[i], fit_val, in_shield );
+    }//for( loop over external shields )
+
+    ext_kids = m_extAttenShields ? m_extAttenShields->children() : vector<WWidget *>{};
+    if( ext_kids.empty() )
+    {
+      auto shield = new RelEffShieldWidget( RelEffShieldWidget::ShieldType::ExternalAtten, m_extAttenShields );
+      shield->changed().connect( this, &RelActManualGui::handleSelfAttenShieldChanged );
+    }
+  }//if( !FramPhysicalModel ) / else
   
   deque<PeakModel::PeakShrdPtr> displayed_peaks;
   if( m_peakModel && m_peakModel->peaks() )
@@ -1832,7 +2039,7 @@ void RelActManualGui::updateGuiWithResults( shared_ptr<RelActCalcManual::RelEffS
     chi2_title.arg( "" );
   }
   
-  m_chart->setData( solution.m_input_peak, relActsColors, relEffEqn, chi2_title );
+  m_chart->setData( solution.m_input.peaks, relActsColors, relEffEqn, chi2_title );
   
   
   // Now update the text
@@ -1918,21 +2125,16 @@ void RelActManualGui::relEffEqnFormChanged()
     case RelActCalc::RelEffEqnForm::FramEmpirical:
       m_physicalModelShields->hide();
       m_nucColumnTitle->setText( WString::tr("ramg-nucs-label") );
-      m_relEffEqnOrder->show();
-      m_relEffEqnFormLabel->show();
+      m_relEffEqnOrderHolder->show();
+      m_physModelUseHoerlHolder->hide();
       break;
     
     case RelActCalc::RelEffEqnForm::FramPhysicalModel:
       m_physicalModelShields->show();
       m_nucColumnTitle->setText( WString::tr("ramg-nucs-shield-label") );
-      m_relEffEqnOrder->hide();
-      m_relEffEqnFormLabel->hide();
-      if( !m_selfAttenShield )
-      {
-        m_selfAttenShield = new RelEffShieldWidget( RelEffShieldWidget::ShieldType::SelfAtten );
-        m_selfAttenShield->changed().connect( this, &RelActManualGui::handleSelfAttenShieldChanged );
-        m_physicalModelShields->insertWidget( 0, m_selfAttenShield );
-      }
+      m_relEffEqnOrderHolder->hide();
+      m_physModelUseHoerlHolder->show();
+      initSelfAttenShieldWidgets();
       break;
   }//switch( eqn_form )
 
@@ -1950,6 +2152,13 @@ void RelActManualGui::relEffEqnOrderChanged()
   scheduleRender();
 }
 
+
+void RelActManualGui::physModelUseHoerlChanged()
+{
+  m_renderFlags |= RenderActions::UpdateCalc;
+  m_renderFlags |= RenderActions::AddUndoRedoStep;
+  scheduleRender();
+}
 
 void RelActManualGui::nucDataSrcChanged()
 {
@@ -1989,6 +2198,28 @@ void RelActManualGui::backgroundSubtractChanged()
   scheduleRender();
 }
 
+void RelActManualGui::initSelfAttenShieldWidgets()
+{
+  assert( m_physicalModelShields );
+
+  if( m_selfAttenShield )
+  {
+    m_selfAttenShield->resetState();
+  }else
+  {      
+    m_selfAttenShield = new RelEffShieldWidget( RelEffShieldWidget::ShieldType::SelfAtten );
+    m_selfAttenShield->changed().connect( this, &RelActManualGui::handleSelfAttenShieldChanged );
+    m_physicalModelShields->insertWidget( 0, m_selfAttenShield );
+  }
+  
+  assert( m_extAttenShields );
+  if( m_extAttenShields )
+  {
+    m_extAttenShields->clear();
+    auto shield = new RelEffShieldWidget( RelEffShieldWidget::ShieldType::ExternalAtten, m_extAttenShields );
+    shield->changed().connect( this, &RelActManualGui::handleSelfAttenShieldChanged );
+  }//if( m_extAttenShields )
+}//void initSelfAttenShieldWidgets()
 
 //void RelActManualGui::resultTabChanged()
 //{
@@ -2080,7 +2311,11 @@ void RelActManualGui::updateNuclides()
       ManRelEffNucDisp *prev = dynamic_cast<ManRelEffNucDisp *>( kids[index] );
       assert( prev || kids[index]->hasStyleClass("PhysicalModelShields") );
       if( !prev || !prev->m_nuc )
+      {
+        if( kids[index] && kids[index]->hasStyleClass("PhysicalModelShields") )
+          insert_index = static_cast<int>( index + 1 );  //Make sure shields are always before nuclides
         continue;
+      }
       
       if( prev->m_nuc->atomicNumber > nuc->atomicNumber )
       {
@@ -2133,7 +2368,11 @@ void RelActManualGui::updateNuclides()
       ManRelEffNucDisp *prev = dynamic_cast<ManRelEffNucDisp *>( kids[index] );
       assert( prev );
       if( !prev || !prev->m_reaction )
+      {
+        if( kids[index] && kids[index]->hasStyleClass("PhysicalModelShields") )
+          insert_index = static_cast<int>( index + 1 );  //Make sure shields are always before nuclides
         continue;
+      }
       
       const SandiaDecay::Element *prev_el = prev->m_reaction->targetElement;
       if( !prev_el && prev->m_reaction->productNuclide )
@@ -2414,6 +2653,11 @@ shared_ptr<const RelActCalcManual::RelEffSolution> RelActManualGui::currentSolut
   node = doc->allocate_node( ::rapidxml::node_element, "RelEffEqnOrder", value );
   base_node->append_node( node );
   
+  const bool phys_model_use_hoerl = m_physModelUseHoerl->isChecked();
+  value = phys_model_use_hoerl ? "true" : "false";
+  node = doc->allocate_node( ::rapidxml::node_element, "PhysModelUseHoerl", value );
+  base_node->append_node( node );
+
   const RelActCalcManual::PeakCsvInput::NucDataSrc srcData = nucDataSrc();
   
   value = RelActCalcManual::PeakCsvInput::to_str( srcData );
@@ -2483,6 +2727,49 @@ shared_ptr<const RelActCalcManual::RelEffSolution> RelActManualGui::currentSolut
     }
   }//for( const auto &n : nuc_age_cache )
   
+
+  // We'll store the state of the Physical model shields in the XML, even if they are not used right now
+  vector<unique_ptr<const RelEffShieldState>> external_shields;
+  auto ext_kids = m_extAttenShields ? m_extAttenShields->children() : vector<WWidget *>();
+  for( auto w : m_extAttenShields->children() )
+  {
+    RelEffShieldWidget *rr = dynamic_cast<RelEffShieldWidget *>(w);
+    if( rr && rr->nonEmpty() )
+      external_shields.push_back( rr->state() );
+  }//for( auto w : m_extAttenShields->children() )
+  
+
+  const bool have_self_shield = (m_selfAttenShield && m_selfAttenShield->nonEmpty()); 
+  const bool have_external_shields = !external_shields.empty();
+  if( have_self_shield || have_external_shields )
+  {
+    ::rapidxml::xml_node<char> *shields_node = doc->allocate_node( ::rapidxml::node_element, "PhysicalModelShields" );
+    base_node->append_node( shields_node );
+    
+    if( have_self_shield )
+    {
+      auto state = m_selfAttenShield->state();
+      if( state )
+      {
+        ::rapidxml::xml_node<char> *self_node = doc->allocate_node( ::rapidxml::node_element, "SelfAttenShield" );  
+        shields_node->append_node( self_node );
+        state->toXml( self_node );
+      }
+    }//if( have_self_shield )
+    
+    if( !external_shields.empty() )
+    {
+      ::rapidxml::xml_node<char> *ext_node = doc->allocate_node( ::rapidxml::node_element, "ExternalAttenShields" );
+      shields_node->append_node( ext_node );
+      for( const auto &s : external_shields )
+        s->toXml( ext_node );
+    }//if( !external_shields.empty() )
+  }//if( have_self_shield || have_external_shields )
+
+  cout << "RelActManualGui::serialize:\n";
+  rapidxml::print( cout, *base_node ); 
+  cout << endl;
+
   return base_node;
 }//serialize(...)
 
@@ -2506,23 +2793,20 @@ void RelActManualGui::deSerialize( const ::rapidxml::xml_node<char> *base_node )
   for( auto w : nuc_kids )
   {
     ManRelEffNucDisp *rr = dynamic_cast<ManRelEffNucDisp *>(w);
-    if( rr  )
+    if( rr )
       delete rr;
   }//for( auto w : m_nuclidesDisp->children() )
-  
-//Need to account for   
-//m_selfAttenShield
-//  m_extAttenShields
 
   const ::rapidxml::xml_node<char> *RelEffEqnForm_node = XML_FIRST_NODE(base_node, "RelEffEqnForm");
   const ::rapidxml::xml_node<char> *RelEffEqnOrder_node = XML_FIRST_NODE(base_node, "RelEffEqnOrder");
+  const ::rapidxml::xml_node<char> *PhysModelUseHoerl_node = XML_FIRST_NODE(base_node, "PhysModelUseHoerl");
   const ::rapidxml::xml_node<char> *NucDataSrc_node = XML_FIRST_NODE(base_node, "NucDataSrc");
   const ::rapidxml::xml_node<char> *MatchTolerance_node = XML_FIRST_NODE(base_node, "MatchTolerance");
   const ::rapidxml::xml_node<char> *AddUncertainty_node = XML_FIRST_NODE(base_node, "AddUncertainty");
   const ::rapidxml::xml_node<char> *ResultTabShowing_node = XML_FIRST_NODE(base_node, "ResultTabShowing");
   const ::rapidxml::xml_node<char> *BackgroundSubtract_node = XML_FIRST_NODE(base_node, "BackgroundSubtract");
   const ::rapidxml::xml_node<char> *NuclideAges_node = XML_FIRST_NODE(base_node, "NuclideAges");
-  
+  const ::rapidxml::xml_node<char> *PhysicalModelShields_node = XML_FIRST_NODE(base_node, "PhysicalModelShields");
   
   if( !RelEffEqnForm_node || !RelEffEqnOrder_node || !NucDataSrc_node || !MatchTolerance_node
      || !AddUncertainty_node || !ResultTabShowing_node || !NuclideAges_node )
@@ -2556,6 +2840,14 @@ void RelActManualGui::deSerialize( const ::rapidxml::xml_node<char> *base_node )
   {
     throw runtime_error( "RelActManualGui::deSerialize: '" + rel_eff_order_str + "' is invalid RelEffEqnOrder" );
   }
+
+  bool phys_model_use_hoerl = true;
+  if( PhysModelUseHoerl_node )
+  {
+    const string use_hoerl_str = SpecUtils::xml_value_str( PhysModelUseHoerl_node );
+    phys_model_use_hoerl = ((use_hoerl_str == "true") || (use_hoerl_str == "1"));
+  }
+
   
   bool got_data_src = false;
   auto data_src = RelActCalcManual::PeakCsvInput::NucDataSrc::Icrp107_U;
@@ -2654,15 +2946,71 @@ void RelActManualGui::deSerialize( const ::rapidxml::xml_node<char> *base_node )
     }
   }//for( loop over <Nuclide> nodes )
   
+  // Reset physical model shields, if they are defined.
+  if( m_selfAttenShield )
+    initSelfAttenShieldWidgets();
+  
+    
+  if( PhysicalModelShields_node )
+  {
+    if( !m_selfAttenShield )// init physical model shields, if we didnt already
+      initSelfAttenShieldWidgets();
+    
+    const ::rapidxml::xml_node<char> *self_node = XML_FIRST_NODE(PhysicalModelShields_node, "SelfAttenShield");
+    const ::rapidxml::xml_node<char> *self_shield_node = self_node ? XML_FIRST_NODE(self_node, "RelEffShield") : nullptr;
+    if( self_shield_node )
+    {
+      RelEffShieldState state;
+      state.fromXml( self_shield_node );
+      m_selfAttenShield->setState( state );
+    }
+    
+    
+    const ::rapidxml::xml_node<char> *ext_node = XML_FIRST_NODE(PhysicalModelShields_node, "ExternalAttenShields");
+    if( ext_node )
+    {
+      assert( m_extAttenShields );
+      m_extAttenShields->clear();
+
+      XML_FOREACH_CHILD( shield_node, ext_node, "RelEffShield" )
+      {
+        RelEffShieldState state;
+        state.fromXml( shield_node );
+
+        auto shield = new RelEffShieldWidget( RelEffShieldWidget::ShieldType::ExternalAtten, m_extAttenShields );
+        shield->changed().connect( this, &RelActManualGui::handleSelfAttenShieldChanged );
+        shield->setState( state );
+      }
+
+      // If there are no shields, then add a default one
+      if( m_extAttenShields->children().empty() )
+      {
+        auto shield = new RelEffShieldWidget( RelEffShieldWidget::ShieldType::ExternalAtten, m_extAttenShields );
+        shield->changed().connect( this, &RelActManualGui::handleSelfAttenShieldChanged );
+      }
+    }//if( ext_node )
+  }//if( PhysicalModelShields_node )
+
   
   // Now need to set state of widgets
   m_relEffEqnForm->setCurrentIndex( static_cast<int>(eqn_form) );
   m_relEffEqnOrder->setCurrentIndex( eqn_order );
+  m_physModelUseHoerl->setChecked( phys_model_use_hoerl );
   m_nucDataSrc->setCurrentIndex( static_cast<int>(data_src) );
   m_matchTolerance->setValue( match_tolerance );
   m_addUncertainty->setCurrentIndex( static_cast<int>(add_uncert) );
   m_resultMenu->select( tab_showing );
   m_backgroundSubtract->setChecked( backSub );
+
+  if( eqn_form == RelActCalc::RelEffEqnForm::FramPhysicalModel )
+  {
+    m_relEffEqnOrderHolder->hide();
+    m_physModelUseHoerlHolder->show();
+  }else
+  {
+    m_relEffEqnOrderHolder->show();
+    m_physModelUseHoerlHolder->hide();
+  }//if( eqn_form == RelActCalc::RelEffEqnForm::FramPhysicalModel ) / else
   
   // Schedule calc/render
   m_renderFlags |= RenderActions::UpdateCalc;

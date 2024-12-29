@@ -120,10 +120,12 @@ protected:
   
   void relEffEqnFormChanged();
   void relEffEqnOrderChanged();
+  void physModelUseHoerlChanged();
   void nucDataSrcChanged();
   void matchToleranceChanged();
   void addUncertChanged();
   void backgroundSubtractChanged();
+  void initSelfAttenShieldWidgets();
   //void resultTabChanged(); //Creates a undo/redo cycle, so not currently tracking
   
   /** Marks that nuclides needs to be updated, and schedules rending; but doesnt do any real work */
@@ -174,8 +176,12 @@ protected:
   Wt::WContainerWidget *m_optionsColumn;
   
   Wt::WComboBox *m_relEffEqnForm;
-  Wt::WLabel *m_relEffEqnFormLabel;
+  
   Wt::WComboBox *m_relEffEqnOrder;
+  Wt::WTableRow *m_relEffEqnOrderHolder;
+
+  Wt::WCheckBox *m_physModelUseHoerl;
+  Wt::WTableRow *m_physModelUseHoerlHolder;
   
   Wt::WTableRow *m_nucDataSrcHolder;
   Wt::WComboBox *m_nucDataSrc;
@@ -242,6 +248,7 @@ protected:
   {
     int m_relEffEqnFormIndex = -1;
     int m_relEffEqnOrderIndex = -1;
+    bool m_physModelUseHoerl = true;
     int m_nucDataSrcIndex = -1;
     float m_matchToleranceValue = -1.0f;
     int m_addUncertIndex = -1;

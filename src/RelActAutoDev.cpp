@@ -91,20 +91,24 @@ void check_physical_model_eff_function()
     1.0  // Modified Hoerl c: pow(c,1000/energy)
   };
   
-  function<double(double)> fcn = RelActCalc::physical_model_eff_function(
-                            pu, external_attenuations, det, paramaters.data(), paramaters.size() );
+  //function<double(double)> fcn = RelActCalc::physical_model_eff_function(
+  //                          pu, external_attenuations, &det, paramaters.data(), paramaters.size() );
   
   cout << "Energy (keV), Counts" << endl;
   for( double energy = 50.0; energy < 3000; energy += 2 )
-    cout << energy << "," << fcn(energy) << endl;
-  
+  {
+    double eff = RelActCalc::eval_physical_model_eqn( energy, pu, external_attenuations,
+                               &det, paramaters.data(), paramaters.size() );
+
+    cout << energy << "," << eff << endl;
+  }
 }//void check_physical_model_eff_function()
   
 void example_manual_phys_model()
 {
   cout << "Running example_manual_phys_model" << endl;
 
-const SandiaDecay::SandiaDecayDataBase * const db = DecayDataBaseServer::database();
+  const SandiaDecay::SandiaDecayDataBase * const db = DecayDataBaseServer::database();
   assert( db );
 
   MaterialDB matdb;
@@ -178,12 +182,13 @@ const SandiaDecay::SandiaDecayDataBase * const db = DecayDataBaseServer::databas
   rel_eff_solve_input.eqn_form = RelActCalc::RelEffEqnForm::FramPhysicalModel;
   rel_eff_solve_input.eqn_order = 0;
   rel_eff_solve_input.phys_model_detector = det;
+  rel_eff_solve_input.phys_model_use_hoerl = true;
 
   RelActCalc::PhysicalModelShieldInput self_atten_def;
-  self_atten_def.atomic_number = 0.0;
-  self_atten_def.material = uranium;
-  self_atten_def.areal_density = 10.0*PhysicalUnits::g_per_cm2;
-  self_atten_def.fit_atomic_number = false;
+  self_atten_def.atomic_number = 80;
+  //self_atten_def.material = uranium;
+  self_atten_def.areal_density = 1.25*PhysicalUnits::g_per_cm2;
+  self_atten_def.fit_atomic_number = true;
   self_atten_def.lower_fit_atomic_number = 1.0;
   self_atten_def.upper_fit_atomic_number = 98.0;
   self_atten_def.fit_areal_density = true;
@@ -202,7 +207,7 @@ const SandiaDecay::SandiaDecayDataBase * const db = DecayDataBaseServer::databas
   external_atten_def.fit_areal_density = true;
   external_atten_def.lower_fit_areal_density = 0.0;
   external_atten_def.upper_fit_areal_density = 500*PhysicalUnits::g_per_cm2;
-  rel_eff_solve_input.phys_model_external_attens.push_back( make_shared<RelActCalc::PhysicalModelShieldInput>( external_atten_def ) );
+  //rel_eff_solve_input.phys_model_external_attens.push_back( make_shared<RelActCalc::PhysicalModelShieldInput>( external_atten_def ) );
 
 
   RelActCalcManual::RelEffSolution sol = RelActCalcManual::solve_relative_efficiency( rel_eff_solve_input );
@@ -229,8 +234,8 @@ int dev_code()
   //check_physical_model_eff_function();
   //return 1;
   
-  //example_manual_phys_model();
-  //return 1;
+  example_manual_phys_model();
+  return 1;
 
   const SandiaDecay::SandiaDecayDataBase * const db = DecayDataBaseServer::database();
   assert( db );

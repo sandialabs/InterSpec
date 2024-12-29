@@ -351,6 +351,13 @@ struct RelEffInput
   */
   size_t eqn_order;
 
+  /** If true, fit the modified Hoerl equation form for the physical model. 
+   * If false, do not fit the modified Hoerl equation form (its value will be constant value of 1.0).
+   * 
+   * Ignored if not using `RelActCalc::RelEffEqnForm::FramPhysicalModel`.
+  */
+  bool phys_model_use_hoerl = true;
+
   /** The detector peak response to use as part of the relative efficiency equation for 
    `RelActCalc::RelEffEqnForm::FramPhysicalModel`, and if so, the detector must be non-null 
    and valid.
@@ -387,17 +394,36 @@ struct RelEffSolution
   RelEffInput m_input;
 
   std::vector<double> m_rel_eff_eqn_coefficients;
+
+  /** The covariance matrix of the relative efficiency equation coefficients. 
+   * Will be empty if the equation form is `RelActCalc::RelEffEqnForm::PhysicalModel`;
+   * for that form of equation, see `m_nonlin_covariance`.
+  */
   std::vector<std::vector<double>> m_rel_eff_eqn_covariance;
   
   /** The relative activities for each of the input nuclides. */
   std::vector<IsotopeRelativeActivity> m_rel_activities;
 
-  /** Covariance matrix of relative activities; same index ordering as \p m_rel_activities. 
+  /** Covariance matrix of nonlinear parameters fit by Ceres.
    
+   If not empty, the first `m_rel_activities.size()` indices are the
+   relative activities, in the same index ordering as \p m_rel_activities. 
    But also see `m_activity_norms`, as you need to multiple the relative activities by these
    scale factors before using with this covariance matrix.
+   
+   If the equation form is `RelActCalc::RelEffEqnForm::PhysicalModel`, then the following
+   indeices are for the shielding parameters:
+   - {self-atten AN}
+   - {self-atten AD}
+   - {external-atten 0 AN} (if >=1 external attens specified)
+   - {external-atten 0 AD} (if >=1 external attens specified)
+   - {external-atten 1 AN} (if >=2 external attens specified)
+   - {external-atten 1 AD} (if >=2 external attens specified)
+   - ...
+   - {Modified Hoerl b}
+   - {Modified Hoerl c}
    */
-  std::vector<std::vector<double>> m_rel_act_covariance;
+  std::vector<std::vector<double>> m_nonlin_covariance;
 
   // TODO: we should probably save the full covariance matrix
   
@@ -450,9 +476,6 @@ struct RelEffSolution
    */
   std::vector<std::string> m_warnings;
   
-  /** The input peaks that were used to create the solution. */
-  std::vector<GenericPeakInfo> m_input_peak;
-  
   /** Peaks with un-decay-corrected yields; useful only to note the effect of the decay correction.
    
    Only includes peaks that have at least one correction, and the only entries in
@@ -464,6 +487,21 @@ struct RelEffSolution
    */
   std::vector<GenericPeakInfo> m_input_peaks_before_decay_corr;
   
+
+  /** A struct to hold the self attenuation shield fit results. 
+   * This is fine for simple accesses, but not if you need to take into account the correlations, which 
+   * you really should do a lot of the time.
+  */
+  struct PhysModelShieldFit
+  {
+    std::shared_ptr<const Material> m_material;
+    double m_areal_density = 0.0;
+    double m_areal_density_uncert = -1.0;
+    double m_atomic_number = 0.0;
+    double m_atomic_number_uncert = -1.0;
+  };//struct PhysModelShield
+  std::unique_ptr<PhysModelShieldFit> m_phys_model_self_atten_shield;
+  std::vector<std::unique_ptr<PhysModelShieldFit>> m_phys_model_external_atten_shields;
 
   /////////////////////////////////////////////////////////////////////////////////////////////////
   //            Below here are member functions for simplified access to information             //

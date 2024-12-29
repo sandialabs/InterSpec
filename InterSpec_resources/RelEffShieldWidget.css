@@ -6,6 +6,8 @@
   padding-inline-start: 5px;
   padding-inline-end: 5px;
   padding-block-end: 0px;
+
+  margin-bottom: 4px;
 }
 
 .RelEffShieldWidget legend {
@@ -31,6 +33,7 @@
   row-gap: 2.5px;
   column-gap: 2.5px;
   padding-bottom: 2.5px;
+  align-items: center; /* Align items vertically in the center */
 }
 
 .RelEffShieldWidget input[type="text"],
@@ -38,4 +41,5 @@
   font-size: smaller;
   border: 1px solid #ccc; /* Add a border for visual feedback */
   padding: 2px; /* Add some padding inside the input */
+  width: 65px;
 }

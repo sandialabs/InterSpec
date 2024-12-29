@@ -389,7 +389,7 @@ struct RelActAutoSolution
    */
   double activity_ratio( const SandiaDecay::Nuclide *numerator, const SandiaDecay::Nuclide *denominator ) const;
   
-  /** Get the index of specified nuclide within #m_rel_activities and #m_rel_act_covariance. */
+  /** Get the index of specified nuclide within #m_rel_activities and #m_nonlin_covariance. */
   size_t nuclide_index( const SandiaDecay::Nuclide *nuclide ) const;
   
   enum class Status : int

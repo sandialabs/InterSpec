@@ -13,6 +13,7 @@
 #include <Wt/WLabel>
 #include <Wt/WSuggestionPopup>
 
+
 //Forward declarations
 namespace Wt
 { 
@@ -28,22 +29,51 @@ class MaterialDB;
 class SwitchCheckbox;
 class NativeFloatSpinBox;
 
+namespace RelActCalc
+{
+  struct PhysicalModelShieldInput;
+}
 
+struct RelEffShieldState 
+{
+  bool materialSelected;
+  std::string material;
+  std::string thickness;
+  bool fitThickness;
+  double atomicNumber;
+  bool fitAtomicNumber;
+  double arealDensity;  
+  bool fitArealDensity;
+
+  void toXml(rapidxml::xml_node<>* node) const;
+  void fromXml(const rapidxml::xml_node<>* node);
+};//struct RelEffShieldState
+
+/** @brief A GUI widget roughly cooresponding to a RelActCalc::PhysicalModelShieldInput.
+ * 
+ * Currently, the widget is not fully complete, and does not allow for all the options 
+ * in the PhysicalModelShieldInput, like limiting range of fit AN and AD.
+ */
 class RelEffShieldWidget : public Wt::WGroupBox
 {
 public:
-  RelEffShieldWidget( const Wt::WString &title, Wt::WContainerWidget *parent = nullptr );
+
+  enum class ShieldType { SelfAtten, ExternalAtten };
+
+  RelEffShieldWidget( ShieldType type, Wt::WContainerWidget *parent = nullptr );
+  ~RelEffShieldWidget();
 
   bool isMaterialSelected() const;
-  std::string material() const;
-
-
-//  std::shared_ptr<const Material> material();
-//MaterialDB *m_materialDB;
+  void setMaterialSelected( bool selected );
+  const Material *material() const;
+  /** The text showing in the material name input field - may not be a valid material name. */
+  Wt::WString materialNameTxt() const;
 
   void setMaterial(const std::string &material);
   double thickness() const;
+  Wt::WString thicknessTxt() const;
   void setThickness(double thickness);
+  void setThickness( const Wt::WString &thickness );
   bool fitThickness() const;
   void setFitThickness(bool fit);
   double atomicNumber() const;
@@ -55,7 +85,23 @@ public:
   bool fitArealDensity() const;
   void setFitArealDensity(bool fit);
 
+  bool nonEmpty() const;
+  void resetState();
+
+  /** For input to Rel Act shield fit.
+   * 
+   * If the widget is empty, returns nullptr.
+   */
+  std::shared_ptr<RelActCalc::PhysicalModelShieldInput> fitInput() const;
+
+  std::unique_ptr<RelEffShieldState> state() const;
+  void setState(const RelEffShieldState& state);
+
+  Wt::Signal<void> &changed();
+
 private:
+  ShieldType m_type;
+  Wt::Signal<void> m_changed;
   SwitchCheckbox *m_frameSwitch;
   Wt::WStackedWidget *m_stackedWidget;
   Wt::WContainerWidget *m_materialFrame;
@@ -71,7 +117,9 @@ private:
   NativeFloatSpinBox *m_arealDensity;
   Wt::WCheckBox *m_fitArealDensity;
 
-  void onFrameSwitchChanged();
+  void userUpdated();
+  void materialUpdated();
+  void materialTypeUpdated();
 };//class RelEffShieldWidget
 
 #endif // RelEffShieldWidget_H

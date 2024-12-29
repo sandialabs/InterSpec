@@ -2455,11 +2455,14 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
           cov.clear();
           cov.resize( num, vector<double>(num,0.0) );
           
-          for( size_t i = start; i < num; ++i )
+          for( size_t i = start; i < (start + num); ++i )
           {
             for( size_t j = start; j < i; ++j )
             {
-              covariance.GetCovarianceBlock( pars + i, pars + j, &(cov[i][j]) );
+              const bool success = covariance.GetCovarianceBlock( pars + i, pars + j, &(cov[i][j]) );
+              assert( success );
+              if( !success )
+                throw runtime_error( "Failed to get covariance block for parameters " + std::to_string(i) + " and " + std::to_string(j) );
               cov[j][i] = cov[i][j];
             }
           }
@@ -2925,7 +2928,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
       assert( (rel_eff_start_index + num_rel_eff_par) < x.size() );
       assert( m_drf );
       
-      return RelActCalc::eval_physical_model_eqn( energy, self_atten, external_attens, *m_drf,
+      return RelActCalc::eval_physical_model_eqn( energy, self_atten, external_attens, m_drf.get(),
                                                  rel_ef_pars, num_rel_eff_par );
     }//if( m_options.rel_eff_eqn_type == RelActCalc::RelEffEqnForm::FramPhysicalModel )
     
@@ -4891,7 +4894,7 @@ void RelActAutoSolution::print_html_report( std::ostream &out ) const
         assert( m_drf );
         
         fit_rel_eff = RelActCalc::eval_physical_model_eqn( energy, self_atten, external_attens,
-                            *m_drf, m_rel_eff_coefficients.data(), m_rel_eff_coefficients.size() );
+                            m_drf.get(), m_rel_eff_coefficients.data(), m_rel_eff_coefficients.size() );
       }//if( m_options.rel_eff_eqn_type == RelActCalc::RelEffEqnForm::FramPhysicalModel )
       
       //assert( fabs(meas_rel_eff - fit_rel_eff) < 0.1*std::max(meas_rel_eff,fit_rel_eff) );
@@ -4908,7 +4911,7 @@ void RelActAutoSolution::print_html_report( std::ostream &out ) const
           }else
           {
             fit_rel_eff_uncert = RelActCalc::eval_physical_model_eqn_uncertainty( energy, self_atten, external_attens, 
-                                                            *m_drf,  m_rel_eff_covariance );
+                                                            m_drf.get(),  m_rel_eff_covariance );
             fit_rel_eff_uncert /= fit_rel_eff;
           }
         }catch( std::exception &e )
@@ -5105,7 +5108,7 @@ void RelActAutoSolution::print_html_report( std::ostream &out ) const
     assert( m_drf );
     
     rel_eff_eqn_js = RelActCalc::physical_model_rel_eff_eqn_js_function( self_atten, external_attens,
-                                                                        *m_drf,
+                                                                        m_drf.get(),
                                                                         m_rel_eff_coefficients.data(),
                                                                         m_rel_eff_coefficients.size() );
   }//if( not FramPhysicalModel ) / else
@@ -5631,7 +5634,7 @@ RelActAutoSolution solve( const Options options,
               throw std::logic_error( "Invalid current_sol.m_drf" );
               
             
-            rel_eff = RelActCalc::eval_physical_model_eqn( energy, self_atten, external_attens, *drf,
+            rel_eff = RelActCalc::eval_physical_model_eqn( energy, self_atten, external_attens, drf.get(),
                                                           current_sol.m_rel_eff_coefficients.data(),
                                                           current_sol.m_rel_eff_coefficients.size() );
           }//if( options.rel_eff_eqn_type == RelActCalc::RelEffEqnForm::FramPhysicalModel )

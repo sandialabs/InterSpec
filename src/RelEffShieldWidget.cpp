@@ -32,6 +32,7 @@
 #include <Wt/WStackedWidget>
 #include <Wt/WRegExpValidator>
 
+#include "SpecUtils/StringAlgo.h"
 #include "SpecUtils/RapidXmlUtils.hpp"
 
 #include "InterSpec/InterSpec.h"
@@ -81,7 +82,7 @@ RelEffShieldWidget::RelEffShieldWidget( ShieldType type, Wt::WContainerWidget *p
   m_materialEdit->addStyleClass("GridSecondCol GridFirstRow");
   m_materialSuggest = interspec->shieldingSuggester();
   if( m_materialSuggest )
-    m_materialSuggest->forEdit( m_materialEdit );
+    m_materialSuggest->forEdit( m_materialEdit, WSuggestionPopup::Editing | WSuggestionPopup::DropDownIcon );
   m_materialEdit->changed().connect( this, &RelEffShieldWidget::materialUpdated );  
   m_materialEdit->enterPressed().connect( this, &RelEffShieldWidget::materialUpdated );
 
@@ -115,6 +116,7 @@ RelEffShieldWidget::RelEffShieldWidget( ShieldType type, Wt::WContainerWidget *p
   m_atomicNumber->setSingleStep( 1.0f );
   m_atomicNumber->setWidth( 50 );
   m_atomicNumber->setSpinnerHidden( true );
+  m_atomicNumber->setFormatString( "%.3f" );
   m_atomicNumber->addStyleClass("AN GridSecondCol GridFirstRow");
   m_atomicNumber->setValue( 26.0f );
   m_atomicNumber->valueChanged().connect( this, &RelEffShieldWidget::userUpdated );
@@ -133,6 +135,7 @@ RelEffShieldWidget::RelEffShieldWidget( ShieldType type, Wt::WContainerWidget *p
   m_arealDensity->setSingleStep( 1.0f );
   m_arealDensity->setWidth( 50 );
   m_arealDensity->setSpinnerHidden( true );
+  m_arealDensity->setFormatString( "%.3f" );
   m_arealDensity->setPlaceholderText( Wt::WString::tr("resw-areal-density-placeholder") );
   m_arealDensity->addStyleClass("AD GridSecondCol GridSecondRow");
   m_arealDensity->setValue( 0.0 );
@@ -150,10 +153,33 @@ RelEffShieldWidget::RelEffShieldWidget( ShieldType type, Wt::WContainerWidget *p
   userUpdated();
 }//RelEffShieldWidget constructor
 
+
+RelEffShieldWidget::~RelEffShieldWidget()
+{
+  InterSpec *interspec = InterSpec::instance();
+  if( !interspec )
+    return;
+    
+  const vector<Wt::WObject *> &kids = interspec->Wt::WObject::children();
+  // kids.size() is usually just 2 or 3, so this isnt that heavy of an operation.
+  auto pos = std::find( begin(kids), end(kids), static_cast<WObject *>(m_materialSuggest) );
+  if( pos != end(kids) )
+    m_materialSuggest->removeEdit( m_materialEdit );
+}//~RelEffShieldWidget()
+
+
 bool RelEffShieldWidget::isMaterialSelected() const
 {
-  return m_stackedWidget->currentIndex() == 0;
+  return (m_stackedWidget->currentIndex() == 0);
 }
+
+
+void RelEffShieldWidget::setMaterialSelected( bool selected )
+{
+  m_stackedWidget->setCurrentIndex( selected ? 0 : 1 );
+  m_frameSwitch->setChecked( !selected );
+}
+
 
 const Material *RelEffShieldWidget::material() const
 {
@@ -168,6 +194,9 @@ const Material *RelEffShieldWidget::material() const
     return nullptr;
   
   const string text = m_materialEdit->text().toUTF8();
+  
+  if( text.empty() )
+    return nullptr;
   
   try
   {
@@ -201,79 +230,150 @@ Wt::WString RelEffShieldWidget::materialNameTxt() const
   return m_materialEdit->text();
 }
 
+
 void RelEffShieldWidget::setMaterial(const std::string &material)
 {
   m_materialEdit->setText(material);
 }
 
+
 double RelEffShieldWidget::thickness() const
 {
-  return std::stod(m_thicknessEdit->text().toUTF8());
+  const string txt = m_thicknessEdit->text().toUTF8();
+  try
+  {
+    return PhysicalUnits::stringToDistance( txt );
+  }catch(...)
+  {
+  }
+
+  return 0.0;
 }
 
-void RelEffShieldWidget::setThickness(double thickness)
+
+Wt::WString RelEffShieldWidget::thicknessTxt() const
 {
-  m_thicknessEdit->setText(std::to_string(thickness));
+  return m_thicknessEdit->text();
 }
+
+
+void RelEffShieldWidget::setThickness( double thickness )
+{
+  const string txt = PhysicalUnits::printToBestLengthUnits(thickness, 5);
+  m_thicknessEdit->setText( txt );
+}
+
+
+void RelEffShieldWidget::setThickness( const Wt::WString &thickness )
+{
+  m_thicknessEdit->setText( thickness );
+}
+
 
 bool RelEffShieldWidget::fitThickness() const
 {
   return m_fitThickness->isChecked();
 }
 
+
 void RelEffShieldWidget::setFitThickness(bool fit)
 {
-  m_fitThickness->setChecked(fit);
+  m_fitThickness->setChecked( fit );
+  m_thicknessEdit->setDisabled( fit );
 }
+
 
 double RelEffShieldWidget::atomicNumber() const
 {
   return m_atomicNumber->value();
 }
 
+
 void RelEffShieldWidget::setAtomicNumber(double atomicNumber)
 {
   m_atomicNumber->setValue(atomicNumber);
 }
+
 
 bool RelEffShieldWidget::fitAtomicNumber() const
 {
   return m_fitAtomicNumber->isChecked();
 }
 
+
 void RelEffShieldWidget::setFitAtomicNumber(bool fit)
 {
-  m_fitAtomicNumber->setChecked(fit);
+  m_fitAtomicNumber->setChecked( fit );
+  m_atomicNumber->setDisabled( fit );
 }
+
 
 double RelEffShieldWidget::arealDensity() const
 {
   return m_arealDensity->value();
 }
 
+
 void RelEffShieldWidget::setArealDensity(double arealDensity)
 {
   m_arealDensity->setValue(arealDensity);
 }
+
 
 bool RelEffShieldWidget::fitArealDensity() const
 {
   return m_fitArealDensity->isChecked();
 }
 
+
 void RelEffShieldWidget::setFitArealDensity(bool fit)
 {
-  m_fitArealDensity->setChecked(fit);
+  m_fitArealDensity->setChecked( fit );
+  m_arealDensity->setDisabled( fit );
 }
+
+
+bool RelEffShieldWidget::nonEmpty() const
+{
+  if( isMaterialSelected() )
+  {
+    const Material *mat = material();
+    if( !mat )
+      return false;
+    
+    if( fitThickness() )
+      return true;
+
+    const double thick = thickness();
+    return (thick > 0.0);
+  }//if( isMaterialSelected() )
+
+  return (fitAtomicNumber() || ((m_atomicNumber->value() >= 1.0) && (m_atomicNumber->value() <= 98.0)))
+        && (fitArealDensity() || (m_arealDensity->value() > 0.0));
+}
+
+
+void RelEffShieldWidget::resetState()
+{
+  setMaterial("");
+  setThickness(0.0);
+  setFitThickness(true);
+  setAtomicNumber(26.0);
+  setFitAtomicNumber(false);
+  setArealDensity(0.0);
+  setFitArealDensity(true);
+}
+
 
 void RelEffShieldWidget::userUpdated()
 {
-  m_arealDensity->setDisabled( !m_fitArealDensity->isChecked() );
-  m_atomicNumber->setDisabled( !m_fitAtomicNumber->isChecked() );
-  m_thicknessEdit->setDisabled( !m_fitThickness->isChecked() );
+  m_arealDensity->setDisabled( m_fitArealDensity->isChecked() );
+  m_atomicNumber->setDisabled( m_fitAtomicNumber->isChecked() );
+  m_thicknessEdit->setDisabled( m_fitThickness->isChecked() );
  
   m_changed.emit();
 }
+
 
 void RelEffShieldWidget::materialUpdated()
 { 
@@ -283,13 +383,11 @@ void RelEffShieldWidget::materialUpdated()
   userUpdated();
 }
 
+
 void RelEffShieldWidget::materialTypeUpdated()
 {
-if (m_frameSwitch->isChecked())
-    m_stackedWidget->setCurrentIndex(1);
-  else
-    m_stackedWidget->setCurrentIndex(0);
-
+  m_stackedWidget->setCurrentIndex( m_frameSwitch->isChecked() ? 1 : 0 );
+  
   userUpdated();
 }//materialTypeUpdated()
 
@@ -299,7 +397,7 @@ std::unique_ptr<RelEffShieldState> RelEffShieldWidget::state() const
   auto s = std::make_unique<RelEffShieldState>();
   s->materialSelected = isMaterialSelected();
   s->material = materialNameTxt().toUTF8();
-  s->thickness = thickness();
+  s->thickness = m_thicknessEdit->text().toUTF8();
   s->fitThickness = fitThickness();
   s->atomicNumber = atomicNumber();
   s->fitAtomicNumber = fitAtomicNumber();
@@ -308,6 +406,7 @@ std::unique_ptr<RelEffShieldState> RelEffShieldWidget::state() const
 
   return s;
 }
+
 
 void RelEffShieldWidget::setState(const RelEffShieldState& s)
 {
@@ -323,17 +422,20 @@ void RelEffShieldWidget::setState(const RelEffShieldState& s)
   materialTypeUpdated();
 }
 
+
 Wt::Signal<void> &RelEffShieldWidget::changed()
 {
   return m_changed;
 }
+
 
 void RelEffShieldState::toXml( rapidxml::xml_node<> *node ) const
 {
   using namespace rapidxml;
 
   xml_document<> *doc = node->document();
-  xml_node<>* root = doc->allocate_node(node_element, "RelEffShieldState");
+  assert( doc );
+  xml_node<>* root = doc->allocate_node(node_element, "RelEffShield");
     
   auto allocateNode = [&](const char* name, const char* value) {
     char* nodeName = doc->allocate_string(name);
@@ -341,9 +443,9 @@ void RelEffShieldState::toXml( rapidxml::xml_node<> *node ) const
     return doc->allocate_node(node_element, nodeName, nodeValue);
   };
 
-  root->append_node(allocateNode("materialSelected", materialSelected ? "true" : "false"));
+  root->append_node(allocateNode("MaterialDefined", materialSelected ? "true" : "false"));
   root->append_node(allocateNode("material", material.c_str()));
-  root->append_node(allocateNode("thickness", std::to_string(thickness).c_str()));
+  root->append_node(allocateNode("thickness", thickness.c_str()));
   root->append_node(allocateNode("fitThickness", fitThickness ? "true" : "false"));
   root->append_node(allocateNode("atomicNumber", std::to_string(atomicNumber).c_str()));
   root->append_node(allocateNode("fitAtomicNumber", fitAtomicNumber ? "true" : "false"));
@@ -351,76 +453,88 @@ void RelEffShieldState::toXml( rapidxml::xml_node<> *node ) const
   root->append_node(allocateNode("fitArealDensity", fitArealDensity ? "true" : "false"));
 
   node->append_node(root);
-}
+}//void RelEffShieldState::toXml(rapidxml::xml_node<>* node)
+
 
 void RelEffShieldState::fromXml(const rapidxml::xml_node<>* node)
 {
-  const rapidxml::xml_node<>* val = node->first_node("materialSelected");
+  const rapidxml::xml_node<>* val = node->first_node("MaterialDefined");
   if( !val )
-    throw std::runtime_error( "Missing node: materialSelected" );
+    throw std::runtime_error( "RelEffShieldState: missing required node 'MaterialDefined'" );
   materialSelected = XML_VALUE_ICOMPARE(val, "true");
   
-  val = node->first_node("material");
-  if( !val )
-    throw std::runtime_error( "Missing node: material" );
+  val = XML_FIRST_NODE(node, "material");
   material = SpecUtils::xml_value_str(val);
   
-  val = node->first_node("thickness");
-  if( !val )
-    throw std::runtime_error( "Missing node: thickness" );
-  thickness = std::stod(SpecUtils::xml_value_str(val));
+  val = XML_FIRST_NODE(node, "thickness");
+  thickness = SpecUtils::xml_value_str(val);
   
-  val = node->first_node("fitThickness");
-  if( !val )
-    throw std::runtime_error( "Missing node: fitThickness" );
-  fitThickness = XML_VALUE_ICOMPARE(val, "true");
+  val = XML_FIRST_NODE(node, "fitThickness");
+  fitThickness = val ? XML_VALUE_ICOMPARE(val, "true") : false;
   
-  val = node->first_node("atomicNumber");
-  if( !val )
-    throw std::runtime_error( "Missing node: atomicNumber" );
-  atomicNumber = std::stod(SpecUtils::xml_value_str(val));
+  val = XML_FIRST_NODE(node, "atomicNumber");
+  const string an_str = SpecUtils::xml_value_str(val);
+  if( !SpecUtils::parse_double(an_str.c_str(), an_str.size(), atomicNumber) )
+    atomicNumber = 26.0;
   
-  val = node->first_node("fitAtomicNumber");
-  if( !val )
-    throw std::runtime_error( "Missing node: fitAtomicNumber" );
-  fitAtomicNumber = XML_VALUE_ICOMPARE(val, "true");
+  val = XML_FIRST_NODE(node, "fitAtomicNumber");
+  fitAtomicNumber = val ? XML_VALUE_ICOMPARE(val, "true") : false;
   
-  val = node->first_node("arealDensity");
-  if( !val )
-    throw std::runtime_error( "Missing node: arealDensity" );
-  arealDensity = std::stod(SpecUtils::xml_value_str(val));
+  val = XML_FIRST_NODE(node, "arealDensity");
+  const string ad_str = SpecUtils::xml_value_str(val);  
+  if( !SpecUtils::parse_double(ad_str.c_str(), ad_str.size(), arealDensity) )
+    arealDensity = 0.0;
   
-  val = node->first_node("fitArealDensity");
-  if( !val )
-    throw std::runtime_error( "Missing node: fitArealDensity" );
-  val = node->first_node("fitArealDensity");
-  fitArealDensity = XML_VALUE_ICOMPARE(val, "true");
-}
+  val = XML_FIRST_NODE(node, "fitArealDensity");
+  fitArealDensity = val ? XML_VALUE_ICOMPARE(val, "true") : false;
+}//void RelEffShieldState::fromXml(const rapidxml::xml_node<>* node)
+
 
 std::shared_ptr<RelActCalc::PhysicalModelShieldInput> RelEffShieldWidget::fitInput() const
 {
+  if( !nonEmpty() )
+    return nullptr;
+  
   auto s = std::make_shared<RelActCalc::PhysicalModelShieldInput>();
   
   if( isMaterialSelected() )
   {
     const Material * const mat = material();
-    s->material = mat ? make_shared<Material>(*mat) : nullptr;
+    assert( mat );
+    if( !mat )
+      return nullptr;
+
+    s->material = make_shared<Material>(*mat);
+    s->atomic_number = 0.0;
+    s->fit_atomic_number = false;
     s->fit_areal_density = fitThickness();
 
     if( s->material && !s->fit_areal_density )
-      s->areal_density = thickness() * s->material->density;
-    else
+    {
+      const double thick = thickness();
+      if( thick <= 0.0 )
+        s->areal_density = 1.25*PhysicalUnits::g_per_cm2;
+      else
+        s->areal_density = thick * s->material->density;
+    }else
+    {
       s->areal_density = 1.25*PhysicalUnits::g_per_cm2; //Arbitrary default value, just to make sure it's not zero, btu also not to go wild incase last fit value was big
+    }
   }else
   {
+    const double an = atomicNumber();
+    assert( an >= 0.9 && an <= 98.1 );
+    if( an < 0.9 || an > 98.1 )
+      return nullptr;
+
+    s->atomic_number = an;
+    s->fit_atomic_number = fitAtomicNumber();
+
     s->fit_areal_density = fitArealDensity();
     if( s->fit_areal_density )
       s->areal_density = 1.25*PhysicalUnits::g_per_cm2;
     else
       s->areal_density = arealDensity()*PhysicalUnits::g_per_cm2;
-    
-    s->atomic_number = atomicNumber();
-    s->fit_atomic_number = fitAtomicNumber();
   }//if( isMaterialSelected() ) / else
 
   return s;

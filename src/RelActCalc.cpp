@@ -853,7 +853,7 @@ void PhysicalModelShieldInput::check_valid() const
 double eval_physical_model_eqn( const double energy,
                                  const shared_ptr<const Material> &self_atten,
                                  const vector<shared_ptr<const Material>> &external_attens,
-                                 const DetectorPeakResponse &drf,
+                                 const DetectorPeakResponse  * const drf,
                                  const double * const paramaters,
                                  const size_t num_pars )
 {
@@ -877,6 +877,11 @@ double eval_physical_model_eqn( const double energy,
       assert( atomic_number == 0.0f );
       if( atomic_number != 0.0f )
         throw runtime_error( "eval_physical_model_eqn: atomic number must be zero if material defined." );
+    }else if( atomic_number == 0.0 )
+    {
+      assert( areal_density == 0.0 );
+      if( areal_density != 0.0 )
+        throw runtime_error( "eval_physical_model_eqn: areal density must be zero if atomic number is zero." );
     }else
     {
       if( IsNan(atomic_number) || IsInf(atomic_number) )
@@ -884,12 +889,14 @@ double eval_physical_model_eqn( const double energy,
 
       if( (atomic_number < 0.9) || (atomic_number > 98.1) )
         throw runtime_error( "eval_physical_model_eqn: atomic number must in in range [1,98]" );
-
-      atomic_number = std::max( 1.0, std::min( 98.0, atomic_number ) );
     }
   };//sanity_check_shield lamda
   
-  sanity_check_shield( self_atten, 0 );
+  if( self_atten || (paramaters[0] != 0.0) )
+    sanity_check_shield( self_atten, 0 );
+  else if( paramaters[1] != 0.0 )
+    throw runtime_error( "eval_physical_model_eqn: if self atten AD is zero, then AN must be zero." );
+    
   for( size_t i = 0; i < external_attens.size(); ++i )
     sanity_check_shield( external_attens[i], 2 + i*2 );
   
@@ -907,19 +914,30 @@ double eval_physical_model_eqn( const double energy,
     throw runtime_error( "eval_physical_model_eqn: self atten areal-density may not be less than zero." );
   self_atten_ad = std::max( 0.0, self_atten_ad );
 
-  assert( !IsNan(self_atten_an) && !IsInf(self_atten_an) && (self_atten_an > 0.9) && (self_atten_an < 98.1) );
+  assert( self_atten || (self_atten_an == 0.0) || (!IsNan(self_atten_an) && !IsInf(self_atten_an) && (self_atten_an > 0.9) && (self_atten_an < 98.1)) );
 
-  if( IsNan(self_atten_an) || IsInf(self_atten_an) || (self_atten_an < 0.9) && (self_atten_an > 98.1) )
+  if( !self_atten && (self_atten_an != 0.0) && (IsNan(self_atten_an) || IsInf(self_atten_an) || (self_atten_an < 0.9) || (self_atten_an > 98.1)) )
     throw runtime_error( "eval_physical_model_eqn: self atten atomic number must be in range [1,98]." );
-  self_atten_an = std::max( 1.0, std::min( 98.0, self_atten_an ) );
+  if( !self_atten && (self_atten_an != 0.0) )
+    self_atten_an = std::max( 1.0, std::min( 98.0, self_atten_an ) );
 
-  const double self_atten_mu = self_atten
-            ? transmition_length_coefficient( self_atten.get(), energyf ) / self_atten->density
-            :  mass_attenuation_coef( self_atten_an, energyf );
-    
-  assert( self_atten_mu > 0.0 );
+  double self_atten_mu;
   
-  const double sa_part = (self_atten_ad == 0.0)
+  if( self_atten )
+  {
+    self_atten_mu = transmition_length_coefficient( self_atten.get(), energyf ) / self_atten->density;
+  }else if( self_atten_an == 0.0 )
+  {
+    assert( self_atten_ad == 0.0 );
+    self_atten_mu = 0.0;
+  }else
+  {
+    self_atten_mu = mass_attenuation_coef( self_atten_an, energyf );
+  }
+
+  assert( self_atten_mu >= 0.0 );
+  
+  const double sa_part = ((self_atten_ad <= 0.0) || (self_atten_mu == 0.0))
                           ? 1.0
                           : (1 - exp(-self_atten_mu * self_atten_ad)) / (self_atten_mu * self_atten_ad);
     
@@ -938,7 +956,7 @@ double eval_physical_model_eqn( const double energy,
   }//for( size_t i = 0; i < external_attens.size(); ++i )
     
     
-  const double det_part = drf.intrinsicEfficiency( energyf );
+  const double det_part = drf ? drf->intrinsicEfficiency( energyf ) : 1.0;
     
 //#warning "Not including correction factor in Physical Model Eff"
 //static int ntimeshere = 0;
@@ -956,7 +974,7 @@ double eval_physical_model_eqn( const double energy,
 double eval_physical_model_eqn_uncertainty( const double energy,
                                  const std::shared_ptr<const Material> &self_atten,
                                  const std::vector<std::shared_ptr<const Material>> &external_attens,
-                                 const DetectorPeakResponse &drf,
+                                 const DetectorPeakResponse  * const drf,
                                  const std::vector<std::vector<double>> &covariance )
 {
 #warning "eval_physical_model_eqn_uncertainty not implemented."
@@ -966,7 +984,7 @@ double eval_physical_model_eqn_uncertainty( const double energy,
   
 std::function<double(double)> physical_model_eff_function( const shared_ptr<const Material> &self_atten,
                                   const vector<shared_ptr<const Material>> &external_attens,
-                                  const DetectorPeakResponse &drf,
+                                  const DetectorPeakResponse * const drf,
                                   const double * const paramaters,
                                   const size_t num_pars )
 {
@@ -985,10 +1003,18 @@ std::function<double(double)> physical_model_eff_function( const shared_ptr<cons
       throw runtime_error( "physical_model_eff_function: areal density must be >= 0." );
     areal_density = std::max( 0.0, areal_density );
     
-    assert( !IsNan(atomic_number) && !IsInf(atomic_number) && (atomic_number > 0.9) && (atomic_number < 98.1) );
-    if( IsNan(atomic_number) || IsInf(atomic_number) || (atomic_number < 0.9) || (atomic_number > 98.1) )
+    assert( material || (!IsNan(atomic_number) && !IsInf(atomic_number) && (((atomic_number > 0.9) && (atomic_number < 98.1)) || (atomic_number == 0.0)) ) );
+
+    if( !material && (atomic_number == 0.0) )
+    {
+      assert( areal_density == 0.0 );
+      return;
+    }
+
+    if( !material && (IsNan(atomic_number) || IsInf(atomic_number) || (atomic_number < 0.9) || (atomic_number > 98.1))  ) 
       throw runtime_error( "physical_model_eff_function: atomic number must be in range [1,98]." );
-    atomic_number = std::max( 1.0, std::min( 98.0, atomic_number ) );
+    if( !material )
+      atomic_number = std::max( 1.0, std::min( 98.0, atomic_number ) );
 
     if( material )
     {
@@ -1011,7 +1037,7 @@ std::function<double(double)> physical_model_eff_function( const shared_ptr<cons
   if( paramaters[0] < 0.0 )
     throw runtime_error( "physical_model_eff_function: self atten areal-density may not be zero." );
   
-  const function<float( float )> drffcn = drf.intrinsicEfficiencyFcn();
+  const function<float(float)> drffcn = drf ? drf->intrinsicEfficiencyFcn() : []( float ){ return 1.0f; };
   const vector<double> pars( paramaters, paramaters + num_pars );
   
   
@@ -1025,17 +1051,31 @@ std::function<double(double)> physical_model_eff_function( const shared_ptr<cons
     const double self_atten_an = pars[0];
     const double self_atten_ad = pars[1] * PhysicalUnits::g / PhysicalUnits::cm2;
     
-    const double self_atten_mu = self_atten
-            ? transmition_length_coefficient( self_atten.get(), energyf ) / self_atten->density
-            :  mass_attenuation_coef( self_atten_an, energyf );
+    double self_atten_mu;
     
-    const double sa_part = (1 - exp(-self_atten_mu * self_atten_ad)) / (self_atten_mu * self_atten_ad);
+    if( self_atten )
+    {
+      self_atten_mu = transmition_length_coefficient( self_atten.get(), energyf ) / self_atten->density;
+    }else if( self_atten_an == 0.0 )
+    {
+      assert( self_atten_ad == 0.0 );
+      self_atten_mu = 0.0;
+    }else
+    {
+      self_atten_mu = mass_attenuation_coef( self_atten_an, energyf );
+    }
+    
+    const double sa_part = (self_atten_ad <= 0.0) 
+                            ? 1.0 
+                            : (1 - exp(-self_atten_mu * self_atten_ad)) / (self_atten_mu * self_atten_ad);
     
     double ext_atten_part = 1.0;
     for( size_t i = 0; i < external_attens.size(); ++i )
     {
       const double atten_an = pars[2 + 2*i];
       const double atten_ad = pars[2 + 2*i + 1] * PhysicalUnits::g / PhysicalUnits::cm2;
+      if( atten_ad <= 0.0 )
+        continue;
       
       const shared_ptr<const Material> &mat = external_attens[i];
       const double self_atten_mu = mat
@@ -1120,18 +1160,21 @@ string physical_model_rel_eff_eqn_text( const std::shared_ptr<const Material> &s
     
     eqn += "]";
   }//if( !external_attens.empty() )
-       
+
+  eqn += (eqn.empty() ? "" : " * ");
+  eqn += "[Det. Eff.]";
+
   const size_t b_index = 2 + 2*external_attens.size() + 0;
   const size_t c_index = 2 + 2*external_attens.size() + 1;
-  if( c_index < num_pars )
+  if( (c_index < num_pars) && ((paramaters[b_index] != 0.0) || (paramaters[c_index] != 1.0)) )
   {
     if( html_format )
     {
-      eqn += " * [Detector Efficiency] * [E<sup>" + SpecUtils::printCompact(paramaters[b_index], 3) + "</sup> * "
+      eqn += " * [E<sup>" + SpecUtils::printCompact(paramaters[b_index], 3) + "</sup> * "
         + SpecUtils::printCompact(paramaters[c_index], 3) + "<sup>1/E</sup>]";
     }else
     {
-      eqn += " * [Detector Efficiency] * [E^" + SpecUtils::printCompact(paramaters[b_index], 3) + " * "
+      eqn += " * [E^" + SpecUtils::printCompact(paramaters[b_index], 3) + " * "
          + SpecUtils::printCompact(paramaters[c_index], 3) + "^(1/E)]";
     }//if( html_format ) / else
   }//if( c_index < num_pars )
@@ -1142,7 +1185,7 @@ string physical_model_rel_eff_eqn_text( const std::shared_ptr<const Material> &s
 
 std::string physical_model_rel_eff_eqn_js_function( const std::shared_ptr<const Material> &self_atten,
                                                        const std::vector<std::shared_ptr<const Material>> &external_attens,
-                                                       const DetectorPeakResponse &drf,
+                                                       const DetectorPeakResponse  * const drf,
                                                        const double * const paramaters,
                                                        const size_t num_pars )
 {

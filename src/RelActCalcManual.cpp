@@ -41,6 +41,7 @@
 
 #include "Eigen/Dense"
 #include "ceres/ceres.h"
+#include "ceres/loss_function.h"
 
 #include "SandiaDecay/SandiaDecay.h"
 
@@ -145,8 +146,6 @@ struct ManualGenericRelActFunctor  /* : ROOT::Minuit2::FCNBase() */
         throw runtime_error( "ManualGenericRelActFunctor: equation order must be 0 for FramPhysicalModel." );
       if( !m_input.phys_model_detector )
         throw runtime_error( "ManualGenericRelActFunctor: detector must be specified for FramPhysicalModel." );
-      if( !m_input.phys_model_self_atten && !m_input.phys_model_external_attens.empty() )
-        throw runtime_error( "ManualGenericRelActFunctor: self attenuation must be specified for FramPhysicalModel." );
 
       try
       {
@@ -387,7 +386,7 @@ struct ManualGenericRelActFunctor  /* : ROOT::Minuit2::FCNBase() */
         //cout << "}" << endl;  
 
         curve_val = RelActCalc::eval_physical_model_eqn( peak.m_energy, self_atten, external_attens, 
-                                      *m_input.phys_model_detector, &(eqn_coefficients[0]), eqn_coefficients.size() );
+                                      m_input.phys_model_detector.get(), &(eqn_coefficients[0]), eqn_coefficients.size() );
       }else
       {
         curve_val = eval_eqn( peak.m_energy, m_input.eqn_form, eqn_coefficients );
@@ -645,6 +644,12 @@ void fit_rel_eff_eqn_lls( const RelActCalc::RelEffEqnForm fcn_form, const size_t
         b(row) = std::log(measured_rel_eff) / uncertainty;
         
         break;
+      }
+
+      case RelActCalc::RelEffEqnForm::FramPhysicalModel:
+      {
+        assert( 0 );
+        throw runtime_error( "fit_rel_eff_eqn_lls: FramPhysicalModel not supported." );
       }
     }//switch( fcn_form )
     
@@ -1172,15 +1177,12 @@ void fit_act_to_rel_eff( const RelEffInput &input,
   if( !input.phys_model_detector || !input.phys_model_detector->isValid() )
     throw runtime_error( "fit_act_to_rel_eff: invalid detector passed in." );
   
-  if( !input.phys_model_self_atten && input.phys_model_external_attens.empty() )
-    throw runtime_error( "fit_act_to_rel_eff: invalid self attenuation passed in." );
-
   vector<double> pars( 2 + 2*input.phys_model_external_attens.size() + 2 );
   setup_physical_model_shield_par( nullptr, pars.data(), 0, input.phys_model_self_atten );
   for( size_t i = 0; i < input.phys_model_external_attens.size(); ++i )
     setup_physical_model_shield_par( nullptr, pars.data(), 2 + 2*i, input.phys_model_external_attens[i] );
 
-  pars[2 + 2*input.phys_model_external_attens.size() + 0] = 0.0;  //(energy/1000)^b
+  pars[2 + 2*input.phys_model_external_attens.size() + 0] = 0.0; //(energy/1000)^b
   pars[2 + 2*input.phys_model_external_attens.size() + 1] = 1.0; //c^(1000/energy)
 
   const shared_ptr<const Material> self_atten = input.phys_model_self_atten ? input.phys_model_self_atten->material : nullptr;
@@ -1188,8 +1190,8 @@ void fit_act_to_rel_eff( const RelEffInput &input,
   for( const auto &opt : input.phys_model_external_attens )
     external_attens.push_back( opt->material );
   
-  const function<double(double)> eff_eqn = RelActCalc::physical_model_eff_function( self_atten, external_attens, 
-              *input.phys_model_detector, pars.data(), pars.size() );
+  const function<double(double)> eff_eqn = RelActCalc::physical_model_eff_function( self_atten, external_attens,
+              input.phys_model_detector.get(), pars.data(), pars.size() );
 
   fit_act_to_rel_eff( eff_eqn, isotopes, peak_infos, fit_rel_acts, fit_uncerts );
 }//fit_act_to_rel_eff(...)
@@ -1275,6 +1277,9 @@ void fit_act_to_rel_eff( const std::function<double(double)> &eff_fcn,
     const double counts_uncert = peak.m_counts_uncert;
     
     const double rel_eff = eff_fcn( energy );
+    
+    if( IsNan(rel_eff) || IsInf(rel_eff) )
+      throw runtime_error( "fit_act_to_rel_eff: invalid rel eff at " + to_string(energy) + " keV." );
     
     const double rel_act = (counts / rel_eff);
     const double rel_act_uncert = rel_act * (counts_uncert / counts);
@@ -1371,13 +1376,17 @@ double RelEffSolution::activity_ratio( const std::string &nuc1, const std::strin
 double RelEffSolution::activity_ratio_uncert( const size_t iso1, const size_t iso2 ) const
 {
   assert( iso1 != iso2 );
-  assert( iso1 < m_rel_act_covariance.size() );
-  assert( iso2 < m_rel_act_covariance.size() );
-  assert( m_rel_act_covariance.size() == m_activity_norms.size() );
+  assert( iso1 < m_nonlin_covariance.size() );
+  assert( iso2 < m_nonlin_covariance.size() );
+  assert( iso1 < m_rel_activities.size() );
+  assert( iso2 < m_rel_activities.size() );
+  assert( m_nonlin_covariance.size() >= m_rel_activities.size() );
+  assert( (m_input.eqn_form == RelActCalc::RelEffEqnForm::FramPhysicalModel)
+         || (m_nonlin_covariance.size() == m_rel_activities.size()) );
   
   if( (iso1 == iso2)
-     || (iso1 >= m_rel_act_covariance.size())
-     || (iso2 >= m_rel_act_covariance.size()) )
+     || (iso1 >= m_rel_activities.size())
+     || (iso2 >= m_rel_activities.size()) )
   {
     //throw runtime_error( "RelEffSolution::activity_ratio_uncert: invalid iso number" );
     return -1;
@@ -1390,9 +1399,9 @@ double RelEffSolution::activity_ratio_uncert( const size_t iso1, const size_t is
   const double fit_act_1 = m_rel_activities[iso1].m_rel_activity / norm_1;
   const double fit_act_2 = m_rel_activities[iso2].m_rel_activity / norm_2;
   
-  const double cov_1_1 = m_rel_act_covariance[iso1][iso1];
-  const double cov_1_2 = m_rel_act_covariance[iso1][iso2];
-  const double cov_2_2 = m_rel_act_covariance[iso2][iso2];
+  const double cov_1_1 = m_nonlin_covariance[iso1][iso1];
+  const double cov_1_2 = m_nonlin_covariance[iso1][iso2];
+  const double cov_2_2 = m_nonlin_covariance[iso2][iso2];
   
   
   const double ratio = m_rel_activities[iso1].m_rel_activity
@@ -1468,21 +1477,23 @@ double RelEffSolution::mass_fraction( const std::string &nuclide, const double n
   if( !wanted_nuc )
     throw runtime_error( "RelEffSolution::mass_fraction('" + nuclide + "', num_sigma): invalid nuclide" );
   
-  //assert( !m_rel_act_covariance.empty() ); // Failing to compute the activity covarances can happen sometimes
-  if( m_rel_act_covariance.empty() )
+  //assert( !m_nonlin_covariance.empty() ); // Failing to compute the activity covarances can happen sometimes
+  if( m_nonlin_covariance.empty() )
     throw runtime_error( "RelEffSolution::mass_fraction('" + nuclide + "', num_sigma): no valid covariance." );
   
-  assert( m_rel_act_covariance.size() == m_rel_activities.size() );
+  assert( m_nonlin_covariance.size() >= m_activity_norms.size() );
+  assert( (m_input.eqn_form == RelActCalc::RelEffEqnForm::FramPhysicalModel)
+          || (m_nonlin_covariance.size() == m_rel_activities.size()) );
   
   const size_t nuc_index = std::find_if( begin(m_rel_activities), end(m_rel_activities),
                           [&nuclide]( const IsotopeRelativeActivity &val ) {
     return val.m_isotope == nuclide;
   }) - begin(m_rel_activities);
   
-  assert( nuc_index < m_rel_act_covariance.size() );
+  assert( nuc_index < m_nonlin_covariance.size() );
   assert( nuc_index < m_rel_activities.size() );
   
-  if( nuc_index >= m_rel_act_covariance.size() )
+  if( nuc_index >= m_rel_activities.size() )
     throw runtime_error( "RelEffSolution::mass_fraction('" + nuclide + "', "
                         + std::to_string(num_sigma) + "): nuclide not in solution set" );
   
@@ -1490,7 +1501,7 @@ double RelEffSolution::mass_fraction( const std::string &nuclide, const double n
   //  a normalization to bring them all near-ish 1.0 (before actually fitting for things
   //  though).
   const double norm_for_nuc = m_activity_norms[nuc_index];
-  const double cov_nuc_nuc = m_rel_act_covariance[nuc_index][nuc_index];
+  const double cov_nuc_nuc = m_nonlin_covariance[nuc_index][nuc_index];
   const double sqrt_cov_nuc_nuc = sqrt(cov_nuc_nuc);
   const double fit_act_for_nuc = m_rel_activities[nuc_index].m_rel_activity / norm_for_nuc;
   
@@ -1501,7 +1512,7 @@ double RelEffSolution::mass_fraction( const std::string &nuclide, const double n
   double sum_rel_mass = 0.0, nuc_rel_mas = -1.0;
   for( size_t index = 0; index < m_rel_activities.size(); ++index )
   {
-    assert( m_rel_act_covariance[index].size() == m_rel_activities.size() );
+    assert( m_nonlin_covariance[index].size() >= m_rel_activities.size() );
     
     const IsotopeRelativeActivity &act = m_rel_activities[index];
     const SandiaDecay::Nuclide * const nuc = db->nuclide( act.m_isotope );
@@ -1512,7 +1523,7 @@ double RelEffSolution::mass_fraction( const std::string &nuclide, const double n
     const double norm_for_index = m_activity_norms[index];
     const double fit_act_for_index = m_rel_activities[index].m_rel_activity / norm_for_index;
     
-    const double cov_nuc_index = m_rel_act_covariance[nuc_index][index];
+    const double cov_nuc_index = m_nonlin_covariance[nuc_index][index];
     const double varied_fit_act_for_index = fit_act_for_index
                                   + (cov_nuc_index / cov_nuc_nuc) * num_sigma * sqrt_cov_nuc_nuc;
     
@@ -1637,7 +1648,7 @@ std::ostream &RelEffSolution::print_summary( std::ostream &strm ) const
         
         function_val = RelActCalc::eval_physical_model_eqn( peak.m_energy, self_atten,
                                                                external_attens,
-                                                               *m_input.phys_model_detector,
+                                                               m_input.phys_model_detector.get(),
                                                                m_rel_eff_eqn_coefficients.data(),
                                                                m_rel_eff_eqn_coefficients.size() );
       }//if( m_input.eqn_form != RelActCalc::RelEffEqnForm::FramPhysicalModel ) / else
@@ -1827,7 +1838,7 @@ void RelEffSolution::get_mass_ratio_table( std::ostream &results_html ) const
       const double i_to_j_mass_ratio = i_to_j_act_ratio * j_to_i_specific_act;
       const double j_to_i_mass_ratio = j_to_i_act_ratio * i_to_j_specific_act;
       
-      if( !m_rel_act_covariance.empty() )
+      if( !m_nonlin_covariance.empty() )
       {
         const double i_to_j_act_ratio_uncert = activity_ratio_uncert( nuc_i_str, nuc_j_str );
         const double j_to_i_act_ratio_uncert = activity_ratio_uncert( nuc_j_str, nuc_i_str );
@@ -2141,7 +2152,7 @@ void RelEffSolution::print_html_report( ostream &output_html_file,
     
     rel_eff_fcn = RelActCalc::physical_model_rel_eff_eqn_js_function( self_atten,
                                                                      external_attens,
-                                                                     *m_input.phys_model_detector,
+                                                                     m_input.phys_model_detector.get(),
                                                                      m_rel_eff_eqn_coefficients.data(),
                                                                      m_rel_eff_eqn_coefficients.size() );
   }
@@ -2272,7 +2283,7 @@ void setup_physical_model_shield_par( ceres::Problem * const problem,
   const size_t an_index = start_ind + 0;
   const size_t ad_index = start_ind + 1;
   
-  if( !opt )
+  if( !opt || (!opt->material && (opt->atomic_number == 0.0)) )
   {
     pars[an_index] = 0.0;
     pars[ad_index] = 0.0;
@@ -2295,11 +2306,7 @@ void setup_physical_model_shield_par( ceres::Problem * const problem,
     if( problem )
       problem->SetParameterBlockConstant( pars + an_index );
   }else
-  {
-    double an = opt->atomic_number;
-    if( (an == 0.0) && opt->fit_atomic_number )
-      an = 0.5*(opt->lower_fit_atomic_number + opt->upper_fit_atomic_number);
-        
+  {     
     double lower_an = opt->lower_fit_atomic_number;
     double upper_an = opt->upper_fit_atomic_number;
     if( (lower_an == upper_an) && (lower_an == 0.0) )
@@ -2307,6 +2314,10 @@ void setup_physical_model_shield_par( ceres::Problem * const problem,
       lower_an = 1.0;
       upper_an = 98.0;
     }
+
+    double an = opt->atomic_number;
+    if( (an == 0.0) && opt->fit_atomic_number )
+      an = 0.5*(opt->lower_fit_atomic_number + opt->upper_fit_atomic_number);
           
     if( (an < 1) || (an > 98) || (an < lower_an) || (an > upper_an) )
       throw runtime_error( "Self-atten AN is invalid" );
@@ -2391,11 +2402,9 @@ RelEffSolution solve_relative_efficiency( const RelEffInput &input )
     if( eqn_form == RelActCalc::RelEffEqnForm::FramPhysicalModel )
     {  
       if( !input.phys_model_detector || !input.phys_model_detector->isValid() )
-        throw runtime_error( "FramPhysicalModel must specify a detector." );
-      if( !input.phys_model_self_atten && input.phys_model_external_attens.empty() )
-        throw runtime_error( "FramPhysicalModel must specify a self attenuation." );
+        throw runtime_error( "You must specify a detector for the Physical Model." );
       if( peak_infos.size() < 2 )// We probably need at more than two peaks...
-        throw runtime_error( "FramPhysicalModel requires at least two peaks." );  
+        throw runtime_error( "You must specify at least two peaks for the Physical Model." );  
     }else
     {
       if( input.phys_model_self_atten || !input.phys_model_external_attens.empty() )
@@ -2462,7 +2471,12 @@ RelEffSolution solve_relative_efficiency( const RelEffInput &input )
   ceres::Problem problem;
   
   // TODO: investigate using a LossFunction - probably really need it
+  //       The Huber and Cauchy functions dont seem to help a  ton on a single problem; probably need to define our own, probably based on Huber
   ceres::LossFunction *lossfcn = nullptr;
+  //ceres::LossFunction *lossfcn = new ceres::HuberLoss(3.5);
+  //ceres::LossFunction *lossfcn = new ceres::CauchyLoss(1.0);
+
+
   problem.AddResidualBlock( cost_function, lossfcn, parameter_blocks );
   
   // We dont seem to need to add paramater block to the problem - it picks it up from the cost function
@@ -2500,14 +2514,17 @@ RelEffSolution solve_relative_efficiency( const RelEffInput &input )
     pars[b_index] = 0.0;  //(energy/1000)^b
     pars[c_index] = 1.0;  //c^(1000/energy)
 
-    //#warning "Setting b and c parameters for relative efficiency equation constant - need to be able to actually fit them."
-    //cerr << "Setting b and c parameters for relative efficiency equation constant" << endl;
-    //problem.SetParameterBlockConstant( pars + num_nuclides + 2 + 2*input.phys_model_external_attens.size() + 0 );
-    //problem.SetParameterBlockConstant( pars + num_nuclides + 2 + 2*input.phys_model_external_attens.size() + 1 );
-    problem.SetParameterLowerBound( pars + b_index, 0, 0.0 );
-    problem.SetParameterUpperBound( pars + b_index, 0, 2.0 );
-    problem.SetParameterLowerBound( pars + c_index, 0, -3.0 );
-    problem.SetParameterUpperBound( pars + c_index, 0, 3.0 );
+    if( input.phys_model_use_hoerl )
+    {
+      problem.SetParameterLowerBound( pars + b_index, 0, 0.0 );
+      problem.SetParameterUpperBound( pars + b_index, 0, 2.0 );
+      problem.SetParameterLowerBound( pars + c_index, 0, -3.0 );
+      problem.SetParameterUpperBound( pars + c_index, 0, 3.0 );
+    }else
+    {
+      problem.SetParameterBlockConstant( pars + b_index );
+      problem.SetParameterBlockConstant( pars + c_index );
+    }
   }//if( eqn_form == RelActCalc::RelEffEqnForm::FramPhysicalModel )
   
 
@@ -2581,10 +2598,26 @@ RelEffSolution solve_relative_efficiency( const RelEffInput &input )
     vector<double> uncertainties( num_nuclides, 0.0 ), uncerts_squared( num_nuclides, 0.0 );
     
     ceres::Covariance covariance(cov_options);
+    size_t num_pars = num_nuclides;
+    vector<const double*> parameter_blocks;
     vector<pair<const double*, const double*> > covariance_blocks;
+
+    parameter_blocks.push_back( pars );
     covariance_blocks.push_back( {pars, pars} );
     
-    solution.m_rel_act_covariance.clear();
+    if( eqn_form == RelActCalc::RelEffEqnForm::FramPhysicalModel )
+    {
+      num_pars += num_phys_model_rel_eff_params;
+      for( size_t i = 0; i < num_phys_model_rel_eff_params; ++i )
+      {
+        parameter_blocks.push_back( pars + num_nuclides + i );
+        covariance_blocks.push_back( {pars, pars + num_nuclides + i} );
+        for( size_t j = 0; j <= i; ++j )
+          covariance_blocks.push_back( {pars + num_nuclides + j, pars + num_nuclides + i} );
+      }
+    }
+    
+    solution.m_nonlin_covariance.clear();
     if( !covariance.Compute(covariance_blocks, &problem) )
     {
       cerr << "Failed to compute final covariances!" << endl;
@@ -2593,14 +2626,18 @@ RelEffSolution solve_relative_efficiency( const RelEffInput &input )
     {
       // row-major order: the elements of the first row are consecutively given, followed by second
       //                  row contents, etc
-      vector<double> row_major_covariance( num_nuclides * num_nuclides );
-      covariance.GetCovarianceBlock( pars, pars, row_major_covariance.data() );
+      vector<double> row_major_covariance( num_pars * num_pars );
       
-      solution.m_rel_act_covariance.resize( num_nuclides, vector<double>(num_nuclides,0.0) );
-      for( size_t row = 0; row < num_nuclides; ++row )
+      const bool success = covariance.GetCovarianceMatrix( parameter_blocks, row_major_covariance.data() );
+      assert( success );
+      if( !success )
+        throw runtime_error( "Failed to get covariance matrix - maybe didnt add all covariance blocks?" );
+      
+      solution.m_nonlin_covariance.resize( num_pars, vector<double>(num_pars,0.0) );
+      for( size_t row = 0; row < num_pars; ++row )
       {
-        for( size_t col = 0; col < num_nuclides; ++col )
-        solution.m_rel_act_covariance[row][col] = row_major_covariance[row*num_nuclides + col];
+        for( size_t col = 0; col < num_pars; ++col )
+          solution.m_nonlin_covariance[row][col] = row_major_covariance[row*num_pars + col];
       }//for( size_t row = 0; row < num_nuclides; ++row )
     }//if( we failed to get covariance ) / else
     
@@ -2613,8 +2650,7 @@ RelEffSolution solve_relative_efficiency( const RelEffInput &input )
     if( eqn_form == RelActCalc::RelEffEqnForm::FramPhysicalModel )
     {
       solution.m_rel_eff_eqn_coefficients = {pars + num_nuclides, pars + num_nuclides + num_phys_model_rel_eff_params };
-      cerr << "RelEffEqnForm::FramPhysicalModel: not getting covariance for relative efficiency equation" << endl ;
-      solution.m_rel_eff_eqn_covariance.clear(); // TODO: compute covariance
+      solution.m_rel_eff_eqn_covariance.clear(); // these covariances are in `m_nonlin_covariance`
     }else
     {
       fit_rel_eff_eqn_lls( eqn_form, eqn_order, cost_functor->m_isotopes, rel_activities, peak_infos,
@@ -2630,19 +2666,59 @@ RelEffSolution solve_relative_efficiency( const RelEffInput &input )
       rel_act.m_isotope = cost_functor->m_isotopes[i];
       
       rel_act.m_rel_activity = rel_act_norm * parameters[i];
-      if( solution.m_rel_act_covariance.empty() )
+      if( solution.m_nonlin_covariance.empty() )
       {
         rel_act.m_rel_activity_uncert = -1.0;
       }else
       {
-        assert( i < solution.m_rel_act_covariance.size() );
-        assert( i < solution.m_rel_act_covariance[i].size() );
-        rel_act.m_rel_activity_uncert = rel_act_norm * std::sqrt( solution.m_rel_act_covariance[i][i] );
+        assert( i < solution.m_nonlin_covariance.size() );
+        assert( i < solution.m_nonlin_covariance[i].size() );
+        rel_act.m_rel_activity_uncert = rel_act_norm * std::sqrt( solution.m_nonlin_covariance[i][i] );
       }
       
       solution.m_rel_activities.push_back( std::move(rel_act) );
     }//for( loop over relative activities )
     
+    if( eqn_form == RelActCalc::RelEffEqnForm::FramPhysicalModel )
+    {
+      const auto get_res = [num_nuclides, &parameters, &solution]( const RelActCalc::PhysicalModelShieldInput &orig_opt, 
+                                                              const size_t start_index ) -> unique_ptr<RelEffSolution::PhysModelShieldFit> {
+        assert( solution.m_nonlin_covariance.empty() 
+                || (solution.m_nonlin_covariance.size() >= (start_index + 2)) );
+
+        auto shield_result = std::make_unique<RelEffSolution::PhysModelShieldFit>();
+        shield_result->m_material = orig_opt.material;
+        shield_result->m_atomic_number = parameters[num_nuclides];
+        shield_result->m_areal_density = parameters[num_nuclides + 1] * PhysicalUnits::g_per_cm2;
+
+        if( !solution.m_nonlin_covariance.empty()  )
+        {
+          assert( orig_opt.fit_atomic_number 
+                  || (solution.m_nonlin_covariance[num_nuclides][num_nuclides] == 0.0) );
+          assert( orig_opt.fit_areal_density 
+                  || (solution.m_nonlin_covariance[num_nuclides+1][num_nuclides+1] == 0.0) );
+
+          if( orig_opt.fit_atomic_number )
+            shield_result->m_atomic_number_uncert = sqrt( solution.m_nonlin_covariance[num_nuclides][num_nuclides] );
+          
+          if( orig_opt.fit_areal_density )
+            shield_result->m_areal_density_uncert = sqrt( solution.m_nonlin_covariance[num_nuclides+1][num_nuclides+1] ) * PhysicalUnits::g_per_cm2;
+        }//if( !solution.m_nonlin_covariance.empty()  )
+
+        return std::move(shield_result);
+      };//get_res lamda
+
+      if( input.phys_model_self_atten )
+        solution.m_phys_model_self_atten_shield = get_res( *input.phys_model_self_atten, num_nuclides );
+
+      for( size_t i = 0; i < input.phys_model_external_attens.size(); ++i )
+      {
+        const auto &opt = input.phys_model_external_attens[i];
+        assert( opt );
+        if( opt )
+          solution.m_phys_model_external_atten_shields.push_back( get_res( *opt, num_nuclides + 2 + i ) );
+      }//for( size_t i = 0; i < input.phys_model_external_attens.size(); ++i )
+    }//if( eqn_form == RelActCalc::RelEffEqnForm::FramPhysicalModel )
     
     // We'll manually compute the Chi2 here, so we only take into account statistical uncertainties,
     //  (i.e., we ignore #GenericPeakInfo::m_base_rel_eff_uncert)
@@ -2696,7 +2772,7 @@ RelEffSolution solve_relative_efficiency( const RelEffInput &input )
         for( const auto &opt : input.phys_model_external_attens )
           external_attens.push_back( opt->material );
         curve_val = RelActCalc::eval_physical_model_eqn( peak.m_energy, self_atten, external_attens, 
-                          *input.phys_model_detector, rel_eff_coefs.data(), rel_eff_coefs.size() );
+                          input.phys_model_detector.get(), rel_eff_coefs.data(), rel_eff_coefs.size() );
       }else
       {
         curve_val = RelActCalc::eval_eqn( peak.m_energy, eqn_form, rel_eff_coefs );

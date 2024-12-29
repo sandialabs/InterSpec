@@ -284,19 +284,19 @@ struct PhysicalModelShieldInput
 double eval_physical_model_eqn( const double energy,
                                const std::shared_ptr<const Material> &self_atten,
                                const std::vector<std::shared_ptr<const Material>> &external_attens,
-                               const DetectorPeakResponse &drf,
+                               const DetectorPeakResponse  * const drf,
                                const double * const paramaters,
                                const size_t num_pars );
   
 double eval_physical_model_eqn_uncertainty( const double energy,
                                const std::shared_ptr<const Material> &self_atten,
                                const std::vector<std::shared_ptr<const Material>> &external_attens,
-                               const DetectorPeakResponse &drf,
+                               const DetectorPeakResponse  * const drf,
                                const std::vector<std::vector<double>> &covariance );
   
 std::function<double(double)> physical_model_eff_function( const std::shared_ptr<const Material> &self_atten,
                                 const std::vector<std::shared_ptr<const Material>> &external_attens,
-                                const DetectorPeakResponse &drf,
+                                const DetectorPeakResponse * const drf,
                                 const double * const paramaters,
                                 const size_t num_pars );
   
@@ -310,7 +310,7 @@ std::string physical_model_rel_eff_eqn_text( const std::shared_ptr<const Materia
 
 std::string physical_model_rel_eff_eqn_js_function( const std::shared_ptr<const Material> &self_atten,
                                                      const std::vector<std::shared_ptr<const Material>> &external_attens,
-                                                     const DetectorPeakResponse &drf,
+                                                     const DetectorPeakResponse  * const drf,
                                                      const double * const paramaters,
                                                      const size_t num_pars );
 
