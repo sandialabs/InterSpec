@@ -50,6 +50,8 @@
 #include "SpecUtils/Filesystem.h"
 #include "SpecUtils/D3SpectrumExport.h"
 
+#include "SpecUtils/SpecUtilsAsync.h" //temp for hacking AN
+
 #include "InterSpec/PeakDef.h"
 #include "InterSpec/RelActCalc.h"
 #include "InterSpec/PhysicalUnits.h"
@@ -61,6 +63,7 @@
 #include "InterSpec/GammaInteractionCalc.h"
 
 using namespace std;
+
 
 namespace
 {
@@ -313,7 +316,6 @@ struct ManualGenericRelActFunctor  /* : ROOT::Minuit2::FCNBase() */
     
     return static_cast<size_t>( iso_pos - std::begin(m_isotopes) );
   }
-  
   
   double relative_activity( const std::string &iso, const vector<double> &x ) const
   {
@@ -1507,6 +1509,12 @@ double RelEffSolution::mass_fraction( const std::string &nuclide, const double n
   
   // Check that relative activity uncertainties have been computed compatible with what we are
   //  assuming here (and no funny business has happened).
+  if( (norm_for_nuc * sqrt_cov_nuc_nuc) != m_rel_activities[nuc_index].m_rel_activity_uncert )
+  {
+    cout << "norm_for_nuc = " << norm_for_nuc << ", sqrt_cov_nuc_nuc = " << sqrt_cov_nuc_nuc << " (="<< norm_for_nuc*sqrt_cov_nuc_nuc << ")" << endl;
+    cout << "m_rel_activities[nuc_index].m_rel_activity_uncert = " << m_rel_activities[nuc_index].m_rel_activity_uncert << endl;
+    cout << "m_rel_activities[nuc_index].m_rel_activity = " << m_rel_activities[nuc_index].m_rel_activity << endl;
+  }
   assert( (norm_for_nuc * sqrt_cov_nuc_nuc) == m_rel_activities[nuc_index].m_rel_activity_uncert );
   
   double sum_rel_mass = 0.0, nuc_rel_mas = -1.0;
@@ -2322,7 +2330,7 @@ void setup_physical_model_shield_par( ceres::Problem * const problem,
     if( (an < 1) || (an > 98) || (an < lower_an) || (an > upper_an) )
       throw runtime_error( "Self-atten AN is invalid" );
           
-    pars[an_index] = an;
+    pars[an_index] = an / RelActCalc::ns_an_ceres_mult;
           
     if( opt->fit_atomic_number )
     {
@@ -2331,8 +2339,14 @@ void setup_physical_model_shield_par( ceres::Problem * const problem,
             
       if( problem )
       {
-        problem->SetParameterLowerBound( pars + an_index, 0, lower_an );
-        problem->SetParameterUpperBound( pars + an_index, 0, upper_an );
+        problem->SetParameterLowerBound( pars + an_index, 0, lower_an / RelActCalc::ns_an_ceres_mult );
+        problem->SetParameterUpperBound( pars + an_index, 0, upper_an / RelActCalc::ns_an_ceres_mult );
+
+        // We could Quantize AN... but I'm not sure the below does it
+        //std::vector<int> quantized_params(1, 0);  // 0 means continuous, 1 means quantized
+        //quantized_params[an_index] = 1;  // Assuming an_index is the index of the AN parameter
+        //problem->SetParameterization( pars + an_index, 
+        //     new ceres::SubsetParameterization(1, quantized_params));
       }
     }else
     {
@@ -2379,8 +2393,22 @@ void setup_physical_model_shield_par( ceres::Problem * const problem,
 }//void setup_physical_model_shield_par( ceres::Problem... )
 
 
-RelEffSolution solve_relative_efficiency( const RelEffInput &input )
+RelEffSolution solve_relative_efficiency( const RelEffInput &input_orig )
 {
+  // When fitting the AN using the Physical Model, we can easily get caught in a local-minimum, and also
+  // we dont currently have great control over the step sizes for AN/AD, so here is 
+  // a work-around, to get a decent starting point for AN.
+  // Right now we are scanning on AN, but scanning on AD as well would be better.
+  // I assume that we could avoid this with a proper implementation of DynamicCostFunction.
+#define SCAN_AN_FOR_BEST_FIT 1
+
+
+#if( SCAN_AN_FOR_BEST_FIT )
+  RelEffInput input = input_orig; //tmp copy for trying hack
+#else
+  const RelEffInput &input = input_orig;
+#endif
+
   const std::vector<GenericPeakInfo> &peak_infos = input.peaks;
   const RelActCalc::RelEffEqnForm eqn_form = input.eqn_form;
   const size_t eqn_order = input.eqn_order;
@@ -2396,6 +2424,69 @@ RelEffSolution solve_relative_efficiency( const RelEffInput &input )
   
   solution.m_input = input;
   solution.m_status = ManualSolutionStatus::NotInitialized;
+
+
+#if( SCAN_AN_FOR_BEST_FIT )
+  const bool scan_an_for_best_fit = (eqn_form == RelActCalc::RelEffEqnForm::FramPhysicalModel 
+                                      && input.phys_model_self_atten
+                                      && input.phys_model_self_atten->fit_atomic_number );
+  if( scan_an_for_best_fit )
+  {
+    SpecUtilsAsync::ThreadPool threadpool;
+    std::mutex best_chi2_mutex;
+    double best_chi2 = std::numeric_limits<double>::max();
+    double best_an = 0.0, best_ad = 0.0;
+    
+    const auto do_work = [&input, &best_chi2, &best_an, &best_ad, &best_chi2_mutex]( const double an ){
+      RelEffInput new_input = input;
+      auto new_self_atten = std::make_shared<RelActCalc::PhysicalModelShieldInput>(*input.phys_model_self_atten);
+      new_self_atten->fit_atomic_number = false;
+      new_self_atten->atomic_number = an;
+      new_input.phys_model_self_atten = new_self_atten;
+      RelEffSolution solution = solve_relative_efficiency( new_input );
+      
+      std::lock_guard<std::mutex> lock(best_chi2_mutex);
+      
+      if( (solution.m_status==ManualSolutionStatus::Success) && (solution.m_chi2 < best_chi2) )
+      {
+        best_chi2 = solution.m_chi2;
+        best_an = an;
+        assert( solution.m_phys_model_self_atten_shield );
+        best_ad = solution.m_phys_model_self_atten_shield->m_areal_density / PhysicalUnits::g_per_cm2;
+      }
+    };//do_work
+
+    double an_step = 5.0;
+    double min_an = input.phys_model_self_atten->lower_fit_atomic_number;
+    double max_an = input.phys_model_self_atten->upper_fit_atomic_number;
+    
+    for( double an = min_an; an <= max_an; an += an_step )
+      threadpool.post( [&do_work, an](){ do_work(an); } );
+    threadpool.join();
+
+    if( best_chi2 != std::numeric_limits<double>::max() )
+    {
+      cout << "Initial best AN = " << best_an << " AD = " << best_ad << endl;
+      best_chi2 = std::numeric_limits<double>::max();
+      min_an = std::max( min_an, best_an - an_step );
+      max_an = std::min( max_an, best_an + an_step );
+      an_step = 1.0;
+      for( double an = min_an; an <= max_an; an += an_step )
+        threadpool.post( [&do_work, an](){ do_work(an); } );
+      threadpool.join();
+    }
+    
+    if( best_chi2 != std::numeric_limits<double>::max() )
+    {
+      cout << "Final best AN = " << best_an << " AD = " << best_ad << endl;
+      auto new_self_atten = std::make_shared<RelActCalc::PhysicalModelShieldInput>(*input.phys_model_self_atten);
+      new_self_atten->fit_atomic_number = true;
+      new_self_atten->atomic_number = best_an;
+      new_self_atten->areal_density = best_ad * PhysicalUnits::g_per_cm2;
+      input.phys_model_self_atten = new_self_atten;
+    }//if( best_chi2 != std::numeric_limits<double>::max() )
+  }//if( scan_an_for_best_fit )
+#endif //SCAN_AN_FOR_BEST_FIT
 
   try
   {
@@ -2437,6 +2528,7 @@ RelEffSolution solve_relative_efficiency( const RelEffInput &input )
   
   const size_t num_peaks = cost_functor->m_input.peaks.size();
   const size_t num_nuclides = cost_functor->m_isotopes.size();
+
   // For FramPhysicalModel, we will use Ceres to fit the Relative Efficiency equation parameters,
   //  but for all other models we will use the LLS (i.e., use matrices, and not Ceres).
   const size_t num_phys_model_rel_eff_params = (eqn_form == RelActCalc::RelEffEqnForm::FramPhysicalModel)
@@ -2446,7 +2538,20 @@ RelEffSolution solve_relative_efficiency( const RelEffInput &input )
 
   solution.m_activity_norms = cost_functor->m_rel_act_norms;
   
-  auto cost_function = new ceres::DynamicNumericDiffCostFunction<ManualGenericRelActFunctor>( cost_functor );
+  ceres::NumericDiffOptions num_diff_options;
+
+#if( SCAN_AN_FOR_BEST_FIT )
+  if( scan_an_for_best_fit )
+  {
+    // TODO: need to more closely evaluate the step sizes
+    num_diff_options.ridders_relative_initial_step_size = 0.1;
+    num_diff_options.relative_step_size = 1.0E-3;
+  }
+#endif //SCAN_AN_FOR_BEST_FIT
+
+  auto cost_function = new ceres::DynamicNumericDiffCostFunction<ManualGenericRelActFunctor>( cost_functor,
+                                                                                              ceres::TAKE_OWNERSHIP,
+                                                                                              num_diff_options );
   // The number of residuals is the number of peaks, unless USE_RESIDUAL_TO_BREAK_DEGENERACY then
   //  we add one more residual to clamp the relative efficiency curve to 1.0 at the lowest energy.
   cost_function->SetNumResiduals( static_cast<int>(cost_functor->number_residuals()) );
@@ -2466,6 +2571,7 @@ RelEffSolution solve_relative_efficiency( const RelEffInput &input )
     cost_function->AddParameterBlock( 1 );
     parameter_blocks.push_back( pars + num_nuclides + i );
   }
+
 
 
   ceres::Problem problem;
@@ -2531,9 +2637,16 @@ RelEffSolution solve_relative_efficiency( const RelEffInput &input )
   // Okay - we've set our problem up
   ceres::Solver::Options ceres_options;
   ceres_options.linear_solver_type = ceres::DENSE_QR;
+  ceres_options.logging_type = ceres::SILENT;
   ceres_options.minimizer_progress_to_stdout = false; //true;
   ceres_options.max_num_iterations = 50;
+  ceres_options.max_solver_time_in_seconds = 60.0;
+  //ceres_options.min_trust_region_radius = 1e-10;
   
+  //ceres_options.use_nonmonotonic_steps = true;
+  //ceres_options.max_consecutive_nonmonotonic_steps = 5;
+  // There are a lot more options that could be useful here!
+
   //parameter_tolerance = 1e-8;
   //double gradient_tolerance = 1e-10;
   //double function_tolerance = 1e-6;
@@ -2688,7 +2801,7 @@ RelEffSolution solve_relative_efficiency( const RelEffInput &input )
 
         auto shield_result = std::make_unique<RelEffSolution::PhysModelShieldFit>();
         shield_result->m_material = orig_opt.material;
-        shield_result->m_atomic_number = parameters[num_nuclides];
+        shield_result->m_atomic_number = parameters[num_nuclides] * RelActCalc::ns_an_ceres_mult;
         shield_result->m_areal_density = parameters[num_nuclides + 1] * PhysicalUnits::g_per_cm2;
 
         if( !solution.m_nonlin_covariance.empty()  )
@@ -2699,7 +2812,7 @@ RelEffSolution solve_relative_efficiency( const RelEffInput &input )
                   || (solution.m_nonlin_covariance[num_nuclides+1][num_nuclides+1] == 0.0) );
 
           if( orig_opt.fit_atomic_number )
-            shield_result->m_atomic_number_uncert = sqrt( solution.m_nonlin_covariance[num_nuclides][num_nuclides] );
+            shield_result->m_atomic_number_uncert = sqrt( solution.m_nonlin_covariance[num_nuclides][num_nuclides] ) * RelActCalc::ns_an_ceres_mult;
           
           if( orig_opt.fit_areal_density )
             shield_result->m_areal_density_uncert = sqrt( solution.m_nonlin_covariance[num_nuclides+1][num_nuclides+1] ) * PhysicalUnits::g_per_cm2;

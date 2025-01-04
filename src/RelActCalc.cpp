@@ -864,7 +864,7 @@ double eval_physical_model_eqn( const double energy,
  
   const auto sanity_check_shield = [paramaters,num_pars]( const shared_ptr<const Material> &material,
                                                 const size_t par_start ){
-    double atomic_number = paramaters[par_start];
+    double atomic_number = RelActCalc::ns_an_ceres_mult * paramaters[par_start];
     double areal_density = paramaters[par_start + 1];
     
     assert( (areal_density >= -1.0E-6) && !IsInf(areal_density) );
@@ -906,7 +906,7 @@ double eval_physical_model_eqn( const double energy,
     
   const float energyf = static_cast<float>( energy );
     
-  double self_atten_an = paramaters[0];
+  double self_atten_an = RelActCalc::ns_an_ceres_mult * paramaters[0];
   double self_atten_ad = paramaters[1] * PhysicalUnits::g / PhysicalUnits::cm2;
   
   assert( self_atten_ad >= -1.0E-3 );
@@ -944,7 +944,7 @@ double eval_physical_model_eqn( const double energy,
   double ext_atten_part = 1.0;
   for( size_t i = 0; i < external_attens.size(); ++i )
   {
-    const double atten_an = paramaters[2 + 2*i];
+    const double atten_an = RelActCalc::ns_an_ceres_mult * paramaters[2 + 2*i];
     const double atten_ad = paramaters[2 + 2*i + 1] * PhysicalUnits::g / PhysicalUnits::cm2;
       
     const shared_ptr<const Material> &mat = external_attens[i];
@@ -995,7 +995,7 @@ std::function<double(double)> physical_model_eff_function( const shared_ptr<cons
  
   const auto sanity_check_shield = [paramaters]( const shared_ptr<const Material> &material,
                                                 const size_t par_start ){
-    double atomic_number = paramaters[par_start];
+    double atomic_number = RelActCalc::ns_an_ceres_mult * paramaters[par_start];
     double areal_density = paramaters[par_start + 1];
     
     assert( (areal_density >= -1.0E-6) && !IsInf(areal_density) );
@@ -1048,7 +1048,7 @@ std::function<double(double)> physical_model_eff_function( const shared_ptr<cons
     
     const float energyf = static_cast<float>( energy );
     
-    const double self_atten_an = pars[0];
+    const double self_atten_an = RelActCalc::ns_an_ceres_mult * pars[0];
     const double self_atten_ad = pars[1] * PhysicalUnits::g / PhysicalUnits::cm2;
     
     double self_atten_mu;
@@ -1072,7 +1072,7 @@ std::function<double(double)> physical_model_eff_function( const shared_ptr<cons
     double ext_atten_part = 1.0;
     for( size_t i = 0; i < external_attens.size(); ++i )
     {
-      const double atten_an = pars[2 + 2*i];
+      const double atten_an = RelActCalc::ns_an_ceres_mult * pars[2 + 2*i];
       const double atten_ad = pars[2 + 2*i + 1] * PhysicalUnits::g / PhysicalUnits::cm2;
       if( atten_ad <= 0.0 )
         continue;
@@ -1113,7 +1113,7 @@ string physical_model_rel_eff_eqn_text( const std::shared_ptr<const Material> &s
   const size_t sa_ad_index = 1;
   if( self_atten || (paramaters[sa_ad_index] >= 1) )
   {
-    const double sa_an = paramaters[sa_an_index];
+    const double sa_an = RelActCalc::ns_an_ceres_mult * paramaters[sa_an_index];
     const double sa_ad = paramaters[sa_ad_index];
     const string sa_ad_str = SpecUtils::printCompact(sa_ad, 3);
     const string mu_name = self_atten ? cleanup_mat_name(self_atten->name) : SpecUtils::printCompact(sa_an, 3);

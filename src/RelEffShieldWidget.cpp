@@ -112,8 +112,7 @@ RelEffShieldWidget::RelEffShieldWidget( ShieldType type, Wt::WContainerWidget *p
   m_atomicNumberLabel->addStyleClass("AN GridFirstCol GridFirstRow");
     
   m_atomicNumber = new NativeFloatSpinBox( m_parametersFrame );
-  m_atomicNumber->setRange( 1.0f, 98.0f );
-  m_atomicNumber->setSingleStep( 1.0f );
+  m_atomicNumber->setRange( 1.0f, 98.0f ); //dont set single-step, so it wont be invalid for a non-step value
   m_atomicNumber->setWidth( 50 );
   m_atomicNumber->setSpinnerHidden( true );
   m_atomicNumber->setFormatString( "%.3f" );
@@ -131,8 +130,7 @@ RelEffShieldWidget::RelEffShieldWidget( ShieldType type, Wt::WContainerWidget *p
   m_arealDensityLabel->addStyleClass("AD GridFirstCol GridSecondRow");
     
   m_arealDensity = new NativeFloatSpinBox( m_parametersFrame );
-  m_arealDensity->setRange( 0.0f, 500.0f );
-  m_arealDensity->setSingleStep( 1.0f );
+  m_arealDensity->setRange( 0.0f, 500.0f ); //dont set single-step, so it wont be invalid for a non-step value
   m_arealDensity->setWidth( 50 );
   m_arealDensity->setSpinnerHidden( true );
   m_arealDensity->setFormatString( "%.3f" );

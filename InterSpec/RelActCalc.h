@@ -281,6 +281,14 @@ struct PhysicalModelShieldInput
   static const double sm_upper_allowed_areal_density_in_g_per_cm2; //Set to 500
 };//struct PhysicalModelShieldInput
 
+
+/** Since AN ranges from 1 to ~100, we'll scale AN by this amount in the Ceres solver. 
+ * Center around 50
+ * Aime to have the parameter between0.1 and 10.0.
+ * 
+*/
+const double ns_an_ceres_mult = 50;
+
 double eval_physical_model_eqn( const double energy,
                                const std::shared_ptr<const Material> &self_atten,
                                const std::vector<std::shared_ptr<const Material>> &external_attens,
