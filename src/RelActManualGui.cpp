@@ -1607,9 +1607,12 @@ void RelActManualGui::calculateSolution()
     input.peaks = peak_infos;
     input.eqn_form = eqn_form;
     input.eqn_order = eqn_order;
+    input.use_ceres_to_fit_eqn = true; //Temp for development?
+    cerr << "RelActManualGui::calculateSolution(): using Ceres to fit the relative efficiency equation\n";
 
     if( eqn_form == RelActCalc::RelEffEqnForm::FramPhysicalModel )
     {
+      input.use_ceres_to_fit_eqn = true;
       input.phys_model_use_hoerl = m_physModelUseHoerl->isChecked();
 
       const auto fore = m_interspec->measurment(SpecUtils::SpectrumType::Foreground);

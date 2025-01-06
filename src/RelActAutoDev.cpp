@@ -183,6 +183,7 @@ void example_manual_phys_model()
   rel_eff_solve_input.eqn_order = 0;
   rel_eff_solve_input.phys_model_detector = det;
   rel_eff_solve_input.phys_model_use_hoerl = true;
+  rel_eff_solve_input.use_ceres_to_fit_eqn = true;
 
   RelActCalc::PhysicalModelShieldInput self_atten_def;
   self_atten_def.atomic_number = 80;

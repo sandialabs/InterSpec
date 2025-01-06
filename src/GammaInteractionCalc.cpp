@@ -229,7 +229,7 @@ double transmission_coefficient_air( float energy, float length )
 //  The quantity retuned by this function is commonly labeled μ
 double mass_attenuation_coef( float atomic_number, float energy )
 {
-  const double xs_per_mass = MassAttenuation::massAttenuationCoeficient( atomic_number, energy );
+  const double xs_per_mass = MassAttenuation::massAttenuationCoeficientFracAN( atomic_number, energy );
   
   return xs_per_mass;
 }

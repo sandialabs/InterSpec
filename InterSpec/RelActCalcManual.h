@@ -351,6 +351,13 @@ struct RelEffInput
   */
   size_t eqn_order;
 
+  /** If true, use Ceres to fit the relative efficiency equation.
+   * If false, use LLS to fit the relative efficiency equation.
+   * 
+   * For `RelActCalc::RelEffEqnForm::FramPhysicalModel`, this must be true.
+   */
+  bool use_ceres_to_fit_eqn = false;
+
   /** If true, fit the modified Hoerl equation form for the physical model. 
    * If false, do not fit the modified Hoerl equation form (its value will be constant value of 1.0).
    * 
