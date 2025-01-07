@@ -2321,7 +2321,7 @@ void MakeDrf::handleSourcesUpdates()
             }//if( mat )
           }//if( shield->isGenericMaterial() ) / else
           
-          const double mu = MassAttenuation::massAttenuationCoeficient( an, energy );
+          const double mu = MassAttenuation::massAttenuationCoefficientFracAN( an, energy );
           return airTransFrac * exp( -mu * ad );
         };//trans_frac lambda
         

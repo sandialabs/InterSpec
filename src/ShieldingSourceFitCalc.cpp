@@ -1951,8 +1951,12 @@ void fit_model( const std::string wtsession,
       for( const auto &parname : fit_generic_an )
       {
         std::mutex best_an_mutex;
-        int best_an = static_cast<int>( std::round(minimum.UserParameters().Value(parname)) );
-        double best_chi2 = minimum.Fval();
+        const double orig_fit_an = minimum.UserParameters().Value(parname);
+        const double orig_an_error = minimum.UserParameters().Error(parname);
+        const double orig_chi2 = minimum.Fval();
+        
+        int best_an = static_cast<int>( std::round(orig_fit_an) );
+        double best_chi2 = orig_chi2;
         ROOT::Minuit2::FunctionMinimum best_min = minimum;
         
         vector<double> an_chi2s( MassAttenuation::sm_max_xs_atomic_number + 1, std::numeric_limits<double>::max() );
@@ -2016,10 +2020,17 @@ void fit_model( const std::string wtsession,
         
         SpecUtilsAsync::ThreadPool pool;
         
-        const int initial_sn_skip = 5;
+        // Note 20250106: prior to this, there was a likely bug where the attenuation coefficient,
+        //                mu, was being truncated to an integer, and possibly causing some of
+        //                the issue with fitting the correct atomic number, and possibly
+        //                contributing to the horribleness below.  However, a few quick checks after
+        //                fixing this bug shows finding the correct AN is still difficult because
+        //                there are local-minima in the AN-AD plane, and in fact a the scans of AN
+        //                should include a few different starting AD's, to avoid false-minima still.
+        const int initial_an_skip = 5;
         for( int an = MassAttenuation::sm_min_xs_atomic_number;
             an < MassAttenuation::sm_max_xs_atomic_number;
-            an += initial_sn_skip )
+            an += initial_an_skip )
         {
           pool.post( [&calc_for_an,an](){ calc_for_an(an); } );
         }//for( loop over AN )
@@ -2033,10 +2044,10 @@ void fit_model( const std::string wtsession,
           const auto min_coarse_chi2_iter = std::min_element( begin(an_chi2s), end(an_chi2s) );
           best_coarse_an = static_cast<int>( min_coarse_chi2_iter - begin(an_chi2s) );
           
-          //Now scan best_coarse_an +- (initial_sn_skip - 1),
+          //Now scan best_coarse_an +- (initial_an_skip - 1),
           // (clamp to MassAttenuation::sm_min_xs_atomic_number, MassAttenuation::sm_max_xs_atomic_number)
-          detail_scan_start = static_cast<int>( best_coarse_an - (initial_sn_skip - 1) );
-          detail_scan_end = static_cast<int>( best_coarse_an + initial_sn_skip );
+          detail_scan_start = static_cast<int>( best_coarse_an - (initial_an_skip - 1) );
+          detail_scan_end = static_cast<int>( best_coarse_an + initial_an_skip );
           detail_scan_start = std::max( detail_scan_start, MassAttenuation::sm_min_xs_atomic_number );
           detail_scan_end = std::min( detail_scan_end, MassAttenuation::sm_max_xs_atomic_number );
           
@@ -2105,6 +2116,10 @@ void fit_model( const std::string wtsession,
           error = std::max( 1.0f, error );
           
           fitParams.SetError( parname, error );
+          
+          //cout << "Originally fit AN for " << parname
+          //<< " was " << orig_fit_an << " +- " << orig_an_error << " with chi2=" << orig_chi2
+          //<< ", but final AN is " << best_an << " +- " << error << " with chi2=" << best_chi2 << endl;
         }// end lock on best_an_mutex
         
         chi2Fcn->setSelfAttMultiThread( origMultithread ); //shouldnt affect anything, but JIC

@@ -591,7 +591,7 @@ double fractionDetectedWeight( const std::vector<SandiaDecay::EnergyRatePair> &s
   const double det_sf = (response ? (response->isFixedGeometry() ? response->intrinsicEfficiency(mean)
                                                                  : response->efficiency( mean, distance ))
                                   : 1.0);
-  const double xs = MassAttenuation::massAttenuationCoeficient( shielding_an, mean );
+  const double xs = MassAttenuation::massAttenuationCoefficientFracAN( shielding_an, mean );
   const double shielding_sf = exp( -shielding_ad * xs );
   const double sf = test_peak->peakArea() / shielding_sf / det_sf /expectedAbund;
   
@@ -615,7 +615,7 @@ double fractionDetectedWeight( const std::vector<SandiaDecay::EnergyRatePair> &s
     const double det_eff = (response ? (response->isFixedGeometry() ? response->intrinsicEfficiency(energy)
                                                                     : response->efficiency(energy, distance))
                                      : 1.0);
-    const double xs = MassAttenuation::massAttenuationCoeficient( shielding_an, energy );
+    const double xs = MassAttenuation::massAttenuationCoefficientFracAN( shielding_an, energy );
     const double transmition = exp( -shielding_ad * xs );
     
     typedef deque< std::shared_ptr<const PeakDef> >::const_iterator Iter_t;
