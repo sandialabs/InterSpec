@@ -7,4 +7,5 @@ Please see one of the following documents for the questions:
 * [January 2025 Flavor LA-UR-24-33222.docx](January 2025 Flavor LA-UR-24-33222.docx)
 * [January 2025 Flavor LA-UR-24-33222.pdf](January 2025 Flavor LA-UR-24-33222.pdf)
 
-Spectrum files referenced from the document are available in [January 2025 Flavor Spectra CHN Format.zip](January 2025 Flavor Spectra CHN Format.zip).
+Spectrum files referenced from the document are available in:
+* [January 2025 Flavor Spectra CHN Format.zip](January 2025 Flavor Spectra CHN Format.zip).
