@@ -342,12 +342,18 @@ bool RelEffShieldWidget::nonEmpty() const
     if( fitThickness() )
       return true;
 
-    const double thick = thickness();
-    return (thick > 0.0);
+    //For the moment, even if AD is zero, we'll say its non-empty, as long as there is some text
+    return !m_thicknessEdit->valueText().empty();
+    //const double thick = thickness();
+    //return (thick > 0.0);
   }//if( isMaterialSelected() )
 
-  return (fitAtomicNumber() || ((m_atomicNumber->value() >= 1.0) && (m_atomicNumber->value() <= 98.0)))
-        && (fitArealDensity() || (m_arealDensity->value() > 0.0));
+  const double an = m_atomicNumber->value();
+  return ( (((an >= 1.0) && (an <= 98.0)) || fitAtomicNumber())
+          && (!m_arealDensity->valueText().empty() || fitArealDensity()) );
+  
+  //return (fitAtomicNumber() || ((m_atomicNumber->value() >= 1.0) && (m_atomicNumber->value() <= 98.0)))
+  //      && (fitArealDensity() || (m_arealDensity->value() > 0.0));
 }
 
 

@@ -300,7 +300,7 @@ struct RelEffInput;  //Forward declaration
  * The input `RelEffInput` must have valid DRF and self attenuation set.  Parameter values
  * are determined similar to the starting values used in the full Relative Activity fit.
  */
-void fit_act_to_rel_eff( const RelEffInput &input,
+void fit_act_to_phys_rel_eff( const RelEffInput &input,
                         const std::vector<std::string> &isotopes,
                         const std::vector<GenericPeakInfo> &peak_infos,
                         std::vector<double> &fit_rel_acts,
@@ -398,6 +398,13 @@ enum class ManualSolutionStatus : int
  */
 struct RelEffSolution
 {
+  /** The input used to compute this solution.
+   
+   Note that if you fit the atomic number of a physical model shielding, this values in this
+   struct may not exactly match your input, because we are currently scanning the AN
+   range to get the an.  See portions of the source code marked by
+   `SCAN_AN_FOR_BEST_FIT`.
+   */
   RelEffInput m_input;
 
   std::vector<double> m_rel_eff_eqn_coefficients;
@@ -611,6 +618,20 @@ struct RelEffSolution
    and "Activity Ratio".
    */
   void get_mass_ratio_table( std::ostream &strm ) const;
+  
+  
+  /** Returns the equation text.
+   
+   @param html_format Currently only applicable to Physical Model.
+   
+   This is a convenience wrapper over `RelActCalc::rel_eff_eqn_text(...)` and `RelActCalc::physical_model_rel_eff_eqn_text(...)`
+   */
+  std::string rel_eff_eqn_txt( const bool html_format ) const;
+  
+  /** A convenience wrapper over `RelActCalc::rel_eff_eqn_js_function(...)` and
+   `RelActCalc::physical_model_rel_eff_eqn_js_function(...)`
+   */
+  std::string rel_eff_eqn_js_function() const;
 };//struct RelEffSolution
 
 

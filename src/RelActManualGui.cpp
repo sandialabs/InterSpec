@@ -1607,8 +1607,8 @@ void RelActManualGui::calculateSolution()
     input.peaks = peak_infos;
     input.eqn_form = eqn_form;
     input.eqn_order = eqn_order;
-    input.use_ceres_to_fit_eqn = true; //Temp for development?
-    cerr << "RelActManualGui::calculateSolution(): using Ceres to fit the relative efficiency equation\n";
+    input.use_ceres_to_fit_eqn = true; //(eqn_form == RelActCalc::RelEffEqnForm::FramPhysicalModel); //Temp for development?
+    cerr << "RelActManualGui::calculateSolution(): using Ceres to fit the relative efficiency equation - this is for development only\n";
 
     if( eqn_form == RelActCalc::RelEffEqnForm::FramPhysicalModel )
     {
@@ -1835,25 +1835,11 @@ void RelActManualGui::updateGuiWithResults( shared_ptr<RelActCalcManual::RelEffS
     return;
   
   // We'll first update the chart
-  string relEffEqn;
-  if( solution.m_input.eqn_form != RelActCalc::RelEffEqnForm::FramPhysicalModel )
+  string relEffEqn = solution.rel_eff_eqn_js_function();
+  if( solution.m_input.eqn_form == RelActCalc::RelEffEqnForm::FramPhysicalModel )
   {
-    relEffEqn = RelActCalc::rel_eff_eqn_js_function( solution.m_input.eqn_form, solution.m_rel_eff_eqn_coefficients );
-  }else
-  {
+    // Update shield widgets
     const auto &input = solution.m_input;
-    shared_ptr<const Material> self_atten = input.phys_model_self_atten ? input.phys_model_self_atten->material : nullptr;
-    vector<shared_ptr<const Material>> external_attens;
-    for( const auto &att : input.phys_model_external_attens )
-      external_attens.push_back( att->material );
-    
-    relEffEqn = RelActCalc::physical_model_rel_eff_eqn_js_function( self_atten, external_attens,
-                                                input.phys_model_detector.get(),
-                                                solution.m_rel_eff_eqn_coefficients.data(),
-                                                solution.m_rel_eff_eqn_coefficients.size()  );
-
-
-    // Also, update shield widgets
     assert( input.phys_model_external_attens.size() == solution.m_phys_model_external_atten_shields.size() );
 
     const auto update_shield = [&]( RelEffShieldWidget *w, const unique_ptr<RelActCalcManual::RelEffSolution::PhysModelShieldFit> &fit,
@@ -2057,23 +2043,7 @@ void RelActManualGui::updateGuiWithResults( shared_ptr<RelActCalcManual::RelEffS
   results_html << "<br />";
   
   results_html << "<div class=\"releffeqn\">Rel. Eff.: y = ";
-  if( solution.m_input.eqn_form != RelActCalc::RelEffEqnForm::FramPhysicalModel )
-  {
-    results_html  << RelActCalc::rel_eff_eqn_text( solution.m_input.eqn_form, solution.m_rel_eff_eqn_coefficients );
-  }else
-  {
-    const auto &input = solution.m_input;
-    shared_ptr<const Material> self_atten = input.phys_model_self_atten ? input.phys_model_self_atten->material : nullptr;
-    vector<shared_ptr<const Material>> external_attens;
-    for( const auto &att : input.phys_model_external_attens )
-      external_attens.push_back( att->material );
-
-    results_html << RelActCalc::physical_model_rel_eff_eqn_text( self_atten, external_attens,
-                                                *input.phys_model_detector,
-                                                solution.m_rel_eff_eqn_coefficients.data(),
-                                                solution.m_rel_eff_eqn_coefficients.size(),
-                                                true );
-  }//if( solution.m_input.eqn_form != RelActCalc::RelEffEqnForm::FramPhysicalModel ) / else 
+  results_html << solution.rel_eff_eqn_txt(true);
 
   results_html << "</div>\n";
   
@@ -2811,7 +2781,7 @@ void RelActManualGui::deSerialize( const ::rapidxml::xml_node<char> *base_node )
   const ::rapidxml::xml_node<char> *NuclideAges_node = XML_FIRST_NODE(base_node, "NuclideAges");
   const ::rapidxml::xml_node<char> *PhysicalModelShields_node = XML_FIRST_NODE(base_node, "PhysicalModelShields");
   
-  if( !RelEffEqnForm_node || !RelEffEqnOrder_node || !NucDataSrc_node || !MatchTolerance_node
+  if( !RelEffEqnForm_node || !NucDataSrc_node || !MatchTolerance_node
      || !AddUncertainty_node || !ResultTabShowing_node || !NuclideAges_node )
     throw runtime_error( "RelActManualGui::deSerialize: missing required node" );
   
@@ -2834,15 +2804,17 @@ void RelActManualGui::deSerialize( const ::rapidxml::xml_node<char> *base_node )
   if( !got_eqn_form )
     throw runtime_error( "RelActManualGui::deSerialize: '" + rel_eff_eqn_form_str + "' is invalid RelEffEqnForm" );
   
-  
-  int eqn_order = -1;
-  const string rel_eff_order_str = SpecUtils::xml_value_str(RelEffEqnOrder_node);
-  if( !(stringstream(rel_eff_order_str) >> eqn_order)
-     || (eqn_order <= 0)
-     || (eqn_order > m_relEffEqnOrder->count() ) )
+  int eqn_order = 0; //We'll let this node be optional for physical mode.
+  if( RelEffEqnOrder_node || (eqn_form != RelActCalc::RelEffEqnForm::FramPhysicalModel) )
   {
-    throw runtime_error( "RelActManualGui::deSerialize: '" + rel_eff_order_str + "' is invalid RelEffEqnOrder" );
-  }
+    const string rel_eff_order_str = SpecUtils::xml_value_str(RelEffEqnOrder_node);
+    if( !(stringstream(rel_eff_order_str) >> eqn_order)
+       || (eqn_order < 0)
+       || (eqn_order > m_relEffEqnOrder->count() ) )
+    {
+      throw runtime_error( "RelActManualGui::deSerialize: '" + rel_eff_order_str + "' is invalid RelEffEqnOrder" );
+    }
+  }//if( we expect, or are seeing equation order node ).
 
   bool phys_model_use_hoerl = true;
   if( PhysModelUseHoerl_node )
@@ -2996,6 +2968,7 @@ void RelActManualGui::deSerialize( const ::rapidxml::xml_node<char> *base_node )
 
   
   // Now need to set state of widgets
+  const int initial_eqn_form = m_relEffEqnForm->currentIndex();
   m_relEffEqnForm->setCurrentIndex( static_cast<int>(eqn_form) );
   m_relEffEqnOrder->setCurrentIndex( eqn_order );
   m_physModelUseHoerl->setChecked( phys_model_use_hoerl );
@@ -3005,15 +2978,8 @@ void RelActManualGui::deSerialize( const ::rapidxml::xml_node<char> *base_node )
   m_resultMenu->select( tab_showing );
   m_backgroundSubtract->setChecked( backSub );
 
-  if( eqn_form == RelActCalc::RelEffEqnForm::FramPhysicalModel )
-  {
-    m_relEffEqnOrderHolder->hide();
-    m_physModelUseHoerlHolder->show();
-  }else
-  {
-    m_relEffEqnOrderHolder->show();
-    m_physModelUseHoerlHolder->hide();
-  }//if( eqn_form == RelActCalc::RelEffEqnForm::FramPhysicalModel ) / else
+  if( initial_eqn_form != static_cast<int>(eqn_form) )
+    relEffEqnFormChanged();
   
   // Schedule calc/render
   m_renderFlags |= RenderActions::UpdateCalc;

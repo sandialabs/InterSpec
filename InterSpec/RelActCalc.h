@@ -27,6 +27,7 @@
 
 #include <vector>
 #include <cstddef>
+#include <optional>
 #include <functional>
 
 // Forward declarations
@@ -284,43 +285,52 @@ struct PhysicalModelShieldInput
 
 /** Since AN ranges from 1 to ~100, we'll scale AN by this amount in the Ceres solver. 
  * Center around 50
- * Aime to have the parameter between0.1 and 10.0.
+ * Aim to have the parameter between0.1 and 10.0.
  * 
 */
 const double ns_an_ceres_mult = 50;
 
+struct PhysModelShield
+{
+  std::shared_ptr<const Material> material;
+  double atomic_number = 0.0;
+  double areal_density = 0.0;
+};//struct PhysModelShield
+  
 double eval_physical_model_eqn( const double energy,
-                               const std::shared_ptr<const Material> &self_atten,
-                               const std::vector<std::shared_ptr<const Material>> &external_attens,
-                               const DetectorPeakResponse  * const drf,
-                               const double * const paramaters,
-                               const size_t num_pars );
+                               const std::shared_ptr<const PhysModelShield> &self_atten,
+                               const std::vector<std::shared_ptr<const PhysModelShield>> &external_attens,
+                               const DetectorPeakResponse * const drf,
+                               std::optional<double> hoerl_b,
+                               std::optional<double> hoerl_c );
   
 double eval_physical_model_eqn_uncertainty( const double energy,
-                               const std::shared_ptr<const Material> &self_atten,
-                               const std::vector<std::shared_ptr<const Material>> &external_attens,
-                               const DetectorPeakResponse  * const drf,
+                                           const std::shared_ptr<const PhysModelShield> &self_atten,
+                                           const std::vector<std::shared_ptr<const PhysModelShield>> &external_attens,
+                               const DetectorPeakResponse * const drf,
+                                           std::optional<double> hoerl_b,
+                                           std::optional<double> hoerl_c,
                                const std::vector<std::vector<double>> &covariance );
   
-std::function<double(double)> physical_model_eff_function( const std::shared_ptr<const Material> &self_atten,
-                                const std::vector<std::shared_ptr<const Material>> &external_attens,
-                                const DetectorPeakResponse * const drf,
-                                const double * const paramaters,
-                                const size_t num_pars );
+std::function<double(double)> physical_model_eff_function( const std::shared_ptr<const PhysModelShield> &self_atten,
+                                                          const std::vector<std::shared_ptr<const PhysModelShield>> &external_attens,
+                                                          const DetectorPeakResponse * const drf,
+                                                          std::optional<double> hoerl_b,
+                                                          std::optional<double> hoerl_c );
   
   
-std::string physical_model_rel_eff_eqn_text( const std::shared_ptr<const Material> &self_atten,
-                                              const std::vector<std::shared_ptr<const Material>> &external_attens,
-                                              const DetectorPeakResponse &drf,
-                                              const double * const paramaters,
-                                              const size_t num_pars,
-                                              const bool html_format );
+std::string physical_model_rel_eff_eqn_text( const std::shared_ptr<const PhysModelShield> &self_atten,
+                                            const std::vector<std::shared_ptr<const PhysModelShield>> &external_attens,
+                                            const DetectorPeakResponse * const drf,
+                                            std::optional<double> hoerl_b,
+                                            std::optional<double> hoerl_c,
+                                            const bool html_format );
 
-std::string physical_model_rel_eff_eqn_js_function( const std::shared_ptr<const Material> &self_atten,
-                                                     const std::vector<std::shared_ptr<const Material>> &external_attens,
-                                                     const DetectorPeakResponse  * const drf,
-                                                     const double * const paramaters,
-                                                     const size_t num_pars );
+std::string physical_model_rel_eff_eqn_js_function( const std::shared_ptr<const PhysModelShield> &self_atten,
+                                                   const std::vector<std::shared_ptr<const PhysModelShield>> &external_attens,
+                                                   const DetectorPeakResponse * const drf,
+                                                   std::optional<double> hoerl_b,
+                                                   std::optional<double> hoerl_c );
 
 }//namespace RelActCalc
 

@@ -74,31 +74,32 @@ void check_physical_model_eff_function()
   assert( pu_db );
   const shared_ptr<const Material> pu = std::make_shared<Material>( *pu_db );
   
-  const vector<shared_ptr<const Material>> external_attenuations{
-    std::make_shared<Material>( *matdb.material("stainless-steel NIST") ),
-    nullptr //generic material
-  };
+  auto self_atten = make_shared<RelActCalc::PhysModelShield>();
+  self_atten->material = pu;
+  self_atten->areal_density = 1.98*PhysicalUnits::g_per_cm2;
   
   
-  const vector<double> paramaters{
-    0.0,  //self-atten, atomic_number - must be zero since we are specifying a material
-    1.98, //self-atten, areal density, in units of g/cm2 (ie, 1 mm Pu)
-    0.0,  //stainless, AN - must be zero
-    0.8,  //stainless, AD - e.g., 1 mm
-    32.0, //generic AN - e.g., Germanium
-    0.532, //generic AD - e.g., 1 mm of Ge
-    1.0, // Modified Hoerl b: pow(0.001*energy,b)
-    1.0  // Modified Hoerl c: pow(c,1000/energy)
-  };
+  auto ext_atten = make_shared<RelActCalc::PhysModelShield>();
+  ext_atten->material = std::make_shared<Material>( *matdb.material("stainless-steel NIST") );
+  ext_atten->areal_density = 0.8*PhysicalUnits::g_per_cm2;
   
-  //function<double(double)> fcn = RelActCalc::physical_model_eff_function(
-  //                          pu, external_attenuations, &det, paramaters.data(), paramaters.size() );
+  auto generic_atten = make_shared<RelActCalc::PhysModelShield>();
+  generic_atten->atomic_number = 32.0; //generic AN - e.g., Germanium
+  generic_atten->areal_density = 0.532*PhysicalUnits::g_per_cm2; //generic AD - e.g., 1 mm of Ge
+  
+  vector<shared_ptr<const RelActCalc::PhysModelShield>> external_attenuations;
+  external_attenuations.push_back( ext_atten );
+  external_attenuations.push_back( generic_atten );
+  
+  const double hoerl_b = 1.0; // Modified Hoerl b: pow(0.001*energy,b)
+  const double hoerl_c = 1.0; // Modified Hoerl c: pow(c,1000/energy)
+  
   
   cout << "Energy (keV), Counts" << endl;
   for( double energy = 50.0; energy < 3000; energy += 2 )
   {
-    double eff = RelActCalc::eval_physical_model_eqn( energy, pu, external_attenuations,
-                               &det, paramaters.data(), paramaters.size() );
+    double eff = RelActCalc::eval_physical_model_eqn( energy, self_atten, external_attenuations,
+                               &det, hoerl_b, hoerl_c );
 
     cout << energy << "," << eff << endl;
   }
