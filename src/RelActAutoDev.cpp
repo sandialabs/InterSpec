@@ -74,20 +74,20 @@ void check_physical_model_eff_function()
   assert( pu_db );
   const shared_ptr<const Material> pu = std::make_shared<Material>( *pu_db );
   
-  auto self_atten = make_shared<RelActCalc::PhysModelShield>();
-  self_atten->material = pu;
-  self_atten->areal_density = 1.98*PhysicalUnits::g_per_cm2;
+  RelActCalc::PhysModelShield<double> self_atten;
+  self_atten.material = pu;
+  self_atten.areal_density = 1.98*PhysicalUnits::g_per_cm2;
   
   
-  auto ext_atten = make_shared<RelActCalc::PhysModelShield>();
-  ext_atten->material = std::make_shared<Material>( *matdb.material("stainless-steel NIST") );
-  ext_atten->areal_density = 0.8*PhysicalUnits::g_per_cm2;
+  RelActCalc::PhysModelShield<double> ext_atten;
+  ext_atten.material = std::make_shared<Material>( *matdb.material("stainless-steel NIST") );
+  ext_atten.areal_density = 0.8*PhysicalUnits::g_per_cm2;
   
-  auto generic_atten = make_shared<RelActCalc::PhysModelShield>();
-  generic_atten->atomic_number = 32.0; //generic AN - e.g., Germanium
-  generic_atten->areal_density = 0.532*PhysicalUnits::g_per_cm2; //generic AD - e.g., 1 mm of Ge
+  RelActCalc::PhysModelShield<double> generic_atten;
+  generic_atten.atomic_number = 32.0; //generic AN - e.g., Germanium
+  generic_atten.areal_density = 0.532*PhysicalUnits::g_per_cm2; //generic AD - e.g., 1 mm of Ge
   
-  vector<shared_ptr<const RelActCalc::PhysModelShield>> external_attenuations;
+  vector<RelActCalc::PhysModelShield<double>> external_attenuations;
   external_attenuations.push_back( ext_atten );
   external_attenuations.push_back( generic_atten );
   

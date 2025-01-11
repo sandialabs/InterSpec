@@ -290,44 +290,48 @@ struct PhysicalModelShieldInput
 */
 const double ns_an_ceres_mult = 50;
 
+template<typename T = double>
 struct PhysModelShield
 {
   std::shared_ptr<const Material> material;
-  double atomic_number = 0.0;
-  double areal_density = 0.0;
+  T atomic_number{0.0};
+  T areal_density{0.0};
 };//struct PhysModelShield
   
+  
 double eval_physical_model_eqn( const double energy,
-                               const std::shared_ptr<const PhysModelShield> &self_atten,
-                               const std::vector<std::shared_ptr<const PhysModelShield>> &external_attens,
+                               const std::optional<PhysModelShield<double>> &self_atten,
+                               const std::vector<PhysModelShield<double>> &external_attens,
                                const DetectorPeakResponse * const drf,
                                std::optional<double> hoerl_b,
                                std::optional<double> hoerl_c );
   
 double eval_physical_model_eqn_uncertainty( const double energy,
-                                           const std::shared_ptr<const PhysModelShield> &self_atten,
-                                           const std::vector<std::shared_ptr<const PhysModelShield>> &external_attens,
+                               const std::optional<PhysModelShield<double>> &self_atten,
+                               const std::vector<PhysModelShield<double>> &external_attens,
                                const DetectorPeakResponse * const drf,
-                                           std::optional<double> hoerl_b,
-                                           std::optional<double> hoerl_c,
+                               std::optional<double> hoerl_b,
+                               std::optional<double> hoerl_c,
                                const std::vector<std::vector<double>> &covariance );
   
-std::function<double(double)> physical_model_eff_function( const std::shared_ptr<const PhysModelShield> &self_atten,
-                                                          const std::vector<std::shared_ptr<const PhysModelShield>> &external_attens,
-                                                          const DetectorPeakResponse * const drf,
+/** Please note, that the
+ */
+std::function<double(double)> physical_model_eff_function( const std::optional<PhysModelShield<double>> &self_atten,
+                                                          const std::vector<PhysModelShield<double>> &external_attens,
+                                                          const std::shared_ptr<const DetectorPeakResponse> &drf,
                                                           std::optional<double> hoerl_b,
                                                           std::optional<double> hoerl_c );
   
   
-std::string physical_model_rel_eff_eqn_text( const std::shared_ptr<const PhysModelShield> &self_atten,
-                                            const std::vector<std::shared_ptr<const PhysModelShield>> &external_attens,
-                                            const DetectorPeakResponse * const drf,
+std::string physical_model_rel_eff_eqn_text( const std::optional<PhysModelShield<double>> &self_atten,
+                                            const std::vector<PhysModelShield<double>> &external_attens,
+                                            const std::shared_ptr<const DetectorPeakResponse> &drf,
                                             std::optional<double> hoerl_b,
                                             std::optional<double> hoerl_c,
                                             const bool html_format );
 
-std::string physical_model_rel_eff_eqn_js_function( const std::shared_ptr<const PhysModelShield> &self_atten,
-                                                   const std::vector<std::shared_ptr<const PhysModelShield>> &external_attens,
+std::string physical_model_rel_eff_eqn_js_function( const std::optional<PhysModelShield<double>> &self_atten,
+                                                   const std::vector<PhysModelShield<double>> &external_attens,
                                                    const DetectorPeakResponse * const drf,
                                                    std::optional<double> hoerl_b,
                                                    std::optional<double> hoerl_c );

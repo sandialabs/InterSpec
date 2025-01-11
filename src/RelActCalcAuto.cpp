@@ -2033,39 +2033,9 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
         rel_eff_eqn_str = RelActCalc::rel_eff_eqn_text( manual_solution.m_input.eqn_form, manual_solution.m_rel_eff_eqn_coefficients );
       }else
       {
-        const double *pars = manual_solution.m_rel_eff_eqn_coefficients.data();
-        const size_t num_pars = manual_solution.m_rel_eff_eqn_coefficients.size();
-        assert( num_pars == (2 + 2*options.phys_model_external_atten.size() + 2) );
-        
-        shared_ptr<RelActCalc::PhysModelShield> self_atten;
-        vector<shared_ptr<const RelActCalc::PhysModelShield>> external_attens;
-        if( options.phys_model_self_atten )
-        {
-          self_atten = make_shared<RelActCalc::PhysModelShield>();
-          self_atten->material = options.phys_model_self_atten->material;
-          if( !self_atten->material )
-            self_atten->atomic_number = pars[0];
-          self_atten->areal_density = pars[1] * PhysicalUnits::g_per_cm2;
-        }
-        for( size_t i = 0; i < options.phys_model_external_atten.size(); ++i )
-        {
-          const auto &a = options.phys_model_external_atten[i];
-          if( !a->material && ((a->atomic_number < 1.0) || (a->atomic_number > 98)))
-            continue;
-          auto atten = make_shared<RelActCalc::PhysModelShield>();
-          atten->material = a->material;
-          if( !atten->material )
-            atten->atomic_number = pars[2 + 2*i + 0];
-          atten->areal_density = pars[2 + 2*i + 1] * PhysicalUnits::g_per_cm2;
-          external_attens.push_back( atten );
-        }
-        
-        std::optional<double> hoerl_b = pars[2 + 2*options.phys_model_external_atten.size() + 0];
-        std::optional<double> hoerl_c = pars[2 + 2*options.phys_model_external_atten.size() + 1];
-        
+        assert( manual_solution.m_rel_eff_eqn_coefficients.size() == (2 + 2*options.phys_model_external_atten.size() + 2) );
         const bool html_format = false;
-        rel_eff_eqn_str = RelActCalc::physical_model_rel_eff_eqn_text( self_atten, external_attens,
-                                                                      res_drf.get(), hoerl_b, hoerl_c, html_format );
+        rel_eff_eqn_str = manual_solution.rel_eff_eqn_txt( html_format );
       }
       cout << "Starting with initial rel. eff. eqn = " << rel_eff_eqn_str << endl;
       
@@ -2933,8 +2903,8 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
   {
     shared_ptr<const DetectorPeakResponse> det;
     
-    shared_ptr<RelActCalc::PhysModelShield> self_atten;
-    vector<shared_ptr<const RelActCalc::PhysModelShield>> external_attens;
+    optional<RelActCalc::PhysModelShield<double>> self_atten;
+    vector<RelActCalc::PhysModelShield<double>> external_attens;
     
     optional<double> hoerl_b, hoerl_c;
   };//struct PhysModelRelEqnDef
@@ -2954,16 +2924,18 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     
     if( opts.phys_model_self_atten )
     {
-      answer.self_atten = make_shared<RelActCalc::PhysModelShield>();
-      answer.self_atten->material = opts.phys_model_self_atten->material;
-      if( !answer.self_atten->material )
+      RelActCalc::PhysModelShield atten;
+      atten.material = opts.phys_model_self_atten->material;
+      if( !atten.material )
       {
-        answer.self_atten->atomic_number = coeffs[rel_eff_start + 0];
-        assert( (answer.self_atten->atomic_number >= 1.0) && (answer.self_atten->atomic_number <= 98.0) );
-        if( (answer.self_atten->atomic_number < 1.0) || (answer.self_atten->atomic_number > 98.0) )
+        atten.atomic_number = coeffs[rel_eff_start + 0];
+        assert( (atten.atomic_number >= 1.0) && (atten.atomic_number <= 98.0) );
+        if( (atten.atomic_number < 1.0) || (atten.atomic_number > 98.0) )
           throw std::logic_error( "make_phys_eqn_input: whack self-atten AN" );
       }
-      answer.self_atten->areal_density = coeffs[rel_eff_start + 1] * PhysicalUnits::g_per_cm2;
+      atten.areal_density = coeffs[rel_eff_start + 1] * PhysicalUnits::g_per_cm2;
+      
+      answer.self_atten = std::move(atten);
     }//if( opts.phys_model_self_atten )
     
     for( size_t ext_ind = 0; ext_ind < opts.phys_model_external_atten.size(); ++ext_ind )
@@ -2971,18 +2943,18 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
       assert( opts.phys_model_external_atten[ext_ind] );
       const RelActCalc::PhysicalModelShieldInput &ext_opt = *opts.phys_model_external_atten[ext_ind];
       
-      auto atten = make_shared<RelActCalc::PhysModelShield>();
-      atten->material = ext_opt.material;
-      if( !atten->material )
+      RelActCalc::PhysModelShield atten;
+      atten.material = ext_opt.material;
+      if( !atten.material )
       {
-        atten->atomic_number = coeffs[rel_eff_start + 2 + 2*ext_ind + 0];
-        assert( (atten->atomic_number >= 1.0) && (atten->atomic_number <= 98.0) );
-        if( (atten->atomic_number < 1.0) || (atten->atomic_number > 98.0) )
+        atten.atomic_number = coeffs[rel_eff_start + 2 + 2*ext_ind + 0];
+        assert( (atten.atomic_number >= 1.0) && (atten.atomic_number <= 98.0) );
+        if( (atten.atomic_number < 1.0) || (atten.atomic_number > 98.0) )
           throw std::logic_error( "make_phys_eqn_input: whack external AN" );
       }
-      atten->areal_density = coeffs[rel_eff_start + 2 + 2*ext_ind + 1] * PhysicalUnits::g_per_cm2;
+      atten.areal_density = coeffs[rel_eff_start + 2 + 2*ext_ind + 1] * PhysicalUnits::g_per_cm2;
      
-      answer.external_attens.push_back( atten );
+      answer.external_attens.push_back( std::move(atten) );
     }//for( loop over external attenuators )
     
     const size_t b_index = rel_eff_start + 2 + 2*opts.phys_model_external_atten.size();
@@ -4588,7 +4560,7 @@ std::string RelActAutoSolution::rel_eff_txt( const bool html_format ) const
            = RelActAutoCostFcn::make_phys_eqn_input( m_options, m_drf, m_rel_eff_coefficients, 0 );
   
   return RelActCalc::physical_model_rel_eff_eqn_text( phys_in.self_atten, phys_in.external_attens,
-                                phys_in.det.get(), phys_in.hoerl_b, phys_in.hoerl_c, html_format );
+                                phys_in.det, phys_in.hoerl_b, phys_in.hoerl_c, html_format );
 }//std::string RelActAutoSolution::rel_eff_txt()
   
 

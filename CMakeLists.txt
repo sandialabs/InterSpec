@@ -521,6 +521,7 @@ if( USE_REL_ACT_TOOL )
   list( APPEND headers
         InterSpec/PeakFitLM.h
         InterSpec/RelActCalc.h
+        InterSpec/RelActCalc_imp.hpp
         InterSpec/RelActCalcAuto.h
         InterSpec/RelActCalcManual.h
         InterSpec/RelActAutoGui.h

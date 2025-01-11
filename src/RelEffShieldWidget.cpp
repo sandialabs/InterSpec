@@ -423,7 +423,8 @@ void RelEffShieldWidget::setState(const RelEffShieldState& s)
   setArealDensity(s.arealDensity);
   setFitArealDensity(s.fitArealDensity);
   
-  materialTypeUpdated();
+  //materialTypeUpdated(); //Not calling, because we dont want to emit that user changed things
+  m_stackedWidget->setCurrentIndex( m_frameSwitch->isChecked() ? 1 : 0 );
 }
 
 

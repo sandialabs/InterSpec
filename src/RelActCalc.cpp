@@ -40,6 +40,8 @@
 #include "InterSpec/DetectorPeakResponse.h"
 #include "InterSpec/GammaInteractionCalc.h"
 
+#include "InterSpec/RelActCalc_imp.hpp"
+
 using namespace std;
 
 namespace 
@@ -303,101 +305,7 @@ double eval_eqn( const double energy, const RelEffEqnForm eqn_form, const vector
 double eval_eqn( const double energy, const RelEffEqnForm eqn_form,
                 const double * const coeffs, const size_t num_coefs )
 {
-  if( energy <= 0.0 )
-    throw runtime_error( "eval_eqn: energy must be greater than zero." );
-  
-  if( num_coefs < 1 )
-    throw runtime_error( "eval_eqn: need at least one coefficients." );
-  
-  
-  double answer = 0.0;
-  
-  switch( eqn_form )
-  {
-    case RelEffEqnForm::LnX:
-    {
-      // y = a + b*ln(x) + c*(ln(x))^2 + d*(ln(x))^3 + ...
-      const double log_energy = std::log(energy);
-      
-      for( size_t order = 0; order < num_coefs; ++order )
-      {
-        switch( order )
-        {
-          case 0:  answer += coeffs[order];                                         break;
-          case 1:  answer += coeffs[order] * log_energy;                            break;
-          default: answer += coeffs[order] * std::pow( log_energy, (double)order ); break;
-        }//switch( order )
-      }//for( loop over coeffs )
-      
-      break;
-    }//case RelEffEqnForm::LnX:
-      
-    case RelEffEqnForm::LnY:
-    {
-      // y = exp( a + b*x + c/x + d/x^2 + e/x^3 + ... )
-      // Note that it would be a little more convenient to have y = exp(a*x + b + c/x + ...), but
-      //  I want to keep the leading term independent of energy.
-      for( size_t order = 0; order < num_coefs; ++order )
-      {
-        switch( order )
-        {
-          case 0:  answer += coeffs[order];                                   break;
-          case 1:  answer += coeffs[order] * energy;                          break;
-          case 2:  answer += coeffs[order] / energy;                          break;
-          default: answer += coeffs[order] / std::pow( energy, order - 1.0 ); break;
-        }//switch( order )
-      }//for( loop over coeffs )
-      
-      answer = std::exp( answer );
-      
-      break;
-    }//case RelEffEqnForm::LnY:
-      
-    case RelEffEqnForm::LnXLnY:
-    {
-      // y = exp (a  + b*(lnx) + c*(lnx)^2 + d*(lnx)^3 + ... )
-      const double log_energy = std::log(energy);
-      
-      for( size_t order = 0; order < num_coefs; ++order )
-      {
-        switch( order )
-        {
-          case 0:  answer += coeffs[order]; break;
-          case 1:  answer += coeffs[order] * log_energy; break;
-          default: answer += coeffs[order] * std::pow( log_energy, (double)order ); break;
-        }//switch( order )
-      }//for( loop over coeffs )
-      
-      answer = std::exp( answer );
-      
-      break;
-    }//case RelEffEqnForm::LnXLnY:
-      
-    case RelEffEqnForm::FramEmpirical:
-    {
-      // y = exp( a + b/x^2 + c*(lnx) + d*(lnx)^2 + e*(lnx)^3 )
-      const double log_energy = std::log(energy);
-      
-      for( size_t order = 0; order < num_coefs; ++order )
-      {
-        switch( order )
-        {
-          case 0:  answer += coeffs[order];  break;
-          case 1:  answer += coeffs[order] / (energy*energy); break;
-          default: answer += coeffs[order] * std::pow( log_energy, order - 1.0 ); break;
-        }//switch( order )
-      }//for( loop over coeffs )
-      
-      answer = std::exp( answer );
-      
-      break;
-    }//case RelEffEqnForm::FramEmpirical:
-      
-    case RelEffEqnForm::FramPhysicalModel:
-      throw runtime_error( "RelActCalc::eval_eqn() can not be called for FramPhysicalModel." );
-  }//switch( eqn_form )
-  
-  return answer;
+  return RelActCalc::eval_eqn_imp<double>( energy, eqn_form, coeffs, num_coefs );
 }//eval_eqn(...)
 
 
@@ -851,131 +759,22 @@ void PhysicalModelShieldInput::check_valid() const
 
 
 double eval_physical_model_eqn( const double energy,
-                               const std::shared_ptr<const PhysModelShield> &self_atten,
-                               const std::vector<std::shared_ptr<const PhysModelShield>> &external_attens,
+                               const std::optional<PhysModelShield<double>> &self_atten,
+                               const std::vector<PhysModelShield<double>> &external_attens,
                                const DetectorPeakResponse * const drf,
                                std::optional<double> hoerl_b,
                                std::optional<double> hoerl_c )
 {
-  const auto sanity_check_shield = []( const shared_ptr<const PhysModelShield> &shield ){
-    if( !shield )
-      return; //empty shielding
-    
-    double atomic_number = shield->atomic_number;
-    double areal_density = shield->areal_density;
-    
-    assert( (areal_density >= -1.0E-6) && !IsInf(areal_density) );
-    if( (areal_density <= -1.0E-6) || IsNan(areal_density) || IsInf(areal_density) )
-      throw runtime_error( "eval_physical_model_eqn: areal density must be >= 0." );
-    areal_density = std::max( 0.0, areal_density );
-
-    if( shield->material )
-    {
-      assert( atomic_number == 0.0f );
-      if( atomic_number != 0.0f )
-        throw runtime_error( "eval_physical_model_eqn: atomic number must be zero if material defined." );
-    }else if( atomic_number == 0.0 )
-    {
-      assert( areal_density == 0.0 );
-      if( areal_density != 0.0 )
-        throw runtime_error( "eval_physical_model_eqn: areal density must be zero if atomic number is zero." );
-    }else
-    {
-      assert( !IsNan(atomic_number) && !IsInf(atomic_number) && (atomic_number > 0.9) && (atomic_number < 98.1) );
-      
-      if( IsNan(atomic_number) || IsInf(atomic_number) )
-        throw runtime_error( "eval_physical_model_eqn: atomic number is inf or NaN." );
-
-      if( (atomic_number < 0.9) || (atomic_number > 98.1) )
-        throw runtime_error( "eval_physical_model_eqn: atomic number must in in range [1,98]" );
-    }
-  };//sanity_check_shield lamda
-  
-  sanity_check_shield( self_atten );
-  for( size_t i = 0; i < external_attens.size(); ++i )
-    sanity_check_shield( external_attens[i] );
-  
-  using GammaInteractionCalc::mass_attenuation_coef;
-  using GammaInteractionCalc::transmition_length_coefficient;
-    
-    
-  const float energyf = static_cast<float>( energy );
-    
-  double sa_part = 1.0;
-
-  if( self_atten )
-  {
-    double self_atten_mu;
-    if( self_atten->material )
-    {
-      self_atten_mu = transmition_length_coefficient( self_atten->material.get(), energyf ) / self_atten->material->density;
-    }else
-    {
-      double atomic_number = self_atten->atomic_number;
-      assert( atomic_number > 0.9 && atomic_number < 98.1 );
-      atomic_number = std::min( 98.0, std::max( atomic_number, 1.0 ));
-      self_atten_mu = mass_attenuation_coef( atomic_number, energyf );
-    }
-    
-    double self_atten_ad = self_atten->areal_density;
-    
-    assert( (self_atten_ad > -1.0E-6) && (self_atten_ad < 500.0*PhysicalUnits::g_per_cm2) );
-    
-    assert( self_atten_mu >= 0.0 );
-    if( (self_atten_ad > 0.0) && (self_atten_mu > 0.0) )
-      sa_part = (1 - exp(-self_atten_mu * self_atten_ad)) / (self_atten_mu * self_atten_ad);
-  }//if( self_atten )
-
-    
-  double ext_atten_part = 1.0;
-  for( const shared_ptr<const PhysModelShield> &atten : external_attens )
-  {
-    assert( atten );
-    if( !atten )
-      continue;
-    
-    double mu;
-    if( atten->material )
-    {
-      mu = transmition_length_coefficient( atten->material.get(), energyf ) / atten->material->density;
-    }else
-    {
-      double atomic_number = atten->atomic_number;
-      assert( atomic_number > 0.9 && atomic_number < 98.1 );
-      atomic_number = std::min( 98.0, std::max( atomic_number, 1.0 ));
-      mu = mass_attenuation_coef( atomic_number, energyf );
-    }
-    
-    double ad = atten->areal_density;
-    
-    assert( (ad > -1.0E-6) && (ad < 500.0*PhysicalUnits::g_per_cm2) );
-    
-    assert( mu >= 0.0 );
-    if( (ad > 0.0) && (mu > 0.0) )
-      ext_atten_part *= exp( -mu * ad );
-  }//for( size_t i = 0; i < external_attens.size(); ++i )
-    
-    
-  const double det_part = drf ? drf->intrinsicEfficiency( energyf ) : 1.0;
-    
-  assert( hoerl_b.has_value() == hoerl_c.has_value() );
-  if( hoerl_b.has_value() != hoerl_c.has_value() )
-    throw std::logic_error( "hoerl_b.has_value() != hoerl_c.has_value()" );
-  
-  double corr_factor = 1.0;
-  if( hoerl_b.has_value() && hoerl_c.has_value() )
-    corr_factor = std::pow(0.001*energy, hoerl_b.value()) * std::pow( hoerl_c.value(), 1000.0/energy );
-    
-  return sa_part * ext_atten_part * det_part * corr_factor;
+  return eval_physical_model_eqn_imp<double>( energy, self_atten, external_attens, drf, hoerl_b, hoerl_c );
 }//eval_physical_model_eqn(...)
   
     
 double eval_physical_model_eqn_uncertainty( const double energy,
-                                           const std::shared_ptr<const PhysModelShield> &self_atten,
-                                           const std::vector<std::shared_ptr<const PhysModelShield>> &external_attens,
+                               const std::optional<PhysModelShield<double>> &self_atten,
+                               const std::vector<PhysModelShield<double>> &external_attens,
                                const DetectorPeakResponse * const drf,
-                                           std::optional<double> hoerl_b,
-                                           std::optional<double> hoerl_c,
+                               std::optional<double> hoerl_b,
+                               std::optional<double> hoerl_c,
                                const std::vector<std::vector<double>> &covariance )
 {
 #warning "eval_physical_model_eqn_uncertainty not implemented."
@@ -983,25 +782,22 @@ double eval_physical_model_eqn_uncertainty( const double energy,
   return 0.0;
 }
   
-std::function<double(double)> physical_model_eff_function( const std::shared_ptr<const PhysModelShield> &self_atten,
-                                                          const std::vector<std::shared_ptr<const PhysModelShield>> &external_attens,
-                                                          const DetectorPeakResponse * const drf,
+std::function<double(double)> physical_model_eff_function( const std::optional<PhysModelShield<double>> &self_atten,
+                                                          const std::vector<PhysModelShield<double>> &external_attens,
+                                                          const std::shared_ptr<const DetectorPeakResponse> &drf,
                                                           std::optional<double> hoerl_b,
                                                           std::optional<double> hoerl_c )
 {
-  const auto sanity_check_shield = []( const shared_ptr<const PhysModelShield> &shield ){
-    if( !shield )
-      return; //empty shielding
-    
-    double atomic_number = shield->atomic_number;
-    double areal_density = shield->areal_density;
+  const auto sanity_check_shield = []( const PhysModelShield<double> &shield ){
+    double atomic_number = shield.atomic_number;
+    double areal_density = shield.areal_density;
     
     assert( (areal_density >= -1.0E-6) && !IsInf(areal_density) );
     if( (areal_density <= -1.0E-6) || IsNan(areal_density) || IsInf(areal_density) )
       throw runtime_error( "physical_model_eff_function: areal density must be >= 0." );
     areal_density = std::max( 0.0, areal_density );
 
-    if( shield->material )
+    if( shield.material )
     {
       assert( atomic_number == 0.0f );
       if( atomic_number != 0.0f )
@@ -1023,8 +819,8 @@ std::function<double(double)> physical_model_eff_function( const std::shared_ptr
     }
   };//sanity_check_shield lamda
   
-  
-  sanity_check_shield( self_atten );
+  if( self_atten.has_value() )
+    sanity_check_shield( *self_atten );
   for( size_t i = 0; i < external_attens.size(); ++i )
     sanity_check_shield( external_attens[i] );
   
@@ -1032,95 +828,25 @@ std::function<double(double)> physical_model_eff_function( const std::shared_ptr
   if( hoerl_b.has_value() != hoerl_c.has_value() )
     throw std::logic_error( "hoerl_b.has_value() != hoerl_c.has_value()" );
   
+  //const function<float(float)> drffcn = drf ? drf->intrinsicEfficiencyFcn() : []( float ){ return 1.0f; };
   
-  const function<float(float)> drffcn = drf ? drf->intrinsicEfficiencyFcn() : []( float ){ return 1.0f; };
-  
-  
-  return [drffcn, self_atten, external_attens, hoerl_b, hoerl_c]( double energy ) -> double {
-    using GammaInteractionCalc::mass_attenuation_coef;
-    using GammaInteractionCalc::transmition_length_coefficient;
-    
-    
-    const float energyf = static_cast<float>( energy );
-    
-    double sa_part = 1.0;
-    
-    if( self_atten )
-    {
-      double self_atten_mu;
-      if( self_atten->material )
-      {
-        self_atten_mu = transmition_length_coefficient( self_atten->material.get(), energyf ) / self_atten->material->density;
-      }else
-      {
-        double atomic_number = self_atten->atomic_number;
-        assert( atomic_number > 0.9 && atomic_number < 98.1 );
-        atomic_number = std::min( 98.0, std::max( atomic_number, 1.0 ));
-        self_atten_mu = mass_attenuation_coef( atomic_number, energyf );
-      }
-      
-      double self_atten_ad = self_atten->areal_density;
-      
-      assert( (self_atten_ad > -1.0E-6) && (self_atten_ad < 500.0*PhysicalUnits::g_per_cm2) );
-      
-      assert( self_atten_mu >= 0.0 );
-      if( (self_atten_ad > 0.0) && (self_atten_mu > 0.0) )
-        sa_part = (1 - exp(-self_atten_mu * self_atten_ad)) / (self_atten_mu * self_atten_ad);
-    }//if( self_atten )
-    
-    
-    
-    double ext_atten_part = 1.0;
-    for( const shared_ptr<const PhysModelShield> &atten : external_attens )
-    {
-      assert( atten );
-      if( !atten )
-        continue;
-      
-      double mu;
-      if( atten->material )
-      {
-        mu = transmition_length_coefficient( atten->material.get(), energyf ) / atten->material->density;
-      }else
-      {
-        double atomic_number = atten->atomic_number;
-        assert( atomic_number > 0.9 && atomic_number < 98.1 );
-        atomic_number = std::min( 98.0, std::max( atomic_number, 1.0 ));
-        mu = mass_attenuation_coef( atomic_number, energyf );
-      }
-      
-      double ad = atten->areal_density;
-      
-      assert( (ad > -1.0E-6) && (ad < 500.0*PhysicalUnits::g_per_cm2) );
-      
-      assert( mu >= 0.0 );
-      if( (ad > 0.0) && (mu > 0.0) )
-        ext_atten_part *= exp( -mu * ad );
-    }//for( size_t i = 0; i < external_attens.size(); ++i )
-    
-    
-    const double det_part = drffcn( energyf );
-    
-    double corr_factor = 1.0;
-    if( hoerl_b.has_value() && hoerl_c.has_value() )
-      corr_factor = std::pow(0.001*energy, hoerl_b.value()) * std::pow( hoerl_c.value(), 1000.0/energy );
-    
-    return sa_part * ext_atten_part * det_part * corr_factor;
+  return [drf, self_atten, external_attens, hoerl_b, hoerl_c]( double energy ) -> double {
+    return eval_physical_model_eqn_imp<double>( energy, self_atten, external_attens, drf.get(), hoerl_b, hoerl_c );
   };
 }//physical_model_eff_function(...)
   
 
 
-string physical_model_rel_eff_eqn_text( const std::shared_ptr<const PhysModelShield> &self_atten,
-                                       const std::vector<std::shared_ptr<const PhysModelShield>> &external_attens,
-                                       const DetectorPeakResponse * const drf,
+string physical_model_rel_eff_eqn_text( const std::optional<PhysModelShield<double>> &self_atten,
+                                       const std::vector<PhysModelShield<double>> &external_attens,
+                                       const std::shared_ptr<const DetectorPeakResponse> &drf,
                                        std::optional<double> hoerl_b,
                                        std::optional<double> hoerl_c,
                                                 const bool html_format )
 {
   string eqn;
   
-  if( self_atten && (self_atten->material || ((self_atten->atomic_number > 0.9) && (self_atten->atomic_number < 98.1))) )
+  if( self_atten.has_value() && (self_atten->material || ((self_atten->atomic_number > 0.9) && (self_atten->atomic_number < 98.1))) )
   {
     const double sa_an = self_atten->atomic_number;
     const double sa_ad = self_atten->areal_density / PhysicalUnits::g_per_cm2;
@@ -1149,14 +875,14 @@ string physical_model_rel_eff_eqn_text( const std::shared_ptr<const PhysModelShi
     
     for( size_t i = 0; i < external_attens.size(); ++i )
     {
-      const shared_ptr<const PhysModelShield> &atten = external_attens[i];
-      if( !atten || (!self_atten->material && ((self_atten->atomic_number < 0.9) || (self_atten->atomic_number > 98.1))) )
+      const PhysModelShield<double> &atten = external_attens[i];
+      if( !atten.material && ((atten.atomic_number < 0.9) || (atten.atomic_number > 98.1)) )
         continue;
         
       eqn += (i ? " * " : "");
-      const shared_ptr<const Material> &mat = self_atten->material;
-      const string mu_name = mat ? cleanup_mat_name(mat->name) : SpecUtils::printCompact(self_atten->atomic_number, 3);
-      const string ad_str = SpecUtils::printCompact(self_atten->areal_density/PhysicalUnits::g_per_cm2, 3);
+      const shared_ptr<const Material> &mat = atten.material;
+      const string mu_name = mat ? cleanup_mat_name(mat->name) : SpecUtils::printCompact(atten.atomic_number, 3);
+      const string ad_str = SpecUtils::printCompact(atten.areal_density/PhysicalUnits::g_per_cm2, 3);
       if( html_format )
       { 
         eqn += "exp(-" + ad_str + "*μ<sub>" + mu_name + "</sub>)";
@@ -1190,8 +916,8 @@ string physical_model_rel_eff_eqn_text( const std::shared_ptr<const PhysModelShi
 }//string physical_model_rel_eff_eqn_text(...)
 
 
-std::string physical_model_rel_eff_eqn_js_function( const std::shared_ptr<const PhysModelShield> &self_atten,
-                                                   const std::vector<std::shared_ptr<const PhysModelShield>> &external_attens,
+std::string physical_model_rel_eff_eqn_js_function( const std::optional<PhysModelShield<double>> &self_atten,
+                                                   const std::vector<PhysModelShield<double>> &external_attens,
                                                    const DetectorPeakResponse * const drf,
                                                    std::optional<double> hoerl_b,
                                                    std::optional<double> hoerl_c )

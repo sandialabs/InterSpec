@@ -80,14 +80,16 @@ struct SandiaDecayNuc
 
 /** Information about a SandiaDecay defined nuclide for input into relative efficiency calculation.
  */
+/*
+template<typename T>
 struct SandiaDecayNucRelAct
 {
   const SandiaDecay::Nuclide *nuclide = nullptr;
-  /** Age at start of measurement. */
+  /// Age at start of measurement.
   double age = -1.0;
-  double rel_activity = -1.0;
+  T rel_activity = -1.0;
 };//struct SandiaDecayNucRelAct
-
+*/
 
 /** Struct to specify the yield of a nuclide, that will be associated with a specific peak. */
 struct GenericLineInfo
@@ -253,14 +255,15 @@ void fit_rel_eff_eqn_lls( const RelActCalc::RelEffEqnForm fcn_form,
  @par covariance [out] If non-nullptr, the covariance matrix will be placed into this vector of
       vectors; see notes above
  */
+/*
 void fit_rel_eff_eqn_lls( const RelActCalc::RelEffEqnForm fcn_form,
                            const size_t order,
-                           const std::vector<SandiaDecayNucRelAct> &nuclides,
+                           const std::vector<SandiaDecayNucRelAct<double>> &nuclides,
                            const double base_rel_eff_uncert,
                            const std::vector<std::shared_ptr<const PeakDef>> &peak_infos,
                            std::vector<double> &fit_pars,
                            std::vector<std::vector<double>> *covariance );
-
+*/
 
 /** Function to do actual LLS work.  Split out from the above for testing purposes.  */
 void fit_rel_eff_eqn_lls( const RelActCalc::RelEffEqnForm fcn_form,
@@ -513,7 +516,7 @@ struct RelEffSolution
     double m_areal_density_uncert = -1.0;
     double m_atomic_number = 0.0;
     double m_atomic_number_uncert = -1.0;
-  };//struct PhysModelShield
+  };//struct PhysModelShieldFit
   std::unique_ptr<PhysModelShieldFit> m_phys_model_self_atten_shield;
   std::vector<std::unique_ptr<PhysModelShieldFit>> m_phys_model_external_atten_shields;
 

@@ -996,6 +996,8 @@ shared_ptr<const RelActManualGui::GuiState> RelActManualGui::getGuiState() const
 
 void RelActManualGui::setGuiState( const GuiState &state )
 {
+  assert( !m_renderFlags.testFlag(RenderActions::AddUndoRedoStep) );
+  
   bool updateCalc = false;
   const auto eqn_form = RelActCalc::RelEffEqnForm( state.m_relEffEqnFormIndex );
 
@@ -1045,6 +1047,7 @@ void RelActManualGui::setGuiState( const GuiState &state )
   if( m_resultMenu->currentIndex() != state.m_resultTab )
     m_resultMenu->select( state.m_resultTab );
   
+  assert( !m_renderFlags.testFlag(RenderActions::AddUndoRedoStep) );
   
   for( auto w : m_nuclidesDisp->children() )
   {
@@ -1078,6 +1081,7 @@ void RelActManualGui::setGuiState( const GuiState &state )
     }//for( loop over previous ages )
   }//for( auto w : m_nuclidesDisp->children() )
   
+  assert( !m_renderFlags.testFlag(RenderActions::AddUndoRedoStep) );
   
   if( eqn_form == RelActCalc::RelEffEqnForm::FramPhysicalModel )
   {
@@ -1094,6 +1098,8 @@ void RelActManualGui::setGuiState( const GuiState &state )
       m_selfAttenShield->setState( *state.m_selfAttenShield );
     }//if( state.m_selfAttenShield )
 
+    assert( !m_renderFlags.testFlag(RenderActions::AddUndoRedoStep) );
+    
     assert( m_extAttenShields );
     
     m_extAttenShields->clear();
@@ -1110,6 +1116,8 @@ void RelActManualGui::setGuiState( const GuiState &state )
       shield->changed().connect( this, &RelActManualGui::handleSelfAttenShieldChanged );
     }
 
+    assert( !m_renderFlags.testFlag(RenderActions::AddUndoRedoStep) );
+    
     m_physModelUseHoerlHolder->setHidden( false );
     m_relEffEqnOrderHolder->setHidden( true );
   }else
@@ -1607,8 +1615,9 @@ void RelActManualGui::calculateSolution()
     input.peaks = peak_infos;
     input.eqn_form = eqn_form;
     input.eqn_order = eqn_order;
-    input.use_ceres_to_fit_eqn = true; //(eqn_form == RelActCalc::RelEffEqnForm::FramPhysicalModel); //Temp for development?
-    cerr << "RelActManualGui::calculateSolution(): using Ceres to fit the relative efficiency equation - this is for development only\n";
+    // We will only use Ceres to fit equation parameters when we have to; using matrix math (i.e.
+    //  Eigen) looks to be at least about twice as fast.
+    input.use_ceres_to_fit_eqn = (eqn_form == RelActCalc::RelEffEqnForm::FramPhysicalModel);
 
     if( eqn_form == RelActCalc::RelEffEqnForm::FramPhysicalModel )
     {

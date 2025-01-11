@@ -42,6 +42,9 @@ template<typename T>
 T eval_eqn_imp( const double energy, const RelActCalc::RelEffEqnForm eqn_form,
                   const T * const coeffs, const size_t num_coefs )
 {
+  using namespace std;
+  using namespace ceres;
+  
   if( energy <= 0.0 )
     throw std::runtime_error( "eval_eqn: energy must be greater than zero." );
   
