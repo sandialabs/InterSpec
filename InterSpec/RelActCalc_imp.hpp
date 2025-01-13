@@ -162,16 +162,17 @@ T get_atten_coef_for_an( const T &an, const float energy )
   
   assert( (an_scalar >= 1.0) && (an_scalar <= 98.0) );
   
-  const int lower_an = static_cast<int>(std::floor(an_scalar));
-  const int upper_an = static_cast<int>(std::ceil(an_scalar));
-  
+  const int lower_an = std::max( 1, static_cast<int>( std::floor(an_scalar) ) );
+  const int sign = (lower_an < 98) ? 1 : -1;
+  const int upper_an = lower_an + sign;
+
   const double lower_mu = MassAttenuation::massAttenuationCoeficient(lower_an, energy);
   const double upper_mu = MassAttenuation::massAttenuationCoeficient(upper_an, energy);
   
   const T anfrac = an - static_cast<double>(lower_an);  //Looks like this preserves the derivative
   const T mu = (1.0 - anfrac)*lower_mu + anfrac*upper_mu;
   
-  return mu;
+  return mu * static_cast<double>(sign);
 }//T get_atten_coef_for_an( const T &an )
 
     
