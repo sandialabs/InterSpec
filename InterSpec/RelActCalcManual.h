@@ -413,13 +413,20 @@ struct RelEffSolution
   std::vector<double> m_rel_eff_eqn_coefficients;
 
   /** The covariance matrix of the relative efficiency equation coefficients. 
-   * Will be empty if the equation form is `RelActCalc::RelEffEqnForm::PhysicalModel`;
-   * for that form of equation, see `m_nonlin_covariance`.
+   
+   Note that if `m_input.use_ceres_to_fit_eqn` is false, then this is the covariance matrix 
+   for the `log` efficiency function, and is computed using the matrices of least linear squares.
+   If `m_input.use_ceres_to_fit_eqn` is true, then this is relative efficiency portion
+   of the full covariance matrix fit by Ceres; and the rel. eff. equations are not ``log''
+   transformed.
   */
   std::vector<std::vector<double>> m_rel_eff_eqn_covariance;
   
   /** The relative activities for each of the input nuclides. */
   std::vector<IsotopeRelativeActivity> m_rel_activities;
+
+  /** The paramaters fit by Ceres. */
+  std::vector<double> m_fit_parameters;
 
   /** Covariance matrix of nonlinear parameters fit by Ceres.
    
@@ -444,6 +451,21 @@ struct RelEffSolution
 
   // TODO: we should probably save the full covariance matrix
   
+  /** The Jacobian matrix of the nonlinear parameters fit by Ceres.
+  
+  i.e, `m_nonlin_jacobian[k][i] = d residual[k] / d parameters[i]`
+  
+  To access the Jacobian for the k'th residual and i'th parameter, 
+  use `m_nonlin_jacobian[k][i]`.  The k-index cooresponds to the index 
+  of the peak in `m_input.peaks`.  The i-index cooresponds to the index 
+  of the parameter in `m_fit_parameters`.  You might want to think of it as
+  `m_nonlin_jacobian[peak][parameter]`.
+
+  Note: if the compile time option `USE_RESIDUAL_TO_BREAK_DEGENERACY` is true, 
+  then there will be one more residual than the number of peaks.
+  */
+  std::vector<std::vector<double>> m_nonlin_jacobian;
+
   /** The Chi2 summed over all peaks between their actual and fit relative efficiencies.
    
    Note that this always uses the peaks statistical uncertainties, and does not include
@@ -622,7 +644,12 @@ struct RelEffSolution
    */
   void get_mass_ratio_table( std::ostream &strm ) const;
   
-  
+  /** Returns the uncertainty of the relative efficiency equation at the specified energy.
+    
+     throws std::exception if covariances are not available, or there is another error.
+   */
+  double rel_eff_eqn_uncert( const double energy ) const;
+
   /** Returns the equation text.
    
    @param html_format Currently only applicable to Physical Model.

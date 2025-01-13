@@ -331,7 +331,7 @@ double eval_eqn_uncertainty( const double energy, const RelEffEqnForm eqn_form,
           throw runtime_error( "eval_eqn_uncertainty: covariance not a square matrix." );
         
         for( size_t j = 0; j <= covariance.size(); ++j )
-        uncert_sq += std::pow(log_energy,1.0*i) * covariance[i][j] * std::pow(log_energy,1.0*j);
+          uncert_sq += std::pow(log_energy,1.0*i) * covariance[i][j] * std::pow(log_energy,1.0*j);
       }//for( size_t i = 0; i < coefs.size(); ++i )
       
       assert( uncert_sq >= 0.0 );
@@ -364,7 +364,7 @@ double eval_eqn_uncertainty( const double energy, const RelEffEqnForm eqn_form,
           throw runtime_error( "eval_eqn_uncertainty: covariance not a square matrix." );
         
         for( size_t j = 0; j <= covariance.size(); ++j )
-        log_uncert_sq += eval_term_log(i) * covariance[i][j] * eval_term_log(j);
+          log_uncert_sq += eval_term_log(i) * covariance[i][j] * eval_term_log(j);
       }//for( size_t i = 0; i < coefs.size(); ++i )
       
       assert( log_uncert_sq >= 0.0 );
@@ -421,7 +421,7 @@ double eval_eqn_uncertainty( const double energy, const RelEffEqnForm eqn_form,
           default: i_component = std::pow(log_energy, i - 1.0); break;
         }//switch( i )
         
-        for( size_t j = 0; j <= covariance.size(); ++j )
+        for( size_t j = 0; j < covariance.size(); ++j )
         {
           double j_component = 0.0;
           switch( j )

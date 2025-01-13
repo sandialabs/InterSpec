@@ -1967,7 +1967,15 @@ double RelEffSolution::relative_activity( const std::string &nuclide ) const
 
 double RelEffSolution::relative_efficiency( const double energy ) const
 {
-  return eval_eqn( energy, m_input.eqn_form, m_rel_eff_eqn_coefficients );
+  if( m_input.eqn_form != RelActCalc::RelEffEqnForm::FramPhysicalModel )
+    return eval_eqn( energy, m_input.eqn_form, m_rel_eff_eqn_coefficients );
+
+  const ManualGenericRelActFunctor::PhysModelRelEqnDef eqn_input
+        = ManualGenericRelActFunctor::make_phys_eqn_input( m_input, m_rel_eff_eqn_coefficients );
+
+  return RelActCalc::eval_physical_model_eqn( energy, eqn_input.self_atten, 
+                              eqn_input.external_attens, eqn_input.det.get(), 
+                              eqn_input.hoerl_b, eqn_input.hoerl_c );
 }//double relative_efficiency( const double energy ) const
 
 
@@ -2495,6 +2503,151 @@ void RelEffSolution::get_mass_ratio_table( std::ostream &results_html ) const
   results_html << "  </tbody>\n"
   << "</table>\n\n";
 }//void get_mass_ratio_table( std::ostream &strm ) const
+
+
+double RelEffSolution::rel_eff_eqn_uncert( const double energy ) const
+{
+  // Check if we use least linear squares to fit the equation; if so, use the covariance matrix directly
+  if( !m_input.use_ceres_to_fit_eqn && (m_input.eqn_form != RelActCalc::RelEffEqnForm::FramPhysicalModel) )
+  {
+    if( m_rel_eff_eqn_covariance.empty() )
+      throw std::runtime_error( "RelEffSolution::rel_eff_eqn_uncert: Rel. Eff. Eqn. covariances not available." );
+
+    const double val = RelActCalc::eval_eqn_uncertainty( energy, m_input.eqn_form, m_rel_eff_eqn_covariance );
+    if( isnan(val) )
+      throw std::runtime_error( "RelEffSolution::rel_eff_eqn_uncert: NaN value for uncertainty." );
+
+    return val;
+  }//if( we can call eval_eqn_uncertainty )
+  
+  if( m_rel_eff_eqn_covariance.empty() )
+    throw std::runtime_error( "RelEffSolution::rel_eff_eqn_uncert: nonlinear covariances not available." );
+
+  assert( m_input.use_ceres_to_fit_eqn );
+
+  assert( m_nonlin_covariance.size() == m_fit_parameters.size() );
+  assert( m_rel_eff_eqn_covariance.size() == m_rel_eff_eqn_coefficients.size() );
+  if( m_rel_eff_eqn_covariance.size() != m_rel_eff_eqn_coefficients.size() )
+    throw std::logic_error( "RelEffSolution::rel_eff_eqn_uncert: covariance matrix does not match expected." );
+  
+  const double eval_val = eval_eqn( energy, m_input.eqn_form, m_rel_eff_eqn_coefficients );
+  
+  // I think we would be safe skipping this following check, at least on non-debug builds, but whatever
+  for( size_t i = 0; i < m_rel_eff_eqn_covariance.size(); ++i )
+  {
+    assert( m_rel_eff_eqn_covariance[i].size() == m_rel_eff_eqn_covariance.size() );
+    if( m_rel_eff_eqn_covariance[i].size() != m_rel_eff_eqn_covariance.size() )  //JIC for release builds
+      throw runtime_error( "eval_eqn_uncertainty: covariance not a square matrix." );
+  }//for( size_t i = 0; i < m_rel_eff_eqn_covariance.size(); ++i )
+
+  double uncert_sq = 0.0;
+
+  switch( m_input.eqn_form )
+  {
+    case RelActCalc::RelEffEqnForm::LnX:
+    {
+      // y = a + b*ln(x) + c*(ln(x))^2 + d*(ln(x))^3 + ...
+      // We use/fit the same form where we use least linear squares, or Ceres, so we could just
+      //  use the function we made for LLS fit
+      const double log_energy = std::log(energy);
+      for( size_t i = 0; i < m_rel_eff_eqn_covariance.size(); ++i )
+      {
+        for( size_t j = 0; j <= m_rel_eff_eqn_covariance.size(); ++j )
+          uncert_sq += std::pow(log_energy,1.0*i) * m_rel_eff_eqn_covariance[i][j] * std::pow(log_energy,1.0*j);
+      }//for( size_t i = 0; i < coefs.size(); ++i )
+      
+      assert( uncert_sq >= 0.0 );
+      
+      return sqrt(uncert_sq);
+    }//case RelEffEqnForm::LnX:
+      
+      
+    case RelActCalc::RelEffEqnForm::LnY:
+    {
+      // y = exp( a + b*x + c/x + d/x^2 + e/x^3 + ... )
+      const double eval_val = eval_eqn( energy, m_input.eqn_form, m_rel_eff_eqn_coefficients );
+      
+      const auto eval_derivative = [energy, eval_val]( const size_t order ) -> double {
+        switch( order )
+        {
+          case 0:  return 1.0 * eval_val;
+          case 1:  return energy * eval_val;
+          default:
+            break;
+        }//switch( order )
+        
+        return eval_val * std::pow( energy, 1.0 - order );
+      };//eval_derivative
+      
+      for( size_t i = 0; i < m_rel_eff_eqn_covariance.size(); ++i )
+      {
+        for( size_t j = 0; j <= m_rel_eff_eqn_covariance.size(); ++j )
+          uncert_sq += eval_derivative(i) * m_rel_eff_eqn_covariance[i][j] * eval_derivative(j);
+      }//for( size_t i = 0; i < coefs.size(); ++i )
+    }//case RelEffEqnForm::LnY:
+      
+    case RelActCalc::RelEffEqnForm::LnXLnY:
+    {
+      // y = exp(a  + b*(lnx) + c*(lnx)^2 + d*(lnx)^3 + ... )
+      const double log_energy = std::log(energy);
+      const double eval_val = eval_eqn( energy, m_input.eqn_form, m_rel_eff_eqn_coefficients );
+      
+      for( size_t i = 0; i < m_rel_eff_eqn_covariance.size(); ++i )
+      {
+        for( size_t j = 0; j <= m_rel_eff_eqn_covariance.size(); ++j )
+          uncert_sq += (eval_val * std::pow(log_energy,1.0*i)) * m_rel_eff_eqn_covariance[i][j] * (eval_val * std::pow(log_energy,1.0*j));
+      }//for( size_t i = 0; i < coefs.size(); ++i )
+    }//case RelEffEqnForm::LnXLnY:
+      
+    case RelActCalc::RelEffEqnForm::FramEmpirical:
+    {
+      // y = exp( a + b/x^2 + c*(lnx) + d*(lnx)^2 + e*(lnx)^3 )
+      const double log_energy = std::log(energy);
+      const double eval_val = eval_eqn( energy, m_input.eqn_form, m_rel_eff_eqn_coefficients );
+      
+      double uncert_sq = 0.0;
+      
+      for( size_t i = 0; i < m_rel_eff_eqn_covariance.size(); ++i )
+      {
+        double i_component = 0.0;
+        switch( i )
+        {
+          case 0:  i_component = eval_val;  break;
+          case 1:  i_component = eval_val / (energy*energy); break;
+          default: i_component = eval_val * std::pow(log_energy, i - 1.0); break;
+        }//switch( i )
+        
+        for( size_t j = 0; j < m_rel_eff_eqn_covariance.size(); ++j )
+        {
+          double j_component = 0.0;
+          switch( j )
+          {
+            case 0:  j_component = eval_val;  break;
+            case 1:  j_component = eval_val / (energy*energy); break;
+            default: j_component = eval_val * std::pow(log_energy, j - 1.0); break;
+          }//switch( i )
+          
+          uncert_sq += i_component * m_rel_eff_eqn_covariance[i][j] * j_component;
+        }
+      }//for( size_t i = 0; i < coefs.size(); ++i )
+    }//case RelEffEqnForm::FramEmpirical:
+      
+    case RelActCalc::RelEffEqnForm::FramPhysicalModel:
+    {
+      assert( 0 );
+      throw std::logic_error( "RelEffSolution::rel_eff_eqn_uncert: FramPhysicalModel not implemented." );
+  
+      break;
+    }//case RelActCalc::RelEffEqnForm::FramPhysicalModel:
+  }//switch( eqn_form )
+
+
+  assert( uncert_sq >= 0.0 );
+  if( uncert_sq < 0.0 )
+    throw std::runtime_error( "RelEffSolution::rel_eff_eqn_uncert: negative squared uncertainty." );
+  
+  return sqrt(uncert_sq);
+}//double rel_eff_eqn_uncert( const double energy ) const
 
 
 string RelEffSolution::rel_eff_eqn_txt( const bool html_format ) const
@@ -3181,11 +3334,15 @@ RelEffSolution solve_relative_efficiency( const RelEffInput &input_orig )
   const size_t num_parameters = cost_functor->num_parameters();
 
   solution.m_activity_norms = cost_functor->m_rel_act_norms;
-  
+
+  // Relative activities multiples start out as 1.0 because ManualGenericRelActFunctor constructor
+  //   estimates the activities for a flat rel eff = 1.0; see
+  //   #ManualGenericRelActFunctor::m_rel_act_norms.
+  vector<double> parameters( num_parameters, 1.0 );
+  double *pars = &parameters[0];
+
 
   ceres::CostFunction *cost_function = nullptr;
-  ceres::DynamicAutoDiffCostFunction<ManualGenericRelActFunctor> *dyn_auto_diff_cost_function = nullptr;
-  ceres::DynamicNumericDiffCostFunction<ManualGenericRelActFunctor> *dyn_num_diff_cost_function = nullptr;
 
   // From a few example cases inspected by hand, it looks like auto and numerical differentiation
   //  get the same answers, but auto diff is faster, and requires a lot fewer evaluations, so
@@ -3193,9 +3350,15 @@ RelEffSolution solve_relative_efficiency( const RelEffInput &input_orig )
   const bool use_auto_diff = true;
   if( use_auto_diff )
   {
-    dyn_auto_diff_cost_function
+    ceres::DynamicAutoDiffCostFunction<ManualGenericRelActFunctor> *dyn_auto_diff_cost_function
           = new ceres::DynamicAutoDiffCostFunction<ManualGenericRelActFunctor>( cost_functor,
                                                                           ceres::TAKE_OWNERSHIP );
+    // The number of residuals is the number of peaks, unless USE_RESIDUAL_TO_BREAK_DEGENERACY then
+    //  we add one more residual to clamp the relative efficiency curve to 1.0 at the lowest energy.
+ 
+    dyn_auto_diff_cost_function->SetNumResiduals( static_cast<int>(cost_functor->number_residuals()) );
+    dyn_auto_diff_cost_function->AddParameterBlock( static_cast<int>(num_parameters) );
+
     cost_function = dyn_auto_diff_cost_function;
   }else
   {
@@ -3210,30 +3373,15 @@ RelEffSolution solve_relative_efficiency( const RelEffInput &input_orig )
     }
 #endif //SCAN_AN_FOR_BEST_FIT
 
-    dyn_num_diff_cost_function
+    ceres::DynamicNumericDiffCostFunction<ManualGenericRelActFunctor> *dyn_num_diff_cost_function
           = new ceres::DynamicNumericDiffCostFunction<ManualGenericRelActFunctor>( cost_functor,
                                                         ceres::TAKE_OWNERSHIP, num_diff_options );
+    dyn_num_diff_cost_function->SetNumResiduals( static_cast<int>(cost_functor->number_residuals()) );        
+    dyn_num_diff_cost_function->AddParameterBlock( static_cast<int>(num_parameters) );     
+
     cost_function = dyn_num_diff_cost_function;
   }//if( use_auto_diff ) / else
-  
-                                                                                              
-  // The number of residuals is the number of peaks, unless USE_RESIDUAL_TO_BREAK_DEGENERACY then
-  //  we add one more residual to clamp the relative efficiency curve to 1.0 at the lowest energy.
-  if( dyn_num_diff_cost_function )
-    dyn_num_diff_cost_function->SetNumResiduals( static_cast<int>(cost_functor->number_residuals()) );
-  if( dyn_auto_diff_cost_function )
-    dyn_auto_diff_cost_function->SetNumResiduals( static_cast<int>(cost_functor->number_residuals()) );
-  
-  // Relative activities multiples start out as 1.0 because ManualGenericRelActFunctor constructor
-  //   estimates the activities for a flat rel eff = 1.0; see
-  //   #ManualGenericRelActFunctor::m_rel_act_norms.
-  vector<double> parameters( num_parameters, 1.0 );
-  double *pars = &parameters[0];
-
-  if( dyn_num_diff_cost_function )
-    dyn_num_diff_cost_function->AddParameterBlock( static_cast<int>(num_parameters) );
-  if( dyn_auto_diff_cost_function )
-    dyn_auto_diff_cost_function->AddParameterBlock( static_cast<int>(num_parameters) );
+    
   
   ceres::Problem problem;
   
@@ -3457,6 +3605,8 @@ RelEffSolution solve_relative_efficiency( const RelEffInput &input_orig )
   cout << "Chi2=" << summary.final_cost << " (from initial value " << summary.initial_cost << ")\n\n";
   
 
+  solution.m_fit_parameters = parameters;
+
   try
   {
     ceres::Covariance::Options cov_options;
@@ -3473,21 +3623,6 @@ RelEffSolution solve_relative_efficiency( const RelEffInput &input_orig )
 
     parameter_blocks.push_back( pars );
     covariance_blocks.push_back( {pars, pars} );
-    
-    /*
-    size_t num_pars = num_nuclides;
-    if( eqn_form == RelActCalc::RelEffEqnForm::FramPhysicalModel )
-    {
-      num_pars += num_phys_model_rel_eff_params;
-      for( size_t i = 0; i < num_phys_model_rel_eff_params; ++i )
-      {
-        parameter_blocks.push_back( pars + num_nuclides + i );
-        covariance_blocks.push_back( {pars, pars + num_nuclides + i} );
-        for( size_t j = 0; j <= i; ++j )
-          covariance_blocks.push_back( {pars + num_nuclides + j, pars + num_nuclides + i} );
-      }
-    }
-    */
     
     solution.m_nonlin_covariance.clear();
     if( !covariance.Compute(covariance_blocks, &problem) )
@@ -3519,7 +3654,35 @@ RelEffSolution solve_relative_efficiency( const RelEffInput &input_orig )
       }//for( size_t row = 0; row < num_nuclides; ++row )
     }//if( we failed to get covariance ) / else
     
-    
+    // Compute the Jacobian
+    try
+    {
+      const size_t num_residuals = cost_functor->number_residuals();
+      vector<double> residuals( num_residuals );
+      vector<double> jacobian( num_parameters * num_residuals ); 
+
+      const double * const parameters_ptr = parameters.data();
+      double * const residuals_ptr = &(residuals[0]);
+      double * jacobians_ptr = &(jacobian[0]);  //We only have a single paramater block; the pointer passed into Ceres expects first index to index into parameter block
+
+      const bool success = cost_function->Evaluate( &parameters_ptr, residuals_ptr, &jacobians_ptr );
+      if( !success )
+        throw std::runtime_error( "Failed to evaluate the cost function." );
+
+      solution.m_nonlin_jacobian.resize( num_residuals, vector<double>(num_parameters, 0.0) );
+      for( size_t k = 0; k < num_residuals; ++k )
+      {
+        for( size_t i = 0; i < num_parameters; ++i )
+          solution.m_nonlin_jacobian[k][i] = jacobian[k*num_parameters + i];
+      }
+    }catch(const std::exception& e)
+    {
+      cerr << "Failed to compute final Jacobian! - " << e.what() << endl;
+      solution.m_warnings.push_back( "Failed to compute Jacobian: " + string(e.what()) );
+    }//try / catch to compute Jacobian
+
+
+    // Compute the relative activities
     vector<double> rel_activities( num_nuclides );
     
     for( size_t i = 0; i < num_nuclides; ++i )
@@ -3528,7 +3691,22 @@ RelEffSolution solve_relative_efficiency( const RelEffInput &input_orig )
     if( (eqn_form == RelActCalc::RelEffEqnForm::FramPhysicalModel) || input.use_ceres_to_fit_eqn )
     {
       solution.m_rel_eff_eqn_coefficients = {pars + num_nuclides, pars + num_parameters };
-      solution.m_rel_eff_eqn_covariance.clear(); // these covariances are in `m_nonlin_covariance`
+
+      if( !solution.m_nonlin_covariance.empty() )
+      {
+        // The covariance matrix for the relative efficiency equation is the lower-right
+        //  submatrix of the full covariance matrix.
+        const size_t num_rel_eff_params = num_parameters - num_nuclides;
+        assert( solution.m_nonlin_covariance.size() == num_parameters );
+
+        solution.m_rel_eff_eqn_covariance.resize( num_rel_eff_params, vector<double>(num_rel_eff_params, 0.0) );
+        for( size_t i = num_nuclides; i < num_parameters; ++i )
+        {
+          assert( solution.m_nonlin_covariance[i].size() == num_parameters );
+          for( size_t j = num_nuclides; j < num_parameters; ++j )
+            solution.m_rel_eff_eqn_covariance[i-num_nuclides][j-num_nuclides] = solution.m_nonlin_covariance[i][j];
+        }
+      }//if( we have the covariance matrix )
     }else
     {
       fit_rel_eff_eqn_lls( eqn_form, eqn_order, cost_functor->m_isotopes, rel_activities, peak_infos,

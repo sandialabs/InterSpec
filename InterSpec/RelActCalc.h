@@ -107,10 +107,14 @@ double eval_eqn( const double energy, const RelEffEqnForm eqn_form,
 /** A convenience call signature for the above #eval_eqn */
 double eval_eqn( const double energy, const RelEffEqnForm eqn_form, const std::vector<double> &coefs );
 
-/** Evaluate the uncertainty in the relative efficiency equation - assuming all uncertainties are uncorrelated - this will tend to
- over-estimate the errors.
+/** Evaluate the uncertainty in the relative efficiency equation.
  
- Can not be called for `RelEffEqnForm::FramPhysicalModel`, will throw exception - see `eval_physical_model_eqn_uncertainty()`.
+ @param covariance The covariance matrix of the ``log'' transformed relative 
+        efficiency equation coefficients; i.e., as computed using the least 
+        linear squares method - not as computed by ceres.
+
+ Can not be called for `RelEffEqnForm::FramPhysicalModel`, will throw exception 
+ - see `RelEffSolution::rel_eff_eqn_uncert(...)`.
  
  TODO: this function can return NaN values - when the square uncertainty is negative...
  */
