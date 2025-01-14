@@ -3132,7 +3132,11 @@ std::pair<std::unique_ptr<ReferenceLineInfo>,int> reference_line_near_peak( Inte
   if( !refLineTool )
     return pair<unique_ptr<ReferenceLineInfo>,int>( nullptr, -1 );
   
-  const double mean = peak.mean(), sigma = peak.sigma();
+  const double mean  = peak.gausPeak() ? peak.mean()
+                                       : (((peak.mean() > peak.lowerX()) && (peak.mean() < peak.upperX()))
+                                           ? peak.mean()
+                                           : 0.5*(peak.lowerX() + peak.upperX()));
+  const double sigma = peak.gausPeak() ? peak.sigma() :  0.25f*peak.roiWidth();
   const double lx = peak.lowerX(), ux = peak.upperX();
     
   double largest_w = -9999, best_energy = -1.0f;
