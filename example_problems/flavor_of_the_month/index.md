@@ -9,3 +9,4 @@ Please see one of the following documents for the questions:
 
 Spectrum files referenced from the document are available in:
 * [January 2025 Flavor Spectra CHN Format.zip](January 2025 Flavor Spectra CHN Format.zip).
+* [January 2025 Flavor Spectra CNF Format.zip](January 2025 Flavor Spectra CNF Format.zip).
