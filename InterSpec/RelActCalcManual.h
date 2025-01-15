@@ -644,11 +644,24 @@ struct RelEffSolution
    */
   void get_mass_ratio_table( std::ostream &strm ) const;
   
+  /** Returns the value of the relative efficiency equation at the specified energy.
+   */
+  double rel_eff_eqn_value( const double energy ) const;
+
   /** Returns the uncertainty of the relative efficiency equation at the specified energy.
     
      throws std::exception if covariances are not available, or there is another error.
    */
   double rel_eff_eqn_uncert( const double energy ) const;
+
+  /** Returns a JavaScript function that returns the uncertainty of the relative efficiency equation at the specified energy.
+   * 
+   * The function interpolates between values computed by the C++.
+   * 
+   * If couldnt evaluate the function, returns "null".
+   */
+  std::string rel_eff_eqn_js_uncert_fcn() const;
+
 
   /** Returns the equation text.
    

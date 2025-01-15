@@ -928,7 +928,7 @@ public:
     
     string relEffEqn = "";
     WString title_chi2_info;
-    m_rel_eff_chart->setData( peaks, relActsColors, relEffEqn, title_chi2_info );
+    m_rel_eff_chart->setData( peaks, relActsColors, relEffEqn, title_chi2_info, "" );
   }//void refreshRelEffChart()
 #endif // USE_REL_ACT_TOOL
   

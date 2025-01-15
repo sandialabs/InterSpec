@@ -1222,10 +1222,11 @@ void RelActManualGui::render( Wt::WFlags<Wt::RenderFlag> flags )
 void RelActManualGui::calculateSolution()
 {
   m_currentSolution.reset();
-  m_chart->setData( vector<RelActCalcManual::GenericPeakInfo>{}, {}, "", {} );
+  m_chart->setData( vector<RelActCalcManual::GenericPeakInfo>{}, {}, "", {}, "" );
   m_results->clear();
   
   // TODO: should do the actual computation not on the GUI thread!
+  //       (although it looks like most computations are less than ~5ms, so its not the worst in the world)
   try
   {
     using namespace RelActCalcManual;
@@ -1814,7 +1815,7 @@ void RelActManualGui::updateGuiWithResults( shared_ptr<RelActCalcManual::RelEffS
     case RelActCalcManual::ManualSolutionStatus::ErrorFindingSolution:
     case RelActCalcManual::ManualSolutionStatus::ErrorGettingSolution:
     {
-      m_chart->setData( vector<RelActCalcManual::GenericPeakInfo>{}, {}, "", {} );
+      m_chart->setData( vector<RelActCalcManual::GenericPeakInfo>{}, {}, "", {}, "" );
       break;
     }
       
@@ -1845,6 +1846,7 @@ void RelActManualGui::updateGuiWithResults( shared_ptr<RelActCalcManual::RelEffS
   
   // We'll first update the chart
   string relEffEqn = solution.rel_eff_eqn_js_function();
+  string relEffEqnUncert = solution.rel_eff_eqn_js_uncert_fcn();
   if( solution.m_input.eqn_form == RelActCalc::RelEffEqnForm::FramPhysicalModel )
   {
     // Update shield widgets
@@ -2037,7 +2039,7 @@ void RelActManualGui::updateGuiWithResults( shared_ptr<RelActCalcManual::RelEffS
     chi2_title.arg( "" );
   }
   
-  m_chart->setData( solution.m_input.peaks, relActsColors, relEffEqn, chi2_title );
+  m_chart->setData( solution.m_input.peaks, relActsColors, relEffEqn, chi2_title, relEffEqnUncert );
   
   
   // Now update the text

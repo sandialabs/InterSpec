@@ -2516,6 +2516,19 @@ void RelEffSolution::get_mass_ratio_table( std::ostream &results_html ) const
 }//void get_mass_ratio_table( std::ostream &strm ) const
 
 
+double RelEffSolution::rel_eff_eqn_value( const double energy ) const
+{
+  if( m_input.eqn_form != RelActCalc::RelEffEqnForm::FramPhysicalModel )
+    return RelActCalc::eval_eqn( energy, m_input.eqn_form, m_rel_eff_eqn_coefficients );
+  
+  const ManualGenericRelActFunctor::PhysModelRelEqnDef input 
+                = ManualGenericRelActFunctor::make_phys_eqn_input( m_input, m_rel_eff_eqn_coefficients );
+
+  return RelActCalc::eval_physical_model_eqn_imp<double>( energy, input.self_atten, input.external_attens,
+                                            input.det.get(), input.hoerl_b, input.hoerl_c );
+}
+
+
 double RelEffSolution::rel_eff_eqn_uncert( const double energy ) const
 {
   // Check if we use least linear squares to fit the equation; if so, use the covariance matrix directly
@@ -2540,8 +2553,6 @@ double RelEffSolution::rel_eff_eqn_uncert( const double energy ) const
   assert( m_rel_eff_eqn_covariance.size() == m_rel_eff_eqn_coefficients.size() );
   if( m_rel_eff_eqn_covariance.size() != m_rel_eff_eqn_coefficients.size() )
     throw std::logic_error( "RelEffSolution::rel_eff_eqn_uncert: covariance matrix does not match expected." );
-  
-  const double eval_val = eval_eqn( energy, m_input.eqn_form, m_rel_eff_eqn_coefficients );
   
   // I think we would be safe skipping this following check, at least on non-debug builds, but whatever
   for( size_t i = 0; i < m_rel_eff_eqn_covariance.size(); ++i )
@@ -2683,7 +2694,7 @@ double RelEffSolution::rel_eff_eqn_uncert( const double energy ) const
                               const RelActCalc::PhysicalModelShieldInput * const input ) -> bool {
         if( !result || !input )
           return false;
-        assert( (!shield->m_material) == (!input->material) );
+        assert( (!result->m_material) == (!input->material) );
         if( result->m_material )
           return true;
         return (input->fit_atomic_number || ((result->m_atomic_number >= 1.0) && (result->m_atomic_number <= 98.0)));
@@ -2828,11 +2839,23 @@ double RelEffSolution::rel_eff_eqn_uncert( const double energy ) const
                                                      : m_phys_model_external_atten_shields[(expanded_index - 2)/2];
         assert( shield && !shield->m_material );
         
-        ceres::Jet<double, 1> x(shield->m_atomic_number, 1); // x = AN, derivative index = 1
+        ceres::Jet<double, 1> x(shield->m_atomic_number, 0); // x = AN, derivative index = 0
         ceres::Jet<double, 1> y = RelActCalc::get_atten_coef_for_an( x, energyf );
         //double value = y.a; // The function value at AN
         const double derivative = y.v[0]; // The derivative at AN
-        cout << "Derivative for energy=" << energy << ", AN=" << shield->m_atomic_number << ", mu=" << y.a << " is: " << derivative << endl;
+        
+        //Printing things out, like below, confirms we are getting the correct derivative
+        //cout << "Derivative for energy=" << energy << ", AN=" << shield->m_atomic_number << ", mu=" << y.a << " is: " << derivative << endl;
+        //if( shield->m_atomic_number > 2 && shield->m_atomic_number < 96 )
+        //{
+        //  const int lower_an = std::max( 1, static_cast<int>( std::floor(shield->m_atomic_number) ) );
+        //  const int upper_an = lower_an + 1;
+        //  cout << "mu(" << lower_an << ")= " << MassAttenuation::massAttenuationCoeficient(lower_an, energy) 
+        //       << ", mu(" << upper_an << ")= " << MassAttenuation::massAttenuationCoeficient(upper_an, energy) 
+        //       << " (diff=" << (MassAttenuation::massAttenuationCoeficient(lower_an, energy) - MassAttenuation::massAttenuationCoeficient(upper_an, energy)) << ")" 
+        //       << endl;
+        //}
+        
         return derivative;
       };//derivative_function_m(...)
       
@@ -2996,13 +3019,95 @@ double RelEffSolution::rel_eff_eqn_uncert( const double energy ) const
     }//case RelActCalc::RelEffEqnForm::FramPhysicalModel:
   }//switch( eqn_form )
 
+  const double eval_val = rel_eff_eqn_value( energy );
+  //cout << "Phys Model Rel Eff: energy=" << energy << "keV, val=" << eval_val << " uncert_sq=" << uncert_sq << " --> uncert=" << sqrt(uncert_sq) << endl;
 
-  assert( uncert_sq >= 0.0 );
+  //assert( uncert_sq >= 0.0 );
   if( uncert_sq < 0.0 )
     throw std::runtime_error( "RelEffSolution::rel_eff_eqn_uncert: negative squared uncertainty." );
   
   return sqrt(uncert_sq);
 }//double rel_eff_eqn_uncert( const double energy ) const
+
+
+string RelEffSolution::rel_eff_eqn_js_uncert_fcn() const
+{
+  vector<double> energies;
+  double current_energy = 20.0;
+  const double upper_energy = m_input.peaks.empty() ? 3000.0 
+                                                    : std::max(3000.0, m_input.peaks.back().m_energy);
+
+  for( const GenericPeakInfo &peak : m_input.peaks )
+  {
+    double min_dx = 1.0;
+    if( current_energy < 130 )
+      min_dx = 1.0;
+    else if( current_energy < 300 )
+      min_dx = 5.0;
+    else
+      min_dx = 15.0;
+
+    // We'll try to get in at least ~10 points between each peak
+    if( peak.m_energy > current_energy )
+      min_dx = std::min( min_dx, 0.1*(peak.m_energy - current_energy) );
+    min_dx = std::max( min_dx, 1.0 ); //but less than a keV between points is just to small.
+
+    for( ; current_energy < peak.m_energy; current_energy += min_dx )
+      energies.push_back( current_energy );
+    
+    if( !energies.empty() && (energies.back() < peak.m_energy) )
+      current_energy = peak.m_energy;
+  }//for( const GenericPeakInfo &peak : m_input.peaks )
+  
+  for( ; current_energy < upper_energy; current_energy += 15 )
+    energies.push_back( current_energy );
+  
+  size_t num_points = 0;
+  string fcn = "function(x){\n"
+  "  const points = [";
+  bool is_first_point = true;
+  for( double x : energies )
+  {
+    try
+    {
+      double y = rel_eff_eqn_uncert( x );
+      //assert( (y >= 0.0) && !IsNan(y) && !IsInf(y) ); //Can happen when we are out of bounds of the physical model
+      if( isnan(y) || isinf(y) )
+        continue;
+    
+      fcn += is_first_point ? "" : ",";
+      fcn += "[" + SpecUtils::printCompact(x, 4) + "," + SpecUtils::printCompact(y, 4) + "]";
+
+      num_points += 1;
+      is_first_point = false;
+    }catch( std::exception &e )
+    {
+      // This can happen when we are out of bounds of the physical model
+    }
+  }//for( double x : energies )
+
+if( num_points < 2 )
+ return "null";
+
+  fcn += "];\n"
+  "  if( x <= points[0][0] )\n"
+  "    return points[0][1];\n"
+  "  if( x >= points[points.length - 1][0] )\n"
+  "    return points[points.length - 1][1];\n"
+  "  for (let i = 0; i < points.length - 1; i++) {\n"
+  "    const [x1, y1] = points[i];\n"
+  "    const [x2, y2] = points[i + 1];\n"
+  "    if( x >= x1 && x <= x2) {\n"
+  "      const t = (x - x1) / (x2 - x1);\n"
+  "      return y1 + t * (y2 - y1);\n"
+  "    }\n"
+  "  }\n"
+  "console.assert(0,'Shouldnt get here in interpolating');\n"
+  "return points[points.length - 1][1];"
+  "}";
+  
+  return fcn;
+}//string RelEffSolution::rel_eff_eqn_js_uncert_fcn() const
 
 
 string RelEffSolution::rel_eff_eqn_txt( const bool html_format ) const
@@ -3301,8 +3406,10 @@ void RelEffSolution::print_html_report( ostream &output_html_file,
                                                                      input.hoerl_c );
   }
 
+  string unc_fcn = rel_eff_eqn_js_uncert_fcn();
+
   SpecUtils::ireplace_all( html, "${FIT_REL_EFF_EQUATION}", rel_eff_fcn.c_str() );
-  
+  SpecUtils::ireplace_all( html, "${FIT_REL_EFF_EQUATION_UNCERTAINTY}", unc_fcn.c_str() );
   SpecUtils::ireplace_all( html, "${RESULTS_TXT}", results_html.str().c_str() );
   
   

@@ -37,7 +37,8 @@ public:
   void setData( const std::vector<RelActCalcManual::GenericPeakInfo> &peaks,
                const std::map<std::string,std::pair<double,std::string>> &relActsColors,
                std::string relEffEqn,
-               const Wt::WString &chi2_title_str );
+               const Wt::WString &chi2_title_str,
+               const std::string &jsRelEffEqnUncert );
   
   void setLineColor( const Wt::WColor &color );
   void setTextColor( const Wt::WColor &color );

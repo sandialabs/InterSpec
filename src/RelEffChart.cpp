@@ -190,14 +190,15 @@ void RelEffChart::setData( const double live_time,
     peaks.push_back( peak );
   }//for( const PeakDef &p : fit_peaks )
   
-  setData( peaks, relActsColors, relEffEqn, chi2_title_str );
+  setData( peaks, relActsColors, relEffEqn, chi2_title_str, "null" );
 }//void setData( std::vector<PeakDef> m_fit_peaks, std::string relEffEqn )
 
 
 void RelEffChart::setData( const std::vector<RelActCalcManual::GenericPeakInfo> &peaks,
                           const map<string,pair<double,string>> &relActsColors,
                           string relEffEqn,
-                          const Wt::WString &chi2_title_str )
+                          const Wt::WString &chi2_title_str,
+                          const string &relEffEqnUncert )
 {
   char buffer[512] = { '\0' };
   
@@ -292,8 +293,9 @@ void RelEffChart::setData( const std::vector<RelActCalcManual::GenericPeakInfo> 
   
   const string js = m_jsgraph + ".setRelEffData(" + rel_eff_plot_values.str() + ","
                      + relEffEqn + "," 
-                      + (chi2_title_str.empty() ? string("null") : chi2_title_str.jsStringLiteral())
-  + ");";
+                      + (chi2_title_str.empty() ? string("null") : chi2_title_str.jsStringLiteral()) + "," 
+                      + (relEffEqnUncert.empty() ? string("null") : relEffEqnUncert) 
+                      + ");";
   if( isRendered() )
     doJavaScript( js );
   else
