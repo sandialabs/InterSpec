@@ -179,8 +179,7 @@ RelEffPlot.prototype.setRelEffData = function (data_vals, fit_eqn, chi2_txt, fit
 
   if( !Array.isArray(data_vals) || (data_vals.length === 0) )
     data_vals = null;
-    
-    console.log( 'chi2_txt:', chi2_txt );
+  
   this.chi2Txt = chi2_txt;
   if( (typeof this.chi2Txt !== "string") || (this.chi2Txt.length === 0) )
     this.chi2Txt = null;
@@ -194,7 +193,7 @@ RelEffPlot.prototype.setRelEffData = function (data_vals, fit_eqn, chi2_txt, fit
     
   const yaxistitleBB = this.yaxistitle ? this.yaxistitle.node().getBBox() : null;
   const ytitleh = yaxistitleBB ? yaxistitleBB.height + titlePad : 0;
-    
+  
   if( this.chi2Txt )
   {
     if( !this.chartInfoTitle ){
@@ -446,5 +445,5 @@ RelEffPlot.prototype.setRelEffData = function (data_vals, fit_eqn, chi2_txt, fit
 
 
 RelEffPlot.prototype.handleResize = function () {
-  this.setRelEffData(this.data_vals, this.fit_eqn, this.chi2_txt, this.fit_uncert_fcn);
+  this.setRelEffData(this.data_vals, this.fit_eqn, this.chi2Txt, this.fit_uncert_fcn);
 };//RelEffPlot.prototype.handleResize
