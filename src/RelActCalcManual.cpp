@@ -591,6 +591,14 @@ void fit_rel_eff_eqn_lls_imp( const RelActCalc::RelEffEqnForm fcn_form,
 */
   
 
+/** Setups the parameters for a shielding.
+  
+ Note that the number of parameters used is variable; when AN is being fit, a parameter will be used, otherwise not.
+ A parameter for AD is always used.
+ This was a result of the development path (specifically trouble getting auto-differentiation to work, and holding and
+ manifolds to behave), and I think could be removed so number of parameter is fixed, but maybe we'll wait until
+ we make another change (like being able to fix ratios of nuclides, or something) to change this
+*/
 void setup_physical_model_shield_par_manual( vector<int> &constant_parameters,
                                             double * const pars,
                                             size_t &index,
@@ -941,8 +949,11 @@ struct ManualGenericRelActFunctor  /* : ROOT::Minuit2::FCNBase() */
     //  atomic number is being fit for.
     // AD will always have a parameter dedicated to it.
     // if a RelActCalc::PhysicalModelShieldInput is nullptr, or material is null and
-    //  opt->atomic_number == 0.0, and fit AN is false, then there will be no paramaters
+    //  opt->atomic_number == 0.0, and fit AN is false, then there will be no parameters
     //  dedicated to the PhysicalModelShieldInput.
+    //  (this design is a bit vestigial, and we *could* change things to always have a
+    //   consistent parameter definition, but maybe its worth waiting until we make another
+    //   change to do this)
     
     assert( input.eqn_form == RelActCalc::RelEffEqnForm::FramPhysicalModel );
     if( input.eqn_form != RelActCalc::RelEffEqnForm::FramPhysicalModel )
@@ -2634,9 +2645,353 @@ double RelEffSolution::rel_eff_eqn_uncert( const double energy ) const
       
     case RelActCalc::RelEffEqnForm::FramPhysicalModel:
     {
-      assert( 0 );
-      throw std::logic_error( "RelEffSolution::rel_eff_eqn_uncert: FramPhysicalModel not implemented." );
-  
+      // y = [(1 - exp(-mu(AN_0,E)*x_j))/(mu(AN_0,E)*x_j)]
+      //     * [exp(-mu(AN_1,E)*x_1) * exp(-mu(AN_2,E)*x_2) * ...]
+      //     * [(E/1000)^b * c^(1000/E)]
+      //     * [Det Eff]
+      //
+      // https://www.derivative-calculator.net
+      // let f   = [(1 - exp(-function_m(x_0)*x_1))/(function_m(x_0)*x_1)]
+      //           * [exp(-function_m(x_2)*x_3)*exp(-function_m(x_4)*x_5)]
+      //           * ((E/1000)^(x_6)) * ((x_7)^(1000/E))
+      //----------------------------------------------------------------------
+      // df/dx_0 = ((E/1000)^x_6 * x_7^(1000 / E) * e^(-x_1 * function_m(x_0) - function_m(x_4) * x_5 - function_m(x_2) * x_3) * (x_1 * function_m(x_0) - e^(x_1 * function_m(x_0)) + 1) * function_m'(x_0))
+      //    / (x_1 * function_m(x_0)^2)
+      //
+      // df/dx_1 = -(E^x_6 * x_7^(1000 / E) * (e^(function_m(x_0) * x_1) - function_m(x_0) * x_1 - 1) * e^(-function_m(x_0) * x_1 - function_m(x_4) * x_5 - function_m(x_2) * x_3))
+      //    / (function_m(x_0) * 1000^x_6 * x_1^2)
+      //
+      // df/dx_2 = -(E^x_6 * (1 - e^(-function_m(x_0) * x_1)) * x_3 * x_7^(1000 / E) * e^(-x_3 * function_m(x_2) - function_m(x_4) * x_5) * function_m'(x_2))
+      //    / (function_m(x_0) * x_1 * 1000^x_6)
+      //
+      // df/dx_3 = -(E^x_6 * (1 - e^(-function_m(x_0) * x_1)) * function_m(x_2) * x_7^(1000 / E) * e^(-function_m(x_2) * x_3 - function_m(x_4) * x_5))
+      //    / (function_m(x_0) * x_1 * 1000^x_6)
+      //
+      // df/dx_4 = -(E^x_6 * (1 - e^(-function_m(x_0) * x_1)) * x_5 * x_7^(1000 / E) * e^(-x_5 * function_m(x_4) - function_m(x_2) * x_3) * function_m'(x_4))
+      //    / (function_m(x_0) * x_1 * 1000^x_6)
+      //
+      // df/dx_5 = -(E^x_6 * (1 - e^(-function_m(x_0) * x_1)) * function_m(x_4) * x_7^(1000 / E) * e^(-function_m(x_4) * x_5 - function_m(x_2) * x_3))
+      //    / (function_m(x_0) * x_1 * 1000^x_6)
+      //
+      // df/dx_6 = (E^x_6 * (ln(E) - ln(1000)) * (e^(function_m(x_0) * x_1) - 1) * e^(-function_m(x_4) * x_5 - function_m(x_2) * x_3 - function_m(x_0) * x_1) * x_7^(1000 / E))
+      //    / (function_m(x_0) * x_1 * 1000^x_6)
+      //
+      // df/dx_7 = (E^(x_6 - 1) * (1 - e^(-function_m(x_0) * x_1)) * e^(-function_m(x_4) * x_5 - function_m(x_2) * x_3) * 1000^(1 - x_6) * x_7^(1000 / E - 1))
+      //    / (function_m(x_0) * x_1)
+      
+      const auto is_valid_shield = []( const PhysModelShieldFit * const result,
+                              const RelActCalc::PhysicalModelShieldInput * const input ) -> bool {
+        if( !result || !input )
+          return false;
+        assert( (!shield->m_material) == (!input->material) );
+        if( result->m_material )
+          return true;
+        return (input->fit_atomic_number || ((result->m_atomic_number >= 1.0) && (result->m_atomic_number <= 98.0)));
+      };//is_valid_shield(...)
+      
+      const auto an_was_fit = []( const RelActCalc::PhysicalModelShieldInput * const input ) -> bool {
+        return input && input->fit_atomic_number;
+      };
+      
+      const auto ad_was_fit = []( const RelActCalc::PhysicalModelShieldInput * const input ) -> bool {
+        return input && input->fit_areal_density;
+      };
+      
+      assert( (!m_phys_model_self_atten_shield) == (!m_input.phys_model_self_atten) );
+      if( (!m_phys_model_self_atten_shield) != (!m_input.phys_model_self_atten) )
+        throw runtime_error( "eval_eqn_uncertainty: result/input mismatch" );
+      
+      assert( m_phys_model_external_atten_shields.size() == m_input.phys_model_external_attens.size() );
+      if( m_phys_model_external_atten_shields.size() != m_input.phys_model_external_attens.size() )
+        throw runtime_error( "eval_eqn_uncertainty: result/input mismatch" );
+      
+      
+      
+      // Since the meaning of parameters doesnt map to their index, its a little awkward, we'll
+      //  expand things so we can do a fixed mapping, but also track which variables we should skip.
+      const size_t max_num_par = 2 + 2*m_phys_model_external_atten_shields.size() + 2;
+      const size_t num_actual_pars = m_rel_eff_eqn_coefficients.size();
+      vector<size_t> par_index( max_num_par, num_actual_pars ); //m
+      vector<double> expanded_pars( max_num_par, 0.0 );
+      vector<bool> is_used_parameter( max_num_par, false ), is_fit_parameter( max_num_par, false );
+      size_t working_actual_index = 0; //indexes into `m_rel_eff_eqn_coefficients` and/or `m_rel_eff_eqn_covariance`
+      
+      // Fill out info on self-atten shielding
+      if( is_valid_shield(m_phys_model_self_atten_shield.get(), m_input.phys_model_self_atten.get()) )
+      {
+        assert( !!m_input.phys_model_self_atten && !!m_phys_model_self_atten_shield );
+        if( m_input.phys_model_self_atten->fit_atomic_number )
+        {
+          par_index[0] = working_actual_index;
+          expanded_pars[0] = m_phys_model_self_atten_shield->m_atomic_number;
+          is_used_parameter[0] = true;
+          is_fit_parameter[0] = true;
+          working_actual_index += 1;
+        }
+        
+        is_used_parameter[1] = true;
+        is_fit_parameter[1] = m_input.phys_model_self_atten->fit_areal_density;
+        expanded_pars[1] = m_phys_model_self_atten_shield->m_areal_density;
+        working_actual_index += 1;
+      }//if( is_valid_shield(m_phys_model_self_atten_shield.get(), m_input.phys_model_self_atten.get()) )
+      
+      // Fill out info on external shieldings
+      assert( m_input.phys_model_external_attens.size() == m_phys_model_external_atten_shields.size() );
+      for( size_t i = 0; i < m_phys_model_external_atten_shields.size(); ++i )
+      {
+        const size_t expanded_an_index = 2 + 2*i;
+        const size_t expanded_ad_index = expanded_an_index + 1;
+        
+        const auto &input = m_input.phys_model_external_attens[i];
+        const auto &result = m_phys_model_external_atten_shields[i];
+        assert( is_valid_shield(result.get(), input.get()) );
+        if( !is_valid_shield(result.get(), input.get()) )
+          continue;
+        
+        if( input->fit_atomic_number )
+        {
+          par_index[expanded_an_index] = working_actual_index;
+          expanded_pars[expanded_an_index] = result->m_atomic_number;
+          is_used_parameter[expanded_an_index] = true;
+          is_fit_parameter[expanded_an_index] = true;
+          working_actual_index += 1;
+        }
+        
+        is_used_parameter[expanded_ad_index] = true;
+        is_fit_parameter[expanded_ad_index] = m_input.phys_model_self_atten->fit_areal_density;
+        expanded_pars[expanded_ad_index] = result->m_areal_density;
+        working_actual_index += 1;
+      }//for( size_t i = 0; i < m_phys_model_external_atten_shields.size(); ++i )
+      
+      // Fill out info on modified Hoerl function
+      if( m_input.phys_model_use_hoerl )
+      {
+        assert( (working_actual_index + 1) < m_rel_eff_eqn_coefficients.size() );
+        
+        const size_t expanded_b_index = 2 + 2*m_phys_model_external_atten_shields.size();
+        const size_t expanded_c_index = expanded_b_index + 1;
+        assert( (expanded_c_index+1) == max_num_par );
+        
+        is_used_parameter[expanded_b_index] = true;
+        is_fit_parameter[expanded_b_index] = true;
+        expanded_pars[expanded_b_index] = m_rel_eff_eqn_coefficients.at(working_actual_index);
+        par_index[expanded_b_index] = working_actual_index;
+        working_actual_index += 1;
+        
+        
+        is_used_parameter[expanded_c_index] = true;
+        is_fit_parameter[expanded_c_index] = true;
+        expanded_pars[expanded_c_index] = m_rel_eff_eqn_coefficients.at(working_actual_index);
+        par_index[expanded_c_index] = working_actual_index;
+        working_actual_index += 1;
+      }//if( m_input.phys_model_use_hoerl )
+      
+      assert( working_actual_index == num_actual_pars );
+      if( working_actual_index != num_actual_pars )
+        throw std::logic_error( "eval_eqn_uncertainty:  working_actual_index != num_actual_pars" );
+      
+      const float energyf = static_cast<float>(energy);
+      
+      // Returns attenuation coefficient, mu, for expanded parameter number passed in
+      //  lambda name corresponds to notation used to get the derivatives in the online derivative
+      //  tool.
+      const auto function_m = [&]( size_t expanded_index ) -> double {
+        assert( (expanded_index % 2) == 0 );
+        
+        assert( (expanded_index == 0)
+               || ((expanded_index - 2)/2) < m_phys_model_external_atten_shields.size() );
+        if( (expanded_index != 0)
+               && ((expanded_index - 2)/2) >= m_phys_model_external_atten_shields.size() )
+          throw std::logic_error( "(expanded_index - 2)/2) >= m_phys_model_external_atten_shields.size()" );
+          
+        
+        const auto &shield = (expanded_index == 0) ? m_phys_model_self_atten_shield
+                                                     : m_phys_model_external_atten_shields[(expanded_index - 2)/2];
+        assert( shield );
+        if( !shield )
+          throw std::logic_error( "logic error: !shield" );
+        
+        const auto &mat = shield->m_material;
+        if( mat )
+          return GammaInteractionCalc::transmition_length_coefficient( mat.get(), energyf ) / mat->density;
+        return RelActCalc::get_atten_coef_for_an<double>( shield->m_atomic_number , energyf );
+      };//const auto function_m
+      
+      const auto derivative_function_m = [&]( size_t expanded_index ) -> double {
+        assert( (expanded_index == 0)
+               || ((expanded_index - 2)/2) < m_phys_model_external_atten_shields.size() );
+        if( (expanded_index != 0)
+               && ((expanded_index - 2)/2) >= m_phys_model_external_atten_shields.size() )
+          throw std::logic_error( "(expanded_index - 2)/2) >= m_phys_model_external_atten_shields.size()" );
+        
+        const auto &shield = (expanded_index == 0) ? m_phys_model_self_atten_shield
+                                                     : m_phys_model_external_atten_shields[(expanded_index - 2)/2];
+        assert( shield && !shield->m_material );
+        
+        ceres::Jet<double, 1> x(shield->m_atomic_number, 1); // x = AN, derivative index = 1
+        ceres::Jet<double, 1> y = RelActCalc::get_atten_coef_for_an( x, energyf );
+        //double value = y.a; // The function value at AN
+        const double derivative = y.v[0]; // The derivative at AN
+        cout << "Derivative for energy=" << energy << ", AN=" << shield->m_atomic_number << ", mu=" << y.a << " is: " << derivative << endl;
+        return derivative;
+      };//derivative_function_m(...)
+      
+      
+      
+      // Get derivative of f, with respect to parameter `expanded_index`.
+      //  As of 20250114, totally untested
+      auto df_dp = [&]( const size_t expanded_index ) -> double {
+        assert( expanded_index < is_used_parameter.size() );
+        assert( is_used_parameter[expanded_index] && is_fit_parameter[expanded_index] );
+        
+        const double det_eff = (m_input.phys_model_detector && m_input.phys_model_detector->isValid())
+                                ? m_input.phys_model_detector->intrinsicEfficiency(energyf)
+                                : 1.0f;
+        
+        double self_atten_val = 1.0;
+        if( is_used_parameter[1] )
+        {
+          const double mu_0 = function_m(0);
+          const double x_1 = expanded_pars[1];
+          self_atten_val = ((1 - exp(-mu_0 * x_1)) / (mu_0 * x_1));
+        }
+        
+        double hoerl_val = 1.0;
+        if( m_input.phys_model_use_hoerl )
+        {
+          const size_t expanded_b_index = 2 + 2*m_phys_model_external_atten_shields.size();
+          const size_t expanded_c_index = expanded_b_index + 1;
+          const double b = expanded_pars[expanded_b_index];
+          const double c = expanded_pars[expanded_c_index];
+          hoerl_val = std::pow( (energy/1000.0), b) * std::pow( c, (1000.0 / energy) );
+        }
+        
+        double ext_atten_exp_arg = 0.0;
+        for( size_t ext_shield_ind = 0; ext_shield_ind < m_phys_model_external_atten_shields.size(); ++ext_shield_ind )
+        {
+          const size_t an_index = 2 + 2*ext_shield_ind;
+          const size_t ad_index = an_index + 1;
+          ext_atten_exp_arg -= function_m(an_index) * expanded_pars[ad_index];
+        }
+        const double ext_atten_val = exp( ext_atten_exp_arg );
+        
+        
+        if( expanded_index == 0 )
+        {
+          // We want the derivative with respect to self-attenuating AN
+          const double x_1 = expanded_pars[1]; //self-atten AD
+          const double mu_0 = function_m(0);
+          double exp_arg = -x_1 * mu_0;
+          for( size_t ext_ind = 0; ext_ind < m_phys_model_external_atten_shields.size(); ++ext_ind )
+          {
+            const size_t expanded_an_index = 2 + 2*ext_ind;
+            const size_t expanded_ad_index = expanded_an_index + 1;
+            exp_arg -= function_m(expanded_an_index) * expanded_pars[expanded_ad_index];
+          }
+          
+          double answer = det_eff * (exp(exp_arg) * (x_1 * mu_0 - exp(x_1 * mu_0) + 1) * derivative_function_m(0))*hoerl_val
+                          / (x_1 * mu_0 * mu_0);
+          
+          return answer;
+        }else if( expanded_index == 1 )
+        {
+          // We want the derivative with respect to self-attenuating AD
+          const double x_1 = expanded_pars[1]; //self-atten AD
+          const double mu_0 = function_m(0);
+          
+          double exp_arg = -mu_0 * x_1;
+          for( size_t ext_ind = 0; ext_ind < m_phys_model_external_atten_shields.size(); ++ext_ind )
+          {
+            const size_t expanded_an_index = 2 + 2*ext_ind;
+            const size_t expanded_ad_index = expanded_an_index + 1;
+            exp_arg -= function_m(expanded_an_index) * expanded_pars[expanded_ad_index];
+          }
+      
+          double answer = -det_eff * (exp(mu_0 * x_1) - mu_0 * x_1 - 1) * exp( exp_arg ) * hoerl_val
+                          / (mu_0 * x_1*x_1);
+          
+          return answer;
+        }else if( expanded_index < (2 + 2*m_phys_model_external_atten_shields.size()) )
+        {
+          const size_t ext_shield_num = (expanded_index - 2) / 2;
+          
+          double answer = -det_eff * hoerl_val * self_atten_val * ext_atten_val;
+          
+          if( ((expanded_index % 2) == 0) )
+          {
+            //External shield AN
+            const double x_ad = expanded_pars[expanded_index + 1];
+            answer *= x_ad * derivative_function_m(expanded_index);
+          }else
+          {
+            //External shield AD
+            answer *= function_m(expanded_index-1);
+          }
+          
+          return answer;
+        }
+        
+        //Modified Hoerl function
+        if( ((expanded_index % 2) == 0) )
+        {
+          //df/dx_6 = (E^x_6 * (ln(E) - ln(1000)) * (e^(function_m(x_0) * x_1) - 1) * e^(-function_m(x_4) * x_5 - function_m(x_2) * x_3 - function_m(x_0) * x_1) * x_7^(1000 / E))
+          //    / (function_m(x_0) * x_1 * 1000^x_6)
+          
+          double answer = det_eff * ext_atten_val * self_atten_val * hoerl_val * (log(energy) - log(1000));
+          return answer;
+        }
+        
+        const size_t expanded_b_index = 2 + 2*m_phys_model_external_atten_shields.size();
+        const size_t expanded_c_index = expanded_b_index + 1;
+        const double b = expanded_pars[expanded_b_index];
+        const double c = expanded_pars[expanded_c_index];
+          
+        double answer = det_eff * ext_atten_val * self_atten_val * std::pow( (energy/1000.0), b);
+        answer *= (1000.0/energy)*std::pow(c, (1000.0/energy) - 1.0 );
+          
+        return answer;
+      };//auto df_dp = ...
+      
+      
+      size_t i_working = 0;
+      for( size_t i_expanded = 0; i_expanded < max_num_par; ++i_expanded )
+      {
+        if( !is_used_parameter[i_expanded] )
+          continue;
+        
+        if( !is_fit_parameter[i_expanded] ) //We only include AN as a parameter when we fit it
+        {
+          assert( m_rel_eff_eqn_covariance[i_working][i_working] == 0.0 );
+          
+          i_working += 1;
+          continue;
+        }
+        
+        size_t j_working = 0;
+        for( size_t j_expanded  = 0; j_expanded < max_num_par; ++j_expanded )
+        {
+          if( !is_used_parameter[j_expanded] )
+            continue;
+          
+          if( !is_fit_parameter[j_expanded] ) //We only include AN as a parameter when we fit it
+          {
+            j_working += 1;
+            continue;
+          }
+          
+          const double i_component = df_dp( i_expanded );
+          const double j_component = df_dp( j_expanded );
+          
+          uncert_sq += i_component * m_rel_eff_eqn_covariance[i_working][j_working] * j_component;
+          
+          j_working += 1;
+        }//for( size_t j_expanded  = 0; j_expanded < max_num_par; ++j_expanded )
+        assert( j_working == num_actual_pars );
+        
+        i_working += 1;
+      }//for( size_t i_expanded  = 0; i_expanded < max_num_par; ++i_expanded )
+      assert( i_working == num_actual_pars );
+      
       break;
     }//case RelActCalc::RelEffEqnForm::FramPhysicalModel:
   }//switch( eqn_form )

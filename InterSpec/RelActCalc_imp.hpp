@@ -184,6 +184,11 @@ T eval_physical_model_eqn_imp( const double energy,
                                 std::optional<T> b,
                                 std::optional<T> c )
 {
+  // Note 20250114: this function currently interpolates between floor(AN) and one above it.
+  //                However, I dont think this is correct, we should be interpolating a bit better
+  //                so at least the derivative comes out better (think of an integer AN, we should
+  //                take into account the AN one below, as well as the one above)
+  
   using namespace std;
   using namespace ceres; //So we can use the math functions defined in the `ceres` namespace for Jets
   
