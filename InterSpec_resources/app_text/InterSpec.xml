@@ -81,6 +81,7 @@
   <message id="Unknown">Unknown</message>
   <message id="Energy (keV)">Energy (keV)</message>
   <message id="Efficiency">Efficiency</message>
+  <message id="stable">stable</message>
 
   <!-- Units the user may use to write time duration.
     Note that we dont have very good changing case (i.e., from lower to upper, or upper to lower)
