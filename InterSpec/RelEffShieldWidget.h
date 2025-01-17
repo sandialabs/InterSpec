@@ -43,7 +43,10 @@ struct RelEffShieldState
   bool fitThickness;
   double atomicNumber;
   bool fitAtomicNumber;
-  double arealDensity;  
+  /** This arealDensity is not stored in units of `PhysicalUnits::g_per_cm2` - so you need to multiply by
+   `PhysicalUnits::g_per_cm2` before using it anywhere, other than setting the GUI.
+   */
+  double arealDensity;
   bool fitArealDensity;
 
   void toXml(rapidxml::xml_node<>* node) const;

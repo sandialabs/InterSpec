@@ -534,7 +534,7 @@ std::shared_ptr<RelActCalc::PhysicalModelShieldInput> RelEffShieldState::fitInpu
   }else
   {
     self_atten->atomic_number = atomicNumber;
-    self_atten->areal_density = arealDensity;
+    self_atten->areal_density = arealDensity * PhysicalUnits::g_per_cm2;
     
     self_atten->fit_atomic_number = fitAtomicNumber;
     self_atten->fit_areal_density = fitArealDensity;

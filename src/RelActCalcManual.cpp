@@ -2159,7 +2159,13 @@ double RelEffSolution::mass_fraction( const std::string &nuclide, const double n
   }
   assert( (norm_for_nuc * sqrt_cov_nuc_nuc) == m_rel_activities[nuc_index].m_rel_activity_uncert );
   
-  cerr << "Do we need to modify how we compute mass-fraction uncertainties when `m_input.use_ceres_to_fit_eqn` is true?" << endl;
+  static std::atomic<int> num_times_here = 0;
+  if( num_times_here < 5 )
+  {
+    ++num_times_here;
+    cerr << "Do we need to modify how we compute mass-fraction uncertainties when `m_input.use_ceres_to_fit_eqn` is true?" << endl;
+  }
+  
   double sum_rel_mass = 0.0, nuc_rel_mas = -1.0;
   for( size_t index = 0; index < m_rel_activities.size(); ++index )
   {
@@ -2848,7 +2854,7 @@ double RelEffSolution::rel_eff_eqn_uncert( const double energy ) const
         }
         
         is_used_parameter[expanded_ad_index] = true;
-        is_fit_parameter[expanded_ad_index] = m_input.phys_model_self_atten->fit_areal_density;
+        is_fit_parameter[expanded_ad_index] = input->fit_areal_density;
         expanded_pars[expanded_ad_index] = result->m_areal_density;
         working_actual_index += 1;
       }//for( size_t i = 0; i < m_phys_model_external_atten_shields.size(); ++i )
@@ -3689,9 +3695,11 @@ void setup_physical_model_shield_par( ceres::Problem * const problem,
     upper_ad = max_ad;
   }
         
-  //if( (ad == 0.0) && opt->fit_areal_density )
-  //  ad = 0.5*(lower_ad + upper_ad); //Something like 250 would be way too much
-        
+  if( (ad == 0.0) && opt->fit_areal_density )
+  {
+    ad = 2.5; // We want something away from zero, because Ceres doesnt like zero values much - 2.5 is arbitrary
+    //  ad = 0.5*(lower_ad + upper_ad); //Something like 250 would be way too much
+  }
   if( (ad < 0.0) || (ad > max_ad) )
     throw runtime_error( "Self-atten AD is invalid" );
         

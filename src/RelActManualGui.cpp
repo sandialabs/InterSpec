@@ -1827,16 +1827,16 @@ void RelActManualGui::calculateSolution()
     InterSpec *interspec = InterSpec::instance();
     std::shared_ptr<MaterialDB> materialdb = interspec ? interspec->materialDataBaseShared() : nullptr;
     
+    // We could almost call `prepare_calc_input(...)` off the GUI thread, and I think the only
+    //  impact would be warning messages wouldnt be localized.
+    RelActCalcManual::RelEffInput setup_output;
+    prepare_calc_input( raw_info, materialdb.get(), setup_output );
     
 
     WServer::instance()->ioService().boost::asio::io_service::post( std::bind(
-      [raw_info, materialdb, sessionId, solution, updater, errmsg, err_updater](){
+      [setup_output, materialdb, sessionId, solution, updater, errmsg, err_updater](){
         try
         {
-          RelActCalcManual::RelEffInput setup_output;
-          
-          prepare_calc_input( raw_info, materialdb.get(), setup_output );
-          
           *solution = solve_relative_efficiency( setup_output );
 
           WServer::instance()->post( sessionId, updater );
@@ -2004,7 +2004,7 @@ void RelActManualGui::updateGuiWithResults( shared_ptr<RelActCalcManual::RelEffS
           const double prev_an = w->atomicNumber();
           const double new_an = fit->m_atomic_number;
           const double delta_an = fabs(new_an - prev_an);
-          assert( delta_an < 0.0001*std::max(prev_an, new_an) );
+          assert( delta_an <= 0.0001*std::max(prev_an, new_an) );
           if( delta_an > 0.0001*std::max(prev_an, new_an) )
             w->setAtomicNumber( new_an );
         }//if( fit_atomic_number ) / else
@@ -2017,7 +2017,7 @@ void RelActManualGui::updateGuiWithResults( shared_ptr<RelActCalcManual::RelEffS
         {
           const double prev_ad = w->arealDensity();
           const double delta_ad = fabs(new_ad - prev_ad);
-          assert( delta_ad < 0.0001*std::max(prev_ad, new_ad) );
+          assert( delta_ad <= 0.0001*std::max(prev_ad, new_ad) );
           if( delta_ad > 0.0001*std::max(prev_ad, new_ad) )
             w->setAtomicNumber( new_ad );
         }//if( fit_areal_density ) / else
