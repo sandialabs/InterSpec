@@ -58,7 +58,6 @@ find_file( ZLIB_PATCH_FILE "zlib/1.2.12/FetchContent/zlib_1.2.12.git.patch"
 
 FetchContent_Declare(
   boost
-  #URL /Users/wcjohns/install/wt_fetch_contents/boost-5df8086b733798c8e08e316626a16babe11bd0d2.zip
   GIT_REPOSITORY https://github.com/boostorg/boost.git
   GIT_TAG        ab7968a0bbcf574a7859240d1d8443f58ed6f6cf # release-1.85.0
   GIT_SHALLOW    ON
@@ -73,7 +72,6 @@ FetchContent_Declare(
 
 FetchContent_Declare(
   wt
-  #URL /Users/wcjohns/install/wt_fetch_contents/wt-b84925215d2b45879cf20c0cb340c4e7960d0c53.zip
   GIT_REPOSITORY https://github.com/emweb/wt.git
   GIT_TAG        b84925215d2b45879cf20c0cb340c4e7960d0c53 # 3.7.1
   GIT_SHALLOW    ON
@@ -169,36 +167,39 @@ if( USE_REL_ACT_TOOL )
     eigen
     GIT_REPOSITORY https://gitlab.com/libeigen/eigen.git
     #GIT_TAG        3147391d946bb4b6c68edd901f2add6ac1f31f8c # release-3.4.0
-    GIT_TAG        9df21dc8b4b576a7aa5c0094daa8d7e8b8be60f0 #Updated 3.4 release, to pickup some CMake fixes
+    #GIT_TAG        9df21dc8b4b576a7aa5c0094daa8d7e8b8be60f0 #Updated 3.4 release, to pickup some CMake fixes
+    GIT_TAG        2e76277bd049f7bec36b0f908c69734a42c5234f #Update to main of 20250114 to pickup some fixes for compiling under C++20
+    GIT_SHALLOW TRUE
   )
-
-  FetchContent_MakeAvailable( eigen )
   
-  # For Android and iOS, we need to force the path information for Eigen, for some reason.
-  if( CMAKE_CROSSCOMPILING )
-    set( CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${eigen_BINARY_DIR}" CACHE STRING "Modules for CMake" FORCE )
-    set( Eigen3_DIR "${eigen_BINARY_DIR}" CACHE PATH "" FORCE )  #${eigen_SOURCE_DIR}
-  endif( CMAKE_CROSSCOMPILING )
+  # For Android and iOS, and sometimes other places, we need to force the path information for Eigen, for some reason.
+  #if( CMAKE_CROSSCOMPILING )
+    list( APPEND CMAKE_MODULE_PATH "${eigen_BINARY_DIR}" )
+    set( Eigen3_DIR "${eigen_BINARY_DIR}" CACHE PATH "" FORCE )
+  #endif( CMAKE_CROSSCOMPILING )
 
-  
-  # Set some Google Ceres options; both to allow compiling without further dependancies, and
+  # Set some Google Ceres options; both to allow compiling without further dependencies, and
   #  avoid some things we dont need
   set( MINIGLOG ON CACHE INTERNAL "" )
   set( GFLAGS OFF CACHE INTERNAL "" )
-  set( CXSPARSE OFF CACHE INTERNAL "" )
   set( ACCELERATESPARSE OFF CACHE INTERNAL "" )
-  set( CUDA OFF CACHE INTERNAL "" )
-  set( EXPORT_BUILD_DIR ON CACHE INTERNAL "" )
+  set( USE_CUDA OFF CACHE INTERNAL "" )
+  set( EXPORT_BUILD_DIR OFF CACHE INTERNAL "" )
   set( BUILD_TESTING OFF CACHE INTERNAL "" )
   set( BUILD_EXAMPLES OFF CACHE INTERNAL "" )
   set( PROVIDE_UNINSTALL_TARGET OFF CACHE INTERNAL "" )
   FetchContent_Declare(
     ceres-solver
     GIT_REPOSITORY https://ceres-solver.googlesource.com/ceres-solver
-    GIT_TAG        783637a6ed285abc6c57b16ccd968c594a91b35f # release-2.1.0
+    GIT_TAG        85331393dc0dff09f6fb9903ab0c4bfa3e134b01 # release-2.2.0
     GIT_SHALLOW TRUE
   )
-  FetchContent_MakeAvailable( ceres-solver )
+
+  # Apparently we need to explicitly grab the sub-modules
+  execute_process(COMMAND git submodule update --init --recursive
+                WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})
+
+  FetchContent_MakeAvailable( ceres-solver eigen )
 endif( USE_REL_ACT_TOOL )
 
 if( BUILD_AS_WX_WIDGETS_APP )

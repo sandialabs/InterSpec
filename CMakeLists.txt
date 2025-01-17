@@ -2,7 +2,7 @@
 
 project(InterSpec VERSION 1.0.13)
 
-set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set( CMAKE_POSITION_INDEPENDENT_CODE ON CACHE BOOL "Set PIC to make InterSpec static lib" )
 
@@ -742,7 +742,7 @@ endif(WIN32)
 
 
 if( USE_REL_ACT_TOOL )
-  target_link_libraries(InterSpecLib PUBLIC Eigen3::Eigen Ceres::ceres )
+  target_link_libraries(InterSpecLib PUBLIC Eigen3::Eigen Ceres::ceres)
 endif( USE_REL_ACT_TOOL )
 
 
