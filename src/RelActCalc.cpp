@@ -310,6 +310,7 @@ double eval_eqn( const double energy, const RelEffEqnForm eqn_form,
 
 
 double eval_eqn_uncertainty( const double energy, const RelEffEqnForm eqn_form,
+                            const std::vector<double> &coefs,
                             const std::vector<std::vector<double>> &covariance )
 {
   if( covariance.empty() )
@@ -330,7 +331,7 @@ double eval_eqn_uncertainty( const double energy, const RelEffEqnForm eqn_form,
         if( covariance[i].size() != covariance.size() )  //JIC for release builds
           throw runtime_error( "eval_eqn_uncertainty: covariance not a square matrix." );
         
-        for( size_t j = 0; j <= covariance.size(); ++j )
+        for( size_t j = 0; j < covariance.size(); ++j )
           uncert_sq += std::pow(log_energy,1.0*i) * covariance[i][j] * std::pow(log_energy,1.0*j);
       }//for( size_t i = 0; i < coefs.size(); ++i )
       
@@ -343,6 +344,8 @@ double eval_eqn_uncertainty( const double energy, const RelEffEqnForm eqn_form,
     case RelEffEqnForm::LnY:
     {
       // y = exp( a + b*x + c/x + d/x^2 + e/x^3 + ... )
+      const double eval_val = eval_eqn( energy, eqn_form, coefs );
+      
       const auto eval_term_log = [energy]( const size_t order ) -> double {
         switch( order )
         {
@@ -363,19 +366,20 @@ double eval_eqn_uncertainty( const double energy, const RelEffEqnForm eqn_form,
         if( covariance[i].size() != covariance.size() )  //JIC for release builds
           throw runtime_error( "eval_eqn_uncertainty: covariance not a square matrix." );
         
-        for( size_t j = 0; j <= covariance.size(); ++j )
+        for( size_t j = 0; j < covariance.size(); ++j )
           log_uncert_sq += eval_term_log(i) * covariance[i][j] * eval_term_log(j);
       }//for( size_t i = 0; i < coefs.size(); ++i )
       
       assert( log_uncert_sq >= 0.0 );
       
-      return exp( sqrt(log_uncert_sq) );
+      return eval_val * sqrt(log_uncert_sq);
     }//case RelEffEqnForm::LnY:
       
     case RelEffEqnForm::LnXLnY:
     {
       // y = exp(a  + b*(lnx) + c*(lnx)^2 + d*(lnx)^3 + ... )
       const double log_energy = std::log(energy);
+      const double eval_val = eval_eqn( energy, eqn_form, coefs );
       
       double log_uncert_sq = 0.0;
       
@@ -385,25 +389,20 @@ double eval_eqn_uncertainty( const double energy, const RelEffEqnForm eqn_form,
         if( covariance[i].size() != covariance.size() )  //JIC for release builds
           throw runtime_error( "eval_eqn_uncertainty: covariance not a square matrix." );
         
-        for( size_t j = 0; j <= covariance.size(); ++j )
+        for( size_t j = 0; j < covariance.size(); ++j )
         log_uncert_sq += std::pow(log_energy,1.0*i) * covariance[i][j] * std::pow(log_energy,1.0*j);
       }//for( size_t i = 0; i < coefs.size(); ++i )
       
       assert( log_uncert_sq >= 0.0 );
       
-      return exp( sqrt(log_uncert_sq) );
+      return eval_val * sqrt(log_uncert_sq);
     }//case RelEffEqnForm::LnXLnY:
       
     case RelEffEqnForm::FramEmpirical:
     {
       // y = exp( a + b/x^2 + c*(lnx) + d*(lnx)^2 + e*(lnx)^3 )
       const double log_energy = std::log(energy);
-      
-#ifdef _MSC_VER
-#pragma message( "eval_eqn_uncertainty with RelEffEqnForm::FramEmpirical not tested!" )
-#else
-#warning "eval_eqn_uncertainty with RelEffEqnForm::FramEmpirical not tested!"
-#endif
+      const double eval_val = eval_eqn( energy, eqn_form, coefs );
       
       double log_uncert_sq = 0.0;
       
@@ -437,7 +436,7 @@ double eval_eqn_uncertainty( const double energy, const RelEffEqnForm eqn_form,
       
       assert( log_uncert_sq >= 0.0 );
       
-      return exp( sqrt(log_uncert_sq) );
+      return eval_val * sqrt(log_uncert_sq);
     }//case RelEffEqnForm::FramEmpirical:
       
     case RelEffEqnForm::FramPhysicalModel:

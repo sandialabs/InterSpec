@@ -335,13 +335,35 @@ struct IsotopeRelativeActivity
 /** The input for the manual relative efficiency calculation. */
 struct RelEffInput
 {
-  /** The input peak information.
+  /** The required input peak information.
  
-  Each peak must have at least one source isotope, have counts above zero, have counts
-  uncertainty greater than zero (or equal to -1.0), and each isotope must have yields
-  at each energy greater than 0.
+   Each peak must have at least one source isotope, have counts above zero, have counts
+   uncertainty greater than zero (or equal to -1.0), and each isotope must have yields
+   at each energy greater than 0.
+   
+   If you are decay-correcting yields during measurement, the `GenericPeakInfo::m_source_gammas::m_yield`
+   values should have already had this applied.
    */
   std::vector<GenericPeakInfo> peaks;
+  
+  /** If you are decay-correcting peaks, then the non-decay-corrected version of the peaks
+   are put here.   Only peaks with corrections should be put here, and should only include info
+   for only gamma lines that have been corrected.
+   
+   Only includes peaks that have at least one correction, and the only entries in
+   `GenericPeakInfo::m_source_gammas`, are the ones with corrections.
+   
+   The peaks are _not_ used during computation, and placed here only so
+   you can list effects of decay-correction.  Not super clean, but maybe the best way
+   to carry all the information together.
+   */
+  std::vector<GenericPeakInfo> peaks_before_decay_correction;
+  
+  /** Any warnings or notes you encountered while preparing input.
+   
+   These are not used for computation, but will be copied into `RelEffSolution::m_warnings`.
+   */
+  std::vector<std::string> prep_warnings;
   
   /** The equation form to use; i.e., EqnForm::LnX, EqnForm::LnY, or EqnForm::LnXLn */
   RelActCalc::RelEffEqnForm eqn_form;
@@ -425,7 +447,7 @@ struct RelEffSolution
   /** The relative activities for each of the input nuclides. */
   std::vector<IsotopeRelativeActivity> m_rel_activities;
 
-  /** The paramaters fit by Ceres. */
+  /** The parameters fit by Ceres. */
   std::vector<double> m_fit_parameters;
 
   /** Covariance matrix of nonlinear parameters fit by Ceres.
@@ -512,19 +534,10 @@ struct RelEffSolution
   
   /** Warnings about the setup or solution of the problem; by no means comprehensive of potential
    issues!
+   
+   Note: contents of `RelEffInput::prep_warnings` are copied into this variable.
    */
   std::vector<std::string> m_warnings;
-  
-  /** Peaks with un-decay-corrected yields; useful only to note the effect of the decay correction.
-   
-   Only includes peaks that have at least one correction, and the only entries in
-   `GenericPeakInfo::m_source_gammas`, are the ones with corrections.
-   
-   Note: these are not filled out by `solve_relative_efficiency(...)`, like the rest of this struct,
-   but rather must be filled out after finding a solution.  Not super clean, but these are informational
-   only.
-   */
-  std::vector<GenericPeakInfo> m_input_peaks_before_decay_corr;
   
 
   /** A struct to hold the self attenuation shield fit results. 
@@ -608,6 +621,12 @@ struct RelEffSolution
    Will throw exception if invalid nuclide name (e.g., a reaction), or negative mass fraction.
    */
   double mass_fraction( const std::string &iso, const double num_sigma ) const;
+  
+  /** Returns a short parameter description.
+   
+   Same indexing as `m_fit_parameters`; throws exception if invalid index.
+   */
+  std::string parameter_name( const size_t par_num ) const;
   
   /** Prints out a summary of the results to the provided stream; for development/debug. */
   std::ostream &print_summary( std::ostream &strm ) const;

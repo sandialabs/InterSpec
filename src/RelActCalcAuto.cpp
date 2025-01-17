@@ -2420,7 +2420,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
         covariance_blocks.push_back( make_pair( pars + i, pars + i ) );
       
       auto add_cov_block = [&covariance_blocks, &pars]( size_t start, size_t num ){
-        for( size_t i = start; i < num; ++i )
+        for( size_t i = start; i < (start + num); ++i )
           for( size_t j = start; j < i; ++j )
             covariance_blocks.push_back( make_pair( pars + i, pars + j ) );
       };
@@ -2453,11 +2453,11 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
           {
             for( size_t j = start; j < i; ++j )
             {
-              const bool success = covariance.GetCovarianceBlock( pars + i, pars + j, &(cov[i][j]) );
+              const bool success = covariance.GetCovarianceBlock( pars + i, pars + j, &(cov[i-start][j-start]) );
               assert( success );
               if( !success )
                 throw runtime_error( "Failed to get covariance block for parameters " + std::to_string(i) + " and " + std::to_string(j) );
-              cov[j][i] = cov[i][j];
+              cov[j-start][i-start] = cov[i-start][j-start];
             }
           }
         };
@@ -3393,7 +3393,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     for( const double &val : continuum_coeffs )
     {
       if( IsInf(val) || IsNan(val) )
-        throw runtime_error( "peaks_for_energy_range: inf or NaN continuum coeificient for range "
+        throw runtime_error( "peaks_for_energy_range: inf or NaN continuum coefficient for range "
                             + std::to_string(range.lower_energy) + " to "
                             + std::to_string(range.upper_energy) + " keV" );
     }//for( const double &val : continuum_coeffs )
@@ -4957,10 +4957,15 @@ void RelActAutoSolution::print_html_report( std::ostream &out ) const
       {
         try
         {
+          //TODO: should implement `rel_eff_eqn_uncert(energy)` member function, and get rid of manually calling functions
+          //fit_rel_eff_uncert = rel_eff_eqn_uncert( energy );
+          //fit_rel_eff_uncert /= fit_rel_eff;
+          
           if( m_options.rel_eff_eqn_type != RelActCalc::RelEffEqnForm::FramPhysicalModel )
           {
-            fit_rel_eff_uncert = RelActCalc::eval_eqn_uncertainty( energy, m_rel_eff_form, m_rel_eff_covariance );
-            fit_rel_eff_uncert /= fit_rel_eff;
+            fit_rel_eff_uncert = RelActCalc::eval_eqn_uncertainty( energy, m_rel_eff_form,
+                                                    m_rel_eff_coefficients, m_rel_eff_covariance );
+            
           }else
           {
             const RelActAutoCostFcn::PhysModelRelEqnDef input

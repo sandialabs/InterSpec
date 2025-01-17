@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.20 FATAL_ERROR)
 
 project( InterSpecTests )
 
-set( CMAKE_CXX_STANDARD 14 )
+set( CMAKE_CXX_STANDARD 17 )
 set( CMAKE_CXX_STANDARD_REQUIRED ON )
 
 if(MSVC)
@@ -101,6 +101,13 @@ add_test( NAME TDoseCalc
   WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
 )
 
+
+add_executable( test_RelEffManual test_RelEffManual.cpp )
+target_link_libraries( test_RelEffManual PRIVATE InterSpecLib )
+add_test( NAME TestRelEffManual
+  COMMAND $<TARGET_FILE:test_RelEffManual> ${BOOST_TEST_CL_ARGS} -- ${DATA_DIR_ARGS}
+  WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
+)
 
 add_executable( test_PeakDists test_PeakDists.cpp )
 target_link_libraries( test_PeakDists PRIVATE InterSpecLib )

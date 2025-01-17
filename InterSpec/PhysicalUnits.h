@@ -124,7 +124,7 @@ namespace PhysicalUnits
   static const double amu = amu_c2/c_squared;
 
   // Mixed units
-  static const double g_per_cm2 = g / (cm*cm);
+  static const double g_per_cm2 = g / (cm*cm); //62415.096471204168
 
   // TODO: consider making user literals, for example to write something like 25.0_cm, define:
   // long double operator"" _cm ( long double dist ){ return dist * PhysicalUnits::cm; }

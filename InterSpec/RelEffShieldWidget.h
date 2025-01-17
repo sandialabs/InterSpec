@@ -34,7 +34,8 @@ namespace RelActCalc
   struct PhysicalModelShieldInput;
 }
 
-struct RelEffShieldState 
+/** TODO: This class should probably be replaced by using only `RelActCalc::PhysicalModelShieldInput`, or maybe inherit from it, so this way the strings can be preserved. */
+struct RelEffShieldState
 {
   bool materialSelected;
   std::string material;
@@ -47,9 +48,12 @@ struct RelEffShieldState
 
   void toXml(rapidxml::xml_node<>* node) const;
   void fromXml(const rapidxml::xml_node<>* node);
+  
+  /** Will return nullptr if invalid or empty state, including the material name can not be parsed. */
+  std::shared_ptr<RelActCalc::PhysicalModelShieldInput> fitInput( MaterialDB *materialDB ) const;
 };//struct RelEffShieldState
 
-/** @brief A GUI widget roughly cooresponding to a RelActCalc::PhysicalModelShieldInput.
+/** @brief A GUI widget roughly corresponding to a RelActCalc::PhysicalModelShieldInput.
  * 
  * Currently, the widget is not fully complete, and does not allow for all the options 
  * in the PhysicalModelShieldInput, like limiting range of fit AN and AD.
@@ -65,6 +69,7 @@ public:
 
   bool isMaterialSelected() const;
   void setMaterialSelected( bool selected );
+  static const Material *material( const std::string &mat_name, MaterialDB *materialD );
   const Material *material() const;
   /** The text showing in the material name input field - may not be a valid material name. */
   Wt::WString materialNameTxt() const;

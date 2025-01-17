@@ -109,7 +109,8 @@ double eval_eqn( const double energy, const RelEffEqnForm eqn_form, const std::v
 
 /** Evaluate the uncertainty in the relative efficiency equation.
  
- @param covariance The covariance matrix of the ``log'' transformed relative 
+ @param coefs The coefficients of the nominal equation.
+ @param covariance The covariance matrix of the ``log'' transformed relative
         efficiency equation coefficients; i.e., as computed using the least 
         linear squares method - not as computed by ceres.
 
@@ -119,6 +120,7 @@ double eval_eqn( const double energy, const RelEffEqnForm eqn_form, const std::v
  TODO: this function can return NaN values - when the square uncertainty is negative...
  */
 double eval_eqn_uncertainty( const double energy, const RelEffEqnForm eqn_form,
+                             const std::vector<double> &coefs,
                              const std::vector<std::vector<double>> &covariance );
 
 

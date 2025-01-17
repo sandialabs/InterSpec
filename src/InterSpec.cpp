@@ -10737,6 +10737,12 @@ MaterialDB *InterSpec::materialDataBase()
 }
 
 
+std::shared_ptr<MaterialDB> InterSpec::materialDataBaseShared()
+{
+  return m_materialDB;
+}
+
+
 Wt::WSuggestionPopup *InterSpec::shieldingSuggester()
 {
   return m_shieldingSuggestion;

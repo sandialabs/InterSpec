@@ -168,7 +168,7 @@ RelEffShieldWidget::~RelEffShieldWidget()
 
 bool RelEffShieldWidget::isMaterialSelected() const
 {
-  return (m_stackedWidget->currentIndex() == 0);
+  return !m_frameSwitch->isChecked();
 }
 
 
@@ -179,19 +179,11 @@ void RelEffShieldWidget::setMaterialSelected( bool selected )
 }
 
 
-const Material *RelEffShieldWidget::material() const
+const Material *RelEffShieldWidget::material( const std::string &text, MaterialDB *matDB )
 {
-  InterSpec *interspec = InterSpec::instance();
-  assert( interspec );
-  if( !interspec )
-    return nullptr;
-
-  MaterialDB *matDB = interspec->materialDataBase();
   assert( matDB );
   if( !matDB )
     return nullptr;
-  
-  const string text = m_materialEdit->text().toUTF8();
   
   if( text.empty() )
     return nullptr;
@@ -199,7 +191,6 @@ const Material *RelEffShieldWidget::material() const
   try
   {
     const Material *answer = matDB->material( text );
-    
     return answer;
   }catch(...)
   {
@@ -211,8 +202,12 @@ const Material *RelEffShieldWidget::material() const
   {
     const SandiaDecay::SandiaDecayDataBase *db = DecayDataBaseServer::database();
     const Material *mat = matDB->parseChemicalFormula( text, db );
-    if( m_materialSuggest )
-      m_materialSuggest->addSuggestion( mat->name, mat->name );
+    
+    // Update the material suggestions widget, if we are in an InterSpec
+    InterSpec *interspec = InterSpec::instance();
+    Wt::WSuggestionPopup *suggester = interspec ? interspec->shieldingSuggester() : nullptr;
+    if( suggester )
+      suggester->addSuggestion( mat->name, mat->name );
     return mat;
   }catch(...)
   {
@@ -220,6 +215,16 @@ const Material *RelEffShieldWidget::material() const
   }
 
   return nullptr;
+}//const Material *material( const std::string &text )
+
+
+const Material *RelEffShieldWidget::material() const
+{
+  InterSpec * const viewer = InterSpec::instance();
+  MaterialDB * const matDB = viewer ? viewer->materialDataBase() : nullptr;
+  
+  const string text = m_materialEdit->text().toUTF8();
+  return material( text, matDB );
 }//const Material *material() const
 
 
@@ -414,7 +419,7 @@ std::unique_ptr<RelEffShieldState> RelEffShieldWidget::state() const
 
 void RelEffShieldWidget::setState(const RelEffShieldState& s)
 {
-  m_frameSwitch->setChecked(s.materialSelected);
+  m_frameSwitch->setChecked( !s.materialSelected );
   setMaterial(s.material);
   setThickness(s.thickness);
   setFitThickness(s.fitThickness);
@@ -493,6 +498,60 @@ void RelEffShieldState::fromXml(const rapidxml::xml_node<>* node)
   val = XML_FIRST_NODE(node, "fitArealDensity");
   fitArealDensity = val ? XML_VALUE_ICOMPARE(val, "true") : false;
 }//void RelEffShieldState::fromXml(const rapidxml::xml_node<>* node)
+
+
+std::shared_ptr<RelActCalc::PhysicalModelShieldInput> RelEffShieldState::fitInput( MaterialDB *materialDB ) const
+{
+  auto self_atten = std::make_shared<RelActCalc::PhysicalModelShieldInput>();
+  if( materialSelected )
+  {
+    const Material * const mat = RelEffShieldWidget::material( material, materialDB );
+    assert( mat );
+    if( !mat )
+      return nullptr;
+    
+    self_atten->material = make_shared<Material>( *mat );
+    const double distance = PhysicalUnits::stringToDistance(thickness);
+    self_atten->areal_density = distance * mat->density;
+    
+    cout << "RelEffShieldState::fitInput: dist=" << distance/PhysicalUnits::cm << " cm, AD="
+    << self_atten->areal_density / PhysicalUnits::g_per_cm2 << " g/cm2, for '" << mat->name << "'"
+    << " wit hdensity " << self_atten->material->density * PhysicalUnits::cm3 / PhysicalUnits::g << " g/cm3."
+    << endl;
+    
+    // The rest of this scope is more to remind me in the future
+    self_atten->fit_atomic_number = false;
+    self_atten->fit_areal_density = fitThickness;
+    
+    if( fitThickness )
+    {
+      //RelActCalc::PhysicalModelShieldInput::sm_upper_allowed_areal_density_in_g_per_cm2 * PhysicalUnits::g_per_cm2;
+      self_atten->lower_fit_areal_density = 0.0;
+      self_atten->upper_fit_areal_density = 0.0;
+    }
+    
+    self_atten->atomic_number = 0.0;
+  }else
+  {
+    self_atten->atomic_number = atomicNumber;
+    self_atten->areal_density = arealDensity;
+    
+    self_atten->fit_atomic_number = fitAtomicNumber;
+    self_atten->fit_areal_density = fitArealDensity;
+    
+    // The rest of this scope is more to remind me in the future
+    self_atten->lower_fit_atomic_number = 1.0;
+    self_atten->upper_fit_atomic_number = 98.0;
+    
+    if( fitArealDensity )
+    {
+      self_atten->lower_fit_areal_density = 0.0;
+      self_atten->upper_fit_areal_density = 0.0;
+    }
+  }//if( materialSelected ) / else
+  
+  return self_atten;
+}//fitInput()
 
 
 std::shared_ptr<RelActCalc::PhysicalModelShieldInput> RelEffShieldWidget::fitInput() const

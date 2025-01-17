@@ -704,6 +704,11 @@ public:
    */
   MaterialDB *materialDataBase();
   
+  /** Returns `m_materialDB`.  Note `MaterialDB` should be thread-safe, so you can use this for long running jobs where
+   this instance of InterSpec may disappear.
+   */
+  std::shared_ptr<MaterialDB> materialDataBaseShared();
+  
   /** The suggestion pop-up widget for shielding names; used globally for all shielding name inputs
    so that there is not duplicate copies of the widget in the DOM.
    
