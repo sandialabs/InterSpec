@@ -883,11 +883,11 @@ public:
     
     switch( order )
     {
-      case 0:  m_label = new WLabel( "Offset", this );    break;
-      case 1:  m_label = new WLabel( "Linear", this );    break;
-      case 2:  m_label = new WLabel( "Quadratic", this ); break;
-      case 3:  m_label = new WLabel( "Cubic", this );   break;
-      default: m_label = new WLabel( std::to_string(order) + "'th order", this ); break;
+      case 0:  m_label = new WLabel( WString::tr("ect-offset-label"), this );         break;
+      case 1:  m_label = new WLabel( WString::tr("ect-linear-label"), this );         break;
+      case 2:  m_label = new WLabel( WString::tr("ect-quad-label"), this );           break;
+      case 3:  m_label = new WLabel( WString::tr("ect-cubic-label"), this );          break;
+      default: m_label = new WLabel( WString::tr("ect-nth-label").arg(static_cast<int>(order)), this ); break;
     }//switch( order )
     
     m_label->addStyleClass( "CoefLabel" );
