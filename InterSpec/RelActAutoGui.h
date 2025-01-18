@@ -42,6 +42,7 @@ class RelEffChart;
 class PopupDivMenu;
 class PopupDivMenuItem;
 class RelActTxtResults;
+class RelEffShieldWidget;
 class DetectorPeakResponse;
 class D3SpectrumDisplayDiv;
 
@@ -199,6 +200,11 @@ protected:
   void handleShowRefLines( const bool show );
   void setPeaksToForeground();
   
+  void initPhysModelShields();
+  void handlePhysModelUseHoerlChange();
+  void handlePhysModelShieldChange();
+  void showAndHideOptionsForEqnType();
+  
   /** Calculation has been started. */
   Wt::Signal<> &calculationStarted();
   
@@ -277,6 +283,7 @@ protected:
   Wt::WText *m_error_msg;
   
   Wt::WComboBox *m_rel_eff_eqn_form;
+  Wt::WLabel *m_rel_eff_eqn_order_label;
   Wt::WComboBox *m_rel_eff_eqn_order;
   
   Wt::WComboBox *m_fwhm_eqn_form;
@@ -289,6 +296,12 @@ protected:
   Wt::WComboBox *m_pu_corr_method;
   
   Wt::WComboBox *m_skew_type;
+  
+  Wt::WContainerWidget *m_phys_model_opts;
+  Wt::WContainerWidget *m_phys_model_shields;
+  RelEffShieldWidget *m_phys_model_self_atten;
+  Wt::WContainerWidget *m_phys_ext_attens;
+  Wt::WCheckBox *m_phys_model_use_hoerl;
   
   // Wt::WComboBox *m_u_pu_data_source;
   PopupDivMenu *m_more_options_menu;

@@ -54,6 +54,8 @@ struct RelEffShieldState
   
   /** Will return nullptr if invalid or empty state, including the material name can not be parsed. */
   std::shared_ptr<RelActCalc::PhysicalModelShieldInput> fitInput( MaterialDB *materialDB ) const;
+  
+  void setStateFromFitInput( const RelActCalc::PhysicalModelShieldInput &input );
 };//struct RelEffShieldState
 
 /** @brief A GUI widget roughly corresponding to a RelActCalc::PhysicalModelShieldInput.

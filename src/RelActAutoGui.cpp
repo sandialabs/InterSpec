@@ -79,6 +79,7 @@
 #include "InterSpec/UserPreferences.h"
 #include "InterSpec/RelActTxtResults.h"
 #include "InterSpec/NativeFloatSpinBox.h"
+#include "InterSpec/RelEffShieldWidget.h"
 #include "InterSpec/DecayDataBaseServer.h"
 #include "InterSpec/D3SpectrumDisplayDiv.h"
 #include "InterSpec/DetectorPeakResponse.h"
@@ -1207,6 +1208,7 @@ RelActAutoGui::RelActAutoGui( InterSpec *viewer, Wt::WContainerWidget *parent )
   m_current_preset_index( -1 ),
   m_error_msg( nullptr ),
   m_rel_eff_eqn_form( nullptr ),
+  m_rel_eff_eqn_order_label( nullptr ),
   m_rel_eff_eqn_order( nullptr ),
   m_fwhm_eqn_form( nullptr ),
   m_fit_energy_cal( nullptr ),
@@ -1214,6 +1216,11 @@ RelActAutoGui::RelActAutoGui( InterSpec *viewer, Wt::WContainerWidget *parent )
   m_same_z_age( nullptr ),
   m_pu_corr_method( nullptr ),
   m_skew_type( nullptr ),
+  m_phys_model_opts( nullptr ),
+  m_phys_model_shields( nullptr ),
+  m_phys_model_self_atten( nullptr ),
+  m_phys_ext_attens( nullptr ),
+  m_phys_model_use_hoerl( nullptr ),
   m_more_options_menu( nullptr ),
   m_apply_energy_cal_item( nullptr ),
   m_show_ref_lines_item( nullptr ),
@@ -1457,21 +1464,22 @@ RelActAutoGui::RelActAutoGui( InterSpec *viewer, Wt::WContainerWidget *parent )
   
   m_rel_eff_eqn_form->setCurrentIndex( static_cast<int>(RelActCalc::RelEffEqnForm::LnX) );
   
-  label = new WLabel( "Eqn Order", optionsDiv );
-  label->addStyleClass( "GridThirdCol GridFirstRow" );
+  m_rel_eff_eqn_order_label = new WLabel( "Eqn Order", optionsDiv );
+  m_rel_eff_eqn_order_label->addStyleClass( "GridThirdCol GridFirstRow" );
   
   m_rel_eff_eqn_order = new WComboBox( optionsDiv );
   m_rel_eff_eqn_order->addStyleClass( "GridFourthCol GridFirstRow" );
-  label->setBuddy( m_rel_eff_eqn_order );
+  m_rel_eff_eqn_order_label->setBuddy( m_rel_eff_eqn_order );
   m_rel_eff_eqn_order->activated().connect( this, &RelActAutoGui::handleRelEffEqnOrderChanged );
   
+  m_rel_eff_eqn_order->addItem( "0" );
   m_rel_eff_eqn_order->addItem( "1" );
   m_rel_eff_eqn_order->addItem( "2" );
   m_rel_eff_eqn_order->addItem( "3" );
   m_rel_eff_eqn_order->addItem( "4" );
   m_rel_eff_eqn_order->addItem( "5" );
   m_rel_eff_eqn_order->addItem( "6" );
-  m_rel_eff_eqn_order->setCurrentIndex( 2 );
+  m_rel_eff_eqn_order->setCurrentIndex( 3 );
   
   
   tooltip = "The order (how many energy-dependent terms) relative efficiency equation to use.";
@@ -1589,6 +1597,21 @@ RelActAutoGui::RelActAutoGui( InterSpec *viewer, Wt::WContainerWidget *parent )
   }//for( loop over SkewTypes )
     
   m_skew_type->setCurrentIndex( 0 );
+    
+    
+  m_phys_model_opts = new WContainerWidget( optionsDiv );
+  m_phys_model_opts->addStyleClass( "PhysicalModelOpts GridEleventhCol GridFirstRow GridSpanTwoRows" );
+  
+  m_phys_model_shields = new WContainerWidget( m_phys_model_opts );
+  m_phys_model_shields->addStyleClass( "PhysicalModelShields" );
+    
+  m_phys_ext_attens = new WContainerWidget( m_phys_model_shields );
+  
+  m_phys_model_use_hoerl = new WCheckBox( "Use Corr. Fcn.", m_phys_model_opts );
+  m_phys_model_use_hoerl->setChecked( true );
+  m_phys_model_use_hoerl->checked().connect( this, &RelActAutoGui::handlePhysModelUseHoerlChange );
+  m_phys_model_opts->hide();
+    
     
   WPushButton *more_btn = new WPushButton( optionsDiv );
   more_btn->setIcon( "InterSpec_resources/images/more_menu_icon.svg" );
@@ -1846,7 +1869,11 @@ RelActCalcAuto::Options RelActAutoGui::getCalcOptions() const
   options.fit_energy_cal = m_fit_energy_cal->isChecked();
   options.nucs_of_el_same_age = m_same_z_age->isChecked();
   options.rel_eff_eqn_type = RelActCalc::RelEffEqnForm( std::max( 0, m_rel_eff_eqn_form->currentIndex() ) );
-  options.rel_eff_eqn_order = 1 + std::max( 0, m_rel_eff_eqn_order->currentIndex() );
+  if( options.rel_eff_eqn_type == RelActCalc::RelEffEqnForm::FramPhysicalModel )
+    options.rel_eff_eqn_order = 0;
+  else
+    options.rel_eff_eqn_order = static_cast<size_t>( std::max( 0, m_rel_eff_eqn_order->currentIndex() ) );
+  
   options.fwhm_form = RelActCalcAuto::FwhmForm( std::max(0,m_fwhm_eqn_form->currentIndex()) );
   
   const shared_ptr<const SpecUtils::Measurement> fore
@@ -1878,6 +1905,25 @@ RelActCalcAuto::Options RelActAutoGui::getCalcOptions() const
   const int skew_index = m_skew_type->currentIndex();
   if( (skew_index >= 0) && (skew_index <= PeakDef::SkewType::DoubleSidedCrystalBall) )
     options.skew_type = PeakDef::SkewType( m_skew_type->currentIndex() );
+  
+  if( options.rel_eff_eqn_type == RelActCalc::RelEffEqnForm::FramPhysicalModel )
+  {
+    if( m_phys_model_self_atten && m_phys_model_self_atten->nonEmpty() )
+      options.phys_model_self_atten = m_phys_model_self_atten->fitInput();
+    
+    for( WWidget *w : m_phys_ext_attens->children() )
+    {
+      RelEffShieldWidget *sw = dynamic_cast<RelEffShieldWidget *>( w );
+      if( sw && sw->nonEmpty() )
+      {
+        auto input = sw->fitInput();
+        if( input )
+          options.phys_model_external_atten.push_back( input );
+      }
+    }//for( WWidget *w : m_phys_ext_attens->children() )
+    
+    options.phys_model_use_hoerl = m_phys_model_use_hoerl->isChecked();
+  }//if( options.rel_eff_eqn_type == RelActCalc::RelEffEqnForm::FramPhysicalModel )
   
   return options;
 }//RelActCalcAuto::Options getCalcOptions() const
@@ -2424,10 +2470,88 @@ void RelActAutoGui::setCalcOptionsGui( const RelActCalcAuto::Options &options )
 {
   m_fit_energy_cal->setChecked( options.fit_energy_cal );
   m_same_z_age->setChecked( options.nucs_of_el_same_age );
-  m_rel_eff_eqn_form->setCurrentIndex( static_cast<int>(options.rel_eff_eqn_type) );
-  m_rel_eff_eqn_order->setCurrentIndex( std::max(options.rel_eff_eqn_order,size_t(1)) - 1 );
   m_fwhm_eqn_form->setCurrentIndex( static_cast<int>(options.fwhm_form) );
   m_skew_type->setCurrentIndex( static_cast<int>(options.skew_type) );
+  
+  m_rel_eff_eqn_form->setCurrentIndex( static_cast<int>(options.rel_eff_eqn_type) );
+  if( options.rel_eff_eqn_type != RelActCalc::RelEffEqnForm::FramPhysicalModel )
+    m_rel_eff_eqn_order->setCurrentIndex( static_cast<int>(options.rel_eff_eqn_order) );
+  
+  const shared_ptr<const RelActCalc::PhysicalModelShieldInput> &self_atten = options.phys_model_self_atten;
+  const vector<shared_ptr<const RelActCalc::PhysicalModelShieldInput>> &ext_attens = options.phys_model_external_atten;
+  
+  if( (options.rel_eff_eqn_type == RelActCalc::RelEffEqnForm::FramPhysicalModel)
+     || self_atten || !ext_attens.empty() )
+  {
+    initPhysModelShields();  //Sets shielding widgets to default state
+    
+    assert( m_phys_model_self_atten );
+    if( !m_phys_model_self_atten || !m_phys_ext_attens )
+      throw std::logic_error( "!m_phys_model_self_atten || !m_phys_ext_attens ?!?" );
+    assert( m_phys_ext_attens->count() == 1 );
+    
+    
+    if( self_atten )
+    {
+      RelEffShieldState state;
+      state.setStateFromFitInput( *self_atten );
+      m_phys_model_self_atten->setState( state );
+    }
+    
+    // Fill out the external shielding widgets
+    vector<RelEffShieldWidget *> ext_shields;
+    for( WWidget *w : m_phys_ext_attens->children() )
+    {
+      RelEffShieldWidget *sw = dynamic_cast<RelEffShieldWidget *>( w );
+      assert( sw );
+      if( sw )
+        ext_shields.push_back( sw );
+    }
+    
+    assert( ext_shields.size() == 1 );
+    
+    // Remove any extra shielding widgets
+    while( !ext_shields.empty() && (ext_shields.size() > ext_attens.size()) )
+    {
+      delete ext_shields.back();
+      ext_shields.pop_back();
+    }
+    
+    // Set state, reusing as many shielding widgets as we can
+    const size_t num_ext_reused = std::min( ext_shields.size(), ext_attens.size() );
+    for( size_t i = 0; i < num_ext_reused; ++i )
+    {
+      RelEffShieldState state;
+      state.setStateFromFitInput( *ext_attens[i] );
+      ext_shields[i]->setState( state );
+    }
+    
+    // Add any new shielding widgets we need
+    for( size_t i = num_ext_reused; i < ext_attens.size(); ++i )
+    {
+      RelEffShieldWidget *sw = new RelEffShieldWidget( RelEffShieldWidget::ShieldType::ExternalAtten, m_phys_ext_attens );
+      sw->changed().connect( this, &RelActAutoGui::handlePhysModelShieldChange );
+      ext_shields.push_back( sw );
+      
+      RelEffShieldState state;
+      state.setStateFromFitInput( *ext_attens[i] );
+      sw->setState( state );
+    }
+  }else
+  {
+    // Normally we will keep Physical model shielding around, incase the user is
+    //  messing around, but if we are setting state from XML, we'll hard reset them
+    if( m_phys_model_self_atten )
+    {
+      delete m_phys_model_self_atten;
+      m_phys_model_self_atten = nullptr;
+    }
+    while( !m_phys_ext_attens->children().empty() )
+      delete m_phys_ext_attens->children().front();
+  }//if( Physical Model ) / else
+  
+  showAndHideOptionsForEqnType();
+  
   // options.spectrum_title
   
   m_render_flags |= RenderActions::UpdateCalculations;
@@ -2672,6 +2796,8 @@ void RelActAutoGui::deSerialize( const rapidxml::xml_node<char> *base_node )
   if( !node )
     throw runtime_error( "RelActAutoGui::deSerialize: No <Options> node." );
   
+  MaterialDB *materialDb = m_interspec->materialDataBase();
+  
   bool loaded_display_energy_range = false;
   
   RelActCalcAuto::Options options;
@@ -2679,7 +2805,7 @@ void RelActAutoGui::deSerialize( const rapidxml::xml_node<char> *base_node )
   vector<RelActCalcAuto::NucInputInfo> nuclides;
   vector<RelActCalcAuto::FloatingPeak> floating_peaks;
   
-  options.fromXml( node );
+  options.fromXml( node, materialDb );
   
   
   {// Begin get extra options
@@ -2991,6 +3117,8 @@ void RelActAutoGui::handlePresetChange()
 
 void RelActAutoGui::handleRelEffEqnFormChanged()
 {
+  showAndHideOptionsForEqnType();
+  
   checkIfInUserConfigOrCreateOne( false );
   m_render_flags |= RenderActions::UpdateCalculations;
   scheduleRender();
@@ -3436,7 +3564,7 @@ void RelActAutoGui::handleConvertEnergyRangeToIndividuals( Wt::WWidget *w )
       return;
     }//
     
-    const int orig_w_index = pos - begin(kids);
+    const int orig_w_index = static_cast<int>( pos - begin(kids) );
     
     delete w;
     
@@ -4001,6 +4129,73 @@ void RelActAutoGui::setPeaksToForeground()
   }) );
   
 }//void setPeaksToForeground()
+
+
+void RelActAutoGui::initPhysModelShields()
+{
+  if( m_phys_model_self_atten )
+  {
+    m_phys_model_self_atten->resetState();
+  }else
+  {
+    m_phys_model_self_atten = new RelEffShieldWidget( RelEffShieldWidget::ShieldType::SelfAtten );
+    m_phys_model_shields->insertWidget( 0, m_phys_model_self_atten );
+    m_phys_model_self_atten->changed().connect( this, &RelActAutoGui::handlePhysModelShieldChange );
+  }
+  
+  vector<RelEffShieldWidget *> starting_ext_shields;
+  const vector<WWidget *> &ext_atten_widgets = m_phys_ext_attens->children();
+  for( WWidget *w : ext_atten_widgets )
+  {
+    RelEffShieldWidget *sw = dynamic_cast<RelEffShieldWidget *>( w );
+    assert( sw );
+    if( sw )
+      starting_ext_shields.push_back( sw );
+  }
+  
+  if( starting_ext_shields.empty() )
+  {
+    RelEffShieldWidget *sw = new RelEffShieldWidget( RelEffShieldWidget::ShieldType::ExternalAtten,
+                                                    m_phys_ext_attens );
+    sw->changed().connect( this, &RelActAutoGui::handlePhysModelShieldChange );
+  }else
+  {
+    starting_ext_shields[0]->resetState();
+    for( size_t i = 1; i < starting_ext_shields.size(); ++i )
+      delete starting_ext_shields[i];
+  }//if( starting_ext_shields.empty() )
+}//void initPhysModelShields()
+
+
+void RelActAutoGui::handlePhysModelUseHoerlChange()
+{
+  checkIfInUserConfigOrCreateOne( false );
+  m_render_flags |= RenderActions::UpdateCalculations;
+  scheduleRender();
+}//void handlePhysModelUseHoerlChange()
+
+
+void RelActAutoGui::handlePhysModelShieldChange()
+{
+  checkIfInUserConfigOrCreateOne( false );
+  m_render_flags |= RenderActions::UpdateCalculations;
+  scheduleRender();
+}//void handlePhysModelShieldChange()
+
+
+void RelActAutoGui::showAndHideOptionsForEqnType()
+{
+  const RelActCalc::RelEffEqnForm eqn_type
+                  = RelActCalc::RelEffEqnForm( std::max( 0, m_rel_eff_eqn_form->currentIndex() ) );
+  
+  const bool is_physical = (eqn_type == RelActCalc::RelEffEqnForm::FramPhysicalModel);
+  
+  m_rel_eff_eqn_order->setHidden( is_physical );
+  m_rel_eff_eqn_order_label->setHidden( is_physical );
+  m_phys_model_opts->setHidden( !is_physical );
+  if( is_physical && !m_phys_model_self_atten )
+    initPhysModelShields();
+}//void showAndHideOptionsForEqnType()
 
 
 Wt::Signal<> &RelActAutoGui::calculationStarted()
@@ -4589,12 +4784,16 @@ void RelActAutoGui::startUpdatingCalculation()
       } );
     }catch( std::exception &e )
     {
+      const string msg = e.what();
+      cout << "Caught exception: " << msg << endl;
+      cout << endl;
+      
       WServer::instance()->post( sessionId, [=](){
         WApplication *app = WApplication::instance();
         
         if( app )
         {
-          *error_msg = e.what();
+          *error_msg = msg;
           error_callback();
           app->triggerUpdate();
         }else
@@ -4667,8 +4866,7 @@ void RelActAutoGui::updateFromCalc( std::shared_ptr<RelActCalcAuto::RelActAutoSo
   answer->print_summary( std::cout );
   cout << "\n\n\n";
   
-  const string rel_eff_eqn_js = RelActCalc::rel_eff_eqn_js_function( answer->m_rel_eff_form,
-                                                                  answer->m_rel_eff_coefficients );
+  const string rel_eff_eqn_js = answer->rel_eff_eqn_js_function();
   
   const double live_time = answer->m_foreground ? answer->m_foreground->live_time() : 1.0f;
 
@@ -4758,6 +4956,11 @@ void RelActAutoGui::updateFromCalc( std::shared_ptr<RelActCalcAuto::RelActAutoSo
   
   
   setOptionsForValidSolution();
+  
+  if( m_solution->m_options.rel_eff_eqn_type == RelActCalc::RelEffEqnForm::FramPhysicalModel )
+  {
+    
+  }//
   
   m_solution_updated.emit( m_solution );
   if( m_solution && (m_solution->m_status == RelActCalcAuto::RelActAutoSolution::Status::Success) )

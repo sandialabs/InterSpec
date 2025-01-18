@@ -428,6 +428,7 @@ set(headers
     InterSpec/NuclideSourceEnter.h
     InterSpec/AddNewPeakDialog.h
     InterSpec/UserPreferences.h
+    InterSpec/XmlUtils.hpp
 )
 
 

@@ -37,6 +37,7 @@
 // Forward declarations
 class DetectorPeakResponse;
 struct Material;
+class MaterialDB;
 
 namespace rapidxml
 {
@@ -309,10 +310,26 @@ struct Options
   
   /** Only used for `RelEffEqnForm::FramPhysicalModel` - shielding definitions for external attenuators. */
   std::vector<std::shared_ptr<const RelActCalc::PhysicalModelShieldInput>> phys_model_external_atten;
+
+  /** If true, fit the modified Hoerl equation form for the physical model.
+   * If false, do not fit the modified Hoerl equation form (its value will be constant value of 1.0).
+   *
+   * Ignored if not using `RelActCalc::RelEffEqnForm::FramPhysicalModel`.
+  */
+  bool phys_model_use_hoerl = true;
   
-  static const int sm_xmlSerializationVersion = 0;
+  /** Version history:
+   - 20250117: incremented to 1 to handle FramPhysicalModel; if not this model, will still write version 0.
+   */
+  static const int sm_xmlSerializationVersion = 1;
   rapidxml::xml_node<char> *toXml( ::rapidxml::xml_node<char> *parent ) const;
-  void fromXml( const ::rapidxml::xml_node<char> *parent );
+  
+  /** Sets the member variables from an XML element created by `toXml(...)`.
+   @param parent An XML element with name "Options".
+   @param materialDB The material database to use to retrieve a material from for the #PhysicalModelShieldInput;
+          for other equation types, or for AN/AD defined shields, this isnt used/required.
+   */
+  void fromXml( const ::rapidxml::xml_node<char> *parent, MaterialDB *materialDB );
 };//struct Options
 
 
@@ -391,6 +408,11 @@ struct RelActAutoSolution
   
   /** Get the index of specified nuclide within #m_rel_activities and #m_nonlin_covariance. */
   size_t nuclide_index( const SandiaDecay::Nuclide *nuclide ) const;
+  
+  /** Returns result of `RelActCalc::rel_eff_eqn_js_function(...)` or
+   `RelActCalc::physical_model_rel_eff_eqn_js_function(...)`
+   */
+  std::string rel_eff_eqn_js_function() const;
   
   enum class Status : int
   {
@@ -496,7 +518,11 @@ struct RelActAutoSolution
   /** The number of evaluation calls it took to reach a solution, and compute final covariance. */
   int m_num_function_eval_total;
   
+  /** This is the total time spent solving the problem. */
   int m_num_microseconds_eval;
+  
+  /** This is the total time spent in the `eval(...)` function. */
+  int m_num_microseconds_in_eval;
 };//struct RelEffSolution
 
 /**

@@ -154,6 +154,25 @@
   justify-self: end;
 }
 
+.RelActAutoGui .PhysicalModelOpts
+{
+  display: flex;
+  flex-direction: column;
+  flex-wrap: nowrap;
+  
+  /* flex: 1 1 auto; */
+  gap: 10px;
+}
+
+.RelActAutoGui .PhysicalModelOpts .PhysicalModelShields
+{
+  display: flex;
+  flex-direction: row;
+  flex-wrap: nowrap;
+  
+  /* flex: 1 1 auto; */
+  gap: 10px;
+}
 
 .RelActAutoGui .MoreMenuIcon,
 .RelActAutoGui .MoreMenuIcon:hover

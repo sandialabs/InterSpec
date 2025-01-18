@@ -36,7 +36,9 @@
 
 #include "InterSpec/MaterialDB.h"
 #include "InterSpec/RelActCalc.h"
+#include "InterSpec/XmlUtils.hpp"
 #include "InterSpec/PhysicalUnits.h"
+#include "InterSpec/DecayDataBaseServer.h"
 #include "InterSpec/DetectorPeakResponse.h"
 #include "InterSpec/GammaInteractionCalc.h"
 
@@ -755,6 +757,149 @@ void PhysicalModelShieldInput::check_valid() const
     
 };//PhysicalModelShieldInput::check_valid()
   
+  
+rapidxml::xml_node<char> *PhysicalModelShieldInput::toXml( ::rapidxml::xml_node<char> *parent ) const
+{
+  using namespace rapidxml;
+  
+  assert( parent );
+  if( !parent || !parent->document() )
+    throw runtime_error( "PhysicalModelShieldInput::toXml: invalid parent." );
+  
+  xml_document<char> *doc = parent->document();
+  xml_node<char> *base_node = doc->allocate_node( node_element, "PhysicalModelShield" );
+  parent->append_node( base_node );
+  
+  XmlUtils::append_version_attrib( base_node, PhysicalModelShieldInput::sm_xmlSerializationVersion );
+  
+  XmlUtils::append_float_node( base_node, "AtomicNumber", atomic_number );
+  if( material )
+    XmlUtils::append_string_node( base_node, "Material", material->name );
+  XmlUtils::append_float_node( base_node, "ArealDensity", areal_density / PhysicalUnits::g_per_cm2 );
+  XmlUtils::append_bool_node( base_node, "FitAtomicNumber", fit_atomic_number );
+  XmlUtils::append_float_node( base_node, "LowerFitAtomicNumber", lower_fit_atomic_number );
+  XmlUtils::append_float_node( base_node, "UpperFitAtomicNumber", upper_fit_atomic_number );
+  XmlUtils::append_bool_node( base_node, "FitArealDensity", fit_areal_density );
+  XmlUtils::append_float_node( base_node, "LowerFitArealDensity", lower_fit_areal_density / PhysicalUnits::g_per_cm2 );
+  XmlUtils::append_float_node( base_node, "UpperFitArealDensity", upper_fit_areal_density / PhysicalUnits::g_per_cm2 );
+}//rapidxml::xml_node<char> *toXml( ::rapidxml::xml_node<char> *parent ) const
+  
+  
+void PhysicalModelShieldInput::fromXml( const ::rapidxml::xml_node<char> *parent, MaterialDB *materialDB )
+{
+  try
+  {
+    if( !parent )
+      throw runtime_error( "invalid input" );
+    
+    if( !rapidxml::internal::compare( parent->name(), parent->name_size(), "PhysicalModelShield", 19, false ) )
+      throw std::logic_error( "invalid input node name" );
+    
+    // A reminder double check these logics when changing RoiRange::sm_xmlSerializationVersion
+    static_assert( PhysicalModelShieldInput::sm_xmlSerializationVersion == 0,
+                  "needs to be updated for new serialization version." );
+    
+    XmlUtils::check_xml_version( parent, PhysicalModelShieldInput::sm_xmlSerializationVersion );
+    
+    const rapidxml::xml_node<char> *material_node = XML_FIRST_NODE( parent, "Material" );
+    
+    
+    areal_density = 0.0;
+    lower_fit_areal_density = 0.0;
+    upper_fit_areal_density = 0.0;
+    fit_areal_density = XmlUtils::get_bool_node_value( parent, "FitArealDensity" );
+    
+    if( fit_areal_density )
+    {
+      // We require AD limits if we are fitting AD
+      lower_fit_areal_density = XmlUtils::get_float_node_value( parent, "LowerFitArealDensity" );
+      upper_fit_areal_density = XmlUtils::get_float_node_value( parent, "UpperFitArealDensity" );
+      
+      // Wont require AD if we are fitting it
+      try
+      {
+        areal_density = XmlUtils::get_float_node_value( parent, "ArealDensity" );
+      }catch( std::exception & )
+      {
+      }
+    }else
+    {
+      // We wont really require AD limits if we are not fitting AD
+      try
+      {
+        lower_fit_areal_density = XmlUtils::get_float_node_value( parent, "LowerFitArealDensity" );
+      }catch( std::exception & )
+      {
+      }
+      
+      try
+      {
+        upper_fit_areal_density = XmlUtils::get_float_node_value( parent, "UpperFitArealDensity" );
+      }catch( std::exception & )
+      {
+      }
+      
+      // Require AD if we are fitting it
+      areal_density = XmlUtils::get_float_node_value( parent, "ArealDensity" );
+    }//if( fit_areal_density ) / else
+    
+    areal_density *= PhysicalUnits::g_per_cm2;
+    lower_fit_areal_density *= PhysicalUnits::g_per_cm2;
+    upper_fit_areal_density *= PhysicalUnits::g_per_cm2;
+    
+    
+    fit_atomic_number = false;
+    lower_fit_atomic_number = 1.0;
+    upper_fit_atomic_number = 98.0;
+    
+    if( material_node )
+    {
+      if( !materialDB )
+        throw runtime_error( "PhysicalModelShieldInput::fromXml: need MaterialDB" );
+      
+      const string name = SpecUtils::xml_value_str(material_node);
+      const Material * mat = materialDB->material( name );
+      if( !mat )
+      {
+        try
+        {
+          const SandiaDecay::SandiaDecayDataBase * const db = DecayDataBaseServer::database();
+          mat = materialDB->parseChemicalFormula( name, db );
+        }catch( std::exception & )
+        {
+        }
+      }//if( !mat )
+      
+      if( !mat )
+        throw runtime_error( "Invalid material name '" + name + "'" );
+      
+      try
+      {
+        fit_atomic_number = XmlUtils::get_bool_node_value( parent, "FitAtomicNumber" );
+      }catch( std::exception & )
+      {
+      }
+      
+      try
+      {
+        atomic_number = XmlUtils::get_float_node_value( parent, "AtomicNumber" );
+        lower_fit_atomic_number = XmlUtils::get_float_node_value( parent, "LowerFitAtomicNumber" );
+        upper_fit_atomic_number = XmlUtils::get_float_node_value( parent, "UpperFitAtomicNumber" );
+      }catch( std::exception & )
+      {
+      }
+    }else
+    {
+      fit_atomic_number = XmlUtils::get_bool_node_value( parent, "FitAtomicNumber" );
+      atomic_number = XmlUtils::get_float_node_value( parent, "AtomicNumber" );
+      lower_fit_atomic_number = XmlUtils::get_float_node_value( parent, "LowerFitAtomicNumber" );
+      upper_fit_atomic_number = XmlUtils::get_float_node_value( parent, "UpperFitAtomicNumber" );
+    }// if( material_node ) / else
+  }catch( std::exception &e )
+  {
+    throw runtime_error( "PhysicalModelShieldInput::fromXml(): " + string(e.what()) );
+  }
+}//void fromXml( const ::rapidxml::xml_node<char> *parent )
 
 
 double eval_physical_model_eqn( const double energy,

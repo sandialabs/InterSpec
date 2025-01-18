@@ -34,6 +34,11 @@
 struct Material;
 class DetectorPeakResponse;
 
+namespace rapidxml
+{
+  template<class Ch> class xml_node;
+}
+
 /** The \c RelActCalc namespace captures things that are common between the "Auto" and "Manual"
  relative eff/act calculations.
  */
@@ -284,7 +289,11 @@ struct PhysicalModelShieldInput
     
   /** Checks specified constraints are obeyed - throwing an exception if not. */
   void check_valid() const;
-    
+  
+  static const int sm_xmlSerializationVersion = 0;
+  rapidxml::xml_node<char> *toXml( ::rapidxml::xml_node<char> *parent ) const;
+  void fromXml( const ::rapidxml::xml_node<char> *parent, MaterialDB *materialDB );
+  
   static const double sm_upper_allowed_areal_density_in_g_per_cm2; //Set to 500
 };//struct PhysicalModelShieldInput
 

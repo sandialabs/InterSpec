@@ -554,6 +554,30 @@ std::shared_ptr<RelActCalc::PhysicalModelShieldInput> RelEffShieldState::fitInpu
 }//fitInput()
 
 
+
+void RelEffShieldState::setStateFromFitInput( const RelActCalc::PhysicalModelShieldInput &input )
+{
+  if( input.material )
+  {
+    materialSelected = true;
+    material = input.material->name;
+    const double dist = input.areal_density / input.material->density;
+    thickness = PhysicalUnits::printToBestLengthUnits( dist, 6 );
+  }else
+  {
+    materialSelected = false;
+    material = nullptr;
+    thickness = "";
+  }
+  
+  atomicNumber = input.atomic_number;
+  arealDensity = input.areal_density / PhysicalUnits::g_per_cm2;
+  fitArealDensity = input.fit_areal_density;
+  fitAtomicNumber = input.fit_atomic_number;
+  fitThickness = input.fit_areal_density;
+}//void setStateFromFitInput( const RelActCalc::PhysicalModelShieldInput &input )
+
+
 std::shared_ptr<RelActCalc::PhysicalModelShieldInput> RelEffShieldWidget::fitInput() const
 {
   if( !nonEmpty() )

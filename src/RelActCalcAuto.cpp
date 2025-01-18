@@ -69,6 +69,8 @@
 #include "InterSpec/InterSpec.h"
 #include "InterSpec/RelActCalc.h"
 #include "InterSpec/MakeDrfFit.h"
+#include "InterSpec/MaterialDB.h"
+#include "InterSpec/XmlUtils.hpp"
 #include "InterSpec/PeakFitUtils.h"
 #include "InterSpec/PhysicalUnits.h"
 #include "InterSpec/RelActCalcAuto.h"
@@ -77,6 +79,7 @@
 #include "InterSpec/DetectorPeakResponse.h"
 
 using namespace std;
+using namespace XmlUtils;
 
 /** Right now if the user specifies a peak energy, we will just multiple the peak sigma (i.e.
  FWHM/2.35482) by the following value to define the ROI on either side of the mean.
@@ -105,160 +108,7 @@ void sort_rois_by_energy( vector<RelActCalcAuto::RoiRange> &rois )
     return lhs.lower_energy < rhs.lower_energy;
   });
 }//void sort_rois( vector<RoiRange> &rois )
-
-// We'll define some XML helper functions for serializing to/from XML
-//  (we should probably put these in a header somewhere and use through the code to minimize
-//   things a little)
-void append_float_node( rapidxml::xml_node<char> *base_node, const char *node_name, const double value )
-{
-  using namespace rapidxml;
-  
-  assert( base_node && base_node->document() );
-  xml_document<char> *doc = base_node->document();
-  
-  char buffer[128];
-  snprintf( buffer, sizeof(buffer), "%1.8e", value );
-  const char *strvalue = doc->allocate_string( buffer );
-  xml_node<char> *node = doc->allocate_node( node_element, node_name, strvalue );
-  base_node->append_node( node );
-}//append_float_node(...)
-
-
-void append_bool_node( rapidxml::xml_node<char> *base_node, const char *node_name, const bool value )
-{
-  using namespace rapidxml;
-  
-  assert( base_node && base_node->document() );
-  xml_document<char> *doc = base_node->document();
-  xml_node<char> *node = doc->allocate_node( node_element, node_name, (value ? "true" : "false") );
-  base_node->append_node( node );
-}//append_bool_node(...)
-
-
-template <class T, typename std::enable_if<std::is_integral<T>::value>::type* = nullptr >
-void append_int_node( rapidxml::xml_node<char> *base_node, const char *node_name, const T value )
-{
-  using namespace rapidxml;
-  
-  assert( base_node && base_node->document() );
-  xml_document<char> *doc = base_node->document();
-  const char *strvalue = doc->allocate_string( std::to_string(value).c_str() );
-  xml_node<char> *node = doc->allocate_node( node_element, node_name, strvalue );
-  base_node->append_node( node );
-}//append_bool_node(...)
-
-
-rapidxml::xml_node<char> *append_string_node( rapidxml::xml_node<char> *base_node, const char *node_name, const string &value )
-{
-  using namespace rapidxml;
-  
-  assert( base_node && base_node->document() );
-  xml_document<char> *doc = base_node->document();
-  const char *strvalue = doc->allocate_string( value.c_str(), value.size() + 1 );
-  xml_node<char> *node = doc->allocate_node( node_element, node_name, strvalue );
-  base_node->append_node( node );
-  
-  return node;
-}//append_string_node(...)
-
-
-void append_attrib( rapidxml::xml_node<char> *base_node, const string &name, const string &value )
-{
-  using namespace rapidxml;
-  
-  assert( base_node && base_node->document() );
-  xml_document<char> *doc = base_node->document();
-  
-  const char *name_str = doc->allocate_string( name.c_str() );
-  const char *value_str = doc->allocate_string( value.c_str() );
-  
-  xml_attribute<char> *attrib = doc->allocate_attribute( name_str, value_str );
-  base_node->append_attribute( attrib );
-}//void append_attrib(...)
-
-
-void append_version_attrib( rapidxml::xml_node<char> *base_node, const int version )
-{
-  char buffer[32];
-  snprintf( buffer, sizeof(buffer), "%i", version );
-  append_attrib( base_node, "version", buffer );
-}//append_version_attrib(...)
-
-
-template<size_t n>
-double get_float_node_value( const rapidxml::xml_node<char> * const parent_node, const char (&name)[n] )
-{
-  assert( parent_node );
-  assert( name );
-  
-  if( !parent_node )
-    throw runtime_error( "null parent node." );
-  
-  const rapidxml::xml_node<char> *node = XML_FIRST_NODE(parent_node, name);
-  if( !node )
-    throw runtime_error( "Missing node '" + std::string(name) + "'" );
-  
-  const string value = SpecUtils::xml_value_str(node);
-  double answer;
-  if( !(stringstream(value) >> answer) )
-    throw runtime_error( "Value ('" + value + "') of node '"
-                        + string(name) + "' was a valid float." );
-  
-  return answer;
-}//double get_float_node_value(...)
-
-
-template<size_t n>
-bool get_bool_node_value( const rapidxml::xml_node<char> * const parent_node, const char (&name)[n] )
-{
-  assert( parent_node );
-  assert( name );
-  
-  if( !parent_node )
-    throw runtime_error( "null parent node." );
-  
-  const rapidxml::xml_node<char> *node = XML_FIRST_NODE(parent_node, name);
-  if( !node )
-    throw runtime_error( "Missing node '" + std::string(name) + "'" );
-  
-  if( XML_VALUE_ICOMPARE(node,"yes") || XML_VALUE_ICOMPARE(node,"true") || XML_VALUE_ICOMPARE(node,"1") )
-    return true;
-  
-  if( !XML_VALUE_ICOMPARE(node,"no") && !XML_VALUE_ICOMPARE(node,"false") && !XML_VALUE_ICOMPARE(node,"0") )
-    throw runtime_error( "Invalid boolean value in node '" + string(name) + "' with value '"
-                        + SpecUtils::xml_value_str(node) );
-  
-  return false;
-}//bool get_bool_node_value(...)
-
-
-void check_xml_version( const rapidxml::xml_node<char> * const node, const int required_version )
-{
-  assert( node );
-  const rapidxml::xml_attribute<char> *att = XML_FIRST_ATTRIB(node, "version");
-  
-  int version;
-  if( !att || !att->value()
-     || (sscanf(att->value(), "%i", &version) != 1) )
-    throw runtime_error( "invalid or missing version" );
-  
-  if( (version < 0) || (version > required_version) )
-    throw runtime_error( "Invalid version: " + std::to_string(version) + ".  "
-                        + "Only up to version " + to_string(required_version)
-                        + " supported." );
-}//check_xml_version(...)
-
-template<size_t n>
-const rapidxml::xml_node<char> *get_required_node( const rapidxml::xml_node<char> *parent, const char (&name)[n] )
-{
-  assert( parent );
-  const auto child_node = XML_FIRST_INODE(parent, name);
-  if( !child_node )
-    throw runtime_error( "No <" + string(name) + "> node" );
-  
-  return child_node;
-}//get_required_node(...)
-  
+ 
   
   /*
    /// Function used to convert parameters of one FWHM type, to another.
@@ -777,6 +627,8 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
   /** just for debug purposes, we'll keep track of how many times the eval function gets called. */
   mutable std::atomic<size_t> m_ncalls;
   
+  /** For tracking where we spend time. */
+  mutable std::atomic<size_t> m_nanoseconds_spent_in_eval;
   
   // If class to implement cancelling a calculation
   class CheckCeresTerminateCallback : public ceres::IterationCallback
@@ -823,7 +675,8 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
   m_skew_par_start_index( std::numeric_limits<size_t>::max() ),
   m_skew_has_energy_dependance( false ),
   m_cancel_calc( cancel_calc ),
-  m_ncalls( 0 )
+  m_ncalls( 0 ),
+  m_nanoseconds_spent_in_eval( size_t(0) )
   {
     if( !spectrum || (spectrum->num_gamma_channels() < 128) )
       throw runtime_error( "RelActAutoCostFcn: invalid spectrum." );
@@ -1185,12 +1038,12 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
         
       case RelActCalc::RelEffEqnForm::FramPhysicalModel:
       {
-        if( !options.phys_model_self_atten
-           && options.phys_model_external_atten.empty() )
-        {
-          throw runtime_error( "solve_ceres: You must provide self attenuating or external"
-                              " attenuating options when using RelEffEqnForm::FramPhysicalModel." );
-        }
+        //if( !options.phys_model_self_atten
+        //   && options.phys_model_external_atten.empty() )
+        //{
+        //  throw runtime_error( "solve_ceres: You must provide self attenuating or external"
+        //                      " attenuating options when using RelEffEqnForm::FramPhysicalModel." );
+        //}
         if( options.rel_eff_eqn_order != 0 )
           throw runtime_error( "solve_ceres: relative eff. eqn order must be zero for"
                               " RelEffEqnForm::FramPhysicalModel." );
@@ -1382,8 +1235,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     }//try / catch
   
     auto cost_function = new ceres::DynamicNumericDiffCostFunction<RelActAutoCostFcn>( cost_functor );
-    cost_function->SetNumResiduals( cost_functor->number_residuals() );
-    
+    cost_function->SetNumResiduals( static_cast<int>(cost_functor->number_residuals()) );
     
     solution.m_status = RelActCalcAuto::RelActAutoSolution::Status::FailToSolveProblem;
     solution.m_drf = cost_functor->m_drf;
@@ -2331,18 +2183,20 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
       // Not sure what to do with the b and c values of the Modified Hoerl function ( E^b * c^(1/E) ).
       const size_t b_index = rel_eff_start + 2 + 2*options.phys_model_external_atten.size();
       const size_t c_index = b_index + 1;
-  #warning "Setting b and c parameters for relative efficiency equation constant - need to be able to actually fit them."
-      cerr << "Setting b and c parameters for relative efficiency equation constant" << endl;
+  
       pars[b_index] = 0.0;  //(energy/1000)^b
       pars[c_index] = 1.0;  //c^(1000/energy)
-      problem.SetParameterBlockConstant( pars + b_index );
-      problem.SetParameterBlockConstant( pars + c_index );
+      //problem.SetParameterBlockConstant( pars + b_index );
+      //problem.SetParameterBlockConstant( pars + c_index );
     }//if( solution.m_rel_eff_form == RelActCalc::RelEffEqnForm::FramPhysicalModel )
     
     // Okay - we've set our problem up
     ceres::Solver::Options ceres_options;
     ceres_options.linear_solver_type = ceres::DENSE_QR;
+    
     ceres_options.minimizer_progress_to_stdout = true; //true;
+    ceres_options.logging_type = ceres::PER_MINIMIZER_ITERATION;
+    ceres_options.max_num_iterations = 100;
     
     // TODO: there are a ton of ceres::Solver::Options that might be useful for us to set
     
@@ -2405,6 +2259,17 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     const bool success = (solution.m_status == RelActCalcAuto::RelActAutoSolution::Status::Success);
     
     solution.m_num_function_eval_solution = static_cast<int>( cost_functor->m_ncalls );
+    solution.m_num_microseconds_in_eval = static_cast<int>( cost_functor->m_nanoseconds_spent_in_eval / 1000 );  //convert from nanoseconds to micro
+    
+    {
+      const auto now_time = std::chrono::high_resolution_clock::now();
+      const auto dt = 1.0*std::chrono::duration_cast<std::chrono::nanoseconds>(now_time - start_time).count();
+      const double frac = cost_functor->m_nanoseconds_spent_in_eval / dt;
+      
+      cout << "Spent " << 0.001*cost_functor->m_nanoseconds_spent_in_eval
+      << " us in eval, and a total time of " << 0.001*dt << " us in fcnt - this is "
+      << frac << " fraction of the time" << endl;
+    }
     
     ceres::Covariance::Options cov_options;
     cov_options.algorithm_type = ceres::CovarianceAlgorithmType::SPARSE_QR; //
@@ -2915,8 +2780,8 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
                                                 const std::vector<double> &coeffs,
                                                 const size_t rel_eff_start )
   {
-    assert( (rel_eff_start + 2 + 2*opts.phys_model_external_atten.size() + 2) < coeffs.size() );
-    if( (rel_eff_start + 2 + 2*opts.phys_model_external_atten.size() + 2) >= coeffs.size() )
+    assert( (rel_eff_start + 2 + 2*opts.phys_model_external_atten.size() + 2) <= coeffs.size() );
+    if( (rel_eff_start + 2 + 2*opts.phys_model_external_atten.size() + 2) > coeffs.size() )
       throw std::logic_error( "make_phys_eqn_input: whack number of inputs." );
     
     PhysModelRelEqnDef answer;
@@ -2928,7 +2793,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
       atten.material = opts.phys_model_self_atten->material;
       if( !atten.material )
       {
-        atten.atomic_number = coeffs[rel_eff_start + 0];
+        atten.atomic_number = coeffs[rel_eff_start + 0] * RelActCalc::ns_an_ceres_mult;
         assert( (atten.atomic_number >= 1.0) && (atten.atomic_number <= 98.0) );
         if( (atten.atomic_number < 1.0) || (atten.atomic_number > 98.0) )
           throw std::logic_error( "make_phys_eqn_input: whack self-atten AN" );
@@ -2947,7 +2812,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
       atten.material = ext_opt.material;
       if( !atten.material )
       {
-        atten.atomic_number = coeffs[rel_eff_start + 2 + 2*ext_ind + 0];
+        atten.atomic_number = coeffs[rel_eff_start + 2 + 2*ext_ind + 0] * RelActCalc::ns_an_ceres_mult;
         assert( (atten.atomic_number >= 1.0) && (atten.atomic_number <= 98.0) );
         if( (atten.atomic_number < 1.0) || (atten.atomic_number > 98.0) )
           throw std::logic_error( "make_phys_eqn_input: whack external AN" );
@@ -3427,6 +3292,13 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
   {
     m_ncalls += 1;
     
+    const auto start_time = std::chrono::high_resolution_clock::now();
+    DoWorkOnDestruct incrementTimeInFncn( [this,start_time](){
+      const auto end_time = std::chrono::high_resolution_clock::now();
+      m_nanoseconds_spent_in_eval += std::chrono::duration_cast<std::chrono::nanoseconds>(end_time - start_time).count();
+    });
+    
+    
     assert( x.size() == number_parameters() );
     assert( residuals );
     assert( !m_energy_ranges.empty() );
@@ -3719,6 +3591,19 @@ int run_test()
 {
   try
   {
+    MaterialDB matdb;
+    const string materialfile = SpecUtils::append_path( InterSpec::staticDataDirectory(), "MaterialDataBase.txt" );
+    try
+    {
+      const SandiaDecay::SandiaDecayDataBase *db = DecayDataBaseServer::database();
+      matdb.parseGadrasMaterialFile( materialfile, db, false );
+    }catch( std::exception &e )
+    {
+      throw runtime_error( "Couldnt initialize material database." );
+    }
+    
+    
+    
     const char *xml_file_path = "/Users/wcjohns/rad_ana/InterSpec_RelAct/RelActTest/simple_pu_test.xml";
     //const char *xml_file_path = "/Users/wcjohns/rad_ana/InterSpec_RelAct/RelActTest/thor_core_614_668_kev_test.xml";
     //const char *xml_file_path = "/Users/wcjohns/rad_ana/InterSpec_RelAct/RelActTest/LaBr_pu_test.xml";
@@ -3771,7 +3656,8 @@ int run_test()
     
     const auto options_node = get_required_node(base_node, "Options");
     Options options;
-    options.fromXml( options_node );
+    
+    options.fromXml( options_node, &matdb );
 
     bool extract_info_from_n42 = false;
     try
@@ -4389,13 +4275,17 @@ rapidxml::xml_node<char> *Options::toXml( rapidxml::xml_node<char> *parent ) con
   xml_node<char> *base_node = doc->allocate_node( node_element, "Options" );
   parent->append_node( base_node );
   
-  append_version_attrib( base_node, Options::sm_xmlSerializationVersion );
+  int xml_version = 0; //Version 1 is only needed for FramPhysicalModel
+  if( rel_eff_eqn_type == RelActCalc::RelEffEqnForm::FramPhysicalModel )
+    xml_version = Options::sm_xmlSerializationVersion;
+  
+  append_version_attrib( base_node, xml_version );
   append_bool_node( base_node, "FitEnergyCal", fit_energy_cal );
   append_bool_node( base_node, "NucsOfElSameAge", nucs_of_el_same_age );
   
   const char *rell_eff_eqn_str = RelActCalc::to_str( rel_eff_eqn_type );
   auto rel_eff_node = append_string_node( base_node, "RelEffEqnType", rell_eff_eqn_str);
-  append_attrib( rel_eff_node, "remark", "Possible values: Possible values: LnX, LnY, LnXLnY, \"FRAM Empirical\"" );
+  append_attrib( rel_eff_node, "remark", "Possible values: Possible values: LnX, LnY, LnXLnY, \"FRAM Empirical\", \"FRAM Physical\"" );
   
   append_int_node( base_node, "RelEffEqnOrder", rel_eff_eqn_order);
   
@@ -4413,11 +4303,36 @@ rapidxml::xml_node<char> *Options::toXml( rapidxml::xml_node<char> *parent ) con
   
   append_string_node( base_node, "SkewType", PeakDef::to_string(skew_type) );
   
+  // Even if not RelActCalc::RelEffEqnForm::FramPhysicalModel, we'll still write the state of
+  //  the shielding widgets to the XML.
+  if( phys_model_self_atten || !phys_model_external_atten.empty() )
+  {
+    xml_node<char> *phys_node = doc->allocate_node( node_element, "PhysicalModelOptions" );
+    base_node->append_node( phys_node );
+    
+    if( phys_model_self_atten )
+    {
+      xml_node<char> *self_atten_node = doc->allocate_node( node_element, "SelfAtten" );
+      phys_node->append_node( self_atten_node );
+      phys_model_self_atten->toXml( self_atten_node );
+    }//if( phys_model_self_atten )
+    
+    if( !phys_model_external_atten.empty() )
+    {
+      xml_node<char> *ext_atten_node = doc->allocate_node( node_element, "ExtAtten" );
+      phys_node->append_node( ext_atten_node );
+      for( const auto &ext : phys_model_external_atten )
+        ext->toXml( ext_atten_node );
+    }//if( !phys_model_external_atten.empty() )
+    
+    XmlUtils::append_bool_node( phys_node, "PhysModelUseHoerl", phys_model_use_hoerl );
+  }//if( phys_model_self_atten || !phys_model_external_atten.empty() )
+  
   return base_node;
 }//rapidxml::xml_node<char> *Options::toXml(...)
 
 
-void Options::fromXml( const ::rapidxml::xml_node<char> *parent )
+void Options::fromXml( const ::rapidxml::xml_node<char> *parent, MaterialDB *materialDB )
 {
   try
   {
@@ -4428,7 +4343,7 @@ void Options::fromXml( const ::rapidxml::xml_node<char> *parent )
       throw std::logic_error( "invalid input node name" );
     
     // A reminder double check these logics when changing RoiRange::sm_xmlSerializationVersion
-    static_assert( Options::sm_xmlSerializationVersion == 0,
+    static_assert( Options::sm_xmlSerializationVersion == 1,
                   "needs to be updated for new serialization version." );
     
     check_xml_version( parent, Options::sm_xmlSerializationVersion );
@@ -4480,6 +4395,42 @@ void Options::fromXml( const ::rapidxml::xml_node<char> *parent )
     const string skew_str = SpecUtils::xml_value_str( skew_node );
     if( !skew_str.empty() )
       skew_type = PeakDef::skew_from_string( skew_str );
+    
+    // Even if not RelActCalc::RelEffEqnForm::FramPhysicalModel, we'll still try to grab the state
+    phys_model_use_hoerl = true;
+    phys_model_self_atten.reset();
+    phys_model_external_atten.clear();
+    const rapidxml::xml_node<char> *phys_model_node = XML_FIRST_NODE( parent, "PhysicalModelOptions" );
+    
+    if( (rel_eff_eqn_type == RelActCalc::RelEffEqnForm::FramPhysicalModel) && !phys_model_node )
+      throw runtime_error( "Missing PhysicalModelOptions node" );
+    
+    if( phys_model_node )
+    {
+      const rapidxml::xml_node<char> *self_atten_par_node = XML_FIRST_NODE( phys_model_node, "SelfAtten" );
+      const rapidxml::xml_node<char> *self_atten_node = SpecUtils::xml_first_node(self_atten_par_node, "PhysicalModelShield");
+      
+      if( self_atten_node )
+      {
+        auto att = shared_ptr<RelActCalc::PhysicalModelShieldInput>();
+        att->fromXml( self_atten_node, materialDB );
+        phys_model_self_atten = att;
+      }//if( self_atten_node )
+      
+      
+      const rapidxml::xml_node<char> *ext_atten_node = XML_FIRST_NODE( phys_model_node, "ExtAtten" );
+      if( ext_atten_node )
+      {
+        XML_FOREACH_CHILD( att_node, ext_atten_node, "PhysicalModelShield" )
+        {
+          auto att = shared_ptr<RelActCalc::PhysicalModelShieldInput>();
+          att->fromXml( att_node, materialDB );
+          phys_model_external_atten.push_back( att );
+        }
+      }//if( ext_atten_node )
+      
+      phys_model_use_hoerl = XmlUtils::get_bool_node_value(phys_model_node, "PhysModelUseHoerl" );
+    }//if( phys_model_node )
   }catch( std::exception &e )
   {
     throw runtime_error( "Options::fromXml(): " + string(e.what()) );
@@ -4546,7 +4497,8 @@ RelActAutoSolution::RelActAutoSolution()
   m_dof( 0 ),
   m_num_function_eval_solution( 0 ),
   m_num_function_eval_total( 0 ),
-  m_num_microseconds_eval( 0 )
+  m_num_microseconds_eval( 0 ),
+  m_num_microseconds_in_eval( 0 )
 {
   
 }
@@ -5477,6 +5429,20 @@ size_t RelActAutoSolution::nuclide_index( const SandiaDecay::Nuclide *nuclide ) 
 }//nuclide_index(...)
 
 
+string RelActAutoSolution::rel_eff_eqn_js_function() const
+{
+  if( m_rel_eff_form != RelActCalc::RelEffEqnForm::FramPhysicalModel )
+    return RelActCalc::rel_eff_eqn_js_function( m_rel_eff_form, m_rel_eff_coefficients );
+  
+  const RelActAutoCostFcn::PhysModelRelEqnDef input = RelActAutoCostFcn::make_phys_eqn_input(
+                                        m_options, m_drf, m_rel_eff_coefficients, 0 );
+  
+    
+  return RelActCalc::physical_model_rel_eff_eqn_js_function( input.self_atten,
+                            input.external_attens, input.det.get(), input.hoerl_b, input.hoerl_c );
+}//string rel_eff_eqn_js_function() const
+  
+  
 RelActAutoSolution solve( const Options options,
                          const std::vector<RoiRange> energy_ranges,
                          const std::vector<NucInputInfo> nuclides,
@@ -5520,6 +5486,7 @@ RelActAutoSolution solve( const Options options,
   int num_function_eval_solution = orig_sol.m_num_function_eval_solution;
   int num_function_eval_total = orig_sol.m_num_function_eval_total;
   int num_microseconds_eval = orig_sol.m_num_microseconds_eval;
+  int num_microseconds_in_eval = orig_sol.m_num_microseconds_in_eval;
   
   
   bool stop_iterating = false, errored_out_of_iterating = false;
@@ -5847,6 +5814,7 @@ RelActAutoSolution solve( const Options options,
       num_function_eval_solution += current_sol.m_num_function_eval_solution;
       num_function_eval_total += current_sol.m_num_function_eval_total;
       num_microseconds_eval += current_sol.m_num_microseconds_eval;
+      num_microseconds_in_eval += current_sol.m_num_microseconds_in_eval;
     }catch( std::exception &e )
     {
       stop_iterating = errored_out_of_iterating = true;
@@ -5860,6 +5828,7 @@ RelActAutoSolution solve( const Options options,
   current_sol.m_num_function_eval_solution = num_function_eval_solution;
   current_sol.m_num_function_eval_total = num_function_eval_total;
   current_sol.m_num_microseconds_eval = num_microseconds_eval;
+  current_sol.m_num_microseconds_in_eval = num_microseconds_in_eval;
   
   
   if( !errored_out_of_iterating && !stop_iterating )
