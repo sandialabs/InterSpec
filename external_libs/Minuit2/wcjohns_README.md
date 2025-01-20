@@ -1,0 +1,3 @@
+This directory contains Minuit2 version corresponding to about ROOT 6.34.02.
+This code was copied from https://github.com/root-project/root.git, git hash 66d814b3057f149ebea3da19384b5a7db3993631, by wcjohns 20250117.
+The only  modification was to run `cmake .. -Dminuit2_standalone=ON` to copy the ROOT dependencies into the Minuit2 source code directory; these files were then manually copied to 'Minuit/inc/ROOT' to allow the code to compile.  Otherwise, no other changes have been made.

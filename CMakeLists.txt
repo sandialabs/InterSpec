@@ -663,7 +663,7 @@ target_link_libraries(
     Threads::Threads
     SpecUtils
     SandiaDecay
-    minuit2
+    Minuit2::Minuit2
     Cuba-3.0
     muparserx
     Boost::thread
