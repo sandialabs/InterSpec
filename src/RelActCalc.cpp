@@ -873,6 +873,8 @@ void PhysicalModelShieldInput::fromXml( const ::rapidxml::xml_node<char> *parent
       if( !mat )
         throw runtime_error( "Invalid material name '" + name + "'" );
       
+      material = make_shared<Material>( *mat );
+      
       try
       {
         fit_atomic_number = XmlUtils::get_bool_node_value( parent, "FitAtomicNumber" );
@@ -894,6 +896,34 @@ void PhysicalModelShieldInput::fromXml( const ::rapidxml::xml_node<char> *parent
       atomic_number = XmlUtils::get_float_node_value( parent, "AtomicNumber" );
       lower_fit_atomic_number = XmlUtils::get_float_node_value( parent, "LowerFitAtomicNumber" );
       upper_fit_atomic_number = XmlUtils::get_float_node_value( parent, "UpperFitAtomicNumber" );
+      
+      double lower_an = 1.0, upper_an = 98.0;
+      if( fit_atomic_number && (lower_fit_atomic_number == upper_fit_atomic_number) )
+      {
+        lower_fit_atomic_number = 1.0;
+        upper_fit_atomic_number = 98.0;
+      }
+      
+      if( fit_atomic_number )
+      {
+        if( (lower_fit_atomic_number < 1.0) || (lower_fit_atomic_number > 98.0) )
+          throw runtime_error( "invalid lower atomic number fit range." );
+        
+        if( (upper_fit_atomic_number < 1.0) || (upper_fit_atomic_number > 98.0) )
+          throw runtime_error( "invalid lower atomic number fit range." );
+        
+        if( lower_fit_atomic_number >= upper_fit_atomic_number )
+          throw runtime_error( "lower atomic number is larger than upper atomic number." );
+      }//if( fit_atomic_number )
+      
+      if( (atomic_number < 1.0) || (atomic_number > 98.0) )
+      {
+        assert( atomic_number == 0.0 );
+        if( fit_atomic_number )
+          atomic_number = 0.5*(lower_fit_atomic_number + upper_fit_atomic_number);
+        else
+          atomic_number = 26.0;
+      }//
     }// if( material_node ) / else
   }catch( std::exception &e )
   {

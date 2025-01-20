@@ -30,6 +30,7 @@
 #include <memory>
 #include <vector>
 #include <ostream>
+#include <optional>
 
 #include "InterSpec/PeakDef.h" //for PeakContinuum::OffsetType and PeakDef::SkewType
 
@@ -509,6 +510,35 @@ struct RelActAutoSolution
    Note: this is currently just a
    */
   size_t m_dof;
+  
+  /** A struct to hold information about the Physical Model result of the fit. */
+  struct PhysicalModelFitInfo
+  {
+    /** Info on an individual shielding. */
+    struct ShieldInfo
+    {
+      std::shared_ptr<const Material> material;
+      std::optional<double> atomic_number;        /// Will not be present if material
+      std::optional<double> atomic_number_uncert; /// Only present if not a material, and AN was fit; sqrt of diagonal of covariance matrix
+      bool atomic_number_was_fit;                 /// If AN was fit
+      double areal_density;                       /// In PhysicalUnits units
+      std::optional<double> areal_density_uncert; /// Only present if AD was fit; sqrt of diagonal of covariance matrix
+      bool areal_density_was_fit;                 /// If AD was fit
+    };//struct ShieldInfo
+    
+    /** Self attenuator info will only be present if was input into fit. */
+    std::optional<ShieldInfo> self_atten;
+    std::vector<ShieldInfo> ext_shields;
+    
+    // Modified Hoerl corrections only present if fitting the Hoerl function was selected
+    //  Uncertainties are just sqrt of covariance diagnal
+    std::optional<double> hoerl_b, hoerl_b_uncert;
+    std::optional<double> hoerl_c, hoerl_c_uncert;
+  };//struct PhysicalModelFitInfo
+  
+  
+  std::optional<PhysicalModelFitInfo> m_phys_model_result;
+  
   
   /** The number of evaluation calls it took L-M to reach a solution.
    Only useful for debugging and curiosity.

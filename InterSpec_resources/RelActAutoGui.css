@@ -161,7 +161,7 @@
   flex-wrap: nowrap;
   
   /* flex: 1 1 auto; */
-  gap: 10px;
+  /* gap: 10px; */
 }
 
 .RelActAutoGui .PhysicalModelOpts .PhysicalModelShields
@@ -172,6 +172,18 @@
   
   /* flex: 1 1 auto; */
   gap: 10px;
+}
+
+.RelActAutoGui .PhysicalModelOpts .PhysicalModelOptRow
+{
+  display: flex;
+  flex-direction: row;
+  gap: 10px;
+}
+
+.RelActAutoGui .PhysicalModelOpts .PhysicalModelOptRow > .DetectorDisplay
+{
+  transform: scale(0.66);
 }
 
 .RelActAutoGui .MoreMenuIcon,

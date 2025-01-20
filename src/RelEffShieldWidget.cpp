@@ -566,7 +566,7 @@ void RelEffShieldState::setStateFromFitInput( const RelActCalc::PhysicalModelShi
   }else
   {
     materialSelected = false;
-    material = nullptr;
+    material.clear();
     thickness = "";
   }
   

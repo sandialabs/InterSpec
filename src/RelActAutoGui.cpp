@@ -59,10 +59,12 @@
 #include "InterSpec/PopupDiv.h"
 #include "InterSpec/SpecMeas.h"
 #include "InterSpec/AuxWindow.h"
+#include "InterSpec/DrfSelect.h"
 #include "InterSpec/InterSpec.h"
 #include "InterSpec/PeakModel.h"
 #include "InterSpec/ColorTheme.h"
 #include "InterSpec/HelpSystem.h"
+#include "InterSpec/MaterialDB.h"
 #include "InterSpec/RelActCalc.h"
 #include "InterSpec/ColorSelect.h"
 #include "InterSpec/RelEffChart.h"
@@ -75,6 +77,7 @@
 #include "InterSpec/WarningWidget.h"
 #include "InterSpec/RelActCalcAuto.h"
 #include "InterSpec/SwitchCheckbox.h"
+#include "InterSpec/SpecMeasManager.h"
 #include "InterSpec/UndoRedoManager.h"
 #include "InterSpec/UserPreferences.h"
 #include "InterSpec/RelActTxtResults.h"
@@ -1607,9 +1610,19 @@ RelActAutoGui::RelActAutoGui( InterSpec *viewer, Wt::WContainerWidget *parent )
     
   m_phys_ext_attens = new WContainerWidget( m_phys_model_shields );
   
-  m_phys_model_use_hoerl = new WCheckBox( "Use Corr. Fcn.", m_phys_model_opts );
+  // We will pu the Use 
+  WContainerWidget *phys_opt_row = new WContainerWidget( m_phys_model_opts );
+  phys_opt_row->setStyleClass( "PhysicalModelOptRow" );
+  
+  m_phys_model_use_hoerl = new WCheckBox( "Use Corr. Fcn.", phys_opt_row );
   m_phys_model_use_hoerl->setChecked( true );
   m_phys_model_use_hoerl->checked().connect( this, &RelActAutoGui::handlePhysModelUseHoerlChange );
+  m_phys_model_use_hoerl->unChecked().connect( this, &RelActAutoGui::handlePhysModelUseHoerlChange );
+
+  SpecMeasManager *spec_manager = m_interspec->fileManager();
+  SpectraFileModel *spec_model = spec_manager ? spec_manager->model() : nullptr;
+  DetectorDisplay *det_disp = new DetectorDisplay( m_interspec, spec_model, phys_opt_row );
+    
   m_phys_model_opts->hide();
     
     
@@ -2511,11 +2524,14 @@ void RelActAutoGui::setCalcOptionsGui( const RelActCalcAuto::Options &options )
     assert( ext_shields.size() == 1 );
     
     // Remove any extra shielding widgets
-    while( !ext_shields.empty() && (ext_shields.size() > ext_attens.size()) )
+    while( (ext_shields.size() > 1) && (ext_shields.size() > ext_attens.size()) )
     {
       delete ext_shields.back();
       ext_shields.pop_back();
     }
+    
+    if( (ext_shields.size()) == 1 && ext_attens.empty() )
+      ext_shields[0]->resetState();
     
     // Set state, reusing as many shielding widgets as we can
     const size_t num_ext_reused = std::min( ext_shields.size(), ext_attens.size() );
@@ -4957,10 +4973,109 @@ void RelActAutoGui::updateFromCalc( std::shared_ptr<RelActCalcAuto::RelActAutoSo
   
   setOptionsForValidSolution();
   
-  if( m_solution->m_options.rel_eff_eqn_type == RelActCalc::RelEffEqnForm::FramPhysicalModel )
+  // Check if we need to update Physical model shieldings
+  if( (m_solution->m_options.rel_eff_eqn_type == RelActCalc::RelEffEqnForm::FramPhysicalModel)
+     && m_solution->m_phys_model_result.has_value() )
   {
+    const RelActCalcAuto::RelActAutoSolution::PhysicalModelFitInfo &phys_info = *m_solution->m_phys_model_result;
     
-  }//
+    assert( m_phys_model_self_atten );
+    if( !m_phys_model_self_atten )
+      initPhysModelShields();
+    assert( m_phys_model_self_atten );
+    
+    const auto update_shield_widget = []( const RelActCalcAuto::RelActAutoSolution::PhysicalModelFitInfo::ShieldInfo &shield,
+                                      RelEffShieldWidget *w ) {
+      if( !w )
+        return;
+      
+      const Material * const widget_mat = w->material();
+      assert( (!!shield.material) == (!!widget_mat) );
+      assert( !widget_mat || !shield.material || (widget_mat->name == shield.material->name) );
+      
+      if( (!!shield.material) != (!!widget_mat) )
+        w->setMaterialSelected( !!shield.material );
+      
+      if( shield.material && (!widget_mat || (widget_mat->name != shield.material->name)) )
+        w->setMaterial( shield.material->name );
+      
+      if( shield.atomic_number )
+      {
+        assert( shield.atomic_number_was_fit == w->fitAtomicNumber() );
+        assert( shield.atomic_number_was_fit || ((*shield.atomic_number) == w->atomicNumber()));
+        if( (*shield.atomic_number) != w->atomicNumber() )
+          w->setAtomicNumber( *shield.atomic_number );
+        
+        if( shield.atomic_number_was_fit != w->fitAtomicNumber() )
+          w->setFitAtomicNumber( shield.atomic_number_was_fit );
+      }//if( shield.atomic_number )
+      
+      
+      if( shield.areal_density )
+      {
+        if( shield.material )
+        {
+          assert( shield.areal_density_was_fit == w->fitThickness() );
+          const double thick = shield.areal_density / shield.material->density;
+          assert( shield.areal_density_was_fit || (thick == w->thickness()));
+          w->setThickness( thick );
+          if( shield.areal_density_was_fit != w->fitThickness() )
+            w->setFitThickness( shield.areal_density_was_fit );
+        }else
+        {
+          const double ad_g_cm2 = shield.areal_density / PhysicalUnits::g_per_cm2;
+          
+          assert( shield.areal_density_was_fit == w->fitArealDensity() );
+          assert( shield.areal_density_was_fit || (ad_g_cm2 == w->arealDensity()));
+          
+          if( ad_g_cm2 != w->arealDensity() )
+            w->setArealDensity( ad_g_cm2 );
+          
+          if( shield.areal_density_was_fit != w->fitArealDensity() )
+            w->setFitArealDensity( shield.areal_density_was_fit );
+        }//if( shield.material ) / else
+      }//if( shield.areal_density )
+    };//set_shield_widget lambda
+   
+    if( phys_info.self_atten.has_value() )
+      update_shield_widget( *phys_info.self_atten, m_phys_model_self_atten );
+    else if( m_phys_model_self_atten )
+      m_phys_model_self_atten->resetState();
+    
+    vector<RelEffShieldWidget *> ext_shields;
+    for( WWidget *w : m_phys_ext_attens->children() )
+    {
+      RelEffShieldWidget *sw = dynamic_cast<RelEffShieldWidget *>( w );
+      if( sw )
+        ext_shields.push_back( sw );
+    }//for( WWidget *w : m_phys_ext_attens->children() )
+    
+    assert( ext_shields.size() >= phys_info.ext_shields.size() );
+    while( ext_shields.size() < phys_info.ext_shields.size() )
+    {
+      RelEffShieldWidget *sw = new RelEffShieldWidget( RelEffShieldWidget::ShieldType::ExternalAtten, m_phys_ext_attens );
+      sw->changed().connect( this, &RelActAutoGui::handlePhysModelShieldChange );
+      ext_shields.push_back( sw );
+    }
+    
+    while( (ext_shields.size() > 1) && (ext_shields.size() > phys_info.ext_shields.size()) )
+    {
+      delete ext_shields.back();
+      ext_shields.pop_back();
+    }
+    
+    if( (ext_shields.size() == 1) && phys_info.ext_shields.empty() )
+      ext_shields[0]->resetState();
+    
+    assert( ext_shields.size() >= phys_info.ext_shields.size() );
+    for( size_t i = 0; i < phys_info.ext_shields.size(); ++i )
+      update_shield_widget( phys_info.ext_shields[i], ext_shields[i] );
+   
+    assert( phys_info.hoerl_b.has_value() == phys_info.hoerl_c.has_value() );
+    assert( !m_phys_model_use_hoerl || (phys_info.hoerl_b.has_value() == m_phys_model_use_hoerl->isChecked()) );
+    if( m_phys_model_use_hoerl && (m_phys_model_use_hoerl->isChecked() != phys_info.hoerl_b.has_value()) )
+      m_phys_model_use_hoerl->setChecked( phys_info.hoerl_b.has_value() );
+  }//if( m_solution->m_options.rel_eff_eqn_type == RelActCalc::RelEffEqnForm::FramPhysicalModel )
   
   m_solution_updated.emit( m_solution );
   if( m_solution && (m_solution->m_status == RelActCalcAuto::RelActAutoSolution::Status::Success) )

@@ -1628,7 +1628,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
                && ((opt.lower_fit_atomic_number < 1) || (opt.upper_fit_atomic_number > 98)) )
               throw runtime_error( "Self-atten AN is invalid" );
           
-            if( opt.atomic_number >= 1.0 )
+            if( (opt.atomic_number >= 1.0) && (opt.atomic_number <= 98.0) )
               parameters[an_index] = opt.atomic_number;
             else
               parameters[an_index] = 0.5*(opt.lower_fit_atomic_number + opt.upper_fit_atomic_number);
@@ -1649,7 +1649,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
           const RelActCalc::PhysicalModelShieldInput &ext_opt = *options.phys_model_external_atten[ext_ind];
           set_par( start_index, ext_opt );
         }//for( size_t ext_ind = 0; ext_ind < options.phys_model_external_atten.size(); ++ext_ind )
-        
+         
         const size_t b_index = rel_eff_start + 2 + 2*options.phys_model_external_atten.size();
         const size_t c_index = b_index + 1;
         parameters[b_index] = 0.0; //(energy/1000)^b - start b at 0, so term is 1.0
@@ -1842,8 +1842,10 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
       manual_input.eqn_form = options.rel_eff_eqn_type;
       manual_input.eqn_order = manual_rel_eff_order;
       manual_input.phys_model_detector = res_drf;
+      manual_input.use_ceres_to_fit_eqn = (manual_input.eqn_form == RelActCalc::RelEffEqnForm::FramPhysicalModel);
       manual_input.phys_model_self_atten = options.phys_model_self_atten;
       manual_input.phys_model_external_attens = options.phys_model_external_atten;
+      manual_input.phys_model_use_hoerl = false;
       
       RelActCalcManual::RelEffSolution manual_solution
                  = RelActCalcManual::solve_relative_efficiency( manual_input );
@@ -1883,16 +1885,67 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
       if( manual_solution.m_input.eqn_form != RelActCalc::RelEffEqnForm::FramPhysicalModel )
       {
         rel_eff_eqn_str = RelActCalc::rel_eff_eqn_text( manual_solution.m_input.eqn_form, manual_solution.m_rel_eff_eqn_coefficients );
+        for( size_t i = 0; i < num_rel_eff_par; ++i )
+          parameters[rel_eff_start + i] = manual_solution.m_rel_eff_eqn_coefficients[i];
       }else
       {
-        assert( manual_solution.m_rel_eff_eqn_coefficients.size() == (2 + 2*options.phys_model_external_atten.size() + 2) );
         const bool html_format = false;
         rel_eff_eqn_str = manual_solution.rel_eff_eqn_txt( html_format );
-      }
+        
+        parameters[rel_eff_start + 0] = 0.0;
+        parameters[rel_eff_start + 1] = 0.0;
+        if( options.phys_model_self_atten )
+        {
+          size_t manual_index = 0;
+          if( options.phys_model_self_atten->fit_atomic_number )
+          {
+            assert( manual_solution.m_rel_eff_eqn_coefficients.size() > manual_index );
+            parameters[rel_eff_start + 0] = manual_solution.m_rel_eff_eqn_coefficients.at(manual_index);
+            manual_index += 1;
+          }
+          
+          assert( manual_solution.m_rel_eff_eqn_coefficients.size() > manual_index );
+          parameters[rel_eff_start + 1] = manual_solution.m_rel_eff_eqn_coefficients.at(manual_index);
+          manual_index += 1;
+          
+          for( size_t i = 0; i < options.phys_model_external_atten.size(); ++i )
+          {
+            const auto &ext_att = options.phys_model_external_atten[i];
+            assert( ext_att );
+            if( !ext_att )
+              continue;
+            
+            if( ext_att->fit_atomic_number )
+            {
+              assert( manual_solution.m_rel_eff_eqn_coefficients.size() > manual_index );
+              parameters[rel_eff_start + 2 + 2*i + 0] = manual_solution.m_rel_eff_eqn_coefficients.at(manual_index);
+              manual_index += 1;
+            }
+            
+            assert( manual_solution.m_rel_eff_eqn_coefficients.size() > manual_index );
+            parameters[rel_eff_start + 2 + 2*i + 1] = manual_solution.m_rel_eff_eqn_coefficients.at(manual_index);
+            manual_index += 1;
+          }//for( loop over options.phys_model_external_atten )
+          
+          const size_t b_index = rel_eff_start + 2 + 2*options.phys_model_external_atten.size() + 0;
+          const size_t c_index = rel_eff_start + 2 + 2*options.phys_model_external_atten.size() + 1;
+          if( manual_input.phys_model_use_hoerl )
+          {
+            assert( manual_solution.m_rel_eff_eqn_coefficients.size() > manual_index );
+            parameters[b_index] = manual_solution.m_rel_eff_eqn_coefficients.at(manual_index);
+            manual_index += 1;
+            
+            assert( manual_solution.m_rel_eff_eqn_coefficients.size() > manual_index );
+            parameters[c_index] = manual_solution.m_rel_eff_eqn_coefficients.at(manual_index);
+            manual_index += 1;
+          }else
+          {
+            pars[b_index] = 0.0;  //(energy/1000)^b
+            pars[c_index] = 1.0;  //c^(1000/energy)
+          }//if( manual_input.phys_model_use_hoerl ) / else
+        }//if( options.phys_model_self_atten )
+      }//if( no Physical Model ) / else
       cout << "Starting with initial rel. eff. eqn = " << rel_eff_eqn_str << endl;
-      
-      for( size_t i = 0; i < num_rel_eff_par; ++i )
-        parameters[rel_eff_start + i] = manual_solution.m_rel_eff_eqn_coefficients[i];
 
       // The parameters will have entries for two sets of peak-skew parameters; one for
       //  the lowest energy of the problem, and one for the highest; in-between we will
@@ -2186,8 +2239,11 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
   
       pars[b_index] = 0.0;  //(energy/1000)^b
       pars[c_index] = 1.0;  //c^(1000/energy)
-      //problem.SetParameterBlockConstant( pars + b_index );
-      //problem.SetParameterBlockConstant( pars + c_index );
+      if( !options.phys_model_use_hoerl )
+      {
+        problem.SetParameterBlockConstant( pars + b_index );
+        problem.SetParameterBlockConstant( pars + c_index );
+      }
     }//if( solution.m_rel_eff_form == RelActCalc::RelEffEqnForm::FramPhysicalModel )
     
     // Okay - we've set our problem up
@@ -2587,6 +2643,93 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
       solution.m_floating_peaks.push_back( peak );
     }//for( size_t i = 0; i < cost_functor->m_extra_peaks.size(); ++i )
     
+    
+    // Fill out PhysicalModel stuff, if we are fitting that
+    if( options.rel_eff_eqn_type == RelActCalc::RelEffEqnForm::FramPhysicalModel )
+    {
+      assert( solution.m_rel_eff_coefficients.size() == (2 + 2*options.phys_model_external_atten.size() + 2) );
+      
+      RelActCalcAuto::RelActAutoSolution::PhysicalModelFitInfo phys_model_result;
+      
+      auto get_shield_info = [&]( const RelActCalc::PhysicalModelShieldInput &input,
+                                 const size_t start_index )
+      -> RelActCalcAuto::RelActAutoSolution::PhysicalModelFitInfo::ShieldInfo {
+        
+        RelActCalcAuto::RelActAutoSolution::PhysicalModelFitInfo::ShieldInfo answer;
+        
+        answer.material = input.material;
+        answer.atomic_number_was_fit = input.fit_atomic_number;
+        if( input.fit_atomic_number )
+        {
+          assert( !input.material );
+          answer.atomic_number = solution.m_rel_eff_coefficients[start_index + 0] * RelActCalc::ns_an_ceres_mult;
+          assert( (answer.atomic_number >= 1.0) && (answer.atomic_number <= 98.0) );
+          
+          if( uncertainties.size() > (rel_eff_start + start_index) )
+            answer.atomic_number_uncert = uncertainties[rel_eff_start + start_index + 0];
+        }else if( !input.material )
+        {
+          assert( (solution.m_rel_eff_coefficients[start_index + 0] * RelActCalc::ns_an_ceres_mult)
+                 == input.atomic_number );
+          answer.atomic_number = input.atomic_number;
+          assert( (answer.atomic_number >= 1.0) && (answer.atomic_number <= 98.0) );
+        }
+          
+        if( !answer.material && ((answer.atomic_number < 1.0) || (answer.atomic_number > 98.0)) )
+          throw std::logic_error( "AN out of range" );
+        
+        answer.areal_density_was_fit = input.fit_areal_density;
+        if( input.fit_areal_density )
+        {
+          answer.areal_density = solution.m_rel_eff_coefficients[start_index + 1] * PhysicalUnits::g_per_cm2;
+          assert( answer.areal_density >= 0.0 );
+          
+          if( uncertainties.size() > (rel_eff_start + start_index + 1) )
+            answer.areal_density_uncert = uncertainties[rel_eff_start + start_index + 1]; //or sqrt( m_rel_eff_covariance[start_index + 1][start_index + 1] )
+        }else
+        {
+          assert( solution.m_rel_eff_coefficients[start_index + 1] == (input.areal_density / PhysicalUnits::g_per_cm2) );
+          answer.areal_density = input.areal_density;
+        }
+          
+        return answer;
+      };//auto get_shield_info lamda to fill out
+      
+      
+      if( options.phys_model_self_atten
+         && (options.phys_model_self_atten->material
+             || ((options.phys_model_self_atten->atomic_number >= 1.0) && (options.phys_model_self_atten->atomic_number <= 98.0))
+             || options.phys_model_self_atten->fit_atomic_number ) )
+      {
+        phys_model_result.self_atten = get_shield_info( *options.phys_model_self_atten, 0 );
+      }//if( options.phys_model_self_atten )
+      
+      for( size_t ext_ind = 0; ext_ind < options.phys_model_external_atten.size(); ++ext_ind )
+      {
+        auto res = get_shield_info( *options.phys_model_external_atten[ext_ind], 2 + 2*ext_ind );
+        phys_model_result.ext_shields.push_back( std::move(res) );
+      }//for( loop over external attens )
+      
+      if( options.phys_model_use_hoerl )
+      {
+        // Modified Hoerl corrections only present if fitting the Hoerl function was selected
+        const size_t b_index = 2 + 2*options.phys_model_external_atten.size();
+        const size_t c_index = b_index + 1;
+        assert( c_index < solution.m_rel_eff_coefficients.size() );
+        
+        phys_model_result.hoerl_b = solution.m_rel_eff_coefficients[b_index];
+        phys_model_result.hoerl_c = solution.m_rel_eff_coefficients[c_index];
+        
+        if( uncertainties.size() > (rel_eff_start + b_index) )
+          phys_model_result.hoerl_b_uncert = uncertainties[rel_eff_start + b_index];
+        if( uncertainties.size() > (rel_eff_start + c_index) )
+          phys_model_result.hoerl_b_uncert = uncertainties[rel_eff_start + c_index];
+      }//if( options.phys_model_use_hoerl )
+      
+      solution.m_phys_model_result = std::move(phys_model_result);
+    }//if( FramPhysicalModel )
+    
+    
     vector<double> residuals( cost_functor->number_residuals(), 0.0 );
     cost_functor->eval( parameters, residuals.data() );
     solution.m_chi2 = 0.0;
@@ -2824,8 +2967,16 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     
     const size_t b_index = rel_eff_start + 2 + 2*opts.phys_model_external_atten.size();
     const size_t c_index = b_index + 1;
-    answer.hoerl_b = coeffs[b_index];
-    answer.hoerl_c = coeffs[c_index];
+    
+    //TODO: maybe should consult: phys_model_use_hoerl?
+    const double b = coeffs[b_index]; //(energy/1000)^b
+    const double c = coeffs[c_index]; //c^(1000/energy)
+    
+    if( (b != 0.0) || (c != 1.0) )
+    {
+      answer.hoerl_b = coeffs[b_index];
+      answer.hoerl_c = coeffs[c_index];
+    }//if( (b != 0.0) || (c != 1.0) )
     
     return answer;
   }//PhysModelRelEqnDef make_phys_eqn_input(...)
@@ -4412,7 +4563,7 @@ void Options::fromXml( const ::rapidxml::xml_node<char> *parent, MaterialDB *mat
       
       if( self_atten_node )
       {
-        auto att = shared_ptr<RelActCalc::PhysicalModelShieldInput>();
+        auto att = make_shared<RelActCalc::PhysicalModelShieldInput>();
         att->fromXml( self_atten_node, materialDB );
         phys_model_self_atten = att;
       }//if( self_atten_node )

@@ -3620,7 +3620,7 @@ void setup_physical_model_shield_par( ceres::Problem * const problem,
   const size_t an_index = start_ind + 0;
   const size_t ad_index = start_ind + 1;
   
-  if( !opt || (!opt->material && (opt->atomic_number == 0.0)) )
+  if( !opt || (!opt->fit_atomic_number && !opt->material && ((opt->atomic_number < 1.0) || (opt->atomic_number > 98.0))) )
   {
     pars[an_index] = 0.0;
     pars[ad_index] = 0.0;

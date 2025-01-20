@@ -218,8 +218,8 @@ T eval_physical_model_eqn_imp( const double energy,
     
     T areal_density = self_atten->areal_density;
     
-    assert( (areal_density >= -1.0E-6) && !isinf(areal_density) );
-    if( (areal_density <= -1.0E-6) || isnan(areal_density) || isinf(areal_density) )
+    assert( (areal_density >= -1.0E-3) && !isinf(areal_density) );
+    if( (areal_density <= -1.0E-3) || isnan(areal_density) || isinf(areal_density) )
       throw std::runtime_error( "eval_physical_model_eqn: areal density must be >= 0." );
     
     if( areal_density < 0.0 )
@@ -239,8 +239,8 @@ T eval_physical_model_eqn_imp( const double energy,
     
     T areal_density = ext_atten.areal_density;
     
-    assert( (areal_density >= -1.0E-6) && !isinf(areal_density) );
-    if( (areal_density <= -1.0E-6) || isnan(areal_density) || isinf(areal_density) )
+    assert( (areal_density >= -1.0E-3) && !isinf(areal_density) );
+    if( (areal_density <= -1.0E-3) || isnan(areal_density) || isinf(areal_density) )
       throw std::runtime_error( "eval_physical_model_eqn: areal density must be >= 0." );
     
     if( areal_density < 0.0 )
