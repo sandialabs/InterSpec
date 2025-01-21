@@ -3612,119 +3612,6 @@ void RelEffSolution::print_html_report( ostream &output_html_file,
 }//void print_html_report( std::ostream &strm ) const
 
 
-void setup_physical_model_shield_par( ceres::Problem * const problem, 
-                                      double * const pars, 
-                                      const size_t start_ind, 
-                                      const std::shared_ptr<const RelActCalc::PhysicalModelShieldInput> &opt )
-{
-  const size_t an_index = start_ind + 0;
-  const size_t ad_index = start_ind + 1;
-  
-  if( !opt || (!opt->fit_atomic_number && !opt->material && ((opt->atomic_number < 1.0) || (opt->atomic_number > 98.0))) )
-  {
-    pars[an_index] = 0.0;
-    pars[ad_index] = 0.0;
-    if( problem )
-    {
-      problem->SetParameterBlockConstant( pars + an_index );
-      problem->SetParameterBlockConstant( pars + ad_index );
-    }
-    return;
-  }//if( !opt )
-
-  opt->check_valid();
-
-  if( opt->material )
-  {
-    if( opt->fit_atomic_number )
-      throw runtime_error( "You can not fit AN when defining a material" );
-
-    pars[an_index] = 0.0;       
-    if( problem )
-      problem->SetParameterBlockConstant( pars + an_index );
-  }else
-  {     
-    double lower_an = opt->lower_fit_atomic_number;
-    double upper_an = opt->upper_fit_atomic_number;
-    if( (lower_an == upper_an) && (lower_an == 0.0) )
-    {
-      lower_an = 1.0;
-      upper_an = 98.0;
-    }
-
-    double an = opt->atomic_number;
-    if( (an == 0.0) && opt->fit_atomic_number )
-      an = 0.5*(opt->lower_fit_atomic_number + opt->upper_fit_atomic_number);
-          
-    if( (an < 1) || (an > 98) || (an < lower_an) || (an > upper_an) )
-      throw runtime_error( "Self-atten AN is invalid" );
-          
-    pars[an_index] = an / RelActCalc::ns_an_ceres_mult;
-          
-    if( opt->fit_atomic_number )
-    {
-      if( (lower_an < 1) || (upper_an > 98) || (upper_an <= lower_an) )
-        throw runtime_error( "Self-atten AN limits is invalid" );
-            
-      if( problem )
-      {
-        problem->SetParameterLowerBound( pars + an_index, 0, lower_an / RelActCalc::ns_an_ceres_mult );
-        problem->SetParameterUpperBound( pars + an_index, 0, upper_an / RelActCalc::ns_an_ceres_mult );
-
-        // We could Quantize AN... but I'm not sure the below does it
-        //std::vector<int> quantized_params(1, 0);  // 0 means continuous, 1 means quantized
-        //quantized_params[an_index] = 1;  // Assuming an_index is the index of the AN parameter
-        //problem->SetParameterization( pars + an_index, 
-        //     new ceres::SubsetParameterization(1, quantized_params));
-      }
-    }else
-    {
-      if( problem )
-        problem->SetParameterBlockConstant( pars + an_index );
-    }
-  }//if( opt.material ) / else
-      
-  const double max_ad = RelActCalc::PhysicalModelShieldInput::sm_upper_allowed_areal_density_in_g_per_cm2;
-  double ad = opt->areal_density / PhysicalUnits::g_per_cm2;
-  double lower_ad = opt->lower_fit_areal_density / PhysicalUnits::g_per_cm2;
-  double upper_ad = opt->upper_fit_areal_density / PhysicalUnits::g_per_cm2;
-        
-  if( (lower_ad == upper_ad) && (lower_ad == 0.0) )
-  {
-    lower_ad = 0.0;
-    upper_ad = max_ad;
-  }
-        
-  if( (ad == 0.0) && opt->fit_areal_density )
-  {
-    ad = 2.5; // We want something away from zero, because Ceres doesnt like zero values much - 2.5 is arbitrary
-    //  ad = 0.5*(lower_ad + upper_ad); //Something like 250 would be way too much
-  }
-  if( (ad < 0.0) || (ad > max_ad) )
-    throw runtime_error( "Self-atten AD is invalid" );
-        
-  pars[ad_index] = ad;
-        
-  if( opt->fit_areal_density )
-  {
-    // Check for limits
-    if( (lower_ad < 0.0) || (upper_ad > max_ad) || (lower_ad >= upper_ad) )
-      throw runtime_error( "Self-atten AD limits is invalid" );
-          
-    if( problem )
-    {
-      problem->SetParameterLowerBound( pars + ad_index, 0, lower_ad );
-      problem->SetParameterUpperBound( pars + ad_index, 0, upper_ad );
-    }
-  }else
-  {
-    if( problem )
-      problem->SetParameterBlockConstant( pars + ad_index );
-  }
-}//void setup_physical_model_shield_par( ceres::Problem... )
-
-
-
 RelEffSolution solve_relative_efficiency( const RelEffInput &input_orig )
 {
   // When fitting the AN using the Physical Model, we can easily get caught in a local-minimum, and also
@@ -3943,15 +3830,8 @@ RelEffSolution solve_relative_efficiency( const RelEffInput &input_orig )
   //ceres::LossFunction *lossfcn = new ceres::HuberLoss(3.5);
   //ceres::LossFunction *lossfcn = new ceres::CauchyLoss(1.0);
 
-  vector<double *> parameter_blocks;
-  parameter_blocks.push_back( pars );
-  problem.AddResidualBlock( cost_function, lossfcn, parameter_blocks[0] );
-  
+  problem.AddResidualBlock( cost_function, lossfcn, pars );
   problem.AddParameterBlock( pars, static_cast<int>(num_parameters) );
-  // We dont seem to need to add paramater block to the problem - it picks it up from the cost function
-  //problem.AddParameterBlock( pars, static_cast<int>(num_nuclides) );
-  //for( size_t i = 0; i < num_phys_model_rel_eff_params; ++i )
-  //  problem.AddParameterBlock( pars + num_nuclides + i, 1 );
 
 
   if( eqn_form == RelActCalc::RelEffEqnForm::FramPhysicalModel )

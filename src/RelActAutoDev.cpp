@@ -28,6 +28,10 @@
 #include <fstream>
 #include <iostream>
 
+#include "rapidxml/rapidxml.hpp"
+#include "rapidxml/rapidxml_print.hpp"
+#include "rapidxml/rapidxml_utils.hpp"
+
 #include "SpecUtils/SpecFile.h"
 #include "SpecUtils/Filesystem.h"
 
@@ -230,15 +234,63 @@ void example_manual_phys_model()
   cout << endl;
 }//void example_manual_phys_model()
 
+void run_u02_example()
+{
+  const SandiaDecay::SandiaDecayDataBase * const db = DecayDataBaseServer::database();
+  assert( db );
+  MaterialDB matdb;
+  const string data_dir = InterSpec::staticDataDirectory();
+  const string materialfile = SpecUtils::append_path( data_dir, "MaterialDataBase.txt" );
+  matdb.parseGadrasMaterialFile( materialfile, db, false );
+  
+  const string specfilename = "mixed_U02_sample.pcf";
+  SpecUtils::SpecFile specfile;
+  const bool loaded_spec = specfile.load_file(specfilename, SpecUtils::ParserType::Auto );
+  if( !loaded_spec )
+  {
+    cerr << "Failed to load '" << specfilename << "', aborting." << endl;
+    return EXIT_FAILURE;
+  }
+
+  //Sample 1 is background
+  //Sample 38 is UO2_50%_50%
+  assert( specfile.num_measurements() == 38 );
+  shared_ptr<const SpecUtils::Measurement> background = specfile.measurement(size_t(0));
+  assert( background );
+  assert( background->title() == "Background" );
+  shared_ptr<const SpecUtils::Measurement> foreground = specfile.measurement(size_t(37));
+  assert( foreground );
+  assert( SpecUtils::istarts_with( foreground->title(), "UO2_50%_50%" ) );
+  
+  
+  const string xml_path = "uo2_auto_rel_eff_setup.xml";
+  rapidxml::file<char> input_file( xml_path.c_str() );
+  
+  rapidxml::xml_document<char> doc;
+  doc.parse<rapidxml::parse_trim_whitespace>( input_file.data() );
+
+  const rapidxml::xml_node<char> *base_node = doc.first_node( "RelActCalcAuto" );
+  assert( base_node );
+  
+  RelActCalcAuto::RelActAutoGuiState state;
+  state.deSerialize( base_node, &matdb );
+  
+  // Now need to load the Detector
+  
+  //
+}//void run_u02_example()
+  
   
 int dev_code()
 {
   //check_physical_model_eff_function();
   //return 1;
   
-  example_manual_phys_model();
-  return 1;
+  //example_manual_phys_model();
+  //return 1;
 
+  //return RelActCalcAuto::run_test();
+  
   const SandiaDecay::SandiaDecayDataBase * const db = DecayDataBaseServer::database();
   assert( db );
   if( !db )

@@ -360,6 +360,31 @@ struct FloatingPeakResult
 };//struct FloatingPeakResult
 
 
+/** This struct hold the `RelActAutoGui` state, but is defined here because we may want to use the XML
+ from the GUI for batch processing, or whatever.
+*/
+struct RelActAutoGuiState
+{
+  RelActAutoGuiState();
+  
+  RelActCalcAuto::Options options;
+  std::vector<RelActCalcAuto::RoiRange> rois;
+  std::vector<RelActCalcAuto::NucInputInfo> nuclides;
+  std::vector<RelActCalcAuto::FloatingPeak> floating_peaks;
+    
+  bool background_subtract;
+  RelActCalc::PuCorrMethod pu_correlation_method;
+  
+  bool show_ref_lines;
+  double lower_display_energy;
+  double upper_display_energy;
+  
+  /** Returns XML node added; i.e., will have name "RelActCalcAuto" */
+  ::rapidxml::xml_node<char> *serialize( ::rapidxml::xml_node<char> *parent ) const;
+  void deSerialize( const rapidxml::xml_node<char> *base_node, MaterialDB *materialDb );
+};//struct RelActAutoGuiState
+  
+  
 struct RelActAutoSolution
 {
   RelActAutoSolution();
@@ -433,7 +458,21 @@ struct RelActAutoSolution
   std::shared_ptr<const SpecUtils::Measurement> m_foreground;
   std::shared_ptr<const SpecUtils::Measurement> m_background;
   
+  /** The final fit parameters. */
   std::vector<double> m_final_parameters;
+  
+  /** The uncertainties on the final fit parameters; the sqrt of covariance matrix diagonal.
+   Will be empty if covariance matrix failed to compute; otherwise same ordering as
+   `m_final_parameters`.
+   */
+  std::vector<double> m_final_uncertainties;
+  
+  /** The covariance matrix of the fit.
+ 
+   Will be empty if computation of the covariance failed.
+   the rows/columns have same size and ordering as `m_final_parameters`.
+   */
+  std::vector<std::vector<double>> m_covariance;
   
   /** This is a spectrum that will be background subtracted and energy calibrated, if those options
    where wanted.

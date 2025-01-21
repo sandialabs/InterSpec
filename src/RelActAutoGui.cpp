@@ -2654,308 +2654,77 @@ Wt::WWidget *RelActAutoGui::handleCombineRoi( Wt::WWidget *left_roi, Wt::WWidget
 
 rapidxml::xml_node<char> *RelActAutoGui::serialize( rapidxml::xml_node<char> *parent_node ) const
 {
-  assert( parent_node );
+  RelActCalcAuto::RelActAutoGuiState state;
+  state.options = getCalcOptions();
+  state.rois = getRoiRanges();
+  state.nuclides = getNucInputInfo();
+  state.floating_peaks = getFloatingPeaks();
+  state.background_subtract = (m_background_subtract->isEnabled() && m_background_subtract->isChecked());
+  state.show_ref_lines = m_hide_ref_lines_item->isEnabled();
+  state.lower_display_energy = m_spectrum->xAxisMinimum();
+  state.upper_display_energy = m_spectrum->xAxisMaximum();
   
-  using namespace rapidxml;
-  xml_document<char> * const doc = parent_node->document();
-  
-  assert( doc );
-  if( !doc )
-    throw runtime_error( "RelActAutoGui::serialize: no xml_document" );
-  
-  xml_node<char> *base_node = doc->allocate_node( node_element, "RelActCalcAuto" );
-  parent_node->append_node( base_node );
-  
-  xml_attribute<char> *attrib = doc->allocate_attribute( "version", "0" );
-  base_node->append_attribute( attrib );
-  
-  // Elements in the offline-xml we dont deal with here
-  //  base_node->append_node( <"ForegroundFileName"> );
-  //  base_node->append_node( <"BackgroundFileName"> );
-  //  base_node->append_node( <"OutputHtmlFileName"> );
-  //  base_node->append_node( <"RoiAndNucsFromFile"> );
-  
-  const RelActCalcAuto::Options options = getCalcOptions();
-  const vector<RelActCalcAuto::RoiRange> rois = getRoiRanges();
-  const vector<RelActCalcAuto::NucInputInfo> nuclides = getNucInputInfo();
-  const vector<RelActCalcAuto::FloatingPeak> floating_peaks = getFloatingPeaks();
-  rapidxml::xml_node<char> *options_node = options.toXml( base_node );
-  
-  {// Begin put extra options
-    //options_node
-    
-    
-    /*
-    if( m_u_pu_data_source->isVisible() )
+  state.pu_correlation_method = RelActCalc::PuCorrMethod::NotApplicable;
+  if( m_pu_corr_method->isVisible() && m_pu_corr_method->count() )
+  {
+    bool found = false;
+    const string currtxt = m_pu_corr_method->currentText().toUTF8();
+    for( RelActCalc::PuCorrMethod method = RelActCalc::PuCorrMethod(0);
+        method <= RelActCalc::PuCorrMethod::NotApplicable;
+        method = RelActCalc::PuCorrMethod( static_cast<int>(method) + 1 ) )
     {
-      const int src_index = m_u_pu_data_source->currentIndex();
-      if( (src_index>= 0)
-         && (src_index < static_cast<int>(RelActCalcManual::PeakCsvInput::NucDataSrc::Undefined)) )
+      if( RelActCalc::to_description(method) == currtxt )
       {
-        const auto src_type = RelActCalcManual::PeakCsvInput::NucDataSrc( src_index );
-        const char *val = RelActCalcManual::PeakCsvInput::to_str( src_type );
-        xml_node<char> *node = doc->allocate_node( node_element, "UPuDataSrc", val );
-        options_node->append_node( node );
-      }//if( a valid index )
-    }//if( we hav eU or Pu in the problem )
-     */
-  
-  
-    if( m_background_subtract->isEnabled() )
-    {
-      const char *val = m_background_subtract->isChecked() ? "true" : "false";
-      xml_node<char> *node = doc->allocate_node( node_element, "BackgroundSubtract", val );
-      options_node->append_node( node );
-    }//if( we have a background to subtract )
-    
-    if( m_pu_corr_method->isVisible() && m_pu_corr_method->count() )
-    {
-      string valstr;
-      const string currtxt = m_pu_corr_method->currentText().toUTF8();
-      for( int i = 0; i <= static_cast<int>(RelActCalc::PuCorrMethod::NotApplicable); ++i )
-      {
-        const auto method = RelActCalc::PuCorrMethod(i);
-        const string &desc = RelActCalc::to_description( method );
-        if( desc == currtxt )
-        {
-          valstr = RelActCalc::to_str(method);
-          break;
-        }
-      }//for( loop over RelActCalc::PuCorrMethod )
-      
-      assert( !valstr.empty() );
-      
-      if( !valstr.empty() )
-      {
-        const char *val = doc->allocate_string( valstr.c_str() );
-        xml_node<char> *node = doc->allocate_node( node_element, "Pu242CorrMethod", val );
-        options_node->append_node( node );
+        found = true;
+        state.pu_correlation_method = method;
+        break;
       }
-    }//if( we have U or Pu in the problem )
-  }// End put extra options
+    }//for( loop over RelActCalc::PuCorrMethod )
+    assert( found );
+  }//if( we have U or Pu in the problem )
   
-  
-  if( !rois.empty() )
-  {
-    xml_node<char> *node = doc->allocate_node( node_element, "RoiRangeList" );
-    base_node->append_node( node );
-    for( const auto &range : rois )
-      range.toXml( node );
-  }
-  
-  if( !nuclides.empty() )
-  {
-    xml_node<char> *node = doc->allocate_node( node_element, "NucInputInfoList" );
-    base_node->append_node( node );
-    for( const auto &nuc : nuclides )
-      nuc.toXml( node );
-  }//if( !nuclides.empty() )
-  
-  if( !floating_peaks.empty() )
-  {
-    xml_node<char> *node = doc->allocate_node( node_element, "FloatingPeakList" );
-    base_node->append_node( node );
-    for( const auto &peak : floating_peaks )
-      peak.toXml( node );
-  }//if( !floating_peaks.empty() )
-  
-  
-  {
-    const bool show_ref_lines = m_hide_ref_lines_item->isEnabled();
-    const char *val = show_ref_lines ? "true" : "false";
-    xml_node<char> *node = doc->allocate_node( node_element, "ShowRefGammaLines", val );
-    options_node->append_node( node );
-  }//if( !refline_cb )
-  
-  const double lower_display_energy = m_spectrum->xAxisMinimum();
-  const double upper_display_energy = m_spectrum->xAxisMaximum();
-  
-  if( lower_display_energy < upper_display_energy )
-  {
-    const string lower_energy_str = std::to_string( lower_display_energy );
-    const string upper_energy_str = std::to_string( upper_display_energy );
-    
-    const char *val = doc->allocate_string( lower_energy_str.c_str() );
-    xml_node<char> *node = doc->allocate_node( node_element, "LowerDisplayEnergy", val );
-    options_node->append_node( node );
-    
-    val = doc->allocate_string( upper_energy_str.c_str() );
-    node = doc->allocate_node( node_element, "UpperDisplayEnergy", val );
-    options_node->append_node( node );
-  }//if( lower_display_energy < upper_display_energy )
-  
-  
-  
-  return parent_node;
+  return state.serialize( parent_node );
 }//rapidxml::xml_node<char> *RelActAutoGui::serialize( rapidxml::xml_node<char> *parent )
 
 
 void RelActAutoGui::deSerialize( const rapidxml::xml_node<char> *base_node )
 {
-  using namespace rapidxml;
-  
-  assert( base_node );
-  if( !base_node )
-    throw runtime_error( "RelActAutoGui::deSerialize: nullptr passed in." );
-  
-  const string base_node_name = SpecUtils::xml_name_str(base_node);
-  if( base_node_name != "RelActCalcAuto" )
-    throw runtime_error( "RelActAutoGui::deSerialize: invalid node passed in named '"
-                         + base_node_name + "'" );
-  
-  const xml_attribute<char> *attrib = XML_FIRST_ATTRIB(base_node, "version");
-  const string base_version = SpecUtils::xml_value_str(attrib);
-  if( !SpecUtils::istarts_with(base_version, "0") )
-    throw runtime_error( "RelActAutoGui::deSerialize: invalid xml version='" + base_version + "'" );
-  
-  const xml_node<char> *node = XML_FIRST_NODE(base_node, "Options");
-  if( !node )
-    throw runtime_error( "RelActAutoGui::deSerialize: No <Options> node." );
-  
   MaterialDB *materialDb = m_interspec->materialDataBase();
   
-  bool loaded_display_energy_range = false;
+  RelActCalcAuto::RelActAutoGuiState state;
+  state.deSerialize( base_node, materialDb );
   
-  RelActCalcAuto::Options options;
-  vector<RelActCalcAuto::RoiRange> rois;
-  vector<RelActCalcAuto::NucInputInfo> nuclides;
-  vector<RelActCalcAuto::FloatingPeak> floating_peaks;
+  m_background_subtract->setChecked( state.background_subtract );
   
-  options.fromXml( node, materialDb );
+  m_pu_corr_method->setHidden( state.pu_correlation_method == RelActCalc::PuCorrMethod::NotApplicable );
+  m_pu_corr_method->clear();
+  m_pu_corr_method->addItem( RelActCalc::to_description(state.pu_correlation_method) );
+  m_pu_corr_method->setCurrentIndex( 1 );
+  if( m_pu_corr_method->label() )
+    m_pu_corr_method->label()->setHidden( m_pu_corr_method->isHidden() );
   
-  
-  {// Begin get extra options
-    const xml_node<char> *opt_node = XML_FIRST_NODE(node, "BackgroundSubtract");
-    string val = SpecUtils::xml_value_str( opt_node );
-    const bool back_sub = SpecUtils::iequals_ascii(val, "true");
-    m_background_subtract->setChecked( back_sub );
+  m_show_ref_lines_item->setHidden( state.show_ref_lines );
+  m_hide_ref_lines_item->setHidden( !state.show_ref_lines );
+  m_show_ref_lines_item->setDisabled( state.show_ref_lines );
+  m_hide_ref_lines_item->setDisabled( !state.show_ref_lines );
     
-
-    if( m_pu_corr_method->label() )
-      m_pu_corr_method->label()->hide();
-    opt_node = XML_FIRST_NODE(node, "Pu242CorrMethod");
-    val = SpecUtils::xml_value_str( opt_node );
-    
-    // Start off assuming we will hide this option
-    m_pu_corr_method->clear();
-    m_pu_corr_method->hide();
-      
-    for( int i = 0; i <= static_cast<int>(RelActCalc::PuCorrMethod::NotApplicable); ++i )
-    {
-      const auto method = RelActCalc::PuCorrMethod(i);
-      if( val == RelActCalc::to_str(method) )
-      {
-        m_pu_corr_method->addItem( RelActCalc::to_description( method ) );
-        m_pu_corr_method->setCurrentIndex( 0 );
-        m_pu_corr_method->show();
-        if( m_pu_corr_method->label() )
-          m_pu_corr_method->label()->show();
-        break;
-      }
-    }//for( loop over RelActCalc::PuCorrMethod )
-    
-    
-    opt_node = XML_FIRST_NODE(node, "ShowRefGammaLines");
-    val = SpecUtils::xml_value_str( opt_node );
-    const bool show_ref_lines = SpecUtils::iequals_ascii(val, "true");
-    m_show_ref_lines_item->setHidden( show_ref_lines );
-    m_hide_ref_lines_item->setHidden( !show_ref_lines );
-    m_show_ref_lines_item->setDisabled( show_ref_lines );
-    m_hide_ref_lines_item->setDisabled( !show_ref_lines );
-    
-    opt_node = XML_FIRST_NODE(node, "LowerDisplayEnergy");
-    const string lower_display_energy_str = SpecUtils::xml_value_str( opt_node );
-    opt_node = XML_FIRST_NODE(node, "UpperDisplayEnergy");
-    const string upper_display_energy_str = SpecUtils::xml_value_str( opt_node );
-    
-    double lower_display_energy, upper_display_energy;
-    if( !lower_display_energy_str.empty() && !upper_display_energy_str.empty()
-       && (stringstream(lower_display_energy_str) >> lower_display_energy)
-       && (stringstream(upper_display_energy_str) >> upper_display_energy)
-       && (upper_display_energy > lower_display_energy)
-       && !IsInf(lower_display_energy) && !IsNan(lower_display_energy)
-       && !IsInf(upper_display_energy) && !IsNan(upper_display_energy)
-       )
-    {
-      loaded_display_energy_range = true;
-      
-      // Note: this next line only works when creating this widget and then loading its state
-      //       because #updateDuringRenderForSpectrumChange checks if the widget has rendered
-      //       yet, and if not, and it looks like a custom range has been set, then it wont
-      //       reset the range.
-      m_spectrum->setXAxisRange( lower_display_energy, upper_display_energy );
-    }
-    
-    
-    /*
-    opt_node = XML_FIRST_NODE(node, "UPuDataSrc");
-    val = SpecUtils::xml_value_str( opt_node );
-    if( !val.empty() )
-    {
-      using RelActCalcManual::PeakCsvInput::NucDataSrc;
-      
-      bool set_src = false;
-      for( int i = 0; i < static_cast<int>(NucDataSrc::Undefined); ++i )
-      {
-        const NucDataSrc src = NucDataSrc(i);
-        const char *src_str = RelActCalcManual::PeakCsvInput::to_str(src);
-        if( val == src_str )
-        {
-          set_src = true;
-          m_u_pu_data_source->setCurrentIndex( i );
-          break;
-        }
-      }//for( int i = 0; i < static_cast<int>(NucDataSrc::Undefined); ++i )
-      
-      if( !set_src )
-        cerr << "Failed to convert '" << val << "' into a NucDataSrc" << endl;
-    }//if( UPuDataSrc not empty )
-     */
-  }// End get extra options
-  
-
-  node = XML_FIRST_NODE(base_node, "RoiRangeList");
-  if( node )
+  if( state.lower_display_energy < state.upper_display_energy )
   {
-    XML_FOREACH_CHILD( roi_node, node, "RoiRange" )
-    {
-      RelActCalcAuto::RoiRange roi;
-      roi.fromXml( roi_node );
-      rois.push_back( roi );
-    }
-  }//if( <RoiRangeList> )
-  
-  
-  node = XML_FIRST_NODE(base_node, "NucInputInfoList");
-  if( node )
-  {
-    XML_FOREACH_CHILD( nuc_node, node, "NucInputInfo" )
-    {
-      RelActCalcAuto::NucInputInfo nuc;
-      nuc.fromXml( nuc_node );
-      nuclides.push_back( nuc );
-    }
-  }//if( <NucInputInfoList> )
-  
-  
-  node = XML_FIRST_NODE(base_node, "FloatingPeakList");
-  if( node )
-  {
-    XML_FOREACH_CHILD( peak_node, node, "FloatingPeak" )
-    {
-      RelActCalcAuto::FloatingPeak peak;
-      peak.fromXml( peak_node );
-      floating_peaks.push_back( peak );
-    }
-  }//if( <NucInputInfoList> )
-  
+    // Note: this next line only works when creating this widget and then loading its state
+    //       because #updateDuringRenderForSpectrumChange checks if the widget has rendered
+    //       yet, and if not, and it looks like a custom range has been set, then it wont
+    //       reset the range.
+    
+    m_spectrum->setXAxisRange( state.lower_display_energy, state.upper_display_energy );
+  }
+    
   m_loading_preset = true;
   
-  setCalcOptionsGui( options );
+  setCalcOptionsGui( state.options );
   m_nuclides->clear();
   m_energy_ranges->clear();
   
-  for( const RelActCalcAuto::NucInputInfo &nuc : nuclides )
+  for( const RelActCalcAuto::NucInputInfo &nuc : state.nuclides )
   {
     RelActAutoNuclide *nuc_widget = new RelActAutoNuclide( this, m_nuclides );
     nuc_widget->updated().connect( this, &RelActAutoGui::handleNuclidesChanged );
@@ -2965,7 +2734,7 @@ void RelActAutoGui::deSerialize( const rapidxml::xml_node<char> *base_node )
   }//for( const RelActCalcAuto::NucInputInfo &nuc : nuclides )
   
   
-  for( const RelActCalcAuto::RoiRange &roi : rois )
+  for( const RelActCalcAuto::RoiRange &roi : state.rois )
   {
     RelActAutoEnergyRange *energy_range = new RelActAutoEnergyRange( this, m_energy_ranges );
     
@@ -2980,13 +2749,13 @@ void RelActAutoGui::deSerialize( const rapidxml::xml_node<char> *base_node )
   
   // Free Peaks
   m_free_peaks->clear();
-  if( floating_peaks.empty() && !m_free_peaks_container->isHidden() )
+  if( state.floating_peaks.empty() && !m_free_peaks_container->isHidden() )
     handleHideFreePeaks();
   
-  if( !floating_peaks.empty() && m_free_peaks_container->isHidden() )
+  if( !state.floating_peaks.empty() && m_free_peaks_container->isHidden() )
     handleShowFreePeaks();
   
-  for( const RelActCalcAuto::FloatingPeak &peak : floating_peaks )
+  for( const RelActCalcAuto::FloatingPeak &peak : state.floating_peaks )
     handleAddFreePeak( peak.energy, !peak.release_fwhm, peak.apply_energy_cal_correction );
   
   m_solution.reset();
@@ -3000,7 +2769,7 @@ void RelActAutoGui::deSerialize( const rapidxml::xml_node<char> *base_node )
   m_render_flags |= RenderActions::UpdateCalculations;
   m_render_flags |= RenderActions::UpdateFreePeaks;
   m_render_flags |= RenderActions::UpdateRefGammaLines;
-  if( !loaded_display_energy_range )
+  if( state.lower_display_energy >= state.upper_display_energy )
     m_render_flags |= RenderActions::ChartToDefaultRange;
   
   scheduleRender();

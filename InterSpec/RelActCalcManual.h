@@ -706,21 +706,6 @@ struct RelEffSolution
 RelEffSolution solve_relative_efficiency( const RelEffInput &input );
 
 
-/** Setup the physical model shield parameters for the Ceres problem - used by both auto and manual.
- * Assumes each parameter is its own parameter block.
- * 
- * @param problem The Ceres problem to setup.  May be nullptr, in which case the parameters will just be set to initial values.
- * @param pars The array of parameters.
- * @param start_ind The starting index, of `pars`, for this shielding.  This is the index
- *                  Atomic Number of the shielding (if material isnt defined), and the next position
- *                  in the paramaters is the Areal Density.
- * @param opt The physical model shield input to use.
- */
-void setup_physical_model_shield_par( ceres::Problem  * const problem, 
-                                      double * const pars, 
-                                      const size_t start_ind, 
-                                      const std::shared_ptr<const RelActCalc::PhysicalModelShieldInput> &opt );
-
 /** Functions in this namespace are for importing peak data from CSV files, and then matching
  up nuclide info, if it wasnt in the CSV files.
  Accepts CSV files from InterSpec, PeakEasy, and GADRAS-DRF.

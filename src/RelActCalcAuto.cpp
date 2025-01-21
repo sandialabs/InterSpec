@@ -580,6 +580,122 @@ struct NucInputGamma : public RelActCalcAuto::NucInputInfo
   }//NucInputGamma constructor
 };//struct NucInputGamma
 
+  /** Setup the physical model shield parameters for the Ceres problem - used by both auto and manual.
+   * Assumes each parameter is its own parameter block.
+   *
+   * @param problem The Ceres problem to setup.  May be nullptr, in which case the parameters will just be set to initial values.
+   * @param constant_parameters The parameters that should be held constant in the problem
+   * @param pars The array of parameters.
+   * @param start_ind The starting index, of `pars`, for this shielding.  This is the index
+   *                  Atomic Number of the shielding (if material isnt defined), and the next position
+   *                  in the parameters is the Areal Density.
+   * @param opt The physical model shield input to use.
+   */
+void setup_physical_model_shield_par( ceres::Problem * const problem,
+                                     vector<int> &constant_parameters,
+                                        double * const pars,
+                                        const size_t start_ind,
+                                        const std::shared_ptr<const RelActCalc::PhysicalModelShieldInput> &opt )
+{
+  const size_t an_index = start_ind + 0;
+  const size_t ad_index = start_ind + 1;
+  
+  if( !opt || (!opt->fit_atomic_number && !opt->material && ((opt->atomic_number < 1.0) || (opt->atomic_number > 98.0))) )
+  {
+    pars[an_index] = 0.0;
+    pars[ad_index] = 0.0;
+    constant_parameters.push_back( static_cast<int>(an_index) );
+    constant_parameters.push_back( static_cast<int>(ad_index) );
+    return;
+  }//if( !opt )
+  
+  opt->check_valid();
+  
+  if( opt->material )
+  {
+    if( opt->fit_atomic_number )
+      throw runtime_error( "You can not fit AN when defining a material" );
+    
+    pars[an_index] = 0.0;
+    constant_parameters.push_back( static_cast<int>(an_index) );
+  }else
+  {
+    double lower_an = opt->lower_fit_atomic_number;
+    double upper_an = opt->upper_fit_atomic_number;
+    if( (lower_an == upper_an) && (lower_an == 0.0) )
+    {
+      lower_an = 1.0;
+      upper_an = 98.0;
+    }
+    
+    double an = opt->atomic_number;
+    if( (an == 0.0) && opt->fit_atomic_number )
+      an = 0.5*(opt->lower_fit_atomic_number + opt->upper_fit_atomic_number);
+    
+    if( (an < 1) || (an > 98) || (an < lower_an) || (an > upper_an) )
+      throw runtime_error( "Self-atten AN is invalid" );
+    
+    pars[an_index] = an / RelActCalc::ns_an_ceres_mult;
+    
+    if( opt->fit_atomic_number )
+    {
+      if( (lower_an < 1) || (upper_an > 98) || (upper_an <= lower_an) )
+        throw runtime_error( "Self-atten AN limits is invalid" );
+      
+      if( problem )
+      {
+        problem->SetParameterLowerBound( pars, static_cast<int>(an_index), lower_an / RelActCalc::ns_an_ceres_mult );
+        problem->SetParameterUpperBound( pars, static_cast<int>(an_index), upper_an / RelActCalc::ns_an_ceres_mult );
+        
+        // We could Quantize AN... but I'm not sure the below does it
+        //std::vector<int> quantized_params(1, 0);  // 0 means continuous, 1 means quantized
+        //quantized_params[an_index] = 1;  // Assuming an_index is the index of the AN parameter
+        //problem->SetParameterization( pars + an_index,
+        //     new ceres::SubsetParameterization(1, quantized_params));
+      }
+    }else
+    {
+      constant_parameters.push_back( static_cast<int>(an_index) );
+    }
+  }//if( opt.material ) / else
+  
+  const double max_ad = RelActCalc::PhysicalModelShieldInput::sm_upper_allowed_areal_density_in_g_per_cm2;
+  double ad = opt->areal_density / PhysicalUnits::g_per_cm2;
+  double lower_ad = opt->lower_fit_areal_density / PhysicalUnits::g_per_cm2;
+  double upper_ad = opt->upper_fit_areal_density / PhysicalUnits::g_per_cm2;
+  
+  if( (lower_ad == upper_ad) && (lower_ad == 0.0) )
+  {
+    lower_ad = 0.0;
+    upper_ad = max_ad;
+  }
+  
+  if( (ad == 0.0) && opt->fit_areal_density )
+  {
+    ad = 2.5; // We want something away from zero, because Ceres doesnt like zero values much - 2.5 is arbitrary
+    //  ad = 0.5*(lower_ad + upper_ad); //Something like 250 would be way too much
+  }
+  if( (ad < 0.0) || (ad > max_ad) )
+    throw runtime_error( "Self-atten AD is invalid" );
+  
+  pars[ad_index] = ad;
+  
+  if( opt->fit_areal_density )
+  {
+    // Check for limits
+    if( (lower_ad < 0.0) || (upper_ad > max_ad) || (lower_ad >= upper_ad) )
+      throw runtime_error( "Self-atten AD limits is invalid" );
+    
+    if( problem )
+    {
+      problem->SetParameterLowerBound( pars, static_cast<int>(ad_index), lower_ad );
+      problem->SetParameterUpperBound( pars, static_cast<int>(ad_index), upper_ad );
+    }
+  }else
+  {
+    constant_parameters.push_back( ad_index );
+  }
+}//void setup_physical_model_shield_par( ceres::Problem... )
 
 
 struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
@@ -1236,6 +1352,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
   
     auto cost_function = new ceres::DynamicNumericDiffCostFunction<RelActAutoCostFcn>( cost_functor );
     cost_function->SetNumResiduals( static_cast<int>(cost_functor->number_residuals()) );
+    cost_function->AddParameterBlock( static_cast<int>(cost_functor->number_parameters()) );
     
     solution.m_status = RelActCalcAuto::RelActAutoSolution::Status::FailToSolveProblem;
     solution.m_drf = cost_functor->m_drf;
@@ -1247,22 +1364,19 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     
     const size_t num_pars = cost_functor->number_parameters();
     
-    for( size_t i = 0; i < num_pars; ++i )
-      cost_function->AddParameterBlock( 1 );
-    
     vector<double> parameters( num_pars, 0.0 );
     double *pars = &parameters[0];
-    
-    vector<double *> parameter_blocks( num_pars );
-    for( size_t i = 0; i < num_pars; ++i )
-      parameter_blocks[i] = pars + i;
-    
+    const vector<double *> parameter_blocks( 1, pars );
+    vector<int> constant_parameters;
     
     ceres::Problem problem;
+    
+    
     
     // TODO: investigate using a LossFunction - probably really need it
     ceres::LossFunction *lossfcn = nullptr;
     problem.AddResidualBlock( cost_function, lossfcn, parameter_blocks );
+    problem.AddParameterBlock( pars, static_cast<int>(num_pars) );
     
     parameters[0] = 0.0;
     parameters[1] = 1.0;
@@ -1293,31 +1407,28 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
       if( solution.m_fit_energy_cal[0] )
       {
         //We'll allow changing the offset by 5 keV (limit chosen fairly arbitrarily)
-        problem.SetParameterLowerBound(pars + 0, 0, -5.0 );
-        problem.SetParameterUpperBound(pars + 0, 0, +5.0 );
+        problem.SetParameterLowerBound(pars, 0, -5.0 );
+        problem.SetParameterUpperBound(pars, 0, +5.0 );
       }else
       {
-        problem.SetParameterBlockConstant( pars + 0 );
+        constant_parameters.push_back( 0 );
       }//if( solution.m_fit_energy_cal[0] ) / else
       
       
       if( solution.m_fit_energy_cal[1] )
       {
         // We'll allow changing the gain by 1.5% (limit chosen fairly arbitrarily);
-        //  we'll also multiple by 100 to keep the parameter ranging from +-1.
-        //
-        //  TODO: for some reason gain doesnt seem to adjust!
-        problem.SetParameterLowerBound(pars + 1, 0, 0.985 );
-        problem.SetParameterUpperBound(pars + 1, 0, 1.015 );
+        problem.SetParameterLowerBound(pars, 1, 0.985 );
+        problem.SetParameterUpperBound(pars, 1, 1.015 );
       }else
       {
-        problem.SetParameterBlockConstant( pars + 1 );
+        constant_parameters.push_back( 1 );
       }//if( solution.m_fit_energy_cal[1] ) / else
       
     }else
     {
-      problem.SetParameterBlockConstant( pars + 0 );
-      problem.SetParameterBlockConstant( pars + 1 );
+      constant_parameters.push_back( 0 );
+      constant_parameters.push_back( 1 );
     }
     
     std::shared_ptr<const DetectorPeakResponse> res_drf = cost_functor->m_drf;
@@ -1452,9 +1563,9 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
       for( size_t i = 0; i < drfpars.size(); ++i )
       {
         parameters[fwhm_start + i] = drfpars[i];
-        cerr << "Setting FWHM constant!" << endl;
-#warning "Setting FWHM constant, for dev - undo this"
-        problem.SetParameterBlockConstant( pars + fwhm_start + i );
+//#warning "Setting FWHM constant for development!"
+//        cerr << "Setting FWHM constant!" << endl;
+//        constant_parameters.push_back( static_cast<int>( fwhm_start + i ) );
       }
     }catch( std::exception &e )
     {
@@ -1982,19 +2093,19 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
         
         
         parameters[skew_start + i] = starting;
-        problem.SetParameterLowerBound(pars + skew_start + i, 0, lower );
-        problem.SetParameterUpperBound(pars + skew_start + i, 0, upper );
+        problem.SetParameterLowerBound(pars, static_cast<int>(skew_start + i), lower );
+        problem.SetParameterUpperBound(pars, static_cast<int>(skew_start + i), upper );
         
         // Specify ranges for second set of skew parameters
         if( !fit_energy_dep )
         {
           parameters[skew_start + i + num_skew_coefs] = -999.9;
-          problem.SetParameterBlockConstant( pars + skew_start + i + num_skew_coefs );
+          constant_parameters.push_back( skew_start + i + num_skew_coefs );
         }else
         {
           parameters[skew_start + i + num_skew_coefs] = starting;
-          problem.SetParameterLowerBound(pars + skew_start + i + num_skew_coefs, 0, lower );
-          problem.SetParameterUpperBound(pars + skew_start + i + num_skew_coefs, 0, upper );
+          problem.SetParameterLowerBound(pars, static_cast<int>(skew_start + i + num_skew_coefs), lower );
+          problem.SetParameterUpperBound(pars, static_cast<int>(skew_start + i + num_skew_coefs), upper );
         }
       }//for( size_t i = 0; i < (num_skew_par/2); ++i )
       
@@ -2092,11 +2203,11 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
         // TODO: is there any problem with a nuclide >100 years, that isnt effectively infinite?
         max_age = std::min( max_age, 120*PhysicalUnits::year );
         
-        problem.SetParameterUpperBound(pars + age_index, 0, max_age );
-        problem.SetParameterLowerBound(pars + age_index, 0, 0.0 );
+        problem.SetParameterLowerBound(pars, static_cast<int>(age_index), 0.0 );
+        problem.SetParameterUpperBound(pars, static_cast<int>(age_index), max_age );
       }else
       {
-        problem.SetParameterBlockConstant( pars + age_index );
+        constant_parameters.push_back( age_index );
       }
       
       if( !succesfully_estimated_re_and_ra )
@@ -2175,7 +2286,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
         }
       }//if( !succesfully_estimated_re_and_ra )
       
-      problem.SetParameterLowerBound(pars + act_index, 0, 0.0 );
+      problem.SetParameterLowerBound(pars, act_index, 0.0 );
     }//for( size_t nuc_num = 0; nuc_num < nuclides.size(); ++nuc_num )
     
     
@@ -2201,7 +2312,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
       
       // Assume data is entirely due to peak; mean +- 0.5*fwhm is ~76% gaussian area
       parameters[amp_index] = data_count / 0.76;
-      problem.SetParameterLowerBound(pars + amp_index, 0, 0.0 );
+      problem.SetParameterLowerBound(pars, amp_index, 0.0 );
       
       parameters[fwhm_index] = 1.0;
       
@@ -2209,14 +2320,14 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
       {
         // We'll say the width of this peak can not be less than 25% of what is expected
         //  TODO: we probably also want to put a lower bound of 3 or 4 channels as well
-        problem.SetParameterLowerBound(pars + fwhm_index, 0, 0.25 );
+        problem.SetParameterLowerBound(pars, static_cast<int>(fwhm_index), 0.25 );
         
         // TODO: set an upper bound on peak width - this needs to be a convolution of Q value and detector resolution - maybe an input to this function
         //  Right now we'll just say a factor of 4 - which is plenty, unless its caused by a large Q reaction.
-        problem.SetParameterUpperBound(pars + fwhm_index, 0, 4.0 );
+        problem.SetParameterUpperBound(pars, static_cast<int>(fwhm_index), 4.0 );
       }else
       {
-        problem.SetParameterBlockConstant(pars + fwhm_index);
+        constant_parameters.push_back( static_cast<int>(fwhm_index) );
       }
     }//for( size_t extra_peak_index = 0; extra_peak_index < extra_peaks.size(); ++extra_peak_index )
     
@@ -2224,13 +2335,13 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     if( solution.m_rel_eff_form == RelActCalc::RelEffEqnForm::FramPhysicalModel )
     { 
       const auto &self_atten_opt = options.phys_model_self_atten;
-      RelActCalcManual::setup_physical_model_shield_par( &problem, pars, rel_eff_start, self_atten_opt );
+      setup_physical_model_shield_par( &problem, constant_parameters, pars, rel_eff_start, self_atten_opt );
       
       for( size_t ext_ind = 0; ext_ind < options.phys_model_external_atten.size(); ++ext_ind )
       {
         const size_t start_index = rel_eff_start + 2 + 2*ext_ind;
         const auto &opt = options.phys_model_external_atten[ext_ind];
-        RelActCalcManual::setup_physical_model_shield_par( &problem, pars, start_index, opt );
+        setup_physical_model_shield_par( &problem, constant_parameters, pars, start_index, opt );
       }//for( size_t ext_ind = 0; ext_ind < options.phys_model_external_atten.size(); ++ext_ind )
       
       // Not sure what to do with the b and c values of the Modified Hoerl function ( E^b * c^(1/E) ).
@@ -2241,10 +2352,18 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
       pars[c_index] = 1.0;  //c^(1000/energy)
       if( !options.phys_model_use_hoerl )
       {
-        problem.SetParameterBlockConstant( pars + b_index );
-        problem.SetParameterBlockConstant( pars + c_index );
+        constant_parameters.push_back( static_cast<int>(b_index) );
+        constant_parameters.push_back( static_cast<int>(c_index) );
       }
     }//if( solution.m_rel_eff_form == RelActCalc::RelEffEqnForm::FramPhysicalModel )
+    
+    
+    if( !constant_parameters.empty() )
+    {
+      ceres::Manifold *subset_manifold = new ceres::SubsetManifold( static_cast<int>(num_pars), constant_parameters );
+      problem.SetManifold( pars, subset_manifold );
+    }
+    
     
     // Okay - we've set our problem up
     ceres::Solver::Options ceres_options;
@@ -2253,6 +2372,13 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     ceres_options.minimizer_progress_to_stdout = true; //true;
     ceres_options.logging_type = ceres::PER_MINIMIZER_ITERATION;
     ceres_options.max_num_iterations = 100;
+    ceres_options.max_solver_time_in_seconds = 120.0;
+    ceres_options.function_tolerance = 1e-9;
+    // parameter_tolerance seems to be what terminates the minimization on some example problems.
+    //  It looks to be:
+    //    |step|_2 <= parameter_tolerance * ( |x|_2 +  parameter_tolerance)
+    //  Where `|step|_2` and `|x|_2` indicate the norm of the parameters - e.g.,
+    ceres_options.parameter_tolerance = 1e-11; //Default value is 1e-8.  Using 1e-11 gets the cost change down to 0.1 in Chi2, for an example Physical Model
     
     // TODO: there are a ton of ceres::Solver::Options that might be useful for us to set
     
@@ -2337,18 +2463,19 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     {
       ceres::Covariance covariance(cov_options);
       vector<pair<const double*, const double*> > covariance_blocks;
-      for( size_t i = 0; i < num_pars; ++i )
-        covariance_blocks.push_back( make_pair( pars + i, pars + i ) );
+      covariance_blocks.emplace_back( pars, pars );
       
-      auto add_cov_block = [&covariance_blocks, &pars]( size_t start, size_t num ){
-        for( size_t i = start; i < (start + num); ++i )
-          for( size_t j = start; j < i; ++j )
-            covariance_blocks.push_back( make_pair( pars + i, pars + j ) );
-      };
+      //auto add_cov_block = [&covariance_blocks, &pars]( size_t start, size_t num ){
+      //  for( size_t i = start; i < (start + num); ++i )
+      //    for( size_t j = start; j < i; ++j )
+      //      covariance_blocks.push_back( make_pair( pars + i, pars + j ) );
+      //};
       
-      add_cov_block( rel_eff_start, num_rel_eff_par );
-      add_cov_block( acts_start, num_acts_par );
-      add_cov_block( fwhm_start, num_fwhm_pars );
+      //add_cov_block( rel_eff_start, num_rel_eff_par );
+      //add_cov_block( acts_start, num_acts_par );
+      //add_cov_block( fwhm_start, num_fwhm_pars );
+      solution.m_covariance.clear();
+      solution.m_final_uncertainties.clear();
       
       if( !covariance.Compute(covariance_blocks, &problem) )
       {
@@ -2356,30 +2483,43 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
         solution.m_warnings.push_back( "Failed to compute final covariances." );
       }else
       {
+        // row-major order: the elements of the first row are consecutively given, followed by second
+        //                  row contents, etc
+        vector<double> row_major_covariance( num_pars * num_pars );
+        const vector<const double *> const_par_blocks( 1, pars );
+        
+        const bool success = covariance.GetCovarianceMatrix( const_par_blocks, row_major_covariance.data() );
+        assert( success );
+        if( !success )
+          throw runtime_error( "Failed to get covariance matrix - maybe didnt add all covariance blocks?" );
+        
+        solution.m_covariance.resize( num_pars, vector<double>(num_pars, 0.0) );
+        
+        for( size_t row = 0; row < num_pars; ++row )
+        {
+          for( size_t col = 0; col < num_pars; ++col )
+            solution.m_covariance[row][col] = row_major_covariance[row*num_pars + col];
+        }//for( size_t row = 0; row < num_nuclides; ++row )
+        
         for( size_t i = 0; i < num_pars; ++i )
         {
-          covariance.GetCovarianceBlock( pars + i, pars + i, &(uncerts_squared[i]) );
+          uncerts_squared[i] = solution.m_covariance[i][i];
           if( uncerts_squared[i] >= 0.0 )
             uncertainties[i] = sqrt( uncerts_squared[i] );
           else
             uncertainties[i] = std::numeric_limits<double>::quiet_NaN();
         }
         
+        solution.m_final_uncertainties = uncertainties;
+        
         // TODO: check the covariance is actually defined right (like not swapping row/col, calling the right places, etc).
-        auto get_cov_block = [&pars,&covariance]( const size_t start, const size_t num, vector<vector<double>> &cov ){
+        auto get_cov_block = [&solution]( const size_t start, const size_t num, vector<vector<double>> &cov ){
           cov.clear();
           cov.resize( num, vector<double>(num,0.0) );
-          
           for( size_t i = start; i < (start + num); ++i )
           {
-            for( size_t j = start; j < i; ++j )
-            {
-              const bool success = covariance.GetCovarianceBlock( pars + i, pars + j, &(cov[i-start][j-start]) );
-              assert( success );
-              if( !success )
-                throw runtime_error( "Failed to get covariance block for parameters " + std::to_string(i) + " and " + std::to_string(j) );
-              cov[j-start][i-start] = cov[i-start][j-start];
-            }
+            for( size_t j = start; j < (start + num); ++j )
+              cov[j-start][i-start] = solution.m_covariance[i][j];
           }
         };
         
@@ -3712,11 +3852,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     try
     {
       const size_t num_pars = number_parameters();
-      
-      vector<double> pars( num_pars, 0.0 );
-      for( size_t i = 0; i < num_pars; ++i )
-        pars[i] = parameters[i][0];
-        
+      vector<double> pars( parameters[0], parameters[0] + num_pars );
       eval( pars, residuals );
     }catch( std::exception &e )
     {
@@ -3764,9 +3900,12 @@ int run_test()
     rapidxml::xml_document<char> doc;
     doc.parse<rapidxml::parse_trim_whitespace>( input_file.data() );
     
-    
     const auto base_node = get_required_node(&doc, "RelActCalcAuto");
   
+    RelActCalcAuto::RelActAutoGuiState state;
+    state.deSerialize( base_node, &matdb );
+    
+    
     auto open_file = [xml_file_path]( const string &filename ) -> shared_ptr<SpecMeas> {
       
       if( filename.empty() )
@@ -3805,11 +3944,6 @@ int run_test()
     
     const string output_html_name = SpecUtils::xml_value_str( XML_FIRST_NODE(base_node, "OutputHtmlFileName") );
     
-    const auto options_node = get_required_node(base_node, "Options");
-    Options options;
-    
-    options.fromXml( options_node, &matdb );
-
     bool extract_info_from_n42 = false;
     try
     {
@@ -3819,10 +3953,10 @@ int run_test()
       //<RoiAndNucsFromFile> is optional, so will get here if it doesnt exist (or invalid value in it)
     }
     
-    
-    vector<RoiRange> energy_ranges;
-    vector<NucInputInfo> nuclides;
-    vector<FloatingPeak> extra_peaks;
+    const Options options = state.options;
+    vector<RoiRange> energy_ranges = state.rois;
+    vector<NucInputInfo> nuclides = state.nuclides;
+    vector<FloatingPeak> extra_peaks = state.floating_peaks;
     vector<string> input_warnings;
     
     
@@ -3919,31 +4053,6 @@ int run_test()
         
         energy_ranges.push_back( range );
       }//for( loop over ROIs )
-    }else
-    {
-      const auto roi_ranges_node = get_required_node(base_node, "RoiRangeList");
-      XML_FOREACH_CHILD(roi_range_node, roi_ranges_node, "RoiRange")
-      {
-        RoiRange range;
-        range.fromXml( roi_range_node );
-        energy_ranges.push_back( range );
-      }
-      
-      const auto nucs_node = get_required_node(base_node, "NucInputInfoList");
-      XML_FOREACH_CHILD(nuc_node, nucs_node, "NucInputInfo")
-      {
-        NucInputInfo nuc;
-        nuc.fromXml( nuc_node );
-        nuclides.push_back( nuc );
-      }
-      
-      auto float_peak_node = XML_FIRST_NODE(base_node, "FloatingPeakList");
-      XML_FOREACH_CHILD(float_peak_node, nucs_node, "FloatingPeak")
-      {
-        FloatingPeak peak;
-        peak.fromXml( float_peak_node );
-        extra_peaks.push_back( peak );
-      }
     }//if( extract_info_from_n42 )
     
     sort_rois_by_energy( energy_ranges );
@@ -4001,11 +4110,15 @@ int run_test()
         
         rapidxml::xml_document<char> doc;
         
-        xml_node<char> *base_node = doc.allocate_node( node_element, "RelActCalcAuto" );
-        doc.append_node( base_node );
+        RelActCalcAuto::RelActAutoGuiState updated_state;
         
-        xml_attribute<char> *attrib = doc.allocate_attribute( "version", "0" );
-        base_node->append_attribute( attrib );
+        
+        updated_state.options = options;
+        updated_state.rois = energy_ranges;
+        updated_state.nuclides = nuclides;
+        updated_state.floating_peaks = extra_peaks;
+
+        xml_node<char> *base_node = updated_state.serialize( &doc );
         
         const char *strvalue = doc.allocate_string( foreground_node->value(), foreground_node->value_size() );
         xml_node<char> *node = doc.allocate_node( node_element, "ForegroundFileName", strvalue );
@@ -4024,44 +4137,6 @@ int run_test()
           node = doc.allocate_node( node_element, "OutputHtmlFileName", strvalue );
           base_node->append_node( node );
           append_attrib( node, "remark", "Can be either an absolute path, or relative to this files path." );
-        }
-        
-        options.toXml( base_node );
-        
-        // Note that when we write <RoiAndNucsFromFile> as "true" it actually makes the XML so it
-        //  wont be read back in
-        
-        if( extract_info_from_n42 )
-        {
-          node = doc.allocate_node( node_comment, "", "You must change RoiAndNucsFromFile to false,"
-                                   " or delete RoiRangeList, NucInputInfoList, and FloatingPeakList"
-                                   " nodes, or else you cant use this XML as input" );
-          base_node->append_node( node );
-        }//if( extract_info_from_n42 )
-        
-        node = doc.allocate_node( node_comment, "", "Optionally, we can extract ROI and Nuclide"
-                                 " information from N42 files saved by InterSpec" );
-        base_node->append_node( node );
-        
-        node = doc.allocate_node( node_element, "RoiAndNucsFromFile", (extract_info_from_n42 ? "true" : "false") );
-        base_node->append_node( node );
-        
-        node = doc.allocate_node( node_element, "RoiRangeList" );
-        base_node->append_node( node );
-        for( const auto &range : energy_ranges )
-          range.toXml( node );
-        
-        node = doc.allocate_node( node_element, "NucInputInfoList" );
-        base_node->append_node( node );
-        for( const auto &nuc : nuclides )
-          nuc.toXml( node );
-        
-        if( !extra_peaks.empty() )
-        {
-          node = doc.allocate_node( node_element, "FloatingPeakList" );
-          base_node->append_node( node );
-          for( const auto &peak : extra_peaks )
-            peak.toXml( node );
         }
        
         cout << "RelActCalcAuto input XML is:\n\n";
@@ -4622,6 +4697,242 @@ Options::Options()
   skew_type( PeakDef::SkewType::NoSkew )
 {
 }
+  
+  
+RelActAutoGuiState::RelActAutoGuiState()
+  : options{},
+  rois{},
+  nuclides{},
+  floating_peaks{},
+  background_subtract( false ),
+  pu_correlation_method( RelActCalc::PuCorrMethod::NotApplicable ),
+  show_ref_lines( false ),
+  lower_display_energy( 0.0 ),
+  upper_display_energy( 0.0 )
+{
+}
+  
+
+::rapidxml::xml_node<char> *RelActAutoGuiState::serialize( ::rapidxml::xml_node<char> *parent_node ) const
+{
+  assert( parent_node );
+  
+  using namespace rapidxml;
+  xml_document<char> * const doc = parent_node->document();
+  
+  assert( doc );
+  if( !doc )
+    throw runtime_error( "RelActAutoGuiState::serialize: no xml_document" );
+  
+  xml_node<char> *base_node = doc->allocate_node( node_element, "RelActCalcAuto" );
+  parent_node->append_node( base_node );
+  
+  xml_attribute<char> *attrib = doc->allocate_attribute( "version", "0" );
+  base_node->append_attribute( attrib );
+  
+  // Elements in the offline-xml we dont deal with here
+  //  base_node->append_node( <"ForegroundFileName"> );
+  //  base_node->append_node( <"BackgroundFileName"> );
+  //  base_node->append_node( <"OutputHtmlFileName"> );
+  //  base_node->append_node( <"RoiAndNucsFromFile"> );
+  
+  rapidxml::xml_node<char> *options_node = options.toXml( base_node );
+  
+  {// Begin put extra options
+    if( background_subtract )
+    {
+      const char *val = background_subtract ? "true" : "false";
+      xml_node<char> *node = doc->allocate_node( node_element, "BackgroundSubtract", val );
+      options_node->append_node( node );
+    }//if( we have a background to subtract )
+    
+    const string valstr = RelActCalc::to_str(pu_correlation_method);
+    const char *val = doc->allocate_string( valstr.c_str() );
+    xml_node<char> *node = doc->allocate_node( node_element, "Pu242CorrMethod", val );
+    options_node->append_node( node );
+  }// End put extra options
+  
+  
+  if( !rois.empty() )
+  {
+    xml_node<char> *node = doc->allocate_node( node_element, "RoiRangeList" );
+    base_node->append_node( node );
+    for( const auto &range : rois )
+      range.toXml( node );
+  }
+  
+  if( !nuclides.empty() )
+  {
+    xml_node<char> *node = doc->allocate_node( node_element, "NucInputInfoList" );
+    base_node->append_node( node );
+    for( const auto &nuc : nuclides )
+      nuc.toXml( node );
+  }//if( !nuclides.empty() )
+  
+  if( !floating_peaks.empty() )
+  {
+    xml_node<char> *node = doc->allocate_node( node_element, "FloatingPeakList" );
+    base_node->append_node( node );
+    for( const auto &peak : floating_peaks )
+      peak.toXml( node );
+  }//if( !floating_peaks.empty() )
+  
+  
+  {//Begin show_ref_lines
+    const char *val = show_ref_lines ? "true" : "false";
+    xml_node<char> *node = doc->allocate_node( node_element, "ShowRefGammaLines", val );
+    options_node->append_node( node );
+  }//End show_ref_lines
+  
+  if( lower_display_energy < upper_display_energy )
+  {
+    const string lower_energy_str = std::to_string( lower_display_energy );
+    const string upper_energy_str = std::to_string( upper_display_energy );
+    
+    const char *val = doc->allocate_string( lower_energy_str.c_str() );
+    xml_node<char> *node = doc->allocate_node( node_element, "LowerDisplayEnergy", val );
+    options_node->append_node( node );
+    
+    val = doc->allocate_string( upper_energy_str.c_str() );
+    node = doc->allocate_node( node_element, "UpperDisplayEnergy", val );
+    options_node->append_node( node );
+  }//if( lower_display_energy < upper_display_energy )
+  
+  return base_node;
+}//::rapidxml::xml_node<char> *serialize( ::rapidxml::xml_node<char> *parent ) const
+  
+
+void RelActAutoGuiState::deSerialize( const rapidxml::xml_node<char> *base_node, MaterialDB *materialDb )
+{
+  using namespace rapidxml;
+  
+  assert( base_node );
+  if( !base_node )
+    throw runtime_error( "RelActAutoGuiState::deSerialize: nullptr passed in." );
+  
+  const string base_node_name = SpecUtils::xml_name_str(base_node);
+  if( base_node_name != "RelActCalcAuto" )
+    throw runtime_error( "RelActAutoGuiState::deSerialize: invalid node passed in named '"
+                         + base_node_name + "'" );
+  
+  const xml_attribute<char> *attrib = XML_FIRST_ATTRIB(base_node, "version");
+  const string base_version = SpecUtils::xml_value_str(attrib);
+  if( !SpecUtils::istarts_with(base_version, "0") )
+    throw runtime_error( "RelActAutoGuiState::deSerialize: invalid xml version='" + base_version + "'" );
+  
+  const xml_node<char> *node = XML_FIRST_NODE(base_node, "Options");
+  if( !node )
+    throw runtime_error( "RelActAutoGui::deSerialize: No <Options> node." );
+  
+  options.fromXml( node, materialDb );
+  
+  
+  {// Begin get extra options
+    const xml_node<char> *opt_node = XML_FIRST_NODE(node, "BackgroundSubtract");
+    string val = SpecUtils::xml_value_str( opt_node );
+    background_subtract = SpecUtils::iequals_ascii(val, "true");
+
+    pu_correlation_method = RelActCalc::PuCorrMethod::NotApplicable;
+    opt_node = XML_FIRST_NODE(node, "Pu242CorrMethod");
+    val = SpecUtils::xml_value_str( opt_node );
+    
+    for( RelActCalc::PuCorrMethod method = RelActCalc::PuCorrMethod(0);
+        method <= RelActCalc::PuCorrMethod::NotApplicable;
+        method = RelActCalc::PuCorrMethod( static_cast<int>(method) + 1) )
+    {
+      if( val == RelActCalc::to_str(method) )
+      {
+        pu_correlation_method = method;
+        break;
+      }
+    }//for( loop over RelActCalc::PuCorrMethod )
+    
+    
+    opt_node = XML_FIRST_NODE(node, "ShowRefGammaLines");
+    val = SpecUtils::xml_value_str( opt_node );
+    show_ref_lines = SpecUtils::iequals_ascii(val, "true");
+    
+    opt_node = XML_FIRST_NODE(node, "LowerDisplayEnergy");
+    const string lower_display_energy_str = SpecUtils::xml_value_str( opt_node );
+    opt_node = XML_FIRST_NODE(node, "UpperDisplayEnergy");
+    const string upper_display_energy_str = SpecUtils::xml_value_str( opt_node );
+    
+    lower_display_energy = upper_display_energy = 0.0;
+    if( !lower_display_energy_str.empty()
+       && !(stringstream(lower_display_energy_str) >> lower_display_energy) )
+    {
+      // Maybe give a warning here?
+    }
+    
+    if( !upper_display_energy_str.empty()
+       && !(stringstream(upper_display_energy_str) >> upper_display_energy) )
+    {
+      // Maybe give a warning here?
+    }
+    
+    
+    /*
+    opt_node = XML_FIRST_NODE(node, "UPuDataSrc");
+    val = SpecUtils::xml_value_str( opt_node );
+    if( !val.empty() )
+    {
+      using RelActCalcManual::PeakCsvInput::NucDataSrc;
+      
+      bool set_src = false;
+      for( int i = 0; i < static_cast<int>(NucDataSrc::Undefined); ++i )
+      {
+        const NucDataSrc src = NucDataSrc(i);
+        const char *src_str = RelActCalcManual::PeakCsvInput::to_str(src);
+        if( val == src_str )
+        {
+          set_src = true;
+          m_u_pu_data_source->setCurrentIndex( i );
+          break;
+        }
+      }//for( int i = 0; i < static_cast<int>(NucDataSrc::Undefined); ++i )
+      
+      if( !set_src )
+        cerr << "Failed to convert '" << val << "' into a NucDataSrc" << endl;
+    }//if( UPuDataSrc not empty )
+     */
+  }// End get extra options
+  
+
+  node = XML_FIRST_NODE(base_node, "RoiRangeList");
+  if( node )
+  {
+    XML_FOREACH_CHILD( roi_node, node, "RoiRange" )
+    {
+      RelActCalcAuto::RoiRange roi;
+      roi.fromXml( roi_node );
+      rois.push_back( roi );
+    }
+  }//if( <RoiRangeList> )
+  
+  
+  node = XML_FIRST_NODE(base_node, "NucInputInfoList");
+  if( node )
+  {
+    XML_FOREACH_CHILD( nuc_node, node, "NucInputInfo" )
+    {
+      RelActCalcAuto::NucInputInfo nuc;
+      nuc.fromXml( nuc_node );
+      nuclides.push_back( nuc );
+    }
+  }//if( <NucInputInfoList> )
+  
+  
+  node = XML_FIRST_NODE(base_node, "FloatingPeakList");
+  if( node )
+  {
+    XML_FOREACH_CHILD( peak_node, node, "FloatingPeak" )
+    {
+      RelActCalcAuto::FloatingPeak peak;
+      peak.fromXml( peak_node );
+      floating_peaks.push_back( peak );
+    }
+  }//if( <NucInputInfoList> )
+}//void deSerialize( const rapidxml::xml_node<char> *base_node )
   
 
 RelActAutoSolution::RelActAutoSolution()
