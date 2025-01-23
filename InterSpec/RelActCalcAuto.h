@@ -48,6 +48,7 @@ namespace rapidxml
 namespace SpecUtils
 {
   class Measurement;
+  struct EnergyCalibration;
 }//namespace SpecUtils
 
 namespace SandiaDecay
@@ -440,6 +441,14 @@ struct RelActAutoSolution
    */
   std::string rel_eff_eqn_js_function() const;
   
+  /** Returns the updated energy calibration.
+   
+   Note: You could instead call `m_spectrum->energy_calibration()` to avoid computing from scratch.
+   
+   Will throw exception if runs into any issues.
+   */
+  std::shared_ptr<SpecUtils::EnergyCalibration> get_adjusted_energy_cal() const;
+  
   enum class Status : int
   {
     Success,
@@ -507,7 +516,20 @@ struct RelActAutoSolution
   
   std::vector<FloatingPeakResult> m_floating_peaks;
   
+  /** The fit peaks.
+   
+   If energy calibration fitting was selected, these peaks will have been adjusted back to "true" energy.
+   
+   You would use these peaks for `m_spectrum`.
+   */
   std::vector<PeakDef> m_fit_peaks;
+  
+  /** The fit peaks, in the energy calibration of the spectrum (i.e., what you would display,
+   if you are not updating the displayed spectrum for the adjusted energy cal).
+   
+   You would use these peaks for `m_foreground`.
+   */
+  std::vector<PeakDef> m_fit_peaks_in_spectrums_cal;
   
   std::vector<RoiRange> m_input_roi_ranges;
   
@@ -537,8 +559,51 @@ struct RelActAutoSolution
    */
   std::shared_ptr<const RelActCalc::Pu242ByCorrelationOutput> m_corrected_pu;
   
-  double m_energy_cal_adjustments[2];
-  bool m_fit_energy_cal[2];
+  /** We will allow corrections to the first following number of energy calibration coefficients.
+ 
+   Implemented for values of 2 or 3; lower channel energy calibration will only ever use up to 2.
+   */
+  constexpr static size_t sm_num_energy_cal_pars = 2;
+  
+  /** It seems parameters centered around zero maybe don't work quite as well, we'll center the energy calibration
+   parameters at 1, and allow to vary between 0 and 2.
+   */
+  constexpr static double sm_energy_par_offset = 1.0;
+  
+  /** We will allow the energy offset to vary by +-5 keV. This is arbitrarily chosen. */
+  constexpr static double sm_energy_offset_range_keV = 10.0;  // Allow +-10 keV offset adjust
+  
+  /** We will allow the energy gain to vary by +-20 keV, at the right side of the spectrum.
+   This is arbitrarily chosen, and non ideal, because it doesnt account for different energy ranges of the spectrum (e.g., a 400 keV
+   spectrum can get a lot larger of a relative adjust, than a 8 MeV spectrum).
+   */
+  constexpr static double sm_energy_gain_range_keV   = 20.0; // Allow 20 keV energy range gain adjust
+  
+  /** If `sm_num_energy_cal_pars == 3` we will allow up to 5 keV adjustment to quadratic energy range, at the right-hand
+   side of the spectrum.
+   */
+  constexpr static double sm_energy_quad_range_keV   = 10.0;  // Allow 10 keV energy range quad correction
+  
+  /** With numeric differentiation, we run into an issue where the initial small delta use (e.x. 1.0E-6 of parameter value)
+   isnt quite enough to actually have a change (and might even get lost in float precision of energy cal pars) - so we will "fix" this by
+   multiplying the change of the value away from `sm_energy_par_offset`, by a multiple like 100, so this way the parameter will
+   actually fit.
+   We then adjust the limits of the parameter (`sm_energy_offset_range_keV` and `sm_energy_gain_range_keV`) to take
+   this into account, so the gain parameter will go between 0.8 and 1.2, for +- 20 keV effect on the spectrum
+   */
+  constexpr static double sm_energy_cal_multiple    = 100.0;
+  
+  /** The fit energy calibration adjustments.
+   
+   To get the effect, in keV to the spectrum (e.g., on right-hand side of spectrum), you would do:
+     `(m_energy_cal_adjustments[i]/sm_energy_par_offset - 1)*sm_energy_cal_multiple`
+   */
+  std::array<double,sm_num_energy_cal_pars> m_energy_cal_adjustments;
+  
+  /** Whether each energy cal parameter was fit.
+   Which parameters are fit are subject to number and energy range of ROIs.
+   */
+  std::array<bool,sm_num_energy_cal_pars> m_fit_energy_cal;
   
   
   /** */

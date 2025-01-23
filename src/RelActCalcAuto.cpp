@@ -92,7 +92,7 @@ using namespace XmlUtils;
 namespace
 {
 const double ns_decay_act_mult = SandiaDecay::MBq;
-
+  
 struct DoWorkOnDestruct
 {
   std::function<void()> m_worker;
@@ -1066,7 +1066,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     size_t num_pars = 0;
     
     // Energy calibration; we will always have these, even if fixed values
-    num_pars += 2;
+    num_pars += RelActCalcAuto::RelActAutoSolution::sm_num_energy_cal_pars;
     
     // The FWHM equation
     num_pars += num_parameters( m_options.fwhm_form );
@@ -1378,15 +1378,38 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     problem.AddResidualBlock( cost_function, lossfcn, parameter_blocks );
     problem.AddParameterBlock( pars, static_cast<int>(num_pars) );
     
-    parameters[0] = 0.0;
-    parameters[1] = 1.0;
+    assert( cost_functor->m_energy_cal && cost_functor->m_energy_cal->valid() );
+    for( size_t i = 0; i < RelActCalcAuto::RelActAutoSolution::sm_num_energy_cal_pars; ++i )
+      parameters[i] = RelActCalcAuto::RelActAutoSolution::sm_energy_par_offset;
+    
     if( options.fit_energy_cal )
     {
+      static_assert( ((RelActCalcAuto::RelActAutoSolution::sm_num_energy_cal_pars == 2)
+                      || (RelActCalcAuto::RelActAutoSolution::sm_num_energy_cal_pars == 3)),
+                    "RelActAutoSolution::sm_num_energy_cal_pars only implemented for 2 and 3" );
+      
       assert( !cost_functor->m_energy_ranges.empty() );
+     
+      // For each order we are fitting, we will fit the number of keV the adjustment makes to
+      //  the far right-hand side of the spectrum.
+      // i.e. To apply the correction to the original energy calibration:
+      //
+      // Offset:
+      //  - For all energy cal types, par[0] will move the whole spectrum left or right that amount
+      // Gain:
+      //  - Polynomial: divide `parameters[1]` by number of channels, and add to gain.
+      //  - FRF: add parameters[1] to gain.
+      //  - EnergyCalType::LowerChannelEdge: let i = energy/max_energy, add `parameters[1]*i`
+      // Cubic:
+      //  - Polynomial: divide `parameters[2]` by number of channels squared, and add to cubic term.
+      //  - FRF: add parameters[2] to cubic term.
+      //  - EnergyCalType::LowerChannelEdge: not applicable - would need to do math
+      //
+      // To un-apply:
+      
       
       const double lowest_energy = cost_functor->m_energy_ranges.front().lower_energy;
       const double highest_energy = cost_functor->m_energy_ranges.back().upper_energy;
-      
       
       // Completely arbitrary
       if( ((lowest_energy < 200) && (highest_energy > 600))
@@ -1406,9 +1429,12 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
       
       if( solution.m_fit_energy_cal[0] )
       {
-        //We'll allow changing the offset by 5 keV (limit chosen fairly arbitrarily)
-        problem.SetParameterLowerBound(pars, 0, -5.0 );
-        problem.SetParameterUpperBound(pars, 0, +5.0 );
+        constexpr double offset = RelActCalcAuto::RelActAutoSolution::sm_energy_par_offset;
+        constexpr double limit = RelActCalcAuto::RelActAutoSolution::sm_energy_offset_range_keV;
+        constexpr double cal_mult = RelActCalcAuto::RelActAutoSolution::sm_energy_cal_multiple;
+        
+        problem.SetParameterLowerBound(pars, 0, offset - (limit/cal_mult) );
+        problem.SetParameterUpperBound(pars, 0, offset + (limit/cal_mult) );
       }else
       {
         constant_parameters.push_back( 0 );
@@ -1417,22 +1443,50 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
       
       if( solution.m_fit_energy_cal[1] )
       {
-        // We'll allow changing the gain by 1.5% (limit chosen fairly arbitrarily);
-        problem.SetParameterLowerBound(pars, 1, 0.985 );
-        problem.SetParameterUpperBound(pars, 1, 1.015 );
+        constexpr double offset = RelActCalcAuto::RelActAutoSolution::sm_energy_par_offset;
+        constexpr double gain_limit = RelActCalcAuto::RelActAutoSolution::sm_energy_gain_range_keV;
+        constexpr double cal_mult = RelActCalcAuto::RelActAutoSolution::sm_energy_cal_multiple;
+        
+        problem.SetParameterLowerBound(pars, 1, offset - (gain_limit/cal_mult) );
+        problem.SetParameterUpperBound(pars, 1, offset + (gain_limit/cal_mult) );
       }else
       {
         constant_parameters.push_back( 1 );
       }//if( solution.m_fit_energy_cal[1] ) / else
       
+      if( RelActCalcAuto::RelActAutoSolution::sm_num_energy_cal_pars > 2 )
+      {
+        static_assert( RelActCalcAuto::RelActAutoSolution::sm_num_energy_cal_pars <= 3, "" );
+        
+        if( solution.m_fit_energy_cal[1]
+           && (cost_functor->m_energy_ranges.size() > 4)
+           && PeakFitUtils::is_high_res( cost_functor->m_spectrum )
+           && (cost_functor->m_energy_cal->type() != SpecUtils::EnergyCalType::LowerChannelEdge) )
+        {
+          constexpr double offset = RelActCalcAuto::RelActAutoSolution::sm_energy_par_offset;
+          constexpr double cubic_limit = RelActCalcAuto::RelActAutoSolution::sm_energy_gain_range_keV;
+          constexpr double cal_mult = RelActCalcAuto::RelActAutoSolution::sm_energy_cal_multiple;
+          
+          problem.SetParameterLowerBound(pars, 2, offset - (cubic_limit/cal_mult) );
+          problem.SetParameterUpperBound(pars, 2, offset + (cubic_limit/cal_mult) );
+          solution.m_fit_energy_cal[2] = true;
+        }else
+        {
+          for( size_t i = 2; i < RelActCalcAuto::RelActAutoSolution::sm_num_energy_cal_pars; ++i )
+          {
+            constant_parameters.push_back( static_cast<int>(i) );
+            solution.m_fit_energy_cal[i] = false;
+          }
+        }
+      }//if( RelActCalcAuto::RelActAutoSolution::sm_num_energy_cal_pars > 2 )
     }else
     {
-      constant_parameters.push_back( 0 );
-      constant_parameters.push_back( 1 );
+      for( size_t i = 0; i < RelActCalcAuto::RelActAutoSolution::sm_num_energy_cal_pars; ++i )
+        constant_parameters.push_back( static_cast<int>(i) );
     }
     
     std::shared_ptr<const DetectorPeakResponse> res_drf = cost_functor->m_drf;
-    const size_t fwhm_start = 2;
+    const size_t fwhm_start = RelActCalcAuto::RelActAutoSolution::sm_num_energy_cal_pars;
     const size_t num_fwhm_pars = num_parameters( options.fwhm_form );
     const size_t rel_eff_start = fwhm_start + num_fwhm_pars;
     
@@ -2207,7 +2261,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
         problem.SetParameterUpperBound(pars, static_cast<int>(age_index), max_age );
       }else
       {
-        constant_parameters.push_back( age_index );
+        constant_parameters.push_back( static_cast<int>(age_index) );
       }
       
       if( !succesfully_estimated_re_and_ra )
@@ -2286,7 +2340,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
         }
       }//if( !succesfully_estimated_re_and_ra )
       
-      problem.SetParameterLowerBound(pars, act_index, 0.0 );
+      problem.SetParameterLowerBound(pars, static_cast<int>(act_index), 0.0 );
     }//for( size_t nuc_num = 0; nuc_num < nuclides.size(); ++nuc_num )
     
     
@@ -2312,7 +2366,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
       
       // Assume data is entirely due to peak; mean +- 0.5*fwhm is ~76% gaussian area
       parameters[amp_index] = data_count / 0.76;
-      problem.SetParameterLowerBound(pars, amp_index, 0.0 );
+      problem.SetParameterLowerBound(pars, static_cast<int>(amp_index), 0.0 );
       
       parameters[fwhm_index] = 1.0;
       
@@ -2372,7 +2426,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     ceres_options.minimizer_progress_to_stdout = true; //true;
     ceres_options.logging_type = ceres::PER_MINIMIZER_ITERATION;
     ceres_options.max_num_iterations = 100;
-    ceres_options.max_solver_time_in_seconds = 120.0;
+    //ceres_options.max_solver_time_in_seconds = 120.0;
     ceres_options.function_tolerance = 1e-9;
     // parameter_tolerance seems to be what terminates the minimization on some example problems.
     //  It looks to be:
@@ -2533,61 +2587,18 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
   
     solution.m_final_parameters = parameters;
     
-    solution.m_energy_cal_adjustments[0] = parameters[0];
-    solution.m_energy_cal_adjustments[1] = parameters[1];
     
+    for( size_t i = 0; i < RelActCalcAuto::RelActAutoSolution::sm_num_energy_cal_pars; ++i )
+      solution.m_energy_cal_adjustments[i] = parameters[i];
+    
+    // We will use `new_cal` to move peaks from their true energy, to the spectrums original
+    //  energy calibration - so we will un-apply the energy calibration correction
     shared_ptr<const SpecUtils::EnergyCalibration> new_cal = solution.m_foreground->energy_calibration();
     if( success && options.fit_energy_cal )
     {
-      auto modified_new_cal = make_shared<SpecUtils::EnergyCalibration>( *new_cal );
-      
-      const double offset = parameters[0];
-      const double gain_mult = parameters[1];
-      const size_t num_channel = cost_functor->m_energy_cal->num_channels();
-      const SpecUtils::EnergyCalType energy_cal_type = cost_functor->m_energy_cal->type();
-      
-      switch( energy_cal_type )
-      {
-        case SpecUtils::EnergyCalType::Polynomial:
-        case SpecUtils::EnergyCalType::FullRangeFraction:
-        case SpecUtils::EnergyCalType::UnspecifiedUsingDefaultPolynomial:
-        {
-          vector<float> coefs = cost_functor->m_energy_cal->coefficients();
-          assert( coefs.size() >= 2 );
-          coefs[0] -= offset;
-          coefs[1] /= gain_mult;
-          
-          const auto &dev_pairs = cost_functor->m_energy_cal->deviation_pairs();
-          
-          if( energy_cal_type == SpecUtils::EnergyCalType::FullRangeFraction )
-            modified_new_cal->set_full_range_fraction( num_channel, coefs, dev_pairs );
-          else
-            modified_new_cal->set_polynomial( num_channel, coefs, dev_pairs );
-          
-          break;
-        }//case polynomial or FRF
-          
-        case SpecUtils::EnergyCalType::LowerChannelEdge:
-        {
-          assert( new_cal->channel_energies() );
-          if( !new_cal->channel_energies() || new_cal->channel_energies()->empty() )
-            throw runtime_error( "Invalid lower channel energies???" );
-          
-          vector<float> lower_energies = *new_cal->channel_energies();
-          for( float &x : lower_energies )
-            x = (x - offset) / gain_mult;
-          
-          modified_new_cal->set_lower_channel_energy( num_channel, std::move(lower_energies) );
-          
-          break;
-        }//case LowerChannelEdge
-          
-        case SpecUtils::EnergyCalType::InvalidEquationType:
-          break;
-      }//switch( m_energy_cal->type() )
-      
-      new_cal = modified_new_cal;
+      shared_ptr<SpecUtils::EnergyCalibration> modified_new_cal = solution.get_adjusted_energy_cal();
       solution.m_spectrum->set_energy_calibration( modified_new_cal );
+      new_cal = modified_new_cal;
     }//if( options.fit_energy_cal )
     
   
@@ -2599,6 +2610,8 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     }
     
     std::sort( begin(fit_peaks), end(fit_peaks), &PeakDef::lessThanByMean );
+    
+    solution.m_fit_peaks_in_spectrums_cal = fit_peaks;
     
     // \c fit_peaks are in the original energy calibration of the spectrum, we may need to adjust
     //  them to match the new energy calibration
@@ -2889,8 +2902,8 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
 
   float fwhm( const float energy, const std::vector<double> &x ) const
   {
-    const auto drf_start = begin(x) + 2;
-    assert( 2 == m_fwhm_par_start_index );
+    const auto drf_start = begin(x) + RelActCalcAuto::RelActAutoSolution::sm_num_energy_cal_pars;
+    assert( RelActCalcAuto::RelActAutoSolution::sm_num_energy_cal_pars == m_fwhm_par_start_index );
     const size_t num_drf_par = num_parameters(m_options.fwhm_form);
     
     const vector<float> drfx( drf_start, drf_start + num_drf_par );
@@ -2901,7 +2914,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
   
   void set_peak_skew( PeakDef &peak, const std::vector<double> &x ) const
   {
-    const size_t skew_start = 2  //energy adjustments
+    const size_t skew_start = RelActCalcAuto::RelActAutoSolution::sm_num_energy_cal_pars
                               + num_parameters(m_options.fwhm_form)
                               + num_rel_eff_coefs()
                               + 2*m_nuclides.size()
@@ -2985,7 +2998,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
   double relative_activity( const SandiaDecay::Nuclide * const nuc, const std::vector<double> &x ) const
   {
     const size_t nuc_index = nuclide_index( nuc );
-    const size_t act_start_index = 2  //energy adjustments
+    const size_t act_start_index = RelActCalcAuto::RelActAutoSolution::sm_num_energy_cal_pars
                                    + num_parameters(m_options.fwhm_form)
                                    + num_rel_eff_coefs();
     assert( (act_start_index + 2*m_nuclides.size() + 2*m_extra_peaks.size()
@@ -3019,7 +3032,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
   
   double age( const SandiaDecay::Nuclide * const nuc, const std::vector<double> &x ) const
   {
-    const size_t act_start_index = 2  //energy adjustments
+    const size_t act_start_index = RelActCalcAuto::RelActAutoSolution::sm_num_energy_cal_pars
                                    + num_parameters(m_options.fwhm_form)
                                    + num_rel_eff_coefs();
     assert( act_start_index == m_acts_par_start_index );
@@ -3124,7 +3137,8 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
   
   double relative_eff( const double energy, const std::vector<double> &x ) const
   {
-    const size_t rel_eff_start_index = 2 + num_parameters(m_options.fwhm_form);
+    const size_t rel_eff_start_index = RelActCalcAuto::RelActAutoSolution::sm_num_energy_cal_pars
+                                         + num_parameters(m_options.fwhm_form);
     const size_t num_rel_eff_par = num_rel_eff_coefs();
     
     assert( (rel_eff_start_index + num_rel_eff_par) < x.size() );
@@ -3156,24 +3170,44 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
    */
   double apply_energy_cal_adjustment( double energy, const std::vector<double> &x ) const
   {
-    assert( x.size() > 2 );
+    assert( x.size() > RelActCalcAuto::RelActAutoSolution::sm_num_energy_cal_pars );
     assert( 0 == m_energy_cal_par_start_index );
     
     if( !m_options.fit_energy_cal )
     {
-      assert( fabs(x[0]) < std::numeric_limits<float>::epsilon() );
-      assert( fabs(1.0 - x[1]) < std::numeric_limits<float>::epsilon() );
+      assert( fabs(x[0] - RelActCalcAuto::RelActAutoSolution::sm_energy_par_offset) < 1.0E-5 );
+      assert( fabs(x[1] - RelActCalcAuto::RelActAutoSolution::sm_energy_par_offset) < 1.0E-5 );
       
       return energy;
     }//if( we arent fitting energy cal )
     
-    if( (x[0] == 0.0) && (x[1] == 1.0) )
+    if( (x[0] == RelActCalcAuto::RelActAutoSolution::sm_energy_par_offset)
+       && (x[1] == RelActCalcAuto::RelActAutoSolution::sm_energy_par_offset) )
       return energy;
     
     // Check adjustments are near the limits we placed (which was [-5,5], and [0.985,1.015])
-    assert( fabs(x[0]) <= 5.1 );
-    assert( (x[1] >= 0.984) && (x[1] <= 1.016) );
-      
+    assert( fabs(x[0] - RelActCalcAuto::RelActAutoSolution::sm_energy_par_offset) <= RelActCalcAuto::RelActAutoSolution::sm_energy_par_offset );
+    assert( fabs(x[1] - RelActCalcAuto::RelActAutoSolution::sm_energy_par_offset) <= RelActCalcAuto::RelActAutoSolution::sm_energy_par_offset );
+    assert( (RelActCalcAuto::RelActAutoSolution::sm_num_energy_cal_pars <= 2)
+           || (fabs(x[2] - RelActCalcAuto::RelActAutoSolution::sm_energy_par_offset) <= RelActCalcAuto::RelActAutoSolution::sm_energy_par_offset) );
+    
+    //if( x[0] != RelActCalcAuto::RelActAutoSolution::sm_energy_par_offset || x[1] != RelActCalcAuto::RelActAutoSolution::sm_energy_par_offset
+    //   || x[2] != RelActCalcAuto::RelActAutoSolution::sm_energy_par_offset )
+    //cout << "offset_delta=" << (x[0]/RelActCalcAuto::RelActAutoSolution::sm_energy_par_offset - 1.0) << ", "
+    // << "gain_delta=" << (x[1]/RelActCalcAuto::RelActAutoSolution::sm_energy_par_offset - 1.0) << ", "
+    //<< "cubic_delta=" << (x[2]/RelActCalcAuto::RelActAutoSolution::sm_energy_par_offset - 1.0) << endl;
+    
+    const double offest_adj = (x[0]/RelActCalcAuto::RelActAutoSolution::sm_energy_par_offset - 1.0)
+                            * RelActCalcAuto::RelActAutoSolution::sm_energy_cal_multiple;
+    const double gain_adj = (x[1]/RelActCalcAuto::RelActAutoSolution::sm_energy_par_offset - 1.0)
+                            * RelActCalcAuto::RelActAutoSolution::sm_energy_cal_multiple;
+    const double quad_adj = (RelActCalcAuto::RelActAutoSolution::sm_num_energy_cal_pars > 2)
+                              ? ((x[2]/RelActCalcAuto::RelActAutoSolution::sm_energy_par_offset - 1.0)
+                                 * RelActCalcAuto::RelActAutoSolution::sm_energy_cal_multiple)
+                              : 0.0;
+    
+    
+    
     // TODO: implement and try out optimization so that if there is no adjustment to be made, skip doing the energy cal adjustment.
     //       Note: we do need to be careful we dont make the cuts so large that the steps of the
     //       numerical differentiation around zero will fail (I did have trouble with this for
@@ -3184,27 +3218,64 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     switch( m_energy_cal->type() )
     {
       case SpecUtils::EnergyCalType::Polynomial:
-      case SpecUtils::EnergyCalType::FullRangeFraction:
       case SpecUtils::EnergyCalType::UnspecifiedUsingDefaultPolynomial:
       {
+        const size_t num_channel = m_energy_cal->num_channels();
         vector<float> coefs = m_energy_cal->coefficients();
         assert( coefs.size() >= 2 );
-        coefs[0] += x[0];
-        coefs[1] *= x[1];
+        coefs[0] += offest_adj;
+        coefs[1] += (gain_adj / num_channel);
+        if( quad_adj != 0.0 )
+        {
+          if( coefs.size() > 2 )
+            coefs[2] += (quad_adj / (num_channel*num_channel));
+          else
+            coefs.push_back( quad_adj / (num_channel*num_channel) );
+        }//if( quad_adj != 0.0 )
         
         const auto &dev_pairs = m_energy_cal->deviation_pairs();
         const double channel = m_energy_cal->channel_for_energy( energy );
         
-        if( m_energy_cal->type() == SpecUtils::EnergyCalType::FullRangeFraction )
-          return SpecUtils::fullrangefraction_energy( channel, coefs, m_energy_cal->num_channels(), dev_pairs );
-        
         return SpecUtils::polynomial_energy( channel, coefs, dev_pairs );
-        break;
+      }//case polynomial or FRF
+      
+        
+      case SpecUtils::EnergyCalType::FullRangeFraction:
+      {
+        const size_t num_channel = m_energy_cal->num_channels();
+        vector<float> coefs = m_energy_cal->coefficients();
+        assert( coefs.size() >= 2 );
+        coefs[0] += offest_adj;
+        coefs[1] += gain_adj;
+        
+        if( quad_adj != 0.0 )
+        {
+          if( coefs.size() > 2 )
+            coefs[2] += quad_adj;
+          else
+            coefs.push_back( quad_adj );
+        }//if( quad_adj != 0.0 )
+        
+        const auto &dev_pairs = m_energy_cal->deviation_pairs();
+        const double channel = m_energy_cal->channel_for_energy( energy );
+        
+        return SpecUtils::fullrangefraction_energy( channel, coefs, num_channel, dev_pairs );
       }//case polynomial or FRF
       
         
       case SpecUtils::EnergyCalType::LowerChannelEdge:
-        return x[0] + (x[1] * energy);
+      {
+        const double lower_energy = m_energy_cal->lower_energy();
+        const double range = m_energy_cal->upper_energy() - lower_energy;
+        const double range_frac = (energy - lower_energy) / range;
+        
+        double new_energy = energy + offest_adj + (range_frac*gain_adj);
+        assert( quad_adj == 0.0 );
+        //if( quad_adj != 0.0 )
+        //  new_energy += quad_adj*range_frac*range_frac;
+        
+        return new_energy;
+      }//case LowerChannelEdge:
         
       case SpecUtils::EnergyCalType::InvalidEquationType:
         break;
@@ -3239,33 +3310,76 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     assert( fabs(x[0]) <= 5.1 );
     assert( (x[1] >= 0.984) && (x[1] <= 1.016) );
     
+    const double offset_adj = (x[0]/RelActCalcAuto::RelActAutoSolution::sm_energy_par_offset - 1.0)
+                              * RelActCalcAuto::RelActAutoSolution::sm_energy_cal_multiple;
+    const double gain_adj = (x[1]/RelActCalcAuto::RelActAutoSolution::sm_energy_par_offset - 1.0)
+                              * RelActCalcAuto::RelActAutoSolution::sm_energy_cal_multiple;
+    const double quad_adj = (RelActCalcAuto::RelActAutoSolution::sm_num_energy_cal_pars > 2)
+                      ? ((x[2]/RelActCalcAuto::RelActAutoSolution::sm_energy_par_offset - 1.0)
+                         * RelActCalcAuto::RelActAutoSolution::sm_energy_cal_multiple)
+                      : 0.0;
+    
     switch( m_energy_cal->type() )
     {
       case SpecUtils::EnergyCalType::Polynomial:
-      case SpecUtils::EnergyCalType::FullRangeFraction:
       case SpecUtils::EnergyCalType::UnspecifiedUsingDefaultPolynomial:
       {
+        const size_t num_channel = m_energy_cal->num_channels();
         vector<float> coefs = m_energy_cal->coefficients();
         assert( coefs.size() >= 2 );
-        coefs[0] += x[0];
-        coefs[1] *= x[1];
+        coefs[0] += offset_adj;
+        coefs[1] += (gain_adj / num_channel);
+        
+        if( quad_adj != 0.0 )
+        {
+          if( coefs.size() > 2 )
+            coefs[2] += (quad_adj / (num_channel*num_channel));
+          else
+            coefs.push_back( quad_adj / (num_channel*num_channel) );
+        }//if( quad_adj != 0.0 )
         
         const auto &dev_pairs = m_energy_cal->deviation_pairs();
         
         // TODO: is there a cheaper way to do this?
-        double channel;
-        if( m_energy_cal->type() == SpecUtils::EnergyCalType::FullRangeFraction )
-          channel = SpecUtils::find_fullrangefraction_channel( adjusted_energy, coefs, m_energy_cal->num_channels(), dev_pairs );
-        else
-          channel = SpecUtils::find_polynomial_channel( adjusted_energy, coefs, m_energy_cal->num_channels(), dev_pairs );
+        const double channel = SpecUtils::find_polynomial_channel( adjusted_energy, coefs, num_channel, dev_pairs );
         
         return m_energy_cal->energy_for_channel( channel );
-        break;
-      }//case polynomial or FRF
+      }//case polynomial
+        
+        
+      case SpecUtils::EnergyCalType::FullRangeFraction:
+      {
+        const size_t num_channel = m_energy_cal->num_channels();
+        vector<float> coefs = m_energy_cal->coefficients();
+        assert( coefs.size() >= 2 );
+        coefs[0] += offset_adj;
+        coefs[1] += gain_adj;
+        
+        if( quad_adj != 0.0 )
+        {
+          if( coefs.size() > 2 )
+            coefs[2] += quad_adj;
+          else
+            coefs.push_back( quad_adj );
+        }//if( quad_adj != 0.0 )
+        
+        const auto &dev_pairs = m_energy_cal->deviation_pairs();
+        
+        // TODO: is there a cheaper way to do this?
+        const double channel = SpecUtils::find_fullrangefraction_channel( adjusted_energy, coefs, num_channel, dev_pairs );
+        
+        return m_energy_cal->energy_for_channel( channel );
+      }//case FRF
         
         
       case SpecUtils::EnergyCalType::LowerChannelEdge:
-        return (adjusted_energy - x[0]) / x[1];
+      {
+        const double lower_energy = m_energy_cal->lower_energy();
+        const double range = m_energy_cal->upper_energy() - lower_energy;
+        
+        assert( quad_adj == 0.0 );
+        return (adjusted_energy - offset_adj + gain_adj*lower_energy/range)/(1 + gain_adj/range);
+      }//case LowerChannelEdge:
         
       case SpecUtils::EnergyCalType::InvalidEquationType:
         break;
@@ -4952,9 +5066,9 @@ RelActAutoSolution::RelActAutoSolution()
   m_floating_peaks{},
   m_fit_peaks{},
   m_input_roi_ranges{},
-  m_energy_cal_adjustments{ 0.0, 0.0 },
   m_drf{ nullptr },
-  m_fit_energy_cal{ false, false },
+  m_energy_cal_adjustments{},
+  m_fit_energy_cal{},
   m_chi2( -1.0 ),
   m_dof( 0 ),
   m_num_function_eval_solution( 0 ),
@@ -4962,7 +5076,10 @@ RelActAutoSolution::RelActAutoSolution()
   m_num_microseconds_eval( 0 ),
   m_num_microseconds_in_eval( 0 )
 {
-  
+  for( auto &i : m_energy_cal_adjustments )
+    i = 0.0;
+  for( auto &i : m_fit_energy_cal )
+    i = false;
 }
   
 std::string RelActAutoSolution::rel_eff_txt( const bool html_format ) const
@@ -5023,18 +5140,40 @@ std::ostream &RelActAutoSolution::print_summary( std::ostream &out ) const
   out << "Rel. Eff. Eqn.: y = ";
   out << rel_eff_txt(false) << "\n";
   
-  if( m_fit_energy_cal[0] || m_fit_energy_cal[1] )
+  bool ene_cal_fit = false;
+  for( const bool &fit : m_fit_energy_cal )
+    ene_cal_fit = (ene_cal_fit || fit);
+  
+  if( ene_cal_fit )
   {
+    static_assert( RelActCalcAuto::RelActAutoSolution::sm_num_energy_cal_pars <= 3 );
+    const char * const label[3] = { "offset", "gain", "cubic" };
+    const char * const post_script[3] = { "keV", "keV/chnl", "keV/chnl2" };
+    
+    const auto cal = m_spectrum ? m_spectrum->energy_calibration() : nullptr;
+    const size_t num_chan = (cal ? cal->num_channels() : 1);
+    
     out << "Energy calibration was fit for: ";
-    if( m_fit_energy_cal[0] )
-      out << "offset=" << m_energy_cal_adjustments[0] << " keV"
-          << (m_fit_energy_cal[1] ? ", " : "");
-    if( m_fit_energy_cal[1] )
+    bool printed_out = false;
+    for( size_t i = 0; i < RelActCalcAuto::RelActAutoSolution::sm_num_energy_cal_pars; ++i )
     {
-      char buffer[32] = { '\0' };
-      snprintf( buffer, sizeof(buffer), "%1.6G", m_energy_cal_adjustments[1] );
-      out << "gain-multiple=" << buffer;
-    }
+      if( m_fit_energy_cal[i] )
+      {
+        double value = (m_energy_cal_adjustments[i]/RelActCalcAuto::RelActAutoSolution::sm_energy_par_offset - 1.0);
+        if( i == 0 )
+          value *= RelActCalcAuto::RelActAutoSolution::sm_energy_cal_multiple;
+        else if( i == 1 )
+          value *= RelActCalcAuto::RelActAutoSolution::sm_energy_cal_multiple / num_chan;
+        else if( i == 2 )
+          value *= RelActCalcAuto::RelActAutoSolution::sm_energy_cal_multiple / (num_chan * num_chan);
+        
+        char buffer[32] = { '\0' };
+        snprintf( buffer, sizeof(buffer), "%1.6G", value );
+        out << (printed_out ? ", " : "") << label[i] << "=" << buffer << " " << post_script[i];
+        printed_out = true;
+      }
+    }//for( loop over energy cal ish )
+    
     out << "\n";
   }//if( m_fit_energy_cal[0] || m_fit_energy_cal[1] )
   
@@ -5422,19 +5561,43 @@ void RelActAutoSolution::print_html_report( std::ostream &out ) const
   results_html << "  </tbody>\n"
   << "</table>\n\n";
   
+  bool ene_cal_fit = false;
+  for( const bool &fit : m_fit_energy_cal )
+    ene_cal_fit = (ene_cal_fit || fit);
   
-  if( m_fit_energy_cal[0] || m_fit_energy_cal[1] )
+  if( ene_cal_fit )
   {
-    results_html << "<div class=\"energycal\">\n";
+    static_assert( RelActCalcAuto::RelActAutoSolution::sm_num_energy_cal_pars <= 3 );
+    const char * const label[3] = { "offset adjustment", "gain adjustment", "cubic adjust" };
+    const char * const post_script[3] = { "keV", "keV/chnl", "keV/chnl2" };
     
-    if( m_fit_energy_cal[0] && m_fit_energy_cal[1] )
-      results_html << "Fit offset adjustment of " << m_energy_cal_adjustments[0]
-                   << " keV and gain multiple of " << (1.0 + m_energy_cal_adjustments[1]) << ".\n";
-    else if( m_fit_energy_cal[1] )
-      results_html << "Fit gain multiple of 1 " << (m_energy_cal_adjustments[1] < 0.0 ? "- " : "+ ")
-                   << fabs(m_energy_cal_adjustments[1]) << ".\n";
-    else // if( m_fit_energy_cal[0] )
-      results_html << "Fit offset adjustment of " << m_energy_cal_adjustments[0] << " keV.\n";
+    const auto cal = m_spectrum ? m_spectrum->energy_calibration() : nullptr;
+    const size_t num_chan = (cal ? cal->num_channels() : 1);
+    
+    results_html << "<div class=\"energycal\">\n";
+    results_html << "Fit ";
+    
+    bool printed = false;
+    for( size_t i = 0; i < RelActCalcAuto::RelActAutoSolution::sm_num_energy_cal_pars; ++i )
+    {
+      if( !m_fit_energy_cal[i] )
+        continue;
+      
+      double value = (m_energy_cal_adjustments[i]/RelActCalcAuto::RelActAutoSolution::sm_energy_par_offset - 1.0);
+      if( i == 0 )
+        value *= RelActCalcAuto::RelActAutoSolution::sm_energy_cal_multiple;
+      else if( i == 1 )
+        value *= RelActCalcAuto::RelActAutoSolution::sm_energy_cal_multiple / num_chan;
+      else if( i == 2 )
+        value *= RelActCalcAuto::RelActAutoSolution::sm_energy_cal_multiple / (num_chan * num_chan);
+      
+      results_html << (printed ? " and " : "") << label[i] << " of " << value
+      << " " << post_script[i];
+      
+      printed = true;
+    }//for( loop over RelActCalcAuto::RelActAutoSolution::sm_num_energy_cal_pars )
+    
+    results_html << ".\n";
     
     results_html << "</div>\n";
   }//if( m_fit_energy_cal[0] || m_fit_energy_cal[1] )
@@ -5903,6 +6066,107 @@ string RelActAutoSolution::rel_eff_eqn_js_function() const
   return RelActCalc::physical_model_rel_eff_eqn_js_function( input.self_atten,
                             input.external_attens, input.det.get(), input.hoerl_b, input.hoerl_c );
 }//string rel_eff_eqn_js_function() const
+  
+  
+std::shared_ptr<SpecUtils::EnergyCalibration> RelActAutoSolution::get_adjusted_energy_cal() const
+{
+  shared_ptr<const SpecUtils::EnergyCalibration> orig_cal = m_foreground ? m_foreground->energy_calibration() : nullptr;
+  if( !orig_cal || !orig_cal->valid() )
+    return nullptr;
+  
+  auto new_cal = make_shared<SpecUtils::EnergyCalibration>( *orig_cal );
+  
+  if( !m_options.fit_energy_cal )
+    return new_cal;
+  
+  assert( m_energy_cal_adjustments.size() == RelActCalcAuto::RelActAutoSolution::sm_num_energy_cal_pars );
+  if( m_energy_cal_adjustments.size() != RelActCalcAuto::RelActAutoSolution::sm_num_energy_cal_pars )
+    throw runtime_error( "RelActAutoSolution::get_adjusted_energy_cal: m_energy_cal_adjustments empty" );
+  
+  const size_t num_channel = orig_cal->num_channels();
+  const SpecUtils::EnergyCalType energy_cal_type = orig_cal->type();
+  
+    
+  const double offset_adj = (m_energy_cal_adjustments[0]/RelActCalcAuto::RelActAutoSolution::sm_energy_par_offset - 1.0)
+                              * RelActCalcAuto::RelActAutoSolution::sm_energy_cal_multiple;
+  const double gain_adj = (m_energy_cal_adjustments[1]/RelActCalcAuto::RelActAutoSolution::sm_energy_par_offset - 1.0)
+                              * RelActCalcAuto::RelActAutoSolution::sm_energy_cal_multiple;
+  const double quad_adj = (RelActCalcAuto::RelActAutoSolution::sm_num_energy_cal_pars > 2)
+                      ? ((m_energy_cal_adjustments[2]/RelActCalcAuto::RelActAutoSolution::sm_energy_par_offset - 1.0)
+                              * RelActCalcAuto::RelActAutoSolution::sm_energy_cal_multiple)
+                      : 0.0;
+    
+  switch( energy_cal_type )
+  {
+    case SpecUtils::EnergyCalType::Polynomial:
+    case SpecUtils::EnergyCalType::UnspecifiedUsingDefaultPolynomial:
+    {
+      vector<float> coefs = orig_cal->coefficients();
+      assert( coefs.size() >= 2 );
+      coefs[0] -= offset_adj;
+      coefs[1] -= (gain_adj / num_channel);
+        
+      if( quad_adj != 0.0 )
+      {
+        if( coefs.size() > 2 )
+          coefs[2] -= (quad_adj / (num_channel*num_channel));
+        else
+          coefs.push_back( -quad_adj / (num_channel*num_channel) );
+      }//if( quad_adj != 0.0 )
+        
+      const auto &dev_pairs = orig_cal->deviation_pairs();
+      new_cal->set_polynomial( num_channel, coefs, dev_pairs );
+      break;
+    }//case polynomial
+        
+    case SpecUtils::EnergyCalType::FullRangeFraction:
+    {
+      vector<float> coefs = orig_cal->coefficients();
+      assert( coefs.size() >= 2 );
+      coefs[0] -= offset_adj;
+      coefs[1] -= gain_adj;
+        
+      if( quad_adj != 0.0 )
+      {
+        if( coefs.size() > 2 )
+          coefs[2] -= quad_adj;
+        else
+          coefs.push_back( -quad_adj );
+      }//if( quad_adj != 0.0 )
+      
+      const auto &dev_pairs = orig_cal->deviation_pairs();
+      new_cal->set_full_range_fraction( num_channel, coefs, dev_pairs );
+      break;
+    }//case FullRangeFraction:
+        
+    case SpecUtils::EnergyCalType::LowerChannelEdge:
+    {
+      assert( orig_cal->channel_energies() );
+      if( !orig_cal->channel_energies() || orig_cal->channel_energies()->empty() )
+        throw runtime_error( "Invalid lower channel energies???" );
+        
+      assert( quad_adj == 0.0 );
+      const double lower_energy = orig_cal->lower_energy();
+      const double range = orig_cal->upper_energy() - lower_energy;
+        
+      vector<float> lower_energies = *orig_cal->channel_energies();
+      for( size_t i = 0; i < lower_energies.size(); ++i )
+      {
+        const float low_e = lower_energies[i];
+        lower_energies[i] = (low_e - offset_adj + gain_adj*lower_energy/range)/(1 + gain_adj/range);
+      }
+        
+      new_cal->set_lower_channel_energy( num_channel, std::move(lower_energies) );
+      break;
+    }//case LowerChannelEdge
+        
+    case SpecUtils::EnergyCalType::InvalidEquationType:
+      break;
+  }//switch( m_energy_cal->type() )
+  
+  return new_cal;
+}//std::shared_ptr<SpecUtils::EnergyCalibration> get_adjusted_energy_cal() const
+  
   
   
 RelActAutoSolution solve( const Options options,

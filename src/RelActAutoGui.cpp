@@ -3032,7 +3032,7 @@ void RelActAutoGui::setOptionsForValidSolution()
   // Check if we should allow setting energy calibration from fit solution
   const bool fit_energy_cal = (m_solution->m_fit_energy_cal[0] || m_solution->m_fit_energy_cal[1]);
   m_apply_energy_cal_item->setDisabled( !fit_energy_cal );
-  m_set_peaks_foreground->setDisabled( m_solution->m_fit_peaks.empty() );
+  m_set_peaks_foreground->setDisabled( m_solution->m_fit_peaks_in_spectrums_cal.empty() );
   
   for( WWidget *w : m_energy_ranges->children() )
   {
@@ -3529,19 +3529,34 @@ void RelActAutoGui::startApplyFitEnergyCalToSpecFile()
   
   char buffer[128] = { '\0' };
   
+  bool printed_some = false;
   if( fit_offset )
   {
-    const double offset = -m_solution->m_energy_cal_adjustments[0];
+    double offset = -(m_solution->m_energy_cal_adjustments[0]/RelActCalcAuto::RelActAutoSolution::sm_energy_par_offset - 1.0)
+                      * RelActCalcAuto::RelActAutoSolution::sm_energy_offset_range_keV;
     snprintf( buffer, sizeof(buffer), " add an offset of %.2f keV", offset );
     msg += buffer;
+    printed_some = true;
   }
   
   if( fit_gain )
   {
-    const double gain = 1.0 / m_solution->m_energy_cal_adjustments[1];
-    snprintf( buffer, sizeof(buffer), "%s multiple the gain by %.5f", (fit_offset ? " and" : ""), gain );
+    double gain = -(m_solution->m_energy_cal_adjustments[1]/RelActCalcAuto::RelActAutoSolution::sm_energy_par_offset - 1.0)
+                      * RelActCalcAuto::RelActAutoSolution::sm_energy_gain_range_keV;
+    snprintf( buffer, sizeof(buffer), "%s increase gain by %.5f", (printed_some ? " and" : ""), gain );
     msg += buffer;
+    printed_some = true;
   }//if( fit_gain )
+  
+  if( m_solution && (m_solution->m_fit_energy_cal.size() > 2) && m_solution->m_fit_energy_cal[2] )
+  {
+    double quad = -(m_solution->m_energy_cal_adjustments[2]/RelActCalcAuto::RelActAutoSolution::sm_energy_par_offset - 1.0)
+                      * RelActCalcAuto::RelActAutoSolution::sm_energy_quad_range_keV;
+    snprintf( buffer, sizeof(buffer), "%s increase quadratic by %.5f", (printed_some ? " and" : ""), quad );
+    msg += buffer;
+    printed_some = true;
+  }//if( fit_gain )
+  
   
   msg += " for the primary foreground";
   const bool has_back = !!m_interspec->displayedHistogram(SpecUtils::SpectrumType::Background);
@@ -3568,7 +3583,7 @@ void RelActAutoGui::applyFitEnergyCalToSpecFile()
   try
   {
     assert( m_solution->m_foreground );
-    if( !m_solution->m_foreground )
+    if( !m_solution || !m_solution->m_foreground )
       throw runtime_error( "Solution foreground not set???" );
     
     const auto orig_cal = m_solution->m_foreground->energy_calibration();
@@ -3578,49 +3593,8 @@ void RelActAutoGui::applyFitEnergyCalToSpecFile()
     
     const size_t nchannel = orig_cal->num_channels();
     
-    shared_ptr<SpecUtils::EnergyCalibration> new_cal = make_shared<SpecUtils::EnergyCalibration>();
-    
-    const double offset = m_solution->m_energy_cal_adjustments[0];
-    const double gain_mult = m_solution->m_energy_cal_adjustments[1];
-    
-    switch( orig_cal->type() )
-    {
-      case SpecUtils::EnergyCalType::Polynomial:
-      case SpecUtils::EnergyCalType::FullRangeFraction:
-      case SpecUtils::EnergyCalType::UnspecifiedUsingDefaultPolynomial:
-      {
-        vector<float> coefs = orig_cal->coefficients();
-        assert( coefs.size() >= 2 );
-        coefs[0] -= offset;
-        coefs[1] /= gain_mult;
-        
-        const auto &dev_pairs = orig_cal->deviation_pairs();
-        if( orig_cal->type() == SpecUtils::EnergyCalType::FullRangeFraction )
-          new_cal->set_full_range_fraction( nchannel, coefs, dev_pairs );
-        else
-          new_cal->set_polynomial( nchannel, coefs, dev_pairs );
-        break;
-      }//case polynomial or FRF
-        
-        
-      case SpecUtils::EnergyCalType::LowerChannelEdge:
-      {
-        assert( orig_cal->channel_energies() );
-        if( !orig_cal->channel_energies() || orig_cal->channel_energies()->empty() )
-          throw runtime_error( "Invalid lower channel energies???" );
-        
-        vector<float> lower_energies = *orig_cal->channel_energies();
-        for( float &x : lower_energies )
-          x = (x - offset) / gain_mult;
-        
-        new_cal->set_lower_channel_energy( nchannel, std::move(lower_energies) );
-      }//case SpecUtils::EnergyCalType::LowerChannelEdge:
-        
-      case SpecUtils::EnergyCalType::InvalidEquationType:
-        assert( 0 );
-        throw runtime_error( "Solution foreground energy calibration invalid equation???" );
-        break;
-    }//switch( m_energy_cal->type() )
+    shared_ptr<const SpecUtils::EnergyCalibration> new_cal = m_solution->m_spectrum
+                                      ? m_solution->m_spectrum->energy_calibration() : nullptr; // or m_solution->get_adjusted_energy_cal()
     
     assert( new_cal && new_cal->valid() );
     if( !new_cal || !new_cal->valid() ) //shouldnt ever happen
@@ -3702,8 +3676,8 @@ void RelActAutoGui::handleShowRefLines( const bool show )
 
 void RelActAutoGui::setPeaksToForeground()
 {
-  assert( m_solution && !m_solution->m_fit_peaks.empty() );
-  if( !m_solution || m_solution->m_fit_peaks.empty() )
+  assert( m_solution && !m_solution->m_fit_peaks_in_spectrums_cal.empty() );
+  if( !m_solution || m_solution->m_fit_peaks_in_spectrums_cal.empty() )
   {
     SimpleDialog *dialog = new SimpleDialog( "Can't Continue", "No peaks in current solution" );
     dialog->addButton( "Close" );
@@ -3758,7 +3732,7 @@ void RelActAutoGui::setPeaksToForeground()
   WPushButton *yes = dialog->addButton( "Yes" );
   
   
-  const vector<PeakDef> solution_peaks = m_solution->m_fit_peaks;
+  const vector<PeakDef> solution_peaks = m_solution->m_fit_peaks_in_spectrums_cal;
   std::shared_ptr<const DetectorPeakResponse> ana_drf = m_solution->m_drf;
   
   if( m_solution->m_options.fit_energy_cal )
@@ -4645,7 +4619,7 @@ void RelActAutoGui::updateFromCalc( std::shared_ptr<RelActCalcAuto::RelActAutoSo
   
   m_txt_results->updateResults( *answer );
   
-  m_peak_model->setPeaks( answer->m_fit_peaks );
+  m_peak_model->setPeaks( answer->m_fit_peaks_in_spectrums_cal );
   
   cout << "\n\n\nCalc finished: \n";
   answer->print_summary( std::cout );
