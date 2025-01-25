@@ -120,10 +120,9 @@ namespace XmlUtils
     if( !node )
       throw std::runtime_error( "Missing node '" + std::string(name) + "'" );
     
-    const std::string value = SpecUtils::xml_value_str(node);
     double answer;
     if( !SpecUtils::parse_double(node->value(), node->value_size(), answer) )
-      throw std::runtime_error( "Value ('" + value + "') of node '"
+      throw std::runtime_error( "Value ('" + SpecUtils::xml_value_str(node) + "') of node '"
                           + std::string(name) + "' was a valid float." );
     
     return answer;

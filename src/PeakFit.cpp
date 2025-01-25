@@ -6437,15 +6437,15 @@ double fit_amp_and_offset( const float *x, const float *data, const size_t nbin,
   //peak.gauss_integral( const float * const energies, double *channels, const size_t nchannel )
   if( do_mt_fixed_peak )
   {
-    const size_t nthread = std::thread::hardware_concurrency();
+    SpecUtilsAsync::ThreadPool pool;
     double * const fixed_contrib = &(mt_fixed_peak_contrib[0]);
     
-    SpecUtilsAsync::ThreadPool pool;
-    
+    /*
     // 20240325: for complicated problems, it kinda looks like multiple cores arent being used that
     //           efficiently (perhaps because each thread is only getting <10 channels to work on).
     //           Perhaps it would be better to put each peak into a thread, for all channels, then
     //           sum results at the end (using vector operations).
+    const size_t nthread = std::thread::hardware_concurrency();
     const size_t nbin_per_thread = 1 + (nbin / nthread);
     
     for( size_t start_channel = 0; start_channel < nbin; start_channel += nbin_per_thread )
@@ -6465,6 +6465,21 @@ double fit_amp_and_offset( const float *x, const float *data, const size_t nbin,
         }
       } );
     }//for( size_t start_channel = 0; start_channel < nbin; start_channel += nbin_per_thread )
+    */
+    
+    std::mutex result_mutex;
+    for( size_t peak_index = 0; peak_index < fixedAmpPeaks.size(); ++peak_index )
+    {
+      pool.post( [&result_mutex, peak_index, &fixedAmpPeaks, nbin, x, fixed_contrib](){
+        vector<double> this_contribs(nbin, 0.0);
+        fixedAmpPeaks[peak_index].gauss_integral( x, &(this_contribs[0]), nbin );
+        
+        std::lock_guard<std::mutex> lock( result_mutex );
+        for( size_t i = 0; i < nbin; ++i )
+          fixed_contrib[i] += this_contribs[i];
+      });
+    }//for( size_t peak_index = 0; peak_index < fixedAmpPeaks.size(); ++peak_index )
+    
     
     pool.join();
   }//if( do_mt_fixed_peak )

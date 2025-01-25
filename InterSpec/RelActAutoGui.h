@@ -76,6 +76,15 @@ namespace rapidxml
 class RelActAutoGui : public Wt::WContainerWidget
 {
 public:
+  enum class AddUncert : int
+  {
+    StatOnly, OnePercent, FivePercent, TenPercent, TwentyFivePercent,
+    FiftyPercent, SeventyFivePercent, OneHundredPercent, NumAddUncert
+  };//enum class AddUncert
+  
+  static const char *to_str( const AddUncert val );
+  
+public:
   RelActAutoGui( InterSpec *viewer, Wt::WContainerWidget *parent = nullptr );
   
   ~RelActAutoGui();
@@ -135,6 +144,8 @@ public:
   
   /** Called when free peaks are added, removed, or edited. */
   void handleFreePeakChange();
+  
+  void handleAdditionalUncertChanged();
   
   void setOptionsForNoSolution();
   void setOptionsForValidSolution();
@@ -296,6 +307,8 @@ protected:
   Wt::WComboBox *m_pu_corr_method;
   
   Wt::WComboBox *m_skew_type;
+  
+  Wt::WComboBox *m_add_uncert;
   
   Wt::WContainerWidget *m_phys_model_opts;
   Wt::WContainerWidget *m_phys_model_shields;

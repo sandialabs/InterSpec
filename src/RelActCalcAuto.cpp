@@ -583,7 +583,8 @@ struct NucInputGamma : public RelActCalcAuto::NucInputInfo
   /** Setup the physical model shield parameters for the Ceres problem - used by both auto and manual.
    * Assumes each parameter is its own parameter block.
    *
-   * @param problem The Ceres problem to setup.  May be nullptr, in which case the parameters will just be set to initial values.
+   * @param lower_bounds The lower bounds the parameters can take - its optional to fill these out
+   * @param upper_bounds The upper bounds the parameters can take - its optional to fill these out
    * @param constant_parameters The parameters that should be held constant in the problem
    * @param pars The array of parameters.
    * @param start_ind The starting index, of `pars`, for this shielding.  This is the index
@@ -591,7 +592,8 @@ struct NucInputGamma : public RelActCalcAuto::NucInputInfo
    *                  in the parameters is the Areal Density.
    * @param opt The physical model shield input to use.
    */
-void setup_physical_model_shield_par( ceres::Problem * const problem,
+void setup_physical_model_shield_par( vector<optional<double>> &lower_bounds,
+                                     vector<optional<double>> &upper_bounds,
                                      vector<int> &constant_parameters,
                                         double * const pars,
                                         const size_t start_ind,
@@ -642,17 +644,14 @@ void setup_physical_model_shield_par( ceres::Problem * const problem,
       if( (lower_an < 1) || (upper_an > 98) || (upper_an <= lower_an) )
         throw runtime_error( "Self-atten AN limits is invalid" );
       
-      if( problem )
-      {
-        problem->SetParameterLowerBound( pars, static_cast<int>(an_index), lower_an / RelActCalc::ns_an_ceres_mult );
-        problem->SetParameterUpperBound( pars, static_cast<int>(an_index), upper_an / RelActCalc::ns_an_ceres_mult );
-        
-        // We could Quantize AN... but I'm not sure the below does it
-        //std::vector<int> quantized_params(1, 0);  // 0 means continuous, 1 means quantized
-        //quantized_params[an_index] = 1;  // Assuming an_index is the index of the AN parameter
-        //problem->SetParameterization( pars + an_index,
-        //     new ceres::SubsetParameterization(1, quantized_params));
-      }
+      lower_bounds[an_index] = lower_an / RelActCalc::ns_an_ceres_mult;
+      upper_bounds[an_index] = upper_an / RelActCalc::ns_an_ceres_mult;
+          
+      // We could Quantize AN... but I'm not sure the below does it
+      //std::vector<int> quantized_params(1, 0);  // 0 means continuous, 1 means quantized
+      //quantized_params[an_index] = 1;  // Assuming an_index is the index of the AN parameter
+      //problem->SetParameterization( pars + an_index,
+      //     new ceres::SubsetParameterization(1, quantized_params));
     }else
     {
       constant_parameters.push_back( static_cast<int>(an_index) );
@@ -686,14 +685,11 @@ void setup_physical_model_shield_par( ceres::Problem * const problem,
     if( (lower_ad < 0.0) || (upper_ad > max_ad) || (lower_ad >= upper_ad) )
       throw runtime_error( "Self-atten AD limits is invalid" );
     
-    if( problem )
-    {
-      problem->SetParameterLowerBound( pars, static_cast<int>(ad_index), lower_ad );
-      problem->SetParameterUpperBound( pars, static_cast<int>(ad_index), upper_ad );
-    }
+    lower_bounds[ad_index] = lower_ad;
+    upper_bounds[ad_index] = upper_ad;
   }else
   {
-    constant_parameters.push_back( ad_index );
+    constant_parameters.push_back( static_cast<int>(ad_index) );
   }
 }//void setup_physical_model_shield_par( ceres::Problem... )
 
@@ -735,8 +731,12 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
   size_t m_acts_par_start_index;
   size_t m_free_peak_par_start_index;
   size_t m_skew_par_start_index;
+  size_t m_add_br_uncert_start_index; //Will only be valid if `peak_ranges_with_uncert` is not empty
   
   bool m_skew_has_energy_dependance;
+  
+  std::vector<std::pair<double,double>> peak_ranges_with_uncert;
+  static constexpr double sm_peak_range_uncert_par_offset = 5.0;
   
   std::shared_ptr<std::atomic_bool> m_cancel_calc;
   
@@ -789,6 +789,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
   m_acts_par_start_index( std::numeric_limits<size_t>::max() ),
   m_free_peak_par_start_index( std::numeric_limits<size_t>::max() ),
   m_skew_par_start_index( std::numeric_limits<size_t>::max() ),
+  m_add_br_uncert_start_index( std::numeric_limits<size_t>::max() ),
   m_skew_has_energy_dependance( false ),
   m_cancel_calc( cancel_calc ),
   m_ncalls( 0 ),
@@ -1064,26 +1065,49 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
   size_t number_parameters() const
   {
     size_t num_pars = 0;
+    assert( (m_energy_cal_par_start_index == std::numeric_limits<size_t>::max())
+           || m_energy_cal_par_start_index == num_pars );
     
     // Energy calibration; we will always have these, even if fixed values
     num_pars += RelActCalcAuto::RelActAutoSolution::sm_num_energy_cal_pars;
     
+    assert( (m_fwhm_par_start_index == std::numeric_limits<size_t>::max())
+           || m_fwhm_par_start_index == num_pars );
+    
     // The FWHM equation
     num_pars += num_parameters( m_options.fwhm_form );
+    
+    assert( (m_rel_eff_par_start_index == std::numeric_limits<size_t>::max())
+           || m_rel_eff_par_start_index == num_pars );
     
     // The Relative Eff coefficients
     num_pars += num_rel_eff_coefs();
     
+    assert( (m_acts_par_start_index == std::numeric_limits<size_t>::max())
+           || m_acts_par_start_index == num_pars );
+    
     // The Activities; one parameter for activity, one for age (which may be fixed)
     num_pars += 2*m_nuclides.size();
     
+    assert( (m_free_peak_par_start_index == std::numeric_limits<size_t>::max())
+           || m_free_peak_par_start_index == num_pars );
+    
     // Floating peaks; one parameter for amplitude, one for FWHM (which will usually be unused)
     num_pars += 2*m_extra_peaks.size();
+    
+    assert( (m_skew_par_start_index == std::numeric_limits<size_t>::max())
+           || m_skew_par_start_index == num_pars );
     
     // Peak skew parameters; two sets of these, with some coefficients in the upper set
     //  maybe not being used
     const size_t num_skew = PeakDef::num_skew_parameters( m_options.skew_type );
     num_pars += 2*num_skew;
+    
+    assert( (m_add_br_uncert_start_index == numeric_limits<size_t>::max()) == peak_ranges_with_uncert.empty() );
+    assert( (m_add_br_uncert_start_index == std::numeric_limits<size_t>::max())
+           || (num_pars == m_add_br_uncert_start_index) );
+    
+    num_pars += peak_ranges_with_uncert.size();
     
     // Anything else?
     
@@ -1096,6 +1120,8 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     size_t num_resids = (m_options.rel_eff_eqn_type != RelActCalc::RelEffEqnForm::FramPhysicalModel);
     for( const auto &r : m_energy_ranges )
       num_resids += r.num_channels;
+    
+    num_resids += peak_ranges_with_uncert.size();
     
     return num_resids;
   }//size_t number_residuals() const
@@ -1329,15 +1355,16 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     // Now use peaks_in_rois and manual stuff to try and estimate initial RelEff and activities
     
     
-    RelActAutoCostFcn *cost_functor = nullptr;
+    shared_ptr<RelActAutoCostFcn> cost_functor;
     try
     {
       if( cancel_calc && cancel_calc->load() )
         throw runtime_error( "User cancelled calculation." );
       
-      cost_functor = new RelActAutoCostFcn( options, energy_ranges, nuclides,
+      auto functor = new RelActAutoCostFcn( options, energy_ranges, nuclides,
                                            extra_peaks, spectrum, channel_count_uncerts,
                                            input_drf, all_peaks, cancel_calc );
+      cost_functor.reset( functor );
     }catch( std::exception &e )
     {
       if( cancel_calc && cancel_calc->load() )
@@ -1350,9 +1377,6 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
       return solution;
     }//try / catch
   
-    auto cost_function = new ceres::DynamicNumericDiffCostFunction<RelActAutoCostFcn>( cost_functor );
-    cost_function->SetNumResiduals( static_cast<int>(cost_functor->number_residuals()) );
-    cost_function->AddParameterBlock( static_cast<int>(cost_functor->number_parameters()) );
     
     solution.m_status = RelActCalcAuto::RelActAutoSolution::Status::FailToSolveProblem;
     solution.m_drf = cost_functor->m_drf;
@@ -1362,21 +1386,16 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     for( const auto &roi : cost_functor->m_energy_ranges )
       solution.m_final_roi_ranges.push_back( roi );
     
-    const size_t num_pars = cost_functor->number_parameters();
+    // `cost_functor` hasnt had `peak_ranges_with_uncert` initialized yet, which we cant do
+    //  until after we get our initial activity/rel-eff estimates setup
+    const size_t num_pars_initial = cost_functor->number_parameters();
     
-    vector<double> parameters( num_pars, 0.0 );
+    vector<double> parameters( num_pars_initial, 0.0 );
     double *pars = &parameters[0];
-    const vector<double *> parameter_blocks( 1, pars );
+    
     vector<int> constant_parameters;
+    vector<std::optional<double>> lower_bounds( num_pars_initial ), upper_bounds( num_pars_initial );
     
-    ceres::Problem problem;
-    
-    
-    
-    // TODO: investigate using a LossFunction - probably really need it
-    ceres::LossFunction *lossfcn = nullptr;
-    problem.AddResidualBlock( cost_function, lossfcn, parameter_blocks );
-    problem.AddParameterBlock( pars, static_cast<int>(num_pars) );
     
     assert( cost_functor->m_energy_cal && cost_functor->m_energy_cal->valid() );
     for( size_t i = 0; i < RelActCalcAuto::RelActAutoSolution::sm_num_energy_cal_pars; ++i )
@@ -1433,8 +1452,8 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
         constexpr double limit = RelActCalcAuto::RelActAutoSolution::sm_energy_offset_range_keV;
         constexpr double cal_mult = RelActCalcAuto::RelActAutoSolution::sm_energy_cal_multiple;
         
-        problem.SetParameterLowerBound(pars, 0, offset - (limit/cal_mult) );
-        problem.SetParameterUpperBound(pars, 0, offset + (limit/cal_mult) );
+        lower_bounds[0] = offset - (limit/cal_mult);
+        upper_bounds[0] = offset + (limit/cal_mult);
       }else
       {
         constant_parameters.push_back( 0 );
@@ -1447,8 +1466,8 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
         constexpr double gain_limit = RelActCalcAuto::RelActAutoSolution::sm_energy_gain_range_keV;
         constexpr double cal_mult = RelActCalcAuto::RelActAutoSolution::sm_energy_cal_multiple;
         
-        problem.SetParameterLowerBound(pars, 1, offset - (gain_limit/cal_mult) );
-        problem.SetParameterUpperBound(pars, 1, offset + (gain_limit/cal_mult) );
+        lower_bounds[1] = offset - (gain_limit/cal_mult);
+        upper_bounds[1] = offset + (gain_limit/cal_mult);
       }else
       {
         constant_parameters.push_back( 1 );
@@ -1467,8 +1486,8 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
           constexpr double cubic_limit = RelActCalcAuto::RelActAutoSolution::sm_energy_gain_range_keV;
           constexpr double cal_mult = RelActCalcAuto::RelActAutoSolution::sm_energy_cal_multiple;
           
-          problem.SetParameterLowerBound(pars, 2, offset - (cubic_limit/cal_mult) );
-          problem.SetParameterUpperBound(pars, 2, offset + (cubic_limit/cal_mult) );
+          lower_bounds[2] = offset - (cubic_limit/cal_mult);
+          upper_bounds[2] = offset + (cubic_limit/cal_mult);
           solution.m_fit_energy_cal[2] = true;
         }else
         {
@@ -1509,6 +1528,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     cost_functor->m_skew_par_start_index = skew_start;
     
     assert( (skew_start + 2*num_skew_coefs) == cost_functor->number_parameters() );
+    
     
     try
     {
@@ -1889,13 +1909,13 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
       
       
       // TODO: For cbnm9375, fill_in_nuclide_info() and add_nuclides_to_peaks() produce nearly identical results (like tiny rounding errors on yields), but this causes a notable difference in the final "auto" solution, although this manual solution apears the same - really should figure this out - and then get rid of add_nuclides_to_peaks(...) - maybe this is all a testimate to how brittle somethign else is...
-      const double cluster_sigma = 1.5;
-      const auto peaks_with_nucs = add_nuclides_to_peaks( peaks_in_range, nuc_sources, real_time, cluster_sigma );
+      const double cluster_num_sigma = 1.5;
+      const auto peaks_with_nucs = add_nuclides_to_peaks( peaks_in_range, nuc_sources, real_time, cluster_num_sigma );
       
       //RelActCalcManual::PeakCsvInput::NucMatchResults matched_res
       //  = RelActCalcManual::PeakCsvInput::fill_in_nuclide_info( peaks_in_range,
       //                                    RelActCalcManual::PeakCsvInput::NucDataSrc::SandiaDecay,
-      //                                    {}, isotopes, cluster_sigma, {}, real_time );
+      //                                    {}, isotopes, cluster_num_sigma, {}, real_time );
       // const auto peaks_with_nucs = matched_res.peaks_matched;
       
       /*
@@ -2147,19 +2167,19 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
         
         
         parameters[skew_start + i] = starting;
-        problem.SetParameterLowerBound(pars, static_cast<int>(skew_start + i), lower );
-        problem.SetParameterUpperBound(pars, static_cast<int>(skew_start + i), upper );
+        lower_bounds[skew_start + i] = lower;
+        upper_bounds[skew_start + i] = upper;
         
         // Specify ranges for second set of skew parameters
         if( !fit_energy_dep )
         {
           parameters[skew_start + i + num_skew_coefs] = -999.9;
-          constant_parameters.push_back( skew_start + i + num_skew_coefs );
+          constant_parameters.push_back( static_cast<int>(skew_start + i + num_skew_coefs) );
         }else
         {
           parameters[skew_start + i + num_skew_coefs] = starting;
-          problem.SetParameterLowerBound(pars, static_cast<int>(skew_start + i + num_skew_coefs), lower );
-          problem.SetParameterUpperBound(pars, static_cast<int>(skew_start + i + num_skew_coefs), upper );
+          lower_bounds[skew_start + i + num_skew_coefs] = lower;
+          upper_bounds[skew_start + i + num_skew_coefs] = upper;
         }
       }//for( size_t i = 0; i < (num_skew_par/2); ++i )
       
@@ -2187,8 +2207,6 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
       solution.m_warnings.push_back( "Initial estimate of relative efficiency curve failed ('"
                                      + string(e.what())
                                      + "'), using a flat line as a starting point" );
-      
- 
     }//try / catch
     
     
@@ -2257,8 +2275,8 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
         // TODO: is there any problem with a nuclide >100 years, that isnt effectively infinite?
         max_age = std::min( max_age, 120*PhysicalUnits::year );
         
-        problem.SetParameterLowerBound(pars, static_cast<int>(age_index), 0.0 );
-        problem.SetParameterUpperBound(pars, static_cast<int>(age_index), max_age );
+        lower_bounds[age_index] = 0.0;
+        upper_bounds[age_index] = max_age;
       }else
       {
         constant_parameters.push_back( static_cast<int>(age_index) );
@@ -2340,7 +2358,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
         }
       }//if( !succesfully_estimated_re_and_ra )
       
-      problem.SetParameterLowerBound(pars, static_cast<int>(act_index), 0.0 );
+      lower_bounds[act_index] = 0.0;
     }//for( size_t nuc_num = 0; nuc_num < nuclides.size(); ++nuc_num )
     
     
@@ -2366,7 +2384,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
       
       // Assume data is entirely due to peak; mean +- 0.5*fwhm is ~76% gaussian area
       parameters[amp_index] = data_count / 0.76;
-      problem.SetParameterLowerBound(pars, static_cast<int>(amp_index), 0.0 );
+      lower_bounds[amp_index] = 0.0;
       
       parameters[fwhm_index] = 1.0;
       
@@ -2374,11 +2392,11 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
       {
         // We'll say the width of this peak can not be less than 25% of what is expected
         //  TODO: we probably also want to put a lower bound of 3 or 4 channels as well
-        problem.SetParameterLowerBound(pars, static_cast<int>(fwhm_index), 0.25 );
+        lower_bounds[fwhm_index] = 0.25;
         
         // TODO: set an upper bound on peak width - this needs to be a convolution of Q value and detector resolution - maybe an input to this function
         //  Right now we'll just say a factor of 4 - which is plenty, unless its caused by a large Q reaction.
-        problem.SetParameterUpperBound(pars, static_cast<int>(fwhm_index), 4.0 );
+        upper_bounds[fwhm_index] = 4.0;
       }else
       {
         constant_parameters.push_back( static_cast<int>(fwhm_index) );
@@ -2389,13 +2407,13 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     if( solution.m_rel_eff_form == RelActCalc::RelEffEqnForm::FramPhysicalModel )
     { 
       const auto &self_atten_opt = options.phys_model_self_atten;
-      setup_physical_model_shield_par( &problem, constant_parameters, pars, rel_eff_start, self_atten_opt );
+      setup_physical_model_shield_par( lower_bounds, upper_bounds, constant_parameters, pars, rel_eff_start, self_atten_opt );
       
       for( size_t ext_ind = 0; ext_ind < options.phys_model_external_atten.size(); ++ext_ind )
       {
         const size_t start_index = rel_eff_start + 2 + 2*ext_ind;
         const auto &opt = options.phys_model_external_atten[ext_ind];
-        setup_physical_model_shield_par( &problem, constant_parameters, pars, start_index, opt );
+        setup_physical_model_shield_par( lower_bounds, upper_bounds, constant_parameters, pars, start_index, opt );
       }//for( size_t ext_ind = 0; ext_ind < options.phys_model_external_atten.size(); ++ext_ind )
       
       // Not sure what to do with the b and c values of the Modified Hoerl function ( E^b * c^(1/E) ).
@@ -2412,11 +2430,55 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     }//if( solution.m_rel_eff_form == RelActCalc::RelEffEqnForm::FramPhysicalModel )
     
     
+    
+    // If we are adding an additional uncertainty onto "branching ratios", what we will actually
+    //  do is cluster things together that will effectively appear as one peak.  We will then
+    //  add each clustered peak as its own residual, to allow it to vary
+    if( options.additional_br_uncert > 0.0 )
+    {
+      const double cluster_num_sigma = 1.5;
+      cost_functor->peak_ranges_with_uncert = cost_functor->cluster_photopeaks( cluster_num_sigma, parameters );
+      
+      const size_t num_pars = parameters.size() + cost_functor->peak_ranges_with_uncert.size();
+      parameters.resize( num_pars, sm_peak_range_uncert_par_offset );
+      pars = &parameters[0];
+      lower_bounds.resize( num_pars, optional<double>(0.0) );
+      upper_bounds.resize( num_pars );
+      
+      const size_t num_skew_coefs = PeakDef::num_skew_parameters( options.skew_type );
+      cost_functor->m_add_br_uncert_start_index = cost_functor->m_skew_par_start_index + 2*num_skew_coefs;
+      
+      assert( num_pars == cost_functor->number_parameters() );
+      assert( num_pars == (cost_functor->m_add_br_uncert_start_index + cost_functor->peak_ranges_with_uncert.size()) );
+    }//if( options.additional_br_uncert > 0.0 )
+    
+    const size_t num_pars = cost_functor->number_parameters();
+    
+    auto cost_function = new ceres::DynamicNumericDiffCostFunction<RelActAutoCostFcn>( cost_functor.get(),
+                                                                    ceres::DO_NOT_TAKE_OWNERSHIP );
+    cost_function->SetNumResiduals( static_cast<int>(cost_functor->number_residuals()) );
+    cost_function->AddParameterBlock( static_cast<int>(cost_functor->number_parameters()) );
+    
+    
+    ceres::Problem problem;
+    ceres::LossFunction *lossfcn = nullptr; // TODO: investigate using a LossFunction - probably really need it
+    problem.AddResidualBlock( cost_function, lossfcn, pars );
+    problem.AddParameterBlock( pars, static_cast<int>(num_pars) );
+    
     if( !constant_parameters.empty() )
     {
       ceres::Manifold *subset_manifold = new ceres::SubsetManifold( static_cast<int>(num_pars), constant_parameters );
       problem.SetManifold( pars, subset_manifold );
     }
+    
+    
+    for( size_t i = 0; i < num_pars; ++i )
+    {
+      if( lower_bounds[i].has_value() )
+        problem.SetParameterLowerBound(pars, static_cast<int>(i), *lower_bounds[i] );
+      if( upper_bounds[i].has_value() )
+        problem.SetParameterUpperBound(pars, static_cast<int>(i), *upper_bounds[i] );
+    }//for( size_t i = 0; i < num_pars; ++i )
     
     
     // Okay - we've set our problem up
@@ -2586,7 +2648,6 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     solution.m_num_function_eval_total = static_cast<int>( cost_functor->m_ncalls );
   
     solution.m_final_parameters = parameters;
-    
     
     for( size_t i = 0; i < RelActCalcAuto::RelActAutoSolution::sm_num_energy_cal_pars; ++i )
       solution.m_energy_cal_adjustments[i] = parameters[i];
@@ -2883,6 +2944,22 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     }//if( FramPhysicalModel )
     
     
+    /*
+    if( options.additional_br_uncert > 0.0 )
+    {
+      cout << "ROIS were adjusted as follows:" << endl;
+      for( size_t roi_index = 0; roi_index < cost_functor->peak_ranges_with_uncert.size(); ++roi_index )
+      {
+        const auto range = cost_functor->peak_ranges_with_uncert[roi_index];
+        const size_t par_index = cost_functor->m_add_br_uncert_start_index + roi_index;
+        const double multiple = solution.m_final_parameters[par_index]/sm_peak_range_uncert_par_offset;
+        cout << "\t[" << setprecision(4) << setw(6) << range.first << "," << setprecision(4) << setw(5) << range.second << "]: "
+        << multiple << endl;
+      }
+      cout << endl;
+    }//if( options.additional_br_uncert > 0.0 )
+     */
+    
     vector<double> residuals( cost_functor->number_residuals(), 0.0 );
     cost_functor->eval( parameters, residuals.data() );
     solution.m_chi2 = 0.0;
@@ -2899,7 +2976,150 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     return solution;
   }//RelActCalcAuto::RelActAutoSolution solve_ceres( ceres::Problem &problem )
   
+  
+  vector<pair<double,double>> cluster_photopeaks( const double cluster_num_sigma, const std::vector<double> &x ) const
+  {
+    // TODO: this function is by no means optimized - it does stupid O(N^2) things.
+    assert( m_spectrum );
+    if( !m_spectrum || (m_spectrum->num_gamma_channels() < 7) )
+      throw std::runtime_error( "Valid spectrum is needed for clustering gammas." );
+    
+    const double live_time = (m_spectrum && (m_spectrum->live_time() > 0.0))
+                              ? m_spectrum->live_time() : 1.0;
+    
+    // First we will get all gammas in our rois
+    vector<pair<double,double>> gammas_by_counts;  //pair<energy,counts>
+    
+    const auto lessThanByEnergy = []( const pair<double,double> &lhs, const pair<double,double> &rhs ){
+      return lhs.first < rhs.first;
+    };
+    
+    const auto moreThanByNumPerSecond = []( const pair<double,double> &lhs, const pair<double,double> &rhs ){
+      return lhs.second > rhs.second;
+    };
+    
+    
+    for( const NucInputGamma &nuc_input : m_nuclides )
+    {
+      for( const NucInputGamma::EnergyYield &line_info : nuc_input.nominal_gammas )
+      {
+        const double energy = line_info.energy;
+        
+        bool in_a_roi = false;
+        for( size_t i = 0; !in_a_roi && (i < m_energy_ranges.size()); ++i )
+        {
+          in_a_roi = ((energy >= m_energy_ranges[i].lower_energy)
+                      && (energy <= m_energy_ranges[i].upper_energy));
+        }
+        
+        if( !in_a_roi )
+          continue;
+        
+        const double rel_act = relative_activity( nuc_input.nuclide, x );
+        const double rel_eff = relative_eff( energy, x );
+        
+        const double counts = rel_act * rel_eff * line_info.yield * live_time;
+        gammas_by_counts.emplace_back( energy, counts );
+      }//for( const NucInputGamma::EnergyYield &line_info : nuc_input.nominal_gammas )
+    }//for( const NucInputGamma &nuc_input : m_nuclides )
+    
+    vector<pair<double,double>> gammas_by_energy = gammas_by_counts;
+    
+    std::sort( begin(gammas_by_energy), end(gammas_by_energy), lessThanByEnergy );
+    std::sort( begin(gammas_by_counts), end(gammas_by_counts), moreThanByNumPerSecond );
+    
+    vector<pair<double,double>> answer;
+    
+    for( const pair<double,double> &energy_counts : gammas_by_counts )
+    {
+      auto ene_pos = std::lower_bound( begin(gammas_by_energy), end(gammas_by_energy),
+                                      energy_counts, lessThanByEnergy );
+      if( ene_pos == end(gammas_by_energy) )
+        continue;
+      
+      if( ene_pos->first != energy_counts.first )
+        continue; //We've already removed erp from gammas_by_energy
+      
+      const double energy = energy_counts.first;
+      const double counts = energy_counts.second;
+      
+      const double sigma = fwhm(energy, x) / 2.35482;
+      
+      double lower = energy - cluster_num_sigma * sigma;
+      double upper = energy + cluster_num_sigma * sigma;
+      
+      // Now remove all gammas from `gammas_by_energy` that are between lower and upper.
+      //  Note that if a gamma is equal to the lower or upper bound, it will be removed
+      //  (I'm pretty sure)
+      const auto start_remove = std::lower_bound(begin(gammas_by_energy), end(gammas_by_energy),
+                                                 make_pair(lower,0.0), lessThanByEnergy );
+      const auto end_remove = std::upper_bound(begin(gammas_by_energy), end(gammas_by_energy),
+                                               make_pair(upper,0.0), lessThanByEnergy );
+      
+      const double counts_in_region = std::accumulate(start_remove, end_remove, 0.0,
+        []( const double &sum, const pair<double,double> &el ){
+        return sum + el.second;
+      });
+      
+      const double data_area = m_spectrum->gamma_integral( static_cast<float>(lower),
+                                                          static_cast<float>(upper) );
+      
+#ifndef NDEBUG
+      //cout << "For [" << lower << "," << upper << "), will remove :{";
+      for( auto iter = start_remove; iter != end_remove; ++iter )
+      {
+        assert( (iter->first >= lower) && (iter->first <= upper) );
+        //cout << iter->first << ",";
+      }
+      //cout << "}" << endl;
+      
+      for( const auto &roi : answer )
+      {
+        assert( (energy <= roi.first) || (energy >= roi.second) );
+      }
+#endif //#ifndef NDEBUG
+      
+      gammas_by_energy.erase( start_remove, end_remove );
+      
+      const double signif = counts_in_region / sqrt(data_area);
+      //cout << "For [" << lower << "," << upper << "), there are data_area="
+      //<< data_area << ", counts_in_region=" << counts_in_region << ", signif=" << signif
+      //<< endl;
+      
+      if( (data_area > 10) && (counts_in_region > 10) && (signif > 0.01) )
+      {
+        // Our new ROI could overlap with existing ROI, so we'll fix this up before inserting
+        // TODO: right now we are just shrinking the new (smaller) region to not invade the previous region - we should do some sort of weighted balancing
+        for( const auto &prev : answer )
+        {
+          if( (lower < prev.second) && (lower > prev.first) )
+            lower = prev.second;
+          if( (upper > prev.first) && (upper < prev.second) )
+            upper = prev.first;
+        }
+        
+        assert( lower <= upper );
+        if( lower <= upper )
+         answer.emplace_back( lower, upper );
+      }
+      
+    }//for( const SandiaDecay::EnergyRatePair &erp : gammas_by_counts )
+    
+    std::sort( begin(answer), end(answer), []( const pair<double,double> &lhs, const pair<double,double> &rhs ){
+      return lhs.first < rhs.first;
+    });
+    
+    assert( std::is_sorted( begin(answer), end(answer) ) );
+    
+    for( size_t i = 1; i < answer.size(); ++i )
+    {
+      assert( answer[i-1].second <= answer[i].first );
+    }
+    
+    return answer;
+  }//vector<pair<double,double>> cluster_photopeaks( const std::vector<double> &x )
 
+  
   float fwhm( const float energy, const std::vector<double> &x ) const
   {
     const auto drf_start = begin(x) + RelActCalcAuto::RelActAutoSolution::sm_num_energy_cal_pars;
@@ -3002,7 +3222,8 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
                                    + num_parameters(m_options.fwhm_form)
                                    + num_rel_eff_coefs();
     assert( (act_start_index + 2*m_nuclides.size() + 2*m_extra_peaks.size()
-             + 2*PeakDef::num_skew_parameters(m_options.skew_type)) == number_parameters() );
+             + 2*PeakDef::num_skew_parameters(m_options.skew_type)
+           + peak_ranges_with_uncert.size()) == number_parameters() );
     assert( act_start_index == m_acts_par_start_index );
     
     assert( x.size() == number_parameters() );
@@ -3462,7 +3683,6 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
       std::unique_ptr<vector<NucInputGamma::EnergyYield>> aged_gammas_cache;
       
       const double rel_act = relative_activity( nucinfo.nuclide, x );
-      
       //cout << "peaks_for_energy_range: Relative activity of " << nucinfo.nuclide->symbol
       //     << " is " << PhysicalUnits::printToBestActivityUnits(rel_act) << endl;
       
@@ -3534,7 +3754,30 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
           throw runtime_error( "peaks_for_energy_range: for peak at " + std::to_string(gamma.energy)
                             + " keV, FWHM=" + std::to_string(peak_fwhm) + " which is too small." );
         
-        const double peak_amplitude = rel_act * m_live_time * rel_eff * yield;
+        double br_uncert_adj = 1.0;
+        if( (m_options.additional_br_uncert > 0.0) && !peak_ranges_with_uncert.empty() )
+        {
+          assert( m_add_br_uncert_start_index != std::numeric_limits<size_t>::max() );
+          assert( (m_add_br_uncert_start_index + peak_ranges_with_uncert.size()) == number_parameters() );
+          
+          // TODO: we could use std::lower_bound to find the applicable `peak_ranges_with_uncert` element
+          for( size_t range_index = 0; range_index < peak_ranges_with_uncert.size(); ++range_index )
+          {
+            const pair<double,double> &range = peak_ranges_with_uncert[range_index];
+            
+            if( (gamma.energy >= range.first) && (gamma.energy <= range.second) )
+            {
+              // If `x[m_add_br_uncert_start_index + range_index]` is zero, then our amplitude is zero; if it is two, then our amplitude is doubled.
+              const double adjvalue = x[m_add_br_uncert_start_index + range_index]/sm_peak_range_uncert_par_offset - 1.0;
+              br_uncert_adj = std::max(0.0, 1.0 + adjvalue);
+              
+              break;
+            }//
+          }//for( find range this gamma belongs to, if any )
+        }//if( m_options.additional_br_uncert > 0.0 && !peak_ranges_with_uncert.empty() )
+        
+        
+        const double peak_amplitude = rel_act * m_live_time * rel_eff * yield * br_uncert_adj;
         if( IsInf(peak_amplitude) || IsNan(peak_amplitude) )
           throw runtime_error( "peaks_for_energy_range: inf or NaN peak amplitude for "
                               + std::to_string(gamma.energy) + " keV.");
@@ -3692,8 +3935,8 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
   }//PeaksForEnergyRange peaks_for_energy_range( const double lower_energy, const double upper_energy ) const
   
   
-  
-  void eval( const std::vector<double> &x, double *residuals ) const
+  template<typename T>
+  void eval( const std::vector<T> &x, T *residuals ) const
   {
     m_ncalls += 1;
     
@@ -3719,6 +3962,18 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
       do_cancel();
       return;
     }//if( m_cancel_calc && m_cancel_calc->load() )
+    
+    
+    // Zero out residuals, although I'm not sure if we actually need to do this.
+    const size_t num_residuals = number_residuals();
+    if constexpr ( !std::is_same_v<T, double> )
+    {
+      for( size_t i = 0; i < num_residuals; ++i )
+        residuals[i] = num_residuals;
+    }else
+    {
+      memset( residuals, 0, sizeof(double) * num_residuals );
+    }
     
     // We'll do the simplest parallelization we can by computing peaks in multiple threads; this
     //  actually seems to be reasonably effective in filling up the CPU cores during fitting.
@@ -3756,6 +4011,10 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     assert( peaks_in_ranges.size() == m_energy_ranges.size() );
     
     size_t residual_index = 0;
+    
+    const bool try_better_par = true;
+    vector<mutex> roi_mutexes( m_energy_ranges.size() );
+    
     for( size_t roi_index = 0; roi_index < m_energy_ranges.size(); ++roi_index )
     {
       const RoiRangeChannels &energy_range = m_energy_ranges[roi_index];
@@ -3767,7 +4026,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
       assert( info.last_channel >= info.first_channel );
       assert( m_channel_counts.size() == m_channel_count_uncerts.size() );
       
-      const shared_ptr<const PeakContinuum> continuum = info.peaks.at(0).continuum();
+      const PeakContinuum * const continuum = info.peaks.at(0).continuum().get();
       assert( continuum );
       
       const size_t residual_start_index = residual_index;
@@ -3775,7 +4034,52 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
       const size_t nchannels_roi = (info.last_channel - info.first_channel) + 1;
       residual_index += nchannels_roi;
       
-      if( parallelize_over_rois_only )
+      
+      if( try_better_par )
+      {
+        mutex *this_roi_mutex = &(roi_mutexes[roi_index]);
+        
+        const PeaksForEnergyRange &range = peaks_in_ranges[roi_index];
+        const shared_ptr<const vector<float>> &energies_ptr = m_energy_cal->channel_energies();
+        if( !energies_ptr || ((range.last_channel+1) >= energies_ptr->size()) )
+          throw runtime_error( "RelActAutoCostFcn::eval(): somehow invalid energy cal." );
+        const vector<float> &energies = *energies_ptr;
+        const float * const this_energies = &(energies[range.first_channel]);
+        const size_t this_nchannel = 1 + range.last_channel - range.first_channel;
+        double * const this_residual = residuals + residual_start_index;
+        
+        
+        
+          // Fill in gaussian values
+          for( const PeakDef &peak : range.peaks )
+          {
+            pool.post( [this_roi_mutex, this_residual, &peak, this_nchannel, this_energies](){
+              vector<double> counts( this_nchannel, 0.0 );
+              peak.gauss_integral( this_energies, counts.data(), this_nchannel );
+              
+              std::lock_guard<std::mutex> lock( *this_roi_mutex );
+              for( size_t i = 0; i < this_nchannel; ++i )
+                this_residual[i] += counts[i];
+            } );
+          }//for( const PeakDef &peak : range.peaks )
+          
+          // Fill the continuum values
+          pool.post( [this_nchannel, this_energies, continuum, this_residual, this_roi_mutex, this](){
+            vector<double> counts( this_nchannel, 0.0 );
+            for( size_t index = 0; index < this_nchannel; ++index )
+            {
+              const double x0 = this_energies[index];
+              const double x1 = this_energies[index + 1];
+              counts[index] += continuum->offset_integral( x0, x1, m_spectrum );
+            }
+            
+            std::lock_guard<std::mutex> lock( *this_roi_mutex );
+            for( size_t i = 0; i < this_nchannel; ++i )
+              this_residual[i] += counts[i];
+          } );
+        
+        
+      }else if( parallelize_over_rois_only )
       {
         // Define a lamda to evaluate the residuals for an entire ROI
         const auto eval_for_roi = [this, residuals, residual_start_index, continuum]( const PeaksForEnergyRange &range ) {
@@ -3791,11 +4095,6 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
           
           double * const this_residual = residuals + residual_start_index;
           const float * const this_energies = &(energies[range.first_channel]);
-          
-          // I think the memset call is valid...
-          memset( this_residual, 0, sizeof(double) * this_nchannel );
-          //for( size_t i = 0; i < this_nchannel; ++i )
-          //  this_residual[i] = 0.0;
           
           // Fill in gaussian values
           for( const PeakDef &peak : range.peaks )
@@ -3823,7 +4122,14 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
         };//eval_for_roi
         
         pool.post( [eval_for_roi,roi_index,&peaks_in_ranges](){
+          //static std::mutex debugmtx;
+          //const auto start_time = std::chrono::high_resolution_clock::now();
+          
           eval_for_roi( peaks_in_ranges[roi_index] );
+          
+          //const auto end_time = std::chrono::high_resolution_clock::now();
+          //std::lock_guard<std::mutex> lock( debugmtx );
+          //cout << "For ROI " << roi_index << " spent " << std::chrono::duration_cast<std::chrono::nanoseconds>(end_time - start_time).count() << " nanoseconds" << endl;
         } );
       }else
       {
@@ -3909,6 +4215,36 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     
     pool.join();
     
+    
+    if( try_better_par )
+    {
+      
+      size_t residual_index = 0;
+      for( size_t roi_index = 0; roi_index < m_energy_ranges.size(); ++roi_index )
+      {
+        double * const this_residual = residuals + residual_index;
+        const PeaksForEnergyRange &range = peaks_in_ranges[roi_index];
+        const size_t first_channel = range.first_channel;
+        const size_t nchannels_roi = (range.last_channel - range.first_channel) + 1;
+        
+        residual_index += nchannels_roi;
+        
+        pool.post( [first_channel,nchannels_roi,this_residual,this](){
+          for( size_t index = 0; index < nchannels_roi; ++index )
+          {
+            const size_t data_index = first_channel + index;
+            const double data_counts = m_channel_counts[data_index];
+            const double data_uncert = m_channel_count_uncerts[data_index];
+            const double peak_area = this_residual[index];
+            
+            this_residual[index] = (data_counts - peak_area) / data_uncert;
+          }
+        } );
+      }//
+      
+      pool.join();
+    }//if( try_better_par )
+    
     // See TODO above about calculations methods giving slightly different end-results, unless be
     //  truncate the accuracy of the residuals to be floats.
     //cerr << "\n\nRounding residuals to floats for debug\n\n" << endl;
@@ -3918,7 +4254,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     
     if( m_options.rel_eff_eqn_type != RelActCalc::RelEffEqnForm::FramPhysicalModel )
     {
-      assert( (residual_index + 1) == number_residuals() );
+      assert( (residual_index + 1 + peak_ranges_with_uncert.size()) == number_residuals() );
       
       // Now make sure the relative efficiency curve is anchored to 1.0 (this removes the degeneracy
       //  between the relative efficiency amplitude, and the relative activity amplitudes).
@@ -3927,6 +4263,22 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
       residuals[residual_index] = m_rel_eff_anchor_enhancement * (1.0 - lowest_energy_rel_eff);
       ++residual_index;
     }//if( m_options.rel_eff_eqn_type != RelActCalc::RelEffEqnForm::FramPhysicalModel )
+    
+    if( !peak_ranges_with_uncert.empty() )
+    {
+      assert( m_options.additional_br_uncert > 0.0 );
+      
+      for( size_t range_index = 0; range_index < peak_ranges_with_uncert.size(); ++range_index )
+      {
+        const size_t par_index = m_add_br_uncert_start_index + range_index;
+        assert( par_index < x.size() );
+        
+        // Normalize the parameter so nominal is 0, and a 100% change is +-1;
+        const double norm_val = x[par_index]/sm_peak_range_uncert_par_offset - 1.0;
+        residuals[residual_index] = norm_val / m_options.additional_br_uncert;
+        ++residual_index;
+      }
+    }//if( !peak_ranges_with_uncert.empty() )
     
     assert( residual_index == number_residuals() );
   }//void eval( const std::vector<double> &x, double *residuals ) const
@@ -4643,6 +4995,8 @@ rapidxml::xml_node<char> *Options::toXml( rapidxml::xml_node<char> *parent ) con
   
   append_string_node( base_node, "SkewType", PeakDef::to_string(skew_type) );
   
+  append_float_node( base_node, "AddUncert", additional_br_uncert );
+  
   // Even if not RelActCalc::RelEffEqnForm::FramPhysicalModel, we'll still write the state of
   //  the shielding widgets to the XML.
   if( phys_model_self_atten || !phys_model_external_atten.empty() )
@@ -4735,6 +5089,18 @@ void Options::fromXml( const ::rapidxml::xml_node<char> *parent, MaterialDB *mat
     const string skew_str = SpecUtils::xml_value_str( skew_node );
     if( !skew_str.empty() )
       skew_type = PeakDef::skew_from_string( skew_str );
+    
+    // Additional uncertainty added 202250125, so we'll allow it to be missing.
+    additional_br_uncert = 0.0;
+    const rapidxml::xml_node<char> *add_uncert_node = XML_FIRST_NODE( parent, "AddUncert" );
+    if( add_uncert_node )
+    {
+      if( !SpecUtils::parse_double(add_uncert_node->value(), add_uncert_node->value_size(), additional_br_uncert) )
+        throw std::runtime_error( "AddUncert node value ('" + SpecUtils::xml_value_str(add_uncert_node) + "') was not a valid float." );
+      if( IsNan(additional_br_uncert) || IsInf(additional_br_uncert) )
+        throw std::runtime_error( "AddUncert node is NaN or inf." );
+      additional_br_uncert = std::max( additional_br_uncert, 0.0 );
+    }//if( add_uncert_node )
     
     // Even if not RelActCalc::RelEffEqnForm::FramPhysicalModel, we'll still try to grab the state
     phys_model_use_hoerl = true;

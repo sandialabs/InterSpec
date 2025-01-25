@@ -314,6 +314,7 @@ int dev_code()
   options.spectrum_title = "Dev Title";
   options.pu242_correlation_method = RelActCalc::PuCorrMethod::ByPu239Only;
   options.skew_type = PeakDef::SkewType::NoSkew;
+  options.additional_br_uncert = 0.01;
   
   RelActCalc::PhysicalModelShieldInput self_atten_def;
   self_atten_def.atomic_number = 0.0;

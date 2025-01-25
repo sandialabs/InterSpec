@@ -320,6 +320,9 @@ struct Options
   */
   bool phys_model_use_hoerl = true;
   
+  
+  double additional_br_uncert = 0.0;
+  
   /** Version history:
    - 20250117: incremented to 1 to handle FramPhysicalModel; if not this model, will still write version 0.
    */

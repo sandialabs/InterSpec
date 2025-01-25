@@ -1190,6 +1190,24 @@ std::pair<RelActAutoGui *,AuxWindow *> RelActAutoGui::createWindow( InterSpec *v
 
 
 
+const char *RelActAutoGui::to_str( const RelActAutoGui::AddUncert val )
+{
+  switch( val )
+  {
+    case RelActAutoGui::AddUncert::StatOnly:           return "StatOnly";
+    case RelActAutoGui::AddUncert::OnePercent:         return "OnePercent";
+    case RelActAutoGui::AddUncert::FivePercent:        return "FivePercent";
+    case RelActAutoGui::AddUncert::TenPercent:         return "TenPercent";
+    case RelActAutoGui::AddUncert::TwentyFivePercent:  return "TwentyFivePercent";
+    case RelActAutoGui::AddUncert::FiftyPercent:       return "FiftyPercent";
+    case RelActAutoGui::AddUncert::SeventyFivePercent: return "SeventyFivePercent";
+    case RelActAutoGui::AddUncert::OneHundredPercent:  return "OneHundredPercent";
+    case RelActAutoGui::AddUncert::NumAddUncert:       return "NumAddUncert";
+  }//
+  
+  return "InvalidAddUncert";
+}//to_str( const AddUncert val )
+
 
 RelActAutoGui::RelActAutoGui( InterSpec *viewer, Wt::WContainerWidget *parent )
 : WContainerWidget( parent ),
@@ -1219,6 +1237,7 @@ RelActAutoGui::RelActAutoGui( InterSpec *viewer, Wt::WContainerWidget *parent )
   m_same_z_age( nullptr ),
   m_pu_corr_method( nullptr ),
   m_skew_type( nullptr ),
+  m_add_uncert( nullptr ),
   m_phys_model_opts( nullptr ),
   m_phys_model_shields( nullptr ),
   m_phys_model_self_atten( nullptr ),
@@ -1600,6 +1619,37 @@ RelActAutoGui::RelActAutoGui( InterSpec *viewer, Wt::WContainerWidget *parent )
   }//for( loop over SkewTypes )
     
   m_skew_type->setCurrentIndex( 0 );
+  
+    
+  label = new WLabel( "Add. Uncert", optionsDiv );
+  label->addStyleClass( "GridFirstCol GridThirdRow" );
+  m_add_uncert = new WComboBox( optionsDiv );
+  m_add_uncert->addStyleClass( "GridSecondCol GridThirdRow" );
+  label->setBuddy( m_add_uncert );
+    m_add_uncert->activated().connect( this, &RelActAutoGui::handleAdditionalUncertChanged );
+    
+  for( RelActAutoGui::AddUncert i = RelActAutoGui::AddUncert(0);
+      i < RelActAutoGui::AddUncert::NumAddUncert;
+      i = RelActAutoGui::AddUncert(static_cast<int>(i) + 1) )
+  {
+    WString uncert_txt;
+    switch( i )
+    {
+      case AddUncert::StatOnly:           uncert_txt = WString::fromUTF8("None"); break;
+      case AddUncert::OnePercent:         uncert_txt = WString::fromUTF8("1%");   break;
+      case AddUncert::FivePercent:        uncert_txt = WString::fromUTF8("5%");   break;
+      case AddUncert::TenPercent:         uncert_txt = WString::fromUTF8("10%");  break;
+      case AddUncert::TwentyFivePercent:  uncert_txt = WString::fromUTF8("25%");  break;
+      case AddUncert::FiftyPercent:       uncert_txt = WString::fromUTF8("50%");  break;
+      case AddUncert::SeventyFivePercent: uncert_txt = WString::fromUTF8("75%");  break;
+      case AddUncert::OneHundredPercent:  uncert_txt = WString::fromUTF8("100%"); break;
+      case AddUncert::NumAddUncert:       assert(0);                              break;
+    }//switch( i )
+       
+    m_add_uncert->addItem( uncert_txt );
+  }//for( loop over AddUncert )
+     
+    m_add_uncert->setCurrentIndex( static_cast<int>(RelActAutoGui::AddUncert::StatOnly) );
     
     
   m_phys_model_opts = new WContainerWidget( optionsDiv );
@@ -1918,6 +1968,23 @@ RelActCalcAuto::Options RelActAutoGui::getCalcOptions() const
   const int skew_index = m_skew_type->currentIndex();
   if( (skew_index >= 0) && (skew_index <= PeakDef::SkewType::DoubleSidedCrystalBall) )
     options.skew_type = PeakDef::SkewType( m_skew_type->currentIndex() );
+  
+  options.additional_br_uncert = -1.0;
+  const auto add_uncert = RelActAutoGui::AddUncert(m_add_uncert->currentIndex());
+  switch( add_uncert )
+  {
+    case AddUncert::StatOnly:           options.additional_br_uncert = 0.00;  break;
+    case AddUncert::OnePercent:         options.additional_br_uncert = 0.01;  break;
+    case AddUncert::FivePercent:        options.additional_br_uncert = 0.05;  break;
+    case AddUncert::TenPercent:         options.additional_br_uncert = 0.10;  break;
+    case AddUncert::TwentyFivePercent:  options.additional_br_uncert = 0.25;  break;
+    case AddUncert::FiftyPercent:       options.additional_br_uncert = 0.50;  break;
+    case AddUncert::SeventyFivePercent: options.additional_br_uncert = 0.75;  break;
+    case AddUncert::OneHundredPercent:  options.additional_br_uncert = 1.00;  break;
+    case AddUncert::NumAddUncert:       assert( 0 );                          break;
+  }//switch( add_uncert )
+  assert( options.additional_br_uncert >= 0.0 );
+  options.additional_br_uncert = std::max( options.additional_br_uncert, 0.0 );
   
   if( options.rel_eff_eqn_type == RelActCalc::RelEffEqnForm::FramPhysicalModel )
   {
@@ -2493,6 +2560,31 @@ void RelActAutoGui::setCalcOptionsGui( const RelActCalcAuto::Options &options )
   const shared_ptr<const RelActCalc::PhysicalModelShieldInput> &self_atten = options.phys_model_self_atten;
   const vector<shared_ptr<const RelActCalc::PhysicalModelShieldInput>> &ext_attens = options.phys_model_external_atten;
   
+  // We'll just round add-uncert to the nearest-ish value we allow in the GUI
+  RelActAutoGui::AddUncert add_uncert = AddUncert::NumAddUncert;
+  if( options.additional_br_uncert <= 0.005 )
+    add_uncert = AddUncert::StatOnly;
+  else if( options.additional_br_uncert <= 0.025 )
+    add_uncert = AddUncert::OnePercent;
+  else if( options.additional_br_uncert <= 0.075 )
+    add_uncert = AddUncert::FivePercent;
+  else if( options.additional_br_uncert <= 0.175 )
+    add_uncert = AddUncert::TenPercent;
+  else if( options.additional_br_uncert <= 0.375 )
+    add_uncert = AddUncert::TwentyFivePercent;
+  else if( options.additional_br_uncert <= 0.625 )
+    add_uncert = AddUncert::FiftyPercent;
+  else if( options.additional_br_uncert <= 0.875 )
+    add_uncert = AddUncert::SeventyFivePercent;
+  else
+    add_uncert = AddUncert::OneHundredPercent;
+  
+  assert( add_uncert != AddUncert::NumAddUncert );
+  if( add_uncert == AddUncert::NumAddUncert )
+    add_uncert = AddUncert::StatOnly;
+  m_add_uncert->setCurrentIndex( static_cast<int>(add_uncert) );
+  
+  
   if( (options.rel_eff_eqn_type == RelActCalc::RelEffEqnForm::FramPhysicalModel)
      || self_atten || !ext_attens.empty() )
   {
@@ -3005,6 +3097,14 @@ void RelActAutoGui::handleFreePeakChange()
   m_render_flags |= RenderActions::UpdateCalculations;
   scheduleRender();
 }//void handleFreePeakChange()
+
+
+void RelActAutoGui::handleAdditionalUncertChanged()
+{
+  checkIfInUserConfigOrCreateOne( false );
+  m_render_flags |= RenderActions::UpdateCalculations;
+  scheduleRender();
+}//void handleAdditionalUncertChanged()
 
 
 void RelActAutoGui::setOptionsForNoSolution()
