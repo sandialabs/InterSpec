@@ -731,11 +731,11 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
   size_t m_acts_par_start_index;
   size_t m_free_peak_par_start_index;
   size_t m_skew_par_start_index;
-  size_t m_add_br_uncert_start_index; //Will only be valid if `peak_ranges_with_uncert` is not empty
+  size_t m_add_br_uncert_start_index; //Will only be valid if `m_peak_ranges_with_uncert` is not empty
   
   bool m_skew_has_energy_dependance;
   
-  std::vector<std::pair<double,double>> peak_ranges_with_uncert;
+  std::vector<std::pair<double,double>> m_peak_ranges_with_uncert;
   static constexpr double sm_peak_range_uncert_par_offset = 5.0;
   
   std::shared_ptr<std::atomic_bool> m_cancel_calc;
@@ -1103,11 +1103,11 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     const size_t num_skew = PeakDef::num_skew_parameters( m_options.skew_type );
     num_pars += 2*num_skew;
     
-    assert( (m_add_br_uncert_start_index == numeric_limits<size_t>::max()) == peak_ranges_with_uncert.empty() );
+    assert( (m_add_br_uncert_start_index == numeric_limits<size_t>::max()) == m_peak_ranges_with_uncert.empty() );
     assert( (m_add_br_uncert_start_index == std::numeric_limits<size_t>::max())
            || (num_pars == m_add_br_uncert_start_index) );
     
-    num_pars += peak_ranges_with_uncert.size();
+    num_pars += m_peak_ranges_with_uncert.size();
     
     // Anything else?
     
@@ -1121,7 +1121,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     for( const auto &r : m_energy_ranges )
       num_resids += r.num_channels;
     
-    num_resids += peak_ranges_with_uncert.size();
+    num_resids += m_peak_ranges_with_uncert.size();
     
     return num_resids;
   }//size_t number_residuals() const
@@ -1386,7 +1386,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     for( const auto &roi : cost_functor->m_energy_ranges )
       solution.m_final_roi_ranges.push_back( roi );
     
-    // `cost_functor` hasnt had `peak_ranges_with_uncert` initialized yet, which we cant do
+    // `cost_functor` hasnt had `m_peak_ranges_with_uncert` initialized yet, which we cant do
     //  until after we get our initial activity/rel-eff estimates setup
     const size_t num_pars_initial = cost_functor->number_parameters();
     
@@ -2437,9 +2437,9 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     if( options.additional_br_uncert > 0.0 )
     {
       const double cluster_num_sigma = 1.5;
-      cost_functor->peak_ranges_with_uncert = cost_functor->cluster_photopeaks( cluster_num_sigma, parameters );
+      cost_functor->m_peak_ranges_with_uncert = cost_functor->cluster_photopeaks( cluster_num_sigma, parameters );
       
-      const size_t num_pars = parameters.size() + cost_functor->peak_ranges_with_uncert.size();
+      const size_t num_pars = parameters.size() + cost_functor->m_peak_ranges_with_uncert.size();
       parameters.resize( num_pars, sm_peak_range_uncert_par_offset );
       pars = &parameters[0];
       lower_bounds.resize( num_pars, optional<double>(0.0) );
@@ -2449,7 +2449,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
       cost_functor->m_add_br_uncert_start_index = cost_functor->m_skew_par_start_index + 2*num_skew_coefs;
       
       assert( num_pars == cost_functor->number_parameters() );
-      assert( num_pars == (cost_functor->m_add_br_uncert_start_index + cost_functor->peak_ranges_with_uncert.size()) );
+      assert( num_pars == (cost_functor->m_add_br_uncert_start_index + cost_functor->m_peak_ranges_with_uncert.size()) );
     }//if( options.additional_br_uncert > 0.0 )
     
     const size_t num_pars = cost_functor->number_parameters();
@@ -2944,13 +2944,24 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     }//if( FramPhysicalModel )
     
     
+    // We will fit the "best" peak amplitudes.  To do this we will cluster the peaks into regions
+    //  and fit them on a ROI by ROI basis; we will only fit the amplitude multiple in each region.
+    //
+    // blah blah blah
+    //  For plotting the Rel. Eff. points
+    {
+     // const double cluster_num_sigma = 1.5;
+     // cost_functor->m_peak_ranges_with_uncert = cost_functor->cluster_photopeaks( cluster_num_sigma, parameters );
+     
+    }
+    
     /*
     if( options.additional_br_uncert > 0.0 )
     {
       cout << "ROIS were adjusted as follows:" << endl;
-      for( size_t roi_index = 0; roi_index < cost_functor->peak_ranges_with_uncert.size(); ++roi_index )
+      for( size_t roi_index = 0; roi_index < cost_functor->m_peak_ranges_with_uncert.size(); ++roi_index )
       {
-        const auto range = cost_functor->peak_ranges_with_uncert[roi_index];
+        const auto range = cost_functor->m_peak_ranges_with_uncert[roi_index];
         const size_t par_index = cost_functor->m_add_br_uncert_start_index + roi_index;
         const double multiple = solution.m_final_parameters[par_index]/sm_peak_range_uncert_par_offset;
         cout << "\t[" << setprecision(4) << setw(6) << range.first << "," << setprecision(4) << setw(5) << range.second << "]: "
@@ -3223,7 +3234,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
                                    + num_rel_eff_coefs();
     assert( (act_start_index + 2*m_nuclides.size() + 2*m_extra_peaks.size()
              + 2*PeakDef::num_skew_parameters(m_options.skew_type)
-           + peak_ranges_with_uncert.size()) == number_parameters() );
+           + m_peak_ranges_with_uncert.size()) == number_parameters() );
     assert( act_start_index == m_acts_par_start_index );
     
     assert( x.size() == number_parameters() );
@@ -3755,15 +3766,15 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
                             + " keV, FWHM=" + std::to_string(peak_fwhm) + " which is too small." );
         
         double br_uncert_adj = 1.0;
-        if( (m_options.additional_br_uncert > 0.0) && !peak_ranges_with_uncert.empty() )
+        if( (m_options.additional_br_uncert > 0.0) && !m_peak_ranges_with_uncert.empty() )
         {
           assert( m_add_br_uncert_start_index != std::numeric_limits<size_t>::max() );
-          assert( (m_add_br_uncert_start_index + peak_ranges_with_uncert.size()) == number_parameters() );
+          assert( (m_add_br_uncert_start_index + m_peak_ranges_with_uncert.size()) == number_parameters() );
           
-          // TODO: we could use std::lower_bound to find the applicable `peak_ranges_with_uncert` element
-          for( size_t range_index = 0; range_index < peak_ranges_with_uncert.size(); ++range_index )
+          // TODO: we could use std::lower_bound to find the applicable `m_peak_ranges_with_uncert` element
+          for( size_t range_index = 0; range_index < m_peak_ranges_with_uncert.size(); ++range_index )
           {
-            const pair<double,double> &range = peak_ranges_with_uncert[range_index];
+            const pair<double,double> &range = m_peak_ranges_with_uncert[range_index];
             
             if( (gamma.energy >= range.first) && (gamma.energy <= range.second) )
             {
@@ -3774,7 +3785,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
               break;
             }//
           }//for( find range this gamma belongs to, if any )
-        }//if( m_options.additional_br_uncert > 0.0 && !peak_ranges_with_uncert.empty() )
+        }//if( m_options.additional_br_uncert > 0.0 && !m_peak_ranges_with_uncert.empty() )
         
         
         const double peak_amplitude = rel_act * m_live_time * rel_eff * yield * br_uncert_adj;
@@ -4254,7 +4265,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     
     if( m_options.rel_eff_eqn_type != RelActCalc::RelEffEqnForm::FramPhysicalModel )
     {
-      assert( (residual_index + 1 + peak_ranges_with_uncert.size()) == number_residuals() );
+      assert( (residual_index + 1 + m_peak_ranges_with_uncert.size()) == number_residuals() );
       
       // Now make sure the relative efficiency curve is anchored to 1.0 (this removes the degeneracy
       //  between the relative efficiency amplitude, and the relative activity amplitudes).
@@ -4264,11 +4275,11 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
       ++residual_index;
     }//if( m_options.rel_eff_eqn_type != RelActCalc::RelEffEqnForm::FramPhysicalModel )
     
-    if( !peak_ranges_with_uncert.empty() )
+    if( !m_peak_ranges_with_uncert.empty() )
     {
       assert( m_options.additional_br_uncert > 0.0 );
       
-      for( size_t range_index = 0; range_index < peak_ranges_with_uncert.size(); ++range_index )
+      for( size_t range_index = 0; range_index < m_peak_ranges_with_uncert.size(); ++range_index )
       {
         const size_t par_index = m_add_br_uncert_start_index + range_index;
         assert( par_index < x.size() );
@@ -4278,7 +4289,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
         residuals[residual_index] = norm_val / m_options.additional_br_uncert;
         ++residual_index;
       }
-    }//if( !peak_ranges_with_uncert.empty() )
+    }//if( !m_peak_ranges_with_uncert.empty() )
     
     assert( residual_index == number_residuals() );
   }//void eval( const std::vector<double> &x, double *residuals ) const

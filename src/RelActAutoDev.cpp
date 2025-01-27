@@ -32,6 +32,7 @@
 #include "rapidxml/rapidxml_print.hpp"
 #include "rapidxml/rapidxml_utils.hpp"
 
+#include "SpecUtils/DateTime.h"
 #include "SpecUtils/SpecFile.h"
 #include "SpecUtils/Filesystem.h"
 
@@ -263,26 +264,67 @@ void run_u02_example()
   assert( SpecUtils::istarts_with( foreground->title(), "UO2_50%_50%" ) );
   
   
-  const string xml_path = "uo2_auto_rel_eff_setup.xml";
-  rapidxml::file<char> input_file( xml_path.c_str() );
+  const string setup_xml_path = "isotopics_by_nuclides_mixed_U02_sample-2.xml";
+  rapidxml::file<char> setup_input_file( setup_xml_path.c_str() );
   
-  rapidxml::xml_document<char> doc;
-  doc.parse<rapidxml::parse_trim_whitespace>( input_file.data() );
+  rapidxml::xml_document<char> setup_doc;
+  setup_doc.parse<rapidxml::parse_trim_whitespace>( setup_input_file.data() );
 
-  const rapidxml::xml_node<char> *base_node = doc.first_node( "RelActCalcAuto" );
-  assert( base_node );
+  const rapidxml::xml_node<char> *setup_base_node = setup_doc.first_node( "RelActCalcAuto" );
+  assert( setup_base_node );
   
   RelActCalcAuto::RelActAutoGuiState state;
-  state.deSerialize( base_node, &matdb );
+  state.deSerialize( setup_base_node, &matdb );
   
-  // Now need to load the Detector
+  const string detector_xml_path = "Detective-X_GADRAS_drf.xml";
+  rapidxml::file<char> detector_input_file( detector_xml_path.c_str() );
   
-  //
+  rapidxml::xml_document<char> detector_doc;
+  detector_doc.parse<rapidxml::parse_trim_whitespace>( detector_input_file.data() );
+
+  const rapidxml::xml_node<char> *detector_base_node = detector_doc.first_node( "DetectorPeakResponse" );
+  assert( detector_base_node );
+  
+  
+  auto det = make_shared<DetectorPeakResponse>();
+  det->fromXml( detector_base_node );
+  
+  vector<shared_ptr<const PeakDef>> all_peaks{};
+  
+  const double start_cpu = SpecUtils::get_cpu_time();
+  const double start_wall = SpecUtils::get_wall_time();
+  
+  const RelActCalcAuto::RelActAutoSolution solution = RelActCalcAuto::solve( state.options,
+                                              state.rois, state.nuclides, state.floating_peaks,
+                                              foreground, background, det, all_peaks, nullptr );
+  
+  const double end_cpu = SpecUtils::get_cpu_time();
+  const double end_wall = SpecUtils::get_wall_time();
+  
+  ofstream out_html( "U02_result.html" );
+  solution.print_summary( cout );
+  solution.print_html_report( out_html );
+  
+  cout << "Enrichment: " << solution.mass_enrichment_fraction( db->nuclide("U235") ) << endl;
+  
+  cout << "Took:\n"
+  << "\tNum Function Calls: " << solution.m_num_function_eval_solution << endl
+  << "\tFcn Evals total:    " << solution.m_num_function_eval_total << endl
+  << "\tSeconds solving:    " << 1.0E-6*solution.m_num_microseconds_eval << endl
+  << "\tSeconds in eval:    " << 1.0E-6*solution.m_num_microseconds_in_eval
+    << " (" << (100.0*solution.m_num_microseconds_eval)/solution.m_num_microseconds_in_eval << "%)\n"
+  << "\tMicrSec per eval:   " << ((1.0*solution.m_num_microseconds_in_eval)/solution.m_num_function_eval_solution) << "\n"
+  << "\tWall Total (s):     " << (end_wall - start_wall) << endl
+  << "\tCPU Total (s):      " << (end_cpu - start_cpu) << endl
+  << endl;
 }//void run_u02_example()
   
   
 int dev_code()
 {
+  run_u02_example();
+  return 1;
+  
   //check_physical_model_eff_function();
   //return 1;
   

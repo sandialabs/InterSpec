@@ -293,7 +293,7 @@ int main( int argc, char **argv )
   }//if( cl_vm.count("static-data-dir") ) / else
 #endif
   
-  //return RelActAutoDev::dev_code();
+  return RelActAutoDev::dev_code();
   
 #if( USE_BATCH_TOOLS )
   if( is_batch )
