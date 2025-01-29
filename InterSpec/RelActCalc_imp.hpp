@@ -25,6 +25,7 @@
 
 #include <optional>
 #include "InterSpec/MassAttenuationTool.h"
+#include "InterSpec/GammaInteractionCalc.h"
 
 namespace ceres
 {

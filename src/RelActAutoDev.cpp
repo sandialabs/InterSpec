@@ -261,7 +261,7 @@ void run_u02_example()
   assert( background->title() == "Background" );
   shared_ptr<const SpecUtils::Measurement> foreground = specfile.measurement(size_t(37));
   assert( foreground );
-  assert( SpecUtils::istarts_with( foreground->title(), "UO2_50%_50%" ) );
+  assert( SpecUtils::istarts_with( foreground->title(), "U02_50%_50% @ 25 cm H=100 cm" ) );
   
   
   const string setup_xml_path = "isotopics_by_nuclides_mixed_U02_sample-2.xml";
@@ -317,6 +317,48 @@ void run_u02_example()
   << "\tWall Total (s):     " << (end_wall - start_wall) << endl
   << "\tCPU Total (s):      " << (end_cpu - start_cpu) << endl
   << endl;
+  
+  /* Compiled in Release mode on M1 MBP, 3 runs (not sure where randomness comes in...)
+   
+   20250127T11:30, git hash 94342ca74a9ca357bc8af709c46707279ccc7c49:
+   Enrichment: 0.4355
+   Took:
+     Num Function Calls: 1837
+     Fcn Evals total:    1872
+     Seconds solving:    77.29
+     Seconds in eval:    75.93 (101.8%)
+     MicrSec per eval:   4.134e+04
+     Wall Total (s):     77.29
+     CPU Total (s):      15.52
+   BUT: re-running resulted in different enrichments!
+   
+   After getting rid of the `pool.join()` that caused all the delay (about 25x faster, per evaluation):
+   Enrichment: 0.4369
+   Took:
+     Num Function Calls: 2013
+     Fcn Evals total:    2048
+     Seconds solving:    4.429
+     Seconds in eval:    3.463 (127.9%)e
+     MicrSec per eval:   1720
+     Wall Total (s):     4.43
+     CPU Total (s):      13.9
+   STILL gives different enrichments between runs
+   
+   After changing to use Eigen to fit continuum, and caching the peak contributions in each channel
+   (i.e., implementing and using `peaks_for_energy_range_imp(...)`)
+   Enrichment: 0.4305
+   Took:
+     Num Function Calls: 2611
+     Fcn Evals total:    2646
+     Seconds solving:    0.591
+     Seconds in eval:    0.3942 (149.9%)
+     MicrSec per eval:   151
+     Wall Total (s):     0.591
+     CPU Total (s):      1.607
+   Now gives same enrichment every time!
+   Now takes 0.35% as long as originally!
+   
+   */
 }//void run_u02_example()
   
   

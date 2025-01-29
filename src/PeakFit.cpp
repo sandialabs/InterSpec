@@ -6349,6 +6349,8 @@ double fit_amp_and_offset( const float *x, const float *data, const size_t nbin,
                                   std::vector<double> &amplitudes_uncerts,
                                   std::vector<double> &continuum_coeffs_uncerts )
 {
+  // TODO: Need to switch to using Eigen::SVD for this function - it is much more stable and predictable
+  //       See RelActCalcAuto::fit_continuum(...) for example of using this.
   if( sigmas.size() != means.size() )
     throw runtime_error( "fit_amp_and_offset: invalid input" );
   
@@ -6431,13 +6433,19 @@ double fit_amp_and_offset( const float *x, const float *data, const size_t nbin,
   //  function in half by calling a more optimized version of the peak integral function
   //
   const size_t nfixedpeak = fixedAmpPeaks.size();
-  const bool do_mt_fixed_peak = (nfixedpeak > 4); // 4 chosen arbitrarily
+  const bool do_mt_fixed_peak = (nfixedpeak > 0); // always use this method if fixed peaks
   vector<double> mt_fixed_peak_contrib( do_mt_fixed_peak ? nbin : size_t(0), 0.0f );
   
-  //peak.gauss_integral( const float * const energies, double *channels, const size_t nchannel )
+  
   if( do_mt_fixed_peak )
   {
-    SpecUtilsAsync::ThreadPool pool;
+    // 20250127: it looks like calling `pool.join()` is causing significant and unreasonable delays
+    //           on macOS (using GCD, at least).  This is likely a problem with
+    //           `SpecUtilsAsync::ThreadPool` - I would guess when creating ThreadPools inside of
+    //           other ThreadPools, but for the moment will just do this single threaded, which is
+    //           like 20 times faster for an example problem
+    
+    //SpecUtilsAsync::ThreadPool pool;
     double * const fixed_contrib = &(mt_fixed_peak_contrib[0]);
     
     /*
@@ -6467,9 +6475,10 @@ double fit_amp_and_offset( const float *x, const float *data, const size_t nbin,
     }//for( size_t start_channel = 0; start_channel < nbin; start_channel += nbin_per_thread )
     */
     
-    std::mutex result_mutex;
+    //std::mutex result_mutex;
     for( size_t peak_index = 0; peak_index < fixedAmpPeaks.size(); ++peak_index )
     {
+      /*
       pool.post( [&result_mutex, peak_index, &fixedAmpPeaks, nbin, x, fixed_contrib](){
         vector<double> this_contribs(nbin, 0.0);
         fixedAmpPeaks[peak_index].gauss_integral( x, &(this_contribs[0]), nbin );
@@ -6478,10 +6487,13 @@ double fit_amp_and_offset( const float *x, const float *data, const size_t nbin,
         for( size_t i = 0; i < nbin; ++i )
           fixed_contrib[i] += this_contribs[i];
       });
+       */
+      
+      fixedAmpPeaks[peak_index].gauss_integral( x, &(fixed_contrib[0]), nbin );
     }//for( size_t peak_index = 0; peak_index < fixedAmpPeaks.size(); ++peak_index )
     
     
-    pool.join();
+    //pool.join();
   }//if( do_mt_fixed_peak )
   
   
