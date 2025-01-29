@@ -24,12 +24,14 @@
 #include "InterSpec_config.h"
 
 #include <set>
+#include <cmath>
 #include <array>
 #include <deque>
 #include <tuple>
 #include <chrono>
 #include <thread>
 #include <limits>
+#include <cstdlib>
 #include <fstream>
 #include <sstream>
 #include <algorithm>
@@ -80,8 +82,10 @@
 #include "InterSpec/DecayDataBaseServer.h"
 #include "InterSpec/DetectorPeakResponse.h"
 
+#include "InterSpec/PeakDists_imp.hpp"
 #include "InterSpec/RelActCalc_imp.hpp"
 #include "InterSpec/RelActCalcAuto_imp.hpp"
+#include "InterSpec/RelActCalc_CeresJetTraits.hpp"
 
 using namespace std;
 using namespace XmlUtils;
@@ -2459,10 +2463,45 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     
     const size_t num_pars = cost_functor->number_parameters();
     
-    auto cost_function = new ceres::DynamicNumericDiffCostFunction<RelActAutoCostFcn>( cost_functor.get(),
-                                                                    ceres::DO_NOT_TAKE_OWNERSHIP );
-    cost_function->SetNumResiduals( static_cast<int>(cost_functor->number_residuals()) );
-    cost_function->AddParameterBlock( static_cast<int>(cost_functor->number_parameters()) );
+    ceres::CostFunction *cost_function = nullptr;
+    bool use_auto_diff = false;
+    
+    // We cant currently use auto-diff if we are fitting any nuclide ages, so lets check for that.
+    //  TODO: write our own CostFunction class that does numeric differentiation for the ages, and auto-diff for the rest/
+    for( const auto &nuc : nuclides )
+      use_auto_diff = (use_auto_diff && !nuc.fit_age);
+    
+    
+    if( use_auto_diff )
+    {
+      // It looks like using Jets<double,32> is fastest for an example problem, however it really
+      //  doesnt seem to matter much (Wall times of {0.1728, 0.1789, 0.1665, 0.1608}, for strides of
+      //  {4, 8, 16, 32}, respectively
+      ceres::DynamicAutoDiffCostFunction<RelActAutoCostFcn,32> *dyn_auto_diff_cost_function
+            = new ceres::DynamicAutoDiffCostFunction<RelActAutoCostFcn,32>( cost_functor.get(),
+                                                                      ceres::DO_NOT_TAKE_OWNERSHIP );
+      dyn_auto_diff_cost_function->SetNumResiduals( static_cast<int>(cost_functor->number_residuals()) );
+      dyn_auto_diff_cost_function->AddParameterBlock( static_cast<int>(cost_functor->number_parameters()) );
+
+      cost_function = dyn_auto_diff_cost_function;
+    }else
+    {
+      ceres::NumericDiffOptions num_diff_options;
+      num_diff_options.relative_step_size = 1E-2;
+      ceres::DynamicNumericDiffCostFunction<RelActAutoCostFcn> *dyn_num_diff_cost_function
+            = new ceres::DynamicNumericDiffCostFunction<RelActAutoCostFcn>( cost_functor.get(),
+                                                ceres::DO_NOT_TAKE_OWNERSHIP, num_diff_options );
+      dyn_num_diff_cost_function->SetNumResiduals( static_cast<int>(cost_functor->number_residuals()) );
+      dyn_num_diff_cost_function->AddParameterBlock( static_cast<int>(cost_functor->number_parameters()) );
+
+      cost_function = dyn_num_diff_cost_function;
+    }//if( use_auto_diff ) / else
+    
+    
+    //auto cost_function = new ceres::DynamicNumericDiffCostFunction<RelActAutoCostFcn>( cost_functor.get(),
+    //                                                                ceres::DO_NOT_TAKE_OWNERSHIP );
+    //cost_function->SetNumResiduals( static_cast<int>(cost_functor->number_residuals()) );
+    //cost_function->AddParameterBlock( static_cast<int>(cost_functor->number_parameters()) );
     
     
     ceres::Problem problem;
@@ -3137,7 +3176,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
 
   
   template<typename T>
-  T fwhm( const double energy, const std::vector<T> &x ) const
+  T fwhm( const T energy, const std::vector<T> &x ) const
   {
     const auto drf_start = x.data() + RelActCalcAuto::RelActAutoSolution::sm_num_energy_cal_pars;
     assert( RelActCalcAuto::RelActAutoSolution::sm_num_energy_cal_pars == m_fwhm_par_start_index );
@@ -3163,14 +3202,14 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     peak.setSkewType( m_options.skew_type );
     
     const size_t num_skew = PeakDef::num_skew_parameters( m_options.skew_type );
-    assert( x.size() <= (skew_start + 2*num_skew) );
-    vector<double> skew_pars( begin(x)+skew_start, begin(x)+skew_start+num_skew );
+    assert( x.size() >= (skew_start + 2*num_skew) );
+    vector<T> skew_pars( begin(x)+skew_start, begin(x)+skew_start+num_skew );
     assert( skew_pars.size() == num_skew );
     
     if( m_skew_has_energy_dependance )
     {
-      const float lower_energy = m_spectrum->gamma_channel_lower(0);
-      const float upper_energy = m_spectrum->gamma_channel_upper( m_spectrum->num_gamma_channels() - 1 );
+      const double lower_energy = m_spectrum->gamma_channel_lower(0);
+      const double upper_energy = m_spectrum->gamma_channel_upper( m_spectrum->num_gamma_channels() - 1 );
       const T mean_frac = (peak.mean() - lower_energy) / (upper_energy - lower_energy);
       
       for( size_t i = 0; i < skew_pars.size(); ++i )
@@ -3327,7 +3366,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     
     if( opts.phys_model_self_atten )
     {
-      RelActCalc::PhysModelShield atten;
+      RelActCalc::PhysModelShield<T> atten;
       atten.material = opts.phys_model_self_atten->material;
       if( !atten.material )
       {
@@ -3419,8 +3458,8 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     
     if( !m_options.fit_energy_cal )
     {
-      assert( fabs(x[0] - RelActCalcAuto::RelActAutoSolution::sm_energy_par_offset) < 1.0E-5 );
-      assert( fabs(x[1] - RelActCalcAuto::RelActAutoSolution::sm_energy_par_offset) < 1.0E-5 );
+      assert( abs(x[0] - RelActCalcAuto::RelActAutoSolution::sm_energy_par_offset) < 1.0E-5 );
+      assert( abs(x[1] - RelActCalcAuto::RelActAutoSolution::sm_energy_par_offset) < 1.0E-5 );
       
       return T(energy);
     }//if( we arent fitting energy cal )
@@ -3430,10 +3469,10 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
       return T(energy);
     
     // Check adjustments are near the limits we placed (which was [-5,5], and [0.985,1.015])
-    assert( fabs(x[0] - RelActCalcAuto::RelActAutoSolution::sm_energy_par_offset) <= RelActCalcAuto::RelActAutoSolution::sm_energy_par_offset );
-    assert( fabs(x[1] - RelActCalcAuto::RelActAutoSolution::sm_energy_par_offset) <= RelActCalcAuto::RelActAutoSolution::sm_energy_par_offset );
+    assert( abs(x[0] - RelActCalcAuto::RelActAutoSolution::sm_energy_par_offset) <= RelActCalcAuto::RelActAutoSolution::sm_energy_par_offset );
+    assert( abs(x[1] - RelActCalcAuto::RelActAutoSolution::sm_energy_par_offset) <= RelActCalcAuto::RelActAutoSolution::sm_energy_par_offset );
     assert( (RelActCalcAuto::RelActAutoSolution::sm_num_energy_cal_pars <= 2)
-           || (fabs(x[2] - RelActCalcAuto::RelActAutoSolution::sm_energy_par_offset) <= RelActCalcAuto::RelActAutoSolution::sm_energy_par_offset) );
+           || (abs(x[2] - RelActCalcAuto::RelActAutoSolution::sm_energy_par_offset) <= RelActCalcAuto::RelActAutoSolution::sm_energy_par_offset) );
     
     //if( x[0] != RelActCalcAuto::RelActAutoSolution::sm_energy_par_offset || x[1] != RelActCalcAuto::RelActAutoSolution::sm_energy_par_offset
     //   || x[2] != RelActCalcAuto::RelActAutoSolution::sm_energy_par_offset )
@@ -3571,7 +3610,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     assert( 0 );
     throw runtime_error( "Energy cal must be valid" );
     
-    return energy;
+    return T(energy);
   }//double apply_energy_cal_adjustment( double energy, const std::vector<double> &x ) const
   
   
@@ -3717,8 +3756,35 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     
     void gauss_integral( const float *energies, T *channels, const size_t nchannel ) const
     {
-      PeakDists::photopeak_function_integral( m_mean, m_sigma, m_amplitude, m_skew_type,
-                                             m_skew_pars, nchannel, energies, channels );
+      switch( m_skew_type )
+      {
+        case PeakDef::SkewType::NoSkew:
+          PeakDists::gaussian_integral( m_mean, m_sigma, m_amplitude, energies, channels, nchannel );
+          break;
+          
+        case PeakDef::SkewType::Bortel:
+          PeakDists::bortel_integral( m_mean, m_sigma, m_amplitude, m_skew_pars[0], energies, channels, nchannel );
+          break;
+          
+        case PeakDef::SkewType::CrystalBall:
+          PeakDists::crystal_ball_integral( m_mean, m_sigma, m_amplitude, m_skew_pars[0], m_skew_pars[1], energies, channels, nchannel );
+          break;
+          
+        case PeakDef::SkewType::DoubleSidedCrystalBall:
+          PeakDists::double_sided_crystal_ball_integral( m_mean, m_sigma, m_amplitude,
+                                             m_skew_pars[0], m_skew_pars[1],
+                                             m_skew_pars[2], m_skew_pars[3],
+                                             energies, channels, nchannel );
+          break;
+          
+        case PeakDef::SkewType::GaussExp:
+          PeakDists::gauss_exp_integral( m_mean, m_sigma, m_amplitude, m_skew_pars[0], energies, channels, nchannel );
+          break;
+          
+        case PeakDef::SkewType::ExpGaussExp:
+          PeakDists::exp_gauss_exp_integral( m_mean, m_sigma, m_amplitude, m_skew_pars[0], m_skew_pars[1], energies, channels, nchannel );
+          break;
+      }//switch( skew_type )
     }//void gauss_integral( const float *energies, double *channels, const size_t nchannel ) const
   };//struct PeakDefImp
   
@@ -3727,9 +3793,9 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
   {
     PeakContinuum::OffsetType m_type = PeakContinuum::OffsetType::NoOffset;
     
-    double m_lower_energy = 0.0;
-    double m_upper_energy = 0.0;
-    double m_reference_energy = 0.0;
+    T m_lower_energy = T(0.0);
+    T m_upper_energy = T(0.0);
+    T m_reference_energy = T(0.0);
     std::array<T,4> m_values = { T(0.0), T(0.0), T(0.0), T(0.0) };
   };//struct PeakContinuumImp
   
@@ -3760,7 +3826,13 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     const T adjusted_lower_energy = apply_energy_cal_adjustment( range.lower_energy, x );
     const T adjusted_upper_energy = apply_energy_cal_adjustment( range.upper_energy, x );
     
-    pair<size_t,size_t> channel_range = range.channel_range( adjusted_lower_energy, adjusted_upper_energy, num_channels, m_energy_cal );
+    // TODO: Check this conversion from `Jet<>` to double doesnt mess anything up - I *think* this is _fine_...
+    pair<size_t,size_t> channel_range;
+    if constexpr ( !std::is_same_v<T, double> )
+      channel_range = range.channel_range( adjusted_lower_energy.a, adjusted_upper_energy.a, num_channels, m_energy_cal );
+    else
+      channel_range = range.channel_range( adjusted_lower_energy, adjusted_upper_energy, num_channels, m_energy_cal );
+    
     const size_t first_channel = channel_range.first;
     const size_t last_channel = channel_range.second;
     
@@ -3844,7 +3916,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
           throw runtime_error( "peaks_for_energy_range: inf or NaN rel. eff for "
                               + std::to_string(gamma.energy) + " keV."  );
         
-        const T peak_fwhm = fwhm( gamma.energy, x );
+        const T peak_fwhm = fwhm( T(gamma.energy), x );
         double fwhm;
         if constexpr ( !std::is_same_v<T, double> )
           fwhm = peak_fwhm.a;
@@ -3899,7 +3971,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
             {
               // If `x[m_add_br_uncert_start_index + range_index]` is zero, then our amplitude is zero; if it is two, then our amplitude is doubled.
               const T adjvalue = x[m_add_br_uncert_start_index + range_index]/sm_peak_range_uncert_par_offset - 1.0;
-              br_uncert_adj = std::max(0.0, 1.0 + adjvalue);
+              br_uncert_adj = max(T(0.0), 1.0 + adjvalue);
               
               break;
             }//
@@ -3907,7 +3979,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
         }//if( m_options.additional_br_uncert > 0.0 && !m_peak_ranges_with_uncert.empty() )
         
         
-        const T peak_amplitude = rel_act * m_live_time * rel_eff * yield * br_uncert_adj;
+        const T peak_amplitude = rel_act * static_cast<double>(m_live_time) * rel_eff * yield * br_uncert_adj;
         if( isinf(peak_amplitude) || isnan(peak_amplitude) )
           throw runtime_error( "peaks_for_energy_range: inf or NaN peak amplitude for "
                               + std::to_string(gamma.energy) + " keV.");
@@ -3981,7 +4053,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
         throw runtime_error( "peaks_for_energy_range: inf or NaN peak FWHM for "
                             + std::to_string(peak.energy) + " keV extra peak.");
       
-      assert( peak.release_fwhm || (fabs(x[fwhm_index] - 1.0) < 1.0E-5) );
+      assert( peak.release_fwhm || (abs(x[fwhm_index] - 1.0) < 1.0E-5) );
       
       num_free_peak_pars += peak.release_fwhm;
       
@@ -4005,10 +4077,10 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
       
       answer.no_gammas_in_range = true;
       
-      const double middle_energy = 0.5*(adjusted_lower_energy + adjusted_upper_energy);
-      double middle_fwhm = fwhm( middle_energy, x );
-      if( IsInf(middle_fwhm) || IsNan(middle_fwhm) )
-        middle_fwhm = 1.0; //arbitrary
+      const T middle_energy = 0.5*(adjusted_lower_energy + adjusted_upper_energy);
+      T middle_fwhm = fwhm( middle_energy, x );
+      if( isinf(middle_fwhm) || isnan(middle_fwhm) )
+        middle_fwhm = T(1.0); //arbitrary
       
       
       PeakDefImp<T> peak;
@@ -4448,7 +4520,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     const auto do_cancel = [this,residuals](){
       const size_t n = number_residuals();
       for( size_t i = 0; i < n; ++i )
-        residuals[i] = 0.0;
+        residuals[i] = T(0.0);
     };
     
     if( m_cancel_calc && m_cancel_calc->load() )
@@ -4463,7 +4535,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     if constexpr ( !std::is_same_v<T, double> )
     {
       for( size_t i = 0; i < num_residuals; ++i )
-        residuals[i] = num_residuals;
+        residuals[i] = T(0.0);
     }else
     {
       memset( residuals, 0, sizeof(double) * num_residuals );
@@ -4546,7 +4618,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
       // Now make sure the relative efficiency curve is anchored to 1.0 (this removes the degeneracy
       //  between the relative efficiency amplitude, and the relative activity amplitudes).
       const double lowest_energy = m_energy_ranges.front().lower_energy;
-      const double lowest_energy_rel_eff = relative_eff( lowest_energy, x );
+      const T lowest_energy_rel_eff = relative_eff( lowest_energy, x );
       residuals[residual_index] = m_rel_eff_anchor_enhancement * (1.0 - lowest_energy_rel_eff);
       ++residual_index;
     }//if( m_options.rel_eff_eqn_type != RelActCalc::RelEffEqnForm::FramPhysicalModel )
@@ -4561,7 +4633,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
         assert( par_index < x.size() );
         
         // Normalize the parameter so nominal is 0, and a 100% change is +-1;
-        const double norm_val = x[par_index]/sm_peak_range_uncert_par_offset - 1.0;
+        const T norm_val = x[par_index]/sm_peak_range_uncert_par_offset - 1.0;
         residuals[residual_index] = norm_val / m_options.additional_br_uncert;
         ++residual_index;
       }
@@ -4600,12 +4672,13 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
   
   // The return value indicates whether the computation of the
   // residuals and/or jacobians was successful or not.
-  bool operator()( double const *const *parameters, double *residuals ) const
+  template<typename T>
+  bool operator()( T const *const *parameters, T *residuals ) const
   {
     try
     {
       const size_t num_pars = number_parameters();
-      vector<double> pars( parameters[0], parameters[0] + num_pars );
+      vector<T> pars( parameters[0], parameters[0] + num_pars );
       eval( pars, residuals );
     }catch( std::exception &e )
     {
@@ -5006,7 +5079,7 @@ FwhmForm fwhm_form_from_str( const char *str )
  TODO: refactor this function and the equivalent `DetectorPeakResponse` function into a single imlpementation.
  */
 template<typename T>
-T peakResolutionFWHM( double energy, DetectorPeakResponse::ResolutionFnctForm fcnFrm,
+T peakResolutionFWHM( T energy, DetectorPeakResponse::ResolutionFnctForm fcnFrm,
                      const T * const pars, const size_t num_pars )
 {
   switch( fcnFrm )
@@ -5020,19 +5093,19 @@ T peakResolutionFWHM( double energy, DetectorPeakResponse::ResolutionFnctForm fc
       const T &b = pars[1];
       const T &c = pars[2];
       
-      if( (energy >= 661.0) || (fabs(a) < T(1.0E-6)) )
+      if( (energy >= 661.0) || (abs(a) < T(1.0E-6)) )
         return 6.61 * b * pow(energy/661.0, c);
       
       if( a < 0.0 )
       {
-        const float p = pow( c, T(1.0/log(1.0-a)) );
+        const T p = pow( c, T(1.0/log(1.0-a)) );
         return 6.61 * b * pow(energy/661.0, p);
       }//if( a < 0.0 )
       
       if( a > 6.61*b )
         return a;
       
-      const float A7 = sqrt( pow(6.61*b, 2.0) - a*a )/6.61;
+      const T A7 = sqrt( pow(6.61*b, 2.0) - a*a )/6.61;
       return sqrt(a*a + pow(6.61 * A7 * pow(energy/661.0, c), 2.0));
     }//case kGadrasResolutionFcn:
       
@@ -5065,7 +5138,7 @@ T peakResolutionFWHM( double energy, DetectorPeakResponse::ResolutionFnctForm fc
       energy /= PhysicalUnits::MeV;
       //return  A1 + A2*std::pow( energy + A3*energy*energy, A4 );
       
-      T val = 0.0;
+      T val(0.0);
       for( size_t i = 0; i < num_pars; ++i )
         val += pars[i] * pow(energy, static_cast<double>(i) );
       return sqrt( val );
@@ -5084,7 +5157,7 @@ T peakResolutionFWHM( double energy, DetectorPeakResponse::ResolutionFnctForm fc
 
   
 template<typename T>
-T eval_fwhm( const double energy, const FwhmForm form, const T * const pars, const size_t num_pars )
+T eval_fwhm( const T energy, const FwhmForm form, const T * const pars, const size_t num_pars )
 {
   DetectorPeakResponse::ResolutionFnctForm fctntype = DetectorPeakResponse::kNumResolutionFnctForm;
   switch( form )

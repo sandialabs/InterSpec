@@ -344,6 +344,7 @@ void run_u02_example()
      CPU Total (s):      13.9
    STILL gives different enrichments between runs
    
+   20250128, git hash 8a6fe8550c86f0e422212a446d597dafb32dd30d:
    After changing to use Eigen to fit continuum, and caching the peak contributions in each channel
    (i.e., implementing and using `peaks_for_energy_range_imp(...)`)
    Enrichment: 0.4305
@@ -358,6 +359,51 @@ void run_u02_example()
    Now gives same enrichment every time!
    Now takes 0.35% as long as originally!
    
+   20250129
+   After enabling auto-differentiation (e.g. `Jet<>`), and using stride of 4
+   Enrichment: 0.4219
+   Took:
+     Num Function Calls: 187
+     Fcn Evals total:    192
+     Seconds solving:    0.1727
+     Seconds in eval:    0.02955 (584.5%)
+     MicrSec per eval:   158
+     Wall Total (s):     0.1728
+     CPU Total (s):      0.368
+   Gives same enrichment every time, and maybe the Chi2 is better
+   
+   using stride = 8
+   Enrichment: 0.4219
+   Took:
+     Num Function Calls: 119
+     Fcn Evals total:    122
+     Seconds solving:    0.1788
+     Seconds in eval:    0.02016 (886.9%)
+     MicrSec per eval:   169.4
+     Wall Total (s):     0.1789
+     CPU Total (s):      0.3668
+   
+   using stride = 16
+   Enrichment: 0.4219
+   Took:
+     Num Function Calls: 85
+     Fcn Evals total:    87
+     Seconds solving:    0.1665
+     Seconds in eval:    0.01722 (966.8%)
+     MicrSec per eval:   202.6
+     Wall Total (s):     0.1665
+     CPU Total (s):      0.3361
+   
+   using stride = 32
+   Enrichment: 0.4219
+   Took:
+     Num Function Calls: 51
+     Fcn Evals total:    52
+     Seconds solving:    0.1608
+     Seconds in eval:    0.0118 (1363%)
+     MicrSec per eval:   231.3
+     Wall Total (s):     0.1608
+     CPU Total (s):      0.3306
    */
 }//void run_u02_example()
   

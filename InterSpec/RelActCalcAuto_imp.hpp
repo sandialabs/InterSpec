@@ -1,5 +1,7 @@
 #include <vector>
 
+
+
 #include "Eigen/Dense"
 
 
@@ -90,7 +92,7 @@ void fit_continuum( const float *x, const float *data, const size_t nbin,
         const double frac_data = (step_cumulative_data - 0.5*data_counts) / roi_data_sum;
         const double contribution = frac_data * (x1 - x0);
         
-        A(row,col) = contribution / uncert;
+        A(row,col) = ScalarType(contribution / uncert);
       }else if( step_continuum && (num_polynomial_terms == 4) )
       {
         const double frac_data = (step_cumulative_data - 0.5*data_counts) / roi_data_sum;

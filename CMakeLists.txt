@@ -361,6 +361,7 @@ set(headers
     InterSpec/PeakFitUtils.h
     InterSpec/PeakDef.h
     InterSpec/PeakDists.h
+    InterSpec/PeakDists_imp.hpp
     InterSpec/SpectraFileModel.h
     InterSpec/AuxWindow.h
     InterSpec/PeakFitChi2Fcn.h

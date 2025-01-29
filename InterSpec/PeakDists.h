@@ -108,12 +108,23 @@ namespace PeakDists
           will not be zeroed); must have at least `nchannel` entries
    @param nchannel The number of channels to do the integration over.
    */
-  void gaussian_integral( const double peak_mean,
-                              const double peak_sigma,
-                              const double peak_amplitude,
-                              const float * const energies,
-                              double *channels,
-                              const size_t nchannel );
+  template<typename T>
+  void gaussian_integral( const T peak_mean,
+                                const T peak_sigma,
+                                const T peak_amplitude,
+                                const float * const energies,
+                                T *channels,
+                         const size_t nchannel );
+  
+  extern template void gaussian_integral<double>(const double, const double, const double,
+                                  const float * const, double *, const size_t);
+  
+  //void gaussian_integral( const double peak_mean,
+  //                            const double peak_sigma,
+  //                            const double peak_amplitude,
+  //                            const float * const energies,
+  //                            double *channels,
+  //                            const size_t nchannel );
   
   
   
@@ -136,13 +147,16 @@ namespace PeakDists
           will not be zeroed); must have at least `nchannel` entries
    @param nchannel The number of channels to do the integration over.
    */
-  void bortel_integral( const double peak_mean,
-                              const double peak_sigma,
-                              const double peak_amplitude,
-                              const double skew,
+  template<typename T>
+  void bortel_integral( const T peak_mean,
+                              const T peak_sigma,
+                              const T peak_amplitude,
+                              const T skew,
                               const float * const energies,
-                              double *channels,
+                              T *channels,
                               const size_t nchannel );
+  extern template void bortel_integral<double>( const double, const double, const double, const double,
+                                       const float * const, double *, const size_t );
   
   /** Returns the PDF for a unit-area Bortel function.
    */
@@ -150,8 +164,11 @@ namespace PeakDists
 
   /** Returns the indefinite integral (e.g., from negative infinity up to `x`) of a unit-area Bortel function
    */
-  double bortel_indefinite_integral( const double x, const double mean,
-                                    const double sigma, const double skew );
+  template<typename T>
+  T bortel_indefinite_integral( const double x, const T mean, const T sigma, const T skew );
+  
+  extern template double bortel_indefinite_integral<double>( const double, const double,
+                                                            const double, const double );
 
   /** Returns an approximate area between `x1` and `x2` for a unit-area Bortel function.
    
@@ -186,16 +203,39 @@ namespace PeakDists
                                       const double skew,
                                       const double x0, const double x1 );
   
-  void gauss_exp_integral( const double peak_mean,
-                               const double peak_sigma,
-                               const double peak_amplitude,
-                               const double skew,
-                               const float * const energies,
-                               double *channels,
-                               const size_t nchannel );
+  
+  
+  template<typename T>
+  void gaussian_integral( const T peak_mean,
+                                const T peak_sigma,
+                                const T peak_amplitude,
+                                const float * const energies,
+                                T *channels,
+                         const size_t nchannel );
+  
+  extern template void gaussian_integral<double>(const double, const double, const double,
+                                  const float * const, double *, const size_t);
+  
+  template<typename T>
+  void gauss_exp_integral( const T peak_mean,
+                          const T peak_sigma,
+                          const T peak_amplitude,
+                          const T skew,
+                          const float * const energies,
+                          T *channels,
+                          const size_t nchannel );
+  
+  extern template void gauss_exp_integral<double>( const double, const double, const double,
+                                      const double, const float * const, double *, const size_t );
+  
   
   /** Returns the normalization so the GaussExp distribution has unit area. */
-  double gauss_exp_norm( const double sigma, const double skew );
+  template<typename T>
+  T gauss_exp_norm( const T sigma, const T skew );
+  
+  extern template double gauss_exp_norm<double>( const double, const double );
+  
+  
   double gauss_exp_pdf(const double mean,
                        const double sigma,
                        const double skew,
@@ -244,16 +284,24 @@ namespace PeakDists
                            const double x0,
                                 const double x1 );
   
-  void exp_gauss_exp_integral( const double peak_mean,
-                               const double peak_sigma,
-                               const double peak_amplitude,
-                               const double skew_left,
-                               const double skew_right,
+  template<typename T>
+  void exp_gauss_exp_integral( const T peak_mean,
+                               const T peak_sigma,
+                               const T peak_amplitude,
+                               const T skew_left,
+                               const T skew_right,
                                const float * const energies,
-                               double *channels,
+                              T *channels,
                                const size_t nchannel );
   
-  double exp_gauss_exp_norm( const double sigma, const double skew_left, const double skew_right );
+  extern template void exp_gauss_exp_integral<double>( const double, const double, const double,
+                                                  const double, const double, const float * const,
+                                                  double *, const size_t );
+  
+  template<typename T>
+  T exp_gauss_exp_norm( const T sigma, const T skew_left, const T skew_right );
+  
+  extern template double exp_gauss_exp_norm<double>( const double, const double, const double );
   
   double exp_gauss_exp_pdf( const double mean,
                            const double sigma,
@@ -318,14 +366,19 @@ namespace PeakDists
                                       const double power_law,
                                       const double x0, const double x1 );
   
-  void crystal_ball_integral( const double peak_mean,
-                               const double peak_sigma,
-                               const double peak_amplitude,
-                               const double alpha,
-                               const double power_law,
-                               const float * const energies,
-                               double *channels,
-                               const size_t nchannel );
+  template<typename T>
+  void crystal_ball_integral( const T peak_mean,
+                              const T peak_sigma,
+                              const T peak_amplitude,
+                              const T alpha,
+                              const T power_law,
+                              const float * const energies,
+                              T *channels,
+                              const size_t nchannel );
+  
+  extern template void crystal_ball_integral<double>( const double, const double, const double,
+                        const double, const double, const float * const, double *, const size_t );
+  
   
   double crystal_ball_norm( const double sigma,
                            const double alpha,
@@ -378,16 +431,22 @@ namespace PeakDists
                                                    const double upper_power_law,
                                                    const double x0, const double x1 );
   
-  void double_sided_crystal_ball_integral( const double peak_mean,
-                                                 const double peak_sigma,
-                                                 const double peak_amplitude,
-                                                 const double lower_alpha,
-                                                 const double lower_power_law,
-                                                 const double upper_alpha,
-                                                 const double upper_power_law,
-                                                 const float * const energies,
-                                                 double *channels,
-                                                 const size_t nchannel );
+  template<typename T>
+  void double_sided_crystal_ball_integral( const T peak_mean,
+                                          const T peak_sigma,
+                                          const T peak_amplitude,
+                                          const T lower_alpha,
+                                          const T lower_power_law,
+                                          const T upper_alpha,
+                                          const T upper_power_law,
+                                          const float * const energies,
+                                          T *channels,
+                                          const size_t nchannel );
+  
+  extern template void double_sided_crystal_ball_integral<double>( const double, const double,
+                                                 const double, const double, const double,
+                                                 const double, const double, const float * const,
+                                                 double *, const size_t );
     
   /** Return the limits so that `1-p` of the ExpGaussExp distribution is covered.
    
@@ -432,10 +491,10 @@ namespace PeakDists
     //                          const double x );
   
 
-    double DSCB_norm( const double alpha_low,
-                                          const double n_low,
-                                          const double alpha_high,
-                                          const double n_high );
+  template<typename T>
+  T DSCB_norm( const T alpha_low, const T n_low, const T alpha_high, const T n_high );
+  
+  extern template double DSCB_norm<double>( const double, const double, const double, const double );
     
     double DSCB_left_tail_indefinite_non_norm_t( const double alpha_low, const double n_low,
                                                  const double t );
