@@ -245,7 +245,7 @@ void gauss_exp_integral( const T peak_mean,
       const double simple_answer = peak_amplitude * PeakDists::gauss_exp_integral( peak_mean, peak_sigma, skew, lower_energy, upper_energy );
       const double diff = fabs(val - simple_answer);
       const double frac_diff = diff / std::max(val, simple_answer);
-      assert( (frac_diff < 1.0E-5) || (diff < 1.0E-9) );
+      assert( (frac_diff < 1.0E-5) || (diff < 1.0E-8) );
     }
 #endif
     

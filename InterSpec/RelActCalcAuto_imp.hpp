@@ -120,9 +120,13 @@ void fit_continuum( const float *x, const float *data, const size_t nbin,
   
   try
   {
-    const Eigen::BDCSVD<Eigen::MatrixX<ScalarType>,Eigen::ComputeThinU | Eigen::ComputeThinV> svd(A);
-    const Eigen::VectorX<ScalarType> coeffs = svd.solve(y); // coeffs will contain [c_0, c_1, c_2, c_3]
+#if( EIGEN_VERSION_AT_LEAST( 3, 4, 1 ) )
+    const Eigen::JacobiSVD<Eigen::MatrixX<ScalarType>,Eigen::ComputeThinU | Eigen::ComputeThinV> svd(A);
+#else
+    const Eigen::BDCSVD<Eigen::MatrixX<ScalarType>> svd(A, Eigen::ComputeThinU | Eigen::ComputeThinV );
+#endif
     
+    const Eigen::VectorX<ScalarType> coeffs = svd.solve(y); // coeffs will contain [c_0, c_1, c_2, c_3]
     //If we wanted to get the covariance matrix and/or parameter uncertainties, we could (unchecked):
     //Calculate residuals
     //Eigen::VectorX<ScalarType> residuals = y - A * coeffs;

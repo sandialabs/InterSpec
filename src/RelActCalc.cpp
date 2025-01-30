@@ -758,6 +758,41 @@ void PhysicalModelShieldInput::check_valid() const
 };//PhysicalModelShieldInput::check_valid()
   
   
+#if( PERFORM_DEVELOPER_CHECKS )
+void PhysicalModelShieldInput::equalEnough( const PhysicalModelShieldInput &lhs, const PhysicalModelShieldInput &rhs )
+{
+  if( fabs(lhs.atomic_number - rhs.atomic_number) > 1.0E-6 )
+    throw runtime_error( "PhysicalModelShieldInput::equalEnough: atomic number mismatch" );
+  
+  if( !lhs.material != !rhs.material )
+    throw runtime_error( "PhysicalModelShieldInput::equalEnough: material being present mismatch" );
+  
+  if( lhs.material && (lhs.material->name != rhs.material->name) )
+    throw runtime_error( "PhysicalModelShieldInput::equalEnough: material name mismatch" );
+  
+  if( fabs(lhs.areal_density - rhs.areal_density) > 1.0E-3 )
+    throw runtime_error( "PhysicalModelShieldInput::equalEnough: areal density mismatch" );
+  
+  if( lhs.fit_atomic_number != rhs.fit_atomic_number )
+    throw runtime_error( "PhysicalModelShieldInput::equalEnough: fit atomic number mismatch" );
+  
+  if( fabs(lhs.lower_fit_atomic_number - rhs.lower_fit_atomic_number) > 1.0E-4 )
+    throw runtime_error( "PhysicalModelShieldInput::equalEnough: lower fit atomic number mismatch" );
+  
+  if( fabs(lhs.upper_fit_atomic_number - rhs.upper_fit_atomic_number) > 1.0E-4 )
+    throw runtime_error( "PhysicalModelShieldInput::equalEnough: upper fit atomic number mismatch" );
+  
+  if( lhs.fit_areal_density != rhs.fit_areal_density )
+    throw runtime_error( "PhysicalModelShieldInput::equalEnough: fit areal density mismatch" );
+  
+  if( fabs(lhs.lower_fit_areal_density - rhs.lower_fit_areal_density) > 1.0E-6 )
+    throw runtime_error( "PhysicalModelShieldInput::equalEnough: lower fit areal density mismatch" );
+  
+  if( fabs(lhs.upper_fit_areal_density - rhs.upper_fit_areal_density) > 1.0E-3 )
+    throw runtime_error( "PhysicalModelShieldInput::equalEnough: upper fit areal density mismatch" );
+}//void PhysicalModelShieldInput::equalEnough(...)
+#endif
+  
 rapidxml::xml_node<char> *PhysicalModelShieldInput::toXml( ::rapidxml::xml_node<char> *parent ) const
 {
   using namespace rapidxml;

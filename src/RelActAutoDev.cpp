@@ -52,6 +52,177 @@ using namespace std;
 
 namespace RelActAutoDev
 {
+
+#if( PERFORM_DEVELOPER_CHECKS )
+void check_auto_state_xml_serialization()
+{
+  const SandiaDecay::SandiaDecayDataBase * const db = DecayDataBaseServer::database();
+
+  MaterialDB matdb;
+  const string materialfile = SpecUtils::append_path( InterSpec::staticDataDirectory(), "MaterialDataBase.txt" );
+  matdb.parseGadrasMaterialFile( materialfile, db, false );
+
+  RelActCalcAuto::RelActAutoGuiState state;
+
+  state.options.fit_energy_cal = true;
+  state.options.fwhm_form = RelActCalcAuto::FwhmForm::Polynomial_3;
+  state.options.spectrum_title = "Test";
+  state.options.skew_type = PeakDef::SkewType::CrystalBall;
+  state.options.additional_br_uncert = 0.011;
+
+  RelActCalcAuto::RelEffCurveInput curve;
+  curve.nucs_of_el_same_age = false;
+  curve.rel_eff_eqn_type = RelActCalc::RelEffEqnForm::FramPhysicalModel;
+  curve.rel_eff_eqn_order = 0;
+
+  // Fill out self-attenuation
+  auto self_atten = make_shared<RelActCalc::PhysicalModelShieldInput>();
+  self_atten->atomic_number = 28.5;
+  self_atten->material = nullptr;
+  self_atten->areal_density = 1.0*PhysicalUnits::g_per_cm2;
+  self_atten->fit_atomic_number = false;
+  self_atten->lower_fit_atomic_number = 1.0;
+  self_atten->upper_fit_atomic_number = 98.0;
+  self_atten->fit_areal_density = true;
+  self_atten->lower_fit_areal_density = 0.0;
+  self_atten->upper_fit_areal_density = 500*PhysicalUnits::g_per_cm2;
+  curve.phys_model_self_atten = self_atten;
+
+  // Fill out external attenuation
+  auto ext_atten = make_shared<RelActCalc::PhysicalModelShieldInput>();
+  ext_atten->atomic_number = 0;
+  const Material * const pu_db = matdb.material("Pu (plutonium)");
+  assert( pu_db );
+  const shared_ptr<const Material> pu = std::make_shared<Material>( *pu_db );
+  ext_atten->material = pu;
+  ext_atten->areal_density = 1.0*PhysicalUnits::g_per_cm2;
+  ext_atten->fit_atomic_number = true;
+  ext_atten->lower_fit_atomic_number = 2.0;
+  ext_atten->upper_fit_atomic_number = 97.0;
+  ext_atten->fit_areal_density = false;
+  ext_atten->lower_fit_areal_density = 1.0;
+  ext_atten->upper_fit_areal_density = 10*PhysicalUnits::g_per_cm2;
+  curve.phys_model_external_atten.push_back( ext_atten );
+  curve.phys_model_use_hoerl = false;
+  
+  curve.pu242_correlation_method = RelActCalc::PuCorrMethod::ByPu239Only;
+
+  RelActCalcAuto::NucInputInfo u235_input;
+  u235_input.nuclide = db->nuclide("U235");
+  u235_input.age = 20.0*PhysicalUnits::year;
+  u235_input.fit_age = false;
+  u235_input.gammas_to_exclude = { 26.325 };
+  u235_input.peak_color_css = "red";
+  curve.nuclides.push_back( u235_input );
+
+  RelActCalcAuto::NucInputInfo u238_input;
+  u238_input.nuclide = db->nuclide("U238");
+  u238_input.age = 18.0*PhysicalUnits::year;
+  u238_input.fit_age = true;
+  u238_input.gammas_to_exclude = { 1001.1 };
+  u238_input.peak_color_css = "blue";
+  curve.nuclides.push_back( u238_input );
+
+  
+  state.options.rel_eff_curves.push_back( curve );
+
+  RelActCalcAuto::RoiRange range;
+  range.lower_energy = 500.0;
+  range.upper_energy = 2000.0;
+  range.continuum_type = PeakContinuum::OffsetType::Quadratic;
+  range.force_full_range = false;
+  range.allow_expand_for_peak_width = false;
+  state.options.rois.push_back( range );
+
+  // Add a second range
+  range.lower_energy = 50.0;
+  range.upper_energy = 200.0;
+  range.continuum_type = PeakContinuum::OffsetType::Linear;
+  range.force_full_range = true;
+  range.allow_expand_for_peak_width = true;
+  state.options.rois.push_back( range );
+
+  RelActCalcAuto::FloatingPeak peak;
+  peak.energy = 1000.0;
+  peak.release_fwhm = true;
+  peak.apply_energy_cal_correction = true;
+  state.options.floating_peaks.push_back( peak );
+
+  state.background_subtract = true;
+  
+  state.show_ref_lines = true;
+  state.lower_display_energy = 50.0;
+  state.upper_display_energy = 2000.0;
+  
+  rapidxml::xml_document<char> doc;
+  auto rel_act_node = state.serialize( &doc );
+  
+  RelActCalcAuto::RelActAutoGuiState state2;
+  try
+  {
+    state2.deSerialize( rel_act_node, &matdb );
+  }catch( std::exception &e )
+  {
+    cerr << "Failed to deserialize state: " << e.what() << endl;
+    return;
+  }
+
+  try
+  {
+    RelActCalcAuto::RelActAutoGuiState::equalEnough( state, state2 );
+  }catch( std::exception &e )
+  {
+    cerr << "Failed to compare states: " << e.what() << endl;
+    assert( 0 );
+    exit( -1 );
+    return;
+  }
+
+  cout << "States are equal" << endl;
+
+// Now try multiple rel eff curves
+  RelActCalcAuto::RelEffCurveInput curve2;
+  curve2.nucs_of_el_same_age = true;
+  curve2.rel_eff_eqn_type = RelActCalc::RelEffEqnForm::LnXLnY;
+  curve2.rel_eff_eqn_order = 2;
+
+  RelActCalcAuto::NucInputInfo co60_input;
+  co60_input.nuclide = db->nuclide("Co60");
+  co60_input.age = 18.0*PhysicalUnits::year;
+  co60_input.fit_age = true;
+  co60_input.gammas_to_exclude = { 1001.1 };
+  co60_input.peak_color_css = "blue";
+  curve2.nuclides.push_back( co60_input );
+
+  state.options.rel_eff_curves.push_back( curve2 );
+
+  auto rel_act_node2 = state.serialize( doc.first_node() );
+  
+  RelActCalcAuto::RelActAutoGuiState state3;  
+  try
+  {
+    state3.deSerialize( rel_act_node2, &matdb );
+  }catch( std::exception &e )
+  {
+    cerr << "Failed to deserialize state: " << e.what() << endl;
+    return;
+  }
+  
+  try
+  {
+    RelActCalcAuto::RelActAutoGuiState::equalEnough( state, state3 );
+  }catch( std::exception &e )
+  {
+    cerr << "Failed to compare states: " << e.what() << endl;
+    
+    assert( 0 );
+    exit( -1 );
+    return;
+  }
+  
+  cout << "States are equal" << endl;
+}//void check_auto_state_xml_serialization()
+#endif //PERFORM_DEVELOPER_CHECKS 
   
 void check_physical_model_eff_function()
 {
@@ -250,7 +421,6 @@ void run_u02_example()
   if( !loaded_spec )
   {
     cerr << "Failed to load '" << specfilename << "', aborting." << endl;
-    return EXIT_FAILURE;
   }
 
   //Sample 1 is background
@@ -295,7 +465,6 @@ void run_u02_example()
   const double start_wall = SpecUtils::get_wall_time();
   
   const RelActCalcAuto::RelActAutoSolution solution = RelActCalcAuto::solve( state.options,
-                                              state.rois, state.nuclides, state.floating_peaks,
                                               foreground, background, det, all_peaks, nullptr );
   
   const double end_cpu = SpecUtils::get_cpu_time();
@@ -410,6 +579,9 @@ void run_u02_example()
   
 int dev_code()
 {
+  check_auto_state_xml_serialization();
+
+
   run_u02_example();
   return 1;
   
@@ -437,14 +609,17 @@ int dev_code()
   
   RelActCalcAuto::Options options;
   options.fit_energy_cal = true;
-  options.nucs_of_el_same_age = true;
-  options.rel_eff_eqn_type = RelActCalc::RelEffEqnForm::FramPhysicalModel;
-  options.rel_eff_eqn_order = 0;
   options.fwhm_form = RelActCalcAuto::FwhmForm::Polynomial_4;
   options.spectrum_title = "Dev Title";
-  options.pu242_correlation_method = RelActCalc::PuCorrMethod::ByPu239Only;
   options.skew_type = PeakDef::SkewType::NoSkew;
   options.additional_br_uncert = 0.01;
+  
+  
+  RelActCalcAuto::RelEffCurveInput rel_eff_curve;
+  rel_eff_curve.nucs_of_el_same_age = true;
+  rel_eff_curve.rel_eff_eqn_type = RelActCalc::RelEffEqnForm::FramPhysicalModel;
+  rel_eff_curve.rel_eff_eqn_order = 0;
+  rel_eff_curve.pu242_correlation_method = RelActCalc::PuCorrMethod::ByPu239Only;
   
   RelActCalc::PhysicalModelShieldInput self_atten_def;
   self_atten_def.atomic_number = 0.0;
@@ -459,7 +634,7 @@ int dev_code()
   self_atten_def.lower_fit_areal_density = 0.0;
   self_atten_def.upper_fit_areal_density = 500.0 * PhysicalUnits::g_per_cm2;
   
-  options.phys_model_self_atten = make_shared<RelActCalc::PhysicalModelShieldInput>( self_atten_def );
+  rel_eff_curve.phys_model_self_atten = make_shared<RelActCalc::PhysicalModelShieldInput>( self_atten_def );
   
   
   RelActCalc::PhysicalModelShieldInput ext_shield;
@@ -472,7 +647,7 @@ int dev_code()
   ext_shield.fit_areal_density = true;
   ext_shield.lower_fit_areal_density = 0.0;
   ext_shield.upper_fit_areal_density = 500.0 * PhysicalUnits::g_per_cm2;
-  options.phys_model_external_atten.push_back( make_shared<RelActCalc::PhysicalModelShieldInput>( ext_shield ) );
+  rel_eff_curve.phys_model_external_atten.push_back( make_shared<RelActCalc::PhysicalModelShieldInput>( ext_shield ) );
   
   
   
@@ -543,9 +718,11 @@ int dev_code()
     }
   };
   
+  options.floating_peaks = vector<RelActCalcAuto::FloatingPeak>{};
+  rel_eff_curve.nuclides = nuclides;
+  options.rois = energy_ranges;
   
-  const vector<RelActCalcAuto::FloatingPeak> extra_peaks{};
-  
+  options.rel_eff_curves.push_back( rel_eff_curve );
   
   shared_ptr<const SpecUtils::Measurement> foreground = specfile.measurement( size_t(0) );
   assert( foreground );
@@ -554,7 +731,7 @@ int dev_code()
   vector<shared_ptr<const PeakDef>> all_peaks{};
   
   const RelActCalcAuto::RelActAutoSolution solution = RelActCalcAuto::solve(
-    options, energy_ranges, nuclides, extra_peaks, foreground, background, drf, all_peaks, nullptr );
+    options, foreground, background, drf, all_peaks, nullptr );
   
   ofstream out_html( "result.html" );
   solution.print_summary( cout );

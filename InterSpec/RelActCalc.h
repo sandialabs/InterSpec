@@ -295,6 +295,10 @@ struct PhysicalModelShieldInput
   void fromXml( const ::rapidxml::xml_node<char> *parent, MaterialDB *materialDB );
   
   static const double sm_upper_allowed_areal_density_in_g_per_cm2; //Set to 500
+  
+#if( PERFORM_DEVELOPER_CHECKS )
+  static void equalEnough( const PhysicalModelShieldInput &lhs, const PhysicalModelShieldInput &rhs );
+#endif
 };//struct PhysicalModelShieldInput
 
 

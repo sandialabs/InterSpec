@@ -1929,14 +1929,9 @@ RelActCalcAuto::Options RelActAutoGui::getCalcOptions() const
 {
   RelActCalcAuto::Options options;
   
-  options.fit_energy_cal = m_fit_energy_cal->isChecked();
-  options.nucs_of_el_same_age = m_same_z_age->isChecked();
-  options.rel_eff_eqn_type = RelActCalc::RelEffEqnForm( std::max( 0, m_rel_eff_eqn_form->currentIndex() ) );
-  if( options.rel_eff_eqn_type == RelActCalc::RelEffEqnForm::FramPhysicalModel )
-    options.rel_eff_eqn_order = 0;
-  else
-    options.rel_eff_eqn_order = static_cast<size_t>( std::max( 0, m_rel_eff_eqn_order->currentIndex() ) );
   
+
+  options.fit_energy_cal = m_fit_energy_cal->isChecked();
   options.fwhm_form = RelActCalcAuto::FwhmForm( std::max(0,m_fwhm_eqn_form->currentIndex()) );
   
   const shared_ptr<const SpecUtils::Measurement> fore
@@ -1947,22 +1942,6 @@ RelActCalcAuto::Options RelActAutoGui::getCalcOptions() const
     options.spectrum_title = fore->title();
   else if( meas && !meas->filename().empty() )
     options.spectrum_title = meas->filename();
-  
-  
-  if( m_pu_corr_method->isVisible() )
-  {
-    const string currtxt = m_pu_corr_method->currentText().toUTF8();
-    for( int i = 0; i <= static_cast<int>(RelActCalc::PuCorrMethod::NotApplicable); ++i )
-    {
-      const auto method = RelActCalc::PuCorrMethod(i);
-      const string &desc = RelActCalc::to_description( method );
-      if( desc == currtxt )
-      {
-        options.pu242_correlation_method = method;
-        break;
-      }
-    }//for( loop over RelActCalc::PuCorrMethod )
-  }//if( m_pu_corr_method->isVisible() )
   
   options.skew_type = PeakDef::SkewType::NoSkew;
   const int skew_index = m_skew_type->currentIndex();
@@ -1986,10 +1965,22 @@ RelActCalcAuto::Options RelActAutoGui::getCalcOptions() const
   assert( options.additional_br_uncert >= 0.0 );
   options.additional_br_uncert = std::max( options.additional_br_uncert, 0.0 );
   
-  if( options.rel_eff_eqn_type == RelActCalc::RelEffEqnForm::FramPhysicalModel )
+  options.floating_peaks = getFloatingPeaks();
+  options.rois = getRoiRanges();
+
+
+  RelActCalcAuto::RelEffCurveInput rel_eff_curve;
+  rel_eff_curve.nuclides = getNucInputInfo();
+  rel_eff_curve.nucs_of_el_same_age = m_same_z_age->isChecked();
+  rel_eff_curve.rel_eff_eqn_type = RelActCalc::RelEffEqnForm( std::max( 0, m_rel_eff_eqn_form->currentIndex() ) );
+  rel_eff_curve.rel_eff_eqn_order = 0;
+  if( rel_eff_curve.rel_eff_eqn_type != RelActCalc::RelEffEqnForm::FramPhysicalModel )
+    rel_eff_curve.rel_eff_eqn_order = static_cast<size_t>( std::max( 0, m_rel_eff_eqn_order->currentIndex() ) );
+  
+  if( rel_eff_curve.rel_eff_eqn_type == RelActCalc::RelEffEqnForm::FramPhysicalModel )
   {
     if( m_phys_model_self_atten && m_phys_model_self_atten->nonEmpty() )
-      options.phys_model_self_atten = m_phys_model_self_atten->fitInput();
+      rel_eff_curve.phys_model_self_atten = m_phys_model_self_atten->fitInput();
     
     for( WWidget *w : m_phys_ext_attens->children() )
     {
@@ -1998,13 +1989,30 @@ RelActCalcAuto::Options RelActAutoGui::getCalcOptions() const
       {
         auto input = sw->fitInput();
         if( input )
-          options.phys_model_external_atten.push_back( input );
+          rel_eff_curve.phys_model_external_atten.push_back( input );
       }
     }//for( WWidget *w : m_phys_ext_attens->children() )
     
-    options.phys_model_use_hoerl = m_phys_model_use_hoerl->isChecked();
+    rel_eff_curve.phys_model_use_hoerl = m_phys_model_use_hoerl->isChecked();
   }//if( options.rel_eff_eqn_type == RelActCalc::RelEffEqnForm::FramPhysicalModel )
-  
+
+  if( m_pu_corr_method->isVisible() )
+  {
+    const string currtxt = m_pu_corr_method->currentText().toUTF8();
+    for( int i = 0; i <= static_cast<int>(RelActCalc::PuCorrMethod::NotApplicable); ++i )
+    {
+      const auto method = RelActCalc::PuCorrMethod(i);
+      const string &desc = RelActCalc::to_description( method );
+      if( desc == currtxt )
+      {
+        rel_eff_curve.pu242_correlation_method = method;
+        break;
+      }
+    }//for( loop over RelActCalc::PuCorrMethod )
+  }//if( m_pu_corr_method->isVisible() )
+
+  options.rel_eff_curves = { rel_eff_curve };
+
   return options;
 }//RelActCalcAuto::Options getCalcOptions() const
 
@@ -2548,17 +2556,13 @@ void RelActAutoGui::handleRightClick( const double energy, const double counts,
 
 void RelActAutoGui::setCalcOptionsGui( const RelActCalcAuto::Options &options )
 {
+  assert( options.rel_eff_curves.size() == 1 );
+  if( options.rel_eff_curves.size() != 1 )
+    throw runtime_error( "RelActAutoGui::setCalcOptionsGui: for dev, must have exactly one rel-eff curve." );
+  
   m_fit_energy_cal->setChecked( options.fit_energy_cal );
-  m_same_z_age->setChecked( options.nucs_of_el_same_age );
   m_fwhm_eqn_form->setCurrentIndex( static_cast<int>(options.fwhm_form) );
   m_skew_type->setCurrentIndex( static_cast<int>(options.skew_type) );
-  
-  m_rel_eff_eqn_form->setCurrentIndex( static_cast<int>(options.rel_eff_eqn_type) );
-  if( options.rel_eff_eqn_type != RelActCalc::RelEffEqnForm::FramPhysicalModel )
-    m_rel_eff_eqn_order->setCurrentIndex( static_cast<int>(options.rel_eff_eqn_order) );
-  
-  const shared_ptr<const RelActCalc::PhysicalModelShieldInput> &self_atten = options.phys_model_self_atten;
-  const vector<shared_ptr<const RelActCalc::PhysicalModelShieldInput>> &ext_attens = options.phys_model_external_atten;
   
   // We'll just round add-uncert to the nearest-ish value we allow in the GUI
   RelActAutoGui::AddUncert add_uncert = AddUncert::NumAddUncert;
@@ -2585,7 +2589,18 @@ void RelActAutoGui::setCalcOptionsGui( const RelActCalcAuto::Options &options )
   m_add_uncert->setCurrentIndex( static_cast<int>(add_uncert) );
   
   
-  if( (options.rel_eff_eqn_type == RelActCalc::RelEffEqnForm::FramPhysicalModel)
+  m_nuclides->clear();
+  
+  const RelActCalcAuto::RelEffCurveInput &rel_eff = options.rel_eff_curves[0];
+  m_same_z_age->setChecked( rel_eff.nucs_of_el_same_age );
+  m_rel_eff_eqn_form->setCurrentIndex( static_cast<int>(rel_eff.rel_eff_eqn_type) );
+  if( rel_eff.rel_eff_eqn_type != RelActCalc::RelEffEqnForm::FramPhysicalModel )
+    m_rel_eff_eqn_order->setCurrentIndex( static_cast<int>(rel_eff.rel_eff_eqn_order) );
+  
+  const shared_ptr<const RelActCalc::PhysicalModelShieldInput> &self_atten = rel_eff.phys_model_self_atten;
+  const vector<shared_ptr<const RelActCalc::PhysicalModelShieldInput>> &ext_attens = rel_eff.phys_model_external_atten;
+  
+  if( (rel_eff.rel_eff_eqn_type == RelActCalc::RelEffEqnForm::FramPhysicalModel)
      || self_atten || !ext_attens.empty() )
   {
     initPhysModelShields();  //Sets shielding widgets to default state
@@ -2657,11 +2672,58 @@ void RelActAutoGui::setCalcOptionsGui( const RelActCalcAuto::Options &options )
     while( !m_phys_ext_attens->children().empty() )
       delete m_phys_ext_attens->children().front();
   }//if( Physical Model ) / else
-  
+
   showAndHideOptionsForEqnType();
   
-  // options.spectrum_title
+  for( const RelActCalcAuto::NucInputInfo &nuc : rel_eff.nuclides )
+  {
+    RelActAutoNuclide *nuc_widget = new RelActAutoNuclide( this, m_nuclides );
+    nuc_widget->updated().connect( this, &RelActAutoGui::handleNuclidesChanged );
+    nuc_widget->remove().connect( boost::bind( &RelActAutoGui::handleRemoveNuclide,
+                                              this, static_cast<WWidget *>(nuc_widget) ) );
+    nuc_widget->fromNucInputInfo( nuc );
+  }//for( const RelActCalcAuto::NucInputInfo &nuc : nuclides )
   
+  
+  m_energy_ranges->clear();
+  for( const RelActCalcAuto::RoiRange &roi : options.rois )
+  {
+    RelActAutoEnergyRange *energy_range = new RelActAutoEnergyRange( this, m_energy_ranges );
+    
+    energy_range->updated().connect( this, &RelActAutoGui::handleEnergyRangeChange );
+    
+    energy_range->remove().connect( boost::bind( &RelActAutoGui::handleRemoveEnergy,
+                                                this, static_cast<WWidget *>(energy_range) ) );
+    
+    energy_range->setFromRoiRange( roi );
+  }//for( const RelActCalcAuto::RoiRange &roi : rois )
+  
+  
+  // Free Peaks
+  m_free_peaks->clear();
+  if( options.floating_peaks.empty() && !m_free_peaks_container->isHidden() )
+    handleHideFreePeaks();
+  
+  if( !options.floating_peaks.empty() && m_free_peaks_container->isHidden() )
+    handleShowFreePeaks();
+  
+  for( const RelActCalcAuto::FloatingPeak &peak : options.floating_peaks )
+    handleAddFreePeak( peak.energy, !peak.release_fwhm, peak.apply_energy_cal_correction );
+  
+  
+  // We will be a bit cheap here, and set one entry in pu correlation selector, and then
+  //  rely on `updateDuringRenderForNuclideChange()` to input all the actual options
+  m_pu_corr_method->setHidden( rel_eff.pu242_correlation_method == RelActCalc::PuCorrMethod::NotApplicable );
+  m_pu_corr_method->clear();
+  m_pu_corr_method->addItem( RelActCalc::to_description(rel_eff.pu242_correlation_method) );
+  m_pu_corr_method->setCurrentIndex( 0 );
+  if( m_pu_corr_method->label() )
+    m_pu_corr_method->label()->setHidden( m_pu_corr_method->isHidden() );
+  
+  
+  
+  // options.spectrum_title
+  m_render_flags |= RenderActions::UpdateNuclidesPresent;  //To trigger calling `updateDuringRenderForNuclideChange()`
   m_render_flags |= RenderActions::UpdateCalculations;
   scheduleRender();
 }//void setCalcOptionsGui( const RelActCalcAuto::Options &options )
@@ -2748,32 +2810,10 @@ rapidxml::xml_node<char> *RelActAutoGui::serialize( rapidxml::xml_node<char> *pa
 {
   RelActCalcAuto::RelActAutoGuiState state;
   state.options = getCalcOptions();
-  state.rois = getRoiRanges();
-  state.nuclides = getNucInputInfo();
-  state.floating_peaks = getFloatingPeaks();
   state.background_subtract = (m_background_subtract->isEnabled() && m_background_subtract->isChecked());
   state.show_ref_lines = m_hide_ref_lines_item->isEnabled();
   state.lower_display_energy = m_spectrum->xAxisMinimum();
   state.upper_display_energy = m_spectrum->xAxisMaximum();
-  
-  state.pu_correlation_method = RelActCalc::PuCorrMethod::NotApplicable;
-  if( m_pu_corr_method->isVisible() && m_pu_corr_method->count() )
-  {
-    bool found = false;
-    const string currtxt = m_pu_corr_method->currentText().toUTF8();
-    for( RelActCalc::PuCorrMethod method = RelActCalc::PuCorrMethod(0);
-        method <= RelActCalc::PuCorrMethod::NotApplicable;
-        method = RelActCalc::PuCorrMethod( static_cast<int>(method) + 1 ) )
-    {
-      if( RelActCalc::to_description(method) == currtxt )
-      {
-        found = true;
-        state.pu_correlation_method = method;
-        break;
-      }
-    }//for( loop over RelActCalc::PuCorrMethod )
-    assert( found );
-  }//if( we have U or Pu in the problem )
   
   return state.serialize( parent_node );
 }//rapidxml::xml_node<char> *RelActAutoGui::serialize( rapidxml::xml_node<char> *parent )
@@ -2787,13 +2827,6 @@ void RelActAutoGui::deSerialize( const rapidxml::xml_node<char> *base_node )
   state.deSerialize( base_node, materialDb );
   
   m_background_subtract->setChecked( state.background_subtract );
-  
-  m_pu_corr_method->setHidden( state.pu_correlation_method == RelActCalc::PuCorrMethod::NotApplicable );
-  m_pu_corr_method->clear();
-  m_pu_corr_method->addItem( RelActCalc::to_description(state.pu_correlation_method) );
-  m_pu_corr_method->setCurrentIndex( 1 );
-  if( m_pu_corr_method->label() )
-    m_pu_corr_method->label()->setHidden( m_pu_corr_method->isHidden() );
   
   m_show_ref_lines_item->setHidden( state.show_ref_lines );
   m_hide_ref_lines_item->setHidden( !state.show_ref_lines );
@@ -2813,42 +2846,6 @@ void RelActAutoGui::deSerialize( const rapidxml::xml_node<char> *base_node )
   m_loading_preset = true;
   
   setCalcOptionsGui( state.options );
-  m_nuclides->clear();
-  m_energy_ranges->clear();
-  
-  for( const RelActCalcAuto::NucInputInfo &nuc : state.nuclides )
-  {
-    RelActAutoNuclide *nuc_widget = new RelActAutoNuclide( this, m_nuclides );
-    nuc_widget->updated().connect( this, &RelActAutoGui::handleNuclidesChanged );
-    nuc_widget->remove().connect( boost::bind( &RelActAutoGui::handleRemoveNuclide,
-                                              this, static_cast<WWidget *>(nuc_widget) ) );
-    nuc_widget->fromNucInputInfo( nuc );
-  }//for( const RelActCalcAuto::NucInputInfo &nuc : nuclides )
-  
-  
-  for( const RelActCalcAuto::RoiRange &roi : state.rois )
-  {
-    RelActAutoEnergyRange *energy_range = new RelActAutoEnergyRange( this, m_energy_ranges );
-    
-    energy_range->updated().connect( this, &RelActAutoGui::handleEnergyRangeChange );
-    
-    energy_range->remove().connect( boost::bind( &RelActAutoGui::handleRemoveEnergy,
-                                                this, static_cast<WWidget *>(energy_range) ) );
-    
-    energy_range->setFromRoiRange( roi );
-  }//for( const RelActCalcAuto::RoiRange &roi : rois )
-  
-  
-  // Free Peaks
-  m_free_peaks->clear();
-  if( state.floating_peaks.empty() && !m_free_peaks_container->isHidden() )
-    handleHideFreePeaks();
-  
-  if( !state.floating_peaks.empty() && m_free_peaks_container->isHidden() )
-    handleShowFreePeaks();
-  
-  for( const RelActCalcAuto::FloatingPeak &peak : state.floating_peaks )
-    handleAddFreePeak( peak.energy, !peak.release_fwhm, peak.apply_energy_cal_correction );
   
   m_solution.reset();
   m_peak_model->setPeaks( vector<PeakDef>{} );
@@ -4549,9 +4546,6 @@ void RelActAutoGui::startUpdatingCalculation()
   shared_ptr<const SpecUtils::Measurement> foreground = m_foreground;
   shared_ptr<const SpecUtils::Measurement> background = m_background;
   RelActCalcAuto::Options options;
-  vector<RelActCalcAuto::RoiRange> rois;
-  vector<RelActCalcAuto::NucInputInfo> nuclides;
-  vector<RelActCalcAuto::FloatingPeak> floating_peaks;
   
   try
   {
@@ -4565,17 +4559,18 @@ void RelActAutoGui::startUpdatingCalculation()
       background = m_interspec->displayedHistogram( SpecUtils::SpectrumType::Background );
     
     options = getCalcOptions();
-    rois = getRoiRanges();
-    nuclides = getNucInputInfo();
-    floating_peaks = getFloatingPeaks();
     
-    if( nuclides.empty() && rois.empty() )
-      throw runtime_error( "No energy ranges or nuclides defined." );
-    else if( nuclides.empty() )
-      throw runtime_error( "No nuclides defined." );
-    else if( rois.empty() )
+    if( options.rel_eff_curves.size() != 1 )
+      throw runtime_error( "No relative efficiency curves defined - currently you must have exactly one curve." );
+
+    for( const auto &rel_eff_curve : options.rel_eff_curves )
+    {
+      if( rel_eff_curve.nuclides.empty() )
+        throw runtime_error( "No nuclides defined for relative efficiency curve." );
+    }
+
+    if( options.rois.empty() )
       throw runtime_error( "No energy ranges defined." );
-    
   }catch( std::exception &e )
   {
     m_is_calculating = false;
@@ -4623,9 +4618,7 @@ void RelActAutoGui::startUpdatingCalculation()
     try
     {
       RelActCalcAuto::RelActAutoSolution answer
-        = RelActCalcAuto::solve( options, rois, nuclides, floating_peaks,
-                                foreground, background, cached_drf,
-                                cached_all_peaks, cancel_calc );
+        = RelActCalcAuto::solve( options, foreground, background, cached_drf, cached_all_peaks, cancel_calc );
       
       WServer::instance()->post( sessionId, [=](){
         WApplication *app = WApplication::instance();
@@ -4817,7 +4810,13 @@ void RelActAutoGui::updateFromCalc( std::shared_ptr<RelActCalcAuto::RelActAutoSo
   setOptionsForValidSolution();
   
   // Check if we need to update Physical model shieldings
-  if( (m_solution->m_options.rel_eff_eqn_type == RelActCalc::RelEffEqnForm::FramPhysicalModel)
+  assert( m_solution->m_options.rel_eff_curves.size() == 1 );
+  if( m_solution->m_options.rel_eff_curves.size() != 1 )
+    throw runtime_error( "updateFromCalc: only a single rel eff curve is supported" );
+  const RelActCalcAuto::RelEffCurveInput &rel_eff = m_solution->m_options.rel_eff_curves[0];
+    
+    
+  if( (rel_eff.rel_eff_eqn_type == RelActCalc::RelEffEqnForm::FramPhysicalModel)
      && m_solution->m_phys_model_result.has_value() )
   {
     const RelActCalcAuto::RelActAutoSolution::PhysicalModelFitInfo &phys_info = *m_solution->m_phys_model_result;

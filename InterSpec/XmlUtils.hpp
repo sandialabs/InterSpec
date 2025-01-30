@@ -152,16 +152,30 @@ namespace XmlUtils
     return false;
   }//bool get_bool_node_value(...)
 
+  template<size_t n>
+  inline int get_int_attribute( const rapidxml::xml_node<char> * const node, const char (&name)[n] )
+  {
+    assert( node );
+    assert( name );
+    
+    const rapidxml::xml_attribute<char> *att = XML_FIRST_ATTRIB(node, name);
+    if( !att )
+      throw std::runtime_error( "Missing attribute '" + std::string(name) + "'" );
+    
+    int answer;
+    if( !SpecUtils::parse_int(att->value(), att->value_size(), answer) )
+      throw std::runtime_error( "Invalid integer value in attribute '" + std::string(name) + "' with value '"
+                          + SpecUtils::xml_value_str(att) + "'" );
+    
+    return answer;
+  }//int get_int_attribute(...)
 
   inline void check_xml_version( const rapidxml::xml_node<char> * const node, const int required_version )
   {
     assert( node );
     const rapidxml::xml_attribute<char> *att = XML_FIRST_ATTRIB(node, "version");
     
-    int version;
-    if( !att || !att->value()
-       || (sscanf(att->value(), "%i", &version) != 1) )
-      throw std::runtime_error( "invalid or missing version" );
+    const int version = get_int_attribute( node, "version" );
     
     if( (version < 0) || (version > required_version) )
       throw std::runtime_error( "Invalid version: " + std::to_string(version) + ".  "

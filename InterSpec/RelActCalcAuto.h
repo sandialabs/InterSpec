@@ -116,6 +116,10 @@ struct RoiRange
   static const int sm_xmlSerializationVersion = 0;
   void toXml( ::rapidxml::xml_node<char> *parent ) const;
   void fromXml( const ::rapidxml::xml_node<char> *parent );
+
+#if( PERFORM_DEVELOPER_CHECKS )
+  static void equalEnough( const RoiRange &lhs, const RoiRange &rhs );
+#endif
 };//struct RoiRange
 
 
@@ -144,6 +148,10 @@ struct NucInputInfo
   static const int sm_xmlSerializationVersion = 0;
   void toXml( ::rapidxml::xml_node<char> *parent ) const;
   void fromXml( const ::rapidxml::xml_node<char> *parent );
+
+#if( PERFORM_DEVELOPER_CHECKS )
+  static void equalEnough( const NucInputInfo &lhs, const NucInputInfo &rhs );
+#endif
 };//struct NucInputInfo
 
 
@@ -181,6 +189,10 @@ struct FloatingPeak
   static const int sm_xmlSerializationVersion = 0;
   void toXml( ::rapidxml::xml_node<char> *parent ) const;
   void fromXml( const ::rapidxml::xml_node<char> *parent );
+
+#if( PERFORM_DEVELOPER_CHECKS )
+  static void equalEnough( const FloatingPeak &lhs, const FloatingPeak &rhs );
+#endif
 };//struct FloatingPeak
 
 
@@ -239,20 +251,15 @@ float eval_fwhm( const float energy, const FwhmForm form, const std::vector<floa
 size_t num_parameters( const FwhmForm eqn_form );
 
 
-struct Options
+struct RelEffCurveInput
 {
-  Options();
- 
-  // TODO: 
-  // - Fix RelEff to flat 1.0 - dont fit
-  //  - Do not fit FWHM - use DRF, or if that doesnt have it, use FWHM eqn fit from all peaks in spectrum
-  //    This should allow getting a rough idea of which gamma lines _could_ be statistically significant, and hence be used.  And also, for generic nuclides, it will allow fitting small numbers of peaks; so like we could still use the "auto" rel act stuff to fit peaks, even for Cs137
-  
-  /** Whether to allow making small adjustments to the gain and/or offset of the energy calibration.
-   
-   Which coefficients are fit will be determined based on energy ranges used.
+  RelEffCurveInput();
+
+  /** The nuclides that apply to this relative efficiency curve.
+   * You may specify the same nuclide for multiple different RelEffCurveInput inputs,
+   * but becareful of degeneracies in the problem.
    */
-  bool fit_energy_cal;
+  std::vector<NucInputInfo> nuclides;
   
   /** If true, all nuclides of a given element will be constrained to be the same age.
    
@@ -272,38 +279,7 @@ struct Options
    and `phys_model_ext_atten_an`
    */
   size_t rel_eff_eqn_order;
-  
-  /** The functional form of the FWHM equation to use.  The coefficients of this equation will
-   be fit for across all energy ranges.
-   */
-  FwhmForm fwhm_form;
-  
-  /** Optional title of the spectrum; used as title in HTML and text summaries. */
-  std::string spectrum_title;
-  
-  /** The method to use for Pu-242 mass-enrichment estimation (all methods use correlation to other
-   Pu isotopics).
-   
-   When specified #RelActAutoSolution::m_corrected_pu will be filled-out (unless an error occurred
-   while doing the correction - which shouldnt really ever happen); this will then be used by the
-   #RelActAutoSolution::mass_enrichment_fraction function, and activity ratio function.
-   
-   Defaults to #PuCorrMethod::NotApplicable; if any other value is specified, and sufficient
-   plutonium isotopes for that method are not in the problem, then finding the solution will
-   fail.
-   */
-  RelActCalc::PuCorrMethod pu242_correlation_method;
-  
-  
-  /** Peak skew to apply to the entire spectrum.
-   
-   Under development: currently, if total energy range being fit is less than 100 keV, then all peaks will share the same skew.
-   Otherwise a linear energy dependance will be assumed, where the fitting parameters will be for the spectrums lower
-   energy, and the spectrums upper energy; not all skew parameters are allowed to vary with energy; e.g., the Crystal Ball
-   power law is not allowed to have an energy dependence (see `PeakDef::is_energy_dependent(...)`).
-   */
-  PeakDef::SkewType skew_type;
-  
+
   /** Only used for `RelEffEqnForm::FramPhysicalModel` - shielding definitions for self-attenuating sources.
    
    May be nullptr if physical model.
@@ -319,14 +295,98 @@ struct Options
    * Ignored if not using `RelActCalc::RelEffEqnForm::FramPhysicalModel`.
   */
   bool phys_model_use_hoerl = true;
+
+  /** The method to use for Pu-242 mass-enrichment estimation (all methods use correlation to other
+   Pu isotopics).
+   
+   When specified #RelActAutoSolution::m_corrected_pu will be filled-out (unless an error occurred
+   while doing the correction - which shouldnt really ever happen); this will then be used by the
+   #RelActAutoSolution::mass_enrichment_fraction function, and activity ratio function.
+   
+   Defaults to #PuCorrMethod::NotApplicable; if any other value is specified, and sufficient
+   plutonium isotopes for that method are not in the problem, then finding the solution will
+   fail.
+   */
+  RelActCalc::PuCorrMethod pu242_correlation_method;
+
+  static const int sm_xmlSerializationVersion = 0;
+
+  /** Puts this object to XML
+   * 
+   * @param parent The parent node to add this object to.
+   * @param into_parent_node If true, this objects fields will be added to the parent node, otherwise a new node will be created.
+   * @returns The node the fields were written into (so the added node, or the parent node passed in).
+   */
+  rapidxml::xml_node<char> *toXml( ::rapidxml::xml_node<char> *parent ) const;
+  void fromXml( const ::rapidxml::xml_node<char> *parent, MaterialDB *materialDB );
+
+#if( PERFORM_DEVELOPER_CHECKS )
+  static void equalEnough( const RelEffCurveInput &lhs, const RelEffCurveInput &rhs );
+#endif
+};//struct RelEffCurveInput
+
+
+
+struct Options
+{
+  Options();
+ 
+  // TODO: 
+  // - Fix RelEff to flat 1.0 - dont fit
+  //  - Do not fit FWHM - use DRF, or if that doesnt have it, use FWHM eqn fit from all peaks in spectrum
+  //    This should allow getting a rough idea of which gamma lines _could_ be statistically significant, and hence be used.  And also, for generic nuclides, it will allow fitting small numbers of peaks; so like we could still use the "auto" rel act stuff to fit peaks, even for Cs137
+  
+  /** Whether to allow making small adjustments to the gain and/or offset of the energy calibration.
+   
+   Which coefficients are fit will be determined based on energy ranges used.
+   */
+  bool fit_energy_cal;
+  
+  /** The functional form of the FWHM equation to use.  The coefficients of this equation will
+   be fit for across all energy ranges.
+   */
+  FwhmForm fwhm_form;
+  
+  /** Optional title of the spectrum; used as title in HTML and text summaries. */
+  std::string spectrum_title;
   
   
-  double additional_br_uncert = 0.0;
+  /** Peak skew to apply to the entire spectrum.
+   
+   Under development: currently, if total energy range being fit is less than 100 keV, then all peaks will share the same skew.
+   Otherwise a linear energy dependance will be assumed, where the fitting parameters will be for the spectrums lower
+   energy, and the spectrums upper energy; not all skew parameters are allowed to vary with energy; e.g., the Crystal Ball
+   power law is not allowed to have an energy dependence (see `PeakDef::is_energy_dependent(...)`).
+   */
+  PeakDef::SkewType skew_type;
   
+  /** An additional uncertainty applied to each roughly independent peak.
+   * 
+   * Contributing gammas are clustered into roughly independent peaks based on their energy and the 
+   * initially estimated FWHM from the spectrum.  Then for each clustered energy range, the gammas 
+   * within that range are allowed to vary in amplitude, with the deviation from nominally predicted
+   * amplitude punished according to this uncertanty.
+   * 
+   * Its not perfect, but its something.
+   */
+  double additional_br_uncert;
+  
+
+  /** The relative efficiency curves to use.
+   */
+  std::vector<RelActCalcAuto::RelEffCurveInput> rel_eff_curves;
+
+
+  std::vector<RelActCalcAuto::RoiRange> rois;
+
+
+  std::vector<RelActCalcAuto::FloatingPeak> floating_peaks;
+
   /** Version history:
    - 20250117: incremented to 1 to handle FramPhysicalModel; if not this model, will still write version 0.
+   - 20250130: incremented to 2 to handle multiple rel eff curves; can read backward compatible, but not write.
    */
-  static const int sm_xmlSerializationVersion = 1;
+  static const int sm_xmlSerializationVersion = 2;
   rapidxml::xml_node<char> *toXml( ::rapidxml::xml_node<char> *parent ) const;
   
   /** Sets the member variables from an XML element created by `toXml(...)`.
@@ -335,6 +395,10 @@ struct Options
           for other equation types, or for AN/AD defined shields, this isnt used/required.
    */
   void fromXml( const ::rapidxml::xml_node<char> *parent, MaterialDB *materialDB );
+
+#if( PERFORM_DEVELOPER_CHECKS )
+  static void equalEnough( const Options &lhs, const Options &rhs );
+#endif
 };//struct Options
 
 
@@ -372,12 +436,9 @@ struct RelActAutoGuiState
   RelActAutoGuiState();
   
   RelActCalcAuto::Options options;
-  std::vector<RelActCalcAuto::RoiRange> rois;
-  std::vector<RelActCalcAuto::NucInputInfo> nuclides;
-  std::vector<RelActCalcAuto::FloatingPeak> floating_peaks;
+  
     
   bool background_subtract;
-  RelActCalc::PuCorrMethod pu_correlation_method;
   
   bool show_ref_lines;
   double lower_display_energy;
@@ -386,6 +447,10 @@ struct RelActAutoGuiState
   /** Returns XML node added; i.e., will have name "RelActCalcAuto" */
   ::rapidxml::xml_node<char> *serialize( ::rapidxml::xml_node<char> *parent ) const;
   void deSerialize( const rapidxml::xml_node<char> *base_node, MaterialDB *materialDb );
+
+#if( PERFORM_DEVELOPER_CHECKS )
+  static void equalEnough( const RelActAutoGuiState &lhs, const RelActAutoGuiState &rhs );
+#endif
 };//struct RelActAutoGuiState
   
   
@@ -534,13 +599,11 @@ struct RelActAutoSolution
    */
   std::vector<PeakDef> m_fit_peaks_in_spectrums_cal;
   
-  std::vector<RoiRange> m_input_roi_ranges;
-  
   /** When a ROI is #RoiRange::force_full_range is false, independent energy ranges will
    be assessed based on peak localities and expected counts; this variable holds the ROI
    ranges that were assessed and used to compute final answer.
    If all input RoiRanges had #RoiRange::force_full_range as true, and computation was
-   successful then this variable will be equal to #m_input_roi_ranges.
+   successful then this variable will be equal to #m_options.rois.
    If computation is not successful, this variable may, or may not, be empty.
    */
   std::vector<RoiRange> m_final_roi_ranges;
@@ -662,15 +725,13 @@ struct RelActAutoSolution
   int m_num_microseconds_in_eval;
 };//struct RelEffSolution
 
+
 /**
  
  @param rel_eff_order The number of energy dependent terms to have in the relative efficiency
         equation (e.g., one more parameter than this will be fit for).
  */
 RelActAutoSolution solve( const Options options,
-                         const std::vector<RoiRange> energy_ranges,
-                         const std::vector<NucInputInfo> nuclides,
-                         const std::vector<FloatingPeak> extra_peaks,
                          std::shared_ptr<const SpecUtils::Measurement> foreground,
                          std::shared_ptr<const SpecUtils::Measurement> background,
                          std::shared_ptr<const DetectorPeakResponse> drf,
