@@ -2054,9 +2054,8 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
       RelActCalcManual::RelEffInput manual_input;
       manual_input.peaks = peaks_with_sources;
       manual_input.phys_model_detector = res_drf;
-      manual_input.use_ceres_to_fit_eqn = (manual_input.eqn_form == RelActCalc::RelEffEqnForm::FramPhysicalModel);
-      
       manual_input.eqn_form = rel_eff_curve.rel_eff_eqn_type;
+      manual_input.use_ceres_to_fit_eqn = (manual_input.eqn_form == RelActCalc::RelEffEqnForm::FramPhysicalModel);
       manual_input.eqn_order = manual_rel_eff_order;
       manual_input.phys_model_self_atten = rel_eff_curve.phys_model_self_atten;
       manual_input.phys_model_external_attens = rel_eff_curve.phys_model_external_atten;
@@ -5745,6 +5744,9 @@ void RelEffCurveInput::fromXml( const ::rapidxml::xml_node<char> *parent, Materi
   
 
   const rapidxml::xml_node<char> *node = XML_FIRST_NODE(parent, "NucInputInfoList");
+  if( !node && parent->parent() && is_options )  //Compatibility with Options::sm_xmlSerializationVersion versions 0 and 1
+    node = XML_FIRST_NODE(parent->parent(), "NucInputInfoList");
+  
   if( node )
   {
     XML_FOREACH_CHILD( nuc_node, node, "NucInputInfo" )
@@ -5817,7 +5819,7 @@ void RelEffCurveInput::fromXml( const ::rapidxml::xml_node<char> *parent, Materi
   if( !pu242_corr_str.empty() )
   {
     bool found = false;
-    for( int i = 0; i < static_cast<int>(RelActCalc::PuCorrMethod::NotApplicable); ++i )
+    for( int i = 0; i <= static_cast<int>(RelActCalc::PuCorrMethod::NotApplicable); ++i )
     {
       const auto method = RelActCalc::PuCorrMethod(i);
       const std::string &method_str = RelActCalc::to_str( method );
