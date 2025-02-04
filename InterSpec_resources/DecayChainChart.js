@@ -591,6 +591,11 @@ DecayChainChart.prototype.redraw = function() {
         return 0;
       return (d.parent===self.selectedNuclide ? 1.35 : 1)*strokew;
     } )
+    .attr("stroke-opacity", function(d){
+      if( (d.parent!==self.selectedNuclide) && (d.br <= 1.0E-5) )
+        return 0.35;
+      return 1;
+    })
     ;
   
   decaylines.exit().remove();
