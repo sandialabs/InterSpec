@@ -2484,13 +2484,80 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     const size_t num_pars = cost_functor->number_parameters();
     
     ceres::CostFunction *cost_function = nullptr;
-    bool use_auto_diff = false;
     
-    // We cant currently use auto-diff if we are fitting any nuclide ages, so lets check for that.
-    //  TODO: write our own CostFunction class that does numeric differentiation for the ages, and auto-diff for the rest/
+    // We cant currently use auto-diff if we are fitting energy calibration, or any nuclide ages, so lets check for that.
+    //  TODO: write our own CostFunction class that does numeric differentiation for the energy cal and ages, and auto-diff for the rest
+    bool use_auto_diff = !options.fit_energy_cal;
     for( const auto &nuc : nuclides )
       use_auto_diff = (use_auto_diff && !nuc.fit_age);
     
+#if( PERFORM_DEVELOPER_CHECKS )
+    //Test auto diff vs numerical diff
+    auto test_gradients = [constant_parameters,&cost_functor]( RelActAutoCostFcn *fcn, const vector<double> &x ){
+      ceres::DynamicAutoDiffCostFunction<RelActAutoCostFcn,32> auto_diff( fcn, ceres::DO_NOT_TAKE_OWNERSHIP );
+      auto_diff.SetNumResiduals( static_cast<int>(fcn->number_residuals()) );
+      auto_diff.AddParameterBlock( static_cast<int>(fcn->number_parameters()) );
+      
+      ceres::NumericDiffOptions num_diff_options;
+      num_diff_options.relative_step_size = 1E-4;
+      auto num_diff = ceres::DynamicNumericDiffCostFunction<RelActAutoCostFcn>( fcn, ceres::DO_NOT_TAKE_OWNERSHIP, num_diff_options );
+      num_diff.SetNumResiduals( static_cast<int>(fcn->number_residuals()) );
+      num_diff.AddParameterBlock( static_cast<int>(fcn->number_parameters()) );
+      
+      const size_t num_res = fcn->number_residuals();
+      const size_t num_pars = fcn->number_parameters();
+      //assert( num_res == 1 );
+      assert( num_pars == x.size() );
+      
+      // Compute the residuals and gradients using automatic differentiation
+      vector<double> pars = x;
+      std::vector<double*> parameter_blocks = { &(pars[0]) };
+      std::vector<double> residuals_auto( num_res, 0.0 ), jacobians_auto( num_pars*num_res, 0.0 );
+      std::vector<double*> jacobian_ptrs_auto = { &jacobians_auto[0] };
+      auto_diff.Evaluate( parameter_blocks.data(), residuals_auto.data(), jacobian_ptrs_auto.data());
+      
+      
+      std::vector<double> residuals_numeric( num_res, 0.0 ), jacobians_numeric( num_pars*num_res, 0.0 );
+      std::vector<double*> jacobian_ptrs_numeric = { &(jacobians_numeric[0]) };
+      num_diff.Evaluate( parameter_blocks.data(), residuals_numeric.data(), jacobian_ptrs_numeric.data() );
+      
+      // TODO: should make function to give parameter name!
+      
+      cout << "Non-equal of numeric and auto-diff Jacobians\n";
+      cout << setw(7) << "Index" << setw(7) << "ParName" << setw(10) << "ResNum"
+      << setw(12) << "ResVal" << setw(12) << "ParVal"
+      << setw(12) << "Auto" << setw(12) << "Numeric"
+      << setw(12) << "Diff" << setw(12) << "FracDiff"
+      << endl;
+      for( size_t i = 0; i < num_pars*num_res; ++i )
+      {
+        // i = residual_index * num_pars + parameter_index.
+        const int par_num = static_cast<int>(i % num_pars);
+        const string par_name = cost_functor->parameter_name(par_num);
+        
+        // Const parameters may not be used, so we'll ignore them.
+        const auto const_pos = std::find(begin(constant_parameters), end(constant_parameters), par_num );
+        if( const_pos != end(constant_parameters) )
+          continue;
+        
+        const size_t residual_num = (i - par_num) / num_pars;
+        const double diff = fabs(jacobians_auto[i] - jacobians_numeric[i]);
+        const double frac_diff = diff / std::max( fabs(jacobians_auto[i]), fabs(jacobians_numeric[i]) );
+        if( (diff > 1.0E-18) && (frac_diff > 1.0E-4) )  //This is totally arbitrary
+        {
+          cout << setprecision(4)
+          << setw(7) << i << setw(10) << par_name << setw(7) << residual_num
+          << setw(12) << residuals_numeric[residual_num] << setw(12) << x[par_num]
+          << setw(12) << jacobians_auto[i] << setw(12) << jacobians_numeric[i]
+          << setw(12) << diff << setw(12) << frac_diff
+          << endl;
+        }
+      }
+      cout << "---" << endl;
+    };//test_gradients(...)
+    
+    test_gradients( cost_functor.get(), parameters );
+#endif
     
     if( use_auto_diff )
     {
@@ -2525,7 +2592,13 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     
     
     ceres::Problem problem;
-    ceres::LossFunction *lossfcn = nullptr; // TODO: investigate using a LossFunction - probably really need it
+    ceres::LossFunction *lossfcn = nullptr;
+    // For an example problem, the loss function didnt seem to have a impact, or if they did, it wasnt good.
+    //lossfcn = new ceres::HuberLoss( 5.0);  //The Huber loss function is quadratic for small residuals and linear for large residuals - probably what we would want to use
+    //lossfcn = new ceres::CauchyLoss(15.0); //The Cauchy loss function is less sensitive to large residuals than the Huber loss.
+    //lossfcn = new ceres::SoftLOneLoss(5.0);
+    //lossfcn = new ceres::TukeyLoss(10.0); //Quadratic for small residuals and zero for large residuals - not good if initial guess isnt great
+    
     problem.AddResidualBlock( cost_function, lossfcn, pars );
     problem.AddParameterBlock( pars, static_cast<int>(num_pars) );
     
@@ -2547,13 +2620,51 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     
     // Okay - we've set our problem up
     ceres::Solver::Options ceres_options;
-    ceres_options.linear_solver_type = ceres::DENSE_QR;
+    ceres_options.minimizer_type = ceres::TRUST_REGION; //ceres::LINE_SEARCH
+    ceres_options.trust_region_strategy_type = ceres::LEVENBERG_MARQUARDT; //ceres::DOGLEG
+    
+    //use_nonmonotonic_steps: set to true to allow to "jump over boulders".
+    // Using function_tolerance=1e-7, initial_trust_region_radius=1E5, using use_nonmonotonic_steps
+    //  false: 52.88% enrich, 261 function calls, 64 iterations, Chi2=0.664167 (terminate due to function tol reached)
+    //  true:  52.85% enrich, 126 function calls, 23 iterations, Chi2=0.664162 (terminate due to function tol reached)
+    ceres_options.use_nonmonotonic_steps = true;
+    ceres_options.max_consecutive_nonmonotonic_steps = 5;
+    
+    
+    // Trust region minimizer settings.
+    //
+    // Initial trust region has notable impact on getting the right answer; it also has a notable
+    //  impact on computation time.
+    //  Default value is 1E4.
+    //  Notes for an example U problem (50% enrich, two objects), using auto-differentiation, and function_tolerance=1E-9, use_nonmonotonic_steps=false
+    //  - 1e4: 42.19% enrich,  87 function calls,  16 iterations, Chi2=0.78602  (terminate due to function tol reached)
+    //  - 1e5: 52.87% enrich, 479 function calls, 127 iterations, Chi2=0.664166 (terminate due to function tol reached)
+    //  - 1e6: 52.89% enrich, 856 function calls, 232 iterations, Chi2=0.664172 (terminate due to function tol reached)
+    //
+    //  According to a LLM, the trust region is an area in the parameter space.
+    //   So we will need to revisit this value if we scale the various parameters to be closer to reasonable.
+    ceres_options.initial_trust_region_radius = 1e5;
+    
+    ceres_options.max_trust_region_radius = 1e16;
+    
+    // Minimizer terminates when the trust region radius becomes smaller than this value.
+    ceres_options.min_trust_region_radius = 1e-32;
+    // Lower bound for the relative decrease before a step is accepted.
+    ceres_options.min_relative_decrease = 1e-3;
+    
+    
+    ceres_options.linear_solver_type = ceres::DENSE_QR; //ceres::DENSE_SCHUR, ceres::DENSE_NORMAL_CHOLESKY, ceres::ITERATIVE_SCHUR
     
     ceres_options.minimizer_progress_to_stdout = true; //true;
     ceres_options.logging_type = ceres::PER_MINIMIZER_ITERATION;
-    ceres_options.max_num_iterations = 100;
+    ceres_options.max_num_iterations = 1000;
     //ceres_options.max_solver_time_in_seconds = 120.0;
-    ceres_options.function_tolerance = 1e-9;
+    
+    // Changing function_tolerance from 1e-9 to 1e-7, and using initial_trust_region_radius=1E5, and use_nonmonotonic_steps=false
+    //  - 52.88% enrich, 261 function calls, 64 iterations, Chi2=0.664167 (terminate due to function tol reached)
+    ceres_options.function_tolerance = 1e-7; //1e-9;
+    
+    ceres_options.gradient_tolerance = 1.0E-4*ceres_options.function_tolerance; // Per documentation of `gradient_tolerance`
     // parameter_tolerance seems to be what terminates the minimization on some example problems.
     //  It looks to be:
     //    |step|_2 <= parameter_tolerance * ( |x|_2 +  parameter_tolerance)
@@ -3296,6 +3407,118 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     return (rel_eff_curve.rel_eff_eqn_order + 1);
   }
   
+  
+  std::string parameter_name( const size_t index ) const
+  {
+    // We'll try to return 12 character, or less names.
+    assert( RelActCalcAuto::RelActAutoSolution::sm_num_energy_cal_pars == m_fwhm_par_start_index );
+    
+    if( index < RelActCalcAuto::RelActAutoSolution::sm_num_energy_cal_pars )
+    {
+      if( index == 0 )
+        return "EneOffset";
+      if( index == 1 )
+        return "EneGain";
+      if( index == 2 )
+        return "EneQuad";
+      assert( 0 );
+      static_assert( RelActCalcAuto::RelActAutoSolution::sm_num_energy_cal_pars <= 3, "Need to update sm_num_energy_cal_pars" );
+      return "Unknown";
+    }//if( index < RelActCalcAuto::RelActAutoSolution::sm_num_energy_cal_pars )
+    
+    
+    if( index < m_rel_eff_par_start_index )
+    {
+      // Its a FWHM parameter
+      return "FWHM_" + std::to_string(index - m_fwhm_par_start_index);
+    }//if( index < m_rel_eff_par_start_index )
+    
+    
+    if( index < m_acts_par_start_index )
+    {
+      assert( m_options.rel_eff_curves.size() == 1 );
+      if( m_options.rel_eff_curves.size() != 1 )
+        throw runtime_error( "parameter_name(): only supports exactly one rel eff curve" );
+      
+      const auto &rel_eff_curve = m_options.rel_eff_curves[0];
+      
+      const size_t sub_ind = index - m_rel_eff_par_start_index;
+      
+      if( rel_eff_curve.rel_eff_eqn_type == RelActCalc::RelEffEqnForm::FramPhysicalModel )
+      {
+        if( sub_ind == 0 )
+          return "SAtt(AN)";
+        if( sub_ind == 1 )
+          return "SAtt(AD)";
+        
+        if( sub_ind < (2 + 2*rel_eff_curve.phys_model_external_atten.size()) )
+        {
+          const size_t ext_atten_num = (sub_ind - 2) / 2;
+          if( (sub_ind % 2) == 0 )
+            return "EAtt" + std::to_string(ext_atten_num) + "(AN)";
+          return "EAtt" + std::to_string(ext_atten_num) + "(AD)";
+        }
+        
+        assert( sub_ind >= (2 + 2*rel_eff_curve.phys_model_external_atten.size()) );
+        const size_t hoerl_num = sub_ind - 2 - 2*rel_eff_curve.phys_model_external_atten.size();
+        if( hoerl_num == 0 )
+          return "Hoerl(b)";
+        
+        assert( hoerl_num == 1 );
+        if( hoerl_num == 1 )
+          return "Hoerl(c)";
+        
+        assert( 0 );
+        throw std::logic_error( "Logic for determining Physical Model coefficient name is bad." );
+      }else
+      {
+        return "RE_" + std::to_string(index - sub_ind);
+      }//if( physical model ) / else
+    }//if( index < m_acts_par_start_index )
+    
+    if( index < m_free_peak_par_start_index )
+    {
+      // Each index gets two parameters, activity, and age
+      const size_t act_index = index - m_acts_par_start_index;
+      const size_t act_num = act_index / 2;
+      assert( act_num < m_nuclides.size() );
+      if( act_num >= m_nuclides.size() )
+        throw runtime_error( "Logic for determining nuclide index is total whack, yo" );
+      
+      assert( m_nuclides[act_num].nuclide );
+      if( (act_index % 2) == 0 )
+        return "Act(" + m_nuclides[act_num].nuclide->symbol + ")";
+      return "Age(" + m_nuclides[act_num].nuclide->symbol + ")";
+    }//if( index < m_free_peak_par_start_index )
+    
+    if( index < m_skew_par_start_index )
+    {
+      return "FPeak_" + std::to_string(index - m_free_peak_par_start_index);
+    }//if( index < m_skew_par_start_index )
+    
+    if( index < m_add_br_uncert_start_index )
+    {
+      // TODO: we could give a better name for the skew parameter here
+      return "Skew_" + std::to_string(index - m_skew_par_start_index);
+    }//if( index < m_add_br_uncert_start_index )
+    
+    assert( m_add_br_uncert_start_index != std::numeric_limits<size_t>::max() );
+    assert( (m_add_br_uncert_start_index + m_peak_ranges_with_uncert.size()) == number_parameters() );
+    
+    if( m_add_br_uncert_start_index == std::numeric_limits<size_t>::max() )
+      throw runtime_error( "Whack computing of parameter name - things not legit." );
+    
+    if( index >= (m_add_br_uncert_start_index + m_peak_ranges_with_uncert.size()) )
+      throw runtime_error( "Bad computing of parameter name - too large of index" );
+    
+    const size_t range_ind = index - m_add_br_uncert_start_index;
+    const int mid_energy = static_cast<int>( std::round(0.5*(m_peak_ranges_with_uncert[range_ind].second
+                                      + m_peak_ranges_with_uncert[range_ind].second)) );
+    
+    return "dBr" + std::to_string(mid_energy);
+  }//std::string parameter_name( const size_t index ) const
+  
+  
   template<typename T>
   T relative_activity( const SandiaDecay::Nuclide * const nuc, const std::vector<T> &x ) const
   {
@@ -3499,6 +3722,9 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
   template<typename T>
   T apply_energy_cal_adjustment( double energy, const std::vector<T> &x ) const
   {
+    // TODO: Auto differentiation doesnt _seem_ to capture effects of energy calibration
+    //assert( std::is_same_v<T, double> );
+    
     assert( x.size() > RelActCalcAuto::RelActAutoSolution::sm_num_energy_cal_pars );
     assert( 0 == m_energy_cal_par_start_index );
     

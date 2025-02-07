@@ -204,10 +204,20 @@ T eval_physical_model_eqn_imp( const double energy,
     throw std::logic_error( "hoerl_b.has_value() != hoerl_c.has_value()" );
   
   if( b.has_value() && c.has_value() )
-    answer = pow(0.001*energy, *b) * pow( *c, 1000.0/energy );
+  {
+    const T b_val = *b;
+    const T c_val = *c;
+    const T b_part = pow(0.001*energy, b_val);
+    const T c_part = pow(c_val, 1000.0/energy);
+    answer = b_part * c_part;
+    
+    assert( !isnan(answer) && !isinf(answer) );
+  }
   
   const double det_part = drf ? drf->intrinsicEfficiency( energyf ) : 1.0;
   answer *= det_part;
+  
+  assert( !isnan(answer) && !isinf(answer) );
   
   if( self_atten.has_value() )
   {
@@ -228,6 +238,8 @@ T eval_physical_model_eqn_imp( const double energy,
     
     if( (mu > 0.0) && (areal_density > 0.0) )
       answer *= (1.0 - exp(-mu * areal_density)) / (mu * self_atten->areal_density);
+    
+    assert( !isnan(answer) && !isinf(answer) );
   }//if( self_atten->has_value() )
   
   for( const RelActCalc::PhysModelShield<T> &ext_atten : external_attens )
@@ -249,7 +261,11 @@ T eval_physical_model_eqn_imp( const double energy,
     
     if( (mu > 0.0) && (ext_atten.areal_density > 0.0) )
       answer *= exp( -mu * areal_density );
+    
+    assert( !isnan(answer) && !isinf(answer) );
   }//for( size_t i = 0; i < external_attens.size(); ++i )
+  
+  assert( !isnan(answer) && !isinf(answer) );
   
   return answer;
 }//eval_physical_model_eqn_imp(...)
