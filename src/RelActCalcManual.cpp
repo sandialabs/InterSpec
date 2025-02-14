@@ -1571,6 +1571,85 @@ vector<GenericPeakInfo> add_nuclides_to_peaks( const std::vector<GenericPeakInfo
     }//for( size_t row = 0; row < num_peaks; ++row )
   }//for( const auto &n : nuclides )
   
+  // an alternate way to do this, but they dont match exactly
+  //vector<RelActCalcManual::PeakCsvInput::NucAndAge> isotopes;
+        //for( const auto &n : nuc_sources )
+        //{
+        //  if( n.nuclide )
+        //    isotopes.emplace_back( n.nuclide->symbol, n.age, correct_for_decay );
+        //}
+        //RelActCalcManual::PeakCsvInput::NucMatchResults matched_res
+        //  = RelActCalcManual::PeakCsvInput::fill_in_nuclide_info( peaks_in_range,
+        //                                    RelActCalcManual::PeakCsvInput::NucDataSrc::SandiaDecay,
+        //                                    {}, isotopes, cluster_num_sigma, {}, real_time );
+        // const auto peaks_with_nucs = matched_res.peaks_matched;
+      
+        /*
+        // Code to help debug difference between matching stuff...
+        for( auto &p : peaks_with_nucs )
+        {
+          std::sort( begin(p.m_source_gammas), end(p.m_source_gammas), []( auto &lhs, auto &rhs ){
+            return lhs.m_isotope < rhs.m_isotope;
+          } );
+        }
+      
+        for( auto &p : matched_res.peaks_matched )
+        {
+          std::sort( begin(p.m_source_gammas), end(p.m_source_gammas), []( auto &lhs, auto &rhs ){
+            return lhs.m_isotope < rhs.m_isotope;
+          } );
+        }
+      
+        assert( matched_res.peaks_matched.size() == peaks_with_nucs.size() );
+      
+      
+        for( size_t i = 0; i < std::max(matched_res.peaks_matched.size(), peaks_with_nucs.size()); ++i )
+        {
+          const auto newp = matched_res.peaks_matched[i];
+          const auto oldp = peaks_with_nucs[i];
+          assert( newp.m_energy == oldp.m_energy );
+          assert( newp.m_counts == oldp.m_counts );
+          assert( newp.m_counts_uncert == oldp.m_counts_uncert );
+          assert( newp.m_fwhm == oldp.m_fwhm );
+          assert( newp.m_base_rel_eff_uncert == oldp.m_base_rel_eff_uncert );
+          assert( newp.m_source_gammas.size() == oldp.m_source_gammas.size() );
+          for( size_t j = 0; j < newp.m_source_gammas.size(); ++j )
+          {
+            assert( newp.m_source_gammas[j].m_isotope == oldp.m_source_gammas[j].m_isotope );
+          
+            double diff = fabs( newp.m_source_gammas[j].m_yield - oldp.m_source_gammas[j].m_yield );
+            assert( diff <= 0.00001*newp.m_source_gammas[j].m_yield );
+            assert( diff <= 0.00001*oldp.m_source_gammas[j].m_yield );
+            if( newp.m_source_gammas[j].m_yield != oldp.m_source_gammas[j].m_yield )
+            {
+              double brnew = newp.m_source_gammas[j].m_yield;
+              double brold = oldp.m_source_gammas[j].m_yield;
+              cout << "Mismatcht BR: " << brnew << " vs " << brold << " for " << newp.m_energy << " keV" << endl;
+              cout << endl;
+            }
+            //assert( newp.m_source_gammas[j].m_yield == oldp.m_source_gammas[j].m_yield );
+          }
+        
+          if( i < matched_res.peaks_matched.size() )
+          {
+            const auto p = matched_res.peaks_matched[i];
+            cout << "new " << i << ": e=" << p.m_energy << ", fwhm=" << p.m_fwhm << endl;
+            for( const auto g : p.m_source_gammas )
+              cout << "\tsource: " << g.m_isotope << ": " << g.m_yield << endl;
+          }
+        
+          if( i < peaks_with_nucs.size() )
+          {
+            const auto p = peaks_with_nucs[i];
+            cout << "old " << i << ": e=" << p.m_energy << ", fwhm=" << p.m_fwhm << endl;
+            for( const auto g : p.m_source_gammas )
+              cout << "\tsource: " << g.m_isotope << ": " << g.m_yield << endl;
+          }
+        }
+        cout << endl << endl;
+        //peaks_with_nucs = matched_res.peaks_matched;
+      */
+
   return answer;
 }//add_nuclides_to_peaks(...)
 

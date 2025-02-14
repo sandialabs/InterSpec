@@ -4718,7 +4718,7 @@ void RelActAutoGui::updateFromCalc( std::shared_ptr<RelActCalcAuto::RelActAutoSo
   answer->print_summary( std::cout );
   cout << "\n\n\n";
   
-  const string rel_eff_eqn_js = answer->rel_eff_eqn_js_function();
+  const string rel_eff_eqn_js = answer->rel_eff_eqn_js_function(0);
   
   const double live_time = answer->m_foreground ? answer->m_foreground->live_time() : 1.0f;
 
@@ -4730,7 +4730,7 @@ void RelActAutoGui::updateFromCalc( std::shared_ptr<RelActCalcAuto::RelActAutoSo
   // If we have U or Pu, we'll give the enrichment, or if we have two nuclides we'll
   //  give their ratio
   set<const SandiaDecay::Nuclide *> isotopes;
-  for( const auto &relact : answer->m_rel_activities )
+  for( const auto &relact : answer->m_rel_activities[0] )
   {
     if( relact.nuclide )
       isotopes.insert( relact.nuclide );
@@ -4748,7 +4748,7 @@ void RelActAutoGui::updateFromCalc( std::shared_ptr<RelActCalcAuto::RelActAutoSo
      || (isotopes.count(pu239) && isotopes.count(pu240) && !isotopes.count(u235)) )
   {
     const SandiaDecay::Nuclide * const iso = isotopes.count(u235) ? u235 : pu239;
-    const double nominal = answer->mass_enrichment_fraction( iso );
+    const double nominal = answer->mass_enrichment_fraction( iso, 0 );
     // TODO: add errors
     string enrich = ", " + SpecUtils::printCompact(100.0*nominal, 4)
                         // + "±" + SpecUtils::printCompact(100.0*error, 4)
@@ -4756,7 +4756,7 @@ void RelActAutoGui::updateFromCalc( std::shared_ptr<RelActCalcAuto::RelActAutoSo
     chi2_title.arg( enrich );
   }else if( isotopes.size() == 2 )
   {
-    const vector<RelActCalcAuto::NuclideRelAct> &rel_acts = answer->m_rel_activities;
+    const vector<RelActCalcAuto::NuclideRelAct> &rel_acts = answer->m_rel_activities.at(0);
     const int num_index = (rel_acts[0].rel_activity > rel_acts[1].rel_activity) ? 1 : 0;
     const int denom_index = (num_index ? 0 : 1);
     const SandiaDecay::Nuclide * const num_nuc = rel_acts[num_index].nuclide;
@@ -4764,7 +4764,7 @@ void RelActAutoGui::updateFromCalc( std::shared_ptr<RelActCalcAuto::RelActAutoSo
     assert( num_nuc && den_nuc );
     if( num_nuc && den_nuc )
     {
-      const double ratio = answer->activity_ratio( num_nuc, den_nuc );
+      const double ratio = answer->activity_ratio( num_nuc, den_nuc, 0 );
       // TODO: add errors
       string ratio_txt = ", act(" + num_nuc->symbol + "/" + den_nuc->symbol + ")="
       + SpecUtils::printCompact(ratio, 4);
@@ -4779,12 +4779,12 @@ void RelActAutoGui::updateFromCalc( std::shared_ptr<RelActCalcAuto::RelActAutoSo
     chi2_title.arg( "" );
   }
   
-  m_rel_eff_chart->setData( live_time, answer->m_fit_peaks, answer->m_rel_activities,
+  m_rel_eff_chart->setData( live_time, answer->m_fit_peaks, answer->m_rel_activities.at(0),
                            rel_eff_eqn_js, chi2_title );
   
   
   bool any_nucs_updated = false;
-  for( const RelActCalcAuto::NuclideRelAct &fit_nuc : m_solution->m_rel_activities )
+  for( const RelActCalcAuto::NuclideRelAct &fit_nuc : m_solution->m_rel_activities.at(0) )
   {
     if( !fit_nuc.age_was_fit || (fit_nuc.age < 0.0) )
       continue;
@@ -4817,9 +4817,9 @@ void RelActAutoGui::updateFromCalc( std::shared_ptr<RelActCalcAuto::RelActAutoSo
     
     
   if( (rel_eff.rel_eff_eqn_type == RelActCalc::RelEffEqnForm::FramPhysicalModel)
-     && m_solution->m_phys_model_result.has_value() )
+     && m_solution->m_phys_model_results.at(0).has_value() )
   {
-    const RelActCalcAuto::RelActAutoSolution::PhysicalModelFitInfo &phys_info = *m_solution->m_phys_model_result;
+    const RelActCalcAuto::RelActAutoSolution::PhysicalModelFitInfo &phys_info = *m_solution->m_phys_model_results.at(0);
     
     assert( m_phys_model_self_atten );
     if( !m_phys_model_self_atten )

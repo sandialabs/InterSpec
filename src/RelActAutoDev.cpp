@@ -474,7 +474,7 @@ void run_u02_example()
   solution.print_summary( cout );
   solution.print_html_report( out_html );
   
-  cout << "Enrichment: " << solution.mass_enrichment_fraction( db->nuclide("U235") ) << endl;
+  cout << "Enrichment: " << solution.mass_enrichment_fraction( db->nuclide("U235"), 0 ) << endl;
   
   cout << "Took:\n"
   << "\tNum Function Calls: " << solution.m_num_function_eval_solution << endl
@@ -579,11 +579,11 @@ void run_u02_example()
   
 int dev_code()
 {
-  check_auto_state_xml_serialization();
+  //check_auto_state_xml_serialization();
 
 
-  run_u02_example();
-  return 1;
+  //run_u02_example();
+  //return 1;
   
   //check_physical_model_eff_function();
   //return 1;
@@ -722,6 +722,11 @@ int dev_code()
   rel_eff_curve.nuclides = nuclides;
   options.rois = energy_ranges;
   
+  options.rel_eff_curves.push_back( rel_eff_curve );
+
+  rel_eff_curve.phys_model_external_atten.clear();
+  self_atten_def.areal_density = 0.1 * PhysicalUnits::g_per_cm2;
+  rel_eff_curve.phys_model_self_atten = make_shared<RelActCalc::PhysicalModelShieldInput>( self_atten_def );
   options.rel_eff_curves.push_back( rel_eff_curve );
   
   shared_ptr<const SpecUtils::Measurement> foreground = specfile.measurement( size_t(0) );

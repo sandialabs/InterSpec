@@ -466,10 +466,10 @@ struct RelActAutoSolution
    
    Note: currently this code largely duplicates #RelEffChart::setData, so need to refactor.
    */
-  void rel_eff_json_data( std::ostream &json, std::ostream &css ) const;
+  void rel_eff_json_data( std::ostream &json, std::ostream &css, const size_t rel_eff_index ) const;
   
   /** Prints the txt version of relative eff eqn. */
-  std::string rel_eff_txt( const bool html_format ) const;
+  std::string rel_eff_txt( const bool html_format, const size_t rel_eff_index ) const;
   
   /** Returns the fractional amount of an element (by mass), the nuclide composes.
    
@@ -483,7 +483,7 @@ struct RelActAutoSolution
    
    TODO: add uncertainty, via returning pair<double,double>
    */
-  double mass_enrichment_fraction( const SandiaDecay::Nuclide *nuclide ) const;
+  double mass_enrichment_fraction( const SandiaDecay::Nuclide *nuclide, const size_t rel_eff_index ) const;
   
   /** Returns the mass ratio of two nuclides.
    
@@ -491,7 +491,7 @@ struct RelActAutoSolution
    
    TODO: add uncertainty, via returning pair<double,double>
    */
-  double mass_ratio( const SandiaDecay::Nuclide *numerator, const SandiaDecay::Nuclide *denominator ) const;
+  double mass_ratio( const SandiaDecay::Nuclide *numerator, const SandiaDecay::Nuclide *denominator, const size_t rel_eff_index ) const;
   
   /** Returns the activity ratio of two nuclides.
    
@@ -499,15 +499,15 @@ struct RelActAutoSolution
    
    TODO: add uncertainty, via returning pair<double,double>
    */
-  double activity_ratio( const SandiaDecay::Nuclide *numerator, const SandiaDecay::Nuclide *denominator ) const;
+  double activity_ratio( const SandiaDecay::Nuclide *numerator, const SandiaDecay::Nuclide *denominator, const size_t rel_eff_index ) const;
   
   /** Get the index of specified nuclide within #m_rel_activities and #m_nonlin_covariance. */
-  size_t nuclide_index( const SandiaDecay::Nuclide *nuclide ) const;
+  size_t nuclide_index( const SandiaDecay::Nuclide *nuclide, const size_t rel_eff_index ) const;
   
   /** Returns result of `RelActCalc::rel_eff_eqn_js_function(...)` or
    `RelActCalc::physical_model_rel_eff_eqn_js_function(...)`
    */
-  std::string rel_eff_eqn_js_function() const;
+  std::string rel_eff_eqn_js_function( const size_t rel_eff_index ) const;
   
   /** Returns the updated energy calibration.
    
@@ -564,17 +564,17 @@ struct RelActAutoSolution
    */
   std::vector<std::shared_ptr<const PeakDef>> m_spectrum_peaks;
   
-  RelActCalc::RelEffEqnForm m_rel_eff_form;
+  std::vector<RelActCalc::RelEffEqnForm> m_rel_eff_forms;
   
-  std::vector<double> m_rel_eff_coefficients;
-  std::vector<std::vector<double>> m_rel_eff_covariance;
+  std::vector<std::vector<double>> m_rel_eff_coefficients;
+  std::vector<std::vector<std::vector<double>>> m_rel_eff_covariance;
   
   /** The relative activities of each of the input nuclides.
    
    If a Pu242 correlation method was specified in #Options::pu242_correlation_method, then Pu242
    will NOT be in this variable, see #m_corrected_pu.
    */
-  std::vector<NuclideRelAct> m_rel_activities;
+  std::vector<std::vector<NuclideRelAct>> m_rel_activities;
   
   std::vector<std::vector<double>> m_rel_act_covariance;
   
@@ -623,7 +623,7 @@ struct RelActAutoSolution
    Note: this is a shared ptr just to avoid creating a copy constructor that would be needed
          if we make it a unique ptr...
    */
-  std::shared_ptr<const RelActCalc::Pu242ByCorrelationOutput> m_corrected_pu;
+  std::vector<std::shared_ptr<const RelActCalc::Pu242ByCorrelationOutput>> m_corrected_pu;
   
   /** We will allow corrections to the first following number of energy calibration coefficients.
  
@@ -707,7 +707,7 @@ struct RelActAutoSolution
   };//struct PhysicalModelFitInfo
   
   
-  std::optional<PhysicalModelFitInfo> m_phys_model_result;
+  std::vector<std::optional<PhysicalModelFitInfo>> m_phys_model_results;
   
   
   /** The number of evaluation calls it took L-M to reach a solution.
