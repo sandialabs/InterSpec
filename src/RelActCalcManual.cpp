@@ -3963,7 +3963,7 @@ RelEffSolution solve_relative_efficiency( const RelEffInput &input_orig )
       problem.SetParameterUpperBound( pars, static_cast<int>(index), 2.0 );
       index += 1;
       assert( index < num_parameters );
-      problem.SetParameterLowerBound( pars, static_cast<int>(index), -3.0 );
+      problem.SetParameterLowerBound( pars, static_cast<int>(index), 0.0 );
       problem.SetParameterUpperBound( pars, static_cast<int>(index), 3.0 );
       index += 1;
     }

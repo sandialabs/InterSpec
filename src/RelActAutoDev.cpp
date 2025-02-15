@@ -582,8 +582,8 @@ int dev_code()
   //check_auto_state_xml_serialization();
 
 
-  //run_u02_example();
-  //return 1;
+  run_u02_example();
+  return 1;
   
   //check_physical_model_eff_function();
   //return 1;
