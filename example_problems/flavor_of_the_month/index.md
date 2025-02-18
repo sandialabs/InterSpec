@@ -14,11 +14,11 @@ Spectrum files referenced from the document are available in:
 
 ## February 2025
 Please see one of the following documents for the questions:
-* [202502/February 2025 Flavor Draft B.docx](February 2025 Flavor Draft B.docx)
+* [February 2025 Flavor Draft B.docx](202502/February 2025 Flavor Draft B.docx)
 * (TODO: create wep-;age version of Word document)
 
 Spectrum files referenced from the document are available in:
-* [202502/February 2025 Flavor Drill Files.zip](February 2025 Flavor Drill Files.zip)
-* [202502/February 2025 Flavor Drill Spectra CHN Format.zip](February 2025 Flavor Drill Spectra CHN Format.zip)
-* [202502/November 2020 Flavor Drill Answers LA-UR-20-29807.docx](November 2020 Flavor Drill Answers LA-UR-20-29807.docx)
-* [202502/March 2021 Flavor Drill Answers LA-UR-21-23546.docx](March 2021 Flavor Drill Answers LA-UR-21-23546.docx)
+* [February 2025 Flavor Drill Files.zip](202502/February 2025 Flavor Drill Files.zip)
+* [February 2025 Flavor Drill Spectra CHN Format.zip](202502/February 2025 Flavor Drill Spectra CHN Format.zip)
+* [November 2020 Flavor Drill Answers LA-UR-20-29807.docx](202502/November 2020 Flavor Drill Answers LA-UR-20-29807.docx)
+* [March 2021 Flavor Drill Answers LA-UR-21-23546.docx](202502/March 2021 Flavor Drill Answers LA-UR-21-23546.docx)
