@@ -1717,7 +1717,7 @@ std::shared_ptr<Measurement> estimateContinuum( std::shared_ptr<const Measuremen
   for( size_t i = 0; i < nchannels; ++i )
     (*source)[i] = data->gamma_channel_content(i);
 
-  calculateContinuum( &(source->operator[](0)), nchannels, numIteration, direction,
+  calculateContinuum( &(source->operator[](0)), static_cast<int>(nchannels), numIteration, direction,
                      filterOrder, smoothing, smoothWindow, compton );
   auto background = make_shared<Measurement>();
   *background = *data;
@@ -7080,7 +7080,7 @@ void AutoPeakSearchChi2Fcn::second_derivative( const vector<float> &input, vecto
 {
   results.clear();
   SavitzyGolayCoeffs sgcoeffs( m_side_bins, m_side_bins, m_smooth_order, 2 );
-  sgcoeffs.smooth( &(input[0]), input.size(), results );
+  sgcoeffs.smooth( &(input[0]), static_cast<int>(input.size()), results );
 }//void smoothSpectrum(...)
 
 
@@ -7127,7 +7127,7 @@ std::vector<PeakDef> AutoPeakSearchChi2Fcn::candidate_peaks( const vector<float>
   int minbin = -1, firstzero = -1, secondzero=-1;
   float secondsum = 0.0f, minval = 9999999999.9f;
   
-  for( int bin = m_lower_channel; bin < (int)m_upper_channel; ++bin )
+  for( int bin = static_cast<int>(m_lower_channel); bin < static_cast<int>(m_upper_channel); ++bin )
   {
     const float secondDeriv = second_deriv[bin]; //Not dividing by binwidth^2 here,
     

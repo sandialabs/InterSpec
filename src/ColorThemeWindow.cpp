@@ -526,7 +526,7 @@ void ColorThemeWindow::uploadThemeCallback()
         ColorThemeWidget *edit = new ColorThemeWidget( editParent );
         edit->setTheme( theme.get(), false );
         WPushButton *yes = window->addCloseButtonToFooter( "Yes" );
-        yes->clicked().connect( std::bind( [=](){
+        yes->clicked().connect( std::bind( [=,this](){
           
           //5) Add to database, and set as current theme to display
           std::unique_ptr<ColorTheme> newtheme = this->saveThemeToDb( theme.get() );

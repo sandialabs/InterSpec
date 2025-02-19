@@ -4387,7 +4387,7 @@ void DrfSelect::updateLastUsedTimeOrAddToDb( std::shared_ptr<DetectorPeakRespons
       DetectorPeakResponse *tempDetector = new DetectorPeakResponse( *drf );
       tempDetector->updateLastUsedTimeToNow();
       
-      tempDetector->m_user = db_user_id; //adds the current user to the detectorpeakresponse insertion into DB
+      tempDetector->m_user = static_cast<int>( db_user_id ); //adds the current user to the detectorpeakresponse insertion into DB
       sql->session()->add( tempDetector );
     }
     

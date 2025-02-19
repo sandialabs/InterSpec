@@ -627,11 +627,11 @@ size_t findROILimit( const PeakDef &peak, const std::shared_ptr<const Measuremen
   //Try to detect if there is a signficant skew on the peak by comparing
   //  4 to 7 sigma, to 7 to 11.75 sigma (or wherever is lastbin) to see if they
   //  are statistically compatible; if they are, just have ROI go to 7 sigma
-  const int mean_channel = dataH->find_gamma_channel( mean );
-  const int good_cont_channel = dataH->find_gamma_channel( mean + direction*7.05*sigma );
+  const int mean_channel = static_cast<int>( dataH->find_gamma_channel( mean ) );
+  const int good_cont_channel = static_cast<int>( dataH->find_gamma_channel( mean + direction*7.05*sigma ) );
   if( (std::abs(int(lastchannel)-mean_channel) > std::abs(good_cont_channel-mean_channel)) )
   {
-    const indexing_t nearest_channel = dataH->find_gamma_channel( mean + direction*3.5*sigma );
+    const indexing_t nearest_channel = static_cast<indexing_t>( dataH->find_gamma_channel( mean + direction*3.5*sigma ) );
     const bool isNotDecreasing = isStatisticallyGreaterOrEqual( nearest_channel, good_cont_channel,
                                             good_cont_channel, lastchannel, dataH, 3.0 );
 
@@ -663,11 +663,11 @@ size_t findROILimit( const PeakDef &peak, const std::shared_ptr<const Measuremen
   if( direction < 0 )
   {
     if( ((mean-val)/sigma) < 1.75 )
-      lastchannel = dataH->find_gamma_channel( mean - 1.75*sigma );
+      lastchannel = static_cast<indexing_t>( dataH->find_gamma_channel( mean - 1.75*sigma ) );
   }else
   {
     if( ((val-mean)/sigma) < 1.75 )
-      lastchannel = dataH->find_gamma_channel( mean + 1.75*sigma );
+      lastchannel = static_cast<indexing_t>( dataH->find_gamma_channel( mean + 1.75*sigma ) );
   }
   
 #if( PRINT_ROI_DEBUG_INFO )
@@ -690,14 +690,14 @@ bool isStatisticallyGreaterOrEqual( const size_t start1, const size_t end1,
   size_t lowerbin = std::min( start1, end1 );
   size_t upperbin = std::max( start1, end1 );
   const double lower_area = dataH->gamma_channels_sum( lowerbin, upperbin );
-  const int num_near_mean_bins = upperbin - lowerbin + 1;
+  const int num_near_mean_bins = static_cast<int>( upperbin - lowerbin + 1 );
   const double avrg_near_mean_area = lower_area / num_near_mean_bins;
   const double avrg_near_mean_uncert = sqrt(lower_area) / num_near_mean_bins;
   
   lowerbin = std::min( start2, end2 );
   upperbin = std::max( start2, end2 );
   const double upper_area = dataH->gamma_channels_sum( lowerbin, upperbin );
-  const int num_tail_bins = upperbin - lowerbin + 1;
+  const int num_tail_bins = static_cast<int>( upperbin - lowerbin + 1 );
   const double tail_area = upper_area / num_tail_bins;
   const double avrg_tail_uncert = sqrt(upper_area) / num_tail_bins;
   

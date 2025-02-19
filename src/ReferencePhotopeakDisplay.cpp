@@ -1963,7 +1963,7 @@ void ReferencePhotopeakDisplay::updateOtherNucsDisplay()
 
   // TODO: Need to deal the "more info" button
 
-  auto displayDetectorOrExternal = [=]( const WString &title, vector<pair<string,string>> nucs ){
+  auto displayDetectorOrExternal = [=,this]( const WString &title, vector<pair<string,string>> nucs ){
     if( nucs.empty() )
       return;
     

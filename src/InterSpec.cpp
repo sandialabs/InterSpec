@@ -4877,8 +4877,8 @@ GammaCountDialog *InterSpec::showGammaCountDialog()
   
   if( m_undo && m_undo->canAddUndoRedoNow() )
   {
-    m_undo->addUndoRedoStep( [=](){deleteGammaCountDialog();},
-                            [=](){showGammaCountDialog();},
+    m_undo->addUndoRedoStep( [=,this](){deleteGammaCountDialog();},
+                            [=,this](){showGammaCountDialog();},
                             "Show Energy Range Sum." );
   }//if( m_undo && m_undo->canAddUndoRedoNow() )
   
@@ -8910,7 +8910,7 @@ void InterSpec::startSimpleMdaFromRightClick()
   
   if( m_undo && m_undo->canAddUndoRedoNow() )
   {
-    auto undo = [=](){
+    auto undo = [=,this](){
       if( wasShowing )
       {
         if( prevState.empty() )
@@ -8924,7 +8924,7 @@ void InterSpec::startSimpleMdaFromRightClick()
       }
     };//undo
     
-    auto redo = [=](){
+    auto redo = [=,this](){
       showSimpleMdaWindow();
       assert( m_simpleMdaWindow );
       if( m_simpleMdaWindow )
@@ -11458,7 +11458,7 @@ void InterSpec::setSpectrum( std::shared_ptr<SpecMeas> meas,
       vector<PeakDef> original_peaks;
       
       const std::string sessionid = wApp->sessionId();
-      propigate_peaks_fcns = [=]( std::shared_ptr<const SpecUtils::Measurement> data ){
+      propigate_peaks_fcns = [=,this]( std::shared_ptr<const SpecUtils::Measurement> data ){
         PeakSearchGuiUtils::fit_template_peaks( this, data, input_peaks, original_peaks,
                        PeakSearchGuiUtils::PeakTemplateFitSrc::PreviousSpectrum,
                        sessionid );
@@ -11494,7 +11494,7 @@ void InterSpec::setSpectrum( std::shared_ptr<SpecMeas> meas,
     {
       if( propigate_peaks_fcns )
       {
-        m_preserveCalibWindow->finished().connect( std::bind( [=](){
+        m_preserveCalibWindow->finished().connect( std::bind( [=,this](){
           deleteEnergyCalPreserveWindow();
           std::shared_ptr<const SpecUtils::Measurement> data = m_spectrum->data();
           WServer::instance()->ioService().boost::asio::io_service::post( std::bind([=](){ propigate_peaks_fcns(data); }) );

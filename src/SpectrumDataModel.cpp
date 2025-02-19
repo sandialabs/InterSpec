@@ -462,7 +462,7 @@ int SpectrumDataModel::findRow( const double x ) const
   if( !xHist )
     return -1;
 
-  const size_t channel = xHist->find_gamma_channel( (float)x );
+  const int channel = static_cast<int>( xHist->find_gamma_channel( (float)x ) );
   
   const int rebin = ( m_rebinFactor > 1 ) ? m_rebinFactor : 1;
   // Note: m_rebinFactor >= 1 always, this is for testing.
