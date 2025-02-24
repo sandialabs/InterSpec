@@ -99,17 +99,17 @@ namespace MassAttenuation
    * \returns The mass attenuation coefficient for:
    *          compton + pair production + photo electric.
    */
-  float massAttenuationCoeficient( const int atomic_number, const float energy );
+  float massAttenuationCoefficientElement( const int atomic_number, const float energy );
   
-  /** Similar to the other #massAttenuationCoeficient function, but instead
+  /** Similar to the other #massAttenuationCoefficientElement function, but instead
    * only for a specific sub-proccess.
    */
-  float massAttenuationCoeficient( const int atomic_number, const float energy, MassAttenuation::GammaEmProcces process );
+  float massAttenuationCoefficientElement( const int atomic_number, const float energy, MassAttenuation::GammaEmProcces process );
   
   /** Similar to #massAttenuationCoeficient, but interpolated the result between
    * floor(atomic_number) and ceil(atomic_number) linearly.
    */
-  float massAttenuationCoeficientFracAN( const float atomic_number, const float energy );
+  float massAttenuationCoefficientFracAN( const float atomic_number, const float energy );
   
   
   /** Compute the total attenuation coefficient using GADRASs CrossSection.lib.

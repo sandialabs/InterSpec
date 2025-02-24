@@ -682,7 +682,7 @@ void GammaXsGui::calculateCrossSections()
     
     try
     {
-      comptonMu  += xsmult * MassAttenuation::massAttenuationCoeficient( AN, energy, MassAttenuation::GammaEmProcces::ComptonScatter ) ;
+      comptonMu  += xsmult * MassAttenuation::massAttenuationCoefficientElement( AN, energy, MassAttenuation::GammaEmProcces::ComptonScatter ) ;
     }catch(exception &e)
     {
       passMessage( WString("gxsg-warn-suspect").arg(e.what()) , 3 );
@@ -691,7 +691,7 @@ void GammaXsGui::calculateCrossSections()
 #if( !USE_SNL_GAMMA_ATTENUATION_VALUES )
     try
     {
-      rayleighMu += xsmult * MassAttenuation::massAttenuationCoeficient( AN, energy, MassAttenuation::GammaEmProcces::RayleighScatter );
+      rayleighMu += xsmult * MassAttenuation::massAttenuationCoefficientElement( AN, energy, MassAttenuation::GammaEmProcces::RayleighScatter );
     }catch(exception &e)
     {
       passMessage( WString("gxsg-warn-suspect").arg(e.what()) , 3 );
@@ -700,7 +700,7 @@ void GammaXsGui::calculateCrossSections()
 
     try
     {
-      photoMu    += xsmult * MassAttenuation::massAttenuationCoeficient( AN, energy, MassAttenuation::GammaEmProcces::PhotoElectric );
+      photoMu    += xsmult * MassAttenuation::massAttenuationCoefficientElement( AN, energy, MassAttenuation::GammaEmProcces::PhotoElectric );
     }catch(exception &e)
     {
       passMessage( WString("gxsg-warn-suspect").arg(e.what()) , 3 );
@@ -708,7 +708,7 @@ void GammaXsGui::calculateCrossSections()
 
     try
     {
-      pairMu     += xsmult * MassAttenuation::massAttenuationCoeficient( AN, energy, MassAttenuation::GammaEmProcces::PairProduction );
+      pairMu     += xsmult * MassAttenuation::massAttenuationCoefficientElement( AN, energy, MassAttenuation::GammaEmProcces::PairProduction );
     }catch(exception &e)
     {
       passMessage( WString("gxsg-warn-suspect").arg(e.what()) , 3 );
@@ -716,7 +716,7 @@ void GammaXsGui::calculateCrossSections()
     
     try
     {
-      totalMu += xsmult * MassAttenuation::massAttenuationCoeficient( AN, energy );
+      totalMu += xsmult * MassAttenuation::massAttenuationCoefficientElement( AN, energy );
     }catch(exception &e)
     {
       passMessage( WString("gxsg-warn-suspect").arg(e.what()) , 3 );

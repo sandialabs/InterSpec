@@ -79,14 +79,14 @@ float TransmissionH( const float E, const float AN, const float AD, const float 
       AH *= exp( -((E-400.0f)/1000.0f) );
     
     const float ANother = (AN*AD - AH*AD)/((1.0f-AH)*AD);
-    const float mu = MassAttenuation::massAttenuationCoeficientFracAN( ANother, E );
-    const float mu_hydrogen = MassAttenuation::massAttenuationCoeficient( 1, E );
+    const float mu = MassAttenuation::massAttenuationCoefficientFracAN( ANother, E );
+    const float mu_hydrogen = MassAttenuation::massAttenuationCoefficientElement( 1, E );
     
     return exp(-(1.0f-AH)*AD*gcm2*mu) * exp(-AH*AD*gcm2*mu_hydrogen);
   }//if( AH > 0.0f )
   
   
-  const float mu = MassAttenuation::massAttenuationCoeficientFracAN( AN, E );
+  const float mu = MassAttenuation::massAttenuationCoefficientFracAN( AN, E );
   return exp( -max( 0.0f, AD*gcm2*mu ) );
 }//float TransmissionH( E,AN,AD,AHIN )
 
@@ -348,7 +348,7 @@ float GadrasScatterTable::getContinuum( std::vector<float> &answer,
   }
   
   /*
-  const float ctot = MassAttenuation::massAttenuationCoeficientFracAN( atomicNumber, sourceEnergy );
+  const float ctot = MassAttenuation::massAttenuationCoefficientFracAN( atomicNumber, sourceEnergy );
   ScatToTotal=CKN/ctot;
   IF (AH1.GT.0) THEN
 		CTOT=AttCoef(Energy,1.)

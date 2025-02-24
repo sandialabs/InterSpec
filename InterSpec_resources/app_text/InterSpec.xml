@@ -12,6 +12,8 @@
   <message id="Create">Create</message>
   <message id="Energy">Energy</message>
   <message id="Counts">Counts</message>
+  <message id="Apply">Apply</message>
+  <message id="Accept">Accept</message>
   <message id="Foreground">Foreground</message>
   <message id="Background">Background</message>
   <message id="Secondary">Secondary</message>
@@ -81,6 +83,7 @@
   <message id="Unknown">Unknown</message>
   <message id="Energy (keV)">Energy (keV)</message>
   <message id="Efficiency">Efficiency</message>
+  <message id="stable">stable</message>
 
   <!-- Units the user may use to write time duration.
     Note that we dont have very good changing case (i.e., from lower to upper, or upper to lower)
@@ -141,7 +144,8 @@
   <message id="window-title-license-credit">Disclaimers, Licenses, Credit, and Contact</message>
   <message id="window-title-help">InterSpec Help</message>
   <message id="window-title-simple-mda">Simple Minimum Detectable Activity Calculation</message>
-
+  <message id="window-title-peak-editor">Peak Editor</message>
+  
 
   <!-- The names of the tool-tabs at the bottom of the app -->
   <message id="app-tab-peak-manager">Peak Manager</message>

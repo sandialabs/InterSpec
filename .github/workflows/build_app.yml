@@ -92,14 +92,14 @@ jobs:
           # sccache --stop-server || & { "ignore failure"; $global:LASTEXITCODE = 0 }
 
       - name: Upload wxWidgets app to as GitHub Artifact
-        uses: actions/upload-artifact@v3.1.1
+        uses: actions/upload-artifact@v4
         if: runner.os == 'Windows'
         with: 
           name: InterSpec_app_${{ runner.os }}_WebView_latest
           path: '${{runner.temp}}/build_${{ runner.os }}_wx_app/InterSpec_app_${{ runner.os }}_WebView_latest'
 
 #      - name: Upload sccache Artifact
-#        uses: actions/upload-artifact@v3.1.1
+#        uses: actions/upload-artifact@v4
 #        if: runner.os == 'Windows'
 #        with: 
 #          name: sccache_log

@@ -158,7 +158,7 @@ double transmition_length_coefficient( const Material *material, float energy )
       throw std::runtime_error( "transmition_length_coefficient(...): invalid "
                                 "atomic number" );
     const double density = p.second * material->density;
-    const double xs_per_mass = MassAttenuation::massAttenuationCoeficient( atomicNumber, energy );
+    const double xs_per_mass = MassAttenuation::massAttenuationCoefficientElement( atomicNumber, energy );
     
     mu += (density*xs_per_mass);
   }//for( const Material::ElementFractionPair &p : material->elements )
@@ -171,7 +171,7 @@ double transmition_length_coefficient( const Material *material, float energy )
       throw std::runtime_error( "transmition_length_coefficient(...): invalid "
                                 "atomic number" );
     double density = p.second * material->density;
-    const double xs_per_mass = MassAttenuation::massAttenuationCoeficient( atomicNumber, energy );
+    const double xs_per_mass = MassAttenuation::massAttenuationCoefficientElement( atomicNumber, energy );
     
     mu += (density*xs_per_mass);
   }//for( const Material::ElementFractionPair &p : material->elements )
@@ -194,7 +194,7 @@ double transmission_length_coefficient_air( float energy )
   // Instead of using the components, we could use the mass-weighted atomic number
   //const float air_an = 7.3737f;  //Gadras uses 7.2
   //const float air_density = static_cast<float>( 0.00129 * PhysicalUnits::g / PhysicalUnits::cm3 );
-  //const double mu = MassAttenuation::massAttenuationCoeficient( air_an, energy );
+  //const double mu = MassAttenuation::massAttenuationCoefficientFracAN( air_an, energy );
   //return mu * air_density;
   
   //Air (taken from definition used in InterSpec v1.0.8 20211017):
@@ -207,7 +207,7 @@ double transmission_length_coefficient_air( float energy )
   {
     const int atomicNumber = i.first;
     const double density = i.second;
-    const double xs_per_mass = MassAttenuation::massAttenuationCoeficient( atomicNumber, energy );
+    const double xs_per_mass = MassAttenuation::massAttenuationCoefficientElement( atomicNumber, energy );
     
     mu += (density*xs_per_mass);
   }//for( const Material::ElementFractionPair &p : material->elements )
@@ -229,7 +229,7 @@ double transmission_coefficient_air( float energy, float length )
 //  The quantity retuned by this function is commonly labeled μ
 double mass_attenuation_coef( float atomic_number, float energy )
 {
-  const double xs_per_mass = MassAttenuation::massAttenuationCoeficient( atomic_number, energy );
+  const double xs_per_mass = MassAttenuation::massAttenuationCoefficientFracAN( atomic_number, energy );
   
   return xs_per_mass;
 }
