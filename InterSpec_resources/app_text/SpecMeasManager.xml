@@ -269,6 +269,15 @@
   <message id="smm-qr-sequence-single">QR Code</message>
   <message id="smm-qr-sequence-multi">QR Code {1} of {2}</message>
   
+  
+  <message id="smm-changed-background">
+    The background spectrum was also updated to be the one included with the newly loaded file.
+  </message>
+  <message id="smm-didnt-changed-background">
+    The newly loaded foreground file contained a background spectrum
+    - but the displayed background <b>HAS NOT</b> been updated.
+  </message>
+  
 
   <message id="musd-dialog-title">Multi-part QR/URL Spectrum</message>
   <message id="musd-err-diff-spec">URL/QR-code received was from a different spectrum than previous URL/QR-code</message>

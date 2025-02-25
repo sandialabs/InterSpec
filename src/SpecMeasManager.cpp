@@ -4491,10 +4491,14 @@ void SpecMeasManager::displayFile( int row,
                                    const SpecMeasManager::VariantChecksToDo viewingChecks )
 {
   std::shared_ptr<SpecMeas> old_meas = m_viewer->measurment( type );
-  std::shared_ptr<SpecMeas>  old_back;
+  std::shared_ptr<SpecMeas> old_back;
+  std::shared_ptr<const SpecUtils::Measurement> old_back_spec;
   if( type == SpecUtils::SpectrumType::Foreground )
+  {
     old_back = m_viewer->measurment( SpecUtils::SpectrumType::Background );
-
+    old_back_spec = m_viewer->displayedHistogram( SpecUtils::SpectrumType::Background );
+  }
+  
 #if( USE_DB_TO_STORE_SPECTRA )
   const bool storeInDb
       = UserPreferences::preferenceValue<bool>( "AutoSaveSpectraToDb", m_viewer );
@@ -4577,10 +4581,15 @@ void SpecMeasManager::displayFile( int row,
 
   const size_t ncandiadate_samples = selected.size();
 
-  //backgroundIndexs will only get filled if the a forground or secondforground
-  // is desired
+  //`background_sample_numbers` will only get filled if the a foreground or second-foreground
+  // is desired.  Same with `back_start_time` - it is only used to check if this new background
+  //  is closer to the foreground measurement start time, than `old_back`.
   std::set<int> background_sample_numbers;
+  SpecUtils::time_point_t back_start_time{}, foreground_start_time{};
 
+  // Number back/fore/instrinsic only filled out if not passthrough/search
+  int numbackground = 0, numForeground = 0, numIntrinsic = 0;
+  
   WarningWidget::WarningMsgLevel warningmsgLevel = WarningWidget::WarningMsgInfo;
   stringstream warningmsg;
 
@@ -4593,7 +4602,6 @@ void SpecMeasManager::displayFile( int row,
       const bool passthrough = header->passthrough();
       if( !passthrough && (nsamples > 1) )
       {
-        int numbackground = 0, numForeground = 0, numIntrinsic = 0;
         int childrow = -1, backrow = -1, intrinsicrow = -1;
         for( size_t i = 0; i < header->m_samples.size(); ++i )
         {
@@ -4607,17 +4615,40 @@ void SpecMeasManager::displayFile( int row,
             break;
               
             case SpecUtils::SourceType::Foreground:
+            {
               ++numForeground;
               childrow = static_cast<int>( i );
+              const vector<shared_ptr<const SpecUtils::Measurement>> fores
+                                      = measement_ptr->sample_measurements(spechead.sample_number);
+              assert( !fores.empty() );
+              for( const shared_ptr<const SpecUtils::Measurement> &f : fores )
+                foreground_start_time = std::max( foreground_start_time, f->start_time() );
+              
               //i = header->m_samples.size();  //first foreground, terminate loop
-            break;
+              break;
+            }//case SpecUtils::SourceType::Foreground:
               
             case SpecUtils::SourceType::Background:
+            {
               ++numbackground;
               backrow = static_cast<int>( i );
+              
+              if( old_back )
+              {
+                back_start_time = SpecUtils::time_point_t{};
+                
+                const vector<shared_ptr<const SpecUtils::Measurement>> backs
+                                      = measement_ptr->sample_measurements(spechead.sample_number);
+                assert( !backs.empty() );
+                for( const shared_ptr<const SpecUtils::Measurement> &b : backs )
+                  back_start_time = std::max( back_start_time, b->start_time() );
+              }//if( numForeground )
+                
               if( numForeground )
                 i = header->m_samples.size();  //We have foreground and background, terminate loop
-            break;
+              
+              break;
+            }//case SpecUtils::SourceType::Background:
             
             case SpecUtils::SourceType::Calibration:
               //do nothing
@@ -4655,16 +4686,38 @@ void SpecMeasManager::displayFile( int row,
             warningmsg << WString::tr("smm-warn-upload-use-file-manager").toUTF8();
         }//if( decide how to customize the info message ) / else
 
-        //If we have an unambiguos background, and arent currently displaying a background
-        //  from this detector, lets load the unambiguos background
-        if( type==SpecUtils::SpectrumType::Foreground
-           && numbackground == 1 && childrow != backrow
-           && (childrow>=0) && (childrow<static_cast<int>(header->m_samples.size()))
-           && (backrow>=0) && (backrow<static_cast<int>(header->m_samples.size())) //These two conditions should always be true if first condition is true
-           && ( !old_back || !measement_ptr
-                || (measement_ptr->num_gamma_channels()!=old_back->num_gamma_channels()) || (measement_ptr->instrument_id()!=old_back->instrument_id()) )
+        assert( (numbackground != 1) || ((childrow >= 0) && (childrow < static_cast<int>(header->m_samples.size()))) );
+        
+        //If we have an unambiguous background, and arent currently displaying a background
+        //  from this detector, or the new background is closer to foreground measurement in time,
+        //  lets load the unambiguous background.
+        //The reason we dont want to be too aggressive about loading the included background is
+        //  that a number of detector models will include a background spectrum from the detectors
+        //  dedicated background acquisition (e.g., when detector was turned on, or a few days or
+        //  weeks ago...), but these may not be as relevant to the measured foreground (usually
+        //  people take a "foreground" measurement of the background, and just manually label this
+        //  second file as a background measurement for the analyst to use).
+        if( (type == SpecUtils::SpectrumType::Foreground)
+           && (numbackground == 1)
+           && (childrow != backrow)
+           && (childrow >= 0) && (childrow < static_cast<int>(header->m_samples.size()))
+           && (backrow >= 0) && (backrow < static_cast<int>(header->m_samples.size())) //These two conditions should always be true if first condition is true
+           && (old_meas != measement_ptr) //I dont think this is actually a necessary check
+           && ( !old_back
+               || !old_back_spec
+               || !measement_ptr
+               || (measement_ptr->num_gamma_channels() != old_back->num_gamma_channels())
+               || (measement_ptr->instrument_id() != old_back->instrument_id())
+               || (SpecUtils::is_special(old_back_spec->start_time()) && !SpecUtils::is_special(back_start_time))
+               || (!SpecUtils::is_special(back_start_time)
+                   && !SpecUtils::is_special(foreground_start_time)
+                   && (std::abs( (back_start_time - foreground_start_time).count() )
+                       <= std::abs( (old_back_spec->start_time() - foreground_start_time).count() ) ) )
+               )
            )
+        {
           background_sample_numbers.insert( header->m_samples[backrow].sample_number );
+        }
         
         selected.clear();
         selected.insert( index.child(childrow,0) );
@@ -4816,7 +4869,14 @@ void SpecMeasManager::displayFile( int row,
     
     m_viewer->setSpectrum( measement_ptr, background_sample_numbers,
                            SpecUtils::SpectrumType::Background, options );
-  }//if( backgroundIndexs.size() )
+    if( old_back && (old_meas != measement_ptr) )
+    {
+      passMessage( WString::tr("smm-changed-background"), WarningWidget::WarningMsgInfo );
+    }
+  }else if( old_back && numbackground && (old_meas != measement_ptr) )
+  {
+    passMessage( WString::tr("smm-didnt-changed-background"), WarningWidget::WarningMsgInfo );
+  }//if( backgroundIndexs.size() ) / else-if
   
 #if( USE_DB_TO_STORE_SPECTRA )
   WApplication *app = wApp;
