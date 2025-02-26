@@ -4,6 +4,7 @@
     smm- is short for Spectrum Measurement Manager
     musd- is short for MultiUrlSpectrumDialog
     uid- is short for UploadedImgDisplay.
+    fud- is short for FileUploadDialog
   -->
   <message id="smm-window-title">Spectrum Manager</message>
   <message id="smm-load-spec-from">Load spectrum from: </message>
@@ -29,6 +30,7 @@
   <message id="smm-empty-file">File was probably an empty file - not a spectrum file.</message>
   <message id="smm-failed-reading-nonspec-file">Failed to read non-spectrum file.</message>
   <message id="smm-not-spec-file">Not a spectrum file</message>
+  <message id="smm-image-file">Image File Selected</message>
   <message id="smm-icd2">This looks to be an N42 ICD2 file that contains analysis results
     rather than raw spectra.
     <br />
@@ -278,7 +280,22 @@
     - but the displayed background <b>HAS NOT</b> been updated.
   </message>
   
-
+  <message id="fud-dialog-title">Select File To Open</message>
+  <message id="fud-open-foreground-only-msg">{1} below to choose a foreground spectrum file to open.</message>
+  <message id="fud-open-any-type-msg">Select how you would like to open the spectrum file, and then {1} below to browse for the file.</message>
+  <message id="fud-btn-grp-title">Open file as:</message>
+  <message id="fud-drg-n-drop-msg">
+    You can also drag and drop the file directly into the <br />
+    application window as a quicker alternative.<br />
+    <br />For more advanced file opening and<br />
+    manipulation use the <b>File Manager</b>
+  </message>
+  <message id="fud-drg-n-drop-msg-mbl">
+    <span style="font-size: 10px;">
+      You can also open spectrum files from email or file apps.
+    </span>
+  </message>
+  
   <message id="musd-dialog-title">Multi-part QR/URL Spectrum</message>
   <message id="musd-err-diff-spec">URL/QR-code received was from a different spectrum than previous URL/QR-code</message>
   <message id="musd-err-duplicate-url">Have already received this URL/QR-code</message>

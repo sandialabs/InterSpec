@@ -331,22 +331,24 @@ namespace
       m_manager( manager ),
       m_type( SpectrumType::Foreground )
     {
-      setWindowTitle( "Select File To Open" );
+      // Loading the internationalization text not needed as SpecMeasManager is always created
+      //viewer->useMessageResourceBundle( "SpecMeasManager" );
+      
+      setWindowTitle( WString::tr("fud-dialog-title") );
       
       const bool noForeground = !viewer->measurment( SpectrumType::Foreground );
       
-      string instructions;
+      WString instructions;
       if( !viewer->isPhone() )
       {
         if( noForeground )
         {
-          instructions = string(viewer->isMobile() ?"Tap" : "Click")
-                         + " below to choose a foreground spectrum file to open.";
+          instructions = WString::tr("fud-open-foreground-only-msg")
+                                    .arg( WString::tr(viewer->isMobile() ? "Tap" : "Click") );
         }else
         {
-          instructions = "Select how you would like to open the spectrum file, and then ";
-          instructions += (viewer->isMobile() ? "tap" : "click");
-          instructions += " below to browse for the file.";
+          instructions = WString::tr("fud-open-any-type-msg")
+                                    .arg( WString::tr(viewer->isMobile() ? "tap" : "click") );
         }//if( noForeground )
       }//if( !viewer->isPhone() )
       
@@ -361,22 +363,22 @@ namespace
       
       if( !noForeground )
       {
-        WGroupBox *buttons = new WGroupBox( "Open file as:" );
+        WGroupBox *buttons = new WGroupBox( WString::tr("fud-btn-grp-title") );
       
         layout->addWidget( buttons, layout->rowCount(), 0 );
         
         WButtonGroup *group = new WButtonGroup( buttons );
         
-        WRadioButton *foreground = new WRadioButton( "Foreground", buttons );
+        WRadioButton *foreground = new WRadioButton( WString::tr("Foreground"), buttons );
         foreground->setInline( false );
         foreground->setChecked( true );
         group->addButton( foreground, toint(SpectrumType::Foreground) );
         
-        WRadioButton *background = new WRadioButton( "Background", buttons );
+        WRadioButton *background = new WRadioButton( WString::tr("Background"), buttons );
         background->setInline( false );
         group->addButton( background, toint(SpectrumType::Background) );
         
-        WRadioButton *secondary = new WRadioButton( "Secondary", buttons );
+        WRadioButton *secondary = new WRadioButton( WString::tr("Secondary"), buttons );
         secondary->setInline( false );
         group->addButton( secondary, toint(SpectrumType::SecondForeground) );
         
@@ -394,15 +396,13 @@ namespace
       layout->addWidget( m_fileUpload, layout->rowCount(), 0, AlignMiddle | AlignCenter );
       layout->setRowStretch( layout->rowCount()-1, 1 );
       
-      const char *msg = "";
+      WString msg = "";
       if( !viewer->isMobile() )
       {
-        msg = "You can also drag and drop the file directly into the <br />"
-              "application window as a quicker alternative.<br />"
-              "<br />For more advanced file opening and<br />"
-              "manipulation use the <b>File Manager</b>";
+        msg = WString::tr("fud-drg-n-drop-msg");
       }else
       {
+        msg = WString::tr("fud-drg-n-drop-msg-mbl");
         msg = "<span style=\"font-size: 10px;\">"
                 "You can also open spectrum files from email or file apps."
               "</span>";
@@ -414,7 +414,7 @@ namespace
       layout->addWidget( friendlyMsg, layout->rowCount(), 0, AlignMiddle | AlignBottom );
       
       
-      WPushButton *cancel = new WPushButton( "Cancel", footer() );
+      WPushButton *cancel = new WPushButton( WString::tr("Cancel"), footer() );
       
       cancel->clicked().connect( this, &FileUploadDialog::userCanceled );
       m_fileUpload->changed().connect( m_fileUpload, &Wt::WFileUpload::upload );
@@ -435,6 +435,11 @@ namespace
         repositionWindow( 0, 0 );
       }else
       {
+        // If we dont explicitly set width, the dialog will creepy in width.
+        const int vw = viewer->renderedWidth();
+        const double w = (vw < 100) ? 375.0 : (((vw > 100) && (vw < 400)) ? (vw - 10.0) : 400.0);
+        
+        setWidth( WLength(w, WLength::Unit::Pixel) );
         resizeToFitOnScreen();
         centerWindow();
       }
@@ -446,14 +451,15 @@ namespace
       
       if( m_specChangedConection.connected() )
         m_specChangedConection.disconnect();
-      delete this;
+      AuxWindow::deleteAuxWindow( this );
     }
     
     void userCanceled()
     {
       if( m_specChangedConection.connected() )
         m_specChangedConection.disconnect();
-      delete this;
+      
+      AuxWindow::deleteAuxWindow( this );
     }
     
     void finishUpload()
@@ -462,7 +468,7 @@ namespace
         m_specChangedConection.disconnect();
       
       m_manager->finishQuickUpload( m_fileUpload, m_type );
-      delete this;
+      AuxWindow::deleteAuxWindow( this );
     }
     
     virtual ~FileUploadDialog()
@@ -839,6 +845,13 @@ protected:
   JSignal<int,std::string> m_qrDecodeSignal;
   boost::function<void()> m_close_parent_dialog;
   
+  /** We'll make some (lifetime safe) cleanup function to delete sub-dialogs
+    created from this widget, when this widget destructs.
+    The functions put in `m_cleanups` need to be made with `wApp->bind( boost::bind(WWidget...) )`
+    so we dont try to delete widgets that have already been deleted.
+   */
+  vector<boost::function<void()>> m_cleanups;
+  
   void close_parent_dialog()
   {
     m_close_parent_dialog();
@@ -991,6 +1004,9 @@ protected:
       SimpleDialog *dialog = new SimpleDialog( title, content );
       dialog->addButton( WString::tr("Okay") );
       
+      // If we delete this UploadedImgDisplay, then dont leave QR-code dialogs dangling
+      m_cleanups.push_back( wApp->bind( boost::bind( &WDialog::done, dialog, Wt::WDialog::DialogCode::Accepted ) ) );
+      
       return;
     }//if( num_qr <= 0 )
     
@@ -1037,6 +1053,9 @@ protected:
       SimpleDialog *dialog = new SimpleDialog( WString::tr("uid-invalid-uri"), content );
       dialog->addButton( WString::tr("Okay") );
       
+      // If we delete this UploadedImgDisplay, then dont leave QR-code dialogs dangling
+      m_cleanups.push_back( wApp->bind( boost::bind( &WDialog::done, dialog, Wt::WDialog::DialogCode::Accepted ) ) );
+      
       return;
     }//if( cleaned_up_uris.size() != initial_uris.size() )
     
@@ -1068,6 +1087,9 @@ protected:
     btn->clicked().connect( this, &UploadedImgDisplay::close_parent_dialog );
     
     btn = dialog->addButton( WString::tr("No") );
+    
+    // If we delete this UploadedImgDisplay, then dont leave QR-code dialogs dangling
+    m_cleanups.push_back( wApp->bind( boost::bind( &WDialog::done, dialog, Wt::WDialog::DialogCode::Accepted ) ) );
   }//void qr_check_result( const int num_qr, const string b64_value )
   
   
@@ -1162,6 +1184,12 @@ public:
   m_qrDecodeSignal( this, "QrDecodedFromImg", false)
   {
     m_close_parent_dialog = wApp->bind( boost::bind( &SimpleDialog::done, dialog, Wt::WDialog::DialogCode::Accepted ) );
+    
+    // Incase we find a QR code in the image, lets avoid `dialog` being called to front of view
+    //  multiple times, which can cause some jank since there will be a dialog asking if the
+    //  user wants to use the URL in the QR code.  Even with this call, the dialog will be brought
+    //  forward a single time
+    dialog->doNotUseMultpleBringstoFront();
     
     WText *t = new WText( WString::tr("uid-image-not-spectrum"), this );
     t->addStyleClass( "NonSpecOtherFile" );
@@ -1259,6 +1287,13 @@ public:
       embedbtn->clicked().connect( this, &UploadedImgDisplay::embed_in_n42 );
     }//if( m_viewer->measurment( SpecUtils::SpectrumType::Foreground ) )
   }//UploadedImgDisplay constructor
+  
+  
+  virtual ~UploadedImgDisplay()
+  {
+    for( const auto &fcn : m_cleanups )
+      fcn();
+  }//~UploadedImgDisplay()
   
 };//UploadedImgDisplay
   
@@ -2197,6 +2232,8 @@ bool SpecMeasManager::handleNonSpectrumFile( const std::string &displayName,
     else if( isbmp ) mimetype = "image/bmp";
     else if( issvg ) mimetype = "image/svg+xml";
     else if( isheic ) mimetype = "image/heic";
+    
+    title->setText( WString::tr("smm-image-file") );
     
     new UploadedImgDisplay( m_viewer, displayName, mimetype, filesize, infile, dialog, type );
     
@@ -4081,20 +4118,30 @@ void SpecMeasManager::startQuickUpload()
 void SpecMeasManager::finishQuickUpload( Wt::WFileUpload *upload,
                                          const SpecUtils::SpectrumType type )
 {
-  // TODO: The warning messages, and error conditions detected should be greatly improved
-
-  std::shared_ptr<SpecMeas> measement_ptr;
-  const int row = dataUploaded( upload, measement_ptr );
+  const string spool_path = upload->spoolFileName();
+  const string display_name = upload->clientFileName().toUTF8();
   
-  if( row < 0 )
+  try
   {
-    cerr << "SpecMeasManager::finishQuickUpload(...)\n\tError uploading file "
-         << upload->clientFileName() << endl;
-    return;
-  } // if( row < 0 )
+    std::shared_ptr<SpecMeas> measurement;
+    std::shared_ptr<SpectraFileHeader> header;
+    const int result = setFile( display_name, spool_path, header, measurement, SpecUtils::ParserType::Auto );
+    WModelIndexSet selected;
+    WModelIndex index = m_fileModel->index( result, 0 );
+    selected.insert( index );
+    m_treeView->setSelectedIndexes( WModelIndexSet() );
 
-  displayFile( row, measement_ptr, type, true, true, 
+    const bool checkIfPreviouslyOpened = true;
+    const bool doPreviousEnergyRangeCheck = true;
+    displayFile( result, measurement, type, checkIfPreviouslyOpened, doPreviousEnergyRangeCheck,
               SpecMeasManager::VariantChecksToDo::DerivedDataAndMultiEnergyAndMultipleVirtualDets );
+  }catch( const std::exception &e )
+  {
+    const bool known_type = handleNonSpectrumFile( display_name, spool_path, type );
+    
+    if( !known_type )
+      displayInvalidFileMsg( display_name, e.what() );
+  }// try/catch
 }//void finishQuickUpload(...)
 
 

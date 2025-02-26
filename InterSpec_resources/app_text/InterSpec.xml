@@ -30,6 +30,10 @@
   <message id="Distance">Distance</message>
   <message id="Activity">Activity</message>
   <message id="Remark">Remark</message>
+  <message id="Tap">Tap</message>
+  <message id="Click">Click</message>
+  <message id="tap">tap</message>
+  <message id="click">click</message>
 
 
   <!-- Words not used in InterSpec.cpp, but at least a few places throughout the app --> 
