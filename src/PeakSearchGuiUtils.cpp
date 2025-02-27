@@ -95,9 +95,9 @@ namespace
      In this case the 'orig_peaks' passed into the window constructor are the
      candidate peaks to try and fit for.
      */
-    PeaksFromPreviousSpectum,
+    PeaksFromPreviousSpectrum,
     
-    /** User updloaded a peaks CSV file.
+    /** User uploaded a peaks CSV file.
      */
     PeaksFromCsvFile,
   };//enum class PeakSelectorWindowReason
@@ -156,7 +156,7 @@ public:
    @param reason The source of the user action that triggered making this dialog.
    @param orig_peaks For reasons of PeakSearch, NuclideId, and PeaksFromCsvFile,
           these are the peaks that existed before the fit.
-          For PeaksFromPreviousSpectum, these are the peaks that were fed into
+          For PeaksFromPreviousSpectrum, these are the peaks that were fed into
           the fitter.
    @param data The gamma spectrum the peaks are for.
    @param final_peaks All peaks; both previously existing and fit for.
@@ -190,19 +190,25 @@ public:
   {
     wApp->useStyleSheet( "InterSpec_resources/PeakSelectorWindow.css" );
    
+    if( !m_viewer )
+      m_viewer = InterSpec::instance();
+    assert( m_viewer );
+    if( m_viewer )
+      m_viewer->useMessageResourceBundle( "PeakSearchGuiUtils" );
+    
     switch( m_reason )
     {
       case PeakSelectorWindowReason::NuclideId:
-        setWindowTitle( "Confirm Nuclide Assignment" );
+        setWindowTitle( WString::tr("psw-title-confirm-nuc-ass") );
         break;
       case PeakSelectorWindowReason::PeakSearch:
-        setWindowTitle( "Check Peak Search Results" );
+        setWindowTitle( WString::tr("psw-title-check-search") );
         break;
-      case PeakSelectorWindowReason::PeaksFromPreviousSpectum:
-        setWindowTitle( "Peaks to Keep from Previous Spectrum" );
+      case PeakSelectorWindowReason::PeaksFromPreviousSpectrum:
+        setWindowTitle( WString::tr("psw-title-prev-spec") );
         break;
       case PeakSelectorWindowReason::PeaksFromCsvFile:
-        setWindowTitle( "Peaks to import from CSV" );
+        setWindowTitle( WString::tr("psw-title-csv-import") );
         break;
     }//switch( m_reason )
     
@@ -272,18 +278,18 @@ public:
     {
       case PeakSelectorWindowReason::PeakSearch:
         if( m_displayed.size() )
-          txt = new WText( "Adjust nuclide assignments, or which peaks to keep.", contents() );
+          txt = new WText( WString::tr("psw-search-instruct-adjust"), contents() );
         else
-          txt = new WText( "Unselect any peaks you would not like to keep.", contents() );
+          txt = new WText( WString::tr("psw-search-instruct-unselect"), contents() );
         break;
         
       case PeakSelectorWindowReason::NuclideId:
-        txt = new WText( "Check and fix nuclide assignments.", contents() );
+        txt = new WText( WString::tr("psw-search-instruct-assign"), contents() );
         break;
         
-      case PeakSelectorWindowReason::PeaksFromPreviousSpectum:
+      case PeakSelectorWindowReason::PeaksFromPreviousSpectrum:
       case PeakSelectorWindowReason::PeaksFromCsvFile:
-        txt = new WText( "Select peaks peaks you would like to keep.", contents() );
+        txt = new WText( WString::tr("psw-search-instruct-keep"), contents() );
         break;
     }//switch( m_reason )
     
@@ -293,7 +299,7 @@ public:
     switch( m_reason )
     {
       case PeakSelectorWindowReason::NuclideId:
-        m_showAllPeaks = new WCheckBox( "Show all peaks", contents() );
+        m_showAllPeaks = new WCheckBox( WString::tr("psw-show-all-peaks"), contents() );
         break;
         
       case PeakSelectorWindowReason::PeakSearch:
@@ -308,15 +314,16 @@ public:
           
           if( anyNonAssignedPeaks )
           {
-            string msg = "Keep only new peaks assigned to ";
+            string srcs;
             for( size_t i = 0; i < m_displayed.size(); ++i )
             {
-              if( i && (i+1)==m_displayed.size() )
-                msg + " or ";
+              if( i && ((i+1) == m_displayed.size()) )
+                srcs + " or ";
               else if( i )
-                msg + ", ";
-              msg += m_displayed[i]->m_input.m_input_txt;
+                srcs + ", ";
+              srcs += m_displayed[i]->m_input.m_input_txt;
             }
+            WString msg = WString::tr("psw-keep-only-assigned-peaks").arg(srcs);
             m_keepRefLinePeaksOnly = new WCheckBox( msg, contents() );
             m_keepRefLinePeaksOnly->setInline( false );
             m_keepRefLinePeaksOnly->checked().connect( this, &PeakSelectorWindow::keepOnlyRefLinesCbChanged );
@@ -327,13 +334,13 @@ public:
         }//if( we searched for peaks, and there were reference lines )
         
         if( orig_peaks.size() )
-          m_showAllPeaks = new WCheckBox( "Show previous peaks too", contents() );
+          m_showAllPeaks = new WCheckBox( WString::tr("psw-show-prev-peaks"), contents() );
         break;
       }//case PeakSelectorWindowReason::PeakSearch:
         
-      case PeakSelectorWindowReason::PeaksFromPreviousSpectum:
+      case PeakSelectorWindowReason::PeaksFromPreviousSpectrum:
         if( final_peaks.size() != orig_peaks.size() )
-          m_showAllPeaks = new WCheckBox( "Show absent peaks", contents() );
+          m_showAllPeaks = new WCheckBox( WString::tr("psw-show-missing-peaks"), contents() );
         break;
     }//switch ( m_reason )
     
@@ -373,7 +380,7 @@ public:
         case PeakSelectorWindowReason::PeaksFromCsvFile:
           break;
           
-        case PeakSelectorWindowReason::PeaksFromPreviousSpectum:
+        case PeakSelectorWindowReason::PeaksFromPreviousSpectrum:
           return true;
       }//switch( m_reason )
       
@@ -413,7 +420,7 @@ public:
           keepPeakIndex   = -1;
           break;
           
-        case PeakSelectorWindowReason::PeaksFromPreviousSpectum:
+        case PeakSelectorWindowReason::PeaksFromPreviousSpectrum:
         case PeakSelectorWindowReason::PeaksFromCsvFile:
           keepPeakIndex   = 0;
           peakEnergyIndex = 1;
@@ -442,7 +449,7 @@ public:
           previewIndex    = 3;
         break;
           
-        case PeakSelectorWindowReason::PeaksFromPreviousSpectum:
+        case PeakSelectorWindowReason::PeaksFromPreviousSpectrum:
         case PeakSelectorWindowReason::PeaksFromCsvFile:
           //Actually we shouldnt be here!  But lets set indexes rather than handling this potential logic error for now.
           keepPeakIndex   = 0;
@@ -478,32 +485,33 @@ public:
       cell = m_table->elementAt(0,keepPeakIndex);
       // We will add in some space so the "Keep Peak" text will have enough room to be next to the
       //  actual check box, and they wont be on separate lines.
-      txt = new WText( "Keep Peak?&nbsp;&nbsp;&nbsp;&nbsp;", cell );
+      txt = new WText( WString::tr("psw-keep-peak-q"), cell );
       txt->setWordWrap( false );
     }
     
     if( peakEnergyIndex >= 0 )
     {
       cell = m_table->elementAt(0,peakEnergyIndex);
-      new WText( "Energy, FWHM", cell );
+      WString labeltxt = WString("{1}, {2}").arg( WString::tr("Energy") ).arg( WString::tr("FWHM") );
+      new WText( labeltxt, cell );
     }
     
     if( origColumnIndex >= 0 )
     {
       cell = m_table->elementAt(0,origColumnIndex);
-      new WText( "Original Nuclide", cell );
+      new WText( WString::tr("psw-orig-nuc"), cell );
     }
     
     if( newColumnIndex >= 0 )
     {
       cell = m_table->elementAt(0,newColumnIndex);
-      new WText( "Assigned Nuclide", cell );
+      new WText( WString::tr("psw-assigned-nuc"), cell );
     }
     
     if( previewIndex >= 0 )
     {
       cell = m_table->elementAt(0,previewIndex);
-      new WText( "Peak Preview", cell );
+      new WText( WString::tr("psw-peak-preview"), cell );
     }
     
     
@@ -530,14 +538,15 @@ public:
         WTableCell *cbcell = m_table->elementAt( table_row, keepPeakIndex );
         cbcell->addStyleClass( "KeepPeakCell" );
         
-        if( m_reason==PeakSelectorWindowReason::PeaksFromPreviousSpectum
+        if( (m_reason == PeakSelectorWindowReason::PeaksFromPreviousSpectrum)
             && !m_old_to_new_peaks[i].second )
         {
-          new WText( "Not Found", cbcell );
+          new WText( WString::tr("psw-not-found"), cbcell );
         }else if( has_changed )
         {
-          WCheckBox *cb = new WCheckBox( "Keep Peak", cbcell );
+          WCheckBox *cb = new WCheckBox( WString::tr("psw-keep-peak"), cbcell );
           cb->setWordWrap(false);
+          cb->addStyleClass( "KeepPeakCb" );
           cb->setChecked(true);
           cb->checked().connect( this, &PeakSelectorWindow::keepPeakChanged );
           cb->unChecked().connect( this, &PeakSelectorWindow::keepPeakChanged );
@@ -559,7 +568,7 @@ public:
         newNucCell->addStyleClass( "NewNucCell" );
         
         if( has_changed
-            && m_reason!=PeakSelectorWindowReason::PeaksFromPreviousSpectum
+            && m_reason!=PeakSelectorWindowReason::PeaksFromPreviousSpectrum
             && m_reason!=PeakSelectorWindowReason::PeaksFromCsvFile )
         {
           m_nuc_select_combos[i] = new WComboBox(newNucCell);
@@ -569,7 +578,7 @@ public:
           // Only show the "Don't change" checkbox if this is a previously existing peak
           if( m_old_to_new_peaks[i].first )
           {
-            m_dont_change_nuc_cbs[i] = new WCheckBox( "Don't change", newNucCell );
+            m_dont_change_nuc_cbs[i] = new WCheckBox( WString::tr("psw-dont-change"), newNucCell );
             m_dont_change_nuc_cbs[i]->addStyleClass( "DontAssignCb" );
             m_dont_change_nuc_cbs[i]->setInline( false );
             m_dont_change_nuc_cbs[i]->checked().connect( boost::bind( &PeakSelectorWindow::dontChangeNucCbChanged, this, i ) );
@@ -612,14 +621,14 @@ public:
     switch( m_reason )
     {
       case PeakSelectorWindowReason::PeakSearch:
-      case PeakSelectorWindowReason::PeaksFromPreviousSpectum:
+      case PeakSelectorWindowReason::PeaksFromPreviousSpectrum:
       case PeakSelectorWindowReason::PeaksFromCsvFile:
         break;
         
       case PeakSelectorWindowReason::NuclideId:
         if( !some_nuclides_changed )
         {
-          txt = new WText( "<strong>No nuclides changed</strong>", contents() );
+          txt = new WText( WString("<strong>{1}</strong>").arg( WString::tr("psw-no-nuc-changed") ), contents() );
           txt->setPadding( 10, Wt::Top | Wt::Bottom );
           txt->setTextAlignment( Wt::AlignmentFlag::AlignCenter );
           txt->setInline( false );
@@ -633,7 +642,7 @@ public:
     refreshRelEffChart();
 #endif
     
-    WPushButton *acceptButton = addCloseButtonToFooter( "Accept", true );
+    WPushButton *acceptButton = addCloseButtonToFooter( WString::tr("Accept"), true );
     acceptButton->clicked().connect( boost::bind( &AuxWindow::hide, this ) );
     
     acceptButton->clicked().connect( std::bind( [viewer, orig_peaks, final_peaks](){
@@ -660,11 +669,11 @@ public:
     WPushButton *cancelButton = nullptr;
     if( viewer->isPhone() )
     {
-      cancelButton = new WPushButton( "Cancel", footer() );
+      cancelButton = new WPushButton( WString::tr("Cancel"), footer() );
       cancelButton->setFloatSide( Wt::Right );
     }else
     {
-      cancelButton = addCloseButtonToFooter( "Cancel", true );
+      cancelButton = addCloseButtonToFooter( WString::tr("Cancel"), true );
     }
     
     cancelButton->clicked().connect( boost::bind( &PeakSelectorWindow::cancelOperation, this ) );
@@ -748,7 +757,7 @@ public:
     m_chartPanel->addStyleClass( "PeakSelectRelEffPanel" );
     m_chartPanel->setCollapsible( true );
     m_chartPanel->setCollapsed( true );
-    m_chartPanel->setTitle( "Relative Efficiency Plot" );
+    m_chartPanel->setTitle( WString::tr("psw-rel-eff-plot-title") );
     m_chartPanel->setAnimation( WAnimation(WAnimation::SlideInFromTop, WAnimation::EaseOut, 100) );
     
     WContainerWidget *holder = new WContainerWidget();
@@ -759,7 +768,7 @@ public:
     
     m_rel_eff_chart = new RelEffChart();
     m_rel_eff_chart->setHeight( 250 );
-    m_rel_eff_chart->setYAxisTitle( "Rel. Peak Area / BR" );
+    m_rel_eff_chart->setYAxisTitle( WString::tr("psw-rel-eff-plot-y-axis-title").toUTF8() );
     layout->addWidget( m_rel_eff_chart, 0, 0 );
   }//void setupRelEffChart()
  
@@ -781,12 +790,28 @@ public:
     
     vector<RelActCalcManual::GenericPeakInfo> peaks;
     map<string,pair<double,std::string>> relActsColors;  //maps source --> {rel-act,color}
+    map<string,vector<shared_ptr<PeakDef>>> label_to_used_new_peaks;
     for( size_t i = 0; i < m_old_to_new_peaks.size(); ++i )
     {
-      auto p = m_old_to_new_peaks[i].second;
-      if( !p )
-        p = m_old_to_new_peaks[i].first;
+      shared_ptr<PeakDef> p = m_old_to_new_peaks[i].second;
       
+      // If we are doing a peak-search, or assigning nuclides from reference lines, the user may
+      //  have already fit some peaks for the showing reference nuclide, in which case `p` will
+      //  likely be nullptr (because a new peak wouldnt have been fit for or modified), so in this
+      //  case, we'll use the old peak, for plotting the Rel. Eff. line, if the user has the
+      //  "Show previous peaks too" checkmark checked.
+      //  However, if we are doing a search from previous spectrum, then the "old" peak is
+      //  from the other spectrum (slightly normalized to this spectrum), so we definitely
+      //  dont want to include the possibility of using it.
+      if( !p
+         && (m_reason != PeakSelectorWindowReason::PeaksFromPreviousSpectrum)
+         && m_showAllPeaks && m_showAllPeaks->isChecked() )
+      {
+        p = m_old_to_new_peaks[i].first;
+      }
+      
+      if( !m_keep_peak_cbs[i] && (!m_showAllPeaks || !m_showAllPeaks->isChecked()) )
+        continue;
       
       if( !eligible_for_rel_eff_chart(p) || !new_peak_nucs.count(p->parentNuclide()) )
         continue;
@@ -800,6 +825,8 @@ public:
       const double photopeakEnergy = p->decayParticle()->energy;
       
       const string label = p->parentNuclide()->symbol;
+      
+      label_to_used_new_peaks[label].push_back( p );
       
       double intensity = 0.0;
       bool gotInfoFromRefLines = false;
@@ -852,11 +879,11 @@ public:
             const double br = line.m_decay_intensity;
             if( fabs(refenergy - photopeakEnergy) < 1.25*peakSigma )
               intensity += br;
-          }
+          }//for( const ReferenceLineInfo::RefLine &line : refline->m_ref_lines )
           
           gotInfoFromRefLines = true;
           break;
-        }
+        }//if( refline->m_nuclide == p->parentNuclide() )
         
         if( gotInfoFromRefLines )
           break;
@@ -899,9 +926,29 @@ public:
     
     // We want to make the maximum relative efficiency point 1.0, for each source
     size_t max_num_peaks = 0;
-    for( auto &src_act_color : relActsColors )
+    for( auto &src_to_peaks : label_to_used_new_peaks )
     {
-      const string &src = src_act_color.first;
+      const string &src = src_to_peaks.first;
+      
+      auto act_color_pos = relActsColors.find(src);
+      if( act_color_pos == end(relActsColors) )
+        act_color_pos = relActsColors.insert( make_pair(src,pair<double,string>{1.0,""}) ).first;
+      assert( act_color_pos != end(relActsColors) );
+      
+      // If we arent showing reference, we wont have colors, so lets check if any of the peaks
+      //  are colored for this source, and if so use the first peaks color.
+      if( act_color_pos->second.second.empty() )
+      {
+        const vector<shared_ptr<PeakDef>> &peak_defs = src_to_peaks.second;
+        for( const shared_ptr<PeakDef> &p : peak_defs )
+        {
+          if( !p->lineColor().isDefault() )
+          {
+            act_color_pos->second.second = p->lineColor().cssText();
+            break;
+          }
+        }//for( const auto &p : peak_defs )
+      }//if( act_color_pos->second.second.empty() )
       
       double max_eff = 0.0;
       size_t num_src_peaks = 0.0;
@@ -920,9 +967,9 @@ public:
       max_num_peaks = std::max( max_num_peaks, num_src_peaks );
       assert( max_eff > 0.0 );
       
-      double &rel_act = src_act_color.second.first;
+      double &rel_act = act_color_pos->second.first;
       rel_act = (max_eff > 0.0) ? max_eff : 1.0;
-    }//for( const auto &src_act_color : relActsColors )
+    }//for( auto &src_to_peaks : label_to_used_new_peaks )
     
     m_chartPanel->setHidden( (max_num_peaks < 2) );
     
@@ -948,6 +995,10 @@ public:
       for( size_t i = 0; i < m_old_to_new_peaks.size(); ++i )
         m_table->rowAt( static_cast<int>(i+1) )->setHidden( !m_peak_updated[i] );
     }
+    
+#if( USE_REL_ACT_TOOL )
+    refreshRelEffChart();
+#endif
   }//void showAllPeaksCbChanged()
   
   
@@ -1049,9 +1100,6 @@ public:
   
   void keepPeakChanged()
   {
-    if( !m_keepRefLinePeaksOnly )
-      return;
-    
     bool anyNonAssignedPeaks = false;
     for( size_t i = 0; !anyNonAssignedPeaks && i < m_old_to_new_peaks.size(); ++i )
     {
@@ -1064,19 +1112,21 @@ public:
     
     for( size_t i = 0; i < m_old_to_new_peaks.size(); ++i )
     {
-      if( m_keep_peak_cbs[i] )
-      {
-        const bool enable = m_keep_peak_cbs[i]->isChecked();
+      if( !m_keep_peak_cbs[i] )
+        continue;
+      
+      const bool enable = m_keep_peak_cbs[i]->isChecked();
         
-        if( m_nuc_select_combos[i] )
-          m_nuc_select_combos[i]->setDisabled( !enable );
+      if( m_nuc_select_combos[i] )
+        m_nuc_select_combos[i]->setDisabled( !enable );
         
-        if( m_dont_change_nuc_cbs[i] )
-          m_dont_change_nuc_cbs[i]->setDisabled( !enable );
-      }//if( m_keep_peak_cbs[i] )
+      if( m_dont_change_nuc_cbs[i] )
+        m_dont_change_nuc_cbs[i]->setDisabled( !enable );
     }//for( size_t i = 0; i < m_old_to_new_peaks.size(); ++i )
     
-    m_keepRefLinePeaksOnly->setChecked( !anyNonAssignedPeaks );
+    if( m_keepRefLinePeaksOnly )
+      m_keepRefLinePeaksOnly->setChecked( !anyNonAssignedPeaks );
+    
 #if( USE_REL_ACT_TOOL )
     refreshRelEffChart();
 #endif
@@ -1326,7 +1376,7 @@ public:
       switch( m_reason )
       {
         case PeakSelectorWindowReason::PeakSearch:
-        case PeakSelectorWindowReason::PeaksFromPreviousSpectum:
+        case PeakSelectorWindowReason::PeaksFromPreviousSpectrum:
         case PeakSelectorWindowReason::PeaksFromCsvFile:
           newpeak->clearSources();
           break;
@@ -1516,7 +1566,7 @@ public:
         case PeakSelectorWindowReason::NuclideId:
           break;
           
-        case PeakSelectorWindowReason::PeaksFromPreviousSpectum:
+        case PeakSelectorWindowReason::PeaksFromPreviousSpectrum:
           break;
           
         case PeakSelectorWindowReason::PeaksFromCsvFile:
@@ -1659,7 +1709,7 @@ public:
               *m_old_to_new_peaks[i].second = *m_old_to_new_peaks[i].first;
             break;
             
-            case PeakSelectorWindowReason::PeaksFromPreviousSpectum:
+            case PeakSelectorWindowReason::PeaksFromPreviousSpectrum:
             case PeakSelectorWindowReason::PeaksFromCsvFile:
               m_old_to_new_peaks[i].second->inheritUserSelectedOptions( *m_old_to_new_peaks[i].first, false );
             break;
@@ -1700,7 +1750,7 @@ public:
               final_peaks.push_back( *i.first );
           break;
           
-          case PeakSelectorWindowReason::PeaksFromPreviousSpectum:
+          case PeakSelectorWindowReason::PeaksFromPreviousSpectrum:
             if( i.second && !m_cancelOperation )
               final_peaks.push_back( *i.second );
           break;
@@ -2088,7 +2138,7 @@ void set_peaks_from_search( InterSpec *viewer,
   
   if( (currentdata != originaldata) || !peaks )
   {
-    passMessage( "Peaks not updated, spectrum has changed.", WarningWidget::WarningMsgHigh );
+    passMessage( WString::tr("psgu-peaks-not-updated-no-change-msg"), WarningWidget::WarningMsgHigh );
     viewer->automatedPeakSearchCompleted();
     return;
   }
@@ -2111,7 +2161,7 @@ void set_peaks_from_search( InterSpec *viewer,
   
   viewer->automatedPeakSearchCompleted();
   
-  passMessage( "Peaks updated.", WarningWidget::WarningMsgInfo );
+  passMessage( WString::tr("psgu-peaks-updated-msg"), WarningWidget::WarningMsgInfo );
   
   ReferencePhotopeakDisplay *refLineDisplay = viewer->referenceLinesWidget();
   
@@ -2511,15 +2561,11 @@ void automated_search_for_peaks( InterSpec *viewer,
   //We should indicate to the user that seraching for peaks will take a while,
   //  but also we want to give them the chance to go past this and keep using
   //  the app.
-  const char *title = "Just a few moments";
-  const char *content = "<div style=\"text-align: left; white-space: nowrap;\">"
-                          "<div>Searching for peaks - this may take a bit.</div>"
-                          "<div>You can close this dialog and when the search is done,</div>"
-                        "you will be notified"
-                        "</div>";
+  const WString title = WString::tr("psgu-search-wait-title");
+  const WString content = WString::tr("psgu-search-wait-content");
   SimpleDialog *msg = new SimpleDialog( title, content );
   msg->rejectWhenEscapePressed();
-  msg->addButton( "Close" );
+  msg->addButton( WString::tr("Close") );
   
   //Make it so users cant keep clicking the search button
   viewer->automatedPeakSearchStarted();
@@ -2954,13 +3000,9 @@ void refit_peaks_with_drf_fwhm( InterSpec * const interspec, const double rightC
     shared_ptr<const DetectorPeakResponse> drf = foreground->detector();
     if( !drf || !drf->hasResolutionInfo() )
     {
-      const char *title = "FWHM information is needed";
-      string content;
-      if( drf)
-        content = "<div>Current detector response does not contain FWHM info.</div>";
-      else
-        content = "<div>No detector response is selected.</div>";
-      content += "<div>Would you like to fit FWHM info from current spectra?</div>";
+      const WString title = WString::tr("psgu-fwhm-info-needed-title");
+      const WString content = WString::tr( !!drf ? "psgu-fwhm-info-needed-has-det-eff" : "psgu-fwhm-info-needed-no-det-eff" );
+      
       SimpleDialog *msg = new SimpleDialog( title, content );
       // Setting object name of the SimpleDialog causes a javascript error - so we'll set
       //  the SimpleDialog contents name, and then get the dialog from that.
@@ -2968,8 +3010,8 @@ void refit_peaks_with_drf_fwhm( InterSpec * const interspec, const double rightC
       //  somewhere.
       msg->contents()->setObjectName( "AskToFitFwhmDialog" );
       msg->rejectWhenEscapePressed();
-      WPushButton *yes_btn = msg->addButton( "Yes" );
-      WPushButton *no_btn = msg->addButton( "No" );
+      WPushButton *yes_btn = msg->addButton( WString::tr("Yes") );
+      WPushButton *no_btn = msg->addButton( WString::tr("No") );
       
       no_btn->clicked().connect( std::bind([interspec,rightClickEnergy](){
         auto undo = [interspec,rightClickEnergy](){
@@ -3098,10 +3140,11 @@ void refit_peaks_with_drf_fwhm( InterSpec * const interspec, const double rightC
                                  fixedPeaks, isRefit );
     if( outputPeak.size() != inputPeak.size() )
     {
-      WStringStream msg;
-      msg << "Failed to refit peak (became insignificant), from "
-      << int(inputPeak.size()) << " to " << int(outputPeak.size()) << " peaks";
-      passMessage( msg.str(), WarningWidget::WarningMsgInfo );
+      const WString msg = WString::tr("psgu-fwhm-fit-fail")
+                            .arg( static_cast<int>(inputPeak.size()) )
+                            .arg( static_cast<int>(outputPeak.size()) );
+      
+      passMessage( msg, WarningWidget::WarningMsgInfo );
       return;
     }//if( outputPeak.size() != 1 )
     
@@ -3377,16 +3420,14 @@ void refit_peak_with_photopeak_mean( InterSpec * const interspec, const double r
     shared_ptr<const PeakDef> peak = model->nearestPeak( rightClickEnergy );
     if( !peak )
     {
-      passMessage( "There was no peak to to set to gamma's energy",
-                  WarningWidget::WarningMsgInfo );
+      passMessage( WString::tr("psgu-no-peak-near-right-click-msg"), WarningWidget::WarningMsgInfo );
       return;
     }
     
     const float energy = reference_line_energy_near_peak( interspec, *peak );
     if( energy < 10 )
     {
-      passMessage( "There was no reference gamma energy to set the peaks mean to.",
-                  WarningWidget::WarningMsgInfo );
+      passMessage( WString::tr("psgu-no-ref-line-near-peak-msg"), WarningWidget::WarningMsgInfo );
       return;
     }
   
@@ -3452,11 +3493,10 @@ void refit_peak_with_photopeak_mean( InterSpec * const interspec, const double r
                                fixedPeaks, isRefit );
     if( outputPeak.size() != inputPeak.size() )
     {
-      WStringStream msg;
-      msg << "Failed to refit peak after fixing mean to reference photopeak."
-      " A peak became insignificant; from "
-      << int(inputPeak.size()) << " to " << int(outputPeak.size()) << " peaks";
-      passMessage( msg.str(), WarningWidget::WarningMsgInfo );
+      WString msg = WString::tr("psgu-failed-refit-after-fixing-mean")
+        .arg( static_cast<int>(inputPeak.size()) )
+        .arg( static_cast<int>(outputPeak.size()) );
+      passMessage( msg, WarningWidget::WarningMsgInfo );
       return;
     }//if( outputPeak.size() != 1 )
   
@@ -3547,7 +3587,6 @@ void change_continuum_type_from_right_click( InterSpec * const interspec,
     assert( oldContinuum );
     if( oldContinuum->type() == type )
     {
-      
       passMessage( "Continuum is already of type " + WString::tr(PeakContinuum::offset_type_label_tr(type)).toUTF8(),
                   WarningWidget::WarningMsgInfo)
       return;
@@ -3604,12 +3643,13 @@ void change_continuum_type_from_right_click( InterSpec * const interspec,
         model->updatePeaks( oldPeaksInRoi, newPeaks );
       }else
       {
-        passMessage( "Changing the continuum type to "
-                    + WString::tr(PeakContinuum::offset_type_label_tr(type)).toUTF8()
-                    + " caused " + string( newCandidatePeaks.size() > 1 ? "at least one" : "the" )
-                    + " peak to become insignificant.<br />"
-                    "Please use the <b>Peak Editor</b> to make this change.",
-                    WarningWidget::WarningMsgInfo);
+        WString msg = WString::tr("psgu-failed-change-cont-type")
+          .arg( WString::tr(PeakContinuum::offset_type_label_tr(type)) )
+          .arg( WString::tr((newCandidatePeaks.size() > 1)
+                            ? "psgu-failed-change-cont-plural"
+                            : "psgu-failed-change-cont-singular") );
+        
+        passMessage( msg, WarningWidget::WarningMsgInfo);
       }//if( result.size() == inputPeak.size() ) / else
       
       return;
@@ -3639,13 +3679,10 @@ void change_continuum_type_from_right_click( InterSpec * const interspec,
       
       if( outputPeak.empty() )
       {
-        WStringStream msg;
-        msg << "Naively changing the continuum type to "
-        << Wt::WString::tr(PeakContinuum::offset_type_label_tr(type)).toUTF8()
-        << " caused the peak to become insignificant.<br />"
-        "Please use the <b>Peak Editor</b> to make this change.";
+        WString msg = WString::tr("psgu-failed-change-cont-insig-msg")
+          .arg( WString::tr(PeakContinuum::offset_type_label_tr(type)) );
         
-        passMessage( msg.str(), WarningWidget::WarningMsgInfo );
+        passMessage( msg, WarningWidget::WarningMsgInfo );
         return;
       }//if( outputPeak.empty() )
       
@@ -3733,10 +3770,10 @@ void change_skew_type_from_right_click( InterSpec * const interspec,
     {
       if( peak->type() == PeakDef::DefintionType::DataDefined )
       {
-        passMessage( "Peak in ROI at " + std::to_string(rightClickEnergy)
-                    + " keV is not Gaussian defined - please change this in the Peak Editor"
-                    " before setting a skew type.",
-                    WarningWidget::WarningMsgInfo );
+        const WString msg = WString::tr("psgu-change-skew-not-gaus")
+          .arg( std::to_string(rightClickEnergy) );
+        
+        passMessage( msg, WarningWidget::WarningMsgInfo );
         return;
       }//if( peak not Gaussian defined )
     }//for( const auto &p : peaks_in_roi )
@@ -3835,12 +3872,13 @@ void change_skew_type_from_right_click( InterSpec * const interspec,
         model->updatePeaks( peaks_in_roi, newPeaks );
       }else
       {
-        passMessage( "Changing the skew type to "
-                    + string(PeakDef::to_string(type))
-                    + " caused " + string( newCandidatePeaks.size() > 1 ? "at least one" : "the" )
-                    + " peak to become insignificant.<br />"
-                    "Please use the <b>Peak Editor</b> to make this change.",
-                    WarningWidget::WarningMsgInfo);
+        const WString msg = WString::tr("psgu-change-skew-make-insig")
+          .arg( PeakDef::to_string(type) )
+        .arg( WString::tr( (newCandidatePeaks.size() > 1)
+                          ? "psgu-failed-change-cont-plural"
+                          : "psgu-failed-change-cont-singular" ) );
+        
+        passMessage( msg, WarningWidget::WarningMsgInfo);
       }//if( result.size() == inputPeak.size() ) / else
       
       return;
@@ -3870,13 +3908,10 @@ void change_skew_type_from_right_click( InterSpec * const interspec,
       
       if( outputPeak.empty() )
       {
-        WStringStream msg;
-        msg << "Naively changing the continuum type to "
-        << string(PeakDef::to_string(type))
-        << " caused the peak to become insignificant.<br />"
-        "Please use the <b>Peak Editor</b> to make this change.";
+        const WString msg = WString::tr("psgu-failed-change-skew-insig-msg")
+          .arg( PeakDef::to_string(type) );
         
-        passMessage( msg.str(), WarningWidget::WarningMsgInfo );
+        passMessage( msg, WarningWidget::WarningMsgInfo );
         return;
       }//if( outputPeak.empty() )
       
@@ -4000,7 +4035,7 @@ void fit_template_peaks( InterSpec *interspec, std::shared_ptr<const SpecUtils::
         break;
         
       case PeakTemplateFitSrc::PreviousSpectrum:
-        reason = PeakSelectorWindowReason::PeaksFromPreviousSpectum;
+        reason = PeakSelectorWindowReason::PeaksFromPreviousSpectrum;
         new PeakSelectorWindow( interspec, reason, input_peaks, data, fitpeaks, reflines );
         break;
     }//switch( fitsrc )
@@ -4149,7 +4184,7 @@ void prepare_and_add_gadras_peaks( std::shared_ptr<const SpecUtils::Measurement>
     
     vector<ReferenceLineInfo> reflines;
     
-    const PeakSelectorWindowReason reason = PeakSelectorWindowReason::PeaksFromCsvFile; //PeaksFromPreviousSpectum
+    const PeakSelectorWindowReason reason = PeakSelectorWindowReason::PeaksFromCsvFile; //PeaksFromPreviousSpectrum
     new PeakSelectorWindow( interspec, reason, orig_peaks, data, fitpeaks, reflines );
     
     wApp->triggerUpdate();
