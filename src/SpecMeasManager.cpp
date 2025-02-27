@@ -5625,6 +5625,7 @@ WContainerWidget *SpecMeasManager::createTreeViewDiv()
   m_treeView->setColumn1Fixed( false );
   m_treeView->setColumnWidth( SpectraFileModel::kDisplayName,     WLength( 17, WLength::FontEx ) );
   m_treeView->setColumnWidth( SpectraFileModel::kUploadTime,      WLength( 16, WLength::FontEx ) );
+  m_treeView->setColumnWidth( SpectraFileModel::kRiidResult,      WLength( 16, WLength::FontEx ) );
   m_treeView->setColumnWidth( SpectraFileModel::kNumMeasurements, WLength( 10, WLength::FontEx ) );
   m_treeView->setColumnWidth( SpectraFileModel::kLiveTime,        WLength( 14, WLength::FontEx ) );
   m_treeView->setColumnWidth( SpectraFileModel::kRealTime,        WLength( 14, WLength::FontEx ) );

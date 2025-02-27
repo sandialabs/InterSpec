@@ -378,7 +378,9 @@ public:
   std::string uuid;
   std::string filename;
   std::string description;
-
+  
+  // TODO: as of 20250227, `SpectraFileHeader->m_riidSummary` doesnt get saved to the database - we should add this.
+  
   bool userHasModified;
   Wt::WDateTime uploadTime;
   Wt::WDateTime serializeTime;
