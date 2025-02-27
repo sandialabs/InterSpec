@@ -11446,6 +11446,15 @@ void InterSpec::setSpectrum( std::shared_ptr<SpecMeas> meas,
       
       vector<PeakDef> original_peaks;
       
+#if( USE_REL_ACT_TOOL )
+      // For some reason loading javascript from inside a
+      //  `WServer::instance()->post( sessionid, [=](){...} );`
+      //  call doesnt seem to work okay, or at least load the JS before
+      //  doing the other JS - so since `PeakSelectorWindow` _may_ make
+      //  a RelEffPlot, we'll load the JS here, just to make sure its ready.
+      wApp->require( "InterSpec_resources/RelEffPlot.js" );
+#endif
+      
       const std::string sessionid = wApp->sessionId();
       propigate_peaks_fcns = [=]( std::shared_ptr<const SpecUtils::Measurement> data ){
         PeakSearchGuiUtils::fit_template_peaks( this, data, input_peaks, original_peaks,
