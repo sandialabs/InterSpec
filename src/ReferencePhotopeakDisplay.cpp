@@ -3349,6 +3349,11 @@ void ReferencePhotopeakDisplay::fitPeaks()
 
 void ReferencePhotopeakDisplay::clearAllLines()
 {
+  const ReferenceLineInfo starting_showing = m_currentlyShowingNuclide;
+  const vector<ReferenceLineInfo> starting_persisted = m_persisted;
+  const deque<RefLineInput> starting_prev_nucs = m_prevNucs;
+  const bool starting_user_color = m_userHasPickedColor;
+  
   // Add current nuclide to list of previous nuclides
   if( m_currentlyShowingNuclide.m_validity == ReferenceLineInfo::InputValidity::Valid )
   {
@@ -3397,6 +3402,12 @@ void ReferencePhotopeakDisplay::clearAllLines()
   updateOtherNucsDisplay();
 
   m_chart->clearAllReferncePhotoPeakLines();
+  
+  
+  const RefLineInput user_input = userInput();
+  
+  addUndoRedoPoint( starting_showing, starting_persisted, starting_prev_nucs,
+                   starting_user_color, user_input );
   
   m_nuclidesCleared.emit();
 }//void clearAllLines()
