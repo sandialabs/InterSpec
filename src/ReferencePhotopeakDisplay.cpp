@@ -3349,6 +3349,27 @@ void ReferencePhotopeakDisplay::fitPeaks()
 
 void ReferencePhotopeakDisplay::clearAllLines()
 {
+  // Add current nuclide to list of previous nuclides
+  if( m_currentlyShowingNuclide.m_validity == ReferenceLineInfo::InputValidity::Valid )
+  {
+    RefLineInput prev = m_currentlyShowingNuclide.m_input;
+    
+    // Remove any other previous nuclides that have same `prev.m_nuclide` as what
+    //  we are about to push on
+    m_prevNucs.erase(std::remove_if(begin(m_prevNucs), end(m_prevNucs),
+                                    [&prev](const RefLineInput &val) -> bool {
+      return (val.m_input_txt == prev.m_input_txt);
+    }), end(m_prevNucs));
+    
+    // Push new value onto front of history
+    m_prevNucs.push_front( std::move(prev) );
+    
+    // Check history length, and truncate if needed
+    if( m_prevNucs.size() > m_max_prev_nucs )
+      m_prevNucs.resize( m_max_prev_nucs );
+  }//if( !m_currentlyShowingNuclide.labelTxt.empty() )
+  
+  
   //m_fitPeaks->disable();
   m_persisted.clear();
   m_currentlyShowingNuclide.reset();
