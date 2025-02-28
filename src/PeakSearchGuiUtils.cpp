@@ -2134,6 +2134,8 @@ void set_peaks_from_search( InterSpec *viewer,
   if( !viewer )
     return;
   
+  viewer->useMessageResourceBundle( "PeakSearchGuiUtils" );
+  
   auto currentdata = viewer->displayedHistogram( SpecUtils::SpectrumType::Foreground );
   
   if( (currentdata != originaldata) || !peaks )
@@ -2526,6 +2528,8 @@ void automated_search_for_peaks( InterSpec *viewer,
 {
   if( !viewer )
     return; //shouldnt happen
+  
+  viewer->useMessageResourceBundle( "PeakSearchGuiUtils" );
   
   auto peakModel = viewer->peakModel();
   if( !peakModel )
@@ -2986,6 +2990,8 @@ void refit_peaks_with_drf_fwhm( InterSpec * const interspec, const double rightC
 {
   try
   {
+    interspec->useMessageResourceBundle( "PeakSearchGuiUtils" );
+    
     PeakModel * const model = interspec->peakModel();
     const shared_ptr<const SpecUtils::Measurement> data = interspec->displayedHistogram(SpecUtils::SpectrumType::Foreground);
     const shared_ptr<const SpecMeas> foreground = interspec->measurment( SpecUtils::SpectrumType::Foreground);
@@ -3413,6 +3419,8 @@ void refit_peak_with_photopeak_mean( InterSpec * const interspec, const double r
 {
   try
   {
+    interspec->useMessageResourceBundle( "PeakSearchGuiUtils" );
+    
     PeakModel * const model = interspec->peakModel();
     const shared_ptr<const SpecUtils::Measurement> data = interspec->displayedHistogram(SpecUtils::SpectrumType::Foreground);
     const shared_ptr<const SpecMeas> foreground = interspec->measurment( SpecUtils::SpectrumType::Foreground);
@@ -3528,6 +3536,8 @@ void change_continuum_type_from_right_click( InterSpec * const interspec,
   try
   {
     assert( interspec );
+    if( interspec )
+      interspec->useMessageResourceBundle( "PeakSearchGuiUtils" );
     
     const PeakContinuum::OffsetType type = static_cast<PeakContinuum::OffsetType>( continuum_type );
     
@@ -3713,6 +3723,8 @@ void change_skew_type_from_right_click( InterSpec * const interspec,
   try
   {
     assert( interspec );
+    if( interspec )
+      interspec->useMessageResourceBundle( "PeakSearchGuiUtils" );
     
     const PeakDef::SkewType type = static_cast<PeakDef::SkewType>( skew_type );
     
