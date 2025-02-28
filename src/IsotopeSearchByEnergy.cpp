@@ -342,14 +342,17 @@ IsotopeSearchByEnergy::IsotopeSearchByEnergy( InterSpec *viewer,
   WContainerWidget *sourceTypes = new WContainerWidget( m_searchConditionsColumn );
   sourceTypes->setStyleClass( "IsotopeSourceTypes" );
   m_gammas = new WCheckBox( WString::tr("isbe-cb-gammas"), sourceTypes );
+  m_gammas->addStyleClass( "CbNoLineBreak" );
   m_gammas->changed().connect( this, &IsotopeSearchByEnergy::minBrOrHlChanged );
   m_gammas->setChecked();
 
   m_xrays = new WCheckBox( WString::tr("X-rays"), sourceTypes );
+  m_xrays->addStyleClass( "CbNoLineBreak" );
   m_xrays->changed().connect( this, &IsotopeSearchByEnergy::minBrOrHlChanged );
   m_xrays->setChecked();
   
   m_reactions = new WCheckBox( WString::tr("isbe-cb-rxnts"), sourceTypes );
+  m_reactions->addStyleClass( "CbNoLineBreak" );
   m_reactions->changed().connect( this, &IsotopeSearchByEnergy::minBrOrHlChanged );
 //  m_reactions->setChecked();
 

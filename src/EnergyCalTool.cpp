@@ -1695,8 +1695,7 @@ void EnergyCalTool::initWidgets( EnergyCalTool::LayoutType layoutType )
     item->addStyleClass( "ApplyToItem" );
     auto cb = new WCheckBox( WString::tr(label), item );
     cb->setWordWrap( false );
-    cb->addStyleClass( "ApplyToItem" );
-    cb->setInline( false );
+    cb->addStyleClass( "ApplyToItem CbNoLineBreak" );
     
     
     switch( index )

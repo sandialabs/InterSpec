@@ -329,7 +329,7 @@ public:
             m_keepRefLinePeaksOnly->checked().connect( this, &PeakSelectorWindow::keepOnlyRefLinesCbChanged );
             m_keepRefLinePeaksOnly->unChecked().connect( this, &PeakSelectorWindow::keepOnlyRefLinesCbChanged );
             m_keepRefLinePeaksOnly->setMargin( 10, Wt::Top );
-            m_keepRefLinePeaksOnly->addStyleClass( "KeepRefLinPeaksOnlyCb" );
+            m_keepRefLinePeaksOnly->addStyleClass( "KeepRefLinPeaksOnlyCb CbNoLineBreak" );
           }//if( anyNonAssignedPeaks )
         }//if( we searched for peaks, and there were reference lines )
         
