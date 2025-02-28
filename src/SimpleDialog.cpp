@@ -177,7 +177,8 @@ void SimpleDialog::init( const Wt::WString &title, const Wt::WString &content )
   
 #if( WT_VERSION > 0x3040000 )
   // I havent checked version of Wt that does include `raiseToFront()`, but 3.3.4 doesnt.
-  raiseToFront();
+  //20250228: raiseToFront() call removed do to encountering some JS exception, that _maybe_ have something to do with this (the object not found), on Windows - I dont actually know if this function call is the problem.
+  //raiseToFront();
 #endif
 }//init(...)
 
