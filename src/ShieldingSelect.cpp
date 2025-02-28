@@ -198,7 +198,7 @@ public:
     m_activityType->addStyleClass( "GridThirdCol GridThirdRow" );
     
     m_allowFitting = new WCheckBox( "Fit activity value", this );
-    m_allowFitting->addStyleClass( "GridSecondCol GridStretchCol GridFourthRow GridSpanTwoCol" );
+    m_allowFitting->addStyleClass( "GridSecondCol GridStretchCol GridFourthRow GridSpanTwoCol CbNoLineBreak" );
     
     
     m_relaxationDiv = new WContainerWidget( this );
@@ -1176,7 +1176,7 @@ SourceCheckbox::SourceCheckbox( const SandiaDecay::Nuclide *nuclide,
 
   WString txt = nuclide ? WString::fromUTF8(nuclide->symbol) : WString();
   m_useAsSourceCb = new WCheckBox( txt, this );
-  m_useAsSourceCb->addStyleClass( "UseAsSrcCb" );
+  m_useAsSourceCb->addStyleClass( "UseAsSrcCb CbNoLineBreak" );
   m_label = new WLabel( "--", this );
   m_label->addStyleClass( "SelfAttenSrcLabel" );
   
@@ -1193,7 +1193,7 @@ SourceCheckbox::SourceCheckbox( const SandiaDecay::Nuclide *nuclide,
   m_massFraction->setValue( massFrac );
 
   m_fitFraction = new WCheckBox( WString::tr("Fit"), this );
-  m_fitFraction->addStyleClass( "FitFractionCb" );
+  m_fitFraction->addStyleClass( "FitFractionCb CbNoLineBreak" );
   if( !nuclide )
   {
     m_useAsSourceCb->setUnChecked();
@@ -2269,6 +2269,7 @@ void ShieldingSelect::init()
   {
     m_fitArealDensityCB = new WCheckBox( WString::tr("Fit") );
     m_fitArealDensityCB->setChecked( true );
+    m_fitArealDensityCB->addStyleClass( "CbNoLineBreak" );
     genericMatLayout->addWidget( m_fitArealDensityCB, 0, 6, AlignMiddle );
   }
   
@@ -2300,6 +2301,7 @@ void ShieldingSelect::init()
   {
     m_fitAtomicNumberCB = new WCheckBox( "Fit" );
     m_fitAtomicNumberCB->setChecked( false );
+    m_fitAtomicNumberCB->addStyleClass( "CbNoLineBreak" );
     genericMatLayout->addWidget( m_fitAtomicNumberCB, 0, 2, AlignMiddle );
     
     m_asSourceCBs = new WContainerWidget( this );
@@ -2366,6 +2368,7 @@ void ShieldingSelect::init()
       
       fitCb = new WCheckBox( WString::tr("Fit") );
       fitCb->setChecked( false );
+      fitCb->addStyleClass( "CbNoLineBreak" );
       grid->addWidget( fitCb, row, 2, AlignMiddle | AlignRight );
       
       fitCb->checked().connect( this, &ShieldingSelect::handleUserChangeForUndoRedo );

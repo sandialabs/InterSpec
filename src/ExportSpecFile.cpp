@@ -802,7 +802,7 @@ void ExportSpecFileTool::init()
       string title = "For." + string(back ? " + Back." : "") + string(secondary ? " + Secon." : "");
       
       m_forePlusBack = new WCheckBox( title, fileSelectDiv );
-      m_forePlusBack->addStyleClass( "ExportForPlusBack" );
+      m_forePlusBack->addStyleClass( "ExportForPlusBack CbNoLineBreak" );
       m_forePlusBack->checked().connect( this, &ExportSpecFileTool::handleForePlusBackChanged );
       m_forePlusBack->unChecked().connect( this, &ExportSpecFileTool::handleForePlusBackChanged );
       m_forePlusBack->setToolTip( "Export the foreground and background and/or secondary"
@@ -895,22 +895,27 @@ void ExportSpecFileTool::init()
   title->addStyleClass( "ExportColTitle" );
   
   m_dispForeSamples   = new WCheckBox( "Disp. Foreground", m_samplesHolder );
+  m_dispForeSamples->addStyleClass( "CbNoLineBreak" );
   m_dispForeSamples->checked().connect( boost::bind( &ExportSpecFileTool::handleDisplaySampleChanged, this, SpecUtils::SpectrumType::Foreground ) );
   m_dispForeSamples->unChecked().connect( boost::bind( &ExportSpecFileTool::handleDisplaySampleChanged, this, SpecUtils::SpectrumType::Foreground ) );
   
   m_dispBackSamples   = new WCheckBox( "Disp. Background", m_samplesHolder );
+  m_dispBackSamples->addStyleClass( "CbNoLineBreak" );
   m_dispBackSamples->checked().connect( boost::bind( &ExportSpecFileTool::handleDisplaySampleChanged, this, SpecUtils::SpectrumType::Background ) );
   m_dispBackSamples->unChecked().connect( boost::bind( &ExportSpecFileTool::handleDisplaySampleChanged, this, SpecUtils::SpectrumType::Background ) );
   
   m_dispSecondSamples = new WCheckBox( "Disp. Secondary", m_samplesHolder );
+  m_dispSecondSamples->addStyleClass( "CbNoLineBreak" );
   m_dispSecondSamples->checked().connect( boost::bind( &ExportSpecFileTool::handleDisplaySampleChanged, this, SpecUtils::SpectrumType::SecondForeground ) );
   m_dispSecondSamples->unChecked().connect( boost::bind( &ExportSpecFileTool::handleDisplaySampleChanged, this, SpecUtils::SpectrumType::SecondForeground ) );
   
   m_allSamples = new WCheckBox( "All Samples", m_samplesHolder );
+  m_allSamples->addStyleClass( "CbNoLineBreak" );
   m_allSamples->checked().connect( this, &ExportSpecFileTool::handleAllSampleChanged );
   m_allSamples->unChecked().connect( this, &ExportSpecFileTool::handleAllSampleChanged );
   
   m_customSamples = new WCheckBox( "Custom Samples", m_samplesHolder );
+  m_customSamples->addStyleClass( "CbNoLineBreak" );
   m_customSamples->checked().connect( this, &ExportSpecFileTool::handleCustomSampleChanged );
   m_customSamples->unChecked().connect( this, &ExportSpecFileTool::handleCustomSampleChanged );
   
@@ -943,6 +948,7 @@ void ExportSpecFileTool::init()
   m_customSamplesEdit->hide();
 
   m_filterDetector = new WCheckBox( "Filter Detectors", m_samplesHolder );
+  m_filterDetector->addStyleClass( "CbNoLineBreak" );
   m_filterDetector->checked().connect( this, &ExportSpecFileTool::handleFilterDetectorCbChanged );
   m_filterDetector->unChecked().connect( this, &ExportSpecFileTool::handleFilterDetectorCbChanged );
   
@@ -959,6 +965,7 @@ void ExportSpecFileTool::init()
   
   
   m_sumAllToSingleRecord = new WCheckBox( "Sum to single record", m_optionsHolder );
+  m_sumAllToSingleRecord->addStyleClass( "CbNoLineBreak" );
   tooltip = "All selected samples and/or detectors will be summed together into a single spectrum.<br />"
             "Caution: if you have both foreground and background selected, they will be summed together.";
   HelpSystem::attachToolTipOn( m_sumAllToSingleRecord, tooltip, true,
@@ -968,6 +975,7 @@ void ExportSpecFileTool::init()
   m_sumAllToSingleRecord->unChecked().connect( this, &ExportSpecFileTool::handleSumToSingleRecordChanged );
   
   m_sumForeToSingleRecord = new WCheckBox( "Sum Fore to single record", m_optionsHolder );
+  m_sumForeToSingleRecord->addStyleClass( "CbNoLineBreak" );
   tooltip = "There are either multiple sample numbers, or multiple detectors that comprise the"
             " displayed foreground; checking this option will sum all these to a single spectrum"
             " in the output file.";
@@ -978,6 +986,7 @@ void ExportSpecFileTool::init()
   m_sumForeToSingleRecord->unChecked().connect( this, &ExportSpecFileTool::handleSumTypeToSingleRecordChanged );
   
   m_sumBackToSingleRecord = new WCheckBox( "Sum Back to single record", m_optionsHolder );
+  m_sumBackToSingleRecord->addStyleClass( "CbNoLineBreak" );
   tooltip = "There are either multiple sample numbers, or multiple detectors that comprise the"
             " displayed background; checking this option will sum all these to a single spectrum"
             " in the output file.";
@@ -988,10 +997,12 @@ void ExportSpecFileTool::init()
   m_sumBackToSingleRecord->unChecked().connect( this, &ExportSpecFileTool::handleSumTypeToSingleRecordChanged );
   
   m_sumSecoToSingleRecord = new WCheckBox( "Sum Sec to single record", m_optionsHolder );
+  m_sumSecoToSingleRecord->addStyleClass( "CbNoLineBreak" );
   m_sumSecoToSingleRecord->checked().connect( this, &ExportSpecFileTool::handleSumTypeToSingleRecordChanged );
   m_sumSecoToSingleRecord->unChecked().connect( this, &ExportSpecFileTool::handleSumTypeToSingleRecordChanged );
   
   m_backSubFore = new WCheckBox( "Background subtract", m_optionsHolder );
+  m_backSubFore->addStyleClass( "CbNoLineBreak" );
   tooltip = "The output spectrum will be the foreground, minus the background.";
   HelpSystem::attachToolTipOn( m_backSubFore, tooltip, true,
                               HelpSystem::ToolTipPosition::Right,
@@ -1000,6 +1011,7 @@ void ExportSpecFileTool::init()
   m_backSubFore->unChecked().connect( this, &ExportSpecFileTool::handleBackSubForeChanged );
   
   m_sumDetsPerSample = new WCheckBox( "Sum det. per sample", m_optionsHolder );
+  m_sumDetsPerSample->addStyleClass( "CbNoLineBreak" );
   tooltip = "For each sample number, sum all detectors for that sample number together.<br />"
             "E.g., if you have 8 detectors in your spectrum file, each with 120 samples"
             " then the results will have 120 spectra, each of which is the sum of the"
@@ -1012,6 +1024,7 @@ void ExportSpecFileTool::init()
   
   
   m_sumSamplesPerDets = new WCheckBox( "Sum samples per det.", m_optionsHolder );
+  m_sumSamplesPerDets->addStyleClass( "CbNoLineBreak" );
   tooltip = "For each detector, sums all sample numbers together.<br />"
             "E.g., if you have 8 detectors in your spectrum file, each with 120 samples"
             " then the results will have 8 spectra, each of which is the sum of the"
@@ -1024,6 +1037,7 @@ void ExportSpecFileTool::init()
   
   
   m_excludeInterSpecInfo = new WCheckBox( "Remove InterSpec info", m_optionsHolder );
+  m_excludeInterSpecInfo->addStyleClass( "CbNoLineBreak" );
   tooltip = "Removes detector response, peaks, and other analysis"
             " results you may have added in InterSpec.";
   HelpSystem::attachToolTipOn( m_excludeInterSpecInfo, tooltip, true,
@@ -1033,6 +1047,7 @@ void ExportSpecFileTool::init()
   m_excludeInterSpecInfo->unChecked().connect( this, &ExportSpecFileTool::handleIncludeInterSpecInfoChanged );
   
   m_excludeGpsInfo = new WCheckBox( "Remove GPS", m_optionsHolder );
+  m_excludeGpsInfo->addStyleClass( "CbNoLineBreak" );
   
   m_sampleSelectNotAppTxt = new WText( "Not Applicable" );
   m_sampleSelectNotAppTxt->addStyleClass( "ExportNotAppTxt" );
@@ -1835,6 +1850,7 @@ void ExportSpecFileTool::refreshSampleAndDetectorOptions()
     for( const string &name : spec->detector_names() )
     {
       WCheckBox *cb = new WCheckBox( name, m_detectorFilterCbs );
+      cb->addStyleClass( "CbNoLineBreak" );
       if( prev_check.count(cb->text().toUTF8()) )
         cb->setChecked( prev_check[cb->text().toUTF8()] );
       else

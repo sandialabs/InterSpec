@@ -389,6 +389,7 @@ public:
     WTableCell *cell = m_nucContentTable->elementAt(3, 0);
     cell->setColumnSpan( 2 );
     m_decay_during_meas = new WCheckBox( WString::tr("mrend-cb-decay-during-meas"), cell );
+    m_decay_during_meas->addStyleClass( "CbNoLineBreak" );
     m_decay_during_meas->checked().connect( this, &ManRelEffNucDisp::handleDecayDuringMeasurementChanged );
     m_decay_during_meas->unChecked().connect( this, &ManRelEffNucDisp::handleDecayDuringMeasurementChanged );
     
@@ -710,7 +711,7 @@ void RelActManualGui::init()
   
   
   m_backgroundSubtract = new WCheckBox( WString::tr("ramg-back-sub-cb"), optionsList->elementAt(5, 0) );
-  m_backgroundSubtract->addStyleClass( "BackSub" );
+  m_backgroundSubtract->addStyleClass( "BackSub CbNoLineBreak" );
   optionsList->elementAt(5, 0)->setColumnSpan( 2 );
   m_backgroundSubtractHolder = optionsList->rowAt(5);
   m_backgroundSubtract->checked().connect( this, &RelActManualGui::backgroundSubtractChanged );

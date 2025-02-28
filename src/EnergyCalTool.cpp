@@ -896,7 +896,7 @@ public:
     m_value->setSpinnerHidden( true );
     
     m_fit = new WCheckBox( "Fit", this );
-    m_fit->addStyleClass( "CoefFit" );
+    m_fit->addStyleClass( "CoefFit CbNoLineBreak" );
   }//CoefDisplay
 };//class CoefDisplay
 

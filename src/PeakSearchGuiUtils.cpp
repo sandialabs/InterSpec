@@ -546,7 +546,7 @@ public:
         {
           WCheckBox *cb = new WCheckBox( WString::tr("psw-keep-peak"), cbcell );
           cb->setWordWrap(false);
-          cb->addStyleClass( "KeepPeakCb" );
+          cb->addStyleClass( "CbNoLineBreak" );
           cb->setChecked(true);
           cb->checked().connect( this, &PeakSelectorWindow::keepPeakChanged );
           cb->unChecked().connect( this, &PeakSelectorWindow::keepPeakChanged );

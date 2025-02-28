@@ -2853,6 +2853,7 @@ bool SpecMeasManager::handleCALpFile( std::istream &infile, SimpleDialog *dialog
   if( fore_samples.size() != foreground->sample_numbers().size() )
   {
     applyOnlyCurrentlyVisible = new WCheckBox( WString::tr("smm-CALp-cb-disp-samples-only") );
+    applyOnlyCurrentlyVisible->addStyleClass( "CbNoLineBreak" );
     stretcher->addWidget( applyOnlyCurrentlyVisible, stretcher->rowCount(), 0, AlignLeft );
   }//if( not displaying all foreground samples )
   
@@ -2864,6 +2865,7 @@ bool SpecMeasManager::handleCALpFile( std::istream &infile, SimpleDialog *dialog
   {
     applyForeground = new WCheckBox( WString::tr("smm-CALp-cb-apply-to-fore") );
     applyForeground->setChecked( true );
+    applyForeground->addStyleClass( "CbNoLineBreak" );
     stretcher->addWidget( applyForeground, stretcher->rowCount(), 0, AlignLeft );
   }
   
@@ -2871,6 +2873,7 @@ bool SpecMeasManager::handleCALpFile( std::istream &infile, SimpleDialog *dialog
   {
     applyBackground = new WCheckBox( WString::tr("smm-CALp-cb-apply-to-back") );
     applyBackground->setChecked( true );
+    applyBackground->addStyleClass( "CbNoLineBreak" );
     stretcher->addWidget( applyBackground, stretcher->rowCount(), 0, AlignLeft );
   }
   
@@ -2878,6 +2881,7 @@ bool SpecMeasManager::handleCALpFile( std::istream &infile, SimpleDialog *dialog
   {
     applySecondary = new WCheckBox( WString::tr("smm-CALp-cb-apply-to-second") );
     applySecondary->setChecked( true );
+    applySecondary->addStyleClass( "CbNoLineBreak" );
     stretcher->addWidget( applySecondary, stretcher->rowCount(), 0, AlignLeft );
   }
   
@@ -5974,7 +5978,7 @@ void SpecMeasManager::showPreviousSpecFileUsesDialog( std::shared_ptr<SpectraFil
   }//if( snapshots && auto_saved ) / else
   
   WCheckBox *cb = new WCheckBox( WString::tr("smm-auto-check-prev-cb") );
-  cb->addStyleClass( "PrefCb" );
+  cb->addStyleClass( "PrefCb CbNoLineBreak" );
   layout->addWidget( cb, 1, 0 );
   layout->setRowStretch( 0, 1 );
   

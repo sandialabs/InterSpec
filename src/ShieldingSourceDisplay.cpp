@@ -3198,6 +3198,7 @@ ShieldingSourceDisplay::ShieldingSourceDisplay( PeakModel *peakModel,
   WContainerWidget *lineDiv = new WContainerWidget();
   optionsLayout->addWidget( lineDiv, optionsLayout->rowCount(), 0 );
   m_multiIsoPerPeak = new WCheckBox( WString::tr("ssd-multi-iso-per-peak"), lineDiv );
+  m_multiIsoPerPeak->addStyleClass( "CbNoLineBreak" );
   //lineDiv->setToolTip( WString::tr("ssd-tt-multi-iso-per-peak") );
   HelpSystem::attachToolTipOn( lineDiv, WString::tr("ssd-tt-multi-iso-per-peak"),
                                       showToolTips, HelpSystem::ToolTipPosition::Right );
@@ -3208,6 +3209,7 @@ ShieldingSourceDisplay::ShieldingSourceDisplay( PeakModel *peakModel,
   lineDiv = new WContainerWidget();
   optionsLayout->addWidget( lineDiv, optionsLayout->rowCount(), 0 );
   m_attenForAir = new WCheckBox( WString::tr("ssd-cb-atten-for-air"), lineDiv );
+  m_attenForAir->addStyleClass( "CbNoLineBreak" );
   //lineDiv->setToolTip( WString::tr("ssd-tt-atten-for-air") );
   HelpSystem::attachToolTipOn( lineDiv, WString::tr("ssd-tt-atten-for-air"),
                               showToolTips, HelpSystem::ToolTipPosition::Right );
@@ -3219,6 +3221,7 @@ ShieldingSourceDisplay::ShieldingSourceDisplay( PeakModel *peakModel,
   lineDiv = new WContainerWidget();
   optionsLayout->addWidget( lineDiv, optionsLayout->rowCount(), 0 );
   m_backgroundPeakSub = new WCheckBox( WString::tr("ssd-cb-sub-back-peaks"), lineDiv );
+  m_backgroundPeakSub->addStyleClass( "CbNoLineBreak" );
   lineDiv->setToolTip( WString::tr("ssd-tt-sub-back-peaks") );
   HelpSystem::attachToolTipOn( lineDiv, WString::tr("ssd-tt-sub-back-peaks"),
                                   showToolTips, HelpSystem::ToolTipPosition::Right );
@@ -3229,6 +3232,7 @@ ShieldingSourceDisplay::ShieldingSourceDisplay( PeakModel *peakModel,
   lineDiv = new WContainerWidget();
   optionsLayout->addWidget( lineDiv, optionsLayout->rowCount(), 0 );
   m_sameIsotopesAge = new WCheckBox( WString::tr("ssd-cb-same-el-same-age"), lineDiv );
+  m_sameIsotopesAge->addStyleClass( "CbNoLineBreak" );
   //lineDiv->setToolTip( WString::tr("ssd-tt-same-el-same-age") );
   HelpSystem::attachToolTipOn( lineDiv, WString::tr("ssd-tt-same-el-same-age"),
                                 showToolTips, HelpSystem::ToolTipPosition::Right );
@@ -3241,6 +3245,7 @@ ShieldingSourceDisplay::ShieldingSourceDisplay( PeakModel *peakModel,
   lineDiv = new WContainerWidget();
   optionsLayout->addWidget( lineDiv, optionsLayout->rowCount(), 0 );
   m_decayCorrect = new WCheckBox( WString::tr("ssd-cb-corr-for-decay"), lineDiv );
+  m_decayCorrect->addStyleClass( "CbNoLineBreak" );
   //lineDiv->setToolTip( WString::tr("ssd-tt-corr-for-decay") );
   HelpSystem::attachToolTipOn( lineDiv, WString::tr("ssd-tt-corr-for-decay"),
                                 showToolTips, HelpSystem::ToolTipPosition::Right );
