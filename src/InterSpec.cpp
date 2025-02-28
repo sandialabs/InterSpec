@@ -1378,7 +1378,10 @@ InterSpec::~InterSpec() noexcept(true)
     if( m_toolsTabs && m_toolsTabs->indexOf(m_peakInfoDisplay)>=0 )
         m_toolsTabs->removeTab( m_peakInfoDisplay );
     if( m_peakInfoWindow )
-      m_peakInfoWindow->contents()->removeWidget( m_peakInfoDisplay );
+    {
+      const bool removed = m_peakInfoWindow->stretcher()->removeWidget( m_peakInfoDisplay );
+      assert( removed );
+    }
     
     del_ptr_set_null( m_peakInfoDisplay );
   }//if( m_peakInfoDisplay )
@@ -5082,43 +5085,26 @@ void InterSpec::showPeakInfoWindow()
 {
   if( m_toolsTabs )
   {
-    cerr << "nterSpec::showPeakInfoWindow()\n\tTemporary hack - we dont want to show the"
-         << " peak info window when tool tabs are showing since things get funky"
-         << endl;
+    // We get here when user does hotkey (CNTRL, or Command)-2 (
     m_toolsTabs->setCurrentWidget( m_peakInfoDisplay );
     m_currentToolsTab = m_toolsTabs->currentIndex();
     return;
   }//if( m_toolsTabs )
- 
-  if( m_toolsTabs && m_peakInfoDisplay )
-  {
-    m_toolsTabs->removeTab( m_peakInfoDisplay );
-    m_toolsTabs->setCurrentIndex( 0 );
-    m_currentToolsTab = 0;
-  }//if( m_toolsTabs && m_peakInfoDisplay )
   
   if( !m_peakInfoWindow )
   {
     m_peakInfoWindow = new AuxWindow( WString::tr("window-title-peak-manager"),
                               Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::SetCloseable) );
     m_peakInfoWindow->rejectWhenEscapePressed();
-    WBorderLayout *layout = new WBorderLayout();
-    layout->setContentsMargins(0, 0, 15, 0);
-    m_peakInfoWindow->contents()->setLayout( layout );
-    //m_peakInfoWindow->contents()->setPadding(0);
-    //m_peakInfoWindow->contents()->setMargin(0);
-    
-    layout->addWidget( m_peakInfoDisplay, Wt::WBorderLayout::Center );
-    WContainerWidget *buttons = new WContainerWidget();
-    layout->addWidget( buttons, Wt::WBorderLayout::South );
-
-    WContainerWidget* footer = m_peakInfoWindow->footer();
-    
-    WPushButton* closeButton = m_peakInfoWindow->addCloseButtonToFooter(WString::tr("Close"),true);
-    
+    WGridLayout *layout = m_peakInfoWindow->stretcher();
+    layout->setContentsMargins( 0, 0, 0, 0 );
+    layout->addWidget( m_peakInfoDisplay, 0, 0 );
+    // If the "Peak Manager" tab hasnt been explicitly shown yet, then `m_peakInfoDisplay` will
+    //  be hidden, so we need to explicitly show it.
+    m_peakInfoDisplay->show();
+    WContainerWidget *footer = m_peakInfoWindow->footer();
+    WPushButton *closeButton = m_peakInfoWindow->addCloseButtonToFooter(WString::tr("Close"),true);
     closeButton->clicked().connect( boost::bind( &AuxWindow::hide, m_peakInfoWindow ) );
-      
-    AuxWindow::addHelpInFooter( m_peakInfoWindow->footer(), "peak-manager" );
     
     WPushButton *b = new WPushButton( WString::tr(CalibrationTabTitleKey), footer );
     b->clicked().connect( this, &InterSpec::showEnergyCalWindow );
@@ -5128,6 +5114,7 @@ void InterSpec::showPeakInfoWindow()
     b->clicked().connect( this, &InterSpec::showGammaLinesWindow );
     b->setFloatSide(Wt::Right);
       
+    AuxWindow::addHelpInFooter( footer, "peak-manager" );
       
     m_peakInfoWindow->resizeScaledWindow( 0.75, 0.5 );
     m_peakInfoWindow->centerWindow();
@@ -5144,19 +5131,21 @@ void InterSpec::handlePeakInfoClose()
   if( !m_peakInfoWindow )
     return;
 
+  const bool removed = m_peakInfoWindow->stretcher()->removeWidget( m_peakInfoDisplay );
+  assert( removed );
+  
   if( m_toolsTabs )
   {
-    m_peakInfoWindow->contents()->removeWidget( m_peakInfoDisplay );
     if( m_toolsTabs->indexOf(m_peakInfoDisplay) < 0 )
     {
       m_toolsTabs->addTab( m_peakInfoDisplay, WString::tr(PeakInfoTabTitleKey), TabLoadPolicy );
       m_toolsTabs->setCurrentIndex( m_toolsTabs->indexOf(m_peakInfoDisplay) );
     }//if( m_toolsTabs->indexOf(m_peakInfoDisplay) < 0 )
     m_currentToolsTab = m_toolsTabs->currentIndex();
-    
-    delete m_peakInfoWindow;
-    m_peakInfoWindow = NULL;
   }//if( m_toolsTabs )
+  
+  delete m_peakInfoWindow;
+  m_peakInfoWindow = nullptr;
 }//void handlePeakInfoClose()
 
 
@@ -6659,13 +6648,8 @@ void InterSpec::setToolTabsVisible( bool showToolTabs )
     m_layout->setHorizontalSpacing( 0 );
     setLayout( m_layout );
     
-    if( m_peakInfoWindow )
-    {
-      m_peakInfoWindow->contents()->removeWidget( m_peakInfoDisplay );
-      delete m_peakInfoWindow;
-      m_peakInfoWindow = NULL;
-    }//if( m_peakInfoWindow )
-    
+    const bool wasShowingPeakManager = !!m_peakInfoWindow;
+    handlePeakInfoClose();
     closeGammaLinesWindow();
     
     if( m_energyCalWindow )
@@ -6856,13 +6840,20 @@ void InterSpec::setToolTabsVisible( bool showToolTabs )
 #endif
     
 #if( InterSpec_PHONE_ROTATE_FOR_TABS )
+    // If `m_currentToolsTab` is for `m_peakInfoDisplay`, and the floating peak info display
+    //  window was showing when the user toggled to show tool tabs, then we get an exception:
+    //    "Uncaught exception in event loop: 'WContainerWidget: error parsing: undefined'."
+    //  Just switching to a different tab seems to fix this.  I dont really know why it happens.
+    if( wasShowingPeakManager && (m_currentToolsTab == m_toolsTabs->indexOf(m_peakInfoDisplay)) )
+      m_currentToolsTab = m_toolsTabs->indexOf(m_referencePhotopeakLines);
+       
     if( (m_currentToolsTab >= 0) && (m_currentToolsTab < m_toolsTabs->count()) )
     {
       m_toolsTabs->setCurrentIndex( m_currentToolsTab );
     }else
     {
       //These next `setCurrentWidget(...)` lines will cause `handleToolTabChanged(...)` to be called
-      if( phone )
+      if( phone || wasShowingPeakManager )
         m_toolsTabs->setCurrentWidget( m_referencePhotopeakLines );
       else
         m_toolsTabs->setCurrentWidget( m_peakInfoDisplay );
