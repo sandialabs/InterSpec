@@ -2847,12 +2847,12 @@ void DetectorPeakResponse::fromXml( const ::rapidxml::xml_node<char> *parent )
   if( node )
   {
     // Added 20230916, e.g., for InterSpec v1.0.12
-    if( compare(node->name(), node->name_size(), "1", 1, false)
-       || compare(node->name(), node->name_size(), "true", 4, false) )
+    if( compare(node->value(), node->value_size(), "1", 1, false)
+       || compare(node->value(), node->value_size(), "true", 4, false) )
     {
       m_geomType = EffGeometryType::FixedGeomTotalAct;
-    }else if( !compare(node->name(), node->name_size(), "0", 1, false)
-            && !compare(node->name(), node->name_size(), "false", 5, false) )
+    }else if( !compare(node->value(), node->value_size(), "0", 1, false)
+            && !compare(node->value(), node->value_size(), "false", 5, false) )
     {
       throw runtime_error( "DetectorPeakResponse invalid FixedGeometry" );
     }
