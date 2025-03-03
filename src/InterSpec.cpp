@@ -4195,7 +4195,13 @@ void InterSpec::loadStateFromDb( Wt::Dbo::ptr<UserState> entry )
     if( (entry->shownDisplayFeatures & UserState::kShowingDetectionSens)
        && !entry->detectionSensitivityToolUri.empty() )
     {
-      showDetectionLimitTool( entry->detectionSensitivityToolUri );
+      try
+      {
+        showDetectionLimitTool( entry->detectionSensitivityToolUri );
+      }catch( std::exception &e )
+      {
+        cerr << "Failed to set detection limit tool state with error: " << e.what() << endl;
+      }
     }//if( m_detectionLimitWindow )
     
     if( (entry->shownDisplayFeatures & UserState::kShowingSimpleMda)
