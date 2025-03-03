@@ -1304,12 +1304,15 @@ void InterSpecApp::prepareForEndOfSession()
   Wt::log("debug") << "Have prepared for end of session " << sessionId() << ".";
 }//void InterSpecApp::prepareForEndOfSession()
 
-#if(  BUILD_AS_WX_WIDGETS_APP )
 void InterSpecApp::handleJavaScriptError( const std::string &errorText )
 {
+  const string js_err_msg = WString("There was a javascript error: {1}")
+    .arg(errorText)
+    .jsStringLiteral();
+  doJavaScript( "console.error(" + js_err_msg + ");", false );
+
+#if(  BUILD_AS_WX_WIDGETS_APP )
   // It doesnt look like we can call wxWidgets here via JS, so we will call into wxWidgets event loop
-  doJavaScript( "console.log('Here I am after error');", false );
-  
   if( isPrimaryWindowInstance() )
   {
     std::function<void(std::string, std::string)> handler;
@@ -1322,11 +1325,14 @@ void InterSpecApp::handleJavaScriptError( const std::string &errorText )
     if( handler )
       handler( errorText, m_externalToken );
   }
-
-  // Default WApplication implementation just logs error, and then calls WApplication:quit()
+#else
+  
+#endif
+  
+  // Default WApplication implementation logs error, and then calls WApplication:quit()
   WApplication::handleJavaScriptError( errorText );
 }//void handleJavaScriptError( const std::string &errorText )
-#endif
+
 
 void InterSpecApp::clearSession()
 {

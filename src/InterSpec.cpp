@@ -3722,7 +3722,22 @@ void InterSpec::loadStateFromDb( Wt::Dbo::ptr<UserState> entry )
   
   try
   {
+    //Essentially reset the state of the app
     closeShieldingSourceFit();
+    programmaticallyCloseMultimediaWindow();
+    assert( !m_multimedia );
+    
+    m_fileManager->removeAllFiles();
+    if( m_referencePhotopeakLines )
+      m_referencePhotopeakLines->clearAllLines();
+    
+    deletePeakEdit();
+    deleteGammaCountDialog();
+    closeNuclideSearchWindow();
+    
+    setSpectrum( nullptr, {}, SpecUtils::SpectrumType::Background, 0 );
+    setSpectrum( nullptr, {}, SpecUtils::SpectrumType::SecondForeground, 0 );
+
     
     switch( entry->stateType )
     {
@@ -3771,31 +3786,7 @@ void InterSpec::loadStateFromDb( Wt::Dbo::ptr<UserState> entry )
         && (!dbsecond || !dbsecond->filedata.size()) )
       throw runtime_error( "Unable to locate second foreground in database" );
     
-    //Essentially reset the state of the app
-    m_fileManager->removeAllFiles();
-    if( m_referencePhotopeakLines )
-      m_referencePhotopeakLines->clearAllLines();
     
-    deletePeakEdit();
-    deleteGammaCountDialog();
-    
-    if( m_shieldingSourceFitWindow && !m_shieldingSourceFitWindow->isHidden() )
-      m_shieldingSourceFitWindow->hide();
-    
-#if( InterSpec_PHONE_ROTATE_FOR_TABS )
-    bool wasDocked = (entry->shownDisplayFeatures & UserState::kDockedWindows);
-    if( isPhone() )
-    {
-      wasDocked = (m_toolsTabs != nullptr);
-    }else if( toolTabsVisible() != wasDocked )
-    {
-      setToolTabsVisible( wasDocked );
-    }
-#else
-    bool wasDocked = (entry->shownDisplayFeatures & UserState::kDockedWindows);
-    if( toolTabsVisible() != wasDocked )
-      setToolTabsVisible( wasDocked );
-#endif
     
     //Now start reloading the state
     std::shared_ptr<SpecMeas> foreground, second, background;
@@ -3872,6 +3863,20 @@ void InterSpec::loadStateFromDb( Wt::Dbo::ptr<UserState> entry )
       }
     }//if( parent )
     
+    auto csvToInts = []( const string &str ) -> set<int> {
+      set<int> samples;
+      stringstream strm( str );
+      std::copy( istream_iterator<int>( strm ), istream_iterator<int>(),
+                std::inserter( samples, end(samples) ) );
+      return samples;
+    }; //csvToInts lambda
+    
+    const set<int> foregroundNums = csvToInts( entry->foregroundSampleNumsCsvIds );
+    const set<int> secondNums     = csvToInts( entry->secondForegroundSampleNumsCsvIds );
+    const set<int> backgroundNums = csvToInts( entry->backgroundSampleNumsCsvIds );
+    const set<int> otherSamples   = csvToInts( entry->otherSpectraCsvIds );
+    
+    
     if( dbforeground )
       m_fileManager->setDbEntry( dbforeground, foregroundheader, foreground, 0);
     
@@ -3929,21 +3934,22 @@ void InterSpec::loadStateFromDb( Wt::Dbo::ptr<UserState> entry )
       }
     }//if( parent )
     
-    auto csvToInts = []( const string &str ) -> set<int> {
-      set<int> samples;
-      stringstream strm( str );
-      std::copy( istream_iterator<int>( strm ), istream_iterator<int>(),
-                std::inserter( samples, end(samples) ) );
-      return samples;
-    }; //csvToInts lambda
     
-    const set<int> foregroundNums = csvToInts( entry->foregroundSampleNumsCsvIds );
-    const set<int> secondNums     = csvToInts( entry->secondForegroundSampleNumsCsvIds );
-    const set<int> backgroundNums = csvToInts( entry->backgroundSampleNumsCsvIds );
-    const set<int> otherSamples   = csvToInts( entry->otherSpectraCsvIds );
+#if( InterSpec_PHONE_ROTATE_FOR_TABS )
+    bool wasDocked = (entry->shownDisplayFeatures & UserState::kDockedWindows);
+    if( isPhone() )
+    {
+      wasDocked = (m_toolsTabs != nullptr);
+    }else if( toolTabsVisible() != wasDocked )
+    {
+      setToolTabsVisible( wasDocked );
+    }
+#else
+    bool wasDocked = (entry->shownDisplayFeatures & UserState::kDockedWindows);
+    if( toolTabsVisible() != wasDocked )
+      setToolTabsVisible( wasDocked );
+#endif
     
-    setSpectrum( nullptr, {}, SpecUtils::SpectrumType::Background, 0 );
-    setSpectrum( nullptr, {}, SpecUtils::SpectrumType::SecondForeground, 0 );
     
     Wt::WFlags<SetSpectrumOptions> options;
 #if( USE_REMOTE_RID )
@@ -3972,6 +3978,7 @@ void InterSpec::loadStateFromDb( Wt::Dbo::ptr<UserState> entry )
     //  write protected so they may have been changed or removed
     //...should check to make sure that they are lazily loaded, so as to not
     //  waste to much CPU.
+    // TODO: this isnt currently saved when creating a state; should make it an option in the save-state dialog
     for( const int id : otherSamples )
     {
       try
@@ -3986,32 +3993,29 @@ void InterSpec::loadStateFromDb( Wt::Dbo::ptr<UserState> entry )
     }//for( const int id : otherSamples )
     
     //Load the ShieldingSourceModel
-    Dbo::ptr<ShieldingSourceModel> fitmodel;
-    if( entry->shieldSourceModelId >= 0 )
-      fitmodel = m_sql->session()->find<ShieldingSourceModel>()
-                         .where( "id = ?" ).bind( entry->shieldSourceModelId );
-    if( fitmodel )
-    {
-      cerr << "When loading state from DB, not loading Shielding/Source Fit"
-      << " model, due to lame GUI ish" << endl;
-//      if( !m_shieldingSourceFit )
-//        shieldingSourceFit();
-      if( m_shieldingSourceFit )
-        m_shieldingSourceFit->loadModelFromDb( fitmodel );
-    }//if( fitmodel )
+    //  20250303: for a long time (10 years?) we've just stored the ShieldingSourceModel as part of
+    //            `SpecMeas`, and we arent doing a great job of actually loading the associated
+    //            model, so lets just not.  I guess we could/should set `fitmodel->xmlData` to
+    //            `foreground->setShieldingSourceModel(...)`, but this would require testing I dont
+    //            think I can do easily, so we'll just ignore this.
+    //Dbo::ptr<ShieldingSourceModel> fitmodel;
+    //if( entry->shieldSourceModelId >= 0 )
+    //  fitmodel = m_sql->session()->find<ShieldingSourceModel>()
+    //                     .where( "id = ?" ).bind( entry->shieldSourceModelId );
+    //
+    //if( fitmodel )
+    //{
+    //  cerr << "When loading state from DB, not loading Shielding/Source Fit"
+    //  << " model, due to lame GUI ish" << endl;
+//  //    if( !m_shieldingSourceFit )
+//  //      shieldingSourceFit();
+    //  if( m_shieldingSourceFit )
+    //    m_shieldingSourceFit->loadModelFromDb( fitmodel );
+    //}//if( fitmodel )
+    //
+    //if( m_shieldingSourceFitWindow )
+    //  m_shieldingSourceFitWindow->hide();
     
-    if( m_shieldingSourceFitWindow )
-      m_shieldingSourceFitWindow->hide();
-    
-    if( m_nuclideSearchWindow )
-    {
-      m_nuclideSearchContainer->layout()->removeWidget( m_nuclideSearch );
-      delete m_nuclideSearchContainer;
-      m_nuclideSearchContainer = nullptr;
-    }
-    
-//  std::string showingDetectorNumbersCsv;
-//  see:  std::vector<bool> detectorsToDisplay() const;
     
     float xmin = entry->energyAxisMinimum;
     float xmax = entry->energyAxisMaximum;
@@ -4027,25 +4031,8 @@ void InterSpec::loadStateFromDb( Wt::Dbo::ptr<UserState> entry )
     }//if( xmin != xmax )
         
     
-    if( m_multimedia )
-      programmaticallyCloseMultimediaWindow();
-    assert( !m_multimedia );
-    
     if( foreground )
     {
-      // If we have a state without a foreground, then for the spectrum chart, changing the legend
-      //  enabled status, or setting the horizontal/vertical lines causes the client-side javascript
-      //  to crash - I spent some hours trying to figure it out, but no luck.  So for the moment,
-      //  we'll just do this work-around.
-      //  One hint was for the crashing case D3SpectrumDisplayDiv::defineJavaScript() seems to be
-      //  called multiple times, and maybe the id of the parent div changes???
-      //  Its really bizarre.
-#ifdef _MSC_VER
-#pragma message("Not setting show legend or grid lines on charts when loading states that do not have a foreground; should figure out why this causes a client-side error")
-#else
-#warning "Not setting show legend or grid lines on charts when loading states that do not have a foreground; should figure out why this causes a client-side error"
-#endif
-      
       const bool vertGridLines = (entry->shownDisplayFeatures & UserState::kVerticalGridLines);
       const bool horizontalGridLines = (entry->shownDisplayFeatures & UserState::kVerticalGridLines);
       m_spectrum->showVerticalLines( vertGridLines );
@@ -4097,69 +4084,111 @@ void InterSpec::loadStateFromDb( Wt::Dbo::ptr<UserState> entry )
     if( (entry->shownDisplayFeatures & UserState::kShowingGammaXsTool)
        && !entry->gammaXsToolUri.empty() )
     {
-      GammaXsWindow *w = showGammaXsTool();
-      if( w && w->xstool() )
-        w->xstool()->handleAppUrl( entry->gammaXsToolUri );
-    }
+      try
+      {
+        GammaXsWindow *w = showGammaXsTool();
+        if( w && w->xstool() )
+          w->xstool()->handleAppUrl( entry->gammaXsToolUri );
+      }catch( std::exception &e )
+      {
+        cerr << "Failed to xs tool GUI state with error: " << e.what() << endl;
+      }
+    }//if( show XS tool )
     
     
     if( (entry->shownDisplayFeatures & UserState::kShowingDoseCalcTool)
        && !entry->doseCalcToolUri.empty() )
     {
-      DoseCalcWindow *w = showDoseTool();
-      DoseCalcWidget *tool = w ? w->tool() : nullptr;
-      if( tool )
+      try
       {
-        string path, uri = entry->doseCalcToolUri;
-        const auto pos = uri.find('?');
-        if( pos != string::npos )
+        DoseCalcWindow *w = showDoseTool();
+        DoseCalcWidget *tool = w ? w->tool() : nullptr;
+        if( tool )
         {
-          path = uri.substr(0,pos);
-          uri = uri.substr(pos+1);
-        }
-        tool->handleAppUrl( path, uri );
-      }//if( tool )
-    }
+          string path, uri = entry->doseCalcToolUri;
+          const auto pos = uri.find('?');
+          if( pos != string::npos )
+          {
+            path = uri.substr(0,pos);
+            uri = uri.substr(pos+1);
+          }
+          tool->handleAppUrl( path, uri );
+        }//if( tool )
+      }catch( std::exception &e )
+      {
+        cerr << "Failed to set dose calc GUI state with error: " << e.what() << endl;
+      }
+    }//if( show dose calc window )
     
     if( (entry->shownDisplayFeatures & UserState::kShowing1OverR2Tool)
        && !entry->oneOverR2ToolUri.empty() )
     {
-      OneOverR2Calc *calc = createOneOverR2Calculator();
-      if( calc )
-        calc->handleAppUrl( entry->oneOverR2ToolUri );
-    }
+      try
+      {
+        OneOverR2Calc *calc = createOneOverR2Calculator();
+        if( calc )
+          calc->handleAppUrl( entry->oneOverR2ToolUri );
+      }catch( std::exception &e )
+      {
+        cerr << "Failed to set 1/r2 calc GUI state with error: " << e.what() << endl;
+      }
+    }//if( show 1/r2 calculator )
     
     if( (entry->shownDisplayFeatures & UserState::kShowingFluxTool)
        && !entry->fluxToolUri.empty() )
     {
-      FluxToolWindow *tool = createFluxTool();
-      if( tool )
-        tool->handleAppUrl( entry->fluxToolUri );
+      try
+      {
+        FluxToolWindow *tool = createFluxTool();
+        if( tool )
+          tool->handleAppUrl( entry->fluxToolUri );
+      }catch( std::exception &e )
+      {
+        cerr << "Failed to set flux tool GUI state with error: " << e.what() << endl;
+      }
     }//if( m_fluxTool )
     
     if( (entry->shownDisplayFeatures & UserState::kShowingUnitConvertTool)
        && !entry->unitsConverterToolUri.empty() )
     {
-      UnitsConverterTool *converter = createUnitsConverterTool();
-      if( converter )
-        converter->handleAppUrl( entry->unitsConverterToolUri );
+      try
+      {
+        UnitsConverterTool *converter = createUnitsConverterTool();
+        if( converter )
+          converter->handleAppUrl( entry->unitsConverterToolUri );
+      }catch( std::exception &e )
+      {
+        cerr << "Failed to set unit converter GUI state with error: " << e.what() << endl;
+      }
     }
     
     if( (entry->shownDisplayFeatures & UserState::kShowingNucDecayInfo)
        && !entry->nucDecayInfoUri.empty() )
     {
-      DecayWindow *decay = createDecayInfoWindow();
-      if( decay )
-        decay->handleAppUrl( entry->nucDecayInfoUri );
-    }
+      try
+      {
+        DecayWindow *decay = createDecayInfoWindow();
+        if( decay )
+          decay->handleAppUrl( entry->nucDecayInfoUri );
+      }catch( std::exception &e )
+      {
+        cerr << "Failed to set decay info GUI state with error: " << e.what() << endl;
+      }
+    }//if( show nuclide decay window )
     
     if( (entry->shownDisplayFeatures & UserState::kShowingEnergyRangeSum)
        && !entry->energyRangeSumUri.empty() )
     {
-      GammaCountDialog *dialog = showGammaCountDialog();
-      if( dialog )
-        dialog->handleAppUrl( entry->energyRangeSumUri );
-    }
+      try
+      {
+        GammaCountDialog *dialog = showGammaCountDialog();
+        if( dialog )
+          dialog->handleAppUrl( entry->energyRangeSumUri );
+      }catch( std::exception &e )
+      {
+        cerr << "Failed to set gamma count GUI state with error: " << e.what() << endl;
+      }
+    }//if( showing energy range sum )
     
     
 #if( USE_DETECTION_LIMIT_TOOL )
@@ -4172,9 +4201,15 @@ void InterSpec::loadStateFromDb( Wt::Dbo::ptr<UserState> entry )
     if( (entry->shownDisplayFeatures & UserState::kShowingSimpleMda)
        && !entry->simpleMdaUri.empty() )
     {
-      auto dialog = showSimpleMdaWindow();
-      if( dialog )
-        dialog->tool()->handleAppUrl( entry->simpleMdaUri );
+      try
+      {
+        auto dialog = showSimpleMdaWindow();
+        if( dialog )
+          dialog->tool()->handleAppUrl( entry->simpleMdaUri );
+      }catch( std::exception &e )
+      {
+        cerr << "Failed to set MDA GUI state with error: " << e.what() << endl;
+      }
     }//if( m_simpleMdaWindow )
 #endif
     
@@ -4265,35 +4300,47 @@ void InterSpec::loadStateFromDb( Wt::Dbo::ptr<UserState> entry )
     //Should take care of entry->showingWindows here, so we can rely on it below
     if( entry->gammaLinesXml.size() )
     {
-      bool toolTabsHidden = false;
-      if( !m_referencePhotopeakLines )    //tool tabs must be hidden, so lets show the window
+      try
       {
-        showGammaLinesWindow();//if entry->showingWindows was implemented
-        toolTabsHidden = true;
-        assert( m_referencePhotopeakLines );
+        bool toolTabsHidden = false;
+        if( !m_referencePhotopeakLines )    //tool tabs must be hidden, so lets show the window
+        {
+          showGammaLinesWindow();//if entry->showingWindows was implemented
+          toolTabsHidden = true;
+          assert( m_referencePhotopeakLines );
+        }
+        
+        string data = entry->gammaLinesXml;
+        m_referencePhotopeakLines->deSerialize( data );
+        
+        if( toolTabsHidden )
+          closeGammaLinesWindow();
+      }catch( std::exception &e )
+      {
+        cerr << "Failed to set reference lines GUI state with error: " << e.what() << endl;
       }
-      
-      string data = entry->gammaLinesXml;
-      m_referencePhotopeakLines->deSerialize( data );
-      
-      if( toolTabsHidden )
-        closeGammaLinesWindow();
     }//if( entry->gammaLinesXml.size() )
     
     if( m_nuclideSearch && entry->isotopeSearchEnergiesXml.size() )
     {
-      string data = entry->isotopeSearchEnergiesXml;
-      
-      bool display = (entry->currentTab == UserState::kIsotopeSearch);
-      
-      if( !wasDocked )
+      try
       {
-        display = (entry->shownDisplayFeatures & UserState::kShowingEnergySearch);
-        if( display )
-          showNuclideSearchWindow();
-      }//if( !wasDocked )
-      
-      m_nuclideSearch->deSerialize( data, display );
+        string data = entry->isotopeSearchEnergiesXml;
+        
+        bool display = (entry->currentTab == UserState::kIsotopeSearch);
+        
+        if( !wasDocked )
+        {
+          display = (entry->shownDisplayFeatures & UserState::kShowingEnergySearch);
+          if( display )
+            showNuclideSearchWindow();
+        }//if( !wasDocked )
+        
+        m_nuclideSearch->deSerialize( data, display );
+      }catch( std::exception &e )
+      {
+        cerr << "Failed to set nuclide search GUI state with error: " << e.what() << endl;
+      }
     }//if( m_nuclideSearch && entry->isotopeSearchEnergiesXml.size() )
 
     for( SpectrumChart::PeakLabels label = SpectrumChart::PeakLabels(0);

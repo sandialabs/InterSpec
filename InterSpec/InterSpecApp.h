@@ -266,9 +266,7 @@ protected:
   /** Adds `m_activeTimeSinceDbUpdate` to the database, saving the updated result. */
   void updateUsageTimeToDb();
   
-#if(  BUILD_AS_WX_WIDGETS_APP )
   virtual void handleJavaScriptError( const std::string &errorText );
-#endif
 
 #if( !BUILD_FOR_WEB_DEPLOYMENT )
   /** Checks for URL argument "externalid", or equivalently "apptoken", and if found sets m_externalToken to it.

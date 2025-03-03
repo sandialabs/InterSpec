@@ -577,7 +577,7 @@ void D3SpectrumDisplayDiv::setShowPeakLabel( int label, bool show )
 {
   SpectrumChart::PeakLabels peakLabel = SpectrumChart::PeakLabels(label);
   
-  string js = m_jsgraph;
+  string js = "try{" + m_jsgraph;
   switch( peakLabel )
   {
     case SpectrumChart::PeakLabels::kShowPeakUserLabel:
@@ -598,6 +598,7 @@ void D3SpectrumDisplayDiv::setShowPeakLabel( int label, bool show )
       break;
   }
   js += "(" + jsbool(show) + ");";
+  js += "}catch(e){ console.error('Error showing peak labels:',e); }";
   
   m_peakLabelsToShow[peakLabel] = show;
   
@@ -711,8 +712,16 @@ void D3SpectrumDisplayDiv::clearAllReferncePhotoPeakLines()
   m_persistedPhotoPeakLines.clear();
   
   if( isRendered() )
-    doJavaScript(m_jsgraph + ".clearReferenceLines();");
-}
+  {
+    // Will add try/catch to this call as a debug measure, for a problem in another location
+    doJavaScript(
+      "try{"
+        + m_jsgraph + ".clearReferenceLines();"
+       "}catch(e){"
+         "console.error('Error clearing ref lines',e);"
+        "}");
+  }//if( isRendered() )
+}//void clearAllReferncePhotoPeakLines()
 
 
 void D3SpectrumDisplayDiv::setReferenceLinesToClient()
@@ -937,23 +946,44 @@ void D3SpectrumDisplayDiv::showGridLines( bool show )
   m_showVerticalLines = show;
   m_showHorizontalLines = show;
   if( isRendered() )
-    doJavaScript( m_jsgraph + ".setGridX(" + jsbool(show) + ");"
-                  + m_jsgraph + ".setGridY(" + jsbool(show) + ");" );
-}
+  {
+    doJavaScript( 
+      "try{"
+      + m_jsgraph + ".setGridX(" + jsbool(show) + ");"
+      + m_jsgraph + ".setGridY(" + jsbool(show) + ");"
+      "}catch(e){"
+        "console.error('showGridLines error:',e);"
+      "}");
+  }
+}//showGridLines(...)
 
 void D3SpectrumDisplayDiv::showVerticalLines( const bool draw )
 {
   m_showVerticalLines = draw;
   if( isRendered() )
-    doJavaScript( m_jsgraph + ".setGridX(" + jsbool(draw) + ");" );
-}
+  {
+    doJavaScript(
+      "try{"
+      + m_jsgraph + ".setGridX(" + jsbool(draw) + ");"
+      "}catch(e){"
+        "console.error('showVerticalLines error:',e);"
+      "}" );
+  }
+}//showVerticalLines( const bool draw )
 
 void D3SpectrumDisplayDiv::showHorizontalLines( const bool draw )
 {
   m_showHorizontalLines = draw;
   if( isRendered() )
-    doJavaScript( m_jsgraph + ".setGridY(" + jsbool(draw) + ");" );
-}
+  {
+    doJavaScript(
+      "try{"
+      + m_jsgraph + ".setGridY(" + jsbool(draw) + ");"
+      "}catch(e){"
+        "console.error('showHorizontalLines error:',e);"
+      "}" );
+  }
+}//showHorizontalLines( const bool draw )
 
 bool D3SpectrumDisplayDiv::verticalLinesShowing() const
 {

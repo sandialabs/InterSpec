@@ -5177,7 +5177,10 @@ void ShieldingSourceDisplay::handleGeometryTypeChange()
   
   UndoRedoManager *undoRedo = UndoRedoManager::instance();
   unique_ptr<ShieldSourceChange> state_undo_creator;
-  if( (type != m_prevGeometry) && undoRedo && !undoRedo->isInUndoOrRedo() )
+  
+  const bool is_same_geometry = (type == m_prevGeometry);
+  
+  if( !is_same_geometry && undoRedo && !undoRedo->isInUndoOrRedo() )
   {
     m_geometrySelect->setCurrentIndex( static_cast<int>(m_prevGeometry) );
     
@@ -5186,6 +5189,7 @@ void ShieldingSourceDisplay::handleGeometryTypeChange()
     m_geometrySelect->setCurrentIndex( static_cast<int>(type) );
   }//if( (type != m_prevGeometry) && undoRedo && !undoRedo->isInUndoOrRedo() )
   
+  m_prevGeometry = type;
   
   for( WWidget *widget : m_shieldingSelects->children() )
   {
@@ -5196,13 +5200,16 @@ void ShieldingSourceDisplay::handleGeometryTypeChange()
       select->setGeometry( type );
   }//for( WWidget *widget : m_shieldingSelects->children() )
   
-  try
+  if( !is_same_geometry )
   {
-    checkDistanceAndThicknessConsistent();
-  }catch( std::exception &e )
-  {
-    passMessage( e.what(), WarningWidget::WarningMsgMedium );
-  }//try / catch
+    try
+    {
+      checkDistanceAndThicknessConsistent();
+    }catch( std::exception &e )
+    {
+      passMessage( e.what(), WarningWidget::WarningMsgMedium );
+    }//try / catch
+  }//if( !is_same_geometry )
   
   handleShieldingChange();
   
@@ -7464,19 +7471,18 @@ void ShieldingSourceDisplay::addGenericShielding()
   ShieldingSelect *temp = addShielding( nullptr, false );
   if( !temp->isGenericMaterial() )
     temp->handleToggleGeneric();
-  updateChi2Chart();
 }//void addGenericShielding()
 
 
 
 ShieldingSelect *ShieldingSourceDisplay::addShielding( ShieldingSelect *before,
-                                                       const bool updateChiChartAndAddUndoRedo )
+                                                       const bool addUndoRedo )
 {
   // Handle undo/redo if the user clicked a button to add a shielding (all paths to here
-  //  will have `updateChiChartAndAddUndoRedo == true` in this case, and all paths to here
+  //  will have `addUndoRedo == true` in this case, and all paths to here
   //  not from a user explicitly clicking a button, will have this as false).
   unique_ptr<ShieldSourceChange> state_undo_creator;
-  if( updateChiChartAndAddUndoRedo )
+  if( addUndoRedo )
     state_undo_creator = make_unique<ShieldSourceChange>( this, "Add Shielding" );
   
   m_modifiedThisForeground = true;
@@ -7528,20 +7534,10 @@ ShieldingSelect *ShieldingSourceDisplay::addShielding( ShieldingSelect *before,
               boost::placeholders::_1, boost::placeholders::_2, boost::placeholders::_3 ) );
   
   
-  try
-  {
-    checkDistanceAndThicknessConsistent();
-  }catch( std::exception &e )
-  {
-    passMessage( e.what(), WarningWidget::WarningMsgMedium );
-  }//try / catch
-  
-  
   handleShieldingChange();
   select->setTraceSourceMenuItemStatus();
   
-  if( updateChiChartAndAddUndoRedo )
-    updateChi2Chart();
+  updateChi2Chart();
   
   return select;
 }//void addShielding()
@@ -7620,21 +7616,12 @@ void ShieldingSourceDisplay::materialModifiedCallback( ShieldingSelect *select )
     return;
   }//if( !select )
 
-  try
-  {
-    checkDistanceAndThicknessConsistent();
-  }catch( std::exception &e )
-  {
-    passMessage( e.what(), WarningWidget::WarningMsgMedium );
-  }//try / catch
-  
   
   m_modifiedThisForeground = true;
   
-  cerr << "In ShieldingSourceDisplay::materialModifiedCallback(...)" << endl;
-  //I meant to do some more work here...
+  //I meant to do some more work here, but dont recall what
 
-  
+  updateChi2Chart();
 }//void materialModifiedCallback( ShieldingSelect *select )
 
 
@@ -7646,15 +7633,6 @@ void ShieldingSourceDisplay::materialChangedCallback( ShieldingSelect *select )
     cerr << "ShieldingSourceDisplay::materialChangedCallback(...)\n\tShouldnt be here!" << endl;
     return;
   }//if( !select )
-
-  try
-  {
-    checkDistanceAndThicknessConsistent();
-  }catch( std::exception &e )
-  {
-    passMessage( e.what(), WarningWidget::WarningMsgMedium );
-  }//try / catch
-  
   
   //The select has already removed any isotopes as sources which arent in the
   //  current material, however, we have to add in all other candidate isotopes
@@ -7669,6 +7647,7 @@ void ShieldingSourceDisplay::materialChangedCallback( ShieldingSelect *select )
       select->modelNuclideAdded( nuc );
   }//for( int row = 0; row < nrow; ++row )
 
+  updateChi2Chart();
 }//void materialChangedCallback( ShieldingSelect *select )
 
 

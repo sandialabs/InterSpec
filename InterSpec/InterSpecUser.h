@@ -770,7 +770,7 @@ struct UserState
   int backgroundId;
   int secondForegroundId;
   int shieldSourceModelId;
-  std::string otherSpectraCsvIds;
+  std::string otherSpectraCsvIds; //!< TODO: This doesnt look to be used; should add option to save all other open files to the database when saving a state; noting which are part of saved app states or not
   std::string foregroundSampleNumsCsvIds;
   std::string secondForegroundSampleNumsCsvIds;
   std::string backgroundSampleNumsCsvIds;
