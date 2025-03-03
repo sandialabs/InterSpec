@@ -190,6 +190,16 @@ namespace InterSpecServer
   /** Sets the session as dead. */
   InterSpec_API void set_session_destructing( const char *session_token );
   
+  /** Sets marks the session as being allowed to be loaded again.
+   
+   This is used when session JS crashes.
+   
+   If session token does not already exist, it will not be added.
+   
+   Returns true if successful (found session token, and reset state).
+   */
+  InterSpec_API bool set_session_reload_allow( const char *session_token );
+  
 #if( !BUILD_FOR_WEB_DEPLOYMENT )
   /** Open one or more files from the filesystem.  For macOS this would be
    dropping a file to the app icon in the Finder.  Or on Windows it would be

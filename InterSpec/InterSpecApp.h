@@ -80,13 +80,6 @@ public:
   //isAndroid(): Searches for Android in the user agent string
   bool isAndroid() const;
   
-#if( WT_VERSION>=0x3030400 )
-  //ToDo: define a custom handler for javascript errors
-//  virtual void handleJavaScriptError(const std::string& errorText)
-//  {
-//    std::cerr << "JS error: " << errorText << std::endl;
-//  }
-#endif
   
   /* svlog send the message to the InterSpec for display to the user. */
   void svlog( const Wt::WString& message, int priority = 1 );
@@ -266,8 +259,10 @@ protected:
   /** Adds `m_activeTimeSinceDbUpdate` to the database, saving the updated result. */
   void updateUsageTimeToDb();
   
+#if( WT_VERSION>=0x3030400 )
   virtual void handleJavaScriptError( const std::string &errorText );
-
+#endif
+  
 #if( !BUILD_FOR_WEB_DEPLOYMENT )
   /** Checks for URL argument "externalid", or equivalently "apptoken", and if found sets m_externalToken to it.
    
