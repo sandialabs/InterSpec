@@ -762,7 +762,7 @@ void killServer()
     }
   }//void set_session_destructing( const char *session_token )
 
-  
+/*
   bool set_session_reload_allow( const char *session_token )
   {
     lock_guard<mutex> lock( ns_sessions_mutex );
@@ -776,7 +776,7 @@ void killServer()
       
     return true;
   }//bool set_session_reload_allow( const char *session_token )
-
+*/
   
   int session_status( const char *session_token )
   {

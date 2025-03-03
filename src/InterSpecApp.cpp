@@ -1337,9 +1337,9 @@ void InterSpecApp::handleJavaScriptError( const std::string &errorText )
   WApplication::handleJavaScriptError( errorText );
   
 #if( !BUILD_FOR_WEB_DEPLOYMENT )
-  // Allow re-loading of the window
-  if( !m_externalToken.empty() )
-    InterSpecServer::set_session_reload_allow( m_externalToken.c_str() );
+  // TODO: Allow re-loading of the window - would require implementing each target (exWindow, Electron, etc), and improving error messaging
+  //if( !m_externalToken.empty() )
+  //  InterSpecServer::set_session_reload_allow( m_externalToken.c_str() );
 #endif //#if( !BUILD_FOR_WEB_DEPLOYMENT )
 }//void handleJavaScriptError( const std::string &errorText )
 #endif //#if( WT_VERSION>=0x3030400 )

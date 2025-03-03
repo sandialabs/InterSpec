@@ -197,8 +197,10 @@ namespace InterSpecServer
    If session token does not already exist, it will not be added.
    
    Returns true if successful (found session token, and reset state).
+   
+   Currently commented out because it is unused.
    */
-  InterSpec_API bool set_session_reload_allow( const char *session_token );
+  //InterSpec_API bool set_session_reload_allow( const char *session_token );
   
 #if( !BUILD_FOR_WEB_DEPLOYMENT )
   /** Open one or more files from the filesystem.  For macOS this would be
