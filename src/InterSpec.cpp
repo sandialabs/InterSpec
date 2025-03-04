@@ -3324,14 +3324,51 @@ void InterSpec::saveStateToDb( Wt::Dbo::ptr<UserState> entry )
     //JIC, make sure indices have all been assigned to everything.
     m_sql->session()->flush();
     
-    auto create_copy_or_update_in_db = [this, deepCopy, &entry]( Dbo::ptr<UserFileInDb> &dbfile, shared_ptr<const SpecMeas> &file ){
-      if( !dbfile || !file )
+    auto create_copy_or_update_in_db = [this, deepCopy, &entry]( Dbo::ptr<UserFileInDb> &dbfile,
+                      shared_ptr<const SpecMeas> &file, const SpecUtils::SpectrumType type ){
+      if( !file )
         return;
-    
-      // We dont need to make a copy of the file if it was not part of a save state, but now its
-      //  becoming part of one
-      if( deepCopy && (dbfile->isPartOfSaveState || dbfile->snapshotParent) )
+      
+      if( !dbfile )
       {
+        // We seem to get here if we recently uploaded the foreground file, so it hasnt been saved
+        //  to the database yet.
+        Wt::Dbo::ptr<UserFileInDb> answer;
+        
+        SpectraFileModel *fileModel = m_fileManager->model();
+        assert( measurment(type) == file );
+        
+        const WModelIndex index = fileModel->index( file );
+        assert( index.isValid() );
+        
+        if( !index.isValid() )
+          throw runtime_error( "Error saving " + string(SpecUtils::descriptionText(type))
+                      + " spectrum file to the database - unable to find in SpectraFileModel!?!" );
+          
+        shared_ptr<SpectraFileHeader> header = fileModel->fileHeader( index.row() );
+        assert( header );
+        if( !header )
+          throw runtime_error( "Error saving " + string(SpecUtils::descriptionText(type))
+               + " spectrum file to the database - no associated header in SpectraFileModel!?!." );
+        
+        try
+        {
+          header->saveToDatabase( file );
+        }catch( std::exception &e )
+        {
+          throw runtime_error( "Error saving " + string(SpecUtils::descriptionText(type))
+          + " spectrum file to the database - call to write to db failed: " + string(e.what()) );
+        }
+        
+        dbfile = header->dbEntry();
+        assert( dbfile );
+        if( !dbfile )
+          throw runtime_error( "Error saving " + string(SpecUtils::descriptionText(type))
+              + " spectrum file to the database - unexpectedly missing reference in db!?!." );
+      }else if( deepCopy && (dbfile->isPartOfSaveState || dbfile->snapshotParent) )
+      {
+        // We dont need to make a copy of the file if it was not part of a save state, but now its
+        //  becoming part of one
         dbfile = UserFileInDb::makeDeepCopyOfFileInDatabase( dbfile, *m_sql, true );
         m_sql->session()->flush();
       }
@@ -3363,7 +3400,7 @@ void InterSpec::saveStateToDb( Wt::Dbo::ptr<UserState> entry )
       filedata.modify()->setFileData( file, UserFileInDbData::SerializedFileFormat::k2012N42 );
     };//create_copy_or_update_in_db lambda
     
-    create_copy_or_update_in_db( dbforeground, foreground );
+    create_copy_or_update_in_db( dbforeground, foreground, SpecUtils::SpectrumType::Foreground );
     if( !dbforeground && foreground )
       throw runtime_error( "Error saving foreground to the database" );  //not displayed to user, so not internationalized
   
@@ -3374,7 +3411,7 @@ void InterSpec::saveStateToDb( Wt::Dbo::ptr<UserState> entry )
         dbsecond = dbforeground;
       }else
       {
-        create_copy_or_update_in_db( dbsecond, second );
+        create_copy_or_update_in_db( dbsecond, second, SpecUtils::SpectrumType::SecondForeground );
         if( !dbsecond )
           throw runtime_error( "Error saving second foreground to the database" );
       }
@@ -3390,7 +3427,7 @@ void InterSpec::saveStateToDb( Wt::Dbo::ptr<UserState> entry )
         dbbackground = dbsecond;
       }else
       {
-        create_copy_or_update_in_db( dbbackground, background );
+        create_copy_or_update_in_db( dbbackground, background, SpecUtils::SpectrumType::Background );
         if( !dbbackground )
           throw runtime_error( "Error saving background to the database" );
       }
@@ -3706,7 +3743,9 @@ void InterSpec::saveStateToDb( Wt::Dbo::ptr<UserState> entry )
   }catch( std::exception &e )
   {
     cerr << "saveStateToDb(...) caught: " << e.what() << endl;
-    throw runtime_error( WString::tr("err-save-sate-to-db").toUTF8() );
+    string errmsg = e.what();
+    errmsg = Wt::Utils::htmlEncode( errmsg, WFlags<Wt::Utils::HtmlEncodingFlag>{} );
+    throw runtime_error( WString::tr("err-save-sate-to-db").arg(errmsg).toUTF8() );
   }//try / catch
 }//void saveStateToDb( Wt::Dbo::ptr<UserState> entry )
 

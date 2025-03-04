@@ -423,7 +423,10 @@
 
 
   <!-- Error messages, the user probably wont see -->
-  <message id="err-save-sate-to-db">I'm sorry there was a technical error saving your  user state to the database.</message>
+  <message id="err-save-sate-to-db">
+    I'm sorry there was a technical error saving your user state to the database.
+    <p style="font-size: x-small;">{1}</p>
+  </message>
   <message id="err-save-to-large-for-db">File is larger than allowed to be saved to database (is {1} kb, allowed {2} kb).</message>
   <message id="err-no-roi-to-add-peak">There was no ROI to add peak to.</message>
   <message id="err-no-add-peak-to-data-roi">Sorry, cant add peaks to a ROI with a data defined peak.</message>
