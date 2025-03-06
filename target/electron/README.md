@@ -23,13 +23,13 @@ npm install --save-dev node-addon-api --arch=x64
 cmake-js
 
 # Or to have a little more control over things
-cmake-js --generator "Visual Studio 16 2019" \
+cmake-js --generator "Visual Studio 17 2022" \
          --architecture x64 --arch=x64 \
-         --CDCMAKE_PREFIX_PATH=/path/to/boost/and/wt/and/zlib \
+         --CDCMAKE_PREFIX_PATH=C://Path/To/Wt_3.7.1_prefix \
          --CDBoost_USE_STATIC_RUNTIME=ON \
          --CDCMAKE_BUILD_TYPE="Release" \
-         --CDGOOGLE_MAPS_KEY="..." \
-         --out="build_dir" \
+         --CDLEAFLET_MAPS_KEY="..." \
+         --out="build_win" \
          --target install
 
 # If you make changes and want to recompile
@@ -75,7 +75,7 @@ npm run package-linux
 cp ../../NOTICE.html ./release-builds/InterSpec-PLATFORM-x64/
 ```
 
-The resulting Electron package seems to run fine on a number of Linux distributions, but to run on the (now out of date) Ubuntu 12.04, you may need to install a couple packages from the package manager on the end-user system:
+The resulting Electron package seems to run fine on a number of Linux distributions, but to run on some systems you may need to install a couple packages from the package manager on the end-user system:
 
 ```bash
 apt-get install libnss3
@@ -200,5 +200,4 @@ The `InterSpec` module is really a shared library that node.js loads, therefore 
 
 
 ## Future Work
-- In the future the build process may be improved to do the final packaging through CMake.  
-- launch_options.json is intended to allow users to customize behaviors (like allow multiple windows, or not), but is not actually implemented.
+- In the future the build process may be improved to do the final packaging through CMake.
