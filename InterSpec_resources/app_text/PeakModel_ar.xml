@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <message id="pm-tt-use-for-cal">ما إذا كان يجب استخدام هذه الذروة للمساعدة في معايرة الطاقة.
+    يجب أن يكون لديك نويدة، أو تفاعل، أو أشعة سينية معينة للذروة، ويجب ألا تكون قد قمت بتثبيت قيمة متوسط الطاقة باستخدام محرر الذروة.</message>
+  <message id="pm-gaussian">غاوسي</message>
+  <message id="pm-region">منطقة</message>
+  <message id="pm-err-use-fit-no-nuc">يجب عليك ربط نويدة بالذروة قبل استخدامها للتدريع/ملائمة المصدر.</message>
+  <message id="pm-err-use-cal-no-nuc">يجب عليك ربط نويدة، أو أشعة سينية، أو تفاعل بالذروة قبل استخدامها للمعايرة.</message>
+  <message id="pm-err-use-rel-act-no-nuc">يمكن استخدام الذروات المرتبطة بغاما النويدات فقط لتحليل النشاط النسبي.</message>
+  <message id="pm-warn-use-xray-fit">تحذير: استخدام الأشعة السينية لملائمة نويدات المصدر ليس فكرة رائعة عادةً، لذا يرجى توخي الحذر.</message>
+  
+  <message id="pm-hdr-diff">الفرق</message>
+  <message id="pm-hdr-cal-peak">ذروة المعايرة</message>
+  <message id="pm-hdr-rel-act">النشاط النسبي</message>
+  <message id="pm-hdr-label">التسمية</message>
+  <message id="pm-hdr-color">اللون</message>
+  <message id="pm-hdr-skew-amp">سعة الانحراف</message>
+  <message id="pm-hdr-peak-type">نوع الذروة</message>
+  <message id="pm-hdr-low-energy">الطاقة الأدنى</message>
+  <message id="pm-hdr-up-energy">الطاقة الأعلى</message>
+  <message id="pm-hdr-roi-counts">عدد ROI</message>
+  
+  
+  <message id="pm-hdr-tt-mean">متوسط الطاقة</message>
+  <message id="pm-hdr-tt-fwhm">العرض الكامل عند المنتصف</message>
+  <message id="pm-hdr-tt-amp">مساحة الذروة</message>
+  <message id="pm-hdr-tt-cps">عدد الذروة في الثانية</message>
+  <message id="pm-hdr-tt-photopeak-energy">طاقة الذروة الضوئية</message>
+  <message id="pm-hdr-tt-diff">الفرق بين طاقة الذروة الضوئية والمتوسط</message>
+  <message id="pm-hdr-tt-man-rel-eff">استخدم لتحليل "النظائر من الذروات".</message>
+  <message id="pm-hdr-tt-color">لون الذروة</message>
+  <message id="pm-hdr-tt-label">تسمية محددة من قبل المستخدم</message>
+  <message id="pm-hdr-tt-roi-counts">تكامل عدد أشعة غاما على منطقة الاهتمام</message>
+  <message id="pm-hdr-tt-"></message>
+
+</messages>
