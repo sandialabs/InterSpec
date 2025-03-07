@@ -1,28 +1,34 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <messages>
-  <!-- gxsg- is short for GammaXsGui -->
   <message id="gxsg-tt-material">
-    Vous pouvez soit entrer le nom d'un matériau ou élément prédéfini (effacer le texte du formulaire
-    et cliquer sur la flèche à droite du formulaire pour voir toutes les options prédéfinies), soit vous pouvez
+    Vous pouvez soit entrer le nom d'un matériau ou d'un élément prédéfini (effacez le texte du formulaire
+    et cliquez sur la flèche à droite du formulaire pour voir toutes les options prédéfinies), ou vous pouvez
     entrer une formule chimique telle que 'H0.112 O0.88' où les nombres représentent la
-    densité en g/cm3, (ou utiliser la fraction massique et le champ Densité), de l'
-    élément précédent.
-</message>
-<message id="gxsg-total-atten-xs">Section efficace totale d'atténuation</message>
-<message id="gxsg-compton-label">Compton</message>
-<message id="gxsg-rayleigh-label">Rayleigh</message>
-<message id="gxsg-photoelec-label">Photoélectrique</message>
-<message id="gxsg-pp-label">Production de paires</message>
-<message id="gxsg-mass-avrg-an">Numéro atomique moyen massique</message>
-<message id="gxsg-opt-atten">Atténuation (optionnel) :</message>
-<message id="gxsg-density-label">Densité :</message>
-<message id="gxsg-thickness-label">Épaisseur :</message>
-<message id="gxsg-tt-thickness">Épaisseur de l'atténuateur.</message>
-<message id="gxsg-trans-frac-label">Fraction Trans.</message>
-<message id="gxsg-tt-trans-frac">C'est la fraction de gammas qui traversera le blindage spécifié.</message>
-<message id="gxsg-tt-distance">C'est la distance du centre de la source au détecteur.</message>
-<message id="gxsg-intrinsic-eff-label">Efficacité Intrinsèque</message>
-<message id="gxsg-tt-intrinsic-eff">Efficacité intrinsèque (efficacité de détection en pic des gammas frappant la face du détecteur).</message>
-<message id="gxsg-solid-angle-frac-label">Fraction d'Angle Solide</message>
-<message id="gxsg-tt-solid-angle-frac">Fraction d'angle solide du détecteur sélectionné à la distance spécifiée.</message>
+    densité en g/cm3, (ou utiliser la fraction massique et le champ Densité), de
+    l'élément précédent.
+  </message>
+  <message id="gxsg-total-atten-xs">Section eff. d'att. totale</message>
+  <message id="gxsg-compton-label">Compton</message>
+  <message id="gxsg-rayleigh-label">Rayleigh</message>
+  <message id="gxsg-photoelec-label">Photoélectrique</message>
+  <message id="gxsg-pp-label">Production de paires</message>
+  <message id="gxsg-mass-avrg-an">Num. atomique moy. pondéré</message>
+  <message id="gxsg-opt-atten">Atténuation (facultatif) :</message>
+  <message id="gxsg-density-label">Densité :</message>
+  <message id="gxsg-thickness-label">Épaisseur :</message>
+  <message id="gxsg-tt-thickness">Épaisseur de l'atténuateur.</message>
+  <message id="gxsg-trans-frac-label">Frac. de trans.</message>
+  <message id="gxsg-tt-trans-frac">Il s'agit de la fraction de gammas qui traverseront le blindage spécifié.</message>
+  <message id="gxsg-tt-distance">Il s'agit de la distance entre le centre de la source et la face du détecteur.</message>
+  <message id="gxsg-intrinsic-eff-label">Efficacité intrinsèque</message>
+  <message id="gxsg-tt-intrinsic-eff">Efficacité intrinsèque (efficacité de détection en pic des gammas frappant la face du détecteur).</message>
+  <message id="gxsg-solid-angle-frac-label">Fraction d'angle solide</message>
+  <message id="gxsg-tt-solid-angle-frac">Fraction d'angle solide du détecteur sélectionné à la distance spécifiée.</message>
+  <message id="gxsg-det-eff-label">Efficacité de détection</message>
+  <message id="gxsg-tt-det-eff">Efficacité intrinsèque multipliée par la fraction d'angle solide.  Par exemple, la fraction de gammas sortant du blindage qui seront détectés.  N'inclut pas l'atténuation.</message>
+  <message id="gxsg-total-eff-label">Efficacité totale</message>
+  <message id="gxsg-tt-total-eff">Fraction de transmission multipliée par l'efficacité de détection.  Par exemple, la fraction de gammas émis par la source qui seront détectés.</message>
+  <message id="gxsg-warn-suspect">Le calcul XS peut être suspect : {1}</message>
+  <message id="gxsg-tool-state-title">État de l'outil XS Gamma</message>
+  <message id="gxsg-tool-state-text">État actuel de l'outil xs.</message>
 </messages>

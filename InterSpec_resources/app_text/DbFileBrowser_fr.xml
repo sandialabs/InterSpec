@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <message id="sb-resume-from-prev">Il semble que vous ayez enregistré ce fichier de spectre dans le cadre d'un état enregistré ; souhaitez-vous reprendre votre travail précédent ?</message>
+  <message id="sb-no-saved-states">Aucun état d'application enregistré</message>
+  <message id="sb-tt-del-state">Supprimer l'état</message>
+  <message id="sb-tt-edit-state">Modifier le nom ou la description de l'état</message>
+  <message id="sb-state-HEAD-label">État enregistré</message>
+  <message id="sb-state-auto-saved-label">Enregistré automatiquement</message>
+  <message id="sb-unsaved-spectra-parent-node-label">Spectres ouverts, mais non explicitement enregistrés</message>
+  <message id="sb-tt-unsaved-spectra-node">Spectres que vous avez ouverts dans InterSpec, mais que vous n'avez pas explicitement enregistrés.</message>
+  <message id="sb-unsaved-spectrum-node">{1} (ouvert le {2})</message>
+  <message id="sb-tt-unsaved-spectrum-node">Nom de fichier : {1}
+Durée de la mesure : {2}
+Heure de chargement : {3}
+Nombre d'échantillons : {4}
+Temps réel total : {5}</message>
+  <message id="sb-open-spectrum-as">Ouvrir le spectre sélectionné en tant que :</message>
+  <message id="sb-load-spectrum-only">Charger le spectre uniquement</message>
+  <message id="sb-load-app-state">Charger l'état de l'application</message>
+  <message id="sb-err-making-browser-txt">Erreur inattendue lors de la création du navigateur de fichiers de spectre de la base de données</message>
+  <message id="sb-err-making-browser-msg">Erreur lors de la création du navigateur de fichiers de spectre de la base de données : {1}</message>
+  <message id="sb-"></message>
+  <message id="sb-"></message>
+  <message id="sb-"></message>
+  <message id="sb-"></message>
+  <message id="sb-"></message>
+  <message id="sb-"></message>
+  <message id="sb-"></message>
+  <message id="sb-"></message>
+  <message id="sb-"></message>
+  <message id="sb-"></message>
+  <message id="sb-"></message>
+  <message id="sb-"></message>
+  <message id="sb-"></message>
+  <message id="sb-"></message>
+</messages>

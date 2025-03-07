@@ -1,10 +1,8 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <messages>
-  <!-- fmw- is short for FeatureMarkerWidget
-  -->
-  <message id="fmw-escape-peaks">Pics d'Évasion</message>
-<message id="fmw-compton-peak">Pic de Compton</message>
-<message id="fmw-angle">Angle</message>
-<message id="fmw-compton-edge">Bord de Compton</message>
-<message id="fmw-sum-peak">Pic Somme</message>
+  <message id="fmw-escape-peaks">Pics d'échappement</message>
+  <message id="fmw-compton-peak">Pic Compton</message>
+  <message id="fmw-angle">Angle</message>
+  <message id="fmw-compton-edge">Bord Compton</message>
+  <message id="fmw-sum-peak">Pic de somme</message>
 </messages>

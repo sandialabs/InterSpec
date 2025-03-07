@@ -1,15 +1,14 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <messages>
-  <!-- srria- is short for ShowRiidIntrumentAna -->
-  <message id="srria-algo-info-label">Informations sur l'Algorithme :</message>
-<message id="srria-creator">Créateur</message>
-<message id="srria-version">Version</message>
-<message id="srria-remarks">Remarques</message>
-<message id="srria-category">Catégorie</message>
-<message id="srria-confidence">Confiance</message>
-<message id="srria-no-id-provided">Aucune identification de nucléide fournie.</message>
-<message id="srria-algo-results">Résultats de l'Algorithme</message>
-<message id="srria-no-algo-results">Aucun résultat d'algorithme disponible.</message>
-<message id="srria-no-nucs">aucun nucléide identifié.</message>
-<message id="srria-inst-ana-window-title">Les Résultats d'ID des Détecteurs</message>
+  <message id="srria-algo-info-label">Informations sur l'algorithme :</message>
+  <message id="srria-creator">Créateur</message>
+  <message id="srria-version">Version</message>
+  <message id="srria-remarks">Remarques</message>
+  <message id="srria-category">Catégorie</message>
+  <message id="srria-confidence">Confiance</message>
+  <message id="srria-no-id-provided">Aucune identification de nucléide fournie.</message>
+  <message id="srria-algo-results">Résultats de l'algorithme</message>
+  <message id="srria-no-algo-results">Aucun résultat d'algorithme disponible.</message>
+  <message id="srria-no-nucs">aucun nucléide identifié.</message>
+  <message id="srria-inst-ana-window-title">Résultats d'identification du détecteur</message>
 </messages>
