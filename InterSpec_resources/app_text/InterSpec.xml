@@ -580,6 +580,7 @@
   <message id="lang-ko">한국어</message>
   <message id="lang-vi">Tiếng Việt</message>
   <message id="lang-tr">Türkçe</message>
+  <message id="lang-ar">العربية</message>
 
 
   <!-- An incomplete list of possible countries - mapping the two letter code we receive as part of
