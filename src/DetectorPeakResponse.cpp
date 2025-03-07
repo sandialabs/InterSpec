@@ -2854,7 +2854,8 @@ void DetectorPeakResponse::fromXml( const ::rapidxml::xml_node<char> *parent )
     }else if( !compare(node->value(), node->value_size(), "0", 1, false)
             && !compare(node->value(), node->value_size(), "false", 5, false) )
     {
-      throw runtime_error( "DetectorPeakResponse invalid FixedGeometry" );
+      throw runtime_error( "DetectorPeakResponse invalid FixedGeometry ('"
+                          + SpecUtils::xml_value_str(node) + "')" );
     }
   }//if( not "FixedGeometry" node )
   

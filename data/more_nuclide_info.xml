@@ -830,7 +830,7 @@ Np-237/Pa-233 (27.4 d)
     </Nuc>
 
     <Nuc name="Pb-212">
-      <Associated>Ra-224</Associated>
+      <Associated>Ra-224;Th-228;U-232</Associated>
       <Notes>
         "Pb-212 is used in TAT for cancers or alpha radioimmunotherapy, with decay products Bi-212 (1 h) and Po-212 (0.3 µs) delivering the alpha particles. Used especially for melanoma, breast cancer and ovarian cancer. Demand is increasing. Used in peptide receptor radionuclide therapy (PRRT)."-[GNRIM]
         
@@ -1075,13 +1075,28 @@ Reactor radioisotope.
     </Nuc>
 
     <Nuc name="Th-228">
-      <Associated>U-232;Th-228;Th-232</Associated>
+      <Associated>U-232;Th-232;Pb-212</Associated>
       <Notes>
 U-232 (68.9 y)/Th-228 (1.91 y)
 
 Th-232 and U-232/Th-228 decay chain gamma spectra are similar.  
 
 Th-232 versus U-232/Th-228: Th-232 decay chain spectra generally contain readily detectable Ac-228 emissions (338.3, 911.2, and 969.0 keV).
+
+Pb-212, a medical isotope, can also have many of the same peaks.
+      </Notes>
+    </Nuc>
+
+    <Nuc name="U-232">
+      <Associated>Th-228;Th-232;Pb-212</Associated>
+      <Notes>
+U-232 (68.9 y)/Th-228 (1.91 y)
+
+Th-232 and U-232/Th-228 decay chain gamma spectra are similar.  
+
+Th-232 versus U-232/Th-228: Th-232 decay chain spectra generally contain readily detectable Ac-228 emissions (338.3, 911.2, and 969.0 keV).
+
+Pb-212, a medical isotope, can also have many of the same peaks.
       </Notes>
     </Nuc>
 
