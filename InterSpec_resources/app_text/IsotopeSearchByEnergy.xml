@@ -42,7 +42,7 @@
   <message id="isbe-assign-all-matching-peaks">Assign all matching peaks to {1}...</message>
 
   <!-- Messages for IsotopeSearchByEnergyModel are below here; i.e. the table headers -->
-  <message id="isbem-parent-nuc">Parent</message>
+  <message id="isbem-parent-nuc">Nuclide</message>
   <message id="isbem-diff">Diff.</message>
   <message id="isbem-rel-br">Rel. B.R.</message>
   <message id="isbem-profile">Profile</message>
