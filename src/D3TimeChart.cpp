@@ -295,7 +295,7 @@ public:
     
     // Add a checkbox, and additional energy ranges, etc
     m_normalizeCb = new WCheckBox("Normalize to energy range", filterContents);
-    m_normalizeCb->addStyleClass("DoNormCb");
+    m_normalizeCb->addStyleClass("DoNormCb CbNoLineBreak");
     m_normalizeCb->hide();
 
     const bool showToolTips = UserPreferences::preferenceValue<bool>("ShowTooltips", InterSpec::instance());
@@ -349,20 +349,20 @@ public:
 
     
     m_dontRebin = new WCheckBox( "Don't rebin", optContents);
-    m_dontRebin->addStyleClass( "D3TimeDontRebin" );
+    m_dontRebin->addStyleClass( "D3TimeDontRebin CbNoLineBreak" );
     m_dontRebin->setToolTip( "Disable combining time samples on the chart when there are more time samples than pixels." );
     m_dontRebin->checked().connect( this, &D3TimeChartFilters::dontRebinChanged );
     m_dontRebin->unChecked().connect( this, &D3TimeChartFilters::dontRebinChanged );
     
     m_hideNeutrons = new WCheckBox( "Hide neutrons", optContents);
-    m_hideNeutrons->addStyleClass( "D3TimeHideNeutrons" );
+    m_hideNeutrons->addStyleClass( "D3TimeHideNeutrons CbNoLineBreak" );
     m_hideNeutrons->setToolTip( "Do not show neutrons on chart" );
     m_hideNeutrons->checked().connect( this, &D3TimeChartFilters::hideNeutronsChanged );
     m_hideNeutrons->unChecked().connect( this, &D3TimeChartFilters::hideNeutronsChanged );
     
     
     m_gammaLogY = new WCheckBox( "Log Y Scale", optContents );
-    m_gammaLogY->addStyleClass( "D3TimeGammaLogY" );
+    m_gammaLogY->addStyleClass( "D3TimeGammaLogY CbNoLineBreak" );
     m_gammaLogY->setToolTip( "Make the y-axis log, for the gammas" );
     m_gammaLogY->checked().connect( this, &D3TimeChartFilters::gammaLogYChanged );
     m_gammaLogY->unChecked().connect( this, &D3TimeChartFilters::gammaLogYChanged );

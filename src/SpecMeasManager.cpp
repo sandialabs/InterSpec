@@ -331,22 +331,24 @@ namespace
       m_manager( manager ),
       m_type( SpectrumType::Foreground )
     {
-      setWindowTitle( "Select File To Open" );
+      // Loading the internationalization text not needed as SpecMeasManager is always created
+      //viewer->useMessageResourceBundle( "SpecMeasManager" );
+      
+      setWindowTitle( WString::tr("fud-dialog-title") );
       
       const bool noForeground = !viewer->measurment( SpectrumType::Foreground );
       
-      string instructions;
+      WString instructions;
       if( !viewer->isPhone() )
       {
         if( noForeground )
         {
-          instructions = string(viewer->isMobile() ?"Tap" : "Click")
-                         + " below to choose a foreground spectrum file to open.";
+          instructions = WString::tr("fud-open-foreground-only-msg")
+                                    .arg( WString::tr(viewer->isMobile() ? "Tap" : "Click") );
         }else
         {
-          instructions = "Select how you would like to open the spectrum file, and then ";
-          instructions += (viewer->isMobile() ? "tap" : "click");
-          instructions += " below to browse for the file.";
+          instructions = WString::tr("fud-open-any-type-msg")
+                                    .arg( WString::tr(viewer->isMobile() ? "tap" : "click") );
         }//if( noForeground )
       }//if( !viewer->isPhone() )
       
@@ -361,22 +363,22 @@ namespace
       
       if( !noForeground )
       {
-        WGroupBox *buttons = new WGroupBox( "Open file as:" );
+        WGroupBox *buttons = new WGroupBox( WString::tr("fud-btn-grp-title") );
       
         layout->addWidget( buttons, layout->rowCount(), 0 );
         
         WButtonGroup *group = new WButtonGroup( buttons );
         
-        WRadioButton *foreground = new WRadioButton( "Foreground", buttons );
+        WRadioButton *foreground = new WRadioButton( WString::tr("Foreground"), buttons );
         foreground->setInline( false );
         foreground->setChecked( true );
         group->addButton( foreground, toint(SpectrumType::Foreground) );
         
-        WRadioButton *background = new WRadioButton( "Background", buttons );
+        WRadioButton *background = new WRadioButton( WString::tr("Background"), buttons );
         background->setInline( false );
         group->addButton( background, toint(SpectrumType::Background) );
         
-        WRadioButton *secondary = new WRadioButton( "Secondary", buttons );
+        WRadioButton *secondary = new WRadioButton( WString::tr("Secondary"), buttons );
         secondary->setInline( false );
         group->addButton( secondary, toint(SpectrumType::SecondForeground) );
         
@@ -394,15 +396,13 @@ namespace
       layout->addWidget( m_fileUpload, layout->rowCount(), 0, AlignMiddle | AlignCenter );
       layout->setRowStretch( layout->rowCount()-1, 1 );
       
-      const char *msg = "";
+      WString msg = "";
       if( !viewer->isMobile() )
       {
-        msg = "You can also drag and drop the file directly into the <br />"
-              "application window as a quicker alternative.<br />"
-              "<br />For more advanced file opening and<br />"
-              "manipulation use the <b>File Manager</b>";
+        msg = WString::tr("fud-drg-n-drop-msg");
       }else
       {
+        msg = WString::tr("fud-drg-n-drop-msg-mbl");
         msg = "<span style=\"font-size: 10px;\">"
                 "You can also open spectrum files from email or file apps."
               "</span>";
@@ -414,7 +414,7 @@ namespace
       layout->addWidget( friendlyMsg, layout->rowCount(), 0, AlignMiddle | AlignBottom );
       
       
-      WPushButton *cancel = new WPushButton( "Cancel", footer() );
+      WPushButton *cancel = new WPushButton( WString::tr("Cancel"), footer() );
       
       cancel->clicked().connect( this, &FileUploadDialog::userCanceled );
       m_fileUpload->changed().connect( m_fileUpload, &Wt::WFileUpload::upload );
@@ -435,6 +435,11 @@ namespace
         repositionWindow( 0, 0 );
       }else
       {
+        // If we dont explicitly set width, the dialog will creepy in width.
+        const int vw = viewer->renderedWidth();
+        const double w = (vw < 100) ? 375.0 : (((vw > 100) && (vw < 400)) ? (vw - 10.0) : 400.0);
+        
+        setWidth( WLength(w, WLength::Unit::Pixel) );
         resizeToFitOnScreen();
         centerWindow();
       }
@@ -446,14 +451,15 @@ namespace
       
       if( m_specChangedConection.connected() )
         m_specChangedConection.disconnect();
-      delete this;
+      AuxWindow::deleteAuxWindow( this );
     }
     
     void userCanceled()
     {
       if( m_specChangedConection.connected() )
         m_specChangedConection.disconnect();
-      delete this;
+      
+      AuxWindow::deleteAuxWindow( this );
     }
     
     void finishUpload()
@@ -462,7 +468,7 @@ namespace
         m_specChangedConection.disconnect();
       
       m_manager->finishQuickUpload( m_fileUpload, m_type );
-      delete this;
+      AuxWindow::deleteAuxWindow( this );
     }
     
     virtual ~FileUploadDialog()
@@ -839,6 +845,13 @@ protected:
   JSignal<int,std::string> m_qrDecodeSignal;
   boost::function<void()> m_close_parent_dialog;
   
+  /** We'll make some (lifetime safe) cleanup function to delete sub-dialogs
+    created from this widget, when this widget destructs.
+    The functions put in `m_cleanups` need to be made with `wApp->bind( boost::bind(WWidget...) )`
+    so we dont try to delete widgets that have already been deleted.
+   */
+  vector<boost::function<void()>> m_cleanups;
+  
   void close_parent_dialog()
   {
     m_close_parent_dialog();
@@ -991,6 +1004,9 @@ protected:
       SimpleDialog *dialog = new SimpleDialog( title, content );
       dialog->addButton( WString::tr("Okay") );
       
+      // If we delete this UploadedImgDisplay, then dont leave QR-code dialogs dangling
+      m_cleanups.push_back( wApp->bind( boost::bind( &WDialog::done, dialog, Wt::WDialog::DialogCode::Accepted ) ) );
+      
       return;
     }//if( num_qr <= 0 )
     
@@ -1037,6 +1053,9 @@ protected:
       SimpleDialog *dialog = new SimpleDialog( WString::tr("uid-invalid-uri"), content );
       dialog->addButton( WString::tr("Okay") );
       
+      // If we delete this UploadedImgDisplay, then dont leave QR-code dialogs dangling
+      m_cleanups.push_back( wApp->bind( boost::bind( &WDialog::done, dialog, Wt::WDialog::DialogCode::Accepted ) ) );
+      
       return;
     }//if( cleaned_up_uris.size() != initial_uris.size() )
     
@@ -1068,6 +1087,9 @@ protected:
     btn->clicked().connect( this, &UploadedImgDisplay::close_parent_dialog );
     
     btn = dialog->addButton( WString::tr("No") );
+    
+    // If we delete this UploadedImgDisplay, then dont leave QR-code dialogs dangling
+    m_cleanups.push_back( wApp->bind( boost::bind( &WDialog::done, dialog, Wt::WDialog::DialogCode::Accepted ) ) );
   }//void qr_check_result( const int num_qr, const string b64_value )
   
   
@@ -1162,6 +1184,12 @@ public:
   m_qrDecodeSignal( this, "QrDecodedFromImg", false)
   {
     m_close_parent_dialog = wApp->bind( boost::bind( &SimpleDialog::done, dialog, Wt::WDialog::DialogCode::Accepted ) );
+    
+    // Incase we find a QR code in the image, lets avoid `dialog` being called to front of view
+    //  multiple times, which can cause some jank since there will be a dialog asking if the
+    //  user wants to use the URL in the QR code.  Even with this call, the dialog will be brought
+    //  forward a single time
+    dialog->doNotUseMultpleBringstoFront();
     
     WText *t = new WText( WString::tr("uid-image-not-spectrum"), this );
     t->addStyleClass( "NonSpecOtherFile" );
@@ -1259,6 +1287,13 @@ public:
       embedbtn->clicked().connect( this, &UploadedImgDisplay::embed_in_n42 );
     }//if( m_viewer->measurment( SpecUtils::SpectrumType::Foreground ) )
   }//UploadedImgDisplay constructor
+  
+  
+  virtual ~UploadedImgDisplay()
+  {
+    for( const auto &fcn : m_cleanups )
+      fcn();
+  }//~UploadedImgDisplay()
   
 };//UploadedImgDisplay
   
@@ -2198,6 +2233,8 @@ bool SpecMeasManager::handleNonSpectrumFile( const std::string &displayName,
     else if( issvg ) mimetype = "image/svg+xml";
     else if( isheic ) mimetype = "image/heic";
     
+    title->setText( WString::tr("smm-image-file") );
+    
     new UploadedImgDisplay( m_viewer, displayName, mimetype, filesize, infile, dialog, type );
     
     add_undo_redo();
@@ -2816,6 +2853,7 @@ bool SpecMeasManager::handleCALpFile( std::istream &infile, SimpleDialog *dialog
   if( fore_samples.size() != foreground->sample_numbers().size() )
   {
     applyOnlyCurrentlyVisible = new WCheckBox( WString::tr("smm-CALp-cb-disp-samples-only") );
+    applyOnlyCurrentlyVisible->addStyleClass( "CbNoLineBreak" );
     stretcher->addWidget( applyOnlyCurrentlyVisible, stretcher->rowCount(), 0, AlignLeft );
   }//if( not displaying all foreground samples )
   
@@ -2827,6 +2865,7 @@ bool SpecMeasManager::handleCALpFile( std::istream &infile, SimpleDialog *dialog
   {
     applyForeground = new WCheckBox( WString::tr("smm-CALp-cb-apply-to-fore") );
     applyForeground->setChecked( true );
+    applyForeground->addStyleClass( "CbNoLineBreak" );
     stretcher->addWidget( applyForeground, stretcher->rowCount(), 0, AlignLeft );
   }
   
@@ -2834,6 +2873,7 @@ bool SpecMeasManager::handleCALpFile( std::istream &infile, SimpleDialog *dialog
   {
     applyBackground = new WCheckBox( WString::tr("smm-CALp-cb-apply-to-back") );
     applyBackground->setChecked( true );
+    applyBackground->addStyleClass( "CbNoLineBreak" );
     stretcher->addWidget( applyBackground, stretcher->rowCount(), 0, AlignLeft );
   }
   
@@ -2841,6 +2881,7 @@ bool SpecMeasManager::handleCALpFile( std::istream &infile, SimpleDialog *dialog
   {
     applySecondary = new WCheckBox( WString::tr("smm-CALp-cb-apply-to-second") );
     applySecondary->setChecked( true );
+    applySecondary->addStyleClass( "CbNoLineBreak" );
     stretcher->addWidget( applySecondary, stretcher->rowCount(), 0, AlignLeft );
   }
   
@@ -4081,20 +4122,30 @@ void SpecMeasManager::startQuickUpload()
 void SpecMeasManager::finishQuickUpload( Wt::WFileUpload *upload,
                                          const SpecUtils::SpectrumType type )
 {
-  // TODO: The warning messages, and error conditions detected should be greatly improved
-
-  std::shared_ptr<SpecMeas> measement_ptr;
-  const int row = dataUploaded( upload, measement_ptr );
+  const string spool_path = upload->spoolFileName();
+  const string display_name = upload->clientFileName().toUTF8();
   
-  if( row < 0 )
+  try
   {
-    cerr << "SpecMeasManager::finishQuickUpload(...)\n\tError uploading file "
-         << upload->clientFileName() << endl;
-    return;
-  } // if( row < 0 )
+    std::shared_ptr<SpecMeas> measurement;
+    std::shared_ptr<SpectraFileHeader> header;
+    const int result = setFile( display_name, spool_path, header, measurement, SpecUtils::ParserType::Auto );
+    WModelIndexSet selected;
+    WModelIndex index = m_fileModel->index( result, 0 );
+    selected.insert( index );
+    m_treeView->setSelectedIndexes( WModelIndexSet() );
 
-  displayFile( row, measement_ptr, type, true, true, 
+    const bool checkIfPreviouslyOpened = true;
+    const bool doPreviousEnergyRangeCheck = true;
+    displayFile( result, measurement, type, checkIfPreviouslyOpened, doPreviousEnergyRangeCheck,
               SpecMeasManager::VariantChecksToDo::DerivedDataAndMultiEnergyAndMultipleVirtualDets );
+  }catch( const std::exception &e )
+  {
+    const bool known_type = handleNonSpectrumFile( display_name, spool_path, type );
+    
+    if( !known_type )
+      displayInvalidFileMsg( display_name, e.what() );
+  }// try/catch
 }//void finishQuickUpload(...)
 
 
@@ -4491,10 +4542,14 @@ void SpecMeasManager::displayFile( int row,
                                    const SpecMeasManager::VariantChecksToDo viewingChecks )
 {
   std::shared_ptr<SpecMeas> old_meas = m_viewer->measurment( type );
-  std::shared_ptr<SpecMeas>  old_back;
+  std::shared_ptr<SpecMeas> old_back;
+  std::shared_ptr<const SpecUtils::Measurement> old_back_spec;
   if( type == SpecUtils::SpectrumType::Foreground )
+  {
     old_back = m_viewer->measurment( SpecUtils::SpectrumType::Background );
-
+    old_back_spec = m_viewer->displayedHistogram( SpecUtils::SpectrumType::Background );
+  }
+  
 #if( USE_DB_TO_STORE_SPECTRA )
   const bool storeInDb
       = UserPreferences::preferenceValue<bool>( "AutoSaveSpectraToDb", m_viewer );
@@ -4577,10 +4632,15 @@ void SpecMeasManager::displayFile( int row,
 
   const size_t ncandiadate_samples = selected.size();
 
-  //backgroundIndexs will only get filled if the a forground or secondforground
-  // is desired
+  //`background_sample_numbers` will only get filled if the a foreground or second-foreground
+  // is desired.  Same with `back_start_time` - it is only used to check if this new background
+  //  is closer to the foreground measurement start time, than `old_back`.
   std::set<int> background_sample_numbers;
+  SpecUtils::time_point_t back_start_time{}, foreground_start_time{};
 
+  // Number back/fore/instrinsic only filled out if not passthrough/search
+  int numbackground = 0, numForeground = 0, numIntrinsic = 0;
+  
   WarningWidget::WarningMsgLevel warningmsgLevel = WarningWidget::WarningMsgInfo;
   stringstream warningmsg;
 
@@ -4593,7 +4653,6 @@ void SpecMeasManager::displayFile( int row,
       const bool passthrough = header->passthrough();
       if( !passthrough && (nsamples > 1) )
       {
-        int numbackground = 0, numForeground = 0, numIntrinsic = 0;
         int childrow = -1, backrow = -1, intrinsicrow = -1;
         for( size_t i = 0; i < header->m_samples.size(); ++i )
         {
@@ -4607,17 +4666,40 @@ void SpecMeasManager::displayFile( int row,
             break;
               
             case SpecUtils::SourceType::Foreground:
+            {
               ++numForeground;
               childrow = static_cast<int>( i );
+              const vector<shared_ptr<const SpecUtils::Measurement>> fores
+                                      = measement_ptr->sample_measurements(spechead.sample_number);
+              assert( !fores.empty() );
+              for( const shared_ptr<const SpecUtils::Measurement> &f : fores )
+                foreground_start_time = std::max( foreground_start_time, f->start_time() );
+              
               //i = header->m_samples.size();  //first foreground, terminate loop
-            break;
+              break;
+            }//case SpecUtils::SourceType::Foreground:
               
             case SpecUtils::SourceType::Background:
+            {
               ++numbackground;
               backrow = static_cast<int>( i );
+              
+              if( old_back )
+              {
+                back_start_time = SpecUtils::time_point_t{};
+                
+                const vector<shared_ptr<const SpecUtils::Measurement>> backs
+                                      = measement_ptr->sample_measurements(spechead.sample_number);
+                assert( !backs.empty() );
+                for( const shared_ptr<const SpecUtils::Measurement> &b : backs )
+                  back_start_time = std::max( back_start_time, b->start_time() );
+              }//if( numForeground )
+                
               if( numForeground )
                 i = header->m_samples.size();  //We have foreground and background, terminate loop
-            break;
+              
+              break;
+            }//case SpecUtils::SourceType::Background:
             
             case SpecUtils::SourceType::Calibration:
               //do nothing
@@ -4655,16 +4737,38 @@ void SpecMeasManager::displayFile( int row,
             warningmsg << WString::tr("smm-warn-upload-use-file-manager").toUTF8();
         }//if( decide how to customize the info message ) / else
 
-        //If we have an unambiguos background, and arent currently displaying a background
-        //  from this detector, lets load the unambiguos background
-        if( type==SpecUtils::SpectrumType::Foreground
-           && numbackground == 1 && childrow != backrow
-           && (childrow>=0) && (childrow<static_cast<int>(header->m_samples.size()))
-           && (backrow>=0) && (backrow<static_cast<int>(header->m_samples.size())) //These two conditions should always be true if first condition is true
-           && ( !old_back || !measement_ptr
-                || (measement_ptr->num_gamma_channels()!=old_back->num_gamma_channels()) || (measement_ptr->instrument_id()!=old_back->instrument_id()) )
+        assert( (numbackground != 1) || ((childrow >= 0) && (childrow < static_cast<int>(header->m_samples.size()))) );
+        
+        //If we have an unambiguous background, and arent currently displaying a background
+        //  from this detector, or the new background is closer to foreground measurement in time,
+        //  lets load the unambiguous background.
+        //The reason we dont want to be too aggressive about loading the included background is
+        //  that a number of detector models will include a background spectrum from the detectors
+        //  dedicated background acquisition (e.g., when detector was turned on, or a few days or
+        //  weeks ago...), but these may not be as relevant to the measured foreground (usually
+        //  people take a "foreground" measurement of the background, and just manually label this
+        //  second file as a background measurement for the analyst to use).
+        if( (type == SpecUtils::SpectrumType::Foreground)
+           && (numbackground == 1)
+           && (childrow != backrow)
+           && (childrow >= 0) && (childrow < static_cast<int>(header->m_samples.size()))
+           && (backrow >= 0) && (backrow < static_cast<int>(header->m_samples.size())) //These two conditions should always be true if first condition is true
+           && (old_meas != measement_ptr) //I dont think this is actually a necessary check
+           && ( !old_back
+               || !old_back_spec
+               || !measement_ptr
+               || (measement_ptr->num_gamma_channels() != old_back->num_gamma_channels())
+               || (measement_ptr->instrument_id() != old_back->instrument_id())
+               || (SpecUtils::is_special(old_back_spec->start_time()) && !SpecUtils::is_special(back_start_time))
+               || (!SpecUtils::is_special(back_start_time)
+                   && !SpecUtils::is_special(foreground_start_time)
+                   && (std::abs( (back_start_time - foreground_start_time).count() )
+                       <= std::abs( (old_back_spec->start_time() - foreground_start_time).count() ) ) )
+               )
            )
+        {
           background_sample_numbers.insert( header->m_samples[backrow].sample_number );
+        }
         
         selected.clear();
         selected.insert( index.child(childrow,0) );
@@ -4816,7 +4920,14 @@ void SpecMeasManager::displayFile( int row,
     
     m_viewer->setSpectrum( measement_ptr, background_sample_numbers,
                            SpecUtils::SpectrumType::Background, options );
-  }//if( backgroundIndexs.size() )
+    if( old_back && (old_meas != measement_ptr) )
+    {
+      passMessage( WString::tr("smm-changed-background"), WarningWidget::WarningMsgInfo );
+    }
+  }else if( old_back && numbackground && (old_meas != measement_ptr) )
+  {
+    passMessage( WString::tr("smm-didnt-changed-background"), WarningWidget::WarningMsgInfo );
+  }//if( backgroundIndexs.size() ) / else-if
   
 #if( USE_DB_TO_STORE_SPECTRA )
   WApplication *app = wApp;
@@ -5518,6 +5629,7 @@ WContainerWidget *SpecMeasManager::createTreeViewDiv()
   m_treeView->setColumn1Fixed( false );
   m_treeView->setColumnWidth( SpectraFileModel::kDisplayName,     WLength( 17, WLength::FontEx ) );
   m_treeView->setColumnWidth( SpectraFileModel::kUploadTime,      WLength( 16, WLength::FontEx ) );
+  m_treeView->setColumnWidth( SpectraFileModel::kRiidResult,      WLength( 16, WLength::FontEx ) );
   m_treeView->setColumnWidth( SpectraFileModel::kNumMeasurements, WLength( 10, WLength::FontEx ) );
   m_treeView->setColumnWidth( SpectraFileModel::kLiveTime,        WLength( 14, WLength::FontEx ) );
   m_treeView->setColumnWidth( SpectraFileModel::kRealTime,        WLength( 14, WLength::FontEx ) );
@@ -5866,7 +5978,7 @@ void SpecMeasManager::showPreviousSpecFileUsesDialog( std::shared_ptr<SpectraFil
   }//if( snapshots && auto_saved ) / else
   
   WCheckBox *cb = new WCheckBox( WString::tr("smm-auto-check-prev-cb") );
-  cb->addStyleClass( "PrefCb" );
+  cb->addStyleClass( "PrefCb CbNoLineBreak" );
   layout->addWidget( cb, 1, 0 );
   layout->setRowStretch( 0, 1 );
   

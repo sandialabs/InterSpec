@@ -119,7 +119,7 @@ public:
   //isEditingValidPeak(): is the editor actually editing a valid peak, or blank
   bool isEditingValidPeak() const;
   
-  static const char *rowLabel( const PeakPars par );
+  static Wt::WString rowLabel( const PeakPars par );
   
 protected:
   void init();

@@ -326,7 +326,7 @@ namespace
     for( auto &src : srcgammas )
     {
       const double det_sf = (!!detector ? detector->intrinsicEfficiency(src.energy) : 1.0f);
-      const double xs = MassAttenuation::massAttenuationCoeficient( shielding_an, src.energy );
+      const double xs = MassAttenuation::massAttenuationCoefficientFracAN( shielding_an, src.energy );
       const double shielding_sf = exp( -shielding_ad * xs );
       
       src.numPerSecond *= det_sf * shielding_sf;

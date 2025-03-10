@@ -143,6 +143,7 @@ public:
     
     WCheckBox *cb = new WCheckBox( WString::tr("smmd-auto-show-images-cb"), footer );
     cb->setToolTip( WString::tr("smmd-tt-auto-show-images") );
+    cb->addStyleClass( "CbNoLineBreak" );
     m_next->setFocus();
     
     InterSpec *interspec = InterSpec::instance();

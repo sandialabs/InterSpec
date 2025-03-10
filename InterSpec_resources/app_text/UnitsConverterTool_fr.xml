@@ -1,23 +1,21 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <messages>
-  <!-- uct- is short for UnitsConverterTool
-  -->
   <message id="uct-mult-nucs">Plusieurs nucléides ({1} + {2})</message>
-  <message id="uct-instructions">Convertir entre les unités liées à la radiation.<br />
-      Ex : 5 MBq, 2 nCi, 1.2rad, 15E-3gy, 0.2mrem, 8 pieds, 9milli-sievert, 10 gramme U235, 1.2 uCi Pu238
+  <message id="uct-instructions">Convertir entre les unités liées aux radiations.<br />
+    Ex : 5 MBq, 2 nCi, 1.2rad, 15E-3gy, 0.2mrem, 8pieds, 9milli-sievert, 10 grammes U235, 1.2 uCi Pu238
   </message>
-  <message id="uct-input-label">Entrée : </message>
-  <message id="uct-output-label">Sortie : </message>
-  <message id="uct-qr-window-title">État du Convertisseur d'Unités</message>
+  <message id="uct-input-label">Entrée : </message>
+  <message id="uct-output-label">Sortie : </message>
+  <message id="uct-qr-window-title">État du convertisseur d'unités</message>
   <message id="uct-qr-window-txt">État actuel de l'outil de conversion d'unités.</message>
   <message id="uct-err-empty-input">Entrée vide</message>
   <message id="uct-couldnt-find-units">Impossible de déterminer les unités</message>
   <message id="uct-nuc-unknown">Impossible de faire quoi que ce soit avec {1} '{2}'</message>
   <message id="uct-invalid-input">Entrée invalide</message>
-  <message id="uct-err-gen">Erreur : {1}.<br />
-      Unités d'activité autorisées : bq, becquerel, ci, curie, gray, Gy, rad, sievert, Sv, rem,
-      roentgen, m, mètre, ft, pouce, in, gramme, g, once, oz, livre, lb, et grain.<br />
-      Préfixes (optionnels) autorisés : n, nano, u, µ, micro, m, milli,
-       k, kilo, M, méga, G, Giga, T, et Tera
+  <message id="uct-err-gen">Erreur : {1}.<br />
+    Unités d'activité autorisées : bq, becquerel, ci, curie, gray, Gy, rad, sievert, Sv, rem,
+    roentgen, m, mètre, ft, pouce, in, gramme, g, once, oz, livre, lb et grain.<br />
+    Préfixes autorisés (facultatifs) : n, nano, u, µ, micro, m, milli,
+     k, kilo, M, méga, G, Giga, T et Tera
   </message>
 </messages>

@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages nplurals="2" plural="n==1 ? 0 : 1">
+  <message id="isbe-clear-ref">مسح الذروات الضوئية المرجعية</message>
+  <message id="isbe-cb-gammas">أشعة غاما</message>
+
+  <message id="isbe-cb-rxnts">تفاعلات</message>
+  <message id="isbe-min-br">الحد الأدنى لـ B.R.</message>
+  <message id="isbe-tt-min-br">الحد الأدنى لنسبة التفريع.</message>
+  <message id="isbe-min-hl">الحد الأدنى لـ T½</message>
+  <message id="isbe-tt-min-hl">
+    الحد الأدنى لعمر النصف للنويدات المراد البحث عنها.
+    <br />
+    <div>
+      يمكن تحديد العمر باستخدام مجموعة من وحدات الوقت، على غرار '<b>5.3y 8d 22m</b>'.
+    </div>
+    <div>
+      وحدات الوقت المقبولة: <b>year</b>، <b>yr</b>، <b>y</b>، <b>day</b>، <b>d</b>، <b>hrs</b>، <b>hour</b>، <b>h</b>، <b>minute</b>،
+      <b>min</b>، <b>m</b>، <b>second</b>، <b>s</b>، <b>ms</b>، <b>microseconds</b>، <b>us</b>، <b>nanoseconds</b>، <b>ns</b>، أو
+      يمكنك تحديد الفترة الزمنية بواسطة <b>hh:mm:ss</b>.
+    </div>
+    <div>
+      عند تحديد فترات زمنية متعددة، يتم جمعها، على سبيل المثال. يتم تفسير '1y6months 3m' على أنها 18 شهرًا و 3 دقائق
+    </div>
+  </message>
+  <message id="isbe-searching">جارٍ البحث</message>
+  <message id="isbe-assign-to-btn">
+    <plural case="0">تعيين الذروة إلى {1}</plural>
+    <plural case="1">تعيين الذروات إلى {1}</plural>
+  </message>
+  <message id="isbe-assign-searched-energies">
+    <plural case="0">تعيين الطاقة التي تم البحث عنها إلى {1}</plural>
+    <plural case="1">تعيين الطاقات التي تم البحث عنها إلى {1}</plural>
+  </message>
+  <message id="isbe-assign-matching-peaks-no-id">تعيين الذروات المطابقة التي ليس لها معرف إلى {1}...</message>
+  <message id="isbe-assign-all-matching-peaks">تعيين كل الذروات المطابقة إلى {1}...</message>
+
+  <message id="isbem-parent-nuc">الأصل</message>
+  <message id="isbem-diff">الفرق</message>
+  <message id="isbem-rel-br">B.R. النسبي</message>
+  <message id="isbem-profile">الملف الشخصي</message>
+  <message id="isbem-decay">التحلل</message>
+  <message id="isbem-part-hl">T½ الأصل</message>
+  <message id="isbem-assumed-age">العمر المفترض</message>
+  <message id="isbem-tt-parent-nuc">النويدة الأم لسلسلة التحلل.</message>
+  <message id="isbem-tt-diff">الفرق بين مستوى طاقة النويدة المحددة ومستوى الطاقة الذي تم البحث عنه</message>
+  <message id="isbem-tt-energy">طاقة أشعة غاما/الأشعة السينية الحقيقية</message>
+  <message id="isbem-tt-rel-bre">نسبة التفريع، بالنسبة لأعلى عائد لأشعة غاما للنويدة
+    (أي، 1.0 يشير إلى أشعة غاما الأكثر وفرة، وليس أشعة غاما واحدة لكل تحلل)
+  </message>
+  <message id="isbem-tt-profile">مقياس تقريبي لمدى اقتراب الطيف المرصود من الحصول على الذروات المتوقعة للمصدر المحدد.
+    كلما زاد الرقم كان ذلك أفضل، حيث تكون القيمة 1.0 هي الأعلى - يوصى بالفرز حسب هذا العمود لمعرف النويدة.
+    راجع مساعدة هذه الأداة للحصول على وصف أكثر اكتمالاً لهذه الكمية.
+  </message>
+  <message id="isbem-tt-parent-hl">عمر النصف الأصل</message>
+  <message id="isbem-tt-assumed-age">العمر المفترض للنويدة</message>
+</messages>

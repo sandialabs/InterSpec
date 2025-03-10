@@ -762,7 +762,22 @@ void killServer()
     }
   }//void set_session_destructing( const char *session_token )
 
-
+/*
+  bool set_session_reload_allow( const char *session_token )
+  {
+    lock_guard<mutex> lock( ns_sessions_mutex );
+    auto pos = ns_sessions.find( session_token );
+    if( pos == end(ns_sessions) )
+      return false;
+    
+    SessionState &session = pos->second;
+    session.auth_time = std::chrono::system_clock::now();
+    session.current_state = SessionState::State::AuthorizedNotLoaded;
+      
+    return true;
+  }//bool set_session_reload_allow( const char *session_token )
+*/
+  
   int session_status( const char *session_token )
   {
     lock_guard<mutex> lock( ns_sessions_mutex );
@@ -934,7 +949,7 @@ std::string file_to_open_on_load( const std::string &session_token )
   auto pos = ns_sessions.find( session_token );
   if( pos == end(ns_sessions) )
   {
-    assert( 0 );
+    //assert( 0 );
     return "";
   }
   

@@ -846,6 +846,7 @@ UseInfoWindow::UseInfoWindow( std::function<void(bool)> showAgainCallback,
     if( isVertical && rightLayout )
     {
       showAgainCb = new WCheckBox( "show at start when no spectra" );
+      showAgainCb->addStyleClass( "CbNoLineBreak" );
       rightLayout->addWidget( showAgainCb, rightLayout->rowCount(), 0 );
     }else
     {

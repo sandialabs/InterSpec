@@ -79,7 +79,7 @@ namespace
 PeakEditWindow::PeakEditWindow( const double energy,
                                 PeakModel *peakmodel,
                                 InterSpec *viewer )
-  : AuxWindow( "Peak Editor", WFlags<AuxWindowProperties>(AuxWindowProperties::PhoneNotFullScreen) | AuxWindowProperties::DisableCollapse  )
+  : AuxWindow( WString::tr("window-title-peak-editor"), WFlags<AuxWindowProperties>(AuxWindowProperties::PhoneNotFullScreen) | AuxWindowProperties::DisableCollapse  )
 {
   wApp->useStyleSheet( "InterSpec_resources/PeakEdit.css" );
   
@@ -187,27 +187,27 @@ PeakEdit::PeakEdit( const double energy,
 }//PeakEdit( constructor )
 
 
-const char *PeakEdit::rowLabel( const PeakPars t )
+Wt::WString PeakEdit::rowLabel( const PeakPars t )
 {
   switch( t )
   {
-    case PeakEdit::Mean:              return "Centroid";
-    case PeakEdit::Sigma:             return "FWHM";
-    case PeakEdit::SigmaDrfPredicted: return "DRF Pred. FWHM";
-    case PeakEdit::GaussAmplitude:    return "Amplitude";
-    case PeakEdit::SkewPar0:   return "Skew 0";
-    case PeakEdit::SkewPar1:        return "Skew 1";
-    case PeakEdit::SkewPar2:       return "Skew 2";
-    case PeakEdit::SkewPar3:       return "Skew 3";
-    case PeakEdit::OffsetPolynomial0: return "Cont. P0";
-    case PeakEdit::OffsetPolynomial1: return "Cont. P1";
-    case PeakEdit::OffsetPolynomial2: return "Cont. P2";
-    case PeakEdit::OffsetPolynomial3: return "Cont. P3";
-    case PeakEdit::OffsetPolynomial4: return "Cont. P4";
-    case PeakEdit::RangeStartEnergy:  return "ROI Start (keV)";
-    case PeakEdit::RangeEndEnergy:    return "ROI End (keV)";
-    case PeakEdit::Chi2DOF:           return "&chi;2/DOF";
-    case PeakEdit::PeakColor:         return "Peak Color";
+    case PeakEdit::Mean:              return WString::tr("pe-label-centroid");
+    case PeakEdit::Sigma:             return WString::tr("FWHM");
+    case PeakEdit::SigmaDrfPredicted: return WString::tr("pe-label-drf-fwhm");
+    case PeakEdit::GaussAmplitude:    return WString::tr("pe-label-amp");
+    case PeakEdit::SkewPar0:          return WString::tr("pe-label-skew0");
+    case PeakEdit::SkewPar1:          return WString::tr("pe-label-skew1");
+    case PeakEdit::SkewPar2:          return WString::tr("pe-label-skew2");
+    case PeakEdit::SkewPar3:          return WString::tr("pe-label-skew3");
+    case PeakEdit::OffsetPolynomial0: return WString::tr("pe-label-cont-p0");
+    case PeakEdit::OffsetPolynomial1: return WString::tr("pe-label-cont-p1");
+    case PeakEdit::OffsetPolynomial2: return WString::tr("pe-label-cont-p2");
+    case PeakEdit::OffsetPolynomial3: return WString::tr("pe-label-cont-p3");
+    case PeakEdit::OffsetPolynomial4: return WString::tr("pe-label-cont-p4");
+    case PeakEdit::RangeStartEnergy:  return WString::tr("pe-label-roi-start");
+    case PeakEdit::RangeEndEnergy:    return WString::tr("pe-label-roi-end");
+    case PeakEdit::Chi2DOF:           return WString::tr("pe-label-chi2-dof");
+    case PeakEdit::PeakColor:         return WString::tr("pe-label-peak-color");
     case PeakEdit::NumPeakPars:       return "";
       break;
   }//case( t )
@@ -221,14 +221,17 @@ void PeakEdit::init()
   wApp->useStyleSheet( "InterSpec_resources/PeakEdit.css" );
   addStyleClass( "PeakEdit" );
   
+  if( m_viewer )
+    m_viewer->useMessageResourceBundle( "PeakEdit" );
+  
   m_valueTable = new WTable( this );
   m_valueTable->setHeaderCount( 1, Horizontal );
   m_valueTable->addStyleClass( "PeakEditTable" );
   
-  WLabel *label = new WLabel( "Parameter", m_valueTable->elementAt(0,0) );
-  label = new WLabel( "Value", m_valueTable->elementAt(0,1) );
-  label = new WLabel( "Uncertainty", m_valueTable->elementAt(0,2) );
-  label = new WLabel( "Fit", m_valueTable->elementAt(0,3) );
+  WLabel *label = new WLabel( WString::tr("pe-parameter"), m_valueTable->elementAt(0,0) );
+  label = new WLabel( WString::tr("pe-value"), m_valueTable->elementAt(0,1) );
+  label = new WLabel( WString::tr("pe-uncertainty"), m_valueTable->elementAt(0,2) );
+  label = new WLabel( WString::tr("Fit"), m_valueTable->elementAt(0,3) );
   
   for( PeakPars t = PeakPars(0); t < NumPeakPars; t = PeakPars(t+1) )
   {
@@ -390,7 +393,7 @@ void PeakEdit::init()
   
   
   row = m_valueTable->rowAt( PeakEdit::NumPeakPars+1 );
-  label = new WLabel( "Nuclide", row->elementAt(0) );
+  label = new WLabel( WString::tr("Nuclide"), row->elementAt(0) );
   row->elementAt(1)->setColumnSpan(2);
   m_nuclide = new WLineEdit( row->elementAt(1) );
   
@@ -428,14 +431,14 @@ void PeakEdit::init()
   m_nuclide->blurred().connect( this, &PeakEdit::isotopeChanged );
   
   row = m_valueTable->rowAt( PeakEdit::NumPeakPars+2 );
-  label = new WLabel( "Photopeak", row->elementAt(0) );
+  label = new WLabel( WString::tr("Photopeak"), row->elementAt(0) );
   row->elementAt(1)->setColumnSpan(2);
   m_photoPeakEnergy = new WComboBox( row->elementAt(1) );
   m_photoPeakEnergy->setWidth( WLength(13.5,WLength::FontEm) );
   m_photoPeakEnergy->activated().connect( this, &PeakEdit::transitionChanged );
   
   row = m_valueTable->rowAt( PeakEdit::NumPeakPars+3 );
-  label = new WLabel( "Label", row->elementAt(0) );
+  label = new WLabel( WString::tr("pe-label"), row->elementAt(0) );
   row->elementAt(1)->setColumnSpan(2);
   m_userLabel = new WLineEdit( row->elementAt(1) );
   
@@ -453,7 +456,7 @@ void PeakEdit::init()
   m_userLabel->textInput().connect( boost::bind( &PeakEdit::checkIfUserLabelDirty, this ) );
   
   row = m_valueTable->rowAt( PeakEdit::NumPeakPars+4 );
-  label = new WLabel( "Peak Color", row->elementAt(0) );
+  label = new WLabel( WString::tr("pe-label-peak-color"), row->elementAt(0) );
   row->elementAt(1)->setColumnSpan(1);
   m_color = new ColorSelect( ColorSelect::AllowNoColor, row->elementAt(1) );
   m_color->cssColorChanged().connect( boost::bind( &PeakEdit::checkIfColorDirty, this ) );
@@ -466,17 +469,17 @@ void PeakEdit::init()
   
   
   row = m_valueTable->rowAt( PeakEdit::NumPeakPars+5 );
-  label = new WLabel( "Peak Type", row->elementAt(0) );
+  label = new WLabel( WString::tr("pe-peak-type"), row->elementAt(0) );
   row->elementAt(1)->setColumnSpan(2);
   
   m_peakType = new WComboBox( row->elementAt(1) );
-  m_peakType->addItem( "Gaussian" );    //PeakDef::GaussianDefined
-  m_peakType->addItem( "Data Region" ); //PeakDef::DataDefined
+  m_peakType->addItem( WString::tr("pe-peak-model-gaussian") );    //PeakDef::GaussianDefined
+  m_peakType->addItem( WString::tr("pe-peak-model-data") ); //PeakDef::DataDefined
   m_peakType->activated().connect( this, &PeakEdit::peakTypeChanged );
 //
 
   row = m_valueTable->rowAt( PeakEdit::NumPeakPars+6 );
-  label = new WLabel( "Continuum", row->elementAt(0) );
+  label = new WLabel( WString::tr("Continuum"), row->elementAt(0) );
   row->elementAt(1)->setColumnSpan(2);
   m_continuumType = new WComboBox( row->elementAt(1) );
   m_continuumType->activated().connect( this, &PeakEdit::contnuumTypeChanged );
@@ -488,7 +491,7 @@ void PeakEdit::init()
   }//for( loop over PeakContinuum::OffsetType )
 
   row = m_valueTable->rowAt( PeakEdit::NumPeakPars+7 );
-  label = new WLabel( "Skew Type", row->elementAt(0) );
+  label = new WLabel( WString::tr("pe-skew-type"), row->elementAt(0) );
   row->elementAt(1)->setColumnSpan(2);
   m_skewType = new WComboBox( row->elementAt(1) );
   m_skewType->activated().connect( this, &PeakEdit::skewTypeChanged );
@@ -522,18 +525,16 @@ void PeakEdit::init()
   
   
 //  WContainerWidget *buttonDiv = new WContainerWidget( m_footer );
-  m_cancel = m_aux->addCloseButtonToFooter( "Cancel", false, m_footer );//new WPushButton( "Cancel", m_footer );
-  
-  m_refit  = new WPushButton( "Refit",  m_footer );
-  m_apply  = new WPushButton( "Apply",  m_footer );
-
-  m_accept = new WPushButton( "Accept", m_footer );
+  m_cancel = m_aux->addCloseButtonToFooter( WString::tr("Cancel"), false, m_footer );//new WPushButton( "Cancel", m_footer );
+  m_refit  = new WPushButton( WString::tr("pe-btn-refit"),  m_footer );
+  m_apply  = new WPushButton( WString::tr("Apply"),  m_footer );
+  m_accept = new WPushButton( WString::tr("Accept"), m_footer );
   if( m_viewer && !m_viewer->isMobile() )
     m_accept->setIcon( "InterSpec_resources/images/accept.png" );
   
   //Add class to give padding on left side (or modify current style class)
   
-  WPushButton *deleteButton = new WPushButton( "Delete", m_footer );
+  WPushButton *deleteButton = new WPushButton( WString::tr("Delete"), m_footer );
 //  deleteButton->setFloatSide( Wt::Right );
   
   m_cancel->clicked().connect( this, &PeakEdit::cancel );
@@ -1258,14 +1259,15 @@ void PeakEdit::refreshPeakInfo()
     m_otherPeakTxt->setText( "" );
   }else
   {
-    char text[128];
     const size_t npeak = peaksInRoi.size();
-    snprintf( text, sizeof(text), "Peak %i of %i in ROI", int(thispeak+1), int(npeak) );
     m_prevPeakInRoi->setHidden( thispeak == 0 );
     m_nextPeakInRoi->setHidden( thispeak == (npeak-1) );
     
     m_otherPeaksDiv->show();
-    m_otherPeakTxt->setText( text );
+    WString txt = WString::tr("pe-multipeak-in-roi")
+        .arg( static_cast<int>(thispeak+1) )
+        .arg( static_cast<int>(npeak) );
+    m_otherPeakTxt->setText( txt );
   }//if( peaksInRoi.size() < 2 ) / else
   
   updateSkewParameterLabels( m_currentPeak.skewType() );
@@ -1505,22 +1507,22 @@ bool PeakEdit::checkNuclideForDiffColors()
   
   if( auto nuc = m_currentPeak.parentNuclide() )
   {
-    m_applyColorForAllNuc->setText( "All " + nuc->symbol + " peaks" );
+    m_applyColorForAllNuc->setText( WString::tr("pe-apply-all-of-type").arg(nuc->symbol) );
     for( const auto &p : *allpeaks )
       nsamesrc += (p->parentNuclide()==nuc && p->lineColor()!=c);
   }else if( auto el = m_currentPeak.xrayElement() )
   {
-    m_applyColorForAllNuc->setText( "All " + el->symbol + " peaks" );
+    m_applyColorForAllNuc->setText( WString::tr("pe-apply-all-of-type").arg(el->symbol) );
     for( const auto & p : *allpeaks )
       nsamesrc += (p->xrayElement()==el && p->lineColor()!=c);
   }else if( auto rctn = m_currentPeak.reaction() )
   {
-    m_applyColorForAllNuc->setText( "All " + rctn->name() + " peaks" );
+    m_applyColorForAllNuc->setText( WString::tr("pe-apply-all-of-type").arg(rctn->name()) );
     for( const auto & p : *allpeaks )
       nsamesrc += (p->reaction()==rctn && p->lineColor()!=c);
   }else
   {
-    m_applyColorForAllNuc->setText( "All no src peaks" );
+    m_applyColorForAllNuc->setText( WString::tr("pe-apply-all-of-type").arg("no src") );
     for( const auto & p : *allpeaks )
       nsamesrc += (!p->parentNuclide() && !p->xrayElement() && !p->reaction()
                    && p->lineColor()!=c);
@@ -1935,9 +1937,9 @@ void PeakEdit::updateDrfFwhmTxt()
   }else
   {
     const double drf_fwhm = drf->peakResolutionFWHM( mean );
-    char text[128] = { '\0' };
-    snprintf( text, sizeof(text), "DRF predicts FWHM of %.2f keV", drf_fwhm );
-    m_drfFwhm->setText( text );
+    char text[32] = { '\0' };
+    snprintf( text, sizeof(text), "%.2f", drf_fwhm );
+    m_drfFwhm->setText( WString::tr("pe-drf-predict-fwhm-txt").arg(text) );
     row->setHidden( false );
   }//case PeakPars::SigmaDrfPredicted:
 }//void updateDrfFwhmTxt();
@@ -2152,8 +2154,7 @@ void PeakEdit::refit()
   
   if( outputPeak.size() != inputPeak.size() )
   {
-    passMessage( "Failed to refit peak (became insignificant), so not doing "
-                 "anything", WarningWidget::WarningMsgHigh );
+    passMessage( WString::tr("pe-failed-refit-insig"), WarningWidget::WarningMsgHigh );
     return;
   }//if( outputPeak.size() != inputPeak.size() )
   
@@ -2401,7 +2402,7 @@ void PeakEdit::apply()
         {
           if( m_values[t]->validate() != WValidator::Valid )
             throw runtime_error( "Value for '"
-                                + string(rowLabel(t)) + "' is not a valid number" );
+                                + rowLabel(t).toUTF8() + "' is not a valid number" );
           
           const string valtxt = m_values[t]->text().toUTF8();
           if( !(stringstream(valtxt) >> val) && !valtxt.empty() )
@@ -2507,7 +2508,7 @@ void PeakEdit::apply()
         
         if( m_uncertainties[t]->validate() != WValidator::Valid )
           throw runtime_error( "Uncertainty for '"
-                              + string(rowLabel(t)) + "' is not a valid number" );
+                              + rowLabel(t).toUTF8() + "' is not a valid number" );
         
         string valtxt = m_uncertainties[t]->text().narrow();
         if( !(stringstream(valtxt) >> val) && !valtxt.empty() )

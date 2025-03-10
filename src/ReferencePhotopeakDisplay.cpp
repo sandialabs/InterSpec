@@ -1117,6 +1117,7 @@ ReferencePhotopeakDisplay::ReferencePhotopeakDisplay(
 
   m_promptLinesOnly = new WCheckBox( WString::tr("rpd-opt-prompt"), m_optionsContent );  //ɣ
   HelpSystem::attachToolTipOn(m_promptLinesOnly, WString::tr("rpd-opt-tt-prompt"), showToolTips);
+  m_promptLinesOnly->addStyleClass( "CbNoLineBreak" );
   m_promptLinesOnly->checked().connect(this, &ReferencePhotopeakDisplay::updateDisplayChange);
   m_promptLinesOnly->unChecked().connect(this, &ReferencePhotopeakDisplay::updateDisplayChange);
   m_promptLinesOnly->hide();
@@ -1135,15 +1136,25 @@ ReferencePhotopeakDisplay::ReferencePhotopeakDisplay(
   m_showFeatureMarkers = new WCheckBox( WString::tr("rpd-feature-markers"), m_optionsContent );
       
   m_showGammas->setWordWrap( false );
+  m_showGammas->addStyleClass( "CbNoLineBreak" );
   m_showXrays->setWordWrap( false );
+  m_showXrays->addStyleClass( "CbNoLineBreak" );
   m_showAlphas->setWordWrap( false );
+  m_showAlphas->addStyleClass( "CbNoLineBreak" );
   m_showBetas->setWordWrap( false );
+  m_showBetas->addStyleClass( "CbNoLineBreak" );
   m_showCascadeSums->setWordWrap( false );
+  m_showCascadeSums->addStyleClass( "CbNoLineBreak" );
   m_showEscapes->setWordWrap( false );
+  m_showEscapes->addStyleClass( "CbNoLineBreak" );
   m_showPrevNucs->setWordWrap( false );
+  m_showPrevNucs->addStyleClass( "CbNoLineBreak" );
   m_showRiidNucs->setWordWrap( false );
+  m_showRiidNucs->addStyleClass( "CbNoLineBreak" );
   m_showAssocNucs->setWordWrap( false );
+  m_showAssocNucs->addStyleClass( "CbNoLineBreak" );
   m_showFeatureMarkers->setWordWrap( false );
+  m_showFeatureMarkers->addStyleClass( "CbNoLineBreak" );
 
   m_showPrevNucs->checked().connect( this, &ReferencePhotopeakDisplay::updateOtherNucsDisplay );
   m_showPrevNucs->unChecked().connect( this, &ReferencePhotopeakDisplay::updateOtherNucsDisplay );
@@ -3409,6 +3420,32 @@ void ReferencePhotopeakDisplay::fitPeaks()
 
 void ReferencePhotopeakDisplay::clearAllLines()
 {
+  const ReferenceLineInfo starting_showing = m_currentlyShowingNuclide;
+  const vector<ReferenceLineInfo> starting_persisted = m_persisted;
+  const deque<RefLineInput> starting_prev_nucs = m_prevNucs;
+  const bool starting_user_color = m_userHasPickedColor;
+  
+  // Add current nuclide to list of previous nuclides
+  if( m_currentlyShowingNuclide.m_validity == ReferenceLineInfo::InputValidity::Valid )
+  {
+    RefLineInput prev = m_currentlyShowingNuclide.m_input;
+    
+    // Remove any other previous nuclides that have same `prev.m_nuclide` as what
+    //  we are about to push on
+    m_prevNucs.erase(std::remove_if(begin(m_prevNucs), end(m_prevNucs),
+                                    [&prev](const RefLineInput &val) -> bool {
+      return (val.m_input_txt == prev.m_input_txt);
+    }), end(m_prevNucs));
+    
+    // Push new value onto front of history
+    m_prevNucs.push_front( std::move(prev) );
+    
+    // Check history length, and truncate if needed
+    if( m_prevNucs.size() > m_max_prev_nucs )
+      m_prevNucs.resize( m_max_prev_nucs );
+  }//if( !m_currentlyShowingNuclide.labelTxt.empty() )
+  
+  
   //m_fitPeaks->disable();
   m_persisted.clear();
   m_currentlyShowingNuclide.reset();
@@ -3436,6 +3473,12 @@ void ReferencePhotopeakDisplay::clearAllLines()
   updateOtherNucsDisplay();
 
   m_chart->clearAllReferncePhotoPeakLines();
+  
+  
+  const RefLineInput user_input = userInput();
+  
+  addUndoRedoPoint( starting_showing, starting_persisted, starting_prev_nucs,
+                   starting_user_color, user_input );
   
   m_nuclidesCleared.emit();
 }//void clearAllLines()

@@ -23,6 +23,7 @@
 
 #include "InterSpec_config.h"
 
+#include <limits>
 #include <string>
 #include <vector>
 #include <sstream>
@@ -145,11 +146,19 @@ namespace
     virtual double operator()( const std::vector<double> &params ) const
     {
       assert( params.size() == 1 );
-      const double ad = params[0] * PhysicalUnits::g / PhysicalUnits::cm2;
-      const double dose = DoseCalc::gamma_dose_with_shielding( m_energies, m_intensities, ad, m_atomic_number, m_distance, m_scatter );
+      try
+      {
+        const double ad = params[0] * PhysicalUnits::g / PhysicalUnits::cm2;
+        const double dose = DoseCalc::gamma_dose_with_shielding( m_energies, m_intensities, ad, m_atomic_number, m_distance, m_scatter );
+        
+        //return difference in micro-rem per hour from the target
+        return fabs(dose - m_user_entered_dose) * 1000000.0 * PhysicalUnits::hour / PhysicalUnits::rem;
+      }catch( std::exception & )
+      {
+        // Can happen if ad is outside of [0,240]
+      }
       
-      //return differnce in microrem per hour from the target
-      return fabs(dose - m_user_entered_dose) * 1000000.0 * PhysicalUnits::hour / PhysicalUnits::rem;
+      return std::numeric_limits<double>::max();
     }
   };//class FitShieldingAdChi2
 
@@ -199,6 +208,9 @@ namespace
     const ROOT::Minuit2::MnUserParameters params = minimum.UserState().Parameters();
     const vector<double> pars = params.Params();
     cerr << "Fit " << pars[0] << " g/cm2 with EDM " << minimum.Edm() << endl;
+    
+    if( pars[0] > 235.0 )
+      throw runtime_error( "Over 235 g/cm2 shielding is required - can not compute." );
     
     return pars[0] * PhysicalUnits::g / PhysicalUnits::cm2;
   }//double fit_ad()

@@ -218,11 +218,10 @@ namespace ShieldingSourceFitCalc
 #if( INCLUDE_ANALYSIS_TEST_SUITE || PERFORM_DEVELOPER_CHECKS || BUILD_AS_UNIT_TEST_SUITE )
     boost::optional<double> m_truthDimensions[3];
     boost::optional<double> m_truthDimensionsTolerances[3];
-    std::map<const SandiaDecay::Nuclide *,std::pair<double,double>> m_truthFitMassFractions;
+    std::map<const SandiaDecay::Element *,std::map<const SandiaDecay::Nuclide *,std::pair<double,double>>> m_truthFitMassFractions;
 #endif
     
     // Self-atten source stuff
-    bool m_fitMassFrac;
     
     /** Nuclide mass-fractions are only fit within the same element, and they are constrained to be the sum fraction
      of all the nuclides, for that element, that are being fit.
@@ -230,8 +229,14 @@ namespace ShieldingSourceFitCalc
      That is, if you have {{I131, 0.1}, {I124,0.01},{Cs131,0.01},{Cs137,0.02}} (and 0.89 stable I127, and 0.97 Cs133), then
      if you fit mass fractions, I131+I124 will always sum to be 0.11 fraction of the Iodine, and Cs137+Cs131 will always
      sum to be 0.03 of the Cesium.
+     
+     We will map from Element to nuclides to reinforce that the mass fractions are per-element, not for the whole material.
+     
+     A nuclide with a value of nullptr, indicates the fraction of other nuclides is being varied.
+     
+     TODO: move away from using the `tuple`, and make a proper struct
      */
-    std::map<const SandiaDecay::Nuclide *,double> m_nuclideFractions;
+    std::map<const SandiaDecay::Element *,std::vector<std::tuple<const SandiaDecay::Nuclide *,double,bool>>> m_nuclideFractions_;
     
     // Trace-source stuff
     std::vector<TraceSourceInfo> m_traceSources;
@@ -266,8 +271,10 @@ namespace ShieldingSourceFitCalc
     /** 1-sigma uncertainties of fit dimensions or AN/AD. */
     double m_dimensionUncerts[3];
     
-    /** 1-sigma uncertainties for fit mass fractions. */
-    std::map<const SandiaDecay::Nuclide *,double> m_nuclideFractionUncerts;
+    /** 1-sigma uncertainties for fit mass fractions.
+     nullptr nuclide indicates the "other" non-source component of the element.
+     */
+    std::map<const SandiaDecay::Element *,std::map<const SandiaDecay::Nuclide *,double>> m_nuclideFractionUncerts;
     
     /** 1-sigma uncertainties for fit trace source activities (duplicate information available in #IsoFitStruct) */
     std::map<const SandiaDecay::Nuclide *,double> m_traceSourceActivityUncerts;

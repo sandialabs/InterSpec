@@ -1,33 +1,32 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <messages>
-  <!-- sm3dc- is short for SearchMode3DChart -->
   <message id="sm3dc-loading">Chargement...</message>
-<message id="sm3dc-min-energy">Énergie Min</message>
-<message id="sm3dc-max-energy">Énergie Max</message>
-<message id="sm3dc-min-time">Temps Min (s)</message>
-<message id="sm3dc-max-time">Temps Max (s)</message>
-<message id="sm3dc-time-bins">Divisions de temps affichées</message>
-<message id="sm3dc-tt-time-bins">
-    Le nombre maximum de divisions de temps à tracer ; si vos données ont plus d'échantillons temporels que
-    cette valeur dans la plage affichée, les échantillons temporels seront combinés ensemble, jusqu'à ce qu'il soit inférieur à cette valeur.
+  <message id="sm3dc-min-energy">Énergie min.</message>
+  <message id="sm3dc-max-energy">Énergie max.</message>
+  <message id="sm3dc-min-time">Temps min. (s)</message>
+  <message id="sm3dc-max-time">Temps max. (s)</message>
+  <message id="sm3dc-time-bins">Cases temporelles d'affichage</message>
+  <message id="sm3dc-tt-time-bins">
+    Le nombre maximum de divisions temporelles à tracer ; si vos données ont plus d'échantillons temporels que
+    cela dans la plage affichée, les échantillons temporels seront combinés ensemble, jusqu'à ce qu'ils soient inférieurs à cette valeur.
     <br />
     <br />
-    Par exemple, si cette valeur est de 60, mais que votre mesure a 208 échantillons, alors chaque 4
-    échantillons seront sommés ensemble pour un seul bin pour l'axe du temps,
-    avec un total de 52 bins sur l'axe du temps.
+    Par exemple, si cette valeur est 60, mais que votre mesure comporte 208 échantillons, alors chaque groupe de 4
+    échantillons sera additionné pour former une seule case pour l'axe des temps,
+    avec un total de 52 cases sur l'axe des temps.
     <br />
-    Si le produit du nombre de canaux de temps, multiplié par le nombre de canaux d'énergie
-    est trop grand, des problèmes de performance peuvent être rencontrés.
-</message>
-<message id="sm3dc-energy-bins">Divisions d'énergie affichées</message>
-<message id="sm3dc-tt-energy-bins">
-    Le nombre maximum de divisions d'énergie à tracer ; si vos données ont plus de canaux d'énergie que
-    cette valeur dans la plage affichée, les canaux seront combinés ensemble, jusqu'à ce qu'il soit inférieur à cette valeur.
+    Si le produit du nombre de canaux temporels par le nombre de canaux d'énergie
+    est trop grand, des problèmes de performances peuvent survenir.
+  </message>
+  <message id="sm3dc-energy-bins">Cases d'énergie d'affichage</message>
+  <message id="sm3dc-tt-energy-bins">
+    Le nombre maximum de divisions d'énergie à tracer ; si vos données ont plus de canaux d'énergie que
+    cela dans la plage affichée, les canaux seront combinés ensemble, jusqu'à ce qu'ils soient inférieurs à cette valeur.
     <br />
     <br />
-    Si le produit du nombre de canaux de temps, multiplié par le nombre de canaux d'énergie
-    est trop grand, des problèmes de performance peuvent être rencontrés.
-</message>
-<message id="sm3dc-time-axis-label">Temps (secondes)</message>
-<message id="sm3dc-counts-axis-label">Comptes par Canal</message>
+    Si le produit du nombre de canaux temporels par le nombre de canaux d'énergie
+    est trop grand, des problèmes de performances peuvent survenir.
+  </message>
+  <message id="sm3dc-time-axis-label">Temps (secondes)</message>
+  <message id="sm3dc-counts-axis-label">Comptes par canal</message>
 </messages>
