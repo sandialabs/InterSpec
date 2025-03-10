@@ -248,10 +248,12 @@ public:
     bool m_fluorescence_xrays;
     /** If should include reactions.  */
     bool m_reactions;
-    /** If should search for alpha energy of nuclides. If true, then betas, x-rays, reactions, and nulcides must be false.  */
+    /** If should search for alpha energy of nuclides. If true, then betas, x-rays, reactions, and nuclides must be false.  */
     bool m_alphas;
-    /** If should search for beta end-point energy of nuclides. If true, then alphas, x-rays, reactions, and nulcides must be false. */
+    /** If should search for beta end-point energy of nuclides. If true, then alphas, x-rays, reactions, and nuclides must be false. */
     bool m_beta_endpoint;
+    /** If results should only be for the gammas given off by the parent nuclide, and not any progeny. */
+    bool m_no_progeny;
     
     /** Specfic elements to search for fluorescence x-rays.  If empty, and fluorescence x-rays are allowed, will use all elements. */
     std::vector<const SandiaDecay::Element *> m_specific_elements;

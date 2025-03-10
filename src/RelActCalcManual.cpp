@@ -3047,7 +3047,7 @@ vector<RelActCalcManual::GenericPeakInfo> peak_csv_to_peaks( istream &csv )
         //size_t transition_index = 0;
         //const SandiaDecay::Transition *transition = nullptr;
         //PeakDef::SourceGammaType sourceGammaType;
-        //PeakDef::findNearestPhotopeak( nuc, nuc_energy, -1.0, false,
+        //PeakDef::findNearestPhotopeak( nuc, nuc_energy, -1.0, false, -1.0,
         //                               transition, transition_index, sourceGammaType );
         
         SandiaDecay::NuclideMixture mix;

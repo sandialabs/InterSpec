@@ -12957,7 +12957,7 @@ void InterSpec::guessIsotopesForPeaks( WApplication *app )
       const SandiaDecay::Transition *transition = NULL;
       const double sigma = newPeak.gausPeak() ? newPeak.sigma() : 0.125*newPeak.roiWidth();
       PeakDef::findNearestPhotopeak( p.nuclide, match.energy,
-                                       4.0*sigma, false, transition,
+                                       4.0*sigma, false, -1.0, transition,
                                        radparticleIndex, sourceGammaType );
       if( j == 0 )
         newPeak.setNuclearTransition( p.nuclide, transition,

@@ -29,6 +29,7 @@ you restart InterSpec).
     <AllowReactions>1</AllowReactions>    <!-- If should include reactions. -->
     <AllowAlphas>0</AllowAlphas>          <!-- If should search for alpha energy of nuclides. If true, then betas, x-rays, reactions, and nulcides must be false. -->
     <AllowBetas>0</AllowBetas>            <!-- If should search for beta end-point energy of nuclides. If true, then alphas, x-rays, reactions, and nulcides must be false. -->
+    <NoProgeny>0</NoProgeny>              <!-- If should only consider the parent nuclide, and NOT consider any of the progeny. -->
      
     <!-- You can specify specific element, that will be the only elements fluorescence x-rays can come from.
     If empty or not specified, will allow all elements.
@@ -424,5 +425,13 @@ you restart InterSpec).
     <Name internationalize="1">isbe-category-betas</Name>
     <Description internationalize="1">isbe-category-betas-desc</Description>
     <AllowBetas>1</AllowBetas>
+  </NucSearchCategory>
+
+  <NucSearchCategory>
+    <Name internationalize="1">isbe-category-no-progeny</Name>
+    <Description internationalize="1">isbe-category-no-progeny-desc</Description>
+    <AllowNucGammas>1</AllowNucGammas>
+    <AllowFluorXrays>1</AllowFluorXrays>
+    <NoProgeny>1</NoProgeny>
   </NucSearchCategory>
 </NucSearchCategories>

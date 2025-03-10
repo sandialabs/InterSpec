@@ -3460,6 +3460,7 @@ void PeakDef::findNearestPhotopeak( const SandiaDecay::Nuclide *nuclide,
                                      const double energy,
                                      const double windowHalfWidth,
                                      const bool xraysOnly,
+                                     const double nuclideAge,
                                      const SandiaDecay::Transition *&transition,
                                      size_t &transition_index,
                                      SourceGammaType &sourceGammaType )
@@ -3474,24 +3475,23 @@ void PeakDef::findNearestPhotopeak( const SandiaDecay::Nuclide *nuclide,
   SandiaDecay::NuclideMixture mixture;
   mixture.addNuclide( SandiaDecay::NuclideActivityPair(nuclide,1.0) );
   
-  const double decaytime = defaultDecayTime( nuclide );
+  const double decaytime = (nuclideAge >= 0.0) ? nuclideAge : defaultDecayTime( nuclide );
   
-  vector<SandiaDecay::EnergyRatePair> gammas
-  = mixture.gammas( decaytime,
-                   SandiaDecay::NuclideMixture::OrderByAbundance, true );
+  vector<SandiaDecay::EnergyRatePair> photons
+            = mixture.photons( decaytime, SandiaDecay::NuclideMixture::OrderByAbundance );
   
   if( xraysOnly )
-    gammas = mixture.xrays( decaytime, SandiaDecay::NuclideMixture::OrderByAbundance );
+    photons = mixture.xrays( decaytime, SandiaDecay::NuclideMixture::OrderByAbundance );
   
-  if( gammas.empty() )
+  if( photons.empty() )
     return;
   
   map<const SandiaDecay::Transition *, vector<size_t> > ec_trans;
   
   
   double best_delta_e = 99999.9;
-  SandiaDecay::EnergyRatePair nearest_gamma = gammas[0];
-  for( const SandiaDecay::EnergyRatePair &gamma : gammas )
+  SandiaDecay::EnergyRatePair nearest_gamma = photons[0];
+  for( const SandiaDecay::EnergyRatePair &gamma : photons )
   {
     const double delta_e = fabs( gamma.energy - energy );
     if( delta_e < best_delta_e )
@@ -3499,7 +3499,7 @@ void PeakDef::findNearestPhotopeak( const SandiaDecay::Nuclide *nuclide,
       best_delta_e = delta_e;
       nearest_gamma = gamma;
     }//if( delta_e < best_delta_e )
-  }//for( const SandiaDecay::EnergyRatePair &gamma : gammas )
+  }//for( const SandiaDecay::EnergyRatePair &gamma : photons )
   
   //loop over the decays and find the gamma nearest 'energy'
   best_delta_e = 99999.9;

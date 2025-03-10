@@ -868,8 +868,11 @@ public:
   //                   'energy' the candidate can be.  If a value <= 0.0 is
   //                   passed in, then an infinite range is assumed, and the
   //                   the actual closest in energy of photopeak is found.
-  //  xraysOnly: If true, reulting photopeak will only be able to have a x-ray
+  //  xraysOnly: If true, resulting photopeak will only be able to have a x-ray
   //             as a source.  If false, can be xray, gamma, annih, S.E., D.E..
+  //  nuclideAge: The nuclide age you would like to use.  If you specify a negative
+  //             value, then the value returned by `PeakDef::defaultDecayTime(...)`
+  //             will be used.
   //  sourceGammaType: in the case of gammas produced by positron
   //                   annihilation, this will be set to AnnihilationGamma.
   //                   If so, then transition and transition_index will be set
@@ -882,6 +885,7 @@ public:
                                    const double energy,
                                    const double windowHalfWidth,
                                    const bool xraysOnly,
+                                   const double nuclideAge,
                                    const SandiaDecay::Transition *&transition,
                                    size_t &transition_index,
                                    SourceGammaType &sourceGammaType );

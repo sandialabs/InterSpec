@@ -370,7 +370,7 @@ namespace
               
               size_t transition_index = 0;
               PeakDef::SourceGammaType nearestGammaType;
-              PeakDef::findNearestPhotopeak( nuc, energy, 0.25, false,
+              PeakDef::findNearestPhotopeak( nuc, energy, 0.25, false, -1.0,
                                             trans, transition_index, nearestGammaType );
               if( !trans )
                 throw runtime_error( "SourceLines named '" + src_name_str + "' with nuclide '"

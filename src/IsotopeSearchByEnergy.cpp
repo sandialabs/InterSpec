@@ -1146,6 +1146,7 @@ void IsotopeSearchByEnergy::init_category_info( std::vector<NucSearchCategory> &
     def_category.m_reactions = false;
     def_category.m_alphas = false;
     def_category.m_beta_endpoint = false;
+    def_category.m_no_progeny = false;
     
     results.push_back( std::move(def_category) );
   }// End add a default search category
@@ -2136,6 +2137,7 @@ void IsotopeSearchByEnergy::NucSearchCategory::deSerialize( const rapidxml::xml_
   m_reactions = get_bool_val( XML_FIRST_NODE(xml_data, "AllowReactions") );
   m_alphas = get_bool_val( XML_FIRST_NODE(xml_data, "AllowAlphas") );
   m_beta_endpoint = get_bool_val( XML_FIRST_NODE(xml_data, "AllowBetas") );
+  m_no_progeny = get_bool_val( XML_FIRST_NODE(xml_data, "NoProgeny") );
   
   if( (m_alphas || m_beta_endpoint)
       && ((m_alphas == m_beta_endpoint) || m_reactions || m_fluorescence_xrays || m_nuclides) )
@@ -2364,6 +2366,8 @@ void IsotopeSearchByEnergy::startSearch( const bool refreshBr )
       srcs |= IsotopeSearchByEnergyModel::RadSource::kAlpha;
     if( cat.m_beta_endpoint )
       srcs |= IsotopeSearchByEnergyModel::RadSource::kBetaEndpoint;
+    if( cat.m_no_progeny )
+      srcs |= IsotopeSearchByEnergyModel::RadSource::kNoNuclideProgeny;
     
     elements = cat.m_specific_elements;
     nuclides = cat.m_specific_nuclides;

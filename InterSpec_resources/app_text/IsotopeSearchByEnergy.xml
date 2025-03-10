@@ -91,4 +91,6 @@
   <message id="isbe-category-alphas-desc">Search on Alpha particle energy.</message>
   <message id="isbe-category-betas">Beta Endpoint</message>
   <message id="isbe-category-betas-desc">Search on beta particle end-point energy.</message>
+  <message id="isbe-category-no-progeny">Un-aged Nuclides</message>
+  <message id="isbe-category-no-progeny-desc">Do not include the progeny of nuclides.  Matches either gammas or decay x-rays.</message>
 </messages>

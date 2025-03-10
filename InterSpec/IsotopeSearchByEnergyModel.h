@@ -69,7 +69,8 @@ public:
     kFluorescenceXRay  = 0x02,
     kReaction          = 0x04,
     kAlpha             = 0x08,
-    kBetaEndpoint      = 0x10
+    kBetaEndpoint      = 0x10,
+    kNoNuclideProgeny  = 0x20  //!< i.e., do not age the nuclides for `NuclideGammaOrXray`.
   };//enum RadSource
   
   struct IsotopeMatch
@@ -189,6 +190,7 @@ public:
                                       const std::vector<double> &energies,
                                       const std::vector<double> &windows,
                                       const double minbr,
+                                      const bool no_progeny,
                                       const std::shared_ptr<const DetectorPeakResponse> detector_response_function,
                                       const std::shared_ptr<const SpecUtils::Measurement> displayed_measurement,
                                       const std::vector<std::shared_ptr<const PeakDef>> &user_peaks,
@@ -221,11 +223,13 @@ public:
                                     const std::shared_ptr<const SpecUtils::Measurement> displayed_measurement,
                                     const std::vector<std::shared_ptr<const PeakDef>> &user_peaks,
                                     const std::vector<std::shared_ptr<const PeakDef>> &automated_search_peaks,
+                                    const bool no_progeny,
                                     const std::vector<const SandiaDecay::Nuclide *> &nuclides,
                                     SearchResults &answer );
   
   static void betaEndpointWithAllEnergies( const std::vector<double> &energies,
                                     const std::vector<double> &windows,
+                                    const bool no_progeny,
                                     const std::vector<const SandiaDecay::Nuclide *> &nuclides,
                                     SearchResults &answer );
   

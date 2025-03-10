@@ -1386,7 +1386,7 @@ void PeakEdit::setNuclideFields( const SandiaDecay::Nuclide *nuclide,
     const bool xrayOnly = (sourceGammaType == PeakDef::XrayGamma);
     
     size_t transition_index = 0;
-    PeakDef::findNearestPhotopeak( nuclide, mean + extraEnergy, 4.0*sigma, xrayOnly,
+    PeakDef::findNearestPhotopeak( nuclide, mean + extraEnergy, 4.0*sigma, xrayOnly, -1.0,
                                     transition, transition_index, sourceGammaType );
     particle_index = static_cast<int>( transition_index );
   }//if( !transition || particle_index<0 )
@@ -2640,7 +2640,7 @@ void PeakEdit::apply()
         const bool xrayOnly = (srcType == PeakDef::XrayGamma);
         
         PeakDef::SourceGammaType nearestGammaType;
-        PeakDef::findNearestPhotopeak( nuc, energy, 0.0, xrayOnly,
+        PeakDef::findNearestPhotopeak( nuc, energy, 0.0, xrayOnly, -1.0,
                                       transition, transition_index, nearestGammaType );
         
         switch( srcType )
