@@ -413,7 +413,9 @@ struct NuclideRelAct
   double rel_activity;
   double rel_activity_uncertainty;
   
-  /** The energy and its respective number of gammas per decay for this nuclide, at its age. */
+  /** The energy and its respective number of gammas per decay for this nuclide, at its age. 
+   Note: this has not had the branching ratio uncertainty correction applied (if they were fit for).
+  */
   std::vector<std::pair<double,double>> gamma_energy_br;
 };//struct NuclideRelAc
 
@@ -501,6 +503,28 @@ struct RelActAutoSolution
    */
   double activity_ratio( const SandiaDecay::Nuclide *numerator, const SandiaDecay::Nuclide *denominator, const size_t rel_eff_index ) const;
   
+  /** Returns the relative activity of a nuclide.
+  
+  Please note that the interpretation of this value is a little tortured, as it depends on the relative efficiency curve.
+
+  Throws exception if \c nuclide is nullptr, or was not in the problem.
+  
+  TODO: add uncertainty, via returning pair<double,double>
+  */
+  double rel_activity( const SandiaDecay::Nuclide *nuclide, const size_t rel_eff_index ) const;
+  
+  /** Returns the counts in all peaks for a nuclide in the relative efficency curve.
+  
+  Note: it actually returns the sum of peak amplitudes, for all gammas within `m_final_roi_ranges`.
+
+  Throws exception if \c nuclide is nullptr, or was not in the problem, or any counts were inf or NaN.
+  */
+  double nuclide_counts( const SandiaDecay::Nuclide *nuclide, const size_t rel_eff_index ) const;
+
+  /**  Gives the relative efficiency for a given energy. 
+  */
+  double relative_efficiency( const double energy, const size_t rel_eff_index ) const;
+
   /** Get the index of specified nuclide within #m_rel_activities and #m_nonlin_covariance. */
   size_t nuclide_index( const SandiaDecay::Nuclide *nuclide, const size_t rel_eff_index ) const;
   
@@ -550,6 +574,11 @@ struct RelActAutoSolution
    the rows/columns have same size and ordering as `m_final_parameters`.
    */
   std::vector<std::vector<double>> m_covariance;
+
+  /** The short names of the parameters. */
+  std::vector<std::string> m_parameter_names;
+
+  std::vector<bool> m_parameter_were_fit;
   
   /** This is a spectrum that will be background subtracted and energy calibrated, if those options
    where wanted.
@@ -573,6 +602,9 @@ struct RelActAutoSolution
    
    If a Pu242 correlation method was specified in #Options::pu242_correlation_method, then Pu242
    will NOT be in this variable, see #m_corrected_pu.
+
+   Note: the gamma yields are nominal for the activity/age, and have not had the branching ratio
+   uncertainty correction applied (if they were fit for).
    */
   std::vector<std::vector<NuclideRelAct>> m_rel_activities;
   
@@ -605,8 +637,13 @@ struct RelActAutoSolution
    If all input RoiRanges had #RoiRange::force_full_range as true, and computation was
    successful then this variable will be equal to #m_options.rois.
    If computation is not successful, this variable may, or may not, be empty.
+
+   Note: these ROIs are in true energy, not the energy of the spectrum.
    */
   std::vector<RoiRange> m_final_roi_ranges;
+
+  /** These ROIs are in the energy of the spectrum. */
+  std::vector<RoiRange> m_final_roi_ranges_in_spectrum_cal;
   
   
   /** This DRF will be the input DRF you passed in, if it was valid and had energy resolution info.
@@ -671,6 +708,19 @@ struct RelActAutoSolution
    */
   std::array<bool,sm_num_energy_cal_pars> m_fit_energy_cal;
   
+  /** The index of the first parameter that will be used to adjust the peak amplitude. 
+   
+   Will be valid only if `m_options.additional_br_uncert > 0.0`.
+  */
+  size_t m_add_br_uncert_start_index = std::numeric_limits<size_t>::max();
+  
+  /** The energy ranges cooresponding to the additional peak amplitude uncertainty paramaters.
+   
+   Will only be valid/filled-out if `m_options.additional_br_uncert > 0.0`.
+   
+   \sa m_add_br_uncert_start_index
+   */
+  std::vector<std::pair<double,double>> m_peak_ranges_with_uncert;
   
   /** */
   double m_chi2;

@@ -212,6 +212,8 @@ T eval_physical_model_eqn_imp( const double energy,
     answer = b_part * c_part;
     
     assert( !isnan(answer) && !isinf(answer) );
+    if( isnan(answer) || isinf(answer) )
+      throw std::logic_error( "hoerl_b or hoerl_c gives eqn NaN or Inf" );
   }
   
   const double det_part = drf ? drf->intrinsicEfficiency( energyf ) : 1.0;

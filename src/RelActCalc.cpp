@@ -987,8 +987,10 @@ double eval_physical_model_eqn_uncertainty( const double energy,
                                const std::vector<std::vector<double>> &covariance )
 {
 #warning "eval_physical_model_eqn_uncertainty not implemented."
-  cerr << "eval_physical_model_eqn_uncertainty not implemented." << endl;
-  return 0.0;
+static int ntimeshere = 0;
+if( ntimeshere++ < 5 )  
+  cerr << "eval_physical_model_eqn_uncertainty not implemented. " << ntimeshere++ << endl;
+return 0.0;
 }
   
 std::function<double(double)> physical_model_eff_function( const std::optional<PhysModelShield<double>> &self_atten,
