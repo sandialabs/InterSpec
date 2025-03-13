@@ -989,7 +989,7 @@ double eval_physical_model_eqn_uncertainty( const double energy,
 #warning "eval_physical_model_eqn_uncertainty not implemented."
 static int ntimeshere = 0;
 if( ntimeshere++ < 5 )  
-  cerr << "eval_physical_model_eqn_uncertainty not implemented. " << ntimeshere++ << endl;
+  cerr << "eval_physical_model_eqn_uncertainty not implemented. " << endl;
 return 0.0;
 }
   

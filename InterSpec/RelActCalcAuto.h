@@ -309,6 +309,52 @@ struct RelEffCurveInput
    */
   RelActCalc::PuCorrMethod pu242_correlation_method;
 
+  /** A constraint on the activity of a nuclide, relative to another nuclide. */
+  struct ActRatioConstraint
+  {
+    const SandiaDecay::Nuclide *controlling_nuclide = nullptr;
+    const SandiaDecay::Nuclide *constrained_nuclide = nullptr;
+    double constrained_to_controlled_activity_ratio = 0.0;
+
+
+    static double mass_ratio_to_act_ratio( const SandiaDecay::Nuclide *constrained, 
+                                              const SandiaDecay::Nuclide *controlling, 
+                                            const double mass_ratio_constrained_to_controlling );
+    
+    static ActRatioConstraint from_mass_ratio( const SandiaDecay::Nuclide *constrained, 
+                                              const SandiaDecay::Nuclide *controlling, 
+                                            const double mass_ratio_constrained_to_controlling );
+
+    // TODO: add ability to specify an uncertainty.
+    //double constrained_to_controlled_activity_ratio_uncertainty = 0.0;
+
+  static const int sm_xmlSerializationVersion = 0;
+  void toXml( ::rapidxml::xml_node<char> *parent ) const;
+  void fromXml( const ::rapidxml::xml_node<char> *constraint_node );
+
+#if( PERFORM_DEVELOPER_CHECKS )
+  static void equalEnough( const ActRatioConstraint &lhs, const ActRatioConstraint &rhs );
+#endif
+  };//struct ActRatioConstraint
+
+  /** Constraints on nuclide activities. 
+    
+    All input nuclides must be valid, and be found in `nuclides`.
+
+    The constrained nuclides must not be cyclical; e.g., if Nuc1 is constrained to Nuc2, 
+    then there can not be a constraint that Nuc2 is constrained to Nuc1.
+  */
+  std::vector<ActRatioConstraint> act_ratio_constraints;
+
+  /** Checks that the nuclide constraints are valid.
+   * 
+   * Throws an exception if they are not valid.
+   */
+  void check_nuclide_constraints() const; 
+
+  // TODO: add a element mass fraction constraint.  Accepts just a single element, and a mass fraction - for that one element.
+  //       Will require adding some logic to `RelActAutoCostFcn::relative_activity(...)` to handle this.
+
   static const int sm_xmlSerializationVersion = 0;
 
   /** Puts this object to XML

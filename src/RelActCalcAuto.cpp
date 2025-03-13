@@ -1541,6 +1541,10 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
 
       for( const RelActCalcAuto::RelEffCurveInput &rel_eff_curve : options.rel_eff_curves )
         check_pu_corr_method( rel_eff_curve );
+    
+      // Check nucliode constraints are all valid
+      for( const auto &rel_eff_curve : options.rel_eff_curves ) 
+        rel_eff_curve.check_nuclide_constraints();
     }catch( std::exception &e )
     {
       solution.m_status = RelActCalcAuto::RelActAutoSolution::Status::FailedToSetupProblem;
@@ -1848,7 +1852,6 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     
       fill_in_default_start_fwhm_pars( parameters, cost_functor->m_fwhm_par_start_index, highres, options.fwhm_form );
     }//try / catch
-  
           
       // Filter peaks to those in ranges we want
       vector<RelActCalcManual::GenericPeakInfo> peaks_in_range;
@@ -2048,6 +2051,8 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
           manual_input.phys_model_external_attens = rel_eff_curve.phys_model_external_atten;
           manual_input.phys_model_use_hoerl = false;
           
+          // TODO: implement activity constraint for manual solution
+
           RelActCalcManual::RelEffSolution manual_solution
                                = RelActCalcManual::solve_relative_efficiency( manual_input );
           
@@ -2156,7 +2161,36 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
             const RelActCalcAuto::NucInputInfo &nuc = rel_eff_curve.nuclides[nuc_num];
             const size_t act_index = cost_functor->nuclide_parameter_index(nuc.nuclide, re_eff_index);
             double rel_act = manual_solution.relative_activity( nuc.nuclide->symbol ) / live_time;
+
+            //Count how many rel eff curves this nuclide is in, and divide by that... we can probably come up with a better solution...
+            size_t nuc_count = 0;
+            for( const auto &rel_eff_curve : options.rel_eff_curves )
+            {
+              for( const auto &nuc : rel_eff_curve.nuclides )
+                if( nuc.nuclide == nuc.nuclide )
+                  nuc_count += 1;
+            }
+            rel_act /= nuc_count;
             
+            assert( cost_functor->m_nuclides[re_eff_index][nuc_num].nuclide == nuc.nuclide );
+
+            bool is_constrained = false;
+            for( const RelActCalcAuto::RelEffCurveInput::ActRatioConstraint &nuc_constraint : rel_eff_curve.act_ratio_constraints )
+            {
+              is_constrained = (nuc_constraint.constrained_nuclide == nuc.nuclide );
+              if( is_constrained )
+              {
+                parameters[act_index] = -1.0;
+                cost_functor->m_nuclides[re_eff_index][nuc_num].activity_multiple = -1.0;
+                assert( std::find( constant_parameters.begin(), constant_parameters.end(), static_cast<int>(act_index) ) == constant_parameters.end() );
+                constant_parameters.push_back( static_cast<int>(act_index) );
+                break;
+              }
+            }//for( const auto &nuc_constraint : rel_eff_curve.act_ratio_constraints )
+
+            if( is_constrained )
+              continue;
+
             /*
 #warning "doing terrible dev hack to check seperating rel eff curves"
             if( re_eff_index == 0 )
@@ -2182,8 +2216,6 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
 
             cout << "Updating initial activity estimate for " << nuc.nuclide->symbol << " from "
             << parameters[act_index] << " to " << rel_act << endl;
-            
-            assert( cost_functor->m_nuclides[re_eff_index][nuc_num].nuclide == nuc.nuclide );
             
             if( (rel_act > 1.0E-12) && !std::isinf(rel_act) && !std::isnan(rel_act) )
               cost_functor->m_nuclides[re_eff_index][nuc_num].activity_multiple = rel_act;
@@ -2358,6 +2390,27 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
               return get<1>(lhs) > get<1>(rhs);
             } );
             
+
+            bool is_constrained = false;
+            for( const RelActCalcAuto::RelEffCurveInput::ActRatioConstraint &nuc_constraint : rel_eff_curve.act_ratio_constraints )
+            {
+              is_constrained = ( nuc_constraint.constrained_nuclide == nuc.nuclide );
+              if( is_constrained )
+              {
+                parameters[act_index] = -1.0;
+                cout << "Setting par " << act_index << " to -1.0 for " << nuc.nuclide->symbol << endl;
+
+                cost_functor->m_nuclides[re_eff_index][nuc_num].activity_multiple = -1.0;
+                assert( std::find( constant_parameters.begin(), constant_parameters.end(), static_cast<int>(act_index) ) == constant_parameters.end() );
+                constant_parameters.push_back( static_cast<int>(act_index) );
+                break;
+              }
+            }//for( const auto &nuc_constraint : rel_eff_curve.act_ratio_constraints )
+
+            if( is_constrained )
+              continue;
+
+
             assert( cost_functor->m_nuclides[re_eff_index][nuc_num].nuclide == nuc.nuclide );
             if( !top_energy_to_rel_act.empty() )
             {
@@ -2373,9 +2426,9 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
                                             " significant gammas for the nuclide in the selected energy"
                                             " ranges." );
             }
+
+            lower_bounds[act_index] = 0.0;
           }//if( !succesfully_estimated_re_and_ra )
-          
-          lower_bounds[act_index] = 0.0;
         }//for( size_t nuc_num = 0; nuc_num < rel_eff_curve.nuclides.size(); ++nuc_num )
         
         num_re_nucs_seen += rel_eff_curve.nuclides.size();
@@ -3650,7 +3703,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
         const auto &rel_eff_curve = m_options.rel_eff_curves[rel_eff_index];
         size_t num_coefs_this_rel_eff = rel_eff_curve.rel_eff_eqn_order + 1;
         if( rel_eff_curve.rel_eff_eqn_type == RelActCalc::RelEffEqnForm::FramPhysicalModel )
-          num_coefs_this_rel_eff += 2 + 2*rel_eff_curve.phys_model_external_atten.size() + 2;
+          num_coefs_this_rel_eff = 2 + 2*rel_eff_curve.phys_model_external_atten.size() + 2;
 
         const size_t sub_ind = index - coef_num;
         if( sub_ind >= num_coefs_this_rel_eff )
@@ -3754,10 +3807,36 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
   T relative_activity( const SandiaDecay::Nuclide * const nuc, const size_t rel_eff_index, const std::vector<T> &x ) const
   {
     assert( x.size() == number_parameters() );
-    assert( rel_eff_index < m_nuclides.size() );
+    assert( m_nuclides.size() == m_options.rel_eff_curves.size() );
+    assert( (rel_eff_index < m_nuclides.size()) && (rel_eff_index < m_options.rel_eff_curves.size()) );
     if( rel_eff_index >= m_nuclides.size() )
       throw std::logic_error( "relative_activity: invalid relative efficiency curve index." );
     
+    // Check for a nuclide constraint
+    const RelActCalcAuto::RelEffCurveInput &rel_eff_curve = m_options.rel_eff_curves[rel_eff_index];
+    for( const auto &nuc_constraint : rel_eff_curve.act_ratio_constraints )
+    {
+      if( nuc_constraint.constrained_nuclide == nuc )
+      {
+#ifndef NDEBUG
+        const size_t nuc_x_index = nuclide_parameter_index( nuc, rel_eff_index );
+        const size_t nuc_index = nuclide_index( nuc, rel_eff_index );
+        assert( m_nuclides[rel_eff_index][nuc_index].nuclide == nuc );
+        assert( m_nuclides[rel_eff_index][nuc_index].activity_multiple == -1.0 );
+        const T rel_act_x_val = x[nuc_x_index];
+        // rel_act_x_val should be fixed to -1.0, but numeric differentiator may still vary a little, 
+        //  or if we pass in paramater uncertainties, then the value will be 0.0.
+        assert( rel_act_x_val <= 0.0 ); 
+#endif
+
+        const double act_ratio = nuc_constraint.constrained_to_controlled_activity_ratio;
+        assert( act_ratio > 0.0 );
+        const T controlled_act = relative_activity( nuc_constraint.controlling_nuclide, rel_eff_index, x );
+        return act_ratio * controlled_act;
+      }
+    }//for( const auto &nuc_constraint : rel_eff_curve.act_ratio_constraints )
+    
+    // No nuclide constraint, so we can just use the normal logic
     const size_t parent_nuc_par_index = nuclide_parameter_index( nuc, rel_eff_index );
     const vector<NucInputGamma> &nuclides = m_nuclides[rel_eff_index];
 
@@ -5911,6 +5990,233 @@ RelEffCurveInput::RelEffCurveInput()
 {
 }
 
+
+void RelEffCurveInput::check_nuclide_constraints() const
+{
+  // Make sure nuclides in constraints are non-null, not the same nuclide, and are in the nuclides 
+  //  list that we are fitting for.
+  for( const RelEffCurveInput::ActRatioConstraint &nuc_constraint : act_ratio_constraints )
+  {
+    if( nuc_constraint.constrained_to_controlled_activity_ratio <= 0.0 )
+      throw logic_error( "Constrained to controlled activity ratio is less than or equal to 0.0." );
+
+    if( !nuc_constraint.constrained_nuclide )
+      throw logic_error( "Constrained nuclide is nullptr." );
+
+    if( !nuc_constraint.controlling_nuclide )
+      throw logic_error( "Controlling nuclide is nullptr." );
+
+    if( nuc_constraint.constrained_nuclide == nuc_constraint.controlling_nuclide )
+      throw logic_error( "Constrained and controlling nuclides are the same." );
+
+    // Check that the constrained nuclide is a nuclide in this RelEffCurve
+    bool is_constrained_nuclide_in_curve = false, is_controlling_nuclide_in_curve = false;
+    for( const auto &nuclide : nuclides )
+    {
+      if( nuc_constraint.constrained_nuclide == nuclide.nuclide )
+        is_constrained_nuclide_in_curve = true;
+
+      if( nuc_constraint.controlling_nuclide == nuclide.nuclide )
+        is_controlling_nuclide_in_curve = true;
+    }
+        
+    if( !is_constrained_nuclide_in_curve )
+      throw logic_error( "Constrained nuclide is not in the relative efficiency curve." );
+
+    if( !is_controlling_nuclide_in_curve )
+      throw logic_error( "Controlling nuclide is not in the relative efficiency curve." );
+  }//for( const RelEffCurveInput::ActRatioConstraint &nuc_constraint : act_ratio_constraints )
+
+  // Check that the constrained nuclide is only controlled by one nuclide
+  for( const auto &nuc_constraint : act_ratio_constraints )
+  {
+    size_t count = 0;
+    for( const auto &other_constraint : act_ratio_constraints )
+    {
+      if( other_constraint.constrained_nuclide == nuc_constraint.constrained_nuclide )
+        ++count;
+    }
+
+    if( count > 1 )
+      throw logic_error( "Constrained nuclide is controlled by more than one nuclide." );
+  }//for( const auto &nuc_constraint : act_ratio_constraints )
+
+  // Make sure no duplicate constraints
+  for( size_t i = 1; i < act_ratio_constraints.size(); ++i )
+  {
+    const RelEffCurveInput::ActRatioConstraint &outer_constraint = act_ratio_constraints[i];
+    for( size_t j = 0; j < i; ++j )
+    {
+      const RelEffCurveInput::ActRatioConstraint &inner_constraint = act_ratio_constraints[j];
+      if( (outer_constraint.constrained_nuclide == inner_constraint.constrained_nuclide)
+        && (outer_constraint.controlling_nuclide == inner_constraint.controlling_nuclide) )
+        {
+          throw logic_error( "Duplicate nuclide constraints." );
+        }
+    }
+  }//for( size_t i = 0; i < act_ratio_constraints.size(); ++i )
+
+  // Now we need to walk the chain of constraints to make sure we dont have a cycle
+  // e.g. {constrained: U235, controlling: U238} -> {constrained: U238, controlling: U234} -> {constrained: U234, controlling: U235}
+  for( size_t outer_index = 0; outer_index < act_ratio_constraints.size(); ++outer_index )
+  { 
+    const RelEffCurveInput::ActRatioConstraint &outer_constraint = act_ratio_constraints[outer_index];
+    
+    set<size_t> visited_constraints;
+    visited_constraints.insert( outer_index );
+
+    bool found_controller = true;
+    const SandiaDecay::Nuclide *current_controller = outer_constraint.controlling_nuclide;  // e.g. U238
+
+    while( found_controller )
+    {
+      found_controller = false;
+      
+      for( size_t inner_index = 0; inner_index < act_ratio_constraints.size(); ++inner_index )
+      {
+        const RelEffCurveInput::ActRatioConstraint &inner_constraint = act_ratio_constraints[inner_index];
+        if( current_controller == inner_constraint.constrained_nuclide )
+        {
+          if( visited_constraints.count( inner_index ) )
+            throw logic_error( "Cycle in nuclide constraints." );
+
+          found_controller = true;
+          current_controller = inner_constraint.controlling_nuclide; // e.g. U234
+          visited_constraints.insert( inner_index );
+          break;
+        }
+      }//for( size_t inner_index = 0; inner_index < rel_eff_curve.act_ratio_constraints.size(); ++inner_index )
+    }//while( found_constroller )
+  }//for( const RelEffCurveInput::ActRatioConstraint &nuc_constraint : rel_eff_curve.act_ratio_constraints )
+}//void RelEffCurveInput::check_nuclide_constraints() const
+
+
+
+double RelEffCurveInput::ActRatioConstraint::mass_ratio_to_act_ratio( const SandiaDecay::Nuclide *constrained, 
+                                              const SandiaDecay::Nuclide *controlling, 
+                                            const double mass_ratio_constrained_to_controlling )
+{
+  assert( constrained );
+  assert( controlling );
+  assert( mass_ratio_constrained_to_controlling > 0.0 );
+/*
+Nuc1: 3 bq/g
+Nuc2: 2 bq/g
+
+constraining Nuc1, controlling Nuc2
+
+want mass ratio 1:
+  mass_ratio_to_act_ratio( Nuc1, Nuc2, 1 ) --> (3/2)*1 = 3/2 (3 bq Nuc1, 2 bq Nuc2)
+
+want mass ratio 0.5:
+  mass_ratio_to_act_ratio( Nuc1, Nuc2, 0.5 ) --> (3/2)*0.5 = 3/4 (3 bq Nuc1, 4 bq Nuc2 --> 1g Nuc1, 2g Nuc2)
+*/
+
+  const double num_act_per_g = constrained->activityPerGram();
+  const double denom_act_per_g = controlling->activityPerGram();
+  const double act_ratio = mass_ratio_constrained_to_controlling * num_act_per_g / denom_act_per_g;
+
+  return act_ratio;
+}
+    
+RelEffCurveInput::ActRatioConstraint RelEffCurveInput::ActRatioConstraint::from_mass_ratio( const SandiaDecay::Nuclide *constrained, 
+                                              const SandiaDecay::Nuclide *controlling, 
+                                            const double mass_ratio_constrained_to_controlling )
+{
+  assert( constrained );
+  assert( controlling );
+  assert( mass_ratio_constrained_to_controlling > 0.0 );
+  
+  ActRatioConstraint answer;
+  answer.constrained_nuclide = constrained;
+  answer.controlling_nuclide = controlling;
+  answer.constrained_to_controlled_activity_ratio = mass_ratio_to_act_ratio(constrained, controlling, mass_ratio_constrained_to_controlling);
+
+  return answer;
+}
+
+
+void RelEffCurveInput::ActRatioConstraint::toXml( ::rapidxml::xml_node<char> *parent ) const
+{
+  using namespace rapidxml;
+  
+  if( !controlling_nuclide || !constrained_nuclide )
+    throw logic_error( "Controlling or constrained nuclide is nullptr." );
+
+  if( constrained_to_controlled_activity_ratio <= 0.0 )
+    throw logic_error( "Constrained to controlled activity ratio is less than or equal to 0.0." );
+
+  assert( parent );
+  if( !parent || !parent->document() )
+    throw runtime_error( "ActRatioConstraint::toXml: invalid parent." );
+
+  xml_document<char> *doc = parent->document();
+  xml_node<char> *base_node = doc->allocate_node( node_element, "ActRatioConstraint", nullptr, 18, 0 );
+  parent->append_node( base_node );
+  append_version_attrib( base_node, RelEffCurveInput::ActRatioConstraint::sm_xmlSerializationVersion );
+  
+  append_string_node( base_node, "ControllingNuclide", controlling_nuclide->symbol );
+  append_string_node( base_node, "ConstrainedNuclide", constrained_nuclide->symbol );
+  append_float_node( base_node, "ActivityRatio", constrained_to_controlled_activity_ratio );
+}//void RelEffCurveInput::ActRatioConstraint::toXml( ::rapidxml::xml_node<char> *parent ) const
+
+
+void RelEffCurveInput::ActRatioConstraint::fromXml( const ::rapidxml::xml_node<char> *constraint_node )
+{
+  using namespace rapidxml;
+  
+  if( !constraint_node )
+    throw runtime_error( "invalid input" );
+    
+  if( !rapidxml::internal::compare( constraint_node->name(), constraint_node->name_size(), "ActRatioConstraint", 18, false ) )
+    throw std::logic_error( "invalid input node name" );
+    
+  // A reminder double check these logics when changing RoiRange::sm_xmlSerializationVersion
+  static_assert( RelEffCurveInput::ActRatioConstraint::sm_xmlSerializationVersion == 0,
+                  "needs to be updated for new serialization version." );
+    
+  XmlUtils::check_xml_version( constraint_node, RelEffCurveInput::ActRatioConstraint::sm_xmlSerializationVersion );
+
+  const rapidxml::xml_node<char> *controlling_node = XmlUtils::get_required_node( constraint_node, "ControllingNuclide" );
+  const rapidxml::xml_node<char> *constrained_node = XmlUtils::get_required_node( constraint_node, "ConstrainedNuclide" );
+  
+  const string controlling_nuclide_name = SpecUtils::xml_value_str( controlling_node );
+  const string constrained_nuclide_name = SpecUtils::xml_value_str( constrained_node );
+  const double activity_ratio = XmlUtils::get_float_node_value( constraint_node, "ActivityRatio" );
+  if( activity_ratio <= 0.0 )
+    throw runtime_error( "Activity ratio is less than or equal to 0.0." );
+
+  const SandiaDecay::SandiaDecayDataBase *db = DecayDataBaseServer::database();
+  if( !db )
+    throw runtime_error( "No decay database found." );
+
+  controlling_nuclide = db->nuclide( controlling_nuclide_name );
+  if( !controlling_nuclide )
+    throw runtime_error( "Controlling nuclide ('" + controlling_nuclide_name + ") not found in decay database." );
+
+  constrained_nuclide = db->nuclide( constrained_nuclide_name );
+  if( !constrained_nuclide )
+    throw runtime_error( "Constrained nuclide not found in decay database." );
+
+  constrained_to_controlled_activity_ratio = activity_ratio;
+}//void RelEffCurveInput::ActRatioConstraint::fromXml( const ::rapidxml::xml_node<char> *parent )  
+
+
+#if( PERFORM_DEVELOPER_CHECKS )
+void RelEffCurveInput::ActRatioConstraint::equalEnough( const ActRatioConstraint &lhs, const ActRatioConstraint &rhs )
+{
+  if( fabs(lhs.constrained_to_controlled_activity_ratio - rhs.constrained_to_controlled_activity_ratio) > 1e-6 )
+    throw logic_error( "Constrained to controlled activity ratio is not equal." );
+
+  if( lhs.controlling_nuclide != rhs.controlling_nuclide )
+    throw logic_error( "Controlling nuclide is not equal." );
+
+  if( lhs.constrained_nuclide != rhs.constrained_nuclide )
+    throw logic_error( "Constrained nuclide is not equal." );
+}//void RelEffCurveInput::ActRatioConstraint::equalEnough(...)
+#endif
+
+
 rapidxml::xml_node<char> *RelEffCurveInput::toXml( ::rapidxml::xml_node<char> *parent ) const
 {
   using namespace rapidxml;
@@ -5972,6 +6278,14 @@ rapidxml::xml_node<char> *RelEffCurveInput::toXml( ::rapidxml::xml_node<char> *p
     const string &method_str = RelActCalc::to_str( pu242_correlation_method );
     append_string_node( base_node, "Pu242CorrMethod", method_str );
   }
+
+  if( !act_ratio_constraints.empty() )
+  {
+    xml_node<char> *act_ratio_constraints_node = doc->allocate_node( node_element, "ActRatioConstraints" );
+    base_node->append_node( act_ratio_constraints_node );
+    for( const auto &constraint : act_ratio_constraints )
+      constraint.toXml( act_ratio_constraints_node );
+  }//if( !act_ratio_constraints.empty() )
 
   return base_node;
 }//RelEffCurveInput::toXml(...)
@@ -6085,6 +6399,42 @@ void RelEffCurveInput::fromXml( const ::rapidxml::xml_node<char> *parent, Materi
       
     assert( found );
   }//if( !pu242_corr_str.empty() )
+
+  // Get the ActRatioConstraints
+  const rapidxml::xml_node<char> *act_ratio_constraints_node = XML_FIRST_NODE( parent, "ActRatioConstraints" );
+  if( act_ratio_constraints_node )
+  {
+    XML_FOREACH_CHILD( constraint_node, act_ratio_constraints_node, "ActRatioConstraint" )
+    {
+      ActRatioConstraint constraint;
+      constraint.fromXml( constraint_node );
+
+      // Check that the nuclides are valid, and in this Rel Eff Curve
+      if( !constraint.controlling_nuclide || !constraint.constrained_nuclide )
+        throw runtime_error( "Invalid nuclide in ActRatioConstraint" ); 
+
+      if( constraint.controlling_nuclide == constraint.constrained_nuclide )
+        throw runtime_error( "Controlling and constrained nuclides cannot be the same" );
+
+      if( constraint.constrained_to_controlled_activity_ratio <= 0.0 )
+        throw runtime_error( "Constrained to controlled activity ratio must be greater than 0.0" );
+
+      bool has_constrained = false, has_controlling = false;
+      for( const auto &nuc : nuclides )
+      {
+        has_constrained |= (nuc.nuclide == constraint.constrained_nuclide);
+        has_controlling |= (nuc.nuclide == constraint.controlling_nuclide);
+      }   
+
+      if( !has_constrained )
+        throw runtime_error( "Constrained nuclide not found in nuclides" );
+
+      if( !has_controlling )
+        throw runtime_error( "Controlling nuclide not found in nuclides" );
+
+      act_ratio_constraints.push_back( constraint );
+    }//for( each ActRatioConstraint )
+  }//if( act_ratio_constraints_node )
 }//void RelEffCurveInput::fromXml(...)
   
   
@@ -6787,6 +7137,13 @@ void RelActAutoSolution::print_html_report( std::ostream &out ) const
       for( const auto &rel_act : rel_activities )
         nuc_info = (rel_act.nuclide == nuc) ? &rel_act : nuc_info;
       
+      // Not all Rel Eff Curves will have all nuclides, so if we don't have a nuc_info,
+      // and we have more than one Rel Eff Curve, then just skip this peak ... for now
+      if( nuc && !nuc_info && (m_rel_eff_forms.size() > 1) )
+      {
+        continue;
+      }
+
       assert( !nuc || nuc_info );
       if( nuc && !nuc_info )
         throw logic_error( "Peak with nuc not in solution?" );
@@ -7156,6 +7513,13 @@ void RelActAutoSolution::rel_eff_json_data( std::ostream &rel_eff_plot_values,
     for( const auto &rel_act : m_rel_activities[rel_eff_index] )
       nuc_info = (rel_act.nuclide == nuc) ? &rel_act : nuc_info;
     
+    // Not all Rel Eff Curves will have all nuclides, so if we don't have a nuc_info,
+    // and we have more than one Rel Eff Curve, then just skip this peak ... for now
+    if( nuc && !nuc_info && (m_rel_eff_forms.size() > 1) )
+    {
+      continue;
+    }
+
     assert( nuc_info );
     if( !nuc_info )
       continue;
@@ -8147,6 +8511,12 @@ void RelEffCurveInput::equalEnough( const RelEffCurveInput &lhs, const RelEffCur
   
   for( size_t i = 0; i < lhs.nuclides.size(); ++i )
     RelActCalcAuto::NucInputInfo::equalEnough( lhs.nuclides[i], rhs.nuclides[i] );
+
+  if( lhs.act_ratio_constraints.size() != rhs.act_ratio_constraints.size() )
+    throw std::runtime_error( "Number of nuclide constraints in lhs and rhs are not the same" );
+  
+  for( size_t i = 0; i < lhs.act_ratio_constraints.size(); ++i )
+    ActRatioConstraint::equalEnough( lhs.act_ratio_constraints[i], rhs.act_ratio_constraints[i] );
 }//RelEffCurveInput::equalEnough
 
 
