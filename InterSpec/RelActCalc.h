@@ -240,6 +240,17 @@ Pu242ByCorrelationOutput correct_pu_mass_fractions_for_pu242( Pu242ByCorrelation
 
 void test_pu242_by_correlation();
     
+
+/** Convert a mass ratio to an activity ratio.
+ 
+ E.g., if you want to get the activity ratio of 0.72% enriched U235 to U238, you would:
+```
+double act_ratio = mass_ratio_to_act_ratio( u235, u238, 0.0072/(1-0.0072) );
+```
+ */
+double mass_ratio_to_act_ratio( const SandiaDecay::Nuclide * const numerator_nuclide, 
+                                const SandiaDecay::Nuclide * const denominator_nuclide, 
+                                const double mass_ratio );
     
 /** A structure to allow inputting self-attenuating, and external attenuating shielding. */
 struct PhysicalModelShieldInput

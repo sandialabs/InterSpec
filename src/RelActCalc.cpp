@@ -695,6 +695,33 @@ void test_pu242_by_correlation()
 }//void test_pu242_by_correlation()
 
 
+double mass_ratio_to_act_ratio( const SandiaDecay::Nuclide * const numerator_nuclide, 
+                                const SandiaDecay::Nuclide * const denominator_nuclide, 
+                                const double mass_ratio )
+{
+  assert( numerator_nuclide );
+  assert( denominator_nuclide );
+  assert( mass_ratio > 0.0 );
+/*
+Nuc1: 3 bq/g
+Nuc2: 2 bq/g
+
+constraining Nuc1, controlling Nuc2
+
+want mass ratio 1:
+  mass_ratio_to_act_ratio( Nuc1, Nuc2, 1 ) --> (3/2)*1 = 3/2 (3 bq Nuc1, 2 bq Nuc2)
+
+want mass ratio 0.5:
+  mass_ratio_to_act_ratio( Nuc1, Nuc2, 0.5 ) --> (3/2)*0.5 = 3/4 (3 bq Nuc1, 4 bq Nuc2 --> 1g Nuc1, 2g Nuc2)
+*/
+
+  const double num_act_per_g = numerator_nuclide->activityPerGram();
+  const double denom_act_per_g = denominator_nuclide->activityPerGram();
+  const double act_ratio = mass_ratio * num_act_per_g / denom_act_per_g;
+
+  return act_ratio;
+}
+
 void PhysicalModelShieldInput::check_valid() const
 {
   const PhysicalModelShieldInput &input = *this;

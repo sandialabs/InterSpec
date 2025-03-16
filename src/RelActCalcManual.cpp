@@ -224,7 +224,11 @@ void fit_rel_eff_eqn_lls_imp( const RelActCalc::RelEffEqnForm fcn_form,
   // TODO: determine if HouseholderQr or BDC SVD is better/more-stable/faster/whatever
   //const Eigen::VectorXd solution = A.colPivHouseholderQr().solve(b);
   
-  const Eigen::BDCSVD<Eigen::MatrixX<T>> bdc = A.bdcSvd(Eigen::ComputeThinU | Eigen::ComputeThinV);
+  // deprecated way to compute the BDCSVD matrix
+  //const Eigen::BDCSVD<Eigen::MatrixX<T>> bdc = A.bdcSvd(Eigen::ComputeThinU | Eigen::ComputeThinV);
+  // What I think is the updated way.
+  Eigen::BDCSVD<Eigen::MatrixX<T>,Eigen::ComputeThinU | Eigen::ComputeThinV> bdc;
+  bdc.compute(A);
   const Eigen::VectorX<T> solution = bdc.solve(b);
   
   assert( solution.size() == (order + 1) );
@@ -658,7 +662,7 @@ struct ManualGenericRelActFunctor  /* : ROOT::Minuit2::FCNBase() */
    to keep the values being fit for roughly around 1.0.
    
    i.e., This vector contains the relative activities for the relative efficiency line of y = 1.0
-  (independent of energy).
+  (independent of energy), except for constrained nuclides; the entries for these will be -1.0.
    */
   vector<double> m_rel_act_norms;
   
@@ -819,24 +823,140 @@ struct ManualGenericRelActFunctor  /* : ROOT::Minuit2::FCNBase() */
     vector<double> dummy_rel_act_norm_uncerts;
     const RelActCalc::RelEffEqnForm est_eqn_form = m_input.eqn_form;
     
-    if( est_eqn_form == RelActCalc::RelEffEqnForm::FramPhysicalModel )
+    // If we have no act ratio constraints, we can just fit the relative activities directly,
+    //  otherwise we need to re-define the isotopes and BRs to eliminate constrained isotopes.
+    if( m_input.act_ratio_constraints.empty() )
     {
-      RelActCalcManual::fit_act_to_phys_rel_eff( m_input, m_isotopes, m_input.peaks,
-                        m_rel_act_norms, dummy_rel_act_norm_uncerts );
-
+      if( est_eqn_form == RelActCalc::RelEffEqnForm::FramPhysicalModel )
+      {
+        RelActCalcManual::fit_act_to_phys_rel_eff( m_input, m_isotopes, m_input.peaks,
+                          m_rel_act_norms, dummy_rel_act_norm_uncerts );
+      }else
+      {
+        const vector<double> flat_rel_eff_coefs{ (est_eqn_form==RelActCalc::RelEffEqnForm::LnX ? 1.0 : 0.0), 0.0 };
+        RelActCalcManual::fit_act_to_rel_eff( est_eqn_form, flat_rel_eff_coefs,
+                         m_isotopes, m_input.peaks,
+                         m_rel_act_norms, dummy_rel_act_norm_uncerts );
+      }
     }else
     {
-      const vector<double> flat_rel_eff_coefs{ (est_eqn_form==RelActCalc::RelEffEqnForm::LnX ? 1.0 : 0.0), 0.0 };
-      RelActCalcManual::fit_act_to_rel_eff( est_eqn_form, flat_rel_eff_coefs,
-                       m_isotopes, m_input.peaks,
-                       m_rel_act_norms, dummy_rel_act_norm_uncerts );
-    }
+      // If we have act ratio constraints, we will re-define the isotopes of the
+      //  peaks, so that only non-constrained isotopes are fit for; 
+      vector<string> mod_isotopes = m_isotopes;
+      vector<RelActCalcManual::GenericPeakInfo> mod_peaks = m_input.peaks;
+      
+      for( RelActCalcManual::GenericPeakInfo &peak : mod_peaks )
+      {
+        for( RelActCalcManual::GenericLineInfo &line : peak.m_source_gammas )
+        {
+          size_t num_iter = 0; //I think the logic is solid - but add in a protection anyway.
+          double act_scale_factor = 1.0;
+          string parent_iso, line_iso = line.m_isotope;
+
+          while( parent_iso != line_iso )
+          {
+            parent_iso = line_iso;
+
+            for( const RelActCalcManual::ManualActRatioConstraint &c : m_input.act_ratio_constraints )
+            {
+              if( c.m_constrained_nuclide == line_iso )
+              {
+                act_scale_factor *= c.m_constrained_to_controlled_activity_ratio;
+                line_iso = c.m_controlling_nuclide;
+                break;
+              }
+            }//for( const ManualActRatioConstraint &c : m_input.act_ratio_constraints )
+
+            ++num_iter;
+            assert( num_iter < 100 );
+            if( num_iter > 100 )
+              throw runtime_error( "ManualGenericRelActFunctor: act ratio constraint loop." );
+          }//while( parent_iso != line_iso )
+          
+          assert( parent_iso == line_iso );
+
+          line.m_yield *= act_scale_factor;
+          line.m_isotope = parent_iso;
+        }//for( GenericLineInfo &line : peak.m_source_gammas )
+
+        // Later on there is a check that each peak only has each source a single time,
+        //  we will lump them together here.
+        std::map<string,RelActCalcManual::GenericLineInfo> line_map;
+        for( const RelActCalcManual::GenericLineInfo &line : peak.m_source_gammas )
+        {
+          auto pos = line_map.find(line.m_isotope);
+          if( pos != line_map.end() )
+            pos->second.m_yield += line.m_yield;
+          else
+            line_map[line.m_isotope] = line;
+        }
+        peak.m_source_gammas.clear();
+        for( const auto &[iso, line] : line_map )
+          peak.m_source_gammas.push_back( line );
+      }//for( GenericPeakInfo &peak : mod_peaks )
+
+      for( const RelActCalcManual::ManualActRatioConstraint &constraint : m_input.act_ratio_constraints )
+      {
+        const auto pos = std::find( begin(mod_isotopes), end(mod_isotopes), constraint.m_constrained_nuclide );
+        assert( pos != end(mod_isotopes) );
+        if( pos != std::end(mod_isotopes) )
+          mod_isotopes.erase( pos );
+      }
+
+      vector<double> mod_activities;
+      if( est_eqn_form == RelActCalc::RelEffEqnForm::FramPhysicalModel )
+      {
+        RelActCalcManual::fit_act_to_phys_rel_eff( m_input, mod_isotopes, mod_peaks,
+                          mod_activities, dummy_rel_act_norm_uncerts );
+      }else
+      {
+        const vector<double> flat_rel_eff_coefs{ (est_eqn_form==RelActCalc::RelEffEqnForm::LnX ? 1.0 : 0.0), 0.0 };
+        RelActCalcManual::fit_act_to_rel_eff( est_eqn_form, flat_rel_eff_coefs,
+                         mod_isotopes, mod_peaks,
+                         mod_activities, dummy_rel_act_norm_uncerts );
+      }
+
+      assert( mod_activities.size() == mod_isotopes.size() );
+      m_rel_act_norms.resize( m_isotopes.size() );
+      for( size_t i = 0; i < m_isotopes.size(); ++i )
+      {
+        const string &iso = m_isotopes[i];
+        const auto pos = std::find( begin(mod_isotopes), end(mod_isotopes), iso );
+        if( pos == end(mod_isotopes) )  
+        {
+          m_rel_act_norms[i] = -1.0;
+#ifndef NDEBUG
+          bool has_constrained = false;
+          for( size_t j = 0; !has_constrained && (j < m_input.act_ratio_constraints.size()); ++j )
+            has_constrained = (m_input.act_ratio_constraints[j].m_constrained_nuclide == iso);
+          assert( has_constrained );
+#endif
+        }else
+        {
+          m_rel_act_norms[i] = mod_activities[pos - begin(mod_isotopes)];
+#ifndef NDEBUG
+          bool has_constrained = false;
+          for( size_t j = 0; !has_constrained && (j < m_input.act_ratio_constraints.size()); ++j )
+            has_constrained = (m_input.act_ratio_constraints[j].m_constrained_nuclide == iso);
+          assert( !has_constrained );
+#endif
+        }//if( pos == end(mod_isotopes) ) / else
+      }//for( size_t i = 0; i < m_isotopes.size(); ++i )
+    }//if( !m_input.act_ratio_constraints.empty() )
 
     assert( m_isotopes.size() == m_rel_act_norms.size() );
     
     for( size_t i = 0; i < m_rel_act_norms.size(); ++i )
     {
-      if( (m_rel_act_norms[i] < 1.0) || IsInf(m_rel_act_norms[i]) || IsNan(m_rel_act_norms[i]) )
+      bool is_constrained = false;
+      for( size_t j = 0; !is_constrained && (j < m_input.act_ratio_constraints.size()); ++j )  
+        is_constrained = (m_input.act_ratio_constraints[j].m_constrained_nuclide == m_isotopes[i]);
+
+      if( is_constrained )
+      {
+        assert( m_rel_act_norms[i] == -1.0 );
+        m_rel_act_norms[i] = -1.0;
+      }else if( (m_rel_act_norms[i] < 1.0) || IsInf(m_rel_act_norms[i]) || IsNan(m_rel_act_norms[i]) )
       {
         m_setup_warnings.push_back( "The initial activity estimate for " + m_isotopes[i]
                                     + " was " + std::to_string(m_rel_act_norms[i])
@@ -875,6 +995,23 @@ struct ManualGenericRelActFunctor  /* : ROOT::Minuit2::FCNBase() */
   template<typename T>
   T relative_activity( const std::string &iso, const vector<T> &x ) const
   {
+    int constraint_index = -1;
+    for( size_t i = 0; ((constraint_index < 0) && (i < m_input.act_ratio_constraints.size())); ++i )  
+      if( m_input.act_ratio_constraints[i].m_constrained_nuclide == iso )
+        constraint_index = static_cast<int>(i);
+
+    if( constraint_index >= 0 )
+    {
+#ifndef NDEBUG
+      const size_t index = iso_index( iso );
+      assert( (abs(x[index] - -1.0) < 1.0E-6) || (abs(x[index] - 0.0) < 1.0E-6) );
+#endif
+
+      const RelActCalcManual::ManualActRatioConstraint &constraint = m_input.act_ratio_constraints[constraint_index];
+      return relative_activity( constraint.m_controlling_nuclide, x ) * constraint.m_constrained_to_controlled_activity_ratio;
+    }//if( constraint_index >= 0 )
+
+
     const size_t index = iso_index( iso );
     assert( index < x.size() );
     return m_rel_act_norms[index] * x[index];
@@ -1494,6 +1631,65 @@ GenericPeakInfo::GenericPeakInfo()
 {
 }
 
+/*
+void ManualActRatioConstraint::toXml( ::rapidxml::xml_node<char> *parent ) const
+{
+  if( m_constrained_to_controlled_activity_ratio <= 0.0 )
+    throw logic_error( "ManualActRatioConstraint::toXml: Constrained to controlled activity ratio is less than or equal to 0.0." );
+
+  assert( parent );
+  if( !parent || !parent->document() )
+    throw runtime_error( "ManualActRatioConstraint::toXml: invalid parent." );
+
+  rapidxml::xml_document<char> *doc = parent->document();
+  rapidxml::xml_node<char> *base_node = doc->allocate_node( node_element, "ManualActRatioConstraint", nullptr, 24, 0 );
+  parent->append_node( base_node );
+  append_version_attrib( base_node, ManualActRatioConstraint::sm_xmlSerializationVersion );
+  
+  append_string_node( base_node, "ControllingNuclide", m_controlling_nuclide );
+  append_string_node( base_node, "ConstrainedNuclide", m_constrained_nuclide );
+  append_float_node( base_node, "ActivityRatio", m_constrained_to_controlled_activity_ratio );
+}//ManualActRatioConstraint::toXml(...)
+
+void ManualActRatioConstraint::fromXml( const ::rapidxml::xml_node<char> *constraint_node )
+{
+  if( !constraint_node )
+    throw runtime_error( "ManualActRatioConstraint::fromXml: invalid input" );
+    
+  if( !rapidxml::internal::compare( constraint_node->name(), constraint_node->name_size(), "ManualActRatioConstraint", 24, false ) )
+    throw std::logic_error( "invalid input node name" );
+    
+  // A reminder double check these logics when changing RoiRange::sm_xmlSerializationVersion
+  static_assert( ManualActRatioConstraint::sm_xmlSerializationVersion == 0,
+                  "ManualActRatioConstraint::fromXml: needs to be updated for new serialization version." );
+    
+  XmlUtils::check_xml_version( constraint_node, ManualActRatioConstraint::sm_xmlSerializationVersion );
+
+  const rapidxml::xml_node<char> *controlling_node = XmlUtils::get_required_node( constraint_node, "ControllingNuclide" );
+  const rapidxml::xml_node<char> *constrained_node = XmlUtils::get_required_node( constraint_node, "ConstrainedNuclide" );
+  
+  m_controlling_nuclide = SpecUtils::xml_value_str( controlling_node );
+  m_constrained_nuclide = SpecUtils::xml_value_str( constrained_node );
+  m_constrained_to_controlled_activity_ratio = XmlUtils::get_float_node_value( constraint_node, "ActivityRatio" );
+  if( m_constrained_to_controlled_activity_ratio <= 0.0 )
+    throw runtime_error( "ManualActRatioConstraint::fromXml: Activity ratio is less than or equal to 0.0." );
+}//ManualActRatioConstraint::fromXml(...)
+
+#if( PERFORM_DEVELOPER_CHECKS )
+void ManualActRatioConstraint::equalEnough( const ManualActRatioConstraint &lhs, const ManualActRatioConstraint &rhs )
+{
+  if( fabs(lhs.m_constrained_to_controlled_activity_ratio - rhs.m_constrained_to_controlled_activity_ratio) > 1e-6 )
+    throw logic_error( "ManualActRatioConstraint: Constrained to controlled activity ratio is not equal." );
+
+  if( lhs.m_controlling_nuclide != rhs.m_controlling_nuclide )
+    throw logic_error( "ManualActRatioConstraint: Controlling nuclide is not equal." );
+
+  if( lhs.m_constrained_nuclide != rhs.m_constrained_nuclide )
+    throw logic_error( "ManualActRatioConstraint: Constrained nuclide is not equal." );
+}
+#endif
+*/
+
 
 void fit_rel_eff_eqn_lls( const RelActCalc::RelEffEqnForm fcn_form, const size_t order,
                              const vector<double> &energies,
@@ -1995,6 +2191,111 @@ void fit_act_to_rel_eff( const std::function<double(double)> &eff_fcn,
 }//fit_act_to_rel_eff(...)
 
 
+void RelEffInput::check_nuclide_constraints() const
+{
+  // Make sure nuclides in constraints are non-null, not the same nuclide, and are in the nuclides 
+  //  list that we are fitting for.
+  for( const ManualActRatioConstraint &nuc_constraint : act_ratio_constraints )
+  {
+    if( nuc_constraint.m_constrained_to_controlled_activity_ratio <= 0.0 )
+      throw logic_error( "RelEffInput: Constrained to controlled activity ratio is less than or equal to 0.0." );
+
+    if( nuc_constraint.m_constrained_nuclide.empty() )
+      throw logic_error( "RelEffInput: Constrained nuclide is empty." );
+
+    if( nuc_constraint.m_controlling_nuclide.empty() )
+      throw logic_error( "RelEffInput: Controlling nuclide is empty." );
+
+    if( nuc_constraint.m_constrained_nuclide == nuc_constraint.m_controlling_nuclide )
+      throw logic_error( "RelEffInput: Constrained and controlling nuclides are the same." );
+
+    // Check that the constrained nuclide is a nuclide in this RelEffCurve
+    bool is_constrained_nuclide_in_curve = false, is_controlling_nuclide_in_curve = false;
+    for( const GenericPeakInfo &peak : peaks )
+    {
+      for( const GenericLineInfo &line : peak.m_source_gammas )
+      {
+        if( nuc_constraint.m_constrained_nuclide == line.m_isotope )
+          is_constrained_nuclide_in_curve = true;
+
+        if( nuc_constraint.m_controlling_nuclide == line.m_isotope )
+          is_controlling_nuclide_in_curve = true;
+      }//for( const GenericLineInfo &line : peak.m_source_gammas )
+
+      if( is_constrained_nuclide_in_curve && is_controlling_nuclide_in_curve )
+        break;
+    }//for( const GenericPeakInfo &peak : peaks )
+        
+    if( !is_constrained_nuclide_in_curve )
+      throw logic_error( "RelEffInput: Constrained nuclide is not in any peak." );
+
+    if( !is_controlling_nuclide_in_curve )
+      throw logic_error( "RelEffInput: Controlling nuclide is not in any peak." );
+  }//for( const RelEffCurveInput::ActRatioConstraint &nuc_constraint : act_ratio_constraints )
+
+  // Check that the constrained nuclide is only controlled by one nuclide
+  for( const ManualActRatioConstraint &nuc_constraint : act_ratio_constraints )
+  {
+    size_t count = 0;
+    for( const ManualActRatioConstraint &other_constraint : act_ratio_constraints )
+    {
+      if( other_constraint.m_constrained_nuclide == nuc_constraint.m_constrained_nuclide )
+        ++count;
+    }
+
+    if( count > 1 )
+      throw logic_error( "RelEffInput: Constrained nuclide is controlled by more than one nuclide." );
+  }//for( const auto &nuc_constraint : act_ratio_constraints )
+
+  // Make sure no duplicate constraints
+  for( size_t i = 1; i < act_ratio_constraints.size(); ++i )
+  {
+    const ManualActRatioConstraint &outer_constraint = act_ratio_constraints[i];
+    for( size_t j = 0; j < i; ++j )
+    {
+      const ManualActRatioConstraint &inner_constraint = act_ratio_constraints[j];
+      if( (outer_constraint.m_constrained_nuclide == inner_constraint.m_constrained_nuclide)
+        && (outer_constraint.m_controlling_nuclide == inner_constraint.m_controlling_nuclide) )
+        {
+          throw logic_error( "RelEffInput: Duplicate nuclide constraints." );
+        }
+    }
+  }//for( size_t i = 0; i < act_ratio_constraints.size(); ++i )
+
+  // Now we need to walk the chain of constraints to make sure we dont have a cycle
+  // e.g. {constrained: U235, controlling: U238} -> {constrained: U238, controlling: U234} -> {constrained: U234, controlling: U235}
+  for( size_t outer_index = 0; outer_index < act_ratio_constraints.size(); ++outer_index )
+  { 
+    const ManualActRatioConstraint &outer_constraint = act_ratio_constraints[outer_index];
+    
+    set<size_t> visited_constraints;
+    visited_constraints.insert( outer_index );
+
+    bool found_controller = true;
+    const string *current_controller = &(outer_constraint.m_controlling_nuclide);  // e.g. U238
+
+    while( found_controller )
+    {
+      found_controller = false;
+      
+      for( size_t inner_index = 0; inner_index < act_ratio_constraints.size(); ++inner_index )
+      {
+        const ManualActRatioConstraint &inner_constraint = act_ratio_constraints[inner_index];
+        if( (*current_controller) == inner_constraint.m_constrained_nuclide )
+        {
+          if( visited_constraints.count( inner_index ) )
+            throw logic_error( "Cycle in nuclide constraints." );
+
+          found_controller = true;
+          current_controller = &(inner_constraint.m_controlling_nuclide); // e.g. U234
+          visited_constraints.insert( inner_index );
+          break;
+        }
+      }//for( size_t inner_index = 0; inner_index < rel_eff_curve.act_ratio_constraints.size(); ++inner_index )
+    }//while( found_constroller )
+  }//for( const RelEffCurveInput::ActRatioConstraint &nuc_constraint : rel_eff_curve.act_ratio_constraints )
+}//RelEffInput::check_nuclide_constraints()
+
 double RelEffSolution::relative_activity( const std::string &nuclide ) const
 {
   for( const IsotopeRelativeActivity &i : m_rel_activities )
@@ -2047,25 +2348,85 @@ double RelEffSolution::activity_ratio( const std::string &nuc1, const std::strin
   return activity_ratio( nuclide_index(nuc1), nuclide_index(nuc2) );
 }
 
-
-double RelEffSolution::activity_ratio_uncert( const size_t iso1, const size_t iso2 ) const
+bool RelEffSolution::walk_to_controlling_nuclide( size_t &iso_index, double &multiple ) const
 {
-  assert( iso1 != iso2 );
-  assert( iso1 < m_nonlin_covariance.size() );
-  assert( iso2 < m_nonlin_covariance.size() );
-  assert( iso1 < m_rel_activities.size() );
-  assert( iso2 < m_rel_activities.size() );
+  assert( multiple == 1.0 );
+  multiple = 1.0;
+  assert( iso_index < m_rel_activities.size() );
+
+#ifndef NDEBUG
+  const size_t original_iso_index = iso_index;
+#endif
+
+  if( m_input.act_ratio_constraints.empty() )
+    return false;
+
+  size_t controller_index = std::numeric_limits<size_t>::max();
+
+  bool found_controller = false;
+  size_t sentinel = 0; //Dont need, but just to check the logic for development
+
+  while( controller_index != iso_index )
+  {
+    sentinel += 1;
+    assert( sentinel < 100 );
+    if( sentinel > 1000 )
+      throw logic_error( "RelEffSolution::activity_ratio_uncert: possible infinite loop - logic error" );
+
+    controller_index = iso_index;
+    for( const ManualActRatioConstraint &constraint : m_input.act_ratio_constraints )
+    {
+      if( constraint.m_constrained_nuclide == m_rel_activities[iso_index].m_isotope )
+      {
+        iso_index = nuclide_index(constraint.m_controlling_nuclide );
+        multiple *= constraint.m_constrained_to_controlled_activity_ratio;
+        found_controller = true;
+        break;
+      }
+    }
+  }//while( controller_index != iso_index )
+
+#ifndef NDEBUG
+  assert( fabs((multiple * m_rel_activities[iso_index].m_rel_activity_uncert) - m_rel_activities[original_iso_index].m_rel_activity_uncert) < 1e-6 );
+#endif
+
+  return found_controller;
+}//bool walk_to_controlling_nuclide( size_t &iso_index, double &multiple ) const;
+
+
+double RelEffSolution::activity_ratio_uncert( const size_t iso1_index, const size_t iso2_index ) const
+{
+  assert( iso1_index != iso2_index );
+  assert( iso1_index < m_nonlin_covariance.size() );
+  assert( iso2_index < m_nonlin_covariance.size() );
+  assert( iso1_index < m_rel_activities.size() );
+  assert( iso2_index < m_rel_activities.size() );
   assert( m_nonlin_covariance.size() >= m_rel_activities.size() );
   assert( m_input.use_ceres_to_fit_eqn || (m_nonlin_covariance.size() == m_rel_activities.size()) );
   
-  if( (iso1 == iso2)
-     || (iso1 >= m_rel_activities.size())
-     || (iso2 >= m_rel_activities.size()) )
+  if( (iso1_index == iso2_index)
+     || (iso1_index >= m_rel_activities.size())
+     || (iso2_index >= m_rel_activities.size()) )
   {
     //throw runtime_error( "RelEffSolution::activity_ratio_uncert: invalid iso number" );
     return -1;
   }
-  
+
+  // If we have constrined either nuclide, then we need to find the ultimate controlling nuclides
+  // and use those indices, as well as keep track of the activity ratios we used to get to them.
+  double iso1_mult = 1.0, iso2_mult = 1.0;
+  size_t iso1 = iso1_index, iso2 = iso2_index;
+
+  if( m_input.act_ratio_constraints.size() > 0 )
+  {
+    walk_to_controlling_nuclide( iso1, iso1_mult );
+    walk_to_controlling_nuclide( iso2, iso2_mult );
+
+    if( iso1 == iso2 )
+      return 0.0;
+  }//if( m_input.act_ratio_constraints.size() > 0 )
+
+
   const double norm_1 = m_activity_norms[iso1];
   const double norm_2 = m_activity_norms[iso2];
   
@@ -2077,9 +2438,14 @@ double RelEffSolution::activity_ratio_uncert( const size_t iso1, const size_t is
   const double cov_1_2 = m_nonlin_covariance[iso1][iso2];
   const double cov_2_2 = m_nonlin_covariance[iso2][iso2];
   
+  // TODO: I think if we have constraints, all we need to do is multiply the ratio by the activity ratios
+  //       of the constraints.... but not checked as of 20250316.
+#warning "Need to check if we are computing activity ratio uncertainties correctly when there are constraints (looks correct with a simple example)."
+  if( m_input.act_ratio_constraints.size() > 0 )
+    cerr << "Need to check if we are computing activity ratio uncertainties correctly when there are constraints." << endl;
   
-  const double ratio = m_rel_activities[iso1].m_rel_activity
-  / m_rel_activities[iso2].m_rel_activity;
+  const double ratio = (iso1_mult * m_rel_activities[iso1].m_rel_activity)
+                          / (iso2_mult * m_rel_activities[iso2].m_rel_activity);
   
   // TODO: I think this is the right way to compute ratio, taking into account correlations, given
   //       we actually fit for the values that multiplied m_activity_norms[],... need to double check
@@ -2158,25 +2524,34 @@ double RelEffSolution::mass_fraction( const std::string &nuclide, const double n
   assert( m_nonlin_covariance.size() >= m_activity_norms.size() );
   assert( m_input.use_ceres_to_fit_eqn || (m_nonlin_covariance.size() == m_rel_activities.size()) );
   
-  const size_t nuc_index = std::find_if( begin(m_rel_activities), end(m_rel_activities),
+  const size_t input_nuc_index = std::find_if( begin(m_rel_activities), end(m_rel_activities),
                           [&nuclide]( const IsotopeRelativeActivity &val ) {
     return val.m_isotope == nuclide;
   }) - begin(m_rel_activities);
   
-  assert( nuc_index < m_nonlin_covariance.size() );
-  assert( nuc_index < m_rel_activities.size() );
+  assert( input_nuc_index < m_nonlin_covariance.size() );
+  assert( input_nuc_index < m_rel_activities.size() );
   
-  if( nuc_index >= m_rel_activities.size() )
+  if( input_nuc_index >= m_rel_activities.size() )
     throw runtime_error( "RelEffSolution::mass_fraction('" + nuclide + "', "
                         + std::to_string(num_sigma) + "): nuclide not in solution set" );
   
+
+// If this nuclide was constrained, then we need to find the ultimate controlling nuclide.
+  double nuc_mult = 1.0;
+  size_t nuc_index = input_nuc_index;
+  const bool nuc_was_constrained = walk_to_controlling_nuclide( nuc_index, nuc_mult );
+#warning "Need to check if we are computing mass_fraction with uncertainties correctly when there are constraints (looks correct with a simple example)."
+  if( nuc_was_constrained )
+    cerr << "Need to check if we are computing mass_fraction with uncertainties correctly when there are constraints." << endl;
+
   // The Covariance matrix is in terms of fit activities - however, we had divided out
   //  a normalization to bring them all near-ish 1.0 (before actually fitting for things
   //  though).
-  const double norm_for_nuc = m_activity_norms[nuc_index];
-  const double cov_nuc_nuc = m_nonlin_covariance[nuc_index][nuc_index];
+  const double norm_for_nuc = m_activity_norms[nuc_index] / nuc_mult;
+  const double cov_nuc_nuc = nuc_mult*nuc_mult*m_nonlin_covariance[nuc_index][nuc_index];
   const double sqrt_cov_nuc_nuc = sqrt(cov_nuc_nuc);
-  const double fit_act_for_nuc = m_rel_activities[nuc_index].m_rel_activity / norm_for_nuc;
+  //const double fit_act_for_nuc = m_rel_activities[nuc_index].m_rel_activity / norm_for_nuc;
   
   // Check that relative activity uncertainties have been computed compatible with what we are
   //  assuming here (and no funny business has happened).
@@ -2196,8 +2571,9 @@ double RelEffSolution::mass_fraction( const std::string &nuclide, const double n
   }
   
   double sum_rel_mass = 0.0, nuc_rel_mas = -1.0;
-  for( size_t index = 0; index < m_rel_activities.size(); ++index )
+  for( size_t loop_index = 0; loop_index < m_rel_activities.size(); ++loop_index )
   {
+    size_t index = loop_index;
     assert( m_nonlin_covariance[index].size() >= m_rel_activities.size() );
     
     const IsotopeRelativeActivity &act = m_rel_activities[index];
@@ -2205,11 +2581,15 @@ double RelEffSolution::mass_fraction( const std::string &nuclide, const double n
     assert( nuc );
     if( !nuc )
       continue;
+
+
+    double loop_nuc_mult = 1.0;
+    const bool was_constrained = walk_to_controlling_nuclide( index, loop_nuc_mult );
     
     const double norm_for_index = m_activity_norms[index];
-    const double fit_act_for_index = m_rel_activities[index].m_rel_activity / norm_for_index;
+    const double fit_act_for_index = loop_nuc_mult * m_rel_activities[index].m_rel_activity / norm_for_index;
     
-    const double cov_nuc_index = m_nonlin_covariance[nuc_index][index];
+    const double cov_nuc_index = loop_nuc_mult*m_nonlin_covariance[nuc_index][index];
     const double varied_fit_act_for_index = fit_act_for_index
                                   + (cov_nuc_index / cov_nuc_nuc) * num_sigma * sqrt_cov_nuc_nuc;
     
@@ -2218,12 +2598,12 @@ double RelEffSolution::mass_fraction( const std::string &nuclide, const double n
     
     sum_rel_mass += (std::max)( rel_mass, 0.0 );
     
-    if( index == nuc_index )
+    if( loop_index == input_nuc_index )
     {
       assert( nuc == wanted_nuc );
       
       nuc_rel_mas = rel_mass;
-    }//if( index == nuc_index )
+    }//if( loop_index == input_nuc_index )
   }//for( size_t index = 0; index < m_rel_activities.size(); ++index )
   
   if( nuc_rel_mas < 0.0 ) // This can happen when we go down a couple sigma
@@ -3657,6 +4037,8 @@ RelEffSolution solve_relative_efficiency( const RelEffInput &input_orig )
   const RelEffInput &input = input_orig;
 #endif
 
+  input.check_nuclide_constraints();
+
   const std::vector<GenericPeakInfo> &peak_infos = input.peaks;
   const RelActCalc::RelEffEqnForm eqn_form = input.eqn_form;
   const size_t eqn_order = input.eqn_order;
@@ -3862,6 +4244,7 @@ RelEffSolution solve_relative_efficiency( const RelEffInput &input_orig )
   problem.AddResidualBlock( cost_function, lossfcn, pars );
   problem.AddParameterBlock( pars, static_cast<int>(num_parameters) );
 
+  vector<int> constant_parameters;
 
   if( eqn_form == RelActCalc::RelEffEqnForm::FramPhysicalModel )
   {
@@ -3869,8 +4252,6 @@ RelEffSolution solve_relative_efficiency( const RelEffInput &input_orig )
     
     size_t par_num = num_nuclides;
     assert( par_num <= num_parameters );
-    
-    vector<int> constant_parameters;
     
     const auto &self_atten_opt = input.phys_model_self_atten;
     setup_physical_model_shield_par_manual( constant_parameters, pars, par_num, self_atten_opt );
@@ -3898,20 +4279,44 @@ RelEffSolution solve_relative_efficiency( const RelEffInput &input_orig )
     assert( par_num == num_parameters );
     if( par_num != num_parameters )
       throw logic_error( "Num paramaters doesnt match expected" );
-    
-    if( !constant_parameters.empty() )
-    {
-      ceres::Manifold *subset_manifold = new ceres::SubsetManifold( static_cast<int>(num_parameters), constant_parameters );
-      problem.SetManifold( pars, subset_manifold );
-    }
   }//if( eqn_form == RelActCalc::RelEffEqnForm::FramPhysicalModel )
   
-  
-  //problem.AddParameterBlock( pars, static_cast<int>(num_parameters), subset_manifold ); // I guess takes ownership of subset_manifold?  TODO: check no memory leak
+  for( const ManualActRatioConstraint &constraint : input.act_ratio_constraints )
+  {
+    assert( num_nuclides == cost_functor->m_isotopes.size() );
 
-// Set a lower bound on relative activities to be 0
+    for( int i = 0; i < static_cast<int>(num_nuclides); ++i )
+    {
+      if( constraint.m_constrained_nuclide == cost_functor->m_isotopes[i] )
+      {
+        assert( std::find( begin(constant_parameters), end(constant_parameters), i ) == end(constant_parameters) );
+        constant_parameters.push_back( i );
+        pars[i] = -1.0; //so we can assert on this later to make sure things are reasonable
+        break;
+      }
+    }//for( size_t i = 0; i < num_nuclides; ++i )
+  }//for( const auto &constraint : input.act_ratio_constraints )
+  
+  if( !constant_parameters.empty() )
+  {
+    ceres::Manifold *subset_manifold = new ceres::SubsetManifold( static_cast<int>(num_parameters), constant_parameters );
+    problem.SetManifold( pars, subset_manifold ); //Looks like it takes ownership of subset_manifold
+  }
+
+  // Set a lower bound on relative activities to be 0, unless it is constrained
   for( size_t i = 0; i < num_nuclides; ++i )
-    problem.SetParameterLowerBound( pars, static_cast<int>(i), 0.0 );
+  {
+    bool is_constrained = false;
+    for( const auto &constraint : input.act_ratio_constraints )
+    {
+      if( constraint.m_constrained_nuclide == cost_functor->m_isotopes[i] )
+        is_constrained = true;
+    }
+    if( is_constrained )
+      pars[i] = -1.0; //so we can assert on this later to make sure things are reasonable
+    else
+      problem.SetParameterLowerBound( pars, static_cast<int>(i), 0.0 );
+  }//for( size_t i = 0; i < num_nuclides; ++i )
   
   if( eqn_form == RelActCalc::RelEffEqnForm::FramPhysicalModel )
   {
@@ -3996,7 +4401,7 @@ RelEffSolution solve_relative_efficiency( const RelEffInput &input_orig )
   ceres_options.linear_solver_type = ceres::DENSE_QR;
   ceres_options.logging_type = ceres::SILENT;
   ceres_options.minimizer_progress_to_stdout = false; //true;
-  ceres_options.max_num_iterations = 50;
+  ceres_options.max_num_iterations = 150;
   ceres_options.max_solver_time_in_seconds = 60.0;
   //ceres_options.min_trust_region_radius = 1e-10;
   
@@ -4011,11 +4416,9 @@ RelEffSolution solve_relative_efficiency( const RelEffInput &input_orig )
   
   // Setting ceres_options.num_threads >1 doesnt seem to do much (any?) good
   ceres_options.num_threads = std::thread::hardware_concurrency();
+  assert( ceres_options.num_threads );
   if( !ceres_options.num_threads )
-  {
-    assert( 0 );
     ceres_options.num_threads = 4;
-  }
   
   //cout << "Starting parameter values: {";
   //for( size_t i = 0; i < num_parameters; ++i )
@@ -4171,12 +4574,13 @@ RelEffSolution solve_relative_efficiency( const RelEffInput &input_orig )
     
     for( size_t i = 0; i < cost_functor->m_isotopes.size(); ++i )
     {
-      const double rel_act_norm = cost_functor->m_rel_act_norms[i];
+      const string &iso = cost_functor->m_isotopes[i];
       
       IsotopeRelativeActivity rel_act;
-      rel_act.m_isotope = cost_functor->m_isotopes[i];
+      rel_act.m_isotope = iso;
       
-      rel_act.m_rel_activity = rel_act_norm * parameters[i];
+      rel_act.m_rel_activity = cost_functor->relative_activity( iso, parameters );
+      
       if( solution.m_nonlin_covariance.empty() )
       {
         rel_act.m_rel_activity_uncert = -1.0;
@@ -4184,8 +4588,27 @@ RelEffSolution solve_relative_efficiency( const RelEffInput &input_orig )
       {
         assert( i < solution.m_nonlin_covariance.size() );
         assert( i < solution.m_nonlin_covariance[i].size() );
-        rel_act.m_rel_activity_uncert = rel_act_norm * std::sqrt( solution.m_nonlin_covariance[i][i] );
-      }
+
+        bool is_constrained = false;
+        for( size_t j = 0; !is_constrained && (j < input.act_ratio_constraints.size()); ++j )  
+          is_constrained = (input.act_ratio_constraints[j].m_constrained_nuclide == iso);
+        
+        if( !is_constrained )
+        {
+          const double rel_act_norm = cost_functor->m_rel_act_norms[i];
+          rel_act.m_rel_activity_uncert = rel_act_norm * std::sqrt( solution.m_nonlin_covariance[i][i] );
+        }else
+        {
+          assert( fabs(parameters[i] - -1.0) < 1.0E-6 );
+          assert( parameters.size() == solution.m_nonlin_covariance.size() );
+
+          vector<double> uncerts( parameters.size(), 0.0 );
+          for( size_t j = 0; j < parameters.size(); ++j )
+            uncerts[j] = std::sqrt( solution.m_nonlin_covariance[j][j] );
+
+          rel_act.m_rel_activity_uncert = cost_functor->relative_activity( iso, uncerts );
+        }//if( input.act_ratio_constraints.empty() ) / else
+      }//if( input.act_ratio_constraints.empty() ) / else
       
       solution.m_rel_activities.push_back( std::move(rel_act) );
     }//for( loop over relative activities )

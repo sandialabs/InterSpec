@@ -315,11 +315,6 @@ struct RelEffCurveInput
     const SandiaDecay::Nuclide *controlling_nuclide = nullptr;
     const SandiaDecay::Nuclide *constrained_nuclide = nullptr;
     double constrained_to_controlled_activity_ratio = 0.0;
-
-
-    static double mass_ratio_to_act_ratio( const SandiaDecay::Nuclide *constrained, 
-                                              const SandiaDecay::Nuclide *controlling, 
-                                            const double mass_ratio_constrained_to_controlling );
     
     static ActRatioConstraint from_mass_ratio( const SandiaDecay::Nuclide *constrained, 
                                               const SandiaDecay::Nuclide *controlling, 
@@ -347,8 +342,10 @@ struct RelEffCurveInput
   std::vector<ActRatioConstraint> act_ratio_constraints;
 
   /** Checks that the nuclide constraints are valid.
-   * 
-   * Throws an exception if they are not valid.
+
+   Checks for cyclical constraints, and that all constrained nuclides are found in #nuclides.
+   
+   Throws an exception if they are not valid.
    */
   void check_nuclide_constraints() const; 
 

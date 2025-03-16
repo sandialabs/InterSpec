@@ -23,6 +23,7 @@
 
 #include "InterSpec_config.h"
 
+#include <regex>
 #include <memory>
 #include <vector>
 #include <fstream>
@@ -340,6 +341,7 @@ void example_manual_phys_model()
   vector<RelActCalcManual::PeakCsvInput::NucAndAge> isotopes;
   isotopes.emplace_back( "U235", 20.0*PhysicalUnits::year, false );
   isotopes.emplace_back( "U238", 20.0*PhysicalUnits::year, false );
+  isotopes.emplace_back( "U234", 20.0*PhysicalUnits::year, false );
 
   
   const vector<pair<float,float>> energy_ranges{ { 50.0, 2000.0 } };
@@ -363,18 +365,18 @@ void example_manual_phys_model()
   rel_eff_solve_input.use_ceres_to_fit_eqn = true;
 
   RelActCalc::PhysicalModelShieldInput self_atten_def;
-  self_atten_def.atomic_number = 80;
-  //self_atten_def.material = uranium;
+  //self_atten_def.atomic_number = 80;
+  self_atten_def.material = uranium;
   self_atten_def.areal_density = 1.25*PhysicalUnits::g_per_cm2;
-  self_atten_def.fit_atomic_number = true;
-  self_atten_def.lower_fit_atomic_number = 1.0;
-  self_atten_def.upper_fit_atomic_number = 98.0;
+  self_atten_def.fit_atomic_number = false;
+  //self_atten_def.lower_fit_atomic_number = 1.0;
+  //self_atten_def.upper_fit_atomic_number = 98.0;
   self_atten_def.fit_areal_density = true;
   self_atten_def.lower_fit_areal_density = 0.0;
   self_atten_def.upper_fit_areal_density = 500*PhysicalUnits::g_per_cm2;
 
   rel_eff_solve_input.phys_model_self_atten = make_shared<RelActCalc::PhysicalModelShieldInput>( self_atten_def );
-
+/*
   RelActCalc::PhysicalModelShieldInput external_atten_def;
   external_atten_def.atomic_number = 26;
   external_atten_def.material = nullptr;
@@ -386,13 +388,23 @@ void example_manual_phys_model()
   external_atten_def.lower_fit_areal_density = 0.0;
   external_atten_def.upper_fit_areal_density = 500*PhysicalUnits::g_per_cm2;
   //rel_eff_solve_input.phys_model_external_attens.push_back( make_shared<RelActCalc::PhysicalModelShieldInput>( external_atten_def ) );
+*/
 
+  const SandiaDecay::Nuclide * const u235 = db->nuclide("U235");
+  const SandiaDecay::Nuclide * const u238 = db->nuclide("U238");
+  assert( u235 && u238 );
+
+  RelActCalcManual::ManualActRatioConstraint nuc_constraint;
+  nuc_constraint.m_constrained_nuclide = "U235";
+  nuc_constraint.m_controlling_nuclide = "U238";
+  nuc_constraint.m_constrained_to_controlled_activity_ratio =  RelActCalc::mass_ratio_to_act_ratio(u235, u238, 0.2);
+  rel_eff_solve_input.act_ratio_constraints.push_back( nuc_constraint );
 
   RelActCalcManual::RelEffSolution sol = RelActCalcManual::solve_relative_efficiency( rel_eff_solve_input );
 
   if( sol.m_status != RelActCalcManual::ManualSolutionStatus::Success )
   {
-    cerr << "Failed to solve relative efficiency" << endl;
+    cerr << "Failed to solve relative efficiency: " << sol.m_error_message << endl;
     return;
   }
 
@@ -576,22 +588,848 @@ void run_u02_example()
    */
 }//void run_u02_example()
   
+
+void run_multi_enrich_u02_ex()
+{
+  const SandiaDecay::SandiaDecayDataBase * const db = DecayDataBaseServer::database();
+  assert( db );
+  MaterialDB matdb;
+  const string data_dir = InterSpec::staticDataDirectory();
+  const string materialfile = SpecUtils::append_path( data_dir, "MaterialDataBase.txt" );
+  matdb.parseGadrasMaterialFile( materialfile, db, false );
   
+  const string specfilename = "mixed_U02_sample.pcf";
+  SpecUtils::SpecFile specfile;
+  const bool loaded_spec = specfile.load_file(specfilename, SpecUtils::ParserType::Auto );
+  if( !loaded_spec )
+  {
+    cerr << "Failed to load '" << specfilename << "', aborting." << endl;
+  }
+  
+  
+  assert( specfile.num_measurements() == 38 );
+  shared_ptr<const SpecUtils::Measurement> background = specfile.measurement(size_t(0));
+  assert( background );
+  assert( background->title() == "Background" );
+  
+  const size_t enrich_choice = 31;
+  shared_ptr<const SpecUtils::Measurement> foreground = specfile.measurement( enrich_choice );
+  assert( foreground );
+
+  string title;
+  double lesser_enrichment = 0.0;
+  double greater_enrichment = 0.0;
+  switch( enrich_choice )
+  {
+    case 1: 
+      title = "U02_0.2%_0.2% @ 25 cm H=100 cm";
+      lesser_enrichment = 0.01*0.2;
+      greater_enrichment = 0.01*0.2;
+      break;
+    
+    case 2: 
+      title = "U02_0.72%_3.3% @ 25 cm H=100 cm";
+      lesser_enrichment = 0.01*0.72;
+      greater_enrichment = 0.01*3.3;
+      break;
+  
+    case 3: 
+      title = "U02_3.3%_3.3% @ 25 cm H=100 cm";
+      lesser_enrichment = 0.01*3.3;
+      greater_enrichment = 0.01*3.3;
+      break;
+    
+    case 4: 
+      title = "U02_50%_93.5% @ 25 cm H=100 cm";
+      lesser_enrichment = 0.01*50;
+      greater_enrichment = 0.01*93.5;
+      break;
+    
+    case 5: 
+      title = "U02_0.2%_0.72% @ 25 cm H=100 cm";
+      lesser_enrichment = 0.01*0.2;
+      greater_enrichment = 0.01*0.72;
+      break;
+    
+    case 6: 
+      title = "U02_0.72%_50% @ 25 cm H=100 cm";
+      lesser_enrichment = 0.01*0.72;
+      greater_enrichment = 0.01*50;
+      break;
+    
+    case 7: 
+      title = "U02_3.3%_50% @ 25 cm H=100 cm";
+      lesser_enrichment = 0.01*3.3;
+      greater_enrichment = 0.01*50;
+      break;
+    
+    case 8: 
+      title = "U02_90%_0.72% @ 25 cm H=100 cm";
+      lesser_enrichment = 0.01*90;
+      greater_enrichment = 0.01*0.72;
+      break;
+    
+    case 9: 
+      title = "U02_0.2%_20% @ 25 cm H=100 cm";
+      lesser_enrichment = 0.01*0.2;
+      greater_enrichment = 0.01*20;
+      break;
+    
+    case 10: 
+      title = "U02_0.72%_93.5% @ 25 cm H=100 cm";
+      lesser_enrichment = 0.01*0.72;
+      greater_enrichment = 0.01*93.5;
+      break;
+    
+    case 11: 
+      title = "U02_3.3%_93.5% @ 25 cm H=100 cm";
+      lesser_enrichment = 0.01*3.3;
+      greater_enrichment = 0.01*93.5;
+      break;
+    
+    case 12: 
+      title = "U02_90%_3.3% @ 25 cm H=100 cm";
+      lesser_enrichment = 0.01*90;
+      greater_enrichment = 0.01*3.3;
+      break;
+    
+    case 13: 
+      title = "U02_0.2%_3.3% @ 25 cm H=100 cm";
+      lesser_enrichment = 0.01*0.2;
+      greater_enrichment = 0.01*3.3;
+      break;
+    
+    case 14: 
+      title = "U02_20%_0.72% @ 25 cm H=100 cm";
+      lesser_enrichment = 0.01*20;
+      greater_enrichment = 0.01*0.72;
+      break;
+    
+    case 15: 
+      title = "U02_5%_0.72% @ 25 cm H=100 cm";
+      lesser_enrichment = 0.01*5;
+      greater_enrichment = 0.01*0.72;
+      break;
+    
+    case 16: 
+      title = "U02_90%_50% @ 25 cm H=100 cm";
+      lesser_enrichment = 0.01*90;
+      greater_enrichment = 0.01*50;
+      break;
+    
+    case 17: 
+      title = "U02_0.2%_5% @ 25 cm H=100 cm";
+      lesser_enrichment = 0.01*0.2;
+      greater_enrichment = 0.01*5;
+      break;
+    
+    case 18: 
+      title = "U02_20%_20% @ 25 cm H=100 cm";
+      lesser_enrichment = 0.01*20;
+      greater_enrichment = 0.01*20;
+      break;
+    
+    case 19: 
+      title = "U02_5%_3.3% @ 25 cm H=100 cm";
+      lesser_enrichment = 0.01*5;
+      greater_enrichment = 0.01*3.3;
+      break;
+    
+    case 20: 
+      title = "U02_90%_90% @ 25 cm H=100 cm";
+      lesser_enrichment = 0.01*90;
+      greater_enrichment = 0.01*90;
+      break;
+    
+    case 21: 
+      title = "U02_0.2%_50% @ 25 cm H=100 cm";
+      lesser_enrichment = 0.01*0.2;
+      greater_enrichment = 0.01*50;
+      break;
+    
+    case 22: 
+      title = "U02_20%_3.3% @ 25 cm H=100 cm";
+      lesser_enrichment = 0.01*20;
+      greater_enrichment = 0.01*3.3;
+      break;
+    
+    case 23: 
+      title = "U02_5%_5% @ 25 cm H=100 cm";
+      lesser_enrichment = 0.01*5;
+      greater_enrichment = 0.01*5;
+      break;
+    
+    case 24: 
+      title = "U02_90%_93.5% @ 25 cm H=100 cm";
+      lesser_enrichment = 0.01*90;
+      greater_enrichment = 0.01*93.5;
+      break;
+    
+    case 25: 
+      title = "U02_0.2%_90% @ 25 cm H=100 cm";
+      lesser_enrichment = 0.01*0.2;
+      greater_enrichment = 0.01*90;
+      break;
+    
+    case 26: 
+      title = "U02_20%_5% @ 25 cm H=100 cm";
+      lesser_enrichment = 0.01*20;
+      greater_enrichment = 0.01*5;
+      break;
+    
+    case 27: 
+      title = "U02_5%_50% @ 25 cm H=100 cm";
+      lesser_enrichment = 0.01*5;
+      greater_enrichment = 0.01*50;
+      break;
+    
+    case 28: 
+      title = "U02_93.5%_93.5% @ 25 cm H=100 cm";
+      lesser_enrichment = 0.01*93.5;
+      greater_enrichment = 0.01*93.5;
+      break;
+    
+    case 29: 
+      title = "U02_0.2%_93.5% @ 25 cm H=100 cm";
+      lesser_enrichment = 0.01*0.2;
+      greater_enrichment = 0.01*93.5;
+      break;
+    
+    case 30: 
+      title = "U02_20%_50% @ 25 cm H=100 cm";
+      lesser_enrichment = 0.01*20;
+      greater_enrichment = 0.01*50;
+      break;
+    
+    case 31: 
+      title = "U02_5%_90% @ 25 cm H=100 cm";
+      lesser_enrichment = 0.01*5;
+      greater_enrichment = 0.01*90;
+      break;
+    
+    case 32: 
+      title = "U02_0.72%_0.72% @ 25 cm H=100 cm";
+      lesser_enrichment = 0.01*0.72;
+      greater_enrichment = 0.01*0.72;
+      break;
+    
+    case 33: 
+      title = "U02_20%_90% @ 25 cm H=100 cm";
+      lesser_enrichment = 0.01*20;
+      greater_enrichment = 0.01*90;
+      break;
+    
+    case 34: 
+      title = "U02_5%_93.5% @ 25 cm H=100 cm";
+      lesser_enrichment = 0.01*5;
+      greater_enrichment = 0.01*93.5;
+      break;
+    
+    case 35: 
+      title = "U02_0.72%_20% @ 25 cm H=100 cm";
+      lesser_enrichment = 0.01*0.72;
+      greater_enrichment = 0.01*20;
+      break;
+    
+    case 36: 
+      title = "U02_20%_93.5% @ 25 cm H=100 cm";
+      lesser_enrichment = 0.01*20;
+      greater_enrichment = 0.01*93.5;
+      break;
+    
+    case 37: 
+      title = "U02_50%_50% @ 25 cm H=100 cm";
+      lesser_enrichment = 0.01*50;
+      greater_enrichment = 0.01*50;
+      break;
+  }//switch
+
+  if( lesser_enrichment > greater_enrichment )
+    std::swap( lesser_enrichment, greater_enrichment );
+
+  assert( SpecUtils::istarts_with( foreground->title(), title ) );
+
+/*
+  cout << "  int enrich_choice = 1;" << endl;
+  cout << "  string title;\n";
+  cout << "  double lesser_enrichment = 0.0;\n";
+  cout << "  double greater_enrichment = 0.0;\n";
+  cout << "  switch( enrich_choice )" << endl;
+  cout << "  {" << endl;
+  for( size_t i = 1; i < specfile.num_measurements(); ++i )
+  {
+    const auto &meas = specfile.measurement(i);
+    string title = meas->title();
+    
+    cout << "    case " << i << ": " << endl;
+    cout << "      title = \"" << title << "\";" << endl;
+    // the title is of the form "U02_20%_3.3% @ 25 cm H=100 cm"
+    // we want to extract the 20% and 3.3%
+    std::regex regex("U02_(\\d*\\.?\\d+)%_(\\d*\\.?\\d+)% @ 25 cm H=100 cm");
+    std::smatch match;
+    if( std::regex_search(title, match, regex) ) 
+    { 
+      cout << "      lesser_enrichment = 0.01*" << match[1].str() << ";\n";
+      cout << "      greater_enrichment = 0.01*" << match[2].str() << ";\n";
+    }else 
+    {
+      cerr << "Failed to extract enrichments from title: " << meas->title() << endl;
+      assert( 0 );
+    }
+    cout << "      break;" << endl;
+  }
+  cout << "  }" << endl;
+return;
+*/
+
+
+  //const string mult_name = "single";
+  const string mult_name = "two";
+
+  const string setup_xml_path = "mixed_U02_" + mult_name + "_rel_eff.xml";
+  rapidxml::file<char> setup_input_file( setup_xml_path.c_str() );
+  
+  rapidxml::xml_document<char> setup_doc;
+  setup_doc.parse<rapidxml::parse_trim_whitespace>( setup_input_file.data() );
+  
+  const rapidxml::xml_node<char> *setup_base_node = setup_doc.first_node( "RelActCalcAuto" );
+  assert( setup_base_node );
+  
+  RelActCalcAuto::RelActAutoGuiState state;
+  state.deSerialize( setup_base_node, &matdb );
+  
+  assert( ((mult_name == "two") && (state.options.rel_eff_curves.size() == 2)) 
+         || ((mult_name == "single") && (state.options.rel_eff_curves.size() == 1) ) );
+
+  const string detector_xml_path = "ORTEC Detective-X_LANL_100cm (59%).drf.xml";
+  rapidxml::file<char> detector_input_file( detector_xml_path.c_str() );
+  
+  rapidxml::xml_document<char> detector_doc;
+  detector_doc.parse<rapidxml::parse_trim_whitespace>( detector_input_file.data() );
+  
+  const rapidxml::xml_node<char> *detector_base_node = detector_doc.first_node( "DetectorPeakResponse" );
+  assert( detector_base_node );
+  
+  
+  auto det = make_shared<DetectorPeakResponse>();
+  det->fromXml( detector_base_node );
+  
+  vector<shared_ptr<const PeakDef>> all_peaks{};
+
+  const SandiaDecay::Nuclide * const u232 = db->nuclide("U232");
+  const SandiaDecay::Nuclide * const u234 = db->nuclide("U234");
+  const SandiaDecay::Nuclide * const u235 = db->nuclide("U235");
+  const SandiaDecay::Nuclide * const u238 = db->nuclide("U238");
+  assert( u235 && u238 && u232 && u234 );
+
+  double u235_to_u238_mass_ratio = lesser_enrichment/(1.0 - lesser_enrichment);
+  RelActCalcAuto::RelEffCurveInput::ActRatioConstraint constraint 
+    = RelActCalcAuto::RelEffCurveInput::ActRatioConstraint::from_mass_ratio( u235, u238, u235_to_u238_mass_ratio );
+
+  cout << "Adding constraint act(" << constraint.constrained_nuclide->symbol << ")/act(" << constraint.controlling_nuclide->symbol << ") = " << constraint.constrained_to_controlled_activity_ratio << endl;
+  state.options.rel_eff_curves[0].act_ratio_constraints.push_back( constraint );
+
+  // We will make the first curve the lower enrichment, so if we expect the lower 
+  // enrichment to be less than 25% we will remove U232 and U234 from this first curve
+  if( lesser_enrichment < 0.25 )
+  {
+    state.options.rel_eff_curves[0].nuclides.erase( 
+    std::remove_if( state.options.rel_eff_curves[0].nuclides.begin(), state.options.rel_eff_curves[0].nuclides.end(),
+      [u232,u234](const RelActCalcAuto::NucInputInfo &nuc) { return (nuc.nuclide == u232) || (nuc.nuclide == u234); } ),
+      state.options.rel_eff_curves[0].nuclides.end() 
+    );
+  }//if( lesser_enrichment < 0.25 )
+
+  // Check serialization to/from XML
+  {
+    rapidxml::xml_document<char> doc;
+    rapidxml::xml_node<char> *base_node = doc.allocate_node( rapidxml::node_element, "State" );
+    doc.append_node( base_node );
+
+    rapidxml::xml_node<char> *state_node = state.serialize( base_node );
+    assert( state_node );
+
+    RelActCalcAuto::RelActAutoGuiState state_cpy;
+    state_cpy.deSerialize( state_node, &matdb );
+
+    RelActCalcAuto::RelActAutoGuiState::equalEnough( state, state_cpy );
+  } 
+
+  const RelActCalcAuto::RelActAutoSolution solution = RelActCalcAuto::solve( state.options,
+                                                                            foreground, background, det, all_peaks, nullptr );
+  ofstream out_html( "U02_" + mult_name + "_rel_eff_result.html" );
+  solution.print_summary( cout );
+  solution.print_html_report( out_html );
+  
+  for( size_t i = 0; i < state.options.rel_eff_curves.size(); ++i )
+  {
+    const double enrichment = solution.mass_enrichment_fraction( u235, i );
+    const double u235_counts = solution.nuclide_counts( u235, i );
+    const double u238_counts = solution.nuclide_counts( u238, i );    
+    cout << "Enrichment " << i << std::left << ": " << setprecision(6) << setw(11) << enrichment 
+    << ", counts(u235)=" << setw(11) << u235_counts 
+    << ", counts(u238)=" << setw(11) << u238_counts << endl;
+  }
+  cout << "For sample: " << title << endl;
+}//void run_multi_enrich_u02_ex()
+  
+void check_auto_nuclide_constraints_checks()
+{
+  const SandiaDecay::SandiaDecayDataBase * const db = DecayDataBaseServer::database();
+  assert( db );
+  
+  const SandiaDecay::Nuclide * const u235 = db->nuclide("U235");
+  const SandiaDecay::Nuclide * const u238 = db->nuclide("U238");
+  const SandiaDecay::Nuclide * const u234 = db->nuclide("U234");
+  
+  RelActCalcAuto::RelEffCurveInput rel_eff_curve;
+
+  RelActCalcAuto::NucInputInfo u235_input;
+  u235_input.nuclide = u235;
+  u235_input.age = 20.0 * PhysicalUnits::year;
+  u235_input.fit_age = false;
+  u235_input.gammas_to_exclude = {};
+  u235_input.peak_color_css = "rgb(0, 0, 255)";
+  
+  RelActCalcAuto::NucInputInfo u238_input;
+  u238_input.nuclide = u238;
+  u238_input.age = 20.0 * PhysicalUnits::year;
+  u238_input.fit_age = false;
+  u238_input.gammas_to_exclude = {};
+  u238_input.peak_color_css = "rgb(255, 69, 0)";
+
+  RelActCalcAuto::NucInputInfo u234_input;
+  u234_input.nuclide = u234;
+  u234_input.age = 20.0 * PhysicalUnits::year;
+  u234_input.fit_age = false;
+  u234_input.gammas_to_exclude = {};
+  u234_input.peak_color_css = "rgb(34, 139, 34)";
+
+  rel_eff_curve.nuclides.push_back( u235_input );
+  rel_eff_curve.nuclides.push_back( u238_input );
+  rel_eff_curve.nuclides.push_back( u234_input );
+
+  rel_eff_curve.nucs_of_el_same_age = true;
+  rel_eff_curve.rel_eff_eqn_type = RelActCalc::RelEffEqnForm::FramPhysicalModel;
+  rel_eff_curve.rel_eff_eqn_order = 0;
+  
+  // Check we dont throw an error for no constraints
+  try
+  {
+    RelActCalcAuto::RelEffCurveInput rel_eff_cpy = rel_eff_curve;
+
+    rel_eff_cpy.check_nuclide_constraints();
+  }catch( std::exception &e )
+  {
+    cerr << "Failed constraint check when we shouldnt have: Error: " << e.what() << endl;
+    assert( 0 );
+  }
+
+  // Check we dont throw an error for a valid constraint
+  try
+  {
+    RelActCalcAuto::RelEffCurveInput rel_eff_cpy = rel_eff_curve;
+    rel_eff_cpy.act_ratio_constraints.push_back( RelActCalcAuto::RelEffCurveInput::ActRatioConstraint::from_mass_ratio( u235, u238, 0.0072/(1.0 - 0.0072) ) );
+    rel_eff_cpy.act_ratio_constraints.push_back( RelActCalcAuto::RelEffCurveInput::ActRatioConstraint::from_mass_ratio( u238, u234, 0.00001 ) ); 
+
+    rel_eff_cpy.check_nuclide_constraints();
+  }catch( std::exception &e )
+  {
+    cerr << "Failed constraint check when we shouldnt have: Error: " << e.what() << endl;
+    assert( 0 );
+  }
+
+  // Check we throw an error for a cycle
+  try
+  {
+    RelActCalcAuto::RelEffCurveInput rel_eff_cpy = rel_eff_curve;
+
+    rel_eff_cpy.act_ratio_constraints.push_back( RelActCalcAuto::RelEffCurveInput::ActRatioConstraint::from_mass_ratio( u235, u238, 0.0072/(1.0 - 0.0072) ) );
+    rel_eff_cpy.act_ratio_constraints.push_back( RelActCalcAuto::RelEffCurveInput::ActRatioConstraint::from_mass_ratio( u238, u234, 0.00001 ) ); 
+    rel_eff_cpy.act_ratio_constraints.push_back( RelActCalcAuto::RelEffCurveInput::ActRatioConstraint::from_mass_ratio( u234, u235, 0.00001 ) ); 
+    
+    rel_eff_cpy.check_nuclide_constraints();
+
+    cerr << "Failed to detect cycle in nuclide constraints" << endl;
+    assert( 0 );
+  }catch(const std::exception& e)
+  {
+    // We are suppoest to get here because of the cycle
+  }
+
+  // Check we throw an error for a duplicate nuclide constraint
+  try
+  {
+    RelActCalcAuto::RelEffCurveInput rel_eff_cpy = rel_eff_curve;
+    rel_eff_cpy.act_ratio_constraints.push_back( RelActCalcAuto::RelEffCurveInput::ActRatioConstraint::from_mass_ratio( u235, u238, 0.02) );
+    rel_eff_cpy.act_ratio_constraints.push_back( RelActCalcAuto::RelEffCurveInput::ActRatioConstraint::from_mass_ratio( u235, u238, 0.00001 ) ); 
+
+    rel_eff_cpy.check_nuclide_constraints();
+    
+    cerr << "Failed to detect duplicate nuclide constraints" << endl;
+    assert( 0 );
+  }catch( std::exception &e )
+  {
+    // We are suppoest to get here
+  }
+
+  // Check we throw an error for an invalid nuclide in a constraint
+  try
+  {
+    const SandiaDecay::Nuclide * const u232 = db->nuclide("U232");
+
+    RelActCalcAuto::RelEffCurveInput rel_eff_cpy = rel_eff_curve;
+    rel_eff_cpy.act_ratio_constraints.push_back( RelActCalcAuto::RelEffCurveInput::ActRatioConstraint::from_mass_ratio( u232, u235, 0.00001 ) ); 
+    
+    rel_eff_cpy.check_nuclide_constraints();
+
+    cerr << "Failed to detect invalid nuclide in constraint" << endl;
+    assert( 0 );
+  }catch(const std::exception& e)
+  {
+    // We are suppoest to get here
+  }
+
+  // Check we throw an error for an invalid activity ratio
+  try
+  {
+    RelActCalcAuto::RelEffCurveInput rel_eff_cpy = rel_eff_curve;
+    RelActCalcAuto::RelEffCurveInput::ActRatioConstraint nuc_constraint;
+    nuc_constraint.constrained_nuclide = u235;
+    nuc_constraint.controlling_nuclide = u238;
+    nuc_constraint.constrained_to_controlled_activity_ratio = -1.0;
+    
+    rel_eff_cpy.act_ratio_constraints.push_back( nuc_constraint );
+    
+    rel_eff_cpy.check_nuclide_constraints();
+
+    cerr << "Failed to detect invalid activity ratio" << endl;
+    assert( 0 );
+  }catch(const std::exception& e)
+  {
+    // We are suppoest to get here
+  }
+
+  // Check we throw an error for a short cycle
+  try
+  {
+    RelActCalcAuto::RelEffCurveInput rel_eff_cpy = rel_eff_curve;
+
+    rel_eff_cpy.act_ratio_constraints.push_back( RelActCalcAuto::RelEffCurveInput::ActRatioConstraint::from_mass_ratio( u235, u238, 0.0072/(1.0 - 0.0072) ) );
+    rel_eff_cpy.act_ratio_constraints.push_back( RelActCalcAuto::RelEffCurveInput::ActRatioConstraint::from_mass_ratio( u238, u235, 0.00001 ) ); 
+    
+    rel_eff_cpy.check_nuclide_constraints();
+
+    cerr << "Failed to detect cycle in nuclide constraints" << endl;
+    assert( 0 );
+  }catch(const std::exception& e)
+  {
+    // We are suppoest to get here because of the cycle
+  }
+
+  cout << "All act_ratio_constraints checks passed" << endl;
+}//void check_auto_nuclide_constraints_checks()
+  
+void check_manual_nuclide_constraints_checks()
+{
+  
+  RelActCalcManual::RelEffInput input;
+
+  RelActCalcManual::GenericPeakInfo peak_info;
+  peak_info.m_energy = 124.8;
+  peak_info.m_counts = 1000.0;
+  peak_info.m_counts_uncert = 10.0;
+
+  RelActCalcManual::GenericLineInfo line_info;
+  line_info.m_isotope = "U238";
+  line_info.m_yield = 1.0;
+  peak_info.m_source_gammas.push_back( line_info );
+  input.peaks.push_back( peak_info );
+
+  peak_info.m_energy = 185.0;
+  peak_info.m_counts = 1000.0;
+  peak_info.m_counts_uncert = 10.0;
+  line_info.m_isotope = "U235";
+  line_info.m_yield = 1.0;
+  peak_info.m_source_gammas.clear();
+  peak_info.m_source_gammas.push_back( line_info );
+  input.peaks.push_back( peak_info );
+
+  // Check we dont throw an error for no constraints
+  try
+  {
+    RelActCalcManual::RelEffInput input_cpy = input;
+
+    input_cpy.check_nuclide_constraints();
+  }catch( std::exception &e )
+  {
+    cerr << "Failed constraint check when we shouldnt have: Error: " << e.what() << endl;
+    assert( 0 );
+  }
+
+  // Try a valid constraint
+  try
+  {
+    RelActCalcManual::ManualActRatioConstraint nuc_constraint;
+    nuc_constraint.m_constrained_nuclide = "U235";
+    nuc_constraint.m_controlling_nuclide = "U238";
+    nuc_constraint.m_constrained_to_controlled_activity_ratio = 0.0072/(1.0 - 0.0072);
+
+    RelActCalcManual::RelEffInput input_cpy = input;
+    input_cpy.act_ratio_constraints.push_back( nuc_constraint );
+
+    input_cpy.check_nuclide_constraints(); //shouldnt be any problems
+  }catch( std::exception &e ) 
+  {
+    cerr << "Failed to create valid nuclide constraint: Error: " << e.what() << endl;
+    assert( 0 );
+  }
+
+  // Make sure invalid constrained nuclide throws
+  try
+  {
+    RelActCalcManual::ManualActRatioConstraint nuc_constraint;
+    nuc_constraint.m_constrained_nuclide = "Co60";
+    nuc_constraint.m_controlling_nuclide = "U238";
+    nuc_constraint.m_constrained_to_controlled_activity_ratio = 0.1;
+
+    RelActCalcManual::RelEffInput input_cpy = input;
+    input_cpy.act_ratio_constraints.push_back( nuc_constraint );
+
+    input_cpy.check_nuclide_constraints(); //shouldnt be any problems
+
+    cerr << "Failed to catch invalid constrained nuclide in constraint" << endl;
+    assert( 0 );
+  }catch( std::exception &e ) 
+  {
+    // We are suppoest to get here
+  }
+
+  // Make sure invalid controlling nuclide throws
+  try
+  {
+    RelActCalcManual::ManualActRatioConstraint nuc_constraint;
+    nuc_constraint.m_constrained_nuclide = "U235";
+    nuc_constraint.m_controlling_nuclide = "Co60";
+    nuc_constraint.m_constrained_to_controlled_activity_ratio = 0.1;
+
+    RelActCalcManual::RelEffInput input_cpy = input;
+    input_cpy.act_ratio_constraints.push_back( nuc_constraint );
+
+    input_cpy.check_nuclide_constraints(); //shouldnt be any problems
+
+    cerr << "Failed to catch invalid constrilling nuclide in constraint" << endl;
+    assert( 0 );
+  }catch( std::exception &e ) 
+  {
+    // We are suppoest to get here
+  }
+
+  
+  // Check we throw an error for a cycle A->B->C->A
+  try
+  {
+    RelActCalcManual::RelEffInput input_cpy = input;
+
+    RelActCalcManual::ManualActRatioConstraint nuc_constraint;
+    nuc_constraint.m_constrained_nuclide = "U235";
+    nuc_constraint.m_controlling_nuclide = "U238";
+    nuc_constraint.m_constrained_to_controlled_activity_ratio = 0.1;
+
+    input_cpy.act_ratio_constraints.push_back( nuc_constraint );
+    
+    nuc_constraint.m_constrained_nuclide = "U238";
+    nuc_constraint.m_controlling_nuclide = "U234";
+
+    input_cpy.act_ratio_constraints.push_back( nuc_constraint );
+
+    nuc_constraint.m_constrained_nuclide = "U234";
+    nuc_constraint.m_controlling_nuclide = "U235";
+
+    input_cpy.act_ratio_constraints.push_back( nuc_constraint );
+
+    // Add a peak for U234
+    peak_info.m_energy = 120.0;
+    peak_info.m_counts = 100.0;
+    peak_info.m_counts_uncert = 10.0;
+    line_info.m_isotope = "U234";
+    line_info.m_yield = 1.0;
+    peak_info.m_source_gammas.clear();
+    peak_info.m_source_gammas.push_back( line_info );
+    input_cpy.peaks.push_back( peak_info );
+    
+    input_cpy.check_nuclide_constraints();
+
+    cerr << "Failed to detect cycle in nuclide constraints" << endl;
+    assert( 0 );
+  }catch(const std::exception& e)
+  {
+    // We are suppoest to get here because of the cycle
+  }
+
+  // Check we throw an error for a cycle A->B->A
+  try
+  {
+    RelActCalcManual::RelEffInput input_cpy = input;
+
+    RelActCalcManual::ManualActRatioConstraint nuc_constraint;
+    nuc_constraint.m_constrained_nuclide = "U235";
+    nuc_constraint.m_controlling_nuclide = "U238";
+    nuc_constraint.m_constrained_to_controlled_activity_ratio = 0.1;
+
+    input_cpy.act_ratio_constraints.push_back( nuc_constraint );
+    
+    nuc_constraint.m_constrained_nuclide = "U238";
+    nuc_constraint.m_controlling_nuclide = "U235";
+
+    input_cpy.act_ratio_constraints.push_back( nuc_constraint );
+
+    input_cpy.check_nuclide_constraints();
+
+    cerr << "Failed to detect cycle in nuclide constraints" << endl;
+    assert( 0 );
+  }catch(const std::exception& e)
+  {
+    // We are suppoest to get here because of the cycle
+  }
+
+  // Check we throw an error for a duplicate nuclide constraint
+  try
+  {
+    RelActCalcManual::ManualActRatioConstraint nuc_constraint;
+    nuc_constraint.m_constrained_nuclide = "U235";
+    nuc_constraint.m_controlling_nuclide = "U238";
+    nuc_constraint.m_constrained_to_controlled_activity_ratio = 0.0072/(1.0 - 0.0072);
+
+    RelActCalcManual::RelEffInput input_cpy = input;
+    input_cpy.act_ratio_constraints.push_back( nuc_constraint );
+    input_cpy.act_ratio_constraints.push_back( nuc_constraint );
+
+    input_cpy.check_nuclide_constraints(); //shouldnt be any problems
+
+    cerr << "Failed to detect duplicate constraints" << endl;
+    assert( 0 );
+  }catch( std::exception &e )
+  {
+    // We are suppoest to get here
+  }
+
+  // Check we throw an error for nuclide with two constraints
+  try
+  {
+    RelActCalcManual::RelEffInput input_cpy = input;
+
+    RelActCalcManual::ManualActRatioConstraint nuc_constraint;
+    nuc_constraint.m_constrained_nuclide = "U235";
+    nuc_constraint.m_controlling_nuclide = "U238";
+    nuc_constraint.m_constrained_to_controlled_activity_ratio = 0.1;
+
+    input_cpy.act_ratio_constraints.push_back( nuc_constraint );
+    
+    nuc_constraint.m_constrained_nuclide = "U235";
+    nuc_constraint.m_controlling_nuclide = "U234";
+
+    input_cpy.act_ratio_constraints.push_back( nuc_constraint );
+
+    // Add a peak for U234
+    peak_info.m_energy = 120.0;
+    peak_info.m_counts = 100.0;
+    peak_info.m_counts_uncert = 10.0;
+    line_info.m_isotope = "U234";
+    line_info.m_yield = 1.0;
+    peak_info.m_source_gammas.clear();
+    peak_info.m_source_gammas.push_back( line_info );
+    input_cpy.peaks.push_back( peak_info );
+    
+    input_cpy.check_nuclide_constraints();
+
+    cerr << "Failed to detect nuclide with two constraints" << endl;
+    assert( 0 );
+  }catch(const std::exception& e)
+  {
+    // We are suppoest to get here because of the cycle
+  }
+
+
+  // Check we done throw an error for a nuclide controlling two other nuclides
+  try
+  {
+    RelActCalcManual::RelEffInput input_cpy = input;
+
+    RelActCalcManual::ManualActRatioConstraint nuc_constraint;
+    nuc_constraint.m_constrained_nuclide = "U235";
+    nuc_constraint.m_controlling_nuclide = "U238";
+    nuc_constraint.m_constrained_to_controlled_activity_ratio = 0.1;
+
+    input_cpy.act_ratio_constraints.push_back( nuc_constraint );
+    
+    nuc_constraint.m_constrained_nuclide = "U234";
+    nuc_constraint.m_controlling_nuclide = "U238";
+
+    input_cpy.act_ratio_constraints.push_back( nuc_constraint );
+
+    // Add a peak for U234
+    peak_info.m_energy = 120.0;
+    peak_info.m_counts = 100.0;
+    peak_info.m_counts_uncert = 10.0;
+    line_info.m_isotope = "U234";
+    line_info.m_yield = 1.0;
+    peak_info.m_source_gammas.clear();
+    peak_info.m_source_gammas.push_back( line_info );
+    input_cpy.peaks.push_back( peak_info );
+    
+    input_cpy.check_nuclide_constraints();
+  }catch(const std::exception& e)
+  {
+    cerr << "Failed to have two nuclides controlled by the same nuclide" << endl;
+    assert( 0 );
+  }
+
+  // Check we throw an error for an invalid activity ratio
+  try
+  {
+    RelActCalcManual::ManualActRatioConstraint nuc_constraint;
+    nuc_constraint.m_constrained_nuclide = "U235";
+    nuc_constraint.m_controlling_nuclide = "U238";
+    nuc_constraint.m_constrained_to_controlled_activity_ratio = -1.0;
+
+    RelActCalcManual::RelEffInput input_cpy = input;
+    input_cpy.act_ratio_constraints.push_back( nuc_constraint );
+
+    input_cpy.check_nuclide_constraints(); //shouldnt be any problems
+
+    cerr << "Failed to detect invalid activity ratio" << endl;
+    assert( 0 );
+  }catch( std::exception &e )
+  {
+    // We are suppoest to get here
+  }
+
+  cout << "All manual act_ratio_constraints checks passed" << endl;
+}//void check_manual_nuclide_constraints_checks()
+
+
 int dev_code()
 {
+  //check_auto_nuclide_constraints_checks();
+  //check_manual_nuclide_constraints_checks();
+  //return 1;
+  
   //check_auto_state_xml_serialization();
 
-
-  run_u02_example();
-  return 1;
+  //run_u02_example();
+  //return 1;
   
   //check_physical_model_eff_function();
   //return 1;
   
-  //example_manual_phys_model();
-  //return 1;
+  example_manual_phys_model();
+  return 1;
 
   //return RelActCalcAuto::run_test();
+  
+  run_multi_enrich_u02_ex();
+  return 1;
   
   const SandiaDecay::SandiaDecayDataBase * const db = DecayDataBaseServer::database();
   assert( db );

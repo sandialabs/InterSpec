@@ -180,6 +180,26 @@ struct GenericPeakInfo
   GenericPeakInfo();
 };//struct GenericPeakInfo
 
+/** A constraint on the activity ratio of two nuclides.
+ 
+ This is used to pin the activity ratio of one nuclide to another.
+ */
+struct ManualActRatioConstraint
+{
+  std::string m_constrained_nuclide;
+  std::string m_controlling_nuclide;
+  double m_constrained_to_controlled_activity_ratio;
+
+/*
+  static const int sm_xmlSerializationVersion = 0;
+  void toXml( ::rapidxml::xml_node<char> *parent ) const;
+  void fromXml( const ::rapidxml::xml_node<char> *constraint_node );
+
+#if( PERFORM_DEVELOPER_CHECKS )
+  static void equalEnough( const ManualActRatioConstraint &lhs, const ManualActRatioConstraint &rhs );
+#endif
+*/
+};//struct ManualActRatioConstraint
 
 /** Adds the `GenericLineInfo` info (e.g. nuclides and their BR) to input `peaks` by clustering gamma lines of
  provided nuclides.
@@ -406,6 +426,18 @@ struct RelEffInput
     If specified for any other equation form, will throw an exception.
   */
   std::vector<std::shared_ptr<const RelActCalc::PhysicalModelShieldInput>> phys_model_external_attens;
+
+  /** The activity ratio constraints. */
+  std::vector<ManualActRatioConstraint> act_ratio_constraints;
+
+
+  /** Checks that the nuclide constraints are valid.
+
+   Checks for cyclical constraints, and that all constrained nuclides are found in #nuclides.
+   
+   Throws an exception if they are not valid.
+   */
+  void check_nuclide_constraints() const; 
 };//struct RelEffInput
 
 /** The status of fitting for a solution. */
@@ -564,6 +596,17 @@ struct RelEffSolution
    Throws std::exception if an invalid nuclide.
    */
   size_t nuclide_index( const std::string &nuc ) const;
+
+  /** Walks the constraints to find the controlling nuclide for the specified nuclide.
+   * 
+   * @param iso_index The index of the nuclide to walk to the controlling nuclide of.
+   * @param multiple The multiple to multiply the activity by to get to the controlling nuclide.
+   * 
+   * @return True if a controlling nuclide was found, false otherwise.
+   * 
+   * \sa RelEffInput::act_ratio_constraints
+   */
+  bool walk_to_controlling_nuclide( size_t &iso_index, double &multiple ) const;
   
   /** The relative activity of a nuclide.
    

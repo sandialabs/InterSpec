@@ -2051,7 +2051,18 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
           manual_input.phys_model_external_attens = rel_eff_curve.phys_model_external_atten;
           manual_input.phys_model_use_hoerl = false;
           
-          // TODO: implement activity constraint for manual solution
+          for( const RelActCalcAuto::RelEffCurveInput::ActRatioConstraint &constraint : rel_eff_curve.act_ratio_constraints )
+          {
+            RelActCalcManual::ManualActRatioConstraint manual_constraint;
+            assert( constraint.constrained_nuclide && constraint.controlling_nuclide );
+            if( !constraint.constrained_nuclide || !constraint.controlling_nuclide )
+              throw runtime_error( "Invalid nuclide in activity ratio constraint" );
+            
+            manual_constraint.m_constrained_nuclide = constraint.constrained_nuclide->symbol;
+            manual_constraint.m_controlling_nuclide = constraint.controlling_nuclide->symbol;
+            manual_constraint.m_constrained_to_controlled_activity_ratio = constraint.constrained_to_controlled_activity_ratio;
+            manual_input.act_ratio_constraints.push_back( manual_constraint );
+          }
 
           RelActCalcManual::RelEffSolution manual_solution
                                = RelActCalcManual::solve_relative_efficiency( manual_input );
@@ -4673,8 +4684,8 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     {
       // We will add a zero-amplitude peak, and fit the continuum, so this way we account for this
       //  region, even if age or something has drove all the gammas out of this regions
-      cerr << "peaks_for_energy_range_imp: no peaks in range [" << range.lower_energy << ", "
-           << range.upper_energy << "] keV." << endl;
+      //cerr << "peaks_for_energy_range_imp: no peaks in range [" << range.lower_energy << ", "
+      //     << range.upper_energy << "] keV." << endl;
       
       answer.no_gammas_in_range = true;
       
@@ -6090,34 +6101,6 @@ void RelEffCurveInput::check_nuclide_constraints() const
   }//for( const RelEffCurveInput::ActRatioConstraint &nuc_constraint : rel_eff_curve.act_ratio_constraints )
 }//void RelEffCurveInput::check_nuclide_constraints() const
 
-
-
-double RelEffCurveInput::ActRatioConstraint::mass_ratio_to_act_ratio( const SandiaDecay::Nuclide *constrained, 
-                                              const SandiaDecay::Nuclide *controlling, 
-                                            const double mass_ratio_constrained_to_controlling )
-{
-  assert( constrained );
-  assert( controlling );
-  assert( mass_ratio_constrained_to_controlling > 0.0 );
-/*
-Nuc1: 3 bq/g
-Nuc2: 2 bq/g
-
-constraining Nuc1, controlling Nuc2
-
-want mass ratio 1:
-  mass_ratio_to_act_ratio( Nuc1, Nuc2, 1 ) --> (3/2)*1 = 3/2 (3 bq Nuc1, 2 bq Nuc2)
-
-want mass ratio 0.5:
-  mass_ratio_to_act_ratio( Nuc1, Nuc2, 0.5 ) --> (3/2)*0.5 = 3/4 (3 bq Nuc1, 4 bq Nuc2 --> 1g Nuc1, 2g Nuc2)
-*/
-
-  const double num_act_per_g = constrained->activityPerGram();
-  const double denom_act_per_g = controlling->activityPerGram();
-  const double act_ratio = mass_ratio_constrained_to_controlling * num_act_per_g / denom_act_per_g;
-
-  return act_ratio;
-}
     
 RelEffCurveInput::ActRatioConstraint RelEffCurveInput::ActRatioConstraint::from_mass_ratio( const SandiaDecay::Nuclide *constrained, 
                                               const SandiaDecay::Nuclide *controlling, 
@@ -6130,7 +6113,7 @@ RelEffCurveInput::ActRatioConstraint RelEffCurveInput::ActRatioConstraint::from_
   ActRatioConstraint answer;
   answer.constrained_nuclide = constrained;
   answer.controlling_nuclide = controlling;
-  answer.constrained_to_controlled_activity_ratio = mass_ratio_to_act_ratio(constrained, controlling, mass_ratio_constrained_to_controlling);
+  answer.constrained_to_controlled_activity_ratio = RelActCalc::mass_ratio_to_act_ratio(constrained, controlling, mass_ratio_constrained_to_controlling);
 
   return answer;
 }
