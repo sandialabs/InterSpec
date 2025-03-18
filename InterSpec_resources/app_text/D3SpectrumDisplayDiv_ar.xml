@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <message id="d3sdd-yAxisTitle">العدد</message>
+  <message id="d3sdd-yAxisTitleMulti">العدد لكل {1} قناة</message>
+  <message id="d3sdd-realTime">الوقت الحقيقي</message>
+  <message id="d3sdd-liveTime">الوقت الحي</message>
+  <message id="d3sdd-deadTime">الوقت الميت</message>
+  <message id="d3sdd-scaledBy">مُقاس بـ</message>
+  <message id="d3sdd-zoomIn">تكبير</message>
+  <message id="d3sdd-neutrons">نيوترونات</message>
+  <message id="d3sdd-Neutrons">النيوترونات</message>
+  <message id="d3sdd-cps">cps</message>
+  <message id="d3sdd-roiCounts">عدد ROI</message>
+  <message id="d3sdd-gammaCounts">عدد غاما</message>
+  <message id="d3sdd-contArea">مساحة المتصل</message>
+  <message id="d3sdd-peakCps">cps الذروة</message>
+  <message id="d3sdd-peakArea">مساحة الذروة</message>
+  <message id="d3sdd-mean">المتوسط</message>
+  <message id="d3sdd-spectrum">الطيف</message>
+  <message id="d3sdd-comptonEdge">حافة كومبتون</message>
+  <message id="d3sdd-sumPeak">ذروة الجمع</message>
+  <message id="d3sdd-firstEnergyClick">انقر لتعيين طاقة ذروة الجمع الأولى.</message>
+  <message id="d3sdd-singleEscape">هروب فردي</message>
+  <message id="d3sdd-doubleEscape">هروب مزدوج</message>
+  <message id="d3sdd-eraseInRange">سيتم مسح الذروات في النطاق</message>
+  <message id="d3sdd-zoomInY">تكبير على المحور Y</message>
+  <message id="d3sdd-zoomOutY">تصغير على المحور Y</message>
+  <message id="d3sdd-touchDefineRoi">حرك إصبعين إلى اليمين لتحديد ROI</message>
+  <message id="d3sdd-foreNSigmaBelowBack">المقدمة أقل من الخلفية بـ {1} σ.</message>
+  <message id="d3sdd-foreNSigmaAboveBack">المقدمة أعلى من الخلفية بـ {1} σ.</message>
+  <message id="d3sdd-backSubCounts">العدد (طرح BG)</message>
+  <message id="d3sdd-afterScalingBy">بعد القياس بـ </message>
+  <message id="d3sdd-clickedPeak">الذروة المنقورة</message>
+  <message id="d3sdd-recalFromTo">إعادة معايرة البيانات من {1} إلى {2} keV</message>
+  <message id="d3sdd-sumFromTo">مجموع من {1} إلى {2} keV</message>
+  <message id="d3sdd-comptonPeakAngle">ذروة كومبتون {1}°</message>
+  <message id="d3sdd-yaxis-lower-upper-equal">العدد الأدنى والأعلى متساويان.</message>
+  <message id="d3sdd-yaxis-no-spectrum">لا يوجد طيف معروض.</message>
+  <message id="d3sdd-yaxis-upper-counts-below-zero">النطاق الأعلى مساوٍ للصفر أو أقل منه.</message>
+  <message id="d3sdd-yaxis-lower-counts-below-zero">النطاق الأدنى مساوٍ للصفر أو أقل منه.</message>
+  <message id="d3sdd-yaxis-below-min-non-zero">النطاق الأعلى أقل من الحد الأدنى المعروض، قيمة غير صفرية.</message>
+</messages>

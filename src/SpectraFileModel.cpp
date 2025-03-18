@@ -88,6 +88,7 @@
 #include "InterSpec/UserPreferences.h"
 #include "InterSpec/SpectraFileModel.h"
 #include "InterSpec/RowStretchTreeView.h"
+#include "InterSpec/ShowRiidInstrumentsAna.h"
 
 #if( SpecUtils_ENABLE_D3_CHART )
 #include "SpecUtils/D3SpectrumExport.h"
@@ -708,7 +709,7 @@ void SpectraFileHeader::saveToDatabase( std::shared_ptr<const SpecMeas> input ) 
   }
   
   
-  if( !fileDbEntry )
+  if( !fileDbEntry || fileDbEntry.isTransient() )
   {
     UserFileInDb *info = new UserFileInDb();
     Dbo::ptr<UserFileInDb> info_dbo_ptr( info );
@@ -741,10 +742,11 @@ void SpectraFileHeader::saveToDatabase( std::shared_ptr<const SpecMeas> input ) 
     {
       DataBaseUtils::DbTransaction transaction( *m_sql );
       fileDbEntry = m_sql->session()->find<UserFileInDb>().where("id = ?").bind(fileDbEntry.id()).resultValue();
+      //fileDbEntry.flush();
       transaction.commit();
       
       if( !fileDbEntry )
-        runtime_error("no entry");
+        throw runtime_error("no entry");
     }catch( Wt::Dbo::Exception &e )
     {
       throw runtime_error( "SpectraFileHeader::saveToDatabase(), database error: " + string(e.what()) );
@@ -1211,6 +1213,7 @@ void SpectraFileHeader::setMeasurmentInfo( std::shared_ptr<SpecMeas> info )
   const vector<int> &detector_numbers = info->detector_numbers();
   m_numSamples = static_cast<int>( sample_numbers.size() );
   m_isPassthrough = info->passthrough();
+  m_riidSummary = riidAnaSummary( info );
 
   m_totalLiveTime = info->gamma_live_time();
   m_totalRealTime = info->gamma_real_time();
@@ -1488,6 +1491,12 @@ int SpectraFileHeader::numDetectors() const
 }
 
 
+const std::string &SpectraFileHeader::riidSummary() const
+{
+  return m_riidSummary;
+}
+
+
 bool SpectraFileHeader::passthrough() const
 {
   return m_isPassthrough;
@@ -1659,7 +1668,11 @@ boost::any SpectraFileModel::data( const Wt::WModelIndex &index,
       case kNumDetectors:
         strm << spectra_header.detector_numbers_.size();
       break;
+      
       case kUploadTime:
+      break;
+      
+      case kRiidResult:
       break;
         
       case kNumMeasurements:
@@ -1734,6 +1747,10 @@ boost::any SpectraFileModel::data( const Wt::WModelIndex &index,
       
     case kUploadTime:
       strm << header->uploadTime().toString( DATE_TIME_FORMAT_STR );
+    break;
+      
+    case kRiidResult:
+      strm << header->riidSummary();
     break;
       
     case kNumMeasurements:
@@ -2002,6 +2019,7 @@ boost::any SpectraFileModel::headerData( int section, Orientation orientation, i
       case kSpectrumTime:    return boost::any( WString("Time Taken") );
       case kNumDetectors:    return boost::any( WString("N-Dets.") );
       case kUploadTime:      return boost::any( WString("Loaded") );
+      case kRiidResult:      return boost::any( WString("File RID") );
       case NumDisplayFields: break;
     };//switch( field )
 
@@ -2039,6 +2057,7 @@ struct SortSpectraFileModel
         case SpectraFileModel::kNeutronCounts:   return (lhs->totalNeutronCounts() < rhs->totalNeutronCounts());
         case SpectraFileModel::kSpectrumTime:    return (lhs->spectrumTime() < rhs->spectrumTime());
         case SpectraFileModel::kUploadTime:      return (lhs->uploadTime() < rhs->uploadTime());
+        case SpectraFileModel::kRiidResult:      return (lhs->riidSummary() < rhs->riidSummary());
         case SpectraFileModel::NumDisplayFields: return false;
       }//switch( m_column )
     }//if( order == AscendingOrder )
@@ -2054,6 +2073,7 @@ struct SortSpectraFileModel
       case SpectraFileModel::kNeutronCounts:   return (lhs->totalNeutronCounts() >= rhs->totalNeutronCounts());
       case SpectraFileModel::kSpectrumTime:    return (lhs->spectrumTime() >= rhs->spectrumTime());
       case SpectraFileModel::kUploadTime:      return (lhs->uploadTime() >= rhs->uploadTime());
+      case SpectraFileModel::kRiidResult:      return (lhs->riidSummary() >= rhs->riidSummary());
       case SpectraFileModel::NumDisplayFields: return true;
     }//switch( m_column )
 
@@ -2103,6 +2123,7 @@ void *SpectraFileModel::toRawIndex( const Wt::WModelIndex &index ) const
       case kNeutronCounts:   return (void *)&(header.m_totalNeutronCounts);
       case kSpectrumTime:    return (void *)&(header.m_spectrumTime);
       case kUploadTime:      return (void *)&(header.m_uploadTime);
+      case kRiidResult:      return (void *)&(header.m_riidSummary);
       case NumDisplayFields: return NULL;
     }//switch( column )
   }//if( !index.parent().isValid() )
@@ -2122,7 +2143,7 @@ void *SpectraFileModel::toRawIndex( const Wt::WModelIndex &index ) const
 
     switch( column )
     {
-      case kDisplayName:     case kUploadTime:
+      case kDisplayName:     case kUploadTime: case kRiidResult:
       case kNumMeasurements:  case kNumDetectors:
         return NULL;
 
@@ -2150,6 +2171,8 @@ WModelIndex SpectraFileModel::fromRawIndex( void *rawIndex ) const
       return index( row, kDisplayName );
     if( rawIndex == &(header.m_uploadTime) )
       return index( row, kUploadTime );
+    if( rawIndex == &(header.m_riidSummary) )
+      return index( row, kRiidResult );
     if( rawIndex == &(header.m_numSamples) )
       return index( row, kNumMeasurements );
     if( rawIndex == &(header.m_numDetectors) )

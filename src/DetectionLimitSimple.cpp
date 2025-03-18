@@ -1005,7 +1005,7 @@ void DetectionLimitSimple::handleNuclideChanged()
   size_t transition_index = 0;
   const SandiaDecay::Transition *transition = nullptr;
   PeakDef::SourceGammaType sourceGammaType = PeakDef::SourceGammaType::NormalGamma;
-  PeakDef::findNearestPhotopeak( nuc, energyToSelect, 4.0*drfSigma, false,
+  PeakDef::findNearestPhotopeak( nuc, energyToSelect, 4.0*drfSigma, false, -1.0,
                                 transition, transition_index, sourceGammaType );
   if( transition && (transition_index < transition->products.size()) )
   {

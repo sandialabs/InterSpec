@@ -351,6 +351,11 @@ color: #E0F5FF;
 {
   white-space: nowrap;
   padding: 3px 2px 2px 2px;
+  
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  flex-wrap: nowrap;
 }
 
 

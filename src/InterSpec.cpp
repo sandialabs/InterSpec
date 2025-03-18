@@ -1378,7 +1378,10 @@ InterSpec::~InterSpec() noexcept(true)
     if( m_toolsTabs && m_toolsTabs->indexOf(m_peakInfoDisplay)>=0 )
         m_toolsTabs->removeTab( m_peakInfoDisplay );
     if( m_peakInfoWindow )
-      m_peakInfoWindow->contents()->removeWidget( m_peakInfoDisplay );
+    {
+      const bool removed = m_peakInfoWindow->stretcher()->removeWidget( m_peakInfoDisplay );
+      assert( removed );
+    }
     
     del_ptr_set_null( m_peakInfoDisplay );
   }//if( m_peakInfoDisplay )
@@ -3310,24 +3313,65 @@ void InterSpec::saveStateToDb( Wt::Dbo::ptr<UserState> entry )
     std::shared_ptr<const SpecMeas> second = measurment( SpecUtils::SpectrumType::SecondForeground );
     std::shared_ptr<const SpecMeas> background = measurment( SpecUtils::SpectrumType::Background );
     
+    const bool updateInDb = false; //We will update the file, or make a copy ourselves
     Dbo::ptr<UserFileInDb> dbforeground, dbsecond, dbbackground;
-    dbforeground = measurementFromDb( SpecUtils::SpectrumType::Foreground, true );
+    dbforeground = measurementFromDb( SpecUtils::SpectrumType::Foreground, updateInDb );
     if( foreground != second )
-      dbsecond = measurementFromDb( SpecUtils::SpectrumType::SecondForeground, true );
+      dbsecond = measurementFromDb( SpecUtils::SpectrumType::SecondForeground, updateInDb );
     if( (background != foreground) && (background != second) )
-      dbbackground = measurementFromDb( SpecUtils::SpectrumType::Background, true );
+      dbbackground = measurementFromDb( SpecUtils::SpectrumType::Background, updateInDb );
   
     //JIC, make sure indices have all been assigned to everything.
     m_sql->session()->flush();
     
-    auto create_copy_or_update_in_db = [this, deepCopy, &entry]( Dbo::ptr<UserFileInDb> &dbfile, shared_ptr<const SpecMeas> &file ){
-      if( !dbfile || !file )
+    auto create_copy_or_update_in_db = [this, deepCopy, &entry]( Dbo::ptr<UserFileInDb> &dbfile,
+                      shared_ptr<const SpecMeas> &file, const SpecUtils::SpectrumType type ){
+      if( !file )
         return;
-    
-      // We dont need to make a copy of the file if it was not part of a save state, but now its
-      //  becoming part of one
-      if( deepCopy && (dbfile->isPartOfSaveState || dbfile->snapshotParent) )
+      
+      if( !dbfile )
+      {
+        // We seem to get here if we recently uploaded the foreground file, so it hasnt been saved
+        //  to the database yet.
+        Wt::Dbo::ptr<UserFileInDb> answer;
+        
+        SpectraFileModel *fileModel = m_fileManager->model();
+        assert( measurment(type) == file );
+        
+        const WModelIndex index = fileModel->index( file );
+        assert( index.isValid() );
+        
+        if( !index.isValid() )
+          throw runtime_error( "Error saving " + string(SpecUtils::descriptionText(type))
+                      + " spectrum file to the database - unable to find in SpectraFileModel!?!" );
+          
+        shared_ptr<SpectraFileHeader> header = fileModel->fileHeader( index.row() );
+        assert( header );
+        if( !header )
+          throw runtime_error( "Error saving " + string(SpecUtils::descriptionText(type))
+               + " spectrum file to the database - no associated header in SpectraFileModel!?!." );
+        
+        try
+        {
+          header->saveToDatabase( file );
+        }catch( std::exception &e )
+        {
+          throw runtime_error( "Error saving " + string(SpecUtils::descriptionText(type))
+          + " spectrum file to the database - call to write to db failed: " + string(e.what()) );
+        }
+        
+        dbfile = header->dbEntry();
+        assert( dbfile );
+        if( !dbfile )
+          throw runtime_error( "Error saving " + string(SpecUtils::descriptionText(type))
+              + " spectrum file to the database - unexpectedly missing reference in db!?!." );
+      }else if( deepCopy && (dbfile->isPartOfSaveState || dbfile->snapshotParent) )
+      {
+        // We dont need to make a copy of the file if it was not part of a save state, but now its
+        //  becoming part of one
         dbfile = UserFileInDb::makeDeepCopyOfFileInDatabase( dbfile, *m_sql, true );
+        m_sql->session()->flush();
+      }
       
       dbfile.modify()->isPartOfSaveState = true;
       
@@ -3356,16 +3400,38 @@ void InterSpec::saveStateToDb( Wt::Dbo::ptr<UserState> entry )
       filedata.modify()->setFileData( file, UserFileInDbData::SerializedFileFormat::k2012N42 );
     };//create_copy_or_update_in_db lambda
     
-    create_copy_or_update_in_db( dbforeground, foreground );
-    create_copy_or_update_in_db( dbsecond, second );
-    create_copy_or_update_in_db( dbbackground, background );
-
+    create_copy_or_update_in_db( dbforeground, foreground, SpecUtils::SpectrumType::Foreground );
     if( !dbforeground && foreground )
       throw runtime_error( "Error saving foreground to the database" );  //not displayed to user, so not internationalized
-    if( !dbsecond && second )
-      throw runtime_error( "Error saving second foreground to the database" );
-    if( !dbbackground && background )
-      throw runtime_error( "Error saving background to the database" );
+  
+    if( second )
+    {
+      if( second == foreground )
+      {
+        dbsecond = dbforeground;
+      }else
+      {
+        create_copy_or_update_in_db( dbsecond, second, SpecUtils::SpectrumType::SecondForeground );
+        if( !dbsecond )
+          throw runtime_error( "Error saving second foreground to the database" );
+      }
+    }//if( second )
+    
+    if( background )
+    {
+      if( background == foreground )
+      {
+        dbbackground = dbforeground;
+      }else if( background == second )
+      {
+        dbbackground = dbsecond;
+      }else
+      {
+        create_copy_or_update_in_db( dbbackground, background, SpecUtils::SpectrumType::Background );
+        if( !dbbackground )
+          throw runtime_error( "Error saving background to the database" );
+      }
+    }//if( background )
     
     //We need to make sure dbforeground, dbbackground, dbsecond will have been
     //  written to the database, so there id()'s will be not -1.
@@ -3677,7 +3743,9 @@ void InterSpec::saveStateToDb( Wt::Dbo::ptr<UserState> entry )
   }catch( std::exception &e )
   {
     cerr << "saveStateToDb(...) caught: " << e.what() << endl;
-    throw runtime_error( WString::tr("err-save-sate-to-db").toUTF8() );
+    string errmsg = e.what();
+    errmsg = Wt::Utils::htmlEncode( errmsg, WFlags<Wt::Utils::HtmlEncodingFlag>{} );
+    throw runtime_error( WString::tr("err-save-sate-to-db").arg(errmsg).toUTF8() );
   }//try / catch
 }//void saveStateToDb( Wt::Dbo::ptr<UserState> entry )
 
@@ -3693,7 +3761,22 @@ void InterSpec::loadStateFromDb( Wt::Dbo::ptr<UserState> entry )
   
   try
   {
+    //Essentially reset the state of the app
     closeShieldingSourceFit();
+    programmaticallyCloseMultimediaWindow();
+    assert( !m_multimedia );
+    
+    m_fileManager->removeAllFiles();
+    if( m_referencePhotopeakLines )
+      m_referencePhotopeakLines->clearAllLines();
+    
+    deletePeakEdit();
+    deleteGammaCountDialog();
+    closeNuclideSearchWindow();
+    
+    setSpectrum( nullptr, {}, SpecUtils::SpectrumType::Background, 0 );
+    setSpectrum( nullptr, {}, SpecUtils::SpectrumType::SecondForeground, 0 );
+
     
     switch( entry->stateType )
     {
@@ -3742,31 +3825,7 @@ void InterSpec::loadStateFromDb( Wt::Dbo::ptr<UserState> entry )
         && (!dbsecond || !dbsecond->filedata.size()) )
       throw runtime_error( "Unable to locate second foreground in database" );
     
-    //Essentially reset the state of the app
-    m_fileManager->removeAllFiles();
-    if( m_referencePhotopeakLines )
-      m_referencePhotopeakLines->clearAllLines();
     
-    deletePeakEdit();
-    deleteGammaCountDialog();
-    
-    if( m_shieldingSourceFitWindow && !m_shieldingSourceFitWindow->isHidden() )
-      m_shieldingSourceFitWindow->hide();
-    
-#if( InterSpec_PHONE_ROTATE_FOR_TABS )
-    bool wasDocked = (entry->shownDisplayFeatures & UserState::kDockedWindows);
-    if( isPhone() )
-    {
-      wasDocked = (m_toolsTabs != nullptr);
-    }else if( toolTabsVisible() != wasDocked )
-    {
-      setToolTabsVisible( wasDocked );
-    }
-#else
-    bool wasDocked = (entry->shownDisplayFeatures & UserState::kDockedWindows);
-    if( toolTabsVisible() != wasDocked )
-      setToolTabsVisible( wasDocked );
-#endif
     
     //Now start reloading the state
     std::shared_ptr<SpecMeas> foreground, second, background;
@@ -3843,6 +3902,20 @@ void InterSpec::loadStateFromDb( Wt::Dbo::ptr<UserState> entry )
       }
     }//if( parent )
     
+    auto csvToInts = []( const string &str ) -> set<int> {
+      set<int> samples;
+      stringstream strm( str );
+      std::copy( istream_iterator<int>( strm ), istream_iterator<int>(),
+                std::inserter( samples, end(samples) ) );
+      return samples;
+    }; //csvToInts lambda
+    
+    const set<int> foregroundNums = csvToInts( entry->foregroundSampleNumsCsvIds );
+    const set<int> secondNums     = csvToInts( entry->secondForegroundSampleNumsCsvIds );
+    const set<int> backgroundNums = csvToInts( entry->backgroundSampleNumsCsvIds );
+    const set<int> otherSamples   = csvToInts( entry->otherSpectraCsvIds );
+    
+    
     if( dbforeground )
       m_fileManager->setDbEntry( dbforeground, foregroundheader, foreground, 0);
     
@@ -3900,21 +3973,22 @@ void InterSpec::loadStateFromDb( Wt::Dbo::ptr<UserState> entry )
       }
     }//if( parent )
     
-    auto csvToInts = []( const string &str ) -> set<int> {
-      set<int> samples;
-      stringstream strm( str );
-      std::copy( istream_iterator<int>( strm ), istream_iterator<int>(),
-                std::inserter( samples, end(samples) ) );
-      return samples;
-    }; //csvToInts lambda
     
-    const set<int> foregroundNums = csvToInts( entry->foregroundSampleNumsCsvIds );
-    const set<int> secondNums     = csvToInts( entry->secondForegroundSampleNumsCsvIds );
-    const set<int> backgroundNums = csvToInts( entry->backgroundSampleNumsCsvIds );
-    const set<int> otherSamples   = csvToInts( entry->otherSpectraCsvIds );
+#if( InterSpec_PHONE_ROTATE_FOR_TABS )
+    bool wasDocked = (entry->shownDisplayFeatures & UserState::kDockedWindows);
+    if( isPhone() )
+    {
+      wasDocked = (m_toolsTabs != nullptr);
+    }else if( toolTabsVisible() != wasDocked )
+    {
+      setToolTabsVisible( wasDocked );
+    }
+#else
+    bool wasDocked = (entry->shownDisplayFeatures & UserState::kDockedWindows);
+    if( toolTabsVisible() != wasDocked )
+      setToolTabsVisible( wasDocked );
+#endif
     
-    setSpectrum( nullptr, {}, SpecUtils::SpectrumType::Background, 0 );
-    setSpectrum( nullptr, {}, SpecUtils::SpectrumType::SecondForeground, 0 );
     
     Wt::WFlags<SetSpectrumOptions> options;
 #if( USE_REMOTE_RID )
@@ -3943,6 +4017,7 @@ void InterSpec::loadStateFromDb( Wt::Dbo::ptr<UserState> entry )
     //  write protected so they may have been changed or removed
     //...should check to make sure that they are lazily loaded, so as to not
     //  waste to much CPU.
+    // TODO: this isnt currently saved when creating a state; should make it an option in the save-state dialog
     for( const int id : otherSamples )
     {
       try
@@ -3957,32 +4032,29 @@ void InterSpec::loadStateFromDb( Wt::Dbo::ptr<UserState> entry )
     }//for( const int id : otherSamples )
     
     //Load the ShieldingSourceModel
-    Dbo::ptr<ShieldingSourceModel> fitmodel;
-    if( entry->shieldSourceModelId >= 0 )
-      fitmodel = m_sql->session()->find<ShieldingSourceModel>()
-                         .where( "id = ?" ).bind( entry->shieldSourceModelId );
-    if( fitmodel )
-    {
-      cerr << "When loading state from DB, not loading Shielding/Source Fit"
-      << " model, due to lame GUI ish" << endl;
-//      if( !m_shieldingSourceFit )
-//        shieldingSourceFit();
-      if( m_shieldingSourceFit )
-        m_shieldingSourceFit->loadModelFromDb( fitmodel );
-    }//if( fitmodel )
+    //  20250303: for a long time (10 years?) we've just stored the ShieldingSourceModel as part of
+    //            `SpecMeas`, and we arent doing a great job of actually loading the associated
+    //            model, so lets just not.  I guess we could/should set `fitmodel->xmlData` to
+    //            `foreground->setShieldingSourceModel(...)`, but this would require testing I dont
+    //            think I can do easily, so we'll just ignore this.
+    //Dbo::ptr<ShieldingSourceModel> fitmodel;
+    //if( entry->shieldSourceModelId >= 0 )
+    //  fitmodel = m_sql->session()->find<ShieldingSourceModel>()
+    //                     .where( "id = ?" ).bind( entry->shieldSourceModelId );
+    //
+    //if( fitmodel )
+    //{
+    //  cerr << "When loading state from DB, not loading Shielding/Source Fit"
+    //  << " model, due to lame GUI ish" << endl;
+//  //    if( !m_shieldingSourceFit )
+//  //      shieldingSourceFit();
+    //  if( m_shieldingSourceFit )
+    //    m_shieldingSourceFit->loadModelFromDb( fitmodel );
+    //}//if( fitmodel )
+    //
+    //if( m_shieldingSourceFitWindow )
+    //  m_shieldingSourceFitWindow->hide();
     
-    if( m_shieldingSourceFitWindow )
-      m_shieldingSourceFitWindow->hide();
-    
-    if( m_nuclideSearchWindow )
-    {
-      m_nuclideSearchContainer->layout()->removeWidget( m_nuclideSearch );
-      delete m_nuclideSearchContainer;
-      m_nuclideSearchContainer = nullptr;
-    }
-    
-//  std::string showingDetectorNumbersCsv;
-//  see:  std::vector<bool> detectorsToDisplay() const;
     
     float xmin = entry->energyAxisMinimum;
     float xmax = entry->energyAxisMaximum;
@@ -3998,25 +4070,8 @@ void InterSpec::loadStateFromDb( Wt::Dbo::ptr<UserState> entry )
     }//if( xmin != xmax )
         
     
-    if( m_multimedia )
-      programmaticallyCloseMultimediaWindow();
-    assert( !m_multimedia );
-    
     if( foreground )
     {
-      // If we have a state without a foreground, then for the spectrum chart, changing the legend
-      //  enabled status, or setting the horizontal/vertical lines causes the client-side javascript
-      //  to crash - I spent some hours trying to figure it out, but no luck.  So for the moment,
-      //  we'll just do this work-around.
-      //  One hint was for the crashing case D3SpectrumDisplayDiv::defineJavaScript() seems to be
-      //  called multiple times, and maybe the id of the parent div changes???
-      //  Its really bizarre.
-#ifdef _MSC_VER
-#pragma message("Not setting show legend or grid lines on charts when loading states that do not have a foreground; should figure out why this causes a client-side error")
-#else
-#warning "Not setting show legend or grid lines on charts when loading states that do not have a foreground; should figure out why this causes a client-side error"
-#endif
-      
       const bool vertGridLines = (entry->shownDisplayFeatures & UserState::kVerticalGridLines);
       const bool horizontalGridLines = (entry->shownDisplayFeatures & UserState::kVerticalGridLines);
       m_spectrum->showVerticalLines( vertGridLines );
@@ -4068,84 +4123,138 @@ void InterSpec::loadStateFromDb( Wt::Dbo::ptr<UserState> entry )
     if( (entry->shownDisplayFeatures & UserState::kShowingGammaXsTool)
        && !entry->gammaXsToolUri.empty() )
     {
-      GammaXsWindow *w = showGammaXsTool();
-      if( w && w->xstool() )
-        w->xstool()->handleAppUrl( entry->gammaXsToolUri );
-    }
+      try
+      {
+        GammaXsWindow *w = showGammaXsTool();
+        if( w && w->xstool() )
+          w->xstool()->handleAppUrl( entry->gammaXsToolUri );
+      }catch( std::exception &e )
+      {
+        cerr << "Failed to xs tool GUI state with error: " << e.what() << endl;
+      }
+    }//if( show XS tool )
     
     
     if( (entry->shownDisplayFeatures & UserState::kShowingDoseCalcTool)
        && !entry->doseCalcToolUri.empty() )
     {
-      DoseCalcWindow *w = showDoseTool();
-      DoseCalcWidget *tool = w ? w->tool() : nullptr;
-      if( tool )
+      try
       {
-        string path, uri = entry->doseCalcToolUri;
-        const auto pos = uri.find('?');
-        if( pos != string::npos )
+        DoseCalcWindow *w = showDoseTool();
+        DoseCalcWidget *tool = w ? w->tool() : nullptr;
+        if( tool )
         {
-          path = uri.substr(0,pos);
-          uri = uri.substr(pos+1);
-        }
-        tool->handleAppUrl( path, uri );
-      }//if( tool )
-    }
+          string path, uri = entry->doseCalcToolUri;
+          const auto pos = uri.find('?');
+          if( pos != string::npos )
+          {
+            path = uri.substr(0,pos);
+            uri = uri.substr(pos+1);
+          }
+          tool->handleAppUrl( path, uri );
+        }//if( tool )
+      }catch( std::exception &e )
+      {
+        cerr << "Failed to set dose calc GUI state with error: " << e.what() << endl;
+      }
+    }//if( show dose calc window )
     
     if( (entry->shownDisplayFeatures & UserState::kShowing1OverR2Tool)
        && !entry->oneOverR2ToolUri.empty() )
     {
-      OneOverR2Calc *calc = createOneOverR2Calculator();
-      if( calc )
-        calc->handleAppUrl( entry->oneOverR2ToolUri );
-    }
+      try
+      {
+        OneOverR2Calc *calc = createOneOverR2Calculator();
+        if( calc )
+          calc->handleAppUrl( entry->oneOverR2ToolUri );
+      }catch( std::exception &e )
+      {
+        cerr << "Failed to set 1/r2 calc GUI state with error: " << e.what() << endl;
+      }
+    }//if( show 1/r2 calculator )
     
     if( (entry->shownDisplayFeatures & UserState::kShowingFluxTool)
        && !entry->fluxToolUri.empty() )
     {
-      FluxToolWindow *tool = createFluxTool();
-      if( tool )
-        tool->handleAppUrl( entry->fluxToolUri );
+      try
+      {
+        FluxToolWindow *tool = createFluxTool();
+        if( tool )
+          tool->handleAppUrl( entry->fluxToolUri );
+      }catch( std::exception &e )
+      {
+        cerr << "Failed to set flux tool GUI state with error: " << e.what() << endl;
+      }
     }//if( m_fluxTool )
     
     if( (entry->shownDisplayFeatures & UserState::kShowingUnitConvertTool)
        && !entry->unitsConverterToolUri.empty() )
     {
-      UnitsConverterTool *converter = createUnitsConverterTool();
-      if( converter )
-        converter->handleAppUrl( entry->unitsConverterToolUri );
+      try
+      {
+        UnitsConverterTool *converter = createUnitsConverterTool();
+        if( converter )
+          converter->handleAppUrl( entry->unitsConverterToolUri );
+      }catch( std::exception &e )
+      {
+        cerr << "Failed to set unit converter GUI state with error: " << e.what() << endl;
+      }
     }
     
     if( (entry->shownDisplayFeatures & UserState::kShowingNucDecayInfo)
        && !entry->nucDecayInfoUri.empty() )
     {
-      DecayWindow *decay = createDecayInfoWindow();
-      if( decay )
-        decay->handleAppUrl( entry->nucDecayInfoUri );
-    }
+      try
+      {
+        DecayWindow *decay = createDecayInfoWindow();
+        if( decay )
+          decay->handleAppUrl( entry->nucDecayInfoUri );
+      }catch( std::exception &e )
+      {
+        cerr << "Failed to set decay info GUI state with error: " << e.what() << endl;
+      }
+    }//if( show nuclide decay window )
     
     if( (entry->shownDisplayFeatures & UserState::kShowingEnergyRangeSum)
        && !entry->energyRangeSumUri.empty() )
     {
-      GammaCountDialog *dialog = showGammaCountDialog();
-      if( dialog )
-        dialog->handleAppUrl( entry->energyRangeSumUri );
-    }
+      try
+      {
+        GammaCountDialog *dialog = showGammaCountDialog();
+        if( dialog )
+          dialog->handleAppUrl( entry->energyRangeSumUri );
+      }catch( std::exception &e )
+      {
+        cerr << "Failed to set gamma count GUI state with error: " << e.what() << endl;
+      }
+    }//if( showing energy range sum )
     
     
 #if( USE_DETECTION_LIMIT_TOOL )
     if( (entry->shownDisplayFeatures & UserState::kShowingDetectionSens)
        && !entry->detectionSensitivityToolUri.empty() )
     {
-      showDetectionLimitTool( entry->detectionSensitivityToolUri );
+      try
+      {
+        showDetectionLimitTool( entry->detectionSensitivityToolUri );
+      }catch( std::exception &e )
+      {
+        cerr << "Failed to set detection limit tool state with error: " << e.what() << endl;
+      }
     }//if( m_detectionLimitWindow )
     
     if( (entry->shownDisplayFeatures & UserState::kShowingSimpleMda)
        && !entry->simpleMdaUri.empty() )
     {
-      auto dialog = showSimpleMdaWindow();
-      if( dialog )
-        dialog->tool()->handleAppUrl( entry->simpleMdaUri );
+      try
+      {
+        auto dialog = showSimpleMdaWindow();
+        if( dialog )
+          dialog->tool()->handleAppUrl( entry->simpleMdaUri );
+      }catch( std::exception &e )
+      {
+        cerr << "Failed to set MDA GUI state with error: " << e.what() << endl;
+      }
     }//if( m_simpleMdaWindow )
 #endif
     
@@ -4236,35 +4345,47 @@ void InterSpec::loadStateFromDb( Wt::Dbo::ptr<UserState> entry )
     //Should take care of entry->showingWindows here, so we can rely on it below
     if( entry->gammaLinesXml.size() )
     {
-      bool toolTabsHidden = false;
-      if( !m_referencePhotopeakLines )    //tool tabs must be hidden, so lets show the window
+      try
       {
-        showGammaLinesWindow();//if entry->showingWindows was implemented
-        toolTabsHidden = true;
-        assert( m_referencePhotopeakLines );
+        bool toolTabsHidden = false;
+        if( !m_referencePhotopeakLines )    //tool tabs must be hidden, so lets show the window
+        {
+          showGammaLinesWindow();//if entry->showingWindows was implemented
+          toolTabsHidden = true;
+          assert( m_referencePhotopeakLines );
+        }
+        
+        string data = entry->gammaLinesXml;
+        m_referencePhotopeakLines->deSerialize( data );
+        
+        if( toolTabsHidden )
+          closeGammaLinesWindow();
+      }catch( std::exception &e )
+      {
+        cerr << "Failed to set reference lines GUI state with error: " << e.what() << endl;
       }
-      
-      string data = entry->gammaLinesXml;
-      m_referencePhotopeakLines->deSerialize( data );
-      
-      if( toolTabsHidden )
-        closeGammaLinesWindow();
     }//if( entry->gammaLinesXml.size() )
     
     if( m_nuclideSearch && entry->isotopeSearchEnergiesXml.size() )
     {
-      string data = entry->isotopeSearchEnergiesXml;
-      
-      bool display = (entry->currentTab == UserState::kIsotopeSearch);
-      
-      if( !wasDocked )
+      try
       {
-        display = (entry->shownDisplayFeatures & UserState::kShowingEnergySearch);
-        if( display )
-          showNuclideSearchWindow();
-      }//if( !wasDocked )
-      
-      m_nuclideSearch->deSerialize( data, display );
+        string data = entry->isotopeSearchEnergiesXml;
+        
+        bool display = (entry->currentTab == UserState::kIsotopeSearch);
+        
+        if( !wasDocked )
+        {
+          display = (entry->shownDisplayFeatures & UserState::kShowingEnergySearch);
+          if( display )
+            showNuclideSearchWindow();
+        }//if( !wasDocked )
+        
+        m_nuclideSearch->deSerialize( data, display );
+      }catch( std::exception &e )
+      {
+        cerr << "Failed to set nuclide search GUI state with error: " << e.what() << endl;
+      }
     }//if( m_nuclideSearch && entry->isotopeSearchEnergiesXml.size() )
 
     for( SpectrumChart::PeakLabels label = SpectrumChart::PeakLabels(0);
@@ -5056,43 +5177,26 @@ void InterSpec::showPeakInfoWindow()
 {
   if( m_toolsTabs )
   {
-    cerr << "nterSpec::showPeakInfoWindow()\n\tTemporary hack - we dont want to show the"
-         << " peak info window when tool tabs are showing since things get funky"
-         << endl;
+    // We get here when user does hotkey (CNTRL, or Command)-2 (
     m_toolsTabs->setCurrentWidget( m_peakInfoDisplay );
     m_currentToolsTab = m_toolsTabs->currentIndex();
     return;
   }//if( m_toolsTabs )
- 
-  if( m_toolsTabs && m_peakInfoDisplay )
-  {
-    m_toolsTabs->removeTab( m_peakInfoDisplay );
-    m_toolsTabs->setCurrentIndex( 0 );
-    m_currentToolsTab = 0;
-  }//if( m_toolsTabs && m_peakInfoDisplay )
   
   if( !m_peakInfoWindow )
   {
     m_peakInfoWindow = new AuxWindow( WString::tr("window-title-peak-manager"),
                               Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::SetCloseable) );
     m_peakInfoWindow->rejectWhenEscapePressed();
-    WBorderLayout *layout = new WBorderLayout();
-    layout->setContentsMargins(0, 0, 15, 0);
-    m_peakInfoWindow->contents()->setLayout( layout );
-    //m_peakInfoWindow->contents()->setPadding(0);
-    //m_peakInfoWindow->contents()->setMargin(0);
-    
-    layout->addWidget( m_peakInfoDisplay, Wt::WBorderLayout::Center );
-    WContainerWidget *buttons = new WContainerWidget();
-    layout->addWidget( buttons, Wt::WBorderLayout::South );
-
-    WContainerWidget* footer = m_peakInfoWindow->footer();
-    
-    WPushButton* closeButton = m_peakInfoWindow->addCloseButtonToFooter(WString::tr("Close"),true);
-    
+    WGridLayout *layout = m_peakInfoWindow->stretcher();
+    layout->setContentsMargins( 0, 0, 0, 0 );
+    layout->addWidget( m_peakInfoDisplay, 0, 0 );
+    // If the "Peak Manager" tab hasnt been explicitly shown yet, then `m_peakInfoDisplay` will
+    //  be hidden, so we need to explicitly show it.
+    m_peakInfoDisplay->show();
+    WContainerWidget *footer = m_peakInfoWindow->footer();
+    WPushButton *closeButton = m_peakInfoWindow->addCloseButtonToFooter(WString::tr("Close"),true);
     closeButton->clicked().connect( boost::bind( &AuxWindow::hide, m_peakInfoWindow ) );
-      
-    AuxWindow::addHelpInFooter( m_peakInfoWindow->footer(), "peak-manager" );
     
     WPushButton *b = new WPushButton( WString::tr(CalibrationTabTitleKey), footer );
     b->clicked().connect( this, &InterSpec::showEnergyCalWindow );
@@ -5102,6 +5206,7 @@ void InterSpec::showPeakInfoWindow()
     b->clicked().connect( this, &InterSpec::showGammaLinesWindow );
     b->setFloatSide(Wt::Right);
       
+    AuxWindow::addHelpInFooter( footer, "peak-manager" );
       
     m_peakInfoWindow->resizeScaledWindow( 0.75, 0.5 );
     m_peakInfoWindow->centerWindow();
@@ -5118,19 +5223,21 @@ void InterSpec::handlePeakInfoClose()
   if( !m_peakInfoWindow )
     return;
 
+  const bool removed = m_peakInfoWindow->stretcher()->removeWidget( m_peakInfoDisplay );
+  assert( removed );
+  
   if( m_toolsTabs )
   {
-    m_peakInfoWindow->contents()->removeWidget( m_peakInfoDisplay );
     if( m_toolsTabs->indexOf(m_peakInfoDisplay) < 0 )
     {
       m_toolsTabs->addTab( m_peakInfoDisplay, WString::tr(PeakInfoTabTitleKey), TabLoadPolicy );
       m_toolsTabs->setCurrentIndex( m_toolsTabs->indexOf(m_peakInfoDisplay) );
     }//if( m_toolsTabs->indexOf(m_peakInfoDisplay) < 0 )
     m_currentToolsTab = m_toolsTabs->currentIndex();
-    
-    delete m_peakInfoWindow;
-    m_peakInfoWindow = NULL;
   }//if( m_toolsTabs )
+  
+  delete m_peakInfoWindow;
+  m_peakInfoWindow = nullptr;
 }//void handlePeakInfoClose()
 
 
@@ -5272,6 +5379,11 @@ void InterSpec::storeTestStateToN42( const Wt::WString name, const Wt::WString d
     if( !output.is_open() )
       throw runtime_error( "Couldnt open test file output '" + filepath + "'" );
     
+    saveShieldingSourceModelToForegroundSpecMeas();
+  #if( USE_REL_ACT_TOOL )
+    saveRelActManualStateToForegroundSpecMeas();
+    saveRelActAutoStateToForegroundSpecMeas();
+  #endif
     
     SpecMeas meas;
     meas.uniqueCopyContents( *m_dataMeasurement );
@@ -5366,17 +5478,6 @@ void InterSpec::storeTestStateToN42( const Wt::WString name, const Wt::WString d
                                       "DisplayedBackgroundSampleNumber", val );
       InterSpecNode->append_node( backgroundsamples_node );
     }//if( newbacksamples.size() )
-    
-    if( m_shieldingSourceFit
-        && m_shieldingSourceFit->userChangedDuringCurrentForeground() )
-    {
-      m_shieldingSourceFit->serialize( InterSpecNode );
-      cerr << "\n\nThe shielding/source fit model WAS changed for current foreground" << endl;
-    }else
-    {
-      cerr << "\n\nThe shielding/source fit model was NOT changed for current foreground" << endl;
-    }
-    
     
     const char *val = n42doc->allocate_string( timestr.c_str(), timestr.size()+1 );
     xml_node<char> *node = n42doc->allocate_node( node_element, "TestSaveDateTime", val );
@@ -5661,6 +5762,7 @@ void InterSpec::startStoreTestState()
     const WString name = edit ? edit->text() : WString();
     const WString sumtxt = summary ? summary->text() : WString();
     storeTestStateToN42( name, sumtxt );
+    window->hide();
   } ) );
   
   window->setMinimumSize(WLength(450), WLength(250));
@@ -6078,33 +6180,38 @@ void InterSpec::saveStateForEndOfSession()
   
   
   // Remove existing end-of-session state
-  DataBaseUtils::DbTransaction transaction( *m_sql );
   try
   {
+    DataBaseUtils::DbTransaction transaction( *m_sql );
     Dbo::collection<Dbo::ptr<UserState>> prevEosStates = m_sql->session()->find<UserState>()
       .where( "InterSpecUser_id = ? AND StateType = ?" )
       .bind( m_user.id() )
       .bind( int(UserState::kEndOfSessionTemp) );
     
-    //assert( prevEosStates.size() <= 1 );
-    for( auto iter = prevEosStates.begin(); iter != prevEosStates.end(); ++iter )
-      UserState::removeFromDatabase( *iter, *m_sql );
+    try
+    {
+      for( auto iter = prevEosStates.begin(); iter != prevEosStates.end(); ++iter )
+        UserState::removeFromDatabase( *iter, *m_sql );
+    }catch( std::exception &e )
+    {
+      Wt::log("error") << "InterSpec::saveStateForEndOfSession() error removing last state: " << e.what();
+    }
+    
+    transaction.commit();
   }catch( std::exception &e )
   {
-    Wt::log("error") << "InterSpec::saveStateForEndOfSession() error removing last state: " << e.what();
-    transaction.rollback();
+    Wt::log("error") << "InterSpec::saveStateForEndOfSession() error getting last state: " << e.what();
     return;
   }
   
   // I we dont want to save states, or there is no foreground - nothing more to do here
   if( !saveState || !m_dataMeasurement )
-  {
-    transaction.commit();
     return;
-  }
   
   try
   {
+    DataBaseUtils::DbTransaction transaction( *m_sql );
+    
     // Check if we are connected with a database state
     const long long int current_state_index = currentAppStateDbId();
     Wt::Dbo::ptr<UserState> parentState;
@@ -6132,7 +6239,6 @@ void InterSpec::saveStateForEndOfSession()
   }catch( std::exception &e )
   {
     Wt::log("error") << "InterSpec::saveStateForEndOfSession() error: " << e.what();
-    transaction.rollback();
   }
 }//void saveStateForEndOfSession()
 #endif //#if( USE_DB_TO_STORE_SPECTRA )
@@ -6634,13 +6740,8 @@ void InterSpec::setToolTabsVisible( bool showToolTabs )
     m_layout->setHorizontalSpacing( 0 );
     setLayout( m_layout );
     
-    if( m_peakInfoWindow )
-    {
-      m_peakInfoWindow->contents()->removeWidget( m_peakInfoDisplay );
-      delete m_peakInfoWindow;
-      m_peakInfoWindow = NULL;
-    }//if( m_peakInfoWindow )
-    
+    const bool wasShowingPeakManager = !!m_peakInfoWindow;
+    handlePeakInfoClose();
     closeGammaLinesWindow();
     
     if( m_energyCalWindow )
@@ -6831,13 +6932,20 @@ void InterSpec::setToolTabsVisible( bool showToolTabs )
 #endif
     
 #if( InterSpec_PHONE_ROTATE_FOR_TABS )
+    // If `m_currentToolsTab` is for `m_peakInfoDisplay`, and the floating peak info display
+    //  window was showing when the user toggled to show tool tabs, then we get an exception:
+    //    "Uncaught exception in event loop: 'WContainerWidget: error parsing: undefined'."
+    //  Just switching to a different tab seems to fix this.  I dont really know why it happens.
+    if( wasShowingPeakManager && (m_currentToolsTab == m_toolsTabs->indexOf(m_peakInfoDisplay)) )
+      m_currentToolsTab = m_toolsTabs->indexOf(m_referencePhotopeakLines);
+       
     if( (m_currentToolsTab >= 0) && (m_currentToolsTab < m_toolsTabs->count()) )
     {
       m_toolsTabs->setCurrentIndex( m_currentToolsTab );
     }else
     {
       //These next `setCurrentWidget(...)` lines will cause `handleToolTabChanged(...)` to be called
-      if( phone )
+      if( phone || wasShowingPeakManager )
         m_toolsTabs->setCurrentWidget( m_referencePhotopeakLines );
       else
         m_toolsTabs->setCurrentWidget( m_peakInfoDisplay );
@@ -11421,6 +11529,15 @@ void InterSpec::setSpectrum( std::shared_ptr<SpecMeas> meas,
       
       vector<PeakDef> original_peaks;
       
+#if( USE_REL_ACT_TOOL )
+      // For some reason loading javascript from inside a
+      //  `WServer::instance()->post( sessionid, [=](){...} );`
+      //  call doesnt seem to work okay, or at least load the JS before
+      //  doing the other JS - so since `PeakSelectorWindow` _may_ make
+      //  a RelEffPlot, we'll load the JS here, just to make sure its ready.
+      wApp->require( "InterSpec_resources/RelEffPlot.js" );
+#endif
+      
       const std::string sessionid = wApp->sessionId();
       propigate_peaks_fcns = [=]( std::shared_ptr<const SpecUtils::Measurement> data ){
         PeakSearchGuiUtils::fit_template_peaks( this, data, input_peaks, original_peaks,
@@ -12840,7 +12957,7 @@ void InterSpec::guessIsotopesForPeaks( WApplication *app )
       const SandiaDecay::Transition *transition = NULL;
       const double sigma = newPeak.gausPeak() ? newPeak.sigma() : 0.125*newPeak.roiWidth();
       PeakDef::findNearestPhotopeak( p.nuclide, match.energy,
-                                       4.0*sigma, false, transition,
+                                       4.0*sigma, false, -1.0, transition,
                                        radparticleIndex, sourceGammaType );
       if( j == 0 )
         newPeak.setNuclearTransition( p.nuclide, transition,

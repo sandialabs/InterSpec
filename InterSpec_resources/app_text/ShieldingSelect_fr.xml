@@ -1,45 +1,54 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <messages>
-  <!-- ss- is short for ShieldingSelect
-  -->
-  <message id="ss-tt-shield-type-toggle">Basculer entre le blindage matériel et générique</message>
-<message id="ss-tt-material-name">
-    Vous pouvez soit entrer le nom d'un matériau ou élément prédéfini ici
-    (effacer le texte du formulaire et cliquer sur la flèche à droite du formulaire pour voir toutes les options prédéfinies),
-    soit vous pouvez spécifier la composition atomique du matériau, similaire
-    à C0.5H0.2Ni0.6, où les nombres représentent la densité en g/cm3 de l'
-    élément précédent dans le matériau, donc l'exemple aurait une densité totale
-    de 0.5+0.2+0.6=1.3 g/cm3.
-    Pour entrer des matériaux avec des composants isotopiques, vous devriez mettre
-    le nucléide entre guillemets simples ou doubles, ex : 'U238'0.2'U235'0.8
-</message>
-<message id="ss-tt-areal-density">Densité surfacique du blindage en g/cm2</message>
-<message id="ss-areal-density-empty-txt">Densité Surf.</message>
-<message id="ss-tt-atomic-number">Numéro atomique du blindage</message>
-<message id="ss-atomic-number-empty-txt">Numéro Atomique</message>
-<message id="ss-source-for-cb">
+  <message id="ss-tt-shield-type-toggle">Basculer entre un matériau et un blindage générique</message>
+  <message id="ss-tt-material-name">
+    Vous pouvez soit entrer le nom d'un matériau ou d'un élément prédéfini ici
+    (effacez le texte du formulaire et cliquez sur la flèche à droite du formulaire pour voir toutes les
+    options prédéfinies), ou vous pouvez spécifier la composition atomique du matériau, de manière similaire
+    à C0.5H0.2Ni0.6, où les nombres représentent la densité en g/cm³ de
+    l'élément précédent dans le matériau, donc l'exemple aurait une densité totale
+    de 0.5+0.2+0.6=1.3 g/cm³.
+    Pour entrer des matériaux avec des composants isotopiques, vous devez mettre des guillemets simples ou doubles
+    autour du nucléide, ex : 'U238'0.2'U235'0.8
+  </message>
+  <message id="ss-tt-material-name-fit">
+  Remarque : si utilisé comme source auto-atténuante, le matériau, tel que défini, sera utilisé pour
+  les besoins de l'atténuation, mais la fraction massique spécifiée des nucléides sources peut ne pas correspondre à cette
+  atténuation...
+  </message>
+  <message id="ss-tt-areal-density">Densité surfacique du blindage en g/cm²</message>
+  <message id="ss-areal-density-empty-txt">Densité surfacique</message>
+  <message id="ss-tt-atomic-number">Numéro atomique du blindage</message>
+  <message id="ss-atomic-number-empty-txt">Numéro atomique</message>
+  <message id="ss-source-for-cb">
     Lorsque ces nucléides sont utilisés comme sources, ils sont
-    traités comme uniformément distribués dans le matériau
+    traités comme étant uniformément répartis dans le matériau
     (qui est supposé sphérique), donc l'auto-atténuation
     et d'autres facteurs sont pris en compte.
-</message>
-<message id="ss-fit-mass-fractions-cb">Ajuster les Fractions Massiques</message>
-<message id="ss-thickness">Épaisseur</message>
-<message id="ss-radius">Rayon</message>
-<message id="ss-radial-thickness">Épaisseur Radiale</message>
-<message id="ss-half-length">Demi-Longueur</message>
-<message id="ss-length-thickness">Épaisseur de Longueur</message>
-<message id="ss-half-width">Demi-Largeur</message>
-<message id="ss-width-thickness">Épaisseur de Largeur</message>
-<message id="ss-half-height">Demi-Hauteur</message>
-<message id="ss-height-thickness">Épaisseur de Hauteur</message>
-<message id="ss-half-depth">Demi-Profondeur</message>
-<message id="ss-depth-thickness">Épaisseur de Profondeur</message>
-<message id="ss-tt-fit-mass-frac">Si les fractions massiques sont ajustées, leur somme fractionnaire restera constante dans l'ajustement.</message>
-<message id="ss-fixed-non-src-frac">Supposant {1}{2}% d'autres isos {3}</message>
-<message id="ss-fixed">fixé</message>
-<message id="ss-generic">Générique</message>
-<message id="ss-consists-of-mass-frac">consiste en (fraction massique, élément)</message>
-<message id="ss-err-invalid-material">{1} n'est pas un matériau valide</message>
-<message id="ss-invalid-mat">mat. invalide</message>
+  </message>
+  <message id="ss-fit-mass-fractions-cb">Ajuster les fractions massiques</message>
+  <message id="ss-thickness">Épaisseur</message>
+  <message id="ss-radius">Rayon</message>
+  <message id="ss-radial-thickness">Épaisseur radiale</message>
+  <message id="ss-half-length">Demi-longueur</message>
+  <message id="ss-length-thickness">Épaisseur de la longueur</message>
+  <message id="ss-half-width">Demi-largeur</message>
+  <message id="ss-width-thickness">Épaisseur de la largeur</message>
+  <message id="ss-half-height">Demi-hauteur</message>
+  <message id="ss-height-thickness">Épaisseur de la hauteur</message>
+  <message id="ss-half-depth">Demi-profondeur</message>
+  <message id="ss-depth-thickness">Épaisseur de la profondeur</message>
+  <message id="ss-tt-fit-mass-frac">Si les fractions massiques sont ajustées, leur somme fractionnaire restera constante dans l'ajustement.</message>
+  <message id="ss-fixed-non-src-frac">En supposant {1}{2}% d'autres isotopes {3}</message>
+  <message id="ss-fixed">fixe </message>
+  <message id="ss-generic">Générique</message>
+  <message id="ss-consists-of-mass-frac">se compose de (fraction massique, élément)</message>
+  <message id="ss-err-invalid-material">{1} n'est pas un matériau valide</message>
+  <message id="ss-invalid-mat">mat. invalide</message>
+  <message id="ss-src-mass-frac-label">frac. massique de {1} :</message>
+  <message id="ss-non-src-frac">Frac. non source</message>
+  <message id="ss-non-src-frac-el">autre {1} :</message>
+  <message id="ss-tt-with-uncert">{1}</message>
+  <message id="ss-tt-without"></message>
+  <message id="ss-warning-only-one-src-frac">Pour ajuster les fractions massiques, veuillez sélectionner au moins deux composants de {1} à ajuster.</message>
 </messages>

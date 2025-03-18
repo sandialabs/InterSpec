@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- pe- is short for PeakEdit -->
+  <message id="pe-value">Value</message>
+  <message id="pe-uncertainty">Uncertainty</message>
+  <message id="pe-parameter">Parameter</message>
+  <message id="pe-label">Label</message>
+  <message id="pe-peak-type">Peak Type</message>
+  <message id="pe-peak-model-gaussian">Gaussian</message>
+  <message id="pe-peak-model-data">Data Region</message>
+  <message id="pe-skew-type">Skew Type</message>
+  <message id="pe-btn-refit">Refit</message>
+  
+  <message id="pe-label-centroid">Centroid</message>
+  <message id="pe-label-drf-fwhm">DRF Pred. FWHM</message>
+  <message id="pe-label-amp">Amplitude</message>
+  <message id="pe-label-skew0">Skew 0</message>
+  <message id="pe-label-skew1">Skew 1</message>
+  <message id="pe-label-skew2">Skew 2</message>
+  <message id="pe-label-skew3">Skew 3</message>
+  <message id="pe-label-cont-p0">Cont. P0</message>
+  <message id="pe-label-cont-p1">Cont. P1</message>
+  <message id="pe-label-cont-p2">Cont. P2</message>
+  <message id="pe-label-cont-p3">Cont. P3</message>
+  <message id="pe-label-cont-p4">Cont. P4</message>
+  <message id="pe-label-roi-start">ROI Start (keV)</message>
+  <message id="pe-label-roi-end">ROI End (keV)</message>
+  <message id="pe-label-chi2-dof">𝜒²/DOF</message>
+  <message id="pe-label-peak-color">Peak Color</message>
+
+  <message id="pe-multipeak-in-roi">Peak {1} of {2} in ROI</message>
+  <message id="pe-apply-all-of-type">All {1} peaks</message>
+  <message id="pe-drf-predict-fwhm-txt">DRF predicts FWHM of {1} keV</message>
+  <message id="pe-failed-refit-insig">Failed to refit peak (became insignificant), so not doing anything</message>
+
+</messages>

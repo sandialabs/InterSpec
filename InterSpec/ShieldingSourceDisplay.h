@@ -373,10 +373,9 @@ public:
    
    @param before If nullptr, the shielding will be added after the last ShieldingSelect; if non-null, the new ShieldingSelect will be added
                 before the specified ShieldingSelect.
-   @param updateChiChartAndAddUndoRedo If true, the Chi2 chart will be updated after adding, AND a undo/redo point will be
-                added.
+   @param addUndoRedo If true, an undo/redo point will be added.
   */
-  ShieldingSelect *addShielding( ShieldingSelect *before, const bool updateChiChartAndAddUndoRedo );
+  ShieldingSelect *addShielding( ShieldingSelect *before, const bool addUndoRedo );
   
   //doAddShielding(), doAddShieldingBefore(), doAddShieldingAfter:
   //  convience functions that calls addShielding(...) appropriately.
@@ -469,9 +468,17 @@ public:
   //  std::exception on error, with a message approprtiate for output to user.
   void checkAndWarnZeroMassFraction();
   
-  //checkDistanceAndThicknessConsistent(): called when the m_distanceEdit is
-  //  changed; makes sure radius of outer shielding is less than this distnace,
-  //  and updates chi2 chart
+  /** Called when doing a model fit, the geometry changes, or when updating the Chi2 chart due to dimension or
+   shielding/material changes (this update happens during the `Wt::render(...)` call), to make sure radius of
+   outer shielding is less than the detector distance, and other characteristics of the shielding are consistent with the
+   model.
+   This function also updates the fit model activities of for volumetric sources.
+   
+   Note: this function should only be called when the whole GUI state is completely setup.
+   For example, if you first set shielding thicknesses, then call this function, then set detector distance, you
+   could have caused the shielding thicknesses to have been changed based on the old detector distances.
+   This also applies to other properties like which thicknesses are allowed to be fit.
+   */
   void checkDistanceAndThicknessConsistent();
 
   /** Checks to see if fitting for more than one atomic number of generic shielding.

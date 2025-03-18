@@ -47,9 +47,13 @@
   <message id="ss-consists-of-mass-frac">consist of (mass fraction, element)</message>
   <message id="ss-err-invalid-material">{1} is not a valid material</message>
   <message id="ss-invalid-mat">invalid mat.</message>
-  <message id="ss-src-mass-frac-label"> - mass fraction:</message>
+  <message id="ss-src-mass-frac-label">mass frac of {1}:</message>
   <message id="ss-non-src-frac">Non Source Frac</message>
   <message id="ss-add-shield-before">Add shielding before</message>
   <message id="ss-add-shield-after">Add Shielding after</message>
   <message id="ss-add-trace-src">Add Trace Source</message>
+  <message id="ss-non-src-frac-el">other {1}:</message>
+  <message id="ss-tt-with-uncert">{1}</message>
+  <message id="ss-tt-without"></message>
+  <message id="ss-warning-only-one-src-frac">To fit mass fractions, please select at least two components of {1} to fit.</message>
 </messages>

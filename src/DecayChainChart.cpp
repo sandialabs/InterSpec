@@ -469,7 +469,9 @@ void DecayChainChart::jsonInfoForNuclide( const SandiaDecay::Nuclide * const nuc
     
   vector<string> info = getTextInfoForNuclide( nuc, m_nuclide, m_useCurie );
     
-  const string hl = (IsInf(nuc->halfLife) ? std::string("stable") : PhysicalUnitsLocalized::printToBestTimeUnits(nuc->halfLife, 2));
+  
+  const string hl = IsInf(nuc->halfLife) ? WString::tr("stable").toUTF8()
+                                          : PhysicalUnitsLocalized::printToBestTimeUnits(nuc->halfLife, 2);
     
   js << "{ \"nuclide\": \"" << nuc->symbol << "\","
     << " \"massNumber\": " << static_cast<int>(nuc->massNumber) << ","
@@ -597,7 +599,7 @@ std::vector<std::string> DecayChainChart::getTextInfoForNuclide( const SandiaDec
   }else
   {
     const string hl = PhysicalUnitsLocalized::printToBestTimeUnits( nuc->halfLife );
-    information.push_back( WString::tr("dcc-nuc-info-hl-stable").arg(hl).toUTF8() );
+    information.push_back( WString::tr("dcc-nuc-info-hl").arg(hl).toUTF8() );
   }
   
   if( parentNuclide && (nuc != parentNuclide) )

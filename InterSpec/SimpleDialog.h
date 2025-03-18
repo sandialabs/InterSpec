@@ -63,6 +63,13 @@ public:
   SimpleDialog( const Wt::WString &title, const Wt::WString &content );
   ~SimpleDialog();
   
+  /** See notes for \c m_multipleBringToFront, but basically this is an over-ride to avoid
+   jank when creating multiple SimpleDialogs at the same time (or close together anyway).
+   
+   You must call this function before initial render of the dialog for it to have any effect.
+   */
+  void doNotUseMultpleBringstoFront();
+  
   /** Add a button to the footer.
    
    Buttons are added left-to-right, and clicking on them will cause the dialog to hide and become deleted, so you dont need to worry
@@ -100,6 +107,16 @@ protected:
    This pointer is never accessed from this class, but may be updated by derived classes.
    */
   Wt::WText *m_msgContents;
+  
+  /** When this dialog is initially rendered, some javascript will run on a delay, and a few times
+   to make sure it is the front-most window (specifically for on mobile when you create a QR
+   code by tapping on a AuxWindows title button, which then calls that windows bring to front
+   on a delay).
+   
+   However, this can create some jank, specifically when you upload a picture that finds a QR
+   code.  So this variable allows us to override the default behavior.
+   */
+  bool m_multipleBringToFront;
 };//class SimpleDialog
 
 

@@ -33,6 +33,7 @@
 #include <Wt/WServer>
 #include <Wt/WLineEdit>
 #include <Wt/WCheckBox>
+#include <Wt/WComboBox>
 #include <Wt/WIOService>
 #include <Wt/WPushButton>
 #include <Wt/WApplication>
@@ -46,6 +47,10 @@
 #include "rapidxml/rapidxml_print.hpp"
 
 #include "SandiaDecay/SandiaDecay.h"
+
+#include "SpecUtils/Filesystem.h"
+#include "SpecUtils/StringAlgo.h"
+#include "SpecUtils/RapidXmlUtils.hpp"
 
 #include "InterSpec/PopupDiv.h"
 #include "InterSpec/SpecMeas.h"
@@ -74,11 +79,18 @@ using namespace std;
 
 const int IsotopeSearchByEnergy::sm_xmlSerializationVersion = 0;
 
+const std::string IsotopeSearchByEnergy::sm_medical_category_key    = "isbe-category-medical";
+const std::string IsotopeSearchByEnergy::sm_industrial_category_key = "isbe-category-industrial";
+const std::string IsotopeSearchByEnergy::sm_snm_category_key        = "isbe-category-snm";
+const std::string IsotopeSearchByEnergy::sm_norm_category_key       = "isbe-category-norm";
+const std::string IsotopeSearchByEnergy::sm_common_category_key     = "isbe-category-common";
+const std::string IsotopeSearchByEnergy::sm_fission_category_key    = "isbe-category-fission";
+
 namespace
 {
   const WString ActiveSearchEnergyClass = "ActiveSearchEnergy";
   
-  /** Returns peaks that were likely used to enter serach energies from. */
+  /** Returns peaks that were likely used to enter search energies from. */
   vector<PeakModel::PeakShrdPtr> peaks_searched( const PeakModel * const pmodel,
                                                  const vector<IsotopeSearchByEnergy::SearchEnergy *> &searches )
   {
@@ -286,12 +298,13 @@ IsotopeSearchByEnergy::IsotopeSearchByEnergy( InterSpec *viewer,
   m_currentSearch( 0 ),
   m_searching( NULL ),
   m_results( NULL ),
+  m_minBranchRatioDiv( nullptr ),
   m_minBranchRatio( NULL ),
+  m_minHalfLiveDiv( nullptr ),
   m_minHalfLife( NULL ),
   m_model( NULL ),
-  m_gammas( NULL ),
-  m_xrays( NULL ),
-  m_reactions( NULL ),
+  m_search_categories{},
+  m_search_category_select( nullptr ),
   m_nextSearchEnergy( 0 ),
   m_minBr( 0.0 ), m_minHl( 6000.0 * PhysicalUnits::second ),
   m_undo_redo_sentry{},
@@ -336,23 +349,9 @@ IsotopeSearchByEnergy::IsotopeSearchByEnergy( InterSpec *viewer,
   m_assignPeakToSelected->setMenu( assignPeakMenu );
   // We will add relevant menu items to this button when the time comes
   
-  
-  
-  
-  WContainerWidget *sourceTypes = new WContainerWidget( m_searchConditionsColumn );
-  sourceTypes->setStyleClass( "IsotopeSourceTypes" );
-  m_gammas = new WCheckBox( WString::tr("isbe-cb-gammas"), sourceTypes );
-  m_gammas->changed().connect( this, &IsotopeSearchByEnergy::minBrOrHlChanged );
-  m_gammas->setChecked();
-
-  m_xrays = new WCheckBox( WString::tr("X-rays"), sourceTypes );
-  m_xrays->changed().connect( this, &IsotopeSearchByEnergy::minBrOrHlChanged );
-  m_xrays->setChecked();
-  
-  m_reactions = new WCheckBox( WString::tr("isbe-cb-rxnts"), sourceTypes );
-  m_reactions->changed().connect( this, &IsotopeSearchByEnergy::minBrOrHlChanged );
-//  m_reactions->setChecked();
-
+  m_search_category_select = new WComboBox( m_searchConditionsColumn );
+  m_search_category_select->setStyleClass( "IsotopeSourceTypes" );
+  m_search_category_select->activated().connect( boost::bind( &IsotopeSearchByEnergy::categoryChanged, this, true ) );
   
   WContainerWidget *searchOptions = new WContainerWidget( m_searchConditionsColumn );
   searchOptions->setStyleClass( "IsotopeSearchMinimums" );
@@ -364,11 +363,12 @@ IsotopeSearchByEnergy::IsotopeSearchByEnergy( InterSpec *viewer,
   
   const bool showToolTips = UserPreferences::preferenceValue<bool>( "ShowTooltips", m_viewer );
   
-  WContainerWidget *optionDiv = new WContainerWidget( searchOptions );
-  WLabel *label = new WLabel( WString::tr("isbe-min-br"), optionDiv );
+  m_minBranchRatioDiv = new WContainerWidget( searchOptions );
+  m_minBranchRatioDiv->setHiddenKeepsGeometry( true );
+  WLabel *label = new WLabel( WString::tr("isbe-min-br"), m_minBranchRatioDiv );
 //  HelpSystem::attachToolTipOn( label,"Toggle or type minimum branching ratio.", showToolTips , HelpSystem::ToolTipPosition::Top);
 
-  m_minBranchRatio = new NativeFloatSpinBox( optionDiv );
+  m_minBranchRatio = new NativeFloatSpinBox( m_minBranchRatioDiv );
   HelpSystem::attachToolTipOn( m_minBranchRatio, WString::tr("isbe-tt-min-br"),
                               showToolTips , HelpSystem::ToolTipPosition::Top);
   
@@ -377,10 +377,11 @@ IsotopeSearchByEnergy::IsotopeSearchByEnergy( InterSpec *viewer,
   m_minBranchRatio->setSingleStep( 0.1f );
   label->setBuddy( m_minBranchRatio );
   
-  optionDiv = new WContainerWidget( searchOptions );
-  label = new WLabel( WString::tr("isbe-min-hl"), optionDiv ); //"Min. T\xc2\xbd"
+  m_minHalfLiveDiv = new WContainerWidget( searchOptions );
+  m_minHalfLiveDiv->setHiddenKeepsGeometry( true );
+  label = new WLabel( WString::tr("isbe-min-hl"), m_minHalfLiveDiv ); //"Min. T\xc2\xbd"
  
-  m_minHalfLife = new WLineEdit( "6000 s", optionDiv );
+  m_minHalfLife = new WLineEdit( "6000 s", m_minHalfLiveDiv );
   m_minHl = 6000.0 * PhysicalUnits::second;
   
   m_minHalfLife->setAttributeValue( "ondragstart", "return false" );
@@ -490,6 +491,10 @@ IsotopeSearchByEnergy::IsotopeSearchByEnergy( InterSpec *viewer,
   enrgy->disableRemove();
   enrgy->changed().connect( boost::bind( &IsotopeSearchByEnergy::startSearch, this, false ) );
 
+  // We could initialize filter types here, but instead we'll wait until first render, to slightly
+  //  help out initial app render
+  //initFilterTypes();
+    
   // Previous to 20230928 we called `minBrOrHlChanged()` here, but this had the side-effect of
   //  also clearing the ReferencePhotopeak nuclide, which if we are restoring a state, we
   //  dont want to do.  So instead we will pre-initialize the mapping from energy to
@@ -518,6 +523,8 @@ void IsotopeSearchByEnergy::render( Wt::WFlags<Wt::RenderFlag> flags )
   
   if( flags.testFlag(Wt::RenderFlag::RenderFull) )
   {
+    initFilterTypes();
+    
     // Initialize the mapping from energies to nuclides when we render this widget the first
     //  time, so this way it will be ever so slightly quicker when the user does the first search.
     const double minHl = m_minHl, minBr = m_minBr;
@@ -845,6 +852,82 @@ void IsotopeSearchByEnergy::setNarrowPhoneLayout( const bool narrow )
 }//void setNarrowPhoneLayout( const bool narrow )
 #endif //InterSpec_PHONE_ROTATE_FOR_TABS
 
+
+const vector<IsotopeSearchByEnergy::NucSearchCategory> &IsotopeSearchByEnergy::search_categories()
+{
+  if( m_search_categories.empty() )
+    initFilterTypes();
+  
+  return m_search_categories;
+}//const vector<NucSearchCategory> search_categories() const
+
+
+const IsotopeSearchByEnergy::NucSearchCategory &IsotopeSearchByEnergy::get_category_info( const string &cat_key, 
+                                                      const vector<NucSearchCategory> &categories )
+{
+  assert( !categories.empty() );
+  
+  if( categories.empty() )
+    throw runtime_error( "Categories not inited." );
+  
+  const NucSearchCategory *cat = nullptr;
+  for( const NucSearchCategory &nsc : categories )
+  {
+    string key = nsc.m_name.key();
+    if( key.empty() )
+      key = nsc.m_name.toUTF8();
+    
+    if( key == cat_key )
+    {
+      cat = &nsc;
+      break;
+    }
+  }//for( loop over categories )
+  
+  if( !cat )
+  {
+    vector<string> fields;
+    SpecUtils::split( fields, cat_key, "-" ); //cat_key is like "isbe-category-medical"
+    throw runtime_error( "Couldnt find " + (fields.size()>2 ? fields[2] : cat_key) + " category." );
+  }//if( !cat )
+  
+  return *cat;
+}//const NucSearchCategory &get_category_info( const string &cat_key )
+
+
+bool IsotopeSearchByEnergy::is_in_category( const SandiaDecay::Nuclide *nuc,
+                           const std::string &cat_name,
+                           const std::vector<NucSearchCategory> &category )
+{
+  const NucSearchCategory &cat = get_category_info( cat_name, category );
+  const auto pos = std::find( begin(cat.m_specific_nuclides), end(cat.m_specific_nuclides), nuc );
+  return ((cat.m_nuclides && cat.m_specific_nuclides.empty())
+          || (pos != end(cat.m_specific_nuclides)));
+}
+
+
+bool IsotopeSearchByEnergy::is_in_category( const SandiaDecay::Element *el,
+                           const std::string &cat_name,
+                           const std::vector<NucSearchCategory> &category )
+{
+  const NucSearchCategory &cat = get_category_info( cat_name, category );
+  const auto pos = std::find( begin(cat.m_specific_elements), end(cat.m_specific_elements), el );
+  return ((cat.m_fluorescence_xrays && cat.m_specific_elements.empty())
+          || (pos != end(cat.m_specific_elements)));
+}
+
+
+bool IsotopeSearchByEnergy::is_in_category( const ReactionGamma::Reaction *rctn,
+                           const std::string &cat_name,
+                           const std::vector<NucSearchCategory> &category )
+{
+  const NucSearchCategory &cat = get_category_info( cat_name, category );
+  const auto pos = std::find( begin(cat.m_specific_reactions), end(cat.m_specific_reactions), rctn );
+  return ((cat.m_reactions && cat.m_specific_reactions.empty())
+          || (pos != end(cat.m_specific_reactions)));
+}
+
+
 std::shared_ptr<void> IsotopeSearchByEnergy::getDisableUndoRedoSentry()
 {
   shared_ptr<void> answer = m_undo_redo_sentry.lock();
@@ -985,6 +1068,132 @@ void IsotopeSearchByEnergy::removeSearchEnergy( IsotopeSearchByEnergy::SearchEne
 }//void removeSearchEnergy( SearchEnergy *energy )
 
 
+void IsotopeSearchByEnergy::init_category_info( std::vector<NucSearchCategory> &results )
+{
+  if( !results.empty() )
+  {
+    cout << "IsotopeSearchByEnergy: filters already initiated." << endl;
+    return;
+  }
+  
+  auto append_categories = [&results]( const std::string &xml_file_name ) -> int {
+#ifdef _WIN32
+    const std::wstring wfilename = SpecUtils::convert_from_utf8_to_utf16(xml_file_name);
+    std::ifstream input( wfilename.c_str() );
+#else
+    std::ifstream input( xml_file_name.c_str() );
+#endif
+      
+    if( !input.is_open() )
+      return -1;
+    
+    int num_loaded = 0;
+    
+    try
+    {
+      rapidxml::file<char> input_file( input );
+      
+      rapidxml::xml_document<char> doc;
+      doc.parse<rapidxml::parse_trim_whitespace>( input_file.data() );
+      
+      const auto categories_node = doc.first_node( "NucSearchCategories" );
+      if( !categories_node )
+        throw runtime_error( "No NucSearchCategories found." );
+      
+      XML_FOREACH_CHILD( category_node, categories_node, "NucSearchCategory" )
+      {
+        try
+        {
+          NucSearchCategory cat;
+          cat.deSerialize( category_node );
+          results.push_back( std::move(cat) );
+          
+          num_loaded += 1;
+        }catch( std::exception &e )
+        {
+          cerr << "Failed to deserialize NucSearchCategory node: " << e.what() << endl;
+        }
+      }//for( loop over NucSearchCategory nodes )
+    }catch( rapidxml::parse_error &e )
+    {
+      string msg = "Failed parsing '" + xml_file_name + "': " + string(e.what());
+      const char * const position = e.where<char>();
+      if( position && *position )
+      {
+        const char *end_pos = position;
+        for( size_t i = 0; (*end_pos) && (i < 80); ++i )
+          end_pos += 1;
+        msg += "\n" + std::string(position, end_pos);
+      }//if( position )
+      
+      cerr << msg << endl;
+    }catch( std::exception &e )
+    {
+      cerr << "Failed parsing '" << xml_file_name << "': " << e.what() << endl;
+    }//try / catch to parse XML and load them
+    
+    return num_loaded;
+  };//append_categories(...)
+  
+  {// Begin add a default search category, so even if we dont find default XML, things wont be completely borked
+    NucSearchCategory def_category;
+    def_category.m_name = WString::tr("isbe-category-nuc-xray");
+    def_category.m_description = WString::tr("isbe-category-nuc-xray-desc");
+    def_category.m_minBr = 0.0;
+    def_category.m_minHl = 6000*PhysicalUnits::second;
+    def_category.m_nuclides = true;
+    def_category.m_fluorescence_xrays = true;
+    def_category.m_reactions = false;
+    def_category.m_alphas = false;
+    def_category.m_beta_endpoint = false;
+    def_category.m_no_progeny = false;
+    
+    results.push_back( std::move(def_category) );
+  }// End add a default search category
+  
+  
+  // Load the default category info
+  const string static_data_dir = InterSpec::staticDataDirectory();
+  const string def_xml = SpecUtils::append_path(static_data_dir, "NuclideSearchCatagories.xml");
+  
+  if( append_categories(def_xml) <= 0 )
+    throw runtime_error( "Failed to load default NuclideSearchCatagories.xml" );
+  
+  // Load user specific category info
+  const string user_data_dir = InterSpec::writableDataDirectory();
+  const std::string user_xml = SpecUtils::append_path(def_xml, "NuclideSearchCatagories.xml");
+  if( append_categories(user_xml) == 0 )
+  {
+    if( SpecUtils::is_file(user_xml) )
+      throw runtime_error( "Error loading user NuclideSearchCatagories.xml" );
+  }
+}//static void init_category_info( std::vector<NucSearchCategory> &results );
+
+
+void IsotopeSearchByEnergy::initFilterTypes()
+{
+  if( !m_search_categories.empty() )
+  {
+    cout << "IsotopeSearchByEnergy: filters already initiated." << endl;
+    return;
+  }
+  
+  try
+  {
+    init_category_info( m_search_categories );
+  }catch( std::exception &e )
+  {
+    cerr << "IsotopeSearchByEnergy::initFilterTypes(): " << e.what() << endl;
+  }
+  
+  for( const NucSearchCategory &cat : m_search_categories )
+    m_search_category_select->addItem( cat.m_name );
+    
+  m_search_category_select->setCurrentIndex( 0 );
+  
+  categoryChanged(false);
+}//void initFilterTypes()
+
 
 void IsotopeSearchByEnergy::minBrOrHlChanged()
 {
@@ -1004,6 +1213,56 @@ void IsotopeSearchByEnergy::minBrOrHlChanged()
 
   startSearch( true );
 }//void IsotopeSearchByEnergy::minBrOrHlChanged()
+
+
+void IsotopeSearchByEnergy::categoryChanged( const bool update_results )
+{
+  assert( !m_search_categories.empty() );
+  if( m_search_categories.empty() )
+    return;
+  
+  int current_index = m_search_category_select->currentIndex();
+  assert( (current_index >= 0) && (current_index < static_cast<int>(m_search_categories.size())) );
+  
+  if( (current_index < 0) || (current_index > static_cast<int>(m_search_categories.size())) )
+  {
+    current_index = 0;
+    m_search_category_select->setCurrentIndex( current_index );
+  }
+  
+  addUndoRedoPoint();
+  
+  const NucSearchCategory &cat = m_search_categories[current_index];
+  m_search_category_select->setToolTip( cat.m_description );
+  m_minHl = cat.m_minHl;
+  m_minHalfLife->setValueText( PhysicalUnitsLocalized::printToBestTimeUnits(m_minHl, 1) );
+  
+  const bool refreshBr = (m_minBr != cat.m_minBr);
+  m_minBr = cat.m_minBr;
+  m_minBranchRatio->setValue( m_minBr );
+  
+  m_minBranchRatioDiv->setHidden( !cat.m_nuclides );
+  m_minHalfLiveDiv->setHidden( !cat.m_nuclides );
+  
+  if( update_results )
+  {
+    // User changed things here, so if applicable, get rid of showing alpha/beta
+    //  ref. lines.  Its possible the user explicitly
+    ReferencePhotopeakDisplay *display = m_viewer->referenceLinesWidget();
+    if( display )
+    {
+      UndoRedoManager::BlockUndoRedoInserts undo_blocker;
+      if( !display->showingGammaLines() )
+        display->setShowGammaLines( cat.m_nuclides || cat.m_reactions );
+      if( !display->showingXrayLines() )
+        display->setShowXrayLines( cat.m_nuclides || cat.m_fluorescence_xrays );
+      display->setShowAlphaLines( cat.m_alphas );
+      display->setShowBetaLines( cat.m_beta_endpoint );
+    }//if( display )
+    
+    startSearch( refreshBr );
+  }
+}//void categoryChanged()
 
 
 void IsotopeSearchByEnergy::resultSelectionChanged()
@@ -1028,6 +1287,25 @@ void IsotopeSearchByEnergy::resultSelectionChanged()
   string orig_state_xml;
   if( display )
     display->serialize( orig_state_xml );
+  
+  if( display )
+  {
+    int current_index = m_search_category_select->currentIndex();
+    assert( (current_index >= 0) && (current_index < static_cast<int>(m_search_categories.size())) );
+    
+    if( (current_index < 0) || (current_index > static_cast<int>(m_search_categories.size())) )
+      current_index = 0;
+    assert( current_index < static_cast<int>(m_search_categories.size()) );
+    const NucSearchCategory &cat = m_search_categories[current_index];
+    
+    UndoRedoManager::BlockUndoRedoInserts undo_blocker;
+    if( !display->showingGammaLines() )
+      display->setShowGammaLines( cat.m_nuclides || cat.m_reactions );
+    if( !display->showingXrayLines() )
+      display->setShowXrayLines( cat.m_nuclides || cat.m_fluorescence_xrays );
+    display->setShowAlphaLines( cat.m_alphas );
+    display->setShowBetaLines( cat.m_beta_endpoint );
+  }//if( display )
   
   const int orig_selected_row = m_selected_row;
   
@@ -1530,10 +1808,8 @@ IsotopeSearchByEnergy::WidgetState IsotopeSearchByEnergy::guiState() const
   state.MinBranchRatio = m_minBranchRatio->valueText();
   state.MinHalfLife = m_minHalfLife->valueText();
   state.NextSearchEnergy = m_nextSearchEnergy;
-  
-  state.IncludeGammas = m_gammas->isChecked();
-  state.IncludeXRays = m_xrays->isChecked();
-  state.IncludeReactions = m_reactions->isChecked();
+  const int cat_index = m_search_category_select->currentIndex();
+  state.CategoryIndex = static_cast<int>( std::max( 0, cat_index ) );
   
   const vector<WWidget *> children = m_searchEnergies->children();
   
@@ -1564,9 +1840,14 @@ void IsotopeSearchByEnergy::setGuiState( const WidgetState &state, const bool re
   m_minBranchRatio->setValueText( state.MinBranchRatio );
   m_minHalfLife->setValueText( state.MinHalfLife );
   m_nextSearchEnergy = state.NextSearchEnergy;
-  m_gammas->setChecked( state.IncludeGammas );
-  m_xrays->setChecked( state.IncludeXRays );
-  m_reactions->setChecked( state.IncludeReactions );
+  
+  size_t cat_index = state.CategoryIndex;
+  const size_t num_cats = m_search_categories.size();
+  if( cat_index >= num_cats )
+    cat_index = 0;
+  m_search_category_select->setCurrentIndex( static_cast<int>(cat_index) );
+  if( cat_index < num_cats )
+    m_search_category_select->setToolTip( m_search_categories[cat_index].m_description );
   
   int nnode = 0;
   for( const pair<double,double> &ene : state.SearchEnergies )
@@ -1641,18 +1922,8 @@ void IsotopeSearchByEnergy::WidgetState::serialize( std::string &xml_data ) cons
   node = doc.allocate_node( rapidxml::node_element, name, value );
   base_node->append_node( node );
 
-  name = "IncludeGammas";
-  value = (IncludeGammas ? "1": "0");
-  node = doc.allocate_node( rapidxml::node_element, name, value );
-  base_node->append_node( node );
-
-  name = "IncludeXRays";
-  value = (IncludeXRays ? "1": "0");
-  node = doc.allocate_node( rapidxml::node_element, name, value );
-  base_node->append_node( node );
-
-  name = "IncludeReactions";
-  value = (IncludeReactions ? "1": "0");
+  name = "CategoryIndex";
+  value = doc.allocate_string( std::to_string(CategoryIndex).c_str() );
   node = doc.allocate_node( rapidxml::node_element, name, value );
   base_node->append_node( node );
 
@@ -1686,7 +1957,8 @@ void IsotopeSearchByEnergy::WidgetState::serialize( std::string &xml_data ) cons
 }//void IsotopeSearchByEnergy::WidgetState::serialize( std::string &xml_data ) const
 
 
-void IsotopeSearchByEnergy::WidgetState::deSerialize( std::string &xml_data )
+void IsotopeSearchByEnergy::WidgetState::deSerialize( std::string &xml_data,
+                                                  const std::vector<NucSearchCategory> &categories )
 {
   rapidxml::xml_document<char> doc;
   const int flags = rapidxml::parse_normalize_whitespace | rapidxml::parse_trim_whitespace;
@@ -1722,23 +1994,58 @@ void IsotopeSearchByEnergy::WidgetState::deSerialize( std::string &xml_data )
       || !(stringstream(node->value()) >> NextSearchEnergy) )
     throw runtime_error( "Missing/invalid NextSearchEnergy node" );
 
-  node = base_node->first_node( "IncludeGammas", 13 );
-  if( node && node->value() && strlen(node->value()))
-    IncludeGammas = (node->value()[0] != '0');
-  else
-    throw runtime_error( "Missing/invalid IncludeGammas node" );
-
-  node = base_node->first_node( "IncludeXRays", 12 );
-  if( node && node->value() && strlen(node->value()))
-    IncludeXRays = (node->value()[0] != '0');
-  else
-    throw runtime_error( "Missing/invalid IncludeXRays node" );
+  node = base_node->first_node( "CategoryIndex", 13 );
+  if( node )
+  {
+    CategoryIndex = 0;
+    int cat_index =  0;
+    const bool success = SpecUtils::parse_int(node->value(), node->value_size(), cat_index);
+    assert( success );
+    if( !success || (cat_index < 0) || (cat_index >= categories.size()) )
+      cat_index = 0;
+    CategoryIndex = static_cast<size_t>( cat_index );
+  }else
+  {
+    // 20241114 (but not merged into main until after v1.0.13), we changed from some checkboxes
+    //  for gamma/xray/reaction options, to a selection option to select things.
+    //  For could just default to use the zeroth category.
+    // However, we can basically remain backward compatible, if we do whats commented out here,
+    //  and basically find the option in the drop-down that matches the options selected.
     
-  node = base_node->first_node( "IncludeReactions", 16 );
-  if( node && node->value() && strlen(node->value()))
-    IncludeReactions = (node->value()[0] != '0');
-  else
-    throw runtime_error( "Missing/invalid IncludeXRays node" );
+    CategoryIndex = 0;
+    
+     
+    bool IncludeGammas = true, IncludeXRays = true, IncludeReactions = false;
+    node = base_node->first_node( "IncludeGammas", 13 );
+    if( node && node->value() && strlen(node->value()))
+      IncludeGammas = (node->value()[0] != '0');
+
+    node = base_node->first_node( "IncludeXRays", 12 );
+    if( node && node->value() && strlen(node->value()))
+      IncludeXRays = (node->value()[0] != '0');
+      
+    node = base_node->first_node( "IncludeReactions", 16 );
+    if( node && node->value() && strlen(node->value()))
+      IncludeReactions = (node->value()[0] != '0');
+    
+    for( size_t i = 0; i < categories.size(); ++i )
+    {
+      const NucSearchCategory &cat = categories[i];
+      if( (cat.m_nuclides == IncludeGammas)
+         && (cat.m_fluorescence_xrays == IncludeXRays)
+         && (cat.m_reactions == IncludeReactions)
+         && !cat.m_alphas
+         && !cat.m_beta_endpoint
+         && cat.m_specific_elements.empty()
+         && cat.m_specific_nuclides.empty()
+         && cat.m_specific_reactions.empty() )
+      {
+        CategoryIndex = i;
+        break;
+      }
+    }//for( loop over m_search_categories )
+  }//if( CategoryIndex node ) / else
+  
     
   search_nodes = base_node->first_node( "SearchEnergies", 14 );
   if( !search_nodes )
@@ -1770,12 +2077,162 @@ bool IsotopeSearchByEnergy::WidgetState::operator==(const WidgetState &rhs) cons
   return ((MinBranchRatio == rhs.MinBranchRatio)
           && (MinHalfLife == rhs.MinHalfLife)
           && (NextSearchEnergy == rhs.NextSearchEnergy)
-          && (IncludeGammas == rhs.IncludeGammas)
-          && (IncludeXRays == rhs.IncludeXRays)
-          && (IncludeReactions == rhs.IncludeReactions)
+          && (CategoryIndex == rhs.CategoryIndex)
           && (SearchEnergies == rhs.SearchEnergies)
   );
 }//bool WidgetState::operator==(const WidgetState &rhs) const;
+
+
+void IsotopeSearchByEnergy::NucSearchCategory::deSerialize( const rapidxml::xml_node<char> * const xml_data )
+{
+  if( !xml_data || !xml_data->name_size() )
+    throw runtime_error( "IsotopeSearchByEnergy::NucSearchCategory::deSerialize: invalid input." );
+    
+  if( !XML_NAME_ICOMPARE(xml_data, "NucSearchCategory") )
+    throw runtime_error( "IsotopeSearchByEnergy::NucSearchCategory:"
+                        " input must be a NucSearchCategory elelement." );
+  
+  auto get_bool_val = [xml_data]( const rapidxml::xml_base<char> *el ) -> bool {
+    return (el && el->value_size() && (el->value()[0] == '1'));
+  };
+  
+  const rapidxml::xml_node<char> *name_el = XML_FIRST_NODE(xml_data, "Name");
+  const string name = SpecUtils::xml_value_str( name_el );
+  if( name.empty() )
+    throw runtime_error( "IsotopeSearchByEnergy::NucSearchCategory: No valid name category." );
+  
+  const rapidxml::xml_attribute<char> *trans_ettrib = XML_FIRST_ATTRIB(name_el, "internationalize");
+  bool translate = get_bool_val( trans_ettrib );
+  
+  m_name = translate ? Wt::WString::tr(name) : Wt::WString::fromUTF8(name);
+  
+  const rapidxml::xml_node<char> *desc_el = XML_FIRST_NODE(xml_data, "Description");
+  const string desc = SpecUtils::xml_value_str( desc_el );
+  const rapidxml::xml_node<char> *trans_el = XML_FIRST_NODE(desc_el, "internationalize");
+  translate = get_bool_val( trans_el );
+  m_description = translate ? Wt::WString::tr(desc) : Wt::WString::fromUTF8(desc);
+  
+  m_minBr = 0.0;
+  const rapidxml::xml_node<char> *min_br_el = XML_FIRST_NODE(xml_data, "MinBr");
+  if( min_br_el )
+  {
+    if( !SpecUtils::parse_double(min_br_el->value(), min_br_el->value_size(), m_minBr) )
+      throw runtime_error( "IsotopeSearchByEnergy::NucSearchCategory: min BR invalid" );
+    if( (m_minBr < 0.0) || (m_minBr > 1.0) )
+      throw runtime_error( "IsotopeSearchByEnergy::NucSearchCategory: min BR must be between 0 and 1" );
+  }//if( min_br_el )
+  
+  m_minHl = 0.0;
+  const rapidxml::xml_node<char> *min_hl_el = XML_FIRST_NODE(xml_data, "MinHl");
+  if( min_hl_el )
+  {
+    const string val = SpecUtils::xml_value_str(min_hl_el);
+    m_minHl = PhysicalUnits::stringToTimeDuration(val);
+    if( m_minHl < 0.0 )
+      m_minHl = 0.0;
+  }//if( min_hl_el )
+  
+  m_nuclides = get_bool_val( XML_FIRST_NODE(xml_data, "AllowNucGammas") );
+  m_fluorescence_xrays = get_bool_val( XML_FIRST_NODE(xml_data, "AllowFluorXrays") );
+  m_reactions = get_bool_val( XML_FIRST_NODE(xml_data, "AllowReactions") );
+  m_alphas = get_bool_val( XML_FIRST_NODE(xml_data, "AllowAlphas") );
+  m_beta_endpoint = get_bool_val( XML_FIRST_NODE(xml_data, "AllowBetas") );
+  m_no_progeny = get_bool_val( XML_FIRST_NODE(xml_data, "NoProgeny") );
+  
+  if( (m_alphas || m_beta_endpoint)
+      && ((m_alphas == m_beta_endpoint) || m_reactions || m_fluorescence_xrays || m_nuclides) )
+  {
+    throw runtime_error( "IsotopeSearchByEnergy::NucSearchCategory: If alpha or betas are"
+                        " specified, then no other source may be specified." );
+  }
+  
+  const SandiaDecay::SandiaDecayDataBase * const db = DecayDataBaseServer::database();
+  if( !db )
+    throw runtime_error( "Couldnt get DecayDataBaseServer." );
+  
+  m_specific_elements.clear();
+  m_specific_nuclides.clear();
+  m_specific_reactions.clear();
+  const rapidxml::xml_node<char> *elements_el = XML_FIRST_NODE(xml_data, "Elements");
+  const rapidxml::xml_node<char> *nuclides_el = XML_FIRST_NODE(xml_data, "Nuclides");
+  const rapidxml::xml_node<char> *reactions_el = XML_FIRST_NODE(xml_data, "Reactions");
+  if( elements_el )
+  {
+    XML_FOREACH_CHILD( element, elements_el, "Element" )
+    {
+      const string el_str = SpecUtils::xml_value_str(element);
+      const SandiaDecay::Element * const el = db->element(el_str);
+      if( el )
+        m_specific_elements.push_back( el );
+      else
+        cerr << "Couldnt find element '" << el_str << "'." << endl;
+    }//for( loop over <Elements> )
+  }//if( elements_el )
+  
+  if( nuclides_el )
+  {
+    XML_FOREACH_CHILD( nuclide, nuclides_el, "Nuclide" )
+    {
+      const string nuc_str = SpecUtils::xml_value_str(nuclide);
+      const SandiaDecay::Nuclide * const nuc = db->nuclide(nuc_str);
+      if( nuc )
+        m_specific_nuclides.push_back( nuc );
+      else
+        cerr << "Couldnt find nuclide '" << nuc_str << "'." << endl;
+    }//for( loop over <Nuclide> )
+  }//if( nuclides_el )
+  
+  if( reactions_el )
+  {
+    const ReactionGamma *reactionDb = nullptr;
+    try
+    {
+      reactionDb = ReactionGammaServer::database();
+    }catch(...)
+    {
+      cerr << "NucSearchCategory::deSerialize(): Failed to open gamma reactions XML file" << endl;
+    }
+    
+    if( reactionDb )
+    {
+      set<const ReactionGamma::Reaction *> reactions_seen;
+      
+      XML_FOREACH_CHILD( reaction, reactions_el, "Reaction" )
+      {
+        const string rectn_str = SpecUtils::xml_value_str(reaction);
+        
+        try
+        {
+          vector<ReactionGamma::ReactionPhotopeak> photopeaks;
+          reactionDb->gammas( rectn_str, photopeaks);
+          
+          for( const ReactionGamma::ReactionPhotopeak &gamma : photopeaks )
+          {
+            if( gamma.reaction && !reactions_seen.count(gamma.reaction) )
+            {
+              reactions_seen.insert( gamma.reaction );
+              m_specific_reactions.push_back( gamma.reaction );
+              // We're not exiting the loop here, because some of the element reactions
+              // may be composed of specific nuclide reactions
+            }//if( gamma.reaction && !reactions_seen.count(gamma.reaction) )
+          }//for( const ReactionGamma::ReactionPhotopeak &gamma : photopeaks )
+        }catch( std::exception &e )
+        {
+          cerr << "NucSearchCategory::deSerialize(): Failed to get reaction '" << rectn_str << "'" << endl;
+        }
+      }//for( loop over <Reactions> )
+    }//if( reactionDb )
+  }//if( reactions_el )
+  
+  if( !m_specific_nuclides.empty() && !m_nuclides && !m_alphas && !m_beta_endpoint )
+    throw runtime_error( "Specific nuclides specified, but AllowNucGammas, AllowAlphas, and AllowBetas is false" );
+  
+  if( !m_specific_elements.empty() && !m_fluorescence_xrays )
+    throw runtime_error( "Specific elements specified, but AllowFluorXrays is false" );
+  
+  if( !m_specific_reactions.empty() && !m_reactions )
+    throw runtime_error( "Specific reactions specified, but AllowReactions is false" );
+}//void IsotopeSearchByEnergy::NucSearchCategory::deSerialize(...)
 
 
 void IsotopeSearchByEnergy::serialize( std::string &xml_data ) const
@@ -1793,7 +2250,7 @@ void IsotopeSearchByEnergy::deSerialize( std::string &xml_data,
   try
   {
     WidgetState state;
-    state.deSerialize( xml_data );
+    state.deSerialize( xml_data, m_search_categories );
     setGuiState( state, renderOnChart );
   }catch( std::exception &e )
   {
@@ -1890,13 +2347,32 @@ void IsotopeSearchByEnergy::startSearch( const bool refreshBr )
   
   WFlags<IsotopeSearchByEnergyModel::RadSource> srcs;
   
-  if( m_gammas->isChecked() )
-    srcs |= IsotopeSearchByEnergyModel::kGamma;
-  if( m_xrays->isChecked() )
-    srcs |= IsotopeSearchByEnergyModel::kXRay;
-  if( m_reactions->isChecked() )
-    srcs |= IsotopeSearchByEnergyModel::kReaction;
+  std::vector<const SandiaDecay::Element *> elements;
+  std::vector<const SandiaDecay::Nuclide *> nuclides;
+  std::vector<const ReactionGamma::Reaction *> reactions;
   
+  const int cat_index = std::max(0, m_search_category_select->currentIndex() );
+  if( cat_index <= static_cast<int>(m_search_categories.size()) )
+  {
+    const NucSearchCategory &cat = m_search_categories[cat_index];
+    
+    if( cat.m_nuclides )
+      srcs |= IsotopeSearchByEnergyModel::RadSource::NuclideGammaOrXray;
+    if( cat.m_fluorescence_xrays )
+      srcs |= IsotopeSearchByEnergyModel::RadSource::kFluorescenceXRay;
+    if( cat.m_reactions )
+      srcs |= IsotopeSearchByEnergyModel::RadSource::kReaction;
+    if( cat.m_alphas )
+      srcs |= IsotopeSearchByEnergyModel::RadSource::kAlpha;
+    if( cat.m_beta_endpoint )
+      srcs |= IsotopeSearchByEnergyModel::RadSource::kBetaEndpoint;
+    if( cat.m_no_progeny )
+      srcs |= IsotopeSearchByEnergyModel::RadSource::kNoNuclideProgeny;
+    
+    elements = cat.m_specific_elements;
+    nuclides = cat.m_specific_nuclides;
+    reactions = cat.m_specific_reactions;
+  }//if( cat_index <= static_cast<int>(m_search_categories.size()) )
   
   WApplication *app = wApp;
   auto workingspace = make_shared<IsotopeSearchByEnergyModel::SearchWorkingSpace>();
@@ -1941,6 +2417,7 @@ void IsotopeSearchByEnergy::startSearch( const bool refreshBr )
   boost::function< void(void) > worker = boost::bind(
                                 &IsotopeSearchByEnergyModel::setSearchEnergies,
                                 workingspace, m_minBr, m_minHl, srcs,
+                                std::move(elements), std::move(nuclides), std::move(reactions),
                                 app->sessionId(), updatefcnt );
   WServer::instance()->ioService().boost::asio::io_service::post( worker );
   

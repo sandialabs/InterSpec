@@ -1,18 +1,17 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <messages>
-  <!-- smmd- is short for ShowMultiMediaDisplay -->
   <message id="smmd-prev-btn">Préc</message>
   <message id="smmd-next-btn">Suiv</message>
   <message id="smmd-auto-show-images-cb">Afficher automatiquement les images</message>
   <message id="smmd-tt-auto-show-images">Afficher automatiquement les images lorsque des fichiers de spectre qui en contiennent sont chargés.</message>
   <message id="smmd-tt-export-image-file">Exporter l'image actuellement affichée vers un fichier.</message>
   <message id="smmd-err-no-content">Aucun contenu multimédia à afficher</message>
-  <message id="smmd-err-file-is-uri">Données encodées comme un fichier à l'URI='{1}'</message>
+  <message id="smmd-err-file-is-uri">Données encodées en tant que fichier à l'URI='{1}'</message>
   <message id="smmd-err-no-multimedia-src">La source multimédia ne contenait aucune donnée.</message>
   <message id="smmd-err-encoding-not-supported">L'encodage du contenu multimédia des données n'est pas pris en charge.</message>
-  <message id="smmd-err-not-image">Le type de contenu multimédia n'était pas de type image, ou n'a pas pu être déterminé.</message>
-  <message id="smmd-image-index">Image {1} sur {2}</message>
-  <message id="smmd-Time">Heure</message>
-  <message id="smmd-window-title-single">Image dans le Fichier de Spectre</message>
-  <message id="smmd-window-title-multiple">Images dans le Fichier de Spectre</message>
+  <message id="smmd-err-not-image">Le type de contenu multimédia n'était pas un type d'image ou n'a pas pu être déterminé.</message>
+  <message id="smmd-image-index">Image {1} de {2}</message>
+  <message id="smmd-Time">Temps</message>
+  <message id="smmd-window-title-single">Image dans le fichier de spectre</message>
+  <message id="smmd-window-title-multiple">Images dans le fichier de spectre</message>
 </messages>

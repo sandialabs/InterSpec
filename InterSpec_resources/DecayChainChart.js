@@ -591,6 +591,21 @@ DecayChainChart.prototype.redraw = function() {
         return 0;
       return (d.parent===self.selectedNuclide ? 1.35 : 1)*strokew;
     } )
+    .attr("opacity", function(d){
+      //If less than `start_opacity_br`, reduce opacity to kinda indicate its a weak B.R.
+      const start_opacity_br = 1.0E-3, end_opacity_br = 1.0E-13;
+      if( (d.parent !== self.selectedNuclide) && (d.br <= start_opacity_br) )
+      {
+        const min_opacity = 0.2, max_opacity = 0.9; //limits of opacity; anything less than `end_opacity_br`, we'll use min opacity
+        const log_start_opacity_br = -Math.log10(start_opacity_br), log_end_opacity_br = -Math.log10(end_opacity_br); // We'll scale opacity on log scale
+        const magnitude = -Math.log10(d.br);
+        const frac = (magnitude - log_start_opacity_br) / (log_end_opacity_br - log_start_opacity_br);
+        const opacity = max_opacity - frac*(max_opacity - min_opacity);
+
+        return Math.max( min_opacity, opacity );
+      }
+      return 1;
+    })
     ;
   
   decaylines.exit().remove();

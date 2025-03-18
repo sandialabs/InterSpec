@@ -2131,8 +2131,8 @@ bool SourceFitModel::setData( const Wt::WModelIndex &index, const boost::any &va
 
 
 bool SourceFitModel::compare( const ShieldingSourceFitCalc::IsoFitStruct &lhs_input,
-                                const ShieldingSourceFitCalc::IsoFitStruct &rhs_input,
-                                Columns sortColumn, Wt::SortOrder order )
+                             const ShieldingSourceFitCalc::IsoFitStruct &rhs_input,
+                             Columns sortColumn, Wt::SortOrder order )
 {
 #if( INCLUDE_ANALYSIS_TEST_SUITE )
   auto optionalLess = []( const boost::optional<double> &olhs, const boost::optional<double> &orhs) -> bool{
@@ -2141,7 +2141,7 @@ bool SourceFitModel::compare( const ShieldingSourceFitCalc::IsoFitStruct &lhs_in
     
     if( !olhs )
       return false;
-      
+    
     return ((*olhs) < (*orhs));
   };
 #endif
@@ -2158,7 +2158,7 @@ bool SourceFitModel::compare( const ShieldingSourceFitCalc::IsoFitStruct &lhs_in
     case kAge:         return (lhs.age < rhs.age);
     case kFitAge:      return (lhs.fitAge < rhs.fitAge);
     case kIsotopeMass: return ((lhs.activity/lhs.nuclide->activityPerGram())
-                                  < (rhs.activity/rhs.nuclide->activityPerGram()) );
+                               < (rhs.activity/rhs.nuclide->activityPerGram()) );
     case kActivityUncertainty: return (lhs.activityUncertainty < rhs.activityUncertainty);
     case kAgeUncertainty:      return (lhs.ageUncertainty < rhs.ageUncertainty);
       
@@ -2171,7 +2171,6 @@ bool SourceFitModel::compare( const ShieldingSourceFitCalc::IsoFitStruct &lhs_in
       
     case kNumColumns:  return false;
   }//switch( sortColumn )
-
   assert( 0 );
   return false;
 }//bool compare(...);
@@ -3201,6 +3200,7 @@ ShieldingSourceDisplay::ShieldingSourceDisplay( PeakModel *peakModel,
   WContainerWidget *lineDiv = new WContainerWidget();
   optionsLayout->addWidget( lineDiv, optionsLayout->rowCount(), 0 );
   m_multiIsoPerPeak = new WCheckBox( WString::tr("ssd-multi-iso-per-peak"), lineDiv );
+  m_multiIsoPerPeak->addStyleClass( "CbNoLineBreak" );
   //lineDiv->setToolTip( WString::tr("ssd-tt-multi-iso-per-peak") );
   HelpSystem::attachToolTipOn( lineDiv, WString::tr("ssd-tt-multi-iso-per-peak"),
                                       showToolTips, HelpSystem::ToolTipPosition::Right );
@@ -3211,6 +3211,7 @@ ShieldingSourceDisplay::ShieldingSourceDisplay( PeakModel *peakModel,
   lineDiv = new WContainerWidget();
   optionsLayout->addWidget( lineDiv, optionsLayout->rowCount(), 0 );
   m_attenForAir = new WCheckBox( WString::tr("ssd-cb-atten-for-air"), lineDiv );
+  m_attenForAir->addStyleClass( "CbNoLineBreak" );
   //lineDiv->setToolTip( WString::tr("ssd-tt-atten-for-air") );
   HelpSystem::attachToolTipOn( lineDiv, WString::tr("ssd-tt-atten-for-air"),
                               showToolTips, HelpSystem::ToolTipPosition::Right );
@@ -3222,6 +3223,7 @@ ShieldingSourceDisplay::ShieldingSourceDisplay( PeakModel *peakModel,
   lineDiv = new WContainerWidget();
   optionsLayout->addWidget( lineDiv, optionsLayout->rowCount(), 0 );
   m_backgroundPeakSub = new WCheckBox( WString::tr("ssd-cb-sub-back-peaks"), lineDiv );
+  m_backgroundPeakSub->addStyleClass( "CbNoLineBreak" );
   lineDiv->setToolTip( WString::tr("ssd-tt-sub-back-peaks") );
   HelpSystem::attachToolTipOn( lineDiv, WString::tr("ssd-tt-sub-back-peaks"),
                                   showToolTips, HelpSystem::ToolTipPosition::Right );
@@ -3232,6 +3234,7 @@ ShieldingSourceDisplay::ShieldingSourceDisplay( PeakModel *peakModel,
   lineDiv = new WContainerWidget();
   optionsLayout->addWidget( lineDiv, optionsLayout->rowCount(), 0 );
   m_sameIsotopesAge = new WCheckBox( WString::tr("ssd-cb-same-el-same-age"), lineDiv );
+  m_sameIsotopesAge->addStyleClass( "CbNoLineBreak" );
   //lineDiv->setToolTip( WString::tr("ssd-tt-same-el-same-age") );
   HelpSystem::attachToolTipOn( lineDiv, WString::tr("ssd-tt-same-el-same-age"),
                                 showToolTips, HelpSystem::ToolTipPosition::Right );
@@ -3244,6 +3247,7 @@ ShieldingSourceDisplay::ShieldingSourceDisplay( PeakModel *peakModel,
   lineDiv = new WContainerWidget();
   optionsLayout->addWidget( lineDiv, optionsLayout->rowCount(), 0 );
   m_decayCorrect = new WCheckBox( WString::tr("ssd-cb-corr-for-decay"), lineDiv );
+  m_decayCorrect->addStyleClass( "CbNoLineBreak" );
   //lineDiv->setToolTip( WString::tr("ssd-tt-corr-for-decay") );
   HelpSystem::attachToolTipOn( lineDiv, WString::tr("ssd-tt-corr-for-decay"),
                                 showToolTips, HelpSystem::ToolTipPosition::Right );
@@ -4214,76 +4218,99 @@ void ShieldingSourceDisplay::showInputTruthValuesWindow()
         }//switch( geometry() )
         
         
-        if( select->fitForMassFractions() )
+        if( select->fitForAnyMassFractions() )
         {
-          const vector<pair<const SandiaDecay::Nuclide *,double>> currentMassFractions
+          const map<const SandiaDecay::Element *,vector<ShieldingSelect::NucMasFrac>> el_currentMassFractions
                                                         = select->sourceNuclideMassFractions();
           
           // Get rid of any truth mass-fractions, that are no longer self-attenuating sources
           set<const SandiaDecay::Nuclide *> nonexistent_nucs;
-          for( const auto &prev_nuc_frac : select->truthFitMassFractions )
+          for( const auto &el_nucfracs : el_currentMassFractions )
           {
-            bool is_current = false;
-            for( size_t i = 0; !is_current && (i < currentMassFractions.size()); ++i )
-              is_current = (currentMassFractions[i].first == prev_nuc_frac.first);
-            if( !is_current
-               || !prev_nuc_frac.first
-               || (prev_nuc_frac.second.first < 0.0)
-               || (prev_nuc_frac.second.first > 1.0)
-               || (prev_nuc_frac.second.second < 0.0)
-               || (prev_nuc_frac.second.second > 1.0) )
+            const vector<ShieldingSelect::NucMasFrac> &currentMassFractions = el_nucfracs.second;
+            
+            for( const auto &prev_el_to_nuc_fracs : select->truthFitMassFractions )
             {
-              nonexistent_nucs.insert( prev_nuc_frac.first );
-            }
-          }//for( const auto &prev_nuc_frac : select->truthFitMassFractions )
+              const map<const SandiaDecay::Nuclide *,std::pair<double,double>> &prevTruthMassFrac 
+                                                                  = prev_el_to_nuc_fracs.second;
+              
+              for( const auto &prev_nuc_frac : prevTruthMassFrac )
+              {
+                bool is_current = false;
+                for( size_t i = 0; !is_current && (i < currentMassFractions.size()); ++i )
+                  is_current = (get<0>(currentMassFractions[i]) == prev_nuc_frac.first);
+                if( !is_current
+                   || !prev_nuc_frac.first
+                   || (prev_nuc_frac.second.first < 0.0)
+                   || (prev_nuc_frac.second.first > 1.0)
+                   || (prev_nuc_frac.second.second < 0.0)
+                   || (prev_nuc_frac.second.second > 1.0) )
+                {
+                  nonexistent_nucs.insert( prev_nuc_frac.first );
+                }
+              }//for( const auto &prev_nuc_frac : select->truthFitMassFractions )
+            }//for( const auto &prev_el_to_nuc_fracs : select->truthFitMassFractions )
+          }//for( const auto &el_nucfracs : el_currentMassFractions )
           
           for( const auto nuc : nonexistent_nucs )
-            select->truthFitMassFractions.erase( nuc );
-          
-          for( const pair<const SandiaDecay::Nuclide *,double> &mass_frac : currentMassFractions )
           {
-            const SandiaDecay::Nuclide * const nuclide = mass_frac.first;
-            assert( nuclide );
-            
-            const int row = table->rowCount();
-            WLabel *label = new WLabel( nuclide->symbol + " mass frac.", table->elementAt(row, 0) );
-            
-            NativeFloatSpinBox *value = new NativeFloatSpinBox( table->elementAt(row, 1) );
-            value->setSpinnerHidden( true );
-            value->setRange( 0.0, 1.0 );
-            value->setText( "" );
-            label->setBuddy( value );
-            
-            NativeFloatSpinBox *tolerance = new NativeFloatSpinBox( table->elementAt(row, 2) );
-            tolerance->setSpinnerHidden( true );
-            tolerance->setRange( 0.0, 1.0 );
-            tolerance->setText( "" );
-            
-            const auto pos = select->truthFitMassFractions.find(nuclide);
-            if( pos != end(select->truthFitMassFractions) )
+            for( auto &el_vals : select->truthFitMassFractions )
             {
-              const double truthval = pos->second.first;
-              const double truthtol = pos->second.second;
-              value->setValue( truthval );
-              tolerance->setValue( truthtol );
+              el_vals.second.erase( nuc ); //a little wasteful to cal for every element, but whatever
             }
+          }
+          
+          for( const auto &el_nucfracs : el_currentMassFractions )
+          {
+            const SandiaDecay::Element *el = el_nucfracs.first;
+            const vector<ShieldingSelect::NucMasFrac> &currentMassFractions = el_nucfracs.second;
             
-            auto updateValAndTol = [select,value,tolerance,nuclide](){
-              if( value->text().empty() || tolerance->text().empty() )
+            for( const tuple<const SandiaDecay::Nuclide *,double,bool> &mass_frac : currentMassFractions )
+            {
+              const SandiaDecay::Nuclide * const nuclide = get<0>(mass_frac);
+              
+              const int row = table->rowCount();
+              WLabel *label = new WLabel( (nuclide ? nuclide->symbol : "Other") + " mass frac.", table->elementAt(row, 0) );
+              
+              NativeFloatSpinBox *value = new NativeFloatSpinBox( table->elementAt(row, 1) );
+              value->setSpinnerHidden( true );
+              value->setRange( 0.0, 1.0 );
+              value->setText( "" );
+              label->setBuddy( value );
+              
+              NativeFloatSpinBox *tolerance = new NativeFloatSpinBox( table->elementAt(row, 2) );
+              tolerance->setSpinnerHidden( true );
+              tolerance->setRange( 0.0, 1.0 );
+              tolerance->setText( "" );
+              
+              map<const SandiaDecay::Nuclide *,pair<double,double>> &truthNucs = select->truthFitMassFractions[el];
+              
+              const auto pos = truthNucs.find(nuclide);
+              if( pos != end(truthNucs) )
               {
-                select->truthFitMassFractions.erase(nuclide);
-                return;
+                const double truthval = pos->second.first;
+                const double truthtol = pos->second.second;
+                value->setValue( truthval );
+                tolerance->setValue( truthtol );
               }
               
-              const double truthval = value->value();
-              const double truthtol = tolerance->value();
-              select->truthFitMassFractions[nuclide] = make_pair(truthval, truthtol);
-            };//updateValAndTol(...)
-            
-            value->valueChanged().connect( std::bind(updateValAndTol) );
-            tolerance->valueChanged().connect( std::bind(updateValAndTol) );
-          }//
-        }//if( select->fitForMassFractions() )
+              auto updateValAndTol = [select,value,tolerance,nuclide,&truthNucs](){
+                if( value->text().empty() || tolerance->text().empty() )
+                {
+                  truthNucs.erase(nuclide);
+                  return;
+                }
+                
+                const double truthval = value->value();
+                const double truthtol = tolerance->value();
+                truthNucs[nuclide] = make_pair(truthval, truthtol);
+              };//updateValAndTol(...)
+              
+              value->valueChanged().connect( std::bind(updateValAndTol) );
+              tolerance->valueChanged().connect( std::bind(updateValAndTol) );
+            }//for( const pair<const SandiaDecay::Nuclide *,double> &mass_frac : currentMassFractions )
+          }//for( const auto &el_nucfracs : el_currentMassFractions )
+        }//if( select->fitForAnyMassFractions() )
       }//if( generic material ) / else
     }//for( WWidget *widget : m_shieldingSelects->children() )
   }catch( std::exception &e )
@@ -4358,7 +4385,7 @@ void ShieldingSourceDisplay::setFitQuantitiesToDefaultValues()
     }else
     {
       shared_ptr<const Material> mat = select->material();
-      if( !mat || select->fitForMassFractions() )
+      if( !mat || select->fitForAnyMassFractions() )
         continue;
       
       switch( geometry() )
@@ -4531,21 +4558,28 @@ std::tuple<int,int,bool> ShieldingSourceDisplay::numTruthValuesForFitValues()
           break;
       }//switch( geometry() )
       
-      if( select->fitForMassFractions() )
-      {
-        const vector<pair<const SandiaDecay::Nuclide *,double>> currentMassFractions
+      
+      map<const SandiaDecay::Element *,vector<ShieldingSelect::NucMasFrac>> currentElAndMassFractions
                                                             = select->sourceNuclideMassFractions();
         
+      for( const auto &el_nucs : currentElAndMassFractions )
+      {
+        const SandiaDecay::Element * const el = el_nucs.first;
+        const vector<ShieldingSelect::NucMasFrac> &currentMassFractions = el_nucs.second;
         for( const auto &current_nuc_frac : currentMassFractions )
         {
           nFitQuantities += 1;
           
           const auto is0To1 = []( const double v ) -> bool { return (v >= 0.0) && (v <= 1.0); };
-          const auto pos = select->truthFitMassFractions.find(current_nuc_frac.first);
-          nQuantitiesCan += ((pos != end(select->truthFitMassFractions))
-                             && is0To1(pos->second.first) && is0To1(pos->second.second) );
+          if( select->truthFitMassFractions.count(el) )
+          {
+            const auto &nucs = select->truthFitMassFractions[el];
+            auto pos = nucs.find( get<0>(current_nuc_frac) );
+            nQuantitiesCan += ((pos != end(nucs))
+                               && is0To1(pos->second.first) && is0To1(pos->second.second) );
+          }
         }//for( const auto &prev_nuc_frac : select->truthFitMassFractions )
-      }//if( select->fitForMassFractions() )
+      }//for( const auto &el_nucs : currentMassFractions )
     }//if( generic material ) / else
   }//for( WWidget *widget : m_shieldingSelects->children() )
   
@@ -4845,16 +4879,26 @@ tuple<bool,int,int,vector<string>> ShieldingSourceDisplay::testCurrentFitAgainst
         }//switch( geometry() )
         
         
-        if( select->fitForMassFractions() )
-        {
+        {//Begin check mass-fractions
           auto checkMassFrac = [select, mat, &successful, &textInfoLines, &numTested, &numCorrect](
+                                    const SandiaDecay::Element * const el,
                                     const SandiaDecay::Nuclide * const nuc, const double value ){
-            assert( nuc );
-            const auto truth_pos = select->truthFitMassFractions.find(nuc);
-            if( truth_pos == end(select->truthFitMassFractions) )
+            assert( el );
+            const auto el_pos = select->truthFitMassFractions.find(el);
+            if( el_pos == end(select->truthFitMassFractions) )
             {
               successful = false;
-              textInfoLines.push_back( "Missing truth mass-fraction for " + nuc->symbol );
+              textInfoLines.push_back( "Missing truth mass-fraction for element " + (el ? el->symbol : string("nullptr")) );
+              return;
+            }
+            
+            const string nuc_name = (nuc ? nuc->symbol : string("other nucs"));
+            const map<const SandiaDecay::Nuclide *,pair<double,double>> &nucs = el_pos->second;
+            const auto truth_pos = nucs.find(nuc);
+            if( truth_pos == end(nucs) )
+            {
+              successful = false;
+              textInfoLines.push_back( "Missing truth mass-fraction for " + nuc_name );
               return;
             }
                                   
@@ -4863,7 +4907,7 @@ tuple<bool,int,int,vector<string>> ShieldingSourceDisplay::testCurrentFitAgainst
             if( (truthval < 0.0) || (truthval > 1.0) || (truthtol < 0.0) || (truthtol > 1.0) )
             {
               successful = false;
-              textInfoLines.push_back( "Invalid truth mass-fraction for " + nuc->symbol );
+              textInfoLines.push_back( "Invalid truth mass-fraction for " + nuc_name );
               return;
             }
             
@@ -4871,18 +4915,29 @@ tuple<bool,int,int,vector<string>> ShieldingSourceDisplay::testCurrentFitAgainst
             const bool closeEnough = ((value >= (truthval - truthtol)) && (value <= (truthval + truthtol)));
             numCorrect += closeEnough;
             
-            textInfoLines.push_back( "For shielding '" + mat->name + "' fit " + nuc->symbol
+            textInfoLines.push_back( "For shielding '" + mat->name + "' fit " + nuc_name
                                      + " to have mass fraction " + SpecUtils::printCompact(value, 5)
                                      + " with the truth value of " + SpecUtils::printCompact(truthval,5)
                                      + " and tolerance " + SpecUtils::printCompact(truthtol,5)
                                      + (closeEnough ? " - within tolerance." : " - out of tolerance." ) );
           };//checkMassFrac( ... )
           
-          for( const auto &nuc_frac : select->sourceNuclideMassFractions() )
+          const map<const SandiaDecay::Element *,vector<ShieldingSelect::NucMasFrac>> gui_mass_fracs
+                                        = select->sourceNuclideMassFractions();
+          for( const auto &el_nucs : gui_mass_fracs )
           {
-            checkMassFrac( nuc_frac.first, nuc_frac.second );
-          }//for( const auto &prev_nuc_frac : select->truthFitMassFractions )
-        }//if( select->fitForMassFractions() )
+            const SandiaDecay::Element * const el = el_nucs.first;
+            const vector<ShieldingSelect::NucMasFrac> &nucs = el_nucs.second;
+            for( const auto &nuc_frac : nucs )
+            {
+              const SandiaDecay::Nuclide * const nuc = std::get<0>(nuc_frac);
+              const double frac = std::get<1>(nuc_frac);
+              const bool fit = std::get<2>(nuc_frac);
+              if( fit )
+                checkMassFrac( el, nuc, frac );
+            }//for( const auto &prev_nuc_frac : select->truthFitMassFractions )
+          }//for( const auto &el_nucs : gui_mass_fracs )
+        }//End check mass-fractions
         
       }//if( generic material ) / else
     }//for( WWidget *widget : m_shieldingSelects->children() )
@@ -5124,7 +5179,10 @@ void ShieldingSourceDisplay::handleGeometryTypeChange()
   
   UndoRedoManager *undoRedo = UndoRedoManager::instance();
   unique_ptr<ShieldSourceChange> state_undo_creator;
-  if( (type != m_prevGeometry) && undoRedo && !undoRedo->isInUndoOrRedo() )
+  
+  const bool is_same_geometry = (type == m_prevGeometry);
+  
+  if( !is_same_geometry && undoRedo && !undoRedo->isInUndoOrRedo() )
   {
     m_geometrySelect->setCurrentIndex( static_cast<int>(m_prevGeometry) );
     
@@ -5133,6 +5191,7 @@ void ShieldingSourceDisplay::handleGeometryTypeChange()
     m_geometrySelect->setCurrentIndex( static_cast<int>(type) );
   }//if( (type != m_prevGeometry) && undoRedo && !undoRedo->isInUndoOrRedo() )
   
+  m_prevGeometry = type;
   
   for( WWidget *widget : m_shieldingSelects->children() )
   {
@@ -5143,13 +5202,16 @@ void ShieldingSourceDisplay::handleGeometryTypeChange()
       select->setGeometry( type );
   }//for( WWidget *widget : m_shieldingSelects->children() )
   
-  try
+  if( !is_same_geometry )
   {
-    checkDistanceAndThicknessConsistent();
-  }catch( std::exception &e )
-  {
-    passMessage( e.what(), WarningWidget::WarningMsgMedium );
-  }//try / catch
+    try
+    {
+      checkDistanceAndThicknessConsistent();
+    }catch( std::exception &e )
+    {
+      passMessage( e.what(), WarningWidget::WarningMsgMedium );
+    }//try / catch
+  }//if( !is_same_geometry )
   
   handleShieldingChange();
   
@@ -6704,7 +6766,7 @@ bool ShieldingSourceDisplay::finishSaveModelToDatabase( const Wt::WString &name,
     Dbo::ptr<UserFileInDb> dbmeas;
     try
     {
-      dbmeas = m_specViewer->measurementFromDb( SpecUtils::SpectrumType::Foreground, true );
+      dbmeas = m_specViewer->measurementFromDb( SpecUtils::SpectrumType::Foreground, false );
     }catch( std::exception & )
     {
     }
@@ -7411,19 +7473,18 @@ void ShieldingSourceDisplay::addGenericShielding()
   ShieldingSelect *temp = addShielding( nullptr, false );
   if( !temp->isGenericMaterial() )
     temp->handleToggleGeneric();
-  updateChi2Chart();
 }//void addGenericShielding()
 
 
 
 ShieldingSelect *ShieldingSourceDisplay::addShielding( ShieldingSelect *before,
-                                                       const bool updateChiChartAndAddUndoRedo )
+                                                       const bool addUndoRedo )
 {
   // Handle undo/redo if the user clicked a button to add a shielding (all paths to here
-  //  will have `updateChiChartAndAddUndoRedo == true` in this case, and all paths to here
+  //  will have `addUndoRedo == true` in this case, and all paths to here
   //  not from a user explicitly clicking a button, will have this as false).
   unique_ptr<ShieldSourceChange> state_undo_creator;
-  if( updateChiChartAndAddUndoRedo )
+  if( addUndoRedo )
     state_undo_creator = make_unique<ShieldSourceChange>( this, "Add Shielding" );
   
   m_modifiedThisForeground = true;
@@ -7475,20 +7536,10 @@ ShieldingSelect *ShieldingSourceDisplay::addShielding( ShieldingSelect *before,
               boost::placeholders::_1, boost::placeholders::_2, boost::placeholders::_3 ) );
   
   
-  try
-  {
-    checkDistanceAndThicknessConsistent();
-  }catch( std::exception &e )
-  {
-    passMessage( e.what(), WarningWidget::WarningMsgMedium );
-  }//try / catch
-  
-  
   handleShieldingChange();
   select->setTraceSourceBtnStatus();
   
-  if( updateChiChartAndAddUndoRedo )
-    updateChi2Chart();
+  updateChi2Chart();
   
   return select;
 }//void addShielding()
@@ -7567,21 +7618,12 @@ void ShieldingSourceDisplay::materialModifiedCallback( ShieldingSelect *select )
     return;
   }//if( !select )
 
-  try
-  {
-    checkDistanceAndThicknessConsistent();
-  }catch( std::exception &e )
-  {
-    passMessage( e.what(), WarningWidget::WarningMsgMedium );
-  }//try / catch
-  
   
   m_modifiedThisForeground = true;
   
-  cerr << "In ShieldingSourceDisplay::materialModifiedCallback(...)" << endl;
-  //I meant to do some more work here...
+  //I meant to do some more work here, but dont recall what
 
-  
+  updateChi2Chart();
 }//void materialModifiedCallback( ShieldingSelect *select )
 
 
@@ -7593,15 +7635,6 @@ void ShieldingSourceDisplay::materialChangedCallback( ShieldingSelect *select )
     cerr << "ShieldingSourceDisplay::materialChangedCallback(...)\n\tShouldnt be here!" << endl;
     return;
   }//if( !select )
-
-  try
-  {
-    checkDistanceAndThicknessConsistent();
-  }catch( std::exception &e )
-  {
-    passMessage( e.what(), WarningWidget::WarningMsgMedium );
-  }//try / catch
-  
   
   //The select has already removed any isotopes as sources which arent in the
   //  current material, however, we have to add in all other candidate isotopes
@@ -7616,6 +7649,7 @@ void ShieldingSourceDisplay::materialChangedCallback( ShieldingSelect *select )
       select->modelNuclideAdded( nuc );
   }//for( int row = 0; row < nrow; ++row )
 
+  updateChi2Chart();
 }//void materialChangedCallback( ShieldingSelect *select )
 
 
@@ -7624,7 +7658,9 @@ void ShieldingSourceDisplay::updateActivityOfShieldingIsotope( ShieldingSelect *
                                        const SandiaDecay::Nuclide *nuc )
 {
   // This function gets called when shielding changes for either self-attenuating or trace sources.
-
+  if( !nuc ) //This can happen if fitting for "other" non-source nuclides fraction.
+    return;
+  
   shared_ptr<const Material> material = select ? select->material() : nullptr;
   
   if( !select || select->isGenericMaterial() || !material || !nuc )
@@ -7666,17 +7702,20 @@ void ShieldingSourceDisplay::updateActivityOfShieldingIsotope( ShieldingSelect *
   bool foundNucInMaterial = false;
   double weight = density * volume;
   
-  const vector<pair<const SandiaDecay::Nuclide *,double>> srcNucFracs
+  const map<const SandiaDecay::Element *,vector<ShieldingSelect::NucMasFrac>> srcNucFracs
                                                = select->sourceNuclideMassFractions();
-  for( const auto &nuc_frac : srcNucFracs )
+  for( const auto &el_nucs : srcNucFracs )
   {
-    if( nuc_frac.first == nuc )
+    for( const ShieldingSelect::NucMasFrac &nuc_frac : el_nucs.second )
     {
-      foundNucInMaterial = true;
-      weight *= nuc_frac.second;
-      break;
-    }
-  }//for( const auto &nuc_frac : srcNucFracs )
+      if( get<0>(nuc_frac) == nuc )
+      {
+        foundNucInMaterial = true;
+        weight *= get<1>(nuc_frac);
+        break;
+      }
+    }//for( const auto &nuc_frac : srcNucFracs )
+  }//for( const auto &el_nucs : srcNucFracs )
   
   if( !foundNucInMaterial )
   {
@@ -7803,7 +7842,7 @@ void ShieldingSourceDisplay::isotopeRemovedAsVolumetricSourceCallback(
 {
   //Set appropriate flags in the SourceFitModel so activity will be editiable
   
-  assert( m_sourceModel->sourceType(m_sourceModel->nuclideIndex(nuc)) == type );
+  assert( !nuc || (m_sourceModel->sourceType(m_sourceModel->nuclideIndex(nuc)) == type) );
 
   m_sourceModel->setSourceType( nuc, ShieldingSourceFitCalc::ModelSourceType::Point );
   
@@ -8222,54 +8261,223 @@ void ShieldingSourceDisplay::updateGuiWithModelFitResults( std::shared_ptr<Shiel
       if( !usrmaterial )
         continue;
       
-      const bool calcFitMasFrac = std::count(begin(massfracFitMaterials), end(massfracFitMaterials), usrmaterial.get());
-      if( calcFitMasFrac != select->fitForMassFractions() )
+      const bool calcFitMassFrac = std::count(begin(massfracFitMaterials), end(massfracFitMaterials), usrmaterial.get());
+      if( calcFitMassFrac != select->fitForAnyMassFractions() )
       {
         throw logic_error( "GUI fit mass fraction for material '" + usrmaterial->name
                                  + "' doesn't match calculation fit mass fraction status." );
       }
       
-      if( calcFitMasFrac )
+      if( !calcFitMassFrac )
+        continue;
+      
+      
+      const map<const SandiaDecay::Element *,vector<const SandiaDecay::Nuclide *>> fit_el_to_nucs
+                                    = m_currentFitFcn->nuclideFittingMassFracFor( shielding_index );
+                                  
+      const vector<const SandiaDecay::Element *> fitOtherEls
+                                = m_currentFitFcn->elementsFittingOtherFracFor( shielding_index );
+      
+      vector<const SandiaDecay::Nuclide *> guiNucsFittingFrac;
+      vector<const SandiaDecay::Element *> guiElFittingOtherFrac;
+      
+      const map<const SandiaDecay::Element *,vector<ShieldingSelect::NucMasFrac>> all_gui_self_atten
+                                                             = select->sourceNuclideMassFractions();
+      for( const auto &el_nucs : all_gui_self_atten )
       {
-        const vector<const SandiaDecay::Nuclide *> &fitnucs
-                                  = m_currentFitFcn->nuclideFittingMassFracFor( shielding_index );
+        const SandiaDecay::Element * const this_el = el_nucs.first;
+        assert( this_el );
+        if( !this_el )
+          continue;
         
-        const vector<const SandiaDecay::Nuclide *> guiNucs = select->selfAttenNuclides();
-        
-        if( fitnucs.size() != guiNucs.size() )
-          throw logic_error( "Number of calc self-atten nuclides does not equal num GUI self-atten nucs." );
-        
-        double prefitsum = 0.0;
-        const vector<pair<const SandiaDecay::Nuclide *,double>> guiMassFracs = select->sourceNuclideMassFractions();
-        for( const SandiaDecay::Nuclide * const n : guiNucs )
+        for( const ShieldingSelect::NucMasFrac &nuc_mass_frac : el_nucs.second )
         {
-          for( const auto &i : guiMassFracs )
+          const SandiaDecay::Nuclide * const this_nuc = get<0>(nuc_mass_frac);
+          const double this_frac = get<1>(nuc_mass_frac);
+          const bool this_fit = get<2>(nuc_mass_frac);
+          
+          if( this_fit )
           {
-            if( i.first == n )
-              prefitsum += i.second;
-          }
-        }
-        
-        double sumfracs = 0.0;
-        for( const SandiaDecay::Nuclide *nuc : fitnucs )
+            if( this_nuc )
+              guiNucsFittingFrac.push_back( this_nuc );
+            else
+              guiElFittingOtherFrac.push_back( this_el );
+          }//if( this_fit )
+        }//for( const ShieldingSelect::NucMasFrac &nuc_mass_frac : all_gui_self_atten )
+      }//for( const auto &el_nucs : all_gui_self_atten )
+      
+      vector<const SandiaDecay::Nuclide *> fitnucs; //Will not include "other" non-srce components
+      // Since not all self-attenuating nuclides will have mass-fractions fit for, we will remove
+      //  the ones we are fitting for from this next variable, to get down to what we want.
+      vector<const SandiaDecay::Nuclide *> selfAttenNotFitNucs
+                                      = m_currentFitFcn->selfAttenuatingNuclides( shielding_index );
+      for( const auto &el_nucs : fit_el_to_nucs )
+      {
+        for( const SandiaDecay::Nuclide * nuc : el_nucs.second )
         {
-          //const double frac = final_shieldings[shielding_index].m_nuclideFractions[nuc];
-          //const double fracUncert = final_shieldings[shielding_index].m_nuclideFractionUncerts[nuc];
+          if( nuc )
+            fitnucs.push_back( nuc );
+          const auto new_end = std::remove(begin(selfAttenNotFitNucs), end(selfAttenNotFitNucs), nuc);
+          selfAttenNotFitNucs.erase( new_end, end(selfAttenNotFitNucs) );
+        }//for( const SandiaDecay::Nuclide * nuc : el_nucs.second )
+      }//for( const auto &el_nucs : fitnucs )
+      
+      
+      //We'll do some sanity checks to make sure the model we fit is consistent with the GUI - which
+      //  it should always be
+      if( fitnucs.size() != guiNucsFittingFrac.size() )  //never expect this to happen
+        throw logic_error( "Number of calc self-atten nuclides does not equal num GUI self-atten nucs." );
+        
+      if( fitOtherEls.size() != guiElFittingOtherFrac.size() ) //never expect this to happen
+        throw logic_error( "Number of non-source element being fit does not equal the GUI." );
+      
+      for( const SandiaDecay::Nuclide *nuc : fitnucs )
+      {
+        assert( nuc );
+        if( !nuc )
+          throw logic_error( "Null nuclide in fit result." );
+        
+        const auto pos = std::find( begin(guiNucsFittingFrac), end(guiNucsFittingFrac), nuc );
+        if( pos == end(guiNucsFittingFrac) )
+          throw logic_error( "The fit and GUI nuclides are not equal." ); //never expect this to happen
+      }//for( const SandiaDecay::Nuclide *nuc : fitnucs )
+      
+      for( const SandiaDecay::Element *el : fitOtherEls )
+      {
+        assert( el );
+        if( !el )
+          throw logic_error( "Null element in fit result." );
+        
+        const auto pos = std::find( begin(guiElFittingOtherFrac), end(guiElFittingOtherFrac), el );
+        if( pos == end(guiElFittingOtherFrac) )
+          throw logic_error( "The fit and GUI other element components are not equal." ); //never expect this to happen
+        
+        //Make sure elements have at least one nuclide matching them.
+        size_t num_nucs_of_el = 0;
+        for( const SandiaDecay::Nuclide *nuc : fitnucs )
+          num_nucs_of_el += (nuc->atomicNumber == el->atomicNumber);
+        
+        if( num_nucs_of_el < 1 )
+          throw logic_error( "Element " + el->symbol + " fit non-source component, but didnt have"
+                              " any source nuclides of this element." );
+      }//for( const SandiaDecay::Element *el : fitOtherEls )
+
+      
+      map<short int,double> prefitsums, postfitsums; //atomic number to sum
+      
+      // The double is a fundamental type, so they would be initialized to 0.0 the first time
+      //  they are accessed, but this makes me queasy, so we'll explicitly do it
+      for( const SandiaDecay::Nuclide *nuc : fitnucs )
+      {
+        prefitsums[nuc->atomicNumber] = 0.0;
+        postfitsums[nuc->atomicNumber] = 0.0;
+      }
+
+      const map<const SandiaDecay::Element *,vector<tuple<const SandiaDecay::Nuclide *,double,bool>>>
+          guiMassFracs = select->sourceNuclideMassFractions();
+      
+      for( const auto &el_nucs : guiMassFracs )
+      {
+        const SandiaDecay::Element * const el = el_nucs.first;
+        assert( el );
+        if( !el )
+          throw std::logic_error( "nullptr Element???" );
+        
+        for( const tuple<const SandiaDecay::Nuclide *,double,bool> &nuc_frac_fit : el_nucs.second )
+        {
+          if( get<2>(nuc_frac_fit) )
+            prefitsums[el->atomicNumber] += get<1>(nuc_frac_fit);
+        }//for( const auto &nuc_frac_fit : guiMassFracs )
+      }//for( const auto &el_nucs : guiMassFracs )
+      
+      const SandiaDecay::SandiaDecayDataBase * const db = DecayDataBaseServer::database();
+      map<const SandiaDecay::Element *,vector<ShieldingSelect::MassFracInfo>> fitMassFracs;
+      
+      for( const auto &el_nucs : fit_el_to_nucs )
+      {
+        const SandiaDecay::Element * const el = el_nucs.first;
+        assert( el );
+        
+        for( const SandiaDecay::Nuclide * nuc : el_nucs.second )
+        {
+          double frac, uncert;
+          m_currentFitFcn->massFractionOfElement( frac, uncert, shielding_index, nuc, el, paramValues, paramErrors );
           
-          const double frac = m_currentFitFcn->massFraction( shielding_index, nuc, paramValues );
-          select->setMassFraction( nuc, frac );
+          postfitsums[el->atomicNumber] += frac;
+          const bool isFit = nuc ? m_currentFitFcn->isVariableMassFraction( shielding_index, nuc )
+                                 : m_currentFitFcn->isVariableOtherMassFraction( shielding_index, el );
           
-          sumfracs += frac;
-        }//for( const SandiaDecay::Nuclide *nuc : fitnucs )
+          ShieldingSelect::MassFracInfo info;
+          info.m_nuclide = nuc;
+          info.m_fraction = frac;
+          info.m_frac_uncert = uncert;
+          info.m_fit_mass_frac = isFit;
+          info.m_use_as_source = true;
+          
+          fitMassFracs[el].push_back( info );
+        }//for( const SandiaDecay::Nuclide * nuc : el_nucs.second )
+      }//for( const auto &el_nucs : fit_el_to_nucs )
+      
+      for( const SandiaDecay::Element *el : fitOtherEls )
+      {
+        double frac, uncert;
+        const SandiaDecay::Nuclide * const nuc = nullptr;
+        
+        m_currentFitFcn->massFractionOfElement( frac, uncert, shielding_index, nuc, el,
+                                      paramValues, paramErrors );
+      
+        postfitsums[el->atomicNumber] += frac;
+        
+        ShieldingSelect::MassFracInfo info;
+        info.m_nuclide = nuc;
+        info.m_fraction = frac;
+        info.m_frac_uncert = uncert;
+        info.m_fit_mass_frac = true;
+        info.m_use_as_source = true;
+        
+        fitMassFracs[el].push_back( info );
+      }//for( const SandiaDecay::Element *el : fitOtherEls )
+      
+      for( const SandiaDecay::Nuclide *nuc : selfAttenNotFitNucs )
+      {
+        const SandiaDecay::Element * const el = db->element( nuc->atomicNumber );
+        assert( el );
+        
+        const double frac = m_currentFitFcn->massFractionOfElement( shielding_index, nuc, paramValues );
+        
+        ShieldingSelect::MassFracInfo info;
+        info.m_nuclide = nuc;
+        info.m_fraction = frac;
+        info.m_frac_uncert = 0.0;
+        info.m_fit_mass_frac = false;
+        info.m_use_as_source = true;
+        
+        fitMassFracs[el].push_back( info );
+      }//for( const SandiaDecay::Nuclide *nuc : selfAttenNotFitNucs )
+      
+      
+      select->setMassFractions( fitMassFracs );
+      
+      assert( postfitsums.size() == prefitsums.size() );
+      
+      for( const auto &el_sum : prefitsums )
+      {
+        short int atomic_number = el_sum.first;
+        assert( postfitsums.count(atomic_number) );
+        if( !postfitsums.count(atomic_number) )
+          throw logic_error( "postfitsums is missing an entry prefitsum has." );
+        
+        const double prefitsum = el_sum.second;
+        const double sumfracs = postfitsums[atomic_number];
         
         const double frac_diff = fabs(sumfracs - prefitsum);
         assert( fabs(frac_diff) < 1.0E-5*std::max(sumfracs,prefitsum) );
         
         if( (frac_diff > 1.0E-12) && ((frac_diff/std::max(sumfracs,prefitsum)) > 1.0E-5) ) //limits chosen arbitrarily
-          throw logic_error( "Mass fraction for of self-atten src elements should be "
-                            + to_string(prefitsum) + " but calculation yielded "
+          throw logic_error( "Mass fraction for of self-atten src atomic number " + std::to_string(atomic_number)
+                            + " should be " + to_string(prefitsum) + " but calculation yielded "
                             + to_string(sumfracs) );
-      }//if( select->fitForMassFractions() )
+      }//for( const auto &el_sum : prefitsums )
     }//for( int i = 0; i < nshieldings; ++i )
     
     
@@ -8660,15 +8868,22 @@ void ShieldingSourceDisplay::updateCalcLogWithFitResults(
       
       stringstream msg;
       msg << "Shielding material " << mat->name << " fit mass fractions for isotopes:";
-      const vector<const SandiaDecay::Nuclide *> &nucs = chi2Fcn->nuclideFittingMassFracFor( shielding_index );
-      for( const SandiaDecay::Nuclide *n : nucs )
+      
+      const map<const SandiaDecay::Element *,vector<const SandiaDecay::Nuclide *>> el_to_nucs
+                                            = chi2Fcn->nuclideFittingMassFracFor( shielding_index );
+      for( const auto &el_nuc : el_to_nucs )
       {
-        const double frac = chi2Fcn->massFraction( shielding_index, n, params );
-        const double df = chi2Fcn->massFractionUncert( shielding_index, n, params, errors );
+        const SandiaDecay::Element * const el = el_nuc.first;
         
-        msg << " " << n->symbol << "(massfrac=" << frac << "+-" << df << "),";
-      }//for( size_t shielding_index = 0; shielding_index < chi2Fcn->numMaterials(); ++shielding_index )
-        
+        for( const SandiaDecay::Nuclide *n : el_nuc.second )
+        {
+          double frac, uncert;
+          chi2Fcn->massFractionOfElement( frac, uncert, shielding_index, n, el, params, errors );
+          
+          msg << " " << n->symbol << "(massfrac=" << frac << "+-" << uncert << "),";
+        }//for( size_t shielding_index = 0; shielding_index < chi2Fcn->numMaterials(); ++shielding_index )
+      }
+      
       calcLog.push_back( msg.str() );
     }//for( const Material *mat : chi2Fcn->materialsFittingMassFracsFor() )
     

@@ -33,16 +33,31 @@
 #include <Wt/WString>
 #include <Wt/WContainerWidget>
 
+#include "InterSpec/ReactionGamma.h" //Because we cant forward declare ReactionGamma::Reaction
+
 class D3SpectrumDisplayDiv;
 
 namespace Wt
 {
   class WText;
   class WCheckBox;
+  class WComboBox;
   class WLineEdit;
   class WPushButton;
   class WSplitButton;
 }//namespace Wt
+
+namespace SandiaDecay
+{
+  struct Element;
+  struct Nuclide;
+}//namespace SandiaDecay
+
+
+namespace rapidxml
+{
+  template<class Ch> class xml_node;
+}//namespace rapidxml
 
 class InterSpec;
 class RowStretchTreeView;
@@ -149,6 +164,9 @@ public:
   //  EnergyToNuclideServer to new min BR and HL
   void minBrOrHlChanged();
 
+  /** `m_search_category_select` is changed. */
+  void categoryChanged( const bool update_results );
+  
   //resultSelectionChanged(): called when user selects a row of the results
   void resultSelectionChanged();
   
@@ -212,7 +230,123 @@ public:
   /** Currently just repositions the results table, and adjusts its row sizes and visible columns. */
   void setNarrowPhoneLayout( const bool narrow );
 #endif
+  
+  
+  struct NucSearchCategory
+  {
+    /** Name to display to user in the WComboBox */
+    Wt::WString m_name;
+    /** A description for the filter type - currently set as tool-top on the WComboBox. */
+    Wt::WString m_description;
+    
+    /** Values of min BR and min HL.  Users can still change these afterwards. */
+    double m_minBr, m_minHl;
+    
+    /** If should search on nuclide gammas and decay x-rays. */
+    bool m_nuclides;
+    /** If should search on element flourescense x-rays. */
+    bool m_fluorescence_xrays;
+    /** If should include reactions.  */
+    bool m_reactions;
+    /** If should search for alpha energy of nuclides. If true, then betas, x-rays, reactions, and nuclides must be false.  */
+    bool m_alphas;
+    /** If should search for beta end-point energy of nuclides. If true, then alphas, x-rays, reactions, and nuclides must be false. */
+    bool m_beta_endpoint;
+    /** If results should only be for the gammas given off by the parent nuclide, and not any progeny. */
+    bool m_no_progeny;
+    
+    /** Specfic elements to search for fluorescence x-rays.  If empty, and fluorescence x-rays are allowed, will use all elements. */
+    std::vector<const SandiaDecay::Element *> m_specific_elements;
+    /** Specific nuclides to search.  If empty and decay x-rays, nuc gammas, alphas, or betas are allowed, will use all nuclides. */
+    std::vector<const SandiaDecay::Nuclide *> m_specific_nuclides;
+    /** Specific reactions to search.  If empty and reactions are allowed, then all reacitions will be used. */
+    std::vector<const ReactionGamma::Reaction *> m_specific_reactions;
+    
+    /** Sets the information from an XML element.
+     
+     The passed-in xml node must have name "NucSearchCategory".
+     Throws exception on error.
+     
+     <NucSearchCategory>
+       <Name>My Fav Nucs</Name>
+       <Description>A really good description</Description>
+       <MinBr>0.0</MinBr>                    <!-- Defaults to zero if not specified -->
+       <MinHl>60 s</MinHl>                   <!-- Defaults to zero if not specified -->
+       <AllowNucGammas>1</AllowNucGammas>    <!-- If should search on nuclide gammas and decay x-rays. -->
+       <AllowFluorXrays>1</AllowFluorXrays>  <!-- If should search on element flourescense x-rays. -->
+       <AllowReactions>1</AllowReactions>    <!-- If should include reactions. -->
+       <AllowAlphas>0</AllowAlphas>          <!-- If should search for alpha energy of nuclides. If true, then betas, x-rays, reactions, and nulcides must be false. -->
+       <AllowBetas>0</AllowBetas>            <!-- If should search for beta end-point energy of nuclides. If true, then alphas, x-rays, reactions, and nulcides must be false. -->
+     
+       <Elements>                            <!-- If empty or not specified, will allow all elements. -->
+         <Element>U</Element>                 <!-- Use same values you would type into Ref. Photopeak -->
+         <Element>Pu</Element>                <!-- Invalid values will be silently discarded -->
+       </Elements>
+     
+       <Nuclides>                            <!-- If empty or not specified, will allow all nuclides. -->
+         <Nuclide>Co60</Nuclide>             <!-- Use same values you would type into Ref. Photopeak -->
+         <Nuclide>Am241</Nuclide>            <!-- Invalid values will be silently discarded -->
+       </Nuclides>
+    
+       <Reactions>                           <!-- If empty or not specified, will allow all nuclides. -->
+         <Reaction>Fe(n,g)</Reaction>        <!-- Use same values you would type into Ref. Photopeak -->
+         <Reaction>U(n,n)</Reaction>         <!-- Invalid values will be silently discarded -->
+       </Reactions>
+     </NucSearchCategory>
+     */
+    void deSerialize( const rapidxml::xml_node<char> * const xml_data );
+  };//struct NucSearchCategory
+  
+  /** Returns the search categories from "NuclideSearchCatagories.xml"  */
+  const std::vector<NucSearchCategory> &search_categories();
+  
+  
+  /** Reads in both the default 'data/NuclideSearchCatagories.xml' as well as users custom NuclideSearchCatagories.xml (if present).
+   
+   Throws exception if cant load default file, or if the user file exists and not loaded.
+   */
+  static void init_category_info( std::vector<NucSearchCategory> &results );
+  
+  
+  static const std::string sm_medical_category_key;    // = "isbe-category-medical";
+  static const std::string sm_industrial_category_key; // = "isbe-category-industrial";
+  static const std::string sm_snm_category_key;        // = "isbe-category-snm";
+  static const std::string sm_norm_category_key;       // = "isbe-category-norm";
+  static const std::string sm_common_category_key;     // = "isbe-category-common";
+  static const std::string sm_fission_category_key;    // = "isbe-category-fission";
+  
+  /** The following functions return the classification from "NuclideSearchCatagories.xml".
+   
+   @param cat_name value of either the key (if category is a default one), or UTF-8 representation of `NucSearchCategory::m_name`.
+          For key values of default categories, see `sm_medical_category_key`, `sm_industrial_category_key`, etc. above
+   @param categories The full data loaded from "NuclideSearchCatagories.xml"
+ 
+   Throws exception if `m_search_categories` not initialized, or the specific category not found.
+   */
+  static bool is_in_category( const SandiaDecay::Nuclide *nuc,
+                             const std::string &cat_name,
+                             const std::vector<NucSearchCategory> &categories );
+  static bool is_in_category( const SandiaDecay::Element *element,
+                             const std::string &cat_name,
+                             const std::vector<NucSearchCategory> &categories );
+  static bool is_in_category( const ReactionGamma::Reaction *reaction,
+                             const std::string &cat_name,
+                             const std::vector<NucSearchCategory> &categories );
+  
+  
+  /** Returns information for a specific category.
+   
+   Input is the name string in the "NuclideSearchCatagories.xml".
+   E.g., "isbe-category-medical", "isbe-category-industrial", "isbe-category-snm", "isbe-category-common", 
+       "isbe-category-norm", "isbe-category-common-nuc"
+   */
+  static const NucSearchCategory &get_category_info( const std::string &cat_key, 
+                                                const std::vector<NucSearchCategory> &category );
+ 
 protected:
+  /** Populates `m_filters` and  `m_typeFilter`.  */
+  void initFilterTypes();
+  
   virtual void render( Wt::WFlags<Wt::RenderFlag> flags );
 
   
@@ -234,17 +368,19 @@ protected:
   int m_currentSearch;
   Wt::WText *m_searching;
   RowStretchTreeView *m_results;
+  
+  Wt::WContainerWidget *m_minBranchRatioDiv;
   NativeFloatSpinBox *m_minBranchRatio;
+  Wt::WContainerWidget *m_minHalfLiveDiv;
   Wt::WLineEdit *m_minHalfLife;
   IsotopeSearchByEnergyModel *m_model;
   
-  Wt::WCheckBox *m_gammas;
-  Wt::WCheckBox *m_xrays;
-  Wt::WCheckBox *m_reactions;
+  std::vector<NucSearchCategory> m_search_categories;
+  
+  Wt::WComboBox *m_search_category_select;
   
   size_t m_nextSearchEnergy;
   double m_minBr, m_minHl;
-  
   
   /** A struct that represents the GUI state, using basic types.
    
@@ -256,15 +392,13 @@ protected:
     Wt::WString MinHalfLife;
     
     size_t NextSearchEnergy;
-    bool IncludeGammas;
-    bool IncludeXRays;
-    bool IncludeReactions;
+    size_t CategoryIndex;
     std::vector<std::pair<double,double>> SearchEnergies;
     
     void serialize( std::string &xml_data ) const;
     
     /** Throws exception on error. */
-    void deSerialize( std::string &xml_data );
+    void deSerialize( std::string &xml_data, const std::vector<NucSearchCategory> &categories );
     
     bool operator==(const WidgetState &rhs) const;
   };//struct WidgetState

@@ -2302,12 +2302,12 @@ PeakModel::SetGammaSource PeakModel::setNuclide( PeakDef &peak,
   PeakDef::SourceGammaType sourceGammaType = src_type;
   
   PeakDef::findNearestPhotopeak( nuclide, ref_energy, width,
-                                xrayOnly, transition, transition_index, sourceGammaType );
+                                xrayOnly, -1.0, transition, transition_index, sourceGammaType );
   
   //There wasnt any photopeaks within 4 sigma, so instead we'll just use
   //  the closest photpopeak
   if( !transition && (sourceGammaType!=PeakDef::AnnihilationGamma) && (nsigma_window>=0.0) )
-    PeakDef::findNearestPhotopeak( nuclide, ref_energy, -1.0, xrayOnly,
+    PeakDef::findNearestPhotopeak( nuclide, ref_energy, -1.0, xrayOnly, -1.0,
                                   transition, transition_index, sourceGammaType );
   
   switch( src_type )
@@ -2949,7 +2949,7 @@ bool PeakModel::setData( const WModelIndex &index,
           //  most likely
           PeakDef::SourceGammaType sourceGammaType;
           const bool xrayOnly = (srcType == PeakDef::SourceGammaType::XrayGamma);
-          PeakDef::findNearestPhotopeak( nuclide, energy, 0.0, xrayOnly,
+          PeakDef::findNearestPhotopeak( nuclide, energy, 0.0, xrayOnly, -1.0,
                                 transition, trans_index, sourceGammaType );
           
           if( !transition && (sourceGammaType!=PeakDef::AnnihilationGamma) )
