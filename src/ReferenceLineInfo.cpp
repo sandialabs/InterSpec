@@ -186,7 +186,7 @@ void sanitize_label_str( string &label )
   SpecUtils::to_lower_ascii( label );
 }//void sanitize_label_str( string &label )
 
-
+  
 void load_custom_nuc_mixes()
 {
   // Takes about 2ms to run this function in Debug mode on M1 mac
@@ -385,7 +385,7 @@ void load_custom_nuc_mixes()
             
             size_t transition_index = 0;
             PeakDef::SourceGammaType nearestGammaType;
-            PeakDef::findNearestPhotopeak( nuc, energy, 0.25, false,
+            PeakDef::findNearestPhotopeak( nuc, energy, 0.25, false, -1.0,
                                           trans, transition_index, nearestGammaType );
             if( !trans )
               throw runtime_error( "SourceLines named '" + src_name_str + "' with nuclide '"
@@ -517,8 +517,8 @@ void load_custom_nuc_mixes()
     }//for( const string &name_path : data_files )
     
     std::sort( begin(*fission_products), end(*fission_products),
-      []( const FissionDataSrcFile &lhs, const FissionDataSrcFile &rhs ) {
-        return SandiaDecay::Nuclide::lessThanForOrdering(lhs.nuclide, rhs.nuclide);
+              []( const FissionDataSrcFile &lhs, const FissionDataSrcFile &rhs ) {
+      return SandiaDecay::Nuclide::lessThanForOrdering(lhs.nuclide, rhs.nuclide);
     });
   }catch( std::exception &e )
   {
@@ -816,7 +816,7 @@ enum class FissionType
 };
 
 std::shared_ptr<const vector<FissionLine>> fission_photons( const SandiaDecay::Nuclide *nuc, const FissionType type,
-                                const double irradiation_time_seconds, const double cool_off_time )
+                                                             const double irradiation_time_seconds, const double cool_off_time )
 {
   const size_t max_cache_photons = 5; //arbitrary - lets speed things a little for the most recent uses, but not waste too much memory
   static std::mutex s_cache_photons_mutex;
@@ -937,7 +937,7 @@ std::shared_ptr<const vector<FissionLine>> fission_photons( const SandiaDecay::N
   //  instead of 64 bit internal precisions in SandiaDecay, as well as exact
   //  expectations).
   auto do_integrate = [&mixture, &ager, irradiation_time_seconds]( double start_time,
-                                            const double end_integration_time, const double dt ) {
+                                                                  const double end_integration_time, const double dt ) {
     for( ; start_time < end_integration_time; start_time += dt )
     {
       const double end_time = std::min( start_time + dt, end_integration_time );
@@ -982,358 +982,70 @@ std::shared_ptr<const vector<FissionLine>> fission_photons( const SandiaDecay::N
   
   
   /*
-  vector<SandiaDecay::NuclideActivityPair> irrad_end_activities = mixture.activity( cool_off_time );
-  std::sort( begin(irrad_end_activities), end(irrad_end_activities),
-    []( const SandiaDecay::NuclideActivityPair &lhs, const SandiaDecay::NuclideActivityPair &rhs ) -> bool {
-    return lhs.activity > rhs.activity;
-  });
-  
-  cout << "At the end of irradiation, the activities are:\n";
-  for( size_t index = 0; index < irrad_end_activities.size() && (index < 100); ++index )
-    cout << "\t" << irrad_end_activities[index].nuclide->symbol
-          << ": " << irrad_end_activities[index].activity << " bq" << endl;
-  
-  vector<SandiaDecay::NuclideActivityPair> after_cool_off_activities = mixture.activity( cool_off_time );
-  std::sort( begin(after_cool_off_activities), end(after_cool_off_activities),
-    []( const SandiaDecay::NuclideActivityPair &lhs, const SandiaDecay::NuclideActivityPair &rhs ) -> bool {
-    return lhs.activity > rhs.activity;
-  });
-  
-  // Get the Cs137 activity
-  double cs137_act = 0.0;
-  const auto cs137 = db->nuclide( "Cs137" );
-  for( const SandiaDecay::NuclideActivityPair &nap : after_cool_off_activities )
-  {
-    if( nap.nuclide == cs137 )
-    {
-      cs137_act = nap.activity;
-      break;
-    }
-  }
-  assert( cs137_act != 0.0 );
-  
-  cout << "\n\nAfter cooling off for " << cool_off_time << " seconds the activities, relative to Cs137 are:\n";
-  for( size_t index = 0; index < after_cool_off_activities.size() && (index < 100); ++index )
-  {
-    cout << "\t" << after_cool_off_activities[index].nuclide->symbol
-    << ": " << after_cool_off_activities[index].activity/cs137_act << endl;
-  }
+   vector<SandiaDecay::NuclideActivityPair> irrad_end_activities = mixture.activity( cool_off_time );
+   std::sort( begin(irrad_end_activities), end(irrad_end_activities),
+   []( const SandiaDecay::NuclideActivityPair &lhs, const SandiaDecay::NuclideActivityPair &rhs ) -> bool {
+   return lhs.activity > rhs.activity;
+   });
+   
+   cout << "At the end of irradiation, the activities are:\n";
+   for( size_t index = 0; index < irrad_end_activities.size() && (index < 100); ++index )
+   cout << "\t" << irrad_end_activities[index].nuclide->symbol
+   << ": " << irrad_end_activities[index].activity << " bq" << endl;
+   
+   vector<SandiaDecay::NuclideActivityPair> after_cool_off_activities = mixture.activity( cool_off_time );
+   std::sort( begin(after_cool_off_activities), end(after_cool_off_activities),
+   []( const SandiaDecay::NuclideActivityPair &lhs, const SandiaDecay::NuclideActivityPair &rhs ) -> bool {
+   return lhs.activity > rhs.activity;
+   });
+   
+   // Get the Cs137 activity
+   double cs137_act = 0.0;
+   const auto cs137 = db->nuclide( "Cs137" );
+   for( const SandiaDecay::NuclideActivityPair &nap : after_cool_off_activities )
+   {
+   if( nap.nuclide == cs137 )
+   {
+   cs137_act = nap.activity;
+   break;
+   }
+   }
+   assert( cs137_act != 0.0 );
+   
+   cout << "\n\nAfter cooling off for " << cool_off_time << " seconds the activities, relative to Cs137 are:\n";
+   for( size_t index = 0; index < after_cool_off_activities.size() && (index < 100); ++index )
+   {
+   cout << "\t" << after_cool_off_activities[index].nuclide->symbol
+   << ": " << after_cool_off_activities[index].activity/cs137_act << endl;
+   }
    */
   
   // We expect A = A_0 * (1 - exp(-lamda * t_activation), so lets check things, but
   //  please note that this is only a valid check if no other activation products
   //  decay through the activation nuclide of interest.
   /*
-  cout << endl << endl;
-  for( size_t index = 0; index < irrad_end_activities.size() && (index < 100); ++index )
-  {
-    const SandiaDecay::Nuclide * const output_nuc = irrad_end_activities[index].nuclide;
-    const double out_act = irrad_end_activities[index].activity;
-    for( size_t input_index = 0; input_index < nuclides_rates.size(); ++input_index )
-    {
-      const SandiaDecay::Nuclide * const input_nuc = nuclides_rates[input_index].first;
-      const double input_rate = nuclides_rates[input_index].second;
-      if( input_nuc != output_nuc )
-        continue;
-      
-      const double lambda = input_nuc->decayConstant();
-      const double expected_act = input_rate * (1.0 - exp( -lambda * irradiation_time_seconds) );
-      cout << "For " << input_nuc->symbol << " analytically expected " << expected_act
-            << " bq; our calculation is " << out_act << " bq" << endl;
-    }//for( loop over input nuclides )
-  }//for( loop over output nuclides )
-  */
-      try
-      {
-        const SandiaDecay::SandiaDecayDataBase *db = DecayDataBaseServer::database();
-        assert( db );
-        if( !db )
-          throw std::logic_error( "invalid SandiaDecayDataBase" );
-        
-        std::vector<char> data;
-        SpecUtils::load_file_data( filepath.c_str(), data );
-        
-        rapidxml::xml_document<char> doc;
-        const int flags = rapidxml::parse_normalize_whitespace | rapidxml::parse_trim_whitespace;
-        doc.parse<flags>( &data.front() );
-        
-        const XmlNode *ref_lines = doc.first_node( "RefLineDefinitions" );
-        if( !ref_lines )
-          throw runtime_error( "No RefLineDefinitions node." );
-        
-        XML_FOREACH_CHILD( nuc_mix, ref_lines, "NucMixture" )
-        {
-          const XmlAttribute *mix_name = XML_FIRST_ATTRIB( nuc_mix, "name" );
-          const XmlAttribute *def_age = XML_FIRST_ATTRIB( nuc_mix, "default-age" );
-          
-          string mix_name_str = SpecUtils::xml_value_str( mix_name );
-          if( mix_name_str.empty() )
-            throw runtime_error( "No mixture name" );
-          
-          NucMix mix;
-          mix.m_name = mix_name_str;
-          mix.m_default_age = 0.0;
-          mix.m_default_age_str = "";
-          mix.m_fixed_act_fractions = true;
-          if( def_age )
-          {
-            mix.m_default_age_str = SpecUtils::xml_value_str( def_age );
-            mix.m_default_age = PhysicalUnits::stringToTimeDuration( mix.m_default_age_str );
-          }
-          
-          const XmlAttribute *ref_age_attrib = XML_FIRST_ATTRIB( nuc_mix, "reference-age" );
-          const string ref_age_str = SpecUtils::xml_value_str( ref_age_attrib );
-          double ref_age = -1.0;
-          if( !ref_age_str.empty() )
-          {
-            mix.m_fixed_act_fractions = false;
-            ref_age = PhysicalUnits::stringToTimeDuration( ref_age_str );
-          }//if( !ref_age_str.empty() )
-          
-          
-          XML_FOREACH_CHILD( nuc, nuc_mix, "Nuc" )
-          {
-            const XmlAttribute *nuc_name = XML_FIRST_ATTRIB( nuc, "name" );
-            const XmlAttribute *nuc_act_frac = XML_FIRST_ATTRIB( nuc, "act-frac" );
-            const XmlAttribute *age_offset = XML_FIRST_ATTRIB( nuc, "age-offset" );
-            const XmlAttribute *color = XML_FIRST_ATTRIB( nuc, "color" );
-            
-            if( !nuc_name || !nuc_name->value_size() )
-              throw runtime_error( "No nuclide name" );
-            
-            const string nuc_name_str = SpecUtils::xml_value_str( nuc_name );
-            
-            if( !nuc_act_frac || !nuc_act_frac->value_size() )
-              throw runtime_error( "No activity fraction for " + nuc_name_str
-                                  + " in " + mix_name_str );
-            
-            NucMixComp comp;
-            comp.m_age_offset = 0.0;
-            comp.m_nuclide = db->nuclide( nuc_name_str );
-            if( !comp.m_nuclide )
-              throw runtime_error( "Invalid nuclide: " + nuc_name_str );
-            
-            if( !SpecUtils::parse_double( nuc_act_frac->value(), nuc_act_frac->value_size(),
-                                         comp.m_rel_act )
-               || (comp.m_rel_act < 0.0) )
-              throw runtime_error( "Invalid activity fraction: " + nuc_name_str );
-            
-            if( age_offset && age_offset->value_size() )
-            {
-              const string age_offset_str = SpecUtils::xml_value_str( age_offset );
-              comp.m_age_offset = PhysicalUnits::stringToTimeDuration( age_offset_str );
-            }//if( age_offset && age_offset->value_size() )
-            
-            if( color && color->value_size() )
-            {
-              const string color_str = SpecUtils::xml_value_str(color);
-              comp.m_color = Wt::WColor( color_str );
-              if( comp.m_color.isDefault() )
-              {
-                const string msg = "NucMixture named '" + mix_name_str + "'"
-                    " has invalid color value for '" + nuc_name_str + "': "
-                    "'" + color_str + "' - not CSS color string.";
-                cerr << msg << endl;
-                //throw runtime_error( msg ); // we wont disregard the whole file over a single color
-              }//if( parsing of color failed )
-            }//if( user specified color )
-            
-            mix.m_components.push_back( std::move(comp) );
-          }//XML_FOREACH_CHILD( nuc, nuc_mix, "Nuc" )
-          
-          assert( mix.m_fixed_act_fractions == (ref_age < 0.0) );
-          if( !mix.m_fixed_act_fractions && (ref_age > 0.0) )
-          {
-            // Figure out activities at t=0:
-            //  specified_act = A_0 * exp( -ref_age * nuc->decayConstant() );
-            //  A_0 = specified_act / exp( -ref_age * nuc->decayConstant() );
-            
-            for( NucMixComp &m : mix.m_components )
-            {
-              const double given_act = m.m_rel_act;
-              const SandiaDecay::Nuclide *nuc = m.m_nuclide;
-              m.m_rel_act = given_act / exp( -ref_age * nuc->decayConstant() );
-              
-#if( PERFORM_DEVELOPER_CHECKS )
-              SandiaDecay::NuclideMixture decay_mix;
-              decay_mix.addNuclideByActivity( nuc, m.m_rel_act );
-              const double ref_act = decay_mix.activity(ref_age, nuc);
-              if( (given_act > 0.0)
-                 && (fabs(ref_act - given_act) > 1.0E-5*std::max(ref_act,given_act)) ) //1.0E-5 arbitrary
-              {
-                log_developer_error( __func__, "Decay correction calculation has failed." );
-                assert( fabs(ref_act - given_act) < 1.0E-5*std::max(ref_act,given_act) );
-              }
-#endif
-            }//for( NucMixComp &m : mix.m_components )
-          }//if( mix.m_fixed_act_fractions )
-          
-          double act_fraction_sum = 0.0;
-          for( const NucMixComp &m : mix.m_components )
-            act_fraction_sum += m.m_rel_act;
-          
-          if( (act_fraction_sum <= 0.0) || IsNan(act_fraction_sum) || IsInf(act_fraction_sum) )
-            throw runtime_error( "Invalid activity fraction sum" );
-          
-          for( NucMixComp &m : mix.m_components )
-            m.m_rel_act /= act_fraction_sum;
-          
-          sanitize_label_str( mix_name_str );
-          nuc_mixes[mix_name_str] = std::move(mix);
-        }//XML_FOREACH_CHILD( nuc_mix, ref_lines, "NucMixture" )
-        
-        
-        XML_FOREACH_CHILD( source, ref_lines, "SourceLines" )
-        {
-          const XmlAttribute *src_name = XML_FIRST_ATTRIB( source, "name" );
-          string src_name_str = SpecUtils::xml_value_str( src_name );
-          SpecUtils::trim( src_name_str );
-          
-          if( src_name_str.empty() )
-            throw runtime_error( "No name specified for a SourceLines element" );
-          
-          CustomSrcLines src_lines;
-          src_lines.m_name = src_name_str;
-          src_lines.m_max_branch_ratio = 0.0;
-          XML_FOREACH_CHILD( line, source, "Line" )
-          {
-            const XmlAttribute *info = XML_FIRST_ATTRIB( line, "info" );
-            string info_str = SpecUtils::xml_value_str( info );
-            SpecUtils::trim( info_str );
-            
-            const string values_str = SpecUtils::xml_value_str( line );
-            
-            vector<float> values;
-            SpecUtils::split_to_floats( values_str, values );
-            if( values.size() != 2 )
-              throw runtime_error( "SourceLines named '" + src_name_str + "' provided "
-                                  + std::to_string(values.size()) + " values (expected two numbers)" );
-            
-            const float energy = values[0];
-            const float br = values[1];
-            
-            if( (energy <= 0.f) || (br < 0.0f) )
-              throw runtime_error( "SourceLines named '" + src_name_str + "' has a negative value." );
-            
-            src_lines.m_max_branch_ratio = std::max( src_lines.m_max_branch_ratio, br );
-            
-            const SandiaDecay::Nuclide *nuc = nullptr;
-            const SandiaDecay::Transition *trans = nullptr;
-            const XmlAttribute *nuclide = XML_FIRST_ATTRIB( line, "nuc" );
-            if( nuclide && nuclide->value_size() )
-            {
-              const string nuc_name = SpecUtils::xml_value_str(nuclide);
-              nuc = db->nuclide( nuc_name );
-              if( !nuc )
-                throw runtime_error( "SourceLines named '" + src_name_str + "' has an invalid nuclide ('" + nuc_name + "')." );
-              
-              size_t transition_index = 0;
-              PeakDef::SourceGammaType nearestGammaType;
-              PeakDef::findNearestPhotopeak( nuc, energy, 0.25, false, -1.0,
-                                            trans, transition_index, nearestGammaType );
-              if( !trans )
-                throw runtime_error( "SourceLines named '" + src_name_str + "' with nuclide '"
-                                    + nuc_name + "', couldnt be matched to source data for energy "
-                                    + std::to_string(energy) + " keV." );
-            }//if( nuclide && nuclide->value_size() )
-            
-            bool atten_applies = true;
-            const XmlAttribute *atten = XML_FIRST_ATTRIB( line, "atten" );
-            if( atten && atten->value_size() )
-            {
-              const string atten_str = SpecUtils::xml_value_str(atten);
-              if( SpecUtils::iequals_ascii(atten_str, "0")
-                 || SpecUtils::iequals_ascii(atten_str, "false")
-                 || SpecUtils::iequals_ascii(atten_str, "no") )
-              {
-                atten_applies = false;
-              }else if( !SpecUtils::iequals_ascii(atten_str, "1")
-                       && !SpecUtils::iequals_ascii(atten_str, "true")
-                       && !SpecUtils::iequals_ascii(atten_str, "yes") )
-              {
-                throw runtime_error( "SourceLines named '" + src_name_str + "' has invalid value "
-                                     " for the 'atten' attribute ('" + atten_str + "')" );
-              }
-            }//if( atten && atten->value_size() )
-            
-            Wt::WColor color;
-            const XmlAttribute *color_attrib = XML_FIRST_ATTRIB( line, "color" );
-            if( color_attrib && color_attrib->value_size() )
-            {
-              const string color_str = SpecUtils::xml_value_str(color_attrib);
-              color = Wt::WColor( color_str );
-              if( color.isDefault() )
-              {
-                // Parsing of color failed
-                const string msg =  "SourceLines named '" + src_name_str + "' has invalid value "
-                                     " for color attribute ('" + color_str
-                                    + "') - could not parse as CSS color.";
-                cerr << msg << endl;
-                //throw runtime_error( msg ); //We wont disregard the whole file over an invalid file
-              }
-            }//if( color_attrib && color_attrib->value_size() )
-            
-            src_lines.m_lines.emplace_back( energy, br, std::move(info_str), nuc, 
-                                           trans, atten_applies, std::move(color) );
-          }//XML_FOREACH_CHILD( line, source, "Line" )
-          
-          if( src_lines.m_lines.empty() )
-            throw runtime_error( "No lines specified for SourceLines named '" + src_name_str + "'" );
-          
-          if( src_lines.m_max_branch_ratio <= 0.0f )
-            throw runtime_error( "Lines specified for SourceLines named '" + src_name_str + "' were all zero amplitude." );
-          
-          sanitize_label_str( src_name_str );
-          custom_lines[std::move(src_name_str)] = std::move(src_lines);
-        }//XML_FOREACH_CHILD( source, ref_lines, "SourceLines" )
-      }catch( std::exception &e )
-      {
-        cerr << "Failed to load '" << filepath << "' as custom ref lines: "
-        << e.what() << endl;
-      }//try / catch to load XML data
-    };//auto load_ref_line_file lambda
-    
-    
-    const string data_dir = InterSpec::staticDataDirectory();
-    const string add_lines_path = SpecUtils::append_path( data_dir, "add_ref_line.xml" );
-    
-    auto nuc_mixes = make_shared<map<string,NucMix>>();
-    auto custom_lines = make_shared<map<string,CustomSrcLines>>();
-    
-    load_ref_line_file( add_lines_path, *nuc_mixes, *custom_lines );
-    
-#if( BUILD_AS_ELECTRON_APP || IOS || ANDROID || BUILD_AS_OSX_APP || BUILD_AS_LOCAL_SERVER || BUILD_AS_WX_WIDGETS_APP || BUILD_AS_UNIT_TEST_SUITE )
-    
-    string user_data_dir;
-    
-    // `InterSpec::writableDataDirectory()` will throw if it hasnt been set.
-    //  - e.g., in testing or batch mode
-    try
-    {
-      user_data_dir = InterSpec::writableDataDirectory();
-    }catch( std::exception & )
-    {
-    }//try / catch
-    
-    if( !user_data_dir.empty() )
-    {
-      const string custom_lines_path = SpecUtils::append_path( user_data_dir, "add_ref_line.xml" );
-        
-      // Any duplicate names, will overwrite what comes with InterSpec
-      if( SpecUtils::is_file( custom_lines_path ) )
-        load_ref_line_file( custom_lines_path, *nuc_mixes, *custom_lines );
-    }//if( !user_data_dir.empty() )
-#endif
-    
-    sm_nuc_mixes = nuc_mixes;
-    sm_custom_lines = custom_lines;
-    
-    //const double end_time = SpecUtils::get_wall_time();
-    //cout << "load_custom_nuc_mixes(): took " << (end_time - start_time) << " s" << endl;
-  }//void load_custom_nuc_mixes()
+   cout << endl << endl;
+   for( size_t index = 0; index < irrad_end_activities.size() && (index < 100); ++index )
+   {
+   const SandiaDecay::Nuclide * const output_nuc = irrad_end_activities[index].nuclide;
+   const double out_act = irrad_end_activities[index].activity;
+   for( size_t input_index = 0; input_index < nuclides_rates.size(); ++input_index )
+   {
+   const SandiaDecay::Nuclide * const input_nuc = nuclides_rates[input_index].first;
+   const double input_rate = nuclides_rates[input_index].second;
+   if( input_nuc != output_nuc )
+   continue;
+   
+   const double lambda = input_nuc->decayConstant();
+   const double expected_act = input_rate * (1.0 - exp( -lambda * irradiation_time_seconds) );
+   cout << "For " << input_nuc->symbol << " analytically expected " << expected_act
+   << " bq; our calculation is " << out_act << " bq" << endl;
+   }//for( loop over input nuclides )
+   }//for( loop over output nuclides )
+   */
   
   const vector<SandiaDecay::NuclideActivityPair> after_cool_off_activities
-                                                                = mixture.activity( cool_off_time );
+  = mixture.activity( cool_off_time );
   
   double max_rel_amp = 0.0;
   vector<FissionLine> all_lines;
@@ -1401,7 +1113,7 @@ std::shared_ptr<const vector<FissionLine>> fission_photons( const SandiaDecay::N
   
   // Now sort from biggest to smallest amplitude.
   std::sort( begin(amp_to_index), end(amp_to_index),
-    []( const pair<double,size_t> &lhs, const pair<double,size_t> &rhs ) -> bool {
+            []( const pair<double,size_t> &lhs, const pair<double,size_t> &rhs ) -> bool {
     return lhs.first > rhs.first;
   } );
   
@@ -1412,16 +1124,16 @@ std::shared_ptr<const vector<FissionLine>> fission_photons( const SandiaDecay::N
   {
     keeper_lines->push_back(all_lines[amp_to_index[i].second] );
   }//for( size_t i = 0; i < answer.size(); ++i )
-    
-                      
+  
+  
   // Sort all lines by energy
   std::sort( begin(*keeper_lines), end(*keeper_lines),
-    []( const FissionLine &lhs, const FissionLine &rhs ) -> bool {
-      if( lhs.energy == rhs.energy ) // If same energy, put larger amplitude to left
-        return rhs.relative_amplitude < lhs.relative_amplitude;
-      return lhs.energy < rhs.energy;
+            []( const FissionLine &lhs, const FissionLine &rhs ) -> bool {
+    if( lhs.energy == rhs.energy ) // If same energy, put larger amplitude to left
+      return rhs.relative_amplitude < lhs.relative_amplitude;
+    return lhs.energy < rhs.energy;
   } );
-
+  
   
   {// Begin lock on `s_cache_photons_mutex` to see if we've already computed this
     std::lock_guard<std::mutex> lock( s_cache_photons_mutex );
@@ -1430,7 +1142,7 @@ std::shared_ptr<const vector<FissionLine>> fission_photons( const SandiaDecay::N
       s_cache_photons.resize( max_cache_photons );
   }// End lock on `s_cache_photons_mutex`
   
-
+  
   return keeper_lines;
 }//shared_ptr<vector<FissionLine>> fission_photons(...)
 }//namespace
