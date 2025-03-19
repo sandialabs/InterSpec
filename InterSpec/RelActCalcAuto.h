@@ -425,6 +425,35 @@ struct Options
 
   std::vector<RelActCalcAuto::FloatingPeak> floating_peaks;
 
+
+  /** If true, use the same Hoerl equation form for all relative efficiency curves.
+   *
+   * If false, each relative efficiency curve will have its own Hoerl equation fit (if applicable).
+   * 
+   * if true, and you do not have multiple physical models with `RelEffCurveInput::phys_model_use_hoerl`
+   * set to true, then an exception will be thrown.
+   */
+  bool same_hoerl_for_all_rel_eff_curves = false;
+
+  /** If true, use the same external shielding for all relative efficiency curves.
+   *
+   * If true, you must have multiple physical models defined, each with the same 
+   * external shielding defined for each relative efficiency curve - or an exception 
+   * will be thrown.
+   * 
+   * If the initial starting solution for the AutoRelEff curve is to be determined using
+   * the ManualRelEff method, then the first RelEffCurveInput estimate will be what is 
+   * used.
+   */
+  bool same_external_shielding_for_all_rel_eff_curves = false;
+
+  /** If using the same Hoerl function, or external shielding for all relative efficiency curves,
+   * this will check that the specifications are consistent.
+   *
+   * Throws an exception if they are not consistent.
+   */
+  void check_same_hoerl_and_external_shielding_specifications() const;
+
   /** Version history:
    - 20250117: incremented to 1 to handle FramPhysicalModel; if not this model, will still write version 0.
    - 20250130: incremented to 2 to handle multiple rel eff curves; can read backward compatible, but not write.
@@ -436,6 +465,8 @@ struct Options
    @param parent An XML element with name "Options".
    @param materialDB The material database to use to retrieve a material from for the #PhysicalModelShieldInput;
           for other equation types, or for AN/AD defined shields, this isnt used/required.
+          `same_hoerl_for_all_rel_eff_curves` and `same_external_shielding_for_all_rel_eff_curves`
+          were also added, and are optional.
    */
   void fromXml( const ::rapidxml::xml_node<char> *parent, MaterialDB *materialDB );
 
@@ -638,7 +669,20 @@ struct RelActAutoSolution
   
   std::vector<RelActCalc::RelEffEqnForm> m_rel_eff_forms;
   
+  /** The coefficients for the relative efficiency curve(s)
+   * 
+   * If Hoerl or external shieldings were shared between Physical Model curves, then the
+   * coefficents fit for these values will be copied from the first physical model curve
+   * to all the others.
+   */
   std::vector<std::vector<double>> m_rel_eff_coefficients;
+
+  /** The covariance matrix of the relative efficiency curve(s)
+   * 
+   * If Hoerl or external shieldings were shared between Physical Model curves, then the
+   * covariance matrix entries these values will NOT have been copied from the first 
+   * physical model curve to all the others - since I dont think this makes sense.
+   */
   std::vector<std::vector<std::vector<double>>> m_rel_eff_covariance;
   
   /** The relative activities of each of the input nuclides.

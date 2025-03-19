@@ -1545,6 +1545,8 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
       // Check nucliode constraints are all valid
       for( const auto &rel_eff_curve : options.rel_eff_curves ) 
         rel_eff_curve.check_nuclide_constraints();
+
+      options.check_same_hoerl_and_external_shielding_specifications();
     }catch( std::exception &e )
     {
       solution.m_status = RelActCalcAuto::RelActAutoSolution::Status::FailedToSetupProblem;
@@ -1889,6 +1891,8 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
 
       // Loop over each relative efficiency curve and estimate the starting parameters for the "auto" fit
       //  by doing a rough/course/poor manual fit.
+      const RelActCalcAuto::RelEffCurveInput *first_phys_model_curve = nullptr; //We'll track this for sharing external shielding and Hoerl function, if the user has selected it
+      size_t first_phys_model_par_start = std::numeric_limits<size_t>::max();
       size_t num_re_nucs_seen = 0, num_re_curve_pars_seen = 0; // To help us keep track of rel eff and act/age index in parameters vector
       for( size_t re_eff_index = 0; re_eff_index < options.rel_eff_curves.size(); ++re_eff_index )
       {
@@ -1897,7 +1901,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
         const auto &rel_eff_curve = options.rel_eff_curves[re_eff_index];
         assert( (rel_eff_curve.rel_eff_eqn_order != 0)
                || (rel_eff_curve.rel_eff_eqn_type == RelActCalc::RelEffEqnForm::FramPhysicalModel) );
-        
+
         // TODO: add something like `options.correct_for_decay_during_meas` or maybe this option should be a per-nuclide option.
         //const bool correct_for_decay = (real_time > 0.0) ? options.correct_for_decay_during_meas : false;
         const bool correct_for_decay = false;
@@ -1952,7 +1956,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
             }//case all models except FramPhysicalModel
               
             case RelActCalc::RelEffEqnForm::FramPhysicalModel:
-            {
+            { 
               const auto &self_atten_opt = rel_eff_curve.phys_model_self_atten;
               setup_physical_model_shield_par( lower_bounds, upper_bounds, constant_parameters, pars, this_rel_eff_start, self_atten_opt );
               
@@ -1969,10 +1973,17 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
               
               pars[b_index] = 0.0;  //(energy/1000)^b - start b at 0, so term is 1.0
               pars[c_index] = 1.0;  //c^(1000/energy) - start c at 1, so term is 1
-              if( !rel_eff_curve.phys_model_use_hoerl )
+              if( !rel_eff_curve.phys_model_use_hoerl || (options.same_hoerl_for_all_rel_eff_curves && first_phys_model_curve) )
               {
                 constant_parameters.push_back( static_cast<int>(b_index) );
                 constant_parameters.push_back( static_cast<int>(c_index) );
+                
+                if( options.same_hoerl_for_all_rel_eff_curves && first_phys_model_curve )
+                {
+                  // This is just so we can assert on the values later, as a double check
+                  pars[b_index] = -1.0;
+                  pars[c_index] = -1.0;
+                }
               }else
               {
                 lower_bounds[b_index] = 0.0;
@@ -1980,6 +1991,13 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
                 lower_bounds[c_index] = 1.0E-6;  //e.x, pow(-0.1889,1000/124.8) is NaN
                 upper_bounds[c_index] = 3.0;
               }
+
+              if( !first_phys_model_curve )
+              {
+                first_phys_model_curve = &rel_eff_curve;
+                first_phys_model_par_start = this_rel_eff_start;
+              }
+
               break;
             }//case RelActCalc::RelEffEqnForm::FramPhysicalModel:
           }//switch( solution.m_rel_eff_form )
@@ -2041,6 +2059,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
           if( num_free_pars < 0 )
             manual_rel_eff_order = manual_num_peaks - manual_num_isos;
           
+
           RelActCalcManual::RelEffInput manual_input;
           manual_input.peaks = peaks_with_sources;
           manual_input.phys_model_detector = res_drf;
@@ -2050,6 +2069,36 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
           manual_input.phys_model_self_atten = rel_eff_curve.phys_model_self_atten;
           manual_input.phys_model_external_attens = rel_eff_curve.phys_model_external_atten;
           manual_input.phys_model_use_hoerl = false;
+
+
+          const bool use_first_ext_shield = ((rel_eff_curve.rel_eff_eqn_type == RelActCalc::RelEffEqnForm::FramPhysicalModel) 
+                                            && options.same_external_shielding_for_all_rel_eff_curves
+                                            && (first_phys_model_curve != (&rel_eff_curve)));
+          const bool use_first_hoerl = ((rel_eff_curve.rel_eff_eqn_type == RelActCalc::RelEffEqnForm::FramPhysicalModel) 
+                                        && options.same_hoerl_for_all_rel_eff_curves
+                                        && manual_input.phys_model_use_hoerl
+                                        && (first_phys_model_curve != (&rel_eff_curve)));
+
+
+          if( use_first_ext_shield )
+          {
+            for( size_t i = 0; i < manual_input.phys_model_external_attens.size(); ++i )
+            {
+              assert( 0 ); // this has not been checked as of 20250317
+
+              const size_t ext_att_index = first_phys_model_par_start + 2 + 2*i;
+              const shared_ptr<const RelActCalc::PhysicalModelShieldInput> orig_ext_att = manual_input.phys_model_external_attens[i];
+              assert( orig_ext_att );
+              shared_ptr<RelActCalc::PhysicalModelShieldInput> updated_ext_att = make_shared<RelActCalc::PhysicalModelShieldInput>( *orig_ext_att );
+              updated_ext_att->fit_atomic_number = false;
+              updated_ext_att->fit_areal_density = false;
+              if( !updated_ext_att->material )
+                updated_ext_att->atomic_number = parameters[ext_att_index + 0] * RelActCalc::ns_an_ceres_mult;
+              updated_ext_att->areal_density = parameters[ext_att_index + 1] * PhysicalUnits::g_per_cm2;
+              
+              manual_input.phys_model_external_attens[i] = updated_ext_att;
+            }
+          }//if( use_first_ext_shield )
           
           for( const RelActCalcAuto::RelEffCurveInput::ActRatioConstraint &constraint : rel_eff_curve.act_ratio_constraints )
           {
@@ -2063,6 +2112,13 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
             manual_constraint.m_constrained_to_controlled_activity_ratio = constraint.constrained_to_controlled_activity_ratio;
             manual_input.act_ratio_constraints.push_back( manual_constraint );
           }
+
+          if( use_first_hoerl )
+          {
+            // TODO: we should fix the Hoerl parameters here to what we got for first Phys Model Rel Eff Curve;
+            //       but actually we arent ever fitting the Hoerl parameters, so this is moot (and we havent implemented a 
+            //       way to contrain the Hoerl parameters yet).
+          }//if( use_first_hoerl )
 
           RelActCalcManual::RelEffSolution manual_solution
                                = RelActCalcManual::solve_relative_efficiency( manual_input );
@@ -2110,44 +2166,64 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
             const bool html_format = false;
             rel_eff_eqn_str = manual_solution.rel_eff_eqn_txt( html_format );
             
-            parameters[this_rel_eff_start + 0] = 0.0;
-            parameters[this_rel_eff_start + 1] = 0.0;
+            parameters[this_rel_eff_start + 0] = 0.0;  //Atomic number
+            parameters[this_rel_eff_start + 1] = 0.0;  //Areal density
+
+            size_t manual_index = 0;
             if( rel_eff_curve.phys_model_self_atten )
             {
-              size_t manual_index = 0;
               if( rel_eff_curve.phys_model_self_atten->fit_atomic_number )
               {
                 assert( manual_solution.m_rel_eff_eqn_coefficients.size() > manual_index );
-                parameters[this_rel_eff_start + 0] = manual_solution.m_rel_eff_eqn_coefficients.at(manual_index);
+                parameters[this_rel_eff_start + 0] = manual_solution.m_rel_eff_eqn_coefficients.at(manual_index); //Atomic number; note both manual and auto RelEff use RelActCalc::ns_an_ceres_mult
                 manual_index += 1;
               }
               
               assert( manual_solution.m_rel_eff_eqn_coefficients.size() > manual_index );
-              parameters[this_rel_eff_start + 1] = manual_solution.m_rel_eff_eqn_coefficients.at(manual_index);
+              parameters[this_rel_eff_start + 1] = manual_solution.m_rel_eff_eqn_coefficients.at(manual_index); //Areal density; both manual and auto RelEff use g/cm2
+              
               manual_index += 1;
-              
-              for( size_t i = 0; i < rel_eff_curve.phys_model_external_atten.size(); ++i )
+            }//if( options.phys_model_self_atten )
+
+            for( size_t i = 0; i < rel_eff_curve.phys_model_external_atten.size(); ++i )
+            {
+              const auto &ext_att = rel_eff_curve.phys_model_external_atten[i];
+              assert( ext_att );
+              if( !ext_att )
+                continue;
+
+              if( use_first_ext_shield )
               {
-                const auto &ext_att = rel_eff_curve.phys_model_external_atten[i];
-                assert( ext_att );
-                if( !ext_att )
-                  continue;
-                
-                if( ext_att->fit_atomic_number )
-                {
-                  assert( manual_solution.m_rel_eff_eqn_coefficients.size() > manual_index );
-                  parameters[this_rel_eff_start + 2 + 2*i + 0] = manual_solution.m_rel_eff_eqn_coefficients.at(manual_index);
-                  manual_index += 1;
-                }
-                
+                parameters[this_rel_eff_start + 2 + 2*i + 0] = -1.0;
+                parameters[this_rel_eff_start + 2 + 2*i + 1] = -1.0;
+                manual_index += 1; //AN is only a parameter if being fit, AD is always a paramater
+                continue;
+              }
+
+              if( ext_att->fit_atomic_number )
+              {
                 assert( manual_solution.m_rel_eff_eqn_coefficients.size() > manual_index );
-                parameters[this_rel_eff_start + 2 + 2*i + 1] = manual_solution.m_rel_eff_eqn_coefficients.at(manual_index);
+                parameters[this_rel_eff_start + 2 + 2*i + 0] = manual_solution.m_rel_eff_eqn_coefficients.at(manual_index);
                 manual_index += 1;
-              }//for( loop over options.phys_model_external_atten )
+              }
+                
+              assert( manual_solution.m_rel_eff_eqn_coefficients.size() > manual_index );
+              parameters[this_rel_eff_start + 2 + 2*i + 1] = manual_solution.m_rel_eff_eqn_coefficients.at(manual_index);
+              manual_index += 1;
+            }//for( loop over options.phys_model_external_atten )
               
-              const size_t b_index = this_rel_eff_start + 2 + 2*rel_eff_curve.phys_model_external_atten.size() + 0;
-              const size_t c_index = this_rel_eff_start + 2 + 2*rel_eff_curve.phys_model_external_atten.size() + 1;
-              if( manual_input.phys_model_use_hoerl )
+            const size_t b_index = this_rel_eff_start + 2 + 2*rel_eff_curve.phys_model_external_atten.size() + 0;
+            const size_t c_index = this_rel_eff_start + 2 + 2*rel_eff_curve.phys_model_external_atten.size() + 1;
+            if( manual_input.phys_model_use_hoerl )
+            {
+              assert( first_phys_model_curve );
+
+              if( options.same_hoerl_for_all_rel_eff_curves && (first_phys_model_curve != (&rel_eff_curve)) )
+              {
+                assert( parameters[b_index] == -1.0 );
+                assert( parameters[c_index] == -1.0 );
+                manual_index += 2;
+              }else
               {
                 assert( manual_solution.m_rel_eff_eqn_coefficients.size() > manual_index );
                 parameters[b_index] = manual_solution.m_rel_eff_eqn_coefficients.at(manual_index);
@@ -2156,12 +2232,19 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
                 assert( manual_solution.m_rel_eff_eqn_coefficients.size() > manual_index );
                 parameters[c_index] = manual_solution.m_rel_eff_eqn_coefficients.at(manual_index);
                 manual_index += 1;
+              }
+            }else
+            {
+              if( options.same_hoerl_for_all_rel_eff_curves && (first_phys_model_curve != (&rel_eff_curve)) )
+              {
+                assert( parameters[b_index] == -1.0 );
+                assert( parameters[c_index] == -1.0 );
               }else
               {
                 pars[b_index] = 0.0;  //(energy/1000)^b
                 pars[c_index] = 1.0;  //c^(1000/energy)
-              }//if( manual_input.phys_model_use_hoerl ) / else
-            }//if( options.phys_model_self_atten )
+              }
+            }//if( manual_input.phys_model_use_hoerl ) / else
           }//if( no Physical Model ) / else
           cout << "Starting with initial rel. eff. eqn = " << rel_eff_eqn_str << endl;
           
@@ -2177,8 +2260,8 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
             size_t nuc_count = 0;
             for( const auto &rel_eff_curve : options.rel_eff_curves )
             {
-              for( const auto &nuc : rel_eff_curve.nuclides )
-                if( nuc.nuclide == nuc.nuclide )
+              for( const auto &other_nuc : rel_eff_curve.nuclides )
+                if( nuc.nuclide == other_nuc.nuclide )
                   nuc_count += 1;
             }
             rel_act /= nuc_count;
@@ -3003,10 +3086,8 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
       const size_t rel_eff_start = cost_functor->rel_eff_eqn_start_parameter(rel_eff_index);
       const size_t num_rel_eff_par = cost_functor->rel_eff_eqn_num_parameters(rel_eff_index);
       const auto rel_eff_iter = begin(parameters) + rel_eff_start;
-      solution.m_rel_eff_coefficients[rel_eff_index].insert( end(solution.m_rel_eff_coefficients[rel_eff_index]),
-                                      rel_eff_iter, rel_eff_iter + num_rel_eff_par );
+      solution.m_rel_eff_coefficients[rel_eff_index] = cost_functor->pars_for_rel_eff_curve( rel_eff_index, parameters );
       solution.m_rel_eff_forms[rel_eff_index] = rel_eff_curve.rel_eff_eqn_type;
-
 
       for( size_t act_index = 0; act_index < input_nuclides.size(); ++act_index )
       {
@@ -3213,7 +3294,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
         auto get_shield_info = [&]( const RelActCalc::PhysicalModelShieldInput &input,
                                    const size_t start_index )
           -> RelActCalcAuto::RelActAutoSolution::PhysicalModelFitInfo::ShieldInfo {
-          
+
           RelActCalcAuto::RelActAutoSolution::PhysicalModelFitInfo::ShieldInfo answer;
           
           answer.material = input.material;
@@ -4006,9 +4087,107 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     }//if( (b != 0.0) || (c != 1.0) )
     
     return answer;
-  }//PhysModelRelEqnDef make_phys_eqn_input(...)
+  }//static PhysModelRelEqnDef make_phys_eqn_input(...)
   
+
+  template<typename T>
+  PhysModelRelEqnDef<T> make_phys_eqn_input( const size_t rel_eff_curve_index, const std::vector<T> &x ) const 
+  {
+    if( rel_eff_curve_index >= m_options.rel_eff_curves.size() )
+      throw std::logic_error( "make_phys_eqn_input: rel eff curve index " + to_string(rel_eff_curve_index) + " is out of range" );
+    
+    const RelActCalcAuto::RelEffCurveInput &rel_eff_curve = m_options.rel_eff_curves[rel_eff_curve_index];
+    
+    assert( rel_eff_curve.rel_eff_eqn_type == RelActCalc::RelEffEqnForm::FramPhysicalModel );
+    if( rel_eff_curve.rel_eff_eqn_type != RelActCalc::RelEffEqnForm::FramPhysicalModel )
+      throw std::logic_error( "make_phys_eqn_input: rel eff curve index " + to_string(rel_eff_curve_index) + " is not a physical model" );
+    
+    const size_t rel_eff_start = rel_eff_eqn_start_parameter(rel_eff_curve_index);
+
+    if( (!m_options.same_hoerl_for_all_rel_eff_curves && !m_options.same_external_shielding_for_all_rel_eff_curves) )
+      return make_phys_eqn_input( rel_eff_curve, m_drf, x, rel_eff_start );
+
+    const vector<T> coefs = pars_for_rel_eff_curve( rel_eff_curve_index, x );
+
+    return make_phys_eqn_input( rel_eff_curve, m_drf, coefs, 0 );
+  }//make_phys_eqn_input(...)
   
+
+  template<typename T>
+  vector<T> pars_for_rel_eff_curve( const size_t rel_eff_index, const std::vector<T> &x ) const
+  {
+    assert( rel_eff_index < m_options.rel_eff_curves.size() );
+    if( rel_eff_index >= m_options.rel_eff_curves.size() )
+      throw runtime_error( "pars_for_rel_eff_curve(): invalid rel eff curve index" );
+
+    const size_t rel_eff_start_index = rel_eff_eqn_start_parameter(rel_eff_index);
+    const size_t num_rel_eff_par = rel_eff_eqn_num_parameters(rel_eff_index);
+    assert( (rel_eff_start_index + num_rel_eff_par) < x.size() );
+    if( (rel_eff_start_index + num_rel_eff_par) >= x.size() )
+      throw std::logic_error( "pars_for_rel_eff_curve(): whack number of rel eff parameters" );
+
+    const RelActCalcAuto::RelEffCurveInput &rel_eff_curve = m_options.rel_eff_curves[rel_eff_index];
+
+    vector<T> coefs( begin(x) + rel_eff_start_index, begin(x) + rel_eff_start_index + num_rel_eff_par );
+
+    if( (rel_eff_curve.rel_eff_eqn_type != RelActCalc::RelEffEqnForm::FramPhysicalModel)
+      || (!m_options.same_hoerl_for_all_rel_eff_curves && !m_options.same_external_shielding_for_all_rel_eff_curves) )
+    {
+      return coefs;
+    }
+
+    // Find first Physical Model
+    const RelActCalcAuto::RelEffCurveInput *first_phys_model = nullptr;
+    size_t first_phys_model_par_start_index = std::numeric_limits<size_t>::max();
+    
+    for( size_t i = 0; i < m_options.rel_eff_curves.size(); ++i )
+    {
+      const RelActCalcAuto::RelEffCurveInput &rel_eff_curve = m_options.rel_eff_curves[i];
+      if( rel_eff_curve.rel_eff_eqn_type == RelActCalc::RelEffEqnForm::FramPhysicalModel )
+      {
+        if( rel_eff_index == i )
+          return coefs;
+
+        first_phys_model = &rel_eff_curve;
+        first_phys_model_par_start_index = rel_eff_eqn_start_parameter(i);
+        break;
+      }
+    }//for( size_t i = 0; i < m_options.rel_eff_curves.size(); ++i )
+
+    assert( first_phys_model );
+    if( !first_phys_model )
+      throw std::logic_error( "make_phys_eqn_input: no physical model found" );
+
+    assert( (2 + 2*first_phys_model->phys_model_external_atten.size() + 2) <= coefs.size() );
+    if( (2 + 2*first_phys_model->phys_model_external_atten.size() + 2) > coefs.size() )
+      throw std::logic_error( "make_phys_eqn_input: inconsistent number of rel eff parameters - shouldnt have happened - programming logic error." ); //shouldnt happen
+
+    if( m_options.same_hoerl_for_all_rel_eff_curves )
+    {
+      const size_t hoerl_b_index = first_phys_model_par_start_index + 2 + 2*first_phys_model->phys_model_external_atten.size();
+      const size_t hoerl_c_index = hoerl_b_index + 1;
+      assert( hoerl_c_index < x.size() );
+      if( hoerl_c_index >= x.size() )
+        throw std::logic_error( "make_phys_eqn_input: hoerl indices out of range" ); //shouldnt happen
+
+      coefs[2 + 2*first_phys_model->phys_model_external_atten.size() + 0] = x[hoerl_b_index];
+      coefs[2 + 2*first_phys_model->phys_model_external_atten.size() + 1] = x[hoerl_c_index];
+    }//if( m_options.same_hoerl_for_all_rel_eff_curves )
+
+    if( m_options.same_external_shielding_for_all_rel_eff_curves )
+    {
+      for( size_t i = 0; i < first_phys_model->phys_model_external_atten.size(); ++i )
+      {
+        const size_t atten_index = first_phys_model_par_start_index + 2 + 2*i;
+        coefs[2 + 2*i + 0] = x[atten_index + 0];  //AN
+        coefs[2 + 2*i + 1] = x[atten_index + 1];  //AD
+      }
+    }//if( m_options.same_external_shielding_for_all_rel_eff_curves )
+
+    return coefs;
+  }//pars_for_rel_eff_curve( const size_t rel_eff_index, const std::vector<T> &x )
+
+
   template<typename T>
   T relative_eff( const double energy, const size_t rel_eff_index, const std::vector<T> &x ) const
   {
@@ -4016,7 +4195,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     if( rel_eff_index >= m_options.rel_eff_curves.size() )
       throw runtime_error( "relative_eff(): invalid rel eff curve index" );
     
-    const auto &rel_eff_curve = m_options.rel_eff_curves[rel_eff_index];
+    const RelActCalcAuto::RelEffCurveInput &rel_eff_curve = m_options.rel_eff_curves[rel_eff_index];
     
     const size_t rel_eff_start_index = rel_eff_eqn_start_parameter(rel_eff_index);
     const size_t num_rel_eff_par = rel_eff_eqn_num_parameters(rel_eff_index);
@@ -4031,8 +4210,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
       assert( (rel_eff_start_index + num_rel_eff_par) < x.size() );
       assert( m_drf );
       
-      const PhysModelRelEqnDef<T> re_input = make_phys_eqn_input( rel_eff_curve,
-                                                             m_drf, x, rel_eff_start_index );
+      const PhysModelRelEqnDef<T> re_input = make_phys_eqn_input( rel_eff_index, x );
       
       return RelActCalc::eval_physical_model_eqn_imp( energy, re_input.self_atten,
                                                  re_input.external_attens, re_input.det.get(),
@@ -4823,6 +5001,8 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
    
    @returns A peak for each gamma, of each nuclide, as well as each free-floating peak, in the
             problem, that is within the specified energy range.
+
+    Currently this function is only used to get the final peaks fit, so not hyper optimized.
    */
   PeaksForEnergyRange peaks_for_energy_range( const RoiRangeChannels &range, const std::vector<double> &x ) const
   {
@@ -4882,6 +5062,11 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
           peak.setLineColor( Wt::WColor( Wt::WString::fromUTF8(nuc_info->peak_color_css) ) );
       }//if( comp_peak.m_rel_eff_index < m_nuclides.size() )
       
+      // Put in a way to label the peak with the relative efficiency index, so we can tell which
+      //  relative efficiency curve the peak came from, if there are multiple.
+      if( m_nuclides.size() > 1 )
+        peak.setUserLabel( "RelEff " + std::to_string(comp_peak.m_rel_eff_index) );
+
       answer.peaks.push_back( peak );
     }//for( size_t i = 0; i < computed_peaks.peaks.size(); ++i )
     
@@ -5812,6 +5997,120 @@ void FloatingPeak::fromXml( const ::rapidxml::xml_node<char> *parent )
 }//void fromXml(...)
 
 
+void Options::check_same_hoerl_and_external_shielding_specifications() const
+{
+  if( !same_hoerl_for_all_rel_eff_curves && !same_external_shielding_for_all_rel_eff_curves )
+    return;
+
+  if( same_hoerl_for_all_rel_eff_curves )
+  {
+    size_t num_hoerl_curves = 0;
+    for( const auto &rel_eff_curve : rel_eff_curves )
+    {
+      if( (rel_eff_curve.rel_eff_eqn_type == RelActCalc::RelEffEqnForm::FramPhysicalModel) 
+        && rel_eff_curve.phys_model_use_hoerl )
+        ++num_hoerl_curves;
+    }
+    if( num_hoerl_curves < 2 )
+      throw logic_error( "If using the same Hoerl function for all relative efficiency curves, "
+                        "you must have at least two relative efficiency curves with the Hoerl function enabled." );
+  }//if( same_hoerl_for_all_rel_eff_curves )
+
+  if( same_external_shielding_for_all_rel_eff_curves )
+  {
+    // Check at least 
+    size_t num_external_shielding_curves = 0;
+    const RelActCalcAuto::RelEffCurveInput *first_phys_model = nullptr;
+    for( const auto &rel_eff_curve : rel_eff_curves )
+    {
+      if( rel_eff_curve.rel_eff_eqn_type == RelActCalc::RelEffEqnForm::FramPhysicalModel ) 
+      {
+        const vector<shared_ptr<const RelActCalc::PhysicalModelShieldInput>> &external_shieldings = rel_eff_curve.phys_model_external_atten;
+        if( external_shieldings.empty() )
+          throw logic_error( "If using the same external shielding for all relative efficiency curves, "
+                            "each relative efficiency curve must have an external shielding specification." );
+        
+        ++num_external_shielding_curves;
+        if( !first_phys_model )
+        {
+          first_phys_model = &rel_eff_curve;
+        }else
+        {
+          const vector<shared_ptr<const RelActCalc::PhysicalModelShieldInput>> &first_ext_shields = first_phys_model->phys_model_external_atten;
+
+          if( external_shieldings.size() != first_ext_shields.size() )
+            throw logic_error( "If using the same external shielding for all relative efficiency curves, "
+                              "all relative efficiency curves must have the same number of external shieldings specified." );
+          for( size_t i = 0; i < external_shieldings.size(); ++i )
+          {
+            const RelActCalc::PhysicalModelShieldInput &ext_shield = *external_shieldings[i];
+            const RelActCalc::PhysicalModelShieldInput &first_ext_shield = *first_ext_shields[i];
+
+            if( (!ext_shield.material) != (!first_ext_shield.material) )
+              throw logic_error( "If using the same external shielding for all relative efficiency curves, "
+                                "all relative efficiency curves must consistently specify shielding materials." );
+
+            if( ext_shield.material && first_ext_shield.material 
+                && (ext_shield.material->name != first_ext_shield.material->name) )
+              throw logic_error( "If using the same external shielding for all relative efficiency curves, "
+                                "all relative efficiency curves must have the same external shielding materials ('" 
+                                + ext_shield.material->name + "' vs '" + first_ext_shield.material->name + ")." );
+            
+            if( !ext_shield.material && (fabs(ext_shield.atomic_number - first_ext_shield.atomic_number) > 1.0e-6) )
+              throw logic_error( "If using the same external shielding for all relative efficiency curves, "
+                                "and they are not defined materials, the atomic numbers must be the same." );
+            
+            if( ext_shield.fit_atomic_number != first_ext_shield.fit_atomic_number )
+              throw logic_error( "If using the same external shielding for all relative efficiency curves, "
+                                "fitting for atomic number must be consistent." );
+            
+            if( !ext_shield.material && ext_shield.fit_atomic_number )
+            {
+              if( fabs(ext_shield.atomic_number - first_ext_shield.atomic_number) > 1.0e-6 )
+                throw logic_error( "If using the same external shielding for all relative efficiency curves, "
+                                  "and atomic number is being fit, the atomic numbers must be the same." );
+
+              if( fabs(ext_shield.lower_fit_atomic_number - first_ext_shield.lower_fit_atomic_number) > 1.0e-6 )
+                throw logic_error( "If using the same external shielding for all relative efficiency curves, "
+                                  "and atomic number is being fit, the lower limits for the atomic numbers must be the same." );
+
+              if( fabs(ext_shield.upper_fit_atomic_number - first_ext_shield.upper_fit_atomic_number) > 1.0e-6 )
+                throw logic_error( "If using the same external shielding for all relative efficiency curves, "
+                                  "and atomic number is being fit, the upper limits for the atomic numbers must be the same." );
+            }//if( !ext_shield.material && ext_shield.fit_atomic_number )
+            
+            if( ext_shield.fit_areal_density != first_ext_shield.fit_areal_density )
+              throw logic_error( "If using the same external shielding for all relative efficiency curves, "
+                                "fitting for areal density must be consistent." );
+            
+            if( fabs(ext_shield.areal_density - first_ext_shield.areal_density) > 1.0e-6 )
+                  throw logic_error( "If using the same external shielding for all relative efficiency curves, "
+                                    "the areal densities must be the same." );
+
+            if( ext_shield.fit_areal_density )
+            {
+              if( fabs(ext_shield.lower_fit_areal_density - first_ext_shield.lower_fit_areal_density) > 1.0e-6 )
+                throw logic_error( "If using the same external shielding for all relative efficiency curves, "
+                                  "and areal density is being fit, the lower limits for the areal densities must be the same." );
+
+              if( fabs(ext_shield.upper_fit_areal_density - first_ext_shield.upper_fit_areal_density) > 1.0e-6 )
+                throw logic_error( "If using the same external shielding for all relative efficiency curves, "
+                                  "and areal density is being fit, the upper limits for the areal densities must be the same." );
+            }//if( ext_shield.fit_areal_density )
+          }//for( size_t i = 0; i < external_shieldings.size(); ++i )
+        }//if( !first_phys_model ) / else
+      }//if( (rel_eff_curve.rel_eff_eqn_type == RelActCalc::RelEffEqnForm::FramPhysicalModel) 
+        
+    }//for( const auto &rel_eff_curve : rel_eff_curves )
+
+
+    if( num_external_shielding_curves < 2 )
+      throw logic_error( "If using the same external shielding for all relative efficiency curves, "
+                        "you must have at least two relative efficiency curves with the external shielding enabled." );
+  }//if( same_external_shielding_for_all_rel_eff_curves )
+}//void Options::check_same_hoerl_and_external_shielding_specifications() const
+
+
 rapidxml::xml_node<char> *Options::toXml( rapidxml::xml_node<char> *parent ) const
 {
   using namespace rapidxml;
@@ -5842,6 +6141,9 @@ rapidxml::xml_node<char> *Options::toXml( rapidxml::xml_node<char> *parent ) con
   base_node->append_node( rel_eff_node );
   for( const auto &curve : rel_eff_curves )
     curve.toXml( rel_eff_node );
+
+  append_bool_node( base_node, "SameHoerlForAllRelEffCurves", same_hoerl_for_all_rel_eff_curves );
+  append_bool_node( base_node, "SameExternalShieldingForAllRelEffCurves", same_external_shielding_for_all_rel_eff_curves );
 
   if( !rois.empty() )
   {
@@ -5920,6 +6222,22 @@ void Options::fromXml( const ::rapidxml::xml_node<char> *parent, MaterialDB *mat
           rel_eff_curves.push_back( curve );
         }
       }//if( rel_eff_node )
+
+      try
+      {
+        same_hoerl_for_all_rel_eff_curves = get_bool_node_value( parent, "SameHoerlForAllRelEffCurves" );
+      }catch( ... )
+      {
+        same_hoerl_for_all_rel_eff_curves = false;
+      }
+
+      try
+      {
+        same_external_shielding_for_all_rel_eff_curves = get_bool_node_value( parent, "SameExternalShieldingForAllRelEffCurves" );
+      }catch( ... )
+      {
+        same_external_shielding_for_all_rel_eff_curves = false;
+      }
     }else
     {
       RelEffCurveInput rel_eff_input;
@@ -6931,12 +7249,27 @@ void RelActAutoSolution::print_html_report( std::ostream &out ) const
   
   
   const float live_time = m_spectrum ? m_spectrum->live_time() : 1.0f;
-  
-  if( m_options.rel_eff_curves.size() > 1 )
-    cerr << "\n\n\nWARNING - only printing results for first rel eff cyrve!!\n\n\n";
-#warning "only printing HTML results for first rel eff curve!!"
-  
-  for( size_t rel_eff_index = 0; (rel_eff_index < 1) && (rel_eff_index < m_rel_eff_forms.size()); ++rel_eff_index )
+
+  const bool have_multiple_rel_eff = (m_rel_eff_forms.size() > 1);
+    
+  stringstream results_html;
+
+  results_html << "<div>&chi;<sup>2</sup>=" << m_chi2 << " and there were " << m_dof
+    << " DOF (&chi;<sup>2</sup>/dof=" << m_chi2/m_dof << ")</div>\n";
+
+
+  for( size_t rel_eff_index = 0; rel_eff_index < m_rel_eff_forms.size(); ++rel_eff_index )
+  {
+    results_html << "<div class=\"releffeqn\">Rel. Eff. Eqn" 
+    << (m_rel_eff_forms.size() > 1 ? (" " + std::to_string(rel_eff_index)) : string()) 
+    << ": y = " << rel_eff_txt(true,rel_eff_index)
+    << "</div>\n";
+  }//for( size_t rel_eff_index = 0; rel_eff_index < m_rel_eff_forms.size(); ++rel_eff_index )
+
+
+
+
+  for( size_t rel_eff_index = 0; rel_eff_index < m_rel_eff_forms.size(); ++rel_eff_index )
   {
     const RelEffCurveInput &rel_eff = m_options.rel_eff_curves[rel_eff_index];
     const vector<NuclideRelAct> &rel_activities = m_rel_activities[rel_eff_index];
@@ -6944,28 +7277,18 @@ void RelActAutoSolution::print_html_report( std::ostream &out ) const
     shared_ptr<const RelActCalc::Pu242ByCorrelationOutput> pu_corr = (rel_eff_index >= m_corrected_pu.size())
                                                                    ? nullptr : m_corrected_pu[rel_eff_index];
     
-    stringstream results_html;
-    
-    if( m_options.rel_eff_curves.size() > 1 )
-      results_html << "<p><div style=\"color: red\">Only including results for first Rel. Eff. Curve!!</div></p>\n";
-    
-    results_html << "<div>&chi;<sup>2</sup>=" << m_chi2 << " and there were " << m_dof
-    << " DOF (&chi;<sup>2</sup>/dof=" << m_chi2/m_dof << ")</div>\n";
-    
-    results_html << "<div class=\"releffeqn\">Rel. Eff. Eqn: y = "
-    << rel_eff_txt(true,rel_eff_index)
-    << "</div>\n";
-    
     // For Pu, print a corrected enrichment table
     if( pu_corr )
     {
-      results_html << "<table class=\"nuctable resulttable\">\n";
-      results_html << "  <caption>Plutonium mass fractions</caption>\n";
-      results_html << "  <thead><tr>"
+      results_html << "<table class=\"nuctable resulttable\">\n"
+      "  <caption>Plutonium mass fractions"
+      << (have_multiple_rel_eff ? (" Rel. Eff. " + std::to_string(rel_eff_index)) : string())
+      << "</caption>\n"
+      "  <thead><tr>"
       " <th scope=\"col\">Nuclide</th>"
       " <th scope=\"col\">% Pu Mass</th>"
-      " </tr></thead>\n";
-      results_html << "  <tbody>\n";
+      " </tr></thead>\n"
+      "  <tbody>\n";
       
       set<string> nuclides;
       for( const auto &act : rel_activities )
@@ -7011,21 +7334,25 @@ void RelActAutoSolution::print_html_report( std::ostream &out ) const
       sum_rel_mass += act.rel_activity / act.nuclide->activityPerGram();
     
     
-    results_html << "<table class=\"nuctable resulttable\">\n";
-    results_html << "  <caption>Relative activities and mass fractions</caption>\n";
-    results_html << "  <thead><tr>"
+    results_html << "<table class=\"nuctable resulttable\">\n"
+    "  <caption>Relative activities and mass fractions"
+    << (m_rel_eff_forms.size() > 1 ? (" Rel. Eff. " + std::to_string(rel_eff_index)) : string())
+    << "</caption>\n"
+    "  <thead><tr>"
     " <th scope=\"col\">Nuclide</th>"
     " <th scope=\"col\">Rel. Act.</th>"
     " <th scope=\"col\">Total Mas Frac.</th>"
     " <th scope=\"col\">Enrichment</th>"
-    " </tr></thead>\n";
-    results_html << "  <tbody>\n";
+    " <th scope=\"col\">Det. Counts</th>"
+    " </tr></thead>\n"
+    "  <tbody>\n";
     
     
-    for( const auto &act : rel_activities )
+    for( const NuclideRelAct &act : rel_activities )
     {
       const double rel_mass = act.rel_activity / act.nuclide->activityPerGram();
-      
+      const double nuc_counts = nuclide_counts( act.nuclide, rel_eff_index );
+
       results_html << "  <tr><td>" << act.nuclide->symbol;
       
       if( act.nuclide
@@ -7040,27 +7367,36 @@ void RelActAutoSolution::print_html_report( std::ostream &out ) const
       << "<td>" << act.rel_activity << " &plusmn; " << act.rel_activity_uncertainty << "</td>"
       << "<td>" << (100.0*rel_mass/sum_rel_mass) << "%</td>"
       << "<td>" << (100.0*mass_enrichment_fraction(act.nuclide,rel_eff_index)) << "%</td>"
+      << "<td>" << nuc_counts << "</td>"
       << "</tr>\n";
     }//for( const auto &act : rel_activities )
     
     results_html << "  </tbody>\n"
     << "</table>\n\n";
+  }//for( size_t rel_eff_index = 0; rel_eff_index < m_rel_eff_forms.size(); ++rel_eff_index )
+
+  for( size_t rel_eff_index = 0; rel_eff_index < m_rel_eff_forms.size(); ++rel_eff_index )
+  {
+    const RelEffCurveInput &rel_eff = m_options.rel_eff_curves[rel_eff_index];
+    const vector<NuclideRelAct> &rel_activities = m_rel_activities[rel_eff_index];
     
     // Make the table of mass and activity ratios
     results_html << "<table class=\"massratiotable resulttable\">\n";
-    results_html << "  <caption>Mass and Activity Ratios.</caption>\n";
-    results_html << "  <thead><tr>"
+    results_html << "  <caption>Mass and Activity Ratios."
+    << (m_rel_eff_forms.size() > 1 ? (" Rel. Eff. " + std::to_string(rel_eff_index)) : string())
+    << "</caption>\n"
+    "  <thead><tr>"
     "<th scope=\"col\">Nuclides</th>"
     "<th scope=\"col\">Mass Ratio</th>"
     "<th scope=\"col\">Activity Ratio</th>"
-    "</tr></thead>\n";
-    results_html << "  <tbody>\n";
+    "</tr></thead>\n"
+    "  <tbody>\n";
     for( size_t i = 1; i < rel_activities.size(); ++i )
     {
       for( size_t j = 0; j < i; ++j )
       {
-        const auto nuc_i = rel_activities[i];
-        const auto nuc_j = rel_activities[j];
+        const NuclideRelAct &nuc_i = rel_activities[i];
+        const NuclideRelAct &nuc_j = rel_activities[j];
         assert( nuc_i.nuclide && nuc_j.nuclide );
         
         const double act_i = nuc_i.rel_activity;
@@ -7083,24 +7419,65 @@ void RelActAutoSolution::print_html_report( std::ostream &out ) const
     }//for( size_t i = 0; i < used_isotopes.size(); ++i )
     results_html << "  </tbody>\n"
     << "</table>\n\n";
+  }//for( size_t rel_eff_index = 0; rel_eff_index < m_rel_eff_forms.size(); ++rel_eff_index )
+
+
+
+  // Make table giving info on each of the result peaks
+  results_html << "<table class=\"peaktable resulttable\">\n";
+  results_html << "  <caption>Peaks fit in analysis.</caption>\n";
+  results_html << "  <thead><tr>"
+  "<th scope=\"col\">Energy (keV)</th>"
+  "<th scope=\"col\">Nuclide</th>"
+  "<th scope=\"col\">Yield</th>"
+  << (have_multiple_rel_eff ? "<th scope=\"col\">Rel. Eff. #</th>" : "")
+  << "<th scope=\"col\">Amp</th>"
+  "<th scope=\"col\">&Delta;Amp</th>"
+  "<th scope=\"col\">CPS/Yield</th>"
+  "<th scope=\"col\">Rel Eff</th>"
+  "<th scope=\"col\">&Delta;Rel Eff</th>"
+  "<th scope=\"col\">Cont. Type</th>"
+  "<th scope=\"col\">Cont. Range</th>"
+  "</tr></thead>\n";
+  results_html << "  <tbody>\n";
     
-    // Make table giving info on each of the result peaks
-    results_html << "<table class=\"peaktable resulttable\">\n";
-    results_html << "  <caption>Peaks fit in analysis.</caption>\n";
-    results_html << "  <thead><tr>"
-    "<th scope=\"col\">Energy (keV)</th>"
-    "<th scope=\"col\">Nuclide</th>"
-    "<th scope=\"col\">Yield</th>"
-    "<th scope=\"col\">Amp</th>"
-    "<th scope=\"col\">&Delta;Amp</th>"
-    "<th scope=\"col\">CPS/Yield</th>"
-    "<th scope=\"col\">Rel Eff</th>"
-    "<th scope=\"col\">&Delta;Rel Eff</th>"
-    "<th scope=\"col\">Cont. Type</th>"
-    "<th scope=\"col\">Cont. Range</th>"
-    "</tr></thead>\n";
-    results_html << "  <tbody>\n";
+ 
+  for( const PeakDef &info : m_fit_peaks )
+  {
+    const double energy = info.mean();
+    const SandiaDecay::Nuclide * const nuc = info.parentNuclide();
+      
+
+    int rel_eff_index = 0;
+    if( have_multiple_rel_eff )
+    {
+      string label = info.userLabel();
+      const bool is_rel_eff_label = SpecUtils::istarts_with( label, "RelEff " );
+      assert( is_rel_eff_label );
+      if( is_rel_eff_label )
+      {
+        label = label.substr(7);
+        const bool ok = SpecUtils::parse_int( label.c_str(), label.size(), rel_eff_index );
+        assert( ok );
+        assert( rel_eff_index >= 0 && rel_eff_index < static_cast<int>(m_rel_eff_forms.size()) );
+        if( rel_eff_index < 0 || rel_eff_index >= static_cast<int>(m_rel_eff_forms.size()) )
+          rel_eff_index = 0;
+      }
+    }//if( have_multiple_rel_eff )
+
+    assert( (rel_eff_index >= 0) && (rel_eff_index < static_cast<int>(m_rel_eff_forms.size())) );
+    const RelEffCurveInput &rel_eff = m_options.rel_eff_curves[rel_eff_index];
+    const vector<NuclideRelAct> &rel_activities = m_rel_activities[rel_eff_index];
     
+    const NuclideRelAct *nuc_info = nullptr;
+    for( const NuclideRelAct &rel_act : rel_activities )
+      nuc_info = (rel_act.nuclide == nuc) ? &rel_act : nuc_info;
+    
+    assert( !nuc || nuc_info );
+    if( nuc && !nuc_info )
+      throw logic_error( "Peak with nuc not in solution?" );
+      
+
     shared_ptr<const Material> self_atten;
     if( rel_eff.phys_model_self_atten )
       self_atten = rel_eff.phys_model_self_atten->material;
@@ -7110,103 +7487,97 @@ void RelActAutoSolution::print_html_report( std::ostream &out ) const
     
     assert( !self_atten || (rel_eff.rel_eff_eqn_type == RelActCalc::RelEffEqnForm::FramPhysicalModel) );
     assert( external_attens.empty() || (rel_eff.rel_eff_eqn_type == RelActCalc::RelEffEqnForm::FramPhysicalModel) );
-    
-    for( const PeakDef &info : m_fit_peaks )
-    {
-      const double energy = info.mean();
-      const SandiaDecay::Nuclide *nuc = info.parentNuclide();
-      
-      const NuclideRelAct *nuc_info = nullptr;
-      for( const auto &rel_act : rel_activities )
-        nuc_info = (rel_act.nuclide == nuc) ? &rel_act : nuc_info;
-      
-      // Not all Rel Eff Curves will have all nuclides, so if we don't have a nuc_info,
-      // and we have more than one Rel Eff Curve, then just skip this peak ... for now
-      if( nuc && !nuc_info && (m_rel_eff_forms.size() > 1) )
-      {
-        continue;
-      }
+   
 
-      assert( !nuc || nuc_info );
-      if( nuc && !nuc_info )
-        throw logic_error( "Peak with nuc not in solution?" );
+
+    if( !nuc || !nuc_info )
+    {
+      const char *rel_eff_label = (have_multiple_rel_eff ? "<td></td>" : "");
       
-      if( !nuc || !nuc_info )
-      {
-        snprintf( buffer, sizeof(buffer),
-                 "  <tr><td>%.2f</td><td></td><td></td><td>%1.6G</td><td>%1.6G</td>"
+      snprintf( buffer, sizeof(buffer),
+                 "  <tr><td>%.2f</td><td></td><td></td>%s<td>%1.6G</td><td>%1.6G</td>"
                  "<td></td><td></td><td></td><td></td><td></td><td></td></tr>\n",
-                 energy, info.amplitude(), info.amplitudeUncert() );
+                 energy, rel_eff_label, info.amplitude(), info.amplitudeUncert() );
+    }else
+    {
+      double yield = 0;
+      for( const pair<double,double> &energy_br : nuc_info->gamma_energy_br )
+      {
+        if( fabs(energy_br.first - info.gammaParticleEnergy()) < 1.0E-4 )
+          yield += energy_br.second;
+      }
+        
+      const double rel_act = nuc_info->rel_activity;
+      const double cps_over_yield = info.amplitude() / (yield * live_time);
+      const double meas_rel_eff = info.amplitude() / (yield * rel_act * live_time);
+      double fit_rel_eff = -1.0;
+        
+      if( rel_eff.rel_eff_eqn_type != RelActCalc::RelEffEqnForm::FramPhysicalModel )
+      {
+        fit_rel_eff = RelActCalc::eval_eqn( energy, rel_eff.rel_eff_eqn_type, m_rel_eff_coefficients[rel_eff_index] );
       }else
       {
-        double yield = 0;
-        for( const pair<double,double> &energy_br : nuc_info->gamma_energy_br )
-        {
-          if( fabs(energy_br.first - info.gammaParticleEnergy()) < 1.0E-4 )
-            yield += energy_br.second;
-        }
-        
-        const double rel_act = nuc_info->rel_activity;
-        const double cps_over_yield = info.amplitude() / (yield * live_time);
-        const double meas_rel_eff = info.amplitude() / (yield * rel_act * live_time);
-        double fit_rel_eff = -1.0;
-        
-        if( rel_eff.rel_eff_eqn_type != RelActCalc::RelEffEqnForm::FramPhysicalModel )
-        {
-          fit_rel_eff = RelActCalc::eval_eqn( energy, rel_eff.rel_eff_eqn_type, m_rel_eff_coefficients[rel_eff_index] );
-        }else
-        {
-          assert( m_drf );
+        assert( m_drf );
           
-          const RelActAutoCostFcn::PhysModelRelEqnDef input
+        const RelActAutoCostFcn::PhysModelRelEqnDef input
           = RelActAutoCostFcn::make_phys_eqn_input( rel_eff, m_drf, m_rel_eff_coefficients[rel_eff_index], 0 );
           
-          fit_rel_eff = RelActCalc::eval_physical_model_eqn( energy, input.self_atten,
+        fit_rel_eff = RelActCalc::eval_physical_model_eqn( energy, input.self_atten,
                                                             input.external_attens, input.det.get(), input.hoerl_b, input.hoerl_c );
-        }//if( m_options.rel_eff_eqn_type == RelActCalc::RelEffEqnForm::FramPhysicalModel )
+      }//if( m_options.rel_eff_eqn_type == RelActCalc::RelEffEqnForm::FramPhysicalModel )
         
-        //assert( fabs(meas_rel_eff - fit_rel_eff) < 0.1*std::max(meas_rel_eff,fit_rel_eff) );
-        double fit_rel_eff_uncert = -1.0;
+      //assert( fabs(meas_rel_eff - fit_rel_eff) < 0.1*std::max(meas_rel_eff,fit_rel_eff) );
+      double fit_rel_eff_uncert = -1.0;
         
-        if( m_rel_eff_covariance.size() )
+      if( m_rel_eff_covariance.size() )
+      {
+        try
         {
-          try
-          {
-            //TODO: should implement `rel_eff_eqn_uncert(energy)` member function, and get rid of manually calling functions
-            //fit_rel_eff_uncert = rel_eff_eqn_uncert( energy );
-            //fit_rel_eff_uncert /= fit_rel_eff;
+          //TODO: should implement `rel_eff_eqn_uncert(energy)` member function, and get rid of manually calling functions
+          //fit_rel_eff_uncert = rel_eff_eqn_uncert( energy );
+          //fit_rel_eff_uncert /= fit_rel_eff;
             
-            vector<vector<double>> cov;
-            if( m_rel_eff_covariance.size() > rel_eff_index )
-              cov = m_rel_eff_covariance[rel_eff_index];
-            const vector<double> &rel_eff_pars = m_rel_eff_coefficients[rel_eff_index];
-            if( rel_eff.rel_eff_eqn_type != RelActCalc::RelEffEqnForm::FramPhysicalModel )
-            {
-              fit_rel_eff_uncert = RelActCalc::eval_eqn_uncertainty( energy, rel_eff.rel_eff_eqn_type,
+          vector<vector<double>> cov;
+          if( m_rel_eff_covariance.size() > rel_eff_index )
+            cov = m_rel_eff_covariance[rel_eff_index];
+          const vector<double> &rel_eff_pars = m_rel_eff_coefficients[rel_eff_index];
+          if( rel_eff.rel_eff_eqn_type != RelActCalc::RelEffEqnForm::FramPhysicalModel )
+          {
+            fit_rel_eff_uncert = RelActCalc::eval_eqn_uncertainty( energy, rel_eff.rel_eff_eqn_type,
                                                                     rel_eff_pars, cov );
               
-            }else
-            {
-              const RelActAutoCostFcn::PhysModelRelEqnDef input
+          }else
+          {
+            const RelActAutoCostFcn::PhysModelRelEqnDef input
               = RelActAutoCostFcn::make_phys_eqn_input( rel_eff, m_drf, rel_eff_pars, 0 );
               
-              fit_rel_eff_uncert = RelActCalc::eval_physical_model_eqn_uncertainty( energy,
+            fit_rel_eff_uncert = RelActCalc::eval_physical_model_eqn_uncertainty( energy,
                                                                                    input.self_atten, input.external_attens, input.det.get(),
                                                                                    input.hoerl_b, input.hoerl_c, cov );
               
-              fit_rel_eff_uncert /= fit_rel_eff;
-            }
-          }catch( std::exception &e )
-          {
-            cerr << "Error calling RelActCalc::eval_eqn_uncertainty: " << e.what() << endl;
+            fit_rel_eff_uncert /= fit_rel_eff;
           }
-        }//if( m_rel_eff_covariance.size() )
+        }catch( std::exception &e )
+        {
+            cerr << "Error calling RelActCalc::eval_eqn_uncertainty: " << e.what() << endl;
+        }
+      }//if( m_rel_eff_covariance.size() )
         
-        snprintf(buffer, sizeof(buffer),"  <tr>"
-                 "<td>%.2f</td><td>%s</td><td>%1.3G</td><td>%1.3G</td><td>%1.2G%%</td>"
-                 "<td>%1.3G</td><td>%1.6G</td><td>%1.2G%%</td>"
-                 "<td>%s</td><td>%.1f-%.1f</td>"
-                 "</tr>\n",
+      std::string format_str = "  <tr>"s
+                 "<td>%.2f</td>"    // energy
+                 "<td>%s</td>"      // nuclide
+                 "<td>%1.3G</td>"s   // yield
+                 + (have_multiple_rel_eff ? ("<td>" + std::to_string(rel_eff_index) + "</td>") : ""s)
+                 + "<td>%1.3G</td>"   // amplitude
+                 "<td>%1.2G%%</td>" // amplitude uncertainty
+                 "<td>%1.3G</td>"   // cps/yield
+                 "<td>%1.6G</td>"   // fit rel eff
+                 "<td>%1.2G%%</td>" // fit rel eff uncertainty
+                 "<td>%s</td>"      // continuum type
+                 "<td>%.1f-%.1f</td>" // continuum range
+                 "</tr>\n"s;
+
+      snprintf(buffer, sizeof(buffer), format_str.c_str(),
                  energy,
                  nuc->symbol.c_str(),
                  yield,
@@ -7269,8 +7640,6 @@ void RelActAutoSolution::print_html_report( std::ostream &out ) const
     }//if( m_fit_energy_cal[0] || m_fit_energy_cal[1] )
     
     
-    
-    
     auto html_sanitize = []( string &val ){
       // We'll do some really stupid/simple sanitization
       SpecUtils::ireplace_all( val, "&", "&amp;" );
@@ -7285,10 +7654,23 @@ void RelActAutoSolution::print_html_report( std::ostream &out ) const
     results_html << "<table class=\"optionstable\">\n";
     results_html << "  <caption>Options used for analysis.</caption>\n";
     results_html << "  <tr><th scope=\"row\">fit_energy_cal</th><td><code>" << m_options.fit_energy_cal << "</code></td></tr>\n";
-    results_html << "  <tr><th scope=\"row\">nucs_of_el_same_age</th><td><code>" << rel_eff.nucs_of_el_same_age << "</code></td></tr>\n";
-    results_html << "  <tr><th scope=\"row\">rel_eff_eqn_type</th><td><code>"
-    << RelActCalc::to_str(rel_eff.rel_eff_eqn_type) << "</code></td></tr>\n";
-    results_html << "  <tr><th scope=\"row\">rel_eff_eqn_order</th><td><code>" << rel_eff.rel_eff_eqn_order << "</code></td></tr>\n";
+
+    for( size_t rel_eff_index = 0; rel_eff_index < m_rel_eff_forms.size(); ++rel_eff_index )
+    {
+      const RelEffCurveInput &rel_eff = m_options.rel_eff_curves[rel_eff_index];
+      results_html << "  <tr><th scope=\"row\">nucs_of_el_same_age</th><td><code>" << rel_eff.nucs_of_el_same_age << "</code></td></tr>\n";
+      results_html << "  <tr><th scope=\"row\">rel_eff_eqn_type</th><td><code>"
+      << RelActCalc::to_str(rel_eff.rel_eff_eqn_type) << "</code></td></tr>\n";
+
+      if( rel_eff.rel_eff_eqn_type == RelActCalc::RelEffEqnForm::FramPhysicalModel )
+      {
+        // TODO: add physical model info here
+      }else
+      {
+        results_html << "  <tr><th scope=\"row\">rel_eff_eqn_order</th><td><code>" << rel_eff.rel_eff_eqn_order << "</code></td></tr>\n";
+      }
+    }//for( size_t rel_eff_index = 0; rel_eff_index < m_rel_eff_forms.size(); ++rel_eff_index )
+    
     results_html << "  <tr><th scope=\"row\">fwhm_form</th><td><code>" << to_str(m_options.fwhm_form) << "</code></td></tr>\n";
     results_html << "</table>\n\n";
     results_html << "</div>\n";
@@ -7350,7 +7732,11 @@ void RelActAutoSolution::print_html_report( std::ostream &out ) const
     results_html << "<div class=\"anatime\">Analysis performed " << local_time << " (" << utc_time
     << " UTC), with code compiled " __TIMESTAMP__ "</div>\n";
     
- 
+  const size_t num_rel_eff = m_options.rel_eff_curves.size();
+  for( size_t rel_eff_index = 0; (rel_eff_index < 1) && (rel_eff_index < num_rel_eff); ++rel_eff_index )
+  {
+    const RelEffCurveInput &rel_eff = m_options.rel_eff_curves[rel_eff_index];
+
     stringstream rel_eff_plot_values, add_rel_eff_plot_css;
     rel_eff_json_data( rel_eff_plot_values, add_rel_eff_plot_css, rel_eff_index );
 
@@ -7359,9 +7745,9 @@ void RelActAutoSolution::print_html_report( std::ostream &out ) const
   
     string rel_eff_eqn_js;
     
-    if( m_rel_eff_forms[rel_eff_index] != RelActCalc::RelEffEqnForm::FramPhysicalModel )
+    if( rel_eff.rel_eff_eqn_type != RelActCalc::RelEffEqnForm::FramPhysicalModel )
     {
-      rel_eff_eqn_js = RelActCalc::rel_eff_eqn_js_function( m_rel_eff_forms[rel_eff_index], m_rel_eff_coefficients[rel_eff_index] );
+      rel_eff_eqn_js = RelActCalc::rel_eff_eqn_js_function( rel_eff.rel_eff_eqn_type, m_rel_eff_coefficients[rel_eff_index] );
     }else
     {
       const RelActAutoCostFcn::PhysModelRelEqnDef input
@@ -7374,7 +7760,7 @@ void RelActAutoSolution::print_html_report( std::ostream &out ) const
     SpecUtils::ireplace_all( html, "${FIT_REL_EFF_EQUATION}", rel_eff_eqn_js.c_str() );
     
     SpecUtils::ireplace_all( html, "${RESULTS_TXT}", results_html.str().c_str() );
-  }
+  }//for( size_t rel_eff_index = 0; rel_eff_index < m_rel_eff_forms.size(); ++rel_eff_index )
   
   
   if( m_spectrum )
@@ -7471,6 +7857,7 @@ void RelActAutoSolution::rel_eff_json_data( std::ostream &rel_eff_plot_values,
 {
   // TODO: refactor RelEffChart::setData to take care of all this functionality, and just call it their
   
+  const bool multiple_rel_eff = (m_rel_eff_forms.size() > 1);
   assert( rel_eff_index < m_rel_activities.size() );
   
   rel_eff_plot_values << "[";
@@ -7491,6 +7878,28 @@ void RelActAutoSolution::rel_eff_json_data( std::ostream &rel_eff_plot_values,
     const SandiaDecay::Nuclide *nuc = peak.parentNuclide();
     if( !nuc )
       continue;
+
+    if( multiple_rel_eff )
+    {
+      string label = peak.userLabel();
+      const bool is_rel_eff_label = SpecUtils::istarts_with( label, "RelEff " );
+      assert( is_rel_eff_label );
+      if( !is_rel_eff_label )
+        continue;
+      
+      label = label.substr(7);
+      int this_rel_eff = -1;
+      const bool ok = SpecUtils::parse_int( label.c_str(), label.size(), this_rel_eff );
+      assert( ok );
+      if( !ok )
+        continue;
+      assert( this_rel_eff >= 0 && this_rel_eff < static_cast<int>(m_rel_eff_forms.size()) );
+      if( this_rel_eff < 0 || this_rel_eff >= static_cast<int>(m_rel_eff_forms.size()) )
+        continue;
+      
+      if( this_rel_eff != rel_eff_index )
+        continue;
+    }//if( multiple_rel_eff )
     
     const NuclideRelAct *nuc_info = nullptr;
     for( const auto &rel_act : m_rel_activities[rel_eff_index] )

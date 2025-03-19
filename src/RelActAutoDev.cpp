@@ -433,6 +433,7 @@ void run_u02_example()
   if( !loaded_spec )
   {
     cerr << "Failed to load '" << specfilename << "', aborting." << endl;
+    return;
   }
 
   //Sample 1 is background
@@ -612,7 +613,7 @@ void run_multi_enrich_u02_ex()
   assert( background );
   assert( background->title() == "Background" );
   
-  const size_t enrich_choice = 31;
+  const size_t enrich_choice = 6;
   shared_ptr<const SpecUtils::Measurement> foreground = specfile.measurement( enrich_choice );
   assert( foreground );
 
@@ -954,6 +955,11 @@ return;
 
     RelActCalcAuto::RelActAutoGuiState::equalEnough( state, state_cpy );
   } 
+
+  
+  state.options.same_hoerl_for_all_rel_eff_curves = true;
+  //state.options.same_external_shielding_for_all_rel_eff_curves = true;
+
 
   const RelActCalcAuto::RelActAutoSolution solution = RelActCalcAuto::solve( state.options,
                                                                             foreground, background, det, all_peaks, nullptr );
@@ -1409,10 +1415,203 @@ void check_manual_nuclide_constraints_checks()
 }//void check_manual_nuclide_constraints_checks()
 
 
+void check_auto_hoerl_and_ext_shield_checks()
+{
+  RelActCalcAuto::Options options;
+  options.same_hoerl_for_all_rel_eff_curves = true;
+  options.same_external_shielding_for_all_rel_eff_curves = true;
+  
+  RelActCalcAuto::RelEffCurveInput rel_eff_curve;
+  rel_eff_curve.rel_eff_eqn_type = RelActCalc::RelEffEqnForm::FramPhysicalModel;
+  rel_eff_curve.phys_model_use_hoerl = true;
+
+  auto ext_shield = make_shared<RelActCalc::PhysicalModelShieldInput>( RelActCalc::PhysicalModelShieldInput() );  
+  ext_shield->atomic_number = 26;
+  ext_shield->material = nullptr;
+  ext_shield->areal_density = 1.0 * PhysicalUnits::g_per_cm2;
+  ext_shield->fit_atomic_number = false;
+  ext_shield->fit_areal_density = true;
+  ext_shield->lower_fit_areal_density = 0.0;
+  ext_shield->upper_fit_areal_density = 500.0 * PhysicalUnits::g_per_cm2;
+  rel_eff_curve.phys_model_external_atten.push_back( ext_shield );
+ 
+  // Check we dont throw error if not sharing hoerl and external shielding
+  try
+  {
+    RelActCalcAuto::Options options_cpy = options;
+
+    RelActCalcAuto::RelEffCurveInput rel_eff_curve_2 = rel_eff_curve;
+    options_cpy.same_hoerl_for_all_rel_eff_curves = false;
+    options_cpy.same_external_shielding_for_all_rel_eff_curves = false;
+    options_cpy.check_same_hoerl_and_external_shielding_specifications();
+
+    options_cpy.rel_eff_curves.push_back( rel_eff_curve );
+    options_cpy.check_same_hoerl_and_external_shielding_specifications();
+
+    options_cpy.rel_eff_curves.push_back( rel_eff_curve_2 );
+    options_cpy.check_same_hoerl_and_external_shielding_specifications();
+  }catch( std::exception &e )
+  {
+    cerr << "Failed to check same hoerl and external shielding specifications: " << e.what() << endl;
+    assert( 0 );
+  }
+  
+  // Check we dont throw an error for two rel_eff_curves with the same external shielding, 
+  //  and sharing the same hoerl function and external shielding
+  try
+  {
+    RelActCalcAuto::Options options_cpy = options;
+    options_cpy.same_hoerl_for_all_rel_eff_curves = true;
+    options_cpy.same_external_shielding_for_all_rel_eff_curves = true;
+    options_cpy.rel_eff_curves.push_back( rel_eff_curve );
+    options_cpy.rel_eff_curves.push_back( rel_eff_curve );
+    options_cpy.check_same_hoerl_and_external_shielding_specifications();
+  }catch( std::exception &e )
+  {
+    cerr << "Failed to check same hoerl and external shielding specifications: " << e.what() << endl;
+    assert( 0 );
+  }
+
+  // Check we throw an error if we only have a single rel_eff_curve, but ask to share the same hoerl
+  try
+  {
+    RelActCalcAuto::Options options_cpy = options;
+    options_cpy.same_hoerl_for_all_rel_eff_curves = true;
+    options_cpy.same_external_shielding_for_all_rel_eff_curves = false;
+
+    options_cpy.rel_eff_curves.clear();
+    options_cpy.rel_eff_curves.push_back( rel_eff_curve );
+    options_cpy.check_same_hoerl_and_external_shielding_specifications();
+    cerr << "Failed to throw an error for a single rel_eff_curve" << endl;
+    assert( 0 );
+  }catch( std::exception &e )
+  {
+    // We are suppoest to get here
+  }
+
+  // Check we throw an error if we only have a single rel_eff_curve, but ask to share the same external shielding
+  try
+  {
+    RelActCalcAuto::Options options_cpy = options;
+    options_cpy.same_hoerl_for_all_rel_eff_curves = false;
+    options_cpy.same_external_shielding_for_all_rel_eff_curves = true;
+
+    options_cpy.rel_eff_curves.clear();
+    options_cpy.rel_eff_curves.push_back( rel_eff_curve );
+    options_cpy.check_same_hoerl_and_external_shielding_specifications();
+    cerr << "Failed to throw an error for a single rel_eff_curve" << endl;
+    assert( 0 );
+  }catch( std::exception &e )
+  {
+    // We are suppoest to get here
+  }
+
+  // Check we throw an error if we have two rel_eff_curves with different external shielding
+  try
+  {
+    RelActCalcAuto::Options options_cpy = options;
+    options_cpy.same_hoerl_for_all_rel_eff_curves = false;
+    options_cpy.same_external_shielding_for_all_rel_eff_curves = true;
+
+    options_cpy.rel_eff_curves.push_back( rel_eff_curve );
+    
+    RelActCalcAuto::RelEffCurveInput rel_eff_curve_2;
+    rel_eff_curve_2.rel_eff_eqn_type = RelActCalc::RelEffEqnForm::FramPhysicalModel;
+    rel_eff_curve_2.phys_model_use_hoerl = true;
+    
+    auto ext_shield_2 = make_shared<RelActCalc::PhysicalModelShieldInput>( RelActCalc::PhysicalModelShieldInput() );  
+    ext_shield_2->atomic_number = 52;
+    ext_shield_2->material = nullptr;
+    ext_shield_2->areal_density = 2.5 * PhysicalUnits::g_per_cm2;
+    ext_shield_2->fit_atomic_number = false;
+    ext_shield_2->fit_areal_density = true;
+    ext_shield_2->lower_fit_areal_density = 0.0;
+    ext_shield_2->upper_fit_areal_density = 500.0 * PhysicalUnits::g_per_cm2;
+    rel_eff_curve_2.phys_model_external_atten.push_back( ext_shield_2 );
+    
+    options_cpy.rel_eff_curves.push_back( rel_eff_curve_2 );
+    options_cpy.check_same_hoerl_and_external_shielding_specifications();
+    cerr << "Failed to throw an error for different external shielding" << endl;
+    assert( 0 );
+  }catch( std::exception &e )
+  {
+    // We are suppoest to get here
+  }
+    
+    
+  // Check we throw an error if one of RelEff curves does not use a hoerl function
+  try
+  {
+    RelActCalcAuto::Options options_cpy = options;
+    options_cpy.same_hoerl_for_all_rel_eff_curves = true;
+    options_cpy.same_external_shielding_for_all_rel_eff_curves = false;
+
+    RelActCalcAuto::RelEffCurveInput rel_eff_curve_cpy = rel_eff_curve;
+    rel_eff_curve_cpy.phys_model_use_hoerl = false;
+    options_cpy.rel_eff_curves.push_back( rel_eff_curve );
+    options_cpy.rel_eff_curves.push_back( rel_eff_curve_cpy );
+
+    options_cpy.check_same_hoerl_and_external_shielding_specifications();
+    cerr << "Failed to throw an error for one rel_eff_curve not using a hoerl function" << endl;
+    assert( 0 );
+  }catch( std::exception &e )
+  {
+    // We are suppoest to get here
+  }
+
+  // Check we throw an error if we request to share external shieldings, but one of the 
+  //  rel_eff_curves does not have an external shielding
+  try
+  {
+    RelActCalcAuto::Options options_cpy = options;
+    options_cpy.same_hoerl_for_all_rel_eff_curves = false;
+    options_cpy.same_external_shielding_for_all_rel_eff_curves = true;
+
+    RelActCalcAuto::RelEffCurveInput rel_eff_curve_cpy = rel_eff_curve;
+    rel_eff_curve_cpy.phys_model_external_atten.clear();
+    options_cpy.rel_eff_curves.push_back( rel_eff_curve );
+    options_cpy.rel_eff_curves.push_back( rel_eff_curve_cpy );
+    options_cpy.check_same_hoerl_and_external_shielding_specifications();
+    cerr << "Failed to throw an error for one rel_eff_curve not having an external shielding" << endl;
+    assert( 0 );
+  }catch( std::exception &e )
+  {
+    // We are suppoest to get here
+  }
+
+  // Check we dont throw an error if we request to share external shieldings, but one of the 
+  //  rel_eff_curves is not a physical model
+  try
+  {
+    RelActCalcAuto::Options options_cpy = options;
+    options_cpy.same_hoerl_for_all_rel_eff_curves = false;
+    options_cpy.same_external_shielding_for_all_rel_eff_curves = true;
+
+    RelActCalcAuto::RelEffCurveInput rel_eff_curve_cpy = rel_eff_curve;
+    rel_eff_curve_cpy.rel_eff_eqn_type = RelActCalc::RelEffEqnForm::LnX;
+    rel_eff_curve_cpy.rel_eff_eqn_order = 2;
+    rel_eff_curve_cpy.phys_model_use_hoerl = false;
+    options_cpy.rel_eff_curves.push_back( rel_eff_curve );
+    options_cpy.rel_eff_curves.push_back( rel_eff_curve_cpy );
+    options_cpy.check_same_hoerl_and_external_shielding_specifications();
+
+    cerr << "Failed to throw an error for one rel_eff_curve not being a physical model" << endl;
+    assert( 0 );
+  }catch( std::exception &e )
+  {
+    // We are suppoest to get here
+  }
+
+  cout << "All auto hoerl and ext shield checks passed" << endl;
+}//void check_auto_hoerl_and_ext_shield_checks()
+
+
+
 int dev_code()
 {
   //check_auto_nuclide_constraints_checks();
   //check_manual_nuclide_constraints_checks();
+  //check_auto_hoerl_and_ext_shield_checks();
   //return 1;
   
   //check_auto_state_xml_serialization();
@@ -1423,14 +1622,15 @@ int dev_code()
   //check_physical_model_eff_function();
   //return 1;
   
-  example_manual_phys_model();
-  return 1;
+  //example_manual_phys_model();
+  //return 1;
 
   //return RelActCalcAuto::run_test();
   
   run_multi_enrich_u02_ex();
   return 1;
   
+
   const SandiaDecay::SandiaDecayDataBase * const db = DecayDataBaseServer::database();
   assert( db );
   if( !db )
