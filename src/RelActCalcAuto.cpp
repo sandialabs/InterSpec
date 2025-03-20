@@ -29,6 +29,7 @@
 #include <deque>
 #include <tuple>
 #include <chrono>
+#include <format>
 #include <thread>
 #include <limits>
 #include <cstdlib>
@@ -956,7 +957,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     
     for( size_t rel_eff_index = 0; rel_eff_index < options.rel_eff_curves.size(); ++rel_eff_index )
     {
-      const auto &rel_eff_input = options.rel_eff_curves[rel_eff_index];
+      const RelActCalcAuto::RelEffCurveInput &rel_eff_input = options.rel_eff_curves[rel_eff_index];
       const vector<RelActCalcAuto::NucInputInfo> &input_nuclides = rel_eff_input.nuclides;
       
       if( input_nuclides.empty() )
@@ -964,12 +965,12 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     
       vector<NucInputGamma> &these_nuclides = m_nuclides[rel_eff_index];
 
-      for( const auto &n : input_nuclides )
+      for( const RelActCalcAuto::NucInputInfo &n : input_nuclides )
       {
         if( !n.nuclide )
           throw runtime_error( "RelActAutoCostFcn: null Nuclide." );
       
-        for( const auto &pn : these_nuclides )
+        for( const NucInputGamma &pn : these_nuclides )
         {
           if( n.nuclide == pn.nuclide )
             throw runtime_error( "RelActAutoCostFcn: duplicate nuclide (" + n.nuclide->symbol + ")." );
@@ -1543,7 +1544,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
         check_pu_corr_method( rel_eff_curve );
     
       // Check nucliode constraints are all valid
-      for( const auto &rel_eff_curve : options.rel_eff_curves ) 
+      for( const RelActCalcAuto::RelEffCurveInput &rel_eff_curve : options.rel_eff_curves ) 
         rel_eff_curve.check_nuclide_constraints();
 
       options.check_same_hoerl_and_external_shielding_specifications();
@@ -2285,39 +2286,36 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
             if( is_constrained )
               continue;
 
-            /*
-#warning "doing terrible dev hack to check seperating rel eff curves"
-            if( re_eff_index == 0 )
+            // Check if nuclide has relative activity limits defined, or maybe even fixed.
+            if( nuc.min_rel_act.has_value() 
+               && nuc.max_rel_act.has_value() 
+                && (nuc.min_rel_act.value() == nuc.max_rel_act.value()) )
             {
-              if( nuc.nuclide->symbol != "U238" )
-              {
-                rel_act *= 0.1;
-              }else
-              {
-                rel_act *= 10;
-              }
-            }else
-            {
-              if( nuc.nuclide->symbol == "U235" )
-              {
-                rel_act *= 0.1;
-              }else
-              {
-                rel_act *= 10;
-              }
+              parameters[act_index] = 1.0;
+              cost_functor->m_nuclides[re_eff_index][nuc_num].activity_multiple = nuc.min_rel_act.value();
+              constant_parameters.push_back( static_cast<int>(act_index) );
+              cout << "Fixing " << nuc.nuclide->symbol << " rel act to " << nuc.min_rel_act.value() << " for rel eff curve " << re_eff_index << endl;
+              continue;
             }
-            */
+
+            if( nuc.starting_rel_act.has_value() )
+            {
+              cout << "Will use starting rel act of " << nuc.starting_rel_act.value() << " for " << nuc.nuclide->symbol 
+                   << " on rel eff curve " << re_eff_index << ", instead of initial estimate of " << rel_act << endl;
+              rel_act = nuc.starting_rel_act.value();
+            }
+            if( (rel_act < 1.0E-16) || std::isinf(rel_act) || std::isnan(rel_act) )
+              rel_act = 1.0;
+            
+            lower_bounds[act_index] = (nuc.min_rel_act.has_value() ? nuc.min_rel_act.value() : 0.0) / rel_act;
+            if( nuc.max_rel_act.has_value() )
+              upper_bounds[act_index] = nuc.max_rel_act.value() / rel_act;
 
             cout << "Updating initial activity estimate for " << nuc.nuclide->symbol << " from "
-            << parameters[act_index] << " to " << rel_act << endl;
+                   << parameters[act_index] << " to " << rel_act << endl;
             
-            if( (rel_act > 1.0E-12) && !std::isinf(rel_act) && !std::isnan(rel_act) )
-              cost_functor->m_nuclides[re_eff_index][nuc_num].activity_multiple = rel_act;
-            else
-              cost_functor->m_nuclides[re_eff_index][nuc_num].activity_multiple = 1.0;
+            cost_functor->m_nuclides[re_eff_index][nuc_num].activity_multiple = rel_act;
             parameters[act_index] = 1.0;
-
-            lower_bounds[act_index] = 0.0;
           }//for( size_t nuc_num = 0; nuc_num < rel_eff_curve.nuclides.size(); ++nuc_num )
           
           
@@ -2414,8 +2412,12 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
             // TODO: is there any problem with a nuclide >100 years, that isnt effectively infinite?
             max_age = std::min( max_age, 120*PhysicalUnits::year );
 
+            if( nuc.fit_age_max.has_value() )
+              max_age = nuc.fit_age_max.value();
             
-            lower_bounds[age_index] = 0.0;
+            const double min_age = nuc.fit_age_min.has_value() ? nuc.fit_age_min.value() : 0.0;
+
+            lower_bounds[age_index] = min_age / nuc_info.age_multiple;
             upper_bounds[age_index] = max_age / nuc_info.age_multiple;
           }else
           {
@@ -2503,25 +2505,47 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
 
             if( is_constrained )
               continue;
-
+              
 
             assert( cost_functor->m_nuclides[re_eff_index][nuc_num].nuclide == nuc.nuclide );
-            if( !top_energy_to_rel_act.empty() )
+
+            double rel_act_mult = 1.0;
+            if( nuc.starting_rel_act.has_value() )
             {
-              parameters[act_index] = 1.0;
-              cost_functor->m_nuclides[re_eff_index][nuc_num].activity_multiple = std::get<2>( top_energy_to_rel_act[top_energy_to_rel_act.size()/2] );
+              rel_act_mult = nuc.starting_rel_act.value();
+            }else if( !top_energy_to_rel_act.empty() )
+            {
+              rel_act_mult = std::get<2>( top_energy_to_rel_act[top_energy_to_rel_act.size()/2] );
               cout << "Setting initial relative activity for " << nuc.nuclide->symbol << " to " << cost_functor->m_nuclides[re_eff_index][nuc_num].activity_multiple << " bq" << endl;
             }else
             {
-              parameters[act_index] = 1.0;
-              cost_functor->m_nuclides[re_eff_index][nuc_num].activity_multiple = 100*PhysicalUnits::bq;
+              rel_act_mult = 100*PhysicalUnits::bq;
               solution.m_warnings.push_back( "Could not estimate a starting activity for "
                                             + nuc.nuclide->symbol + ".  This may be because there are no"
                                             " significant gammas for the nuclide in the selected energy"
                                             " ranges." );
             }
 
-            lower_bounds[act_index] = 0.0;
+            if( nuc.min_rel_act.has_value() )
+              rel_act_mult = std::max( rel_act_mult, nuc.min_rel_act.value() );
+
+            if( nuc.max_rel_act.has_value() )
+              rel_act_mult = std::min( rel_act_mult, nuc.max_rel_act.value() );
+
+            parameters[act_index] = 1.0;
+            cost_functor->m_nuclides[re_eff_index][nuc_num].activity_multiple = rel_act_mult; 
+
+            if( nuc.min_rel_act.has_value()
+             && nuc.max_rel_act.has_value() 
+             && (nuc.min_rel_act.value() == nuc.max_rel_act.value()) )
+            {
+              constant_parameters.push_back( static_cast<int>(act_index) );
+            }else
+            {
+              lower_bounds[act_index] = (nuc.min_rel_act.has_value() ? nuc.min_rel_act.value() : 0.0) / rel_act_mult;
+              if( nuc.max_rel_act.has_value() )
+                upper_bounds[act_index] = nuc.max_rel_act.value() / rel_act_mult;
+            }
           }//if( !succesfully_estimated_re_and_ra )
         }//for( size_t nuc_num = 0; nuc_num < rel_eff_curve.nuclides.size(); ++nuc_num )
         
@@ -5872,6 +5896,19 @@ void NucInputInfo::toXml( ::rapidxml::xml_node<char> *parent ) const
   append_string_node( base_node, "Age", age_str);
   append_bool_node( base_node, "FitAge", fit_age );
   
+  if( fit_age_min.has_value() )
+    append_string_node( base_node, "FitAgeMin", PhysicalUnits::printToBestTimeUnits(fit_age_min.value()) );
+  if( fit_age_max.has_value() )
+    append_string_node( base_node, "FitAgeMax", PhysicalUnits::printToBestTimeUnits(fit_age_max.value()) );
+
+  if( min_rel_act.has_value() )
+    append_float_node( base_node, "MinRelAct", min_rel_act.value() );
+  if( max_rel_act.has_value() )
+    append_float_node( base_node, "MaxRelAct", max_rel_act.value() );
+  
+  if( starting_rel_act.has_value() )
+    append_float_node( base_node, "StartingRelAct", starting_rel_act.value() );
+
   if( !gammas_to_exclude.empty() )
   {
     xml_node<char> *exclude_node = doc->allocate_node( node_element, "GammasToExclude" );
@@ -5912,6 +5949,15 @@ void NucInputInfo::fromXml( const ::rapidxml::xml_node<char> *nuc_info_node )
     if( !nuclide )
       throw runtime_error( "Invalid nuclide '" + nuc_str + "'" );
     
+    fit_age = false;
+    fit_age_min = std::nullopt;
+    fit_age_max = std::nullopt;
+    min_rel_act = std::nullopt;
+    max_rel_act = std::nullopt;
+    starting_rel_act = std::nullopt;
+    gammas_to_exclude.clear();
+
+
     const auto age_node = XML_FIRST_INODE( nuc_info_node, "Age");
     const string age_str = SpecUtils::xml_value_str( age_node );
     if( age_str.empty() || SpecUtils::iequals_ascii(age_str, "default") )
@@ -5921,10 +5967,28 @@ void NucInputInfo::fromXml( const ::rapidxml::xml_node<char> *nuc_info_node )
     
     if( XML_FIRST_NODE(nuc_info_node, "FitAge") )
       fit_age = get_bool_node_value( nuc_info_node, "FitAge" );
-    else
-      fit_age = false;
+
+    const rapidxml::xml_node<char> *fit_age_min_node = XML_FIRST_NODE(nuc_info_node, "FitAgeMin");
+    if( fit_age_min_node )
+    {
+      const string strval = SpecUtils::xml_value_str( fit_age_min_node );
+      fit_age_min = PhysicalUnits::stringToTimeDurationPossibleHalfLife( strval, nuclide->halfLife );
+    }
+
+    const rapidxml::xml_node<char> *fit_age_max_node = XML_FIRST_NODE(nuc_info_node, "FitAgeMax");
+    if( fit_age_max_node )
+    {
+      const string strval = SpecUtils::xml_value_str( fit_age_max_node );
+      fit_age_max = PhysicalUnits::stringToTimeDurationPossibleHalfLife( strval, nuclide->halfLife );
+    }
     
-    gammas_to_exclude.clear();
+    if( XML_FIRST_NODE(nuc_info_node, "MinRelAct") )
+      min_rel_act = get_float_node_value( nuc_info_node, "MinRelAct" );
+    if( XML_FIRST_NODE(nuc_info_node, "MaxRelAct") )
+      max_rel_act = get_float_node_value( nuc_info_node, "MaxRelAct" );
+    if( XML_FIRST_NODE(nuc_info_node, "StartingRelAct") )
+      starting_rel_act = get_float_node_value( nuc_info_node, "StartingRelAct" );
+
     const rapidxml::xml_node<char> *exclude_node = XML_FIRST_NODE( nuc_info_node, "GammasToExclude" );
     XML_FOREACH_CHILD( energy_node, exclude_node, "Energy" ) //ok if exclude_node is nullptr
     {
@@ -5975,7 +6039,7 @@ void FloatingPeak::fromXml( const ::rapidxml::xml_node<char> *parent )
       throw std::logic_error( "invalid input node name" );
     
     // A reminder double check these logics when changing RoiRange::sm_xmlSerializationVersion
-    static_assert( NucInputInfo::sm_xmlSerializationVersion == 0,
+    static_assert( FloatingPeak::sm_xmlSerializationVersion == 0,
                   "needs to be updated for new serialization version." );
     
     check_xml_version( parent, FloatingPeak::sm_xmlSerializationVersion );
@@ -6417,6 +6481,122 @@ void RelEffCurveInput::check_nuclide_constraints() const
       }//for( size_t inner_index = 0; inner_index < rel_eff_curve.act_ratio_constraints.size(); ++inner_index )
     }//while( found_constroller )
   }//for( const RelEffCurveInput::ActRatioConstraint &nuc_constraint : rel_eff_curve.act_ratio_constraints )
+
+
+  // Check that if rel act min/max/starting values are set, then nuclide is not constrained to another nuclide
+  for( const NucInputInfo &nuc : nuclides )
+  {
+    assert( nuc.nuclide );
+    if( !nuc.nuclide )
+      throw logic_error( "Nuclide is nullptr." );
+      
+    if( nuc.min_rel_act.has_value() || nuc.max_rel_act.has_value() || nuc.starting_rel_act.has_value() )
+    {
+      for( const ActRatioConstraint &constraint : act_ratio_constraints )
+      {
+        if( constraint.constrained_nuclide == nuc.nuclide )
+          throw runtime_error( "Nuclide " + nuc.nuclide->symbol + " is constrained to another nuclide"
+                               " - you can not specify its min, max, or starting activity." );
+      }//for( const ActRatioConstraint &constraint : act_ratio_constraints )
+    }//if( nuc.min_rel_act.has_value() || nuc.max_rel_act.has_value() || nuc.starting_rel_act.has_value() )
+    
+    if( nuc.min_rel_act.has_value() && (nuc.min_rel_act.value() < 0.0) )
+      throw runtime_error( std::format( "Nuclide {} has min rel act set to {} - min rel act must be greater or equal to 0.0.",
+                                        nuc.nuclide->symbol, nuc.min_rel_act.value() ) );
+
+    if( nuc.max_rel_act.has_value() && (nuc.max_rel_act.value() < 0.0) )
+      throw runtime_error( std::format( "Nuclide {} has max rel act set to {} - max rel act must be greater or equal to 0.0.",
+                                        nuc.nuclide->symbol, nuc.max_rel_act.value() ) );
+
+    if( nuc.starting_rel_act.has_value() && (nuc.starting_rel_act.value() < 0.0) )
+      throw runtime_error( std::format( "Nuclide {} has starting rel act set to {} - starting rel act must be greater or equal to 0.0.",
+                                        nuc.nuclide->symbol, nuc.starting_rel_act.value() ) );  
+
+    //Check that if min_rel_act is set, and max_rel_act is set, then max_rel_act is greater than min_rel_act
+    if( (nuc.min_rel_act.has_value() && nuc.max_rel_act.has_value())
+        && (nuc.min_rel_act.value() > nuc.max_rel_act.value()) )
+    {
+      const string msg = std::format( "Nuclide {} has min rel act set to {} and max rel act set to {}"
+                                      " - max rel act must be greater or equal to min rel act.",
+                            nuc.nuclide->symbol, nuc.min_rel_act.value(), nuc.max_rel_act.value() );
+      throw runtime_error( msg );
+    }
+    
+    if( (nuc.starting_rel_act.has_value() && nuc.min_rel_act.has_value()) 
+        && (nuc.starting_rel_act.value() < nuc.min_rel_act.value()) )
+    {
+      const string msg = std::format( "Nuclide {} has starting rel act set to {}"
+                                      " - starting rel act must be greater or equal to min rel act.",
+                                      nuc.nuclide->symbol, nuc.starting_rel_act.value() );
+      throw runtime_error( msg );
+    }
+
+    if( (nuc.starting_rel_act.has_value() && nuc.max_rel_act.has_value()) 
+        && (nuc.starting_rel_act.value() > nuc.max_rel_act.value()) )
+    {
+      const string msg = std::format( "Nuclide {} has starting rel act set to {}"
+                                      " - starting rel act must be less or equal to max rel act.",
+                                      nuc.nuclide->symbol, nuc.starting_rel_act.value() );
+      throw runtime_error( msg );
+    }
+
+    if( !nuc.fit_age )
+    {
+      if( nuc.fit_age_min.has_value() || nuc.fit_age_max.has_value() )
+        throw runtime_error( std::format( "Nuclide {} has fit age min or max set, but fit age is not set.",
+                                          nuc.nuclide->symbol ) );
+    }
+
+    if( nuc.age < 0.0 )
+      throw runtime_error( std::format( "Nuclide {} has age set to {} - age must be greater or equal to 0.0.",
+                                        nuc.nuclide->symbol, nuc.age ) );
+
+    if( nuc.fit_age_min.has_value() && nuc.fit_age_max.has_value() )
+    {
+      if( nuc.fit_age_min.value() >= nuc.fit_age_max.value() )
+        throw runtime_error( std::format( "Nuclide {} has fit age min set to {} and fit age max set to {}"
+                                         " - fit age max must be greater or equal to fit age min.",
+                                         nuc.nuclide->symbol, nuc.fit_age_min.value(), nuc.fit_age_max.value() ) );
+    }
+
+    if( nuc.fit_age_min.has_value() && nuc.age < nuc.fit_age_min.value() )
+      throw runtime_error( std::format( "Nuclide {} has age set to {} - age must be greater or equal to fit age min.",
+                                        nuc.nuclide->symbol, nuc.age ) );
+
+    if( nuc.fit_age_max.has_value() && nuc.age > nuc.fit_age_max.value() )
+      throw runtime_error( std::format( "Nuclide {} has age set to {} - age must be less or equal to fit age max.",
+                                        nuc.nuclide->symbol, nuc.age ) );  
+  }//for( const NucInputInfo &nuc : nuclides )
+
+  if( nucs_of_el_same_age )
+  {
+    for( const NucInputInfo &inner_nuc : nuclides )
+    {
+      for( const NucInputInfo &outer_nuc : nuclides )
+      {
+        if( inner_nuc.nuclide->atomicNumber != outer_nuc.nuclide->atomicNumber )
+          continue;
+
+        if( inner_nuc.age != outer_nuc.age )
+          throw runtime_error( "When nucs_of_el_same_age is true, all nuclides of same element must have the same age input." );
+
+        if( inner_nuc.fit_age != outer_nuc.fit_age )
+          throw runtime_error( "When nucs_of_el_same_age is true, all nuclides of same element must have the same fit_age input." );
+
+        if( (inner_nuc.fit_age_min.has_value() != outer_nuc.fit_age_min.has_value())
+            || (inner_nuc.fit_age_max.has_value() != outer_nuc.fit_age_max.has_value())
+            || (inner_nuc.fit_age_min.has_value() && (inner_nuc.fit_age_min.value() != outer_nuc.fit_age_min.value()))
+            || (inner_nuc.fit_age_max.has_value() && (inner_nuc.fit_age_max.value() != outer_nuc.fit_age_max.value())) )
+        {
+          const string msg = std::format( "When nucs_of_el_same_age is true, all nuclides of same element must have the same fit_age_min and fit_age_max input."
+                                          " - nuclide {} has fit_age_min set to {} and fit_age_max set to {}, but nuclide {} has fit_age_min set to {} and fit_age_max set to {}.",
+                                          inner_nuc.nuclide->symbol, inner_nuc.fit_age_min.value_or(0.0), inner_nuc.fit_age_max.value_or(0.0),
+                                          outer_nuc.nuclide->symbol, outer_nuc.fit_age_min.value_or(0.0), outer_nuc.fit_age_max.value_or(0.0) );
+          throw runtime_error( msg );
+        }//if( same age limits not specified for all nuclides of same element )
+      }//for( const NucInputInfo &outer_nuc : nuclides )
+    }//for( const NucInputInfo &inner_nuc : nuclides )
+  }//if( nucs_of_el_same_age )
 }//void RelEffCurveInput::check_nuclide_constraints() const
 
     
@@ -8839,6 +9019,37 @@ void NucInputInfo::equalEnough( const NucInputInfo &lhs, const NucInputInfo &rhs
   if( lhs.gammas_to_exclude.size() != rhs.gammas_to_exclude.size() )
     throw std::runtime_error( "Number of gammas to exclude in lhs and rhs are not the same" );
   
+  if( lhs.fit_age_min.has_value() != rhs.fit_age_min.has_value() )
+    throw std::runtime_error( "Fit age min in lhs and rhs are not the same" );
+  if( lhs.fit_age_min.has_value() && rhs.fit_age_min.has_value() )
+    if( fabs(lhs.fit_age_min.value() - rhs.fit_age_min.value()) > 1.0e-5 )
+      throw std::runtime_error( "Fit age min in lhs and rhs are not the same" );
+
+  if( lhs.fit_age_max.has_value() != rhs.fit_age_max.has_value() )
+    throw std::runtime_error( "Fit age max in lhs and rhs are not the same" );
+  if( lhs.fit_age_max.has_value() && rhs.fit_age_max.has_value() )
+    if( fabs(lhs.fit_age_max.value() - rhs.fit_age_max.value()) > 1.0e-5 )
+      throw std::runtime_error( "Fit age max in lhs and rhs are not the same" );
+
+  if( lhs.min_rel_act.has_value() != rhs.min_rel_act.has_value() )
+    throw std::runtime_error( "Min rel act in lhs and rhs are not the same" );
+  if( lhs.min_rel_act.has_value() && rhs.min_rel_act.has_value() )
+    if( fabs(lhs.min_rel_act.value() - rhs.min_rel_act.value()) > 1.0e-5 )
+      throw std::runtime_error( "Min rel act in lhs and rhs are not the same" );
+
+  if( lhs.max_rel_act.has_value() != rhs.max_rel_act.has_value() )
+    throw std::runtime_error( "Max rel act in lhs and rhs are not the same" );
+  if( lhs.max_rel_act.has_value() && rhs.max_rel_act.has_value() )
+    if( fabs(lhs.max_rel_act.value() - rhs.max_rel_act.value()) > 1.0e-5 )
+      throw std::runtime_error( "Max rel act in lhs and rhs are not the same" );
+
+  if( lhs.starting_rel_act.has_value() != rhs.starting_rel_act.has_value() )
+    throw std::runtime_error( "Starting rel act in lhs and rhs are not the same" );
+  if( lhs.starting_rel_act.has_value() && rhs.starting_rel_act.has_value() )
+    if( fabs(lhs.starting_rel_act.value() - rhs.starting_rel_act.value()) > 1.0e-5 )
+      throw std::runtime_error( "Starting rel act in lhs and rhs are not the same" );
+      
+
   for( size_t i = 0; i < lhs.gammas_to_exclude.size(); ++i )
     if( fabs(lhs.gammas_to_exclude[i] - rhs.gammas_to_exclude[i]) > 1.0e-3 )
       throw std::runtime_error( "Gamma to exclude in lhs and rhs are not the same" );

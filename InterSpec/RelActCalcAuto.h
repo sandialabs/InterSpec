@@ -137,9 +137,49 @@ struct NucInputInfo
    */
   double age = -1.0;
   
-  
+  /** If nuclide age should be fit. */
   bool fit_age = false;
   
+  /** Minimum age to fit; if specified, must be zero or greater. 
+   
+   In units of PhysicalUnits (i.e., 1.0 == second).
+   
+   May not be specified if #fit_age is false.
+  */
+  std::optional<double> fit_age_min;
+  
+  /** Maximum age to fit; if specified, must be greater than #fit_age_min (if specified). 
+  
+   In units of PhysicalUnits (i.e., 1.0 == second).
+
+   May not be specified if #fit_age is false.
+  */
+  std::optional<double> fit_age_max;
+
+  /** Minimum relative activity to fit; if specified, must be zero or greater. 
+   
+   May not be specified if this nuclide is subject to a ActRatioConstraint (as the controlled nuclide).
+
+   Setting #min_rel_act equal to #max_rel_act will cause the fit to be constrained to that value (
+   and if #starting_rel_act is set, it must be exactly equal to that value).
+  */
+  std::optional<double> min_rel_act;
+  
+  /** Maximum relative activity to fit; if specified, must be greater than #min_rel_act (if specified). 
+   
+   May not be specified if this nuclide is subject to a ActRatioConstraint (as the controlled nuclide).
+
+   Setting #min_rel_act equal to #max_rel_act will cause the fit to be constrained to that value (
+   and if #starting_rel_act is set, it must be exactly equal to that value).
+  */
+  std::optional<double> max_rel_act;
+
+  /** Starting relative activity; if specified, must be zero or greater. 
+   
+   May not be specified if this nuclide is subject to a ActRatioConstraint (as the controlled nuclide).
+  */
+  std::optional<double> starting_rel_act;
+
   /** Energy corresponding to SandiaDecay::EnergyRatePair::energy */
   std::vector<double> gammas_to_exclude;
   

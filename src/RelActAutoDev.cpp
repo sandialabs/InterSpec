@@ -613,7 +613,7 @@ void run_multi_enrich_u02_ex()
   assert( background );
   assert( background->title() == "Background" );
   
-  const size_t enrich_choice = 6;
+  const size_t enrich_choice = 27;
   shared_ptr<const SpecUtils::Measurement> foreground = specfile.measurement( enrich_choice );
   assert( foreground );
 
@@ -941,6 +941,28 @@ return;
     );
   }//if( lesser_enrichment < 0.25 )
 
+
+  //state.options.rel_eff_curves.resize(1);
+  state.options.rel_eff_curves[0].phys_model_use_hoerl = true;
+  state.options.rel_eff_curves[1].phys_model_use_hoerl = true;
+
+  /*
+  // We can constrain the RelActivity.
+  for( auto &nuc : state.options.rel_eff_curves[0].nuclides )
+  {
+    if( nuc.nuclide == u238 )
+    {
+      nuc.min_rel_act = 8000.0;
+      nuc.max_rel_act = 50000.0;
+      nuc.starting_rel_act = 16228.0;
+    }
+  }
+  */
+  
+  state.options.same_hoerl_for_all_rel_eff_curves = true;
+  //state.options.same_external_shielding_for_all_rel_eff_curves = true;
+
+
   // Check serialization to/from XML
   {
     rapidxml::xml_document<char> doc;
@@ -955,11 +977,6 @@ return;
 
     RelActCalcAuto::RelActAutoGuiState::equalEnough( state, state_cpy );
   } 
-
-  
-  state.options.same_hoerl_for_all_rel_eff_curves = true;
-  //state.options.same_external_shielding_for_all_rel_eff_curves = true;
-
 
   const RelActCalcAuto::RelActAutoSolution solution = RelActCalcAuto::solve( state.options,
                                                                             foreground, background, det, all_peaks, nullptr );
@@ -1733,24 +1750,44 @@ int dev_code()
       db->nuclide("Pu238"),
       20.0*PhysicalUnits::year,  //Default age
       false, //fit age
+      std::nullopt, //fit_age_min
+      std::nullopt, //fit_age_max
+      std::nullopt, //min_rel_act
+      std::nullopt, //max_rel_act
+      std::nullopt, //starting_rel_act
       {}, //gammas to exclude
       "rgb(0, 0, 255)",
     }, {
       db->nuclide("Pu239"),
       20.0*PhysicalUnits::year,  //Default age
       false, //fit age
+      std::nullopt, //fit_age_min
+      std::nullopt, //fit_age_max
+      std::nullopt, //min_rel_act
+      std::nullopt, //max_rel_act
+      std::nullopt, //starting_rel_act
       {}, //gammas to exclude
       "rgb(255, 69, 0)",
     }, {
       db->nuclide("Pu240"),
       20.0*PhysicalUnits::year,  //Default age
       false, //fit age
+      std::nullopt, //fit_age_min
+      std::nullopt, //fit_age_max
+      std::nullopt, //min_rel_act
+      std::nullopt, //max_rel_act
+      std::nullopt, //starting_rel_act
       {}, //gammas to exclude
       "rgb(34, 139, 34)",
     }, {
       db->nuclide("Pu241"),
       20.0*PhysicalUnits::year,  //Default age
       false, //fit age
+      std::nullopt, //fit_age_min
+      std::nullopt, //fit_age_max
+      std::nullopt, //min_rel_act
+      std::nullopt, //max_rel_act
+      std::nullopt, //starting_rel_act
       {}, //gammas to exclude
       "rgb(204, 204, 0)",
     }
