@@ -271,8 +271,16 @@ enum class FwhmForm : int
   Polynomial_3,
   Polynomial_4,
   Polynomial_5,
-  Polynomial_6
-};//enum ResolutionFnctForm
+  Polynomial_6,
+
+  /** Do not fit the FWHM equation - use the FWHM from the detector efficiency function.
+   
+   #Options::fwhm_estimation_method must be set to FwhmEstimationMethod::FixedToDetectorEfficiency,
+   and you must provide a DetectorPeakResponse, with FWHM information, to `RelActCalcAuto::solve(...)`.
+  */
+  NotApplicable
+};//enum FwhmForm
+
 
 /** Returns string representation of the #FwhmForm.
  String returned is a static string, so do not delete it.
@@ -284,6 +292,59 @@ const char *to_str( const FwhmForm form );
  Throws exception if invalid string (i.e., any string not returned by #to_str(FwhmForm) ).
  */
 FwhmForm fwhm_form_from_str( const char *str );
+
+
+/** How the FWHM of peaks should be determined.
+ 
+ We could add in ability to specify parameters and the ranges they can vary over, but for now
+ we'll keep it simple - it isnt clear complicating things will actually be useful to users.
+ */
+enum class FwhmEstimationMethod : int
+{
+  /** Will use the FWHM of the DetectorPeakResponse, if available, or if not will fit the
+   peaks in the spectrum, and use the derived FWHM to start with, refining it in the non-linear
+   fit for the relative activities.
+   */
+  StartFromDetEffOrPeaksInSpectrum,
+
+  /** Use the FWHM equation fit from all peaks in the spectrum, 
+    but further refine this during the non-linear fit for the relative activities. 
+  */
+  StartingFromAllPeaksInSpectrum,
+  
+  /** Use the FWHM equation fit from all peaks in the spectrum, 
+    and do not further refine this during the non-linear fit for the relative activities. 
+   */
+  FixedToAllPeaksInSpectrum,
+
+  /** Use the detector efficiency function to estimate the FWHM,
+    but further refine this during the non-linear fit for the relative activities. 
+
+    Will throw exception if detector efficiency function does not have a FWHM
+   */
+  StartingFromDetectorEfficiency,
+  
+  /** Use the detector efficiency function to estimate the FWHM,
+    and do not further refine this during the non-linear fit for the relative activities. 
+
+    Options::fwhm_form
+   */
+  FixedToDetectorEfficiency
+};//enum FwhmEstimationMethod
+
+
+/** Returns string representation of the #FwhmEstimationMethod.
+ String returned is a static string, so do not delete it.
+ */
+const char *to_str( const FwhmEstimationMethod form );
+
+
+/** Converts from the string representation of #FwhmEstimationMethod to enumerated value.
+ 
+ Throws exception if invalid string (i.e., any string not returned by #to_str(FwhmEstimationMethod) ).
+ */
+FwhmEstimationMethod fwhm_estimation_method_from_str( const char *str );
+
 
 /** Evaluates the FWHM equation for the input energy, returning the FWHM. */
 float eval_fwhm( const float energy, const FwhmForm form, const std::vector<float> &coeffs );
@@ -430,6 +491,9 @@ struct Options
    */
   FwhmForm fwhm_form;
   
+  /** How the FWHM of peaks should be determined. */
+  FwhmEstimationMethod fwhm_estimation_method;
+
   /** Optional title of the spectrum; used as title in HTML and text summaries. */
   std::string spectrum_title;
   

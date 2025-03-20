@@ -181,6 +181,11 @@ void sort_rois_by_energy( vector<RelActCalcAuto::RoiRange> &rois )
           drf_form_to_fit = DetectorPeakResponse::ResolutionFnctForm::kSqrtPolynomial;
           fit_order = num_parameters(form_to_fit);
           break;
+          
+        case RelActCalcAuto::FwhmForm::NotApplicable:
+          assert( 0 );
+          throw runtime_error( "NotApplicable should not be used here" );
+          break;
       }//switch( rel_act_fwhm_form )
       
       vector<float> answer, uncerts;
@@ -228,6 +233,10 @@ void sort_rois_by_energy( vector<RelActCalcAuto::RoiRange> &rois )
     cout << "            case RelActCalcAuto::FwhmForm::Polynomial_6:" << endl;
     fitFromGadras( highres_pars, true, RelActCalcAuto::FwhmForm::Polynomial_6 );
     cout << "            break;" << endl;
+    cout << "            case RelActCalcAuto::FwhmForm::NotApplicable:" << endl;
+    cout << "            assert( 0 );" << endl;
+    cout << "            throw runtime_error( \"NotApplicable should not be used here\" );" << endl;
+    cout << "            break;" << endl;
     cout << "          }" << endl;
     cout << "        }else" << endl;
     cout << "        {" << endl;
@@ -263,6 +272,10 @@ void sort_rois_by_energy( vector<RelActCalcAuto::RoiRange> &rois )
     
     cout << "            case RelActCalcAuto::FwhmForm::Polynomial_6:" << endl;
     fitFromGadras( lowres_pars, false, RelActCalcAuto::FwhmForm::Polynomial_6 );
+    cout << "            break;" << endl;
+    cout << "            case RelActCalcAuto::FwhmForm::NotApplicable:" << endl;
+    cout << "            assert( 0 );" << endl;
+    cout << "            throw runtime_error( \"NotApplicable should not be used here\" );" << endl;
     cout << "            break;" << endl;
     cout << "          }" << endl;
     cout << "        }" << endl;
@@ -332,6 +345,11 @@ void fill_in_default_start_fwhm_pars( std::vector<double> &parameters, size_t fw
         parameters[fwhm_start + 4] = -0.568632;
         parameters[fwhm_start + 5] = 0.0969217;
         break;
+
+      case RelActCalcAuto::FwhmForm::NotApplicable:
+        assert( 0 );
+        throw runtime_error( "NotApplicable should not be used here" );
+        break;
     }//switch( options.fwhm_form )
   }else
   {
@@ -389,6 +407,11 @@ void fill_in_default_start_fwhm_pars( std::vector<double> &parameters, size_t fw
         parameters[fwhm_start + 3] = -5991.02;
         parameters[fwhm_start + 4] = 2192.23;
         parameters[fwhm_start + 5] = -286.53;
+        break;
+
+      case RelActCalcAuto::FwhmForm::NotApplicable:
+        assert( 0 );
+        throw runtime_error( "NotApplicable should not be used here" );
         break;
     }//switch( options.fwhm_form )
   }//if( highres ) / else
@@ -1739,63 +1762,106 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     }//End some dev checks
 #endif //NDEBUG
     
-    try
+    bool use_drf_fwhm = false;
+    switch( options.fwhm_estimation_method )
     {
-      // We'll convert from one FWHM type to another here; throwing an exception if we fail
-      if( !res_drf || !res_drf->hasResolutionInfo() )
-        throw runtime_error( "No starting FWHM info was passed in, or derived from the spectrum;"
-                             " please select a DRF with FWHM information." );
-    
-      const RelActCalcAuto::FwhmForm rel_act_fwhm_form = cost_functor->m_options.fwhm_form;
-      const DetectorPeakResponse::ResolutionFnctForm drf_fwhm_type = res_drf->resolutionFcnType();
-      vector<float> drfpars = res_drf->resolutionFcnCoefficients();
+      case RelActCalcAuto::FwhmEstimationMethod::StartingFromAllPeaksInSpectrum:      
+      case RelActCalcAuto::FwhmEstimationMethod::FixedToAllPeaksInSpectrum:      
+        use_drf_fwhm = false;
+      break;
+
+      case RelActCalcAuto::FwhmEstimationMethod::StartFromDetEffOrPeaksInSpectrum:
+        use_drf_fwhm = (res_drf && res_drf->hasResolutionInfo());
+      break;
+
+      case RelActCalcAuto::FwhmEstimationMethod::FixedToDetectorEfficiency:
+      case RelActCalcAuto::FwhmEstimationMethod::StartingFromDetectorEfficiency:      
+        use_drf_fwhm = true;
+        break;
+    }//switch( options.fwhm_estimation_method )
+
+    if( use_drf_fwhm && (!res_drf || !res_drf->hasResolutionInfo()) )
+    {
+      solution.m_status = RelActCalcAuto::RelActAutoSolution::Status::FailedToSetupProblem;
+      solution.m_error_message = "The detector efficiency function does not have FWHM information;"
+                                    " please select a DRF with FWHM information, or select to use"
+                                    " FWHM from peaks in spectrum.";
       
-      assert( drf_fwhm_type != DetectorPeakResponse::ResolutionFnctForm::kNumResolutionFnctForm );
-      
-      
-      bool needToFitOtherType = false;
-      
-      switch( rel_act_fwhm_form )
+      return solution;
+    }//if( use_drf_fwhm && (!res_drf || !res_drf->hasResolutionInfo()) )
+
+    if( use_drf_fwhm )
+    {
+      try
       {
-        case RelActCalcAuto::FwhmForm::Gadras:
-          // We are fitting to the GADRAS functional form
-          assert( num_parameters(options.fwhm_form) == 3 );
-          needToFitOtherType = (drf_fwhm_type != DetectorPeakResponse::kGadrasResolutionFcn);
-        break;
+        const RelActCalcAuto::FwhmForm rel_act_fwhm_form = cost_functor->m_options.fwhm_form;
+        const DetectorPeakResponse::ResolutionFnctForm drf_fwhm_type = res_drf->resolutionFcnType();
+        vector<float> drfpars = res_drf->resolutionFcnCoefficients();
+      
+        assert( drf_fwhm_type != DetectorPeakResponse::ResolutionFnctForm::kNumResolutionFnctForm );
+      
+      
+        bool needToFitOtherType = false;
+      
+        switch( rel_act_fwhm_form )
+        {
+          case RelActCalcAuto::FwhmForm::Gadras:
+            // We are fitting to the GADRAS functional form
+            assert( num_parameters(options.fwhm_form) == 3 );
+            needToFitOtherType = (drf_fwhm_type != DetectorPeakResponse::kGadrasResolutionFcn);
+          break;
           
-        case RelActCalcAuto::FwhmForm::SqrtEnergyPlusInverse:
-          needToFitOtherType = (drf_fwhm_type != DetectorPeakResponse::kSqrtEnergyPlusInverse);
-        break;
+          case RelActCalcAuto::FwhmForm::SqrtEnergyPlusInverse:
+            needToFitOtherType = (drf_fwhm_type != DetectorPeakResponse::kSqrtEnergyPlusInverse);
+          break;
           
-        case RelActCalcAuto::FwhmForm::ConstantPlusSqrtEnergy:
-          needToFitOtherType = (drf_fwhm_type != DetectorPeakResponse::kConstantPlusSqrtEnergy);
-        break;
+          case RelActCalcAuto::FwhmForm::ConstantPlusSqrtEnergy:
+            needToFitOtherType = (drf_fwhm_type != DetectorPeakResponse::kConstantPlusSqrtEnergy);
+          break;
           
-        case RelActCalcAuto::FwhmForm::Polynomial_2:
-        case RelActCalcAuto::FwhmForm::Polynomial_3:
-        case RelActCalcAuto::FwhmForm::Polynomial_4:
-        case RelActCalcAuto::FwhmForm::Polynomial_5:
-        case RelActCalcAuto::FwhmForm::Polynomial_6:
-          assert( num_parameters(rel_act_fwhm_form) == (static_cast<size_t>(rel_act_fwhm_form)-1) );
+          case RelActCalcAuto::FwhmForm::Polynomial_2:
+          case RelActCalcAuto::FwhmForm::Polynomial_3:
+          case RelActCalcAuto::FwhmForm::Polynomial_4:
+          case RelActCalcAuto::FwhmForm::Polynomial_5:
+          case RelActCalcAuto::FwhmForm::Polynomial_6:
+            assert( num_parameters(rel_act_fwhm_form) == (static_cast<size_t>(rel_act_fwhm_form)-1) );
           
-          needToFitOtherType = ((drf_fwhm_type != DetectorPeakResponse::kSqrtPolynomial)
+            needToFitOtherType = ((drf_fwhm_type != DetectorPeakResponse::kSqrtPolynomial)
                                 || (drfpars.size() != num_parameters(rel_act_fwhm_form)) );
-        break;
-      }//switch( m_options.fwhm_form )
+          break;
+
+          case RelActCalcAuto::FwhmForm::NotApplicable:
+          {
+            needToFitOtherType = false;
+
+            if( options.fwhm_estimation_method != RelActCalcAuto::FwhmEstimationMethod::FixedToDetectorEfficiency )
+            {
+              solution.m_status = RelActCalcAuto::RelActAutoSolution::Status::FailedToSetupProblem;
+              solution.m_error_message = "The detector efficiency function does not have FWHM information;"
+                                    " please select a DRF with FWHM information, or select to use"
+                                    " FWHM from peaks in spectrum.";
+      
+              return solution;
+            }//if( options.fwhm_estimation_method != RelActCalcAuto::FwhmEstimationMethod::FixedToDetectorEfficiency )
+
+            break;
+          }//case RelActCalcAuto::FwhmForm::NotApplicable:
+        }//switch( rel_act_fwhm_form )
+     
     
           
       if( needToFitOtherType )
       {
-        // Make a vector of ~10 equally spaced peaks, with uncert 10% that peaks width -
+        // Make a vector of ~20 equally spaced peaks, with uncert 10% that peaks width -
         //  fairly arbitrary
         const double lowest_energy = cost_functor->m_energy_ranges.front().lower_energy;
         const double highest_energy = cost_functor->m_energy_ranges.back().upper_energy;
-        const double delta_energy = 0.1*(highest_energy - lowest_energy);
+        const double delta_energy = 0.05*(highest_energy - lowest_energy);
         
         auto fake_peaks = make_shared<std::deque< std::shared_ptr<const PeakDef> > >();
         for( double ene = lowest_energy; ene <=(1.001*highest_energy); ene += delta_energy )
         {
-          const auto sigma = res_drf->peakResolutionSigma(ene);
+          const float sigma = res_drf->peakResolutionSigma(ene);
           auto p = make_shared<PeakDef>( ene, sigma, 1000.0 );
           p->setSigmaUncert( 0.1*sigma );
           fake_peaks->push_back( p );
@@ -1838,6 +1904,9 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
         drfpars = new_sigma_coefs;
       }//if( needToFitOtherType )
       
+
+work in progress; need to implement proper logic to fill out `drfpars`.  Also, implement using peaks in spectrum to make FWHM function, or defaulting to using defaults.
+
       if( drfpars.size() != num_parameters(options.fwhm_form) )
       {
         assert( 0 );
@@ -1853,8 +1922,12 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
       solution.m_warnings.push_back( "Failed to create initial FWHM estimation, but will continue anyway: "
                                     + string(e.what()) );
     
-      fill_in_default_start_fwhm_pars( parameters, cost_functor->m_fwhm_par_start_index, highres, options.fwhm_form );
-    }//try / catch
+        fill_in_default_start_fwhm_pars( parameters, cost_functor->m_fwhm_par_start_index, highres, options.fwhm_form );
+      }//try / catch
+    }else //if( use_drf_fwhm )
+    {
+
+    }//if( use_drf_fwhm ) / else
           
       // Filter peaks to those in ranges we want
       vector<RelActCalcManual::GenericPeakInfo> peaks_in_range;
@@ -5697,6 +5770,46 @@ FwhmForm fwhm_form_from_str( const char *str )
   return FwhmForm::Gadras;
 }//FwhmForm fwhm_form_from_str(str)
 
+
+const char *to_str( const FwhmEstimationMethod form )
+{
+  switch( form )
+  {
+    case FwhmEstimationMethod::StartFromDetEffOrPeaksInSpectrum: 
+      return "StartFromDetEffOrPeaksInSpectrum";
+    case FwhmEstimationMethod::StartingFromAllPeaksInSpectrum: 
+      return "StartingFromAllPeaksInSpectrum";
+    case FwhmEstimationMethod::FixedToAllPeaksInSpectrum: 
+      return "FixedToAllPeaksInSpectrum";
+    case FwhmEstimationMethod::StartingFromDetectorEfficiency: 
+      return "StartingFromDetectorEfficiency";
+    case FwhmEstimationMethod::FixedToDetectorEfficiency: 
+      return "FixedToDetectorEfficiency";
+  }
+  
+  assert( 0 );
+  return "InvalidFwhmEstimationMethod";
+}//to_str( const FwhmEstimationMethod form )
+
+
+FwhmEstimationMethod fwhm_estimation_method_from_str( const char *str )
+{
+  const size_t str_len = strlen(str);
+  
+  for( int iform = 0; iform <= static_cast<int>(FwhmEstimationMethod::FixedToDetectorEfficiency); iform += 1 )
+  {
+    const FwhmEstimationMethod x = FwhmEstimationMethod(iform);
+    const char *form_str = to_str( x );
+    const bool case_sensitive = false;
+    const size_t form_str_len = strlen(form_str);
+    if( rapidxml::internal::compare(str, str_len, form_str, form_str_len, case_sensitive) )
+      return x;
+  }
+  
+  throw runtime_error( "fwhm_estimation_method_from_str(...): invalid input string '" + std::string(str) + "'" );
+  return FwhmEstimationMethod::StartFromDetEffOrPeaksInSpectrum;
+}//FwhmEstimationMethod fwhm_estimation_method_from_str(str)
+
   
 /** This function is the same as `DetectorPeakResponse::peakResolutionFWHM(...)`, but templated to allow Jets
  TODO: refactor this function and the equivalent `DetectorPeakResponse` function into a single imlpementation.
@@ -6194,6 +6307,10 @@ rapidxml::xml_node<char> *Options::toXml( rapidxml::xml_node<char> *parent ) con
   auto fwhm_node = append_string_node( base_node, "FwhmForm", fwhm_form_str );
   append_attrib( fwhm_node, "remark", "Possible values: Gadras, Polynomial_2, Polynomial_3, Polynomial_4, Polynomial_5, Polynomial_6" );
   
+  const char *fwhm_estimation_method_str = to_str( fwhm_estimation_method );
+  auto fwhm_estimation_method_node = append_string_node( base_node, "FwhmEstimationMethod", fwhm_estimation_method_str );
+  append_attrib( fwhm_estimation_method_node, "remark", "Possible values: StartFromDetEffOrPeaksInSpectrum, StartingFromAllPeaksInSpectrum, FixedToAllPeaksInSpectrum, StartingFromDetectorEfficiency, FixedToDetectorEfficiency" );
+
   append_string_node( base_node, "Title", spectrum_title );
   
   append_string_node( base_node, "SkewType", PeakDef::to_string(skew_type) );
@@ -6252,6 +6369,16 @@ void Options::fromXml( const ::rapidxml::xml_node<char> *parent, MaterialDB *mat
     const string fwhm_str = SpecUtils::xml_value_str( fwhm_node );
     fwhm_form = fwhm_form_from_str( fwhm_str.c_str() );
     
+    const rapidxml::xml_node<char> *fwhm_estimation_method_node = XML_FIRST_NODE( parent, "FwhmEstimationMethod" );
+    if( fwhm_estimation_method_node )
+    {
+      const string method_str = SpecUtils::xml_value_str( fwhm_estimation_method_node );
+      fwhm_estimation_method = fwhm_estimation_method_from_str( method_str.c_str() );
+    }else
+    {
+      fwhm_estimation_method = FwhmEstimationMethod::StartFromDetEffOrPeaksInSpectrum;
+    }
+
     const rapidxml::xml_node<char> *title_node = XML_FIRST_NODE( parent, "Title" );
     spectrum_title = SpecUtils::xml_value_str( title_node );
     
@@ -6923,6 +7050,7 @@ void RelEffCurveInput::fromXml( const ::rapidxml::xml_node<char> *parent, Materi
 Options::Options()
 : fit_energy_cal( false ),
   fwhm_form( FwhmForm::Polynomial_2 ),
+  fwhm_estimation_method( FwhmEstimationMethod::StartFromDetEffOrPeaksInSpectrum ),
   spectrum_title( "" ),
   skew_type( PeakDef::SkewType::NoSkew ),
   additional_br_uncert( 0.0 ),
@@ -9131,6 +9259,9 @@ void Options::equalEnough( const Options &lhs, const Options &rhs )
   if( lhs.fwhm_form != rhs.fwhm_form )
     throw std::runtime_error( "FWHM form in lhs and rhs are not the same" );
   
+  if( lhs.fwhm_estimation_method != rhs.fwhm_estimation_method )
+    throw std::runtime_error( "FWHM estimation method in lhs and rhs are not the same" );
+
   if( lhs.spectrum_title != rhs.spectrum_title )
     throw std::runtime_error( "Spectrum title in lhs and rhs are not the same" );
   
