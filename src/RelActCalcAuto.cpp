@@ -295,34 +295,52 @@ void fill_in_default_start_fwhm_pars( std::vector<double> &parameters, size_t fw
     switch( fwhm_form )
     {
       case RelActCalcAuto::FwhmForm::Gadras:
+        assert( parameters.empty() || (parameters.size() >= (fwhm_start + 3)) );
+        if( parameters.size() < (fwhm_start + 3) )
+          parameters.resize( fwhm_start + 3, 0.0 );
         parameters[fwhm_start + 0] = 1.54;
         parameters[fwhm_start + 1] = 0.264;
         parameters[fwhm_start + 2] = 0.33;
         break;
         
       case RelActCalcAuto::FwhmForm::SqrtEnergyPlusInverse:
+        assert( parameters.empty() || (parameters.size() >= (fwhm_start + 3)) );
+        if( parameters.size() < (fwhm_start + 3) )
+          parameters.resize( fwhm_start + 3, 0.0 );
         parameters[fwhm_start + 0] = 1.86745;
         parameters[fwhm_start + 1] = 0.00216761;
         parameters[fwhm_start + 2] = 27.9835;
         break;
         
       case RelActCalcAuto::FwhmForm::ConstantPlusSqrtEnergy:
+        assert( parameters.empty() || (parameters.size() >= (fwhm_start + 2)) );
+        if( parameters.size() < (fwhm_start + 2) )
+          parameters.resize( fwhm_start + 2, 0.0 );
         parameters[fwhm_start + 0] = 1.0;
         parameters[fwhm_start + 1] = 0.035;
         break;
         
       case RelActCalcAuto::FwhmForm::Polynomial_2:
+        assert( parameters.empty() || (parameters.size() >= (fwhm_start + 2)) );
+        if( parameters.size() < (fwhm_start + 2) )
+          parameters.resize( fwhm_start + 2, 0.0 );
         parameters[fwhm_start + 0] = 2.10029;
         parameters[fwhm_start + 1] = 2.03657;
         break;
         
       case RelActCalcAuto::FwhmForm::Polynomial_3:
+        assert( parameters.empty() || (parameters.size() >= (fwhm_start + 3)) );
+        if( parameters.size() < (fwhm_start + 3) )
+          parameters.resize( fwhm_start + 3, 0.0 );
         parameters[fwhm_start + 0] = 2.26918;
         parameters[fwhm_start + 1] = 1.54837;
         parameters[fwhm_start + 2] = 0.192;
         break;
         
       case RelActCalcAuto::FwhmForm::Polynomial_4:
+        assert( parameters.empty() || (parameters.size() >= (fwhm_start + 4)) );
+        if( parameters.size() < (fwhm_start + 4) )
+          parameters.resize( fwhm_start + 4, 0.0 );
         parameters[fwhm_start + 0] = 2.49021;
         parameters[fwhm_start + 1] = 0.346357;
         parameters[fwhm_start + 2] = 1.3902;
@@ -330,6 +348,9 @@ void fill_in_default_start_fwhm_pars( std::vector<double> &parameters, size_t fw
         break;
         
       case RelActCalcAuto::FwhmForm::Polynomial_5:
+        assert( parameters.empty() || (parameters.size() >= (fwhm_start + 5)) );
+        if( parameters.size() < (fwhm_start + 5) )
+          parameters.resize( fwhm_start + 5, 0.0 );
         parameters[fwhm_start + 0] = 2.5667;
         parameters[fwhm_start + 1] = -0.333729;
         parameters[fwhm_start + 2] = 2.59812;
@@ -338,6 +359,9 @@ void fill_in_default_start_fwhm_pars( std::vector<double> &parameters, size_t fw
         break;
         
       case RelActCalcAuto::FwhmForm::Polynomial_6:
+        assert( parameters.empty() || (parameters.size() >= (fwhm_start + 6)) );
+        if( parameters.size() < (fwhm_start + 6) )
+          parameters.resize( fwhm_start + 6, 0.0 );
         parameters[fwhm_start + 0] = 2.51611;
         parameters[fwhm_start + 1] = 0.318145;
         parameters[fwhm_start + 2] = 0.838887;
@@ -358,34 +382,52 @@ void fill_in_default_start_fwhm_pars( std::vector<double> &parameters, size_t fw
     switch( fwhm_form )
     {
       case RelActCalcAuto::FwhmForm::Gadras:
+        assert( parameters.empty() || (parameters.size() >= (fwhm_start + 3)) );
+        if( parameters.size() < (fwhm_start + 3) )
+          parameters.resize( fwhm_start + 3, 0.0 );
         parameters[fwhm_start + 0] = -6.5;
         parameters[fwhm_start + 1] = 7.5;
         parameters[fwhm_start + 2] = 0.55;
         break;
         
       case RelActCalcAuto::FwhmForm::SqrtEnergyPlusInverse:
+        assert( parameters.empty() || (parameters.size() >= (fwhm_start + 3)) );
+        if( parameters.size() < (fwhm_start + 3) )
+          parameters.resize( fwhm_start + 3, 0.0 );
         parameters[fwhm_start + 0] = -592.865;
         parameters[fwhm_start + 1] = 4.44776;
         parameters[fwhm_start + 2] = 21173.6;
         break;
       
       case RelActCalcAuto::FwhmForm::ConstantPlusSqrtEnergy:
+        assert( parameters.empty() || (parameters.size() >= (fwhm_start + 2)) );
+        if( parameters.size() < (fwhm_start + 2) )
+          parameters.resize( fwhm_start + 2, 0.0 );
         parameters[fwhm_start + 0] = -7.0;
         parameters[fwhm_start + 1] = 2.0;
         break;
         
       case RelActCalcAuto::FwhmForm::Polynomial_2:
+        assert( parameters.empty() || (parameters.size() >= (fwhm_start + 2)) );
+        if( parameters.size() < (fwhm_start + 2) )
+          parameters.resize( fwhm_start + 2, 0.0 );
         parameters[fwhm_start + 0] = -146.632;
         parameters[fwhm_start + 1] = 3928.7;
         break;
         
       case RelActCalcAuto::FwhmForm::Polynomial_3:
+        assert( parameters.empty() || (parameters.size() >= (fwhm_start + 3)) );
+        if( parameters.size() < (fwhm_start + 3) )
+          parameters.resize( fwhm_start + 3, 0.0 );
         parameters[fwhm_start + 0] = -101.518;
         parameters[fwhm_start + 1] = 3037.91;
         parameters[fwhm_start + 2] = 555.973;
         break;
         
       case RelActCalcAuto::FwhmForm::Polynomial_4:
+        assert( parameters.empty() || (parameters.size() >= (fwhm_start + 4)) );
+        if( parameters.size() < (fwhm_start + 4) )
+          parameters.resize( fwhm_start + 4, 0.0 );
         parameters[fwhm_start + 0] = -68.9708;
         parameters[fwhm_start + 1] = 2334.29;
         parameters[fwhm_start + 2] = 1873.59;
@@ -393,6 +435,9 @@ void fill_in_default_start_fwhm_pars( std::vector<double> &parameters, size_t fw
         break;
         
       case RelActCalcAuto::FwhmForm::Polynomial_5:
+        assert( parameters.empty() || (parameters.size() >= (fwhm_start + 5)) );
+        if( parameters.size() < (fwhm_start + 5) )
+          parameters.resize( fwhm_start + 5, 0.0 );
         parameters[fwhm_start + 0] = -37.7014;
         parameters[fwhm_start + 1] = 1605.68;
         parameters[fwhm_start + 2] = 4201.01;
@@ -401,6 +446,9 @@ void fill_in_default_start_fwhm_pars( std::vector<double> &parameters, size_t fw
         break;
         
       case RelActCalcAuto::FwhmForm::Polynomial_6:
+        assert( parameters.empty() || (parameters.size() >= (fwhm_start + 6)) );
+        if( parameters.size() < (fwhm_start + 6) )
+          parameters.resize( fwhm_start + 6, 0.0 );
         parameters[fwhm_start + 0] = -11.4349;
         parameters[fwhm_start + 1] = 947.497;
         parameters[fwhm_start + 2] = 7088.34;
@@ -416,6 +464,355 @@ void fill_in_default_start_fwhm_pars( std::vector<double> &parameters, size_t fw
     }//switch( options.fwhm_form )
   }//if( highres ) / else
 }//fill_in_default_start_fwhm_pars()
+
+
+/** @brief Get the fwhm coefficients to use in the non-linear fit to data.
+ * 
+ * @param fwhm_form 
+ * @param fwhm_estimation_method 
+ * @param all_peaks 
+ * @param highres 
+ * @param lowest_energy The lowest energy in the analysis energy range; used only when converting 
+ *        DetectorPeakResponse FWHM info to a different form, and is not used when fitting FWHM from data.
+ * @param highest_energy The highest energy in the analysis energy range; used only when converting 
+ *        DetectorPeakResponse FWHM info to a different form, and is not used when fitting FWHM from data.
+ * @param input_drf The input detector response function; for some FwhmEstimationMethod, this
+ *                  will be used to get the FWHM coefficients, otherwise the all_peaks will be used.
+ * @param [out] paramaters The FWHM coefficients to use in the non-linear fit to data.
+ * @param [out] warnings Any warnings generated by this function.
+ * @return std::shared_ptr<const DetectorPeakResponse> The detector response function with the
+ *         FWHM coefficients set - this may be a new object, or the same as the input_drf.  
+ *         If a new object, it will have the efficiency of the input_drf (if not-null, otherwise a flat 
+ *         efficiency of 1.0 if input was null), but the FWHM coefficients will be set to the values 
+ *         returned by this function.  If a FwhmEstimationMethod is specified as FixedToDetectorEfficiency,
+ *         or StartingFromDetectorEfficiency, then the returned detector, will be same as input.  If
+ *         the FwhmEstimationMethod is StartFromDetEffOrPeaksInSpectrum, then the returned detector
+ *         will only be different from the input if the FWHM had to be estimated from the data (or input was null)
+ * 
+ * Throws exception if error is encountered.
+ */
+std::shared_ptr<const DetectorPeakResponse> get_fwhm_coefficients( const RelActCalcAuto::FwhmForm fwhm_form, 
+            const RelActCalcAuto::FwhmEstimationMethod fwhm_estimation_method,
+            const std::vector<std::shared_ptr<const PeakDef>> all_peaks, 
+            const bool highres,
+            const double lowest_energy,
+            const double highest_energy,
+            std::shared_ptr<const DetectorPeakResponse> input_drf,
+            vector<double> &paramaters,
+            vector<string> &warnings )  
+{
+  paramaters.clear();
+  const size_t num_fwhm_pars = num_parameters(fwhm_form);
+
+  if( (fwhm_estimation_method == RelActCalcAuto::FwhmEstimationMethod::FixedToDetectorEfficiency)
+      != (fwhm_form == RelActCalcAuto::FwhmForm::NotApplicable) )
+  {
+    throw runtime_error( "When FwhmEstimationMethod is specified as FixedToDetectorEfficiency,"
+                         " FWHM form must be set to NotApplicable, and vice-versa." );
+  }//if( check FWHM type and method are compatible )
+
+  
+  bool use_drf_fwhm = false, estimate_fwhm_from_data = false;
+  switch( fwhm_estimation_method )
+  {
+    case RelActCalcAuto::FwhmEstimationMethod::StartingFromAllPeaksInSpectrum:      
+    case RelActCalcAuto::FwhmEstimationMethod::FixedToAllPeaksInSpectrum:      
+      use_drf_fwhm = false;
+      estimate_fwhm_from_data = true;
+    break;
+
+    case RelActCalcAuto::FwhmEstimationMethod::StartFromDetEffOrPeaksInSpectrum:
+      use_drf_fwhm = (input_drf && input_drf->hasResolutionInfo());
+      estimate_fwhm_from_data = !use_drf_fwhm;
+    break;
+
+    case RelActCalcAuto::FwhmEstimationMethod::FixedToDetectorEfficiency:
+      use_drf_fwhm = true;             //dead store
+      estimate_fwhm_from_data = false; //dead store
+         
+      if( fwhm_form != RelActCalcAuto::FwhmForm::NotApplicable )
+      {  
+        throw runtime_error( "When FwhmEstimationMethod is specified as FixedToDetectorEfficiency,"
+                             " FWHM form must be set to NotApplicable." );
+      }//if( fwhm_form != RelActCalcAuto::FwhmForm::NotApplicable )
+
+      if( input_drf && input_drf->hasResolutionInfo() )
+        return input_drf;
+
+      throw runtime_error( "The detector efficiency function does not have FWHM information;"
+                           " please select a DRF with FWHM information, or select to use"
+                           " FWHM from peaks in spectrum." );
+    break;
+      
+
+    case RelActCalcAuto::FwhmEstimationMethod::StartingFromDetectorEfficiency:      
+      use_drf_fwhm = true;
+      estimate_fwhm_from_data = false;
+    break;
+  }//switch( fwhm_estimation_method )
+
+
+  if( use_drf_fwhm && (!input_drf || !input_drf->hasResolutionInfo()) )
+  {
+    throw runtime_error( "The detector efficiency function does not have FWHM information;"
+                          " please select a DRF with FWHM information, or select to use"
+                          " FWHM from peaks in spectrum." );
+  }//if( use_drf_fwhm && (!input_drf || !input_drf->hasResolutionInfo()) )
+
+
+  if( use_drf_fwhm )
+  {
+    const DetectorPeakResponse::ResolutionFnctForm drf_fwhm_type = input_drf->resolutionFcnType();
+    const vector<float> drfpars = input_drf->resolutionFcnCoefficients();
+      
+    assert( drf_fwhm_type != DetectorPeakResponse::ResolutionFnctForm::kNumResolutionFnctForm );
+    assert( fwhm_estimation_method != RelActCalcAuto::FwhmEstimationMethod::FixedToDetectorEfficiency );
+      
+    bool needToFitOtherType = false;
+      
+    switch( fwhm_form )
+    {
+      case RelActCalcAuto::FwhmForm::Gadras:
+      // We are fitting to the GADRAS functional form
+        assert( num_parameters(fwhm_form) == 3 );
+        needToFitOtherType = (drf_fwhm_type != DetectorPeakResponse::kGadrasResolutionFcn);
+      break;
+          
+      case RelActCalcAuto::FwhmForm::SqrtEnergyPlusInverse:
+        needToFitOtherType = (drf_fwhm_type != DetectorPeakResponse::kSqrtEnergyPlusInverse);
+      break;
+          
+      case RelActCalcAuto::FwhmForm::ConstantPlusSqrtEnergy:
+        needToFitOtherType = (drf_fwhm_type != DetectorPeakResponse::kConstantPlusSqrtEnergy);
+      break;
+          
+      case RelActCalcAuto::FwhmForm::Polynomial_2:
+      case RelActCalcAuto::FwhmForm::Polynomial_3:
+      case RelActCalcAuto::FwhmForm::Polynomial_4:
+      case RelActCalcAuto::FwhmForm::Polynomial_5:
+      case RelActCalcAuto::FwhmForm::Polynomial_6:
+        assert( num_parameters(fwhm_form) == (static_cast<size_t>(fwhm_form)-1) );
+          
+        needToFitOtherType = ((drf_fwhm_type != DetectorPeakResponse::kSqrtPolynomial)
+                                || (drfpars.size() != num_parameters(fwhm_form)) );
+      break;
+
+      case RelActCalcAuto::FwhmForm::NotApplicable:
+      {
+        needToFitOtherType = false;
+        throw runtime_error( "The detector efficiency function does not have FWHM information;"
+                              " please select a DRF with FWHM information, or select to use"
+                              " FWHM from peaks in spectrum." );
+        break;
+      }//case RelActCalcAuto::FwhmForm::NotApplicable:
+    }//switch( fwhm_form )
+     
+    if( !needToFitOtherType )
+    {
+      // We are done here, return the input DetectorPeakResponse, and update the FWHM parameters, 
+      //  with the values from the input DetectorPeakResponse
+      assert( num_parameters(fwhm_form) == drfpars.size() );
+
+      paramaters.resize( drfpars.size() );
+      for( size_t i = 0; i < drfpars.size(); ++i )
+        paramaters[i] = static_cast<double>( drfpars[i] );
+
+      return input_drf;
+    }//if( !needToFitOtherType )
+
+    // We need to convert from the DetectorPeakResponse FWHM type to the FWHM type we want to use.
+    // Make a vector of ~20 equally spaced peaks, with uncert 5% that peaks width -
+    //  fairly arbitrary
+    const double delta_energy = 0.05*(highest_energy - lowest_energy);
+        
+    auto fake_peaks = make_shared<std::deque< std::shared_ptr<const PeakDef> > >();
+    for( double ene = lowest_energy; ene <=(1.001*highest_energy); ene += delta_energy )
+    {
+      const float sigma = input_drf->peakResolutionSigma(ene);
+      auto p = make_shared<PeakDef>( ene, sigma, 1000.0 );
+      p->setSigmaUncert( 0.05*sigma );
+      fake_peaks->push_back( p );
+    }
+      
+    DetectorPeakResponse::ResolutionFnctForm formToFit;
+    switch( fwhm_form )
+    {
+      case RelActCalcAuto::FwhmForm::Gadras:
+        assert( num_fwhm_pars == 3 );
+        formToFit = DetectorPeakResponse::ResolutionFnctForm::kGadrasResolutionFcn;
+      break;
+            
+      case RelActCalcAuto::FwhmForm::SqrtEnergyPlusInverse:
+        assert( num_fwhm_pars == 3 );
+        formToFit = DetectorPeakResponse::ResolutionFnctForm::kSqrtEnergyPlusInverse;
+      break;
+            
+      case RelActCalcAuto::FwhmForm::ConstantPlusSqrtEnergy:
+        assert( num_fwhm_pars == 2 );
+        formToFit = DetectorPeakResponse::ResolutionFnctForm::kConstantPlusSqrtEnergy;
+      break;
+         
+      case RelActCalcAuto::FwhmForm::Polynomial_2:
+      case RelActCalcAuto::FwhmForm::Polynomial_3:
+      case RelActCalcAuto::FwhmForm::Polynomial_4:
+      case RelActCalcAuto::FwhmForm::Polynomial_5:
+      case RelActCalcAuto::FwhmForm::Polynomial_6:
+        formToFit = DetectorPeakResponse::ResolutionFnctForm::kSqrtPolynomial;
+      break;
+
+      case RelActCalcAuto::FwhmForm::NotApplicable:
+        assert( 0 );
+        throw logic_error( "FwhmForm::NotApplicable should not have made it here" );
+      break;
+    }//switch( fwhm_form )
+        
+    try
+    {
+      vector<float> new_sigma_coefs, sigma_coef_uncerts;
+      MakeDrfFit::performResolutionFit( fake_peaks, formToFit, highres, static_cast<int>(num_fwhm_pars),
+                                          new_sigma_coefs, sigma_coef_uncerts );
+      
+      assert( new_sigma_coefs.size() == num_fwhm_pars );
+          
+      paramaters.resize( new_sigma_coefs.size() );
+      for( size_t i = 0; i < new_sigma_coefs.size(); ++i )
+        paramaters[i] = static_cast<double>( new_sigma_coefs[i] );
+
+      estimate_fwhm_from_data = false;
+
+      // We are done here, return the input DetectorPeakResponse, with the updated FWHM parameters
+      return input_drf;
+    }catch( std::exception &e )
+    {
+      if( fwhm_estimation_method == RelActCalcAuto::FwhmEstimationMethod::StartFromDetEffOrPeaksInSpectrum )
+      {
+        estimate_fwhm_from_data = true;
+      }else
+      {
+        // We failed to convert from one FWHM type to another
+        throw runtime_error( std::format("Failed to convert detectors efficiency functions FWHM info to"
+                                            " {} initial FWHM estimation.  Issue: {}", 
+                                            to_str(fwhm_form), e.what()) );
+      }//if( fwhm_estimation_method == StartFromDetEffOrPeaksInSpectrum ) / else
+    }//try / catch
+  }//if( use_drf_fwhm )
+
+  assert( estimate_fwhm_from_data );
+  assert( fwhm_form != RelActCalcAuto::FwhmForm::NotApplicable );
+  assert( (fwhm_estimation_method != RelActCalcAuto::FwhmEstimationMethod::StartingFromDetectorEfficiency)
+          && (fwhm_estimation_method != RelActCalcAuto::FwhmEstimationMethod::FixedToDetectorEfficiency) );
+
+  DetectorPeakResponse::ResolutionFnctForm form_to_fit;
+  int fit_order;
+  switch( fwhm_form )
+  {
+    case RelActCalcAuto::FwhmForm::Gadras:
+      fit_order = 3;
+      form_to_fit = DetectorPeakResponse::ResolutionFnctForm::kGadrasResolutionFcn;
+    break;
+          
+    case RelActCalcAuto::FwhmForm::SqrtEnergyPlusInverse:
+      fit_order = 3;
+      form_to_fit = DetectorPeakResponse::ResolutionFnctForm::kSqrtEnergyPlusInverse;
+    break;
+   
+    case RelActCalcAuto::FwhmForm::ConstantPlusSqrtEnergy:
+      fit_order = 2;
+      form_to_fit = DetectorPeakResponse::ResolutionFnctForm::kConstantPlusSqrtEnergy;
+    break;
+          
+    case RelActCalcAuto::FwhmForm::Polynomial_2:
+    case RelActCalcAuto::FwhmForm::Polynomial_3:
+    case RelActCalcAuto::FwhmForm::Polynomial_4:
+    case RelActCalcAuto::FwhmForm::Polynomial_6:
+    case RelActCalcAuto::FwhmForm::Polynomial_5:
+      form_to_fit = DetectorPeakResponse::ResolutionFnctForm::kSqrtPolynomial;
+      fit_order = num_parameters(fwhm_form);
+    break;
+          
+    case RelActCalcAuto::FwhmForm::NotApplicable:
+      assert( 0 );
+      throw runtime_error( "NotApplicable should not be used here" );
+    break;
+  }//switch( fwhm_form )
+
+  try
+  {
+    vector<float> fwhm_paramatersf, uncerts;
+    auto peaks_deque = make_shared<deque<shared_ptr<const PeakDef>>>(begin(all_peaks), end(all_peaks));
+    MakeDrfFit::performResolutionFit( peaks_deque, form_to_fit, highres, fit_order, fwhm_paramatersf, uncerts );
+      
+    vector<pair<double,shared_ptr<const PeakDef>>> distances;
+    for( const auto &p : *peaks_deque )
+    {
+      const float mean = static_cast<float>(p->mean());
+      const float pred_fwhm = DetectorPeakResponse::peakResolutionFWHM( mean, form_to_fit, fwhm_paramatersf );
+
+      const double frac_diff = fabs( p->fwhm() - pred_fwhm ) / p->fwhm();
+      if( !IsNan(frac_diff) && !IsInf(frac_diff) )
+        distances.emplace_back( frac_diff, p );
+    }//for( const auto &p : initial_fit_peaks )
+      
+    std::sort( begin(distances), end(distances), []( const auto &lhs, const auto &rhs) -> bool {
+      return lhs.first > rhs.first;
+    } );
+
+    // Limit to un-selecting max of 20% of peaks (arbitrarily chosen), if the deviate
+    // more than 17.5% from the fit (again, arbitrarily chosen).
+    const size_t max_remove = distances.size() < 8 ? size_t(0) : static_cast<size_t>( std::ceil( 0.2*distances.size() ) );
+    auto filtered_peaks = make_shared<deque<shared_ptr<const PeakDef>>>();
+    for( size_t index = 0, num_removed = 0; index < distances.size(); ++index )
+    {
+      if( (distances[index].first > 0.175 ) && (num_removed < max_remove) ) //0.175 chosen arbitrarily
+      {
+        ++num_removed;
+        continue;
+      }
+        
+      filtered_peaks->push_back( distances[index].second );
+    }//for( size_t index = 0, num_removed = 0; index < distances.size(); ++index )
+
+    assert( (max_remove + filtered_peaks->size()) == all_peaks.size() );
+
+    if( filtered_peaks->size() != all_peaks.size() )
+    {
+      try
+      {
+        vector<float> new_result, new_result_uncerts;
+        MakeDrfFit::performResolutionFit( filtered_peaks, form_to_fit, highres,
+                                          fit_order, new_result, new_result_uncerts );
+        fwhm_paramatersf = new_result;
+        uncerts.swap( new_result_uncerts );
+      }catch( std::exception &e )
+      {
+        warnings.push_back( std::format("Failed to refine FWHM fit from data: {}.  Will use initial estimate.", e.what()) );
+      }
+    }//if( filtered_peaks->size() != all_peaks.size() )
+
+    paramaters.resize( fwhm_paramatersf.size() );
+    for( size_t i = 0; i < fwhm_paramatersf.size(); ++i )
+      paramaters[i] = static_cast<double>( fwhm_paramatersf[i] );
+  }catch( std::exception &e )
+  {
+    paramaters.clear();
+    fill_in_default_start_fwhm_pars( paramaters, 0, highres, fwhm_form );
+    warnings.push_back( std::format("Failed to estimate FWHM from data: {}.  Using default FWHM parameters.", e.what()) );
+  }
+  
+  vector<float> fwhm_pars_float( paramaters.size() );
+  for( size_t i = 0; i < paramaters.size(); ++i )
+    fwhm_pars_float[i] = static_cast<float>( paramaters[i] );
+
+  auto new_drf = input_drf ? make_shared<DetectorPeakResponse>(*input_drf) 
+                            : make_shared<DetectorPeakResponse>( "FLAT", "FLAT" );
+  new_drf->setFwhmCoefficients( fwhm_pars_float, form_to_fit );
+  
+  return new_drf;
+};//get_fwhm_coefficients(...)
+          
+
+
+
 
 
 struct RoiRangeChannels : public RelActCalcAuto::RoiRange
@@ -1364,6 +1761,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     //  uncertainties in each channel
     shared_ptr<SpecUtils::Measurement> spectrum;
     vector<float> channel_counts, channel_count_uncerts;
+    vector<double> starting_fwhm_paramaters; //The initial FWHM parameters to use in the fit
 
     try
     {
@@ -1378,8 +1776,6 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
       for( const auto &rel_eff_curve : options.rel_eff_curves )
         solution.m_rel_eff_forms.push_back( rel_eff_curve.rel_eff_eqn_type );
     
-      if( input_drf && input_drf->isValid() && input_drf->hasResolutionInfo() )
-        solution.m_drf = input_drf;
     
       const auto check_rel_eff_form = [&]( const RelActCalcAuto::RelEffCurveInput &rel_eff_curve ){
         switch( rel_eff_curve.rel_eff_eqn_type )
@@ -1481,6 +1877,25 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
         }//for( const RelActCalcAuto::RoiRange &range : energy_ranges )
       }//for( const shared_ptr<const PeakDef> &p : peaks_in_roi )
     
+      // Get the initial FWHM parameters to use in the fit
+      try
+      {
+        double lowest_energy = 10000.0, highest_energy = 0.0;
+        for( const RelActCalcAuto::RoiRange &r : options.rois )
+        {
+          lowest_energy = std::min( lowest_energy, r.lower_energy );
+          highest_energy = std::max( highest_energy, r.upper_energy );
+        }
+
+        solution.m_drf = get_fwhm_coefficients( options.fwhm_form, options.fwhm_estimation_method, all_peaks,
+                                              highres, lowest_energy, highest_energy, input_drf,
+                                              starting_fwhm_paramaters, solution.m_warnings );
+      }catch( std::exception &e )
+      {
+        throw runtime_error( std::format("Failed to get initial FWHM: {}.", e.what()) );
+      }//try / catch (getting initial FWHM parameters)
+
+      assert( solution.m_drf  && solution.m_drf->isValid() && solution.m_drf->hasResolutionInfo() );
     
       // Check that the specified Pu242 by correlation method is valid.
       auto check_pu_corr_method = [&]( const RelActCalcAuto::RelEffCurveInput &rel_eff_curve ){
@@ -1592,7 +2007,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
         throw runtime_error( "User cancelled calculation." );
       
       auto functor = new RelActAutoCostFcn( options, spectrum, channel_count_uncerts,
-                                           input_drf, all_peaks, cancel_calc );
+                                           solution.m_drf, all_peaks, cancel_calc );
       cost_functor.reset( functor );
     }catch( std::exception &e )
     {
@@ -1733,10 +2148,6 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
         constant_parameters.push_back( static_cast<int>(i) );
     }
     
-    shared_ptr<const DetectorPeakResponse> res_drf = cost_functor->m_drf;
-
-    
-    
 #ifndef NDEBUG
     {// Begin some dev checks
       size_t num_rel_eff_par = 0;
@@ -1761,174 +2172,23 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
       assert( (cost_functor->m_skew_par_start_index + 2*PeakDef::num_skew_parameters(options.skew_type)) == cost_functor->number_parameters() );
     }//End some dev checks
 #endif //NDEBUG
-    
-    bool use_drf_fwhm = false;
-    switch( options.fwhm_estimation_method )
-    {
-      case RelActCalcAuto::FwhmEstimationMethod::StartingFromAllPeaksInSpectrum:      
-      case RelActCalcAuto::FwhmEstimationMethod::FixedToAllPeaksInSpectrum:      
-        use_drf_fwhm = false;
-      break;
 
-      case RelActCalcAuto::FwhmEstimationMethod::StartFromDetEffOrPeaksInSpectrum:
-        use_drf_fwhm = (res_drf && res_drf->hasResolutionInfo());
-      break;
+      assert( parameters.size() >= (cost_functor->m_fwhm_par_start_index + starting_fwhm_paramaters.size()) );
+      assert( (options.fwhm_estimation_method != RelActCalcAuto::FwhmEstimationMethod::FixedToDetectorEfficiency) 
+              || (starting_fwhm_paramaters.size() == 0) );
+              
+      if( parameters.size() < (cost_functor->m_fwhm_par_start_index + starting_fwhm_paramaters.size()) )
+        throw logic_error( "Parameters vector is not large enough to hold FWHM parameters??? - shouldnt happen" );
 
-      case RelActCalcAuto::FwhmEstimationMethod::FixedToDetectorEfficiency:
-      case RelActCalcAuto::FwhmEstimationMethod::StartingFromDetectorEfficiency:      
-        use_drf_fwhm = true;
-        break;
-    }//switch( options.fwhm_estimation_method )
-
-    if( use_drf_fwhm && (!res_drf || !res_drf->hasResolutionInfo()) )
-    {
-      solution.m_status = RelActCalcAuto::RelActAutoSolution::Status::FailedToSetupProblem;
-      solution.m_error_message = "The detector efficiency function does not have FWHM information;"
-                                    " please select a DRF with FWHM information, or select to use"
-                                    " FWHM from peaks in spectrum.";
-      
-      return solution;
-    }//if( use_drf_fwhm && (!res_drf || !res_drf->hasResolutionInfo()) )
-
-    if( use_drf_fwhm )
-    {
-      try
+      // Copy the FWHM parameters to the parameters vector
+      for( size_t i = 0; i < starting_fwhm_paramaters.size(); ++i )
       {
-        const RelActCalcAuto::FwhmForm rel_act_fwhm_form = cost_functor->m_options.fwhm_form;
-        const DetectorPeakResponse::ResolutionFnctForm drf_fwhm_type = res_drf->resolutionFcnType();
-        vector<float> drfpars = res_drf->resolutionFcnCoefficients();
-      
-        assert( drf_fwhm_type != DetectorPeakResponse::ResolutionFnctForm::kNumResolutionFnctForm );
-      
-      
-        bool needToFitOtherType = false;
-      
-        switch( rel_act_fwhm_form )
-        {
-          case RelActCalcAuto::FwhmForm::Gadras:
-            // We are fitting to the GADRAS functional form
-            assert( num_parameters(options.fwhm_form) == 3 );
-            needToFitOtherType = (drf_fwhm_type != DetectorPeakResponse::kGadrasResolutionFcn);
-          break;
-          
-          case RelActCalcAuto::FwhmForm::SqrtEnergyPlusInverse:
-            needToFitOtherType = (drf_fwhm_type != DetectorPeakResponse::kSqrtEnergyPlusInverse);
-          break;
-          
-          case RelActCalcAuto::FwhmForm::ConstantPlusSqrtEnergy:
-            needToFitOtherType = (drf_fwhm_type != DetectorPeakResponse::kConstantPlusSqrtEnergy);
-          break;
-          
-          case RelActCalcAuto::FwhmForm::Polynomial_2:
-          case RelActCalcAuto::FwhmForm::Polynomial_3:
-          case RelActCalcAuto::FwhmForm::Polynomial_4:
-          case RelActCalcAuto::FwhmForm::Polynomial_5:
-          case RelActCalcAuto::FwhmForm::Polynomial_6:
-            assert( num_parameters(rel_act_fwhm_form) == (static_cast<size_t>(rel_act_fwhm_form)-1) );
-          
-            needToFitOtherType = ((drf_fwhm_type != DetectorPeakResponse::kSqrtPolynomial)
-                                || (drfpars.size() != num_parameters(rel_act_fwhm_form)) );
-          break;
-
-          case RelActCalcAuto::FwhmForm::NotApplicable:
-          {
-            needToFitOtherType = false;
-
-            if( options.fwhm_estimation_method != RelActCalcAuto::FwhmEstimationMethod::FixedToDetectorEfficiency )
-            {
-              solution.m_status = RelActCalcAuto::RelActAutoSolution::Status::FailedToSetupProblem;
-              solution.m_error_message = "The detector efficiency function does not have FWHM information;"
-                                    " please select a DRF with FWHM information, or select to use"
-                                    " FWHM from peaks in spectrum.";
-      
-              return solution;
-            }//if( options.fwhm_estimation_method != RelActCalcAuto::FwhmEstimationMethod::FixedToDetectorEfficiency )
-
-            break;
-          }//case RelActCalcAuto::FwhmForm::NotApplicable:
-        }//switch( rel_act_fwhm_form )
-     
-    
-          
-      if( needToFitOtherType )
-      {
-        // Make a vector of ~20 equally spaced peaks, with uncert 10% that peaks width -
-        //  fairly arbitrary
-        const double lowest_energy = cost_functor->m_energy_ranges.front().lower_energy;
-        const double highest_energy = cost_functor->m_energy_ranges.back().upper_energy;
-        const double delta_energy = 0.05*(highest_energy - lowest_energy);
-        
-        auto fake_peaks = make_shared<std::deque< std::shared_ptr<const PeakDef> > >();
-        for( double ene = lowest_energy; ene <=(1.001*highest_energy); ene += delta_energy )
-        {
-          const float sigma = res_drf->peakResolutionSigma(ene);
-          auto p = make_shared<PeakDef>( ene, sigma, 1000.0 );
-          p->setSigmaUncert( 0.1*sigma );
-          fake_peaks->push_back( p );
-        }
-      
-        DetectorPeakResponse::ResolutionFnctForm formToFit;
-        const size_t num_fwhm_pars = num_parameters(options.fwhm_form);
-        switch( rel_act_fwhm_form )
-        {
-          case RelActCalcAuto::FwhmForm::Gadras:
-            assert( num_fwhm_pars == 3 );
-            formToFit = DetectorPeakResponse::ResolutionFnctForm::kGadrasResolutionFcn;
-            break;
-            
-          case RelActCalcAuto::FwhmForm::SqrtEnergyPlusInverse:
-            assert( num_fwhm_pars == 3 );
-            formToFit = DetectorPeakResponse::ResolutionFnctForm::kSqrtEnergyPlusInverse;
-            break;
-            
-          case RelActCalcAuto::FwhmForm::ConstantPlusSqrtEnergy:
-            assert( num_fwhm_pars == 2 );
-            formToFit = DetectorPeakResponse::ResolutionFnctForm::kConstantPlusSqrtEnergy;
-            break;
-         
-          case RelActCalcAuto::FwhmForm::Polynomial_2:
-          case RelActCalcAuto::FwhmForm::Polynomial_3:
-          case RelActCalcAuto::FwhmForm::Polynomial_4:
-          case RelActCalcAuto::FwhmForm::Polynomial_5:
-          case RelActCalcAuto::FwhmForm::Polynomial_6:
-            formToFit = DetectorPeakResponse::ResolutionFnctForm::kSqrtPolynomial;
-            break;
-        }//switch( rel_act_fwhm_form )
-        
-        vector<float> new_sigma_coefs, sigma_coef_uncerts;
-        MakeDrfFit::performResolutionFit( fake_peaks, formToFit, highres, static_cast<int>(num_fwhm_pars),
-                                         new_sigma_coefs, sigma_coef_uncerts );
-      
-        assert( new_sigma_coefs.size() == num_fwhm_pars );
-        
-        drfpars = new_sigma_coefs;
-      }//if( needToFitOtherType )
-      
-
-work in progress; need to implement proper logic to fill out `drfpars`.  Also, implement using peaks in spectrum to make FWHM function, or defaulting to using defaults.
-
-      if( drfpars.size() != num_parameters(options.fwhm_form) )
-      {
-        assert( 0 );
-        throw logic_error( "Unexpected num parameters from fit to FWHM function (logic error)." );
+        const size_t par_index = cost_functor->m_fwhm_par_start_index + i;
+        parameters[par_index] = starting_fwhm_paramaters[i];
+        if( options.fwhm_estimation_method == RelActCalcAuto::FwhmEstimationMethod::FixedToAllPeaksInSpectrum )
+          constant_parameters.push_back( static_cast<int>(par_index) );
       }
-      
-      for( size_t i = 0; i < drfpars.size(); ++i )
-        parameters[cost_functor->m_fwhm_par_start_index + i] = drfpars[i];
-    }catch( std::exception &e )
-    {
-      // We failed to convert from one FWHM type to another - we'll just use some default values
-      //  (I dont expect this to happen very often at all)
-      solution.m_warnings.push_back( "Failed to create initial FWHM estimation, but will continue anyway: "
-                                    + string(e.what()) );
-    
-        fill_in_default_start_fwhm_pars( parameters, cost_functor->m_fwhm_par_start_index, highres, options.fwhm_form );
-      }//try / catch
-    }else //if( use_drf_fwhm )
-    {
 
-    }//if( use_drf_fwhm ) / else
-          
       // Filter peaks to those in ranges we want
       vector<RelActCalcManual::GenericPeakInfo> peaks_in_range;
       vector<std::shared_ptr<const PeakDef> > debug_manual_display_peaks;
@@ -2136,7 +2396,7 @@ work in progress; need to implement proper logic to fill out `drfpars`.  Also, i
 
           RelActCalcManual::RelEffInput manual_input;
           manual_input.peaks = peaks_with_sources;
-          manual_input.phys_model_detector = res_drf;
+          manual_input.phys_model_detector = solution.m_drf;
           manual_input.eqn_form = rel_eff_curve.rel_eff_eqn_type;
           manual_input.use_ceres_to_fit_eqn = (manual_input.eqn_form == RelActCalc::RelEffEqnForm::FramPhysicalModel);
           manual_input.eqn_order = manual_rel_eff_order;
@@ -3060,7 +3320,7 @@ work in progress; need to implement proper logic to fill out `drfpars`.  Also, i
         {
           for( size_t col = 0; col < num_pars; ++col )
             solution.m_covariance[row][col] = row_major_covariance[row*num_pars + col];
-        }//for( size_t row = 0; row < num_nuclides; ++row )
+        }//for( size_t row = 0; row < num_pars; ++row )
         
         for( size_t i = 0; i < num_pars; ++i )
         {
@@ -3668,7 +3928,7 @@ work in progress; need to implement proper logic to fill out `drfpars`.  Also, i
     assert( RelActCalcAuto::RelActAutoSolution::sm_num_energy_cal_pars == m_fwhm_par_start_index );
     const size_t num_drf_par = num_parameters(m_options.fwhm_form);
     
-    return eval_fwhm( energy, m_options.fwhm_form, drf_start, num_drf_par );
+    return eval_fwhm( energy, m_options.fwhm_form, drf_start, num_drf_par, m_drf );
   }//float fwhm(...)
   
   
@@ -5737,14 +5997,15 @@ const char *to_str( const FwhmForm form )
 {
   switch( form )
   {
-    case FwhmForm::Gadras:       return "Gadras";
+    case FwhmForm::Gadras:        return "Gadras";
     case FwhmForm::SqrtEnergyPlusInverse:  return "SqrtEnergyPlusInverse";
     case FwhmForm::ConstantPlusSqrtEnergy: return "ConstantPlusSqrtEnergy";
-    case FwhmForm::Polynomial_2: return "Polynomial_2";
-    case FwhmForm::Polynomial_3: return "Polynomial_3";
-    case FwhmForm::Polynomial_4: return "Polynomial_4";
-    case FwhmForm::Polynomial_5: return "Polynomial_5";
-    case FwhmForm::Polynomial_6: return "Polynomial_6";
+    case FwhmForm::Polynomial_2:  return "Polynomial_2";
+    case FwhmForm::Polynomial_3:  return "Polynomial_3";
+    case FwhmForm::Polynomial_4:  return "Polynomial_4";
+    case FwhmForm::Polynomial_5:  return "Polynomial_5";
+    case FwhmForm::Polynomial_6:  return "Polynomial_6";
+    case FwhmForm::NotApplicable: return "NotApplicable";
   }//switch( form )
   
   assert( 0 );
@@ -5756,7 +6017,7 @@ FwhmForm fwhm_form_from_str( const char *str )
 {
   const size_t str_len = strlen(str);
   
-  for( int iform = 0; iform <= static_cast<int>(FwhmForm::Polynomial_6); iform += 1 )
+  for( int iform = 0; iform <= static_cast<int>(FwhmForm::NotApplicable); iform += 1 )
   {
     const FwhmForm x = FwhmForm(iform);
     const char *form_str = to_str( x );
@@ -5893,7 +6154,7 @@ T peakResolutionFWHM( T energy, DetectorPeakResponse::ResolutionFnctForm fcnFrm,
 
   
 template<typename T>
-T eval_fwhm( const T energy, const FwhmForm form, const T * const pars, const size_t num_pars )
+T eval_fwhm( const T energy, const FwhmForm form, const T * const pars, const size_t num_pars, const shared_ptr<const DetectorPeakResponse> &drf )
 {
   DetectorPeakResponse::ResolutionFnctForm fctntype = DetectorPeakResponse::kNumResolutionFnctForm;
   switch( form )
@@ -5916,6 +6177,20 @@ T eval_fwhm( const T energy, const FwhmForm form, const T * const pars, const si
     case RelActCalcAuto::FwhmForm::Polynomial_5:
     case RelActCalcAuto::FwhmForm::Polynomial_6:
       fctntype = DetectorPeakResponse::ResolutionFnctForm::kSqrtPolynomial;
+      break;
+
+    case RelActCalcAuto::FwhmForm::NotApplicable:
+      assert( drf && drf->isValid() && drf->hasResolutionInfo() );
+      if( !drf || !drf->hasResolutionInfo() )
+        throw runtime_error( "RelActCalcAuto::eval_fwhm(): invalid detector response function - how did we get here???" );
+      
+      if constexpr ( std::is_same_v<T, double> )
+      {
+        return drf->peakResolutionFWHM( static_cast<float>(energy) );
+      }else
+      {
+        return T(drf->peakResolutionFWHM( static_cast<float>(energy.a) ));
+      }
       break;
   }//switch( m_options.fwhm_form )
   
@@ -6483,14 +6758,15 @@ size_t num_parameters( const FwhmForm eqn_form )
   
   switch( eqn_form )
   {
-    case FwhmForm::Gadras:       return 3;
+    case FwhmForm::Gadras:        return 3;
     case FwhmForm::SqrtEnergyPlusInverse:  return 3;
     case FwhmForm::ConstantPlusSqrtEnergy: return 2;
-    case FwhmForm::Polynomial_2: return 2;
-    case FwhmForm::Polynomial_3: return 3;
-    case FwhmForm::Polynomial_4: return 4;
-    case FwhmForm::Polynomial_5: return 5;
-    case FwhmForm::Polynomial_6: return 6;
+    case FwhmForm::Polynomial_2:  return 2;
+    case FwhmForm::Polynomial_3:  return 3;
+    case FwhmForm::Polynomial_4:  return 4;
+    case FwhmForm::Polynomial_5:  return 5;
+    case FwhmForm::Polynomial_6:  return 6;
+    case FwhmForm::NotApplicable: return 0;
   }//switch( m_options.fwhm_form )
   
   assert( 0 );
@@ -7511,9 +7787,10 @@ void RelActAutoSolution::print_html_report( std::ostream &out ) const
 {
   // TODO: we should probably use WTemplate to form this HTML - and then we could maybe share some models or whatever with the GUI.
   
-  assert( m_rel_eff_forms.size() == m_rel_eff_coefficients.size() );
-  assert( m_rel_eff_forms.size() == m_options.rel_eff_curves.size() );
+  assert( m_rel_eff_coefficients.empty() || (m_rel_eff_forms.size() == m_rel_eff_coefficients.size()) );
+  assert( m_rel_eff_forms.empty() || (m_rel_eff_forms.size() == m_options.rel_eff_curves.size()) );
   
+
   char buffer[1024*16] = { '\0' };
   
   // First, load in template html, and do the problem-independent substitions
@@ -7562,11 +7839,36 @@ void RelActAutoSolution::print_html_report( std::ostream &out ) const
     
   stringstream results_html;
 
-  results_html << "<div>&chi;<sup>2</sup>=" << m_chi2 << " and there were " << m_dof
+  if( m_status == Status::Success )
+  {
+    results_html << "<div>&chi;<sup>2</sup>=" << m_chi2 << " and there were " << m_dof
     << " DOF (&chi;<sup>2</sup>/dof=" << m_chi2/m_dof << ")</div>\n";
+  }else
+  {
+    string fail_reason;
+    switch( m_status )
+    {
+      case Status::NotInitiated:
+        fail_reason = "Not initiated";
+        break;
+      case Status::FailedToSetupProblem:
+        fail_reason = "Failed to setup problem";
+        break;
+      case Status::FailToSolveProblem:
+        fail_reason = "Failed to solve problem";
+        break;
+      case Status::UserCanceled:
+        fail_reason = "User canceled";
+        break;
+      case Status::Success:
+        assert( false );
+        break;
+    }
 
+    results_html << "<div style=\"color: red; font-size: 150%;\">Calculation failed, " << fail_reason << ": " << m_error_message << "</div>\n";
+  }//if( m_status == Status::Success ) /  else
 
-  for( size_t rel_eff_index = 0; rel_eff_index < m_rel_eff_forms.size(); ++rel_eff_index )
+  for( size_t rel_eff_index = 0; rel_eff_index < m_rel_eff_coefficients.size(); ++rel_eff_index )
   {
     results_html << "<div class=\"releffeqn\">Rel. Eff. Eqn" 
     << (m_rel_eff_forms.size() > 1 ? (" " + std::to_string(rel_eff_index)) : string()) 
@@ -7575,10 +7877,16 @@ void RelActAutoSolution::print_html_report( std::ostream &out ) const
   }//for( size_t rel_eff_index = 0; rel_eff_index < m_rel_eff_forms.size(); ++rel_eff_index )
 
 
-
-
-  for( size_t rel_eff_index = 0; rel_eff_index < m_rel_eff_forms.size(); ++rel_eff_index )
+  for( size_t rel_eff_index = 0; rel_eff_index < m_options.rel_eff_curves.size(); ++rel_eff_index )
   {
+    if( (rel_eff_index >= m_rel_eff_forms.size())
+        || (rel_eff_index >= m_rel_eff_coefficients.size())
+        || (rel_eff_index >= m_rel_activities.size()) )
+    {
+      assert( m_status != Status::Success );
+      break;
+    }
+
     const RelEffCurveInput &rel_eff = m_options.rel_eff_curves[rel_eff_index];
     const vector<NuclideRelAct> &rel_activities = m_rel_activities[rel_eff_index];
     
@@ -7685,6 +7993,14 @@ void RelActAutoSolution::print_html_report( std::ostream &out ) const
 
   for( size_t rel_eff_index = 0; rel_eff_index < m_rel_eff_forms.size(); ++rel_eff_index )
   {
+    if( (rel_eff_index >= m_rel_eff_forms.size())
+        || (rel_eff_index >= m_rel_eff_coefficients.size())
+        || (rel_eff_index >= m_rel_activities.size()) )
+    {
+      assert( m_status != Status::Success );
+      break;
+    }
+
     const RelEffCurveInput &rel_eff = m_options.rel_eff_curves[rel_eff_index];
     const vector<NuclideRelAct> &rel_activities = m_rel_activities[rel_eff_index];
     
@@ -8040,7 +8356,7 @@ void RelActAutoSolution::print_html_report( std::ostream &out ) const
     results_html << "<div class=\"anatime\">Analysis performed " << local_time << " (" << utc_time
     << " UTC), with code compiled " __TIMESTAMP__ "</div>\n";
     
-  const size_t num_rel_eff = m_options.rel_eff_curves.size();
+  const size_t num_rel_eff = std::min( m_options.rel_eff_curves.size(), m_rel_activities.size() );
   for( size_t rel_eff_index = 0; (rel_eff_index < 1) && (rel_eff_index < num_rel_eff); ++rel_eff_index )
   {
     const RelEffCurveInput &rel_eff = m_options.rel_eff_curves[rel_eff_index];
@@ -8785,7 +9101,8 @@ RelActAutoSolution solve( const Options options,
                              &current_sol,
                              &fixed_energy_ranges,
                              num_sigma_half_roi]( RoiRange roi, const double energy ){
-      const double fwhm = eval_fwhm( energy, current_sol.m_fwhm_form, current_sol.m_fwhm_coefficients.data(), current_sol.m_fwhm_coefficients.size() );
+      const double fwhm = eval_fwhm( energy, current_sol.m_fwhm_form, current_sol.m_fwhm_coefficients.data(), 
+                                    current_sol.m_fwhm_coefficients.size(), current_sol.m_drf );
       const double sigma = fwhm / 2.35482f;
       
       double roi_lower = energy - (num_sigma_half_roi * sigma);
@@ -8920,7 +9237,8 @@ RelActAutoSolution solve( const Options options,
             const double expected_counts = live_time * br * rel_eff_val * rel_act.rel_activity;
             const double fwhm = eval_fwhm( energy, current_sol.m_fwhm_form,
                                           current_sol.m_fwhm_coefficients.data(),
-                                          current_sol.m_fwhm_coefficients.size() );
+                                          current_sol.m_fwhm_coefficients.size(), 
+                                          current_sol.m_drf );
             const double sigma = fwhm / 2.35482f;
             
             const double peak_width_nsigma = 3.0;

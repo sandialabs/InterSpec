@@ -613,7 +613,7 @@ void run_multi_enrich_u02_ex()
   assert( background );
   assert( background->title() == "Background" );
   
-  const size_t enrich_choice = 27;
+  const size_t enrich_choice = 26;
   shared_ptr<const SpecUtils::Measurement> foreground = specfile.measurement( enrich_choice );
   assert( foreground );
 
@@ -963,6 +963,10 @@ return;
   //state.options.same_external_shielding_for_all_rel_eff_curves = true;
 
 
+  //det->setFwhmCoefficients( {}, DetectorPeakResponse::ResolutionFnctForm::kNumResolutionFnctForm );
+  state.options.fwhm_form = RelActCalcAuto::FwhmForm::Polynomial_4;
+  state.options.fwhm_estimation_method = RelActCalcAuto::FwhmEstimationMethod::StartFromDetEffOrPeaksInSpectrum;
+
   // Check serialization to/from XML
   {
     rapidxml::xml_document<char> doc;
@@ -984,7 +988,7 @@ return;
   solution.print_summary( cout );
   solution.print_html_report( out_html );
   
-  for( size_t i = 0; i < state.options.rel_eff_curves.size(); ++i )
+  for( size_t i = 0; i < solution.m_rel_activities.size(); ++i )
   {
     const double enrichment = solution.mass_enrichment_fraction( u235, i );
     const double u235_counts = solution.nuclide_counts( u235, i );

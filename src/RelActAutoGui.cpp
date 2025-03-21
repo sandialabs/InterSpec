@@ -1527,6 +1527,7 @@ RelActAutoGui::RelActAutoGui( InterSpec *viewer, Wt::WContainerWidget *parent )
       case RelActCalcAuto::FwhmForm::Polynomial_4: name = "sqrt(A0 + A1*E^1...A3*E^3)"; break;
       case RelActCalcAuto::FwhmForm::Polynomial_5: name = "sqrt(A0 + A1*E^1...A4*E^4)"; break;
       case RelActCalcAuto::FwhmForm::Polynomial_6: name = "sqrt(A0 + A1*E^1...A5*E^5)"; break;
+      case RelActCalcAuto::FwhmForm::NotApplicable: name = "Use Det. Eff."; break;
     }//switch( RelActCalcAuto::FwhmForm(i) )
     
     m_fwhm_eqn_form->addItem( name );
