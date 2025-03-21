@@ -186,6 +186,11 @@
   transform: scale(0.66);
 }
 
+.RelActAutoGui .PhysicalModelOpts .PhysicalModelOptRow .UseCorrFcnCb
+{
+  font-size: x-small;
+}
+
 .RelActAutoGui .MoreMenuIcon,
 .RelActAutoGui .MoreMenuIcon:hover
 {

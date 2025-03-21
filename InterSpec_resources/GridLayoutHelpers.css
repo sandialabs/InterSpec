@@ -149,6 +149,11 @@
   grid-row-end: span 2;
 }
 
+.GridSpanThreeRows
+{
+  grid-row-end: span 3;
+}
+
 
 .GridVertCenter
 {

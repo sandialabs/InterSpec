@@ -109,6 +109,7 @@ public:
   void handleRelEffEqnFormChanged();
   void handleRelEffEqnOrderChanged();
   void handleFwhmFormChanged();
+  void handleFwhmEstimationMethodChanged();
   void handleFitEnergyCalChanged();
   void handleBackgroundSubtractChanged();
   void handleSameAgeChanged();
@@ -298,6 +299,7 @@ protected:
   Wt::WComboBox *m_rel_eff_eqn_order;
   
   Wt::WComboBox *m_fwhm_eqn_form;
+  Wt::WComboBox *m_fwhm_estimation_method;
   
   Wt::WCheckBox *m_fit_energy_cal;
   Wt::WCheckBox *m_background_subtract;

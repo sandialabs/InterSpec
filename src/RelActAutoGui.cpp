@@ -1232,6 +1232,7 @@ RelActAutoGui::RelActAutoGui( InterSpec *viewer, Wt::WContainerWidget *parent )
   m_rel_eff_eqn_order_label( nullptr ),
   m_rel_eff_eqn_order( nullptr ),
   m_fwhm_eqn_form( nullptr ),
+  m_fwhm_estimation_method( nullptr ),
   m_fit_energy_cal( nullptr ),
   m_background_subtract( nullptr ),
   m_same_z_age( nullptr ),
@@ -1507,26 +1508,62 @@ RelActAutoGui::RelActAutoGui( InterSpec *viewer, Wt::WContainerWidget *parent )
   tooltip = "The order (how many energy-dependent terms) relative efficiency equation to use.";
   HelpSystem::attachToolTipOn( {label, m_rel_eff_eqn_order}, tooltip, showToolTips );
   
+
+  label = new WLabel( "FWHM Est.", optionsDiv );
+  label->addStyleClass( "GridFirstCol GridSecondRow" );
+  m_fwhm_estimation_method = new WComboBox( optionsDiv );
+  m_fwhm_estimation_method->addStyleClass( "GridSecondCol GridSecondRow" );
+  label->setBuddy( m_fwhm_estimation_method );
+
+  for( int i = 0; i <= static_cast<int>(RelActCalcAuto::FwhmEstimationMethod::FixedToDetectorEfficiency); ++i )
+  {
+    const char *name = "";
+    switch( RelActCalcAuto::FwhmEstimationMethod(i) )
+    {
+      case RelActCalcAuto::FwhmEstimationMethod::StartFromDetEffOrPeaksInSpectrum: 
+        name = "Start from Det/Peaks"; 
+        break;
+
+      case RelActCalcAuto::FwhmEstimationMethod::StartingFromAllPeaksInSpectrum: 
+        name = "Start from Peaks"; 
+        break;
+      
+      case RelActCalcAuto::FwhmEstimationMethod::FixedToAllPeaksInSpectrum: 
+        name = "Fixed to Peaks"; 
+        break;
+
+      case RelActCalcAuto::FwhmEstimationMethod::StartingFromDetectorEfficiency: 
+        name = "Start from Det. Eff."; 
+        break;
+
+      case RelActCalcAuto::FwhmEstimationMethod::FixedToDetectorEfficiency: 
+        name = "Fixed to Det. Eff."; 
+        break;
+    }//switch( RelActCalcAuto::FwhmEstimationMethod(i) )
+    
+    m_fwhm_estimation_method->addItem( name );
+  }//for( loop over RelActCalcAuto::FwhmEstimationMethod )
+
   label = new WLabel( "FWHM Form", optionsDiv );
-  label->addStyleClass( "GridFifthCol GridFirstRow" );
+  label->addStyleClass( "GridThirdCol GridSecondRow" );
   
   m_fwhm_eqn_form = new WComboBox( optionsDiv );
-  m_fwhm_eqn_form->addStyleClass( "GridSixthCol GridFirstRow" );
+  m_fwhm_eqn_form->addStyleClass( "GridFourthCol GridSecondRow" );
   label->setBuddy( m_fwhm_eqn_form );
-  
+
   for( int i = 0; i <= static_cast<int>(RelActCalcAuto::FwhmForm::Polynomial_6); ++i )
   {
     const char *name = "";
     switch( RelActCalcAuto::FwhmForm(i) )
     {
-      case RelActCalcAuto::FwhmForm::Gadras:       name = "Gadras"; break;
+      case RelActCalcAuto::FwhmForm::Gadras:        name = "Gadras"; break;
       case RelActCalcAuto::FwhmForm::SqrtEnergyPlusInverse:  name = "sqrt(A0 + A1*E + A2/E)"; break;
       case RelActCalcAuto::FwhmForm::ConstantPlusSqrtEnergy: name = "A0 + A1*sqrt(E)"; break;
-      case RelActCalcAuto::FwhmForm::Polynomial_2: name = "sqrt(A0 + A1*E)"; break;
-      case RelActCalcAuto::FwhmForm::Polynomial_3: name = "sqrt(A0 + A1*E + A2*E*E)"; break;
-      case RelActCalcAuto::FwhmForm::Polynomial_4: name = "sqrt(A0 + A1*E^1...A3*E^3)"; break;
-      case RelActCalcAuto::FwhmForm::Polynomial_5: name = "sqrt(A0 + A1*E^1...A4*E^4)"; break;
-      case RelActCalcAuto::FwhmForm::Polynomial_6: name = "sqrt(A0 + A1*E^1...A5*E^5)"; break;
+      case RelActCalcAuto::FwhmForm::Polynomial_2:  name = "sqrt(A0 + A1*E)"; break;
+      case RelActCalcAuto::FwhmForm::Polynomial_3:  name = "sqrt(A0 + A1*E + A2*E*E)"; break;
+      case RelActCalcAuto::FwhmForm::Polynomial_4:  name = "sqrt(A0 + A1*E^1...A3*E^3)"; break;
+      case RelActCalcAuto::FwhmForm::Polynomial_5:  name = "sqrt(A0 + A1*E^1...A4*E^4)"; break;
+      case RelActCalcAuto::FwhmForm::Polynomial_6:  name = "sqrt(A0 + A1*E^1...A5*E^5)"; break;
       case RelActCalcAuto::FwhmForm::NotApplicable: name = "Use Det. Eff."; break;
     }//switch( RelActCalcAuto::FwhmForm(i) )
     
@@ -1537,9 +1574,12 @@ RelActAutoGui::RelActAutoGui( InterSpec *viewer, Wt::WContainerWidget *parent )
   HelpSystem::attachToolTipOn( {label, m_fwhm_eqn_form}, tooltip, showToolTips );
   
   // TODO: need to set m_fwhm_eqn_form based on energy ranges selected
-  m_fwhm_eqn_form->setCurrentIndex( 1 );
+  m_fwhm_eqn_form->setCurrentIndex( static_cast<int>(RelActCalcAuto::FwhmForm::SqrtEnergyPlusInverse) );
+  m_fwhm_estimation_method->setCurrentIndex( static_cast<int>(RelActCalcAuto::FwhmEstimationMethod::StartFromDetEffOrPeaksInSpectrum) );
   m_fwhm_eqn_form->changed().connect( this, &RelActAutoGui::handleFwhmFormChanged );
+  m_fwhm_estimation_method->changed().connect( this, &RelActAutoGui::handleFwhmEstimationMethodChanged );
   
+
 /*
   label = new WLabel( "Yield Info", optionsDiv );
   label->addStyleClass( "GridSeventhCol GridFirstRow" );
@@ -1573,19 +1613,19 @@ RelActAutoGui::RelActAutoGui( InterSpec *viewer, Wt::WContainerWidget *parent )
  */
   
   m_fit_energy_cal = new WCheckBox( "Fit Energy Cal.", optionsDiv );
-  m_fit_energy_cal->addStyleClass( "GridFirstCol GridSecondRow GridSpanTwoCol" );
+  m_fit_energy_cal->addStyleClass( "GridFirstCol GridThirdRow GridSpanTwoCol" );
   m_fit_energy_cal->checked().connect( this, &RelActAutoGui::handleFitEnergyCalChanged );
   m_fit_energy_cal->unChecked().connect( this, &RelActAutoGui::handleFitEnergyCalChanged );
   
   
   m_background_subtract = new WCheckBox( "Back. Sub.", optionsDiv );
-  m_background_subtract->addStyleClass( "GridThirdCol GridSecondRow GridSpanTwoCol" );
+  m_background_subtract->addStyleClass( "GridThirdCol GridThirdRow GridSpanTwoCol" );
   m_background_subtract->checked().connect( this, &RelActAutoGui::handleBackgroundSubtractChanged );
   m_background_subtract->unChecked().connect( this, &RelActAutoGui::handleBackgroundSubtractChanged );
   
   
   m_same_z_age = new WCheckBox( "Same El. Same Age", optionsDiv );
-  m_same_z_age->addStyleClass( "GridFifthCol GridSecondRow GridSpanTwoCol" );
+  m_same_z_age->addStyleClass( "GridFifthCol GridThirdRow GridSpanTwoCol" );
   m_same_z_age->checked().connect( this, &RelActAutoGui::handleSameAgeChanged );
   m_same_z_age->unChecked().connect( this, &RelActAutoGui::handleSameAgeChanged );
   
@@ -1605,9 +1645,9 @@ RelActAutoGui::RelActAutoGui( InterSpec *viewer, Wt::WContainerWidget *parent )
   
     
   label = new WLabel( "Peak Skew", optionsDiv );
-  label->addStyleClass( "GridNinthCol GridFirstRow" );
+  label->addStyleClass( "GridFifthCol GridSecondRow" );
   m_skew_type = new WComboBox( optionsDiv );
-  m_skew_type->addStyleClass( "GridTenthCol GridFirstRow" );
+  m_skew_type->addStyleClass( "GridSixthCol GridSecondRow" );
   label->setBuddy( m_skew_type );
   m_skew_type->activated().connect( this, &RelActAutoGui::handleSkewTypeChanged );
   tooltip = "The type of skew to apply to the peaks; skew parameters will be fit.";
@@ -1623,9 +1663,9 @@ RelActAutoGui::RelActAutoGui( InterSpec *viewer, Wt::WContainerWidget *parent )
   
     
   label = new WLabel( "Add. Uncert", optionsDiv );
-  label->addStyleClass( "GridFirstCol GridThirdRow" );
+  label->addStyleClass( "GridFifthCol GridFirstRow" );
   m_add_uncert = new WComboBox( optionsDiv );
-  m_add_uncert->addStyleClass( "GridSecondCol GridThirdRow" );
+  m_add_uncert->addStyleClass( "GridSixthCol GridFirstRow" );
   label->setBuddy( m_add_uncert );
     m_add_uncert->activated().connect( this, &RelActAutoGui::handleAdditionalUncertChanged );
     
@@ -1650,11 +1690,11 @@ RelActAutoGui::RelActAutoGui( InterSpec *viewer, Wt::WContainerWidget *parent )
     m_add_uncert->addItem( uncert_txt );
   }//for( loop over AddUncert )
      
-    m_add_uncert->setCurrentIndex( static_cast<int>(RelActAutoGui::AddUncert::StatOnly) );
+  m_add_uncert->setCurrentIndex( static_cast<int>(RelActAutoGui::AddUncert::StatOnly) );
     
     
   m_phys_model_opts = new WContainerWidget( optionsDiv );
-  m_phys_model_opts->addStyleClass( "PhysicalModelOpts GridEleventhCol GridFirstRow GridSpanTwoRows" );
+  m_phys_model_opts->addStyleClass( "PhysicalModelOpts GridEleventhCol GridFirstRow GridSpanThreeRows" );
   
   m_phys_model_shields = new WContainerWidget( m_phys_model_opts );
   m_phys_model_shields->addStyleClass( "PhysicalModelShields" );
@@ -1666,7 +1706,9 @@ RelActAutoGui::RelActAutoGui( InterSpec *viewer, Wt::WContainerWidget *parent )
   phys_opt_row->setStyleClass( "PhysicalModelOptRow" );
   
   m_phys_model_use_hoerl = new WCheckBox( "Use Corr. Fcn.", phys_opt_row );
+  m_phys_model_use_hoerl->addStyleClass( "UseCorrFcnCb" );
   m_phys_model_use_hoerl->setChecked( true );
+  m_phys_model_use_hoerl->setWordWrap( false );
   m_phys_model_use_hoerl->checked().connect( this, &RelActAutoGui::handlePhysModelUseHoerlChange );
   m_phys_model_use_hoerl->unChecked().connect( this, &RelActAutoGui::handlePhysModelUseHoerlChange );
 
@@ -1931,9 +1973,11 @@ RelActCalcAuto::Options RelActAutoGui::getCalcOptions() const
   RelActCalcAuto::Options options;
   
   
-
   options.fit_energy_cal = m_fit_energy_cal->isChecked();
   options.fwhm_form = RelActCalcAuto::FwhmForm( std::max(0,m_fwhm_eqn_form->currentIndex()) );
+  options.fwhm_estimation_method = RelActCalcAuto::FwhmEstimationMethod( std::max(0,m_fwhm_estimation_method->currentIndex()) );
+  if( options.fwhm_estimation_method == RelActCalcAuto::FwhmEstimationMethod::FixedToDetectorEfficiency )
+    options.fwhm_form = RelActCalcAuto::FwhmForm::NotApplicable;
   
   const shared_ptr<const SpecUtils::Measurement> fore
                            = m_interspec->displayedHistogram( SpecUtils::SpectrumType::Foreground );
@@ -2562,7 +2606,16 @@ void RelActAutoGui::setCalcOptionsGui( const RelActCalcAuto::Options &options )
     throw runtime_error( "RelActAutoGui::setCalcOptionsGui: for dev, must have exactly one rel-eff curve." );
   
   m_fit_energy_cal->setChecked( options.fit_energy_cal );
-  m_fwhm_eqn_form->setCurrentIndex( static_cast<int>(options.fwhm_form) );
+  
+  m_fwhm_estimation_method->setCurrentIndex( static_cast<int>(options.fwhm_estimation_method) );
+  const bool fixed_to_det_eff = (options.fwhm_estimation_method == RelActCalcAuto::FwhmEstimationMethod::FixedToDetectorEfficiency);
+  
+  m_fwhm_eqn_form->setHidden( fixed_to_det_eff );
+  if( m_fwhm_eqn_form->label() )
+    m_fwhm_eqn_form->label()->setHidden( fixed_to_det_eff );
+  if( !fixed_to_det_eff && (options.fwhm_form != RelActCalc::FwhmEqnForm::NotApplicable) )
+    m_fwhm_eqn_form->setCurrentIndex( static_cast<int>(options.fwhm_form) );
+  
   m_skew_type->setCurrentIndex( static_cast<int>(options.skew_type) );
   
   // We'll just round add-uncert to the nearest-ish value we allow in the GUI
@@ -3014,6 +3067,22 @@ void RelActAutoGui::handleFwhmFormChanged()
   m_render_flags |= RenderActions::UpdateCalculations;
   scheduleRender();
 }//void handleFwhmFormChanged()
+
+
+void RelActAutoGui::handleFwhmEstimationMethodChanged()
+{
+  const RelActCalcAuto::FwhmEstimationMethod index 
+           = static_cast<RelActCalcAuto::FwhmEstimationMethod>( m_fwhm_estimation_method->currentIndex() );
+  
+  const bool fixed_to_det_eff = (index == RelActCalcAuto::FwhmEstimationMethod::FixedToDetectorEfficiency);
+  if( m_fwhm_eqn_form->label() )
+    m_fwhm_eqn_form->label()->setHidden( fixed_to_det_eff );
+  m_fwhm_eqn_form->setHidden( fixed_to_det_eff );
+  
+  checkIfInUserConfigOrCreateOne( false );
+  m_render_flags |= RenderActions::UpdateCalculations;
+  scheduleRender();
+}//void handleFwhmEstimationMethodChanged()
 
 
 void RelActAutoGui::handleFitEnergyCalChanged()
@@ -4047,8 +4116,8 @@ void RelActAutoGui::showAndHideOptionsForEqnType()
   
   const bool is_physical = (eqn_type == RelActCalc::RelEffEqnForm::FramPhysicalModel);
   
-  m_rel_eff_eqn_order->setHidden( is_physical );
-  m_rel_eff_eqn_order_label->setHidden( is_physical );
+  m_rel_eff_eqn_order->setDisabled( is_physical );
+  m_rel_eff_eqn_order_label->setDisabled( is_physical );
   m_phys_model_opts->setHidden( !is_physical );
   if( is_physical && !m_phys_model_self_atten )
     initPhysModelShields();
