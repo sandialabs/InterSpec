@@ -1582,6 +1582,33 @@ double PeakDef::extract_energy_from_peak_source_string( std::string &str )
 };//extract_energy_from_peak_source_string
 
 
+const char *PeakDef::to_str( const DefintionType type )
+{
+  switch( type )
+  {
+    case GaussianDefined:
+      return "GaussianDefined";
+    case DataDefined:
+      return "DataDefined";
+  }//switch( type )
+  
+  assert( 0 );
+  return "InvalidDefintionType";
+}//const char *to_str( const DefintionType type )
+
+
+PeakDef::DefintionType PeakDef::peak_type_from_str( const char * const str )
+{
+  if( str && SpecUtils::icontains( str, "GaussianDefined" ) )
+    return PeakDef::DefintionType::GaussianDefined;
+  
+  if( str && SpecUtils::icontains( str, "DataDefined" ) )
+    return PeakDef::DefintionType::DataDefined;
+  
+  throw runtime_error( "Invalid PeakDef::DefintionType: '" + string(str ? str : "") );
+}//DefintionType peak_type_from_str( const char * const str )
+
+
 void PeakDef::gammaTypeFromUserInput( std::string &txt,
                                       PeakDef::SourceGammaType &type )
 {
@@ -1972,12 +1999,7 @@ rapidxml::xml_node<char> *PeakDef::toXml( rapidxml::xml_node<char> *parent,
   }//if( m_userLabel.size() )
   
   
-  switch( m_type )
-  {
-    case GaussianDefined: val = "GaussianDefined"; break;
-    case DataDefined:     val = "DataDefined";     break;
-  }//switch( m_type )
-  
+  val = PeakDef::to_str( m_type );
   node = doc->allocate_node( node_element, "Type", val );
   peak_node->append_node( node );
   
@@ -2873,19 +2895,7 @@ std::string PeakDef::gaus_peaks_to_json(const std::vector<std::shared_ptr<const 
 
     if (!p.lineColor().isDefault())
       answer << q << "lineColor" << q << ":" << q << p.lineColor().cssText(false) << q << ",";
-
-    answer << q << "type" << q << ":";
-    switch( p.type() )
-    {
-      case PeakDef::GaussianDefined:
-        answer << q << "GaussianDefined" << q << ",";
-      break;
-        
-      case PeakDef::DataDefined:
-        answer << q << "DataDefined" << q << ",";
-      break;
-    }//switch( p.type() )
-
+    answer << q << "type" << q << ":" << q << PeakDef::to_str(p.type()) << q << ",";
     
     double dist_norm = 0.0;
     answer << q << "skewType" << q << ":";

@@ -236,7 +236,7 @@ public:
           continue;
         const PeakDef &newPeak = final_peaks[newindex];
         const double newMean = newPeak.mean();
-        const double newSigma = newPeak.sigma();
+        const double newSigma = newPeak.gausPeak() ? newPeak.sigma() : 0.25*newPeak.roiWidth();
         if( fabs(newMean - oldMean) < 0.25*(newSigma + oldSigma) )
         {
           if( (nearestNew < 0)
@@ -598,9 +598,18 @@ public:
       if( displayPeak && (peakEnergyIndex >= 0) )
       {
         char buffer[512] = { '\0' };
-        snprintf( buffer, sizeof(buffer), "<div style=\"white-space: nowrap;\">"
-                     "mean=%.1f keV</div><div style=\"white-space: nowrap;\">FWHM=%.1f keV</div>",
-                     displayPeak->mean(), displayPeak->fwhm() );
+        
+        if( displayPeak->gausPeak() )
+        {
+          snprintf( buffer, sizeof(buffer), "<div style=\"white-space: nowrap;\">"
+                   "mean=%.1f keV</div><div style=\"white-space: nowrap;\">FWHM=%.1f keV</div>",
+                   displayPeak->mean(), displayPeak->fwhm() );
+        }else
+        {
+          snprintf( buffer, sizeof(buffer), "<div style=\"white-space: nowrap;\">"
+                   "mean=%.1f keV</div><div style=\"white-space: nowrap;\">Data Defined</div>",
+                   displayPeak->mean() );
+        }
         
         WTableCell *peakene = m_table->elementAt( table_row, peakEnergyIndex );
         peakene->addStyleClass( "PeakEnergyCell" );

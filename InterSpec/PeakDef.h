@@ -471,6 +471,12 @@ public:
     DataDefined
   };//enum PeakType
   
+  /** Returns "GaussianDefined" or "DataDefined". */
+  static const char *to_str( const DefintionType type );
+  
+  /** Returns the `DefintionType`; if does not contain with "GaussianDefined" or "DataDefined", throws exception. */
+  static DefintionType peak_type_from_str( const char * const str );
+  
   enum CoefficientType
   {
     Mean,
@@ -554,9 +560,9 @@ public:
   //  self defined background/continuum.
   PeakDef( double m, double s, double a );
 
-  //The following constructor make a peak were m_PeakDef==false and
+  //The following constructor make a peak were m_type==PeakDef::DefintionType::DataDefined and
   //  instead the peak will be drawn as the difference between data and
-  //  background.  If a background histogram is not proivided than a
+  //  background.  If a background histogram is not provided than a
   //  strait line spanning lowerx and upperx will be used.
   //This usage of PeakDef has not been well tested
   PeakDef( double lowerx, double upperx, double mean,

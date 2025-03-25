@@ -31,6 +31,13 @@
   <message id="pe-multipeak-in-roi">Peak {1} of {2} in ROI</message>
   <message id="pe-apply-all-of-type">All {1} peaks</message>
   <message id="pe-drf-predict-fwhm-txt">DRF predicts FWHM of {1} keV</message>
+  <message id="pe-btn-cont-to-linear">Estimate linear continuum</message>
+  <message id="pe-tt-btn-cont-to-linear">Uses the channels on right and left of ROI to estimate a straight-line continuum.</message>
   <message id="pe-failed-refit-insig">Failed to refit peak (became insignificant), so not doing anything</message>
 
+  <message id="pe-est-lin-cont-no-data">Please load a foreground spectrum before estimating continuum.</message>
+  <message id="pe-failed-est-lin-cont">Failed to estimate continuum from edges of ROI: {1}</message>
+  
+  
+  
 </messages>

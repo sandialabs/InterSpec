@@ -90,6 +90,7 @@ public:
     OffsetPolynomial2,
     OffsetPolynomial3,
     OffsetPolynomial4,
+    SetContinuumToLinear, ///< Currently only used for "DataDefined" peaks.
     PeakColor,
     NumPeakPars
   };//enum PeakPars
@@ -172,6 +173,7 @@ protected:
   
   void updateDrfFwhmTxt();
   void setSkewInputValueRanges( const PeakDef::SkewType skewType );
+  void estimateLinearContinuumFromData();
 protected:
   double m_energy;
   PeakModel *m_peakModel;
@@ -213,6 +215,8 @@ protected:
   Wt::WComboBox *m_peakType;
   Wt::WComboBox *m_continuumType;
   Wt::WComboBox *m_skewType;
+  
+  Wt::WPushButton *m_resetLinearContinuum; ///< Currently only used for "DataDefined" peaks.
   
   Wt::WPushButton *m_apply;
   Wt::WPushButton *m_accept;
