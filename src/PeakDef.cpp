@@ -1422,8 +1422,8 @@ bool PeakDef::skew_parameter_range( const SkewType skew_type, const CoefficientT
           // fall-though intentional
         case CoefficientType::SkewPar1: //n (left)
           // The valid values of `n` is probably a bit more complicated than just the range
-          starting_value = 15;
-          step_size = 2;
+          starting_value = 2;
+          step_size = 0.75;
           lower_value = 1.05; //1.0 would be divide by zero
           upper_value = 100;  //much higher than this and we run into numerical issues
           break;
@@ -2930,7 +2930,7 @@ std::string PeakDef::gaus_peaks_to_json(const std::vector<std::shared_ptr<const 
         break;
     }//switch( p.type() )
 
-    if( p.skewType() != PeakDef::NoSkew )
+    if( (p.skewType() != PeakDef::NoSkew) && (!IsNan(dist_norm) && !IsInf(dist_norm)) )
       answer << q << "DistNorm" << q << ":" << dist_norm << ",";
     
     if( (p.type() == PeakDef::GaussianDefined) && (p.skewType() != PeakDef::NoSkew) )
@@ -3201,6 +3201,13 @@ string PeakDef::peak_json(const vector<std::shared_ptr<const PeakDef> > &inpeaks
     json += ((json.size()>2) ? "," : "") + gaus_peaks_to_json(vt.second,foreground);
 
   json += "]";
+  
+  if( json.find("nan") != string::npos )
+  {
+    cerr << "Found nan: " << json << endl;
+    cerr << endl;
+  }
+  
   return json;
 }//string peak_json( inpeaks )
 #endif //#if( SpecUtils_ENABLE_D3_CHART )

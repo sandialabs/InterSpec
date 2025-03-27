@@ -23,7 +23,9 @@
 
 #include "InterSpec_config.h"
 
+#include <Wt/Utils>
 #include <Wt/WText>
+#include <Wt/WGridLayout>
 #include <Wt/WApplication>
 #include <Wt/WContainerWidget>
 
@@ -37,25 +39,36 @@ using namespace std;
 
 
 RelActTxtResults::RelActTxtResults( Wt::WContainerWidget *parent )
- : Wt::WContainerWidget( parent )
+ : Wt::WContainerWidget( parent ),
+  m_txt( nullptr )
 {
   wApp->useStyleSheet( "InterSpec_resources/RelActTxtResults.css" );
   
   addStyleClass( "RelActTxtResults" );
-  new WText( "No current results", this );
+  
+  m_txt = new WContainerWidget();
+  
+  // Without using a layout the formatting messes up and the contents move over
+  //  onto the tabs... not sure why, but using a layout fixes this.
+  WGridLayout *lay = new WGridLayout( this );
+  lay->addWidget(m_txt, 0, 0);
+  lay->setRowStretch( 0, 1 );
+  lay->setColumnStretch( 0, 1 );
+  
+  new WText( "No current results", m_txt );
 }
 
 
 void RelActTxtResults::setNoResults()
 {
-  clear();
-  new WText( "No current results", this );
+  m_txt->clear();
+  new WText( "No current results", m_txt );
 }
 
 
 void RelActTxtResults::updateResults( const RelActCalcAuto::RelActAutoSolution &solution )
 {
-  clear();
+  m_txt->clear();
   
   try
   {
@@ -63,10 +76,8 @@ void RelActTxtResults::updateResults( const RelActCalcAuto::RelActAutoSolution &
     solution.print_summary( strm );
     
     string res = strm.str();
-    
-    SpecUtils::ireplace_all( res, "\n", "<br />" );
-  
-    WText *txt = new WText( res, this );
+    res = Wt::Utils::htmlEncode( res, Wt::Utils::HtmlEncodingFlag::EncodeNewLines );
+    WText *txt = new WText( res, m_txt );
     txt->setInline( false );
   }catch( std::exception &e )
   {

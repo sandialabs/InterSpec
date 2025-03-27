@@ -246,6 +246,7 @@ T eval_physical_model_eqn_imp( const double energy,
   
   for( const RelActCalc::PhysModelShield<T> &ext_atten : external_attens )
   {
+    // TODO: `GammaInteractionCalc::transmition_length_coefficient` can be a real bottleneck of computation - at soem point we should memoise its results
     T mu;
     if( ext_atten.material )
       mu = T( GammaInteractionCalc::transmition_length_coefficient( ext_atten.material.get(), energyf ) / ext_atten.material->density );

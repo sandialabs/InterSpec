@@ -727,7 +727,10 @@ namespace PeakDists
         upper_x = x_from_eqn( 1.0 - 0.5*p );
       }catch( std::exception & )
       {
-        cout << "Failed to find upper answer by eqn from p=" << p << endl;
+        // Add a reminder here so we eventually fix not being able to get p-value from upper tail
+        static std::atomic<size_t> ntimeshere = 0;
+        if( (++ntimeshere < 25) || ((ntimeshere%100) == 0) )
+          cerr << "Failed to find upper answer by eqn from p=" << p << endl;
       }
       
 
@@ -790,11 +793,24 @@ namespace PeakDists
 #if( PERFORM_DEVELOPER_CHECKS )
         if( !found_upper )
         {
+          const double y_mean_2sigma = upper_fcn( mean + 2*sigma );
+          const double y_mean_5sigma = upper_fcn( mean + 5*sigma );
+          const double y_mean_10sigma = upper_fcn( mean + 10*sigma );
+          const double y_mean_20sigma = upper_fcn( mean + 20*sigma );
+          const double y_mean_40sigma = upper_fcn( mean + 40*sigma );
+          
           const string msg = "Failed to find upper limit by " + std::to_string(mean + current_dx)
-          + " for double_sided_crystal_ball_coverage_limits( "
-          + std::to_string(mean) + ", " + std::to_string(sigma) + ", " + std::to_string(left_skew)
-          + ", " + std::to_string(left_n) + ", " + std::to_string(right_skew) + ", "
-          + std::to_string(right_n) + ", " + std::to_string(p) + " )";
+          + " for\n"
+          "\tdouble_sided_crystal_ball_coverage_limits( mean="
+          + std::to_string(mean) + ", sigma=" + std::to_string(sigma) + ", lskew=" + std::to_string(left_skew)
+          + ", lpow=" + std::to_string(left_n) + ", rskew=" + std::to_string(right_skew) + ", rpow="
+          + std::to_string(right_n) + ", " + std::to_string(p) + " )"
+          + string("\n\ty(mean+2sigma) = ") + std::to_string(y_mean_2sigma)
+          + string("\n\ty(mean+5sigma) = ") + std::to_string(y_mean_5sigma)
+          + string("\n\ty(mean+10sigma) = ") + std::to_string(y_mean_10sigma)
+          + string("\n\ty(mean+20sigma) = ") + std::to_string(y_mean_20sigma)
+          + string("\n\ty(mean+40sigma) = ") + std::to_string(y_mean_40sigma)
+          ;
           
           log_developer_error( __func__, msg.c_str() );
         }//if( !found_upper )

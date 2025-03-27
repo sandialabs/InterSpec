@@ -1,5 +1,6 @@
 #include <vector>
 
+#include <thread>
 
 
 #include "Eigen/Dense"
@@ -19,6 +20,7 @@ void fit_continuum( const float *x, const float *data, const size_t nbin,
                                   const bool step_continuum,
                                   const ScalarType ref_energy,
                                   const std::vector<PeakType> &fixedAmpPeaks,
+                                  const bool multithread,
                                   ScalarType *continuum_coeffs,
                                   ScalarType *peak_counts )
 {
@@ -56,11 +58,62 @@ void fit_continuum( const float *x, const float *data, const size_t nbin,
   // Add the Gaussian + Skew component of the peaks to destination counts
   const size_t nfixedpeak = fixedAmpPeaks.size();
   
-  for( size_t peak_index = 0; peak_index < nfixedpeak; ++peak_index )
-  {      
-    fixedAmpPeaks[peak_index].gauss_integral( x, peak_counts, nbin );
-  }//for( size_t peak_index = 0; peak_index < nfixedpeak; ++peak_index )
-  
+  if( multithread && (nfixedpeak > 8) ) //8 is arbitrary.
+  {
+    // TODO: multi-thread computation needs to be evaluated more hollistically both here and in #RelActAutoSolution::eval
+    const unsigned nthread = std::min( 16, std::min( static_cast<int>(nfixedpeak), std::max( 1, static_cast<int>( std::thread::hardware_concurrency() ) ) ) );
+    
+    vector<vector<ScalarType>> results( nthread );
+    
+    SpecUtilsAsync::ThreadPool pool;
+    
+    for( size_t thread_index = 0; thread_index < nthread; ++thread_index )
+    {
+      pool.post( [nbin, thread_index, nfixedpeak, nthread, &results, &fixedAmpPeaks, &x](){
+        results[thread_index].resize( nbin, ScalarType(0.0) );
+        
+        for( size_t peak_index = thread_index; peak_index < nfixedpeak; peak_index += nthread )
+        {
+          fixedAmpPeaks[peak_index].gauss_integral( x, results[thread_index].data(), nbin );
+        }//for( size_t peak_index = 0; peak_index < nfixedpeak; ++peak_index )
+      } );
+    }//for( size_t thread_index = 0; thread_index < nthread; ++thread_index )
+    
+    pool.join();
+    
+    /*
+    vector<std::thread> threads( nthread );
+    for( size_t thread_index = 0; thread_index < nthread; ++thread_index )
+    {
+      threads[thread_index] = std::thread( [nbin, thread_index, nfixedpeak, nthread, &results, &fixedAmpPeaks, &x](){
+        results[thread_index].resize( nbin, ScalarType(0.0) );
+        
+        for( size_t peak_index = thread_index; peak_index < nfixedpeak; peak_index += nthread )
+        {
+          fixedAmpPeaks[peak_index].gauss_integral( x, results[thread_index].data(), nbin );
+        }//for( size_t peak_index = 0; peak_index < nfixedpeak; ++peak_index )
+      } );
+    }
+    
+    for( size_t thread_index = 0; thread_index < nthread; ++thread_index )
+    {
+      threads[thread_index].join();
+    }
+    */
+    
+    // TODO: use Eigen to vectorize these sums
+    for( size_t thread_index = 0; thread_index < nthread; ++thread_index )
+    {
+      for( size_t i = 0; i < nbin; ++i )
+        peak_counts[i] += results[thread_index][i];
+    }
+  }else
+  {
+    for( size_t peak_index = 0; peak_index < nfixedpeak; ++peak_index )
+    {
+      fixedAmpPeaks[peak_index].gauss_integral( x, peak_counts, nbin );
+    }//for( size_t peak_index = 0; peak_index < nfixedpeak; ++peak_index )
+  }//if( multithread && (nfixedpeak > 8) ) / else
   
   for( size_t row = 0; row < nbin; ++row )
   {

@@ -838,9 +838,16 @@ struct RelActAutoSolution
   
   
   /** This DRF will be the input DRF you passed in, if it was valid and had energy resolution info.
-   Otherwise, this will be a "FLAT" DRF with a rough energy resolution function fit from the
-   foreground spectrum; in this case, it may be useful to re-use the DRF on subsequent calls to
-   avoid the overhead of searching for all the peaks and such.
+     
+   If you passed in a valid DRF, but no energy resolution info, this DRF will have
+   the resolution info added.
+   
+   If you didnt pass in a valid detector, then this will be a generic detector, with rough
+   energy resolution derived from the spectrum, or at least the best we could do, before
+   the fit.
+   
+   It may be useful to re-use the DRF on subsequent calls to  avoid the overhead of searching
+   for all the peaks and such (although this isnt a garuntee this wont need to be done).
    */
   std::shared_ptr<const DetectorPeakResponse> m_drf;
   

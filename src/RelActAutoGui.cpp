@@ -2176,9 +2176,24 @@ void RelActAutoGui::handleRoiDrag( double new_roi_lower_energy,
     }
   }//for( WWidget *w : kids )
 
-  if( !range || min_de > 1.0 )  //0.001 would probably be fine instead of 1.0
+  if( !range || (min_de > 2.5) )  // Sometimes the ROI might say its original lower energy is like 603 keV, but the RelActAutoEnergyRange might say 604.2.
   {
     cerr << "Unexpectedly couldnt find ROI in getRoiRanges()!" << endl;
+    cout << "\t\toriginal_roi_lower_energy=" << original_roi_lower_energy
+    << ", new_roi_lower_energy=" << new_roi_lower_energy << ", new_roi_upper_energy=" << new_roi_upper_energy
+    << ", is_final_range=" << is_final_range << endl;
+    for( WWidget *w : kids )
+    {
+      RelActAutoEnergyRange *roi = dynamic_cast<RelActAutoEnergyRange *>( w );
+      assert( roi );
+      if( !roi || roi->isEmpty() )
+        continue;
+      
+      RelActCalcAuto::RoiRange roi_range = roi->toRoiRange();
+      cout << "\t\tRange: " << roi_range.lower_energy << ", " << roi_range.upper_energy << endl;
+    }
+    cout << endl << endl;
+    
     return;
   }//if( failed to find continuum )
   
@@ -2613,7 +2628,7 @@ void RelActAutoGui::setCalcOptionsGui( const RelActCalcAuto::Options &options )
   m_fwhm_eqn_form->setHidden( fixed_to_det_eff );
   if( m_fwhm_eqn_form->label() )
     m_fwhm_eqn_form->label()->setHidden( fixed_to_det_eff );
-  if( !fixed_to_det_eff && (options.fwhm_form != RelActCalc::FwhmEqnForm::NotApplicable) )
+  if( !fixed_to_det_eff && (options.fwhm_form != RelActCalcAuto::FwhmForm::NotApplicable) )
     m_fwhm_eqn_form->setCurrentIndex( static_cast<int>(options.fwhm_form) );
   
   m_skew_type->setCurrentIndex( static_cast<int>(options.skew_type) );
@@ -4745,6 +4760,9 @@ void RelActAutoGui::updateFromCalc( std::shared_ptr<RelActCalcAuto::RelActAutoSo
   if( cancel_flag != m_cancel_calc )
     return;
   
+  if( cancel_flag && (*cancel_flag) )
+    return;
+  
   m_is_calculating = false;
   m_status_indicator->hide();
   
@@ -4929,7 +4947,16 @@ void RelActAutoGui::updateFromCalc( std::shared_ptr<RelActCalcAuto::RelActAutoSo
         {
           assert( shield.areal_density_was_fit == w->fitThickness() );
           const double thick = shield.areal_density / shield.material->density;
+          
+          if( !shield.areal_density_was_fit && (thick != w->thickness()) )
+          {
+            cerr << "Found fixed shielding thickness has changed for '" << shield.material->name << "'; was "
+            << PhysicalUnits::printToBestLengthUnits(w->thickness()) << " but returned answer is "
+            << PhysicalUnits::printToBestLengthUnits(thick) << endl;
+            cerr << endl;
+          }
           assert( shield.areal_density_was_fit || (thick == w->thickness()));
+          
           w->setThickness( thick );
           if( shield.areal_density_was_fit != w->fitThickness() )
             w->setFitThickness( shield.areal_density_was_fit );

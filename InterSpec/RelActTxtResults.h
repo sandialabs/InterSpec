@@ -44,6 +44,9 @@ public:
   void setNoResults();
   
   void updateResults( const RelActCalcAuto::RelActAutoSolution &solution );
+  
+protected:
+  Wt::WContainerWidget *m_txt;
 };//class RelActTxtResults
 
 

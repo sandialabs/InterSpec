@@ -600,8 +600,8 @@ std::shared_ptr<RelActCalc::PhysicalModelShieldInput> RelEffShieldWidget::fitInp
     if( s->material && !s->fit_areal_density )
     {
       const double thick = thickness();
-      if( thick <= 0.0 )
-        s->areal_density = 1.25*PhysicalUnits::g_per_cm2;
+      if( thick < 0.0 )
+        s->areal_density = 0.0;
       else
         s->areal_density = thick * s->material->density;
     }else
