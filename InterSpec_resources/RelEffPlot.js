@@ -391,6 +391,11 @@ RelEffPlot.prototype.setRelEffData = function (data_vals, fit_eqn, chi2_txt) {
         .attr('opacity', '.85')
         .attr("r", 6);
 
+      let sum_contrib = 0;
+      for( const el of d.nuc_info ) {
+        sum_contrib += el.rel_act * el.br;
+      }
+
       let txt = "<div>Energy: " + (d.mean ? d.mean.toFixed(2) : d.energy.toFixed(2)) + " keV</div>"
         + "<div>Peak Area: " + d.counts.toFixed(1) + " &pm; " + d.counts_uncert.toFixed(1) + "</div>"
         + "<div>Measured RelEff: " + d.eff.toPrecision(5) + "</div>"
@@ -399,6 +404,8 @@ RelEffPlot.prototype.setRelEffData = function (data_vals, fit_eqn, chi2_txt) {
         txt += "<div>&nbsp;&nbsp;" + el.nuc + ": br=" + el.br.toPrecision(4);
         if( el.rel_act )
           txt += ", RelAct=" + el.rel_act.toPrecision(4);
+        if( el.rel_act && (d.nuc_info.length > 1) )
+          txt += ", " + (100*el.rel_act*el.br/sum_contrib).toFixed(1) + "% of counts";
         txt += "</div>";
       }
             
