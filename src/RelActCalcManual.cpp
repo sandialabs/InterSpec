@@ -1723,7 +1723,11 @@ void RelEffSolution::print_html_report( ostream &output_html_file,
   get_mass_ratio_table( results_html );
   
   const bool has_decay_corr = !m_input_peaks_before_decay_corr.empty();
-  
+
+  bool any_peak_has_multiple_srcs = false;
+  for( const GenericPeakInfo &info : m_input_peak )
+    any_peak_has_multiple_srcs |= (info.m_source_gammas.size() > 1);
+
   // Make table giving info on each of the _used_ peaks
   results_html << "<table class=\"peaktable resulttable\">\n";
   results_html << "  <caption>Peaks used for analysis.</caption>\n";
@@ -1738,6 +1742,7 @@ void RelEffSolution::print_html_report( ostream &output_html_file,
   "<th scope=\"col\">Add. Unc.</th>"
   "<th scope=\"col\">Meas. Rel Eff</th>"
   "<th scope=\"col\">Meas. Rel Eff Unct</th>"
+  << (any_peak_has_multiple_srcs ? "<th scope=\"col\">Peak Frac</th>" : "")
   << (has_decay_corr ? "<th scope=\"col\">Decay Corr.</th>" : "")
   << "</tr></thead>\n"
   "  <tbody>\n";
@@ -1769,7 +1774,20 @@ void RelEffSolution::print_html_report( ostream &output_html_file,
       << "</td><td>" << SpecUtils::printCompact( info.m_base_rel_eff_uncert, nsigfig )
       << "</td><td>" << SpecUtils::printCompact( meas_rel_eff, nsigfig )
       << "</td><td>" << SpecUtils::printCompact( meas_rel_eff_uncert, nsigfig ) << "%";
-      
+
+      if( any_peak_has_multiple_srcs )
+      {
+        results_html << "</td><td>";
+        if( info.m_source_gammas.size() >= 2 )
+        {
+          double sum_counts = 0.0;
+          for( const GenericLineInfo &sum_line : info.m_source_gammas )
+            sum_counts += relative_activity(sum_line.m_isotope) * sum_line.m_yield;
+          const double contrib_percent = 100.0*(rel_act*line.m_yield) / sum_counts;
+          results_html << SpecUtils::printCompact( contrib_percent, nsigfig ) << "%";
+        }
+      }//if( any_peak_has_multiple_srcs )
+
       if( has_decay_corr )
       {
         results_html << "</td><td>";
