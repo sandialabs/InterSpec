@@ -1417,6 +1417,12 @@ void D3SpectrumDisplayDiv::setChartTitle( const Wt::WString &title )
 }//void setChartTitle( const Wt::WString &title )
 
 
+const Wt::WString &D3SpectrumDisplayDiv::chartTitle() const
+{
+  return m_chartTitle;
+}
+
+
 void D3SpectrumDisplayDiv::setSearchEnergies( const vector<pair<double,double>> &energies )
 {
   m_searchEnergies = energies;
