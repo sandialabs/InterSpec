@@ -12,7 +12,8 @@ namespace RelActCalcAuto
 
 /** This function fits the polynomial continuum for a region with a number of fixed amplitude peaks.
  * 
- * 
+ * Note that when ScalarType is a `ceres::Jet<>`, and peaks SkewType is not PeakDef::SkewType::NoSkew,
+ * then some of the derivative values may become NaN during the `svd.solve(y)` step
  */
 template<typename PeakType, typename ScalarType>
 void fit_continuum( const float *x, const float *data, const size_t nbin,
@@ -146,6 +147,8 @@ void fit_continuum( const float *x, const float *data, const size_t nbin,
         const double contribution = frac_data * (x1 - x0);
         
         A(row,col) = ScalarType(contribution / uncert);
+
+        check_jet_for_NaN( A(row,col) );
       }else if( step_continuum && (num_polynomial_terms == 4) )
       {
         const double frac_data = (step_cumulative_data - 0.5*data_counts) / roi_data_sum;
@@ -161,11 +164,19 @@ void fit_continuum( const float *x, const float *data, const size_t nbin,
         }//switch( col )
         
         A(row,col) = contrib / uncert;
+
+        check_jet_for_NaN( contrib );
+        check_jet_for_NaN( uncert );
+        check_jet_for_NaN( A(row,col) );
       }else
       {
         const ScalarType contribution = (1.0/exp) * (pow(x1_rel,exp) - pow(x0_rel,exp));
         
         A(row,col) = contribution / uncert;
+
+        check_jet_for_NaN( contribution );
+        check_jet_for_NaN( uncert );
+        check_jet_for_NaN( A(row,col) );
       }
     }//for( int order = 0; order < maxorder; ++order )
   }//for( size_t row = 0; row < nbin; ++row )
@@ -178,8 +189,15 @@ void fit_continuum( const float *x, const float *data, const size_t nbin,
 #else
     const Eigen::BDCSVD<Eigen::MatrixX<ScalarType>> svd(A, Eigen::ComputeThinU | Eigen::ComputeThinV );
 #endif
-    
+
     const Eigen::VectorX<ScalarType> coeffs = svd.solve(y); // coeffs will contain [c_0, c_1, c_2, c_3]
+
+    check_jet_array_for_NaN( coeffs.data(), coeffs.size() );
+
+
+    //If time is a real issue, we could try other methods, like:
+    //Eigen::VectorX<ScalarType> coeffs = A.colPivHouseholderQr().solve(y);
+
     //If we wanted to get the covariance matrix and/or parameter uncertainties, we could (unchecked):
     //Calculate residuals
     //Eigen::VectorX<ScalarType> residuals = y - A * coeffs;

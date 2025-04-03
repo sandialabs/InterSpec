@@ -1,6 +1,55 @@
 
 #include <boost/math/constants/constants.hpp>
 
+
+// Had a little trouble with the auto-derivative when using Jet - so will define some functions
+//  here to help find the issues - but make them be no-ops for non-debug builds
+#if( !defined(NDEBUG) && PERFORM_DEVELOPER_CHECKS && defined(CERES_PUBLIC_JET_H_) )
+inline void check_jet_for_NaN( const double &jet )
+{
+  //no-op
+}
+
+inline void check_jet_array_for_NaN( const double * const jet, const size_t nelements )
+{
+  //no-op
+}
+
+template<typename T, int N>
+inline void check_jet_for_NaN( const ceres::Jet<T,N> &jet )
+{
+  using namespace std;
+
+  const Eigen::Matrix<double, N, 1> &matrix = jet.v;
+  for( size_t par = 0; par < matrix.size(); ++par )
+  {
+    const double *vals = matrix.data();
+    const double &val = vals[par];
+    if( isnan(val) || isinf(val) )
+    {
+      cerr << "For par " << par << " val=" << val << endl;
+      assert( !isnan(val) );
+      assert( !isinf(val) );
+      //val = 0.0;
+    }
+  }
+}//void check_jet_for_NaN( ceres::Jet<T,N> &jet )
+
+template<typename T, int N>
+inline void check_jet_array_for_NaN( const ceres::Jet<T,N> * const jets, const size_t nelements )
+{
+  for( size_t i = 0; i < nelements; ++i )
+    check_jet_for_NaN( jets[i] );
+}
+#else
+
+#define check_jet_for_NaN(a){}
+#define check_jet_array_for_NaN(a,b){}
+
+#endif
+
+
+
 /** Templating the peak distributions on calculation type is for `RelActAuto`, so they can be computed with
  `ceres::Jet<>` instead of `double`, to allow automatic differentiation.
  */
@@ -65,11 +114,14 @@ T gauss_exp_norm( const T sigma, const T skew )
   static const double one_div_root_two = boost::math::constants::one_div_root_two<double>(); //0.707106781186547524400
     
   if constexpr ( !std::is_same_v<T, double> )
+  {
     return 1.0 / ((sigma/skew)*exp(-0.5*skew*skew)
-           + (sqrt_pi*one_div_root_two*(erf(skew*one_div_root_two)+1.0)*sigma));
-  else
+                  + (sqrt_pi*one_div_root_two*(erf(skew*one_div_root_two)+1.0)*sigma));
+  }else
+  {
     return 1.0 / ((sigma/skew)*std::exp(-0.5*skew*skew)
-           + (sqrt_pi*one_div_root_two*(boost_erf_imp(skew*one_div_root_two)+1)*sigma));
+                  + (sqrt_pi*one_div_root_two*(boost_erf_imp(skew*one_div_root_two)+1)*sigma));
+  }
 }
   
   
@@ -371,12 +423,29 @@ void crystal_ball_integral( const T peak_mean,
   const T N = 1.0 / (peak_sigma * (C + D));
   const T tail_amp = peak_amplitude * N * A * peak_sigma / (power_law - 1.0);
   const T gauss_indef_amp = 0.5 * peak_amplitude * sqrt_2pi / (C + D);
-  
+
+  check_jet_for_NaN( N );
+  check_jet_for_NaN( tail_amp );
+  check_jet_for_NaN( gauss_indef_amp );
+  check_jet_for_NaN( A );
+  check_jet_for_NaN( B );
+  check_jet_for_NaN( C );
+  check_jet_for_NaN( D );
+  check_jet_for_NaN( exp_aa );
+  check_jet_for_NaN( start_energy );
+  check_jet_for_NaN( stop_energy );
+
   // Brief implementation of crystal_ball_tail_indefinite_t
   auto tail_indefinite = [peak_mean,peak_sigma,alpha,power_law,B,tail_amp]( const T x ) -> T {
     const T t = (x - peak_mean) / peak_sigma;
     assert( ((t - 1.0E-6) <= -alpha) && (alpha > 0.0) && (power_law > 1.0) );
-    return tail_amp * pow( B - t, 1.0 - power_law );
+
+    T answer = tail_amp * pow( B - t, 1.0 - power_law );
+
+    check_jet_for_NaN( t );
+    check_jet_for_NaN( answer );
+
+    return answer;
   };
   
   auto gauss_indefinite = [peak_mean,peak_sigma,gauss_indef_amp,one_div_root_two]( const T x ) -> T {
@@ -407,7 +476,15 @@ void crystal_ball_integral( const T peak_mean,
       {
         const T indefinite_high = tail_indefinite( tail_end );
         const T val = (indefinite_high - indefinite_low);
+
+        check_jet_for_NaN( indefinite_high );
+        check_jet_for_NaN( val );
+        check_jet_for_NaN( channels[channel] );
+
         channels[channel] += val;
+
+        check_jet_for_NaN( channels[channel] );
+
 #if( PERFORM_DEVELOPER_CHECKS )
         dist_sum += val;
 #endif
@@ -417,7 +494,15 @@ void crystal_ball_integral( const T peak_mean,
       {
         const T indefinite_high = tail_indefinite( T(upper_energy) );
         const T val = (indefinite_high - indefinite_low);
+
+        check_jet_for_NaN( indefinite_high );
+        check_jet_for_NaN( val );
+        check_jet_for_NaN( channels[channel] );
+
         channels[channel] += val;
+
+        check_jet_for_NaN( channels[channel] );
+
         indefinite_low = indefinite_high;
         channel += 1;
         lower_energy = upper_energy;
@@ -431,7 +516,10 @@ void crystal_ball_integral( const T peak_mean,
   assert( static_cast<double>(energies[channel+1]) >= tail_end );
   lower_energy = max( T( static_cast<double>(energies[channel]) ), tail_end );
   T indefinite_low = gauss_indefinite( lower_energy );
-  
+
+  check_jet_for_NaN( lower_energy );
+  check_jet_for_NaN( indefinite_low );
+
   while( (channel < nchannel) && (static_cast<double>(energies[channel]) < stop_energy) )
   {
     assert( energies[channel] < energies[channel+1] );
@@ -439,8 +527,16 @@ void crystal_ball_integral( const T peak_mean,
     
     const T indefinite_high = gauss_indefinite( upper_energy );
     const T val = (indefinite_high - indefinite_low);
+
+    check_jet_for_NaN( indefinite_high );
+    check_jet_for_NaN( val );
+    check_jet_for_NaN( upper_energy );
+    check_jet_for_NaN( channels[channel] );
+
     channels[channel] += val;
-    
+
+    check_jet_for_NaN( channels[channel] );
+
 #if( PERFORM_DEVELOPER_CHECKS && !defined(NDEBUG) )
     if constexpr ( std::is_same_v<T, double> )
     {
@@ -577,6 +673,11 @@ void exp_gauss_exp_integral( const T peak_mean,
       {
         const T indefinite_high = left_tail_indefinite_non_norm( left_tail_end );
         const T val = norm * (indefinite_high - indefinite_low);
+
+        check_jet_for_NaN( indefinite_high );
+        check_jet_for_NaN( val );
+        check_jet_for_NaN( channels[channel] );
+
         channels[channel] += val;
         
 #if( PERFORM_DEVELOPER_CHECKS && !defined(NDEBUG) )
@@ -595,6 +696,11 @@ void exp_gauss_exp_integral( const T peak_mean,
       {
         const T indefinite_high = left_tail_indefinite_non_norm( upper_energy );
         const T val = norm * (indefinite_high - indefinite_low);;
+
+        check_jet_for_NaN( indefinite_high );
+        check_jet_for_NaN( val );
+        check_jet_for_NaN( channels[channel] );
+
         channels[channel] += val;
         
 #if( PERFORM_DEVELOPER_CHECKS && !defined(NDEBUG) )
@@ -628,6 +734,11 @@ void exp_gauss_exp_integral( const T peak_mean,
     {
       const T indefinite_high = gauss_indefinite_non_norm( right_tail_start );
       const T val = norm * (indefinite_high - indefinite_low);
+
+      check_jet_for_NaN( indefinite_high );
+      check_jet_for_NaN( val );
+      check_jet_for_NaN( channels[channel] );
+
       channels[channel] += val;
       
 #if( PERFORM_DEVELOPER_CHECKS && !defined(NDEBUG) )
@@ -646,6 +757,11 @@ void exp_gauss_exp_integral( const T peak_mean,
     {
       const T indefinite_high = gauss_indefinite_non_norm( upper_energy );
       const T val = norm * (indefinite_high - indefinite_low);
+
+      check_jet_for_NaN( indefinite_high );
+      check_jet_for_NaN( val );
+      check_jet_for_NaN( channels[channel] );
+
       channels[channel] += val;
       
 #if( PERFORM_DEVELOPER_CHECKS && !defined(NDEBUG) )
@@ -681,6 +797,11 @@ void exp_gauss_exp_integral( const T peak_mean,
     {
       const T indefinite_high = right_tail_indefinite_non_norm( right_tail_start );
       const T val = norm * (indefinite_high - indefinite_low);
+
+      check_jet_for_NaN( indefinite_high );
+      check_jet_for_NaN( val );
+      check_jet_for_NaN( channels[channel] );
+
       channels[channel] += val;
       
 #if( PERFORM_DEVELOPER_CHECKS && !defined(NDEBUG) )
@@ -699,6 +820,11 @@ void exp_gauss_exp_integral( const T peak_mean,
     {
       const T indefinite_high = right_tail_indefinite_non_norm( upper_energy );
       const T val = norm * (indefinite_high - indefinite_low);
+
+      check_jet_for_NaN( indefinite_high );
+      check_jet_for_NaN( val );
+      check_jet_for_NaN( channels[channel] );
+
       channels[channel] += val;
       
 #if( PERFORM_DEVELOPER_CHECKS && !defined(NDEBUG) )
@@ -778,13 +904,25 @@ void double_sided_crystal_ball_integral( const T peak_mean,
   
   if( (peak_sigma == 0.0) || (peak_amplitude == 0.0) )
     return;
-  
-  
+
+  check_jet_for_NaN( peak_mean );
+  check_jet_for_NaN( peak_sigma );
+  check_jet_for_NaN( peak_amplitude );
+  check_jet_for_NaN( lower_alpha );
+  check_jet_for_NaN( lower_power_law );
+  check_jet_for_NaN( upper_alpha );
+  check_jet_for_NaN( upper_power_law );
+  check_jet_array_for_NaN( channels, nchannel );
+
+
   // TODO: estimate where we should actually start and stop computing values for, using `double_sided_crystal_ball_coverage_limits(...)`, but need to check if it actually saves time
   //const double zero_amp_point_nsigma = 8.0;
   const T start_energy( static_cast<double>(energies[0]) ); // peak_mean - zero_amp_point_nsigma*peak_sigma );
   const T stop_energy( static_cast<double>(energies[nchannel]) ); // peak_mean + zero_amp_point_nsigma*peak_sigma );
-  
+
+  check_jet_for_NaN( start_energy );
+  check_jet_for_NaN( stop_energy );
+
   size_t channel = 0;
   while( (channel < nchannel) && (energies[channel+1] < start_energy) )
   {
@@ -796,15 +934,25 @@ void double_sided_crystal_ball_integral( const T peak_mean,
   
   const T exp_lower_aa = exp(-0.5*lower_alpha*lower_alpha);
   const T exp_upper_aa = exp(-0.5*upper_alpha*upper_alpha);
-  
+
+  check_jet_for_NaN( exp_lower_aa );
+  check_jet_for_NaN( exp_upper_aa );
+
   auto left_tail_indefinite_non_norm = [peak_mean,peak_sigma,lower_alpha,lower_power_law, exp_lower_aa]( const T x ) -> T {
     const T t = (x - peak_mean) / peak_sigma;
     assert( (t - 1.0E-7) <= -lower_alpha );
-    
+
     const T &a = lower_alpha;
     const T &n = lower_power_law;
-    const T t_1 = 1.0 - (a / (n / (a + t)));
-    return -exp_lower_aa*(t_1 / pow(t_1, n)) / ((a / n) - a); //slightly more stable
+    const T t_1 = 1.0 - ((a + t)*a / n);
+
+    T answer = -exp_lower_aa*(t_1 / pow(t_1, n)) / ((a / n) - a); //slightly more stable
+
+    check_jet_for_NaN( t );
+    check_jet_for_NaN( t_1 );
+    check_jet_for_NaN( answer );
+
+    return answer;
   };
   
   auto right_tail_indefinite_non_norm = [peak_mean,peak_sigma,upper_alpha,upper_power_law,exp_upper_aa]( const T x ) -> T {
@@ -834,22 +982,35 @@ void double_sided_crystal_ball_integral( const T peak_mean,
   
   const T left_tail_end = peak_mean - peak_sigma*lower_alpha;
   const T right_tail_start = peak_mean + peak_sigma*upper_alpha;
-  
+
+  check_jet_for_NaN( left_tail_end );
+  check_jet_for_NaN( right_tail_start );
+  check_jet_for_NaN( norm );
+
   T lower_energy;
   
   if( energies[channel] < left_tail_end )
   {
     lower_energy = T( static_cast<double>(energies[channel]) );
     T indefinite_low = left_tail_indefinite_non_norm( lower_energy );
-    
+
+    check_jet_for_NaN( lower_energy );
+    check_jet_for_NaN( indefinite_low );
+
     while( (channel < nchannel) && (energies[channel] < left_tail_end) )
     {
       const T upper_energy( static_cast<T>(energies[channel+1]) );
-      
+
+      check_jet_for_NaN( upper_energy );
+
       if( upper_energy > left_tail_end )
       {
         const T indefinite_high = left_tail_indefinite_non_norm( left_tail_end );
         const T val = norm * (indefinite_high - indefinite_low);
+
+        check_jet_for_NaN( indefinite_high );
+        check_jet_for_NaN( val );
+
         channels[channel] += val;
         
 #if( PERFORM_DEVELOPER_CHECKS && !defined(NDEBUG) )
@@ -872,8 +1033,14 @@ void double_sided_crystal_ball_integral( const T peak_mean,
       {
         const T indefinite_high = left_tail_indefinite_non_norm( upper_energy );
         const T val = norm * (indefinite_high - indefinite_low);
+
+        check_jet_for_NaN( indefinite_high );
+        check_jet_for_NaN( val );
+
         channels[channel] += val;
-        
+
+        check_jet_for_NaN( channels[channel] );
+
 #if( PERFORM_DEVELOPER_CHECKS && !defined(NDEBUG) )
         if constexpr ( std::is_same_v<T, double> )
         {
@@ -902,17 +1069,28 @@ void double_sided_crystal_ball_integral( const T peak_mean,
   
   lower_energy = max( T(static_cast<double>(energies[channel])), left_tail_end );
   T indefinite_low = gauss_indefinite_non_norm( lower_energy );
-  
+
+  check_jet_for_NaN( lower_energy );
+  check_jet_for_NaN( indefinite_low );
+
   while( (channel < nchannel) && (static_cast<double>(energies[channel]) < right_tail_start) )
   {
     const T upper_energy( static_cast<double>(energies[channel+1]) );
-    
+
+    check_jet_for_NaN( upper_energy );
+
     if( upper_energy > right_tail_start )
     {
       const T indefinite_high = gauss_indefinite_non_norm( right_tail_start );
       const T val = norm * (indefinite_high - indefinite_low);
+
+      check_jet_for_NaN( indefinite_high );
+      check_jet_for_NaN( val );
+
       channels[channel] += val;
-      
+
+      check_jet_for_NaN( channels[channel] );
+
 #if( PERFORM_DEVELOPER_CHECKS && !defined(NDEBUG) )
         if constexpr ( std::is_same_v<T, double> )
         {
@@ -933,8 +1111,14 @@ void double_sided_crystal_ball_integral( const T peak_mean,
     {
       const T indefinite_high = gauss_indefinite_non_norm( upper_energy );
       const T val = norm * (indefinite_high - indefinite_low);
+
+      check_jet_for_NaN( indefinite_high );
+      check_jet_for_NaN( val );
+
       channels[channel] += val;
-      
+
+      check_jet_for_NaN( channels[channel] );
+
 #if( PERFORM_DEVELOPER_CHECKS && !defined(NDEBUG) )
         if constexpr ( std::is_same_v<T, double> )
         {
@@ -962,17 +1146,28 @@ void double_sided_crystal_ball_integral( const T peak_mean,
   assert( energies[channel+1] >= right_tail_start );
   lower_energy = max( T(static_cast<double>(energies[channel])), right_tail_start );
   indefinite_low = right_tail_indefinite_non_norm( lower_energy );
-  
+
+  check_jet_for_NaN( indefinite_low );
+  check_jet_for_NaN( lower_energy );
+
   while( (channel < nchannel) && (energies[channel] < stop_energy) )
   {
     const T upper_energy( static_cast<double>(energies[channel+1]) );
-    
+
+    check_jet_for_NaN( upper_energy );
+
     if( upper_energy > stop_energy )
     {
       const T indefinite_high = right_tail_indefinite_non_norm( right_tail_start );
       const T val = norm * (indefinite_high - indefinite_low);
+
+      check_jet_for_NaN( indefinite_high );
+      check_jet_for_NaN( val );
+
       channels[channel] += val;
-      
+
+      check_jet_for_NaN( channels[channel] );
+
 #if( PERFORM_DEVELOPER_CHECKS && !defined(NDEBUG) )
         if constexpr ( std::is_same_v<T, double> )
         {
@@ -993,8 +1188,14 @@ void double_sided_crystal_ball_integral( const T peak_mean,
     {
       const T indefinite_high = right_tail_indefinite_non_norm( upper_energy );
       const T val = norm * (indefinite_high - indefinite_low);
+
+      check_jet_for_NaN( indefinite_high );
+      check_jet_for_NaN( val );
+
       channels[channel] += val;
-      
+
+      check_jet_for_NaN( channels[channel] );
+
 #if( PERFORM_DEVELOPER_CHECKS && !defined(NDEBUG) )
         if constexpr ( std::is_same_v<T, double> )
         {
@@ -1014,6 +1215,8 @@ void double_sided_crystal_ball_integral( const T peak_mean,
       channel += 1;
     }
   }//while( (channel < nchannel) && (energies[channel] < stop_energy) )
+
+  check_jet_array_for_NaN( channels, nchannel );
 }//double_sided_crystal_ball_integral(...)
   
 }//namespace PeakDists
