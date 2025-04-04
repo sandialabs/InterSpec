@@ -551,6 +551,57 @@ BOOST_AUTO_TEST_CASE( CrystalBall )
 
 BOOST_AUTO_TEST_CASE( DoubleSidedCrystalBall )
 {
+  //Check on some norms
+  {
+    double mean=714.891615, sigma=3.106207, alpha_low=0.500000, n_low=2.163142, alpha_high=1.796941, n_high=1.145615;
+
+    const double ltail_norm = DSCB_left_tail_indefinite_non_norm_t( alpha_low, n_low, -alpha_low );
+
+    const double expected_ltail_norm = (n_low * exp(-0.5*alpha_low*alpha_low)) / ((n_low - 1) * alpha_low);
+
+    const double expected_rtail_norm = (n_high * exp(-0.5*alpha_high*alpha_high)) / ((n_high - 1) * alpha_high);
+
+    const double expected_rtail_norm_2 = (DSCB_right_tail_indefinite_non_norm_t( alpha_high, n_high, 1.0E32 )
+                                           - DSCB_right_tail_indefinite_non_norm_t( alpha_high, n_high, alpha_high ));
+
+    const double rtail_norm = -DSCB_right_tail_indefinite_non_norm_t( alpha_high, n_high, alpha_high );
+
+    assert( fabs( expected_rtail_norm_2 - rtail_norm ) < 1.0E-3 );
+    BOOST_CHECK_CLOSE( expected_rtail_norm_2, rtail_norm, 5.0E-1 );
+
+    const double one_div_root_two = boost::math::constants::one_div_root_two<double>(); //0.707106781186547524400
+    const double root_half_pi = boost::math::constants::root_half_pi<double>(); //1.2533141373155002512078826424
+
+    const double gaus_norm = root_half_pi * (std::erf(alpha_low*one_div_root_two) + std::erf(alpha_high*one_div_root_two));
+    const double expected_norm = 1.0 / (ltail_norm + rtail_norm + gaus_norm);
+    const double norm = DSCB_norm( alpha_low, n_low, alpha_high, n_high );
+
+    assert( fabs(norm - expected_norm) < 1.0E-6 );
+    BOOST_CHECK_CLOSE( norm, expected_norm, 5.0E-4 );
+  }
+
+  //
+  {
+    double mean=0, sigma=3.106207, alpha_low=0.500000, n_low=2.163142, alpha_high=0.500000, n_high=2.163142;
+
+    pair<double,double> limits = double_sided_crystal_ball_coverage_limits( mean, sigma, alpha_low, n_low, alpha_high, n_high, 0.000001 );
+
+    BOOST_CHECK_CLOSE( limits.first, -limits.second, 5.0E-4 );
+
+
+    alpha_low=3.0000;
+    n_low=10.0000;
+    alpha_high=3.0000;
+    n_high=10.0000;
+
+    limits = double_sided_crystal_ball_coverage_limits( mean, sigma, alpha_low, n_low, alpha_high, n_high, 0.000001 );
+    BOOST_CHECK_CLOSE( limits.first, -limits.second, 5.0E-4 );
+
+    limits = double_sided_crystal_ball_coverage_limits( mean, sigma, alpha_low, n_low, alpha_high, n_high, 0.001 );
+    BOOST_CHECK_CLOSE( limits.first, -limits.second, 5.0E-4 );
+  }
+
+
   // Check DoubleSidedCrystalBall has unit area
   {
     double mean = 964.4019;
