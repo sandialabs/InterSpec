@@ -44,7 +44,8 @@
 #include "rapidxml/rapidxml_print.hpp"
 
 #include <boost/asio/post.hpp>
-#include "boost/asio/thread_pool.hpp"
+#include <boost/asio/thread_pool.hpp>
+#include <boost/math/distributions/normal.hpp>
 
 #include "Wt/WDateTime"
 #include "Wt/WApplication"
@@ -105,12 +106,11 @@ using namespace XmlUtils;
 // 20250324 HACK to test fitting peak skew, or use a hard-coded preset value
 //#define PEAK_SKEW_HACK 0 //No hacking
 //#define PEAK_SKEW_HACK 1  //Fix the peak skew, and dont fit it
-//#define PEAK_SKEW_HACK 2  //First fit without peak skew, then fit with peak skew, starting with hard-coded value for DSCB
-#define PEAK_SKEW_HACK 3 //Use ceres to solve the peak skew
+#define PEAK_SKEW_HACK 2  //First fit without peak skew, then fit with peak skew, starting with hard-coded value for DSCB
 
 // Instead of using `fit_continuum(...)` to fit the continua paramaters, we can try to
 //  use the linear solver that is part of Ceres
-#define USE_CERES_TO_FIT_CONTINUA_COEFS 1
+#define USE_CERES_TO_FIT_CONTINUA_COEFS 0
 
 namespace
 {
@@ -859,9 +859,6 @@ std::shared_ptr<const DetectorPeakResponse> get_fwhm_coefficients( const RelActC
 
   return new_drf;
 };//get_fwhm_coefficients(...)
-          
-
-
 
 
 
@@ -3222,13 +3219,14 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     
     // We cant currently use auto-diff if we are fitting energy calibration, or any nuclide ages, so lets check for that.
     //  TODO: write our own CostFunction class that does numeric differentiation for the energy cal and ages, and auto-diff for the rest
-    bool use_auto_diff = !options.fit_energy_cal;
-    for( const auto &rel_eff_curve : cost_functor->m_options.rel_eff_curves )
-    {
-      for( const auto &nuc : rel_eff_curve.nuclides )
-        use_auto_diff = (use_auto_diff && !nuc.fit_age);
-    }
-    
+    bool use_auto_diff = true;
+    //bool use_auto_diff = !options.fit_energy_cal;
+    //for( const auto &rel_eff_curve : cost_functor->m_options.rel_eff_curves )
+    //{
+    //  for( const auto &nuc : rel_eff_curve.nuclides )
+    //    use_auto_diff = (use_auto_diff && !nuc.fit_age);
+    //}
+
     // TODO: auto-diff also looks to be failing for skew peaks, so we will turn it off until we fix it
 #warning "Auto-diff for skew peaks is failing - should fix"
 #warning "Not skipping auto-diff for skew peaks!!!"
@@ -3493,7 +3491,8 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
       }
     }
     cout << "Starting with parameter volume of " << par_area << " from " << num_fit_par << " paramaters." << endl;
-    ceres_options.initial_trust_region_radius = std::max( 4.0*par_area, 10.0 );
+    // The below is pretty arbitrary - and only kinda sort optimized on one problem
+    ceres_options.initial_trust_region_radius = std::min( std::max( par_area, 10.0 ), 10.0*num_fit_par );
 
     ceres_options.max_trust_region_radius = 1e16;
     
@@ -3507,7 +3506,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     
     ceres_options.minimizer_progress_to_stdout = true; //true;
     ceres_options.logging_type = ceres::PER_MINIMIZER_ITERATION;
-    ceres_options.max_num_iterations = 3500;
+    ceres_options.max_num_iterations = 50000;
 #ifndef NDEBUG
     ceres_options.max_solver_time_in_seconds = 300.0;
 #else
@@ -5323,6 +5322,110 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
 
       check_jet_array_for_NaN( channels, nchannel );
     }//void gauss_integral( const float *energies, double *channels, const size_t nchannel ) const
+
+
+    /** Gives lower and upper energies that contain `1.0 - missing_frac` of the peak,
+
+     For skewed distributions, particularly Crystal Bal, the energy range given by the desired
+     peak coverage can get huge, so you can also specify the max number of FWHM to use, which will
+     truncate the range in these cases of very large skew.
+
+     @param missing_frac The fraction of the peaks area you are okay not including; half this
+            amount will be missing from both lower and upper distribution tails.
+            A typical value might be like 1.0E-4 to get 99.99% of the peak.
+     @param max_num_fwhm If greater than zero, the energy range will be truncated to be this
+            amount of FWHMs from the mean, if the coverage would have the energy range go really
+            far out.
+     */
+    pair<double,double> peak_coverage_limits( const double missing_frac, const double max_num_fwhm )
+    {
+      double skew_pars[4] = { 0.0 };
+
+      double mean, sigma;
+      if constexpr ( !std::is_same_v<T, double> )
+      {
+        mean = m_mean.a;
+        sigma = m_sigma.a;
+      }else
+      {
+        mean = m_mean;
+        sigma = m_sigma;
+      }
+
+      const size_t nskew_par = PeakDef::num_skew_parameters(m_skew_type);
+      for( size_t i = 0; i < nskew_par; ++i )
+      {
+        if constexpr ( !std::is_same_v<T, double> )
+          skew_pars[i] = m_skew_pars[i].a;
+        else
+          skew_pars[i] = m_skew_pars[i];
+      }
+
+
+      pair<double,double> vis_limits;
+
+      switch( m_skew_type )
+      {
+        case PeakDef::SkewType::NoSkew:
+        {
+          const boost::math::normal_distribution gaus_dist( 1.0 );
+          vis_limits.first = mean +  sigma*boost::math::quantile( gaus_dist, 0.5*missing_frac );
+          vis_limits.second = mean + sigma*boost::math::quantile( gaus_dist, 1.0 - 0.5*missing_frac );
+          break;
+        }
+
+        case PeakDef::SkewType::Bortel:
+          vis_limits = PeakDists::bortel_coverage_limits( mean, sigma, skew_pars[0], missing_frac );
+          break;
+
+        case PeakDef::SkewType::GaussExp:
+          vis_limits = PeakDists::gauss_exp_coverage_limits( mean, sigma, skew_pars[0], missing_frac );
+          break;
+
+        case PeakDef::SkewType::CrystalBall:
+          try
+        {
+          vis_limits = PeakDists::crystal_ball_coverage_limits( mean, sigma, skew_pars[0], skew_pars[1], missing_frac );
+        }catch( std::exception & )
+        {
+          // CB dist can have really long tail, causing the coverage limits to fail, because
+          //  of unreasonable values - in this case we'll just go way out
+          vis_limits.first = mean - 15.0*sigma;
+
+          const boost::math::normal_distribution gaus_dist( 1.0 );
+          vis_limits.second = mean + sigma*boost::math::quantile( gaus_dist, 1.0 - missing_frac );
+        }
+          break;
+
+        case PeakDef::SkewType::ExpGaussExp:
+          vis_limits = PeakDists::exp_gauss_exp_coverage_limits( mean, sigma, skew_pars[0],
+                                                                skew_pars[1], missing_frac );
+          break;
+
+        case PeakDef::SkewType::DoubleSidedCrystalBall:
+          try
+        {
+          vis_limits = PeakDists::double_sided_crystal_ball_coverage_limits( mean, sigma, skew_pars[0],
+                                                                            skew_pars[1], skew_pars[2], skew_pars[3], missing_frac );
+        }catch( std::exception & )
+        {
+          // CB dist can have really long tail, causing the coverage limits to fail, because
+          //  of unreasonable values - in this case we'll just go way out
+          vis_limits.first  = mean - 15.0*sigma;
+          vis_limits.second = mean + 15.0*sigma;
+        }//try / catch
+          break;
+      }//switch( m_skew_type )
+
+      if( max_num_fwhm > 0.0 )
+      {
+        vis_limits.first = std::max( vis_limits.first, mean - 2.35482*max_num_fwhm*sigma );
+        vis_limits.second = std::min( vis_limits.second, mean + 2.35482*max_num_fwhm*sigma );
+      }//if( max_num_fwhm > 0.0 )
+
+      return vis_limits;
+    }//pair<double,double> peak_coverage_limits( const double missing_frac = 1.0E-6 )
+
   };//struct PeakDefImp
   
   template<typename T>
@@ -5481,7 +5584,94 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     
     const int num_polynomial_terms = static_cast<int>( PeakContinuum::num_parameters( range.continuum_type ) );
     const bool is_step_continuum = PeakContinuum::is_step_continuum( range.continuum_type );
-    
+
+
+    // Throws lambda if any peak quantities are NaN or Inf
+    auto check_peak_reasonable = [this,&x]( const PeakDefImp<T> &peak, const double gamma_energy ){
+      const T &peak_sigma = peak.m_sigma;
+
+      double fwhm;
+      if constexpr ( !std::is_same_v<T, double> )
+        fwhm = 2.35482*peak_sigma.a;
+      else
+        fwhm = 2.35482 * peak_sigma;
+
+      if( isinf(peak_sigma) || isnan(peak_sigma) )
+      {
+        stringstream msg;
+        msg << "peaks_for_energy_range_imp: " << fwhm << " FWHM for "
+        << std::setprecision(2) << gamma_energy << " keV, from pars={";
+        const size_t num_drf_par = num_parameters(m_options.fwhm_form);
+        for( size_t i = 0; i < num_drf_par; ++i )
+        {
+          double par_val;
+          if constexpr ( !std::is_same_v<T, double> )
+            par_val = x[2 + i].a;
+          else
+            par_val = x[2 + i];
+
+          msg << (i ? ", " : "") << par_val;
+        }
+        msg << "}";
+
+        throw runtime_error( msg.str() );
+      }//if( IsInf(peak_sigma) || IsNan(peak_sigma) )
+
+      // Do a sanity check to make sure peak isnt getting too narrow
+      const double nchannel = m_energy_cal->channel_for_energy(gamma_energy + 0.5*fwhm)
+                                       - m_energy_cal->channel_for_energy(gamma_energy - 0.5*fwhm);
+      if( nchannel < 1.5 )
+        throw runtime_error( "peaks_for_energy_range_imp: for peak at " + std::to_string(gamma_energy)
+                            + " keV, FWHM=" + std::to_string(fwhm) + " which is only "
+                            + std::to_string(nchannel) + "channels - too small." );
+
+      if( fwhm < 0.001 )
+        throw runtime_error( "peaks_for_energy_range_imp: for peak at " + std::to_string(gamma_energy)
+                            + " keV, FWHM=" + std::to_string(fwhm) + " which is too small." );
+
+
+      const T &peak_amplitude = peak.m_amplitude;
+      if( isinf(peak_amplitude) || isnan(peak_amplitude) )
+        throw runtime_error( "peaks_for_energy_range_imp: inf or NaN peak amplitude for "
+                            + std::to_string(gamma_energy) + " keV.");
+
+      const T &peak_mean = peak.m_mean;
+      if( isinf(peak_mean) || isnan(peak_mean) )
+        throw runtime_error( "peaks_for_energy_range_imp: inf or NaN peak mean for "
+                            + std::to_string(gamma_energy) + " keV.");
+
+    };//auto check_peak_reasonable
+
+    // We will accept peaks outdide the ROI range, if they will still effect the ROI, so here we will define
+    //  a peak for the lower and upper edges of the ROI, and use thier extent to approximate peaks
+    //  above and below the ROI (in principle we should search around, but its not too important).
+    //
+    //  TODO: We are including peaks such that 1E-4 of them make it into the ROI - this is totally arbitrary, and instead we should take into account the peak area.
+    PeakDefImp<T> lower_range_peak, upper_range_peak;
+    lower_range_peak.m_mean = T(range.lower_energy);
+    lower_range_peak.m_sigma = fwhm( T(range.lower_energy), x ) / 2.35482;
+    lower_range_peak.m_amplitude = T(1.0);
+    set_peak_skew( lower_range_peak, x );
+
+    upper_range_peak.m_mean = T(range.upper_energy);
+    upper_range_peak.m_sigma = fwhm( T(range.upper_energy), x ) / 2.35482;
+    upper_range_peak.m_amplitude = T(1.0);
+    set_peak_skew( upper_range_peak, x );
+
+    check_peak_reasonable( lower_range_peak, range.lower_energy );
+    check_peak_reasonable( upper_range_peak, range.upper_energy );
+
+    const pair<double,double> lower_peak_limits = lower_range_peak.peak_coverage_limits( 1.0E-4, 20.0 );
+    const pair<double,double> upper_peak_limits = upper_range_peak.peak_coverage_limits( 1.0E-4, 20.0 );
+
+    assert( range.lower_energy >= lower_peak_limits.first );
+    assert( range.upper_energy <= upper_peak_limits.second );
+
+    // TODO: for Crystal Ball dists, they can have really far-reaching tails - perhaps we should limit the max extent of peaks to save CPU, or whatever
+    const double lower_mean = lower_peak_limits.first;
+    const double upper_mean = upper_peak_limits.second;
+
+
     size_t num_free_peak_pars = 0;
     set<const SandiaDecay::Nuclide *> nuclides_used;
     
@@ -5573,7 +5763,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
             continue;
           
           // Filter the energy range based on true energies (i.e., not adjusted energies)
-          if( (gamma.energy < range.lower_energy) || (gamma.energy > range.upper_energy) )
+          if( (energy < lower_mean) || (energy > upper_mean) )
             continue;
           
           nuclides_used.insert( nucinfo.nuclide );
@@ -5583,46 +5773,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
           if( isinf(rel_eff) || isnan(rel_eff) )
             throw runtime_error( "peaks_for_energy_range_imp: inf or NaN rel. eff for "
                                 + std::to_string(gamma.energy) + " keV."  );
-          
-          const T peak_fwhm = fwhm( T(gamma.energy), x );
-          double fwhm;
-          if constexpr ( !std::is_same_v<T, double> )
-            fwhm = peak_fwhm.a;
-          else
-            fwhm = peak_fwhm;
-          
-          if( isinf(peak_fwhm) || isnan(peak_fwhm) )
-          {
-            stringstream msg;
-            msg << "peaks_for_energy_range_imp: " << fwhm << " FWHM for "
-            << std::setprecision(2) << gamma.energy << " keV, from pars={";
-            const size_t num_drf_par = num_parameters(m_options.fwhm_form);
-            for( size_t i = 0; i < num_drf_par; ++i )
-            {
-              double par_val;
-              if constexpr ( !std::is_same_v<T, double> )
-                par_val = x[2 + i].a;
-              else
-                par_val = x[2 + i];
-              
-              msg << (i ? ", " : "") << par_val;
-            }
-            msg << "}";
-            
-            throw runtime_error( msg.str() );
-          }//if( IsInf(peak_fwhm) || IsNan(peak_fwhm) )
-          
-          // Do a sanity check to make sure peak isnt getting too narrow
-          const double nchannel = m_energy_cal->channel_for_energy(gamma.energy + 0.5*fwhm)
-                                           - m_energy_cal->channel_for_energy(gamma.energy - 0.5*fwhm);
-          if( nchannel < 1.5 )
-            throw runtime_error( "peaks_for_energy_range_imp: for peak at " + std::to_string(gamma.energy)
-                                + " keV, FWHM=" + std::to_string(fwhm) + " which is only "
-                                + std::to_string(nchannel) + "channels - too small." );
-          
-          if( peak_fwhm < 0.001 )
-            throw runtime_error( "peaks_for_energy_range_imp: for peak at " + std::to_string(gamma.energy)
-                                + " keV, FWHM=" + std::to_string(fwhm) + " which is too small." );
+
           
           T br_uncert_adj(1.0);
           if( (m_options.additional_br_uncert > 0.0) && !m_peak_ranges_with_uncert.empty() )
@@ -5646,26 +5797,12 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
             }//for( find range this gamma belongs to, if any )
           }//if( m_options.additional_br_uncert > 0.0 && !m_peak_ranges_with_uncert.empty() )
           
-          
-          const T peak_amplitude = rel_act * static_cast<double>(m_live_time) * rel_eff * yield * br_uncert_adj;
-          if( isinf(peak_amplitude) || isnan(peak_amplitude) )
-            throw runtime_error( "peaks_for_energy_range_imp: inf or NaN peak amplitude for "
-                                + std::to_string(gamma.energy) + " keV.");
-          
+
           const T peak_mean = apply_energy_cal_adjustment( gamma.energy, x );
-          if( isinf(peak_mean) || isnan(peak_mean) )
-            throw runtime_error( "peaks_for_energy_range_imp: inf or NaN peak mean for "
-                                + std::to_string(gamma.energy) + " keV.");
-          
-          if( peak_amplitude < static_cast<double>( std::numeric_limits<float>::min() ) )
-          {
-            //cout << "peaks_for_energy_range_imp: Peak at " << gamma.energy << " keV for " << nucinfo.nuclide->symbol
-            //<< " has a mean of " << peak_mean << " keV, FWHM=" << peak_fwhm << ", RelEff=" << rel_eff
-            //<< ", and AMP=" << peak_amplitude << ", rel_act=" << rel_act << ", yield="
-            //<< yield << ", m_live_time=" << m_live_time << endl;
-            continue;
-          }
-          
+          const T peak_amplitude = rel_act * static_cast<double>(m_live_time) * rel_eff * yield * br_uncert_adj;
+          const T peak_fwhm = fwhm( T(gamma.energy), x );
+
+
           PeakDefImp<T> peak;
           peak.m_mean = peak_mean;
           peak.m_sigma = peak_fwhm/2.35482;
@@ -5680,8 +5817,13 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
           
           set_peak_skew( peak, x );
           peak.m_rel_eff_index = rel_eff_index;
-          
-          
+
+          check_peak_reasonable( peak, gamma.energy );
+
+
+          if( peak_amplitude < static_cast<double>( std::numeric_limits<float>::min() ) )
+            continue;
+
           peaks.push_back( std::move(peak) );
         }//for( const SandiaDecay::EnergyRatePair &gamma : gammas )
       }//for( const NucInputGamma &nucinfo : m_nuclides )
@@ -5692,8 +5834,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     for( size_t index = 0; index < m_options.floating_peaks.size(); ++index )
     {
       const RelActCalcAuto::FloatingPeak &peak = m_options.floating_peaks[index];
-      
-      if( (peak.energy < range.lower_energy) || (peak.energy > range.upper_energy) )
+      if( (peak.energy < lower_mean) || (peak.energy > upper_mean) )
         continue;
       
       const size_t amp_index = free_peaks_start_index + 2*index + 0;
