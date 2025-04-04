@@ -108,10 +108,6 @@ using namespace XmlUtils;
 //#define PEAK_SKEW_HACK 1  //Fix the peak skew, and dont fit it
 #define PEAK_SKEW_HACK 2  //First fit without peak skew, then fit with peak skew, starting with hard-coded value for DSCB
 
-// Instead of using `fit_continuum(...)` to fit the continua paramaters, we can try to
-//  use the linear solver that is part of Ceres
-#define USE_CERES_TO_FIT_CONTINUA_COEFS 0
-
 namespace
 {
 const double ns_decay_act_mult = SandiaDecay::MBq;
@@ -1352,10 +1348,6 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
   bool m_skip_skew; // 20250324 HACK to test fitting peak skew
 #endif
 
-#if( USE_CERES_TO_FIT_CONTINUA_COEFS )
-  bool m_use_ceres_for_peak_continua;
-#endif
-
   std::vector<std::pair<double,double>> m_peak_ranges_with_uncert;
   static constexpr double sm_peak_range_uncert_par_offset = 5.0;
   
@@ -1454,9 +1446,6 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
   m_skew_has_energy_dependance( false ),
 #if( PEAK_SKEW_HACK == 2 )
   m_skip_skew( false ), // 20250324 HACK to test fitting peak skew
-#endif
-#if( USE_CERES_TO_FIT_CONTINUA_COEFS )
-  m_use_ceres_for_peak_continua( false ),
 #endif
   m_peak_ranges_with_uncert{},
   m_aged_gammas_cache_mutex{},
@@ -1776,20 +1765,6 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     
     return num_pars;
   }//number_parameters()
-
-#if( USE_CERES_TO_FIT_CONTINUA_COEFS )
-  size_t number_continua_parameters() const
-  {
-    size_t answer = 0;
-    if( !m_use_ceres_for_peak_continua )
-      return answer;
-
-    for( const auto &roi : m_energy_ranges )
-      answer += PeakContinuum::num_parameters( roi.continuum_type );
-
-    return answer;
-  }
-#endif
 
 
   size_t number_residuals() const
@@ -3234,44 +3209,6 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     //use_auto_diff = (use_auto_diff && (options.skew_type == PeakDef::SkewType::NoSkew));
 
 
-#if( USE_CERES_TO_FIT_CONTINUA_COEFS )
-    vector<double> continua_par;
-    size_t num_continua_par = 0;
-    if( use_auto_diff )
-    {
-      const bool use_ceres_for_peak_continua = (options.skew_type != PeakDef::SkewType::NoSkew);
-      if( use_ceres_for_peak_continua )
-      {
-        for( const RoiRangeChannels &erange : cost_functor->m_energy_ranges )
-        {
-          const size_t npar = PeakContinuum::num_parameters( erange.continuum_type );
-          num_continua_par += npar;
-
-          try
-          {
-            const PeaksForEnergyRangeImp<double> initial_peaks
-                    = cost_functor->peaks_for_energy_range_imp( erange, parameters, {}, true );
-
-            const PeakContinuumImp<double> &continuum = initial_peaks.continuum;
-            assert( continuum.m_type == erange.continuum_type );
-            assert( fabs(continuum.m_reference_energy - erange.lower_energy) < 5.0 );
-            continua_par.insert( end(continua_par), continuum.m_values.data(), continuum.m_values.data() + npar );
-          }catch( std::exception & )
-          {
-            solution.m_warnings.push_back( "An initial estimation of continua paramaters failed." );
-            assert( 0 );
-            continua_par.resize( num_continua_par, 1.0 ); //Or maybe there is a better initial value?
-          }//try / catch
-        }//for( const RoiRangeChannels &erange : cost_functor->m_energy_ranges )
-      }//if( use_ceres_for_peak_continua )
-
-      // Dont set `m_use_ceres_for_peak_continua` until after computing intial continua, or else
-      // `peaks_for_energy_range_imp(...)` will throw.
-      cost_functor->m_use_ceres_for_peak_continua = use_ceres_for_peak_continua;
-    }//if( use_auto_diff )
-
-#endif
-
 #if( PERFORM_DEVELOPER_CHECKS )
     //Test auto diff vs numerical diff
     auto test_gradients = [constant_parameters,&cost_functor]( RelActAutoCostFcn *fcn, const vector<double> &x ){
@@ -3352,15 +3289,6 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
       dyn_auto_diff_cost_function->SetNumResiduals( static_cast<int>(cost_functor->number_residuals()) );
       dyn_auto_diff_cost_function->AddParameterBlock( static_cast<int>(cost_functor->number_parameters()) );
 
-#if( USE_CERES_TO_FIT_CONTINUA_COEFS )
-      if( cost_functor->m_use_ceres_for_peak_continua )
-      {
-        assert( !continua_par.empty() );
-        assert( continua_par.size() == cost_functor->number_continua_parameters() );
-        dyn_auto_diff_cost_function->AddParameterBlock( static_cast<int>(cost_functor->number_continua_parameters()) );
-      }//if( cost_functor->m_use_ceres_for_peak_continua )
-#endif
-
       cost_function = dyn_auto_diff_cost_function;
     }else
     {
@@ -3371,15 +3299,6 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
                                                 ceres::DO_NOT_TAKE_OWNERSHIP, num_diff_options );
       dyn_num_diff_cost_function->SetNumResiduals( static_cast<int>(cost_functor->number_residuals()) );
       dyn_num_diff_cost_function->AddParameterBlock( static_cast<int>(cost_functor->number_parameters()) );
-
-#if( USE_CERES_TO_FIT_CONTINUA_COEFS )
-      if( cost_functor->m_use_ceres_for_peak_continua )
-      {
-        assert( !continua_par.empty() );
-        assert( continua_par.size() == cost_functor->number_continua_parameters() );
-        dyn_num_diff_cost_function->AddParameterBlock( static_cast<int>(cost_functor->number_continua_parameters()) );
-      }//if( cost_functor->m_use_ceres_for_peak_continua )
-#endif
 
       cost_function = dyn_num_diff_cost_function;
     }//if( use_auto_diff ) / else
@@ -3398,23 +3317,8 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     //lossfcn = new ceres::CauchyLoss(15.0); //The Cauchy loss function is less sensitive to large residuals than the Huber loss.
     //lossfcn = new ceres::SoftLOneLoss(5.0);
     //lossfcn = new ceres::TukeyLoss(10.0); //Quadratic for small residuals and zero for large residuals - not good if initial guess isnt great
-#if( USE_CERES_TO_FIT_CONTINUA_COEFS )
-      if( cost_functor->m_use_ceres_for_peak_continua )
-      {
-        problem.AddResidualBlock( cost_function, lossfcn, pars, continua_par.data() );
-      }else
-      {
-        problem.AddResidualBlock( cost_function, lossfcn, pars );
-      }
-#else
     problem.AddResidualBlock( cost_function, lossfcn, pars );
-#endif
     problem.AddParameterBlock( pars, static_cast<int>(num_pars) );
-
-#if( USE_CERES_TO_FIT_CONTINUA_COEFS )
-    if( cost_functor->m_use_ceres_for_peak_continua )
-      problem.AddParameterBlock( continua_par.data(), static_cast<int>(continua_par.size()) );
-#endif
 
     if( !constant_parameters.empty() )
     {
@@ -3525,19 +3429,6 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     ceres_options.parameter_tolerance = 1e-11; //Default value is 1e-8.  Using 1e-11 gets the cost change down to 0.1 in Chi2, for an example Physical Model
     
     // TODO: there are a ton of ceres::Solver::Options that might be useful for us to set
-
-
-#if( USE_CERES_TO_FIT_CONTINUA_COEFS )
-      if( cost_functor->m_use_ceres_for_peak_continua )
-      {
-        // Set up the parameter block ordering
-        ceres::ParameterBlockOrdering* ordering = new ceres::ParameterBlockOrdering;
-        ordering->AddElementToGroup(continua_par.data(), 1); // Non-linear parameters
-        ordering->AddElementToGroup(pars, 0); // Linear parameters
-        ceres_options.linear_solver_ordering.reset(ordering);
-        ceres_options.linear_solver_type = ceres::DENSE_SCHUR;
-      }
-#endif
 
     std::unique_ptr<RelActAutoCostFcn::CheckCeresTerminateCallback> terminate_callback;
     if( cancel_calc )
@@ -3773,11 +3664,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     vector<PeakDef> fit_peaks;
     for( const RoiRangeChannels &range : cost_functor->m_energy_ranges )
     {
-#if( USE_CERES_TO_FIT_CONTINUA_COEFS )
-      PeaksForEnergyRange these_peaks = cost_functor->peaks_for_energy_range( range, parameters, continua_par );
-#else
       PeaksForEnergyRange these_peaks = cost_functor->peaks_for_energy_range( range, parameters );
-#endif
 
       fit_peaks.insert( end(fit_peaks), begin(these_peaks.peaks), end(these_peaks.peaks) );
     }
@@ -4136,11 +4023,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
      */
     
     vector<double> residuals( cost_functor->number_residuals(), 0.0 );
-#if( USE_CERES_TO_FIT_CONTINUA_COEFS )
-    cost_functor->eval( parameters, continua_par, residuals.data() );
-#else
     cost_functor->eval( parameters, residuals.data() );
-#endif
     solution.m_chi2 = 0.0;
     for( const double v : residuals )
       solution.m_chi2 += v*v;
@@ -5437,104 +5320,6 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     T m_upper_energy = T(0.0);
     T m_reference_energy = T(0.0);
     std::array<T,5> m_values = { T(0.0), T(0.0), T(0.0), T(0.0), T(0.0) };
-
-    /** Integrates for the entire ROI at once - you must pass in entire ROI */
-    void offset_integral( const float *energies, const float *data, const size_t nchannel, T *channels ) const
-    {
-      // This logic mirrors that of PeakContinuum::offset_integral(...), and code
-      // If you change it in one place - change it in here, below, in offset_integral, and in fit_amp_and_offset.
-
-      double roi_data_sum = 0.0, cumulative_data = 0.0;
-      switch( m_type )
-      {
-        case PeakContinuum::NoOffset:  case PeakContinuum::Constant:
-        case PeakContinuum::Linear:    case PeakContinuum::Quadratic:
-        case PeakContinuum::Cubic:     case PeakContinuum::External:
-        break;
-
-        case PeakContinuum::FlatStep:
-        case PeakContinuum::LinearStep:
-        case PeakContinuum::BiLinearStep:
-          for( size_t channel = 0; channel < nchannel; ++channel )
-            roi_data_sum += data[channel];
-          assert( roi_data_sum > 0.0 );
-          //TODO: I guess we should protect against roi_data_sum==0 ?
-        break;
-      }//switch( m_type )
-
-
-
-      for( size_t channel = 0; channel < nchannel; ++channel )
-      {
-        check_jet_for_NaN(channels[channel]);
-
-        const T x0_rel = static_cast<double>(energies[channel]) - m_reference_energy;
-        const T x1_rel = static_cast<double>(energies[channel + 1]) - m_reference_energy;
-
-        switch( m_type )
-        {
-          case PeakContinuum::OffsetType::NoOffset:
-            break;
-
-          case PeakContinuum::OffsetType::Cubic:
-            channels[channel] += 0.25*m_values[3]*(x1_rel*x1_rel*x1_rel*x1_rel - x0_rel*x0_rel*x0_rel*x0_rel);
-            //fallthrough intentional
-
-          case PeakContinuum::OffsetType::Quadratic:
-            channels[channel] += 0.333333333333333*m_values[2]*(x1_rel*x1_rel*x1_rel - x0_rel*x0_rel*x0_rel);
-            //fallthrough intentional
-
-          case PeakContinuum::OffsetType::Linear:
-            channels[channel] += 0.5*m_values[1]*(x1_rel*x1_rel - x0_rel*x0_rel);
-            //fallthrough intentional
-
-          case PeakContinuum::OffsetType::Constant:
-            channels[channel] += m_values[0]*(x1_rel - x0_rel);
-            break;
-
-
-          case PeakContinuum::OffsetType::FlatStep:
-          case PeakContinuum::OffsetType::LinearStep:
-          {
-            cumulative_data += data[channel];
-
-            const double frac_data = cumulative_data / roi_data_sum;
-
-            const T offset = m_values[0]*(x1_rel - x0_rel);
-            const T linear = ((m_type == PeakContinuum::OffsetType::FlatStep) ? T(0.0) :  0.5*m_values[1]*(x1_rel*x1_rel - x0_rel*x0_rel));
-            const size_t step_index = ((m_type == PeakContinuum::OffsetType::FlatStep) ? 1 : 2);
-            const T step_contribution = m_values[step_index] * frac_data * (x1_rel - x0_rel);
-
-            const T contrib = offset + linear + step_contribution;
-
-            channels[channel] += max( contrib, T(0.0) );
-          }//case FlatStep and LinearStep
-
-
-          case PeakContinuum::OffsetType::BiLinearStep:
-          {
-            assert( m_values.size() == 4 );
-
-            cumulative_data += data[channel];
-            const double frac_data = cumulative_data / roi_data_sum;
-
-            const T left_poly = m_values[0]*(x1_rel - x0_rel) + 0.5*m_values[1]*(x1_rel*x1_rel - x0_rel*x0_rel);
-            const T right_poly = m_values[2]*(x1_rel - x0_rel) + 0.5*m_values[3]*(x1_rel*x1_rel - x0_rel*x0_rel);
-
-            const T contrib = ((1.0 - frac_data) * left_poly) + (frac_data * right_poly);
-
-            channels[channel] += contrib;
-          }//case BiLinearStep:
-
-          case PeakContinuum::OffsetType::External:
-            assert( 0 );
-            throw std::logic_error( "PeakContinuumImp::offset_integral(...): shouldnt have gotten OffsetType::External" );
-            break;
-        };//enum OffsetType
-
-        check_jet_for_NaN(channels[channel]);
-      }//for( size_t channel = 0; channel < nchannel; ++channel )
-    }//double offset_integral( const double x0, const double x1 ) const
   };//struct PeakContinuumImp
   
   
@@ -5557,9 +5342,6 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
   template<typename T>
   PeaksForEnergyRangeImp<T> peaks_for_energy_range_imp( const RoiRangeChannels &range,
                                                        const std::vector<T> &x,
-#if( USE_CERES_TO_FIT_CONTINUA_COEFS )
-                                                       const std::vector<T> &continua_pars,
-#endif
                                                        const bool multithread ) const
   {
     const size_t num_channels = range.num_channels;
@@ -5922,39 +5704,11 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     peak_counts.resize( num_channels, T(0.0) );
     T *continuum_coeffs = answer.continuum.m_values.data();
 
-#if( USE_CERES_TO_FIT_CONTINUA_COEFS )
-    if( m_use_ceres_for_peak_continua )
-    {
-      assert( continua_pars.size() == PeakContinuum::num_parameters( range.continuum_type ) );
-
-      for( size_t par_num = 0; par_num < continua_pars.size(); ++par_num )
-        continuum_coeffs[par_num] = continua_pars[par_num];
-
-      // Add peak components to peak_counts
-      for( const PeakDefImp<T> &p : peaks )
-      {
-        p.gauss_integral( energies, peak_counts.data(), num_channels );
-
-        check_jet_array_for_NaN( peak_counts.data(), num_channels );
-      }
-
-      // Add continuum component to peak_counts
-      answer.continuum.offset_integral( energies, data, num_channels, peak_counts.data() );
-    }else
-    {
-      vector<PeakDefImp<T>> dummy;
-      RelActCalcAuto::fit_continuum( energies, data, num_channels, num_polynomial_terms,
-                                    is_step_continuum, ref_energy, peaks, multithread,
-                                    continuum_coeffs,
-                                    peak_counts.data() );
-    }//if( m_use_ceres_for_peak_continua ) / else
-#else
     vector<PeakDefImp<T>> dummy;
     RelActCalcAuto::fit_continuum( energies, data, num_channels, num_polynomial_terms,
                                   is_step_continuum, ref_energy, peaks, multithread,
                                   continuum_coeffs,
                                   peak_counts.data() );
-#endif
 
     /*
 #ifndef NDEBUG
@@ -6050,17 +5804,9 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     Currently this function is only used to get the final peaks fit, so not hyper optimized.
    */
   PeaksForEnergyRange peaks_for_energy_range( const RoiRangeChannels &range,
-                                             const std::vector<double> &x
-#if( USE_CERES_TO_FIT_CONTINUA_COEFS )
-                                             , const std::vector<double> &continua_pars
-#endif
-                                             ) const
+                                             const std::vector<double> &x ) const
   {
-#if( USE_CERES_TO_FIT_CONTINUA_COEFS )
-    const PeaksForEnergyRangeImp<double> computed_peaks = peaks_for_energy_range_imp( range, x, continua_pars, true );
-#else
     const PeaksForEnergyRangeImp<double> computed_peaks = peaks_for_energy_range_imp( range, x, true );
-#endif
 
     PeaksForEnergyRange answer;
     answer.first_channel = computed_peaks.first_channel;
@@ -6130,11 +5876,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
   
   
   template<typename T>
-  void eval( const std::vector<T> &x,
-#if( USE_CERES_TO_FIT_CONTINUA_COEFS )
-            const std::vector<T> &continua_pars,
-#endif
-            T *residuals ) const
+  void eval( const std::vector<T> &x, T *residuals ) const
   {
     m_ncalls += 1;
     
@@ -6148,10 +5890,6 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     assert( x.size() == number_parameters() );
     assert( residuals );
     assert( !m_energy_ranges.empty() );
-
-#if( USE_CERES_TO_FIT_CONTINUA_COEFS )
-    assert( continua_pars.size() == number_continua_parameters() );
-#endif
 
     const auto do_cancel = [this,residuals](){
       const size_t n = number_residuals();
@@ -6197,18 +5935,10 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     for( size_t i = 0; i < num_energy_ranges; ++i )
     {
       boost::asio::post( m_pool,
-                        [i,&peaks_in_ranges_imp,this,&x,multhread_each_roi,&cv,&cv_mutex,&tasks_completed,&exception_msg
-#if( USE_CERES_TO_FIT_CONTINUA_COEFS )
-                         , &continua_pars
-#endif
-                        ](){
+                        [i,&peaks_in_ranges_imp,this,&x,multhread_each_roi,&cv,&cv_mutex,&tasks_completed,&exception_msg](){
         try
         {
-#if( USE_CERES_TO_FIT_CONTINUA_COEFS )
-          peaks_in_ranges_imp[i] = peaks_for_energy_range_imp( m_energy_ranges[i], x, continua_pars, multhread_each_roi );
-#else
           peaks_in_ranges_imp[i] = peaks_for_energy_range_imp( m_energy_ranges[i], x, multhread_each_roi );
-#endif
         }catch( std::exception &e )
         {
           std::lock_guard<std::mutex> lock(cv_mutex);
@@ -6381,12 +6111,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     vector<double> residuals( number_residuals(), 0.0 );
     try
     {
-#if( USE_CERES_TO_FIT_CONTINUA_COEFS )
-      assert( 0 );
-      throw logic_error( "RelActAutoCostFcn::operator() no implemented for USE_CERES_TO_FIT_CONTINUA_COEFS" );
-#else
       eval( x, residuals.data() );
-#endif
     }catch( std::exception &e )
     {
       cerr << "RelActAutoCostFcn::operator() caught: " << e.what() << endl;
@@ -6418,26 +6143,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
       const size_t num_pars = number_parameters();
       vector<T> pars( parameters[0], parameters[0] + num_pars );
 
-#if( USE_CERES_TO_FIT_CONTINUA_COEFS )
-      vector<T> cont_pars;
-      if( m_use_ceres_for_peak_continua )
-      {
-        const size_t ncontpars = number_continua_parameters();
-        cont_pars.insert( end(cont_pars), parameters[1], parameters[1] + ncontpars );
-      }
-      eval( pars, cont_pars, residuals );
-
-#ifndef NDEBUG
-      if constexpr ( !std::is_same_v<T, double> )
-      {
-        const size_t nres = number_residuals();
-        check_jet_array_for_NaN( residuals, nres );
-      }
-#endif
-
-#else
       eval( pars, residuals );
-#endif
     }catch( std::exception &e )
     {
       cerr << "RelActAutoCostFcn::operator() caught: " << e.what() << endl;
