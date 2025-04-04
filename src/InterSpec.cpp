@@ -9629,7 +9629,7 @@ RelActAutoGui *InterSpec::showRelActAutoWindow()
       log_developer_error( __func__, ("Error deserializing Rel. Act. GUI state: " + string(e.what())).c_str() );
 #endif
       
-      assert( 0 );
+      //assert( 0 );
     }//try / catch
   }else
   {
@@ -10022,10 +10022,34 @@ void InterSpec::pushMaterialSuggestionsToUsers()
   if( !m_materialDB || !m_shieldingSuggestion )
     throw runtime_error( "pushMaterialSuggestionsToUsers(): you must"
                         " call initMaterialDbAndSuggestions() first." );
-  
-  for( const string &name : m_materialDB->names() )
+
+  const vector<const Material *> materials = m_materialDB->materials();
+  for( const Material *material : materials )
+  {
+    const string &name = material->name;
+    const string &desc = material->description;
+
+    // Lets filter out things like "PuO2 - X.X% Pu240 Plutonium dioxide", since
+    //  InterSpec doesnt make used of this enrichment anywhere; but we'll leave
+    //  in the material database incase a shielding used it or something in the
+    //  past.
+    const string::size_type name_pos = name.find( "% Pu" );
+    if( name_pos != string::npos )
+      continue;
+
+    const string::size_type desc_pos = desc.find( "% Pu" );
+    if( desc_pos != string::npos )
+      continue;
+
     m_shieldingSuggestion->addSuggestion( name, name );
-  
+    if( SpecUtils::iequals_ascii(name, desc) )
+      continue;
+
+    const string::size_type sub_pos = SpecUtils::ifind_substr_ascii(name, desc.c_str());
+    if( sub_pos == string::npos )
+      m_shieldingSuggestion->addSuggestion( desc, desc );
+  }//for( const Material *material : materials )
+
   wApp->triggerUpdate();
 }//void pushMaterialSuggestionsToUsers()
 
