@@ -216,7 +216,8 @@ protected:
   void handlePhysModelUseHoerlChange();
   void handlePhysModelShieldChange();
   void showAndHideOptionsForEqnType();
-  
+  void handleDetectorChange();
+
   /** Calculation has been started. */
   Wt::Signal<> &calculationStarted();
   
@@ -291,9 +292,12 @@ protected:
    they can go back to it. The map index corresponds to the #m_preset index for the state.
    */
   std::map<int,std::unique_ptr<rapidxml::xml_document<char>>> m_previous_presets;
-  
+
+  /** The place to indicate errors in calculation, when calc is not successful. */
   Wt::WText *m_error_msg;
-  
+  /* The place to give a summary of the fit, so like "chi2 = 123", or "Chi2 = 123, Uranium Enrichment 23.2%" */
+  Wt::WText *m_fit_chi2_msg;
+
   Wt::WComboBox *m_rel_eff_eqn_form;
   Wt::WLabel *m_rel_eff_eqn_order_label;
   Wt::WComboBox *m_rel_eff_eqn_order;

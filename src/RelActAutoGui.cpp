@@ -244,7 +244,7 @@ namespace
         const string orig_extension = SpecUtils::file_extension(filename);
         if( orig_extension.size() && (orig_extension.size() < filename.size()) )
           filename = filename.substr(0,filename.size() - orig_extension.size());
-        filename += ".xml";
+        filename += "_releff.xml";
         
         suggestFileName( filename, WResource::Attachment );
         response.setMimeType( "application/xml" );
@@ -1228,6 +1228,7 @@ RelActAutoGui::RelActAutoGui( InterSpec *viewer, Wt::WContainerWidget *parent )
   m_loading_preset( false ),
   m_current_preset_index( -1 ),
   m_error_msg( nullptr ),
+  m_fit_chi2_msg( nullptr ),
   m_rel_eff_eqn_form( nullptr ),
   m_rel_eff_eqn_order_label( nullptr ),
   m_rel_eff_eqn_order( nullptr ),
@@ -1416,7 +1417,10 @@ RelActAutoGui::RelActAutoGui( InterSpec *viewer, Wt::WContainerWidget *parent )
   
   m_error_msg = new WText( "Not Calculated.", presetDiv );
   m_error_msg->addStyleClass( "RelActAutoErrMsg" );
-  
+
+  m_fit_chi2_msg = new WText( "", presetDiv );
+  m_fit_chi2_msg->addStyleClass( "RelActAutoChi2Msg" );
+
   m_status_indicator = new WText( "Calculating...", presetDiv );
   m_status_indicator->addStyleClass( "RelActAutoStatusMsg" );
   m_status_indicator->hide();
@@ -1715,7 +1719,9 @@ RelActAutoGui::RelActAutoGui( InterSpec *viewer, Wt::WContainerWidget *parent )
   SpecMeasManager *spec_manager = m_interspec->fileManager();
   SpectraFileModel *spec_model = spec_manager ? spec_manager->model() : nullptr;
   DetectorDisplay *det_disp = new DetectorDisplay( m_interspec, spec_model, phys_opt_row );
-    
+  m_interspec->detectorChanged().connect( this, &RelActAutoGui::handleDetectorChange );
+  m_interspec->detectorModified().connect( this, &RelActAutoGui::handleDetectorChange );
+
   m_phys_model_opts->hide();
     
     
@@ -3191,9 +3197,16 @@ void RelActAutoGui::handleAdditionalUncertChanged()
 
 void RelActAutoGui::setOptionsForNoSolution()
 {
+  //if( !m_spectrum->chartTitle().empty() )
+  //  m_spectrum->setChartTitle( WString() );
+  m_fit_chi2_msg->setText( "" );
+  m_fit_chi2_msg->hide();
+
   makeZeroAmplitudeRoisToChart();
   m_set_peaks_foreground->setDisabled( true );
-  
+
+  m_rel_eff_chart->setData( 0.0, {}, {}, "", "" );
+
   for( WWidget *w : m_energy_ranges->children() )
   {
     RelActAutoEnergyRange *roi = dynamic_cast<RelActAutoEnergyRange *>( w );
@@ -4139,6 +4152,20 @@ void RelActAutoGui::showAndHideOptionsForEqnType()
 }//void showAndHideOptionsForEqnType()
 
 
+void RelActAutoGui::handleDetectorChange()
+{
+  // We could sometimes get away with not updating calculations if we arent using a physical model,
+  //  but I think having the detectors FWHM may slightly impact the auto-search peaks (not 100% sure),
+  //  so we'll just always refresh calculations on detector changes.
+
+  m_cached_drf = nullptr;
+  m_cached_all_peaks.clear();
+
+  m_render_flags |= RenderActions::UpdateCalculations;
+  scheduleRender();
+}//void RelActAutoGui::handleDetectorChange()
+
+
 Wt::Signal<> &RelActAutoGui::calculationStarted()
 {
   return m_calc_started;
@@ -4361,7 +4388,10 @@ void RelActAutoGui::updateDuringRenderForSpectrumChange()
   m_spectrum->setDisplayScaleFactor( m_background_sf, SpecUtils::SpectrumType::Background );
   
   m_spectrum->removeAllDecorativeHighlightRegions();
-  
+  //m_spectrum->setChartTitle( WString() );
+  m_fit_chi2_msg->setText( "" );
+  m_fit_chi2_msg->hide();
+
   m_background_subtract->setHidden( !m_background );
 }//void updateDuringRenderForSpectrumChange()
 
@@ -4622,6 +4652,8 @@ void RelActAutoGui::startUpdatingCalculation()
 {
   m_error_msg->setText("");
   m_error_msg->hide();
+  m_fit_chi2_msg->setText("");
+  m_fit_chi2_msg->hide();
   m_status_indicator->hide();
   
   // Disable being able to apply energy calibration fit from solution, until we get a new solution
@@ -4661,7 +4693,7 @@ void RelActAutoGui::startUpdatingCalculation()
     m_is_calculating = false;
     m_error_msg->setText( e.what() );
     m_error_msg->show();
-    
+
     setOptionsForNoSolution();
     
     return;
@@ -4782,8 +4814,9 @@ void RelActAutoGui::updateFromCalc( std::shared_ptr<RelActCalcAuto::RelActAutoSo
       
       m_error_msg->setText( msg );
       m_error_msg->show();
+
       m_txt_results->setNoResults();
-      
+
       setOptionsForNoSolution();
       
       return;
@@ -4814,7 +4847,7 @@ void RelActAutoGui::updateFromCalc( std::shared_ptr<RelActCalcAuto::RelActAutoSo
   WString chi2_title("χ²/dof = {1}/{2}{3}");
   chi2_title.arg( SpecUtils::printCompact(answer->m_chi2, 3) )
             .arg( static_cast<int>(answer->m_dof) );
-  
+
   // If we have U or Pu, we'll give the enrichment, or if we have two nuclides we'll
   //  give their ratio
   set<const SandiaDecay::Nuclide *> isotopes;
@@ -4866,11 +4899,23 @@ void RelActAutoGui::updateFromCalc( std::shared_ptr<RelActCalcAuto::RelActAutoSo
   {
     chi2_title.arg( "" );
   }
-  
+
+  string rel_eff_eqn_txt;
+  try
+  {
+    rel_eff_eqn_txt = "y = " + answer->rel_eff_txt( false, 0);
+  }catch( std::exception & )
+  {
+    // Oh well
+    assert( 0 );
+  }
+
   m_rel_eff_chart->setData( live_time, answer->m_fit_peaks, answer->m_rel_activities.at(0),
-                           rel_eff_eqn_js, chi2_title );
-  
-  
+                           rel_eff_eqn_js, rel_eff_eqn_txt );
+
+  m_fit_chi2_msg->setText( chi2_title );
+  m_fit_chi2_msg->show();
+
   bool any_nucs_updated = false;
   for( const RelActCalcAuto::NuclideRelAct &fit_nuc : m_solution->m_rel_activities.at(0) )
   {
@@ -5050,7 +5095,10 @@ void RelActAutoGui::handleCalcException( std::shared_ptr<std::string> message,
   
   m_error_msg->setText( msg );
   m_error_msg->show();
-  
+
+  m_fit_chi2_msg->setText( "" ); // should already be hidden, but JIC
+  m_fit_chi2_msg->hide();
+
   m_solution.reset();
   
   setOptionsForNoSolution();
