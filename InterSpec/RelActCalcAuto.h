@@ -871,8 +871,8 @@ struct RelActAutoSolution
    */
   constexpr static double sm_energy_par_offset = 1.0;
   
-  /** We will allow the energy offset to vary by +-5 keV. This is arbitrarily chosen. */
-  constexpr static double sm_energy_offset_range_keV = 10.0;  // Allow +-10 keV offset adjust
+  /** We will allow the energy offset to vary by +-55 keV. This is arbitrarily chosen. */
+  constexpr static double sm_energy_offset_range_keV = 15.0;  // Allow +-15 keV offset adjust
   
   /** We will allow the energy gain to vary by +-20 keV, at the right side of the spectrum.
    This is arbitrarily chosen, and non ideal, because it doesnt account for different energy ranges of the spectrum (e.g., a 400 keV

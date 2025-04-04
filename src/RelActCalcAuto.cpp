@@ -3195,19 +3195,11 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     // We cant currently use auto-diff if we are fitting energy calibration, or any nuclide ages, so lets check for that.
     //  TODO: write our own CostFunction class that does numeric differentiation for the energy cal and ages, and auto-diff for the rest
     bool use_auto_diff = true;
-    //bool use_auto_diff = !options.fit_energy_cal;
-    //for( const auto &rel_eff_curve : cost_functor->m_options.rel_eff_curves )
-    //{
-    //  for( const auto &nuc : rel_eff_curve.nuclides )
-    //    use_auto_diff = (use_auto_diff && !nuc.fit_age);
-    //}
-
-    // TODO: auto-diff also looks to be failing for skew peaks, so we will turn it off until we fix it
-#warning "Auto-diff for skew peaks is failing - should fix"
-#warning "Not skipping auto-diff for skew peaks!!!"
-    cerr << "Not skipping auto-diff for skew peaks!!!" << endl;
-    //use_auto_diff = (use_auto_diff && (options.skew_type == PeakDef::SkewType::NoSkew));
-
+    for( const auto &rel_eff_curve : cost_functor->m_options.rel_eff_curves )
+    {
+      for( const auto &nuc : rel_eff_curve.nuclides )
+        use_auto_diff = (use_auto_diff && !nuc.fit_age);
+    }
 
 #if( PERFORM_DEVELOPER_CHECKS )
     //Test auto diff vs numerical diff
@@ -3274,7 +3266,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
       cout << "---" << endl;
     };//test_gradients(...)
     
-    //test_gradients( cost_functor.get(), parameters );
+    test_gradients( cost_functor.get(), parameters );
 #endif
     
     
@@ -4876,11 +4868,22 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
       
       return T(energy);
     }//if( we arent fitting energy cal )
-    
-    if( (x[0] == RelActCalcAuto::RelActAutoSolution::sm_energy_par_offset)
-       && (x[1] == RelActCalcAuto::RelActAutoSolution::sm_energy_par_offset) )
-      return T(energy);
-    
+
+    // If we are doing numeric differentiation, and the calibration paramaters are all
+    //  default/nominal values, then lets skip the math.
+    // However, if we are doing auto-differentiation, we need to do the math so we can
+    //  carry the gradient information into the answer.
+    if constexpr ( std::is_same_v<T, double> )
+    {
+      if( (x[0] == RelActCalcAuto::RelActAutoSolution::sm_energy_par_offset)
+         && (x[1] == RelActCalcAuto::RelActAutoSolution::sm_energy_par_offset)
+         && ((RelActCalcAuto::RelActAutoSolution::sm_num_energy_cal_pars <= 2)
+             || (x[2] == RelActCalcAuto::RelActAutoSolution::sm_energy_par_offset)) )
+      {
+        return T(energy);
+      }
+    }//if constexpr ( std::is_same_v<T, double> )
+
     // Check adjustments are near the limits we placed (which was [-5,5], and [0.985,1.015])
     assert( abs(x[0] - RelActCalcAuto::RelActAutoSolution::sm_energy_par_offset) <= RelActCalcAuto::RelActAutoSolution::sm_energy_par_offset );
     assert( abs(x[1] - RelActCalcAuto::RelActAutoSolution::sm_energy_par_offset) <= RelActCalcAuto::RelActAutoSolution::sm_energy_par_offset );
@@ -5443,8 +5446,14 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     check_peak_reasonable( lower_range_peak, range.lower_energy );
     check_peak_reasonable( upper_range_peak, range.upper_energy );
 
-    const pair<double,double> lower_peak_limits = lower_range_peak.peak_coverage_limits( 1.0E-4, 20.0 );
-    const pair<double,double> upper_peak_limits = upper_range_peak.peak_coverage_limits( 1.0E-4, 20.0 );
+    // The Cyrstal Ball distributions can have reallllly long tails, so we will use a smaller coverage function
+    //  for these.
+    const bool is_crystal_ball = ((m_options.skew_type == PeakDef::SkewType::CrystalBall)
+                                  || (m_options.skew_type == PeakDef::SkewType::DoubleSidedCrystalBall));
+
+    const double missing_frac = is_crystal_ball ? 1.0E-3 : 1.0E-4;
+    const pair<double,double> lower_peak_limits = lower_range_peak.peak_coverage_limits( missing_frac, 20.0 );
+    const pair<double,double> upper_peak_limits = upper_range_peak.peak_coverage_limits( missing_frac, 20.0 );
 
     assert( range.lower_energy >= lower_peak_limits.first );
     assert( range.upper_energy <= upper_peak_limits.second );
