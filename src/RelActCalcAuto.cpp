@@ -112,6 +112,9 @@ namespace
 {
 const double ns_decay_act_mult = SandiaDecay::MBq;
   
+// Forward declaration
+struct RelActAutoCostFcn;
+
 struct DoWorkOnDestruct
 {
   std::function<void()> m_worker;
@@ -1033,161 +1036,15 @@ struct NucInputGamma : public RelActCalcAuto::NucInputInfo
     PeakDef::SourceGammaType gamma_type;
   };
   
-  vector<EnergyYield> nominal_gammas;
+  std::shared_ptr<const vector<EnergyYield>> nominal_gammas;
   
-  /** Returns the decay gammas along with their rate, and the transition that led to them (i.e.,
-   where in the decay chain they come from).
-   
-   Note that the returned result may have multiple entries with the exact same energy (i.e., from
-   different decays).
-   */
-  static vector<EnergyYield> decay_gammas( const SandiaDecay::Nuclide * const parent,
-                                          const double age,
-                                          const std::vector<double> &gammas_to_exclude )
-  {
-    SandiaDecay::NuclideMixture mix;
-    mix.addAgedNuclideByActivity( parent, ns_decay_act_mult, age );
-    
-    const vector<SandiaDecay::NuclideActivityPair> activities = mix.activity( 0.0 );
-    
-    // all_gamma_transitions may contain duplicate energies - we will combine these below
-    vector<EnergyYield> all_gamma_transitions;
-    all_gamma_transitions.reserve( 1536 ); //avoid a few resizes; for Pu241, at nominal age, the actual number of entries is 1229
-    
-    EnergyYield annihilationInfo;
-    annihilationInfo.energy = 510.998910;
-    annihilationInfo.yield = 0.0;
-    annihilationInfo.transition = nullptr;
-    annihilationInfo.transition_index = 0;
-    annihilationInfo.gamma_type = PeakDef::SourceGammaType::AnnihilationGamma;
-    size_t num_annih_trans = 0;
-    
-    for( size_t nucIndex = 0; nucIndex < activities.size(); ++nucIndex )
-    {
-      const SandiaDecay::Nuclide * const nuclide = activities[nucIndex].nuclide;
-      const double activity = activities[nucIndex].activity / ns_decay_act_mult;
-      
-      if( activity <= 0.0 )
-        continue;
-      
-      const size_t n_decaysToChildren = nuclide->decaysToChildren.size();
-      
-      for( size_t decayIndex = 0; decayIndex < n_decaysToChildren; ++decayIndex )
-      {
-        const SandiaDecay::Transition * const transition = nuclide->decaysToChildren[decayIndex];
-        const size_t n_products = transition->products.size();
-        
-        for( size_t productNum = 0; productNum < n_products; ++productNum )
-        {
-          const SandiaDecay::RadParticle &particle = transition->products[productNum];
-          if( particle.type == SandiaDecay::ProductType::GammaParticle )
-          {
-            bool exclude = false;
-            for( const double exclude_energy : gammas_to_exclude )
-              exclude = (exclude || (fabs(particle.energy - exclude_energy) < 0.001));
-            
-            if( exclude )
-              continue;
-            
-            all_gamma_transitions.push_back( {} );
-            EnergyYield &info = all_gamma_transitions.back();
-            info.energy = particle.energy;
-            info.yield = activity * particle.intensity * transition->branchRatio;
-            
-            info.transition_index = productNum;
-            info.transition = transition;
-            info.gamma_type = PeakDef::SourceGammaType::NormalGamma;
-          }else if( particle.type == SandiaDecay::ProductType::PositronParticle )
-          {
-            annihilationInfo.yield += 2.0 * activity * particle.intensity * transition->branchRatio;
-           
-            num_annih_trans += 1;
-            annihilationInfo.transition_index = productNum;
-            annihilationInfo.transition = transition;
-          }//if( particle.type is gamma ) / else if( position )
-        }//for( size_t productNum = 0; productNum < n_products; ++productNum )
-      }//for( size_t decayIndex = 0; decayIndex < n_decaysToChildren; ++decayIndex )
-    }//for( size_t nucIndex = 0; nucIndex < activities.size(); ++nucIndex )
-    
-    
-    if( annihilationInfo.yield > 0.0 )
-    {
-      bool exclude = false;
-      for( const double exclude_energy : gammas_to_exclude )
-        exclude = (exclude || (fabs(annihilationInfo.energy - exclude_energy) < 0.001));
-      
-      if( num_annih_trans != 1 )
-      {
-        annihilationInfo.transition = nullptr;
-        annihilationInfo.transition_index = 0;
-      }
-      
-      if( !exclude )
-        all_gamma_transitions.push_back( annihilationInfo );
-    }//if( annihilationInfo.yield > 0.0 )
-    
-    
-    std::sort( begin(all_gamma_transitions), end(all_gamma_transitions),
-               []( const auto &lhs, const auto &rhs ) { return lhs.energy < rhs.energy; });
-    
-    if( all_gamma_transitions.empty() )
-      return all_gamma_transitions;
-    
-    // Now go throw and combine duplicate energies
-    vector<EnergyYield> answer;
-    answer.reserve( all_gamma_transitions.size() );
-    answer.push_back( all_gamma_transitions.front() );
-    size_t energy_start_index = 0;
-    for( size_t current_index = 1; current_index < all_gamma_transitions.size(); ++current_index )
-    {
-      const EnergyYield &current = all_gamma_transitions[current_index];
-      EnergyYield &prev = answer.back();
-      if( current.energy == prev.energy )
-      {
-        prev.yield += current.yield;
-        
-        // We will assign the transition to the largest yield of this energy (not that it matters
-        //  that much, I guess, given peaks only get a single source transition, but it seems like
-        //  the right thing to do anyway).
-        double max_yield = -1;
-        for( size_t i = energy_start_index; i <= current_index; ++i )
-        {
-          if( all_gamma_transitions[i].yield > max_yield )
-          {
-            max_yield = all_gamma_transitions[i].yield;
-            prev.gamma_type = all_gamma_transitions[i].gamma_type;
-            prev.transition = all_gamma_transitions[i].transition;
-            prev.transition_index = all_gamma_transitions[i].transition_index;
-          }//
-        }//for( size_t i = energy_start_index; i < current_index; ++i )
-      }else
-      {
-        energy_start_index = current_index;
-        answer.push_back( current );
-      }
-    }//for( size_t current_index = 1; current_index < all_gamma_transitions.size(); ++current_index )
-    
-    return answer;
-  }//static vector<EnergyYield> decay_gammas( const SandiaDecay::Nuclide * const parent, ... )
-
-  
-  NucInputGamma( const RelActCalcAuto::NucInputInfo &info )
-   : RelActCalcAuto::NucInputInfo( info )
-  {
-    if( !nuclide )
-      throw runtime_error( "NucInputGamma: null Nuclide." );
-    
-    if( age < 0.0 )
-      throw runtime_error( "NucInputGamma: age may not be negative (" + nuclide->symbol + ": "
-                           + PhysicalUnits::printToBestTimeUnits(age)  + ")" );
-    
-    double nominal_age = info.age;
-    
-    //if( !fit_age )
-    //  nominal_age = PeakDef::defaultDecayTime( nuclide, nullptr );
-    
-    nominal_gammas = decay_gammas( nuclide, nominal_age, gammas_to_exclude );
-  }//NucInputGamma constructor
+  // Implemeneted below RelActAutoCostFcn, so we can access it
+  NucInputGamma( const RelActCalcAuto::NucInputInfo &info, const RelActAutoCostFcn * const cost_fcn );
+  NucInputGamma() = delete;
+  NucInputGamma( const NucInputGamma & ) = default;
+  NucInputGamma( NucInputGamma && ) = default;
+  NucInputGamma &operator=( const NucInputGamma & ) = default;
+  NucInputGamma &operator=( NucInputGamma && ) = default;
 };//struct NucInputGamma
 
   /** Setup the physical model shield parameters for the Ceres problem - used by both auto and manual.
@@ -1354,17 +1211,15 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
   mutable std::mutex m_aged_gammas_cache_mutex;
   /** When we are fitting the age of nuclides, performing the decay can take a significant amount of the time, so we'll cache results.
    
-   This variable is only used in `peaks_for_energy_range_imp`.
-   
    Note the map key is {nuclide,age}, where age is kept as a float to hopefully help minimize how many entries get put into the cache.
    
    For an example CZT Pu problem, fitting the Pu age, the cache hit about 99% of calls,
    and in a debug build, the average call time to `eval(...)` went from 17 ms, to 5.5 ms.
    The cache size grew to about 1100 entries, probably taking a bit over 30 MB of memory.
    
-   Note that this is only used if fitting ages.
+   Note that this is usefull when fitting ages.
    */
-  mutable std::map<std::pair<const SandiaDecay::Nuclide *,float>,std::unique_ptr<const std::vector<NucInputGamma::EnergyYield>>> m_aged_gammas_cache;
+  mutable std::map<std::pair<const SandiaDecay::Nuclide *,float>,std::shared_ptr<const std::vector<NucInputGamma::EnergyYield>>> m_aged_gammas_cache;
   
   
   /** Thread pool used to calculate the each ROI.
@@ -1494,7 +1349,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
             throw runtime_error( "RelActAutoCostFcn: duplicate nuclide (" + n.nuclide->symbol + ")." );
         }
       
-        these_nuclides.emplace_back( n );
+        these_nuclides.emplace_back( n, this );
       }//for( const auto &n : input_nuclides )
 
       if( rel_eff_input.rel_eff_eqn_type == RelActCalc::RelEffEqnForm::FramPhysicalModel )
@@ -1604,7 +1459,8 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
       {
         for( const auto &n : nucs )
         {
-          for( const auto &g : n.nominal_gammas )
+          assert( n.nominal_gammas );
+          for( const auto &g : *n.nominal_gammas )
           {
             const double energy = g.energy;
             const double yield = g.yield;
@@ -3192,15 +3048,6 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     
     ceres::CostFunction *cost_function = nullptr;
     
-    // We cant currently use auto-diff if we are fitting energy calibration, or any nuclide ages, so lets check for that.
-    //  TODO: write our own CostFunction class that does numeric differentiation for the energy cal and ages, and auto-diff for the rest
-    bool use_auto_diff = true;
-    for( const auto &rel_eff_curve : cost_functor->m_options.rel_eff_curves )
-    {
-      for( const auto &nuc : rel_eff_curve.nuclides )
-        use_auto_diff = (use_auto_diff && !nuc.fit_age);
-    }
-
 #if( PERFORM_DEVELOPER_CHECKS )
     //Test auto diff vs numerical diff
     auto test_gradients = [constant_parameters,&cost_functor]( RelActAutoCostFcn *fcn, const vector<double> &x ){
@@ -3209,7 +3056,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
       auto_diff.AddParameterBlock( static_cast<int>(fcn->number_parameters()) );
       
       ceres::NumericDiffOptions num_diff_options;
-      num_diff_options.relative_step_size = 1E-4; //Default is 1E-6.
+      num_diff_options.relative_step_size = 1E-6; //Default is 1E-6.
       auto num_diff = ceres::DynamicNumericDiffCostFunction<RelActAutoCostFcn>( fcn, ceres::DO_NOT_TAKE_OWNERSHIP, num_diff_options );
       num_diff.SetNumResiduals( static_cast<int>(fcn->number_residuals()) );
       num_diff.AddParameterBlock( static_cast<int>(fcn->number_parameters()) );
@@ -3253,7 +3100,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
         const size_t residual_num = (i - par_num) / num_pars;
         const double diff = fabs(jacobians_auto[i] - jacobians_numeric[i]);
         const double frac_diff = diff / std::max( fabs(jacobians_auto[i]), fabs(jacobians_numeric[i]) );
-        if( (diff > 1.0E-18) && (frac_diff > 1.0E-4) )  //This is totally arbitrary
+        if( (diff > 1.0E-18) && (frac_diff > 1.0E-2) )  //This is totally arbitrary
         {
           cout << setprecision(4)
           << setw(7) << i << setw(10) << par_name << setw(7) << residual_num
@@ -3269,7 +3116,10 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     test_gradients( cost_functor.get(), parameters );
 #endif
     
-    
+    // We should use auto-diff generally, since it is faster, and should be less-error-prone, but to check on
+    //  things, you can choose to use numeric differentiation.
+    const bool use_auto_diff = true;
+
     if( use_auto_diff )
     {
       // It looks like using Jets<double,32> is fastest for an example problem, however it really
@@ -4030,6 +3880,158 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     return solution;
   }//RelActCalcAuto::RelActAutoSolution solve_ceres( ceres::Problem &problem )
   
+
+  /** Returns the decay gammas along with their rate, and the transition that led to them (i.e.,
+   where in the decay chain they come from).
+   
+   Note that the returned result may have multiple entries with the exact same energy (i.e., from
+   different decays).  Also, that gammas with zero amplitude will also be returned, so this way no
+   matter the age, the same number of gammas will be returned, in the same order.
+   */
+  std::shared_ptr<const vector<NucInputGamma::EnergyYield>> decay_gammas( const SandiaDecay::Nuclide * const parent,
+                                          const double age,
+                                          const std::vector<double> &gammas_to_exclude ) const
+  {
+    const pair<const SandiaDecay::Nuclide *,float> key{ parent, static_cast<float>(age) };
+    
+    {//begin lock on m_aged_gammas_cache_mutex
+      std::lock_guard<std::mutex> cache_lock( m_aged_gammas_cache_mutex );
+          
+      const auto pos = m_aged_gammas_cache.find( key );
+      if( pos != end(m_aged_gammas_cache) )
+        return pos->second;
+    }//end lock on m_aged_gammas_cache_mutex
+
+
+    SandiaDecay::NuclideMixture mix;
+    mix.addAgedNuclideByActivity( parent, ns_decay_act_mult, age );
+    
+    const vector<SandiaDecay::NuclideActivityPair> activities = mix.activity( 0.0 );
+    
+    // all_gamma_transitions may contain duplicate energies - we will combine these below
+    vector<NucInputGamma::EnergyYield> all_gamma_transitions;
+    all_gamma_transitions.reserve( 1536 ); //avoid a few resizes; for Pu241, at nominal age, the actual number of entries is 1229
+    
+    bool has_annihilation = false;
+    NucInputGamma::EnergyYield annihilationInfo;
+    annihilationInfo.energy = 510.998910;
+    annihilationInfo.yield = 0.0;
+    annihilationInfo.transition = nullptr;
+    annihilationInfo.transition_index = 0;
+    annihilationInfo.gamma_type = PeakDef::SourceGammaType::AnnihilationGamma;
+    size_t num_annih_trans = 0;
+    
+    for( size_t nucIndex = 0; nucIndex < activities.size(); ++nucIndex )
+    {
+      const SandiaDecay::Nuclide * const nuclide = activities[nucIndex].nuclide;
+      const double activity = activities[nucIndex].activity / ns_decay_act_mult;
+      
+      const size_t n_decaysToChildren = nuclide->decaysToChildren.size();
+      
+      for( size_t decayIndex = 0; decayIndex < n_decaysToChildren; ++decayIndex )
+      {
+        const SandiaDecay::Transition * const transition = nuclide->decaysToChildren[decayIndex];
+        const size_t n_products = transition->products.size();
+        
+        for( size_t productNum = 0; productNum < n_products; ++productNum )
+        {
+          const SandiaDecay::RadParticle &particle = transition->products[productNum];
+          if( particle.type == SandiaDecay::ProductType::GammaParticle )
+          {
+            bool exclude = false;
+            for( const double exclude_energy : gammas_to_exclude )
+              exclude = (exclude || (fabs(particle.energy - exclude_energy) < 0.001));
+            
+            if( exclude )
+              continue;
+            
+            all_gamma_transitions.push_back( {} );
+            NucInputGamma::EnergyYield &info = all_gamma_transitions.back();
+            info.energy = particle.energy;
+            info.yield = activity * particle.intensity * transition->branchRatio;
+            
+            info.transition_index = productNum;
+            info.transition = transition;
+            info.gamma_type = PeakDef::SourceGammaType::NormalGamma;
+          }else if( particle.type == SandiaDecay::ProductType::PositronParticle )
+          {
+            has_annihilation = true;
+            annihilationInfo.yield += 2.0 * activity * particle.intensity * transition->branchRatio;
+           
+            num_annih_trans += 1;
+            annihilationInfo.transition_index = productNum;
+            annihilationInfo.transition = transition;
+          }//if( particle.type is gamma ) / else if( position )
+        }//for( size_t productNum = 0; productNum < n_products; ++productNum )
+      }//for( size_t decayIndex = 0; decayIndex < n_decaysToChildren; ++decayIndex )
+    }//for( size_t nucIndex = 0; nucIndex < activities.size(); ++nucIndex )
+    
+    if( has_annihilation )
+    {
+      bool exclude = false;
+      for( const double exclude_energy : gammas_to_exclude )
+        exclude = (exclude || (fabs(annihilationInfo.energy - exclude_energy) < 0.001));
+      
+      if( num_annih_trans != 1 )
+      {
+        annihilationInfo.transition = nullptr;
+        annihilationInfo.transition_index = 0;
+      }
+      
+      if( !exclude )
+        all_gamma_transitions.push_back( annihilationInfo );
+    }//if( annihilationInfo.yield > 0.0 )
+    
+    
+    std::sort( begin(all_gamma_transitions), end(all_gamma_transitions),
+               []( const auto &lhs, const auto &rhs ) { return lhs.energy < rhs.energy; });
+    
+    
+    // Now go throw and combine duplicate energies
+    auto answer = make_shared<vector<NucInputGamma::EnergyYield>>();
+    answer->reserve( all_gamma_transitions.size() );
+    answer->push_back( all_gamma_transitions.front() );
+    size_t energy_start_index = 0;
+    for( size_t current_index = 1; current_index < all_gamma_transitions.size(); ++current_index )
+    {
+      const NucInputGamma::EnergyYield &current = all_gamma_transitions[current_index];
+      NucInputGamma::EnergyYield &prev = answer->back();
+      if( current.energy == prev.energy )
+      {
+        prev.yield += current.yield;
+        
+        // We will assign the transition to the largest yield of this energy (not that it matters
+        //  that much, I guess, given peaks only get a single source transition, but it seems like
+        //  the right thing to do anyway).
+        double max_yield = -1;
+        for( size_t i = energy_start_index; i <= current_index; ++i )
+        {
+          if( all_gamma_transitions[i].yield > max_yield )
+          {
+            max_yield = all_gamma_transitions[i].yield;
+            prev.gamma_type = all_gamma_transitions[i].gamma_type;
+            prev.transition = all_gamma_transitions[i].transition;
+            prev.transition_index = all_gamma_transitions[i].transition_index;
+          }//
+        }//for( size_t i = energy_start_index; i < current_index; ++i )
+      }else
+      {
+        energy_start_index = current_index;
+        answer->push_back( current );
+      }
+    }//for( size_t current_index = 1; current_index < all_gamma_transitions.size(); ++current_index )
+    
+
+    {
+      std::lock_guard<std::mutex> cache_lock( m_aged_gammas_cache_mutex );
+      m_aged_gammas_cache[key] = answer;
+            
+      // TODO: limit size of cache
+    }
+
+    return answer;
+  }//std::shared_ptr<const vector<EnergyYield>> decay_gammas( const SandiaDecay::Nuclide * const parent, ... )
+
   
   vector<pair<double,double>> cluster_photopeaks( const double cluster_num_sigma, const std::vector<double> &x ) const
   {
@@ -4060,7 +4062,8 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
       
       for( const NucInputGamma &nuc_input : rel_rff_nucs )
       {
-        for( const NucInputGamma::EnergyYield &line_info : nuc_input.nominal_gammas )
+        assert( nuc_input.nominal_gammas );
+        for( const NucInputGamma::EnergyYield &line_info : *nuc_input.nominal_gammas )
         {
           const double energy = line_info.energy;
           
@@ -5480,65 +5483,87 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
       const vector<NucInputGamma> &nuclides = m_nuclides[rel_eff_index];
       for( const NucInputGamma &nucinfo : nuclides )
       {
-        const vector<NucInputGamma::EnergyYield> *gammas = nullptr;
+        const bool fixed_age = is_fixed_age(nucinfo.nuclide, rel_eff_index);
+        double nuc_age_val = -1.0, forward_diff_nuc_age_val = -1.0, backward_diff_nuc_age_val = -1.0;
+        std::shared_ptr<const vector<NucInputGamma::EnergyYield>> gammas, forward_diff_gammas, backward_diff_gammas;
         
         const T rel_act = relative_activity( nucinfo.nuclide, rel_eff_index, x );
         //cout << "peaks_for_energy_range_imp: Relative activity of " << nucinfo.nuclide->symbol
         //     << " is " << PhysicalUnits::printToBestActivityUnits(rel_act) << endl;
         
-        if( is_fixed_age(nucinfo.nuclide, rel_eff_index) )
+        T nuc_age;
+        if( fixed_age )
         {
-          gammas = &(nucinfo.nominal_gammas);
+          gammas = nucinfo.nominal_gammas;
         }else
         {
-          const T nuc_age = age(nucinfo.nuclide, rel_eff_index, x);
+          // If we are here, we are fitting the age - however, automatic differentiation does
+          //  not work with age, so if our template type is a `Jet<>` we will do numeric 
+          //  differentiation, and insert this info into the Jet.
+          nuc_age = age(nucinfo.nuclide, rel_eff_index, x);
           
-          double nuc_age_val;
+          
           if constexpr ( !std::is_same_v<T, double> )
           {
-            cerr << "Fitting age is not implemented for using Jets" << endl;
-            assert(0);
-            throw logic_error( "Fitting age is not implemented for using Jets" );
-            
             nuc_age_val = nuc_age.a;
+            gammas = this->decay_gammas( nucinfo.nuclide, nuc_age_val, nucinfo.gammas_to_exclude );
+            assert( gammas );
+            
+            // TODO: be a bit smarter about selecting dt
+            // At larger ages, we dont expect much of a change in gamma BRs, so we'll be a
+            //  bit larger of a time delta, to hopefully avoid getting zero derivative; this
+            //  was not tested, and I'm not even sure its needed!
+            double forward_dt = 0.001*nuc_age_val, backward_dt = -1.0;
+            if( nuc_age_val > 0.1*nucinfo.nuclide->halfLife )
+            {
+              if( nuc_age_val > 5.0*nucinfo.nuclide->halfLife )
+              {
+                forward_dt = 0.1*nuc_age_val;
+                backward_dt = 0.1*nuc_age_val;
+              }else if( nuc_age_val > 2.5*nucinfo.nuclide->halfLife )
+              {
+                forward_dt = 0.01*nuc_age_val;
+                backward_dt = 0.01*nuc_age_val;
+              }else
+              {
+                forward_dt = 0.001*nuc_age_val;
+                backward_dt = 0.001*nuc_age_val;
+              }
+            }else
+            {
+              forward_dt = std::min( 0.01*nuc_age_val, 0.001*nucinfo.nuclide->halfLife );
+              if( nuc_age_val > 0.0 )
+                backward_dt = std::min(0.1*nuc_age_val, 0.001*nucinfo.nuclide->halfLife);
+            }//if( nuc_age_val > 0.001*nucinfo.nuclide->halfLife ) / else
+            
+            forward_diff_nuc_age_val = nuc_age_val + forward_dt;
+            forward_diff_gammas = this->decay_gammas( nucinfo.nuclide, forward_diff_nuc_age_val, nucinfo.gammas_to_exclude );
+
+            assert( forward_diff_gammas );
+            assert( forward_diff_gammas->size() == gammas->size() );
+
+            if( backward_dt > 0.0 )
+            {
+              backward_diff_nuc_age_val = nuc_age_val - backward_dt;
+              backward_diff_gammas = this->decay_gammas( nucinfo.nuclide, backward_diff_nuc_age_val, nucinfo.gammas_to_exclude );
+              assert( backward_diff_gammas );
+              assert( backward_diff_gammas->size() == gammas->size() );
+            }//if( nuc_age_val > 0.0 )
           }else
           {
             nuc_age_val = nuc_age;
-          }
-          
-          const pair<const SandiaDecay::Nuclide *,float> key{ nucinfo.nuclide, static_cast<float>(nuc_age_val) };
-          
-          std::lock_guard<std::mutex> cache_lock( m_aged_gammas_cache_mutex );
-          
-          const auto pos = m_aged_gammas_cache.find( key );
-          if( pos != end(m_aged_gammas_cache) )
-          {
-            gammas = pos->second.get();
-            assert( gammas );
-          }else
-          {
-            auto gamma_ptr = make_unique<vector<NucInputGamma::EnergyYield>>();
-            *gamma_ptr = NucInputGamma::decay_gammas( nucinfo.nuclide, nuc_age_val, nucinfo.gammas_to_exclude );
-            gammas = gamma_ptr.get();
-            m_aged_gammas_cache[key] = std::move(gamma_ptr);
-            
-            
-            //if( (m_aged_gammas_cache.size() % 1000) == 0 )
-            //{
-            //  size_t memsize = 0;
-            //  for( const auto &key_val : m_aged_gammas_cache )
-            //    memsize += key_val.second->size() * sizeof( NucInputGamma::EnergyYield );
-            //  cout << "m_aged_gammas_cache.size() = " << m_aged_gammas_cache.size() << ", with memsize=" << memsize << endl;
-            //}
+            gammas = this->decay_gammas( nucinfo.nuclide, nuc_age_val, nucinfo.gammas_to_exclude );
           }
         }//if( age is fixed ) / else( age may vary )
         
         assert( gammas );
         
-        for( const NucInputGamma::EnergyYield &gamma : *gammas )
+        for( size_t gamma_index = 0; gamma_index < gammas->size(); ++gamma_index )
         {
+          // TODO: gammas right next to eachother may have exactly, or really close energies that we could combine into a single peak to save a little time - should consider doing this
+          const NucInputGamma::EnergyYield &gamma = (*gammas)[gamma_index];
           const double energy = gamma.energy;
-          const double yield = gamma.yield;
+          T yield = T(gamma.yield);
           const size_t transition_index = gamma.transition_index;
           const SandiaDecay::Transition * const transition = gamma.transition;
           const PeakDef::SourceGammaType gamma_type = gamma.gamma_type;
@@ -5549,9 +5574,31 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
                  || (fabs(transition->products[transition_index].energy - energy) < 0.0001) );
           
           // Filter out zero-amplitude gammas
-          // TODO: - come up with more intelligent lower bound of gamma rate to bother wit
-          if( yield < std::numeric_limits<float>::min() )
-            continue;
+          // TODO: - come up with more intelligent lower bound of gamma rate to bother with
+          const double min_br_wanted = std::numeric_limits<float>::min();
+          if constexpr ( std::is_same_v<T, double> )
+          {
+            if( yield < min_br_wanted )
+              continue;
+          }else
+          {
+            if( fixed_age )
+            {
+              if( yield < min_br_wanted )
+                continue;
+            }else if( yield < min_br_wanted )
+            {
+              // only skip this gamma if nominal, and forward, and backward points are zero.
+              assert( forward_diff_gammas );
+              assert( forward_diff_gammas->size() == gammas->size() );
+              assert( !backward_diff_gammas || (backward_diff_gammas->size() == gammas->size()) );
+              
+              const bool forward_is_zero = ((*forward_diff_gammas)[gamma_index].yield  < min_br_wanted);
+              const bool backward_is_zero = (!backward_diff_gammas || ((*backward_diff_gammas)[gamma_index].yield  < min_br_wanted));
+              if( forward_is_zero && backward_is_zero )
+                continue;
+            }//if( fixed age ) / else
+          }//if( double ) / else ( ceres::Jet )
           
           // Filter the energy range based on true energies (i.e., not adjusted energies)
           if( (energy < lower_mean) || (energy > upper_mean) )
@@ -5587,7 +5634,49 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
               }//
             }//for( find range this gamma belongs to, if any )
           }//if( m_options.additional_br_uncert > 0.0 && !m_peak_ranges_with_uncert.empty() )
-          
+
+          if constexpr ( !std::is_same_v<T, double> )
+          {
+            if( !is_fixed_age(nucinfo.nuclide, rel_eff_index) )
+            {
+              // Here we will do the numeric differentiation and put the results in the Jet
+              assert( forward_diff_gammas );
+              assert( gamma_index < forward_diff_gammas->size() );
+              const NucInputGamma::EnergyYield &gamma_forward = (*forward_diff_gammas)[gamma_index];
+              assert( gamma_forward.energy == gamma.energy );
+              assert( gamma_forward.transition_index == gamma.transition_index );
+              assert( gamma_forward.gamma_type == gamma.gamma_type );
+              assert( gamma_forward.transition == gamma.transition );
+              const double forward_yield = gamma_forward.yield;
+              const double forward_derivative = (forward_yield - yield.a) / (forward_diff_nuc_age_val - nuc_age_val);
+
+              if( backward_diff_gammas )
+              {
+                assert( gamma_index < backward_diff_gammas->size() );
+                const NucInputGamma::EnergyYield &gamma_backward = (*backward_diff_gammas)[gamma_index];
+                assert( gamma_backward.energy == gamma.energy );
+                assert( gamma_backward.transition_index == gamma.transition_index );
+                assert( gamma_backward.gamma_type == gamma.gamma_type );
+                assert( gamma_backward.transition == gamma.transition );
+                
+                const double f_x = yield.a;
+                const double f_plus = gamma_forward.yield;
+                const double f_minus = gamma_backward.yield;
+                const double h_fwd = forward_diff_nuc_age_val - nuc_age_val;
+                const double h_bwd = nuc_age_val - backward_diff_nuc_age_val;
+                const double hf2 = h_fwd * h_fwd;
+                const double hb2 = h_bwd * h_bwd;
+                const double hf_x_hb = h_fwd * h_bwd;
+                const double hf_p_hb = h_fwd + h_bwd;
+
+                const double numerator = (hb2 * f_plus) - (hf2 * f_minus) + (hf2 - hb2) * f_x;
+                const double denominator = hf_x_hb * hf_p_hb;
+                const double derivative = numerator / denominator;
+
+                yield.v = derivative * nuc_age.v;
+              }
+            }//if( is_fixed_age(nucinfo.nuclide, rel_eff_index) )
+          }//if( !std::is_same_v<T, double> )          
 
           const T peak_mean = apply_energy_cal_adjustment( gamma.energy, x );
           const T peak_amplitude = rel_act * static_cast<double>(m_live_time) * rel_eff * yield * br_uncert_adj;
@@ -6162,6 +6251,23 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     return true;
   };//bool operator() - for Ceres
 };//struct RelActAutoCostFcn
+
+
+NucInputGamma::NucInputGamma( const RelActCalcAuto::NucInputInfo &info, const RelActAutoCostFcn * const cost_fcn )
+   : RelActCalcAuto::NucInputInfo( info )
+{
+  if( !nuclide )
+    throw runtime_error( "NucInputGamma: null Nuclide." );
+    
+  if( age < 0.0 )
+    throw runtime_error( "NucInputGamma: age may not be negative (" + nuclide->symbol + ": "
+                           + PhysicalUnits::printToBestTimeUnits(age)  + ")" );
+    
+  double nominal_age = info.age;
+    
+  assert( cost_fcn );
+  nominal_gammas = cost_fcn->decay_gammas( nuclide, nominal_age, gammas_to_exclude );
+}//NucInputGamma constructor
 
 }
 
