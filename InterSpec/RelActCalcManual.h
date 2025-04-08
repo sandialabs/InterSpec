@@ -28,6 +28,7 @@
 #include <vector>
 #include <memory>
 #include <istream>
+#include "ReactionGamma.h"
 
 // Forward declarations
 class PeakDef;
@@ -43,6 +44,7 @@ namespace RelActCalc
 namespace SandiaDecay
 {
   struct Nuclide;
+  struct Element;
 }
 
 namespace SpecUtils
@@ -74,6 +76,7 @@ struct SandiaDecayNuc
   const SandiaDecay::Nuclide *nuclide = nullptr;
   double age = -1;
   bool correct_for_decay_during_meas = false;
+  const SandiaDecay::Element *element = nullptr;
   const ReactionGamma::Reaction *reaction = nullptr;
 };//struct SandiaDecayNuc
 

@@ -92,6 +92,9 @@ namespace RelActCalcAuto
 
 int run_test();
 
+/** A typdef for passing either Nuclide, Element, or Reaction to functions. */
+typedef std::variant<const SandiaDecay::Nuclide *, const SandiaDecay::Element *, const ReactionGamma::Reaction *> SrcVariant;
+  
 /** Struct to specify an energy range to consider for doing relative-efficiency/activity calc.
  */
 struct RoiRange
@@ -129,22 +132,25 @@ struct NucInputInfo
 {
   const SandiaDecay::Nuclide *nuclide = nullptr;
   
-  /** Age in units of PhysicalUnits (i.e., 1.0 == second).
+  const SandiaDecay::Element *element = nullptr;
+  const ReactionGamma::Reaction *reaction = nullptr;
+  
+  /** Age in units of PhysicalUnits (i.e., 1.0 == second), for the nuclide.
    
    If the age is being fit, this will be used as the initial age to start with.
    
-   Must not be negative.
+   Must not be negative if this is a nuclide, but must be zero or negative for element or reaction.
    */
   double age = -1.0;
   
-  /** If nuclide age should be fit. */
+  /** If nuclide age should be fit.  Must be false for x-ray or reaction. */
   bool fit_age = false;
   
   /** Minimum age to fit; if specified, must be zero or greater. 
    
    In units of PhysicalUnits (i.e., 1.0 == second).
    
-   May not be specified if #fit_age is false.
+   May not be specified if `fit_age` is false, or a x-ray or reaction.
   */
   std::optional<double> fit_age_min;
   
@@ -152,7 +158,7 @@ struct NucInputInfo
   
    In units of PhysicalUnits (i.e., 1.0 == second).
 
-   May not be specified if #fit_age is false.
+   May not be specified if `fit_age` is false, or a x-ray or reaction.
   */
   std::optional<double> fit_age_max;
 
@@ -180,11 +186,13 @@ struct NucInputInfo
   */
   std::optional<double> starting_rel_act;
 
-  /** Energy corresponding to SandiaDecay::EnergyRatePair::energy */
+  /** Energy corresponding to SandiaDecay::EnergyRatePair::energy, or equivalent for x-ray or reactions. */
   std::vector<double> gammas_to_exclude;
   
   std::string peak_color_css;
   
+  const std::string name() const;
+
   static const int sm_xmlSerializationVersion = 0;
   void toXml( ::rapidxml::xml_node<char> *parent ) const;
   void fromXml( const ::rapidxml::xml_node<char> *parent );
@@ -582,14 +590,18 @@ struct Options
 
 struct NuclideRelAct
 {
-  const SandiaDecay::Nuclide *nuclide;
+  const SandiaDecay::Nuclide *nuclide = nullptr;
+  const SandiaDecay::Element *element = nullptr;
+  const ReactionGamma::Reaction *reaction = nullptr;
   
-  double age;
-  double age_uncertainty;
-  bool age_was_fit;
+  std::string name() const;
+
+  double age = -1.0;
+  double age_uncertainty = -1.0;
+  bool age_was_fit = false;
   
-  double rel_activity;
-  double rel_activity_uncertainty;
+  double rel_activity = -1.0;
+  double rel_activity_uncertainty = -1.0;
   
   /** The energy and its respective number of gammas per decay for this nuclide, at its age. 
    Note: this has not had the branching ratio uncertainty correction applied (if they were fit for).
@@ -673,13 +685,19 @@ struct RelActAutoSolution
    */
   double mass_ratio( const SandiaDecay::Nuclide *numerator, const SandiaDecay::Nuclide *denominator, const size_t rel_eff_index ) const;
   
+
+  const NuclideRelAct &nucinfo( const SrcVariant src, const size_t rel_eff_index ) const;
+  
+
   /** Returns the activity ratio of two nuclides.
    
    Throws exception if either input \c nuclide is nullptr, or was not in the problem.
    
    TODO: add uncertainty, via returning pair<double,double>
    */
-  double activity_ratio( const SandiaDecay::Nuclide *numerator, const SandiaDecay::Nuclide *denominator, const size_t rel_eff_index ) const;
+  double activity_ratio( const SrcVariant &numerator, const SrcVariant &denominator, const size_t rel_eff_index ) const;
+
+  double activity_ratio( const NuclideRelAct &numerator, const NuclideRelAct &denominator, const size_t rel_eff_index ) const;
   
   /** Returns the relative activity of a nuclide.
   
@@ -689,22 +707,29 @@ struct RelActAutoSolution
   
   TODO: add uncertainty, via returning pair<double,double>
   */
-  double rel_activity( const SandiaDecay::Nuclide *nuclide, const size_t rel_eff_index ) const;
-  
-  /** Returns the counts in all peaks for a nuclide in the relative efficency curve.
-  
+  double rel_activity( const SrcVariant &src, const size_t rel_eff_index ) const;
+
+  double rel_activity( const NuclideRelAct &nucinfo, const size_t rel_eff_index ) const;
+
+  /** Returns the counts in all peaks for a source in the relative efficency curve.
+
   Note: it actually returns the sum of peak amplitudes, for all gammas within `m_final_roi_ranges`.
 
   Throws exception if \c nuclide is nullptr, or was not in the problem, or any counts were inf or NaN.
   */
-  double nuclide_counts( const SandiaDecay::Nuclide *nuclide, const size_t rel_eff_index ) const;
+  double nuclide_counts( const NuclideRelAct &nucinfo, const size_t rel_eff_index ) const;
+
+  /** A convience function for calling the above for a specific nuclide. */
+  double nuclide_counts( const SrcVariant &src, const size_t rel_eff_index ) const;
 
   /**  Gives the relative efficiency for a given energy. 
   */
   double relative_efficiency( const double energy, const size_t rel_eff_index ) const;
 
   /** Get the index of specified nuclide within #m_rel_activities and #m_nonlin_covariance. */
-  size_t nuclide_index( const SandiaDecay::Nuclide *nuclide, const size_t rel_eff_index ) const;
+  size_t nuclide_index( const NuclideRelAct &nucinfo, const size_t rel_eff_index ) const;
+
+  size_t nuclide_index( const SrcVariant &src, const size_t rel_eff_index ) const;
   
   /** Returns result of `RelActCalc::rel_eff_eqn_js_function(...)` or
    `RelActCalc::physical_model_rel_eff_eqn_js_function(...)`

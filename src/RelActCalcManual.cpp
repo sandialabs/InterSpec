@@ -1726,30 +1726,82 @@ vector<GenericPeakInfo> add_nuclides_to_peaks( const std::vector<GenericPeakInfo
   for( const auto &p : peaks )
     energy_widths.push_back( {p.m_energy, p.m_fwhm / 2.35482} );
   
-  set<const SandiaDecay::Nuclide *> nuclides_seen;
+  set<const void *> nuclides_seen;
   for( const auto &n : nuclides )
   {
-    if( nuclides_seen.count(n.nuclide) )
-      throw runtime_error( "add_nuclides_to_peaks: input nuclides must be unique" );
-    nuclides_seen.insert( n.nuclide );
+    string name;
+    const void *src_ptr = nullptr;
+    if( n.nuclide )
+    {
+      src_ptr = static_cast<const void *>(n.nuclide);
+      name = n.nuclide->symbol;
+    }else if( n.element )
+    {
+      src_ptr = static_cast<const void *>(n.element);
+      name = n.element->name;
+    }else if( n.reaction )
+    {
+      src_ptr = static_cast<const void *>(n.reaction);
+      name = n.reaction->name();
+    }else
+    {
+      throw runtime_error( "add_nuclides_to_peaks: null input" );
+    }
     
-    SandiaDecay::NuclideMixture mixture;
-    mixture.addNuclideByActivity(n.nuclide, GammaInteractionCalc::ShieldingSourceChi2Fcn::sm_activityUnits);
+    if( nuclides_seen.count( src_ptr ) )
+      throw runtime_error( "add_nuclides_to_peaks: input nuclides must be unique" );
+    nuclides_seen.insert( src_ptr );
     
     // We will map from the peaks mean, to the total number of gammas that contribute to that peak,
     //  for this nuclide
     map<double,double> energy_gammas_map;
+    
+    if( n.nuclide )
+    {
+      SandiaDecay::NuclideMixture mixture;
+      mixture.addNuclideByActivity(n.nuclide, GammaInteractionCalc::ShieldingSourceChi2Fcn::sm_activityUnits);
+      
+      if( n.correct_for_decay_during_meas && (real_time <= 0) )
+        throw runtime_error( "add_nuclides_to_peaks: measurement time must be specified if"
+                            " correcting activities for nuclide decays during measurement.");
+      
+      const double activity = 1.0;
+      const bool decay_correct = n.correct_for_decay_during_meas;
+      
+      GammaInteractionCalc::ShieldingSourceChi2Fcn::cluster_peak_activities( energy_gammas_map,
+                                                                            energy_widths, mixture, activity, n.age, cluster_sigma, -1,
+                                                                            decay_correct, real_time, nullptr, nullptr );
+    }else if( n.element )
+    {
+      for( const pair<double,double> &p : energy_widths )
+      {
+        double src_yield = 0.0;
+        const double lower_x = p.first - cluster_sigma*p.second;
+        const double upper_x = p.first + cluster_sigma*p.second;
+        for( const SandiaDecay::EnergyIntensityPair &xray : n.element->xrays )
+        {
+          if( (xray.energy >= lower_x) && (xray.energy <= upper_x) )
+            src_yield += xray.intensity;
+        }
         
-    if( n.correct_for_decay_during_meas && (real_time <= 0) )
-      throw runtime_error( "add_nuclides_to_peaks: measurement time must be specified if"
-                          " correcting activities for nuclide decays during measurement.");
-    
-    const double activity = 1.0;
-    const bool decay_correct = n.correct_for_decay_during_meas;
-    
-    GammaInteractionCalc::ShieldingSourceChi2Fcn::cluster_peak_activities( energy_gammas_map,
-                            energy_widths, mixture, activity, n.age, cluster_sigma, -1,
-                            decay_correct, real_time, nullptr, nullptr );
+        energy_gammas_map[p.first] = src_yield;
+      }//for( const auto &p : peaks )
+    }else if( n.reaction )
+    {
+      for( const pair<double,double> &p : energy_widths )
+      {
+        double src_yield = 0.0;
+        const double lower_x = p.first - cluster_sigma*p.second;
+        const double upper_x = p.first + cluster_sigma*p.second;
+        for( const ReactionGamma::Reaction::EnergyYield &rxctn : n.reaction->gammas )
+        {
+          if( (rxctn.energy >= lower_x) && (rxctn.energy <= upper_x) )
+            src_yield += rxctn.abundance;
+        }
+        
+        energy_gammas_map[p.first] = src_yield;
+      }//for( const auto &p : peaks )
+    }
     
     // Convert energy_gammas_map to a vector for convenience
     vector<pair<double,double>> energy_gammas;
@@ -1763,7 +1815,7 @@ vector<GenericPeakInfo> add_nuclides_to_peaks( const std::vector<GenericPeakInfo
       GenericPeakInfo &peak = answer[peak_index];
       const double yield = energy_gammas[peak_index].second;
       if( yield > numeric_limits<float>::min() )
-        peak.m_source_gammas.emplace_back( yield, n.nuclide->symbol );
+        peak.m_source_gammas.emplace_back( yield, name );
     }//for( size_t row = 0; row < num_peaks; ++row )
   }//for( const auto &n : nuclides )
   
@@ -2749,8 +2801,7 @@ std::ostream &RelEffSolution::print_summary( std::ostream &strm ) const
   for( const RelActCalcManual::IsotopeRelativeActivity &i : m_rel_activities )
   {
     const SandiaDecay::Nuclide *nuclide = db->nuclide( i.m_isotope );
-    assert( nuclide );
-    if( nuclide )
+    if( nuclide )  //Will be nullptr for reactions and x-rays
       total_rel_mass += i.m_rel_activity / nuclide->activityPerGram();
   }
   
@@ -4980,8 +5031,8 @@ NucMatchResults fill_in_nuclide_info( const vector<RelActCalcManual::GenericPeak
     
     const ReactionGamma::Reaction *rctn = nullptr;
     const SandiaDecay::Nuclide *nuc = db->nuclide( iso );
-    
-    if( !nuc )
+    const SandiaDecay::Element *element = !nuc ? db->element( iso ) : nullptr;
+    if( !nuc && !element )
     {
       const ReactionGamma *reactiondb = ReactionGammaServer::database();
       
@@ -5000,15 +5051,15 @@ NucMatchResults fill_in_nuclide_info( const vector<RelActCalcManual::GenericPeak
       }
     }//if( !nuc )
     
-    if( !nuc && !rctn )
+    if( !nuc && !rctn && !element )
       throw runtime_error( "Invalid nuclide '" + iso + "' specified." );
     
-    iso = nuc ? nuc->symbol : rctn->name();
+    iso = nuc ? nuc->symbol : (element ? element->symbol : rctn->name());
     
     // Make sure we try to use a U-data source, only for U, and the nuclides of it we have,
     //  otherwise we'll default back to using SandiaDecay
-    auto src = nuc_data_src;
-    if( (nuc && (nuc->atomicNumber != 92)) || rctn )
+    NucDataSrc src = nuc_data_src;
+    if( (nuc && (nuc->atomicNumber != 92)) || rctn || element )
     {
       src = NucDataSrc::SandiaDecay;
     }else if( nuc->atomicNumber == 92 )
@@ -5116,7 +5167,7 @@ NucMatchResults fill_in_nuclide_info( const vector<RelActCalcManual::GenericPeak
             if( g.abundance > std::numeric_limits<float>::min() )
               initial_nucs_info.emplace_back( rctn->name().c_str(), "", true, g.energy, g.abundance );
           }
-        }else
+        }else if( nuc )
         {
           assert( nuc );
           const double ref_act = 1.0*SandiaDecay::MBq;
@@ -5178,7 +5229,18 @@ NucMatchResults fill_in_nuclide_info( const vector<RelActCalcManual::GenericPeak
               }//if( decay correct nuclides )
             }//if( br > std::numeric_limits<float>::min() )
           }//for( const SandiaDecay::EnergyRatePair info : photons )
+        }else if( element )
+        {
+          for( const SandiaDecay::EnergyIntensityPair &g : element->xrays )
+          {
+            if( g.intensity > std::numeric_limits<float>::min() )
+              initial_nucs_info.emplace_back( element->symbol.c_str(), "", true, g.energy, g.intensity );
+          }
+        }else
+        {
+          assert( 0 );
         }//if( rctn ) / else( nuc )
+        
         
         break;
       }//case NucDataSrc::SandiaDecay:

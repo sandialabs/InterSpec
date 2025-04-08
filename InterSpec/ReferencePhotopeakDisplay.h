@@ -306,6 +306,17 @@ public:
   void setNarrowPhoneLayout( const bool narrow );
 #endif
   
+  /** Pass in a source string (U235, Fe(n,n), Pb, etc), and get back the color that has been previously used
+   by the user.
+   Checks `currentlyUsedPeakColors()`, then  `m_previouslyPickedSourceColors`, then
+   `m_specificSourcelineColors`.  If no history of it can be found, returns default/empty color.
+   
+   Note that `src` passed in must exactly match nuclide/reaction/element.
+   
+   This function is intended to be called by other widgets.
+   */
+  Wt::WColor suggestColorForSource( const std::string &src ) const;
+  
 protected:
   virtual void render( Wt::WFlags<Wt::RenderFlag> flags );
   
@@ -339,7 +350,7 @@ protected:
   /** Returns a map from source name (ex "U235", "Be(n,n')", etc) to colors used
    for peaks with that as a source, as well as for persisted reference lines.
    */
-  std::map<std::string,std::vector<Wt::WColor>> currentlyUsedPeakColors();
+  std::map<std::string,std::vector<Wt::WColor>> currentlyUsedPeakColors() const;
   
   void toggleShowOptions();
 

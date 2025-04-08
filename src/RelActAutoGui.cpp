@@ -580,16 +580,16 @@ namespace
       
       const char *tooltip = "ex. <b>U235</b>, <b>235 Uranium</b>"
       ", <b>U-235m</b> (meta stable state)"
-      ", <b>Cs137</b>, etc.";
+      ", <b>Cs137</b>, Pb, Fe(n,n), etc.";
       HelpSystem::attachToolTipOn( m_nuclide_edit, tooltip, showToolTips );
       
       string replacerJs, matcherJs;
       IsotopeNameFilterModel::replacerJs( replacerJs );
       IsotopeNameFilterModel::nuclideNameMatcherJs( matcherJs );
       IsotopeNameFilterModel *isoSuggestModel = new IsotopeNameFilterModel( this );
-      isoSuggestModel->excludeXrays( true );
-      isoSuggestModel->excludeEscapes( true );
-      isoSuggestModel->excludeReactions( true );
+      isoSuggestModel->excludeXrays( false );
+      isoSuggestModel->excludeEscapes( false );
+      isoSuggestModel->excludeReactions( false );
       
       WSuggestionPopup *nuclideSuggest = new WSuggestionPopup( matcherJs, replacerJs, this );
 #if( WT_VERSION < 0x3070000 ) //I'm not sure what version of Wt "wtNoReparent" went away.
@@ -641,104 +641,114 @@ namespace
     
     void handleIsotopeChange()
     {
-      const SandiaDecay::Nuclide *nuc = nuclide();
-      if( !nuc )
-      {
-        const string nucstr = m_nuclide_edit->text().toUTF8();
-        
+      const auto nuc_input = nuclide();
+
+      const auto hide_age_stuff = [this,&nuc_input](){
+        m_age_label->hide();
+        m_age_edit->hide();
         m_fit_age->setUnChecked();
         m_fit_age->hide();
-        
-        if( !nucstr.empty() )
-          passMessage( nucstr + " is not a valid nuclide.", WarningWidget::WarningMsgHigh );
-        
-        m_updated.emit();
-        return;
-      }//if( !nuc )
-      
-      if( IsInf(nuc->halfLife) )
-      {
+
         const string nucstr = m_nuclide_edit->text().toUTF8();
-        passMessage( nucstr + " is a stable nuclide.", WarningWidget::WarningMsgHigh );
-        
-        m_nuclide_edit->setText( "" );
-        m_nuclide_edit->validate();
-        m_fit_age->setUnChecked();
-        m_fit_age->hide();
-        
+        if( !nucstr.empty() && std::holds_alternative<std::monostate>(nuc_input) )
+          passMessage( nucstr + " is not a valid nuclide, x-ray, or reaction.", WarningWidget::WarningMsgHigh );
+      };//hide_age_stuff
+
+      if( std::holds_alternative<std::monostate>(nuc_input) )
+      {
+        hide_age_stuff();
         m_updated.emit();
         return;
-      }//if( IsInf(nuc->halfLife) )
-      
-      const bool age_is_fittable = !PeakDef::ageFitNotAllowed( nuc );
-      
-      if( nuc->decaysToStableChildren() )
+      }
+
+      std::string src_name;
+      const SandiaDecay::Nuclide *nuc = nullptr;
+      const SandiaDecay::Element *el = nullptr;
+      const ReactionGamma::Reaction * reaction = nullptr;
+
+      if( std::holds_alternative<const SandiaDecay::Nuclide *>(nuc_input) )
       {
-        m_age_edit->setText( "0y" );
-      }else
-      {
-        string agestr;
-        PeakDef::defaultDecayTime( nuc, &agestr );
-        m_age_edit->setText( agestr );
+        nuc = std::get<const SandiaDecay::Nuclide *>(nuc_input);
+
+        assert( nuc );
+        if( !nuc )
+          throw runtime_error( "No valid nuclide" );
+
+        src_name = nuc->symbol;
+      
+        if( IsInf(nuc->halfLife) )
+        {
+          const string nucstr = m_nuclide_edit->text().toUTF8();
+          passMessage( nucstr + " is a stable nuclide.", WarningWidget::WarningMsgHigh );
+        
+          m_nuclide_edit->setText( "" );
+          m_nuclide_edit->validate();
+          m_fit_age->setUnChecked();
+          m_fit_age->hide();
+        
+          m_updated.emit();
+          return;
+        }//if( IsInf(nuc->halfLife) )
+      
+        const bool age_is_fittable = !PeakDef::ageFitNotAllowed( nuc );
+      
+        if( nuc->decaysToStableChildren() )
+        {
+          m_age_edit->setText( "0y" );
+        }else
+        {
+          string agestr;
+          PeakDef::defaultDecayTime( nuc, &agestr );
+          m_age_edit->setText( agestr );
+        }
+      
+        m_age_label->setHidden( !age_is_fittable );
+        m_age_edit->setHidden( !age_is_fittable );
+        m_fit_age->setHidden( !age_is_fittable );
+        m_fit_age->setChecked( false );
       }
       
-      m_age_label->setHidden( !age_is_fittable );
-      m_age_edit->setHidden( !age_is_fittable );
-      m_fit_age->setHidden( !age_is_fittable );
-      m_fit_age->setChecked( false );
+      if( std::holds_alternative<const SandiaDecay::Element *>(nuc_input) )
+      {
+        el = std::get<const SandiaDecay::Element *>(nuc_input);
+        assert( el );
+        src_name = el->symbol;
+        hide_age_stuff();
+      }
+
+      if( std::holds_alternative<const ReactionGamma::Reaction *>(nuc_input) )
+      {
+        reaction = std::get<const ReactionGamma::Reaction *>(nuc_input);
+        assert( reaction );
+        src_name = reaction->name();
+        hide_age_stuff();
+      }
       
       bool haveFoundColor = false;
       
-      // Check if user is showing reference lines for this nuclide, and if so, use that color
+      // Check user is showing reference lines, displayed peaks, and previous user-selected colors
       if( !haveFoundColor )
       {
-        vector<ReferenceLineInfo> reflines;
         const ReferencePhotopeakDisplay *refdisp = InterSpec::instance()->referenceLinesWidget();
         if( refdisp )
-          reflines = refdisp->showingNuclides();
-        
-        for( const auto &refline : reflines )
         {
-          if( (refline.m_nuclide == nuc) && !refline.m_input.m_color.isDefault() )
+          const Wt::WColor c = refdisp->suggestColorForSource( src_name );
+          if( !c.isDefault() )
           {
             haveFoundColor = true;
-            m_color_select->setColor( refline.m_input.m_color );
-            break;
-          }//if( we found a match )
-        }//for( const auto &refline : reflines )
-        
-        // TODO: look in ReferencePhotopeakDisplay cache of previous colors
+            m_color_select->setColor( c );
+          }
+        }//if( refdisp )
       }//if( !haveFoundColor )
       
-      // Check for user-fit peaks
-      if( !haveFoundColor )
-      {
-        PeakModel *peakmodel = InterSpec::instance()->peakModel();
-        if( peakmodel && peakmodel->peaks() )
-        {
-          for( auto peakshrdptr : *peakmodel->peaks() )
-          {
-            if( !peakshrdptr )
-              continue;
-            
-            if( (peakshrdptr->parentNuclide() == nuc) && !peakshrdptr->lineColor().isDefault() )
-            {
-              haveFoundColor = true;
-              m_color_select->setColor( peakshrdptr->lineColor() );
-              break;
-            }//if( we found a matching nuclide )
-          }//for( loop over user peaks )
-        }//if( PeakModel is valid  - should always be )
-      }//if( !haveFoundColor )
-      
-      // Finally check
+      // Check if the theme explicitly specifies a color for this nuclide
       if( !haveFoundColor )
       {
         shared_ptr<const ColorTheme> theme = InterSpec::instance()->getColorTheme();
         if( theme )
         {
           const map<string,WColor> &defcolors = theme->referenceLineColorForSources;
-          const auto pos = defcolors.find( nuc->symbol );
+          const auto pos = defcolors.find( src_name );
           if( pos != end(defcolors) )
             m_color_select->setColor( pos->second );
         }//if( theme )
@@ -802,13 +812,46 @@ namespace
       m_updated.emit();
     }
     
-    /** Will return nullptr if invalid text entered. */
-    const SandiaDecay::Nuclide *nuclide() const
+    /** Will return std::monostate if invalid text entered. */
+    std::variant<std::monostate, const SandiaDecay::Nuclide *, const SandiaDecay::Element *, const ReactionGamma::Reaction *> nuclide() const
     {
       const string nucstr = m_nuclide_edit->text().toUTF8();
       const SandiaDecay::SandiaDecayDataBase * const db = DecayDataBaseServer::database();
+      assert( db );
+      if( !db )
+        throw runtime_error( "Couldnt load decay DB" );
       
-      return db->nuclide( nucstr );
+      const SandiaDecay::Nuclide *nuc = db->nuclide( nucstr );
+      if( nuc )
+        return nuc;
+      
+      const SandiaDecay::Element *el = db->element( nucstr );
+      if( el )
+        return el;
+      
+      const ReactionGamma * const reaction_db = ReactionGammaServer::database();
+      assert( reaction_db );
+      if( !reaction_db )
+        throw runtime_error( "Couldnt load reaction DB" );
+      
+      try
+      {
+        const ReactionGamma::Reaction *reaction = nullptr;
+        vector<ReactionGamma::ReactionPhotopeak> possible_rctns;
+        reaction_db->gammas( nucstr, possible_rctns );
+        
+        // TODO: we are currently taking the first reaction; however, in principle there could be multiple - however, `ReactionGamma` doesnt have an interface to just return a reaction by name, I guess because
+        for( size_t i = 0; !reaction && (i < possible_rctns.size()); ++i )
+          reaction = possible_rctns[i].reaction;
+        
+        if( reaction )
+          return reaction;
+      }catch( std::exception & )
+      {
+        //ReactionGamma::gammas(...) throws if not a valid reaction
+      }//try / catch
+      
+      return std::monostate{};
     }
     
     WColor color() const
@@ -823,7 +866,11 @@ namespace
     
     double age() const
     {
-      const SandiaDecay::Nuclide * const nuc = nuclide();
+      const auto nuc_input = nuclide();
+      if( !std::holds_alternative<const SandiaDecay::Nuclide *>(nuc_input) )
+        return 0.0;
+      
+      const SandiaDecay::Nuclide * const nuc = std::get<const SandiaDecay::Nuclide *>(nuc_input);
       if( !nuc )
         return 0.0;
     
@@ -846,15 +893,26 @@ namespace
     
     RelActCalcAuto::NucInputInfo toNucInputInfo() const
     {
-      const SandiaDecay::Nuclide * const nuc = nuclide();
-      if( !nuc )
-        throw runtime_error( "No valid nuclide" );
+      const auto nuc_input = nuclide();
       
+   
       RelActCalcAuto::NucInputInfo nuc_info;
 
-      nuc_info.nuclide = nuc;
-      nuc_info.age = age(); // Must not be negative.
-      nuc_info.fit_age = m_fit_age->isChecked();
+      if( std::holds_alternative<const SandiaDecay::Nuclide *>(nuc_input) )
+      {
+        nuc_info.nuclide = std::get<const SandiaDecay::Nuclide *>(nuc_input);
+        nuc_info.age = age(); // Must not be negative.
+        nuc_info.fit_age = m_fit_age->isChecked();
+      }else if( std::holds_alternative<const SandiaDecay::Element *>(nuc_input) )
+      {
+        nuc_info.element = std::get<const SandiaDecay::Element *>(nuc_input);
+      }else if( std::holds_alternative<const ReactionGamma::Reaction *>(nuc_input) )
+      {
+        nuc_info.reaction = std::get<const ReactionGamma::Reaction *>(nuc_input);
+      }else
+      {
+        throw runtime_error( "No valid nuclide" );
+      }
       
       // TODO: Not implemented: vector<double> gammas_to_exclude;
       //nuc_info.gammas_to_exclude = ;
@@ -867,7 +925,7 @@ namespace
     
     void fromNucInputInfo( const RelActCalcAuto::NucInputInfo &info )
     {
-      if( !info.nuclide )
+      if( !info.nuclide && !info.element && !info.reaction )
       {
         m_nuclide_edit->setText( "" );
         if( !info.peak_color_css.empty() )
@@ -882,34 +940,50 @@ namespace
         m_updated.emit();
         
         return;
-      }//if( !info.nuclide )
+      }//if( !info.nuclide && !info.element && !info.reaction )
       
-      m_nuclide_edit->setText( WString::fromUTF8(info.nuclide->symbol) );
-      handleIsotopeChange();
+      if( info.nuclide )
+        m_nuclide_edit->setText( WString::fromUTF8(info.nuclide->symbol) );
+      else if( info.element )
+        m_nuclide_edit->setText( WString::fromUTF8(info.element->symbol) );
+      else if( info.reaction )
+        m_nuclide_edit->setText( WString::fromUTF8(info.reaction->name()) );
       
       if( !info.peak_color_css.empty() )
         m_color_select->setColor( WColor(info.peak_color_css) );
       
-      const SandiaDecay::Nuclide * const nuc = nuclide();
-      
-      const bool age_is_fittable = !PeakDef::ageFitNotAllowed(nuc);
-      m_age_label->setHidden( !age_is_fittable );
-      m_age_edit->setHidden( !age_is_fittable );
-      m_fit_age->setHidden( !age_is_fittable );
-      m_fit_age->setChecked( age_is_fittable && info.fit_age );
-      
-      if( !age_is_fittable || (info.age < 0.0) )
+      if( info.nuclide )
       {
-        string agestr = "0s";
-        if( nuc )
-          PeakDef::defaultDecayTime( nuc, &agestr );
-        m_age_edit->setText( WString::fromUTF8(agestr) );
-      }else
+        const SandiaDecay::Nuclide * const nuc = info.nuclide;
+        
+        const bool age_is_fittable = !PeakDef::ageFitNotAllowed(nuc);
+        m_age_label->setHidden( !age_is_fittable );
+        m_age_edit->setHidden( !age_is_fittable );
+        m_fit_age->setHidden( !age_is_fittable );
+        m_fit_age->setChecked( age_is_fittable && info.fit_age );
+      
+        if( !age_is_fittable || (info.age < 0.0) )
+        {
+          string agestr = "0s";
+          if( nuc )
+            PeakDef::defaultDecayTime( nuc, &agestr );
+          m_age_edit->setText( WString::fromUTF8(agestr) );
+        }else
+        {
+          const string agestr = PhysicalUnitsLocalized::printToBestTimeUnits(info.age);
+          m_age_edit->setText( WString::fromUTF8(agestr) );
+        }
+      }else 
       {
-        const string agestr = PhysicalUnitsLocalized::printToBestTimeUnits(info.age);
-        m_age_edit->setText( WString::fromUTF8(agestr) );
-      }
+        m_age_label->hide();
+        m_age_edit->hide();
+        m_fit_age->setUnChecked();
+        m_fit_age->hide();
+      }//if( info.nuclide )
+      
       // Not currently supported: info.gammas_to_exclude -> vector<double>;
+
+      handleIsotopeChange();
     }//void fromNucInputInfo( const RelActCalcAuto::NucInputInfo &info )
     
     
@@ -2077,7 +2151,7 @@ vector<RelActCalcAuto::NucInputInfo> RelActAutoGui::getNucInputInfo() const
   {
     const RelActAutoNuclide *nuc = dynamic_cast<const RelActAutoNuclide *>( w );
     assert( nuc );
-    if( nuc && nuc->nuclide() )
+    if( nuc && !std::holds_alternative<std::monostate>(nuc->nuclide()) )
       answer.push_back( nuc->toNucInputInfo() );
   }//for( WWidget *w : kids )
   
@@ -4573,8 +4647,8 @@ void RelActAutoGui::updateDuringRenderForRefGammaLineChange()
     map<std::string,Wt::WColor> nuclide_colors;
     for( const RelActCalcAuto::NucInputInfo &nuc : nuclides )
     {
-      if( nuc.nuclide && !nuc.peak_color_css.empty() )
-        nuclide_colors[nuc.nuclide->symbol] = WColor( nuc.peak_color_css );
+      if( (nuc.nuclide || nuc.element || nuc.reaction) && !nuc.peak_color_css.empty() )
+        nuclide_colors[nuc.name()] = WColor( nuc.peak_color_css );
     }
     
     // If the user has a ColorTheme preference to assign a specific color to a nuclide, that
@@ -4588,7 +4662,17 @@ void RelActAutoGui::updateDuringRenderForRefGammaLineChange()
       
       if( i )
         m_photopeak_widget->persistCurentLines();
-      m_photopeak_widget->setIsotope( nuc.nuclide, nuc.age );
+      
+      if( nuc.nuclide )
+      {
+        m_photopeak_widget->setIsotope( nuc.nuclide, nuc.age );
+      }else if( nuc.element )
+      {
+        m_photopeak_widget->setElement( nuc.element );
+      }else if( nuc.reaction )
+      {
+        m_photopeak_widget->setReaction( nuc.reaction );
+      }
     }//
   }//if( !show_ref_lines ) / else
 }//void updateDuringRenderForRefGammaLineChange()
@@ -4927,10 +5011,40 @@ void RelActAutoGui::updateFromCalc( std::shared_ptr<RelActCalcAuto::RelActAutoSo
     {
       RelActAutoNuclide *nuc = dynamic_cast<RelActAutoNuclide *>( w );
       assert( nuc );
-      if( !nuc || !nuc->nuclide() )
+      
+      if( !nuc || std::holds_alternative<std::monostate>(nuc->nuclide()) )
         continue;
       
-      if( fit_nuc.nuclide == nuc->nuclide() )
+      const std::variant<std::monostate, const SandiaDecay::Nuclide *, const SandiaDecay::Element *, const ReactionGamma::Reaction *>
+           src_info = nuc->nuclide();
+      const SandiaDecay::Nuclide *nuclide = nullptr;
+      const SandiaDecay::Element *element = nullptr;
+      const ReactionGamma::Reaction * reaction = nullptr;
+      
+      std::visit( [&]( auto &&arg ) {
+        using T = std::decay_t<decltype(arg)>;
+        if constexpr( std::is_same_v<T,std::monostate> )
+        {
+          
+        }if constexpr( std::is_same_v<T, const SandiaDecay::Nuclide *> )
+        {
+          nuclide = std::get<const SandiaDecay::Nuclide *>(src_info);
+        }else if constexpr( std::is_same_v<T, const SandiaDecay::Element *> )
+        {
+          element = std::get<const SandiaDecay::Element *>(src_info);
+        }else if constexpr( std::is_same_v<T, const ReactionGamma::Reaction *> )
+        {
+          reaction = std::get<const ReactionGamma::Reaction *>(src_info);
+        }else
+        {
+          assert( 0 );
+          //static_assert( false, "Non-exhaustive visitor.");
+        }
+      }, src_info );
+
+      if( (fit_nuc.nuclide == nuclide)
+          && (fit_nuc.element == element)
+          && (fit_nuc.reaction == reaction) )
       {
         const string agestr = PhysicalUnitsLocalized::printToBestTimeUnits( fit_nuc.age, 3 );
         nuc->setAge( agestr );
